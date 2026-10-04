@@ -554,16 +554,31 @@ export function stayRoute(e, secs = 99999) {
   return { motion: e.motion === 'FLY' ? 'FLY' : 'WALK', start: p, end: p, steps: [{ t: 'wait', s: secs }] };
 }
 
+/**
+ * Mods copied onto a split or summoned child. The parent's stat multipliers travel; a kill bounty does not
+ * (owner 2026-10-04: the main body alone carries it — GitHub #67, #89-2). `bountyId` is the 悬赏 card and
+ * `bountyCoins` is the coin copy the match writes for 联防. The parent object is left as it is.
+ */
+function modsWithoutBounty(mods) {
+  if (!mods || typeof mods !== 'object') return mods ?? null;
+  if (mods.bountyId == null && mods.bountyCoins == null) return mods;
+  const copy = { ...mods };
+  delete copy.bountyId;
+  delete copy.bountyCoins;
+  return copy;
+}
+
 /** Spawn `n` enemies at the parent's position that continue its route. Returns the spawned units. */
 export function spawnChildren(b, parent, key, n, opts = {}) {
   const out = [];
   const route = opts.route ?? remainingRoute(parent);
   const cnt = Math.max(0, Math.min(20, Math.floor(n)));
+  const mods = modsWithoutBounty(opts.mods ?? parent.mods ?? null);
   for (let i = 0; i < cnt; i++) {
     const off = cnt > 1 ? (i - (cnt - 1) / 2) * 0.2 : 0;
     const pos = opts.pos ?? [parent.y, parent.x + off];
     const c = b.spawnEnemy(key, {
-      pos, route, mods: opts.mods ?? parent.mods ?? null, tag: opts.tag ?? null, countInTotal: opts.countInTotal,
+      pos, route, mods, tag: opts.tag ?? null, countInTotal: opts.countInTotal,
       ownerPlayerId: parent.ownerId ?? null, sourcePlayerId: parent.sourcePlayerId ?? null,
     });
     if (c) out.push(c);

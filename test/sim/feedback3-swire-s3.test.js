@@ -1,8 +1,6 @@
-// test/sim/feedback3-swire-s3.test.js — GitHub #89-1: 琳琅诗怀雅 S3 千金一掷 used to call skill.end('manual')
-// from onTick once her coins were full and a ground enemy stood in the coin range. PRTS 卫戍协议/帮助 技能操作
-// 「通常不会自动关闭技能」 and the skill text 「可随时主动关闭技能；携带此技能时金币上限为10」: she keeps it
-// open. The close is still skill.end('manual') — the same call the old onTick used, and feedback1d-push.test.js —
-// which spends the coins and pushes. No markable target still ends and does not throw.
+// test/sim/feedback3-swire-s3.test.js — 琳琅诗怀雅 S3 千金一掷. Owner 2026-10-04: the written purse cap
+// (「金币上限为10」) is the close. At the cap the coins are shot (skill.end('manual'): damage + radial push).
+// Below the cap the skill stays open. No mark still spends and hits nothing.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,32 +27,47 @@ const arm = (h) => {
   return u;
 };
 
-test('琳琅诗怀雅 S3 stays open with a full purse and a coin target; skill.end(\'manual\') still spends', REAL, () => {
+test('琳琅诗怀雅 S3 shoots the purse when it reaches the cap of 10, and stays open below it', REAL, () => {
+  const under = battle(true);
+  const u9 = arm(under);
+  u9.mem.coins = 9;
+  // shorter than the merchant trait's 3 s payment, which would add a coin and reach the cap
+  under.run(2);
+  assert.equal(u9.skill.active, true, '9 coins do not close it');
+  assert.equal(u9.mem.coins, 9);
+
   const h = battle(true);
   const u = arm(h);
-  const full = 10; // S3 blackboard sp: the purse cap 「金币上限为10」
-  u.mem.coins = full;
-  h.run(6);
-  assert.equal(u.skill.active, true, 'several seconds do not close it');
-  assert.equal(u.mem.coins, full, 'the coins are still hers');
   const e = h.enemies()[0];
   const hp0 = e.hp;
-  u.skill.end('manual');
-  assert.equal(u.skill.active, false);
-  assert.equal(u.mem.coins, 0, 'the close spends every coin');
-  assert.ok(e.hp < hp0, 'and the coins hit the enemy in range');
+  u.mem.coins = 10;
+  h.run(0.2);
+  assert.equal(u.skill.active, false, 'the cap shoots');
+  assert.equal(u.mem.coins, 0, 'every coin is spent');
+  assert.ok(e.hp < hp0, 'the coins hit the enemy in range');
   assert.equal(h.b.errors.length, 0);
   checkInvariants(h.b);
 });
 
-test('琳琅诗怀雅 S3: closing with no markable target still ends and spends, and does not throw', REAL, () => {
+test('琳琅诗怀雅 S3: the cap with no markable target still ends and spends, and does not throw', REAL, () => {
+  const h = battle(false);
+  const u = arm(h);
+  u.mem.coins = 10;
+  assert.doesNotThrow(() => h.run(0.2));
+  assert.equal(u.skill.active, false);
+  assert.equal(u.mem.coins, 0);
+  assert.equal(h.hooksOf('damaged').length, 0, 'nothing to pay');
+  assert.equal(h.b.errors.length, 0);
+  checkInvariants(h.b);
+});
+
+test('琳琅诗怀雅 S3: a manual close below the cap still spends', REAL, () => {
   const h = battle(false);
   const u = arm(h);
   u.mem.coins = 4;
   assert.doesNotThrow(() => u.skill.end('manual'));
   assert.equal(u.skill.active, false);
   assert.equal(u.mem.coins, 0);
-  assert.equal(h.hooksOf('damaged').length, 0, 'nothing to pay');
-  assert.equal(h.b.errors.length, 0);
+  assert.equal(h.hooksOf('damaged').length, 0);
   checkInvariants(h.b);
 });

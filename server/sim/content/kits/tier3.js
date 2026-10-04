@@ -406,7 +406,8 @@ const KITS = {
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
   //      the RandomGold ability (Skill_3_End) carries swire2_s_3[knockback] of template knockback[relative]; 地面敌方单位,
   //      弹道不可对空). It does not close itself when the purse is full (PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; the skill
-  //      text is 「可随时主动关闭」; GitHub #89-1). The player closes it: skill.end('manual'), which spends the coins.
+  //      text is 「可随时主动关闭」). Owner's decision 2026-10-04: the written cap (金币上限为10) is the close — at the cap the
+  //      coins are shot at once (skill.end('manual')), with or without a mark. Below the cap it stays open.
   //      精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
   chess_char_3_04_a: (bb, chess, def) => {
     const d = defOf(chess, def);
@@ -501,11 +502,16 @@ const KITS = {
             for (const e of unit.blocking || []) if (e.alive && !e.isFlying && !list.includes(e)) list.push(e);
             return list;
           };
+          const purseCap = Math.max(1, Math.floor(num(s.bb.sp, 10)));
           return {
             kind: 'toggle',
             attack: { hits: 2 },
-            // PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; 千金一掷 「可随时主动关闭」 (GitHub #89-1). A full purse
-            // with a markable enemy does not end it. skill.end('manual') is the close that spends the coins.
+            // Owner 2026-10-04: 「金币上限为10」 is the close. Reaching the cap shoots the coins (the onEnd below).
+            // It does not wait for a mark — a cap with nobody in range still spends them and hits nothing. Below the
+            // cap the skill stays open (the old close also required a markable enemy; that wait is withdrawn).
+            onTick({ unit, skill }) {
+              if (skill.active && (unit.mem.coins ?? 0) + 1e-9 >= purseCap) skill.end('manual');
+            },
             onEnd({ battle, unit, reason }) {
               if (reason !== 'manual' || !unit.alive) return;
               const n = unit.mem.coins ?? 0;

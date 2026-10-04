@@ -141,8 +141,11 @@ landing tile) compare offsets in the unit's facing-RIGHT frame (`localOrder` / `
 the old tile-key order), so a rotated layout plays the same (test/sim/facing-invariance.test.js: every chess × 4
 directions on an open field). 余 S3's fire wall runs through his tile perpendicular to his direction (his column facing
 RIGHT / LEFT, his row facing UP / DOWN; fx `firewall.axis` = `'col'|'row'`).
-`carryState: { hpPct, sp, skillActive }` restores unite helpers (HP ratio, SP; `skillActive` restarts a timed skill for a
-fresh duration/ammo **without spending a charge** — `unitsEnd` reports `sp: 0` while a skill runs, so pass it through as is).
+`carryState: { hpPct, sp }` restores unite helpers' operators (HP ratio, and the SP = the official 技力, stored charges
+included: `unitsEnd` reports `skill.spTotal`, reset rebuilds the charges from it); `carryState: { sp }` a board summon
+piece's SP only (PRTS "召唤物仅修改技力"). Nothing else is carried: a skill running at the end of the own combat enters
+switched off with the SP it had left — spent at its activation, 0 for a one-charge skill (`unitsEnd.skillActive` is
+reported, never carried; community report #34 — it used to restart for free).
 `carryState: { down: true }` = an operator knocked out at the end of the helper's own combat (PRTS 卫戍协议/帮助 "上一阶段为
 退场状态的干员强制退场", user playtest #5 item 2): `start()` deploys it with everyone (initial `deploy` fires), then — before
 `battleStart` — withdraws it with reason `FORCED_EXIT` (constants.js `'forcedExit'`) and HP 0 (the end-of-phase HP ratio, as after
@@ -366,7 +369,7 @@ recorded for the player whose half contains the goal it reached, with `sourcePla
   perPlayer: { [playerId]: { killed, total, perfect,
       leaked: [{ enemyKey, mods, lpr, sourcePlayerId, tag, counted, boss?, spawned }],
       layerGains: {bondId: n}, coins, damageDealt, bossDamage, healingDone, deaths,
-      unitsEnd: [{ uid, id, defId, hpPct, sp, skillActive, alive }],
+      unitsEnd: [{ uid, id, defId, hpPct, sp, skillActive, alive }],   // operators + board summon pieces; sp = skill.spTotal
       unitStats: [{ id, uid, defId, name, kind, dmg, kills, heal, taken, attacks }] } } }
 ```
 - `cleared`: no spawns pending and no enemy alive (or the shared boss pool reached 0 — a pool never holds less than

@@ -339,7 +339,7 @@ test('user playtest #5 (DESIGN §19): blocking, 联防 forced exit, huge bosses,
   assert.match(SIM, /taken over by another operator in contact with room, else they walk on/);
   // #2 联防: carryState { down: true } → FORCED_EXIT (code = §5.1 / §5.5 / §6.1 / §18.3)
   assert.equal(FORCED_EXIT, 'forcedExit');
-  assert.match(DESIGN, /carryState\?: \{ hpPct, sp, skillActive \} \| \{ down: true \}/);
+  assert.match(DESIGN, /carryState\?: \{ hpPct, sp \} \| \{ sp \} \| \{ down: true \}/);
   assert.match(DESIGN, /or `FORCED_EXIT`, entering 联防 knocked out/);
   assert.match(sec(6), /knocked out at the end of its own combat enters down/);
   assert.match(PLAYING, /作战结束时已被击倒的干员在原位倒地/);

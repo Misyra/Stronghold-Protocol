@@ -161,7 +161,22 @@ export class SkillRuntime {
     return this.battle._safe(() => fn(this._ctx(extra)), `skill.${fnName}`, this.unit);
   }
 
-  /** Called on every (re)deployment. `carry` = { sp, skillActive } for unite helpers. */
+  /**
+   * The official 技力 (PRTS 技能: "可充能X次…当前技力上限等于该技能技力需求的X倍"): the stored charges × cost plus the SP
+   * towards the next one — what 联防 carries (BattleResult unitsEnd `sp`; reset rebuilds the charges from it).
+   */
+  get spTotal() {
+    if (this.noSkill || this.kind === 'passive') return 0;
+    const cost = this.spCost;
+    return this.charges >= this.maxCharges ? this.maxCharges * cost : this.charges * cost + this.sp;
+  }
+
+  /**
+   * Called on every (re)deployment. `carry` = { sp } for unite (联防) helpers: their 技力 at the end of their own combat
+   * (unitsEnd `sp` = spTotal, rebuilt into charges here). Nothing else of the skill is carried — PRTS 卫戍协议/帮助 §联防阶段
+   * "将对应单位的生命比例、技力修改至与上一阶段结束时相同": a skill that was running enters 联防 switched off, with the SP it
+   * had left (spent at its activation: 0 for a one-charge skill — PRTS 技能 "触发技能后…消耗相应的技力").
+   */
   reset(carry = null) {
     this.active = false;
     this.pending = false;
@@ -181,9 +196,6 @@ export class SkillRuntime {
     this.gainSp(carry && Number.isFinite(carry.sp) ? carry.sp : this.initSp, 'init', true);
     // a free (spCost 0) non-passive skill is available once per deployment
     if (this.spCost <= 0) this.charges = this.maxCharges;
-    // unite helpers whose timed skill was running when their combat ended: it keeps running (a fresh duration/ammo),
-    // without spending a charge — the carried SP is what they had accumulated (0 while a skill runs).
-    if (carry && carry.skillActive && this.isTimed) this.activate('carry', { free: true });
   }
 
   _startPassive() {
@@ -396,7 +408,7 @@ export class SkillRuntime {
     this.activations++;
     this.lastStart = this.battle.time;
     const b = this.battle;
-    if (this.manual && reason !== 'carry') this.opReadyAt = b.time + AUTO_OP_COOLDOWN;
+    if (this.manual) this.opReadyAt = b.time + AUTO_OP_COOLDOWN;
     if (this.isTimed) {
       this.active = true;
       this.timeLeft = this.kind === 'duration' ? Math.max(0.01, this.duration) : (this.kind === 'ammo' && this.duration > 0 ? this.duration : Infinity);

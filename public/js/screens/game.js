@@ -58,6 +58,10 @@
 // the battle on screen (battle/runner.js state().bondLayers). Picking a teammate on such a field (a 联防 leaker, an
 // eliminated spectator) frames their half and keeps the ‹ › pill (with 返回战场); an open bond popup closes when the
 // strip changes hands.
+// Spectator seats (community report #26, a remake feature): a spectator has no m.private and plays like an ELIMINATED
+// player — no shop, no ready, no emotes (▸ [ASSUMED] off), the server auto-observes the first field of every battle, a
+// team row → 前往查看 any player; in 休整期 / 机变 / round start it is shown the first player's board by itself (once per
+// phase). Its pill reads 观战中, never "你已被淘汰"; its exit only leaves the seat (ui/matchChrome.js ExitModal).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE, GEO } from '../../../shared/constants.js';
@@ -99,7 +103,7 @@ import { BriefingScreen } from './briefing.js';
 import { BandDraftScreen } from './bandDraft.js';
 import { ResultScreen } from './result.js';
 import { net } from '../net.js';
-import { store, useStore, shallowEqual, serverNow, emptyMatch } from '../store.js';
+import { store, useStore, shallowEqual, serverNow, emptyMatch, isSpectating } from '../store.js';
 import { battleRunner } from '../battle/runner.js';
 import { isClientCombat, observeTarget, teammateProgress, cameraLayers, layerCamera, sidesOf, resumedWatch } from '../battle/observe.js';
 import { screenStrip, playerBonds, playerLayer, detailBondOwner, toggleBond, popupView } from '../ui/watchBonds.js';
@@ -184,6 +188,7 @@ function MatchScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const emotes = useStore((s) => s.emotes);
   const roomSolo = useStore((s) => s.room?.mode === 'solo');
+  const spectator = useStore((s) => isSpectating(s.room, s.me.playerId));
   const gd = useGameData();
 
   const hostRef = useRef(null);
@@ -225,7 +230,8 @@ function MatchScreen() {
   const solo = roomSolo || String(pub?.modeId || '').includes('single');
   const players = sortedPlayers(pub);
   const meP = players.find((p) => p.playerId === myId) || null;
-  const alive = priv ? priv.alive !== false : meP?.alive !== false;
+  // a spectator seat watches like an eliminated player (it has no m.private and no row in m.public)
+  const alive = spectator ? false : priv ? priv.alive !== false : meP?.alive !== false;
   const home = homeFieldId(pub, myId);
   const watchingOther = !!watching && watching !== home && watching !== ownFieldId(myId);
   const editable = phase === PHASE.PREP && !!priv && alive && !priv.ready && !watchingOther;
@@ -722,6 +728,18 @@ function MatchScreen() {
 
   const watchField = useCallback((fid) => { requestWatch(fid); }, []);
 
+  // a spectator seat has no board of its own: in 休整期 / 机变 / round start it is shown the first player still in (as a
+  // tap on that row would — g.watch 'n:<pid>', the read-only board), once per phase; a row switches to another player
+  const scoutedRef = useRef(null);
+  useEffect(() => {
+    if (!spectator || watching || !pub || scoutedRef.current === phaseKey) return;
+    if (phase !== PHASE.PREP && phase !== PHASE.SP_DRAFT && phase !== PHASE.ROUND_START) return;
+    const first = players.find((p) => p.alive !== false && p.status !== 'left');
+    if (!first) return;
+    scoutedRef.current = phaseKey;
+    requestWatch(ownFieldId(first.playerId), first.playerId);
+  }, [spectator, phaseKey, watching]);
+
   // ---- view events (drag & drop, clicks) ----------------------------------------------------------------------
   useEffect(() => {
     if (!view) return undefined;
@@ -1206,7 +1224,7 @@ function MatchScreen() {
         readyBusy=${readyBusy} readyCount=${readyCount} playerCount=${solo ? 1 : aliveCount}
         pen=${pen} penAvail=${penAvail} onPen=${togglePen} config=${gd.config} frozenAt=${frozenAt}
         pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
-        live=${liveLpNow} />
+        live=${liveLpNow} spectator=${spectator} />
 
       <div class="gm__bonds">
         <${BondStrip} bonds=${stripBonds} layersDisabled=${layersDisabled} openId=${bondPop && bondPop.ownerId === strip.ownerId ? bondPop.bondId : null}
@@ -1221,7 +1239,7 @@ function MatchScreen() {
 
       ${watchingOther && !combat ? html`<div class="gm__watching" role="status">
         <${GIcon} name="eye" /><span>正在查看 <b>${watchedName}</b> 的阵地（只读）</span>
-        <${Button} size="sm" variant="primary" icon="back" onClick=${() => watchPlayer({ playerId: myId })}>返回自己<//>
+        ${spectator ? null : html`<${Button} size="sm" variant="primary" icon="back" onClick=${() => watchPlayer({ playerId: myId })}>返回自己<//>`}
       </div>` : null}
 
       ${showShop ? html`<${ShopBar} priv=${priv} editable=${editable} collapsed=${collapsed} onCollapse=${setCollapsed}
@@ -1237,15 +1255,17 @@ function MatchScreen() {
         onMinimize=${(m) => { setRewardMin(m); if (!m) setCollapsed(false); }} />` : null}
 
       ${combat || mode === 'settle' ? html`<${CombatHud} pub=${pub} myId=${myId} watching=${watchingNow} hud=${hud} myDone=${!!myDone && alive}
-        spectating=${!alive} onWatch=${watchField}
+        spectating=${!alive} spectator=${spectator} onWatch=${watchField}
         client=${cc ? { progress, observing: observingName ? { name: observingName } : null, onBack: alive ? backHome : null, layers, layer, onLayer: setLayer } : null} />` : null}
 
-      ${showDeadPill(alive, phase) ? html`<div class="gm__dead" role="status"><${Icon} name="close" />你已被淘汰 · 可继续观战队友</div>` : null}
+      ${showDeadPill(alive, phase) ? (spectator
+        ? html`<div class="gm__dead gm__dead--spectator" role="status"><${GIcon} name="eye" />观战中 · 点击左侧成员头像切换查看</div>`
+        : html`<div class="gm__dead" role="status"><${Icon} name="close" />你已被淘汰 · 可继续观战队友</div>`) : null}
 
       <${Ticker} />
 
       <div class="gm__corner">
-        <${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />
+        ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
         <button type="button" class="gm__gear" aria-label="设置" title="设置" onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label="玩法说明" title="玩法说明" onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />

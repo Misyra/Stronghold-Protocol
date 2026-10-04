@@ -421,6 +421,8 @@
   padding: .1rem .26rem; background: rgba(40, 8, 6, .9); border: 1px solid rgba(255, 84, 84, .5); color: var(--red-premium); font-size: .18rem; font-weight: 700;
 }
 .gm__dead .icon { width: .22rem; height: .22rem; }
+/* a spectator seat (community report #26): the same place, the watching pill's amber — nobody was eliminated */
+.gm__dead--spectator { background: rgba(24, 16, 4, .92); border-color: rgba(246, 163, 41, .6); color: var(--amber); }
 
 .chud { position: absolute; inset: 0; pointer-events: none; }
 .chud > * { pointer-events: auto; }

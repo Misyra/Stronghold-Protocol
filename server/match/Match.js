@@ -139,7 +139,7 @@ import { RealScheduler } from './scheduler.js';
 import { SharedPool, drawDisabledBonds } from './pool.js';
 import { PlayerState } from './PlayerState.js';
 import { buildDeployMap, boardOrder, pieceDir } from './board.js';
-import { bondList } from './bondsMeta.js';
+import { bondList, offBondCounts } from './bondsMeta.js';
 import { EffectDispatcher, getDefaultRegistry } from './effectsMeta.js';
 import { generateDraft, applyCard, cardView, bountyBattles, isMultiRoundBounty } from './choices.js';
 import { setupMatchWaves, buildNormalWave, buildBossWave, bountySpawns, withBounties, previewOf, weightedPick } from './waves.js';
@@ -892,7 +892,8 @@ export class Match {
         // this round's in-battle gains included once the COMBAT phase ended (PlayerState.bondsView); [] once eliminated —
         // nobody can watch an eliminated player (g.watch refuses them, they have no field) and the result screen reads
         // m.result's own bonds, so their layers would only cost every m.public bytes for the rest of the match
-        bonds: ps.alive ? bondList(this.gd, ps.bondsView()) : [],
+        // (the mode-off bonds with members included, `off: true`, as in m.private — bondsMeta.offBondCounts)
+        bonds: ps.alive ? bondList(this.gd, ps.bondsView(), { off: offBondCounts(this.gd, ps) }) : [],
         fieldId: this.fieldOf(ps),
         status: this.statusOf(ps),
         autoplay: ps.autoplay,
@@ -1657,6 +1658,11 @@ export class Match {
     const alive = this.alivePlayers();
     for (const ps of alive) {
       ps.ready = false;
+      // Items gained as the previous prep ended waited unmerged (acquireItem deferMerge). Merge them now, before
+      // this prep's onPrepStart grants and before the player acts — not in endPrep, which runs in the same prep
+      // that granted them and would take an equipped copy off for the fight about to start.
+      ps.checkItemMerges();
+      ps.recompute();
       this.dispatch(ps, 'onPrepStart', { round: this.round });
       ps.recompute();
     }

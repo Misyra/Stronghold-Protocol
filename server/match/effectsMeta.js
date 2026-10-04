@@ -196,6 +196,11 @@ export class EffectDispatcher {
       return ev;
     }
     this.depth++;
+    // An item granted while 休整期结束 is on the stack (this hook, or onGain re-entering it — 维多利亚 pays the next
+    // milestone from the grant's onGain) is stowed and not merged until the next prep start. [ASSUMED] every such
+    // item, not only the 战栗维式重锤 (owner's decision 2026-10-04: "an item that arrives at 休整期结束").
+    const deferItems = hook === 'onPrepEnd';
+    if (deferItems) ps._deferItemMerge = (ps._deferItemMerge || 0) + 1;
     try {
       const reg = this.registry;
       // 0. onPrice: the priced chess's own 特质 first — 购买价格为N defines the price every other modifier acts on
@@ -236,6 +241,7 @@ export class EffectDispatcher {
         if (h) this._call(ps, ref.key, h, hook, { kind: 'effect', key: ref.key, ref }, ev);
       }
     } finally {
+      if (deferItems) ps._deferItemMerge--;
       this.depth--;
     }
     return ev;
@@ -511,7 +517,11 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     },
     grantItem: (itemId, opts = {}) => {
       if (!ps.alive || !gd.item(itemId)) return null;
-      const p = ps.acquireItem(itemId, { source: opts.source || source.key || 'effect', toTemp: !!opts.toTemp });
+      const p = ps.acquireItem(itemId, {
+        source: opts.source || source.key || 'effect',
+        toTemp: !!opts.toTemp,
+        deferMerge: ps._deferItemMerge > 0,
+      });
       return p ? view(p) : null;
     },
     /** Random chess id from the shared pool (copy-weighted). opts: { maxTier, tier, bond, filter(id) } */

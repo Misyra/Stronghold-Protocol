@@ -431,7 +431,7 @@ otherwise locked (research 04 §2 / addendum: they leave the operator only on pr
 refuses them (`BAD_TARGET 'equipped items are locked'`). A second copy of an equipped normal item merges into the golden
 item in the hand. Every path that hands an item to the player (buy, reward, 机变, grants, equip, the equipment a sale,
 a promotion or `ctx.destroyPiece` returns) ends with the auto-merge (`acquireItem` / `checkItemMerges`: "已拥有2件同一初始
-装备时…自动合并"), so a player never holds two identical mergeable normal items (`test/match/feedback1b-items.test.js`).
+装备时…自动合并"), so a player never holds two identical mergeable normal items (`test/match/feedback1b-items.test.js`), except an item gained while 休整期结束 is dispatching (`onPrepEnd`, including a grant nested under it): it is stowed (hand, else temp) and merges at the next prep's start, and nothing already equipped is taken off for the fight. Hand and temp both full still destroys it with 「整备区已满，获得的装备已销毁」. [ASSUMED] every such grant, not only 维多利亚's hammer (owner's decision 2026-10-04). A buy, an onPrepStart grant and a grant at any other time still merge at once (`test/match/feedback3-prep-end-item.test.js`).
 
 Built-ins (builtinMeta.js, overridable): 盟约之币 / 骑士储蓄罐 (random funds), 随身身份牌 (layers of the target's bonds),
 紧急调度券 (take shop chess), 精打细算玩偶 (+funds each round), 简易通讯机 / 拟态物质 (same-bond chess), 见钱眼开玩偶
@@ -683,7 +683,9 @@ drawn set; `disabledBonds` = drawn ∪ the mode's static list), `hiddenBossId`, 
 `combatMode` (`'client'` | `'server'`), `fields[].progress { killed, total, done }` (teammates' progress UI), `paused`
 (solo pause, §1.3a),
 `players[].autoplay`, `players[].uniteLeft` (UNITE, leakers only: their enemies still standing, uncapped — §4),
-`players[].bonds` = `ps.alive ? bondList(gd, ps.bondsView()) : []` — every bond with members, layers or an active tier, the same list
+`players[].bonds` = `ps.alive ? bondList(gd, ps.bondsView(), { off: offBondCounts(gd, ps) }) : []` — every bond with members, layers or an active tier
+(and, last, every bond the mode never activates that the player has members of: `{ bondId, count, active: false, tier: 0, layers, off: true }`,
+the strip's grey 本局禁用 disc — bondsMeta.offBondCounts, never in the battle input), the same list
 and order as the player's own `m.private bonds` minus `thresholds` / `countsHand` (the client reads those from
 bonds.json; an entry whose count holds 调和's +1 carries `harmony: 1` in both lists — the bond popup's 调和 row, DESIGN
 §21.26): a teammate watching the player shows it in the bond strip (DESIGN §20.15); `[]` once the player is

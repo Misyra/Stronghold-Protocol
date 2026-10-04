@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
-  bondMembers, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
+  bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
   activeBubbles, sortedPlayers, tileKey, prepCapsuleLabel, prepCamera, dropFailureReason,
@@ -138,8 +138,45 @@ describe('bonds', () => {
     assert.equal(byId.get(m2).owned, true, 'golden in hand counts as owned base');
     assert.equal(byId.get(m2).onBoard, false);
     assert.equal(byId.get(m3).banned, true);
+    assert.equal(byId.get(m2).inHand, true, 'a golden copy in the hand marks the base in hand');
     assert.equal(rows[0].id, m1, 'on-board first');
     assert.equal(rows.length, b.visibleMembers.length);
+  });
+  test('memberHeadCount: the hand counts only for a bond that counts the hand, once per row', () => {
+    const rows = [
+      { id: 'a', onBoard: true, inHand: true },
+      { id: 'b', onBoard: false, inHand: true },
+      { id: 'c', onBoard: false, inHand: false },
+      null,
+    ];
+    assert.equal(memberHeadCount(rows, false), 1, 'board only');
+    assert.equal(memberHeadCount(rows, true), 2, 'board or hand, one row once');
+    assert.equal(memberHeadCount(null, true), 0);
+    assert.equal(memberHeadCount(undefined), 0);
+    const invest = bonds.investShip;
+    assert.equal(invest.countsHand, true);
+    const [m1, m2] = invest.visibleMembers;
+    const priv = privWith({
+      board: [{ ...piece(m1), row: 9, col: 3 }],
+      hand: [piece(m2)],
+      temp: [piece(invest.visibleMembers[2] || m2)],
+    });
+    const got = bondMembers(invest, priv, [], getChess);
+    const byId = new Map(got.map((r) => [r.id, r]));
+    assert.equal(byId.get(m1).onBoard, true);
+    assert.equal(byId.get(m2).inHand, true);
+    assert.equal(byId.get(m2).onBoard, false);
+    if (invest.visibleMembers[2]) assert.equal(byId.get(invest.visibleMembers[2]).inHand, false, 'a temporary-slot copy is not in hand');
+    assert.equal(memberHeadCount(got, true), 2, 'the board member and the hand member, not the temporary slot');
+    assert.equal(memberHeadCount(got, false), 1, 'without countsHand the hand member is left out');
+  });
+  test('sortBonds puts a mode-off bond after every live bond', () => {
+    const sorted = sortBonds([
+      { bondId: 'investShip', off: true, active: false, layers: 99, count: 3, tier: 0 },
+      { bondId: 'yanShip', active: true, layers: 1, count: 3, tier: 1 },
+      { bondId: 'raidShip', off: true, layers: 0, count: 1 },
+    ], (id) => bonds[id]).map((b) => b.bondId);
+    assert.deepEqual(sorted, ['yanShip', 'investShip', 'raidShip']);
   });
   test('bannedPerBond counts banned visible members', () => {
     const b = bonds.deputShip;

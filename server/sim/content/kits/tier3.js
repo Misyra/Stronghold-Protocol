@@ -1389,7 +1389,8 @@ const KITS = {
             if (t == null) { marks.set(e.id, battle.time); return; }
             if (battle.time - t <= num(t0.interval, 10) + 1e-9 && e.alive) {
               busy = true;
-              try { battle.dealDamage(unit, e, { amount: unit.s.atk * num(t0.atk_scale), type: 'arts', canDodge: false, tags: ['talent', 'vulpisHunt'] }); } finally { busy = false; }
+              // PRTS 备注 "伤害类型为法术附加伤害": tag addition (no 叙拉古 6 roll)
+              try { battle.dealDamage(unit, e, { amount: unit.s.atk * num(t0.atk_scale), type: 'arts', canDodge: false, tags: ['talent', 'vulpisHunt', 'addition'] }); } finally { busy = false; }
             }
           }, { owner: unit });
           battle.on('kill', (ctx) => { if (ctx.killer === unit && unit.skill?.active) unit.mem.vulpisKill = true; }, { owner: unit });

@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { ERR, PHASE } from '../../shared/constants.js';
 import { checkLoadout } from '../../shared/protocol.js';
 import { DATA, makeMatch, give, giveItem, checkInvariants, chessOfTier, legalTileFor } from './harness.js';
-import { canPlace, positionClass, tileKey, mergeTile } from '../../server/match/board.js';
+import { canPlace, placeClass, tileKey, mergeTile } from '../../server/match/board.js';
 import { makeCtx } from '../../server/match/effectsMeta.js';
 import { attachAudit } from '../../server/match/audit.js';
 import { botPrep } from '../../server/match/bot.js';
@@ -363,7 +363,7 @@ test('boss-field prep (R14, act2 m01): the elite takes a copy\'s tile that is le
     assert.deepEqual(m.handle(pid, { t: 'g.buy', slot: 0 }), { ok: true });
     const elite = ps.board.get('11,8');
     assert.ok(elite && elite.id === chess(id).goldenId && elite.dir === 'UP', `${pid} (${field}): the elite on board (11,8) of its boss half`);
-    assert.ok(canPlace(ps.deployMap(), positionClass(chess(elite.id)), 11, 8));
+    assert.ok(canPlace(ps.deployMap(), placeClass(ps, chess(elite.id)), 11, 8));
   }
   checkInvariants(m);
   m.dispose();

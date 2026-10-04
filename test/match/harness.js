@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { Match } from '../../server/match/Match.js';
 import { VirtualScheduler } from '../../server/match/scheduler.js';
 import { getData } from '../../server/data.js';
-import { FIELD, canPlace, positionClass, tileKey } from '../../server/match/board.js';
+import { FIELD, canPlace, placeClass, positionClass, tileKey } from '../../server/match/board.js';
 import { FakeBattle } from './fakeBattle.js';
 import { GEO } from '../../shared/constants.js';
 import { collectViolations } from '../../server/match/invariants.js';
@@ -179,7 +179,8 @@ function legacyInvariants(m) {
       assert.ok(r >= FIELD.r0 && r <= FIELD.r1 && c >= FIELD.c0 && c <= FIELD.c1, `piece outside the board ${k}`);
       const rec = p.kind === 'token' ? m.gd.token(p.id) : m.gd.chess(p.id);
       assert.ok(rec, `unknown board piece ${p.id}`);
-      assert.ok(canPlace(dmap, positionClass(rec), r, c), `illegal tile ${p.id} @ ${k}`);
+      const cls = p.kind === 'chess' ? placeClass(ps, rec) : positionClass(rec);
+      assert.ok(canPlace(dmap, cls, r, c), `illegal tile ${p.id} @ ${k}`);
       assert.notEqual(p.kind, 'item', 'items never stand on the board');
       if (p.kind === 'chess') deployed++;
       if (p.kind === 'token') assert.ok(chessUids.has(p.ownerUid), `orphan token ${p.uid}`);
@@ -255,7 +256,7 @@ export function chessOfTier(tier, filter = () => true) {
 
 /** First legal board tile for a chess (reading order). */
 export function legalTileFor(m, ps, chessId, skip = new Set()) {
-  const pos = positionClass(m.gd.chess(chessId));
+  const pos = placeClass(ps, m.gd.chess(chessId));
   const map = ps.deployMap();
   for (let r = FIELD.r1; r >= FIELD.r0; r--) for (let c = FIELD.c0; c <= FIELD.c1; c++) {
     if (skip.has(tileKey(r, c)) || ps.board.has(tileKey(r, c))) continue;

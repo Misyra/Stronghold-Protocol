@@ -4,8 +4,8 @@
 // light legal tiles while dragging; the server stays authoritative and may still refuse a move.
 //
 //   Board = own normal field (GEO.FIELD rows 9–12, cols 2–10). Melee chess stand on `melee` deploy tiles
-//   (LOW, buildable ALL/MELEE) — a 钩索师 / 推击手 ("可以放置于远程位", chess.json `placement` 'all') on any deploy
-//   tile, the 高台 included (piecePosition 'ALL'); ranged chess on `melee ∪ rangedOnly` (stages.json → deployTiles.normal,
+//   (LOW, buildable ALL/MELEE) — elite 歌蕾蒂娅 carrying HOK-Y (shared/highGround.js, the player's loadout) on any
+//   deploy tile, the 高台 included (piecePosition 'ALL'); ranged chess on `melee ∪ rangedOnly` (stages.json → deployTiles.normal,
 //   derived from the tile legend when missing — the legend's `buildable` is the effective type: 深水区 tile_deepsea
 //   refuses deployment, PRTS 深水区 地形信息 "拒绝部署（待补充）", player report #3 after 0.1.0). Tokens follow their
 //   own `position`; a summon whose text reads "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`: 伺夜's 狼群,
@@ -24,6 +24,7 @@
 import { GEO, PHASE, UF } from '../../../shared/constants.js';
 import { resolveLoadout, loadoutOptions, MODULE_NONE } from '../../../shared/protocol.js';
 import { resolveRecordLoadout, loadoutRecord, attackRangeGrid } from '../../../shared/loadoutRecord.js';
+import { meleeOnHighGround } from '../../../shared/highGround.js';
 import { rangeTiles, pieceDir } from './facing.js';
 import { layoutPen } from '../render/pen.js';
 import { BOSS_ROW_SHIFT, MAX_COL } from '../render/prepfield.js';
@@ -1014,15 +1015,17 @@ export function placementContext({ priv, stage, editable, field = 'normal', getC
 }
 
 /**
- * Deploy position ('MELEE'|'RANGED'|'ALL') of a chess/token piece, or null for items. A MELEE operator whose branch
- * trait reads "可以放置于远程位" (钩索师, 推击手: chess.json `placement` 'all') is 'ALL': any deployable tile, the 高台
- * included (server/match/board.js positionClass; GitHub issue #32 item 4, DESIGN §22.6 [ASSUMED]).
+ * Deploy position ('MELEE'|'RANGED'|'ALL') of a chess/token piece, or null for items. Elite 歌蕾蒂娅 carrying HOK-Y
+ * (the viewer's loadout, shared/highGround.js) is 'ALL': any deployable tile, the 高台 included
+ * (server/match/board.js placeClass; owner's decision 2026-10-04). Every other MELEE chess is ground-only.
  */
 export function piecePosition(ctx, piece) {
   if (!isObj(piece)) return null;
   if (piece.kind === 'chess') {
     const rec = ctx.getChess(piece.id);
-    if (rec?.placement === 'all') return 'ALL';
+    let moduleId = null;
+    try { moduleId = resolveLoadout(ctx.priv?.loadout ?? null, rec, ctx.getChess)?.moduleId ?? null; } catch { moduleId = null; }
+    if (meleeOnHighGround(rec, moduleId)) return 'ALL';
     return rec?.position === 'MELEE' ? 'MELEE' : 'RANGED';
   }
   // tokens: MELEE → ground only; RANGED / ALL → any deployable tile

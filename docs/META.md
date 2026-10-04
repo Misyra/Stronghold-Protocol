@@ -11,7 +11,8 @@ server/match/
   gamedata.js      typed, defaulted view of data/*.json (config tunables with research defaults) + the balance layer
                    (data/tuning.json, §3.1)
   pool.js          SharedPool (copies per base chess, across players), per-match bans, copy-weighted rolls
-  board.js         placement legality from the stage legend on the deploy field (own board / boss half), slot helpers,
+  board.js         placement legality from the stage legend on the deploy field (own board / boss half); a 高台
+                   also takes elite 歌蕾蒂娅 with HOK-Y (shared/highGround.js), slot helpers,
                    deployment order
   bondsMeta.js     bond counting modes, tiers, 调和 / 独行 / 助力 / 绝技, layers
   effectsMeta.js   MetaRegistry + EffectDispatcher + the handler ctx (this document, §2)

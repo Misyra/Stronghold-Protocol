@@ -835,7 +835,7 @@ export function fxAtlas() {
   return _fx;
 }
 
-export const STATUS_KEYS = ['stun', 'freeze', 'cold', 'stealth', 'shield', 'fragile', 'sleep', 'invuln', 'silence', 'slow', 'bind', 'fear', 'weaken', 'levitate', 'taunt', 'burn', 'neural', 'necrosis', 'blocked', 'skill', 'doll', 'healFree'];
+export const STATUS_KEYS = ['stun', 'freeze', 'cold', 'stealth', 'shield', 'fragile', 'sleep', 'invuln', 'silence', 'slow', 'bind', 'fear', 'weaken', 'levitate', 'taunt', 'burn', 'neural', 'necrosis', 'blocked', 'skill', 'doll', 'healFree', 'refraction'];
 
 function drawStatusIcon(c, key, x, y, s) {
   const cx = x + s / 2, cy = y + s / 2;
@@ -881,6 +881,13 @@ function drawStatusIcon(c, key, x, y, s) {
     case 'sleep': {
       disc('rgba(20,25,50,0.92)', '#a8b6ff');
       c.fillStyle = '#d8e0ff'; c.font = 'bold 14px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('Zz', cx, cy + 1);
+      break;
+    }
+    case 'refraction': {
+      // 折射: a split beam. Drawn only while the buff is on; units.js drops it under silence.
+      disc('rgba(12,36,48,0.92)', '#7ee0ff');
+      c.strokeStyle = '#d8f7ff'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cx - 8, cy + 6); c.lineTo(cx - 1, cy - 8); c.lineTo(cx + 8, cy + 6); c.moveTo(cx + 2, cy - 2); c.lineTo(cx + 9, cy - 8); c.stroke();
       break;
     }
     case 'silence': {

@@ -68,7 +68,7 @@
 import { UF, ANIM } from '../../../shared/constants.js';
 import { SpineActor } from './spine.js';
 import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTexture, hudRings, ringArc, HUD_DISC, ELEMENT_RING } from './textures.js';
-import { COLORS, TIER_COLORS, ENEMY_FRAME, UNIT, PROJ, statusIconKey } from './style.js';
+import { COLORS, TIER_COLORS, ENEMY_FRAME, UNIT, PROJ, statusIconKey, statusIconSuppressed } from './style.js';
 import { drawCrate, rowDepthKey, ROW_KEY, deviceBoxOf, DEVICE_BOX } from './tiles.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -1359,6 +1359,7 @@ export class UnitView {
       // a burst's lock ('burnBurst', 'neuralBurst' … — the 爆发冷却) is shown by the element gauge row under the bars
       // (b.snap `elem`); only a feed without gauges (an older recording) shows it as a status
       if (this.el && k.endsWith('Burst')) continue;
+      if (statusIconSuppressed(k, this.statuses)) continue; // 折射 while silenced
       const icon = statusIconKey(k);
       // flag-driven states are authoritative (a stale 'stun' status must not outlive the flag)
       if (!icon || icon === 'stun' || icon === 'freeze' || icon === 'sleep' || icon === 'stealth' || icon === 'invuln') continue;

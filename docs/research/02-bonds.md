@@ -373,7 +373,7 @@ Members (11 chess, 10 in current shop pool; by tier in shop: {'1': 1, '2': 1, '3
 
 - **[3 distinct]** 阿戈尔 members maxHP x(1 + 0.35 + 0.01*L).
 - **[3 distinct (battle start)]** Devour (吞噬): see algorithm.
-- **[5 distinct]** The first 3 阿戈尔 members to be knocked out (first time each) revive immediately (max_free_respawn_cnt 3). Devour knock-outs count: a chain that knocks out 3 members spends the 3 revives at battle start (and those members stay standing, step 4).
+- **[5 distinct]** The first 3 阿戈尔 members by position — the devour order below (step 1), i.e. the deployment order, fixed at battle start — each revive immediately on their own first knock-out, whatever the order of knock-outs (max_free_respawn_cnt 3; PRTS 阿戈尔 备注 "从最先部署（更靠左和靠上的）的【阿戈尔】干员开始", players' videos; until 0.1.3 the remake gave them to the first 3 members knocked out). A devour knock-out of one of them spends its revive (it stays standing, step 4); any other member the devour knocks out stays down.
 - Algorithm:
   1. Order: 阿戈尔 members sorted leftmost first, then topmost ("更靠左和靠上").
   2. Each 阿戈尔 in order marks the unit on the tile directly in front of it (its facing direction) and also the front-tile unit of every 阿戈尔 it has marked (chain). It never marks itself, a unit it already marked, or a unit that marked it.

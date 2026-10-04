@@ -245,6 +245,8 @@ export const C2S = {
   'room.setDifficulty': { difficulty: (v) => DIFFICULTIES.includes(v) },
   'room.addBot': {},
   'room.removeBot': { seat: (v) => isInt(v, 0, MAX_SEATS - 1) },
+  // the host removes another human before the match (server/lobby.js kick; community report #17)
+  'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1) },
   'room.start': {},
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK
   'room.loadout': { entries: isLoadoutEntries },

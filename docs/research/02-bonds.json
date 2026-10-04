@@ -8796,11 +8796,11 @@
     "tiers": [
      {
       "need": "2 distinct",
-      "effect": "When a ground operator is knocked out / retreats / swaps 替身<->本体: with p = min(1, 0.18 + 0.004*L) it is redeployed at once (next deployment has 0 redeploy time and 0 cost). Also consumes a \"复活\" charge if it had one."
+      "effect": "When a ground operator (地面干员 = melee position, on any tile) is knocked out / retreats / swaps 替身<->本体: with p = min(1, 0.18 + 0.004*L) it is redeployed at once (next deployment has 0 redeploy time and 0 cost). Also consumes a \"复活\" charge if it had one."
      },
      {
       "need": "3 distinct",
-      "effect": "When a ground operator is knocked out: every operator on the field +5 SP."
+      "effect": "When a ground (melee-position) operator is knocked out: every operator on the field +5 SP."
      }
     ],
     "formulas": {

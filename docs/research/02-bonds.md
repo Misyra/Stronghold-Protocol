@@ -963,8 +963,8 @@ Members (9 chess, 9 in current shop pool; by tier in shop: {'1': 1, '2': 1, '3':
 
 **Implementable spec**
 
-- **[2 distinct]** When a ground operator is knocked out / retreats / swaps 替身<->本体: with p = min(1, 0.18 + 0.004*L) it is redeployed at once (next deployment has 0 redeploy time and 0 cost). Also consumes a "复活" charge if it had one.
-- **[3 distinct]** When a ground operator is knocked out: every operator on the field +5 SP.
+- **[2 distinct]** When a ground operator (地面干员 = melee position, on any tile) is knocked out / retreats / swaps 替身<->本体: with p = min(1, 0.18 + 0.004*L) it is redeployed at once (next deployment has 0 redeploy time and 0 cost). Also consumes a "复活" charge if it had one.
+- **[3 distinct]** When a ground (melee-position) operator is knocked out: every operator on the field +5 SP.
 - Formulas: `p = min(1, 0.18 + 0.004*L)`; `reaches100%AtL = 205`
 - How layers are gained: 雷蛇 休整期结束 +1; 砾 被击倒 +2; 归溟幽灵鲨 +5; 风笛 kills +2; 机变 "风笛的盟誓" +8.
 - Bond item (with 变形同构体 grants this bond): 不屈弹射器 `chess_item_2_01_e` (1 gold: 再部署时间-30%，生命值-30%)

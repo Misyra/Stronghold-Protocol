@@ -40,7 +40,7 @@ function onDefaultSkill(chess) {
  * `liftoff` (no ground enemy blocked — Battle._blockerFor; 对地规避 — targeting.js evadesGround: no ground enemy selects
  * her, while what selects nobody still lands — 无视无法选择 abilities, direct picks, flying units' blasts, 无来源 damage, the
  * ticks of a debuff already on her) and `blockFly` (blocks flyers at the air radius). She stays a ground unit on her tile (PRTS 行动方式 "起飞的
- * 干员仍然是地面单位": `unit.ground` unchanged — 隐德来希's 血镰, 地面干员 bonds / items still count her).
+ * 干员仍然是地面单位": `unit.ground` unchanged — 隐德来希's 血镰 still counts her; 地面干员 bonds / items read her position).
  */
 const LIFTOFF_FLAGS = Object.freeze({ blockFly: true, liftoff: true });
 /** 蒂比 take-off: the ground enemies she blocked walk on. */

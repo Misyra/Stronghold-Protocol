@@ -412,7 +412,7 @@ test('突袭 #51: the most advanced enemy out of reach → the jump goes to the 
   checkInvariants(h.b);
 });
 
-test('不屈: knocked-out ground operator redeploys (p=1 at high L); tier 2 every operator +5 SP; inactive / elevated → no', () => {
+test('不屈: knocked-out 地面干员 (melee position) redeploys (p=1 at high L); tier 2 every operator +5 SP; inactive / ranged → no', () => {
   const bb = bondBb('indomShip');
   const sk = { spCost: 50, initSp: 0 };
   const defs = { chess: { i_g: op('i_g', ['indomShip']), i_o: chessRec({ id: 'i_o', bonds: [], skill: sk }) } };
@@ -441,12 +441,21 @@ test('不屈: knocked-out ground operator redeploys (p=1 at high L); tier 2 ever
   close(o1.skill.sp, s1, 'tier 1: no SP');
   checkInvariants(t1.b);
 
+  // 地面干员 = the melee position, whatever the tile: up on a 高台 it still counts; a ranged operator on a melee tile never
   const hi = makeBattle({ defs, units: [{ chessId: 'i_g', row: 10, col: 2 }], bonds: { indomShip: bond(1, 300) } });
   hi.step(2);
   const hg = hi.unit('i_g');
   assert.equal(hg.ground, false, 'elevated tile');
   hi.b.dealDamage(null, hg, { amount: 1e9, type: 'true' });
-  assert.equal(hg.alive, false, 'not a ground operator');
+  assert.ok(hg.alive && hg.deployed, 'a melee operator on a 高台 is a 地面干员');
+  const rd = { chess: { i_r: ranged('i_r', ['indomShip']), i_o: chessRec({ id: 'i_o', bonds: [], skill: sk }) } };
+  const lo = makeBattle({ defs: rd, units: [{ chessId: 'i_r', row: 10, col: 4 }, { chessId: 'i_o', row: 12, col: 6 }], bonds: { indomShip: bond(2, 300, 3) } });
+  lo.step(2);
+  const lr = lo.unit('i_r'), lsp = lo.unit('i_o').skill.sp;
+  assert.equal(lr.ground, true, 'a melee (ground) tile');
+  lo.b.dealDamage(null, lr, { amount: 1e9, type: 'true' });
+  assert.equal(lr.alive, false, 'a ranged operator on a melee tile is not a 地面干员');
+  close(lo.unit('i_o').skill.sp, lsp, 'no tier 2 SP either');
 });
 
 test('协防干员: all operators take ×0.8 phys/arts; members deal ×1.2 (elite ×1.4)', () => {

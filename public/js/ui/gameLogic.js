@@ -367,8 +367,10 @@ export function activeBubbles(emotes, now, ttl = 3000) {
 // ---- bonds -------------------------------------------------------------------------------------------
 
 /**
- * Sort bonds for the strip: active first, then layers desc, count desc, tier desc, core first, id.
- * @template {{bondId:string, active?:boolean, layers?:number, count?:number, tier?:number}} B
+ * Sort bonds for the strip: active first, then layers desc, count desc, tier desc, core first, id; the mode-off bonds
+ * (`off`: the server's entries for the bonds this mode never activates that the player has members of —
+ * server/match/bondsMeta.js offBondCounts) after all the others.
+ * @template {{bondId:string, active?:boolean, layers?:number, count?:number, tier?:number, off?:boolean}} B
  * @param {B[]} bonds
  * @param {(id:string)=>any} [getBond]
  * @returns {B[]}
@@ -377,7 +379,8 @@ export function sortBonds(bonds, getBond = () => null) {
   const list = (Array.isArray(bonds) ? bonds : []).filter((b) => isObj(b) && typeof b.bondId === 'string');
   const n = (v) => (Number.isFinite(v) ? v : 0);
   return [...list].sort((a, b) => (
-    (b.active ? 1 : 0) - (a.active ? 1 : 0)
+    (a.off ? 1 : 0) - (b.off ? 1 : 0)
+    || (b.active ? 1 : 0) - (a.active ? 1 : 0)
     || n(b.layers) - n(a.layers)
     || n(b.count) - n(a.count)
     || n(b.tier) - n(a.tier)
@@ -509,10 +512,11 @@ export function harmonyMembers(priv, getChess = () => null) {
 }
 
 /**
- * Member rows of a bond popup: every visible member with owned / on-board / banned state, plus the player's operators
- * that are members through 变形同构体 (grantedBonds; `granted: true` and `items`: the item ids of the copy that wears the
- * pair — the card the row opens shows them; one row per operator — normal and elite copies are one member, like the
- * count's distinct members), so "成员 x/y" agrees with the count the server reports (在场).
+ * Member rows of a bond popup: every visible member with owned / on-board / in-hand / banned state, plus the player's
+ * operators that are members through 变形同构体 (grantedBonds; `granted: true` and `items`: the item ids of the copy that
+ * wears the pair — the card the row opens shows them; one row per operator — normal and elite copies are one member,
+ * like the count's distinct members), so "成员 x/y" agrees with the count the server reports (在场; memberHeadCount).
+ * `inHand`: in the 整备区 (hand), not the 5 temporary slots — what BOARD_AND_DECK bonds (投资人 远见 奇迹) count.
  * @param {any} bond bonds.json record
  * @param {any} priv m.private (hand/board/temp) — or a teammate's field operators (ui/watchBonds.js ownerBoard)
  * @param {Set<string>|string[]} [banned] banned base chess ids
@@ -525,8 +529,9 @@ export function bondMembers(bond, priv, banned = [], getChess = () => null, getI
   const baseOf = (id) => getChess(id)?.baseId || (typeof id === 'string' ? id.replace(/_b$/, '_a') : id);
   const onBoard = new Set();
   const owned = new Set();
+  const inHand = new Set();
   const memberSet = new Set(members);
-  /** base id → { on: on the board?, items: the wearer's item ids } — operators of the player that join this bond through 变形同构体 */
+  /** base id → { on: on the board?, hand: in the hand?, items: the wearer's item ids } — operators of the player that join this bond through 变形同构体 */
   const granted = new Map();
   const grants = (p) => typeof bond?.bondId === 'string' && grantedBonds(p.items, getItem).includes(bond.bondId);
   const itemIds = (p) => p.items.map((it) => (typeof it === 'string' ? it : it?.id)).filter((x) => typeof x === 'string');
@@ -534,23 +539,43 @@ export function bondMembers(bond, priv, banned = [], getChess = () => null, getI
     if (p?.kind !== 'chess') continue;
     const base = baseOf(p.id);
     onBoard.add(base); owned.add(base);
-    if (!memberSet.has(base) && !granted.has(base) && grants(p)) granted.set(base, { on: true, items: itemIds(p) });
+    if (!memberSet.has(base) && !granted.has(base) && grants(p)) granted.set(base, { on: true, hand: false, items: itemIds(p) });
   }
-  for (const p of [...(Array.isArray(priv?.hand) ? priv.hand : []), ...(Array.isArray(priv?.temp) ? priv.temp : [])]) {
-    if (p?.kind !== 'chess') continue;
-    const base = baseOf(p.id);
-    owned.add(base);
-    if (!memberSet.has(base) && !granted.has(base) && grants(p)) granted.set(base, { on: false, items: itemIds(p) });
+  for (const [list, hand] of [[priv?.hand, true], [priv?.temp, false]]) {
+    for (const p of Array.isArray(list) ? list : []) {
+      if (p?.kind !== 'chess') continue;
+      const base = baseOf(p.id);
+      owned.add(base);
+      if (hand) inHand.add(base);
+      if (memberSet.has(base) || !grants(p)) continue;
+      const g = granted.get(base);
+      if (!g) granted.set(base, { on: false, hand, items: itemIds(p) });
+      else if (hand) g.hand = true;
+    }
   }
   const rows = members.map((id) => {
     const c = getChess(id);
-    return { id, tier: c?.tier ?? 0, name: c?.name ?? id, onBoard: onBoard.has(id), owned: owned.has(id), banned: bannedSet.has(id) };
+    return { id, tier: c?.tier ?? 0, name: c?.name ?? id, onBoard: onBoard.has(id), owned: owned.has(id), inHand: inHand.has(id), banned: bannedSet.has(id) };
   });
   for (const [id, g] of granted) {
     const c = getChess(id);
-    rows.push({ id, tier: c?.tier ?? 0, name: c?.name ?? id, onBoard: g.on, owned: true, banned: false, granted: true, items: g.items });
+    rows.push({ id, tier: c?.tier ?? 0, name: c?.name ?? id, onBoard: g.on, owned: true, inHand: g.hand, banned: false, granted: true, items: g.items });
   }
   return rows.sort((a, b) => (b.onBoard - a.onBoard) || (b.owned - a.owned) || (a.tier - b.tier) || (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * The member count of a bond popup's 成员 header: the rows on the board — and, for a bond that counts the hand
+ * (`countsHand`: BOARD_AND_DECK — 投资人 远见 奇迹; the server's 在场 says （含整备区）), those in the hand too (the 5
+ * temporary slots never count), so the header agrees with 在场 (community report 「投资人等在休整区就能生效的盟约不生效」:
+ * the header said 0/n with the members in the hand while 在场 said 3/3).
+ * @param {Array<{ onBoard?: boolean, inHand?: boolean }>} rows bondMembers rows @param {boolean} [countsHand]
+ * @returns {number}
+ */
+export function memberHeadCount(rows, countsHand = false) {
+  let n = 0;
+  for (const r of Array.isArray(rows) ? rows : []) if (r && (r.onBoard || (countsHand && r.inHand))) n++;
+  return n;
 }
 
 /**
@@ -603,9 +628,10 @@ export function briefingBondTip(name, state, bannedN = 0) {
  * The bonds a mode never activates (config.json modes[modeId].inactiveBondIds = the official modeDataDict
  * inactiveBondIdList: 标准模拟 leaves 拉特兰 阿戈尔 卡西米尔 灵巧 奥术 奇迹 投资人 突袭 独行 绝技 off). Operators that also carry an
  * enabled bond stay in the pool (server pool.js drawDisabledBonds) — 标准's 深靛 洛洛 阿罗玛 夕 圣聆初雪 still show 奥术 — and
- * the server leaves such a bond out of m.private.bonds, so without a mark a card read "奥术 0/2 未激活" with three 奥术
+ * the server left such a bond out of m.private.bonds, so without a mark a card read "奥术 0/2 未激活" with three 奥术
  * operators deployed (player report after 0.1.0: "奥术盟约不生效"). The shop / reward cards, the detail card's bond chips
- * and the bond popup mark these 本局禁用 (briefingBondTip 'off').
+ * and the bond popup mark these 本局禁用 (briefingBondTip 'off'); since 0.1.3 the server also lists such a bond the player
+ * has members of (`off: true`, server/match/bondsMeta.js offBondCounts) and the strip shows it as a grey 本局禁用 disc.
  * @param {any} mode config.json modes[modeId] (data.js getMode), or null
  * @returns {Set<string>}
  */

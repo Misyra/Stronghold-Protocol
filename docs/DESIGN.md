@@ -440,7 +440,7 @@ S→C:
   temp:  [ Piece | null ],   // length 5
   board: [ Piece & { row, col, dir } ],   // dir ∈ UP|RIGHT|DOWN|LEFT (§3; bench pieces carry none)
   deployCap, deployCount,
-  bonds: [ { bondId, count, active, tier, layers, harmony? /* 调和's +1 is in count, §21.26 */, thresholds, countsHand } ],   // sorted: active first, then layers desc
+  bonds: [ { bondId, count, active, tier, layers, harmony? /* 调和's +1 is in count, §21.26 */, thresholds, countsHand } ],   // sorted: active first, then layers desc; an `off` entry (a bond the mode never activates, with members: count only, never active — the strip's grey 本局禁用 disc, bondsMeta.offBondCounts) comes last
   effects: [ { id, name, desc, iconKind: 'band'|'choice'|'team'|'item'|'garrison', iconId, counter?, counterText? /* a bounty: 还剩 N 场作战, §20.6 */ } ],
   nextEnemies: [ { enemyKey, count, tag, start? } ],   // preview of the upcoming round's wave (after waves.js generation); `start` = a leader's spawn tile [row, col] on the boss field (the boss-field prep shows it standing there, community report #12)
   stats: { dmgDealt, kills, leaks, gold, refreshes, merges } }
@@ -1109,7 +1109,7 @@ In SETTLE it is the field the last battle left on screen. In prep without watchi
 - This is views only: `ps.bonds` / `ps.layers` are untouched. SETTLE clears the pending gains as it adds them (once), and the next round start clears them too.
 
 **Data:**
-- `m.public players[].bonds = ps.alive ? bondList(gd, ps.bondsView()) : []`: every bond with members, layers or an active tier. It is the same list and order as the player's own `m.private bonds`, minus `thresholds` / `countsHand` (the client reads those from bonds.json).
+- `m.public players[].bonds = ps.alive ? bondList(gd, ps.bondsView(), { off: offBondCounts(gd, ps) }) : []`: every bond with members, layers or an active tier (since 0.1.3 also the mode-off bonds with members, `off: true`, last). It is the same list and order as the player's own `m.private bonds`, minus `thresholds` / `countsHand` (the client reads those from bonds.json).
 - An eliminated player's list is `[]`, for these reasons:
   - nobody can watch them: `g.watch` refuses them and they have no field;
   - the result screen reads `m.result`'s own bonds;

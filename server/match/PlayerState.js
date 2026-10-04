@@ -75,7 +75,7 @@ import { checkLoadout, resolveLoadout } from '../../shared/protocol.js';
 import { FIELD, tileKey, parseKey, inField, canPlace, positionClass, boardOrder, freeSlot, pieceDir, parseDir, mergeTile, ownerRangeKeys } from './board.js';
 import { attackRangeGrid, loadoutRecord, resolveRecordLoadout } from '../../shared/loadoutRecord.js';
 import { offsetTile } from '../sim/dir.js';
-import { computeBonds, bondList, bondSnapshot, activatedLayers, bondsWithGains } from './bondsMeta.js';
+import { computeBonds, bondList, bondSnapshot, activatedLayers, bondsWithGains, offBondCounts } from './bondsMeta.js';
 import { itemKey } from './gamedata.js';
 import { bountyText } from './choices.js';
 
@@ -1642,7 +1642,8 @@ export class PlayerState {
       board,
       deployCap: this.deployCap,
       deployCount: this.deployCount,
-      bonds: bondList(this.gd, this.bondsView(), { full: true }),
+      // + the mode-off bonds it has members of (`off: true`, the strip's grey 本局禁用 discs — bondsMeta.offBondCounts)
+      bonds: bondList(this.gd, this.bondsView(), { full: true, off: offBondCounts(this.gd, this) }),
       effects: this.effectsView(),
       nextEnemies: this.m.nextEnemiesFor(this),
       // DESIGN §16: the effective operator loadout ({ [baseChessId]: { skill, module } }; chess not listed use defaults)

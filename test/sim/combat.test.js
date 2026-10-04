@@ -55,7 +55,7 @@ test('stunned operator neither attacks nor casts but keeps its natural SP recove
   assert.equal(u.skill.activations, 0, 'silenced: no cast');
 });
 
-test('cold on cold ⇒ freeze 3 s (res −15), frozen-immune enemies only get cold', () => {
+test('cold on cold ⇒ freeze for the longer cold (res −15), not a fixed 3 s; frozen-immune enemies only get cold', () => {
   const h = makeBattle({
     defs: { enemies: { enemy_dummy: dummy({ res: 30 }), enemy_icy: enemyRec({ key: 'enemy_icy', speed: 0, hp: 1e6, immunities: { frozen: true } }) } },
     enemies: [{ key: 'enemy_dummy', pos: [11, 8] }, { key: 'enemy_icy', pos: [10, 8] }], content: 'none',
@@ -70,8 +70,11 @@ test('cold on cold ⇒ freeze 3 s (res −15), frozen-immune enemies only get co
   assert.equal(e.s.flags.freeze, true);
   assert.equal(e.s.flags.stun, true);
   assert.equal(e.s.res, 15);
+  assert.ok(Math.abs(e.findBuff('freeze').timeLeft - 5) < 1e-6, 'freeze lasts the longer cold (5 s), not 3 s');
   h.run(3.1);
-  assert.ok(!e.s.flags.freeze, 'freeze lasts 3 s');
+  assert.ok(e.s.flags.freeze, 'still frozen past the old fixed 3 s');
+  h.run(2);
+  assert.ok(!e.s.flags.freeze, 'freeze ends with that cold');
   h.b.applyStatus(icy, 'cold', { duration: 5 });
   h.b.applyStatus(icy, 'cold', { duration: 5 });
   assert.ok(!icy.s.flags.freeze);

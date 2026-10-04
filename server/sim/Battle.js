@@ -1340,10 +1340,12 @@ export class Battle {
   }
 
   /**
-   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point } — returns true when applied.
-   * Honours enemy immunities (stun/silence/sleep/frozen/levitate/feared) unless `force`. `beforeStatus` handlers may
-   * cancel it or change `duration` / `value`. Official rules (buffs.js STATUS): 抵抗 (the `resist` status) shortens the
-   * RESIST_STATUSES by its value (default half; applied after `beforeStatus`); 浮空 lasts half as long on units heavier
+   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point, resistApplied } — returns true
+   * when applied. Honours enemy immunities (stun/silence/sleep/frozen/levitate/feared) unless `force`. `beforeStatus`
+   * handlers may cancel it or change `duration` / `value`. Official rules (buffs.js STATUS): 抵抗 (the `resist` status)
+   * shortens the RESIST_STATUSES by its value (default half; applied after `beforeStatus`; `resistApplied` skips that
+   * pass — the cold-on-cold 冻结 below already used post-抵抗 lengths). A second 寒冷 while 寒冷 remains applies 冻结 for
+   * max(remaining, this cold after 抵抗) (PRTS 术语释义 寒冷 「持续时间取双方之中最高」). 浮空 lasts half as long on units heavier
    * than LEVITATE_HALF_WEIGHT (current massLevel); 冻结's RES cut hits enemies only; 麻痹 adds stacks; "同名效果取最高"
    * statuses (`valued`) keep the strongest value — a weaker application only extends past the stronger one's end (it
    * then resumes); other statuses refresh to the longer duration. 诱导 (`attract`) walks the enemy to `point`
@@ -1379,14 +1381,26 @@ export class Battle {
       else if (Number.isFinite(d) && d <= 0) return false;
       value = c.value;
     }
-    if (RESIST_STATUSES.has(key)) {
+    if (RESIST_STATUSES.has(key) && !opts.resistApplied) {
       const rv = this.resistOf(target);
       if (rv > 0) duration *= 1 - rv;
     }
     if (key === 'levitate' && target.s.massLevel > LEVITATE_HALF_WEIGHT) duration /= 2;
     if (!(duration > 0)) return false;
     if (key === 'cold' && target.findBuff('cold') && !(immune && immune.has('frozen'))) {
-      this.applyStatus(target, 'freeze', { duration: COLD_FREEZE_DURATION, source: opts.source, force: opts.force });
+      // PRTS 术语释义 寒冷: 友方寒冷 pairs into 冻结, 「持续时间取双方之中最高」. `duration` is this cold after 抵抗;
+      // the cold already on the target keeps timeLeft. addBuff refresh 'extend' below sets that cold to the same max.
+      // COLD_FREEZE_DURATION is only the fallback when neither side has a duration. resistApplied: that max is already
+      // post-抵抗, so the freeze must not be halved again.
+      // [ASSUMED] one catalogue cold, so an enemy-applied second cold uses this max too. PRTS states it on the 友方
+      // line only (敌方 cold becomes 冻结 when the target already has 敌方 cold or 敌方 冻结).
+      const prev = target.findBuff('cold');
+      const spans = [prev.timeLeft, duration].filter((t) => t === Infinity || (Number.isFinite(t) && t > 0));
+      const freezeFor = spans.length ? Math.max(...spans) : COLD_FREEZE_DURATION;
+      this.applyStatus(target, 'freeze', {
+        duration: freezeFor, source: opts.source, force: opts.force,
+        ...(spans.length ? { resistApplied: true } : {}),
+      });
       if (!target.alive) return false;
     }
     const source = opts.source ?? null;

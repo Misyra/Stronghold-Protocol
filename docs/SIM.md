@@ -564,7 +564,7 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 |---|---|---|
 | `stun` | cannot act / move; **a stunned operator blocks nothing** (its blocked enemies are released: taken over by another operator in contact with room, else they walk on — §1.2 Blocking) | – |
 | `freeze` | stun; **enemies** also RES −15 | – |
-| `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` 3 s (unless frozen-immune) | – |
+| `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` for max(remaining cold, the incoming cold after 抵抗) — PRTS 术语释义 寒冷 「持续时间取双方之中最高」 (`COLD_FREEZE_DURATION` 3 s only when neither side has a duration; unless frozen-immune). [ASSUMED] the one catalogue cold uses that 友方 sentence for an enemy-applied cold too | – |
 | `sleep` | 无敌且无法行动: inactive, untargetable, **takes no damage** (unless the attacker profile has `hitSleep` or the damage `ignoreSleep`), blocks nothing | – |
 | `slow` | moveMul 1 − value (*strongest*) | default 0.5 |
 | `sluggish` (停顿) | moveMul 0.2 | – |

@@ -72,7 +72,9 @@ export function collectViolations(m, { limit = 25 } = {}) {
     const boardChessUids = new Set();
     for (const p of ps.board.values()) if (p.kind === 'chess') boardChessUids.add(p.uid);
     const itemCounts = new Map();
-    const countItem = (it) => itemCounts.set(it.id, (itemCounts.get(it.id) || 0) + 1);
+    // A copy gained as the previous prep ended (PlayerState.acquireItem deferMerge) waits until the next prep.
+    // It does not count toward "merges are immediate" until that prep's checkItemMerges consumes it.
+    const countItem = (it) => { if (it.deferMerge) return; itemCounts.set(it.id, (itemCounts.get(it.id) || 0) + 1); };
     for (const p of all) {
       note(ps, p);
       if (p.kind === 'chess') {

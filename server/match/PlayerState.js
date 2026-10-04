@@ -721,6 +721,9 @@ export class PlayerState {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
     let piece = this.newPiece('item', itemId);
+    // A prep-end grant may sit beside an identical copy until the next prep. The invariant counts only copies
+    // without this mark, so the fight that is about to start is not reported as a missed merge.
+    if (deferMerge) piece.deferMerge = true;
     if (!deferMerge && this.completesItemMerge(itemId)) {
       piece = this._mergeItem(itemId, piece);
       if (!piece) return null;

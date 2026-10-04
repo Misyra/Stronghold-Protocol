@@ -227,6 +227,7 @@ Each player fights their own copy of the round level independently. There is no 
 - **Setup:** 1–2 players who *did* clear perfectly field their board as-is. They face the **union of all enemies the other players leaked**, using the escaped-battle template `level_act1autochess_escaped_multi` (char limit 20).
 - **Rules:**
   - Bond stacking is disabled ("该阶段不能叠加层数").
+  - The helpers fight "以其阵地当前的状态" (PRTS 帮助): the remake reads that as including the layers their own combat reached that round (the count the strip shows) [ASSUMED]; the settlement adds those gains once.
   - Bounty kills here pay the killer.
   - Only perfect-clear teammates can defend (tip).
   - Community: in 下半 the result shown is the *defended* player's view.

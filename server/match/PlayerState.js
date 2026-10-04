@@ -1524,14 +1524,20 @@ export class PlayerState {
 
   /**
    * The bond states the views show (m.private bonds, m.public players[].bonds): the computed states plus the pending
-   * in-battle gains of this round's finished normal battle (bondsMeta.bondsWithGains). Never used by rules.
+   * in-battle gains of this round's finished normal battle (bondsMeta.bondsWithGains). The 联防 field fights with them too
+   * (battleInput `reached`); no other rule reads them.
    */
   bondsView() { return bondsWithGains(this.bonds, this.pendingLayerGains); }
 
   // =================================================================================================
   // battle input
 
-  battleInput({ side = 'L', colOffset = 0, carry = null } = {}) {
+  /**
+   * `reached`: the bonds carry the layers this round's own combat reached (bondsView: the pending in-battle gains, capped
+   * like settle()) — the 联防 field (unite.js; PRTS 卫戍协议/帮助 §联防阶段 "将以其阵地当前的状态", [ASSUMED] the current
+   * state includes those layers, as the strip shows them). The gains stay pending: settle() adds them once.
+   */
+  battleInput({ side = 'L', colOffset = 0, carry = null, reached = false } = {}) {
     // a terrain change not yet followed by a recompute (a content hook at the prep end) never fields an illegal board
     this.deployMap();
     if (this._legalityStale) this.recompute();
@@ -1557,7 +1563,7 @@ export class PlayerState {
       side,
       colOffset,
       units,
-      bonds: bondSnapshot(this.bonds),
+      bonds: bondSnapshot(reached ? this.bondsView() : this.bonds),
       bandId: this.bandId,
       playerEffects: this.effects.filter((e) => e.battle !== false).map((e) => ({
         id: e.id, key: e.key ?? null, source: e.iconKind ?? null, params: e.params ?? null, counter: e.counter ?? null, data: e.data ?? null,

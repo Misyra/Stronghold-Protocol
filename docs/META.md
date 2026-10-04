@@ -702,9 +702,10 @@ spawn tile `start`, where the boss-field prep shows it —, + its bounties).
 Bond layers in the views (DESIGN §20.15): from the end of COMBAT (`_finishCombat`, every normal result in) until SETTLE,
 `m.private bonds` and `m.public players[].bonds` add the finished battle's IN_BATTLE gains (`PlayerState.pendingLayerGains`
 = the result's `layerGains`; `bondsMeta.bondsWithGains`: floored, at most up to `BOND_LAYER_CAP`, like the settlement), so
-the strip keeps the layers the battle reached through the COMBAT_END pause and the 联防. Views only: `ps.bonds` /
-`ps.layers` (rules, the 联防 spec, `activatedLayers`) are untouched; SETTLE clears the pending gains as it adds them to
-`ps.layers` (once); the next round start clears them too.
+the strip keeps the layers the battle reached through the COMBAT_END pause and the 联防. The 联防 field fights with the
+same counts (its input's `bonds` come from `bondsView()`, PlayerState.battleInput `reached`; since 0.1.3). `ps.bonds` /
+`ps.layers` (rules, `activatedLayers`) are untouched; SETTLE clears the pending gains as it adds them to `ps.layers`
+(once); the next round start clears them too.
 
 `m.field` = `{ fieldId, kind, rect, stageId, units, live }`; during prep `g.watch 'n:<pid>'` returns a one-shot board
 view with `prep: true` (scouting a teammate).

@@ -188,7 +188,8 @@ b.on(event, fn, { priority=0, owner } ) / b.off(...)   // hook bus (§5.4)
              items: [itemId...],                  // equipped items (golden ids when merged)
              carryState?: { hpPct, sp } | { sp } | { down: true } } ],   // unite: an operator keeps its end-of-combat HP ratio + SP, a summon its SP (no running skill);
                                                   // { down: true } = knocked out at its end: deployed, then forced out (§19.3)
-  bonds: { [bondId]: { count, active, tier, layers } },   // snapshot from bondsMeta at combat start
+  bonds: { [bondId]: { count, active, tier, layers } },   // snapshot from bondsMeta at combat start (联防: with the layers the
+                                                          // helper's own combat reached, PlayerState.bondsView — §20.15)
   bandId, playerEffects: [ EffectRef ],                   // active band/choice/team effects with battle parts
   lpForBoss?: number }
 ```
@@ -325,7 +326,8 @@ LOBBY(room) → INFO_CHECK (co-op 25 s; solo and any single-human match untimed 
      COMBAT        (one Battle per alive player, all in parallel, 2×; watchers get snapshots; solo: pausable, §14 Solo pause)
      UNITE         (co-op only, if ≥1 leaked & ≥1 perfect: ≤2 perfect helpers in `unite.js helperOrder` order (research 08 §5 / PRTS 帮助:
                     most units on the field > an active bond > most standing units > seat; the pair ordered by units > active bond >
-                    Σ active layers > standing > seat, the first one on the right-hand field) fight the union of leaks; no layer gains;
+                    Σ active layers > standing > seat, the first one on the right-hand field) fight the union of leaks; no layer gains — with
+                    the layers their own combat reached (the round's pending gains, PRTS "以其阵地当前的状态" [ASSUMED]);
                     a helper's operator knocked out at the end of its own combat enters down — carryState { down: true },
                     PRTS "上一阶段为退场状态的干员强制退场", its full redeploy timer — confirmed by the user (§19.3))
      SETTLE        (LP −min(leaks,10) per player (unite survivors to their source); eliminations; layer gains applied; coins; broadcast)
@@ -1106,7 +1108,7 @@ In SETTLE it is the field the last battle left on screen. In prep without watchi
 - The client lays them over the view's counts with `withLiveLayers`: the higher value wins (a count only grows) and never shows above 999. They apply in the battle phases and SETTLE only.
 - 联防 and boss battles disable gains, so they report none.
 - **After COMBAT** (`_finishCombat`): until SETTLE, both `m.private bonds` and `m.public players[].bonds` add the finished normal battle's IN_BATTLE gains (`PlayerState.pendingLayerGains` = the result's `layerGains`; `bondsMeta.bondsWithGains`: floored, at most up to the cap, like `settle()`). The strip of a player, and of a teammate watching him in the 联防, therefore keeps the layers his battle reached.
-- This is views only: `ps.bonds` / `ps.layers` are untouched. SETTLE clears the pending gains as it adds them (once), and the next round start clears them too.
+- `ps.bonds` / `ps.layers` are untouched. SETTLE clears the pending gains as it adds them (once), and the next round start clears them too. Since 0.1.3 the 联防 field fights with the same counts: the helpers' battle input takes its bonds from `bondsView()` (`battleInput({ reached: true })`, PRTS §联防阶段 "将以其阵地当前的状态" [ASSUMED] — it used to carry the round-start layers while the strip showed the reached ones); no other rule reads them.
 
 **Data:**
 - `m.public players[].bonds = ps.alive ? bondList(gd, ps.bondsView()) : []`: every bond with members, layers or an active tier. It is the same list and order as the player's own `m.private bonds`, minus `thresholds` / `countsHand` (the client reads those from bonds.json).

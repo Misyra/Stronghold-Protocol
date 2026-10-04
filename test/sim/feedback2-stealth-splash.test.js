@@ -95,7 +95,7 @@ test('areaSelectable: no 隐匿 ally unless it blocks the source, no untargetabl
   done(h);
 });
 
-/** 碎骨 walks lane row 9 and grenades 角峰 on (10,6); 古米 stands next to it (distance 1 = the splash radius). */
+/** 碎骨 walks lane row 9 and grenades 角峰 on (10,6); 古米 stands next to it (inside the grenade's 3×3 — 0.1.3, PRTS 碎骨). */
 function grenades({ gm = [10, 7], items = [], status = null, seconds = 25 } = {}) {
   const h = makeBattle({
     seed: 5, timeLimit: 120, autoFinish: false,

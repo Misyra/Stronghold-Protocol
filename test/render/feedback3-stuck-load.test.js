@@ -77,6 +77,9 @@ test('forgetPendingSpine: PIXI\'s pending requests of an unfinished skeleton go,
     c = setup([]);
     forgetPendingSpine(e, new Set([page]));
     assert.ok(c[page], 'a page another cached skeleton uses stays');
+    c = setup([]);
+    c[`http://127.0.0.1:8080${e.atlas}`] = {};
+    assert.equal(forgetPendingSpine(e), 4, 'an absolute key of the same path too');
     globalThis.PIXI = {};
     assert.equal(forgetPendingSpine(e), 0, 'no loader cache: nothing');
   } finally { globalThis.PIXI = prev; }

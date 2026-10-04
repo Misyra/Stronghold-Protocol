@@ -573,9 +573,10 @@ export function forgetPendingSpine(entry, keep) {
   const done = (u) => { try { return !!PIXI.Assets.cache?.has?.(u); } catch { return true; } };
   if (done(skel)) return 0;
   const atlas = (typeof entry.atlas === 'string' && entry.atlas) || skel.replace(/\.skel$/, '.atlas');
-  const urls = done(atlas) ? [skel] : [skel, atlas, ...spinePages(entry)];
+  const urls = (done(atlas) ? [skel] : [skel, atlas, ...spinePages(entry)]).filter((u) => !(keep && keep.has(u)));
   let n = 0;
-  for (const u of urls) if (!(keep && keep.has(u)) && Object.hasOwn(cache, u)) { delete cache[u]; n++; }
+  // the loader keys its cache by the resolved URL: the manifest path itself, or that path made absolute
+  for (const key of Object.keys(cache)) if (urls.some((u) => key === u || (u.startsWith('/') && key.endsWith(u)))) { delete cache[key]; n++; }
   return n;
 }
 

@@ -59,7 +59,7 @@
 // (a direct pick) and the ticks of a debuff already on it (【自然涌动】: a tick selects nobody).
 // Every area effect of a leader or part — pulses, strikes around an echo, blasts, charges and tramples, crosses, columns,
 // whole-field skills — selects with enemies.js areaAllies / areaAlliesInTiles / fieldAllies (targeting.js
-// areaSelectable): no 隐匿 operator that does not block the unit, no untargetable or sleeping one, no 起飞 one for a
+// areaSelectable): no 隐匿 operator, the one blocking the unit included (GitHub #97), no untargetable or sleeping one, no 起飞 one for a
 // ground unit; 迷彩 is not checked (splash-type, 中点判定 / 格子判定 or "无视迷彩" on PRTS; the rest [ASSUMED], DESIGN
 // §22.12). Only 【盲信之誓】 ("无视无法选择、迷彩") takes everyone on its lines.
 // LP effects ('lpLoss' hook + result.lpLoss) must be applied by the match (see the report of this module's owner).
@@ -334,7 +334,7 @@ export function fairOrder(b, e, list, P) {
  * 斩胄之剑 / 破胄之锤 (PRTS 行动方式 飞行) — and its damage 无来源, so 对地规避 does not stop it: `ignoreSelect` (an airborne
  * 起飞 ally in the 3×3 is stunned and hurt like the others, although the credited 胄 walks). It is still that unit's area
  * selection (PRTS: "令自身周围8格内的所有我方单位…" / "…无视迷彩，可对空", no 无视无法选择): areaAlliesInTiles of `by` — no
- * 隐匿 ally that does not block it (掷剑 / 掷锤's "无视无法选择" is their pick of the operator they fly at, not the blast).
+ * 隐匿 ally, the one blocking it included (GitHub #97; 掷剑 / 掷锤's "无视无法选择" is their pick of the operator they fly at, not the blast).
  */
 function stunBlast(b, src, by, r, c, stun, dot, dur, kind) {
   b.fx('explode', { x: c, y: r, r: 1.5, kind, tiles: 'box' });

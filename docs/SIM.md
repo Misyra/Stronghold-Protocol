@@ -268,15 +268,15 @@ a stealthed ally (隐匿, 排气格栅) only for the enemy it blocks — our ope
 leaves, chain / bounce jumps, 周围四格 additions, whole-column / whole-field skills — select with `targeting.js
 areaSelectable` (`content/enemies.js areaAllies` / `areaAlliesInTiles` / `fieldAllies`; PRTS 作战机制 §AOE伤害判定
 "AOE的判定是对攻击范围内的每个可以被选中的敌人进行判定"; PRTS 异常效果 §无法选择: 隐匿, 不可选中, 无敌 and 对地规避 make
-"常见的、来自不同阵营的“选择”行为" skip a unit unless the ability "无视可选性"): no 隐匿 ally unless it blocks that enemy
-[ASSUMED: the blocker exception, read from 索敌, for its area abilities too], no untargetable or sleeping one, no
+"常见的、来自不同阵营的“选择”行为" skip a unit unless the ability "无视可选性"): no 隐匿 ally, the one blocking that enemy included
+(GitHub #97, owner 2026-10-04; the 0.1.2 [ASSUMED] that the blocker's area also hit is withdrawn — the blocked enemy's attack still lands), no untargetable or sleeping one, no
 airborne 起飞 one for a ground enemy; an invulnerable one still [ASSUMED, as for attacks — §21.22]. 迷彩 is not checked:
 splash-type damage, 中点判定 / 格子判定 effects and auras ignore it (ba.camou "无法躲避溅射类攻击"; PRTS 异常效果 迷彩
 "所有光环类能力、以及涉及中点判定/格子判定的效果均不受迷彩制约") or the enemy's PRTS page says "无视迷彩" — the few sites
 with none of these hit it [ASSUMED] (DESIGN §22.12). A target the ability locked beforehand (an attack's target, 死亡之眼's
 channel, a C4, an 爆炸箭) is a direct pick — a 隐匿 it gained meanwhile does not save it (PRTS 异常效果 "'直接选中'的能力
 …不受这些仅在选择时生效的异常效果制约"); only the units around it are an area selection (`targetAndArea`). An enemy's
-buff aura (深池伙友卫队's field, 扎罗's 远古威慑) takes the allies `targeting.js auraSelectable` accepts — 隐匿 kept out
+buff aura (深池伙友卫队's field, 扎罗's 远古威慑) takes the allies `targeting.js auraSelectable` accepts — 隐匿 kept out, the blocker included,
 (PRTS 作战机制 §隐匿与Buff的关系 "隐匿状态下的单位一般无法被敌方的索敌机制和Buff选择器选中为目标"), an airborne 起飞 ally
 not [ASSUMED, §21.22]. Until 0.1.2 they took every ally in the area (GitHub issue #32 item 6; DESIGN §22.12). Still on
 every ally there: the "无视无法选择 / 无视可选性" abilities above (and 远眺's death 暴露, 圆仔's facing count), 寒霜's aura
@@ -315,7 +315,7 @@ excepted). 【污染秽蚀】 (萨卡兹枯朽战车's 秽蚀轰击,
 同名效果不叠加", user playtest #6): a unit covered by several zones takes one tick per second (`unit.mem.pollutedAt`), so
 a crowd of dying 萨卡兹枯朽战士 totals 50 / s, not 50 × n. It is "可对空，无视无法选择": it also burns an airborne 起飞 ally
 (`ignoreSelect`), at the low-ground rate on a low tile. The other zones are no exception to 对地规避: a ground enemy's
-燃烧区域 (集团军重型火炮, PRTS "碰撞不受迷彩制约，不可对空" — 迷彩 only) skips an airborne 起飞 ally and an unblocking 隐匿
+燃烧区域 (集团军重型火炮, PRTS "碰撞不受迷彩制约，不可对空" — 迷彩 only) skips an airborne 起飞 ally and a 隐匿
 one; the sourceless 毒雾 of 假想敌：蚀裂 skips a 隐匿 one but still reaches an airborne one (PRTS 作战机制's "可以受到无来源的
 毒雾伤害" is the stage hazard; until 0.1.2 the cloud took everyone inside). An activated 孽罪奇美拉's aura (`kitChimera`, PRTS "自身半径1.2
 范围内的所有单位持续视为受到源石污染区影响，技力自然回复速度倍率-80%，每0.5秒受到50真实持续伤害（同类效果取最高）") is the same
@@ -575,7 +575,7 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `tremble` (战栗) | 被阻挡后无法进行普通攻击: no normal attack **while blocked** (abilities still fire) | – |
 | `palsy` (麻痹) | each stack cancels one enemy normal attack (max 3, lasts until consumed); refused by 麻痹免疫 (data `palsyImmune`) | stacks, default 1 |
 | `disarm` | no normal attacks | – |
-| `stealth` / `reveal` | 隐匿: untargetable unless blocked (an ally: only the enemy it blocks attacks it, and an enemy's area effects and buff auras skip it unless it blocks that enemy — `targeting.js areaSelectable` / `auraSelectable`, since 0.1.2) / cancels stealth. An enemy's 隐匿 also stays off after a block: each block's end (`Battle._stealthSwitch`, every release path) switches each of its 隐匿 sources off for `STEALTH_RESTORE` (3) s — PRTS 作战机制 §隐匿 "不被阻挡的3秒后重新进入隐匿" — or the source's own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`: 0 s for 业余竞演者, 节日爵士乐手, 假想敌：骨刺, 流泪小子, 访问团强攻冠军 and 清明's veil, 1 s for the 家族灭迹人); a new block inside it lifts it again and its end restarts the window; our operators' 隐匿 / 迷彩 never lift by blocking (DESIGN §22.8). `targeting.js enemyStealthed` is the one test: the b.snap stealth bit is set only while its 隐匿 is on (drawn solid otherwise); an operator's radius area damage (`foesInRadius`) skips it too (PRTS 作战机制 §AOE伤害判定 "对攻击范围内的每个可以被选中的敌人进行判定"; until 0.1.1 the splash still hit it) | – |
+| `stealth` / `reveal` | 隐匿: untargetable unless blocked (an ally: only the enemy it blocks attacks it, and an enemy's area effects and buff auras skip it even when it blocks that enemy — `targeting.js areaSelectable` / `auraSelectable`, GitHub #97, owner 2026-10-04; 0.1.2 made an exception for that blocker) / cancels stealth. An enemy's 隐匿 also stays off after a block: each block's end (`Battle._stealthSwitch`, every release path) switches each of its 隐匿 sources off for `STEALTH_RESTORE` (3) s — PRTS 作战机制 §隐匿 "不被阻挡的3秒后重新进入隐匿" — or the source's own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`: 0 s for 业余竞演者, 节日爵士乐手, 假想敌：骨刺, 流泪小子, 访问团强攻冠军 and 清明's veil, 1 s for the 家族灭迹人); a new block inside it lifts it again and its end restarts the window; our operators' 隐匿 / 迷彩 never lift by blocking (DESIGN §22.8). `targeting.js enemyStealthed` is the one test: the b.snap stealth bit is set only while its 隐匿 is on (drawn solid otherwise); an operator's radius area damage (`foesInRadius`) skips it too (PRTS 作战机制 §AOE伤害判定 "对攻击范围内的每个可以被选中的敌人进行判定"; until 0.1.1 the splash still hit it) | – |
 | `camou` (迷彩) | an ally's camouflage (ba.camou "不阻挡时不成为敌方普通攻击的目标（无法躲避溅射类攻击）"): like `stealth` for enemy targeting (only the enemy it blocks attacks it) — but an enemy's splash and other area effects still hit it (`areaSelectable` does not check it) — and on screen (b.snap stealth bit, `snapshot.js flagsOf`), but not 隐匿 for 隐匿-conditions (叙拉古, 家族徽章) and under its own buff keys. 忍冬 S3 (key `vulpis:camou`, until her next cast), 寒芒克洛丝 S1 | – |
 | `invulnerable` | ignores damage | – |
 | `levitate` (浮空) | stun + unblockable (unblocks enemies) + 失衡免疫 (`noDisplace`); an air unit meanwhile (`isFlying`: melee cannot hit it); **half duration on units with (current) massLevel > 3**; refused on data flyers (`motion` FLY) and units already levitated (PRTS 异常效果 "若单位数据上为飞行单位…或是持有浮空异常则Buff取消") — a 近地悬浮 enemy is WALK in its data, so it can be levitated; 浮空 is not one of the 近地悬浮 enemies' drop triggers | – |

@@ -1668,7 +1668,7 @@ export class Battle {
 
   /**
    * Every deployed ally within `r` of (x, y) — no selection rule: an enemy's area effect selects among them with
-   * targeting.js areaSelectable (content/enemies.js areaAllies: no unblocking 隐匿 ally, DESIGN §22.12).
+   * targeting.js areaSelectable (content/enemies.js areaAllies: no 隐匿 ally, the blocker included, GitHub #97; DESIGN §22.12).
    */
   alliesInRadius(x, y, r, ownerId = null, { includeDevices = false } = {}) {
     const out = [];

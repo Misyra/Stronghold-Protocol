@@ -36,7 +36,7 @@
 //   (targeting.js aggroCmp — PRTS 索敌: 特殊优先级 → 仇恨值). Area effects — splash, blasts, area skills and statuses,
 //   pulses, the zones an enemy leaves, chain / bounce jumps, 周围四格 additions, whole-column / whole-field skills —
 //   select with areaAllies / areaAlliesInTiles / fieldAllies (targeting.js areaSelectable; PRTS 作战机制 §AOE伤害判定
-//   "AOE的判定是对攻击范围内的每个可以被选中的敌人进行判定"): no 隐匿 ally that does not block the enemy, no untargetable
+//   "AOE的判定是对攻击范围内的每个可以被选中的敌人进行判定"): no 隐匿 ally, the one blocking the enemy included (GitHub #97), no untargetable
 //   or sleeping one, no airborne 起飞 one for a ground enemy; 迷彩 is not checked (splash-type, 中点判定 / 格子判定 and
 //   aura effects ignore it — ba.camou "无法躲避溅射类攻击", PRTS 异常效果 迷彩; the sites with no such reading are
 //   [ASSUMED] in DESIGN §22.12). Buff auras select with auraAllies (auraSelectable: 隐匿 kept out, 起飞 not). A locked
@@ -63,7 +63,7 @@
 //                gauge whose burst is the official one (termDescription ba.dt.erosion: "永久降低100点防御力并受到800点物理伤害").
 //   DOT        — damage zones (污染秽蚀: true damage, one tick per second however many cover a unit, "可对空，无视无法选择"
 //                — `ignoreSelect`, 起飞 / 隐匿 allies included; 燃烧区域: the enemy's area selection — PRTS 集团军重型火炮
-//                "碰撞不受迷彩制约，不可对空", no 无视无法选择 —, so no 起飞 or unblocking 隐匿 ally; 假想敌：蚀裂's sourceless
+//                "碰撞不受迷彩制约，不可对空", no 无视无法选择 —, so no 起飞 or 隐匿 ally; 假想敌：蚀裂's sourceless
 //                毒雾 skips a 隐匿 ally, not a 起飞 one), bleeding (removed by healing), pulsing damage around an enemy
 //                (area selection).
 //   INVISIBLE  — permanent `stealth` flag (engine: untargetable unless blocked or revealed). An operator's radius area
@@ -72,7 +72,7 @@
 //                still hit it); tile selectors (enemiesInKeys) always skipped it. After a block it hides again only
 //                STEALTH_RESTORE (3) s later — or after the "（解除阻挡N秒后恢复）" of its PRTS page (STEALTH_RESTORE_BY_KEY,
 //                清明's veil 0 s) — Battle._stealthSwitch / targeting.js enemyStealthed (until 0.1.2: at once).
-//                The mirror rule for an ally's 隐匿 — enemy area effects skip it unless it blocks the enemy — is areaAllies (since 0.1.2, DESIGN §22.12).
+//                The mirror rule for an ally's 隐匿 — enemy area effects skip it even when it blocks the enemy (0.1.3, GitHub #97) — is areaAllies.
 //   REFLECTION — 折射 (ba.refraction "生效时，法术抗性+70"): RES +refracting.magic_resistance while NOT silenced
 //                (the ability line is SILENCE-flagged: silencing turns it off); 镜膜 also gets max HP +100 % while on.
 //   SPECIAL    — mostly stats; prisoners, 穿刺手, 暴虐兵长, 镜卫, 动力装甲 … below.
@@ -471,7 +471,7 @@ export function allTargets(b, e) {
 
 /**
  * The allies an AREA effect of enemy `src` selects within `r` of (x, y) — splash, blast, area skill / status, pulse, zone
- * tick, chain or bounce jump (targeting.js areaSelectable: no unblocking 隐匿, untargetable or sleeping ally, no 起飞 one
+ * tick, chain or bounce jump (targeting.js areaSelectable: no 隐匿 ally, the blocker included, no untargetable or sleeping ally, no 起飞 one
  * for a ground `src`; 迷彩 is not checked). `src` = the enemy whose effect it is (null: none — 隐匿 still applies). A
  * locked target goes first through targetAndArea. Abilities PRTS marks "无视无法选择 / 无视可选性" use b.alliesInRadius with
  * `ignoreSelect` instead.
@@ -491,7 +491,7 @@ export function fieldAllies(b, src) {
 }
 
 /**
- * The allies within `r` of (x, y) a buff aura of enemy `src` takes (targeting.js auraSelectable: no unblocking 隐匿,
+ * The allies within `r` of (x, y) a buff aura of enemy `src` takes (targeting.js auraSelectable: no 隐匿 ally, the blocker included,
  * untargetable or sleeping ally — PRTS "隐匿状态下的单位一般无法被敌方的…Buff选择器选中"; an airborne 起飞 ally is still
  * taken [ASSUMED, §21.22]). 寒霜's aura, which PRTS says ignores 隐匿, keeps b.alliesInRadius (allyAura).
  */
@@ -722,8 +722,8 @@ const onHitStatus = (key, dur, value) => ({ dealt(c, b, e) { if (dur > 0) b.appl
  * attack starts (`before`): `unblocked` = only an attack begun while not blocked splashes (the others are the plain melee
  * hit at `meleeScale`). The main target takes the engine's attack at `scale` × ATK (e.profile.atkScale, a normal attack:
  * on-hit effects apply); when it lands (the main hit's 'hit', before its dodge) the others around the target take
- * `scale` × ATK as a splash — an area selection (areaAllies / areaAlliesInTiles: no 隐匿 ally that does not block the
- * enemy, no airborne 起飞 one for a ground enemy; 迷彩 is not checked — DESIGN §22.12). `tiles` 1 = the target's tile and
+ * `scale` × ATK as a splash — an area selection (areaAllies / areaAlliesInTiles: no 隐匿 ally, the blocker included
+ * (GitHub #97), no airborne 起飞 one for a ground enemy; 迷彩 is not checked — DESIGN §22.12). `tiles` 1 = the target's tile and
  * its 8 neighbours (格子判定), else `radius` around the target (中点判定). `noAir`: "不可对空" (a flying ally — the 炎佑
  * dragon — is skipped; without it "可溅射飞行单位"). `dodge`: the splash hits may be dodged (烹泉 / 沏虹, whose PRTS 天赋 calls
  * them 法术普通伤害 — a normal attack's damage); a 溅射伤害 splash cannot. `onEach(b, e, u)` runs on every unit hit (the target
@@ -1651,7 +1651,7 @@ function kitHolyGuard(ab) {
     tick(b, e) {
       const on = b.enemiesInRadius(e.x, e.y, r).some((o) => /enemy_1175_dushdo/.test(o.defId));
       if (!on) return;
-      // a buff aura (auraAllies): no 隐匿 operator that does not block it (PRTS 作战机制 §隐匿与Buff的关系 — no 无视 note on
+      // a buff aura (auraAllies): no 隐匿 operator, the blocker included (PRTS 作战机制 §隐匿与Buff的关系 — no 无视 note on
       // its page), but an airborne 起飞 one still [ASSUMED, as §21.22's ground-enemy auras]
       for (const u of auraAllies(b, e, e.x, e.y, r)) auraBuff(b, u, 'ab:forceField', 0.5, { aspd }, null, true);
     },
@@ -2074,7 +2074,7 @@ function kitLeaderMisc(key, ab, e) {
       // PRTS 碎骨 天赋: "不会攻击飞行单位"; below half HP ATK +50 %; "未被阻挡时发射榴弹对目标及其周围八格的我方单位造成相当于攻击力
       // 26%的物理伤害，并令其在5秒内防御力下降50%" ("榴弹对主目标造成物理普通伤害，对溅射目标造成物理溅射伤害，可溅射飞行单位") — the
       // 26 % / 5 s / 3×3 are PRTS's, the −50 % is the blackboard's defdown.def. A blocked attack is its plain melee hit. The
-      // splash is an area selection: a 隐匿 operator next to the target that does not block it is spared (GitHub issue #32
+      // splash is an area selection: a 隐匿 operator is spared, the one blocking this enemy included (GitHub #97; #32
       // item 6, DESIGN §22.12). Community report #14 (0.1.2): the grenade used to be a full attack + 100 % on 4 neighbours.
       const dd = -(T(ab, 'defdown.def') ?? 0);
       return [lowHpBuff(T(ab, 'atkup.hp_ratio') ?? 0.5, { atkPct: T(ab, 'atkup.atk') ?? 0 }), noAirTargets(),
@@ -2520,7 +2520,7 @@ function kitWolfLord(ab) {
   const P = { form2: false, caught: 0, waitUntil: -Infinity, cast: null };
   const caught = (b) => b.allies().some((u) => u.findBuff('ab:fearCage'));
   const cure = (b) => { for (const u of b.allies()) { const d = u.findBuff('ab:fearCage'); if (d) b.removeBuff(u, d); } };
-  // 【远古威慑】 (a buff aura, auraAllies): no 隐匿 operator that does not block it, an airborne 起飞 one still — as 深池伙友卫队's
+  // 【远古威慑】 (a buff aura, auraAllies): no 隐匿 operator, the blocker included, an airborne 起飞 one still — as 深池伙友卫队's
   const awe = (b, e) => { for (const u of auraAllies(b, e, e.x, e.y, WOLF_AWE_RADIUS)) auraBuff(b, u, 'ab:ancientAwe', 0.2, { aspd: WOLF_AWE_ASPD }, null, true); };
   return [{
     spawn(b, e, a, ab2) {

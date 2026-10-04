@@ -513,7 +513,7 @@ test('SERVER_CHESS_PRICE: 购买价格为1 — bb.price is the discount off the 
   assert.equal(GR('garrison_13_b').bb.price, 2);
 });
 
-test('regression: 购买价格为1 runs before the other price modifiers (远见 −1 never below 1 leaves 至简 at 1)', () => {
+test('regression: 购买价格为1 runs before the other price modifiers — 远见 150 (−1, no floor since 0.1.3) takes 至简 to 0', () => {
   const s = setup();
   const seen = [];
   s.m.dispatcher.registry.global('gar_test_seen', { onPrice(ctx, ev) { seen.push(ev.price); } });
@@ -522,9 +522,13 @@ test('regression: 购买价格为1 runs before the other price modifiers (远见
     s.ps.shop.slots[1] = { kind: 'chess', id: 'chess_char_1_02_a', basePrice: 2, frozen: false, sold: false };
     assert.equal(s.ps.priceOf(s.ps.shop.slots[0]), 1);
     assert.deepEqual(seen, [1], 'a global modifier already sees 至简 at 1');
-    s.ps.counters['bondaddon:visi:disc'] = 2;             // 远见 150 layers: every chess −1, never below 1
-    assert.equal(s.ps.priceOf(s.ps.shop.slots[0]), 1, '至简 3 − 2 = 1; 远见 leaves it at 1');
+    s.ps.counters['bondaddon:visi:disc'] = 2;             // 远见 150 layers: every chess −1, down to 0
+    assert.equal(s.ps.priceOf(s.ps.shop.slots[0]), 0, '至简 3 − 2 = 1, then 远见 −1 → 0 (owner\'s decision 2026-10-04)');
     assert.equal(s.ps.priceOf(s.ps.shop.slots[1]), 1, 'other chess: 2 − 1');
+    assert.equal(s.ps.privateView().shop.slots[0].price, 0, 'the shop card gets 0 (drawn FREE)');
+    s.ps.funds = 0;
+    assert.deepEqual(s.m.handle('p_0', { t: 'g.buy', slot: 0 }), { ok: true }, 'bought with no funds');
+    assert.equal(s.ps.funds, 0);
   } finally {
     s.m.dispatcher.registry.unregister('global:gar_test_seen');
   }

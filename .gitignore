@@ -28,6 +28,8 @@ logs/
 scripts/service.env.cmd
 .env
 .env.*
+# Hot-loaded server announcement (deployment-specific content).
+/announcement.json
 
 # --- OS / editor clutter ---------------------------------------------------------------------------
 .DS_Store

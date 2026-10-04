@@ -18,10 +18,12 @@
 //     single byte-range requests (206/416, used by <audio>); traversal & dotfile protection; 404 page.
 //   * GET /healthz → JSON status (protocol `version`, release `app`, rooms, matches, sessions, sockets).
 //   * GET /api/rooms/:code/status → read-only status by shared room code; no room listing or game session.
+//   * GET /api/announcement → hot-loaded maintenance notice and server time; no write API.
 //   * WebSocket (ws) at /ws, maxPayload 64 KB → server/net.js Network → server/lobby.js Lobby.
 //   * Env: PORT (default 3000), HOST (default 0.0.0.0), TRUST_PROXY ('auto' default: honour CF-Connecting-IP /
 //     X-Real-IP / X-Forwarded-For only from loopback/private peers such as a local cloudflared; '1' always; '0' never).
 //     SP_WS_COMPRESSION ('on' default; 'off' disables bounded per-message WebSocket compression).
+//     SP_ANNOUNCEMENT_FILE (default ROOT/announcement.json; local JSON, hot-loaded without restarting).
 //     Prints LAN URLs on boot.
 //   * Per-network limits for internet clients (see net.js clientAddress; local/LAN peers are exempt): open sockets
 //     (maxConnectionsPerAddr, refused at upgrade with 429), rooms and running matches (lobby.js).
@@ -44,6 +46,7 @@ import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
 import { Lobby, CODE_ALPHABET } from './lobby.js';
 import { createStatusLimiter } from './roomStatus.js';
+import { createAnnouncementReader } from './announcement.js';
 import { getData, loadData } from './data.js';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../shared/constants.js';
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../shared/media.js';
@@ -612,7 +615,7 @@ function makeLogger(quiet) {
  * Build and start the HTTP + WebSocket server.
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object, wsCompression?: boolean,
- *   publicDir?: string, dataDir?: string, sharedDir?: string,
+ *   publicDir?: string, dataDir?: string, sharedDir?: string, announcementFile?: string,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
@@ -649,6 +652,9 @@ export async function startServer(opts = {}) {
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
   const allowStatus = createStatusLimiter({ trustProxy: netOptions.trustProxy });
+  const readAnnouncement = createAnnouncementReader({
+    filePath: path.resolve(ROOT, opts.announcementFile ?? process.env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json'), log,
+  });
   const statusPath = new RegExp(`^/api/rooms/([${CODE_ALPHABET}]{${ROOM_CODE_LEN}})/status$`, 'i');
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
@@ -700,6 +706,10 @@ export async function startServer(opts = {}) {
         build: buildTag(),
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
       });
+      return;
+    }
+    if (parts.rawPath === '/api/announcement') {
+      sendJson(req, res, 200, { announcement: await readAnnouncement(), serverTime: Date.now() });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

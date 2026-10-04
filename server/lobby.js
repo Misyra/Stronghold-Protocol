@@ -54,7 +54,8 @@
 //     matches, so a late b.progress / b.result of the previous match is ignored by the next one (DESIGN §14).
 //     onEnd(summary) → room back to LOBBY (departed seats freed, humans un-readied, disconnected humans
 //     get the lobby grace), dispose() on the next macrotask. Players can start again.
-//   * room.closed reasons: 'timeout' (removed after lobby grace), 'kicked' (room.kick), 'shutdown' (server stopping).
+//   * room.closed reasons: 'timeout' (removed after lobby grace), 'kicked' (room.kick, room.removeSpectator), 'empty' (a
+//     spectator whose room lost its last player), 'shutdown' (server stopping).
 //   * Operator loadout (DESIGN §16): room.loadout { entries } is checked strictly against the game data
 //     (shared/protocol.js checkLoadout: known visible chess, a skill index legal for the normal AND the elite status, a
 //     module of the elite or 'none'; any bad entry rejects the whole message, nothing is stored). ▸ It is stored on the

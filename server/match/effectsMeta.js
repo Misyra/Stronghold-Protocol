@@ -33,6 +33,8 @@
 // then hand) → equipped items → effects (insertion order); onPrice runs the priced chess's own 特质 first (购买价格为N
 // sets the price the discounts and caps of bonds / strategies then act on — user playtest #5). Every call is
 // try/catch-guarded; nested dispatch depth is capped (MAX_DEPTH) so content can never loop the server.
+// An eliminated player gets no dispatch, except the persistent effects whose handler sets `afterElimination: true`
+// (onRoundStart, EffectDispatcher.dispatchEliminated: 信标's gift — GitHub #86).
 
 import { itemKey } from './gamedata.js';
 import { boardOrder, parseKey, tileKey } from './board.js';
@@ -232,6 +234,26 @@ export class EffectDispatcher {
         if (!ref || typeof ref.key !== 'string' || ref.key === skipKey) continue;
         const h = reg.get(ref.key);
         if (h) this._call(ps, ref.key, h, hook, { kind: 'effect', key: ref.key, ref }, ev);
+      }
+    } finally {
+      this.depth--;
+    }
+    return ev;
+  }
+
+  /**
+   * `hook` for an ELIMINATED player (Match.startRound: onRoundStart): only its persistent effects whose handler sets
+   * `afterElimination: true` run — 信标's gift still reaches the teammate when its sender is out (builtinMeta.js
+   * builtin_gift, GitHub #86). Nothing else of an eliminated player is dispatched.
+   */
+  dispatchEliminated(ps, hook, ev = {}) {
+    if (!ps || ps.alive || this.depth >= MAX_DEPTH) return ev;
+    this.depth++;
+    try {
+      for (const ref of ps.effects.slice()) {
+        if (!ref || typeof ref.key !== 'string') continue;
+        const h = this.registry.get(ref.key);
+        if (h && h.afterElimination === true) this._call(ps, ref.key, h, hook, { kind: 'effect', key: ref.key, ref }, ev);
       }
     } finally {
       this.depth--;

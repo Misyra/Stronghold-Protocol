@@ -7174,7 +7174,7 @@
     },
     "layerGain": "寒檀 进入/结束休整期 +4 each; 伊内丝 +5 own active bonds; 赫默 +2; 圣约送葬人 +3 per 7 bullets (<=21/battle); 风笛 kills +2; 机变 \"风笛的盟誓\" +8.",
     "assumed": [
-     "price never below 1"
+     "no floor but 0 (owner's decision 2026-10-04; a floor of 1 was assumed until 0.1.3)"
     ]
    },
    "members": [

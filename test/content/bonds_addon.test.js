@@ -630,17 +630,19 @@ test('远见 meta: a milestone crossed after the prep phase ended (助力 +2 at 
   m.dispose();
 });
 
-test('远见 meta: the discounts never push a price below 1', () => {
+test('远见 meta: 「购买价格永久-1资金」 has no floor but 0 — a price of 1 becomes 0 (owner\'s decision 2026-10-04)', () => {
   const { m, ps } = metaMatch(addonRegistry(), 94);
   ps.counters['bondaddon:visi:disc'] = 2;                 // 150 layers reached: every chess −1
   const at = (basePrice) => ps.priceOf({ kind: 'chess', id: 'chess_char_1_09_a', basePrice });
   assert.equal(at(3), 2);
   assert.equal(at(2), 1);
-  assert.equal(at(1), 1, 'a price of 1 (至简 / 休露丝) stays 1');
+  assert.equal(at(1), 0, 'a price of 1 (至简 / 休露丝) becomes 0');
+  assert.equal(at(0), 0, 'never negative');
   ps.counters['bondaddon:visi:disc'] = 1;                 // 80: 远见 chess only
   assert.equal(ps.priceOf({ kind: 'chess', id: 'chess_char_2_02_a', basePrice: 2 }), 1);
-  assert.equal(ps.priceOf({ kind: 'chess', id: 'chess_char_2_02_a', basePrice: 1 }), 1);
+  assert.equal(ps.priceOf({ kind: 'chess', id: 'chess_char_2_02_a', basePrice: 1 }), 0, '80: a 远见 operator at 1 → 0 too');
   assert.equal(at(2), 2, 'non-远见 chess unchanged at 80');
+  assert.equal(at(1), 1);
   m.dispose();
 });
 

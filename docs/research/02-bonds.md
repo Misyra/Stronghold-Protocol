@@ -798,7 +798,7 @@ Members (13 chess, 8 in current shop pool; by tier in shop: {'1': 2, '2': 1, '3'
 - **[first time L >= 150]** Replaces the above: every operator in the shop permanently -1 (overrides, does not stack; 3/27 update).
 - Formulas: `goldPayouts = 2 * floor(L/10)`
 - How layers are gained: 寒檀 进入/结束休整期 +4 each; 伊内丝 +5 own active bonds; 赫默 +2; 圣约送葬人 +3 per 7 bullets (<=21/battle); 风笛 kills +2; 机变 "风笛的盟誓" +8.
-- [ASSUMED] price never below 1
+- No floor but 0: the text names none, so a price of 1 (至简's 特质, 休露丝's first 谢拉格) becomes 0 (owner's decision 2026-10-04; this note assumed a floor of 1 until 0.1.3)
 - Garrisons that explicitly add layers to this bond: `garrison_50`, `garrison_55`, `garrison_63`, `garrison_64`, `garrison_141`, `garrison_142` (see section 4; plus the generic ones)
 
 Members (9 chess, 8 in current shop pool; by tier in shop: {'2': 1, '3': 2, '4': 2, '5': 2, '6': 1}):

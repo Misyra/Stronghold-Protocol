@@ -8,9 +8,16 @@
 //     Humans and bots take the lowest free seat index; seat indexes never compact.
 //   * ▸ Being in a LOBBY room and sending room.create / room.join implicitly leaves it. While your room is
 //     in a match, create/join of another room fails with ROOM_STARTED (send g.leave or room.leave first).
-//   * Host-only: room.setDifficulty, room.addBot, room.removeBot, room.start. ▸ Changing the difficulty
+//   * Host-only: room.setDifficulty, room.addBot, room.removeBot, room.kick, room.start. ▸ Changing the difficulty
 //     un-readies the other humans. ▸ room.start requires every other human to be connected and ready;
 //     the host's start counts as the host's ready (the host may still toggle room.ready for display).
+//   * room.kick {seat, playerId} (community report #17, owner approved): before the match only, the host removes another
+//     human like an AI seat (an AI seat stays room.removeBot's; never the host itself). `playerId` names the player the
+//     host confirmed: a seat that changed hands meanwhile (left, someone else joined) is refused with BAD_TARGET. The
+//     seat is freed at once and the player gets `room.closed {reason:'kicked'}` — now, or on the next resume when
+//     offline (with the result replay, as the grace timeout) —, so the reconnect token no longer leads back to the seat
+//     (it stays the player's identity: net.js sessions belong to players, not seats). ▸ No ban: the player may join
+//     again with the code.
 //   * Host migration: when the host leaves (or is removed), the lowest-seat remaining human (connected
 //     ones first) becomes host. A room without humans is disposed (bots never keep a room alive).
 //   * Disconnect in LOBBY: the seat shows connected=false and is freed after `lobbyGraceMs` (60 s); a
@@ -47,7 +54,7 @@
 //     matches, so a late b.progress / b.result of the previous match is ignored by the next one (DESIGN §14).
 //     onEnd(summary) → room back to LOBBY (departed seats freed, humans un-readied, disconnected humans
 //     get the lobby grace), dispose() on the next macrotask. Players can start again.
-//   * room.closed reasons: 'timeout' (removed after lobby grace), 'shutdown' (server stopping).
+//   * room.closed reasons: 'timeout' (removed after lobby grace), 'kicked' (room.kick), 'shutdown' (server stopping).
 //   * Operator loadout (DESIGN §16): room.loadout { entries } is checked strictly against the game data
 //     (shared/protocol.js checkLoadout: known visible chess, a skill index legal for the normal AND the elite status, a
 //     module of the elite or 'none'; any bad entry rejects the whole message, nothing is stored). ▸ It is stored on the
@@ -257,6 +264,7 @@ export class Lobby {
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.addBot': return this.addBot(session);
       case 'room.removeBot': return this.removeBot(session, msg);
+      case 'room.kick': return this.kick(session, msg);
       case 'room.start': return this.start(session);
       case 'room.loadout': return this.loadout(session, msg);
       default:
@@ -418,6 +426,30 @@ export class Lobby {
     if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
     room.seats[seat] = null;
     this.broadcastState(room);
+    return OK;
+  }
+
+  /** Host removes another human before the match (header: room.kick). */
+  kick(session, { seat, playerId }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    this.dropReplay(room, session.playerId);
+    const target = room.seats[seat];
+    if (!target || target.left) return fail(ERR.BAD_TARGET, 'seat holds no player');
+    if (target.playerId !== playerId) return fail(ERR.BAD_TARGET, 'seat changed hands'); // the confirmed player left meanwhile
+    if (target.isBot) return fail(ERR.BAD_TARGET, 'seat holds an AI (room.removeBot)');
+    if (target.playerId === session.playerId) return fail(ERR.BAD_TARGET, 'cannot kick yourself');
+    const kicked = this.registry.byId(target.playerId);
+    const wasHere = !!kicked && kicked.roomCode === room.code;
+    const replay = this.replayFor(room, target.playerId);
+    this.removeMember(room, target.playerId);
+    if (wasHere) {
+      if (kicked.connected) sendSession(kicked, { t: 'room.closed', reason: 'kicked' });
+      else { kicked.notice = 'kicked'; kicked.pendingResult = replay; }
+    }
+    this.log.info(`[lobby] ${room.code} ${target.name} removed by the host`);
     return OK;
   }
 

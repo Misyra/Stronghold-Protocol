@@ -787,6 +787,29 @@ export function shopBlockReason(kind, { priv, editable, slot, getChess, getItem 
   return null;
 }
 
+/**
+ * The 准备 confirmation (community report #4 after 0.1.2): readying with funds left asks first — the prep's end wipes
+ * them (PRTS 卫戍协议/帮助 「本回合的剩余资金将清零」; the server still does: PlayerState.endPrep). act2autochess constData
+ * `noMoneyTipsBand` — data/config.json economy.leftoverFundsKeptByBands, ["band_cannot"] — names the strategies whose
+ * funds carry over and that get no such tip (坎诺特 利滚利). No prompt for an un-ready, with 0 funds, when already ready
+ * or out, or under AI 托管 (the server plays the seat). The dialog's wording is the remake's own [ASSUMED]: neither the
+ * tables nor PRTS hold the official one.
+ * @param {any} priv m.private
+ * @param {{ ready?: boolean, keptBands?: string[]|null, autoplay?: boolean }} [opts] `ready`: the state asked for
+ * @returns {{ title: string, text: string, okText: string, cancelText: string, micro: string } | null}
+ */
+export function readyFundsPrompt(priv, { ready = true, keptBands = null, autoplay = false } = {}) {
+  if (!ready || autoplay || !isObj(priv) || priv.alive === false || priv.ready) return null;
+  const funds = Math.trunc(Number(priv.funds) || 0);
+  if (!(funds > 0)) return null;
+  const kept = Array.isArray(keptBands) ? keptBands : ['band_cannot'];
+  if (typeof priv.bandId === 'string' && kept.includes(priv.bandId)) return null;
+  return {
+    title: '剩余资金', micro: 'FUNDS LEFT', okText: '准备就绪', cancelText: '继续整备',
+    text: `还有 ${funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？`,
+  };
+}
+
 // ---- placement (canPlace mirror) ------------------------------------------------------------------------
 
 /**

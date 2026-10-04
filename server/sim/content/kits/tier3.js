@@ -406,8 +406,8 @@ const KITS = {
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
   //      the RandomGold ability (Skill_3_End) carries swire2_s_3[knockback] of template knockback[relative]; 地面敌方单位,
   //      弹道不可对空). It does not close itself when the purse is full (PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; the skill
-  //      text is 「可随时主动关闭」). Owner's decision 2026-10-04: the written cap (金币上限为10) is the close — at the cap the
-  //      coins are shot at once (skill.end('manual')), with or without a mark. Below the cap it stays open.
+  //      text is 「可随时主动关闭」). Owner 2026-10-04: at the cap (金币上限为10) she shoots once an enemy is in the skill's
+  //      attack range (the 1-tile range, not the coin-mark 2-4 grid). Below the cap, or with nobody there, it stays open.
   //      精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
   chess_char_3_04_a: (bb, chess, def) => {
     const d = defOf(chess, def);
@@ -506,11 +506,13 @@ const KITS = {
           return {
             kind: 'toggle',
             attack: { hits: 2 },
-            // Owner 2026-10-04: 「金币上限为10」 is the close. Reaching the cap shoots the coins (the onEnd below).
-            // It does not wait for a mark — a cap with nobody in range still spends them and hits nothing. Below the
-            // cap the skill stays open (the old close also required a markable enemy; that wait is withdrawn).
-            onTick({ unit, skill }) {
-              if (skill.active && (unit.mem.coins ?? 0) + 1e-9 >= purseCap) skill.end('manual');
+            // Owner 2026-10-04: at the cap, shoot once a ground enemy is in the skill attack range (data rangeGrid,
+            // the same 1-tile range as her attack). The coin marks (前方 2-4) are who the burst pays, not the trigger.
+            // Nobody in that range: stay open and keep the coins. Below the cap: stay open.
+            onTick({ battle, unit, skill }) {
+              if (!skill.active || (unit.mem.coins ?? 0) + 1e-9 < purseCap) return;
+              const keys = gridKeys(skillGrid ?? unit.rangeGrid, unit);
+              if (enemiesOn(battle, unit, keys, 0, { ...unit.profile, canHitFly: false }).length) skill.end('manual');
             },
             onEnd({ battle, unit, reason }) {
               if (reason !== 'manual' || !unit.alive) return;

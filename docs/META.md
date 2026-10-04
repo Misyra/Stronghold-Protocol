@@ -651,12 +651,13 @@ chosen by most units on the field (downed included) > an active bond > most stan
 units > active bond > Σ active layers > standing > seat (LP plays no part), the first one on the right-hand field
 (colOffset +8, where escaped_multi enters), the other colOffset 0; the escaped template of that size routes the leaked
 enemies by slot class; helpers' operators carry
-`{ hpPct, sp, skillActive }` from `unitsEnd` ("阵地以其当前状态"); an operator knocked out at the end of the helper's own
+`{ hpPct, sp }` from `unitsEnd` ("阵地以其当前状态": the HP ratio and the 技力 only — a skill running at the end enters
+switched off; summon pieces `{ sp }`, "召唤物仅修改技力"); an operator knocked out at the end of the helper's own
 combat carries `{ down: true }` (PRTS 卫戍协议/帮助: "部署完成后…上一阶段为退场状态的干员强制退场"): deployed, then forced out
 at once, it lies on its tile with the redeploy ring and redeploys like after any knock-out (docs/SIM.md §1.1; user
 playtest #5 item 2 — it used to stay out and vanish); its timer is its full redeploy time (the official setup carries
 only hp / tech per operator; confirmed by the user), with the redeploy-time effects that start with the battle (机变 征召); summons are
-fielded as the board has them; `flags.layerGainsEnabled = false`; time limit = the round's combat limit.
+fielded as the board has them (their SP carried); `flags.layerGainsEnabled = false`; time limit = the round's combat limit.
 Every enemy still alive at the end (leaked again, or never spawned before the limit) costs its **source** player 1 LP.
 A client-run 联防 result may bill a survivor only to a leaker who sent that enemy in — a split / summon only to a leaker
 who sent in its parent, ≤ the parents' data offspring count (磨砻 2, 烹泉 4 …; fields.js offspringPerParent).

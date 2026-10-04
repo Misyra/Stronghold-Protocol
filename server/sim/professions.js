@@ -149,6 +149,7 @@ const installDollkeeper = (battle, unit) => {
     unit.markDirty();
     unit.hp = unit.s.maxHp;
     battle.fx('swap', at({ form: null }));
+    if (battle.hasHook('dollSwap')) battle.emit('dollSwap', { unit, form: null });
   };
   const enter = () => {
     if (unit.trait.doll || !unit.alive || !unit.deployed) return false;
@@ -168,6 +169,9 @@ const installDollkeeper = (battle, unit) => {
     unit.hp = unit.s.maxHp;
     // `dur`: until the switch back (the client times the 替身's closing clip with it)
     battle.fx('substitute', at({ form: 'doll', dur }));
+    // `dollSwap` { unit, form }: a switch started — to the 替身 ('doll') or back to the 本体 (null); not fired when she is
+    // knocked out as the 替身 (不屈 rolls on both switches: PRTS 盟约记录 "切换<替身>与<本体>时")
+    if (battle.hasHook('dollSwap')) battle.emit('dollSwap', { unit, form: 'doll' });
     return true;
   };
   battle.on('fatal', (ctx) => {

@@ -124,6 +124,7 @@ export class Battle {
     this.finished = false;
     this.reason = null;
     this.started = false;
+    this._startDeploying = false;
     /** @type {Unit[]} every unit ever created */
     this.units = [];
     /** @type {Unit[]} alive enemies (compacted each tick) */
@@ -360,11 +361,15 @@ export class Battle {
     // a summon piece flagged `deferDeploy` by content (one its owner's loadout does not make — 赫默 on S1 with a drone
     // piece —, or a skill's summon when shared/constants.js SKILL_SUMMON_START_DEPLOY is off: content/tokens.js
     // dockSkillSummons) stays off the field, its tile reserved (isReservedTile), until content deploys it
+    // (_startDeploying: a board piece content brings in during this deployment — a tactician's 流形 / 狼群 comes with
+    // its owner's deploy — takes its 联防 carry on that first deployment too)
+    this._startDeploying = true;
     for (const kind of ['op', 'token']) {
       const per = lists.map((l) => l.filter((u) => u.kind === kind && !u.deferDeploy));
       const n = Math.max(0, ...per.map((l) => l.length));
       for (let i = 0; i < n; i++) for (const l of per) if (l[i]) this._safe(() => this._deploy(l[i], { initial: true }), 'initialDeploy', l[i]);
     }
+    this._startDeploying = false;
     // 仇恨 (targeting.js sortAllyTargets: the later deployed is attacked first): every summon that came in during the
     // initial deployment — also one an operator's deploy brought along (a tactician's 援军, a start-of-battle summon)
     // — ranks after all the operators (of every player on the field [ASSUMED]), in the order it came
@@ -539,10 +544,14 @@ export class Battle {
     for (const ps of this.players) {
       const pp = this._perPlayer[ps.playerId];
       pp.perfect = !pp.leaked.some((l) => l.counted !== false);
-      pp.unitsEnd = ps.units.filter((u) => u.kind === 'op').map((u) => ({
+      // the operators and the board's summon pieces (a board uid): 联防 carries an operator's HP ratio and SP, a summon's
+      // SP only (match/unite.js). `sp` is the official 技力 — stored charges included (PRTS 技能 "可充能X次…当前技力上限等于该
+      // 技能技力需求的X倍"); a running skill spent its SP at activation, so it reports what was left (0 for one charge).
+      // `skillActive` is reported, never carried.
+      pp.unitsEnd = ps.units.filter((u) => u.kind === 'op' || (u.kind === 'token' && u.uid != null)).map((u) => ({
         uid: u.uid, id: u.id, defId: u.defId,
         hpPct: u.alive ? Math.max(0, Math.min(1, u.hp / u.s.maxHp)) : 0,
-        sp: u.skill && !u.skill.noSkill ? Math.round(u.skill.sp * 100) / 100 : 0,
+        sp: u.skill && !u.skill.noSkill ? Math.round(u.skill.spTotal * 100) / 100 : 0,
         skillActive: !!(u.skill && u.skill.active && u.skill.kind !== 'passive'),
         alive: !!u.alive,
       }));
@@ -883,8 +892,10 @@ export class Battle {
     u.ground = this.grid.isLow(R0, C0) && !this._elevated?.has(k);
     u.markDirty();
     u.hp = u.s.maxHp;
-    const cs = initial ? (carry ?? u.carry) : null;
-    if (cs && Number.isFinite(cs.hpPct)) u.hp = Math.max(1, u.s.maxHp * Math.max(0.01, Math.min(1, cs.hpPct)));
+    // 联防 carry (PRTS 卫戍协议/帮助 §联防阶段 "将对应单位的生命比例、技力修改至与上一阶段结束时相同（召唤物仅修改技力…）"):
+    // an operator's HP ratio here, the SP in skill.reset and again after the `deploy` hook (below) — a summon's SP only
+    const cs = initial || (first && this._startDeploying) ? (carry ?? u.carry) : null;
+    if (cs && u.kind === 'op' && Number.isFinite(cs.hpPct)) u.hp = Math.max(1, u.s.maxHp * Math.max(0.01, Math.min(1, cs.hpPct)));
     this._occ[k] = u;
     this._refreshRange(u); // also rebuilds baseRangeKeys (initial range incl. permanent rangeExtend)
     if (!u.skill) this._setupUnit(u);
@@ -900,6 +911,9 @@ export class Battle {
     if (first) this._ev(['spawn', unitInfo(u)]);
     this._ev(['deploy', u.id]);
     if (this._hooks.deploy) this.emit('deploy', { unit: u, initial });
+    // 联防: "部署完成后，将对应单位的…技力修改至与上一阶段结束时相同" — the carried SP is set again once the deployment is
+    // done, so a deploy-time SP gift (独行, 黄沙罗盘 …) does not come on top of it; later redeploys keep those gifts
+    if (cs && Number.isFinite(cs.sp) && u.alive && u.skill) u.skill.setSpTotal(cs.sp);
     return true;
   }
 

@@ -89,8 +89,9 @@ where it fell for the `kill` / `death` handlers. "倒地干员所在地块视为
 tile and `isReservedTile` reports it, so every automatic picker skips it. The rule covers every 退场 (GitHub #60): an
 operator forced out by its own effects (`retreat` reason `'retreat'`: 史尔特尔's 余烬, 耀骑士临光 S2, 骑士戒律 + 竞技旗,
 伊内丝 S3; `'merchant'`: a 商人 that cannot pay) lies down and comes back the same way — still no kill (its death reason is
-not `'killed'`: no 被击倒 effects, 不屈, 阿戈尔 or knock-down count); only the 突袭 retreat (`'raid'`, redeployed at once on
-its landing tile) and permanent removals leave nothing.
+not `'killed'`: no 被击倒 effects, 阿戈尔 or knock-down count), but 不屈 rolls on it (PRTS 盟约记录 不屈 修正 "被击倒、撤退、
+切换<替身>与<本体>时": a hit redeploys it at once, free, where it lies; addon/battle.js); only the 突袭 retreat (`'raid'`,
+redeployed at once on its landing tile — no 不屈 roll) and permanent removals leave nothing.
 
 ### 1.1 Coordinates (PlayerBattleInput units)
 
@@ -141,8 +142,13 @@ landing tile) compare offsets in the unit's facing-RIGHT frame (`localOrder` / `
 the old tile-key order), so a rotated layout plays the same (test/sim/facing-invariance.test.js: every chess × 4
 directions on an open field). 余 S3's fire wall runs through his tile perpendicular to his direction (his column facing
 RIGHT / LEFT, his row facing UP / DOWN; fx `firewall.axis` = `'col'|'row'`).
-`carryState: { hpPct, sp, skillActive }` restores unite helpers (HP ratio, SP; `skillActive` restarts a timed skill for a
-fresh duration/ammo **without spending a charge** — `unitsEnd` reports `sp: 0` while a skill runs, so pass it through as is).
+`carryState: { hpPct, sp }` restores unite helpers' operators (HP ratio, and the SP = the official 技力, stored charges
+included: `unitsEnd` reports `skill.spTotal`, reset rebuilds the charges from it, and `skill.setSpTotal` sets it again after
+the `deploy` hook — PRTS "部署完成后…技力修改至与上一阶段结束时相同", so 独行 / 黄沙罗盘's deploy-time SP does not add to it;
+later redeploys keep those gifts); `carryState: { sp }` a board summon
+piece's SP only (PRTS "召唤物仅修改技力"). Nothing else is carried: a skill running at the end of the own combat enters
+switched off with the SP it had left — spent at its activation, 0 for a one-charge skill (`unitsEnd.skillActive` is
+reported, never carried; community report #34 — it used to restart for free).
 `carryState: { down: true }` = an operator knocked out at the end of the helper's own combat (PRTS 卫戍协议/帮助 "上一阶段为
 退场状态的干员强制退场", user playtest #5 item 2): `start()` deploys it with everyone (initial `deploy` fires), then — before
 `battleStart` — withdraws it with reason `FORCED_EXIT` (constants.js `'forcedExit'`) and HP 0 (the end-of-phase HP ratio, as after
@@ -366,7 +372,7 @@ recorded for the player whose half contains the goal it reached, with `sourcePla
   perPlayer: { [playerId]: { killed, total, perfect,
       leaked: [{ enemyKey, mods, lpr, sourcePlayerId, tag, counted, boss?, spawned }],
       layerGains: {bondId: n}, coins, damageDealt, bossDamage, healingDone, deaths,
-      unitsEnd: [{ uid, id, defId, hpPct, sp, skillActive, alive }],
+      unitsEnd: [{ uid, id, defId, hpPct, sp, skillActive, alive }],   // operators + board summon pieces; sp = skill.spTotal
       unitStats: [{ id, uid, defId, name, kind, dmg, kills, heal, taken, attacks }] } } }
 ```
 - `cleared`: no spawns pending and no enemy alive (or the shared boss pool reached 0 — a pool never holds less than
@@ -713,6 +719,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `heal` | `{ source, target, amount, opts }` | mutable `amount` |
 | `fatal` | `{ unit, source, credit, dmg, amount, prevented }` | HP would reach 0 — set `prevented` (substitutes, kit savers, 不死 / 复活 items, 埃芒加德; 不屈 is a `death` hook). Fired by every HP loss of a unit without a boss pool — hits of any type, element bursts, 无来源 damage, `loseHp` 流失. Order: kits' own savers (10 … −60) → items' 不死 (坚固维式重锤 — once per deployment: `items/battle.js deploymentOf`, a key every deploy changes and an in-place 复活 changes too; one battle-level hook holds the running windows (`holdsUndying`), so a window outlasts a lend, DESIGN §21.21 — the lock `PRIO_REVIVE` −100 after the substitutes (−100, registered first), the running windows `PRIO_UNDYING_HELD` −99 before them: a 傀儡师 holding 不死 does not switch, PRTS 分支特性信息 傀儡师 "未持有不死的情况下", DESIGN §22.11) → items' 复活 (M3茧甲, `PRIO_RESPAWN` −101: PRTS "复活" acts on a knock-out, which a 不死 prevents) → 埃芒加德 (−110); both 复活 revive in place and call `revivedInPlace` (a new deployment for the lock) |
 | `dollSwitch` | `{ unit, reason, done }` | content switches a 傀儡师 to its <替身> now (归溟幽灵鲨 S2 "技能结束后立刻切换为<替身>": no lethal HP loss); its trait does it unless it already is one or is not on the field, and sets `done` |
+| `dollSwap` | `{ unit, form }` | a 傀儡师 starts a switch — to its <替身> (`form` `'doll'`) or back to its <本体> (`null`); not when it is knocked out as the 替身 (不屈 rolls on it: "切换<替身>与<本体>时") |
 | `kill` | `{ killer, victim }` | victim HP reached 0 (a handler may revive by restoring HP) |
 | `death` | `{ unit, reason:'killed'|'leak'|'retreat'|'merchant'|'expired'|'forcedExit', killer }` | unit removed (`'forcedExit'`: an operator entering 联防 knocked out, §1.1) |
 | `skillStart` / `skillEnd` | `{ unit, skill, reason }` | mutate `skill.ammoLeft` / `skill.timeLeft` in skillStart |
@@ -778,7 +785,9 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
 
 ### 7.1 Runtime rules (skills.js)
 - SP types: `time` (+`s.spRecovery`/s), `attack` (+1 per attack), `hurt` (+1 per hit taken); starts at `initSp`; **no SP
-  gain while a duration/ammo/toggle skill is active, while stunned, or with the `noSp` flag**. Attack-type SP: attacks made
+  gain while a duration/ammo/toggle skill is active, or with the `noSp` flag** (阻回); a stunned / frozen / levitated unit
+  (`canAct` false) neither attacks nor casts, but its time SP keeps recovering (PRTS 技能: only 阻回 pauses the SP cooldown;
+  PRTS 异常效果 晕眩 names no SP effect — community report #18). Attack-type SP: attacks made
   by the skill (the pending "next attack" of an instant/charge skill, every shot of a timed skill including the one that
   ends it) recover nothing, so a cost-N skill fires every **N+1** attacks (AK). Charges (`maxChargeTime > 1`):
   SP fills to cost → +1 charge (SP restarts) until charges are full (then SP stays full).

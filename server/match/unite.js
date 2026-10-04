@@ -5,15 +5,17 @@
 // players chosen by most units on the field (downed included) > has an active bond (存疑) > most undowned units, then
 // seat; with 2 helpers the one ranked first by most units > active bond > Σ active bond layers (存疑) > most undowned
 // units "率先迎敌" on the RIGHT-hand field (colOffset +8, where the escaped_multi routes enter), the other keeps the
-// left half (colOffset 0); a lone helper plays escaped_single on its own field. Their operators keep HP%, SP and a
-// running timed skill from the end of their own combat (BattleResult.unitsEnd → PlayerBattleInput.units[].carryState,
-// "阵地以其当前状态"). An operator knocked out at the end of its own combat (alive false) is fielded with
+// left half (colOffset 0); a lone helper plays escaped_single on its own field. Their operators keep the HP ratio and
+// the SP (技力, stored charges included) from the end of their own combat, nothing else — a skill still running then
+// enters switched off (BattleResult.unitsEnd → PlayerBattleInput.units[].carryState `{ hpPct, sp }`, "阵地以其当前状态";
+// community report #34 / GitHub #82: it used to restart for free). An operator knocked out at the end of its own combat (alive false) is fielded with
 // `carryState: { down: true }`: PRTS "部署完成后，将对应单位的生命比例、技力修改至与上一阶段结束时相同（召唤物仅修改技力，
 // 上一阶段为退场状态的干员强制退场）" — the sim deploys it with everyone and forces it out at once (constants.js
 // FORCED_EXIT), so it lies on its own tile with the redeploy ring and comes back like after any knock-out (user
 // playtest #5 item 2: it used to be left out and vanished). Its timer is its full redeploy time (the official 联防
-// setup carries only hp / tech per operator, research 09 §3 HelpBattleInfo; the user confirmed it restarts). Summons are fielded as the board has
-// them (a summon's own end state is not carried: unitsEnd lists operators only). Enemies = the union of every leaker's
+// setup carries only hp / tech per operator, research 09 §3 HelpBattleInfo; the user confirmed it restarts). The board's summon
+// pieces are fielded as the board has them and keep only their SP ("召唤物仅修改技力": carryState `{ sp }`, unitsEnd lists
+// them beside the operators; one off the field at the end enters fresh [ASSUMED]). Enemies = the union of every leaker's
 // counted leaks (same stats: the SpawnSpec mods travel with the leak), routed on the escaped template (`escaped_single`
 // for 1 helper, `escaped_multi` for 2): walkers on its `lrsldr` action, flyers on `yokai`, tokens on `gopro_2` /
 // `lazerd` (waves.js buildUniteWave); kill bounties keep paying the killer (a helper). No IN_BATTLE layer gains. Time
@@ -105,11 +107,18 @@ export function uniteBattleOpts(m, plan, timeLimit) {
   const players = plan.helpers.map((ps, i) => {
     const carry = new Map();
     const r = m.lastResults.get(ps.playerId);
+    const summonUids = new Set();
+    for (const p of ps.board.values()) if (p && p.kind === 'token') summonUids.add(p.uid);
     for (const u of (r && r.unitsEnd) || []) {
       if (!u || u.uid == null) continue;
+      const sp = Number.isFinite(u.sp) ? Math.max(0, u.sp) : 0;
+      // a summon: its SP only ("召唤物仅修改技力"); one off the field at the end enters fresh [ASSUMED]
+      if (summonUids.has(u.uid)) { if (u.alive) carry.set(u.uid, { sp }); continue; }
       // knocked out at the end of its own combat: 强制退场 right after the deployment (see header)
       if (!u.alive) { carry.set(u.uid, { down: true }); continue; }
-      carry.set(u.uid, { hpPct: Number.isFinite(u.hpPct) ? Math.max(0.01, Math.min(1, u.hpPct)) : 1, sp: Number.isFinite(u.sp) ? u.sp : 0, skillActive: !!u.skillActive });
+      // HP ratio and SP only: a skill still running at the end is not carried (unitsEnd `skillActive` stays unused —
+      // community report #34, GitHub #82)
+      carry.set(u.uid, { hpPct: Number.isFinite(u.hpPct) ? Math.max(0.01, Math.min(1, u.hpPct)) : 1, sp });
     }
     // 2 helpers: the first one meets the enemies first on the right-hand field (escaped_multi enters at col 18)
     const colOffset = plan.helpers.length > 1 && i === 0 ? 8 : 0;

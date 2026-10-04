@@ -1,8 +1,9 @@
 // server/sim/skills.js — skill runtime: SP, charges, trigger rules, kinds, SkillSpec interpretation (DESIGN §5.6).
 //
 // SP types: 'time' (+spRecovery/s), 'attack' (+1 per attack), 'hurt' (+1 per hit taken), 'none'.
-// No SP gain while a duration/ammo/toggle skill is active, while stunned, or while the unit has the noSp flag (阻回: no SP
-// gain of any kind — time, attack, hurt or granted).
+// No SP gain while a duration/ammo/toggle skill is active, or while the unit has the noSp flag (阻回: no SP gain of any
+// kind — time, attack, hurt or granted). A stunned / frozen / levitated unit (canAct false) neither attacks nor casts, but
+// its time SP keeps recovering (PRTS: only 阻回 pauses the SP cooldown; 晕眩 does not — community report #18).
 // Charges (maxCharges > 1): SP fills to spCost → +1 charge (SP restarts) until charges == max (SP stays full).
 // Trigger rules (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; data: tools/build-data.mjs resolveTrigger):
 //   DEFAULT — the basic strategy: ready + about to attack/heal + enemy / injured ally in the INITIAL range (or blocked by
@@ -161,7 +162,34 @@ export class SkillRuntime {
     return this.battle._safe(() => fn(this._ctx(extra)), `skill.${fnName}`, this.unit);
   }
 
-  /** Called on every (re)deployment. `carry` = { sp, skillActive } for unite helpers. */
+  /**
+   * The official 技力 (PRTS 技能: "可充能X次…当前技力上限等于该技能技力需求的X倍"): the stored charges × cost plus the SP
+   * towards the next one — what 联防 carries (BattleResult unitsEnd `sp`; reset rebuilds the charges from it).
+   */
+  get spTotal() {
+    if (this.noSkill || this.kind === 'passive') return 0;
+    const cost = this.spCost;
+    return this.charges >= this.maxCharges ? this.maxCharges * cost : this.charges * cost + this.sp;
+  }
+
+  /**
+   * Set the official 技力 to `total` (charges rebuilt, nothing fired — a 修改, not a gain): the 联防 carry, applied again
+   * once the deployment is done (Battle._deploy). A passive skill, or a timed one that runs already, is left as it is.
+   */
+  setSpTotal(total) {
+    if (this.noSkill || this.kind === 'passive' || (this.active && this.isTimed) || !Number.isFinite(total)) return;
+    this.sp = 0;
+    this.charges = 0;
+    this.gainSp(Math.max(0, total), 'init', true);
+    if (this.spCost <= 0) this.charges = this.maxCharges;
+  }
+
+  /**
+   * Called on every (re)deployment. `carry` = { sp } for unite (联防) helpers: their 技力 at the end of their own combat
+   * (unitsEnd `sp` = spTotal, rebuilt into charges here). Nothing else of the skill is carried — PRTS 卫戍协议/帮助 §联防阶段
+   * "将对应单位的生命比例、技力修改至与上一阶段结束时相同": a skill that was running enters 联防 switched off, with the SP it
+   * had left (spent at its activation: 0 for a one-charge skill — PRTS 技能 "触发技能后…消耗相应的技力").
+   */
   reset(carry = null) {
     this.active = false;
     this.pending = false;
@@ -181,9 +209,6 @@ export class SkillRuntime {
     this.gainSp(carry && Number.isFinite(carry.sp) ? carry.sp : this.initSp, 'init', true);
     // a free (spCost 0) non-passive skill is available once per deployment
     if (this.spCost <= 0) this.charges = this.maxCharges;
-    // unite helpers whose timed skill was running when their combat ended: it keeps running (a fresh duration/ammo),
-    // without spending a charge — the carried SP is what they had accumulated (0 while a skill runs).
-    if (carry && carry.skillActive && this.isTimed) this.activate('carry', { free: true });
   }
 
   _startPassive() {
@@ -262,11 +287,14 @@ export class SkillRuntime {
     } else if (this.active && this.kind === 'passive' && this.spec.onTick) {
       this._call('onTick', { dt });
     }
-    if (!u.canAct) return;
-    if (this.spType === 'time' && !(this.active && this.isTimed) && !u.s.flags.noSp) {
+    // natural SP recovery stops only under 阻回 (noSp; a running timed skill holds it too) — not while 晕眩 / 冻结 / 浮空
+    // keep the unit from acting: PRTS 技能 "在阻回状态或技力条已满时，保留剩余冷却时间，计时暂停"; PRTS 异常效果 STUNNED
+    // "无法攻击、释放技能、阻挡敌人类单位" says nothing of SP (community report #18: 洛洛's S2 self-stun froze her SP)
+    if (this.spType === 'time' && !(this.active && this.isTimed) && !u.s.flags.noSp && u.alive && u.deployed && !u.hidden) {
       const rate = u.s.spRecovery;
       if (rate > 0) this.gainSp(rate * dt, 'time');
     }
+    if (!u.canAct) return;
     // a DEFAULT cast bound to an ally condition (塞雷娅 S1) replaces the attack about to be made: should the condition
     // have failed before that attack (the ally healed meanwhile), the cast is withdrawn — no heal mode stays behind
     if (this.pending && this.triggerAllies && this.rule !== 'SKILL_RANGE' && !this._allyTriggerSatisfied()) {
@@ -396,7 +424,7 @@ export class SkillRuntime {
     this.activations++;
     this.lastStart = this.battle.time;
     const b = this.battle;
-    if (this.manual && reason !== 'carry') this.opReadyAt = b.time + AUTO_OP_COOLDOWN;
+    if (this.manual) this.opReadyAt = b.time + AUTO_OP_COOLDOWN;
     if (this.isTimed) {
       this.active = true;
       this.timeLeft = this.kind === 'duration' ? Math.max(0.01, this.duration) : (this.kind === 'ammo' && this.duration > 0 ? this.duration : Infinity);

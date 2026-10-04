@@ -876,8 +876,9 @@ export class UnitView {
     if (this.dimmed) alpha *= 0.35;
     this.alpha = alpha;
 
-    // body placement
-    const lungeK = this.lunge > 0 ? Math.sin(this.lunge * Math.PI) * 0.12 : 0;
+    // body placement — the 0.12-tile jolt toward the target on an attack stands in for the avatar diamond's missing attack
+    // clip; a Spine model plays its own and keeps its place (GitHub #61: every ranged attack shoved the model aside)
+    const lungeK = this.lunge > 0 && !(this.actor && this.spineReady) ? Math.sin(this.lunge * Math.PI) * 0.12 : 0;
     this.lunge = Math.max(0, this.lunge - dt * 5);
     const lx = this.lungeDir.x * lungeK, ly = this.lungeDir.y * lungeK;
     let bx = p.x, by = p.y;

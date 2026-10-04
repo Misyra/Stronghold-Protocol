@@ -129,7 +129,7 @@ function textNum(text, re, fallback) {
 /**
  * A tile a summon may take: inside the field and not reserved (Battle.isReservedTile: nobody on it, no knocked-out
  * operator lying there, not the home tile of an ally that has not deployed yet / waits to redeploy — the initial
- * deployment runs top→bottom: a summon placed while it runs must not steal a later board unit's tile).
+ * deployment runs one unit after another: a summon placed while it runs must not steal a later board unit's tile).
  */
 function freeTile(battle, r, c) {
   return Number.isInteger(r) && Number.isInteger(c) && battle.grid.inRect(r, c) && !battle.isReservedTile(r, c);
@@ -290,7 +290,7 @@ const KITS = {
           battle.addBuff(unit, { key: 'talent:angel_bless', mods: { ...bless }, persist: true, allowDead: true });
           battle.on('deploy', (ctx) => {
             if (ctx.unit !== unit) return;
-            // after the whole board is deployed (initial deployment goes top→bottom)
+            // after the whole board is deployed (the initial deployment goes one unit after another)
             battle.after(0, () => {
               if (!alive(unit)) return;
               const cands = battle.allies(unit.ownerId).filter((a) => a !== unit && a.kind === 'op' && !a.findBuff('talent:angel_bless_ally'));

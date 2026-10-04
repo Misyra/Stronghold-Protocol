@@ -59,9 +59,10 @@ b.fieldMeta();                     // { fieldId, kind, rect, stageId, units: Uni
 ```
 
 Construction creates every ally unit (not yet deployed) and installs content (kits, then domain modules). The first
-`step()` (or `b.start()`) spawns stage crates, deploys all board units for free — per player the **operators top→bottom
-then left→right** (right boss side: right→left in field columns), **then the summon pieces** the same way (PRTS
-卫戍协议/帮助 "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物"; a skill's summon — 赫默's 医疗探机, 巫恋's
+`step()` (or `b.start()`) spawns stage crates, deploys all board units for free — per player the **operators by column, the
+left column first, top to bottom within a column** (right boss side: from its own left, the highest field column),
+**then the summon pieces** the same way (PRTS 卫戍协议/帮助 "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物", a
+scan down each column — the 阿戈尔 devour's "更靠左和靠上"; row-major until 0.1.3; a skill's summon — 赫默's 医疗探机, 巫恋's
 诅咒娃娃 — included, once, free: content/tokens.js `dockSkillSummons` / `releaseSkillSummon`, user playtest #6) — except a
 summon piece content flags `deferDeploy` (one its owner's loadout does not make, e.g. 赫默 on S1; with
 `SKILL_SUMMON_START_DEPLOY` off also a skill's summon, which then waits on its reserved tile until the skill gives

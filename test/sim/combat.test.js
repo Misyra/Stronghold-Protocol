@@ -543,7 +543,7 @@ test('ranged enemies attack allies in radius: blocker → taunt → latest deplo
       chess: { t_a: guard({ id: 't_a', stats: { maxHp: 1e6, atk: 0 } }), t_b: guard({ id: 't_b', stats: { maxHp: 1e6, atk: 0, tauntLevel: taunt } }) },
       enemies: { enemy_caster: enemyRec({ key: 'enemy_caster', hp: 1e6, speed: 1, atk: 100, range: 2.5, dmgType: 'arts' }) },
     },
-    // deploy order: top→bottom, so t_b (row 11) deploys before t_a (row 10) ⇒ t_a is the latest deployed
+    // deploy order: one column, top to bottom, so t_b (row 11) deploys before t_a (row 10) ⇒ t_a is the latest deployed
     units: [{ chessId: 't_a', row: 10, col: 8 }, { chessId: 't_b', row: 11, col: 8 }],
     enemies: [{ key: 'enemy_caster', pos: [10, 10] }], content: 'none', autoFinish: false,
   });

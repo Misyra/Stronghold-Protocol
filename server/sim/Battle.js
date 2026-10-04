@@ -5,11 +5,11 @@
 //   b.step(); b.finished; b.forceEnd(reason); b.time; b.result(); b.snapshot(); b.drainEvents(); b.on/off(...)
 //
 // Construction creates every ally unit (undeployed) and installs content (kits + domain modules). The first
-// step() (or an explicit start()) deploys everything (operators top→bottom, left→right — mirrored for the right boss
-// side —, then the summon pieces the same way — except a piece content flags `deferDeploy`, which waits on its tile;
-// the players of a shared field side by side), fires `deploy` (initial) for each unit, forces out the operators that
-// enter already knocked out (`carryState.down`, 联防: constants.js FORCED_EXIT — down on their tile, redeploy timer
-// running) and then fires `battleStart`.
+// step() (or an explicit start()) deploys everything (operators by column from the left, top to bottom within a
+// column — mirrored for the right boss side —, then the summon pieces the same way — except a piece content flags
+// `deferDeploy`, which waits on its tile; the players of a shared field side by side), fires `deploy` (initial) for
+// each unit, forces out the operators that enter already knocked out (`carryState.down`, 联防: constants.js
+// FORCED_EXIT — down on their tile, redeploy timer running) and then fires `battleStart`.
 // An operator that left the field — knocked out, or forced out by its own effects (史尔特尔's 余烬 …, GitHub #60) — lies
 // on its `body` tile — where it fell, or its own home when it fell on another board piece's home — and redeploys there;
 // no ally deploys or moves onto that tile meanwhile (PRTS 卫戍协议/帮助 §作战阶段 单位部署; `isDown`, `_layBody`, `downOn`,
@@ -350,14 +350,18 @@ export class Battle {
     if (this.started) return;
     this.started = true;
     this._safe(() => this._spawnStageDevices(), 'stageDevices');
-    // PRTS 卫戍协议/帮助: "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物（如果有）" — per player the operators
-    // top row first, left to right within a row (the mirrored right boss side: right to left in field columns,
-    // research 01 §4.3 "嘲諷優先鏡射"), then the summon pieces in the same order. [ASSUMED] On a shared field (联防, boss)
-    // the players' fields deploy at the same time (PRTS: one unit after another with a fixed delay, from the battle
+    // PRTS 卫戍协议/帮助 §作战阶段: "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物（如果有）", noted "自卫戍协议：
+    // 盟约 下半（2026/3/14）起，部署顺序由“从左到右>从下到上”更改为“从上到下>从左到右”" — a scanning order: down each column
+    // (top first), the columns from left to right; act 1's along each row, the rows from the bottom. It is the order PRTS
+    // gives the 阿戈尔 devour ("从最先部署（更靠左和靠上的）的【阿戈尔】干员开始", content/bonds/core.js egirOrder) and the one
+    // act-2 videos show. Per player the operators, left column first, top to bottom within a column (the mirrored right
+    // boss side from its own left, i.e. the highest field column — PRTS "部署顺序…左右镜像", research 01 §4.3), then the
+    // summon pieces in the same order. Until 0.1.3 the top row came first (row-major). [ASSUMED] On a shared field (联防,
+    // boss) the players' fields deploy at the same time (PRTS: one unit after another with a fixed delay, from the battle
     // start), so the i-th operators of all players come in together (in `players` order), then the summons likewise
     const seq0 = this._deploySeq;
     const lists = this.players.map((ps) => ps.units.filter((u) => u.kind === 'op' || u.kind === 'token').slice().sort((a, b) =>
-      b.homeR - a.homeR || (ps.mirror ? b.homeC - a.homeC : a.homeC - b.homeC) || a.id - b.id));
+      (ps.mirror ? b.homeC - a.homeC : a.homeC - b.homeC) || b.homeR - a.homeR || a.id - b.id));
     // a summon piece flagged `deferDeploy` by content (one its owner's loadout does not make — 赫默 on S1 with a drone
     // piece —, or a skill's summon when shared/constants.js SKILL_SUMMON_START_DEPLOY is off: content/tokens.js
     // dockSkillSummons) stays off the field, its tile reserved (isReservedTile), until content deploys it

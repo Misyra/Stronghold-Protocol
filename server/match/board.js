@@ -188,7 +188,11 @@ export function legalTiles(map, pos) {
   return out;
 }
 
-/** Board pieces sorted in deployment order: top→bottom (row desc) then left→right (col asc). */
+/**
+ * Board pieces in reading order: top row first (row desc), left to right within a row (col asc) — the battle input's order
+ * (unit ids), the garrisons' dispatch order and the lists the views send. Not the deployment order: the battle deploys by
+ * column (Battle.start; mergeTile follows that one).
+ */
 export function boardOrder(board) {
   return [...board.entries()]
     .map(([k, p]) => { const [r, c] = parseKey(k); return { r, c, piece: p }; })
@@ -197,16 +201,17 @@ export function boardOrder(board) {
 
 /**
  * Where a merge's elite stands (PRTS 卫戍协议/帮助 "若消耗已部署至作战区的干员，则发送至作战区对应位置"): of the board tiles
- * the consumed copies stood on (`[{ key, dir }]`), the first in deployment order (top→bottom, left→right — the copy the
- * battle deploys first; the right-hand boss half is mirrored on screen but deploys in the same board order) that
- * `legal(r, c)` accepts for the elite, or null (⇒ the hand). [ASSUMED] the order: the official text names one position.
+ * the consumed copies stood on (`[{ key, dir }]`), the first in deployment order (the left board column first, top to
+ * bottom within a column — the copy the battle deploys first, Battle.start; the right-hand boss half is mirrored on
+ * screen but deploys in the same board order) that `legal(r, c)` accepts for the elite, or null (⇒ the hand). [ASSUMED]
+ * the order: the official text names one position. Until 0.1.3 the deployment order, and so this one, was top row first.
  * public/js/ui/gameLogic.js mergeTarget mirrors it for the client.
  * @param {Array<{ key: string, dir?: string }>} tiles
  * @param {(r: number, c: number) => boolean} [legal]
  * @returns {{ key: string, dir?: string, r: number, c: number } | null}
  */
 export function mergeTile(tiles, legal = () => true) {
-  const sorted = (tiles || []).map((t) => { const [r, c] = parseKey(t.key); return { ...t, r, c }; }).sort((a, b) => b.r - a.r || a.c - b.c);
+  const sorted = (tiles || []).map((t) => { const [r, c] = parseKey(t.key); return { ...t, r, c }; }).sort((a, b) => a.c - b.c || b.r - a.r);
   return sorted.find((t) => inField(t.r, t.c) && legal(t.r, t.c)) || null;
 }
 

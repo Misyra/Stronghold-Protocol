@@ -949,8 +949,12 @@ export function* planLayoutSteps(m, ps, pieces, params = LAYOUT_PARAMS, { occupi
     let bestV = -Infinity;
     // a "只能部署在召唤者攻击范围内" summon (伺夜's 狼群, 缪尔赛思's 流形): only the tiles of its owner's range
     const within = p.kind === 'token' && typeof ps.summonRange === 'function' ? ps.summonRange(p) : null;
-    // ground tiles for a MELEE blocker; elite 歌蕾蒂娅 with HOK-Y may also take a 高台 (everyone else must not)
+    // ground tiles for a MELEE blocker. placeClass 'all' is only elite 歌蕾蒂娅 + HOK-Y: she may stand on a 高台,
+    // and when one of those tiles covers the enemy road she is planned there (owner 2026-10-04: the bot uses the 高台).
     const cls = p.kind === 'token' ? basePositionClass(r0) : placeClass(ps, m.gd.chess(p.id) || r0);
+    const preferHigh = cls === 'all' && basePositionClass(r0) === 'melee';
+    let bestHigh = null;
+    let bestHighV = -Infinity;
     for (const [r, c] of legalTiles(map, cls)) {
       const k = tileKey(r, c);
       if (taken.has(k) || (within && !within.has(k))) continue;
@@ -966,13 +970,18 @@ export function* planLayoutSteps(m, ps, pieces, params = LAYOUT_PARAMS, { occupi
         const v = layout.value() + noise;
         layout.units.pop();
         if (v > bestV) { bestV = v; best = [k, r, c, dir]; }
+        if (preferHigh && map.get(k) === 'ranged' && [...u.cover].some((ck) => model.ground.has(ck)) && v > bestHighV) {
+          bestHighV = v;
+          bestHigh = [k, r, c, dir];
+        }
       }
     }
-    if (!best) continue;
-    taken.add(best[0]);
-    layout.units.push(unitOf(r0, best[0], best[1], best[2], best[3], model));
-    out.set(p.uid, best[0]);
-    out.dirs.set(p.uid, best[3]);
+    const pick = bestHigh || best;
+    if (!pick) continue;
+    taken.add(pick[0]);
+    layout.units.push(unitOf(r0, pick[0], pick[1], pick[2], pick[3], model));
+    out.set(p.uid, pick[0]);
+    out.dirs.set(p.uid, pick[3]);
     yield;
   }
   return out;

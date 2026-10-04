@@ -472,6 +472,17 @@ test('高台 battle input: elite 歌蕾蒂娅 + HOK-Y is fielded on (10,4) and b
   }
 });
 
+test('高台 bots: elite 歌蕾蒂娅 + HOK-Y takes a 高台 that covers the road while the ground is still free', () => {
+  const { m, ps } = prep(HIGH_STAGE, 11);
+  equip(ps, GLADIIA_HOK_Y);
+  const elite = give(m, ps, GLAD_E);
+  const k = planLayout(m, ps, [elite]).get(elite.uid);
+  assert.equal(ps.deployMap().get(k), 'ranged', `planned on a 高台 with the road open (${k})`);
+  const [r, c] = rc(k);
+  assert.deepEqual(move(m, elite.uid, board(r, c)), { ok: true });
+  m.dispose();
+});
+
 test('高台 bots: everyone else stays on the road; elite 歌蕾蒂娅 + HOK-Y may take a 高台 when the ground is full', () => {
   const { m, ps } = prep(HIGH_STAGE, 11);
   const pieces = ['chess_char_4_02_a', GLAD_N, FORCER_N, 'chess_char_2_03_a'].map((id) => give(m, ps, id));

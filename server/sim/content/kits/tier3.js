@@ -399,8 +399,9 @@ const KITS = {
 
   // ---- 3_04 琳琅诗怀雅 · 行商 — S2 “见面礼” (passive): each attack spends a coin to drop a champagne bomb in range;
   //      大买家: coin at skill start + coin & ATK stack per trait payment; 破财消灾: DP-paid revive (cost doubles)
-  //      S1 仗义疏财 (passive, 2 coins): an attack spends a coin to heal the most injured ally (< 70 % HP) of the 8
-  //      surrounding tiles for attack@heal_scale × ATK. S3 千金一掷 (持续时间无限): attacks hit twice, kills give a coin;
+  //      S1 仗义疏财 (passive, 2 coins): a coin heals the most injured ally (< 70 % HP) of the 8 surrounding tiles for
+  //      attack@heal_scale × ATK — on her attack, or with no enemy to attack on her own attack timer (owner's decision
+  //      2026-10-04, against the official 「下一次攻击会为…」; installS1). S3 千金一掷 (持续时间无限): attacks hit twice, kills give a coin;
   //      closing it spends every coin on random ground enemies of range 2-4 in front and those she blocks (atk_scale phys +
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
   //      the RandomGold ability (Skill_3_End) carries swire2_s_3[knockback] of template knockback[relative]; 地面敌方单位,
@@ -448,10 +449,19 @@ const KITS = {
       },
     });
     const healRatio = textNum(d.skill?.description, /血量不足(\d+)%/, 70) / 100;
-    const installS1 = (battle, unit) => { // 仗义疏财
+    /**
+     * 仗义疏财 — official text 「消耗一枚金币，下一次攻击会为周围八格内血量不足70%的一名友方单位恢复相当于攻击力40%的生命」: the heal rides on an
+     * attack, so with no enemy around she never healed (community report #5 「琳琅诗怀雅1技能不会主动奶身边受伤的干员」). Owner's
+     * decision 2026-10-04 (a deliberate deviation, like §21.29's 重装 casts): she heals an injured ally beside her whether
+     * she attacks or not. Same target (the lowest HP ratio below 70 % of the 8 surrounding tiles, no 禁疗 / 孤立 unit, no
+     * device), coin and heal_scale × ATK. Cadence [ASSUMED]: at most one heal per attack cycle (her attack interval, ASPD
+     * included) — while she attacks, on the attack as before; when her last attack attempt found no target, on her own
+     * timer (the 'tick' hook runs after the attacks, so an attack due in the same tick takes it).
+     */
+    const installS1 = (battle, unit) => {
       const hs = num(bb['attack@heal_scale'], num(bb.heal_scale, 0));
-      battle.on('attack', (ctx) => {
-        if (ctx.attacker !== unit || !alive(unit) || (unit.mem.coins ?? 0) < coinCost || !(hs > 0)) return;
+      let nextAt = -Infinity;
+      const healTarget = () => {
         let best = null;
         for (const a of battle.allyUnits) {
           if (a === unit || !alive(a) || a.hidden || a.kind === 'device' || a.hpRatio >= healRatio) continue;
@@ -459,11 +469,19 @@ const KITS = {
           if (Math.max(Math.abs(a.tileR - unit.tileR), Math.abs(a.tileC - unit.tileC)) !== 1) continue; // 周围八格
           if (!best || a.hpRatio < best.hpRatio || (a.hpRatio === best.hpRatio && a.deploySeq < best.deploySeq)) best = a;
         }
+        return best;
+      };
+      const tryHeal = () => {
+        if (!alive(unit) || (unit.mem.coins ?? 0) < coinCost || !(hs > 0) || battle.time < nextAt - 1e-9) return;
+        const best = healTarget();
         if (!best) return;
         unit.mem.coins -= coinCost;
+        nextAt = battle.time + unit.s.interval;
         battle.heal(unit, best, unit.s.atk * hs);
         fx(battle, 'coin', unit, { n: unit.mem.coins, heal: best.id, skill: 'swire2_1' });
-      }, { owner: unit, priority: -10 });
+      };
+      battle.on('attack', (ctx) => { if (ctx.attacker === unit) tryHeal(); }, { owner: unit, priority: -10 });
+      battle.on('tick', () => { if (unit.deployed && unit.canAct && !unit.trait?.hadTarget) tryHeal(); }, { owner: unit });
     };
     const installS3 = (battle, unit) => { // 千金一掷: "击倒敌人时获得一枚金币"
       battle.on('kill', (ctx) => {

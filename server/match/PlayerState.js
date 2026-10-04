@@ -1489,6 +1489,8 @@ export class PlayerState {
     this.dirty();
   }
 
+  // `effects` are kept: a 信标 gift still pending is delivered to the teammate at the next round start (builtin_gift is
+  // flagged afterElimination — GitHub #86); nothing else of an eliminated player is dispatched.
   eliminate(round) {
     this.alive = false;
     this.ready = false;

@@ -430,7 +430,8 @@ a promotion or `ctx.destroyPiece` returns) ends with the auto-merge (`acquireIte
 Built-ins (builtinMeta.js, overridable): 盟约之币 / 骑士储蓄罐 (random funds), 随身身份牌 (layers of the target's bonds),
 紧急调度券 (take shop chess), 精打细算玩偶 (+funds each round), 简易通讯机 / 拟态物质 (same-bond chess), 见钱眼开玩偶
 (+funds next round), 人事部文档 (cap 9), 博士投影 (elite now / at the next round start), 寻呼模块 / 信标 (pick-one
-offers; 信标 gifts the original chess to the teammate with the most members of its bonds next round), 商业包装方案 (every
+offers; 信标 gifts the original chess — an elite stays an elite — to the teammate with the most members of its bonds next
+round, also when the sender was eliminated meanwhile; a failed grant waits for the next round start), 商业包装方案 (every
 N sells → same-bond chess), 突变细胞 (after battle the carrier — deployed or on the bench — is destroyed, its tile freed;
 its equipment, the cell included, returns to the hand first; then a random NORMAL chess one tier higher, max 6, is
 gained like any gained operator: into the 整备区, overflow temp, never onto the carrier's tile — official footage,
@@ -453,7 +454,9 @@ risk / reward the item is about. The
 bounty then behaves like any other (next battles, 联防 payouts, Final Assault spawns). 神秘顾客's destroy clause (+1
 fund, the Art passes to the next alive player) is content too (`onDestroy`).
 EffectRefs: `effect:builtin_round_coin`, `effect:builtin_gift`, `effect:builtin_next_buy_golden_item` (整备),
-`effect:builtin_next_buy_elite` (升华).
+`effect:builtin_next_buy_elite` (升华). An eliminated player gets no dispatch, except an EffectRef whose handler sets
+`afterElimination: true` (its `onRoundStart` still runs: `EffectDispatcher.dispatchEliminated`, called by
+`Match.startRound`) — only `effect:builtin_gift` does, so a 信标 gift reaches the teammate (GitHub #86).
 
 ### 2.6 机变 card application
 `choice:<effectId>` handler (content) → else the family default (choices.js): bounty → `ctx.addBounty`; supply/shop →

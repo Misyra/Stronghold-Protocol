@@ -686,7 +686,8 @@ overtime drain starts; `deadline` = the level's 120 s countdown), `unite { helpe
 PREP ready/acting · COMBAT/boss combat/done · UNITE helping/done · others done · `left` / `dead` override.
 
 `m.private` = DESIGN §8.3 exactly (sent per player whenever it changed). `nextEnemies` = the current round's wave
-(+ the player's bounty enemies, tag `bounty`; boss rounds: the player's boss field, tag `boss`, + its bounties).
+(+ the player's bounty enemies, tag `bounty`; boss rounds: the player's boss field, tag `boss` — the leader's entry with its
+spawn tile `start`, where the boss-field prep shows it —, + its bounties).
 
 Bond layers in the views (DESIGN §20.15): from the end of COMBAT (`_finishCombat`, every normal result in) until SETTLE,
 `m.private bonds` and `m.public players[].bonds` add the finished battle's IN_BATTLE gains (`PlayerState.pendingLayerGains`

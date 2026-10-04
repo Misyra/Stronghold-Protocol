@@ -123,3 +123,30 @@ test('a summon piece enters 联防 with its carried SP only (流形: SP set, HP 
   assert.ok(tok.skill.sp >= 40 && tok.skill.sp < 41, `its SP is the carried 40 (fresh it would be 95), got ${tok.skill.sp}`);
   close(tok.hp, tok.s.maxHp, 1e-6, 'a summon keeps no HP ratio (召唤物仅修改技力)');
 });
+
+test('联防: the carried SP is set after the deployment ("部署完成后…技力修改") — 独行 / 黄沙罗盘 deploy-time SP does not come on top; a later redeploy keeps it', () => {
+  const caster = (id, bonds = []) => chessRec({ id, bonds, profession: 'CASTER', stats: { maxHp: 1000, atk: 100 }, skill: { spCost: 40, initSp: 10, duration: 10 } });
+  const cases = [
+    // 独行 (bonds.json soloShip bb.sp 15: "初始技力+15") on its lone member
+    { name: '独行', unit: { chessId: 't_solo' }, defs: { t_solo: caster('t_solo', ['soloShip']) }, bonds: { soloShip: { count: 1, active: true, tier: 1, layers: 0 } }, gift: 15 },
+    // 黄沙罗盘 (chess_item_6_07_e "初始技力+30")
+    { name: '黄沙罗盘', unit: { chessId: 't_comp', items: ['chess_item_6_07_e_a'] }, defs: { t_comp: caster('t_comp') }, bonds: {}, gift: 30 },
+  ];
+  for (const c of cases) {
+    for (const sp of [0, 30]) {
+      const h = makeBattle({
+        kind: 'unite', defs: { chess: c.defs }, bonds: c.bonds, autoFinish: false, timeLimit: 60,
+        units: [{ ...c.unit, row: 10, col: 4, carryState: { hpPct: 0.5, sp } }],
+      });
+      h.b.start();
+      const u = h.unit(c.unit.chessId);
+      close(u.skill.sp, sp, 1e-9, `${c.name}, carried ${sp}: the bar comes back as it ended`);
+      assert.equal(u.skill.ready, false, `${c.name}, carried ${sp}: not ready`);
+      // a later redeploy in the same 联防 battle: initial SP 10 + the gift, as usual
+      h.step();
+      h.b.retreat(u, { reason: 'retreat' });
+      assert.ok(h.b.redeploy(u, { free: true }));
+      close(u.skill.sp, 10 + c.gift, 1e-9, `${c.name}: a later redeploy keeps the deploy-time SP`);
+    }
+  }
+});

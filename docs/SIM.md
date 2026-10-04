@@ -143,7 +143,9 @@ the old tile-key order), so a rotated layout plays the same (test/sim/facing-inv
 directions on an open field). 余 S3's fire wall runs through his tile perpendicular to his direction (his column facing
 RIGHT / LEFT, his row facing UP / DOWN; fx `firewall.axis` = `'col'|'row'`).
 `carryState: { hpPct, sp }` restores unite helpers' operators (HP ratio, and the SP = the official 技力, stored charges
-included: `unitsEnd` reports `skill.spTotal`, reset rebuilds the charges from it); `carryState: { sp }` a board summon
+included: `unitsEnd` reports `skill.spTotal`, reset rebuilds the charges from it, and `skill.setSpTotal` sets it again after
+the `deploy` hook — PRTS "部署完成后…技力修改至与上一阶段结束时相同", so 独行 / 黄沙罗盘's deploy-time SP does not add to it;
+later redeploys keep those gifts); `carryState: { sp }` a board summon
 piece's SP only (PRTS "召唤物仅修改技力"). Nothing else is carried: a skill running at the end of the own combat enters
 switched off with the SP it had left — spent at its activation, 0 for a one-charge skill (`unitsEnd.skillActive` is
 reported, never carried; community report #34 — it used to restart for free).

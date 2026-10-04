@@ -344,8 +344,8 @@ function installLaterano(battle, pid, bb, members) {
  * cancelled, also when it is back at once (the 5-tier 立刻复活, 不屈's 立刻重新部署, 埃芒加德 / M3茧甲): PRTS 盟约记录 "目标首次被
  * 击倒后解除自身被付与但还未触发的【吞噬】效果". A marker off the field gives no further mark (the rule since 0.1.0; one knocked
  * out and back in the same pass still gives its marks).
- * 联防: the operators down since the end of their own combat (forced out by Battle.start) mark and are marked like
- * standing ones, but nothing resolves on or from them (below; per players' reports, owner's decision 2026-10-04).
+ * 联防: the operators down since the end of their own combat (forced out by Battle.start) mark, are marked and resolve
+ * their marks like standing ones, but nothing resolves on them (below; per players' reports, owner's decision 2026-10-04).
  * Each devoured operator adds its tier to 阿戈尔 once (IN_BATTLE gain, disabled in 联防 / boss fields).
  * Tokens / devices / empty tiles are never devoured.
  */
@@ -356,11 +356,11 @@ function devour(battle, pid, bb, members) {
   // board position, independent of the members' directions (only "身前" follows each member's `dir`).
   const boardCol = (u) => (u.player && u.player.mirror ? -u.tileC : u.tileC);
   // 联防: an operator down at the end of its own combat (carryState.down — Battle.start forced it out right before
-  // battleStart, FORCED_EXIT) still takes part in the marking as if it stood on its tile: it marks in its turn, it is
-  // "the unit in front" of another (the chain goes on through it when it is a member) and its base ATK / block count
-  // for its marker — then it stays out: its marks and the marks on it resolve nothing (as for any unit off the field
-  // during the pass), so it is never knocked out again, revived or devoured. Per players' reports (community report #3,
-  // GitHub #33 item 3), owner's decision 2026-10-04; until 0.1.2 the forced exit came first and the chain broke there.
+  // battleStart, FORCED_EXIT) takes part in the devour as if it stood on its tile, then stays out: it marks in its turn,
+  // it is "the unit in front" of another (the chain goes on through it when it is a member), its base ATK / block count
+  // for its marker and its own marks resolve (their 物理流失 lands, credited to it as usual); only the marks ON it resolve
+  // nothing — it is forced out, so it is never knocked out again, revived or devoured. Per players' reports (community
+  // report #3, GitHub #33 item 3), owner's decision 2026-10-04; until 0.1.2 the forced exit came first and the chain broke.
   const downAtStart = (u) => S.isOp(u) && !u.alive && u.removeReason === FORCED_EXIT && !!u.carry && u.carry.down === true
     && battle.isDown(u);
   const order = members.filter((u) => S.onField(u) || downAtStart(u)).sort((a, b) =>
@@ -405,8 +405,9 @@ function devour(battle, pid, bb, members) {
   for (const [, t] of marks) if (!dep.has(t)) dep.set(t, items.deploymentOf(t));
   const knocked = (t) => !t.alive || items.deploymentOf(t) !== dep.get(t);
   for (const [m, t] of marks) {
-    // (a member down since its own combat — downAtStart — is off the field: neither its marks nor the marks on it resolve)
-    if (knocked(t) || !m.alive) continue;
+    // (a member down since its own combat — downAtStart — resolves its marks as if it stood; a mark on it resolves nothing:
+    // `knocked` — it is off the field)
+    if (knocked(t) || !(m.alive || downAtStart(m))) continue;
     S.fxOn(battle, 'devour', t, 'bond:egirShip', 'devour', { from: m.id });
     if (amount > 0) battle.loseHp(t, mitigate(amount, 'phys', t.s), { source: m, tags: ['bond:egir:devour'] });
     if (!layered.has(t)) {

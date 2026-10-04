@@ -1,7 +1,8 @@
 // test/content/feedback3-egir-down.test.js — 阿戈尔 in 联防 (community report #3, GitHub #33 item 3; per players' reports,
 // owner's decision 2026-10-04): an operator down at the end of its own combat still takes part in the battle-start devour
-// (marking order, the unit in front, base ATK / block gains) and is then forced out — it used to be forced out first,
-// which broke the chain at its tile.
+// as if it stood (marking order, the unit in front, base ATK / block gains, its own marks' 物理流失) and is then forced
+// out — it used to be forced out first, which broke the chain at its tile. Nothing lands on it (it is never knocked out
+// again, revived or devoured).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,12 +43,13 @@ test('联防 阿戈尔 chain 乌尔比安 → 幽灵鲨 (down) → 歌蕾蒂娅 
   assert.equal(got.mods.blockCnt, base(GHOST).blockCnt + base(GLADY).blockCnt + base(FODDER).blockCnt);
   assert.deepEqual(got.mods, ref.mods, 'exactly the gains of the chain with 幽灵鲨 standing');
   close(ulpia.s.atk, up.unit(ULPIA).s.atk, 1e-6, '乌尔比安 ATK');
-  // then she is out: forced out (not knocked out again), never devoured, never revived, her marks resolve nothing
+  // then she is out: forced out (not knocked out again), never devoured, never revived
   assert.ok(!ghost.alive && ghost.removeReason === FORCED_EXIT && down.b.isDown(ghost), '幽灵鲨 lies on her tile, forced out');
   assert.equal(down.hooksOf('death').filter((c) => c.unit === ghost && c.reason === 'killed').length, 0, 'no knock-out');
   assert.equal(down.hooksOf('deploy').filter((c) => c.unit === ghost && !c.initial).length, 0, 'no revive');
-  assert.ok(!devours(down).some((c) => c.target === ghost || c.source === ghost), 'no 物理流失 on or from her');
-  // standing, 乌尔比安's first mark knocks her out (so her own marks give nothing either); the rest resolves alike
+  assert.ok(!devours(down).some((c) => c.target === ghost), 'no 物理流失 on her');
+  // standing, 乌尔比安's first mark knocks her out, so her own marks give nothing; down, her marks resolve but find
+  // 歌蕾蒂娅 and the fodder already knocked out by 乌尔比安's (cancelled) — the rest resolves alike
   const pairs = (h) => devours(h).map((c) => [c.source.defId, c.target.defId]);
   assert.deepEqual(pairs(up), [[ULPIA, GHOST], [ULPIA, GLADY], [ULPIA, FODDER]]);
   assert.deepEqual(pairs(down), [[ULPIA, GLADY], [ULPIA, FODDER]]);
@@ -60,22 +62,47 @@ test('联防 阿戈尔 chain 乌尔比安 → 幽灵鲨 (down) → 歌蕾蒂娅 
   assert.equal(down.result().perPlayer.p1.deaths, up.result().perPlayer.p1.deaths - 1, 'no knock-out counted for her (standing, the devour knocks her out)');
 });
 
-test('联防 阿戈尔: a down member at the head of the chain marks and gains, but its marks hit nobody', () => {
-  // 幽灵鲨 (down) → 歌蕾蒂娅 → fodder, 乌尔比安 on another row facing an empty tile
+/** 幽灵鲨 (down or standing) → 歌蕾蒂娅 → fodder on row 10; 乌尔比安 (+ 深巡, 海霓 for 5 members) on row 12 facing empty tiles. */
+function head(ghostDown, five) {
+  const units = [
+    { chessId: GHOST, row: 10, col: 3, ...(ghostDown ? { carryState: { down: true } } : {}) }, { chessId: GLADY, row: 10, col: 4 },
+    { chessId: FODDER, row: 10, col: 5 }, { chessId: ULPIA, row: 12, col: 3 },
+    ...(five ? [{ chessId: 'chess_char_1_04_a', row: 12, col: 5 }, { chessId: 'chess_char_3_09_a', row: 12, col: 7 }] : []),
+  ];
   const h = makeBattle({
     kind: 'unite', autoFinish: false, timeLimit: 60, captureNoisy: true, hooks: ['damaged', 'death', 'deploy'],
-    units: [
-      { chessId: GHOST, row: 10, col: 3, carryState: { down: true } }, { chessId: GLADY, row: 10, col: 4 }, { chessId: FODDER, row: 10, col: 5 },
-      { chessId: ULPIA, row: 12, col: 3 },
-    ],
-    bonds: { egirShip: bondOn(3, 0, null, [3, 5]) },
+    units, bonds: { egirShip: bondOn(five ? 5 : 3, 0, null, [3, 5]) },
   });
   h.step();
-  const [ghost, glady, fodder] = [GHOST, GLADY, FODDER].map((id) => h.unit(id));
-  const g = buffOf(ghost, 'bond:egir:devour');
-  close(g.mods.atkFlat, glady.base.atk + fodder.base.atk, 1e-6, 'marks 歌蕾蒂娅 and, through her, the fodder');
-  assert.deepEqual(devours(h).map((c) => [c.source.defId, c.target.defId]), [[GLADY, FODDER]], 'only 歌蕾蒂娅\'s mark resolves');
-  close(glady.hp, glady.s.maxHp, 1e-6, '歌蕾蒂娅 takes no 物理流失 from the down 幽灵鲨');
-  assert.ok(!ghost.alive && ghost.removeReason === FORCED_EXIT);
-  checkInvariants(h.b);
+  return h;
+}
+
+test('联防 阿戈尔: a down member at the head of the chain devours as if it stood — its 物理流失 lands (credited to it), then it stays out', () => {
+  for (const five of [false, true]) {
+    const tag = five ? '5 members' : '3 members';
+    const up = head(false, five);
+    const down = head(true, five);
+    const [ghost, glady, fodder] = [GHOST, GLADY, FODDER].map((id) => down.unit(id));
+    const g = buffOf(ghost, 'bond:egir:devour');
+    close(g.mods.atkFlat, glady.base.atk + fodder.base.atk, 1e-6, `${tag}: marks 歌蕾蒂娅 and, through her, the fodder`);
+    const pairs = (h) => devours(h).map((c) => [c.source.defId, c.target.defId]);
+    assert.deepEqual(pairs(down), pairs(up), `${tag}: the marks resolve as with 幽灵鲨 standing`);
+    assert.deepEqual(pairs(down), [[GHOST, GLADY], [GHOST, FODDER]], `${tag}: her two marks; 歌蕾蒂娅's on the fodder is cancelled (knocked out first)`);
+    assert.ok(!fodder.alive, `${tag}: the fodder falls`);
+    assert.equal(ghost.stats.kills, up.unit(GHOST).stats.kills, `${tag}: the kills are hers, as standing`);
+    assert.ok(!ghost.alive && ghost.removeReason === FORCED_EXIT && down.b.isDown(ghost), `${tag}: 幽灵鲨 stays forced out`);
+    const revived = (h, u) => h.hooksOf('deploy').filter((c) => c.unit === u && !c.initial).length;
+    if (five) {
+      // the 5-tier revive: 歌蕾蒂娅's first knock-out (by the down 幽灵鲨's mark) spends a charge, as standing
+      assert.equal(revived(down, glady), 1, '歌蕾蒂娅 revived once');
+      assert.equal(revived(up, up.unit(GLADY)), 1);
+      assert.ok(glady.alive, '歌蕾蒂娅 stands again');
+      close(glady.hp, glady.s.maxHp, 1e-6, 'at full HP: no further mark on her');
+      assert.equal(revived(down, ghost), 0, 'the down 幽灵鲨 spends nothing');
+    } else {
+      assert.ok(!glady.alive, '歌蕾蒂娅 falls to 幽灵鲨\'s mark (3 members: no revive)');
+    }
+    assert.equal(down.result().perPlayer.p1.deaths, up.result().perPlayer.p1.deaths, `${tag}: the same knock-outs`);
+    checkInvariants(down.b);
+  }
 });

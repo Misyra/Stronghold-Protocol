@@ -173,6 +173,18 @@ export class SkillRuntime {
   }
 
   /**
+   * Set the official 技力 to `total` (charges rebuilt, nothing fired — a 修改, not a gain): the 联防 carry, applied again
+   * once the deployment is done (Battle._deploy). A passive skill, or a timed one that runs already, is left as it is.
+   */
+  setSpTotal(total) {
+    if (this.noSkill || this.kind === 'passive' || (this.active && this.isTimed) || !Number.isFinite(total)) return;
+    this.sp = 0;
+    this.charges = 0;
+    this.gainSp(Math.max(0, total), 'init', true);
+    if (this.spCost <= 0) this.charges = this.maxCharges;
+  }
+
+  /**
    * Called on every (re)deployment. `carry` = { sp } for unite (联防) helpers: their 技力 at the end of their own combat
    * (unitsEnd `sp` = spTotal, rebuilt into charges here). Nothing else of the skill is carried — PRTS 卫戍协议/帮助 §联防阶段
    * "将对应单位的生命比例、技力修改至与上一阶段结束时相同": a skill that was running enters 联防 switched off, with the SP it

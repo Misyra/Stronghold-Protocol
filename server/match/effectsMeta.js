@@ -406,6 +406,11 @@ export function offerLabel(gd, source) {
   return null;
 }
 
+/** Who a grantChess toast names: the same speaker as an offer label, or the choice card's name. */
+function grantSpeaker(gd, source) {
+  return offerLabel(gd, source) || (source && source.kind === 'choice' && source.card && source.card.name) || '';
+}
+
 /**
  * @param {import('./Match.js').Match} m
  * @param {import('./PlayerState.js').PlayerState} ps
@@ -507,6 +512,16 @@ export function makeCtx(m, ps, source, hook, ev = null) {
       // "some effects fail when the cap is hit" (research 06 §7): by default a chess of the pool needs a free copy
       if (opts.requirePool !== false && m.pool.has(base) && m.pool.left(base) < 1) return null;
       const p = ps.acquireChess(id, { source: opts.source || source.key || 'effect', toTemp: !!opts.toTemp, fromPool: opts.fromPool !== false });
+      // 「歌蕾蒂娅：获得斯卡蒂」 — every silent grantChess (a 特质, 余 SERVER_MOST_BOND, a band, an item, a choice).
+      // opts.toast === false skips it. A caller that already says the same thing should pass that.
+      if (p && opts.toast !== false) {
+        const got = gd.chess(p.id);
+        const name = got && got.name;
+        if (name) {
+          const who = grantSpeaker(gd, source);
+          m.toast(ps, 'info', who ? `${who}：获得${name}` : `获得${name}`);
+        }
+      }
       return p ? view(p) : null;
     },
     grantItem: (itemId, opts = {}) => {

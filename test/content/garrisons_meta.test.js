@@ -696,6 +696,34 @@ test('pools: 凯瑟琳 127 odd rounds, 佩佩 94, 洛洛 91, 焰尾 149, 歌蕾�
   }
 });
 
+test('歌蕾蒂娅 / 余: granting a chess toasts 「名字：获得X」', () => {
+  const glady = setup(11);
+  const row = plain().slice(0, 2);
+  give(glady.m, glady.ps, 'chess_char_4_12_a', 'board', [10, 4]);
+  give(glady.m, glady.ps, row[0], 'board', [10, 6]);
+  give(glady.m, glady.ps, row[1], 'board', [10, 8]);
+  const n0 = glady.h.allTo('p_0', 'm.toast').length;
+  glady.roundStart();
+  const lines = glady.h.allTo('p_0', 'm.toast').slice(n0).map((t) => t.text);
+  const line = lines.find((t) => t.startsWith('歌蕾蒂娅：获得'));
+  assert.ok(line, lines.join(' | '));
+  const gained = line.slice('歌蕾蒂娅：获得'.length);
+  assert.ok(handChess(glady.ps).some((id) => CH(id).name === gained), `${line} not in ${handChess(glady.ps)}`);
+  const yu = setup(12);
+  give(yu.m, yu.ps, 'chess_char_6_03_a', 'board', [10, 4]);
+  yu.ps.bondCountBonus.egirShip = 9;
+  yu.ps.recompute();
+  const fillers = plain((c) => !c.bonds.includes('egirShip')).slice(0, 2);
+  give(yu.m, yu.ps, fillers[0], 'board', [10, 6]);
+  give(yu.m, yu.ps, fillers[1], 'board', [10, 8]);
+  const n1 = yu.h.allTo('p_0', 'm.toast').length;
+  yu.roundStart();
+  const yuLine = yu.h.allTo('p_0', 'm.toast').slice(n1).map((t) => t.text).find((t) => t.startsWith('余：获得'));
+  assert.ok(yuLine, yu.h.allTo('p_0', 'm.toast').slice(n1).map((t) => t.text).join(' | '));
+  const yuName = yuLine.slice('余：获得'.length);
+  assert.ok(handChess(yu.ps).some((id) => CH(id).name === yuName), yuLine);
+});
+
 test('余 37: a chess of the bond with the most members (normal: 3 in the row; 精锐: always)', () => {
   for (const { gid, g, owners } of idsOf('SERVER_PREP_START', 'SERVER_MOST_BOND')) {
     for (const owner of owners) {

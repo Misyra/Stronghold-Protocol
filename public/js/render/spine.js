@@ -356,6 +356,9 @@ export class SpineActor {
     this.skillOn = on;
     const sk = this.roles.skill;
     if (this.mode === 'stun' || this.mode === 'die') return;
+    // a skill that ends as the unit (re)deploys — 乌尔比安's 【返回】 is a 【移动】 (sim Battle.moveRedeploy) right before
+    // his S3's 'skill' off event — lets the deploy clip play out (then the plain idle) instead of cutting it with the End
+    if (!on && this.mode === 'deploy') return;
     if (on && sk) {
       if (this.has(sk.begin)) {
         this.mode = 'skillBegin';

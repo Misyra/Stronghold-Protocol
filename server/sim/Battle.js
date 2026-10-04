@@ -1931,6 +1931,32 @@ export class Battle {
   }
 
   /**
+   * 【移动】 (PRTS 术语释义 移动: "不退场，以当前血量在目标位置部署 … 本质上为一次特殊的撤退-再部署行为"): `unit` leaves its
+   * tile (relocate: same checks, false = refused, nothing changed) and is deployed on (r, c) at once. A new deployment —
+   * deploySeq / aggroSeq / deployedAt (the deploy animation; once-per-deployment effects re-arm) — announced by
+   * `deploy` { initial: false, move: true }: deploy effects fire again ("可以通过移动行为多次触发部署时触发的效果"). Not an
+   * exit: no `die` / `death`, so no knock-out, no redeploy timer or cost ("因移动撤退时不会积累再部署惩罚") — 不屈 and
+   * 阿戈尔's revive, which act on exits "因移动之外的原因" (PRTS 阿戈尔 备注), never see it. HP, buffs and a running skill
+   * stay: officially nothing carries over but what the mover's skill names (乌尔比安 S3: 技能进度 and the second talent's
+   * stacks); the remake keeps the rest too (owner's deviation, DESIGN §22.3). `clearSp`: the 技力 is emptied before the
+   * deploy handlers run ("部署时将清空技力"; 乌尔比安's 【返回】 "将清空技力，但仍可以享受后续由其他效果提供的技力").
+   */
+  moveRedeploy(unit, r, c, { clearSp = false } = {}) {
+    if (!this.relocate(unit, r, c)) return false;
+    unit.deploySeq = ++this._deploySeq;
+    unit.aggroSeq = unit.deploySeq;
+    unit.deployedAt = this.time;
+    const sk = unit.skill;
+    if (clearSp && sk && !sk.noSkill && sk.kind !== 'passive' && !(sk.active && sk.isTimed)) {
+      sk.sp = 0;
+      sk.charges = sk.spCost <= 0 ? sk.maxCharges : 0; // (a free skill is available once per deployment: skills.js reset)
+    }
+    this._ev(['deploy', unit.id]);
+    if (this._hooks.deploy) this.emit('deploy', { unit, initial: false, move: true });
+    return true;
+  }
+
+  /**
    * 受力等级 of enemy `e` under a push / pull of 力度 `force` (微小力 −1, 小力 0, 中力 1, 较大力 2, 大力 3, 大力+1 4, 特大力 5):
    * force − its current 重量等级 (massLevel incl. 失重) — PRTS 游戏数据基础 §重量公式, 推与拉 (user playtest #6 item 14).
    */

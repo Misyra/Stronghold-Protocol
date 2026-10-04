@@ -405,8 +405,10 @@ const KITS = {
   //      closing it spends every coin on random ground enemies of range 2-4 in front and those she blocks (atk_scale phys +
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
   //      the RandomGold ability (Skill_3_End) carries swire2_s_3[knockback] of template knockback[relative]; 地面敌方单位,
-  //      弹道不可对空). Auto-close (the mode casts everything itself; the player's "主动关闭" is not available): once the
-  //      purse is full (10) and a coin target stands there. 精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
+  //      弹道不可对空). It does not close itself when the purse is full (PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; the skill
+  //      text is 「可随时主动关闭」). Owner 2026-10-04: at the cap (金币上限为10) she shoots once an enemy is in the skill's
+  //      attack range (the 1-tile range, not the coin-mark 2-4 grid). Below the cap, or with nobody there, it stays open.
+  //      精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
   chess_char_3_04_a: (bb, chess, def) => {
     const d = defOf(chess, def);
     const t0 = talentBb(d, 0), t1 = talentBb(d, 1);
@@ -493,18 +495,24 @@ const KITS = {
       skills: altSkills(chess, d, bb, {
         [S1]: () => ({ kind: 'passive' }), // (coins → heals: installS1)
         [S3]: (s) => {
-          const cash = num(s.bb.atk_scale, 1), force = num(s.bb.force, 0), full = num(s.bb.sp, 10);
+          const cash = num(s.bb.atk_scale, 1), force = num(s.bb.force, 0);
           // the 【金币标记】 targets: ground enemies on range 2-4 in front of her (range_table "2-4") and every unit she blocks
           const coinMarks = (battle, unit) => {
             const list = enemiesOn(battle, unit, gridKeys(SWIRE2_COIN_GRID, unit), 0, { ...unit.profile, canHitFly: false });
             for (const e of unit.blocking || []) if (e.alive && !e.isFlying && !list.includes(e)) list.push(e);
             return list;
           };
+          const purseCap = Math.max(1, Math.floor(num(s.bb.sp, 10)));
           return {
             kind: 'toggle',
             attack: { hits: 2 },
+            // Owner 2026-10-04: at the cap, shoot once a ground enemy is in the skill attack range (data rangeGrid,
+            // the same 1-tile range as her attack). The coin marks (前方 2-4) are who the burst pays, not the trigger.
+            // Nobody in that range: stay open and keep the coins. Below the cap: stay open.
             onTick({ battle, unit, skill }) {
-              if ((unit.mem.coins ?? 0) >= full && coinMarks(battle, unit).length) skill.end('manual');
+              if (!skill.active || (unit.mem.coins ?? 0) + 1e-9 < purseCap) return;
+              const keys = gridKeys(skillGrid ?? unit.rangeGrid, unit);
+              if (enemiesOn(battle, unit, keys, 0, { ...unit.profile, canHitFly: false }).length) skill.end('manual');
             },
             onEnd({ battle, unit, reason }) {
               if (reason !== 'manual' || !unit.alive) return;

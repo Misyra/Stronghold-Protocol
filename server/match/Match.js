@@ -1658,6 +1658,11 @@ export class Match {
     const alive = this.alivePlayers();
     for (const ps of alive) {
       ps.ready = false;
+      // Items gained as the previous prep ended waited unmerged (acquireItem deferMerge). Merge them now, before
+      // this prep's onPrepStart grants and before the player acts — not in endPrep, which runs in the same prep
+      // that granted them and would take an equipped copy off for the fight about to start.
+      ps.checkItemMerges();
+      ps.recompute();
       this.dispatch(ps, 'onPrepStart', { round: this.round });
       ps.recompute();
     }

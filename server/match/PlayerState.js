@@ -712,12 +712,16 @@ export class PlayerState {
   /**
    * Acquire an item (buy, supply card, grant). Merges with an identical normal copy (hand/temp/equipped) into the
    * golden item (to the hand). Returns the owned piece or null.
+   * `deferMerge` (effectsMeta, while onPrepEnd is on the stack): stow it — hand, else temp — and do not merge in this
+   * call, even when an identical normal copy is already owned. The next prep's start runs checkItemMerges. Nothing
+   * already equipped is taken off for the fight about to start. Hand and temp both full keeps the 「整备区已满，获得的装备已销毁」
+   * outcome. [ASSUMED] every item granted at 休整期结束, not only 维多利亚's 战栗维式重锤 (owner's decision 2026-10-04).
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
     let piece = this.newPiece('item', itemId);
-    if (this.completesItemMerge(itemId)) {
+    if (!deferMerge && this.completesItemMerge(itemId)) {
       piece = this._mergeItem(itemId, piece);
       if (!piece) return null;
     } else if (!this.stow(piece, { allowTemp: true, toTemp })) {

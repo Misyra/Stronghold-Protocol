@@ -607,6 +607,8 @@ export function payHammers(ctx) {
     ctx.setCounter(VICTORIA_COUNTER, paid + 1);
     for (let i = 0; i < count; i++) {
       const id = ctx.rollItem({ pool: p.pool });
+      // onPrepEnd: grantItem stows this and does not merge until the next prep start, so a second copy does not
+      // take an equipped hammer off for the fight (effectsMeta _deferItemMerge). [ASSUMED] every item that hook grants.
       if (id && ctx.grantItem(id, { source: 'bond:victoriaShip' })) granted++;
     }
   }

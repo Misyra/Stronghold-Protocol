@@ -1,8 +1,9 @@
 // server/sim/skills.js — skill runtime: SP, charges, trigger rules, kinds, SkillSpec interpretation (DESIGN §5.6).
 //
 // SP types: 'time' (+spRecovery/s), 'attack' (+1 per attack), 'hurt' (+1 per hit taken), 'none'.
-// No SP gain while a duration/ammo/toggle skill is active, while stunned, or while the unit has the noSp flag (阻回: no SP
-// gain of any kind — time, attack, hurt or granted).
+// No SP gain while a duration/ammo/toggle skill is active, or while the unit has the noSp flag (阻回: no SP gain of any
+// kind — time, attack, hurt or granted). A stunned / frozen / levitated unit (canAct false) neither attacks nor casts, but
+// its time SP keeps recovering (PRTS: only 阻回 pauses the SP cooldown; 晕眩 does not — community report #18).
 // Charges (maxCharges > 1): SP fills to spCost → +1 charge (SP restarts) until charges == max (SP stays full).
 // Trigger rules (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; data: tools/build-data.mjs resolveTrigger):
 //   DEFAULT — the basic strategy: ready + about to attack/heal + enemy / injured ally in the INITIAL range (or blocked by
@@ -274,11 +275,14 @@ export class SkillRuntime {
     } else if (this.active && this.kind === 'passive' && this.spec.onTick) {
       this._call('onTick', { dt });
     }
-    if (!u.canAct) return;
-    if (this.spType === 'time' && !(this.active && this.isTimed) && !u.s.flags.noSp) {
+    // natural SP recovery stops only under 阻回 (noSp; a running timed skill holds it too) — not while 晕眩 / 冻结 / 浮空
+    // keep the unit from acting: PRTS 技能 "在阻回状态或技力条已满时，保留剩余冷却时间，计时暂停"; PRTS 异常效果 STUNNED
+    // "无法攻击、释放技能、阻挡敌人类单位" says nothing of SP (community report #18: 洛洛's S2 self-stun froze her SP)
+    if (this.spType === 'time' && !(this.active && this.isTimed) && !u.s.flags.noSp && u.alive && u.deployed && !u.hidden) {
       const rate = u.s.spRecovery;
       if (rate > 0) this.gainSp(rate * dt, 'time');
     }
+    if (!u.canAct) return;
     // a DEFAULT cast bound to an ally condition (塞雷娅 S1) replaces the attack about to be made: should the condition
     // have failed before that attack (the ally healed meanwhile), the cast is withdrawn — no heal mode stays behind
     if (this.pending && this.triggerAllies && this.rule !== 'SKILL_RANGE' && !this._allyTriggerSatisfied()) {

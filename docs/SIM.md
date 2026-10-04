@@ -781,7 +781,9 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
 
 ### 7.1 Runtime rules (skills.js)
 - SP types: `time` (+`s.spRecovery`/s), `attack` (+1 per attack), `hurt` (+1 per hit taken); starts at `initSp`; **no SP
-  gain while a duration/ammo/toggle skill is active, while stunned, or with the `noSp` flag**. Attack-type SP: attacks made
+  gain while a duration/ammo/toggle skill is active, or with the `noSp` flag** (阻回); a stunned / frozen / levitated unit
+  (`canAct` false) neither attacks nor casts, but its time SP keeps recovering (PRTS 技能: only 阻回 pauses the SP cooldown;
+  PRTS 异常效果 晕眩 names no SP effect — community report #18). Attack-type SP: attacks made
   by the skill (the pending "next attack" of an instant/charge skill, every shot of a timed skill including the one that
   ends it) recover nothing, so a cost-N skill fires every **N+1** attacks (AK). Charges (`maxChargeTime > 1`):
   SP fills to cost → +1 charge (SP restarts) until charges are full (then SP stays full).

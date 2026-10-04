@@ -33,7 +33,7 @@ test('stun stops enemy movement and attacks; immunity honoured; statusApplied fi
   assert.ok(h.eventsOf('status').some((ev) => ev[1] === e.id && ev[2] === 'stun' && ev[3] === 0));
 });
 
-test('stunned operator neither attacks nor gains SP; silence blocks skill activation', () => {
+test('stunned operator neither attacks nor casts but keeps its natural SP recovery; silence blocks skill activation', () => {
   const h = makeBattle({
     defs: { chess: { t_guard: guard({ skill: { spCost: 5, initSp: 0, duration: 3, bb: { atk: 0.5 } } }) }, enemies: { enemy_dummy: dummy() } },
     units: [{ chessId: 't_guard', row: 9, col: 5 }], enemies: [{ key: 'enemy_dummy', pos: [9, 6] }], content: 'generic',
@@ -42,9 +42,12 @@ test('stunned operator neither attacks nor gains SP; silence blocks skill activa
   const u = h.unit('t_guard');
   h.b.applyStatus(u, 'stun', { duration: 2 });
   const atk0 = u.stats.attacks;
+  const sp0 = u.skill.sp;
   h.run(1.9);
   assert.equal(u.stats.attacks, atk0);
-  assert.ok(u.skill.sp < 0.2);
+  // PRTS 技能: only 阻回 pauses the SP cooldown ("在阻回状态或技力条已满时…计时暂停"); 晕眩 (PRTS 异常效果 STUNNED) does not
+  approx(u.skill.sp - sp0, 1.9, 0.02);
+  assert.equal(u.skill.activations, 0, 'no cast while stunned');
   h.b.applyStatus(u, 'silence', { duration: 20 });
   h.run(8);
   assert.ok(u.stats.attacks > atk0, 'attacks after stun');

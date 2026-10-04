@@ -11,11 +11,13 @@
 //   * Host-only: room.setDifficulty, room.addBot, room.removeBot, room.kick, room.start. ▸ Changing the difficulty
 //     un-readies the other humans. ▸ room.start requires every other human to be connected and ready;
 //     the host's start counts as the host's ready (the host may still toggle room.ready for display).
-//   * room.kick {seat} (community report #17, owner approved): before the match only, the host removes another human
-//     like an AI seat (an AI seat stays room.removeBot's; never the host itself). The seat is freed at once and the
-//     player gets `room.closed {reason:'kicked'}` — now, or on the next resume when offline (with the result replay,
-//     as the grace timeout) —, so the reconnect token no longer leads back to the seat (it stays the player's
-//     identity: net.js sessions belong to players, not seats). ▸ No ban: the player may join again with the code.
+//   * room.kick {seat, playerId} (community report #17, owner approved): before the match only, the host removes another
+//     human like an AI seat (an AI seat stays room.removeBot's; never the host itself). `playerId` names the player the
+//     host confirmed: a seat that changed hands meanwhile (left, someone else joined) is refused with BAD_TARGET. The
+//     seat is freed at once and the player gets `room.closed {reason:'kicked'}` — now, or on the next resume when
+//     offline (with the result replay, as the grace timeout) —, so the reconnect token no longer leads back to the seat
+//     (it stays the player's identity: net.js sessions belong to players, not seats). ▸ No ban: the player may join
+//     again with the code.
 //   * Host migration: when the host leaves (or is removed), the lowest-seat remaining human (connected
 //     ones first) becomes host. A room without humans is disposed (bots never keep a room alive).
 //   * Disconnect in LOBBY: the seat shows connected=false and is freed after `lobbyGraceMs` (60 s); a
@@ -428,7 +430,7 @@ export class Lobby {
   }
 
   /** Host removes another human before the match (header: room.kick). */
-  kick(session, { seat }) {
+  kick(session, { seat, playerId }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
@@ -436,6 +438,7 @@ export class Lobby {
     this.dropReplay(room, session.playerId);
     const target = room.seats[seat];
     if (!target || target.left) return fail(ERR.BAD_TARGET, 'seat holds no player');
+    if (target.playerId !== playerId) return fail(ERR.BAD_TARGET, 'seat changed hands'); // the confirmed player left meanwhile
     if (target.isBot) return fail(ERR.BAD_TARGET, 'seat holds an AI (room.removeBot)');
     if (target.playerId === session.playerId) return fail(ERR.BAD_TARGET, 'cannot kick yourself');
     const kicked = this.registry.byId(target.playerId);

@@ -127,7 +127,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
         <${Button} variant="ghost" size="sm" square=${true} icon="close" loading=${busy === `rm${index}`} onClick=${() => onRemoveBot(index)} aria-label="移除 AI 队友" />
       <//>` : null}
       ${!seat.isBot && !isMe && facts.isHost ? html`<${Tooltip} text="将该博士移出同盟">
-        <${Button} variant="ghost" size="sm" square=${true} icon="close" loading=${busy === `kick${index}`} onClick=${() => onKick(index, seat.name)} aria-label="移出该博士" />
+        <${Button} variant="ghost" size="sm" square=${true} icon="close" loading=${busy === `kick${index}`} onClick=${() => onKick(index, seat.name, seat.playerId)} aria-label="移出该博士" />
       <//>` : null}
     </footer>
   </article>`;
@@ -197,11 +197,12 @@ export function RoomScreen() {
   const start = () => run('start', () => net.request('room.start', {}));
   const addBot = () => run('add', () => net.request('room.addBot', {}));
   const removeBot = (seat) => run(`rm${seat}`, () => net.request('room.removeBot', { seat }));
-  // the host removes a human before the match (community report #17): asked first; the player may join again
-  const kick = async (seat, name) => {
+  // the host removes a human before the match (community report #17): asked first; the player may join again. The
+  // confirmed player's id goes along: if they left and someone else took the seat meanwhile, the server refuses it.
+  const kick = async (seat, name, playerId) => {
     if (inFlight.current) return;
     const ok = await confirmDialog({ title: '移出同盟', text: `确定将「${name || '博士'}」移出同盟吗？对方可以凭同盟密钥重新加入。`, okText: '移出', danger: true });
-    if (ok) run(`kick${seat}`, () => net.request('room.kick', { seat }));
+    if (ok) run(`kick${seat}`, () => net.request('room.kick', { seat, playerId }));
   };
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
   const leave = async () => {

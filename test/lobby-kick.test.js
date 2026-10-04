@@ -1,6 +1,7 @@
 // test/lobby-kick.test.js — room.kick (community report #17, owner approved): before the match the host removes another
 // human like an AI seat (server/lobby.js kick). The player gets room.closed {kicked} (now, or on the next resume when
 // offline), the reconnect token no longer leads back to the seat, and the player may join again (no ban) [ASSUMED].
+// The message names the confirmed player too: a seat that changed hands while the host's dialog was open is refused.
 import { describe, test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -57,9 +58,11 @@ describe('room.kick (lobby)', () => {
     assert.deepEqual(cap.errors, [], 'no server errors logged');
   });
 
-  test('protocol: room.kick {seat} with a seat index', () => {
-    assert.equal(validateC2S({ t: 'room.kick', seat: 1 }), null);
-    assert.notEqual(validateC2S({ t: 'room.kick', seat: 9 }), null);
+  test('protocol: room.kick {seat, playerId} — a seat index and the confirmed player', () => {
+    assert.equal(validateC2S({ t: 'room.kick', seat: 1, playerId: 'p_0123456789' }), null);
+    assert.notEqual(validateC2S({ t: 'room.kick', seat: 1 }), null, 'the player is required');
+    assert.notEqual(validateC2S({ t: 'room.kick', seat: 9, playerId: 'p_0123456789' }), null);
+    assert.notEqual(validateC2S({ t: 'room.kick', seat: 1, playerId: '' }), null);
     assert.notEqual(validateC2S({ t: 'room.kick' }), null);
   });
 
@@ -71,7 +74,7 @@ describe('room.kick (lobby)', () => {
     await ok(guest, { t: 'room.ready', ready: true });
     await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.ready);
     guest.clearInbox();
-    await ok(host, { t: 'room.kick', seat: 1 });
+    await ok(host, { t: 'room.kick', seat: 1, playerId: guest.id });
     const closed = await guest.waitFor('room.closed');
     assert.equal(closed.reason, 'kicked');
     const after = await host.waitFor('room.state', (s) => s.seats[1] === null);
@@ -91,7 +94,7 @@ describe('room.kick (lobby)', () => {
     await joinRoom(guest, st.code);
     await guest.terminate();
     await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.connected === false);
-    await ok(host, { t: 'room.kick', seat: 1 });
+    await ok(host, { t: 'room.kick', seat: 1, playerId: guest.id });
     await host.waitFor('room.state', (s) => s.seats[1] === null);
     // the host can start alone right away (the offline seat no longer blocks it with NOT_READY)
     await ok(host, { t: 'room.start' });
@@ -111,19 +114,44 @@ describe('room.kick (lobby)', () => {
     const st = await createRoom(host);
     const guest = await pool.player('Guest');
     await joinRoom(guest, st.code);
-    await err(guest, { t: 'room.kick', seat: 0 }, ERR.NOT_HOST);
-    const self = await err(host, { t: 'room.kick', seat: 0 }, ERR.BAD_TARGET);
+    await err(guest, { t: 'room.kick', seat: 0, playerId: host.id }, ERR.NOT_HOST);
+    const self = await err(host, { t: 'room.kick', seat: 0, playerId: host.id }, ERR.BAD_TARGET);
     assert.match(self.detail || self.msg, /yourself/);
     await ok(host, { t: 'room.addBot' });
-    await host.waitFor('room.state', (s) => s.seats[2]?.isBot);
-    await err(host, { t: 'room.kick', seat: 2 }, ERR.BAD_TARGET);
-    await err(host, { t: 'room.kick', seat: 3 }, ERR.BAD_TARGET);
+    const withBot = await host.waitFor('room.state', (s) => s.seats[2]?.isBot);
+    await err(host, { t: 'room.kick', seat: 2, playerId: withBot.seats[2].playerId }, ERR.BAD_TARGET);
+    await err(host, { t: 'room.kick', seat: 3, playerId: guest.id }, ERR.BAD_TARGET);
+    await err(host, { t: 'room.kick', seat: 1 }, ERR.BAD_MSG);
     const stranger = await pool.player('Stranger');
-    await err(stranger, { t: 'room.kick', seat: 1 }, ERR.NOT_IN_ROOM);
+    await err(stranger, { t: 'room.kick', seat: 1, playerId: guest.id }, ERR.NOT_IN_ROOM);
     await ok(guest, { t: 'room.ready', ready: true });
     await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.ready);
     await ok(host, { t: 'room.start' });
     await host.waitFor('room.state', (s) => s.inMatch === true);
-    await err(host, { t: 'room.kick', seat: 1 }, ERR.ROOM_STARTED);
+    await err(host, { t: 'room.kick', seat: 1, playerId: guest.id }, ERR.ROOM_STARTED);
+  });
+
+  test('a seat that changed hands while the host confirmed is refused: the newcomer stays (review of #17)', async () => {
+    const host = await pool.player('Host');
+    const st = await createRoom(host);
+    const alice = await pool.player('Alice');
+    await joinRoom(alice, st.code);
+    await host.waitFor('room.state', (s) => seatOf(s, alice.id)?.seat === 1);
+    // the host's dialog names Alice … she leaves and Bob takes seat 1 before the host confirms
+    await ok(alice, { t: 'room.leave' });
+    await host.waitFor('room.state', (s) => s.seats[1] === null);
+    const bob = await pool.player('Bob');
+    const joined = await joinRoom(bob, st.code);
+    assert.equal(seatOf(joined, bob.id).seat, 1);
+    bob.clearInbox();
+    const stale = await err(host, { t: 'room.kick', seat: 1, playerId: alice.id }, ERR.BAD_TARGET);
+    assert.match(stale.detail || stale.msg, /changed hands/);
+    await bob.expectNone('room.closed');
+    await ok(bob, { t: 'room.ready', ready: true });
+    const still = await host.waitFor('room.state', (s) => seatOf(s, bob.id)?.ready);
+    assert.equal(seatOf(still, bob.id).seat, 1, 'Bob keeps the seat');
+    // naming Bob works
+    await ok(host, { t: 'room.kick', seat: 1, playerId: bob.id });
+    assert.equal((await bob.waitFor('room.closed')).reason, 'kicked');
   });
 });

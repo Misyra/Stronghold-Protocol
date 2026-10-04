@@ -422,8 +422,9 @@ function MatchScreen() {
       view.pushEvents(early);
       audio.handleBattleEvents(early.filter((e) => e[0] === 'spawn'));
     }
-    if (!earlySnap && (field.prep || !combat) && Array.isArray(field.units) && field.units.length) {
-      // prep scouting (read-only teammate board): no snapshots follow, so place the units once
+    if (!earlySnap && (field.prep || !combat) && Array.isArray(field.units)) {
+      // prep scouting: no battle snapshots follow. A later m.field for this board (the teammate moved) re-enters
+      // above and places the units again, including an empty board (GitHub #87).
       view.pushSnapshot({
         fieldId: field.fieldId, gt: 0,
         units: field.units.filter((u) => u && u.id != null).map((u) => [u.id, Number(u.x) || 0, Number(u.y) || 0, u.maxHp || 1, u.maxHp || 1, 0, 0, 0, 0]),

@@ -219,6 +219,8 @@ export function unitStatsEntry(u, s = null) {
     ...statView(cur),
     base: statView(base),
     ...(range ? { range } : {}),
+    // the enemy card greys a SILENCE-format line (折射) from this; absent flags ⇒ not silenced
+    silenced: !!(cur.flags && cur.flags.silence),
   };
 }
 

@@ -781,8 +781,8 @@ export class Match {
       const list = [...this._privDirty];
       this._privDirty.clear();
       for (const ps of list) {
-        if (ps.isBot || ps.left || !ps.connected) continue;
-        this._sendPrivate(ps, false);
+        if (!(ps.isBot || ps.left || !ps.connected)) this._sendPrivate(ps, false);
+        this._notifyPrepScouts(ps);
       }
     }
     if (this._pubDirty || forcePublic) this._maybeSendPublic(forcePublic);
@@ -970,6 +970,35 @@ export class Match {
     return { t: 'm.field', fieldId: `n:${ps.playerId}`, kind: 'normal', rect: { ...GEO.NORMAL_RECT }, stageId: this.stageId, units, prep: true, nextEnemies };
   }
 
+  /** Board signature of a prep scout view (units only: a shop or funds change is not a board change). */
+  _prepScoutSig(ps) {
+    const parts = [];
+    for (const { r, c, piece } of boardOrder(ps.board)) {
+      const items = piece.kind === 'chess' && Array.isArray(piece.items) ? piece.items.map((it) => `${it.uid}:${it.id}`).join(',') : '';
+      parts.push(`${piece.uid}:${piece.id}@${r},${c}:${pieceDir(piece)}:${items}`);
+    }
+    return parts.join(';');
+  }
+
+  /**
+   * Push prepFieldMeta to whoever is scouting `ps` during prep (GitHub #87). `to` always receives the current board
+   * (the player who just asked to watch); everyone scouting it receives a new `m.field` only when the board changed.
+   * A live battle field owns the `n:<pid>` id, so this stays quiet once fields exist.
+   */
+  _notifyPrepScouts(ps, { to = null } = {}) {
+    if (!ps || !ps.alive || this.fields.length) return;
+    const fid = `n:${ps.playerId}`;
+    const watchers = this.watchersOf(fid);
+    if (!watchers.length) return;
+    const sig = this._prepScoutSig(ps);
+    const changed = sig !== ps._prepScoutSig;
+    ps._prepScoutSig = sig;
+    const dest = changed ? watchers : (to ? [to] : []);
+    if (!dest.length) return;
+    const meta = this.prepFieldMeta(ps);
+    for (const pid of dest) this.sendTo(pid, meta);
+  }
+
   _sendField(playerId, fieldId) {
     const f = this.fields.find((x) => x.fieldId === fieldId);
     if (f) {
@@ -1053,14 +1082,15 @@ export class Match {
       return OK;
     }
     if (fieldId.startsWith('n:')) {
-      // prep scouting — a one-shot board view — only while no battle field is up: during 各自行动 / 联防 / 最终攻势 /
-      // 隐秘核心 an 'n:<pid>' id must name a live field (else the boss-group rule above could be bypassed, and the
-      // viewer would stop receiving its own field's snapshots)
+      // prep scouting, only while no battle field is up: during 各自行动 / 联防 / 最终攻势 / 隐秘核心 an 'n:<pid>' id
+      // must name a live field (else the boss-group rule above could be bypassed, and the viewer would stop receiving
+      // its own field's snapshots). The scout stays in `watchers` so a later board change pushes prepFieldMeta again
+      // (GitHub #87); combat start clears the map and reassigns live fields, spectators included.
       if (this.fields.length) return fail(ERR.BAD_TARGET, 'no such field');
       const target = this.players.get(fieldId.slice(2));
       if (!target || !target.alive) return fail(ERR.BAD_TARGET);
-      this.watchers.delete(ps.playerId);
-      this.sendTo(ps.playerId, this.prepFieldMeta(target));
+      this.watchers.set(ps.playerId, fieldId);
+      this._notifyPrepScouts(target, { to: ps.playerId });
       return OK;
     }
     return fail(ERR.BAD_TARGET);

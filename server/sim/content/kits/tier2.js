@@ -721,7 +721,8 @@ export default {
     if (num(t.duration) > 0) trait.onHitStatus = { key: 'silence', duration: num(t.duration) };
     if (num(tb.atk_scale_m) > 0) {
       trait.afterHit = (battle, u, target) => {
-        if (target && target.alive && target.side === 'enemy') battle.dealDamage(u, target, { amount: u.s.atk * num(tb.atk_scale_m), type: 'arts', tags: ['module'] });
+        // PRTS 特性备注 "造成预计算的法术附加伤害": 附加伤害 (tag addition — no 叙拉古 6 roll)
+        if (target && target.alive && target.side === 'enemy') battle.dealDamage(u, target, { amount: u.s.atk * num(tb.atk_scale_m), type: 'arts', tags: ['module', 'addition'] });
       };
     }
     return {

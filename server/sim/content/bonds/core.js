@@ -18,8 +18,8 @@
 //   阿戈尔 egirShip      members max HP +(base_max_hp + max_hp_per_stack·L) (直接乘算); battle start devour (see devour());
 //                        5: the first max_free_respawn_cnt members knocked out for the first time redeploy at once (free)
 //   叙拉古 siracusaShip  every member deployment: ASPD +(base + per·L) for (base_duration + per·L) s; 6: 隐匿 for the same
-//                        time, and while hidden / end_duration s after, attacks proc (PRD, nominal `prob`) base_damage +
-//                        damage_per_stack·L true damage + fear `fear` s
+//                        time, and while hidden / end_duration s after, every 普通伤害 hit (siracusaRolls) procs (PRD,
+//                        nominal `prob`) base_damage + damage_per_stack·L true damage + fear `fear` s
 //   卡西米尔 kazimierzShip every deployment of one of the player's operators (initial ones included): members ATK
 //                        +atk_when_born, total ≤ base_max_atk_when_born + max_atk_when_born_per_stack·L; 6: blocking
 //                        members pulse damage_atk_scale×ATK true damage + stun around them every damage_interval s,
@@ -451,6 +451,29 @@ function installEgir(battle, pid, bb, members) {
 // =====================================================================================================================
 // 叙拉古
 
+/**
+ * Does a member's damage instance try the tier-6 proc? PRTS 盟约记录 叙拉古: "※仅在造成普通伤害时尝试造成来源为干员自身的
+ * 真实附加伤害和恐惧", "每次造成普通伤害时尝试触发" — 普通伤害 is the attack type NORMAL (PRTS 伤害分类: the default type,
+ * group damage included unless it is 溅射), not "a normal attack" (community report 「叙拉古盟约真伤概率数值没有正确递增
+ * 成长」, GitHub #79: it rolled on normal attacks only). So skill hits roll — 德克萨斯 剑雨, 缄默德克萨斯's bursts and
+ * sword rain, 阿罗玛 S1 / S2, 忍冬 S1 / S2, 伺夜 S3 — and so do 荒芜拉普兰德's S3 drone attacks (PRTS 备注 "不属于普通攻击/
+ * 技能直接伤害": neither an attack nor skill damage, still 普通伤害). Not: 溅射 (`isSplash`); 持续伤害 (tags dot / periodic:
+ * 荒芜拉普兰德's S3 pulse, PRTS 备注 "持续法术伤害"; 缄默德克萨斯 S1, "伤害分类为法术持续伤害"); 附加伤害 (tag `addition`:
+ * 拉普兰德's module, 忍冬's 追凶 — PRTS "法术附加伤害"; item procs and the bonds' riders, own proc included [ASSUMED: 附加,
+ * PRTS gives no class]); element damage; 无来源 damage (坚守's thorns); 流失.
+ */
+function siracusaRolls(dmg) {
+  if (!dmg || dmg.isSplash || dmg.sourceless || dmg.type === 'element' || dmg.type === 'elemental') return false;
+  const tags = dmg.tags;
+  if (!Array.isArray(tags)) return true;
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i];
+    if (t === 'dot' || t === 'periodic' || t === 'addition' || t === 'item' || t === 'hpLoss') return false;
+    if (typeof t === 'string' && t.startsWith('bond:')) return false;
+  }
+  return true;
+}
+
 function installSiracusa(battle, pid, bb, members) {
   const memberSet = new Set(members);
   const six = reached(battle, pid, 'siracusaShip', bb.power_bond_char_cnt);
@@ -472,7 +495,7 @@ function installSiracusa(battle, pid, bb, members) {
   const st = { n: 0 };
   const onDmg = (ctx) => {
     const u = ctx.source, t = ctx.target, dmg = ctx.dmg;
-    if (!dmg || !dmg.isAttack || dmg.isSplash || !isEnemyTarget(t) || ownTag(dmg, 'bond:siracusa')) return;
+    if (!isEnemyTarget(t) || !siracusaRolls(dmg)) return;
     const hidden = u.s.flags.stealth || battle.time <= num(u.mem.siraStealthEnd, -Infinity) + end + 1e-9;
     if (!hidden) return;
     st.n++;

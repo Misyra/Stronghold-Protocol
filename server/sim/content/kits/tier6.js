@@ -2972,11 +2972,13 @@ function whitw2(bb, chess, def) {
     // 信息 驭械术师 "浮游单元攻击不同目标…时，上述的伤害立刻恢复至初始值"). That damage is arts and neither a normal attack
     // nor skill damage (PRTS S3 备注 "该技能释放的浮游单元造成的伤害不属于普通攻击/技能直接伤害", which for this skill
     // overrides the branch note "通过技能释放的浮游单元造成技能直接伤害": no 'attack' hook, isAttack / isSkill false — the
-    // 叙拉古 6 assassin proc and the on-attack items skip it), and 缴械 does not stop it (PRTS 驭械术师 "…不受缴械类效果
+    // on-attack items skip it; it is still 普通伤害, so the 叙拉古 6 proc rolls on it, bonds/core.js siracusaRolls), and
+    // 缴械 does not stop it (PRTS 驭械术师 "…不受缴械类效果
     // 制约"); [ASSUMED] nor do her stun, freeze or silence (PRTS names only 缴械) — the skill ticks on and so do the drones.
     // Around every drone (attack@range_radius): move speed attack@move_speed and, once per second, attack@magic_atk_scale
     // × ATK arts (不叠加: one hit per enemy whatever the number of drones); [ASSUMED] that area hit keeps `isSkill` (a skill
-    // DoT — the 备注 speaks of 直接伤害). A knocked-out / withdrawn wolf (onEnd cleared the drones mid-tick, e.g. from a
+    // DoT — the 备注 speaks of 直接伤害) and is 持续伤害 (tag dot: PRTS 备注 "持续法术伤害" — no 叙拉古 6 roll, 锡人's
+    // 凋敝魂灵 raises it). A knocked-out / withdrawn wolf (onEnd cleared the drones mid-tick, e.g. from a
     // kill hook) deals nothing more in that tick.
     skill: {
       kind: 'duration',
@@ -3009,7 +3011,7 @@ function whitw2(bb, chess, def) {
           unit.mem.droneAcc -= 1;
           for (const e of near) {
             if (gone()) return;
-            if (e.alive) battle.dealDamage(unit, e, { amount: unit.s.atk * dmgScale, type: 'arts', isSkill: true, tags: ['skill', 'drone'] });
+            if (e.alive) battle.dealDamage(unit, e, { amount: unit.s.atk * dmgScale, type: 'arts', isSkill: true, tags: ['skill', 'drone', 'dot'] });
           }
           // (a drone on its target already pulses with each of its attacks)
           for (const d of D) if (d.phase !== 'lock') battle.fx('drone', { x: d.x, y: d.y, id: unit.id });

@@ -425,7 +425,7 @@ Members (9 chess, 9 in current shop pool; by tier in shop: {'1': 1, '2': 1, '3':
 **Implementable spec**
 
 - **[3 distinct]** After every deployment (incl. redeploy) a 叙拉古 member gains ASPD +(25 + 0.8*L) for (32 + 0.4*L) s.
-- **[6 distinct]** After deployment also 隐匿 (camouflage) for the same duration. While camouflaged and for 10 s after it ends, each normal damage instance it deals may add (5000 + 50*L) true damage (source = the operator) and 恐惧 (fear) 3 s. Nominal 3% chance, implemented as pseudo-random: all 叙拉古 members share one counter; attempt n since last proc succeeds with p = 0.00139*n (guaranteed at n = 720); counter resets on proc.
+- **[6 distinct]** After deployment also 隐匿 (camouflage) for the same duration. While camouflaged and for 10 s after it ends, each normal damage instance (普通伤害 = attack type NORMAL: attacks, skill hits, drone attacks; not 溅射 / 持续 / 附加 — `bonds/core.js siracusaRolls`) it deals may add (5000 + 50*L) true damage (source = the operator) and 恐惧 (fear) 3 s. Nominal 3% chance, implemented as pseudo-random: all 叙拉古 members share one counter; attempt n since last proc succeeds with p = 0.00139*n (guaranteed at n = 720); counter resets on proc.
 - Formulas: `aspd = 25 + 0.8*L`; `durationSec = 32 + 0.4*L`; `procDamage = 5000 + 50*L`; `prdStep = 0.00139`
 - Caps: none
 - How layers are gained: Shop refresh-driven: 拉普兰德 first manual refresh each round +4 (works from bench); 安洁莉娜 休整期结束 +4 per refresh this round (<=12/round); 阿罗玛 +2 叙拉古/奥术 per refresh (<=6); 伺夜 first 3 kills +2 叙拉古 +1 奇迹; 荒芜拉普兰德 each kill +2 (elite: every 叙拉古 gets this, <=100/battle); 忍冬 获得时 +6 own bonds (x2/x3 with 投资人); 机变 "德克萨斯的盟誓" +10. Strategy 贾维: every 6 manual refreshes get a free 叙拉古 (<=2/round).

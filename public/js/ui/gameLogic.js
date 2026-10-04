@@ -676,7 +676,8 @@ export function mergeProgress(priv, chessId, getChess = () => null) {
 /**
  * Where the elite appears when gaining one more normal copy of `chessId` completes a merge now (PRTS 卫戍协议/帮助
  * "若消耗已部署至作战区的干员，则发送至作战区对应位置"; mirror of server board.js mergeTile / PlayerState._mergeChess): the
- * board tile of the deployed copy that deploys first (row desc, then col asc) — `{ row, col, dir }` — or null (no
+ * board tile of the deployed copy that deploys first (col asc, then row desc: by column from the left, top to bottom —
+ * Battle.start) — `{ row, col, dir }` — or null (no
  * merge — an elite card never merges, see mergeProgress — or no copy is deployed: the elite goes to the hand). The
  * copies stand on legal tiles, and the elite is the same operator, so the tile needs no legality check here.
  * @param {any} priv
@@ -692,7 +693,7 @@ export function mergeTarget(priv, chessId, getChess = () => null) {
   const board = (Array.isArray(priv?.board) ? priv.board : []).filter((p) => p?.kind === 'chess' && !p.golden && Number.isInteger(p.row) && Number.isInteger(p.col)
     && !String(p.id).endsWith('_b') && (p.id === base || getChess(p.id)?.baseId === base));
   if (!board.length) return null;
-  board.sort((a, b) => b.row - a.row || a.col - b.col);
+  board.sort((a, b) => a.col - b.col || b.row - a.row);
   return { row: board[0].row, col: board[0].col, dir: board[0].dir || 'RIGHT' };
 }
 

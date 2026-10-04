@@ -321,7 +321,7 @@ export class PlayerState {
     return null;
   }
 
-  /** Every owned chess piece: board (deploy order) then hand then temp. */
+  /** Every owned chess piece: board (reading order, board.js boardOrder) then hand then temp. */
   allChess() {
     const out = [];
     for (const { piece } of boardOrder(this.board)) if (piece.kind === 'chess') out.push(piece);
@@ -509,8 +509,8 @@ export class PlayerState {
    * Merge `need` normal copies of `baseId` (the incoming, not yet stowed piece first, then temp, hand, board) into
    * the elite — PRTS 卫戍协议/帮助 §干员的获得与精锐化: "发送1名【精锐】状态的该干员至手牌区（若消耗已部署至作战区的干员，
    * 则发送至作战区对应位置）" (the user's playtest #6 follow-up confirms it). The tile (`mergeTile`): when a consumed copy
-   * stood on the board the elite takes its tile and facing — of several, the one that deploys first (board reading
-   * order: top → bottom, then left → right) [ASSUMED]. The incoming copy is never deployed (a 突变细胞 transformation
+   * stood on the board the elite takes its tile and facing — of several, the one that deploys first (the left board
+   * column first, top to bottom within a column — Battle.start's order) [ASSUMED]. The incoming copy is never deployed (a 突变细胞 transformation
    * destroyed its carrier before the gain: that tile is no copy's). It replaces a deployed copy, so the deploy count
    * never grows. Otherwise the elite goes to the hand, overflow temp — outside PREP too (a SETTLE merge's elite waits in
    * temp through the next prep, tempDue). The copies' equipment returns to the hand ("干员晋级后已配发装备会回收至整备区";
@@ -1524,14 +1524,20 @@ export class PlayerState {
 
   /**
    * The bond states the views show (m.private bonds, m.public players[].bonds): the computed states plus the pending
-   * in-battle gains of this round's finished normal battle (bondsMeta.bondsWithGains). Never used by rules.
+   * in-battle gains of this round's finished normal battle (bondsMeta.bondsWithGains). The 联防 field fights with them too
+   * (battleInput `reached`); no other rule reads them.
    */
   bondsView() { return bondsWithGains(this.bonds, this.pendingLayerGains); }
 
   // =================================================================================================
   // battle input
 
-  battleInput({ side = 'L', colOffset = 0, carry = null } = {}) {
+  /**
+   * `reached`: the bonds carry the layers this round's own combat reached (bondsView: the pending in-battle gains, capped
+   * like settle()) — the 联防 field (unite.js; PRTS 卫戍协议/帮助 §联防阶段 "将以其阵地当前的状态", [ASSUMED] the current
+   * state includes those layers, as the strip shows them). The gains stay pending: settle() adds them once.
+   */
+  battleInput({ side = 'L', colOffset = 0, carry = null, reached = false } = {}) {
     // a terrain change not yet followed by a recompute (a content hook at the prep end) never fields an illegal board
     this.deployMap();
     if (this._legalityStale) this.recompute();
@@ -1557,7 +1563,7 @@ export class PlayerState {
       side,
       colOffset,
       units,
-      bonds: bondSnapshot(this.bonds),
+      bonds: bondSnapshot(reached ? this.bondsView() : this.bonds),
       bandId: this.bandId,
       playerEffects: this.effects.filter((e) => e.battle !== false).map((e) => ({
         id: e.id, key: e.key ?? null, source: e.iconKind ?? null, params: e.params ?? null, counter: e.counter ?? null, data: e.data ?? null,

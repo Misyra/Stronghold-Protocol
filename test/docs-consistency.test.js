@@ -99,6 +99,19 @@ test('联防 helpers follow unite.helperOrder (units > active bond > standing > 
   const c = player('c', 2, 2, 5, true);     // most units + an active bond
   const order = helperOrder(m, [a, b, c], new Map()).map((p) => p.playerId);
   assert.deepEqual(order, ['c', 'b'], 'LP never decides; the first helper (right-hand field) is c');
+  // the tie-break is the layers the 联防 will fight with: stored plus this round's pending gains, capped at 999
+  const reached = (playerId, seat, stored, pending) => ({
+    playerId, seat, lp: 10, deployCount: 4, board: new Map(),
+    layers: { bond_x: stored },
+    pendingLayerGains: pending,
+    bonds: { bond_x: { active: true, layers: stored } },
+  });
+  const hi = reached('A', 0, 200, { bond_x: 50 }); // fights at 250
+  const lo = reached('B', 1, 230, null);          // fights at 230
+  assert.deepEqual(helperOrder(m, [lo, hi], new Map()).map((p) => p.playerId), ['A', 'B']);
+  const capped = reached('C', 2, 990, { bond_x: 50 }); // 999, not 1040
+  const under = reached('D', 3, 995, null);
+  assert.deepEqual(helperOrder(m, [under, capped], new Map()).map((p) => p.playerId), ['C', 'D']);
   assert.ok(!/highest LP, then seat/.test(DESIGN), 'DESIGN §6.1 no longer picks helpers by LP');
   assert.match(DESIGN, /helperOrder/);
   assert.match(META, /unite\.js helperOrder/);
@@ -515,7 +528,8 @@ test('user playtest #6 follow-up: a merge consuming a deployed copy puts the eli
   assert.equal(promo.eliteTileAmongSeveralDeployed?.assumed, true);
   for (const [name, text] of [['research 01', R01], ['00-INDEX', INDEX], ['META', META], ['SIM', SIM], ['PlayerState', PS]]) assert.match(text.replace(/\s+|\/\/\s/g, ''), official, `${name} quotes PRTS`);
   assert.match(INDEX, /to \*\*that copy's board position\*\*/);
-  assert.match(META, /of several, the one that deploys first \(row desc, then col asc; `board\.js mergeTile`/);
+  // the deployment order is by column since 0.1.3 (Battle.start; DESIGN §23.f4), so is the merge's tile among several copies
+  assert.match(META, /of several, the one that deploys first \(col asc, then row desc; `board\.js mergeTile`/);
   assert.ok(!/it takes a freed\s+board tile of a consumed copy only when the hand and temp are both full/.test(META), 'META: the old fallback-only wording is gone');
   assert.ok(!/only with the hand and temp both full does it take a/.test(PS), 'PlayerState header: the old fallback-only wording is gone');
   assert.match(PLAYING, /精锐会直接出现在\*\*那名干员的位置\*\*/);

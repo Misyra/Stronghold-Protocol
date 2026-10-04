@@ -321,7 +321,8 @@ for (const key of ['enemy_1203_sfhu', 'enemy_1203_sfhu_2']) {
   // 持续时间和效果独立计算"; "普通攻击对目标对及目标周围半径1.0范围内的所有我方单位造成法术普通伤害" (0.1.3: the blast took the attack
   // radius 2 and left a steam zone; the attack hit its target only)
   test(`${nm(key)}: death spawns 4 茶器; the blast (r 1.25, ATK arts) gives each unit hit one ${tb(key, 'DeadBoom.duration')} s layer of ASPD ${tb(key, 'DeadBoom.attack_speed')}; its attacks splash r 1.0`, () => {
-    const h = arena({ units: [{ chessId: 't_gun', row: 10, col: 6 }, { chessId: 't_wall', row: 11, col: 8 }, { chessId: 't_wall2', row: 10, col: 5 }], hooks: ['damaged'], captureNoisy: true });
+    // t_gun deploys last (column 6, below t_wall): the attack's target, t_wall2 and t_wall within 1.0 of it
+    const h = arena({ units: [{ chessId: 't_gun', row: 10, col: 6 }, { chessId: 't_wall', row: 11, col: 6 }, { chessId: 't_wall2', row: 10, col: 5 }], hooks: ['damaged'], captureNoisy: true });
     h.step();
     const e = put(h, key, [10, 7]);
     h.runUntil(() => h.hooksOf('damaged').some((c) => c.source === e && c.dmg.isAttack), 10);
@@ -1372,7 +1373,8 @@ test(`${nm('enemy_1050_lslime')}: 4 targets, burning DoT on hit, ASPD up below h
 // 目标造成物理普通伤害，对溅射目标造成物理溅射伤害") — community report #14: until 0.1.3 the target took a full attack and the 4
 // orthogonal neighbours 100 % ATK (no diagonal), DEF down for 3 s
 test(`${nm('enemy_1500_skulsr')}: an unblocked attack is a grenade — 26 % ATK on the target and on its 8 surrounding tiles, DEF −50 % for 5 s; blocked a plain hit; ATK up below half`, () => {
-  const h = arena({ units: [{ chessId: 't_wall', row: 11, col: 3 }, { chessId: 't_wall2', row: 12, col: 6 }, { chessId: 't_wall3', row: 11, col: 5 }], captureNoisy: true, hooks: ['statusApplied', 'damaged'] });
+  // t_wall3 is the one in range (√5): the target; t_wall2 on its diagonal, t_wall two tiles away
+  const h = arena({ units: [{ chessId: 't_wall', row: 11, col: 3 }, { chessId: 't_wall2', row: 12, col: 4 }, { chessId: 't_wall3', row: 11, col: 5 }], captureNoisy: true, hooks: ['statusApplied', 'damaged'] });
   h.step();
   const e = put(h, 'enemy_1500_skulsr', [10, 7]);
   h.runUntil(() => e.stats.attacks >= 1, 10);

@@ -348,7 +348,8 @@ function inRectTile(battle, r, c) { return Number.isInteger(r) && Number.isInteg
 
 /**
  * A tile a summon may take: inside the field, nobody on it, and not the home tile of a board unit that has not
- * deployed yet / waits to redeploy (initial deployment runs top→bottom, a summon must not steal a later unit's tile).
+ * deployed yet / waits to redeploy (the initial deployment runs one unit after another, a summon must not steal a later
+ * unit's tile).
  */
 export function tileFree(battle, r, c) {
   return inRectTile(battle, r, c) && !battle.isReservedTile(r, c);

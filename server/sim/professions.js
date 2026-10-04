@@ -128,16 +128,27 @@ const installDollkeeper = (battle, unit) => {
   };
   const at = (extra) => ({ x: unit.x, y: unit.y, id: unit.id, ...extra });
   // a switch animation: "切换动画开始时会清除自身一切Buff" (header: the running skill and the statuses), then 1 s of 不死
-  // (the fatal hook below) 无敌 阻回 禁疗 孤立 强制缴械 and 眩晕 / 冻结 / 睡眠 immunity (beforeStatus below)
+  // (the fatal hook below) 无敌 阻回 禁疗 孤立 强制缴械 and 眩晕 / 冻结 / 睡眠 immunity (beforeStatus below). "切换途中重设自身
+  // 生命至最大值": the HP is set to the max at the start (enter / leave) and again when the switch ends, so she always
+  // leaves it at full HP — a lethal 流失 inside the switch (无敌 does not stop it, 不死 holds it at 1 HP: a later 阿戈尔
+  // devour mark on her) used to leave her the 替身's 20 s at 1 HP (community report #2)
   const startSwitch = () => {
     const sk = unit.skill;
     if (sk && sk.active && sk.kind !== 'passive') sk.end('substitute');
     for (const b of unit.buffs.slice()) if (b.status) battle.removeBuff(unit, b);
     unit.trait.dollSwitching = true;
     const done = () => { unit.trait.dollSwitching = false; };
+    const ended = () => {
+      done();
+      if (!unit.alive || !unit.deployed) return;
+      unit.markDirty();
+      unit.hp = unit.s.maxHp;
+    };
     battle.addBuff(unit, {
-      key: 'trait:dollSwitching', duration: DOLL_SWITCH, onExpire: done, onRemove: done,
-      flags: { invulnerable: true, noSp: true, noHeal: true, isolated: true, disarm: true },
+      key: 'trait:dollSwitching', duration: DOLL_SWITCH, onExpire: ended, onRemove: done,
+      // noHeal refuses another unit's heal; healFree is 禁疗 (damage.js: a self-heal is 0 too, regen excepted). The
+      // window still ends at full HP — onExpire writes it, it does not heal.
+      flags: { invulnerable: true, noSp: true, noHeal: true, healFree: true, isolated: true, disarm: true },
     });
   };
   const leave = () => {

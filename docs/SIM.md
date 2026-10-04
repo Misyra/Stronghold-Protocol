@@ -59,9 +59,10 @@ b.fieldMeta();                     // { fieldId, kind, rect, stageId, units: Uni
 ```
 
 Construction creates every ally unit (not yet deployed) and installs content (kits, then domain modules). The first
-`step()` (or `b.start()`) spawns stage crates, deploys all board units for free — per player the **operators top→bottom
-then left→right** (right boss side: right→left in field columns), **then the summon pieces** the same way (PRTS
-卫戍协议/帮助 "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物"; a skill's summon — 赫默's 医疗探机, 巫恋's
+`step()` (or `b.start()`) spawns stage crates, deploys all board units for free — per player the **operators by column, the
+left column first, top to bottom within a column** (right boss side: from its own left, the highest field column),
+**then the summon pieces** the same way (PRTS 卫戍协议/帮助 "按从上到下>从左到右的顺序部署。优先部署干员，随后为召唤物", a
+scan down each column — the 阿戈尔 devour's "更靠左和靠上"; row-major until 0.1.3; a skill's summon — 赫默's 医疗探机, 巫恋's
 诅咒娃娃 — included, once, free: content/tokens.js `dockSkillSummons` / `releaseSkillSummon`, user playtest #6) — except a
 summon piece content flags `deferDeploy` (one its owner's loadout does not make, e.g. 赫默 on S1; with
 `SKILL_SUMMON_START_DEPLOY` off also a skill's summon, which then waits on its reserved tile until the skill gives
@@ -1143,7 +1144,7 @@ table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡�
 | agent / hookmaster | can hit FLY (ranged reach); hook displacement comes from skills (generic: `force`) |
 | bearer | block 0 while the skill is active |
 | alchemist | ranged lob, can hit FLY |
-| dollkeeper | fatal damage (no 不死 — a running 坚固维式重锤 window comes first) ⇒ a 1 s switch animation [ASSUMED length, also on a direct switch] (无敌, 不死, 阻回, 禁疗, 孤立, 缴械, 眩晕 / 冻结 / 睡眠 immune; ends the running skill and removes the statuses), then the <替身> for 20 s (bb duration): block 0 from the switch on, 阻回, HP = its own 替身 token's (风丸 纸偶), else its own max HP (归溟幽灵鲨: PRTS resets it "至最大值", the trait's 替身 HP bonus `max_hp` is 0, 风丸's 纸偶 has her HP); then the switch back (the same animation) at full HP; dies if the 替身 dies. Kit flag `dollNoAttack` (归溟幽灵鲨): the 替身 makes no normal attack and casts no skill. Hook `dollSwitch` switches it at once (归溟幽灵鲨 S2's end). Model form `'doll'` (PRTS 分支特性信息 傀儡师, DESIGN §22.11) |
+| dollkeeper | fatal damage (no 不死 — a running 坚固维式重锤 window comes first) ⇒ a 1 s switch animation [ASSUMED length, also on a direct switch] (无敌, 不死, 阻回, 禁疗, 孤立, 缴械, 眩晕 / 冻结 / 睡眠 immune; ends the running skill and removes the statuses; the HP is set to the max at its start and again at its end — PRTS "切换途中重设自身生命至最大值" —, so a lethal 流失 inside it, held at 1 HP, never outlasts it), then the <替身> for 20 s (bb duration): block 0 from the switch on, 阻回, HP = its own 替身 token's (风丸 纸偶), else its own max HP (归溟幽灵鲨: PRTS resets it "至最大值", the trait's 替身 HP bonus `max_hp` is 0, 风丸's 纸偶 has her HP); then the switch back (the same animation) at full HP; dies if the 替身 dies. Kit flag `dollNoAttack` (归溟幽灵鲨): the 替身 makes no normal attack and casts no skill. Hook `dollSwitch` switches it at once (归溟幽灵鲨 S2's end). Model form `'doll'` (PRTS 分支特性信息 傀儡师, DESIGN §22.11) |
 | geek | loses 1–3 % max HP per second (bb hp_ratio), never lethal on its own |
 | merchant | −3 DP every 3 s (bb cost/interval); retreats when DP runs out |
 | skywalker | can block FLY enemies (蒂比's kit: only while airborne — 起飞, flag `liftoff`, which also releases the ground enemies she blocked) |

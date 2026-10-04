@@ -12,7 +12,7 @@ server/match/
                    (data/tuning.json, §3.1)
   pool.js          SharedPool (copies per base chess, across players), per-match bans, copy-weighted rolls
   board.js         placement legality from the stage legend on the deploy field (own board / boss half), slot helpers,
-                   deployment order
+                   reading order (boardOrder), a merge's elite tile in deployment order (mergeTile)
   bondsMeta.js     bond counting modes, tiers, 调和 / 独行 / 助力 / 绝技, layers
   effectsMeta.js   MetaRegistry + EffectDispatcher + the handler ctx (this document, §2)
   builtinMeta.js   engine built-ins (consume-on-equip items, Arts, EffectRefs used by 机变 defaults)
@@ -342,7 +342,7 @@ Every handler method is `(ctx, ev)`; `ev` is shared by all handlers of one dispa
 | `onDestroy` | an item was destroyed (player / replaced) | `{ item, holder, reason }` |
 | `onLayers` | bond layers were added (prep or battle gains) | `{ bondId, from, to, reason }` (milestones: 维多利亚 25, 远见 10, 奇迹 100 …); `to` ≤ 999 (`BOND_LAYER_CAP`) — a gain at the cap dispatches nothing, so the milestones stop with the count |
 
-Dispatch order per player: `global` → `band` → `bond` (data order) → garrisons (board in deployment order, then hand)
+Dispatch order per player: `global` → `band` → `bond` (data order) → garrisons (board in reading order — top row first, `board.js boardOrder` —, then hand)
 → equipped items → EffectRefs (insertion order). `onPrice` runs the priced chess's own 特质 first (购买价格为N sets the
 price that 远见's discount and the strategies' caps then act on). Every call is isolated with try/catch (the error is
 logged once and counted in `match.dispatcher.errors`); nested dispatches are capped at depth 6.
@@ -511,7 +511,7 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
 * **Merge**: 3 normal copies (风丸 2) anywhere (board/hand/temp) → 1 elite (the incoming copy, then temp, hand, board
   copies are consumed). Where it goes (PRTS 卫戍协议/帮助 "发送1名【精锐】状态的该干员至手牌区（若消耗已部署至作战区的干员，
   则发送至作战区对应位置）", the user's playtest #6 follow-up): when a consumed copy stood on the board, onto that copy's
-  tile with its facing — of several, the one that deploys first (row desc, then col asc; `board.js mergeTile`,
+  tile with its facing — of several, the one that deploys first (col asc, then row desc; `board.js mergeTile`,
   [ASSUMED]); a 突变细胞 carrier is destroyed before its gain, so its freed tile is no copy's (`transformChess`, DESIGN
   §21.1); a tile the elite may not use (a stale terrain change) is skipped. It replaces a deployed copy, so the deploy count never
   grows (no BOARD_FULL), and as a deployment its manually deployable summons join the hand (`grantTokensFor`, the
@@ -702,9 +702,10 @@ spawn tile `start`, where the boss-field prep shows it —, + its bounties).
 Bond layers in the views (DESIGN §20.15): from the end of COMBAT (`_finishCombat`, every normal result in) until SETTLE,
 `m.private bonds` and `m.public players[].bonds` add the finished battle's IN_BATTLE gains (`PlayerState.pendingLayerGains`
 = the result's `layerGains`; `bondsMeta.bondsWithGains`: floored, at most up to `BOND_LAYER_CAP`, like the settlement), so
-the strip keeps the layers the battle reached through the COMBAT_END pause and the 联防. Views only: `ps.bonds` /
-`ps.layers` (rules, the 联防 spec, `activatedLayers`) are untouched; SETTLE clears the pending gains as it adds them to
-`ps.layers` (once); the next round start clears them too.
+the strip keeps the layers the battle reached through the COMBAT_END pause and the 联防. The 联防 field fights with the
+same counts (its input's `bonds` come from `bondsView()`, PlayerState.battleInput `reached`; since 0.1.3). `ps.bonds` /
+`ps.layers` (rules, `activatedLayers`) are untouched; SETTLE clears the pending gains as it adds them to `ps.layers`
+(once); the next round start clears them too.
 
 `m.field` = `{ fieldId, kind, rect, stageId, units, live }`; during prep `g.watch 'n:<pid>'` returns a one-shot board
 view with `prep: true` (scouting a teammate).

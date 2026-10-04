@@ -1980,7 +1980,7 @@ Consequences for the current pool:
   - Withdrawing the owner removes its summons from the board.
   - Tokens marked `DEFAULT` in `shopStateTokenDict` are these placeable pieces: 医疗探机, 诅咒娃娃, 狼群, 斯卡蒂的海嗣, 流形. `HIDDEN` tokens exist only in battle.
   - [ASSUMED] Summons do **not** use one of the 8 deploy slots, as in the base game. Keep this as a config flag.
-- **Battle start:** every board unit deploys for free, in order **top→bottom, then left→right** (下半). In the boss round the order is mirrored for the right-side player. After that, knocked-out units redeploy automatically on their tile when the respawn timer is done and DP ≥ `cost` (DP starts at 10, +1/s, cap 99).
+- **Battle start:** every board unit deploys for free, in order **从上到下>从左到右** (下半): down each column, the columns left to right (research 01 §4.3). In the boss round the order is mirrored for the right-side player. After that, knocked-out units redeploy automatically on their tile when the respawn timer is done and DP ≥ `cost` (DP starts at 10, +1/s, cap 99).
 - **Ranged units may stand on melee tiles** ("所有行动内远程干员可部署在近战位"). Melee units may **not** use ranged-only tiles (HIGH `h`) [ASSUMED standard] — except the branches whose own trait reads 可以放置于远程位 (钩索师 歌蕾蒂娅 / 崖心, 推击手 见行者; PRTS 新人入门 "可部署在高台和地面"). That line is the branch trait, not a 部署效果 like the Y-module 教官's talent "可以额外部署在远程位" (the 帮助: "携带Y模组的教官仍无法部署至高台位"), so it still applies in prep — the remake's reading [ASSUMED], GitHub issue #32 item 4, DESIGN §22.6. Maps: see 05.
 
 ### C3. Pool membership per match

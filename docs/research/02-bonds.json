@@ -2727,7 +2727,7 @@
      },
      {
       "need": "5 distinct",
-      "effect": "The first 3 阿戈尔 members to be knocked out (first time each) revive immediately (max_free_respawn_cnt 3)."
+      "effect": "The first 3 阿戈尔 members by position (the devour order: leftmost first, then topmost; fixed at battle start) each revive immediately on their own first knock-out, whatever the order of knock-outs (max_free_respawn_cnt 3)."
      }
     ],
     "algorithm": [

@@ -55,11 +55,16 @@ export function planUnite(m, results) {
     for (const l of r.leaked || []) {
       if (!l || l.counted === false) continue;
       if (!m.gd.enemy(l.enemyKey)) { notReentered.set(ps.playerId, (notReentered.get(ps.playerId) || 0) + 1); continue; }
-      // kill bounties keep paying in 联防: a 悬赏 card (mods.bountyId) or a bounty set on the SpawnSpec by content
-      // (copied into mods.bountyCoins by the match)
+      // kill bounties keep paying in 联防, and only on the card's own enemy. A split or summoned child
+      // never carries bountyId / bountyCoins (spawnChildren). A leak that still has the card's id but is
+      // some other enemy — a copy that did not go through spawnChildren — does not collect the card either
+      // (GitHub #67, #89-2; owner 2026-10-04: the main body only). A bounty set on the SpawnSpec by content
+      // is copied into mods.bountyCoins by the match and has no card to match.
       const bountyId = l.mods && l.mods.bountyId;
       const b = bountyId ? ps.bounties.find((x) => x.id === bountyId) : null;
-      let bounty = b && b.card && b.card.payout !== 'perfect' && Number(b.card.coin) > 0 ? { coins: Math.trunc(b.card.coin), ownerPlayerId: ps.playerId } : null;
+      const card = b && b.card;
+      let bounty = card && card.payout !== 'perfect' && Number(card.coin) > 0 && l.enemyKey === card.enemyKey
+        ? { coins: Math.trunc(card.coin), ownerPlayerId: ps.playerId } : null;
       const extra = !bountyId && l.mods ? Math.trunc(Number(l.mods.bountyCoins) || 0) : 0;
       if (!bounty && extra > 0) bounty = { coins: extra, ownerPlayerId: ps.playerId };
       leaked.push({ enemyKey: l.enemyKey, mods: l.mods ? { ...l.mods } : null, lpr: l.lpr ?? 1, sourcePlayerId: ps.playerId, tag: l.tag ?? null, bounty });

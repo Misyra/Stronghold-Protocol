@@ -213,7 +213,7 @@ no battle effect), it gets the settlement's `m.result`, and `handle()` answers o
 The rest of this section is the legacy server-run mode
 (`SP_COMBAT=server`):
 `g.watch { fieldId }`: any live field during COMBAT / 联防; while no battle field is up (PREP, drafts, SETTLE)
-`'n:<pid>'` returns a one-shot board view — during a battle phase an `'n:<pid>'` id must name a live field
+`'n:<pid>'` keeps the viewer scouting that board and pushes `prepFieldMeta` again when it changes (GitHub #87) — during a battle phase an `'n:<pid>'` id must name a live field
 (`BAD_TARGET 'no such field'` otherwise, and the viewer keeps its stream). In the
 最终攻势 / 隐秘核心 a player fighting in a boss field may only watch its own field ("两名参与者会处于同一个战场，但无法查看
 另一组队友的战场情况" → `BAD_TARGET 'other group hidden'`); eliminated / departed players spectate any field.
@@ -707,8 +707,8 @@ the strip keeps the layers the battle reached through the COMBAT_END pause and t
 `ps.layers` (rules, the 联防 spec, `activatedLayers`) are untouched; SETTLE clears the pending gains as it adds them to
 `ps.layers` (once); the next round start clears them too.
 
-`m.field` = `{ fieldId, kind, rect, stageId, units, live }`; during prep `g.watch 'n:<pid>'` returns a one-shot board
-view with `prep: true` (scouting a teammate).
+`m.field` = `{ fieldId, kind, rect, stageId, units, live }`; during prep `g.watch 'n:<pid>'` returns that board
+with `prep: true` and sends it again when the board changes (GitHub #87).
 
 **`b.snap` / `b.ev` game time**: every frame is `{ t: '<type>', … }`, so the snapshot's game time (DESIGN `b.snap.t`)
 is sent as **`gt`** (game seconds); `b.ev` carries the same `gt`. The client reads `gt` (`render/interp.js frameTime`,

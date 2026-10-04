@@ -405,8 +405,9 @@ const KITS = {
   //      closing it spends every coin on random ground enemies of range 2-4 in front and those she blocks (atk_scale phys +
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
   //      the RandomGold ability (Skill_3_End) carries swire2_s_3[knockback] of template knockback[relative]; 地面敌方单位,
-  //      弹道不可对空). Auto-close (the mode casts everything itself; the player's "主动关闭" is not available): once the
-  //      purse is full (10) and a coin target stands there. 精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
+  //      弹道不可对空). It does not close itself when the purse is full (PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; the skill
+  //      text is 「可随时主动关闭」; GitHub #89-1). The player closes it: skill.end('manual'), which spends the coins.
+  //      精锐 module MER-Y: ATK +4 % per trait payment (≤ 5 stacks).
   chess_char_3_04_a: (bb, chess, def) => {
     const d = defOf(chess, def);
     const t0 = talentBb(d, 0), t1 = talentBb(d, 1);
@@ -493,7 +494,7 @@ const KITS = {
       skills: altSkills(chess, d, bb, {
         [S1]: () => ({ kind: 'passive' }), // (coins → heals: installS1)
         [S3]: (s) => {
-          const cash = num(s.bb.atk_scale, 1), force = num(s.bb.force, 0), full = num(s.bb.sp, 10);
+          const cash = num(s.bb.atk_scale, 1), force = num(s.bb.force, 0);
           // the 【金币标记】 targets: ground enemies on range 2-4 in front of her (range_table "2-4") and every unit she blocks
           const coinMarks = (battle, unit) => {
             const list = enemiesOn(battle, unit, gridKeys(SWIRE2_COIN_GRID, unit), 0, { ...unit.profile, canHitFly: false });
@@ -503,9 +504,8 @@ const KITS = {
           return {
             kind: 'toggle',
             attack: { hits: 2 },
-            onTick({ battle, unit, skill }) {
-              if ((unit.mem.coins ?? 0) >= full && coinMarks(battle, unit).length) skill.end('manual');
-            },
+            // PRTS 卫戍协议/帮助 「通常不会自动关闭技能」; 千金一掷 「可随时主动关闭」 (GitHub #89-1). A full purse
+            // with a markable enemy does not end it. skill.end('manual') is the close that spends the coins.
             onEnd({ battle, unit, reason }) {
               if (reason !== 'manual' || !unit.alive) return;
               const n = unit.mem.coins ?? 0;

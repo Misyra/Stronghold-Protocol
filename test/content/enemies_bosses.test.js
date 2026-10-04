@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { makeBattle, chessRec, checkInvariants } from '../helpers/battleHarness.js';
 import * as enemiesMod from '../../server/sim/content/enemies.js';
 import * as bossesMod from '../../server/sim/content/bosses.js';
+import { spawnYanyou } from '../../server/sim/content/tokens.js';
 
 const E = JSON.parse(fs.readFileSync(new URL('../../data/enemies.json', import.meta.url), 'utf8'));
 const W = JSON.parse(fs.readFileSync(new URL('../../data/waves.json', import.meta.url), 'utf8'));
@@ -2802,4 +2803,59 @@ test(`${nm('enemy_1512_mcmstr')}: unblocked, a ranged attack (radius 2.5, ground
   const st = h.hooksOf('statusApplied').filter((c) => c.status === 'stun').map((c) => c.target.defId).sort();
   // t_wall (11,5): √5 ≈ 2.24, t_wall2 (12,6): √5, t_wall3 (9,4): √10 ≈ 3.16 — outside 3.0
   assert.deepEqual(st, ['t_wall', 't_wall2']);
+});
+
+test(`${nm('enemy_1535_wlfmster')}: leaking in its first form ends every 溶血骇惧 it cast — no drain afterwards`, () => {
+  // [ASSUMED] (no official text): the buff ends once its 扎罗 is off the field without a 重生 (a leak, a removal); until
+  // 0.1.3 the drain went on ramping after a leak and knocked the units out (Grok review of fb3-enemies-kits)
+  const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 5 }, { chessId: 't_wall2', row: 11, col: 5 }, { chessId: 't_wall3', row: 12, col: 5 }] });
+  h.step();
+  const e = put(h, 'enemy_1535_wlfmster', [10, 7]);
+  e.profile.noAttack = true;
+  const fc = skb('enemy_1535_wlfmster', 'FearCage');
+  h.run(fc.spCost + 3.1);
+  const caged = h.allies().filter((u) => u.findBuff('ab:fearCage'));
+  assert.equal(caged.length, fc.bb.max_target);
+  h.b.leak(e);
+  assert.ok(!e.alive);
+  const hp = caged.map((u) => u.hp);
+  h.run(3);
+  assert.equal(h.allies().filter((u) => u.findBuff('ab:fearCage')).length, 0, 'every 溶血骇惧 ended');
+  assert.deepEqual(caged.map((u) => u.hp), hp, 'no HP lost after the leak');
+});
+
+test(`${nm('enemy_1203_sfhu')}: its attack splash (法术普通伤害) can be dodged; its death blast (法术溅射伤害) cannot`, () => {
+  // PRTS 烹泉 天赋: "普通攻击对目标对及目标周围半径1.0范围内的所有我方单位造成法术普通伤害", "死亡爆炸（…造成攻击力100%法术溅射伤害…）"
+  const h = arena({ units: [{ chessId: 't_gun', row: 10, col: 6 }, { chessId: 't_wall', row: 11, col: 6 }, { chessId: 't_wall2', row: 10, col: 5 }], hooks: ['damaged', 'dodge'], captureNoisy: true });
+  h.step();
+  const g = h.unit('t_gun'), w = h.unit('t_wall'), dodger = h.unit('t_wall2');
+  h.b.addBuff(dodger, { key: 'test:dodge', persist: true, mods: { dodgeArts: 1 } });
+  const e = put(h, 'enemy_1203_sfhu', [10, 7]);
+  h.runUntil(() => h.hooksOf('damaged').some((c) => c.source === e && c.dmg.isAttack && c.target === g), 10);
+  h.run(0.3);
+  approx(w.stats.taken, e.s.atk, 1e-6, 'the plain neighbour: splashed');
+  assert.equal(dodger.stats.taken, 0, 'the arts-dodge neighbour dodges the splash');
+  assert.ok(h.hooksOf('dodge').some((c) => c.target === dodger && c.source === e));
+  h.b.addBuff(g, { key: 'test:dodge', persist: true, mods: { dodgeArts: 1 } });
+  const t0 = g.stats.taken, atk = e.s.atk;
+  killed(h, e, null);
+  approx(g.stats.taken - t0, atk, 1e-6, 'the death blast is not dodged');
+});
+
+test(`${nm('enemy_10122_uacann_2')}: its 燃烧区域 (不可对空) spares a flying ally standing in it`, () => {
+  // PRTS 集团军重型火炮: 【燃烧区域】 "…（可叠加，碰撞不受迷彩制约，不可对空）" — until 0.1.3 the 炎佑 dragon in it burned
+  const h = makeBattle({ seed: 7, autoFinish: false, timeLimit: 120, defs: { chess: { t_wall: WALL('t_wall') } }, kits: { t_wall: NOATK },
+    units: [{ chessId: 't_wall', row: 10, col: 2 }], hooks: ['damaged'], captureNoisy: true });
+  h.step();
+  const [y] = spawnYanyou(h.b, 'p1', { atk: 0, hp: 50000 });
+  assert.ok(y && y.isFlying, 'a flying ally');
+  const e = h.spawn('enemy_10122_uacann_2', { pos: [10, 9], routeIndex: 0, mods: { speedMul: 0 } });
+  const w = h.unit('t_wall');
+  assert.ok(Math.hypot(y.x - w.x, y.y - w.y) <= 1.5, 'the dragon stands inside the zone around the wall');
+  h.runUntil(() => e.stats.attacks >= 1, 15);
+  h.run(3.5);
+  const burns = h.hooksOf('damaged').filter((c) => c.source === e && (c.dmg.tags || []).includes('burning'));
+  assert.ok(burns.some((c) => c.target === w), 'the wall burns');
+  assert.ok(!burns.some((c) => c.target === y), 'the dragon does not');
+  assert.ok(!h.hooksOf('damaged').some((c) => c.source === e && c.target === y), 'nor is it shot or splashed');
 });

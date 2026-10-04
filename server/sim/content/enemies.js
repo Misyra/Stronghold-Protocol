@@ -715,9 +715,11 @@ const hitAllInRadius = (r) => ({ before(c, b, e) { const l = areaAllies(b, e, e.
  * `scale` × ATK as a splash — an area selection (areaAllies / areaAlliesInTiles: no 隐匿 ally that does not block the
  * enemy, no airborne 起飞 one for a ground enemy; 迷彩 is not checked — DESIGN §22.12). `tiles` 1 = the target's tile and
  * its 8 neighbours (格子判定), else `radius` around the target (中点判定). `noAir`: "不可对空" (a flying ally — the 炎佑
- * dragon — is skipped; without it "可溅射飞行单位"). `onEach(b, e, u)` runs on every unit hit (the target after its damage).
+ * dragon — is skipped; without it "可溅射飞行单位"). `dodge`: the splash hits may be dodged (烹泉 / 沏虹, whose PRTS 天赋 calls
+ * them 法术普通伤害 — a normal attack's damage); a 溅射伤害 splash cannot. `onEach(b, e, u)` runs on every unit hit (the target
+ * after its damage).
  */
-function splashAttack({ scale = 1, meleeScale = 1, unblocked = true, tiles = 0, radius = 0, noAir = false, fxKind = 'splash', onEach = null } = {}) {
+function splashAttack({ scale = 1, meleeScale = 1, unblocked = true, tiles = 0, radius = 0, noAir = false, dodge = false, fxKind = 'splash', onEach = null } = {}) {
   return {
     before(c, b, e, a) { a.splash = !unblocked || !e.blockedBy; e.profile.atkScale = a.splash ? scale : meleeScale; },
     hitOut(c, b, e, a) {
@@ -727,7 +729,7 @@ function splashAttack({ scale = 1, meleeScale = 1, unblocked = true, tiles = 0, 
       const area = tiles > 0 ? areaAlliesInTiles(b, e, t.tileR, t.tileC, 'box', tiles) : areaAllies(b, e, t.x, t.y, radius);
       for (const u of area) {
         if (u === t || (noAir && u.isFlying)) continue;
-        hurt(b, e, u, e.s.atk * scale, c.dmg.type, { tags: ['splash'] });
+        hurt(b, e, u, e.s.atk * scale, c.dmg.type, { tags: ['splash'], canDodge: dodge });
         if (onEach && u.alive) onEach(b, e, u);
       }
     },
@@ -1193,10 +1195,11 @@ function pollution(b, src, x, y, r, life, low, high) {
  * its area selection takes (areaAllies: no unblocking 隐匿, untargetable or sleeping ally; no airborne 起飞 one for a ground
  * enemy — PRTS 集团军重型火炮 【燃烧区域】 "碰撞不受迷彩制约，不可对空": 迷彩 only). A sourceless zone (`src` null: 假想敌：蚀裂's
  * 毒雾, an enemy's 死亡爆炸 with no 无视可选性 note on PRTS) selects as an effect with no selecting enemy: 隐匿 kept out, an
- * airborne 起飞 ally reached (§21.22; until 0.1.2 it took everyone inside).
+ * airborne 起飞 ally reached (§21.22; until 0.1.2 it took everyone inside). `noAir`: "不可对空" — a flying ally (the 炎佑
+ * dragon) is skipped too (集团军重型火炮's 【燃烧区域】, since 0.1.3).
  */
-function dmgZone(b, src, x, y, r, life, iv, amount, type = 'arts', kind = 'zone', el = null, elAmount = 0) {
-  zone(b, { x, y, r, life, iv, kind, pick: (zx, zy, zr) => areaAllies(b, src, zx, zy, zr), tick(units) {
+function dmgZone(b, src, x, y, r, life, iv, amount, type = 'arts', kind = 'zone', el = null, elAmount = 0, { noAir = false } = {}) {
+  zone(b, { x, y, r, life, iv, kind, pick: (zx, zy, zr) => areaAllies(b, src, zx, zy, zr).filter((u) => !(noAir && u.isFlying)), tick(units) {
     for (const u of units) {
       hurt(b, src, u, amount, type, { tags: [kind] });
       if (el && elAmount > 0) elem(b, src, u, el, elAmount, { tags: [kind] });
@@ -1969,10 +1972,11 @@ function kitDekght(ab) {
  * （无视迷彩，不可对空）" — splashAttack, blocked or not); 死亡爆炸 "（爆炸半径1.25，造成攻击力100%法术溅射伤害并施加15s【烹泉减益】，
  * 无视迷彩，不可对空）", 【烹泉减益】 "攻击速度-40，且固定每3秒额外-0（可被抵抗，可叠加，每层持续时间和效果独立计算）" — DeadBoom.
  * attack_speed / duration; one layer per blast, each its own buff. Until 0.1.3: no attack splash; the blast took the attack
- * radius (2) and left a 15 s steam zone re-applying the ASPD cut to whoever stood in it [ASSUMED].
+ * radius (2) and left a 15 s steam zone re-applying the ASPD cut to whoever stood in it [ASSUMED]. The attack splash, a 法术普通
+ * 伤害, can be dodged like the attack itself; the blast (法术溅射伤害) cannot.
  */
 function kitTeapot(ab) {
-  return kitDeathSpawn([splashAttack({ unblocked: false, radius: TEA_SPLASH_RADIUS, noAir: true, fxKind: 'artsSplash' }), {
+  return kitDeathSpawn([splashAttack({ unblocked: false, radius: TEA_SPLASH_RADIUS, noAir: true, dodge: true, fxKind: 'artsSplash' }), {
     sil: true,
     death(c, b, e) {
       if (c.reason !== 'killed') return;
@@ -2511,7 +2515,14 @@ function kitWolfLord(ab) {
       b.fx('beam', { x: e.x, y: e.y, from: e.id, to: u.id, kind: 'fearCage' });
       b.addBuff(u, { key: 'ab:fearCage', refresh: 'replace', visible: true, interval: 1, data: { src: e, hp0: e.hpRatio, t0: b.time },
         mods: { aspd: fc.bb.attack_speed ?? 0 },
-        onTick: ({ battle, unit, buff }) => { const k = Math.min(1, (battle.time - buff.data.t0) / ramp); battle.loseHp(unit, unit.s.maxHp * peak * k, { source: e }); } });
+        onTick: ({ battle, unit, buff }) => {
+          // its 扎罗 gone from the field without a 重生 (leaked, removed): the effect ends, no loss this tick [ASSUMED — no
+          // official text; the 重生's onKo cure covers its knock-out]. Until 0.1.3 a leak left it draining for good.
+          const src = buff.data.src;
+          if (!src || !src.alive || src.removed) { battle.removeBuff(unit, buff); return; }
+          const k = Math.min(1, (battle.time - buff.data.t0) / ramp);
+          battle.loseHp(unit, unit.s.maxHp * peak * k, { source: e });
+        } });
     }
   }, { cd: fc ? fc.sp || fc.cd : null, icd: fc ? fc.sp || fc.icd : null, cond: (b, e) => !P.form2 && !caught(b) && b.time >= P.waitUntil && allTargets(b, e).some((u) => u.kind === 'op') }),
   doubleHit(() => P.form2),                                     // 攻击变为远程二连击
@@ -2750,7 +2761,8 @@ export const KITS = Object.freeze({
   // projectile_range × UACANN_ZONE_SCALE
   enemy_10122_uacann_2: (ab) => [noAirTargets(), splashAttack({ unblocked: false, radius: SHELL_SPLASH_RADIUS, noAir: true, fxKind: 'shell' }), {
     dealt(c, b, e) {
-      dmgZone(b, e, c.target.x, c.target.y, (T(ab, 'ProjectileBoomRange.attack@projectile_range') ?? 1) * UACANN_ZONE_SCALE, T(ab, 'ProjectileBoomRange.attack@projectile_life_time') ?? 0, 1, T(ab, 'ProjectileBoomRange.attack@value') ?? 0, 'arts', 'burning');
+      // 【燃烧区域】 "不可对空": a flying ally (the 炎佑 dragon) standing in it takes nothing (until 0.1.3 it burned)
+      dmgZone(b, e, c.target.x, c.target.y, (T(ab, 'ProjectileBoomRange.attack@projectile_range') ?? 1) * UACANN_ZONE_SCALE, T(ab, 'ProjectileBoomRange.attack@projectile_life_time') ?? 0, 1, T(ab, 'ProjectileBoomRange.attack@value') ?? 0, 'arts', 'burning', null, 0, { noAir: true });
     },
   }],
   enemy_10054_cjhot: (ab, e) => [immuneTo('sluggish'), {             // 鼎沸 · pulses arts + burn around itself; immune 停顿

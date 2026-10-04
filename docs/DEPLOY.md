@@ -108,6 +108,27 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 没装开机自启的话，最后一步改成重新双击 `start-windows.bat`。用 Releases 完整包的：停止服务器，把新版本的完整包解压到新目录后从那里启动即可（素材已包含；装了开机自启的，在新目录重新运行一次 `install-service-windows.ps1`）。用 GitHub「Download ZIP」源码包的：解压新版本后，把旧目录里的 `public\assets`、`public\fonts`、`.cache` 和 `data\local-assets.json`（若有）复制过去，可避免重新下载。
 
+### 1.6 局内维护公告
+
+复制项目根目录的 `announcement.example.json` 为 `announcement.json`（PowerShell：`Copy-Item announcement.example.json announcement.json`；Linux / macOS：`cp announcement.example.json announcement.json`），修改为：
+
+```json
+{
+  "enabled": true,
+  "title": "维护公告",
+  "text": "服务器将于 17:00 开始维护，请提前结束模拟。",
+  "expiresAt": "2026-10-04T17:00:00+08:00"
+}
+```
+
+将示例日期替换为实际维护日期；`expiresAt` 必须包含时区，例如北京时间用 `+08:00`，UTC 用 `Z`。公告从配置生效起显示到该时刻，到期自动隐藏，不会触发停服、踢人或结束对局。`title` 可省略（默认「维护公告」），最多 80 个字符；`text` 为纯文本，支持换行，最多 2000 个字符，不解析 HTML。
+
+局内（含开局简报、选羁绊和结算）显示带关闭按钮的公告条，每 30 秒检查更新，回到浏览器标签页时立即检查。关闭后同一浏览器记住当前公告，不因刷新或开始下一局重复出现；修改标题、正文或截止时间会作为新公告再次显示。浏览器禁用本地存储时，关闭状态只在本次页面内保留。
+
+服务器最多每秒读取一次文件，多个玩家共享读取结果；保存完成后，局内通常在 31 秒内看到更新，无需重启服务器。立即撤下可设为 `{"enabled": false}`，或删除配置文件；文件缺失、无效或超过 16 KiB 时不显示公告，无效配置会记录警告。建议先写临时文件再重命名覆盖，避免保存到一半时被读取。
+
+配置文件放在项目根目录，不在 `public/` / `data/` 下，且已被 Git 忽略；可通过 `SP_ANNOUNCEMENT_FILE` 指定其他服务器本地路径（相对路径以项目根目录为基准）。`GET /api/announcement` 返回当前公告和服务器时间，响应不缓存；这是只读接口，发布和修改只能通过本地配置文件完成，无需管理页面或管理令牌。使用 nginx 时，保持该 API 代理到 Node，避免配置静态缓存。
+
 ## 2. 让不在同一网络的朋友加入
 
 ### 2.1 Tailscale / ZeroTier（推荐给家用小主机）
@@ -150,6 +171,16 @@ game.example.com {
 ```
 
 **Nginx**：
+
+完整主配置模板见 [`scripts/nginx.conf.example`](../scripts/nginx.conf.example)，默认使用 `worker_processes auto;`，按可用 CPU 核心数选择 worker 数。首次部署时修改模板中的域名和证书路径；已有 nginx 的，在现有 `/etc/nginx/nginx.conf` 顶层将 `worker_processes` 设为 `auto`，保留已有站点配置：
+
+```nginx
+worker_processes auto;
+```
+
+该指令必须位于 `http`、`server`、`events` 块之外，不能放进通常在 `http` 中加载的 `conf.d` / `sites-enabled` 站点文件。修改后运行 `sudo nginx -t && sudo nginx -s reload`，检查成功后平滑重载，无需重启 Node 服务。这只使 nginx 使用多个 worker，不改变 Node 的游戏计算方式。指令说明见 [nginx 官方文档](https://nginx.org/en/docs/ngx_core_module.html#worker_processes)。
+
+下面是站点配置，放在 `http` 块内（或其中加载的站点文件）：
 
 ```nginx
 map $http_upgrade $connection_upgrade {

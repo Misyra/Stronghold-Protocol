@@ -881,6 +881,31 @@
 .conn-banner .icon { width: .22rem; height: .22rem; color: var(--orange-hi); }
 .conn-banner__sub { color: var(--text-lo); font-family: var(--font-num); font-size: .15rem; }
 
+/* ---- dismissible server announcement -------------------------------------------------------------- */
+.announcement {
+  position: fixed;
+  top: calc(1.34rem + var(--sa-t, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-conn);
+  display: flex;
+  align-items: flex-start;
+  gap: .12rem;
+  width: 6.4rem;
+  max-width: 86vw;
+  padding: .14rem .12rem .14rem .18rem;
+  background: rgba(20, 18, 12, .96);
+  border: 1px solid var(--amber);
+  --bk-c: var(--amber);
+  box-shadow: 0 .08rem .3rem rgba(0, 0, 0, .5);
+}
+.sp-conn .announcement { top: calc(2.04rem + var(--sa-t, 0px)); }
+.announcement__icon { flex: none; width: max(.22rem, 16px); height: max(.22rem, 16px); color: var(--amber); margin-top: .02rem; }
+.announcement__content { flex: 1; min-width: 0; }
+.announcement__title { display: block; font-size: max(.18rem, 14px); color: var(--amber); overflow-wrap: anywhere; }
+.announcement__text { margin: .04rem 0 0; font-size: max(.16rem, 12px); line-height: 1.55; color: var(--text-hi); white-space: pre-wrap; overflow-wrap: anywhere; max-height: max(1.3rem, 56px); overflow-y: auto; }
+.announcement > .btn { flex: none; min-width: 32px; min-height: 32px; }
+
 /* ---- misc shared bits ------------------------------------------------------------------------------ */
 .kv { display: flex; align-items: baseline; gap: .08rem; }
 .kv__k { color: var(--text-lo); font-size: .14rem; }

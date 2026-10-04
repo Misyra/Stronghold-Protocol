@@ -422,11 +422,14 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (!room.spectatorOf(playerId)) return fail(ERR.BAD_TARGET, 'not a spectator of this room');
     const target = this.registry.byId(playerId);
-    if (target && target.roomCode === room.code) {
-      if (target.connected) sendSession(target, { t: 'room.closed', reason: 'kicked' });
-      else target.notice = 'kicked';
-    }
+    const wasHere = !!target && target.roomCode === room.code;
+    const replay = this.replayFor(room, playerId);
     this.removeMember(room, playerId);
+    if (wasHere) {
+      // like room.kick: now, or on the next resume (with the result replay, as after the grace timeout)
+      if (target.connected) sendSession(target, { t: 'room.closed', reason: 'kicked' });
+      else { target.notice = 'kicked'; target.pendingResult = replay; }
+    }
     return OK;
   }
 

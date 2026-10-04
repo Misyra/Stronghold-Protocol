@@ -661,6 +661,16 @@ describe('websocket lobby', () => {
     assert.equal((await s4.waitFor('room.closed')).reason, 'kicked');
     await host.waitFor('room.state', (s) => s.spectators.length === 0);
     await expectError(s4, { t: 'room.leave' }, ERR.NOT_IN_ROOM);
+    // an offline spectator removed: freed at once, told on its next resume
+    const s5 = await pool.player('Watcher5');
+    await expectOk(s5, { t: 'room.spectate', code: st.code });
+    await s5.terminate();
+    await host.waitFor('room.state', (s) => s.spectators.find((x) => x.playerId === s5.id)?.connected === false);
+    await expectOk(host, { t: 'room.removeSpectator', playerId: s5.id });
+    const s5back = await pool.connect();
+    await s5back.hello('Watcher5', s5.token);
+    assert.equal((await s5back.waitFor('room.closed')).reason, 'kicked');
+    await s5back.expectNone('room.state');
     // solo rooms have no spectator seat; unknown codes
     const solo = await pool.player('Solo');
     const soloSt = await createRoom(solo, 'solo', 'FUNNY');

@@ -99,6 +99,19 @@ test('联防 helpers follow unite.helperOrder (units > active bond > standing > 
   const c = player('c', 2, 2, 5, true);     // most units + an active bond
   const order = helperOrder(m, [a, b, c], new Map()).map((p) => p.playerId);
   assert.deepEqual(order, ['c', 'b'], 'LP never decides; the first helper (right-hand field) is c');
+  // the tie-break is the layers the 联防 will fight with: stored plus this round's pending gains, capped at 999
+  const reached = (playerId, seat, stored, pending) => ({
+    playerId, seat, lp: 10, deployCount: 4, board: new Map(),
+    layers: { bond_x: stored },
+    pendingLayerGains: pending,
+    bonds: { bond_x: { active: true, layers: stored } },
+  });
+  const hi = reached('A', 0, 200, { bond_x: 50 }); // fights at 250
+  const lo = reached('B', 1, 230, null);          // fights at 230
+  assert.deepEqual(helperOrder(m, [lo, hi], new Map()).map((p) => p.playerId), ['A', 'B']);
+  const capped = reached('C', 2, 990, { bond_x: 50 }); // 999, not 1040
+  const under = reached('D', 3, 995, null);
+  assert.deepEqual(helperOrder(m, [under, capped], new Map()).map((p) => p.playerId), ['C', 'D']);
   assert.ok(!/highest LP, then seat/.test(DESIGN), 'DESIGN §6.1 no longer picks helpers by LP');
   assert.match(DESIGN, /helperOrder/);
   assert.match(META, /unite\.js helperOrder/);

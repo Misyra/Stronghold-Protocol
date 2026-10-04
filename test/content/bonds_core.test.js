@@ -461,7 +461,7 @@ test('阿戈尔 5 + the devour chain (GitHub #33): the devour knocks out the foo
   }
 });
 
-test('阿戈尔 5 beneficiaries: fixed at battle start — a 联防 member entering down is none (the next on the field is), a 调和 member is one, the mirrored boss side counts from its own left', () => {
+test('阿戈尔 5 beneficiaries: fixed at battle start — a 联防 member entering down keeps the slot, a 调和 member is one, the mirrored boss side counts from its own left', () => {
   const list = [['g0_a', ['egirShip']], ['g1_a', ['egirShip']], ['g2_a', ['egirShip']], ['g3_a', ['egirShip']], ['g4_a', ['egirShip']], ['mani_a', ['maniShip']]];
   // five members in five columns (one per column, nobody in front of anybody): g0 col 3 … g4 col 7
   const units = list.slice(0, 5).map(([chessId], i) => ({ chessId, row: 9 + (i % 2) * 3, col: 3 + i }));
@@ -470,14 +470,20 @@ test('阿戈尔 5 beneficiaries: fixed at battle start — a 联防 member enter
     h.b.dealDamage(null, u, { amount: 1e9, type: 'true' });
     return u.alive;
   };
-  // 联防: g0 entered down (forced out before battleStart) — g1, g2, g3 hold the revives
+  // 联防: g0 entered down (forced out before battleStart). The slots stay the first 3 by position — g0, g1, g2.
+  // The forced exit is not a 击倒, so g0's charge waits until they stand back up. g3 is not promoted into it.
   const hu = makeBattle({
     kind: 'unite', defs: defsOf(list), autoFinish: false, timeLimit: 60, bonds: { egirShip: bondOn(5, 0, null, [3, 5]) },
     units: units.map((u, i) => (i === 0 ? { ...u, carryState: { down: true } } : u)),
   });
   hu.step(1);
-  assert.ok(!hu.unit('g0_a').alive, 'g0 forced out');
-  assert.deepEqual(['g4_a', 'g1_a', 'g2_a', 'g3_a'].map((id) => revives(hu, id)), [false, true, true, true]);
+  const g0 = hu.unit('g0_a');
+  assert.ok(!g0.alive, 'g0 forced out');
+  assert.deepEqual(['g4_a', 'g3_a', 'g1_a', 'g2_a'].map((id) => revives(hu, id)), [false, false, true, true]);
+  assert.ok(hu.runUntil(() => g0.alive && g0.deployed, 25), 'g0 stands back up inside the redeploy time');
+  assert.equal(revives(hu, 'g0_a'), true, 'g0 still held the first slot');
+  hu.b.dealDamage(null, g0, { amount: 1e9, type: 'true' });
+  assert.ok(!g0.alive, 'g0 has no second revive');
   checkInvariants(hu.b);
   // 调和 (an active 调和 member enjoys the core bonds) in the first column: one of the 3
   const hm = makeBattle({

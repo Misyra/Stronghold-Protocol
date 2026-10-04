@@ -340,6 +340,15 @@ const boardCol = (u) => (u.player && u.player.mirror ? -u.tileC : u.tileC);
 const egirOrder = (a, b) => boardCol(a) - boardCol(b) || b.tileR - a.tileR || a.id - b.id;
 
 /**
+ * 联防: an operator forced out at the deployment (carry.down, Battle.start, before battleStart) still stands on its
+ * deploy position. The devour and the 5-tier revive slots both count it there (PRTS 盟约记录 前3名 / 最先部署).
+ */
+function egirDownAtStart(battle, u) {
+  return S.isOp(u) && !u.alive && u.removeReason === FORCED_EXIT && !!u.carry && u.carry.down === true
+    && battle.isDown(u);
+}
+
+/**
  * Battle-start devour (research 02 §3.6 algorithm): members in order (further left on the player's own board — the
  * Final Assault right side is mirrored, so its board-left is the field's right — then higher on the board first) mark
  * the operator on the tile in front of them (one step along each member's own direction `dir`), and through marked
@@ -366,8 +375,7 @@ function devour(battle, pid, bb, members) {
   // for its marker and its own marks resolve (their 物理流失 lands, credited to it as usual); only the marks ON it resolve
   // nothing — it is forced out, so it is never knocked out again, revived or devoured. Per players' reports (community
   // report #3, GitHub #33 item 3), owner's decision 2026-10-04; until 0.1.2 the forced exit came first and the chain broke.
-  const downAtStart = (u) => S.isOp(u) && !u.alive && u.removeReason === FORCED_EXIT && !!u.carry && u.carry.down === true
-    && battle.isDown(u);
+  const downAtStart = (u) => egirDownAtStart(battle, u);
   const order = members.filter((u) => S.onField(u) || downAtStart(u)).sort(egirOrder);
   const opAt = (u) => {
     const [r, c] = S.frontTile(u);
@@ -433,8 +441,9 @@ function installEgir(battle, pid, bb, members) {
   // 【阿戈尔】干员开始"; players' videos: the revivers go by position, not by who is eaten or knocked out first). They are
   // fixed at battle start, before the devour; each revives once, on its own first knock-out ('killed'), whatever the order
   // of knock-outs, so a member the devour knocks out comes back only when it is one of them. Until 0.1.3 the first 3
-  // members knocked out took the revives and the devour's food spent them at t = 0. [ASSUMED] a member entering 联防 down
-  // (forced out before battleStart) is none — the next members on the field are; a 调和 member counts like any other.
+  // members knocked out took the revives and the devour's food spent them at t = 0. A member entering 联防 down (forced
+  // out before battleStart) keeps the slot its position earned: the forced exit is not a 击倒 (reason !== 'killed'), so
+  // the charge waits until they are knocked out after standing back up. A 调和 member counts like any other.
   // [ASSUMED] a beneficiary 埃芒加德 / M3茧甲 save in place (items revivedInPlace, the stand-in for PRTS's 0-time redeploy)
   // has used its revive (PRTS 不屈 备注: a held 复活 is consumed even when another effect redeploys the unit at once).
   // PRTS: the knocked-out unit's next deployment has 0 redeploy time and 0 cost, i.e. it IS knocked out (被击倒 triggers,
@@ -446,7 +455,7 @@ function installEgir(battle, pid, bb, members) {
   const max = reached(battle, pid, 'egirShip', bb.power_bond_char_cnt) ? Math.max(0, Math.floor(num(bb.max_free_respawn_cnt, 0))) : 0;
   const holders = new Map(); // beneficiary → its in-place revives (mem.revives) at battle start
   battle.on('battleStart', () => {
-    for (const u of members.filter((x) => S.isOp(x) && S.onField(x)).sort(egirOrder).slice(0, max)) holders.set(u, u.mem.revives | 0);
+    for (const u of members.filter((x) => S.isOp(x) && (S.onField(x) || egirDownAtStart(battle, x))).sort(egirOrder).slice(0, max)) holders.set(u, u.mem.revives | 0);
     devour(battle, pid, bb, members);
   }, { once: true });
   if (!(max > 0)) return;

@@ -27,6 +27,7 @@
 // re-enter) — the same 10 cap as a normal round.
 
 import { buildUniteWave } from './waves.js';
+import { layerGainRoom } from '../../shared/constants.js';
 
 /**
  * @param {import('./Match.js').Match} m
@@ -69,16 +70,22 @@ export function planUnite(m, results) {
 
 /**
  * Helper metrics of a perfect player: units on the field (board operators, downed included), whether a bond is
- * active, Σ layers of the active bonds, operators still standing at the end of the player's own combat.
+ * active, Σ layers of the active bonds as the 联防 battle will fight them (the persistent layers plus this round's
+ * pending gains, capped like bondsView / settle — PRTS 以其阵地当前的状态; the official "层数最高" tie-break is marked 存疑),
+ * operators still standing at the end of the player's own combat.
  */
 export function helperStats(m, ps, results) {
   const units = ps.deployCount;
   let active = false;
   let layers = 0;
+  const pending = ps.pendingLayerGains;
   for (const [id, b] of Object.entries(ps.bonds || {})) {
     if (!b || !b.active) continue;
     active = true;
-    layers += Number(ps.layers && ps.layers[id]) || Number(b.layers) || 0;
+    const stored = Number(ps.layers && ps.layers[id]) || Number(b.layers) || 0;
+    const gain = pending && Number(pending[id]);
+    const add = Number.isFinite(gain) && gain > 0 ? layerGainRoom(stored, Math.floor(gain)) : 0;
+    layers += stored + add;
   }
   const r = results && typeof results.get === 'function' ? results.get(ps.playerId) : null;
   const opUids = new Set();

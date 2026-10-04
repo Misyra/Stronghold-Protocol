@@ -146,7 +146,9 @@ const installDollkeeper = (battle, unit) => {
     };
     battle.addBuff(unit, {
       key: 'trait:dollSwitching', duration: DOLL_SWITCH, onExpire: ended, onRemove: done,
-      flags: { invulnerable: true, noSp: true, noHeal: true, isolated: true, disarm: true },
+      // noHeal refuses another unit's heal; healFree is 禁疗 (damage.js: a self-heal is 0 too, regen excepted). The
+      // window still ends at full HP — onExpire writes it, it does not heal.
+      flags: { invulnerable: true, noSp: true, noHeal: true, healFree: true, isolated: true, disarm: true },
     });
   };
   const leave = () => {

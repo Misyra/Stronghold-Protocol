@@ -159,6 +159,18 @@ test(`${nm('enemy_10034_cnvsax')}: never attacks while stealthed; once blocked i
   assert.ok(w.elem.burn > 0, '狂欢式演奏 burns its target (the blocker)');
 });
 
+test(`${nm('enemy_10034_cnvsax')}: revealed (反隐) and not blocked it makes no normal attack and walks on — 反击模式 "仅进行阻挡攻击"`, () => {
+  const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 6 }] });
+  h.step();
+  h.b.addBuff(h.unit('t_wall'), { key: 'test:noBlock', persist: true, flags: { noBlock: true } });
+  const e = put(h, 'enemy_10034_cnvsax', [9, 8], { move: true, route: { motion: 'WALK', start: [9, 8], end: [9, 1], checkpoints: [] } });
+  h.b.addBuff(e, { key: 'test:reveal', persist: true, flags: { reveal: true } });
+  const x0 = e.x;
+  h.run(4);
+  assert.equal(e.stats.attacks, 0, 'no ranged attack (until 0.1.3 it shot the wall and stood still)');
+  approx(x0 - e.x, 4 * e.s.moveSpeed * 0.5, 0.02, 'walked the whole 4 s');
+});
+
 test(`${nm('enemy_9008_acbunn')}: attacks several targets at once while stealthed`, () => {
   const h = arena({ units: [{ chessId: 't_gun', row: 10, col: 6 }, { chessId: 't_mage', row: 11, col: 6 }, { chessId: 't_blade', row: 10, col: 7 }], captureNoisy: true, hooks: ['attack'] });
   h.step();
@@ -584,7 +596,54 @@ for (const key of ['enemy_1234_dsubrl', 'enemy_1234_dsubrl_2']) {
     approx(e.findBuff('stun').timeLeft, 2);
     assert.equal(h.b.applyStatus(e, 'sluggish', { duration: 4 }), false);
   });
+
+  // community report 「有个持续造成范围伤害的海嗣敌人错误的设置了攻击时不移动导致卡在原地」: PRTS 天赋 "不进行普通攻击", "未处于消失状态
+  // 时，令攻击范围内的所有我方单位每秒受到攻击力100%的无途径法术伤害", "每次输出伤害时，再造成攻击力5%的神经损伤"
+  test(`${nm(key)}: no normal attack — walks on past an unblocking operator while it pulses 100 % ATK arts + 5 % neural each second; no pulse while hidden`, () => {
+    const h = arena({ units: [{ chessId: 't_gun', row: 10, col: 6 }], hooks: ['damaged'], captureNoisy: true });
+    h.step();
+    const g = h.unit('t_gun');
+    h.b.addBuff(g, { key: 'test:noBlock', persist: true, flags: { noBlock: true } });
+    g.profile.noAttack = true;
+    const e = put(h, key, [9, 8], { move: true, route: { motion: 'WALK', start: [9, 8], end: [9, 1], checkpoints: [] } });
+    const x0 = e.x;
+    h.run(4);
+    assert.ok(e.profile.noAttack && e.stats.attacks === 0, 'never attacks');
+    approx(x0 - e.x, 4 * e.s.moveSpeed * 0.5, 0.02, 'walked the whole 4 s (MOVE_SCALE 0.5) with the operator in range');
+    const mine = h.hooksOf('damaged').filter((c) => c.source === e && c.target === g);
+    const arts = mine.filter((c) => c.dmg.type === 'arts');
+    assert.ok(arts.length >= 3 && arts.every((c) => !c.dmg.isAttack && c.dmg.tags.includes('nestPulse')), `pulses, not attacks (${arts.length})`);
+    approx(arts[0].dmg.amount, e.s.atk, 1e-9, '100 % ATK');
+    const neural = mine.filter((c) => c.dmg.type === 'element');
+    assert.equal(neural.length, arts.length, 'one 神经 per pulse');
+    approx(neural[0].dmg.amount, e.s.atk * tb(key, 'EpDamage.ep_damage_ratio'), 1e-9, '5 % ATK 神经');
+    const times = arts.map((c) => c.t ?? null).filter((t) => t != null);
+    if (times.length > 1) approx(times[1] - times[0], 1, 1e-6, 'one per second');
+    // 消失 (a DISAPPEAR leg): no pulse
+    const n0 = arts.length;
+    h.b._setHidden(e, true);
+    e.x = g.x + 1; e.y = g.y;
+    h.run(2.05);
+    assert.equal(h.hooksOf('damaged').filter((c) => c.source === e && c.dmg.type === 'arts').length, n0, 'hidden: no pulse');
+  });
 }
+
+test('GitHub #93: 深溟巢涌者 keeps walking with the 炎佑 dragon in range; only its pulse (no attack) reaches the dragon', () => {
+  const h = makeBattle({ seed: 7, autoFinish: false, timeLimit: 120, defs: { chess: { t_wall: WALL('t_wall') } }, kits: { t_wall: NOATK },
+    units: [{ chessId: 't_wall', row: 12, col: 1 }], hooks: ['damaged'], captureNoisy: true });
+  h.step();
+  const [y] = spawnYanyou(h.b, 'p1', { atk: 0, hp: 50000 });
+  assert.ok(y && y.isFlying, 'a flying ally');
+  const e = h.spawn('enemy_1234_dsubrl', { pos: [Math.round(y.y), Math.round(y.x) + 2], routeIndex: 0, mods: { speedMul: 1 },
+    route: { motion: 'WALK', start: [Math.round(y.y), Math.round(y.x) + 2], end: [Math.round(y.y), 0], checkpoints: [] } });
+  const x0 = e.x;
+  h.run(5);
+  assert.equal(e.stats.attacks, 0, 'no normal attack');
+  assert.ok(x0 - e.x >= 5 * e.s.moveSpeed * 0.5 - 0.05, `walked on (${(x0 - e.x).toFixed(2)} tiles in 5 s)`);
+  const onDragon = h.hooksOf('damaged').filter((c) => c.source === e && c.target === y);
+  assert.ok(onDragon.length > 0, 'the dragon in range is pulsed');
+  assert.ok(onDragon.every((c) => !c.dmg.isAttack && (c.dmg.type === 'element' || c.dmg.tags.includes('nestPulse'))), 'pulse and its 神经 only');
+});
 
 for (const key of ['enemy_1267_nhpbr', 'enemy_1267_nhpbr_2']) {
   test(`${nm(key)}: death releases 污染秽蚀 — ground allies within ${tb(key, 'PollutedDie.projectile_range')} lose ${tb(key, 'PollutedDie.polluted_damage_low')} HP/s`, () => {
@@ -1276,6 +1335,24 @@ test(`${nm('enemy_10116_ymgtop')}: spinning phase deals ATK×${tb('enemy_10116_y
   assert.equal(w.stats.taken, t0, 'no more spin damage');
 });
 
+test(`${nm('enemy_10116_ymgtop')}: 漩涡形态 — no normal attack on its blocker while it spins; no spin damage while stunned (阻止攻击)`, () => {
+  const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 7 }] });
+  h.step();
+  const e = put(h, 'enemy_10116_ymgtop', [10, 7]);           // blocked by the wall
+  const icd = skb('enemy_10116_ymgtop', 'SwitchModeTrigger').initCooldown;
+  h.run(icd - 1);
+  assert.ok(e.blockedBy && e.stats.attacks > 0, 'its blocked attack before the spin (初始形态 仅进行阻挡攻击)');
+  h.run(1.5);
+  const a0 = e.stats.attacks;
+  h.run(4);
+  assert.ok(e.profile.noAttack && e.stats.attacks === a0, `no normal attack while spinning (${e.stats.attacks - a0})`);
+  const w = h.unit('t_wall');
+  h.b.applyStatus(e, 'stun', { duration: 3, force: true });
+  const t0 = w.stats.taken;
+  h.run(2.5);
+  assert.equal(w.stats.taken, t0, 'stunned: no spin damage');
+});
+
 test(`${nm('enemy_10118_ymgprc')}: double hits; after ${skb('enemy_10118_ymgprc', 'PowerAttack').spCost} attacks the next double hit is ×${skb('enemy_10118_ymgprc', 'PowerAttack').bb.atk_scale}`, () => {
   const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 5 }], captureNoisy: true, hooks: ['damaged'] });
   h.step();
@@ -1795,6 +1872,8 @@ test('失衡: 弧光锋卫 bleeds per tile pushed; 冒失的小弟 is stunned; �
   approx(statuses(h, g.id, 'stun')[0].duration, tb('enemy_10112_ymgds', 'StunAfterUnbalance.stun'));
   assert.ok(p.s.flags.unblockable);
   assert.equal(p.findBuff('ab:noEgg').mods.moveMul, 1 + tb('enemy_10141_xdpeng_2', 'speed.move_speed'));
+  assert.ok(p.profile.noAttack, '拥霜羽兽 失去蛋的模式: 不进行普通攻击 (no attack, so no stand for its clip)');
+  assert.equal(typeof p.profile.canTarget === 'function' && p.profile.canTarget({ isFlying: true }), false, '拥霜羽兽: 不会攻击飞行单位');
   // 雪孩子: pushed into high ground (row 12 col 2 is 'h' on the flat stage) ⇒ hitWall.value
   const sn = put(h, 'enemy_10138_xdsnow', [10, 3]);
   const sn2 = put(h, 'enemy_10138_xdsnow', [11, 6]);
@@ -2372,6 +2451,7 @@ test('假想敌：铳 (隐秘核心): damage ×0.2 while springs live; 盲信之
   const s2 = W.act1autochess_h08_02.overrides.enemy_9017_achunt_2.skills.find((s) => s.prefabKey === '2');
   h.run(s2.initCooldown - h.b.time + 0.2);
   assert.ok(sp.s.flags.invulnerable && sp.mem.ab.dash);
+  assert.ok(sp.s.flags.disarm, '追逐模式: 不进行普通攻击');
 });
 
 test('“碎铳之簧” 法术护盾 (9018): barrier absorbs arts, physical ×0.1 with a counter; damage passes to 铳', () => {

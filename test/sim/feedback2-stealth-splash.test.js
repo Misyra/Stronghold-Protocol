@@ -328,7 +328,8 @@ test('#32.6 review: the 斩胄之剑 / 破胄之锤 hover attack skips 隐匿 an
     assert.ok(log.some((x) => x.target === h.unit(HD) && !x.attack), '迷彩 红豆: shot inside the zone (in 0.1.1 never)');
     done(h);
   }
-  // 深溟巢涌者: its pulse rides on its attack — with the plain 古米 in range the 迷彩 红豆 is hit by every pulse; alone it is never
+  // 深溟巢涌者: its pulse is a talent aura (no attack, 0.1.3) — the 迷彩 红豆 is hit by every pulse, with the plain 古米 in range
+  // or alone (until 0.1.3 the pulse rode on its attack, which needed a target: alone it was never hit)
   for (const alone of [false, true]) {
     const units = [{ chessId: HD, row: 9, col: 6, dir: 'RIGHT' }];
     if (!alone) units.push({ chessId: GM, row: 10, col: 7, dir: 'RIGHT' });
@@ -337,9 +338,10 @@ test('#32.6 review: the 斩胄之剑 / 破胄之锤 hover attack skips 隐匿 an
     camou(h, h.unit(HD));
     const log = damageLog(h, 'enemy_1234_dsubrl');
     h.run(10);
-    const on = (id) => log.filter((x) => x.target === h.unit(id) && x.attack).length;
-    if (alone) assert.equal(on(HD), 0, '迷彩 alone in range: no attack, so no pulse [the engine attack needs a target]');
-    else { assert.ok(on(GM) >= 5, `plain 古米 pulsed (${on(GM)})`); assert.equal(on(HD), on(GM), '迷彩 红豆: every pulse too (in 0.1.1 none)'); }
+    const on = (id) => log.filter((x) => x.target === h.unit(id) && x.tags.includes('nestPulse')).length;
+    assert.equal(log.filter((x) => x.attack).length, 0, 'no normal attack');
+    assert.ok(on(HD) >= 9, `迷彩 红豆 pulsed every second (${on(HD)}; alone: ${alone})`);
+    if (!alone) assert.equal(on(HD), on(GM), '迷彩 红豆: every pulse the plain 古米 takes');
     done(h);
   }
   // “萨科塔昂首”'s 【祈祷邀约】 (whole field, "无视迷彩", no 无视无法选择): 角峰 slowed, the 隐匿 古米 not

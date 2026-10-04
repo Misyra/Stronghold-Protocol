@@ -8,7 +8,9 @@
 // (the plain 源石虫) is drawn tinted toward the slug's own colours (ALIAS_TINT). A model that failed or timed out is
 // loaded again after SPINE_RETRY_MS (bounded), and `retryAssets()` re-resolves a view's picture and model when the
 // asset manifest arrives after the view was built or the tab is shown again (render/app.js; public issue #8 item 5:
-// after a reload whose manifest was slow or failed, every operator stayed the image-less placeholder for good). Every
+// after a reload whose manifest was slow or failed, every operator stayed the image-less placeholder for good); a load
+// begun while the tab was hidden and still in flight SPINE_STUCK_MS after it is shown again is started again
+// (assets.js spine.restart: GitHub #68, such a load may never settle — its view stayed the placeholder). Every
 // bar is a tinted Texture.WHITE sprite, so HUDs batch into few draw calls.
 //
 // Placement: feet anchored at world (x, y, z); scale = camera px-per-tile at the feet × UNIT.modelScale, so
@@ -107,6 +109,13 @@ const PIC_WAIT_MS = 400;
  * shown again). Counted from the failure; a hidden tab runs no frames, so nothing is retried while hidden.
  */
 export const SPINE_RETRY_MS = Object.freeze([2000, 6000, 15000, 30000]);
+/**
+ * A Spine load begun while the tab was hidden and still in flight this long (ms, real time) after the tab is shown again
+ * is started again (`retryAssets` arms it, `update` fires it; GitHub #68: such a load — a request the hidden tab left
+ * hanging — may never settle, and the view stayed the placeholder). A load that finishes within it is never doubled.
+ * [ASSUMED] the length: a healthy load finishes within a few seconds once the tab is visible.
+ */
+export const SPINE_STUCK_MS = 5000;
 
 /** Heights above this count as standing on a raised top (bench pads are the lowest raised tiles, 0.16). */
 const RAISED_Z = 0.12;
@@ -365,6 +374,8 @@ export class UnitView {
     this._spineBusy = false;             // a Spine load of this view is in flight
     this._spineTries = 0;                // failed loads since the last model (SPINE_RETRY_MS)
     this._retryAt = 0;                   // when the next retry is due (ms, performance clock; 0 = none)
+    this._spineHidden = false;           // the load in flight began while the tab was hidden (SPINE_STUCK_MS)
+    this._stuckAt = 0;                   // when that load is started again unless it settled (ms; 0 = none)
     this.baseTint = 0xffffff;            // the drawn model's own tint (ALIAS_TINT), under the status tints
 
     this.hud = new P.Container();
@@ -431,12 +442,16 @@ export class UnitView {
    * Re-resolve what this view could not draw yet (public issue #8 item 5): the picture when it has none (no avatar URL —
    * the asset manifest arrived after the view was built — or the image failed) and, at once, the Spine model when none
    * is shown and none is loading (no manifest entry then, or a load that failed / timed out). render/app.js calls it for
-   * every view when a manifest arrives (assets.js onChange) and when the tab is shown again. Nothing to do otherwise.
+   * every view when a manifest arrives (assets.js onChange) and when the tab is shown again. A load still in flight that
+   * began while the tab was hidden gets SPINE_STUCK_MS from now (the tab visible) to finish, then `update` starts it again
+   * (GitHub #68). Nothing to do otherwise.
    */
   retryAssets() {
     if (this.destroyed) return;
     if (!this._pic || this._pic.state === 'none') this._loadPicture();
-    if (!this.actor && !this._spineBusy) { this._retryAt = 0; this._loadSpine(true); }
+    if (this.actor) return;
+    if (!this._spineBusy) { this._retryAt = 0; this._loadSpine(true); return; }
+    if (this._spineHidden && !this._stuckAt && !globalThis.document?.hidden) this._stuckAt = nowMs() + SPINE_STUCK_MS;
   }
 
   /**
@@ -451,8 +466,10 @@ export class UnitView {
     this.entry = entry;
     const req = this._spineReq = (this._spineReq || 0) + 1;
     this._spineBusy = true;
+    this._spineHidden = !!globalThis.document?.hidden;
+    this._stuckAt = 0;
     a.spine.acquire(entry, retry ? { retry: true } : undefined).then((data) => {
-      if (req === this._spineReq) this._spineBusy = false;
+      if (req === this._spineReq) { this._spineBusy = false; this._stuckAt = 0; }
       if (this.destroyed || req !== this._spineReq) { this._releaseEntry(entry); return; }
       this._spineTries = 0;
       this._retryAt = 0;
@@ -496,7 +513,7 @@ export class UnitView {
         if (deployed != null) { this.actor.deploy(); if (deployed > 0) this.actor.update(deployed); }
       }
     }, () => {
-      if (req === this._spineReq) this._spineBusy = false;
+      if (req === this._spineReq) { this._spineBusy = false; this._stuckAt = 0; }
       this._releaseEntry(entry);
       if (this.destroyed || req !== this._spineReq) return;
       if (entry.fallback) { this._acquireSpine(entry.fallback, id, retry); return; }
@@ -850,6 +867,11 @@ export class UnitView {
     if (this._modelDirty) { this._modelDirty = false; this._syncModel(); }
     // a failed / timed-out model load is tried again once its wait is over (SPINE_RETRY_MS; frames only: never hidden)
     if (this._retryAt && nowMs() >= this._retryAt) { this._retryAt = 0; if (!this.actor && !this._spineBusy) this._loadSpine(true); }
+    // a load begun in a hidden tab and still in flight SPINE_STUCK_MS after it came back: started again (GitHub #68)
+    if (this._stuckAt && nowMs() >= this._stuckAt) {
+      this._stuckAt = 0;
+      if (!this.actor && this._spineBusy && this.entry) { this._spineHidden = false; this.ctx.assets?.spine?.restart?.(this.entry); }
+    }
     if (this.zTarget != null && this.z !== this.zTarget) {
       const d = this.zTarget - this.z;
       this.z = Math.abs(d) < 1e-3 ? this.zTarget : this.z + d * Math.min(1, dt * 12);
@@ -876,8 +898,9 @@ export class UnitView {
     if (this.dimmed) alpha *= 0.35;
     this.alpha = alpha;
 
-    // body placement
-    const lungeK = this.lunge > 0 ? Math.sin(this.lunge * Math.PI) * 0.12 : 0;
+    // body placement — the 0.12-tile jolt toward the target on an attack stands in for the avatar diamond's missing attack
+    // clip; a Spine model plays its own and keeps its place (GitHub #61: every ranged attack shoved the model aside)
+    const lungeK = this.lunge > 0 && !(this.actor && this.spineReady) ? Math.sin(this.lunge * Math.PI) * 0.12 : 0;
     this.lunge = Math.max(0, this.lunge - dt * 5);
     const lx = this.lungeDir.x * lungeK, ly = this.lungeDir.y * lungeK;
     let bx = p.x, by = p.y;

@@ -442,7 +442,7 @@ S→C:
   deployCap, deployCount,
   bonds: [ { bondId, count, active, tier, layers, harmony? /* 调和's +1 is in count, §21.26 */, thresholds, countsHand } ],   // sorted: active first, then layers desc
   effects: [ { id, name, desc, iconKind: 'band'|'choice'|'team'|'item'|'garrison', iconId, counter?, counterText? /* a bounty: 还剩 N 场作战, §20.6 */ } ],
-  nextEnemies: [ { enemyKey, count, tag } ],   // preview of the upcoming round's wave (after waves.js generation)
+  nextEnemies: [ { enemyKey, count, tag, start? } ],   // preview of the upcoming round's wave (after waves.js generation); `start` = a leader's spawn tile [row, col] on the boss field (the boss-field prep shows it standing there, community report #12)
   stats: { dmgDealt, kills, leaks, gold, refreshes, merges } }
 Piece = { uid, kind: 'chess'|'item'|'token', id, golden: bool, tier, items: [ { uid, id } ] /* chess only */, count /* token stacks */, ownerUid /* token */ }
 ```

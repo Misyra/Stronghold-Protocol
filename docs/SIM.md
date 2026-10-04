@@ -722,7 +722,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `dollSwap` | `{ unit, form }` | a 傀儡师 starts a switch — to its <替身> (`form` `'doll'`) or back to its <本体> (`null`); not when it is knocked out as the 替身 (不屈 rolls on it: "切换<替身>与<本体>时") |
 | `kill` | `{ killer, victim }` | victim HP reached 0 (a handler may revive by restoring HP) |
 | `death` | `{ unit, reason:'killed'|'leak'|'retreat'|'merchant'|'expired'|'forcedExit', killer }` | unit removed (`'forcedExit'`: an operator entering 联防 knocked out, §1.1) |
-| `skillStart` / `skillEnd` | `{ unit, skill, reason }` | mutate `skill.ammoLeft` / `skill.timeLeft` in skillStart |
+| `skillStart` / `skillEnd` | `{ unit, skill, reason }` | mutate `skill.ammoLeft` / `skill.timeLeft` in skillStart (bullets added there raise `skill.ammoMax`, the ammo bar's full mark) |
 | `ammoUsed` | `{ unit, left, skill }` | per ammo consumed |
 | `spGain` | `{ unit, amount, reason:'time'|'attack'|'hurt'|'init'|…, skill }` | mutable `amount` (time gains fire every tick) |
 | `beforeStatus` | `{ source, target, status, duration, value, cancel }` | set `cancel` (e.g. 浓缩嗅盐) |
@@ -834,7 +834,8 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   free heals).
 - Runtime helpers on `unit.skill`: `activate(reason, {free})`, `end(reason)`, `stop()`, `addAmmo(n)`, `extend(s)`,
   `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`; fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
-  maxCharges, active, timeLeft, ammoLeft, activations, kind, rule, bb`.
+  maxCharges, active, timeLeft, ammoLeft, ammoMax, activations, kind, rule, bb` (`ammoMax`: the most bullets the running ammo skill
+  has held — set at activation, raised by skillStart additions and `addAmmo` above it; 0 when inactive).
 
 ### 7.2 Kits
 
@@ -1156,7 +1157,8 @@ Unknown subprofessions fall back to the profession default (test `professions.te
 ## 9. Wire format (snapshot.js, DESIGN §8.2)
 
 - `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, dps?, boss?, down?, elem? }`.
-  `sp/spMax` show remaining duration/ammo as a draining bar while a timed skill is active. Units in DIE state stay 0.8 s.
+  `sp/spMax` show remaining duration/ammo as a draining bar while a timed skill is active (ammo: `ammoLeft / ammoMax`, the
+  activation's real total — 拉特兰's and 逃犯引渡手续's extra bullets included, community report #35). Units in DIE state stay 0.8 s.
   `down: [[id, respawnAt, respawnTime, state, row, col]]` (only when non-empty) = operators lying down waiting to redeploy
   (`Battle.isDown(u)`: reason `'killed'` or `FORCED_EXIT` (§1.1 carryState `down`), or a forced exit `'retreat'` /
   `'merchant'` (GitHub #60) — every removal but the 突袭 `'raid'` —, not removed for good, deployed at least once, a finite

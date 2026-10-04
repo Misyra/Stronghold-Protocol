@@ -21,6 +21,7 @@
 //   * WebSocket (ws) at /ws, maxPayload 64 KB → server/net.js Network → server/lobby.js Lobby.
 //   * Env: PORT (default 3000), HOST (default 0.0.0.0), TRUST_PROXY ('auto' default: honour CF-Connecting-IP /
 //     X-Real-IP / X-Forwarded-For only from loopback/private peers such as a local cloudflared; '1' always; '0' never).
+//     SP_WS_COMPRESSION ('on' default; 'off' disables bounded per-message WebSocket compression).
 //     Prints LAN URLs on boot.
 //   * Per-network limits for internet clients (see net.js clientAddress; local/LAN peers are exempt): open sockets
 //     (maxConnectionsPerAddr, refused at upgrade with 429), rooms and running matches (lobby.js).
@@ -589,6 +590,14 @@ export function parseTrustProxy(v) {
   return 'auto';
 }
 
+/** SP_WS_COMPRESSION env (or a boolean option) → enabled; reject typos before starting timers. */
+export function parseWsCompression(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (['', '1', 'true', 'on'].includes(s)) return true;
+  if (['0', 'false', 'off'].includes(s)) return false;
+  throw new RangeError(`invalid SP_WS_COMPRESSION ${v}; use on or off`);
+}
+
 function makeLogger(quiet) {
   if (quiet) return noopLog;
   return {
@@ -602,7 +611,7 @@ function makeLogger(quiet) {
 /**
  * Build and start the HTTP + WebSocket server.
  * @param {{
- *   port?: number, host?: string, quiet?: boolean, log?: object,
+ *   port?: number, host?: string, quiet?: boolean, log?: object, wsCompression?: boolean,
  *   publicDir?: string, dataDir?: string, sharedDir?: string,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
@@ -617,6 +626,7 @@ export async function startServer(opts = {}) {
   const port = opts.port ?? (process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000);
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0';
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new RangeError(`invalid PORT ${port}`);
+  const wsCompression = parseWsCompression(opts.wsCompression ?? process.env.SP_WS_COMPRESSION);
   const log = opts.log || makeLogger(!!opts.quiet);
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
@@ -703,7 +713,16 @@ export async function startServer(opts = {}) {
     } catch { /* ignore */ }
   });
 
-  const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: false, clientTracking: false });
+  // Small frames bypass zlib; reset dictionaries between messages and cap each connection's deflate window.
+  const perMessageDeflate = wsCompression ? {
+    zlibDeflateOptions: { level: 1, memLevel: 7 },
+    serverMaxWindowBits: 12,
+    serverNoContextTakeover: true,
+    clientNoContextTakeover: true,
+    threshold: 1024,
+    concurrencyLimit: 4,
+  } : false;
+  const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate, clientTracking: false });
   wss.on('connection', (ws, req) => network.handleConnection(ws, req));
   wss.on('error', (e) => log.error('[ws] server error', e));
 

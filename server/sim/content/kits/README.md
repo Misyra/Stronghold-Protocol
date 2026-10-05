@@ -126,6 +126,9 @@ stand-in's, `def.standInFor` the replaced operator's charId.
   stand-ins is `tools/build-data.mjs STANDIN_TRIGGER_DEVIATIONS` (预备干员-重装, Mechanist: every skill `DEFAULT`,
   `rawRule` `TAKE_DAMAGE`).
 - **Summons**: no stand-in has one (DATA.md §18).
+- **One character, one implementation**: a stand-in the mode also fields elsewhere reuses that code through a named
+  export, never through another registry: Touch (`standin-acmedc.js`) runs the 外勤医疗 strategy's Touch S3 and talents,
+  `content/tokens.js` `touchGospel` / `mapCharTalents`.
 - `node --test test/content/kits_layout.test.js` checks the file name, the key (a charId of data/backups.json `units`)
   and the registry entry.
 

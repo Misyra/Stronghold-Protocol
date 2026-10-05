@@ -74,7 +74,8 @@
 // makes the token (Battle.spawnToken also refuses summons the owner's loadout does not produce).
 //
 // Exports for other content: spawnYanyou, spawnMapChar, findSummonTile, summonToken, tacticalPoint, wolfShadows,
-// releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY, TOKEN_IDS.
+// releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY, TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 /
+// 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit, kits/ops/standin-acmedc.js).
 
 import { COLS, ROWS, MOVE_SCALE } from '../constants.js';
 import { absoluteRangeKeys, sortEnemyTargets, canTargetEnemy } from '../targeting.js';
@@ -1228,12 +1229,13 @@ export function spawnYanyou(battle, playerId, { atk, hp, atkMul = 1, dmgTakenMul
 // band map characters (预备干员-医疗 / Touch)
 
 /**
- * Talents of the band map characters (data talents of the character record):
+ * Talents of the band map characters (data talents of the character record) — and of the Touch 补位 stand-in, whose kit
+ * (kits/ops/standin-acmedc.js) uses this one implementation, the module's 超脱 upgrade (8 SP) coming with the record:
  *   plain stat talent  "攻击力+4%" (预备干员-医疗 攻击提升) → persistent ATK/DEF/HP/ASPD buff
  *   攫升  "治疗目标时使其获得3点技力" (Touch) → every heal by the character gives the healed unit `sp` SP
  *   超脱  "攻击范围内的友方干员被击倒时获得5点技力" (Touch) → an allied operator knocked out on a tile of its range: +`sp` SP
  */
-function mapCharTalents(def) {
+export function mapCharTalents(def) {
   const out = [];
   for (const t of def?.talents ?? []) {
     const bb = t?.bb ?? {};
@@ -1278,18 +1280,21 @@ function reserveMedicKit(bb, raw, def) {
   return { ...k, talents: [...(k.talents ?? []), ...mapCharTalents(def)] };
 }
 
-/** Touch 恳切福音: +ATK, 2 heal targets in the skill range, ×heal_scale on allies ≤ hp_ratio, +addition heal. */
-function touchKit(bb, raw, def) {
-  const sk = def?.skill;
-  if (!sk) return { skill: null, talents: mapCharTalents(def) };
+/**
+ * Touch 恳切福音 (skchr_acmedc_3): +ATK, 2 heal targets in the skill range, ×heal_scale on allies ≤ hp_ratio, +addition
+ * heal — one implementation for the 外勤医疗 map character (touchKit) and the Touch 补位 stand-in (kits/ops/
+ * standin-acmedc.js). `skill` = the skill record (`rangeGrid`, `duration`) of blackboard `bb`. Returns `{ skill:
+ * SkillSpec, install(battle, unit) }`: `install` adds the heal boost, which acts while the unit's skill runs — install it
+ * on a unit whose skill is this one only.
+ */
+export function touchGospel(bb, skill) {
   const hpRatio = num(bb.hp_ratio, 0), boost = num(bb.heal_scale, 1), extra = num(bb['attack@addition_heal_scale'], 0);
   const targeting = {};
   if (num(bb['attack@max_target'], 0) > 1) targeting.maxTargets = Math.floor(num(bb['attack@max_target'], 1));
-  if (sk.rangeGrid && sk.rangeGrid.length) targeting.rangeGrid = sk.rangeGrid;
+  if (skill.rangeGrid && skill.rangeGrid.length) targeting.rangeGrid = skill.rangeGrid;
   return {
-    talents: mapCharTalents(def),
     skill: {
-      kind: sk.duration > 0 ? 'duration' : 'instant', heal: true,
+      kind: skill.duration > 0 ? 'duration' : 'instant', heal: true,
       mods: num(bb.atk, 0) ? { atkPct: num(bb.atk, 0) } : undefined,
       targeting,
       onHit({ battle, unit, target, heal }) {
@@ -1319,6 +1324,14 @@ function touchKit(bb, raw, def) {
       }, { owner: unit });
     },
   };
+}
+
+/** Touch (外勤医疗 map character): 恳切福音 (touchGospel) + 攫升 / 超脱 (mapCharTalents). */
+function touchKit(bb, raw, def) {
+  const sk = def?.skill;
+  if (!sk) return { skill: null, talents: mapCharTalents(def) };
+  const g = touchGospel(bb, sk);
+  return { talents: mapCharTalents(def), skill: g.skill, install: g.install };
 }
 
 /**

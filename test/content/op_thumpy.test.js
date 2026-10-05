@@ -84,21 +84,20 @@ test('a 自选 pick: 珊比 is offered at tiers 5 and 6 (she has a kit) and a ro
     { ok: true, picks: { [SLOT[5]]: { charId: THUMPY, skillIndex: 1, uniEquipId: PRPX } } });
 });
 
-test('triggers: every skill is MANUAL with the data\'s DEFAULT (the owner\'s 重装 cast-in-range exception; rawRule TAKE_DAMAGE) — shot from afar she casts nothing, an enemy on her tile casts; a flyer on it is no target', () => {
+test('triggers: every skill is MANUAL with the data\'s DEFAULT (the owner\'s 重装 exception; rawRule TAKE_DAMAGE); S1 casts with an enemy on her tile, S2 / S3 (areas larger than her range) as soon as a ground enemy is on the glue / conveyor — the kit\'s ACTIVE_RANGE; a flyer never counts', () => {
   for (const [tier, elite] of [[5, false], [6, true]]) {
     for (const skill of [0, 1, 2]) {
       const sk = formOf(tier, elite).skills[skill];
       assert.deepEqual([sk.skillType, sk.trigger.rule, sk.trigger.rawRule], ['MANUAL', 'DEFAULT', 'TAKE_DAMAGE'], `T${tier} S${skill + 1}: data`);
       const { h, u } = field({ tier, elite, skill });
-      assert.equal(u.skill.rule, 'DEFAULT');
-      h.spawn('enemy_shooter', { pos: [10, 7] });
-      h.spawn('enemy_fly', { pos: [10, 5] });
+      assert.equal(u.skill.rule, skill === 0 ? 'DEFAULT' : 'ACTIVE_RANGE');
+      h.spawn('enemy_fly', { pos: [10, 6] });
+      if (skill === 0) h.spawn('enemy_shooter', { pos: [10, 7] });
       u.skill.gainSp(999);
       h.run(3);
-      assert.ok(h.hooksOf('damaged').some((c) => c.target === u && c.source?.defId === 'enemy_shooter'), `T${tier} S${skill + 1}: she is being shot`);
-      assert.deepEqual([u.skill.activations, u.stats.attacks], [0, 0], `T${tier} S${skill + 1}: no cast, no attack on the flyer`);
-      h.spawn('enemy_dummy', { pos: [10, 5] });
-      assert.ok(h.runUntil(() => u.skill.activations === 1, 3), `T${tier} S${skill + 1}: cast with an enemy on her tile`);
+      assert.deepEqual([u.skill.activations, u.stats.attacks], [0, 0], `T${tier} S${skill + 1}: no cast for a flyer (or a shooter off her tile for S1), no attack on the flyer`);
+      h.spawn('enemy_dummy', { pos: skill === 0 ? [10, 5] : [10, 7] });
+      assert.ok(h.runUntil(() => u.skill.activations === 1, 3), `T${tier} S${skill + 1}: cast with a ground enemy ${skill === 0 ? 'on her tile' : 'on the skill area'}`);
       done(h);
     }
   }

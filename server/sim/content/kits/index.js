@@ -103,6 +103,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-ifrit.js',
   'op-aphris.js',
   'op-lin.js',
+  'op-chen2.js',
+  'op-ray.js',
+  'op-ascln.js',
 ]);
 
 /**

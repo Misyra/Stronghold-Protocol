@@ -10,7 +10,7 @@ export const MAX_SEATS = 4;
  * Spectator seats of a co-op room (community report #26, owner's decision 2026-10-04) — a remake feature: the official
  * room has 1–4 players and no spectator seat (there only eliminated players and 联防 bystanders watch, research 09 §3.1).
  * A spectator never counts as a player, may not act, and watches like an eliminated player (server/lobby.js spectate,
- * server/match/Match.js addSpectator).
+ * server/match/match/watch.js addSpectator).
  */
 export const MAX_SPECTATORS = 2;
 export const ROOM_CODE_LEN = 4;
@@ -79,8 +79,8 @@ export const SKILL_SUMMON_START_DEPLOY = true;
  * `Torappu.Battle.AutoChessBattleConst.MAX_GARRISON_STACK = 999`, and its bond counter (`AddBondCount`) stores
  * `min(L + n, 999)` — each bond stops at 999 on its own; the community reports bonds sitting at 999 while fed (巴哈姆特
  * 12534 "每把都能999层", 12316 "999謝"; research 02 §layers). The only implementation of the cap (DESIGN §20.12). Every
- * writer of a bond's layers goes through `layerGainRoom`: the prep-side gains (server/match/PlayerState.js addLayers —
- * 特质, items, bands, 机变 cards, bonds), the settle of the in-battle gains (server/match/Match.js) and the live in-battle
+ * writer of a bond's layers goes through `layerGainRoom`: the prep-side gains (server/match/player/economy.js addLayers —
+ * 特质, items, bands, 机变 cards, bonds), the settle of the in-battle gains (server/match/match/settle.js) and the live in-battle
  * copy (server/sim/battle/economy.js addLayers, as the client's AddBondCount) — and the dev tools' direct writes (tools/matchrun.mjs
  * --layers, tools/balance.mjs applyBoard); a gain at the cap adds 0 (no onLayers, no 'layer'
  * event), and the client-result check (server/match/fields.js) bounds a reported gain by the room left. Milestones paid

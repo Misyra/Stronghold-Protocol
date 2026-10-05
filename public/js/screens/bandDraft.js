@@ -58,7 +58,7 @@ export function allowedBands(bands, modeType) {
 export const DEFAULT_TIMEOUT_BAND = 'band_bldsk';
 
 /**
- * The strategy the server assigns me when my turn times out (server/match/Match.js defaultBand): the official default
+ * The strategy the server assigns me when my turn times out (server/match/match/phases.js defaultBand): the official default
  * 「华法琳」 while no teammate holds it, else the first free strategy in draft order (sortId) — never one a teammate
  * already picked (队友已选).
  * @param {any[]} bands allowedBands(...) (sortId order)
@@ -218,7 +218,7 @@ export function BandDraftScreen() {
     act('g.bandFocus', { bandId: sel }, { sfx: false, quiet: true });
   }, [sel, timed, myPick]);
 
-  // what a timeout gives me: the highlighted band while free, else the default (never 队友已选 — Match.js timeoutBand)
+  // what a timeout gives me: the highlighted band while free, else the default (never 队友已选 — match/phases.js timeoutBand)
   const autoId = autoPickBand(sel, { bands, taken, myPick, defaultId });
   const autoName = (autoId && gd.band(autoId)?.name) || gd.band(defaultId)?.name || '华法琳';
 

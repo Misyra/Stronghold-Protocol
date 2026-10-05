@@ -7,7 +7,14 @@ Normative contracts stay in DESIGN.md §6 and §8; this file documents the imple
 ```
 server/match/
   Match.js         state machine, timers, round loop, co-op orchestration, views (the lobby⇄match interface is at the top)
-  PlayerState.js   per-player economy / shop / hand / board / items / bonds / LP + every prep intent handler
+                   — the class: constructor + method install
+  match/           Match's methods by concern: platform, infra, messaging, views, watch, intents, pause, phases,
+                   spDraft (机变), prep, combat, clientCombat, reports, unitePhase (联防), bossRounds (Final Assault /
+                   Hidden Core), settle; common.js (FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS, re-exported by Match.js)
+  PlayerState.js   per-player economy / shop / hand / board / items / bonds / LP + every prep intent handler — the class:
+                   constructor + method install
+  player/          PlayerState's methods by concern: basics, pieces, acquire (gains, merges), economy (funds, layers,
+                   the shop), placement (g.move), items, prep, round (lifecycle, battleInput), views; common.js
   gamedata.js      typed, defaulted view of data/*.json (config tunables with research defaults) + the balance layer
                    (data/tuning.json, §3.1)
   pool.js          SharedPool (copies per base chess, across players), per-match bans, copy-weighted rolls

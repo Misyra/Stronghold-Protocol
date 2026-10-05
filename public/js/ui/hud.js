@@ -102,7 +102,7 @@ export function MissTag({ n, name = null }) {
 const LEAK_PHASES = new Set([PHASE.COMBAT, PHASE.UNITE]);
 
 /**
- * LP a round's leaks cost at settlement — the server rule (server/match/Match.js settle): min(lpCapPerRound, counted
+ * LP a round's leaks cost at settlement — the server rule (server/match/match/settle.js): min(lpCapPerRound, counted
  * leaks), never negative.
  * @param {number} leaks counted leaks so far
  * @param {number} [cap] data/config.json lpCapPerRound

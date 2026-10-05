@@ -7,7 +7,7 @@
 // watches that player's field at once.
 // Live LP (user playtest #3 item 2): during a normal round's battle each row's tower shows lp − the loss that player's
 // leaks so far will cost (red, −N): the own row the top bar's live value (`self`, ui/hud.js liveLp), a teammate's row
-// m.public players[].pendingLp (server/match/Match.js, ~1 Hz). 联防 (user playtest #6 item 7): a leaker's row adds the
+// m.public players[].pendingLp (server/match/match/views.js, ~1 Hz). 联防 (user playtest #6 item 7): a leaker's row adds the
 // runner tag ×N — its enemies still standing on the 联防 field, uncapped and live (falling as the helpers kill them,
 // rising when one splits) — next to lp − min(lpCapPerRound, N): the own row the top bar's value, a teammate's row the
 // local 联防 replica's count while it is on screen (`uniteLocal`: the battle runner's state().uniteLeft, the same battle

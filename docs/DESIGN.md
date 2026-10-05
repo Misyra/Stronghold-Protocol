@@ -56,8 +56,15 @@ server/
   lobby.js                 rooms (4-letter codes), seats, host, AI seats, ready/start, reconnect tokens, room→Match wiring
   data.js                  loads data/*.json once, builds indexes (getChess, getBond, …); frozen objects
   match/
-    Match.js               match state machine, timers, round loop, co-op orchestration, broadcasting views
-    PlayerState.js         per-player economy/shop/hand/board/items/bonds/LP state + all prep-intent handlers
+    Match.js               match state machine, timers, round loop, co-op orchestration, broadcasting views — the class:
+                           the lobby⇄match interface (header), constructor + method install
+    match/                 Match's methods by concern (platform, infra, messaging, views, watch, intents, pause, phases,
+                           spDraft, prep, combat, clientCombat, reports, unitePhase, bossRounds, settle; shared constants
+                           in common.js), installed on Match.prototype
+    PlayerState.js         per-player economy/shop/hand/board/items/bonds/LP state + all prep-intent handlers — the class:
+                           constructor + method install
+    player/                PlayerState's methods by concern (basics, pieces, acquire, economy, placement, items, prep,
+                           round, views; common.js), installed on PlayerState.prototype
     pool.js                SharedPool (copies per base chess), banned/disabled bonds, odds & rolls
     board.js               placement legality, deploy cap, hand/temp management, merge detection & execution
     bondsMeta.js           bond member counting (BOARD / BOARD_AND_DECK / golden), activation tiers, persistent layers

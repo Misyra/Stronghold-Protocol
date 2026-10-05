@@ -457,7 +457,7 @@ test('号角 S3: cast with an enemy in range (DEFAULT, DESIGN §21.29); ATK +25 
 });
 
 // ------------------------------------------------------------------------------------------------------------------
-test('魔王 S3: inspire +65 % of her max HP to others in range, HP equalised every 2 s; T1 orbiting motes ×1.5 aura heal; T2 −10 % from Sarkaz', () => {
+test('魔王 S3: inspire +65 % of her max HP to others in range, HP equalised every 2 s; T1 orbiting motes ×1.5 trait (生命回复速度); T2 −10 % from Sarkaz', () => {
   const sark = dummy('enemy_sark');
   sark.tags = ['sarkaz'];
   const h = makeBattle({
@@ -469,17 +469,22 @@ test('魔王 S3: inspire +65 % of her max HP to others in range, HP equalised ev
   const a = h.unit('t_a'), b = h.unit('t_b'), c = h.unit('t_c');
   const bb = bbOf(u), t0 = tal(u, 0), t1 = tal(u, 1);
   const aura = () => u.s.atk * u.def.traitBb['attack@atk_to_hp_recovery_ratio'];
+  // the trait: 生命回复速度 on the allies in range (an hpRegen buff — PRTS 分支特性信息 吟游者; professions.js bardRegen)
+  const trait = (x) => x.findBuff(`trait:bard:${u.id}`)?.mods.hpRegen ?? 0;
   h.step();
   a.hp = 2000; b.hp = 8000; c.hp = 2000;
   h.run(1.05);
   // the 3 motes orbit at range_radius 1.15 (dynamic_spd 30°/s, 120° apart): none sits on the left neighbour at t = 1 s
   assert.ok(!a.hasBuff('cetsyr:mote'), 'motes orbit: not on the left neighbour yet');
-  approx(a.hp - 2000, aura(), 1e-6, 'plain aura before the mote arrives');
-  approx(b.hp - 8000, aura(), 1e-6, 'plain aura (2 tiles away)');
+  approx(trait(a), aura(), 1e-6, 'plain trait before the mote arrives');
+  approx(trait(b), aura(), 1e-6, 'plain trait (2 tiles away)');
+  assert.ok(a.hp > 2000 && b.hp > 8000, 'regenerating');
   assert.ok(h.runUntil(() => a.hasBuff('cetsyr:mote'), 2), 'an orbiting mote reaches the adjacent operator');
+  h.run(0.3);
+  approx(trait(a), aura() * t0['attack@trait_mul'], 1e-6, 'mote ×1.5');
   const hpA = a.hp;
   h.run(1);
-  approx(a.hp - hpA, aura() * t0['attack@trait_mul'], 1e-6, 'mote ×1.5');
+  assert.ok(Math.abs(a.hp - hpA - aura() * t0['attack@trait_mul']) <= 1.5, `mote ×1.5: +${a.hp - hpA} in 1 s`);
   assert.ok(h.runUntil(() => c.hasBuff('cetsyr:mote'), 12), 'a diagonal neighbour (1.41 tiles) is on the orbit too');
   h.run(8);
   assert.ok(!fxOf(h, 'mote').some((e) => e[4].id === b.id), 'two tiles away: off the orbit');
@@ -502,7 +507,7 @@ test('魔王 S3: inspire +65 % of her max HP to others in range, HP equalised ev
 });
 
 // ------------------------------------------------------------------------------------------------------------------
-test('铃兰 T2 画地为牢 fragile 20 % on sluggish enemies (×1.4 in S3); S3 no attack, range-wide sluggish, heals; T1 Supporter SP aura', () => {
+test('铃兰 T2 画地为牢 fragile 20 % on sluggish enemies (×1.4 in S3); S3 no attack, range-wide sluggish, 生命回复速度 (none in the first second); T1 Supporter SP aura', () => {
   const h = makeBattle({
     defs: { enemies: { enemy_dummy: dummy() }, chess: { t_sup: chessRec({ id: 't_sup', profession: 'SUPPORT', stats: { atk: 0 } }), t_hurt: ally('t_hurt') } },
     units: [{ chessId: 'chess_char_5_10_a', row: 10, col: 4 }, { chessId: 't_sup', row: 12, col: 3 }, { chessId: 't_hurt', row: 11, col: 5 }],
@@ -521,12 +526,21 @@ test('铃兰 T2 画地为牢 fragile 20 % on sluggish enemies (×1.4 in S3); S3 
   hurt.hp = 5000;
   u.skill.gainSp(1000);
   assert.ok(h.runUntil(() => u.skill.active, 5));
-  const lastAtk = u.lastAttackAt;
-  h.run(2.1);
+  const lastAtk = u.lastAttackAt, cast = h.b.time;
+  // PRTS 技能3 备注: an hpRegen buff (no heal), 0 in the first second, its amount refreshed every second
+  const fox = () => hurt.findBuff(`lisa:fox:${u.id}`);
+  h.run(0.9);
+  assert.equal(fox(), null, 'nothing in the first second');
+  assert.equal(hurt.hp, 5000);
+  h.run(1.2);
   assert.equal(u.lastAttackAt, lastAtk, 'no attacks during S3');
   assert.ok(e.s.flags && e.findBuff('sluggish'), 'enemies in range are sluggish');
   approx(e.s.dmgTakenMul, 1 + (t1.damage_scale - 1) * bb.scale_delta_to_one, 1e-9, 'T2 ×1.4');
-  approx(hurt.hp - 5000, 2 * u.s.atk * bb['attack@atk_to_hp_recovery_ratio'], 1e-6, 'heals 9 % ATK/s');
+  const v = u.s.atk * bb['attack@atk_to_hp_recovery_ratio'];
+  approx(fox().mods.hpRegen, v, 1e-9, '生命回复速度 +9 % ATK');
+  assert.ok(Math.abs(hurt.hp - 5000 - v * (h.b.time - cast - 1)) <= 2, `regenerated ${hurt.hp - 5000} from the first second on`);
+  assert.ok(h.runUntil(() => !u.skill.active, 40));
+  assert.equal(fox(), null, 'gone with the skill');
   clean(h);
 });
 

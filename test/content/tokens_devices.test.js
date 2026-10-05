@@ -118,7 +118,7 @@ test('“小自在”: arts melee blocker, 25 s lifetime, kills emit summonKill 
   checkInvariants(h.b);
 });
 
-test('斯卡蒂的海嗣: heals allies in its range; during the owner skill: true dmg/s + 鼓舞; expires, then redeploys after respawnTime', REAL, () => {
+test('斯卡蒂的海嗣: its owner\'s trait (生命回复速度) on the allies in its range; during the owner skill: true dmg/s + 鼓舞; expires, then redeploys after respawnTime', REAL, () => {
   const bb = tokDef(TOKEN_IDS.seaborn, 'chess_char_6_04_a').skill.bb;
   const ratio = tokDef(TOKEN_IDS.seaborn, 'chess_char_6_04_a').traitBb['attack@atk_to_hp_recovery_ratio'];
   // heal mode (owner skill idle)
@@ -130,8 +130,13 @@ test('斯卡蒂的海嗣: heals allies in its range; during the owner skill: tru
     g.hp = 1000;
     const sea = spawnOn(h, sk, TOKEN_IDS.seaborn, 10, 7);
     assert.equal(sea.s.flags.untargetable, true);
-    h.run(3.05);
-    approx(g.hp - 1000, 3 * sk.s.atk * ratio, 1e-6, 'heal 3 pulses');
+    h.run(1.05);
+    // an hpRegen buff keyed by the owner (one trait effect per ally — professions.js bardRegen), refreshed every second
+    const v = sk.s.atk * ratio;
+    approx(g.findBuff(`trait:bard:${sk.id}`)?.mods.hpRegen ?? 0, v, 1e-6, 'the owner\'s trait');
+    const hp0 = g.hp, t1 = h.b.time;
+    h.run(2);
+    assert.ok(Math.abs(g.hp - hp0 - v * (h.b.time - t1)) <= 1.5, `regenerated ${g.hp - hp0}`);
     const life = tokDef(TOKEN_IDS.seaborn, 'chess_char_6_04_a').talents[0].bb.duration;
     h.runUntil(() => !sea.alive, life + 2);
     approx(sea.deathAt - sea.deployedAt, life, 0.01, 'lifetime');
@@ -263,14 +268,14 @@ test('hand-authored summoner kits: the board 狼群 deploys before 伺夜 (one p
   assert.equal(packs.length, 1, 'a single pack');
   assert.equal(packs[0].uid, 2, 'the player\'s piece');
   assert.equal(vigil.trait.reinforcement, packs[0]);
-  // a summoner with a hand kit (no skill here): the seaborn does not run its own heal pulses
+  // a summoner with a hand kit (no skill here): the seaborn does not run its own trait pulses
   const h2 = makeBattle({ defs: { chess: { test_guard: guard() } }, kits: { chess_char_6_04_a: bare }, units: [{ chessId: 'chess_char_6_04_a', row: 12, col: 3 }, { chessId: 'test_guard', row: 10, col: 8 }], autoFinish: false, timeLimit: 30 });
   h2.step();
   const g = h2.unit('test_guard');
   g.hp = 1000;
   const sea = spawnOn(h2, h2.unit('chess_char_6_04_a'), TOKEN_IDS.seaborn, 10, 7);
   h2.run(3);
-  assert.equal(g.hp, 1000, 'managed: no token-side heal');
+  assert.equal(g.hp, 1000, 'managed: no token-side trait');
   assert.equal(sea.mem.expiresAt, undefined, 'managed: lifetime left to the owner kit');
   checkInvariants(h.b);
 });

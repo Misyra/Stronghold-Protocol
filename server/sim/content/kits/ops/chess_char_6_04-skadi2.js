@@ -3,6 +3,7 @@
 
 import { aggregateMods } from '../../../buffs.js';
 import { COLS } from '../../../constants.js';
+import { bardRegen } from '../../../professions.js';
 import {
   num, bv, tbb, tdesc, moduleBb, parseN, live, enemiesIn, isTok, onDefaultSkill, selectedSkill, aura,
 } from '../shared/tier6.js';
@@ -37,7 +38,8 @@ function skadi2(bb, chess, def) {
   const isDef = onDefaultSkill(chess), sid = selectedSkill(chess, def);
   const tokId = def?.talents?.[0]?.tokenKey || (chess?.tokens || [])[0] || 'token_10017_skadi2_dedant';
   const auraRatio = num(tb['attack@atk_to_hp_recovery_ratio'], 0.1);
-  // S1 / S2 raise the trait heal ("特性效果提高至N%") while they run; S3 (default) turns it into the tide
+  // S1 / S2 raise the trait ("特性效果提高至N%") while they run; S3 (default) turns it into the tide. The trait is a
+  // 生命回复速度 buff on the allies, not a heal (PRTS 分支特性信息 吟游者; professions.js bardRegen)
   const skillRatio = num(bb['attack@atk_to_hp_recovery_ratio'], auraRatio);
   const seaborns = (battle, unit) => battle.allyUnits.filter((t) => isTok(t, tokId, unit) && live(t));
   const covered = (battle, unit, toks) => { // allies inside her range ∪ the seaborns' ranges
@@ -52,7 +54,7 @@ function skadi2(bb, chess, def) {
     return seaborns(battle, unit).some((t) => t.rangeKeySet?.has(k));
   };
   const skills = {
-    // S1 同归殊途之吟 (SP_FULL): full self heal, max HP +max_hp, trait heal attack@atk_to_hp_recovery_ratio, and
+    // S1 同归殊途之吟 (SP_FULL): full self heal, max HP +max_hp, trait attack@atk_to_hp_recovery_ratio, and
     // damage_resistance of the damage taken by every ally of her (+ 海嗣) range is transferred to her (install)
     skchr_skadi2_1: {
       kind: 'duration',
@@ -60,7 +62,7 @@ function skadi2(bb, chess, def) {
       onStart({ battle, unit }) { unit.hp = unit.s.maxHp; battle.fx('heal', { x: unit.x, y: unit.y, id: unit.id }); },
     },
     // S2 同葬无光之愿 (toggle): 鼓舞 ATK / DEF = atk / def × her ATK / DEF on every other ally of her (+ 海嗣) range,
-    // trait heal attack@atk_to_hp_recovery_ratio (trait pulse). 自动触发 with effects on her allies only (nothing to target):
+    // trait attack@atk_to_hp_recovery_ratio (trait pulse). 自动触发 with effects on her allies only (nothing to target):
     // on as soon as it is ready (SP_FULL, like 魔王 S1 往昔萦绕身旁); until 0.2.0 the data's DEFAULT left it off until an
     // enemy came into her (or a 海嗣's) range.
     skchr_skadi2_2: { kind: 'toggle', trigger: 'SP_FULL' },
@@ -72,7 +74,7 @@ function skadi2(bb, chess, def) {
       onStart({ battle, unit }) { battle.fx('tide', { x: unit.x, y: unit.y, id: unit.id }); },
     },
     trait: {
-      install(battle, unit) { // replaces the bard aura: heal normally, tide (true damage + 鼓舞 + self drain) during S3
+      install(battle, unit) { // replaces the bard aura: 生命回复速度 normally, tide (true damage + 鼓舞 + self drain) during S3
         unit.mem.noInspire = true; // 自身不受鼓舞影响
         const isInspire = (b) => b.key === 'inspire' || b.status === 'inspire' || b.key.startsWith('inspire:') || b.key.endsWith(':inspire');
         // "海嗣的攻击范围视为自身攻击范围的延伸": an enemy in a 海嗣's range also satisfies her DEFAULT trigger
@@ -103,10 +105,9 @@ function skadi2(bb, chess, def) {
             const va = unit.s.atk * num(bb.atk), vd = unit.s.def * num(bb.def);
             for (const a of allies) if (a !== unit) { inspire(battle, a, va, unit); inspire(battle, a, vd, unit, 'def'); }
           }
-          if (n % 2 === 0) {
-            const amount = unit.s.atk * (on ? skillRatio : num(unit.profile?.auraRatio, auraRatio));
-            for (const a of allies) if (a.hp < a.s.maxHp) battle.heal(unit, a, amount, { aura: true });
-          }
+          // the trait over her range ∪ the 海嗣' ranges, refreshed every pulse (it lapses 0.75 s after the last one)
+          const v = unit.s.atk * (on ? skillRatio : num(unit.profile?.auraRatio, auraRatio));
+          for (const a of allies) bardRegen(battle, unit, a, v, 0.75);
         }, { owner: unit });
       },
     },

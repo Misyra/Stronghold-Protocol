@@ -7,14 +7,18 @@ import {
   giveSp,
 } from '../shared/tier3.js';
 
+/** Refresh period (s) of 瑕光 S2's 生命回复速度 buff (it lasts two periods, so it never lapses while the skill runs). */
+const REGEN_IV = 0.25;
+
 export default {
   // ---- 3_12 瑕光 · 守护者 — S3 先贤化身: ATK/DEF +, bonus arts per hit, heals another nearby ally per attack;
   //      剑盾骑士: hurt-SP skills of the team also gain SP on attack; 仁慈: attacks sleeping enemies (first, ×atk_scale);
   //      精锐 module GUA-Y: damage taken −15 %
   //      S1 光芒涌动 (自动触发 ⇒ DEFAULT, charges): next attack ×atk_scale phys + heals the most injured ally of the 3×3 (herself
   //      included) for heal_scale × ATK; S2 慑敌辉光: ATK +, puts every ground enemy on her own tile and every enemy she
-  //      blocks to sleep (PRTS 备注; for the skill's duration: no own value in the data) and heals every ally of the
-  //      skill range by ATK × ratio each second;
+  //      blocks to sleep (PRTS 备注; for the skill's duration: no own value in the data) and gives every ally of the
+  //      skill range 生命回复速度 +ATK × ratio while it runs (PRTS 技能2 备注 "生命恢复的提供方式为基于自己的攻击力，增加目标的
+  //      “生命回复速度”属性，不受治疗加成和禁疗影响": an hpRegen buff, no heal — GitHub #137);
   //      精锐 module GUA-X: her heals on allies under hp_ratio HP × heal_scale
   chess_char_3_12_a: (bb, chess, def) => {
     const d = defOf(chess, def);
@@ -62,6 +66,19 @@ export default {
         skchr_blemsh_2: (s) => {
           const grid = copyGrid(s.rangeGrid) ?? NINE;
           const ratio = num(s.bb['attack@atk_to_hp_recovery_ratio'], num(s.bb.atk_to_hp_recovery_ratio, 0));
+          // "周围的所有友方单位每秒恢复相当于攻击力N%的生命值": an hpRegen buff on every ally on the skill range's tiles (no
+          // device, no 孤立 unit), refreshed every REGEN_IV while the skill runs and removed at its end [ASSUMED: from the
+          // start of the skill — unlike 铃兰's, the note names no delay]
+          const regenKey = (unit) => `blemsh:regen:${unit.id}`;
+          const regen = (battle, unit) => {
+            if (!(ratio > 0)) return;
+            const keys = new Set(gridKeys(grid, unit));
+            const v = unit.s.atk * ratio;
+            for (const a of battle.allyUnits) {
+              if (!a.alive || !a.deployed || a.hidden || a.kind === 'device' || !onTiles(a, keys) || !battle.allySelectable(a, unit)) continue;
+              battle.addBuff(a, { key: regenKey(unit), duration: REGEN_IV * 2, source: unit, mods: { hpRegen: v } });
+            }
+          };
           return {
             kind: 'duration',
             heal: false,
@@ -78,14 +95,16 @@ export default {
               }
               fx(battle, 'aoe', unit, { radius: 0.5, skill: 'blemsh_2', status: 'sleep', n });
               unit.mem.blemshRegen = 0;
+              regen(battle, unit);
             },
-            onTick({ battle, unit, dt }) { // "周围的所有友方单位每秒恢复相当于攻击力N%的生命值"
-              if (!(ratio > 0)) return;
+            onTick({ battle, unit, dt }) {
               unit.mem.blemshRegen = (unit.mem.blemshRegen ?? 0) + dt;
-              while (unit.mem.blemshRegen >= 1 - 1e-9) {
-                unit.mem.blemshRegen -= 1;
-                for (const a of battle.injuredAlliesInKeys(new Set(gridKeys(grid, unit)), unit)) battle.heal(unit, a, unit.s.atk * ratio);
-              }
+              if (unit.mem.blemshRegen < REGEN_IV - 1e-9) return;
+              unit.mem.blemshRegen = 0;
+              regen(battle, unit);
+            },
+            onEnd({ battle, unit }) {
+              for (const a of battle.allyUnits) if (a.findBuff(regenKey(unit))) battle.removeBuff(a, regenKey(unit));
             },
           };
         },

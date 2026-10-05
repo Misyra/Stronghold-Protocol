@@ -496,7 +496,7 @@ test('1_15 盟约·辅助干员 (hidden): 迭代元素 18 % ATK 神经 + 灼燃 
 });
 
 for (const [idA, idB] of [['chess_char_1_16_a', 'chess_char_1_16_b'], ['chess_char_2_19_a', 'chess_char_2_19_b']]) {
-  test(`${idA.slice(11, 15)} 锡人: “大拉里” zone — ground enemies take atk_scale × ATK arts/s, allies heal; elite 凋敝魂灵 + module SP`, () => {
+  test(`${idA.slice(11, 15)} 锡人: “大拉里” zone — ground enemies take atk_scale × ATK arts/s, allies inside get 生命回复速度 (PRTS 备注: no heal); elite 凋敝魂灵 + module SP`, () => {
     const bb = bbOf(idA);
     const flyer = dummy('e_fly', { motion: 'FLY' });
     const h = run({
@@ -513,10 +513,25 @@ for (const [idA, idB] of [['chess_char_1_16_a', 'chess_char_1_16_b'], ['chess_ch
     assert.equal(z.length, bb.projectile_delay_time);
     for (const c of z) approx(c.amount, u.s.atk * bb.atk_scale);
     assert.equal(dealt(h, u, (c) => c.target === f && (c.dmg.tags || []).includes('zone')).length, 0, 'air units unaffected');
-    const zh = heals(h, u, (c) => c.target === yak);
-    assert.equal(zh.length, bb.projectile_delay_time);
-    for (const c of zh) approx(c.amount, u.s.atk * bb.hp_recovery_per_sec_ratio);
+    assert.equal(heals(h, u, (c) => c.target === yak).length, 0, 'no heal of hers: an hpRegen buff (PRTS 备注 「增加目标的“生命回复速度”属性」)');
     done(h);
+    // the ally inside: 生命回复速度 + her ATK at the cast × hp_recovery_per_sec_ratio for the unit's life, then gone
+    const h3 = run({
+      defs: { enemies: { e: dummy('e') } },
+      units: [{ chessId: idA, row: 10, col: 4, carryState: READY }, { chessId: 'chess_char_1_02_a', row: 10, col: 6 }],
+      enemies: [{ key: 'e', pos: [10, 5] }],
+    });
+    const u3 = h3.unit(idA), yak3 = h3.unit('chess_char_1_02_a');
+    const zone = () => yak3.buffs.find((b) => String(b.key).startsWith('tinman:zone:'));
+    assert.ok(h3.runUntil(() => !!zone(), 2), 'the unit is down');
+    const v = u3.s.atk * bb.hp_recovery_per_sec_ratio;
+    approx(zone().mods.hpRegen, v, 'ATK × ratio');
+    yak3.hp = yak3.s.maxHp * 0.3;
+    const hp0 = yak3.hp, t1 = h3.b.time;
+    h3.run(5);
+    assert.ok(Math.abs(yak3.hp - hp0 - v * (h3.b.time - t1)) <= 1.5, `regenerated ${yak3.hp - hp0} ≈ ${v * 5}`);
+    assert.ok(h3.runUntil(() => !zone(), bb.projectile_delay_time + 1), 'gone with the unit');
+    done(h3);
 
     const bbB = bbOf(idB), w = tal(idB, 1)['skill@damage_scale'], mb = hid(idB);
     const h2 = run({ defs: { enemies: { e: dummy('e') } }, units: [{ chessId: idB, row: 10, col: 4 }], enemies: [{ key: 'e', pos: [10, 5] }] });
@@ -1018,7 +1033,7 @@ test('2_13 蒂比: an incoming attack triggers 紧急赶场通知 and is dodged;
   done(h2);
 });
 
-test('2_14 调香师: 精调 ATK +atk / ASPD −50; 熏衣草 heals every ally atk_to_hp_recovery_ratio × ATK per s; elite heals 4', () => {
+test('2_14 调香师: 精调 ATK +atk / ASPD −50; 熏衣草 every ally 生命回复速度 +atk_to_hp_recovery_ratio × ATK (PRTS 备注: no heal); elite heals 4', () => {
   const id = 'chess_char_2_14_a', bb = bbOf(id), t = tal(id);
   const h = run({ units: [{ chessId: id, row: 10, col: 4, carryState: READY }, { chessId: 'chess_char_1_02_a', row: 9, col: 9 }, { chessId: 'chess_char_1_10_a', row: 10, col: 5 }] });
   const u = h.unit(id), far = h.unit('chess_char_1_02_a'), near = h.unit('chess_char_1_10_a');
@@ -1029,9 +1044,12 @@ test('2_14 调香师: 精调 ATK +atk / ASPD −50; 熏衣草 heals every ally a
   assert.ok(u.skill.active);
   approx(u.s.atk, u.base.atk * (1 + bb.atk));
   approx(u.s.aspd, u.base.aspd + bb.attack_speed);
-  const aura = heals(h, u, (c) => c.target === far);
-  assert.equal(aura.length, 3, 'one pulse per second, out of range too');
-  for (const c of aura) approx(c.amount, u.s.atk * t.atk_to_hp_recovery_ratio);
+  const v = u.s.atk * t.atk_to_hp_recovery_ratio;
+  for (const x of [far, near, u]) approx(x.s.hpRegen - x.base.hpRecoveryPerSec, v, `${x.defId}: 生命回复速度 +ATK × ratio (out of range too)`);
+  assert.equal(heals(h, u, (c) => c.target === far).length, 0, 'no heal of hers');
+  const hp0 = far.hp, t1 = h.b.time;
+  h.run(2);
+  assert.ok(Math.abs(far.hp - hp0 - far.s.hpRegen * (h.b.time - t1)) <= 1.5, `regenerated ${far.hp - hp0}`);
   done(h);
   const idb = 'chess_char_2_14_b';
   const ids = ['chess_char_1_02_a', 'chess_char_1_10_a', 'chess_char_1_12_a', 'chess_char_2_07_a', 'chess_char_1_18_a'];

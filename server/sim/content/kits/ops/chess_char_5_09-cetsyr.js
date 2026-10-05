@@ -10,9 +10,10 @@ const MOTE_HIT_RADIUS = 0.4;
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
-  // 魔王 — bard (aura heal 10 % ATK/s). S3 编织重构现世 (30 s): skill range, aura 65 %, motes never vanish, other allies in
-  // range get 鼓舞 = +65 % of her max HP, HP of everyone in range is equalised every 2 s.
-  // T1 过往尘埃: 3 motes orbit her; one colliding with an operator vanishes and gives it ×1.5 aura healing for 6 s, then
+  // 魔王 — bard (trait: 生命回复速度 +10 % ATK on the allies in range, professions.js bardRegen). S3 编织重构现世 (30 s):
+  // skill range, trait 65 %, motes never vanish, other allies in range get 鼓舞 = +65 % of her max HP, HP of everyone in
+  // range is equalised every 2 s.
+  // T1 过往尘埃: 3 motes orbit her; one colliding with an operator vanishes and gives it ×1.5 of her trait for 6 s, then
   // respawns after 6 s.
   // T2 魔王残响: allies take −10 % damage from Sarkaz enemies. Module (elite): ≥2 other ops in range → ATK +8 %.
   chess_char_5_09_a: (bb, chess, def) => {
@@ -94,10 +95,11 @@ export default {
               battle.fx('mote', { x: hit.x, y: hit.y, id: hit.id });
             }
           });
-          battle.on('heal', (c) => {
-            if (c.source !== unit || !c.opts?.aura) return;
+          // "受到魔王特性效果提升至1.5倍": his trait's 生命回复速度 on that operator (professions.js bardRegen hook)
+          battle.on('bardRegen', (c) => {
+            if (c.unit !== unit) return;
             const b = c.target.findBuff('cetsyr:mote');
-            if (b) c.amount *= num(b.data.mul, 1);
+            if (b) c.value *= num(b.data.mul, 1);
           }, { owner: unit });
         } },
         { install(battle, unit) { // 魔王残响

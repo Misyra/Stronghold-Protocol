@@ -11,7 +11,8 @@
 //   沙之碑        on appear: owner ATK × atk_scale arts + stun (skill range 3×3), blocks 3 (no attack), talent duration 20 s
 //   战术装备      on appear: stun around (bb.stun), blocked enemies DEF + talent def (−160), talent duration 25 s
 //   “小自在”      arts melee blocker, talent duration 25 s; kills emit `summonKill` (夕's 化境 is the 夕 kit's job)
-//   斯卡蒂的海嗣  untargetable range extension of 浊心斯卡蒂: heals allies in its range (owner ATK × trait ratio /s);
+//   斯卡蒂的海嗣  untargetable range extension of 浊心斯卡蒂: her trait's 生命回复速度 on the allies in its range (owner
+//                 ATK × trait ratio /s);
 //                 while the owner's skill runs: owner ATK × atk_scale true dmg/s to enemies + 鼓舞 owner ATK × bb.atk;
 //                 talent duration 25/30 s, then redeploys after respawnTime (30/25 s, DP cost from data)
 //   “耀阳”        on appear: owner ATK × atk_scale true + stun in the skill grid (+1 hit if the previously deployed
@@ -85,6 +86,7 @@ import { absoluteRangeKeys, sortEnemyTargets, canTargetEnemy } from '../targetin
 import { bodyInKeys, bodyOnTile } from '../body.js';
 import { hasHp } from '../damage.js';
 import { genericKit } from './generic.js';
+import { bardRegen } from '../professions.js';
 import { normDir, localOrder } from '../dir.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
 
@@ -535,7 +537,11 @@ function duskDragon(bb, raw, def) {
   };
 }
 
-/** 斯卡蒂的海嗣 (浊心斯卡蒂 talent 远古血亲): range extension of its owner (heal aura / S3 damage + 鼓舞). */
+/**
+ * 斯卡蒂的海嗣 (浊心斯卡蒂 talent 远古血亲): range extension of its owner (her trait's 生命回复速度 — professions.js bardRegen,
+ * keyed by the owner: one trait effect per ally — / S3 damage + 鼓舞). Only while the owner fights with the generic kit:
+ * her own kit (kits/ops/chess_char_6_04-skadi2.js) covers the 海嗣' ranges itself.
+ */
 function seaborn(bb, raw, def) {
   const life = num(talentBb(def, 'duration').duration, 0);
   const healRatio = num(def?.traitBb?.['attack@atk_to_hp_recovery_ratio'], 0);
@@ -567,9 +573,9 @@ function seaborn(bb, raw, def) {
         } else if (healRatio > 0) {
           const ownerKeys = o && o.alive && o.deployed ? (o.rangeKeySet || new Set(o.rangeKeys || [])) : null;
           for (const a of battle.alliesInGrid(unit)) {
-            if (a === unit || a.hp >= a.s.maxHp - 1e-6) continue;
-            if (ownerKeys && ownerKeys.has(a.tileR * COLS + a.tileC)) continue; // the owner's own aura already heals it
-            battle.heal(unit, a, atk * healRatio);
+            if (a === unit) continue;
+            if (ownerKeys && ownerKeys.has(a.tileR * COLS + a.tileC)) continue; // the owner's own trait already covers it
+            bardRegen(battle, o ?? unit, a, atk * healRatio, 1.25); // refreshed every second
           }
         }
       }, { owner: unit });

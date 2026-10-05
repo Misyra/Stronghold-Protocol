@@ -5,8 +5,11 @@ import { AURA_IV, AURA_DUR, num, talent, skillGrid, mods, isOp, lazySkills, whil
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
-  // 铃兰 — S3 狐火渺然 (27/29 s): no attacks, skill range, every enemy in range is sluggish, allies in range heal 9/11 %
-  // ATK per second, T2 ×scale_delta_to_one. T1 技力光环·辅助: Supporters +0.4 SP/s (highest wins).
+  // 铃兰 — S3 狐火渺然 (27/29 s): no attacks, skill range, every enemy in range is sluggish, allies in range recover 9/11 %
+  // ATK per second, T2 ×scale_delta_to_one. PRTS 技能3 备注: "生命恢复的提供方式为基于铃兰的攻击力增加目标的“生命回复速度”
+  // 属性，不受治疗加成和禁疗影响" and "技能开启第一秒内提供生命回复为0，生命回复速度数额每秒刷新一次" — an hpRegen buff (no heal:
+  // 无法被友方治疗 / 禁疗 units get it too), set at each full second of the skill on the allies then in range, none in the
+  // first second, removed when the skill ends. T1 技力光环·辅助: Supporters +0.4 SP/s (highest wins).
   // T2 画地为牢: sluggish enemies in range also take +20 % damage for the same time. Module (elite): +0.2 SP/s with an
   // enemy in range.
   chess_char_5_10_a: (bb, chess, def) => {
@@ -14,6 +17,7 @@ export default {
     const boost = num(bb.scale_delta_to_one, 1);
     const healRatio = num(bb['attack@atk_to_hp_recovery_ratio']);
     const fragile = num(t1.damage_scale, 1) - 1;
+    const foxKey = (unit) => `lisa:fox:${unit.id}`;
     return {
       // S1 全力以赴 (duration): ATK +, ASPD +. S2 儿时的舞乐 (toggle, 持续时间无限): ATK +, 2 targets.
       skills: lazySkills({
@@ -35,8 +39,13 @@ export default {
           if (unit.mem.foxHeal >= 1) {
             unit.mem.foxHeal -= 1;
             if (!(healRatio > 0)) return;
-            for (const a of battle.alliesInGrid(unit)) if (a.hp < a.s.maxHp) battle.heal(unit, a, unit.s.atk * healRatio, { aura: true });
+            // until the next refresh (a little longer, so it never lapses in between; onEnd takes it off)
+            const v = unit.s.atk * healRatio;
+            for (const a of battle.alliesInGrid(unit)) battle.addBuff(a, { key: foxKey(unit), duration: 1.25, source: unit, mods: { hpRegen: v } });
           }
+        },
+        onEnd({ battle, unit }) {
+          for (const a of battle.allyUnits) if (a.findBuff(foxKey(unit))) battle.removeBuff(a, foxKey(unit));
         },
       },
       talents: [

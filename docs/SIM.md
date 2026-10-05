@@ -685,7 +685,13 @@ unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `d
 `battle.heal(source, target, amount, { overheal=false, self, silent, regen, ignoreHealFree })`: no-op on `noHeal` targets
 (unless self — 禁疗 / 孤立 summons carry the flag, §3) and on `healFree` ones, self included (史尔特尔's 余烬), unless `regen`
 (an HP-regen attribute tick) or `ignoreHealFree` (a heal that "无视禁疗");
-× source `healingDealtMul` × target `healingTakenMul`; **`heal`** hook (mutable amount); capped at max HP; `overheal`
+× source `healingDealtMul` × target `healingTakenMul`; **`heal`** hook (mutable amount); capped at max HP; a `regen` tick
+— the unit's own 生命回复速度 (`s.hpRegen`, applied in the buffs phase) — is no 治疗 (PRTS 调香师 / 瑕光 / 铃兰 / 锡人 备注
+"不受治疗加成和禁疗影响"): no multiplier, and the hook sees it (`opts.regen`) but cannot change its amount. Effects PRTS
+describes as raising the target's 生命回复速度 are hpRegen buffs, never `heal` calls, so 禁疗 and 无法被友方治疗 (`noHeal`:
+收割者 / 不屈者 / 武者) do not stop them: the 吟游者 trait (professions.js `bardRegen`, 分支特性信息 吟游者; 魔王's 微尘 ×1.5
+through its `bardRegen` hook; 浊心斯卡蒂 and her 海嗣), 调香师's 熏衣草, 瑕光 S2, 铃兰 S3 (none in its first second, refreshed
+every second), 锡人's 炼金单元 (GitHub #96 / #137); `overheal`
 turns the excess into an `overheal` shield. `battle.loseHp(target, amount, { source, from, tags, silent, sourceless })` = HP
 loss ignoring DEF/RES/shields/dodge (流失); `sourceless: true` makes it 无来源 ("受到等量的无来源生命流失": hooks see no source,
 `source` keeps the credit — stats and the per-player shared-pool tally), as does a 无来源 `from`. A 流失 skips the damage
@@ -1156,7 +1162,7 @@ table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡�
 | wandermedic | heal + reduce element gauges by 50 % ATK (bb ep_heal_ratio); also targets uninjured allies with gauge |
 | incantationmedic | arts attack; EVERY damage the unit deals heals the lowest ally in range for 50 % (bb scale) of it — the official trait buff (`vendla_tr` / `reed2_tr` / `titi_tr`) is ON_AFTER_OUTPUT_DAMAGE, so skill and DoT damage heals too (缇缇's 凝固的时光 ticks, 焰影苇草's S2 fireballs while she is disarmed); a skill that triggers it for one named ally says so ("仅对该角色触发…特性") and the damage instance carries that ally (`DamageInfo.traitAlly`) |
 | slower | sluggish 0.8 s on hit (bb sluggish) |
-| bard | no attack; every second heals allies in range 10 % ATK (bb atk_to_hp_recovery_ratio) |
+| bard | no attack; allies in range get 生命回复速度 +10 % ATK (bb atk_to_hp_recovery_ratio) — an hpRegen buff refreshed every 0.25 s (`bardRegen`), no heal |
 | craftsman | melee phys (support devices via kit) |
 | shotprotector | ranged phys, can hit FLY, blocks 3 |
 | fortress | melee single target while blocking, ranged 1.0 splash otherwise, ground only (never hits FLY) |

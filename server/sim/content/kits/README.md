@@ -236,6 +236,11 @@ Each item is a mistake this project already made once. Tick every one for every 
   `enemies_bosses.test.js` "沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced".
 - [ ] **10. Tests** — at least one per skill and per talent, plus the trigger rule, the range toggle, anti-air and
   every module; the golden files updated in the same pull request (an intended change).
+- [ ] **11. 治疗 or 生命回复速度** — an effect PRTS describes as raising the target's 「生命回复速度」 (a 备注 「增加目标的
+  “生命回复速度”属性，不受治疗加成和禁疗影响」; 分支特性信息 吟游者) is an hpRegen / hpRegenRatio buff on the target, never
+  `battle.heal`: 禁疗 and 无法被友方治疗 (`noHeal`) do not stop it and no 治疗加成 scales it (damage.js heal `regen`).
+  Examples: 安洁莉娜 兼职工作, the 吟游者 trait (professions.js `bardRegen`), 调香师, 瑕光 S2, 铃兰 S3, 锡人;
+  `test/content/feedback5-regen.test.js` (GitHub #96 / #137). A per-second 「恢复…生命」 without such a note stays a heal.
 
 ## Old references
 

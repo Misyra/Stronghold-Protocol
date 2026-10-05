@@ -6,7 +6,9 @@ import { num, talentBb, moduleBb, up } from '../shared/tier1.js';
 export default {
   // ---------------------------------------------------------------------------------------------------------------
   // 2_14 调香师 精调: ASPD +attack_speed (−50), ATK +atk. 熏衣草: every ally on the field recovers
-  // atk_to_hp_recovery_ratio × ATK HP per second. Elite module (RIN-Y, hidden attack@max_target): heals 4 allies.
+  // atk_to_hp_recovery_ratio × ATK HP per second — PRTS 天赋备注 "生命恢复的提供方式为增加目标的“生命回复速度”属性（直接加算），
+  // 不受治疗加成和禁疗影响": an hpRegen buff, no heal, so 无法被友方治疗 (折桠, 收割者) and 禁疗 units get it too (GitHub #137).
+  // Elite module (RIN-Y, hidden attack@max_target): heals 4 allies.
   // S1 治疗强化·β型 (alt): ATK +atk for its duration.
   chess_char_2_14_a: (bb, chess) => {
     const t = talentBb(chess, 0);
@@ -18,10 +20,12 @@ export default {
       talents: [{ install(battle, unit) {
         const r = num(t.atk_to_hp_recovery_ratio);
         if (!(r > 0)) return;
-        battle.every(1, () => {
+        // one buff per 调香师 (直接加算: two add up), refreshed while she is on the field; it lapses 0.5 s after she leaves
+        const key = `flower:lavender:${unit.id}`;
+        battle.every(0.25, () => {
           if (!up(unit)) return;
-          const amt = unit.s.atk * r;
-          for (const a of battle.alliesFor(unit)) if (a.hp < a.s.maxHp) battle.heal(unit, a, amt, { aura: true, tags: ['talent'] });
+          const v = unit.s.atk * r;
+          for (const a of battle.alliesFor(unit)) battle.addBuff(a, { key, duration: 0.5, source: unit, mods: { hpRegen: v }, tags: ['talent'] });
         }, { owner: unit });
       } }],
     };

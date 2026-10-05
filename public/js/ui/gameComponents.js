@@ -11,15 +11,15 @@ import {
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
-/** Data files the in-match screens use. */
+/** Data files the in-match screens use (`backups`: the 补位 stand-ins' bodies — cards, the board model, the detail card). */
 export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands', 'enemies', 'bosses', 'stages', 'tokens',
-  'choices', 'effects', 'garrisons', 'factions', 'local'];
+  'choices', 'effects', 'garrisons', 'factions', 'local', 'backups'];
 
 /**
  * Load every in-match data file; returns lookups (sync, null until loaded).
  * @returns {{ ready: boolean, m: any, config: any, chess: (id:string)=>any, bond: (id:string)=>any, item: (id:string)=>any,
  *   band: (id:string)=>any, enemy: (k:string)=>any, boss: (id:string)=>any, stage: (id:string)=>any, token: (id:string)=>any,
- *   effect: (id:string)=>any, garrison: (id:string)=>any, factions: any, choices: any, list: (name:string)=>any[] }}
+ *   effect: (id:string)=>any, garrison: (id:string)=>any, factions: any, choices: any, backups: any, list: (name:string)=>any[] }}
  */
 export function useGameData() {
   const ready = useData(...GAME_FILES);
@@ -44,6 +44,7 @@ export function makeLookups(ready = true) {
     garrison: (id) => data.lookup('garrisons', id),
     factions: data.get('factions'),
     choices: data.get('choices'),
+    backups: data.get('backups'),
     list: (name) => data.list(name),
   };
 }

@@ -17,12 +17,14 @@
 // item slot drawn as an item card (player report #6 after 0.1.0).
 // Every operator card shows the skill it will fight with — the player's 干员调配 loadout (m.private.loadout, DESIGN
 // §16): the skill icon above the name, mint-framed with 已调配 in its title when it is not the default skill (and the
-// module type of an elite card, with its official type icon when the local-client art has it).
+// module type of an elite card, with its official type icon when the local-client art has it). A chess the player does
+// not own (0.2.0 补位, m.private.standIns) keeps its card — name, portrait, bonds, price — with an ice 「替补：X」 badge,
+// and the skill icon is the stand-in's (its backup skill: the one that fights).
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
 import { Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
-import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip } from './gameLogic.js';
+import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, fieldsStandIn, standInOf, standInLoadout, standInLabel } from './gameLogic.js';
 import { chessPortraitUrl, itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
 
@@ -70,7 +72,9 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
   const willMerge = !!hint;
   const bonds = Array.isArray(c?.bonds) ? c.bonds : [];
   const disabled = !!reason;
-  const lo = c ? chessLoadout(c, priv?.loadout, LOOKUPS.getChess) : null;
+  // 0.2.0 补位: the player's not-owned chess is deployed as its stand-in — badge + the stand-in's skill
+  const si = c && fieldsStandIn(priv, c) ? standInOf(c, data.get('backups')) : null;
+  const lo = si ? standInLoadout(si, LOOKUPS.getChess, data.get('backups')) : c ? chessLoadout(c, priv?.loadout, LOOKUPS.getChess) : null;
   const tap = () => { if (onTap) onTap(idx); else if (!disabled) onBuy(idx); else onDetail(slot.id, 'chess', hint); };
   const card = html`<button type="button" class=${cx('scard', `scard--t${tier}`, frozen && 'is-frozen', disabled && 'is-disabled', willMerge && 'is-merge', armed && 'is-armed')}
       onClick=${tap} onContextMenu=${(e) => { e.preventDefault(); onDetail(slot.id, 'chess', hint); }}
@@ -85,8 +89,9 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
         ${Array.from({ length: prog.need }, (_, i) => html`<i key=${i} class=${i < prog.copies ? 'on' : ''}></i>`)}
       </span>` : null}
     </span>
+    ${si ? html`<span class="scard__standin" data-standin=${si.charId} title=${`未持有：由替补干员 ${si.name} 上场（盟约、阶级与价格不变）`}>${standInLabel(si)}</span>` : null}
     <span class="scard__body">
-      ${lo?.skill ? html`<${SkillBadge} chess=${c} lo=${lo} />` : null}
+      ${lo?.skill ? html`<${SkillBadge} chess=${si || c} lo=${lo} standIn=${!!si} />` : null}
       <span class="scard__name">${c?.name || slot.id}</span>
       <span class="scard__bonds">
         ${bonds.slice(0, 3).map((b) => {
@@ -108,14 +113,14 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
 }
 
 /** The loadout's skill (icon; name + 已调配 in the tooltip) and an elite's module type, on an operator card. */
-function SkillBadge({ chess, lo }) {
+function SkillBadge({ chess, lo, standIn = false }) {
   const m = data.get('assets');
-  const custom = !lo.defaultSkill;
+  const custom = !lo.defaultSkill && !standIn;
   // a chosen skill without an icon in the manifest: its slot letter (S1–S3) instead of the blank skill sprite
   const src = custom ? skillRecordIconUrl(m, lo.skill, { empty: false }) : skillIconUrl(m, chess);
   const slot = Number.isInteger(lo.skill.index) ? `S${lo.skill.index + 1}` : null;
   const mod = lo.module && !lo.module.none ? lo.module : null;
-  const tip = `技能${slot ? ` ${slot}` : ''}：${lo.skill.name || ''}${custom ? '（已调配）' : ''}${mod ? ` · 模组：${mod.name}` : lo.module?.none ? ' · 未装备模组' : ''}`;
+  const tip = `${standIn ? `替补 ${chess.name} · ` : ''}技能${slot ? ` ${slot}` : ''}：${lo.skill.name || ''}${custom ? '（已调配）' : ''}${mod ? ` · 模组：${mod.name}` : lo.module?.none ? ' · 未装备模组' : ''}`;
   return html`<span class=${cx('scard__skill', custom && 'is-custom')} title=${tip} aria-label=${tip} data-skill=${lo.skill.skillId || ''}>
     <${Img} src=${src} fallback=${slot ? html`<span class="scard__sglyph num">${slot}</span>` : html`<${GIcon} name="bolt" />`} />
     ${mod && mod.typeName ? html`<span class="scard__mod" data-type=${mod.typeName}><${Img} src=${moduleTypeIconUrl(data.get('local'), mod.typeName)} class="scard__modicon" />${mod.typeName}</span>` : null}

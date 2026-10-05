@@ -1,6 +1,7 @@
 // public/js/render/app/host.js — asset lookup, data lookup and GL teardown for one field view.
 
 import { createAssets, assets as defaultAssets } from '../../assets.js';
+import { standInRecord } from '../../../../shared/standIn.js';
 
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((resolve) => setTimeout(resolve, ms))]);
@@ -24,9 +25,25 @@ function makeData(src) {
     } catch { /* ignore */ }
     return null;
   };
+  // 0.2.0 补位: the composed stand-in record of a chess (shared/standIn.js over data/backups.json), cached per chess
+  const standIns = new Map();
+  const backups = () => {
+    try { return (src && typeof src.get === 'function' ? src.get('backups') : src && src.backups) || null; } catch { return null; }
+  };
+  const standIn = (id) => {
+    const c = look('chess', id);
+    const b = backups();
+    if (!c || !b) return null;
+    if (standIns.has(c)) return standIns.get(c);
+    let rec;
+    try { rec = standInRecord(c, b); } catch { rec = null; }
+    standIns.set(c, rec);
+    return rec;
+  };
   return {
     chess: (id) => look('chess', id), token: (id) => look('tokens', id), item: (id) => look('items', id),
     enemy: (id) => look('enemies', id), stage: (id) => look('stages', id), bond: (id) => look('bonds', id),
+    standIn,
   };
 }
 

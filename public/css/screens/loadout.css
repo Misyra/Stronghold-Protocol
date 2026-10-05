@@ -162,6 +162,9 @@
   position: absolute; right: 0; top: 0; z-index: 1; width: .22rem; height: .22rem;
   background: linear-gradient(225deg, var(--mint-400) 50%, transparent 50%);
 }
+/* 0.2.0 补位: a chess marked 未持有 on the 干员持有 tab (its stand-in fights with a fixed skill) */
+.lo-card__sub { position: absolute; right: .03rem; top: .26rem; z-index: 1; padding: 0 .04rem; font-size: max(.11rem, 8px); font-weight: 700; line-height: 1.4; color: var(--ice-900); background: var(--ice); }
+.lo-locknote--standin { color: var(--ice); }
 .lo-card__name {
   position: absolute; left: .05rem; right: .05rem; top: calc(100% - max(.64rem, 34px)); z-index: 1;
   font-size: max(.15rem, 10px); font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -326,6 +329,62 @@
 .lo-locknote { display: flex; align-items: center; gap: .06rem; margin: .16rem 0 0; font-size: max(.14rem, 10px); color: var(--amber); }
 .lo-locknote .icon { width: .16rem; height: .16rem; }
 
+/* ---- tabs: 干员调配 / 干员持有 (0.2.0 补位) ---------------------------------------------------------------------------- */
+.lo-tabs { display: flex; align-items: stretch; gap: .04rem; }
+.lo-tab {
+  display: inline-flex; align-items: center; gap: .08rem; padding: .02rem .16rem; font: inherit; font-size: max(.24rem, 13px); font-weight: 900;
+  letter-spacing: .12em; line-height: 1.2; color: var(--text-lo); background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+  touch-action: manipulation; white-space: nowrap;
+}
+.lo-tab .lo-top__icon { width: max(.24rem, 14px); height: max(.24rem, 14px); }
+.lo-tab:hover { color: var(--text-hi); }
+.lo-tab.is-on { color: var(--text-hi); border-bottom-color: var(--mint-500); }
+.lo-tab__n { display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; padding: 0 .3em; font-size: .62em; font-weight: 700; letter-spacing: 0; color: var(--ice-900); background: var(--ice); border-radius: 1em; }
+
+/* ---- 干员持有 (screens/ownership.js): the NORMAL chess by tier, each operator → its stand-in, a 持有 switch -------------- */
+.own { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: .12rem; padding: .16rem .3rem .2rem; }
+.own__bar { flex: none; display: flex; align-items: center; gap: .2rem; }
+.own__lead { flex: 1; margin: 0; font-size: max(.15rem, 10px); line-height: 1.5; color: var(--text-md); }
+.own__lead b { color: var(--ice); font-weight: 700; }
+.own__list { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: .18rem; padding: 0 .06rem .2rem 0;
+  scrollbar-width: thin; scrollbar-color: var(--line-3) transparent; }
+.own-tier__head { display: flex; align-items: center; gap: .08rem; margin: 0 0 .08rem; font-size: max(.17rem, 12px); font-weight: 700; color: var(--text-md); letter-spacing: .06em; }
+.own-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(4.4rem, 270px), 1fr)); gap: .08rem; }
+.own-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: .08rem; min-width: 0;
+  padding: .07rem .1rem .07rem .07rem; font: inherit; color: var(--text-hi); text-align: left; cursor: pointer; touch-action: manipulation;
+  background: rgba(255, 255, 255, .03); border: 1px solid var(--line); border-left: 3px solid var(--tc, var(--line-3));
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.own-card--t1 { --tc: var(--tier-1); } .own-card--t2 { --tc: var(--tier-2); } .own-card--t3 { --tc: var(--tier-3); }
+.own-card--t4 { --tc: var(--tier-4); } .own-card--t5 { --tc: var(--tier-5); } .own-card--t6 { --tc: var(--tier-6); }
+.own-card:hover { background: rgba(255, 255, 255, .06); border-color: var(--line-3); }
+.own-card__op, .own-card__sub { display: flex; align-items: center; gap: .07rem; min-width: 0; }
+.own-card__ava { flex: none; display: grid; place-items: center; width: max(.46rem, 28px); height: max(.46rem, 28px); overflow: hidden; background: #0a0d0c; border: 1px solid var(--line-2); }
+.own-card__ava img { width: 100%; height: 100%; object-fit: cover; }
+.own-card__ava b { font-size: max(.18rem, 12px); color: var(--text-lo); }
+.own-card__txt { display: flex; flex-direction: column; min-width: 0; }
+.own-card__name { font-size: max(.16rem, 11px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.own-card__txt small { font-size: max(.12rem, 9px); color: var(--text-lo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.own-card__arrow .icon { width: max(.18rem, 12px); height: max(.18rem, 12px); color: var(--text-dim); }
+.own-card__sub { opacity: .55; }
+.own-card__state { display: inline-flex; flex-direction: column; align-items: center; gap: .03rem; min-width: max(.5rem, 30px); font-size: max(.12rem, 9px); font-weight: 700; color: var(--mint-400); white-space: nowrap; }
+.own-switch { position: relative; display: inline-block; width: max(.36rem, 24px); height: max(.2rem, 13px); border-radius: 1em; background: var(--mint-700); }
+.own-switch > i { position: absolute; top: 2px; right: 2px; width: calc(max(.2rem, 13px) - 4px); height: calc(max(.2rem, 13px) - 4px); border-radius: 50%; background: #fff; transition: right var(--t-fast), left var(--t-fast); }
+/* 未持有: the operator greys out, the stand-in (who is deployed) lights up */
+.own-card.is-off { background: rgba(159, 212, 255, .07); border-color: rgba(159, 212, 255, .35); }
+.own-card.is-off .own-card__op { opacity: .5; filter: grayscale(.8); }
+.own-card.is-off .own-card__sub { opacity: 1; }
+.own-card.is-off .own-card__sub .own-card__ava { border-color: var(--ice); }
+.own-card.is-off .own-card__state { color: var(--ice); }
+.own-card.is-off .own-switch { background: var(--bg-4); }
+.own-card.is-off .own-switch > i { right: auto; left: 2px; background: var(--ice); }
+@media (max-width: 760px) {
+  .own { padding: .1rem .16rem .16rem; }
+  .own__lead { display: none; }
+  .lo-tab { padding: .02rem .08rem; letter-spacing: .04em; }
+}
+
 /* ---- entry button (lobby / room / briefing) --------------------------------------------------------------------------- */
 .lo-entry { position: relative; gap: .08rem; }
 .lo-entry__icon { width: 1.25em; height: 1.25em; object-fit: contain; flex: none; }
@@ -333,6 +392,8 @@
   display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; padding: 0 .3em; margin-left: .02rem;
   font-size: .8em; font-weight: 700; color: var(--text-on-mint); background: var(--mint-500); border-radius: 1em;
 }
+/* 0.2.0 补位: operators marked 未持有 on the 干员持有 tab */
+.lo-entry__own { display: inline-flex; align-items: center; gap: .2em; height: 1.5em; padding: 0 .4em; font-size: .75em; font-weight: 700; color: var(--ice-900); background: var(--ice); border-radius: 1em; white-space: nowrap; }
 
 /* Untimed phases (user playtest #11 / #4 item 3: the official 独立模拟 shows no countdown outside combat — the server
    sends deadline 0 for them, Match.soloUntimed): ui/components.js Countdown now renders nothing without a deadline;

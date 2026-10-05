@@ -42,5 +42,8 @@ export function renderInfo(u) {
     // unit (resolveDetail `unitItems` → the read-only 装备 section and the 变形同构体 pairing chips); the owner's own
     // unit takes its items from the piece instead, so only other players' boards ever read this field
     items: Array.isArray(u.items) ? u.items.filter((x) => typeof x === 'string') : undefined,
+    // 0.2.0 补位: the replaced operator's charId of a chess fighting as its stand-in (UnitInfo.standInFor; spine / avatar /
+    // name are already the stand-in's) — the detail card and the view's data lookups (attack interval, splash FX) follow it
+    standInFor: typeof u.standInFor === 'string' && u.standInFor ? u.standInFor : undefined,
   };
 }

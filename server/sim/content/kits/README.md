@@ -203,7 +203,8 @@ Each item is a mistake this project already made once. Tick every one for every 
   `skills[].trigger`); check it, and change the data rule rather than hand-coding a trigger in the kit. The owner's
   rules (0.2.0): a skill whose attack range is larger than the normal one casts as soon as an enemy is inside the
   SKILL range (a deliberate deviation from the official 技能策略, like the 重装 exception: data `ACTIVE_RANGE` for a
-  MANUAL skill on the basic strategy whose running range strictly contains the operator's own,
+  MANUAL skill on the basic strategy — 深巡 S2's DEFAULT deviation included — or on the SEARCH row (薄绿 S1, 玛恩纳 S2,
+  安洁莉娜 S3 …) whose running range strictly contains the operator's own,
   `test/sim/feedback5-active-range.test.js`; 烛煌 S3 in `feedback1e-skillrange.test.js` keeps DEFAULT — its 4-11 does
   not contain her 3-1); an AUTO skill that acts on
   allies or itself fires at full SP (引星棘刺 S1, `kits_alt_t5.test.js` "… fires as soon as its SP is full, no enemy

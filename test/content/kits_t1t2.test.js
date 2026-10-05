@@ -132,12 +132,12 @@ test('1_04 深巡: fin darts pierce attack@max_target enemies on the line + 1 s 
   });
   const u = h.unit(id);
   h.step();
-  // 技能策略 (issue #4; the deliberate deviation of DESIGN §21.29): an enemy inside her initial 2-2 range is enough — the
-  // basic strategy casts it, no hit required
-  assert.equal(u.skill.rule, 'DEFAULT', '行动能力剥夺 is an offensive ranged skill, not a 重装 TAKE_DAMAGE one');
+  // 技能策略 (issue #4; the deliberate deviation of DESIGN §21.29, and since 0.2.0 the owner's ACTIVE_RANGE on top): an
+  // enemy inside the 3-2 she attacks with is enough — no hit required
+  assert.equal(u.skill.rule, 'ACTIVE_RANGE', '行动能力剥夺 is an offensive ranged skill, not a 重装 TAKE_DAMAGE one');
   h.run(3.5);
   assert.ok(u.skill.active);
-  assert.equal(h.hooksOf('skillStart').find((c) => c.unit === u).reason, 'DEFAULT', 'cast by the basic strategy');
+  assert.equal(h.hooksOf('skillStart').find((c) => c.unit === u).reason, 'ACTIVE_RANGE', 'cast on its running range');
   approx(u.s.atk, u.base.atk * (1 + bb.atk));
   const firstAtk = h.hooksOf('attack').find((c) => c.attacker === u && c.isSkill);
   assert.equal(firstAtk.targets.length, bb['attack@max_target'], 'hits every enemy of the line');
@@ -150,16 +150,20 @@ test('1_04 深巡: fin darts pierce attack@max_target enemies on the line + 1 s 
   done(h);
 });
 
-test('1_04 深巡 / 1_20 雷蛇 S2 技能策略: both 哨戒铁卫 S2s cast with an enemy in range, no hit needed (issue #4)', () => {
+test('1_04 深巡 / 1_20 雷蛇 S2 技能策略: both 哨戒铁卫 S2s cast with an enemy in range, no hit needed (issue #4); 深巡 on her 3-2', () => {
   // both S2s are offensive (深巡: range up + ATK/ASPD + piercing darts; 雷蛇: ATK +125 % + arts on 3 + stun); the official
   // 下半 重装 row (TAKE_DAMAGE for every MANUAL 重装 skill) made both wait for a hit, and the owner's deliberate deviation
-  // from it (DESIGN §21.29, after community feedback) gives them the basic strategy — the data and the kit say DEFAULT.
+  // from it (DESIGN §21.29, after community feedback) gives them the basic strategy — 雷蛇's data and kit say DEFAULT;
+  // 深巡's 3-2 strictly contains her 2-2, so since 0.2.0 the owner's ACTIVE_RANGE rule casts it on the 3-2 (2026-10-05).
   for (const id of ['chess_char_1_04_a', 'chess_char_1_04_b', 'chess_char_1_20_a', 'chess_char_1_20_b']) {
-    const h = run({ units: [{ chessId: id, row: 9, col: 4, carryState: READY }], enemies: [{ key: 'e', pos: [9, 6] }] });
+    const udflow = id.startsWith('chess_char_1_04');
+    // (9,7) = [0,3]: on 深巡's 3-2, not on her 2-2
+    const h = run({ units: [{ chessId: id, row: 9, col: 4, carryState: READY }], enemies: [{ key: 'e', pos: [9, udflow ? 7 : 6] }] });
     const u = h.unit(id);
-    assert.equal(u.skill.rule, 'DEFAULT', `${id}: an offensive skill, not the 重装 TAKE_DAMAGE row`);
+    const rule = udflow ? 'ACTIVE_RANGE' : 'DEFAULT';
+    assert.equal(u.skill.rule, rule, `${id}: an offensive skill, not the 重装 TAKE_DAMAGE row`);
     assert.ok(h.runUntil(() => u.skill.activations >= 1, 5), `${id}: casts while an enemy is in range and untouched`);
-    assert.equal(h.hooksOf('skillStart').find((c) => c.unit === u).reason, 'DEFAULT', `${id}: cast by the basic strategy`);
+    assert.equal(h.hooksOf('skillStart').find((c) => c.unit === u).reason, rule, `${id}: cast by ${rule}`);
     done(h);
   }
 });

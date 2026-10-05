@@ -1165,6 +1165,26 @@ test('6_20 纯烬艾雅法拉 S1 无声润物: toggle heal; ATK +, 2 heal target
   }
 });
 
+test('6_20 纯烬艾雅法拉 S1 无声润物 (自动触发, effects on her allies only): on as soon as its SP is full — nobody injured, no enemy (the owner\'s decision of 2026-10-05)', () => {
+  for (const id of both('chess_char_6_20')) {
+    const sid = 'skchr_agoat2_1', bb = bbOf(id, sid);
+    const h = run({
+      defs: { chess: { a1: plain('a1', { stats: { maxHp: 1e5 } }) } },
+      units: [U(id, sid, 10, 3, { carryState: READY }), { chessId: 'a1', row: 10, col: 5 }],
+    });
+    const u = h.unit(id), a1 = h.unit('a1');
+    usesSkill(u, sid);
+    assert.equal(u.skill.rule, 'SP_FULL');
+    assert.ok(h.runUntil(() => u.skill.active, 2), 'on with every ally at full HP and no enemy (the data DEFAULT heal rule waited for an injured ally)');
+    assert.equal(a1.hp, a1.s.maxHp);
+    h.b.addBuff(u, { key: 'test:disarm', flags: { disarm: true } }); // (no heals: only the skill's 元素损伤 recovery)
+    a1.elem.burn = 800;
+    h.run(1.05);
+    approx(800 - a1.elem.burn, u.s.atk * bb['agoat2_s_1[aura].ep_heal_ratio'], 'its 元素损伤 recovery runs at full HP', 1e-3);
+    done(h);
+  }
+});
+
 test('6_20 纯烬艾雅法拉 S2 云霭荫佑: one heal on every ally of her range, then a barrier absorbing atk_scale × ATK of 元素损伤 for `duration` s', () => {
   for (const id of both('chess_char_6_20')) {
     const sid = 'skchr_agoat2_2', bb = bbOf(id, sid);

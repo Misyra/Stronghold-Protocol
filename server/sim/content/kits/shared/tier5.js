@@ -27,7 +27,8 @@
 //   the heal replaces that attack). Every other
 //   kit keeps the data rule (tools/build-data.mjs resolveTrigger, the official 技能策略: DEFAULT = about to attack + an
 //   enemy in the INITIAL range; SKILL_RANGE for a MANUAL skill's own 技能范围; ACTIVE_RANGE for a MANUAL skill on the basic
-//   strategy whose running attack range strictly contains the own one (the owner's rule, 2026-10-05); the class rows —
+//   strategy or the SEARCH row (玛恩纳 S2, 安洁莉娜 S3) whose running attack range strictly contains the own one (the
+//   owner's rule, 2026-10-05); the class rows —
 //   重装 TAKE_DAMAGE … — for
 //   every MANUAL skill; AUTO skills never take a class row).
 // - fx kinds emitted (battle.fx(kind, {x, y, id, …})): 'aoe' {r, skill}, 'healAoe' {r}, 'summon' {token}, 'anchor'

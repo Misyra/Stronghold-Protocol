@@ -21,7 +21,8 @@ export default {
   // enemies around). T2 无动于衷: taunt +1, Kazimierz ops reflect 15 % of his ATK as true damage when attacked.
   // S1 未声张的怒火 (duration, SEARCH): attacks attack@atk_scale × ATK, DEF +. S2 未宽解的悲哀 (duration): skill range,
   // BAT +0.3 s, attacks attack@atk_scale × ATK twice; a kill of his own attacks during the skill keeps the trait ramp
-  // when it ends. S1 / S2 have no 对空 note: ground only, like his trait.
+  // when it ends. S1 / S2 have no 对空 note: ground only, like his trait. S2's data rule is ACTIVE_RANGE on its 2-3 (the
+  // owner's rule of 2026-10-05 over the 解放者 SEARCH row: an enemy he can target inside the 2-3 casts it).
   chess_char_5_19_a: (bb, chess, def) => {
     const t0 = talent(chess, 0), t1 = talent(chess, 1);
     const sid = selectedId(chess, def);

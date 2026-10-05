@@ -3,6 +3,9 @@
 // as soon as an enemy (a heal skill: an injured ally) is inside that larger range — trigger ACTIVE_RANGE, resolved by
 // tools/build-data.mjs resolveTrigger (customRangeGrid = the running range) and checked every tick by server/sim/skills.js.
 // Community report: 「有的干员开技能后的攻击范围比平时攻击范围大，但是怪走到平时的攻击范围内才会开技能」.
+// The owner's further decisions of the same day: the rule also replaces the SEARCH row ("在初始攻击范围内存在敌人时释放技能":
+// 薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3) and covers 深巡 S2 on top of its §21.29 DEFAULT (its 3-2 over her
+// 2-2: test/sim/feedback1-tank-triggers.test.js).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -90,4 +93,27 @@ test('real data: 莫斯提马 S3 序时之匙 (3-15 over her 3-6) casts on its r
   assert.ok(h.runUntil(() => u.skill.active, 2), '莫斯提马 S3 cast');
   assert.equal(casts(h, u)[0].reason, 'ACTIVE_RANGE');
   done(h);
+});
+
+test('real data: the SEARCH row widened — 安洁莉娜 S3 秘杖·反重力模式 (y-4 over her y-2) casts on an enemy of the y-4 only, no attack needed; her S2 (no range change) keeps SEARCH on the y-2', () => {
+  const AGL = 'chess_char_5_20_a';
+  const idx = (sid) => ds.getChess(AGL).raw.skills.find((s) => s.skillId === sid).index;
+  const s3 = ds.getChess(AGL, { skillIndex: idx('skchr_aglina_3') }).skill, s2 = ds.getChess(AGL, { skillIndex: idx('skchr_aglina_2') }).skill;
+  assert.equal(s3.trigger.rule, 'ACTIVE_RANGE');
+  assert.deepEqual(s3.trigger.grid, s3.rangeGrid, 'the trigger grid is the y-4 she attacks with');
+  assert.equal(s2.trigger.rule, 'SEARCH');
+  // (10,6) = [0,3]: on the y-4, not on her y-2
+  for (const [sid, want] of [['skchr_aglina_3', 1], ['skchr_aglina_2', 0]]) {
+    const h = makeBattle({
+      defs: { enemies: { e: dummy('e') } }, units: [{ chessId: AGL, row: 10, col: 3, dir: 'RIGHT', skillIndex: idx(sid) }],
+      enemies: [{ key: 'e', pos: [10, 6] }], hooks: ['skillStart'], autoFinish: false, timeLimit: 30,
+    });
+    const u = h.unit(AGL);
+    h.step();
+    u.skill.gainSp(1000);
+    h.run(4);
+    assert.equal(casts(h, u).length, want, `${sid}: ${want ? 'cast on the y-4' : 'the enemy is outside the initial y-2'}`);
+    if (want) assert.equal(casts(h, u)[0].reason, 'ACTIVE_RANGE');
+    done(h);
+  }
 });

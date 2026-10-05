@@ -14,10 +14,11 @@
 //   too), checked every tick, no attack needed. Kit option `trigger.allies` (+ `hpAtMost`, default 1): a healable,
 //   injured ally of the grid whose HP ratio is at most that instead (an AUTO heal skill's own rule — 古米 S1 waits in
 //   its heal mode until it has healed);
-//   ACTIVE_RANGE — the owner's rule (2026-10-05, a deliberate deviation): a MANUAL skill on the basic strategy whose attack
-//   range while it runs strictly contains the unit's own range checks the DEFAULT condition on that larger range
-//   (trigger grid = the running range, grown by the unit's permanent rangeExtend unless the skill ignores 攻击距离), every
-//   tick, no attack needed — an enemy the unit can target there (or one it blocks), a heal skill an injured ally;
+//   ACTIVE_RANGE — the owner's rule (2026-10-05, a deliberate deviation): a MANUAL skill on the basic strategy (深巡 S2's
+//   DEFAULT deviation included) or on the SEARCH row (薄绿 S1, 玛恩纳 S2, 安洁莉娜 S3 …) whose attack range while it runs
+//   strictly contains the unit's own range checks the DEFAULT condition on that larger range (trigger grid = the running
+//   range, grown by the unit's permanent rangeExtend unless the skill ignores 攻击距离), every tick, no attack needed —
+//   an enemy the unit can target there (or one it blocks), a heal skill an injured ally;
 //   TAKE_DAMAGE (ready + just took a hit: 重装 "不受技能范围影响，受到伤害时释放技能"), SP_FULL/ALWAYS (as soon as ready),
 //   CUSTOM_RANGE (enemy inside the custom trigger grid), SEARCH (an enemy inside the INITIAL range, checked every tick
 //   without waiting for an attack: "不受基础策略影响，在初始攻击范围内存在敌人时释放技能" — not any enemy on the field,

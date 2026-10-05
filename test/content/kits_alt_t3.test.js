@@ -432,20 +432,22 @@ test('3_06 菲莱 S1 灵河护佑 (TAKE_DAMAGE): HP +, clears her element gauges
   }
 });
 
-test('3_08 薄绿 S1 风语 (阵法术师 技能1: "初始攻击范围内出现敌人后自动释放"): wider range, attacks at attack@atk_scale; guard/taunt rules kept', () => {
+test('3_08 薄绿 S1 风语 (阵法术师 row SEARCH "在初始攻击范围内存在敌人时", widened to its running x-2 by the owner\'s ACTIVE_RANGE rule of 2026-10-05): wider range, attacks at attack@atk_scale; guard/taunt rules kept', () => {
   for (const id of BOTH('chess_char_3_08_a')) {
     const b = SB(id, 'skchr_mint_1'), t0 = TB(id, 0);
-    assert.equal(LD(id, 'skchr_mint_1').skill.trigger?.rule, 'SEARCH', 'data: the phalanx S1 row');
-    const h = makeBattle({ defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_in: dummy('enemy_in') } }, timeLimit: 60, hooks: ['damaged'], captureNoisy: true,
-      units: [U(id, 'skchr_mint_1', 10, 4)], enemies: [{ key: 'enemy_d', pos: [11, 6] }] }); // [1,2]: x-2 only
+    const sk = LD(id, 'skchr_mint_1').skill;
+    assert.equal(sk.trigger?.rule, 'ACTIVE_RANGE', 'data: the phalanx row (rawRule SEARCH) on the x-2 she attacks with');
+    assert.deepEqual(sk.trigger.grid, sk.rangeGrid, 'trigger grid = the S1 x-2');
+    const h = makeBattle({ defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_far: dummy('enemy_far') } }, timeLimit: 60, hooks: ['damaged'], captureNoisy: true,
+      units: [U(id, 'skchr_mint_1', 10, 4)], enemies: [{ key: 'enemy_far', pos: [10, 7] }] }); // [0,3]: outside the x-2 too
     const u = h.unit(id);
     h.run(1);
     assert.equal(atkHits(h, u).length, 0, 'phalanx: no attack while the skill is off');
     fill(u);
     h.run(2);
-    assert.equal(u.skill.activations, 0, 'an enemy outside her INITIAL range does not open it (not a whole-field search)');
-    h.spawn('enemy_in', { pos: [10, 6] }); // [0,2]: initial range
-    assert.ok(h.runUntil(() => u.skill.active, 1), 'an enemy inside her initial range opens it at once (she never attacks before)');
+    assert.equal(u.skill.activations, 0, 'an enemy outside the x-2 does not open it (not a whole-field search)');
+    h.spawn('enemy_d', { pos: [11, 6] }); // [1,2]: the x-2 only, outside her initial x-1
+    assert.ok(h.runUntil(() => u.skill.active, 1), 'an enemy inside the S1 x-2 opens it at once (she never attacks before)');
     assert.ok(u.findBuff('talent:mint_taunt'));
     approx(u.s.taunt, (u.base.tauntLevel ?? 0) + t0.taunt_level);
     h.run(3);
@@ -747,12 +749,12 @@ test('3_18 忍冬 S1 小施惩戒: next attack + extra arts and +DP; S2 坠刃�
   }
 });
 
-test('3_19 伺夜 S1 领袖的呼唤 (ALWAYS): +DP and one more “狼影” (≤ max)', () => {
+test('3_19 伺夜 S1 领袖的呼唤 (自动触发, the pack on the field): +DP and one more “狼影” (≤ max)', () => {
   for (const id of BOTH('chess_char_3_19_a')) {
     const b = SB(id, 'skchr_vigil_1');
     const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_1', 10, 3)] });
     const u = h.unit(id), p = h.b.getPlayer('p1');
-    assert.equal(u.skill.rule, 'SP_FULL');
+    assert.equal(u.skill.rule, 'NEVER', 'the kit casts it (the pack check)');
     h.step();
     const w = u.trait.reinforcement;
     assert.equal(w.mem.wolves, 2);
@@ -782,6 +784,32 @@ test('3_19 伺夜 S1 领袖的呼唤 (ALWAYS): +DP and one more “狼影” (�
   assert.equal(piece.mem.shadows, n0 + 1);
   assert.equal(piece.s.blockCnt, blk + 1);
   done(g);
+});
+
+test('3_19 伺夜 S1 领袖的呼唤: PRTS 备注 「仅场上存在狼群时可触发技能」 — no pack, no cast (the SP waits full, no DP); cast once the pack stands again', () => {
+  for (const id of BOTH('chess_char_3_19_a')) {
+    const b = SB(id, 'skchr_vigil_1');
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_1', 10, 3)] });
+    const u = h.unit(id), p = h.b.getPlayer('p1');
+    h.run(1);
+    const w = u.trait.reinforcement;
+    assert.ok(w && w.alive, 'the pack stands');
+    for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
+    assert.ok(!u.trait.reinforcement?.alive, 'no pack on the field');
+    const dp0 = p.dp;
+    fill(u);
+    h.run(2);
+    assert.equal(u.skill.activations, 0, 'no pack, no cast');
+    assert.ok(u.skill.ready, 'the SP waits full');
+    approx(p.dp, dp0, 1e-9, 'no DP without the pack');
+    // the knocked-out pack comes back after its respawn time: cast at once — +DP and one more 狼影
+    assert.ok(h.runUntil(() => u.skill.activations === 1, 15), 'cast once the pack stands again');
+    const w2 = u.trait.reinforcement;
+    assert.ok(w2 && w2.alive, 'the pack is back');
+    approx(p.dp, dp0 + b.cost, 1e-9, '+cost DP');
+    assert.equal(w2.mem.wolves, 3, 'one more 狼影 on the returned pack');
+    done(h);
+  }
 });
 
 test('3_19 伺夜 S2 领袖的馈赠: +DP, the pack recovers HP, its next attack ×atk_scale, a kill by it pays +DP', () => {

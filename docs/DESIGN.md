@@ -1921,7 +1921,7 @@ Decisions of the owner, 2026-10-04: a 联防 devour counts members who enter alr
 - Docs: DESIGN §8.1 (spectator-seat paragraph), META §1.4, PLAYING §8, README (观战 row), the headers of `server/lobby.js`, `server/match/Match.js` (interface), `screens/room.js`, `screens/lobby.js`, `screens/game.js`.
 - Tests: `test/lobby.test.js` (+3, StubMatch / RecordingMatch over sockets: join / idempotent / `ALREADY` / cap / never a player seat / `SPECTATOR` and `NOT_HOST` refusals / 入座 / leave / host removal online and offline (`room.closed {kicked}` on resume) / solo and unknown codes / a room's last human leaving → `room.closed {empty}`; during a match: broadcasts but no `m.private`, a mid-match join, refusals, `room.loadout` kept off the match, drop and resume give the seat back, staying through the result; lobby grace like a player, `opts.spectators`, only `g.watch` routed, `addSpectator` on join / resume, `removeSpectator` on `g.leave`, never `onDisconnect / onReconnect / onLeave`; the protocol fuzz now also takes / frees spectator seats and checks the cap, no spectator in solo rooms, never seated twice, never host, the session pointing at its seat), `test/match/spectator.test.js` (3: a whole client-combat match — 各自行动, 联防, 最终攻势, settlement — every `b.start` watched and never authoritative, the first field like an eliminated player, `b.end` of the watched boss field, the same `m.result` rows, no frame (unicast or broadcast) with a private key, every player intent refused; mid-battle `g.watch` of any field, the spec without `funds`, a spectator added mid-battle gets the state, a removed one gets nothing; server-run mode `m.field` + `b.snap`), `test/match/lobby-integration.test.js` (+1: the real Match over sockets — briefing / draft / prep refusals, the prep board, a watched `b.start` without funds, drop and resume, no private frame, the room closing for it when the last player leaves), `test/client-static.test.js` (+1: `isSpectating`, `roomFacts`), `test/ui/spectator.e2e.test.js` (opt-in browser, `SP_E2E=1`: lobby 观战 → room strip and 观战中 → the host's ✕ → briefing / prep / battle views, no `m.private`, a reload, 离开观战; screenshots `test/e2e/out/spectator-*.png`).
 
-### 23.20 阿戈尔 5: the 3 revives belong to the first 3 members by position (community report #24) — `content/bonds/core.js installEgir` (`egirOrder`, shared with `devour`)
+### 23.20 阿戈尔 5: the 3 revives belong to the first 3 members by position (community report #24) — withdrawn in 0.1.4, see §24.3 — `content/bonds/core.js installEgir` (`egirOrder`, shared with `devour`)
 
 - **Seen** (community report #24, many players): 「阿戈尔盟约复活有bug，只能复活一个干员」「阿戈尔5人羁绊不生效」. The usual food chain puts the carries back-left and the food front-right; the battle-start devour knocks the food out first, and our rule ("the first 3 members knocked out", since 0.1.0) gave it the 2–3 revives at t ≈ 0 — seen only as a fall and a redeploy in the deploy frame. In the fight the carries fell and nobody came back. Measured (real co-op Match 险境, seeds 3 / 11, R1–R14 with 联防 and the boss, the 46 battles of the player holding 5 阿戈尔): 126 instant revives at t = 0; 4 of the 16 later knock-outs were revived.
 - **Official**: PRTS 卫戍协议：盟约 下半/PRTS盟约记录, 阿戈尔: "<在场5名不同【阿戈尔】干员>前3名【阿戈尔】干员首次被击倒时立刻复活" (bonds.json `max_free_respawn_cnt` 3); the revived unit is a 受益者 ("“复活”的实现方式为：受益者因移动之外的原因退场时…"); the devour note starts "从最先部署（更靠左和靠上的）的【阿戈尔】干员开始". The 2026-03-14 notice (ak.hypergryph.com news 5114) raises the 阿戈尔 revivers, a 特定数量, to 前3名 — worded unlike 埃芒加德's first N knocked out. Players' videos read it as by position: BV146QXB4EUK (2026-03-22, danmaku 207–284 s: by position, left to right and top to bottom, not by who is eaten first), BV11XwCzXEH9 (2026-03-19, 66 s: column by column from the left until the count runs out), BV17jSsBpEER (act 1: the uploader's pinned reply — by position, bottom / left in act 1, unrelated to the eating order). So the 3 are the first 3 阿戈尔 in the deployment / devour order (left column first, top to bottom; mirrored on the right-hand boss side), and each revives once on its own first knock-out, whatever the order of knock-outs.
@@ -2079,7 +2079,7 @@ Decisions of the owner, 2026-10-04: a 联防 devour counts members who enter alr
 - **Docs**: the kit comment. No pinned SIM / DESIGN sentence described the auto-close.
 - **Tests**: `test/sim/feedback3-swire-s3.test.js` (9 coins and an enemy, 6 s, still open; 10 coins, the enemy is hit and the purse is empty; 10 coins and no enemy, ends, spends, no hit, no error; a manual close at 4 still spends). `test/sim/feedback1d-push.test.js` 「琳琅诗怀雅 S3」 (the radial push, one coin).
 
-### 23.35 高台 only for elite 歌蕾蒂娅 carrying HOK-Y (owner's decision 2026-10-04) — `shared/highGround.js`, `match/board.js placeClass`, `PlayerState._placementOf`, `ui/gameLogic.js piecePosition`, `match/bot.js planLayoutSteps`, `tools/build-data.mjs`
+### 23.35 高台 only for elite 歌蕾蒂娅 carrying HOK-Y (owner's decision 2026-10-04) — withdrawn in 0.1.4, see §24.2 — `shared/highGround.js`, `match/board.js placeClass`, `PlayerState._placementOf`, `ui/gameLogic.js piecePosition`, `match/bot.js planLayoutSteps`, `tools/build-data.mjs`
 
 - **Seen**: 0.1.2 §22.6 set `chess.json placement: 'all'` on every melee record whose branch trait contains 「可以放置于远程位」 — 歌蕾蒂娅, 崖心 and 见行者, normal and elite — so `positionClass` let all of them stand on a 高台. The owner (2026-10-04) says that reading is wrong.
 - **Official**: character_table still writes that line on the 钩索师 (歌蕾蒂娅 `char_474_glady`, 崖心 `char_173_slchan`) and the 推击手 (见行者 `char_4036_forcer`). PRTS 新人入门 says both branches deploy on 高台 and ground. PRTS 卫戍协议/帮助 §战斗部署 switches off 部署效果 ("携带Y模组的教官仍无法部署至高台位"). No table row names HOK-Y as the prep exception. The module id is the data: `chess_char_4_12_b.modules` lists `uniequip_003_glady` typeName `HOK-Y` name 淡金坠饰 (not the default; the default is `uniequip_002_glady` HOK-X 执政官手镜). 崖心's only module is HOK-X `uniequip_002_slchan`. The golden record is the elite (`chess_char_4_12_b`, `isGolden`); there is no further copy.
@@ -2128,7 +2128,7 @@ Decisions of the owner, 2026-10-04: a 联防 devour counts members who enter alr
 
 ## 24. Community reports after 0.1.3
 
-Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1.
+Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1; 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, PR #69) → §24.2; the 5-阿戈尔 revives go to the first 3 members knocked out (GitHub #105, #140) → §24.3; 联防 阿戈尔 devours the operator in front whoever owns it (GitHub #140) → §24.4. Merged pull requests keep their own notes where they changed the rules: deploy-timed skills as duration skills (PR #109, §5 skill contract), the teammate's hand / temp / equipment in prep scouting (PR #129), 灵巧's knocked-out aura and the hidden-layer bonds (PR #66, research 02).
 
 ### 24.1 A skill clip with no Begin and no own Idle plays once — 德克萨斯 S2 剑雨 (player report) — `render/spine.js SpineActor.setSkill / update` (`SKILL_CLIP_MIN`, `skillClipOnce`, `skillEndPending`)
 
@@ -2138,5 +2138,163 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - **Now**: a skill clip with neither a Begin nor its own Idle (its loop is not its idle, and it is not borrowed from the attack clip: `via !== 'attack'`) plays that clip once for its own length — `max(SKILL_CLIP_MIN 0.2 s, dur(loop))` — as the skill's own window; a `setSkill(false)` inside that window only marks the transition, so when the window ends the actor plays the skill's End clip (if it has one) or the idle. An instant skill therefore shows its animation instead of a one-frame flash, and a longer skill of the same shape still rests in its idle between attacks while its attacks use the loop, exactly as before. Untouched: a Begin clip with its queued idle / loop, a skill with an idle clip of its own (§23.13), `via: 'attack'` clips, `loop === idle` stances and enemies.
 - **Scale**: 90 such clips on 61 Front models (96 clips have no Begin at all — the 6 with an own Idle keep the §23.13 path); 57 of the 90 belong to instant skills.
 - **A PASSIVE skill reaches none of this through `activate()`**: `Skill.activate()` returns early for `kind === 'passive'` (`sim/skills.js`); a passive goes through `_startPassive()` (active + mods + `onStart`). Three of the 57 instant clips are passives in the data — 琳琅诗怀雅 S1 仗义疏财 / S2 “见面礼” and 凯瑟琳 S1; 凯瑟琳 S1 turned out to be `kind: instant` in the sim (so it already casts), and the two 琳琅诗怀雅 ones now fire the same window from `_startPassive` — on at the deployment, off after `SKILL_ANIM_WINDOW` (0.5 s) while the passive itself stays active. So all 57 are live.
-- **Deploy-time passives with a duration are left alone** (缄默德克萨斯 S1–S3 8–12 s, 野鬃 S1, 伊内丝 S3, 耀骑士临光 S2): the sim keeps a passive active until death, so how long its stance should show is a separate question. A clip that IS the normal attack clip (`anims.skill.loop === anims.attack.loop`: 缄默德克萨斯 S1, 砾, 普罗旺斯, 斯卡蒂 S2) is never played as a skill animation — the new branch requires a distinct clip, so a deploy-time passive on those shows no attack twitch.
+- **Deploy-time passives with a duration were left alone here** (since PR #109, merged in the same release, they are duration skills — `activateOnDeploy`, §5 — with their own start / end events) (缄默德克萨斯 S1–S3 8–12 s, 野鬃 S1, 伊内丝 S3, 耀骑士临光 S2): the sim keeps a passive active until death, so how long its stance should show is a separate question. A clip that IS the normal attack clip (`anims.skill.loop === anims.attack.loop`: 缄默德克萨斯 S1, 砾, 普罗旺斯, 斯卡蒂 S2) is never played as a skill animation — the new branch requires a distinct clip, so a deploy-time passive on those shows no attack twitch.
 - **Tests**: `test/render/feedback4-texas-skill-clip.test.js` (德克萨斯 S2: the clip plays, holds through the same-tick off, then the idle, with no base flash in between; two more real instant entries — `char_140_whitew` S1 日晷, `char_206_gnosis` S2 零度爆发; 银灰 S3 真银斩 — the same shape but long — rests without freezing on the clip's last frame and still attacks with the loop; the deploy-time passives 琳琅诗怀雅 S1/S2 hold their 1 s clip through the sim's 0.5 s window and then idle; a clip that is the attack clip falls through to the base clip; unchanged: 折桠 S2 begin → idle, 耀骑士临光 S3 own idle, 宴 begin → loop). `test/sim/skills.test.js` covers the sim side (the passive window opens at the deployment and closes 0.5 s later, the passive staying active; a timed passive fires nothing). `test/render/feedback3-skill-idle.test.js`, `feedback3-move-deploy.test.js`, `loadout-skill.test.js` and the full suite stay green.
+
+### 24.2 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, #148; PR #69; the owner's decision of 2026-10-05) — `shared/highGround.js`, `match/board.js positionClass / placeClass`, `PlayerState._placementOf`, `ui/gameLogic.js piecePosition`, `match/bot.js planLayoutSteps`
+
+- **Seen**: GitHub #153 「歌蕾蒂娅无法放置在高台位置」: 0.1.3 (§23.35) let only elite 歌蕾蒂娅 carrying HOK-Y 淡金坠饰
+  stand on a 高台; a normal 歌蕾蒂娅, the elite with HOK-X (her default module) or with no module was refused
+  (`BAD_TILE`, client 「近战单位只能部署在地面」). PR #69 (@sunstricken) raised the PRTS source for the trait: the line
+  is the 钩索师 base branch trait, with no elite or module condition. (GitHub #148, a 突袭 melee operator shown on a
+  高台, is not this rule — see the note below.)
+- **Official**: character_table writes 「可以放置于远程位」 in the branch trait of the 钩索师 (歌蕾蒂娅 `char_474_glady`,
+  崖心 `char_173_slchan`) and the 推击手 (见行者 `char_4036_forcer`); PRTS 歌蕾蒂娅 · 特性 lists it under the branch
+  trait (「技能可以使敌人产生位移 / 可以放置于远程位」), PRTS 新人入门 says both branches "可部署在高台和地面". Every module
+  of the three keeps the line in its trait override (HOK-X, HOK-Y, PUS-X). PRTS 卫戍协议/帮助 §战斗部署 switches off
+  部署效果 ("携带Y模组的教官仍无法部署至高台位") — that is a module talent (教官 Y "可以额外部署在远程位"), not a trait,
+  and no 教官 Y is in the pool.
+- **Decision**: the owner's decision of 2026-10-05 reverses the one of 2026-10-04 (§23.35) and follows PRTS: every
+  MELEE chess whose trait reads 「可以放置于远程位」 may stand on a 高台 — normal or elite, with any module or none.
+  Raised with the PRTS source in PR #69 by @sunstricken (its implementation covered 歌蕾蒂娅 only; its test page was not
+  taken).
+- **Cause**: `meleeOnHighGround(rec, moduleId)` required `isGolden`, `charId === char_474_glady` and the module
+  `uniequip_003_glady`.
+- **Now**: `meleeOnHighGround(rec)` is true for a record with position MELEE whose trait without a module
+  (`traitBase.desc`, which an elite with modules carries, else `trait.desc`) contains 「可以放置于远程位」 — exactly six
+  records: 歌蕾蒂娅, 崖心, 见行者, normal and elite. The loadout is no longer read: `positionClass(rec)` is `'all'` for them,
+  and `placeClass(ps, rec)` (the server's entry point: `g.move`, swaps, the merge tile, `_evictIllegal`, the audit, the
+  invariants, the bot) returns `positionClass(rec)`. The client's `piecePosition` lights the same tiles. data/ is
+  unchanged (no `placement` field; `build-data --offline` gives identical files).
+- **Bots**: `planLayoutSteps` already preferred a 高台 for a widened melee chess when one of its 高台 options covers an
+  enemy road tile (owner 2026-10-04); that now covers all six records, any module. They still count as blockers in the
+  lineup (`basePositionClass`), and with every ground tile taken a plain melee unit gets no plan while they still get a
+  高台.
+- **Battle** (unchanged): position stays MELEE — on a 高台 they attack and block nothing (`unit.ground` false), on the
+  ground they block. 地面干员 effects keep reading the melee position (§23.28). 崖心 and 见行者 are hidden chess this
+  season (never in the pool, and a player cannot set their loadout), so 歌蕾蒂娅 is the one players meet; 见行者's elite
+  PUS-X refund on a ranged tile (kits/tier3.js `!unit.ground`) stays moot.
+- [ASSUMED] (kept from §23.35): the sim's automatic tile searches (突袭 landing, summon / device tiles, `grid.canStand`
+  without `ranged`) still treat every MELEE unit as ground-only; a prep placement on a 高台 is the tile the battle
+  deploys and redeploys on.
+- Note on GitHub #148 (「突袭近战干员部署在高台」, a battle screenshot on the 深水区 map): not changed here. The rule
+  above admits no 突袭 operator on a 高台, and the 突袭 landing search is meant to be ground-only (the [ASSUMED] above);
+  a melee 突袭 member standing on a 高台 after its jump needs its own reproduction.
+- **Integrator**: §23.35 (title and **Now**) describes the 2026-10-04 rule; it needs a pointer here ("withdrawn in
+  0.1.4"), as §22.6 got in 0.1.3. §22.6's "Withdrawn in 0.1.3 (§23.35)" line can say the trait reading is back.
+- Docs: DESIGN §3 (placement) and §6.6 (the bot), DATA (`placement`), PLAYING §4, META (`board.js`), research 03 C2,
+  code comments (board.js, gameLogic.js, bot.js, PlayerState.js, build-data.mjs).
+- Golden: 16 scenarios moved, all of them the ones with 歌蕾蒂娅 laid out by `tools/golden.mjs layout` (it places by
+  `positionClass`, so a widened chess goes beside the enemy path — possibly on a 高台 — instead of on the busiest melee
+  tile, and the others shift): roster-010, -012, -029, -040, -041; bond-deputShip-high, bond-indomShip-low,
+  bond-preciShip-low, bond-preciShip-high, bond-suntShip-low, bond-swiftShip-high; boss-boss_2-pair, boss-boss_4-pair,
+  boss-boss_6-pair, hidden-boss_8-pair, hidden-boss_10-pair. roster-031 (elite 歌蕾蒂娅 with HOK-Y, already widened)
+  and the 16 matches did not move.
+- Tests: `test/match/board.test.js` (the class table: the trait line, another wording, a ranged record, the six
+  records on (10,4) and the ground, 角峰 refused); `test/match/feedback1-placement.test.js` (the six records are exactly
+  the trait holders and every module keeps the line; `g.move` onto the three 高台 of 战场#01(下半) for each record with its
+  default / no module / every module (崖心 and 见行者: default only — hidden, no loadout); a 重装 refused; ranged
+  unchanged; client highlights = the server under four loadouts; the swap; the battle input and the sim on / off the
+  高台; the bots plan each record on a 高台 that covers the road, a 重装 on the road, no 高台 fallback for it);
+  `test/ui/gameLogic.test.js` (the drag mirror under four loadouts).
+
+### 24.3 阿戈尔 5: the 3 revives go to the first 3 members knocked out (GitHub #105, #140; the owner's decision of 2026-10-05) — `content/bonds/core.js installEgir`
+
+- **Seen**: GitHub #105 (comment 2) and #140 (comment 3), and a report the owner quoted: 「没被吃的阿戈尔干员也会占用复活名额」
+  — with 5 阿戈尔, "whatever the food chain eats, only 3 阿戈尔 stand at the end". #140 item 3 (screenshot): the chain ends
+  on 斯卡蒂 (elite, her module saves her) and 幽灵鲨 falls and stays down. 0.1.3 (§23.20) fixed the 3 holders at battle
+  start as the first 3 members by position, so uneaten front members held slots they never used while the eaten food
+  further right stayed down.
+- **Official**: PRTS 卫戍协议：盟约 下半/PRTS盟约记录, 阿戈尔: "<在场5名不同【阿戈尔】干员>前3名【阿戈尔】干员首次被击倒时立刻复活"
+  (bonds.json `max_free_respawn_cnt` 3); "※标记按付与顺序触发【吞噬】效果，目标首次被击倒后解除自身被付与但还未触发的【吞噬】
+  效果"; "※“复活”的实现方式为：受益者因移动之外的原因退场时下次部署的再部署时间和费用归零". PRTS names no holder order; §23.20 read
+  "前3名" as the deployment order from the devour note and players' videos.
+- **Decision**: the owner's decision of 2026-10-05, following the players' reports: the 3 slots go to the FIRST 3 阿戈尔
+  knocked out, in knock-out order, the battle-start devour (5000 物理流失) included; a member never knocked out takes
+  none (survivors = uneaten + 3); a member uses at most one slot, on its first knock-out, however many 阿戈尔 eat it; an
+  operator's own revive must not use a slot.
+- **Cause**: `installEgir` fixed `holders` at `battleStart` from `egirOrder` (position) and revived only them.
+- **Now**: the `death` hook (priority 11) takes a member operator's first `'killed'` of the battle; while fewer than 3
+  revives are spent it redeploys it at once (free) where it lies and counts one. A member's later knock-outs never take
+  one, and a first knock-out after the 3 are gone stays down (left to 不屈 at priority 10 and the rest). The devour is
+  unchanged: it resolves the marks in marking order and cancels a target's pending marks once it is knocked out (a new
+  deployment or off the field), so a member marked by several 阿戈尔 spends one slot at most. The `fatal` savers all run
+  before any `death` hook — kits' own savers (斯卡蒂's DRE-Y −50, others 10 … −60), 坚固维式重锤 `PRIO_REVIVE` −100,
+  M3茧甲 `PRIO_RESPAWN` −101, 埃芒加德 −110 — so a save is no knock-out and leaves the slot for the unit's first real
+  knock-out. The 0.1.3 rule that an in-place save spends the holder's revive is gone. A 联防 member entering down
+  (`FORCED_EXIT`) is not knocked out (no slot) until it stands up and falls again; a 调和 member counts; each battle
+  (normal, 联防, boss) counts its own; a mirrored boss player counts its own knock-outs.
+- **Verified** (the report "each devour of the same operator wastes a revive count"): not reproduced on 0.1.3 — a
+  member marked three times (A → B → X with C facing X) is knocked out by the first mark and the other two are cancelled;
+  `used` let each holder revive once. What players saw was the fixed holders: in that layout 0.1.3 revived B and left X
+  down while uneaten A and C held the other two slots. Now B and X take two slots and one is left for the fight.
+- **Measured** (the §22.3 chain 浊心斯卡蒂 → 乌尔比安 → 幽灵鲨 → 海霓 → 深巡 → 隐现, normal and 联防): 乌尔比安 survives his
+  mark (7046 HP, DEF 0), 幽灵鲨 / 海霓 / 深巡 are knocked out 1st–3rd and stand again at t = 0; all 5 members stand.
+- [ASSUMED]: (1) 埃芒加德 (a band, not the operator's own kit or item) is treated like M3茧甲, the item revive the owner
+  named: its in-place save is no knock-out and takes no slot — so with 埃芒加德 and 5 阿戈尔 the battle's first 3
+  knock-downs are its, and the first 3 real 阿戈尔 knock-outs after that are the bond's. Officially both are the same
+  "复活" (0-time redeploy), and PRTS's 不屈 note says a held 复活 is consumed even when another effect redeploys the unit;
+  if the owner reads 埃芒加德 as consuming the slot too, it is one condition in the hook. (2) A slot is counted only when
+  the redeploy happens (a member that cannot be redeployed — removed, its tile taken — does not spend one).
+- Not changed: 埃芒加德's own rule (the battle's first 3 operator knock-downs, `bands/battle.js`, a separate `fatal` hook
+  that shares no code with this bond) and its test; the devour; 不屈's priority.
+- **Integrator**: §23.20 (title, **Now**, [ASSUMED] (1)–(2)) describes the position rule and needs a pointer here
+  ("withdrawn in 0.1.4"); §23.2's "a member it knocks out spends a 5-tier revive like any first knock-out" stays true.
+- Docs: research 02 §3.6 and its JSON spec (data/bonds.json `egirShip.spec` regenerated with `build-data --offline`; a
+  JSON compare shows only `spec.tiers[2].effect` changed), the core.js comments.
+- Golden: no scenario moved — no corpus battle has a 5-阿戈尔 knock-out whose slot differs (bond-egirShip-high runs at
+  999 layers: nobody falls to the devour).
+- Tests: `test/content/bonds_core.test.js` — rewritten '阿戈尔 5: the 3 slots go to the first 3 members knocked out,
+  wherever they stand …' (the last two by position revive, the first by position stays down, second knock-out final,
+  the relocation case, 3 members: none), '阿戈尔 5 + the devour chain (GitHub #33, #105, #140) …' (6 members: the 3 eaten
+  first revive, the 4th eaten stays down, the 2 uneaten take none — survivors = 2 + 3, normal and 联防), new '… a member
+  devoured by several 阿戈尔 spends one slot at most …' (three marks, one knock-out, one slot; a tougher target falls to
+  the third mark: still one), new '… an operator's own save uses no slot …' (斯卡蒂 elite at half HP in 联防: DRE-Y saves
+  her from 乌尔比安's mark, all 3 slots left, her first real knock-out takes one; M3茧甲; 埃芒加德 spends its 3, the
+  bond's 3 are untouched), rewritten '… in 联防 and on the boss field …' (a member entering down, 调和, the mirrored
+  player). All five fail on 0.1.3's code. `feedback3-egir-down`, `feedback2-doll`, `feedback1f-hammer`,
+  `feedback3-ulpia-move`, `bands`, `items` pass unchanged.
+
+### 24.4 联防: 阿戈尔 devours the operator in front whoever owns it — a teammate's standing or down operator too (GitHub #140 comment 4, #105; the owner's decision of 2026-10-05) — `content/bonds/core.js devour`
+
+- **Seen**: GitHub #140 comment 4 (two screenshots of a remake 联防): 「阿格尔在联防阶段无法吃再部署状态的队友，导致无法获得
+  阿格尔加成，官方卫戍协议则可以正常获得加成」. #105 (on 0.1.2): 「联防阶段……攻击加成吃不到，作战的时候深巡3000攻，联防的时候就
+  500了」 — players report the 联防 block / ATK gains differ from the own combat.
+- **Official**: PRTS 卫戍协议：盟约 下半/PRTS盟约记录, 阿戈尔: "战斗开始时【阿戈尔】干员依次吞噬身前一格干员（以及被自身吞噬的
+  【阿戈尔】干员身前一格干员）造成5000点物理流失并获得其基础攻击力和阻挡数"; the 备注's marking rule reads "身前一格干员" and
+  "有自身标记的【阿戈尔】干员的身前一格干员" — no own-side limit. PRTS 卫戍协议/帮助 §联防阶段: "该阶段不能叠加层数", "上一阶段为
+  退场状态的干员强制退场".
+- **Decision**: the owner's decision of 2026-10-05: in 联防 an 阿戈尔 devours whoever is on her front tile — a teammate's
+  living operator, or a teammate's operator that entered 联防 knocked out (carry.down body) — and gains its base ATK and
+  block count exactly as in a solo battle. 联防 keeps its ban on in-battle layer gains.
+- **Cause**: `devour`'s `opAt` took only the devouring player's operators (`S.allyAt(…, pid)`, `d.ownerId === pid`),
+  and the chain went on only through the player's own members.
+- **Now**: `opAt` takes the operator on the front tile whoever owns it: a living one (`S.allyAt` without an owner), else
+  one lying there since the 联防 start (`egirDownAtStart`: forced out, carry.down). The chain goes on through a marked
+  阿戈尔 by `S.isMember` — for the player's own operators exactly its members, as before; a teammate's by its own bonds.
+  Everything else is the solo devour: the marker gains the target's base ATK (atkFlat) and block count; a mark on a
+  standing teammate's operator resolves (5000 物理流失 less its DEF, the kill credited to the marker), a mark on a down
+  one resolves nothing (it stays forced out — §19.3's "still counts as standing for its marking"); the knocked-out
+  teammate's operator belongs to its owner (their 5-tier slot, 不屈 …). Layers: none in 联防 (`layerGainsEnabled`
+  false, unchanged). The rule is the same on a boss field (two players, no own-side limit).
+- **Measured / verified**: the 0.1.3 own-board case holds through unite.js's real carry: a 30-s own combat in which the
+  devour knocks out 幽灵鲨 → 歌蕾蒂娅 → fodder (3 阿戈尔, no revive) hands them to 联防 with `carryState.down`, and
+  乌尔比安 gets exactly the own combat's atkFlat / blockCnt, with no layers. A teammate's fodder in front gives the same
+  atkFlat / blockCnt / 物理流失 as an own one and as a solo battle.
+- **Geometry** (for the owner): the remake's two 联防 helpers stand on board cols 3–9 (left) and 11–17 (right, colOffset
+  8) with the road column 10 between them, and the boss halves are cols 3–9 / 11–17 too, so on the current maps no
+  teammate's operator is ever on an 阿戈尔's front tile at the battle start. The tests place one on col 10 to exercise
+  the rule. If the report meant the player's own operators waiting to redeploy, that has worked since 0.1.3 (§23.2;
+  the reporter's screenshots are of a remake 联防).
+- [ASSUMED]: (1) the chain continues through a teammate's 阿戈尔 (PRTS "【阿戈尔】干员" names the bond's operators, not an
+  owner); (2) each player's devour is its own pass, in the players' order (p1's resolves before p2's starts), so a unit
+  p1's marks knock out is no longer "in front" for p2's members.
+- Docs: research 02 §3.6 (the [ASSUMED] own-operators line replaced) and its JSON spec (data/bonds.json
+  `egirShip.spec.assumed[1]`, regenerated with `build-data --offline`; only that string changed), the core.js comments.
+- Golden: no scenario moved (no corpus field has a teammate's operator in front of an 阿戈尔).
+- Tests: `test/content/feedback4-egir-unite.test.js` (new): a teammate's living fodder on (10,10) in front of
+  乌尔比安 — the solo gains, the same 物理流失, knocked out and credited to him, no layer gain; a teammate's down operator —
+  the standing one's gains, no 物理流失, no knock-out, still forced out (and the same for an own down one); the chain
+  through a teammate's 幽灵鲨 equals the own chain, and her knock-out takes her owner's 5-tier slot; the own-board case
+  through `uniteBattleOpts` (carry.down from a real own combat, the own combat's gains). The first three fail on the
+  previous code. `feedback3-egir-down`, `bonds_core`, `unitedown`, `feedback3-unitecarry` pass unchanged.

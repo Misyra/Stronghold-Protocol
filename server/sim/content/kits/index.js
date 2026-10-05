@@ -109,6 +109,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-zumama.js',
   'op-judge.js',
   'op-shu.js',
+  'op-pallas.js',
+  'op-lessng.js',
+  'op-demetr.js',
 ]);
 
 /**

@@ -124,8 +124,9 @@ export class PlayerBasics {
    * The record this player's piece of chess record `rec` fights with (0.2.0 补位): the stand-in record
    * (gd.standIn — the chess's identity, the stand-in's body) when the player fields its stand-in; for a DIY slot record
    * the player's 自选 record of that slot (this.gd — a caller holding the match's own record of the slot gets the
-   * operator); else `rec` itself. Rules about the unit's body read it (placement class, summon / bot ranges, the
-   * scouting art); rules about the chess (price, bonds, 特质, merges, pools) keep reading gd.chess.
+   * operator); else `rec` itself. Rules about the unit's body read it (placement class, summon / bot ranges), and so
+   * does what shows the piece (the scouting art, the elite / gift tickers' names — the owner's recall of 2026-10-06: the official
+   * mode shows the stand-in everywhere); rules about the chess (price, bonds, 特质, merges, pools) keep reading gd.chess.
    * @param {object|null} rec
    */
   fieldRecord(rec) {

@@ -75,12 +75,13 @@
 //   * Operator ownership (0.2.0 补位, the approved plan — owner's decision 2026-10-05): the human's `seat.notOwned` (base
 //     chess ids marked 未持有 on the 干员持有 screen) is re-checked against this match's data (shared/protocol.js
 //     checkNotOwned + a stand-in record in data/backups.json) and fixed for the match (`standIns`; bots own every
-//     operator). A piece of such a chess — normal or elite, wherever it is — keeps the chess's identity (name, bonds,
-//     特质, tier, price, sell price, merge: every rule that reads gd.chess) and fights as its official stand-in
+//     operator). A piece of such a chess — normal or elite, wherever it is — keeps the chess's identity for the rules
+//     (bonds, 特质, tier, price, sell price, merge: every rule that reads gd.chess) and is its official stand-in
 //     (`fieldRecord` = gd.standIn: body, stats, range, position, skills / talents / module — the backup selection, the
 //     loadout never applies to it, "对于补位干员其技能不可更改"): battleInput marks it `standIn: true`, placeClass /
 //     summon range / the bots' range read the stand-in record, it makes no summons (none of the 17 stand-ins has one),
-//     and the scouting views draw it with the stand-in's art on the board. m.private exposes `standIns`.
+//     and what shows it shows the stand-in (the owner's recall of the official mode, 2026-10-06): the scouting views
+//     (board and bench), the m.result lineup (`standInFor`), the elite / gift tickers' names. m.private exposes `standIns`.
 //   * 自选编队 (0.2.0 DIY, the owner's decisions of 2026-10-05; player/diy.js): the human's `seat.diy` picks are re-checked
 //     against this match's data and kits and fixed for the match (`diy`; bots none [ASSUMED]). With picks, `this.gd` is the
 //     player's data view: the slotted slots' ids (normal and elite) are the composed 自选 records, so the player's piece

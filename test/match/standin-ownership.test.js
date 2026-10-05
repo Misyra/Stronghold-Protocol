@@ -1,8 +1,10 @@
 // test/match/standin-ownership.test.js — 0.2.0 补位 end to end on the server (the approved plan, owner's decision
 // 2026-10-05): the not-owned list (room.ownership → seats[].notOwned) is checked leniently, fixed for the match and
-// applied to that player's own pieces only — the chess keeps its identity (name, bonds, price, merge) and its battle
-// unit is the official stand-in (PlayerBattleInput `standIn: true`: the stand-in's body, skill, talents, module, range,
-// position), in the player's own field, the 联防 field and the boss fields alike, client-run and server-run identical.
+// applied to that player's own pieces only — the chess keeps its identity for the rules (bonds, price, merge) and its
+// battle unit is the official stand-in (PlayerBattleInput `standIn: true`: the stand-in's body, skill, talents, module,
+// range, position), in the player's own field, the 联防 field and the boss fields alike, client-run and server-run
+// identical; what shows the piece shows the stand-in (the owner's recall of the official mode, 2026-10-06): prep
+// scouting (board and bench), the m.result lineup (`standInFor`), the elite and gift tickers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { C2S, validateC2S, checkNotOwned, OWNERSHIP_LIMITS, checkLoadout } from '../../shared/protocol.js';
@@ -211,7 +213,7 @@ test('联防 and the Final Assault field carry each player\'s own marks (p_0 sta
   mb.dispose();
 });
 
-test('prep scouting (m.field): a teammate\'s stand-in shows the stand-in\'s art on the board, the original in the hand (standInFor on both)', REAL, () => {
+test('prep scouting (m.field): a teammate\'s stand-in shows the stand-in\'s art on the board and in the hand (standInFor on both)', REAL, () => {
   const h = ownershipMatch().start();
   const m = h.m;
   h.toPrep(1);
@@ -225,6 +227,60 @@ test('prep scouting (m.field): a teammate\'s stand-in shows the stand-in\'s art 
   const bu = by.get(onBoard.uid);
   assert.deepEqual([bu.defId, bu.name, bu.spine, bu.avatar, bu.standInFor, bu.skillIndex], [SILVER, 'Sharp', 'char_609_acguad', 'char_609_acguad', chess(SILVER).charId, 1]);
   const hu = by.get(held.uid);
-  assert.deepEqual([hu.defId, hu.name, hu.spine, hu.standInFor], [MLYSS, chess(MLYSS).name, chess(MLYSS).assets.spine, chess(MLYSS).charId]);
+  const tulip = m.gd.standIn(MLYSS);
+  assert.deepEqual([hu.defId, hu.name, hu.spine, hu.avatar, hu.maxHp, hu.standInFor], [MLYSS, '郁金香', 'char_608_acpion', 'char_608_acpion', tulip.stats.maxHp, chess(MLYSS).charId],
+    'the hand shows the stand-in too (the owner\'s recall, 2026-10-06)');
+  // an owned chess in the hand keeps its own art
+  const p1 = h.ps('p_1');
+  const own = give(m, p1, MLYSS, 'hand');
+  assert.deepEqual(m.handle('p_0', { t: 'g.watch', fieldId: 'n:p_1' }), { ok: true });
+  const ou = wire(h.lastTo('p_0', 'm.field')).units.find((u) => u.uid === own.uid);
+  assert.deepEqual([ou.name, ou.spine, ou.standInFor], [chess(MLYSS).name, chess(MLYSS).assets.spine, undefined]);
+  m.dispose();
+});
+
+test('what shows the piece shows the stand-in: the m.result lineup carries standInFor, the elite and gift tickers name the stand-in; the rules keep the chess', REAL, async () => {
+  const { buildResult } = await import('../../server/match/results.js');
+  const h = ownershipMatch().start();
+  const m = h.m;
+  h.toPrep(1);
+  const p0 = h.ps('p_0');
+  const p1 = h.ps('p_1');
+  clearBoard(p0);
+  clearBoard(p1);
+  const a = give(m, p0, SILVER, 'board', legalTileFor(m, p0, SILVER));
+  const b = give(m, p0, INSIDE, 'board', legalTileFor(m, p0, INSIDE));
+  const c = give(m, p1, SILVER, 'board', legalTileFor(m, p1, SILVER));
+  const res = buildResult(m, { victory: false, hiddenReached: false, hiddenCleared: false, reason: 'defeat' });
+  const lineup = (pid) => new Map(res.players.find((x) => x.playerId === pid).lineup.map((e) => [e.id + '@' + e.row + ',' + e.col, e]));
+  const l0 = [...lineup('p_0').values()];
+  assert.equal(l0.find((e) => e.id === SILVER).standInFor, chess(SILVER).charId, 'p_0 fielded Sharp');
+  assert.equal(l0.find((e) => e.id === INSIDE).standInFor, undefined, 'a PRESET chess is itself');
+  assert.equal([...lineup('p_1').values()].find((e) => e.id === SILVER).standInFor, undefined, 'p_1 owns 银灰');
+  assert.ok([a, b, c].every(Boolean));
+  // the elite ticker: three copies merge (a rule of the chess) — the line names what everyone sees
+  clearBoard(p0);
+  clearBoard(p1);
+  const goldName = (ps) => {
+    const before = h.bc.length;
+    give(m, ps, SILVER, 'hand');
+    give(m, ps, SILVER, 'hand');
+    ps.acquireChess(SILVER);
+    const line = h.bc.slice(before).find((x) => x.t === 'm.ticker' && x.type === 'GOLDEN_CHAR');
+    assert.ok(line, `${ps.playerId}: a GOLDEN_CHAR line`);
+    assert.ok([...ps.hand, ...ps.temp].some((x) => x && x.id === chess(SILVER).goldenId), 'merged by the chess\'s rule');
+    return line.args[1];
+  };
+  assert.equal(goldName(p0), 'Sharp');
+  assert.equal(goldName(p1), chess(chess(SILVER).goldenId).name);
+  // a gift (信标's CHAR_GIFT, sent to its receiver only) is named as the receiver sees it
+  const { makeCtx } = await import('../../server/match/effectsMeta.js');
+  const gift = (ps) => {
+    const before = h.sent.length;
+    makeCtx(m, ps, { key: 'test' }, 'onPrepStart').giftTicker('P9', SILVER);
+    return h.sent.slice(before).find(([id, x]) => id === ps.playerId && x.t === 'm.ticker' && x.type === 'CHAR_GIFT')?.[1].args[1];
+  };
+  assert.equal(gift(p0), 'Sharp');
+  assert.equal(gift(p1), chess(SILVER).name);
   m.dispose();
 });

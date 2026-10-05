@@ -275,7 +275,7 @@ export async function createFieldView(host, options = {}) {
   let penHidden = true;       // the pen's figures are shown only by the pen camera (setPenHidden)
   let penList = null;
   let ownPen = null;          // the own m.private.nextEnemies (fallback composition of a scouted teammate's pen)
-  let standInList = [];       // the own m.private.standIns (0.2.0 补位): board pieces of these chess draw the stand-in
+  let standInList = [];       // the own m.private.standIns (0.2.0 补位): pieces of these chess draw the stand-in
   let diyPicks = {};          // the own m.private.diy (0.2.0 自选编队): pieces of these DIY slots draw the operator
   let camBeforePen = null;    // { kind, opts } the camera the pen returns to
   let leader = null;          // { key, view, stand, area } the round leader standing on the boss field in the prep (setLeader)
@@ -631,9 +631,9 @@ export async function createFieldView(host, options = {}) {
       return { kind: 'token', side: 'ally', defId: piece.id, spine: rec?.assets?.spine || piece.id, avatar: rec?.assets?.avatar || piece.id, tier: piece.tier || 1, golden: false, dir };
     }
     const chess = data.chess(piece.id);
-    // 0.2.0 补位: a board piece of a chess the player does not own (m.private.standIns) is deployed as its stand-in —
-    // the stand-in's model; on the bench it keeps the chess's own (the hand shows the original operator)
-    const si = area === 'board' && chess && standInList.includes(chess.baseId || chess.chessId) ? data.standIn(piece.id) : null;
+    // 0.2.0 补位: a piece of a chess the player does not own (m.private.standIns) is its stand-in's model, in the hand,
+    // the 临时整备区 and on the board alike (the owner's recall of the official mode, 2026-10-06)
+    const si = chess && standInList.includes(chess.baseId || chess.chessId) ? data.standIn(piece.id) : null;
     // 0.2.0 自选编队: a DIY slot the player filled is its operator, on the board and on the bench alike
     const pick = chess && chess.isDiy ? diyPicks[chess.baseId || chess.chessId] : null;
     const dr = pick ? data.diy(piece.id, pick) : null;
@@ -720,7 +720,7 @@ export async function createFieldView(host, options = {}) {
       const key = 'p:' + e.uid;
       e.key = key;
       const info = pieceInfo(e.piece, e.area);
-      // (the model is part of it: a 补位 chess changes body between the bench and the board — pieceInfo)
+      // (the model is part of it: a piece whose body changes — a merge, an own 补位 / 自选 setting arriving — is rebuilt)
       const sig = `${info.kind}|${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}`;
       let v = views.get(key);
       if (v && v._sig !== sig) { dropView(key); v = null; }

@@ -131,8 +131,11 @@ export class PlayerAcquire {
     }
     this.stats.merges++;
     this.pushRewardOffer('merge');
+    // (named as everyone sees the elite: a chess this player fields as its stand-in by the stand-in's name — 0.2.0 补位,
+    // the owner's recall of the official mode, 2026-10-06 [ASSUMED for the ticker])
     const rec = this.gd.chess(goldenId);
-    this.m.tickerFor('GOLDEN_CHAR', [this.name, rec ? rec.name : goldenId], { playerId: this.playerId });
+    const shown = rec ? this.fieldRecord(rec) || rec : null;
+    this.m.tickerFor('GOLDEN_CHAR', [this.name, shown ? shown.name : goldenId], { playerId: this.playerId });
     this.m.dispatch(this, 'onMerge', { kind: 'chess', piece: elite, baseId, consumed: consumed.map((l) => l.piece.uid), area: where });
     return elite;
   }

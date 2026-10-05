@@ -1,8 +1,10 @@
 // 干员持有 (operator ownership, 0.2.0 补位 — the approved plan, owner's decision 2026-10-05): the second tab of the
 // 干员调配 overlay (screens/loadout.js). The 53 NORMAL chess of this season's shop, grouped by tier — each card shows the
 // operator and its official stand-in (avatar, name, the skill it fields) and switches between 持有 and 未持有 with a
-// tap. A chess marked 未持有 keeps its shop / hand card (name, bonds, price, with a 「替补：X」 badge) and is deployed
-// as the stand-in (model, skills, talents, range). PRESET chess always field their own operator and are not listed.
+// tap. A chess marked 未持有 is shown as its stand-in in the match — shop and reward cards, hand, board, detail card,
+// result (portrait, name, model, skills, talents, range; a small 「替补」 mark — the owner's recall of the official mode,
+// 2026-10-06) — while its bonds, 特质, tier, price and merge stay the chess's. PRESET chess always field their own
+// operator and are not listed.
 // Default: everything owned; 全部持有 resets. Out of match: the next match takes the list (in co-op it only affects the
 // player's own pieces). The list lives in ui/loadoutSync.js (localStorage + room.ownership); the model is
 // ui/ownershipModel.js. Styles: css/screens/loadout.css (own-*).
@@ -14,6 +16,7 @@ import { chessAvatarUrl } from '../ui/assetUrls.js';
 import { data } from '../data.js';
 import { PROF_NAME } from '../ui/loadoutModel.js';
 import { ownershipRoster, rosterByTier, isOwned, standInSummary } from '../ui/ownershipModel.js';
+import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -62,7 +65,7 @@ export function OwnershipPanel({ m, roster, notOwned, onToggle }) {
   const groups = rosterByTier(list);
   return html`<main class="own" data-testid="ownership">
     <div class="own__bar">
-      <p class="own__lead">未持有的干员由官方指定的<b>替补干员</b>上场：棋子的名字、盟约、特质、阶级与价格不变，上场的是替补干员（模型、技能、天赋、攻击范围）。预设干员无论是否持有都由本人上场，不在此列。</p>
+      <p class="own__lead">${t('未持有的干员由官方指定的替补干员上场：商店、整备区、作战区与结算都显示替补干员（模型、技能、天赋、攻击范围），盟约、特质、阶级、价格与合成仍按原干员。预设干员无论是否持有都由本人上场，不在此列。')}</p>
       <button type="button" class=${cx('lo-toggle', offOnly && 'is-on')} aria-pressed=${offOnly ? 'true' : 'false'} onClick=${() => setOffOnly(!offOnly)}>
         <i class="lo-toggle__box"><${Icon} name="check" /></i>仅看未持有</button>
     </div>

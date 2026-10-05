@@ -89,7 +89,8 @@ export class PlayerViews {
       // DESIGN §16: the effective operator loadout ({ [baseChessId]: { skill, module } }; chess not listed use defaults)
       loadout: this.loadout,
       // 0.2.0 补位: the base chess ids this player fields as their stand-ins in this match (the not-owned list the seat had
-      // at the match start; [] = every operator owned) — the client's 「替补：X」 badges, the stand-in's art and card
+      // at the match start; [] = every operator owned) — the client shows these as their stand-ins (cards, pieces, the
+      // detail card, with a small 「替补」 mark)
       standIns: this.standIns,
       // 0.2.0 自选编队: this player's 自选 picks in this match ({ [slotBaseId]: { charId, skillIndex, uniEquipId } } — the seat's
       // when the match started; {} = none) — the client composes the operator's record for its own cards and pieces

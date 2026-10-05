@@ -8,7 +8,9 @@
 //                 title: 'comment_1' | { id, name? } | null,
 //                 lineup: [{ id /* chessId, golden id if elite */, golden?, tier?, items?: [itemId],
 //                            diy? /* 0.2.0 自选编队: a DIY slot's pick { charId, skillIndex, uniEquipId } — the card
-//                                    draws the operator (gameLogic diyRecordFor) */ }],
+//                                    draws the operator (gameLogic diyRecordFor) */,
+//                            standInFor? /* 0.2.0 补位: the replaced operator's charId — the card draws the stand-in
+//                                           with a small 「替补」 mark (gameLogic standInOf; the owner's recall, 2026-10-06) */ }],
 //                 bonds?: [{ bondId, layers, active }],
 //                 stats: { dmgDealt, kills, leaks, gold /* funds SPENT */, refreshes, merges, bossDamage?, itemsEquipped?,
 //                          activatedLayers?, lpLost?, perfectRounds? } }] }
@@ -16,7 +18,7 @@
 import { useEffect } from '../../vendor/hooks.module.js';
 import { html, Button, Icon, MicroLabel, DifficultyTag } from '../ui/components.js';
 import { useGameData, Img, UnitThumb, BandIcon, PlayerAvatar, BondGlyph, LpTower, Sprite } from '../ui/gameComponents.js';
-import { normalizeResult, fmtNum, diyRecordFor } from '../ui/gameLogic.js';
+import { normalizeResult, fmtNum, diyRecordFor, cardStandIn, standInForText } from '../ui/gameLogic.js';
 import { data } from '../data.js';
 import { enemyIconUrl, titleIconUrl, uiUrl } from '../ui/assetUrls.js';
 import { store, useStore, emptyMatch } from '../store.js';
@@ -31,6 +33,18 @@ const STAT_ROWS = [
   ['merges', '晋升次数'], ['itemsEquipped', '配发装备'], ['gold', '消耗资金'], ['perfectRounds', '完美作战'],
   ['refreshes', '刷新次数'], ['leaks', '未击倒'], ['lpLost', '损失生命'],
 ];
+
+/**
+ * One unit of a final lineup: a 自选 piece draws its operator; a 补位 piece (`standInFor`) its stand-in, with the small
+ * 「替补」 mark — the title names the chess it fielded for.
+ */
+export function LineupThumb({ u, gd }) {
+  const chess = u.kind === 'token' ? null : gd.chess(u.id);
+  const dr = u.diy && chess ? diyRecordFor(chess, u.diy, { chess: data.get('chess'), backups: data.get('backups') }) : null;
+  const si = !dr && chess ? cardStandIn(chess, { unit: u, backups: gd.backups }) : null;
+  return html`<${UnitThumb} kind=${u.kind === 'token' ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm" rec=${dr || si}
+    title=${si ? `${si.name}（${standInForText(chess.name)}）` : undefined} />`;
+}
 
 function PlayerCard({ p, myId, titles, best, solo = false }) {
   const gd = useGameData();
@@ -49,8 +63,7 @@ function PlayerCard({ p, myId, titles, best, solo = false }) {
       </div>
       <div class="rcard__mid">
         <div class="rcard__lineup">
-          ${lineup.length ? lineup.map((u, i) => html`<${UnitThumb} key=${i} kind=${u.kind === 'token' ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm"
-            rec=${u.diy ? diyRecordFor(gd.chess(u.id), u.diy, { chess: data.get('chess'), backups: data.get('backups') }) : null} />`)
+          ${lineup.length ? lineup.map((u, i) => html`<${LineupThumb} key=${i} u=${u} gd=${gd} />`)
             : html`<span class="rcard__noinfo">${p.alive === false ? '阵容已撤离' : 'NO INFO'}</span>`}
         </div>
         ${bonds.length ? html`<div class="rcard__bonds">${bonds.map((b) => html`<span key=${b.bondId} class=${cx('rbond', b.active && 'is-on')} title=${gd.bond(b.bondId)?.name || b.bondId}>

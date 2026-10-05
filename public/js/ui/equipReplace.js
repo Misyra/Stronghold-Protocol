@@ -7,8 +7,9 @@
 // _arrow_head, _avatart_bg / _frame, _round, _close, _comfirm_icon, _replace_icon), CSS look-alikes without them
 // (css/screens/game-panels.css .eqr).
 //
-//   replaceRequest(ctx, intent, getChess, getItem) → { targetUid, targetId, targetName, item: {uid,id,name}, options }
-//                                                 | null  (pure; the data the dialog shows — null = no dialog)
+//   replaceRequest(ctx, intent, getChess, getItem) → { targetUid, targetId, targetName, targetRec, item: {uid,id,name},
+//                                                 options } | null  (pure; the data the dialog shows — null = no dialog;
+//                                                 `getChess` = what the own pieces show: a 补位 piece's stand-in record)
 //   replaceIntent(intent, replaceUid)            → { t: 'g.equip', fields: { itemUid, targetUid, replaceUid } }
 //   <EquipReplaceDialog request onConfirm(replaceUid) onCancel />
 
@@ -35,10 +36,13 @@ export function replaceRequest(ctx, intent, getChess = () => null, getItem = () 
   const equipped = (Array.isArray(target.items) ? target.items : []).filter((it) => isObj(it) && Number.isInteger(it.uid));
   if (equipped.length < 2) return null;
   const rec = (id) => getItem(id) || null;
+  const shown = getChess(target.id) || null;
   return {
     targetUid: target.uid,
     targetId: target.id,
-    targetName: getChess(target.id)?.name || '该干员',
+    targetName: shown?.name || '该干员',
+    // the record the avatar draws (a 补位 stand-in's or a 自选 operator's composed record; the data's for any other chess)
+    targetRec: shown && (shown.standInFor || shown.diyFor) ? shown : null,
     golden: !!target.golden,
     item: { uid: item.uid, id: item.id, name: rec(item.id)?.name || '装备' },
     options: equipped.map((it) => ({ uid: it.uid, id: it.id, name: rec(it.id)?.name || it.id })),
@@ -115,7 +119,7 @@ export function EquipReplaceDialog({ request, getItem = () => null, busy = false
       <p class="eqr__lead">「<b>${request.targetName}</b>」的装备栏已满（2/2）。选择一件装备进行替换，<b class="t-red">被替换的装备将被销毁</b>。</p>
       <div class="eqr__top">
         <div class="eqr__op" title=${request.targetName}>
-          <span class="eqr__ava"><${UnitThumb} kind="chess" id=${request.targetId} golden=${request.golden} size="md" /></span>
+          <span class="eqr__ava"><${UnitThumb} kind="chess" id=${request.targetId} golden=${request.golden} size="md" rec=${request.targetRec || null} /></span>
           <span class="eqr__opname">${request.targetName}</span>
         </div>
         <span class="eqr__swap" aria-hidden="true">${swapIcon ? html`<img src=${swapIcon} alt="" draggable=${false} />` : html`<${GIcon} name="refresh" />`}</span>

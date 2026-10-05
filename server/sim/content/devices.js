@@ -375,7 +375,7 @@ function enterTerrain(battle, st, u, code) {
  * unit that already carries it gets its full `duration` back and keeps its per-second rhythm — no second effect, no
  * extra tick [ASSUMED: the time counts from the last contact — so an operator deployed on it, always in contact, drains
  * past `duration`]. An operator moved off the tile (Battle.relocate: 夕's 小自在 …; Battle.moveRedeploy: 乌尔比安 S3)
- * keeps it for its time; leaving the field drops it with every buff; a 重生 clears it (enemies.js rebirthCleanse: PRTS
+ * keeps it for its time; leaving the field drops it with every buff; a 重生 clears it (enemies/archetypes.js rebirthCleanse: PRTS
  * 特殊机制 §重生 "清空自身身上除白名单外所有Buff") and contact gives it again while the unit is on the tile [ASSUMED]. The
  * tick (infectionDamage) is true damage no unit deals (无来源), tagged 'terrain' = 环境伤害 (PRTS 自然环境 lists 活性源石),
  * not 'dot' [ASSUMED: PRTS 伤害分类's list of BUFF damage does not name it].

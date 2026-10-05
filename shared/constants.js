@@ -81,7 +81,7 @@ export const SKILL_SUMMON_START_DEPLOY = true;
  * 12534 "每把都能999层", 12316 "999謝"; research 02 §layers). The only implementation of the cap (DESIGN §20.12). Every
  * writer of a bond's layers goes through `layerGainRoom`: the prep-side gains (server/match/PlayerState.js addLayers —
  * 特质, items, bands, 机变 cards, bonds), the settle of the in-battle gains (server/match/Match.js) and the live in-battle
- * copy (server/sim/Battle.js addLayers, as the client's AddBondCount) — and the dev tools' direct writes (tools/matchrun.mjs
+ * copy (server/sim/battle/economy.js addLayers, as the client's AddBondCount) — and the dev tools' direct writes (tools/matchrun.mjs
  * --layers, tools/balance.mjs applyBoard); a gain at the cap adds 0 (no onLayers, no 'layer'
  * event), and the client-result check (server/match/fields.js) bounds a reported gain by the room left. Milestones paid
  * per N layers (远见, 奇迹, 维多利亚 …) stop with the count. 0 / Infinity = no cap.

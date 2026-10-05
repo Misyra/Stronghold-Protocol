@@ -69,7 +69,9 @@ server/
     results.js             settlement stats, titles (评语)
     bot.js                 AI player (plays prep phases; also auto-play for disconnected humans)
   sim/
-    Battle.js              one field simulation (normal / unite / boss); public API §5
+    Battle.js              one field simulation (normal / unite / boss); public API §5 — the class: constructor + method install
+    battle/                Battle's methods by concern (players, lifecycle, hooks, spawns, deploy, blocking, status, combat,
+                           queries, summons, tiles, displacement, economy, events), installed on Battle.prototype
     constants.js           TICK, conversions, tuning knobs
     rng.js                 seeded PRNG (mulberry32) + helpers
     grid.js                field grid, tile queries, passability, official 4-direction SPFA flow field + line-of-sight smoothing, road-over-floor preference only where it crosses fewer floor tiles (§21.15); DEPLOY_REFUSED_TILES (深水区, §21.3)
@@ -91,7 +93,9 @@ server/
       garrisons.js         battle side (IN_BATTLE) garrison effect keys
       items.js             battle side of equipment + Arts
       bands.js             battle side of band (strategy) effects
-      enemies.js           enemy ability specs + generic special-type behaviours
+      enemies.js           enemy ability specs + generic special-type behaviours: dispatch hooks, KITS, STATS_ONLY
+      enemies/             helpers.js, archetypes.js, one kit file per special type (invisible, times, element, dot,
+                           reflection, fly, special) and leaders.js — each with its part of KITS
       bosses.js            boss scripts (boss_1 … boss_10)
       devices.js           stage devices & special terrain
 shared/

@@ -23,7 +23,7 @@
 // 重装 skills (§21.29, GitHub issue #4 / PR #12).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GameData } from '../server/match/gamedata.js';
@@ -49,6 +49,8 @@ import { DATA, makeMatch } from './match/harness.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const doc = (p) => readFileSync(join(ROOT, p), 'utf8');
+/** server/sim/Battle.js with its method modules (server/sim/battle/*.js) as one text. */
+const battleText = () => [doc('server/sim/Battle.js'), ...readdirSync(join(ROOT, 'server/sim/battle')).sort().map((f) => doc(`server/sim/battle/${f}`))].join('\n');
 const DESIGN = doc('docs/DESIGN.md');
 const META = doc('docs/META.md');
 const DATA_MD = doc('docs/DATA.md');
@@ -449,7 +451,7 @@ test('user playtest #6 (DESIGN §20): summons, skill triggers, blocking, push fo
   assert.match(SIM, /\*\*every blocker\*\* — melee units/);
   assert.ok(!/targets by its range alone: no/.test(SIM), 'SIM: the melee-only rule is gone');
   assert.match(PLAYING, /\*\*阻挡了就一定能打到\*\*/);
-  const battleSrc = readFileSync(join(ROOT, 'server/sim/Battle.js'), 'utf8');
+  const battleSrc = battleText();
   assert.ok(!/meleeUnit/.test(battleSrc) && !/export function meleeUnit/.test(readFileSync(join(ROOT, 'server/sim/targeting.js'), 'utf8')), 'no melee gate in the engine');
   // #15 / #16: skill triggers and the 3 s operation cooldown (code = §5.6 = §19.2 superseded)
   assert.equal(AUTO_OP_COOLDOWN, 3);
@@ -552,7 +554,7 @@ test('playtest6b follow-up (DESIGN §20.10–§20.13): leader HP, 直接乘算, 
   assert.equal(BOND_LAYER_CAP, 999);
   assert.equal(layerGainRoom(995, 10), 4);
   assert.ok(!('BOND_LAYER_CAP' in SIM_CONST) && !('layerRoom' in SIM_CONST), 'no second cap in server/sim/constants.js');
-  for (const f of ['server/match/PlayerState.js', 'server/match/Match.js', 'server/sim/Battle.js']) {
+  for (const f of ['server/match/PlayerState.js', 'server/match/Match.js', 'server/sim/battle/economy.js']) {
     const src = doc(f);
     assert.match(src, /layerGainRoom/, `${f} clamps with layerGainRoom`);
     assert.ok(!/layerRoom\b/.test(src), `${f}: no layerRoom`);
@@ -764,14 +766,14 @@ test('batch 6 QA residuals (DESIGN §21.21–§21.25): the lock per deployment f
   // F3: 卢西恩 / 锏 count only the allies they can hurt — since 0.1.2 (§22.12) the targets of their trigger selection
   // (targetsNear → canTargetAlly, which skips an airborne 起飞 ally for a ground enemy); the player text keeps auras and counters
   assert.match(doc('server/sim/content/bosses.js'), /cond: \(b\) => targetsNear\(b, e, LUCIEN_AOE_RADIUS\)\.length > 0/);
-  assert.match(doc('server/sim/content/enemies.js'), /const inR = \(b, e, s\) => targetsNear\(b, e, [^\n]*\)\.length > 0/);
+  assert.match(doc('server/sim/content/enemies/leaders.js'), /const inR = \(b, e, s\) => targetsNear\(b, e, [^\n]*\)\.length > 0/);
   assert.match(doc('server/sim/targeting.js'), /if \(f\.liftoff && evadesGround\(e, a\)\) return false;/);
   assert.match(sub(22), /they count only the allies they can hurt \(`!evadesGround`\)/);
   assert.match(sub(20), /an area skill cast because allies are near counts only those it can hurt/);
   assert.ok(!/燃烧区域和减益都落不到她身上/.test(PLAYING), 'PLAYING: no blanket 减益 claim');
   assert.match(PLAYING, /地面敌人的光环和全场效果[^\n]*照常生效/);
   // F5: rule 3 counts every board piece's home, removed or not
-  const battleSrc = doc('server/sim/Battle.js');
+  const battleSrc = battleText();
   assert.match(battleSrc, /a\.uid != null && \(a\.kind === 'op' \|\| a\.kind === 'token'\) && a\.homeR === r && a\.homeC === c/);
   assert.match(sub(24), /Every board piece's home counts now, on the field or not/);
   assert.match(SIM, /the piece on the field or not — a summon leaves its home free only once it has expired or been\nkilled/);

@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { KITTED_CHARS, OPERATOR_KITS, KITS } from '../../server/sim/content/kits/index.js';
 import { diyPool, validateDiyPicks } from '../../shared/diy.js';
-import { spareChance, waterOn, holidayLines, slimeOf, SLIME_KEY } from '../../server/sim/content/kits/ops/op-chen2.js';
+import { spareChance, waterOn, holidayLines, slimeOf, slimeKey } from '../../server/sim/content/kits/ops/op-chen2.js';
 
 const load = (f) => JSON.parse(readFileSync(new URL(`../../data/${f}.json`, import.meta.url), 'utf8'));
 const CHESS = load('chess');
@@ -27,7 +27,7 @@ const modOf = (tier, mod) => (mod ? formOf(tier, true).modules.find((m) => m.uni
 const approx = (a, b, msg, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps * Math.max(1, Math.abs(b)), `${msg}: ${a} vs ${b}`);
 const dummy = (key, o = {}) => enemyRec({ key, hp: 1e9, speed: 0, mass: 0, ...o });
 const ENEMIES = {
-  enemy_dummy: dummy('enemy_dummy'), enemy_fly: dummy('enemy_fly', { motion: 'FLY' }),
+  enemy_dummy: dummy('enemy_dummy'), enemy_fly: dummy('enemy_fly', { motion: 'FLY' }), enemy_armor: dummy('enemy_armor', { def: 500 }),
   enemy_walk: enemyRec({ key: 'enemy_walk', hp: 1e9, speed: 0.5, mass: 0 }),
 };
 const FORMS_ALL = [[5, false, null], [6, false, null], ...[5, 6].flatMap((t) => [null, RX, RY].map((m) => [t, true, m]))];
@@ -161,38 +161,58 @@ test('S2 “堇青之夜” (MANUAL, data DEFAULT, 蓄力 2): 27 / 24 SP from 5 
   }
 });
 
-test('slime (S2 / S3): each struck enemy\'s tile holds slime 5 s; a ground enemy on it moves ×0.8 / ×0.7 (S2) and loses 100 / 150 DEF (not stacking), a stealthed one too, a flyer never; it lapses after the 5 s', () => {
-  for (const [tier, elite, skill] of [[5, false, 1], [6, true, 1], [6, true, 2]]) {
+test('slime (S2 / S3): each attack slimes the tiles of her attack range (2-5; S3 2-6) for 5 s; a ground enemy there — struck or not, stealthed too — moves ×0.8 / ×0.7 / ×0.6 and loses 100 / 150 / 200 DEF after its multipliers (not stacking); a flyer or an enemy outside never; it lapses 5 s after her last attack; two 假日威龙陈 each slow', () => {
+  for (const [tier, elite, skill] of [[5, false, 1], [6, true, 1], [5, false, 2], [6, true, 2]]) {
     const sk = skillOf(tier, elite, [S1, S2, S3][skill]);
+    const [ms, def, life] = [sk.bb['attack@move_speed'], sk.bb['attack@def'], sk.bb['attack@projectile_life_time']];
     const { h, u } = field({ tier, elite, skill });
-    const e = h.spawn('enemy_dummy', { pos: [10, 5] });
+    const e = h.spawn('enemy_armor', { pos: [10, 5] });
     const fly = h.spawn('enemy_fly', { pos: [10, 6] });
+    const out = h.spawn('enemy_armor', { pos: [10, 8] });
     cast(h, u);
-    assert.ok(h.runUntil(() => atkHits(h, u).some((c) => c.dmg.isSkill && c.target === e), 5), 'struck');
+    assert.ok(h.runUntil(() => h.hooksOf('attack').some((c) => c.attacker === u && c.isSkill), 5), 'an attack');
     h.run(0.25);
-    const pud = slimeOf(h.b);
-    assert.ok(pud && pud.has(10 * 21 + 5) && pud.has(10 * 21 + 6), `T${tier} S${skill + 1}: puddles under both struck enemies`);
-    const b = e.findBuff(SLIME_KEY);
+    const tiles = slimeOf(h.b, u);
+    assert.deepEqual([...tiles.keys()].sort((a, b) => a - b), [...u.rangeKeys].sort((a, b) => a - b), `T${tier} S${skill + 1}: her range (${skill === 2 ? '2-6' : '2-5'})`);
+    const key = slimeKey(u);
+    const b = e.findBuff(key);
     assert.ok(b, `T${tier} S${skill + 1}: the ground enemy is slimed`);
-    assert.deepEqual(b.mods, { moveMul: 1 + sk.bb['attack@move_speed'], defFlat: sk.bb['attack@def'] }, `T${tier} S${skill + 1}: ×${1 + sk.bb['attack@move_speed']} / ${sk.bb['attack@def']}`);
-    assert.equal(fly.findBuff(SLIME_KEY), null, `T${tier}: never a flyer`);
-    approx(e.s.def, Math.max(0, e.base.def + sk.bb['attack@def']), 'DEF');
-    // 不叠加: one effect however many puddles / attacks
-    h.run(5);
-    assert.equal(e.buffs.filter((x) => x.key === SLIME_KEY).length, 1);
-    // a stealthed walker passing through (无视无法选择)
-    const w = h.spawn('enemy_dummy', { pos: [10, 5] });
-    h.b.addBuff(w, { key: 'test:stealth', flags: { stealth: true } });
-    h.run(0.3);
-    assert.ok(w.findBuff(SLIME_KEY), 'a stealthed enemy on the slime is slimed');
-    // stop the skill and let the puddles run out
+    approx(b.mods.moveMul, 1 + ms, `×${1 + ms}`);
+    approx(e.s.def, 500 + def, `DEF ${def}`);
+    assert.equal(fly.findBuff(key), null, 'never a flyer');
+    assert.equal(out.findBuff(key), null, 'not outside her range');
+    // a stealthed ground enemy that walks in (never struck: she cannot see it) — 无视无法选择
+    const sneak = h.spawn('enemy_armor', { pos: [9, 6] });
+    h.b.addBuff(sneak, { key: 'test:stealth', flags: { stealth: true } });
+    h.run(0.25);
+    assert.ok(sneak.findBuff(key), 'a stealthed enemy in the slime is slimed');
+    // the DEF cut is a final addition: after a ×0.7 DEF status
+    h.b.applyStatus(e, 'defDown', { duration: 30, value: 0.3, source: u });
+    h.run(0.25);
+    approx(e.s.def, 500 * 0.7 + def, 'DEF ×0.7 then the cut');
+    assert.equal(e.buffs.filter((x) => x.key === key).length, 1, '不叠加');
+    // stop her: the slime lapses life s after her last attack
     u.skill.end('test');
     h.b.addBuff(u, { key: 'test:disarm', flags: { disarm: true } });
-    h.run(sk.bb['attack@projectile_life_time'] + 0.5);
-    assert.equal(e.findBuff(SLIME_KEY), null, `T${tier}: gone ${sk.bb['attack@projectile_life_time']} s after the last attack`);
-    assert.equal(pud.size, 0, 'no puddle left');
+    const tLast = h.hooksOf('attack').filter((c) => c.attacker === u).slice(-1)[0].t;
+    h.run(tLast + life - 0.3 - h.b.time);
+    assert.ok(e.findBuff(key), 'still slimed');
+    h.run(0.7);
+    assert.equal(e.findBuff(key), null, `gone ${life} s after her last attack`);
     done(h);
   }
+  // two of them: one slow each (independentCharacterSource)
+  const h = makeBattle({
+    defs: { enemies: ENEMIES }, timeLimit: 60, autoFinish: false, seed: 3, flags: { dpPerSec: 0 },
+    units: [{ uid: 1, diy: { slot: 5, charId: CHEN, skillIndex: 1 }, row: 10, col: 4 }, { uid: 2, diy: { slot: 6, charId: CHEN, skillIndex: 1 }, row: 11, col: 4 }],
+  });
+  h.step();
+  const e = h.spawn('enemy_armor', { pos: [10, 5] });
+  for (const id of [1, 2]) h.unit(id).skill.gainSp(999);
+  h.run(3);
+  assert.ok(e.findBuff(slimeKey(h.unit(1))) && e.findBuff(slimeKey(h.unit(2))), 'both slimes');
+  approx(e.s.def, 500 - 200, 'DEF −100 twice');
+  done(h);
 });
 
 test('S3 “假日风暴” (MANUAL, data ACTIVE_RANGE on 2-6): an enemy only on 2-6 casts it; range 2-6 (and back); ATK +55 % / +70 %, every attack strikes twice with the trait multiplier on every enemy; 32 bullets, 2 per attack (16 attacks), one left still attacks', () => {

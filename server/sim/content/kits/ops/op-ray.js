@@ -9,7 +9,10 @@
 // built into backups.json) and PRTS 莱伊 (巡哨伙伴 / 入神 / S1 / S2 / S3 备注), PRTS 沙地兽 (备注 "持有禁疗、无敌", "退场时返还1
 // 个可部署的沙地兽", "莱伊退场时强制撤退场上的沙地兽"; its skill "仅在持有者携带技能2时才会携带"), PRTS 分支特性信息 猎手, BWIKI
 // 莱伊 ("装填间隔即为攻击间隔，初始子弹数即为最大子弹数"), PRTS 卫戍协议/帮助 (a placed summon that leaves is deployed again on
-// its tile "在满足条件后").
+// its tile "在满足条件后"); the client's battle data read from the local install — buff_template_data ray_tr / ray_tr_add /
+// ray_tr_sub (the magazine), ray_s_1[konckback] (Knockback _useSourceDirection, _decreaseForceLevelWhenNotInDirection 1),
+// ray_s_1[kill_add_bullet], ray_t_1[damage_scale] (PHYSICAL DamageScale on targets holding ray_sndbst_aura), ray_s_2[deck],
+// ray_s_3[reload] / [check_full] / [sp], ray_sndbst_tr / ray_sndbst_collect, and charpack char_4117_ray.
 // - Trait (猎手) "攻击时需要消耗子弹且攻击力提升至120%，不攻击时会缓慢地装填子弹（最多8发）" (trait bb value / atk_scale; the
 //   hunter profile's ×atk_scale on every bullet attack, skill attacks included). PRTS 分支特性信息 猎手: "入场时持有自身子弹上限
 //   数的子弹" — full at every deployment; "存在子弹且攻击范围内存在目标时进行攻击，不存在子弹/子弹未满且攻击范围内无目标时进行
@@ -44,9 +47,10 @@
 // - S2 广域警觉 (AUTO, attack SP; 持续时间无限 — a toggle): range 4-10, ATK +atk, the 沙地兽's redeploy time ×(1 +
 //   respawn_time). Self / summon effects only: it fires at full SP (`trigger: 'SP_FULL'`, the owner's AUTO rule).
 //   Passive "沙地兽撤退时回收命中该区域的子弹": while she carries S2, the bullets of her attacks that hit an enemy inside a
-//   scouting 沙地兽's area are counted and come back to her magazine when it leaves (≤ the magazine, while she is on the
-//   field) [ASSUMED: capped at the trait's maximum]; S1's special bullet is no bullet. PRTS "装弹行为不触发攻击回复": no
-//   reload gives attack SP.
+//   scouting 沙地兽's area are counted (its own counter: ≤ its trait value 8 — ray_sndbst_tr) and come back to her magazine
+//   when it leaves, while she is on the field (ray_sndbst_collect → ray_tr_add: HUN-X's extra_add first on an empty
+//   magazine, capped at her maximum); S1's special bullet is no bullet. PRTS "装弹行为不触发攻击回复": no reload gives
+//   attack SP.
 // - S3 “得见光芒” (MANUAL, 16 s, data ACTIVE_RANGE on its 3-8): "立即停止攻击直至子弹装满，装填间隔大幅缩短(-1.2)": at the cast
 //   she stops attacking and reloads (a reload under way is cut to the new interval) until her magazine is full, every reload
 //   while it runs lasting base attack time + reload_interval (0.4 s); range 3-8; every attack attack@atk_scale × ATK
@@ -233,8 +237,13 @@ export default {
             if (!mine(t) || battle.finished) return;
             t.removed = false; // the piece stays (Battle.redeploy needs it; its hooks are kept)
             if (m.rayBeast === t) endArea();
-            // S2 passive: the bullets that hit in its area come back
-            if (picked === S2 && m.rayBullets > 0 && up(unit)) unit.trait.ammo = Math.min(ammoMax(unit), (unit.trait.ammo ?? 0) + m.rayBullets);
+            // S2 passive: the bullets that hit in its area come back (ray_sndbst_collect → ray_tr_add: its count — ≤ its own
+            // trait value — onto her magazine, HUN-X's extra_add first when she is empty, capped at her maximum)
+            if (picked === S2 && m.rayBullets > 0 && up(unit)) {
+              const back = Math.min(m.rayBullets, Math.max(1, Math.floor(num(t.def?.traitBb?.value, ammoMax(unit)))));
+              const empty = (unit.trait.ammo ?? 0) <= 0 ? extraAdd : 0;
+              unit.trait.ammo = Math.min(ammoMax(unit), (unit.trait.ammo ?? 0) + empty + back);
+            }
             m.rayBullets = 0;
             const left = battle.time;
             battle.every(RETRY, (b, sched) => {

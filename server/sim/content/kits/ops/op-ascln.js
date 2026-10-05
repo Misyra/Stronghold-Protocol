@@ -7,7 +7,11 @@
 // account]. Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json) and PRTS
 // 阿斯卡纶 (死亡拘审 备注 and its {{**}} 最终乘算 (100−18×层数)%, S2 修正 / 备注, S3 备注, the AMB-X note), PRTS 分支特性信息
 // 伏击客 ("嘲讽等级为-1"), PRTS 命中率, Arknights Terra Wiki "Ascalon" (死亡拘审: "The MSPD reduction and Arts damage stack
-// additively").
+// additively"); the client's battle data read from the local install — buff_template_data ascln_t_1 / ascln_t_1[debuff]
+// (ON_OUTPUT_DAMAGE of NORMAL attacks; STACK, the duration refreshed; per trigger buff count × atk_ratio × ATK, MAGICAL,
+// attack type BUFF), ascln_t_2 (CheckHeightTypeInRange x-5 ≥ cnt), ascln_s_2[enemy] (ON_OWNER_KILLED of a WALK enemy:
+// the debuff in a circle of range_radius on the WALK_ONLY enemies but the dead one), ascln_s_3[self] (heal on
+// ON_EVADE_DAMAGE and on a HIT_FAILED damage), ascln_e_003_t_1[heal] (a heal when the enemy holding it finishes).
 // - Trait (伏击客) "对攻击范围内所有敌人造成伤害；拥有50%的物理和法术闪避且不容易成为敌人的攻击目标": the stalker profile — every
 //   enemy of her range at once, melee, ground only (no "可对空"), physical — and 50 % physical / arts dodge (trait bb prob;
 //   AMB-Y: 65 %). "不容易成为敌人的攻击目标" is her taunt level −1, which her data stats already carry (PRTS 伏击客 "嘲讽等级为

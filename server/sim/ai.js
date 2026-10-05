@@ -713,12 +713,14 @@ function enemyAttack(b, e) {
   for (const t of targets) {
     b._ev(['atk', e.id, t.id, deferred ? (e.profile.shot || 'none') : rangedShot ? 'enemy' : 'none']);
     if (deferred) continue;
-    const hit = (tt) => {
+    // a shot that flies as a projectile is 远程途径 (DamageInfo `isProjectile`; PRTS 作战机制 "有弹道的攻击固定为10，无弹道的攻击
+    // 固定为01"): what only 近战途径 damage triggers skips it (薇薇安娜's 散华 护盾, kits/ops/op-vvana.js)
+    const hit = (tt, isProjectile = false) => {
       if (!tt || !tt.alive || !e.alive && !rangedShot) return;
-      b.dealDamage(e, tt, { amount: e.s.atk * (e.profile?.atkScale ?? 1), type, isAttack: true, attackId });
+      b.dealDamage(e, tt, { amount: e.s.atk * (e.profile?.atkScale ?? 1), type, isAttack: true, attackId, isProjectile });
     };
     if (rangedShot && Math.hypot(t.x - e.x, t.y - e.y) > 0.75) {
-      b.addProjectile({ from: e, target: t, speed: PROJECTILE_SPEEDS.enemy, visual: 'enemy', source: e, onHit: (c) => hit(c.target) });
+      b.addProjectile({ from: e, target: t, speed: PROJECTILE_SPEEDS.enemy, visual: 'enemy', source: e, onHit: (c) => hit(c.target, true) });
     } else hit(t);
   }
   if (b._hooks.attack) b.emit('attack', { attacker: e, targets, isSkill: false });

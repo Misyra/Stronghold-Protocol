@@ -118,6 +118,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-thorns.js',
   'op-chen3.js',
   'op-leizi2.js',
+  'op-vvana.js',
+  'op-headb2.js',
+  'op-hodrer.js',
 ]);
 
 /**

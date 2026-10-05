@@ -181,6 +181,8 @@ const PRIORITY_FNS = {
   lowestHpRatio: (e) => e.hpRatio,
   highestAtk: (e) => -e.s.atk,
   boss: (e) => (e.isBoss ? 0 : 1),
+  // "优先攻击精英或领袖敌人" (薇薇安娜 S3: kits/ops/op-vvana.js): an ELITE / BOSS rank enemy or a leader first
+  elite: (e) => (e.isBoss || e.def?.rank === 'ELITE' || e.def?.rank === 'BOSS' ? 0 : 1),
   notBurst: (e) => (e.s.flags.burstLock ? 1 : 0),
   ground: (e) => (e.isFlying ? 1 : 0),
   // 攻城手 trait "优先攻击重量最重的敌人" (早露 / 提丰: kits/ops/op-poca.js, op-typhon.js): the highest current 重量等级

@@ -657,7 +657,10 @@ HP left is refused (damage.js `hasHp`: a lethal hit's `damaged` hook runs before
 
 `battle.dealDamage(source, target, dmg)` → HP removed. `DamageInfo = { amount, type:'phys'|'arts'|'true'|'elemental'|'element',
 element?, defIgnoreFlat, defIgnorePct, resIgnoreFlat, resIgnorePct, mul=1, canDodge (phys/arts), isSkill, isSplash,
-isAttack, attackId, ignoreSleep, ignoreSelect, sourceless, tags[], cancel }` (`ignoreSelect`: no selection 无法选择
+isAttack, isProjectile, attackId, ignoreSleep, ignoreSelect, sourceless, tags[], cancel }` (`isProjectile`: 远程途径 — an
+enemy normal attack that flew as a projectile (ai.js enemyAttack; PRTS 作战机制 "有弹道的攻击固定为10，无弹道的攻击固定为01")
+and 怒潮凛冬's 高台 splash (PRTS "被视为远程途径伤害"); every other hit is 近战途径 — what only melee-path damage triggers
+reads it: 薇薇安娜's 散华 护盾, kits/ops/op-vvana.js; `ignoreSelect`: no selection 无法选择
 effects stop — an ability "无视无法选择", a direct pick such as a counter on the attacker, a flying unit's blast credited to
 a ground leader, the tick of a debuff already on the unit — it reaches an airborne 起飞 ally whatever its source;
 `sourceless`: 无来源 damage — the source's stats add nothing and the hooks get `source: null` plus `credit` = the source,
@@ -1170,7 +1173,8 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
 `afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
-"优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
+"优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰; `'elite'`: "优先攻击精英或领袖敌人", an ELITE / BOSS
+rank enemy or a leader first: 薇薇安娜 S3), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
 selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
 单位"), `boomerang` (the projectile stays
 `'boomerang'` whatever the data's generic ranged projectile says), `boomerangOnward(ctx)` (a boomerang's flight after its

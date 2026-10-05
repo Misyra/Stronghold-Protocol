@@ -1,0 +1,185 @@
+# Operator kits
+
+A kit is the battle behaviour of one chess (棋子): its skills, talents, trait specifics and module effects, on top of
+the profession defaults of `server/sim/professions.js`. Kits run inside the deterministic battle simulation that the
+server and every browser share, so the same seed and inputs give the same battle everywhere. New kits — the stand-in
+operators, the self-select 6★ operators, contributions from GitHub issue #136 — go here, one file each.
+
+## Layout
+
+| path | what |
+|---|---|
+| `index.js` | the registry: `KIT_FILES` lists every kit file, grouped by tier; `KITS` (base chess id → kit builder) and `TIER_KITS` (one registry per tier group) are built from it |
+| `ops/<chessId>-<codename>.js` | one kit per file, with the helpers and constants only that kit uses |
+| `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
+| `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
+| `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
+
+`content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
+id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4).
+
+## Naming
+
+`ops/<base chess id without _a>-<codename>.js`, where the code name is the operator's official `charId` without its
+`char_<n>_` prefix (`data/chess.json` `charId`): `chess_char_3_04_a` (琳琅诗怀雅, `char_1033_swire2`) →
+`ops/chess_char_3_04-swire2.js`.
+
+- The chess id is the registry key and the one unique name: one operator can be two chess (锡人 `chess_char_1_16` and
+  `chess_char_2_19`, 耶拉 3_20 / 4_03, 华法琳 4_26 / 5_04 …), so a code name alone collides. One file ⇔ one registry
+  entry, and a directory listing sorts like the data: by tier, then shop order.
+- The code name finds the operator by name; the docs and the code already call kits by it (`lemuen`, `whitw2`,
+  `sbell2`, `pithst`). It is ASCII and stable across languages — no Unicode file names (the macOS NFD / Windows / URL
+  encoding differences of `/sim/` in the browser) — and the Chinese name is in the file's first line, so
+  `grep -l 玛恩纳 ops/` works too.
+- `-` separates the two parts, which both contain `_`.
+
+## A kit file
+
+```js
+// server/sim/content/kits/ops/chess_char_6_21-codename.js — 名字 (char_xxxx_codename) kit, tier 6.
+// Conventions of the tier-6 kits: ../shared/tier6.js; kit contract and rules: ../README.md.
+
+import { num, talentBb, statBuff } from '../shared/tier1.js';     // shared helpers, engine modules (relative paths)
+
+/** 名字 S2 "…": the radius exists only in the PRTS 备注 (no blackboard key). */
+const SOME_RADIUS = 1.5;                                          // helpers / constants of this kit only
+
+export default {
+  // 6_21 名字 — S3 …: what each skill / talent / module does, which blackboard key gives each number, [ASSUMED] where
+  // no source says.
+  chess_char_6_21_a: (bb, chess, def) => ({ skill: { … }, skills: { … }, talents: [ … ], trait: { … }, install() {} }),
+};
+```
+
+- **The default export** is `{ [baseChessId]: (bb, chess, def) => Kit }` with exactly one key, the `_a` id; the same kit
+  serves the elite `_b` record. `bb` = the SELECTED skill's blackboard at the chess's level (normal Lv4, elite Lv7),
+  `chess` = the record as the unit's loadout makes it (talents, `trait.bb`, `module`), `def` = the normalised def. The
+  Kit fields (`skill`, `skills: { [skillId]: SkillSpec }`, `talents`, `trait`, `install`) and how the loader picks the
+  selected skill's spec: docs/SIM.md §7.2; the SkillSpec schema: §7.3; worked examples with real operators: §7.5.
+- Small real files to start from: `ops/chess_char_1_11-skgoat.js`, `ops/chess_char_1_02-yak.js`; one with every
+  selectable skill: `ops/chess_char_3_04-swire2.js`; a large one with its own helpers: `ops/chess_char_6_18-whitw2.js`.
+- The tier-4 files wrap their entry in `withDefaults(…)` (`shared/tier4.js`: it rebuilds `def` for callers that pass
+  `(bb, chess)` only); `content/index.js` always passes all three, so a new kit needs no wrapper.
+
+## What a kit may use
+
+- **Helpers**: `../shared/tier1.js` first — `num` / `talentBb` / `talentGrid` / `moduleBb` / `traitBb` / `moduleOn`,
+  `skillRec` / `skillBbOf` (another selectable skill's record and blackboard), `instantKind`, `batMod`, `up` / `cheb`,
+  `onHitBy` / `onHitOn` / `onDamagedOn`, `enemiesInGrid` / `alliesInGridOf` / `enemyInRange`, `statBuff` / `toggleBuff`
+  / `installAura` / `spTimeBonus` / `installReveal`, `makeZone`, `freeTileAround`, `giveSp`, `once`. The other
+  `../shared/tierN.js` are usable too, but same-named helpers are not interchangeable: `num` of tier 1 / 4 also reads
+  numeric strings, those of tiers 3 / 5 / 6 do not; `toggleBuff`, `talentBb`, `moduleBb`, `instantKind` take different
+  arguments per tier. Read the helper before using it.
+- **The battle API** documented in docs/SIM.md: units (§2), buffs / mods / statuses (§3), the damage & heal pipeline
+  (§4), the hook bus and its re-entrancy rule (§5), the engine helpers content must use (§6), the skill runtime (§7.1);
+  engine modules by relative path (`../../../constants.js`, `targeting.js`, `body.js` for huge enemies, `dir.js` for
+  facing, `damage.js` `hasHp` / `isHpLoss` / `mitigate`, `buffs.js`, `simdata.js` `normalizeChess`); content modules
+  (`../../tokens.js` summons, `../../items/battle.js`).
+- **Never**: Node-only modules (`node:*`, `server/sim/nodeData.js`) or anything of `server/match`, `server/net`,
+  `public/` — the sim is served to browsers as-is (`/sim/`, no bundler); `Math.random`, `Date.now`, timers — use
+  `battle.rng()` (`rng.int / range / chance / pick / shuffle / weighted`), `battle.after` / `battle.every`; state kept
+  across battles in module variables — key it by battle (`WeakMap`) or keep it in `unit.mem`; mutating `bb`, `def`,
+  `chess` or range grids (deep-frozen, shared by every battle: copy them). Register hooks with `{ owner: unit }` and
+  check `unit.alive` in handlers. `test/content/kits_layout.test.js` enforces the import / clock rules.
+- Order matters: hooks run by priority, then registration order, and every random draw comes from one stream — the
+  golden corpus (`test/golden/`) notices any change in either.
+
+## Registering a kit
+
+1. The chess needs its data record first: `data/chess.json` is generated from the official tables by
+   `tools/build-data.mjs` (docs/DATA.md) — skills, talents, trait, modules, ranges, tokens and the resolved auto-cast
+   trigger of every skill.
+2. Add the kit file to `ops/`, named as above.
+3. Append its file name to its tier's group in `index.js` `KIT_FILES` (never reorder the existing entries). Each file
+   is loaded with a guarded dynamic import: a file that fails to load is logged and its chess falls back to the
+   generic kit, so check the server log when a kit seems to do nothing.
+4. `node --test test/content/kits_layout.test.js` checks the name, the registry entry and the imports;
+   `node tools/kit-coverage.mjs --missing` lists selectable skills that still fall back to the generic spec.
+
+## Testing a kit
+
+- The harness is `test/helpers/battleHarness.js` (`makeBattle`, `runUntil`, `hooksOf`, `eventsOf`, `checkInvariants`;
+  docs/SIM.md §10 has an example and every option). Seed everything, use synthetic `enemyRec` targets for exact
+  numbers, assert on ids, end with `checkInvariants(h.b)`.
+- Patterns: `test/content/kits_t1t2.test.js` … `kits_t6.test.js` (the default skill and the talents of every chess),
+  `test/content/kits_alt_t1.test.js` … `kits_alt_t6.test.js` (every selectable non-default skill and every module;
+  `kits_alt_t4.test.js` also runs every chess × skill × module against a mixed wave),
+  `test/content/feedback1b_kits.test.js` (real-match checks).
+  A new kit gets its own test file (for example `test/content/kits_<codename>.test.js`).
+- Golden results: a new or changed kit moves the digests of the scenarios that field its chess. Run
+  `npm run golden:update` and commit `test/golden/*.json` in the same change, saying which scenarios moved and why
+  (`test/golden/README.md`). A refactor never changes them.
+- Run `node --test test/content/kits_layout.test.js test/golden.test.js <your test file>`, then
+  `GOLDEN_FULL=1 node --test test/golden.test.js` before the pull request.
+
+## The fidelity rule
+
+Every official skill, talent and module is implemented exactly as the game has it — no approximation.
+
+- Sources: the official tables (`.cache/gamedata/excel/*.json`, which `tools/build-data.mjs` downloads: character_table,
+  skill_table, battle_equip_table / uniequip_table, activity_table → act2autochess) as built into `data/chess.json`;
+  PRTS (prts.wiki: the operator page, its 备注, 卫戍协议 pages) for mechanics the data does not carry — cite it.
+- Numbers come from the blackboards whenever a key exists; a number that only exists in the text is parsed from it
+  (with a fallback) or a named constant with its source in the comment.
+- When the text and the blackboard seem to disagree, find out what the game does and say so in the comment (DESIGN
+  §19.9: 至简's text says 购买价格为1 while `bb.price` is 2 — the blackboard is the discount off the tier price 3).
+- If the engine cannot express a mechanic, extend the engine in a reviewed change of its own instead of faking it.
+- Anything no source backs is marked `[ASSUMED]` in the comment and in the pull request; a decision of the owner is
+  cited as "owner's decision YYYY-MM-DD".
+
+## Fidelity checklist (one per operator)
+
+Each item is a mistake this project already made once. Tick every one for every operator in the pull request.
+
+- [ ] **1. Skills** — every effect of each skill at the level the chess uses (normal Lv4, elite Lv7: the skill_table
+  blackboard and the text, reconciled), durations, charges, ammo, SP type (time / attack / hit) and initial SP (the
+  data's `spType`, `initSp`; SkillSpec overrides need a reason). Examples: ammo — 隐现 `ops/chess_char_1_01-inside.js`,
+  `kits_t1t2.test.js` "1_01 隐现: ammo skill"; charges — 松果 S1, `kits_alt_t3.test.js` "3_10 松果 S1 RMA长钉 (charges)";
+  hit SP — `feedback1d-solvent.test.js` (the drain feeds 受击回复 SP).
+- [ ] **2. Talents** — every talent at the chess's level / potential (the talent blackboards), conditional ones too.
+  Example: `kits_t1t2.test.js` "1_01 隐现 elite: +self_ammo after `duration` s on field; a random other 【拉特兰】 ammo
+  operator +ally_ammo".
+- [ ] **3. Modules** — for every module the chess offers (loadout, DESIGN §16): the trait override
+  (battle_equip_table `overrideTraitDataBundle`, the trait text), the talent changes (`addOrOverrideTalentDataBundle`)
+  and the stat bonuses (`attributeBlackboard`); `chess` is already the loadout-resolved record. Examples:
+  `kits_alt_t4.test.js` "信仰搅拌机 modules: SPT-Y 老朋友 = range +1 …" and "莫斯提马 SPC-X: the range becomes the module
+  grid …", and its "every chess × selectable skill × module" run.
+- [ ] **4. Attack range** — the base range, the range while a skill that changes it is on, and back when it ends; a
+  skill's own 技能范围. Examples: 烛煌 S3, `test/sim/feedback1e-skillrange.test.js`; DESIGN §21.16 (the live range on the
+  card); 见行者 / 松果, `kits_t3.test.js` ("fires on an enemy inside the skill range only").
+- [ ] **5. Auto-cast trigger** — the data resolves it (`tools/build-data.mjs resolveTrigger`, `data/chess.json`
+  `skills[].trigger`); check it, and change the data rule rather than hand-coding a trigger in the kit. The owner's
+  rules (0.2.0): a skill whose attack range is larger than the normal one casts as soon as an enemy is inside the
+  SKILL range (a deliberate deviation from the official 技能策略, like the 重装 exception; existing kits that predate
+  the rule, such as 烛煌 S3 in `feedback1e-skillrange.test.js`, are not examples of it); an AUTO skill that acts on
+  allies or itself fires at full SP (引星棘刺 S1, `kits_alt_t5.test.js` "… fires as soon as its SP is full, no enemy
+  needed (GitHub #124)"); the 重装 exception list (`TRIGGER_DEVIATIONS`: 深巡 S2, 雷蛇 S2, 号角 S2 / S3, 灰毫 S1 / S2,
+  余 S2; the 预备干员-重装 / Mechanist stand-ins join it), DESIGN §21.29 / §22.10,
+  `test/sim/feedback1-tank-triggers.test.js`.
+- [ ] **6. Targeting** — can it hit air units (`canHitFly`), ground-only attacks, block count, target priority; can
+  ground enemies hit it (起飞 / 对地规避, stealth, camouflage flags). Examples: `test/sim/professions.test.js` "fortress
+  (号角 / 灰毫) is ground-only and never fires at FLY enemies" (DESIGN §22.13); `feedback1b_kits.test.js` "B4 玛恩纳 S3 …
+  hits the air units" vs "S1 / S2 … stay ground-only"; 蒂比 `ops/chess_char_2_13-tippi.js` (`LIFTOFF_FLAGS`, DESIGN
+  §21.22); `kits_t3.test.js` "忍冬 迷彩: … ranged enemies stop targeting her".
+- [ ] **7. Damage typing** — physical / arts / true / element (元素损伤 vs 元素伤害: docs/SIM.md §7.2), splash vs
+  normal (普通伤害), dodgeable or not, `isSkill`, and what triggers on-hit effects (a trait that heals on any damage
+  dealt, e.g. 咒愈师). Examples: `enemies_bosses.test.js` "its attack splash (法术普通伤害) can be dodged; its death blast
+  (法术溅射伤害) cannot"; DESIGN §23.29 (叙拉古 rolls on every 普通伤害 hit); `test/sim/professions.test.js` "incantation
+  medics heal an ally for 50 % of damage dealt"; the re-entrancy rule of docs/SIM.md §5.
+- [ ] **8. Summons / tokens** — placement rules (the owner's range, deployable tiles), redeploy, what they inherit from
+  the owner's skill / module (`data/tokens.json` variants, `battle.tokenDef`). Examples:
+  `test/match/feedback1-placement.test.js` "#9 data: 狼群 and 流形 are owner-range summons" (DESIGN §20.1, §21.3);
+  `test/content/playtest6_summons.test.js`, `tokens_summons.test.js`; `feedback1b_kits.test.js` "B3 维娜·维多利亚 S3".
+- [ ] **9. Status effects** — every status applied, with its official duration and stacking (寒冷 on 寒冷 ⇒ 冻结 for the
+  longer cold, 沉默 removes abilities, 恐惧, 睡眠, 浮空 …; "同名效果取最高" = `applyStrongest`). Examples:
+  `test/sim/combat.test.js` "cold on cold ⇒ freeze for the longer cold …", "sleep: target is untargetable and
+  inactive; fear stops enemy attacks", "statuses: sleep = invulnerable except `hitSleep` attackers; levitate …";
+  `enemies_bosses.test.js` "沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced".
+- [ ] **10. Tests** — at least one per skill and per talent, plus the trigger rule, the range toggle, anti-air and
+  every module; the golden files updated in the same pull request (an intended change).
+
+## Old references
+
+DESIGN, the changelog and issues cite kits as `kits/tierN.js <name>` (before 0.2.0). That kit is now
+`ops/<chess id>-<codename>.js` — search `ops/` for the chess id, the code name or the Chinese name — and the helpers of
+that file are in `shared/tierN.js`.

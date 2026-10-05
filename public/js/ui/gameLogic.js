@@ -150,6 +150,13 @@ export function boardTileOf(field, r, c) {
   return [r - BOSS_ROW_SHIFT, field === 'bossR' ? MAX_COL - c : c];
 }
 
+/** The band (策略) a player picked, from m.public.players[].bandId (Match.js marksPublic) — the detail card shows it
+ *   on a teammate's unit (user playtest #2 item 2: watching a teammate revealed nothing about their 策略). */
+export function ownerBandId(pub, ownerId) {
+  const p = Array.isArray(pub?.players) ? pub.players.find((x) => x && x.playerId === ownerId) : null;
+  return typeof p?.bandId === 'string' && p.bandId ? p.bandId : null;
+}
+
 /** Banner shown when a phase starts: { title, sub?, tone } or null. */
 export function phaseBanner(phase, pub) {
   const r = int(pub?.round, 0);

@@ -752,6 +752,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `enemySpawn` / `enemyLeak` | `{ enemy }` | |
 | `elementBurst` | `{ source, target, element }` | before the burst's lock/effects; same-element fills of `target` are already refused |
 | `dodge` | `{ source, target, dmg }` | an attack was dodged |
+| `boomerangCaught` | `{ unit, attackId, isSkill, x, y }` | a 回环射手 boomerang came back to its thrower (`ai.js throwBoomerang`; `isSkill` = thrown by a skill attack): 娜仁图亚 LPS-Y "每回收5次回旋投射物", S3 "投射物全部回收时" |
 | `layerGain` | `{ playerId, bondId, n, reason, source, tile }` | mutable `n` before recording (魔王 +1 …), then clamped to the room left under `BOND_LAYER_CAP` (999); not emitted for a bond already at the cap; `tile` = `[r, c]` where `source` stands — or was knocked out this very instant ("被击倒时" gains) — else null (`addLayers` opts.tile overrides) |
 | `merchantPay` | `{ unit, cost, cancel }` | a merchant (行商) is about to pay its periodic DP; change `cost` or set `cancel` |
 | `battleEnd` | `{ result }` | may still add layer gains / coins |
@@ -1143,11 +1144,14 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 3.75 back = `BOOMERANG_RETURN_SPEED`, PRTS 跃跃; droneBomb 5 = 暴鸰's bomb, the official projectile_bombd); melee/`none` hits are
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
-`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority`, `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
+`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
+"优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
 selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
 单位"), `boomerang` (the projectile stays
-`'boomerang'` whatever the data's generic ranged projectile says), `rangeAoe` (applied after every override: sets
-`allInRange` and, on a ranged profile, the instant `'beam'`) (see the header of professions.js).
+`'boomerang'` whatever the data's generic ranged projectile says), `boomerangOnward(ctx)` (a boomerang's flight after its
+first hit belongs to content: ctx `hit(target, x, y)` / `comeBack(x, y)` — 娜仁图亚 S1's bounces, S2's dash; the loopshooter
+row), `rangeAoe` (applied after every override: sets `allInRange` and, on a ranged profile, the instant `'beam'`) (see the
+header of professions.js).
 
 | sub | behaviour |
 |---|---|
@@ -1158,7 +1162,7 @@ selects — its attacks, the enemies it blocks and its skill-trigger targets: ta
 | blastcaster | `rangeAoe`: every selectable enemy on its line at once, the same damage near and far, instant (`'beam'`) — "超远距离的群体法术伤害" is the whole line, not a splash (primary: PRTS 作战机制 §AOE伤害判定 names 伊芙利特's 炎爆 a 锁定攻击范围 AoE, and 炎爆 is her next-attack skill "下次攻击造成…" (PRTS 伊芙利特 S2), so a 轰击术师 normal attack; secondary: Terra Wiki, Blast Caster; supporting: PRTS 溅射半径一览 documents no splash radius for it; community report E3). A stealthed enemy is not struck unless it is revealed or blocked (a 锁定范围 AoE cannot hit a 隐匿 unit, PRTS 作战机制) |
 | bombarder | ground-only splash 0.9 (PRTS 溅射半径一览: 投掷手 0.9; 1.0 until 0.1.1) + aftershock(s) at 50 % ATK (bb append_atk_scale / times); 迷迭香's S2 末梢阻断 1.5 (the same table) |
 | hunter | 8 bullets (bb value), ×1.2 ATK (bb atk_scale), reloads 1/s after 1 s without attacking; can't attack when empty |
-| loopshooter | 回环射手 (user playtest #3): every attack throws a boomerang (`ai.js throwBoomerang`, projectile `'boomerang'`) out to the target at 15 tiles/s — it hits on arrival — and back to the thrower's current position at 3.75 tiles/s without damage (PRTS 跃跃 "投射物飞行速度15，返回时飞行速度3.75"); attacks only while holding it (every boomerang thrown caught — "必须回收全部回旋投掷物才可以进行下一次攻击", `unit.trait.boomerangsOut`) and with the attack cooldown ready, so the real interval is the longer of the two; a target dead mid-flight is not hit (it still flies to the last position and back); knocked out / withdrawn ⇒ lost, a redeployed thrower holds a fresh one; 跃跃 S2's extra boomerangs share the one flight (cnt hits) |
+| loopshooter | 回环射手 (user playtest #3): every attack throws a boomerang (`ai.js throwBoomerang`, projectile `'boomerang'`) out to the target at 15 tiles/s — it hits on arrival — and back to the thrower's current position at 3.75 tiles/s without damage (PRTS 跃跃 "投射物飞行速度15，返回时飞行速度3.75"); attacks only while holding it (every boomerang thrown caught — "必须回收全部回旋投掷物才可以进行下一次攻击", `unit.trait.boomerangsOut`) and with the attack cooldown ready, so the real interval is the longer of the two; a target dead mid-flight is not hit (it still flies to the last position and back); knocked out / withdrawn ⇒ lost, a redeployed thrower holds a fresh one; 跃跃 S2's extra boomerangs share the one flight (cnt hits); each catch fires `boomerangCaught`, and an attack profile's `boomerangOnward(ctx)` flies it on after the first hit before it turns back — ctx `hit` (a hit of the same attack), `comeBack(x, y)` once (a content error sends it back from the hit point): 娜仁图亚 S1 bounces, S2 dashes on and hits on its way back (kits/ops/op-narant.js) |
 | reaperrange | hits every enemy in range; ×1.5 (bb atk_scale) on the trait front grid (or its own line ahead) — both along its direction |
 | chain | chain N (trait text/bb max_target) with −15 % per jump (bb chain.atk_scale), 1.7-tile jumps (constants.js CHAIN_RADIUS, PRTS 溅射半径一览: 链术师 1.7; 1.8 until 0.1.1), sluggish on each hit |
 | funnel | drone damage 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max) |

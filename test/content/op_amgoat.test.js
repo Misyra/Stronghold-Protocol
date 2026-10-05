@@ -161,13 +161,13 @@ test('S2 点燃 (AUTO, 2 charges, data DEFAULT): main target RES ×0.85 / ×0.8 
   }
 });
 
-test('S3 火山 (MANUAL, data SKILL_RANGE on x-3): 15 s, ATK +70 % / +85 %, interval 1.6 − 1.1 = 0.5 s, range x-3 while on, lava on 4 / 5 random different enemies of it per attack (all when fewer); back after', () => {
+test('S3 火山 (MANUAL, data ACTIVE_RANGE on x-3 — 「攻击范围增大」 is an attack-range change, owner rule 2026-10-05): 15 s, ATK +70 % / +85 %, interval 1.6 − 1.1 = 0.5 s, range x-3 while on, lava on 4 / 5 random different enemies of it per attack (all when fewer); back after', () => {
   for (const [tier, elite] of [[5, false], [6, true]]) {
     const sk = skillOf(tier, elite, S3);
     const { h, u } = field({ tier, elite, skill: 2, seed: 9 });
     const n = sk.bb['attack@max_target'];
     assert.deepEqual([u.skill.rule, sk.trigger.rawRule, sk.rangeId, sk.duration, sk.bb.atk, sk.bb.base_attack_time, n, sk.spCost, sk.initSp],
-      ['SKILL_RANGE', 'DEFAULT', 'x-3', 15, elite ? 0.85 : 0.7, -1.1, elite ? 5 : 4, 80, elite ? 40 : 33], `T${tier}`);
+      ['ACTIVE_RANGE', 'DEFAULT', 'x-3', 15, elite ? 0.85 : 0.7, -1.1, elite ? 5 : 4, 80, elite ? 40 : 33], `T${tier}`);
     assert.deepEqual(u.skill.triggerGrid, sk.rangeGrid, `T${tier}: the trigger grid is x-3`);
     h.run(0.6);
     const atk0 = u.s.atk;

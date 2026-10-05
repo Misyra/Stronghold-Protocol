@@ -89,6 +89,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-amgoat.js',
   'op-cerber.js',
   'op-heyak.js',
+  'op-poca.js',
+  'op-typhon.js',
+  'op-narant.js',
 ]);
 
 /**

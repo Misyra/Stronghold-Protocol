@@ -185,19 +185,39 @@ export function performAttack(b, u, prof, targets, opts = null) {
  * current position at BOOMERANG_RETURN_SPEED, dealing nothing on the way back, and is caught (u.trait.boomerangsOut −1:
  * the thrower attacks again once every boomerang is back). A thrower knocked out / withdrawn meanwhile loses it — nothing
  * returns to a unit off the field or to a later deployment of it (the deploy hook hands it a fresh one).
+ * Content: a catch fires the hook `boomerangCaught` { unit, attackId, isSkill, x, y } (娜仁图亚 LPS-Y "每回收5次回旋投射物",
+ * S3 "投射物全部回收时"); an attack profile with `boomerangOnward(ctx)` (a skill's attack override: 娜仁图亚 S1's bounces,
+ * S2's dash) takes the flight over after the first hit — ctx { battle, unit, profile, target, x, y, attackId, isSkill,
+ * home(), hit(target, x, y) (resolveHit with this attack's profile), comeBack(x, y) (sends it back from there, once;
+ * returns the return projectile or null) } — and a content error there sends it back from the hit point.
  */
 function throwBoomerang(b, u, prof, t, info) {
   const seq = u.deploySeq;
   u.trait.boomerangsOut = (u.trait.boomerangsOut || 0) + 1;
   const home = () => u.alive && u.deployed && u.deploySeq === seq;
+  let sent = false;
+  const comeBack = (x, y) => {
+    if (sent || !home()) return null;
+    sent = true;
+    // hitDead: flies on to the thrower's last position even while it is hidden, caught there when it is still home
+    return b.addProjectile({ from: { x, y }, target: u, speed: BOOMERANG_RETURN_SPEED, visual: 'boomerangReturn', source: u, hitDead: true,
+      onHit: (r) => {
+        if (!home() || !(u.trait.boomerangsOut > 0)) return;
+        u.trait.boomerangsOut--;
+        if (b._hooks.boomerangCaught) b.emit('boomerangCaught', { unit: u, attackId: info.attackId ?? 0, isSkill: !!info.isSkill, x: r.x, y: r.y });
+      } });
+  };
   b.addProjectile({ from: u, target: t, speed: PROJECTILE_SPEEDS.boomerang, visual: 'boomerang', source: u, hitDead: true,
     onHit: (c) => {
       // (guarded on its own: a content error in the hit must not cost the thrower its boomerang for the battle)
       if (c.target || prof.splashRadius > 0) b._safe(() => resolveHit(b, u, prof, c.target, info, c.x, c.y), 'boomerang.hit', u);
       if (!home()) return;
-      // hitDead: flies on to the thrower's last position even while it is hidden, caught there when it is still home
-      b.addProjectile({ from: { x: c.x, y: c.y }, target: u, speed: BOOMERANG_RETURN_SPEED, visual: 'boomerangReturn', source: u, hitDead: true,
-        onHit: () => { if (home() && u.trait.boomerangsOut > 0) u.trait.boomerangsOut--; } });
+      if (typeof prof.boomerangOnward === 'function') {
+        const ctx = { battle: b, unit: u, profile: prof, target: c.target, x: c.x, y: c.y, attackId: info.attackId ?? 0, isSkill: !!info.isSkill,
+          home, comeBack, hit: (tgt, x, y) => b._safe(() => resolveHit(b, u, prof, tgt, info, x, y), 'boomerang.hit', u) };
+        if (b._safe(() => { prof.boomerangOnward(ctx); return true; }, 'boomerang.onward', u) === true) return;
+      }
+      comeBack(c.x, c.y);
     } });
 }
 

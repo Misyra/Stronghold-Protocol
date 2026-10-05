@@ -95,7 +95,8 @@ export function diyGameData(gd, records) {
     token: { value: (id) => gd.token(id) || tokenOf(id) },
     /**
      * GameData.placeableTokens for a slotted slot: the summons its record lists (the pick's skill and talents) that are
-     * placeable, by the variant of the owner form (`bySkill[skillIndex]` sources) — the deploy limit as the count.
+     * placeable, by the variant of the owner form (`bySkill[skillIndex]` sources) — the deploy limit as the count, the
+     * active module's own when its variant has one (`byModule`: 望's TRP-X "可同时部署的陷阱数量提升", 6 → 7 棋子).
      */
     placeableTokens: {
       value: (chessId, loadout = null) => {
@@ -112,7 +113,9 @@ export function diyGameData(gd, records) {
             const src = Array.isArray(alt?.sources) ? alt.sources : Array.isArray(v.sources) ? v.sources : [];
             if (!src.includes('talent') && !src.includes('skill')) continue;
           }
-          out.push({ tokenId: tid, count: Math.min(posIntOr(v?.stats?.deployLimit, posIntOr(t.deployLimit, 1)), 9) });
+          const mid = rec.module && rec.module.active ? rec.module.id : null;
+          const vm = v && mid && isObj(v.byModule) ? v.byModule[mid] ?? null : null;
+          out.push({ tokenId: tid, count: Math.min(posIntOr(vm?.stats?.deployLimit, posIntOr(v?.stats?.deployLimit, posIntOr(t.deployLimit, 1))), 9) });
         }
         return out;
       },

@@ -130,6 +130,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-sleach.js',
   'op-closur.js',
   'op-gdglow.js',
+  'op-haak.js',
+  'op-phatom.js',
+  'op-crosly.js',
 ]);
 
 /**

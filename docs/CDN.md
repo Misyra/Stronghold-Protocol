@@ -74,3 +74,15 @@ npm start
 设置 **Eligible for cache**，Edge TTL 与 Browser TTL 尊重源站 `Cache-Control`，不要强制缓存源站的 `no-store` 错误响应。这样 `.skel`、`.atlas`、`.obj`、棋盘 JSON 等也能缓存；`/play`、API、健康检查和游戏连接不在此规则内。[Cloudflare Cache Rules](https://developers.cloudflare.com/cache/how-to/cache-rules/)
 
 `/healthz` 同时报告当前站的 `artVersion`、配置的 `assetsCdn` 与 `assetsCdnVersion`，用于核对部署。CDN 不可用时没有自动切换整套素材的回退：可清空 `SP_ASSETS_CDN` 与 `SP_ASSETS_CDN_VERSION`，重启国内站，恢复本站加载；不要让单个 Spine 骨骼和纹理来自不同版本。
+
+## 5. 浏览器预载
+
+首页右下角或对局设置中的「预载资源」可开启预载，默认关闭。优先下载字体、界面、图标、音频，再下载立绘、Spine 和棋盘素材；显示文件及大小进度，支持暂停、继续、清理缓存。关闭预载停止下载并保留已保存的素材。需要 HTTPS 或 localhost。
+
+清单由 `/data/resource-manifest.json` 动态生成，沿用游戏的 CDN 配置和资源版本。Service Worker 只读取素材缓存；游戏仍需要服务器连接。内容未改变的二进制素材会跨版本路径复用，CSS/JSON 因可能被服务器重写而重新校验版本。单文件限制 24 MiB，已知超大文件跳过；空间不足会停止，并保留已有进度。另一标签页预载期间不能清理共享缓存，请先暂停该标签页。
+
+反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；清单和 Worker 脚本应遵循源站的 `no-cache`，不要套用素材一年缓存规则。
+
+本地已有文件在首次读取清单时补算内容指纹，不增加启动时的素材读取。也可在部署前运行 `node tools/asset-hashes.mjs`，生成本机 `data/asset-hashes.json`（不提交 Git）；用 `node tools/asset-hashes.mjs --check` 检查。素材改变后重生成指纹并重启。只有 CDN、没有本地文件或指纹时，使用清单版本回退，不能保证每文件增量。CDN 两次返回与内容指纹不符的文件不会标记为完成，请同步两站素材并清理旧 CDN 缓存。
+
+预载实现移植并改编自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)，保留 GPL-3.0-or-later 许可，并增加本站版本资源与 CDN 的适配。

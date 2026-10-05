@@ -362,6 +362,7 @@ async function boot() {
     splash.classList.add('is-done');
     setTimeout(() => splash.remove(), 300);
   }
+  installResourcePreload();
   globalThis.__SP__ = { store, net, data, version: 1 };
   // A page keeps the modules it imported at load time for its whole lifetime, so a deploy cannot reach an open tab
   // (ui/buildGuard.js): watch `/healthz.build`. Outside a match the page reloads itself; during a match the guard says
@@ -375,6 +376,14 @@ async function boot() {
   } catch (err) {
     console.warn('[app] build guard failed to start', err);
   }
+}
+
+function installResourcePreload() {
+  import('./resources/index.js').then((r) => {
+    const apply = (s) => { r.syncResources(s.preload).catch((err) => console.warn('[resources] sync failed', err)); };
+    apply(settingsStore.get());
+    settingsStore.subscribe(apply);
+  }).catch((err) => console.warn('[resources] unavailable', err));
 }
 
 boot().catch((err) => {

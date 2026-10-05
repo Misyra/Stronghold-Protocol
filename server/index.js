@@ -48,6 +48,7 @@ import { Lobby, CODE_ALPHABET } from './lobby.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
 import { createAssetVersion, VERSION_PREFIX } from './assetVersion.js';
+import { createResourceIndex, RESOURCE_MANIFEST_FILE } from './resources.js';
 import { assetCdnSettings } from '../shared/assetCdn.js';
 import { getData, loadData } from './data.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
@@ -376,6 +377,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new GzipCache();
   const release = createAssetVersion(mounts, DATA_SHIM_JS, cdn);
+  const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn.base,
+    rewrite: (v) => JSON.parse(release.transform(JSON.stringify(v), '.json')), log });
   // Small transformed responses share both the read and the result; bounded independently of the gzip cache.
   const transformed = new Map();
   let transformedBytes = 0;
@@ -397,6 +400,20 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     try { decoded = decodeURIComponent(rawPath); } catch { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
     if (!decoded.startsWith('/') || decoded.includes('\0') || decoded.includes('\\')) {
       sendError(req, res, 400, '请求地址无效 · Bad request');
+      return;
+    }
+    if (decoded.toLowerCase() === '/data/' + RESOURCE_MANIFEST_FILE) {
+      try {
+        const idx = await resources.get();
+        const gz = acceptsGzip(req.headers['accept-encoding']);
+        const body = gz ? idx.gzip : idx.body;
+        const etag = '"resources-' + idx.manifest.version + (gz ? '-gz' : '') + '"';
+        const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', ETag: etag, Vary: 'Accept-Encoding' };
+        if (gz) headers['Content-Encoding'] = 'gzip';
+        if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return; }
+        headers['Content-Length'] = body.length;
+        res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : body);
+      } catch (err) { log.error('[resources] manifest failed', err); sendError(req, res, 500, '无法生成资源清单'); }
       return;
     }
     let versioned = false;

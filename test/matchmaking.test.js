@@ -72,6 +72,21 @@ test('public ping is CORS-readable and creates no sessions', async (t) => {
   assert.equal(await response.text(), ''); assert.equal(server.registry.size, 0);
 });
 
+test('taking an upstream spectator seat removes the player from matchmaking', async (t) => {
+  const { server, player } = await fixture(t);
+  const watcher = await player(), host = await player();
+  await join(watcher);
+  await host.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+  const room = server.lobby.roomOf(server.registry.byId(host.id));
+  assert.equal((await watcher.request({ t: 'room.spectate', code: room.code })).t, 'ok');
+  assert.equal(server.lobby.matchmaking.entries.size, 0);
+  assert.equal(room.spectators[0].playerId, watcher.id);
+  assert.equal(room.seats.some((s) => s?.playerId === watcher.id), false);
+  assert.equal((await watcher.request({ t: 'matchmaking.join', difficulty: 'NORMAL' })).code, 'ALREADY');
+  assert.equal((await watcher.request({ t: 'room.leave' })).t, 'ok');
+  assert.equal(room.spectators.length, 0);
+});
+
 test('a guest network at its match limit cannot bypass the cap through another host', async (t) => {
   const { server, player } = await fixture(t, { maxMatchesPerAddr: 1 });
   const active = await player(); server.registry.byId(active.id).limitKey = 'guest-network';

@@ -25,7 +25,7 @@ Unknown options or a missing option value are errors (exit code 2); `--refresh` 
   Integrity errors (see §17) make the exit code 1 **and leave the previous output untouched** (unless `--force`);
   warnings never do. Each output file is written atomically (temp file + rename).
 - **Determinism.** Same inputs ⇒ byte-identical outputs (stable key order, no timestamps, no randomness).
-- **Size.** ≈3.5 MB total (limit 6 MB; `chess.json` ≈1.65 MB with the loadout choices), compact JSON (no indentation).
+- **Size.** ≈3.7 MB total (limit 6 MB; `chess.json` ≈1.69 MB with the loadout choices, `backups.json` ≈0.17 MB), compact JSON (no indentation).
 - **Derived paths.** `stages.json groundPaths*` come from the sim's own `server/sim/grid.js` pathing: a change there
   needs a rebuild (the offline-rebuild test catches a stale `data/`).
 
@@ -146,6 +146,7 @@ Top level: `{ season, seasonName, modes, economy, lpCapPerRound, bossOvertimeAft
 | `identifier`, `shopSortId` | `133`, `1` | official ordering |
 | `isHidden`, `isDiy`, `visible` | | `visible = !isHidden && !isDiy` (only visible chess enter the shop pool) |
 | `chessType` | `"PRESET"` | `PRESET` / `NORMAL` / `DIY` |
+| `backup` | `{"charId":"char_611_acnipe","tmplId":null,"skillIndex":2,"uniEquipId":"uniequip_002_acnipe","potRank":0}` (`chess_char_5_22_a/_b`, 妮芙) | the shop row's official stand-in fields, verbatim (`backupCharId`, `backupTmplId`, `backupCharSkillIndex`, `backupCharUniEquipId`, `backupCharPotRank`), the same on both forms: PRESET (特许) = itself, NORMAL = the 补位 stand-in fielded when the player does not own the operator (§18), DIY = none (`charId` null). The current match ignores it (every chess fields its real operator) |
 | `charId` | `"char_498_inside"` | operator (null for DIY) |
 | `name`, `appellation` | `"隐现"`, `"Insider"` | |
 | `rarity` | `5` | stars 1–6 |
@@ -239,7 +240,7 @@ everything needed to resolve a unit for `(chessId, skillIndex, moduleId)` (`simd
 | Field | Example (`deputShip`) | Meaning |
 |---|---|---|
 | `bondId`, `name`, `identifier` | `"deputShip"`, `"助力"`, `14` | |
-| `isCore`, `bondType`, `bondOrder`, `powerIdList` | `false`, `"REGULAR"`, `2`, `[]` | core = `isPower` (SEASON); `powerIdList` = nation/group ids for DIY bond derivation |
+| `isCore`, `bondType`, `bondOrder`, `powerIdList` | `false`, `"REGULAR"`, `2`, `[]` | core = `isPower` (SEASON); `powerIdList` = nation/group/team ids for DIY bond derivation (`backups.json diy.operators[*].bonds`, §18) |
 | `iconId` | `"icon_deputShip"` | |
 | `activeCount` | `2` | official activation count |
 | `thresholds` | `[2,3]` | ascending member counts that raise the tier (tier = number of thresholds reached). yan `[3,6,9]`, egir `[3,5]`, sunt `[2,5]`, solo `[1]` |
@@ -487,7 +488,8 @@ Glyph legend (`rows`):
    `…_eagle1/3` stay listed (`sources:["display"]`, belong to S1/S3). With another skill selected (DESIGN §16) the
    talent follows that skill's eagle (`simdata loadoutRecord`; `variants[o].bySkill[i].sources`).
 2. **DIY chess** (`chess_char_5_diy1/2`, `chess_char_6_diy1/2`, `_a` and `_b` = 8 records): no `charId`, no stats/skill; `visible:false`,
-   name placeholder `甄选干员`. Out of scope for v1.
+   name placeholder `甄选干员`, not in the shop. Their picks and bond rule are in `backups.json diy` (§18); the gameplay
+   is not implemented yet.
 3. **Module-less chess**: 蒂比 (`chess_char_2_13`) and 凛御银灰 (`chess_char_5_14`) have no module; their golden
    record has `module:{id:null,active:false}` and no module stat bonus.
 4. **Hidden chess (17)** are kept with `visible:false`; several operators exist in two tiers with one hidden
@@ -542,12 +544,16 @@ Glyph legend (`rows`):
 
 ## 16. Counts (current build)
 
-`chess 266 (112 visible; 283 selectable skills over the visible chess, 184 module choices over 129 goldens)`, `bonds 23`, `garrisons 249 (43 effect keys)`, `items 115`, `bands 40`, `effects 361`,
+`chess 266 (112 visible; 283 selectable skills over the visible chess, 184 module choices over 129 goldens; 74 PRESET / 55 NORMAL / 4 DIY base chess)`, `bonds 23`, `garrisons 249 (43 effect keys)`, `items 115`, `bands 40`, `effects 361`,
 `enemies 249`, `factions 67 entries`, `waves 38`, `stages 11 (8 active)`, `bosses 10`, `tokens 22`, `choice events 109`,
-`bounty cards 129`, `tactic cards 43`.
+`bounty cards 129`, `tactic cards 43`, `backups: 17 stand-in units (43 forms), 4 DIY slots, 15 / 9 prototype picks (tier 5 / 6), 78 owned-6★ picks`.
 
 ## 17. Integrity guarantees (checked by the builder and `test/data.test.js`)
 
+Every PRESET chess is its own backup and the stand-in builder gives it back field for field (§18); every NORMAL chess
+(both forms) composes into its stand-in with an unlocked backup skill and, on the elite form, its module at that level;
+every DIY prototype pick has a form for both slot statuses; derived DIY bonds exist (`test/backups.test.js` also
+re-derives the backup fields, the stand-in numbers and the faction ids from the raw tables).
 Chess bonds/garrisons/tokens/base/golden ids resolve; talent tokens are in `chess.tokens`; every non-DIY chess has
 `skills[]` with exactly one default equal to `skill` (and every skill token listed in `chess.tokens`); golden module
 choices are consistent (one default iff `module.active`, base fields present; composing the default reproduces the
@@ -566,3 +572,61 @@ generator and preview zones on the raw level files for every mode × round × te
 included) × allowed entry, and `test/sim/pathing-crosscheck.test.js` re-implements the client SPFA + smoothing over the
 whole map for every walkable tile of the normal / 联防 / boss fields of the 8 stages (extended by the road-over-floor
 preference; against the pure official algorithm: identical route lengths, never more non-blockable tiles crossed).
+
+## 18. `backups.json` — 补位 stand-ins and 自选 (DIY) data — `{ units, diy }`
+
+The data of two official features whose gameplay is not implemented yet (DESIGN 0.2.0 draft): **补位** — a NORMAL chess
+whose operator the player does not own is fielded as its official stand-in (原型干员) — and **自选编队** — two tier-5 and
+two tier-6 DIY slots, each filled with a 6★ the player owns or a prototype. Built by `tools/build-data.mjs buildBackups`;
+`shared/standIn.js` composes it into chess-shaped records. The rules in the data (activity_table act2autochess
+`charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约 下半/PRTS盟约记录):
+
+- PRESET (74, 特许干员) always fields the real operator (`backup.charId` = itself); NORMAL (55) names one of 17 stand-ins —
+  the 4★ 预备干员 `char_600–607`, the 6★ `char_608–615` and 领主·Sharp `char_617` (the "其它分支"); DIY (4) has none.
+- A stand-in keeps the chess's bonds, 特质, tier, price, merge and status (the elite form uses the same backup at the
+  elite row) and fights as `backup.charId` at that status with skill `backup.skillIndex` (fixed by the chess: the same
+  character takes S2 on one chess and S3 on another), module `backup.uniEquipId` (null at tiers 3–4 and for every 4★, so
+  even their elite form has none) and potential 0 (`potRank` 0 on all 55).
+
+`units[charId]` — the 17 stand-ins (no unit for a PRESET or DIY chess):
+
+| Field | Example (`char_611_acnipe`) | Meaning |
+|---|---|---|
+| `charId`, `name`, `appellation`, `rarity`, `profession`, `subProfessionId`, `subProfessionName`, `position`, `nationId`, `isNotObtainable` | `"char_611_acnipe"`, `"Stormeye"`, `"Stormeye"`, `6`, `"SNIPER"`, `"fastshot"`, `"速射手"`, `"RANGED"`, `null`, `true` | as on a chess record |
+| `assets` | `{"avatar":"char_611_acnipe","avatarGolden":"char_611_acnipe","portrait":"char_611_acnipe_1","portraitGolden":"char_611_acnipe_1","spine":"char_611_acnipe","subProfIcon":"sub_fastshot_icon"}` | art ids (URLs in `data/assets.json`, which already carries all 17); the elite form takes the E2 art when it exists — only 领主·Sharp has it |
+| `moduleNames` | `{"uniequip_001_acnipe":{"name":"Stormeye证章","typeName":"ORIGINAL"},"uniequip_002_acnipe":{"name":"Stormeye证章","typeName":"MAR-X"}}` | every module of the character (a composed record names its module on the normal form too) |
+| `standsIn[]` | `["chess_char_3_21_a","chess_char_4_02_a","chess_char_5_18_a","chess_char_5_22_a","chess_char_6_01_a","chess_char_6_05_a"]` | the NORMAL base chess it replaces |
+| `forms[statusKey]` | keys `"2/1/4/0"`, `"2/60/7/1"`, `"2/60/7/3"` | the character at every status it fights at — of the chess it stands in for and of the DIY slots it may fill (`statusKey(status)` = `phase/level/skillLevel/equipLevel`): 3 forms per 6★, 2 per 4★ |
+
+A **form** holds the operator fields of a chess record with **nothing selected**: `status`; `stats`, `trait`, `talents`
+**without** a module; `immunities`, `rangeId`, `rangeGrid`, `dmgType`, `attackKind`, `projectile`, `canHitFly`,
+`targetPriority`; `skills[]` — every skill unlocked at the status, at its skill level, `trigger` resolved per skill, no
+`isDefault`; `displayTokens` / `tokens` (summons — none of the 17 has one); at `equipLevel > 0` `modules[]` (§2.2 shape
+without `isDefault`). `buildUnitForm` uses buildChess's helpers and rules, and the build fails when `buildUnitForm` +
+`composeUnitRecord` do not give back every PRESET chess field for field (each is its own backup), so a later change to
+buildChess that the stand-ins would miss stops the build. No trigger deviation (§2.2, DESIGN §21.29) applies to a form —
+the deviations name chess, so the 重装 stand-ins (预备干员-重装, Mechanist) keep the official `TAKE_DAMAGE` row.
+
+**Composition** (`shared/standIn.js`, pure ESM for the server, the sim and the client): `standInRecord(chess, backups)` is
+the NORMAL chess as its stand-in — `IDENTITY_FIELDS` (ids, tier, `isHidden` / `visible`, `chessType`, `backup`, `bonds`,
+`garrisonIds`, prices, merge, `status`) from the chess, every other field from the unit's form at the chess's status
+with `backup.skillIndex` / `backup.uniEquipId` as the defaults, plus `standInFor` (the replaced charId: the official 补位
+mark on the avatar). The result is shaped exactly like a chess record (`skill` = the `isDefault` entry of `skills[]`;
+elite `statsBase` / `traitBase` / `talentsBase` / `modules[]`), so `normalizeChess`, `resolveLoadout` (no loadout ⇒ the
+backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DIY chess. **Kits are keyed by base chess
+id** (`server/sim/content/index.js setupUnitKit`): a stand-in keeps the chess's ids, so its kit must be found by its
+`charId`. `diyRecord(slot, charId, backups, { skillIndex, moduleId })` fills a DIY slot with a prototype (the slot's
+tier and price, no 特质, the pick's derived bonds); which skill a prototype carries in a slot is not in the data.
+
+`diy`:
+
+| Field | Example | Meaning |
+|---|---|---|
+| `slots[slotId]` | `{"tier":5,"goldenId":"chess_char_5_diy1_b","shopLevel":5,"requirement":"TIER_6"}` | the four DIY chess `chess_char_5_diy1/2_a`, `chess_char_6_diy1/2_a` (chess.json: price 4, sell 1, `diyRequirement`, empty `bonds` / `garrisonIds`); `shopLevel` = the 调度中心 level whose `shopLevelDisplayDataDict.charChessDiySlotIdList` lists the slot |
+| `prototypes[tier]` | `{"5":[…15],"6":[…9]}` | the legal prototype picks: the nine 6★ at both tiers, at tier 5 also the six 4★ that are not 先锋 / 特种 ("第5阶可额外从6名四星原型干员（先锋、特种职业除外）中选取"; `DIY_EXTRA_PROTOTYPES`). A prototype may fill a tier-5 and a tier-6 slot ("原型干员可于5、6阶之间重复选取") |
+| `ownedPool[]` | 78 charIds | the owned 6★ a player may slot: obtainable, rarity = the requirement, and no chess names it — hidden chess included ("不可甄选加入已在名单中的固定干员"); each at most once per roster ("玩家已拥有干员不可重复选取"). The data does not exclude collab operators |
+| `operators[charId]` | `{"name":"煌","rarity":6,"profession":"WARRIOR","subProfessionId":"centurion","obtainable":true,"powers":["rhodes","elite","yan","victoria"],"bonds":["yanShip","victoriaShip"]}` | every pick (owned pool + prototypes): `powers` = the `nationId` / `groupId` / `teamId` of `mainPower` and of every `subPower` (隐藏势力); `bonds` = the core bonds whose `powerIdList` meets them — one or several — else `economy.fallbackBondId` 协防干员 ("甄选加入的干员会根据其实际阵营所属分配核心盟约，若没有可匹配的则改为分配协防干员盟约"); every prototype gets `["emptyShip"]` |
+
+Not in this data (the gameplay workstreams): a player's ownership roster, 助战 borrows (`borrowCount` 20), DIY stock, the
+owned-operator training bonus (`prepareStateDict`), forms and kits of owned 6★ picks (the same `buildUnitForm` builds
+them once kits exist).

@@ -28,6 +28,10 @@
 //   matches  16 bot-only matches (solo 标准 / 险境 / 绝境 / 终极 ×2 seeds, co-op 2 / 3 / 4, one server-run combat match,
 //            two with LP and layers raised at the first prep so they reach the Hidden Core) run to the end in virtual
 //            time with the match's default bot rehearsal
+//   diy      自选 pieces (PlayerBattleInput `diy`, shared/diy.js): every owned 6★ with an operator kit (kits/index.js
+//            OPERATOR_KITS) in each form of tiers 5 and 6 — normal, elite with no module and with each module — under
+//            each of its skills, then every prototype pick with a kit at its locked selection, both forms of each tier;
+//            12 pieces per battle on a real stage against the round's real wave three times over (diyScenarios)
 // Battles run through the production BattleSpec path (server/sim/spec.js buildBattleSpec → createBattleFromSpec, the
 // path browsers and the server's headless fields use) with every option explicit; matches construct Match directly
 // with a VirtualScheduler (as tools/botbench.mjs) — test-harness defaults never move a digest.
@@ -64,11 +68,14 @@ import { computeBonds, bondSnapshot } from '../server/match/bondsMeta.js';
 import { Match } from '../server/match/Match.js';
 import { VirtualScheduler } from '../server/match/scheduler.js';
 import { resolveRecordLoadout, loadoutRecord, attackRangeGrid } from '../shared/loadoutRecord.js';
+import { diyRecordOf, DIY_TIERS } from '../shared/diy.js';
+import { unitForm } from '../shared/standIn.js';
+import { OPERATOR_KITS, KITTED_CHARS } from '../server/sim/content/kits/index.js';
 import { GEO } from '../shared/constants.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GOLDEN_DIR = join(ROOT, 'test', 'golden');
-export const FAMILY_NAMES = Object.freeze(['roster', 'bonds', 'fields', 'matches']);
+export const FAMILY_NAMES = Object.freeze(['roster', 'bonds', 'fields', 'matches', 'diy']);
 
 const QUIET = Object.freeze({ warn() {}, error() {}, info() {}, log() {}, debug() {} });
 const data = getData({ log: QUIET });
@@ -731,14 +738,136 @@ export function runMatch(cfg) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// family: diy (自选 pieces: a DIY slot fielded with its `diy` pick — simdata getDiy, shared/diy.js)
+
+const DIY_SLOTS = data.backups?.diy?.slots ?? {};
+/** The slot record of a tier's first slot, normal or elite (the forms every slot of the tier shares). */
+const diySlotRec = (tier, elite) => {
+  const base = Object.keys(DIY_SLOTS).find((id) => DIY_SLOTS[id].tier === tier);
+  return base ? data.chess[elite ? DIY_SLOTS[base].goldenId : base] : null;
+};
+
+/**
+ * The 自选 configurations of the corpus, in a fixed order: every owned 6★ with an operator kit (OPERATOR_KITS, file
+ * order) in each form of both tiers — normal (no module: none is active), elite with no module and with each module of
+ * the form — under each skill; then every prototype pick with a kit (KITTED_CHARS: its stand-in kit, a 预备干员's generic
+ * kit) at its locked selection, normal and elite, per tier. `{ tier, elite, pick, group }`.
+ */
+function diyConfigs() {
+  const diy = data.backups?.diy;
+  if (!diy) return [];
+  const out = [];
+  for (const charId of Object.keys(OPERATOR_KITS)) {
+    if (!diy.ownedPool.includes(charId)) continue;
+    for (const tier of DIY_TIERS) {
+      for (const elite of [false, true]) {
+        const form = unitForm(data.backups, charId, diySlotRec(tier, elite)?.status);
+        if (!form) continue;
+        for (const uniEquipId of elite ? [null, ...(form.modules ?? []).map((m) => m.uniEquipId)] : [null]) {
+          for (const s of form.skills) out.push({ tier, elite, pick: { charId, skillIndex: s.index, uniEquipId }, group: 'operator' });
+        }
+      }
+    }
+  }
+  for (const tier of DIY_TIERS) {
+    for (const charId of diy.prototypes?.[tier] ?? []) {
+      if (!KITTED_CHARS.includes(charId)) continue;
+      for (const elite of [false, true]) out.push({ tier, elite, pick: { charId }, group: 'prototype' });
+    }
+  }
+  return out;
+}
+
+/**
+ * Lay 自选 pieces on a player's board like `layout` (melee — most blockers first — on the deployable tiles the enemy
+ * ground paths cross most, ranged ones beside the paths, every 7th one facing UP / LEFT / DOWN), their class read from
+ * the composed record (`w.rec`, shared/diy.js diyRecordOf). No summons are placed (the 自选 hand pieces come with the
+ * per-player shop).
+ */
+function diyLayout(stageId, wanted) {
+  const map = buildDeployMap(data.stages[stageId], { field: 'normal' });
+  const traffic = pathTraffic(stageId, 'normal', 0);
+  const pathList = [...traffic.keys()].map((k) => k.split(',').map(Number));
+  const dist = (r, c) => (pathList.length ? Math.min(...pathList.map(([pr, pc]) => Math.max(Math.abs(pr - r), Math.abs(pc - c)))) : 9);
+  const used = new Set();
+  const tiles = (cls) => {
+    const out = [];
+    for (let r = 12; r >= 9; r--) for (let c = 2; c <= 10; c++) if (!used.has(tileKey(r, c)) && canPlace(map, cls, r, c)) out.push([r, c]);
+    if (cls === 'melee') return out.sort((a, b) => (traffic.get(tileKey(b[0], b[1])) || 0) - (traffic.get(tileKey(a[0], a[1])) || 0));
+    const rank = (r, c) => { const d = dist(r, c); return d === 0 ? 1.5 : d; };
+    return out.sort((a, b) => rank(a[0], a[1]) - rank(b[0], b[1]));
+  };
+  const cls = (w) => positionClass(w.rec, w.diy.uniEquipId ?? null);
+  const order = wanted.slice().sort((a, b) => ((cls(b) === 'melee') - (cls(a) === 'melee')) || (cls(a) === 'melee' ? (b.rec.stats.blockCnt || 0) - (a.rec.stats.blockCnt || 0) : 0));
+  const units = [];
+  let uid = 1;
+  for (const w of order) {
+    const free = tiles(cls(w));
+    if (!free.length) continue;
+    const [r, c] = free[0];
+    used.add(tileKey(r, c));
+    const dir = units.length % 7 === 6 ? ['UP', 'LEFT', 'DOWN'][Math.floor(units.length / 7) % 3] : 'RIGHT';
+    units.push({ uid: uid++, kind: 'chess', chessId: w.chessId, diy: { ...w.diy }, row: r, col: c, dir, items: [] });
+  }
+  return units;
+}
+
+/**
+ * The diy family: the configurations (diyConfigs) 12 per battle, each on the next of its tier's two slots (the elite
+ * twin for an elite form); a real stage and mode in turn, the round of the strongest piece (BAND_ROUND), the round's
+ * real wave three times over, no bonds / items / band (the 自选 bonds come with the per-player roster). `pass` 0 = the
+ * first battle of each group (operator kits, prototypes): the fast subset.
+ */
+export function diyScenarios() {
+  const configs = diyConfigs();
+  const scenarios = [];
+  const firstOf = new Set();
+  for (let i = 0, n = 0; i < configs.length; i += 12, n++) {
+    const chunk = configs.slice(i, i + 12);
+    const stageId = STAGES[n % STAGES.length];
+    const modeId = ROSTER_MODES[n % ROSTER_MODES.length];
+    const gd = gdFor(modeId);
+    const turn = {};
+    const wanted = chunk.map((c) => {
+      const ids = Object.keys(DIY_SLOTS).filter((id) => DIY_SLOTS[id].tier === c.tier);
+      turn[c.tier] = (turn[c.tier] ?? -1) + 1;
+      const base = ids[turn[c.tier] % ids.length];
+      const chessId = c.elite ? DIY_SLOTS[base].goldenId : base;
+      const rec = diyRecordOf(data.chess[chessId], c.pick, data);
+      if (!rec) throw new Error(`diy: ${c.pick.charId} is no legal pick of ${chessId}`);
+      return { chessId, diy: c.pick, rec, band: c.tier + (c.elite ? 1 : 0) };
+    });
+    const units = diyLayout(stageId, wanted);
+    if (units.length !== wanted.length) throw new Error(`diy: ${wanted.length - units.length} pieces do not fit on ${stageId}`);
+    const round = BAND_ROUND[Math.max(...wanted.map((w) => w.band))];
+    const seed = deriveSeed(20261005, `diy:${n}`);
+    const wave = normalWave(gd, round, seed);
+    const pid = 'p1';
+    const groups = [...new Set(chunk.map((c) => c.group))];
+    const pass = groups.some((g) => !firstOf.has(g)) ? 0 : 1;
+    for (const g of groups) firstOf.add(g);
+    scenarios.push({
+      id: `diy-${String(n + 1).padStart(3, '0')}`, family: 'diy', kind: 'normal', modeId, round, stageId, seed, pass,
+      rect: { ...GEO.NORMAL_RECT }, timeLimit: wave.timeLimit, routes: wave.routes, waveId: wave.templateId, enemyOverrides: wave.overrides,
+      flags: { layerGainsEnabled: true, ...gd.dp },
+      players: [playerInput(pid, 0, units)],
+      spawns: [0, 1, 2].flatMap((k) => wave.spawns.map((s) => ({ ...s, time: s.time + k * Math.round(wave.timeLimit / 4), ownerPlayerId: pid }))),
+      about: `${units.map((u) => `${u.chessId.replace(/^chess_char_/, '')}=${u.diy.charId.replace(/^char_\d+_/, '')}${u.diy.skillIndex != null ? `/S${u.diy.skillIndex + 1}` : ''}${u.diy.uniEquipId ? `/${u.diy.uniEquipId.replace(/^uniequip_/, '')}` : ''}`).join(' ')}`,
+    });
+  }
+  return scenarios;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // families, fast subset, comparison
 
-const GENERATORS = { roster: rosterScenarios, bonds: bondScenarios, fields: fieldScenarios, matches: matchScenarios };
+const GENERATORS = { roster: rosterScenarios, bonds: bondScenarios, fields: fieldScenarios, matches: matchScenarios, diy: diyScenarios };
 const ABOUT = {
   roster: 'every visible chess record × every selectable skill / module, every stage, every non-leader enemy kind, items, bands, 机变 cards, map cards, placeable summons',
   bonds: 'every bond at its activation threshold (layers 1) and at its top tier (layers 999)',
   fields: 'Final Assault / Hidden Core leaders (pair + solo templates, shared pool, 200 s cap) and 联防 fields (1 / 2 helpers)',
   matches: 'bot-only matches run to the end in virtual time (solo ×4 difficulties ×2 seeds, co-op 2/3/4, one server-run, two boosted to the Hidden Core)',
+  diy: '自选 pieces: every kitted owned 6★ × form (tiers 5 / 6, normal / elite × module) × skill, every kitted prototype at its locked selection',
 };
 /**
  * The default test subset (GOLDEN_FULL=1 runs everything): the pass-0 roster battles (every chess record with its

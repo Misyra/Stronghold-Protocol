@@ -103,11 +103,15 @@ export class BattlePlayers {
     }
     // the unit's own loadout (DESIGN §16): an entry without loadout fields is the DEFAULT — never another player's
     // choice for the same chess id in a multi-player field (the per-battle data view maps id-only lookups); `standIn:
-    // true` fields the chess as its 补位 stand-in (simdata getStandIn: the stand-in's body, the chess's identity)
+    // true` fields the chess as its 补位 stand-in (simdata getStandIn: the stand-in's body, the chess's identity); `diy`
+    // fills a 自选 slot with its pick (simdata getDiy: the slot's identity, the operator's body, skill and module)
     const lo = { skillIndex: inp.skillIndex ?? null, moduleId: inp.moduleId ?? null };
     if (inp.standIn === true) lo.standIn = true;
+    if (inp.diy && typeof inp.diy === 'object') lo.diy = inp.diy;
     const def = this.data.getChess(inp.chessId, lo);
-    if (!def) { this.log(`unknown chess ${inp.chessId}`); return null; }
+    if (!def) { this.log(`unknown chess ${inp.chessId}${lo.diy ? ' (illegal 自选 pick)' : ''}`); return null; }
+    // a DIY slot has no body of its own (甄选干员): it fights only as a 自选 piece (its `diy` pick)
+    if (def.raw?.isDiy && !def.diyFor) { this.log(`自选 slot ${inp.chessId} without a pick`); return null; }
     const u = this._makeAlly(ps, def, 'op', r, c, { uid: inp.uid, dir });
     u.items = [...(inp.items ?? [])];
     u.carry = inp.carryState ?? null;

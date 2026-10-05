@@ -11,6 +11,9 @@
 //   kits[def.charId] (the stand-in's own, kits/ops/standin-<codename>.js), never the chess id's — that is the replaced
 //   operator's kit; without one, the generic kit plus the talents it can apply exactly (generic.js genericTalents).
 //   A stand-in has no default skill: its kit authors every skill it supports in `skills` (selectSkillSpec).
+//   自选 pieces (isDiyDef: the def of simdata getDiy — a DIY slot's ids, the picked operator's body) take their kit the
+//   same way: kits[def.charId] (an owned 6★'s kits/ops/op-<codename>.js, a prototype's standin-<codename>.js), else the
+//   generic kit plus genericTalents; no default skill either (the pick chooses any of the three).
 //   Operator loadouts (DESIGN §16): the def is resolved for the unit's selected skill / module (simdata getChess), so
 //   the kit receives `chess.skill` = the SELECTED skill record and `bb` = its blackboard (talents / trait / module of
 //   the selected module). Kit contract (backward compatible): `{ skill?, skills?: { [skillId]: SkillSpec }, talents,
@@ -60,21 +63,33 @@ export function isStandInDef(def) {
 }
 
 /**
- * The kit builder of an operator def in `reg` ({ [key]: (bb, chess, def) => Kit }), or undefined. A stand-in's kit is
- * keyed by its charId (`char_609_acguad`) and by nothing else: the chess id it keeps names the replaced operator's kit.
- * Any other def: baseId (`…_a`, data/SIM.md), the exact id, or the suffix-less id of DESIGN §5.6's example.
+ * Whether `def` is a 自选 piece: a DIY slot fielded with a picked operator's body (simdata getDiy — `diyFor` = the slot's
+ * base id, `charId` = the operator's).
+ */
+export function isDiyDef(def) {
+  return !!(def && def.diyFor && def.charId);
+}
+
+/** A def whose body is another character than its chess id names (补位 stand-in, 自选 piece): its kit is keyed by charId. */
+const isOtherBody = (def) => isStandInDef(def) || isDiyDef(def);
+
+/**
+ * The kit builder of an operator def in `reg` ({ [key]: (bb, chess, def) => Kit }), or undefined. A stand-in's and a
+ * 自选 piece's kit is keyed by its charId (`char_609_acguad`, `char_112_siege`) and by nothing else: the chess id it keeps
+ * names the replaced operator's kit (a DIY slot has none). Any other def: baseId (`…_a`, data/SIM.md), the exact id, or
+ * the suffix-less id of DESIGN §5.6's example.
  */
 export function kitOf(def, reg) {
   if (!def || !reg) return undefined;
-  if (isStandInDef(def)) return Object.prototype.hasOwnProperty.call(reg, def.charId) ? reg[def.charId] : undefined;
+  if (isOtherBody(def)) return Object.prototype.hasOwnProperty.call(reg, def.charId) ? reg[def.charId] : undefined;
   const bare = String(def.baseId ?? def.id ?? '').replace(/_[ab]$/, '');
   return reg[def.baseId] ?? reg[def.id] ?? reg[bare];
 }
 
-/** The generic kit of an operator def; a stand-in's also carries the talents generic.js can apply exactly. */
+/** The generic kit of an operator def; a stand-in's / 自选 piece's also carries the talents generic.js can apply exactly. */
 function fallbackKit(bb, raw, def) {
   const k = genericKit(bb, raw, def);
-  if (!isStandInDef(def)) return k;
+  if (!isOtherBody(def)) return k;
   const talents = genericTalents(def);
   return talents.length ? { ...k, talents: [...(k.talents ?? []), ...talents] } : k;
 }
@@ -102,7 +117,7 @@ export function setupUnitKit(battle, unit, mode = 'full') {
         const k = f(bb, raw, def);
         if (k) return selectSkillSpec(k, bb, raw, def);
       } catch (e) {
-        battle._handlerError(`kit:${isStandInDef(def) ? def.charId : def.baseId}`, unit, e);
+        battle._handlerError(`kit:${isOtherBody(def) ? def.charId : def.baseId}`, unit, e);
       }
     }
   }
@@ -120,15 +135,18 @@ function inputEntry(unit) {
 /**
  * The loadout `{ skillIndex, moduleId }` a unit's PlayerBattleInput entry gives; an entry without loadout fields means
  * the DEFAULT loadout (`{}`), never "whatever the data view maps this chess id to" (another player's choice in a
- * multi-player field). `standIn: true` rides along (补位: the stand-in def whatever the skill / module fields say).
- * Null when the unit has no input entry.
+ * multi-player field). `standIn: true` rides along (补位: the stand-in def whatever the skill / module fields say), as
+ * does `diy` (自选: the pick of a DIY slot's piece). Null when the unit has no input entry.
  */
 function inputLoadout(unit) {
   const x = inputEntry(unit);
   if (!x) return null;
-  const standIn = x.standIn === true ? { standIn: true } : null;
-  if (x.skillIndex == null && x.moduleId == null) return standIn ?? {};
-  return { skillIndex: x.skillIndex ?? null, moduleId: x.moduleId ?? null, ...standIn };
+  const extra = {
+    ...(x.standIn === true ? { standIn: true } : null),
+    ...(x.diy && typeof x.diy === 'object' ? { diy: x.diy } : null),
+  };
+  if (x.skillIndex == null && x.moduleId == null) return extra;
+  return { skillIndex: x.skillIndex ?? null, moduleId: x.moduleId ?? null, ...extra };
 }
 
 /** Put a def on a not-yet-deployed ally (the fields Battle._makeAlly takes from the def). */
@@ -179,9 +197,10 @@ const selectedSkillId = (def) => def?.skill?.id ?? def?.raw?.skill?.skillId ?? n
 
 /**
  * True when the def's selected skill is the chess's default skill (no loadout info ⇒ default). Never for a stand-in:
- * the skill it fields is the one its chess names (S2 on one chess, S3 on another), so its kit authors each in `skills`.
+ * the skill it fields is the one its chess names (S2 on one chess, S3 on another), so its kit authors each in `skills`;
+ * nor for a 自选 piece (the pick chooses any of its skills).
  */
-const skillIsDefault = (def) => !isStandInDef(def) && (!def?.loadout || def.loadout.skillIsDefault !== false);
+const skillIsDefault = (def) => !isOtherBody(def) && (!def?.loadout || def.loadout.skillIsDefault !== false);
 
 /**
  * The kit with the skill spec of the SELECTED skill (see header): `kit.skills[id]` → `kit.skill` (default skill only;

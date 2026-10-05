@@ -14,6 +14,14 @@
 // key, that charId. A stand-in keeps the ids of the chess it replaces, so content/index.js kitOf finds its kit by
 // `def.charId` only, never by the chess id (the replaced operator's kit). STANDIN_KITS is merged into KITS after every
 // tier group: the chess keys keep their order, and `char_…` keys never meet `chess_char_…` ones.
+//
+// 自选 operator kits (DATA.md §18, README.md "How to add an operator (自选)"): OPERATOR_KIT_FILES lists
+// `ops/op-<codename>.js`, one per owned-6★ pick of data/backups.json `diy.ownedPool` (codename = its charId without
+// `char_<n>_`: `op-siege.js` = 推进之王, char_112_siege), each registering exactly that charId and writing every skill under
+// `skills`. A 自选 piece keeps its DIY slot's ids, so kitOf finds its kit by `def.charId` — a prototype pick runs its
+// stand-in kit, a 4★ reserve the generic kit (GENERIC_KIT_CHARS). OPERATOR_KITS is merged after the stand-ins.
+// KITTED_CHARS = every character a 自选 pick may field with a faithful kit; an operator outside it is not offered
+// (shared/diy.js diyPool / validateDiyPicks `kitted`).
 
 export const KIT_FILES = Object.freeze([
   // tier 1
@@ -66,6 +74,19 @@ export const KIT_FILES = Object.freeze([
  */
 export const STANDIN_KIT_FILES = Object.freeze(['standin-acguad.js', 'standin-sharp2.js', 'standin-acspec.js', 'standin-acmedc.js', 'standin-acfend.js', 'standin-acpion.js', 'standin-acnipe.js', 'standin-accast.js', 'standin-acsupo.js']);
 
+/**
+ * The 自选 operator kit files (`ops/op-<codename>.js`, registry key = the operator's charId, an owned-6★ pick of
+ * data/backups.json; a new file is appended). An operator without a file is not offered as a 自选 pick (KITTED_CHARS).
+ */
+export const OPERATOR_KIT_FILES = Object.freeze([]);
+
+/**
+ * The 预备干员 whose every skill the generic kit covers exactly (冲锋号令, 攻击力 / 防御力 / 治疗强化, 战术咏唱, 一击即退 —
+ * test/content/standin.test.js): fielded with no kit file, as 补位 stand-ins and as tier-5 自选 picks.
+ */
+export const GENERIC_KIT_CHARS = Object.freeze(['char_600_cpione', 'char_601_cguard', 'char_602_cdfend', 'char_603_csnipe',
+  'char_604_ccast', 'char_605_cmedic', 'char_606_csuppo', 'char_607_cspec']);
+
 async function loadKitFile(file) {
   try {
     return await import(`./ops/${file}`);
@@ -77,6 +98,7 @@ async function loadKitFile(file) {
 
 const MODULES = await Promise.all(KIT_FILES.map((group) => Promise.all(group.map(loadKitFile))));
 const STANDIN_MODULES = await Promise.all(STANDIN_KIT_FILES.map(loadKitFile));
+const OPERATOR_MODULES = await Promise.all(OPERATOR_KIT_FILES.map(loadKitFile));
 const registryOf = (m) => (m && m.default && typeof m.default === 'object' ? m.default : {});
 
 /** The registry of each tier group (index 0 = tier 1): baseChessId → kit builder, in KIT_FILES order. */
@@ -85,5 +107,18 @@ export const TIER_KITS = Object.freeze(MODULES.map((group) => Object.assign({}, 
 /** The 补位 stand-in kits: stand-in charId → kit builder, in STANDIN_KIT_FILES order. */
 export const STANDIN_KITS = Object.freeze(Object.assign({}, ...STANDIN_MODULES.map(registryOf)));
 
-/** The merged kit registry: baseChessId → (bb, chess, def) => Kit, tier 1 … tier 6, then the stand-ins' charIds. */
-export const KITS = Object.freeze(Object.assign({}, ...TIER_KITS, STANDIN_KITS));
+/** The 自选 operator kits: owned-6★ charId → kit builder, in OPERATOR_KIT_FILES order. */
+export const OPERATOR_KITS = Object.freeze(Object.assign({}, ...OPERATOR_MODULES.map(registryOf)));
+
+/**
+ * The merged kit registry: baseChessId → (bb, chess, def) => Kit, tier 1 … tier 6, then the stand-ins' charIds, then
+ * the 自选 operators' charIds.
+ */
+export const KITS = Object.freeze(Object.assign({}, ...TIER_KITS, STANDIN_KITS, OPERATOR_KITS));
+
+/**
+ * Every character a 自选 pick may field with a faithful kit: the 预备干员 (GENERIC_KIT_CHARS), the stand-ins with a kit
+ * file and the operators of OPERATOR_KIT_FILES whose file loaded. The `kitted` option of shared/diy.js diyPool /
+ * validateDiyPicks.
+ */
+export const KITTED_CHARS = Object.freeze([...new Set([...GENERIC_KIT_CHARS, ...Object.keys(STANDIN_KITS), ...Object.keys(OPERATOR_KITS)])]);

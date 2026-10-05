@@ -17,7 +17,12 @@
 //                 path: the chess's ids / bonds / 特质 / tier, the stand-in's body, its kit by charId); the `_a` id is the
 //                 normal form, `_b` the elite, skill / module are the chess's backup selection. `standIn: { skillIndex?,
 //                 moduleId? }` fields it with another of the stand-in's skills / modules (a kit test of a skill no chess
-//                 names): the composed record (standInRec) replaces that chess id's record for the whole battle
+//                 names): the composed record (standInRec) replaces that chess id's record for the whole battle.
+//                 `{ diy: { slot, charId, skillIndex?, uniEquipId? }, elite?, row, col }` fields a 自选 piece — the
+//                 production path (simdata getChess(slotId, { diy }), shared/diy.js): `slot` = a DIY slot's base id
+//                 (`chess_char_5_diy1_a`) or its tier (5 / 6 ⇒ that tier's first slot), `elite` = its `_b` form (E2
+//                 Lv60, module stage 1 at tier 5 / 3 at tier 6); the operator's kit is KITS[charId]; a prototype may
+//                 omit skillIndex / uniEquipId (its locked ones)
 //   players       full PlayerBattleInput[] (overrides `units`)
 //   enemies       [{ key, time=0, route=0 | RouteSpec, pos?, count?, interval?, mods?, tag?, bounty?, sourcePlayerId? }]
 //   waveTemplate  wave id (data/waves.json) or template object → routes + spawns + timeLimit
@@ -179,6 +184,20 @@ function buildData(defs) {
   return new DataSource({ chess: defs.chess ?? {}, enemies: defs.enemies ?? {}, tokens: defs.tokens ?? {}, stages: defs.stages ?? {}, waves: defs.waves ?? {} }, getDefaultSource());
 }
 
+/**
+ * A harness `units[]` entry with `diy` → its PlayerBattleInput fields: `chessId` = the slot's normal or elite id, `diy` =
+ * the pick ({ charId, skillIndex, uniEquipId } as given). Other entries unchanged.
+ */
+function diyEntry(u, data = getDefaultSource()) {
+  if (!u || !u.diy || typeof u.diy !== 'object') return u;
+  const slots = data.rawBackups?.()?.diy?.slots ?? {};
+  const { slot, ...pick } = u.diy;
+  const base = typeof slot === 'number' ? Object.keys(slots).find((id) => slots[id].tier === slot) : slot;
+  if (!base || !slots[base]) throw new Error(`diy: unknown slot ${slot}`);
+  const { elite, ...rest } = u;
+  return { ...rest, chessId: elite ? slots[base].goldenId : base, diy: pick };
+}
+
 /** `units[].standIn` objects → the composed records for `defs.chess` (null when there are none). */
 function standInDefs(units) {
   let out = null;
@@ -225,7 +244,7 @@ export function makeBattle(opts = {}) {
   if (extraRoutes.length) routes = routes.concat(extraRoutes);
   const players = opts.players ?? [{
     playerId: 'p1', seat: 0, side: 'L', colOffset: 0,
-    units: (opts.units ?? []).map((u, i) => ({ uid: u.uid ?? i + 1, kind: u.kind ?? 'chess', ...u, ...(u.standIn ? { standIn: true } : null) })),
+    units: (opts.units ?? []).map((u, i) => ({ uid: u.uid ?? i + 1, kind: u.kind ?? 'chess', ...diyEntry(u), ...(u.standIn ? { standIn: true } : null) })),
     bonds: opts.bonds ?? {}, bandId: opts.bandId ?? null, playerEffects: opts.playerEffects ?? [],
   }];
   const hookNames = opts.hooks ?? ALL_HOOKS;

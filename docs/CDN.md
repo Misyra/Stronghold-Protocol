@@ -1,6 +1,6 @@
 # 国内站使用香港站的 Cloudflare 素材缓存
 
-香港站入口为 `https://game.misyra.com/play`；素材在 `https://game.misyra.com/assets/` 和 `/fonts/`，所以 CDN 基地址是 **`https://game.misyra.com`，不含 `/play`**。国内站保留现有 DNS、页面、代码、游戏数据、API 和 WebSocket，图片、Spine、音频、字体使用香港域名。主动资源预载尚未接入；后续预载应复用同一批素材 URL。
+香港站入口为 `https://game.misyra.com/play`；素材在 `https://game.misyra.com/assets/` 和 `/fonts/`，所以 CDN 基地址是 **`https://game.misyra.com`，不含 `/play`**。国内站保留现有 DNS、页面、代码、游戏数据、API 和 WebSocket，图片、Spine、音频、字体使用香港域名。浏览器预载已接入并复用这些素材 URL，使用方法见第 5 节。
 
 ## 1. 先配置香港站的跨域响应
 
@@ -20,6 +20,8 @@ curl -I -H 'Origin: https://你的国内站域名' https://game.misyra.com/fonts
 ```
 
 响应应包含 `Access-Control-Allow-Origin: *`。同一个请求再次到达边缘缓存时，可检查 `CF-Cache-Status: HIT`；浏览器自身缓存命中时不会重新请求 Cloudflare。
+
+2026-10-05 本地实测：游戏运行于 `http://localhost:3001`，CDN 指向真实香港域名，通过当前终端代理访问。香港 `/healthz` 仍报告 0.1.2、没有 `artVersion`；头像、Spine 骨骼和字体返回 HTTP 200、`server: cloudflare`，但没有跨域许可头，Edge 直接跨域 fetch 全部被 CORS 拦截。仅在本地测试浏览器中模拟添加素材的 `Access-Control-Allow-Origin: *`，使用真实 CF 返回的文件内容，6 个抽样文件（头像、骨骼、atlas、字体、字体 CSS、音频）全部预载成功；随后断网仍从 Service Worker 读到这 6 个文件。头像、骨骼和字体出现 `CF-Cache-Status: HIT`。该模拟没有修改香港站，也不代表线上跨域已经可用；当前仍需完成本节的香港站配置。这是代理环境下的兼容性检查，不是国内网络延迟测试。
 
 ## 2. 国内站启用 CDN
 

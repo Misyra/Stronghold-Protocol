@@ -44,7 +44,7 @@ const NODE_URL = 'https://nodejs.org/zh-cn/download';
 
 /** Data files the server expects (server/data.js DATA_FILES) + the emote catalogue used by the client. */
 export const DATA_FILES = ['config', 'chess', 'bonds', 'garrisons', 'items', 'bands', 'effects', 'choices',
-  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'emotes'];
+  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'backups', 'emotes'];
 /** Runtime packages that must be installed (package.json dependencies). */
 export const RUNTIME_PACKAGES = ['ws', 'pixi.js', 'pixi-spine', 'preact', 'htm'];
 /** Vendor files the client cannot run without (tools/vendor.mjs; three.js is optional there). */

@@ -2,7 +2,8 @@
 //
 // b.snap  = { fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total }
 // UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?,
-//   form?, skillIndex?, moduleId?, items? }  (form = the unit's current model form — an enemy's, content/enemies/helpers.js setForm:
+//   form?, skillIndex?, moduleId?, items?, standInFor? }  (standInFor = the replaced operator's charId of a 补位 stand-in;
+//   form = the unit's current model form — an enemy's, content/enemies/helpers.js setForm:
 //   掠海漂移体 'crawl', 暴鸰 'bombed', 转译基底·α's forms …; a 傀儡师 fighting as its 替身 'doll', professions.js — a view built
 //   after the change, a field opened mid-battle, draws it: render/units.js FORMS)
 //   dir = 'UP'|'RIGHT'|'DOWN'|'LEFT' (allies: the deploy direction, sim/dir.js); facing = its horizontal sign (±1).
@@ -51,6 +52,9 @@ export function unitInfo(u) {
     // an ally operator's equipped item ids (display: a 变形同构体 wearer counts for the bond it grants — the bond popup's
     // member list and the detail card's bond chips of a teammate's unit)
     items: u.side === 'ally' && u.kind === 'op' && Array.isArray(u.items) && u.items.length ? [...u.items] : undefined,
+    // 补位: the replaced operator's charId when the chess fights as its stand-in (spine / avatar are the stand-in's; the
+    // detail card composes the stand-in record, shared/standIn.js standInRecord)
+    standInFor: u.side === 'ally' && u.kind === 'op' && typeof d.standInFor === 'string' ? d.standInFor : undefined,
   };
 }
 

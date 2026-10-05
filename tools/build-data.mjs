@@ -461,6 +461,19 @@ const TRIGGER_DEVIATIONS = Object.freeze({
 });
 
 /**
+ * The same deviation for the 重装 stand-ins (补位 / 自选 prototypes, data/backups.json forms): the owner's decision of
+ * 2026-10-05 (the approved 补位 plan, handoff 0.2.0-补位方案 §一.5): 预备干员-重装 and Mechanist cast with an enemy in
+ * range — DEFAULT — instead of the TANK class row's TAKE_DAMAGE. Keyed by the stand-in's charId (a form belongs to no
+ * chess) and the skill id, every skill of both: a stand-in fields the skill its chess names and a prototype in a 自选
+ * slot follows the same rule. `rawRule` keeps TAKE_DAMAGE; validateAll fails the build when an entry no longer meets a
+ * TAKE_DAMAGE row on every form of its unit.
+ */
+const STANDIN_TRIGGER_DEVIATIONS = Object.freeze({
+  char_602_cdfend: { 'skcom_def_up[1]': 'DEFAULT', 'skcom_def_up[2]': 'DEFAULT', 'skcom_def_up[3]': 'DEFAULT' }, // 预备干员-重装 防御力强化 α/β/γ
+  char_610_acfend: { skchr_acfend_1: 'DEFAULT', skchr_acfend_2: 'DEFAULT', skchr_acfend_3: 'DEFAULT' },          // Mechanist S1 结构稳定 / S2 不变性原理 / S3 应力倒置
+});
+
+/**
  * Resolve the auto-cast rule of a skill record (PRTS 卫戍协议/帮助 §作战阶段 技能操作 — the official skill strategies;
  * DESIGN §5.6):
  * - charId rows first (exact skillIndex, or −1 = every skill of the operator);
@@ -473,13 +486,15 @@ const TRIGGER_DEVIATIONS = Object.freeze({
  * - else, for an operator's MANUAL skill with a 技能范围 (a rangeId that is not an attack-range change): SKILL_RANGE,
  *   "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能", customRangeGrid = the skill range;
  * - else DEFAULT (the basic strategy: ready + about to attack / heal);
- * - last, the deliberate deviations (TRIGGER_DEVIATIONS, per chess and skill): `rule` from the table, `rawRule` the
- *   official row (a SKILL_RANGE deviation takes the skill's own range as `customRangeGrid`).
+ * - last, the deliberate deviations (TRIGGER_DEVIATIONS, per chess and skill; STANDIN_TRIGGER_DEVIATIONS, per stand-in
+ *   unit and skill): `rule` from the table, `rawRule` the official row (a SKILL_RANGE deviation takes the skill's own
+ *   range as `customRangeGrid`).
  * @param {object} skill record from buildSkill (skillId, skillType, desc, rangeGrid)
- * @param {{operator?: boolean, chessId?: string}} opts operator = a chess (the 技能范围 strategy is written for 干员;
- *   summons keep DEFAULT); chessId = the chess's NORMAL id (TRIGGER_DEVIATIONS key)
+ * @param {{operator?: boolean, chessId?: string, unitCharId?: string}} opts operator = a chess (the 技能范围 strategy is
+ *   written for 干员; summons keep DEFAULT); chessId = the chess's NORMAL id (TRIGGER_DEVIATIONS key); unitCharId = the
+ *   character of a backups.json unit form (STANDIN_TRIGGER_DEVIATIONS key)
  */
-function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, chessId = null } = {}) {
+function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, chessId = null, unitCharId = null } = {}) {
   const rows = Object.values(ctx.ac.skillTriggerDataList || {});
   const manual = skill.skillType === 'MANUAL';
   const pick =
@@ -491,7 +506,8 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
     return { rule: 'SKILL_RANGE', rawRule: 'DEFAULT', customRangeGrid: skill.rangeGrid.map((p) => p.slice()) };
   }
   const rawRule = pick ? pick.skillTriggerType : 'DEFAULT';
-  const deviation = chessId ? TRIGGER_DEVIATIONS[chessId]?.[skill.skillId] : null;
+  const deviation = chessId ? TRIGGER_DEVIATIONS[chessId]?.[skill.skillId]
+    : unitCharId ? STANDIN_TRIGGER_DEVIATIONS[unitCharId]?.[skill.skillId] : null;
   if (deviation === 'SKILL_RANGE') {
     if (!skill.rangeGrid) warn(`trigger deviation ${chessId} ${skill.skillId}: SKILL_RANGE without a 技能范围`);
     return { rule: deviation, rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null };
@@ -1045,8 +1061,9 @@ function buildUnitHead(ctx, charId) {
  * trigger resolved per skill as for a chess), its summons, and at `equipLevel > 0` every ADVANCED module of that level.
  * The helpers and rules of buildChess; checkUnitFormParity proves the two agree on every PRESET chess.
  * @param {{ chessId?: string|null, skillIndex?: number|null }} [opts] `chessId`: the NORMAL chess id of a
- *   TRIGGER_DEVIATIONS entry (parity check only — a stand-in's form belongs to no chess, so no deviation applies);
- *   `skillIndex`: a skill listed even when locked (buildChess always lists the default)
+ *   TRIGGER_DEVIATIONS entry (parity check only — a stand-in's form belongs to no chess: its deviations are the
+ *   unit's, STANDIN_TRIGGER_DEVIATIONS by charId); `skillIndex`: a skill listed even when locked (buildChess always
+ *   lists the default)
  */
 function buildUnitForm(ctx, charId, status, { chessId = null, skillIndex = null } = {}) {
   const { charTable, uniequip, battleEquip } = ctx;
@@ -1063,7 +1080,7 @@ function buildUnitForm(ctx, charId, status, { chessId = null, skillIndex = null 
     if (!se?.skillId || (i !== skillIndex && !unlocked(se.unlockCond, phase, level))) return;
     const s = buildSkill(ctx, se.skillId, skillLevel, null, label);
     if (!s) return;
-    s.trigger = resolveTrigger(ctx, char, charId, i, s, { operator: true, chessId });
+    s.trigger = resolveTrigger(ctx, char, charId, i, s, { operator: true, chessId, unitCharId: chessId ? null : charId });
     s.index = i;
     s.overrideTokenKey = se.overrideTokenKey || null;
     skills.push(s);
@@ -3412,6 +3429,18 @@ function validateAll(f) {
       for (const p of backups.diy.prototypes[s.tier] || []) for (const rec of [slot, golden]) if (!unitForm(backups, p, rec.status)) err(`DIY slot ${rec.chessId}: prototype ${p} has no form ${statusKey(rec.status)}`);
     }
     for (const [id, o] of Object.entries(backups.diy.operators)) for (const b of o.bonds) if (!bonds[b]) err(`DIY pick ${id}: bond ${b} missing`);
+    // the 重装 stand-ins' deviations (STANDIN_TRIGGER_DEVIATIONS) still override an official TAKE_DAMAGE row, on every form
+    for (const [charId, skillsOf] of Object.entries(STANDIN_TRIGGER_DEVIATIONS)) {
+      const forms = Object.values(backups.units[charId]?.forms || {});
+      if (!forms.length) err(`stand-in trigger deviation ${charId}: no unit in backups.json`);
+      for (const [skillId, rule] of Object.entries(skillsOf)) {
+        for (const f of forms) {
+          const s = f.skills.find((x) => x.skillId === skillId);
+          if (!s) err(`stand-in trigger deviation ${charId}@${statusKey(f.status)}: no skill ${skillId}`);
+          else if (s.trigger.rawRule !== 'TAKE_DAMAGE' || s.trigger.rule !== rule) err(`stand-in trigger deviation ${charId}@${statusKey(f.status)} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
+        }
+      }
+    }
   }
   for (const b of Object.values(bonds)) {
     for (const m of b.members) if (!chess[m]) err(`bond ${b.bondId}: member ${m} missing`);

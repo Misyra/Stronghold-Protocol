@@ -863,6 +863,11 @@ Kit = {
 Keys: the data `baseId` (`chess_char_1_01_a`, also used for the elite `_b`), the exact chess id, or the suffix-less id of the
 DESIGN §5.6 example (`chess_char_1_01`) — all three are looked up.
 Missing kit ⇒ `content/generic.js` builds one from the blackboard (§7.4), so every chess always fights.
+补位 stand-ins (DATA.md §18; a PlayerBattleInput entry with `standIn: true` ⇒ the def of `getChess(chessId, { standIn:
+true })`, §12): the def keeps the chess's ids, so `content/index.js kitOf` looks the kit up by `def.charId` only — the
+stand-in's own, `kits/ops/standin-<codename>.js` registered under that charId (kits/README.md "Stand-in kits") — never
+by the chess id, which names the replaced operator's kit. A stand-in has no default skill: its kit authors each skill in
+`skills` (`skill` is ignored); without a kit it gets the generic kit plus `genericTalents(def)` (§7.4).
 Operator loadouts (DESIGN §16): the unit's def is `getChess(chessId, { skillIndex, moduleId })` of its PlayerBattleInput
 entry (no loadout fields = the default). The skill spec is `kit.skills[selectedSkillId]` when authored, else `kit.skill`
 only when the selected skill is the default one, else the GENERIC spec of the selected skill (its generic install is
@@ -947,7 +952,12 @@ whose skill "恢复…友方/友军…生命" heals the most injured ally in ran
 displacement by the official 力度 − 重量 rules (拖拽/hookmaster: `pullToFront`; else `push`, directional for 往攻击方向 / 朝部署方向 /
 向前 / 身前方向 and 推击手, radial otherwise — §6; only a fallback: hand-written kits follow the client templates
 `knockback[dir]` / `knockback[relative]`, e.g. 琳琅诗怀雅 S3's "向前推开" is radial). **Passive** skills only apply stat mods (timed when the text says "N秒内":
-宴 +65 % ATK for 14 s) and the self/counter effects — their scales describe procs that need a kit. Instant skills with
+宴 +65 % ATK for 14 s; for the skill's own `duration` from every deployment when an ON_DEPLOY passive says "部署后…" with no
+`duration` key — 一击即退, 10 s) and the self/counter effects — their scales describe procs that need a kit.
+"立即获得N点部署费用" + `cost` ⇒ +cost DP at the start (冲锋号令); such an AUTO skill with nothing else to do fires at full
+SP (`trigger: 'SP_FULL'`, as 德克萨斯's kit casts it). `genericTalents(def)` — for 补位 stand-ins without a kit only — applies
+every unconditional stat talent ("攻击力+8%", "防御力+10%", "攻击速度+9"; `statTalentMods`: only stat clauses whose numbers
+are the blackboard's) as a persistent `talent:generic:<i>` buff; any other talent is left to a kit. Instant skills with
 mods/targeting but no attack override apply them to the next attack (the skill range is switched in for that attack).
 
 ### 7.5 Worked examples (real operators, numbers from blackboards)
@@ -1182,7 +1192,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's hit cancelled by 限伤 — the renderer draws nothing;
   `extra.form` = the unit's model form from then on — an enemy's `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
   `['layer', playerId, bondId, n]` (n = the layers actually added, capped at 999), `['bounty', playerId, coins]`.
-- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items? }` (`skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
+- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items?, standInFor? }` (`standInFor`: a 补位 stand-in's replaced operator charId — `spine` / `avatar` / `name` are the stand-in's, DATA.md §18; `skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
   (`dir` = the unit direction, allies meaningful, enemies 'RIGHT'; `facing` = its horizontal sign for sprite flipping)
   (`spine`/`avatar` are asset ids from data).
 - flags: UF bits (blocked 1, stunned 2, frozen 4, stealth 8 — 隐匿 (an enemy's only while not blocked / revealed and not within 3 s of a block's end) or an ally's 迷彩 — skill 16, shield 32, invuln 64, cold 128, sleep 256, flying 512);
@@ -1218,7 +1228,10 @@ test/content/facing.test.js)
 or `players`; `enemies:
 [{ key, time, route (index | RouteSpec), pos, count, interval, mods, tag, bounty, sourcePlayerId }]` or `waveTemplate`
 (id or object ⇒ routes, spawns, time limit); `routes` (flat defaults: 0 walk low gate, 1 walk high gate, 2/3 fly);
-`timeLimit`; `content` (`'full'|'generic'|'none'`); `kits` (inject `{ baseId: kitFn }`); `defs: { chess, enemies, tokens }`
+`timeLimit`; `content` (`'full'|'generic'|'none'`); `kits` (inject `{ baseId: kitFn }`; a stand-in's by its charId); a unit's
+`standIn: true` fields a NORMAL chess as its 补位 stand-in (the production path, the chess's backup skill / module; `_a` =
+normal, `_b` = elite), `standIn: { skillIndex?, moduleId? }` another skill / module of it (the composed record `standInRec(chessId,
+sel)` replaces that chess's record for the battle; kits/README.md "How to test a stand-in kit"); `defs: { chess, enemies, tokens }`
 (extra/override records; build them with `chessRec({...})` / `enemyRec({...})`); `bonds`, `bandId`, `playerEffects`,
 `flags`, `sharedBoss`, `setup(battle)`, `hooks` (names to capture; `captureNoisy` to keep tick/hit/damaged/heal/spGain/
 attack contexts), `autoFinish` (default: true when enemies are scheduled).
@@ -1227,7 +1240,7 @@ Harness API: `battle`/`b`, `step(n)`, `run(seconds)`, `runUntil(pred | seconds, 
 `eventsOf(kind)` (client tuples), `hooks` / `hooksOf(name)` (captured ctx copies with `t`), `result()`, `snapshot()`,
 `invariants()`. `checkInvariants(b)` (no NaN, hp ∈ [0, maxHp], positions inside the rect, SP/charge bounds, finite skill
 timers, occupancy map in sync with deployed allies, block links, DP, finite projectiles and per-player result counters,
-no open hook emit between steps), `hashOf(v)`, `flatStage()`, `flatRoutes(kind)` are exported too.
+no open hook emit between steps), `hashOf(v)`, `flatStage()`, `flatRoutes(kind)`, `standInRec(chessId, sel)` are exported too.
 
 Soaks: `SIM_FUZZ_N=3000 SIM_FUZZ_CHECK_EVERY=3 node --test test/sim/fuzz.test.js` (random real battles) and
 `SIM_CHAOS_N=500 SIM_CHAOS_SEED=<n> node --test --test-name-pattern="chaos fuzz" test/sim/robustness.test.js` (content that
@@ -1270,6 +1283,13 @@ ownerLoadout)` = the summon for that owner loadout (`bySkill` / `byModule` merge
 per-battle view (`withUnitLoadouts`: id-only `getChess(id)` / `getToken(id, owner)` use the loadout the inputs give that
 chess id — the first player's when two players of one field differ, `view.loadoutConflicts`); Battle itself always passes
 the unit's own loadout (`_createAllyFromInput`, `tokenDef` / `spawnToken`, the dollkeeper substitute), so it is exact.
+补位 (DATA.md §18): `getChess(id, { standIn: true })` = `getStandIn(id)` — shared/standIn.js `standInRecord` of the chess over
+the source's `backups` (data/backups.json; `rawBackups()` follows the fallback chain), normalised: `id` / `baseId` / `golden` /
+`tier` / `bonds` / `raw.garrisonIds` of the chess, every combat field of the stand-in, `charId` the stand-in's, `standInFor`
+the replaced operator's, `loadout` the backup selection (`standIn: true`); its skill / module ignore the loadout's
+("对于补位干员其技能不可更改", shared/standIn.js). A PRESET / DIY chess or a source without backups (a browser that did not
+fetch backups.json) gives the chess's own def. A PlayerBattleInput entry carries it as `standIn: true` (spec.js keeps
+nothing else); the per-battle view maps id-only lookups of that chess id to the stand-in.
 Assumptions taken here (documented choices): element burst numbers for necrosis/apoptosis; unspawned enemies at timeout
 are dropped (not leaks); geek drain is non-lethal; tactician reinforcement stats; displacement is instantaneous (the official 失衡 slide over ≈ 0.4–1.2 s is not
 modelled — only its distance, `push` / `pull`); pushes PRTS does not classify use the 弹道 distance column (`PUSH_TILES`);

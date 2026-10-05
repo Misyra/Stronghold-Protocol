@@ -20,6 +20,8 @@
 // the default). createBattleFromSpec hands the Battle a per-battle data view (withUnitLoadouts) that resolves each
 // operator def — and its summons — for the loadout of its chess (simdata getChess(id, loadout) / getToken(id, owner,
 // ownerLoadout)); an explicit loadout argument always wins over the view's per-chess lookup.
+// 补位 (DATA.md §18): an operator entry with `standIn: true` (kept only when exactly `true`) is fielded as its chess's
+// stand-in (simdata getChess(id, { standIn: true }); its skill / module are the chess's backup selection).
 
 import { Battle } from './Battle.js';
 import { toDataSource, withUnitLoadouts } from './simdata.js';
@@ -76,11 +78,15 @@ export function buildBattleSpec(o = {}) {
 
 const LOADOUT_ID = /^[A-Za-z0-9_\-]{1,64}$/;
 
-/** Keep a unit's `skillIndex` / `moduleId` only when well-formed (the data layer checks legality). Mutates `u`. */
+/**
+ * Keep a unit's `skillIndex` / `moduleId` only when well-formed (the data layer checks legality) and `standIn` only
+ * when exactly `true` (补位). Mutates `u`.
+ */
 export function sanitizeUnitLoadout(u) {
   if ('skillIndex' in u && !(Number.isInteger(u.skillIndex) && u.skillIndex >= 0 && u.skillIndex <= 9)) delete u.skillIndex;
   if ('moduleId' in u && !(typeof u.moduleId === 'string' && LOADOUT_ID.test(u.moduleId))) delete u.moduleId;
-  if (u.kind === 'token') { delete u.skillIndex; delete u.moduleId; }
+  if ('standIn' in u && u.standIn !== true) delete u.standIn;
+  if (u.kind === 'token') { delete u.skillIndex; delete u.moduleId; delete u.standIn; }
   return u;
 }
 

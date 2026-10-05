@@ -2,8 +2,10 @@
 
 Owner: `tools/fetch-assets.mjs` and `tools/assets/*`. Research background: `docs/research/07-assets.md`.
 
-All art, Spine models and audio are **downloaded at install time**. They are never committed; `public/assets/` is git-ignored.
+Most art, Spine models and audio are **downloaded at install time** and git-ignored. This fork tracks `public/assets/local/` and `data/local-assets.json` so Git deployments include the official 3D board, HUD sprites and local-only enemy models. Game assets remain outside the GPL; see `NOTICE.md`.
 Everything the client needs is listed in **`data/assets.json`**. The client should only request URLs that appear in that manifest.
+
+The tracked local-client art was copied unchanged from the upstream [v0.1.3 complete release](https://github.com/sganggs/Stronghold-Protocol/releases/tag/v0.1.3), `Stronghold-Protocol-v0.1.3.zip` (SHA256: `165e55063971dc413fc184ad9185104357dfe4b8d51036f38da2848aaf61299e`). Only `public/assets/local/` and `data/local-assets.json` were extracted: 1,482 resource files plus the manifest, approximately 65 MiB. Keep both together when updating or deploying to the CDN host.
 
 ## Running
 
@@ -52,7 +54,7 @@ The first run downloads about **269 MiB in about 4,000 files** (it took 134 s on
 
 Outputs:
 - `data/assets.json`: the manifest (committed).
-- `public/assets/**`: art and audio (git-ignored).
+- `public/assets/**`: downloaded art and audio (git-ignored except the tracked `local/` directory).
 - `public/fonts/*`: fonts and `fonts.css`.
 - `.cache/assets-report.json`: misses, fallbacks and notes from the last run.
 - `.cache/spine-info.json`: skeleton parse cache.

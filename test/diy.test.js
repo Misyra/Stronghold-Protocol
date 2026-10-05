@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { diyPool, diySlot, diySlotIds, checkDiyPick, diyRecord, diyRecordOf, validateDiyPicks, lockedSelection, diyTokenOwner, DIY_TIERS } from '../shared/diy.js';
+import { diyPool, diySlot, diySlotIds, checkDiyPick, diyRecord, diyRecordOf, validateDiyPicks, lockedSelection, diyTokenOwner, isDiyModule, DIY_TIERS } from '../shared/diy.js';
 import { unitForm, composeUnitRecord } from '../shared/standIn.js';
 import { composeStats, composeTalents } from '../shared/loadoutRecord.js';
 import { normalizeChess, resolveLoadout, loadoutRecord } from '../server/sim/simdata.js';
@@ -29,7 +29,8 @@ test('slots: two per tier (5, 6), each with its elite twin', () => {
   assert.deepEqual(DIY_TIERS, [5, 6]);
   assert.deepEqual(diySlotIds(DATA), [T5, T5B, T6, T6B]);
   assert.deepEqual(diySlot('chess_char_6_diy2_b', DATA) && { ...diySlot('chess_char_6_diy2_b', DATA), normal: undefined, golden: undefined },
-    { baseId: T6B, goldenId: 'chess_char_6_diy2_b', tier: 6, elite: true, normal: undefined, golden: undefined });
+    { baseId: T6B, goldenId: 'chess_char_6_diy2_b', tier: 6, shopLevel: 6, elite: true, normal: undefined, golden: undefined });
+  assert.deepEqual([T5, T5B, T6, T6B].map((id) => diySlot(id, DATA).shopLevel), [5, 5, 6, 6], 'shopLevelDisplayDataDict: the 调度中心 level that lists the slot');
   assert.equal(diySlot('chess_char_5_01_a', DATA), null, 'not a slot');
   assert.equal(diyTokenOwner(SIEGE, chess.chess_char_6_diy1_b.status), 'char_112_siege@2/60/7/3');
 });
@@ -100,6 +101,21 @@ test('checkDiyPick: an owned 6★ chooses any of its 3 skills and any module of 
     ['chess_char_5_01_a', { charId: SIEGE, skillIndex: 0 }, /not a 自选 slot/],
   ];
   for (const [slot, pick, re] of bad) assert.match(checkDiyPick(slot, pick, DATA).error, re, JSON.stringify(pick));
+});
+
+test('checkDiyPick: an owned pick never carries a 集成战略 module (ISW-A) [ASSUMED, the owner\'s decision of 2026-10-05]', () => {
+  const backups = DATA.backups;
+  let checked = 0;
+  for (const charId of backups.diy.ownedPool) {
+    for (const [slot, key] of [[T5, '2/60/7/1'], [T6, '2/60/7/3']]) {
+      for (const mod of backups.units[charId].forms[key]?.modules ?? []) {
+        const c = checkDiyPick(slot, { charId, skillIndex: 0, uniEquipId: mod.uniEquipId }, DATA);
+        if (/^ISW-/.test(mod.typeName)) { assert.match(c.error || '', /集成战略 module/, `${charId} ${mod.uniEquipId}`); assert.equal(isDiyModule(mod), false); checked++; }
+        else assert.ok(c.ok, `${charId} ${mod.uniEquipId}: ${c.error}`);
+      }
+    }
+  }
+  assert.ok(checked >= 6, 'the ISW-A modules of the pool (凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮, 霍尔海雅) at both stages');
 });
 
 test('diyRecord: the slot\'s identity (tier, price, merge, status), no 特质, derived bonds, the operator\'s body at the slot form; module active on the elite only, stage 1 / 3', () => {

@@ -12,7 +12,8 @@
 // - no 特质 (PRTS "甄选加入的干员不会拥有任何特质"); bonds from the operator's factions (`diy.operators[id].bonds`);
 // - the normal form is E2 Lv1, skill rank 4, no module; the elite E2 Lv60, rank 7, its module at stage 1 (tier 5) or 3
 //   (tier 6) — the slot record's `status` (activity_table diyChessDict) picks the unit form;
-// - an owned pick chooses its skill (any of 3) and module (any of its modules, or none); a prototype carries the skill
+// - an owned pick chooses its skill (any of 3) and module (any of its modules but a 集成战略-only one — ISW-A, "在集成战略
+//   中…" [ASSUMED: not usable outside 集成战略, the owner's decision of 2026-10-05] — or none); a prototype carries the skill
 //   and module of its 补位 rows at that tier (`diy.locked`: "技能携带规则与系统补位时一致" — [ASSUMED] that reading, the
 //   owner's decision of 2026-10-05);
 // - potential 0 for everyone [ASSUMED: no account].
@@ -23,6 +24,20 @@ import { composeUnitRecord, unitForm, statusKey } from './standIn.js';
 
 /** The tiers that have 自选 slots. */
 export const DIY_TIERS = Object.freeze([5, 6]);
+
+/**
+ * Module types a 自选 pick never carries: the 集成战略 modules (ISW-A — their own effect applies only "在集成战略中")
+ * [ASSUMED: not usable outside 集成战略, the owner's decision of 2026-10-05].
+ */
+export const DIY_EXCLUDED_MODULE_TYPE = /^ISW-/;
+
+/**
+ * Whether a module of a unit form (`forms[k].modules[]` entry) may be picked for a 自选 piece (DIY_EXCLUDED_MODULE_TYPE).
+ * @param {any} mod
+ */
+export function isDiyModule(mod) {
+  return isObj(mod) && typeof mod.uniEquipId === 'string' && !DIY_EXCLUDED_MODULE_TYPE.test(String(mod.typeName ?? ''));
+}
 
 /**
  * @typedef {{ charId: string, skillIndex?: number|null, uniEquipId?: string|null }} DiyPick a 自选 pick: the operator,
@@ -160,9 +175,11 @@ export function checkDiyPick(slotId, pick, data) {
   }
   if (!forms.every((f) => (f.skills ?? []).some((s) => s && s.index === skillIndex))) return { error: `${charId}: no skill ${skillIndex}` };
   const elite = forms[1];
-  if (uniEquipId !== null && !(elite.modules ?? []).some((m) => m && m.uniEquipId === uniEquipId)) {
+  const mod = uniEquipId !== null ? (elite.modules ?? []).find((m) => m && m.uniEquipId === uniEquipId) : null;
+  if (uniEquipId !== null && !mod) {
     return { error: `${charId}: no module ${uniEquipId} at stage ${slot.golden?.status?.equipLevel ?? '?'}` };
   }
+  if (mod && !proto && !isDiyModule(mod)) return { error: `${charId}: ${uniEquipId} is a 集成战略 module (${mod.typeName})` };
   return { ok: true, pick: { charId, skillIndex, uniEquipId } };
 }
 

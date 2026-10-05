@@ -231,12 +231,14 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 ```bash
 # A) 构建时下载素材（需要联网，约 250 MB）
 docker build -t stronghold-protocol --build-arg FETCH_ASSETS=1 .
-docker run -d --name stronghold -p 3000:3000 --restart unless-stopped stronghold-protocol
+docker run -d --name stronghold -p 3000:3000 --restart unless-stopped \
+  -v stronghold-state:/app/.state stronghold-protocol
 
 # B) 不把素材打进镜像：先在宿主机运行 node tools/setup.mjs，然后挂载
 docker build -t stronghold-protocol .
 docker run -d --name stronghold -p 3000:3000 --restart unless-stopped \
-  -v "$PWD/public/assets:/app/public/assets:ro" stronghold-protocol
+  -v "$PWD/public/assets:/app/public/assets:ro" \
+  -v stronghold-state:/app/.state stronghold-protocol
 ```
 
 镜像基于 `node:22-alpine`，多阶段构建，只含生产依赖；`public/vendor` 在构建时生成。`.dockerignore` 排除了 `public/assets`（不会把宿主机素材打进构建上下文）；`public/fonts`、`data/assets.json` 和 `data/local-assets.json` 若存在会被复制进去。环境变量同 README（`-e SP_VERIFY=sample` 等）。健康检查：`GET /healthz`。
@@ -251,9 +253,15 @@ services:
       args: { FETCH_ASSETS: "1" }
     ports: ["3000:3000"]
     restart: unless-stopped
+    volumes: ["stronghold-state:/app/.state"]
+    stop_grace_period: 30s
     environment:
       SP_VERIFY: "off"
+volumes:
+  stronghold-state:
 ```
+
+启动默认启用服务端检查点。升级时保留状态目录或上面的持久卷，玩家可凭原身份恢复最近的安全阶段；配置、恢复范围和首次升级说明见 [PERSISTENCE.md](PERSISTENCE.md)。
 
 ## 4. macOS / Linux 常驻
 

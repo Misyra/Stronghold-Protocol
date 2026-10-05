@@ -1,3 +1,5 @@
+import { restoreMatch as applyMatchCheckpoint } from './match/snapshot.js';
+import { createRngFromState } from './sim/rng.js';
 // server/lobby.js — rooms, seats, host, AI seats, ready/start, reconnect, and room → Match wiring
 // (DESIGN §2, §6.1 LOBBY, §8.1). Implements the handler interface consumed by server/net.js.
 //
@@ -631,18 +633,96 @@ export class Lobby {
   // ---------------------------------------------------------------------------------------------------
 
   /** @param {Room} room @param {string | null} [key] per-network limit key of the starter */
-  startMatch(room, key = null) {
+  startMatch(room, key = null) { return this.startMatchWith(room, key, null); }
+
+// Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
+  restoreRooms(docs, { now = this.now() } = {}) {
+    const stats = { rooms: 0, seats: 0, droppedSeats: 0 };
+    for (const d of Array.isArray(docs) ? docs : []) {
+      if (!d || typeof d.code !== 'string' || d.code.length !== ROOM_CODE_LEN || this.rooms.has(d.code)) { stats.droppedSeats++; continue; }
+      const mode = d.mode === 'solo' ? 'solo' : 'coop';
+      const difficulty = typeof d.difficulty === 'string' && d.difficulty ? d.difficulty : 'NORMAL';
+      const room = new Room(d.code, mode, difficulty, now);
+      room.ownerKey = typeof d.ownerKey === 'string' ? d.ownerKey : null;
+      room.matchKey = typeof d.matchKey === 'string' ? d.matchKey : null;
+      room.matchCount = Number.isInteger(d.matchCount) && d.matchCount >= 0 ? d.matchCount : 0;
+      for (const s of Array.isArray(d.seats) ? d.seats : []) {
+        if (!s || typeof s.playerId !== 'string' || !Number.isInteger(s.seat) || s.seat < 0 || s.seat >= MAX_SEATS || room.seats[s.seat]) continue;
+        const isBot = !!s.isBot;
+        const left = !!s.left;
+        const session = isBot ? null : this.registry.byId(s.playerId);
+        if (!isBot && !left && !session) { stats.droppedSeats++; continue; }
+        room.seats[s.seat] = {
+          seat: s.seat,
+          playerId: s.playerId,
+          name: session?.name || (typeof s.name === 'string' && s.name ? s.name : '博士'),
+          isBot,
+          ready: !!s.ready,
+          connected: false,
+          left,
+          loadout: isBot ? null : (session?.loadout || (s.loadout && typeof s.loadout === 'object' ? s.loadout : null)),
+        };
+        stats.seats++;
+      }
+      if (room.activeHumans().length === 0) { stats.droppedSeats += room.seats.filter(Boolean).length; continue; }
+      for (const s of Array.isArray(d.spectators) ? d.spectators.slice(0, MAX_SPECTATORS) : []) {
+        const session = this.registry.byId(s?.playerId);
+        if (session && !room.seatOf(session.playerId) && !room.spectatorOf(session.playerId)) {
+          room.spectators.push({ playerId: session.playerId, name: session.name, connected: false });
+        }
+      }
+      room.lastSummary = d.lastSummary || null;
+      if (d.replay && Array.isArray(d.replay.frames) && Array.isArray(d.replay.pending)) {
+        room.replay = { publicFrame: d.replay.publicFrame || null, frames: new Map(d.replay.frames), pending: new Set(d.replay.pending) };
+      }
+      room.hostId = room.seatOf(d.hostId) ? d.hostId : null;
+      if (!room.hostId) this.migrateHost(room);
+      this.rooms.set(room.code, room);
+      stats.rooms++;
+      for (const s of room.seats) if (s && !s.isBot && !s.left && !s.connected) this.startGrace(room, s);
+      for (const s of room.spectators) this.startGrace(room, s);
+    }
+    if (stats.rooms) this.log.info(`[lobby] restored ${stats.rooms} room(s), ${stats.seats} seat(s)${stats.droppedSeats ? `, ${stats.droppedSeats} seat(s) dropped` : ''}`);
+    return stats;
+  }
+
+  /**
+   * Rebuild a running match from a checkpoint (server/match/snapshot.js). Every seat of the checkpoint must still be in
+   * the room; otherwise nothing is restored and the room stays in the lobby (the players simply start a new match).
+   * @param {Room} room @param {object} checkpoint
+   * @returns {boolean} true when the match runs again
+   */
+  restoreMatch(room, checkpoint) {
+    if (!room || room.disposed || room.match || !checkpoint || typeof checkpoint !== 'object') return false;
+    const players = Array.isArray(checkpoint.players) ? checkpoint.players : [];
+    if (players.length === 0) return false;
+    for (const p of players) {
+      if (!p || typeof p.playerId !== 'string' || !Number.isInteger(p.seat)) return false;
+      if (!room.seatOf(p.playerId)) return false;
+    }
+    const res = this.startMatchWith(room, room.matchKey, checkpoint);
+    return !(res && res.error);
+  }
+
+  startMatchWith(room, key, checkpoint) {
     const host = room.seatOf(room.hostId);
-    if (host) host.ready = true;
-    const seats = room.seats.filter(Boolean).map((s) => ({
-      seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, connected: s.connected,
-      // DESIGN §16: the human's checked operator loadout (bots fight with the defaults)
-      loadout: s.isBot ? null : s.loadout || null,
-    }));
+    if (host && !checkpoint) host.ready = true;
+    const seats = checkpoint
+      ? checkpoint.players.map((p) => ({
+        seat: p.seat, playerId: p.playerId, name: p.name, isBot: !!p.isBot, connected: false,
+        loadout: p.isBot ? null : (p.loadout || null),
+      }))
+      : room.seats.filter(Boolean).map((s) => ({
+        seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, connected: s.connected,
+        // DESIGN §16: the human's checked operator loadout (bots fight with the defaults)
+        loadout: s.isBot ? null : s.loadout || null,
+      }));
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
     const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, status: null, sharedResult: null, results: new Map() };
+    const matchNo = checkpoint ? Math.max(1, room.matchCount) : room.matchCount + 1;
     let seed = 0;
     try { seed = this.seedFn() >>> 0; } catch { seed = randomInt(2 ** 32); }
+    if (checkpoint && Number.isInteger(checkpoint.seed)) seed = checkpoint.seed >>> 0;
     try {
       const match = new this.MatchClass({
         roomCode: room.code,
@@ -654,7 +734,7 @@ export class Lobby {
         spectators: room.spectators.map((s) => s.playerId),
         seed,
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
-        matchNo: room.matchCount + 1,
+        matchNo,
         data: this.safeData(),
         workerPool: this.workerPool,
         log: this.log,
@@ -662,8 +742,25 @@ export class Lobby {
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),
         broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
+        onCheckpoint: (m) => this.onCheckpoint?.(room.code, m),
       });
       ctx.match = match;
+      if (checkpoint) {
+        if (!applyMatchCheckpoint(match, checkpoint, { createRngFromState, log: this.log })) {
+          this.log.warn(`[lobby] ${room.code} match checkpoint refused — the room stays in the lobby`);
+          this.disposeMatchCtx(ctx);
+          this.broadcastState(room);
+          return fail(ERR.INTERNAL, 'match checkpoint refused');
+        }
+        room.match = match;
+        room.matchCtx = ctx;
+        room.matchKey = key;
+        room.replay = null;
+        this.log.info(`[lobby] ${room.code} match #${room.matchCount} restored (${room.mode}/${room.difficulty}, round ${match.round}, ${match.phase})`);
+        this.broadcastState(room);
+        this.onCheckpoint?.(room.code, match);
+        return OK;
+      }
       room.match = match;
       room.matchCtx = ctx;
       room.matchKey = key;
@@ -672,6 +769,7 @@ export class Lobby {
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting (${room.mode}/${room.difficulty}, ${seats.length} seats, seed ${seed})`);
       this.broadcastState(room);
       match.start();
+      this.onCheckpoint?.(room.code, match);
     } catch (e) {
       this.log.error(`[lobby] ${room.code} match failed to start`, e);
       if (room.matchCtx === ctx) { room.match = null; room.matchCtx = null; room.matchKey = null; }
@@ -705,6 +803,7 @@ export class Lobby {
     if (!host || host.isBot || host.left) this.migrateHost(room);
     if (room.activeHumans().length === 0) this.disposeRoom(room, 'empty');
     else this.broadcastState(room);
+    this.onCheckpoint?.(room.code, null);
   }
 
   /** Match unicast; m.result frames are also kept for the replay. */

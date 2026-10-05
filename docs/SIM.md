@@ -680,7 +680,9 @@ PRTS 异常效果: 无法选择 effects "仅在选择时生效"); checked before
 with `ceil(final) ≥ BOSS_HIT_LIMIT` (300000, shared/constants.js) is cancelled whole: returns 0 before shields (阿利斯泰尔's
 `boss:vest` barrier stays untouched; a `hit`-step block such as 假想敌：再生's aura acts earlier) [ASSUMED order], no HP /
 pool loss, no credit or stats, no `dmg` event, no `damaged` / `fatal` / kill; an fx `hitCap` `{ id, n }` marks it and
-draws nothing; research 11) → shields (a typed one — buff `shieldType` — only for its damage type) → HP loss
+draws nothing; research 11) → shields (a typed one — buff `shieldType` — only for its damage type) → **`hpDamage`** (what
+passed the shields; a handler may only lower `amount` — the 伤判效果 that act after a barrier: 煌's 紧急除颤 HP floor, PRTS
+备注 "该伤害减少(伤害值-煌当前生命值+煌最大生命值×50%)点"; 左乐's 庇护 re-applied after his 行险 barrier; never for a 流失) → HP loss
 (boss units: routed to `sharedBoss.damage(playerId, amount)`; a pool left under 1 HP is emptied) → if HP ≤ 0: **`fatal`** (`ctx.prevented = true` keeps the
 unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `death`.
 
@@ -737,6 +739,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `hit` | `{ source, target, dmg, credit }` | before mitigation; mutate `dmg` (not fired for gauge fills — see `elementHit`). `source` may be null (terrain; 无来源 `dmg.sourceless` bursts, whose `credit` names the unit credited) |
 | `elementHit` | `{ source, target, dmg }` | before a gauge fill (`dmg.type === 'element'`); mutate `dmg.amount`/`dmg.mul`, set `dmg.cancel` |
 | `damaged` | `{ source, target, amount, type, dmg, credit }` | after application (`amount` may be 0 when shielded); element fills too (with their source); 无来源: `source` null, `credit` set |
+| `hpDamage` | `{ source, target, amount, dmg, credit }` | a damage instance after shields, before the HP loss (§4; not a 流失): lower `amount` only (a raise is ignored) — HP floors / reductions ordered after a barrier (kits/ops/op-huang.js, op-zuole.js) |
 | `heal` | `{ source, target, amount, opts }` | mutable `amount` |
 | `fatal` | `{ unit, source, credit, dmg, amount, prevented }` | HP would reach 0 — set `prevented` (substitutes, kit savers, 不死 / 复活 items, 埃芒加德; 不屈 is a `death` hook). Fired by every HP loss of a unit without a boss pool — hits of any type, element bursts, 无来源 damage, `loseHp` 流失. Order: kits' own savers (10 … −60) → items' 不死 (坚固维式重锤 — once per deployment: `items/battle.js deploymentOf`, a key every deploy changes and an in-place 复活 changes too; one battle-level hook holds the running windows (`holdsUndying`), so a window outlasts a lend, DESIGN §21.21 — the lock `PRIO_REVIVE` −100 after the substitutes (−100, registered first), the running windows `PRIO_UNDYING_HELD` −99 before them: a 傀儡师 holding 不死 does not switch, PRTS 分支特性信息 傀儡师 "未持有不死的情况下", DESIGN §22.11) → items' 复活 (M3茧甲, `PRIO_RESPAWN` −101: PRTS "复活" acts on a knock-out, which a 不死 prevents) → 埃芒加德 (−110); both 复活 revive in place and call `revivedInPlace` (a new deployment for the lock) |
 | `dollSwitch` | `{ unit, reason, done }` | content switches a 傀儡师 to its <替身> now (归溟幽灵鲨 S2 "技能结束后立刻切换为<替身>": no lethal HP loss); its trait does it unless it already is one or is not on the field, and sets `done` |

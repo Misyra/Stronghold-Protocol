@@ -95,6 +95,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-logos.js',
   'op-mantra.js',
   'op-veen.js',
+  'op-zuole.js',
+  'op-chyue.js',
+  'op-huang.js',
 ]);
 
 /**

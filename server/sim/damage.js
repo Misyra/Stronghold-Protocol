@@ -6,8 +6,9 @@
 //   → × source dmgDealtMul (× phys/artsDealtMul) × target dmgTakenMul (not for 元素伤害) × type-taken mul × dmg.mul
 //   → 限伤 (leaders in boss / hidden battles: a hit of ceil(final) ≥ BOSS_HIT_LIMIT is cancelled, see leaderHitCancelled)
 //   → shields (hit-negating barriers first, then HP shields; a typed one — buff `shieldType` — only its damage type)
-//   → HP loss (boss pool routing) → 'damaged' hook
-//   → SP-on-hurt / TAKE_DAMAGE trigger → fatal/kill.
+//   → 'hpDamage' hook (what passed the shields; handlers may only lower `amount`: the 伤判效果 that act after a
+//   barrier — 煌's 紧急除颤 HP floor, 左乐's 庇护 re-applied after his 行险 barrier) → HP loss (boss pool routing)
+//   → 'damaged' hook → SP-on-hurt / TAKE_DAMAGE trigger → fatal/kill.
 // Damage-dealt stats (the source's `stats.dmg`, the player's `damageDealt`) count only HP removed from the other side:
 // self and friendly damage (a 源石溶剂 drain, an operator's own 流失) is the target's `taken` and keeps the kill credit.
 // Phys: max(A − max(0, D×(1−defIgnorePct) − defIgnoreFlat), 5 %·A); Arts: max(A×(1 − R′/100), 5 %·A) with
@@ -274,6 +275,12 @@ export function dealDamage(battle, source, target, dmgIn) {
   // ran before it (the attack, its SP, `hit` hook effects, separate element 损伤) stays; nothing after it happens
   if (final > 0 && leaderHitCancelled(battle, target, final)) return 0;
   final = absorbShields(battle, target, final, type);
+  // 伤判效果 after the barriers (header): a handler may lower what reaches the HP — never raise it (a 流失 skips this)
+  if (final > 0 && battle._hooks.hpDamage) {
+    const hctx = { source: hs, target, amount: final, dmg, credit: source };
+    battle.emit('hpDamage', hctx);
+    if (Number.isFinite(hctx.amount)) final = Math.max(0, Math.min(final, hctx.amount));
+  }
   return applyHpLoss(battle, source, target, final, dmg);
 }
 

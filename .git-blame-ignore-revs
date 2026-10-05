@@ -1,0 +1,7 @@
+# Commits that only move code. Blame across them with
+#   git blame -C -C --ignore-revs-file .git-blame-ignore-revs <file>
+# (or once: git config blame.ignoreRevsFile .git-blame-ignore-revs; -C -C follows lines into the new files of a split).
+# Pure moves only (0.2.0 refactor plan, rule 3): a commit listed here changes nothing but where the code lives.
+
+# feedback5 R1: server/index.js top-level code → server/http/ (config, common, files, static, media, buildTag, websocket, boot)
+b48a67caec5ba0699097e21f3db4d4dbb35a2aed

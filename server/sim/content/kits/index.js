@@ -92,6 +92,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-poca.js',
   'op-typhon.js',
   'op-narant.js',
+  'op-logos.js',
+  'op-mantra.js',
+  'op-veen.js',
 ]);
 
 /**

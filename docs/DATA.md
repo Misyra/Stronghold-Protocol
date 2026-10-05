@@ -146,7 +146,7 @@ Top level: `{ season, seasonName, modes, economy, lpCapPerRound, bossOvertimeAft
 | `identifier`, `shopSortId` | `133`, `1` | official ordering |
 | `isHidden`, `isDiy`, `visible` | | `visible = !isHidden && !isDiy` (only visible chess enter the shop pool) |
 | `chessType` | `"PRESET"` | `PRESET` / `NORMAL` / `DIY` |
-| `backup` | `{"charId":"char_611_acnipe","tmplId":null,"skillIndex":2,"uniEquipId":"uniequip_002_acnipe","potRank":0}` (`chess_char_5_22_a/_b`, 妮芙) | the shop row's official stand-in fields, verbatim (`backupCharId`, `backupTmplId`, `backupCharSkillIndex`, `backupCharUniEquipId`, `backupCharPotRank`), the same on both forms: PRESET (特许) = itself, NORMAL = the 补位 stand-in fielded when the player does not own the operator (§18), DIY = none (`charId` null). The current match ignores it (every chess fields its real operator) |
+| `backup` | `{"charId":"char_611_acnipe","tmplId":null,"skillIndex":2,"uniEquipId":"uniequip_002_acnipe","potRank":0}` (`chess_char_5_22_a/_b`, 妮芙) | the shop row's official stand-in fields, verbatim (`backupCharId`, `backupTmplId`, `backupCharSkillIndex`, `backupCharUniEquipId`, `backupCharPotRank`), the same on both forms: PRESET (特许) = itself, NORMAL = the 补位 stand-in fielded when the player marked the operator as not owned (干员持有, §18), DIY = none (`charId` null) |
 | `charId` | `"char_498_inside"` | operator (null for DIY) |
 | `name`, `appellation` | `"隐现"`, `"Insider"` | |
 | `rarity` | `5` | stars 1–6 |
@@ -588,9 +588,11 @@ preference; against the pure official algorithm: identical route lengths, never 
 
 ## 18. `backups.json` — 补位 stand-ins and 自选 (DIY) data — `{ units, diy }`
 
-The data of two official features whose gameplay is not implemented yet (DESIGN 0.2.0 draft): **补位** — a NORMAL chess
-whose operator the player does not own is fielded as its official stand-in (原型干员) — and **自选编队** — two tier-5 and
-two tier-6 DIY slots, each filled with a 6★ the player owns or a prototype. Built by `tools/build-data.mjs buildBackups`;
+The data of two official features: **补位** — a NORMAL chess whose operator the player does not own is fielded as its
+official stand-in (原型干员); played since 0.2.0: the player marks operators as not owned on the 干员持有 tab
+(`room.ownership { notOwned }`, DESIGN 0.2.0 draft, docs/PLAYING.md §3), the match fields those chess with
+`standIn: true` — and **自选编队** — two tier-5 and two tier-6 DIY slots, each filled with a 6★ the player owns or a
+prototype (gameplay not implemented yet). Built by `tools/build-data.mjs buildBackups`;
 `shared/standIn.js` composes it into chess-shaped records. The rules in the data (activity_table act2autochess
 `charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约 下半/PRTS盟约记录):
 
@@ -628,10 +630,17 @@ the NORMAL chess as its stand-in — `IDENTITY_FIELDS` (ids, tier, `isHidden` / 
 with `backup.skillIndex` / `backup.uniEquipId` as the defaults, plus `standInFor` (the replaced charId: the official 补位
 mark on the avatar). The result is shaped exactly like a chess record (`skill` = the `isDefault` entry of `skills[]`;
 elite `statsBase` / `traitBase` / `talentsBase` / `modules[]`), so `normalizeChess`, `resolveLoadout` (no loadout ⇒ the
-backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DIY chess. **In battle** a PlayerBattleInput
-entry with `standIn: true` is fielded as `getChess(chessId, { standIn: true })` (docs/SIM.md §12: this record, normalised),
-and its kit is found by its `charId` (`server/sim/content/index.js kitOf`; kits/README.md "Stand-in kits") — never by
-the chess id it keeps, which names the replaced operator's kit. `diyRecord(slot, charId, backups, { skillIndex, moduleId })` fills a DIY slot with a prototype (the slot's
+backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DIY chess. `isDroppableChess(chess)` says
+which chess a player may mark as not owned (the 55 NORMAL base chess; `shared/protocol.js checkNotOwned` keeps those of a
+`room.ownership` list). **In the match** (`server/match/player/basics.js`: `PlayerState.standIns`, `fieldsStandIn`,
+`fieldRecord` = `gd.standIn(id)`) the player's piece keeps the chess's identity for every meta rule (price, bonds,
+特质, merges, pools) and is deployed as the stand-in (placement class, summon / bot ranges, the prep scouting art; no
+summons — none of the 17 has one). **In battle** a PlayerBattleInput entry with `standIn: true` (PlayerState.battleInput:
+the player's own field, 联防 and the boss fields alike) is fielded as `getChess(chessId, { standIn: true })` (docs/SIM.md
+§12: this record, normalised), and its kit is found by its `charId` (`server/sim/content/index.js kitOf`;
+kits/README.md "Stand-in kits") — never by the chess id it keeps, which names the replaced operator's kit. The client
+composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the renderer's `data.standIn`) for the cards'
+「替补：X」 badge, the board model and the detail card. `diyRecord(slot, charId, backups, { skillIndex, moduleId })` fills a DIY slot with a prototype (the slot's
 tier and price, no 特质, the pick's derived bonds); which skill a prototype carries in a slot is not in the data.
 
 `diy`:

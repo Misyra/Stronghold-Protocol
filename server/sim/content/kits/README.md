@@ -104,8 +104,11 @@ export default {
 A NORMAL chess whose operator the player does not own fights as its official stand-in (原型干员, data/backups.json,
 docs/DATA.md §18): the chess's ids, bonds, 特质, tier and price, the stand-in's body — stats, range, trait, talents, the
 skill `backup.skillIndex` and the module `backup.uniEquipId` the chess names. The sim gets that def from
-`battle.data.getChess(chessId, { standIn: true })` (a PlayerBattleInput entry with `standIn: true`); `def.charId` is the
-stand-in's, `def.standInFor` the replaced operator's charId.
+`battle.data.getChess(chessId, { standIn: true })` (a PlayerBattleInput entry with `standIn: true` — in a match, the
+player's chess marked 未持有 on the 干员持有 tab, `PlayerState.battleInput`); `def.charId` is the stand-in's,
+`def.standInFor` the replaced operator's charId. The golden `standins` family (tools/golden.mjs) fields every NORMAL
+chess record as its stand-in, so a kit change that alters a battle shows there (test/golden-standins.test.js checks that
+every active backup skill is cast).
 
 - **File and key**: `ops/standin-<codename>.js`, the code name being the stand-in's charId without `char_<n>_`
   (`standin-acguad.js` = Sharp, `char_609_acguad`); the default export has exactly one key, that charId:
@@ -161,8 +164,9 @@ stand-in's, `def.standInFor` the replaced operator's charId.
 - Assert that the unit is the stand-in (`u.def.charId`, `u.def.standInFor`, `u.skill.id`) and that its kit is yours, not
   the generic one (`!u.kit.generic`); then the checklist below as for any operator. Examples:
   `test/content/standin.test.js` (the plumbing and the eight 预备干员).
-- A stand-in kit is new gameplay for stand-ins only: the golden corpus fields no stand-in, so its digests stay as they
-  are.
+- A stand-in kit is gameplay for stand-ins only: of the golden corpus only the `standins` family (and the 补位 match
+  `coop2-NORMAL-14-standins`) fields stand-ins, so a kit change moves those digests and no other — `npm run
+  golden:update`, then review that the change is confined to the battles that field the stand-in.
 
 ## The fidelity rule
 

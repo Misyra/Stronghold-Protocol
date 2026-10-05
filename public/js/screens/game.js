@@ -273,7 +273,7 @@ function MatchScreen() {
     priv, stage: gd.stage(pub?.stageId), editable, field: deployField,
     getChess: gd.chess, getToken: gd.token, getItem: gd.item, getEffect: gd.effect,
   }), [priv, pub?.stageId, editable, gd.ready, deployField]);
-  live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
+  live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, selBusy, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
 
   // ---- camera: every request goes through setCam, which remembers it for the pen's way back -----------------------
   // the own prep board: the normal board, or — in the prep of a boss round — the player's half of the boss field
@@ -972,6 +972,7 @@ function MatchScreen() {
   }, [editable, placeCtx, facing]);
   // the selected piece: gone / not editable → deselect; on the board its range tiles show (rotated to its facing)
   const selEntry = sel ? placeCtx.pieces.get(sel.uid) || null : null;
+  live.current.showPrep = showPrep;
   useEffect(() => { if (sel && (!selEntry || !editable || !showPrep)) setSel(null); }, [sel, selEntry, editable, showPrep]);
   const selRangeKey = selEntry && selEntry.area === 'board' ? `${selEntry.piece.uid}:${selEntry.row},${selEntry.col}:${pieceDir(selEntry.piece)}` : '';
   useEffect(() => {
@@ -1095,6 +1096,15 @@ function MatchScreen() {
         return;
       }
       if (!L.editable) return;
+      if (act === 'retreat' || act === 'sell') {
+        if (!L.showPrep || L.drag || L.facing || L.selBusy || !L.sel) return;
+        const selected = L.placeCtx.pieces.get(L.sel.uid);
+        if (selected?.piece.kind !== 'chess') return;
+        const available = underframeActions(L.placeCtx, L.sel.uid);
+        if (act === 'retreat' && available?.retreat) await retreatSel();
+        else if (act === 'sell' && available?.sell != null) await sellSel();
+        return;
+      }
       const reason = shopBlockReason(act, { priv: L.priv, editable: L.editable });
       if (reason) { audio.sfx('error', { volume: 0.5 }); return; }
       if (act === 'refresh') actions.refresh();

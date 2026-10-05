@@ -363,11 +363,14 @@ function egirDownAtStart(battle, u) {
  * out and back in the same pass still gives its marks).
  * 联防: the operators down since the end of their own combat (forced out by Battle.start) mark, are marked and resolve
  * their marks like standing ones, but nothing resolves on them (below; per players' reports, owner's decision 2026-10-04).
- * Each devoured operator adds its tier to 阿戈尔 once (IN_BATTLE gain, disabled in 联防 / boss fields).
+ * Whose operator stands in front does not matter (PRTS "依次吞噬身前一格干员", no own-side limit; the owner's decision of
+ * 2026-10-05 after GitHub #140 comment 4): on a shared field (联防, boss) a teammate's operator — standing, or entering
+ * 联防 down — is marked like an own one, gives the same base ATK / block count, and the chain goes on through it when it
+ * is an 阿戈尔 (S.isMember: its own bonds). Its knock-out is its owner's (their bonds' revives, 不屈 …), credited to the
+ * marker as usual. Each devoured operator adds its tier to 阿戈尔 once (IN_BATTLE gain, disabled in 联防 / boss fields).
  * Tokens / devices / empty tiles are never devoured.
  */
 function devour(battle, pid, bb, members) {
-  const memberSet = new Set(members);
   // 联防: an operator down at the end of its own combat (carryState.down — Battle.start forced it out right before
   // battleStart, FORCED_EXIT) takes part in the devour as if it stood on its tile, then stays out: it marks in its turn,
   // it is "the unit in front" of another (the chain goes on through it when it is a member), its base ATK / block count
@@ -376,12 +379,14 @@ function devour(battle, pid, bb, members) {
   // report #3, GitHub #33 item 3), owner's decision 2026-10-04; until 0.1.2 the forced exit came first and the chain broke.
   const downAtStart = (u) => egirDownAtStart(battle, u);
   const order = members.filter((u) => S.onField(u) || downAtStart(u)).sort(egirOrder);
+  // the operator in front, whoever owns it (until 0.1.3 only the player's own): a living one, else one lying there since
+  // the 联防 start (carry.down, forced out) — a teammate's included
   const opAt = (u) => {
     const [r, c] = S.frontTile(u);
-    const a = S.allyAt(battle, r, c, pid);
+    const a = S.allyAt(battle, r, c);
     if (a) return S.isOp(a) && a.alive ? a : null;
     const d = battle.downOn(r, c);
-    return d && d.ownerId === pid && downAtStart(d) ? d : null;
+    return d && downAtStart(d) ? d : null;
   };
   const markedBy = new Map(); // marker → [targets]
   const marks = [];
@@ -396,7 +401,8 @@ function devour(battle, pid, bb, members) {
       if ((markedBy.get(t) ?? []).includes(m)) continue;
       seen.add(t);
       mine.push(t);
-      if (memberSet.has(t)) queue.push(t);
+      // through a marked 阿戈尔 (for the player's own operators: exactly its members; a teammate's by its own bonds)
+      if (S.isMember(battle, t, 'egirShip')) queue.push(t);
     }
     markedBy.set(m, mine);
     if (!mine.length) continue;

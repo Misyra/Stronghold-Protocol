@@ -2748,7 +2748,7 @@
     "howToPlay": "Put cheap/high-tier fodder in front of 阿戈尔 carries: they steal base ATK and block, gain layers, and (5) revive. Tier-6 fodder gives +6 layers per battle.",
     "assumed": [
      "5000 physical 流失 ignores DEF and shields",
-     "marked allied units are the player's own operators (devour hits allies)"
+     "marked allied units are operators of any player (devour hits allies): on a shared field a teammate's operator in front, standing or entering 联防 knocked out, is devoured too and the chain continues through a teammate's 阿戈尔 (the owner's decision of 2026-10-05: PRTS has no own-side limit)"
     ]
    },
    "members": [

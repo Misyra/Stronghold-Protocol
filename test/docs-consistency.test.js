@@ -54,6 +54,8 @@ const doc = (p) => readFileSync(join(ROOT, p), 'utf8');
 const battleText = () => [doc('server/sim/Battle.js'), ...readdirSync(join(ROOT, 'server/sim/battle')).sort().map((f) => doc(`server/sim/battle/${f}`))].join('\n');
 // the Match class: the façade (constructor) and its method modules (server/match/match/)
 const matchText = () => [doc('server/match/Match.js'), ...readdirSync(join(ROOT, 'server/match/match')).sort().map((f) => doc(`server/match/match/${f}`))].join('\n');
+// the PlayerState class: the façade (header, constructor) and its method modules (server/match/player/)
+const playerText = () => [doc('server/match/PlayerState.js'), ...readdirSync(join(ROOT, 'server/match/player')).sort().map((f) => doc(`server/match/player/${f}`))].join('\n');
 // the sources of a former kits/tierN.js: its helpers (kits/shared/tierN.js) and its kit files (kits/ops/, kits/index.js)
 const tierSources = (t) => [`server/sim/content/kits/shared/tier${t}.js`, ...KIT_FILES[t - 1].map((f) => `server/sim/content/kits/ops/${f}`)];
 const DESIGN = doc('docs/DESIGN.md');
@@ -559,11 +561,12 @@ test('playtest6b follow-up (DESIGN §20.10–§20.13): leader HP, 直接乘算, 
   assert.equal(BOND_LAYER_CAP, 999);
   assert.equal(layerGainRoom(995, 10), 4);
   assert.ok(!('BOND_LAYER_CAP' in SIM_CONST) && !('layerRoom' in SIM_CONST), 'no second cap in server/sim/constants.js');
-  for (const f of ['server/match/PlayerState.js', 'server/match/match/settle.js', 'server/sim/battle/economy.js']) {
+  for (const f of ['server/match/player/economy.js', 'server/match/match/settle.js', 'server/sim/battle/economy.js']) {
     const src = doc(f);
     assert.match(src, /layerGainRoom/, `${f} clamps with layerGainRoom`);
     assert.ok(!/layerRoom\b/.test(src), `${f}: no layerRoom`);
   }
+  for (const [name, src] of [['Match', matchText()], ['PlayerState', playerText()]]) assert.ok(!/layerRoom\b/.test(src), `${name}: no layerRoom`);
   // 限伤: official constant, not an overflow — no doc keeps the boss-HP branch's "fixed-point overflow, not modelled"
   assert.equal(BOSS_HIT_LIMIT, 300000);
   for (const [name, text] of [['BALANCE', BALANCE], ['DATA', DATA_MD], ['PLAYING', PLAYING], ['SIM', SIM], ['META', META], ['research 02', R02], ['DESIGN', DESIGN]]) {
@@ -812,7 +815,7 @@ test('突变细胞 after the WA merge (DESIGN §21.1): the carrier is destroyed,
   assert.match(PLAYING, /原来的格子空出来，剩余可放置角色加 1/);
   assert.match(DATA.items.chess_item_5_08_e_a.note, /进入整备区，需要重新部署/);
   // the code: a destroy, then a gain through acquireChess; _mergeChess has no carrier-tile option left
-  const PS = doc('server/match/PlayerState.js');
+  const PS = playerText();
   const { PlayerState } = await import('../server/match/PlayerState.js');
   assert.equal(PlayerState.prototype.transformChess.length, 2, 'transformChess(piece, newId)');
   assert.equal(PlayerState.prototype._mergeChess.length, 2, '_mergeChess(baseId, incoming)');

@@ -50,9 +50,9 @@ import { Persister, restoreServer } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
-import { createAssetVersion, VERSION_PREFIX } from './assetVersion.js';
+import { createAssetVersion, VERSION_PREFIX, readAssetsCdnVersionFile } from './assetVersion.js';
 import { createResourceIndex, RESOURCE_MANIFEST_FILE } from './resources.js';
-import { assetCdnSettings } from '../shared/assetCdn.js';
+import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { getData, loadData } from './data.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../shared/constants.js';
@@ -699,7 +699,7 @@ function makeLogger(quiet) {
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   workers?: number, workerQueue?: number, workerTimeoutMs?: number, workerPool?: SimulationPool | null,
- *   assetsCdn?: string, assetsCdnVersion?: string,
+ *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: WebSocketServer,
@@ -715,7 +715,20 @@ export async function startServer(opts = {}) {
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
-  const cdn = assetCdnSettings(opts.assetsCdn ?? process.env.SP_ASSETS_CDN, opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION);
+  // Without an explicit SP_ASSETS_CDN_VERSION the release tag comes from the repo's `.assets-cdn-version`
+  // (written by tools/r2-sync.mjs, travels with `git pull`); when that is absent the CDN's own publication
+  // (`/_v/latest`) is asked, and a CDN without either simply stays unversioned.
+  const cdnBase = opts.assetsCdn ?? process.env.SP_ASSETS_CDN;
+  let cdnVersion = opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION;
+  if (cdnBase && !cdnVersion) {
+    cdnVersion = readAssetsCdnVersionFile(opts.assetsVersionFile);
+    if (cdnVersion) log.info(`assets CDN ${cdnBase} release ${cdnVersion} (from the version file)`);
+    else {
+      cdnVersion = await resolveAssetsCdnVersion(cdnBase);
+      log.info(cdnVersion ? `assets CDN ${cdnBase} release ${cdnVersion} (from /_v/latest)` : `assets CDN ${cdnBase} publishes no release tag, serving unversioned URLs`);
+    }
+  }
+  const cdn = assetCdnSettings(cdnBase, cdnVersion);
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });

@@ -88,3 +88,38 @@ npm start
 本地已有文件在首次读取清单时补算内容指纹，不增加启动时的素材读取。也可在部署前运行 `node tools/asset-hashes.mjs`，生成本机 `data/asset-hashes.json`（不提交 Git）；用 `node tools/asset-hashes.mjs --check` 检查。素材改变后重生成指纹并重启。只有 CDN、没有本地文件或指纹时，使用清单版本回退，不能保证每文件增量。CDN 两次返回与内容指纹不符的文件不会标记为完成，请同步两站素材并清理旧 CDN 缓存。
 
 预载实现移植并改编自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)，保留 GPL-3.0-or-later 许可，并增加本站版本资源与 CDN 的适配。
+
+## 6. 用 Cloudflare R2 作为素材 CDN
+
+R2 方案不再需要一个常驻的香港站 Node 源站：素材对象直接放在 R2 bucket 里，由绑定的自定义域名（走 Cloudflare 边缘缓存）对外服务。管理操作全部可用 Wrangler CLI 完成（上传走 [S3 兼容 API](https://developers.cloudflare.com/r2/api/s3/api/) 的批量脚本，见下）。
+
+一次性准备：
+
+```powershell
+npx wrangler login
+npx wrangler r2 bucket create <bucket>
+# 自定义域名需域名已托管在 Cloudflare；一个域名只能绑定一个 bucket
+npx wrangler r2 bucket domain add <bucket> --domain assets.example.com --zone-id <zone_id>
+# CORS：Spine / 音频是跨域 fetch，必须放行 GET / HEAD
+npx wrangler r2 bucket cors set <bucket> --file scripts/r2-cors.example.json
+```
+
+上传与发布（`tools/r2-sync.mjs`）：
+
+```powershell
+node tools/r2-sync.mjs --bucket <bucket>            # 上传 public/{assets,fonts,media}
+node tools/r2-sync.mjs --bucket <bucket> --dry-run  # 只看将要上传的内容
+```
+
+脚本的行为：
+
+- 每个文件写两个 key：`assets/…`（普通路径）和 `_v/<tag>/assets/…`（版本化发布）。`tag` 是全部美术文件「路径 + SHA-256 内容」哈希的前 16 位十六进制，美术不变则 tag 不变，重跑即 no-op。
+- 支持断点续传（`.cache/r2-sync-progress.json`）；OAuth token 过期时自动调 `wrangler whoami` 刷新。
+- 上传限速约 3 req/s 并对 429 全局退避：Cloudflare 管理 API 有每账户请求配额，并发猛打会大面积 429。
+- 成功后把 tag 写入 `_v/latest`（`Cache-Control: no-store`），供服务器启动时自动解析。
+
+服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com`。**`SP_ASSETS_CDN_VERSION` 现在是可选项**，解析优先级为：显式设置的环境变量 → 仓库根目录的 `.assets-cdn-version`（由同步脚本写入、随发布提交）→ CDN 上的 `_v/latest` 对象（带时间戳查询参数，绕过所有缓存）→ 都没有则回退为无版本 URL，行为与第 2 节的兼容模式一致。手动设置该变量仍然生效，可用于钉住旧版本回滚。
+
+发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 重启服务器。脚本成功后会更新 `.assets-cdn-version`；`--push` 额外把这一个文件提交（`素材：R2 发布 <tag>`）并推送 master 到除 `origin` 外的所有远程（GitHub fork 与 Gitee）。部署机 `git pull` 后重启即完成同步，版本文件优先于网络请求，启动不依赖 CDN 可达。每个 tag 都是自洽的全量快照，旧 tag 的对象永久保留，旧页面与已缓存版本不受影响。玩家端 Service Worker 按文件内容哈希跨版本复用未变化的文件（见第 5 节），只有真正变化的文件会重新下载。
+
+费用：只有穿透到 R2 的读取（Class B）计费，边缘缓存命中不计费，流量免费；配合高命中率（建议开启 [Tiered Cache](https://developers.cloudflare.com/cache/how-to/tiered-cache/)）月请求量通常在免费额度内。

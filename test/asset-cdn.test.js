@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../server/index.js';
-import { assetCdnSettings, assetCdnUrl } from '../shared/assetCdn.js';
+import { readAssetsCdnVersionFile } from '../server/assetVersion.js';
+import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
 import { validSpine } from '../public/js/assets.js';
@@ -104,9 +106,101 @@ test('two hosts keep independent release versions, serve public CORS and retain 
   const board = await (await fetch(remotePrefix + '/assets/local/tiles.json')).json();
   assert.equal(board.source.D.path, `/_v/${remoteHealth.artVersion}/assets/x.png`);
 
-  const legacy = await startServer({ ...opts, assetsCdn: remote.url });
+  const legacy = await startServer({ ...opts, assetsCdn: remote.url, assetsVersionFile: path.join(root, 'absent') });
   t.after(() => legacy.close());
   const legacyHealth = await (await fetch(legacy.url + '/healthz')).json();
   const legacyManifest = await (await fetch(legacy.url + `/_v/${legacyHealth.build}/data/assets.json`)).json();
   assert.equal(legacyManifest.spine.skel, remote.url + '/assets/x.skel', 'an older CDN has no release route');
+});
+
+test('resolveAssetsCdnVersion reads the published tag and degrades to unversioned on any failure', async () => {
+  assert.equal(cdnLatestUrl(' https://cdn.example/ ', { now: () => 42 }), 'https://cdn.example/_v/latest?t=42');
+  assert.equal(cdnLatestUrl(''), null);
+  const tag = '1234567890abcdef';
+  const ok = (body) => async () => ({ ok: true, status: 200, text: async () => body });
+  await assert.equal(await resolveAssetsCdnVersion('https://cdn.example', { fetcher: ok(`\n  ${tag}\n`) }), tag);
+  for (const [name, fetcher] of [
+    ['404', async () => ({ ok: false, status: 404, text: async () => '' })],
+    ['junk body', ok('not-a-tag')],
+    ['rejected', async () => { throw new Error('offline'); }],
+    ['no fetcher', undefined],
+  ]) {
+    assert.equal(await resolveAssetsCdnVersion('https://cdn.example', fetcher ? { fetcher } : {}), '', name);
+  }
+  assert.equal(await resolveAssetsCdnVersion('', { fetcher: ok(tag) }), '', 'no base, no lookup');
+});
+
+test('startServer resolves SP_ASSETS_CDN_VERSION from the CDN publication and keeps unversioned fallback', async (t) => {
+  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
+  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
+  delete process.env.SP_ASSETS_CDN;
+  delete process.env.SP_ASSETS_CDN_VERSION;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-latest-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const write = (rel, body) => {
+    const target = path.join(root, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
+  };
+  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head><script src="/js/main.js"></script></html>');
+  write('public/js/main.js', 'export const ready = true;');
+  write('public/fonts/a.woff2', 'font');
+  write('public/assets/x.png', 'image');
+  write('data/chess.json', '{}');
+  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared') };
+
+  const cdnOrigin = http.createServer((req, res) => {
+    if (new URL(req.url, 'http://x').pathname === '/_v/latest') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('fedcba9876543210\n'); return; }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((resolve) => cdnOrigin.listen(0, '127.0.0.1', resolve));
+  t.after(() => cdnOrigin.close());
+  const game = await startServer({ ...opts, assetsCdn: `http://127.0.0.1:${cdnOrigin.address().port}`, assetsVersionFile: path.join(root, 'absent') });
+  t.after(() => game.close());
+  const health = await (await fetch(game.url + '/healthz')).json();
+  assert.equal(health.assetsCdnVersion, 'fedcba9876543210');
+  const html = await (await fetch(game.url + '/')).text();
+  assert.ok(html.includes(`http://127.0.0.1:${cdnOrigin.address().port}/_v/fedcba9876543210/fonts/a.woff2`));
+
+  const missing = http.createServer((req, res) => { res.writeHead(404); res.end(); });
+  await new Promise((resolve) => missing.listen(0, '127.0.0.1', resolve));
+  t.after(() => missing.close());
+  const fallback = await startServer({ ...opts, assetsCdn: `http://127.0.0.1:${missing.address().port}`, assetsVersionFile: path.join(root, 'absent') });
+  t.after(() => fallback.close());
+  const fallbackHealth = await (await fetch(fallback.url + '/healthz')).json();
+  assert.equal(fallbackHealth.assetsCdnVersion, null, 'a CDN without a publication serves unversioned URLs');
+  const fallbackHtml = await (await fetch(fallback.url + '/')).text();
+  assert.ok(fallbackHtml.includes(`http://127.0.0.1:${missing.address().port}/fonts/a.woff2`));
+  assert.ok(!fallbackHtml.includes('/_v/fedcba9876543210'));
+});
+
+test('the repo-shipped .assets-cdn-version wins over the network and travels with git pull', async (t) => {
+  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
+  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
+  delete process.env.SP_ASSETS_CDN;
+  delete process.env.SP_ASSETS_CDN_VERSION;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-file-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const write = (rel, body) => {
+    const target = path.join(root, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
+  };
+  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head></html>');
+  write('public/fonts/a.woff2', 'font');
+  write('data/chess.json', '{}');
+  const versionFile = path.join(root, '.assets-cdn-version');
+  fs.writeFileSync(versionFile, '0123456789abcdef\n');
+  // an unreachable CDN: the file must resolve the release without any network
+  const game = await startServer({
+    port: 0, host: '127.0.0.1', quiet: true, workers: 0,
+    publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
+    assetsCdn: 'http://127.0.0.1:1', assetsVersionFile: versionFile,
+  });
+  t.after(() => game.close());
+  const health = await (await fetch(game.url + '/healthz')).json();
+  assert.equal(health.assetsCdnVersion, '0123456789abcdef');
+  const html = await (await fetch(game.url + '/')).text();
+  assert.ok(html.includes('http://127.0.0.1:1/_v/0123456789abcdef/fonts/a.woff2'));
+  fs.writeFileSync(versionFile, 'garbage\n');
+  assert.equal(readAssetsCdnVersionFile(versionFile), '', 'a junk version file resolves to nothing');
+  assert.equal(readAssetsCdnVersionFile(path.join(root, 'absent')), '');
 });

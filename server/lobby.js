@@ -171,6 +171,7 @@ export class Lobby {
    *   now?: () => number,
    *   seedFn?: () => number,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
+   *   workerPool?: object | null,
    * }} opts
    */
   constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null }) {

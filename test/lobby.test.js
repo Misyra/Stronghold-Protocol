@@ -232,11 +232,16 @@ describe('static http server', () => {
     const font = await httpReq(srv.port, '/fonts/f.woff2');
     assert.equal(font.headers['cache-control'], 'public, max-age=86400');
     const assetV = await httpReq(srv.port, '/assets/img/a.png?v=abc');
-    assert.match(assetV.headers['cache-control'], /immutable/);
+    assert.equal(assetV.headers['cache-control'], 'public, max-age=86400', 'arbitrary query versions cannot pin bytes for a year');
     const assetRoot = await httpReq(srv.port, '/assets');
     assert.equal(assetRoot.status, 301, 'directory redirect, not cached content');
-    const versioned = await httpReq(srv.port, '/js/app.js?v=123');
+    const tag = JSON.parse((await httpReq(srv.port, '/healthz')).body).build;
+    const versioned = await httpReq(srv.port, `/_v/${tag}/js/app.js`);
     assert.match(versioned.headers['cache-control'], /immutable/);
+    assert.equal(versioned.body.toString(), js);
+    const wrong = await httpReq(srv.port, '/_v/0000000000000000/js/app.js');
+    assert.equal(wrong.status, 404);
+    assert.equal(wrong.headers['cache-control'], 'no-store');
     const html = await httpReq(srv.port, '/index.html?v=1');
     assert.equal(html.headers['cache-control'], 'no-cache');
   });

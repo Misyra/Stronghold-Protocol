@@ -65,6 +65,7 @@
 import { net as appNet } from '../net.js';
 import { store as appStore } from '../store.js';
 import { unitStatsEntry, fxForm } from '../../../shared/protocol.js';
+import { resourceUrl, resourceCache } from '../resourceUrl.js';
 
 const TICK = 1 / 30;
 /** Fast-forward budget per frame (ticks) when far behind. */
@@ -133,7 +134,8 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   ]);
   const fetchOnce = async (n) => {
     try {
-      const res = await fetchFn(`${dataBase}${n}.json`, { cache: 'no-cache' });
+      const url = resourceUrl(`${dataBase}${n}.json`);
+      const res = await fetchFn(url, { cache: resourceCache(url) });
       return res && res.ok ? await res.json() : null;
     } catch { return null; }
   };

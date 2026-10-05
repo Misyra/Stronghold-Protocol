@@ -136,3 +136,20 @@ test('startBuildGuard: stop() ends the watch', async () => {
   assert.equal(m.guard.stale(), false);
   assert.equal(BUILD_CHECK_MS, 60_000);
 });
+
+test('startBuildGuard: the HTML version remains the baseline when deployment precedes the first health check', async () => {
+  const previous = globalThis.__spAssetVersion;
+  globalThis.__spAssetVersion = 'old-page';
+  let reloads = 0;
+  const guard = startBuildGuard({ fetchFn: fetchOf('new-server'), reload: () => { reloads++; }, setInterval: () => 1, clearInterval() {} });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(guard.known(), 'old-page');
+    await guard.check();
+    assert.equal(reloads, 1);
+  } finally {
+    guard.stop();
+    if (previous === undefined) delete globalThis.__spAssetVersion;
+    else globalThis.__spAssetVersion = previous;
+  }
+});

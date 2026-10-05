@@ -5,9 +5,9 @@
 // reload. A client-only battle fix shipped exactly that way and stayed invisible on the reporting player's page: the
 // nginx log shows the page loaded the PRE-fix module blob and made no module request at all for the rest of the session.
 //
-// HOW: the server stamps a short hash of the runtime it serves into `/healthz.build` (server/index.js computeBuildTag).
-// The first successful check of a page records that tag as "the build this page runs" — IN MEMORY, because one page is
-// one set of loaded modules: nothing must survive a reload, and a duplicated tab must not inherit the first tab's tag.
+// HOW: the server injects this release's tag into the HTML and reports it at `/healthz.build`.
+// A plain static host without that stamp uses the first successful check as its baseline. The tag lives in page
+// memory: nothing survives a reload, and a duplicated tab must not inherit the first tab's tag.
 // A later check reporting a DIFFERENT tag means the server changed under this page:
 //   * outside a match the page reloads itself, once;
 //   * during a match the guard never throws the player's game away — `onStale` fires (the connection banner offers
@@ -78,7 +78,7 @@ export function startBuildGuard(o = {}) {
   const setIv = o.setInterval || ((fn, ms) => globalThis.setInterval(fn, ms));
   const clearIv = o.clearInterval || ((h) => globalThis.clearInterval(h));
   const intervalMs = Number.isFinite(o.intervalMs) && o.intervalMs > 0 ? o.intervalMs : BUILD_CHECK_MS;
-  let known = null;      // the build this page runs — memory only (one page == one set of loaded modules)
+  let known = globalThis.__spAssetVersion || null; // stamped into this page before its modules load
   let candidate = null;  // the last new build seen; needs BUILD_CONFIRMATIONS checks in a row to be acted on
   let seen = 0;          // consecutive checks that reported `candidate`
   let stale = false;     // a new build is confirmed → reload as soon as no match is on screen

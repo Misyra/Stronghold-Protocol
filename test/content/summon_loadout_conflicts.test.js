@@ -125,8 +125,10 @@ test('琳琅诗怀雅: a 香槟炸弹 arms after its owner\'s module variant of 
       chessId: SWIRE, lo, tokens, row: 9, col: 5, enemies: { enemy_d: dummy('enemy_d') },
       spawns: [{ key: 'enemy_d', pos: [9, 5] }, { key: 'enemy_d', pos: [9, 13] }],
     });
-    for (const u of ops) { u.mem.coins = 5; u.player.dp = 99; }
-    // the moment a bomb stands, an enemy steps on it (the bomb is < 1 tick old)
+    // each threw its deployment coin's bomb in duel's first step (S2 needs no enemy); no other coin before the 3 s payment,
+    // so every trap hit below is that bomb's
+    for (const u of ops) { u.mem.coins = 0; u.player.dp = 99; }
+    // the moment a bomb stands, an enemy steps on it (the bomb is a tick old)
     const bombs = [null, null];
     for (let i = 0; i < 30 * 10 && bombs.some((x) => !x); i++) {
       h.step();

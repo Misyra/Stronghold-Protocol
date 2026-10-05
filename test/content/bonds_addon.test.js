@@ -71,6 +71,28 @@ test('迅捷: member skill end +12 SP (p=1 at high L), ≥40 layers every operat
   assert.equal(off.s_x, 0);
 });
 
+test('迅捷 / 突袭: SP gifts after end do not recharge a zero-SP deployment skill or trigger a ready raid', () => {
+  const h = makeBattle({
+    defs: { chess: { t_deploy: chessRec({ id: 't_deploy', bonds: ['swiftShip', 'raidShip'], skill: { spCost: 0 } }) } },
+    units: [{ chessId: 't_deploy', row: 10, col: 4 }],
+    bonds: { swiftShip: bond(1, 1000), raidShip: bond(1) }, captureNoisy: true,
+    kits: { t_deploy: () => ({ skill: {
+      kind: 'duration', activateOnDeploy: true, duration: 2, spCost: 0, spType: 'none', trigger: 'NEVER',
+    } }) },
+  });
+  h.b.start();
+  const u = h.unit('t_deploy'), seq = u.deploySeq;
+  h.run(5);
+  assert.deepEqual(h.hooksOf('skillEnd').map((c) => c.reason), ['duration']);
+  assert.ok(h.hooksOf('spGain').some((c) => c.unit === u), 'swift end handler attempted SP gain');
+  assert.equal(u.skill.sp, 0);
+  assert.equal(u.skill.charges, 0);
+  assert.equal(u.skill.ready, false);
+  assert.equal(u.skill.activations, 1);
+  assert.equal(u.deploySeq, seq, 'skill end alone does not meet raid readiness');
+  checkInvariants(h.b);
+});
+
 test('迅捷 / 不屈 proc chances: p = min(1, base + per·L) at each layer count', () => {
   const sw = bondBb('swiftShip'), ind = bondBb('indomShip');
   close(procChance(sw, 0), 0.20);

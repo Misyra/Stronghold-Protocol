@@ -211,6 +211,7 @@ export class SkillRuntime {
     this.gainSp(carry && Number.isFinite(carry.sp) ? carry.sp : this.initSp, 'init', true);
     // a free (spCost 0) non-passive skill is available once per deployment
     if (this.spCost <= 0) this.charges = this.maxCharges;
+    if (this.spec.activateOnDeploy) this.activate('deploy');
   }
 
   _startPassive() {

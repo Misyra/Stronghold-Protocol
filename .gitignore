@@ -3,13 +3,12 @@ node_modules/
 # copied from node_modules by tools/vendor.mjs (postinstall); never commit third-party builds
 public/vendor/
 
-# --- game assets: (c) Hypergryph / Yostar, fetched or extracted locally, NEVER committed ----------
+# --- game assets: (c) Hypergryph / Yostar (see NOTICE.md) ------------------------------------------
 # tools/fetch-assets.mjs → public/assets/** (~270 MB) and public/fonts/** (+ fonts.css)
-public/assets/
+public/assets/*
+# This fork tracks the v0.1.3 local-client art for Git-based deployments.
+!public/assets/local/
 public/fonts/
-# tools/local-extract/extract.py → public/assets/local/** and this per-machine manifest
-# (optional: the client and the tests work without it; docs/DEPLOY.md §6 lists what falls back)
-data/local-assets.json
 # download caches, upstream tables, ledgers, reports, setup state
 .cache/
 

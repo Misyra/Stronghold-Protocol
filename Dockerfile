@@ -2,7 +2,7 @@
 # 卫戍协议：盟约 · production image (server + static client). Docs: docs/DEPLOY.md「Docker」.
 #
 # Code: GPL-3.0-or-later (LICENSE). Game art/audio is © Hypergryph / Yostar, not covered by the GPL, non-commercial use
-# only (NOTICE.md), and never part of the repository. Two ways to get it into a container:
+# only (NOTICE.md). This fork includes local-client art; two ways to add the remaining downloaded art:
 #   A) download it while building (~250 MB, needs internet during the build):
 #        docker build -t stronghold-protocol --build-arg FETCH_ASSETS=1 .
 #   B) build without it and mount the host's copy (prepared with `node tools/setup.mjs` on the host):

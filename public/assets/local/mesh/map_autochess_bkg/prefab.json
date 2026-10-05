@@ -1,0 +1,1 @@
+[{"name":"S_Background_common","parent":null,"pos":[0.0,0.0,-8.0],"rot":[0.0,0.0,0.0,1.0],"scale":[0.431578,0.431578,0.431578],"mesh":"pPlane1","materials":[null]},{"name":"S_Background_shadow","parent":null,"pos":[-1.999999,3.525424,0.0],"rot":[0.0,0.0,0.0,1.0],"scale":[0.01,0.01,0.01],"mesh":"S_Background_shadow","materials":["lambert1"]}]

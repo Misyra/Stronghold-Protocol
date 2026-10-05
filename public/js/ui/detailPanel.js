@@ -631,7 +631,10 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     // a bond popup's 变形同构体 row hands the wearer's item ids on (bondStrip onMember): the card shows the pair and the chip
     const c = data.lookup('chess', target.id);
     const items = Array.isArray(target.items) ? target.items.filter((x) => typeof x === 'string') : [];
-    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: target.foreign ? null : ownStandIn(c), ...(items.length ? { unitItems: items } : {}) } : null;
+    // (a bond popup's member card of a teammate's strip — `owner` another player — and the mode's banned list (`foreign`)
+    // show the chess as it is: the viewer's 补位 list is not theirs)
+    const foreign = !!target.foreign || (target.owner != null && !!priv && target.owner !== priv.playerId);
+    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: foreign ? null : ownStandIn(c), ...(items.length ? { unitItems: items } : {}) } : null;
   }
   if (target.kind === 'item') { const it = data.lookup('items', target.id); return it ? { type: 'item', item: it } : null; }
   if (target.kind === 'enemy') { const en = data.lookup('enemies', target.id); return en ? { type: 'enemy', enemy: en, count: target.count } : null; }

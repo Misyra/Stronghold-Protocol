@@ -178,6 +178,9 @@ const PRIORITY_FNS = {
   boss: (e) => (e.isBoss ? 0 : 1),
   notBurst: (e) => (e.s.flags.burstLock ? 1 : 0),
   ground: (e) => (e.isFlying ? 1 : 0),
+  // 攻城手 trait "优先攻击重量最重的敌人" (早露 / 提丰: kits/ops/op-poca.js, op-typhon.js): the highest current 重量等级
+  // (Unit.weight: massLevel with 失重 etc.) first, the usual order after that
+  heaviest: (e) => -e.weight,
 };
 
 /**

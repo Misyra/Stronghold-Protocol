@@ -4,7 +4,7 @@
 // Reads the official zh_CN client data (Kengxxiao/ArknightsGameData) plus the research JSON in
 // docs/research/ and emits compact, game-ready JSON into data/:
 //   config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves,
-//   stages, bosses, tokens (every field is documented in docs/DATA.md).
+//   stages, bosses, tokens, backups (every field is documented in docs/DATA.md).
 //
 // Usage:  node tools/build-data.mjs [--refresh | --offline] [--out <dir>] [--cache <dir>]
 //                                   [--report <file>] [--quiet] [--no-research] [--force]
@@ -27,15 +27,17 @@
 // .cache/build-data-report.json (never silently dropped); integrity errors make the exit code 1.
 //
 // Sections (search for "// ====="): CLI & IO · text/blackboard helpers · context loading ·
-// chess · tokens · bonds · garrisons · items · bands · effects · choices · enemies · factions ·
+// chess · backups · tokens · bonds · garrisons · items · bands · effects · choices · enemies · factions ·
 // waves · stages · bosses · config · validation · main.
 
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { Grid, DEPLOY_REFUSED_TILES } from '../server/sim/grid.js';
 import { bandBondIds } from '../shared/bandBonds.js';
+import { statusKey, composeUnitRecord, standInRecord, unitForm } from '../shared/standIn.js';
 
 // ===== CLI & IO ==================================================================================
 
@@ -775,6 +777,11 @@ function buildChess(ctx) {
       identifier: cd.identifier,
       isHidden: !!shop.isHidden, isDiy, visible: !shop.isHidden && !isDiy,
       chessType: shop.chessType,
+      // the official stand-in fields of the shop row, verbatim (both forms; data/backups.json, shared/standIn.js)
+      backup: {
+        charId: shop.backupCharId ?? null, tmplId: shop.backupTmplId ?? null, skillIndex: shop.backupCharSkillIndex ?? null,
+        uniEquipId: shop.backupCharUniEquipId ?? null, potRank: shop.backupCharPotRank ?? null,
+      },
       shopSortId: shop.shopLevelSortId,
       charId: shop.charId || null,
       name: null, appellation: null, rarity: null, profession: null, subProfessionId: null, subProfessionName: null,
@@ -992,6 +999,228 @@ function buildChess(ctx) {
     if (rec.goldenId && !out[rec.goldenId]) warn(`chess ${rec.chessId}: goldenId ${rec.goldenId} missing`);
   }
   return { chess: out, tokenOwners };
+}
+
+// ===== backups (补位 stand-ins, 自选 DIY slots) ===================================================
+
+/**
+ * 自选 picks beyond the 6★ the slot requirement names (diyChessDict says only TIER_6): PRTS 「卫戍协议：盟约
+ * 下半/PRTS盟约记录」 干员数据库 "可选干员范围为除所有预设干员以外的玩家拥有的六星干员、所有六星原型干员，第5阶可额外从6名四星
+ * 原型干员（先锋、特种职业除外）中选取" — per slot tier, the extra prototype rarity and the professions left out.
+ */
+const DIY_EXTRA_PROTOTYPES = Object.freeze({ 5: Object.freeze({ rarity: 4, excludedProfessions: Object.freeze(['PIONEER', 'SPECIAL']) }) });
+
+const rarityOf = (char) => Number(String(char?.rarity).replace('TIER_', '')) || null;
+const statusCmp = (a, b) => a.phase - b.phase || a.level - b.level || a.skillLevel - b.skillLevel || a.equipLevel - b.equipLevel;
+
+/**
+ * The character part of a data/backups.json unit (DATA.md §18): who it is, its art ids (the elite form uses the E2 art
+ * when it exists, as a chess does) and its module names (a composed record's `module` names the module on the normal
+ * form too, where no module phase is built).
+ */
+function buildUnitHead(ctx, charId) {
+  const { charTable, uniequip } = ctx;
+  const char = charTable[charId];
+  const moduleNames = {};
+  for (const id of uniequip.charEquip?.[charId] || []) {
+    const meta = uniequip.equipDict?.[id];
+    if (meta) moduleNames[id] = { name: meta.uniEquipName || null, typeName: `${meta.typeName1 || ''}${meta.typeName2 ? '-' + meta.typeName2 : ''}` };
+  }
+  return {
+    charId, name: char.name, appellation: char.appellation, rarity: rarityOf(char), profession: char.profession,
+    subProfessionId: char.subProfessionId, subProfessionName: uniequip.subProfDict?.[char.subProfessionId]?.subProfessionName || null,
+    position: char.position, nationId: char.nationId || null, isNotObtainable: !!char.isNotObtainable,
+    assets: {
+      avatar: charId, avatarGolden: hasE2Art(ctx, charId, 'avatar') ? `${charId}_2` : charId,
+      portrait: `${charId}_1`, portraitGolden: `${charId}_${hasE2Art(ctx, charId, 'portrait') ? 2 : 1}`,
+      spine: charId, subProfIcon: `sub_${char.subProfessionId}_icon`,
+    },
+    moduleNames,
+  };
+}
+
+/**
+ * A unit form (DATA.md §18): the character at one training status with nothing selected — the operator fields of a
+ * chess record: stats / trait / talents without a module, every skill unlocked at the status at its skill level (the
+ * trigger resolved per skill as for a chess), its summons, and at `equipLevel > 0` every ADVANCED module of that level.
+ * The helpers and rules of buildChess; checkUnitFormParity proves the two agree on every PRESET chess.
+ * @param {{ chessId?: string|null, skillIndex?: number|null }} [opts] `chessId`: the NORMAL chess id of a
+ *   TRIGGER_DEVIATIONS entry (parity check only — a stand-in's form belongs to no chess, so no deviation applies);
+ *   `skillIndex`: a skill listed even when locked (buildChess always lists the default)
+ */
+function buildUnitForm(ctx, charId, status, { chessId = null, skillIndex = null } = {}) {
+  const { charTable, uniequip, battleEquip } = ctx;
+  const char = charTable[charId];
+  const { phase, level, skillLevel, equipLevel } = status;
+  const label = chessId ? `chess ${chessId}` : `unit ${charId}@${statusKey(status)}`;
+  const attrs = interpolateAttrs(char, phase, level);
+  if (!attrs) warn(`${label}: cannot interpolate attributes`);
+  const stats = statsFrom(attrs, {});
+  const rangeId = char.phases?.[phase]?.rangeId || null;
+  const base = traitRecord(ctx, char, phase, level, [], chessId || charId);
+  const skills = [];
+  (char.skills || []).forEach((se, i) => {
+    if (!se?.skillId || (i !== skillIndex && !unlocked(se.unlockCond, phase, level))) return;
+    const s = buildSkill(ctx, se.skillId, skillLevel, null, label);
+    if (!s) return;
+    s.trigger = resolveTrigger(ctx, char, charId, i, s, { operator: true, chessId });
+    s.index = i;
+    s.overrideTokenKey = se.overrideTokenKey || null;
+    skills.push(s);
+  });
+  const talents = mergeTalentChanges(baseTalentList(ctx, char, phase, level, label), []);
+  const modules = [];
+  if (equipLevel > 0) {
+    for (const id of uniequip.charEquip?.[charId] || []) {
+      const meta = uniequip.equipDict?.[id];
+      if (!meta || meta.type === 'INITIAL') continue;
+      const ph = battleEquip[id]?.phases?.find((p) => p.equipLevel === equipLevel) || null;
+      if (!ph) { warn(`${label}: module ${id} has no level ${equipLevel} (not selectable)`); continue; }
+      const parts = splitModuleParts(ph);
+      const hasTraitPart = parts.op.some((pt) => bestCandidate(pt.overrideTraitDataBundle?.candidates, phase, level));
+      const tr = hasTraitPart ? traitRecord(ctx, char, phase, level, parts.op, chessId || charId) : null;
+      if (tr && JSON.stringify(tr.classify) !== JSON.stringify(base.classify)) warn(`${label}: module ${id} changes the combat classification (not applied by loadouts)`);
+      modules.push({
+        uniEquipId: id, name: meta.uniEquipName || null,
+        typeName: `${meta.typeName1 || ''}${meta.typeName2 ? '-' + meta.typeName2 : ''}`,
+        typeIcon: meta.typeIcon || null, icon: meta.uniEquipIcon || id, level: equipLevel,
+        attr: moduleAttr(ph),
+        traitOverride: tr ? tr.trait : null,
+        talentChanges: moduleTalentChanges(ctx, parts.op, phase, level, label),
+      });
+    }
+  }
+  // summons: every id the character lists or a skill / talent / module talent names that character_table has — the
+  // composed record keeps the ones its selection produces (shared/standIn.js composeUnitRecord)
+  const displayTokens = Object.keys(char.displayTokenDict || {});
+  const tokenIds = [...displayTokens, ...skills.map((s) => s.overrideTokenKey), ...talents.map((t) => t.tokenKey),
+    ...modules.flatMap((m) => m.talentChanges.map((t) => t.tokenKey))];
+  const form = {
+    status: { phase, level, skillLevel, equipLevel },
+    stats, immunities: stats ? immunitiesOf(attrs) : null,
+    rangeId, rangeGrid: rangeGrid(ctx, rangeId),
+    ...base.classify,
+    trait: base.trait,
+    skills, talents,
+    displayTokens,
+    tokens: [...new Set(tokenIds.filter((id) => id && charTable[id]))].sort(naturalCmp),
+  };
+  if (equipLevel > 0) form.modules = modules;
+  return form;
+}
+
+/**
+ * data/backups.json (DATA.md §18; DESIGN 0.2.0 draft): the data of 补位 and 自选.
+ * - `units`: every character a NORMAL chess names as `backup.charId` — the 17 原型干员 (预备干员 char_600–607, the 6★
+ *   罗德岛特派高级资深干员 char_608–615 and 领主·Sharp char_617) — with a form for every status it fights at: the statuses
+ *   of the chess it stands in for (normal and elite) and of the DIY slots it may fill. No unit for a PRESET chess
+ *   (特许: always the real operator; its backup is itself) or a DIY slot (no backup).
+ * - `diy`: the slots (tier, elite id, the shop level that lists them, the rarity requirement), the prototype picks per
+ *   slot tier (DIY_EXTRA_PROTOTYPES), the owned-6★ pool (obtainable, not a roster operator: no chess names it, hidden
+ *   chess included — "不可甄选加入已在名单中的固定干员") and, for every pick, its faction ids (`mainPower` and every
+ *   `subPower`: "依据其「所属势力」「隐藏势力」等属性决定其盟约") and the core bonds whose `powerIdList` meets them, else
+ *   `constData.fallbackBondId` (协防干员) — PRTS 「卫戍协议」 "甄选加入的干员会根据其实际阵营所属分配核心盟约，若没有可匹配的
+ *   则改为分配协防干员盟约".
+ */
+function buildBackups(ctx, chess) {
+  const { act, ac, charTable } = ctx;
+  const need = new Map();   // charId → Map(statusKey → status)
+  const addNeed = (charId, st) => {
+    if (!need.has(charId)) need.set(charId, new Map());
+    need.get(charId).set(statusKey(st), st);
+  };
+  const standsIn = new Map();   // charId → base chess ids
+  for (const c of Object.values(chess)) {
+    const b = c.backup;
+    if (c.chessType !== 'NORMAL' || !b?.charId || b.charId === c.charId) continue;
+    if (!charTable[b.charId]) { warn(`chess ${c.chessId}: backup ${b.charId} missing from character_table`); continue; }
+    if (b.potRank !== 0) warn(`chess ${c.chessId}: backup potential ${b.potRank} (stand-in forms are built at potential 0)`);
+    if (b.tmplId) warn(`chess ${c.chessId}: backup template ${b.tmplId} is not built`);
+    addNeed(b.charId, c.status);
+    if (!c.isGolden) standsIn.set(b.charId, [...(standsIn.get(b.charId) || []), c.chessId]);
+  }
+  const standInIds = [...standsIn.keys()].sort(naturalCmp);
+
+  const shopLevelOf = {};
+  for (const d of Object.values(act.shopLevelDisplayDataDict || {})) for (const id of d.charChessDiySlotIdList || []) shopLevelOf[id] = d.shopLevel;
+  const slots = {};
+  const prototypes = {};
+  const requirements = new Set();
+  for (const s of Object.values(chess).filter((c) => c.isDiy && !c.isGolden).sort((x, y) => naturalCmp(x.chessId, y.chessId))) {
+    const golden = chess[s.goldenId];
+    if (!golden) continue;
+    requirements.add(s.diyRequirement);
+    slots[s.chessId] = { tier: s.tier, goldenId: s.goldenId, shopLevel: shopLevelOf[s.chessId] ?? null, requirement: s.diyRequirement };
+    const extra = DIY_EXTRA_PROTOTYPES[s.tier];
+    const picks = standInIds.filter((id) => {
+      const ch = charTable[id];
+      return ch.rarity === s.diyRequirement || (!!extra && rarityOf(ch) === extra.rarity && !extra.excludedProfessions.includes(ch.profession));
+    });
+    if (prototypes[s.tier] && JSON.stringify(prototypes[s.tier]) !== JSON.stringify(picks)) warn(`DIY tier ${s.tier}: slots disagree on the prototype picks`);
+    prototypes[s.tier] = picks;
+    for (const id of picks) { addNeed(id, s.status); addNeed(id, golden.status); }
+  }
+
+  const units = {};
+  for (const id of [...need.keys()].sort(naturalCmp)) {
+    const unit = buildUnitHead(ctx, id);
+    unit.standsIn = (standsIn.get(id) || []).sort(naturalCmp);
+    unit.forms = {};
+    for (const st of [...need.get(id).values()].sort(statusCmp)) {
+      const form = buildUnitForm(ctx, id, st);
+      if (form.tokens.length) warn(`unit ${id}@${statusKey(st)}: summons ${form.tokens.join(', ')} have no tokens.json variant for a stand-in owner`);
+      unit.forms[statusKey(st)] = form;
+    }
+    units[id] = unit;
+  }
+
+  const roster = new Set(Object.values(act.charShopChessDatas).map((r) => r.charId).filter(Boolean));
+  const ownedPool = Object.keys(charTable).filter((id) => {
+    const ch = charTable[id];
+    return id.startsWith('char_') && requirements.has(ch.rarity) && ch.profession !== 'TOKEN' && ch.profession !== 'TRAP'
+      && !ch.isNotObtainable && !roster.has(id);
+  }).sort(naturalCmp);
+  const coreBonds = Object.values(ac.bondInfoDict || {}).filter((b) => b.isPower && (b.powerIdList || []).length);
+  const fallback = act.constData.fallbackBondId;
+  const operators = {};
+  for (const id of [...new Set([...ownedPool, ...Object.values(prototypes).flat()])].sort(naturalCmp)) {
+    const ch = charTable[id];
+    const powers = [];
+    for (const p of [ch.mainPower ?? { nationId: ch.nationId, groupId: ch.groupId, teamId: ch.teamId }, ...(ch.subPower || [])]) {
+      for (const k of ['nationId', 'groupId', 'teamId']) if (p?.[k] && !powers.includes(p[k])) powers.push(p[k]);
+    }
+    const hit = coreBonds.filter((b) => b.powerIdList.some((x) => powers.includes(x))).map((b) => b.bondId);
+    operators[id] = {
+      name: ch.name, rarity: rarityOf(ch), profession: ch.profession, subProfessionId: ch.subProfessionId,
+      obtainable: !ch.isNotObtainable, powers, bonds: hit.length ? hit : [fallback],
+    };
+  }
+  return { units, diy: { slots, prototypes, ownedPool, operators } };
+}
+
+/**
+ * The stand-in forms come from buildUnitForm, not buildChess: prove the two agree. Every PRESET chess is its own backup
+ * (charShopChessDatas: backupCharId = charId with the default skill and module), so its own unit form composed with
+ * that selection (shared/standIn.js composeUnitRecord) must give back the chess record field for field — a chess field
+ * that is neither an identity field (IDENTITY_FIELDS) nor set by composeUnitRecord fails here as well.
+ * @returns {string[]} errors
+ */
+function checkUnitFormParity(ctx, chess) {
+  const errors = [];
+  for (const c of Object.values(chess)) {
+    if (c.chessType !== 'PRESET' || c.backup?.charId !== c.charId) continue;
+    if (c.backup.skillIndex !== c.skill?.index || (c.backup.uniEquipId ?? null) !== (c.module?.id ?? null)) {
+      errors.push(`unit parity ${c.chessId}: the backup skill / module differ from the chess default`);
+      continue;
+    }
+    const form = buildUnitForm(ctx, c.charId, c.status, { chessId: c.baseId, skillIndex: c.skill.index });
+    const rec = composeUnitRecord(c, buildUnitHead(ctx, c.charId), form, { skillIndex: c.backup.skillIndex, moduleId: c.backup.uniEquipId });
+    if (!isDeepStrictEqual(rec, c)) {
+      const keys = [...new Set([...Object.keys(rec || {}), ...Object.keys(c)])].filter((k) => !isDeepStrictEqual(rec?.[k], c[k]));
+      errors.push(`unit parity ${c.chessId}: buildUnitForm + composeUnitRecord differ from buildChess in ${keys.join(', ')}`);
+    }
+  }
+  return errors;
 }
 
 // ===== tokens ===================================================================================
@@ -3119,7 +3348,7 @@ function findNonFinite(obj, path, out) {
 function validateAll(f) {
   const errors = [];
   const err = (m) => errors.push(m);
-  const { config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves, stages, bosses, tokens } = f;
+  const { config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves, stages, bosses, tokens, backups } = f;
   for (const [name, obj] of Object.entries(f)) {
     const bad = [];
     findNonFinite(obj, name, bad);
@@ -3159,6 +3388,30 @@ function validateAll(f) {
         else if (rule === 'SKILL_RANGE' && (!s.rangeGrid?.length || JSON.stringify(s.trigger.customRangeGrid) !== JSON.stringify(s.rangeGrid))) err(`trigger deviation ${c.chessId} ${skillId}: SKILL_RANGE needs the skill's own range as customRangeGrid`);
       }
     }
+  }
+  // 补位 / 自选 (data/backups.json, DATA.md §18): a PRESET chess is its own backup; every NORMAL chess (both forms)
+  // composes into its stand-in (shared/standIn.js standInRecord) with the chess's skill and module; every DIY slot is a
+  // DIY chess and every prototype pick of its tier has a form for both slot statuses; derived bonds exist
+  if (backups) {
+    for (const c of Object.values(chess)) {
+      const b = c.backup;
+      if (c.chessType === 'PRESET' && b?.charId !== c.charId) err(`chess ${c.chessId}: a PRESET chess's backup must be itself`);
+      if (c.chessType === 'DIY' && b?.charId !== null) err(`chess ${c.chessId}: a DIY slot has no backup`);
+      if (c.chessType !== 'NORMAL') continue;
+      const r = standInRecord(c, backups);
+      if (!r) { err(`chess ${c.chessId}: no stand-in ${b?.charId}@${statusKey(c.status)} in backups.json`); continue; }
+      if (!r.stats || !Array.isArray(r.rangeGrid) || !r.trait) err(`chess ${c.chessId}: stand-in ${b.charId} without stats / range / trait`);
+      if (r.skill?.index !== b.skillIndex || r.skills.filter((s) => s.isDefault).length !== 1) err(`chess ${c.chessId}: stand-in skill ${b.skillIndex} is not unlocked at ${statusKey(c.status)}`);
+      if (b.uniEquipId && c.status.equipLevel > 0 && !r.module?.active) err(`chess ${c.chessId}: stand-in module ${b.uniEquipId} has no level ${c.status.equipLevel}`);
+      if (r.tokens.length) err(`chess ${c.chessId}: stand-in ${b.charId} summons ${r.tokens.join(', ')} (no tokens.json variant)`);
+    }
+    for (const [id, s] of Object.entries(backups.diy.slots)) {
+      const slot = chess[id], golden = chess[s.goldenId];
+      if (!slot?.isDiy || slot.isGolden || slot.tier !== s.tier || !golden?.isDiy) { err(`DIY slot ${id}: not a DIY chess pair of tier ${s.tier}`); continue; }
+      if (!backups.diy.prototypes[s.tier]?.length) err(`DIY slot ${id}: no prototype picks`);
+      for (const p of backups.diy.prototypes[s.tier] || []) for (const rec of [slot, golden]) if (!unitForm(backups, p, rec.status)) err(`DIY slot ${rec.chessId}: prototype ${p} has no form ${statusKey(rec.status)}`);
+    }
+    for (const [id, o] of Object.entries(backups.diy.operators)) for (const b of o.bonds) if (!bonds[b]) err(`DIY pick ${id}: bond ${b} missing`);
   }
   for (const b of Object.values(bonds)) {
     for (const m of b.members) if (!chess[m]) err(`bond ${b.bondId}: member ${m} missing`);
@@ -3234,6 +3487,7 @@ async function main() {
   const ctx = await loadContext();
   log('building…');
   const { chess, tokenOwners } = buildChess(ctx);
+  const backups = buildBackups(ctx, chess);
   const effects = buildEffects(ctx);
   const bonds = buildBonds(ctx, chess, effects);
   const garrisons = buildGarrisons(ctx, chess);
@@ -3250,9 +3504,9 @@ async function main() {
   // whose bond the mode switches off
   for (const b of Object.values(bands)) b.bondIds = bandBondIds(b, { bonds, pools: choices.pools });
   const config = buildConfig(ctx, waves, stages, bands);
-  const files = { config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves, stages, bosses, tokens };
+  const files = { config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves, stages, bosses, tokens, backups };
 
-  const errors = validateAll(files);
+  const errors = [...validateAll(files), ...checkUnitFormParity(ctx, chess)];
   let total = 0;
   const sizes = {};
   const texts = {};
@@ -3282,6 +3536,8 @@ async function main() {
       bands: Object.keys(bands).length, effects: Object.keys(effects).length, enemies: Object.keys(enemies).length,
       waves: Object.keys(waves).length, stages: Object.keys(stages).length, bosses: Object.keys(bosses).length,
       tokens: Object.keys(tokens).length, factionEntries: Object.keys(factions.entries).length,
+      backupUnits: Object.keys(backups.units).length,
+      backupForms: Object.values(backups.units).reduce((n, u) => n + Object.keys(u.forms).length, 0),
     },
     sizes, totalBytes: total, out: OPTS.out, written: write, warnings, errors,
   };

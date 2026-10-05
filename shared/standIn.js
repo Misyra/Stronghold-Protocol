@@ -1,0 +1,131 @@
+// shared/standIn.js — a chess fielded with another character's body: the 补位 stand-in (原型干员) of a NORMAL chess
+// whose operator the player does not own, and a 自选 (DIY) slot filled with a prototype. Pure ESM shared by the build
+// (tools/build-data.mjs proves composeUnitRecord rebuilds every PRESET chess from its own unit form), the simulation and
+// the client. Data: data/backups.json (docs/DATA.md §18).
+//
+// `backups.units[charId].forms[statusKey]` holds what a character is at one training status (stats, trait, talents,
+// every skill unlocked there, the modules of that equip level) with nothing selected. composeUnitRecord joins a form to
+// the identity of a chess record — chess id, tier, bonds, 特质 (garrisonIds), price, merge, status: PRTS 「卫戍协议」
+// "原型干员会继承其补位干员的盟约 / 特质" — with a selected skill and module, and returns a record shaped exactly like a
+// data/chess.json record whose `skill` / `module` defaults are that selection: normalizeChess, resolveLoadout /
+// loadoutRecord and the detail card read it unchanged. A stand-in's skill and module are fixed by the chess
+// (`backup.skillIndex` / `backup.uniEquipId`; Bilibili wiki 盟约: "对于补位干员其技能不可更改"), so a caller resolves it
+// with no loadout. Sim kits are keyed by base chess id (server/sim/content/index.js setupUnitKit): a stand-in keeps the
+// chess's ids, so its kit must be looked up by its `charId`, never by `baseId` (that is the replaced operator's kit).
+
+import { composeStats, composeTalents } from './loadoutRecord.js';
+
+/** The key of a unit form: a chess record's `status` as `${phase}/${level}/${skillLevel}/${equipLevel}`. */
+export function statusKey(status) {
+  const s = status && typeof status === 'object' ? status : {};
+  return `${s.phase ?? 0}/${s.level ?? 1}/${s.skillLevel ?? 1}/${s.equipLevel ?? 0}`;
+}
+
+/**
+ * Fields a composed record takes from the chess record (its identity); every other field comes from the character.
+ * tools/build-data.mjs fails the build when a chess field is neither one of these nor set by composeUnitRecord.
+ */
+export const IDENTITY_FIELDS = Object.freeze([
+  'chessId', 'baseId', 'goldenId', 'isGolden', 'tier', 'identifier', 'isHidden', 'isDiy', 'visible', 'chessType', 'backup',
+  'shopSortId', 'bonds', 'garrisonIds', 'price', 'sellPrice', 'upgradeNum', 'upgradeChessId', 'status', 'diyRequirement',
+]);
+
+/** The form of `charId` at a chess `status`, or null. */
+export function unitForm(backups, charId, status) {
+  const forms = backups?.units?.[charId]?.forms;
+  return (forms && Object.prototype.hasOwnProperty.call(forms, statusKey(status)) && forms[statusKey(status)]) || null;
+}
+
+const byNatural = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: true });
+
+/**
+ * A chess record fielded with the character of `unit` at `form`, with the selected skill and module (a new object).
+ * The same rules as tools/build-data.mjs buildChess: stats = form stats + the module's `attr`, trait = the module's
+ * `traitOverride` or the form's, talents = form talents + the module's `talentChanges`; `module` is active only when
+ * `status.equipLevel > 0` and the module has that level; an elite with `equipLevel > 0` carries
+ * `statsBase` / `traitBase` / `talentsBase` / `modules[]`; `tokens` are the summons the selection produces.
+ * @param {object} identity the data/chess.json record whose identity the unit takes (IDENTITY_FIELDS)
+ * @param {object} unit backups.units[charId]
+ * @param {object} form backups.units[charId].forms[statusKey(identity.status)]
+ * @param {{ skillIndex: number, moduleId?: string|null, standInFor?: string|null, bonds?: string[]|null }} sel
+ *   `bonds` replaces the identity's (a DIY slot's are empty: the pick's derived bonds); `standInFor` = the replaced
+ *   operator's charId (the official 补位 mark on the avatar)
+ * @returns {object|null} null when a part is missing
+ */
+export function composeUnitRecord(identity, unit, form, { skillIndex, moduleId = null, standInFor = null, bonds = null } = {}) {
+  if (!identity || typeof identity !== 'object' || !unit || !form) return null;
+  const out = {};
+  for (const k of IDENTITY_FIELDS) if (Object.prototype.hasOwnProperty.call(identity, k)) out[k] = identity[k];
+  if (Array.isArray(bonds)) out.bonds = [...bonds];
+  const equipLevel = identity.status?.equipLevel || 0;
+  const skills = Array.isArray(form.skills) ? form.skills : [];
+  const skill = skills.find((s) => s && s.index === skillIndex) ?? null;
+  const mods = Array.isArray(form.modules) ? form.modules : null;
+  const mod = moduleId && mods ? mods.find((m) => m && m.uniEquipId === moduleId) ?? null : null;
+  const talents = mod ? composeTalents(form.talents, mod.talentChanges) : form.talents;
+  // summons: listed by the character, produced by the selected skill or a talent (buildChess `tokens`)
+  const known = new Set(form.tokens || []);
+  const tokenIds = new Set([...(form.displayTokens || []), skill?.overrideTokenKey, ...(talents || []).map((t) => t?.tokenKey)]
+    .filter((id) => id && known.has(id)));
+  const info = moduleId ? unit.moduleNames?.[moduleId] ?? null : null;
+  const golden = !!identity.isGolden;
+  const a = unit.assets || {};
+  Object.assign(out, {
+    charId: unit.charId, name: unit.name, appellation: unit.appellation, rarity: unit.rarity, profession: unit.profession,
+    subProfessionId: unit.subProfessionId, subProfessionName: unit.subProfessionName, position: unit.position,
+    nationId: unit.nationId,
+    stats: mod ? composeStats(form.stats, mod.attr) : form.stats,
+    immunities: form.immunities, rangeId: form.rangeId, rangeGrid: form.rangeGrid,
+    dmgType: form.dmgType, attackKind: form.attackKind, projectile: form.projectile, canHitFly: form.canHitFly,
+    targetPriority: form.targetPriority,
+    trait: (mod && mod.traitOverride) || form.trait,
+    skill: skill ? { ...skill } : null,
+    talents,
+    tokens: [...tokenIds].sort(byNatural),
+    module: moduleId
+      ? { id: moduleId, name: info?.name ?? null, type: info?.typeName ?? null, level: equipLevel, active: equipLevel > 0 && !!mod }
+      : (equipLevel > 0 ? { id: null, name: null, type: null, level: equipLevel, active: false } : null),
+    assets: {
+      avatar: golden ? a.avatarGolden : a.avatar, portrait: golden ? a.portraitGolden : a.portrait, spine: a.spine,
+      skillIcon: skill?.iconId || null, subProfIcon: a.subProfIcon,
+    },
+    skills: skills.map((s) => ({ ...s, isDefault: s.index === skillIndex })),
+  });
+  if (golden && equipLevel > 0) {
+    out.statsBase = form.stats;
+    out.traitBase = form.trait;
+    out.talentsBase = form.talents;
+    out.modules = (mods || []).map((m) => ({ ...m, isDefault: m.uniEquipId === moduleId }));
+  }
+  if (standInFor) out.standInFor = standInFor;
+  return out;
+}
+
+/**
+ * The 补位 record of a chess: a NORMAL chess (normal or elite) fielded as its official stand-in — `backup.charId` at
+ * the chess's own status, skill `backup.skillIndex`, module `backup.uniEquipId` (none when null), potential 0 — with
+ * the chess's bonds, 特质, tier, price and merge. Null for a PRESET (特许: always the real operator) or DIY chess, or
+ * when the data lacks the unit / form.
+ * @param {object} chess data/chess.json record
+ * @param {object} backups data/backups.json
+ */
+export function standInRecord(chess, backups) {
+  const b = chess?.backup;
+  if (!b || chess.chessType !== 'NORMAL' || !b.charId || b.charId === chess.charId) return null;
+  const unit = backups?.units?.[b.charId] ?? null;
+  return composeUnitRecord(chess, unit, unitForm(backups, b.charId, chess.status),
+    { skillIndex: b.skillIndex, moduleId: b.uniEquipId ?? null, standInFor: chess.charId });
+}
+
+/**
+ * A 自选 slot (DIY chess record, normal or elite) filled with a prototype `charId` (backups.diy.prototypes[tier]):
+ * the slot's identity (tier, price, no 特质) with the pick's derived bonds (backups.diy.operators[charId].bonds). The
+ * skill and module are the caller's — which skill a prototype carries in a slot is not in the data (DESIGN 0.2.0
+ * draft, open question). Null when the pick is not a legal prototype of the slot's tier or the data lacks it.
+ */
+export function diyRecord(slot, charId, backups, { skillIndex, moduleId = null } = {}) {
+  if (!slot?.isDiy || !(backups?.diy?.prototypes?.[slot.tier] || []).includes(charId)) return null;
+  const unit = backups.units?.[charId] ?? null;
+  return composeUnitRecord(slot, unit, unitForm(backups, charId, slot.status),
+    { skillIndex, moduleId, bonds: backups.diy.operators?.[charId]?.bonds ?? null });
+}

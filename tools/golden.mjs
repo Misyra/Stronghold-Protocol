@@ -320,12 +320,12 @@ function layout(gd, stageId, wanted, { field = 'normal', colOffset = 0, max = 12
     const rank = (r, c) => { const d = dist(r, c); return d === 0 ? 1.5 : d; }; // beside a path first, then on it
     return out.sort((a, b) => rank(a[0], a[1]) - rank(b[0], b[1]));
   };
-  const isMelee = (w) => positionClass(data.chess[w.chessId], w.moduleId) === 'melee';
+  const isMelee = (w) => positionClass(data.chess[w.chessId]) === 'melee';
   const order = wanted.slice().sort((a, b) => (isMelee(b) - isMelee(a)) || (isMelee(a) ? (data.chess[b.chessId].stats.blockCnt || 0) - (data.chess[a.chessId].stats.blockCnt || 0) : 0));
   let uid = uid0;
   for (const w of order) {
     const rec = data.chess[w.chessId];
-    const free = units.length < max ? tiles(positionClass(rec, w.moduleId)) : [];
+    const free = units.length < max ? tiles(positionClass(rec)) : [];
     if (!free.length) { rest.push(w); continue; }
     const [r, c] = free[0];
     used.add(tileKey(r, c));

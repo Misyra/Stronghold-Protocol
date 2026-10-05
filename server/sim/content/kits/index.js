@@ -82,6 +82,9 @@ export const OPERATOR_KIT_FILES = Object.freeze(['op-siege.js',
   'op-chen.js',
   'op-irene.js',
   'op-helage.js',
+  'op-shining.js',
+  'op-cgbird.js',
+  'op-saga.js',
 ]);
 
 /**

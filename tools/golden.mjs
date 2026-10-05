@@ -25,10 +25,12 @@
 //            ended at 200 game s) and 联防 fields (1 and 2 helpers on the 联防 map of their count — boards laid out on a
 //            battle stage —, carried HP / SP, a knocked-out operator, two leakers' enemies with a summoned-only kind and
 //            a bounty)
-//   matches  17 matches run to the end in virtual time with the match's default bot rehearsal: 16 bot-only (solo 标准 /
+//   matches  18 matches run to the end in virtual time with the match's default bot rehearsal: 16 bot-only (solo 标准 /
 //            险境 / 绝境 / 终极 ×2 seeds, co-op 2 / 3 / 4, one server-run combat match, two with LP and layers raised at the
-//            first prep so they reach the Hidden Core) and one co-op match whose human seat (AI 托管, offline: its
-//            battles run on the server) does not own a few NORMAL chess — they fight as their 补位 stand-ins (0.2.0)
+//            first prep so they reach the Hidden Core), one co-op match whose human seat (AI 托管, offline: its
+//            battles run on the server) does not own a few NORMAL chess — they fight as their 补位 stand-ins (0.2.0) — and
+//            one whose human seat slots 自选 picks (推进之王 and prototypes; its 调度中心 at level 5 from the first prep):
+//            its shop sells them and its AI fields them (0.2.0 自选编队, the digest's `diy`)
 //   standins 10 battles: every NORMAL chess record (normal + elite, 110) fielded as its 补位 stand-in (PlayerBattleInput
 //            standIn: true — DATA.md §18: the stand-in's body, its backup skill / module, its kit by charId; all 17
 //            stand-ins and every skill a chess names for them), 12 per battle by strength band, laid out by the stand-in's
@@ -713,8 +715,28 @@ export function matchScenarios() {
   out.push({ id: 'coop2-ABYSS-10-boosted', mode: 'coop', difficulty: 'ABYSS', bots: 2, seed: 10, boost: { lp: 400, layers: 300 } });
   // 0.2.0 补位: a human seat (AI 托管, offline: its battles run on the server) that does not own a few NORMAL chess
   out.push({ id: 'coop2-NORMAL-14-standins', mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: 14, human: { notOwned: MATCH_NOT_OWNED } });
-  return out.map((m) => ({ ...m, family: 'matches', kind: 'match', about: `${m.mode} ${m.difficulty}, ${m.bots} bot seat(s)${m.human ? ` + 1 human seat (AI 托管) without ${m.human.notOwned.length} operators (补位 stand-ins)` : ''}, seed ${m.seed}${m.clientCombat === false ? ', server-run combat' : ''}${m.boost ? `, LP ${m.boost.lp} and ${m.boost.layers} layers per bond from the first prep` : ''}` }));
+  // 0.2.0 自选编队: a human seat (AI 托管, offline) that slots 推进之王 and prototypes into the four DIY slots
+  // (its 调度中心 starts at level 5, like the boosted runs' raised LP: the 自选 pieces are sold from level 5 / 6, which the
+  // AI otherwise reaches only with a full board, where a single new operator rarely improves its lineup)
+  out.push({ id: `coop2-NORMAL-${MATCH_DIY_SEED}-diy`, mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: MATCH_DIY_SEED, human: { diy: MATCH_DIY, shopLevel: 5 } });
+  const humanAbout = (h) => (h.notOwned ? ` + 1 human seat (AI 托管) without ${h.notOwned.length} operators (补位 stand-ins)`
+    : ` + 1 human seat (AI 托管) with ${Object.keys(h.diy || {}).length} 自选 picks${h.shopLevel ? ` and its 调度中心 at level ${h.shopLevel} from the first prep` : ''}`);
+  return out.map((m) => ({ ...m, family: 'matches', kind: 'match', about: `${m.mode} ${m.difficulty}, ${m.bots} bot seat(s)${m.human ? humanAbout(m.human) : ''}, seed ${m.seed}${m.clientCombat === false ? ', server-run combat' : ''}${m.boost ? `, LP ${m.boost.lp} and ${m.boost.layers} layers per bond from the first prep` : ''}` }));
 }
+
+/**
+ * The 自选 match's human seat (0.2.0 自选编队, shared/diy.js): 推进之王 (an owned 6★ with its operator kit; S3 and SOL-X) in a
+ * tier-5 slot, Sharp (a prototype: its locked S3 + SOL-X) in the other tier-5 slot and a tier-6 one, 领主·Sharp in the last
+ * — its shop sells them from 调度中心 level 5 / 6 and its AI fields them (the digest's `diy` lists the shop draws and the
+ * fielded pieces per round).
+ */
+const MATCH_DIY = Object.freeze({
+  chess_char_5_diy1_a: { charId: 'char_112_siege', skillIndex: 2, uniEquipId: 'uniequip_002_siege' },
+  chess_char_5_diy2_a: { charId: 'char_609_acguad' },
+  chess_char_6_diy1_a: { charId: 'char_609_acguad' },
+  chess_char_6_diy2_a: { charId: 'char_617_sharp2' },
+});
+const MATCH_DIY_SEED = 70;
 
 /**
  * The NORMAL chess the 补位 match's human seat does not own: operators its AI fields with seed 14 (瑕光 → 郁金香 from
@@ -737,8 +759,14 @@ export function runMatch(cfg) {
   const sched = new VirtualScheduler();
   const seats = [];
   // a human seat (cfg.human): offline (its battles run on the server) and on AI 托管 from the start; its not-owned chess
-  // fight as their 补位 stand-ins
-  if (cfg.human) seats.push({ seat: 0, playerId: 'h_0', name: 'H-1', isBot: false, connected: false, notOwned: [...cfg.human.notOwned] });
+  // fight as their 补位 stand-ins, its 自选 picks join its shop
+  if (cfg.human) {
+    seats.push({
+      seat: 0, playerId: 'h_0', name: 'H-1', isBot: false, connected: false,
+      ...(cfg.human.notOwned ? { notOwned: [...cfg.human.notOwned] } : null),
+      ...(cfg.human.diy ? { diy: JSON.parse(JSON.stringify(cfg.human.diy)) } : null),
+    });
+  }
   for (let i = 0; i < cfg.bots; i++) seats.push({ seat: seats.length, playerId: `ai_${i}`, name: `AI-${i + 1}`, isBot: true, connected: true });
   let summary = null;
   const logged = [];
@@ -752,10 +780,24 @@ export function runMatch(cfg) {
   const rounds = [];
   // 补位: per round at SETTLE, the human's board pieces that fought as stand-ins (chess id → stand-in charId)
   const standIns = [];
+  // 自选编队: per round, the human's shop draws of its 自选 pieces and, at SETTLE, its board pieces that fought as their
+  // operators (slot id → charId) — an instance wrapper that only observes (as server/match/audit.js does)
+  const diyRounds = [];
+  const diyRolls = new Map();
+  if (cfg.human?.diy) {
+    const h = m.players.get('h_0');
+    const roll = h._rollChessSlot.bind(h);
+    h._rollChessSlot = () => {
+      const slot = roll();
+      if (slot && h.diyPickOf(slot.id)) diyRolls.set(m.round, [...(diyRolls.get(m.round) || []), slot.id.replace(/^chess_char_/, '')]);
+      return slot;
+    };
+  }
   let last = '';
   m.start();
   const setup = { stageId: m.stageId, bossId: m.bossId, hiddenBossId: m.hiddenBossId, factions: [...(m.factions || [])] };
   let boosted = !cfg.boost;
+  let levelled = !cfg.human?.shopLevel;
   const prepFunds = {};
   sched.runUntil(() => {
     const key = `${m.phase}:${m.round}`;
@@ -768,6 +810,14 @@ export function runMatch(cfg) {
           for (const id of m.gd.bondIds) ps.layers[id] = cfg.boost.layers;
           ps.recompute();
         }
+      }
+      // the human's 调度中心 raised at the first prep (its shop rerolled there; the next level's price follows)
+      if (!levelled && m.phase === 'PREP') {
+        levelled = true;
+        const h = m.players.get('h_0');
+        h.shop.level = cfg.human.shopLevel;
+        h.shop.upgradePrice = m.gd.upgradeBase(h.shop.level) ?? 0;
+        h.rollShop({ keepFrozen: false });
       }
       // funds when the prep opens (income in, nothing bought yet: the bots play their prep in later callbacks)
       if (m.phase === 'PREP') for (const ps of m.order) prepFunds[ps.playerId] = ps.funds;
@@ -782,10 +832,15 @@ export function runMatch(cfg) {
           ];
         }
         rounds.push(row);
-        if (cfg.human) {
+        if (cfg.human?.notOwned) {
           const h = m.players.get('h_0');
           const fielded = [...h.board.values()].filter((p) => p.kind === 'chess' && h.fieldsStandIn(p.id)).map((p) => `${p.id.replace(/^chess_char_/, '')}→${m.gd.standIn(p.id)?.charId}`).sort(byId);
           standIns.push([m.round, fielded.join(' ')]);
+        }
+        if (cfg.human?.diy) {
+          const h = m.players.get('h_0');
+          const fielded = [...h.board.values()].filter((p) => p.kind === 'chess' && h.diyPickOf(p.id)).map((p) => `${p.id.replace(/^chess_char_/, '')}→${h.diyPickOf(p.id).charId}`).sort(byId);
+          diyRounds.push([m.round, (diyRolls.get(m.round) || []).sort(byId).join(' '), fielded.join(' ')]);
         }
       }
     }
@@ -817,7 +872,13 @@ export function runMatch(cfg) {
     rounds,
     players,
   };
-  if (cfg.human) digest.standIns = { notOwned: [...m.players.get('h_0').standIns], rounds: standIns };
+  if (cfg.human?.notOwned) digest.standIns = { notOwned: [...m.players.get('h_0').standIns], rounds: standIns };
+  if (cfg.human?.diy) {
+    const h = m.players.get('h_0');
+    // [round, this round's shop draws of its 自选 pieces (slot ids), the 自选 pieces fielded at SETTLE (slot → operator)];
+    // the stock left at the end
+    digest.diy = { picks: JSON.parse(JSON.stringify(h.diy)), banned: [...h.diyBanned], rounds: diyRounds, stock: h.diyStock.snapshot() };
+  }
   m.dispose();
   return digest;
 }
@@ -961,7 +1022,7 @@ const ABOUT = {
  * fields (one of them a Hidden Core), six matches (solo 标准 / 绝境, co-op 2 / 4, the boosted Hidden Core run, the 补位
  * match) and the normal-record stand-in battles.
  */
-const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted', 'coop2-NORMAL-14-standins']);
+const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted', 'coop2-NORMAL-14-standins', `coop2-NORMAL-${MATCH_DIY_SEED}-diy`]);
 const FAST_FIELDS = new Set(['boss-boss_1-pair', 'boss-boss_4-solo', 'boss-boss_7-pair', 'hidden-boss_9-pair', 'unite-1', 'unite-2']);
 export function isFast(sc) {
   if (sc.family === 'matches') return FAST_MATCHES.has(sc.id);

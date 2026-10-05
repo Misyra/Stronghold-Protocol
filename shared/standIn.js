@@ -47,7 +47,7 @@ const byNatural = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: 
  * @param {object} identity the data/chess.json record whose identity the unit takes (IDENTITY_FIELDS)
  * @param {object} unit backups.units[charId]
  * @param {object} form backups.units[charId].forms[statusKey(identity.status)]
- * @param {{ skillIndex: number, moduleId?: string|null, standInFor?: string|null, bonds?: string[]|null }} sel
+ * @param {{ skillIndex?: number, moduleId?: string|null, standInFor?: string|null, bonds?: string[]|null }} [sel]
  *   `bonds` replaces the identity's (a DIY slot's are empty: the pick's derived bonds); `standInFor` = the replaced
  *   operator's charId (the official 补位 mark on the avatar)
  * @returns {object|null} null when a part is missing
@@ -122,6 +122,11 @@ export function standInRecord(chess, backups) {
  * the slot's identity (tier, price, no 特质) with the pick's derived bonds (backups.diy.operators[charId].bonds). The
  * skill and module are the caller's — which skill a prototype carries in a slot is not in the data (DESIGN 0.2.0
  * draft, open question). Null when the pick is not a legal prototype of the slot's tier or the data lacks it.
+ * @param {object} slot a DIY chess record (data/chess.json, `isDiy`)
+ * @param {string} charId the picked prototype
+ * @param {object} backups data/backups.json
+ * @param {{ skillIndex?: number, moduleId?: string|null }} [opts]
+ * @returns {object|null}
  */
 export function diyRecord(slot, charId, backups, { skillIndex, moduleId = null } = {}) {
   if (!slot?.isDiy || !(backups?.diy?.prototypes?.[slot.tier] || []).includes(charId)) return null;

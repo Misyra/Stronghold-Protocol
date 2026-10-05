@@ -81,6 +81,23 @@ test('电弧 in every 自选 form: her kit (all three skills authored), the form
   assert.deepEqual([modOf(5, SOA).attr, modOf(6, SOA).attr, modOf(5, SOB).attr, modOf(6, SOB).attr], [{ maxHp: 125, atk: 27 }, { maxHp: 165, atk: 43 }, { atk: 41 }, { atk: 65 }]);
 });
 
+test('电弧\'s skills in every form: the data\'s SP (time SP, spCost, initSp, charges) and her 3-1 range while each runs (none changes it)', () => {
+  for (const f of FORMS_ALL) {
+    const [tier, elite, mod] = f;
+    for (const skill of [0, 1, 2]) {
+      const sk = formOf(tier, elite).skills[skill];
+      const { h, u } = field({ tier, elite, mod, skill });
+      assert.deepEqual([u.skill.spType, u.skill.spCost, u.skill.maxCharges], ['time', sk.spCost, sk.maxChargeTime], `${label(f)} S${skill + 1}: SP`);
+      assert.ok(Math.abs(u.skill.sp - sk.initSp) < 0.1, `${label(f)} S${skill + 1}: initSp ${sk.initSp} (${u.skill.sp})`);
+      h.spawn('enemy_dummy', { pos: [10, 4] });
+      u.skill.gainSp(999);
+      assert.ok(h.runUntil(() => u.skill.activations > 0, 3), `${label(f)} S${skill + 1}: cast with an enemy in her range`);
+      assert.deepEqual(u.liveRangeGrid, formOf(tier, elite).rangeGrid, `${label(f)} S${skill + 1}: 3-1 while it runs`);
+      done(h);
+    }
+  }
+});
+
 test('a 自选 pick: 电弧 is offered at tiers 5 and 6 and a roster with her passes validateDiyPicks (the 岁的界园志异 modules SO-A / SO-B are not ISW-*)', () => {
   const data = { chess: CHESS, backups: BACKUPS };
   assert.ok(KITTED_CHARS.includes(RAD));

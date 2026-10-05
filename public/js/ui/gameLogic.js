@@ -731,15 +731,16 @@ export function mergeTarget(priv, chessId, getChess = () => null) {
   return { row: board[0].row, col: board[0].col, dir: board[0].dir || 'RIGHT' };
 }
 
-/** Whether every hand slot is taken (the server refuses a purchase / reward that needs a slot: HAND_FULL). */
+/** Whether every hand slot is taken (the server refuses every purchase / reward pick then: HAND_FULL, GitHub #82). */
 export function handFull(priv) {
   const hand = Array.isArray(priv?.hand) ? priv.hand : [];
   return hand.length >= GEO.HAND_SIZE && hand.every((p) => p != null);
 }
 
 /**
- * Would gaining one more `slot` (shop / reward card: { kind: 'chess'|'item', id }) complete a merge right away, so it
- * needs no hand slot? Mirror of server PlayerState completesChessMerge / completesItemMerge.
+ * Would gaining one more `slot` (shop / reward card: { kind: 'chess'|'item', id }) complete a merge right away? Mirror
+ * of server PlayerState completesChessMerge / completesItemMerge. (A full hand refuses such a purchase all the same:
+ * PRTS 卫戍协议/帮助 §手牌区, GitHub #82.)
  * @param {any} priv
  * @param {{kind?:string, id:string}} slot
  * @param {{ getChess?:(id:string)=>any, getItem?:(id:string)=>any, itemMergeCount?: number }} [o]
@@ -795,10 +796,10 @@ export function offerHeader(offer) {
 /**
  * Why a shop action is unavailable (null when available).
  * @param {'buy'|'reward'|'refresh'|'freeze'|'levelUp'|'ready'} kind
- * @param {{ priv:any, editable:boolean, slot?:any, getChess?:(id:string)=>any, getItem?:(id:string)=>any }} ctx
+ * @param {{ priv:any, editable:boolean, slot?:any }} ctx
  * @returns {string|null} Chinese reason
  */
-export function shopBlockReason(kind, { priv, editable, slot, getChess, getItem } = {}) {
+export function shopBlockReason(kind, { priv, editable, slot } = {}) {
   if (!priv) return '尚未就绪';
   if (priv.alive === false) return '你已被淘汰';
   if (kind === 'ready') return priv.canReady === false ? '临时整备区不为空，请先处理溢出的资源' : null;
@@ -811,7 +812,8 @@ export function shopBlockReason(kind, { priv, editable, slot, getChess, getItem 
   if (kind === 'buy' || kind === 'reward') {
     if (!isObj(slot) || slot.sold) return kind === 'reward' ? '已选择' : '已售出';
     if ((Number(slot.price) || 0) > funds) return '资金不足';
-    if (handFull(priv) && !completesMerge(priv, slot, { getChess, getItem })) return '整备区已满';
+    // a full hand refuses every purchase / pick, a merge-completing one too (PRTS 卫戍协议/帮助 §手牌区, GitHub #82)
+    if (handFull(priv)) return '整备区已满';
     return null;
   }
   if (kind === 'refresh') return (Number(shop.refreshPrice) || 0) > funds ? '资金不足' : null;

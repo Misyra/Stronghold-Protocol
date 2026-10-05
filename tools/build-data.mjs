@@ -2499,14 +2499,25 @@ function stageDisplayName(stageId, raw) {
 }
 
 /**
+ * The 联防 maps' names: the tables and PRTS name neither map, so the label is the remake's own [ASSUMED] (PRTS
+ * 卫戍协议/帮助 §联防阶段 calls the joined field "一处阵地"); no screen shows it today.
+ */
+const UNITE_STAGE_NAMES = { 1: '联防阵地（1名玩家）', 2: '联防阵地（2名玩家）' };
+
+/**
  * Build data/stages.json: 19×21 terrain grids (row 0 = bottom), legend, devices, special terrain
- * parameters, deployable tiles and helper ground paths.
+ * parameters, deployable tiles and helper ground paths — the 11 battle stages of stageDatasDict, then the two 联防
+ * maps: act2autochess constData escapedBattleTemplateMapSinglePlayer / MultiPlayer name the level of the 联防 battle
+ * (level_act1autochess_escaped_single / _multi), whose own map is the 联防 field — a road, not the round's stage (GitHub
+ * #41). They carry `kind: 'unite'` and `helpers` (1 / 2), weight 0, no modes, and are never drawn as a match stage.
  */
 function buildStages(ctx, modesById) {
   const researchStages = ctx.research.maps?.stages || {};
   const out = {};
-  for (const stageId of ctx.stageIds) {
-    const sd = ctx.act.stageDatasDict[stageId];
+  const unite = [['escapedBattleTemplateMapSinglePlayer', 1], ['escapedBattleTemplateMapMultiPlayer', 2]]
+    .filter(([k]) => ctx.act.constData[k]).map(([k, helpers]) => ({ stageId: templateIdOf(ctx.act.constData[k]), helpers }));
+  for (const { stageId, helpers } of [...ctx.stageIds.map((id) => ({ stageId: id, helpers: 0 })), ...unite]) {
+    const sd = helpers ? null : ctx.act.stageDatasDict[stageId];
     const lv = ctx.levels[stageId];
     const map = lv.mapData?.map || [];
     const tiles = lv.mapData?.tiles || [];
@@ -2603,10 +2614,11 @@ function buildStages(ctx, modesById) {
       const p2 = officialPath(gridStage, activeBlocking, a, b);
       if (p2) groundPathsWithDevices[k] = p2;
     }
-    const modes = [...(sd.mode || [])];
+    const modes = [...(sd?.mode || [])];
     const o = lv.options || {};
     out[stageId] = {
-      id: stageId, name: stageDisplayName(stageId, researchStages[stageId]?.name), weight: sd.weight, active: sd.weight > 0,
+      id: stageId, name: helpers ? UNITE_STAGE_NAMES[helpers] : stageDisplayName(stageId, researchStages[stageId]?.name),
+      weight: sd ? sd.weight : 0, active: sd ? sd.weight > 0 : false, ...(helpers ? { kind: 'unite', helpers } : {}),
       modes, size: [H, W], rows, tiles: glyphTiles,
       devices, mapChars, special, runes, globalBuffs,
       deployTiles: { normal: deployIn(9, 12, 2, 10), bossLeft: deployIn(1, 5, 2, 10), bossRight: deployIn(1, 5, 10, 18) },
@@ -3514,6 +3526,10 @@ function validateAll(f) {
     if (s.rows.length !== 19 || s.rows.some((r) => r.length !== 21)) err(`stage ${s.id}: not 19x21`);
     if (s.rows.some((r) => r.includes('?'))) err(`stage ${s.id}: unknown tile glyph`);
     if (s.name !== s.id && /[A-Za-z]/.test(s.name)) err(`stage ${s.id}: Latin text in player-facing name "${s.name}"`);
+  }
+  // the 联防 field of 1 / 2 helpers is the map of its template (server/match/unite.js uniteStageId)
+  for (const [n, id] of Object.entries(config.unite.templates)) {
+    if (stages[id]?.kind !== 'unite' || stages[id].helpers !== Number(n) || stages[id].active) err(`unite template ${id}: no inactive 联防 stage for ${n} helper(s)`);
   }
   for (const m of Object.values(config.modes)) {
     for (const [r, rd] of Object.entries(m.rounds)) {

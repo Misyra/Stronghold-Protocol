@@ -2,9 +2,12 @@
 //
 // Handlers validate → mutate → recompute bonds → mark the private view dirty. They never throw on bad input; they
 // return `{ ok: true }` or `{ error: ERR.*, detail? }`. Rules (research 00-INDEX §3–§4, 01 A1, 04 §2):
-//   * Hand (整备区) 10 slots filled right→left, temp (临时整备区) 5 slots. A full hand refuses buys / withdrawals,
-//     except a purchase that completes a merge and a withdrawal whose own summon stack frees a slot. Passive gains (merge
-//     results, grants, returned equipment) overflow into temp; temp blocks Ready ("直到溢出情况排除才可开始进行作战").
+//   * Hand (整备区) 10 slots filled right→left, temp (临时整备区) 5 slots. A full hand refuses buys and reward picks —
+//     also one that would complete a merge at once (PRTS 卫戍协议/帮助 §手牌区 "例如招募/购入等通常情况下会增加手牌的操作";
+//     GitHub #82) — and withdrawals, except one whose own summon stack frees a slot. Passive gains (merge results,
+//     grants, returned equipment) overflow into temp, and a free hand slot pulls them back in at once, right→left
+//     (_fillHandFromTemp at every recompute: "常规手牌区出现空位时自动移入"); temp blocks Ready ("直到溢出情况排除才可开始
+//     进行作战").
 //     A temp piece is resolved (chess sold back to the pool, items destroyed, summon stacks removed — they come back at
 //     the next round start, grantTokensFor) at the deadline of the
 //     first prep in which the player could act on it (tempDue): a piece that overflowed during a prep before Ready

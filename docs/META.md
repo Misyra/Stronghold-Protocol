@@ -407,8 +407,8 @@ Writes (all validated, never throw on bad input, never make funds / pools negati
 |---|---|
 | `addFunds(n, reason?)` / `addPendingFunds(n)` / `spendFunds(n)` | funds now / at the next round start / pay (false when short) |
 | `addLayers(bondId, n, { requireActive })` | layer gain (`requireActive` = "使已激活的…"); returns layers added — at most the room left under `BOND_LAYER_CAP` (999, shared/constants.js `layerGainRoom`; the battle gains merged at SETTLE too); fires onLayers unless it added 0 |
-| `grantChess(id, { toTemp, golden, requirePool=true, fromPool=true })` | acquire a chess (takes pool copies; with `requirePool` a pool chess with no copy left fails → `null`); merges; fires onGain |
-| `grantItem(id, { toTemp })` | acquire an item (merges with an identical normal item) |
+| `grantChess(id, { toTemp, golden, requirePool=true, fromPool=true })` | acquire a chess (takes pool copies; with `requirePool` a pool chess with no copy left fails → `null`); merges; fires onGain. `toTemp` puts it into temp, but a free hand slot pulls it in at the next recompute (temp holds overflow only, `PlayerState._fillHandFromTemp`) |
+| `grantItem(id, { toTemp })` | acquire an item (merges with an identical normal item); `toTemp` as for grantChess |
 | `rollChess({ maxTier, tier, bond, filter })` / `rollItem({ pool, tier, maxTier })` | copy-weighted chess id from the shared pool / item id (choices.json pools) |
 | `grantFreeRefresh(n)` | free refreshes (stack) |
 | `modifyPrice(delta)` / `setPrice(v)` | onPrice only: edit `ev.price` |
@@ -508,9 +508,14 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
 * **Pool**: copies 12/14/18/16/8/5 (缪尔赛思 4); a normal piece holds 1 copy, an elite 3; displays never reserve copies;
   selling, temp resolution and elimination return exactly what a piece holds (`left + held = cap` always).
 * **Hand**: 10 slots filled right→left, 5 temp slots for passive overflow (merge results, grants, returned equipment);
-  a full hand refuses buys unless the purchase completes a merge, and withdrawals unless the withdrawn summoner's own
-  summon stack frees a slot (a deployed summon withdrawn with no stack of its own left to join is a new card: `HAND_FULL`,
-  never temp); temp blocks Ready. A temp piece is resolved (chess sold back to the pool, items destroyed, a summon stack
+  a full hand refuses every buy and reward pick — also one whose copy would complete a merge at once (PRTS
+  卫戍协议/帮助 §手牌区 "例如招募/购入等通常情况下会增加手牌的操作"; GitHub #82) — and withdrawals unless the withdrawn
+  summoner's own summon stack frees a slot (a deployed summon withdrawn with no stack of its own left to join is a new
+  card: `HAND_FULL`, never temp). A free hand slot pulls the temp pieces in at once ("常规手牌区出现空位时自动移入"):
+  `PlayerState._fillHandFromTemp` at every recompute, the temp row right → left (the order it fills, [ASSUMED]) into the
+  hand's free slots right → left — after a sale, a deployment, a merge that consumed hand copies, an item equipped /
+  destroyed / used, a summon stack removed with its owner; so temp holds pieces only while the hand is full
+  (`invariants.js`). Temp blocks Ready. A temp piece is resolved (chess sold back to the pool, items destroyed, a summon stack
   removed — it comes back at the next round start, see Summons) at the deadline of the first prep in which its player could act on it (`PlayerState.tempDue` vs
   `prepsEnded`, recorded by `_putTemp`, user playtest #3): arrived during a prep before Ready → that prep's end; after
   Ready, during onPrepEnd, or outside PREP (COMBAT, 联防, SETTLE, ROUND_START, 机变) → the end of the NEXT prep, so it
@@ -658,7 +663,10 @@ helpers = `unite.js helperOrder` (research 08 §5, PRTS 卫戍协议/帮助 §�
 chosen by most units on the field (downed included) > an active bond > most standing units > seat; the pair ordered by
 units > active bond > Σ active layers > standing > seat (LP plays no part), the first one on the right-hand field
 (colOffset +8, where escaped_multi enters), the other colOffset 0; the escaped template of that size routes the leaked
-enemies by slot class; helpers' operators carry
+enemies by slot class, and its own map is the field (`unite.js uniteStageId`: stages.json `act1autochess_escaped_single` /
+`_multi`, two road halves joined at col 10 — no water, crates or devices of the round's stage, no band map characters:
+the level has no predefined ones; the round's stage only with data that lacks them; GitHub #41), each helper's pieces
+on their prep tiles; helpers' operators carry
 `{ hpPct, sp }` from `unitsEnd` ("阵地以其当前状态": the HP ratio and the 技力 only — a skill running at the end enters
 switched off; summon pieces `{ sp }`, "召唤物仅修改技力"); an operator knocked out at the end of the helper's own
 combat carries `{ down: true }` (PRTS 卫戍协议/帮助: "部署完成后…上一阶段为退场状态的干员强制退场"): deployed, then forced out

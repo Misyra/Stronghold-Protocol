@@ -362,11 +362,13 @@ function MatchScreen() {
   const shownMembers = shownField ? ((Array.isArray(pub?.fields) ? pub.fields : []).find((f) => f && f.fieldId === shownField.fieldId)?.players
     || (Array.isArray(shownField.players) ? shownField.players : null)) : null;
   const ownView = showPrep || (shownField ? (shownMembers ? shownMembers.includes(myId) : shownField.fieldId === ownFieldId(myId)) : !watchingOther);
+  // a field on a map of its own (联防: the escaped template's map, GitHub #41) shows that map; leaving it restores the board's
+  const fieldStage = gd.ready && shownField && shownField.stageId && shownField.stageId !== pub?.stageId ? gd.stage(shownField.stageId) : null;
   useEffect(() => {
     if (!view) return;
-    const st = ownView ? ownStage : baseStage;
+    const st = fieldStage || (ownView ? ownStage : baseStage);
     if (st) view.setStage(st);
-  }, [view, ownView, ownStage, baseStage]);
+  }, [view, ownView, ownStage, baseStage, fieldStage]);
   const staleFieldRef = useRef(null);
   const enteredFieldRef = useRef(null);
   const pressSel = useRef(null);                         // the selected piece when the current field press began

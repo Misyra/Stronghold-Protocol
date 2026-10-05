@@ -411,12 +411,19 @@ hidden core `h08_0X`; 联防 `act1autochess_escaped_single|multi`; training `tr0
 Timing: templates have one wave with one fragment, so `time = wave.preDelay + fragment.preDelay + action.preDelay`
 exactly (the builder warns if a multi-fragment template ever appears).
 
-## 12. `stages.json` — `{ [stageId]: Stage }` (11 terrains, 8 active)
+## 12. `stages.json` — `{ [stageId]: Stage }` (11 terrains, 8 active, + the 2 联防 maps)
+
+The 11 battle stages of `stageDatasDict`, then the two **联防 maps** (GitHub #41): act2autochess constData
+`escapedBattleTemplateMapSinglePlayer` / `MultiPlayer` name the level of the 联防 battle (`level_act1autochess_escaped_single`
+/ `_multi`, the wave templates of the same id in `waves.json`), and its own map is the 联防 field — tile for tile the same
+on both: two road halves (cols 3–9 and 11–17, rows 9–12) joined at col 10, the objective at (9,2), no devices or special
+terrain. `server/match/unite.js uniteStageId` fields the 联防 battle on the one of its helper count.
 
 | Field | Example | Meaning |
 |---|---|---|
-| `id`, `name` | `"act2autochess_m01"`, `"战场#05(下半) 源石流发生装置"` | player-facing name from research 05 (the official tables carry none; falls back to id). The build drops bracketed segments containing Latin letters (research notes such as `战场#01 (upper half #01)` → `战场#01`), logs a warning, and fails validation if Latin text remains |
-| `weight`, `active`, `modes` | `50`, `true`, `["mode_single_normal",…]` | match-start pick weight (act1 m05–m07 weight 0) |
+| `id`, `name` | `"act2autochess_m01"`, `"战场#05(下半) 源石流发生装置"` | player-facing name from research 05 (the official tables carry none; falls back to id). The build drops bracketed segments containing Latin letters (research notes such as `战场#01 (upper half #01)` → `战场#01`), logs a warning, and fails validation if Latin text remains. The 联防 maps: `联防阵地（1名玩家）` / `联防阵地（2名玩家）`, the remake's own label [ASSUMED] (no table or PRTS page names them; no screen shows it) |
+| `weight`, `active`, `modes` | `50`, `true`, `["mode_single_normal",…]` | match-start pick weight (act1 m05–m07 weight 0); the 联防 maps: `0`, `false`, `[]` (never a match stage) |
+| `kind`, `helpers` | `"unite"`, `1` | only on the two 联防 maps: the helper count whose 联防 field it is (= `config.unite.templates`; the build fails when they disagree) |
 | `size` | `[19,21]` | |
 | `rows[]` | `rows[9] = "##Errr#rrrSrrr#rrrS##"` | 19 strings, **index = row (0 = bottom)**, one glyph per col |
 | `tiles[glyph]` | `{"tileKey":"tile_road","height":"LOW","buildable":"ALL","passable":"ALL","groundPassable":true,"flyPassable":true,"special":null,"bb":{}}` | actual tile properties of each glyph used. `buildable` is the **effective** deploy type: the level's buildableType, except a tile whose mechanism refuses deployment — 深水区 `tile_deepsea` (PRTS 深水区 地形信息 "部署类型 全部位 … 地形机制 拒绝部署（待补充）"; player report #3 after 0.1.0) — which is `NONE` and keeps the level's value in `buildableType` (`server/sim/grid.js DEPLOY_REFUSED_TILES`, shared with the builder) |

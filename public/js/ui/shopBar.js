@@ -37,7 +37,7 @@ function PriceHex({ slot, free, poor = false }) {
     title=${poor ? '资金不足' : tone === 'discount' ? `折扣价（原价 ${slot.basePrice}）` : tone === 'premium' ? `加价（原价 ${slot.basePrice}）` : '价格'} />`;
 }
 
-/** Data lookups for shopBlockReason (full-hand purchases that complete a merge stay allowed). */
+/** Data lookups (merge progress / target, the loadout; shopBlockReason ignores them — a full hand refuses every purchase). */
 const LOOKUPS = { getChess: (id) => data.lookup('chess', id), getItem: (id) => data.lookup('items', id) };
 
 /**

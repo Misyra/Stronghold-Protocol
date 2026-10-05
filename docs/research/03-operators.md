@@ -80,7 +80,7 @@ Meaning (names are from the data; semantics partly inferred — the official wor
 - `CUSTOM_RANGE_SEARCH_ENEMY` (6 chess): SP full AND an enemy inside the `skillRangeDict` range (listed below). Pool: 乌尔比安 S3 (6-1), 维娜·维多利亚 S3 (x-4), 余 S3 (3-15), 远牙 S3 (6-1), 玛恩纳 S3 (3-18), 圣聆初雪 S3 (x-2). Not in pool: 塑心 demetr, 司霆惊蛰 leizi2, 林 lin, 猎蜂? headb2.
 - `GDGLOW_SKILL_2` (2 chess: 荒芜拉普兰德 whitw2 S3, 纯烬艾雅法拉 agoat2 S3; 澄闪 gdglow not in pool): named after 澄闪 S3 whose skill places/targets a zone; [ASSUMED] cast when SP full and an enemy is inside the attack range, choosing the target tile/enemy with the most enemies around it.
 - `MLYSS_WTRMAN` (缪尔赛思, skillIndex -1): AI rule for her summon 流形 (token_10030_mlyss_wtrman) placement/behaviour [ASSUMED: token copies/follows the nearest allied operator as in the base game]; her S3 itself uses the tactician ALWAYS rule.
-- `MARCILS2` (玛露西尔 S2) and `TRY_SEARCH_ALLY_SKILL` (黍 S3) are for operators not in this season's pool.
+- `MARCILS2` (玛露西尔 S2) and `TRY_SEARCH_ALLY_SKILL` (黍 S3) are for operators not in this season's chess pool. 黍 is a 自选 pick since 0.2.0: PRTS 卫戍协议/帮助 words her row 「技能范围内存在可治疗的我方单位时释放技能」; the engine has no such rule (an unknown rule acts as DEFAULT), so her kit (`kits/ops/op-shu.js`) maps it onto SKILL_RANGE + `allies` on the skill's x-2.
 - Redeployment (PRTS 卫戍协议/帮助 §作战阶段 单位部署, quoted in research 01 §4.3): a knocked-out operator auto-redeploys on the tile it lies on when its `respawnTime` has elapsed AND there is enough DP for its `cost` (or instantly via effects). So **cost and respawnTime matter** in battle; see the battle-rules research for the DP economy.
 
 skillRangeDict (custom trigger ranges; `O` = operator tile, `#` = trigger tile, facing right):

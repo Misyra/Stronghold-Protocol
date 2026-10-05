@@ -17,8 +17,16 @@
 //   - or either of those wrapped as { <name>: … } / { list: … } / { data: … }.
 // Synchronous getters (getChess, getBond, …) return null until the file has loaded; use
 // `loadData(...)` to await, or the `useData(...)` hook to re-render when files arrive.
+//
+// Language (docs/I18N.md): the files hold the official Chinese texts. `setLocale('en')` downloads the overlay
+// data/i18n/en.json once (tools/build-i18n.mjs: the official EN texts by record id and field, shared/i18nData.js) and
+// from then on `get`, `lookup` and `list` — and every getter built on them — return the records with their English
+// texts (a copy per file, built on first use; untranslated fields keep the Chinese text). `setLocale('zh')` goes back.
+// Each switch notifies the subscribers of every loaded file, so `useData` components re-render. `localeName(zh)` maps
+// a Chinese game-data name to the current language (server messages name operators / items in Chinese).
 
 import { useEffect, useReducer } from '../vendor/hooks.module.js';
+import { applyFileOverlay } from '../../shared/i18nData.js';
 
 /** Known data files (name → URL basename). Unknown names are allowed too (`/data/<name>.json`). */
 export const DATA_FILES = Object.freeze({
@@ -122,6 +130,14 @@ export function createDataStore(opts = {}) {
   const entries = new Map();
   const listeners = new Set();
   const warned = new Set();
+  /** Current locale ('zh' = the files as they are) and the downloaded overlays by language (shared/i18nData.js). */
+  let locale = 'zh';
+  /** @type {Map<string, Promise<any>>} */
+  const overlayLoads = new Map();
+  /** @type {Map<string, any>} */
+  const overlays = new Map();
+  /** name → { lang, value, index } localized copy of a ready file (dropped on every switch / reload of the file) */
+  const localized = new Map();
 
   const notify = (name) => {
     for (const fn of [...listeners]) {
@@ -219,11 +235,56 @@ export function createDataStore(opts = {}) {
     return entry.promise;
   }
 
+  /** The localized copy of a ready file (null in Chinese or without an overlay for the file). */
+  function localizedEntry(name) {
+    if (locale === 'zh') return null;
+    const e = entries.get(name);
+    const fileOverlay = overlays.get(locale)?.files?.[name];
+    if (!e || e.status !== 'ready' || !fileOverlay) return null;
+    let l = localized.get(name);
+    if (!l || l.lang !== locale || l.base !== e.value) {
+      let value = e.value;
+      try { value = applyFileOverlay(e.value, fileOverlay).value; } catch (err) { console.warn(`[data] ${name}: overlay not applied`, err); }
+      l = { lang: locale, base: e.value, value, index: null };
+      localized.set(name, l);
+    }
+    return l;
+  }
+
   function index(name) {
     const e = entries.get(name);
     if (!e || e.status !== 'ready') return null;
+    const l = localizedEntry(name);
+    if (l) {
+      if (!l.index) l.index = buildIndex(name, l.value);
+      return l.index;
+    }
     if (!e.index) e.index = buildIndex(name, e.value);
     return e.index;
+  }
+
+  /** Download (once per language) the overlay data/i18n/<lang>.json; resolves to it, or null when unavailable. */
+  function loadOverlay(lang) {
+    if (overlayLoads.has(lang)) return overlayLoads.get(lang);
+    const p = (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await doFetch(`${base}i18n/${lang}.json`, { cache: 'no-cache' });
+          if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
+          const json = await res.json();
+          if (!json || typeof json !== 'object' || !json.files) throw Object.assign(new Error('not an overlay'), { badJson: true });
+          overlays.set(lang, json);
+          return json;
+        } catch (err) {
+          if (transientFailure(err) && attempt < retryDelays.length) { await wait(retryDelays[attempt]); continue; }
+          console.warn(`[data] ${base}i18n/${lang}.json unavailable (${err?.message || err}); game texts stay Chinese`);
+          overlayLoads.delete(lang); // a later switch may try again
+          return null;
+        }
+      }
+    })();
+    overlayLoads.set(lang, p);
+    return p;
   }
 
   return {
@@ -231,8 +292,10 @@ export function createDataStore(opts = {}) {
     load,
     /** Load several files; resolves when all settled. */
     loadAll: (...names) => Promise.all(names.flat().map(load)),
-    /** Raw JSON of a loaded file (null when missing / not loaded yet). */
-    get: (name) => entries.get(name)?.value ?? null,
+    /** JSON of a loaded file in the current locale (null when missing / not loaded yet). */
+    get: (name) => localizedEntry(name)?.value ?? entries.get(name)?.value ?? null,
+    /** The file exactly as downloaded (Chinese texts), whatever the locale. */
+    getRaw: (name) => entries.get(name)?.value ?? null,
     /** 'idle' | 'loading' | 'ready' | 'missing' */
     status: (name) => entries.get(name)?.status ?? 'idle',
     /** Record by id from a loaded file (null when unknown / not loaded). */
@@ -246,15 +309,44 @@ export function createDataStore(opts = {}) {
     invalidate(name) {
       if (!entries.has(name)) return Promise.resolve(null);
       entries.delete(name);
+      localized.delete(name);
       warned.delete(name);
       const p = load(name);
       notify(name); // status is 'loading' again, never a stuck 'idle'
       return p;
     },
-    /** Called with the file name whenever a file finishes loading (or is invalidated). */
+    /** Called with the file name whenever a file finishes loading (or is invalidated, or the locale changes). */
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
+    },
+    /** Current game-text locale ('zh' or a language whose overlay is applied). */
+    locale: () => locale,
+    /**
+     * Switch the game texts' language: 'zh' at once; another language once its overlay has downloaded (it stays Chinese
+     * when the overlay is unavailable). Every loaded file's subscribers are notified. Resolves to the locale in effect.
+     * @param {string} lang
+     * @returns {Promise<string>}
+     */
+    async setLocale(lang) {
+      const want = typeof lang === 'string' && /^[a-z]{2}$/.test(lang) ? lang : 'zh';
+      if (want !== 'zh' && !(await loadOverlay(want))) return locale;
+      if (want === locale) return locale;
+      locale = want;
+      localized.clear();
+      for (const name of [...entries.keys()]) notify(name);
+      return locale;
+    },
+    /**
+     * A Chinese game-data name (operator, item, bond, token …) in the current locale (itself in Chinese or when the
+     * overlay does not know it).
+     * @param {string} zh
+     * @returns {string}
+     */
+    localeName(zh) {
+      if (locale === 'zh' || typeof zh !== 'string') return zh;
+      const names = overlays.get(locale)?.names;
+      return (names && Object.prototype.hasOwnProperty.call(names, zh) && names[zh]) || zh;
     },
   };
 }

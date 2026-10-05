@@ -196,7 +196,7 @@ test('T2 追责: every cast strikes each low tile of her range ring by ring from
     const { h, u, log } = field({ tier: 5, skill });
     const e = h.spawn(pos[0] === 11 ? 'enemy_fly' : 'enemy_dummy', { pos });
     u.skill.gainSp(999);
-    if (skill === 0) h.spawn('enemy_dummy', { pos: [11, 5] });    // S1 (SEARCH) needs a ground enemy on her 1-2
+    if (skill === 0) h.spawn('enemy_dummy', { pos: [11, 5] });    // S1 (ACTIVE_RANGE on the 3-19) needs a ground enemy in range
     assert.ok(h.runUntil(() => u.skill.active, 2), `S${skill + 1}: cast`);
     const t0 = h.b.time;
     h.run(1.2);
@@ -223,11 +223,11 @@ test('T2 追责: every cast strikes each low tile of her range ring by ring from
   done(h);
 });
 
-test('S1 浩气长存 (MANUAL, 3 charges, data SEARCH): a 0.5 s skill on the 3-19; 0.3 s in, a 3-2 to her left, front and right each hits every ground enemy on it for 260 % / 300 % ATK × 1.07 physical (one on her tile three times, none diagonal, no flyer)', () => {
+test('S1 浩气长存 (MANUAL, 3 charges, data ACTIVE_RANGE — the SEARCH row on her larger 3-19): a 0.5 s skill on the 3-19; 0.3 s in, a 3-2 to her left, front and right each hits every ground enemy on it for 260 % / 300 % ATK × 1.07 physical (one on her tile three times, none diagonal, no flyer)', () => {
   for (const [tier, elite] of [[5, false], [6, true]]) {
     const sk = skillOf(tier, elite, S1);
     const { h, u, log } = field({ tier, elite, skill: 0, silence: true });
-    assert.deepEqual([u.skill.rule, u.skill.maxCharges, sk.bb['attack@atk_scale_s1'], sk.rangeId, u.skill.spCost, sk.initSp], ['SEARCH', 3, elite ? 3 : 2.6, '3-19', elite ? 13 : 14, 17], `T${tier}`);
+    assert.deepEqual([u.skill.rule, u.skill.maxCharges, sk.bb['attack@atk_scale_s1'], sk.rangeId, u.skill.spCost, sk.initSp], ['ACTIVE_RANGE', 3, elite ? 3 : 2.6, '3-19', elite ? 13 : 14, 17], `T${tier}`);
     const own = h.spawn('enemy_dummy', { pos: [10, 5] }), front = h.spawn('enemy_dummy', { pos: [10, 8] });
     const left = h.spawn('enemy_dummy', { pos: [12, 5] }), right = h.spawn('enemy_dummy', { pos: [9, 5] });
     const diag = h.spawn('enemy_dummy', { pos: [11, 6] }), fly = h.spawn('enemy_fly', { pos: [11, 5] });

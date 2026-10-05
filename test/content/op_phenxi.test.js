@@ -77,7 +77,7 @@ test('菲亚梅塔 in every 自选 form: her kit (all three skills authored), th
       done(h);
     }
   }
-  assert.deepEqual(formOf(6, true).skills.map((s) => [s.skillType, s.trigger.rule]), [['MANUAL', 'ACTIVE_RANGE'], ['MANUAL', 'DEFAULT'], ['MANUAL', 'DEFAULT']]);
+  assert.deepEqual(formOf(6, true).skills.map((s) => [s.skillType, s.trigger.rule]), [['MANUAL', 'DEFAULT'], ['MANUAL', 'DEFAULT'], ['MANUAL', 'DEFAULT']]);
   assert.deepEqual([FORMS['2/1/4/0'].stats.maxHp, FORMS['2/1/4/0'].stats.atk, FORMS['2/60/7/1'].stats.maxHp, FORMS['2/60/7/1'].stats.atk], [1540, 671, 1796, 797]);
   assert.deepEqual([Y, X, ISW].flatMap((id) => [modOf(5, id).attr, modOf(6, id).attr]),
     [{ atk: 48, def: 26 }, { atk: 70, def: 43 }, { atk: 60, def: 17 }, { atk: 85, def: 32 }, { maxHp: 85, atk: 65 }, { maxHp: 115, atk: 90 }]);
@@ -164,28 +164,30 @@ test('T2 宣告终局: ASPD +27 outside a running skill, none while S1 / S3 run 
   }
 });
 
-test('S1 “你须直面” (MANUAL, attack SP 17 / 14 from 5, 30 s, data ACTIVE_RANGE on 3-10 + 1): ATK +45 % / +60 %; since the 2026-08 client her attacks pick ground enemies only (the splash still hits air) and her range stays 3-10', () => {
+test('S1 “你须直面” (MANUAL, attack SP 17 / 14 from 5, 30 s, data DEFAULT — the 2026-08 client grows no range: tools/build-data.mjs UNIT_TRIGGER_CORRECTIONS): ATK +45 % / +60 %; since the 2026-08 client her attacks pick ground enemies only (the splash still hits air) and her range stays 3-10', () => {
   for (const [tier, elite] of [[5, false], [6, true]]) {
     const sk = skillOf(tier, elite, S1);
     assert.deepEqual([sk.spType, sk.spCost, sk.initSp, sk.duration, sk.bb.atk, sk.bb.ability_range_forward_extend], ['INCREASE_WHEN_ATTACK', elite ? 14 : 17, 5, 30, elite ? 0.6 : 0.45, 1], `T${tier}`);
-    assert.equal(sk.trigger.customRangeGrid.length, formOf(tier, elite).rangeGrid.length + 3, `T${tier}: the data's trigger grid is the +1 range`);
+    assert.equal(sk.trigger.customRangeGrid, null, `T${tier}: no +1 trigger grid`);
     const { h, u } = field({ tier, elite, skill: 0, pin: true });
-    assert.deepEqual([u.skill.kind, u.skill.rule, u.skill.spType], ['duration', 'ACTIVE_RANGE', 'attack'], `T${tier}`);
-    const far = h.spawn('enemy_dummy', { pos: [10, 9] });   // 5 tiles ahead: on the trigger grid, outside 3-10
+    assert.deepEqual([u.skill.kind, u.skill.rule, u.skill.spType], ['duration', 'DEFAULT', 'attack'], `T${tier}`);
+    const far = h.spawn('enemy_dummy', { pos: [10, 9] });   // 5 tiles ahead: outside 3-10
     u.skill.gainSp(999);
-    assert.ok(h.runUntil(() => u.skill.active, 2), `T${tier}: an enemy on the +1 column casts it (the data rule)`);
-    approx(u.skill.timeLeft, 30, `T${tier}: 30 s`, 0.01);
+    h.run(2);
+    assert.equal(u.skill.activations, 0, `T${tier}: an enemy out of her reach casts nothing (DEFAULT)`);
+    const g = h.spawn('enemy_dummy', { pos: [11, 7] });
+    assert.ok(h.runUntil(() => u.skill.active, 3), `T${tier}: cast as she is about to attack a ground enemy in range`);
+    approx(u.skill.timeLeft, 30, `T${tier}: 30 s`, 0.05);
     assert.deepEqual(u.findBuff(`skill:${u.id}`)?.mods, { atkPct: sk.bb.atk }, `T${tier}: ATK +${sk.bb.atk * 100} %`);
     assert.deepEqual(u.liveRangeGrid, formOf(tier, elite).rangeGrid, `T${tier}: her range stays 3-10`);
     h.run(6);
     assert.equal(on(h, far).length, 0, `T${tier}: 5 tiles ahead stays out of reach`);
     const fly = h.spawn('enemy_fly', { pos: [10, 7] });
     h.run(6);
-    assert.equal(on(h, fly).length, 0, `T${tier}: no air target while it runs`);
-    const g = h.spawn('enemy_dummy', { pos: [11, 7] });
+    assert.equal(on(h, fly).filter((c) => !c.dmg.isSplash).length, 0, `T${tier}: no air target while it runs`);
     assert.ok(h.runUntil(() => on(h, g).length > 0, 4), `T${tier}: a ground target`);
     h.run(0.3);
-    const id = on(h, g)[0].dmg.attackId;
+    const id = on(h, g).at(-1).dmg.attackId; // a shell fired with the flyer on the field
     assert.ok(on(h, fly).some((c) => c.dmg.attackId === id && c.dmg.isSplash), `T${tier}: her shell still splashes the flyer 1.0 away`);
     for (const c of from(h, u).filter((c) => c.dmg.attackId === id)) approx(c.amount, u.base.atk * (1 + sk.bb.atk + u.findBuff('talent:phenxi:peak').mods.atkPct), `T${tier}: ATK`);
     u.skill.end('test');

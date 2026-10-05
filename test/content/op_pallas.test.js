@@ -210,19 +210,17 @@ test('S1 胜利的连击 (AUTO, attack SP 3, data DEFAULT): the next attack stri
   }
 });
 
-test('S2 信念的长鞭 (MANUAL, data DEFAULT): 20 / 22 s, range 2-2 + 1 tile forward, ATK +35 / 50 %, each attack 60 / 70 % to stun 0.2 s; all back after', () => {
+test('S2 信念的长鞭 (MANUAL, data ACTIVE_RANGE on her range + 1 forward): 20 / 22 s, range 2-2 + 1 tile forward, ATK +35 / 50 %, each attack 60 / 70 % to stun 0.2 s; all back after', () => {
   for (const [tier, elite, mod] of [[5, false, null], [6, true, INSY]]) {
     const sk = skillOf(tier, elite, S2);
     const { h, u } = field({ tier, elite, mod, skill: 1, seed: 9 });
-    // the data's DEFAULT: tools/build-data.mjs ATTACK_RANGE_CHANGE misses "攻击范围向前延伸一格" (reported, not worked around)
+    // 「攻击范围向前延伸一格」 is an attack-range change (tools/build-data.mjs ATTACK_RANGE_CHANGE): the owner's ACTIVE_RANGE rule
     assert.deepEqual([u.skill.rule, sk.trigger.rawRule, sk.duration, sk.bb.atk, sk.bb.ability_range_forward_extend, sk.bb['attack@buff_prob'], sk.bb['attack@stun']],
-      ['DEFAULT', 'DEFAULT', elite ? 22 : 20, elite ? 0.5 : 0.35, 1, elite ? 0.7 : 0.6, 0.2], `T${tier}`);
+      ['ACTIVE_RANGE', 'DEFAULT', elite ? 22 : 20, elite ? 0.5 : 0.35, 1, elite ? 0.7 : 0.6, 0.2], `T${tier}`);
     const far = h.spawn('enemy_dummy', { pos: [10, 8] });   // 3 tiles ahead: only in the extended range
     u.skill.gainSp(999);
-    h.run(2);
-    assert.equal(u.skill.activations, 0, `T${tier}: nothing in her own 2-2: no cast (DEFAULT)`);
+    assert.ok(h.runUntil(() => u.skill.active, 3), `T${tier}: cast for an enemy only in the extended range (ACTIVE_RANGE)`);
     const near = h.spawn('enemy_dummy', { pos: [10, 7] });
-    assert.ok(h.runUntil(() => u.skill.active, 3), `T${tier}: cast on her attack`);
     approx(u.skill.timeLeft, sk.duration, `T${tier}: ${sk.duration} s`, 0.01);
     assert.deepEqual(u.liveRangeGrid, [[0, 0], [0, 1], [0, 2], [0, 3]], `T${tier}: one tile more forward`);
     const v = talentOf(u, 0)['peak_performance.atk'];

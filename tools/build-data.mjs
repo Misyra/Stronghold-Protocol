@@ -437,7 +437,7 @@ const TRIGGER_RENAME = { ALWAYS: 'SP_FULL', CUSTOM_RANGE_SEARCH_ENEMY: 'CUSTOM_R
  * 溅射范围扩大" — and not a 技能范围 of its own (PRTS 卫戍协议/帮助 技能操作: "拥有技能范围的技能（非攻击距离增加）").
  * "攻击范围内…" (an effect on the attack range) does not match.
  */
-const ATTACK_RANGE_CHANGE = /攻击(?:范围|距离)(?:与溅射范围)?(?:扩大|增大|改变|改为|缩小|缩短|加长|增加|\+)/;
+const ATTACK_RANGE_CHANGE = /攻击(?:范围|距离)(?:与溅射范围)?(?:扩大|增大|改变|改为|缩小|缩短|加长|增加|\+|(?:向前|往前)?延伸|朝[^，。；]{1,8}扩大)/;
 
 /**
  * A deliberate deviation from the official 技能策略 (DESIGN §21.29): the owner's decision of 2026-10-03 after community
@@ -475,6 +475,15 @@ const TRIGGER_DEVIATIONS = Object.freeze({
 const STANDIN_TRIGGER_DEVIATIONS = Object.freeze({
   char_602_cdfend: { 'skcom_def_up[1]': 'DEFAULT', 'skcom_def_up[2]': 'DEFAULT', 'skcom_def_up[3]': 'DEFAULT' }, // 预备干员-重装 防御力强化 α/β/γ
   char_610_acfend: { skchr_acfend_1: 'DEFAULT', skchr_acfend_2: 'DEFAULT', skchr_acfend_3: 'DEFAULT' },          // Mechanist S1 结构稳定 / S2 不变性原理 / S3 应力倒置
+});
+
+/**
+ * Corrections for 自选 units whose skill text no longer matches the live client (keyed by charId and skill id): 菲亚梅塔
+ * S1 — PRTS 备注 for the 2026-08-01 client: it no longer targets flyers and its "攻击距离+1" no longer grows the range
+ * (the client's selector agrees), so the basic strategy (DEFAULT), not ACTIVE_RANGE on a +1 grid she cannot reach (O12).
+ */
+const UNIT_TRIGGER_CORRECTIONS = Object.freeze({
+  char_300_phenxi: { skchr_phenxi_1: 'DEFAULT' },
 });
 
 /**
@@ -547,6 +556,9 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
     return { rule: 'SKILL_RANGE', rawRule: 'DEFAULT', customRangeGrid: skill.rangeGrid.map((p) => p.slice()) };
   }
   const rawRule = pick ? pick.skillTriggerType : 'DEFAULT';
+  // a live-client correction is final (no ACTIVE_RANGE upgrade: the text's larger range is gone in the client)
+  const correction = unitCharId ? UNIT_TRIGGER_CORRECTIONS[unitCharId]?.[skill.skillId] : null;
+  if (correction) return { rule: correction, rawRule, customRangeGrid: null };
   // the 重装 exception also covers every 自选 重装 (a backups.json unit of the TANK class whose MANUAL skill meets the
   // class row's TAKE_DAMAGE casts with an enemy in range — the owner's decision of 2026-10-05, as for the stand-ins)
   const deviation = chessId ? TRIGGER_DEVIATIONS[chessId]?.[skill.skillId]

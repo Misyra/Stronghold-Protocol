@@ -11,3 +11,11 @@ b48a67caec5ba0699097e21f3db4d4dbb35a2aed
 560328cacc863c26d07780096527e255ebf62bc4
 # feedback5 R4: kits/tier1..6.js → kits/ops/ (one file per kit), kits/shared/, kits/index.js
 1169102d46742474bf0f0189d467c791984d9e05
+# feedback5 R5: public/js/ui/gameLogic.js → public/js/ui/gameLogic/*.js (the barrel re-exports)
+eb04f5dfa4f396b17e987b61a47fbcdc2b8b2fdf
+# feedback5 R5: public/js/render/fx.js → public/js/render/fx/*.js (methods installed in source order)
+c1b8292f92f5f07581342babe84ba0ac8a1dcf82
+# feedback5 R5: public/js/render/app.js prelude → public/js/render/app/*.js (createFieldView stays)
+aaef748ad95b33117654bf2f82b956de6b6509ff
+# feedback5 R5: public/js/screens/game.js plates, marks and keepEarly → public/js/screens/game/*.js
+dd07dc1ec10a47cb93490018c047c1eac5ab5157

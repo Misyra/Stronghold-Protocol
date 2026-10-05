@@ -352,7 +352,7 @@ still standing after `Revive[Trigger].interval` s stands up again with full HP),
 转译基底·α (its original form cancels every damage instance, and an HP loss stops at 1 HP; the 4th physical / arts
 instance or a block starts a 2 s change). Each form change goes through `setForm(b, e, form, fxKind, params)`: the
 unit keeps it (`e.form`, published as UnitInfo `form`, so a view built mid-battle from `fieldMeta()` — a watched
-teammate's field, 联防 observers, a reconnect — starts in it: `render/app.js renderInfo` hands it to the view) and the
+teammate's field, 联防 observers, a reconnect — starts in it: `render/app/info.js renderInfo` hands it to the view) and the
 fx announces it as its `form`: a 'phase' fx (crawl, translator_* — also its `kind`), 'ember' ('husk'), 'revive'
 ('revived' / 'form2' / 'fly'), 'telegraph' ('reborn') or 'stone' ('stone') — render/units.js FORMS. An operator has one
 form too: a 傀儡师's <替身> (`professions.js installDollkeeper`: `u.form` 'doll' from the switch to it — fx 'substitute'
@@ -362,7 +362,7 @@ after the 'die' event). Barrier / charge
 keeps every fx with a `form` (`shared/protocol.js fxForm`) where it drops other events — the runner's catch-up frames
 and its hidden-tab backlog (`battle/runner.js keepsState`; a backlog past `HELD_MAX` drops only superseded status /
 skill toggles, and a battle that ended while hidden delivers it when the tab is shown), the game screen's events
-buffered before a field is entered (`screens/game.js keepEarly`, also while a re-sent field meta re-enters the field on
+buffered before a field is entered (`screens/game/early.js keepEarly`, also while a re-sent field meta re-enters the field on
 screen) and the render engine's event queue (`render/interp.js isCosmeticEvent`: a form fx is never dropped as stale,
 more than 1.5 game s behind the render clock, nor shed from a full queue; one handed out late switches the model
 without its telegraph or a change clip that would already have ended); dropping them was report #5's look again after a stall or a background tab.

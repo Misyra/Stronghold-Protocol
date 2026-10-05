@@ -17,16 +17,32 @@ const TEA_BOOM_RADIUS = 1.25;
 // ---------------------------------------------------------------------------------------------------------------
 // kits
 
+/**
+ * 沉沙 / 新硎 断刃 (PRTS 天赋): 「攻击力+80%，持有4个【断刃】 / 每次成功攻击后消耗1个【断刃】，攻击结束时若已耗尽【断刃】，则立刻
+ * 切换为无断刃模式并失去攻击力加成」 (popup: the switch 「清空当次攻击间隔」, so it attacks again at once) / 「因坠落以外的原因死亡后…
+ * 召唤自身剩余【断刃】数量的铜矛头 / 铁矛头（至少召唤1个）」. ONE layer of Atkup.atk / AtkUp.atk (沉沙 0.7 — its PRTS page repeats
+ * 新硎's 80 %, the blackboard says 0.7 — / 新硎 0.8) from the spawn while it holds a blade (DeadSpawn.cnt = 4), removed when
+ * an attack spends the last one; that attack's cooldown is then cleared (ai.js sets it after the 'attack' hook, so this
+ * tick's 'tick' clears it and the next attack comes on the next tick). Unspent blades (cnt + cnt_add × spent, ≥ 1)
+ * become 矛头 when it is killed (a leak is no death; the mode has no 坠落), at once and side by side (spawnChildren — the
+ * 0.7 s random delay and the 1.0 square of the text are not modelled). Until 0.2.0 each attack stacked one more layer
+ * and none was ever removed (GitHub #107: 新硎 1350 → 3510 ATK after two hits).
+ */
 function kitBlades(ab) {
   const cnt = T(ab, 'DeadSpawn.cnt') ?? 0, add = T(ab, 'DeadSpawn.cnt_add') ?? 0, atk = T(ab, 'Atkup.atk', 'AtkUp.atk') ?? 0;
   const key = ab.tS['DeadSpawn.enemy_key'];
   return [{
-    spawn(b, e, a) { a.used = 0; },
+    spawn(b, e, a) {
+      a.used = 0;
+      if (cnt > 0 && atk) b.addBuff(e, { key: 'ab:blade', mods: { atkPct: atk }, persist: true, visible: true });
+    },
     attack(c, b, e, a) {
       if (a.used >= cnt) return;
-      a.used++;
-      b.addBuff(e, { key: 'ab:blade', refresh: 'stack', stacks: 1, maxStacks: Math.max(1, cnt), mods: { atkPct: atk }, persist: true, visible: true });
+      if (++a.used < cnt) return;
+      b.removeBuff(e, 'ab:blade'); // 无断刃模式
+      a.clearCd = true;
     },
+    tick(b, e, a) { if (a.clearCd) { a.clearCd = false; e.atkCd = 0; } },
     death(c, b, e, a) { if (c.reason === 'killed' && key) spawnChildren(b, e, key, Math.max(1, cnt + add * a.used)); },
   }];
 }
@@ -110,7 +126,7 @@ export const TIMES_KITS = Object.freeze({
   enemy_1197_sfshu: kitDeathSpawn(),                                 // 俗心 · death: 3 小说卷轴
   enemy_1197_sfshu_2: kitDeathSpawn(),                               // 雅气 · death: 3 诗画卷轴
   enemy_1199_sfjin: kitDeathSpawn(),                                 // 身观 · death: 1 青铜镜 (taunt from data)
-  enemy_1207_sfji: kitBlades,                                        // 沉沙 · each attack spends a blade (+ATK); death: unspent blades → 铜矛头 (≥1)
+  enemy_1207_sfji: kitBlades,                                        // 沉沙 · +ATK while it holds a blade (4, one per attack); death: unspent blades → 铜矛头 (≥1)
   enemy_1207_sfji_2: kitBlades,                                      // 新硎 · same (铁矛头)
   enemy_1209_sfden: kitInvisShield,                                  // 清明 · veils nearby enemies (stealth) every 15 s; death: 铜灯盘
   enemy_1209_sfden_2: kitInvisShield,                                // 堂皇 · same (铁灯盘)

@@ -1240,6 +1240,11 @@ prints a per-unit damage/DPS/kills/heal table (+ ASCII frames: letters = operato
 `^` = flyers, `■` = crates). `--wave <template>`, `--seed`, `--content generic`, `--hpMul/--atkMul/--speedMul`,
 `--time`, `--bossHp`, `--json`, `--events`, or a scenario JSON file (see the file header).
 
+Golden results (`tools/golden.mjs`, `test/golden/README.md`): a fixed corpus of seeded battles — every chess record ×
+skill × module, every bond at its threshold and at 999 layers, every leader field, 联防 — and bot-only matches,
+reduced to digests in `test/golden/*.json`; `test/golden.test.js` fails, naming the scenario and the field, when a
+digest moves. A refactor must leave them unchanged; `npm run golden:update` records an intended gameplay change.
+
 ## 12. Data notes (simdata.js)
 
 Defs are normalised from data/*.json (DATA.md) with research JSON as a fallback. Chess: `stats {maxHp, atk, def, res, aspd,

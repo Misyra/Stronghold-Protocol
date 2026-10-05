@@ -123,10 +123,12 @@ export async function loadLocalEnemySpines(path) {
  * @param {import('./downloader.mjs').Downloader} o.dl
  * @param {string} o.cachePath parse cache JSON path
  * @param {boolean} [o.download] false = only post-process what is on disk
+ * @param {(rel: string) => boolean} [o.writable] whether a file on disk may be rewritten (normalized atlas) or deleted
+ *   (corrupt skeleton); fetch-assets --add-only allows only the files this run downloaded
  * @param {(m:string)=>void} [o.log]
  * @returns {Promise<{ entries: Map<string, SpineEntry>, problems: string[] }>}
  */
-export async function processModels(models, { root, dl, cachePath, download = true, log = console.log }) {
+export async function processModels(models, { root, dl, cachePath, download = true, writable = () => true, log = console.log }) {
   const problems = [];
   const list = [...models.values()];
   if (download) {
@@ -180,6 +182,7 @@ export async function processModels(models, { root, dl, cachePath, download = tr
     const norm = normalizeAtlas(atlasText, { pageSize: (p) => sizes.get(p) || null, pma: !!m.pma, renamePage: (p) => safeName(p) });
     if (norm.missingSize.length) { problems.push(`${m.key}: cannot size pages ${norm.missingSize.join(',')}`); continue; }
     if (norm.changed) {
+      if (!writable(m.atlas.rel)) { problems.push(`${m.key}: atlas needs normalizing, left as it is (an existing file)`); continue; }
       await writeFile(atlasAbs + '.tmp', norm.text);
       await rename(atlasAbs + '.tmp', atlasAbs);
     }
@@ -196,6 +199,7 @@ export async function processModels(models, { root, dl, cachePath, download = tr
       } catch (e) {
         // A corrupt skeleton would otherwise be kept forever (its size matches the ledger):
         // delete it and forget it so the next online run downloads it again.
+        if (!writable(m.skel.rel)) { problems.push(`${m.key}: skel parse failed (${e.message}); an existing file, left as it is`); continue; }
         problems.push(`${m.key}: skel parse failed (${e.message}); deleted, re-run to re-download`);
         try { await unlink(skelAbs); } catch { /* ignore */ }
         if (dl?.ledger?.files) delete dl.ledger.files[m.skel.rel];

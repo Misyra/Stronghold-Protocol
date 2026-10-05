@@ -144,10 +144,13 @@ function withLoadout(v, lo) {
   return out;
 }
 
-/** The owner's own variant of a token record (chess id, else its normal `_a` sibling) with its loadout; null if none. */
+/**
+ * The owner's own variant of a token record (chess id, else its normal `_a` sibling; a 自选 piece's: its owner form,
+ * `def.tokenOwner`) with its loadout; null if none.
+ */
 function ownVariant(raw, owner) {
   const vs = raw?.variants;
-  const oid = owner?.defId;
+  const oid = owner?.def?.tokenOwner ?? owner?.defId;
   if (!vs || typeof vs !== 'object' || !oid) return null;
   const v = vs[oid] ?? vs[String(oid).replace(/_b$/, '_a')] ?? null;
   return v ? withLoadout(v, owner.def?.loadout) : null;

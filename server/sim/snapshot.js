@@ -2,7 +2,8 @@
 //
 // b.snap  = { fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total }
 // UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?,
-//   form?, skillIndex?, moduleId?, items?, standInFor? }  (standInFor = the replaced operator's charId of a 补位 stand-in;
+//   form?, skillIndex?, moduleId?, items?, standInFor?, diy? }  (standInFor = the replaced operator's charId of a 补位
+//   stand-in; diy = a 自选 piece's pick { charId, skillIndex, uniEquipId } — defId is its slot, spine / avatar the operator's;
 //   form = the unit's current model form — an enemy's, content/enemies/helpers.js setForm:
 //   掠海漂移体 'crawl', 暴鸰 'bombed', 转译基底·α's forms …; a 傀儡师 fighting as its 替身 'doll', professions.js — a view built
 //   after the change, a field opened mid-battle, draws it: render/units.js FORMS)
@@ -55,6 +56,8 @@ export function unitInfo(u) {
     // 补位: the replaced operator's charId when the chess fights as its stand-in (spine / avatar are the stand-in's; the
     // detail card composes the stand-in record, shared/standIn.js standInRecord)
     standInFor: u.side === 'ally' && u.kind === 'op' && typeof d.standInFor === 'string' ? d.standInFor : undefined,
+    // 自选: the pick of a DIY slot's piece (the detail card composes its record, shared/diy.js diyRecord)
+    diy: u.side === 'ally' && u.kind === 'op' && d.diyFor && d.loadout?.diy ? { ...d.loadout.diy } : undefined,
   };
 }
 

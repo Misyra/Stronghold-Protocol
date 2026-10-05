@@ -31,7 +31,7 @@ export class BattleSummons {
     const src = d && Array.isArray(d.sources) ? d.sources : null;
     if (!src || src.includes('skill') || src.includes('talent')) return true;
     const vs = this.data.rawToken?.(tokenId)?.variants;
-    const id = String(owner.defId ?? '');
+    const id = String(owner.def?.tokenOwner ?? owner.defId ?? ''); // a 自选 piece's variants are keyed by its owner form
     return !(vs && typeof vs === 'object' && (vs[id] || vs[id.replace(/_b$/, '_a')]));
   }
 

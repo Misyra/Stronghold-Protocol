@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { assetCdnUrl } from '../shared/assetCdn.js';
 
 const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js(?:[?#]|$)/;
@@ -68,4 +69,16 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
     return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};</script>`);
   }
   return { tag, artTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === `${stat.size}:${stat.mtimeMs}` };
+}
+
+/** The CDN release tag shipped with the repo (`.assets-cdn-version`, written by tools/r2-sync.mjs and
+ *  committed with the release): a `git pull` then restart syncs a server that cannot reach the CDN.
+ *  Returns '' when the file is missing or does not hold a valid tag. */
+export function readAssetsCdnVersionFile(file = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.assets-cdn-version')) {
+  try {
+    const tag = fs.readFileSync(file, 'utf8').trim();
+    return /^[a-f0-9]{16}$/.test(tag) ? tag : '';
+  } catch {
+    return '';
+  }
 }

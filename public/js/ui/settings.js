@@ -1,4 +1,4 @@
-// Player settings (BGM/SFX volume, mute, damage numbers, render quality): a tiny observable store
+// Player settings (BGM/SFX/voice volume, mute, damage numbers, render quality): a tiny observable store
 // persisted in localStorage (`sp.pref.settings`), applied to the audio manager on every change, plus
 // the settings modal — which also holds the language switch (ui/lang.js; kept apart in `sp.pref.lang`).
 
@@ -12,7 +12,7 @@ import { detectFeatures } from './device.js';
 import { LangToggle } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 
-/** Settings store: { bgm, sfx, muted, damageNumbers, quality }. */
+/** Settings store: { bgm, sfx, voice, muted, damageNumbers, quality }. */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
 
 settingsStore.subscribe((s) => {
@@ -69,6 +69,7 @@ export function SettingsModal({ open, onClose }) {
         <${LangToggle} class="set-lang" />
       </div>
       <${Slider} label=${t('背景音乐')} micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
+      <${Slider} label=${t('干员语音')} micro="VOICE" icon="mic" value=${s.voice} onInput=${(v) => updateSettings({ voice: v })} />
       <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}
         onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
       <${Toggle} label=${t('静音')} micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />

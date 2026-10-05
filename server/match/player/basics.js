@@ -1,13 +1,14 @@
 // server/match/player/basics.js — PlayerState methods: the basics — seat flags and counts (isHumanActive,
 // botControlled, deployCap, deployCount, tempEmpty), the prep that resolves a temp piece (tempDue, _putTemp: every
-// write into a temp slot), the operator loadout (DESIGN §16: setLoadout, loadoutFor), the deploy map on the field the
+// write into a temp slot), the operator loadout (DESIGN §16: setLoadout, loadoutFor), the not-owned operators fielded
+// as their stand-ins (0.2.0 补位: setNotOwned, fieldsStandIn, fieldRecord), the deploy map on the field the
 // player deploys on (Match.deployFieldOf) and the withdrawal of pieces a terrain / deploy-field change left on tiles
 // they may no longer occupy (_evictIllegal), dirty.
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
 import { PHASE } from '../../../shared/constants.js';
-import { checkLoadout, resolveLoadout } from '../../../shared/protocol.js';
+import { checkLoadout, checkNotOwned, resolveLoadout } from '../../../shared/protocol.js';
 import { tileKey, boardOrder } from '../board.js';
 
 export class PlayerBasics {
@@ -73,9 +74,57 @@ export class PlayerBasics {
     return true;
   }
 
-  /** The skill index / module a chess record fights with under this player's loadout (DESIGN §16). */
+  /**
+   * The skill index / module a chess record fights with under this player's loadout (DESIGN §16) — for a chess this
+   * player fields as its stand-in (0.2.0 补位) the stand-in's backup selection, whatever the loadout says.
+   */
   loadoutFor(chessRecord) {
+    if (this.fieldsStandIn(chessRecord)) {
+      return resolveLoadout(null, this.gd.standIn(chessRecord.chessId), (id) => this.gd.standIn(id) || this.gd.chess(id));
+    }
     return resolveLoadout(this.loadout, chessRecord, (id) => this.gd.chess(id));
+  }
+
+  /**
+   * Replace the not-owned list (0.2.0 补位; the seat's list at the match start — the setting never changes during a
+   * match): keeps the droppable chess (checkNotOwned) whose stand-in this match's data has. Bots own every operator.
+   * @param {any} list base chess ids
+   * @returns {boolean} false when the list is malformed (nothing changes) or the player is a bot
+   */
+  setNotOwned(list) {
+    if (this.isBot) return false;
+    const res = checkNotOwned(list, (id) => this.gd.chess(id));
+    if (!res || !res.ok) {
+      this.m.log?.warn?.(`[match ${this.m.roomCode}] not-owned list of ${this.playerId} ignored: ${res && res.detail}`);
+      return false;
+    }
+    const ids = res.notOwned.filter((id) => !!this.gd.standIn(id));
+    this.standIns = Object.freeze(ids);
+    this._standInSet = new Set(ids);
+    return true;
+  }
+
+  /**
+   * Whether this player's piece of chess record (or id) `rec` fights as its stand-in (0.2.0 补位): its base chess is
+   * in `standIns` and the data has the stand-in. Normal and elite alike (the elite uses the same backup).
+   * @param {object|string|null} rec
+   */
+  fieldsStandIn(rec) {
+    if (!this._standInSet || this._standInSet.size === 0 || !rec) return false;
+    const r = typeof rec === 'string' ? this.gd.chess(rec) : rec;
+    if (!r || typeof r.chessId !== 'string') return false;
+    return this._standInSet.has(r.baseId || r.chessId) && !!this.gd.standIn(r.chessId);
+  }
+
+  /**
+   * The record this player's piece of chess record `rec` fights with (0.2.0 补位): the stand-in record
+   * (gd.standIn — the chess's identity, the stand-in's body) when the player fields its stand-in, else `rec` itself.
+   * Rules about the unit's body read it (placement class, summon / bot ranges, the scouting art); rules about the chess
+   * (price, bonds, 特质, merges, pools) keep reading gd.chess.
+   * @param {object|null} rec
+   */
+  fieldRecord(rec) {
+    return rec && this.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) || rec : rec;
   }
 
   /**

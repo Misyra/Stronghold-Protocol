@@ -181,6 +181,8 @@ export class PlayerPieces {
   grantTokensFor(owner) {
     const rec = owner && owner.kind === 'chess' ? this.gd.chess(owner.id) : null;
     if (!rec) return;
+    // 0.2.0 补位: a chess fielded as its stand-in makes the stand-in's summons — none of the 17 has one (DATA.md §18)
+    if (this.fieldsStandIn(rec)) return;
     for (const { tokenId, count } of this.gd.placeableTokens(owner.id, this.loadoutFor(rec))) {
       const missing = count - this._tokenCountOf(owner.uid, tokenId);
       if (missing <= 0) continue;

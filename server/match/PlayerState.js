@@ -72,6 +72,15 @@
 //     mismatch falls back to the defaults) and kept frozen; bots always use the defaults. Match.setLoadout may replace
 //     it during INFO_CHECK only. battleInput() resolves every chess unit to `skillIndex` + `moduleId` (resolveLoadout:
 //     normal chess → moduleId null, elite → uniEquipId | 'none'); m.private exposes `loadout`.
+//   * Operator ownership (0.2.0 补位, the approved plan — owner's decision 2026-10-05): the human's `seat.notOwned` (base
+//     chess ids marked 未持有 on the 干员持有 screen) is re-checked against this match's data (shared/protocol.js
+//     checkNotOwned + a stand-in record in data/backups.json) and fixed for the match (`standIns`; bots own every
+//     operator). A piece of such a chess — normal or elite, wherever it is — keeps the chess's identity (name, bonds,
+//     特质, tier, price, sell price, merge: every rule that reads gd.chess) and fights as its official stand-in
+//     (`fieldRecord` = gd.standIn: body, stats, range, position, skills / talents / module — the backup selection, the
+//     loadout never applies to it, "对于补位干员其技能不可更改"): battleInput marks it `standIn: true`, placeClass /
+//     summon range / the bots' range read the stand-in record, it makes no summons (none of the 17 stand-ins has one),
+//     and the scouting views draw it with the stand-in's art on the board. m.private exposes `standIns`.
 //
 // Code layout: this file keeps the constructor (the per-player state fields); the methods live in
 // server/match/player/, one module per concern, and are installed on PlayerState.prototype below in a fixed order,
@@ -131,6 +140,14 @@ export class PlayerState {
     /** operator loadout (DESIGN §16): frozen { [baseChessId]: { skill, module } }, {} = every chess on its defaults */
     this.loadout = Object.freeze({});
     if (!this.isBot && seat.loadout) this.setLoadout(seat.loadout);
+    /**
+     * 补位 (0.2.0): the base chess ids this player fields as their stand-ins — the seat's not-owned list when the match
+     * started, re-checked against this match's data; frozen, sorted; [] = every operator owned (bots always)
+     */
+    this.standIns = Object.freeze([]);
+    /** @type {Set<string>} lookup set of `standIns` */
+    this._standInSet = new Set();
+    if (!this.isBot && seat.notOwned) this.setNotOwned(seat.notOwned);
     this.shop = { level: 1, upgradePrice: this.gd.upgradeBase(1) ?? 0, slots: [], frozen: false, freeRefreshes: 0 };
     /** reward offers queue (merge rewards, special refreshes): { tier, source, label, slots: [{ kind, id, price, sold }] } */
     this.offers = [];

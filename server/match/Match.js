@@ -13,11 +13,14 @@
 //   opts.difficulty  'FUNNY'|'NORMAL'|'HARD'|'ABYSS'
 //   opts.modeId      string                     modeIdFor(mode, difficulty), e.g. 'mode_multi_hard'
 //   opts.seats       Array<{ seat: 0..3, playerId: string, name: string, isBot: boolean, connected: boolean,
-//                            loadout?: { [baseChessId]: { skill: index, module: uniEquipId|'none'|null } } | null }>
+//                            loadout?: { [baseChessId]: { skill: index, module: uniEquipId|'none'|null } } | null,
+//                            notOwned?: string[] | null }>
 //                    sorted by seat, 1–4 entries, ≥ 1 human; solo ⇒ exactly 1 human and no bots.
 //                    Bot playerIds start with 'ai_'. Seat indexes may have gaps (e.g. seats 0 and 2).
 //                    `loadout` (DESIGN §16, optional): the human's operator loadout, already checked by the lobby
 //                    (shared/protocol.js checkLoadout); PlayerState re-checks it against opts.data and ignores it for bots.
+//                    `notOwned` (0.2.0 补位, optional): the base chess ids the human marked as not owned (干员持有) — fixed
+//                    for the match; those chess fight as their stand-ins (PlayerState setNotOwned; bots own everything).
 //   opts.spectators  string[] (optional)        the room's spectator seats (remake feature, community report #26;
 //                                              server/lobby.js): never players — see addSpectator below
 //   opts.seed        uint32                     master seed for all match randomness

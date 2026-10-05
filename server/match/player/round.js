@@ -1,7 +1,7 @@
 // server/match/player/round.js — PlayerState methods: the round lifecycle the match calls — startRound (income, pending
 // coins, the shop, summon stacks topped up), endPrep, eliminate (every copy back to the pool), recompute (legality,
 // out-of-range summons, temp pieces into free hand slots, bonds), the bond views — and battleInput (the player's
-// PlayerBattleInput: board units with their loadout, carried 联防 state, the reached layers).
+// PlayerBattleInput: board units with their loadout or their 补位 mark, carried 联防 state, the reached layers).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -102,10 +102,16 @@ export class PlayerRound {
     for (const { r, c, piece } of boardOrder(this.board)) {
       if (piece.kind === 'chess') {
         const u = { uid: piece.uid, kind: 'chess', chessId: piece.id, row: r, col: c, dir: pieceDir(piece), items: (piece.items || []).map((i) => i.id) };
-        // DESIGN §16: the equipped skill / module (elite only) from the loadout (defaults when absent)
-        const lo = this.loadoutFor(this.gd.chess(piece.id));
-        u.skillIndex = lo.skillIndex;
-        u.moduleId = lo.moduleId;
+        if (this.fieldsStandIn(piece.id)) {
+          // 0.2.0 补位: a chess this player does not own fights as its stand-in (sim getChess(id, { standIn: true }): the
+          // backup skill / module — no loadout fields, docs/SIM.md §12)
+          u.standIn = true;
+        } else {
+          // DESIGN §16: the equipped skill / module (elite only) from the loadout (defaults when absent)
+          const lo = this.loadoutFor(this.gd.chess(piece.id));
+          u.skillIndex = lo.skillIndex;
+          u.moduleId = lo.moduleId;
+        }
         if (carry && carry.has(piece.uid)) u.carryState = carry.get(piece.uid);
         units.push(u);
       } else if (piece.kind === 'token') {

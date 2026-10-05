@@ -147,19 +147,23 @@ export function positionClass(rec, moduleId = null) {
 
 /**
  * Placement class of a record under a player's loadout (the module `ps.loadoutFor` resolves, defaults included).
- * Tokens and records without a chess id ignore the loadout.
- * @param {{ loadoutFor?: (rec: object) => { moduleId?: string|null }|null }|null} ps
+ * Tokens and records without a chess id ignore the loadout. A chess the player fields as its stand-in (0.2.0 补位,
+ * `ps.fieldRecord`) is placed by the stand-in's position — the body that is deployed (圣约送葬人's 预备干员-先锋 stands on
+ * the ground, 塞雷娅's Touch anywhere) [ASSUMED: the official deploy check reads the fielded character].
+ * @param {{ loadoutFor?: (rec: object) => { moduleId?: string|null }|null, fieldRecord?: (rec: object) => object }|null} ps
  */
 export function placeClass(ps, rec) {
   if (!rec || !rec.chessId || !ps || typeof ps.loadoutFor !== 'function') return positionClass(rec);
   let moduleId = null;
+  let body = rec;
   try {
     const lo = ps.loadoutFor(rec);
     moduleId = lo && typeof lo.moduleId === 'string' ? lo.moduleId : null;
+    if (typeof ps.fieldRecord === 'function') body = ps.fieldRecord(rec) || rec;
   } catch {
     moduleId = null;
   }
-  return positionClass(rec, moduleId);
+  return positionClass(body, moduleId);
 }
 
 /**

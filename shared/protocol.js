@@ -2,6 +2,7 @@
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
+import { isDroppableChess } from './standIn.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -171,6 +172,38 @@ export function resolveLoadout(loadout, chess, getChess) {
   return { skillIndex, moduleId };
 }
 
+// ---- operator ownership (干员持有, 0.2.0 补位): room.ownership { notOwned } -------------------------------------------
+
+/**
+ * `room.ownership { notOwned }`: the base chess ids the player marked as not owned on the 干员持有 screen (the
+ * per-browser setting next to 干员调配; default: every operator owned ⇒ []). Such a chess keeps its identity (name,
+ * bonds, 特质, tier, price, merge) and fights as its official stand-in (shared/standIn.js standInRecord). Structural
+ * limit below; the semantic check (`checkNotOwned`) is LENIENT, unlike checkLoadout: an id that is not a droppable chess
+ * (unknown, elite, PRESET / 自选, a stale id of another build) is dropped, never the whole list.
+ */
+export const OWNERSHIP_LIMITS = Object.freeze({ notOwned: 160 });
+/** Structural check of `room.ownership.notOwned`: an array of ≤ 160 ids. */
+export const isNotOwnedList = (v) => isList(v, OWNERSHIP_LIMITS.notOwned, isId);
+
+/**
+ * Semantic check + normalisation of a not-owned list against the game data: keeps the ids of droppable chess
+ * (shared/standIn.js isDroppableChess — NORMAL base chess with a stand-in), deduplicated and sorted; drops the rest.
+ * Used by the server (lobby, match) and by the client before it sends or imports a list.
+ * @param {any} list `room.ownership.notOwned`
+ * @param {(id: string) => any} getChess chess record lookup
+ * @returns {{ ok: true, notOwned: string[], dropped: number } | { error: 'BAD_MSG', detail: string }}
+ */
+export function checkNotOwned(list, getChess) {
+  if (!isNotOwnedList(list)) return { error: 'BAD_MSG', detail: 'bad notOwned list' };
+  const keep = new Set();
+  for (const id of list) {
+    const c = typeof getChess === 'function' ? getChess(id) : null;
+    if (c && c.chessId === id && isDroppableChess(c)) keep.add(id);
+  }
+  const notOwned = [...keep].sort();
+  return { ok: true, notOwned, dropped: list.length - notOwned.length };
+}
+
 // ---- unit stats (user playtest #4 item 7): m.unitStats units and the browser battle's live stats ---------------------
 
 const fin = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -253,6 +286,9 @@ export const C2S = {
   'room.start': {},
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK
   'room.loadout': { entries: isLoadoutEntries },
+  // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it
+  // started (an out-of-match setting — during a match it is stored for the next one: ROOM_STARTED)
+  'room.ownership': { notOwned: isNotOwnedList },
   // spectator seats (remake feature, community report #26; MAX_SPECTATORS): take one of a co-op room's spectator seats —
   // in its lobby or while its match runs — never a player seat; the host frees one by playerId (the spectator gets
   // room.closed { reason: 'kicked' }). room.leave / g.leave leave a spectator seat like a player seat.

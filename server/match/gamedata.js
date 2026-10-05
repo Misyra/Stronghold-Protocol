@@ -13,6 +13,7 @@
 
 import { getConfig, getMode } from '../data.js';
 import { isShopItem } from '../sim/simdata.js';
+import { standInRecord } from '../../shared/standIn.js';
 
 const own = (map, id) => (map && typeof map === 'object' && typeof id === 'string' && Object.hasOwn(map, id) && map[id] && typeof map[id] === 'object' ? map[id] : null);
 const numOr = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -95,6 +96,8 @@ export class GameData {
     this.inactiveEnemies = new Set(Array.isArray(this.mode.inactiveEnemyKeys) ? this.mode.inactiveEnemyKeys : []);
     /** data/tuning.json (titles only, see the header) */
     this.tuning = this.raw.tuning && typeof this.raw.tuning === 'object' ? this.raw.tuning : {};
+    /** standIn memo: chess id → composed 补位 record | null */
+    this._standIns = new Map();
   }
 
   /**
@@ -174,6 +177,26 @@ export class GameData {
   token(id) { return own(this.raw.tokens, id); }
   get choices() { return this.raw.choices && typeof this.raw.choices === 'object' ? this.raw.choices : {}; }
   get factions() { return this.raw.factions && typeof this.raw.factions === 'object' ? this.raw.factions : {}; }
+
+  /**
+   * The 补位 record of chess `id` (normal or elite; DATA.md §18): shared/standIn.js standInRecord over data/backups.json
+   * — the chess's identity (ids, tier, bonds, 特质, price, merge) with its official stand-in's body (stats, range, skills
+   * with the backup skill as the default, talents, module, art, `standInFor`). Null for a PRESET / 自选 chess, an unknown
+   * id or data without backups.json. Memoized (frozen records).
+   * @param {string} id
+   * @returns {object|null}
+   */
+  standIn(id) {
+    if (typeof id !== 'string') return null;
+    if (this._standIns.has(id)) return this._standIns.get(id);
+    const c = this.chess(id);
+    const backups = this.raw.backups && typeof this.raw.backups === 'object' ? this.raw.backups : null;
+    let rec;
+    try { rec = c && backups ? standInRecord(c, backups) : null; } catch { rec = null; }
+    if (rec) Object.freeze(rec);
+    this._standIns.set(id, rec);
+    return rec;
+  }
 
   /** Normal (base) chess id of a chess id (golden → base). */
   baseIdOf(id) {

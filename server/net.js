@@ -60,10 +60,11 @@ export const NET_DEFAULTS = Object.freeze({
 
 /**
  * Intents that also draw from the per-connection heavy bucket: g.watch (its reply is a large state resend, m.field),
- * room.loadout (a ≤ 160-entry map validated against the game data; the client debounces its edits) and room.spectate
+ * room.loadout (a ≤ 160-entry map validated against the game data; the client debounces its edits), room.ownership
+ * (a ≤ 160-id list, the same way) and room.spectate
  * (taking a spectator seat in a running match resends its state like a watcher's g.watch — server/lobby.js spectate).
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.spectate']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.spectate']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, POLICY: 1008, SHUTDOWN: 1001 });
@@ -106,6 +107,8 @@ export class Session {
     this.resyncAt = -Infinity;
     /** @type {Record<string, { skill: number, module: string|null }> | null} checked operator loadout (lobby-owned, DESIGN §16) */
     this.loadout = null;
+    /** @type {readonly string[] | null} checked not-owned chess ids (干员持有, lobby-owned, 0.2.0 补位) */
+    this.notOwned = null;
     /** @type {string} client address of the latest connection (logging) */
     this.addr = '?';
     /** @type {string | null} per-network limit key of the latest connection (null = not limited), see clientAddress */

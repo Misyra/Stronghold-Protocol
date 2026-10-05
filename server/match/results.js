@@ -127,6 +127,10 @@ export function buildResult(m, outcome) {
   });
   return {
     t: 'm.result',
+    // Stable across reconnect/resends; independent of simulation randomness and the client's wall clock.
+    matchId: `${m.roomCode}-${m.battlePrefix}-${m.startedAt}`,
+    startedAt: m.startedAt,
+    finishedAt: m.sched.now(),
     victory,
     roundsPassed: teamRounds,
     hiddenReached,

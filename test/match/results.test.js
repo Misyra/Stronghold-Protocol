@@ -7,6 +7,20 @@ import { PHASE } from '../../shared/constants.js';
 import { DATA, makeMatch } from './harness.js';
 
 const gd = new GameData(DATA, 'mode_multi_hard');
+test('result match identity and timestamps are stable on reconnect and unique for the next match', () => {
+  const h = makeMatch({ seed: 7, matchNo: 1, fake: true }).start();
+  h.m.finish({ victory: false });
+  const first = h.m.lastResultMsg;
+  assert.equal(first.startedAt, h.m.startedAt);
+  assert.equal(first.finishedAt - first.startedAt, first.durationMs);
+  assert.ok(first.matchId);
+  h.m.onReconnect('p_0');
+  assert.deepEqual(h.sent.filter(([, msg]) => msg.t === 'm.result').at(-1)[1], { ...first, playerId: 'p_0' });
+  const next = makeMatch({ seed: 7, matchNo: 2, fake: true }).start();
+  next.m.finish({ victory: false });
+  assert.notEqual(next.m.lastResultMsg.matchId, first.matchId);
+  h.m.dispose(); next.m.dispose();
+});
 const fake = (seat, s = {}, layers = 0, lp = 10) => ({
   playerId: `p${seat}`, seat, alive: true, lp, lpAtFinal: lp,
   stats: { bossDamage: 0, merges: 0, itemsEquipped: 0, gold: 0, ...s },

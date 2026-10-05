@@ -1,0 +1,30 @@
+.history-panel { max-width: calc(100vw - .4rem); }
+.title-conn { flex-wrap: wrap; }
+.history-notice, .history-meta, .history-save { color: var(--text-lo); font-size: .15rem; }
+.history-notice { margin: 0 0 .16rem; }
+.history-save { min-height: .2rem; margin: .1rem 0 0; }
+.history-error, .history-save.is-error { color: var(--orange, #f8a76d); }
+.history-error { display: flex; align-items: center; gap: .12rem; font-size: .17rem; }
+.history-empty { display: flex; align-items: center; justify-content: center; gap: .12rem; min-height: 1.5rem; color: var(--text-lo); font-size: .2rem; }
+.history-list { display: flex; flex-direction: column; gap: .08rem; padding: .04rem 0 .16rem; }
+.history-entry { display: grid; grid-template-columns: 1.2rem .9rem minmax(2rem, 1.5fr) minmax(.8rem, 1fr) 1.3rem 1.4rem 1rem;
+  align-items: center; gap: .12rem; padding: .16rem; color: var(--text-hi); background: #101713;
+  border: 1px solid var(--line); text-align: left; font: inherit; font-size: .16rem; cursor: pointer; }
+.history-entry:hover, .history-entry:focus-visible { border-color: var(--mint-500); background: #18271f; }
+.history-entry > span { overflow-wrap: anywhere; }
+.history-win { color: var(--mint-400); }
+.history-loss { color: #f8a76d; }
+.history-entry__view { color: var(--text-lo); }
+.history-detail { display: flex; flex-direction: column; gap: .1rem; padding-bottom: .16rem; }
+.history-detail__summary { display: flex; align-items: center; flex-wrap: wrap; gap: .15rem; font-size: .19rem; }
+.history-detail .rcard__head { grid-template-columns: auto minmax(1.3rem, 1.5rem) minmax(0, 1fr) auto 1.9rem; }
+.history-detail .rcard__name { overflow-wrap: anywhere; }
+.result__foot { flex-wrap: wrap; gap: .08rem; }
+.result__foot .history-btn { min-width: 0; }
+@media (max-width: 850px) {
+  .history-entry { grid-template-columns: 1.2rem .9rem minmax(2rem, 1fr) 1.3rem; }
+  .history-entry__view { display: none; }
+  .history-detail .rcard__head { grid-template-columns: auto minmax(1.5rem, 1fr) auto; }
+  .history-detail .rcard__mid { grid-column: 1 / -1; grid-row: 2; }
+  .history-detail .rcard__title { grid-column: 1 / -1; }
+}

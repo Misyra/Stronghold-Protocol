@@ -516,7 +516,8 @@ mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, 
 - `onTick({battle, unit, buff, dt})` every tick, or every `interval` s. `persist: true` survives death/redeploy.
 - `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated;
   `shieldType` ('phys' | 'arts' | 'true' | 'elemental') = a 屏障 that absorbs that damage type only (夜莺 S2 法术护盾 "能吸收…
-  法术伤害"); none = every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害"). Shields are spent oldest first.
+  法术伤害"), or a list of them = those types only (机械师's 屏障 `['phys', 'arts']`: BlockDamage PHYSICAL_AND_MAGICAL — true
+  damage passes); none = every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害"). Shields are spent oldest first.
 - `visible: true` emits `['status', id, key, 1/0]` client events. `battle.removeBuff(unit, key|buff)`.
 
 **Mod keys** — additive: `atkFlat atkPct defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
@@ -688,7 +689,9 @@ unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `d
 
 `battle.heal(source, target, amount, { overheal=false, self, silent, regen, ignoreHealFree })`: no-op on `noHeal` targets
 (unless self — 禁疗 / 孤立 summons carry the flag, §3) and on `healFree` ones, self included (史尔特尔's 余烬), unless `regen`
-(an HP-regen attribute tick) or `ignoreHealFree` (a heal that "无视禁疗");
+(an HP-regen attribute tick) or `ignoreHealFree` (a heal that "无视禁疗"); a healer whose profile names the target in
+`healThrough(healer, target)` heals it through the `noHeal` flag and `healFree` (not a profile's `noHeal`), and its heal
+selection (`injuredAlliesInKeys`) takes it — 凯尔希 on her Mon3tr (PRTS "持有禁疗（可被凯尔希…无视）");
 × source `healingDealtMul` × target `healingTakenMul`; **`heal`** hook (mutable amount); capped at max HP; a `regen` tick
 — the unit's own 生命回复速度 (`s.hpRegen`, applied in the buffs phase) — is no 治疗 (PRTS 调香师 / 瑕光 / 铃兰 / 锡人 备注
 "不受治疗加成和禁疗影响"): no multiplier, and the hook sees it (`opts.regen`) but cannot change its amount. Effects PRTS
@@ -1151,7 +1154,7 @@ table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡�
 `afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
 "优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
 selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
-单位"), `boomerang` (the projectile stays
+单位"), `healThrough(healer, ally)` (a healer that selects and heals that ally through its 禁疗 — §4; 凯尔希's Mon3tr), `boomerang` (the projectile stays
 `'boomerang'` whatever the data's generic ranged projectile says), `boomerangOnward(ctx)` (a boomerang's flight after its
 first hit belongs to content: ctx `hit(target, x, y)` / `comeBack(x, y)` — 娜仁图亚 S1's bounces, S2's dash; the loopshooter
 row), `rangeAoe` (applied after every override: sets `allInRange` and, on a ranged profile, the instant `'beam'`) (see the

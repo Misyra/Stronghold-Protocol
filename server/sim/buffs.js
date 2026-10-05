@@ -155,8 +155,9 @@ export function makeBuff(b) {
     tags: b.tags ?? [],
     shield: b.shield ?? (b.mods && b.mods.shield) ?? 0,
     shieldHits: b.shieldHits ?? 0,
-    // a 屏障 that absorbs one damage type only (damage.js absorbShields): 'phys' | 'arts' | 'true' | 'elemental'; null =
-    // every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害") — 夜莺 S2 法术护盾 "能吸收…法术伤害"
+    // a 屏障 that absorbs one damage type only (damage.js absorbShields): 'phys' | 'arts' | 'true' | 'elemental', or a list
+    // of them (机械师's 屏障: ['phys', 'arts']); null = every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害") —
+    // 夜莺 S2 法术护盾 "能吸收…法术伤害"
     shieldType: b.shieldType ?? null,
     persist: !!b.persist,
     status: b.status ?? null,

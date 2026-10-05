@@ -476,8 +476,10 @@ function MatchScreen() {
         const mine = (pid && msg.result.perPlayer && msg.result.perPlayer[pid]) || null;
         const diff = st.match?.public?.difficulty;
         // the speaker comes from THIS battle's own field (`mine.unitsEnd`), not from the field on screen: watching a
-        // teammate used to make THEIR operator say the viewer's line (review on #73)
-        const charId = resultSpeaker(mine);
+        // teammate used to make THEIR operator say the viewer's line (review on #73). unitsEnd names chess ids: the
+        // record the own piece shows gives the operator whose voice bank speaks — a 补位 piece's stand-in (its own
+        // voice, like its 选中 line) and a filled 自选 slot's operator (ownShown), else the chess record's charId
+        const charId = resultSpeaker(mine, Math.random, (id) => ownShown(id)?.charId ?? null);
         if (!charId) return;
         audio.voice(charId, resultVoiceSlot({
           perfect: !!(mine?.perfect),

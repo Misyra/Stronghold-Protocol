@@ -1,0 +1,65 @@
+// server/sim/content/kits/ops/chess_char_2_12-gravel.js — 砾 (char_237_gravel) kit, tier 2.
+// Conventions of the tier-2 kits: ../shared/tier2.js; kit contract and rules: ../README.md.
+
+import { num, talentBb, installAura } from '../shared/tier1.js';
+
+export default {
+  // ---------------------------------------------------------------------------------------------------------------
+  // 2_12 砾 鼠群 (passive): at each deployment a barrier of hp_ratio × max HP that decays to 0 over `duration` s
+  // (capacity stepped once per second; a damaged barrier shrinks in proportion — PRTS).
+  // 快速部署: own deployment cost +cost (−1). Elite 小个子支援: every unit whose initial deployment cost ≤ cond.cost
+  // DEF +def while 砾 is on the field. (Elite module withdraw refund: no manual retreat in battle ⇒ no effect.)
+  // S1 影袭 (alt, passive): at each deployment DEF +def, decaying linearly to 0 over `duration` s, updated once per
+  // second (PRTS: "防御力加成每秒更新一次").
+  chess_char_2_12_a: (bb, chess) => {
+    const t = talentBb(chess, 0);
+    return {
+      skill: {
+        kind: 'passive',
+        onStart({ battle, unit }) {
+          const total = unit.s.maxHp * num(bb.hp_ratio);
+          const dur = num(bb.duration, 10);
+          if (!(total > 0) || !(dur > 0)) return;
+          let k = 0;
+          battle.addBuff(unit, {
+            key: 'gravel:rats', shield: total, duration: dur, interval: 1, visible: true, tags: ['skill'],
+            // PRTS: "屏障最大容量每秒更新一次；受到伤害后，剩余容量根据屏障最大容量等比变化" — the capacity steps down
+            // once per second and what is left of the barrier scales with it (never a plain cap)
+            onTick: ({ unit: u, buff }) => {
+              const prev = Math.max(0, dur - k) / dur;
+              k++;
+              const next = Math.max(0, dur - k) / dur;
+              if (prev > 0 && buff.shield > 0) { buff.shield *= next / prev; u.markDirty(); }
+            },
+          });
+          battle.fx('shield', { x: unit.x, y: unit.y, id: unit.id });
+        },
+      },
+      skills: {
+        skchr_gravel_1: {
+          kind: 'passive',
+          onStart({ battle, unit }) {
+            const v = num(bb.def), dur = num(bb.duration);
+            if (!(v > 0) || !(dur > 0)) return;
+            let k = 0;
+            battle.addBuff(unit, {
+              key: 'gravel:shadow', duration: dur, mods: { defPct: v }, interval: 1, visible: true, tags: ['skill'],
+              onTick: ({ unit: u, buff }) => {
+                k++;
+                buff.mods = { defPct: v * Math.max(0, dur - k) / dur };
+                u.markDirty();
+              },
+            });
+            battle.fx('buff', { x: unit.x, y: unit.y, id: unit.id, kind: 'def' });
+          },
+        },
+      },
+      talents: [{ install(battle, unit) {
+        const c = num(t.cost);
+        if (c) unit.base.cost = Math.max(0, unit.base.cost + c);
+        const d = num(t.def), lim = t['cond.cost'];
+        if (d && lim != null) installAura(battle, unit, { key: 'talent:gravel', value: d, select: (a) => num(a.def?.stats?.cost, Infinity) <= num(lim), mods: { defPct: d } });
+      } }],
+    };
+  },
+};

@@ -292,7 +292,7 @@ export function tilesAround(x, y, r, tiles) {
 
 /**
  * Tiles of a straight wall through tile (round(y), round(x)): `axis` 'col' = that column, 'row' = that row (余 S3
- * fire wall: perpendicular to his facing, sim/content/kits/tier6.js). Clipped to the field `rect` (inclusive
+ * fire wall: perpendicular to his facing, sim/content/kits/ops/chess_char_6_03-yu.js). Clipped to the field `rect` (inclusive
  * { r0, r1, c0, c1 }); without one ±4 tiles.
  */
 export function wallTiles(x, y, axis, rect) {

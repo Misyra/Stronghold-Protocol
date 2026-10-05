@@ -9,3 +9,5 @@ b48a67caec5ba0699097e21f3db4d4dbb35a2aed
 13224f9483d94f65089e289ff2be63f50a69b1cb
 # feedback5 R3: server/sim/content/enemies.js → server/sim/content/enemies/*.js (helpers, archetypes, kit families)
 560328cacc863c26d07780096527e255ebf62bc4
+# feedback5 R4: kits/tier1..6.js → kits/ops/ (one file per kit), kits/shared/, kits/index.js
+1169102d46742474bf0f0189d467c791984d9e05

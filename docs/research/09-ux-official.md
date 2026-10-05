@@ -332,7 +332,7 @@ The public mirror (ArknightsAssets2 `cn`, `ui/emoticon/theme/[uc]<themeId>/icon/
      - `professions.js` front checks (the `(x − unit.x)·facing` tests)
      - `skills.js` trigger grids
      - `tokens.js` placement grids and Mech/device helpers
-     - kits tier3 (`displace` direction, 薄绿 pull tile) and tier4 device placement
+     - the tier-3 kits (`displace` direction, 薄绿 pull tile) and tier-4 device placement (server/sim/content/kits/ops/)
      - `content/devices.js` blower relation: `equal` if the operator dir == blower dir, `opposite` if reversed, otherwise none. Today only fx is compared, so the DOWN blowers never buff anyone.
      - Items 叙拉古正装 (perpendicular pair), 歌利亚头盔 (front tile), 画卷 `1-1`.
 4. **`server/match/finalAssault.js`.** The right-side mirror becomes col `c→20−c` with dir RIGHT↔LEFT; UP and DOWN are kept (not a flat `facing=−1`). FA prep on the right half shows the mirrored layout, and moves there go through the wheel in mirrored coordinates.

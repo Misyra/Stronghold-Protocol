@@ -1,4 +1,4 @@
-// Tier-4 operator kits (server/sim/content/kits/tier4.js): one signature test per chess (+ elite checks), real battles
+// Tier-4 operator kits (server/sim/content/kits/ops/chess_char_4_*.js): one signature test per chess (+ elite checks), real battles
 // through the harness. Numbers are read back from the data blackboards so the tests follow data changes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

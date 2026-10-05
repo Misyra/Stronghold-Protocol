@@ -1,4 +1,4 @@
-// Content tests for the tier-6 kits (server/sim/content/kits/tier6.js) + 盟约·辅助干员 (chess_char_1_15).
+// Content tests for the tier-6 kits (server/sim/content/kits/ops/chess_char_6_*.js) + 盟约·辅助干员 (chess_char_1_15).
 // Every test runs a real battle through the harness and checks the signature effect of the kit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

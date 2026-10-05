@@ -1,4 +1,4 @@
-// Operator loadouts (DESIGN §16) for the tier-2 kits (server/sim/content/kits/tier2.js): every selectable NON-default
+// Operator loadouts (DESIGN §16) for the tier-2 kits (server/sim/content/kits/ops/): every selectable NON-default
 // skill of every visible tier-2 chess is hand-authored (tools/kit-coverage.mjs) and shows its signature effect for the
 // normal (Lv4) and the elite (Lv7) chess — numbers from the selected skill's blackboard (data/chess.json skills[]) —
 // and the elite's module choice ('none' instead of the default module) changes what the kit / profile does.

@@ -46,11 +46,14 @@ import { BAND_TURN_SECONDS } from '../server/match/Match.js';
 import { SPINE_EVICT_DELAY_MS, SPINE_QUIET_DELAY_MS } from '../public/js/assets.js';
 import { RETRY_DELAYS_MS } from '../public/js/data.js';
 import { DATA, makeMatch } from './match/harness.js';
+import { KIT_FILES } from '../server/sim/content/kits/index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const doc = (p) => readFileSync(join(ROOT, p), 'utf8');
 /** server/sim/Battle.js with its method modules (server/sim/battle/*.js) as one text. */
 const battleText = () => [doc('server/sim/Battle.js'), ...readdirSync(join(ROOT, 'server/sim/battle')).sort().map((f) => doc(`server/sim/battle/${f}`))].join('\n');
+// the sources of a former kits/tierN.js: its helpers (kits/shared/tierN.js) and its kit files (kits/ops/, kits/index.js)
+const tierSources = (t) => [`server/sim/content/kits/shared/tier${t}.js`, ...KIT_FILES[t - 1].map((f) => `server/sim/content/kits/ops/${f}`)];
 const DESIGN = doc('docs/DESIGN.md');
 const META = doc('docs/META.md');
 const DATA_MD = doc('docs/DATA.md');
@@ -255,7 +258,7 @@ test('回环射手 boomerang and 蕾缪安 S3 shells (user playtest #3 items 4�
   assert.match(SIM, /`none\|arrow\|bolt\|bomb\|lob\|orb\|drone\|enemy\|boomerang\|droneBomb\|chain\|chainHeal`/);
   assert.match(DESIGN, /BOOMERANG_RETURN_SPEED/);
   // 蕾缪安: one shell every 0.3 s after the skill (PRTS), fx 'bombardShell' then 'bombard' — the kit's constants
-  const kit = readFileSync(join(ROOT, 'server/sim/content/kits/tier6.js'), 'utf8');
+  const kit = readFileSync(join(ROOT, 'server/sim/content/kits/ops/chess_char_6_01-lemuen.js'), 'utf8');
   assert.match(kit, /const LEMUEN_SHELL_INTERVAL = 0\.3;/);
   assert.match(kit, /battle\.fx\('bombardShell'/);
   assert.match(DESIGN, /'bombardShell' \{x, y, id: shooter, r, t: flight game s, i\}/);
@@ -367,7 +370,7 @@ test('user playtest #5 (DESIGN §19): blocking, 联防 forced exit, huge bosses,
   assert.match(PLAYING, /自缚、无法被阻挡/);
   // #3 elements: one hasHp, the pipeline guard, 脆弱 vs 元素伤害, element healing per type
   assert.equal(typeof DAMAGE.hasHp, 'function');
-  for (const f of ['server/sim/content/kits/tier5.js', 'server/sim/content/kits/tier6.js', 'server/sim/content/items/battle.js']) {
+  for (const f of [...tierSources(5), ...tierSources(6), 'server/sim/content/items/battle.js']) {
     assert.ok(!/const hasHp = /.test(readFileSync(join(ROOT, f), 'utf8')), `${f}: no local hasHp copy`);
   }
   assert.match(s55, /元素伤害 takes 元素脆弱 \(`elementalTakenMul`\) alone, not `dmgTakenMul`/);
@@ -753,7 +756,7 @@ test('batch 6 QA residuals (DESIGN §21.21–§21.25): the lock per deployment f
   assert.match(items, /function deploymentOf\(u\)/);
   assert.ok(!/S\.on\('deploy', \(c\) => \{\s*if \(c\.unit !== u \|\| c\.initial\) return;\s*hs\.undyingUsed/.test(items), 'no per-grant re-arm hook');
   assert.match(doc('server/sim/content/bands/battle.js'), /revivedInPlace\(u\)/);
-  assert.match(doc('server/sim/content/kits/tier4.js'), /if \(holdsUndying\(battle, unit\)\) return;/);
+  assert.match(doc('server/sim/content/kits/ops/chess_char_4_01-rmixer.js'), /if \(holdsUndying\(battle, unit\)\) return;/);
   assert.match(sub(21), /\*\*QA after the integration, fixed\*\*: \(1\) the lock lived in the hooks of the carrier's hammer grants/);
   assert.match(sub(21), /both in-place revives now call `revivedInPlace`/);
   assert.match(sub(20), /the lock belongs to the deployment, so a borrowed hammer \(萨尔贡 × 娜仁图亚\) follows the same rule \| `content\/items\/battle\.js deploymentOf` returning one key/);
@@ -838,7 +841,7 @@ test('the deliberate trigger deviation (DESIGN §21.29): six 重装 skills DEFAU
   assert.match(r03, /下半 \(act2autochess, 2026-03-14\) added `TANK \| \| \| 0 \| TAKE_DAMAGE` for every skill index/);
   assert.match(r03, /\*\*Deliberate deviation\*\* \(the owner, 2026-10-03/);
   // PR #12's kit lines stay; their comments give this reason, not the community summary
-  const t1 = doc('server/sim/content/kits/tier1.js');
+  const t1 = tierSources(1).map(doc).join('\n');
   assert.equal((t1.match(/trigger: 'DEFAULT',/g) || []).length, 2, "PR #12's two kit lines");
   assert.ok(!/offensive skills activate when an enemy is in their skill range/.test(t1));
   assert.ok(!/documented for skillIndex 0/.test(t1));

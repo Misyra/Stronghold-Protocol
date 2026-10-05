@@ -1,5 +1,5 @@
 // Tier-4 operator loadouts (DESIGN §16): every selectable NON-default skill of every visible tier-4 chess has a
-// hand-authored spec in server/sim/content/kits/tier4.js (`skills[skillId]`), proven here by its signature effect for
+// hand-authored spec in its kit file (server/sim/content/kits/ops/, `skills[skillId]`), proven here by its signature effect for
 // the normal (Lv4) and the elite (Lv7) chess; non-default modules (and 'none') change what their text says. Numbers
 // are read back from the data blackboards (the SELECTED skill's `bb`), real battles through the harness.
 import { test } from 'node:test';

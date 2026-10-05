@@ -1,4 +1,4 @@
-// Tier-3 operator loadouts (DESIGN §16, server/sim/content/kits/tier3.js): every selectable NON-default skill of every
+// Tier-3 operator loadouts (DESIGN §16, server/sim/content/kits/ops/): every selectable NON-default skill of every
 // visible tier-3 chess is hand-authored (`skills[skillId]`) and proves its signature effect for the normal (Lv4) and the
 // elite (Lv7) chess with its own blackboard; non-default modules that change behaviour are exercised too.
 import { test } from 'node:test';

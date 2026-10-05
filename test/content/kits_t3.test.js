@@ -1,4 +1,4 @@
-// Tier-3 operator kits (server/sim/content/kits/tier3.js): every chess runs a real battle through the harness and
+// Tier-3 operator kits (server/sim/content/kits/ops/chess_char_3_*.js): every chess runs a real battle through the harness and
 // its signature skill / talent / module effect is asserted with numbers taken from its own blackboards.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

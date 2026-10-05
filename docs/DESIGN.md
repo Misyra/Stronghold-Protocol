@@ -87,7 +87,9 @@ server/
     snapshot.js            compact serialization for clients
     content/
       index.js             installs all content into a Battle (kits, bonds, garrisons, items, bands, enemies, devices)
-      kits/tier1.js … tier6.js     operator kits (skill + talents) keyed by base chessId
+      kits/index.js        operator kit registry keyed by base chessId (guide: kits/README.md)
+      kits/ops/*.js        one operator kit (skills + talents) per file, <chessId>-<codename>.js
+      kits/shared/*.js     helpers the kits share (shared/tier1.js: the general ones)
       tokens.js            summon/token definitions
       bonds.js             battle side of the 23 bonds
       garrisons.js         battle side (IN_BATTLE) garrison effect keys
@@ -406,7 +408,7 @@ Deterministic-ish heuristic player used for (a) AI teammates, (b) auto-play for 
 
 ## 7. Content modules (server/sim/content + match/effectsMeta handlers)
 
-Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live in `content/kits/tier1..6.js` (`export default { [baseChessId]: (bb, chess) => Kit }`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).
+Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).
 
 - kits: all 112 visible chess + hidden ones used by effects (盟约·辅助干员), default skill + talents + trait specifics; tokens.
 - bonds: 23 (battle + meta), exact per-layer formulas from research 02.

@@ -37,10 +37,12 @@ export class PlayerAcquire {
    */
   acquireChess(chessId, { source = 'grant', toTemp = false, fromPool = true, silent = false } = {}) {
     const rec = this.gd.chess(chessId);
-    if (!rec) return null;
+    // a DIY slot is only ever this player's own 自选 piece: a slot it has not filled has no body (甄选干员) to gain
+    if (!rec || (rec.isDiy && !rec.diyFor)) return null;
     const base = this.gd.baseIdOf(chessId);
     const need = rec.isGolden ? this.gd.goldenCopies : 1;
-    const taken = fromPool ? this.m.pool.take(base, need) : 0;
+    // the shared pool, or this player's stock of a slotted 自选 piece (player/diy.js poolOf)
+    const taken = fromPool ? this.poolOf(base).take(base, need) : 0;
     const piece = this.newPiece('chess', chessId, { poolCopies: taken });
     this.round.gainedChess++;
     let owned = piece;
@@ -121,7 +123,7 @@ export class PlayerAcquire {
     // equipment, which would be lost in temp — a summon stack removed there comes back at the next round start)
     if (where === 'board') this.grantTokensFor(elite);
     if (!where) {
-      this.m.pool.give(baseId, copies);
+      this.poolOf(baseId).give(baseId, copies);
       this.m.toast(this, 'warn', '整备区已满，晋升的精锐干员无法放入');
       this.m.log.warn?.(`[match ${this.m.roomCode}] ${this.playerId}: merge result dropped (hand+temp full)`);
       this.recompute();
@@ -142,7 +144,7 @@ export class PlayerAcquire {
     if (!goldenId) return false;
     const base = this.gd.baseIdOf(piece.id);
     const extra = Math.max(0, this.gd.goldenCopies - (piece.poolCopies || 0));
-    piece.poolCopies = (piece.poolCopies || 0) + this.m.pool.take(base, extra);
+    piece.poolCopies = (piece.poolCopies || 0) + this.poolOf(base).take(base, extra);
     piece.id = goldenId;
     this.recompute();
     return true;
@@ -205,6 +207,8 @@ export class PlayerAcquire {
    * copy-weighted roll from the shared pool excluding the ones already drawn; a tier left without another chess tops
    * up from the tier below (user playtest #6 item 19: the official promotion reward never offers one operator twice —
    * the user's first-hand report; the normal shop's slots may repeat). The offer reserves no copies (the pick takes one).
+   * The player's slotted 自选 pieces join the draw like in its shop (player/diy.js diyRollEntries: once the 调度中心 is at
+   * the slot's level) — the reward is a temporary refresh of the shop ("临时刷新3名…干员") [ASSUMED].
    */
   pushRewardOffer(source = 'merge', { tier = null, ids = null, label = null } = {}) {
     const ro = this.gd.rewardOffer();
@@ -216,7 +220,7 @@ export class PlayerAcquire {
       const fresh = (id) => !list.includes(id);
       for (let i = 0; i < ro.count; i++) {
         let id = null;
-        for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh });
+        for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh, extra: this.diyRollEntries() });
         if (id) list.push(id);
       }
     }

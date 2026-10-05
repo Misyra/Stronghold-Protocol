@@ -81,6 +81,14 @@
 //     loadout never applies to it, "对于补位干员其技能不可更改"): battleInput marks it `standIn: true`, placeClass /
 //     summon range / the bots' range read the stand-in record, it makes no summons (none of the 17 stand-ins has one),
 //     and the scouting views draw it with the stand-in's art on the board. m.private exposes `standIns`.
+//   * 自选编队 (0.2.0 DIY, the owner's decisions of 2026-10-05; player/diy.js): the human's `seat.diy` picks are re-checked
+//     against this match's data and kits and fixed for the match (`diy`; bots none [ASSUMED]). With picks, `this.gd` is the
+//     player's data view: the slotted slots' ids (normal and elite) are the composed 自选 records, so the player's piece
+//     of a slot is the operator for every rule (name, class, position, bonds from its factions, no 特质, the pick's skill
+//     and module; tier, price, sell price and the 3 → elite merge are the slot's). Each slotted piece has its own stock
+//     (8 at tier 5, 5 at tier 6 [ASSUMED]; none when every bond of it is banned this match) and joins this player's shop
+//     rolls once the 调度中心 reaches the slot's level; it never enters the shared pool. battleInput carries `diy` (the
+//     pick), m.private exposes `diy` (and `diyBanned`), the scouting views draw the operator with its pick.
 //
 // Code layout: this file keeps the constructor (the per-player state fields); the methods live in
 // server/match/player/, one module per concern, and are installed on PlayerState.prototype below in a fixed order,
@@ -99,6 +107,8 @@
 //   round.js      the round lifecycle the match calls (startRound, endPrep, eliminate, recompute, bond views) and
 //                 battleInput
 //   views.js      pieceView, effectsView, m.private (privateView)
+//   diy.js        自选编队: the picks (setDiy), the player's data view, the DIY stock (initDiyStock, poolOf), the shop's
+//                 DIY draws (diyRollEntries), the pick of a piece (diyPickOf)
 //   common.js     HAND_SIZE, TEMP_SIZE, MAX_OFFER_SLOTS, OK, fail
 
 import { FIELD } from './board.js';
@@ -113,11 +123,12 @@ import { PlayerItems } from './player/items.js';
 import { PlayerPrep } from './player/prep.js';
 import { PlayerRound } from './player/round.js';
 import { PlayerViews } from './player/views.js';
+import { PlayerDiy, DiyStock } from './player/diy.js';
 
 export class PlayerState {
   /**
    * @param {import('./Match.js').Match} m owning match
-   * @param {{ seat: number, playerId: string, name: string, isBot: boolean, connected: boolean }} seat
+   * @param {{ seat: number, playerId: string, name: string, isBot: boolean, connected: boolean, loadout?: any, notOwned?: any, diy?: any }} seat
    */
   constructor(m, seat) {
     this.m = m;
@@ -148,6 +159,18 @@ export class PlayerState {
     /** @type {Set<string>} lookup set of `standIns` */
     this._standInSet = new Set();
     if (!this.isBot && seat.notOwned) this.setNotOwned(seat.notOwned);
+    /**
+     * 自选编队 (0.2.0): the slotted picks { [slotBaseId]: { charId, skillIndex, uniEquipId } } — the seat's when the match
+     * started, re-checked; frozen; {} = none (bots always). setDiy makes `this.gd` the player's data view.
+     */
+    this.diy = Object.freeze({});
+    /** @type {Map<string, object>} slot id (normal / elite) → composed 自选 record (setDiy) */
+    this._diyRecords = new Map();
+    /** the copies of the slotted pieces (initDiyStock, once the match's bans are drawn) */
+    this.diyStock = new DiyStock();
+    /** slotted slots without stock: every bond of the operator is switched off this match */
+    this.diyBanned = Object.freeze([]);
+    if (!this.isBot && seat.diy) this.setDiy(seat.diy);
     this.shop = { level: 1, upgradePrice: this.gd.upgradeBase(1) ?? 0, slots: [], frozen: false, freeRefreshes: 0 };
     /** reward offers queue (merge rewards, special refreshes): { tier, source, label, slots: [{ kind, id, price, sold }] } */
     this.offers = [];
@@ -204,7 +227,7 @@ export class PlayerState {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [PlayerBasics, PlayerPieces, PlayerAcquire, PlayerEconomy, PlayerPlacement, PlayerItems, PlayerPrep, PlayerRound, PlayerViews]) {
+for (const part of [PlayerBasics, PlayerPieces, PlayerAcquire, PlayerEconomy, PlayerPlacement, PlayerItems, PlayerPrep, PlayerRound, PlayerViews, PlayerDiy]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(PlayerState.prototype, key)) throw new Error(`PlayerState.${String(key)} is defined twice`);

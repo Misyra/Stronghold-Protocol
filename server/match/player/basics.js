@@ -77,13 +77,16 @@ export class PlayerBasics {
 
   /**
    * The skill index / module a chess record fights with under this player's loadout (DESIGN §16) — for a chess this
-   * player fields as its stand-in (0.2.0 补位) the stand-in's backup selection, whatever the loadout says.
+   * player fields as its stand-in (0.2.0 补位) the stand-in's backup selection, whatever the loadout says; for a slotted
+   * 自选 slot (0.2.0, player/diy.js) its pick's skill and module (the composed record's defaults — the loadout never names
+   * a DIY slot: shared/protocol.js checkLoadout).
    */
   loadoutFor(chessRecord) {
     if (this.fieldsStandIn(chessRecord)) {
       return resolveLoadout(null, this.gd.standIn(chessRecord.chessId), (id) => this.gd.standIn(id) || this.gd.chess(id));
     }
-    return resolveLoadout(this.loadout, chessRecord, (id) => this.gd.chess(id));
+    const rec = chessRecord && chessRecord.isDiy && typeof chessRecord.chessId === 'string' ? this.gd.chess(chessRecord.chessId) || chessRecord : chessRecord;
+    return resolveLoadout(this.loadout, rec, (id) => this.gd.chess(id));
   }
 
   /**
@@ -119,13 +122,16 @@ export class PlayerBasics {
 
   /**
    * The record this player's piece of chess record `rec` fights with (0.2.0 补位): the stand-in record
-   * (gd.standIn — the chess's identity, the stand-in's body) when the player fields its stand-in, else `rec` itself.
-   * Rules about the unit's body read it (placement class, summon / bot ranges, the scouting art); rules about the chess
-   * (price, bonds, 特质, merges, pools) keep reading gd.chess.
+   * (gd.standIn — the chess's identity, the stand-in's body) when the player fields its stand-in; for a DIY slot record
+   * the player's 自选 record of that slot (this.gd — a caller holding the match's own record of the slot gets the
+   * operator); else `rec` itself. Rules about the unit's body read it (placement class, summon / bot ranges, the
+   * scouting art); rules about the chess (price, bonds, 特质, merges, pools) keep reading gd.chess.
    * @param {object|null} rec
    */
   fieldRecord(rec) {
-    return rec && this.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) || rec : rec;
+    if (rec && this.fieldsStandIn(rec)) return this.gd.standIn(rec.chessId) || rec;
+    if (rec && rec.isDiy && !rec.diyFor && typeof rec.chessId === 'string') return this.gd.chess(rec.chessId) || rec;
+    return rec;
   }
 
   /**

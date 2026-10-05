@@ -3,6 +3,7 @@
 
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
 import { isDroppableChess } from './standIn.js';
+import { diySlotIds, validateDiyPicks } from './diy.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -204,6 +205,52 @@ export function checkNotOwned(list, getChess) {
   return { ok: true, notOwned, dropped: list.length - notOwned.length };
 }
 
+// ---- 自选编队 (0.2.0 DIY): room.diy { picks } ------------------------------------------------------------------------
+
+/**
+ * `room.diy { picks }`: the player's 自选编队 — `{ [slotBaseId]: { charId, skillIndex?, uniEquipId? } | null }` for the
+ * four DIY slots (data/backups.json `diy.slots`: two at tier 5, two at tier 6; shared/diy.js). An out-of-match setting
+ * like 干员持有: stored per session / seat, a match takes the picks its seat had at its start. Structural limit below
+ * (room for more slots in a later season); the semantic check (`checkDiyPicks`) is LENIENT, like checkNotOwned: an
+ * illegal pick — not a pick of the slot's tier, an operator without a kit, a prototype off its locked skill, an unknown
+ * skill / module, the same operator twice in a tier, an owned operator in a second slot, an unknown slot — is dropped,
+ * never the whole roster; only malformed input is BAD_MSG.
+ */
+export const DIY_LIMITS = Object.freeze({ slots: 8 });
+const isDiyPickWire = (p) => p === null || (isPlain(p) && isId(p.charId)
+  && nullable((v) => isInt(v, 0, 9))(p.skillIndex) && nullable(isId)(p.uniEquipId));
+/** Structural check of `room.diy.picks`: a map of ≤ 8 slot ids → a pick `{ charId, skillIndex?, uniEquipId? }` or null. */
+export const isDiyPicks = (v) => isMap(v, DIY_LIMITS.slots, isId, isDiyPickWire);
+
+/**
+ * Semantic check + normalisation of a 自选 roster against the game data (`{ chess, backups }` or a sim DataSource) and
+ * the kit registry (`kitted`: server/sim/content/kits/index.js KITTED_CHARS — an operator without a kit is never fielded):
+ * the slots are taken in data order (tier 5, then tier 6), and each pick is kept when the roster so far plus it still
+ * passes shared/diy.js validateDiyPicks — so the result always passes it, and of two picks that clash (one owned operator
+ * in two slots, one operator twice in a tier) the first slot keeps it. Kept picks are complete
+ * (`{ charId, skillIndex, uniEquipId }`: a prototype's locked selection, uniEquipId null = no module).
+ * @param {any} picks `room.diy.picks`
+ * @param {{ data: any, kitted?: Iterable<string>|((id: string) => boolean)|null }} opts
+ * @returns {{ ok: true, picks: Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>, dropped: number }
+ *   | { error: 'BAD_MSG', detail: string }}
+ */
+export function checkDiyPicks(picks, { data, kitted = null } = { data: null }) {
+  if (!isDiyPicks(picks)) return { error: 'BAD_MSG', detail: 'bad 自选 picks' };
+  const slots = diySlotIds(data);
+  /** @type {Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>} */
+  const kept = {};
+  let dropped = 0;
+  for (const id of Object.keys(picks)) if (picks[id] != null && !slots.includes(id)) dropped++;
+  for (const slotId of slots) {
+    const pick = Object.hasOwn(picks, slotId) ? picks[slotId] : null;
+    if (pick == null) continue;
+    const res = validateDiyPicks({ ...kept, [slotId]: pick }, { data, kitted });
+    if ('ok' in res) kept[slotId] = res.picks[slotId];
+    else dropped++;
+  }
+  return { ok: true, picks: kept, dropped };
+}
+
 // ---- unit stats (user playtest #4 item 7): m.unitStats units and the browser battle's live stats ---------------------
 
 const fin = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -289,6 +336,9 @@ export const C2S = {
   // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it
   // started (an out-of-match setting — during a match it is stored for the next one: ROOM_STARTED)
   'room.ownership': { notOwned: isNotOwnedList },
+  // 自选编队 (0.2.0 DIY): the player's DIY slot picks; stored per session / seat like room.ownership (a match takes the
+  // picks its seat had when it started; during a match they are stored for the next one: ROOM_STARTED)
+  'room.diy': { picks: isDiyPicks },
   // spectator seats (remake feature, community report #26; MAX_SPECTATORS): take one of a co-op room's spectator seats —
   // in its lobby or while its match runs — never a player seat; the host frees one by playerId (the spectator gets
   // room.closed { reason: 'kicked' }). room.leave / g.leave leave a spectator seat like a player seat.

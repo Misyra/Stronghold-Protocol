@@ -1,7 +1,8 @@
 // server/match/player/round.js — PlayerState methods: the round lifecycle the match calls — startRound (income, pending
 // coins, the shop, summon stacks topped up), endPrep, eliminate (every copy back to the pool), recompute (legality,
 // out-of-range summons, temp pieces into free hand slots, bonds), the bond views — and battleInput (the player's
-// PlayerBattleInput: board units with their loadout or their 补位 mark, carried 联防 state, the reached layers).
+// PlayerBattleInput: board units with their loadout, their 补位 mark or their 自选 pick, carried 联防 state, the reached
+// layers).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -102,7 +103,12 @@ export class PlayerRound {
     for (const { r, c, piece } of boardOrder(this.board)) {
       if (piece.kind === 'chess') {
         const u = { uid: piece.uid, kind: 'chess', chessId: piece.id, row: r, col: c, dir: pieceDir(piece), items: (piece.items || []).map((i) => i.id) };
-        if (this.fieldsStandIn(piece.id)) {
+        const pick = this.diyPickOf(piece.id);
+        if (pick) {
+          // 0.2.0 自选编队: a slotted DIY slot fights as its pick (sim getChess(id, { diy }): the operator's body, the pick's
+          // skill and module — no loadout fields, docs/SIM.md §12)
+          u.diy = { charId: pick.charId, skillIndex: pick.skillIndex, uniEquipId: pick.uniEquipId };
+        } else if (this.fieldsStandIn(piece.id)) {
           // 0.2.0 补位: a chess this player does not own fights as its stand-in (sim getChess(id, { standIn: true }): the
           // backup skill / module — no loadout fields, docs/SIM.md §12)
           u.standIn = true;

@@ -1,6 +1,6 @@
 // server/match/player/economy.js — PlayerState methods: the economy — funds, spending (onSpend), prep-side bond layer
-// gains (clamped by layerGainRoom), the shop (onPrice prices, copy-weighted rolls from the shared pool, freeze) and its
-// intents: g.buy, g.refresh, g.freeze, g.levelUp, g.sell.
+// gains (clamped by layerGainRoom), the shop (onPrice prices, copy-weighted rolls from the shared pool plus the player's
+// own 自选 stock — player/diy.js —, freeze) and its intents: g.buy, g.refresh, g.freeze, g.levelUp, g.sell.
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -61,7 +61,8 @@ export class PlayerEconomy {
   }
 
   _rollChessSlot() {
-    const id = this.m.pool.roll(this.m.rngShop, { maxTier: this.shop.level });
+    // the slotted 自选 pieces join the draw once the 调度中心 reaches their slot's level (player/diy.js diyRollEntries)
+    const id = this.m.pool.roll(this.m.rngShop, { maxTier: this.shop.level, extra: this.diyRollEntries() });
     return id ? { kind: 'chess', id, basePrice: this.gd.chessPrice(id), frozen: false, sold: false } : null;
   }
 
@@ -115,10 +116,12 @@ export class PlayerEconomy {
     let piece;
     if (slot.kind === 'chess') {
       const rec = this.gd.chess(slot.id);
-      if (!rec) return fail(ERR.BAD_TARGET);
+      // a DIY slot sells only as this player's own 自选 piece (a slotted slot's record carries `diyFor`)
+      if (!rec || (rec.isDiy && !rec.diyFor)) return fail(ERR.BAD_TARGET);
       const base = this.gd.baseIdOf(slot.id);
       const need = rec.isGolden ? this.gd.goldenCopies : 1;
-      if (this.m.pool.has(base) && this.m.pool.left(base) < need) return fail(ERR.SOLD_OUT);
+      const pool = this.poolOf(base);
+      if (pool.has(base) && pool.left(base) < need) return fail(ERR.SOLD_OUT);
       if (handFull) return fail(ERR.HAND_FULL);
       this.spend(price);
       slot.sold = true;

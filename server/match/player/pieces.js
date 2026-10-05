@@ -1,7 +1,8 @@
 // server/match/player/pieces.js — PlayerState methods: piece bookkeeping — new pieces, lookup by uid (board / hand /
 // temp / equipped), the chess locations, detach and stow (hand first, overflow temp; a free hand slot pulls a temp piece
-// in, _fillHandFromTemp), the per-piece round counters (拉普兰德), pool copies back to the shared pool, and summon stacks
-// (removal, lifting, counts, the stack granted for an owner).
+// in, _fillHandFromTemp), the per-piece round counters (拉普兰德), pool copies back to the shared pool (a 自选 piece's to
+// the player's own stock), and summon stacks (removal, lifting, counts, the stack granted for an owner — a 自选 owner's
+// from its pick, player/diy.js placeableTokens).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -132,10 +133,11 @@ export class PlayerPieces {
     return v;
   }
 
-  /** Return a piece's pool copies (and its equipped items are handled by the caller). */
+  /** Return a piece's pool copies — to the shared pool, or a 自选 piece's to this player's stock (poolOf). */
   returnCopies(piece) {
     if (piece && piece.kind === 'chess' && piece.poolCopies > 0) {
-      this.m.pool.give(this.gd.baseIdOf(piece.id), piece.poolCopies);
+      const base = this.gd.baseIdOf(piece.id);
+      this.poolOf(base).give(base, piece.poolCopies);
       piece.poolCopies = 0;
     }
   }

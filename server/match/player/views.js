@@ -91,6 +91,12 @@ export class PlayerViews {
       // 0.2.0 补位: the base chess ids this player fields as their stand-ins in this match (the not-owned list the seat had
       // at the match start; [] = every operator owned) — the client's 「替补：X」 badges, the stand-in's art and card
       standIns: this.standIns,
+      // 0.2.0 自选编队: this player's 自选 picks in this match ({ [slotBaseId]: { charId, skillIndex, uniEquipId } } — the seat's
+      // when the match started; {} = none) — the client composes the operator's record for its own cards and pieces
+      // (shared/diy.js diyRecord); `diyBanned`: the slotted slots out of the shop this match (every bond of the operator
+      // switched off)
+      diy: this.diy,
+      diyBanned: this.diyBanned,
       stats: {
         dmgDealt: Math.round(this.stats.dmgDealt), kills: this.stats.kills, leaks: this.stats.leaks, gold: this.stats.gold,
         refreshes: this.stats.refreshes, merges: this.stats.merges,

@@ -127,7 +127,10 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         check('shop roll', () => {
           const base = gd.baseIdOf(s.id);
           if (t > ps.shop.level) fail(`${ps.playerId}: rolled tier ${t} at shop level ${ps.shop.level}`);
-          if (!m.pool.has(base)) fail(`${ps.playerId}: rolled ${s.id} outside the match pool (banned/hidden)`);
+          // (a slotted 自选 piece comes from the player's own stock, 0.2.0 player/diy.js — once the 调度中心 is at its level)
+          const diy = ps.diyStock && ps.diyStock.has(base) ? ps.diyStock.entries.get(base) : null;
+          if (!m.pool.has(base) && !diy) fail(`${ps.playerId}: rolled ${s.id} outside the match pool (banned/hidden)`);
+          if (diy && ps.shop.level < diy.shopLevel) fail(`${ps.playerId}: rolled 自选 ${s.id} at shop level ${ps.shop.level} < ${diy.shopLevel}`);
           if (s.basePrice !== gd.chessPrice(s.id)) fail(`${ps.playerId}: ${s.id} basePrice ${s.basePrice} != ${gd.chessPrice(s.id)}`);
         });
       }
@@ -243,7 +246,7 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         if (ps.deployCount > deployed0) fail(`${id}: a merge of ${baseId} grew the deploy count ${deployed0} → ${ps.deployCount}`);
         // a pure read of the deploy field (Match.deployMapFor, as invariants.js): the audit must not refresh the cache
         const dmap = typeof m.deployMapFor === 'function' ? m.deployMapFor(ps) : ps.deployMap();
-        const pos = placeClass(ps, gd.chess(elite.id));
+        const pos = placeClass(ps, (ps.gd || gd).chess(elite.id));
         const want = mergeTile([...tiles.keys()].map((key) => ({ key })), (r, c) => canPlace(dmap, pos, r, c));
         if (want) {
           if (loc.area !== 'board' || loc.key !== want.key) fail(`${id}: the elite of ${baseId} went to ${loc.area} ${loc.key || ''}, expected the deployed copy's tile ${want.key}`);

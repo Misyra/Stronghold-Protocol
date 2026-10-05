@@ -55,7 +55,9 @@ function diyOf(data) {
 }
 
 /**
- * The 自选 slot a chess id names: its base (normal) id, its tier and both records. Null for any other id.
+ * The 自选 slot a chess id names: its base (normal) id, its tier, the 调度中心 level whose shop lists it (`shopLevel`:
+ * activity_table shopLevelDisplayDataDict — the tier-5 slots at level 5, the tier-6 slots at level 6; the tier when the
+ * data lacks it) and both records. Null for any other id.
  * @param {string} slotId a slot's normal (`_a`) or elite (`_b`) id
  * @param {DiyData} data
  */
@@ -65,7 +67,8 @@ export function diySlot(slotId, data) {
   const baseId = own(diy.slots, slotId) ? slotId : Object.keys(diy.slots).find((id) => diy.slots[id]?.goldenId === slotId);
   const s = baseId ? diy.slots[baseId] : null;
   if (!s) return null;
-  return { baseId, goldenId: s.goldenId, tier: s.tier, elite: slotId !== baseId, normal: chessOf(data, baseId), golden: chessOf(data, s.goldenId) };
+  const shopLevel = Number.isInteger(s.shopLevel) && s.shopLevel > 0 ? s.shopLevel : s.tier;
+  return { baseId, goldenId: s.goldenId, tier: s.tier, shopLevel, elite: slotId !== baseId, normal: chessOf(data, baseId), golden: chessOf(data, s.goldenId) };
 }
 
 /** The base ids of the 自选 slots (data order: tier 5 then tier 6). @param {DiyData} data @returns {string[]} */

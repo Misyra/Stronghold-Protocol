@@ -280,7 +280,7 @@ export class EffectDispatcher {
   }
 
   _garrisons(ps, hook, ev) {
-    const gd = this.m.gd;
+    const gd = ps.gd || this.m.gd;
     const run = (piece, where) => {
       const rec = gd.chess(piece.id);
       if (!rec || !Array.isArray(rec.garrisonIds)) return;
@@ -314,7 +314,7 @@ export class EffectDispatcher {
    * SERVER_GAIN. SERVER_PRICE cannot be triggered. Returns the number of garrison handlers run.
    */
   triggerGarrisons(ps, piece, eventType, { asPiece = null, triggeredBy = null } = {}) {
-    const gd = this.m.gd;
+    const gd = ps.gd || this.m.gd;
     const hook = eventType === 'SERVER_PRICE' ? null : GARRISON_HOOK[eventType];
     const rec = piece && piece.kind === 'chess' ? gd.chess(piece.id) : null;
     if (!hook || !rec || !Array.isArray(rec.garrisonIds) || this.depth >= MAX_DEPTH) return 0;
@@ -426,7 +426,9 @@ function grantSpeaker(gd, source) {
  * @param {object|null} [ev] the event being dispatched (onPrice: ctx.modifyPrice / ctx.setPrice edit ev.price)
  */
 export function makeCtx(m, ps, source, hook, ev = null) {
-  const gd = m.gd;
+  // the player's view of the data: its slotted 自选 slots are its operators (0.2.0, player/diy.js) — chessRecord,
+  // pieceBonds, a strategy's / 特质's bond and tier reads see the operator; the match's GameData for everyone else
+  const gd = ps.gd || m.gd;
   const view = (p) => (p ? ps.pieceView(p) : null);
   const ctx = {
     hook,
@@ -516,8 +518,10 @@ export function makeCtx(m, ps, source, hook, ev = null) {
       if (opts.golden) id = gd.goldenIdOf(chessId) || chessId;
       if (!gd.chess(id)) return null;
       const base = gd.baseIdOf(id);
-      // "some effects fail when the cap is hit" (research 06 §7): by default a chess of the pool needs a free copy
-      if (opts.requirePool !== false && m.pool.has(base) && m.pool.left(base) < 1) return null;
+      // "some effects fail when the cap is hit" (research 06 §7): by default a chess of the pool needs a free copy (a
+      // 自选 piece: one of the player's own stock — player/diy.js poolOf)
+      const pool = typeof ps.poolOf === 'function' ? ps.poolOf(base) : m.pool;
+      if (opts.requirePool !== false && pool.has(base) && pool.left(base) < 1) return null;
       const p = ps.acquireChess(id, { source: opts.source || source.key || 'effect', toTemp: !!opts.toTemp, fromPool: opts.fromPool !== false });
       // 「歌蕾蒂娅：获得斯卡蒂」 — every silent grantChess (a 特质, 余 SERVER_MOST_BOND, a band, an item, a choice).
       // opts.toast === false skips it. A caller that already says the same thing should pass that.

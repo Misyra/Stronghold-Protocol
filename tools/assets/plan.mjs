@@ -29,6 +29,14 @@ import { EMOTE_CATALOG } from '../../shared/constants.js';
  * models come from the local client only (tools/local-extract ENEMY_SPINES): `localEnemySpines` adds them as the
  * optional `spineLocal` overlay, which the client draws when data/local-assets.json lists its files (user feedback
  * after 0.1.0, D3: 灼热源石虫 / 炽焰源石虫 were drawn as the plain 源石虫 everywhere).
+ *
+ * Why no dump carries them: isHarryh/Ark-Models *indexes* `1305_mhslim` / `1305_mhslim_2` but with an EMPTY
+ * `assetList` — registered, never uploaded — so `arkModel()` returns nothing for them and the alias chain below falls
+ * back to `enemy_1007_slime`: a different enemy rather than a variant of it, which is why the renderer tints it
+ * (render/units.js ALIAS_TINT). The *mobile* build does ship their own model
+ * (`enemy_spine/<enemyId>/<enemyId>.{skel,atlas,png}`), but the only public mirror of that build is a community wiki,
+ * not a GitHub dump, so downloading from it would add a source the project deliberately does not use (docs/ASSETS.md
+ * "Enemy aliases"). The tinted alias therefore stays the web model until a GitHub dump carries these two.
  */
 export const ENEMY_SPINE_ALIAS = Object.freeze({
   enemy_1305_mhslim: 'enemy_1007_slime',

@@ -268,10 +268,17 @@ Other renderer rules from research 07 §5.4–5.5:
 - **Enemy aliases:** `enemies[id].spineAliasOf` means the model belongs to another enemy. Two cases:
   - `_2` variants whose official prefab is the base one (鸭爵, 高普尼克, 流泪小子, 圆仔, 假想敌：胄, 假想敌：铳): the base model, as in the game.
   - an enemy whose own model no dump carries: 灼热源石虫 / 炽焰源石虫 (`enemy_1305_mhslim` / `_2`) use the plain 源石虫 on
-    the web (`plan.mjs ENEMY_SPINE_ALIAS`). Their official skeletons only exist in the client's enemy art bundles
-    (`refs/arts/enm_art_*.ab`), so they are an optional **overlay**, `enemies[id].spineLocal` = `{ group, skel, atlas,
-    textures, pma, anims, animations, events, hits, bounds }` (file names in the `data/local-assets.json` group
-    `spine/enemy/{enemyId}`; the rest as a `spine` entry):
+    the web (`plan.mjs ENEMY_SPINE_ALIAS`). The reason is upstream: isHarryh/Ark-Models *indexes* `1305_mhslim` /
+    `1305_mhslim_2` but with an **empty `assetList`** — registered, never uploaded — so `arkModel()` finds no files for
+    them and the alias chain drops to `enemy_1007_slime`, a different enemy rather than a variant of it, which is why
+    the renderer tints that alias toward the slug's own colours. Their official skeletons only exist in the client's
+    enemy art bundles (`refs/arts/enm_art_*.ab`); the *mobile* build also ships them as
+    `enemy_spine/<enemyId>/<enemyId>.{skel,atlas,png}` (straight-alpha pages: no `pma: true` line), but its only public
+    mirror is a community wiki rather than a GitHub dump, so it is deliberately **not** an asset source — a third-party
+    site is not added to `sources.mjs` for two models, and the tinted alias stays the web model until a GitHub dump
+    carries them. The same official model from the local client is the optional **overlay**,
+    `enemies[id].spineLocal` = `{ group, skel, atlas, textures, pma, anims, animations, events, hits, bounds }` (file
+    names in the `data/local-assets.json` group `spine/enemy/{enemyId}`; the rest as a `spine` entry):
     - `tools/local-extract/extract.py` writes the model to `public/assets/local/spine/enemy/{enemyId}/` (page textures
       with their `[alpha]` texture merged in: premultiplied RGB + A like Ark-Models; the atlas gets `size:` and
       `pma: true`) and lists its files in `data/local-assets.json`.

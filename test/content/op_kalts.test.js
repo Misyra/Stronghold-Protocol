@@ -328,8 +328,8 @@ test('S3 指令：熔毁 (MANUAL, data DEFAULT, 绑定 Mon3tr, 18 s): Mon3tr DEF
   }
 });
 
-test('modules: PHY-X ×1.15 on a heal of a target at or below 50 %; PHY-Y ×1.15 on a heal of a target on a 地面 tile; ISW-A (集成战略-only trait) and no module: plain heals', () => {
-  for (const f of [[5, true, PHYX], [6, true, PHYX], [5, true, PHYY], [6, true, PHYY], [6, true, ISWA], [6, true, null]]) {
+test('modules: PHY-X ×1.15 on a heal of a target at or below 50 %; PHY-Y ×1.15 on a heal of a target on a 地面 tile; ISW-A (集成战略-only trait and talent: no 2 targets, no Mon3tr +50 %) and no module: plain heals', () => {
+  for (const f of [[5, true, PHYX], [6, true, PHYX], [5, true, PHYY], [6, true, PHYY], [5, true, ISWA], [6, true, ISWA], [6, true, null]]) {
     const [tier, elite, mod] = f;
     const md = modOf(tier, mod);
     if (md) assert.deepEqual([md.traitOverride.bb.heal_scale, md.traitOverride.bb.hp_ratio ?? null], [1.15, mod === PHYY ? null : 0.5], label(f));
@@ -350,6 +350,15 @@ test('modules: PHY-X ×1.15 on a heal of a target at or below 50 %; PHY-Y ×1.15
     approx(a.amount, want(yak, 0.45), `${label(f)}: 地面, 45 %`);
     approx(b.amount, want(yak, 0.8), `${label(f)}: 地面, 80 %`);
     approx(c.amount, want(tex, 0.45), `${label(f)}: high ground, 45 %`);
+    if (mod === ISWA) {
+      // both injured: one heal per attack (no 集成战略 second target)
+      yak.hp = yak.s.maxHp * 0.5; tex.hp = tex.s.maxHp * 0.5;
+      const n = heals(h, u).length;
+      assert.ok(h.runUntil(() => heals(h, u).length > n, 4));
+      h.step();
+      const att = new Set(heals(h, u).slice(n).map((x) => x.t));
+      assert.ok([...att].every((t) => heals(h, u).filter((x) => x.t === t).length === 1), `${label(f)}: one target per heal`);
+    }
     done(h);
   }
 });

@@ -13,7 +13,7 @@
 > - 《明日方舟》及「卫戍协议」相关的名称、角色、美术、音乐、音效、文本与数据等素材，版权归原权利人所有。这些素材**不适用**本项目的 GPL-3.0 许可证；GPL 只覆盖本项目自己编写的代码。
 > - 仅供学习交流与个人非商业使用。**严禁任何形式的盈利**，包括但不限于：售卖本项目或整合包、付费下载或付费分发、收费服务器或收费代开、广告 / 打赏 / 会员等变现方式，以及其他任何商业用途。
 > - 仓库源码不包含游戏的美术与音频素材（只有由官方数据表生成的数据和几张游戏截图，同样不适用 GPL）；[Releases](../../releases/latest) 中的整合包为了方便玩家附带了素材，下载即视为同意本声明。请勿将素材用于本项目以外的用途或单独再分发。完整条款见 [NOTICE.md](NOTICE.md)。
-> - 权利人如认为本项目侵犯其权益，请通过 Issue 联系，我们会**立即删除**相关内容。
+> - 权利人如认为本项目侵犯其权益，请通过 Issue 或邮件 **misyra@163.com** 联系，我们会**立即删除**相关内容。
 > - 本项目按「现状」提供，**不提供任何担保**，使用风险自负。
 
 English summary: [below](#english).
@@ -26,7 +26,7 @@ English summary: [below](#english).
 
 ## 目录
 
-- [声明](#声明) · [简介](#简介) · [功能一览](#功能一览)
+- [声明](#声明) · [简介](#简介) · [本分支差异](#本分支差异) · [功能一览](#功能一览)
 - [快速开始](#快速开始)：[整合包](#方式一整合包推荐) · [从源码运行](#方式二从源码运行) · [系统要求](#系统要求) · [端口与配置](#端口与配置) · [局域网联机](#和朋友一起玩局域网)
 - [联机方式](#联机方式) · [操作](#操作) · [文档](#文档) · [开发与测试](#开发与测试) · [项目结构](#项目结构)
 - [许可证](#许可证) · [致谢与数据来源](#致谢与数据来源) · [贡献](#贡献)
@@ -38,6 +38,26 @@ English summary: [below](#english).
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
 - 当前版本 0.1.3：修复了 0.1.2 发布后玩家和 GitHub 上反馈的问题，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
+
+## 本分支差异
+
+本分支包含上游 [sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol) 的全部内容（含 v0.1.3），在其之上独立维护，差异集中在服务端运维与客户端体验：
+
+| 方面 | 本分支的做法 |
+|---|---|
+| 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/PERSISTENCE.md](docs/PERSISTENCE.md) |
+| 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导出 JSON；见 [docs/MATCH_HISTORY.md](docs/MATCH_HISTORY.md) |
+| 资源预载 | 在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/CDN.md](docs/CDN.md) |
+| 匹配 | 「同站四人」纯真人匹配：凑满 4 名真人才开局，不补 AI，断线自动出队 |
+| 局内维护公告 | 单条维护公告热加载（`SP_ANNOUNCEMENT_FILE`），仅对局内显示、可关闭，配 `GET /api/announcement` |
+| 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/CUSTOM_API.md](docs/CUSTOM_API.md) |
+| WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
+| 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
+| 素材与部署 | Git 仓库内附带 v0.1.3 本地客户端素材（`public/assets/local/`），源码部署无需本机提取；另附 nginx 多核配置示例 |
+
+另一个活跃分支 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 与本分支平行发展、同样基于 v0.1.3，思路不同、互有取舍：它把持久化放在 Redis（专用持久化 Worker 负责编码，可恢复不挂房间的匹配对局）、匹配走 solo/coop 队列（组队整体入队、60 秒后可由 AI 补位、支持无房间的独立对局）、内置受配额保护的开发者控制台（每回合 5 次 / 每局 50 次发放干员、装备、盟约）、全站定时公告与在线人数推送、资源清单 ETag/304 再验证、`SP_DATA_CDN` 数据外移与 `SP_MAX_*` 容量环境变量；本分支则在预载健壮性、Bot/战斗热路径性能、零依赖持久化、本地对局记录与压缩调优上更完整，并坚持纯真人匹配。可按自己的运营形态选用或互相借鉴。
+
+其中本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复，分别移植改编自 xinhai-ai 分支的对应实现（commit `2e89a90`、`20524bb` 等，双方均为 GPL-3.0-or-later），并按本分支的存储、CDN 与性能方案做了改造；相关文件头部有 `Adapted from xinhai-ai/Stronghold-Protocol` 标注，细节见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)、[docs/CDN.md](docs/CDN.md) 与 [docs/PERSISTENCE.md](docs/PERSISTENCE.md)。
 
 ## 功能一览
 
@@ -179,6 +199,7 @@ npm start          # 启动服务器：http://localhost:3000
 | [CHANGELOG.md](CHANGELOG.md) | 更新记录：每个版本修复了什么、哪些反馈经核实不是问题 |
 | [docs/PLAYING.md](docs/PLAYING.md) | 玩法指南：流程、经济、招募与晋升、摆阵、联防、盟约、最终攻势、结算称号 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 部署指南：Windows 开服与开机自启、防火墙、组网 / 隧道、反向代理与 HTTPS、Docker、systemd、排错 |
+| [docs/CUSTOM_API.md](docs/CUSTOM_API.md) | 本分支 API 规范：房间号查询、延迟探测、维护公告、四人匹配及资源 / 结算扩展（排除上游已有接口） |
 | [docs/WINDOWS.md](docs/WINDOWS.md) | Windows 便携包：怎么打一份「零安装」包（`scripts/make-windows-bundle.mjs`）、包里放了什么、授权注意事项 |
 | [docs/DESIGN.md](docs/DESIGN.md) | 架构与契约（英文）：技术栈、目录分工、网络协议、渲染与 UI、各次试玩后的规则修订 |
 | [docs/SIM.md](docs/SIM.md) | 战斗模拟引擎参考（英文）：钩子、技能描述格式、职业默认行为 |
@@ -227,6 +248,7 @@ RENDER_E2E=1 node --test 'test/render/*.browser.test.js'   # 渲染测试，部�
 - 规则核对参考：[PRTS 明日方舟中文 Wiki](https://prts.wiki/)。
 - LZ4AK 解包：`tools/local-extract/aklz4.py` 的算法来自 [isHarryh/Ark-Unpacker](https://github.com/isHarryh/Ark-Unpacker)（BSD-3-Clause，经 MooncellWiki/UnityPy）；解析 Unity 资源使用 [UnityPy](https://github.com/K0lb3/UnityPy)（MIT）。
 - 库：[PixiJS](https://pixijs.com/)（MIT）、[pixi-spine](https://github.com/pixijs/spine)（MIT；其中包含的 Spine Runtime 另受 [Spine Runtimes License](https://esotericsoftware.com/spine-runtimes-license) 约束）、[three.js](https://threejs.org/)（MIT）、[Preact](https://preactjs.com/) + [htm](https://github.com/developit/htm)（MIT）、[ws](https://github.com/websockets/ws)（MIT）。
+- 分支实现参考：[xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) —— 本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复移植改编自该分支（GPL-3.0-or-later），改造细节见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)、[docs/CDN.md](docs/CDN.md)、[docs/PERSISTENCE.md](docs/PERSISTENCE.md)。
 
 感谢以上项目的作者与维护者，以及鹰角网络带来的这款游戏。
 
@@ -247,5 +269,5 @@ An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess t
 
 - **Run:** download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads ~270 MB of art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction; WebGL2 is required for the 3D board).
 - **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/DEPLOY.md](docs/DEPLOY.md).
-- **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Content will be removed on request of the rights holders. Provided "as is", without warranty.
-- **License:** code GPL-3.0-or-later ([LICENSE](LICENSE)); game assets excluded.
+- **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Rights holders may request removal via an [Issue](../../issues) or email **misyra@163.com**; content will be removed immediately. Provided "as is", without warranty.
+- **License:** code GPL-3.0-or-later ([LICENSE](LICENSE)); game assets excluded. Portions of this fork (shared worker pool, resource preload, match checkpointing) are adapted from [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) (GPL-3.0-or-later).

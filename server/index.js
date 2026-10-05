@@ -843,7 +843,7 @@ export async function startServer(opts = {}) {
         assetsCdnVersion: cdn.version || null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
         workers: workerPool?.stats() || null,
-        persist: persister ? { enabled: true, backend: store.kind || 'custom', writes: persister.writes,
+        persist: persister ? { enabled: true, backend: store.kind || 'custom', mode: store.mode || null, writes: persister.writes,
           failures: persister.failures, checkpoints: persister.matchDocs.size } : null,
       });
       return;
@@ -960,7 +960,7 @@ async function main() {
   process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
   let srv;
   try {
-    srv = await startServer({ stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}.state.json`) });
+    srv = await startServer({ stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`) });
   } catch (e) {
     if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
     else console.error('[boot] failed to start', e);
@@ -968,7 +968,7 @@ async function main() {
   }
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Alliance v${APP_VERSION}`);
   console.log(`  Local:   ${srv.url}`);
-  console.log(`  State:   ${srv.persister ? `file checkpoint every ${srv.persister.saveMs / 1000}s` : 'memory only'}`);
+  console.log(`  State:   ${srv.persister ? `checkpoint every ${srv.persister.saveMs / 1000}s (${srv.store?.mode === 'dir' ? 'sharded files in ' + srv.store.dir : 'single file'})` : 'memory only'}`);
   if (srv.host === '0.0.0.0' || srv.host === '::') {
     for (const u of lanUrls(srv.port)) console.log(`  LAN:     ${u}`);
   }

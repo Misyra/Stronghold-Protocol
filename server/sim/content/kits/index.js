@@ -133,6 +133,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-haak.js',
   'op-phatom.js',
   'op-crosly.js',
+  'op-ironmn.js',
+  'op-nasti.js',
+  'op-necras.js',
 ]);
 
 /**

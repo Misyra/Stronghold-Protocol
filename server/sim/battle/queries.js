@@ -1,5 +1,6 @@
 // server/sim/battle/queries.js — Battle methods: queries: the per-tick enemy tile index, enemies / allies by tile keys,
-// grid, radius and selectability, players, and the range rebuild of an ally (current, base and extra range keys).
+// grid, radius and selectability, the ally targets (allies our attacks select like enemies), players, and the range
+// rebuild of an ally (current, base and extra range keys).
 // Installed on Battle.prototype by server/sim/Battle.js (a method container: never instantiated; `this` is the battle).
 
 import { ROWS, COLS } from '../constants.js';
@@ -39,6 +40,35 @@ export class BattleQueries {
       for (const e of b) if (e.alive && (!e.hitArea || !out.includes(e)) && canTargetEnemy(attacker, e, profile)) out.push(e);
     }
     return out;
+  }
+
+  /**
+   * Ally units an ally's attack selects like an enemy — the "ally targets" content registers (setAllyTarget): 白铁's
+   * 铁钳号·原型机, a summon of the enemy camp that "可被我方干员攻击但不受伤害" (PRTS 铁钳号·原型机 备注 "该召唤物阵营为敌方";
+   * kits/ops/op-ironmn.js). Those standing on one of `keys`, alive and deployed — never `attacker` itself, and an ally target
+   * selects none. ai.js acquireTargets appends them after the enemies (their 嘲讽等级 −2 puts them last). [] at once
+   * while none is registered, so every other battle runs exactly as before.
+   */
+  allyTargetsInKeys(keys, attacker) {
+    const set = this._allyTargets;
+    if (!set || !set.size || !keys || !attacker || set.has(attacker)) return [];
+    const ks = keys === attacker.rangeKeys && attacker.rangeKeySet ? attacker.rangeKeySet : new Set(keys);
+    const out = [];
+    for (const a of set) if (a.alive && a.deployed && !a.hidden && ks.has(a.tileR * COLS + a.tileC)) out.push(a);
+    return out;
+  }
+
+  /** Register (`on`) or drop an ally target (allyTargetsInKeys); one off the field is skipped while registered. */
+  setAllyTarget(unit, on = true) {
+    if (!unit || unit.side !== 'ally') return false;
+    if (on) (this._allyTargets ??= new Set()).add(unit);
+    else if (this._allyTargets) this._allyTargets.delete(unit);
+    return true;
+  }
+
+  /** Is `unit` a registered ally target (setAllyTarget)? */
+  isAllyTarget(unit) {
+    return !!(unit && this._allyTargets && this._allyTargets.has(unit));
   }
 
   /**

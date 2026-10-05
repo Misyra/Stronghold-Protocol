@@ -1985,6 +1985,10 @@ const KITS = {
       skills: lazySkills({
         skchr_thorn2_1: () => ({
           kind: instantKind(chess, def),
+          // an AUTO skill (skill_table 自动触发) that throws at an ally: it fires as soon as its SP is full, with or
+          // without an enemy — the basic DEFAULT rule waited for an attack, so with no enemy around it sat at 7/7
+          // (GitHub #124 「引星棘刺一技能不会在满技力时自动释放」)
+          trigger: { rule: 'SP_FULL' },
           onStart({ battle, unit }) {
             const t = battle.alliesInGrid(unit).filter((a) => a.hp > 0).sort((a, b) => a.hpRatio - b.hpRatio || b.blocking.length - a.blocking.length || dist(a, unit) - dist(b, unit) || a.id - b.id)[0];
             if (!t) return;

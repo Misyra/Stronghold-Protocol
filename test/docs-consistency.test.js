@@ -52,6 +52,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const doc = (p) => readFileSync(join(ROOT, p), 'utf8');
 /** server/sim/Battle.js with its method modules (server/sim/battle/*.js) as one text. */
 const battleText = () => [doc('server/sim/Battle.js'), ...readdirSync(join(ROOT, 'server/sim/battle')).sort().map((f) => doc(`server/sim/battle/${f}`))].join('\n');
+// the Match class: the façade (constructor) and its method modules (server/match/match/)
+const matchText = () => [doc('server/match/Match.js'), ...readdirSync(join(ROOT, 'server/match/match')).sort().map((f) => doc(`server/match/match/${f}`))].join('\n');
 // the sources of a former kits/tierN.js: its helpers (kits/shared/tierN.js) and its kit files (kits/ops/, kits/index.js)
 const tierSources = (t) => [`server/sim/content/kits/shared/tier${t}.js`, ...KIT_FILES[t - 1].map((f) => `server/sim/content/kits/ops/${f}`)];
 const DESIGN = doc('docs/DESIGN.md');
@@ -557,7 +559,7 @@ test('playtest6b follow-up (DESIGN §20.10–§20.13): leader HP, 直接乘算, 
   assert.equal(BOND_LAYER_CAP, 999);
   assert.equal(layerGainRoom(995, 10), 4);
   assert.ok(!('BOND_LAYER_CAP' in SIM_CONST) && !('layerRoom' in SIM_CONST), 'no second cap in server/sim/constants.js');
-  for (const f of ['server/match/PlayerState.js', 'server/match/Match.js', 'server/sim/battle/economy.js']) {
+  for (const f of ['server/match/PlayerState.js', 'server/match/match/settle.js', 'server/sim/battle/economy.js']) {
     const src = doc(f);
     assert.match(src, /layerGainRoom/, `${f} clamps with layerGainRoom`);
     assert.ok(!/layerRoom\b/.test(src), `${f}: no layerRoom`);
@@ -614,8 +616,8 @@ test('playtest6b QA residuals (DESIGN §20.14): the held boss result, the cue be
   assert.ok(s2014.length > 100, '§20.14 exists');
   const intro = S20.slice(0, S20.indexOf('### 20.1 '));
   assert.match(intro, /residual issues are handled in §20\.14/);
-  // the held 'cleared' result: Match.js = §14 = §20.14 = META
-  const match = doc('server/match/Match.js');
+  // the held 'cleared' result: Match (match/reports.js, match/bossRounds.js) = §14 = §20.14 = META
+  const match = matchText();
   assert.match(match, /if \(result\.reason === 'cleared' && pool && reported - f\.bossAcked >= pool\.hp - 1\) \{\s*f\.heldResult = result;/);
   assert.match(match, /_bossHandover\(f, why, \{ demote = false \} = \{\}\) \{\s*if \(f\.done \|\| f\.mode !== 'client' \|\| f\.heldResult\) return;/);
   assert.match(match, /const BOSS_MIN_CLEAR_GS = 5;/, 'the budget itself is unchanged');

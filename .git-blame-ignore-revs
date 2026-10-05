@@ -1,0 +1,8 @@
+# Commits that only move code between files (0.2.0 refactor). Blame skips them when asked to:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs   (GitHub's blame view reads this file by itself)
+# For lines that moved into a new file, add -C -C (git blame -C -C <file>) to follow them to their old file.
+
+# feedback5 R3: server/sim/Battle.js → server/sim/battle/*.js (the Battle methods, verbatim)
+13224f9483d94f65089e289ff2be63f50a69b1cb
+# feedback5 R3: server/sim/content/enemies.js → server/sim/content/enemies/*.js (helpers, archetypes, kit families)
+560328cacc863c26d07780096527e255ebf62bc4

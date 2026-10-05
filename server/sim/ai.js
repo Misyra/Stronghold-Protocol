@@ -635,7 +635,7 @@ function enemyAttack(b, e) {
   const radius = melee ? 0 : e.base.rangeRadius;
   // the range circle takes an ally whose 0.25 collider touches it (PRTS 作战机制 §碰撞体积: 索敌 uses the colliders)
   const reach = radius > 0 ? radius + ALLY_COLLIDER_RADIUS : 0;
-  // `e.profile.canTarget(ally)`: the enemy's own target rule (只攻击地面单位, 不会攻击飞行单位 …; content/enemies.js),
+  // `e.profile.canTarget(ally)`: the enemy's own target rule (只攻击地面单位, 不会攻击飞行单位 …; content/enemies/*.js),
   // applied to the candidates before the priority sort and the target count
   const own = e.profile && typeof e.profile.canTarget === 'function' ? e.profile.canTarget : null;
   if (e.atkCd > 0) {

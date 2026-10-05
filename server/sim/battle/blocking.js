@@ -104,7 +104,7 @@ export class BattleBlocking {
    * A block on enemy `e` just ended (every release goes through here: `_unblock`, `releaseBlocked`, ai.js
    * enforceBlockCapacity). Each 隐匿 source it holds stays switched off for its restore time — PRTS 作战机制 §隐匿 "对于
    * 绝大部分可隐匿的敌人而言，在被我方单位阻挡后会解除隐匿，不被阻挡的3秒后重新进入隐匿" (STEALTH_RESTORE), or the source's
-   * own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`, content/enemies.js: 0 s / 1 s on some enemy pages) — as a
+   * own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`, content/enemies/helpers.js STEALTH_RESTORE_BY_KEY: 0 s / 1 s on some enemy pages) — as a
    * `stealthOff` buff per source; meanwhile it is targetable, operator splash reaches it and it is drawn solid
    * (targeting.js enemyStealthed). A new block inside the window lifts it again and its end restarts the window. Our
    * operators' 隐匿 / 迷彩 are never lifted by blocking (only enemies get here).

@@ -4,8 +4,8 @@
 // bosses.js calls it too) and attaches an ability list to every spawned enemy whose key has a kit in KITS.
 // Every number comes from the enemy's talent / skill blackboard (data/enemies.json, merged with the wave template's
 // `overrides[key].talents/skills` — the engine only applies `overrides.stats`). Numbers that exist nowhere in the
-// data are named constants below, marked [ASSUMED] or sourced from the official term table (gamedata_const
-// termDescriptionDict) / PRTS.
+// data are named constants (enemies/helpers.js when several kit families use them, else in the family's file), marked
+// [ASSUMED] or sourced from the official term table (gamedata_const termDescriptionDict) / PRTS.
 //
 // Runtime model: `enemy.mem.ab = { key, t (talent bb), tS (talent bbStr), sk {prefabKey → {cd, icd, sp, bb, bs}},
 //   list [abilities], times, hitShield, atkType, immune, … }`. An ability is a plain object with optional methods
@@ -54,7 +54,7 @@
 //   【国度】, the chimera's 源石污染区 [ASSUMED]) reach every ally.
 //
 // Special types (factions.json):
-//   FLY        — engine (FLY motion, ranged-only targeting). Flyer kits below (御4, 护障, 寒霜, 萨科塔之翼/眼, 黑云 …).
+//   FLY        — engine (FLY motion, ranged-only targeting). Flyer kits in enemies/fly.js (御4, 护障, 寒霜, 萨科塔之翼/眼, 黑云 …).
 //   TIMES 频次 — "需要N次伤害击倒": maxHp := N hits; engine buff flag hitCount — every damage instance (any type, element
 //                bursts included) removes exactly 1 on its own DamageInfo (茶器 hitCountArts: phys removes 0); HP loss
 //                (loseHp) bypasses the rule. The faction's enemies
@@ -75,7 +75,7 @@
 //                The mirror rule for an ally's 隐匿 — enemy area effects skip it even when it blocks the enemy (0.1.3, GitHub #97) — is areaAllies.
 //   REFLECTION — 折射 (ba.refraction "生效时，法术抗性+70"): RES +refracting.magic_resistance while NOT silenced
 //                (the ability line is SILENCE-flagged: silencing turns it off); 镜膜 also gets max HP +100 % while on.
-//   SPECIAL    — mostly stats; prisoners, 穿刺手, 暴虐兵长, 镜卫, 动力装甲 … below.
+//   SPECIAL    — mostly stats; prisoners, 穿刺手, 暴虐兵长, 镜卫, 动力装甲 … in enemies/special.js.
 // Every enemy key of data/enemies.json is either in KITS (this file), BOSS_KEYS (bosses.js) or STATS_ONLY (with the
 // reason) — pinned by test/content/enemies_bosses.test.js. Bounty (悬赏) leaders are included: multi-form ones
 // (巨大的丑东西, 杰斯顿, 自在, 锏, 扎罗) get their second form; event-only mechanics (芦苇, 摄影区, 狂欢时刻, 悬索桥, 唤血祭坛,

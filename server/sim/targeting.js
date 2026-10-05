@@ -107,7 +107,7 @@ export function canTargetAlly(e, a, ranged) {
 
 /**
  * May an AREA effect of enemy-side `src` select ally `a` — a splash, a blast, an area skill or status, a pulse, a zone it
- * leaves, a chain / bounce jump, a 周围四格 addition (content/enemies.js areaAllies / areaAlliesInTiles / fieldAllies)?
+ * leaves, a chain / bounce jump, a 周围四格 addition (content/enemies/helpers.js areaAllies / areaAlliesInTiles / fieldAllies)?
  * PRTS 作战机制 §AOE伤害判定 "AOE的判定是对攻击范围内的每个可以被选中的敌人进行判定"; §隐匿 "隐匿效果使得获得该效果的单位无法被
  * 任何敌方的能力索敌选中"; PRTS 异常效果 §无法选择: with 隐匿, 不可选中, 无敌, 塔不可选中 or 对地规避 "常见的、来自不同阵营的
  * “选择”行为将无视这些单位进行（如同范围内不存在这个单位）", and the abilities PRTS marks "无视可选性" are those that skip
@@ -133,9 +133,9 @@ export function areaSelectable(src, a) {
 
 /**
  * May a BUFF AURA of enemy-side `src` (a 光环 refreshed on whoever stands in it — 深池伙友卫队's force field, 扎罗's
- * 远古威慑; content/enemies.js auraAllies) take ally `a`? PRTS 作战机制 §隐匿与Buff的关系 "隐匿状态下的单位一般无法被敌方的
+ * 远古威慑; content/enemies/helpers.js auraAllies) take ally `a`? PRTS 作战机制 §隐匿与Buff的关系 "隐匿状态下的单位一般无法被敌方的
  * 索敌机制和Buff选择器选中为目标", "目前明日方舟中使用能选中隐匿状态单位的Buff效果一定是无视隐匿状态起作用的" (its example:
- * 寒霜's 攻速下降 Debuff — content/enemies.js allyAura keeps that one on every ally): no 隐匿 ally, the one blocking `src`
+ * 寒霜's 攻速下降 Debuff — content/enemies/archetypes.js allyAura keeps that one on every ally): no 隐匿 ally, the one blocking `src`
  * included (GitHub #97), no untargetable or sleeping one; 迷彩 does not protect ("所有光环类能力…均不受迷彩制约"). Unlike areaSelectable it does not
  * apply 对地规避: a ground enemy's aura still reaches an airborne 起飞 ally [ASSUMED, DESIGN §21.20 / §21.22].
  */

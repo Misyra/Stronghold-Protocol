@@ -7,7 +7,10 @@ the test harness. Everything here is deterministic: the only randomness is `batt
 
 ```
 server/sim/
-  Battle.js        one field (normal / unite / boss / hidden) — public API, hook bus, helpers
+  Battle.js        one field (normal / unite / boss / hidden) — the class: constructor, method install, public API
+  battle/          Battle's methods by concern: players, lifecycle (start / step / end), hooks (bus, timers, callback
+                   isolation), spawns, deploy, blocking, status (buffs, statuses), combat, queries (+ ranges), summons,
+                   tiles (relocation, bodies, tactical points), displacement, economy (DP, layers, coins), events
   constants.js     TICK, MOVE_SCALE, ATTACK_PAUSE, element numbers, tuning knobs
   rng.js           mulberry32 PRNG (+ int/range/chance/pick/shuffle/weighted)
   grid.js          stage grid, tile semantics, 8-dir A* (no corner cutting), obstacles
@@ -25,6 +28,7 @@ server/sim/
   snapshot.js      wire format (UnitInfo, snapshot tuples, flags, anim codes)
   simdata.js       data access + normalisation (data/*.json, research fallback)
   content/index.js installContent / setupUnitKit / registerAllMeta
+  content/enemies/ helpers.js, archetypes.js, one kit file per special type + leaders.js (content/enemies.js builds KITS)
   content/generic.js  generic kit from skill blackboards
   content/kits/tier1..6.js, content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js  (content phase)
 ```
@@ -137,7 +141,7 @@ passage must follow; test/ui/playtest6_summons.test.js checks).
 "左右两格" = `offsetTile(r, c, ±1, 0, dir)` (`support.sideTiles`); kit pushes / pulls use `unit.fwd`; blowers compare
 directions (same ⇒ `equal`, reverse ⇒ `opposite`, perpendicular ⇒ `vertical`); board-position rules ("更靠左", "最右边",
 "同一行最右边") stay board positions in the player's own frame (mirrored FA side: counted from the field's other end),
-independent of the units' directions. Enemies keep their own horizontal facing logic (content/enemies.js frontGuard).
+independent of the units' directions. Enemies keep their own horizontal facing logic (content/enemies/archetypes.js frontGuard).
 "First tile" tie-breaks relative to a unit (tactical points `findTacticalPoint`, summon tiles `findSummonTile`, the 突袭
 landing tile) compare offsets in the unit's facing-RIGHT frame (`localOrder` / `localBefore`; for a RIGHT unit exactly
 the old tile-key order), so a rotated layout plays the same (test/sim/facing-invariance.test.js: every chess × 4
@@ -267,7 +271,7 @@ a stealthed ally (隐匿, 排气格栅) only for the enemy it blocks — our ope
 (attacks, skill picks, cast conditions, a normal attack on every operator in range — 斩胄之剑 / 破胄之锤's hover attack,
 “灵幛”). **Enemy area effects** — splash, death and self blasts, area skills and statuses, pulses, the zones an enemy
 leaves, chain / bounce jumps, 周围四格 additions, whole-column / whole-field skills — select with `targeting.js
-areaSelectable` (`content/enemies.js areaAllies` / `areaAlliesInTiles` / `fieldAllies`; PRTS 作战机制 §AOE伤害判定
+areaSelectable` (`content/enemies/helpers.js areaAllies` / `areaAlliesInTiles` / `fieldAllies`; PRTS 作战机制 §AOE伤害判定
 "AOE的判定是对攻击范围内的每个可以被选中的敌人进行判定"; PRTS 异常效果 §无法选择: 隐匿, 不可选中, 无敌 and 对地规避 make
 "常见的、来自不同阵营的“选择”行为" skip a unit unless the ability "无视可选性"): no 隐匿 ally, the one blocking that enemy included
 (GitHub #97, owner 2026-10-04; the 0.1.2 [ASSUMED] that the blocker's area also hit is withdrawn — the blocked enemy's attack still lands), no untargetable or sleeping one, no
@@ -291,7 +295,7 @@ DISAPPEAR / APPEAR legs still happen, hiding ends the stand; GitHub #58 — then
 never attack — unless content arms them through `enemy.profile` (`noAttack: false`, `melee`, `dmgType`, `maxTargets`:
 转译基底·α's 寻仇者 / 特战术师 forms, which then attack like any enemy); `dmgType 'heal'` enemies heal the lowest-HP% enemy in their radius instead. A `noMove` enemy stands (not `moving`, drawn idle). Content can take over an
 enemy's attack: `enemy.profile.deferHit` = the engine makes the attack (target, timing, the `'atk'` event) but deals no
-damage — the content's `attack` handler resolves it (帝国炮火先兆者's shells landing 3 s later, `content/enemies.js
+damage — the content's `attack` handler resolves it (帝国炮火先兆者's shells landing 3 s later, `content/enemies/fly.js
 kitShell`); `enemy.profile.shot` = the `'atk'` event's projectile kind (`'mortar'`: no projectile drawn). 暴鸰 (`kitBombd`,
 no normal attack) drops its one bomb as a projectile: the cast (trigger: an ally within its range 2; the drone hovers
 through it) releases it `BOMBD_RELEASE` (8 ticks, the Attack clip's OnAttack on frame 8) later — `'atk'` kind
@@ -306,7 +310,7 @@ present when data/stages.json says `active: true` (this wins over the level file
 research stages without `active` use `!hidden`. Active platforms/mounds (射击台, act1 m03) [ASSUMED, DATA §15.11] are
 ground obstacles, and an operator standing on one is elevated (`unit.ground = false`: never blocks).
 
-**Enemy damage zones** (`content/enemies.js zone` / `dmgZone` / `pollution`): a zone ticks on the allies inside it
+**Enemy damage zones** (`content/enemies/helpers.js zone`, `archetypes.js dmgZone` / `pollution`): a zone ticks on the allies inside it
 that it selects — an enemy's zone through its area selection (`areaAllies`, above; the sourceless 毒雾 with no selecting
 enemy: 隐匿 kept out, 起飞 not), 【污染秽蚀】 on every ally inside (flyers, stealthed and untargetable ones included;
 `alliesInRadius`) — through `dealDamage`, so shields absorb a damage
@@ -323,7 +327,7 @@ one; the sourceless 毒雾 of 假想敌：蚀裂 skips a 隐匿 one but still re
 kind of damage — 无来源 true (like the terrain it stands for [ASSUMED]), the chimera credited — not a 流失 (player report
 D1 audit): radius 1.2, a tick every 0.5 s, one tick per unit per 0.5 s however many chimeras reach it (`mem.chimeraAt`).
 
-**Knock-outs that are not deaths** (`content/enemies.js`; player reports after 0.1.0): a `killed` ability that keeps the
+**Knock-outs that are not deaths** (`content/enemies/archetypes.js`; player reports after 0.1.0): a `killed` ability that keeps the
 enemy alive hides the knock-out from every later `kill` handler, the kill count, kill credit and the bounty — they all
 wait for the real death, the only one with a `die` event. Every 重生 (`reborn()`, `husk()`, `statue()`) clears what
 operators put on the enemy — the buffs with an ally source and source-less catalogue statuses (PRTS 特殊机制 §重生
@@ -598,7 +602,7 @@ gain is amount × `dmg.mul` × `elemTakenMul` (元素损伤倍率: "受到的元
 改为目标的损伤抵抗即可"); `elementIntake(unit)` in damage.js returns that factor, applied after `elementHit`). 元素脆弱 never
 scales it, no gauge decays (EP_RECOVERY_PER_SEC 0), and every enemy in data/enemies.json has 损伤抵抗 0 except 转译基底·α
 (10); operators have none.
-Enemies deal ATK × their talent's `ep_damage_ratio` per hit (content/enemies.js `ep`). A full gauge bursts with the
+Enemies deal ATK × their talent's `ep_damage_ratio` per hit (content/enemies/archetypes.js `ep`). A full gauge bursts with the
 official effects, which depend on the side hit (constants.js `ELEMENT`); burst damage is **无来源** (DamageInfo
 `sourceless`, PRTS 伤害分类 "无法被追溯伤害来源": no damage-dealt multiplier or penetration of the unit that filled the
 gauge, and the `hit` / `damaged` / `fatal` hooks see `source: null` — no attacker-keyed content applies — while the ctx's
@@ -1175,9 +1179,9 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   e.g. `mortar` for 帝国炮火先兆者, which the renderer does not draw — its fx `bombardShell` is the shell), `['dmg', tgt, amount, type]` (`phys|arts|true|burn|neural|necrosis|apoptosis`),
   `['heal', tgt, amount]`, `['skill', id, 1|0]`, `['die', id, reason]`, `['leak', id]`, `['status', id, key, 1|0]`,
   `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's hit cancelled by 限伤 — the renderer draws nothing;
-  `extra.form` = the unit's model form from then on — an enemy's `content/enemies.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
+  `extra.form` = the unit's model form from then on — an enemy's `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
   `['layer', playerId, bondId, n]` (n = the layers actually added, capped at 999), `['bounty', playerId, coins]`.
-- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items? }` (`skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
+- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items? }` (`skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
   (`dir` = the unit direction, allies meaningful, enemies 'RIGHT'; `facing` = its horizontal sign for sprite flipping)
   (`spine`/`avatar` are asset ids from data).
 - flags: UF bits (blocked 1, stunned 2, frozen 4, stealth 8 — 隐匿 (an enemy's only while not blocked / revealed and not within 3 s of a block's end) or an ally's 迷彩 — skill 16, shield 32, invuln 64, cold 128, sleep 256, flying 512);

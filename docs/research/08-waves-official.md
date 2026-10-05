@@ -554,7 +554,7 @@ Everything in `docs/BALANCE.md` §4 (the tuned tables) and the `tools/balance.mj
    - `config.bossHpScale`: co-op pool = `bloodPoint[difficulty]` with no alive-player factor; solo stays a flagged config value. (2026-10-01: × alive / 4 available behind `aliveScaling`, off, see §6 #7.)
    - Keep `enemyScale` (PRTS table) and the 终极 speed ×1.15 from R3.
    - Re-run `tools/balance.mjs --tuning off` only to report, not to tune.
-3. **Pathing** (`server/sim/grid.js`, `server/sim/ai.js`, `server/sim/Battle.js`):
+3. **Pathing** (`server/sim/grid.js`, `server/sim/ai.js`, `server/sim/Battle.js` — since 0.2.0 `server/sim/battle/spawns.js` / `tiles.js`):
    - Add `Grid.flowField(dest)` as in §3.4, cached per `(dest, version)`.
    - `planLeg` for WALK: follow the smoothed parents from the enemy's tile to the leg target and re-plan on version change. That is the same trigger as today.
    - Crates: `setObstacle` marks a cost-1000 obstacle-like tile, not an impassable one. The existing "blocked enemy attacks the crate" logic stays.

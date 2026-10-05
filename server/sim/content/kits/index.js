@@ -106,6 +106,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-nian.js',
   'op-hsgma2.js',
   'op-thumpy.js',
+  'op-zumama.js',
+  'op-judge.js',
+  'op-shu.js',
 ]);
 
 /**

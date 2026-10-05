@@ -172,7 +172,6 @@ export class MatchWatch {
     }
   }
 
-  /** Board signature of a prep scout view (units and hand: a shop or funds change is not a board change). */
   /** Board signature of a prep scout view (board, hand and temp rows: a shop or funds change is not a board change).
    *  Hand / temp entries carry their slot — `prepFieldMeta` draws x from it, so a piece moved to another slot is a
    *  change (review of PR #129). */

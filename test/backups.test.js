@@ -96,9 +96,14 @@ test('backups: the 17 stand-in characters, each with a form for every status it 
       else assert.deepEqual(f.modules.map((m) => [m.uniEquipId, m.level]), ELITES.includes(id) ? [[`uniequip_002_${id.replace(/^char_\d+_/, '')}`, f.status.equipLevel]] : [], `${label}: modules`);
     }
   }
-  // the official 重装 class row applies to the stand-ins' MANUAL skills (the §21.29 deviation is per chess and names
-  // none of them)
-  for (const id of ['char_602_cdfend', 'char_610_acfend']) for (const s of backups.units[id].forms['2/1/4/0'].skills) assert.equal(s.trigger.rule, 'TAKE_DAMAGE', `${id} ${s.skillId}`);
+  // the official 重装 class row (TAKE_DAMAGE) meets the 重装 stand-ins' MANUAL skills, and the owner's 重装 exception
+  // (the approved 补位 plan, 2026-10-05; tools/build-data.mjs STANDIN_TRIGGER_DEVIATIONS) makes every one of them cast
+  // with an enemy in range — DEFAULT — on every form
+  for (const id of ['char_602_cdfend', 'char_610_acfend']) {
+    for (const f of Object.values(backups.units[id].forms)) {
+      for (const s of f.skills) assert.deepEqual(s.trigger, { rule: 'DEFAULT', rawRule: 'TAKE_DAMAGE', customRangeGrid: null }, `${id}@${statusKey(f.status)} ${s.skillId}`);
+    }
+  }
   assert.equal(backups.units.char_608_acpion.forms['2/1/4/0'].skills[2].trigger.rule, 'SKILL_RANGE', '郁金香 S3 对周围的敌人: its own x-1');
   assert.equal(backups.units.char_617_sharp2.assets.avatarGolden, 'char_617_sharp2_2', '领主·Sharp has E2 art');
 });

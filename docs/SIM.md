@@ -509,12 +509,14 @@ per source — DoTs and slows do that on purpose; a damage-taken / DEF / RES mod
 ## 3. Buffs, mods, statuses
 
 `battle.addBuff(unit, { key, duration=Infinity, refresh='replace'|'extend'|'stack'|'independent'|'keep', stacks, maxStacks,
-mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, shieldHits, persist, visible, data, allowDead })`
+mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, shieldHits, shieldType, persist, visible, data, allowDead })`
 - `replace`: new instance replaces the old; `extend`: keep the longer remaining time, take the new mods; `stack`: +stacks
   up to maxStacks, timer reset; `independent`: separate timers, at most `maxStacks` alive (oldest dropped); `keep`: ignore.
 - Additive mods scale with stacks (`value × stacks`), `*Mul` mods multiply (`value ^ stacks`).
 - `onTick({battle, unit, buff, dt})` every tick, or every `interval` s. `persist: true` survives death/redeploy.
-- `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated.
+- `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated;
+  `shieldType` ('phys' | 'arts' | 'true' | 'elemental') = a 屏障 that absorbs that damage type only (夜莺 S2 法术护盾 "能吸收…
+  法术伤害"); none = every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害"). Shields are spent oldest first.
 - `visible: true` emits `['status', id, key, 1/0]` client events. `battle.removeBuff(unit, key|buff)`.
 
 **Mod keys** — additive: `atkFlat atkPct defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
@@ -678,7 +680,7 @@ PRTS 异常效果: 无法选择 effects "仅在选择时生效"); checked before
 with `ceil(final) ≥ BOSS_HIT_LIMIT` (300000, shared/constants.js) is cancelled whole: returns 0 before shields (阿利斯泰尔's
 `boss:vest` barrier stays untouched; a `hit`-step block such as 假想敌：再生's aura acts earlier) [ASSUMED order], no HP /
 pool loss, no credit or stats, no `dmg` event, no `damaged` / `fatal` / kill; an fx `hitCap` `{ id, n }` marks it and
-draws nothing; research 11) → shields → HP loss
+draws nothing; research 11) → shields (a typed one — buff `shieldType` — only for its damage type) → HP loss
 (boss units: routed to `sharedBoss.damage(playerId, amount)`; a pool left under 1 HP is emptied) → if HP ≤ 0: **`fatal`** (`ctx.prevented = true` keeps the
 unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `death`.
 
@@ -1141,7 +1143,9 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 3.75 back = `BOOMERANG_RETURN_SPEED`, PRTS 跃跃; droneBomb 5 = 暴鸰's bomb, the official projectile_bombd); melee/`none` hits are
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
-`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority`, `blockFly`, `noHeal`, `boomerang` (the projectile stays
+`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority`, `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
+selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
+单位"), `boomerang` (the projectile stays
 `'boomerang'` whatever the data's generic ranged projectile says), `rangeAoe` (applied after every override: sets
 `allInRange` and, on a ranged profile, the instant `'beam'`) (see the header of professions.js).
 

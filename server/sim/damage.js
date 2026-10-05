@@ -5,7 +5,8 @@
 //   → dodge (phys/arts, canDodge) → mitigation (phys: DEF, arts: RES, true: none)
 //   → × source dmgDealtMul (× phys/artsDealtMul) × target dmgTakenMul (not for 元素伤害) × type-taken mul × dmg.mul
 //   → 限伤 (leaders in boss / hidden battles: a hit of ceil(final) ≥ BOSS_HIT_LIMIT is cancelled, see leaderHitCancelled)
-//   → shields (hit-negating barriers first, then HP shields) → HP loss (boss pool routing) → 'damaged' hook
+//   → shields (hit-negating barriers first, then HP shields; a typed one — buff `shieldType` — only its damage type)
+//   → HP loss (boss pool routing) → 'damaged' hook
 //   → SP-on-hurt / TAKE_DAMAGE trigger → fatal/kill.
 // Damage-dealt stats (the source's `stats.dmg`, the player's `damageDealt`) count only HP removed from the other side:
 // self and friendly damage (a 源石溶剂 drain, an operator's own 流失) is the target's `taken` and keeps the kill credit.
@@ -180,14 +181,19 @@ export function leaderHitCancelled(battle, target, amount) {
   return true;
 }
 
-/** Absorb damage with shields on `target`. Returns the remaining amount. */
-export function absorbShields(battle, target, amount) {
+/**
+ * Absorb damage with shields on `target`. Returns the remaining amount. `type` = the damage type: a shield buff with a
+ * `shieldType` absorbs only that type (夜莺 S2 "屏障能吸收…法术伤害"); one without absorbs every type (PRTS 术语释义 屏障
+ * "若无特殊说明，屏障可吸收全种类伤害"). Older shields first (buff order: "优先消耗先生成的屏障").
+ */
+export function absorbShields(battle, target, amount, type = null) {
   if (amount <= 0) return 0;
   let changed = false;
   let rest = amount;
+  const absorbs = (b) => !b.shieldType || b.shieldType === type;
   for (let i = 0; i < target.buffs.length && rest > 0; i++) {
     const b = target.buffs[i];
-    if (b.shieldHits > 0) {
+    if (b.shieldHits > 0 && absorbs(b)) {
       b.shieldHits--;
       rest = 0;
       if (b.shieldHits <= 0 && !(b.shield > 0) && !b.mods && !b.flags) { battle._removeBuffAt(target, i); i--; }
@@ -197,7 +203,7 @@ export function absorbShields(battle, target, amount) {
   }
   for (let i = 0; i < target.buffs.length && rest > 0; i++) {
     const b = target.buffs[i];
-    if (b.shield > 0) {
+    if (b.shield > 0 && absorbs(b)) {
       const take = Math.min(b.shield, rest);
       b.shield -= take;
       rest -= take;
@@ -247,7 +253,7 @@ export function dealDamage(battle, source, target, dmgIn) {
   // recognise their own (tagged) damage — never re-create such a loss with a fresh loseHp.
   if (ts.flags.hitCount || ts.flags.hitCountArts) {
     const counts = !(ts.flags.hitCountArts && !ts.flags.hitCount && type === 'phys');
-    return applyHpLoss(battle, source, target, absorbShields(battle, target, counts ? 1 : 0), dmg);
+    return applyHpLoss(battle, source, target, absorbShields(battle, target, counts ? 1 : 0, type), dmg);
   }
   // 无来源 damage (element bursts) takes nothing from its source's stats; the source still gets the credit below
   const ss = source && source.s && !dmg.sourceless ? source.s : null;
@@ -267,7 +273,7 @@ export function dealDamage(battle, source, target, dmgIn) {
   // 限伤: a leader's hit of ≥ BOSS_HIT_LIMIT in a boss / hidden battle is cancelled before it reaches shields / HP — what
   // ran before it (the attack, its SP, `hit` hook effects, separate element 损伤) stays; nothing after it happens
   if (final > 0 && leaderHitCancelled(battle, target, final)) return 0;
-  final = absorbShields(battle, target, final);
+  final = absorbShields(battle, target, final, type);
   return applyHpLoss(battle, source, target, final, dmg);
 }
 

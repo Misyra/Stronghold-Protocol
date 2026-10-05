@@ -1071,6 +1071,21 @@ function buildChess(ctx) {
  */
 const DIY_EXTRA_PROTOTYPES = Object.freeze({ 5: Object.freeze({ rarity: 4, excludedProfessions: Object.freeze(['PIONEER', 'SPECIAL']) }) });
 
+/**
+ * 自选 owned picks left out of the data and the pool by the owner's decision of 2026-10-05: the collab operators
+ * (copyright) — every 6★ whose `mainPower` or a `subPower` names one of these 联动 teams: rainbow (灰烬, 艾拉), action4
+ * (麒麟R夜刀), mujica (丰川祥子), sees (结城理), laios (玛露西尔). The excel does not exclude them (research 0.2.0 §2.2).
+ */
+const DIY_EXCLUDED_TEAMS = Object.freeze(['rainbow', 'action4', 'mujica', 'sees', 'laios']);
+
+/**
+ * The skill a prototype carries in a 自选 slot when no 补位 row of the slot's tier names it (only 预备干员-医疗 at tier 5:
+ * it stands in at tier 3 only). PRTS 卫戍协议 says the prototypes' "技能携带规则与系统补位时一致"; [ASSUMED] (the owner's
+ * decision of 2026-10-05) the selection of its 补位 rows at that tier, and for this one S3 — every other 4★ reserve's
+ * tier-5 row — with no module.
+ */
+const DIY_PROTOTYPE_FALLBACK_SKILL = 2;
+
 const rarityOf = (char) => Number(String(char?.rarity).replace('TIER_', '')) || null;
 const statusCmp = (a, b) => a.phase - b.phase || a.level - b.level || a.skillLevel - b.skillLevel || a.equipLevel - b.equipLevel;
 
@@ -1173,16 +1188,21 @@ function buildUnitForm(ctx, charId, status, { chessId = null, skillIndex = null 
 
 /**
  * data/backups.json (DATA.md §18; DESIGN 0.2.0 draft): the data of 补位 and 自选.
- * - `units`: every character a NORMAL chess names as `backup.charId` — the 17 原型干员 (预备干员 char_600–607, the 6★
- *   罗德岛特派高级资深干员 char_608–615 and 领主·Sharp char_617) — with a form for every status it fights at: the statuses
- *   of the chess it stands in for (normal and elite) and of the DIY slots it may fill. No unit for a PRESET chess
- *   (特许: always the real operator; its backup is itself) or a DIY slot (no backup).
+ * - `units`: every character a 补位 or 自选 piece fields, with a form for every status it fights at. First the 17
+ *   原型干员 a NORMAL chess names as `backup.charId` (预备干员 char_600–607, the 6★ 罗德岛特派高级资深干员 char_608–615 and
+ *   领主·Sharp char_617) at the statuses of the chess it stands in for (normal and elite) and of the DIY slots it may fill;
+ *   then every owned-6★ pick (`diy.ownedPool`) at the DIY slot statuses — E2 Lv1 skill rank 4 without a module, E2 Lv60
+ *   rank 7 with every module at stage 1 (tier 5) and at stage 3 (tier 6). No unit for a PRESET chess (特许: always the
+ *   real operator; its backup is itself) or a DIY slot (no backup).
+ * - `tokens`: the summons of the owned picks (buildDiyTokens: tokens.json records whose `variants` are keyed by owner
+ *   form, `<charId>@<statusKey>`).
  * - `diy`: the slots (tier, elite id, the shop level that lists them, the rarity requirement), the prototype picks per
- *   slot tier (DIY_EXTRA_PROTOTYPES), the owned-6★ pool (obtainable, not a roster operator: no chess names it, hidden
- *   chess included — "不可甄选加入已在名单中的固定干员") and, for every pick, its faction ids (`mainPower` and every
- *   `subPower`: "依据其「所属势力」「隐藏势力」等属性决定其盟约") and the core bonds whose `powerIdList` meets them, else
- *   `constData.fallbackBondId` (协防干员) — PRTS 「卫戍协议」 "甄选加入的干员会根据其实际阵营所属分配核心盟约，若没有可匹配的
- *   则改为分配协防干员盟约".
+ *   slot tier (DIY_EXTRA_PROTOTYPES) and the skill / module each carries there (`locked`: its 补位 rows' selection at
+ *   that tier — "技能携带规则与系统补位时一致"), the owned-6★ pool (obtainable, not a roster operator: no chess names it,
+ *   hidden chess included — "不可甄选加入已在名单中的固定干员" — and not a collab, DIY_EXCLUDED_TEAMS: `excluded`) and, for
+ *   every pick, its faction ids (`mainPower` and every `subPower`: "依据其「所属势力」「隐藏势力」等属性决定其盟约") and the
+ *   core bonds whose `powerIdList` meets them, else `constData.fallbackBondId` (协防干员) — PRTS 「卫戍协议」
+ *   "甄选加入的干员会根据其实际阵营所属分配核心盟约，若没有可匹配的则改为分配协防干员盟约".
  */
 function buildBackups(ctx, chess) {
   const { act, ac, charTable } = ctx;
@@ -1207,12 +1227,15 @@ function buildBackups(ctx, chess) {
   for (const d of Object.values(act.shopLevelDisplayDataDict || {})) for (const id of d.charChessDiySlotIdList || []) shopLevelOf[id] = d.shopLevel;
   const slots = {};
   const prototypes = {};
+  const locked = {};
   const requirements = new Set();
+  const diyStatuses = new Map();   // statusKey → status of every DIY slot record (both forms)
   for (const s of Object.values(chess).filter((c) => c.isDiy && !c.isGolden).sort((x, y) => naturalCmp(x.chessId, y.chessId))) {
     const golden = chess[s.goldenId];
     if (!golden) continue;
     requirements.add(s.diyRequirement);
     slots[s.chessId] = { tier: s.tier, goldenId: s.goldenId, shopLevel: shopLevelOf[s.chessId] ?? null, requirement: s.diyRequirement };
+    for (const rec of [s, golden]) diyStatuses.set(statusKey(rec.status), rec.status);
     const extra = DIY_EXTRA_PROTOTYPES[s.tier];
     const picks = standInIds.filter((id) => {
       const ch = charTable[id];
@@ -1221,27 +1244,48 @@ function buildBackups(ctx, chess) {
     if (prototypes[s.tier] && JSON.stringify(prototypes[s.tier]) !== JSON.stringify(picks)) warn(`DIY tier ${s.tier}: slots disagree on the prototype picks`);
     prototypes[s.tier] = picks;
     for (const id of picks) { addNeed(id, s.status); addNeed(id, golden.status); }
+    // the skill / module a prototype carries in a slot of this tier: its 补位 rows' (the NORMAL base chess of the tier
+    // whose backup it is), else DIY_PROTOTYPE_FALLBACK_SKILL without a module [ASSUMED]
+    locked[s.tier] = {};
+    for (const id of picks) {
+      const rows = Object.values(chess).filter((c) => c.chessType === 'NORMAL' && !c.isGolden && c.tier === s.tier && c.backup?.charId === id)
+        .sort((x, y) => naturalCmp(x.chessId, y.chessId));
+      const kinds = new Set(rows.map((c) => `${c.backup.skillIndex}|${c.backup.uniEquipId ?? ''}`));
+      if (kinds.size > 1) warn(`DIY tier ${s.tier} prototype ${id}: its 补位 rows carry different selections (${[...kinds].join(', ')}); the first row's is used`);
+      locked[s.tier][id] = rows.length
+        ? { skillIndex: rows[0].backup.skillIndex, uniEquipId: rows[0].backup.uniEquipId ?? null, from: rows.map((c) => c.chessId) }
+        : { skillIndex: DIY_PROTOTYPE_FALLBACK_SKILL, uniEquipId: null, from: [] };
+    }
   }
 
+  const roster = new Set(Object.values(act.charShopChessDatas).map((r) => r.charId).filter(Boolean));
+  const teamsOf = (ch) => [ch.mainPower?.teamId ?? ch.teamId, ...(ch.subPower || []).map((p) => p?.teamId)].filter(Boolean);
+  const excludedTeams = new Set(DIY_EXCLUDED_TEAMS);
+  const legal6 = Object.keys(charTable).filter((id) => {
+    const ch = charTable[id];
+    return id.startsWith('char_') && requirements.has(ch.rarity) && ch.profession !== 'TOKEN' && ch.profession !== 'TRAP'
+      && !ch.isNotObtainable && !roster.has(id);
+  }).sort(naturalCmp);
+  const excluded = legal6.filter((id) => teamsOf(charTable[id]).some((t) => excludedTeams.has(t)));
+  for (const t of DIY_EXCLUDED_TEAMS) if (!excluded.some((id) => teamsOf(charTable[id]).includes(t))) warn(`DIY_EXCLUDED_TEAMS: no owned-6★ pick of team ${t}`);
+  const ownedPool = legal6.filter((id) => !excluded.includes(id));
+  for (const id of ownedPool) for (const st of diyStatuses.values()) addNeed(id, st);
+
   const units = {};
-  for (const id of [...need.keys()].sort(naturalCmp)) {
+  for (const id of [...standInIds, ...ownedPool]) {
     const unit = buildUnitHead(ctx, id);
     unit.standsIn = (standsIn.get(id) || []).sort(naturalCmp);
     unit.forms = {};
     for (const st of [...need.get(id).values()].sort(statusCmp)) {
       const form = buildUnitForm(ctx, id, st);
-      if (form.tokens.length) warn(`unit ${id}@${statusKey(st)}: summons ${form.tokens.join(', ')} have no tokens.json variant for a stand-in owner`);
+      if (form.tokens.length && unit.standsIn.length) warn(`unit ${id}@${statusKey(st)}: summons ${form.tokens.join(', ')} have no tokens.json variant for a stand-in owner`);
       unit.forms[statusKey(st)] = form;
     }
     units[id] = unit;
   }
+  for (const id of need.keys()) if (!units[id]) warn(`unit ${id}: needed but neither a stand-in nor an owned pick`);
+  const tokens = buildDiyTokens(ctx, units, ownedPool);
 
-  const roster = new Set(Object.values(act.charShopChessDatas).map((r) => r.charId).filter(Boolean));
-  const ownedPool = Object.keys(charTable).filter((id) => {
-    const ch = charTable[id];
-    return id.startsWith('char_') && requirements.has(ch.rarity) && ch.profession !== 'TOKEN' && ch.profession !== 'TRAP'
-      && !ch.isNotObtainable && !roster.has(id);
-  }).sort(naturalCmp);
   const coreBonds = Object.values(ac.bondInfoDict || {}).filter((b) => b.isPower && (b.powerIdList || []).length);
   const fallback = act.constData.fallbackBondId;
   const operators = {};
@@ -1257,7 +1301,7 @@ function buildBackups(ctx, chess) {
       obtainable: !ch.isNotObtainable, powers, bonds: hit.length ? hit : [fallback],
     };
   }
-  return { units, diy: { slots, prototypes, ownedPool, operators } };
+  return { units, tokens, diy: { slots, prototypes, locked, ownedPool, excluded, operators } };
 }
 
 /**
@@ -1381,13 +1425,129 @@ const TOKEN_ABNORMAL = Object.freeze({
 });
 
 /**
+ * The tokens.json record of a summon (buildTokens; the 自选 picks' summons, buildDiyTokens) from its per-owner
+ * `variants` (key → variant; `owners` = the keys, in order; the defaults are the first owner's variant).
+ * Hand cards placed during the prep phase (`placeable`) are the MANUALLY DEPLOYABLE summons (PRTS 卫戍协议/帮助
+ * §战斗部署: "如果部署的干员拥有可手动部署的附属召唤物，则该召唤物会立刻加入手牌区"; user playtest #6): the shop
+ * state's tokenDisplayType DEFAULT — 赫默's 医疗探机 and 巫恋's 诅咒娃娃 (skill summons) as well as 浊心斯卡蒂's 海嗣,
+ * 伺夜's 狼群 and 缪尔赛思's 流形 (talent summons) — and a summon the shop state does not list at all: 凯瑟琳's
+ * 爬行号·防护单元 (talent "携带3个支援装置（最多部署2个）", deployed by hand in the base game; a friend of the user:
+ * placed by hand officially; confirmed by the user after playtest #6 — DESIGN §20). It is the only pool summon
+ * missing from shopStateTokenDict (every other one is listed, as are newer tokens such as 10040, 10042, 10043,
+ * 10055–10058, 10065), so no entry is read as the default display. HIDDEN tokens exist in battle only (e.g.
+ * 投递坐标 — PRTS: "携带技能【使命必达！】的新约能天使，不会提供所属召唤物"). Only a token its owner actually makes
+ * (`produced`: a talent or a skill of some loadout, `sources`) is a card; which loadouts make it is per variant
+ * (`sources`, `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). In battle a skill's summon deploys once at the start, then
+ * takes its tile again each time the skill gives one (sim/content/tokens.js dockSkillSummons, shared/constants.js
+ * SKILL_SUMMON_START_DEPLOY).
+ * `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
+ * 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
+ * ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere).
+ * `abnormal` = TOKEN_ABNORMAL (PRTS).
+ */
+function summonRecord(ctx, tokenId, char, variants, produced) {
+  const displayType = ctx.ac.shopStateTokenDict?.[tokenId]?.tokenDisplayType || null;
+  const owners = Object.keys(variants);
+  const first = variants[owners[0]];
+  const ownerRange = /只能部署在\S*攻击范围内/.test(stripRich(first.trait.desc) || '');
+  return {
+    tokenId, kind: 'summon', name: char.name, appellation: char.appellation || null,
+    desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
+    profession: char.profession, subProfessionId: char.subProfessionId, position: char.position,
+    displayType, placeable: displayType !== 'HIDDEN' && produced, ownerRange,
+    owners,
+    // Defaults = first owner's variant; per-owner data in variants[owner].
+    stats: first.stats, rangeGrid: first.rangeGrid, dmgType: first.dmgType, attackKind: first.attackKind,
+    projectile: first.projectile, canHitFly: first.canHitFly,
+    skill: first.skill ? { skillId: first.skill.skillId, bb: first.skill.bb } : null,
+    deployLimit: first.stats?.deployLimit ?? 1,
+    count: first.count,
+    abnormal: TOKEN_ABNORMAL[tokenId] ? [...TOKEN_ABNORMAL[tokenId]] : [],
+    variants,
+    assets: { avatar: tokenId, spine: tokenId },
+  };
+}
+
+/**
+ * The summons of the 自选 owned picks (data/backups.json `tokens`, DATA.md §18): one summonRecord per token whose
+ * `variants` are keyed by the owner FORM, `<charId>@<statusKey>` (shared/diy.js diyTokenOwner), never by a chess id — a
+ * DIY piece is a slot, and two players may fill the same slot with different operators. A variant is the token at the
+ * owner's status (the owner's phase / level / skill level, as for a chess owner) for the owner's FIRST skill and no
+ * module; `bySkill[i]` the token skill, count and sources under each other skill, `byModule[id]` the module token
+ * attributes / trait / talents under each module of the form — the chess variant shape (DESIGN §16), applied with the
+ * pick as the owner's loadout (simdata getToken, content/tokens.js withLoadout). `count` / `sources` come from the
+ * owner's no-module talents and the selected skill, as buildChess's `tokenUse`.
+ * @param {object} units backups `units`
+ * @param {string[]} owned the owned-6★ picks (their forms are the DIY slot statuses)
+ */
+function buildDiyTokens(ctx, units, owned) {
+  const { charTable, battleEquip } = ctx;
+  const owners = new Map();   // tokenId → [{ key, variant, produced }]
+  const makes = (list) => list.includes('talent') || list.includes('skill');
+  for (const charId of owned) {
+    for (const [key, form] of Object.entries(units[charId]?.forms || {})) {
+      if (!form.tokens.length) continue;
+      const { phase, level, skillLevel, equipLevel } = form.status;
+      /** token id → its sources under `skill` (buildChess tokenUse), and the count a talent / the skill sends */
+      const tokenUse = (skill) => {
+        const skTok = skill?.overrideTokenKey || null;
+        const use = new Map();
+        const add = (id, src) => { if (!use.has(id)) use.set(id, new Set()); use.get(id).add(src); };
+        for (const id of form.displayTokens) add(id, 'display');
+        if (skTok) add(skTok, 'skill');
+        for (const t of form.talents) if (t.tokenKey) add(t.tokenKey, 'talent');
+        const count = (id) => {
+          const tal = form.talents.find((t) => t.tokenKey === id && typeof t.bb.cnt === 'number');
+          const skillCnt = skTok === id ? skill?.bb?.cnt : undefined;
+          return tal ? tal.bb.cnt : typeof skillCnt === 'number' ? skillCnt : null;
+        };
+        const sources = (id) => ['talent', 'skill', 'display'].filter((x) => use.get(id)?.has(x));
+        return { count, sources };
+      };
+      const [first, ...alts] = form.skills;
+      for (const tokenId of form.tokens) {
+        const tchar = charTable[tokenId];
+        const label = `token ${tokenId}@${charId}@${key}`;
+        const at = (o) => tokenVariant(ctx, tokenId, tchar, { phase, level, skillIndex: first.index, skillLevel, modulePhase: null, moduleTokenParts: [], label, ...o });
+        const u0 = tokenUse(first);
+        const v = { ...at({}), count: u0.count(tokenId), sources: u0.sources(tokenId) };
+        let produced = makes(v.sources);
+        if (alts.length) {
+          v.bySkill = {};
+          for (const s of alts) {
+            const u = tokenUse(s);
+            v.bySkill[s.index] = { skill: at({ skillIndex: s.index }).skill, count: u.count(tokenId), sources: u.sources(tokenId) };
+            produced = produced || makes(v.bySkill[s.index].sources);
+          }
+        }
+        if (equipLevel > 0 && form.modules?.length) {
+          v.byModule = {};
+          for (const m of form.modules) {
+            const ph = battleEquip[m.uniEquipId]?.phases?.find((p) => p.equipLevel === equipLevel) || null;
+            const tv = at({ modulePhase: ph, moduleTokenParts: splitModuleParts(ph).token });
+            v.byModule[m.uniEquipId] = { stats: tv.stats, immunities: tv.immunities, trait: tv.trait, talents: tv.talents };
+          }
+        }
+        if (!owners.has(tokenId)) owners.set(tokenId, []);
+        owners.get(tokenId).push({ key: `${charId}@${key}`, variant: v, produced });
+      }
+    }
+  }
+  const out = {};
+  for (const tokenId of [...owners.keys()].sort(naturalCmp)) {
+    const list = owners.get(tokenId);
+    out[tokenId] = summonRecord(ctx, tokenId, charTable[tokenId], Object.fromEntries(list.map((o) => [o.key, o.variant])), list.some((o) => o.produced));
+  }
+  return out;
+}
+
+/**
  * Build data/tokens.json: summons of chess (per-owner variants), bond summons (炎佑) and band map
  * characters (band_amedic 预备干员-医疗 / Touch). `abnormal` = TOKEN_ABNORMAL (PRTS).
  */
 function buildTokens(ctx, chess, tokenOwners, enemies) {
-  const { charTable, ac } = ctx;
+  const { charTable } = ctx;
   const out = {};
-  const displayType = (id) => ac.shopStateTokenDict?.[id]?.tokenDisplayType || null;
   for (const tokenId of [...tokenOwners.keys()].sort(naturalCmp)) {
     const char = charTable[tokenId];
     const owners = tokenOwners.get(tokenId);
@@ -1417,42 +1577,9 @@ function buildTokens(ctx, chess, tokenOwners, enemies) {
         }
       }
     }
-    const first = variants[owners[0].chessId];
-    // Hand cards placed during the prep phase (`placeable`) are the MANUALLY DEPLOYABLE summons (PRTS 卫戍协议/帮助
-    // §战斗部署: "如果部署的干员拥有可手动部署的附属召唤物，则该召唤物会立刻加入手牌区"; user playtest #6): the shop
-    // state's tokenDisplayType DEFAULT — 赫默's 医疗探机 and 巫恋's 诅咒娃娃 (skill summons) as well as 浊心斯卡蒂's 海嗣,
-    // 伺夜's 狼群 and 缪尔赛思's 流形 (talent summons) — and a summon the shop state does not list at all: 凯瑟琳's
-    // 爬行号·防护单元 (talent "携带3个支援装置（最多部署2个）", deployed by hand in the base game; a friend of the user:
-    // placed by hand officially; confirmed by the user after playtest #6 — DESIGN §20). It is the only pool summon
-    // missing from shopStateTokenDict (every other one is listed, as are newer tokens such as 10040, 10042, 10043,
-    // 10055–10058, 10065), so no entry is read as the default display. HIDDEN tokens exist in battle only (e.g.
-    // 投递坐标 — PRTS: "携带技能【使命必达！】的新约能天使，不会提供所属召唤物"). Only a token its owner actually makes
-    // (a talent or a skill of some loadout, `sources`) is a card; which loadouts make it is per variant (`sources`,
-    // `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). In battle a skill's summon deploys once at the start, then
-    // takes its tile again each time the skill gives one (sim/content/tokens.js dockSkillSummons, shared/constants.js
-    // SKILL_SUMMON_START_DEPLOY).
     const makes = (list) => (list || []).some((s) => s === 'talent' || s === 'skill');
     const produced = owners.some((o) => makes(o.sources) || (o.skillAlts || []).some((a) => makes(a.sources)));
-    // `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
-    // 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
-    // ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere)
-    const ownerRange = /只能部署在\S*攻击范围内/.test(stripRich(first.trait.desc) || '');
-    out[tokenId] = {
-      tokenId, kind: 'summon', name: char.name, appellation: char.appellation || null,
-      desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
-      profession: char.profession, subProfessionId: char.subProfessionId, position: char.position,
-      displayType: displayType(tokenId), placeable: displayType(tokenId) !== 'HIDDEN' && produced, ownerRange,
-      owners: owners.map((o) => o.chessId),
-      // Defaults = first owner's variant; per-owner data in variants[chessId].
-      stats: first.stats, rangeGrid: first.rangeGrid, dmgType: first.dmgType, attackKind: first.attackKind,
-      projectile: first.projectile, canHitFly: first.canHitFly,
-      skill: first.skill ? { skillId: first.skill.skillId, bb: first.skill.bb } : null,
-      deployLimit: first.stats?.deployLimit ?? 1,
-      count: first.count,
-      abnormal: TOKEN_ABNORMAL[tokenId] ? [...TOKEN_ABNORMAL[tokenId]] : [],
-      variants,
-      assets: { avatar: tokenId, spine: tokenId },
-    };
+    out[tokenId] = summonRecord(ctx, tokenId, char, variants, produced);
   }
 
   // 炎佑 (yanShip 6-member summon) — allied flying unit built from its enemy template.
@@ -3495,9 +3622,32 @@ function validateAll(f) {
       const slot = chess[id], golden = chess[s.goldenId];
       if (!slot?.isDiy || slot.isGolden || slot.tier !== s.tier || !golden?.isDiy) { err(`DIY slot ${id}: not a DIY chess pair of tier ${s.tier}`); continue; }
       if (!backups.diy.prototypes[s.tier]?.length) err(`DIY slot ${id}: no prototype picks`);
-      for (const p of backups.diy.prototypes[s.tier] || []) for (const rec of [slot, golden]) if (!unitForm(backups, p, rec.status)) err(`DIY slot ${rec.chessId}: prototype ${p} has no form ${statusKey(rec.status)}`);
+      for (const p of backups.diy.prototypes[s.tier] || []) {
+        for (const rec of [slot, golden]) if (!unitForm(backups, p, rec.status)) err(`DIY slot ${rec.chessId}: prototype ${p} has no form ${statusKey(rec.status)}`);
+        // the locked selection exists at both slot forms (the module at the elite's stage)
+        const lk = backups.diy.locked?.[s.tier]?.[p];
+        if (!lk) { err(`DIY slot ${id}: prototype ${p} has no locked selection`); continue; }
+        for (const rec of [slot, golden]) {
+          const f = unitForm(backups, p, rec.status);
+          if (f && !f.skills.some((x) => x.index === lk.skillIndex)) err(`DIY slot ${rec.chessId}: prototype ${p} has no skill ${lk.skillIndex} at ${statusKey(rec.status)}`);
+          if (f && lk.uniEquipId && rec.status.equipLevel > 0 && !f.modules.some((m) => m.uniEquipId === lk.uniEquipId)) err(`DIY slot ${rec.chessId}: prototype ${p} has no module ${lk.uniEquipId} at ${statusKey(rec.status)}`);
+        }
+      }
+      // every owned pick: a form at both slot statuses with every skill, and at the elite every module of the character
+      for (const p of backups.diy.ownedPool) {
+        const u = backups.units[p];
+        for (const rec of [slot, golden]) {
+          const f = unitForm(backups, p, rec.status);
+          if (!f) { err(`DIY slot ${rec.chessId}: owned pick ${p} has no form ${statusKey(rec.status)}`); continue; }
+          if (f.skills.length !== 3) err(`DIY slot ${rec.chessId}: owned pick ${p} has ${f.skills.length} skills at ${statusKey(rec.status)}`);
+          const ids = Object.keys(u.moduleNames).filter((m) => u.moduleNames[m].typeName !== 'ORIGINAL');
+          if (rec.status.equipLevel > 0 && JSON.stringify(f.modules.map((m) => m.uniEquipId)) !== JSON.stringify(ids)) err(`DIY slot ${rec.chessId}: owned pick ${p} modules ${f.modules.map((m) => m.uniEquipId)} ≠ ${ids}`);
+          for (const t of f.tokens) if (!backups.tokens?.[t]?.variants?.[`${p}@${statusKey(rec.status)}`]) err(`DIY pick ${p}@${statusKey(rec.status)}: summon ${t} has no variant in backups.json tokens`);
+        }
+      }
     }
     for (const [id, o] of Object.entries(backups.diy.operators)) for (const b of o.bonds) if (!bonds[b]) err(`DIY pick ${id}: bond ${b} missing`);
+    for (const id of Object.keys(backups.tokens || {})) if (tokens[id]) err(`backups.json token ${id} is also a tokens.json record`);
     // the 重装 stand-ins' deviations (STANDIN_TRIGGER_DEVIATIONS) still override an official TAKE_DAMAGE row, on every form
     for (const [charId, skillsOf] of Object.entries(STANDIN_TRIGGER_DEVIATIONS)) {
       const forms = Object.values(backups.units[charId]?.forms || {});
@@ -3640,6 +3790,8 @@ async function main() {
       tokens: Object.keys(tokens).length, factionEntries: Object.keys(factions.entries).length,
       backupUnits: Object.keys(backups.units).length,
       backupForms: Object.values(backups.units).reduce((n, u) => n + Object.keys(u.forms).length, 0),
+      backupTokens: Object.keys(backups.tokens).length,
+      diyOwnedPicks: backups.diy.ownedPool.length,
     },
     sizes, totalBytes: total, out: OPTS.out, written: write, warnings, errors,
   };

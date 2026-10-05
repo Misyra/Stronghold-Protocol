@@ -505,11 +505,19 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   // bank is missing (the client then falls back to `bgm.combat`; public/js/audio.js resolveBgm), so the manifest stays
   // valid for an older audio_data.
   const unite = flatBgm(bgmLeaf('battle.ON_GAME_READY.corrosion'));
+  // 开战 BGM: the two official battle tracks of the mode's own 卡西米尔 act (music_act13side_1 骑士之日 /
+  // music_act13side_2 无畏者, 塞壬唱片). The client does not draw them: the round decides (audio.js combatTrackFor —
+  // 无畏者 for rounds 1–7, 骑士之日 from round 8 on), so index 0 must stay `bat_kazimierz2_1` and index 1
+  // `bat_kazimierz2_2` (test/ui/audio.test.js pins both the order and the round table).
+  // Kept out of `bgm` below when the index has neither bank, so the manifest stays valid for an older audio_data.
+  const combatAlts = ['battle.ON_GAME_READY.bat_kazimierz2_1', 'battle.ON_GAME_READY.bat_kazimierz2_2']
+    .map((n) => flatBgm(bgmLeaf(n))).filter(Boolean);
   const bgm = {
     lobby: flatBgm(bgmLeaf('sys.ON_ACTIVITY_LOADED.act2autochess')),
     prep: flatBgm(bgmLeaf('battle.ON_GAME_READY.act1autochess_shop')),
     combat: flatBgm(bgmLeaf('battle.ON_GAME_READY.act1autochess_shop')),
     boss: flatBgm(bgmLeaf('battle.ON_GAME_READY.rglk1phantomcastle')),
+    ...(combatAlts.length ? { combatAlts } : {}),
     ...(unite ? { unite } : {}),
   };
   const bossBgm = {};

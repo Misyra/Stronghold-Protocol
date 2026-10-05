@@ -30,7 +30,8 @@
 //                      无来源 damage uses the chance and hits nobody, a 流失 never does — PRTS 备注 / 作战机制)
 //                      + 脆弱 ×damage_scale for weak[limit] s
 //   助力 deputShip     all operators DEF +(base + per·L), redeploy time ×(1 + respawn_time)
-//   突袭 raidShip      member idle ≥ no_attack_duration s (or skill ready) with no enemy in range → "保留技力立即再部署"
+//   突袭 raidShip      member idle ≥ no_attack_duration s (or skill ready — a passive skill that is on counts, GitHub
+//                      #49) with no enemy in range → "保留技力立即再部署"
 //                      next to the most advanced ground enemy it can reach: on a free tile its position may be deployed
 //                      on from which its range covers that enemy (GitHub issue #51 [ASSUMED]: the first of the 8 most
 //                      advanced that has such a tile; none → it stays and the next poll looks again, never a jump that
@@ -311,7 +312,13 @@ function raidPoll(battle, st) {
   for (const u of st.members[ID.raid]) {
     if (!onField(u) || !u.canAct) continue;
     const since = Math.max(u.lastAttackAt ?? -Infinity, u.deployedAt ?? -Infinity, u.mem[KEY.raid] ?? -Infinity);
-    const ready = !!(u.skill && u.skill.ready && !(u.skill.active && u.skill.isTimed));
+    // 技能就绪: a charged skill, or a passive skill that is on (GitHub #49: skills.js `ready` is false for every passive,
+    // so 缄默德克萨斯 / 宴 … only ever jumped on the idle trigger; the reporter's footage of the official game shows
+    // 缄默德克萨斯 jumping within her passive's 10 s with no enemy in range). The engine keeps a passive on for the whole
+    // deployment, so such a member may jump whenever nothing is in its range [ASSUMED: "技能就绪" of a passive = the
+    // skill being on]; the landing rule below keeps it from hopping. Here only — the global `ready` stays as it is.
+    const sk = u.skill;
+    const ready = !!(sk && !sk.noSkill && (sk.ready || (sk.kind === 'passive' && sk.active)) && !(sk.active && sk.isTimed));
     const idleOk = battle.time - since >= idle - 1e-9;
     if (!(ready || idleOk)) continue;
     if (battle.enemiesInKeys(u.rangeKeys || [], u, u.profile).length) continue;

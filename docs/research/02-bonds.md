@@ -920,7 +920,7 @@ Members (5 chess, 4 in current shop pool; by tier in shop: {'2': 1, '3': 1, '5':
 
 **Implementable spec**
 
-- **[2 distinct]** If a 突袭 member has not attacked for 10 s, or its skill is ready, and no enemy is in its range: it is immediately redeployed (keeping SP) onto a tile next to a ground enemy; while in that redeployed state its ATK and maxHP x(1 + 0.25 + 0.01*L).
+- **[2 distinct]** If a 突袭 member has not attacked for 10 s, or its skill is ready, and no enemy is in its range: it is immediately redeployed (keeping SP) onto a tile next to a ground enemy; while in that redeployed state its ATK and maxHP x(1 + 0.25 + 0.01*L). A passive skill that is on counts as ready (GitHub #49: the reporter's footage shows 缄默德克萨斯 jumping within her passive's 10 s; the engine keeps a passive on for the whole deployment [ASSUMED]); the landing tile must have the target in range (GitHub #51 [ASSUMED]).
 - **[L >= 50]** ALL operators ASPD +50.
 - Formulas: `atkHpMultiplier = 1.25 + 0.01*L`; `idleSec = 10`; `aspdAll(L>=50) = 50`
 - How layers are gained: 史尔特尔 部署时 +8 (<=50/battle); 休谟斯 each 2 kills +1; 瑕光 +4/deploy; 斯卡蒂; 伊内丝 +5; 机变 "斯卡蒂的盟誓" +8, "德克萨斯的盟誓" +10.

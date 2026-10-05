@@ -254,9 +254,14 @@ export function revivedInPlace(u) { if (u && u.mem) u.mem.revives = (u.mem.reviv
  * on the unit (`mem.undyingUntil`, `mem.undyingAt`) and a battle-level hook holds it (hammerAcquire), so it outlives the
  * grant that started it — a lend running out mid-window leaves the 不死 for its 8 s [ASSUMED: the 异常效果 outlasts its
  * source] — and ends with the deployment. 信仰搅拌机 S2 steps aside while it holds (kits/ops/chess_char_4_01-rmixer.js).
+ * A content 不死 window counts too: a buff with the flag `undying` (淬羽赫默 S3 无畏者协议, kits/ops/op-slent2.js — its own
+ * battle-level hook holds it), so the savers that do not spend themselves while a 不死 holds ("_dontConsumeWhenUndeadable":
+ * 左乐, 莱恩哈特, 信仰搅拌机) step aside for it as well.
  */
 export function holdsUndying(battle, u) {
-  return !!u && u.mem.undyingAt != null && battle.time < u.mem.undyingUntil && u.mem.undyingAt === deploymentOf(u);
+  if (!u) return false;
+  if (u.mem.undyingAt != null && battle.time < u.mem.undyingUntil && u.mem.undyingAt === deploymentOf(u)) return true;
+  return !!(u.s && u.s.flags.undying);
 }
 /** Effective multiplier of a hammer type on `u` and its params (null when the type does not apply). */
 function hammerMul(battle, rt, u, hs, type) {

@@ -71,7 +71,9 @@ export class BattleBlocking {
    * unit (起飞, flag `liftoff`: "不阻挡地面敌人…可以阻挡飞行敌人") blocks flyers only.
    */
   _blockerFor(u, e, w) {
-    if (!u.alive || !u.deployed || u.hidden || u.s.flags.noBlock || u.s.flags.sleep) return false;
+    // flag `noNewBlock`: a unit that takes no new enemy by contact — it blocks only those content hands it (酒神's 迷狂牢笼,
+    // PRTS "只在生成/刷新时判定阻挡新的敌人"); the blocks it holds go on as usual
+    if (!u.alive || !u.deployed || u.hidden || u.s.flags.noBlock || u.s.flags.sleep || u.s.flags.noNewBlock) return false;
     if (e.isFlying && !(u.s.flags.blockFly || (u.profile && u.profile.blockFly))) return false;
     // ground enemies: only a ground unit that has not taken off (起飞 "不阻挡地面敌人": flag `liftoff`), standing on a tile
     // ground units can pass (not a fenced 围墙 / 围栏 tile)

@@ -1,5 +1,4 @@
 // server/http/buildTag.js — the build tag of the browser runtime this process serves (/healthz `build`).
-// Moved from server/index.js.
 
 import fs from 'node:fs';
 import path from 'node:path';

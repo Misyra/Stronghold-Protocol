@@ -1,4 +1,4 @@
-// server/http/files.js — one file on disk → an HTTP response (moved from server/index.js):
+// server/http/files.js — one file on disk → an HTTP response (static.js and media.js decide which file):
 //     MIME types incl. .mjs/.js text/javascript, .skel application/octet-stream, .atlas text/plain;
 //     gzip for text-like types, .skel and uncompressed fonts when the client accepts it (small files are
 //     compressed once and cached in memory); strong ETag + Last-Modified with 304s; Cache-Control

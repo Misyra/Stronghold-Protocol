@@ -36,9 +36,9 @@ test('CHANGELOG.md opens with the release version, and the README links it', () 
 test('the release version is what players see', () => {
   assert.match(read('public/js/screens/title.js'), /v\$\{APP_VERSION\}/, 'title screen footer');
   assert.ok(!/PROTOCOL v1/.test(read('public/js/screens/title.js')), 'no protocol number posing as a version');
-  const server = read('server/index.js');
-  assert.match(server, /Stronghold Protocol: Alliance v\$\{APP_VERSION\}/, 'boot banner');
-  assert.match(server, /app: APP_VERSION/, '/healthz');
+  // the server's entry is server/index.js; the banner and /healthz live in server/http/ (boot.js, routes.js)
+  assert.match(read('server/http/boot.js'), /Stronghold Protocol: Alliance v\$\{APP_VERSION\}/, 'boot banner');
+  assert.match(read('server/http/routes.js'), /app: APP_VERSION/, '/healthz');
 });
 
 test('the English title is the official one: Stronghold Protocol: Alliance (as in the reply to GitHub issue #38, which stays open)', () => {
@@ -47,11 +47,11 @@ test('the English title is the official one: Stronghold Protocol: Alliance (as i
   const readme = read('README.md');
   assert.match(readme.split('\n')[0], /^# 卫戍协议：盟约 · Stronghold Protocol: Alliance$/, 'README title');
   assert.match(readme, /mode \*Stronghold Protocol: Alliance\*/, 'README English summary');
-  assert.match(read('server/index.js'), /卫戍协议：盟约 · Stronghold Protocol: Alliance v/, 'boot banner');
+  assert.match(read('server/http/boot.js'), /卫戍协议：盟约 · Stronghold Protocol: Alliance v/, 'boot banner');
   assert.equal(pkg.name, 'stronghold-protocol-alliance');
   assert.equal(lock.name, pkg.name);
   assert.equal(lock.packages[''].name, pkg.name);
-  for (const f of ['README.md', 'server/index.js', 'package.json', 'package-lock.json', 'NOTICE.md', 'public/index.html', 'docs/DEPLOY.md']) {
+  for (const f of ['README.md', 'server/index.js', 'server/http/boot.js', 'package.json', 'package-lock.json', 'NOTICE.md', 'public/index.html', 'docs/DEPLOY.md']) {
     assert.ok(!/covenant/i.test(read(f)), `${f}: no "Covenant" title left`);
   }
 });

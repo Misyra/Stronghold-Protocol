@@ -1,5 +1,15 @@
-// server/http/common.js — the helpers every HTTP route shares: URL split, the error page and JSON replies.
-// Moved from server/index.js.
+// server/http/common.js — what every HTTP answer shares:
+//
+//   * the security headers, set on every response before any route runs (routes.js);
+//   * splitUrl (raw path + query, also from absolute-form URLs), the bilingual error page (sendError) and JSON replies
+//     (sendJson) — both `Cache-Control: no-store`, without a body for HEAD;
+//   * the bare `400 Bad Request` for a request node:http cannot parse (answerClientError).
+
+/** Headers on every HTTP response. @param {import('node:http').ServerResponse} res */
+export function setSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+}
 
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -34,4 +44,13 @@ export function splitUrl(url) {
   const q = u.indexOf('?');
   const hashless = (s) => { const h = s.indexOf('#'); return h >= 0 ? s.slice(0, h) : s; };
   return q >= 0 ? { rawPath: hashless(u.slice(0, q)), query: hashless(u.slice(q + 1)) } : { rawPath: hashless(u), query: '' };
+}
+
+/** node:http 'clientError' listener: a reset socket is dropped, any other unparseable request gets a bare 400. */
+export function answerClientError(err, socket) {
+  if (err && err.code === 'ECONNRESET') { socket.destroy(); return; }
+  try {
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    else socket.destroy();
+  } catch { /* ignore */ }
 }

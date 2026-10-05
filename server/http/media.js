@@ -1,4 +1,4 @@
-// server/http/media.js — the extension-less audio route /media/… → public/assets/audio (moved from server/index.js).
+// server/http/media.js — the extension-less audio route /media/… → public/assets/audio (see serveMedia).
 
 import fsp from 'node:fs/promises';
 import path from 'node:path';

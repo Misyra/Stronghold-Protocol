@@ -103,15 +103,17 @@ test('checkDiyPick: an owned 6★ chooses any of its 3 skills and any module of 
   for (const [slot, pick, re] of bad) assert.match(checkDiyPick(slot, pick, DATA).error, re, JSON.stringify(pick));
 });
 
-test('checkDiyPick: an owned pick never carries a 集成战略 module (ISW-A) [ASSUMED, the owner\'s decision of 2026-10-05]', () => {
+test('validateDiyPicks: a roster never carries a 集成战略 module (ISW-A) [ASSUMED, the owner\'s decision of 2026-10-05]; the record still composes it', () => {
   const backups = DATA.backups;
   let checked = 0;
   for (const charId of backups.diy.ownedPool) {
     for (const [slot, key] of [[T5, '2/60/7/1'], [T6, '2/60/7/3']]) {
       for (const mod of backups.units[charId].forms[key]?.modules ?? []) {
-        const c = checkDiyPick(slot, { charId, skillIndex: 0, uniEquipId: mod.uniEquipId }, DATA);
-        if (/^ISW-/.test(mod.typeName)) { assert.match(c.error || '', /集成战略 module/, `${charId} ${mod.uniEquipId}`); assert.equal(isDiyModule(mod), false); checked++; }
-        else assert.ok(c.ok, `${charId} ${mod.uniEquipId}: ${c.error}`);
+        const pick = { charId, skillIndex: 0, uniEquipId: mod.uniEquipId };
+        assert.ok(checkDiyPick(slot, pick, DATA).ok, `${charId} ${mod.uniEquipId}: a legal record (the sim and the kits field it)`);
+        const v = validateDiyPicks({ [slot]: pick }, { data: DATA });
+        if (/^ISW-/.test(mod.typeName)) { assert.match(v.detail || '', /集成战略 module/, `${charId} ${mod.uniEquipId}`); assert.equal(isDiyModule(mod), false); checked++; }
+        else assert.ok(v.ok, `${charId} ${mod.uniEquipId}: ${v.detail}`);
       }
     }
   }

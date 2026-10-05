@@ -660,15 +660,16 @@ composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the ren
 A 自选 piece is composed by `shared/diy.js`:
 `checkDiyPick(slotId, pick, data)` checks one pick `{ charId, skillIndex?, uniEquipId? }` against a slot (a pick of the
 slot's tier; a prototype takes its `diy.locked` selection, another skill is refused; an owned pick names one of its three
-skills and optionally a module of its elite form at the slot's stage — never a 集成战略 one, `isDiyModule`: the ISW-A
-modules of 凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮 and 霍尔海雅 [ASSUMED], the owner's decision of 2026-10-05),
-`diySlot(id, data)` names a slot's tier, elite twin and `shopLevel`, `diyRecord(slotId, pick, { elite, data })` /
+skills and optionally a module of its elite form at the slot's stage), `diySlot(id, data)` names a slot's tier, elite
+twin and `shopLevel`, `diyRecord(slotId, pick, { elite, data })` /
 `diyRecordOf(slot, pick, data)` give the record — the slot's identity (tier, price, merge, status; no 特质), the pick's
 derived bonds, the operator's form at the slot's status with that skill and module (active on the elite only), plus
 `diyFor` = the slot's base id —, `diyPool(tier, { data, kitted })` the legal picks of a tier (prototypes, then the owned
 pool; with `kitted`, only operators with a kit: server/sim/content/kits/index.js `KITTED_CHARS`) and
 `validateDiyPicks(picks, { data, kitted })` a roster (a prototype may fill a tier-5 and a tier-6 slot, an owned operator
-one slot, the picks of a tier differ). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
+one slot, the picks of a tier differ, no 集成战略 module — `isDiyModule`: the ISW-A modules of 凯尔希, 傀影, 菲亚梅塔, 提丰,
+艾丽妮 and 霍尔海雅 are never a player's choice [ASSUMED], the owner's decision of 2026-10-05, while the record and the sim
+still compose them for the kits' tests). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
 is fielded as `getChess(slotId, { diy })` (docs/SIM.md §12); its kit is `KITS[charId]` (kits/README.md "How to add an
 operator (自选)"). (`shared/standIn.js diyRecord(slot, charId, backups, sel)` is the older prototype-only form.)
 

@@ -506,7 +506,8 @@ Glyph legend (`rows`):
 2. **DIY chess** (`chess_char_5_diy1/2`, `chess_char_6_diy1/2`, `_a` and `_b` = 8 records): no `charId`, no stats/skill; `visible:false`,
    name placeholder `甄选干员`, not in the shop. Their picks and bond rule are in `backups.json diy` (§18); a slot fights
    only as a 自选 piece — a PlayerBattleInput entry with its `diy` pick (docs/SIM.md §12; shared/diy.js) — and a slot
-   without a legal pick fields nothing. The picker and the per-player shop are not implemented yet.
+   without a legal pick fields nothing. Played since 0.2.0: the player fills the slots on the 自选编队 tab (`room.diy`)
+   and its own shop sells them (server/match/player/diy.js; §18).
 3. **Module-less chess**: 蒂比 (`chess_char_2_13`) and 凛御银灰 (`chess_char_5_14`) have no module; their golden
    record has `module:{id:null,active:false}` and no module stat bonus.
 4. **Hidden chess (17)** are kept with `visible:false`; several operators exist in two tiers with one hidden
@@ -602,8 +603,12 @@ official stand-in (原型干员); played since 0.2.0: the player marks operators
 (`room.ownership { notOwned }`, DESIGN 0.2.0 draft, docs/PLAYING.md §3), the match fields those chess with
 `standIn: true` — and **自选编队** — two tier-5 and two tier-6 DIY slots, each filled with a 6★ the player owns or a
 prototype. Built by `tools/build-data.mjs buildBackups`; `shared/standIn.js` composes it into chess-shaped records,
-`shared/diy.js` adds the 自选 rules on top. The sim fields both (docs/SIM.md §12); the 自选 picker and per-player shop
-come later. The rules in the data (activity_table act2autochess `charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约
+`shared/diy.js` adds the 自选 rules on top. The sim fields both (docs/SIM.md §12). Played since 0.2.0: the player fills
+the four slots on the 自选编队 tab (`room.diy { picks }`, docs/PLAYING.md §3; shared/protocol.js checkDiyPicks keeps the
+legal picks), the match takes the picks the seat had at its start (`PlayerState.diy`), and each slotted piece is sold in
+that player's shop only — its own stock (the tier's pool copies, 8 / 5 [ASSUMED]), from the 调度中心 level `shopLevel`,
+none when every bond of it is banned this match — and is the operator for every rule of that player (its data view:
+server/match/player/diy.js, docs/META.md §3). The rules in the data (activity_table act2autochess `charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约
 下半/PRTS盟约记录):
 
 - PRESET (74, 特许干员) always fields the real operator (`backup.charId` = itself); NORMAL (55) names one of 17 stand-ins —
@@ -655,7 +660,9 @@ composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the ren
 A 自选 piece is composed by `shared/diy.js`:
 `checkDiyPick(slotId, pick, data)` checks one pick `{ charId, skillIndex?, uniEquipId? }` against a slot (a pick of the
 slot's tier; a prototype takes its `diy.locked` selection, another skill is refused; an owned pick names one of its three
-skills and optionally a module of its elite form at the slot's stage), `diyRecord(slotId, pick, { elite, data })` /
+skills and optionally a module of its elite form at the slot's stage — never a 集成战略 one, `isDiyModule`: the ISW-A
+modules of 凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮 and 霍尔海雅 [ASSUMED], the owner's decision of 2026-10-05),
+`diySlot(id, data)` names a slot's tier, elite twin and `shopLevel`, `diyRecord(slotId, pick, { elite, data })` /
 `diyRecordOf(slot, pick, data)` give the record — the slot's identity (tier, price, merge, status; no 特质), the pick's
 derived bonds, the operator's form at the slot's status with that skill and module (active on the elite only), plus
 `diyFor` = the slot's base id —, `diyPool(tier, { data, kitted })` the legal picks of a tier (prototypes, then the owned
@@ -684,5 +691,7 @@ fill one slot with different operators. A variant is the token at the owner's st
 trait and talents (`tools/build-data.mjs buildDiyTokens`); simdata `getToken` merges them with the pick as the owner's
 loadout. No id is also a tokens.json record.
 
-Not in this data (the gameplay workstreams): a player's ownership roster, 助战 borrows (`borrowCount` 20), DIY stock, the
-owned-operator training bonus (`prepareStateDict`), potential (0 for every 自选 pick, [ASSUMED]: no account).
+Not in this data: a player's ownership roster and 自选 picks (browser settings sent with `room.ownership` / `room.diy`),
+the DIY stock (per player in the match, `PlayerState.diyStock`: `config.economy.poolCopies` of the slot's tier — no excel
+field), 助战 borrows (`borrowCount` 20), the owned-operator training bonus (`prepareStateDict`), potential (0 for every
+自选 pick, [ASSUMED]: no account).

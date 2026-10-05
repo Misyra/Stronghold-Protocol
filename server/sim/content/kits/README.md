@@ -182,7 +182,9 @@ pick chooses any of the three, so write every skill under `skills: { [skillId]: 
 `talents`, `trait` and `install` apply under every skill. Read every number from `chess` / `bb` — the same file serves
 both tiers, both forms and both module stages. A 自选 piece has no 特质 and its bonds come from its factions: neither is
 the kit's business. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnToken(unit, …)` resolve the variant of the
-pick (the hand pieces of 自选 summons come with the per-player shop). Potential is 0 [ASSUMED: no account].
+pick; a placeable summon comes to its player's hand like any operator's (server/match/player/diy.js `placeableTokens`
+reads the owner form's variant). Potential is 0 [ASSUMED: no account]. A new kit makes the operator a legal pick at once:
+the server's `welcome.diyKitted` lists `KITTED_CHARS`, so the 自选编队 picker offers it and `room.diy` keeps it.
 
 **The fidelity rule and the checklist** above apply item by item: every skill at rank 4 and 7, every talent, every
 module at stages 1 and 3 (trait override, talent changes, stats), the range while a skill runs, the auto-cast trigger

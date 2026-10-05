@@ -17,7 +17,8 @@ export default withDefaults({
   //       S1 沙暴守卫 (SEARCH: ATK/DEF up; charged — cast with every charge stored — "特性效果在技能期间继续生效", PRTS 备注
   //       "应用蓄力时：应用技能未开启时的特性": the skill-off trait stays in force, the DEF/RES guard AND 不攻击 — she makes
   //       no attack until the skill ends, a pure guard);
-  //       S3 食噬之印 (wider range, ATK +0 % → +140 %/+200 % in 1 s steps over 20 s — PRTS 备注; charged: each attack adds a
+  //       S3 食噬之印 (wider range — data rule ACTIVE_RANGE on its x-2, the owner's rule of 2026-10-05 over the 阵法术师
+  //       SEARCH row —, ATK +0 % → +140 %/+200 % in 1 s steps over 20 s — PRTS 备注; charged: each attack adds a
   //       stack of the mark BEFORE its damage — PRTS 备注 "于攻击造成伤害前生效，多层效果之间加算叠加" — +20 % damage from
   //       her per stack, ≤ 5, so ×1.2 on the first hit and ×2.0 from the 5th, until the skill ends; one mark per enemy:
   //       another 卡涅利安 only adds stacks to it, the bonus is the setter's — PRTS 备注 popup). Talent 生命之餐 heals on

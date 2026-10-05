@@ -24,10 +24,9 @@
 // parts that belong to one skill only (琳琅诗怀雅 bombs, 菲莱 counters, 雪猎 special bullets…) check the selected skill id.
 // Triggers come from the data record of each skill (skills[i].trigger: tools/build-data.mjs resolveTrigger — the official
 // 技能策略 incl. SKILL_RANGE for a MANUAL skill's own 技能范围 and the class rows for every MANUAL skill; ACTIVE_RANGE, the
-// owner's rule of 2026-10-05, for a MANUAL basic-strategy skill whose running range strictly contains the own one), except
-// 薄绿 S1 (the 阵法术师 row SEARCH = "在初始攻击范围内存在敌人时" ⇒ the engine's DEFAULT for a phalanx, checked every
-// tick) and the kits' own automatic casts (雪猎 special bullets). Non-default modules: 能天使 MAR-Y (ASPD vs ground), 琳琅诗怀雅 MER-Y (ATK per payment),
-// 斯卡蒂 DRE-X (× vs blocked), 瑕光 GUA-X (heal × under 50 %), 伺夜 TAC-Y (×165 % trait, pack-blocked enemies taunt +1),
+// owner's rule of 2026-10-05, for a MANUAL basic-strategy or SEARCH-row skill whose running range strictly contains the
+// own one — 薄绿 S1 on its x-2), except the kits' own automatic casts (雪猎 special bullets, 伺夜 S2's pack check).
+// Non-default modules: 能天使 MAR-Y (ASPD vs ground), 琳琅诗怀雅 MER-Y (ATK per payment), 斯卡蒂 DRE-X (× vs blocked), 瑕光 GUA-X (heal × under 50 %), 伺夜 TAC-Y (×165 % trait, pack-blocked enemies taunt +1),
 // 空弦 MAR-X (fly ×, profession layer). No in-battle effect here: 忍冬 SOL-Y "首次部署时部署费用-4" (the initial
 // deployment is free) and the 集成战略-only ISW-A modules of 琳琅诗怀雅 / 空弦 (their stats and trait cost still apply).
 

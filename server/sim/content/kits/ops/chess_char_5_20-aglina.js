@@ -17,7 +17,8 @@ function enemySpUp(battle, unit, key, sp) {
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
-  // 安洁莉娜 — slower (no normal attack while the skill is off). S3 秘杖·反重力模式 (14/18 s, SEARCH): every enemy on the
+  // 安洁莉娜 — slower (no normal attack while the skill is off). S3 秘杖·反重力模式 (14/18 s; her SEARCH row widened to
+  // ACTIVE_RANGE on its y-4 by the owner's rule of 2026-10-05: an enemy inside the y-4 casts it): every enemy on the
   // field is weightless, skill range, ATK +, 4/5 targets. T1 加速力场: all allies ASPD +7. T2 兼职工作: while the skill is
   // off, all allies regenerate 20 HP/s. Module (elite): longer sluggish (trait bb, profession tunables).
   // S1 秘杖·速充模式 (duration, attack SP): ATK +; she attacks normally with S1 ("技能未开启时无法普通攻击" is only in the

@@ -452,6 +452,9 @@ const ATTACK_RANGE_CHANGE = /攻击(?:范围|距离)(?:与溅射范围)?(?:扩�
  * from a ranged hit with nobody to pull). His attack range is his own tile (0-1), so the basic strategy would not see an
  * enemy he could pull: his S2 takes SKILL_RANGE on its own 技能范围 (x-1) — the official strategy of a MANUAL skill with a
  * 技能范围 when no class row applies, "仅在技能范围内存在敌人（无视其不可选中）时释放技能" — `customRangeGrid` = that range.
+ * A DEFAULT entry is the basic strategy, so the owner's ACTIVE_RANGE rule applies on top of it (resolveTrigger; the
+ * owner's decision of 2026-10-05): 深巡 S2, whose running range 3-2 strictly contains her 2-2, casts with an enemy in the
+ * 3-2 (`rule` ACTIVE_RANGE, `rawRule` still TAKE_DAMAGE).
  */
 const TRIGGER_DEVIATIONS = Object.freeze({
   chess_char_1_04_a: { skchr_udflow_2: 'DEFAULT' },                                // 深巡 S2 行动能力剥夺
@@ -495,6 +498,14 @@ function strictlyContains(a, b) {
 }
 
 /**
+ * The rules the owner's ACTIVE_RANGE replaces (resolveTrigger), both of which wait for an enemy in the INITIAL range:
+ * DEFAULT, the basic strategy (no row, or a DEFAULT deviation of the tables — 深巡 S2, the owner's decision of
+ * 2026-10-05), and SEARCH, the 解放者 / 阵法术师 / 安洁莉娜 S2·S3 row "不受基础策略影响，在初始攻击范围内存在敌人时释放技能"
+ * (the owner's decision of 2026-10-05 too).
+ */
+const ACTIVE_RANGE_OVER = new Set(['DEFAULT', 'SEARCH']);
+
+/**
  * Resolve the auto-cast rule of a skill record (PRTS 卫戍协议/帮助 §作战阶段 技能操作 — the official skill strategies;
  * DESIGN §5.6):
  * - charId rows first (exact skillIndex, or −1 = every skill of the operator);
@@ -511,11 +522,13 @@ function strictlyContains(a, b) {
  *   unit and skill): `rule` from the table, `rawRule` the official row (a SKILL_RANGE deviation takes the skill's own
  *   range as `customRangeGrid`);
  * - and the owner's rule of 2026-10-05, a deliberate deviation like §21.29 (community report 「有的干员开技能后的攻击范围比
- *   平时攻击范围大，但是怪走到平时的攻击范围内才会开技能」): an operator's MANUAL skill left on the basic strategy (DEFAULT,
- *   no deviation of the table) whose attack range while it runs (activeAttackGrid) strictly contains the operator's own
- *   range casts as soon as an enemy — a heal skill: an injured ally — is inside that larger range: ACTIVE_RANGE,
- *   `customRangeGrid` = the running range, `rawRule` the official row. Other rows keep their rule (TAKE_DAMAGE waits for a
- *   hit, SEARCH reads the initial range by its official row, CUSTOM_RANGE / SP_FULL / … have their own).
+ *   平时攻击范围大，但是怪走到平时的攻击范围内才会开技能」): an operator's MANUAL skill on the basic strategy (DEFAULT — by
+ *   no row, or by a DEFAULT deviation of the tables: 深巡 S2's 3-2 over her 2-2) or on the SEARCH row (解放者 / 阵法术师 /
+ *   安洁莉娜: 薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3) — ACTIVE_RANGE_OVER, both by the owner's decisions
+ *   of 2026-10-05 — whose attack range while it runs (activeAttackGrid) strictly contains the operator's own range casts as
+ *   soon as an enemy — a heal skill: an injured ally — is inside that larger range: ACTIVE_RANGE, `customRangeGrid` = the
+ *   running range, `rawRule` the official row. Other rows keep their rule (TAKE_DAMAGE waits for a hit, CUSTOM_RANGE /
+ *   SKILL_RANGE / SP_FULL / … have their own range or none).
  * @param {object} skill record from buildSkill (skillId, skillType, desc, rangeGrid, bb)
  * @param {{operator?: boolean, chessId?: string, unitCharId?: string, baseGrid?: number[][]|null}} opts operator = a
  *   chess (the 技能范围 strategy is written for 干员; summons keep DEFAULT); chessId = the chess's NORMAL id
@@ -540,12 +553,12 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
     if (!skill.rangeGrid) warn(`trigger deviation ${chessId} ${skill.skillId}: SKILL_RANGE without a 技能范围`);
     return { rule: deviation, rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null };
   }
-  if (deviation) return { rule: deviation, rawRule, customRangeGrid: null };
-  const rule = TRIGGER_RENAME[rawRule] || rawRule;
-  if (rule === 'DEFAULT' && operator && manual && baseGrid?.length) {
+  const rule = deviation || TRIGGER_RENAME[rawRule] || rawRule;
+  if (ACTIVE_RANGE_OVER.has(rule) && operator && manual && baseGrid?.length) {
     const active = activeAttackGrid(skill, baseGrid);
     if (active && strictlyContains(active, baseGrid)) return { rule: 'ACTIVE_RANGE', rawRule, customRangeGrid: active };
   }
+  if (deviation) return { rule: deviation, rawRule, customRangeGrid: null };
   let customRangeGrid = null;
   if (rawRule === 'CUSTOM_RANGE_SEARCH_ENEMY') {
     const rid = ctx.ac.skillRangeDict?.[skill.skillId];
@@ -3425,7 +3438,8 @@ function validateAll(f) {
     if (c.placement !== undefined) err(`chess ${c.chessId}: placement is not a data field`);
   }
   // the deliberate trigger deviations (DESIGN §21.29, §22.10) still override an official TAKE_DAMAGE row, on the normal
-  // chess and its elite alike
+  // chess and its elite alike (a DEFAULT one may resolve to the owner's ACTIVE_RANGE on top: 深巡 S2)
+  const deviationHolds = (rule, trig) => trig.rawRule === 'TAKE_DAMAGE' && (trig.rule === rule || (ACTIVE_RANGE_OVER.has(rule) && trig.rule === 'ACTIVE_RANGE'));
   for (const [baseId, skillsOf] of Object.entries(TRIGGER_DEVIATIONS)) {
     const recs = Object.values(chess).filter((c) => c.baseId === baseId);
     if (recs.length !== 2) err(`trigger deviation ${baseId}: expected the normal and the elite record, got ${recs.length}`);
@@ -3433,18 +3447,19 @@ function validateAll(f) {
       for (const c of recs) {
         const s = (c.skills || []).find((x) => x.skillId === skillId);
         if (!s) err(`trigger deviation ${c.chessId}: no skill ${skillId}`);
-        else if (s.trigger.rawRule !== 'TAKE_DAMAGE' || s.trigger.rule !== rule) err(`trigger deviation ${c.chessId} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
+        else if (!deviationHolds(rule, s.trigger)) err(`trigger deviation ${c.chessId} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
         else if (rule === 'SKILL_RANGE' && (!s.rangeGrid?.length || JSON.stringify(s.trigger.customRangeGrid) !== JSON.stringify(s.rangeGrid))) err(`trigger deviation ${c.chessId} ${skillId}: SKILL_RANGE needs the skill's own range as customRangeGrid`);
       }
     }
   }
-  // the owner's ACTIVE_RANGE rule (2026-10-05): a MANUAL skill of the basic strategy whose running range strictly contains
-  // the record's own range, and no other
+  // the owner's ACTIVE_RANGE rule (2026-10-05): a MANUAL skill of the basic strategy (DEFAULT by its row or a deviation)
+  // or of the SEARCH row whose running range strictly contains the record's own range, and no other
   for (const c of Object.values(chess)) {
     for (const s of c.skills || []) {
       if (s.trigger?.rule !== 'ACTIVE_RANGE') continue;
-      if (s.skillType !== 'MANUAL' || s.trigger.rawRule !== 'DEFAULT' || !c.rangeGrid?.length || !strictlyContains(s.trigger.customRangeGrid || [], c.rangeGrid)) {
-        err(`chess ${c.chessId} ${s.skillId}: ACTIVE_RANGE needs a MANUAL basic-strategy skill whose customRangeGrid strictly contains the record's range`);
+      const over = TRIGGER_DEVIATIONS[c.baseId]?.[s.skillId] || s.trigger.rawRule;
+      if (s.skillType !== 'MANUAL' || !ACTIVE_RANGE_OVER.has(over) || !c.rangeGrid?.length || !strictlyContains(s.trigger.customRangeGrid || [], c.rangeGrid)) {
+        err(`chess ${c.chessId} ${s.skillId}: ACTIVE_RANGE needs a MANUAL basic-strategy or SEARCH skill whose customRangeGrid strictly contains the record's range`);
       }
     }
   }
@@ -3479,7 +3494,7 @@ function validateAll(f) {
         for (const f of forms) {
           const s = f.skills.find((x) => x.skillId === skillId);
           if (!s) err(`stand-in trigger deviation ${charId}@${statusKey(f.status)}: no skill ${skillId}`);
-          else if (s.trigger.rawRule !== 'TAKE_DAMAGE' || s.trigger.rule !== rule) err(`stand-in trigger deviation ${charId}@${statusKey(f.status)} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
+          else if (!deviationHolds(rule, s.trigger)) err(`stand-in trigger deviation ${charId}@${statusKey(f.status)} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
         }
       }
     }

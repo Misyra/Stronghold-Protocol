@@ -432,20 +432,22 @@ test('3_06 菲莱 S1 灵河护佑 (TAKE_DAMAGE): HP +, clears her element gauges
   }
 });
 
-test('3_08 薄绿 S1 风语 (阵法术师 技能1: "初始攻击范围内出现敌人后自动释放"): wider range, attacks at attack@atk_scale; guard/taunt rules kept', () => {
+test('3_08 薄绿 S1 风语 (阵法术师 row SEARCH "在初始攻击范围内存在敌人时", widened to its running x-2 by the owner\'s ACTIVE_RANGE rule of 2026-10-05): wider range, attacks at attack@atk_scale; guard/taunt rules kept', () => {
   for (const id of BOTH('chess_char_3_08_a')) {
     const b = SB(id, 'skchr_mint_1'), t0 = TB(id, 0);
-    assert.equal(LD(id, 'skchr_mint_1').skill.trigger?.rule, 'SEARCH', 'data: the phalanx S1 row');
-    const h = makeBattle({ defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_in: dummy('enemy_in') } }, timeLimit: 60, hooks: ['damaged'], captureNoisy: true,
-      units: [U(id, 'skchr_mint_1', 10, 4)], enemies: [{ key: 'enemy_d', pos: [11, 6] }] }); // [1,2]: x-2 only
+    const sk = LD(id, 'skchr_mint_1').skill;
+    assert.equal(sk.trigger?.rule, 'ACTIVE_RANGE', 'data: the phalanx row (rawRule SEARCH) on the x-2 she attacks with');
+    assert.deepEqual(sk.trigger.grid, sk.rangeGrid, 'trigger grid = the S1 x-2');
+    const h = makeBattle({ defs: { enemies: { enemy_d: dummy('enemy_d'), enemy_far: dummy('enemy_far') } }, timeLimit: 60, hooks: ['damaged'], captureNoisy: true,
+      units: [U(id, 'skchr_mint_1', 10, 4)], enemies: [{ key: 'enemy_far', pos: [10, 7] }] }); // [0,3]: outside the x-2 too
     const u = h.unit(id);
     h.run(1);
     assert.equal(atkHits(h, u).length, 0, 'phalanx: no attack while the skill is off');
     fill(u);
     h.run(2);
-    assert.equal(u.skill.activations, 0, 'an enemy outside her INITIAL range does not open it (not a whole-field search)');
-    h.spawn('enemy_in', { pos: [10, 6] }); // [0,2]: initial range
-    assert.ok(h.runUntil(() => u.skill.active, 1), 'an enemy inside her initial range opens it at once (she never attacks before)');
+    assert.equal(u.skill.activations, 0, 'an enemy outside the x-2 does not open it (not a whole-field search)');
+    h.spawn('enemy_d', { pos: [11, 6] }); // [1,2]: the x-2 only, outside her initial x-1
+    assert.ok(h.runUntil(() => u.skill.active, 1), 'an enemy inside the S1 x-2 opens it at once (she never attacks before)');
     assert.ok(u.findBuff('talent:mint_taunt'));
     approx(u.s.taunt, (u.base.tauntLevel ?? 0) + t0.taunt_level);
     h.run(3);

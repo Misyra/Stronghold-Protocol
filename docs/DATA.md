@@ -190,7 +190,7 @@ Top level: `{ season, seasonName, modes, economy, lpCapPerRound, bossOvertimeAft
 | `bb`, `bbStr` | `{"atk":1,"base_attack_time":-0.3,"attack@trigger_time":14}` | kit input (DESIGN §5.6) |
 | `rangeId`, `rangeGrid` | `null` | skill range override |
 | `prefabId`, `overrideTokenKey` | | |
-| `trigger` | `{"rule":"DEFAULT","rawRule":"DEFAULT","customRangeGrid":null}` | auto-cast rule (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; §2.2). `rule` ∈ `DEFAULT` (basic strategy), `SKILL_RANGE` (a MANUAL skill with a 技能范围 of its own: `customRangeGrid` = its `rangeGrid`, `rawRule` `DEFAULT` — no official row), `ACTIVE_RANGE` (the owner's deliberate deviation of 2026-10-05: a MANUAL skill left on the basic strategy whose attack range while it runs strictly contains the operator's own range: `customRangeGrid` = that running range, `rawRule` `DEFAULT`), `TAKE_DAMAGE` (every MANUAL 重装 skill but seven: 深巡 / 雷蛇 S2, 号角 S2 / S3 and 灰毫 S1 / S2 are `DEFAULT` with `rawRule` `TAKE_DAMAGE` — a deliberate deviation, `tools/build-data.mjs TRIGGER_DEVIATIONS`, DESIGN §21.29 — and 余 S2 is `SKILL_RANGE` with `rawRule` `TAKE_DAMAGE` and `customRangeGrid` its x-1, DESIGN §22.10), `SP_FULL` (official `ALWAYS`: 执旗手 / 战术家 / 吟游者 MANUAL skills), `CUSTOM_RANGE` (official `CUSTOM_RANGE_SEARCH_ENEMY`, uses `customRangeGrid`), `SEARCH` (解放者 / 阵法术师 MANUAL skills, 安洁莉娜 S2/S3), `MLYSS_WTRMAN` (缪尔赛思), `GDGLOW_SKILL_2` (荒芜拉普兰德, 纯烬艾雅法拉 S3: "全场存在可选目标时释放技能"). |
+| `trigger` | `{"rule":"DEFAULT","rawRule":"DEFAULT","customRangeGrid":null}` | auto-cast rule (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; §2.2). `rule` ∈ `DEFAULT` (basic strategy), `SKILL_RANGE` (a MANUAL skill with a 技能范围 of its own: `customRangeGrid` = its `rangeGrid`, `rawRule` `DEFAULT` — no official row), `ACTIVE_RANGE` (the owner's deliberate deviation of 2026-10-05: a MANUAL skill on the basic strategy — 深巡 S2's deviation included — or on the `SEARCH` row whose attack range while it runs strictly contains the operator's own range: `customRangeGrid` = that running range, `rawRule` the official row, `DEFAULT` / `SEARCH` / 深巡's `TAKE_DAMAGE`), `TAKE_DAMAGE` (every MANUAL 重装 skill but seven: 深巡 / 雷蛇 S2, 号角 S2 / S3 and 灰毫 S1 / S2 are `DEFAULT` with `rawRule` `TAKE_DAMAGE` — a deliberate deviation, `tools/build-data.mjs TRIGGER_DEVIATIONS`, DESIGN §21.29; 深巡 S2 then `ACTIVE_RANGE` on its 3-2 — and 余 S2 is `SKILL_RANGE` with `rawRule` `TAKE_DAMAGE` and `customRangeGrid` its x-1, DESIGN §22.10), `SP_FULL` (official `ALWAYS`: 执旗手 / 战术家 / 吟游者 MANUAL skills), `CUSTOM_RANGE` (official `CUSTOM_RANGE_SEARCH_ENEMY`, uses `customRangeGrid`), `SEARCH` (解放者 / 阵法术师 MANUAL skills, 安洁莉娜 S2/S3 — but those whose running range is larger, `ACTIVE_RANGE`: 薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3), `MLYSS_WTRMAN` (缪尔赛思), `GDGLOW_SKILL_2` (荒芜拉普兰德, 纯烬艾雅法拉 S3: "全场存在可选目标时释放技能"). |
 
 ### 2.1 Combat classification heuristic (`dmgType` / `attackKind` / `projectile` / `canHitFly`)
 - `dmgType`: MEDIC (except `incantationmedic`) and `bard` → `heal`; trait text containing 法术伤害 or profession CASTER → `arts`; else `phys`.
@@ -213,10 +213,12 @@ everything needed to resolve a unit for `(chessId, skillIndex, moduleId)` (`simd
   MANUAL operator skill whose `rangeId` is a 技能范围 — its description is not an attack-range change ("攻击范围扩大 /
   改变 / 缩小 / 缩短", "攻击距离+N / 加长 / 缩短") — is `SKILL_RANGE` with `customRangeGrid` = its `rangeGrid`; summons keep
   DEFAULT. `customRangeGrid` of `CUSTOM_RANGE` from `skillRangeDict[skillId]`. Last, the owner's rule of 2026-10-05 (a
-  deliberate deviation): a MANUAL operator skill still on DEFAULT (no row, no `TRIGGER_DEVIATIONS` entry) whose attack
+  deliberate deviation): a MANUAL operator skill on DEFAULT (no row, or a DEFAULT entry of `TRIGGER_DEVIATIONS` /
+  `STANDIN_TRIGGER_DEVIATIONS` — 深巡 S2) or on the `SEARCH` row (the owner's decision of 2026-10-05 too) whose attack
   range while it runs — its `rangeId` grid when the text is an attack-range change, else the operator's range grown by
   `ability_range_forward_extend`; never "被动效果：攻击范围扩大" (引星棘刺 S3) — strictly contains the record's own
-  `rangeGrid` is `ACTIVE_RANGE` with `customRangeGrid` = that running range (`activeAttackGrid`; stand-in forms alike). (Research 03 Addendum C1 read the rows'
+  `rangeGrid` is `ACTIVE_RANGE` with `customRangeGrid` = that running range (`activeAttackGrid`, `ACTIVE_RANGE_OVER`;
+  stand-in forms alike). (Research 03 Addendum C1 read the rows'
   `skillIndex 0` as "skill 1 only" after BWIKI's transcription; superseded by user playtest #6.)
 - `modules[]` (golden, `equipLevel > 0`): every **ADVANCED** `uniequip` of the character (the INITIAL `uniequip_001_*`
   is "no module" = choice `'none'`), in official order, at the chess `equipLevel` (1, T6: 3):
@@ -501,11 +503,12 @@ Glyph legend (`rows`):
 5. **Every non-DIY chess (258 records: 129 normal + 129 golden) has a resolvable default skill, stats and range** — no
    skill anomalies.
 6. **Skill triggers** (§2.2): the class rows cover every MANUAL skill of the class (all 重装 MANUAL skills are
-   `TAKE_DAMAGE` but the six of the deliberate deviation, DESIGN §21.29, which are `DEFAULT` with `rawRule` `TAKE_DAMAGE`, and 余 S2, `SKILL_RANGE` on its x-1 (DESIGN §22.10); 薄绿 / 卡涅利安 / 蜜蜡 / 玛恩纳 S2 `SEARCH`; 伺夜 / 魔王 / 浊心斯卡蒂 S3 `SP_FULL`) and no AUTO skill (古米 /
+   `TAKE_DAMAGE` but the six of the deliberate deviation, DESIGN §21.29, which are `DEFAULT` with `rawRule` `TAKE_DAMAGE` (深巡 S2 then `ACTIVE_RANGE`), and 余 S2, `SKILL_RANGE` on its x-1 (DESIGN §22.10); 薄绿 / 卡涅利安 / 蜜蜡 S2 and 玛恩纳 S1 `SEARCH`; 伺夜 / 魔王 / 浊心斯卡蒂 S3 `SP_FULL`) and no AUTO skill (古米 /
    雷蛇 / 瑕光 / 塞雷娅 / 号角 / 信仰搅拌机 S1, 伺夜 S1/S2, 魔王 S1); 13 MANUAL skills (26 normal + elite records) with
-   their own 技能范围 are `SKILL_RANGE` (德克萨斯 S2, 凛御银灰 S2, 锏 S2/S3, 异客 S3, 忍冬 S2, 焰尾 S2 …); 余 S2 joins them by the §22.10 deviation, 14 skills / 28 records in the data; 33 MANUAL skills (66 records) whose
+   their own 技能范围 are `SKILL_RANGE` (德克萨斯 S2, 凛御银灰 S2, 锏 S2/S3, 异客 S3, 忍冬 S2, 焰尾 S2 …); 余 S2 joins them by the §22.10 deviation, 14 skills / 28 records in the data; 39 MANUAL skills (78 records) whose
    running attack range strictly contains the operator's own are `ACTIVE_RANGE` (the owner's rule of 2026-10-05; 莫斯提马 S3,
-   银灰 S3, 史尔特尔 S2 / S3 …), plus 预备干员 Touch S2 / S3 and Raidian S3 in `backups.json`.
+   银灰 S3, 史尔特尔 S2 / S3 …; from the `SEARCH` row 薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3, and 深巡 S2 over
+   its deviation), plus 预备干员 Touch S2 / S3 and Raidian S3 in `backups.json`.
 7. **Trait candidate `rangeId`** (送葬人, 松果 1-3; 风丸, 归溟幽灵鲨 x-4) is the trait-effect area, exposed as
    `trait.rangeGrid`, not the attack range.
 8. **Passive skills** use numeric `spType 8` in skill_table → normalized to `ON_DEPLOY`.

@@ -135,7 +135,7 @@ export function tempRowFrame(a, b, { labelW = 0, gap = 8, vw = Infinity } = {}) 
 }
 
 /**
- * What the temp row's label says will happen to its pieces (server/match/PlayerState.js tempDue): a piece is resolved
+ * What the temp row's label says will happen to its pieces (server/match/player/basics.js tempDue): a piece is resolved
  * at the end of the first prep in which the player can act on it. Not ready (or outside PREP): at the end of this / the
  * coming prep, and 准备就绪 waits for the row to be cleared. Ready in PREP: Ready is refused while the row holds pieces,
  * so whatever lies there arrived after it — kept through the NEXT prep (cancelling Ready makes it due at this one).

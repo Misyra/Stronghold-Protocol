@@ -11,3 +11,7 @@ b48a67caec5ba0699097e21f3db4d4dbb35a2aed
 560328cacc863c26d07780096527e255ebf62bc4
 # feedback5 R4: kits/tier1..6.js → kits/ops/ (one file per kit), kits/shared/, kits/index.js
 1169102d46742474bf0f0189d467c791984d9e05
+# feedback5 R2: server/match/Match.js → server/match/match/*.js (the Match methods, verbatim; shared constants in common.js)
+1ca4936f0a541cabda9acae5fe6f9213df4b5e6a
+# feedback5 R2: server/match/PlayerState.js → server/match/player/*.js (the PlayerState methods, verbatim)
+64443b4aab3126d6703509b8c47e9cfa58b75157

@@ -681,7 +681,7 @@ async function mockRequest(t, f = {}) {
         const who = f.fieldId.replace(/^n:/, '');
         if (who !== ME) {
           const units = shuffle(S.pool).slice(0, 6).map((c, i) => ({ id: 900 + i, kind: 'op', side: 'ally', ownerId: who, defId: c.chessId, name: c.name, tier: c.tier, golden: i === 0, spine: c.charId, avatar: c.assets.avatar, x: [3, 4, 5, 7, 8, 5][i], y: [9, 9, 10, 11, 12, 12][i], facing: 1, maxHp: c.stats.maxHp }));
-          // like server/match/Match.js prepFieldMeta: a read-only prep board with THEIR coming enemies (the pen shows them)
+          // like server/match/match/views.js prepFieldMeta: a read-only prep board with THEIR coming enemies (the pen shows them)
           const theirs = S.priv.nextEnemies.filter((e) => e.source !== 'bounty').slice(0, 3).map((e) => ({ ...e, gate: 'upper', count: e.count + 1 }));
           store.patch('match', { field: { fieldId: f.fieldId, kind: 'normal', rect: { ...GEO.NORMAL_RECT }, stageId: pub.stageId, units, prep: true, nextEnemies: theirs } });
         }

@@ -318,7 +318,7 @@ The public mirror (ArknightsAssets2 `cn`, `ui/emoticon/theme/[uc]<themeId>/icon/
    - `g.move {uid, to:{area:'board',row,col}, dir}` with `dir ∈ 'UP'|'RIGHT'|'DOWN'|'LEFT'`; the server defaults to `'RIGHT'` when absent, for bots and old clients.
    - `g.art {itemUid,row,col,dir}`.
    - Broadcast `dir` in the board state (public and private views, snapshot `UnitInfo.dir`).
-2. **`server/match/PlayerState.js`.**
+2. **`server/match/PlayerState.js`** (the methods named here: `server/match/player/placement.js`, `items.js`).
    - Store `piece.dir`, preserved across rounds.
    - In `_moveChessToBoard` and `_moveTokenToBoard`, `if (occ === piece) return OK;` must become "update `piece.dir`, recompute, OK". This is the in-place re-orient.
    - Swaps keep each piece's own dir.
@@ -363,7 +363,7 @@ The public mirror (ArknightsAssets2 `cn`, `ui/emoticon/theme/[uc]<themeId>/icon/
 4. Prep: the same avatar → 前往查看 flow (read-only board + pen).
 5. 联防 and FA fields: the ‹ › pill cycles LEFT half / 全景 / RIGHT half, with captions "你自己" / "👁 name#" / "全景". Non-helpers are auto-moved to the 联防 field as observers. In FA the other pair's field is not selectable.
 6. Eliminated players: a dialog offers 继续观战 (auto-observe the first live field, free switching) or 退出.
-7. `server/match/Match.js watch()` must enforce the same rules (prep: any teammate; combat: only if your own field finished; FA: own pair only; dead: anything).
+7. `Match.watch()` (`server/match/match/watch.js`) must enforce the same rules (prep: any teammate; combat: only if your own field finished; FA: own pair only; dead: anything).
 
 ### 6.4 Combat computation model (user item 5, architecture) [proposal based on §3.2]
 

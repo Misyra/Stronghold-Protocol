@@ -9,7 +9,7 @@
 // the verdict then came from the pool after the final b.result, whose per-player damage is rounded: rounding up
 // emptied the dust → 胜利 (what the user saw), rounding down → 失败.
 //
-// Now (sim/constants.js BOSS_POOL_MIN_HP, finalAssault.js SharedBossPool, sim/spec.js LocalBossPool, Match.js): a pool
+// Now (sim/constants.js BOSS_POOL_MIN_HP, finalAssault.js SharedBossPool, sim/spec.js LocalBossPool, match/reports.js): a pool
 // never holds less than 1 HP (the hit that would leave less takes the rest; a browser pool reading below 1 is 0), so
 // the leader dies on every field as soon as the pool shows 0 and the fight ends; the first end condition the server
 // registers decides the verdict (pool 0 → victory, team LP 0 → defeat: PRTS 卫戍协议：盟约 下半 "…使目标生命值扣除至0，

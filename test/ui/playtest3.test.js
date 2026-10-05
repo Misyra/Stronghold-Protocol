@@ -2,7 +2,7 @@
 //   2  the own LP drops live while the own battle's enemies enter the blue gate — pendingLoss / liveLp (the settle
 //      rule min(lpCapPerRound, counted leaks), reset when the settled m.private lands, 联防中 during 联防), the team
 //      panel rows (rowLp: own live value, teammates' m.public players[].pendingLp), the LP tower's −N tick, and the
-//      server's pendingLp (server/match/Match.js _pendingLpView)
+//      server's pendingLp (server/match/match/views.js _pendingLpView)
 //   3  the temp overflow row (临时整备区): the ready button's visible reason, the row's frame geometry (tempRowFrame)
 //   8  the operator's own effect (特质 / garrison) right under the detail card's header (CHESS_SECTIONS, rendered order)
 //   9  no spinning busy indicators next to texts: no wait / progress cursors, the button's busy bar instead of a

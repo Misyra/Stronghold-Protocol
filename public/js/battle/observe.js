@@ -1,5 +1,5 @@
 // Observing rules and labels of client-side combat (research 09 §3.1 / §6.3, DESIGN §14 "Spectating") — pure helpers
-// for the game screen, the team panel and the combat HUD (mirror of server/match/Match.js _watchClient):
+// for the game screen, the team panel and the combat HUD (mirror of server/match/match/watch.js _watchClient):
 //   * prep (休整期): tap a teammate → 前往查看 → their board (read-only);
 //   * own normal battle running: no observing ("当前无法查看");
 //   * own battle over: "⌛ 作战结束，等待队友完成作战" + the teammates' progress; tap a teammate → 前往查看 → a local

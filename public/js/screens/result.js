@@ -22,7 +22,7 @@ import { audio } from '../audio.js';
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 // The first seven present are shown (+ remaining LP = a 4×2 grid); the title (评语) stats come first.
-// `gold` is the funds a player SPENT (server/match/PlayerState.js spend(); the 挥金如土 title stat).
+// `gold` is the funds a player SPENT (server/match/player/economy.js spend(); the 挥金如土 title stat).
 const STAT_ROWS = [
   ['dmgDealt', '造成伤害'], ['kills', '击倒敌人'], ['bossDamage', '领袖伤害'], ['activatedLayers', '盟约层数'],
   ['merges', '晋升次数'], ['itemsEquipped', '配发装备'], ['gold', '消耗资金'], ['perfectRounds', '完美作战'],

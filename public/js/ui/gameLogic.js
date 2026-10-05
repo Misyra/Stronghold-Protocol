@@ -4,8 +4,8 @@
 // light legal tiles while dragging; the server stays authoritative and may still refuse a move.
 //
 //   Board = own normal field (GEO.FIELD rows 9–12, cols 2–10). Melee chess stand on `melee` deploy tiles
-//   (LOW, buildable ALL/MELEE) — elite 歌蕾蒂娅 carrying HOK-Y (shared/highGround.js, the player's loadout) on any
-//   deploy tile, the 高台 included (piecePosition 'ALL'); ranged chess on `melee ∪ rangedOnly` (stages.json → deployTiles.normal,
+//   (LOW, buildable ALL/MELEE) — a melee chess whose trait reads 「可以放置于远程位」 (shared/highGround.js: 歌蕾蒂娅, 崖心,
+//   见行者, any module) on any deploy tile, the 高台 included (piecePosition 'ALL'); ranged chess on `melee ∪ rangedOnly` (stages.json → deployTiles.normal,
 //   derived from the tile legend when missing — the legend's `buildable` is the effective type: 深水区 tile_deepsea
 //   refuses deployment, PRTS 深水区 地形信息 "拒绝部署（待补充）", player report #3 after 0.1.0). Tokens follow their
 //   own `position`; a summon whose text reads "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`: 伺夜's 狼群,

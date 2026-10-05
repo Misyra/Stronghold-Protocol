@@ -83,6 +83,7 @@
   "移除 AI 队友": "Remove AI Teammate",
   "已复制同盟密钥 {code}": "Alliance Key {code} copied",
   "已复制邀请链接": "Invite link copied",
+  "{name}邀请你加入卫戍协议：盟约【{difficulty}】": "{name} invites you to Stronghold Protocol: Alliance [{difficulty}]",
   "复制失败，请手动复制": "Copy failed, please copy manually",
   "同盟密钥": "Alliance Key",
   "同盟密钥 {code}": "Alliance Key {code}",

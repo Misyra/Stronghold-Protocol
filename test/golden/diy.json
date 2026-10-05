@@ -2095,7 +2095,7 @@
         "enemy_1200_msfjin": [11,8,3,0,246]
       },
       "hooks": [1,314,6144,1470,1470,1969,2082,0,212,305,25,30,0,33234,6218,91,290,93,1,212,0,0,11],
-      "events": {"atk":1512,"deploy":22,"die":212,"dmg":2076,"fx":273,"leak":93,"skill":48,"spawn":304,"status":488},
+      "events": {"atk":1512,"deploy":22,"die":212,"dmg":2076,"fx":273,"leak":93,"skill":64,"spawn":304,"status":488},
       "fx": {"aoe":56,"displace":1,"dodge":22,"dp":63,"slash":52,"summon":79},
       "snaps": "cf051c06 587dcba3 94ed6adb bba4fd81 815661ad cbf17744 a8d0c19b 32b88916 1e8bde83 51a1d669 b023b185 df725cf4 bf4681aa 2c372e04 1a001766 3d81d3d6 7f8effe5 11826d80 b4fb05d0 0eed6d6c 65f6503d"
     },
@@ -2134,7 +2134,7 @@
       ],
       "enemies": {"enemy_1019_jshoot_2":[57,0,57,29550,4113],"enemy_1299_ymkilr_2":[27,0,27,14576,26756],"enemy_1422_lrsldr_2":[39,0,39,4739,45577]},
       "hooks": [1,157,6557,277,277,283,291,7,33,156,4,24,0,6272,192,29,123,123,1,33,0,0,0],
-      "events": {"atk":278,"deploy":34,"die":33,"dmg":269,"fx":19,"heal":7,"leak":123,"skill":8,"spawn":135,"status":92},
+      "events": {"atk":278,"deploy":34,"die":33,"dmg":269,"fx":19,"heal":7,"leak":123,"skill":39,"spawn":135,"status":92},
       "fx": {"aoe":2,"displace":15,"spGain":2},
       "snaps": "21be44ba 23e43266 29788d55 2f1037e9 363ad836 051606c5 26acdfeb 8dc54607 7a7c6a86 7ebe59b3 d1661fdb 203d434c 2e82423b f7e9ffc1 7a1afa0e 8998df31 0ca38cb6 f3ac5677 87bcc7cf 0f5f3879 0e082cac 62241cef"
     }

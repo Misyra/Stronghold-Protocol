@@ -39,21 +39,9 @@ export default withDefaults({
           },
         }),
         skchr_ines_3: () => ({
-          kind: 'passive',
+          kind: 'duration', duration: s3Dur, spCost: 0, spType: 'none', trigger: 'NEVER',
           onStart({ battle, unit }) {
-            if (!unit.mem.inesS3Placed) {
-              // 首次部署: place a 影哨 (her talent's sentry, left on retreat) and leave; 立刻刷新再部署时间 — the redeploy
-              // (auto, paying her DP cost like every redeploy) follows as soon as it is affordable
-              unit.mem.inesS3Placed = true;
-              battle.after(0, () => {
-                if (!unit.alive || !unit.deployed) return;
-                battle.retreat(unit, { reason: 'retreat' });
-                unit.respawnAt = battle.time;
-                battle.fx('sentry', { x: unit.x, y: unit.y, id: unit.id });
-              }, { owner: unit });
-              return;
-            }
-            battle.addBuff(unit, { key: 'ines:s3', duration: s3Dur, mods: { atkPct: num(bb.atk) }, visible: true });
+            battle.addBuff(unit, { key: 'ines:s3', mods: { atkPct: num(bb.atk) }, visible: true });
             // 立刻收回影哨: the sentry flies back to her and hits ≤ max_target enemies on its way (within
             // projectile_range of the segment, [ASSUMED] nearest to its start first)
             const from = unit.mem.inesSentryAt;
@@ -77,6 +65,7 @@ export default withDefaults({
             }
             battle.fx('beam', { x: ax, y: ay, tx: bx, ty: by, id: unit.id });
           },
+          onEnd({ battle, unit }) { battle.removeBuff(unit, 'ines:s3'); },
         }),
       }),
       skill: {
@@ -146,11 +135,27 @@ export default withDefaults({
       ],
       install(battle, unit) {
         if (S3) {
+          battle.on('deploy', (c) => {
+            if (c.unit !== unit || c.move) return;
+            if (unit.mem.inesS3Placed) {
+              unit.skill.activate('deploy');
+              return;
+            }
+            // 首次部署 only places a 影哨 and retreats; it is not a skill activation.
+            // 立刻刷新再部署时间: redeploy as soon as its DP cost is affordable.
+            unit.mem.inesS3Placed = true;
+            battle.after(0, () => {
+              if (!unit.alive || !unit.deployed) return;
+              battle.retreat(unit, { reason: 'retreat' });
+              unit.respawnAt = battle.time;
+              battle.fx('sentry', { x: unit.x, y: unit.y, id: unit.id });
+            }, { owner: unit });
+          }, { owner: unit });
           // where the talent's 影哨 stays (every leave but an expiry), for the recall of the next deployment
           battle.on('death', (c) => { if (c.unit === unit && c.reason !== 'expired') unit.mem.inesSentryAt = { x: unit.x, y: unit.y }; }, { owner: unit, priority: 5 });
           // 技能期间每对一个敌人造成伤害就获得1点部署费用
           battle.on('damaged', (c) => {
-            if (c.source !== unit || c.target.side !== 'enemy' || !(c.amount > 0) || c.type === 'element' || !unit.findBuff('ines:s3')) return;
+            if (c.source !== unit || c.target.side !== 'enemy' || !(c.amount > 0) || c.type === 'element' || !unit.skill?.active || !(unit.skill.timeLeft > 0)) return;
             battle.addDp(unit.ownerId, num(bb.cost, 1));
           }, { owner: unit });
         }

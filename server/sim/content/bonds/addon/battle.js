@@ -10,7 +10,8 @@
 //                      which also ignore power_def_penetrate DEF / power_magic_resist_penetrate RES (defIgnorePct / resIgnorePct)
 //   迅捷 swiftShip     member skill end → p = min(1, base_prob + prob_per_stack·L): +normal_sp SP; L ≥ power_bond_stack_cnt:
 //                      every operator's skill end rolls p again for +power_sp (members roll both, research [ASSUMED])
-//   灵巧 skillfulShip  aura: members + operators on their 4 (L ≥ 40: 8) adjacent tiles ASPD +(base + per·L), once per unit
+//   灵巧 skillfulShip  aura: members + operators on their 4 (L ≥ 40: 8) adjacent tiles ASPD +(base + per·L), once per unit;
+//                      killed members keep providing it from their body tile until redeploy; retreat / forcedExit do not
 //   奥术 arcaneShip    member arts damage → target arts taken ×(base + per·L) for weak_duration s; tier 2: ×power_weak_scale
 //                      when the target is below hp_ratio at application. ONE instance per target whatever applies it — the
 //                      two players of a pair field compete for it, the strongest wins (battle.applyStrongest, 同名效果取最高:
@@ -31,7 +32,7 @@
 //                      + 脆弱 ×damage_scale for weak[limit] s
 //   助力 deputShip     all operators DEF +(base + per·L), redeploy time ×(1 + respawn_time)
 //   突袭 raidShip      member idle ≥ no_attack_duration s (or skill ready — a passive skill that is on counts, GitHub
-//                      #49) with no enemy in range → "保留技力立即再部署"
+//                      #49, and so does a deploy-timed skill while it runs, #109) with no enemy in range → "保留技力立即再部署"
 //                      next to the most advanced ground enemy it can reach: on a free tile its position may be deployed
 //                      on from which its range covers that enemy (GitHub issue #51 [ASSUMED]: the first of the 8 most
 //                      advanced that has such a tile; none → it stays and the next poll looks again, never a jump that
@@ -220,10 +221,14 @@ function updateAura(battle, st) {
   next.clear();
   const offs = st.auraWide ? N8 : N4;
   for (const m of st.members[ID.skillful]) {
-    if (!onField(m)) continue;
-    next.add(m);
+    const active = onField(m);
+    // isDown also covers voluntary / forced exits since v0.1.2. Only a kill keeps the aura.
+    if (!active && (m.removeReason !== 'killed' || !battle.isDown(m))) continue;
+    if (active) next.add(m);
+    // A knocked-out member still covers neighbours around the tile where it waits to redeploy.
+    const [r, c] = active ? [m.tileR, m.tileC] : battle.restTile(m);
     for (const [dr, dc] of offs) {
-      const a = battle.unitAt(m.tileR + dr, m.tileC + dc);
+      const a = battle.unitAt(r + dr, c + dc);
       if (a && a.kind === 'op' && a.ownerId === st.pid && onField(a)) next.add(a);
     }
   }
@@ -317,8 +322,12 @@ function raidPoll(battle, st) {
     // 缄默德克萨斯 jumping within her passive's 10 s with no enemy in range). The engine keeps a passive on for the whole
     // deployment, so such a member may jump whenever nothing is in its range [ASSUMED: "技能就绪" of a passive = the
     // skill being on]; the landing rule below keeps it from hopping. Here only — the global `ready` stays as it is.
+    // A deploy-timed skill (#109: kind 'duration' with no SP — spType 'none' — run from the deployment: 宴 S2, 斯卡蒂 S2,
+    // 伊内丝 S3, 缄默德克萨斯 S1–S3, 耀骑士临光 S2, the generic "部署后…N秒内" passives) counts the same way while its
+    // window runs — the 10 s of the reporter's footage; once it has ended only the idle trigger is left.
     const sk = u.skill;
-    const ready = !!(sk && !sk.noSkill && (sk.ready || (sk.kind === 'passive' && sk.active)) && !(sk.active && sk.isTimed));
+    const deploySkillOn = !!(sk && sk.active && (sk.kind === 'passive' || sk.spType === 'none'));
+    const ready = !!(sk && !sk.noSkill && ((sk.ready && !(sk.active && sk.isTimed)) || deploySkillOn));
     const idleOk = battle.time - since >= idle - 1e-9;
     if (!(ready || idleOk)) continue;
     if (battle.enemiesInKeys(u.rangeKeys || [], u, u.profile).length) continue;

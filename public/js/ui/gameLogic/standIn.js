@@ -90,8 +90,8 @@ export function deployedRecord(chess, priv, getChess, backups) {
 }
 
 /**
- * The module id a deployed piece carries (the placement rule of elite 歌蕾蒂娅's HOK-Y reads it): a stand-in's backup
- * module, else the player's loadout.
+ * The module id a deployed piece carries: a stand-in's backup module, else the player's loadout. (The 高台 rule no
+ * longer reads it: since the owner's decision of 2026-10-05 it is the trait, whatever the module — shared/highGround.js.)
  */
 export function deployedModuleId(chess, priv, getChess, backups) {
   if (!isObj(chess)) return null;

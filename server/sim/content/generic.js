@@ -28,9 +28,10 @@
 //   "附带…凋亡/灼燃/神经损伤" + ep_damage_ratio ⇒ element damage on hit (× damage dealt when the text says "伤害N%的…损伤",
 //   else × ATK); "屏障" + shield_max_hp_ratio / hp_ratio ⇒ self shield at start decaying over its duration (砾, 新约能天使);
 //   "立即流失N%当前生命" + hp_ratio ⇒ self HP loss at start (宴, 风丸); hp_ratio + "恢复/回复…生命" ⇒ self heal at start.
-// Passive skills only apply stat mods (for bb.duration s when the text says "N秒内": 宴; for the skill's own duration
-//   when an ON_DEPLOY passive says "部署后…" without one in its blackboard: 一击即退, duration 10 — PRTS 技能 持续 10) and
-//   the self/counter effects above — their scales describe procs (bombs, sword rain, counters) that need a kit.
+// Passive skills with stat mods + bb.duration + "N秒内" use a deployment duration (宴), and so do the ON_DEPLOY passives that
+//   say "部署后…" with the skill's own duration and none in their blackboard (一击即退, duration 10 — PRTS 技能 持续 10):
+//   kind 'duration', activateOnDeploy (#109); other passives apply stat mods and the self/counter effects above — their
+//   scales describe procs (bombs, sword rain, counters) that need a hand-authored kit.
 // "立即获得N点部署费用" + cost ⇒ +cost DP for the player at the start (冲锋号令); an AUTO skill that does nothing else
 //   fires as soon as its SP is full (as 德克萨斯's kit casts the same skill: kits/ops/chess_char_1_08-texas.js).
 // genericTalents(def): the talents a generic kit can apply exactly — an unconditional stat line ("攻击力+8%",
@@ -112,10 +113,8 @@ export function genericSkillSpec(sk, bb = sk?.bb ?? {}, def = null) {
   if (!sk) return null;
   const g = getter(bb);
   const ga = attackGetter(bb);
-  const kind = genericKind(sk, bb);
+  let kind = genericKind(sk, bb);
   const desc = String(sk.description || '');
-  const passive = kind === 'passive';
-  const timed = kind === 'duration' || kind === 'ammo' || kind === 'toggle';
   // "受到攻击时…造成…" numbers belong to a counter effect (the operator's own, or an ally's: 刺玫 "该角色受到攻击时")
   const counterCtx = /受到(敌人的)?攻击时/.test(desc);
   const counterText = counterCtx && !/该(角色|干员|单位)受到攻击时/.test(desc);
@@ -154,9 +153,21 @@ export function genericSkillSpec(sk, bb = sk?.bb ?? {}, def = null) {
   set('resIgnoreFlat', g('magic_resist_penetrate_fixed'));
   set('defIgnoreFlat', g('def_penetrate_fixed'));
 
+  // Effect inference keeps the original kind; a deployment window only changes the lifecycle.
+  const passive = kind === 'passive';
+  const timed = kind === 'duration' || kind === 'ammo' || kind === 'toggle';
+  // a passive stat buff limited in time ("部署后…在14秒内攻击力+65%", 宴) runs as a duration skill from every deployment;
+  // so does an ON_DEPLOY passive whose duration is the skill's own (一击即退 "部署后攻击力+X%，防御力+Y%", duration 10, no bb key)
+  const ownDuration = num(bb.duration) === undefined && sk.duration > 0 && /^部署后/.test(desc) ? sk.duration : 0;
+  const passiveTimed = passive && Object.keys(mods).length
+    ? (num(bb.duration) > 0 && /\d+(\.\d+)?秒内/.test(desc) ? num(bb.duration) : ownDuration)
+    : 0;
+  if (passiveTimed) kind = 'duration';
+
   // ---- targeting / attack override (never for passives: their scales describe procs)
   const targeting = {};
   const attack = {};
+  if (passiveTimed && /攻击[^。；]*(造成|变为|变成)[^。；]*法术伤害|伤害类型变为法术/.test(desc)) attack.dmgType = 'arts';
   const mt = ga('max_target');
   if (!passive && mt !== undefined && mt > 0) targeting.maxTargets = Math.floor(mt);
   const ext = g('ability_range_forward_extend');
@@ -278,17 +289,12 @@ export function genericSkillSpec(sk, bb = sk?.bb ?? {}, def = null) {
     id: sk.id,
     name: sk.name,
     kind,
-    duration: kind === 'duration' ? sk.duration : (kind === 'ammo' && sk.duration > 0 ? sk.duration : undefined),
+    duration: kind === 'duration' ? (passiveTimed || sk.duration) : (kind === 'ammo' && sk.duration > 0 ? sk.duration : undefined),
     ammo,
   };
 
-  // passive stat buffs limited in time ("部署后…在14秒内攻击力+65%", 宴) become a timed buff at each deployment; so do the
-  // ON_DEPLOY passives whose duration is the skill's own (一击即退 "部署后攻击力+X%，防御力+Y%", duration 10, no bb key)
-  const ownDuration = num(bb.duration) === undefined && sk.duration > 0 && /^部署后/.test(desc) ? sk.duration : 0;
-  const passiveTimed = passive && Object.keys(mods).length
-    ? (num(bb.duration) > 0 && /\d+(\.\d+)?秒内/.test(desc) ? num(bb.duration) : ownDuration)
-    : 0;
-  if (Object.keys(mods).length && !passiveTimed) spec.mods = mods;
+  if (passiveTimed) Object.assign(spec, { activateOnDeploy: true, spCost: 0, spType: 'none', trigger: 'NEVER' });
+  if (Object.keys(mods).length) spec.mods = mods;
   if (Object.keys(targeting).length) spec.targeting = targeting;
   // instant/charges skills act on the next attack: mods/targeting without an explicit attack still need one
   if (!Object.keys(attack).length && (kind === 'instant' || kind === 'charges') && (spec.mods || spec.targeting)) spec.attack = {};
@@ -303,10 +309,6 @@ export function genericSkillSpec(sk, bb = sk?.bb ?? {}, def = null) {
   // ---- start / end effects
   const starts = [];
   const ends = [];
-  if (passiveTimed) {
-    const m = { ...mods };
-    starts.push(({ battle, unit }) => battle.addBuff(unit, { key: `generic:passive:${sk.id ?? 'skill'}`, duration: passiveTimed, mods: m, tags: ['skill'] }));
-  }
   if (gainsDp) {
     starts.push(({ battle, unit }) => {
       battle.addDp(unit.ownerId, dpGain);

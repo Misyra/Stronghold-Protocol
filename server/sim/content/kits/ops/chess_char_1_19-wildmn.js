@@ -25,11 +25,8 @@ export default {
     return {
       skills: {
         skchr_wildmn_1: {
-          kind: 'passive',
-          onStart({ battle, unit }) {
-            const d = num(r1?.duration);
-            if (d > 0) battle.addBuff(unit, { key: 'wildmn:s1', duration: d, mods: { aspd: num(r1?.bb?.attack_speed) }, tags: ['skill'], visible: true });
-          },
+          kind: 'duration', activateOnDeploy: true, duration: num(r1?.duration), spCost: 0, spType: 'none', trigger: 'NEVER',
+          mods: { aspd: num(r1?.bb?.attack_speed) },
         },
       },
       skill: {

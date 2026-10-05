@@ -42,15 +42,19 @@ function deploy(h, ps, id) {
   return p;
 }
 
-test('the derived bonds of the data: 协防 39 owned + every prototype, 炎 14, 维多利亚 8, 煌 two', REAL, () => {
-  const owned = DATA.backups.diy.ownedPool;
-  // (research 0.2.0 §2.4: 协防 39, 炎 14, 维多利亚 8, 萨尔贡 4, 叙拉古 4, 拉特兰 1, 卡西米尔 1, 炎 + 维多利亚 1 — 煌)
-  const only = (b) => owned.filter((id) => OPS[id].bonds.length === 1 && OPS[id].bonds[0] === b).length;
-  assert.deepEqual([only('emptyShip'), only('yanShip'), only('victoriaShip'), only('sargonShip'), only('siracusaShip'), only('lateranoShip'), only('kazimierzShip')], [39, 14, 8, 4, 4, 1, 1]);
-  assert.deepEqual(owned.filter((id) => OPS[id].bonds.length > 1), [HUANG]);
+test('the derived bonds of the data: each owned pick its core bonds or 协防, 煌 alone two, every prototype 协防 (read from the data)', REAL, () => {
+  const owned = DATA.backups.diy.ownedPool; // never hard-coded: the pool changes (焰狐龙梓兰 left it as a collab operator)
+  const core = new Set(Object.entries(DATA.bonds).filter(([, b]) => b && b.isCore).map(([id]) => id));
+  for (const id of owned) {
+    const b = OPS[id].bonds;
+    assert.ok(b.length >= 1, id);
+    assert.ok((b.length === 1 && b[0] === 'emptyShip') || b.every((x) => core.has(x)), `${id}: ${b.join(', ')}`);
+  }
   assert.deepEqual(OPS[HUANG].bonds, ['yanShip', 'victoriaShip']);
+  assert.deepEqual(owned.filter((id) => OPS[id].bonds.length > 1), [HUANG], '煌 alone has several');
   assert.deepEqual(OPS.char_300_phenxi.bonds, ['lateranoShip']);
   assert.deepEqual(OPS.char_4098_vvana.bonds, ['kazimierzShip']);
+  assert.deepEqual(OPS[CROSLY].bonds, ['siracusaShip']);
   for (const id of [...DATA.backups.diy.prototypes[5], ...DATA.backups.diy.prototypes[6]]) assert.deepEqual(OPS[id].bonds, ['emptyShip'], id);
 });
 

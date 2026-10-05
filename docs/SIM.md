@@ -540,7 +540,7 @@ HEAL_FREE "受到的治疗量变为0"; DESIGN §22.7), `stealthOff` = an enemy �
 (`stealthOff:<source buff key>`, below), `camou` = 迷彩 (below)). `taunt: true` as a flag counts
 as +1 taunt level (DESIGN §5.3).
 
-**Statuses** — `battle.applyStatus(target, key, { duration, source, value, force, refresh, point })` (returns true if
+**Statuses** — `battle.applyStatus(target, key, { duration, source, value, force, refresh, point, stackAs })` (returns true if
 applied); a unit that is 无敌 and 无法选中 at once (flags `invulnerable` + `untargetable`: a 重生 in progress, a hovering or
 永久无敌 leader part) takes no status from the other side, `force` included (PRTS 无敌 "无法被不同阵营选中" — so the status
 a knocking-out hit carries, 妮芙 S2's fear say, does not land after the 重生's cleanse; since 0.1.1's QA); refused when
@@ -551,7 +551,9 @@ and the 浮空 weight rule, then `statusApplied { source, target, status, durati
 = the target carried no buff of that status before (a refresh / a weaker "取最高" application is not an entry: "进入…时"). Effects follow the official term table
 (`gamedata_const.termDescriptionDict`, `ba.*`). Same-key statuses refresh to the longer duration, except the
 "同名效果取最高" ones marked *strongest* below: the strongest value wins, a weaker application never overrides it and,
-if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out).
+if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out); `stackAs` = the strength such an
+application competes with instead of its `value`, which stays its effect (Raidian S3's 虚弱: PRTS 备注 "在叠加时视为90%…的
+虚弱（仅影响叠加优先级，不影响实际效果）").
 `battle.applyStrongest(target, key, { duration, value, mods: (v) => mods, source })` gives a content effect that is not a
 catalogue status the same rule (one invisible buff `key` per target whatever applies it — no immunity, 抵抗, status hooks
 or icon): the engine default for two same-named buffs (PRTS 作战机制 "同名buff的默认叠加策略buff只能表现出一个"). 奥术 uses
@@ -755,7 +757,7 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
 | helper | notes |
 |---|---|
 | `dealDamage(src, tgt, dmg)`, `heal(src, tgt, amount, opts)`, `loseHp(tgt, amount, {source, from, tags, sourceless})` | §4 |
-| `applyStatus(tgt, key, {duration, source, value, force, point})`, `removeStatus(tgt, key)`, `resistOf(unit)` | §3 |
+| `applyStatus(tgt, key, {duration, source, value, force, point, stackAs})`, `removeStatus(tgt, key)`, `resistOf(unit)` | §3 |
 | `applyStrongest(tgt, key, {duration, value, mods, source})` | §3 — "同名效果取最高" for a non-catalogue effect |
 | `addBuff(unit, buff)`, `removeBuff(unit, key)` | §3 |
 | `spawnToken(ownerUnit | playerId, tokenId, row, col, { def, stats, hp, duration, untargetable, dir, kit, force, anySource })` | field tiles; def from data/tokens.json `variants[ownerChessId]` for the owner unit's selected skill / module (`tokenDef`); `dir` defaults to the owner unit's (else the player's: RIGHT, mirrored side LEFT; a legacy `facing` ±1 is still read); returns the token or null (tile busy; or the owner runs a **non-default** skill that does not produce the token — `producesToken` — unless `anySource`: kit install hooks written for the default skill run under every skill). `spawnDevice(key, row, col, { …, dir })` likewise |

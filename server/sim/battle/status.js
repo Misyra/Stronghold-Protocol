@@ -130,15 +130,17 @@ export class BattleStatus {
   }
 
   /**
-   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point, resistApplied } — returns true
-   * when applied. Honours enemy immunities (stun/silence/sleep/frozen/levitate/feared) unless `force`. `beforeStatus`
+   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point, resistApplied, stackAs } — returns
+   * true when applied. Honours enemy immunities (stun/silence/sleep/frozen/levitate/feared) unless `force`. `beforeStatus`
    * handlers may cancel it or change `duration` / `value`. Official rules (buffs.js STATUS): 抵抗 (the `resist` status)
    * shortens the RESIST_STATUSES by its value (default half; applied after `beforeStatus`; `resistApplied` skips that
    * pass — the cold-on-cold 冻结 below already used post-抵抗 lengths). A second 寒冷 while 寒冷 remains applies 冻结 for
    * max(remaining, this cold after 抵抗) (PRTS 术语释义 寒冷 「持续时间取双方之中最高」). 浮空 lasts half as long on units heavier
    * than LEVITATE_HALF_WEIGHT (current massLevel); 冻结's RES cut hits enemies only; 麻痹 adds stacks; "同名效果取最高"
    * statuses (`valued`) keep the strongest value — a weaker application only extends past the stronger one's end (it
-   * then resumes); other statuses refresh to the longer duration. 诱导 (`attract`) walks the enemy to `point`
+   * then resumes); `stackAs` = the value such an application competes with instead of its own (its effect stays
+   * `value`): an effect the game stacks as another strength — Raidian S3's 虚弱, PRTS 备注 "在叠加时视为90%（1级~6级）/80%
+   * （7级~专精二）…的虚弱（仅影响叠加优先级，不影响实际效果）"; other statuses refresh to the longer duration. 诱导 (`attract`) walks the enemy to `point`
    * ([r, c] or {x, y}; default the source's tile — a new application moves the point); 恐惧 (`fear`) stamps where it
    * was applied and from where (fear.js stampFear: the fan of 恐惧可达地块 its movement uses). A stunned/sleeping operator
    * releases the enemies it blocks; a feared/levitated/unblockable/attracted enemy is released by its blocker.
@@ -199,7 +201,7 @@ export class BattleStatus {
     if (tpl.palsy) {
       this.addBuff(target, { ...palsyBuff(value ?? 1), duration, source });
     } else if (tpl.valued != null && typeof tpl.mods === 'function' && opts.refresh == null) {
-      this._applyValuedStatus(target, key, tpl, duration, value ?? tpl.valued, source);
+      this._applyValuedStatus(target, key, tpl, duration, value ?? tpl.valued, source, opts.stackAs);
     } else {
       const mods = tpl.enemyOnlyMods && target.side !== 'enemy' ? null : typeof tpl.mods === 'function' ? tpl.mods(value) : (tpl.mods || null);
       const b = this.addBuff(target, { key, duration, refresh: opts.refresh ?? 'extend', mods, flags: tpl.flags || null, status: key, visible: true, source });
@@ -257,33 +259,38 @@ export class BattleStatus {
 
   /**
    * "同名效果取最高": keep the strongest value; a weaker one that outlasts it resumes afterwards (buff.data.tail). A
-   * `plain` template (applyStrongest) is an ordinary invisible buff, not a status.
+   * `plain` template (applyStrongest) is an ordinary invisible buff, not a status. `stackAs` (finite): the strength this
+   * application competes with instead of its value (applyStatus opts.stackAs); kept in `data.stackAs` / the tail.
    */
-  _applyValuedStatus(target, key, tpl, duration, value, source) {
-    const strength = (v) => Math.abs(Number.isFinite(v) ? v : tpl.valued);
-    const make = (v, dur, tail) => ({
+  _applyValuedStatus(target, key, tpl, duration, value, source, stackAs = null) {
+    const as = Number.isFinite(stackAs) ? stackAs : null;
+    const strength = (v, s = null) => Math.abs(Number.isFinite(s) ? s : Number.isFinite(v) ? v : tpl.valued);
+    // (no stackAs: the very objects of before — data { value, tail }, tails { value, until })
+    const entry = (v, s, extra) => (Number.isFinite(s) ? { value: v, stackAs: s, ...extra } : { value: v, ...extra });
+    const make = (v, dur, tail, s = null) => ({
       ...(tpl.buff || null),   // extra buff fields of the status (抵抗: the 麻痹 decay tick)
       key, duration: dur, refresh: 'replace', mods: tpl.mods(v), flags: tpl.flags || null, status: tpl.plain ? null : key,
       visible: !tpl.plain, source,
-      data: { value: v, tail },
+      data: entry(v, s, { tail }),
       onExpire: ({ battle, unit, buff }) => {
         const t = buff.data.tail;
-        if (t && t.until - battle.time > 1e-6 && unit.alive) battle.addBuff(unit, make(t.value, t.until - battle.time, null));
+        if (t && t.until - battle.time > 1e-6 && unit.alive) battle.addBuff(unit, make(t.value, t.until - battle.time, null, t.stackAs));
       },
     });
     const old = target.buffs.find((b) => b.key === key && (tpl.plain || b.status === key));
-    if (!old) { this.addBuff(target, make(value, duration, null)); return; }
+    if (!old) { this.addBuff(target, make(value, duration, null, as)); return; }
     const oldV = old.data && Number.isFinite(old.data.value) ? old.data.value : tpl.valued;
+    const oldAs = old.data && Number.isFinite(old.data.stackAs) ? old.data.stackAs : null;
     const oldEnd = this.time + old.timeLeft, newEnd = this.time + duration;
     const oldTail = old.data && old.data.tail;
     const longerTail = (a, b) => (!a ? b : !b ? a : (b.until > a.until ? b : a));
-    if (strength(value) > strength(oldV) + 1e-12) {
+    if (strength(value, as) > strength(oldV, oldAs) + 1e-12) {
       // stronger: takes over now; the weaker old one (or its tail) resumes if it lasts longer
-      const tail = longerTail(oldEnd > newEnd ? { value: oldV, until: oldEnd } : null, oldTail && oldTail.until > newEnd ? oldTail : null);
-      this.addBuff(target, make(value, duration, tail));
-    } else if (strength(value) < strength(oldV) - 1e-12) {
+      const tail = longerTail(oldEnd > newEnd ? entry(oldV, oldAs, { until: oldEnd }) : null, oldTail && oldTail.until > newEnd ? oldTail : null);
+      this.addBuff(target, make(value, duration, tail, as));
+    } else if (strength(value, as) < strength(oldV, oldAs) - 1e-12) {
       // weaker: never overrides; remembered as the tail when it outlasts the running one
-      if (newEnd > oldEnd && (!oldTail || newEnd > oldTail.until)) old.data = { ...old.data, value: oldV, tail: { value, until: newEnd } };
+      if (newEnd > oldEnd && (!oldTail || newEnd > oldTail.until)) old.data = { ...old.data, value: oldV, tail: entry(value, as, { until: newEnd }) };
     } else if (duration > old.timeLeft) {
       old.timeLeft = duration;
       old.duration = Math.max(old.duration, duration);

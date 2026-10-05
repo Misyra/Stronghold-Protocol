@@ -14,7 +14,7 @@
 //     MIME types incl. .mjs/.js text/javascript, .skel application/octet-stream, .atlas text/plain;
 //     gzip for text-like types, .skel and uncompressed fonts when the client accepts it (small files are
 //     compressed once and cached in memory); strong ETag + Last-Modified with 304s; Cache-Control
-//     (html & code/data: no-cache + revalidate; public/assets|fonts|vendor: 1 day; any `?v=` URL: immutable);
+//     (html: no-cache; startup-versioned /_v/<release>/ URLs: 1 year immutable; plain assets: 1 day);
 //     single byte-range requests (206/416, used by <audio>); traversal & dotfile protection; 404 page.
 //   * GET /healthz → JSON status (protocol `version`, release `app`, rooms, matches, sessions, sockets).
 //   * GET /api/rooms/:code/status → read-only status by shared room code; no room listing or game session.
@@ -47,7 +47,10 @@ import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
 import { Lobby, CODE_ALPHABET } from './lobby.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
+import { createAssetVersion, VERSION_PREFIX } from './assetVersion.js';
+import { assetCdnSettings } from '../shared/assetCdn.js';
 import { getData, loadData } from './data.js';
+import { SimulationPool, workerSettings } from './workers/pool.js';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../shared/constants.js';
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../shared/media.js';
 
@@ -118,8 +121,7 @@ export const COMPRESSIBLE = new Set([
 const GZIP_MIN_BYTES = 512;
 const GZIP_CACHE_MAX_FILE = 8 << 20;      // larger files are gzip-streamed on the fly
 const GZIP_CACHE_MAX_TOTAL = 96 << 20;
-// Asset URLs carry no content hash yet, and tools/fetch-assets.mjs / tools/vendor.mjs can rewrite files in
-// place (atlas + png + skel must stay consistent), so "long" is one day; revalidation after that is a cheap 304.
+// Plain URLs remain compatible with static hosts and older clients; only validated release paths are immutable.
 const LONG_CACHE = 'public, max-age=86400';          // 1 day
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const LONG_CACHE_DIRS = ['assets', 'fonts', 'vendor']; // first path segment under public/
@@ -205,14 +207,14 @@ class GzipCache {
   }
 
   /** @returns {Promise<Buffer>} gzip of the file identified by (path, size, mtime) */
-  get(absPath, stat) {
-    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}`;
+  get(absPath, stat, body = null, variant = '') {
+    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}\0${variant}`;
     const hit = this.map.get(key);
     if (hit) { this.map.delete(key); this.map.set(key, hit); return Promise.resolve(hit); }
     const pending = this.inflight.get(key);
     if (pending) return pending;
     const p = (async () => {
-      const raw = await fsp.readFile(absPath);
+      const raw = body || await fsp.readFile(absPath);
       const gz = await gzipAsync(raw, { level: 6 });
       this.store(key, gz);
       return gz;
@@ -305,9 +307,9 @@ function ifRangeMatches(req, etag, lastModified) {
   return s === lastModified;
 }
 
-function cacheControlFor(ext, mountName, segments, query) {
+function cacheControlFor(ext, mountName, segments, versioned) {
   if (ext === '.html' || ext === '.htm') return 'no-cache';
-  if (/(^|&)v=/.test(query)) return IMMUTABLE_CACHE;
+  if (versioned) return IMMUTABLE_CACHE;
   if (mountName === 'public' && segments.length > 1 && LONG_CACHE_DIRS.includes(segments[0])) return LONG_CACHE;
   return 'no-cache';
 }
@@ -353,14 +355,16 @@ function splitUrl(url) {
 
 /**
  * Create the static request handler.
- * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, log?: object }} dirs
+ * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, log?: object,
+ *           assetsCdn?: string, assetsCdnVersion?: string }} dirs
  * @returns {(req: http.IncomingMessage, res: http.ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
 /** Optional per-machine art manifest (tools/local-extract) and the empty stand-in served when it is absent. */
 const LOCAL_ART_MANIFEST = 'local-assets.json';
 const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none', count: 0, groups: {} }));
 
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), log = noopLog }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), log = noopLog, assetsCdn = '', assetsCdnVersion = '' }) {
+  const cdn = assetCdnSettings(assetsCdn, assetsCdnVersion);
   const mounts = [
     { prefix: '/data/', name: 'data', dir: path.resolve(dataDir) },
     { prefix: '/shared/', name: 'shared', dir: path.resolve(sharedDir) },
@@ -371,16 +375,53 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new GzipCache();
+  const release = createAssetVersion(mounts, DATA_SHIM_JS, cdn);
+  // Small transformed responses share both the read and the result; bounded independently of the gzip cache.
+  const transformed = new Map();
+  let transformedBytes = 0;
+  const bodyFor = async (absPath, stat, ext) => {
+    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}`;
+    if (transformed.has(key)) return transformed.get(key);
+    const pending = fsp.readFile(absPath, 'utf8').then((source) => {
+      const body = Buffer.from(release.transform(source, ext));
+      transformedBytes += body.length;
+      if (transformedBytes > (16 << 20)) { transformed.clear(); transformedBytes = 0; }
+      return body;
+    }).catch((err) => { transformed.delete(key); throw err; });
+    transformed.set(key, pending);
+    return pending;
+  };
 
-  return async function serveStatic(req, res, rawPath, query) {
+  const handler = async function serveStatic(req, res, rawPath, query) {
     let decoded;
     try { decoded = decodeURIComponent(rawPath); } catch { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
     if (!decoded.startsWith('/') || decoded.includes('\0') || decoded.includes('\\')) {
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
     }
+    let versioned = false;
+    if (decoded.startsWith(VERSION_PREFIX)) {
+      const match = /^\/_v\/([a-f0-9]{16})(\/.*)$/.exec(decoded);
+      if (!match || !/^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js$/.test(match[2])) {
+        sendError(req, res, 404, '页面不存在 · Not found'); return;
+      }
+      // Never serve this release's bytes under an old immutable URL after deployment.
+      if (match[1] !== release.expectedTag(match[2])) { sendError(req, res, 404, '资源版本已更新 · Reload required'); return; }
+      decoded = match[2];
+      versioned = true;
+    }
+    // Public art is reusable by other game hosts. Never grant CORS to game state, APIs or private modules.
+    if (/^\/(?:assets|fonts|media)\//.test(decoded)) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range');
+      res.setHeader('Access-Control-Expose-Headers', 'ETag, Content-Length, Content-Range, Accept-Ranges');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, { 'Cache-Control': 'no-store', 'Access-Control-Max-Age': '86400' }); res.end(); return;
+      }
+    }
     if (decoded === '/data.js') {
-      const headers = { 'Content-Type': MIME['.js'], 'Cache-Control': 'no-cache', ETag: shimTag, 'Content-Length': shimBody.length };
+      const headers = { 'Content-Type': MIME['.js'], 'Cache-Control': versioned ? IMMUTABLE_CACHE : 'no-cache', ETag: shimTag, 'Content-Length': shimBody.length };
       if (isNotModified(req, shimTag, new Date(0))) { delete headers['Content-Length']; res.writeHead(304, headers); res.end(); return; }
       res.writeHead(200, headers);
       res.end(req.method === 'HEAD' ? undefined : shimBody);
@@ -388,7 +429,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     // Extension-less audio (download-manager avoidance): /media/bgm/act1 → /assets/audio/bgm/act1.mp3
     if (decoded.startsWith(MEDIA_PREFIX)) {
-      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), query, publicDir, gzipCache, log);
+      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), versioned, publicDir, gzipCache, log, release);
       return;
     }
     // Bare mount paths (e.g. "/data") → treat as the mount directory.
@@ -413,7 +454,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       if (stat.isDirectory()) {
         if (!decoded.endsWith('/')) {
           // Built from normalized segments (never from the raw path) so "//host" can't become an open redirect.
-          const loc = (mount.prefix + segments.map(encodeURIComponent).join('/') + '/').replace(/\/{2,}/g, '/');
+          const canonical = (mount.prefix + segments.map(encodeURIComponent).join('/') + '/').replace(/\/{2,}/g, '/');
+          const loc = versioned ? release.url(canonical) : canonical;
           res.writeHead(301, { Location: loc + (query ? `?${query}` : ''), 'Cache-Control': 'no-cache', 'Content-Length': 0 });
           res.end();
           return;
@@ -448,8 +490,17 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       }
       return;
     }
-    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log);
+    if (versioned && !release.matchesFile(absPath, stat)) {
+      sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required'); return;
+    }
+    const ext = path.extname(absPath).toLowerCase();
+    const rewrite = ['.html', '.htm'].includes(ext) || (versioned && (ext === '.css' || (ext === '.json' && (mount.name === 'data' || segments[0] === 'assets'))));
+    const body = rewrite ? await bodyFor(absPath, stat, ext) : null;
+    await serveFile(req, res, absPath, stat, mount.name, segments, versioned, gzipCache, log, body, rewrite ? release.tag : '');
   };
+  handler.version = release.tag;
+  handler.artVersion = release.artTag;
+  return handler;
 }
 
 /**
@@ -461,7 +512,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
  * `MEDIA_PREFIX` / `AUDIO_EXTS` live in `shared/media.js`: the browser decides which URLs to rewrite with the
  * same two values, and they must not drift apart.
  */
-async function serveMedia(req, res, rest, query, publicDir, gzipCache, log) {
+async function serveMedia(req, res, rest, versioned, publicDir, gzipCache, log, release) {
   const root = path.join(path.resolve(publicDir), 'assets', 'audio');
   const segments = String(rest || '').split('/').filter((s) => s.length > 0);
   if (!segments.length || rest.endsWith('/')) { sendError(req, res, 404, '页面不存在 · Not found'); return; }
@@ -488,35 +539,40 @@ async function serveMedia(req, res, rest, query, publicDir, gzipCache, log) {
       stat = await fsp.stat(absPath);
     } catch { continue; }
     if (!stat.isFile()) continue;
+    if (versioned && !release.matchesFile(absPath, stat)) {
+      sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required'); return;
+    }
     // serveFile decides Content-Type from the resolved name (`.mp3` → audio/mpeg) — Range/ETag handling is shared.
     // Cache policy is that of the public path the client would otherwise have asked for (`/assets/audio/…`, 1 day).
     // eslint-disable-next-line no-await-in-loop
-    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], query, gzipCache, log);
+    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], versioned, gzipCache, log);
     return;
   }
   sendError(req, res, 404, '页面不存在 · Not found');
 }
 
-async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log) {
+async function serveFile(req, res, absPath, stat, mountName, segments, versioned, gzipCache, log, body = null, variant = '') {
+  if (body) stat = { size: body.length, mtime: stat.mtime, mtimeMs: stat.mtimeMs };
   const ext = path.extname(absPath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
   const compressible = COMPRESSIBLE.has(ext);
   const rangeHeader = req.headers.range;
   const useGzip = compressible && stat.size >= GZIP_MIN_BYTES && !rangeHeader && acceptsGzip(req.headers['accept-encoding']);
-  const baseTag = `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`;
+  const baseTag = `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}${variant ? '-' + variant : ''}`;
   const etag = `"${baseTag}${useGzip ? '-gz' : ''}"`;
   const lastModified = stat.mtime.toUTCString();
   const isHead = req.method === 'HEAD';
 
   const headers = {
     'Content-Type': type,
-    'Cache-Control': cacheControlFor(ext, mountName, segments, query),
+    'Cache-Control': cacheControlFor(ext, mountName, segments, versioned),
     ETag: etag,
     'Last-Modified': lastModified,
   };
   if (compressible) headers.Vary = 'Accept-Encoding';
 
-  if (isNotModified(req, etag, stat.mtime)) {
+  // A transformed representation also depends on the release, not just this file's timestamp.
+  if (isNotModified(variant && !req.headers['if-none-match'] ? { headers: {} } : req, etag, stat.mtime)) {
     res.writeHead(304, headers);
     res.end();
     return;
@@ -524,8 +580,8 @@ async function serveFile(req, res, absPath, stat, mountName, segments, query, gz
 
   if (useGzip) {
     headers['Content-Encoding'] = 'gzip';
-    if (stat.size <= GZIP_CACHE_MAX_FILE) {
-      const gz = await gzipCache.get(absPath, stat);
+    if (body || stat.size <= GZIP_CACHE_MAX_FILE) {
+      const gz = await gzipCache.get(absPath, stat, body, variant);
       headers['Content-Length'] = gz.length;
       res.writeHead(200, headers);
       res.end(isHead ? undefined : gz);
@@ -557,7 +613,8 @@ async function serveFile(req, res, absPath, stat, mountName, segments, query, gz
   headers['Content-Length'] = stat.size === 0 ? 0 : end - start + 1;
   res.writeHead(status, headers);
   if (isHead || stat.size === 0) { res.end(); return; }
-  await streamTo(fs.createReadStream(absPath, { start, end }), res, log);
+  if (body) res.end(body.subarray(start, end + 1));
+  else await streamTo(fs.createReadStream(absPath, { start, end }), res, log);
 }
 
 async function streamTo(src, res, log, transform) {
@@ -621,9 +678,12 @@ function makeLogger(quiet) {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
+ *   workers?: number, workerQueue?: number, workerTimeoutMs?: number, workerPool?: SimulationPool | null,
+ *   assetsCdn?: string, assetsCdnVersion?: string,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: WebSocketServer,
- *                     lobby: Lobby, network: Network, registry: SessionRegistry, close: () => Promise<void> }>}
+ *                     lobby: Lobby, network: Network, registry: SessionRegistry, workerPool: SimulationPool | null,
+ *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
   const port = opts.port ?? (process.env.PORT != null && process.env.PORT !== '' ? Number(process.env.PORT) : 3000);
@@ -634,9 +694,19 @@ export async function startServer(opts = {}) {
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
+  const cdn = assetCdnSettings(opts.assetsCdn ?? process.env.SP_ASSETS_CDN, opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION);
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
+  const workerConfig = workerSettings();
+  for (const [option, key] of [['workers', 'size'], ['workerQueue', 'maxQueue'], ['workerTimeoutMs', 'timeoutMs']]) {
+    if (opts[option] != null) workerConfig[key] = opts[option];
+  }
+  const ownsWorkerPool = opts.workerPool === undefined;
+  if (!Number.isInteger(workerConfig.size) || workerConfig.size < 0 || workerConfig.size > 32) {
+    throw new RangeError('workers must be 0..32');
+  }
+  const workerPool = ownsWorkerPool ? (workerConfig.size > 0 ? new SimulationPool({ data, ...workerConfig }) : null) : opts.workerPool;
   const netOptions = {};
   for (const k of ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'abuseDropsPerSec',
     'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy']) {
@@ -648,9 +718,10 @@ export async function startServer(opts = {}) {
   for (const k of ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs']) {
     if (opts[k] != null) lobbyOptions[k] = opts[k];
   }
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
+  log.info(`[workers] ${workerPool ? `${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)` : 'disabled'}`);
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log, assetsCdn: cdn.base, assetsCdnVersion: cdn.version });
   const allowStatus = createStatusLimiter({ trustProxy: netOptions.trustProxy });
   const readAnnouncement = createAnnouncementReader({
     filePath: path.resolve(ROOT, opts.announcementFile ?? process.env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json'), log,
@@ -702,6 +773,9 @@ export async function startServer(opts = {}) {
       sendJson(req, res, status ? 200 : 404, status || { error: 'ROOM_NOT_FOUND' });
       return;
     }
+    if (req.method === 'OPTIONS' && /^\/(?:assets|fonts|media)\/|^\/_v\/[a-f0-9]{16}\/(?:assets|fonts|media)\//.test(parts.rawPath)) {
+      await serveStatic(req, res, parts.rawPath, parts.query); return;
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.setHeader('Allow', 'GET, HEAD');
       sendError(req, res, 405, '不支持的请求方法 · Method not allowed');
@@ -712,8 +786,12 @@ export async function startServer(opts = {}) {
         ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
         // older than this reloads itself, so a deploy reaches clients that never reload
-        build: buildTag(),
+        build: serveStatic.version,
+        artVersion: serveStatic.artVersion,
+        assetsCdn: cdn.base || null,
+        assetsCdnVersion: cdn.version || null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+        workers: workerPool?.stats() || null,
       });
       return;
     }
@@ -773,6 +851,8 @@ export async function startServer(opts = {}) {
     });
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    lobby.shutdown('shutdown');
+    if (ownsWorkerPool) await workerPool?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -787,6 +867,7 @@ export async function startServer(opts = {}) {
     closing = (async () => {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
+      if (ownsWorkerPool) await workerPool?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();
@@ -797,7 +878,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host, url, server, wss, lobby, network, registry, close };
+  return { port: actualPort, host, url, server, wss, lobby, network, registry, workerPool, close };
 }
 
 // ---------------------------------------------------------------------------------------------------

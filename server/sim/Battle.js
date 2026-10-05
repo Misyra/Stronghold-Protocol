@@ -680,8 +680,13 @@ export class Battle {
   _runScheduled() {
     if (!this._sched.length) return;
     const now = this.time + 1e-9;
-    let due = this._sched.filter((s) => !s.cancelled && s.due <= now);
-    if (!due.length) { if (this._sched.some((s) => s.cancelled)) this._sched = this._sched.filter((s) => !s.cancelled); return; }
+    let due = null;
+    let cancelled = false;
+    for (const s of this._sched) {
+      if (s.cancelled) cancelled = true;
+      else if (s.due <= now) (due ||= []).push(s);
+    }
+    if (!due) { if (cancelled) this._pruneScheduled(); return; }
     due.sort((a, b) => a.due - b.due || a.seq - b.seq);
     for (const s of due) {
       if (s.cancelled) continue;
@@ -698,7 +703,14 @@ export class Battle {
         this._safe(() => s.fn(this, s), 'after', s.owner);
       }
     }
-    this._sched = this._sched.filter((s) => !s.cancelled);
+    this._pruneScheduled();
+  }
+
+  /** Compact in place, preserving order and tasks added by callbacks. */
+  _pruneScheduled() {
+    let n = 0;
+    for (const s of this._sched) if (!s.cancelled) this._sched[n++] = s;
+    this._sched.length = n;
   }
 
   // =============================================================================================================

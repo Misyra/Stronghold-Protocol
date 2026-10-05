@@ -862,24 +862,28 @@ class Layout {
     this.model = model;
     this.p = params;
     this.units = []; // { rec, key, dps, air, ground, block, heal, cover: Set }
+    this.cover = new Map();
+    this.healCover = new Map();
+    this.blockAt = new Map();
   }
 
-  value() {
+  /** Commit a chosen unit once; candidates reuse the already accumulated coverage. */
+  add(u) {
+    this.units.push(u);
+    for (const k of u.cover) {
+      const e = this.cover.get(k) || { g: 0, a: 0 };
+      if (u.ground) e.g += u.dps;
+      if (u.air) e.a += u.dps;
+      this.cover.set(k, e);
+      if (u.heal) this.healCover.set(k, (this.healCover.get(k) || 0) + 1);
+    }
+    if (u.block > 0 && this.model.ground.has(u.key)) this.blockAt.set(u.key, (this.blockAt.get(u.key) || 0) + u.block);
+  }
+
+  value(candidate) {
     const { routes } = this.model;
     const p = this.p;
-    const cover = new Map(); // key → { g: dps on ground, a: dps on air }
-    const healCover = new Map();
-    for (const u of this.units) {
-      for (const k of u.cover) {
-        const e = cover.get(k) || { g: 0, a: 0 };
-        if (u.ground) e.g += u.dps;
-        if (u.air) e.a += u.dps;
-        cover.set(k, e);
-        if (u.heal) healCover.set(k, (healCover.get(k) || 0) + 1);
-      }
-    }
-    const blockAt = new Map();
-    for (const u of this.units) if (u.block > 0 && this.model.ground.has(u.key)) blockAt.set(u.key, (blockAt.get(u.key) || 0) + u.block);
+    const { cover, healCover, blockAt } = this;
     let total = 0;
     for (const rt of routes) {
       let exp = 0;
@@ -887,30 +891,48 @@ class Layout {
       for (let i = 0; i < rt.tiles.length; i++) {
         const k = rt.tiles[i];
         let t = rt.tileTime + (i < 2 && rt.dwell ? rt.dwell : 0);
-        if (!rt.fly && blockAt.has(k)) {
+        const block = (blockAt.get(k) || 0) + (candidate.key === k ? candidate.block : 0);
+        if (!rt.fly && block > 0) {
           // a blocker right behind another one mostly holds what slipped past; a separate line holds again
           const fresh = i - lastBlock >= p.spread;
-          t += p.hold * blockAt.get(k) * (fresh ? 1 : p.secondHold) * (1 + p.healHold * Math.min(2, healCover.get(k) || 0));
+          const heals = (healCover.get(k) || 0) + (candidate.heal && candidate.cover.has(k) ? 1 : 0);
+          t += p.hold * block * (fresh ? 1 : p.secondHold) * (1 + p.healHold * Math.min(2, heals));
           lastBlock = i;
         }
         const c = cover.get(k);
-        if (c) exp += t * (rt.fly ? c.a : c.g);
+        const covered = candidate.cover.has(k);
+        if (c || covered) {
+          const dps = (c ? (rt.fly ? c.a : c.g) : 0) + (covered && (rt.fly ? candidate.air : candidate.ground) ? candidate.dps : 0);
+          exp += t * dps;
+        }
       }
       total += rt.n * (1 - Math.exp(-exp / (p.kill * rt.hp)));
     }
     // ranged units standing on a road block and get hit: a small penalty per road tile they occupy
     for (const u of this.units) if (!u.block && this.model.ground.has(u.key)) total -= p.roadPenalty * this.model.ground.get(u.key).flow;
+    if (!candidate.block && this.model.ground.has(candidate.key)) total -= p.roadPenalty * this.model.ground.get(candidate.key).flow;
     return total;
   }
 }
 
+const layoutUnitCaches = new WeakMap();
+
 function unitOf(rec, key, r, c, dir = 'RIGHT', model = null) {
+  let cache = model ? layoutUnitCaches.get(model) : null;
+  if (model && !cache) { cache = new WeakMap(); layoutUnitCaches.set(model, cache); }
+  let placements = cache?.get(rec);
+  if (cache && !placements) { placements = new Map(); cache.set(rec, placements); }
+  const placementKey = `${key}|${dir}`;
+  if (placements?.has(placementKey)) return placements.get(placementKey);
   const block = isBlocker(rec) ? Math.max(1, rec.stats?.blockCnt ?? 1) : 0;
   const atkMul = airflowAtkMul(model, key, dir);
-  return {
+  const u = {
     rec, key, dir, dps: effDps(model, rec) * atkMul, atkMul, air: hitsFly(rec), ground: rec.attackKind !== 'heal' && !isHealer(rec),
     block, heal: isHealer(rec), cover: new Set(rangeTiles(rec, r, c, dir)),
   };
+  u.signature = `${u.atkMul}|${[...u.cover].sort().join(' ')}`;
+  placements?.set(placementKey, u);
+  return u;
 }
 
 /** A layout plan: Map uid → tile key, plus `dirs`: Map uid → direction (UP|RIGHT|DOWN|LEFT). */
@@ -958,18 +980,16 @@ export function* planLayoutSteps(m, ps, pieces, params = LAYOUT_PARAMS, { occupi
       for (const dir of PLAN_DIRS) {
         const u = unitOf(r0, k, r, c, dir, model);
         // (the same covered tiles under a different airflow ATK factor are a different candidate)
-        const sig = `${u.atkMul}|${[...u.cover].sort().join(' ')}`;
+        const sig = u.signature;
         if (seen.has(sig)) continue;
         seen.add(sig);
-        layout.units.push(u);
-        const v = layout.value() + noise;
-        layout.units.pop();
+        const v = layout.value(u) + noise;
         if (v > bestV) { bestV = v; best = [k, r, c, dir]; }
       }
     }
     if (!best) continue;
     taken.add(best[0]);
-    layout.units.push(unitOf(r0, best[0], best[1], best[2], best[3], model));
+    layout.add(unitOf(r0, best[0], best[1], best[2], best[3], model));
     out.set(p.uid, best[0]);
     out.dirs.set(p.uid, best[3]);
     yield;
@@ -1035,6 +1055,7 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
   const cands = distinct.slice(0, m.botRehearsal);
   const byUid = new Map(chosen.map((p) => [p.uid, p]));
   const battles = [];
+  const options = [];
   for (const plan of cands) {
     const saved = [...ps.board.entries()];
     // the candidate's directions are set on the pieces while its input is taken; restored exactly afterwards
@@ -1045,12 +1066,15 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
       for (const [uid, k] of plan) { const p = byUid.get(uid); if (p) { p.dir = planDir(plan, uid); ps.board.set(k, p); } }
       ps.recompute();
       const spawns = withBounties(m.gd, m.round, wave, ps.bounties, ps.playerId).map((sp) => ({ ...sp, ownerPlayerId: ps.playerId }));
-      battles.push(m.newBattle({
+      const opts = {
         seed: deriveSeed(m.seed, `rehearse:${m.round}:${ps.seat}`), kind: 'normal', modeId: m.modeId, round: m.round,
         stageId: m.stageId, rect: { ...GEO.NORMAL_RECT }, timeLimit: wave.timeLimit, players: [ps.battleInput({ side: 'L', colOffset: 0 })],
         spawns: m._sanitizeSpawns(spawns, ps.playerId), routes: wave.routes, sharedBoss: null,
         flags: { layerGainsEnabled: false, ...m.gd.dp }, fieldId: `r:${ps.playerId}`, enemyOverrides: wave.overrides, waveId: wave.templateId,
-      }));
+        recordEvents: false, // rehearsal only reads scores; no renderer consumes the animation event buffer
+      };
+      if (m.workerPool) options.push(structuredClone({ ...opts, content: m.battleContent }));
+      else battles.push(m.newBattle(opts));
     } catch (e) {
       failed = true;
       m.log.warn?.(`[match ${m.roomCode}] bot rehearsal failed: ${e && e.message}`);
@@ -1064,6 +1088,24 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
     yield;
   }
   const cap = Math.ceil(((wave.timeLimit || 60) + 5) * 30);
+  if (m.workerPool) {
+    let local = null;
+    return {
+      chosen, plans: cands, best: cands[0], done: false,
+      workerPayload: { options, playerId: ps.playerId, cap },
+      run(budgetMs) {
+        local ||= createRehearsalJob(options.map((o) => () => m.newBattle(o)), chosen, cands, ps.playerId, cap, m.log);
+        this.done = local.run(budgetMs);
+        this.best = local.best;
+        return this.done;
+      },
+    };
+  }
+  return createRehearsalJob(battles, chosen, cands, ps.playerId, cap, m.log);
+}
+
+/** The same scoring / early-exit algorithm in production workers and the local deterministic runner. */
+export function createRehearsalJob(battles, chosen, cands, playerId, cap, log) {
   let i = 0;
   let t = 0;
   let bestScore = -Infinity;
@@ -1081,20 +1123,21 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
         // a candidate that ended mid-slice (finished, cap, or beaten at a 64-tick check that skipped the budget test):
         // check the budget before stepping the next one, so a slice never exceeds 4 ticks past its budget
         if (timed && n > 0 && performance.now() - t0 >= budgetMs) return false;
-        const battle = battles[i];
+        let battle = battles[i];
+        if (typeof battle === 'function') battle = battles[i] = battle(); // lazy local fallback construction
         try {
           let beaten = false;
           while (t < cap && !battle.finished) {
             battle.step();
             t++;
             n++;
-            if ((t & 63) === 0 && bestLeaks < Infinity && countedLeaks(battle, ps.playerId) > bestLeaks) { beaten = true; break; }
+            if ((t & 63) === 0 && bestLeaks < Infinity && countedLeaks(battle, playerId) > bestLeaks) { beaten = true; break; }
             if (timed && (n & 3) === 0 && performance.now() - t0 >= budgetMs) return false;
           }
           if (!beaten) {
             if (!battle.finished) battle.forceEnd('timeout');
             const r = battle.result();
-            const pp = r && !r.synthetic && r.perPlayer && r.perPlayer[ps.playerId];
+            const pp = r && !r.synthetic && r.perPlayer && r.perPlayer[playerId];
             if (pp) {
               const leaks = (pp.leaked || []).filter((l) => l && l.counted !== false).length;
               const score = -leaks * 1000 + (pp.killed || 0) - i * 0.01;
@@ -1102,7 +1145,7 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
             }
           }
         } catch (e) {
-          m.log.warn?.(`[match ${m.roomCode}] bot rehearsal failed: ${e && e.message}`);
+          log.warn?.(`[rehearsal] failed: ${e && e.message}`);
         }
         battles[i] = null;
         i++;

@@ -16,6 +16,7 @@
 // `loadData(...)` to await, or the `useData(...)` hook to re-render when files arrive.
 
 import { useEffect, useReducer } from '../vendor/hooks.module.js';
+import { resourceUrl, resourceCache } from './resourceUrl.js';
 
 /** Known data files (name → URL basename). Unknown names are allowed too (`/data/<name>.json`). */
 export const DATA_FILES = Object.freeze({
@@ -111,7 +112,7 @@ export function createDataStore(opts = {}) {
     }
   };
 
-  const urlFor = (name) => base + (DATA_FILES[name] || `${name}.json`);
+  const urlFor = (name) => resourceUrl(base + (DATA_FILES[name] || `${name}.json`));
 
   function load(name) {
     if (typeof name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(name)) return Promise.resolve(null);
@@ -121,7 +122,8 @@ export function createDataStore(opts = {}) {
     entry.promise = (async () => {
       for (let attempt = 0; ; attempt++) {
         try {
-          const res = await doFetch(urlFor(name), { cache: 'no-cache' });
+          const url = urlFor(name);
+          const res = await doFetch(url, { cache: resourceCache(url) });
           if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
           let json;
           try { json = await res.json(); } catch (err) { throw Object.assign(err instanceof Error ? err : new Error(String(err)), { badJson: true }); }

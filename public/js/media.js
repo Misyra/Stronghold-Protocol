@@ -16,7 +16,7 @@
 // path with the SPA's index.html).
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../../shared/media.js';
 
-const AUDIO_PATH = /^\/assets\/audio\/(.+)$/i;
+const AUDIO_PATH = /^(\/_v\/[a-f0-9]{16})?\/assets\/audio\/(.+)$/i;
 
 /**
  * Rewrite an audio URL to its extension-less `/media/…` form.
@@ -38,11 +38,11 @@ export function mediaUrl(url, origin = globalThis.location?.origin) {
   if (origin ? u.origin !== origin : absolute) return url;
   const m = AUDIO_PATH.exec(u.pathname);
   if (!m) return url;
-  let rest = m[1];
+  let rest = m[2];
   const ext = AUDIO_EXTS.find((e) => rest.toLowerCase().endsWith(e));
   if (!ext) return url;             // not a file we serve as audio (e.g. "x.mp3.bak") — leave it alone
   rest = rest.slice(0, -ext.length);
   const segments = rest.split('/');
   if (!rest || segments.some((s) => !s || s === '.' || s === '..' || s.startsWith('.'))) return url;
-  return `${MEDIA_PREFIX}${rest}${u.search}`;
+  return `${m[1] || ''}${MEDIA_PREFIX}${rest}${u.search}`;
 }

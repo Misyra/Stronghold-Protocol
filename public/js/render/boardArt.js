@@ -8,6 +8,8 @@
 // tools/crop-board-atlas.mjs). Every image referenced by the table is loaded through the shared image cache; a
 // missing image drops only the materials that use it. Everything is cached per page (one load for every view).
 
+import { resourceCache } from '../resourceUrl.js';
+
 let cached = null;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -24,7 +26,8 @@ export function loadBoardArt(assets) {
     const dir = atlasUrl.replace(/\/[^/]*$/, '');
     let tiles = null;
     try {
-      const res = await fetch(`${dir}/tiles.json`, { cache: 'no-cache' });
+      const url = `${dir}/tiles.json`;
+      const res = await fetch(url, { cache: resourceCache(url) });
       tiles = res.ok ? await res.json() : null;
     } catch { tiles = null; }
     if (!isObj(tiles) || !isObj(tiles.materials) || !isObj(tiles.source)) return null;

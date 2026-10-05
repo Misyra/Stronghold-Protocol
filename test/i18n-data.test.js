@@ -95,7 +95,7 @@ test('data/i18n/en.json: shape, the 盟约 season of the EN build, coverage and 
   assert.equal(OVERLAY.version, 1);
   assert.equal(OVERLAY.lang, 'en');
   assert.equal(OVERLAY.meta.source.season, 'act2autochess', 'built from an EN client that has 卫戍协议：盟约 下半');
-  // the 自选 data (0.2.0) brings 72 owned 6★, some of them (and some newer modules) not in the EN client yet: their
+  // the 自选 data (0.2.0) brings 71 owned 6★, some of them (and some newer modules) not in the EN client yet: their
   // names, skills, talents and modules stay Chinese — measured 97.6 % in all, skills 95.9 / talents 95.1 % (2026-10-05)
   assert.ok(OVERLAY.meta.totals.pct >= 97, `coverage ${OVERLAY.meta.totals.pct} %`);
   for (const kind of ['operators', 'skills', 'talents', 'modules', 'traits', 'enemies', 'bonds', 'items', 'effects', 'bands', 'garrisons', 'stages', 'tokens', 'choices', 'config']) {

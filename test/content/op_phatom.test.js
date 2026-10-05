@@ -68,7 +68,7 @@ function redeployNow(h, u) {
   assert.ok(h.b.redeploy(u, { free: true }), `${u.name} redeployed`);
 }
 
-test('傀影 in every 自选 form: his operator kit (all three skills authored), the form\'s stats + module attributes, 1-1, blocks 1, melee ground-only, 18 s redeploy, 维多利亚, no 特质; his placed 镜中虚影 deploys after him with the variant\'s stats and its copy of his skill', () => {
+test('傀影 in every 自选 form: his operator kit (all three skills authored), the form\'s stats + module attributes, 1-1, blocks 1, melee ground-only, 18 s redeploy, 维多利亚, no 特质; his placed 镜中虚影 deploys after him with the variant\'s stats, 禁疗 and its copy of his skill', () => {
   assert.equal(OPERATOR_KITS[PHATOM], KITS[PHATOM]);
   for (const f of FORMS_ALL) {
     const [tier, elite, mod] = f;
@@ -87,6 +87,7 @@ test('傀影 in every 自选 form: his operator kit (all three skills authored),
       assert.deepEqual([t.base.maxHp, t.base.atk, t.base.def, t.base.respawnTime, t.base.cost], [tw.stats.maxHp, tw.stats.atk, tw.stats.def, 45, 5], `${label(f)}: twin stats`);
       assert.deepEqual([t.def.skill.id, t.skill.kind], [tw.skillOf(skill).skillId, 'passive'], `${label(f)}: twin skill copy`);
       assert.deepEqual([t.s.blockCnt, t.profile.attack, t.profile.canHitFly, t.liveRangeGrid], [1, 'melee', false, [[0, 0], [0, 1]]], `${label(f)}: twin executor`);
+      assert.ok(t.s.flags.noHeal, `${label(f)}: twin 持有禁疗`);
       done(h);
     }
   }
@@ -203,13 +204,17 @@ test('S3 夜幕突袭 (被动): at each deployment 210 % / 240 % ATK physical to
   }
 });
 
-test('T1 镜中虚影 / T2 虚影精通: the twin is killed when he leaves the field and comes back on its tile 35 s (45 − 10; EXE-X stage 3: 45 − 16) after its LAST deployment, paying 5 DP, only while he stands', () => {
+test('T1 镜中虚影 / T2 虚影精通: the twin (禁疗: no heal reaches it) is withdrawn when he leaves the field and comes back on its tile 35 s (45 − 10; EXE-X stage 3: 45 − 16) after its LAST deployment, paying 5 DP, only while he stands', () => {
   for (const f of [[5, false, null], [5, true, EX], [6, true, EX]]) {
     const [tier, elite, mod] = f;
     const cut = twinOf(tier, elite, mod).talents.find((x) => x.bb.respawn_time != null).bb.respawn_time;
     assert.equal(cut, tier === 6 && mod === EX ? -16 : -10, label(f));
     const { h, u, t } = field({ tier, elite, mod, skill: 1, dp: 50 });
     const wait = 45 + cut;
+    // 禁疗: an ally heal does not reach it
+    t.hp = 100;
+    h.b.heal(u, t, 500);
+    assert.equal(t.hp, 100, `${label(f)}: 禁疗`);
     // knocked out while he stands: back `wait` s after its deployment at 0 s, 5 DP paid
     h.run(5);
     h.b.kill(t, null);
@@ -219,10 +224,11 @@ test('T1 镜中虚影 / T2 虚影精通: the twin is killed when he leaves the f
     assert.ok(h.runUntil(() => t.alive, 1.5), `${label(f)}: back at ${wait} s`);
     assert.deepEqual([t.tileR, t.tileC, h.b.players[0].dp], [12, 4, 45], `${label(f)}: its tile, 5 DP`);
     const at = h.b.time;
-    // he is knocked out: the twin is killed with him (KillTokens) and waits for him
+    // he is knocked out: the twin is withdrawn with him (强制撤退 — KillTokens) and waits for him
     h.b.kill(u, null);
     u.respawnAt = Infinity;   // he stays down until the test brings him back
-    assert.ok(!t.alive, `${label(f)}: killed with him`);
+    assert.ok(!t.alive, `${label(f)}: withdrawn with him`);
+    assert.equal(h.hooksOf('death').filter((c) => c.unit === t).slice(-1)[0].reason, 'retreat', `${label(f)}: a withdrawal, not a knock-out`);
     h.run(wait + 1);
     assert.ok(!t.alive && !u.alive, `${label(f)}: no return while he is down`);
     assert.ok(h.b.redeploy(u, { free: true }));

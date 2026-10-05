@@ -9,9 +9,11 @@
 // character_table / skill_table / battle_equip_table / token_table (zh_CN, as built into backups.json); PRTS 傀影 (镜中虚影
 // 备注 "虚影再部署与拥有复数召唤物的干员相同，即“部署召唤物后立刻开始计算再部署时间，结束后可以部署下一个”"; 血色乐章 备注 "触发消耗
 // 层数效果的行动节点为“成功造成伤害后”。若造成的伤害被伤判效果归零则不会消耗层数"; 夜幕突袭 备注 "不可对空"; EXE-X "撤退时返还大量
-// (80%)该次部署费用"); PRTS 分支特性信息 处决者; the client's battle data — charpack char_250_phatom (Talents/1:
+// (80%)该次部署费用"); PRTS 镜中虚影 (备注 "持有禁疗", "可以且优先攻击自身阻挡的单位", "退场时返还1个可部署的镜中虚影", "傀影退场时
+// 强制撤退场上的镜中虚影"); PRTS 分支特性信息 处决者; the client's battle data — charpack char_250_phatom (Talents/1:
 // charge_token[born] (RechargeToken on his deployment) + die_to_kill_token (KillTokens when he leaves), CommonAbilities
-// KillTokens; modes S2 / S3), token prefab token_10007_phatom_twin (charge_token[finish]; the same modes), the skill
+// KillTokens; modes S2 / S3), token prefab token_10007_phatom_twin (CommonAbilities: charge_token[finish] carrying abnormal
+// flag 7 = 禁疗; Talents/2: phatom_twin_t, RESPAWN_TIME + respawn_time; the same modes), the skill
 // prefabs skchr_phatom_1 / _2 / _3 and sktok_phatom_1 / _2 / _3 (S1: evade_physical + phatom_s_1[shield_physical] = a
 // shield_physical of hp_ratio × max HP, both `duration`; S2: phatom_s_2 = `times` stacked phatom_s_2[atk] (ATK MULTIPLIER
 // `atk`), one stack finished per ON_AFTER_OUTPUT_DAMAGE; S3: RandomCastAbility of the sluggish / stun / root attack
@@ -31,14 +33,16 @@
 // - T1 镜中虚影 "可以使用一个属性更强的虚影，虚影拥有和自己一样的技能，拥有独立的再部署时间": the twin is a hand piece the player
 //   places (a talent summon: tokens `placeable`, not owner-range); it deploys with the board after the operators and fights
 //   with its own stats (the variant of his form; EXE-Y stage 3: "属性进一步增强" = the byModule stats) as an executor (melee,
-//   blocks 1, ground-only), its copy of his picked skill (bySkill sktok_phatom_1 / 2 / 3) running at each of its own
-//   deployments. When he leaves the field (knocked out, withdrawn, forced out) it is killed (KillTokens); a fallen twin comes
-//   back on its tile — paying its cost (5 DP) as a deployment, the 卫戍 auto redeploy of a placed summon [ASSUMED, as 鸿雪's
-//   打字机 / 凯尔希's Mon3tr] — once its redeploy time has passed since its LAST DEPLOYMENT (PRTS 备注: the timer starts at the
-//   summon's deployment) and only while he stands (it is recharged by his deployment and killed by his leaving)
-//   [ASSUMED: his redeployment does not cut the twin's own timer short — the client's RechargeToken NORMAL; the 凯尔希 kit
-//   reads the same charge_token[born] as "readies at once"]. EXE-Y stage 2+ "本体和虚影同时在场时，攻击力各+10%": the twin's
-//   hidden module talent `atk` — ATK +atk on both while both are on the field.
+//   blocks 1, ground-only) holding 禁疗 (PRTS; the client's flag 7 — the data's `abnormal` lacks it [ASSUMED: given here, as
+//   the 凯尔希 / 机械师 kits do for their summons]), its copy of his picked skill (bySkill sktok_phatom_1 / 2 / 3) running at
+//   each of its own deployments. When he leaves the field (knocked out, withdrawn, forced out) it is withdrawn (PRTS "强制
+//   撤退"; the client's KillTokens); a twin off the field comes back on its tile — paying its cost (5 DP) as a deployment,
+//   the 卫戍 auto redeploy of a placed summon [ASSUMED, as 鸿雪's 打字机 / 凯尔希's Mon3tr] — once its redeploy time has
+//   passed since its LAST DEPLOYMENT (PRTS 备注: the timer starts at the summon's deployment) and only while he stands (it
+//   is recharged by his deployment, withdrawn by his leaving) [ASSUMED: his redeployment does not cut the twin's own timer
+//   short — the client's RechargeToken NORMAL; 虚影精通 / EXE-X would matter little otherwise; the 凯尔希 kit reads the same
+//   charge_token[born] as "readies at once"]. EXE-Y stage 2+ "本体和虚影同时在场时，攻击力各+10%": the twin's hidden module
+//   talent `atk` — ATK +atk on both while both are on the field.
 // - T2 虚影精通 "虚影的再部署时间-10秒" (EXE-X stage 3: −16): the twin's own talent respawn_time, added to its 45 s.
 // - S1 暗夜魅影 (被动, at each deployment): physical dodge `prob` and a 屏障 of hp_ratio × max HP that absorbs physical damage
 //   only (shieldType 'phys'), both for `duration` (10) s.
@@ -148,8 +152,8 @@ function deployEffect(battle, u, rec, key) {
 }
 
 /**
- * The twin's kit (`owner` = 傀影): its skill copy at each of its deployments, EXE-Y stage 2+'s shared ATK, and its own
- * redeploys (killed with him; back on its tile once its timer has run from its last deployment, he stands and the DP is
+ * The twin's kit (`owner` = 傀影): 禁疗, its skill copy at each of its deployments, EXE-Y stage 2+'s shared ATK, and its own
+ * redeploys (withdrawn with him; back on its tile once its timer has run from its last deployment, he stands and the DP is
  * there).
  */
 function twinKit(t, owner) {
@@ -160,6 +164,7 @@ function twinKit(t, owner) {
   return {
     skill: { kind: 'passive' },
     install(battle, unit) {
+      battle.addBuff(unit, { key: 'phatom:twin:abnormal', flags: { noHeal: true }, persist: true, allowDead: true });   // 持有禁疗
       if (rec?.id === TS2) installOpusUse(battle, unit, key);
       battle.on('deploy', (c) => {
         if (c.unit !== unit || c.move || !up(unit)) return;
@@ -194,7 +199,7 @@ export default {
         [S3]: { kind: 'passive' },
       },
       talents: [
-        { install(battle, unit) { // 镜中虚影: his twin pieces run the twin's kit; killed when he leaves; EXE-Y stage 2+: both +ATK
+        { install(battle, unit) { // 镜中虚影: his twin pieces run the twin's kit; withdrawn when he leaves; EXE-Y stage 2+: both +ATK
           for (const t of twinsOf(battle, unit)) {
             if (t.alive || t.deployed) continue;
             if (t.kit) battle.offOwner(t); // a piece set up before him: drop its generic kit's hooks
@@ -202,7 +207,8 @@ export default {
           }
           battle.on('death', (c) => {
             if (c.unit !== unit) return;
-            for (const t of twinsOf(battle, unit)) if (t.alive) battle.kill(t, null);   // KillTokens
+            // "傀影退场时强制撤退场上的镜中虚影" (KillTokens): a withdrawal, not a knock-out
+            for (const t of twinsOf(battle, unit)) if (t.alive) battle.retreat(t, { reason: 'retreat' });
           }, { owner: unit });
           // 本体和虚影同时在场时，攻击力各+N%: the twin's hidden module talent (his text when no twin def resolves)
           const both = num(tokTalentBb(battle.tokenDef(TWIN, unit), 'atk').atk, /本体和虚影同时在场时/.test(t0desc)

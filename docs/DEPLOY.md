@@ -153,7 +153,7 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 server {
-    listen 443 ssl;
+    listen 443 ssl http2;   # 新版 Nginx（1.25.1 起）写成 listen 443 ssl; 加一行 http2 on;
     server_name game.example.com;
     ssl_certificate     /etc/letsencrypt/live/game.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/game.example.com/privkey.pem;
@@ -171,6 +171,8 @@ server {
     }
 }
 ```
+
+**HTTP/2**：客户端由数百个小脚本模块组成（0.2.0 起进入对局时约 340 个），隔着公网时建议让代理以 HTTP/2 提供页面：所有模块走同一条连接，远距离玩家首次进入对局明显更快。Caddy 默认就是 HTTP/2；Nginx 见上面的 `http2`。服务器本身只说 HTTP/1.1，局域网或本机游玩不受影响。
 
 https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://同一域名/ws`；http 时用 `ws://`。服务器本身只提供 http，证书由代理 / 隧道负责。代理与服务器在同一台机器或内网时，`TRUST_PROXY=auto` 会信任它的 `X-Forwarded-For` / `X-Real-IP`；代理在公网另一台机器上时设 `TRUST_PROXY=1`（同时确保游戏端口只对代理开放）。
 

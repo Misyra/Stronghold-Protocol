@@ -413,6 +413,13 @@ class Client {
   async ready() {
     if (!(await this.isEditable())) return;
     await this.click('.readybtn');
+    // 准备 with funds left asks first (剩余资金, DESIGN §23.11): confirm it, as a player who means to start the fight does
+    await sleep(250);
+    const asked = await this.page.evaluate(() => {
+      const t = document.querySelector('.modal__title');
+      return !!(t && t.textContent.includes('剩余资金'));
+    });
+    if (asked) await this.click('.modal__actions button', '准备就绪', { timeout: 4000 });
     await this.waitFor((s) => s.ready || s.phase !== 'PREP', 'ready', 8000);
   }
 }

@@ -17,9 +17,9 @@
 //   damage instance she deals (normal or skill) she holds a 物理穿透 charge or draws one — always against an air unit (no
 //   random draw; 浮空 enemies are air units, ba.levitate), with `prob` against a ground one — and the charge adds
 //   def_penetrate to that instance's defIgnorePct; it is spent only by a damage instance that lands (a dodge or a cancel
-//   keeps it, and while she holds one she draws nothing: 不可叠加). SWO-X stage 3: 55 % and "技能期间若击倒空中单位，技能结束
-//   时获得6点技力" — an air unit she knocks out while her skill is active (S1's strike, S2's cut, S3's 3.5 s) gives her +sp SP
-//   once that skill ends.
+//   keeps it, and while she holds one she draws nothing: 不可叠加); a buff on her, so a new deployment starts without one.
+//   SWO-X stage 3: 55 % and "技能期间若击倒空中单位，技能结束时获得6点技力" — an air unit she knocks out while her skill
+//   is active (S1's strike, S2's cut, S3's 3.5 s) gives her +sp SP once that skill ends.
 // - T2 净化之剑 "攻击速度+18，场上有【海怪】敌人时效果翻倍": ASPD +attack_speed; SWO-Y stage 3 adds ATK +5 % (the module talent
 //   change's atk); both doubled while a living 【海怪】 enemy (data tag seamonster) is on the field.
 // - S1 起风 (AUTO, attack SP, DEFAULT): the next attack strikes its target once for atk_scale × ATK physical and levitates it
@@ -148,6 +148,13 @@ export default {
       talents: [
         { install(battle, unit) { // 审判之火: a 物理穿透 charge per physical instance (air: always, ground: prob), spent on landing
           const prob = num(t0.prob), pen = num(t0.def_penetrate), sp = num(t0.sp);
+          // the charge is a buff on her: a new deployment starts without one (an operator leaving the field loses its buffs)
+          battle.on('deploy', (ctx) => {
+            if (ctx.unit !== unit) return;
+            unit.mem.ireneCharge = false;
+            unit.mem.ireneChargeDmg = null;
+            unit.mem.ireneAirKill = false;
+          }, { owner: unit });
           if (pen > 0) {
             onHitBy(battle, unit, (ctx) => {
               const d = ctx.dmg, m = unit.mem;

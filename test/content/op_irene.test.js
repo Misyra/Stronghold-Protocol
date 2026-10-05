@@ -136,6 +136,13 @@ test('T1 审判之火 vs a ground enemy: one draw per physical instance at 50 %;
     approx(h.b.dealDamage(u, g, { amount: 1000, type: 'phys' }), 1000 - 400 * (1 - pen), 'pierced');
     assert.equal(h.b.rng.state(), st, 'no draw while a charge is held');
     assert.equal(u.mem.ireneCharge, false, 'spent');
+    // a held charge does not outlive her deployment (a buff on her)
+    assert.equal(h.b.dealDamage(u, fly, { amount: 1000, type: 'phys' }), 0, 'dodged again');
+    assert.equal(u.mem.ireneCharge, true, 'held');
+    h.b.retreat(u);
+    h.b.redeploy(u);
+    assert.ok(u.alive && u.deployed, 'redeployed');
+    assert.equal(u.mem.ireneCharge, false, 'a new deployment holds no charge');
     done(h);
   }
 });

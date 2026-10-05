@@ -41,7 +41,17 @@ Run: `npm install && npm run assets && npm start` → `http://localhost:3000`. F
 
 ```
 server/
-  index.js                 HTTP static server (gzip for .skel/.atlas/.json/.js/.css), WebSocket upgrade at /ws, boot
+  index.js                 process entry: startServer() wires server/http/ (plain node:http + ws); boots when run directly
+  http/
+    config.js              ROOT, served dirs, env (PORT, HOST, TRUST_PROXY, DEBUG), options handed to net.js / lobby.js
+    websocket.js           session wiring (SessionRegistry → Lobby → Network), WebSocket upgrade at /ws (64 KB frames)
+    static.js              mounts / → public, /data/, /shared/, /sim/ (.js only), the /data.js browser stand-in, path guards
+    media.js               /media/… extension-less audio → public/assets/audio
+    files.js               one file → response: MIME, gzip (.skel/.atlas/.json/.js/.css …), ETag / 304, cache policy, ranges
+    buildTag.js            build tag of the served browser runtime (/healthz build, public/js/ui/buildGuard.js)
+    routes.js              request listener: 414 / 400 / 405 guards, GET /healthz, then static files
+    common.js              security headers, URL split, error page, JSON replies, bare 400 for unparseable requests
+    boot.js                boot banner (Local / LAN / tunnel URLs), port-in-use hint, graceful SIGINT / SIGTERM
   net.js                   session registry, send helpers, per-connection rate limit, message validation (uses shared/protocol.js)
   lobby.js                 rooms (4-letter codes), seats, host, AI seats, ready/start, reconnect tokens, room→Match wiring
   data.js                  loads data/*.json once, builds indexes (getChess, getBond, …); frozen objects

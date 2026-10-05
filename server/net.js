@@ -525,7 +525,7 @@ export class Network {
   get connectionCount() { return this.conns.size; }
 
   /**
-   * Upgrade-time admission check (server/index.js): null to accept, otherwise the reason to refuse.
+   * Upgrade-time admission check (server/http/websocket.js): null to accept, otherwise the reason to refuse.
    * @param {import('node:http').IncomingMessage} req
    * @returns {null | 'shutdown' | 'full' | 'per-address'}
    */

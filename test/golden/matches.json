@@ -1574,7 +1574,7 @@
           "title": {"id":"comment_1","name":"卫戍之星","picId":"comment_icon_1","text":"对敌方领袖造成伤害最高（仅胜利时）"},
           "trophies": 4,
           "reward": 400,
-          "stats": {"activatedLayers":276,"bossDamage":390000,"dmgDealt":2811982,"gold":135,"itemsEquipped":23,"kills":254,"leaks":53,"lpLost":26,"merges":5,"perfectRounds":8,"refreshes":21},
+          "stats": {"activatedLayers":276,"bossDamage":390000,"dmgDealt":2809891,"gold":135,"itemsEquipped":23,"kills":254,"leaks":53,"lpLost":26,"merges":5,"perfectRounds":8,"refreshes":21},
           "lineup": ["6_05_a@12,3[3_08_e_a+3_05_e_a]","4_14_b@11,3[3_11_e_b+6_05_e_a]","1_17_b@10,3","6_19_a@10,4","6_17_a@10,7[4_08_e_a+1_05_e_b]","6_06_a@10,8[1_01_e_a+4_04_e_a]","3_12_a@9,4[4_04_e_b+1_02_e_b]","3_13_b@9,8[2_01_e_a+4_03_e_a]"],
           "bonds": ["arcaneShip 0/14","kazimierzShip 1/62","kjeragShip 0/8","preciShip 2/48","raidShip 1/105","sargonShip 1/2","skillfulShip 0/9","soloShip 0/6","suntShip 1/0","swiftShip 1/59","yanShip 0/1"]
         },

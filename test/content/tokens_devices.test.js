@@ -495,7 +495,7 @@ test('炎佑: spawnYanyou — flying ally, bond stats, 3 targets with burn + ele
   checkInvariants(h.b);
 });
 
-test('band map characters: spawnMapChar puts 预备干员-医疗 at its stage slot; Touch 恳切福音 heals ×heal_scale on ≤50 % HP allies', REAL, () => {
+test('band map characters: spawnMapChar puts 预备干员-医疗 at its stage slot; Touch 恳切福音 heals ×heal_scale on allies below 50 % HP', REAL, () => {
   const g = guard({ stats: { maxHp: 10000 } });
   const h = makeBattle({ stageId: 'act2autochess_m01', defs: { chess: { test_guard: g } }, units: [{ chessId: 'test_guard', row: 10, col: 3 }], autoFinish: false, timeLimit: 60,
     setup: (b) => b.on('heal', (c) => { if (c.source?.defId === TOKEN_IDS.touch) (b.mem ??= []).push({ amount: c.amount, ratio: c.target.hpRatio, active: c.source.skill.active }); }, { priority: -500 }) });
@@ -515,7 +515,7 @@ test('band map characters: spawnMapChar puts 预备干员-医疗 at its stage sl
   gu.hp = 3000;
   h.run(4);
   const bb = touch.skill.bb;
-  const low = h.b.mem.find((x) => x.active && x.ratio <= bb.hp_ratio);
+  const low = h.b.mem.find((x) => x.active && x.ratio < bb.hp_ratio);
   assert.ok(low, 'healed a low ally');
   approx(low.amount, touch.s.atk * bb.heal_scale, 1e-6, 'boosted heal');
   checkInvariants(h.b);
@@ -1090,7 +1090,7 @@ test('预备干员-医疗: stat talent 攻击提升 (+4 % ATK) on top of the dat
   approx(med.s.atk, tokDef(TOKEN_IDS.reserveMedic).stats.atk * (1.04 + 0.5), 1e-9, '治疗强化·β型 +50 %');
 });
 
-test('Touch talents: 攫升 +3 SP to the healed unit, 超脱 +5 SP when an operator in range is knocked out; extra heal = 30 % of the main heal', REAL, () => {
+test('Touch talents: 攫升 +3 SP to the healed unit, 超脱 +5 SP when an operator in range is knocked out; extra heal = 30 % of the main heal\'s base, ×heal_scale on its own low recipient', REAL, () => {
   const g = chessRec({ id: 'test_sp', stats: { maxHp: 10000, atk: 0, spRecovery: 0 }, skill: { spCost: 100, initSp: 0 } });
   const h = makeBattle({ stageId: 'act2autochess_m01', defs: { chess: { test_sp: g } }, units: [{ chessId: 'test_sp', row: 10, col: 3, uid: 1 }, { chessId: 'test_sp', row: 11, col: 3, uid: 2 }], autoFinish: false, timeLimit: 60,
     setup: (b) => b.on('heal', (c) => { if (c.source?.defId === TOKEN_IDS.touch) (b.mem ??= []).push({ t: c.target.id, amount: c.amount, ratio: c.target.hpRatio }); }, { priority: -500 }) });
@@ -1105,14 +1105,17 @@ test('Touch talents: 攫升 +3 SP to the healed unit, 超脱 +5 SP when an opera
   h.b.dealDamage(null, b2, { amount: 1e6, type: 'true' });
   assert.equal(b2.alive, false);
   approx(touch.skill.sp - sp0, 5, 0.1, '超脱');
-  // skill: main heal (×1.5 at ≤ 50 %) + extra 30 % of it, not boosted again
+  // skill: main heal (×1.5 below 50 %) + an extra heal of 30 % of its base (ATK) on the lowest-ratio unit of the target and
+  // its neighbours — the target again, still below half after the main heal: ×1.5 on its own (PRTS 技能3 备注)
   h.b.mem = [];
   touch.skill.activate('test', { free: true });
-  a.hp = 4000;
+  a.hp = 2000;
   assert.ok(h.runUntil(() => h.b.mem.length >= 2, 5));
   const [main, extra] = h.b.mem;
+  assert.deepEqual([main.t, extra.t], [a.id, a.id]);
   approx(main.amount, touch.s.atk * 1.5, 1e-6, 'main heal boosted');
-  approx(extra.amount, main.amount * 0.3, 1e-6, 'extra = 30 % of the main heal');
+  assert.ok(extra.ratio < 0.5);
+  approx(extra.amount, touch.s.atk * 0.3 * 1.5, 1e-6, 'extra = 30 % of the base, boosted on its low recipient');
   checkInvariants(h.b);
 });
 

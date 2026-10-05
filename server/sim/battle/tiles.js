@@ -185,9 +185,10 @@ export class BattleTiles {
    * decision of 2026-10-04): knocked out ('killed'), entering the battle knocked out (FORCED_EXIT, 联防) and forced out
    * by its own effects ('retreat': 史尔特尔's 余烬, 耀骑士临光 S2, 骑士戒律 + 竞技旗, 伊内丝 S3; 'merchant': a 商人 that cannot
    * pay) — except the 突袭 retreat ('raid', redeployed at once on its landing tile); not removed for good, after it was
-   * deployed. A forced exit stays no kill: its 'die' / `death` reason is not 'killed' (no 被击倒 effect, 不屈, 阿戈尔, no
-   * knock-down count). The client keeps its model on that tile knocked down with a redeploy countdown (b.snap `down`,
-   * render/units.js); summons, devices and enemies simply leave.
+   * deployed. A forced exit stays no kill: its 'die' / `death` reason is not 'killed' (no 被击倒 effect, 阿戈尔, no
+   * knock-down count — but 不屈 rolls on it, and Touch's 超脱 counts a `dying` one: 史尔特尔's 余烬, 骑士戒律 + 竞技旗). The
+   * client keeps its model on that tile knocked down with a redeploy countdown (b.snap `down`, render/units.js); summons,
+   * devices and enemies simply leave.
    */
   isDown(u) {
     return !!u && u.side === 'ally' && u.kind === 'op' && !u.alive && !u.removed && u.removeReason !== 'raid'

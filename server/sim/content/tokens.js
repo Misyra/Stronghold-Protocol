@@ -1339,11 +1339,25 @@ export function spawnYanyou(battle, playerId, { atk, hp, atkMul = 1, dmgTakenMul
 // band map characters (预备干员-医疗 / Touch)
 
 /**
+ * Exits that give Touch's 超脱 its SP (PRTS Touch(卫戍协议) 第二天赋 备注 "部分有死亡动画的强制撤退（如史尔特尔的天赋效果）也能触发这一
+ * 天赋"): a knock-out ('killed') and a forced exit that plays the death animation — Battle.retreat `dying`, a knock-out put
+ * off by the operator's own effect: 史尔特尔's 余烬 (the PRTS example) and 骑士戒律 + 竞技旗 ("受到致命伤害时不撤退，技能结束后
+ * 退场" [ASSUMED: the same kind of exit]). Not the exits a skill plans — 耀骑士临光 S2's "技能结束后自动撤退", 伊内丝 S3's "放置
+ * 一个影哨后离场" — nor the 商人's "不足时自动撤退" ('merchant'), the 突袭 jump ('raid'), the 联防 setup (FORCED_EXIT) or a
+ * summon's end ('expired') [ASSUMED: plain 撤退 without a death animation]. A battle runs on its own — the player has no
+ * 撤退 command in it — so none of these is a player's own retreat.
+ */
+const touchExitCounts = (ctx) => ctx.reason === 'killed' || (ctx.reason === 'retreat' && !!ctx.dying);
+
+/**
  * Talents of the band map characters (data talents of the character record) — and of the Touch 补位 stand-in, whose kit
  * (kits/ops/standin-acmedc.js) uses this one implementation, the module's 超脱 upgrade (8 SP) coming with the record:
  *   plain stat talent  "攻击力+4%" (预备干员-医疗 攻击提升) → persistent ATK/DEF/HP/ASPD buff
- *   攫升  "治疗目标时使其获得3点技力" (Touch) → every heal by the character gives the healed unit `sp` SP
- *   超脱  "攻击范围内的友方干员被击倒时获得5点技力" (Touch) → an allied operator knocked out on a tile of its range: +`sp` SP
+ *   攫升  "治疗目标时使其获得3点技力" (Touch) → every heal the character outputs gives its target `sp` SP — PRTS 备注 "本天赋只需
+ *         Touch输出治疗便能触发（无需实际产生治疗量）": herself too, and a heal that restores nothing (a full-HP target: S3's
+ *         extra heal); not a device or a unit without a skill, not her own HP-regeneration tick (no heal she outputs)
+ *   超脱  "攻击范围内的友方干员被击倒时获得5点技力" (Touch) → an allied operator knocked out (or forced out dying:
+ *         touchExitCounts) on a tile of its range: +`sp` SP
  */
 export function mapCharTalents(def) {
   const out = [];
@@ -1355,7 +1369,7 @@ export function mapCharTalents(def) {
       out.push({ install(battle, unit) {
         battle.on('heal', (ctx) => {
           const tg = ctx.target;
-          if (ctx.source !== unit || !tg || tg === unit || tg.kind === 'device' || !tg.skill || !(ctx.amount > 0)) return;
+          if (ctx.source !== unit || ctx.opts?.regen || !tg || tg.kind === 'device' || !tg.skill || tg.skill.noSkill) return;
           tg.skill.gainSp(sp, 'talent');
         }, { owner: unit, priority: -200 });
       } });
@@ -1363,7 +1377,7 @@ export function mapCharTalents(def) {
       out.push({ install(battle, unit) {
         battle.on('death', (ctx) => {
           const d = ctx.unit;
-          if (ctx.reason !== 'killed' || !unit.alive || !unit.deployed || !unit.skill || !d || d === unit || d.kind !== 'op' || d.ownerId !== unit.ownerId) return;
+          if (!touchExitCounts(ctx) || !unit.alive || !unit.deployed || !unit.skill || !d || d === unit || d.kind !== 'op' || d.ownerId !== unit.ownerId) return;
           if ((unit.rangeKeySet || new Set(unit.rangeKeys || [])).has(d.tileR * COLS + d.tileC)) {
             unit.skill.gainSp(sp, 'talent');
             battle.fx('spGain', { x: unit.x, y: unit.y, id: unit.id, n: sp });
@@ -1391,11 +1405,19 @@ function reserveMedicKit(bb, raw, def) {
 }
 
 /**
- * Touch 恳切福音 (skchr_acmedc_3): +ATK, 2 heal targets in the skill range, ×heal_scale on allies ≤ hp_ratio, +addition
+ * Touch 恳切福音 (skchr_acmedc_3): +ATK, 2 heal targets in the skill range, ×heal_scale on allies below hp_ratio, +addition
  * heal — one implementation for the 外勤医疗 map character (touchKit) and the Touch 补位 stand-in (kits/ops/
  * standin-acmedc.js). `skill` = the skill record (`rangeGrid`, `duration`) of blackboard `bb`. Returns `{ skill:
  * SkillSpec, install(battle, unit) }`: `install` adds the heal boost, which acts while the unit's skill runs — install it
- * on a unit whose skill is this one only.
+ * on a unit whose skill is this one only. PRTS Touch(卫戍协议) 技能3 and its 备注:
+ *   - "对生命值低于一半的友方单位治疗量提高为原来的130%": strictly below hp_ratio (PRTS 修正: 低于, not the old 不高于);
+ *   - "并额外治疗一次目标或目标相邻1个友方单位，治疗量为主目标的30%": once per heal action, at the main (first = most
+ *     injured) target's hit; 30 % of that heal's base (ATK × its scales, before the ×heal_scale the main target may get);
+ *   - 备注 "额外治疗范围 x-5…优先选择生命比例更低的单位治疗（可治疗生命值已满单位）": the main target or one of its 4
+ *     orthogonal neighbours, the lowest HP ratio first, a full-HP one included [ASSUMED: on equal ratios the main target,
+ *     then the battle's ally order]; never a 禁疗 / 孤立 / 无法被友方治疗 unit (no heal can pick it);
+ *   - 备注 "额外治疗可触发技能后半段的治疗量提高效果": the extra heal is a heal of its own, so its recipient gets the ×heal_scale
+ *     when it is below hp_ratio (and the stand-in's PHY-X ×1.15), and its target gets 攫升's SP.
  */
 export function touchGospel(bb, skill) {
   const hpRatio = num(bb.hp_ratio, 0), boost = num(bb.heal_scale, 1), extra = num(bb['attack@addition_heal_scale'], 0);
@@ -1409,28 +1431,24 @@ export function touchGospel(bb, skill) {
       targeting,
       onHit({ battle, unit, target, heal }) {
         if (!(extra > 0) || !target || !(heal > 0)) return;
-        // "每次治疗2个目标，并额外治疗一次…治疗量为主目标的30%": one extra heal per heal action, for the main
-        // (first = most injured) target — onHit runs once per healed target
+        // onHit runs once per healed target: the extra heal comes with the first (main) one of the action
         const n = unit.stats.attacks;
         if (unit.mem.touchExtraAt === n) return;
         unit.mem.touchExtraAt = n;
-        let best = target.hp < target.s.maxHp - 1e-6 ? target : null;
-        for (const a of battle.alliesInRadius(target.x, target.y, 1, unit.ownerId)) {
-          if (a === target || a.hp >= a.s.maxHp - 1e-6 || a.s.flags.noHeal || a.profile?.noHeal) continue; // (禁疗 / 孤立)
+        let best = target;
+        for (const a of battle.alliesInRadius(target.x, target.y, 1)) {
+          if (a === target || !battle.allySelectable(a, unit) || a.s.flags.noHeal || a.profile?.noHeal) continue;
           if (Math.abs(a.tileR - target.tileR) + Math.abs(a.tileC - target.tileC) !== 1) continue;
-          if (!best || a.hpRatio < best.hpRatio) best = a;
+          if (a.hpRatio < best.hpRatio - 1e-9) best = a;
         }
-        // 30 % of the main target's heal as it was applied (×heal_scale when that target was at ≤ hp_ratio)
-        const main = unit.mem.touchMainHeal && unit.mem.touchMainHeal.target === target ? unit.mem.touchMainHeal.amount : heal;
-        unit.mem.touchExtra = true; // the extra heal is a share of the main heal: no second ×heal_scale
-        try { battle.heal(unit, best ?? target, main * extra); } finally { unit.mem.touchExtra = false; }
+        // `heal` = the main heal's base (ai.js doHeal: ATK × scales, before the heal pipeline and the ×heal_scale)
+        battle.heal(unit, best, heal * extra);
       },
     },
     install(battle, unit) {
       battle.on('heal', (ctx) => {
-        if (ctx.source !== unit || !unit.skill?.active || unit.mem.touchExtra) return;
-        if (boost !== 1 && hpRatio > 0 && ctx.target.hpRatio <= hpRatio + 1e-9) ctx.amount *= boost;
-        unit.mem.touchMainHeal = { target: ctx.target, amount: ctx.amount };
+        if (ctx.source !== unit || ctx.opts?.regen || !unit.skill?.active) return;
+        if (boost !== 1 && hpRatio > 0 && ctx.target.hpRatio < hpRatio - 1e-9) ctx.amount *= boost;
       }, { owner: unit });
     },
   };

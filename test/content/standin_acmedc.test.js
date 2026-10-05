@@ -24,6 +24,7 @@ const DEFS = {
     test_tank2_a: chessRec({ id: 'test_tank2_a', profession: 'TANK', stats: { maxHp: 100000, atk: 1, def: 0 }, skill: null }),
     // SP only from 攫升: an attack-SP skill and no enemy to attack
     test_sp_a: chessRec({ id: 'test_sp_a', profession: 'TANK', stats: { maxHp: 100000, atk: 1, def: 0 }, skill: { spType: 'INCREASE_WHEN_ATTACK', spCost: 1000, initSp: 0 } }),
+    test_sp2_a: chessRec({ id: 'test_sp2_a', profession: 'TANK', stats: { maxHp: 1000, atk: 1, def: 0 }, skill: { spType: 'INCREASE_WHEN_ATTACK', spCost: 1000, initSp: 0 } }),
     test_medic_a: chessRec({ id: 'test_medic_a', profession: 'MEDIC', subProfessionId: 'physician', stats: { atk: 300 }, skill: null, rangeGrid: [[0, 0]] }),
   },
 };
@@ -97,9 +98,9 @@ test('S3 恳切福音: cast with an injured ally inside the 5-2 only (no heal be
     h.run(0.5);
     const first = h.heals.filter((x) => x.t === h.heals[0].t);
     assert.ok(first[0].t >= cast, `${id}: the first heal comes with the cast`);
-    assert.deepEqual(first.map((x) => x.uid), [2, 2], `${id}: the main heal on the far ally, then the extra on it (its neighbours are full)`);
+    assert.deepEqual(first.map((x) => x.uid), [2, 2], `${id}: the main heal on the far ally, then the extra on it (the lowest HP ratio of it and its neighbours)`);
     close(first[0].amount, u.s.atk * phy * boost, `${id}: main heal ×${boost}${phy > 1 ? ' ×1.15 PHY-X' : ''}`);
-    close(first[1].amount, first[0].amount * 0.3, `${id}: extra heal = 30 % of the main one`);
+    close(first[1].amount, u.s.atk * 0.3 * phy * boost, `${id}: extra heal = 30 % of the main heal's base, its still-low recipient's bonuses on it`);
     // two injured allies: both healed per action
     h.b.loseHp(near, near.hp * 0.2);
     const n0 = h.heals.length;
@@ -118,6 +119,41 @@ test('S3 恳切福音: cast with an injured ally inside the 5-2 only (no heal be
     const h = battle({ id: 'chess_char_5_11_a', carry: { sp: 999 } }, allies);
     h.run(5);
     assert.equal(h.unit(1).skill.activations, 0, JSON.stringify(allies));
+  }
+});
+
+test('S3 extra heal (PRTS 备注): 30 % of the main heal\'s base, its own recipient\'s ×heal_scale (and PHY-X); the lowest HP ratio of the main target and its 4 neighbours; exactly half HP is not 「低于」', () => {
+  for (const id of ['chess_char_5_11_a', 'chess_char_6_09_b']) {
+    const phy = moduleOf(id) ? 1.15 : 1;
+    const boost = skillOf(id, S3).bb.heal_scale;
+    // the main target on (10,8) (inside the 5-2, outside her 3-3); its neighbour (10,9) is beyond the 5-2 (never a main target)
+    const firstAction = (mainRatio, nearRatio) => {
+      const h = battle({ id, carry: { sp: 999 } }, [['test_tank_a', 10, 8, mainRatio], ['test_tank2_a', 10, 9, nearRatio]]);
+      const u = h.unit(1);
+      assert.ok(h.runUntil(() => h.heals.length >= 2, 5), `${id}: healed`);
+      assert.ok(u.skill.active, `${id}: S3 running`);
+      const t0 = h.heals[0].t;
+      const act = h.heals.filter((x) => x.t === t0);
+      assert.equal(act.length, 2, `${id}: one main heal and one extra heal`);
+      checkInvariants(h.b);
+      return { u, main: act[0], extra: act[1] };
+    };
+    // main above half: no bonus; the extra goes to the neighbour below half (lower ratio), with both bonuses
+    let r = firstAction(0.55, 0.45);
+    assert.deepEqual([r.main.uid, r.extra.uid], [2, 3], `${id}: the extra on the lower-ratio neighbour`);
+    close(r.main.amount, r.u.s.atk, `${id}: no bonus at 55 %`);
+    close(r.extra.amount, r.u.s.atk * 0.3 * boost * phy, `${id}: the extra takes its own recipient's ×${boost}`);
+    // main at exactly half: "低于" — no ×heal_scale, no PHY-X; the extra on it (its neighbour is full), no bonus either
+    r = firstAction(0.5, 1);
+    assert.deepEqual([r.main.uid, r.extra.uid], [2, 2], `${id}: the full neighbour has the higher ratio`);
+    close(r.main.amount, r.u.s.atk, `${id}: exactly 50 % is not below half`);
+    close(r.extra.amount, r.u.s.atk * 0.3, `${id}: extra = 30 % of the base`);
+    // main just below half: boosted; the extra lands on it after it crossed half — 30 % of the base, not of the boosted heal
+    r = firstAction(0.499, 1);
+    assert.deepEqual([r.main.uid, r.extra.uid], [2, 2]);
+    close(r.main.amount, r.u.s.atk * boost * phy, `${id}: ×${boost} below half`);
+    assert.ok(r.extra.ratio >= 0.5, `${id}: its recipient is above half now`);
+    close(r.extra.amount, r.u.s.atk * 0.3, `${id}: the extra's base excludes the main heal's bonuses`);
   }
 });
 
@@ -187,9 +223,9 @@ test('S2 宛如天启: cast with an injured ally inside the 3-10 only; 30 s on t
   assert.equal(h.unit(1).skill.activations, 0);
 });
 
-test('攫升 / 超脱 (the strategy\'s mapCharTalents): a healed unit +3 SP; an operator knocked out in her range +5 SP (+8 with PHY-X Lv3)', () => {
+test('攫升 / 超脱 (the strategy\'s mapCharTalents): a healed unit +3 SP; an operator knocked out — or forced out — in her range +5 SP (+8 with PHY-X Lv3)', () => {
   for (const [id, sp] of [['chess_char_5_11_a', 5], ['chess_char_5_11_b', 5], ['chess_char_6_20_b', 8]]) {
-    const h = battle({ id }, [['test_sp_a', 10, 5, 0.6], ['test_tank_a', 9, 4, 1], ['test_tank2_a', 9, 10, 1]]);
+    const h = battle({ id }, [['test_sp_a', 10, 5, 0.6], ['test_tank_a', 9, 4, 1], ['test_tank2_a', 9, 10, 1], ['test_tank_a', 11, 4, 1], ['test_tank2_a', 11, 5, 1], ['test_tank_a', 9, 5, 1], ['test_tank2_a', 11, 6, 1]]);
     const u = h.unit(1), ally = h.unit(2);
     const gains = [];
     h.b.on('spGain', (c) => { if (c.unit === ally) gains.push([c.reason, c.amount]); });
@@ -203,6 +239,60 @@ test('攫升 / 超脱 (the strategy\'s mapCharTalents): a healed unit +3 SP; an 
     const mid = u.skill.sp;
     h.b.kill(h.unit(4)); // (9,10): out of it
     close(u.skill.sp, mid, `${id}: not out of range`);
+    // PRTS 备注: a forced exit with a death animation (史尔特尔's 余烬: a `dying` retreat) counts; not a skill's planned
+    // retreat (耀骑士临光 S2, 伊内丝 S3: a plain 'retreat'), the 商人's automatic 撤退 ('merchant') or the 突袭 jump ('raid')
+    h.b.retreat(h.unit(5), { reason: 'retreat', dying: true }); // (11,4)
+    close(u.skill.sp, mid + sp, `${id}: 超脱 on a dying forced exit`);
+    h.b.retreat(h.unit(6), { reason: 'retreat' }); // (11,5)
+    h.b.retreat(h.unit(7), { reason: 'merchant' }); // (9,5)
+    h.b.retreat(h.unit(8), { reason: 'raid' }); // (11,6)
+    close(u.skill.sp, mid + sp, `${id}: not on a planned, a 商人's or a 突袭 retreat`);
+    checkInvariants(h.b);
+  }
+});
+
+test('超脱 on 史尔特尔\'s 余烬 exit (PRTS 备注 "如史尔特尔的天赋效果"): her forced exit 8 s after the lethal blow gives Touch the SP', () => {
+  const id = 'chess_char_5_11_a', sp = 5;
+  const h = battle({ id }, [['chess_char_5_07_a', 9, 4, 1]]);
+  const u = h.unit(1), surtr = h.unit(2);
+  const exits = [];
+  h.b.on('death', (c) => { if (c.unit === surtr) exits.push([c.reason, c.dying]); });
+  h.b.dealDamage(null, surtr, { amount: 1e7, type: 'true' });
+  assert.ok(surtr.alive && surtr.findBuff('surtr:ember'), '余烬: kept alive');
+  const before = u.skill.sp;
+  const gains = [];
+  h.b.on('spGain', (c) => { if (c.unit === u && c.reason === 'talent') gains.push(c.amount); });
+  assert.ok(h.runUntil(() => !surtr.alive, 12), 'she withdraws');
+  assert.deepEqual(exits, [['retreat', true]], 'a dying forced exit');
+  assert.deepEqual(gains, [sp], '超脱');
+  assert.ok(u.skill.sp >= before + sp - 1e-6);
+  checkInvariants(h.b);
+});
+
+test('攫升 (PRTS 备注 "只需Touch输出治疗便能触发（无需实际产生治疗量）"): her heal on herself and a heal that restores nothing (S3\'s extra heal on a full unit) give SP too', () => {
+  for (const id of ['chess_char_5_11_a', 'chess_char_6_09_b']) {
+    // herself: injured, she heals herself (her 3-3 holds her own tile)
+    let h = battle({ id }, []);
+    let u = h.unit(1);
+    h.b.loseHp(u, u.hp * 0.4);
+    const own = [];
+    h.b.on('spGain', (c) => { if (c.unit === u && c.reason === 'talent') own.push(c.amount); });
+    assert.ok(h.runUntil(() => h.heals.length > 0, 5), `${id}: a self-heal`);
+    h.step();
+    assert.equal(h.heals[0].uid, 1);
+    assert.deepEqual(own, [3], `${id}: 攫升 on her own heal`);
+    checkInvariants(h.b);
+    // S3: the main heal fills a 1000-HP unit at 90 %, then the extra heal lands on it at full HP — still +3 SP
+    h = battle({ id, carry: { sp: 999 } }, [['test_sp2_a', 10, 8, 0.9]]);
+    u = h.unit(1);
+    const tgt = h.unit(2);
+    const got = [];
+    h.b.on('spGain', (c) => { if (c.unit === tgt && c.reason === 'talent') got.push(c.amount); });
+    assert.ok(h.runUntil(() => h.heals.length >= 2, 5), `${id}: S3 heals`);
+    h.step();
+    assert.ok(u.skill.active);
+    assert.deepEqual(h.heals.slice(0, 2).map((x) => [x.uid, x.ratio === 1]), [[2, false], [2, true]], `${id}: the extra heal on the now full unit`);
+    assert.deepEqual(got, [3, 3], `${id}: 攫升 for the main heal and for the extra heal that restored nothing`);
     checkInvariants(h.b);
   }
 });

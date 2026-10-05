@@ -21,3 +21,7 @@ scripts/service.env.cmd
 Thumbs.db
 .env
 .env.*
+.state
+*.state.json
+*.state.json.lock
+*.state.json.*.tmp

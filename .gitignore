@@ -42,3 +42,9 @@ desktop.ini
 
 # Optional per-install preload content hashes
 /data/asset-hashes.json
+
+# Server checkpoints contain private reconnect tokens; never publish or commit them.
+/.state/
+*.state.json
+*.state.json.lock
+*.state.json.*.tmp

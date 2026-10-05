@@ -54,6 +54,8 @@ COPY --from=build /app/public ./public
 # research tables: read by server/sim/nodeData.js as a fallback
 COPY --from=build /app/docs/research ./docs/research
 
+RUN mkdir -p /app/.state && chown node:node /app/.state
+ENV SP_STATE_FILE=/app/.state/server.state.json
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

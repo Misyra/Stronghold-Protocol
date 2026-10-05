@@ -1853,6 +1853,9 @@ export class Match {
 
   endPrep() {
     if (this.phase !== PHASE.PREP) return;
+    // Capture the final formation before onPrepEnd mutates it or constructs any battle state.
+    try { this.opts.onCheckpoint?.(this); }
+    catch (err) { this.log.warn?.('[persist] prep checkpoint failed', err.message); }
     for (const ps of this.order) { ps._botWorker?.cancel(); ps._botWorker = null; }
     this.setDeadline(0);
     const alive = this.alivePlayers();

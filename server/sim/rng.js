@@ -41,8 +41,13 @@ export function createRng(seed = 1) {
   };
   /** current internal state (for debugging / hashing) */
   rng.state = () => s;
+  /** Restore an internal position (zero is a valid state, unlike the public zero seed). */
+  rng.setState = (state) => { s = Number(state) >>> 0; return rng; };
   return rng;
 }
+
+/** Continue a saved RNG stream without re-seeding it (checkpoint recovery). */
+export const createRngFromState = (state) => createRng(1).setState(state);
 
 /** Derive a child seed deterministically (e.g. per field). */
 export function deriveSeed(seed, salt) {

@@ -27,7 +27,8 @@
 //     Prints LAN URLs on boot.
 //   * Per-network limits for internet clients (see net.js clientAddress; local/LAN peers are exempt): open sockets
 //     (maxConnectionsPerAddr, refused at upgrade with 429), rooms and running matches (lobby.js).
-//   * Graceful shutdown on SIGINT/SIGTERM (rooms get room.closed{reason:'shutdown'}, sockets close 1001).
+//   * CLI checkpoints to .state/server-<PORT>.state.json (SP_STATE_FILE=off disables); restored before listening.
+//     Graceful shutdown saves state before closing rooms/sockets.
 //
 // Programmatic use (tests): `const srv = await startServer({ port: 0, quiet: true }); … await srv.close();`
 // The server only auto-listens when this file is the process entry point.
@@ -45,6 +46,8 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
 import { Lobby, CODE_ALPHABET } from './lobby.js';
+import { Persister, restoreServer } from './persist.js';
+import { FileStateStore } from './stateFile.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
 import { createAssetVersion, VERSION_PREFIX } from './assetVersion.js';
@@ -697,6 +700,7 @@ function makeLogger(quiet) {
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   workers?: number, workerQueue?: number, workerTimeoutMs?: number, workerPool?: SimulationPool | null,
  *   assetsCdn?: string, assetsCdnVersion?: string,
+ *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: WebSocketServer,
  *                     lobby: Lobby, network: Network, registry: SessionRegistry, workerPool: SimulationPool | null,
@@ -737,6 +741,36 @@ export async function startServer(opts = {}) {
   }
   log.info(`[workers] ${workerPool ? `${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)` : 'disabled'}`);
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool });
+  const stateFile = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;
+  if (stateFile && stateFile !== 'off') {
+    const absoluteState = path.resolve(stateFile);
+    for (const root of [publicDir, dataDir, sharedDir]) {
+      const relative = path.relative(path.resolve(root), absoluteState);
+      if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+        if (ownsWorkerPool) await workerPool?.close();
+        throw new Error('SP_STATE_FILE 不能位于公开静态目录，建议使用 .state/ 或私有数据目录');
+      }
+    }
+  }
+  const store = opts.store !== undefined ? opts.store : stateFile && stateFile !== 'off'
+    ? new FileStateStore({ file: stateFile, log }) : null;
+  const persister = store ? new Persister({ store, registry, lobby, log, saveMs: opts.saveMs ?? process.env.SP_STATE_SAVE_MS }) : null;
+  try {
+    if (store) {
+      const doc = await store.load();
+      if (doc && opts.resume !== false) {
+        const stats = restoreServer({ doc, registry, lobby, log });
+        if (!stats.ok) throw new Error(`状态格式不兼容 (${stats.reason})，已保留状态文件，请恢复备份或显式选择新的 SP_STATE_FILE`);
+        log.info(`[persist] restored ${stats.sessions} sessions, ${stats.rooms} rooms, ${stats.matches} matches`);
+      }
+    }
+  } catch (err) {
+    persister?.stop();
+    lobby.shutdown('shutdown');
+    await store?.close();
+    if (ownsWorkerPool) await workerPool?.close();
+    throw err;
+  }
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log, assetsCdn: cdn.base, assetsCdnVersion: cdn.version });
   const allowStatus = createStatusLimiter({ trustProxy: netOptions.trustProxy });
@@ -809,6 +843,8 @@ export async function startServer(opts = {}) {
         assetsCdnVersion: cdn.version || null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
         workers: workerPool?.stats() || null,
+        persist: persister ? { enabled: true, backend: store.kind || 'custom', writes: persister.writes,
+          failures: persister.failures, checkpoints: persister.matchDocs.size } : null,
       });
       return;
     }
@@ -868,11 +904,14 @@ export async function startServer(opts = {}) {
     });
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    persister?.stop();
     lobby.shutdown('shutdown');
+    await store?.close();
     if (ownsWorkerPool) await workerPool?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
+  persister?.start();
 
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
@@ -882,6 +921,10 @@ export async function startServer(opts = {}) {
   async function close() {
     if (closing) return closing;
     closing = (async () => {
+      if (persister) {
+        const saved = await persister.shutdown('shutdown');
+        if (!saved) log.error('[persist] final state was NOT saved; check the state directory permissions and disk space');
+      }
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
       if (ownsWorkerPool) await workerPool?.close();
@@ -891,11 +934,12 @@ export async function startServer(opts = {}) {
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
       try { wss.close(); } catch { /* ignore */ }
+      await store?.close();
     })();
     return closing;
   }
 
-  return { port: actualPort, host, url, server, wss, lobby, network, registry, workerPool, close };
+  return { port: actualPort, host, url, server, wss, lobby, network, registry, workerPool, store, persister, close };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -916,7 +960,7 @@ async function main() {
   process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
   let srv;
   try {
-    srv = await startServer();
+    srv = await startServer({ stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}.state.json`) });
   } catch (e) {
     if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
     else console.error('[boot] failed to start', e);
@@ -924,6 +968,7 @@ async function main() {
   }
   console.log(`\n  卫戍协议：盟约 · Stronghold Protocol: Alliance v${APP_VERSION}`);
   console.log(`  Local:   ${srv.url}`);
+  console.log(`  State:   ${srv.persister ? `file checkpoint every ${srv.persister.saveMs / 1000}s` : 'memory only'}`);
   if (srv.host === '0.0.0.0' || srv.host === '::') {
     for (const u of lanUrls(srv.port)) console.log(`  LAN:     ${u}`);
   }
@@ -934,7 +979,7 @@ async function main() {
     if (stopping) { console.log('forced exit'); process.exit(1); }
     stopping = true;
     console.log(`\n[${signal}] shutting down…`);
-    setTimeout(() => process.exit(0), 5000).unref();
+    setTimeout(() => { console.error('[shutdown] timed out before close completed'); process.exit(1); }, srv.persister ? 30_000 : 5000).unref();
     srv.close().then(() => process.exit(0), () => process.exit(1));
   };
   process.on('SIGINT', () => stop('SIGINT'));

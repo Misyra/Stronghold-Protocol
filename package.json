@@ -36,7 +36,8 @@
     "doctor": "node tools/doctor.mjs",
     "launch": "node scripts/launch.mjs",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit --checkJs -p jsconfig.json"
+    "typecheck": "tsc --noEmit --checkJs -p jsconfig.json",
+    "check:imports": "node tools/check-imports.mjs"
   },
   "engines": {
     "node": ">=22"

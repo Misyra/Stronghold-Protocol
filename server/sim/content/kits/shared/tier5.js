@@ -159,7 +159,7 @@ function lowHpHealUp(battle, unit, tb) {
 
 /**
  * Modules "攻击范围扩大" (夕 SPC-X, 白面鸮 RIN-X): the range becomes the SELECTED module's own grid — the data's
- * range-only talent change (talentIndex −1), e.g. SPC-X = the 3×3 caster range + ONE centre tile [0,3] — like tier4's
+ * range-only talent change (talentIndex −1), e.g. SPC-X = the 3×3 caster range + ONE centre tile [0,3] — like the tier-4 kits'
  * 莫斯提马 / 莱恩哈特 / 白面鸮 (integration review: a flat forward +1 added a whole column, 3 tiles, and widened the skill
  * ranges too). It replaces the unit's own range, so the DEFAULT trigger's initial range follows; skills with their own
  * range keep it. Without such a grid in the data: one extra forward tile [ASSUMED].

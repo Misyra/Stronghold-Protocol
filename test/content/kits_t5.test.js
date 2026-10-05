@@ -1,4 +1,4 @@
-// Tier-5 operator kits (server/sim/content/kits/tier5.js): every chess runs a real battle through the harness and its
+// Tier-5 operator kits (server/sim/content/kits/ops/chess_char_5_*.js): every chess runs a real battle through the harness and its
 // signature effect is asserted with numbers taken from its own blackboards (normal Lv4 / elite Lv7).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -998,7 +998,7 @@ test('录武官 S2: ATK +45 %; healed allies heal 80 HP per hit taken for 10 s; 
 });
 
 // ------------------------------------------------------------------------------------------------------------------
-// regressions of the 2026-09-28 fidelity review (PRTS 备注 of the base operators; see the tier5.js header)
+// regressions of the 2026-09-28 fidelity review (PRTS 备注 of the base operators; see the kits/shared/tier5.js header)
 
 test('圣约送葬人 T1 受选之人: the extra attack consumes no ammo and never reaches ammoUsed listeners', () => {
   const log = [];

@@ -32,7 +32,7 @@
 //                 its blast fx carries `consumed: true` so clients play the explosion, not a death sound)
 //   从不混淆的方向 untargetable marker; when the owner's skill ends it vanishes and the owner returns to its tile
 //   黄金盟誓      attacks deal true damage (trait); lasts while the owner's skill runs; 维娜 S3 places one on every
-//                 free deployable tile around her (kits/tier6.js) — no per-owner deploy limit (SKILL_SUMMON_UNCAPPED)
+//                 free deployable tile around her (kits/ops/chess_char_6_07-siege2.js) — no per-owner deploy limit (SKILL_SUMMON_UNCAPPED)
 //   防护单元      untargetable, invulnerable device placed by the player (a hand piece, user playtest #6): shield =
 //                 凯瑟琳 max HP × max_shield_ratio on the operator in its range (range 1-1: the tile it faces; effects do
 //                 not stack — `cathy:shield`, read by 凯瑟琳 S1 岁月锻打), in full whenever it takes a new operator,
@@ -691,7 +691,7 @@ function wolfPack(bb, raw, def) {
  * The operator a 流形 copies ("可复制待部署区一名干员"): the nearest (Chebyshev tiles) living operator of its player on
  * the field, not the summoner; ties → higher base ATK → lower id. (The remake deploys the whole board at battle start,
  * so the official "operator waiting to deploy" is read as the nearest deployed operator — same pick as the 缪尔赛思
- * kit, content/kits/tier6.js.) Null when there is none: the 流形 then waits with its copy skill ready.
+ * kit, content/kits/ops/chess_char_6_11-mlyss.js.) Null when there is none: the 流形 then waits with its copy skill ready.
  */
 export function pickCopyTarget(battle, unit) {
   let best = null, bs = null;
@@ -1438,7 +1438,8 @@ function deployLimitOf(u) {
 /**
  * Tactical point (战术点) of a tactician when the player placed no 援军 piece: `Battle.findTacticalPoint` — a free
  * walkable tile of its initial range, on an enemy ground path first (where a player would put the blocker), then
- * nearest to the tactician. Shared by every tactician kit (tier3 伺夜, the tokens' own fallback).
+ * nearest to the tactician. Shared by every tactician kit (伺夜, kits/ops/chess_char_3_19-vigil.js; the tokens' own
+ * fallback).
  */
 export function tacticalPoint(battle, owner) {
   return battle.findTacticalPoint(owner);

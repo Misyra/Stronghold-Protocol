@@ -59,8 +59,6 @@ export function tinmanKit(bb, chess, def) {
 }
 
 export default {
-  // 1_15 盟约·辅助干员 (hidden, band 优等生): its kit is tier6.js `pithst` (迭代元素 — one implementation only).
-
   // ---------------------------------------------------------------------------------------------------------------
   // 1_16 锡人 (hidden tier-1 entry of chess_char_2_19): see tinmanKit.
   chess_char_1_16_a: tinmanKit,

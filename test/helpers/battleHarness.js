@@ -19,7 +19,7 @@
 //   routes        RouteSpec[] (default: template routes, or flat-stage routes 0..3 = walk low, walk high, fly low, fly high)
 //   timeLimit     seconds (default: template maxPlayTime, else 60; boss/hidden: Infinity)
 //   content       'full' | 'generic' | 'none' (default 'full')
-//   kits          { [baseChessId]: (bb, chess, def) => Kit } injected kits (take precedence over kits/tier*.js)
+//   kits          { [baseChessId]: (bb, chess, def) => Kit } injected kits (take precedence over kits/index.js)
 //   extraContent  [{ install(battle) }] extra content modules installed after the domain modules (content tests)
 //   defs          { chess: {id: record}, enemies: {key: record}, tokens: {id: record} } extra/override data records
 //   flags, sharedBoss, modeId, round, setup(battle), recordEvents (default true). The harness sets

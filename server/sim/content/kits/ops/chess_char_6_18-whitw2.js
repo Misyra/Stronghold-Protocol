@@ -50,7 +50,7 @@ function whitw2(bb, chess, def) {
   // ② the selectable enemy nearest to the drone, ties broken by the one nearest to her. [ASSUMED] distances are measured
   // to every enemy's position (a huge enemy's centre, its 判定中心) — the owner's decision of 2026-10-04: the centre, so
   // leader rounds stay close to 0.1.1; the sim's general convention for operator-side distance picks, the hit rectangle
-  // (body.js bodyDist: targeting.js sortEnemyTargets 'nearest', tier3 enemiesAround, 异客 / 溯光星源's chains), was
+  // (body.js bodyDist: targeting.js sortEnemyTargets 'nearest', 空弦's enemiesAround, 异客 / 溯光星源's chains), was
   // considered — it made a huge leader (胄, 管) the nearest enemy of every drone around it (DESIGN §22.9)
   const pickTarget = (battle, unit, d, ok) => {
     let best = null, bd = Infinity, bh = Infinity;

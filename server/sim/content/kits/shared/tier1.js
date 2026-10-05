@@ -9,7 +9,8 @@
 //
 // Covered (normal + elite): 1_01 隐现 1_02 角峰 1_03 惊蛰 1_04 深巡 1_05 红豆(H) 1_06 刺玫 1_07 普罗旺斯 1_08 德克萨斯
 // 1_09 跃跃 1_10 古米 1_11 地灵(H) 1_12 艾丝黛尔 1_13 波登可 1_14 格雷伊 1_16 锡人(H) 1_17 深靛
-// 1_18 宴 1_19 野鬃 1_20 雷蛇.  (H = hidden in the shop pool, still authored.) 1_15 盟约·辅助干员(H) lives in tier6.js.
+// 1_18 宴 1_19 野鬃 1_20 雷蛇.  (H = hidden in the shop pool, still authored.) 1_15 盟约·辅助干员(H) is registered
+// with the tier-6 kits.
 // Operator loadouts (DESIGN §16): every selectable non-default skill of the 16 visible chess is authored in the kit's
 // `skills: { [skillId]: SkillSpec }` map from its own SkillRecord (skillRec / skillBbOf — Lv4 normal, Lv7 elite);
 // talents / traits read the resolved record, so a module choice ('none' ⇒ traitBase / talentsBase, module.active
@@ -227,7 +228,7 @@ export const skillBbOf = (chess, skillId) => skillRec(chess, skillId)?.bb ?? {};
 /**
  * Skill blackboard `base_attack_time` → engine batPct of this chess's base attack time. The value is a FLAT change of
  * the base attack time in seconds (AK attribute ADDITION: 送葬人 −0.5 on 2.3 s "少量缩短(-0.5)" ⇒ 1.8 s, 红豆 +0.5
- * "略微增大(+0.5)" — the same convention as tier4/tier5), except a positive value described as a shortening, which is
+ * "略微增大(+0.5)" — the same convention as the tier-4 / tier-5 kits), except a positive value described as a shortening, which is
  * the new interval ratio (深靛 0.7 "攻击间隔略微缩短" ⇒ ×0.7). The convention is per skill in AK: skills PRTS lists as
  * a ratio (雷蛇 反击电弧 "+70%", 古米 食粮烹制 "+130%", 深靛 灯塔守卫者 "-80%") use batPct = value directly, not this.
  */

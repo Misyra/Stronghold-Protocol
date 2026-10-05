@@ -1,4 +1,4 @@
-// Content tests for the tier 1 / tier 2 operator kits (server/sim/content/kits/tier1.js, tier2.js).
+// Content tests for the tier 1 / tier 2 operator kits (server/sim/content/kits/ops/chess_char_1_*.js, chess_char_2_*.js).
 // Every chess (normal + elite where the elite adds something) runs a real battle through the harness and the test
 // asserts its signature effect with numbers taken from the chess blackboards (data/chess.json).
 import { test } from 'node:test';

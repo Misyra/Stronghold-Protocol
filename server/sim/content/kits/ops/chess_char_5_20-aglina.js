@@ -22,7 +22,7 @@ export default {
   // off, all allies regenerate 20 HP/s. Module (elite): longer sluggish (trait bb, profession tunables).
   // S1 秘杖·速充模式 (duration, attack SP): ATK +; she attacks normally with S1 ("技能未开启时无法普通攻击" is only in the
   // S2/S3 texts). S2 秘杖·微粒模式 (duration, SEARCH): attack interval ×base_attack_time ("极大幅度缩短": a positive value
-  // described as a shortening is the new interval ratio, tier1 batMod convention), each attack damage_scale × ATK arts.
+  // described as a shortening is the new interval ratio, the shared/tier1.js batMod convention), each attack damage_scale × ATK arts.
   // Module DEC-X (elite): SP +0.2/s with an enemy in range.
   chess_char_5_20_a: (bb, chess, def) => {
     const t0 = talent(chess, 0), t1 = talent(chess, 1), tm = talent(chess, -1);

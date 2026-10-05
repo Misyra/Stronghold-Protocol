@@ -165,7 +165,7 @@ const selectedSkill = (chess, def) => chess?.skill?.skillId ?? def?.skill?.id ??
 /**
  * Skill blackboard `base_attack_time` → engine batPct, the rule of the AK damage calculator (akdata attributes.js,
  * checked against the game): a shortening (v < 0) is a FLAT change of the base attack time in seconds (送葬人 −0.5 on
- * 2.3 s ⇒ 1.8 s, the tier1 `batMod` convention), a lengthening (v > 0) scales it (迷迭香 S2 +0.5 ⇒ ×1.5, 佩佩 S3 +0.2 ⇒
+ * 2.3 s ⇒ 1.8 s, the shared/tier1.js `batMod` convention), a lengthening (v > 0) scales it (迷迭香 S2 +0.5 ⇒ ×1.5, 佩佩 S3 +0.2 ⇒
  * ×1.2). `mul` = a skill the calculator lists as "攻击间隔缩短，但是是乘算负数" (异客 S2 −0.3 ⇒ ×0.7, 迷迭香 S3 −0.5 ⇒ ×0.5).
  */
 function batOf(v, def, mul = false) {

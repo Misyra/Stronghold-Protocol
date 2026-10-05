@@ -253,7 +253,7 @@ export function revivedInPlace(u) { if (u && u.mem) u.mem.revives = (u.mem.reviv
  * Does `u` hold 坚固维式重锤's 不死 right now — a window started in this deployment that has not run out? The window lives
  * on the unit (`mem.undyingUntil`, `mem.undyingAt`) and a battle-level hook holds it (hammerAcquire), so it outlives the
  * grant that started it — a lend running out mid-window leaves the 不死 for its 8 s [ASSUMED: the 异常效果 outlasts its
- * source] — and ends with the deployment. 信仰搅拌机 S2 steps aside while it holds (kits/tier4.js).
+ * source] — and ends with the deployment. 信仰搅拌机 S2 steps aside while it holds (kits/ops/chess_char_4_01-rmixer.js).
  */
 export function holdsUndying(battle, u) {
   return !!u && u.mem.undyingAt != null && battle.time < u.mem.undyingUntil && u.mem.undyingAt === deploymentOf(u);

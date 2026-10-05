@@ -6,7 +6,7 @@ import { tinmanKit } from './chess_char_1_16-tinman.js';
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
-  // 2_19 锡人 “大拉里”: see tinmanKit (tier1.js).
+  // 2_19 锡人 “大拉里”: see tinmanKit (chess_char_1_16-tinman.js).
   // S1 “老科利” (alt, attack SP, needs a target): throws an alchemy unit at the target (ground first); for
   // projectile_delay_time s ground enemies within projectile_range tiles are 虚弱 (weaken −atk) and take atk_scale ×
   // ATK arts per second (ATK cached at the cast; damage over time, so the elite 凋敝魂灵 ×skill@damage_scale applies;

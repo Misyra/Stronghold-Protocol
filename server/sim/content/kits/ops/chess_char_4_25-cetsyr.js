@@ -12,7 +12,7 @@ import {
 /**
  * 鼓舞 (ba.inspire "获得额外附加的基础属性加成（同类属性取最高）"): +`val` ATK (or max HP) on top of the target's own
  * percentage multipliers (the flat mod is compensated, so an ATK+% skill does not scale it), the strongest source wins
- * (the ATK key `inspire` is shared with tier6's 鼓舞); units flagged `mem.noInspire` (bards: 自身不受鼓舞影响) never
+ * (the ATK key `inspire` is shared with 浊心斯卡蒂's 鼓舞); units flagged `mem.noInspire` (bards: 自身不受鼓舞影响) never
  * receive it. Refreshed by an aura: lapses within AURA_DUR once the source stops.
  */
 function inspire(battle, target, val, src, stat = 'atk') {

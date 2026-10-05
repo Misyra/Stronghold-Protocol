@@ -352,16 +352,18 @@ test('2_12 砾 S1 影袭: at deployment DEF +def decaying to 0 over `duration` s
   }
 });
 
-test('2_13 蒂比 S1 专业喷绘技巧: DEFAULT trigger, takes off (skill range, ATK +atk, blocks flyers), single shots; hits never set it off', () => {
+test('2_13 蒂比 S1 专业喷绘技巧: ACTIVE_RANGE trigger (an enemy in its 2-3 only), takes off (skill range, ATK +atk, blocks flyers), single shots; hits never set it off', () => {
   for (const id of both('chess_char_2_13')) {
     const bb = bbAlt(id);
-    const h = run({ defs: { enemies: { e: dummy('e'), f: dummy('f', { motion: 'FLY' }) } }, units: [U(id, 9, 5, { carryState: READY })], enemies: [{ key: 'e', pos: [9, 6] }] });
+    // (10,5) = [1,0]: inside S1's 2-3, outside her own 2-2 — the owner's rule of 2026-10-05 (data trigger ACTIVE_RANGE)
+    const h = run({ defs: { enemies: { e: dummy('e'), f: dummy('f', { motion: 'FLY' }) } }, units: [U(id, 9, 5, { carryState: READY })], enemies: [{ key: 'e', pos: [10, 5] }] });
     const u = h.unit(id);
     usesAlt(u, id);
     h.step();
     const range0 = u.baseRangeKeys.length;
+    assert.ok(!u.baseRangeKeys.includes(h.b.grid.key(10, 5)), 'the enemy is outside her own range');
     h.runUntil(() => u.skill.active, 3);
-    assert.equal(started(h, u)[0].reason, 'DEFAULT');
+    assert.equal(started(h, u)[0].reason, 'ACTIVE_RANGE');
     assert.equal(u.s.flags.liftoff, true, 'airborne (起飞)');
     assert.equal(u.ground, true, 'still a ground unit on her low tile');
     approx(u.s.atk, u.base.atk * (1 + bb.atk));

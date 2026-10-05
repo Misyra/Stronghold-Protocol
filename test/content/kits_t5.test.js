@@ -801,10 +801,13 @@ test('百炼嘉维尔 S2: drags unblocked enemies in front of her; T1 ATK/DEF +1
   u.hp = u.s.maxHp * 0.3;
   approx(h.b.heal(null, u, 100), 100 * t1.heal_scale_2);
   for (const e of h.b.enemies) h.b.dealDamage(null, e, { amount: 1e9, type: 'true' });
+  h.run(0.3); // 战地巨斧 refreshes every 0.2 s: back to no extra blocked enemy before the cast
   const near = h.spawn('enemy_dummy', { pos: [9, 5] });
   const far = h.spawn('enemy_dummy', { pos: [9, 6] });
   u.skill.gainSp(1000);
+  // S2's 2-5 strictly contains her 1-1: ACTIVE_RANGE (the owner's rule, 2026-10-05) casts it at once, no attack needed
   assert.ok(h.runUntil(() => u.skill.active, 3));
+  assert.equal(h.hooksOf('skillStart').find((c) => c.unit === u)?.reason, 'ACTIVE_RANGE');
   approx(u.s.atk, u.base.atk * (1 + t0.atk + bb.atk));
   h.b.dealDamage(null, near, { amount: 1e9, type: 'true' });
   h.run(1.5);

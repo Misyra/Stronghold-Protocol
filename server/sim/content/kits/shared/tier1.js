@@ -16,9 +16,11 @@
 // talents / traits read the resolved record, so a module choice ('none' ⇒ traitBase / talentsBase, module.active
 // false) is honoured. Per-skill triggers come from data (the official 技能策略: every MANUAL 重装 skill ⇒ TAKE_DAMAGE —
 // but the six of the owner's deliberate deviation, DESIGN §21.29 / tools/build-data.mjs TRIGGER_DEVIATIONS, which are
-// DEFAULT —, a MANUAL skill with its own 技能范围 ⇒ SKILL_RANGE, AUTO skills keep their own rule); the few spec rules are
-// documented at the skill (冲锋号令 AUTO ⇒ SP_FULL, 花香疗法 heal-type DEFAULT; the two 哨戒铁卫 S2s 深巡 行动能力剥夺 and
-// 雷蛇 反击电弧 state the DEFAULT their data carries since that deviation — GitHub issue #4, PR #12).
+// DEFAULT —, a MANUAL skill with its own 技能范围 ⇒ SKILL_RANGE, a MANUAL skill on the basic strategy whose running attack
+// range strictly contains the own one ⇒ ACTIVE_RANGE (the owner's rule, 2026-10-05), AUTO skills keep their own rule);
+// the few spec rules are documented at the skill (冲锋号令 AUTO ⇒ SP_FULL, 花香疗法 heal-type DEFAULT; the two 哨戒铁卫
+// S2s 深巡 行动能力剥夺 and 雷蛇 反击电弧 state the DEFAULT their data carries since that deviation — GitHub issue #4,
+// PR #12).
 // Tests: test/content/kits_alt_t1.test.js.
 //
 // fx kinds emitted (battle.fx(kind, {x, y, …})): aoe {radius, id, skill} · zone {radius, dur, id, skill} ·

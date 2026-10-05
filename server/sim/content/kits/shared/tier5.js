@@ -26,7 +26,9 @@
 //   uses the engine's DEFAULT rule with `allies` / `hpAtMost` (about to attack + an ally of the skill area at ≤ half HP:
 //   the heal replaces that attack). Every other
 //   kit keeps the data rule (tools/build-data.mjs resolveTrigger, the official 技能策略: DEFAULT = about to attack + an
-//   enemy in the INITIAL range; SKILL_RANGE for a MANUAL skill's own 技能范围; the class rows — 重装 TAKE_DAMAGE … — for
+//   enemy in the INITIAL range; SKILL_RANGE for a MANUAL skill's own 技能范围; ACTIVE_RANGE for a MANUAL skill on the basic
+//   strategy whose running attack range strictly contains the own one (the owner's rule, 2026-10-05); the class rows —
+//   重装 TAKE_DAMAGE … — for
 //   every MANUAL skill; AUTO skills never take a class row).
 // - fx kinds emitted (battle.fx(kind, {x, y, id, …})): 'aoe' {r, skill}, 'healAoe' {r}, 'summon' {token}, 'anchor'
 //   {fromX, fromY, r}, 'teleport', 'zone' {r, duration}, 'iceSpike' {r}, 'extraAttack', 'downed', 'revive' {r},

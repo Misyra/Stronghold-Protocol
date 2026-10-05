@@ -800,7 +800,8 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   SP fills to cost → +1 charge (SP restarts) until charges are full (then SP stays full).
 - Triggers (`skill.trigger.rule` in data — the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作, resolved by
   `tools/build-data.mjs resolveTrigger`: charId rows by skill index; the class rows (重装 / 执旗手 / 战术家 / 吟游者 / 解放者 /
-  阵法术师) for **every MANUAL skill** of the class; SKILL_RANGE for a MANUAL skill with a 技能范围 of its own; AUTO skills
+  阵法术师) for **every MANUAL skill** of the class; SKILL_RANGE for a MANUAL skill with a 技能范围 of its own; ACTIVE_RANGE
+  for a MANUAL skill on the basic strategy whose running attack range strictly contains the own range; AUTO skills
   take no row — they keep their own rule, DEFAULT or a kit override): `DEFAULT` — the basic strategy: ready **and** about
   to attack/heal **and** an enemy (heal skills: an injured ally) inside the **initial** range (`unit.baseRangeKeys`: its
   own grid + its permanent rangeExtend — "攻击范围扩大" modules/talents as persist never-expiring `rangeExtend` buffs; no
@@ -811,7 +812,11 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   living enemy (stealthed, untargetable, flying included) on `trigger.customRangeGrid` (= the skill's rangeGrid), every
   tick, no attack needed; a kit may set `trigger.allies` (+ `hpAtMost`, default 1) for an injured, healable ally of the
   grid at or below that HP ratio instead (the AUTO heal skill 古米 S1: PRTS 备注 "此技能在存在生命值不满的可治疗角色时可
-  触发…直至古米完成一次普通攻击的治疗" — her heal mode waits for its heal); `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
+  触发…直至古米完成一次普通攻击的治疗" — her heal mode waits for its heal); `ACTIVE_RANGE` — the owner's rule of 2026-10-05
+  (a deliberate deviation): a MANUAL skill on the basic strategy whose attack range while it runs strictly contains the
+  unit's own range checks the DEFAULT condition — a targetable enemy (or one it blocks), a heal skill an injured ally —
+  on `trigger.customRangeGrid` (= that running range, grown by the unit's permanent rangeExtend unless the skill's
+  `targeting.noRangeExtend`), every tick, no attack needed; `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
   `grid`) = the basic rule **and** such an ally on the grid: the cast replaces the attack about to be made (塞雷娅 S1 "触发
   时会替换当次攻击", ≤ half HP); a cast whose ally condition fails before that attack is withdrawn, its charge returned;
   `TAKE_DAMAGE` — ready and just hit (重装: "不受技能范围影响，受到伤害时释放技能"; in the data every MANUAL 重装 skill but

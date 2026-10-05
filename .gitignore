@@ -39,3 +39,6 @@ desktop.ini
 .idea/
 .vscode/
 .claude/
+
+# Optional per-install preload content hashes
+/data/asset-hashes.json

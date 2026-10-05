@@ -624,3 +624,12 @@
 .pauseov__plate h2 { font-size: .5rem; font-weight: 900; letter-spacing: .3em; color: #fff; text-shadow: 0 0 .2rem rgba(0, 0, 0, .8); }
 .pauseov__note { font-size: .17rem; color: var(--text-md); text-shadow: 0 1px 2px #000; }
 .pauseov__btns { display: flex; gap: .2rem; }
+
+.set-res { display: flex; flex-direction: column; gap: .1rem; }
+.set-res > .set-row { min-height: .44rem; }
+.set-res__body { display: flex; flex-direction: column; gap: .1rem; padding-bottom: .06rem; }
+.set-res__line { flex-wrap: wrap; display: flex; align-items: baseline; justify-content: space-between; gap: .16rem; }
+.set-res__text { font-size: .15rem; color: var(--text-md); line-height: 1.6; }
+.set-res__num { font-size: .15rem; color: var(--mint-400); white-space: nowrap; }
+.set-res__warn { margin: 0; color: var(--amber); }
+.set-hint kbd, .lvcard__key, .toolbtn kbd { font-family: var(--font-num); font-size: .11rem; border: 1px solid var(--line-2); padding: 0 .04rem; color: var(--text-lo); background: rgba(0, 0, 0, .3); }

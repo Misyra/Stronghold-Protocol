@@ -6,6 +6,7 @@ import { useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button, Icon, MicroLabel } from './components.js';
 import { createStore, useStore, loadPref, savePref } from '../store.js';
 import { sanitizeSettings } from './gameLogic.js';
+import { ResourceRow } from './resourcePanel.js';
 import { audio } from '../audio.js';
 import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
@@ -63,6 +64,7 @@ export function SettingsModal({ open, onClose }) {
       <${Slider} label="音效" micro="SFX" icon="signal" value=${s.sfx}
         onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
       <${Toggle} label="静音" micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
+      <${ResourceRow} enabled=${s.preload} onChange=${(v) => updateSettings({ preload: v })} />
       <${Toggle} label="显示伤害数字" micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
       <div class="set-row">
         <span class="set-row__label">画面质量<${MicroLabel}>QUALITY<//></span>

@@ -18,6 +18,9 @@ import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
 
+import { useSettings, updateSettings } from '../ui/settings.js';
+import { ResourceLauncher } from '../ui/resourcePanel.js';
+
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
 // the client accepts is never rejected by the server's hello validation.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g;
@@ -180,6 +183,7 @@ const STATUS_TEXT = {
 
 /** Title screen component. */
 export function TitleScreen() {
+  const settings = useSettings();
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
@@ -263,6 +267,7 @@ export function TitleScreen() {
       </div>
     </main>
 
+    <div class="title-preload"><${ResourceLauncher} enabled=${settings.preload} onChange=${(v) => updateSettings({ preload: v })} /></div>
     <footer class="title-foot">
       <span>非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有</span>
       <${MicroLabel}>v${APP_VERSION} · WEB SIMULATION<//>

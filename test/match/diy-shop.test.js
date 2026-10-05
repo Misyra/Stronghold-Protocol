@@ -321,3 +321,39 @@ test('a match keeps the picks its seat had at its start (the next match takes a 
   assert.deepEqual(h2.ps('p_1').diy, { [T6A]: { charId: SIEGE, skillIndex: 1, uniEquipId: null } });
   h2.m.dispose();
 });
+
+test('a placeable 自选 summon comes to the hand like any operator\'s, places, and fights as its owner\'s variant', REAL, () => {
+  const h = diyMatch().start();
+  const m = h.m;
+  h.toPrep(1);
+  const p0 = h.ps('p_0');
+  // 凯尔希 has no kit yet: the kit list is widened for this test (her Mon3tr is a placeable talent summon)
+  assert.equal(p0.setDiy({ [T6B]: { charId: 'char_003_kalts', skillIndex: 0, uniEquipId: null } }, { kitted: [...KITTED_CHARS, 'char_003_kalts'] }), true);
+  p0.initDiyStock(new Set());
+  clear(p0);
+  const k = gain(p0, T6B);
+  const tile = legalTileFor(m, p0, T6B);
+  assert.deepEqual(m.handle('p_0', { t: 'g.move', uid: k.uid, to: { area: 'board', row: tile[0], col: tile[1] } }), { ok: true });
+  const stack = p0.hand.find((p) => p && p.kind === 'token');
+  assert.ok(stack, 'the Mon3tr stack is in the hand');
+  assert.equal(stack.id, 'token_10002_kalts_mon3tr');
+  assert.equal(stack.ownerUid, k.uid);
+  assert.equal(p0.gd.token(stack.id).name, 'Mon3tr', 'the player\'s data view finds the 自选 summon');
+  const t2 = legalTileFor(m, p0, T6B, new Set([`${tile[0]},${tile[1]}`]));
+  assert.deepEqual(m.handle('p_0', { t: 'g.move', uid: stack.uid, to: { area: 'board', row: t2[0], col: t2[1] } }), { ok: true });
+  const input = p0.battleInput();
+  const tok = input.units.find((u) => u.kind === 'token');
+  assert.deepEqual([tok.tokenId, tok.ownerUid], ['token_10002_kalts_mon3tr', k.uid]);
+  const spec = wire(buildBattleSpec({
+    battleId: 't.2', fieldId: 'n:p_0', kind: 'normal', seed: 5, modeId: m.modeId, round: 1, stageId: m.stageId,
+    rect: { ...GEO.NORMAL_RECT }, timeLimit: 20, players: [input], spawns: [], routes: m.wave.routes,
+    flags: { layerGainsEnabled: true, ...m.gd.dp }, enemyOverrides: {}, content: 'full',
+  }));
+  const bt = createBattleFromSpec(spec, m.ds, { quiet: true, recordEvents: false });
+  bt.step();
+  const mon = bt.allyUnits.find((u) => u.kind === 'token');
+  assert.ok(mon && mon.def.name === 'Mon3tr', 'the summon is fielded');
+  assert.equal(mon.ownerUnit?.def?.charId, 'char_003_kalts');
+  h.invariants();
+  m.dispose();
+});

@@ -58,7 +58,8 @@ function makeData(src) {
     return rec;
   };
   return {
-    chess: (id) => look('chess', id), token: (id) => look('tokens', id), item: (id) => look('items', id),
+    // (a 自选 operator's summons are data/backups.json tokens, 0.2.0)
+    chess: (id) => look('chess', id), token: (id) => look('tokens', id) || (backups()?.tokens && Object.hasOwn(backups().tokens, id) ? backups().tokens[id] : null), item: (id) => look('items', id),
     enemy: (id) => look('enemies', id), stage: (id) => look('stages', id), bond: (id) => look('bonds', id),
     standIn, diy,
   };

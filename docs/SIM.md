@@ -219,8 +219,10 @@ to a new pick. A `wait` leg keeps counting; when the fear ends the route re-plan
 **Blocking** (`Battle._checkBlock`, official contact rule — PRTS 游戏数据基础 §阻挡半径, 作战机制 "中点判定 … 案例: 阻挡";
 user playtest #5 item 4): an unblocked, blockable enemy is blocked by an ally (or device) whose centre is within its
 block radius of the enemy's position — `constants.js BLOCK_RADIUS`: ground 0.7071 (compared as d² < 0.49999037, the
-tile's circumscribed circle), air 0.8944 (blockFly units against flyers; an airborne 起飞 unit — flag `liftoff` — blocks
-flyers only, PRTS 术语释义 起飞 "阻挡模式变为空中阻挡"), devices 0.4472 — while that blocker has free
+tile's circumscribed circle), air 0.8944 × the blocker's 阻挡半径倍率 (blockFly units against flyers; an airborne 起飞
+unit — flag `liftoff` — blocks flyers only, PRTS 术语释义 起飞 "阻挡模式变为空中阻挡"; mod `blockRadiusScale` = 倍率 − 1,
+PRTS 游戏数据基础 "飞行阻挡半径 = 0.8944 × 阻挡半径倍率": 凯尔希·思衡托's 遗尘守望 and S1, +0.23 — ground blocking ignores it),
+devices 0.4472 — while that blocker has free
 capacity for the enemy's `blockWeight` (data `blockCnt`). A unit standing on a tile ground units cannot pass — the
 fenced 围墙 / 围栏 tiles (`b`: low, deployable, flyers only; the only low tiles of that kind on the stages) — blocks no
 ground enemy (PRTS 围墙 / 围栏 地形机制 "部署在其中的单位，若当前阻挡类型为'地面阻挡'则无法阻挡敌人";
@@ -483,7 +485,8 @@ targets take more damage, pull strength), movement, pathing, terrain under the e
 heuristics and the range keys taken from blocked enemies (a huge enemy is never blocked) keep the position.
 
 `unit.s` (lazy, recomputed after any buff change): `maxHp, atk, def, res, aspd, bat, interval, blockCnt, moveSpeed,
-rangeExtend, baseRangeExtend (its permanent part: persist + never-expiring buffs), massLevel (base + ΣmassFlat, ≥ 0 —
+rangeExtend, blockRadiusScale (阻挡半径倍率 − 1: the air-block radius, §1.2), baseRangeExtend (its permanent part: persist +
+never-expiring buffs), massLevel (base + ΣmassFlat, ≥ 0 —
 `unit.weight`), maxTargets (+n), taunt, dodgePhys, dodgeArts, defIgnoreFlat/Pct, resIgnoreFlat/Pct, dmgDealtMul,
 physDealtMul, artsDealtMul, dmgTakenMul, physTakenMul, artsTakenMul, trueTakenMul, elemTakenMul (元素损伤倍率: gauge fills),
 elementalTakenMul (元素脆弱: 元素伤害), healingDealtMul, healingTakenMul, atkScaleMul, spRecovery, spCostFlat, redeployMul,
@@ -524,7 +527,8 @@ mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, 
 
 **Mod keys** — additive: `atkFlat atkPct defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
 defIgnoreFlat defIgnorePct resIgnoreFlat resIgnorePct dodgePhys dodgeArts spRecoveryFlat maxTargets taunt hpRegen
-hpRegenRatio spCostFlat moveFlat massFlat` (重量 levels: 失重 = `massFlat: −1`; never edit `base.massLevel`);
+hpRegenRatio spCostFlat moveFlat massFlat blockRadiusScale` (重量 levels: 失重 = `massFlat: −1`; never edit `base.massLevel`;
+`blockRadiusScale` = 阻挡半径倍率 − 1, the air-block radius of §1.2);
 multiplicative: `atkMul defMul hpMul resMul moveMul dmgDealtMul dmgTakenMul physTakenMul artsTakenMul trueTakenMul
 elemTakenMul elementalTakenMul healingDealtMul healingTakenMul spRecoveryMul redeployMul atkScaleMul physDealtMul artsDealtMul`.
 A `rangeExtend` on a `persist` never-expiring buff is **permanent**: it also widens the initial range (§7.1). It widens

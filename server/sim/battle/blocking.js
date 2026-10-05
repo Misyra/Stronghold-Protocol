@@ -14,7 +14,9 @@ export class BattleBlocking {
    * a fenced tile blocks no ground enemy, _blockerFor). Checked every tick for every
    * unblocked enemy, moving or not, so an enemy overlapping an operator is taken over as soon as its blocker is gone or
    * the operator's capacity frees up (user playtest #5 item 4). Several blockers in contact → the nearest [ASSUMED],
-   * ties → the first in row-then-column scan order.
+   * ties → the first in row-then-column scan order. The air radius grows with the blocker's 阻挡半径倍率 (PRTS 游戏数据基础
+   * "飞行阻挡半径 = 0.8944 × 阻挡半径倍率"; mod `blockRadiusScale` = 倍率 − 1: 凯尔希·思衡托's 遗尘守望 / S1, +0.23); ground
+   * blocking ignores it (PRTS 数值范围 "对地面阻挡的单位不生效"). Below 1.5 tiles the 3×3 scan still finds every blocker.
    */
   _checkBlock(e) {
     if (e.blockedBy || e.hidden || !e.alive) return !!e.blockedBy;
@@ -32,7 +34,8 @@ export class BattleBlocking {
         const o = this._occ[r * COLS + c];
         if (!o || !this._blockerFor(o, e, w)) continue;
         const d2 = (e.x - c) * (e.x - c) + (e.y - r) * (e.y - r);
-        const r2 = o.kind === 'device' ? BLOCK_RADIUS_SQ.device : fly ? BLOCK_RADIUS_SQ.fly : BLOCK_RADIUS_SQ.ground;
+        const k = fly ? 1 + (o.s.blockRadiusScale || 0) : 1;
+        const r2 = o.kind === 'device' ? BLOCK_RADIUS_SQ.device : fly ? BLOCK_RADIUS_SQ.fly * k * k : BLOCK_RADIUS_SQ.ground;
         if (d2 < r2 && d2 < bd) { u = o; bd = d2; }
       }
     }

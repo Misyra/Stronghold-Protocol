@@ -208,7 +208,7 @@
       ],
       "enemies": {"enemy_1019_jshoot_2":[57,37,20,9953,112024],"enemy_1299_ymkilr_2":[27,6,20,25821,123649],"enemy_1422_lrsldr_2":[39,20,19,1584,123193]},
       "hooks": [1,154,6900,835,835,3335,3375,0,83,142,12,15,0,16427,38,83,123,59,1,83,0,0,0],
-      "events": {"atk":851,"deploy":31,"die":83,"dmg":3367,"fx":150,"leak":59,"skill":22,"spawn":135,"status":47},
+      "events": {"atk":851,"deploy":31,"die":83,"dmg":3367,"fx":150,"leak":59,"skill":36,"spawn":135,"status":47},
       "fx": {"aoe":83,"displace":3,"dp":26,"slash":38},
       "snaps": "aa4b712f 51a2360b 59868653 c815c7eb 7dd47d06 3f3f03f4 89e883c3 60e1e7f6 2355716a 5d734980 75cde05f c0dd657c 4e5bd257 0f8a040d b1aafe05 c04cbb36 e6d37890 8457998a a19143e5 d709bc2b 4283543b 0d9edf54 6ef9963d"
     },
@@ -247,7 +247,7 @@
       ],
       "enemies": {"enemy_1267_nhpbr_2":[27,5,22,7765,89733],"enemy_1270_nhstlk_2":[36,0,36,14278,68347],"enemy_1272_nhtank_2":[18,0,18,24706,27121]},
       "hooks": [1,113,6307,262,262,449,476,16,35,111,6,21,0,5828,86,24,81,76,1,35,0,0,0],
-      "events": {"atk":283,"deploy":32,"die":35,"dmg":441,"fx":58,"heal":15,"leak":76,"skill":12,"spawn":93,"status":142},
+      "events": {"atk":283,"deploy":32,"die":35,"dmg":441,"fx":58,"heal":15,"leak":76,"skill":42,"spawn":93,"status":142},
       "fx": {"aoe":7,"displace":21,"spGain":6,"zone":24},
       "snaps": "1dcf4706 8bd55683 d93e4d02 ab832ad5 132699ab f37b039d f12175ca fe30225b 6b2b77c0 2caefa3a 1018f9e1 a60a2364 f81df3c0 d0f2780e 0e940f53 372c90ef 46af3a81 a6b2adf1 63234976 3b8b7c59 b62aa8d4"
     }

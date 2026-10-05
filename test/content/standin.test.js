@@ -231,7 +231,9 @@ test('the eight 预备干员: every chess record they replace fields the stand-i
     const dp0 = h.b.players[0].dp;
     if (sk.skillType === 'PASSIVE') {
       h.step();
-      assert.deepEqual(u.findBuff(`generic:passive:${sk.skillId}`)?.mods, statMods(sk.bb), `${where}: deploy buff`);
+      // a deploy-timed passive runs the duration lifecycle from the deployment (#109): the skill's own mods
+      assert.deepEqual([u.skill.kind, !!u.skill.spec.activateOnDeploy, u.skill.active], ['duration', true, true], `${where}: deploy-timed skill`);
+      assert.deepEqual(u.findBuff(`skill:${u.id}`)?.mods, statMods(sk.bb), `${where}: deploy buff`);
     } else {
       assert.ok(h.runUntil(() => u.skill.activations > 0, 30), `${where}: the skill fires`);
       h.step();

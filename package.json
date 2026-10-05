@@ -37,7 +37,9 @@
     "launch": "node scripts/launch.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --checkJs -p jsconfig.json",
-    "check:imports": "node tools/check-imports.mjs"
+    "check:imports": "node tools/check-imports.mjs",
+    "package": "node tools/package.mjs",
+    "package:lite": "node tools/package.mjs --lite"
   },
   "engines": {
     "node": ">=22"

@@ -727,11 +727,17 @@ test('3_19 伺夜: wolf pack (2 → 3 wolves, block/bites, lose a wolf instead o
   assert.ok(g.runUntil(() => v.skill.active, 5));
   g.runUntil(() => !v.skill.active, 20);
   approx(gp.dp, gdp + BB(gid).value, 1e-6, '精锐 DP over the full duration');
+  // the last wolf falls: 战术点形态 (PRTS 狼群领袖 备注) for the 狼影 interval, then the same pack back with one wolf —
+  // not a new pack after the token's redeploy time (until 0.2.0)
+  const iv = ds.getToken('token_10028_vigil_wolf', gid).talents[0].bb.interval;
   g.b.dealDamage(null, gw, { type: 'true', amount: 1e7 });
   g.b.dealDamage(null, gw, { type: 'true', amount: 1e7 });
   assert.equal(gw.alive, false);
   g.run(gw.base.respawnTime + 0.5);
-  assert.ok(v.trait.reinforcement !== gw && v.trait.reinforcement?.alive, 'pack re-summoned after its respawn time');
+  assert.equal(gw.alive, false, 'not back after the token’s redeploy time');
+  assert.ok(g.runUntil(() => gw.alive, iv), 'back after the 狼影 interval');
+  assert.equal(v.trait.reinforcement, gw, 'the same pack');
+  assert.equal(gw.mem.wolves, 1, 'with one wolf');
   done(g);
 });
 

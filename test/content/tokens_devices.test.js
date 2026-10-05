@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { makeBattle, chessRec, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { hasGeneratedData, getDefaultSource } from '../../server/sim/simdata.js';
 import { genericKit } from '../../server/sim/content/generic.js';
-import { spawnYanyou, spawnMapChar, TOKEN_IDS, wolfShadows, tileFree, findSummonTile, summonToken } from '../../server/sim/content/tokens.js';
+import { spawnYanyou, spawnMapChar, TOKEN_IDS, wolfShadows, wolfShadowInterval, wolfTacticalPoint, tileFree, findSummonTile, summonToken } from '../../server/sim/content/tokens.js';
 import { startColdWind, kjeragColdWind, activateTurrets, terrainAt, deviceOverridesOf } from '../../server/sim/content/devices.js';
 import { HUSK_REBIRTH } from '../../server/sim/content/enemies.js';
 
@@ -202,7 +202,7 @@ test('纸偶: appear burst = its ATK × damage_scale arts on the 8 surrounding t
   checkInvariants(h.b);
 });
 
-test('狼群: board piece becomes 伺夜\'s 援军; 2→3 狼影 (block & hits), fatal sheds a shadow, DEF ignore vs blocked, respawn', REAL, () => {
+test('狼群: board piece becomes 伺夜\'s 援军; 2→3 狼影 (block & hits), fatal sheds a shadow, DEF ignore vs blocked, 战术点形态 after the last one', REAL, () => {
   let wolfHits = 0;
   const h = makeBattle({
     defs: { enemies: { enemy_walker: walker({ def: 200, atk: 0 }) } },
@@ -238,11 +238,19 @@ test('狼群: board piece becomes 伺夜\'s 援军; 2→3 狼影 (block & hits),
   assert.equal(wolf.hp, wolf.s.maxHp);
   h.b.dealDamage(null, wolf, { amount: 1e6, type: 'true' });
   h.b.dealDamage(null, wolf, { amount: 1e6, type: 'true' });
+  // the last shadow falls: 战术点形态 (PRTS 狼群 备注) — off the field, kept, 0 狼影, for the 狼影 interval (data), then
+  // back on its tile with one 狼影 (no longer a full pack after the token's redeploy time)
   assert.equal(wolf.alive, false, 'last shadow falls');
-  const died = h.b.time;
-  assert.ok(h.runUntil(() => wolf.alive, 20), 'respawns');
-  approx(h.b.time - died, wolf.base.respawnTime, 0.3);
-  assert.equal(wolfShadows(wolf), 2, 'fresh pack');
+  assert.ok(wolfTacticalPoint(wolf), '战术点形态');
+  assert.equal(wolf.removed, false);
+  assert.equal(wolfShadows(wolf), 0);
+  const died = h.b.time, iv = wolfShadowInterval(wolf.def);
+  assert.equal(iv, tokDef(TOKEN_IDS.wolfPack, 'chess_char_3_19_b').talents[0].bb.interval, 'the talent interval');
+  assert.ok(h.runUntil(() => wolf.alive, iv + 1), 'back');
+  approx(h.b.time - died, iv, 0.004);
+  assert.deepEqual([wolf.tileR, wolf.tileC], [9, 6], 'on its tile');
+  assert.equal(wolfShadows(wolf), 1, 'one 狼影');
+  assert.equal(wolf.s.blockCnt, 1);
   checkInvariants(h.b);
 });
 

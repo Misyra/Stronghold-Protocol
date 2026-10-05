@@ -293,7 +293,8 @@ test('user playtest #4 (DESIGN §18): picking by tile, timers, 机变 two taps, 
   // #1 the tile under the pointer; the dragged model held under the pointer (no touch lift, probe or body shapes)
   assert.equal(ENEMY_REACH, 0.6);
   const app = readFileSync(join(ROOT, 'public/js/render/app.js'), 'utf8');
-  assert.match(app, /export const DRAG_HOLD_TILES = 0\.45;/);
+  const tune = readFileSync(join(ROOT, 'public/js/render/app/tune.js'), 'utf8');
+  assert.match(tune, /export const DRAG_HOLD_TILES = 0\.45;/);
   assert.ok(!/TOUCH_LIFT_TILES|drawnAt|pickShape|pieceDragOver/.test(app), 'no touch lift, pixel probe or body shapes (user playtest #4 item 1)');
   assert.match(DESIGN, /`DRAG_HOLD_TILES` = 0\.45 tile/);
   assert.match(DESIGN, /`ENEMY_REACH` 0\.6 tile/);

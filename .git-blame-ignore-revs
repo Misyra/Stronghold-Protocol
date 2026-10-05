@@ -15,3 +15,11 @@ b48a67caec5ba0699097e21f3db4d4dbb35a2aed
 1ca4936f0a541cabda9acae5fe6f9213df4b5e6a
 # feedback5 R2: server/match/PlayerState.js → server/match/player/*.js (the PlayerState methods, verbatim)
 64443b4aab3126d6703509b8c47e9cfa58b75157
+# feedback5 R5: public/js/ui/gameLogic.js → public/js/ui/gameLogic/*.js (the barrel re-exports)
+eb04f5dfa4f396b17e987b61a47fbcdc2b8b2fdf
+# feedback5 R5: public/js/render/fx.js → public/js/render/fx/*.js (methods installed in source order)
+c1b8292f92f5f07581342babe84ba0ac8a1dcf82
+# feedback5 R5: public/js/render/app.js prelude → public/js/render/app/*.js (createFieldView stays)
+aaef748ad95b33117654bf2f82b956de6b6509ff
+# feedback5 R5: public/js/screens/game.js plates, marks and keepEarly → public/js/screens/game/*.js
+dd07dc1ec10a47cb93490018c047c1eac5ab5157

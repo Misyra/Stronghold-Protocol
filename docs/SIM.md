@@ -128,7 +128,10 @@ device or 海嗣 that was not placed never appears (the hidden 待部署区 depl
 流形 still come as their 援军 on a tactical point without a piece (content/tokens.js `tacticalPoint`). Their piece stands
 inside the tactician's attack range — the prep enforces "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`, player
 report #9 after 0.1.0) — and the kits re-use the piece's tile for a re-summoned pack only while it is a free, standable
-tile of her initial range (kits/shared/tier3.js `tacticalPoint`, tokens.js `ensureReinforcement`). The start deploy
+tile of her initial range (kits/shared/tier3.js `tacticalPoint`, tokens.js `ensureReinforcement`). A 狼群 whose last 狼影
+falls (or that is retreated) is not re-summoned: it stays its tile's piece in its 战术点形态 — off the fight, the tile
+reserved — for the 狼影 interval and comes back there with one 狼影 (tokens.js `installWolfTacticalPoint`, the piece and
+the 伺夜 kit's own pack alike; 伺夜 S1 ① ends the form at once, 伺夜 leaving ends it without a return). The start deploy
 is the user's call after playtest #6 (DESIGN §20); `shared/constants.js SKILL_SUMMON_START_DEPLOY = false` would bring
 back the playtest #4 reading (only with the skill) in the sim and the summon card's hint (docs/PLAYING.md §4 and this
 passage must follow; test/ui/playtest6_summons.test.js checks).

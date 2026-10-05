@@ -8,6 +8,7 @@ import { getDefaultSource } from '../../server/sim/simdata.js';
 import { skillSpecSource } from '../../server/sim/content/index.js';
 import { effectiveProfile } from '../../server/sim/ai.js';
 import { kitCoverage } from '../../tools/kit-coverage.mjs';
+import { wolfShadows, wolfTacticalPoint } from '../../server/sim/content/tokens.js';
 import KITS from '../../server/sim/content/kits/tier3.js';
 
 const ds = getDefaultSource();
@@ -786,28 +787,186 @@ test('3_19 伺夜 S1 领袖的呼唤 (自动触发, the pack on the field): +DP 
   done(g);
 });
 
-test('3_19 伺夜 S1 领袖的呼唤: PRTS 备注 「仅场上存在狼群时可触发技能」 — no pack, no cast (the SP waits full, no DP); cast once the pack stands again', () => {
+test('3_19 伺夜 S1 领袖的呼唤: PRTS 备注 「仅场上存在狼群时可触发技能」 — no pack on the field in either form, no cast (the SP waits full, no DP)', () => {
   for (const id of BOTH('chess_char_3_19_a')) {
-    const b = SB(id, 'skchr_vigil_1');
     const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_1', 10, 3)] });
     const u = h.unit(id), p = h.b.getPlayer('p1');
     h.run(1);
     const w = u.trait.reinforcement;
     assert.ok(w && w.alive, 'the pack stands');
-    for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
-    assert.ok(!u.trait.reinforcement?.alive, 'no pack on the field');
+    // withdrawn by a rule ('expired', as when it leaves with 伺夜): gone, not in its 战术点形态
+    h.b.retreat(w, { reason: 'expired', permanent: true });
+    assert.equal(w.removed, true);
+    assert.equal(wolfTacticalPoint(w), null, 'no 战术点形态');
     const dp0 = p.dp;
     fill(u);
     h.run(2);
     assert.equal(u.skill.activations, 0, 'no pack, no cast');
     assert.ok(u.skill.ready, 'the SP waits full');
     approx(p.dp, dp0, 1e-9, 'no DP without the pack');
-    // the knocked-out pack comes back after its respawn time: cast at once — +DP and one more 狼影
-    assert.ok(h.runUntil(() => u.skill.activations === 1, 15), 'cast once the pack stands again');
+    done(h);
+  }
+});
+
+// 狼群 战术点形态 (PRTS 伺夜 天赋 狼群领袖 备注, 狼群 召唤物信息 备注) — both packs: the 伺夜 kit's own pack (no board piece) and
+// the 狼群 piece placed in the prep phase (content/tokens.js wolfPack, adopted by the kit)
+const WOLF = 'token_10028_vigil_wolf';
+/** The 狼影 recovery time from the data: the token's 狼群领袖 talent interval. */
+const WOLF_IV = (id) => ds.getToken(WOLF, id).talents.find((t) => t.bb['vigil_wolf_t_1_enhance[trigger].interval'] != null).bb['vigil_wolf_t_1_enhance[trigger].interval'];
+/** 伺夜 `id` (skill `skillId`, default S3 when null) with the kit's pack, or with a prep-placed 狼群 piece (uid 2). */
+const vigilUnits = (id, skillId, piece) => {
+  const sk = skillId ? { skillIndex: IDX(id, skillId) } : {};
+  return piece
+    ? [{ chessId: id, row: 12, col: 3, uid: 1, ...sk }, { kind: 'token', tokenId: WOLF, ownerUid: 1, row: 11, col: 5, uid: 2 }]
+    : [{ chessId: id, row: 10, col: 3, uid: 1, ...sk }];
+};
+const close = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} ≈ ${b}`);
+const silence = (h, u, on) => (on ? h.b.addBuff(u, { key: 'test:silence', flags: { silence: true } }) : h.b.removeBuff(u, 'test:silence'));
+
+test('3_19 伺夜 狼群 战术点形态: the fatal hit on the last 狼影 — out of the fight for the 狼影 interval (data), then back on its tile at full HP with one 狼影 and a fresh cycle (kit pack and prep piece)', () => {
+  for (const id of BOTH('chess_char_3_19_a')) for (const piece of [false, true]) {
+    const iv = WOLF_IV(id), tag = `${id} ${piece ? 'piece' : 'kit pack'}`;
+    assert.equal(iv, 25, '25 s on both chess (data)');
+    const h = makeBattle({ defs: { enemies: { enemy_d: dummy('enemy_d', { atk: 0 }) }, chess: noGarrison(id) }, timeLimit: 120, hooks: ['attack'], flags: { dpPerSec: 0 },
+      units: vigilUnits(id, null, piece), enemies: [{ key: 'enemy_d', pos: piece ? [11, 5] : [9, 3], time: 0.5 }] });
+    h.run(2);
+    const u = h.unit(1), w = u.trait.reinforcement, e = h.enemy('enemy_d');
+    if (piece) assert.equal(w, h.unit(2), `${tag}: the piece is the pack`);
+    else assert.ok(w && w.defId === WOLF && w.uid == null, `${tag}: the kit's own pack`);
+    assert.equal(e.blockedBy, w, `${tag}: blocks`);
+    const tile = [w.tileR, w.tileC];
+    h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    assert.ok(w.alive && wolfShadows(w) === 1, `${tag}: one 狼影 lost, still standing`);
+    h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    const t0 = h.b.time;
+    assert.equal(w.alive, false, `${tag}: out of the fight`);
+    assert.ok(wolfTacticalPoint(w), `${tag}: 战术点形态`);
+    assert.equal(w.removed, false, `${tag}: kept, not removed`);
+    assert.equal(wolfShadows(w), 0, `${tag}: 狼影 0`);
+    assert.equal(u.trait.reinforcement, w, `${tag}: still his 援军`);
+    assert.ok(h.b.isReservedTile(tile[0], tile[1]), `${tag}: its tile stays taken`);
+    assert.deepEqual(w.blocking, [], `${tag}: no block`);
+    assert.notEqual(e.blockedBy, w);
+    const bites0 = h.hooksOf('attack').filter((c) => c.attacker === w).length;
+    h.run(iv - 0.5);
+    assert.equal(w.alive, false, `${tag}: still in its 战术点形态 (not back after the token's 10 s redeploy time)`);
+    assert.equal(h.hooksOf('attack').filter((c) => c.attacker === w).length, bites0, `${tag}: no attack`);
+    assert.notEqual(e.blockedBy, w, `${tag}: blocks nothing`);
+    assert.ok(h.runUntil(() => w.alive, 1), `${tag}: back`);
+    close(h.b.time - t0, iv, 0.1, `${tag}: after the 狼影 interval`);
+    assert.equal(wolfTacticalPoint(w), null);
+    assert.deepEqual([w.tileR, w.tileC], tile, `${tag}: on its tile`);
+    assert.equal(w.hp, w.s.maxHp, `${tag}: full HP`);
+    assert.equal(wolfShadows(w), 1, `${tag}: one 狼影`);
+    assert.equal(w.s.blockCnt, 1);
+    assert.equal(u.trait.reinforcement, w, `${tag}: the same pack`);
+    // a fresh 狼影 cycle: the next one an interval after the return
+    const t1 = h.b.time;
+    h.run(iv - 0.5);
+    assert.equal(wolfShadows(w), 1, `${tag}: no 狼影 before a full interval`);
+    assert.ok(h.runUntil(() => wolfShadows(w) === 2, 1), `${tag}: the next 狼影`);
+    close(h.b.time - t1, iv, 0.1, `${tag}: one interval after the return`);
+    done(h);
+  }
+});
+
+test('3_19 伺夜 S1 领袖的呼唤 by the pack\'s state (PRTS 备注 ①②③): +cost DP each cast; ② +1 狼影 (own cycle untouched), ③ at the maximum HP to max, ① from the 战术点形态 back at once with one 狼影 and a fresh cycle — a stale return timer never revives it (kit pack and prep piece)', () => {
+  for (const id of BOTH('chess_char_3_19_a')) for (const piece of [false, true]) {
+    const b = SB(id, 'skchr_vigil_1'), iv = WOLF_IV(id), tag = `${id} ${piece ? 'piece' : 'kit pack'}`;
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 120, flags: { dpPerSec: 0 }, units: vigilUnits(id, 'skchr_vigil_1', piece) });
+    const u = h.unit(1), p = h.b.getPlayer('p1');
+    h.step();
+    const w = u.trait.reinforcement;
+    assert.ok(w && w.alive && (!piece || w === h.unit(2)), tag);
+    silence(h, u, true); // casts only when the test asks (the SP refills in 24–27 s)
+    const cast = () => {
+      const n0 = u.skill.activations, dp0 = p.dp;
+      silence(h, u, false);
+      fill(u);
+      h.step();
+      silence(h, u, true);
+      assert.equal(u.skill.activations, n0 + 1, `${tag}: cast`);
+      approx(p.dp, dp0 + b.cost, 1e-9, `${tag}: +cost DP`);
+    };
+    // ② below the maximum, 5 s into the pack's cycle: one more 狼影; its own next one still comes at deploy + interval
+    assert.equal(wolfShadows(w), 2);
+    h.run(5);
+    cast();
+    assert.equal(wolfShadows(w), 3, `${tag} ②: +1 狼影`);
+    assert.equal(w.s.blockCnt, 3);
+    h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    assert.equal(wolfShadows(w), 2);
+    assert.ok(h.runUntil(() => wolfShadows(w) === 3, iv), `${tag} ②: the pack's own 狼影`);
+    close(h.b.time - w.deployedAt, iv, 0.1, `${tag} ②: on the cycle from its deployment, not from the cast`);
+    // ③ at the maximum: the pack's HP back to max, the count unchanged
+    w.hp = w.s.maxHp * 0.3;
+    cast();
+    assert.equal(wolfShadows(w), 3, `${tag} ③: still at the maximum`);
+    assert.equal(w.hp, w.s.maxHp, `${tag} ③: HP to max`);
+    // ① in its 战术点形态: back at once, one 狼影, full HP, a fresh cycle
+    for (let i = 0; i < 3; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    assert.ok(!w.alive && wolfTacticalPoint(w), `${tag}: 战术点形态`);
+    h.run(3);
+    assert.equal(w.alive, false, `${tag}: waits in its 战术点形态 without a cast`);
+    cast();
+    assert.ok(w.alive, `${tag} ①: back at once`);
+    assert.equal(wolfTacticalPoint(w), null);
+    assert.equal(wolfShadows(w), 1, `${tag} ①: one 狼影`);
+    assert.equal(w.hp, w.s.maxHp, `${tag} ①: full HP`);
+    assert.equal(u.trait.reinforcement, w, `${tag} ①: the same pack`);
+    const tUp = h.b.time;
+    assert.ok(h.runUntil(() => wolfShadows(w) === 2, iv + 1), `${tag} ①: the next 狼影`);
+    close(h.b.time - tUp, iv, 0.1, `${tag} ①: a fresh cycle from the return`);
+    // a stale timer: down, back by S1 3 s later, down again 2 s after that — the first form's return time passes
+    // without reviving it; it comes back an interval after the second knock-out
+    for (let i = 0; i < 2; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    assert.ok(wolfTacticalPoint(w));
+    const tDown = h.b.time;
+    h.run(3);
+    cast();
+    assert.ok(w.alive);
+    h.run(2);
+    h.b.dealDamage(null, w, { amount: 1e9, type: 'true' });
+    assert.ok(wolfTacticalPoint(w), `${tag}: 战术点形态 again`);
+    const tDown2 = h.b.time;
+    h.run(tDown + iv + 0.5 - h.b.time);
+    assert.equal(w.alive, false, `${tag}: the cancelled return does not revive it`);
+    assert.ok(h.runUntil(() => w.alive, 6), `${tag}: back`);
+    close(h.b.time - tDown2, iv, 0.1, `${tag}: an interval after the second knock-out`);
+    done(h);
+  }
+});
+
+test('3_19 伺夜 狼群: a 撤退 also ends in the 战术点形态 (狼影 0); 伺夜 leaving ends the form without a return — his redeploy brings a fresh pack; a standing pack leaves with him, no 战术点形态 (kit pack and prep piece)', () => {
+  const id = 'chess_char_3_19_a', iv = WOLF_IV(id);
+  for (const piece of [false, true]) {
+    const tag = piece ? 'piece' : 'kit pack';
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 120, flags: { dpPerSec: 0 }, units: vigilUnits(id, null, piece) });
+    h.step();
+    const u = h.unit(1), w = u.trait.reinforcement;
+    assert.equal(wolfShadows(w), 2);
+    // a manual 撤退 (battle.retreat's default reason; no sim path withdraws the pack so today)
+    h.b.retreat(w);
+    assert.ok(!w.alive && wolfTacticalPoint(w), `${tag}: 撤退 ⇒ 战术点形态`);
+    assert.equal(wolfShadows(w), 0, `${tag}: 狼影 0`);
+    // 伺夜 leaves: the form ends there, no return
+    h.b.dealDamage(null, u, { amount: 1e9, type: 'true' });
+    assert.equal(u.alive, false);
+    assert.equal(wolfTacticalPoint(w), null, `${tag}: the form ends with 伺夜`);
+    h.run(iv + 2);
+    assert.equal(w.alive, false, `${tag}: no return without 伺夜`);
+    // his redeploy: a fresh pack with the initial 狼影
+    assert.ok(h.b.redeploy(u, { free: true }));
+    h.step();
     const w2 = u.trait.reinforcement;
-    assert.ok(w2 && w2.alive, 'the pack is back');
-    approx(p.dp, dp0 + b.cost, 1e-9, '+cost DP');
-    assert.equal(w2.mem.wolves, 3, 'one more 狼影 on the returned pack');
+    assert.ok(w2 && w2.alive, `${tag}: a pack with him`);
+    assert.equal(wolfShadows(w2), 2, `${tag}: the initial 狼影`);
+    assert.equal(h.b.allyUnits.filter((t) => t.alive && t.defId === WOLF).length, 1, `${tag}: one pack`);
+    // a standing pack leaves with him ('expired'): gone, no 战术点形态
+    h.b.dealDamage(null, u, { amount: 1e9, type: 'true' });
+    assert.equal(w2.alive, false);
+    assert.equal(wolfTacticalPoint(w2), null, `${tag}: no 战术点形态 when it leaves with 伺夜`);
+    assert.equal(w2.removed, true);
     done(h);
   }
 });
@@ -857,28 +1016,33 @@ test('3_19 伺夜 S2 领袖的馈赠: +DP, the pack recovers HP, its next attack
   }
 });
 
-test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at full SP while the pack stands and holds no unused gift (PRTS 备注), never without the pack', () => {
-  for (const id of BOTH('chess_char_3_19_a')) {
-    const b = SB(id, 'skchr_vigil_2');
-    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_2', 10, 3)] });
-    const u = h.unit(id), p = h.b.getPlayer('p1');
+test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at full SP while the pack stands and holds no unused gift (PRTS 备注), never while it is in its 战术点形态 [ASSUMED] — cast once it is back (kit pack and prep piece)', () => {
+  for (const id of BOTH('chess_char_3_19_a')) for (const piece of [false, true]) {
+    const b = SB(id, 'skchr_vigil_2'), tag = `${id} ${piece ? 'piece' : 'kit pack'}`;
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: vigilUnits(id, 'skchr_vigil_2', piece) });
+    const u = h.unit(1), p = h.b.getPlayer('p1');
     h.run(1);
     const w = u.trait.reinforcement;
-    assert.ok(w && w.alive, 'the pack stands');
+    assert.ok(w && w.alive, `${tag}: the pack stands`);
     const dp0 = p.dp;
     fill(u);
-    assert.ok(h.runUntil(() => u.skill.activations === 1, 1), 'cast with nobody on the field');
+    assert.ok(h.runUntil(() => u.skill.activations === 1, 1), `${tag}: cast with nobody on the field`);
     approx(p.dp, dp0 + b.cost, 1e-6, '+cost DP at once');
     assert.ok(w.mem.vigilGift, 'the pack holds the gift for its next attack');
     fill(u);
     h.run(3);
     assert.equal(u.skill.activations, 1, '"狼群未获得此技能的充能时可触发": no second cast while the gift is unused');
-    // the gift spent (as by a bite), the pack gone: still no cast until a pack stands again
+    // the gift spent (as by a bite), the pack in its 战术点形态: no cast (the 备注 does not count that form for S2 —
+    // [ASSUMED]); once it is back, the waiting cast fires
     w.mem.vigilGift = null;
     for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
-    assert.ok(!u.trait.reinforcement?.alive, 'no pack on the field');
-    h.step(2);
-    assert.equal(u.skill.activations, 1, '"仅场上存在狼群…时可触发": no pack, no cast');
+    assert.ok(wolfTacticalPoint(w), `${tag}: 战术点形态`);
+    h.run(5);
+    assert.equal(u.skill.activations, 1, `${tag}: no cast while the pack is in its 战术点形态`);
+    assert.ok(u.skill.ready, 'the SP waits full');
+    assert.ok(h.runUntil(() => w.alive, WOLF_IV(id)), `${tag}: the pack is back`);
+    assert.ok(h.runUntil(() => u.skill.activations === 2, 0.5), `${tag}: cast once it stands again`);
+    assert.ok(w.mem.vigilGift, 'the returned pack holds the gift');
     done(h);
   }
 });

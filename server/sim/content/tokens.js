@@ -21,7 +21,8 @@
 //                 full HP; its and 伺夜's attacks ignore def_penetrate_fixed DEF of enemies it blocks; while 伺夜's
 //                 timed skill runs every attack damage instance (each bite) of the pack / 伺夜 on an enemy it blocks
 //                 adds 伺夜 ATK × bb scale arts; module: ×damage_scale damage from enemies it blocks; is its owner's
-//                 tactician 援军 (1.5× trait), leaves with it; respawns respawnTime s after being killed
+//                 tactician 援军 (1.5× trait), leaves with it; the fatal hit on its last shadow (or a 撤退) ⇒ 战术点形态
+//                 for the talent interval, then back on its tile with 1 shadow (installWolfTacticalPoint, both packs)
 //   流形          copy skill (SP from data, golden +sp; starts only when an operator can be copied, else waits ready):
 //                 copies scale × HP/ATK/DEF/RES, block, BAT/ASPD, range and the damage type of the nearest allied
 //                 operator; no attack before its copy; ranged copy splits every N attacks (clone lasts the talent
@@ -74,10 +75,12 @@
 // makes the token (Battle.spawnToken also refuses summons the owner's loadout does not produce).
 //
 // Exports for other content: spawnYanyou, spawnMapChar, findSummonTile, summonToken, tacticalPoint, wolfShadows,
-// releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY, TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 /
-// 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit, kits/ops/standin-acmedc.js).
+// wolfShadowInterval, installWolfTacticalPoint, wolfTacticalPoint, wolfReturnNow (the 狼群's 战术点形态, shared with the
+// 伺夜 kit's own pack, kits/ops/chess_char_3_19-vigil.js), releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY,
+// TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 / 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit,
+// kits/ops/standin-acmedc.js).
 
-import { COLS, ROWS, MOVE_SCALE } from '../constants.js';
+import { COLS, ROWS, MOVE_SCALE, FORCED_EXIT } from '../constants.js';
 import { absoluteRangeKeys, sortEnemyTargets, canTargetEnemy } from '../targeting.js';
 import { bodyInKeys, bodyOnTile } from '../body.js';
 import { hasHp } from '../damage.js';
@@ -607,14 +610,109 @@ function paperDoll(bb, raw, def) {
   };
 }
 
-/** Current “狼影” count of a 狼群 token (0 when not a wolf pack). */
+/** Current “狼影” count of a 狼群 token (0 when not a wolf pack, and in its 战术点形态). */
 export function wolfShadows(unit) { return unit && unit.defId === TOKEN_IDS.wolfPack ? (unit.mem.shadows ?? 0) : 0; }
+
+// ---- 狼群 战术点形态 — both packs: the board piece (wolfPack below) and the 伺夜 kit's own pack
+// (kits/ops/chess_char_3_19-vigil.js). PRTS 伺夜 天赋 狼群领袖 备注 and 狼群 召唤物信息 备注: "受到致命伤时，如果狼影层数＞1则
+// 消耗一层狼影并重设生命值至上限，为1则消耗一层狼影变为战术点形态；手动撤退、强制撤退时狼影层数归零并变为战术点形态；战术点形态的
+// 持续时间等于“狼影”恢复时间，持续时间结束后狼影层数变回1层", "战术点形态期间：不进行普通攻击，持有无敌、强制缴械、不死…",
+// "持有者离场后强制撤退场上的狼群（不触发上述效果）". The remake's 战术点形态 is its knocked-out piece: off the fight
+// (`alive` false: no block, no attack, not targetable) but kept (`removed` false: its hooks live on and its tile stays
+// reserved — Battle.isReservedTile — as the official device holds it), with 0 狼影, for the 狼影 recovery time
+// (wolfShadowInterval: the talent's interval, data); then it is redeployed on its tile, free, at full HP with 1 狼影 and a
+// fresh growth cycle (the pack's own `deploy` handler reads `mem.wolfReturn`). 伺夜 S1 领袖的呼唤 ① brings it back at
+// once (wolfReturnNow); every return timer carries the form's `seq`, so a stale one never revives a pack that came back
+// and fell again.
+
+/**
+ * Removal reasons that put a 狼群 in its 战术点形态: the fatal hit on its last 狼影 (the engine's knock-out) and a 撤退 —
+ * manual (`battle.retreat`'s default reason) or forced. No sim path retreats the pack that way today; 'expired' (its
+ * owner leaving, the deploy limit) and 'raid' (an instant redeploy) never do.
+ */
+const WOLF_TAC_EXITS = new Set(['killed', 'retreat', FORCED_EXIT]);
+/** Seconds between two return tries of a 狼群 whose tile is taken when its 战术点形态 ends (Battle.isReservedTile keeps it). */
+const WOLF_RETURN_RETRY = 0.25;
+
+/** The 狼群领袖 talent of a 狼群 def (its 狼影 stack talent), else its first talent. */
+const wolfLeader = (def) => talentWith(def, 'vigil_wolf_t_1_enhance[trigger].max_stack_cnt') ?? def?.talents?.[0] ?? null;
+
+/**
+ * “狼影” recovery time of a 狼群 def: its 狼群领袖 talent interval ("每25秒增加一只"; data — 25 s for both 伺夜 chess). The
+ * growth cycle and the length of the 战术点形态. 0 when the data has none.
+ */
+export function wolfShadowInterval(def) {
+  const lb = wolfLeader(def)?.bb ?? {};
+  return Math.max(0, num(lb['vigil_wolf_t_1_enhance[trigger].interval'] ?? lb.interval, 0));
+}
+
+/** The 战术点形态 of a 狼群 (`{ seq, since, until }`) while it is in it, else null. */
+export function wolfTacticalPoint(unit) {
+  const tp = unit?.mem?.wolfTac;
+  return tp && !unit.alive && !unit.removed ? tp : null;
+}
+
+/** The pack's owner stands on the field (no owner unit: a test spawn). */
+const wolfOwnerStands = (u) => !u.ownerUnit || (u.ownerUnit.alive && u.ownerUnit.deployed);
+
+/**
+ * Bring a 狼群 back from its 战术点形态 at once (the end of the form; 伺夜 S1 ①: "立刻切换至拥有1只狼影的召唤物形态（会更新
+ * 狼群的狼影刷新周期）"): redeployed on its tile, free, at full HP with 1 狼影 and a fresh growth cycle (its `deploy`
+ * handler reads `mem.wolfReturn` = { src }); the pending return is cancelled. False when it is not in the form, its owner
+ * is off the field or its tile is taken.
+ */
+export function wolfReturnNow(battle, unit, src = null) {
+  const tp = wolfTacticalPoint(unit);
+  if (!tp || battle.finished || !wolfOwnerStands(unit)) return false;
+  unit.mem.wolfReturn = { src };
+  let ok;
+  try { ok = battle.redeploy(unit, { free: true }); } finally { unit.mem.wolfReturn = null; }
+  if (!ok) return false;
+  if (unit.mem.wolfTac === tp) unit.mem.wolfTac = null;
+  if (tp.timer) tp.timer.cancel();
+  return true;
+}
+
+/** The end of the 战术点形态 `seq` (its timer): the pack comes back — another try shortly when its tile is taken. */
+function wolfTimerReturn(battle, unit, seq) {
+  const tp = wolfTacticalPoint(unit);
+  if (!tp || tp.seq !== seq || battle.finished) return;
+  if (wolfReturnNow(battle, unit)) return;
+  tp.timer = battle.after(WOLF_RETURN_RETRY, () => wolfTimerReturn(battle, unit, seq), { owner: unit });
+}
+
+/**
+ * The 战术点形态 of a 狼群 unit (see above). `onEnter(battle, unit)` sets its 狼影 to 0 — each pack keeps its own count,
+ * buff and fx.
+ */
+export function installWolfTacticalPoint(battle, unit, { onEnter = null } = {}) {
+  battle.on('death', (ctx) => {
+    if (ctx.unit !== unit || battle.finished || !WOLF_TAC_EXITS.has(ctx.reason) || !wolfOwnerStands(unit)) return;
+    unit.removed = false;
+    // the 狼影 recovery time from the data; a record without one falls back to the token's redeploy time (data)
+    const t = wolfShadowInterval(unit.def) || Math.max(0, num(unit.base.respawnTime, 0));
+    const seq = (unit.mem.wolfTacSeq ?? 0) + 1;
+    unit.mem.wolfTacSeq = seq;
+    const tp = { seq, since: battle.time, until: battle.time + t, timer: null };
+    unit.mem.wolfTac = tp;
+    if (onEnter) onEnter(battle, unit);
+    tp.timer = battle.after(t, () => wolfTimerReturn(battle, unit, seq), { owner: unit });
+  }, { owner: unit, priority: -10 });
+  // its owner leaving ends the form without a return ("不触发上述效果"): the piece waits for the owner's redeploy, which
+  // brings a fresh pack (its initial 狼影) — as for a standing pack, which leaves with its owner
+  battle.on('death', (ctx) => {
+    const tp = wolfTacticalPoint(unit);
+    if (!tp || !unit.ownerUnit || ctx.unit !== unit.ownerUnit) return;
+    unit.mem.wolfTac = null;
+    if (tp.timer) tp.timer.cancel();
+  }, { owner: unit });
+}
 
 /** 狼群 (伺夜 talent 狼群领袖/狼群天性; S3 bb on the token). */
 function wolfPack(bb, raw, def) {
-  const leader = talentWith(def, 'vigil_wolf_t_1_enhance[trigger].max_stack_cnt') ?? def?.talents?.[0] ?? null;
+  const leader = wolfLeader(def);
   const lb = leader?.bb ?? {};
-  const interval = num(lb['vigil_wolf_t_1_enhance[trigger].interval'] ?? lb.interval, 0);
+  const interval = wolfShadowInterval(def);
   const perBlock = num(lb['vigil_wolf_t_1_enhance[trigger].block_cnt'] ?? lb.block_cnt, 1);
   const mMax = String(leader?.description ?? '').match(/至多(\d+)只/);
   const maxShadows = mMax ? +mMax[1] : 1 + num(lb['vigil_wolf_t_1_enhance[trigger].max_stack_cnt'], 0);
@@ -635,8 +733,13 @@ function wolfPack(bb, raw, def) {
       const mi = ot.match(/初始(两|二|\d+)只/);
       const initShadows = Math.max(1, Math.min(maxShadows, mi ? (/\d/.test(mi[1]) ? +mi[1] : 2) : maxShadows - 1));
       onDeploy(battle, unit, () => {
-        setShadows(battle, unit, initShadows);
+        // back from its 战术点形态 (wolfReturnNow): 1 狼影 (PRTS 狼群 "从战术点形态转变为召唤物形态后拥有1只“狼影”") and a
+        // fresh growth cycle; any other deployment: the initial count
+        const back = unit.mem.wolfReturn;
+        setShadows(battle, unit, back ? 1 : initShadows);
         unit.hp = unit.s.maxHp;
+        // (伺夜 S1 ① shows its own summon fx)
+        if (back && back.src == null) battle.fx('wolfShadow', { x: unit.x, y: unit.y, id: unit.id, n: 1 });
         const seq = unit.deploySeq;
         if (interval > 0) {
           battle.every(interval, (b, sched) => {
@@ -650,6 +753,7 @@ function wolfPack(bb, raw, def) {
         const o = ownerOf(unit);
         if (o && o.profile?.sub === 'tactician') o.trait.reinforcement = unit;
       }, 20);
+      // fatal with more than one 狼影: one is lost, full HP; on the last one the knock-out goes through — 战术点形态
       battle.on('fatal', (ctx) => {
         if (ctx.unit !== unit || ctx.prevented || !((unit.mem.shadows ?? 0) > 1)) return;
         ctx.prevented = true;
@@ -657,6 +761,12 @@ function wolfPack(bb, raw, def) {
         unit.hp = unit.s.maxHp;
         battle.fx('wolfShadowLost', { x: unit.x, y: unit.y, id: unit.id, n: unit.mem.shadows });
       }, { owner: unit, priority: -50 });
+      installWolfTacticalPoint(battle, unit, {
+        onEnter: (b, u) => {
+          setShadows(b, u, 0);
+          b.fx('wolfShadowLost', { x: u.x, y: u.y, id: u.id, n: 0 });
+        },
+      });
       // 狼群天性 ("伺夜和狼群对其的攻击无视其175防御力") and the owner's S3 bonus ("狼群与伺夜攻击被狼群阻挡的单位造成伤害
       // 时，额外造成相当于伺夜攻击力N%的法术伤害", one per damage instance = per bite) cover the pack's and 伺夜's own
       // attacks; with a hand-authored 伺夜 kit (managed) that kit applies both. The module guard is intrinsic.
@@ -676,14 +786,14 @@ function wolfPack(bb, raw, def) {
           battle.dealDamage(ctx.source, e, { amount: o.s.atk * s3Scale, type: 'arts', isSkill: true, canDodge: false, tags: ['vigil'] });
         }, { owner: unit });
       }
-      // the 援军 leaves with its tactician (a hand-authored 伺夜 kit does the same for its pack) and a killed pack
-      // does not come back while its tactician is down (the tactician's redeploy brings it back)
+      // the 援军 leaves with its tactician (a hand-authored 伺夜 kit does the same for its pack); a pack in its 战术点形态
+      // ends it then (installWolfTacticalPoint) and the tactician's redeploy brings it back fresh. No respawn timer of
+      // its own: the token's redeploy time (data 10 s) is not the 战术点形态's length (the 狼影 interval)
       const tacticianOwner = () => ownerOf(unit)?.profile?.sub === 'tactician';
       battle.on('death', (ctx) => {
         if (ctx.unit !== unit.ownerUnit || !unit.alive || managed(unit) || !tacticianOwner()) return;
         battle.retreat(unit, { reason: 'expired', permanent: true });
       }, { owner: unit });
-      enableRespawn(battle, unit, { delay: (u) => u.base.respawnTime, requireOwner: tacticianOwner });
     },
   };
 }
@@ -1464,6 +1574,10 @@ function ensureReinforcement(battle, owner, tokenId) {
   const mine = battle.allyUnits.filter((t) => t.kind === 'token' && t.defId === tokenId && t.ownerUnit === owner && !t.mem.isClone && !t.mem.mlyssClone);
   const live = mine.find((t) => t.alive);
   if (live) { owner.trait.reinforcement = live; return live; }
+  // a 狼群 in its 战术点形态 is still the 援军 on the field: it comes back by its own timer (a 【移动】 of the owner fires
+  // `deploy` without ending the form)
+  const tac = mine.find((t) => wolfTacticalPoint(t));
+  if (tac) { owner.trait.reinforcement = tac; return tac; }
   const waiting = mine.find((t) => !t.alive && !t.removed);
   if (waiting && battle.redeploy(waiting, { free: true })) { owner.trait.reinforcement = waiting; return waiting; }
   // the tactical point the player chose (the board piece's tile, else the last one's) when still usable, else the

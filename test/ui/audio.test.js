@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { bgmKeyFor, resolveBgm, SfxLimiter, AudioManager, normalAttackSfx, installAudio, audio, combatTrackFor, COMBAT_TRACK_SWITCH_ROUND, VoiceGate, resultSpeaker, resultVoiceSlot, VOICE_PRIORITY, VOICE_COOLDOWN_MS } from '../../public/js/audio.js';
 import { mediaUrl } from '../../public/js/media.js';
 import { PHASE } from '../../shared/constants.js';
+import { makeBattle, chessRec } from '../helpers/battleHarness.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const manifest = JSON.parse(readFileSync(path.join(ROOT, 'data', 'assets.json'), 'utf8'));
@@ -209,6 +210,19 @@ describe('operator battle voice', () => {
     assert.equal(resultSpeaker(undefined), null);
     assert.equal(resultSpeaker({ unitsEnd: [{ alive: true }] }, () => 0), null, 'a unit without a defId');
     assert.equal(resultSpeaker({ unitsEnd: [{ defId: 'enemy_1007_slime', alive: true }] }, () => 0), null, 'an enemy');
+  });
+
+  test('resultSpeaker on a real battle result: unitsEnd names the chess, the chess record gives the speaking operator', () => {
+    // the sim reports each unit by its chess id (sim/Battle.js unitsEnd defId = the chess record's id), so the line needs
+    // the chess → charId step the game screen passes (data.lookup('chess', id).charId); without it no battle ever spoke
+    const chessTable = JSON.parse(readFileSync(path.join(ROOT, 'data', 'chess.json'), 'utf8'));
+    const id = 'chess_char_1_01_a';
+    assert.equal(chessTable[id]?.charId, 'char_498_inside');
+    const h = makeBattle({ defs: { chess: { [id]: chessRec({ id }) } }, units: [{ chessId: id, row: 10, col: 4 }], content: 'none' });
+    const mine = Object.values(h.runToEnd(30).perPlayer)[0];
+    assert.equal(mine.unitsEnd[0].defId, id, 'the result carries the chess id, not the charId');
+    assert.equal(resultSpeaker(mine, () => 0), null, 'no chess → charId step: silent (the 0.1.4 bug)');
+    assert.equal(resultSpeaker(mine, () => 0, (defId) => chessTable[defId]?.charId ?? null), 'char_498_inside');
   });
 
   test('VoiceGate: one line at a time, a global gap, per-unit cooldowns, higher priority takes over', () => {

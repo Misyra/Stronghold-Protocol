@@ -241,7 +241,7 @@ docker run -d --name stronghold -p 3000:3000 --restart unless-stopped \
   -v stronghold-state:/app/.state stronghold-protocol
 ```
 
-镜像基于 `node:22-alpine`，多阶段构建，只含生产依赖；`public/vendor` 在构建时生成。`.dockerignore` 排除了 `public/assets`（不会把宿主机素材打进构建上下文）；`public/fonts`、`data/assets.json` 和 `data/local-assets.json` 若存在会被复制进去。环境变量同 README（`-e SP_VERIFY=sample` 等）。健康检查：`GET /healthz`。
+镜像基于 `node:22-alpine`，多阶段构建，只含生产依赖；`public/vendor` 在构建时生成。`.dockerignore` 排除了下载的 `public/assets` 素材，但保留本分支跟踪的 `public/assets/local/`，因此 3D 棋盘素材会进入镜像；`public/fonts`、`data/assets.json` 和 `data/local-assets.json` 若存在会被复制进去。挂载整个 `/app/public/assets` 会覆盖镜像中的素材，宿主机目录也应包含 `local/`。环境变量同 README（`-e SP_VERIFY=sample` 等）。健康检查：`GET /healthz`。
 
 docker compose 示例：
 
@@ -305,6 +305,8 @@ volumes:
 ## 6. 本地客户端素材（可选）
 
 `public/assets/local/` 和 `data/local-assets.json` 是从本机安装的《明日方舟》客户端里提取的官方素材（`tools/local-extract`，DESIGN §13）：`node tools/setup.mjs` 检测到客户端时会询问是否提取，之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定客户端目录。setup 从公开镜像下载的素材不包含这部分，所以在没有客户端的电脑上（例如 Linux 服务器）从源码部署时不会有它；Releases 的完整包里已经带上了。
+
+**本分支已把上游 v0.1.3 完整包的这部分素材和清单纳入 Git**，因此拉取 `master` 就会获得官方 3D 棋盘、部分界面图标和本地独有的敌人模型，无需另行提取或复制。来源和完整包校验值见 [ASSETS.md](ASSETS.md)。更新时停止服务、执行 `git pull` 后重启，再运行 `node tools/doctor.mjs` 确认「3D 棋盘可用」。普通干员美术、音频和字体仍由 setup 下载。若使用香港 CDN，香港素材站也需拉取同版并重启；使用 `SP_ASSETS_CDN_VERSION` 时，再同步香港站新的 `artVersion`。
 
 没有本地素材时游戏照常运行，只是下面几样换成替代样式：
 

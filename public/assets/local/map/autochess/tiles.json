@@ -1,0 +1,848 @@
+{
+ "version": 2,
+ "generatedBy": "tools/crop-board-atlas.mjs",
+ "cell": 256,
+ "source": {
+  "D": {
+   "path": "/assets/local/map/autochess/TX_autochessi_D.png",
+   "w": 2048,
+   "h": 2048
+  },
+  "common": {
+   "path": "/assets/local/map/autochess/TX_autochessi_common_D.png",
+   "w": 1024,
+   "h": 1024
+  },
+  "BG": {
+   "path": "/assets/local/map/autochess/TX_autochessi_BG.png",
+   "w": 1024,
+   "h": 1024
+  }
+ },
+ "materials": {
+  "road": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ]
+   }
+  ],
+  "road2": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "rot": 90
+   }
+  ],
+  "road3": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "rot": 180,
+    "bright": 0.97
+   }
+  ],
+  "roadN": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "rot": 270,
+    "bright": 0.93
+   }
+  ],
+  "roadN2": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "flipX": true,
+    "bright": 0.93
+   }
+  ],
+  "floor": [
+   {
+    "src": "D",
+    "rect": [
+     768,
+     512,
+     256,
+     256
+    ]
+   }
+  ],
+  "floor2": [
+   {
+    "src": "D",
+    "rect": [
+     768,
+     512,
+     256,
+     256
+    ],
+    "flipX": true
+   }
+  ],
+  "preview": [
+   {
+    "src": "D",
+    "rect": [
+     512,
+     256,
+     256,
+     256
+    ],
+    "bright": 0.9
+   }
+  ],
+  "wall": [
+   {
+    "src": "D",
+    "rect": [
+     768,
+     0,
+     256,
+     256
+    ]
+   }
+  ],
+  "wallL": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     0,
+     256,
+     256
+    ]
+   }
+  ],
+  "wallM": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     0,
+     256,
+     256
+    ]
+   }
+  ],
+  "wallR": [
+   {
+    "src": "D",
+    "rect": [
+     512,
+     0,
+     256,
+     256
+    ]
+   }
+  ],
+  "wallB": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     0,
+     256,
+     256
+    ],
+    "rot": 270
+   }
+  ],
+  "wallVM": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     0,
+     256,
+     256
+    ],
+    "rot": 90
+   }
+  ],
+  "wallT": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     0,
+     256,
+     256
+    ],
+    "rot": 90
+   }
+  ],
+  "wallSide": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     1664,
+     272,
+     114
+    ],
+    "bright": 0.92
+   }
+  ],
+  "forbid": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "tint": "#6a7075"
+   },
+   {
+    "proc": "rim"
+   }
+  ],
+  "forbid2": [
+   {
+    "src": "D",
+    "rect": [
+     256,
+     512,
+     256,
+     256
+    ],
+    "rot": 90,
+    "tint": "#646a6f"
+   },
+   {
+    "proc": "rim"
+   }
+  ],
+  "forbidSide": [
+   {
+    "src": "D",
+    "rect": [
+     272,
+     1664,
+     272,
+     82
+    ],
+    "tint": "#6d767b"
+   }
+  ],
+  "sep": [
+   {
+    "src": "D",
+    "rect": [
+     1032,
+     477,
+     226,
+     226
+    ],
+    "tint": "#5a6266"
+   },
+   {
+    "proc": "rim"
+   }
+  ],
+  "sepSide": [
+   {
+    "src": "D",
+    "rect": [
+     196,
+     768,
+     300,
+     160
+    ],
+    "bright": 0.8
+   }
+  ],
+  "fence": [
+   {
+    "src": "D",
+    "rect": [
+     556,
+     1788,
+     236,
+     236
+    ]
+   }
+  ],
+  "start": [
+   {
+    "src": "D",
+    "rect": [
+     768,
+     256,
+     256,
+     256
+    ]
+   },
+   {
+    "src": "common",
+    "rect": [
+     792,
+     258,
+     232,
+     262
+    ],
+    "scale": 0.5,
+    "alpha": 0.85
+   }
+  ],
+  "end": [
+   {
+    "src": "D",
+    "rect": [
+     1290,
+     1400,
+     210,
+     210
+    ]
+   },
+   {
+    "src": "common",
+    "rect": [
+     538,
+     2,
+     256,
+     250
+    ],
+    "scale": 0.46,
+    "alpha": 0.9,
+    "tint": "#6fc3ff"
+   }
+  ],
+  "telin": [
+   {
+    "src": "D",
+    "rect": [
+     804,
+     1790,
+     234,
+     234
+    ]
+   }
+  ],
+  "telout": [
+   {
+    "src": "D",
+    "rect": [
+     804,
+     1790,
+     234,
+     234
+    ],
+    "rot": 180
+   }
+  ],
+  "hand": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     1024,
+     512,
+     512
+    ]
+   }
+  ],
+  "temp": [
+   {
+    "src": "D",
+    "rect": [
+     512,
+     1024,
+     512,
+     512
+    ]
+   }
+  ],
+  "benchSide": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     1538,
+     512,
+     82
+    ]
+   }
+  ],
+  "benchSideTemp": [
+   {
+    "src": "D",
+    "rect": [
+     0,
+     1538,
+     512,
+     82
+    ],
+    "flipX": true
+   }
+  ],
+  "smog": [
+   {
+    "src": "D",
+    "rect": [
+     1032,
+     477,
+     226,
+     226
+    ],
+    "tint": "#7c8589"
+   }
+  ],
+  "crateSide": [
+   {
+    "src": "D",
+    "rect": [
+     1087,
+     1938,
+     134,
+     108
+    ]
+   }
+  ],
+  "crateTop": [
+   {
+    "src": "D",
+    "rect": [
+     1222,
+     1938,
+     134,
+     108
+    ],
+    "rot": 90,
+    "bright": 1.08
+   }
+  ],
+  "blowerTop": [
+   {
+    "src": "D",
+    "rect": [
+     1088,
+     705,
+     304,
+     304
+    ],
+    "tint": "#6b7478"
+   },
+   {
+    "src": "common",
+    "rect": [
+     2,
+     520,
+     250,
+     250
+    ],
+    "scale": 0.92
+   }
+  ],
+  "sealed": [
+   {
+    "src": "common",
+    "rect": [
+     2,
+     2,
+     250,
+     248
+    ]
+   }
+  ],
+  "turretTop": [
+   {
+    "src": "D",
+    "rect": [
+     1088,
+     705,
+     304,
+     304
+    ],
+    "rot": 180,
+    "tint": "#737c80"
+   },
+   {
+    "src": "common",
+    "rect": [
+     2,
+     262,
+     250,
+     250
+    ],
+    "scale": 0.9
+   }
+  ],
+  "platformTop": [
+   {
+    "src": "D",
+    "rect": [
+     768,
+     0,
+     256,
+     256
+    ],
+    "bright": 1.06
+   }
+  ]
+ },
+ "backdrop": {
+  "src": "BG",
+  "tilesPerRepeat": 9,
+  "crop": [
+   0,
+   0,
+   1024,
+   440
+  ]
+ },
+ "board3d": {
+  "concrete": {
+   "src": "D",
+   "rect": [
+    256,
+    512,
+    256,
+    256
+   ]
+  },
+  "concreteRailTL": {
+   "src": "D",
+   "rect": [
+    0,
+    256,
+    256,
+    256
+   ]
+  },
+  "concreteRailT": {
+   "src": "D",
+   "rect": [
+    256,
+    256,
+    256,
+    256
+   ]
+  },
+  "concreteRailL": {
+   "src": "D",
+   "rect": [
+    0,
+    512,
+    256,
+    256
+   ]
+  },
+  "concreteStripe": {
+   "src": "D",
+   "rect": [
+    512,
+    256,
+    256,
+    256
+   ]
+  },
+  "concreteArrow": {
+   "src": "D",
+   "rect": [
+    768,
+    256,
+    256,
+    256
+   ]
+  },
+  "concreteRed": {
+   "src": "D",
+   "rect": [
+    768,
+    512,
+    256,
+    256
+   ]
+  },
+  "hatch": {
+   "src": "D",
+   "rect": [
+    549,
+    1787,
+    255,
+    256
+   ]
+  },
+  "lift": {
+   "src": "D",
+   "rect": [
+    804,
+    1790,
+    234,
+    234
+   ]
+  },
+  "ringHatch": {
+   "src": "D",
+   "rect": [
+    1290,
+    1400,
+    190,
+    190
+   ]
+  },
+  "slats": {
+   "src": "D",
+   "rect": [
+    1036,
+    480,
+    404,
+    216
+   ]
+  },
+  "mech": {
+   "src": "D",
+   "rect": [
+    1088,
+    708,
+    356,
+    310
+   ]
+  },
+  "steel": {
+   "src": "D",
+   "rect": [
+    12,
+    776,
+    196,
+    196
+   ]
+  },
+  "plateL": {
+   "src": "D",
+   "rect": [
+    0,
+    0,
+    256,
+    256
+   ]
+  },
+  "plateM": {
+   "src": "D",
+   "rect": [
+    256,
+    0,
+    256,
+    256
+   ]
+  },
+  "plateR": {
+   "src": "D",
+   "rect": [
+    512,
+    0,
+    256,
+    256
+   ]
+  },
+  "plateS": {
+   "src": "D",
+   "rect": [
+    768,
+    0,
+    256,
+    256
+   ]
+  },
+  "padReinf": {
+   "src": "D",
+   "rect": [
+    0,
+    1024,
+    512,
+    512
+   ]
+  },
+  "padEquip": {
+   "src": "D",
+   "rect": [
+    512,
+    1024,
+    512,
+    512
+   ]
+  },
+  "goldSide": {
+   "src": "D",
+   "rect": [
+    0,
+    1664,
+    272,
+    384
+   ]
+  },
+  "graySide": {
+   "src": "D",
+   "rect": [
+    272,
+    1664,
+    272,
+    384
+   ]
+  },
+  "benchRail": {
+   "src": "D",
+   "rect": [
+    0,
+    1538,
+    512,
+    98
+   ]
+  },
+  "restPanel": {
+   "src": "D",
+   "rect": [
+    0,
+    768,
+    512,
+    208
+   ]
+  },
+  "evacPanel": {
+   "src": "D",
+   "rect": [
+    512,
+    768,
+    256,
+    208
+   ]
+  },
+  "pipePanel": {
+   "src": "D",
+   "rect": [
+    544,
+    1540,
+    480,
+    244
+   ]
+  },
+  "crateSide": {
+   "src": "D",
+   "rect": [
+    1087,
+    1938,
+    134,
+    108
+   ]
+  },
+  "crateTop": {
+   "src": "D",
+   "rect": [
+    1222,
+    1938,
+    134,
+    108
+   ],
+   "rot": 90
+  },
+  "hazardX": {
+   "src": "common",
+   "rect": [
+    2,
+    2,
+    250,
+    248
+   ]
+  },
+  "heal": {
+   "src": "common",
+   "rect": [
+    264,
+    2,
+    256,
+    250
+   ]
+  },
+  "shield": {
+   "src": "common",
+   "rect": [
+    538,
+    2,
+    256,
+    250
+   ]
+  },
+  "target": {
+   "src": "common",
+   "rect": [
+    2,
+    262,
+    250,
+    250
+   ]
+  },
+  "blast": {
+   "src": "common",
+   "rect": [
+    538,
+    262,
+    250,
+    250
+   ]
+  },
+  "enemyMark": {
+   "src": "common",
+   "rect": [
+    792,
+    258,
+    232,
+    262
+   ]
+  },
+  "fast": {
+   "src": "common",
+   "rect": [
+    2,
+    520,
+    250,
+    250
+   ]
+  },
+  "arrowUp": {
+   "src": "common",
+   "rect": [
+    508,
+    762,
+    244,
+    244
+   ]
+  },
+  "arrowDown": {
+   "src": "common",
+   "rect": [
+    776,
+    762,
+    244,
+    244
+   ]
+  }
+ }
+}

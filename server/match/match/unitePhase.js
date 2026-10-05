@@ -5,7 +5,7 @@
 
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { deriveSeed } from '../../sim/rng.js';
-import { uniteBattleOpts, uniteSurvivors } from '../unite.js';
+import { uniteBattleOpts, uniteSurvivors, uniteStageId } from '../unite.js';
 import { FieldRunner, timelineAt, uniteBillBounds } from '../fields.js';
 import { uniteLeft } from '../../sim/spec.js';
 import { FLOW_TICKER_PRIORITY, DELAYS } from './common.js';
@@ -38,7 +38,11 @@ export class MatchUnite {
     this.runner.start();
   }
 
-  /** Battle options of the 联防 field (helpers' carried end state, the leakers' enemies). */
+  /**
+   * Battle options of the 联防 field (helpers' carried end state, the leakers' enemies) on its own map — the escaped
+   * template's (unite.js uniteStageId; GitHub #41), the round's stage only when the data lacks it. The field meta and the
+   * client-run spec carry that stageId, so every viewer draws the 联防 map.
+   */
   _uniteOpts(plan, limit) {
     const { wave, players } = uniteBattleOpts(this, plan, limit);
     return {
@@ -46,7 +50,7 @@ export class MatchUnite {
       kind: 'unite',
       modeId: this.modeId,
       round: this.round,
-      stageId: this.stageId,
+      stageId: uniteStageId(this.gd, plan.helpers.length) ?? this.stageId,
       rect: { ...GEO.UNITE_RECT },
       timeLimit: limit,
       players,

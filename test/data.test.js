@@ -635,12 +635,41 @@ test('stages: player-facing names are clean Chinese "战场#NN…" labels (no re
   // Regression: research 05 named act1 m01 '战场#01 (upper half #01)'; the English note reached the
   // briefing BATTLEFIELD row. Names come from research only, so the build must strip such notes.
   for (const s of Object.values(stages)) {
+    if (s.kind === 'unite') continue; // the two 联防 maps: the remake's own label, checked in the 联防 test below
     assert.match(s.name, /^战场#\d{2}(?:\((?:上半|下半)\))?(?: \S.*)?$/, `${s.id}: name ${JSON.stringify(s.name)}`);
     assert.doesNotMatch(s.name, /[A-Za-z]/, `${s.id}: Latin text in name ${JSON.stringify(s.name)}`);
     assert.equal(s.name, s.name.trim().replace(/\s+/g, ' '), `${s.id}: stray whitespace in name`);
   }
   assert.equal(stages.act1autochess_m01.name, '战场#01');
   assert.equal(stages.act2autochess_m01.name, '战场#05(下半) 源石流发生装置');
+});
+
+test('stages: the 联防 maps (GitHub #41) — the escaped template levels, one per helper count, never a match stage', () => {
+  // act2autochess constData escapedBattleTemplateMapSinglePlayer / MultiPlayer → config.unite.templates { 1, 2 }
+  assert.deepEqual(config.unite.templates, { 1: 'act1autochess_escaped_single', 2: 'act1autochess_escaped_multi' });
+  for (const [n, id] of Object.entries(config.unite.templates)) {
+    const s = stages[id];
+    assert.ok(s, id);
+    assert.equal(s.kind, 'unite');
+    assert.equal(s.helpers, Number(n));
+    assert.equal(s.active, false);
+    assert.equal(s.weight, 0);
+    assert.deepEqual(s.modes, []);
+    assert.ok(!Object.values(config.modes).some((m) => m.stages.includes(id)), `${id} in no mode's stage list`);
+    assert.equal(s.name, `联防阵地（${n}名玩家）`);
+    assert.deepEqual(s.devices, [], 'no crates, platforms or other devices');
+    assert.deepEqual(s.special, {}, 'no water, mire, smog or infection');
+    // the official level map (level_act1autochess_escaped_*.json): two road halves joined at col 10, not the round's stage
+    assert.deepEqual(s.rows.slice(9, 13), ['##ErrrrrrrSrrrrrrrS##', '###rrrrrrr#rrrrrrr###', '###rrrrrrr#rrrrrrr###', '###rrrrrrrSrrrrrrrS##']);
+    for (let r = 9; r <= 12; r++) for (const c of [19, 20]) assert.equal(s.tiles[s.rows[r][c]].groundPassable, false, `${id} (${r},${c}) is no ground`);
+    assert.ok(s.groundPaths['9,10->9,2'] && s.groundPaths['9,18->9,2'], 'walkable from both gates');
+  }
+  // the two maps are tile for tile the same: they differ in their routes (data/waves.json — 1 helper enters at col 10,
+  // 2 helpers at col 18 through the checkpoint (9,10))
+  assert.deepEqual(stages.act1autochess_escaped_single.rows, stages.act1autochess_escaped_multi.rows);
+  assert.deepEqual(waves.act1autochess_escaped_single.routes.map((r) => r.start), [[9, 10], [9, 10], [12, 10], [9, 10], [9, 10], [9, 10], [9, 10], [9, 10]]);
+  assert.deepEqual(waves.act1autochess_escaped_multi.routes.map((r) => r.start), [[9, 18], [9, 18], [12, 18], [9, 18], [9, 18], [9, 18], [9, 18], [9, 18]]);
+  assert.deepEqual(waves.act1autochess_escaped_multi.routes[3].checkpoints, [[9, 10]]);
 });
 
 test('official spot checks (hard-coded values from the zh_CN client data)', () => {

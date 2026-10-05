@@ -19,7 +19,7 @@ through.
 | `fields` | 22 battles: every Final Assault / Hidden Core leader on a pair and a solo template (shared pool, 200 s cap) and the 联防 field with 1 and 2 helpers on its own map (carried HP / SP, a knocked-out operator, two leakers' enemies) |
 | `matches` | 17 matches to the end in virtual time: 16 bot-only (solo 标准 / 险境 / 绝境 / 终极 × 2 seeds, co-op 2 / 3 / 4, one server-run combat match, two runs boosted to the Hidden Core) and one co-op match whose human seat (AI 托管, offline) does not own 7 NORMAL chess — they fight as their 补位 stand-ins (its digest lists them per round, `standIns`) |
 | `standins` | 10 battles: every NORMAL chess record (normal and elite, 110) fielded as its 补位 stand-in (`standIn: true`: the stand-in's body, backup skill / module and kit — all 17 stand-ins, every skill a chess names for them), 12 per battle by strength band, laid out by the stand-in's position on a real stage, against the round's real wave three times over plus 8 ground enemy kinds (melee stand-ins always meet an enemy), an item each, bonds from the board |
-| `diy` | 6 battles of 自选 pieces (a DIY slot with its `diy` pick, `shared/diy.js`): every owned 6★ with an operator kit (`kits/index.js OPERATOR_KITS` — 推进之王 so far) in each form of tiers 5 and 6 (normal; elite with no module and with each module) under each skill, then every prototype pick with a kit at its locked selection, normal and elite, 12 per battle against the round's real wave; a new operator kit adds its scenarios |
+| `diy` | 12 battles of 自选 pieces (a DIY slot with its `diy` pick, `shared/diy.js`): every owned 6★ with an operator kit (`kits/index.js OPERATOR_KITS` — 推进之王, 黑, 焰狐龙梓兰 and 鸿雪 so far) in each form of tiers 5 and 6 (normal; elite with no module and with each module) under each skill, then every prototype pick with a kit at its locked selection, normal and elite, 12 per battle against the round's real wave; a new operator kit adds its scenarios |
 
 Battles go through the production BattleSpec path (`server/sim/spec.js`, as browsers and the server's headless fields
 run them); matches construct `Match` directly with a `VirtualScheduler`. Every option is explicit, so a change to a
@@ -32,7 +32,7 @@ to 2 decimals.
 
 `npm test` runs the fast subset (the scenarios marked `"fast": true`: every chess record with its default loadout,
 every stage and every non-leader enemy kind, every bond at its top tier, six fields, six matches, the five stand-in
-battles of the normal records, the first 自选 battle of the operator kits and of the prototypes — 61 of the 150). `GOLDEN_FULL=1` checks everything.
+battles of the normal records, the first 自选 battle of the operator kits and of the prototypes — 61 of the 156). `GOLDEN_FULL=1` checks everything.
 
 ## Workflow
 

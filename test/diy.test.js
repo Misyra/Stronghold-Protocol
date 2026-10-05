@@ -70,6 +70,8 @@ test('checkDiyPick: a prototype carries its locked skill / module (与系统补�
   assert.deepEqual(lockedSelection(DATA, 6, 'char_617_sharp2'), { skillIndex: 0, uniEquipId: 'uniequip_002_sharp2' });
   assert.deepEqual(lockedSelection(DATA, 5, 'char_605_cmedic'), { skillIndex: 2, uniEquipId: null });
   assert.match(checkDiyPick(T5, { charId: 'char_609_acguad', uniEquipId: 'none' }, DATA).error, /prototype carries module/);
+  assert.match(checkDiyPick(T5, { charId: 'char_609_acguad', uniEquipId: 'uniequip_001_acguad' }, DATA).error, /prototype carries module/);
+  assert.deepEqual(checkDiyPick(T5, { charId: 'char_609_acguad', skillIndex: null, uniEquipId: null }, DATA).pick, { charId: 'char_609_acguad', skillIndex: 2, uniEquipId: 'uniequip_002_acguad' }, 'null = the locked selection');
   assert.equal(lockedSelection(DATA, 5, SIEGE), null, 'an owned operator has no lock');
 });
 

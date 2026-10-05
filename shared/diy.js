@@ -146,8 +146,9 @@ export function checkDiyPick(slotId, pick, data) {
   if (proto) {
     const lk = lockedSelection(data, slot.tier, charId);
     if (!lk) return { error: `${charId}: no locked selection at tier ${slot.tier}` };
+    // omitted / null = its locked selection; another skill, another module or an explicit 'none' is refused
     if (want !== null && want !== lk.skillIndex) return { error: `${charId}: a prototype carries skill ${lk.skillIndex} (与系统补位时一致)` };
-    if (pick.uniEquipId !== undefined && wantMod !== lk.uniEquipId) return { error: `${charId}: a prototype carries module ${lk.uniEquipId ?? 'none'}` };
+    if (pick.uniEquipId != null && wantMod !== lk.uniEquipId) return { error: `${charId}: a prototype carries module ${lk.uniEquipId ?? 'none'}` };
     ({ skillIndex, uniEquipId } = lk);
   } else {
     if (want === null) return { error: `${charId}: an owned pick needs a skill index` };

@@ -14,6 +14,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KIT_FILES, TIER_KITS, KITS, STANDIN_KIT_FILES, STANDIN_KITS, OPERATOR_KIT_FILES, OPERATOR_KITS, GENERIC_KIT_CHARS, KITTED_CHARS } from '../../server/sim/content/kits/index.js';
 import { KITS as CONTENT_KITS } from '../../server/sim/content/index.js';
+import { diyRecord } from '../../shared/diy.js';
+import { normalizeChess } from '../../server/sim/simdata.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const KIT_DIR = join(ROOT, 'server/sim/content/kits');
@@ -54,10 +56,15 @@ test('a 自选 kit file op-<codename>.js registers the kit of that owned-6★ pi
     assert.equal(typeof mod.default[charId], 'function', `${file}: kit builder`);
     assert.equal(OPERATOR_KITS[charId], mod.default[charId], `${file}: registered`);
     assert.equal(KITS[charId], mod.default[charId], `${file}: in the merged registry`);
-    // every skill of every form is authored (a 自选 piece has no default skill: the pick chooses any)
-    for (const [key, form] of Object.entries(BACKUPS.units[charId].forms)) {
-      const kit = mod.default[charId](form.skills[0].bb, { ...form, skill: form.skills[0], charId }, {});
-      assert.deepEqual(Object.keys(kit.skills || {}).sort(), form.skills.map((s) => s.skillId).sort(), `${file}@${key}: skills`);
+    // every skill of every slot form is authored (a 自选 piece has no default skill: the pick chooses any), built from the
+    // composed record and its def as the sim does (shared/diy.js diyRecord, simdata normalizeChess)
+    for (const slot of ['chess_char_5_diy1_a', 'chess_char_6_diy1_a']) {
+      for (const elite of [false, true]) {
+        const rec = diyRecord(slot, { charId, skillIndex: 0 }, { elite, data: { chess: CHESS, backups: BACKUPS } });
+        assert.ok(rec, `${file}: a legal pick of ${slot}`);
+        const kit = mod.default[charId](rec.skill.bb, rec, normalizeChess(rec));
+        assert.deepEqual(Object.keys(kit.skills || {}).sort(), rec.skills.map((s) => s.skillId).sort(), `${file}@${slot}${elite ? ' elite' : ''}: skills`);
+      }
     }
   }
   assert.deepEqual([...KITTED_CHARS].sort(), [...new Set([...GENERIC_KIT_CHARS, ...Object.keys(STANDIN_KITS), ...Object.keys(OPERATOR_KITS)])].sort());

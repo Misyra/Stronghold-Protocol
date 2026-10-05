@@ -337,12 +337,12 @@ function layout(gd, stageId, wanted, { field = 'normal', colOffset = 0, max = 12
   };
   // a 补位 unit (`standIn`) is laid out by its stand-in's body (position, block count); every other by its chess record
   const recOf = (w) => (w.standIn ? gd.standIn(w.chessId) || data.chess[w.chessId] : data.chess[w.chessId]);
-  const isMelee = (w) => positionClass(recOf(w), w.moduleId) === 'melee';
+  const isMelee = (w) => positionClass(recOf(w)) === 'melee';
   const order = wanted.slice().sort((a, b) => (isMelee(b) - isMelee(a)) || (isMelee(a) ? (recOf(b).stats.blockCnt || 0) - (recOf(a).stats.blockCnt || 0) : 0));
   let uid = uid0;
   for (const w of order) {
     const rec = recOf(w);
-    const free = units.length < max ? tiles(positionClass(rec, w.moduleId)) : [];
+    const free = units.length < max ? tiles(positionClass(rec)) : [];
     if (!free.length) { rest.push(w); continue; }
     const [r, c] = free[0];
     used.add(tileKey(r, c));
@@ -882,7 +882,7 @@ function diyLayout(stageId, wanted) {
     const rank = (r, c) => { const d = dist(r, c); return d === 0 ? 1.5 : d; };
     return out.sort((a, b) => rank(a[0], a[1]) - rank(b[0], b[1]));
   };
-  const cls = (w) => positionClass(w.rec, w.diy.uniEquipId ?? null);
+  const cls = (w) => positionClass(w.rec);
   const order = wanted.slice().sort((a, b) => ((cls(b) === 'melee') - (cls(a) === 'melee')) || (cls(a) === 'melee' ? (b.rec.stats.blockCnt || 0) - (a.rec.stats.blockCnt || 0) : 0));
   const units = [];
   let uid = 1;

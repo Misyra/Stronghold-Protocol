@@ -6,7 +6,7 @@ import { meleeOnHighGround } from '../../../../shared/highGround.js';
 import { pieceDir, rangeTiles } from '../facing.js';
 import { isObj, tileKey } from './shared.js';
 import { boardTileOf, fieldTile } from './camera.js';
-import { deployedRecord, deployedModuleId, fieldsStandIn, standInOf } from './standIn.js';
+import { deployedRecord, fieldsStandIn, standInOf } from './standIn.js';
 
 
 // ---- placement (canPlace mirror) ------------------------------------------------------------------------
@@ -213,9 +213,10 @@ export function placementContext({ priv, stage, editable, field = 'normal', getC
 }
 
 /**
- * Deploy position ('MELEE'|'RANGED'|'ALL') of a chess/token piece, or null for items. Elite 歌蕾蒂娅 carrying HOK-Y
- * (the viewer's loadout, shared/highGround.js) is 'ALL': any deployable tile, the 高台 included
- * (server/match/board.js placeClass; owner's decision 2026-10-04). Every other MELEE chess is ground-only.
+ * Deploy position ('MELEE'|'RANGED'|'ALL') of a chess/token piece, or null for items. A MELEE chess whose trait reads
+ * 「可以放置于远程位」 (shared/highGround.js: 歌蕾蒂娅, 崖心, 见行者, normal and elite, any module) is 'ALL': any deployable
+ * tile, the 高台 included (server/match/board.js positionClass; the owner's decision of 2026-10-05). Every other MELEE
+ * chess is ground-only.
  */
 export function piecePosition(ctx, piece) {
   if (!isObj(piece)) return null;
@@ -223,8 +224,7 @@ export function piecePosition(ctx, piece) {
     const chess = ctx.getChess(piece.id);
     // 0.2.0 补位: a chess the player fields as its stand-in is placed by the stand-in's position (server placeClass)
     const rec = (fieldsStandIn(ctx.priv, chess) && standInOf(chess, ctx.backups)) || chess;
-    const moduleId = deployedModuleId(chess, ctx.priv, ctx.getChess, ctx.backups);
-    if (meleeOnHighGround(rec, moduleId)) return 'ALL';
+    if (meleeOnHighGround(rec)) return 'ALL';
     return rec?.position === 'MELEE' ? 'MELEE' : 'RANGED';
   }
   // tokens: MELEE → ground only; RANGED / ALL → any deployable tile

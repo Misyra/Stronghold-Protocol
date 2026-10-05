@@ -21,7 +21,7 @@ In scope:
 - Rendering with the real Spine battle chibis (PixiJS 7 + pixi-spine 4), procedural tiles, VFX, damage numbers, real BGM/SFX, emotes, broadcast ticker.
 - Reconnect, AI take-over of disconnected players, robust validation of every client intent.
 
-Out of scope v1: matchmaking queue, training/tutorial, DIY (甄选) slots (the 4 DIY chess are removed from the pool), trophies/progression persistence, reporting.
+Out of scope v1: matchmaking queue, training/tutorial, DIY (甄选) slots (the 4 DIY chess are removed from the pool — 0.2.0 adds their data and battle side: DATA.md §18, shared/diy.js), trophies/progression persistence, reporting.
 
 ---
 

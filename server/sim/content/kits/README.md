@@ -9,17 +9,18 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 
 | path | what |
 |---|---|
-| `index.js` | the registry: `KIT_FILES` lists every kit file, grouped by tier, and `STANDIN_KIT_FILES` the 补位 stand-in kits; `KITS` (base chess id → kit builder, then stand-in charId → kit builder), `TIER_KITS` (one registry per tier group) and `STANDIN_KITS` are built from them |
+| `index.js` | the registry: `KIT_FILES` lists every kit file, grouped by tier, `STANDIN_KIT_FILES` the 补位 stand-in kits and `OPERATOR_KIT_FILES` the 自选 operator kits; `KITS` (base chess id → kit builder, then stand-in charId → kit builder, then operator charId → kit builder), `TIER_KITS` (one registry per tier group), `STANDIN_KITS`, `OPERATOR_KITS` and `KITTED_CHARS` (who a 自选 slot may field) are built from them |
 | `ops/<chessId>-<codename>.js` | one kit per file, with the helpers and constants only that kit uses |
 | `ops/standin-<codename>.js` | one 补位 stand-in kit per file (below: "Stand-in kits") |
+| `ops/op-<codename>.js` | one 自选 operator kit per file (below: "How to add an operator (自选)") |
 | `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
 | `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
 | `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
 id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4). A 补位 stand-in's
-kit is `KITS[def.charId]` and nothing else (`content/index.js kitOf`): it keeps the chess's ids, which name the replaced
-operator's kit.
+and a 自选 piece's kit is `KITS[def.charId]` and nothing else (`content/index.js kitOf`): it keeps the chess's (the DIY
+slot's) ids, which name the replaced operator's kit (a slot has none).
 
 ## Naming
 
@@ -131,6 +132,75 @@ stand-in's, `def.standInFor` the replaced operator's charId.
   `content/tokens.js` `touchGospel` / `mapCharTalents`.
 - `node --test test/content/kits_layout.test.js` checks the file name, the key (a charId of data/backups.json `units`)
   and the registry entry.
+
+## How to add an operator (自选)
+
+The 自选 (self-select) slots — two at tier 5, two at tier 6 — field a 6★ the player owns that is not in the chess pool,
+or a prototype (DATA.md §18, `shared/diy.js`). The prototypes run their stand-in kits, the 4★ 预备干员 the generic kit;
+an owned 6★ can be picked only once it has a kit of its own: one file per operator, the same rules as every kit above.
+Contributions are welcome — one operator per pull request is easiest to review.
+
+**Who.** The owned-6★ picks are `data/backups.json diy.ownedPool` (72 operators; the collab operators are not included,
+the owner's decision of 2026-10-05). The ones still without a kit:
+
+```sh
+node --input-type=module -e "import { readFileSync } from 'node:fs'; import { KITTED_CHARS } from './server/sim/content/kits/index.js';
+const b = JSON.parse(readFileSync('data/backups.json', 'utf8')); for (const id of b.diy.ownedPool) if (!KITTED_CHARS.includes(id)) console.log(id, b.units[id].name);"
+```
+
+**The data is already built** — `data/backups.json units[charId]` (no chess record exists for these operators):
+- `forms['2/1/4/0']` = the normal form (E2 Lv1, skills at rank 4, no module), `forms['2/60/7/1']` = the tier-5 elite (E2
+  Lv60, rank 7, modules at stage 1), `forms['2/60/7/3']` = the tier-6 elite (modules at stage 3). Each holds `stats`,
+  `rangeGrid`, `trait`, `talents` (no module), all three `skills` (blackboard `bb`, SP data, `rangeGrid`, the resolved
+  auto-cast `trigger`) and on the elites `modules[]` (`attr`, `traitOverride`, `talentChanges` — the official module
+  parts at that stage).
+- `tokens[tokenId]` = its summons, per owner form (`variants['<charId>@<statusKey>']`, with `bySkill` / `byModule`).
+- Verify the numbers against the official tables (`.cache/gamedata/excel`) and PRTS like any kit. If the data itself is
+  wrong or lacks something — a trigger deviation, a summon's abnormal effect — fix `tools/build-data.mjs`
+  (`STANDIN_TRIGGER_DEVIATIONS` is keyed by charId and applies to these units too; `TOKEN_ABNORMAL`), rebuild with
+  `node tools/build-data.mjs --offline` and check with a JSON compare that only the intended data changed.
+
+**File and registration.**
+1. `ops/op-<codename>.js`, the code name being the charId without `char_<n>_` (`op-siege.js` = 推进之王,
+   `char_112_siege`); the Chinese name in the first line.
+2. The default export has exactly one key, the charId: `export default { char_112_siege: (bb, chess, def) => Kit }`.
+3. Append the file name to `OPERATOR_KIT_FILES` in `index.js`. The operator becomes a legal pick (`KITTED_CHARS`;
+   `shared/diy.js diyPool` / `validateDiyPicks` with `kitted`) — never register it under a chess or slot id.
+4. `node --test test/content/kits_layout.test.js` checks the name, the key (an owned pick), the registry and that every
+   skill of every form is authored under `skills`.
+
+**The kit contract** (as for a stand-in): `bb` = the blackboard of the picked skill at the slot's rank; `chess` = the
+composed record (`shared/diy.js diyRecordOf`): `skills` (all three at that rank), `talents` with the picked module's
+changes, `trait` (the module's override), `module` (`{ id, level: 1 | 3, active }` — active on the elite only), and on an
+elite with a module stage `statsBase` / `traitBase` / `talentsBase` / `modules[]` (a module talent that adds to a base
+talent: read the base from `talentsBase` and the module's own part from the module's `talentChanges`, as `op-siege.js`
+万兽之王); `def.tier` (5 / 6), `def.golden`, `def.charId`, `def.diyFor` (the slot). There is **no default skill**: the
+pick chooses any of the three, so write every skill under `skills: { [skillId]: SkillSpec }` (`skill` is ignored);
+`talents`, `trait` and `install` apply under every skill. Read every number from `chess` / `bb` — the same file serves
+both tiers, both forms and both module stages. A 自选 piece has no 特质 and its bonds come from its factions: neither is
+the kit's business. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnToken(unit, …)` resolve the variant of the
+pick (the hand pieces of 自选 summons come with the per-player shop). Potential is 0 [ASSUMED: no account].
+
+**The fidelity rule and the checklist** above apply item by item: every skill at rank 4 and 7, every talent, every
+module at stages 1 and 3 (trait override, talent changes, stats), the range while a skill runs, the auto-cast trigger
+(the data's; the owner's rules of checklist item 5 — an AUTO skill acting on nobody fires at full SP), anti-air and
+targetability, damage typing, summons, statuses. Mark what no source settles `[ASSUMED]` in the comment and the pull
+request.
+
+**Tests** — `test/content/op_<codename>.test.js`, the pattern of `test/content/op_siege.test.js`:
+- field the operator the production way: `makeBattle({ units: [{ diy: { slot: 5, charId: 'char_112_siege',
+  skillIndex: 2, uniEquipId: 'uniequip_002_siege' }, elite: true, row: 10, col: 5 }] })` — `slot` = a DIY slot id or its
+  tier (5 / 6 ⇒ that tier's first slot), `elite` = the `_b` form, `uniEquipId` null / omitted = no module;
+- loop over every form (`[5, false]`, `[6, false]`, and both tiers' elites with no module and with each module) and every
+  skill; assert that the unit is yours (`u.def.charId`, `!u.kit.generic`, `u.kit.skillSource === 'skills'`), then the
+  checklist; read the expected numbers from `data/backups.json` forms, never from memory;
+- seed everything, use synthetic `enemyRec` targets for exact numbers, end with `checkInvariants(h.b)`.
+
+**Golden** — the `diy` family of `tools/golden.mjs` fields every operator of `OPERATOR_KIT_FILES` in every form × module ×
+skill: a new kit adds its scenarios. Run `npm run golden:update`, check that only `test/golden/diy.json` changed (new
+scenarios; no other family moves), and commit it with the kit (`test/golden/README.md`).
+
+**Art** comes with the data: `tools/fetch-assets.mjs` plans every unit of `data/backups.json` (ASSETS.md) — nothing to do.
 
 ## Testing a kit
 

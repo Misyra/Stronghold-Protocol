@@ -876,6 +876,11 @@ true })`, §12): the def keeps the chess's ids, so `content/index.js kitOf` look
 stand-in's own, `kits/ops/standin-<codename>.js` registered under that charId (kits/README.md "Stand-in kits") — never
 by the chess id, which names the replaced operator's kit. A stand-in has no default skill: its kit authors each skill in
 `skills` (`skill` is ignored); without a kit it gets the generic kit plus `genericTalents(def)` (§7.4).
+自选 pieces (DATA.md §18; a PlayerBattleInput entry of a DIY slot with `diy: { charId, skillIndex, uniEquipId }` ⇒ the def
+of `getChess(slotId, { diy })`, §12) take their kit the same way, `KITS[def.charId]` only (`content/index.js isDiyDef`): an
+owned 6★'s `kits/ops/op-<codename>.js` (kits/index.js `OPERATOR_KIT_FILES`, kits/README.md "How to add an operator
+(自选)"), a prototype's stand-in kit, a 预备干员's generic kit; no default skill either (the pick chooses any of the
+three). `KITTED_CHARS` lists who has one — shared/diy.js offers no other pick.
 Operator loadouts (DESIGN §16): the unit's def is `getChess(chessId, { skillIndex, moduleId })` of its PlayerBattleInput
 entry (no loadout fields = the default). The skill spec is `kit.skills[selectedSkillId]` when authored, else `kit.skill`
 only when the selected skill is the default one, else the GENERIC spec of the selected skill (its generic install is
@@ -1200,7 +1205,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's hit cancelled by 限伤 — the renderer draws nothing;
   `extra.form` = the unit's model form from then on — an enemy's `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
   `['layer', playerId, bondId, n]` (n = the layers actually added, capped at 999), `['bounty', playerId, coins]`.
-- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items?, standInFor? }` (`standInFor`: a 补位 stand-in's replaced operator charId — `spine` / `avatar` / `name` are the stand-in's, DATA.md §18; `skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
+- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items?, standInFor?, diy? }` (`standInFor`: a 补位 stand-in's replaced operator charId — `spine` / `avatar` / `name` are the stand-in's, DATA.md §18; `diy`: a 自选 piece's pick `{ charId, skillIndex, uniEquipId }` — `defId` is its slot, `spine` / `avatar` / `name` the operator's; `skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
   (`dir` = the unit direction, allies meaningful, enemies 'RIGHT'; `facing` = its horizontal sign for sprite flipping)
   (`spine`/`avatar` are asset ids from data).
 - flags: UF bits (blocked 1, stunned 2, frozen 4, stealth 8 — 隐匿 (an enemy's only while not blocked / revealed and not within 3 s of a block's end) or an ally's 迷彩 — skill 16, shield 32, invuln 64, cold 128, sleep 256, flying 512);
@@ -1239,7 +1244,10 @@ or `players`; `enemies:
 `timeLimit`; `content` (`'full'|'generic'|'none'`); `kits` (inject `{ baseId: kitFn }`; a stand-in's by its charId); a unit's
 `standIn: true` fields a NORMAL chess as its 补位 stand-in (the production path, the chess's backup skill / module; `_a` =
 normal, `_b` = elite), `standIn: { skillIndex?, moduleId? }` another skill / module of it (the composed record `standInRec(chessId,
-sel)` replaces that chess's record for the battle; kits/README.md "How to test a stand-in kit"); `defs: { chess, enemies, tokens }`
+sel)` replaces that chess's record for the battle; kits/README.md "How to test a stand-in kit"); a unit `{ diy: { slot,
+charId, skillIndex?, uniEquipId? }, elite?, row, col }` fields a 自选 piece the production way (`slot` = a DIY slot's base
+id or its tier 5 / 6, `elite` = its `_b` form; `getChess(slotId, { diy })`, kits/README.md "How to add an operator
+(自选)"); `defs: { chess, enemies, tokens }`
 (extra/override records; build them with `chessRec({...})` / `enemyRec({...})`); `bonds`, `bandId`, `playerEffects`,
 `flags`, `sharedBoss`, `setup(battle)`, `hooks` (names to capture; `captureNoisy` to keep tick/hit/damaged/heal/spGain/
 attack contexts), `autoFinish` (default: true when enemies are scheduled).
@@ -1298,6 +1306,17 @@ the replaced operator's, `loadout` the backup selection (`standIn: true`); its s
 ("对于补位干员其技能不可更改", shared/standIn.js). A PRESET / DIY chess or a source without backups (a browser that did not
 fetch backups.json) gives the chess's own def. A PlayerBattleInput entry carries it as `standIn: true` (spec.js keeps
 nothing else); the per-battle view maps id-only lookups of that chess id to the stand-in.
+自选 (DATA.md §18): `getChess(slotId, { diy })` = `getDiy(slotId, pick)` — shared/diy.js `diyRecordOf` of the DIY slot
+record (`_a` normal, `_b` elite) with the pick over this source, normalised: `id` / `baseId` / `golden` / `tier` of the
+slot, `bonds` the pick's derived ones, `raw.garrisonIds` `[]` (no 特质), every combat field of the operator at the slot's
+status with the pick's skill and module (a prototype's locked ones), `charId` the operator's, `diyFor` the slot's base
+id, `loadout` the selection with `diy` = the checked pick `{ charId, skillIndex, uniEquipId }`, `tokenOwner` =
+`<charId>@<statusKey>`; null for an illegal pick (shared/diy.js `checkDiyPick`); cached per (id, pick). Its summons:
+`getToken(id, slotId, def.loadout)` reads `rawBackups().tokens[id].variants[tokenOwner]` with `bySkill[skillIndex]` /
+`byModule[uniEquipId]` merged (`getDiyToken`); `rawToken(id)` falls back to `backups.tokens`, and content/tokens.js /
+`Battle.producesToken` key a 自选 owner's variant by `def.tokenOwner`. A PlayerBattleInput entry carries the pick as
+`diy` (spec.js keeps `charId` / `skillIndex` / `uniEquipId` when well-formed); Battle fields a DIY slot only with a legal
+pick (none ⇒ no unit), and each unit resolves its own pick — two players filling one slot id differently are exact.
 Assumptions taken here (documented choices): element burst numbers for necrosis/apoptosis; unspawned enemies at timeout
 are dropped (not leaks); geek drain is non-lethal; tactician reinforcement stats; displacement is instantaneous (the official 失衡 slide over ≈ 0.4–1.2 s is not
 modelled — only its distance, `push` / `pull`); pushes PRTS does not classify use the 弹道 distance column (`PUSH_TILES`);

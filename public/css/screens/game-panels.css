@@ -91,6 +91,7 @@
 .dtag-elite { background: var(--gold); color: #1d1400; }
 .dtag-token { background: #a9c3d8; color: #0b1520; }
 /* 0.2.0 补位: the card of a chess fielded as its stand-in (ui/detailPanel.js ChessDetail) */
+.dtag-diy { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; letter-spacing: .08em; background: var(--mint-500); color: var(--text-on-mint); }
 .dtag-standin { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; letter-spacing: .04em; background: var(--ice); color: var(--ice-900); }
 .dtag-kind { border: 1px solid var(--line-2); color: var(--text-lo); font-weight: 500; }
 .drank { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; }
@@ -558,6 +559,7 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .sitag { position: absolute; transform: translate(-50%, .02rem); pointer-events: none; white-space: nowrap; font-size: max(.12rem, 9px); font-weight: 700;
   line-height: 1.35; padding: 0 .05rem; letter-spacing: .03em; background: var(--ice); color: var(--ice-900); box-shadow: 0 1px 3px rgba(0, 0, 0, .7); opacity: .92; }
 .sitag--board { background: #c2e3ff; }
+.sitag--diy { background: var(--mint-500); color: var(--text-on-mint); }
 .gm.is-dragging .sitags { display: none; }
 
 /* ---- underframe: the selection diamond of a tapped own piece (ui/underframe.js): 撤退 / 出售 +N / 销毁 ----

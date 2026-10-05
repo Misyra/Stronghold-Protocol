@@ -21,7 +21,7 @@ import { render } from '../../vendor/preact.module.js';
 import { html, TierChip } from './components.js';
 import { GEO } from '../../../shared/constants.js';
 import { chessAvatarUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl } from './assetUrls.js';
-import { tileKey, hasFlag, UF, penPlacement, PEN, fieldTile, fieldsStandIn, standInOf } from './gameLogic.js';
+import { tileKey, hasFlag, UF, penPlacement, PEN, fieldTile, fieldsStandIn, standInOf, ownDiyRecord } from './gameLogic.js';
 
 const DRAG_PX = 6;
 const DMG_TTL = 900;
@@ -126,12 +126,17 @@ export function createFallbackView(host, opts = {}) {
     const chess = lookup('chess', p.id);
     // 0.2.0 补位: on the board a chess the player does not own is its stand-in (render/app.js pieceInfo)
     const si = area === 'board' && fieldsStandIn(st.priv, chess) ? standInOf(chess, dataStore?.get?.('backups') ?? null) : null;
-    return chessAvatarUrl(mm, si || chess);
+    return chessAvatarUrl(mm, si || ownDiy(chess) || chess);
+  }
+  /** 0.2.0 自选编队: the player's own piece of a DIY slot it filled is its operator (gameLogic ownDiyRecord) */
+  function ownDiy(chess) {
+    return chess ? ownDiyRecord(chess, st.priv, { chess: dataStore?.get?.('chess') ?? null, backups: dataStore?.get?.('backups') ?? null }) : null;
   }
   function pieceName(p) {
     if (p.kind === 'item') return lookup('items', p.id)?.name || '道具';
     if (p.kind === 'token') return lookup('tokens', p.id)?.name || '召唤物';
-    return lookup('chess', p.id)?.name || '干员';
+    const chess = lookup('chess', p.id);
+    return (ownDiy(chess) || chess)?.name || '干员';
   }
 
   function Piece({ p, x, y, L, area }) {

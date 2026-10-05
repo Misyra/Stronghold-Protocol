@@ -6,7 +6,9 @@
 //   { victory, roundsPassed, lastRound?, hiddenCleared?, bossId?, hiddenBossId?, difficulty?, modeId?, durationMs?,
 //     players: [{ playerId, seat, name, isBot, alive, lp, bandId, roundsPassed?,
 //                 title: 'comment_1' | { id, name? } | null,
-//                 lineup: [{ id /* chessId, golden id if elite */, golden?, tier?, items?: [itemId] }],
+//                 lineup: [{ id /* chessId, golden id if elite */, golden?, tier?, items?: [itemId],
+//                            diy? /* 0.2.0 自选编队: a DIY slot's pick { charId, skillIndex, uniEquipId } — the card
+//                                    draws the operator (gameLogic diyRecordFor) */ }],
 //                 bonds?: [{ bondId, layers, active }],
 //                 stats: { dmgDealt, kills, leaks, gold /* funds SPENT */, refreshes, merges, bossDamage?, itemsEquipped?,
 //                          activatedLayers?, lpLost?, perfectRounds? } }] }
@@ -14,7 +16,8 @@
 import { useEffect } from '../../vendor/hooks.module.js';
 import { html, Button, Icon, MicroLabel, DifficultyTag } from '../ui/components.js';
 import { useGameData, Img, UnitThumb, BandIcon, PlayerAvatar, BondGlyph, LpTower, Sprite } from '../ui/gameComponents.js';
-import { normalizeResult, fmtNum } from '../ui/gameLogic.js';
+import { normalizeResult, fmtNum, diyRecordFor } from '../ui/gameLogic.js';
+import { data } from '../data.js';
 import { enemyIconUrl, titleIconUrl, uiUrl } from '../ui/assetUrls.js';
 import { store, useStore, emptyMatch } from '../store.js';
 import { audio } from '../audio.js';
@@ -46,7 +49,8 @@ function PlayerCard({ p, myId, titles, best, solo = false }) {
       </div>
       <div class="rcard__mid">
         <div class="rcard__lineup">
-          ${lineup.length ? lineup.map((u, i) => html`<${UnitThumb} key=${i} kind=${u.kind === 'token' ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm" />`)
+          ${lineup.length ? lineup.map((u, i) => html`<${UnitThumb} key=${i} kind=${u.kind === 'token' ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm"
+            rec=${u.diy ? diyRecordFor(gd.chess(u.id), u.diy, { chess: data.get('chess'), backups: data.get('backups') }) : null} />`)
             : html`<span class="rcard__noinfo">${p.alive === false ? '阵容已撤离' : 'NO INFO'}</span>`}
         </div>
         ${bonds.length ? html`<div class="rcard__bonds">${bonds.map((b) => html`<span key=${b.bondId} class=${cx('rbond', b.active && 'is-on')} title=${gd.bond(b.bondId)?.name || b.bondId}>

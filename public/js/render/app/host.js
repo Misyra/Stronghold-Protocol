@@ -2,6 +2,7 @@
 
 import { createAssets, assets as defaultAssets } from '../../assets.js';
 import { standInRecord } from '../../../../shared/standIn.js';
+import { diyRecordOf } from '../../../../shared/diy.js';
 
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((resolve) => setTimeout(resolve, ms))]);
@@ -40,10 +41,27 @@ function makeData(src) {
     standIns.set(c, rec);
     return rec;
   };
+  // 0.2.0 自选编队: the composed 自选 record of a DIY slot filled with a pick (shared/diy.js over chess.json + backups.json)
+  const diys = new Map();
+  const chessMap = () => {
+    try { return (src && typeof src.get === 'function' ? src.get('chess') : src && src.chess) || null; } catch { return null; }
+  };
+  const diy = (id, pick) => {
+    const c = look('chess', id);
+    const b = backups();
+    if (!c || !c.isDiy || !b || !pick || typeof pick.charId !== 'string') return null;
+    const key = `${id}|${pick.charId}|${pick.skillIndex ?? ''}|${pick.uniEquipId ?? ''}`;
+    if (diys.has(key)) return diys.get(key);
+    let rec;
+    try { rec = diyRecordOf(c, pick, { chess: chessMap(), backups: b }); } catch { rec = null; }
+    diys.set(key, rec);
+    return rec;
+  };
   return {
-    chess: (id) => look('chess', id), token: (id) => look('tokens', id), item: (id) => look('items', id),
+    // (a 自选 operator's summons are data/backups.json tokens, 0.2.0)
+    chess: (id) => look('chess', id), token: (id) => look('tokens', id) || (backups()?.tokens && Object.hasOwn(backups().tokens, id) ? backups().tokens[id] : null), item: (id) => look('items', id),
     enemy: (id) => look('enemies', id), stage: (id) => look('stages', id), bond: (id) => look('bonds', id),
-    standIn,
+    standIn, diy,
   };
 }
 

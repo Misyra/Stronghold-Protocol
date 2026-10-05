@@ -172,8 +172,10 @@ const ITEM_HANDLERS = {
         if (id) ids.push(id);
       }
       if (ids.length) ctx.offerChess(ids, { source: 'item', tier });
-      // co-op: next prep, send the original chess to the teammate with the most members of its bonds
-      const to = mostBondMate(ctx, bonds);
+      // co-op: next prep, send the original chess to the teammate with the most members of its bonds — except a 自选
+      // piece (0.2.0): its DIY slot is bound to this player's roster (no teammate's shop or slot can hold that operator),
+      // so nothing is sent [ASSUMED: the official text names no 自选 case]
+      const to = ctx.chessRecord(original)?.diyFor ? null : mostBondMate(ctx, bonds);
       if (to) ctx.addEffect({ id: `gift:${ev.item.uid}`, key: 'effect:builtin_gift', hidden: true, battle: false, params: { toPlayerId: to.playerId, chessId: original, bonds } });
     },
   },

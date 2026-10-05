@@ -26,6 +26,12 @@ export function useGameData() {
   return useMemo(() => makeLookups(ready), [ready]);
 }
 
+/** A 自选 operator's summon record (data/backups.json `tokens`, 0.2.0), or null. */
+export function diyToken(id) {
+  const t = typeof id === 'string' ? data.get('backups')?.tokens : null;
+  return t && Object.hasOwn(t, id) ? t[id] : null;
+}
+
 /** Non-hook lookups (for event handlers). */
 export function makeLookups(ready = true) {
   return {
@@ -39,7 +45,8 @@ export function makeLookups(ready = true) {
     enemy: (k) => data.lookup('enemies', k),
     boss: (id) => data.lookup('bosses', id),
     stage: (id) => data.lookup('stages', id),
-    token: (id) => data.lookup('tokens', id),
+    // (a 自选 operator's summons are data/backups.json tokens — 0.2.0, the hand piece of a placeable one)
+    token: (id) => data.lookup('tokens', id) || diyToken(id),
     effect: (id) => data.lookup('effects', id),
     garrison: (id) => data.lookup('garrisons', id),
     factions: data.get('factions'),
@@ -93,15 +100,16 @@ export const isGoldenPiece = (piece, chess) => !!(piece?.golden || chess?.isGold
 /**
  * Square unit thumbnail for a piece / chess / item / token / enemy: art + tier chip + elite frame.
  * @param {{ kind?: 'chess'|'item'|'token'|'enemy', id: string, golden?: boolean, size?: 'xs'|'sm'|'md'|'lg', tier?: number,
- *   showTier?: boolean, class?: string, dim?: boolean, badge?: any, title?: string }} props
+ *   showTier?: boolean, class?: string, dim?: boolean, badge?: any, title?: string, rec?: any }} props
+ *   `rec`: the chess record to draw instead of the data's (a 自选 piece's composed record — 0.2.0, gameLogic/diy.js)
  */
-export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showTier = true, class: cls, dim = false, badge = null, title }) {
+export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showTier = true, class: cls, dim = false, badge = null, title, rec = null }) {
   const m = data.get('assets');
   let src = null;
   let name = '';
   let t = tier;
   if (kind === 'chess') {
-    const c = data.lookup('chess', id);
+    const c = rec || data.lookup('chess', id);
     src = chessAvatarUrl(m, c);
     name = c?.name || '';
     t = t ?? c?.tier;

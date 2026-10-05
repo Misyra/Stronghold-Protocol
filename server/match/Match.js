@@ -14,13 +14,16 @@
 //   opts.modeId      string                     modeIdFor(mode, difficulty), e.g. 'mode_multi_hard'
 //   opts.seats       Array<{ seat: 0..3, playerId: string, name: string, isBot: boolean, connected: boolean,
 //                            loadout?: { [baseChessId]: { skill: index, module: uniEquipId|'none'|null } } | null,
-//                            notOwned?: string[] | null }>
+//                            notOwned?: string[] | null,
+//                            diy?: { [slotBaseId]: { charId, skillIndex, uniEquipId } } | null }>
 //                    sorted by seat, 1–4 entries, ≥ 1 human; solo ⇒ exactly 1 human and no bots.
 //                    Bot playerIds start with 'ai_'. Seat indexes may have gaps (e.g. seats 0 and 2).
 //                    `loadout` (DESIGN §16, optional): the human's operator loadout, already checked by the lobby
 //                    (shared/protocol.js checkLoadout); PlayerState re-checks it against opts.data and ignores it for bots.
 //                    `notOwned` (0.2.0 补位, optional): the base chess ids the human marked as not owned (干员持有) — fixed
 //                    for the match; those chess fight as their stand-ins (PlayerState setNotOwned; bots own everything).
+//                    `diy` (0.2.0 自选编队, optional): the human's 自选 picks (shared/protocol.js checkDiyPicks) — fixed for
+//                    the match; the slotted operators join the human's own shop (PlayerState setDiy / initDiyStock).
 //   opts.spectators  string[] (optional)        the room's spectator seats (remake feature, community report #26;
 //                                              server/lobby.js): never players — see addSpectator below
 //   opts.seed        uint32                     master seed for all match randomness
@@ -316,6 +319,10 @@ export class Match {
     this.staticInactiveBonds = bans.staticOff;
     this.bannedChess = bans.banned;
     this.pool = new SharedPool(this.gd, { banned: bans.banned });
+    // 自选编队 (0.2.0): each human's slotted DIY pieces get their own stock — none for one whose bonds are all off this
+    // match (player/diy.js initDiyStock); no randomness is drawn here
+    const off = new Set([...bans.drawn, ...bans.staticOff]);
+    for (const ps of this.order) ps.initDiyStock(off);
 
     this.phase = PHASE.LOBBY;
     this.round = 0;

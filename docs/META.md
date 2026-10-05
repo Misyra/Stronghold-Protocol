@@ -14,7 +14,8 @@ server/match/
   PlayerState.js   per-player economy / shop / hand / board / items / bonds / LP + every prep intent handler — the class:
                    constructor + method install
   player/          PlayerState's methods by concern: basics, pieces, acquire (gains, merges), economy (funds, layers,
-                   the shop), placement (g.move), items, prep, round (lifecycle, battleInput), views; common.js
+                   the shop), placement (g.move), items, prep, round (lifecycle, battleInput), views, diy (自选编队: the
+                   picks, the player's data view, the DIY stock); common.js
   gamedata.js      typed, defaulted view of data/*.json (config tunables with research defaults) + the balance layer
                    (data/tuning.json, §3.1)
   pool.js          SharedPool (copies per base chess, across players), per-match bans, copy-weighted rolls
@@ -507,6 +508,21 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   frozen). Unfrozen slots are cleared at combat start. Slot positions are stable (frozen slots keep their index).
 * **Pool**: copies 12/14/18/16/8/5 (缪尔赛思 4); a normal piece holds 1 copy, an elite 3; displays never reserve copies;
   selling, temp resolution and elimination return exactly what a piece holds (`left + held = cap` always).
+* **自选编队 (0.2.0, `player/diy.js`; research 0.2.0 §2, the owner's decisions of 2026-10-05)**: a human's `seat.diy`
+  picks (room.diy, checked again against the match's data and kits) are fixed for the match; bots field none [ASSUMED].
+  The player's `ps.gd` is then a view of the match's GameData whose `chess(id)` of a slotted slot (normal and elite) is
+  the composed 自选 record (shared/diy.js `diyRecord`): every rule that reads a record through `ps.gd` — bonds
+  (bondsMeta: BOARD / BOARD_AND_DECK distinct pieces, 煌's 炎 + 维多利亚, 绝技 elites), 特质 / meta effects (`makeCtx`
+  hands handlers the player's view), placement and summon ranges, the AI 托管 evaluation (bot.js), names in toasts and
+  tickers — sees the operator; a player without picks keeps the match's GameData itself. Each slotted piece has its own
+  stock (`ps.diyStock`: `poolCopies` of the slot's tier, 8 / 5 [ASSUMED]; none — `diyBanned` — when every bond of it is
+  off this match; `initDiyStock` once the bans are drawn); `poolOf(baseId)` routes its copy accounting (buy, reward
+  picks, merges, promotions, sells, temp, elimination; `invariants.js` checks `left + held = cap` per player). The
+  shop's chess slots and the reward offers' temporary refreshes roll it with the shared pool (`pool.roll({ extra })`,
+  copy-weighted like any chess of its tier) once the 调度中心 reaches the slot's `shopLevel` (5 / 6) [ASSUMED for the
+  reward offers]; effects that draw a random operator from the shared pool never draw it, and 信标 never sends one to a
+  teammate [ASSUMED]. `battleInput` carries `diy` (the pick); `m.private.diy` / `diyBanned`; `prepFieldMeta` and
+  `m.result` lineups carry the pick (`diy`) so other players' cards compose the operator.
 * **Hand**: 10 slots filled right→left, 5 temp slots for passive overflow (merge results, grants, returned equipment);
   a full hand refuses every buy and reward pick — also one whose copy would complete a merge at once (PRTS
   卫戍协议/帮助 §手牌区 "例如招募/购入等通常情况下会增加手牌的操作"; GitHub #82) — and withdrawals unless the withdrawn

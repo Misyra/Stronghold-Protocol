@@ -81,7 +81,7 @@ export class MatchViews {
         // nobody can watch an eliminated player (g.watch refuses them, they have no field) and the result screen reads
         // m.result's own bonds, so their layers would only cost every m.public bytes for the rest of the match
         // (the mode-off bonds with members included, `off: true`, as in m.private — bondsMeta.offBondCounts)
-        bonds: ps.alive ? bondList(this.gd, ps.bondsView(), { off: offBondCounts(this.gd, ps) }) : [],
+        bonds: ps.alive ? bondList(this.gd, ps.bondsView(), { off: offBondCounts(ps.gd || this.gd, ps) }) : [],
         fieldId: this.fieldOf(ps),
         status: this.statusOf(ps),
         autoplay: ps.autoplay,
@@ -186,11 +186,18 @@ export class MatchViews {
    *   hand row (row 7) — the scout renders like the own prep bench. */
   prepFieldMeta(ps) {
     const units = [];
+    // the scouted player's own view of the data (0.2.0 自选编队: its slotted DIY slots are its operators — player/diy.js)
+    const gd = ps.gd || this.gd;
+    // a 自选 piece's pick (like the sim's UnitInfo.diy): the scout's card composes the operator from it (shared/diy.js)
+    const diyOf = (piece) => {
+      const p = piece.kind === 'chess' && typeof ps.diyPickOf === 'function' ? ps.diyPickOf(piece.id) : null;
+      return p ? { charId: p.charId, skillIndex: p.skillIndex, uniEquipId: p.uniEquipId } : undefined;
+    };
     for (const { r, c, piece } of boardOrder(ps.board)) {
-      const chess = piece.kind === 'token' ? null : this.gd.chess(piece.id);
+      const chess = piece.kind === 'token' ? null : gd.chess(piece.id);
       // 0.2.0 补位: a chess this player fields as its stand-in is deployed with the stand-in's body — name, art, max HP,
       // skill, like the sim's UnitInfo (`standInFor` = the replaced operator's charId)
-      const rec = piece.kind === 'token' ? this.gd.token(piece.id) : ps.fieldRecord(chess);
+      const rec = piece.kind === 'token' ? gd.token(piece.id) : ps.fieldRecord(chess);
       const assets = (rec && rec.assets) || {};
       // DESIGN §16: the skill / module THIS player's operator fights with (the scout's detail card shows it, like the
       // sim's UnitInfo in a shared field); moduleId only for an elite
@@ -205,6 +212,7 @@ export class MatchViews {
         // the equipped items (like the sim's UnitInfo): a 变形同构体 wearer shows as a member of the bond it grants
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: rec && rec.standInFor ? rec.standInFor : undefined,
+        diy: diyOf(piece),
       });
     }
     // the hand (整备区) and the 临时整备区 scout exactly like the own prep bench renders them: pieces as units on
@@ -215,7 +223,7 @@ export class MatchViews {
     // (a held chess the player fields as its stand-in keeps the chess's own art — the hand shows the original operator,
     // the approved 0.2.0 补位 plan — and carries `standInFor`: its card shows the stand-in it deploys as)
     const benchUnit = (piece, i, y) => {
-      const rec = piece.kind === 'item' ? this.gd.item(piece.id) : piece.kind === 'token' ? this.gd.token(piece.id) : this.gd.chess(piece.id);
+      const rec = piece.kind === 'item' ? gd.item(piece.id) : piece.kind === 'token' ? gd.token(piece.id) : gd.chess(piece.id);
       const assets = (rec && rec.assets) || {};
       const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
       const standIn = piece.kind === 'chess' && rec && ps.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) : null;
@@ -229,6 +237,7 @@ export class MatchViews {
         moduleId: lo && typeof lo.moduleId === 'string' ? lo.moduleId : undefined,
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: standIn && standIn.standInFor ? standIn.standInFor : undefined,
+        diy: diyOf(piece),
       });
     };
     for (let i = 0; i < ps.hand.length; i++) {

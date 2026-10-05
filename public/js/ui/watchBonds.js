@@ -162,7 +162,12 @@ export function ownerBoard(field, ownerId, extra = null) {
   if (!fromField && !fromBattle) return null;
   const board = [...(fromField || []), ...(fromBattle || [])]
     .filter((u) => isObj(u) && u.ownerId === ownerId && u.kind === 'op' && typeof u.defId === 'string')
-    .map((u) => (Array.isArray(u.items) && u.items.length ? { kind: 'chess', id: u.defId, items: u.items.filter((x) => typeof x === 'string') } : { kind: 'chess', id: u.defId }));
+    .map((u) => {
+      const p = Array.isArray(u.items) && u.items.length ? { kind: 'chess', id: u.defId, items: u.items.filter((x) => typeof x === 'string') } : { kind: 'chess', id: u.defId };
+      // 0.2.0 自选编队: a DIY slot's unit names its operator (UnitInfo diy) — the popup counts it for that operator's bonds
+      if (isObj(u.diy) && typeof u.diy.charId === 'string') p.diy = u.diy;
+      return p;
+    });
   return { board, hand: [], temp: [] };
 }
 

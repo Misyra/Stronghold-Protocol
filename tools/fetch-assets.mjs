@@ -24,9 +24,21 @@
 // the entries it would drop and exits 1; --allow-shrink (or --prune) writes the
 // smaller manifest.
 //
+// Beyond research 07's ids the plan covers what data/*.json adds: spawnable
+// enemies / tokens (data/enemies.json, data/tokens.json), the 自选 owned-6★ picks
+// of data/backups.json `units` (art from 07's URL patterns) and their summons
+// (`tokens`), and the module type icons of every module in data/chess.json /
+// data/backups.json (manifest `modules`).
+//
+// --add-only: for a checkout whose public/assets / public/fonts are shared with
+// another one (a git worktree): download only the files missing on disk, never
+// re-download, rewrite or delete an existing file (atlases already on disk are
+// left as they are; fonts are not rebuilt — the manifest keeps its current
+// `fonts`).
+//
 // Usage: node tools/fetch-assets.mjs [--concurrency=16] [--force] [--offline]
 //                                    [--dry-run] [--refresh-index] [--prune]
-//                                    [--allow-shrink] [--local-spines] [--help]
+//                                    [--allow-shrink] [--add-only] [--local-spines] [--help]
 
 import { readFile, writeFile, mkdir, rename, readdir, unlink } from 'node:fs/promises';
 import { existsSync, realpathSync } from 'node:fs';
@@ -59,6 +71,8 @@ const HELP = `Usage: node tools/fetch-assets.mjs [options]
                     (public/assets/local/** of tools/local-extract is never deleted); implies --allow-shrink
   --allow-shrink    write data/assets.json even when it loses entries the current one has
                     (without it such a run keeps the current manifest, lists the entries and exits 1)
+  --add-only        download only files missing on disk; never re-download, rewrite or delete an existing
+                    file, no font rebuild (a worktree sharing public/assets and public/fonts)
   --local-spines    rewrite ${LOCAL_ENEMY_SPINES_FILE} from the enemy models extracted
                     by tools/local-extract/extract.py (public/assets/local/spine/enemy/)
   --help            this text`;
@@ -66,10 +80,10 @@ const HELP = `Usage: node tools/fetch-assets.mjs [options]
 /**
  * Parse CLI flags.
  * @param {string[]} argv
- * @returns {{concurrency:number, force:boolean, offline:boolean, dryRun:boolean, refreshIndex:boolean, prune:boolean, allowShrink:boolean, localSpines:boolean, help:boolean}}
+ * @returns {{concurrency:number, force:boolean, offline:boolean, dryRun:boolean, refreshIndex:boolean, prune:boolean, allowShrink:boolean, addOnly:boolean, localSpines:boolean, help:boolean}}
  */
 export function parseArgs(argv) {
-  const o = { concurrency: 16, force: false, offline: false, dryRun: false, refreshIndex: false, prune: false, allowShrink: false, localSpines: false, help: false };
+  const o = { concurrency: 16, force: false, offline: false, dryRun: false, refreshIndex: false, prune: false, allowShrink: false, addOnly: false, localSpines: false, help: false };
   for (const a of argv) {
     const [k, v] = a.split('=');
     if (k === '--concurrency') o.concurrency = Math.max(1, Math.min(64, parseInt(v, 10) || 16));
@@ -79,11 +93,36 @@ export function parseArgs(argv) {
     else if (k === '--refresh-index') o.refreshIndex = true;
     else if (k === '--prune') o.prune = true;
     else if (k === '--allow-shrink') o.allowShrink = true;
+    else if (k === '--add-only') o.addOnly = true;
     else if (k === '--local-spines') o.localSpines = true;
     else if (k === '--help' || k === '-h') o.help = true;
     else throw new Error(`unknown option ${a}\n${HELP}`);
   }
+  if (o.addOnly && (o.prune || o.force)) throw new Error(`--add-only never deletes or rewrites files: not with --prune / --force\n${HELP}`);
   return o;
+}
+
+/**
+ * What data/backups.json and data/chess.json add to the asset plan: `extraOperators` — every unit of backups.json
+ * (`{ name, subProfessionId, nationId, skills: [{ index, skillId, iconId }] }`; buildPlan plans those research 07 lacks,
+ * the 自选 owned-6★ picks), `tokenIds` — the summons of the 自选 picks (backups.json `tokens`), `moduleTypes` — the type
+ * icon of every module a chess or a unit form offers.
+ * @param {any} backups data/backups.json (or null)
+ * @param {any} chess data/chess.json (or null)
+ */
+export function dataExtras(backups, chess) {
+  const extraOperators = {};
+  const moduleTypes = new Set();
+  for (const [id, u] of Object.entries(backups?.units || {})) {
+    const skills = new Map();
+    for (const f of Object.values(u.forms || {})) {
+      for (const sk of f.skills || []) if (!skills.has(sk.index)) skills.set(sk.index, { index: sk.index, skillId: sk.skillId, iconId: sk.iconId || sk.skillId });
+      for (const m of f.modules || []) if (m.typeIcon) moduleTypes.add(m.typeIcon);
+    }
+    extraOperators[id] = { name: u.name, subProfessionId: u.subProfessionId, nationId: u.nationId, skills: [...skills.values()].sort((a, b) => a.index - b.index) };
+  }
+  for (const c of Object.values(chess || {})) for (const m of c?.modules || []) if (m.typeIcon) moduleTypes.add(m.typeIcon);
+  return { extraOperators, tokenIds: Object.keys(backups?.tokens || {}).sort(), moduleTypes: [...moduleTypes].sort() };
 }
 
 /**
@@ -156,6 +195,7 @@ function countStats(m, bytes, files) {
     items: Object.keys(m.items || {}).length,
     bands: Object.keys(m.bands || {}).length,
     skills: Object.keys(m.skills || {}).length,
+    modules: Object.keys(m.modules || {}).length,
     ui: Object.keys(m.ui || {}).length,
     sfxUnits: Object.keys(m.audio?.sfx?.units || {}).length,
   };
@@ -222,17 +262,20 @@ async function main() {
   const audio = indexAudio(audioData);
   // The game data built by tools/build-data.mjs (when present) may reference more
   // spawnable enemies/tokens than research lists (e.g. 机变 enemy swaps): cover them too.
-  const [dataEnemies, dataTokens, dataBosses] = await Promise.all(
-    ['data/enemies.json', 'data/tokens.json', 'data/bosses.json'].map((f) => readJson(f).catch(() => null)));
+  const [dataEnemies, dataTokens, dataBosses, dataBackups, dataChess] = await Promise.all(
+    ['data/enemies.json', 'data/tokens.json', 'data/bosses.json', 'data/backups.json', 'data/chess.json'].map((f) => readJson(f).catch(() => null)));
+  const extras = dataExtras(dataBackups, dataChess);
   const extraHandbook = {};
   for (const b of Object.values(dataBosses || {})) if (b?.enemyKey && typeof b.handbookId === 'string') extraHandbook[b.enemyKey] = b.handbookId;
   const localEnemySpines = await syncLocalEnemySpines(opts);
   const plan = buildPlan({
     assets07, ops03, enemies05, maps05, audio, modelsData,
     extraEnemyIds: Object.keys(dataEnemies || {}),
-    extraTokenIds: Object.keys(dataTokens || {}),
+    extraTokenIds: [...Object.keys(dataTokens || {}), ...extras.tokenIds],
     extraHandbook,
     localEnemySpines,
+    extraOperators: extras.extraOperators,
+    moduleTypes: extras.moduleTypes,
   });
   const leaves = collectLeaves(plan.template);
   log(`[plan] ${leaves.length} files + ${plan.models.size} Spine models ` +
@@ -246,26 +289,32 @@ async function main() {
 
   const dl = new Downloader({
     root: ASSETS, ledgerPath: join(CACHE, 'assets-ledger.json'),
-    concurrency: opts.concurrency, force: opts.force, log,
+    concurrency: opts.concurrency, force: opts.force, keepExisting: opts.addOnly, log,
   });
   await dl.loadLedger();
   const downloadErrors = opts.offline ? [] : await downloadLeaves(leaves, dl, ASSETS, 'files');
 
-  // Fonts
+  let current = null;
+  if (existsSync(MANIFEST)) {
+    try { current = JSON.parse(await readFile(MANIFEST, 'utf8')); } catch (e) { log(`[manifest] the current ${relative(ROOT, MANIFEST)} is unreadable (${e.message}): replaced`); }
+  }
+
+  // Fonts (--add-only: not rebuilt — public/fonts may be another checkout's; the manifest keeps its current entry)
   let fontErrors = [];
-  if (!opts.offline) {
+  if (!opts.offline && !opts.addOnly) {
     const fdl = new Downloader({ root: FONTS, ledgerPath: join(CACHE, 'fonts-ledger.json'), concurrency: 4, force: opts.force, log });
     await fdl.loadLedger();
     await fdl.run(fontJobs(), 'fonts');
     dl.totals.bytesDownloaded += fdl.totals.bytesDownloaded;
     for (const k of ['ok', 'skip', 'miss', 'error']) dl.totals[k] += fdl.totals[k];
   }
-  const fonts = await buildFonts(FONTS, log);
+  const fonts = opts.addOnly ? { files: {}, errors: [] } : await buildFonts(FONTS, log);
   fontErrors = fonts.errors;
 
   // Spine
   const spine = await processModels(plan.models, {
     root: ASSETS, dl, cachePath: join(CACHE, 'spine-info.json'), download: !opts.offline, log,
+    ...(opts.addOnly ? { writable: (rel) => dl.written.has(rel) } : null),
   });
 
   // Manifest
@@ -274,7 +323,8 @@ async function main() {
   tidyManifest(body);
   const fontFaces = {};
   for (const [name, f] of Object.entries(fonts.files)) fontFaces[name] = f;
-  body.fonts = existsSync(join(FONTS, 'fonts.css')) ? { css: '/fonts/fonts.css', faces: fontFaces } : { faces: fontFaces };
+  body.fonts = opts.addOnly && current?.fonts ? current.fonts
+    : existsSync(join(FONTS, 'fonts.css')) ? { css: '/fonts/fonts.css', faces: fontFaces } : { faces: fontFaces };
   const bytes = totalBytes(ASSETS, resolved.files);
   const manifest = {
     version: MANIFEST_VERSION,
@@ -283,10 +333,6 @@ async function main() {
     stats: countStats(body, bytes, resolved.files.size),
     ...body,
   };
-  let current = null;
-  if (existsSync(MANIFEST)) {
-    try { current = JSON.parse(await readFile(MANIFEST, 'utf8')); } catch (e) { log(`[manifest] the current ${relative(ROOT, MANIFEST)} is unreadable (${e.message}): replaced`); }
-  }
   const guard = shrinkGuard(current, manifest, opts);
   if (guard.write) await writeJsonAtomic(MANIFEST, manifest);
 

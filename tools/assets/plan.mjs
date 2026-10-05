@@ -11,7 +11,10 @@
 // audio_data.json and Ark-Models' models_data.json.
 //
 // Scope (research 07 §1, DESIGN §0): all 138 pool charIds (incl. backup
-// operators), the 20 pool tokens, every enemy that can appear in an
+// operators), the 自选 owned-6★ picks of data/backups.json (`extraOperators`:
+// research 07 does not list them — their URLs follow its patterns) and their
+// summons, the module type icons of every module the data offers
+// (`moduleTypes`), the 20 pool tokens, every enemy that can appear in an
 // act2autochess match (07 enemy list ∪ act1autochess wave/boss levels used by
 // act2 modes ∪ bosses ∪ their summons ∪ enemy units spawned by operator kits),
 // the 23 bonds, 59 shop items, 40 bands,
@@ -165,6 +168,32 @@ function walkKeys(node, add) {
   }
 }
 
+/**
+ * A research-07-shaped operator record of a character research 07 does not list (the 自选 owned-6★ picks): every URL
+ * from the patterns of 07-assets.json `meta.patterns` — avatar / portrait (E0–E1 and E2), the default-skin battle Spine
+ * Front / Back, the skill icons, the sub-profession icon. No expected byte counts (the downloader validates the files);
+ * a file the mirrors lack is a miss the client falls back from (the E2 art to the E0–E1 one, a missing Back to Front).
+ * @param {string} id charId
+ * @param {{ subProfessionId?: string|null, nationId?: string|null, skills?: Array<{ index: number, skillId: string, iconId?: string|null }> }} x
+ */
+export function patternOperator(id, x = {}) {
+  const sp = (side) => {
+    const b = `${RAW.fexli}spine/${id}/${id}/${side}/${id}`;
+    return { skel: `${b}.skel`, atlas: `${b}.atlas`, png: `${b}.png` };
+  };
+  return {
+    name: x.name ?? null, subProfessionId: x.subProfessionId ?? null, nationId: x.nationId ?? null, chess: [],
+    avatar: { e0e1: { url: `${RAW.yuanyan}avatar/${id}.png` }, e2: { url: `${RAW.yuanyan}avatar/${id}_2.png` } },
+    portrait: { e0e1: { url: `${RAW.yuanyan}portrait/${id}_1.png` }, e2: { url: `${RAW.yuanyan}portrait/${id}_2.png` } },
+    skills: (x.skills || []).map((s) => ({
+      index: s.index, skillId: s.skillId, iconId: s.iconId || s.skillId,
+      icon: { url: `${RAW.yuanyan}skill/skill_icon_${encodeURIComponent(s.iconId || s.skillId)}.png` },
+    })),
+    battleSpine: { front: sp('Front'), back: sp('Back'), note: null },
+    subProfessionIcon: x.subProfessionId ? joinUrl(RAW.aa2, `arts/ui/subprofessionicon/sub_${x.subProfessionId}_icon.png`) : null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // id sets
 
@@ -249,9 +278,14 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  * @param {Record<string, import('./spine.mjs').LocalSpineMeta>} [p.localEnemySpines] metadata of the enemy models the
  *   local client has (the committed tools/assets/local-enemy-spines.json, never the disk): each planned enemy listed
  *   gets `spineLocal` = { group: 'spine/enemy/<id>', ...meta } beside its web `spine`
+ * @param {Record<string, any>} [p.extraOperators] charId → { subProfessionId, nationId, skills: [{ index, skillId, iconId }] }
+ *   of characters research 07 does not list (the 自选 owned-6★ picks, data/backups.json `units`): planned like the pool
+ *   operators from patternOperator
+ * @param {string[]} [p.moduleTypes] module type icon ids (`typeIcon`, e.g. 'sol-x') → manifest `modules[typeIcon]`, the
+ *   official type icon (arts/ui/uniequiptype) the 干员调配 / 自选 module tiles draw when the local-client art lacks it
  * @returns {{ template: any, models: Map<string, any>, notes: string[] }}
  */
-export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {} }) {
+export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {}, extraOperators = {}, moduleTypes = [] }) {
   const notes = [];
   /** @type {Map<string, any>} */
   const models = new Map();
@@ -280,9 +314,13 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   const skills = {};
   const skillsById = {};
   const unitsSfx = {};
-  const charIds = Object.keys(assets07?.operators || {}).sort();
+  const known = assets07?.operators || {};
+  const extraOps = {};
+  for (const [id, x] of Object.entries(extraOperators || {})) if (/^char_\d+_[a-z0-9]+$/i.test(id) && !known[id]) extraOps[id] = patternOperator(id, x);
+  const operators = { ...known, ...extraOps };
+  const charIds = Object.keys(operators).sort();
   for (const id of charIds) {
-    const o = assets07.operators[id];
+    const o = operators[id];
     // DESIGN §16 operator loadouts: any skill of the character can be equipped — the icons, skill SFX and Spine skill
     // clips of every skill index (the pool's primary index first, as before)
     const idx0 = skillIdx.get(id) || [0];
@@ -448,7 +486,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   for (const p of [...PROFESSIONS, 'token']) {
     prof.battlecard[p] = leaf(alt(`prof/battlecard_${p}.png`, joinUrl(RAW.aa2, `arts/ui/[uc]battlecommon/ui_battle_new/battlecard/icon_profession_${p}.png`)));
   }
-  for (const o of Object.values(assets07?.operators || {})) {
+  for (const o of Object.values(operators)) {
     const sub = o.subProfessionId;
     if (typeof sub === 'string' && sub && !prof.sub[sub] && o.subProfessionIcon) prof.sub[sub] = leaf(alt(`prof/sub/${safeName(sub)}.png`, o.subProfessionIcon));
   }
@@ -463,7 +501,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   for (const [group, entries] of Object.entries(assets07?.autochessUi || {})) {
     for (const [key, url] of Object.entries(entries || {})) addUi(group, key, url);
   }
-  const nations = new Set(Object.values(assets07?.operators || {}).map((o) => o.nationId).filter(Boolean));
+  const nations = new Set(Object.values(operators).map((o) => o.nationId).filter(Boolean));
   const logos = new Set(['logo_rhodes', ...[...nations].map((n) => `logo_${n}`)]);
   for (const b of Object.values(assets07?.bonds || {})) if (b.fallbackCampLogo) logos.add(urlBase(b.fallbackCampLogo).replace(/\.png$/i, ''));
   for (const [src, group] of Object.entries(ARTS_GROUPS)) {
@@ -517,8 +555,15 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   const sfxBattle = {};
   for (const [name, spec] of Object.entries(BATTLE_SFX)) { const l = soundLeaf(resolveSpec(spec, audio.bank)); if (l) sfxBattle[name] = l; else notes.push(`battle SFX ${name}: no sound`); }
 
+  // --- module type icons ----------------------------------------------------
+  const modules = {};
+  for (const t of [...new Set(moduleTypes || [])].filter((x) => typeof x === 'string' && /^[a-z0-9-]+$/i.test(x)).sort()) {
+    // the client's file name, else its lower-case form (the type id of a few modules is mixed case: WAH-Y → wah-y.png)
+    modules[t] = leaf(alt(`module/${safeName(t)}.png`, [...new Set([t, t.toLowerCase()])].map((n) => joinUrl(RAW.aa2, `arts/ui/uniequiptype/${n}.png`))));
+  }
+
   const template = {
-    chars, enemies, tokens, bonds, items, bands, skills, skillsById, ui, prof,
+    chars, enemies, tokens, bonds, items, bands, skills, skillsById, modules, ui, prof,
     audio: { bgm, bossBgm: Object.fromEntries(Object.entries(bossBgm).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))), sfx: { ui: sfxUi, battle: sfxBattle, units: unitsSfx } },
   };
   return { template, models, notes };

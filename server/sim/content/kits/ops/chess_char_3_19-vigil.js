@@ -11,8 +11,9 @@ export default {
   //      wolf = +1 block and one more bite, a wolf is lost instead of the pack dying); 狼群天性: DEF ignore vs pack-blocked
   //      enemies; S3 领袖的尊严: DP over time, 三连击, bonus arts vs pack-blocked enemies; 精锐 module: pack takes less
   //      damage from the enemies it blocks (token module talent). A 狼群 piece placed in the prep phase is the pack.
-  //      S1 领袖的呼唤 (ALWAYS): +cost DP and one more “狼影” (≤ the talent's maximum); S2 领袖的馈赠: +cost DP, the pack
-  //      recovers hp_ratio of its max HP and its next attack hits ×atk_scale — a kill by that attack gives +cost DP.
+  //      S1 领袖的呼唤 (自动触发, only while the pack is on the field): +cost DP and one more “狼影” (≤ the talent's
+  //      maximum); S2 领袖的馈赠: +cost DP, the pack recovers hp_ratio of its max HP and its next attack hits ×atk_scale —
+  //      a kill by that attack gives +cost DP.
   //      精锐 module TAC-Y: trait ×165 % (profession layer) and "援军阻挡的敌人更容易受到我方的攻击": the pack's token module
   //      talent taunt_level (+1) goes to the enemies it blocks — the enemy-side 嘲讽等级 our operators target first
   //      (targeting.js; research 05: "更容易受到我方的攻击" = enemy taunt.taunt_level), never to the pack itself.
@@ -114,6 +115,14 @@ export default {
       return true;
     };
     const dpGain = (battle, unit, n) => { if (n > 0) { battle.addDp(unit.ownerId, n); fx(battle, 'dp', unit, { n }); } };
+    // S1: the cast — ready and the pack on the field (PRTS 备注 「仅场上存在狼群时可触发技能」)
+    const installCall = (battle, unit) => {
+      battle.on('tick', () => {
+        const sk = unit.skill;
+        if (!alive(unit) || !sk || !sk.ready || sk.active || !unit.canAct || unit.s.flags.silence || !wolfOf(unit)) return;
+        sk.activate('SP_FULL');
+      }, { owner: unit });
+    };
     // S2: the pack's empowered next attack (armed by the cast; ×scale on its hits; a kill pays once)
     const installGift = (battle, unit) => {
       battle.on('tick', () => { // the cast: ready, the pack on the field, no unused gift on it (PRTS 备注)
@@ -195,11 +204,15 @@ export default {
         },
       },
       skills: altSkills(chess, d, bb, {
-        // (自动触发: an AUTO skill takes no 技能策略 — the 战术家 row is for MANUAL skills — and this DP skill fires as soon
-        // as it is ready, as before)
+        // (自动触发: an AUTO skill takes no 技能策略 — the 战术家 row is for MANUAL skills. PRTS 备注 「仅场上存在狼群时可触发技能」
+        // (the owner's decision of 2026-10-05): the kit casts it as soon as it is ready while the pack stands
+        // (installCall); without a pack it waits at full SP — until 0.2.0 it fired at SP_FULL and paid its DP with no pack.
+        // The 备注 also counts the pack's 战术点形态 (after its last 狼影 is lost) as on the field — the cast brings it back
+        // at once with one 狼影 — and at the 狼影 cap resets the pack's HP; the kit has neither: a knocked-out pack comes
+        // back after its respawn time and S1 waits for it, and at the cap it only pays its DP [ASSUMED])
         skchr_vigil_1: (s) => ({
           kind: 'instant',
-          trigger: 'SP_FULL',
+          trigger: 'NEVER',
           onStart({ battle, unit }) {
             dpGain(battle, unit, num(s.bb.cost, 0));
             const w = wolfOf(unit);
@@ -223,7 +236,10 @@ export default {
           },
         }),
       }),
-      install(battle, unit) { if (sel === 'skchr_vigil_2') installGift(battle, unit); },
+      install(battle, unit) {
+        if (sel === 'skchr_vigil_1') installCall(battle, unit);
+        if (sel === 'skchr_vigil_2') installGift(battle, unit);
+      },
       talents: [
         { install() { /* 狼群领袖: the pack itself (trait.install / wolfKit) */ } },
         { install(battle, unit) {

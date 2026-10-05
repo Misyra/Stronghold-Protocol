@@ -749,12 +749,12 @@ test('3_18 忍冬 S1 小施惩戒: next attack + extra arts and +DP; S2 坠刃�
   }
 });
 
-test('3_19 伺夜 S1 领袖的呼唤 (ALWAYS): +DP and one more “狼影” (≤ max)', () => {
+test('3_19 伺夜 S1 领袖的呼唤 (自动触发, the pack on the field): +DP and one more “狼影” (≤ max)', () => {
   for (const id of BOTH('chess_char_3_19_a')) {
     const b = SB(id, 'skchr_vigil_1');
     const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_1', 10, 3)] });
     const u = h.unit(id), p = h.b.getPlayer('p1');
-    assert.equal(u.skill.rule, 'SP_FULL');
+    assert.equal(u.skill.rule, 'NEVER', 'the kit casts it (the pack check)');
     h.step();
     const w = u.trait.reinforcement;
     assert.equal(w.mem.wolves, 2);
@@ -784,6 +784,32 @@ test('3_19 伺夜 S1 领袖的呼唤 (ALWAYS): +DP and one more “狼影” (�
   assert.equal(piece.mem.shadows, n0 + 1);
   assert.equal(piece.s.blockCnt, blk + 1);
   done(g);
+});
+
+test('3_19 伺夜 S1 领袖的呼唤: PRTS 备注 「仅场上存在狼群时可触发技能」 — no pack, no cast (the SP waits full, no DP); cast once the pack stands again', () => {
+  for (const id of BOTH('chess_char_3_19_a')) {
+    const b = SB(id, 'skchr_vigil_1');
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_1', 10, 3)] });
+    const u = h.unit(id), p = h.b.getPlayer('p1');
+    h.run(1);
+    const w = u.trait.reinforcement;
+    assert.ok(w && w.alive, 'the pack stands');
+    for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
+    assert.ok(!u.trait.reinforcement?.alive, 'no pack on the field');
+    const dp0 = p.dp;
+    fill(u);
+    h.run(2);
+    assert.equal(u.skill.activations, 0, 'no pack, no cast');
+    assert.ok(u.skill.ready, 'the SP waits full');
+    approx(p.dp, dp0, 1e-9, 'no DP without the pack');
+    // the knocked-out pack comes back after its respawn time: cast at once — +DP and one more 狼影
+    assert.ok(h.runUntil(() => u.skill.activations === 1, 15), 'cast once the pack stands again');
+    const w2 = u.trait.reinforcement;
+    assert.ok(w2 && w2.alive, 'the pack is back');
+    approx(p.dp, dp0 + b.cost, 1e-9, '+cost DP');
+    assert.equal(w2.mem.wolves, 3, 'one more 狼影 on the returned pack');
+    done(h);
+  }
 });
 
 test('3_19 伺夜 S2 领袖的馈赠: +DP, the pack recovers HP, its next attack ×atk_scale, a kill by it pays +DP', () => {

@@ -64,7 +64,7 @@ export const KIT_FILES = Object.freeze([
  * A stand-in without a file fights with the generic kit (content/generic.js) plus its unconditional stat talents
  * (genericTalents) — the eight 预备干员 need no file.
  */
-export const STANDIN_KIT_FILES = Object.freeze(['standin-acmedc.js', 'standin-acfend.js']);
+export const STANDIN_KIT_FILES = Object.freeze(['standin-acmedc.js', 'standin-acfend.js', 'standin-acpion.js']);
 
 async function loadKitFile(file) {
   try {

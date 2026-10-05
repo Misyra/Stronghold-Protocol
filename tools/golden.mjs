@@ -8,7 +8,7 @@
 // Usage:
 //   node tools/golden.mjs                 compare the corpus with test/golden/*.json (exit 1 on a difference)
 //   node tools/golden.mjs --update        recompute and rewrite test/golden/*.json   (npm run golden:update)
-//   options: --family roster,bonds,fields,matches   --fast (the test's default subset)   --only <id,id>
+//   options: --family roster,bonds,fields,matches,standins   --fast (the test's default subset)   --only <id,id>
 //            --jobs N (worker threads, default: up to 4)   --list   --coverage (skills cast, stages, enemies…)
 //            --twice  determinism: compute twice in this process (the second pass in reverse order) and compare
 //
@@ -25,9 +25,14 @@
 //            ended at 200 game s) and 联防 fields (1 and 2 helpers on the 联防 map of their count — boards laid out on a
 //            battle stage —, carried HP / SP, a knocked-out operator, two leakers' enemies with a summoned-only kind and
 //            a bounty)
-//   matches  16 bot-only matches (solo 标准 / 险境 / 绝境 / 终极 ×2 seeds, co-op 2 / 3 / 4, one server-run combat match,
-//            two with LP and layers raised at the first prep so they reach the Hidden Core) run to the end in virtual
-//            time with the match's default bot rehearsal
+//   matches  17 matches run to the end in virtual time with the match's default bot rehearsal: 16 bot-only (solo 标准 /
+//            险境 / 绝境 / 终极 ×2 seeds, co-op 2 / 3 / 4, one server-run combat match, two with LP and layers raised at the
+//            first prep so they reach the Hidden Core) and one co-op match whose human seat (AI 托管, offline: its
+//            battles run on the server) does not own a few NORMAL chess — they fight as their 补位 stand-ins (0.2.0)
+//   standins 10 battles: every NORMAL chess record (normal + elite, 110) fielded as its 补位 stand-in (PlayerBattleInput
+//            standIn: true — DATA.md §18: the stand-in's body, its backup skill / module, its kit by charId; all 17
+//            stand-ins and every skill a chess names for them), 12 per battle by strength band, laid out by the stand-in's
+//            position on a real stage, against the round's real wave three times over, an item each, bonds from the board
 // Battles run through the production BattleSpec path (server/sim/spec.js buildBattleSpec → createBattleFromSpec, the
 // path browsers and the server's headless fields use) with every option explicit; matches construct Match directly
 // with a VirtualScheduler (as tools/botbench.mjs) — test-harness defaults never move a digest.
@@ -68,7 +73,7 @@ import { GEO } from '../shared/constants.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GOLDEN_DIR = join(ROOT, 'test', 'golden');
-export const FAMILY_NAMES = Object.freeze(['roster', 'bonds', 'fields', 'matches']);
+export const FAMILY_NAMES = Object.freeze(['roster', 'bonds', 'fields', 'matches', 'standins']);
 
 const QUIET = Object.freeze({ warn() {}, error() {}, info() {}, log() {}, debug() {} });
 const data = getData({ log: QUIET });
@@ -323,11 +328,13 @@ function layout(gd, stageId, wanted, { field = 'normal', colOffset = 0, max = 12
     const rank = (r, c) => { const d = dist(r, c); return d === 0 ? 1.5 : d; }; // beside a path first, then on it
     return out.sort((a, b) => rank(a[0], a[1]) - rank(b[0], b[1]));
   };
-  const isMelee = (w) => positionClass(data.chess[w.chessId], w.moduleId) === 'melee';
-  const order = wanted.slice().sort((a, b) => (isMelee(b) - isMelee(a)) || (isMelee(a) ? (data.chess[b.chessId].stats.blockCnt || 0) - (data.chess[a.chessId].stats.blockCnt || 0) : 0));
+  // a 补位 unit (`standIn`) is laid out by its stand-in's body (position, block count); every other by its chess record
+  const recOf = (w) => (w.standIn ? gd.standIn(w.chessId) || data.chess[w.chessId] : data.chess[w.chessId]);
+  const isMelee = (w) => positionClass(recOf(w), w.moduleId) === 'melee';
+  const order = wanted.slice().sort((a, b) => (isMelee(b) - isMelee(a)) || (isMelee(a) ? (recOf(b).stats.blockCnt || 0) - (recOf(a).stats.blockCnt || 0) : 0));
   let uid = uid0;
   for (const w of order) {
-    const rec = data.chess[w.chessId];
+    const rec = recOf(w);
     const free = units.length < max ? tiles(positionClass(rec, w.moduleId)) : [];
     if (!free.length) { rest.push(w); continue; }
     const [r, c] = free[0];
@@ -336,12 +343,14 @@ function layout(gd, stageId, wanted, { field = 'normal', colOffset = 0, max = 12
     const u = { uid: uid++, kind: 'chess', chessId: w.chessId, row: r, col: c, dir, items: w.items ?? [] };
     if (w.skillIndex != null) u.skillIndex = w.skillIndex;
     if (w.moduleId != null) u.moduleId = w.moduleId;
+    if (w.standIn) u.standIn = true;
     if (w.carryState) u.carryState = w.carryState;
     units.push(u);
   }
-  // placeable summons of the placed operators
+  // placeable summons of the placed operators (a stand-in makes none: none of the 17 has one)
   const tokens = [];
   for (const u of units) {
+    if (u.standIn) continue;
     for (const { tokenId, count } of gd.placeableTokens(u.chessId, { skillIndex: u.skillIndex ?? null })) {
       const trec = data.tokens[tokenId];
       let allowed = null;
@@ -626,6 +635,60 @@ export function fieldScenarios() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// family: standins (0.2.0 补位)
+
+/** The NORMAL chess records (normal + elite) that have a stand-in (shared/standIn.js: PRESET / 自选 have none). */
+const STANDIN_CHESS = CHESS.filter((c) => c.chessType === 'NORMAL' && !c.isDiy && c.backup && c.backup.charId && c.backup.charId !== c.charId);
+
+export function standInScenarios() {
+  // normal records first, then the elites; within them by strength band (tier + elite) and id; a battle takes up to 12
+  // with distinct chess ids and bands within one of the first waiting record's
+  const queue = STANDIN_CHESS.map((rec) => ({ chessId: rec.chessId, standIn: true, elite: rec.isGolden ? 1 : 0, band: rec.tier + (rec.isGolden ? 1 : 0) }));
+  queue.sort((a, b) => a.elite - b.elite || a.band - b.band || byId(a.chessId, b.chessId));
+  // every battle also gets 8 ground enemy kinds as extra spawns: a 飞行 round wave would leave the melee stand-ins
+  // nobody to block, and their skills (cast with an enemy in range) uncast
+  const ground = cursor(EXTRA_ENEMIES.filter((k) => !data.enemies[k].tokenOnly && !isFlyKey(gdFor('mode_multi_normal'), k)));
+  const items = cursor(EQUIPS);
+  const bands = cursor(BANDS.slice().reverse());
+  const scenarios = [];
+  let n = 0;
+  while (queue.length) {
+    const i = n++;
+    const stageId = STAGES[(i * 3 + 1) % STAGES.length];
+    const modeId = ROSTER_MODES[(i + 2) % ROSTER_MODES.length];
+    const gd = gdFor(modeId);
+    const first = queue[0];
+    const picked = [];
+    for (const w of queue) {
+      if (picked.length >= 12) break;
+      if (picked.some((x) => x.chessId === w.chessId) || Math.abs(w.band - first.band) > 1 || w.elite !== first.elite) continue;
+      picked.push(w);
+    }
+    const chunk = picked.map((w) => ({ ...w, items: [items.next()] }));
+    const { units } = layout(gd, stageId, chunk, { max: 12 });
+    if (!units.length) throw new Error(`standins: nothing fits on ${stageId}`);
+    const placed = new Set(units.map((u) => u.chessId));
+    for (let q = queue.length - 1; q >= 0; q--) if (picked.includes(queue[q]) && placed.has(queue[q].chessId)) queue.splice(q, 1);
+    if (!placed.size) throw new Error('standins: no progress');
+    const band = Math.max(...picked.filter((w) => placed.has(w.chessId)).map((w) => w.band));
+    const round = BAND_ROUND[band];
+    const seed = deriveSeed(20261005, `standins:${i}`);
+    const wave = normalWave(gd, round, seed);
+    const pid = 'p1';
+    scenarios.push({
+      id: `standin-${String(i + 1).padStart(2, '0')}`, family: 'standins', kind: 'normal', modeId, round, stageId, seed, pass: first.elite,
+      rect: { ...GEO.NORMAL_RECT }, timeLimit: wave.timeLimit, routes: wave.routes, waveId: wave.templateId, enemyOverrides: wave.overrides,
+      flags: { layerGainsEnabled: true, ...gd.dp },
+      players: [playerInput(pid, 0, units, { bonds: bondsOf(gd, units, LAYER_STEPS[i % LAYER_STEPS.length]), bandId: bands.next() })],
+      spawns: [0, 1, 2].flatMap((k) => wave.spawns.map((sp) => ({ ...sp, time: sp.time + k * Math.round(wave.timeLimit / 4), ownerPlayerId: pid })))
+        .concat(extraSpawns(gd, wave.routes, Array.from({ length: 8 }, () => ground.next()), round, pid, 6, 6)),
+      about: `${first.elite ? 'elite' : 'normal'} band ${band} as stand-ins: ${units.map((u) => `${u.chessId}→${gd.standIn(u.chessId)?.charId ?? '?'}`).join(' ')}`,
+    });
+  }
+  return scenarios;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // family: matches
 
 export function matchScenarios() {
@@ -641,8 +704,18 @@ export function matchScenarios() {
   // match reaches the Final Assault and — Σ activated layers over the threshold — the Hidden Core
   out.push({ id: 'solo-HARD-9-boosted', mode: 'solo', difficulty: 'HARD', bots: 1, seed: 9, boost: { lp: 400, layers: 300 } });
   out.push({ id: 'coop2-ABYSS-10-boosted', mode: 'coop', difficulty: 'ABYSS', bots: 2, seed: 10, boost: { lp: 400, layers: 300 } });
-  return out.map((m) => ({ ...m, family: 'matches', kind: 'match', about: `${m.mode} ${m.difficulty}, ${m.bots} bot seat(s), seed ${m.seed}${m.clientCombat === false ? ', server-run combat' : ''}${m.boost ? `, LP ${m.boost.lp} and ${m.boost.layers} layers per bond from the first prep` : ''}` }));
+  // 0.2.0 补位: a human seat (AI 托管, offline: its battles run on the server) that does not own a few NORMAL chess
+  out.push({ id: 'coop2-NORMAL-14-standins', mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: 14, human: { notOwned: MATCH_NOT_OWNED } });
+  return out.map((m) => ({ ...m, family: 'matches', kind: 'match', about: `${m.mode} ${m.difficulty}, ${m.bots} bot seat(s)${m.human ? ` + 1 human seat (AI 托管) without ${m.human.notOwned.length} operators (补位 stand-ins)` : ''}, seed ${m.seed}${m.clientCombat === false ? ', server-run combat' : ''}${m.boost ? `, LP ${m.boost.lp} and ${m.boost.layers} layers per bond from the first prep` : ''}` }));
 }
+
+/**
+ * The NORMAL chess the 补位 match's human seat does not own: operators its AI fields with seed 14 (瑕光 → 郁金香 from
+ * round 4, 异客 → Stormeye, 耀骑士临光 → 郁金香 later; the digest's `standIns` lists them per round).
+ */
+const MATCH_NOT_OWNED = Object.freeze([
+  'chess_char_3_12_a', 'chess_char_3_18_a', 'chess_char_5_20_a', 'chess_char_6_05_a', 'chess_char_6_06_a', 'chess_char_6_17_a', 'chess_char_6_19_a',
+]);
 
 const pieceStr = (p, r, c) => `${p.id.replace(/^chess_char_/, '')}@${r},${c}${p.dir && p.dir !== 'RIGHT' ? p.dir[0] : ''}${p.items && p.items.length ? `[${p.items.map((i) => i.id.replace(/^chess_item_/, '')).join('+')}]` : ''}`;
 function boardStr(ps) {
@@ -656,7 +729,10 @@ const MATCH_ROW_COLS = Object.freeze(['alive', 'lp', 'prepFunds', 'funds', 'pend
 export function runMatch(cfg) {
   const sched = new VirtualScheduler();
   const seats = [];
-  for (let i = 0; i < cfg.bots; i++) seats.push({ seat: i, playerId: `ai_${i}`, name: `AI-${i + 1}`, isBot: true, connected: true });
+  // a human seat (cfg.human): offline (its battles run on the server) and on AI 托管 from the start; its not-owned chess
+  // fight as their 补位 stand-ins
+  if (cfg.human) seats.push({ seat: 0, playerId: 'h_0', name: 'H-1', isBot: false, connected: false, notOwned: [...cfg.human.notOwned] });
+  for (let i = 0; i < cfg.bots; i++) seats.push({ seat: seats.length, playerId: `ai_${i}`, name: `AI-${i + 1}`, isBot: true, connected: true });
   let summary = null;
   const logged = [];
   const log = { info() {}, debug() {}, warn() {}, error: (...a) => logged.push(a.map(String).join(' ').slice(0, 120)) };
@@ -665,7 +741,10 @@ export function runMatch(cfg) {
     send: () => true, broadcast: () => {}, onEnd: (s) => { summary = s; },
     clientCombat: cfg.clientCombat !== false, verify: 'off',
   });
+  if (cfg.human) m.players.get('h_0').autoplay = true;
   const rounds = [];
+  // 补位: per round at SETTLE, the human's board pieces that fought as stand-ins (chess id → stand-in charId)
+  const standIns = [];
   let last = '';
   m.start();
   const setup = { stageId: m.stageId, bossId: m.bossId, hiddenBossId: m.hiddenBossId, factions: [...(m.factions || [])] };
@@ -696,6 +775,11 @@ export function runMatch(cfg) {
           ];
         }
         rounds.push(row);
+        if (cfg.human) {
+          const h = m.players.get('h_0');
+          const fielded = [...h.board.values()].filter((p) => p.kind === 'chess' && h.fieldsStandIn(p.id)).map((p) => `${p.id.replace(/^chess_char_/, '')}→${m.gd.standIn(p.id)?.charId}`).sort(byId);
+          standIns.push([m.round, fielded.join(' ')]);
+        }
       }
     }
     return summary != null;
@@ -726,6 +810,7 @@ export function runMatch(cfg) {
     rounds,
     players,
   };
+  if (cfg.human) digest.standIns = { notOwned: [...m.players.get('h_0').standIns], rounds: standIns };
   m.dispose();
   return digest;
 }
@@ -733,22 +818,25 @@ export function runMatch(cfg) {
 // ---------------------------------------------------------------------------------------------------------------
 // families, fast subset, comparison
 
-const GENERATORS = { roster: rosterScenarios, bonds: bondScenarios, fields: fieldScenarios, matches: matchScenarios };
+const GENERATORS = { roster: rosterScenarios, bonds: bondScenarios, fields: fieldScenarios, matches: matchScenarios, standins: standInScenarios };
 const ABOUT = {
   roster: 'every visible chess record × every selectable skill / module, every stage, every non-leader enemy kind, items, bands, 机变 cards, map cards, placeable summons',
   bonds: 'every bond at its activation threshold (layers 1) and at its top tier (layers 999)',
   fields: 'Final Assault / Hidden Core leaders (pair + solo templates, shared pool, 200 s cap) and 联防 fields (1 / 2 helpers)',
-  matches: 'bot-only matches run to the end in virtual time (solo ×4 difficulties ×2 seeds, co-op 2/3/4, one server-run, two boosted to the Hidden Core)',
+  matches: 'matches run to the end in virtual time: bot-only (solo ×4 difficulties ×2 seeds, co-op 2/3/4, one server-run, two boosted to the Hidden Core) and one co-op match whose human seat fields 补位 stand-ins',
+  standins: 'every NORMAL chess record (normal + elite) fielded as its 补位 stand-in (all 17 stand-ins and the skills the chess name for them), 12 per battle on real stages and waves',
 };
 /**
  * The default test subset (GOLDEN_FULL=1 runs everything): the pass-0 roster battles (every chess record with its
  * default loadout, every stage, every non-leader enemy kind), every bond at its top tier, both 联防 fields, four leader
- * fields (one of them a Hidden Core) and five matches (solo 标准 / 绝境, co-op 2 / 4, the boosted Hidden Core run).
+ * fields (one of them a Hidden Core), six matches (solo 标准 / 绝境, co-op 2 / 4, the boosted Hidden Core run, the 补位
+ * match) and the normal-record stand-in battles.
  */
-const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted']);
+const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted', 'coop2-NORMAL-14-standins']);
 const FAST_FIELDS = new Set(['boss-boss_1-pair', 'boss-boss_4-solo', 'boss-boss_7-pair', 'hidden-boss_9-pair', 'unite-1', 'unite-2']);
 export function isFast(sc) {
   if (sc.family === 'matches') return FAST_MATCHES.has(sc.id);
+  if (sc.family === 'standins') return sc.pass === 0; // the normal records (the elites with GOLDEN_FULL)
   if (sc.family === 'fields') return FAST_FIELDS.has(sc.id);
   if (sc.family === 'bonds') return sc.id.endsWith('-high');
   return sc.pass === 0;

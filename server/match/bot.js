@@ -818,7 +818,9 @@ export function rangeRec(ps, rec) {
   if (cache.has(key)) return cache.get(key);
   let out = rec;
   try {
-    const g = attackRangeGrid(loadoutRecord(rec, resolveRecordLoadout(rec, lo)));
+    // 0.2.0 补位: a human's not-owned chess (AI 托管) is deployed as its stand-in — that body's range
+    const body = typeof ps.fieldRecord === 'function' ? ps.fieldRecord(rec) || rec : rec;
+    const g = attackRangeGrid(loadoutRecord(body, resolveRecordLoadout(body, lo)));
     if (Array.isArray(g) && g.length && JSON.stringify(g) !== JSON.stringify(rec.rangeGrid)) out = Object.freeze({ ...rec, rangeGrid: g });
   } catch { out = rec; }
   cache.set(key, out);

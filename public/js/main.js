@@ -20,7 +20,8 @@
 // Multi-device support (ui/device.js + css/devices.css): feature classes on <html>, no page zoom, safe areas, rotation
 // re-layout; ui/compat.js polyfills are imported before anything else.
 // 干员调配 (DESIGN §16): an overlay over any route (<LoadoutHost/>, opened from lobby / room / briefing); its loadout is
-// kept in sync with the server by installLoadoutSync (room.loadout after every welcome and edit).
+// kept in sync with the server by installLoadoutSync (room.loadout after every welcome and edit), its 干员持有 tab's
+// not-owned list (0.2.0 补位) by installOwnershipSync (room.ownership, likewise).
 // Game data: every text of the game is static data (/data/*.json) downloaded once per page; the in-match files are
 // warmed in the background as soon as the player is in a room (warmGameData), before the match needs them.
 
@@ -44,7 +45,7 @@ import { settingsStore } from './ui/settings.js';
 import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
-import { installLoadoutSync } from './ui/loadoutSync.js';
+import { installLoadoutSync, installOwnershipSync } from './ui/loadoutSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 
 const RESTORE_GRACE_MS = 1500;
@@ -329,6 +330,7 @@ async function boot() {
 
   wireNet();
   installLoadoutSync({ net });
+  installOwnershipSync({ net });
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });

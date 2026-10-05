@@ -1,13 +1,12 @@
 // ui/gameLogic/placement.js — deploy maps and the canPlace mirror of the server rules. Re-exported from ../gameLogic.js.
 
 import { GEO } from '../../../../shared/constants.js';
-import { resolveLoadout } from '../../../../shared/protocol.js';
 import { attackRangeGrid } from '../../../../shared/loadoutRecord.js';
 import { meleeOnHighGround } from '../../../../shared/highGround.js';
 import { pieceDir, rangeTiles } from '../facing.js';
 import { isObj, tileKey } from './shared.js';
 import { boardTileOf, fieldTile } from './camera.js';
-import { chessLoadout } from './loadout.js';
+import { deployedRecord, deployedModuleId, fieldsStandIn, standInOf } from './standIn.js';
 
 
 // ---- placement (canPlace mirror) ------------------------------------------------------------------------
@@ -194,7 +193,7 @@ export function indexPieces(priv) {
  * @param {{ priv:any, stage:any, editable:boolean, field?:'normal'|'bossL'|'bossR', getChess?:(id:string)=>any,
  *   getToken?:(id:string)=>any, getItem?:(id:string)=>any, getEffect?:(id:string)=>any }} o
  */
-export function placementContext({ priv, stage, editable, field = 'normal', getChess = () => null, getToken = () => null, getItem = () => null, getEffect = () => null }) {
+export function placementContext({ priv, stage, editable, field = 'normal', getChess = () => null, getToken = () => null, getItem = () => null, getEffect = () => null, backups = null }) {
   const pieces = indexPieces(priv);
   const boardAt = new Map();
   for (const e of pieces.values()) if (e.area === 'board') boardAt.set(tileKey(e.row, e.col), e);
@@ -210,7 +209,7 @@ export function placementContext({ priv, stage, editable, field = 'normal', getC
   const deploy = field === 'bossL' || field === 'bossR'
     ? deploySets(stage, field, ov)
     : deploySets(effectiveStage(stage, ov));
-  return { priv, pieces, boardAt, handAt, deploy, cap, count, field, editable: !!editable, getChess, getToken, getItem };
+  return { priv, pieces, boardAt, handAt, deploy, cap, count, field, editable: !!editable, getChess, getToken, getItem, backups };
 }
 
 /**
@@ -221,9 +220,10 @@ export function placementContext({ priv, stage, editable, field = 'normal', getC
 export function piecePosition(ctx, piece) {
   if (!isObj(piece)) return null;
   if (piece.kind === 'chess') {
-    const rec = ctx.getChess(piece.id);
-    let moduleId = null;
-    try { moduleId = resolveLoadout(ctx.priv?.loadout ?? null, rec, ctx.getChess)?.moduleId ?? null; } catch { moduleId = null; }
+    const chess = ctx.getChess(piece.id);
+    // 0.2.0 补位: a chess the player fields as its stand-in is placed by the stand-in's position (server placeClass)
+    const rec = (fieldsStandIn(ctx.priv, chess) && standInOf(chess, ctx.backups)) || chess;
+    const moduleId = deployedModuleId(chess, ctx.priv, ctx.getChess, ctx.backups);
     if (meleeOnHighGround(rec, moduleId)) return 'ALL';
     return rec?.position === 'MELEE' ? 'MELEE' : 'RANGED';
   }
@@ -256,7 +256,7 @@ export function summonRange(ctx, piece, owner = null) {
   const rec = at && ctx.getChess(at.piece.id);
   if (!rec) return null;
   let grid = null;
-  try { grid = attackRangeGrid(chessLoadout(rec, ctx.priv?.loadout ?? null, ctx.getChess)?.record || rec); } catch { /* the data grid */ }
+  try { grid = attackRangeGrid(deployedRecord(rec, ctx.priv, ctx.getChess, ctx.backups) || rec); } catch { /* the data grid */ }
   return new Set(rangeTiles(grid || rec.rangeGrid, at.row, at.col, pieceDir(at.piece)).map(([r, c]) => tileKey(r, c)));
 }
 

@@ -66,9 +66,10 @@ export class PlayerPlacement {
     if (!piece || piece.kind !== 'token' || this.gd.token(piece.id)?.ownerRange !== true) return null;
     let at = owner;
     if (!at) for (const [key, p] of this.board) if (p.uid === piece.ownerUid && p.kind === 'chess') { at = { key, piece: p, dir: pieceDir(p) }; break; }
-    const rec = at && this.gd.chess(at.piece.id);
-    if (!rec) return null;
-    const grid = attackRangeGrid(loadoutRecord(rec, resolveRecordLoadout(rec, this.loadoutFor(rec)))) || rec.rangeGrid;
+    const chess = at && this.gd.chess(at.piece.id);
+    if (!chess) return null;
+    const rec = this.fieldRecord(chess); // 0.2.0 补位: a stand-in's own range (its backup selection)
+    const grid = attackRangeGrid(loadoutRecord(rec, resolveRecordLoadout(rec, this.loadoutFor(chess)))) || rec.rangeGrid;
     const [r, c] = parseKey(at.key);
     return ownerRangeKeys(grid, r, c, at.dir);
   }

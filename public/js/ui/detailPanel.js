@@ -33,7 +33,7 @@
 
 import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
 import { Img, RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
-import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings } from './gameLogic.js';
+import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, fieldsStandIn, standInOf, standInLoadout, standInLabel } from './gameLogic.js';
 import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
@@ -354,17 +354,22 @@ export function chessStatsBlock({ rec, chess, live = null }) {
     </div>`;
 }
 
-export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bonds, offBonds = null, loadout, onBond, live = null, hint = null, unitItems = null }) {
+export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bonds, offBonds = null, loadout, onBond, live = null, hint = null, unitItems = null, standIn = null }) {
   const m = data.get('assets');
   const hp = hpOf(live, snapHp);
-  const lo = chessLoadout(chess, loadout, (id) => data.lookup('chess', id));
+  const getChess = (id) => data.lookup('chess', id);
+  // 0.2.0 补位: a chess fielded as its stand-in keeps its identity (name, tier, bonds, 特质, sell price) and shows the
+  // stand-in's body — portrait, class, 特性, stats, range, skill, talents, module (its backup selection, no loadout)
+  const si = standIn && standIn.standInFor ? standIn : null;
+  const body = si || chess;
+  const lo = si ? standInLoadout(si, getChess, data.get('backups')) : chessLoadout(chess, loadout, getChess);
   const c = chess;
   // stats / talents the unit fights with: the chosen module's (or none — statsBase) for an elite (DESIGN §16)
-  const fr = lo?.record || c;
+  const fr = lo?.record || body;
   const golden = !!(c.isGolden || piece?.golden);
-  const sk = lo?.skill || c.skill || null;
+  const sk = lo?.skill || body.skill || null;
   // a chosen skill the manifest has no icon for (only the default skills' icons are fetched): its slot letter
-  const skIcon = sk && lo && !lo.defaultSkill ? skillRecordIconUrl(m, sk, { empty: false }) : skillIconUrl(m, c);
+  const skIcon = sk && lo && !lo.defaultSkill ? skillRecordIconUrl(m, sk, { empty: false }) : skillIconUrl(m, body);
   const skSlot = sk && Number.isInteger(sk.index) ? `S${sk.index + 1}` : null;
   const garrison = Array.isArray(c.garrisonIds) && c.garrisonIds[0] ? data.lookup('garrisons', c.garrisonIds[0]) : null;
   const items = Array.isArray(piece?.items) ? piece.items : [];
@@ -379,36 +384,38 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   blocks.head = html`
     <div key="head" class="dhead">
       <div class=${cx('dhead__art', golden && 'is-golden', `dhead__art--t${c.tier}`)}>
-        <${Img} src=${chessPortraitUrl(m, c)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" />`} />
+        <${Img} src=${chessPortraitUrl(m, body)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" />`} />
       </div>
       <div class="dhead__info">
         <div class="dhead__chips">
           <${TierChip} tier=${c.tier} golden=${golden} size="lg" />
           ${golden ? html`<span class="dtag-elite">精锐</span>` : null}
           ${piece?.kind === 'token' ? html`<span class="dtag-token">召唤物</span>` : null}
+          ${si ? html`<span class="dtag-standin" data-standin=${si.charId} title=${`未持有${c.name}：由替补干员 ${si.name} 上场（盟约、特质、阶级与价格不变）`}>${standInLabel(si)}</span>` : null}
         </div>
         <h3 class="dhead__name">${c.name}</h3>
-        <span class="dhead__en">${c.appellation || ''}</span>
+        <span class="dhead__en">${si ? `${si.name}${si.appellation && si.appellation !== si.name ? ` · ${si.appellation}` : ''}` : c.appellation || ''}</span>
         <div class="dhead__class">
-          <${Img} src=${profIconUrl(m, c.profession)} class="dhead__prof" />
-          <span>${PROF_NAME[c.profession] || c.profession || ''}</span>
+          <${Img} src=${profIconUrl(m, body.profession)} class="dhead__prof" />
+          <span>${PROF_NAME[body.profession] || body.profession || ''}</span>
           <i class="sep"></i>
-          <${Img} src=${subProfIconUrl(m, c)} class="dhead__sub" />
-          <span>${c.subProfessionName || ''}</span>
-          <span class="dhead__pos">${c.position === 'MELEE' ? '近战位' : '远程位'}</span>
+          <${Img} src=${subProfIconUrl(m, body)} class="dhead__sub" />
+          <span>${body.subProfessionName || ''}</span>
+          <span class="dhead__pos">${body.position === 'MELEE' ? '近战位' : '远程位'}</span>
         </div>
         ${hp ? html`<div class="dhp"><i style=${`width:${Math.max(0, Math.min(100, (hp.hp / Math.max(1, hp.max)) * 100))}%`}></i><span class="num">${fmtNum(hp.hp)} / ${fmtNum(hp.max)}</span></div>` : null}
         <${BondChips} bondIds=${bondIds} bonds=${bonds} off=${offBonds} onBond=${onBond} granted=${grantedIds} />
       </div>
     </div>`;
   blocks.garrison = garrison ? html`<${GarrisonBlock} key="garrison" garrison=${garrison} m=${m} />` : null;
-  blocks.trait = c.trait?.desc ? html`<p key="trait" class="dtrait"><${Icon} name="info" /><${RichText} text=${traitText(c, golden, lo)} /></p>` : null;
+  blocks.trait = body.trait?.desc ? html`<p key="trait" class="dtrait"><${Icon} name="info" /><${RichText} text=${traitText(body, golden, lo)} /></p>` : null;
+  // (`fr` is the body the unit fights with — a stand-in's record for a 补位 chess; `chess` is only the range's fallback)
   blocks.stats = chessStatsBlock({ rec: fr, chess: c, live });
   blocks.skill = sk ? html`<${Section} key="skill" title="技能" micro="SKILL" class="dsec--skill">
       <div class="dskill" data-skill=${sk.skillId || ''}>
         <${Img} src=${skIcon} class="dskill__icon" fallback=${html`<span class="dskill__icon dskill__icon--empty">${skSlot ? html`<b class="num">${skSlot}</b>` : null}</span>`} />
         <div class="dskill__meta">
-          <b class="dskill__name">${skSlot && (lo?.choices || 0) > 1 ? html`<span class="dskill__slot num" title=${`技能 ${skSlot}`}>${skSlot}</span>` : null}${sk.name}${lo && !lo.defaultSkill ? html`<span class="dtag-loadout" title="干员调配中选择的技能">已调配</span>` : null}</b>
+          <b class="dskill__name">${skSlot && (lo?.choices || 0) > 1 ? html`<span class="dskill__slot num" title=${`技能 ${skSlot}`}>${skSlot}</span>` : null}${sk.name}${lo && !lo.defaultSkill && !si ? html`<span class="dtag-loadout" title="干员调配中选择的技能">已调配</span>` : null}</b>
           <div class="dskill__tags">
             <span class="dsp dsp--${sk.spType === 'INCREASE_WHEN_ATTACK' ? 'atk' : sk.spType === 'INCREASE_WHEN_TAKEN_DAMAGE' ? 'def' : 'time'}">${SP_TYPE[sk.spType] || '技力'}</span>
             <span class="dsp dsp--trig">${SKILL_TYPE[sk.skillType] || '自动触发'}</span>
@@ -426,7 +433,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
           <${Img} src=${moduleTypeIconUrl(data.get('local'), lo.module.typeName)} fallback=${html`<b class="num">${moduleBadge(lo.module)}</b>`} /></span>` : null}
         <b class="dmodule__name">${lo.module.name}</b>
         ${lo.module.typeName ? html`<span class="dmodule__type">${lo.module.typeName}</span>` : null}
-        ${!lo.defaultModule ? html`<span class="dtag-loadout" title="干员调配中选择的模组">已调配</span>` : null}
+        ${!lo.defaultModule && !si ? html`<span class="dtag-loadout" title="干员调配中选择的模组">已调配</span>` : null}
       </div>
     <//>` : null;
   // (a 变形同构体 / bond item row shows its pairing against what this operator carries: ItemRow `carried`)
@@ -604,9 +611,13 @@ export function TokenDetail({ token, piece, ownerId = null, snapHp = null, live 
  * Resolve what a detail target shows.
  * @param {{ kind:'piece'|'chess'|'item'|'enemy'|'unit'|'token', id?:string, uid?:number, unit?:any, count?:number }} target
  * @param {Map<number, any>} pieces indexPieces(priv)
+ * @param {{ priv?: any, backups?: any }} [opts] 0.2.0 补位: the player's own pieces and cards of a chess in
+ *   m.private.standIns — and a unit carrying `standInFor` — resolve with `standIn` (the composed stand-in record the
+ *   card shows as the body)
  */
-export function resolveDetail(target, pieces) {
+export function resolveDetail(target, pieces, { priv = null, backups = data.get('backups') } = {}) {
   if (!target) return null;
+  const ownStandIn = (c) => (fieldsStandIn(priv, c) ? standInOf(c, backups) : null);
   if (target.kind === 'piece') {
     const e = pieces?.get(target.uid);
     if (!e) return null;
@@ -614,13 +625,16 @@ export function resolveDetail(target, pieces) {
     if (p.kind === 'item') { const it = data.lookup('items', p.id); return it ? { type: 'item', item: it, piece: p } : null; }
     if (p.kind === 'token') { const t = data.lookup('tokens', p.id); return t ? { type: 'token', token: t, piece: p, ownerId: tokenOwnerId(p, pieces) } : null; }
     const c = data.lookup('chess', p.id);
-    return c ? { type: 'chess', chess: c, piece: p } : null;
+    return c ? { type: 'chess', chess: c, piece: p, standIn: ownStandIn(c) } : null;
   }
   if (target.kind === 'chess') {
     // a bond popup's 变形同构体 row hands the wearer's item ids on (bondStrip onMember): the card shows the pair and the chip
     const c = data.lookup('chess', target.id);
     const items = Array.isArray(target.items) ? target.items.filter((x) => typeof x === 'string') : [];
-    return c ? { type: 'chess', chess: c, hint: target.hint || null, ...(items.length ? { unitItems: items } : {}) } : null;
+    // (a bond popup's member card of a teammate's strip — `owner` another player — and the mode's banned list (`foreign`)
+    // show the chess as it is: the viewer's 补位 list is not theirs)
+    const foreign = !!target.foreign || (target.owner != null && !!priv && target.owner !== priv.playerId);
+    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: foreign ? null : ownStandIn(c), ...(items.length ? { unitItems: items } : {}) } : null;
   }
   if (target.kind === 'item') { const it = data.lookup('items', target.id); return it ? { type: 'item', item: it } : null; }
   if (target.kind === 'enemy') { const en = data.lookup('enemies', target.id); return en ? { type: 'enemy', enemy: en, count: target.count } : null; }
@@ -632,7 +646,12 @@ export function resolveDetail(target, pieces) {
     // a hand item on a scouted prep board (m.field units, kind 'item'): the item's own card
     if (u.kind === 'item') { const it = data.lookup('items', u.defId); return it ? { type: 'item', item: it } : null; }
     const c = data.lookup('chess', u.defId);
-    if (c) return { type: 'chess', chess: c, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null };
+    // a unit says itself whether it is a stand-in (UnitInfo standInFor: the sim's, prep scouting's); an own piece's unit
+    // follows m.private.standIns like the piece
+    let si = null;
+    if (c && typeof u.standInFor === 'string' && u.standInFor) si = standInOf(c, backups);
+    else if (c && own?.piece) si = ownStandIn(c);
+    if (c) return { type: 'chess', chess: c, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null, standIn: si };
     const t = data.lookup('tokens', u.defId);
     if (t) return { type: 'token', token: t, unitId: u.id, ownerId: tokenOwnerId(own?.piece, pieces) };
     const en = data.lookup('enemies', u.defId);
@@ -675,7 +694,8 @@ export function DetailPanel({ detail, editable, snapHp, onClose, onSell, onDestr
     <button type="button" class="dpanel__close" aria-label="关闭" onClick=${onClose}><${Icon} name="close" /></button>
     <div class="dpanel__scroll">
       ${detail.type === 'chess' ? html`<${ChessDetail} chess=${detail.chess} piece=${detail.piece} snapHp=${snapHp} editable=${editable} onSell=${sellIt}
-        bonds=${bonds} offBonds=${offBonds} loadout=${loadout} onBond=${onBond} live=${liveNow} hint=${detail.hint || null} unitItems=${detail.unitItems || null} />` : null}
+        bonds=${bonds} offBonds=${offBonds} loadout=${loadout} onBond=${onBond} live=${liveNow} hint=${detail.hint || null} unitItems=${detail.unitItems || null}
+        standIn=${detail.standIn || null} />` : null}
       ${detail.type === 'item' ? html`<${ItemDetail} item=${detail.item} piece=${detail.piece} editable=${editable} onDestroy=${destroyIt} offBonds=${offBonds} />` : null}
       ${detail.type === 'enemy' ? html`<${EnemyDetail} enemy=${detail.enemy} snapHp=${snapHp} count=${detail.count} live=${liveNow} />` : null}
       ${detail.type === 'token' ? html`<${TokenDetail} token=${detail.token} piece=${detail.piece} ownerId=${detail.ownerId ?? null} snapHp=${snapHp} live=${liveNow} />` : null}

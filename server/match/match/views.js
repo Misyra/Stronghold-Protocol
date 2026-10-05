@@ -187,11 +187,14 @@ export class MatchViews {
   prepFieldMeta(ps) {
     const units = [];
     for (const { r, c, piece } of boardOrder(ps.board)) {
-      const rec = piece.kind === 'token' ? this.gd.token(piece.id) : this.gd.chess(piece.id);
+      const chess = piece.kind === 'token' ? null : this.gd.chess(piece.id);
+      // 0.2.0 补位: a chess this player fields as its stand-in is deployed with the stand-in's body — name, art, max HP,
+      // skill, like the sim's UnitInfo (`standInFor` = the replaced operator's charId)
+      const rec = piece.kind === 'token' ? this.gd.token(piece.id) : ps.fieldRecord(chess);
       const assets = (rec && rec.assets) || {};
       // DESIGN §16: the skill / module THIS player's operator fights with (the scout's detail card shows it, like the
       // sim's UnitInfo in a shared field); moduleId only for an elite
-      const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
+      const lo = piece.kind === 'chess' && chess ? ps.loadoutFor(chess) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : 'op', side: 'ally', ownerId: ps.playerId, defId: piece.id,
         name: rec ? rec.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
@@ -201,6 +204,7 @@ export class MatchViews {
         moduleId: lo && typeof lo.moduleId === 'string' ? lo.moduleId : undefined,
         // the equipped items (like the sim's UnitInfo): a 变形同构体 wearer shows as a member of the bond it grants
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
+        standInFor: rec && rec.standInFor ? rec.standInFor : undefined,
       });
     }
     // the hand (整备区) and the 临时整备区 scout exactly like the own prep bench renders them: pieces as units on
@@ -208,10 +212,13 @@ export class MatchViews {
     // items included (the client draws their floating plates). PRTS 帮助 counts the temp area with the hand (review of
     // PR #129). Part of the meta for every watcher alike — the spectator seat's copy equals a teammate's
     // (test/match/spectator.test.js). User playtest #2 item 1 (GitHub #44).
+    // (a held chess the player fields as its stand-in keeps the chess's own art — the hand shows the original operator,
+    // the approved 0.2.0 补位 plan — and carries `standInFor`: its card shows the stand-in it deploys as)
     const benchUnit = (piece, i, y) => {
       const rec = piece.kind === 'item' ? this.gd.item(piece.id) : piece.kind === 'token' ? this.gd.token(piece.id) : this.gd.chess(piece.id);
       const assets = (rec && rec.assets) || {};
       const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
+      const standIn = piece.kind === 'chess' && rec && ps.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : piece.kind === 'item' ? 'item' : 'op',
         side: 'ally', ownerId: ps.playerId, defId: piece.id,
@@ -221,6 +228,7 @@ export class MatchViews {
         skillIndex: lo && Number.isInteger(lo.skillIndex) ? lo.skillIndex : undefined,
         moduleId: lo && typeof lo.moduleId === 'string' ? lo.moduleId : undefined,
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
+        standInFor: standIn && standIn.standInFor ? standIn.standInFor : undefined,
       });
     };
     for (let i = 0; i < ps.hand.length; i++) {

@@ -275,6 +275,7 @@ export async function createFieldView(host, options = {}) {
   let penHidden = true;       // the pen's figures are shown only by the pen camera (setPenHidden)
   let penList = null;
   let ownPen = null;          // the own m.private.nextEnemies (fallback composition of a scouted teammate's pen)
+  let standInList = [];       // the own m.private.standIns (0.2.0 补位): board pieces of these chess draw the stand-in
   let camBeforePen = null;    // { kind, opts } the camera the pen returns to
   let leader = null;          // { key, view, stand, area } the round leader standing on the boss field in the prep (setLeader)
   let leaderHidden = true;    // shown only by the boss-field prep camera (leaderShown)
@@ -285,7 +286,9 @@ export async function createFieldView(host, options = {}) {
     cam: () => cam, heightAt,
     animRate: () => (mode === 'battle' ? interp.rate : 1),
     timeScale: () => (mode === 'battle' ? interp.rate : 1),
-    lookupDef: (info) => (info.side === 'enemy' ? data.enemy(info.defId) : data.chess(info.defId) || data.token(info.defId)),
+    // (a chess fighting as its 补位 stand-in — `standInFor` — reads the stand-in's record: its attack interval)
+    lookupDef: (info) => (info.side === 'enemy' ? data.enemy(info.defId)
+      : (info.standInFor && data.standIn(info.defId)) || data.chess(info.defId) || data.token(info.defId)),
     crowded: () => views.size > 90,
     renderer: app.renderer,
     frameNo: () => frameNo,
@@ -301,7 +304,7 @@ export async function createFieldView(host, options = {}) {
     timeScale: () => ctx.timeScale(),
     loadLevel: () => loadLevel,
     fieldRect: () => (mode === 'battle' && battleMeta ? battleMeta.rect : null),
-    subProfOf: (defId) => data.chess(defId)?.subProfessionId || null,
+    subProfOf: (defId, info = null) => ((info && info.standInFor && data.standIn(defId)) || data.chess(defId))?.subProfessionId || null,
     view: (id) => views.get(id) || null,
     screenSize: size,
     fieldTop: () => {
@@ -626,11 +629,16 @@ export async function createFieldView(host, options = {}) {
       const rec = data.token(piece.id);
       return { kind: 'token', side: 'ally', defId: piece.id, spine: rec?.assets?.spine || piece.id, avatar: rec?.assets?.avatar || piece.id, tier: piece.tier || 1, golden: false, dir };
     }
-    const rec = data.chess(piece.id);
+    const chess = data.chess(piece.id);
+    // 0.2.0 补位: a board piece of a chess the player does not own (m.private.standIns) is deployed as its stand-in —
+    // the stand-in's model; on the bench it keeps the chess's own (the hand shows the original operator)
+    const si = area === 'board' && chess && standInList.includes(chess.baseId || chess.chessId) ? data.standIn(piece.id) : null;
+    const rec = si || chess;
     return {
       kind: 'op', side: 'ally', defId: piece.id,
       spine: rec?.assets?.spine || rec?.charId || null, avatar: rec?.assets?.avatar || rec?.charId || null,
-      tier: rec?.tier || piece.tier || 1, golden: !!(piece.golden || rec?.isGolden), dir,
+      tier: chess?.tier || piece.tier || 1, golden: !!(piece.golden || chess?.isGolden), dir,
+      ...(si ? { standInFor: si.standInFor } : null),
     };
   }
 
@@ -678,6 +686,7 @@ export async function createFieldView(host, options = {}) {
       });
     };
     const src = ps && typeof ps === 'object' ? ps : {};
+    standInList = Array.isArray(src.standIns) ? src.standIns.filter((x) => typeof x === 'string') : [];
     ownPen = Array.isArray(src.nextEnemies) ? src.nextEnemies : null;
     setPenList(ownPen);
     addList(src.hand, 'hand');
@@ -705,7 +714,8 @@ export async function createFieldView(host, options = {}) {
       const key = 'p:' + e.uid;
       e.key = key;
       const info = pieceInfo(e.piece, e.area);
-      const sig = `${info.kind}|${info.defId}|${info.golden ? 1 : 0}`;
+      // (the model is part of it: a 补位 chess changes body between the bench and the board — pieceInfo)
+      const sig = `${info.kind}|${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}`;
       let v = views.get(key);
       if (v && v._sig !== sig) { dropView(key); v = null; }
       const w = slotWorld(e);

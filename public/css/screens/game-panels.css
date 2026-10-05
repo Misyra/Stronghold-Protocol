@@ -90,6 +90,8 @@
 .dtag-elite, .dtag-token, .dtag-kind { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; letter-spacing: .08em; }
 .dtag-elite { background: var(--gold); color: #1d1400; }
 .dtag-token { background: #a9c3d8; color: #0b1520; }
+/* 0.2.0 补位: the card of a chess fielded as its stand-in (ui/detailPanel.js ChessDetail) */
+.dtag-standin { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; letter-spacing: .04em; background: var(--ice); color: var(--ice-900); }
 .dtag-kind { border: 1px solid var(--line-2); color: var(--text-lo); font-weight: 500; }
 .drank { font-size: .13rem; font-weight: 700; padding: .01rem .08rem; }
 .drank--normal { background: var(--bg-4); color: var(--text-md); }
@@ -551,6 +553,12 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .tempnote__rule { font-size: .12rem; line-height: 1.45; color: rgba(255, 220, 214, .88); }
 @media (prefers-reduced-motion: reduce) { .tempnote__frame polygon, .tempnote__label { animation: none; } }
 .sp-reduced-motion .tempnote__frame polygon, .sp-reduced-motion .tempnote__label { animation: none; }
+/* 0.2.0 补位: 「替补：X」 under the player's own prep pieces of a chess they do not own (screens/game/standInTags.js) */
+.sitags { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+.sitag { position: absolute; transform: translate(-50%, .02rem); pointer-events: none; white-space: nowrap; font-size: max(.12rem, 9px); font-weight: 700;
+  line-height: 1.35; padding: 0 .05rem; letter-spacing: .03em; background: var(--ice); color: var(--ice-900); box-shadow: 0 1px 3px rgba(0, 0, 0, .7); opacity: .92; }
+.sitag--board { background: #c2e3ff; }
+.gm.is-dragging .sitags { display: none; }
 
 /* ---- underframe: the selection diamond of a tapped own piece (ui/underframe.js): 撤退 / 出售 +N / 销毁 ----
    It sits above every HUD panel (detail card z 9, bond popup, drawer, shop bar): only its buttons take pointer events,

@@ -86,6 +86,7 @@ import { openGuide } from '../ui/guide.js';
 import { actions } from '../ui/gameActions.js';
 import { FacingWheel, holdPiece, setPieceDir, syncPieceDirs, showRange, useTileScreen } from '../ui/facingWheel.js';
 import { Underframe, underframeRect, TempRowNotice } from '../ui/underframe.js';
+import { StandInTags } from './game/standInTags.js';
 import { needsFacing, facingIntent, previewGrid, pieceDir, underframeActions, retreatSlot, itemDestroyable } from '../ui/facing.js';
 import { EquipReplaceDialog, replaceRequest, replaceIntent } from '../ui/equipReplace.js';
 import { pauseAvailable, isPaused, frozenNow } from '../ui/matchStatus.js';
@@ -94,7 +95,7 @@ import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
   snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
-  previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, chessLoadout, unitLoadout,
+  previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
   mergeTarget, modeOffBonds, readyFundsPrompt, ownerBandId,
 } from '../ui/gameLogic.js';
 import { toast } from '../ui/toasts.js';
@@ -237,7 +238,7 @@ function MatchScreen() {
   const deployField = deployFieldOf(pub, myId);
   const placeCtx = useMemo(() => placementContext({
     priv, stage: gd.stage(pub?.stageId), editable, field: deployField,
-    getChess: gd.chess, getToken: gd.token, getItem: gd.item, getEffect: gd.effect,
+    getChess: gd.chess, getToken: gd.token, getItem: gd.item, getEffect: gd.effect, backups: gd.backups,
   }), [priv, pub?.stageId, editable, gd.ready, deployField]);
   live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, selBusy, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
 
@@ -718,7 +719,7 @@ function MatchScreen() {
     // the drop target is the tile under the pointer (render/drag.js; an item dropped on a unit's tile equips that unit —
     // user playtest #4 item 1); `tile` = the last target tile (tileHover), `released` = the pointer went up (not a cancel)
     const ptr = { released: false, tile: null };
-    const lookups = { getChess: gd.chess, getToken: gd.token, getItem: gd.item, chessRecord: (rec) => chessLoadout(rec, live.current.priv?.loadout ?? null, gd.chess)?.record };
+    const lookups = { getChess: gd.chess, getToken: gd.token, getItem: gd.item, chessRecord: (rec) => deployedRecord(rec, live.current.priv, gd.chess, gd.backups) };
     const runIntent = async (intent) => {
       const L = live.current;
       if (intent.confirmReplace) {
@@ -886,9 +887,10 @@ function MatchScreen() {
   }, []);
 
   // ---- direction step (research 09 §1.2) and the selected piece's underframe ------------------------------------
-  // DESIGN §16: previews show the range the unit fights with under the player's loadout (an elite's module grid)
+  // DESIGN §16: previews show the range the unit fights with under the player's loadout (an elite's module grid); a
+  // chess the player does not own the range of its stand-in (0.2.0 补位, gameLogic deployedRecord)
   const lookups = useMemo(() => ({ getChess: gd.chess, getToken: gd.token, getItem: gd.item,
-    chessRecord: (rec) => chessLoadout(rec, live.current.priv?.loadout ?? null, gd.chess)?.record }), [gd.ready]);
+    chessRecord: (rec) => deployedRecord(rec, live.current.priv, gd.chess, gd.backups) }), [gd.ready]);
   const heldRef = useRef(new Map());                     // uid → { row, col, t } committed placements awaiting m.private
   const releaseHold = useCallback((uid) => {
     heldRef.current.delete(uid);
@@ -984,7 +986,7 @@ function MatchScreen() {
     const u = (Array.isArray(field?.units) ? field.units : []).find((x) => x && x.id === detail.unitId);
     return u ? { ...detail, unit: u } : detail;
   }, [detail, field]);
-  const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces), [detailTarget, placeCtx]);
+  const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces, { priv, backups: gd.backups }), [detailTarget, placeCtx, gd.ready]);
   useEffect(() => { if (detail && !resolved && detail.kind === 'piece') setDetail(null); }, [resolved]);
   const snapHp = (() => {
     const id = resolved?.unitId;
@@ -1198,6 +1200,7 @@ function MatchScreen() {
     <div class="gm__vignette" aria-hidden="true"></div>
     ${tempNotice ? html`<${TempRowNotice} view=${view} count=${temp.count} items=${temp.items} label=${!drag && !facing}
       ready=${phase === PHASE.PREP && !!priv?.ready} />` : null}
+    ${showPrep && view && viewKind !== 'loading' && priv && !pen ? html`<${StandInTags} view=${view} priv=${priv} getChess=${gd.chess} backups=${gd.backups} />` : null}
 
     <div class="gm__hud" ref=${hudElRef}>
       <${TopBar} pub=${pub} priv=${priv} conn=${conn} hud=${hud} total=${total} drawer=${drawer}
@@ -1254,7 +1257,7 @@ function MatchScreen() {
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}
         bandId=${scoutBandId} bandOwner=${scoutBandOwner}
-        onEnemy=${(k, n) => setDetail({ kind: 'enemy', id: k, count: n })} onChess=${(id) => setDetail({ kind: 'chess', id })} />` : null}
+        onEnemy=${(k, n) => setDetail({ kind: 'enemy', id: k, count: n })} onChess=${(id) => setDetail({ kind: 'chess', id, foreign: true })} />` : null}
 
       ${bondPop ? html`<${BondPopup} bondId=${bondPop.bondId} entry=${bondPop.entry} priv=${bondPop.priv} banned=${pub?.bannedChess || []} owner=${bondPop.name}
         off=${offBonds.has(bondPop.bondId)}

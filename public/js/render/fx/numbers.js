@@ -59,7 +59,7 @@ export class FxNumbers {
     this.particle('glow', px, py, { tint, life: 0.18, s0: (s / 128) * (big ? 1.0 : 0.6), s1: (s / 128) * (big ? 1.5 : 0.9), a0: 0.9, a1: 0 });
     if (melee) { this._slashAt = null; this._slash(view, srcView, px, py, s, style, big); }
     this.burst(px, py, s, big ? 8 : melee ? 6 : 4, tint, { speed: melee ? 2.8 : 2.4, size: big ? 0.6 : 0.46 });
-    if (srcView && this.ctx.subProfOf && SPLASH_SUBS.has(this.ctx.subProfOf(srcView.info?.defId))) {
+    if (srcView && this.ctx.subProfOf && SPLASH_SUBS.has(this.ctx.subProfOf(srcView.info?.defId, srcView.info))) {
       if (!this._lastRing || this.time - this._lastRing > 0.08) {
         this._lastRing = this.time;
         this.ring(view.x, view.y, view.z || 0, 0.1, 1.1, tint, 0.3);

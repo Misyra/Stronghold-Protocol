@@ -64,6 +64,13 @@
 //     (or outside a room) it simply replaces the stored one; while the room's match runs it is also handed to
 //     match.setLoadout(playerId, loadout), which accepts it only during INFO_CHECK (the 干员调配 entry of the briefing)
 //     and refuses it afterwards (WRONG_PHASE: the match's loadout is locked, the stored one applies to the next match).
+//   * Operator ownership (干员持有, 0.2.0 补位, owner's decision 2026-10-05): room.ownership { notOwned } — the base chess
+//     ids the player marked as not owned — is checked leniently (shared/protocol.js checkNotOwned: anything that is not
+//     a droppable NORMAL chess is dropped, never the whole list; only a malformed list is BAD_MSG) and stored on the
+//     session and the seat like the loadout. The match receives seats[].notOwned when it starts (bots: none — they own
+//     every operator) and keeps it for its whole length: the setting is out of match ("局外设置，下一局生效"), so while
+//     the room's match runs a new list is only stored for the next match (ROOM_STARTED 'stored for the next match',
+//     never handed to the match). A spectator's list stays on its session.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -71,15 +78,15 @@
 //     {empty} for its spectators). It receives room.state (`spectators: [{ playerId, name, connected }]`) and every match
 //     broadcast (m.public, m.ticker, m.emote, b.pool — public data); the match registers it (opts.spectators /
 //     addSpectator) and shows it fields like an eliminated player (b.start watch / m.field), never an m.private. It may
-//     only g.watch (the heavy bucket, like every watcher), g.leave / room.leave, and room.loadout (stored for its session,
-//     never handed to the match); anything else → SPECTATOR (▸ emotes too). Host: room.removeSpectator { playerId } any
+//     only g.watch (the heavy bucket, like every watcher), g.leave / room.leave, and room.loadout / room.ownership (stored
+//     for its session, never handed to the match); anything else → SPECTATOR (▸ emotes too). Host: room.removeSpectator { playerId } any
 //     time → room.closed {kicked} to it. A spectator in a LOBBY room may take a free player seat with room.join of the same
 //     code; a player never switches to spectating in place (ALREADY). Disconnect / grace / reconnect / expiry work as for
 //     a player seat (the seat is kept and given back on resume).
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
-import { checkLoadout } from '../shared/protocol.js';
+import { checkLoadout, checkNotOwned } from '../shared/protocol.js';
 import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
@@ -109,7 +116,8 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /**
  * @typedef {{ seat: number, playerId: string, name: string, isBot: boolean, ready: boolean,
- *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null }} Seat
+ *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null,
+ *             notOwned?: readonly string[] | null }} Seat
  */
 
 /** Deep-frozen copy of a checked loadout (shared by the session, the seat and the match's PlayerState). */
@@ -289,6 +297,7 @@ export class Lobby {
       case 'room.kick': return this.kick(session, msg);
       case 'room.start': return this.start(session);
       case 'room.loadout': return this.loadout(session, msg);
+      case 'room.ownership': return this.ownership(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
       case 'room.removeSpectator': return this.removeSpectator(session, msg);
       default:
@@ -575,6 +584,24 @@ export class Lobby {
     return OK;
   }
 
+  /**
+   * room.ownership (0.2.0 补位): keep the droppable chess of the not-owned list, store it on the session and the seat
+   * (see the header). A running match never takes it: it keeps the list its seat had at its start.
+   */
+  ownership(session, { notOwned }) {
+    const data = this.safeData();
+    const res = checkNotOwned(notOwned, (id) => lookup('chess', id, data));
+    if (!res || res.error) return fail(ERR.BAD_MSG, res && res.detail);
+    const list = Object.freeze(res.notOwned.slice());
+    session.notOwned = list;
+    const room = this.roomOf(session);
+    if (!room) return OK;
+    const seat = room.seatOf(session.playerId);
+    if (seat) seat.notOwned = list;
+    if (room.match && seat) return fail(ERR.ROOM_STARTED, 'stored for the next match');
+    return OK;
+  }
+
   // ---------------------------------------------------------------------------------------------------
   // Match wiring
   // ---------------------------------------------------------------------------------------------------
@@ -587,6 +614,8 @@ export class Lobby {
       seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, connected: s.connected,
       // DESIGN §16: the human's checked operator loadout (bots fight with the defaults)
       loadout: s.isBot ? null : s.loadout || null,
+      // 0.2.0 补位: the chess the human marked as not owned (bots own every operator)
+      notOwned: s.isBot ? null : s.notOwned || null,
     }));
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
     const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, sharedResult: null, results: new Map() };
@@ -845,6 +874,7 @@ export class Lobby {
     return {
       seat: idx, playerId: session.playerId, name: session.name, isBot: false, ready: false, connected: session.connected, left: false,
       loadout: session.loadout || null,
+      notOwned: session.notOwned || null,
     };
   }
 

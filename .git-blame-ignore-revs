@@ -1,0 +1,6 @@
+# Commits that only move code (0.2.0 refactor). git blame skips them with
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs   (or: git blame --ignore-revs-file .git-blame-ignore-revs)
+# and follows moved lines into other files with -C -C.
+
+# feedback5 R4: kits/tier1..6.js → kits/ops/ (one file per kit), kits/shared/, kits/index.js
+1169102d46742474bf0f0189d467c791984d9e05

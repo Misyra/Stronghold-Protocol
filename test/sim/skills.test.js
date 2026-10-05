@@ -434,7 +434,7 @@ test('spCostMul changes (绝技-style) keep SP within bounds and convert overflo
   assert.ok(u.skill.sp <= u.skill.spCost);
 });
 
-test('a deploy-time passive fires the skill animation window; a passive with a duration does not (yet)', () => {
+test('a deploy-time passive fires the skill animation window; a deploy-timed skill runs its duration (PR #109)', () => {
   // 琳琅诗怀雅 S1 仗义疏财 / S2 “见面礼”: kind 'passive', no duration — the sim used to start them silently, so the
   // client got no 'skill' event and never played the clip the manifest carries (player report follow-up). The window is
   // the same one an instant cast uses: on at the deployment, off 0.5 s later (SKILL_ANIM_WINDOW), the passive itself
@@ -450,11 +450,16 @@ test('a deploy-time passive fires the skill animation window; a passive with a d
   assert.deepEqual(h.eventsOf('skill').map((e) => e[2]), [1, 0], 'and closes 0.5 s later');
   assert.equal(u.skill.active, true, 'the passive itself never ends');
 
-  // a passive WITH a duration (缄默德克萨斯 S2 阵雨连绵, 8 s): left alone — the sim holds it active until death, so how
-  // long its stance should show is a separate question
+  // a deploy-timed skill (缄默德克萨斯 S2 阵雨连绵, 8 s) is a real duration skill since PR #109: on at the deployment
+  // (its own skill event, no 0.5 s window), off when the duration runs out, not ready again in that deployment
   const t = makeBattle({ units: [{ chessId: 'chess_char_4_16_a', row: 10, col: 6, skillIndex: 1 }], autoFinish: false, timeLimit: 30 });
   t.run(0.6);
-  assert.equal(t.unit('chess_char_4_16_a').skill.kind, 'passive');
-  assert.equal(t.unit('chess_char_4_16_a').skill.active, true);
-  assert.deepEqual(t.eventsOf('skill'), [], 'no window for a timed passive');
+  const tx = t.unit('chess_char_4_16_a');
+  assert.equal(tx.skill.kind, 'duration');
+  assert.equal(tx.skill.active, true);
+  assert.deepEqual(t.eventsOf('skill').map((e) => e[2]), [1], 'on at the deployment');
+  t.run(12);
+  assert.equal(tx.skill.active, false, 'the duration ran out');
+  assert.deepEqual(t.eventsOf('skill').map((e) => e[2]), [1, 0], 'and the skill ended');
+  assert.equal(tx.skill.ready, false, 'one charge per deployment');
 });

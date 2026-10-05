@@ -829,6 +829,32 @@ test('3_19 伺夜 S2 领袖的馈赠: +DP, the pack recovers HP, its next attack
   }
 });
 
+test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at full SP while the pack stands and holds no unused gift (PRTS 备注), never without the pack', () => {
+  for (const id of BOTH('chess_char_3_19_a')) {
+    const b = SB(id, 'skchr_vigil_2');
+    const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: [U(id, 'skchr_vigil_2', 10, 3)] });
+    const u = h.unit(id), p = h.b.getPlayer('p1');
+    h.run(1);
+    const w = u.trait.reinforcement;
+    assert.ok(w && w.alive, 'the pack stands');
+    const dp0 = p.dp;
+    fill(u);
+    assert.ok(h.runUntil(() => u.skill.activations === 1, 1), 'cast with nobody on the field');
+    approx(p.dp, dp0 + b.cost, 1e-6, '+cost DP at once');
+    assert.ok(w.mem.vigilGift, 'the pack holds the gift for its next attack');
+    fill(u);
+    h.run(3);
+    assert.equal(u.skill.activations, 1, '"狼群未获得此技能的充能时可触发": no second cast while the gift is unused');
+    // the gift spent (as by a bite), the pack gone: still no cast until a pack stands again
+    w.mem.vigilGift = null;
+    for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
+    assert.ok(!u.trait.reinforcement?.alive, 'no pack on the field');
+    h.step(2);
+    assert.equal(u.skill.activations, 1, '"仅场上存在狼群…时可触发": no pack, no cast');
+    done(h);
+  }
+});
+
 test('3_19 伺夜 精锐 module TAC-Y: ×165 % on pack-blocked enemies; "援军阻挡的敌人更容易受到我方的攻击" = those enemies taunt +1 (not the pack); TAC-X guard not applied', () => {
   const id = 'chess_char_3_19_b', mod = 'uniequip_003_vigil';
   const tb = ds.getChess(id, { moduleId: mod }).traitBb;

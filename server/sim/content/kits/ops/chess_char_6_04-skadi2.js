@@ -60,8 +60,10 @@ function skadi2(bb, chess, def) {
       onStart({ battle, unit }) { unit.hp = unit.s.maxHp; battle.fx('heal', { x: unit.x, y: unit.y, id: unit.id }); },
     },
     // S2 同葬无光之愿 (toggle): 鼓舞 ATK / DEF = atk / def × her ATK / DEF on every other ally of her (+ 海嗣) range,
-    // trait heal attack@atk_to_hp_recovery_ratio (trait pulse)
-    skchr_skadi2_2: { kind: 'toggle' },
+    // trait heal attack@atk_to_hp_recovery_ratio (trait pulse). 自动触发 with effects on her allies only (nothing to target):
+    // on as soon as it is ready (SP_FULL, like 魔王 S1 往昔萦绕身旁); until 0.2.0 the data's DEFAULT left it off until an
+    // enemy came into her (or a 海嗣's) range.
+    skchr_skadi2_2: { kind: 'toggle', trigger: 'SP_FULL' },
   };
   return {
     skills,

@@ -38,6 +38,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Grid, DEPLOY_REFUSED_TILES } from '../server/sim/grid.js';
 import { bandBondIds } from '../shared/bandBonds.js';
 import { statusKey, composeUnitRecord, standInRecord, unitForm } from '../shared/standIn.js';
+import { extendedGrid } from '../shared/loadoutRecord.js';
 
 // ===== CLI & IO ==================================================================================
 
@@ -474,6 +475,26 @@ const STANDIN_TRIGGER_DEVIATIONS = Object.freeze({
 });
 
 /**
+ * The attack range a MANUAL skill gives while it runs, when its text changes the attack range (ATTACK_RANGE_CHANGE): its
+ * own rangeId grid, else the operator's range grown by `ability_range_forward_extend` ("攻击距离+N": 空弦 S3, 史尔特尔
+ * S2 / S3, 异客 S2 — the kits' targeting.rangeExtend, extendedGrid as Battle._refreshRange); null for any other skill and
+ * for "被动效果：攻击范围扩大" (引星棘刺 S3: her own range while she carries it — shared/loadoutRecord.js attackRangeGrid).
+ */
+function activeAttackGrid(skill, baseGrid) {
+  const desc = skill.desc || '';
+  if (!ATTACK_RANGE_CHANGE.test(desc) || /被动效果：攻击范围扩大/.test(desc)) return null;
+  if (skill.rangeGrid?.length) return skill.rangeGrid.map((p) => p.slice());
+  const n = Math.round(Number(skill.bb?.ability_range_forward_extend) || 0);
+  return n > 0 && baseGrid?.length ? extendedGrid(baseGrid, n) : null;
+}
+
+/** True when grid `a` holds every tile of grid `b` and at least one more (`[dRow, dCol]` pairs, facing RIGHT). */
+function strictlyContains(a, b) {
+  const sa = new Set(a.map(([r, c]) => `${r},${c}`)), sb = new Set(b.map(([r, c]) => `${r},${c}`));
+  return sa.size > sb.size && [...sb].every((k) => sa.has(k));
+}
+
+/**
  * Resolve the auto-cast rule of a skill record (PRTS 卫戍协议/帮助 §作战阶段 技能操作 — the official skill strategies;
  * DESIGN §5.6):
  * - charId rows first (exact skillIndex, or −1 = every skill of the operator);
@@ -488,13 +509,20 @@ const STANDIN_TRIGGER_DEVIATIONS = Object.freeze({
  * - else DEFAULT (the basic strategy: ready + about to attack / heal);
  * - last, the deliberate deviations (TRIGGER_DEVIATIONS, per chess and skill; STANDIN_TRIGGER_DEVIATIONS, per stand-in
  *   unit and skill): `rule` from the table, `rawRule` the official row (a SKILL_RANGE deviation takes the skill's own
- *   range as `customRangeGrid`).
- * @param {object} skill record from buildSkill (skillId, skillType, desc, rangeGrid)
- * @param {{operator?: boolean, chessId?: string, unitCharId?: string}} opts operator = a chess (the 技能范围 strategy is
- *   written for 干员; summons keep DEFAULT); chessId = the chess's NORMAL id (TRIGGER_DEVIATIONS key); unitCharId = the
- *   character of a backups.json unit form (STANDIN_TRIGGER_DEVIATIONS key)
+ *   range as `customRangeGrid`);
+ * - and the owner's rule of 2026-10-05, a deliberate deviation like §21.29 (community report 「有的干员开技能后的攻击范围比
+ *   平时攻击范围大，但是怪走到平时的攻击范围内才会开技能」): an operator's MANUAL skill left on the basic strategy (DEFAULT,
+ *   no deviation of the table) whose attack range while it runs (activeAttackGrid) strictly contains the operator's own
+ *   range casts as soon as an enemy — a heal skill: an injured ally — is inside that larger range: ACTIVE_RANGE,
+ *   `customRangeGrid` = the running range, `rawRule` the official row. Other rows keep their rule (TAKE_DAMAGE waits for a
+ *   hit, SEARCH reads the initial range by its official row, CUSTOM_RANGE / SP_FULL / … have their own).
+ * @param {object} skill record from buildSkill (skillId, skillType, desc, rangeGrid, bb)
+ * @param {{operator?: boolean, chessId?: string, unitCharId?: string, baseGrid?: number[][]|null}} opts operator = a
+ *   chess (the 技能范围 strategy is written for 干员; summons keep DEFAULT); chessId = the chess's NORMAL id
+ *   (TRIGGER_DEVIATIONS key); unitCharId = the character of a backups.json unit form (STANDIN_TRIGGER_DEVIATIONS key);
+ *   baseGrid = the operator's own range at that status (ACTIVE_RANGE)
  */
-function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, chessId = null, unitCharId = null } = {}) {
+function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, chessId = null, unitCharId = null, baseGrid = null } = {}) {
   const rows = Object.values(ctx.ac.skillTriggerDataList || {});
   const manual = skill.skillType === 'MANUAL';
   const pick =
@@ -514,6 +542,10 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
   }
   if (deviation) return { rule: deviation, rawRule, customRangeGrid: null };
   const rule = TRIGGER_RENAME[rawRule] || rawRule;
+  if (rule === 'DEFAULT' && operator && manual && baseGrid?.length) {
+    const active = activeAttackGrid(skill, baseGrid);
+    if (active && strictlyContains(active, baseGrid)) return { rule: 'ACTIVE_RANGE', rawRule, customRangeGrid: active };
+  }
   let customRangeGrid = null;
   if (rawRule === 'CUSTOM_RANGE_SEARCH_ENEMY') {
     const rid = ctx.ac.skillRangeDict?.[skill.skillId];
@@ -886,7 +918,7 @@ function buildChess(ctx) {
       if (!se?.skillId || (i !== sIdx && !unlocked(se.unlockCond, phase, level))) return;
       const s = buildSkill(ctx, se.skillId, skillLevel, null, `chess ${chessId}`);
       if (!s) return;
-      s.trigger = resolveTrigger(ctx, char, shop.charId, i, s, { operator: true, chessId: baseId });
+      s.trigger = resolveTrigger(ctx, char, shop.charId, i, s, { operator: true, chessId: baseId, baseGrid: rec.rangeGrid });
       s.index = i;
       s.overrideTokenKey = se.overrideTokenKey || null;
       skillRecs.push(s);
@@ -1080,7 +1112,7 @@ function buildUnitForm(ctx, charId, status, { chessId = null, skillIndex = null 
     if (!se?.skillId || (i !== skillIndex && !unlocked(se.unlockCond, phase, level))) return;
     const s = buildSkill(ctx, se.skillId, skillLevel, null, label);
     if (!s) return;
-    s.trigger = resolveTrigger(ctx, char, charId, i, s, { operator: true, chessId, unitCharId: chessId ? null : charId });
+    s.trigger = resolveTrigger(ctx, char, charId, i, s, { operator: true, chessId, unitCharId: chessId ? null : charId, baseGrid: rangeGrid(ctx, rangeId) });
     s.index = i;
     s.overrideTokenKey = se.overrideTokenKey || null;
     skills.push(s);
@@ -3403,6 +3435,16 @@ function validateAll(f) {
         if (!s) err(`trigger deviation ${c.chessId}: no skill ${skillId}`);
         else if (s.trigger.rawRule !== 'TAKE_DAMAGE' || s.trigger.rule !== rule) err(`trigger deviation ${c.chessId} ${skillId}: ${s.trigger.rawRule} → ${s.trigger.rule}, expected TAKE_DAMAGE → ${rule}`);
         else if (rule === 'SKILL_RANGE' && (!s.rangeGrid?.length || JSON.stringify(s.trigger.customRangeGrid) !== JSON.stringify(s.rangeGrid))) err(`trigger deviation ${c.chessId} ${skillId}: SKILL_RANGE needs the skill's own range as customRangeGrid`);
+      }
+    }
+  }
+  // the owner's ACTIVE_RANGE rule (2026-10-05): a MANUAL skill of the basic strategy whose running range strictly contains
+  // the record's own range, and no other
+  for (const c of Object.values(chess)) {
+    for (const s of c.skills || []) {
+      if (s.trigger?.rule !== 'ACTIVE_RANGE') continue;
+      if (s.skillType !== 'MANUAL' || s.trigger.rawRule !== 'DEFAULT' || !c.rangeGrid?.length || !strictlyContains(s.trigger.customRangeGrid || [], c.rangeGrid)) {
+        err(`chess ${c.chessId} ${s.skillId}: ACTIVE_RANGE needs a MANUAL basic-strategy skill whose customRangeGrid strictly contains the record's range`);
       }
     }
   }

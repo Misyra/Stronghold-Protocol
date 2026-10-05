@@ -116,6 +116,11 @@ export default {
     const dpGain = (battle, unit, n) => { if (n > 0) { battle.addDp(unit.ownerId, n); fx(battle, 'dp', unit, { n }); } };
     // S2: the pack's empowered next attack (armed by the cast; ×scale on its hits; a kill pays once)
     const installGift = (battle, unit) => {
+      battle.on('tick', () => { // the cast: ready, the pack on the field, no unused gift on it (PRTS 备注)
+        const sk = unit.skill, w = wolfOf(unit);
+        if (!alive(unit) || !sk || !sk.ready || sk.active || !unit.canAct || unit.s.flags.silence || !w || w.mem.vigilGift) return;
+        sk.activate('SP_FULL');
+      }, { owner: unit });
       battle.on('beforeAttack', (ctx) => {
         const w = wolfOf(unit);
         if (!w || ctx.attacker !== w || !w.mem.vigilGift) return;
@@ -201,8 +206,12 @@ export default {
             if (w) addShadow(battle, unit, w);
           },
         }),
+        // (自动触发, PRTS 备注 「仅场上存在狼群，且狼群未获得此技能的充能时可触发技能」: no enemy needed — the kit casts it as soon
+        // as it is ready while the pack stands and holds no unused gift (installGift); until 0.2.0 the data's DEFAULT made it
+        // wait for 伺夜's own next attack, so it never fired with no enemy in his range)
         skchr_vigil_2: (s) => ({
           kind: 'instant',
+          trigger: 'NEVER',
           onStart({ battle, unit }) {
             dpGain(battle, unit, num(s.bb.cost, 0));
             const w = wolfOf(unit);

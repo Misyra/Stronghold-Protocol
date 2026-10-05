@@ -290,22 +290,37 @@ for (const [key, n] of Object.entries(DEATH_SPAWN)) {
 }
 
 for (const key of ['enemy_1207_sfji', 'enemy_1207_sfji_2']) {
-  test(`${nm(key)}: each attack spends a blade (+ATK); unspent blades become 矛头 on death (at least 1)`, () => {
+  // PRTS 天赋 "攻击力+X%，持有4个【断刃】 / 每次成功攻击后消耗1个【断刃】，攻击结束时若已耗尽【断刃】，则立刻切换为无断刃模式并失去攻击力
+  // 加成" (popup: "清空当次攻击间隔" — it attacks again at once); GitHub #107: until 0.2.0 each attack stacked another layer
+  test(`${nm(key)}: one ATK layer while it holds a blade, gone with the 4th attack (which is followed at once by the next); unspent blades become 矛头 on death (at least 1)`, () => {
+    const per = tb(key, 'Atkup.atk') ?? tb(key, 'AtkUp.atk'), cnt = tb(key, 'DeadSpawn.cnt');
     const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 5 }] });
     h.step();
     const e = put(h, key, [9, 5]);
-    const base = e.s.atk;
+    const base = e.base.atk;
+    approx(e.s.atk, base * (1 + per), 1e-6, 'holding 4 blades: one layer from the spawn');
     h.runUntil(() => e.stats.attacks >= 2, 20);
-    const per = tb(key, 'Atkup.atk') ?? tb(key, 'AtkUp.atk');
-    approx(e.s.atk, base * (1 + 2 * per));
-    killed(h, e, null);
+    approx(e.s.atk, base * (1 + per), 1e-6, 'two blades spent: still one layer (never stacked)');
+    h.runUntil(() => e.stats.attacks >= cnt, 20);
+    approx(e.s.atk, base, 1e-6, 'the last blade spent: 无断刃模式, no bonus');
+    const tLast = h.b.time;
+    assert.ok(h.runUntil(() => e.stats.attacks >= cnt + 1, 0.2), 'the mode switch clears the attack interval: the next attack at once');
+    assert.ok(h.b.time - tLast < e.s.interval / 2, `${h.b.time - tLast} s after the 4th attack`);
     const child = E[key].talents.bbStr['DeadSpawn.enemy_key'];
-    assert.equal(alive(h, child).length, tb(key, 'DeadSpawn.cnt') + tb(key, 'DeadSpawn.cnt_add') * 2);
-    const h2 = arena();
+    killed(h, e, null);
+    assert.equal(alive(h, child).length, 1, 'no blade left: still one 矛头');
+    // killed after two attacks: the two unspent blades; untouched: all four
+    const h2 = arena({ units: [{ chessId: 't_wall', row: 9, col: 5 }] });
     h2.step();
-    const e2 = put(h2, key, [10, 7]);
+    const e2 = put(h2, key, [9, 5]);
+    h2.runUntil(() => e2.stats.attacks >= 2, 20);
     killed(h2, e2, null);
-    assert.equal(alive(h2, child).length, tb(key, 'DeadSpawn.cnt'));
+    assert.equal(alive(h2, child).length, cnt + tb(key, 'DeadSpawn.cnt_add') * 2);
+    const h3 = arena();
+    h3.step();
+    const e3 = put(h3, key, [10, 7]);
+    killed(h3, e3, null);
+    assert.equal(alive(h3, child).length, cnt);
   });
 }
 

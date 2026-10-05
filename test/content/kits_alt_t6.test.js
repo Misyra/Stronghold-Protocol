@@ -366,6 +366,23 @@ test('6_04 浊心斯卡蒂 S2 同葬无光之愿: toggle; 鼓舞 ATK and DEF (at
   }
 });
 
+test('6_04 浊心斯卡蒂 S2 同葬无光之愿 (自动触发, effects on her allies only): on as soon as its SP is full — no enemy needed', () => {
+  for (const id of both('chess_char_6_04')) {
+    const sid = 'skchr_skadi2_2';
+    const h = run({
+      defs: { chess: { ally_a: plain('ally_a', { stats: { maxHp: 1e5, atk: 400, def: 100 } }) } },
+      units: [U(id, sid, 10, 4, { carryState: READY }), { chessId: 'ally_a', row: 10, col: 5 }],
+    });
+    const u = h.unit(id), a = h.unit('ally_a');
+    usesSkill(u, sid);
+    assert.equal(u.skill.rule, 'SP_FULL');
+    assert.ok(h.runUntil(() => u.skill.active, 2), 'on with nobody on the field (the data DEFAULT waited for an enemy in her range)');
+    h.run(1.1);
+    assert.ok(a.findBuff('inspire') && a.findBuff('inspire:def'), '鼓舞 on the ally beside her');
+    done(h);
+  }
+});
+
 // =================================================================================================================
 // 6_05 异客
 

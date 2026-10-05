@@ -1,9 +1,13 @@
 // server/match/match/messaging.js — Match methods: messaging — unicast, broadcast, toasts, the ticker lines
 // (config.broadcasts by type; the remake's CUSTOM lines), the dirty marks and flush: m.private per player only when it
 // changed (plus the prep scouts of that player's board), m.public throttled (DELAYS.PUBLIC_THROTTLE) and deduplicated.
+// i18n (docs/I18N.md): a toast / CUSTOM line is a string (its own msgid) or a shared/i18n.js msg(msgid, params); the frame
+// carries `text` (the Chinese rendering, what older clients show) plus `msgid` / `params`; a broadcast line carries its
+// `args` so the client can fill the localized config.broadcasts template.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { DELAYS } from './common.js';
+import { wireMessage } from '../../../shared/i18n.js';
 
 export class MatchMessaging {
   sendTo(playerId, msg) {
@@ -18,9 +22,10 @@ export class MatchMessaging {
     try { this.broadcastFn(msg); } catch (e) { this.reportError('broadcast', e); }
   }
 
+  /** @param {string|{ msgid: string, params?: object }} text a string or msg() (shared/i18n.js) */
   toast(ps, kind, text) {
     if (!ps || ps.isBot || ps.left || !ps.connected) return;
-    this.sendTo(ps.playerId, { t: 'm.toast', kind, text });
+    this.sendTo(ps.playerId, { t: 'm.toast', kind, ...wireMessage(text) });
   }
 
   /** Broadcast ticker from config.broadcasts by type; `param` picks the variant (SHOP_LEVEL level, BOSS_HIT share…). */
@@ -31,7 +36,7 @@ export class MatchMessaging {
     const tpl = b && typeof b.text === 'string' ? b.text : null;
     if (!tpl) return;
     const text = tpl.replace(/\{(\d)\}/g, (_, i) => (args[Number(i)] != null ? String(args[Number(i)]) : ''));
-    const msg = { t: 'm.ticker', text, id: b.id, type, priority: Number(b.priority) || 0, playerId };
+    const msg = { t: 'm.ticker', text, id: b.id, type, priority: Number(b.priority) || 0, playerId, args: args.map((a) => String(a ?? '')) };
     if (to) this.sendTo(to, msg);
     else this.broadcast(msg);
   }
@@ -42,7 +47,8 @@ export class MatchMessaging {
    */
   tickerText(text, priority = 0) {
     if (!text) return;
-    this.broadcast({ t: 'm.ticker', text: String(text).slice(0, 200), id: null, type: 'CUSTOM', priority: Number(priority) || 0, playerId: null });
+    const w = wireMessage(text);
+    this.broadcast({ t: 'm.ticker', ...w, text: w.text.slice(0, 200), id: null, type: 'CUSTOM', priority: Number(priority) || 0, playerId: null });
   }
 
   markPublic() { this._pubDirty = true; }

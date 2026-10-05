@@ -1,6 +1,6 @@
 // Player settings (BGM/SFX volume, mute, damage numbers, render quality): a tiny observable store
 // persisted in localStorage (`sp.pref.settings`), applied to the audio manager on every change, plus
-// the settings modal.
+// the settings modal — which also holds the language switch (ui/lang.js; kept apart in `sp.pref.lang`).
 
 import { useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button, Icon, MicroLabel } from './components.js';
@@ -9,6 +9,8 @@ import { sanitizeSettings } from './gameLogic.js';
 import { audio } from '../audio.js';
 import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
+import { LangToggle } from './lang.js';
+import { t, tc, N_ } from '../../../shared/i18n.js';
 
 /** Settings store: { bgm, sfx, muted, damageNumbers, quality }. */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
@@ -41,11 +43,14 @@ function Toggle({ label, micro, value, onChange }) {
   return html`<div class="set-row">
     <span class="set-row__label">${label}<${MicroLabel}>${micro}<//></span>
     <button type="button" class=${`set-toggle${value ? ' is-on' : ''}`} role="switch" aria-checked=${value ? 'true' : 'false'}
-      onClick=${() => onChange(!value)}><i></i><span>${value ? '开启' : '关闭'}</span></button>
+      onClick=${() => onChange(!value)}><i></i><span>${value ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
   </div>`;
 }
 
-const QUALITY = [['high', '高'], ['medium', '中'], ['low', '低']];
+const QUALITY = [['high', N_('高')], ['medium', N_('中')], ['low', N_('低')]];
+/** Desktop shortcuts of the hint line: key → action (msgids). */
+const SHORTCUTS = [['R', N_('刷新')], ['F', N_('冻结')], ['D', N_('升级')], ['Q', N_('撤退选中干员')], ['X', N_('出售选中干员')],
+  ['Space', N_('准备就绪')], ['Esc', N_('关闭弹窗')]];
 
 /**
  * Settings modal.
@@ -55,25 +60,29 @@ export function SettingsModal({ open, onClose }) {
   const s = useSettings();
   const [tested, setTested] = useState(false);
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
-  return html`<${Modal} open=${open} onClose=${onClose} title="设置" micro="SETTINGS" width="7.4rem"
-    actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>玩法说明<//>
-      <${Button} variant="primary" icon="check" onClick=${onClose}>完成<//>`}>
+  return html`<${Modal} open=${open} onClose=${onClose} title=${t('设置')} micro="SETTINGS" width="7.4rem"
+    actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>${t('玩法说明')}<//>
+      <${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
     <div class="set-list">
-      <${Slider} label="背景音乐" micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
-      <${Slider} label="音效" micro="SFX" icon="signal" value=${s.sfx}
-        onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
-      <${Toggle} label="静音" micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
-      <${Toggle} label="显示伤害数字" micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
       <div class="set-row">
-        <span class="set-row__label">画面质量<${MicroLabel}>QUALITY<//></span>
+        <span class="set-row__label">${t('语言')}<${MicroLabel}>LANGUAGE<//></span>
+        <${LangToggle} class="set-lang" />
+      </div>
+      <${Slider} label=${t('背景音乐')} micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
+      <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}
+        onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
+      <${Toggle} label=${t('静音')} micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
+      <${Toggle} label=${t('显示伤害数字')} micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
+      <div class="set-row">
+        <span class="set-row__label">${t('画面质量')}<${MicroLabel}>QUALITY<//></span>
         <div class="set-seg" role="radiogroup">
           ${QUALITY.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.quality === id ? 'true' : 'false'}
-            class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${label}</button>`)}
+            class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
         </div>
       </div>
       ${touchUi
-        ? html`<p class="set-hint">触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向</p>`
-        : html`<p class="set-hint">快捷键：<kbd>R</kbd> 刷新 · <kbd>F</kbd> 冻结 · <kbd>D</kbd> 升级 · <kbd>Q</kbd> 撤退选中干员 · <kbd>X</kbd> 出售选中干员 · <kbd>Space</kbd> 准备就绪 · <kbd>Esc</kbd> 关闭弹窗 · 右键查看详情</p>`}
+        ? html`<p class="set-hint">${t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向')}</p>`
+        : html`<p class="set-hint">${t('快捷键：')}${SHORTCUTS.map(([key, label]) => html`<kbd>${key}</kbd> ${t(label)} · `)}${t('右键查看详情')}</p>`}
     </div>
   <//>`;
 }

@@ -23,6 +23,7 @@ import {
 import { planLayout } from '../../server/match/bot.js';
 import { collectViolations } from '../../server/match/invariants.js';
 import { DATA, makeMatch, give, chessOfTier, checkInvariants } from './harness.js';
+import { renderMessage } from '../../shared/i18n.js';
 
 const STAGE = 'act2autochess_m01';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -115,7 +116,8 @@ describe('#7 the Final Assault prep deploys on the boss field', () => {
     h.drive(() => m.phase === PHASE.PREP && m.round === m.gd.bossRound);
     const toasts = [];
     const toast = m.toast.bind(m);
-    m.toast = (ps, kind, text) => { toasts.push(`${ps.playerId}:${text}`); return toast(ps, kind, text); };
+    // a toast is a string or a shared/i18n.js msg(): compare its Chinese rendering
+    m.toast = (ps, kind, text) => { toasts.push(`${ps.playerId}:${renderMessage(text)}`); return toast(ps, kind, text); };
     const fields = [];
     m.deployFieldOf = ((orig) => function (ps) { const f = orig.call(this, ps); if (this.round === this.gd.hiddenRound) fields.push(f); return f; })(m.deployFieldOf);
     const placed = {};

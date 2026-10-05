@@ -8,6 +8,7 @@
 // the player state).
 
 import { PHASE } from '../../../shared/constants.js';
+import { msg, dn } from '../../../shared/i18n.js';
 import { checkLoadout, checkNotOwned, resolveLoadout } from '../../../shared/protocol.js';
 import { tileKey, boardOrder } from '../board.js';
 
@@ -175,7 +176,7 @@ export class PlayerBasics {
         }
       }
     }
-    if (names.length) this.m.toast(this, 'warn', `地形变化：${names.join('、')}无法停留在原位置，已撤回整备区`);
+    if (names.length) this.m.toast(this, 'warn', msg('地形变化：{names}无法停留在原位置，已撤回整备区', { names: names.map(dn) }));
     return moved;
   }
 

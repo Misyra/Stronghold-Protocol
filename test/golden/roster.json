@@ -2392,7 +2392,7 @@
       "hooks": [1,171,5928,875,875,4471,4472,570,160,160,28,22,57,16607,2339,99,157,0,1,162,2,0,0],
       "events": {"atk":1462,"bounty":4,"deploy":14,"die":160,"dmg":4472,"fx":109,"heal":476,"layer":2,"skill":50,"spawn":169,"status":484},
       "fx": {"aoe":13,"explode":1,"extraAttack":12,"garrison":2,"garrisonGrant":4,"overload":4,"reborn":2,"shieldBreak":60,"sleepGuard":3,"sunBurst":3,"talent":3,"undying":2},
-      "snaps": "5650a99f 06b14bc4 3c7f90df cf359f4e 480510fd 8e81f273 ec14a81a 0825a60e e99490fb 7ad74476 4390230d b7c4e053 520f67e8 c3129ede 1c0767c5 ece8a0cf 9c740ad6 7ce51ab8 b1470a6b c5a3183e"
+      "snaps": "5650a99f 06b14bc4 3c7f90df cf359f4e 7f409ef5 957fdbbb 569273e2 cb682916 c0778723 26f39f3e 59c6cbf5 1587263b 4a25f8a0 ccfcceb6 e38b8fdd 7df9d9d7 fefbca2e 276eab30 e0bc20b3 d59aebb6"
     },
     "roster-039": {
       "about": "pass 2 band 4: chess_char_3_12_a chess_char_3_12_b chess_char_3_18_a chess_char_3_18_b chess_char_3_04_a chess_char_3_05_a chess_char_3_04_b chess_char_3_05_b chess_char_3_01_a chess_char_3_19_a chess_char_3_21_a chess_char_3_01_b token_10028_vigil_wolf",

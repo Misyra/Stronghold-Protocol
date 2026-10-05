@@ -604,8 +604,10 @@ A **form** holds the operator fields of a chess record with **nothing selected**
 `isDefault`; `displayTokens` / `tokens` (summons — none of the 17 has one); at `equipLevel > 0` `modules[]` (§2.2 shape
 without `isDefault`). `buildUnitForm` uses buildChess's helpers and rules, and the build fails when `buildUnitForm` +
 `composeUnitRecord` do not give back every PRESET chess field for field (each is its own backup), so a later change to
-buildChess that the stand-ins would miss stops the build. No trigger deviation (§2.2, DESIGN §21.29) applies to a form —
-the deviations name chess, so the 重装 stand-ins (预备干员-重装, Mechanist) keep the official `TAKE_DAMAGE` row.
+buildChess that the stand-ins would miss stops the build. The chess trigger deviations (§2.2, DESIGN §21.29) name chess
+and never apply to a form; the 重装 stand-ins have their own, by charId (`tools/build-data.mjs STANDIN_TRIGGER_DEVIATIONS`,
+the owner's decision of 2026-10-05 in the approved 补位 plan): every skill of 预备干员-重装 and Mechanist is `DEFAULT` —
+cast with an enemy in range — with `rawRule` the official `TAKE_DAMAGE`, on every form.
 
 **Composition** (`shared/standIn.js`, pure ESM for the server, the sim and the client): `standInRecord(chess, backups)` is
 the NORMAL chess as its stand-in — `IDENTITY_FIELDS` (ids, tier, `isHidden` / `visible`, `chessType`, `backup`, `bonds`,
@@ -613,9 +615,10 @@ the NORMAL chess as its stand-in — `IDENTITY_FIELDS` (ids, tier, `isHidden` / 
 with `backup.skillIndex` / `backup.uniEquipId` as the defaults, plus `standInFor` (the replaced charId: the official 补位
 mark on the avatar). The result is shaped exactly like a chess record (`skill` = the `isDefault` entry of `skills[]`;
 elite `statsBase` / `traitBase` / `talentsBase` / `modules[]`), so `normalizeChess`, `resolveLoadout` (no loadout ⇒ the
-backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DIY chess. **Kits are keyed by base chess
-id** (`server/sim/content/index.js setupUnitKit`): a stand-in keeps the chess's ids, so its kit must be found by its
-`charId`. `diyRecord(slot, charId, backups, { skillIndex, moduleId })` fills a DIY slot with a prototype (the slot's
+backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DIY chess. **In battle** a PlayerBattleInput
+entry with `standIn: true` is fielded as `getChess(chessId, { standIn: true })` (docs/SIM.md §12: this record, normalised),
+and its kit is found by its `charId` (`server/sim/content/index.js kitOf`; kits/README.md "Stand-in kits") — never by
+the chess id it keeps, which names the replaced operator's kit. `diyRecord(slot, charId, backups, { skillIndex, moduleId })` fills a DIY slot with a prototype (the slot's
 tier and price, no 特质, the pick's derived bonds); which skill a prototype carries in a slot is not in the data.
 
 `diy`:

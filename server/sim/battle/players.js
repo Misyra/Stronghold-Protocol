@@ -102,8 +102,11 @@ export class BattlePlayers {
       return u;
     }
     // the unit's own loadout (DESIGN §16): an entry without loadout fields is the DEFAULT — never another player's
-    // choice for the same chess id in a multi-player field (the per-battle data view maps id-only lookups)
-    const def = this.data.getChess(inp.chessId, { skillIndex: inp.skillIndex ?? null, moduleId: inp.moduleId ?? null });
+    // choice for the same chess id in a multi-player field (the per-battle data view maps id-only lookups); `standIn:
+    // true` fields the chess as its 补位 stand-in (simdata getStandIn: the stand-in's body, the chess's identity)
+    const lo = { skillIndex: inp.skillIndex ?? null, moduleId: inp.moduleId ?? null };
+    if (inp.standIn === true) lo.standIn = true;
+    const def = this.data.getChess(inp.chessId, lo);
     if (!def) { this.log(`unknown chess ${inp.chessId}`); return null; }
     const u = this._makeAlly(ps, def, 'op', r, c, { uid: inp.uid, dir });
     u.items = [...(inp.items ?? [])];

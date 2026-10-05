@@ -8,6 +8,12 @@
 // Each file is loaded with a guarded dynamic import, so this runs unchanged in the browser (/sim/, no Node-only
 // module, no directory listing): a file that fails to load (syntax error, throwing top-level code, missing file) is
 // logged and skipped — its chess falls back to the generic kit — instead of breaking the server or the page.
+//
+// 补位 stand-in kits (DATA.md §18): STANDIN_KIT_FILES lists `ops/standin-<codename>.js`, one per stand-in character
+// (codename = its charId without `char_<n>_`: `standin-acguad.js` = Sharp, char_609_acguad); each registers exactly one
+// key, that charId. A stand-in keeps the ids of the chess it replaces, so content/index.js kitOf finds its kit by
+// `def.charId` only, never by the chess id (the replaced operator's kit). STANDIN_KITS is merged into KITS after every
+// tier group: the chess keys keep their order, and `char_…` keys never meet `chess_char_…` ones.
 
 export const KIT_FILES = Object.freeze([
   // tier 1
@@ -53,6 +59,13 @@ export const KIT_FILES = Object.freeze([
     'chess_char_6_20-agoat2.js'],
 ].map((group) => Object.freeze(group)));
 
+/**
+ * The 补位 stand-in kit files (`ops/standin-<codename>.js`, registry key = the stand-in's charId; a new file is appended).
+ * A stand-in without a file fights with the generic kit (content/generic.js) plus its unconditional stat talents
+ * (genericTalents) — the eight 预备干员 need no file.
+ */
+export const STANDIN_KIT_FILES = Object.freeze([]);
+
 async function loadKitFile(file) {
   try {
     return await import(`./ops/${file}`);
@@ -63,10 +76,14 @@ async function loadKitFile(file) {
 }
 
 const MODULES = await Promise.all(KIT_FILES.map((group) => Promise.all(group.map(loadKitFile))));
+const STANDIN_MODULES = await Promise.all(STANDIN_KIT_FILES.map(loadKitFile));
 const registryOf = (m) => (m && m.default && typeof m.default === 'object' ? m.default : {});
 
 /** The registry of each tier group (index 0 = tier 1): baseChessId → kit builder, in KIT_FILES order. */
 export const TIER_KITS = Object.freeze(MODULES.map((group) => Object.assign({}, ...group.map(registryOf))));
 
-/** The merged kit registry: baseChessId → (bb, chess, def) => Kit, tier 1 … tier 6. */
-export const KITS = Object.freeze(Object.assign({}, ...TIER_KITS));
+/** The 补位 stand-in kits: stand-in charId → kit builder, in STANDIN_KIT_FILES order. */
+export const STANDIN_KITS = Object.freeze(Object.assign({}, ...STANDIN_MODULES.map(registryOf)));
+
+/** The merged kit registry: baseChessId → (bb, chess, def) => Kit, tier 1 … tier 6, then the stand-ins' charIds. */
+export const KITS = Object.freeze(Object.assign({}, ...TIER_KITS, STANDIN_KITS));

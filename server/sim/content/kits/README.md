@@ -9,14 +9,17 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 
 | path | what |
 |---|---|
-| `index.js` | the registry: `KIT_FILES` lists every kit file, grouped by tier; `KITS` (base chess id → kit builder) and `TIER_KITS` (one registry per tier group) are built from it |
+| `index.js` | the registry: `KIT_FILES` lists every kit file, grouped by tier, and `STANDIN_KIT_FILES` the 补位 stand-in kits; `KITS` (base chess id → kit builder, then stand-in charId → kit builder), `TIER_KITS` (one registry per tier group) and `STANDIN_KITS` are built from them |
 | `ops/<chessId>-<codename>.js` | one kit per file, with the helpers and constants only that kit uses |
+| `ops/standin-<codename>.js` | one 补位 stand-in kit per file (below: "Stand-in kits") |
 | `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
 | `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
 | `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
-id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4).
+id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4). A 补位 stand-in's
+kit is `KITS[def.charId]` and nothing else (`content/index.js kitOf`): it keeps the chess's ids, which name the replaced
+operator's kit.
 
 ## Naming
 
@@ -96,6 +99,36 @@ export default {
 4. `node --test test/content/kits_layout.test.js` checks the name, the registry entry and the imports;
    `node tools/kit-coverage.mjs --missing` lists selectable skills that still fall back to the generic spec.
 
+## Stand-in kits (补位)
+
+A NORMAL chess whose operator the player does not own fights as its official stand-in (原型干员, data/backups.json,
+docs/DATA.md §18): the chess's ids, bonds, 特质, tier and price, the stand-in's body — stats, range, trait, talents, the
+skill `backup.skillIndex` and the module `backup.uniEquipId` the chess names. The sim gets that def from
+`battle.data.getChess(chessId, { standIn: true })` (a PlayerBattleInput entry with `standIn: true`); `def.charId` is the
+stand-in's, `def.standInFor` the replaced operator's charId.
+
+- **File and key**: `ops/standin-<codename>.js`, the code name being the stand-in's charId without `char_<n>_`
+  (`standin-acguad.js` = Sharp, `char_609_acguad`); the default export has exactly one key, that charId:
+  `export default { char_609_acguad: (bb, chess, def) => Kit }`. Append the file name to `STANDIN_KIT_FILES` in
+  `index.js`. Never register a stand-in under a chess id: that is the replaced operator's kit, which the stand-in must
+  not run.
+- **Arguments**: `bb` = the blackboard of the skill the chess names, at the chess's level (normal Lv4, elite Lv7);
+  `chess` = the composed record (shared/standIn.js `standInRecord`: talents, `trait.bb`, `module` of the stand-in);
+  `def.tier` / `def.golden` tell which chess it stands in for.
+- **No default skill**: one stand-in takes S2 on one chess and S3 on another (Sharp: S2 for 银灰, S3 for 隐德来希), so the
+  kit authors every skill it supports in `skills: { [skillId]: SkillSpec }`; `skill` is ignored for a stand-in (a skill
+  missing from `skills` gets the generic spec). `talents`, `trait` and `install` apply as for any kit.
+- **Without a file** the stand-in fights with the generic kit plus the talents it can apply exactly
+  (`generic.js genericTalents`: unconditional stat lines like "攻击力+8%"). The eight 预备干员 need no file: their skills
+  (攻击力 / 防御力 / 治疗强化, 战术咏唱, 冲锋号令, 一击即退) are covered by the generic spec
+  (`test/content/standin.test.js`).
+- **Auto-cast**: the trigger comes from the data like any chess's (checklist item 5). The 重装 exception for the
+  stand-ins is `tools/build-data.mjs STANDIN_TRIGGER_DEVIATIONS` (预备干员-重装, Mechanist: every skill `DEFAULT`,
+  `rawRule` `TAKE_DAMAGE`).
+- **Summons**: no stand-in has one (DATA.md §18).
+- `node --test test/content/kits_layout.test.js` checks the file name, the key (a charId of data/backups.json `units`)
+  and the registry entry.
+
 ## Testing a kit
 
 - The harness is `test/helpers/battleHarness.js` (`makeBattle`, `runUntil`, `hooksOf`, `eventsOf`, `checkInvariants`;
@@ -111,6 +144,22 @@ export default {
   (`test/golden/README.md`). A refactor never changes them.
 - Run `node --test test/content/kits_layout.test.js test/golden.test.js <your test file>`, then
   `GOLDEN_FULL=1 node --test test/golden.test.js` before the pull request.
+
+### How to test a stand-in kit
+
+- Field the chess as its stand-in: `makeBattle({ units: [{ chessId: 'chess_char_5_13_b', row: 10, col: 4, standIn: true
+  }] })` — the production path (data/backups.json through `getChess(id, { standIn: true })`): `_a` = the normal form
+  (Lv4), `_b` = the elite (Lv7, its module), with the chess's backup skill. Pick one chess per skill the stand-in
+  fields (data/chess.json `backup`; `backups.json units[charId].standsIn` lists them).
+- Another skill or module of the stand-in (a skill no chess names, a 自选 prototype): `standIn: { skillIndex: 0 }` or
+  `standIn: { skillIndex: 2, moduleId: 'none' }` — the harness composes that record (`standInRec`) and puts it under the
+  chess id for the whole battle, so do not field the real operator of that chess in the same battle.
+- Inject a kit for a quick experiment with `kits: { char_609_acguad: (bb, chess, def) => Kit }` (keyed by the charId).
+- Assert that the unit is the stand-in (`u.def.charId`, `u.def.standInFor`, `u.skill.id`) and that its kit is yours, not
+  the generic one (`!u.kit.generic`); then the checklist below as for any operator. Examples:
+  `test/content/standin.test.js` (the plumbing and the eight 预备干员).
+- A stand-in kit is new gameplay for stand-ins only: the golden corpus fields no stand-in, so its digests stay as they
+  are.
 
 ## The fidelity rule
 
@@ -154,7 +203,7 @@ Each item is a mistake this project already made once. Tick every one for every 
   the rule, such as 烛煌 S3 in `feedback1e-skillrange.test.js`, are not examples of it); an AUTO skill that acts on
   allies or itself fires at full SP (引星棘刺 S1, `kits_alt_t5.test.js` "… fires as soon as its SP is full, no enemy
   needed (GitHub #124)"); the 重装 exception list (`TRIGGER_DEVIATIONS`: 深巡 S2, 雷蛇 S2, 号角 S2 / S3, 灰毫 S1 / S2,
-  余 S2; the 预备干员-重装 / Mechanist stand-ins join it), DESIGN §21.29 / §22.10,
+  余 S2; the 预备干员-重装 / Mechanist stand-ins: `STANDIN_TRIGGER_DEVIATIONS`, every skill), DESIGN §21.29 / §22.10,
   `test/sim/feedback1-tank-triggers.test.js`.
 - [ ] **6. Targeting** — can it hit air units (`canHitFly`), ground-only attacks, block count, target priority; can
   ground enemies hit it (起飞 / 对地规避, stealth, camouflage flags). Examples: `test/sim/professions.test.js` "fortress

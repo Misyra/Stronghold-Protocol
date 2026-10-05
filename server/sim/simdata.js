@@ -16,6 +16,11 @@
 // match / UI (implemented in shared/loadoutRecord.js, re-exported here): resolveLoadout, loadoutRecord (the resolved
 // chess record), composeStats / composeTalents. (Which choices a player may make is shared/protocol.js
 // loadoutOptions / checkLoadout.)
+// 补位 stand-ins (DATA.md §18): `getChess(id, { standIn: true })` = the def of a NORMAL chess fielded as its official
+// stand-in (shared/standIn.js standInRecord over data/backups.json: the chess's ids, bonds, 特质, tier; the stand-in's
+// body, skill `backup.skillIndex` and module `backup.uniEquipId` — any other skill / module choice is ignored), with
+// `def.standInFor` = the replaced operator's charId and `def.charId` = the stand-in's (content/index.js looks its kit
+// up by that charId). A PRESET / DIY chess, or a source without backups.json, gives the chess's own def instead.
 //
 // This module is pure ESM shared with browsers (served at /sim/): no Node API is imported here. Under Node the default
 // loader (./nodeData.js) is imported dynamically at module evaluation; browsers never load it.
@@ -25,6 +30,7 @@
 //   getSimData()      the injected data (browser) or the generated data (Node), or null.
 
 import { resolveRecordLoadout, composeStats, composeTalents, loadoutRecord } from '../../shared/loadoutRecord.js';
+import { standInRecord } from '../../shared/standIn.js';
 import { normHitArea } from './body.js';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -193,6 +199,8 @@ export function normalizeChess(rec) {
     tokens: rec.tokens ?? [],
     spine: rec.assets?.spine ?? rec.spine ?? rec.charId ?? null,
     avatar: rec.assets?.avatar ?? rec.avatar ?? rec.charId ?? null,
+    // a 补位 stand-in (shared/standIn.js): the replaced operator's charId — `charId` is the stand-in's (absent otherwise)
+    ...(rec.standInFor ? { standInFor: rec.standInFor } : null),
     raw: rec,
   };
 }
@@ -509,7 +517,8 @@ export function freezeDef(d) {
 }
 
 /**
- * A DataSource resolves ids to normalised defs. `raw` is `{ chess, enemies, tokens, stages, waves }`.
+ * A DataSource resolves ids to normalised defs. `raw` is `{ chess, enemies, tokens, stages, waves, backups? }`
+ * (`backups` = data/backups.json `{ units, diy }`, the 补位 stand-ins: getChess(id, { standIn: true })).
  */
 export class DataSource {
   constructor(raw = {}, fallback = null) {
@@ -519,6 +528,7 @@ export class DataSource {
       tokens: asMap(unwrap(raw.tokens, 'tokens'), 'tokenId') ?? {},
       stages: asMap(unwrap(raw.stages, 'stages'), 'id') ?? {},
       waves: asMap(unwrap(raw.waves, 'waves'), 'id') ?? {},
+      backups: raw.backups && typeof raw.backups === 'object' && raw.backups.units ? raw.backups : null,
     };
     this.fallback = fallback;
     this._chess = new Map();
@@ -534,13 +544,22 @@ export class DataSource {
   rawToken(id) { return this.raw.tokens[id] ?? this.fallback?.rawToken(id) ?? null; }
   rawStage(id) { return this.raw.stages[id] ?? this.fallback?.rawStage(id) ?? null; }
   rawWave(id) { return this.raw.waves[id] ?? this.fallback?.rawWave(id) ?? null; }
+  /** data/backups.json (`{ units, diy }`) of this source or its fallback, or null. */
+  rawBackups() { return this.raw.backups ?? (typeof this.fallback?.rawBackups === 'function' ? this.fallback.rawBackups() : null); }
 
   /**
    * Chess def for the default loadout, or for `loadout` `{ skillIndex, moduleId }` (DESIGN §16; resolved with
    * resolveLoadout — illegal choices fall back to the default). `def.loadout` = the resolved loadout (null for records
    * without skill choices); `def.id` is always the chess id. Defs are cached per (id, resolved loadout).
+   * `loadout.standIn === true`: the 补位 def of the chess (getStandIn) — its skill and module are the chess's backup
+   * selection whatever `skillIndex` / `moduleId` say; a chess without a stand-in (PRESET, DIY, no backups data) gives
+   * its own def for that loadout.
    */
   getChess(id, loadout = null) {
+    if (loadout && loadout.standIn === true) {
+      const sd = this.getStandIn(id);
+      if (sd) return sd;
+    }
     if (loadout == null && this._chess.has(id)) return this._chess.get(id);
     const r = this.rawChess(id);
     const lo = r ? resolveLoadout(r, loadout) : null;
@@ -550,6 +569,27 @@ export class DataSource {
     if (r) {
       d = normalizeChess({ chessId: id, ...loadoutRecord(r, lo) });
       d.loadout = lo;
+      freezeDef(d);
+    }
+    this._chess.set(key, d);
+    return d;
+  }
+  /**
+   * The 补位 def of chess `id` (DATA.md §18): shared/standIn.js standInRecord of its record over rawBackups(), normalised
+   * — `def.id` / `baseId` / `golden` / `tier` / `bonds` / `raw.garrisonIds` of the chess, every combat field of the
+   * stand-in at the chess's status, `def.charId` the stand-in's, `def.standInFor` the replaced operator's charId,
+   * `def.loadout` the backup selection (`isDefault`, `standIn: true`). Null for a chess without a stand-in (PRESET,
+   * DIY) or when the data lacks it. Cached per id.
+   */
+  getStandIn(id) {
+    const key = `${id}|standIn`;
+    if (this._chess.has(key)) return this._chess.get(key);
+    const r = this.rawChess(id);
+    const rec = r ? standInRecord(r, this.rawBackups()) : null;
+    let d = null;
+    if (rec) {
+      d = normalizeChess({ ...rec, chessId: id });
+      d.loadout = { ...resolveLoadout(rec, null), standIn: true };
       freezeDef(d);
     }
     this._chess.set(key, d);
@@ -691,7 +731,8 @@ export function toDataSource(data) {
  * lookups (`view.loadoutConflicts` lists them) — callers that pass the unit's own loadout (`getChess(id, { skillIndex,
  * moduleId })`, `getToken(id, owner, ownerDef.loadout)`) are always exact. Returns `ds` itself when no unit carries a
  * loadout, and an existing view unchanged (`isLoadoutView`). Used by spec.js createBattleFromSpec and by
- * content/index.js installContent (every Battle, however constructed).
+ * content/index.js installContent (every Battle, however constructed). An entry with `standIn: true` (补位) maps its
+ * chess id to the stand-in def (`getChess(id, { standIn: true })`) the same way.
  * @param {object} ds DataSource
  * @param {object[]} players PlayerBattleInput[] (spec players)
  */
@@ -703,11 +744,12 @@ export function withUnitLoadouts(ds, players) {
   for (const p of Array.isArray(players) ? players : []) {
     for (const u of (p && Array.isArray(p.units) ? p.units : [])) {
       if (!u || u.kind === 'token' || typeof u.chessId !== 'string') continue;
-      if (u.skillIndex != null || u.moduleId != null) any = true;
+      if (u.skillIndex != null || u.moduleId != null || u.standIn === true) any = true;
       const lo = { skillIndex: u.skillIndex ?? null, moduleId: u.moduleId ?? null };
+      if (u.standIn === true) lo.standIn = true;
       const prev = map.get(u.chessId);
       if (!prev) map.set(u.chessId, lo);
-      else if (prev.skillIndex !== lo.skillIndex || prev.moduleId !== lo.moduleId) conflicts.add(u.chessId);
+      else if (prev.skillIndex !== lo.skillIndex || prev.moduleId !== lo.moduleId || !!prev.standIn !== !!lo.standIn) conflicts.add(u.chessId);
     }
   }
   if (!any) return ds;

@@ -59,11 +59,9 @@ export const NET_DEFAULTS = Object.freeze({
 });
 
 /**
- * Intents that also draw from the per-connection heavy bucket: g.watch (its reply is a large state resend, m.field) and
- * room.loadout (a ≤ 160-entry map validated against the game data; the client debounces its edits), and
- * matchmaking.join (joining or changing difficulty updates other waiting players).
+ * Heavy intents: watch/loadout, matchmaking joins and spectator state resends.
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'matchmaking.join']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'matchmaking.join', 'room.spectate']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, POLICY: 1008, SHUTDOWN: 1001 });

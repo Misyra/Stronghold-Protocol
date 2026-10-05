@@ -15,6 +15,7 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 | `ops/op-<codename>.js` | one 自选 operator kit per file (below: "How to add an operator (自选)") |
 | `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
 | `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
+| `shared/summoner.js` | the 召唤师 summon deck the 自选 kits of 麦哲伦 / 令 / 电弧 share (`summonDeck`: the holding, a placed piece's return, recalls, the summons leaving with their owner; `holdBuff`, `tokenStat`) |
 | `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
@@ -191,7 +192,9 @@ so a kit finds its pieces before the battle starts as `battle.allyUnits` with `k
 `ownerUnit === unit`, still undeployed (e.g. `op-bgsnow.js` gives its 打字机 pieces their kit in a talent's `install`
 with `battle._setupUnit(t, kit)`; `op-cgbird.js` counts its 幻影). A kit test fields a piece the same way:
 `units: [op, { uid, kind: 'token', tokenId, ownerUid, row, col }]` (`test/content/op_bgsnow.test.js`); the match side is
-covered by `test/match/diy-shop.test.js` (a DIY 鸿雪's 打字机 from prep to battle). Potential is 0 [ASSUMED: no account]. A new kit makes the operator a legal pick at once:
+covered by `test/match/diy-shop.test.js` (a DIY 鸿雪's 打字机 from prep to battle). A 召唤师 whose talent holds a deck of
+summons ("可以使用5个召唤物（最多同时部署3个）") takes `shared/summoner.js summonDeck` — the holding, a placed piece's return
+on its tile, recalls, its pieces' kits (`op-mgllan.js`, `op-ling.js`, `op-radian.js`). Potential is 0 [ASSUMED: no account]. A new kit makes the operator a legal pick at once:
 the server's `welcome.diyKitted` lists `KITTED_CHARS`, so the 自选编队 picker offers it and `room.diy` keeps it.
 
 **The fidelity rule and the checklist** above apply item by item: every skill at rank 4 and 7, every talent, every

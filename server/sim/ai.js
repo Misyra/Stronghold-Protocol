@@ -656,10 +656,17 @@ function enemyAttack(b, e) {
   if (own && targets.length) targets = targets.filter((a) => own(a));
   if (targets.length > 1) sortAllyTargets(e, targets);
   if (!targets.length) return false;
-  // 麻痹 (ba.palsy): each stack interrupts one normal attack
+  // 麻痹 (ba.palsy): each stack interrupts one normal attack. The `palsyTrigger` hook { enemy, buff, keep } fires as it
+  // does (PRTS 真言 备注: "触发麻痹时" = the attack interrupted by 麻痹, not a stack gained): a handler may set `keep` — the
+  // stack is not consumed (真言 噤声限域 "触发麻痹时有N%概率不消耗麻痹层数") — or deal damage (the enemy may die there)
   const palsy = e.buffs.length ? e.findBuff('palsy') : null;
   if (palsy) {
-    if (--palsy.stacks <= 0) b.removeBuff(e, palsy); else e.markDirty();
+    let keep = false;
+    if (b._hooks.palsyTrigger) {
+      keep = !!b.emit('palsyTrigger', { enemy: e, buff: palsy, keep: false }).keep;
+      if (!e.alive) return false;
+    }
+    if (!keep) { if (--palsy.stacks <= 0) b.removeBuff(e, palsy); else e.markDirty(); }
     e.atkCd = e.s.interval;
     // the interrupted attack ends its clip: the old short stand after it (PRTS 异常效果 麻痹: 0.5 s 麻痹震颤 — not modelled)
     if (!e.blockedBy && radius > 0 && !(e.profile?.attackMoves ?? def.attackMoves)) e.atkStandUntil = b.time + ATTACK_PAUSE;

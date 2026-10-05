@@ -78,6 +78,7 @@ export const initialState = Object.freeze({
   me: { playerId: null, name: '', token: null },
   session: { entered: false },
   room: null,
+  matchmaking: null,
   match: emptyMatch(),
   ticker: [],
   emotes: [],

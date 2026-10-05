@@ -130,7 +130,7 @@ function backToLobby() {
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
-  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [] });
+  store.set({ room: null, matchmaking: null, match: emptyMatch(), ticker: [], emotes: [] });
   store.patch('ui', { restoring: false });
 }
 
@@ -178,7 +178,7 @@ function onRoomState(msg) {
   const prevRoom = store.get().room;
   // A (new) match starts: forget the previous match's state so stale results never show.
   if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch() });
-  store.set({ room });
+  store.set({ room, matchmaking: null });
   if (room.mode === 'coop' && typeof room.code === 'string') rememberRoom(room.code);
   maybeFinishRestore();
 }
@@ -187,10 +187,12 @@ const CLOSE_REASON = {
   // 'timeout' = this player was removed after staying disconnected past the lobby grace (server/lobby.js)
   host_left: '创建者已离开，同盟已解散', timeout: '由于长时间断开连接，你已离开同盟', empty: '同盟已解散',
   kicked: '你已被移出同盟', ended: '模拟已结束', expired: '同盟已过期', shutdown: '服务器维护中，同盟已关闭',
+  matchmaking_failed: '匹配未能启动，已返回大厅',
 };
 
 function wireNet() {
   net.on('status', (snap) => {
+    if (snap.status !== 'online') store.set({ matchmaking: null });
     const cur = store.get().connection;
     store.set({
       connection: {
@@ -205,6 +207,13 @@ function wireNet() {
   net.on('replaced', () => toast('该身份已在其他页面登录，本页已断开', 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
+  net.on('matchmaking.state', (msg) => {
+    if (msg.status === 'searching') store.set({ matchmaking: payload(msg) });
+    else {
+      store.set({ matchmaking: null });
+      if (msg.status === 'failed') toast(msg.error === 'RATE' ? '当前站点或网络资源已达到上限，请稍后重试' : '匹配未能启动，请重新搜寻', 'warn');
+    }
+  });
   net.on('room.closed', (msg) => {
     backToLobby();
     toast(CLOSE_REASON[msg.reason] || (typeof msg.reason === 'string' && msg.reason.length < 60 ? `同盟已关闭：${msg.reason}` : '同盟已关闭'), 'warn');

@@ -14,8 +14,33 @@
 }
 .lobby-left, .lobby-right { display: flex; flex-direction: column; min-width: 0; }
 
+/* Same-site opt-in matchmaking, without AI backfill. */
+.matching-panel { --bk-c: var(--mint-400); border: 1px solid var(--mint-700); padding: .28rem; background: rgba(13,25,21,.8); min-height: 4.9rem; display: flex; flex-direction: column; gap: .28rem; }
+.matching-panel__head { display: flex; justify-content: space-between; gap: .2rem; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: .2rem; }
+.matching-panel__head h2 { font-size: .23rem; margin: .08rem 0 0; }
+.matching-panel__time { color: var(--mint-400); font-size: .4rem; }
+.matching-panel__count { display: flex; align-items: center; gap: .3rem; }
+.matching-panel__count strong { font-size: .37rem; }
+.matching-panel__count p { color: var(--text-lo); font-size: .16rem; margin-top: .1rem; }
+.matching-panel__progress { appearance: none; border: 0; height: .08rem; width: 100%; background: #111b17; color: var(--mint-500); }
+.matching-panel__progress::-webkit-progress-bar { background: #111b17; }
+.matching-panel__progress::-webkit-progress-value { background: var(--mint-500); }
+.matching-panel__progress::-moz-progress-bar { background: var(--mint-500); }
+.matching-panel__note,.matching-panel__foot { font-size: .17rem; color: var(--text-md); line-height: 1.8; }
+.matching-panel__foot { color: var(--text-lo); font-size: .14rem; }
+.matching-panel>.btn { align-self: center; }
+.diff-card:disabled { cursor: default; opacity: .65; }
+@media(max-width:900px) {
+  .lobby-screen .mode-card__name { font-size: .31rem; }
+  .matching-panel { min-height: 0; padding: .22rem; gap: .2rem; }
+  .matching-panel__note,.matching-panel__foot,.matching-panel__count p { font-size: max(9px,.17rem); }
+  .matching-panel__head h2 { font-size: max(12px,.23rem); }
+  .matching-panel__count strong { font-size: max(16px,.37rem); }
+  .matching-panel__time { font-size: max(18px,.4rem); }
+}
+
 /* ---- mode cards ------------------------------------------------------------------------------------ */
-.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .24rem; margin-bottom: .34rem; }
+.mode-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem; margin-bottom: .34rem; }
 .mode-card {
   --bk-c: transparent;
   --bk-l: .2rem;
@@ -71,7 +96,7 @@
 }
 .mode-card__icon .icon { width: .44rem; height: .44rem; }
 .mode-card__text { position: relative; display: flex; flex-direction: column; gap: .1rem; }
-.mode-card__name { font-size: .46rem; font-weight: 900; letter-spacing: .08em; line-height: 1.1; }
+.mode-card__name { font-size: .36rem; font-weight: 900; letter-spacing: .04em; line-height: 1.1; }
 .mode-card__desc { font-size: .17rem; color: var(--text-lo); line-height: 1.65; max-width: 3.6rem; }
 .mode-card__points { display: flex; flex-direction: column; gap: .05rem; margin-top: .06rem; font-size: .15rem; color: var(--text-md); }
 .mode-card__points span::before {

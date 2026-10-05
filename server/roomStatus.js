@@ -1,5 +1,5 @@
 // Read-only projections: room codes are shared explicitly, never listed by this API.
-import { PHASE } from '../shared/constants.js';
+import { PHASE, DIFFICULTY_NAMES } from '../shared/constants.js';
 import { TokenBucket, clientAddress, limitKeyOf } from './net.js';
 
 /** Keep only the match fields needed by a status display, including live LP loss. */
@@ -32,7 +32,7 @@ export function roomStatus(room, now = Date.now()) {
   });
   const occupied = seats.filter(Boolean);
   return {
-    code: room.code, mode: room.mode, difficulty: room.difficulty,
+    code: room.code, mode: room.mode, difficulty: room.difficulty, difficultyName: DIFFICULTY_NAMES[room.difficulty] || room.difficulty,
     inMatch: !!room.match, joinable: room.mode === 'coop' && !room.match && seats.includes(null),
     capacity: seats.length, occupied: occupied.length,
     humans: occupied.filter((s) => !s.isBot).length,

@@ -203,31 +203,49 @@ const RNG_NAMES = Object.freeze(['rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 
 
 /**
  * Checkpoint the match, or null when it cannot be checkpointed right now (canSnapshot) — the caller keeps the
- * previous checkpoint in that case.
+ * previous checkpoint in that case. Synchronous: captures *and* encodes on the calling thread. The Persister uses the
+ * split captureMatch / encodeMatchCapture pair instead, so the encode (and its JSON round trip) runs in the dedicated
+ * persistence Worker and never stalls the game loop.
  * @param {import('./Match.js').Match} m
  * @returns {object | null}
  */
 export function snapshotMatch(m) {
   if (!canSnapshot(m)) return null;
   try {
-    return buildSnapshot(m);
+    return encodeMatchCapture(captureMatch(m));
   } catch {
     // an unserializable state (a cycle, an exotic value) must never break the save loop: the caller keeps the last one
     return null;
   }
 }
 
-/** @param {import('./Match.js').Match} m @returns {object} */
-function buildSnapshot(m) {
+/**
+ * Main-thread half of a checkpoint: select only the persistence surface, *by reference*. The values are cloned
+ * synchronously by Worker.postMessage (native structured clone) before the thread yields, so a capture is always a
+ * consistent snapshot of one engine tick and the deep encode never touches the game loop. The wave schedule needs an
+ * explicit side channel: structured clone drops non-enumerable properties, and `factions` carries its schedule as one
+ * (waves.js setupMatchWaves). Clocks travel separately in `clocks` — they tick in real time, so keeping them out of
+ * the encoded body is what lets the Persister tell an unchanged room from a changed one.
+ * @param {import('./Match.js').Match} m
+ * @returns {{ doc: object, clocks: { deadlineRemainingMs: number, startedAtAgoMs: number }, factionSchedule: any } | null}
+ */
+export function captureMatch(m) {
+  if (!canSnapshot(m)) return null;
   const now = m.sched.now();
-  const doc = { v: SNAPSHOT_VERSION, phase: m.phase, round: m.round, savedAt: now };
+  const doc = { v: SNAPSHOT_VERSION, phase: m.phase, round: m.round };
   for (const k of MATCH_FIELDS) {
     if (k === 'round') continue;
-    doc[k] = encodeState(m[k]);
+    doc[k] = m[k];
   }
+  // dead weight the restore re-arms from its own clock (restoreMatch / enterPhase): zeroing a *copy* keeps the
+  // encoded body byte-stable between real events — the dirty check's baseline — without touching the live match
+  if (doc.draft && typeof doc.draft === 'object' && 'turnDeadline' in doc.draft) doc.draft = { ...doc.draft, turnDeadline: 0 };
+  if (doc.sp && typeof doc.sp === 'object' && 'turnDeadline' in doc.sp) doc.sp = { ...doc.sp, turnDeadline: 0 };
   // the phase clock travels as *remaining* time: the match is frozen while the server is down
-  doc.deadlineRemainingMs = m.deadline > 0 ? Math.max(0, Math.round(m.deadline - now)) : 0;
-  doc.startedAtAgoMs = Math.max(0, Math.round(now - (Number(m.startedAt) || now)));
+  const clocks = {
+    deadlineRemainingMs: m.deadline > 0 ? Math.max(0, Math.round(m.deadline - now)) : 0,
+    startedAtAgoMs: Math.max(0, Math.round(now - (Number(m.startedAt) || now))),
+  };
   // the shared pool: only the remaining copies live in the checkpoint (cap/tier are data-derived)
   doc.poolLeft = {};
   for (const [id, e] of m.pool.entries) doc.poolLeft[id] = e.left;
@@ -241,16 +259,35 @@ function buildSnapshot(m) {
     const p = { playerId: ps.playerId };
     for (const k of PLAYER_FIELDS) {
       if (k === 'playerId') continue;
-      p[k] = encodeState(ps[k]);
+      p[k] = ps[k];
     }
     return p;
   });
-  try {
-    // a round trip both validates JSON-safety and normalizes undefined away
-    return JSON.parse(JSON.stringify(doc));
-  } catch {
-    return null;
+  return { doc, clocks, factionSchedule: m.factions?.schedule };
+}
+
+/**
+ * Worker-side half of a checkpoint (also used by the synchronous snapshotMatch): reattach the wave schedule, run the
+ * codec over the captured surface, and validate JSON-safety with a full round trip.
+ * @param {{ doc: object, clocks: object, factionSchedule: any } | null} capture
+ * @returns {object | null} the checkpoint in the classic layout — clocks merged back in at the top level
+ */
+export function encodeMatchCapture(capture) {
+  if (!capture) return null;
+  const { doc, clocks, factionSchedule } = capture;
+  // Reattach before encoding: the codec preserves it in the existing snapshot format.
+  if (Array.isArray(doc.factions) && factionSchedule !== undefined && !Object.hasOwn(doc.factions, 'schedule')) {
+    Object.defineProperty(doc.factions, 'schedule', { value: factionSchedule, enumerable: false });
   }
+  const out = { ...doc, ...clocks };
+  for (const k of MATCH_FIELDS) if (k !== 'round') out[k] = encodeState(doc[k]);
+  out.players = doc.players.map((p) => {
+    const encoded = { playerId: p.playerId };
+    for (const k of PLAYER_FIELDS) if (k !== 'playerId') encoded[k] = encodeState(p[k]);
+    return encoded;
+  });
+  // a round trip both validates JSON-safety and normalizes undefined away
+  return JSON.parse(JSON.stringify(out));
 }
 
 // ---------------------------------------------------------------------------------------------------

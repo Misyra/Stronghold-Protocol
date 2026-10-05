@@ -237,9 +237,8 @@ test('a running match resumes from its last checkpoint (round, board, phase)', a
   const funds = ps.funds;
   assert.ok(bought > 0, 'bought an operator');
 
-  srvA.persister.checkpointMatches();
-  assert.equal(srvA.persister.matchDocs.size, 1, 'checkpoint taken');
   await srvA.persister.flush('test');
+  assert.equal(srvA.persister.matchDocs.size, 1, 'checkpoint taken');
   await c.close();
   await srvA.close();
 
@@ -291,7 +290,6 @@ test('a checkpoint whose player lost their session is not resumed (room stays in
   await c.request({ t: 'g.band', bandId: match.gd.bandIds()[0] });
   until(match, () => match.phase === PHASE.PREP);
   assert.equal(match.phase, PHASE.PREP);
-  srvA.persister.checkpointMatches();
   await srvA.persister.flush('test');
   await c.close();
   await srvA.close();

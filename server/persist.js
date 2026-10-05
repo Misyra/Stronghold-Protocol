@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
-// server/persist.js — server state/checkpoints, backed by server/stateFile.js (docs/PERSISTENCE.md).
+// server/persist.js — server state/checkpoints; storage backends live in server/stateFile.js (docs/PERSISTENCE.md).
 //
 // WHAT SURVIVES A RESTART
 //   * Sessions — playerId, secret token, nickname, operator loadout, the room they are in and their reconnect window.
@@ -19,10 +19,17 @@
 //     lobby.soloReconnectWindowMs). Its room is dropped too when nobody is left in it; a running match whose human seat
 //     lost its session is not resumed — the room goes back to the lobby with the players that did survive.
 //
-// The document is one JSON object, refreshed every saveMs (default 10 s), at important transitions, and on shutdown.
+// HOW IT IS WRITTEN. The main thread only *captures* a match (field selection, by reference — snapshot.captureMatch);
+// a dedicated persistence Worker (server/workers/persistence.js) encodes and JSON-validates it off the game loop. Each
+// checkpoint is stored as a clock-free body string plus a fresh clock envelope, so the store can tell an unchanged
+// room (rewritten: never) from a changed one, and an idle room costs one index entry per tick instead of a full
+// state rewrite. The store decides the on-disk layout: one JSON file, or a directory of per-room shards
+// (server/stateFile.js). A Worker failure degrades to a synchronous encode — persistence never dies with the Worker.
+//
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
 
-import { snapshotMatch, canSnapshot, SNAPSHOT_VERSION } from './match/snapshot.js';
+import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
+import { PersistenceWorker } from './workers/persistenceClient.js';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -83,14 +90,11 @@ export function roomDoc(room) {
 }
 
 /**
- * The whole document.
- * @param {{ registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby, matchDocs?: Map<string, object>, now: number }} args
+ * The meta part of the document (sessions, rooms, version stamps). The matches and their clock envelopes are added by
+ * the Persister, which owns the encoded checkpoints.
+ * @param {{ registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby, now?: number }} args
  */
-export function snapshotServer({ registry, lobby, matchDocs = null, now = Date.now() }) {
-  const matches = {};
-  if (matchDocs) {
-    for (const [code, doc] of matchDocs) if (doc) matches[code] = doc;
-  }
+export function snapshotServer({ registry, lobby, now = Date.now() }) {
   return {
     v: PERSIST_VERSION,
     snapshot: SNAPSHOT_VERSION,
@@ -102,7 +106,8 @@ export function snapshotServer({ registry, lobby, matchDocs = null, now = Date.n
       return doc;
     }),
     rooms: [...lobby.rooms.values()].map((room) => ({ ...roomDoc(room), hasMatch: !!room.match })),
-    matches,
+    clocks: {},
+    matches: {},
   };
 }
 
@@ -112,7 +117,8 @@ export function snapshotServer({ registry, lobby, matchDocs = null, now = Date.n
 
 /**
  * Re-create the sessions of a document (expired ones are dropped), then the rooms, then the running matches.
- * Never throws: an unusable document is refused with a log line.
+ * Never throws: an unusable document is refused with a log line. Both checkpoint layouts are accepted — clocks in a
+ * `clocks` envelope (what the Persister writes) or inline in the checkpoint (older documents).
  * @param {{
  *   doc: object, registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby,
  *   now?: number, log?: object,
@@ -136,7 +142,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
     const session = registry.adopt({
       playerId: s.playerId,
       token: s.token,
-      name: typeof s.name === 'string' ? s.name : '博士',
+      name: typeof s.name === 'string' && s.name ? s.name : '博士',
       disconnectedAt: since,
       resumeWindowMs: windowMs,
       roomCode: s.roomCode,
@@ -153,10 +159,18 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
   stats.droppedSeats = result.droppedSeats;
 
   const matches = doc.matches && typeof doc.matches === 'object' ? doc.matches : {};
+  const clocks = doc.clocks && typeof doc.clocks === 'object' ? doc.clocks : {};
   for (const room of lobby.rooms.values()) {
     const checkpoint = matches[room.code];
     if (!checkpoint) continue;
-    if (lobby.restoreMatch(room, checkpoint)) stats.matches++;
+    // the envelope carries the freshest clocks (the index is written after the shards); inline values are the fallback
+    const c = clocks[room.code];
+    const restored = c && typeof c === 'object' ? { ...checkpoint } : checkpoint;
+    if (restored !== checkpoint) {
+      if (Number.isFinite(c.deadlineRemainingMs)) restored.deadlineRemainingMs = c.deadlineRemainingMs;
+      if (Number.isFinite(c.startedAtAgoMs)) restored.startedAtAgoMs = c.startedAtAgoMs;
+    }
+    if (lobby.restoreMatch(room, restored)) stats.matches++;
     else log.warn?.(`[persist] ${room.code}: the running match could not be resumed — room kept in the lobby`);
   }
   stats.ok = true;
@@ -168,13 +182,15 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Refreshes safe checkpoints and writes the state document. Shutdown waits for an in-flight write and saves a
- * fresh final document before the lobby is disposed.
+ * Keeps the state document up to date: every tick it refreshes the checkpoint of each running match that is in a
+ * checkpointable phase. The main thread only captures; the persistence Worker encodes. An encode may outlive its
+ * match, so a checkpoint is committed only while it still belongs to the room's *current* match. A graceful shutdown
+ * waits for an in-flight write and saves a fresh final document before the lobby is disposed.
  */
 export class Persister {
   /**
    * @param {{
-   *   store: { save: (doc: object) => Promise<boolean>, log?: object },
+   *   store: { save?: (doc: object) => Promise<boolean>, saveSharded?: (payload: object) => Promise<boolean>, log?: object },
    *   registry: import('./net.js').SessionRegistry,
    *   lobby: import('./lobby.js').Lobby,
    *   log?: object, now?: () => number, saveMs?: number,
@@ -187,8 +203,13 @@ export class Persister {
     this.log = log;
     this.now = now;
     this.saveMs = Math.max(1000, Number(saveMs) || SAVE_MS);
-    /** @type {Map<string, object>} room code → last safe match checkpoint */
+    /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
+    /** Fresh phase clocks per room code (deadlineRemainingMs / startedAtAgoMs; written into the document envelope). */
+    this.matchClocks = new Map();
+    this.encoder = new PersistenceWorker();
+    /** False while the Worker is failing and checkpoints encode inline (warned once per streak). */
+    this._workerHealthy = true;
     /** @type {NodeJS.Timeout | null} */
     this.timer = null;
     this.writes = 0;
@@ -199,44 +220,99 @@ export class Persister {
     this._pending = null;
     this._again = false;
     this.lobby.onCheckpoint = (code, match) => {
-      const doc = snapshotMatch(match);
-      if (doc) this.matchDocs.set(code, doc);
-      else if (!match) this.matchDocs.delete(code);
-      else return;
-      if (this.running) {
-        if (this._busy) this._again = true;
-        else void this.flush('checkpoint');
+      if (!match) {
+        this.matchDocs.delete(code);
+        this.matchClocks.delete(code);
+        if (this.running) this.scheduleFlush('checkpoint');
+        return;
       }
+      this.encodeRoom(code, match).then((encoded) => {
+        if (encoded && this.running) this.scheduleFlush('checkpoint');
+      }, () => {});
     };
   }
 
-  /** Refresh the checkpoint of every running match (a placeholder document while none is safe yet is *not* written). */
-  checkpointMatches() {
-    for (const [code, room] of this.lobby.rooms) {
-      if (room.disposed || !room.match) { this.matchDocs.delete(code); continue; }
-      if (!canSnapshot(room.match)) continue;                     // keep the last safe checkpoint
-      const doc = snapshotMatch(room.match);
-      if (doc) this.matchDocs.set(code, doc);
+  /** Refresh every checkpointable match (Worker-encoded, one room at a time); drop checkpoints of gone rooms. */
+  async checkpointMatches() {
+    for (const code of [...this.matchDocs.keys()]) {
+      if (!this.lobby.rooms.has(code)) { this.matchDocs.delete(code); this.matchClocks.delete(code); }
     }
-    for (const code of [...this.matchDocs.keys()]) if (!this.lobby.rooms.has(code)) this.matchDocs.delete(code);
+    for (const [code, room] of this.lobby.rooms) {
+      if (room.disposed || !room.match) continue;
+      await this.encodeRoom(code, room.match);
+    }
   }
 
-  /** Build the document without writing it (tests / diagnostics). */
-  document() {
-    this.checkpointMatches();
-    return snapshotServer({ registry: this.registry, lobby: this.lobby, matchDocs: this.matchDocs, now: this.now() });
+  /**
+   * Capture one room's match and encode it — Worker first, a fresh synchronous capture as the fallback. Never throws.
+   * @returns {Promise<boolean>} true when a checkpoint of the room's current match was committed
+   */
+  async encodeRoom(code, match) {
+    if (!canSnapshot(match)) return false;           // unsafe phase: keep the last checkpoint
+    const capture = captureMatch(match);
+    if (!capture) return false;
+    let clocks = null;
+    let body = null;
+    try {
+      ({ clocks, body } = await this.encoder.request('encode', { capture }));
+      this._workerHealthy = true;
+    } catch (err) {
+      // Re-capture synchronously: the posted capture held references that may have moved on while the Worker died.
+      const doc = snapshotMatch(match);
+      if (!doc) return false;
+      const { deadlineRemainingMs, startedAtAgoMs, ...rest } = doc;
+      clocks = { deadlineRemainingMs, startedAtAgoMs };
+      body = JSON.stringify(rest);
+      if (this._workerHealthy !== false) {
+        this._workerHealthy = false;
+        this.log.warn?.(`[persist] persistence worker unavailable, encoding inline (${err?.message}); will retry the Worker every save`);
+      }
+    }
+    return this.commit(code, match, clocks, body);
+  }
+
+  /** A room's encode may outlive its match: only a checkpoint of the room's *current* match is committed. */
+  commit(code, match, clocks, body) {
+    const room = this.lobby.rooms.get(code);
+    if (!room || room.disposed || room.match !== match) return false;
+    this.matchDocs.set(code, body);
+    this.matchClocks.set(code, clocks);
+    return true;
+  }
+
+  /** Assemble the document in the classic layout (clocks merged back into each checkpoint) for object-based stores. */
+  legacyDocument(meta) {
+    const clocks = Object.fromEntries(this.matchClocks);
+    const doc = { ...meta, clocks, matches: {} };
+    for (const [code, body] of this.matchDocs) {
+      const parsed = JSON.parse(body);
+      const c = clocks[code];
+      doc.matches[code] = c ? { ...parsed, deadlineRemainingMs: c.deadlineRemainingMs, startedAtAgoMs: c.startedAtAgoMs } : parsed;
+    }
+    return doc;
+  }
+
+  /** Diagnostic API: the whole document in the classic layout, after refreshing the checkpoints. */
+  async document() {
+    await this.checkpointMatches();
+    return this.legacyDocument(snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() }));
   }
 
   /** One save round (never throws). */
   flush(reason = 'tick') {
     if (!this.store) return Promise.resolve(false);
     if (this._busy) return this._pending || Promise.resolve(false);
+    // Capture the meta synchronously, at flush() call time: a shutdown's final write must hold the state as of the
+    // moment it was asked for, not whatever the lobby looks like by the time the Worker answers.
+    const meta = snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() });
     this._busy = true;
     this._pending = (async () => { try {
-      const doc = this.document();
-      const ok = await this.store.save(doc);
+      await this.checkpointMatches();
+      const ok = typeof this.store.saveSharded === 'function'
+        ? await this.store.saveSharded({ index: { ...meta, clocks: Object.fromEntries(this.matchClocks) }, shards: this.matchDocs })
+        : await this.store.save(this.legacyDocument(meta));
       if (ok) this.writes++;
-      else { this.failures++; this.log.debug?.(`[persist] write skipped (${reason})`); }
+      else { this.failures++; this.skipped++; this.log.debug?.(`[persist] write skipped (${reason})`); }
       return ok;
     } catch (e) {
       this.failures++;
@@ -248,6 +324,12 @@ export class Persister {
       if (this._again && this.running) { this._again = false; queueMicrotask(() => { void this.flush('checkpoint'); }); }
     } })();
     return this._pending;
+  }
+
+  /** Ask for a flush: coalesced while one is already running (it re-runs once when the write settles). */
+  scheduleFlush(reason) {
+    if (this._busy) { this._again = true; return; }
+    void this.flush(reason);
   }
 
   start() {
@@ -269,6 +351,7 @@ export class Persister {
     this.stop();
     this._again = false;
     await this._pending;
-    return this.flush(reason);
+    try { return await this.flush(reason); }
+    finally { await this.encoder.close(); }
   }
 }

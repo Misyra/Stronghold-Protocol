@@ -643,8 +643,15 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     // a string or a shared/i18n.js msg(msgid, params)
     toast: (text, kind = 'info') => m.toast(ps, kind, text && typeof text === 'object' ? text : String(text)),
     ticker: (text) => m.tickerText(text && typeof text === 'object' ? text : String(text)),
-    /** CHAR_GIFT broadcast to this player: "{0}博士给你赠送了{1}". */
-    giftTicker: (fromName, chessId) => { const c = gd.chess(chessId); m.tickerFor('CHAR_GIFT', [String(fromName), c ? c.name : String(chessId)], { to: ps.playerId }); },
+    /**
+     * CHAR_GIFT broadcast to this player: "{0}博士给你赠送了{1}" — named as this player sees the gift (a chess it fields as
+     * its 补位 stand-in by the stand-in's name: 0.2.0, the owner's recall of the official mode, 2026-10-06).
+     */
+    giftTicker: (fromName, chessId) => {
+      const c = gd.chess(chessId);
+      const shown = c && typeof ps.fieldRecord === 'function' ? ps.fieldRecord(c) || c : c;
+      m.tickerFor('CHAR_GIFT', [String(fromName), shown ? shown.name : String(chessId)], { to: ps.playerId });
+    },
 
     // ---- team
     teammates: () => m.alivePlayers().filter((p) => p !== ps).map((p) => makeCtx(m, p, source, hook, null)),

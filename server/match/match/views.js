@@ -220,19 +220,20 @@ export class MatchViews {
     // items included (the client draws their floating plates). PRTS 帮助 counts the temp area with the hand (review of
     // PR #129). Part of the meta for every watcher alike — the spectator seat's copy equals a teammate's
     // (test/match/spectator.test.js). User playtest #2 item 1 (GitHub #44).
-    // (a held chess the player fields as its stand-in keeps the chess's own art — the hand shows the original operator,
-    // the approved 0.2.0 补位 plan — and carries `standInFor`: its card shows the stand-in it deploys as)
+    // (a held chess the player fields as its stand-in is the stand-in there too — name, art, max HP — and carries
+    // `standInFor`, like a board piece: the owner's recall of the official mode, 2026-10-06, the hand shows the stand-in)
     const benchUnit = (piece, i, y) => {
       const rec = piece.kind === 'item' ? gd.item(piece.id) : piece.kind === 'token' ? gd.token(piece.id) : gd.chess(piece.id);
-      const assets = (rec && rec.assets) || {};
-      const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
       const standIn = piece.kind === 'chess' && rec && ps.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) : null;
+      const body = standIn || rec;
+      const assets = (body && body.assets) || {};
+      const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : piece.kind === 'item' ? 'item' : 'op',
         side: 'ally', ownerId: ps.playerId, defId: piece.id,
-        name: rec ? rec.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
-        spine: assets.spine || (rec && rec.charId) || piece.id, avatar: assets.avatar || (rec && rec.charId) || piece.id,
-        x: i, y, maxHp: rec && rec.stats && Number.isFinite(rec.stats.maxHp) ? rec.stats.maxHp : 1,
+        name: body ? body.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
+        spine: assets.spine || (body && body.charId) || piece.id, avatar: assets.avatar || (body && body.charId) || piece.id,
+        x: i, y, maxHp: body && body.stats && Number.isFinite(body.stats.maxHp) ? body.stats.maxHp : 1,
         skillIndex: lo && Number.isInteger(lo.skillIndex) ? lo.skillIndex : undefined,
         moduleId: lo && typeof lo.moduleId === 'string' ? lo.moduleId : undefined,
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,

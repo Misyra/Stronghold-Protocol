@@ -18,10 +18,13 @@
 // Watching a teammate (DESIGN §20.15, ui/watchBonds.js) the strip and the popup show THAT player's bonds and layers:
 // the strip carries an amber "👁 name" tag (`owner`, the observing pill's spelling, research 09 §3.1) and amber rings,
 // the popup a "👁 name 的盟约" line; its member list reads the teammate's operators on the field (no hand: never sent).
+// 0.2.0 补位: a member the player fields as its stand-in (the own m.private.standIns; a teammate's unit that says so —
+// UnitInfo `standInFor`) is drawn as the stand-in — avatar, name, a small 「替补」 mark on the thumbnail — and its row
+// opens the stand-in's card (gameLogic memberStandIn; the owner's recall of the official mode, 2026-10-06).
 
 import { html, BondDisc, Icon, MicroLabel, Tooltip } from './components.js';
 import { RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
-import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip, diyGetter, diyRecordFor } from './gameLogic.js';
+import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip, diyGetter, diyRecordFor, memberStandIn, standInForText } from './gameLogic.js';
 import { formatBondEffect } from './richText.js';
 import { bondIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
@@ -83,11 +86,12 @@ export function BondStrip({ bonds, layersDisabled = false, onOpen, openId = null
 /**
  * Bond detail popup.
  * @param {{ bondId: string, entry?: any, priv?: any, banned?: string[], onClose: Function,
- *   onMember?: (chessId:string, items?:string[]|null)=>void,
+ *   onMember?: (chessId:string, items?:string[]|null, standInFor?:string|null)=>void,
  *   place?: 'left'|'beside'|'besideR'|'right'|null, over?: boolean, beside?: 'left'|'right'|null, owner?: string|null, off?: boolean }} props —
  *   `place`: where it opens (gameLogic bondPopupPlace; `beside: 'left'` = the older spelling of 'beside'); `over`: above the
  *   detail card; `owner`: the watched teammate's name (`entry` / `priv` are then theirs: ui/watchBonds.js); `onMember`
- *   gets a 变形同构体 row's item ids too (its card shows the pair and the granted chip), null for a plain member; `off`: the
+ *   gets a 变形同构体 row's item ids too (its card shows the pair and the granted chip), null for a plain member, and a
+ *   stand-in row's `standInFor` (0.2.0 补位: a teammate's card then shows the stand-in too); `off`: the
  *   mode never activates this bond (gameLogic modeOffBonds — 标准's 10 inactive bonds): 本局禁用 instead of 未激活, with a
  *   note, no 在场 count and no 当前效果 block (its numbers would promise an effect the mode never gives; the bond text stays).
  *   `entry.harmony` (the server's bond views: the +1 调和 added to `count`): 在场 n（含调和 +1） and the 调和 row
@@ -105,13 +109,19 @@ export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember,
   const getChess = diyGetter((id) => data.lookup('chess', id), priv, dd);
   const pieceRecord = (p) => (p && p.diy && typeof p.diy === 'object' ? diyRecordFor(data.lookup('chess', p.id), p.diy, dd) : null) || getChess(p.id);
   const members = bondMembers(b, priv, banned, getChess, (id) => data.lookup('items', id), pieceRecord);
+  // 补位: the stand-in a row shows (a 自选 row is its operator already)
+  const rawChess = (id) => data.lookup('chess', id);
+  const siOf = (mb) => (mb.diy ? null : memberStandIn(priv, rawChess(mb.id), data.get('backups'), rawChess));
   const countsHand = entry?.countsHand ?? b.countsHand;
   const next = nextThreshold(count, th);
   const hasNow = !off && !!(b.effectDescRaw || b.effectDesc);
   const at = place || (beside === 'left' ? 'beside' : 'left');
   // 调和's +1 in this count (the server's word), and the 调和 operators on that board who give it
   const harmony = !off && Number.isInteger(entry?.harmony) && entry.harmony > 0 ? entry.harmony : 0;
-  const harmonyBy = harmony ? harmonyMembers(priv, getChess) : [];
+  const harmonyBy = harmony ? harmonyMembers(priv, getChess).map((x) => {
+    const si = memberStandIn(priv, rawChess(x.id), data.get('backups'), rawChess);
+    return si ? { ...x, name: si.name } : x;
+  }) : [];
   const harmonyName = data.lookup('bonds', HARMONY_BOND)?.name || '调和';
   const harmonyText = `${harmonyBy.length ? `${harmonyBy.map((x) => x.name).join('、')} 在场` : `${harmonyName}已激活`}：核心盟约激活人数 +${harmony}`;
   return html`<div class=${cx('bpop', 'brackets', `bpop--${at}`, over && 'is-over', owner && 'is-other')} data-place=${at} data-owner=${owner || null}
@@ -150,15 +160,21 @@ export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember,
         : html`<div class="bpop__harmony" role="note" data-harmony=${harmony} title=${harmonyText}>
           <${BondGlyph} bondId=${HARMONY_BOND} /><b>${harmonyName} +${harmony}</b><span>${harmonyText}</span></div>`) : null}
       <div class="bpop__members">
-        ${members.map((mb) => html`<button key=${mb.id} type="button" class=${cx('bpop__member', mb.onBoard && 'is-on', mb.owned && !mb.onBoard && 'is-owned', mb.banned && 'is-banned', mb.granted && 'is-granted')}
-            onClick=${() => onMember?.(mb.id, mb.granted && Array.isArray(mb.items) ? mb.items : null)} data-granted=${mb.granted ? '1' : null}
-            title=${`${mb.name}${mb.granted ? '（变形同构体：视为本盟约成员）' : ''}${mb.banned ? '（本局禁用）' : mb.onBoard ? '（在场）' : mb.owned ? '（整备区）' : ''}`}>
-          <${UnitThumb} kind="chess" id=${mb.id} size="sm" dim=${!mb.owned || mb.banned} rec=${mb.diy ? mb.rec : null} />
-          <span class="bpop__mname">${mb.name}</span>
-          ${mb.banned ? html`<span class="bpop__ban"><${Icon} name="close" /></span>` : null}
-          ${mb.granted ? html`<span class="bpop__iso" aria-hidden="true">同构</span>` : null}
-          ${mb.diy ? html`<span class="bpop__iso bpop__diy" data-diy="1" aria-hidden="true">${t('自选')}</span>` : null}
-        </button>`)}
+        ${members.map((mb) => {
+          const si = siOf(mb);
+          const name = si ? si.name : mb.name;
+          const items = mb.granted && Array.isArray(mb.items) ? mb.items : null;
+          return html`<button key=${mb.id} type="button" class=${cx('bpop__member', mb.onBoard && 'is-on', mb.owned && !mb.onBoard && 'is-owned', mb.banned && 'is-banned', mb.granted && 'is-granted', si && 'is-standin')}
+              onClick=${() => (si ? onMember?.(mb.id, items, si.standInFor) : onMember?.(mb.id, items))}
+              data-granted=${mb.granted ? '1' : null} data-standin=${si ? si.charId : null}
+              title=${`${name}${si ? `（${standInForText(mb.name)}）` : ''}${mb.granted ? '（变形同构体：视为本盟约成员）' : ''}${mb.banned ? '（本局禁用）' : mb.onBoard ? '（在场）' : mb.owned ? '（整备区）' : ''}`}>
+            <${UnitThumb} kind="chess" id=${mb.id} size="sm" dim=${!mb.owned || mb.banned} rec=${si || (mb.diy ? mb.rec : null)} title=${name} />
+            <span class="bpop__mname">${name}</span>
+            ${mb.banned ? html`<span class="bpop__ban"><${Icon} name="close" /></span>` : null}
+            ${mb.granted ? html`<span class="bpop__iso" aria-hidden="true">同构</span>` : null}
+            ${mb.diy ? html`<span class="bpop__iso bpop__diy" data-diy="1" aria-hidden="true">${t('自选')}</span>` : null}
+          </button>`;
+        })}
       </div>
     </section>
   </div>`;

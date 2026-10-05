@@ -21,7 +21,7 @@ import { render } from '../../vendor/preact.module.js';
 import { html, TierChip } from './components.js';
 import { GEO } from '../../../shared/constants.js';
 import { chessAvatarUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl } from './assetUrls.js';
-import { tileKey, hasFlag, UF, penPlacement, PEN, fieldTile, fieldsStandIn, standInOf, ownDiyRecord } from './gameLogic.js';
+import { tileKey, hasFlag, UF, penPlacement, PEN, fieldTile, ownStandIn, ownDiyRecord } from './gameLogic.js';
 
 const DRAG_PX = 6;
 const DMG_TTL = 900;
@@ -119,14 +119,16 @@ export function createFallbackView(host, opts = {}) {
   const tempPos = (L, idx) => ({ x: (GEO.TEMP_C0 + idx) * L.tile, y: (L.rows + 1.72) * L.tile });
 
   // ---- pieces (prep) ---------------------------------------------------------------------------------------
-  function pieceArt(p, area = null) {
+  function pieceArt(p) {
     const mm = m();
     if (p.kind === 'item') return itemIconUrl(mm, lookup('items', p.id));
     if (p.kind === 'token') return tokenAvatarUrl(mm, p.id);
     const chess = lookup('chess', p.id);
-    // 0.2.0 补位: on the board a chess the player does not own is its stand-in (render/app.js pieceInfo)
-    const si = area === 'board' && fieldsStandIn(st.priv, chess) ? standInOf(chess, dataStore?.get?.('backups') ?? null) : null;
-    return chessAvatarUrl(mm, si || ownDiy(chess) || chess);
+    return chessAvatarUrl(mm, ownSi(chess) || ownDiy(chess) || chess);
+  }
+  /** 0.2.0 补位: the player's own piece of a chess it does not own is its stand-in, bench and board alike (render/app.js pieceInfo) */
+  function ownSi(chess) {
+    return chess ? ownStandIn(chess, st.priv, dataStore?.get?.('backups') ?? null) : null;
   }
   /** 0.2.0 自选编队: the player's own piece of a DIY slot it filled is its operator (gameLogic ownDiyRecord) */
   function ownDiy(chess) {
@@ -136,11 +138,11 @@ export function createFallbackView(host, opts = {}) {
     if (p.kind === 'item') return lookup('items', p.id)?.name || '道具';
     if (p.kind === 'token') return lookup('tokens', p.id)?.name || '召唤物';
     const chess = lookup('chess', p.id);
-    return (ownDiy(chess) || chess)?.name || '干员';
+    return (ownSi(chess) || ownDiy(chess) || chess)?.name || '干员';
   }
 
   function Piece({ p, x, y, L, area }) {
-    const src = pieceArt(p, area);
+    const src = pieceArt(p);
     const dragging = st.drag?.uid === p.uid && st.drag.moved;
     const golden = !!p.golden;
     const tier = p.tier || lookup('chess', p.id)?.tier || lookup('items', p.id)?.tier;

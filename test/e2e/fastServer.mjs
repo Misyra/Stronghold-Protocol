@@ -24,6 +24,8 @@
 // 战场#08's pool).
 // SP_START_LEVEL=<1..6>: the starter kit also puts every human's 调度中心 at this level (and rerolls its shop there, before
 // SP_START_SHOP stocks its first slots) — test/ui/diy.e2e.test.js: a tier-5 自选 piece is sold from level 5.
+// SP_FINISH_AFTER=<round>: the match ends (a defeat: m.result, the RESULT screen) once that round has settled, instead
+// of going on to the next round — test/ui/standin.e2e.test.js: the result lineup of the board just fought with.
 // Not a test file (node --test runs it as a no-op module when NODE_TEST_CONTEXT is set).
 
 import { startServer } from '../../server/index.js';
@@ -49,6 +51,7 @@ if (!process.env.NODE_TEST_CONTEXT) {
   const eliminate = String(process.env.SP_ELIMINATE || '').split(',').map((x) => x.trim()).filter(Boolean).map(Number);
   const forcedStage = String(process.env.SP_STAGE || '').trim();
   const startLevel = Math.max(0, Math.min(6, Number(process.env.SP_START_LEVEL) || 0));
+  const finishAfter = Math.max(0, Number(process.env.SP_FINISH_AFTER) || 0);
 
   class FastMatch extends Match {
     constructor(opts) {
@@ -117,6 +120,11 @@ if (!process.env.NODE_TEST_CONTEXT) {
         ps.dirty();
       }
       this.markPublic();
+    }
+
+    afterSettle() {
+      if (finishAfter && this.round >= finishAfter && !this.ended) { this.finish({ victory: false, reason: 'defeat' }); return; }
+      super.afterSettle();
     }
 
     scheduleBotPrep(ps, i = 0) {

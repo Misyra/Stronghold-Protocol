@@ -5,6 +5,7 @@ import { useState, useMemo } from '../../vendor/hooks.module.js';
 import { html, Icon, TierChip, Tooltip } from './components.js';
 import { data, useData, localAsset } from '../data.js';
 import { parseRichText, rtClassName } from './richText.js';
+import { t as tr } from '../../../shared/i18n.js';
 import {
   uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
 } from './assetUrls.js';
@@ -101,15 +102,18 @@ export const isGoldenPiece = (piece, chess) => !!(piece?.golden || chess?.isGold
  * Square unit thumbnail for a piece / chess / item / token / enemy: art + tier chip + elite frame.
  * @param {{ kind?: 'chess'|'item'|'token'|'enemy', id: string, golden?: boolean, size?: 'xs'|'sm'|'md'|'lg', tier?: number,
  *   showTier?: boolean, class?: string, dim?: boolean, badge?: any, title?: string, rec?: any }} props
- *   `rec`: the chess record to draw instead of the data's (a 自选 piece's composed record — 0.2.0, gameLogic/diy.js)
+ *   `rec`: the chess record to draw instead of the data's (a 自选 piece's composed record — 0.2.0, gameLogic/diy.js; a
+ *   补位 stand-in's — gameLogic/standIn.js: drawn with a small 「替补」 mark in the corner)
  */
 export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showTier = true, class: cls, dim = false, badge = null, title, rec = null }) {
   const m = data.get('assets');
   let src = null;
   let name = '';
   let t = tier;
+  let si = null;
   if (kind === 'chess') {
     const c = rec || data.lookup('chess', id);
+    si = rec && typeof rec.standInFor === 'string' && rec.standInFor ? rec : null;
     src = chessAvatarUrl(m, c);
     name = c?.name || '';
     t = t ?? c?.tier;
@@ -137,6 +141,7 @@ export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showT
     </span>
     ${showTier && t && kind !== 'enemy' && kind !== 'token' ? html`<${TierChip} tier=${t} golden=${golden} size="sm" class="uthumb__tier" />` : null}
     ${kind === 'token' ? html`<span class="uthumb__tag">召唤</span>` : null}
+    ${si ? html`<span class="uthumb__si" data-standin=${si.charId} aria-hidden="true">${tr('替补')}</span>` : null}
     ${badge}
   </span>`;
 }

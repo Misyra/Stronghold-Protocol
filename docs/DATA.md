@@ -650,13 +650,15 @@ backup selection) and `loadoutRecord` read it unchanged; null for a PRESET or DI
 which chess a player may mark as not owned (the 55 NORMAL base chess; `shared/protocol.js checkNotOwned` keeps those of a
 `room.ownership` list). **In the match** (`server/match/player/basics.js`: `PlayerState.standIns`, `fieldsStandIn`,
 `fieldRecord` = `gd.standIn(id)`) the player's piece keeps the chess's identity for every meta rule (price, bonds,
-特质, merges, pools) and is deployed as the stand-in (placement class, summon / bot ranges, the prep scouting art; no
-summons — none of the 17 has one). **In battle** a PlayerBattleInput entry with `standIn: true` (PlayerState.battleInput:
+特质, merges, pools) and is deployed as the stand-in (placement class, summon / bot ranges; no summons — none of the 17
+has one); what shows the piece shows the stand-in (the prep scouting art of board and bench pieces, the m.result
+lineup's `standInFor`, the elite and gift tickers' names — the owner's recall of the official mode, 2026-10-06). **In battle** a PlayerBattleInput entry with `standIn: true` (PlayerState.battleInput:
 the player's own field, 联防 and the boss fields alike) is fielded as `getChess(chessId, { standIn: true })` (docs/SIM.md
 §12: this record, normalised), and its kit is found by its `charId` (`server/sim/content/index.js kitOf`;
 kits/README.md "Stand-in kits") — never by the chess id it keeps, which names the replaced operator's kit. The client
-composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the renderer's `data.standIn`) for the cards'
-「替补：X」 badge, the board model and the detail card.
+composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the renderer's `data.standIn`) to show the
+stand-in on the shop / reward cards, the own pieces' models (hand, 临时整备区, board), the detail card, bond popups and the
+result lineup, with a small 「替补」 mark.
 A 自选 piece is composed by `shared/diy.js`:
 `checkDiyPick(slotId, pick, data)` checks one pick `{ charId, skillIndex?, uniEquipId? }` against a slot (a pick of the
 slot's tier; a prototype takes its `diy.locked` selection, another skill is refused; an owned pick names one of its three

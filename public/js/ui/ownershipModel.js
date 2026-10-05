@@ -2,8 +2,9 @@
 // shared with the sync (ui/loadoutSync.js) and the tests. The approved plan (owner's decision 2026-10-05): a player marks
 // operators as not owned ("下掉"); only the 55 NORMAL chess can be dropped (shared/standIn.js isDroppableChess — the 74
 // PRESET chess always field their own operator); default = everything owned; out of match (the next match takes it);
-// co-op: the player's own pieces only; no friend borrowing. A dropped chess keeps its card (name, bonds, price) and is
-// deployed as its official stand-in (data/backups.json).
+// co-op: the player's own pieces only; no friend borrowing. A dropped chess is deployed and shown as its official
+// stand-in (data/backups.json; the owner's recall of 2026-10-06: cards, pieces and the result show the stand-in) while
+// its bonds, 特质, tier, price and merge stay the chess's.
 //
 // The per-browser setting is a sorted list of base chess ids, persisted in localStorage (`sp.pref.ownership` =
 // { v: 1, notOwned }) and sent with C2S `room.ownership { notOwned }` (the server keeps the droppable ids and drops the

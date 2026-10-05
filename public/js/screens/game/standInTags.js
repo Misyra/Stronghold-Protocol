@@ -1,20 +1,21 @@
-// public/js/screens/game/standInTags.js — 0.2.0 补位: the 「替补：X」 tag under the player's own prep pieces (hand,
-// 临时整备区, board) of a chess they do not own (m.private.standIns). The hand keeps the chess's own model (the card shows
-// the original operator); on the board the model is the stand-in's (render/app.js pieceInfo) — the tag says which
-// chess it is either way. 0.2.0 自选编队: the 「自选」 tag under the player's own pieces of a DIY slot it filled
+// public/js/screens/game/standInTags.js — 0.2.0 补位: the small 「替补」 tag under the player's own prep pieces (hand,
+// 临时整备区, board) of a chess they do not own (m.private.standIns): the model is the stand-in's everywhere
+// (render/app.js pieceInfo — the owner's recall of the official mode, 2026-10-06), the tag says it fields for another
+// chess (the detail card names it). 0.2.0 自选编队: the 「自选」 tag under the player's own pieces of a DIY slot it filled
 // (m.private.diy) — the model is the operator's everywhere. Anchored to each piece's drawn body (view.pieceScreenRect,
 // followed every frame like the direction wheel follows its tile); never takes the pointer, so the pieces stay
 // draggable.
 
 import { useEffect, useRef, useState } from '../../../vendor/hooks.module.js';
 import { html } from '../../ui/components.js';
-import { fieldsStandIn, standInOf, standInLabel, ownDiyRecord } from '../../ui/gameLogic.js';
+import { ownStandIn, standInLabel, standInTip, ownDiyRecord } from '../../ui/gameLogic.js';
 import { t } from '../../../../shared/i18n.js';
 
 const rawOf = (view) => (view && view.raw) || view || null;
 
 /**
- * The player's own prep pieces that fight as stand-ins: [{ uid, label, name, area }] (hand, temp, board).
+ * The player's own prep pieces that fight as stand-ins: [{ uid, label, name, area, tip }] (hand, temp, board; `name` =
+ * the stand-in's, `tip` = which chess it fields for).
  * @param {any} priv m.private @param {(id: string) => any} getChess @param {any} backups data/backups.json
  */
 export function standInPieces(priv, getChess, backups) {
@@ -23,9 +24,8 @@ export function standInPieces(priv, getChess, backups) {
   const add = (p, area) => {
     if (!p || p.kind !== 'chess' || !Number.isInteger(p.uid)) return;
     const c = getChess(p.id);
-    if (!fieldsStandIn(priv, c)) return;
-    const si = standInOf(c, backups);
-    if (si) out.push({ uid: p.uid, label: standInLabel(si), name: si.name, area });
+    const si = ownStandIn(c, priv, backups);
+    if (si) out.push({ uid: p.uid, label: standInLabel(si), name: si.name, area, tip: standInTip(si, c.name) });
   };
   for (const p of Array.isArray(priv.hand) ? priv.hand : []) add(p, 'hand');
   for (const p of Array.isArray(priv.temp) ? priv.temp : []) add(p, 'temp');
@@ -85,8 +85,8 @@ export function StandInTags({ view, priv, getChess, backups, diyData = null }) {
   return html`<div class="sitags" aria-hidden="true" data-testid="standin-tags">
     ${items.map((it) => {
       const p = pos[it.uid];
-      return p ? html`<span key=${it.uid} class=${`sitag sitag--${it.area}${it.diy ? ' sitag--diy' : ''}`} data-uid=${it.uid} data-diy=${it.diy ? '1' : undefined}
-        title=${it.diy ? t('自选编队：{name}', { name: it.name }) : `未持有：由 ${it.name} 上场`}
+      return p ? html`<span key=${it.uid} class=${`sitag sitag--${it.area}${it.diy ? ' sitag--diy' : ''}`} data-uid=${it.uid} data-diy=${it.diy ? '1' : undefined} data-standin=${it.diy ? undefined : '1'}
+        title=${it.diy ? t('自选编队：{name}', { name: it.name }) : it.tip}
         style=${`left:${p.x.toFixed(1)}px;top:${p.y.toFixed(1)}px`}>${it.label}</span>` : null;
     })}
   </div>`;

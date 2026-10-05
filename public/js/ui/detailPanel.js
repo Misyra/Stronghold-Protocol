@@ -33,7 +33,7 @@
 
 import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
 import { Img, RichText, UnitThumb, BondGlyph, GIcon, diyToken } from './gameComponents.js';
-import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, fieldsStandIn, standInOf, standInLoadout, standInLabel, ownDiyRecord, ownDiyPick, diyRecordFor, pickGetter } from './gameLogic.js';
+import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, ownStandIn, standInOf, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, ownDiyPick, diyRecordFor, pickGetter } from './gameLogic.js';
 import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
@@ -361,8 +361,10 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   // 0.2.0 自选编队: `chess` is then the composed 自选 record (the operator, the slot's tier / price); its skill and module are
   // the pick's — the lookups resolve the slot's ids to the same pick (shared/diy.js), so the loadout reads them as defaults
   const getChess = diy ? pickGetter((id) => data.lookup('chess', id), diy, { chess: data.get('chess'), backups: data.get('backups') }) : (id) => data.lookup('chess', id);
-  // 0.2.0 补位: a chess fielded as its stand-in keeps its identity (name, tier, bonds, 特质, sell price) and shows the
-  // stand-in's body — portrait, class, 特性, stats, range, skill, talents, module (its backup selection, no loadout)
+  // 0.2.0 补位: a chess fielded as its stand-in shows the stand-in — portrait, name, class, 特性, stats, range, skill,
+  // talents, module (its backup selection, no loadout) — under a small 「替补」 tag, with the replaced operator's name
+  // where the English name usually is (「银灰的替补」, [ASSUMED] placement); the chess's tier, bonds, 特质 and sell price
+  // still apply (the owner's recall of the official mode, 2026-10-06)
   const si = standIn && standIn.standInFor ? standIn : null;
   const body = si || chess;
   const lo = si ? standInLoadout(si, getChess, data.get('backups')) : chessLoadout(chess, loadout, getChess);
@@ -387,18 +389,18 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   blocks.head = html`
     <div key="head" class="dhead">
       <div class=${cx('dhead__art', golden && 'is-golden', `dhead__art--t${c.tier}`)}>
-        <${Img} src=${chessPortraitUrl(m, body)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" />`} />
+        <${Img} src=${chessPortraitUrl(m, body)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${si} />`} />
       </div>
       <div class="dhead__info">
         <div class="dhead__chips">
           <${TierChip} tier=${c.tier} golden=${golden} size="lg" />
           ${golden ? html`<span class="dtag-elite">精锐</span>` : null}
           ${piece?.kind === 'token' ? html`<span class="dtag-token">召唤物</span>` : null}
-          ${si ? html`<span class="dtag-standin" data-standin=${si.charId} title=${`未持有${c.name}：由替补干员 ${si.name} 上场（盟约、特质、阶级与价格不变）`}>${standInLabel(si)}</span>` : null}
+          ${si ? html`<span class="dtag-standin" data-standin=${si.charId} title=${standInTip(si, c.name)}>${standInLabel(si)}</span>` : null}
           ${diy ? html`<span class="dtag-diy" data-diy=${c.charId || ''} title=${t('自选编队：所选技能与模组，没有特质，盟约按所属阵营分配')}>${t('自选')}</span>` : null}
         </div>
-        <h3 class="dhead__name">${c.name}</h3>
-        <span class="dhead__en">${si ? `${si.name}${si.appellation && si.appellation !== si.name ? ` · ${si.appellation}` : ''}` : c.appellation || ''}</span>
+        <h3 class="dhead__name">${si ? si.name : c.name}</h3>
+        ${si ? html`<span class="dhead__for" data-for=${c.chessId}>${standInForText(c.name)}</span>` : html`<span class="dhead__en">${c.appellation || ''}</span>`}
         <div class="dhead__class">
           <${Img} src=${profIconUrl(m, body.profession)} class="dhead__prof" />
           <span>${PROF_NAME[body.profession] || body.profession || ''}</span>
@@ -453,7 +455,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
       ${talents.map((t, i) => html`<div key=${i} class="dtalent"><b>${t.name}</b><${RichText} text=${t.descRaw || t.desc} class="dtext" /></div>`)}
     <//>` : null;
   blocks.actions = piece && editable && piece.kind !== 'item' ? html`<div key="actions" class="dactions">
-      <${Button} variant="amber" icon="close" class="dpanel__sell" onClick=${() => onSell(piece, c)}>出售<span class="dsell num">+${sell}</span><//>
+      <${Button} variant="amber" icon="close" class="dpanel__sell" onClick=${() => onSell(piece, si || c)}>出售<span class="dsell num">+${sell}</span><//>
     </div>` : null;
   const out = CHESS_SECTIONS.map((k) => blocks[k]).filter(Boolean);
   // a merge-completing shop / reward card: where the elite goes (shopBar mergeHint), right under the header
@@ -616,13 +618,14 @@ export function TokenDetail({ token, piece, ownerId = null, snapHp = null, live 
  * @param {{ kind:'piece'|'chess'|'item'|'enemy'|'unit'|'token', id?:string, uid?:number, unit?:any, count?:number }} target
  * @param {Map<number, any>} pieces indexPieces(priv)
  * @param {{ priv?: any, backups?: any }} [opts] 0.2.0 补位: the player's own pieces and cards of a chess in
- *   m.private.standIns — and a unit carrying `standInFor` — resolve with `standIn` (the composed stand-in record the
- *   card shows as the body); 0.2.0 自选编队: the player's own pieces and cards of a DIY slot it filled (m.private.diy) —
- *   and a unit carrying `diy` — resolve to the composed 自选 record (`chess`, the operator) with `diy` = the pick
+ *   m.private.standIns — a unit carrying `standInFor`, and a teammate's bond popup row that says it (`target.standInFor`)
+ *   — resolve with `standIn` (the composed stand-in record the card shows: portrait, name, body, with the chess's
+ *   bonds and 特质); 0.2.0 自选编队: the player's own pieces and cards of a DIY slot it filled (m.private.diy) — and a
+ *   unit carrying `diy` — resolve to the composed 自选 record (`chess`, the operator) with `diy` = the pick
  */
 export function resolveDetail(target, pieces, { priv = null, backups = data.get('backups') } = {}) {
   if (!target) return null;
-  const ownStandIn = (c) => (fieldsStandIn(priv, c) ? standInOf(c, backups) : null);
+  const ownSi = (c) => ownStandIn(c, priv, backups);
   const dd = { chess: data.get('chess'), backups };
   /** the own card of chess `c`: its 自选 record and pick when the player filled that DIY slot */
   const ownDiy = (c) => {
@@ -638,18 +641,20 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     const c = data.lookup('chess', p.id);
     const d = ownDiy(c);
     if (d) return { type: 'chess', chess: d.chess, piece: p, standIn: null, diy: d.diy };
-    return c ? { type: 'chess', chess: c, piece: p, standIn: ownStandIn(c) } : null;
+    return c ? { type: 'chess', chess: c, piece: p, standIn: ownSi(c) } : null;
   }
   if (target.kind === 'chess') {
     // a bond popup's 变形同构体 row hands the wearer's item ids on (bondStrip onMember): the card shows the pair and the chip
     const c = data.lookup('chess', target.id);
     const items = Array.isArray(target.items) ? target.items.filter((x) => typeof x === 'string') : [];
     // (a bond popup's member card of a teammate's strip — `owner` another player — and the mode's banned list (`foreign`)
-    // show the chess as it is: the viewer's 补位 list is not theirs)
+    // do not read the viewer's 补位 list: a teammate's row shows the stand-in only when its unit says it is one —
+    // `target.standInFor`, from UnitInfo through ui/watchBonds.js ownerBoard)
     const foreign = !!target.foreign || (target.owner != null && !!priv && target.owner !== priv.playerId);
     const d = foreign ? null : ownDiy(c);
     if (d) return { type: 'chess', chess: d.chess, hint: target.hint || null, standIn: null, diy: d.diy, ...(items.length ? { unitItems: items } : {}) };
-    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: foreign ? null : ownStandIn(c), ...(items.length ? { unitItems: items } : {}) } : null;
+    const si = !c ? null : foreign ? (typeof target.standInFor === 'string' && target.standInFor ? standInOf(c, backups) : null) : ownSi(c);
+    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: si, ...(items.length ? { unitItems: items } : {}) } : null;
   }
   if (target.kind === 'item') { const it = data.lookup('items', target.id); return it ? { type: 'item', item: it } : null; }
   if (target.kind === 'enemy') { const en = data.lookup('enemies', target.id); return en ? { type: 'enemy', enemy: en, count: target.count } : null; }
@@ -665,7 +670,7 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     // follows m.private.standIns like the piece
     let si = null;
     if (c && typeof u.standInFor === 'string' && u.standInFor) si = standInOf(c, backups);
-    else if (c && own?.piece) si = ownStandIn(c);
+    else if (c && own?.piece) si = ownSi(c);
     // 0.2.0 自选编队: a unit says itself which operator fills its DIY slot (UnitInfo diy); an own piece's unit follows
     // m.private.diy like the piece
     const pick = c && u.diy && typeof u.diy === 'object' ? u.diy : own?.piece ? ownDiyPick(priv, c) : null;

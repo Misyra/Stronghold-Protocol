@@ -21,6 +21,7 @@
 //   noHeal bool (cannot be healed by others)   blockFly bool   onHitStatus {key, duration, value}
 //   dmgMul(battle, unit, target) → number      afterHit(battle, unit, target, {dealt,x,y})
 //   canAttack(battle, unit) → bool             afterAttack(battle, unit, targets)
+//   skipEnemy(enemy) → bool (an enemy the unit never selects — targeting.js canTargetEnemy; 嵯峨 "不攻击重伤单位")
 //   hitsFn(battle, unit) → n                   install(battle, unit) — per-unit hooks, called once at setup
 //   dollNoAttack bool (傀儡师: its <替身> makes no normal attack and casts no skill — 归溟幽灵鲨, kit trait)
 //   tb — the unit's trait blackboard (data `trait.bb`), used for tunables (module upgrades included on elites)

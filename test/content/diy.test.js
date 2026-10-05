@@ -13,10 +13,13 @@ import { getDefaultSource, DataSource } from '../../server/sim/simdata.js';
 import { buildBattleSpec, createBattleFromSpec } from '../../server/sim/spec.js';
 import { unitInfo } from '../../server/sim/snapshot.js';
 import { isDiyDef, kitOf } from '../../server/sim/content/index.js';
+import { KITTED_CHARS } from '../../server/sim/content/kits/index.js';
 
 const load = (f) => JSON.parse(readFileSync(new URL(`../../data/${f}.json`, import.meta.url), 'utf8'));
 const BACKUPS = load('backups');
 const SIEGE = 'char_112_siege';
+/** An owned 6★ without an operator kit yet (the generic kit's case) — the first of diy.ownedPool, null once all have one. */
+const KITLESS = BACKUPS.diy.ownedPool.find((id) => !KITTED_CHARS.includes(id)) ?? null;
 const T5 = 'chess_char_5_diy1_a', T6 = 'chess_char_6_diy1_a';
 const dummy = (key, o = {}) => enemyRec({ key, hp: 1e9, speed: 0, mass: 0, ...o });
 const ENEMIES = { enemy_dummy: dummy('enemy_dummy') };
@@ -54,18 +57,21 @@ test('a battle fields 自选 pieces by their kit: an owned 6★\'s operator kit 
     { diy: { slot: 5, charId: SIEGE, skillIndex: 1 }, row: 10, col: 3 },
     { diy: { slot: 'chess_char_5_diy2_a', charId: 'char_609_acguad' }, elite: true, row: 10, col: 5 },
     { diy: { slot: T6, charId: 'char_617_sharp2' }, elite: true, row: 10, col: 7 },
-    { diy: { slot: 'chess_char_6_diy2_a', charId: 'char_017_huang', skillIndex: 2 }, row: 11, col: 3 },
+    ...(KITLESS ? [{ diy: { slot: 'chess_char_6_diy2_a', charId: KITLESS, skillIndex: 2 }, row: 11, col: 3 }] : []),
     { diy: { slot: 'chess_char_6_diy2_a', charId: 'char_601_cguard' }, row: 11, col: 5 },   // illegal at tier 6: never fielded
   ], { kits: { [SIEGE]: siegeKit, chess_char_5_diy1_a: () => { throw new Error('a 自选 piece never runs a kit of its slot id'); } } });
   h.step();
-  const [siege, sharp, sharp2, huang] = [1, 2, 3, 4].map((uid) => h.unit(uid));
-  assert.equal(h.unit(5), null, 'an illegal pick fields nothing');
+  const [siege, sharp, sharp2, kitless] = [1, 2, 3, 4].map((uid) => h.unit(uid));
+  assert.equal(h.unit(KITLESS ? 5 : 4), null, 'an illegal pick fields nothing');
   assert.deepEqual([siege.defId, siege.def.charId, siege.skill.id, siege.kit.diyProbe, siege.kit.skillSource], [T5, SIEGE, 'skchr_siege_2', true, 'skills']);
   assert.equal(kitOf(siege.def, { [T5]: 'slot', chess_char_5_diy1: 'bare', [SIEGE]: 'mine' }), 'mine', 'kitOf: by charId only');
   assert.equal(kitOf(siege.def, { [T5]: 'slot' }), undefined);
   assert.deepEqual([sharp.defId, sharp.def.charId, sharp.skill.id, !!sharp.kit.generic, sharp.kit.skillSource, sharp.def.raw.module.level], ['chess_char_5_diy2_b', 'char_609_acguad', 'skchr_acguad_3', false, 'skills', 1]);
   assert.deepEqual([sharp2.skill.id, !!sharp2.kit.generic, sharp2.def.raw.module.level, sharp2.def.raw.module.active], ['skchr_sharp2_1', false, 3, true], '领主·Sharp at tier 6: S1 + LOR-X stage 3');
-  assert.deepEqual([huang.def.charId, huang.skill.id, !!huang.kit.generic, huang.def.bonds], ['char_017_huang', 'skchr_huang_3', true, ['yanShip', 'victoriaShip']], '煌 has no kit yet: the generic kit');
+  if (KITLESS) {
+    assert.deepEqual([kitless.def.charId, kitless.skill.id, !!kitless.kit.generic, kitless.def.bonds],
+      [KITLESS, BACKUPS.units[KITLESS].forms['2/1/4/0'].skills[2].skillId, true, BACKUPS.diy.operators[KITLESS].bonds], `${KITLESS} has no kit yet: the generic kit`);
+  }
   // the elite reserve uses the generic kit with its exact stat talents (as a 补位 stand-in does)
   const h2 = battle([{ diy: { slot: 5, charId: 'char_601_cguard' }, elite: true, row: 10, col: 3 }]);
   h2.step();

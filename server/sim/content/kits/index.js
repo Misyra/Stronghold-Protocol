@@ -78,7 +78,32 @@ export const STANDIN_KIT_FILES = Object.freeze(['standin-acguad.js', 'standin-sh
  * The 自选 operator kit files (`ops/op-<codename>.js`, registry key = the operator's charId, an owned-6★ pick of
  * data/backups.json; a new file is appended). An operator without a file is not offered as a 自选 pick (KITTED_CHARS).
  */
-export const OPERATOR_KIT_FILES = Object.freeze(['op-siege.js']);
+export const OPERATOR_KIT_FILES = Object.freeze([
+  'op-siege.js',
+  'op-chen.js',
+  'op-irene.js',
+  'op-helage.js',
+  'op-shining.js',
+  'op-cgbird.js',
+  'op-saga.js',
+  'op-amgoat.js',
+  'op-cerber.js',
+  'op-heyak.js',
+  'op-poca.js',
+  'op-typhon.js',
+  'op-narant.js',
+  'op-logos.js',
+  'op-mantra.js',
+  'op-veen.js',
+  'op-zuole.js',
+  'op-chyue.js',
+  'op-huang.js',
+  'op-shwaz.js',
+  'op-bgsnow.js',
+  'op-ifrit.js',
+  'op-aphris.js',
+  'op-lin.js',
+]);
 
 /**
  * The 预备干员 whose every skill the generic kit covers exactly (冲锋号令, 攻击力 / 防御力 / 治疗强化, 战术咏唱, 一击即退 —

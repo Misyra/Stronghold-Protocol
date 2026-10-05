@@ -74,7 +74,11 @@ export function enemyStealthed(e) {
   return false;
 }
 
-/** Can `attacker` (ally) target enemy `e` at all (ignoring range)? */
+/**
+ * Can `attacker` (ally) target enemy `e` at all (ignoring range)? A profile's own exclusion `skipEnemy(e)` (a kit trait:
+ * 嵯峨 劝善 "嵯峨不攻击重伤单位") keeps such an enemy out of the unit's normal targets, the enemies it blocks
+ * (blockedTargets) and the target condition of its skill triggers (they pass `unit.profile`).
+ */
 export function canTargetEnemy(attacker, e, profile) {
   if (!e.alive || e.hidden || !e.deployed) return false;
   const f = e.s.flags;
@@ -82,6 +86,7 @@ export function canTargetEnemy(attacker, e, profile) {
   if (f.stealth && enemyStealthed(e)) return false;
   if (e.isFlying && !(profile && profile.canHitFly)) return false;
   if (profile && profile.groundOnly && e.isFlying) return false;
+  if (profile && typeof profile.skipEnemy === 'function' && profile.skipEnemy(e)) return false;
   return true;
 }
 
@@ -178,6 +183,9 @@ const PRIORITY_FNS = {
   boss: (e) => (e.isBoss ? 0 : 1),
   notBurst: (e) => (e.s.flags.burstLock ? 1 : 0),
   ground: (e) => (e.isFlying ? 1 : 0),
+  // 攻城手 trait "优先攻击重量最重的敌人" (早露 / 提丰: kits/ops/op-poca.js, op-typhon.js): the highest current 重量等级
+  // (Unit.weight: massLevel with 失重 etc.) first, the usual order after that
+  heaviest: (e) => -e.weight,
 };
 
 /**

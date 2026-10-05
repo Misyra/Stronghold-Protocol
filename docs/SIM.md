@@ -509,12 +509,14 @@ per source — DoTs and slows do that on purpose; a damage-taken / DEF / RES mod
 ## 3. Buffs, mods, statuses
 
 `battle.addBuff(unit, { key, duration=Infinity, refresh='replace'|'extend'|'stack'|'independent'|'keep', stacks, maxStacks,
-mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, shieldHits, persist, visible, data, allowDead })`
+mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, shieldHits, shieldType, persist, visible, data, allowDead })`
 - `replace`: new instance replaces the old; `extend`: keep the longer remaining time, take the new mods; `stack`: +stacks
   up to maxStacks, timer reset; `independent`: separate timers, at most `maxStacks` alive (oldest dropped); `keep`: ignore.
 - Additive mods scale with stacks (`value × stacks`), `*Mul` mods multiply (`value ^ stacks`).
 - `onTick({battle, unit, buff, dt})` every tick, or every `interval` s. `persist: true` survives death/redeploy.
-- `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated.
+- `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated;
+  `shieldType` ('phys' | 'arts' | 'true' | 'elemental') = a 屏障 that absorbs that damage type only (夜莺 S2 法术护盾 "能吸收…
+  法术伤害"); none = every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害"). Shields are spent oldest first.
 - `visible: true` emits `['status', id, key, 1/0]` client events. `battle.removeBuff(unit, key|buff)`.
 
 **Mod keys** — additive: `atkFlat atkPct defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
@@ -586,7 +588,7 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `silence` | no skill activation | – |
 | `fear` (恐惧) | 无法被阻挡并四散逃跑: enemy cannot attack, is unblockable (released) and leaves its route: it runs between random checkpoints of the fan away from the source (§1.2 恐惧 movement; no source / itself ⇒ inside its own tile) | – |
 | `tremble` (战栗) | 被阻挡后无法进行普通攻击: no normal attack **while blocked** (abilities still fire) | – |
-| `palsy` (麻痹) | each stack cancels one enemy normal attack (max 3, lasts until consumed); refused by 麻痹免疫 (data `palsyImmune`) | stacks, default 1 |
+| `palsy` (麻痹) | each stack cancels one enemy normal attack (max 3, lasts until consumed); refused by 麻痹免疫 (data `palsyImmune`); each cancel fires the hook `palsyTrigger` (§5) | stacks, default 1 |
 | `disarm` | no normal attacks | – |
 | `stealth` / `reveal` | 隐匿: untargetable unless blocked (an ally: only the enemy it blocks attacks it, and an enemy's area effects and buff auras skip it even when it blocks that enemy — `targeting.js areaSelectable` / `auraSelectable`, GitHub #97, owner 2026-10-04; 0.1.2 made an exception for that blocker) / cancels stealth. An enemy's 隐匿 also stays off after a block: each block's end (`Battle._stealthSwitch`, every release path) switches each of its 隐匿 sources off for `STEALTH_RESTORE` (3) s — PRTS 作战机制 §隐匿 "不被阻挡的3秒后重新进入隐匿" — or the source's own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`: 0 s for 业余竞演者, 节日爵士乐手, 假想敌：骨刺, 流泪小子, 访问团强攻冠军 and 清明's veil, 1 s for the 家族灭迹人); a new block inside it lifts it again and its end restarts the window; our operators' 隐匿 / 迷彩 never lift by blocking (DESIGN §22.8). `targeting.js enemyStealthed` is the one test: the b.snap stealth bit is set only while its 隐匿 is on (drawn solid otherwise); an operator's radius area damage (`foesInRadius`) skips it too (PRTS 作战机制 §AOE伤害判定 "对攻击范围内的每个可以被选中的敌人进行判定"; until 0.1.1 the splash still hit it) | – |
 | `camou` (迷彩) | an ally's camouflage (ba.camou "不阻挡时不成为敌方普通攻击的目标（无法躲避溅射类攻击）"): like `stealth` for enemy targeting (only the enemy it blocks attacks it) — but an enemy's splash and other area effects still hit it (`areaSelectable` does not check it) — and on screen (b.snap stealth bit, `snapshot.js flagsOf`), but not 隐匿 for 隐匿-conditions (叙拉古, 家族徽章) and under its own buff keys. 忍冬 S3 (key `vulpis:camou`, until her next cast), 寒芒克洛丝 S1 | – |
@@ -678,7 +680,9 @@ PRTS 异常效果: 无法选择 effects "仅在选择时生效"); checked before
 with `ceil(final) ≥ BOSS_HIT_LIMIT` (300000, shared/constants.js) is cancelled whole: returns 0 before shields (阿利斯泰尔's
 `boss:vest` barrier stays untouched; a `hit`-step block such as 假想敌：再生's aura acts earlier) [ASSUMED order], no HP /
 pool loss, no credit or stats, no `dmg` event, no `damaged` / `fatal` / kill; an fx `hitCap` `{ id, n }` marks it and
-draws nothing; research 11) → shields → HP loss
+draws nothing; research 11) → shields (a typed one — buff `shieldType` — only for its damage type) → **`hpDamage`** (what
+passed the shields; a handler may only lower `amount` — the 伤判效果 that act after a barrier: 煌's 紧急除颤 HP floor, PRTS
+备注 "该伤害减少(伤害值-煌当前生命值+煌最大生命值×50%)点"; 左乐's 庇护 re-applied after his 行险 barrier; never for a 流失) → HP loss
 (boss units: routed to `sharedBoss.damage(playerId, amount)`; a pool left under 1 HP is emptied) → if HP ≤ 0: **`fatal`** (`ctx.prevented = true` keeps the
 unit at ≥ 1 HP) → **`damaged`** → SP-on-hurt / TAKE_DAMAGE → `kill` + `death`.
 
@@ -735,6 +739,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `hit` | `{ source, target, dmg, credit }` | before mitigation; mutate `dmg` (not fired for gauge fills — see `elementHit`). `source` may be null (terrain; 无来源 `dmg.sourceless` bursts, whose `credit` names the unit credited) |
 | `elementHit` | `{ source, target, dmg }` | before a gauge fill (`dmg.type === 'element'`); mutate `dmg.amount`/`dmg.mul`, set `dmg.cancel` |
 | `damaged` | `{ source, target, amount, type, dmg, credit }` | after application (`amount` may be 0 when shielded); element fills too (with their source); 无来源: `source` null, `credit` set |
+| `hpDamage` | `{ source, target, amount, dmg, credit }` | a damage instance after shields, before the HP loss (§4; not a 流失): lower `amount` only (a raise is ignored) — HP floors / reductions ordered after a barrier (kits/ops/op-huang.js, op-zuole.js) |
 | `heal` | `{ source, target, amount, opts }` | mutable `amount` |
 | `fatal` | `{ unit, source, credit, dmg, amount, prevented }` | HP would reach 0 — set `prevented` (substitutes, kit savers, 不死 / 复活 items, 埃芒加德; 不屈 is a `death` hook). Fired by every HP loss of a unit without a boss pool — hits of any type, element bursts, 无来源 damage, `loseHp` 流失. Order: kits' own savers (10 … −60) → items' 不死 (坚固维式重锤 — once per deployment: `items/battle.js deploymentOf`, a key every deploy changes and an in-place 复活 changes too; one battle-level hook holds the running windows (`holdsUndying`), so a window outlasts a lend, DESIGN §21.21 — the lock `PRIO_REVIVE` −100 after the substitutes (−100, registered first), the running windows `PRIO_UNDYING_HELD` −99 before them: a 傀儡师 holding 不死 does not switch, PRTS 分支特性信息 傀儡师 "未持有不死的情况下", DESIGN §22.11) → items' 复活 (M3茧甲, `PRIO_RESPAWN` −101: PRTS "复活" acts on a knock-out, which a 不死 prevents) → 埃芒加德 (−110); both 复活 revive in place and call `revivedInPlace` (a new deployment for the lock) |
 | `dollSwitch` | `{ unit, reason, done }` | content switches a 傀儡师 to its <替身> now (归溟幽灵鲨 S2 "技能结束后立刻切换为<替身>": no lethal HP loss); its trait does it unless it already is one or is not on the field, and sets `done` |
@@ -749,7 +754,9 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `blocked` | `{ blocker, enemy }` | enemy became blocked |
 | `enemySpawn` / `enemyLeak` | `{ enemy }` | |
 | `elementBurst` | `{ source, target, element }` | before the burst's lock/effects; same-element fills of `target` are already refused |
+| `palsyTrigger` | `{ enemy, buff, keep }` | a 麻痹 stack interrupts the enemy's normal attack ("触发麻痹"), before the stack is used: set `keep` to leave it (真言 噤声限域); a handler may kill the enemy (its turn ends) |
 | `dodge` | `{ source, target, dmg }` | an attack was dodged |
+| `boomerangCaught` | `{ unit, attackId, isSkill, x, y }` | a 回环射手 boomerang came back to its thrower (`ai.js throwBoomerang`; `isSkill` = thrown by a skill attack): 娜仁图亚 LPS-Y "每回收5次回旋投射物", S3 "投射物全部回收时" |
 | `layerGain` | `{ playerId, bondId, n, reason, source, tile }` | mutable `n` before recording (魔王 +1 …), then clamped to the room left under `BOND_LAYER_CAP` (999); not emitted for a bond already at the cap; `tile` = `[r, c]` where `source` stands — or was knocked out this very instant ("被击倒时" gains) — else null (`addLayers` opts.tile overrides) |
 | `merchantPay` | `{ unit, cost, cancel }` | a merchant (行商) is about to pay its periodic DP; change `cost` or set `cancel` |
 | `battleEnd` | `{ result }` | may still add layer gains / coins |
@@ -1141,9 +1148,14 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 3.75 back = `BOOMERANG_RETURN_SPEED`, PRTS 跃跃; droneBomb 5 = 暴鸰's bomb, the official projectile_bombd); melee/`none` hits are
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
-`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority`, `blockFly`, `noHeal`, `boomerang` (the projectile stays
-`'boomerang'` whatever the data's generic ranged projectile says), `rangeAoe` (applied after every override: sets
-`allInRange` and, on a ranged profile, the instant `'beam'`) (see the header of professions.js).
+`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
+"优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
+selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
+单位"), `boomerang` (the projectile stays
+`'boomerang'` whatever the data's generic ranged projectile says), `boomerangOnward(ctx)` (a boomerang's flight after its
+first hit belongs to content: ctx `hit(target, x, y)` / `comeBack(x, y)` — 娜仁图亚 S1's bounces, S2's dash; the loopshooter
+row), `rangeAoe` (applied after every override: sets `allInRange` and, on a ranged profile, the instant `'beam'`) (see the
+header of professions.js).
 
 | sub | behaviour |
 |---|---|
@@ -1154,7 +1166,7 @@ table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡�
 | blastcaster | `rangeAoe`: every selectable enemy on its line at once, the same damage near and far, instant (`'beam'`) — "超远距离的群体法术伤害" is the whole line, not a splash (primary: PRTS 作战机制 §AOE伤害判定 names 伊芙利特's 炎爆 a 锁定攻击范围 AoE, and 炎爆 is her next-attack skill "下次攻击造成…" (PRTS 伊芙利特 S2), so a 轰击术师 normal attack; secondary: Terra Wiki, Blast Caster; supporting: PRTS 溅射半径一览 documents no splash radius for it; community report E3). A stealthed enemy is not struck unless it is revealed or blocked (a 锁定范围 AoE cannot hit a 隐匿 unit, PRTS 作战机制) |
 | bombarder | ground-only splash 0.9 (PRTS 溅射半径一览: 投掷手 0.9; 1.0 until 0.1.1) + aftershock(s) at 50 % ATK (bb append_atk_scale / times); 迷迭香's S2 末梢阻断 1.5 (the same table) |
 | hunter | 8 bullets (bb value), ×1.2 ATK (bb atk_scale), reloads 1/s after 1 s without attacking; can't attack when empty |
-| loopshooter | 回环射手 (user playtest #3): every attack throws a boomerang (`ai.js throwBoomerang`, projectile `'boomerang'`) out to the target at 15 tiles/s — it hits on arrival — and back to the thrower's current position at 3.75 tiles/s without damage (PRTS 跃跃 "投射物飞行速度15，返回时飞行速度3.75"); attacks only while holding it (every boomerang thrown caught — "必须回收全部回旋投掷物才可以进行下一次攻击", `unit.trait.boomerangsOut`) and with the attack cooldown ready, so the real interval is the longer of the two; a target dead mid-flight is not hit (it still flies to the last position and back); knocked out / withdrawn ⇒ lost, a redeployed thrower holds a fresh one; 跃跃 S2's extra boomerangs share the one flight (cnt hits) |
+| loopshooter | 回环射手 (user playtest #3): every attack throws a boomerang (`ai.js throwBoomerang`, projectile `'boomerang'`) out to the target at 15 tiles/s — it hits on arrival — and back to the thrower's current position at 3.75 tiles/s without damage (PRTS 跃跃 "投射物飞行速度15，返回时飞行速度3.75"); attacks only while holding it (every boomerang thrown caught — "必须回收全部回旋投掷物才可以进行下一次攻击", `unit.trait.boomerangsOut`) and with the attack cooldown ready, so the real interval is the longer of the two; a target dead mid-flight is not hit (it still flies to the last position and back); knocked out / withdrawn ⇒ lost, a redeployed thrower holds a fresh one; 跃跃 S2's extra boomerangs share the one flight (cnt hits); each catch fires `boomerangCaught`, and an attack profile's `boomerangOnward(ctx)` flies it on after the first hit before it turns back — ctx `hit` (a hit of the same attack), `comeBack(x, y)` once (a content error sends it back from the hit point): 娜仁图亚 S1 bounces, S2 dashes on and hits on its way back (kits/ops/op-narant.js) |
 | reaperrange | hits every enemy in range; ×1.5 (bb atk_scale) on the trait front grid (or its own line ahead) — both along its direction |
 | chain | chain N (trait text/bb max_target) with −15 % per jump (bb chain.atk_scale), 1.7-tile jumps (constants.js CHAIN_RADIUS, PRTS 溅射半径一览: 链术师 1.7; 1.8 until 0.1.1), sluggish on each hit |
 | funnel | drone damage 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max) |

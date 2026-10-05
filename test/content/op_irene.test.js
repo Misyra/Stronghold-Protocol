@@ -80,12 +80,14 @@ test('艾丽妮 in every 自选 form: her operator kit (all three skills authore
     [[{ atk: 50, def: 35 }, { atk: 65, def: 50 }], [{ atk: 50, aspd: 5 }, { atk: 80, aspd: 7 }], [{ maxHp: 240, atk: 40 }, { maxHp: 300, atk: 65 }]]);
 });
 
-test('a 自选 pick: 艾丽妮 is offered at tiers 5 and 6 (she has a kit) and a roster with her passes validateDiyPicks', () => {
+test('a 自选 pick: 艾丽妮 is offered at tiers 5 and 6 (she has a kit) and a roster with her passes validateDiyPicks (ISW-A, a 集成战略 module, is refused)', () => {
   const data = { chess: CHESS, backups: BACKUPS };
   assert.ok(KITTED_CHARS.includes(IRENE));
   for (const t of [5, 6]) assert.ok(diyPool(t, { data, kitted: KITTED_CHARS }).includes(IRENE), `tier ${t}`);
-  assert.deepEqual(validateDiyPicks({ [SLOT[5]]: { charId: IRENE, skillIndex: 1, uniEquipId: ISWA } }, { data, kitted: KITTED_CHARS }),
-    { ok: true, picks: { [SLOT[5]]: { charId: IRENE, skillIndex: 1, uniEquipId: ISWA } } });
+  assert.equal(validateDiyPicks({ [SLOT[5]]: { charId: IRENE, skillIndex: 1, uniEquipId: ISWA } }, { data, kitted: KITTED_CHARS }).error, 'BAD_TARGET',
+    'a 集成战略 module (ISW-A) is not a 自选 choice (shared/diy.js, W5K)');
+  assert.deepEqual(validateDiyPicks({ [SLOT[5]]: { charId: IRENE, skillIndex: 1, uniEquipId: SWOX } }, { data, kitted: KITTED_CHARS }),
+    { ok: true, picks: { [SLOT[5]]: { charId: IRENE, skillIndex: 1, uniEquipId: SWOX } } });
 });
 
 test('T1 审判之火 vs an air unit: every physical instance ignores 50 % (SWO-X stage 3: 55 %) of its DEF with no random draw; a levitated enemy is an air unit; arts untouched', () => {

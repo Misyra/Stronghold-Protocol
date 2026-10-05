@@ -67,6 +67,12 @@ export const FX_KINDS = Object.freeze({
   // 限伤 (sim/damage.js leaderHitCancelled): a leader's hit of ≥ 300000 dealt nothing — the official shows no number and
   // no effect [ASSUMED], so nothing is drawn (`a: 'none'`)
   hitCap: { a: 'none', c: 0xffffff },
+  // 自选 operator kits (0.2.0): 逻各斯, 真言, 维伊 (O3); 早露, 提丰, 娜仁图亚 (O7); 嵯峨's 重伤 (O8)
+  bulletClear: { a: 'wave', c: 0xd8b0ff }, logosLexicon: { a: 'mark', c: 0xc9a2ff }, logosExecute: { a: 'strike', c: 0xb07dff },
+  mantraArc: { a: 'bolt', c: 0xc77dff }, mantraGrant: { a: 'mark', c: 0xc77dff }, mantraGate: { a: 'reticle', c: 0xc77dff },
+  veenBounce: { a: 'counter', c: 0xffd27a }, veenVolley: { a: 'volley', c: 0xffd27a },
+  harpoon: { a: 'beam', c: 0xd0c0a0 }, arrowRain: { a: 'volley', c: 0xfff2d0 }, mark: { a: 'reticle', c: 0xff7b8a },
+  bounce: { a: 'counter', c: 0xffd9a0 }, dying: { a: 'mark', c: 0xff5a4a },
   // beams
   beam: { a: 'beam', c: 0xff7a5a }, link: { a: 'beam', c: 0x9ff0dc }, lightning: { a: 'bolt', c: 0xc9a2ff }, tentacle: { a: 'beam', c: 0x5fe0ff },
   sandChains: { a: 'beam', c: 0xd8c8a0 }, sandChainsCharged: { a: 'beam', c: 0xffd45a },

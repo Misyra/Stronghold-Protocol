@@ -76,12 +76,14 @@ test('提丰 in every 自选 form: her operator kit (all three skills authored),
     [{ maxHp: 120, atk: 60 }, { maxHp: 210, atk: 90 }, { atk: 70, aspd: 5 }, { atk: 94, aspd: 7 }, { maxHp: 100, atk: 70 }, { maxHp: 150, atk: 90 }]);
 });
 
-test('a 自选 pick: 提丰 is offered at tiers 5 and 6 (she has a kit) and a roster with her passes validateDiyPicks', () => {
+test('a 自选 pick: 提丰 is offered at tiers 5 and 6 (she has a kit) and a roster with her passes validateDiyPicks (ISW-A, a 集成战略 module, is refused)', () => {
   const data = { chess: CHESS, backups: BACKUPS };
   assert.ok(KITTED_CHARS.includes(TYPHON));
   for (const t of [5, 6]) assert.ok(diyPool(t, { data, kitted: KITTED_CHARS }).includes(TYPHON), `tier ${t}`);
-  assert.deepEqual(validateDiyPicks({ [SLOT[6]]: { charId: TYPHON, skillIndex: 1, uniEquipId: ISWA } }, { data, kitted: KITTED_CHARS }),
-    { ok: true, picks: { [SLOT[6]]: { charId: TYPHON, skillIndex: 1, uniEquipId: ISWA } } });
+  assert.equal(validateDiyPicks({ [SLOT[6]]: { charId: TYPHON, skillIndex: 1, uniEquipId: ISWA } }, { data, kitted: KITTED_CHARS }).error, 'BAD_TARGET',
+    'a 集成战略 module (ISW-A) is not a 自选 choice (shared/diy.js, W5K)');
+  assert.deepEqual(validateDiyPicks({ [SLOT[6]]: { charId: TYPHON, skillIndex: 1, uniEquipId: SIEX } }, { data, kitted: KITTED_CHARS }),
+    { ok: true, picks: { [SLOT[6]]: { charId: TYPHON, skillIndex: 1, uniEquipId: SIEX } } });
 });
 
 test('trait 攻城手: the heaviest enemy of her range first; a flyer is a target', () => {

@@ -135,8 +135,8 @@ export class BattleStatus {
    * handlers may cancel it or change `duration` / `value`. Official rules (buffs.js STATUS): 抵抗 (the `resist` status)
    * shortens the RESIST_STATUSES by its value (default half; applied after `beforeStatus`; `resistApplied` skips that
    * pass — the cold-on-cold 冻结 below already used post-抵抗 lengths). A second 寒冷 while 寒冷 remains applies 冻结 for
-   * max(remaining, this cold after 抵抗) (PRTS 术语释义 寒冷 「持续时间取双方之中最高」). 浮空 lasts half as long on units heavier
-   * than LEVITATE_HALF_WEIGHT (current massLevel); 冻结's RES cut hits enemies only; 麻痹 adds stacks; "同名效果取最高"
+   * max(remaining, this cold after 抵抗) (PRTS 术语释义 寒冷 「持续时间取双方之中最高」). 浮空 and 缚地 last half as long on units
+   * heavier than LEVITATE_HALF_WEIGHT (current massLevel); 冻结's RES cut hits enemies only; 麻痹 adds stacks; "同名效果取最高"
    * statuses (`valued`) keep the strongest value — a weaker application only extends past the stronger one's end (it
    * then resumes); `stackAs` = the value such an application competes with instead of its own (its effect stays
    * `value`): an effect the game stacks as another strength — Raidian S3's 虚弱, PRTS 备注 "在叠加时视为90%（1级~6级）/80%
@@ -162,9 +162,9 @@ export class BattleStatus {
     const immune = target.def && target.def.immune;
     if (!opts.force && tpl.immune && immune && immune.has(tpl.immune)) return false;
     // 浮空 Buff (PRTS 异常效果: "若单位数据上为飞行单位且不持有缚地异常或是持有浮空异常则Buff取消"; 行动方式 "行动类型（数据）为
-    // 飞行的单位、以及已持有浮空异常的单位无法被施加浮空Buff"): refused on data flyers (`motion` FLY) and units already
-    // levitated — a hovering 近地悬浮 enemy is WALK in its data, so it can be levitated (no 缚地 / 浮空强化 in this mode)
-    if (key === 'levitate' && (target.motion === 'FLY' || target.s.flags.levitate)) return false;
+    // 飞行的单位、以及已持有浮空异常的单位无法被施加浮空Buff"): refused on data flyers (`motion` FLY) that hold no 缚地 and on
+    // units already levitated — a hovering 近地悬浮 enemy is WALK in its data, so it can be levitated (no 浮空强化 in this mode)
+    if (key === 'levitate' && ((target.motion === 'FLY' && !target.s.flags.groundbind) || target.s.flags.levitate)) return false;
     if (this._hooks.beforeStatus) {
       const c = this.emit('beforeStatus', { source: opts.source ?? null, target, status: key, duration, value, cancel: false });
       if (c.cancel || !target.alive) return false;
@@ -177,7 +177,8 @@ export class BattleStatus {
       const rv = this.resistOf(target);
       if (rv > 0) duration *= 1 - rv;
     }
-    if (key === 'levitate' && target.s.massLevel > LEVITATE_HALF_WEIGHT) duration /= 2;
+    // 浮空 / 缚地 (ba.levitate, ba.groundbind): "对重量大于3的单位持续时间减半"
+    if ((key === 'levitate' || key === 'groundbind') && target.s.massLevel > LEVITATE_HALF_WEIGHT) duration /= 2;
     if (!(duration > 0)) return false;
     if (key === 'cold' && target.findBuff('cold') && !(immune && immune.has('frozen'))) {
       // PRTS 术语释义 寒冷: 友方寒冷 pairs into 冻结, 「持续时间取双方之中最高」. `duration` is this cold after 抵抗;

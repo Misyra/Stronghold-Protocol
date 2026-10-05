@@ -460,8 +460,9 @@ extraRangeKeys (content extra targets, `battle.setExtraRange`), blocking[] (alli
 stats {dmg,kills,heal,taken,attacks}, mem {} and trait {} (free scratch space), persist {redeployMul, …}.`
 Getters: `s` (aggregated stats), `maxHp`, `atk`, `hpRatio`, `sp`, `spMax`, `canAct`, `isFlying`, `statusFlags` (UF bits),
 `dmgType`, `weight`. `isFlying` = an **air unit** for every targeting / ground-only rule: `motion` FLY, or an enemy with
-flag `float` (近地悬浮, PRTS 术语释义 "算作空中单位") or `levitate` (浮空 "变为空中单位"); movement and pathing read `motion`
-(a hovering enemy keeps walking the ground path). `deploySeq` counts deployments (and identifies one: `seq === u.deploySeq`);
+flag `float` (近地悬浮, PRTS 术语释义 "算作空中单位") or `levitate` (浮空 "变为空中单位") — never an enemy under 缚地 (flag
+`groundbind`, "目标变为地面单位") unless a 浮空 lifts it again; movement and pathing read `motion` (a hovering enemy keeps
+walking the ground path). `deploySeq` counts deployments (and identifies one: `seq === u.deploySeq`);
 `aggroSeq` is the aggro order (= deploySeq, except the summons of the initial deployment, §1).
 
 **Hit areas (`body.js`, user playtest #5 item 10).** A regular enemy is a point: in a grid range when the tile of its
@@ -531,8 +532,8 @@ A `rangeExtend` on a `persist` never-expiring buff is **permanent**: it also wid
 a running skill's range too, unless that skill's range ignores 攻击距离 (`targeting.noRangeExtend`; PRTS 数值范围 "根据配置
 不同，任何范围都可以受/不受该属性影响" — 信仰搅拌机 S3 "此技能的攻击范围不受“攻击距离”属性影响").
 **Flags:** `stun freeze sleep silence disarm stealth stealthOff invulnerable unblockable levitate fear cold reveal bind noHeal
-healFree untargetable blockFly noMove noSp burstLock hidden attract float noDisplace isolated camou liftoff` (`float` = 近地悬浮 (an air
-unit, `Unit.isFlying`), `liftoff` = an ally's 起飞 (蒂比's skills; gamedata_const ba.liftoff "不阻挡地面敌人且不会被地面敌人攻击，
+healFree untargetable blockFly noMove noSp burstLock hidden attract float noDisplace isolated groundbind camou liftoff` (`float` = 近地悬浮 (an air
+unit, `Unit.isFlying`), `groundbind` = 缚地 (the status below: an enemy air unit counts as a ground unit), `liftoff` = an ally's 起飞 (蒂比's skills; gamedata_const ba.liftoff "不阻挡地面敌人且不会被地面敌人攻击，
 可以阻挡飞行敌人"): it blocks no ground enemy (`Battle._blockerFor`) and has 对地规避 — no ground enemy (not `isFlying`)
 selects it, so no selected damage or status of one lands on it (`targeting.js evadesGround`), while what selects nobody
 still does (`ignoreSelect` / 无来源: 无视无法选择 abilities, direct picks, flying units' blasts, a debuff's ticks); flyers,
@@ -596,9 +597,10 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `stealth` / `reveal` | 隐匿: untargetable unless blocked (an ally: only the enemy it blocks attacks it, and an enemy's area effects and buff auras skip it even when it blocks that enemy — `targeting.js areaSelectable` / `auraSelectable`, GitHub #97, owner 2026-10-04; 0.1.2 made an exception for that blocker) / cancels stealth. An enemy's 隐匿 also stays off after a block: each block's end (`Battle._stealthSwitch`, every release path) switches each of its 隐匿 sources off for `STEALTH_RESTORE` (3) s — PRTS 作战机制 §隐匿 "不被阻挡的3秒后重新进入隐匿" — or the source's own "（解除阻挡N秒后恢复）" (buff `data.stealthRestore`: 0 s for 业余竞演者, 节日爵士乐手, 假想敌：骨刺, 流泪小子, 访问团强攻冠军 and 清明's veil, 1 s for the 家族灭迹人); a new block inside it lifts it again and its end restarts the window; our operators' 隐匿 / 迷彩 never lift by blocking (DESIGN §22.8). `targeting.js enemyStealthed` is the one test: the b.snap stealth bit is set only while its 隐匿 is on (drawn solid otherwise); an operator's radius area damage (`foesInRadius`) skips it too (PRTS 作战机制 §AOE伤害判定 "对攻击范围内的每个可以被选中的敌人进行判定"; until 0.1.1 the splash still hit it) | – |
 | `camou` (迷彩) | an ally's camouflage (ba.camou "不阻挡时不成为敌方普通攻击的目标（无法躲避溅射类攻击）"): like `stealth` for enemy targeting (only the enemy it blocks attacks it) — but an enemy's splash and other area effects still hit it (`areaSelectable` does not check it) — and on screen (b.snap stealth bit, `snapshot.js flagsOf`), but not 隐匿 for 隐匿-conditions (叙拉古, 家族徽章) and under its own buff keys. 忍冬 S3 (key `vulpis:camou`, until her next cast), 寒芒克洛丝 S1 | – |
 | `invulnerable` | ignores damage | – |
-| `levitate` (浮空) | stun + unblockable (unblocks enemies) + 失衡免疫 (`noDisplace`); an air unit meanwhile (`isFlying`: melee cannot hit it); **half duration on units with (current) massLevel > 3**; refused on data flyers (`motion` FLY) and units already levitated (PRTS 异常效果 "若单位数据上为飞行单位…或是持有浮空异常则Buff取消") — a 近地悬浮 enemy is WALK in its data, so it can be levitated; 浮空 is not one of the 近地悬浮 enemies' drop triggers | – |
+| `levitate` (浮空) | stun + unblockable (unblocks enemies) + 失衡免疫 (`noDisplace`); an air unit meanwhile (`isFlying`: melee cannot hit it); **half duration on units with (current) massLevel > 3**; refused on data flyers (`motion` FLY) that hold no 缚地 and on units already levitated (PRTS 异常效果 "若单位数据上为飞行单位且不持有缚地异常或是持有浮空异常则Buff取消") — a 近地悬浮 enemy is WALK in its data, so it can be levitated; 浮空 is not one of the 近地悬浮 enemies' drop triggers | – |
+| `groundbind` (缚地) | gamedata_const ba.groundbind "目标变为地面单位，无法移动；使部分近地悬浮敌人掉落；对重量大于3的单位持续时间减半": an enemy air unit (data flyer, 近地悬浮) counts as a ground unit (`isFlying` false: melee operators hit it, ground blockers block it) and cannot move (`noMove`); **half duration on units with (current) massLevel > 3**; one of 抵抗's statuses [ASSUMED, as 束缚]; the drop trigger of 掠海漂移体 / 吉兆飞鳞 (content/enemies: "受…缚地影响后"). 予愿安洁莉娜 S2 (kits/ops/op-aglna2.js) | – |
 | `attract` (诱导) | 无法被阻挡并向目标位置移动: unblockable (released); the engine walks it (own speed, grid path re-planned on obstacle changes, after a push and after an outranking 恐惧; flyers straight) to `opts.point` (`[r, c]` or `{x, y}`, default the source's tile, clamped to the rect) and keeps it there; stun/bind/sleep stop it; its route re-plans from where it stands when the status ends. A new application moves the point | point |
-| `resist` (抵抗) | the control statuses of `RESIST_STATUSES` (晕眩 冻结 寒冷 沉睡 恐惧 战栗 诱导 浮空 束缚 沉默 缴械 停顿 减速) applied to the unit last ×(1 − value); a resisting unit loses one 麻痹 stack every 5 s. **同名效果不叠加** — `battle.resistOf(u)` = the strongest `status: 'resist'` buff (never a product): several sources (灵知, 流明, 寒檀, enemy talents) never compound. *strongest*; a permanent one that survives death is a `persist` buff with `status: 'resist', data: { value }` | 0.5 (≤ 0.95) |
+| `resist` (抵抗) | the control statuses of `RESIST_STATUSES` (晕眩 冻结 寒冷 沉睡 恐惧 战栗 诱导 浮空 束缚 沉默 缴械 停顿 减速 缚地) applied to the unit last ×(1 − value); a resisting unit loses one 麻痹 stack every 5 s. **同名效果不叠加** — `battle.resistOf(u)` = the strongest `status: 'resist'` buff (never a product): several sources (灵知, 流明, 寒檀, enemy talents) never compound. *strongest*; a permanent one that survives death is a `persist` buff with `status: 'resist', data: { value }` | 0.5 (≤ 0.95) |
 | `taunt` | taunt level +value | 1 |
 | `weaken` | atkMul 1 − value (*strongest*) | 0.3 |
 | `aspdDown` | aspd + value (*strongest*) | −30 |

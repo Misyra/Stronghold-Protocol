@@ -97,6 +97,12 @@ export class PlayerEconomy {
     this.dirty();
   }
 
+  /**
+   * g.buy {slot}. A full regular hand refuses every purchase, also one whose copy would complete a merge at once (PRTS
+   * 卫戍协议/帮助 §手牌区 "当常规手牌区全满无空位时，玩家将无法执行使手牌溢出的操作" — "例如招募/购入等通常情况下会增加手牌的
+   * 操作"; BWIKI 盟约 "当整备区达到上限后将无法进行涉及到整备区的操作（购买、撤回等）"; GitHub #82: the reporter's first-hand
+   * check in the official game, "哪怕是已经有了两个相同干员情况"). Until 0.1.3 such a purchase was let through.
+   */
   buy(slotIdx) {
     const g = this._gate(); if (g) return g;
     if (!Number.isInteger(slotIdx) || slotIdx < 0 || slotIdx >= this.shop.slots.length) return fail(ERR.BAD_TARGET);
@@ -113,13 +119,13 @@ export class PlayerEconomy {
       const base = this.gd.baseIdOf(slot.id);
       const need = rec.isGolden ? this.gd.goldenCopies : 1;
       if (this.m.pool.has(base) && this.m.pool.left(base) < need) return fail(ERR.SOLD_OUT);
-      if (handFull && !this.completesChessMerge(slot.id)) return fail(ERR.HAND_FULL);
+      if (handFull) return fail(ERR.HAND_FULL);
       this.spend(price);
       slot.sold = true;
       piece = this.acquireChess(slot.id, { source: 'buy' });
     } else {
       if (!this.gd.item(slot.id)) return fail(ERR.BAD_TARGET);
-      if (handFull && !this.completesItemMerge(slot.id)) return fail(ERR.HAND_FULL);
+      if (handFull) return fail(ERR.HAND_FULL);
       this.spend(price);
       slot.sold = true;
       piece = this.acquireItem(slot.id, { source: 'buy' });

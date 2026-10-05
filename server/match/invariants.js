@@ -4,9 +4,10 @@
 // collectViolations(m) → string[] (empty when every invariant holds):
 //   pool     0 ≤ left ≤ cap and left + Σ copies held by pieces == cap per base chess; non-pool chess hold 0 copies
 //   economy  funds / pendingFunds non-negative integers, LP finite, shop level in range, prices ≥ 0
-//   pieces   unique uids; hand 10 / temp 5 slots; chess carry ≤ equipPerChess known items; a normal piece holds ≤ 1
-//            copy, an elite ≤ goldenCopies; merges are immediate (never `mergeCount` normal copies of one chess, never
-//            two copies of a mergeable normal item); every token's owner chess is deployed
+//   pieces   unique uids; hand 10 / temp 5 slots; temp holds pieces only while the hand is full (a free hand slot pulls
+//            a temp piece in, PlayerState._fillHandFromTemp); chess carry ≤ equipPerChess known items; a normal piece
+//            holds ≤ 1 copy, an elite ≤ goldenCopies; merges are immediate (never `mergeCount` normal copies of one
+//            chess, never two copies of a mergeable normal item); every token's owner chess is deployed
 //   board    tiles inside the own region and legal for the piece (a range-bound summon inside its owner's attack
 //            range); no items on the board; chess count ≤ deploy cap
 //            (where a merge's elite goes — a consumed deployed copy's tile, else the hand — needs the state before the
@@ -52,6 +53,8 @@ export function collectViolations(m, { limit = 25 } = {}) {
     if (ps.alive && m.phase !== PHASE.SETTLE && ps.lp <= 0 && m.teamLp == null && m.round > 0 && ps.bandId) fail(`${id}: alive with lp ${ps.lp}`);
     if (ps.hand.length !== gd.benchSize) fail(`${id}: hand has ${ps.hand.length} slots`);
     if (ps.temp.length !== gd.tempSize) fail(`${id}: temp has ${ps.temp.length} slots`);
+    // 临时整备区 = overflow only (PRTS 卫戍协议/帮助 §手牌区 "常规手牌区出现空位时自动移入", GitHub #82)
+    if (ps.temp.some(Boolean) && ps.hand.some((x) => x == null)) fail(`${id}: a temp piece waits while a hand slot is free`);
     if (!(ps.shop.level >= 1 && ps.shop.level <= gd.maxShopLevel)) fail(`${id}: shop level ${ps.shop.level}`);
     if (!(ps.shop.upgradePrice >= 0)) fail(`${id}: upgradePrice ${ps.shop.upgradePrice}`);
     if (!Number.isInteger(ps.shop.freeRefreshes) || ps.shop.freeRefreshes < 0) fail(`${id}: freeRefreshes ${ps.shop.freeRefreshes}`);

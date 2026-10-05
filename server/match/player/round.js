@@ -1,7 +1,7 @@
 // server/match/player/round.js — PlayerState methods: the round lifecycle the match calls — startRound (income, pending
 // coins, the shop, summon stacks topped up), endPrep, eliminate (every copy back to the pool), recompute (legality,
-// out-of-range summons, bonds), the bond views — and battleInput (the player's PlayerBattleInput: board units with
-// their loadout, carried 联防 state, the reached layers).
+// out-of-range summons, temp pieces into free hand slots, bonds), the bond views — and battleInput (the player's
+// PlayerBattleInput: board units with their loadout, carried 联防 state, the reached layers).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -74,6 +74,8 @@ export class PlayerRound {
     this.deployMap(); // a change of the deploy field (a boss round's prep) marks the legality stale
     if (this._legalityStale) this._evictIllegal();
     this._liftOutOfRange();
+    // a free regular hand slot pulls a temp piece in (PRTS 卫戍协议/帮助 §手牌区 "常规手牌区出现空位时自动移入")
+    this._fillHandFromTemp();
     this.bonds = computeBonds(this.gd, this);
     this.dirty();
   }

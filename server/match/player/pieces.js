@@ -1,7 +1,7 @@
 // server/match/player/pieces.js — PlayerState methods: piece bookkeeping — new pieces, lookup by uid (board / hand /
-// temp / equipped), the chess locations, detach and stow (hand first, overflow temp), the per-piece round counters
-// (拉普兰德), pool copies back to the shared pool, and summon stacks (removal, lifting, counts, the stack granted for an
-// owner).
+// temp / equipped), the chess locations, detach and stow (hand first, overflow temp; a free hand slot pulls a temp piece
+// in, _fillHandFromTemp), the per-piece round counters (拉普兰德), pool copies back to the shared pool, and summon stacks
+// (removal, lifting, counts, the stack granted for an owner).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -68,7 +68,8 @@ export class PlayerPieces {
 
   /**
    * Put a piece into the hand (right→left) or, when `allowTemp`, the temp slots (due at the deadline of the first prep
-   * in which the player can act on it, _tempDueNow). Returns 'hand' | 'temp' | null.
+   * in which the player can act on it, _tempDueNow). Returns 'hand' | 'temp' | null. A piece put into temp while a hand
+   * slot is free (`toTemp`) moves into the hand at the next recompute (_fillHandFromTemp).
    */
   stow(piece, { allowTemp = true, toTemp = false, preferIdx = null } = {}) {
     if (!toTemp) {
@@ -83,6 +84,31 @@ export class PlayerPieces {
     const j = freeSlot(this.temp);
     if (j >= 0) { this._putTemp(j, piece); return 'temp'; }
     return null;
+  }
+
+  /**
+   * PRTS 卫戍协议/帮助 §手牌区 "溢出单位会自动进入临时手牌区，常规手牌区出现空位时自动移入" (GitHub #82; until 0.1.3 the
+   * player had to drag them back): every free regular hand slot takes a temp piece at once. Order [ASSUMED] (PRTS names
+   * none): the temp row empties in the order it fills — right→left, the way stow fills it (freeSlot), so the piece that
+   * overflowed first moves first — and each piece takes the hand's next free slot right→left ("被发送至手牌区的物资优先
+   * 从右到左填充空位"). recompute() runs it, so it follows every change that frees a slot: a sale, a deployment from the
+   * hand, a merge that consumed hand copies, an item equipped / destroyed / used from the hand, a summon stack removed
+   * with its owner, an effect's destroyPiece… A piece that leaves temp is no longer due (tempDue). Returns the number
+   * moved.
+   * @returns {number}
+   */
+  _fillHandFromTemp() {
+    let moved = 0;
+    for (let j = this.temp.length - 1; j >= 0; j--) {
+      const p = this.temp[j];
+      if (!p) continue;
+      const i = freeSlot(this.hand);
+      if (i < 0) break;
+      this._detach({ piece: p, area: 'temp', idx: j });
+      this.hand[i] = p;
+      moved++;
+    }
+    return moved;
   }
 
   /**

@@ -16,6 +16,11 @@ export class PlayerPrep {
     return null;
   }
 
+  /**
+   * g.reward {idx}: the pick of the first queued offer (promotion reward, a strategy's special refresh, an item offer).
+   * A pick is a 招募 like a purchase: a full regular hand refuses it, also when it would complete a merge (PRTS
+   * 卫戍协议/帮助 §手牌区, see buy; GitHub #82).
+   */
   pickReward(idx) {
     const g = this._gate(); if (g) return g;
     const offer = this.offers[0];
@@ -26,14 +31,14 @@ export class PlayerPrep {
     const handFull = freeSlot(this.hand) < 0;
     if (slot.kind === 'item') {
       if (!this.gd.item(slot.id)) return fail(ERR.BAD_TARGET);
-      if (handFull && !this.completesItemMerge(slot.id)) return fail(ERR.HAND_FULL);
+      if (handFull) return fail(ERR.HAND_FULL);
     } else {
       const rec = this.gd.chess(slot.id);
       if (!rec) return fail(ERR.BAD_TARGET);
       const base = this.gd.baseIdOf(slot.id);
       const need = rec.isGolden ? this.gd.goldenCopies : 1;
       if (this.m.pool.has(base) && this.m.pool.left(base) < need) return fail(ERR.SOLD_OUT);
-      if (handFull && !this.completesChessMerge(slot.id)) return fail(ERR.HAND_FULL);
+      if (handFull) return fail(ERR.HAND_FULL);
     }
     const price = Number.isFinite(slot.price) && slot.price > 0 ? Math.trunc(slot.price) : 0;
     if (price > this.funds) return fail(ERR.NO_FUNDS);

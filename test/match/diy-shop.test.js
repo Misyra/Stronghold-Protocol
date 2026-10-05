@@ -357,3 +357,51 @@ test('a placeable 自选 summon comes to the hand like any operator\'s, places, 
   h.invariants();
   m.dispose();
 });
+
+test('a DIY 鸿雪 (her operator kit): her 打字机 piece comes to the hand in prep, places, fields with its kit; it leaves with her', REAL, () => {
+  const SNOW = 'char_4055_bgsnow';
+  const TYPEWRITER = 'token_10026_bgsnow_subbow';
+  if (!KITTED_CHARS.includes(SNOW)) return; // (her kit is on feedback5 since O6)
+  const h = diyMatch().start();
+  const m = h.m;
+  h.toPrep(1);
+  const p0 = h.ps('p_0');
+  assert.equal(p0.setDiy({ [T5B]: { charId: SNOW, skillIndex: 0, uniEquipId: null } }), true, 'a kitted pick: no widened list');
+  p0.initDiyStock(new Set());
+  clear(p0);
+  const snow = gain(p0, T5B);
+  assert.ok(!p0.hand.some((p) => p && p.kind === 'token'), 'in the hand she brings no summon yet');
+  const tile = legalTileFor(m, p0, T5B);
+  assert.deepEqual(m.handle('p_0', { t: 'g.move', uid: snow.uid, to: { area: 'board', row: tile[0], col: tile[1] } }), { ok: true });
+  const stack = p0.hand.find((p) => p && p.kind === 'token');
+  assert.ok(stack, 'deployed, her 打字机 comes to the hand (PRTS 卫戍协议/帮助 §战斗部署)');
+  assert.deepEqual([stack.id, stack.ownerUid, stack.count], [TYPEWRITER, snow.uid, DATA.backups.tokens[TYPEWRITER].variants[`${SNOW}@2/1/4/0`].stats.deployLimit]);
+  const t2 = legalTileFor(m, p0, T5B, new Set([`${tile[0]},${tile[1]}`]));
+  assert.deepEqual(m.handle('p_0', { t: 'g.move', uid: stack.uid, to: { area: 'board', row: t2[0], col: t2[1] } }), { ok: true });
+  h.invariants();
+  const input = p0.battleInput();
+  const tok = input.units.find((u) => u.kind === 'token');
+  assert.deepEqual([tok.tokenId, tok.ownerUid], [TYPEWRITER, snow.uid], 'the battle input carries the piece with its owner');
+  const spec = wire(buildBattleSpec({
+    battleId: 't.3', fieldId: 'n:p_0', kind: 'normal', seed: 9, modeId: m.modeId, round: 1, stageId: m.stageId,
+    rect: { ...GEO.NORMAL_RECT }, timeLimit: 20, players: [input], spawns: [], routes: m.wave.routes,
+    flags: { layerGainsEnabled: true, ...m.gd.dp }, enemyOverrides: {}, content: 'full',
+  }));
+  for (const ds of [m.ds, browserSource()]) {
+    const bt = createBattleFromSpec(wire(spec), ds, { quiet: true, recordEvents: false });
+    bt.step();
+    const u = bt.allyUnits.find((x) => x.uid === snow.uid);
+    const t = bt.allyUnits.find((x) => x.kind === 'token' && x.defId === TYPEWRITER);
+    assert.ok(u && !u.kit.generic, 'her operator kit');
+    assert.ok(t, 'the 打字机 is fielded');
+    assert.equal(t.ownerUnit, u, 'owned by her (the kit finds its piece by owner)');
+    assert.equal(t.def.stats.maxHp, DATA.backups.tokens[TYPEWRITER].variants[`${SNOW}@2/1/4/0`].stats.maxHp, 'the token record of her form');
+    assert.ok(t.kit && !t.kit.generic, 'the typewriter runs the kit her install gave it');
+    assert.equal(bt.errors.length, 0);
+  }
+  // sold, the piece leaves with her
+  assert.deepEqual(m.handle('p_0', { t: 'g.sell', uid: snow.uid }), { ok: true });
+  assert.ok(![...p0.board.values(), ...p0.hand, ...p0.temp].some((p) => p && p.kind === 'token'), 'her summon leaves with her');
+  h.invariants();
+  m.dispose();
+});

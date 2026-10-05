@@ -182,8 +182,16 @@ pick chooses any of the three, so write every skill under `skills: { [skillId]: 
 `talents`, `trait` and `install` apply under every skill. Read every number from `chess` / `bb` — the same file serves
 both tiers, both forms and both module stages. A 自选 piece has no 特质 and its bonds come from its factions: neither is
 the kit's business. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnToken(unit, …)` resolve the variant of the
-pick; a placeable summon comes to its player's hand like any operator's (server/match/player/diy.js `placeableTokens`
-reads the owner form's variant). Potential is 0 [ASSUMED: no account]. A new kit makes the operator a legal pick at once:
+pick. A **placeable** summon (data/backups.json `tokens[id].placeable`, made by the pick's skill or a talent — the
+variant's `sources`) is a hand piece like any operator's: when the 自选 piece is deployed in prep its player gets one
+stack of the variant's `deployLimit` (server/match/player/diy.js `placeableTokens`, PlayerState `grantTokensFor`), places
+it on a legal tile (the token's position / `ownerRange`), loses it with its owner (sold, merged, moved back), and the
+match hands every placed piece to the battle as a PlayerBattleInput token unit `{ kind: 'token', tokenId, ownerUid }` —
+so a kit finds its pieces before the battle starts as `battle.allyUnits` with `kind === 'token'`, its `defId` and
+`ownerUnit === unit`, still undeployed (e.g. `op-bgsnow.js` gives its 打字机 pieces their kit in a talent's `install`
+with `battle._setupUnit(t, kit)`; `op-cgbird.js` counts its 幻影). A kit test fields a piece the same way:
+`units: [op, { uid, kind: 'token', tokenId, ownerUid, row, col }]` (`test/content/op_bgsnow.test.js`); the match side is
+covered by `test/match/diy-shop.test.js` (a DIY 鸿雪's 打字机 from prep to battle). Potential is 0 [ASSUMED: no account]. A new kit makes the operator a legal pick at once:
 the server's `welcome.diyKitted` lists `KITTED_CHARS`, so the 自选编队 picker offers it and `room.diy` keeps it.
 
 **The fidelity rule and the checklist** above apply item by item: every skill at rank 4 and 7, every talent, every

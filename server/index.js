@@ -675,6 +675,15 @@ export async function startServer(opts = {}) {
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    // Public latency probe, deliberately tiny and session-free. No credentials or room information.
+    if (parts.rawPath === '/api/ping') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Cache-Control', 'no-store');
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+      if (req.method !== 'GET' && req.method !== 'HEAD') { sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' }); return; }
+      sendJson(req, res, 200, { ok: true }); return;
+    }
     // No collection route: even malformed /api/rooms requests consume the lookup budget.
     if (parts.rawPath === '/api/rooms' || parts.rawPath.startsWith('/api/rooms/')) {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');

@@ -64,6 +64,7 @@ import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { matchStatus, roomStatus } from './roomStatus.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
+import { Matchmaking } from './matchmaking.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -172,11 +173,12 @@ export class Lobby {
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
+    this.workerPool = workerPool;
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
@@ -188,6 +190,7 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
+    this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -221,6 +224,10 @@ export class Lobby {
    * @param {{ resumed: boolean, repeat: boolean }} info
    */
   onHello(session, { resumed, repeat }) {
+    if ((resumed || repeat) && (this.matchmaking.has(session) || session.matchmakingCancelledOnDisconnect)) {
+      this.matchmaking.sync(session);
+      session.matchmakingCancelledOnDisconnect = false;
+    }
     if (!resumed && !repeat) return;
     const room = this.roomOf(session);
     if (!room) {
@@ -257,6 +264,8 @@ export class Lobby {
    */
   onMessage(session, msg) {
     switch (msg.t) {
+      case 'matchmaking.join': return this.matchmaking.join(session, msg.difficulty);
+      case 'matchmaking.cancel': return this.roomOf(session) ? fail(ERR.ROOM_STARTED) : this.matchmaking.cancel(session);
       case 'room.create': return this.create(session, msg);
       case 'room.join': return this.join(session, msg);
       case 'room.leave': return this.leave(session);
@@ -274,6 +283,8 @@ export class Lobby {
 
   /** The session's socket closed. @param {import('./net.js').Session} session */
   onDisconnect(session) {
+    if (this.matchmaking.has(session)) session.matchmakingCancelledOnDisconnect = true;
+    this.matchmaking.cancel(session, false);
     this.clearResync(session.playerId); // the next resume resyncs immediately
     const room = this.roomOf(session);
     // a solo run may be resumed within singleReconnectTime (24 h); everything else keeps the registry's window
@@ -288,6 +299,7 @@ export class Lobby {
 
   /** The session's reconnect window elapsed (already removed from the registry). */
   onExpire(session) {
+    this.matchmaking.cancel(session, false);
     session.notice = null;
     session.pendingResult = null;
     this.clearResync(session.playerId);
@@ -302,6 +314,7 @@ export class Lobby {
    * @param {string} [reason]
    */
   shutdown(reason = 'shutdown') {
+    this.matchmaking.shutdown();
     for (const room of [...this.rooms.values()]) this.disposeRoom(room, reason);
     for (const t of this.graceTimers.values()) clearTimeout(t);
     this.graceTimers.clear();
@@ -328,6 +341,7 @@ export class Lobby {
     }
     const code = this.genCode();
     if (!code) return fail(ERR.INTERNAL, 'no room code available');
+    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now());
     room.ownerKey = key;
@@ -353,6 +367,7 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
+    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (cur) this.removeMember(cur, session.playerId);
     room.seats[idx] = this.humanSeat(idx, session);
     session.roomCode = room.code;
@@ -364,10 +379,37 @@ export class Lobby {
   }
 
   leave(session) {
+    if (this.matchmaking.has(session)) return this.matchmaking.cancel(session);
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     this.removeMember(room, session.playerId);
     return OK;
+  }
+
+  /** Allocate a fresh private co-op room and start it with exactly four opted-in humans. */
+  allocateMatchmaking(group, difficulty) {
+    if (group.length !== MAX_SEATS || group.some((s) => !s.connected || this.roomOf(s))) return fail(ERR.NOT_READY);
+    // Every participant's network budget applies, including when that player is not the generated room's host.
+    const keys = new Set(group.map((s) => s.limitKey).filter(Boolean));
+    if (this.opts.maxMatchesPerAddr > 0) for (const key of keys) {
+      if (this.countRooms((r) => !!r.match && (r.matchKey === key || r.activeHumans().some((seat) => this.registry.byId(seat.playerId)?.limitKey === key))) >= this.opts.maxMatchesPerAddr) return fail(ERR.RATE);
+    }
+    const created = this.create(group[0], { mode: 'coop', difficulty });
+    if (!created.ok) return created;
+    const room = this.roomOf(group[0]);
+    try {
+      for (const s of group.slice(1)) {
+        const joined = this.join(s, { code: room.code });
+        if (!joined.ok) { this.disposeRoom(room, 'matchmaking_failed'); return joined; }
+      }
+      for (const seat of room.seats) if (seat) seat.ready = true;
+      const started = this.start(group[0]);
+      if (!started.ok) this.disposeRoom(room, 'matchmaking_failed');
+      return started;
+    } catch (error) {
+      this.disposeRoom(room, 'matchmaking_failed'); this.log.error('[matchmaking] allocation failed', error);
+      return fail(ERR.INTERNAL);
+    }
   }
 
   ready(session, { ready }) {
@@ -506,6 +548,7 @@ export class Lobby {
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
         matchNo: room.matchCount + 1,
         data: this.safeData(),
+        workerPool: this.workerPool,
         log: this.log,
         now: this.now,
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),

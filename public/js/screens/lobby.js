@@ -73,6 +73,11 @@ const MODE_CARDS = [
     desc: `与至多 ${MAX_SEATS - 1} 名博士组成同盟，共享干员池，联防协作抵御敌潮。`,
     points: [`1–${MAX_SEATS} 名博士 · 可由 AI 队友补位`, '联防阶段 · 最终攻势合并生命值'],
   },
+  {
+    id: 'match', name: '同盟匹配', en: 'ALLIANCE MATCH', icon: 'search',
+    desc: '搜寻当前站点同难度的队友，凑齐 4 名博士后直接开始模拟。',
+    points: ['仅匹配主动搜寻的真人玩家', '可随时取消 · 不添加 AI 队友'],
+  },
 ];
 
 /**
@@ -192,10 +197,10 @@ function ModeCard({ card, selected, onSelect }) {
   </button>`;
 }
 
-function DifficultyCard({ roomMode, difficulty, selected, onSelect }) {
+function DifficultyCard({ roomMode, difficulty, selected, onSelect, disabled = false }) {
   const info = difficultyInfo(roomMode, difficulty);
   return html`<button type="button" class=${`diff-card${selected ? ' is-selected' : ''}`}
-      style=${`--d-color:${DIFFICULTY_COLORS[difficulty]}`} onClick=${() => onSelect(difficulty)} aria-pressed=${selected ? 'true' : 'false'}>
+      style=${`--d-color:${DIFFICULTY_COLORS[difficulty]}`} onClick=${() => onSelect(difficulty)} disabled=${disabled} aria-pressed=${selected ? 'true' : 'false'}>
     <span class="diff-card__bar" aria-hidden="true"></span>
     <span class="diff-card__head">
       <${DifficultyIcon} difficulty=${difficulty} class="diff-card__glyph" />
@@ -215,24 +220,35 @@ function DifficultyCard({ roomMode, difficulty, selected, onSelect }) {
 export function LobbyScreen() {
   const me = useStore((s) => s.me, shallowEqual);
   const conn = useStore((s) => s.connection, shallowEqual);
+  const matching = useStore((s) => s.matchmaking, shallowEqual);
   useData('config');
-  const [roomMode, setRoomMode] = useState(() => (loadPref('lobby.mode', 'coop') === 'solo' ? 'solo' : 'coop'));
+  const [roomMode, setRoomMode] = useState(() => {
+    const mode = loadPref('lobby.mode', 'coop'); return ['solo', 'coop', 'match'].includes(mode) ? mode : 'coop';
+  });
   const [difficulty, setDifficulty] = useState(() => {
     const d = loadPref('lobby.difficulty', 'FUNNY');
     return DIFFICULTIES.includes(d) ? d : 'FUNNY';
   });
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
   const [recent] = useState(recentRooms);
   const alive = useRef(true);
   const inFlight = useRef(false); // synchronous guard against double clicks (state updates are async)
   useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    if (!matching) { setElapsed(0); return; }
+    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() + (store.get().clock.offset || 0) - matching.joinedAt) / 1000)));
+    update(); const timer = setInterval(update, 1000); return () => clearInterval(timer);
+  }, [matching?.joinedAt]);
+  const activeDifficulty = matching?.difficulty || difficulty;
+  const simulationMode = roomMode === 'solo' ? 'solo' : 'coop';
 
   const online = conn.status === 'online';
   const codeOk = CODE_RE.test(code);
 
-  const pickMode = (m) => { setRoomMode(m); savePref('lobby.mode', m); };
-  const pickDifficulty = (d) => { setDifficulty(d); savePref('lobby.difficulty', d); };
+  const pickMode = (m) => { if (matching || busy) return; setRoomMode(m); savePref('lobby.mode', m); };
+  const pickDifficulty = (d) => { if (matching || busy) return; setDifficulty(d); savePref('lobby.difficulty', d); };
 
   const run = async (kind, fn) => {
     if (inFlight.current) return;
@@ -245,20 +261,23 @@ export function LobbyScreen() {
     }
   };
   const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty }));
+  const search = () => run('search', () => net.request('matchmaking.join', { difficulty }));
+  const cancel = () => run('cancel', () => net.request('matchmaking.cancel'));
   const join = (c = code) => {
     const k = normalizeCode(c);
     if (!CODE_RE.test(k)) { toast(`同盟密钥为 ${ROOM_CODE_LEN} 位字母或数字`, 'warn'); return; }
     run('join', () => net.request('room.join', { code: k }));
   };
-  const backToTitle = () => {
+  const returnToTitle = () => {
     identity.setEntered(false);
     store.set((s) => ({ session: { ...s.session, entered: false } }));
   };
+  const backToTitle = () => matching ? run('cancel', async () => { await net.request('matchmaking.cancel'); returnToTitle(); }) : returnToTitle();
 
   return html`<div class="screen lobby-screen">
     <header class="topbar">
       <div class="topbar__left">
-        <${Button} variant="ghost" size="sm" icon="chevronLeft" onClick=${backToTitle} title="返回标题">返回<//>
+        <${Button} variant="ghost" size="sm" icon="chevronLeft" disabled=${!!busy} onClick=${backToTitle} title="返回标题">返回<//>
         <${PingPill} ms=${conn.ping} online=${online} />
       </div>
       <div class="topbar__center">
@@ -280,6 +299,14 @@ export function LobbyScreen() {
 
     <div class="lobby-body screen__scroll">
       <section class="lobby-left">
+        ${matching ? html`<div class="matching-panel brackets" role="status">
+          <div class="matching-panel__head"><div><${MicroLabel}>SEARCHING FOR DOCTORS<//><h2>正在搜寻队友</h2></div><span class="matching-panel__time num">${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}</span></div>
+          <div class="matching-panel__count"><${Spinner} label="SEARCHING" /><div><strong class="num">${matching.players}/${matching.target} 名博士</strong><p>${DIFFICULTY_NAMES[activeDifficulty]} · 当前站点</p></div></div>
+          <progress class="matching-panel__progress" max=${matching.target} value=${matching.players} aria-label="匹配队列人数"></progress>
+          <p class="matching-panel__note">等待同站同难度的博士，凑齐 4 人后直接进入模拟。可随时取消，不添加 AI 队友。</p>
+          <${Button} variant="ghost" size="lg" icon="chevronLeft" loading=${busy === 'cancel'} onClick=${cancel}>取消搜寻<//>
+          <p class="matching-panel__foot">匹配成功后无需房间准备，可在本局信息确认阶段查看同盟密钥。</p>
+        </div>` : html`<div>
         <div class="section-label"><span class="section-label__idx num">01</span>模拟方式<${MicroLabel}>MODE<//></div>
         <div class="mode-cards">
           ${MODE_CARDS.map((c) => html`<${ModeCard} key=${c.id} card=${c} selected=${roomMode === c.id} onSelect=${pickMode} />`)}
@@ -298,23 +325,24 @@ export function LobbyScreen() {
               : html`<span class="t-dim">向同伴索取 ${ROOM_CODE_LEN} 位同盟密钥，或直接打开邀请链接</span>`}
           </div>
         <//>
+        </div>`}
         <${TipsPanel} />
       </section>
 
       <section class="lobby-right">
         <div class="section-label"><span class="section-label__idx num">02</span>模拟难度<${MicroLabel}>DIFFICULTY<//></div>
         <div class="diff-list">
-          ${DIFFICULTIES.map((d) => html`<${DifficultyCard} key=${d} roomMode=${roomMode} difficulty=${d} selected=${difficulty === d} onSelect=${pickDifficulty} />`)}
+          ${DIFFICULTIES.map((d) => html`<${DifficultyCard} key=${d} roomMode=${simulationMode} difficulty=${d} selected=${activeDifficulty === d} onSelect=${pickDifficulty} disabled=${!!matching || !!busy} />`)}
         </div>
         <div class="create-box">
           <${Tooltip} block=${true} text=${online ? null : '正在连接服务器…'}>
-            <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${busy === 'create'} disabled=${!online} onClick=${create}>
-              ${roomMode === 'solo' ? '开始独立模拟' : '创建同盟'}
+            <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" loading=${busy === 'create' || busy === 'search'} disabled=${!online || !!matching} onClick=${roomMode === 'match' ? search : create}>
+              ${matching ? '正在搜寻其他博士…' : roomMode === 'match' ? '开始匹配' : roomMode === 'solo' ? '开始独立模拟' : '创建同盟'}
             <//>
           <//>
           <div class="create-box__hint">
             ${online
-              ? html`<span>${roomMode === 'solo' ? '创建后即可开始模拟' : '创建后可邀请好友或添加 AI 队友'}</span>`
+              ? html`<span>${matching ? '凑齐四名真人后直接进入本局' : roomMode === 'match' ? '仅当前站点 · 同难度 · 不补 AI' : roomMode === 'solo' ? '创建后即可开始模拟' : '创建后可邀请好友，尽量避免添加 AI 队友'}</span>`
               : html`<${Spinner} size="sm" label="CONNECTING" />`}
           </div>
         </div>

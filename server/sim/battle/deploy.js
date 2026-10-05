@@ -86,13 +86,15 @@ export class BattleDeploy {
   /**
    * Withdraw an ally without a kill (it may redeploy after its respawn time): an operator lies down where it stood and
    * comes back there (isDown, GitHub #60) — unless `permanent`, or the 突袭 retreat ('raid') that redeploys it at once.
+   * `dying`: a forced exit that plays the operator's death animation — a knock-out put off by its own effect (史尔特尔's
+   * 余烬, 骑士戒律 + 竞技旗); the `death` hook carries it (Touch's 超脱 counts such an exit: content/tokens.js).
    */
-  retreat(unit, { reason = 'retreat', permanent = false } = {}) {
+  retreat(unit, { reason = 'retreat', permanent = false, dying = false } = {}) {
     if (!unit || !unit.alive || unit.side !== 'ally') return;
-    this._remove(unit, reason, null, permanent);
+    this._remove(unit, reason, null, permanent, dying);
   }
 
-  _remove(unit, reason, killer = null, permanent = false) {
+  _remove(unit, reason, killer = null, permanent = false, dying = false) {
     unit.alive = false;
     unit.removeReason = reason;
     unit.deployed = false;
@@ -145,7 +147,7 @@ export class BattleDeploy {
     }
     // the reason ('killed' | 'retreat' | 'expired' | …) lets the client keep the knock-down sound for real knock-outs
     if (reason !== 'leak') this._ev(['die', unit.id, reason]);
-    if (this._hooks.death) this.emit('death', { unit, reason, killer });
+    if (this._hooks.death) this.emit('death', { unit, reason, killer, dying: !!dying });
     if (unit.removed) this._toRelease.push(unit);
   }
 

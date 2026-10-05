@@ -565,7 +565,7 @@ test('3_12 瑕光 S1 光芒涌动 (自动触发 ⇒ DEFAULT, charges): next atta
   }
 });
 
-test('3_12 瑕光 S2 慑敌辉光: ATK +, ground enemies on her tile sleep for the skill, allies of the skill range healed each second', () => {
+test('3_12 瑕光 S2 慑敌辉光: ATK +, ground enemies on her tile sleep for the skill, allies of the skill range get 生命回复速度 (PRTS 备注: no heal)', () => {
   for (const id of BOTH('chess_char_3_12_a')) {
     const b = SB(id, 'skchr_blemsh_2'), t1 = TB(id, 1);
     const dur = LD(id, 'skchr_blemsh_2').skill.duration;
@@ -586,14 +586,17 @@ test('3_12 瑕光 S2 慑敌辉光: ATK +, ground enemies on her tile sleep for t
     assert.ok(e.s.flags.sleep, 'her tile: asleep');
     approx(e.findBuff('sleep').timeLeft, dur - h.b.dt, 0.05, 'for the skill duration');
     assert.ok(!n.s.flags.sleep, 'next tile: awake');
-    const n0 = h.hooksOf('damaged').length;
+    const v = u.s.atk * b['attack@atk_to_hp_recovery_ratio'];
+    approx(ally.findBuff(`blemsh:regen:${u.id}`)?.mods.hpRegen ?? 0, v, 1e-6, '生命回复速度 +ATK × ratio');
+    const n0 = h.hooksOf('damaged').length, hp0 = ally.hp, t1s = h.b.time, own = ally.s.hpRegen - v;
     h.run(2.2);
     const onSleeper = h.hooksOf('damaged').slice(n0).filter((c) => c.source === u && c.target === e && c.dmg?.isAttack);
     assert.ok(onSleeper.length >= 1, '仁慈: she hits the sleeper');
     approx(onSleeper[0].amount, u.s.atk * t1.atk_scale, 1e-6, '×仁慈');
-    const regen = h.hooksOf('heal').filter((c) => c.source === u && c.target === ally);
-    assert.equal(regen.length, 2, 'once per second');
-    approx(regen[0].amount, u.s.atk * b['attack@atk_to_hp_recovery_ratio']);
+    assert.equal(h.hooksOf('heal').filter((c) => c.source === u && c.target === ally).length, 0, 'no heal of hers');
+    assert.ok(Math.abs(ally.hp - hp0 - (v + own) * (h.b.time - t1s)) <= 1.5, `regenerated ${ally.hp - hp0}`);
+    assert.ok(h.runUntil(() => !u.skill.active, dur + 1));
+    assert.equal(ally.findBuff(`blemsh:regen:${u.id}`), null, 'gone with the skill');
     done(h);
   }
 });

@@ -46,7 +46,7 @@ export default {
           c.amount = 0;
         }, { owner: unit, priority: 100 });
         battle.on('heal', (c) => { // merged into the same heal
-          if (c.source !== unit || !unit.mem.bldskBonus || c.target !== unit.mem.bldskBonus) return;
+          if (c.source !== unit || c.opts?.regen || !unit.mem.bldskBonus || c.target !== unit.mem.bldskBonus) return; // (not her own 生命回复速度 tick)
           unit.mem.bldskBonus = null;
           // the bonus is part of the same heal: the healer's and the target's healing multipliers apply to it too
           c.amount += c.target.s.maxHp * ratio * num(unit.s.healingDealtMul, 1) * num(c.target.s.healingTakenMul, 1);

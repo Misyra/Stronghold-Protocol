@@ -371,13 +371,31 @@ const installMystic = (battle, unit) => {
   }, { owner: unit });
 };
 
+/** Refresh period / lifetime (s) of a bard trait's 生命回复速度 buff: it lapses within BARD_REGEN_DUR once the bard stops. */
+export const BARD_REGEN_IV = 0.25;
+export const BARD_REGEN_DUR = 0.5;
+
+/**
+ * 吟游者 trait "不攻击，持续恢复范围内所有友军生命（每秒相当于自身攻击力10%的生命）": PRTS 分支特性信息 吟游者 "特性为基于自身攻击力
+ * 来增加受益者的“生命回复速度”属性" — an hpRegen buff of `value` (the bard's ATK × ratio) on `ally`, one per bard (two bards
+ * add up), which the caller refreshes before it lapses (`duration`, default BARD_REGEN_DUR). No heal: 禁疗 and 无法被友方
+ * 治疗 (收割者 / 不屈者 / 武者 noHeal) do not stop it — PRTS 异常效果 禁疗 "增减生命回复速度…的效果不会被识别为治疗类能力"; the
+ * regeneration tick is the ally's own (damage.js heal `regen`, no 治疗加成). The `bardRegen` hook { unit (the bard),
+ * target, value } may scale one ally's share (魔王's 微尘: "使该干员受到魔王特性效果提升至1.5倍"). Also the 海嗣 range of
+ * 浊心斯卡蒂 (content/tokens.js, kits/ops/chess_char_6_04-skadi2.js).
+ */
+export function bardRegen(battle, bard, ally, value, duration = BARD_REGEN_DUR) {
+  if (!bard || !ally || !ally.alive || !(value > 0)) return;
+  let v = value;
+  if (battle.hasHook('bardRegen')) v = num(battle.emit('bardRegen', { unit: bard, target: ally, value: v }).value, 0);
+  if (v > 0) battle.addBuff(ally, { key: `trait:bard:${bard.id}`, duration, source: bard, mods: { hpRegen: v } });
+}
+
 const installBard = (battle, unit) => {
-  battle.every(1, () => {
+  battle.every(BARD_REGEN_IV, () => {
     if (!unit.canAct) return;
-    const amount = unit.s.atk * (unit.profile.auraRatio ?? 0.1);
-    for (const ally of battle.alliesInGrid(unit)) {
-      if (ally.hp < ally.s.maxHp) battle.heal(unit, ally, amount, { aura: true });
-    }
+    const v = unit.s.atk * (unit.profile.auraRatio ?? 0.1);
+    for (const ally of battle.alliesInGrid(unit)) bardRegen(battle, unit, ally, v);
   }, { owner: unit });
 };
 

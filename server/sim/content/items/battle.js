@@ -739,6 +739,7 @@ const BY_ITEM = {
   },
   // 骑士戒律 (卡西米尔): skill start ⇒ 20 s aura: enemies in range ASPD ×attack_speed, move ×move_speed;
   //   + 卡西米尔竞技旗: during the (timed) skill ATK +atk, lethal damage does not retreat it — it retreats when the skill ends
+  //   ("受到致命伤害时不撤退，技能结束后退场": a knock-out put off, so a `dying` retreat — Touch's 超脱 counts it [ASSUMED])
   chess_item_6_10_e(battle, u, rec, S) {
     const p = bp(rec, 'act2autochess_equip_acarm119_global_buff');
     const a = bp(rec, 'act2autochess_equip_acarm119_ability');
@@ -763,7 +764,7 @@ const BY_ITEM = {
       battle.removeBuff(u, comboKey);
       if (doomed && c.reason !== 'death') {
         doomed = false;
-        battle.after(0, () => { if (u.alive) battle.retreat(u, { reason: 'retreat' }); });
+        battle.after(0, () => { if (u.alive) battle.retreat(u, { reason: 'retreat', dying: true }); });
       }
     });
     S.on('fatal', (c) => {

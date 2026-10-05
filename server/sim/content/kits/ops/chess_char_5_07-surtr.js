@@ -66,7 +66,8 @@ export default {
           // noHeal (no heal pick, no heal from others) + healFree (her own heals too; S3's start heal "无视禁疗"), shown as
           // the status 'healFree' until she leaves. "强制退出战场视为撤回干员": a retreat (Battle.retreat drops the buff) — she
           // lies down where she stood and redeploys there, like every operator that leaves the field (PRTS 卫戍协议/帮助
-          // "干员退场后…原地留下一个“倒地干员”…自动部署至该位置"; Battle.isDown, GitHub #60).
+          // "干员退场后…原地留下一个“倒地干员”…自动部署至该位置"; Battle.isDown, GitHub #60). With her death animation
+          // (`dying`): PRTS Touch(卫戍协议) 超脱 备注 counts it as a knock-out ("如史尔特尔的天赋效果").
           const wait = num(t1['surtr_t_2[withdraw].interval'], 8);
           battle.on('deploy', (c) => { if (c.unit === unit) unit.mem.ember = false; }, { owner: unit });
           battle.on('fatal', (c) => {
@@ -77,7 +78,7 @@ export default {
             const dep = unit.deploySeq;
             battle.addBuff(unit, { key: 'surtr:ember', status: 'healFree', flags: { noHeal: true, healFree: true } });
             battle.fx('ember', { x: unit.x, y: unit.y, id: unit.id });
-            battle.after(wait, () => { if (unit.alive && unit.deploySeq === dep) battle.retreat(unit, { reason: 'retreat' }); }, { owner: unit });
+            battle.after(wait, () => { if (unit.alive && unit.deploySeq === dep) battle.retreat(unit, { reason: 'retreat', dying: true }); }, { owner: unit });
           }, { owner: unit, priority: -60 });
         } },
       ],

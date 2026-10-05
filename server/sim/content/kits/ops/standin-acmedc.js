@@ -19,16 +19,16 @@ export default {
   //      `attack@max_target` targets, every 医疗 operator of hers ATK +`attack@atk` herself included [ASSUMED: her own
   //      player's operators, as 余's "全场所有干员"; summons not].
   //   S3 恳切福音 (40 s): content/tokens.js touchGospel — the one implementation the 外勤医疗 strategy's Touch runs too
-  //      (5-2 grid, ATK +atk, 2 targets, an extra heal of 30 % of the main one on the target or an orthogonal neighbour,
-  //      ×heal_scale on allies at ≤ hp_ratio HP).
+  //      (5-2 grid, ATK +atk, 2 targets, ×heal_scale on allies below hp_ratio HP, and an extra heal of 30 % of the main
+  //      heal's base on the main target or an orthogonal neighbour — the lowest HP ratio, a full-HP one included — which
+  //      takes the ×heal_scale of its own recipient: PRTS 技能3 备注).
   //   Talents 攫升 / 超脱: content/tokens.js mapCharTalents (the strategy's Touch too); the module's 超脱 upgrade (8 SP at
   //      module Lv3) comes with the record's talents.
   //   Module PHY-X (elite, trait addition): "治疗生命值低于50%的友方单位时治疗量提升15%" — every heal of hers on an ally
   //      below `hp_ratio` HP (strictly: "低于") ×`heal_scale` (the trait blackboard). With S3's ×1.35 / ×1.40 it
   //      multiplies (×1.61 at Lv7): both are `heal_scale` blackboards, the 治疗倍率, and PRTS 游戏数据基础 §倍率 says "同种
-  //      倍率间叠乘" — no Touch-specific note or buff template exists. It runs before S3's hook, so S3's 30 % extra heal is
-  //      a share of the main heal with both bonuses and, like S3's ×1.35 / ×1.40 in touchGospel, never multiplies that
-  //      share again [ASSUMED].
+  //      倍率间叠乘" — no Touch-specific note or buff template exists. S3's extra heal is a heal of hers like any other: its
+  //      recipient below `hp_ratio` gets the ×1.15 too (its base is taken before either bonus).
   //   Triggers (data, nothing set here): S1 DEFAULT (an injured ally in her range); S2 / S3 ACTIVE_RANGE — the owner's
   //      rule of 2026-10-05 read for a heal skill: an injured ally inside the running 3-10 / 5-2 range casts.
   char_613_acmedc: (bb, chess, def) => {
@@ -79,8 +79,7 @@ export default {
       install(battle, unit) {
         if (phyScale !== 1 && phyRatio > 0) {
           battle.on('heal', (ctx) => {
-            // (S3's extra heal is a share of the main heal, which already carries it: touchGospel's `touchExtra`)
-            if (ctx.source !== unit || !ctx.target || ctx.opts?.regen || unit.mem.touchExtra) return;
+            if (ctx.source !== unit || !ctx.target || ctx.opts?.regen) return;
             if (ctx.target.hpRatio < phyRatio - 1e-9) ctx.amount *= phyScale;
           }, { owner: unit, priority: 10 });
         }

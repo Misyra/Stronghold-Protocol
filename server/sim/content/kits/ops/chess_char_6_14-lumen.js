@@ -93,7 +93,7 @@ function lumen(bb, chess, def) {
         const res = -num(t0.one_minus_status_resistance, -0.5), thr = num(t0.hp_ratio, 0.75);
         battle.on('heal', (ctx) => {
           const t = ctx.target;
-          if (ctx.source !== unit || !t || !(res > 0) || !(base > 0)) return;
+          if (ctx.source !== unit || ctx.opts?.regen || !t || !(res > 0) || !(base > 0)) return; // "治疗的目标": not her own 生命回复速度 tick
           const after = Math.min(t.s.maxHp, t.hp + ctx.amount);
           battle.applyStatus(t, 'resist', { duration: after / t.s.maxHp > thr ? special : base, value: Math.min(1, res), source: unit });
         }, { owner: unit, priority: -10 });

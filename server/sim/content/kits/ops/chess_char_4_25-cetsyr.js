@@ -92,7 +92,7 @@ export default withDefaults({
         onEnd({ unit }) { if (unit.mem.bardBase != null) unit.profile.auraRatio = unit.mem.bardBase; },
       },
       talents: [
-        { install(battle, unit) { // 过往尘埃: 3 motes; touching an operator ⇒ her trait heal ×1.5 on it for 6 s; mote back after 6 s
+        { install(battle, unit) { // 过往尘埃: 3 motes; touching an operator ⇒ her trait regen ×1.5 on it for 6 s; mote back after 6 s
           unit.mem.motes = new Array(baseCnt).fill(-Infinity);
           unit.mem.noInspire = true; // trait: 自身不受鼓舞影响 (another bard's 鼓舞 skips her)
           const cooldown = () => (S1 && skillActive(unit) ? num(bb.talent_cool_down, 3) : num(t0.cooldown, 6)); // S1: 重生速度加快
@@ -126,8 +126,9 @@ export default withDefaults({
               battle.fx('mote', { x: a.x, y: a.y, id: a.id });
             }
           });
-          battle.on('heal', (c) => {
-            if (c.source === unit && c.opts?.aura && c.target.findBuff(`cetsyr:mote:${unit.id}`)) c.amount *= num(t0['attack@trait_mul'], 1.5);
+          // "受到魔王特性效果提升至1.5倍": her trait's 生命回复速度 on that operator (professions.js bardRegen hook)
+          battle.on('bardRegen', (c) => {
+            if (c.unit === unit && c.target.findBuff(`cetsyr:mote:${unit.id}`)) c.value *= num(t0['attack@trait_mul'], 1.5);
           }, { owner: unit });
         } },
         { install(battle, unit) { // 魔王残响: every ally takes −10 % damage from 萨卡兹 enemies (while she is in the squad)

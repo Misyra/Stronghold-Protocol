@@ -155,14 +155,18 @@ export function harmonyMembers(priv, getChess = () => null) {
  * operators that are members through 变形同构体 (grantedBonds; `granted: true` and `items`: the item ids of the copy that
  * wears the pair — the card the row opens shows them; one row per operator — normal and elite copies are one member,
  * like the count's distinct members), so "成员 x/y" agrees with the count the server reports (在场; memberHeadCount).
+ * 0.2.0 自选编队: the 自选 pieces of the bond (a DIY slot filled with an operator, whose bonds come from its factions — the
+ * own pieces through `getChess` (gameLogic/diy.js diyGetter), a teammate's through `pieceRecord` (its UnitInfo `diy`
+ * pick) are rows too (`diy: true`, the operator's name and record `rec`).
  * `inHand`: in the 整备区 (hand), not the 5 temporary slots — what BOARD_AND_DECK bonds (投资人 远见 奇迹) count.
  * @param {any} bond bonds.json record
  * @param {any} priv m.private (hand/board/temp) — or a teammate's field operators (ui/watchBonds.js ownerBoard)
  * @param {Set<string>|string[]} [banned] banned base chess ids
  * @param {(id:string)=>any} [getChess]
  * @param {(id:string)=>any} [getItem] items.json lookup (the 变形同构体 pairings)
+ * @param {((p: any) => any)|null} [pieceRecord] the record of one of the pieces (default: getChess(p.id))
  */
-export function bondMembers(bond, priv, banned = [], getChess = () => null, getItem = () => null) {
+export function bondMembers(bond, priv, banned = [], getChess = () => null, getItem = () => null, pieceRecord = null) {
   const bannedSet = banned instanceof Set ? banned : new Set(Array.isArray(banned) ? banned : []);
   const members = Array.isArray(bond?.visibleMembers) && bond.visibleMembers.length ? bond.visibleMembers : (Array.isArray(bond?.members) ? bond.members : []);
   const baseOf = (id) => getChess(id)?.baseId || (typeof id === 'string' ? id.replace(/_b$/, '_a') : id);
@@ -173,11 +177,22 @@ export function bondMembers(bond, priv, banned = [], getChess = () => null, getI
   /** base id → { on: on the board?, hand: in the hand?, items: the wearer's item ids } — operators of the player that join this bond through 变形同构体 */
   const granted = new Map();
   const grants = (p) => typeof bond?.bondId === 'string' && grantedBonds(p.items, getItem).includes(bond.bondId);
+  /** base id → { on, hand, rec } — the player's 自选 pieces whose operator carries this bond */
+  const diy = new Map();
+  const diyOf = (p, on, hand) => {
+    const rec = pieceRecord ? pieceRecord(p) : getChess(p.id);
+    if (!rec || typeof rec.diyFor !== 'string' || !Array.isArray(rec.bonds) || !rec.bonds.includes(bond?.bondId)) return false;
+    const g = diy.get(rec.diyFor);
+    if (!g) diy.set(rec.diyFor, { on, hand, rec });
+    else { g.on = g.on || on; g.hand = g.hand || hand; }
+    return true;
+  };
   const itemIds = (p) => p.items.map((it) => (typeof it === 'string' ? it : it?.id)).filter((x) => typeof x === 'string');
   for (const p of Array.isArray(priv?.board) ? priv.board : []) {
     if (p?.kind !== 'chess') continue;
     const base = baseOf(p.id);
     onBoard.add(base); owned.add(base);
+    if (diyOf(p, true, false)) continue;
     if (!memberSet.has(base) && !granted.has(base) && grants(p)) granted.set(base, { on: true, hand: false, items: itemIds(p) });
   }
   for (const [list, hand] of [[priv?.hand, true], [priv?.temp, false]]) {
@@ -186,6 +201,7 @@ export function bondMembers(bond, priv, banned = [], getChess = () => null, getI
       const base = baseOf(p.id);
       owned.add(base);
       if (hand) inHand.add(base);
+      if (diyOf(p, false, hand)) continue;
       if (memberSet.has(base) || !grants(p)) continue;
       const g = granted.get(base);
       if (!g) granted.set(base, { on: false, hand, items: itemIds(p) });
@@ -200,6 +216,7 @@ export function bondMembers(bond, priv, banned = [], getChess = () => null, getI
     const c = getChess(id);
     rows.push({ id, tier: c?.tier ?? 0, name: c?.name ?? id, onBoard: g.on, owned: true, inHand: g.hand, banned: false, granted: true, items: g.items });
   }
+  for (const [id, g] of diy) rows.push({ id, tier: g.rec.tier ?? 0, name: g.rec.name ?? id, onBoard: g.on, owned: true, inHand: g.hand, banned: false, diy: true, rec: g.rec });
   return rows.sort((a, b) => (b.onBoard - a.onBoard) || (b.owned - a.owned) || (a.tier - b.tier) || (a.id < b.id ? -1 : 1));
 }
 

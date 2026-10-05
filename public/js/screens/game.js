@@ -96,7 +96,7 @@ import {
   snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
-  mergeTarget, modeOffBonds, readyFundsPrompt, ownerBandId,
+  mergeTarget, modeOffBonds, readyFundsPrompt, ownerBandId, ownDiyRecord,
 } from '../ui/gameLogic.js';
 import { toast } from '../ui/toasts.js';
 import { BriefingScreen } from './briefing.js';
@@ -236,9 +236,13 @@ function MatchScreen() {
   // the field the own pieces are deployed on: the own board, or the player's half of the boss field in a boss round's
   // prep (user playtest #5 item 7: legality and the legal-tile highlights read THOSE tiles, like the server)
   const deployField = deployFieldOf(pub, myId);
+  // the own pieces' records: a DIY slot the player filled is its 自选 operator (0.2.0, m.private.diy — position, range,
+  // name; gameLogic/diy.js), every other chess its data record
+  const ownChess = (id) => { const c = gd.chess(id); return ownDiyRecord(c, live.current.priv, { chess: data.get('chess'), backups: data.get('backups') }) || c; };
   const placeCtx = useMemo(() => placementContext({
     priv, stage: gd.stage(pub?.stageId), editable, field: deployField,
-    getChess: gd.chess, getToken: gd.token, getItem: gd.item, getEffect: gd.effect, backups: gd.backups,
+    getChess: (id) => { const c = gd.chess(id); return ownDiyRecord(c, priv, { chess: data.get('chess'), backups: data.get('backups') }) || c; },
+    getToken: gd.token, getItem: gd.item, getEffect: gd.effect, backups: gd.backups,
   }), [priv, pub?.stageId, editable, gd.ready, deployField]);
   live.current = { pub, priv, field, editable, placeCtx, watching, watchWho, home, myId, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, selBusy, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
 
@@ -719,12 +723,12 @@ function MatchScreen() {
     // the drop target is the tile under the pointer (render/drag.js; an item dropped on a unit's tile equips that unit —
     // user playtest #4 item 1); `tile` = the last target tile (tileHover), `released` = the pointer went up (not a cancel)
     const ptr = { released: false, tile: null };
-    const lookups = { getChess: gd.chess, getToken: gd.token, getItem: gd.item, chessRecord: (rec) => deployedRecord(rec, live.current.priv, gd.chess, gd.backups) };
+    const lookups = { getChess: ownChess, getToken: gd.token, getItem: gd.item, chessRecord: (rec) => deployedRecord(rec, live.current.priv, ownChess, gd.backups) };
     const runIntent = async (intent) => {
       const L = live.current;
       if (intent.confirmReplace) {
         // both slots used: the player picks the equipped item to destroy (cancel ⇒ nothing is sent)
-        const request = replaceRequest(L.placeCtx, intent, gd.chess, gd.item);
+        const request = replaceRequest(L.placeCtx, intent, ownChess, gd.item);
         if (request) {
           const uid = await openReplaceRef.current(request);
           if (!Number.isInteger(uid)) { audio.sfx('back', { volume: 0.5 }); return; }
@@ -750,7 +754,7 @@ function MatchScreen() {
     /** Open the direction wheel for a legal board drop (the piece stays on the tile meanwhile). */
     const openFacing = (entry, t) => {
       const piece = entry.piece;
-      const rec = piece.kind === 'item' ? gd.item(piece.id) : piece.kind === 'token' ? gd.token(piece.id) : gd.chess(piece.id);
+      const rec = piece.kind === 'item' ? gd.item(piece.id) : piece.kind === 'token' ? gd.token(piece.id) : ownChess(piece.id);
       holdPiece(view, piece.uid, { row: t.row, col: t.col });
       setSel(null);
       setFacing({ uid: piece.uid, piece, row: t.row, col: t.col, grid: previewGrid(lookups, piece), name: rec?.name || '' });
@@ -889,8 +893,8 @@ function MatchScreen() {
   // ---- direction step (research 09 §1.2) and the selected piece's underframe ------------------------------------
   // DESIGN §16: previews show the range the unit fights with under the player's loadout (an elite's module grid); a
   // chess the player does not own the range of its stand-in (0.2.0 补位, gameLogic deployedRecord)
-  const lookups = useMemo(() => ({ getChess: gd.chess, getToken: gd.token, getItem: gd.item,
-    chessRecord: (rec) => deployedRecord(rec, live.current.priv, gd.chess, gd.backups) }), [gd.ready]);
+  const lookups = useMemo(() => ({ getChess: ownChess, getToken: gd.token, getItem: gd.item,
+    chessRecord: (rec) => deployedRecord(rec, live.current.priv, ownChess, gd.backups) }), [gd.ready]);
   const heldRef = useRef(new Map());                     // uid → { row, col, t } committed placements awaiting m.private
   const releaseHold = useCallback((uid) => {
     heldRef.current.delete(uid);
@@ -1200,7 +1204,7 @@ function MatchScreen() {
     <div class="gm__vignette" aria-hidden="true"></div>
     ${tempNotice ? html`<${TempRowNotice} view=${view} count=${temp.count} items=${temp.items} label=${!drag && !facing}
       ready=${phase === PHASE.PREP && !!priv?.ready} />` : null}
-    ${showPrep && view && viewKind !== 'loading' && priv && !pen ? html`<${StandInTags} view=${view} priv=${priv} getChess=${gd.chess} backups=${gd.backups} />` : null}
+    ${showPrep && view && viewKind !== 'loading' && priv && !pen ? html`<${StandInTags} view=${view} priv=${priv} getChess=${gd.chess} backups=${gd.backups} diyData=${{ chess: data.get('chess'), backups: data.get('backups') }} />` : null}
 
     <div class="gm__hud" ref=${hudElRef}>
       <${TopBar} pub=${pub} priv=${priv} conn=${conn} hud=${hud} total=${total} drawer=${drawer}
@@ -1270,7 +1274,7 @@ function MatchScreen() {
 
       ${selEntry && editable && !facing && !drag && showPrep ? html`<${Underframe} key=${sel.uid} view=${view} uid=${sel.uid}
         row=${pieceTile(selEntry)?.row} col=${pieceTile(selEntry)?.col} actions=${underframeActions(placeCtx, sel.uid)} busy=${selBusy}
-        name=${(selEntry.piece.kind === 'item' ? gd.item(selEntry.piece.id) : selEntry.piece.kind === 'token' ? gd.token(selEntry.piece.id) : gd.chess(selEntry.piece.id))?.name || ''}
+        name=${(selEntry.piece.kind === 'item' ? gd.item(selEntry.piece.id) : selEntry.piece.kind === 'token' ? gd.token(selEntry.piece.id) : ownChess(selEntry.piece.id))?.name || ''}
         onRetreat=${retreatSel} onSell=${sellSel} onDestroy=${sellSel} />` : null}
     </div>
 

@@ -1,23 +1,28 @@
-// Operator loadout + ownership state and server sync (DESIGN §16; 干员持有 — 0.2.0 补位).
+// Operator loadout + ownership + 自选编队 state and server sync (DESIGN §16; 干员持有 — 0.2.0 补位; 自选编队 — 0.2.0 DIY).
 //
 // `loadoutStore` holds the per-browser loadout (`entries`, persisted in localStorage through store.js savePref), the
-// per-browser not-owned list of the 干员持有 tab (`notOwned`, likewise) and the overlay's screen state (open / origin /
-// tab / selection / filters). `installLoadoutSync()` / `installOwnershipSync()` (called once by main.js) keep the
-// server's copies current — one sync engine (installPrefSync), two settings: after every `welcome` (new or resumed
+// per-browser not-owned list of the 干员持有 tab (`notOwned`, likewise), the 自选编队 picks (`diy`, likewise; with
+// `diyKitted` = the operators the server lets a DIY slot field, from every `welcome`) and the overlay's screen state
+// (open / origin / tab / selection / filters). `installLoadoutSync()` / `installOwnershipSync()` / `installDiySync()`
+// (called once by main.js) keep the server's copies current — one sync engine (installPrefSync), three settings: after
+// every `welcome` (new or resumed
 // session — the server keeps them on the session and on the seat, so joining a room needs no resend) and after every
 // edit (debounced; a pending edit goes out at once when the overlay closes), they send `room.loadout { entries }`
 // (sanitised against the loaded data/chess.json: ui/loadoutModel.js sanitizeEntries — a stale entry is dropped, never
-// the whole loadout) and `room.ownership { notOwned }` (sent as stored: the server keeps the droppable chess and drops
-// the rest, so no data is needed). Replies: RATE → retried later; WRONG_PHASE / ROOM_STARTED → the running match keeps
-// what it took (the loadout locks when INFO_CHECK ends; the ownership never changes during a match) — stored for the
-// next match, not an error for the player; anything else is logged. `sync` / `ownSync` ∈ 'idle' | 'pending' |
-// 'sending' | 'synced' | 'locked' | 'error' are mirrored into the store for the screen's status line.
+// the whole loadout), `room.ownership { notOwned }` (sent as stored: the server keeps the droppable chess and drops
+// the rest, so no data is needed) and `room.diy { picks }` (sent as stored, structurally clean: the server keeps the
+// legal picks). Replies: RATE → retried later; WRONG_PHASE / ROOM_STARTED → the running match keeps what it took (the
+// loadout locks when INFO_CHECK ends; the ownership and the 自选 picks never change during a match) — stored for the
+// next match, not an error for the player; anything else is logged. `sync` / `ownSync` / `diySync` ∈ 'idle' |
+// 'pending' | 'sending' | 'synced' | 'locked' | 'error' are mirrored into the store for the screen's status line.
 
 import { createStore, loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
 import { LOADOUT_PREF, parseStored, toStored, sanitizeEntries } from './loadoutModel.js';
 import { OWNERSHIP_PREF, parseStoredOwnership, toStoredOwnership, cleanIds, sanitizeNotOwned } from './ownershipModel.js';
+import { DIY_PREF, parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks } from './diyModel.js';
 import { toast } from './toasts.js';
+import { t } from '../../../shared/i18n.js';
 
 export const SYNC_DEBOUNCE_MS = 500;
 export const RETRY_MS = 1500;
@@ -28,18 +33,24 @@ function readStored() {
 function readStoredOwnership() {
   try { return parseStoredOwnership(loadPref(OWNERSHIP_PREF, null)); } catch { return []; }
 }
+function readStoredDiy() {
+  try { return parseStoredDiy(loadPref(DIY_PREF, null)); } catch { return {}; }
+}
 
 /** Loadout + ownership + screen state (separate from the app store: it must survive room / match resets). */
 export const loadoutStore = createStore({
   entries: readStored(),
   notOwned: readStoredOwnership(), // 干员持有: base chess ids marked 未持有 (sorted; [] = every operator owned)
+  diy: readStoredDiy(), // 自选编队: { [slotBaseId]: { charId, skillIndex?, uniEquipId? } } ({} = every slot empty)
+  diyKitted: null,     // the operators a DIY slot may field (welcome.diyKitted; null before the first welcome)
   open: false,
   from: null,          // 'lobby' | 'room' | 'briefing'
-  tab: 'loadout',      // 'loadout' (干员调配) | 'ownership' (干员持有)
+  tab: 'loadout',      // 'loadout' (干员调配) | 'ownership' (干员持有) | 'diy' (自选编队)
   sel: null,           // selected base chess id
   filters: { tier: null, prof: null, bond: null, query: '', changedOnly: false },
   sync: 'idle',
   ownSync: 'idle',
+  diySync: 'idle',
 });
 
 /** Replace the stored entries (persisted at once; the sync picks the change up). */
@@ -86,9 +97,30 @@ export function applyOwnershipImport(list, lookup) {
   return { applied: clean.length, dropped: Math.max(0, asked - clean.length) };
 }
 
+/** Replace the stored 自选编队 picks (persisted at once, the sync picks the change up). */
+export function setDiyPicks(picks) {
+  const next = cleanPicks(picks);
+  try { savePref(DIY_PREF, toStoredDiy(next)); } catch { /* private mode: the session keeps it */ }
+  loadoutStore.set({ diy: next });
+}
+
+/**
+ * Apply an imported roster (parseDiyImport(...).picks), sanitised against the loaded data and the kit list (the picks
+ * the server would keep), persisted and synced like an edit. An empty roster is a valid import (= every slot empty).
+ * @param {Record<string, any>} picks @param {any} data `{ chess, backups }` @param {Iterable<string>|null} kitted
+ * @returns {{ applied: number, dropped: number }}
+ */
+export function applyDiyImport(picks, data, kitted) {
+  const asked = Object.keys(cleanPicks(picks)).length;
+  const clean = sanitizeDiyPicks(picks, data, kitted);
+  setDiyPicks(clean);
+  const applied = Object.keys(clean).length;
+  return { applied, dropped: Math.max(0, asked - applied) };
+}
+
 /**
  * Open the 干员调配 overlay. @param {'lobby'|'room'|'briefing'} from @param {string|null} [sel]
- * @param {'loadout'|'ownership'|null} [tab] the tab to show (default: the last one)
+ * @param {'loadout'|'ownership'|'diy'|null} [tab] the tab to show (default: the last one)
  */
 export function openLoadout(from = 'lobby', sel = null, tab = null) {
   data.load('chess');
@@ -96,7 +128,7 @@ export function openLoadout(from = 'lobby', sel = null, tab = null) {
   data.load('assets');
   data.load('local');
   data.load('backups');
-  loadoutStore.set({ open: true, from, ...(sel ? { sel } : {}), ...(tab === 'loadout' || tab === 'ownership' ? { tab } : {}) });
+  loadoutStore.set({ open: true, from, ...(sel ? { sel } : {}), ...(tab === 'loadout' || tab === 'ownership' || tab === 'diy' ? { tab } : {}) });
 }
 export const closeLoadout = () => loadoutStore.set({ open: false });
 
@@ -107,7 +139,8 @@ export const closeLoadout = () => loadoutStore.set({ open: false });
  */
 function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, field, prepare, lockedText, tag }) {
   const T = timers || { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: (id) => globalThis.clearTimeout(id) };
-  const tell = notify || ((text) => toast(text, 'warn'));
+  // (`lockedText` is a msgid: the toast is translated when it shows — docs/I18N.md)
+  const tell = notify || ((text) => toast(t(text), 'warn'));
   let timer = null;
   let seq = 0;            // requests sent (the reply of an older one never overrides a newer one's state)
   let pendingJson = null; // JSON of the newest request still awaiting its reply
@@ -227,4 +260,25 @@ export function installOwnershipSync({ net, timers, target = loadoutStore, notif
     lockedText: '干员持有是局外设置，修改将在下一局生效',
     prepare: async () => cleanIds(target.get().notOwned),
   });
+}
+
+/**
+ * Wire the 自选编队 sync once (0.2.0 DIY): `room.diy { picks }` after every welcome and edit. The picks go as stored
+ * (structurally clean); the server keeps the legal ones. During a match the server stores them for the next one
+ * (ROOM_STARTED → 'locked'): the setting is out of match. Every `welcome` also brings the operators a DIY slot may field
+ * (`diyKitted`, the picker's list).
+ * @param {{ net: any, timers?: { setTimeout: Function, clearTimeout: Function }, target?: ReturnType<typeof createStore>,
+ *   notify?: (text: string) => void }} deps
+ */
+export function installDiySync({ net, timers, target = loadoutStore, notify } = {}) {
+  const offKit = net.on('welcome', (msg) => {
+    const list = msg && Array.isArray(msg.diyKitted) ? msg.diyKitted.filter((x) => typeof x === 'string') : null;
+    target.set({ diyKitted: list });
+  });
+  const sync = installPrefSync({
+    net, timers, target, notify, key: 'diy', stateKey: 'diySync', msgType: 'room.diy', field: 'picks', tag: 'diy',
+    lockedText: '自选编队是局外设置，修改将在下一局生效',
+    prepare: async () => cleanPicks(target.get().diy),
+  });
+  return { flush: sync.flush, dispose() { offKit?.(); sync.dispose(); } };
 }

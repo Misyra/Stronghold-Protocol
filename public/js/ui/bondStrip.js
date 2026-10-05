@@ -21,10 +21,11 @@
 
 import { html, BondDisc, Icon, MicroLabel, Tooltip } from './components.js';
 import { RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
-import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip } from './gameLogic.js';
+import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip, diyGetter, diyRecordFor } from './gameLogic.js';
 import { formatBondEffect } from './richText.js';
 import { bondIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
+import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -99,8 +100,11 @@ export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember,
   const th = Array.isArray(entry?.thresholds) && entry.thresholds.length ? entry.thresholds : b.thresholds || [];
   const tier = off ? 0 : entry?.tier ?? bondTier(count, th, b.maxCount);
   const active = !off && (entry ? !!entry.active : tier > 0);
-  const getChess = (id) => data.lookup('chess', id);
-  const members = bondMembers(b, priv, banned, getChess, (id) => data.lookup('items', id));
+  // (自选 pieces are their operators: the own ones by m.private.diy, a watched teammate's by the pick its unit carries)
+  const dd = { chess: data.get('chess'), backups: data.get('backups') };
+  const getChess = diyGetter((id) => data.lookup('chess', id), priv, dd);
+  const pieceRecord = (p) => (p && p.diy && typeof p.diy === 'object' ? diyRecordFor(data.lookup('chess', p.id), p.diy, dd) : null) || getChess(p.id);
+  const members = bondMembers(b, priv, banned, getChess, (id) => data.lookup('items', id), pieceRecord);
   const countsHand = entry?.countsHand ?? b.countsHand;
   const next = nextThreshold(count, th);
   const hasNow = !off && !!(b.effectDescRaw || b.effectDesc);
@@ -149,10 +153,11 @@ export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember,
         ${members.map((mb) => html`<button key=${mb.id} type="button" class=${cx('bpop__member', mb.onBoard && 'is-on', mb.owned && !mb.onBoard && 'is-owned', mb.banned && 'is-banned', mb.granted && 'is-granted')}
             onClick=${() => onMember?.(mb.id, mb.granted && Array.isArray(mb.items) ? mb.items : null)} data-granted=${mb.granted ? '1' : null}
             title=${`${mb.name}${mb.granted ? '（变形同构体：视为本盟约成员）' : ''}${mb.banned ? '（本局禁用）' : mb.onBoard ? '（在场）' : mb.owned ? '（整备区）' : ''}`}>
-          <${UnitThumb} kind="chess" id=${mb.id} size="sm" dim=${!mb.owned || mb.banned} />
+          <${UnitThumb} kind="chess" id=${mb.id} size="sm" dim=${!mb.owned || mb.banned} rec=${mb.diy ? mb.rec : null} />
           <span class="bpop__mname">${mb.name}</span>
           ${mb.banned ? html`<span class="bpop__ban"><${Icon} name="close" /></span>` : null}
           ${mb.granted ? html`<span class="bpop__iso" aria-hidden="true">同构</span>` : null}
+          ${mb.diy ? html`<span class="bpop__iso bpop__diy" data-diy="1" aria-hidden="true">${t('自选')}</span>` : null}
         </button>`)}
       </div>
     </section>

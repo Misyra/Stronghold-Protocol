@@ -1,12 +1,15 @@
 // public/js/screens/game/standInTags.js — 0.2.0 补位: the 「替补：X」 tag under the player's own prep pieces (hand,
 // 临时整备区, board) of a chess they do not own (m.private.standIns). The hand keeps the chess's own model (the card shows
 // the original operator); on the board the model is the stand-in's (render/app.js pieceInfo) — the tag says which
-// chess it is either way. Anchored to each piece's drawn body (view.pieceScreenRect, followed every frame like the
-// direction wheel follows its tile); never takes the pointer, so the pieces stay draggable.
+// chess it is either way. 0.2.0 自选编队: the 「自选」 tag under the player's own pieces of a DIY slot it filled
+// (m.private.diy) — the model is the operator's everywhere. Anchored to each piece's drawn body (view.pieceScreenRect,
+// followed every frame like the direction wheel follows its tile); never takes the pointer, so the pieces stay
+// draggable.
 
 import { useEffect, useRef, useState } from '../../../vendor/hooks.module.js';
 import { html } from '../../ui/components.js';
-import { fieldsStandIn, standInOf, standInLabel } from '../../ui/gameLogic.js';
+import { fieldsStandIn, standInOf, standInLabel, ownDiyRecord } from '../../ui/gameLogic.js';
+import { t } from '../../../../shared/i18n.js';
 
 const rawOf = (view) => (view && view.raw) || view || null;
 
@@ -30,9 +33,27 @@ export function standInPieces(priv, getChess, backups) {
   return out;
 }
 
-/** @param {{ view: any, priv: any, getChess: (id: string) => any, backups: any }} props */
-export function StandInTags({ view, priv, getChess, backups }) {
-  const items = standInPieces(priv, getChess, backups);
+/**
+ * The player's own prep pieces of a DIY slot it filled (0.2.0 自选编队): [{ uid, label, name, area, diy: true }].
+ * @param {any} priv m.private @param {(id: string) => any} getChess @param {{ chess: any, backups: any }} data
+ */
+export function diyPieces(priv, getChess, data) {
+  const out = [];
+  if (!priv || !priv.diy || typeof priv.diy !== 'object' || !Object.keys(priv.diy).length) return out;
+  const add = (p, area) => {
+    if (!p || p.kind !== 'chess' || !Number.isInteger(p.uid)) return;
+    const rec = ownDiyRecord(getChess(p.id), priv, data);
+    if (rec) out.push({ uid: p.uid, label: t('自选'), name: rec.name, area, diy: true });
+  };
+  for (const p of Array.isArray(priv.hand) ? priv.hand : []) add(p, 'hand');
+  for (const p of Array.isArray(priv.temp) ? priv.temp : []) add(p, 'temp');
+  for (const p of Array.isArray(priv.board) ? priv.board : []) add(p, 'board');
+  return out;
+}
+
+/** @param {{ view: any, priv: any, getChess: (id: string) => any, backups: any, diyData?: { chess: any, backups: any } | null }} props */
+export function StandInTags({ view, priv, getChess, backups, diyData = null }) {
+  const items = [...standInPieces(priv, getChess, backups), ...(diyData ? diyPieces(priv, getChess, diyData) : [])];
   const [pos, setPos] = useState({});
   const last = useRef('');
   const key = items.map((it) => it.uid).join(',');
@@ -64,7 +85,8 @@ export function StandInTags({ view, priv, getChess, backups }) {
   return html`<div class="sitags" aria-hidden="true" data-testid="standin-tags">
     ${items.map((it) => {
       const p = pos[it.uid];
-      return p ? html`<span key=${it.uid} class=${`sitag sitag--${it.area}`} data-uid=${it.uid} title=${`未持有：由 ${it.name} 上场`}
+      return p ? html`<span key=${it.uid} class=${`sitag sitag--${it.area}${it.diy ? ' sitag--diy' : ''}`} data-uid=${it.uid} data-diy=${it.diy ? '1' : undefined}
+        title=${it.diy ? t('自选编队：{name}', { name: it.name }) : `未持有：由 ${it.name} 上场`}
         style=${`left:${p.x.toFixed(1)}px;top:${p.y.toFixed(1)}px`}>${it.label}</span>` : null;
     })}
   </div>`;

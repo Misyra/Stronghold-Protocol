@@ -45,5 +45,10 @@ export function renderInfo(u) {
     // 0.2.0 补位: the replaced operator's charId of a chess fighting as its stand-in (UnitInfo.standInFor; spine / avatar /
     // name are already the stand-in's) — the detail card and the view's data lookups (attack interval, splash FX) follow it
     standInFor: typeof u.standInFor === 'string' && u.standInFor ? u.standInFor : undefined,
+    // 0.2.0 自选编队: the pick of a DIY slot's unit (UnitInfo.diy { charId, skillIndex, uniEquipId }; spine / avatar / name
+    // are already the operator's) — the detail card composes the operator from it, the data lookups follow it
+    diy: u.diy && typeof u.diy === 'object' && typeof u.diy.charId === 'string'
+      ? { charId: u.diy.charId, skillIndex: Number.isInteger(u.diy.skillIndex) ? u.diy.skillIndex : null, uniEquipId: typeof u.diy.uniEquipId === 'string' ? u.diy.uniEquipId : null }
+      : undefined,
   };
 }

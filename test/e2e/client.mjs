@@ -56,6 +56,7 @@ export async function startRealServer(opts = {}) {
     if (opts.fast.autoPlace) env.SP_AUTO_PLACE = '1';
     if (opts.fast.eliminate?.length) env.SP_ELIMINATE = opts.fast.eliminate.join(',');
     if (opts.fast.stage) env.SP_STAGE = String(opts.fast.stage);
+    if (opts.fast.level) env.SP_START_LEVEL = String(opts.fast.level);
   }
   const child = spawn(process.execPath, [entry], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const logs = [];

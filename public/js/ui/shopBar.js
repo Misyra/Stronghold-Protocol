@@ -19,14 +19,17 @@
 // §16): the skill icon above the name, mint-framed with 已调配 in its title when it is not the default skill (and the
 // module type of an elite card, with its official type icon when the local-client art has it). A chess the player does
 // not own (0.2.0 补位, m.private.standIns) keeps its card — name, portrait, bonds, price — with an ice 「替补：X」 badge,
-// and the skill icon is the stand-in's (its backup skill: the one that fights).
+// and the skill icon is the stand-in's (its backup skill: the one that fights). A 自选 piece (0.2.0, m.private.diy — a DIY
+// slot the player filled, only ever in its own shop) shows the operator — name, portrait, class, the bonds of its
+// factions, the pick's skill and module — with a mint 「自选」 badge.
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
 import { Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
-import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, fieldsStandIn, standInOf, standInLoadout, standInLabel } from './gameLogic.js';
+import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, fieldsStandIn, standInOf, standInLoadout, standInLabel, ownDiyRecord, diyGetter } from './gameLogic.js';
 import { chessPortraitUrl, itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
+import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -64,7 +67,11 @@ function ArmedTag({ reason, free }) {
  *   onTap?:(idx:number)=>void, onBuy:Function, onDetail:Function }} props
  */
 export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, offBonds = null }) {
-  const c = data.lookup('chess', slot.id);
+  const c0 = data.lookup('chess', slot.id);
+  // 0.2.0 自选编队: a DIY slot the player filled is its operator (shared/diy.js, the pick of m.private.diy)
+  const diyData = { chess: data.get('chess'), backups: data.get('backups') };
+  const dr = c0 ? ownDiyRecord(c0, priv, diyData) : null;
+  const c = dr || c0;
   const m = data.get('assets');
   const tier = c?.tier ?? 1;
   const prog = mergeProgress(priv, slot.id, (id) => data.lookup('chess', id));
@@ -74,7 +81,7 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
   const disabled = !!reason;
   // 0.2.0 补位: the player's not-owned chess is deployed as its stand-in — badge + the stand-in's skill
   const si = c && fieldsStandIn(priv, c) ? standInOf(c, data.get('backups')) : null;
-  const lo = si ? standInLoadout(si, LOOKUPS.getChess, data.get('backups')) : c ? chessLoadout(c, priv?.loadout, LOOKUPS.getChess) : null;
+  const lo = si ? standInLoadout(si, LOOKUPS.getChess, data.get('backups')) : c ? chessLoadout(c, priv?.loadout, dr ? diyGetter(LOOKUPS.getChess, priv, diyData) : LOOKUPS.getChess) : null;
   const tap = () => { if (onTap) onTap(idx); else if (!disabled) onBuy(idx); else onDetail(slot.id, 'chess', hint); };
   const card = html`<button type="button" class=${cx('scard', `scard--t${tier}`, frozen && 'is-frozen', disabled && 'is-disabled', willMerge && 'is-merge', armed && 'is-armed')}
       onClick=${tap} onContextMenu=${(e) => { e.preventDefault(); onDetail(slot.id, 'chess', hint); }}
@@ -90,6 +97,7 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
       </span>` : null}
     </span>
     ${si ? html`<span class="scard__standin" data-standin=${si.charId} title=${`未持有：由替补干员 ${si.name} 上场（盟约、阶级与价格不变）`}>${standInLabel(si)}</span>` : null}
+    ${dr ? html`<span class="scard__diy" data-diy=${dr.charId} title=${t('自选编队：{name}（只在你的商店出现）', { name: dr.name })}>${t('自选')}</span>` : null}
     <span class="scard__body">
       ${lo?.skill ? html`<${SkillBadge} chess=${si || c} lo=${lo} standIn=${!!si} />` : null}
       <span class="scard__name">${c?.name || slot.id}</span>

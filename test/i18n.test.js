@@ -117,6 +117,7 @@ test('public/i18n/en.json: valid, English values, placeholders kept, the pilot s
 
 test('every msgid of the pilot screens, the shell and the server messages is in public/i18n/en.json', async () => {
   const files = ['public/js/screens/title.js', 'public/js/screens/lobby.js', 'public/js/screens/room.js', 'public/js/ui/settings.js',
+    'public/js/screens/diy.js',
     'public/js/main.js', 'public/js/ui/toasts.js', 'server/match/match/messaging.js', 'server/match/player/placement.js',
     'server/match/player/basics.js', 'server/match/player/acquire.js', 'server/match/effectsMeta.js', 'server/match/match/settle.js',
     'server/match/match/platform.js', 'server/match/match/unitePhase.js', 'server/match/match/bossRounds.js',

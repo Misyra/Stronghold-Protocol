@@ -121,7 +121,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 资源 URL 自动带版本前缀（`/_v/<版本>/…`）：脚本、样式、游戏数据及其模块依赖按发布版本缓存一年；图片、Spine、字体、音频使用独立的素材版本，单纯更新代码不会让浏览器重新下载未改变的素材。HTML 保持 `no-cache`，刷新即可取得当前版本；旧页面发现版本变化时沿用局内更新提示，局内不会自动刷新。无需手动修改素材清单或给 URL 拼 `?v=`。
 
-版本在进程启动时计算：代码和 JSON 按内容，大型二进制素材按路径、大小和修改时间。更新代码、下载素材、复制本地素材后都要重启服务器；不要在保留二进制文件大小和修改时间的同时替换内容。运行中改动的版本资源返回不缓存的 503，避免把新内容写进旧版本的长期缓存。反向代理需把 `/_v/` 原样交给 Node；不要对首页和 API 强制设置长期缓存。
+版本在进程启动时计算：代码和 JSON 按内容，大型二进制素材按路径、大小和修改时间。更新代码、下载素材、复制本地素材后都要重启服务器；不要在保留二进制文件大小和修改时间的同时替换内容。运行中改动的版本资源返回不缓存的 503，避免把新内容写进旧版本的长期缓存。反向代理需把 `/_v/` 原样交给 Node——它是 Node 按启动内容哈希解析的虚拟路径，磁盘上并不存在 `public/_v`，不能让代理用 `root` / `alias` 直出；不要对首页和 API 强制设置长期缓存。反代可以为 `/_v/` 加共享缓存降低 Node 的 CPU 与临时文件 I/O（未命中仍回源 Node，Node 始终是唯一权威），要点与坑位见下文 2.4 的「Nginx 运维备忘」。
 
 国内站可保留原 DNS，让素材使用香港站的 Cloudflare 缓存：设置 `SP_ASSETS_CDN=https://game.misyra.com`（不含 `/play`）。香港站须先启用素材跨域响应；两站版本缓存上线后，可用 `SP_ASSETS_CDN_VERSION` 指定香港站的 `artVersion`。完整步骤、nginx 片段与缓存规则见 [CDN.md](CDN.md)。
 
@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 服务器最多每秒读取一次文件，多个玩家共享读取结果；保存完成后，局内通常在 31 秒内看到更新，无需重启服务器。立即撤下可设为 `{"enabled": false}`，或删除配置文件；文件缺失、无效或超过 16 KiB 时不显示公告，无效配置会记录警告。建议先写临时文件再重命名覆盖，避免保存到一半时被读取。
 
-配置文件放在项目根目录，不在 `public/` / `data/` 下，且已被 Git 忽略；可通过 `SP_ANNOUNCEMENT_FILE` 指定其他服务器本地路径（相对路径以项目根目录为基准）。`GET /api/announcement` 返回当前公告和服务器时间，响应不缓存；这是只读接口，发布和修改只能通过本地配置文件完成，无需管理页面或管理令牌。使用 nginx 时，保持该 API 代理到 Node，避免配置静态缓存。
+配置文件放在项目根目录，不在 `public/` / `data/` 下，且已被 Git 忽略；可通过 `SP_ANNOUNCEMENT_FILE` 指定其他服务器本地路径（相对路径以项目根目录为基准）。`GET /api/announcement` 返回当前公告和服务器时间，Node 侧始终不缓存（`no-store`）；这是只读接口，发布和修改只能通过本地配置文件完成，无需管理页面或管理令牌。使用 nginx 时保持该 API 代理到 Node；如需减轻轮询压力，可为 `location = /api/announcement` 精确匹配加 5~10 秒的共享缓存（必须 `proxy_ignore_headers Cache-Control`），响应里的 `serverTime` 被客户端用于换算公告倒计时，TTL 越大偏差越大，不要超过 10 秒；`/api/` 其余端点保持不缓存。
 
 ## 2. 让不在同一网络的朋友加入
 
@@ -225,6 +225,16 @@ server {
 ```
 
 https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://同一域名/ws`；http 时用 `ws://`。服务器本身只提供 http，证书由代理 / 隧道负责。代理与服务器在同一台机器或内网时，`TRUST_PROXY=auto` 会信任它的 `X-Forwarded-For` / `X-Real-IP`；代理在公网另一台机器上时设 `TRUST_PROXY=1`（同时确保游戏端口只对代理开放）。
+
+**Nginx 运维备忘（2026-10-05 线上复核后沉淀，改配置前先读）**：
+
+- `/_v/<tag>/` 是 Node 按启动时内容哈希解析的虚拟路径，磁盘上没有 `public/_v`：任何情况下都不能用 `root` / `alias` 直出，必须 `proxy_pass` 回 Node（模板里已有完整缓存块）。
+- 为 `/_v/` 加 `proxy_cache` 时：只缓存 200/301/302——Node 对运行中被改动的版本资源返回**不缓存的 503**，把 404/503 加进 `proxy_cache_valid` 会让发布后一段时间出现幽灵错误页。nginx 不按 `Vary: Accept-Encoding` 自动分桶，缓存 key 必须并入编码维度（见模板的 `$sp_ae_key` map）。不要往 key 里加 `$request_method`：默认 `proxy_cache_convert_head on` 已让 HEAD 复用 GET 条目，加了反而各存一份（[官方文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_convert_head)：仅当关闭该转换时才应加）。Range 请求不会从缓存切片——206 是回源 Node 拿的、也不入缓存，属正常行为，不要试图缓存 206。location 内的 `add_header` 会屏蔽从 server 继承的所有 `add_header`，新增前先确认 server 块没有 server 级响应头。
+- 这层缓存不减少出站带宽（字节仍由源站发出），只省 Node 的 CPU 与 `buffered to a temporary file` 临时文件 I/O。要降带宽只能让玩家走 CDN；而 CDN（`SP_ASSETS_CDN`）按设计只覆盖 `/assets`、`/fonts`、`/media` 美术路径（见 [CDN.md](CDN.md)），脚本与游戏数据的 `/_v/<release>/…` 始终由游戏主机直出。
+- `/healthz` 即使加了短缓存也不是探活接口：有缓存就有陈旧语义（配了 `proxy_cache_use_stale` 时故障期间还会回放旧值）。外部监控判断死活要用其他端点或直连 Node 端口。删除云监控 / 云盾 agent 之前先备好替代告警，否则监控出现空窗。
+- `sites-enabled/` 里的站点文件必须保持指向 `sites-available/` 的软链接：变成普通文件后，改 `sites-available` 不再生效、按旧文件回滚也会失效（2026-10-05 实际发生过）。
+- Node 的对局计算线程数由环境变量 `SP_WORKERS` 控制（`server/workers/pool.js`，取值 0..32，默认 `min(8, CPU 核数 - 2)`，2 核机器默认 1）。`/healthz` 的 `workers.queued` 持续大于 0 说明计算线程不够：设 `SP_WORKERS=2` 可消除排队延迟，但要真正扩容量需升配 CPU（4 核时默认值即为 2）。
+- 主配置模板 [`scripts/nginx.conf.example`](../scripts/nginx.conf.example) 已包含线上验证过的 `/_v/`、`/healthz`、`/api/announcement` 缓存块与坑位注释，改域名和证书路径后可直接使用。
 
 ## 3. Docker
 

@@ -184,14 +184,16 @@ export function leaderHitCancelled(battle, target, amount) {
 
 /**
  * Absorb damage with shields on `target`. Returns the remaining amount. `type` = the damage type: a shield buff with a
- * `shieldType` absorbs only that type (夜莺 S2 "屏障能吸收…法术伤害"); one without absorbs every type (PRTS 术语释义 屏障
- * "若无特殊说明，屏障可吸收全种类伤害"). Older shields first (buff order: "优先消耗先生成的屏障").
+ * `shieldType` absorbs only that type (夜莺 S2 "屏障能吸收…法术伤害") — or, a list of types, only those (机械师's 屏障:
+ * BlockDamage PHYSICAL_AND_MAGICAL, buff_template_data mcnist_t_2 / mcnist_s_2_shield: ['phys', 'arts']); one without
+ * absorbs every type (PRTS 术语释义 屏障 "若无特殊说明，屏障可吸收全种类伤害"). Older shields first (buff order:
+ * "优先消耗先生成的屏障").
  */
 export function absorbShields(battle, target, amount, type = null) {
   if (amount <= 0) return 0;
   let changed = false;
   let rest = amount;
-  const absorbs = (b) => !b.shieldType || b.shieldType === type;
+  const absorbs = (b) => !b.shieldType || (Array.isArray(b.shieldType) ? b.shieldType.includes(type) : b.shieldType === type);
   for (let i = 0; i < target.buffs.length && rest > 0; i++) {
     const b = target.buffs[i];
     if (b.shieldHits > 0 && absorbs(b)) {
@@ -526,13 +528,17 @@ export function reduceElement(target, amount, el = null) {
  * with an hpRegen buff, PRTS 备注 "不受治疗加成和禁疗影响") is no 治疗: no 治疗加成 scales it — neither the healing
  * multipliers nor a `heal` handler (handlers still see it, with `opts.regen`; a change they make to its amount is
  * ignored).
+ * A healer whose profile names the target in `healThrough(healer, target)` heals it through its 禁疗 — the `noHeal` flag
+ * a summon's 禁疗 sets and the flag `healFree` (not a profile's `noHeal`, 无法被友方治疗): 凯尔希 on her Mon3tr (PRTS
+ * Mon3tr(凯尔希的召唤物) "持有禁疗（可被凯尔希…无视）"; her heal selection takes it too, Battle.injuredAlliesInKeys).
  */
 export function heal(battle, source, target, amount, opts = {}) {
   if (!target || !target.alive || target.removed || !target.deployed || target.bossPool) return 0;
   const self = source === target || !!opts.self;
-  if (!self && (target.s.flags.noHeal || (target.profile && target.profile.noHeal))) return 0;
+  const through = !!(source && source.profile && typeof source.profile.healThrough === 'function' && source.profile.healThrough(source, target));
+  if (!self && ((target.s.flags.noHeal && !through) || (target.profile && target.profile.noHeal))) return 0;
   const regen = !!opts.regen;
-  if (target.s.flags.healFree && !regen && !opts.ignoreHealFree) return 0;
+  if (target.s.flags.healFree && !regen && !opts.ignoreHealFree && !through) return 0;
   let amt = regen ? amount : amount * (source && source.s ? source.s.healingDealtMul : 1) * target.s.healingTakenMul;
   if (!(amt > 0) || !Number.isFinite(amt)) return 0;
   if (battle._hooks.heal) {

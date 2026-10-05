@@ -112,6 +112,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-pallas.js',
   'op-lessng.js',
   'op-demetr.js',
+  'op-cqbw.js',
+  'op-phenxi.js',
+  'op-wisdel.js',
 ]);
 
 /**

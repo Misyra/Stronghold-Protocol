@@ -354,7 +354,7 @@ export function useData(...names) {
     const unsub = data.subscribe((n) => { if (alive && names.includes(n)) force(); });
     for (const n of names) data.load(n);
     return () => { alive = false; unsub(); };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key]);
   return names.every((n) => {
     const s = data.status(n);
     return s === 'ready' || s === 'missing';

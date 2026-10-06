@@ -2221,7 +2221,7 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - [ASSUMED] (kept from §23.35): the sim's automatic tile searches (突袭 landing, summon / device tiles, `grid.canStand`
   without `ranged`) still treat every MELEE unit as ground-only; a prep placement on a 高台 is the tile the battle
   deploys and redeploys on.
-- Note on GitHub #148 (「突袭近战干员部署在高台」, a battle screenshot on the 深水区 map): not changed here (0.2.0: a melee 突袭 member prefers a landing tile where it can block — the owner's decision of 2026-10-06, §25). The rule
+- Note on GitHub #148 (「突袭近战干员部署在高台」, a battle screenshot on the 深水区 map): not changed here (0.2.0: a melee 突袭 member prefers a landing tile where it can block — the owner's decision of 2026-10-06, §25.11.3). The rule
   above admits no 突袭 operator on a 高台, and the 突袭 landing search is meant to be ground-only (the [ASSUMED] above);
   a melee 突袭 member standing on a 高台 after its jump needs its own reproduction.
 - **Integrator**: §23.35 (title and **Now**) describes the 2026-10-04 rule; it needs a pointer here ("withdrawn in
@@ -2441,7 +2441,7 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
   enemy in range beside both wards — one entry per pulse — takes the trait to 24 / 48 within 6.5 s; fails on 0.1.3's
   code). The 125 test (a stun refresh is not an entry) and `kits_alt_t5`'s S2 test pass unchanged.
 
-### 24.9 A sleeping enemy cannot be blocked: 沉睡 frees the block slot (GitHub #140; the owner's decision of 2026-10-06) — `sim/Battle.js _checkBlock / applyStatus`, `sim/ai.js updateEnemy`, `sim/buffs.js` (`sleep`), `kits/tier3.js` (瑕光 S2)
+### 24.9 A sleeping enemy cannot be blocked: 沉睡 frees the block slot (GitHub #140; the owner's decision of 2026-10-06) — `sim/battle/blocking.js _checkBlock`, `sim/battle/status.js applyStatus`, `sim/ai.js updateEnemy`, `sim/buffs.js` (`sleep`), `kits/ops/chess_char_3_12-blemsh.js` (瑕光 S2) (the 0.2.0 files; 0.1.4 had them in `sim/Battle.js` and `kits/tier3.js`; the port: §25.9.1)
 
 - **Seen**: GitHub #140 — a player tested 瑕光's S2 in the official mode (the 爱国者 stage): she put 4 enemies to sleep,
   the hounds that came next were still blocked, and after the skill no more were — 「被沉睡的敌人是不占用阻挡数的」. In the
@@ -2504,28 +2504,35 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 
 ---
 
-## 25. 0.2.0 — the maintainability refactor, two languages, 补位, 自选编队, fidelity fixes, the 0.1.4 ports
+## 25. 0.2.0 — the maintainability refactor, two languages, 补位, 自选编队, fidelity fixes, the 0.1.4 ports, release packaging
 
 0.2.0 was built on `feedback5`, branched from feedback4 at 583899d (0.1.3, the golden-result harness and part of 0.1.4);
 later merges of feedback4 brought the rest of 0.1.4 in. The workstreams, each on its own `fb5-*` branch, each merged
 after review with its golden scenarios named: R1–R6 (refactor, tooling), W5A (golden results), W5B / W5D / W5G /
-K1–K3 / W5N (补位), W5H / W5K / O1–O24 (自选编队 and its operator kits), W5I (languages, phase 1), W5C / W5E / W5F /
-W5J / W5L (fidelity, wave 1), WE1 / WE2 (the follow-ups the kit waves reported), W5M and the feedback4 merges (the
-0.1.4 ports). Each rule was checked against the official data and PRTS; anything no source backs is marked [ASSUMED].
+K1–K3 / W5N (补位), W5H / W5K / O1–O24 (自选编队 and its operator kits), W5I / W5S (languages, phases 1 and 2), W5C /
+W5E / W5F / W5J / W5L (fidelity, wave 1), WE1 / WE2 (the follow-ups the kit waves reported), W5M, W5R and the feedback4
+merges (the 0.1.4 ports), W5V (the owner's items of 2026-10-06), W5U (packaging) and W5T (the docs). Each rule was
+checked against the official data and PRTS; anything no source backs is marked [ASSUMED].
 The normative sections were rewritten with the streams: §0 (the DIY slots), §2 (the layout), §5.5 (the enemy damage
 frame, the block-count target rule), §5.6 (the trigger rules), §8.1 / §8.3 (`welcome.diyKitted`, `standIns`, `diy`,
 `diyBanned`), §16 (干员持有, 自选编队). Where each is handled: refactor and tooling → §25.1; Chinese and English →
 §25.2; 补位 → §25.3; 自选编队 and the 71 operator kits → §25.4; trigger rules (the larger-range rule, AUTO skills) →
 §25.5; fidelity fixes of wave 1 (GitHub #41, #49, #82, #96 / #137, #107, #116; 伺夜's 狼群; Touch) → §25.6; WE1, sim
 rules (GitHub #181, #187 / #170, follow-ups) → §25.7; WE2, data / match / UI (follow-ups, GitHub #148) → §25.8; the
-0.1.4 ports → §25.9; the settled decisions, what stays [ASSUMED] and the questions left to the owner → §25.10.
+0.1.4 ports → §25.9 (the last two, W4D's sleep rule and W4C's board tap → §25.9.1 / §25.9.2); the settled decisions,
+what stays [ASSUMED] and the questions left to the owner → §25.10. The closing additions: the owner's decisions of
+2026-10-06 (望's stock, skill triggers through summon areas, the 突袭 landing, GitHub #148) and the items the sources
+settled (泥岩's 闭锁; 忍冬, 深靛, 阿) → §25.11; release packaging and the asset manifest (the 自选 voices, the summons
+with no Spine model) → §25.12.
 
 Decisions of the owner: 2026-10-04 — the server stays on plain `node:http` + `ws`, no web framework (§25.1);
 2026-10-05 — the 补位 plan (§25.3); the 自选编队 rules, the collab operators out of the pool, ISW-A refused (§25.4);
 Chinese by default with an English switch, official English game texts, PR #70's translations reused with credit
 (§25.2); the larger-range trigger rule on the basic strategy, the SEARCH row and 深巡 S2, every 自选 重装 cast with an
 enemy in range, 纯烬艾雅法拉 S1 at full SP, 伺夜 S1 only with his pack on the field (§25.5); 2026-10-06 — a chess the player
-does not own shows as its stand-in everywhere (the owner's recall of the official mode, §25.3).
+does not own shows as its stand-in everywhere (the owner's recall of the official mode, §25.3); the enemy damage frame
+kept (§25.7.2); 望's placed 棋子 count in her stock, skills that act through summons cast on an enemy in a summon's area,
+a melee 突袭 member lands where it can block (§25.11).
 
 ### 25.1 Refactor and tooling: the big files split, golden results, lint, types, import boundaries (refactor plan; owner's decision of 2026-10-04: no web framework) — `server/http/`, `server/match/match/`, `server/match/player/`, `server/sim/battle/`, `content/enemies/`, `kits/ops/`, `public/js/ui/gameLogic/`, `render/fx/`, `render/app/`, `screens/game/`, `tools/golden.mjs`, `tools/check-imports.mjs`, `eslint.config.js`, `jsconfig.json`
 
@@ -2566,7 +2573,7 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
   widen it); `npm run check:imports` — `tools/check-imports.mjs`: `server/sim/` (served to browsers) imports neither the
   match, the lobby, the entry, the net layer, `public/` nor a Node builtin, `server/match/` neither `public/` nor the
   net layer; the one listed exception is `sim/nodeData.js`, the Node-only loader (`test/check-imports.test.js` pins the
-  list); `tools/package.mjs` (+ `--lite`) builds the release zip from a runtime allowlist (W5U documents packaging).
+  list); `tools/package.mjs` (+ `--lite`) builds the release zips from a runtime allowlist (W5U, §25.12).
   CI gained a tooling job (lint, imports, typecheck; once, not per matrix entry).
 - **Measured**: a match now loads about 340 small script modules; over HTTP/1.1 at 100 ms latency a cold load took
   13.4 s instead of 9.8 s, so docs/DEPLOY.md recommends HTTP/2 at the reverse proxy (the browser sim warms up during the
@@ -2578,7 +2585,7 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
 - Docs: docs/ARCHITECTURE.md (the map of the code after the split) and CONTRIBUTING.md (setup, tests, the fidelity
   rules, conventions) are new in 0.2.0; §2 lists every file.
 
-### 25.2 Chinese by default, an English switch (W5I, phase 1; PR #70 by @YuriRestia; the owner's decision of 2026-10-05) — `shared/i18n.js`, `shared/i18nData.js`, `tools/build-i18n.mjs`, `tools/i18n.mjs`, `public/i18n/en.json`, `data/i18n/en.json`, `public/js/ui/lang.js`, docs/I18N.md
+### 25.2 Chinese by default, an English switch (W5I, phase 1; W5S, phase 2; PR #70 by @YuriRestia; the owner's decision of 2026-10-05) — `shared/i18n.js`, `shared/i18nData.js`, `tools/build-i18n.mjs`, `tools/i18n.mjs`, `public/i18n/en.json`, `data/i18n/en.json`, `public/js/ui/lang.js` (`sentText`), docs/I18N.md
 
 - **Seen**: English-speaking players asked for an English interface. PR #70 (@YuriRestia) translated by replacing the
   strings in place across every file, logic included; the owner did not merge it (reply on PR #70, 2026-10-05) and
@@ -2599,11 +2606,32 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
   (`wireMessage`; `text` keeps older clients working) and each client renders its own language. The switch: the title
   screen (top right) and 设置, `?lang=en` once, kept in `sp.pref.lang`, re-rendered in place. Phase 1 converted the
   title screen, lobby, room, settings, the app shell and every server message; `tools/i18n.mjs` (extract / check /
-  codemod / seed) finds what is left, and phase 2 (W5S) wraps the remaining screens.
+  codemod / seed) finds what is left.
+- **Phase 2** (W5S, 2026-10-06; docs/I18N.md §4): of the 1 128 Chinese literals `extract` still listed, 1 056 go through
+  `t()`, `N_()` or the new `tParts()` (a sentence with markup or a component inside: the translation split at its
+  placeholders, vnode params kept) — the screens (band draft, briefing, the game screen and its overlays, 干员调配 /
+  干员持有, the result), the HUD, shop bar, detail card, bond strip and popup, 机变 overlay, enemy drawer, team panel,
+  guide, emotes, components and the client models, the phase banners, refusal reasons and formats of `ui/gameLogic`
+  (`fmtNum` writes K / M / B in English, 万 / 亿 in Chinese), the canvas, 2D-fallback and facing-wheel labels and the
+  msgid tables of `shared/constants.js`; the other 72 are marked as no player text and skipped by the audit (error
+  details and logger lines, the invariant reports, the bilingual HTTP error pages, the AI seats' names, the dev STUB
+  match, data keys). `extract` now reports 0 and `check` 1 002 msgids, every one translated (`public/i18n/en.json`
+  1 015 entries; the 64 fragments the sweep replaced dropped). Game texts the server copies into the match views in
+  Chinese — a 机变 card, an effect entry, the draft's name, a reward offer's label, the result title — show the localized
+  record when the sent text is that record's own (`data.lookupRaw`, `ui/lang.js sentText`; names through `tName`); a
+  text the server reworded (the multi-round 悬赏's two-battle text, `choices.js bountyText`) stays as sent. A language
+  switch in the middle of a screen re-reads the game texts (`useGameData()`, the 干员调配 / 干员持有 rosters, the strategy
+  list and the open detail card list `data.locale()` among their memo dependencies). What stays Chinese in English:
+  player names (the AI seats' too), that reworded 悬赏 text, the game texts the official EN client lacks (some 自选
+  operators, newer modules) and the 玩法说明 pictures (their titles translated). The 虫动 emote set follows the official
+  EN name (Slug Style). The Chinese output did not change: a render of every converted file in Chinese equals the code
+  before the sweep, and the few rewrites it cannot follow were checked by hand.
 - [ASSUMED]: the English of the remake's own strings (排气格栅 "Exhaust Grille" as PR #70 has it, the 联防 map names, the
-  server's own templates).
-- Golden: unchanged. Tests: `test/i18n.test.js`, `test/i18n-data.test.js` (coverage floors), `test/i18n-server.test.js`,
-  `test/ui/i18n.e2e.test.js` (`SP_E2E=1`).
+  server's own templates, the 126 msgids phase 2 added).
+- Golden: unchanged. Tests: `test/i18n.test.js` (since phase 2 it scans the whole client, shared and the server
+  messages: no Chinese literal left unwrapped, every msgid translated — `extract` 0 and `check --strict` as a test;
+  floors 1 000 catalog entries, 1 350 msgid uses), `test/i18n-data.test.js` (coverage floors), `test/i18n-server.test.js`
+  (also the sent data texts), `test/ui/i18n.e2e.test.js` (`SP_E2E=1`).
 
 ### 25.3 补位: an operator the player does not own fights as its official stand-in (W5B, W5D, W5G, K1–K3, W5N; the approved plan, the owner's decision of 2026-10-05; the owner's recall of 2026-10-06) — `tools/build-data.mjs buildBackups`, `data/backups.json`, `shared/standIn.js`, `sim/simdata.js getStandIn`, `content/index.js kitOf`, `kits/ops/standin-*.js`, `shared/protocol.js room.ownership`, `screens/ownership.js`, `ui/gameLogic/standIn.js`
 
@@ -2687,7 +2715,7 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
   (`Battle.setAllyTarget`, O23), the air-block mod `blockRadiusScale` (O24); `kits/shared/summoner.js` (O21) holds the
   召唤师 deck of 麦哲伦 / 令 / 电弧. Match: a placeable summon's hand count reads the active module's variant (O19: 望's
   TRP-X 7). Client: visuals for the 13 fx kinds the new kits emit (`render/fx/kinds.js`); the picks' art comes with the
-  asset plan (`tools/fetch-assets.mjs --add-only`).
+  asset plan (`tools/fetch-assets.mjs --add-only`; their battle voices and the summons with no Spine model: §25.12).
 
 | 干员 (summons) | kit (`kits/ops/`) | stream | notable [ASSUMED] (and later changes) |
 |---|---|---|---|
@@ -2742,24 +2770,24 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
 | 琴柳 | `op-sleach.js` | O17 | 精神感召 saves DP only on a redeploy (the battle-start deployment is free here) |
 | 可露希尔 (指挥中心) | `op-closur.js` | O17 | 部署费用下限 has no counterpart (costs never drop below 0); her own tile counts beside the 指挥中心 |
 | 澄闪 | `op-gdglow.js` | O17 | her own attack stops in every skill (all drones out); S2 fires at full SP |
-| 阿 | `op-haak.js` | O18 | S2 / S3 keep the data's DEFAULT: with no ally in range the cast does nothing (owner question) |
+| 阿 | `op-haak.js` | O18 | S2 / S3 keep the data's DEFAULT: with no ally in range the cast does nothing (settled by the data and the skill prefabs, §25.11.5) |
 | 傀影 (镜中虚影) | `op-phatom.js` | O18 | S3's push and status land on a dodged hit too; the twin is readied at his redeploy (WE1) |
 | 弑君者 | `op-crosly.js` | O18 | S2's blast lands at once; any action-stopping state or 缴械 cancels it |
 | 老鲤 | `op-lmlee.js` | O19 | 周围八格 = the 3 × 3 with his tile, flyers counted |
 | 温蒂 (工程蓄水炮) | `op-weedy.js` | O19 | S2 reaches air units; the cannon's forced skill fires once per deployment (data DEFAULT, re-checked in WE2) |
-| 望 (棋子, 跟子) | `op-wang.js` | O19 | 跟子 are kit records, no unit; S1 / S2 add one 棋子 once, then 阻回 (owner question); 棋子 on any tile (WE2) |
+| 望 (棋子, 跟子) | `op-wang.js` | O19 | 跟子 are kit records, no unit; placed 棋子 take and return her stock, so S1 / S2 keep cycling (the owner's decision of 2026-10-06, §25.11.1); 棋子 on any tile (WE2) |
 | 多萝西 (共振装置) | `op-doroth.js` | O20 | a used-up piece returns 5 s after the LAST trap deployment; the hand holds at most 9 |
 | 予愿安洁莉娜 (“一会儿见！”) | `op-aglna2.js` | O20 | flight 2 tiles/s, landing clips not modelled; the marker is no hand card (WE2); new status 缚地 |
 | 黑键 (旧日残影) | `op-ebnhlz.js` | O20 | his energies land with the main bolt; S2 at full SP with a free tile (WE2) |
-| 麦哲伦 (龙腾) | `op-mgllan.js` | O21 | 龙腾.F makes no attack (ATK 0); 3 summon pieces, 4 with SUM-Y (WE2) |
-| 令 (清平 / 逍遥 / 弦惊) | `op-ling.js` | O21 | her summons strike during S2 even when stunned; 3 pieces (WE2) |
-| 电弧 (戴乌 / 赛柯 / 桑特拉) | `op-radian.js` | O21 | 桑特拉's link is its own attack with its own ATK; SO-A / SO-B refused in 自选 (WE2) |
-| 淬羽赫默 (夜灯) | `op-slent2.js` | O22 | 丰润羽翼 as 生命回复速度 rests on the client template (owner question) |
-| 遥 | `op-haruka.js` | O22 | her bubbles outlast her; the T2 heal uses the ATK of the grant (owner question) |
-| 酒神 (本能的召唤, 迷狂牢笼) | `op-phatm2.js` | O22 | 本能的召唤 lures at most 4 in all; its redeploys cost no DP |
+| 麦哲伦 (龙腾) | `op-mgllan.js` | O21 | 龙腾.F makes no attack (ATK 0); 3 summon pieces, 4 with SUM-Y (WE2); S1 casts on an enemy in a drone's range (§25.11.2) |
+| 令 (清平 / 逍遥 / 弦惊) | `op-ling.js` | O21 | her summons strike during S2 even when stunned; 3 pieces (WE2); S3 casts on a ground enemy in a summon's x-5 (§25.11.2) |
+| 电弧 (戴乌 / 赛柯 / 桑特拉) | `op-radian.js` | O21 | 桑特拉's link is its own attack with its own ATK; SO-A / SO-B refused in 自选 (WE2); S2 / S3 cast on an enemy in a summon's range (§25.11.2) |
+| 淬羽赫默 (夜灯) | `op-slent2.js` | O22 | 丰润羽翼 as 生命回复速度 rests on the client template (kept, §25.11.5; owner question) |
+| 遥 | `op-haruka.js` | O22 | her bubbles outlast her; the T2 heal uses the ATK of the grant (kept, §25.11.5; owner question) |
+| 酒神 (本能的召唤, 迷狂牢笼) | `op-phatm2.js` | O22 | 本能的召唤 lures at most 4 in all; its redeploys cost no DP; the 迷狂牢笼 blocks no sleeper (§25.9.1) |
 | 白铁 (支援装置, 铁钳号) | `op-ironmn.js` | O23 | the 铁钳号 is charged only by attacks that select it; 2 devices in hand (WE2) |
 | 娜斯提 (支援装置) | `op-nasti.js` | O23 | the built 高台's operator bonus (m4–m6_bonus) never applies |
-| 死芒 (悲叹的仆役) | `op-necras.js` | O23 | the servant consumed is the earliest made; S3's strikes are skill damage |
+| 死芒 (悲叹的仆役) | `op-necras.js` | O23 | the servant consumed is the earliest made; S3's strikes are skill damage; S2's sleepers leave her servants' block (§25.9.1) |
 | 凯尔希·思衡托 (战术锚点) | `op-kalts2.js` | O24 | S2's shot flies at the engine's orb speed 10 (official 12); 战术锚点 placement (WE2) |
 | Mon3tr (重构体) | `op-monstr.js` | O24 | the 路标形态 marker is not placed; 重构体 placement (WE2); the chain heal jumps in the 3×3 (WE1) |
 
@@ -2803,6 +2831,9 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
      战术点形态, §25.6.5 and §25.7.9), 黑键 S2 only with a free deployable tile in range (§25.8.4).
   4. Data aliases: 黍 S3's TRY_SEARCH_ALLY_SKILL resolves to SKILL_RANGE with `allies` on its x-2 (`TRIGGER_ALLY_RULES`,
      §25.8.4).
+  5. **Through summons** — the owner's decision of 2026-10-06, the larger-range rule read through the summons' areas:
+     麦哲伦 S1, 令 S3 and 电弧 S2 / S3 also cast on an enemy in a standing summon's area the skill acts through
+     (`kits/shared/summoner.js summonTriggerArea`, §25.11.2).
 - Kept on their rows: 烛煌 S2 / S3 (their ranges do not contain her 3-1), TAKE_DAMAGE 重装 skills of the chess pool but
   the §21.29 six, CUSTOM_RANGE skills, AUTO skills that need a target, SEARCH skills whose range does not grow.
 - Golden: each step names its scenarios in its commit (the SEARCH / 深巡 step: roster-001 / 002 / 016 / 026 / 027 / 041
@@ -2911,8 +2942,9 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
   stun / freeze / sleep / 浮空 / 缴械 / 恐惧 or losing every target before it cut the swing (restart from the wind-up), a
   stun in the cooldown only pauses it, shots in flight land; 36 of 249 kinds without a clip keep the old rule (§5.5;
   withdraws §22.14's [ASSUMED]). [ASSUMED]: targets re-taken at the frame; an interrupted swing keeps its cooldown.
-  Golden: 275 of 283 scenarios moved (solo-HARD-2 now wins, coop2-NORMAL-8-serverrun loses in round 13). Tests:
-  `test/sim/feedback5-enemy-swing.test.js`, `feedback2-enemy-attack-stand.test.js`.
+  Golden: 275 of 283 scenarios moved (solo-HARD-2 now wins, coop2-NORMAL-8-serverrun loses in round 13). The owner kept
+  the rule on 2026-10-06 (follow-up 29, §25.10). Tests: `test/sim/feedback5-enemy-swing.test.js`,
+  `feedback2-enemy-attack-stand.test.js`.
 
 #### 25.7.3 武者: the trait heal on every damage instance, through the own 禁疗 (follow-up 1) — `professions.js installMushaHeal / installReaperHeal`, `kits/ops/op-helage.js`, `op-zuole.js`
 
@@ -3007,7 +3039,8 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
 - **Now**: the scan of the 41 kitted 自选 MANUAL skills found two whose running range the data cannot hold (§25.5): 谬因
   S2's beam path is a content trigger range; 薇薇安娜 S3 switches to ACTIVE_RANGE 3-2 after its first cast of a
   deployment (new additive `skill.setTrigger`). [ASSUMED]: the owner's rule read through these kit ranges. Golden:
-  diy-045, diy-078. Tests: `test/content/feedback5-we2-area-triggers.test.js`.
+  diy-045, diy-078. Tests: `test/content/feedback5-we2-area-triggers.test.js`. The skills that act through their
+  summons' areas (麦哲伦 S1, 令 S3, 电弧 S2 / S3) waited for the owner: §25.11.2.
 
 #### 25.8.6 自选 rosters refuse SO-A / SO-B / RA-A like ISW-A (follow-ups 25, 10) — `shared/diy.js DIY_EXCLUDED_MODULE_TYPE`
 
@@ -3031,17 +3064,19 @@ does not own shows as its stand-in everywhere (the owner's recall of the officia
   bond no longer opens a fresh cap (found in the PR #178 review; `test/content/feedback5-we2-garrison90.test.js`).
 - 驭法铁卫 (斩业星熊): the data's normal attack is physical — arts only while a skill runs (display and AI only).
 - GitHub #148 reproduced: a melee 突袭 member never lands on a 高台; on 战场#08 it lands on a 围墙 tile (deployable, drawn
-  raised), so no rule changed (`test/content/feedback5-we2-raid-148.test.js`; the owner's question in §25.10).
+  raised), so no rule changed here (`test/content/feedback5-we2-raid-148.test.js`); the owner then chose a landing
+  tile where it can block (2026-10-06, §25.11.3).
 - The `kits/tier1..6.js` re-export shims and `shared/standIn.js diyRecord` are removed.
 
-### 25.9 Ports from 0.1.4 (W5M and the feedback4 merges)
+### 25.9 Ports from 0.1.4 (W5M, W5R and the feedback4 merges)
 
 0.1.4 (§24, CHANGELOG 0.1.4) shipped from feedback4 while the refactor ran; every fix was ported by hand into the split
 layout, with the golden moves each named: PRs #150, #66, #146, #74, #72, #103, #149, #109, #160 and W4A (高台 by the
 trait, the 阿戈尔 revive slots, the 联防 devour) in W5M; PR #129 (teammate scouting); the restarted-cast events and 伊内丝's
 影哨 before 不屈; PR #73 (operator battle voices, §21.30) and the settlement line's speaker; PRs #186, #134, #185, #24, #183
 (their 42 new strings through `t()`); W4B (阿戈尔's devoured ATK as a 最终加算, a fallen marker's marks, 缇缇 S2's pulses,
-§24.7 / §24.8); W4D (a sleeping enemy cannot be blocked, §24.9) is ported by W5R. Where a 0.1.4 change met 0.2.0 work:
+§24.7 / §24.8); W4D (a sleeping enemy cannot be blocked, §24.9; W5R, §25.9.1) and W4C (a tap on the board stays on
+its tile, §18.1; §25.9.2). Where a 0.1.4 change met 0.2.0 work:
 
 - **突袭 × PR #109**: deploy-timed skills became duration skills, which the #49 rule (a passive that is on) missed;
   `raidPoll` counts a skill that needs no SP while its window runs (`test/content/bonds_addon.test.js`).
@@ -3052,6 +3087,61 @@ trait, the 阿戈尔 revive slots, the 联防 devour) in W5M; PR #129 (teammate 
   温蒂 carries the line.
 - **Voices × 补位 / 自选**: the stand-in or the 自选 operator on screen speaks for itself; the settlement line, which never
   played (it looked up chess ids as character ids), now names the record the own piece shows (`screens/game.js ownShown`).
+
+#### 25.9.1 沉睡 frees the block slot on the split layout; 酒神's 迷狂牢笼 skips a sleeper too (W4D, GitHub #140; ported by W5R) — `sim/battle/blocking.js _checkBlock`, `sim/battle/status.js applyStatus`, `sim/ai.js updateEnemy`, `sim/buffs.js` (`sleep`), `kits/ops/chess_char_3_12-blemsh.js` (瑕光 S2), `kits/ops/op-phatm2.js cageBlock`
+
+- **Port**: §24.9 (the rule, PRTS 异常效果 SLEEPING = 无法行动+无敌+不可阻挡, the owner's decision of 2026-10-06), its §24
+  intro entry, the §5.5 Blocking sentence and §22.8's "(since §24.9)" came over from feedback4 unchanged; §24.9's heading
+  now names the 0.2.0 files above (0.1.4 had them in `sim/Battle.js` and `kits/tier3.js`). On the split layout
+  `_checkBlock` (battle/blocking.js) refuses `flags.sleep` and `applyStatus` (battle/status.js) releases an enemy that
+  falls asleep. WE1's swing cut (§25.7.2) runs before `enemyAttack`, but a plain-buff `flags.sleep` still makes the
+  enemy `stun` (`units.js`), so its release stays in `updateEnemy`'s cannot-act branch, after the cut: the swing is
+  cut, the enemy is let go, and it stands until it wakes.
+- **New on feedback5**: 酒神's 迷狂牢笼 (O22, `cageBlock`) blocked every unblocked enemy on its tile but the old three
+  不可阻挡 flags; it now skips a sleeper too (PRTS BLOCK_FREE 「无法阻挡/被阻挡」: no blocker of any kind). Before, the 牢笼
+  held the sleeper, refreshed its own HP and block count for it and lost it on the enemy's next update. 予愿安洁莉娜's S3
+  helper needed no change (`canTargetEnemy` never returns a sleeper). Followed without code: `blockedTargets`, the 要塞
+  branch of `acquireTargets` (`u.blocking`), “庞贝”'s clock (`blockedBy`), the snapshot's `UF.BLOCKED` and the client's
+  block marker; 死芒 S2 折朽 (自选) sleeps the enemies it links — one her 悲叹的仆役 held is let go, and SOC-X's
+  ×atk_scale on "an enemy one of her summons blocks" no longer applies to it.
+- **Golden** (feedback5's own list; a probe over all 283 scenarios counted the sleeps of blocked enemies, in brackets,
+  and every scenario that moved has some; the outcomes differ from §24.9's because feedback5's baselines differ, WE1's
+  damage frame first): roster-003 (小满 S2 [5]: the same fight, `blocked` 27 → 29 and the snapshot hashes); roster-005
+  (elite 小满 S2 [3]: the 140 s timeout with 83 kills and 1 leak, where it cleared at 135.43 s with 84); roster-013 (缇缇
+  S3 [11]: the same kills, `blocked` 22 → 33); roster-032 (缇缇 S1 [10]: 71 kills instead of 68, 8 leaks instead of 11,
+  4 knock-outs instead of 8, 萨尔贡 layers 41 → 35); roster-038 (elite 缇缇 S2 [1]: ends at 197.40 s instead of
+  197.27 s); roster-039 (瑕光 S2 normal + elite [31 + 12]: the same kills and counted leaks, the 窃贼 gets away, `blocked`
+  53 → 87); roster-042 (缇缇 S2 [3]: ends at 168.77 s instead of 166.93 s); bond-maniShip-high (小满 [1]: `blocked`
+  29 → 30, the snapshot hashes); solo-FUNNY-1 (ai_0's 缇缇 [3]: only ai_0's damage dealt); coop4-FUNNY-6 (ai_0's 缇缇
+  [15 + 56]: from round 9 ai_0's 精准 / 萨尔贡 layers and boss damage move, ai_1 loses no LP from round 11, team LP
+  124 → 130); coop4-ABYSS-7 (ai_2's 小满 [18]: ai_2 one kill fewer, ai_0 one more LP lost in round 9);
+  coop2-NORMAL-8-serverrun (ai_1's 缇缇 [83]: only ai_1's damage dealt — WE1 had already turned this match into a loss);
+  coop2-NORMAL-70-diy (the 自选 seat h_0's 缇缇 [171], ai_0's 缇缇 [74] and 小满 [19 + 21]: h_0's layers move from round
+  4, then its AI 托管 buys differently, boards from round 7; ai_0 246 kills instead of 233, the same end); diy-131 (死芒
+  S2 at tiers 5 and 6 [1 + 1]: the snapshot hashes only); diy-132 (elite 死芒 S2 [2]: ends at 199.50 s instead of
+  198.13 s, the same kills). coop2-HARD-4 sleeps a blocked enemy [1] and did not move: the sleeper wakes with no room
+  and is blocked further on, and a match digest has no snapshot hashes (its kills, leaks, damage and funds are the
+  same). `fields` and `standins` did not move; no scenario spawns a 牢笼 over a sleeper.
+- Tests: `test/sim/feedback4-sleep-unblock.test.js` (5 cases, from feedback4) passes unchanged on the split layout;
+  every case fails with the three sim hunks reverted, case 3 (the plain-buff sleep) with only the `ai.js` release
+  reverted.
+
+#### 25.9.2 A tap on the board stays on its tile; long browser waits poll in slices (W4C, the 0.1.4 release candidate; PR #149) — `render/app.js onTapTarget`, `test/e2e/client.mjs waitForFunctionLong`
+
+- **Seen** (the 0.1.4 release candidate, `test/render/models.browser.test.js` #4.1 touch): at 844×390 a tap on the row-12
+  unit opened the bond popup instead of selecting it. **Cause**: the browser's touch adjustment moves a tap onto a
+  nearby element that responds to clicks (pointer listeners do not count) when the finger's contact area reaches one,
+  and PR #149's 收起 toggle (§10) had pushed the bond discs one button (≈ 55 px) to the right, over row 12. **Now**
+  (§18.1 Touch): the field canvas is a click target of its own (a no-op `click` listener, `app.js onTapTarget`), so a
+  tap on the board stays on its tile; the browser test passes with #149's client diff reverted and fails with it.
+  Ported as is (`render/app.js` keeps `createFieldView`, §25.1).
+- **Test harness**: the real-server browser suites' long waits poll in slices under the browser's 90 s CDP protocol
+  timeout (`waitForFunctionLong`, `PROTOCOL_TIMEOUT_MS`). Puppeteer runs a whole `waitForFunction` poll inside one
+  `Runtime.callFunctionOn`, so watch-bonds' 240 s wait died with a bare "Waiting failed" whenever the own battle
+  outlasted 90 s (playtest2.real's 120 s wait had the same gap) — a harness timing flake, no product change.
+- Golden: unchanged (client and tests only). Tests: `test/ui/playtest2.test.js`, `test/e2e/client-wait.test.js`;
+  browser: `test/render/models.browser.test.js` (`RENDER_E2E=1`), `test/ui/watch-bonds.e2e.test.js` and
+  `test/ui/playtest2.real.e2e.test.js` (`SP_E2E=1`).
 
 ### 25.10 Settled decisions, what stays [ASSUMED], and the questions left to the owner
 
@@ -3066,16 +3156,178 @@ trait, the 阿戈尔 revive slots, the 联防 devour) in W5M; PR #129 (teammate 
 | The larger-range rule (ACTIVE_RANGE) on DEFAULT, on SEARCH and for 深巡 S2 (§25.5) | the owner, 2026-10-05 (deliberate deviation) |
 | The 重装 stand-ins and every 自选 重装 cast with an enemy in range (§25.5) | the owner, 2026-10-05 (deliberate deviation) |
 | 纯烬艾雅法拉 S1 at full SP; 伺夜 S1 only with his pack on the field (§25.5, §25.6.5) | the owner, 2026-10-05 |
+| Enemy attacks strike at their damage frame; a short stun before it cuts the swing (follow-up 29, §25.7.2) | the owner, 2026-10-06 (kept) |
+| 望's placed 棋子 take and return her stock, so S1 / S2 keep cycling (§25.11.1) | the owner, 2026-10-06 (deliberate deviation from 「不消耗持有数量」) |
+| Skills that act through summons cast on an enemy in a summon's area: 麦哲伦 S1, 令 S3, 电弧 S2 / S3 (§25.11.2) | the owner, 2026-10-06 (the larger-range rule) |
+| A melee 突袭 member lands on a tile where it can block before one where it cannot (GitHub #148, §25.11.3) | the owner, 2026-10-06 |
+
+Settled by the sources in W5V, no longer questions: 泥岩 S3's dormancy is 闭锁 — she lets go and blocks nobody (PRTS,
+§25.11.4); 阿 S2 / S3 keep the data's DEFAULT, 忍冬 S2's and 深靛 S1's notes are what the kits do (§25.11.5).
 
 Still [ASSUMED] (each also in its code comment): potential 0 for every 自选 pick; the per-player 自选 stock 8 / 5;
 bots field no 自选 piece; SO-A / SO-B / RA-A refused for ISW-A's reason; the AI 托管 preference for 自选 pieces; a
 stand-in placed by its own position; the 联防 map names; 伺夜 S2 in the 战术点形态; the enemy swing's re-taken targets and
-kept cooldown; the stand-in and operator kit items of the tables above.
+kept cooldown; a woken sleeper re-blocked in the enemy update order where it stands (§24.9); 望's card back in her hand
+the moment a 棋子 leaves, a 棋子 over the cap lost, TRP-X's 7th placed 棋子 taking none, her stock kept through her
+redeployment; 电弧 S2's area = 赛柯's 3-2 range, standing summons only; the official 突袭 landing taken as random among the
+legal tiles, ranged members on the old order, the target's own tile counted as a blocking tile; 泥岩's 反制 during 闭锁
+not modelled; the English of the remake's own strings; the lite zip without `public/fonts`, the zips' unchanged
+package.json (maintainer scripts fail there); the stand-in and operator kit items of the tables above.
 
-Left to the owner (none changed in 0.2.0): 望's stock and 阻回 (placed 棋子 never draw from her stock, so S1 / S2 add one
-棋子 once, then 阻回 holds); whether a melee 突袭 member should prefer a tile where it can block (GitHub #148); trigger areas
-through summons (麦哲伦 S1, 令 S3, 电弧 S2 / S3); an ally condition for 阿 S2 / S3; 淬羽赫默's 丰润羽翼 as 生命回复速度 (the
-client template, no PRTS note) and 遥's break heal on the ATK cached at the grant; whether a passive counts as 技能就绪
-for the whole deployment or its window only (§25.6.7); Stormeye S2 / Pith S1 (AUTO attack buffs) on DEFAULT or at full
-SP; 赫默 S2 and 巫恋 S2 (wasted with nobody to heal / no enemy); the AUTO cast of an attacker of 白铁's 铁钳号; 泥岩 S3 闭锁
-(PRTS 「强制缴械+无敌+不可阻挡」 against the kit keeping its block).
+Left to the owner (none changed in 0.2.0): 淬羽赫默's 丰润羽翼 as 生命回复速度 (the client template, no PRTS note) and 遥's
+break heal on the ATK cached at the grant (both kept, §25.11.5); whether a passive counts as 技能就绪 for the whole
+deployment or its window only (§25.6.7); Stormeye S2 / Pith S1 (AUTO attack buffs) on DEFAULT or at full SP; 赫默 S2 and
+巫恋 S2 (wasted with nobody to heal / no enemy); the AUTO cast of an attacker of 白铁's 铁钳号. Answered on 2026-10-06 and
+moved to the table: 望's stock and 阻回, the 突袭 landing (GitHub #148), the trigger areas through summons; settled by the
+sources: the ally condition for 阿 S2 / S3, 泥岩 S3's 闭锁.
+
+Open polish (no rule): 34 or more of the 38 summons of the 自选 kits have no Spine skeleton in the online sources, so the
+field draws them as the avatar placeholder (§25.12); `scripts/make-windows-bundle.mjs` still copies every tracked file
+but test/ (it could reuse the package selection); the THIRD-PARTY-NOTICES "In the release bundle" column does not tell
+the lite zip (no fonts) apart.
+
+### 25.11 The owner's decisions of 2026-10-06 and the items the sources settled (W5V) — `kits/ops/op-wang.js`, `kits/shared/summoner.js summonTriggerArea`, `content/bonds/addon/battle.js raidTile`, `kits/ops/chess_char_4_18-mudrok.js`
+
+The questions WE2 and the kit waves had left open went to the owner as one batch on 2026-10-06; W5V implemented the
+answers and checked the remaining items against PRTS and the client (W5V's commits name every golden scenario moved).
+
+#### 25.11.1 望's placed 棋子 take and return her stock (the owner's decision of 2026-10-06) — `kits/ops/op-wang.js`
+
+- **Seen** (O19, follow-up 22): in this mode her 棋子 are hand pieces deployed with the board, 「无视所属干员的持有状态，
+  不消耗持有数量」, so her stock stayed at 6; one S1 / S2 cast (「立即获得两枚棋子」) reached the cap 7, and 阻回 held her SP
+  for the rest of the battle — the skill cast once.
+- **Official**: PRTS 卫戍协议/帮助 §作战阶段 (placed summons ignore the holding; one that leaves is redeployed in place once
+  the conditions are met); PRTS 望 铸子 (6 usable, 7 at most) and the S1 / S2 备注 (阻回 at the stock cap); the client's
+  charge_token templates (the stock = cnt at her deployment, the skills' +cnt, S3's overflow built as 跟子); a summon that
+  leaves returns to its owner's card while its redeploy time runs.
+- **Decision**: the owner's decision of 2026-10-06, a deliberate deviation from 「不消耗持有数量」 — the placed 棋子 count in
+  her stock, and a 棋子 that goes off or returns replenishes it by the official rules, so her skills keep working.
+- **Now**: every deployment of one of her 棋子 (the battle start's and each in-place return) takes one from her stock
+  (never below 0); a 棋子 that leaves the field (set off, or gone with her) puts one back at once, at most the cap; the
+  in-place return also waits for one in stock. At the cap a 棋子 that goes off is lost to the cap and its return takes
+  one, so the stock drops to 6, 阻回 lifts, her SP recovers and the next cast fills it again — S1 / S2 keep cycling.
+  S3's "+8, the overflow as 跟子" starts from the lower stock (2 placed: 4 + 8 → 7 with 5 跟子, was 7).
+- [ASSUMED]: the card is back in her hand the moment the piece leaves (its redeploy time is the return's own wait); a
+  piece over the cap is lost; 7 placed 棋子 (TRP-X's deploy limit) on a stock of 6 — the 7th takes none; the stock carries
+  through her mid-battle redeployment.
+- Golden: unchanged (no corpus battle places her 棋子). Tests: `test/content/op_wang.test.js` (9: the stock after the
+  placed pieces, a piece set off and its return, casts up to the cap, 阻回 only at the cap, a piece set off at the cap,
+  TRP-X's 7). Docs: docs/SIM.md (token pieces).
+
+#### 25.11.2 Skills that act through summons cast on an enemy in a summon's area: 麦哲伦 S1, 令 S3, 电弧 S2 / S3 (the owner's decision of 2026-10-06) — `kits/shared/summoner.js summonTriggerArea`, `sim/skills.js` (`addTriggerRange` `{ keys, profile }`), `kits/ops/op-mgllan.js`, `op-ling.js`, `op-radian.js`
+
+- **Seen** (WE2's scan, §25.8.5): their effects reach through the summons' areas, but the data's DEFAULT waits for an
+  enemy in the operator's own 3-1 (no data range can carry the larger area).
+- **Official**: no trigger row (DEFAULT). The areas (PRTS, the client): 麦哲伦 S1 — 停顿 / 束缚 on her range and each drone's
+  range, air units too; 令 S3 — the x-5 around each summon, ground only (备注 「不可对空」); 电弧 S2 — 赛柯's bullets, ground
+  only; S3 — 停顿 + 法术脆弱 before her summons' damage, air units too (备注 「召唤物可对空」).
+- **Decision**: the owner's decision of 2026-10-06, the larger-range rule (§25.5) read through the summons: cast when an
+  enemy is in the operator's range or in a deployed summon's area that the skill acts through.
+- **Now**: `summonTriggerArea(battle, owner, skillId, area)` registers a content trigger range (checked every tick, on
+  top of the data's DEFAULT) built from the owner's standing summons, each giving `{ keys, profile }` — tile keys with the
+  enemy profile the effect selects by (`canHitFly` false: ground enemies only), a new additive entry form of
+  `addTriggerRange`. 麦哲伦 S1: each drone's range, air units too; 令 S3: each summon's x-5, ground only; 电弧 S2: each
+  summon's range (赛柯's 3-2), ground only; S3: each summon's range (桑特拉's 3-1), air units too. The other skills of the
+  three get no area.
+- [ASSUMED]: 电弧 S2's area is 赛柯's 3-2 range, not its S2 bullets' longer flight (0.8 s ≈ 4 tiles at rank 7); only
+  summons standing on the field count.
+- Golden: unchanged (no corpus battle places a 自选 summon). Tests: `test/content/feedback5-wv-summon-triggers.test.js`
+  (an enemy in a summon's area outside her range casts the skill; a flyer there does not for 令 S3 / 电弧 S2 and does for
+  麦哲伦 S1 / 电弧 S3; nobody in an area, or the drone off the field: no cast; all three fail with the helper switched
+  off). Docs: docs/SIM.md (content trigger ranges), the `skills.js` header.
+
+#### 25.11.3 A melee 突袭 member lands where it can block (GitHub #148; the owner's decision of 2026-10-06) — `content/bonds/addon/battle.js raidTile`
+
+- **Seen** (GitHub #148, reproduced in WE2, §25.8.8): a melee member never lands on a 高台, but it lands on a 围墙 tile
+  (drawn raised; it blocks nothing there) when that is the nearest tile covering its enemy, even with a road tile
+  covering it too.
+- **Official**: 「再部署至一名地面敌人周围」 — no tile preference stated.
+- **Decision**: the owner's decision of 2026-10-06 — prefer a landing tile where it can block an enemy over a tile where
+  it cannot; keep the rest of the landing rule.
+- **Now**: for a melee member (position not RANGED) with a block count, `raidTile` ranks first the tiles where its block
+  applies — ground units pass the tile (not a 围墙 / 围栏: `Battle._blockerFor`) and an enemy ground path runs through it
+  (`Battle.groundPathTiles`) or its enemy stands on it — then the old order (nearest, then the facing frame). The rest of
+  §22.2's rule is unchanged: the 8 most advanced targets in turn, a tile from which its range covers the target,
+  `grid.canStand` (never a 高台, never the 深水区), free tiles, no useless jump. A 围墙 landing remains where nothing
+  else covers the enemy. §24.2's note on #148 points here.
+- [ASSUMED]: the official landing picks among the legal tiles at random (the preference is the owner's); ranged members
+  keep the old order; "its enemy stands on it" counts as a tile where it blocks (a target off the computed paths).
+- Golden: fields `boss-boss_2-pair`, `boss-boss_3-pair`, `boss-boss_4-pair`, `boss-boss_6-pair`, `boss-boss_7-pair`,
+  `hidden-boss_10-pair` — their 突袭 members (伊内丝, 缄默德克萨斯, 仇白) now land on a road tile of the enemy path instead
+  of a 围墙 tile (6 of the 8 changed landings) or an off-path road tile (2); roster / bonds / matches / standins / diy
+  unchanged. Tests: `test/content/feedback5-we2-raid-148.test.js` (updated on purpose: every stage × every low enemy
+  tile — never a 高台; whenever a tile where it blocks covers its enemy it lands on one; the old code fails at act1 m02).
+
+#### 25.11.4 泥岩 S3's 10 s dormancy is 闭锁: she lets go and blocks nobody (PRTS) — `kits/ops/chess_char_4_18-mudrok.js`
+
+- **Seen**: the kit kept her blocking through the dormancy of S3 秽壤的血脉 ("keeps blocking").
+- **Official**: PRTS 泥岩 S3 备注 — the first 10 s are 闭锁, not 无法行动, with 眩晕 / 冻结 / 沉默 反制; PRTS 异常效果 — 闭锁
+  (SHELTERING) = 强制缴械 + 无敌 + 不可阻挡, and 不可阻挡 (BLOCK_FREE) 「无法阻挡/被阻挡，自动解除阻挡」: on an operator, it
+  blocks nobody and lets go of what it held (the enemy side of the same state: §24.9).
+- **Now**: the dormancy adds the flag `noBlock` (with invulnerable and disarm): the enemies she held walk on (`ai.js` lets
+  go of a `noBlock` blocker) and she blocks none until she wakes. [ASSUMED]: the 备注's 反制 are not modelled.
+- Golden: `roster-040` (it fields 泥岩 S3: the enemies she held walk on during the 闭锁). Tests:
+  `test/content/kits_alt_t4.test.js` (updated on purpose: the 闭锁 releases the three walkers and blocks none — enemies
+  placed on her tile neither —, awake she blocks again once their stun ends).
+
+#### 25.11.5 Settled by the sources with no rule change: 忍冬 S2, 深靛 S1, 阿 S2 / S3; the shared 庇护 — kit comments, `test/content/feedback5-wv-sources.test.js`, `test/content/feedback5-protect.test.js`
+
+- 忍冬: PRTS's 「无法选中被自身阻挡而没有位于技能范围内的敌人」 is the 备注 of S2 坠刃拷问 (技能范围 3-12), not of S3 (its only
+  备注 is the ASPD update; the client's S3 selector is the standard 「同时攻击阻挡的所有敌人」 one); the S2 kit already selects
+  on the 3-12 keys only — pinned.
+- 深靛 S1: the S1 「每次攻击的攻击倍率」 applies to her stored energies (PRTS S1 备注; the client's ChargeAttackS1 reads the
+  same `atk_scale`), as the kit does (`ai.js resolveHit`) — pinned.
+- 阿 S2 / S3: the data's DEFAULT — no trigger row names him; the skill prefabs cast with no target and keep the SP spent
+  (`_allowNoTarget` 1, `_checkHasTargetBeforeDoCast` 0, `_recoverSpIfNoTarget` 0); PRTS has no ally condition. With no
+  ally in his range the cast spends its SP and does nothing; the kit comment records the sources.
+- 庇护: 淬羽赫默, 黍, 斥罪, 森蚺 and 娜斯提 grant it through the shared `holdProtect` (`kits/shared/tier1.js`, §25.7.4), 遥's
+  bubbles (their own key) through the shared `protectMods`; a guard test keeps kit-local copies out — a pure refactor.
+- Kept as they are: 淬羽赫默's T2 丰润羽翼 as 生命回复速度 (the client's buff template atk_to_hp_recovery: 禁疗 does not
+  stop it, no 治疗加成) and 遥's T2 break heal on the ATK cached when the bubble is given (§25.10 keeps both open).
+- Golden: unchanged.
+
+### 25.12 Release packaging and the asset manifest (W5U; the 自选 voices) — `tools/package.mjs` (`npm run package` / `package:lite`), docs/DEPLOY.md §7, `tools/assets/plan.mjs`, `tools/assets/manifest.mjs`, `tools/fetch-assets.mjs`, data/assets.json
+
+- **Seen**: 0.1.x releases came from a maintainer script outside the repository that zipped every tracked file (tests,
+  design docs, research notes, dev pages, the Windows-bundle maker) plus all of `public/assets` as it lay on the
+  maintainer's disk; there was no smaller download. 焰狐龙梓兰 left the 自选 pool (§25.4) but her art stayed in
+  data/assets.json, because fetch-assets refuses to shrink the manifest. The first real build found both
+  `module/dec-X.png` and `module/dec-x.png` listed — one file on Windows / macOS, so a zip built there carries one.
+- **Official**: no game rule (release tooling). The collab exclusion is the owner's decision of 2026-10-05 (copyright);
+  the uniequip table spells one DEC X module `dec-X` (uniequip_003_aglina) and the others `dec-x`, and `WAH-Y` is the
+  other mixed-case type id.
+- **Now**: `tools/package.mjs` builds `Stronghold-Protocol-v<version>.zip` (full) and `…-lite.zip`, each holding one
+  `Stronghold-Protocol/` folder, from an allowlist over `git ls-files`: `server/`, `shared/`, `data/`, `public/` (not
+  `public/dev/`), the start scripts and the tools a player runs (setup, vendor, fetch-assets + `tools/assets/`, doctor,
+  and what setup starts: `tools/local-extract/`, crop-board-atlas), the four research tables the server and fetch-assets
+  read (`03-operators`, `05-enemies`, `05-maps`, `07-assets`), package.json / lock, LICENSE / NOTICE /
+  THIRD-PARTY-NOTICES, README, CHANGELOG, docs/PLAYING.md and docs/DEPLOY.md; `npm ci --omit=dev` in the stage adds
+  node_modules and public/vendor. The full zip adds the files data/assets.json and data/local-assets.json list,
+  `public/fonts` and `public/assets/local/` — nothing else on disk, so her 15 files and other orphans never ship. Every
+  check also runs in `--dry-run`: the refusal list (0.1.x's plus test, .github, AGENTS.md, public/dev, `.env` / `.venv`
+  anywhere); imports and the player npm scripts resolve to shipped files; all listed art is present; no two paths differ
+  only in case; no shipped file holds a home-directory path or the machine's account name (text and binary, the name read
+  from the OS at run time); no shipped tracked file has uncommitted changes; a real build also checks the stage against
+  the plan. Measured on the 0.2.0 tree (before the voices below): full 421 421 613 bytes, 14 910 files, 589 MB unpacked;
+  lite 22 088 912 bytes, 6 430 files, 85 MB; the 0.1.x layout of the same tree zipped to 429 644 767 bytes (569 files
+  more, 25 MB more unpacked). Both stages boot; `setup --check` passes on the full stage and the lite stage plans the art
+  offline.
+- **The manifest**: data/assets.json regenerated offline (`--offline --add-only --allow-shrink`) drops her 8 subtrees
+  (163 entries); module icons get one lower-case file per type (`module/<type in lower case>.png`: `modules.dec-X` and
+  `modules.WAH-Y` changed); `resolveTemplate` drops an array whose lines are all missing (it kept `{select: [], place: []}`
+  for the 71 自选 voice entries this machine had never downloaded); fetch-assets compares orphans (the `--prune` targets)
+  case-insensitively. Then (6499f4b) `fetch-assets --add-only` run online added the battle voices of the 71 自选 operators —
+  994 lines, 25.5 MB, `voiceChars` 120 → 191 (the manifest: 7 972 files, 485 MB) — and nothing else changed; the full zip
+  grows by about as much.
+- **Open (polish)**: 34 or more of the 38 summons of the 自选 kits (Mon3tr, 麦哲伦's drones, 令's summons, 电弧's towers,
+  白铁's piles, 娜斯提's devices, 望's 棋子 …) have no Spine skeleton in the online sources (fetch-assets: "missing skel"),
+  and the manifest lists none of the 38 with a model, so the field draws them as the avatar placeholder; extracting them
+  from a local client (`tools/local-extract`) or keeping the placeholder is left for later.
+- [ASSUMED]: the lite zip leaves out `public/fonts` too (fetch-assets downloads the fonts with the art); package.json
+  ships unchanged, so the maintainer scripts (`npm test`, `golden`, `package`) fail inside a zip; docs/img (the README
+  screenshots), docs/WINDOWS.md, docs/ASSETS.md and the Dockerfile stay out (Docker builds from a git clone).
+- Golden: unchanged. Tests: `test/package.test.js` (9, no network: the selection on samples and on the real tracked tree,
+  the refusal list, a dry run and a `--no-install` build of a temporary checkout, the scans), `test/assets-diy.test.js`
+  (no `diy.excluded` operator keeps art; one lower-case module icon per type; no two manifest URLs differ only in case;
+  orphans compared case-insensitively), `test/assets.test.js` (the empty-array rule). Docs: docs/DEPLOY.md §7, the
+  README download section (full and lite), docs/ASSETS.md.

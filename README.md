@@ -180,6 +180,7 @@ npm start          # 启动服务器：http://localhost:3000
 | [docs/META.md](docs/META.md) | 对局与经济引擎（英文）：回合流程、商店、联防、最终攻势的实现细节 |
 | [docs/DATA.md](docs/DATA.md) | 由官方数据表生成的游戏数据（英文） |
 | [docs/ASSETS.md](docs/ASSETS.md) | 素材来源、目录结构与清单（英文） |
+| [docs/I18N.md](docs/I18N.md) | 中文 / English 界面（英文）：界面文字、游戏文本与服务器消息怎样翻译，覆盖范围，切到英文后仍显示中文的内容 |
 | [docs/BALANCE.md](docs/BALANCE.md) | 难度模型与测量（英文） |
 | [docs/research/](docs/research/00-INDEX.md) | 官方规则、数据与界面的调研记录 |
 

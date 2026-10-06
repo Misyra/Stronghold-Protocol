@@ -219,7 +219,9 @@ test('1_06 刺玫: 荆藤庇荫 taunts the highest-HP ally in range and counters
   const counters = dealt(h, u, tagged('counter'));
   assert.ok(counters.length >= 2);
   for (const c of counters) approx(c.amount, u.s.atk * bb.atk_scale, 'counter = 20 % ATK arts');
-  assert.ok(heals(h, u).every((c) => c.target === yak), 'trait heal only on the protected ally during the skill');
+  // the counters' trait heal goes to the protected ally; her attacks heal the most injured ally in range — the protected
+  // one here, the only ally hit (test/content/feedback5-vendla-heal.test.js: herself when she is the most injured)
+  assert.ok(heals(h, u).every((c) => c.target === yak), 'trait heals on the protected ally (counters; the most injured)');
   // talent: the highest max-HP ally in range receives more healing
   yak.hp = yak.s.maxHp * 0.3;
   approx(h.b.heal(null, yak, 100), 100 * t.heal_scale, 'heal ×1.08');

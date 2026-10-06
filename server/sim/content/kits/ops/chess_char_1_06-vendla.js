@@ -6,7 +6,13 @@ import { num, talentBb, up, byEnemyAttack, alliesInGridOf, skillBbOf } from '../
 export default {
   // ---------------------------------------------------------------------------------------------------------------
   // 1_06 刺玫 荆藤庇荫: ATK +atk; the ally with the highest max HP in range gets taunt +taunt_level; whenever that ally is
-  // attacked, 刺玫 deals atk_scale × ATK arts to the attacker, and her trait heal (scale × damage) only goes to that ally.
+  // attacked, 刺玫 deals atk_scale × ATK arts to the attacker, and the trait heal of THAT damage (scale × damage) goes to
+  // that ally ("并仅对该角色触发刺玫特性"; en "…and activates her Trait on the ally"). Her own attacks keep healing the
+  // lowest-HP ally in range — herself included — while the skill runs: client buff vendla_tr heals through the
+  // S2TraitHealRange selector (the vendla_s_2 holder) only for a damage whose modifier carries the key vendla_s_2 (the
+  // counter, vendla_s_2[extra_damage]), else through TraitHealRange (_excludeOwner 0, 禁疗 excluded). Until 0.2.0 every
+  // damage she dealt during the skill healed the protégé, usually at full HP, so she healed nobody (community report of
+  // 2026-10-06 「刺玫开技能（装备源石药剂）之后不能治疗」 — her 源石溶剂 drain went unhealed).
   // 土壤基肥改良: the highest-max-HP ally in range receives heal_scale × healing ("受到的治疗效果提升") — never its natural /
   // skill HP regeneration (the 生命回复速度 attribute is "不受治疗加成影响": 宴 分神, 角峰 体能强化; PRTS).
   // Alternate S1 战术咏唱·γ型: ASPD +attack_speed (the trait heal keeps going to the most injured ally in range).
@@ -20,14 +26,14 @@ export default {
       skills: { 'skcom_magic_rage[3]': { kind: 'duration', mods: { aspd: num(skillBbOf(chess, 'skcom_magic_rage[3]').attack_speed) } } },
       trait: {
         // 咒愈师 trait: EVERY damage she deals heals an ally for 50 % of it (professions.js `installIncantation`,
-        // buff_template_data `vendla_tr` = ON_AFTER_OUTPUT_DAMAGE) — while 荆藤庇荫 runs her S2 says "仅对该角色触发刺玫
-        // 特性", so her protégé is the target then; otherwise it is the lowest-HP ally in range.
+        // buff_template_data `vendla_tr` = ON_AFTER_OUTPUT_DAMAGE): the lowest-HP ally in range (herself included) — the
+        // S2 counter's damage names her protégé instead (`traitAlly`, talent install below), skill running or not
         install(battle, u) {
           battle.on('damaged', (c) => {
             const t = c.target;
             if (c.source !== u || !u.alive || !t || t.side !== 'enemy' || !(c.amount > 0)) return;
             if (c.type === 'element' || c.type === 'elemental') return;
-            const ally = (c.dmg && c.dmg.traitAlly) || protege(u) || battle.lowestHpAllyInRange(u);
+            const ally = (c.dmg && c.dmg.traitAlly) || battle.lowestHpAllyInRange(u);
             if (ally) battle.heal(u, ally, c.amount * (u.profile.healRatio ?? 0.5), { tags: ['incantation'] });
           }, { owner: u });
         },

@@ -739,11 +739,14 @@ const MATCH_DIY = Object.freeze({
 const MATCH_DIY_SEED = 70;
 
 /**
- * The NORMAL chess the 补位 match's human seat does not own: operators its AI fields with seed 14 (瑕光 → 郁金香 from
- * round 4, 异客 → Stormeye, 耀骑士临光 → 郁金香 later; the digest's `standIns` lists them per round).
+ * The NORMAL chess the 补位 match's human seat does not own: operators its AI fields with seed 14 (the digest's `standIns`
+ * lists them per round; test/golden-standins.test.js wants at least 3 different ones). 缄默德克萨斯 and 铃兰 joined in 0.2.0
+ * when the 调度中心 upgrade's new card (DESIGN §25.19) changed the seat's shop: 忍冬 → Sharp from round 4, 缄默德克萨斯 →
+ * Misery from round 7, 铃兰 → 预备干员-辅助 from round 9, 安洁莉娜 → Raidian in round 12.
  */
 const MATCH_NOT_OWNED = Object.freeze([
-  'chess_char_3_12_a', 'chess_char_3_18_a', 'chess_char_5_20_a', 'chess_char_6_05_a', 'chess_char_6_06_a', 'chess_char_6_17_a', 'chess_char_6_19_a',
+  'chess_char_3_12_a', 'chess_char_3_18_a', 'chess_char_4_16_a', 'chess_char_5_10_a', 'chess_char_5_20_a', 'chess_char_6_05_a', 'chess_char_6_06_a',
+  'chess_char_6_17_a', 'chess_char_6_19_a',
 ]);
 
 const pieceStr = (p, r, c) => `${p.id.replace(/^chess_char_/, '')}@${r},${c}${p.dir && p.dir !== 'RIGHT' ? p.dir[0] : ''}${p.items && p.items.length ? `[${p.items.map((i) => i.id.replace(/^chess_item_/, '')).join('+')}]` : ''}`;

@@ -40,8 +40,8 @@ export default {
   // ---- 3_04 琳琅诗怀雅 · 行商 — S2 “见面礼” (passive): with a coin and a free tile of range x-6 her attack's turn
   //      throws a champagne bomb instead (onto an enemy's tile when one stands there; installS2);
   //      大买家: coin at skill start + coin & ATK stack per trait payment; 破财消灾: DP-paid revive (cost doubles)
-  //      S1 仗义疏财 (passive, 2 coins): a coin heals the most injured ally (< 70 % HP) of the 8 surrounding tiles for
-  //      attack@heal_scale × ATK — on her attack, or with no enemy to attack on her own attack timer (owner's decision
+  //      S1 仗义疏财 (passive, 2 coins): a coin heals the most injured ally (< 70 % HP) of the 3×3 around her — herself
+  //      included — for attack@heal_scale × ATK — on her attack, or with no enemy to attack on her own attack timer (owner's decision
   //      2026-10-04, against the official 「下一次攻击会为…」; installS1). S3 千金一掷 (持续时间无限): attacks hit twice, kills give a coin;
   //      closing it spends every coin on random ground enemies of range 2-4 in front and those she blocks (atk_scale phys +
   //      a small push, radial despite the text's 向前 — PRTS 备注 "推开效果为径向推动"; client charpack char_1033_swire2:
@@ -96,10 +96,13 @@ export default {
      * 仗义疏财 — official text 「消耗一枚金币，下一次攻击会为周围八格内血量不足70%的一名友方单位恢复相当于攻击力40%的生命」: the heal rides on an
      * attack, so with no enemy around she never healed (community report #5 「琳琅诗怀雅1技能不会主动奶身边受伤的干员」). Owner's
      * decision 2026-10-04 (a deliberate deviation, like §21.29's 重装 casts): she heals an injured ally beside her whether
-     * she attacks or not. Same target (the lowest HP ratio below 70 % of the 8 surrounding tiles, no 禁疗 / 孤立 unit, no
+     * she attacks or not. Same target (the lowest HP ratio below 70 % of the 3×3 around her, no 禁疗 / 孤立 unit, no
      * device), coin and heal_scale × ATK. Cadence [ASSUMED]: at most one heal per attack cycle (her attack interval, ASPD
      * included) — while she attacks, on the attack as before; when her last attack attempt found no target, on her own
      * timer (the 'tick' hook runs after the attacks, so an attack due in the same tick takes it).
+     * 「周围八格」 includes herself: the client charpack (char_1033_swire2, mode S1, ability HealAlly) selects with range
+     * x-4 — the 3×3 with her own tile — ally side, `_excludeOwner` 0, max HP ratio 0.7, one target. Until 0.2.0 she was
+     * left out and never healed herself (community report of 2026-10-06 「琳琅诗怀雅不会治疗自己」).
      */
     const installS1 = (battle, unit) => {
       const hs = num(bb['attack@heal_scale'], num(bb.heal_scale, 0));
@@ -107,9 +110,10 @@ export default {
       const healTarget = () => {
         let best = null;
         for (const a of battle.allyUnits) {
-          if (a === unit || !alive(a) || a.hidden || a.kind === 'device' || a.hpRatio >= healRatio) continue;
-          if (a.s.flags.noHeal || a.profile?.noHeal) continue; // 禁疗 / 孤立: never a heal target
-          if (Math.max(Math.abs(a.tileR - unit.tileR), Math.abs(a.tileC - unit.tileC)) !== 1) continue; // 周围八格
+          if (!alive(a) || a.hidden || a.kind === 'device' || a.hpRatio >= healRatio) continue;
+          if (a !== unit && (a.s.flags.noHeal || a.profile?.noHeal)) continue; // 禁疗 / 孤立: never a heal target
+          if (a === unit && a.s.flags.healFree) continue; // her own 禁疗 (HEAL_FREE) stops a heal of herself too
+          if (Math.max(Math.abs(a.tileR - unit.tileR), Math.abs(a.tileC - unit.tileC)) > 1) continue; // x-4: the 3×3, her tile too
           if (!best || a.hpRatio < best.hpRatio || (a.hpRatio === best.hpRatio && a.deploySeq < best.deploySeq)) best = a;
         }
         return best;
@@ -255,6 +259,11 @@ export default {
           battle.on('skillStart', (ctx) => { if (ctx.unit === unit && unit.skill?.kind !== 'passive') addCoins(battle, unit, num(t0.sp, 1)); }, { owner: unit });
         } },
         { install(battle, unit) { // 破财消灾
+          // the doubling cost restarts at 5 with every deployment: PRTS 备注 「再部署时重置本天赋费用消耗」 — the client buff
+          // swire2_t_2 keeps the doubled `cost` in its own blackboard, built anew when she is deployed (a battle start, 联防
+          // included — a new battle —, a redeploy, a 突袭 再部署). Until 0.2.0 a redeploy kept the doubled cost (community
+          // report of 2026-10-06 「正常对局中死亡之后再部署复活费用也应该重置」)
+          battle.on('deploy', (ctx) => { if (ctx.unit === unit) unit.mem.saveCount = 0; }, { owner: unit });
           battle.on('fatal', (ctx) => {
             if (ctx.unit !== unit || ctx.prevented) return;
             const n = unit.mem.saveCount ?? 0;

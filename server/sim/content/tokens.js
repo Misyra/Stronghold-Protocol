@@ -5,8 +5,10 @@
 // stats / talents / trait / skill at the owner's phase — a golden owner gets the `_b` variant).
 // Every tokenId of data/tokens.json has a kit, so `battle.spawnToken(owner, tokenId, r, c)` works with data defaults
 // even when the summoner's kit passes no options:
-//   医疗探机      heal profile (data), untargetable, self-destructs after its withdraw skill time (10 s)
-//   诅咒娃娃      no attack, aura: enemies in its range ATK/DEF + bb.atk/bb.def (−25 %/−30 %), 15 s (skill duration);
+//   医疗探机      heal profile (data), untargetable, self-destructs after its withdraw skill time (10 s); a countdown
+//                 summon (COUNTDOWN_SUMMONS: 无敌, 禁疗, its bar = the life left)
+//   诅咒娃娃      no attack, aura: enemies in its range ATK/DEF + bb.atk/bb.def (−25 %/−30 %), 15 s (skill duration; a
+//                 countdown summon);
 //                 leaves when 巫恋 leaves (PRTS 备注) — the drone stays when 赫默 leaves (PRTS 医疗探机 备注)
 //   沙之碑        on appear: owner ATK × atk_scale arts + stun (skill range 3×3), blocks 3 (no attack), talent duration 20 s
 //   战术装备      on appear: stun around (bb.stun), blocked enemies DEF + talent def (−160), talent duration 25 s
@@ -14,7 +16,7 @@
 //   斯卡蒂的海嗣  untargetable range extension of 浊心斯卡蒂: her trait's 生命回复速度 on the allies in its range (owner
 //                 ATK × trait ratio /s);
 //                 while the owner's skill runs: owner ATK × atk_scale true dmg/s to enemies + 鼓舞 owner ATK × bb.atk;
-//                 talent duration 25/30 s, then redeploys after respawnTime (30/25 s, DP cost from data)
+//                 talent duration 25/30 s (a countdown summon), then redeploys after respawnTime (30/25 s, DP cost from data)
 //   “耀阳”        on appear: owner ATK × atk_scale true + stun in the skill grid (+1 hit if the previously deployed
 //                 operator is 卡西米尔); golden trait ×atk_scale vs blocked enemies; lasts while the owner's skill runs
 //   纸偶          on appear: token ATK × damage_scale arts to the 8 surrounding tiles; does not block (data)
@@ -76,6 +78,7 @@
 // makes the token (Battle.spawnToken also refuses summons the owner's loadout does not produce).
 //
 // Exports for other content: spawnYanyou, spawnMapChar, findSummonTile, summonToken, tacticalPoint, wolfShadows,
+// COUNTDOWN_SUMMONS / startCountdown (the countdown summons' 无敌 + 禁疗 and timer bar, shared with the kits that time them),
 // wolfShadowInterval, installWolfTacticalPoint, wolfTacticalPoint, wolfReturnNow (the 狼群's 战术点形态, shared with the
 // 伺夜 kit's own pack, kits/ops/chess_char_3_19-vigil.js), releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY,
 // TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 / 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit,
@@ -192,10 +195,42 @@ function untargetable(battle, unit) {
   battle.addBuff(unit, { key: 'trait:untargetable', flags: { untargetable: true }, persist: true, allowDead: true });
 }
 
-/** Withdraw the token `seconds` after this deployment (the same deployment only). */
+/**
+ * Countdown summons — the summons that "不会受到攻击" and leave after a fixed time: 赫默's 医疗探机 (10 s, skcom_withdraw),
+ * 巫恋's 诅咒娃娃 (15 s, its skill), 浊心斯卡蒂's 斯卡蒂的海嗣 (talent 远古血亲 25 / 30 s) and, among the 自选 operators, 温蒂's
+ * 工程蓄水炮 (20 s), 莱伊's 沙地兽 (25 s), 鸿雪's “打字机” (25 s) and 酒神's 本能的召唤 (10 s). Community report of 2026-10-06
+ * (the official mode): they take no outside damage — 活性源石 included —, no operator heals them and their bar runs down
+ * like a timer, the summon leaving when it is empty. PRTS / client data: 海嗣 and 沙地兽 hold 无敌 + 禁疗 (PRTS 海嗣 备注
+ * 「持有禁疗、无敌」; token prefabs: abnormal flags 5 + 7), 工程蓄水炮 禁疗 (PRTS 备注); the others have no abnormal flag in the
+ * base-game prefabs — [ASSUMED] the report's 无敌 + 禁疗 for every one of them. startCountdown gives them both (their HP never
+ * moves) and the bar (Unit.countdown, shown by snapshot.js as the share of the life left). The other timed summons (沙之碑,
+ * 战术装备, “小自在”, 结构性原理 …) block and are attacked: their HP stays HP. Until 0.2.0 a 海嗣 on 活性源石 lost 70 HP/s (of
+ * 100) and a hurt drone drew every medic's heals.
+ */
+export const COUNTDOWN_SUMMONS = Object.freeze(new Set([
+  TOKEN_IDS.healDrone, TOKEN_IDS.curseDoll, TOKEN_IDS.seaborn,
+  'token_10009_weedy_cannon', 'token_10034_ray_sndbst', 'token_10026_bgsnow_subbow', 'token_10054_phatm2_encdool',
+]));
+const COUNTDOWN_KEY = 'token:countdown';
+
+/**
+ * A countdown summon's life on the field starts (COUNTDOWN_SUMMONS; call it from the `deploy` hook of each deployment,
+ * where its kit schedules its withdrawal): `seconds` from now its bar is empty. It holds 无敌 and 禁疗 from then on. A
+ * summon that is not a countdown one is left alone (false).
+ */
+export function startCountdown(battle, unit, seconds) {
+  const s = num(seconds, 0);
+  if (!unit || !COUNTDOWN_SUMMONS.has(unit.defId) || !(s > 0)) return false;
+  unit.countdown = { from: battle.time, until: battle.time + s };
+  if (!unit.findBuff(COUNTDOWN_KEY)) battle.addBuff(unit, { key: COUNTDOWN_KEY, flags: { invulnerable: true, noHeal: true, healFree: true }, persist: true, allowDead: true });
+  return true;
+}
+
+/** Withdraw the token `seconds` after this deployment (the same deployment only); a countdown summon's bar runs with it. */
 function scheduleLifetime(battle, unit, seconds) {
   const s = num(seconds, 0);
   if (!(s > 0)) return;
+  startCountdown(battle, unit, s);
   const seq = unit.deploySeq;
   unit.mem.expiresAt = battle.time + s;
   battle.after(s, () => { if (unit.alive && unit.deploySeq === seq) battle.retreat(unit, { reason: 'expired', permanent: true }); }, { owner: unit });

@@ -81,6 +81,9 @@ export class Unit {
     this.burstPending = null;   // { [element]: true } while that element's burst resolves (damage.js burstLocked)
     this.tags = new Set(init.tags || []);
     this.mem = {};              // free scratch space for content (per unit)
+    // a countdown summon's life on the field ({ from, until } battle times; content/tokens.js startCountdown, cleared by
+    // every deployment): its bar shows the time left (snapshot.js unitTuple), its HP never moves (无敌 + 禁疗)
+    this.countdown = null;
     this.trait = {};            // profession runtime state
     this.stats = { dmg: 0, kills: 0, heal: 0, taken: 0, attacks: 0 };
     this.hidden = false;        // enemies inside a DISAPPEAR segment

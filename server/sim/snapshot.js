@@ -1,6 +1,7 @@
 // server/sim/snapshot.js — compact serialization for clients (DESIGN §8.2).
 //
 // b.snap  = { fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total }
+//   (hp of a countdown summon — unit.countdown, content/tokens.js startCountdown — is maxHp × the share of its life left)
 // UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?,
 //   form?, skillIndex?, moduleId?, items?, standInFor?, diy? }  (standInFor = the replaced operator's charId of a 补位
 //   stand-in; diy = a 自选 piece's pick { charId, skillIndex, uniEquipId } — defId is its slot, spine / avatar the operator's;
@@ -107,9 +108,13 @@ export function unitTuple(u, t) {
       sp = spMax * (sk.timeLeft / sk.duration);
     }
   }
-  // hp is rounded up (a living unit never shows 0) but never above the rounded max HP
+  // hp is rounded up (a living unit never shows 0) but never above the rounded max HP. A countdown summon (医疗探机, 海嗣 …:
+  // content/tokens.js startCountdown) shows the share of its life left instead — its bar runs down like a timer and it
+  // leaves when it is empty (community report of 2026-10-06; its HP itself never moves: 无敌, 禁疗)
   const maxHp = Math.max(1, Math.round(u.s.maxHp));
-  const hp = u.alive ? Math.min(Math.max(1, Math.ceil(u.hp)), maxHp) : 0;
+  const cd = u.alive ? u.countdown : null;
+  const left = cd ? Math.max(0, Math.min(1, (cd.until - t) / Math.max(1e-9, cd.until - cd.from))) : 1;
+  const hp = u.alive ? Math.min(Math.max(1, Math.ceil(cd ? maxHp * left : u.hp)), maxHp) : 0;
   return [u.id, r2(u.x), r2(u.y), hp, maxHp, r1(sp), spMax, flagsOf(u), animOf(u, t)];
 }
 

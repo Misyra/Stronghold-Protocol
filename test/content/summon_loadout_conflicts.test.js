@@ -86,9 +86,13 @@ test('赫默: the medical drone lives its owner\'s withdraw duration (module var
     const start = ops.map((u) => summons(h, u, DRONE)[0]);
     assert.ok(start.every((d) => d && d.alive), 'both start deploys');
     assertLifetimes(h, start, lo.map(life));
-    h.run(6);                                         // past the token's redeploy time
-    assert.ok(ops.every((u) => u.skill.activations === 0), 'no cast yet');
-    const drones = castAndCollect(h, ops, DRONE);
+    // S2 casts by itself the tick its SP is full (22 s), injured ally or not — client skill skchr_silent_2: no `_trigger`,
+    // `_allowNoTarget` 1 (community report of 2026-10-06, DESIGN §25.16; until then it waited for an injured ally and this
+    // test cast it by hand): past the token's redeploy time, so each drone comes back with its owner's cast
+    assert.ok(ops.every((u) => u.skill.activations === 0), 'no cast before the SP is full');
+    assert.ok(h.runUntil(() => ops.every((u) => u.skill.activations === 1), 10), 'both cast at full SP');
+    const drones = ops.map((u) => summons(h, u, DRONE)[0]);
+    assert.ok(drones.every((d) => d.alive), 'both drones back on the field');
     assertLifetimes(h, drones, lo.map(life));
     done(h);
   }

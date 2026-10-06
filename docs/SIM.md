@@ -126,7 +126,10 @@ owner's decision of 2026-10-06, kits/ops/op-wang.js); a skill's summon (赫默 S
 and regardless of the holding (PRTS §作战阶段 "所有手动部署的召唤物，无视所属干员的持有状态…作战开始时立即部署一次"), then
 waits on its tile and takes the field there each time the skill gives one (stock ≤ 1, after the token's redeploy time
 once it left, free; never while its owner is off the field [ASSUMED] — a stocked one deploys as soon as the owner is
-back; the doll also leaves when 巫恋 leaves, the drone stays when 赫默 leaves: PRTS token 备注). A skill's summon, a
+back; the doll also leaves when 巫恋 leaves, the drone stays when 赫默 leaves: PRTS token 备注). The countdown summons —
+those that "不会受到攻击" and leave after a fixed time (医疗探机, 诅咒娃娃, 海嗣; 自选: 工程蓄水炮, 沙地兽, “打字机”, 本能的召唤;
+content/tokens.js `COUNTDOWN_SUMMONS`) — hold 无敌 + 禁疗 from each deployment (`startCountdown`) and their snapshot hp is
+maxHp × the share of their life left (`unit.countdown`; community report of 2026-10-06, 0.2.0). A skill's summon, a
 device or 海嗣 that was not placed never appears (the hidden 待部署区 deploys nothing by itself); the tacticians' 狼群 /
 流形 still come as their 援军 on a tactical point without a piece (content/tokens.js `tacticalPoint`). Their piece stands
 inside the tactician's attack range — the prep enforces "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`, player

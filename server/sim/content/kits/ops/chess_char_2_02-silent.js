@@ -12,6 +12,11 @@ export default {
   // battle start — user playtest #4; not placed ⇒ no drone); it heals around itself and self-destructs after 10 s (token
   // kit). 强化注射: every 【医疗】 operator on the field ASPD +attack_speed. Elite module (PHY-Y): heals on ground units
   // ×heal_scale (module 'none': no bonus).
+  // The cast: as soon as the SP is full — the AUTO skill has no cast condition (client skill skchr_silent_2: no
+  // `_trigger`, `_allowNoTarget` 1, `_checkHasTargetBeforeDoCast` 0, a RechargeToken action), so the placed drone takes the
+  // field the moment S2 is ready (community report of 2026-10-06 「赫默的无人机在2技能好了之后应该秒放」; until 0.2.0 the data's
+  // DEFAULT rule with `heal` waited for an injured ally in her range). While the stock is full her SP stops (阻回) until
+  // one is spent: `_stopSpWhenTokenIsFull` 1, PRTS 备注 「医疗探机库存达到上限后赫默获得阻回，直到库存被消耗为止」.
   // S1 治疗强化·γ型 (alt): ATK +atk for its duration (no drone).
   chess_char_2_02_a: (bb, chess) => {
     const tokId = chess?.skill?.overrideTokenKey ?? (chess?.tokens ?? [])[0] ?? 'token_10000_silent_healrb';
@@ -21,7 +26,16 @@ export default {
     return {
       skill: {
         kind: 'instant', heal: true,
+        trigger: { rule: 'SP_FULL' },
         onStart({ battle, unit }) { releaseSkillSummon(battle, unit, tokId, { cap: cnt }); },
+      },
+      install(battle, unit) {
+        if (unit.def?.skill?.id !== 'skchr_silent_2') return;
+        // 阻回 while the stock is full (refreshed every tick; gone a tick after a drone takes the field)
+        battle.on('tick', () => {
+          if (!unit.alive || !unit.deployed || !((unit.mem.summonStock?.[tokId] ?? 0) >= cnt)) return;
+          battle.addBuff(unit, { key: 'silent:stockFull', duration: 2 * battle.dt, refresh: 'extend', flags: { noSp: true } });
+        }, { owner: unit });
       },
       skills: { 'skcom_heal_up[3]': { kind: 'duration', heal: true, mods: { atkPct: num(bb.atk) } } },
       talents: [{ install(battle, unit) {

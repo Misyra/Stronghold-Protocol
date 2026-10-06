@@ -545,6 +545,17 @@ export class Network {
   /** Number of open sockets. */
   get connectionCount() { return this.conns.size; }
 
+  /** Bytes queued unsent across all open sockets ({ total, max }) — health diagnostics for a backed-up peer. */
+  bufferedBytes() {
+    let total = 0, max = 0;
+    for (const conn of this.conns.values()) {
+      const n = conn.ws?.bufferedAmount || 0;
+      total += n;
+      if (n > max) max = n;
+    }
+    return { total, max };
+  }
+
   /**
    * Upgrade-time admission check (server/index.js): null to accept, otherwise the reason to refuse.
    * @param {import('node:http').IncomingMessage} req

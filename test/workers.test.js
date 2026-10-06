@@ -59,6 +59,21 @@ test('failed and cancelled work does not inflate successful compute averages', a
   assert.equal(pool.stats().avgComputeMs, compute);
 });
 
+test('settled Worker tasks release their inputs and callbacks (a kept cancel handle retains nothing)', async (t) => {
+  const pool = fixturePool();
+  t.after(() => pool.close());
+  const handle = pool.submit('burn', { ms: 10, value: 'done' }, { onProgress: () => {} });
+  const task = [...pool.slots][0].task;
+  assert.ok(task.payload);
+  assert.equal(await handle.promise, 'done');
+  assert.equal(task.payload, null);
+  assert.equal(task.onProgress, null);
+  assert.equal(task.resolve, null);
+  assert.equal(task.slot, null);
+  handle.cancel();
+  assert.equal(pool.stats().cancelled, 0);
+});
+
 test('bounded queue, priority, queued cancellation, and thread reuse', async (t) => {
   const pool = fixturePool({ maxQueue: 2 });
   t.after(() => pool.close());
@@ -322,6 +337,11 @@ test('server shares one pool across matches, reports health, and responds over W
   const health = await (await fetch(`${srv.url}/healthz`)).json();
   assert.equal(health.workers.size, 1);
   assert.equal(health.workers.avgComputeMs, 0);
+  assert.ok(health.memory.rss > 0);
+  assert.ok(health.memory.heapUsed > 0);
+  assert.ok(health.memory.heapUsed <= health.memory.heapTotal);
+  assert.ok(health.staticCache.gzipBytes <= health.staticCache.gzipLimitBytes);
+  assert.ok(Number.isFinite(health.socketBuffers.total) && health.socketBuffers.total >= health.socketBuffers.max);
   const cpu = fixturePool();
   t.after(() => cpu.close());
   await cpu.submit('burn', {}).promise;

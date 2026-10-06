@@ -12,6 +12,8 @@ export class PersistenceWorker {
     this.pending = new Map();
     this.nextId = 0;
     this.closed = false;
+    /** Latest heap sample reported by the worker (health diagnostics), or null before the first reply. */
+    this.memory = null;
     this.stopping = new Set();
   }
 
@@ -20,7 +22,8 @@ export class PersistenceWorker {
     if (!this.worker) {
       const worker = new Worker(new URL('./persistence.js', import.meta.url));
       this.worker = worker;
-      worker.on('message', ({ id, error, ...value }) => {
+      worker.on('message', ({ id, error, memory, ...value }) => {
+        if (memory) this.memory = memory;
         const task = this.pending.get(id);
         if (!task) return;
         this.pending.delete(id);

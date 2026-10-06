@@ -410,10 +410,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         const idx = await resources.get();
         const gz = acceptsGzip(req.headers['accept-encoding']);
         const body = gz ? idx.gzip : idx.body;
-        const etag = '"resources-' + idx.manifest.version + (gz ? '-gz' : '') + '"';
-        const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', ETag: etag, Vary: 'Accept-Encoding' };
+        // The ETag hashes the complete response, so unchanged rebuilds and restarts keep the validator and the
+        // browser can revalidate (cache: 'no-cache') instead of re-downloading; each encoding gets its own tag.
+        const etag = gz ? `${idx.etag.slice(0, -1)}-gz"` : idx.etag;
+        const mtime = new Date(idx.mtimeMs);
+        const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', ETag: etag,
+          'Last-Modified': mtime.toUTCString(), Vary: 'Accept-Encoding' };
         if (gz) headers['Content-Encoding'] = 'gzip';
-        if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return; }
+        if (isNotModified(req, etag, mtime)) { res.writeHead(304, headers); res.end(); return; }
         headers['Content-Length'] = body.length;
         res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : body);
       } catch (err) { log.error('[resources] manifest failed', err); sendError(req, res, 500, '无法生成资源清单'); }
@@ -520,6 +524,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   };
   handler.version = release.tag;
   handler.artVersion = release.artTag;
+  /** Cache usage for /healthz: the gzip LRU and the small transformed-response cache. */
+  handler.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size,
+    gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,
+    transformedBytes, transformedEntries: transformed.size });
   return handler;
 }
 
@@ -856,8 +864,13 @@ export async function startServer(opts = {}) {
         assetsCdnVersion: cdn.version || null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
         workers: workerPool?.stats() || null,
+        // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
+        memory: process.memoryUsage(),
+        staticCache: serveStatic.cacheStats(),
+        socketBuffers: network.bufferedBytes(),
         persist: persister ? { enabled: true, backend: store.kind || 'custom', mode: store.mode || null, writes: persister.writes,
-          failures: persister.failures, checkpoints: persister.matchDocs.size } : null,
+          failures: persister.failures, checkpoints: persister.matchDocs.size,
+          workerMemory: persister.encoder?.memory || null } : null,
       });
       return;
     }

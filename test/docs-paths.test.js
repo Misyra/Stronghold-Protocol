@@ -1,7 +1,7 @@
-// The newcomer docs name only paths that exist: every repository path in docs/ARCHITECTURE.md — inline code, the
-// diagrams in fenced blocks — and every relative Markdown link. A path with a placeholder (`<codename>`, `{a,b}`) or a
-// glob (`*`) is checked up to its last fixed directory; a path ending in `/` must be a directory. Outputs that a fresh
-// checkout does not have (downloaded art, vendored libraries, the official-data cache) are exempt.
+// The newcomer docs name only paths that exist: every repository path in docs/ARCHITECTURE.md and CONTRIBUTING.md
+// (inline code, the diagrams and commands in fenced blocks) and every relative Markdown link. A path with a
+// placeholder (`<codename>`, `{a,b}`) or a glob (`*`) is checked up to its last fixed directory; a path ending in `/`
+// must be a directory. Outputs that a fresh checkout does not have (downloaded art, vendored libraries) are exempt.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -9,7 +9,8 @@ import { dirname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DOCS = ['docs/ARCHITECTURE.md'];
+/** Each document with the least number of paths it names (a guard against an extraction that finds nothing). */
+const DOCS = [['docs/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15]];
 /** A repository path starts with one of these top-level directories … */
 const TOP = /^(?:server|shared|public|data|tools|test|docs|types|scripts|\.github)\//;
 /** … or is one of these root files (README.md is left out: a bare `README.md` often means a folder's own). */
@@ -52,12 +53,12 @@ function missing(path) {
   return null;
 }
 
-for (const docPath of DOCS) {
+for (const [docPath, least] of DOCS) {
   const md = readFileSync(join(ROOT, docPath), 'utf8');
 
   test(`${docPath}: every repository path it names exists`, () => {
     const paths = namedPaths(md);
-    assert.ok(paths.length >= 40, `only ${paths.length} paths found — is the extraction broken?`);
+    assert.ok(paths.length >= least, `only ${paths.length} paths found — is the extraction broken?`);
     const bad = paths.map(missing).filter(Boolean);
     assert.deepEqual(bad, [], `stale paths in ${docPath}`);
   });

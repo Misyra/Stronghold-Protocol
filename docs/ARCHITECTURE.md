@@ -4,7 +4,7 @@ For a newcomer who wants to find their way before changing something. This file 
 in [DESIGN.md](DESIGN.md) (§5 the battle engine, §6 the match, §8 the protocol, §9 rendering, §14 client-side combat);
 the details in [SIM.md](SIM.md) (battle engine, hooks, SkillSpec), [META.md](META.md) (match engine, prep-phase
 effects), [DATA.md](DATA.md) (generated data), [ASSETS.md](ASSETS.md) (art and audio) and [I18N.md](I18N.md)
-(languages). How to set up and run the tests: [README · 开发与测试](../README.md#开发与测试).
+(languages). How to set up, test and send a change: [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## 1. What runs where
 
@@ -158,7 +158,7 @@ public/assets/ ─────────▶ public/js/render/, public/js/audio
 - **Lint and types.** `npm run lint` is a correctness-only ESLint (`eslint.config.js`: warnings are allowed, errors
   are not); `npm run typecheck` checks a JSDoc slice (`jsconfig.json`; `types/README.md` says how to widen it). CI
   runs both once, and the tests on Ubuntu and Windows with Node 22 and 24 (`.github/workflows/ci.yml`).
-- **Tests.** `node --test` runs every suite that needs no browser; the browser suites are opt-in (README · 开发与测试).
+- **Tests.** `node --test` runs every suite that needs no browser; the browser suites are opt-in ([CONTRIBUTING.md](../CONTRIBUTING.md) §2).
   The battle harness `test/helpers/battleHarness.js` (SIM.md §10) sets up a battle in a few lines.
 
 ## 6. Where to start
@@ -181,4 +181,4 @@ public/assets/ ─────────▶ public/js/render/, public/js/audio
 | HTTP, headers, static routes | `server/http/` | `test/version.test.js`, `test/client-static.test.js` |
 
 Before changing a rule, read the DESIGN section that owns it (module headers cite their sections) and the official
-source; a rule no source settles is marked `[ASSUMED]` (`server/sim/content/kits/README.md`, "The fidelity rule").
+source; a rule no source settles is marked `[ASSUMED]` ([CONTRIBUTING.md](../CONTRIBUTING.md) §3).

@@ -252,7 +252,7 @@ the wave; an attack on every enemy in range counts ×2 — 阵法术师 / 轰击
 chain ×1.4 [ASSUMED], `CROWD`). The deployed set maximizes unit value + activated bond tiers (exact counting via `computeBonds`; every
 deployed focus member counts toward the next threshold). Items by what they do: equipment on the strongest deployed
 damage dealers (survival items on blockers first, bond signature items on a member), 信标 on a bench single (never the
-lineup when a bench single exists), 拟态物质 on a pair, 博士投影 (both qualities — neither takes an elite) on the strongest
+lineup when a bench single exists), 拟态物质 on a pair (never on 2 copies whose pool is out), 博士投影 (both qualities — neither takes an elite) on the strongest
 normal operator, 突变细胞 on the least valuable normal operator below 6阶 (deployed or benched — never an elite, never one
 of a merge pair, never one already carrying a cell; it comes back after every transformation, and a cell left in temp
 gets a hand slot made for it, `makeHandRoom` — on a bot's own seat by destroying the cheapest other hand item if no
@@ -444,7 +444,8 @@ a promotion or `ctx.destroyPiece` returns) ends with the auto-merge (`acquireIte
 装备时…自动合并"), so a player never holds two identical mergeable normal items (`test/match/feedback1b-items.test.js`), except an item gained while 休整期结束 is dispatching (`onPrepEnd`, including a grant nested under it): it is stowed (hand, else temp) and merges at the next prep's start, and nothing already equipped is taken off for the fight. Hand and temp both full still destroys it with 「整备区已满，获得的装备已销毁」. [ASSUMED] every such grant, not only 维多利亚's hammer (owner's decision 2026-10-04). A buy, an onPrepStart grant and a grant at any other time still merge at once (`test/match/feedback3-prep-end-item.test.js`).
 
 Built-ins (builtinMeta.js, overridable): 盟约之币 / 骑士储蓄罐 (random funds), 随身身份牌 (layers of the target's bonds),
-紧急调度券 (take shop chess), 精打细算玩偶 (+funds each round), 简易通讯机 / 拟态物质 (same-bond chess), 见钱眼开玩偶
+紧急调度券 (take shop chess), 精打细算玩偶 (+funds each round), 简易通讯机 (same-bond chess), 拟态物质 (with 2 copies
+owned the 3rd — nothing when the pool has none left, GitHub #207 —, else a same-bond chess), 见钱眼开玩偶
 (+funds next round), 人事部文档 (cap 9), 博士投影 (elite now / at the next round start), 寻呼模块 / 信标 (pick-one
 offers; 信标 gifts the original chess — an elite stays an elite — to the teammate with the most members of its bonds next
 round, also when the sender was eliminated meanwhile; a failed grant waits for the next round start), 商业包装方案 (every

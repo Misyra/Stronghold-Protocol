@@ -108,6 +108,10 @@ test('items: 信标 on a bench single; both 博士投影 on a normal operator ev
   // 拟态物质 (a third copy when two are owned): the pair
   const mimic = itemTarget(m, ps, giveItem(m, ps, 'chess_item_5_05_e_a'));
   assert.ok(mimic && [pairA.uid, pairB.uid].includes(mimic.uid), '拟态物质 on the pair');
+  // …but not once the pool has no third copy: the item would give nothing (GitHub #207)
+  m.pool.take(pairId, m.pool.left(pairId));
+  const mimic2 = itemTarget(m, ps, giveItem(m, ps, 'chess_item_5_05_e_a'));
+  assert.ok(mimic2 && ![pairA.uid, pairB.uid].includes(mimic2.uid), '拟态物质 not on a pair whose pool is out');
   m.dispose();
 });
 

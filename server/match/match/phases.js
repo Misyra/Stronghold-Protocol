@@ -253,6 +253,9 @@ export class MatchPhases {
     for (const ps of alive) ps.recompute();
     this.setDeadline(DELAYS.ROUND_START / 1000, () => this.afterRoundStart(), { silent: this.soloUntimed });
     this.markPublic();
+    // eliminated humans and spectator seats scout the board of the player they follow through the round's prep, not
+    // their own empty board (community report of 2026-10-06, item 56; MatchWatch._followScout)
+    for (const ps of this._viewers()) this._followScout(ps);
   }
 
   /** The boss round's fields (seat pairs of the alive players) and their templates, generated for the prep preview. */

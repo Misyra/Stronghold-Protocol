@@ -92,7 +92,8 @@ export class MatchCombat {
     this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
     this._launch(fields);
     // every fighting human runs its own field; eliminated humans (and spectator seats) keep watching (research 09 §3.1
-    // "Keep-watching auto-observes the first available field", switching freely with 前往查看): a replica of the first field
+    // "Keep-watching auto-observes the first available field", switching freely with 前往查看): a replica of the field
+    // of the player they follow — the one they last watched, else the first player still in (item 56) — else the first
     for (const f of fields) for (const pid of f.players) {
       const ps = this.players.get(pid);
       if (!ps || ps.isBot || ps.left) continue;
@@ -103,8 +104,9 @@ export class MatchCombat {
     if (first) {
       for (const ps of this._viewers()) {
         if (ps.alive || this.watchers.has(ps.playerId)) continue;
-        this.watchers.set(ps.playerId, first.fieldId);
-        this._sendStart(ps.playerId, first, { watch: true });
+        const f = this._watchTargetField(ps, fields) || first;
+        this.watchers.set(ps.playerId, f.fieldId);
+        this._sendStart(ps.playerId, f, { watch: true });
       }
     }
     this.markPublic();

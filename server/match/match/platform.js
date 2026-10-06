@@ -100,7 +100,8 @@ export class MatchPlatform {
 
   /**
    * The full state of one human (a reconnect, a resync, a spectator seat): m.public, its m.private (players only), the
-   * field it is on / watches — a spectator, like an eliminated player, the first field — or the result once ended.
+   * field it is on / watches — a spectator, like an eliminated player, the field of the player it follows (item 56),
+   * else the first; in a prep phase that player's board — or the result once ended.
    */
   _resync(ps) {
     const playerId = ps.playerId;
@@ -111,9 +112,10 @@ export class MatchPlatform {
         this._sendPrivate(ps, true);
       }
       if (this.clientCombat) this._resendBattle(ps);
+      else if (!this.fields.length && this._follows(ps)) this._followScout(ps, { keep: true });
       else {
         let fid = this.watchers.get(playerId);
-        if (!fid && ps.spectator && this.fields.length) { fid = this.fields[0].fieldId; this.watchers.set(playerId, fid); }
+        if (!fid && ps.spectator && this.fields.length) { fid = (this._watchTargetField(ps, this.fields) || this.fields[0]).fieldId; this.watchers.set(playerId, fid); }
         if (fid) this._sendField(playerId, fid);
       }
     } else if (this.lastResultMsg) {
@@ -180,6 +182,8 @@ export class MatchPlatform {
       this._planBossWaves();
       for (const p of this.alivePlayers()) p.recompute();
     }
+    // whoever scouted the departed player's board follows the next player still in (item 56)
+    for (const v of this._viewers()) if (this.watchers.get(v.playerId) === `n:${ps.playerId}`) this._followScout(v);
     this.markPublic();
     if (this.teamLp != null) this._syncTeamLp();
     if (!this.alivePlayers().length) {

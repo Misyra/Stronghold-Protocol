@@ -1,47 +1,90 @@
-// Language switch of the client (docs/I18N.md): picks the language at boot, loads the UI translations
-// (public/i18n/<lang>.json, shared/i18n.js) and the localized game data (data/i18n/<lang>.json through data.js), keeps
-// the choice, and translates what the server sends (m.toast / m.ticker / error codes).
+// Language switch of the client (docs/I18N.md): lists the language packs — the "lang" entries of the pack index
+// /packs/index.json (shared/packs.js; the server's registry, server/packs.js, scans the language folders and the pack
+// folders; a static host serves the file `node tools/packs.mjs index` writes) — picks the language at boot, loads the UI
+// strings of the chosen pack and of its fallback chain (shared/i18n.js; the URLs the index gives: /i18n/<code>.json or
+// /packs/<id>/<file>) and its game texts (data.js), keeps the choice, and translates what the server sends (m.toast /
+// m.ticker / error codes). No language is known by name here: a pack is a file in a folder (the owner's decision of
+// 2026-10-07).
 //
-// Chinese is the default; English is a switch (the owner's decision of 2026-10-05) — the browser's language is not
-// consulted. Order at boot: `?lang=en|zh` in the URL (then removed from the address bar and kept as the choice), the
-// stored choice (localStorage `sp.pref.lang`), else Chinese. A switch re-renders the app in place (main.js App
-// subscribes with useLang) — no reload; the game texts follow as soon as the data overlay has downloaded (data.js
-// notifies its subscribers).
+// Chinese is the default (the owner's decision of 2026-10-05) — the browser's language is not consulted. Order at boot:
+// `?lang=<code>` in the URL (then removed from the address bar and kept as the choice), the stored choice (localStorage
+// `sp.pref.lang`), else Chinese; a code no pack has falls back to Chinese (`en-US` takes the `en` pack). A switch
+// re-renders the app in place (main.js App subscribes with useLang) — no reload; the game texts follow as soon as their
+// overlays have downloaded (data.js notifies its subscribers). Without an index (a static host that lacks the file) the
+// stored or requested pack still loads by its code, and the menu offers it beside Chinese.
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
-import { LANGS, DEFAULT_LANG, normalizeLang, getLang, setLang, onLangChange, addMessages, setNameResolver, tName, format, translateWire } from '../../../shared/i18n.js';
+import {
+  DEFAULT_LANG, normalizeLang, getLang, setLang, onLangChange, addMessages, setNameResolver, tName, format, translateWire, t,
+  registerLangs, getLangs, langInfo, langChain, onLangsChange, setI18nWarn,
+} from '../../../shared/i18n.js';
+import { canonicalLang, computeChain, scriptOf } from '../../../shared/i18nPacks.js';
+import { PACKS_URL, PACK_INDEX_FILE, readPackIndex, langMetaOf } from '../../../shared/packs.js';
+import { DEV_BUILD } from '../../../shared/constants.js';
 import { loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
 import { html } from './components.js';
 
-/** Labels of the language switch (each in its own language). */
-export const LANG_LABELS = Object.freeze({ zh: '中文', en: 'English' }); // i18n-ignore: each language in its own name
 /** The switch's own label, in both languages (whoever opens it may not read the current one). */
 const SWITCH_LABEL = 'Language / 语言'; // i18n-ignore
 const PREF_KEY = 'lang';
-/** How long boot waits for the UI translations before rendering in Chinese anyway (they apply when they arrive). */
+/** How long boot waits for the index and the UI strings before rendering in Chinese anyway (they apply when they arrive). */
 const BOOT_WAIT_MS = 2500;
+/** Up to this many languages the switch is a row of buttons (中文 | English …); more make it a list. */
+export const SEGMENTED_MAX = 4;
 
 /** @type {Map<string, Promise<boolean>>} */
 const uiLoads = new Map();
+/** @type {Promise<boolean> | null} */
+let indexLoad = null;
+/** Whether the pack index arrived (without it the chain of a pack is taken from its own `_meta` as it loads). */
+let indexOk = false;
+const INDEX_URL = `${PACKS_URL}${PACK_INDEX_FILE}`;
+
+const defaultFetch = (...a) => globalThis.fetch(...a);
 
 /**
- * Download (once) the UI translations of a language.
+ * Download (once) the pack index and register its language packs (shared/i18n.js registerLangs), so the menu lists
+ * them.
+ * @param {typeof fetch} [doFetch]
+ * @returns {Promise<boolean>} false when unavailable (the menu then offers Chinese and the stored language)
+ */
+export function loadLangIndex(doFetch = defaultFetch) {
+  if (indexLoad) return indexLoad;
+  indexLoad = (async () => {
+    try {
+      const res = await doFetch(INDEX_URL, { cache: 'no-cache' });
+      if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
+      registerLangs(readPackIndex(await res.json(), 'lang').map(langMetaOf));
+      indexOk = true;
+      return true;
+    } catch (err) {
+      console.warn(`[i18n] ${INDEX_URL} unavailable (${err?.message || err}); the menu offers Chinese and the stored language`);
+      return false;
+    }
+  })();
+  return indexLoad;
+}
+
+/**
+ * Download (once) the UI strings of one language pack: the URL its index entry gives, else the language folder's file
+ * /i18n/<code>.json (whose `_meta` then registers it).
  * @param {string} lang
  * @param {typeof fetch} [doFetch]
- * @returns {Promise<boolean>} false when unavailable (the UI stays Chinese)
+ * @returns {Promise<boolean>} false when unavailable (the interface stays as it is)
  */
-export function loadUiMessages(lang, doFetch = (...a) => globalThis.fetch(...a)) {
+export function loadUiMessages(lang, doFetch = defaultFetch) {
   if (lang === DEFAULT_LANG) return Promise.resolve(true);
   if (uiLoads.has(lang)) return uiLoads.get(lang);
+  const url = langInfo(lang)?.ui || `/i18n/${lang}.json`;
   const p = (async () => {
     try {
-      const res = await doFetch(`/i18n/${lang}.json`, { cache: 'no-cache' });
+      const res = await doFetch(url, { cache: 'no-cache' });
       if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
       addMessages(lang, await res.json());
       return true;
     } catch (err) {
-      console.warn(`[i18n] /i18n/${lang}.json unavailable (${err?.message || err}); the interface stays Chinese`);
+      console.warn(`[i18n] ${url} unavailable (${err?.message || err}); the interface stays as it is`);
       uiLoads.delete(lang);
       return false;
     }
@@ -51,17 +94,44 @@ export function loadUiMessages(lang, doFetch = (...a) => globalThis.fetch(...a))
 }
 
 /**
- * The language to start in: the URL's `?lang=`, then the stored choice, then Chinese.
+ * Load a pack and the packs of its chain (its base, its fallbacks — shared/i18n.js langChain). A fallback that fails
+ * only leaves its strings to the next language of the chain.
+ * @param {string} lang
+ * @param {typeof fetch} [doFetch]
+ * @returns {Promise<boolean>} whether the pack itself loaded
+ */
+export async function loadLangChain(lang, doFetch = defaultFetch) {
+  if (lang === DEFAULT_LANG) return true;
+  if (!(await loadUiMessages(lang, doFetch))) return false;
+  // without the index, the chain's codes are not registered yet: try them by the pack's own `_meta`
+  const chain = indexOk ? langChain(lang) : computeChain(lang, (c) => langInfo(c), () => true);
+  await Promise.all(chain.filter((c) => c !== lang).map((c) => loadUiMessages(c, doFetch)));
+  return true;
+}
+
+/**
+ * The game-text overlays that apply for `lang`, best first: the chain's packs that have one (the index's `files.data`;
+ * unknown without the index → the language folder's data/i18n/<code>.json is tried), with their URLs (data.js).
+ * @param {string} lang
+ * @returns {{ code: string, url?: string }[]}
+ */
+export const dataChain = (lang) => langChain(lang).filter((c) => langInfo(c)?.data !== false).map((c) => ({ code: c, url: langInfo(c)?.dataUrl }));
+
+/**
+ * The language to start in: the URL's `?lang=`, then the stored choice, then Chinese. `tentative`: also a well-formed
+ * code no pack is known for (boot without an index tries to load it).
  * @param {string} [search] location.search
  * @param {(key: string, fallback: any) => any} [load]
+ * @param {{ tentative?: boolean }} [opts]
  * @returns {{ lang: string, fromUrl: boolean }}
  */
-export function initialLang(search = globalThis.location?.search || '', load = loadPref) {
+export function initialLang(search = globalThis.location?.search || '', load = loadPref, { tentative = false } = {}) {
+  const pick = (v) => normalizeLang(v) || (tentative ? canonicalLang(v) : null);
   let fromUrl = null;
-  try { fromUrl = normalizeLang(new URLSearchParams(search).get('lang')); } catch { /* ignore */ }
+  try { fromUrl = pick(new URLSearchParams(search).get('lang')); } catch { /* ignore */ }
   if (fromUrl) return { lang: fromUrl, fromUrl: true };
   let stored = null;
-  try { stored = normalizeLang(load(PREF_KEY, null)); } catch { /* ignore */ }
+  try { stored = pick(load(PREF_KEY, null)); } catch { /* ignore */ }
   return { lang: stored || DEFAULT_LANG, fromUrl: false };
 }
 
@@ -74,46 +144,76 @@ function stripLangParam() {
   } catch { /* ignore */ }
 }
 
-/** <html lang> and the tab title follow the language. */
+/** The `lang` attribute of a language: its code ('zh-CN' for the Chinese source). @param {string} code */
+export const htmlLang = (code) => (code === DEFAULT_LANG ? 'zh-CN' : code);
+
+/**
+ * <html lang>, data-lang, data-script (the title screen's layout: CJK or alphabetic, from the pack's title) and the tab
+ * title follow the language.
+ */
 function applyDocument(lang) {
   const doc = globalThis.document;
   if (!doc) return;
-  doc.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+  doc.documentElement.lang = htmlLang(lang);
   doc.documentElement.dataset.lang = lang;
-  doc.title = lang === 'en' ? 'Stronghold Protocol: Alliance · Web Simulation' : '卫戍协议：盟约 · STRONGHOLD PROTOCOL'; // i18n-ignore: one title per language
+  doc.documentElement.dataset.script = scriptOf(t('卫戍协议'));
+  doc.title = t('卫戍协议：盟约 · STRONGHOLD PROTOCOL');
 }
 
 // `{ dn }` params and tName(): Chinese game-data names → the current language (data/i18n/<lang>.json names)
 setNameResolver((name) => data.localeName(name));
+
+/** A development page (a dev build, or served from this machine): report translations t() skips (shared/i18n.js). */
+function isDevPage() {
+  if (DEV_BUILD) return true;
+  try {
+    const h = String(globalThis.location?.hostname || '');
+    return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || h.endsWith('.localhost');
+  } catch { return false; }
+}
 
 let wired = false;
 function wire() {
   if (wired) return;
   wired = true;
   onLangChange((lang) => { applyDocument(lang); });
+  if (isDevPage()) {
+    setI18nWarn(({ lang, key, problems }) => console.warn(`[i18n] ${lang}: the translation of "${key}" is skipped (${problems.join('; ')}); the next language of the chain shows`));
+  }
+}
+
+/** Make a loaded language current: the interface now, the game texts once their overlays are in. */
+function applyLang(lang) {
+  setLang(lang);
+  data.setLocale(getLang(), dataChain(getLang())).catch(() => {});
 }
 
 /**
- * Boot: choose the language and load its UI translations (waits at most BOOT_WAIT_MS) before the first render; the
- * game-data overlay downloads in the background.
+ * Boot: list the packs, choose the language and load its UI strings (waits at most BOOT_WAIT_MS) before the first
+ * render; the game-text overlays download in the background.
  * @returns {Promise<string>} the language in effect
  */
 export async function initLang() {
   wire();
-  const { lang, fromUrl } = initialLang();
-  if (fromUrl) { savePref(PREF_KEY, lang); stripLangParam(); }
   applyDocument(getLang());
-  if (lang === DEFAULT_LANG) return getLang();
-  const ok = await Promise.race([loadUiMessages(lang), new Promise((r) => setTimeout(() => r(null), BOOT_WAIT_MS))]);
-  if (ok === null) loadUiMessages(lang).then((loaded) => { if (loaded && normalizeLang(loadPref(PREF_KEY, null)) === lang) setLang(lang); });
-  else if (ok) setLang(lang);
-  data.setLocale(lang).catch(() => {});
+  const TIMEOUT = Symbol('timeout');
+  const boot = (async () => {
+    const listed = await loadLangIndex();
+    const { lang, fromUrl } = initialLang(undefined, undefined, { tentative: !listed });
+    if (fromUrl) { savePref(PREF_KEY, lang); stripLangParam(); }
+    if (lang === DEFAULT_LANG) return null;
+    return (await loadLangChain(lang)) ? lang : null;
+  })();
+  const got = await Promise.race([boot, new Promise((r) => setTimeout(() => r(TIMEOUT), BOOT_WAIT_MS))]);
+  if (got === TIMEOUT) {
+    boot.then((lang) => { if (lang && normalizeLang(loadPref(PREF_KEY, null)) === lang) applyLang(lang); });
+  } else if (got) applyLang(got);
   return getLang();
 }
 
 /**
- * Switch the language (the switch on the title screen and in 设置): keeps the choice, loads the translations, then
- * re-renders; the game texts follow when their overlay has downloaded.
+ * Switch the language (the menu on the title screen and in 设置): keeps the choice, loads the pack and its chain, then
+ * re-renders; the game texts follow when their overlays have downloaded.
  * @param {string} lang
  * @returns {Promise<string>} the language in effect
  */
@@ -121,9 +221,8 @@ export async function switchLang(lang) {
   wire();
   const want = normalizeLang(lang) || DEFAULT_LANG;
   savePref(PREF_KEY, want);
-  if (want !== DEFAULT_LANG && !(await loadUiMessages(want))) return getLang();
-  setLang(want);
-  data.setLocale(want).catch(() => {});
+  if (want !== DEFAULT_LANG && !(await loadLangChain(want))) return getLang();
+  applyLang(want);
   return getLang();
 }
 
@@ -141,14 +240,54 @@ export function useLang() {
 }
 
 /**
- * The language switch (segmented 中文 | English).
+ * Preact hook: the known languages (shared/i18n.js getLangs); re-renders when the index or a pack arrives.
+ * @returns {ReturnType<typeof getLangs>}
+ */
+export function useLangs() {
+  const [list, setList] = useState(getLangs);
+  useEffect(() => {
+    setList(getLangs());
+    return onLangsChange(() => setList(getLangs()));
+  }, []);
+  return list;
+}
+
+/**
+ * What the language menu shows: every known language under its own name (the English name as a tooltip when it reads
+ * differently), current one marked — a row of buttons up to SEGMENTED_MAX languages, a list beyond.
+ * @param {ReturnType<typeof getLangs>} langs
+ * @param {string} current
+ * @returns {{ kind: 'buttons' | 'select', items: { code: string, label: string, title: string, htmlLang: string, on: boolean }[] }}
+ */
+export function langMenuModel(langs, current) {
+  const items = (Array.isArray(langs) ? langs : []).filter(Boolean).map((m) => ({
+    code: m.code,
+    label: m.name || m.code,
+    title: m.englishName && m.englishName !== m.name ? m.englishName : '',
+    htmlLang: htmlLang(m.code),
+    on: m.code === current,
+  }));
+  return { kind: items.length > SEGMENTED_MAX ? 'select' : 'buttons', items };
+}
+
+/**
+ * The language menu: 中文 | English | … as buttons, or a list when there are many packs.
  * @param {{ class?: string }} props
  */
 export function LangToggle({ class: cls }) {
   const lang = useLang();
+  const menu = langMenuModel(useLangs(), lang);
+  const pick = (code) => { if (code && code !== getLang()) switchLang(code); };
+  if (menu.kind === 'select') {
+    return html`<label class=${`set-seg lang-toggle lang-select${cls ? ` ${cls}` : ''}`} data-testid="lang-toggle">
+      <select aria-label=${SWITCH_LABEL} value=${lang} onChange=${(e) => pick(e.currentTarget.value)}>
+        ${menu.items.map((it) => html`<option key=${it.code} value=${it.code} lang=${it.htmlLang} title=${it.title || undefined} selected=${it.on}>${it.label}</option>`)}
+      </select>
+    </label>`;
+  }
   return html`<div class=${`set-seg lang-toggle${cls ? ` ${cls}` : ''}`} role="radiogroup" aria-label=${SWITCH_LABEL} data-testid="lang-toggle">
-    ${LANGS.map((l) => html`<button key=${l} type="button" role="radio" lang=${l === 'zh' ? 'zh-CN' : 'en'} aria-checked=${lang === l ? 'true' : 'false'}
-      class=${lang === l ? 'is-on' : ''} data-lang=${l} onClick=${() => { if (lang !== l) switchLang(l); }}>${LANG_LABELS[l]}</button>`)}
+    ${menu.items.map((it) => html`<button key=${it.code} type="button" role="radio" lang=${it.htmlLang} aria-checked=${it.on ? 'true' : 'false'}
+      class=${it.on ? 'is-on' : ''} data-lang=${it.code} title=${it.title || undefined} onClick=${() => pick(it.code)}>${it.label}</button>`)}
   </div>`;
 }
 

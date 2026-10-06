@@ -2,7 +2,7 @@
 
 import { UF } from '../../../../shared/constants.js';
 import { clamp, isObj, tileKey } from './shared.js';
-import { N_, getLang } from '../../../../shared/i18n.js';
+import { N_, langInfo } from '../../../../shared/i18n.js';
 
 
 // ---- players, statuses, fields ------------------------------------------------------------------------
@@ -71,20 +71,22 @@ export function attackInterval(bat, aspd = 100) {
 }
 
 /**
- * Compact number: 12345 → '12,345'; 1.5e6 → '150万' — in English the thousands-based units: 1.5e6 → '1.5M', 2.5e5 →
- * '250K', 3e9 → '3B' (万 / 亿 count in 10⁴ / 10⁸ steps, no template can move the decimal point).
+ * Compact number: 12345 → '12,345'; 1.5e6 → '150万' in Chinese, whose units count in 10⁴ / 10⁸ steps (万 / 亿; a language
+ * pack names its own pair in `_meta.numberUnits`, shared/i18nPacks.js — no template can move the decimal point); a
+ * language without them uses the thousands-based units: 1.5e6 → '1.5M', 2.5e5 → '250K', 3e9 → '3B' (English).
  */
 export function fmtNum(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
-  if (getLang() === 'en') {
+  const units = langInfo()?.numberUnits;
+  if (!units) {
     if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(Math.abs(n) >= 1e10 ? 0 : 1)}B`;
     if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(Math.abs(n) >= 1e7 ? 0 : 1)}M`;
     if (Math.abs(n) >= 1e5) return `${Math.round(n / 1e3)}K`;
     return Math.round(n).toLocaleString('en-US');
   }
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}亿`; // i18n-ignore: the Chinese units (English above)
-  if (Math.abs(n) >= 1e5) return `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}万`; // i18n-ignore
+  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}${units[1]}`;
+  if (Math.abs(n) >= 1e5) return `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}${units[0]}`;
   return Math.round(n).toLocaleString('en-US');
 }
 

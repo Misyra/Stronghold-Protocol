@@ -1,5 +1,6 @@
-// Title screen: season-style backdrop, big title 卫戍协议：盟约, remembered nickname, 开始, the language switch
-// (中文 | English, ui/lang.js; in English the big title is the English one and the small wordmark above it hides).
+// Title screen: season-style backdrop, big title 卫戍协议：盟约, remembered nickname, 开始, the language menu
+// (中文 | English | every pack in public/i18n/, ui/lang.js; a title in an alphabetic script — English — is the big one and
+// the small wordmark above it hides).
 //
 // Pressing 开始 validates the nickname (1..NAME_MAX_LEN chars, no control characters), stores it,
 // marks this tab as "entered" (so reloads skip the title) and hands the name to net.js, which
@@ -20,6 +21,7 @@ import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
 import { LangToggle, useLang } from '../ui/lang.js';
 import { t, N_ } from '../../../shared/i18n.js';
+import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
 
@@ -187,7 +189,7 @@ const STATUS_TEXT = {
 export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
-  const lang = useLang();
+  useLang(); // re-render on a language switch
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const assetsSettled = useData('assets');
@@ -215,6 +217,9 @@ export function TitleScreen() {
 
   // touch screens: no autofocus (it would pop the on-screen keyboard over a landscape phone's whole view)
   const touchUi = useMemo(() => detectFeatures().coarse, []);
+  // a title in an alphabetic script (English, French …) is the big one in the display face and the wordmark above it
+  // hides; a CJK / kana / Hangul title keeps the Chinese layout (shared/i18nPacks.js scriptOf — a pack needs no flag)
+  const alphabetic = scriptOf(t('卫戍协议')) === 'alphabetic';
   return html`<div class="screen title-screen">
     <div class=${`title-bg${bgLoaded ? ' has-art' : ''}${ridgesLoaded ? ' has-ridges' : ''}`} aria-hidden="true">
       ${backdrop ? html`<img class="title-bg__art" src=${backdrop} alt="" draggable=${false}
@@ -247,11 +252,11 @@ export function TitleScreen() {
 
     <main class="title-main">
       <${Emblem} />
-      ${lang === 'en' ? null : html`<div class="title-en">
+      ${alphabetic ? null : html`<div class="title-en">
         <span class="title-en__a">STRONGHOLD PROTOCOL</span>
         <span class="title-en__b">ALLIANCE</span>
       </div>`}
-      <h1 class=${`title-cn${lang === 'en' ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${lang === 'en' ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
+      <h1 class=${`title-cn${alphabetic ? ' title-cn--latin' : ''}`}>${t('卫戍协议')}<span class="title-cn__colon">${alphabetic ? ': ' : '：'}</span><em>${t('盟约')}</em></h1>
       <p class="title-tag">${t('调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。')}</p>
 
       <div class="title-login">

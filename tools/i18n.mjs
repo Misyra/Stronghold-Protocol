@@ -5,9 +5,19 @@
 //       per file: the msgids passed to t() / tc() / tParts() / N_() / msg(), and the Chinese literals still shown untranslated
 //       (string literals, template literals, html`` text and attribute values outside those calls; comments,
 //       console.* and Error messages are ignored). --list prints each literal with its line.
-//   node tools/i18n.mjs check [paths…] [--lang en] [--strict] [--stale]
-//       msgids the code uses that public/i18n/<lang>.json lacks (exit 1 with --strict when any); --stale also lists
-//       entries no scanned code uses (not an error: phase 2 wraps the rest of the UI later).
+//   node tools/i18n.mjs check [<code>… | --all] [paths…] [--strict] [--stale] [--list]
+//       per language pack (default en; --all: every pack the registry finds, server/packs.js): coverage of the msgids
+//       the code uses, and the errors — a translation that drops a placeholder of its msgid, uses one no call site
+//       passes, or has a broken plural form (shared/i18n.js checkTranslation), a value that is not a string, a manifest
+//       problem. Missing strings are listed for a pack that declares `complete` (English) or with --list; --stale
+//       lists entries no code uses and no complete pack has (obsolete). --strict exits 1 on an error, or when a
+//       complete pack misses a msgid. A partial pack is fine: what it lacks falls back (docs/I18N.md).
+//   node tools/i18n.mjs template <code> [--fill <code>]
+//       write a pack skeleton public/i18n/<code>.json: a `_meta` manifest to fill in and every msgid with an empty
+//       value (--fill: the values of another pack, e.g. --fill en). An existing pack keeps its translations and
+//       `_meta`; only the msgids it lacks are added (run it again after an update of the game).
+//   node tools/i18n.mjs index   → node tools/packs.mjs index (the pack index for a static host)
+//   check / template take --root <dir>: the packs of another checkout (the msgids are always this checkout's code).
 //   node tools/i18n.mjs codemod <files…> [--write]
 //       wrap Chinese literals: html`` text runs / attribute values → ${t('…')}, plain strings → t('…'), template
 //       literals → t('…{name}…', { name }); adds the import. Module-level literals (evaluated once, before a language
@@ -24,9 +34,13 @@
 // msgid (the client translates the text it receives), as is the first argument of msg(). Message ids: the Chinese text itself; a template literal's expressions become named params (paramName()).
 // Needs the dev dependencies (acorn, which eslint brings).
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkTranslation } from '../shared/i18n.js';
+import { canonicalLang, isLangCode, languageName, SOURCE_LANG } from '../shared/i18nPacks.js';
+import { APP_VERSION } from '../shared/constants.js';
+import { scanPacks, LANG_DIR } from '../server/packs.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CJK = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff01-\uff60]/;
@@ -320,10 +334,33 @@ function htmlSegments(tpl) {
 // ===== scanning a file ===============================================================================================
 
 /**
+ * The param names a call passes (its params argument): an object literal's keys, an array literal's indexes, none
+ * without the argument; null when they cannot be read (a variable, a spread, a computed key) — `check` then trusts the
+ * translation's extra placeholders.
+ * @param {any} node
+ * @returns {string[] | null}
+ */
+export function paramNames(node) {
+  if (!node) return [];
+  if (node.type === 'ObjectExpression') {
+    const out = [];
+    for (const p of node.properties) {
+      if (p.type !== 'Property' || p.computed) return null;
+      if (p.key.type === 'Identifier') out.push(p.key.name);
+      else if (p.key.type === 'Literal') out.push(String(p.key.value));
+      else return null;
+    }
+    return out;
+  }
+  if (node.type === 'ArrayExpression') return node.elements.some((e) => !e || e.type === 'SpreadElement') ? null : node.elements.map((_, i) => String(i));
+  return null;
+}
+
+/**
  * Scan a source file.
  * @param {string} src
  * @param {string} file label
- * @returns {Promise<{ msgids: { msgid: string, line: number }[], literals: any[] }>}
+ * @returns {Promise<{ msgids: { msgid: string, line: number, via: string, params: string[] | null }[], literals: any[] }>}
  *   literals: { kind: 'str'|'tpl'|'text'|'attr', start, end, line, msgid, params, module: boolean, reason: string|null }
  */
 export async function scanSource(src, file = '<src>') {
@@ -350,14 +387,16 @@ export async function scanSource(src, file = '<src>') {
   const fileIgnored = /\/\/[^\n]*i18n-ignore-file/.test(src);
   walk(ast, (node, ancestors) => {
     if (node.type === 'CallExpression' && fnName(node.callee) === 'tc') {
-      const [c, a] = node.arguments;
-      if (c?.type === 'Literal' && a?.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: `${c.value}::${a.value}`, line: lineOf(a.start), via: 'tc' });
+      const [c, a, p] = node.arguments;
+      if (c?.type === 'Literal' && a?.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: `${c.value}::${a.value}`, line: lineOf(a.start), via: 'tc', params: paramNames(p) });
     }
     if (node.type === 'CallExpression' && MSGID_CALLS.has(fnName(node.callee))) {
       const a = node.arguments[0];
       const via = fnName(node.callee);
-      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via });
-      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via });
+      // N_() only marks a msgid: its params come where it is shown, unknown here
+      const params = via === 'N_' ? null : paramNames(node.arguments[1]);
+      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via, params });
+      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via, params });
     }
     if (node.type === 'TaggedTemplateExpression' && node.tag.type === 'Identifier' && node.tag.name === 'html') {
       for (const seg of htmlSegments(node.quasi)) {
@@ -377,7 +416,7 @@ export async function scanSource(src, file = '<src>') {
       while (k >= 0 && ((ancestors[k].type === 'ConditionalExpression' && ancestors[k].test !== arg) || ancestors[k].type === 'LogicalExpression')) { arg = ancestors[k]; k--; }
       const call = ancestors[k];
       if (call && call.type === 'CallExpression' && call.callee.type === 'MemberExpression' && SERVER_TEXT_CALLS.has(calleeName(call)) && call.arguments.includes(arg)) {
-        msgids.push({ msgid: node.value, line: lineOf(node.start), via: 'server' });
+        msgids.push({ msgid: node.value, line: lineOf(node.start), via: 'server', params: [] });
         return true;
       }
       const line = lineOf(node.start);
@@ -527,26 +566,39 @@ function parseFlags(argv) {
     if (a.startsWith('--')) {
       const [k, v] = a.slice(2).split('=');
       if (v !== undefined) flags[k] = v;
-      else if (['from', 'lang'].includes(k)) flags[k] = argv[++i];
+      else if (['from', 'lang', 'fill', 'root'].includes(k)) flags[k] = argv[++i];
       else flags[k] = true;
     } else flags._.push(a);
   }
   return flags;
 }
 
-const catalogPath = (lang) => path.join(ROOT, 'public', 'i18n', `${lang}.json`);
+const catalogPath = (lang, root = ROOT) => path.join(root, 'public', 'i18n', `${lang}.json`);
 function readCatalog(lang) {
   const p = catalogPath(lang);
   return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : {};
 }
-function writeCatalog(lang, cat) {
+function writeCatalog(lang, cat, root = ROOT) {
   const meta = Object.entries(cat).filter(([k]) => k.startsWith('_'));
   const rest = Object.entries(cat).filter(([k]) => !k.startsWith('_'));
-  writeFileSync(catalogPath(lang), `${JSON.stringify(Object.fromEntries([...meta, ...rest]), null, 2)}\n`);
+  mkdirSync(path.dirname(catalogPath(lang, root)), { recursive: true });
+  writeFileSync(catalogPath(lang, root), `${JSON.stringify(Object.fromEntries([...meta, ...rest]), null, 2)}\n`);
 }
 
+/**
+ * The msgids the code uses: msgid → { where: first "file:line", params: the param names its call sites pass, null when a
+ * call site's params cannot be read (a variable, N_(), a msgid table) }.
+ * @param {string[]} files
+ * @returns {Promise<Map<string, { where: string, params: Set<string> | null }>>}
+ */
 async function usedMsgids(files) {
-  const used = new Map(); // msgid → first "file:line"
+  const used = new Map();
+  const note = (msgid, where, params) => {
+    const u = used.get(msgid);
+    if (!u) { used.set(msgid, { where, params: params ? new Set(params) : null }); return; }
+    if (!params) u.params = null;
+    else if (u.params) for (const k of params) u.params.add(k);
+  };
   for (const f of files) {
     const { msgids } = await scanSource(readFileSync(f, 'utf8'), rel(f));
     // server code never translates: its t() / N_() are other helpers (blackboard lookups in the sim); only msg() and
@@ -554,13 +606,13 @@ async function usedMsgids(files) {
     const server = rel(f).startsWith('server/');
     for (const m of msgids) {
       if (server && m.via !== 'msg' && m.via !== 'server') continue;
-      if (!used.has(m.msgid)) used.set(m.msgid, `${rel(f)}:${m.line}`);
+      note(m.msgid, `${rel(f)}:${m.line}`, m.params);
     }
   }
   for (const [file, names] of MSGID_TABLES) {
     const abs = path.join(ROOT, file);
     if (!existsSync(abs)) continue;
-    for (const m of await tableMsgids(readFileSync(abs, 'utf8'), names)) if (!used.has(m)) used.set(m, file);
+    for (const m of await tableMsgids(readFileSync(abs, 'utf8'), names)) note(m, file, null);
   }
   return used;
 }
@@ -588,18 +640,156 @@ async function cmdExtract(flags) {
     + ` (${ready} of them already translated in public/i18n/${flags.lang || 'en'}.json, ready for the codemod)`);
 }
 
-async function cmdCheck(flags) {
-  const lang = flags.lang || 'en';
-  const files = listFiles(flags._.length ? flags._ : DEFAULT_ROOTS, { sim: true });
-  const used = await usedMsgids(files);
-  const cat = readCatalog(lang);
-  const missing = [...used].filter(([m]) => !(typeof cat[m] === 'string' && cat[m]));
-  for (const [m, where] of missing) console.log(`missing  ${where.padEnd(40)} ${m.replace(/\n/g, '⏎')}`);
-  if (flags.stale) {
-    for (const k of Object.keys(cat)) if (!k.startsWith('_') && !used.has(k)) console.log(`unused   ${k.replace(/\n/g, '⏎')}`);
+// ===== language packs: check, template ===============================================================================
+
+/** The language packs of a checkout (server/packs.js scanPacks): lang → { pack, json }, plus what was skipped. */
+function langPacks(root = ROOT) {
+  const scan = scanPacks({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs') });
+  const byLang = new Map();
+  for (const p of scan.packs) {
+    if (p.type !== 'lang') continue;
+    byLang.set(p.manifest.lang, { pack: p, json: JSON.parse(readFileSync(p.files.ui.abs, 'utf8')) });
   }
-  console.log(`${used.size} msgids used, ${used.size - missing.length} translated in public/i18n/${lang}.json, ${missing.length} missing`);
-  if (flags.strict && missing.length) process.exitCode = 1;
+  return { byLang, skipped: scan.skipped, warnings: scan.warnings };
+}
+
+/**
+ * Check one language pack against the msgids the code uses (see the header).
+ * @param {Record<string, unknown>} json the pack's UI strings
+ * @param {Map<string, { where: string, params: Set<string> | null }>} used
+ * @param {Set<string>} known msgids no pack is obsolete for (used ∪ the keys of the complete packs)
+ * @returns {{ total: number, translated: number, missing: [string, string][], errors: string[], obsolete: string[] }}
+ */
+export function checkPack(json, used, known) {
+  const missing = [];
+  const errors = [];
+  const obsolete = [];
+  let translated = 0;
+  for (const [k, v] of Object.entries(json || {})) {
+    if (k.startsWith('_')) continue;
+    if (typeof v !== 'string') errors.push(`not a string: ${k}`);
+    else if (!used.has(k) && !known.has(k)) obsolete.push(k);
+  }
+  for (const [msgid, u] of used) {
+    const v = json?.[msgid];
+    if (typeof v !== 'string' || !v) { missing.push([msgid, u.where]); continue; }
+    const sep = msgid.indexOf('::');
+    const c = checkTranslation(sep >= 0 ? msgid.slice(sep + 2) : msgid, v);
+    const stray = u.params ? c.extras.filter((x) => !u.params.has(x)) : [];
+    if (!c.ok || stray.length) {
+      errors.push(`${[...c.problems, ...stray.map((x) => `uses {${x}}, which no call site passes`)].join('; ')}: ${msgid.replace(/\n/g, '⏎')}  →  ${v.replace(/\n/g, '⏎')}  (${u.where})`);
+      continue;
+    }
+    translated++;
+  }
+  return { total: used.size, translated, missing, errors, obsolete };
+}
+
+async function cmdCheck(flags) {
+  const paths = flags._.filter((a) => !isLangArg(a));
+  const files = listFiles(paths.length ? paths : DEFAULT_ROOTS, { sim: true });
+  const used = await usedMsgids(files);
+  const packRoot = flags.root ? path.resolve(flags.root) : ROOT;
+  const { byLang, skipped, warnings } = langPacks(packRoot);
+  let codes = flags._.filter(isLangArg).map((a) => canonicalLang(a));
+  if (flags.lang) codes.push(canonicalLang(flags.lang));
+  if (flags.all) codes = [...byLang.keys()];
+  if (!codes.length) codes = ['en'];
+  const known = new Set(used.keys());
+  for (const { pack, json } of byLang.values()) if (pack.manifest.complete) for (const k of Object.keys(json)) if (!k.startsWith('_')) known.add(k);
+  let failed = false;
+  for (const s of skipped) {
+    if (!flags.all && !codes.some((c) => s.where.includes(`/${c}`))) continue;
+    console.log(`error    ${s.where}: not loaded — ${s.problems.join('; ')}`);
+    failed = true;
+  }
+  for (const code of codes) {
+    const entry = byLang.get(code);
+    if (!entry) {
+      if (!skipped.some((s) => s.where.includes(`/${code}`))) console.log(`error    no language pack "${code}" (public/${LANG_DIR}/${code}.json or packs/<id>/ with "lang": "${code}"; node tools/i18n.mjs template ${code} makes one)`);
+      failed = true;
+      continue;
+    }
+    const { pack, json } = entry;
+    const where = pack.layout === 'file' ? `public/${LANG_DIR}/${code}.json` : `${pack.where}${pack.files.ui.rel}`;
+    for (const w of warnings) if (w.where === pack.where) console.log(`warning  ${w.where}: ${w.warning}`);
+    const r = checkPack(json, used, known);
+    const complete = pack.manifest.complete;
+    for (const e of r.errors) console.log(`error    ${where}: ${e}`);
+    if (complete || flags.list) for (const [m, w] of r.missing) console.log(`missing  ${w.padEnd(40)} ${m.replace(/\n/g, '⏎')}`);
+    if (flags.stale) for (const k of r.obsolete) console.log(`unused   ${k.replace(/\n/g, '⏎')}`);
+    const pct = r.total ? Math.floor((r.translated / r.total) * 1000) / 10 : 100;
+    console.log(`${where} (${pack.manifest.name}, ${code}${complete ? ', complete' : ''}): ${r.total} msgids used, ${r.translated} translated (${pct} %), ${r.missing.length} missing`
+      + `, ${r.errors.length} errors${r.obsolete.length ? `, ${r.obsolete.length} unused` : ''}${pack.manifest.compatible ? '' : `; made for app ${pack.manifest.app}`}`);
+    if (r.errors.length || (complete && r.missing.length)) failed = true;
+  }
+  if (flags.strict && failed) process.exitCode = 1;
+}
+
+/** A positional argument of `check` that names a language (a code that is not a path of the checkout). */
+const isLangArg = (a) => !!canonicalLang(a) && !existsSync(path.resolve(ROOT, a));
+
+/** The `app` range a new pack targets: this release and later ('>=0.2.0' on 0.2.0-dev). */
+const appRange = () => `>=${(/^\d+\.\d+\.\d+/.exec(APP_VERSION) || ['0.0.0'])[0]}`;
+
+/**
+ * A pack skeleton (or an existing pack with the msgids it lacks added, empty): the `_meta` manifest first, then every
+ * msgid in the order of the complete packs (English), then the code's msgids they lack.
+ * @param {string} code
+ * @param {{ existing?: Record<string, unknown> | null, msgids: string[], fill?: Record<string, unknown> | null }} opts
+ * @returns {{ json: Record<string, unknown>, added: number, kept: number }}
+ */
+export function packTemplate(code, { existing = null, msgids, fill = null }) {
+  const meta = existing && typeof existing._meta === 'object' && existing._meta ? existing._meta : {
+    type: 'lang',
+    lang: code,
+    name: languageName(code),
+    englishName: languageName(code, 'en'),
+    version: '0.1.0',
+    app: appRange(),
+    authors: [],
+    // untranslated strings show English first; a Chinese variant (zh-TW …) falls back to the Chinese msgid instead
+    fallback: code.startsWith(`${SOURCE_LANG}-`) ? [] : ['en'],
+  };
+  /** @type {Record<string, unknown>} */
+  const json = { _meta: meta };
+  for (const [k, v] of Object.entries(existing || {})) if (k.startsWith('_') && k !== '_meta') json[k] = v;
+  let added = 0;
+  let kept = 0;
+  for (const m of msgids) {
+    const have = existing?.[m];
+    if (typeof have === 'string') { json[m] = have; kept++; continue; }
+    const f = fill?.[m];
+    json[m] = typeof f === 'string' ? f : '';
+    added++;
+  }
+  // translations of msgids the code no longer uses stay (check --stale lists them)
+  for (const [k, v] of Object.entries(existing || {})) if (!k.startsWith('_') && !Object.prototype.hasOwnProperty.call(json, k)) json[k] = v;
+  return { json, added, kept };
+}
+
+async function cmdTemplate(flags) {
+  const code = canonicalLang(flags._[0]);
+  if (!code || !isLangCode(code)) throw new Error('template needs a language code (ja, ko, zh-TW, pt-BR …)');
+  if (code === SOURCE_LANG) throw new Error('"zh" is the source language (the msgids), it needs no pack');
+  const used = await usedMsgids(listFiles(DEFAULT_ROOTS, { sim: true }));
+  const packRoot = flags.root ? path.resolve(flags.root) : ROOT;
+  const { byLang } = langPacks(packRoot);
+  const order = [];
+  const seen = new Set();
+  for (const { pack, json } of byLang.values()) {
+    if (!pack.manifest.complete) continue;
+    for (const k of Object.keys(json)) if (!k.startsWith('_') && !seen.has(k)) { seen.add(k); order.push(k); }
+  }
+  for (const k of used.keys()) if (!seen.has(k)) { seen.add(k); order.push(k); }
+  const target = byLang.get(code);
+  if (target && target.pack.layout !== 'file') throw new Error(`${code} is a folder pack (${target.pack.where}); edit ${target.pack.files.ui.rel} there`);
+  const fillCode = flags.fill ? canonicalLang(flags.fill) : null;
+  if (flags.fill && !byLang.has(fillCode)) throw new Error(`--fill ${flags.fill}: no such language pack`);
+  const { json, added, kept } = packTemplate(code, { existing: target ? target.json : null, msgids: order, fill: fillCode ? byLang.get(fillCode).json : null });
+  writeCatalog(code, json, packRoot);
+  console.log(`${target ? 'updated' : 'wrote'} public/${LANG_DIR}/${code}.json: ${order.length} msgids — ${kept} translations kept, ${added} added${fillCode ? ` (values from ${fillCode})` : ' (empty)'}`);
+  if (!target) console.log(`next: fill in "_meta" (name, authors), translate the values, then node tools/i18n.mjs check ${code}`);
 }
 
 async function cmdCodemod(flags) {
@@ -640,9 +830,10 @@ async function cmdSeed(flags) {
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const flags = parseFlags(rest);
-  const cmds = { extract: cmdExtract, check: cmdCheck, codemod: cmdCodemod, seed: cmdSeed };
+  const cmdIndex = async () => { const { main: packs } = await import('./packs.mjs'); process.exitCode = await packs(['index', ...rest]); };
+  const cmds = { extract: cmdExtract, check: cmdCheck, codemod: cmdCodemod, seed: cmdSeed, template: cmdTemplate, index: cmdIndex };
   if (!cmds[cmd]) {
-    console.log('usage: node tools/i18n.mjs extract|check|codemod|seed … (see the header of tools/i18n.mjs)');
+    console.log('usage: node tools/i18n.mjs extract|check|template|codemod|seed|index … (see the header of tools/i18n.mjs)');
     process.exitCode = cmd ? 2 : 0;
     return;
   }

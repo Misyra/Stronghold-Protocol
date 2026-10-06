@@ -9,6 +9,8 @@
 //
 // Both zips hold one folder, Stronghold-Protocol/, with only what a player runs — an allowlist over `git ls-files`, so
 // untracked work, caches, logs and per-machine config never get in: server/, shared/, data/, public/ (not public/dev/),
+// packs/ (the content packs that ship with the repository, docs/PACKS.md; a pack installed on this machine and not
+// committed stays out),
 // the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, and
 // what setup starts: tools/local-extract, crop-board-atlas), the research tables the Node server (server/sim/
 // nodeData.js fallback) and fetch-assets read, package.json / package-lock.json, LICENSE / NOTICE.md /
@@ -26,7 +28,9 @@
 // data/assets.json and data/local-assets.json list; no shipped file carries a home-directory path (/Users/…,
 // C:\Users\…, /home/…) or this machine's account name (text and binary, art included; node_modules only for the name);
 // no shipped tracked file has an uncommitted change (--allow-dirty skips that). A build also checks that the stage holds
-// exactly the plan before zipping.
+// exactly the plan before zipping. Generated into the stage: packs/index.json, the pack index of the shipped packs
+// (tools/packs.mjs writePackIndex — what the server's GET /packs/index.json answers, for a static host), when any pack
+// ships (a language file of public/i18n/, a packs/<id>/pack.json).
 // The account name comes from the OS at run time (never written in the repository): SP_PACKAGE_SCAN_USER=0 skips it
 // (a name that is a common word), SP_PACKAGE_SCAN_NAMES=a,b adds more names to refuse.
 //
@@ -39,6 +43,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { findSpecifiers } from './check-imports.mjs';
+import { writePackIndex } from './packs.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** The one folder inside both zips (DEPLOY §1.1: "解压后把里面的 Stronghold-Protocol 文件夹放到…"). */
@@ -58,7 +63,11 @@ export const PLAYER_TOOLS = ['tools/crop-board-atlas.mjs', 'tools/doctor.mjs', '
 /** Whole tool directories: fetch-assets' modules, the local-client extraction setup runs. */
 export const PLAYER_TOOL_DIRS = ['tools/assets/', 'tools/local-extract/'];
 /** Whole runtime directories (their tracked files). */
-export const RUNTIME_DIRS = ['server/', 'shared/', 'data/', 'public/'];
+export const RUNTIME_DIRS = ['server/', 'shared/', 'data/', 'public/', 'packs/'];
+/** Written into the stage, never taken from the checkout: the pack index of the shipped packs. */
+export const GENERATED_PACK_INDEX = 'packs/index.json';
+/** Whether shipped files include a content pack (then the stage gets GENERATED_PACK_INDEX). @param {string[]} files */
+export const shipsPacks = (files) => files.some((f) => /^public\/i18n\/[^/]+\.json$/.test(f) || /^packs\/[^/]+\/pack\.json$/.test(f));
 /** Never from the tracked list: the dev pages, and what only the art plan adds (or npm ci writes). */
 const NOT_TRACKED_SHIP = ['public/dev/', 'public/assets/', 'public/fonts/', 'public/vendor/'];
 /** The npm scripts a player runs: each `node <file>` of them must ship. */
@@ -102,7 +111,7 @@ export function isJunk(rel) {
 /** Whether a tracked file belongs in the player package. */
 export function isPlayerFile(rel) {
   const p = posixRel(rel);
-  if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json') return false;
+  if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === GENERATED_PACK_INDEX) return false;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;
   return ROOT_FILES.includes(p) || PLAYER_DOCS.includes(p) || RUNTIME_RESEARCH.includes(p) || PLAYER_SCRIPTS.includes(p) || PLAYER_TOOLS.includes(p);
@@ -322,7 +331,8 @@ export function plan(root, opts = {}) {
   const art = artPlan(root, { lite });
   const pkg = readJson(path.join(root, 'package.json')) || {};
   const lock = readJson(path.join(root, 'package-lock.json')) || {};
-  const files = [...keep, ...art.files];
+  const generated = shipsPacks(keep) ? [GENERATED_PACK_INDEX] : [];
+  const files = [...keep, ...art.files, ...generated];
   const problems = [];
   for (const f of files) if (isRefused(f) || isJunk(f)) problems.push(`refused: ${f}`);
   const byCase = new Map();
@@ -359,7 +369,7 @@ export function plan(root, opts = {}) {
   const vendorBytes = opts.measure !== false ? sumBytes(root, listTree(root, 'public/vendor')) : 0;
   const dropBytes = Object.values(dropped).reduce((n, g) => n + g.bytes, 0);
   return {
-    version: pkg.version || '0.0.0', lite, tracked: keep, art: art.files, files, dropped, orphans: art.orphans,
+    version: pkg.version || '0.0.0', lite, tracked: keep, art: art.files, generated, files, dropped, orphans: art.orphans,
     localArt: art.local, problems, names: names.length, scanned,
     bytes: {
       tracked: trackedBytes, art: artBytes, modules: modulesBytes, vendor: vendorBytes,
@@ -380,6 +390,7 @@ export function formatSummary(p) {
   if (!p.lite) {
     lines.push(`art: ${p.art.length} files, ${MB(p.bytes.art)} (data/assets.json, public/fonts${p.localArt ? ', public/assets/local + data/local-assets.json' : '; no local-client art here'})`);
   }
+  if (p.generated?.length) lines.push(`generated: ${p.generated.join(', ')} (the pack index of the shipped packs, for a static host)`);
   lines.push(`production node_modules: ${MB(p.bytes.modules)} · public/vendor: ${MB(p.bytes.vendor)} (npm ci --omit=dev and its postinstall)`);
   lines.push(`uncompressed: ${MB(p.bytes.total)}; a 0.1.x whole-tree copy would add ${MB(p.bytes.leftOut)}`);
   const groups = Object.entries(p.dropped).sort((a, b) => b[1].bytes - a[1].bytes);
@@ -421,13 +432,19 @@ export function build(root, p, { out, install = true, force = false, keepStage =
     if (!force) throw new Error(`${t} already exists (--force replaces it)`);
     fs.rmSync(t, { recursive: true, force: true });
   }
-  log(`copying ${p.files.length} files → ${stage}`);
+  const generated = new Set(p.generated || []);
+  log(`copying ${p.files.length - generated.size} files → ${stage}`);
   for (const rel of p.files) {
+    if (generated.has(rel)) continue;
     const src = path.join(root, rel);
     const to = path.join(stage, rel);
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(src, to, fs.constants.COPYFILE_FICLONE);
     fs.chmodSync(to, fs.statSync(src).mode & 0o777);
+  }
+  if (generated.has(GENERATED_PACK_INDEX)) {
+    const index = writePackIndex(stage, path.join(stage, GENERATED_PACK_INDEX));
+    log(`${GENERATED_PACK_INDEX}: ${index.packs.map((x) => `${x.type} ${x.id}`).join(', ') || 'no pack'}`);
   }
   if (install) {
     log('npm ci --omit=dev …');

@@ -13,7 +13,8 @@ export default {
   // ---------------------------------------------------------------------------------------------------------------
   // 乌尔比安 — S3 必须开辟的通路 (25 s, CUSTOM_RANGE row ahead): max HP/ATK +, throws an anchor forward that stops on the
   // first enemy or at max distance — on his own tile while he blocks: 135 % ATK phys + 6 s stun around it
-  // (projectile_range); moves onto the anchor tile when deployable and not his own (a 从不混淆的方向 marker keeps his tile)
+  // (projectile_range); moves onto the anchor tile when deployable (a tile of his own board) and not his own (a 从不混淆的方向
+  // marker keeps his tile)
   // and returns at skill end — both 【移动】, i.e. free redeploys (Battle.moveRedeploy; the return empties his SP).
   // T1 本性的坚守: heal 100 (160 below 50 %) on every hit taken. T2 血脉的哺养: per kill +120 max HP / +30 ATK (×9),
   // other Abyssal Hunters +50 %. Module (elite): healing received ×1.2.
@@ -90,8 +91,12 @@ export default {
           // anchor on his own tile leaves him where he stands, no marker, nothing to return from [ASSUMED: the "tile one
           // beyond the landing" is not tried when the landing is his own tile]
           if (stop === 0 || !unit.alive) return;
-          // PRTS 备注: landing tile > the tile one beyond it > his own tile (a deployable, free, unreserved melee tile)
-          const ok = ([r, c]) => (r !== unit.tileR || c !== unit.tileC) && battle.grid.inRect(r, c) && battle.grid.canStand(r, c) && !battle.grid.isObstacle(r, c) && !battle.isReservedTile(r, c);
+          // PRTS 备注: landing tile > the tile one beyond it > his own tile (a deployable, free, unreserved melee tile).
+          // "可部署" is a tile his player may deploy on: his own board (Battle.onOwnBoard) — never the other half of a 联防 or
+          // boss field nor a boss field's hand / 临时整备区 rows. Community report of 2026-10-06 (item 27) 「乌尔比安使用3技能会在
+          // 联防阶段跳到红门后」: on the one-helper 联防 map (escaped_single, enemies from the middle gate at col 10) an anchor that
+          // met no enemy flew on to the right half, where no enemy ever walks, and he moved there for the whole skill
+          const ok = ([r, c]) => (r !== unit.tileR || c !== unit.tileC) && battle.grid.inRect(r, c) && battle.onOwnBoard(unit.player, r, c) && battle.grid.canStand(r, c) && !battle.grid.isObstacle(r, c) && !battle.isReservedTile(r, c);
           const dest = [[sr, sc], frontOf(unit.tileR, unit.tileC, unit.dir, stop + 1)].find(ok);
           if (dest == null) return;
           const home = [unit.tileR, unit.tileC];

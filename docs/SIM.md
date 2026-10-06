@@ -180,6 +180,11 @@ and research routes (`{m, s, e, cp:[['MOVE',r,c]…]}`). `spawnsFromTemplate(wav
 template into `{ routes, spawns, maxPlayTime, overrides, extraRoutes }` (non-spawn `action` entries are skipped; `unharmful`
 and `tag:'part'` spawns don't count in `total`).
 
+A `bounty` pays `coins` once, when the enemy really dies (not a knock-out it survives; a leak pays nothing), to
+`Battle._bountyPayee`: the player of the operator or summon that dealt the blow, if that player is in the battle; any
+other death (无来源 damage such as 活性源石, its own HP loss, another enemy, an ownerless unit) pays `ownerPlayerId` when
+that player is in the battle, else — 联防, where it is the leaker — the helper whose half the enemy fell on (0.2.0).
+
 Leader parts (`tag:'part'`) pass damage to their leader with `loseHp(leader, share, { source, from, sourceless: true })`
 (无来源, credited to the attacker's `bossDamage`): `PART_TRANSFER` 1 for 斩胄之剑 / 破胄之锤 (`BLADE_TRANSFER`, the same
 constant) and 碎铳之簧 (PRTS "受到伤害时令假想敌：胄/铳受到等量的无来源生命流失"; DESIGN §20.10, §20.13). Content may replace a part mid-battle: every 剑/锤 sortie (content/bosses.js `kitBlade`)

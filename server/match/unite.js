@@ -22,10 +22,11 @@
 // them beside the operators; one off the field at the end enters fresh [ASSUMED]). Enemies = the union of every leaker's
 // counted leaks (same stats: the SpawnSpec mods travel with the leak), routed on the escaped template (`escaped_single`
 // for 1 helper, `escaped_multi` for 2): walkers on its `lrsldr` action, flyers on `yokai`, tokens on `gopro_2` /
-// `lazerd` (waves.js buildUniteWave); kill bounties keep paying the killer (a helper). No IN_BATTLE layer gains ("该阶段
-// 不能叠加层数"); the helpers' bonds carry the layers their own combat reached (PlayerState.battleInput `reached`: the
-// round's pending gains, capped like settle() — the strip's count; "以其阵地当前的状态" [ASSUMED] includes them; until 0.1.3
-// the round-start layers), and settle() still adds those gains once. Time limit = the round's combat limit.
+// `lazerd` (waves.js buildUniteWave); kill bounties keep paying the killer (a helper) — a death no operator caused pays
+// the helper whose half it fell on (Battle._bountyPayee). No IN_BATTLE layer gains ("该阶段不能叠加层数"); the helpers'
+// bonds carry the layers their own combat reached (PlayerState.battleInput `reached`: the round's pending gains, capped
+// like settle() — the strip's count; "以其阵地当前的状态" [ASSUMED] includes them; until 0.1.3 the round-start layers),
+// and settle() still adds those gains once. Time limit = the round's combat limit.
 // LP: an enemy still alive at the end (leaked in the unite battle, or never spawned before the limit) costs its
 // SOURCE player 1 LP; each player's round loss = min(lpCap, survivors attributed to them + leaks that could not
 // re-enter) — the same 10 cap as a normal round.

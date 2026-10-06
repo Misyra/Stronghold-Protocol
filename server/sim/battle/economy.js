@@ -48,6 +48,24 @@ export class BattleEconomy {
     return u.side === 'ally' ? [u.tileR, u.tileC] : [Math.round(u.y), Math.round(u.x)];
   }
 
+  /**
+   * The player a kill bounty (`unit.bounty`: a 悬赏 card's enemy, a 鸭爵 swap) pays when its enemy dies: the bounty pays
+   * whenever the body dies (the owner's decision, relayed 2026-10-06). An operator or summon of a player of this battle
+   * that dealt the blow pays its player ("将其击倒者获得N资金" — a 联防 helper included); any other death — 无来源 damage
+   * (terrain, an uncredited tick), its own drain, another enemy, an ownerless unit — pays the card's owner when that
+   * player fights here (own field, Final Assault / Hidden Core), else (联防, where the owner is the leaker) the player
+   * whose half of the field it fell on: PRTS 卫戍协议：盟约 决策 "该敌人于对应玩家所属区域倒下时，使相应玩家获得额外资金"
+   * [ASSUMED for 联防: no source names the payee of a death nobody caused there]. Until 0.2.0 that fallback was the
+   * leaker, who has no entry in a 联防 battle, and addCoins dropped the coins (community report of 2026-10-06
+   * 「被源石地板烫死的悬赏没给赏金」: until 0.1.3 the 联防 field was the round's map, 战场#04's 活性源石 included).
+   */
+  _bountyPayee(unit, killer = null) {
+    if (killer && killer.side === 'ally' && killer.ownerId != null && this._pp(killer.ownerId)) return killer.ownerId;
+    const owner = unit.bounty?.ownerPlayerId ?? unit.ownerId;
+    if (owner != null && this._pp(owner)) return owner;
+    return this._ownerForTile([Math.round(unit.y), Math.round(unit.x)]);
+  }
+
   addCoins(playerId, n) {
     const pp = this._pp(playerId);
     if (!pp || !(n > 0) || !Number.isFinite(n)) return 0;

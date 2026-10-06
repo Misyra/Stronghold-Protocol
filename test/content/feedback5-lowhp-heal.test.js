@@ -2,7 +2,7 @@
 // target's HP the way the client's module buff does (follow-up 19): FilterByTargetHpRatio LT — strictly below — for 瑕光 /
 // 古米 / 塞雷娅's GUA-X (set_heal_scale_by_hpratio) and 录武官's PHY-X (reckpr_e_002_tr); LE — at or below — for the template
 // heal_scale_up[hpratio][LE] of 华法琳's and 闪灵's PHY-X (and 黍's GUA-X, 凯尔希's PHY-X, already so). The text's 「低于」 is the
-// display; the buff templates decide (scratchpad extraction of [uc]equips.ab + buff_template_data, 2026-10-06).
+// display; the buff templates decide (the local client's [uc]equips.ab prefabs and buff_template_data, read 2026-10-06).
 // Run: node --test test/content/feedback5-lowhp-heal.test.js
 
 import { test } from 'node:test';

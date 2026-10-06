@@ -52,7 +52,7 @@
 //   refund of a withdrawal is not modelled — no retreat in the sim refunds DP). No strategy of this mode closes it: PRTS
 //   帮助 lists the 上半 row that did as removed in 下半, so in a fight the skill simply runs its `duration`.
 
-import { num, talentBb, traitBb, skillRec, up } from '../shared/tier1.js';
+import { num, talentBb, traitBb, skillRec, up, byEnemyAttack } from '../shared/tier1.js';
 import { canTargetEnemy } from '../../../targeting.js';
 import { bodyInRadius } from '../../../body.js';
 import { hasHp } from '../../../damage.js';
@@ -252,15 +252,17 @@ export default {
         } },
       ],
       install(battle, unit) {
-        // S1 恶业苦果: every enemy attack she takes ⇒ atk_scale × ATK arts back to the attacker
+        // S1 恶业苦果: every enemy damage instance she takes (the official hsgma2_s_1 on ON_TAKE_DAMAGE, not its attacks only:
+        // tier1 byEnemyAttack) ⇒ atk_scale × ATK arts back to its source
         battle.on('damaged', (c) => {
           const s = c.source;
           if (c.target !== unit || !unit.alive || unit.skill?.id !== S1 || !unit.skill.active) return;
-          if (!s || s.side !== 'enemy' || !s.alive || !c.dmg?.isAttack) return;
+          if (!byEnemyAttack(c) || !s.alive) return;
           battle.dealDamage(unit, s, { amount: unit.s.atk * num(b1.atk_scale), type: 'arts', canDodge: false, isSkill: true, ignoreSelect: true, tags: ['skill', 'counter'] });
           battle.fx('counter', { x: s.x, y: s.y, id: unit.id });
         }, { owner: unit });
-        // AST-X 无迹: her attack damage ⇒ +atk_scale × ATK arts (附加伤害); an enemy attack she takes ⇒ atk_scale × ATK arts back
+        // AST-X 无迹: her attack damage ⇒ +atk_scale × ATK arts (附加伤害); an enemy damage instance she takes (the official
+        // hsgma2_e_003_tr_take: ON_TAKE_DAMAGE from the other side) ⇒ atk_scale × ATK arts back
         const astx = num(tb.atk_scale);
         if (astx > 0) {
           battle.on('damaged', (c) => {
@@ -270,7 +272,7 @@ export default {
           }, { owner: unit, priority: -20 });
           battle.on('damaged', (c) => {
             const s = c.source;
-            if (c.target !== unit || !unit.alive || !s || s.side !== 'enemy' || !s.alive || !c.dmg?.isAttack) return;
+            if (c.target !== unit || !unit.alive || !byEnemyAttack(c) || !s.alive) return;
             battle.dealDamage(unit, s, { amount: unit.s.atk * astx, type: 'arts', ignoreSelect: true, tags: ['module', ASTX, 'counter'] });
           }, { owner: unit });
         }

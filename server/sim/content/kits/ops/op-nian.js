@@ -37,7 +37,7 @@
 //   −one_minus_status_resistance), refreshed every AURA s while the skill runs; two 年 of a shared field keep the stronger
 //   (installAura's rule). The DEF / block buff ends with the skill, the 抵抗 within AURA_DUR.
 
-import { num, talentBb, traitBb, skillRec, statBuff, toggleBuff, up, giveSp } from '../shared/tier1.js';
+import { num, talentBb, traitBb, skillRec, statBuff, toggleBuff, up, giveSp, byEnemyAttack } from '../shared/tier1.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
 
@@ -154,12 +154,13 @@ export default {
             battle.addBuff(unit, { key: FORT, mods: nz({ hpPct: perHp * n, healingTakenMul: Math.min(healMax, healBase + healAdd * n) }), data: { n }, tags: ['trait'] });
           }, { owner: unit });
         }
-        // S2 铜印: every enemy attack she takes ⇒ atk_scale × ATK arts back to the attacker + silence `silence` s
+        // S2 铜印: every enemy damage instance she takes (the official inverse_damage[magic] + nian_s_2 on ON_TAKE_DAMAGE, not
+        // its attacks only: tier1 byEnemyAttack) ⇒ atk_scale × ATK arts back to its source + silence `silence` s
         const scale = num(b2.atk_scale), sil = num(b2.silence);
         battle.on('damaged', (c) => {
           const src = c.source;
           if (c.target !== unit || !unit.alive || unit.skill?.id !== S2 || !unit.skill.active) return;
-          if (!src || src.side !== 'enemy' || !src.alive || !c.dmg?.isAttack) return;
+          if (!byEnemyAttack(c) || !src.alive) return;
           if (scale > 0) battle.dealDamage(unit, src, { amount: unit.s.atk * scale, type: 'arts', canDodge: false, isSkill: true, ignoreSelect: true, tags: ['skill', 'counter'] });
           if (sil > 0 && src.alive) battle.applyStatus(src, 'silence', { duration: sil, source: unit });
           battle.fx('counter', { x: src.x, y: src.y, id: unit.id });

@@ -6,8 +6,9 @@ import { onDefaultSkill } from '../shared/tier2.js';
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
-  // 2_08 泡泡 “挨打”: stops attacking; DEF +def, taunt +taunt_level, each attack received returns atk_scale × DEF phys
-  // damage to the attacker. 尖刺盾: attackers get ATK −atk for `duration` s. Elite module (PRO-X): DEF +def while blocking.
+  // 2_08 泡泡 “挨打”: stops attacking; DEF +def, taunt +taunt_level, each enemy damage instance received (its attack or not:
+  // the official bubble_s_2 / bubble_t_1 fire on ON_TAKE_DAMAGE — tier1 byEnemyAttack) returns atk_scale × DEF phys damage
+  // to its source. 尖刺盾: that source gets ATK −atk for `duration` s. Elite module (PRO-X): DEF +def while blocking.
   // S1 防御力强化·β型 (alt, TAKE_DAMAGE from data): DEF +def for its duration; the counter belongs to “挨打” only.
   chess_char_2_08_a: (bb, chess) => {
     const t = talentBb(chess, 0);

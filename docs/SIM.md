@@ -798,7 +798,10 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 "bonus damage on hit") must not react to its own output or to other reactive damage, or two such effects ping-pong
 until the nesting guard trips (the guard then skips *every* nested handler, including `kill`/`death` bookkeeping of
 content). Respond only to `dmg.isAttack` (normal attacks), tag your damage (`tags: ['counter']`) and skip tagged damage,
-or guard with a per-unit flag while dealing it. When the guard trips, the logged error names the open frames
+or guard with a per-unit flag while dealing it. The "受到攻击时" counters take the second way: the official ones fire on
+every damage instance from an enemy (ON_TAKE_DAMAGE — its attack, a skill hit, 深溟巢涌者's pulse; never a 流失), so they
+answer `kits/shared/tier1.js byEnemyAttack` (星熊 S2, 泡泡, 刺玫 S2, 余 S1, 玛恩纳 无动于衷, 年 S2, 斩业星熊; 菲莱 S2 any
+instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the logged error names the open frames
 (`chain: hit(enemy_x→chess_y) > damaged(chess_y) > …`).
 
 ---

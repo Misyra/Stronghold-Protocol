@@ -6,7 +6,7 @@ import {
   num, bv, tbb, moduleBb, live, opsOf, ANY, onDefaultSkill, selectedSkill, skillGridOf, AROUND8, onElementHit,
   elementDmg, aura,
 } from '../shared/tier6.js';
-import { holdProtect } from '../shared/tier1.js';
+import { holdProtect, byEnemyAttack } from '../shared/tier1.js';
 
 /**
  * "传送至自身位置": a ground enemy that can reach `unit`'s tile on the ground grid is moved onto it (unblocked, its
@@ -71,7 +71,8 @@ function yu(bb, chess, def) {
       battle.addBuff(unit, { key: 'yu:host', mods: { taunt: num(bb.taunt_level, 1) }, persist: true, allowDead: true });
       battle.on('damaged', (ctx) => {
         const s = ctx.source;
-        if (ctx.target !== unit || !unit.skill?.active || !s || s.side !== 'enemy' || !s.alive || !ctx.dmg?.isAttack) return;
+        // "每次受到攻击" = the official yu_s_1[inverse_damage]: every enemy damage instance (tier1 byEnemyAttack)
+        if (ctx.target !== unit || !unit.skill?.active || !byEnemyAttack(ctx) || !s.alive) return;
         elementDmg(battle, unit, s, 'burn', unit.s.atk * num(bb.ep_damage_ratio), ['skill']);
       }, { owner: unit });
     },

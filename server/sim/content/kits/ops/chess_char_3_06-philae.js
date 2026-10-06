@@ -2,10 +2,12 @@
 // Conventions of the tier-3 kits: ../shared/tier3.js; kit contract and rules: ../README.md.
 
 import { num, defOf, talentBb, traitBb, selectedId, altSkills, fx, NINE, giveSp } from '../shared/tier3.js';
+import { isHpLoss } from '../../../damage.js';
 
 export default {
-  // ---- 3_06 菲莱 · 本源铁卫 — S2 冥河诅咒: stops attacking, HP +; when attacked blasts the ground enemies of the 3×3
-  //      around her (PRTS 备注: range x-4; arts + ep_damage_ratio × ATK apoptosis, aoe_cd); ATK + once hit by element
+  // ---- 3_06 菲莱 · 本源铁卫 — S2 冥河诅咒: stops attacking, HP +; "受到攻击时" — any damage instance she takes (official
+  //      philae_s_2: ON_TAKE_DAMAGE with no source or attack filter) — blasts the ground enemies of the 3×3 around her
+  //      (PRTS 备注: range x-4; arts + ep_damage_ratio × ATK apoptosis, aoe_cd); ATK + once hit by element
   //      damage; 神河谕使: 元素损伤 taken −damage_resistance, +SP on apoptosis
   //      精锐 module PRP-X "阻挡敌人时，自身造成的元素损伤提升15%": EVERY element fill she deals (the S2 blast, a 灼燃维式重锤
   //      she carries …) ×ep_damage_scale while she blocks — an `elementHit` multiplier, like 余's
@@ -85,7 +87,11 @@ export default {
             if (isS2 && sk && sk.active && !unit.findBuff('skill:philae_rage')) battle.addBuff(unit, { key: 'skill:philae_rage', mods: { atkPct: num(bb.atk) }, visible: true });
             return;
           }
-          if (!isS2 || !sk || !sk.active || !ctx.dmg?.isAttack || !ctx.source || ctx.source.side !== 'enemy') return;
+          // the official philae_s_2 (buff_template_data) fires on ON_TAKE_DAMAGE with no filter: any damage instance — an
+          // enemy's attack, a skill hit, 深溟巢涌者's pulse, a 无来源 hit — never a 流失 or an element 损伤 (above), nor a
+          // counter / reflection. Until 0.2.0 enemy attacks only (community report of 2026-10-06, item 30)
+          const d = ctx.dmg;
+          if (!isS2 || !sk || !sk.active || !d || isHpLoss(d) || (d.tags || []).some((t) => t === 'counter' || t === 'reflect')) return;
           if (battle.time < (unit.mem.philaeCd ?? -Infinity)) return;
           unit.mem.philaeCd = battle.time + cd;
           // "周围的地面敌人" = range x-4, the 3×3 tiles around her (PRTS 备注)

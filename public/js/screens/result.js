@@ -71,8 +71,8 @@ export function ResultScreen() {
         ${mins ? html`<p class="result__time t-lo">本局耗时 <b class="num">${mins}</b> 分钟</p>` : null}
         <${HistorySaveStatus} />
         <footer class="result__foot">
-          <${HistoryButton} variant="secondary" />
           <${Button} variant="primary" size="xl" icon="chevronLeft" onClick=${back}>${hasRoom ? '返回同盟' : '返回大厅'}<//>
+          <${HistoryButton} variant="secondary" size="xl" />
         </footer>
       </section>
       <section class="result__players">

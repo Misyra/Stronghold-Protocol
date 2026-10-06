@@ -47,8 +47,10 @@
 //   every `interval` (0.5) s, every selectable enemy on her path takes atk_scale × ATK arts (16 hits in the 8 s). The path
 //   meanwhile has no length limit (`_infinite`) and turns at her 中继器 and at every allied
 //   operator it reaches (validators: the piece, allies of profession mask 639 — every operator profession; a 孤立 one too),
-//   to that unit's facing. The data resolves DEFAULT: the unbounded range is no data range (no rangeId), so build-data's
-//   ACTIVE_RANGE rule cannot see it (reported, not hand-coded).
+//   to that unit's facing. Trigger: the data's DEFAULT, plus — the owner's ACTIVE_RANGE rule (2026-10-05: a MANUAL skill
+//   whose running range strictly contains her own casts with an enemy inside that range), which no data range can carry
+//   for an unbounded path that bends — the beam's path as a content trigger range (skill.addTriggerRange: a targetable enemy
+//   on the path she would fire along now, air units too as the beam hits them; 0.2.0 WE2, follow-up #16, O1's report).
 // - S3 混沌的本质 (MANUAL, data DEFAULT, 20 发弹药 — `ammo`, attack@trigger_time): for charge_time (3) s from the cast 强制缴械
 //   (aphris_sk3[sheltering], abnormal flag disarmed) and aphris_sk3[token-withdraw]: every 中继器 of hers withdrawn and its
 //   redeploy time cleared (ResetTokenRespawnTime — the placed piece is back on its tile at once; the two extra pieces the
@@ -285,6 +287,8 @@ export default {
         battle.on('skillStart', (c) => { if (c.unit === unit) refreshPath(battle, unit); }, { owner: unit });
         battle.on('skillEnd', (c) => { if (c.unit === unit) refreshPath(battle, unit); }, { owner: unit });
         battle.on('tick', () => refreshPath(battle, unit), { owner: unit });
+        // S2: the beam's path is its trigger range too (the owner's larger-range rule, see the header)
+        if (unit.skill?.id === S2) unit.skill.addTriggerRange(() => (up(unit) ? [aphrisPath(battle, unit, true).tiles.map(([r, c]) => r * COLS + c)] : []));
         // S3's 强制缴械 from the cast on: the attack loop goes on to the attack the cast was made for (ai.js updateAlly
         // checks `disarm` before the cast only) — no target, no attack, no bullet spent
         battle.on('beforeAttack', (c) => { if (c.attacker === unit && unit.findBuff(CHARGE_KEY)) c.targets = []; }, { owner: unit });

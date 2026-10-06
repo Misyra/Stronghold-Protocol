@@ -121,6 +121,19 @@ export class SkillRuntime {
   }
 
   /**
+   * Change the trigger rule and grid mid-battle — a kit whose skill's running range changes with its own use (薇薇安娜 S3:
+   * "首次技能结束后，本技能的技能范围永久扩大至3-2" — ACTIVE_RANGE on 3-2 from then, DEFAULT again at her next deployment).
+   * `grid`: a facing-RIGHT [dRow, dCol] grid (ACTIVE_RANGE / SKILL_RANGE / CUSTOM_RANGE), or null. (0.2.0 WE2, additive.)
+   * @param {string} rule @param {number[][]|null} [grid]
+   */
+  setTrigger(rule, grid = null) {
+    this.rule = String(rule ?? 'DEFAULT').toUpperCase();
+    this.triggerGrid = Array.isArray(grid) && grid.length ? grid : null;
+    this._trigKeys = null;
+    this._trigSet = null;
+  }
+
+  /**
    * Extra DEFAULT-trigger range (海嗣 "攻击范围视为自身攻击范围的延伸", 流形): `fn(battle, unit)` returns a list whose
    * entries are ally units (their current `rangeKeys` count while they are on the field) or arrays of absolute tile
    * keys. A targetable enemy (flyers included) on those tiles satisfies the DEFAULT rule (and unknown DEFAULT-like

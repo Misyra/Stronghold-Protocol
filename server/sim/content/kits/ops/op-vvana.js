@@ -54,8 +54,10 @@
 //   备注 "每次部署薇薇安娜时，重新计算该技能的使用次数" / "首次技能结束后，本技能的技能范围永久扩大至3-2"; vvana_s_3[check]: a
 //   skill triggered before ⇒ the enhance mark and duration_plus = enhance_duration, vvana_s_3: mode 4 instead of 3): from her
 //   second cast of a deployment the skill runs enhance_duration s with S3_LATER_HITS hits on the 3-2 range (her own grid while
-//   it runs: the card shows it). The trigger stays the data's DEFAULT on her own range for every cast — the later casts'
-//   larger running range is no data range (reported, not changed: kits/README.md checklist 5).
+//   it runs: the card shows it). Trigger: the data's DEFAULT on her own range for the first cast of a deployment; once it
+//   has ended the owner's ACTIVE_RANGE rule (2026-10-05: a MANUAL skill whose running range strictly contains her own casts
+//   with an enemy inside that range) on the 3-2 — no data range carries it, so the kit sets it (skill.setTrigger, 0.2.0 WE2,
+//   follow-up #16; O11's report) — and DEFAULT again at her next deployment.
 
 import { num, talentBb, traitBb, skillRec, up, batMod } from '../shared/tier1.js';
 import { isElite, elementDmg, enemiesIn } from '../shared/tier6.js';
@@ -168,9 +170,11 @@ export default {
             skill.timeLeft = Math.max(0.01, num(b3.enhance_duration, skill.duration));
             setGrid(battle, unit, RANGE_3_2);
           },
-          onEnd({ battle, unit }) {
+          onEnd({ battle, unit, skill }) {
             if (unit.mem.vvanaS3Later) setGrid(battle, unit, unit.def?.rangeGrid);
             unit.mem.vvanaS3Later = false;
+            // its later casts run on the 3-2: from now the owner's ACTIVE_RANGE rule there (see the header)
+            if ((unit.mem.vvanaS3Casts ?? 0) >= 1) skill.setTrigger('ACTIVE_RANGE', RANGE_3_2);
           },
         },
       },
@@ -258,6 +262,7 @@ export default {
             unit.mem.vvanaS3Casts = 0;
             unit.mem.vvanaS3Later = false;
             setGrid(battle, unit, own);
+            if (unit.skill?.id === S3) unit.skill.setTrigger('DEFAULT', null);   // the first cast of a deployment: the data's rule
           }, { owner: unit });
         }
         // AFT-D: 元素伤害 at the output of every damage of hers on an enemy in its 灼燃 爆发冷却 (not on this rider's own)

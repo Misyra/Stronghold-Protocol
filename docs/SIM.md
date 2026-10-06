@@ -892,7 +892,8 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   `skillEnd` fires. `onAttack` ctx carries `noAmmo` (set it to true: this attack spends no bullet, no `ammoUsed` — 流明's
   free heals).
 - Runtime helpers on `unit.skill`: `activate(reason, {free})`, `end(reason)`, `stop()`, `addAmmo(n)`, `extend(s)`,
-  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`; fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
+  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`, `setTrigger(rule, grid)` (a kit's own rule change mid-battle —
+  薇薇安娜 S3's ACTIVE_RANGE on 3-2 after its first cast; 0.2.0); fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
   maxCharges, active, timeLeft, ammoLeft, ammoMax, activations, kind, rule, bb` (`ammoMax`: the most bullets the running ammo skill
   has held — set at activation, raised by skillStart additions and `addAmmo` above it; 0 when inactive).
 

@@ -9,8 +9,8 @@
 // `[shield_core]`, `zuole_s_3` / `[shield]`, `zuole_e_002[resistance]`, `zuole_e_003_talent`, `zuole_e_003_trait`);
 // Arknights Terra Wiki "Zuo Le" (the barrier caps count each skill's own barrier only).
 // - Trait (武者) "不成为其他角色的治疗目标，每次攻击到敌人后回复自身70生命": the profession default (musha: no heal from
-//   others, `value` per enemy hit; zuole_trait heals on every damage he outputs — the profession heals a normal attack
-//   per target and any other damage per instance, so S1's extra strikes are separate damage instances).
+//   others; zuole_trait heals on every damage he outputs — the profession heals `value` per damage instance, PRTS 分支特性信息
+//   武者, so S1's extra strikes heal too).
 // - T1 秉烛照影 "在场时，自身获得最高+50攻击速度和技力自然回复速度+2/秒的坚忍（损失70%生命值时达到最大加成）" (bb
 //   min_attack_speed / min_sp_recovery_per_sec / min_hp_ratio): 坚忍 (ba.berserk "根据已损失的生命值获得相应比例的属性
 //   加成") — ASPD and SP recovery × min(1, lost HP ÷ (1 − min_hp_ratio)) while he is deployed. SBL-X stage 3: +70 /
@@ -29,7 +29,8 @@
 //   not while a 不死 already holds him ("_dontConsumeWhenUndeadable": 坚固维式重锤's window, items/battle.js holdsUndying).
 // - S1 破虏 (AUTO, 可充能 2 次): the next attack at atk_scale × ATK; "自身生命低于80%时额外攻击1次，低于50%时额外攻击2次"
 //   (hp_ratio_double / hp_ratio_tripple): one / two more strikes on that target at the same scale, separate damage
-//   instances [ASSUMED: the same target — nothing when it fell]. The data's DEFAULT trigger (an AUTO "next attack").
+//   instances [ASSUMED: the same target — nothing when it fell; the HP read when the skill fires, before the strike's
+//   own trait heal]. The data's DEFAULT trigger (an AUTO "next attack").
 // - S2 行险 (MANUAL, 12 s): "立即流失50%当前生命" (zuole_s_2[shield] DamageViaCurHpRatio, undeadable: never below 1 HP;
 //   a 流失), then a barrier of scale × max HP (ba.barrier "可以吸收一定数值的伤害") added to the one he still has, capped at
 //   max_scale × max HP at each gain (PRTS "上限于每次获取屏障时实时发生变化"; Terra: the cap counts this skill's barrier
@@ -96,10 +97,14 @@ export default {
       skills: {
         [S1]: {
           kind: num(s1?.maxChargeTime, 1) > 1 ? 'charges' : 'instant',
+          // the HP that decides the extra strikes: when the skill fires, before its strike lands (the trait heals at each
+          // damage instance — professions.js musha — so after the first strike he would read healed) [ASSUMED]
+          onStart({ unit }) { unit.mem.zuoleS1Hp = unit.hpRatio; },
           attack: {
             atkScale: num(b1.atk_scale, 1),
             onHit({ battle, unit, target }) {
-              const r = unit.hpRatio;
+              const r = unit.mem.zuoleS1Hp ?? unit.hpRatio;
+              unit.mem.zuoleS1Hp = null;
               const extra = (r < num(b1.hp_ratio_double, 0.8) ? 1 : 0) + (r < num(b1.hp_ratio_tripple, 0.5) ? 1 : 0);
               for (let i = 0; i < extra && target && target.alive; i++) {
                 battle.dealDamage(unit, target, { amount: unit.s.atk * num(b1.atk_scale, 1), type: 'phys', isSkill: true, tags: ['skill'] });

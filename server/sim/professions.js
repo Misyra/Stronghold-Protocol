@@ -58,26 +58,46 @@ export const PROFESSION_DEFAULTS = Object.freeze({
 // install helpers (per-unit hooks). All use engine helpers only; tunables come from unit.profile.
 
 /**
- * 武者 / 收割者 self-heal ("每次攻击到敌人回复自身50生命"; 收割者 adds "最大生效数等于阻挡数"). Normal attacks arrive as one
- * 'attack' event whose `targets` are every enemy hit.
+ * 武者 (musha) trait "每次攻击到敌人后回复自身N生命" (bb value) with the branch rules of PRTS 分支特性信息 武者: "特性治疗于干员每次
+ * 输出伤害时触发（不局限于攻击）" and "常态持有禁疗；通过自身特性/天赋/技能产生的作用于自身的治疗效果会无视自身的禁疗". The official
+ * trait buffs (buff_template_data `utage_trait`, `helage_trait`, `zuole_trait`) fire on ON_OUTPUT_DAMAGE: one heal per damage
+ * instance the unit deals to an enemy — every hit of a normal attack (the second hit of a double strike, a splash or
+ * chain victim) and every skill / item / bond damage instance credited to it; a dodged hit deals none (no `damaged`).
+ * Not a 流失 (no damage dealt), not an element 损伤 (a gauge fill, no HP damage — as 咒愈师), not a buff-made damage
+ * (talent / DoT tags: attackType BUFF — [ASSUMED] as before; only 隐德来希's template filters it and no 武者 kit deals such
+ * damage). The heal ignores 禁疗 (`ignoreHealFree`: an abnormal flag is one switch whoever set it — PRTS 异常效果).
+ */
+const installMushaHeal = (battle, unit) => {
+  battle.on('damaged', (c) => {
+    if (c.source !== unit || !unit.alive || !c.target || c.target.side !== 'enemy') return;
+    const dmg = c.dmg;
+    if (!dmg || isHpLoss(dmg) || c.type === 'element') return;
+    const tags = dmg.tags || [];
+    if (tags.includes('talent') || tags.includes('dot') || tags.includes('periodic')) return;
+    battle.heal(unit, unit, unit.profile.selfHeal ?? 50, { self: true, ignoreHealFree: true });
+  }, { owner: unit, priority: -10 });
+};
+
+/**
+ * 收割者 (reaper) self-heal ("每次攻击到敌人回复自身50生命，最大生效数等于阻挡数"). Normal attacks arrive as one 'attack' event
+ * whose `targets` are every enemy hit.
  *
  * The official trait is a buff ON the operator that fires on ON_OUTPUT_DAMAGE — buff_template_data `etlchi_trait`,
- * `excu2_trait`, `utage_trait`, `helage_trait`, `zuole_trait` all react to any damage the unit outputs, and 隐德来希's
- * filters the attackType BUFF out (damage produced by a buff/talent — e.g. her own 萃血 DoT). So skill damage heals too:
- * 隐德来希's S2 blood sickles restore her life although the skill stops her attacks (`attack: { noAttack: true }`) — the
- * sickle's AOEDamage nodes are attackType NORMAL and PRTS 备注 says "伤害来源始终视为隐德来希". Every such hit arrives as
- * one 'damaged' event per enemy, so the reaper cap ("最大生效数") is applied per instant here: the official `[heal_fake]`
- * window is 0.05 s and its stack count is the block number (`SetStackCountViaBlockNum`). [ASSUMED] the sim uses the same
- * `battle.time` as its window, so simultaneous hits (both 血镰, an AoE) share the block-count cap; a normal attack has its
- * own event and its own cap, as before.
+ * `excu2_trait` react to any damage the unit outputs, and 隐德来希's filters the attackType BUFF out (damage produced by a
+ * buff/talent — e.g. her own 萃血 DoT). So skill damage heals too: 隐德来希's S2 blood sickles restore her life although the
+ * skill stops her attacks (`attack: { noAttack: true }`) — the sickle's AOEDamage nodes are attackType NORMAL and PRTS 备注
+ * says "伤害来源始终视为隐德来希". Every such hit arrives as one 'damaged' event per enemy, so the reaper cap ("最大生效数") is
+ * applied per instant here: the official `[heal_fake]` window is 0.05 s and its stack count is the block number
+ * (`SetStackCountViaBlockNum`; PRTS 分支特性信息 收割者 "触发后的0.05s内最多只能累加等于自身阻挡数的治疗次数"). [ASSUMED] the sim uses
+ * the same `battle.time` as its window, so simultaneous hits (both 血镰, an AoE) share the block-count cap; a normal attack
+ * has its own event and its own cap, as before. Like the 武者's, the heal ignores 禁疗 (PRTS 分支特性信息 收割者 "通过自身特性/
+ * 天赋/技能产生的作用于自身的治疗效果会无视自身的禁疗").
  */
-const installSelfHealOnHit = (capByBlock) => (battle, unit) => {
-  const heal = (n) => { if (n > 0 && unit.alive) battle.heal(unit, unit, (unit.profile.selfHeal ?? 50) * n, { self: true }); };
+const installReaperHeal = (battle, unit) => {
+  const heal = (n) => { if (n > 0 && unit.alive) battle.heal(unit, unit, (unit.profile.selfHeal ?? 50) * n, { self: true, ignoreHealFree: true }); };
   battle.on('attack', (ctx) => {
     if (ctx.attacker !== unit || !unit.alive) return;
-    let n = ctx.targets.length;
-    if (capByBlock) n = Math.min(n, Math.max(1, unit.s.blockCnt));
-    heal(n);
+    heal(Math.min(ctx.targets.length, Math.max(1, unit.s.blockCnt)));
   }, { owner: unit, priority: -10 });
   battle.on('damaged', (c) => {
     if (c.source !== unit || !unit.alive || !c.target || c.target.side !== 'enemy') return;
@@ -87,7 +107,7 @@ const installSelfHealOnHit = (capByBlock) => (battle, unit) => {
     if (tags.includes('talent') || tags.includes('dot') || tags.includes('periodic')) return; // attackType BUFF
     const mem = unit.mem;
     if (mem.selfHealAt !== battle.time) { mem.selfHealAt = battle.time; mem.selfHealN = 0; }
-    if (capByBlock && mem.selfHealN >= Math.max(1, unit.s.blockCnt)) return;
+    if (mem.selfHealN >= Math.max(1, unit.s.blockCnt)) return;
     mem.selfHealN++;
     heal(1);
   }, { owner: unit, priority: -10 });
@@ -537,8 +557,8 @@ export const SUB = Object.freeze({
       const [fr, fc] = frontOf(unit.tileR, unit.tileC, unit.dir);
       return bodyOnTile(target, unit.tileR, unit.tileC) || bodyOnTile(target, fr, fc) ? 1 : (unit.profile.rangedScale ?? 0.8);
     } }),
-  musha: P({ noHeal: true, install: installSelfHealOnHit(false) }),
-  reaper: P({ noHeal: true, allInRange: true, install: installSelfHealOnHit(true) }),
+  musha: P({ noHeal: true, install: installMushaHeal }),
+  reaper: P({ noHeal: true, allInRange: true, install: installReaperHeal }),
   sword: P({ hits: 2 }),
   artsfghter: P({ dmgType: 'arts' }),
   swordmaster: P({ hits: 2 }),

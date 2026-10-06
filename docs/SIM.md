@@ -1222,7 +1222,7 @@ header of professions.js).
 | craftsman | melee phys (support devices via kit) |
 | shotprotector | ranged phys, can hit FLY, blocks 3 |
 | fortress | melee single target while blocking, ranged 1.0 splash otherwise, ground only (never hits FLY) |
-| unyield / musha / reaper | cannot be healed by others; the heal fires on every enemy the unit damages itself — a normal attack (musha 50 / bb value per hit; reaper 50 × min(hits, block)) and any damage it outputs that no buff produced (the official trait's ON_OUTPUT_DAMAGE, which is why 隐德来希's S2 血镰 cuts heal her while she is disarmed), 50 (bb value) per enemy, the reaper's capped at the block count per instant |
+| unyield / musha / reaper | cannot be healed by others. musha: one heal of 50 (bb value) per damage instance it deals to an enemy (PRTS 分支特性信息 武者 "特性治疗于干员每次输出伤害时触发（不局限于攻击）"; the official `utage_trait` / `helage_trait` / `zuole_trait` ON_OUTPUT_DAMAGE): every hit of a normal attack — a double strike heals twice, a dodged hit not at all — and every skill / item / bond damage instance; not a 流失, an element 损伤 or a talent / DoT damage. reaper: 50 × min(enemies hit, block) per normal attack and 50 per other damage instance it outputs that no buff produced (the official trait's ON_OUTPUT_DAMAGE, which is why 隐德来希's S2 血镰 cuts heal her while she is disarmed), capped at the block count per instant. Both trait heals ignore 禁疗 (PRTS 分支特性信息 武者 / 收割者 "通过自身特性/天赋/技能产生的作用于自身的治疗效果会无视自身的禁疗") |
 | centurion / crusher / pusher | hit every blocked enemy at once |
 | hammer | 50 % splash (bb atk_scale_2) to others within 1 tile |
 | instructor | ×1.2 (bb atk_scale) vs enemies it doesn't block |

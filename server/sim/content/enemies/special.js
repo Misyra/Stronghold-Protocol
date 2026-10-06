@@ -404,7 +404,11 @@ export const SPECIAL_KITS = Object.freeze({
     b.fx('explode', { x: e.x, y: e.y, r, kind: 'heal' });
     for (const o of b.enemiesInRadius(e.x, e.y, r)) if (o !== e) b.heal(e, o, amt);
   } }],
-  enemy_10162_mnctpt: (ab) => [{                                     // 自制投石机 · 3-hit attacks with small splash
+  enemy_10162_mnctpt: (ab) => [{                                     // 自制投石机 · 3-hit attacks with small splash; 索敌不受阻挡影响
+    // PRTS 天赋 「索敌不受阻挡影响，且不会因丢失目标而结束攻击」: its target selection ignores its block — a 隐匿 blocker (an
+    // operator on the 排气格栅) is no target, so with nobody else in range it does not attack (the official game, community
+    // report of 2026-10-06, item 24); it picks by 仇恨值, not its blocker first
+    spawn(b, e) { e.profile.blockFree = true; },
     dealt(c, b, e) {
       const n = T(ab, 'Attack.attack@times') ?? 1, r = T(ab, 'Attack.attack@projectile_range') ?? 0;
       const t = c.target;

@@ -718,10 +718,13 @@ export function attackWindup(e) {
   return a && a.dur > 0 ? clipHit(a) / clipSpeed(e, a) : 0;
 }
 
-/** The allies `e` could hit now: its blocker (and, with a range, the others in reach), passing its own target rule. */
+/**
+ * The allies `e` could hit now: its blocker (and, with a range, the others in reach), passing its own target rule. An
+ * enemy whose 索敌不受阻挡影响 (profile `blockFree`: 自制投石机) selects as if unblocked: the allies in reach it may target.
+ */
 function attackTargets(b, e, radius, reach, own) {
   let targets = [];
-  if (e.blockedBy) {
+  if (e.blockedBy && !(radius > 0 && e.profile && e.profile.blockFree)) {
     const bl = e.blockedBy;
     if (radius > 0) {
       targets = b.alliesInRadius(e.x, e.y, reach, null).filter((a) => a === bl || canTargetAlly(e, a, true));

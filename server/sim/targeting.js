@@ -99,13 +99,15 @@ export function canTargetEnemy(attacker, e, profile) {
  * PRTS 异常效果 gives both anomalies the note "与'阻挡时解除'没有直接关系" — for this target selection (an attack, a skill
  * pick, a cast condition, a normal attack on every ally in range: PRTS 选择器 "所有触发选择器通常不无视迷彩"); an area
  * effect selects with areaSelectable / auraSelectable, which do not check 迷彩. An airborne ally (起飞, flag `liftoff`) is
- * never a target of a ground enemy (evadesGround).
+ * never a target of a ground enemy (evadesGround). An enemy whose 索敌不受阻挡影响 (profile `blockFree`: 自制投石机, PRTS 天赋)
+ * has no blocker exception: a 隐匿 / 迷彩 ally that blocks it is no target either — so, blocked by an operator on the
+ * 排气格栅 with nobody else in range, it does not attack (the official game, community report of 2026-10-06, item 24).
  */
 export function canTargetAlly(e, a, ranged) {
   if (!a.alive || !a.deployed || a.hidden || a.kind === 'device') return false;
   const f = a.s.flags;
   if (f.untargetable || f.sleep) return false;
-  if (ranged && (f.stealth || f.camou) && e.blockedBy !== a) return false;
+  if (ranged && (f.stealth || f.camou) && (e.blockedBy !== a || (e.profile && e.profile.blockFree))) return false;
   if (f.liftoff && evadesGround(e, a)) return false;
   return true;
 }
@@ -221,8 +223,9 @@ export function sortEnemyTargets(battle, attacker, cands, priority) {
  */
 export function sortAllyTargets(enemy, cands) {
   if (cands.length <= 1) return cands;
+  const bl = enemy.profile && enemy.profile.blockFree ? null : enemy.blockedBy;   // 索敌不受阻挡影响: no blocker first
   cands.sort((a, b) => {
-    const ba = enemy.blockedBy === a ? 0 : 1, bb = enemy.blockedBy === b ? 0 : 1;
+    const ba = bl === a ? 0 : 1, bb = bl === b ? 0 : 1;
     return ba - bb || aggroCmp(a, b);
   });
   return cands;

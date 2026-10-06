@@ -1,0 +1,43 @@
+// test/wire-frames.test.js — the single-stringify frames (net.js ENCODED): the m.public / m.private
+// dedup strings and the per-field snapshot emit are reused as the wire form instead of being
+// stringified a second time.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { startServer } from '../server/index.js';
+import { publicWireFrame } from '../server/match/Match.js';
+import { TestClient } from './helpers/wsClient.js';
+
+async function connect(t, serverOptions = {}) {
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...serverOptions });
+  t.after(() => srv.close());
+  const connection = once(srv.wss, 'connection');
+  const client = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
+  t.after(() => client.close());
+  await connection;
+  return { srv, client };
+}
+
+test('publicWireFrame splices serverNow into the dedup string as valid JSON', () => {
+  const view = { t: 'm.public', phase: 'COMBAT', round: 3, deadline: 0, serverNow: 1234, players: [{ playerId: 'p_a' }], fields: [] };
+  const { serverNow, ...rest } = view;
+  const json = JSON.stringify(rest);
+  const wire = publicWireFrame(json, serverNow);
+  assert.ok(wire != null && wire !== json);
+  assert.deepEqual(JSON.parse(wire), view, 'the spliced frame parses to the full view, serverNow included');
+  assert.equal(publicWireFrame('{"t":"other"}', 1), null, 'another leading layout falls back to a full encode');
+  assert.equal(publicWireFrame(json, Number.NaN), null, 'a non-finite clock falls back to a full encode');
+});
+
+test('m.public frames through the spliced wire form still parse with serverNow', async (t) => {
+  const { srv, client } = await connect(t);
+  await client.hello('快照测试');
+  await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
+  await client.waitFor('room.state');
+  await client.request({ t: 'room.start' });
+  // every m.public of a started match goes through publicWireFrame; a malformed splice would fail here
+  const pub = await client.waitFor('m.public', (m) => m.phase !== 'LOBBY', 8000);
+  assert.ok(Number.isFinite(pub.serverNow), 'serverNow rides every m.public');
+  assert.ok(pub.players.length === 1 && pub.combatMode === 'client');
+  await client.request({ t: 'room.leave' });
+});

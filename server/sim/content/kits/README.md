@@ -319,7 +319,8 @@ Each item is a mistake this project already made once. Tick every one for every 
   `test/match/feedback1-placement.test.js` "#9 data: 狼群 and 流形 are owner-range summons" (DESIGN §20.1, §21.3);
   `test/content/playtest6_summons.test.js`, `tokens_summons.test.js`; `feedback1b_kits.test.js` "B3 维娜·维多利亚 S3".
 - [ ] **9. Status effects** — every status applied, with its official duration and stacking (寒冷 on 寒冷 ⇒ 冻结 for the
-  longer cold, 沉默 removes abilities, 恐惧, 睡眠, 浮空 …; "同名效果取最高" = `applyStrongest`). Examples:
+  longer cold, 沉默 removes abilities, 恐惧, 睡眠, 浮空 …; "同名效果取最高" = `applyStrongest`; 庇护 = the shared
+  `PROTECT` key, `holdProtect` in `shared/tier1.js`). Examples:
   `test/sim/combat.test.js` "cold on cold ⇒ freeze for the longer cold …", "sleep: target is untargetable and
   inactive; fear stops enemy attacks", "statuses: sleep = invulnerable except `hitSleep` attackers; levitate …";
   `enemies_bosses.test.js` "沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced".

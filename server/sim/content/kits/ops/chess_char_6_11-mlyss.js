@@ -5,6 +5,7 @@ import {
   num, bv, tbb, tdesc, moduleBb, parseN, live, isTok, onDefaultSkill, selectedSkill, AROUND8, N4, bstate, bestTile,
   pullToward,
 } from '../shared/tier6.js';
+import { holdProtect } from '../shared/tier1.js';
 
 /** 莱茵生命 (character_table groupId "rhine") members of this season's pool (checked against the official table). */
 const RHINE = new Set(['char_108_silent', 'char_128_plosis', 'char_202_demkni', 'char_249_mlyss', 'char_1047_halo2']);
@@ -139,7 +140,9 @@ function mlyss(bb, chess, def) {
             const ranged = !!(m && m.ranged);
             t.profile.hits = on && ranged && live(t) ? t.mem.mlyssHits * 2 : t.mem.mlyssHits; // 二连击
             if (on && m && !ranged && live(t)) {
-              battle.addBuff(t, { key: 'mlyss:eco', duration: 0.4, refresh: 'replace', visible: true, mods: { hpRegenRatio: regen, physTakenMul: 1 - dr, artsTakenMul: 1 - dr } });
+              battle.addBuff(t, { key: 'mlyss:eco', duration: 0.4, refresh: 'replace', visible: true, mods: { hpRegenRatio: regen } });
+              // "获得15%的庇护": the shared 庇护 (holdProtect — 同名效果取最高 with every other source)
+              holdProtect(battle, t, dr, 0.4, unit);
             }
           }
         }, { owner: unit });

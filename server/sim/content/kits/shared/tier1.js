@@ -27,7 +27,7 @@
 // counter {id} · crit {id} · dp {n, id} · heal {id} · taunt {id} · summon {id, token} · pull {id} · sonic {radius} ·
 // shield {id} · overload {id} · takeoff {id} · sleep {id} · buff {id, kind} · reveal {id} · dodge (engine kind).
 
-import { COLS } from '../../../constants.js';
+import { COLS, TICK } from '../../../constants.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { offsetTile } from '../../../dir.js';
 import { bodyInKeys, bodyTileReach } from '../../../body.js';
@@ -92,6 +92,21 @@ export function onHitOn(battle, unit, fn, priority = 0) {
 /** 'damaged' handler for damage dealt TO `unit`. */
 export function onDamagedOn(battle, unit, fn, priority = 0) {
   return battle.on('damaged', (ctx) => { if (ctx.target === unit) fn(ctx); }, { owner: unit, priority });
+}
+
+/**
+ * 庇护 (gamedata_const ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）"; PRTS 术语释义 庇护): ONE effect per unit
+ * whoever grants it — battle.applyStrongest under this key, the strongest value holds and a weaker one resumes when it
+ * outlasts it. (遥's bubbles are a separate key, the client's damage_resistance[bonus] — they multiply with it.)
+ */
+export const PROTECT = 'protect';
+/** The mods of a 庇护 value: physical and arts damage taken ×(1 − v). */
+export const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
+/** A hold that outlives one tick and lapses in the next: refreshed every tick while its condition lasts. */
+export const PROTECT_TICK_HOLD = 1.5 * TICK;
+/** Hold 庇护 `value` on `target` for `duration` s (the shared PROTECT effect). */
+export function holdProtect(battle, target, value, duration, source = null) {
+  if (value > 0) battle.applyStrongest(target, PROTECT, { duration, value, mods: protectMods, source });
 }
 
 /** Targetable enemies inside `grid` (relative to the unit; null ⇒ current range), best targets first. */

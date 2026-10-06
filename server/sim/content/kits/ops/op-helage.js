@@ -25,7 +25,7 @@
 //   parts at once].
 // - Module SBL-X “藏锋” "生命值低于50%时，获得25%的庇护" (a display trait part; the effect is the hidden talent part hp_ratio /
 //   damage_resistance, merged into talent 0's blackboard): below hp_ratio of his max HP the physical and arts damage he takes
-//   ×(1 − damage_resistance) (as 宴's elite module).
+//   ×(1 − damage_resistance) (as 宴's elite module) — 庇护, "同名效果取最高": the shared effect (tier1.js holdProtect).
 // - Module SBL-Y “热的雪” "被击倒时不撤退且回复30%生命（单次部署只触发1次）" (trait bb hp_ratio): the first lethal blow of a
 //   deployment leaves him on the field at hp_ratio of his max HP (a kit saver, priority −50 as 斯卡蒂's module).
 // - S1 新月 (AUTO, attack SP, DEFAULT): the next attack at atk_scale × ATK, twice (Skill clip: two OnAttack).
@@ -33,7 +33,7 @@
 // - S3 满月 (MANUAL, time SP, data ACTIVE_RANGE on the running 1-1 + 1): `duration` s — ATK +atk, attack range +1 tile
 //   forward (ability_range_forward_extend), up to attack@max_target targets at once; back to 1-1 after.
 
-import { num, traitBb, skillRec, toggleBuff, up, onHitOn } from '../shared/tier1.js';
+import { num, traitBb, skillRec, toggleBuff, up, onHitOn, holdProtect, PROTECT_TICK_HOLD } from '../shared/tier1.js';
 
 const S1 = 'skchr_helage_1';
 const S2 = 'skchr_helage_2';
@@ -89,12 +89,13 @@ export default {
         } },
       ],
       install(battle, unit) {
-        // SBL-X “藏锋”: 生命值低于50%时，获得25%的庇护 (physical and arts damage taken)
+        // SBL-X “藏锋”: 生命值低于50%时，获得25%的庇护 — the shared 庇护 (holdProtect: the strongest of every source holds),
+        // refreshed every tick and at each hit on him while he is below
         const dr = num(t0.damage_resistance), drBelow = num(t0.hp_ratio);
         if (dr > 0 && drBelow > 0) {
-          onHitOn(battle, unit, ({ dmg }) => {
-            if ((dmg.type === 'phys' || dmg.type === 'arts') && unit.hpRatio < drBelow) dmg.mul *= 1 - dr;
-          });
+          const keep = () => { if (up(unit) && unit.hpRatio < drBelow) holdProtect(battle, unit, dr, PROTECT_TICK_HOLD, unit); };
+          battle.on('tick', keep, { owner: unit });
+          onHitOn(battle, unit, keep);
         }
         // SBL-Y “热的雪”: 被击倒时不撤退且回复30%生命（单次部署只触发1次）
         const rise = num(tb.hp_ratio);

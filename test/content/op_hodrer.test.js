@@ -20,7 +20,8 @@ const FORMS = BACKUPS.units[HOD].forms;
 const SLOT = { 5: 'chess_char_5_diy1_a', 6: 'chess_char_6_diy1_a' };
 const CRUX = 'uniequip_002_hodrer', CRUY = 'uniequip_003_hodrer';
 const S1 = 'skchr_hodrer_1', S2 = 'skchr_hodrer_2', S3 = 'skchr_hodrer_3';
-const PROTECT = 'talent:hodrer:protect';
+const PROTECT = 'protect';                 // the shared 庇护 of every source (kits/shared/tier1.js holdProtect)
+const DMG_UP = 'talent:hodrer:dmgUp';      // CRU-X stage 3's 物理伤害 + (its own one instance per ally)
 const formOf = (tier, elite) => FORMS[elite ? (tier === 5 ? '2/60/7/1' : '2/60/7/3') : '2/1/4/0'];
 const skillOf = (tier, elite, id) => formOf(tier, elite).skills.find((s) => s.skillId === id);
 const modOf = (tier, mod) => (mod ? formOf(tier, true).modules.find((m) => m.uniEquipId === mod) : null);
@@ -173,7 +174,7 @@ test('T2 余火之氅: he and the ally on the tile behind him get 18 % 庇护 (C
       assert.ok(m, `${label(f)}: ${a.def.charId} protected`);
       approx(m.physTakenMul, 1 - dr, `${label(f)}: phys`);
       approx(m.artsTakenMul, 1 - dr, `${label(f)}: arts`);
-      assert.equal(m.physDealtMul ?? 1, x3 ? 1.1 : 1, `${label(f)}: 物理伤害`);
+      assert.equal(a.findBuff(DMG_UP)?.mods.physDealtMul ?? 1, x3 ? 1.1 : 1, `${label(f)}: 物理伤害`);
     }
     assert.equal(beside.findBuff(PROTECT), null, `${label(f)}: not beside him`);
     const hp = behind.hp;

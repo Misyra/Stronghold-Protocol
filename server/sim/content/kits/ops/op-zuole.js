@@ -20,7 +20,8 @@
 //   (zuole_e_003_talent, ON_CALCULATE_DAMAGE): "…且当次攻击的攻击力提升至120%…80%": a success also scales that damage
 //   instance by atk_scale.
 // - Module SBL-X “岂苦夜长” (trait moduleDesc "生命值低于50%时，获得25%的庇护"; the hidden part merged into the first talent's
-//   bb: hp_ratio / damage_resistance): 庇护 (ba.protect "受到的物理和法术伤害降低相应比例") while HP < hp_ratio
+//   bb: hp_ratio / damage_resistance): 庇护 (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）": the shared effect of
+//   every source, tier1.js holdProtect) while HP < hp_ratio
 //   (zuole_e_002[resistance]: the 庇护 buff is created when HP drops below it and finished when it is back). PRTS S2 备注:
 //   行险 resets it, it comes back 0.1 s later "并因此导致庇护的BUFF顺序落后于本技能的屏障" — a 庇护 created after his
 //   barrier cuts only what passes the barrier (the `hpDamage` hook), one created before it cuts the hit first.
@@ -46,7 +47,7 @@
 //   at max_scale × max HP at each gain, lasting shield_duration s from the latest gain (PRTS "每次获取屏障时重置剩余持续
 //   时间为15s").
 
-import { num, talentBb, traitBb, up, onHitBy, onHitOn, giveSp, skillRec } from '../shared/tier1.js';
+import { num, talentBb, traitBb, up, onHitBy, onHitOn, giveSp, skillRec, holdProtect, PROTECT, PROTECT_TICK_HOLD } from '../shared/tier1.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { isHpLoss } from '../../../damage.js';
 import { holdsUndying } from '../../items/battle.js';
@@ -128,9 +129,12 @@ export default {
                 data: { createdAt: battle.time } });
             }
             battle.fx('shield', { x: unit.x, y: unit.y, id: unit.id });
-            // SBL-X: 行险 resets the 庇护, which is judged again PROTECT_RESET s later (after the barrier)
+            // SBL-X: 行险 resets the 庇护, which is judged again PROTECT_RESET s later (after the barrier) — his own held 庇护
+            // goes now (another source's comes back with its next refresh)
             P.since = null;
             P.blockedUntil = battle.time + PROTECT_RESET;
+            const held = unit.findBuff(PROTECT);
+            if (held && held.source === unit) battle.removeBuff(unit, held);
           },
         },
         [S3]: {
@@ -202,8 +206,10 @@ export default {
           if (!unit.mem.zuoleS3 || c.source !== unit || !c.target || c.target.side !== 'enemy' || isHpLoss(c.dmg) || c.type === 'element') return;
           gainS3Barrier(battle, unit);
         }, { owner: unit });
-        // SBL-X 庇护: active while HP < protectRatio, judged again PROTECT_RESET s after 行险
-        if (protectCut > 0) {
+        // SBL-X 庇护: active while HP < protectRatio, judged again PROTECT_RESET s after 行险 — the shared 庇护 (holdProtect: the
+        // strongest of every source holds), refreshed every tick and at each hit on him. When the 庇护 held is his own and his
+        // barrier is older than it, his cut comes after the barrier (the hpDamage hook) instead of before it
+        if (protectCut > 0 && protectCut < 1) {
           const active = () => {
             const now = battle.time;
             if (!up(unit) || now < P.blockedUntil - 1e-9) { P.since = null; return false; }
@@ -211,13 +217,16 @@ export default {
             P.since = null;
             return false;
           };
+          const keep = () => { if (active()) holdProtect(battle, unit, protectCut, PROTECT_TICK_HOLD, unit); };
+          const own = () => { const b = unit.findBuff(PROTECT); return !!b && b.source === unit && b.data?.value === protectCut; };
           const afterBarrier = new WeakSet();
-          battle.on('tick', active, { owner: unit });
+          battle.on('tick', keep, { owner: unit });
           onHitOn(battle, unit, ({ dmg }) => {
-            if ((dmg.type !== 'phys' && dmg.type !== 'arts') || !active()) return;
+            keep();
+            if ((dmg.type !== 'phys' && dmg.type !== 'arts') || P.since == null || !own()) return;
             const bar = barrierOf(unit);
-            if (bar && bar.shield > 0 && (bar.data?.createdAt ?? Infinity) < P.since) afterBarrier.add(dmg);
-            else dmg.mul *= 1 - protectCut;
+            // (the held buff's mods cut this hit before the barrier: undo that and cut what passes the barrier instead)
+            if (bar && bar.shield > 0 && (bar.data?.createdAt ?? Infinity) < P.since) { dmg.mul /= 1 - protectCut; afterBarrier.add(dmg); }
           });
           battle.on('hpDamage', (c) => { if (c.target === unit && afterBarrier.has(c.dmg)) c.amount *= 1 - protectCut; }, { owner: unit });
         }

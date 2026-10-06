@@ -156,6 +156,7 @@ import { buildBattleSpec, createBattleFromSpec, resultDigest, compactResult as c
 import { CreditPool } from './finalAssault.js';
 import { buildResult } from './results.js';
 import { botPrepBeginSteps, botPrepEndSteps, botPickBand, botPickCard } from './bot.js';
+import { ENCODED } from '../net.js';
 
 const BOT_REHEARSAL_DEFAULT = 3;
 /** Wall-clock ms of bot layout rehearsal per scheduler callback (real time; virtual time runs it in one go). */
@@ -181,6 +182,21 @@ const envClientCombat = () => String(env('SP_COMBAT') || '').toLowerCase() !== '
 export function parseVerify(v) {
   const s = String(v ?? '').trim().toLowerCase();
   return s === 'all' || s === 'sample' ? s : 'off';
+}
+
+/**
+ * Wire form of the m.public dedup string with `serverNow` spliced back in: `_maybeSendPublic` stringifies
+ * the view once without serverNow (the dedup baseline) and this re-creates the exact frame the client used
+ * to get from a second full stringify. Expects `{"t":"m.public"` first — the literal order of publicView —
+ * and returns null (caller falls back to a normal encode) when the layout or the clock drift from that.
+ * @param {string} json JSON.stringify of the view minus serverNow
+ * @param {number} serverNow
+ * @returns {string | null}
+ */
+export function publicWireFrame(json, serverNow) {
+  const head = '{"t":"m.public"';
+  if (typeof json !== 'string' || !json.startsWith(head) || !Number.isFinite(serverNow)) return null;
+  return `{"t":"m.public","serverNow":${serverNow}${json.slice(head.length)}`;
 }
 /** b.pool broadcasts at most this often (ms). */
 const POOL_MIN_GAP_MS = 250;
@@ -831,6 +847,8 @@ export class Match {
     const json = JSON.stringify(view);
     if (!force && json === ps._lastPriv) return;
     ps._lastPriv = json;
+    // the dedup string IS the wire form: hand it to encode (net.js ENCODED) instead of re-stringifying
+    view[ENCODED] = json;
     this.sendTo(ps.playerId, view);
   }
 
@@ -855,6 +873,10 @@ export class Match {
     if (!force && json === this._lastPubJson) return;
     this._lastPubJson = json;
     this._lastPubAt = now;
+    // one stringify per frame: the wire form is the dedup string with serverNow spliced back in
+    // (publicWireFrame); null (layout drift) falls back to a full stringify inside encode
+    const wire = publicWireFrame(json, serverNow);
+    if (wire != null) view[ENCODED] = wire;
     this.broadcast(view);
   }
 

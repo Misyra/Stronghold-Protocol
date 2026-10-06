@@ -261,12 +261,22 @@ export class TokenBucket {
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * JSON-encode a message; returns null (and never throws) on unserializable input.
+ * Symbol key for a frame's pre-encoded wire form: hot paths that already hold the JSON string
+ * (m.public / m.private dedup, the per-field snapshot emit) attach it to the message object so
+ * `encode` reuses that string instead of stringifying the same content again. Symbol keys are
+ * invisible to JSON.stringify, so attaching it never changes a re-serialization.
+ */
+export const ENCODED = Symbol('sp.encoded');
+
+/**
+ * JSON-encode a message; returns null (and never throws) on unserializable input. A message
+ * carrying a string under `ENCODED` encodes to that string (see the symbol).
  * @param {object} msg
  * @returns {string | null}
  */
 export function encode(msg) {
   try {
+    if (msg && typeof msg === 'object' && typeof msg[ENCODED] === 'string') return msg[ENCODED];
     const s = JSON.stringify(msg);
     return typeof s === 'string' ? s : null;
   } catch {

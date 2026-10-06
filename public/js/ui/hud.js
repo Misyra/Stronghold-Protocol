@@ -31,6 +31,7 @@ import { localAsset } from '../data.js';
 import { serverNow } from '../store.js';
 import { isCombatPhase, isBossPhase, prepCapsuleLabel, bossFrac, bossPctText, fmtNum, shopBlockReason } from './gameLogic.js';
 import { overtimeState, overtimeDrainPerSec, remainAt } from './matchStatus.js';
+import { hotkeyLabelOf } from './settings.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -218,7 +219,7 @@ export function ReadyToggle({ priv, onToggle, busy, readyCount, total }) {
       aria-pressed=${ready ? 'true' : 'false'} aria-describedby=${!ready && temp.count ? 'readywrap-why' : undefined} onClick=${() => onToggle(!ready)}>
     <span class="readybtn__box">${ready ? html`<${Icon} name="check" />` : null}</span>
     <span class="readybtn__label">${ready ? t('取消准备') : t('准备就绪')}</span>
-    <kbd class="readybtn__key">Space</kbd>
+    <kbd class="readybtn__key">${hotkeyLabelOf('ready')}</kbd>
   </button>`;
   return html`<div class="readywrap">
     ${reason ? html`<${Tooltip} text=${reason} placement="bottom">${btn}<//>` : btn}
@@ -290,7 +291,8 @@ function PauseGlyph() {
  */
 export function PauseButton({ paused, busy = false, onToggle }) {
   const label = paused ? t('继续作战') : t('暂停');
-  return html`<${Tooltip} text=${paused ? t('继续作战（Space）') : t('暂停作战（Space）')} placement="bottom">
+  const key = hotkeyLabelOf('ready'); // the ready key pauses a solo battle (Space unless rebound: 设置 → 快捷键)
+  return html`<${Tooltip} text=${paused ? t('继续作战（{key}）', { key }) : t('暂停作战（{key}）', { key })} placement="bottom">
     <button type="button" class=${cx('pausebtn', 'tapx', paused && 'is-on', busy && 'is-busy')} aria-pressed=${paused ? 'true' : 'false'}
         aria-label=${label} disabled=${busy} data-testid="pause" onClick=${() => onToggle?.()}>
       ${paused ? html`<${Icon} name="play" class="pausebtn__glyph" />` : html`<${PauseGlyph} />`}

@@ -25,6 +25,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks
 import { html } from './components.js';
 import { LocalSprite } from './gameComponents.js';
 import { DIRS, DIR_LABEL, DEAD_ZONE_TILES, dirFromDelta, dirFromKey, rangeTiles, normDir, boardDir, viewMirrored } from './facing.js';
+import { facingSwallows } from './gameLogic.js';
+import { settingsStore } from './settings.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -242,7 +244,8 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
       const k = dirFromKey(e.key);
       if (k) { e.preventDefault(); e.stopImmediatePropagation(); setDir(k); return; }
       if (e.key === 'Enter' && L.dir) { e.preventDefault(); e.stopImmediatePropagation(); L.onCommit(L.bdir); return; }
-      if (e.key === ' ' || /^Key[RFD]$/.test(e.code || '')) { e.preventDefault(); e.stopImmediatePropagation(); } // no ready / shop while choosing
+      // no ready / shop while choosing: Space and every key of the player's map (设置 → 快捷键)
+      if (facingSwallows(e, settingsStore.get().keys)) { e.preventDefault(); e.stopImmediatePropagation(); }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);

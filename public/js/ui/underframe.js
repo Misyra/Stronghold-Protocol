@@ -27,6 +27,7 @@
 import { html, HexBadge, Icon } from './components.js';
 import { GIcon } from './gameComponents.js';
 import { useTileScreen } from './facingWheel.js';
+import { hotkeyLabelOf } from './settings.js';
 import { localAsset } from '../data.js';
 import { GEO } from '../../../shared/constants.js';
 import { t, tParts } from '../../../shared/i18n.js';
@@ -85,6 +86,7 @@ export function Underframe({ view, uid = null, row, col, actions, name = '', bus
   const s = g.s > 0 ? g.s : 64;
   const half = s * 1.05;
   const stop = (e) => e.stopPropagation();
+  const keys = { retreat: hotkeyLabelOf('retreat'), sell: hotkeyLabelOf('sell') }; // the player's keys (设置 → 快捷键)
   return html`<div class="uframe" data-uid=${uid} style=${`left:${g.x}px;top:${g.y}px;width:${half * 2}px;height:${half * 2}px`} role="group"
       aria-label=${t('{name} 操作', { name: name || t('单位') })}>
     <svg class="uframe__dia" viewBox="-110 -110 220 220" aria-hidden="true">
@@ -92,13 +94,13 @@ export function Underframe({ view, uid = null, row, col, actions, name = '', bus
       <path class="uframe__corner" d="M-100 0 L-86 -14 M-100 0 L-86 14 M100 0 L86 -14 M100 0 L86 14 M0 -100 L-14 -86 M0 -100 L14 -86 M0 100 L-14 86 M0 100 L14 86" />
     </svg>
     ${actions.retreat ? html`<button type="button" class="uframe__btn uframe__btn--retreat" disabled=${busy} onPointerDown=${stop}
-        onClick=${(e) => { stop(e); onRetreat?.(); }} title=${actions.sell != null ? t('撤退至整备区（Q）') : t('撤退至整备区')} aria-label=${t('撤退')} aria-keyshortcuts=${actions.sell != null ? 'Q' : undefined}>
-      <${RetreatGlyph} /><span class="uframe__label">${actions.sell != null ? t('撤退[Q]') : t('撤退')}</span>
+        onClick=${(e) => { stop(e); onRetreat?.(); }} title=${actions.sell != null ? t('撤退至整备区（{key}）', { key: keys.retreat }) : t('撤退至整备区')} aria-label=${t('撤退')} aria-keyshortcuts=${actions.sell != null ? keys.retreat : undefined}>
+      <${RetreatGlyph} /><span class="uframe__label">${actions.sell != null ? t('撤退[{key}]', { key: keys.retreat }) : t('撤退')}</span>
     </button>` : null}
     ${actions.sell != null ? html`<button type="button" class="uframe__btn uframe__btn--sell" disabled=${busy} onPointerDown=${stop}
-        onClick=${(e) => { stop(e); onSell?.(); }} title=${t('出售（+{sell} 资金，X）', { sell: actions.sell })} aria-label=${t('出售，获得 {sell} 资金', { sell: actions.sell })} aria-keyshortcuts="X">
+        onClick=${(e) => { stop(e); onSell?.(); }} title=${t('出售（+{sell} 资金，{key}）', { sell: actions.sell, key: keys.sell })} aria-label=${t('出售，获得 {sell} 资金', { sell: actions.sell })} aria-keyshortcuts=${keys.sell}>
       <${PlateIcon} sprite="icon_sell" glyph="sell" tone="sell" />
-      <span class="uframe__label">${t('出售[X]')}</span>
+      <span class="uframe__label">${t('出售[{key}]', { key: keys.sell })}</span>
       <${HexBadge} value=${`+${actions.sell}`} tone="gold" size="sm" class="uframe__price" />
     </button>` : null}
     ${actions.destroy ? html`<button type="button" class=${cx('uframe__btn', 'uframe__btn--destroy')} disabled=${busy} onPointerDown=${stop}

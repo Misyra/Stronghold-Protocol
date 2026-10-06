@@ -80,7 +80,7 @@ import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
-import { SettingsModal } from '../ui/settings.js';
+import { SettingsModal, settingsStore } from '../ui/settings.js';
 import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { openGuide } from '../ui/guide.js';
 import { actions } from '../ui/gameActions.js';
@@ -1094,7 +1094,7 @@ function MatchScreen() {
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
     const onKey = async (e) => {
-      const act = shortcutFor(e);
+      const act = shortcutFor(e, settingsStore.get().keys); // the player's key map (设置 → 快捷键)
       const L = live.current;
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
       if (shortcutBlocked(act, { modal: !!document.querySelector('.modal, .guide'), drawer: !!L.drawer })) return;
@@ -1108,7 +1108,7 @@ function MatchScreen() {
         e.preventDefault();
         return;
       }
-      // Space pauses / resumes a solo battle (the official battle key)
+      // the ready key (Space unless rebound) pauses / resumes a solo battle (Space: the official battle key)
       if (act === 'ready' && (L.canPause || L.paused)) {
         e.preventDefault();
         if (e.target instanceof HTMLElement && e.target.closest('button, [role="button"]')) e.target.blur();
@@ -1116,7 +1116,7 @@ function MatchScreen() {
         return;
       }
       if (L.pub?.phase !== PHASE.PREP || !L.priv) return;
-      e.preventDefault(); // a focused HUD button must not also activate (Space) — see shortcutFor
+      e.preventDefault(); // a focused HUD button must not also activate (Space, or any key bound) — see shortcutFor
       if (act === 'ready' && e.target instanceof HTMLElement && e.target.closest('button, [role="button"]')) e.target.blur();
       if (act === 'ready') {
         const refused = !L.priv.ready ? shopBlockReason('ready', { priv: L.priv, editable: true }) : null;

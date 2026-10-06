@@ -8,6 +8,9 @@
 // with the field's LocalBossPool, and must give the same result digest, the same pool and the same fx per kind.
 // The fields exercise the playtest-6b sim paths: 直接乘算 bonus sums (§20.10), one 奥术 instance per target
 // (applyStrongest), the drone 2 % links and the 剑 / 锤 / shell kit (§20.13), and 限伤 cancels (fx 'hitCap', §20.12).
+// 瘫痪 (fx 'palsy': a 麻痹 stack interrupts an enemy attack) is checked on the same four specs with a golden 催泪瓦斯 in
+// every operator's second slot (withTearGas), compared Chrome vs Node like the others: the bots' only 麻痹 had been one
+// 5 % 催泪瓦斯 on one operator — a single hit at 0.1.4, none since 0.2.0's enemy damage frame (WE1) re-timed every fight.
 //
 // Opt-in (starts Chrome): SIM_E2E=1 node --test test/sim/bossfield.browser.test.js   (or RENDER_E2E=1)
 // Run browser test files one at a time. Chrome path: $CHROME_PATH or the macOS default.
@@ -60,6 +63,21 @@ function captureBossSpecs() {
 }
 
 /**
+ * A copy of `spec` where every operator carries a golden 催泪瓦斯 (攻击时有5%概率使目标获得一层麻痹) in its second slot —
+ * two slots, as in the game: a 麻痹 source on every field whatever the bots drafted (seed 22's own was a single 5 % roll).
+ */
+const TEAR_GAS = 'chess_item_5_01_e_b';
+function withTearGas(spec) {
+  const s = JSON.parse(JSON.stringify(spec));
+  for (const p of s.players || []) {
+    for (const u of p.units || []) {
+      if (u.kind === 'chess') u.items = [...(u.items || []).filter((id) => !String(id).startsWith('chess_item_5_01_e')).slice(0, 1), TEAR_GAS];
+    }
+  }
+  return s;
+}
+
+/**
  * Runs a spec to the end (the same code in Node and in the page: `S` = spec module, `ds` = data source) and returns
  * its digest, the local pool, the fx count per kind and the leader-side checks (奥术 instances, 无来源 HP losses).
  * Serialised into the page with Function#toString, so it uses nothing from this module's scope.
@@ -100,8 +118,10 @@ describe('Final Assault / Hidden Core fields in the browser sim', { skip }, () =
   test('real boss specs at 999 layers: Chrome and Node give the same digest, pool and fx; 限伤, drones, 瘫痪 and 奥术 all occur', { timeout: 180000 }, async () => {
     const specs = captureBossSpecs();
     assert.deepEqual(specs.map((s) => `${s.kind}:${s.bossId}`).sort(), ['boss:boss_1', 'boss:boss_1', 'hidden:boss_8', 'hidden:boss_8']);
+    // the four as captured, then the same four with a 麻痹 source on every field (withTearGas)
+    const runs = [...specs, ...specs.map(withTearGas)];
     const ds = new DataSource(DATA, null);
-    const node = specs.map((spec) => runField({ createBattleFromSpec, resultDigest }, ds, spec, MAX_SECONDS));
+    const node = runs.map((spec) => runField({ createBattleFromSpec, resultDigest }, ds, spec, MAX_SECONDS));
 
     const page = await browser.newPage();
     const problems = [];
@@ -115,12 +135,12 @@ describe('Final Assault / Hidden Core fields in the browser sim', { skip }, () =
       const { spec: S, ds } = await loadBrowserSim();
       const run = new Function(`return (${src})`)();
       return all.map((spec) => run(S, ds, spec, maxSeconds));
-    }, specs, runField.toString(), MAX_SECONDS);
+    }, runs, runField.toString(), MAX_SECONDS);
     await page.close();
     assert.deepEqual(problems, []);
 
-    specs.forEach((spec, i) => {
-      const at = `${spec.kind} ${spec.fieldId} ${spec.bossId}`;
+    runs.forEach((spec, i) => {
+      const at = `${spec.kind} ${spec.fieldId} ${spec.bossId}${i >= specs.length ? ' +催泪瓦斯' : ''}`;
       assert.equal(node[i].reason, 'cleared', `${at}: the 999-layer pair clears the field`);
       assert.equal(chrome[i].json, node[i].json, `${at}: browser and Node results are identical`);
       assert.equal(chrome[i].hash, node[i].hash, at);
@@ -129,10 +149,12 @@ describe('Final Assault / Hidden Core fields in the browser sim', { skip }, () =
       assert.equal(chrome[i].hpLoss, node[i].hpLoss, `${at}: same 无来源 HP losses on the leader`);
       assert.ok(node[i].maxArcane <= 1, `${at}: one 奥术 instance on the leader at a time (${node[i].maxArcane})`);
     });
-    const sum = (k) => node.reduce((a, r) => a + (r.fx[k] || 0), 0);
-    assert.ok(sum('hitCap') >= 1, `a 999-layer hit reached 300000 and was cancelled (限伤: ${sum('hitCap')})`);
-    assert.ok(sum('palsy') >= 1, `瘫痪 occurred (${sum('palsy')})`);
-    assert.ok(node.every((r) => r.hpLoss >= 1), `every field cost the leader 无来源 HP (drone links / 剑 · 锤 transfers: ${node.map((r) => r.hpLoss)})`);
-    assert.ok(node.some((r) => r.maxArcane === 1), 'the leader carried 奥术');
+    const real = node.slice(0, specs.length);
+    const gassed = node.slice(specs.length);
+    const sum = (rows, k) => rows.reduce((a, r) => a + (r.fx[k] || 0), 0);
+    assert.ok(sum(real, 'hitCap') >= 1, `a 999-layer hit reached 300000 and was cancelled (限伤: ${sum(real, 'hitCap')})`);
+    assert.ok(sum(gassed, 'palsy') >= 1, `瘫痪 occurred with the 催泪瓦斯 (${gassed.map((r) => r.fx.palsy || 0)})`);
+    assert.ok(real.every((r) => r.hpLoss >= 1), `every field cost the leader 无来源 HP (drone links / 剑 · 锤 transfers: ${real.map((r) => r.hpLoss)})`);
+    assert.ok(real.some((r) => r.maxArcane === 1), 'the leader carried 奥术');
   });
 });

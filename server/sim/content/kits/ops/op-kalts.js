@@ -33,7 +33,9 @@
 //   [ASSUMED: given here]); its DEF is ×0 while its tile is outside her attack range (kalts_t_1[token_def_down]; PHY-Y stage
 //   3: inside it ASPD +attack_speed, DEF +def — kalts_t_1[token_def_down_finish]). It is withdrawn when she leaves (no
 //   rattle); it comes back on its tile its respawnTime (25 s) after it left, paying its cost (10 DP), only while she stands —
-//   her (re)deployment readies a waiting one at once (charge_token[born]) [ASSUMED: the 卫戍 auto redeploy of a placed summon].
+//   her (re)deployment readies a waiting one at once (charge_token[born]: RechargeToken with timing NORMAL, while its own timer
+//   is the summon's charge_token[finish], ON_FINISH — the one reading of every summoner kit, 傀影's twin included)
+//   [ASSUMED: the 卫戍 auto redeploy of a placed summon].
 // - T2 不毁重构: Mon3tr knocked out (not withdrawn; S3's 流失 counts) ⇒ every selectable enemy of its 3×3 (the talent's x-4,
 //   air units too) takes `value` (1200) true damage (溅射, not dodgeable) and is stunned `stun` (3) s. PHY-X stage 3 (the
 //   token's module talent: 3.5 s, 1500, hp_ratio): also once per deployment when a hit leaves it at or below hp_ratio of

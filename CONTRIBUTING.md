@@ -72,6 +72,9 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   `test/docs-consistency.test.js` 固定了文档里的一些句子，改文档后跑一下。
 - 代码和注释用英文；玩家文档（README、PLAYING、DEPLOY）用简体中文，技术文档用英文。界面上的文字写中文并用 `t('…')`
   包起来，英文放进 `public/i18n/en.json`（[docs/I18N.md](docs/I18N.md)）。
+- 翻译成新的语言：一个语言就是 `public/i18n/` 里的一个文件，不用改代码。`node tools/i18n.mjs template <语言代码>` 生成骨架，
+  翻译后用 `node tools/i18n.mjs check <语言代码>` 检查，步骤见 [docs/I18N.md](docs/I18N.md)「Adding a language」；语言包是
+  内容包的第一种，格式见 [docs/PACKS.md](docs/PACKS.md)。
 - 提交的代码以 GPL-3.0-or-later 发布。本项目坚持非商业，请不要加入广告、付费、打赏等任何变现功能。
 
 ## 5. 添加干员（自选编队）
@@ -111,7 +114,9 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   `Generated with …` (the maintainers' convention) — merged pull requests are credited in the CHANGELOG. Describe the
   sources, the `[ASSUMED]` items, the tests and the golden scenarios that moved; update the docs a rule change makes
   wrong. Code and comments in English; player-facing text in Chinese through `t('…')` with the English in
-  `public/i18n/en.json`. Code is GPL-3.0-or-later; no monetisation features.
+  `public/i18n/en.json`. A new language is one file in `public/i18n/` and no code: `node tools/i18n.mjs template <code>`,
+  translate, `node tools/i18n.mjs check <code>` (docs/I18N.md "Adding a language"; packs in general: docs/PACKS.md).
+  Code is GPL-3.0-or-later; no monetisation features.
 - **Adding an operator (自选)**: follow "How to add an operator (自选)" in
   [server/sim/content/kits/README.md](server/sim/content/kits/README.md): `op-<codename>.js` keyed by the charId,
   registered in `OPERATOR_KIT_FILES`, a test `test/content/op_<codename>.test.js`, the fidelity checklist in the pull

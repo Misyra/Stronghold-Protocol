@@ -21,7 +21,8 @@ import {
 } from '../shared/i18n.js';
 import { canonicalLang, computeChain, scriptOf, langFields } from '../shared/i18nPacks.js';
 import { normalizeManifest, appVersionMatches, isVersionRange, readPackIndex, langMetaOf, PACK_TYPES, isPackPath } from '../shared/packs.js';
-import { buildRecordOverlay, applyFileOverlay } from '../shared/i18nData.js';
+import { buildRecordOverlay, applyFileOverlay, applyRecordOverlay } from '../shared/i18nData.js';
+import { buildOverlay, LANG_SOURCES } from '../tools/build-i18n.mjs';
 import { scanPacks, createPackRegistry, packIndexOf } from '../server/packs.js';
 import { createDataStore } from '../public/js/data.js';
 import { checkPack, packTemplate } from '../tools/i18n.mjs';
@@ -388,4 +389,23 @@ test('tools: template writes a skeleton (or adds the missing msgids to a pack), 
     assert.deepEqual(body.packs.map((p) => p.id), ['en', 'qaa']);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'packs/index.json'), 'utf8')), body);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('build-i18n --lang: another official client (a text equal to the Chinese is no translation, no English composites); --dict for a language without one', () => {
+  assert.deepEqual(Object.keys(LANG_SOURCES), ['en', 'ja', 'ko', 'zh-TW']);
+  assert.match(LANG_SOURCES.ja.sources.assets.url, /ArknightsAssets\/ArknightsGamedata\/master\/jp\/gamedata\/$/);
+  const zh = [{ chars: { char_x: { name: '测试员', description: '攻击造成法术伤害' } } }];
+  const ja = [{ chars: { char_x: { name: 'テスター', description: '攻击造成法术伤害' } } }];
+  const data = { chess: { chess_x_a: { charId: 'char_x', name: '测试员', trait: { desc: '攻击造成法术伤害' } } }, stages: { m1: { name: '战场#05(下半) 测试员' } } };
+  const { overlay, report } = buildOverlay({ zh, en: ja, data, lang: 'ja' });
+  assert.equal(overlay.lang, 'ja');
+  const c = applyRecordOverlay(data.chess.chess_x_a, overlay.files.chess.chess_x_a).value;
+  assert.deepEqual([c.name, c.trait.desc], ['テスター', '攻击造成法术伤害'], 'the JP text equal to the Chinese one stays untranslated (falls back at run time)');
+  assert.equal(overlay.files.stages, undefined, 'the remake\'s stage-name composite is English wording only');
+  assert.equal(overlay.names['测试员'], 'テスター');
+  assert.equal(report.coverage.operators.translated, 1);
+  const fr = buildOverlay({ zh: [], en: [], data, lang: 'fr', fallback: { dict: { 测试员: 'Testeur', 攻击造成法术伤害: 'Inflige des dégâts magiques' } } });
+  const f = applyRecordOverlay(data.chess.chess_x_a, fr.overlay.files.chess.chess_x_a).value;
+  assert.deepEqual([fr.overlay.lang, f.name, f.trait.desc, fr.overlay.names['测试员']], ['fr', 'Testeur', 'Inflige des dégâts magiques', 'Testeur']);
+  assert.deepEqual([fr.report.coverage.operators.dict, fr.report.coverage.traits.dict], [1, 1], 'counted as the dictionary\'s');
 });

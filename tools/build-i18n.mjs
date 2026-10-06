@@ -27,9 +27,10 @@
 //   --lang      the target language (default en): one with an official client in LANG_SOURCES — en, ja (the JP
 //               client), ko (KR), zh-TW (TW); all three carry both 盟约 seasons (verified 2026-10-07, data 51.x). The
 //               output goes to data/i18n/<code>.json, the game texts of the language pack <code> (it needs the pack's
-//               UI file public/i18n/<code>.json to show in the menu). A language with no official client gets its game
-//               texts another way (docs/I18N.md): the pack's UI file fills the data texts equal to one of its msgids,
-//               the rest falls back per text (the pack's chain, then Chinese).
+//               UI file public/i18n/<code>.json to show in the menu). Any other code needs --dict.
+//   --dict      a community dictionary { "<Chinese data text>": "<translation>" } (a language without an official
+//               client: the only source besides the pack's UI file; with a client: tried after it). Matching is exact
+//               (a text with its numbers resolved needs its own entry); the rest falls back per text at run time.
 //   --source    tables of the language: 'assets' (default) = ArknightsAssets/ArknightsGamedata (en / jp / kr / tw;
 //               current, has the 盟约 seasons act1autochess / act2autochess); for en also 'yostar' =
 //               Kengxxiao/ArknightsGameData_YoStar en_US (archived in 2025-11: no 盟约 season, only the 2025 test event
@@ -47,12 +48,12 @@
 
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve, relative } from 'node:path';
+import { basename, dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildRecordOverlay, applyFileOverlay, OVERLAY_VERSION } from '../shared/i18nData.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/build-i18n.mjs [--lang en|ja|ko|zh-TW] [--refresh | --offline] [--source assets|yostar] [--cache <dir>] [--cache-en <dir>] [--data <dir>] [--out <file>] [--report <file>] [--check] [--quiet]';
+const USAGE = 'usage: node tools/build-i18n.mjs [--lang en|ja|ko|zh-TW | --lang <code> --dict <file.json>] [--dict <file.json>] [--refresh | --offline] [--source assets|yostar] [--cache <dir>] [--cache-en <dir>] [--data <dir>] [--out <file>] [--report <file>] [--check] [--quiet]';
 
 const ASSETS_HOME = 'https://github.com/ArknightsAssets/ArknightsGamedata';
 /** The official client tables of a language other than English (ArknightsAssets/ArknightsGamedata <server>/gamedata). */
@@ -92,7 +93,7 @@ export const LANG_SOURCES = Object.freeze({
 });
 
 /** The test "this target text is no translation of that Chinese one" of a language (LANG_SOURCES `untranslated`). */
-const untranslatedTest = (lang) => (LANG_SOURCES[lang]?.untranslated === 'same' ? (zh, t) => t === zh : (zh, t) => hasCjk(t));
+const untranslatedTest = (lang) => ((LANG_SOURCES[lang]?.untranslated ?? 'same') === 'same' ? (zh, t) => t === zh : (zh, t) => hasCjk(t));
 
 /** Official tables walked side by side (zh_CN ↔ EN), with the sub-trees that hold texts the remake uses. */
 const TABLES = [
@@ -190,7 +191,7 @@ function parseArgs(argv) {
     cache: join(ROOT, '.cache', 'gamedata'), cacheEn: null, data: join(ROOT, 'data'), out: null, report: null,
   };
   const flags = { '--refresh': 'refresh', '--offline': 'offline', '--quiet': 'quiet', '--check': 'check' };
-  const vals = { '--source': 'source', '--lang': 'lang', '--cache': 'cache', '--cache-en': 'cacheEn', '--data': 'data', '--out': 'out', '--report': 'report' };
+  const vals = { '--source': 'source', '--lang': 'lang', '--dict': 'dict', '--cache': 'cache', '--cache-en': 'cacheEn', '--data': 'data', '--out': 'out', '--report': 'report' };
   for (let i = 0; i < argv.length; i++) {
     const eq = argv[i].indexOf('=');
     const [name, inline] = eq > 0 ? [argv[i].slice(0, eq), argv[i].slice(eq + 1)] : [argv[i], null];
@@ -206,9 +207,10 @@ function parseArgs(argv) {
   }
   if (opts.refresh && opts.offline) throw new Error(`--refresh and --offline are mutually exclusive\n${USAGE}`);
   const lang = LANG_SOURCES[opts.lang];
-  if (!lang) throw new Error(`--lang must be one of ${Object.keys(LANG_SOURCES).join(', ')} (a language with an official client; docs/I18N.md says how a pack without one gets its game texts)`);
-  if (!lang.sources[opts.source]) throw new Error(`--source for ${opts.lang} must be one of ${Object.keys(lang.sources).join(', ')}`);
-  if (!opts.cacheEn) opts.cacheEn = join(ROOT, lang.sources[opts.source].cache);
+  if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(opts.lang) || opts.lang === 'zh') throw new Error(`--lang ${opts.lang}: a language code (en, ja, zh-TW …; not zh, the source)`);
+  if (!lang && !opts.dict) throw new Error(`--lang ${opts.lang} has no official client here (${Object.keys(LANG_SOURCES).join(', ')}): give its game texts with --dict <file.json> (docs/I18N.md §2)`);
+  if (lang && !lang.sources[opts.source]) throw new Error(`--source for ${opts.lang} must be one of ${Object.keys(lang.sources).join(', ')}`);
+  if (!opts.cacheEn && lang) opts.cacheEn = join(ROOT, lang.sources[opts.source].cache);
   if (!opts.out) opts.out = join(ROOT, 'data', 'i18n', `${opts.lang}.json`);
   if (!opts.report) opts.report = join(ROOT, '.cache', opts.lang === 'en' ? 'build-i18n-report.json' : `build-i18n-report.${opts.lang}.json`);
   return opts;
@@ -596,7 +598,7 @@ function translateScalar(file, id, text, tr, stats, samples) {
 
 class Stats {
   constructor() { this.kinds = {}; this.missing = new Map(); }
-  row(kind) { return this.kinds[kind] || (this.kinds[kind] = { texts: 0, exact: 0, template: 0, composite: 0, remake: 0, pr70: 0, ui: 0, missing: 0, notes: 0 }); }
+  row(kind) { return this.kinds[kind] || (this.kinds[kind] = { texts: 0, exact: 0, template: 0, composite: 0, remake: 0, pr70: 0, ui: 0, dict: 0, missing: 0, notes: 0 }); }
   hit(kind, how) { const r = this.row(kind); r.texts++; r[how]++; }
   miss(kind, text) {
     const r = this.row(kind);
@@ -623,6 +625,7 @@ export function buildOverlay({ zh, en, data, fallback = {}, source = null, lang 
   const index = new PairIndex(untranslated);
   for (let i = 0; i < zh.length; i++) index.walk(zh[i], en[i], []);
   const tr = new Translator(index, [
+    ...(fallback.dict ? [{ name: 'dict', map: dictMap(fallback.dict, untranslated) }] : []),
     { name: 'remake', map: dictMap(fallback.remake, untranslated) },
     { name: 'pr70', map: dictMap(fallback.pr70, untranslated) },
     { name: 'ui', map: dictMap(fallback.ui, untranslated) },
@@ -664,7 +667,7 @@ export function buildOverlay({ zh, en, data, fallback = {}, source = null, lang 
   const coverage = {};
   let total = 0, translated = 0, official = 0;
   for (const [kind, r] of Object.entries(stats.kinds).sort()) {
-    const ok = r.exact + r.template + r.composite + r.remake + r.pr70 + r.ui;
+    const ok = r.exact + r.template + r.composite + r.remake + r.pr70 + r.ui + r.dict;
     coverage[kind] = { ...r, translated: ok, pct: r.texts ? Math.round((ok / r.texts) * 1000) / 10 : 100 };
     total += r.texts; translated += ok; official += r.exact + r.template + r.composite;
   }
@@ -692,11 +695,13 @@ async function main() {
   let opts;
   try { opts = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`build-i18n: ${e.message}`); process.exit(2); }
   const log = (...a) => { if (!opts.quiet) console.log(...a); };
-  const src = LANG_SOURCES[opts.lang].sources[opts.source];
+  const client = LANG_SOURCES[opts.lang];
+  // (the dictionary by its file name only: a path outside the repository must not end up in the output)
+  const src = client ? client.sources[opts.source] : { label: `the dictionary ${basename(opts.dict)}`, home: null, url: null };
   log(`build-i18n: ${opts.lang} tables from ${src.label}`);
   const zh = [];
   const en = [];
-  for (const t of TABLES) {
+  for (const t of client ? TABLES : []) {
     const zj = await loadTable(opts.cache, ZH_URL, t.rel, { refresh: false, offline: opts.offline, log });
     const ej = await loadTable(opts.cacheEn, src.url, t.rel, { refresh: opts.refresh, offline: opts.offline, log });
     zh.push(t.pick ? t.pick(zj) : zj);
@@ -704,14 +709,14 @@ async function main() {
   }
   const seasonEn = en[0]?.act2 ? 'act2autochess' : en[0]?.act1 ? 'act1autochess' : 'none (no 盟约 season in this EN build)';
   let version = null;
-  const versionFile = join(opts.cacheEn, 'excel', 'data_version.txt');
-  if (!opts.offline && (opts.refresh || !existsSync(versionFile))) {
+  const versionFile = client ? join(opts.cacheEn, 'excel', 'data_version.txt') : '';
+  if (client && !opts.offline && (opts.refresh || !existsSync(versionFile))) {
     try {
       const res = await fetch(`${src.url}excel/data_version.txt`, { signal: AbortSignal.timeout(30_000) });
       if (res.ok) { await mkdir(dirname(versionFile), { recursive: true }); await writeFile(versionFile, await res.text()); }
     } catch { /* optional */ }
   }
-  try { version = (await readFile(versionFile, 'utf8')).trim(); } catch { /* optional */ }
+  try { version = versionFile ? (await readFile(versionFile, 'utf8')).trim() : null; } catch { /* optional */ }
   const data = {};
   for (const f of DATA_FILES) {
     const abs = join(opts.data, `${f}.json`);
@@ -724,7 +729,8 @@ async function main() {
     pr70: await readDict(join(ROOT, 'tools', 'i18n', 'fallback-pr70.json')),
     ui: await readDict(join(ROOT, 'public', 'i18n', 'en.json')),
   } : { ui: await readDict(join(ROOT, 'public', 'i18n', `${opts.lang}.json`)) };
-  const { overlay, report } = buildOverlay({ zh, en, data, fallback, lang: opts.lang, source: { id: opts.source, label: src.label, home: src.home, season: seasonEn } });
+  if (opts.dict) fallback.dict = JSON.parse(await readFile(opts.dict, 'utf8'));
+  const { overlay, report } = buildOverlay({ zh, en, data, fallback, lang: opts.lang, source: client ? { id: opts.source, label: src.label, home: src.home, season: seasonEn } : { id: 'dict', label: src.label } });
 
   // self-check: applying the overlay keeps every record's shape (strings replace strings only)
   let applied = 0;
@@ -737,10 +743,10 @@ async function main() {
   const rep = { ...report, source: overlay.meta.source, enDataVersion: version, applied, bytes: Buffer.byteLength(text) };
   await mkdir(dirname(opts.report), { recursive: true });
   await writeFile(opts.report, `${JSON.stringify(rep, null, 1)}\n`);
-  log(`  season in the ${opts.lang} build: ${seasonEn}${version ? ` · ${version.replace(/\s+/g, ' ')}` : ''}`);
+  if (client) log(`  season in the ${opts.lang} build: ${seasonEn}${version ? ` · ${version.replace(/\s+/g, ' ')}` : ''}`);
   log(`  ${report.pairs} zh→${opts.lang} source pairs; coverage per kind (translated / texts):`);
   for (const [kind, c] of Object.entries(report.coverage)) {
-    const fb = [c.remake && `remake ${c.remake}`, c.pr70 && `PR #70 ${c.pr70}`, c.ui && `UI ${c.ui}`].filter(Boolean).join(' · ');
+    const fb = [c.remake && `remake ${c.remake}`, c.pr70 && `PR #70 ${c.pr70}`, c.ui && `UI ${c.ui}`, c.dict && `dictionary ${c.dict}`].filter(Boolean).join(' · ');
     log(`    ${kind.padEnd(10)} ${String(c.translated).padStart(5)} / ${String(c.texts).padEnd(5)} ${String(c.pct).padStart(5)} %   official ${c.exact + c.template + c.composite} (exact ${c.exact} · template ${c.template} · composite ${c.composite})${fb ? ` · ${fb}` : ''}${c.notes ? ` · notes skipped ${c.notes}` : ''}`);
   }
   log(`  total ${report.totals.translated} / ${report.totals.texts} (${report.totals.pct} %), official ${report.totals.official}; ${Object.keys(overlay.names).length} names (${report.nameConflicts.length} with several ${opts.lang} forms)`);

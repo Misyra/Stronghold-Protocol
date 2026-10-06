@@ -3,9 +3,10 @@
 // The Chinese source string is the message id: `t('整备区已满')`, `t('还剩 {n} 秒', { n })`. A message without a
 // translation in the current language falls back to the Chinese text, so an untranslated string is never blank.
 // Chinese ('zh') is the default language; every other language is a pack (shared/i18nPacks.js): a file in
-// public/i18n/ that the client lists from /i18n/index.json and loads on demand (ui/lang.js). Nothing here knows a
-// language by name (the owner's decisions of 2026-10-05 and 2026-10-07: Chinese by default, a language is a file in the
-// language folder). docs/I18N.md explains how to add and translate strings and how to add a language.
+// public/i18n/ (or a pack folder, shared/packs.js) that the client lists from /packs/index.json and loads on demand
+// (ui/lang.js). Nothing here knows a language by name (the owner's decisions of 2026-10-05 and 2026-10-07: Chinese by
+// default, a language is a file in the language folder). docs/I18N.md explains how to add and translate strings and how
+// to add a language.
 //
 // Fallback chain per string: the chosen pack → its base (pt-BR → pt; zh-TW has none) → the packs its `_meta.fallback`
 // names (e.g. English) → the Chinese msgid (i18nPacks.js computeChain). A partial pack is fine: what it lacks falls
@@ -81,7 +82,7 @@ const notifyLangs = () => {
 };
 
 /**
- * Register languages (the client: the entries of /i18n/index.json; a pack's own `_meta` when it loads). A known code
+ * Register languages (the client: the language entries of /packs/index.json, shared/packs.js langMetaOf). A known code
  * is merged with what is there. Listeners of onLangsChange run once.
  * @param {Partial<LangMeta>[]} entries each with a `code`
  * @returns {number} languages registered

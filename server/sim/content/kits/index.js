@@ -145,6 +145,9 @@ export const OPERATOR_KIT_FILES = Object.freeze([
   'op-slent2.js',
   'op-haruka.js',
   'op-phatm2.js',
+  'op-ironmn.js',
+  'op-nasti.js',
+  'op-necras.js',
 ]);
 
 /**

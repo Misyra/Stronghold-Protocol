@@ -15,7 +15,9 @@
 // range, blocker first); every blocker whose attack hits enemies — a ranged operator on a melee tile included — may
 // always target the enemies it blocks, in range or not, whatever its facing, and targets them first (acquireTargets,
 // Battle.blockedTargets; user playtest #6: "阻挡了就一定要能打到"); a heal attack keeps selecting injured allies while
-// its unit blocks (PRTS 卫戍协议/帮助 "对于医疗干员（咒愈师分支除外），攻击目标为需要治疗的单位").
+// its unit blocks (PRTS 卫戍协议/帮助 "对于医疗干员（咒愈师分支除外），攻击目标为需要治疗的单位"). An ally target
+// (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon our operators attack, 嘲讽等级 −2) on the range comes after
+// every enemy (acquireTargets) and a ranged attack flies to it like to an enemy.
 // Unblocked ranged enemies attack allies within their radius and stand for each attack's clip — through its wind-up
 // and until the clip ends — then walk on (attackStand, GitHub #58; ATTACK_PAUSE after the strike when no clip is known;
 // 「不停止移动」 attackers never stop); the candidates pass the enemy's own rule (`e.profile.canTarget`) and are ordered
@@ -135,6 +137,15 @@ export function acquireTargets(b, u, prof) {
   // (0.7071) reaches past its own tile, so a blocked enemy may stand outside a short range or behind its facing (user
   // playtest #5 item 4); a ranged operator on a melee tile too (user playtest #6: "阻挡了就一定要能打到")
   if (u.blocking.length) for (const e of b.blockedTargets(u, prof)) if (!cands.includes(e)) cands.push(e);
+  // an ally target (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon with 嘲讽等级 −2) after every enemy
+  const extra = b._allyTargets && b._allyTargets.size ? b.allyTargetsInKeys(u.rangeKeys, u) : null;
+  if (extra && extra.length) {
+    if (prof.allInRange) return cands.concat(extra);
+    sortEnemyTargets(b, u, cands, prof.priority);
+    const all = cands.concat(extra);
+    const n = Math.max(1, Math.floor((prof.maxTargets || 1) + u.s.maxTargets));
+    return n >= all.length ? all : all.slice(0, n);
+  }
   if (!cands.length) return cands;
   if (prof.allInRange) return cands;
   const n = Math.max(1, Math.floor((prof.maxTargets || 1) + u.s.maxTargets));
@@ -168,9 +179,10 @@ export function performAttack(b, u, prof, targets, opts = null) {
     b._ev(['atk', u.id, t.id, vis]);
     if (isHeal) { doHeal(b, u, prof, t); continue; }
     const info = { isSkill, index: i, attackId };
-    if (ranged && t.side === 'enemy' && prof.projectile === 'boomerang') {
+    const foe = t.side === 'enemy' || b.isAllyTarget(t);
+    if (ranged && foe && prof.projectile === 'boomerang') {
       throwBoomerang(b, u, prof, t, info);
-    } else if (ranged && t.side === 'enemy') {
+    } else if (ranged && foe) {
       const speed = PROJECTILE_SPEEDS[prof.projectile] ?? PROJECTILE_SPEED;
       // projectiles land even if the shooter died meanwhile (damage is credited to it)
       b.addProjectile({ from: u, target: t, speed, visual: prof.projectile, source: u, hitDead: prof.splashRadius > 0,

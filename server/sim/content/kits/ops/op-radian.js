@@ -43,10 +43,14 @@
 // - S2 环形鳞地 (MANUAL, data DEFAULT, 25 s): +cnt held; she and her summons ATK +atk (base_attack_time 0: no change); 赛柯's
 //   attacks fire BULLET_OFFSETS (three bullets: its centre, 0.2 tile left-up and right-down — fixed, PRTS) that fly its token
 //   skill's attack@projectile_life_time s (0.6 at rank 4, 0.8 at rank 7: "子弹飞行距离+1"); its 3-2 range is unchanged at ranks
-//   4 / 7 (PRTS). Passive "会持续向前方发射子弹": 赛柯's data.
+//   4 / 7 (PRTS). Passive "会持续向前方发射子弹": 赛柯's data. Its cast: the data's DEFAULT, and — the owner's larger-range
+//   rule of 2026-10-06 (it acts through 赛柯's shots) — also a ground enemy on a standing summon's range (its 3-2: the
+//   bullets reach no air unit; shared/summoner.js summonTriggerArea, checked every tick).
 // - S3 手牵手 (MANUAL, data DEFAULT, 30 s): +cnt held; she and her summons ATK +atk; before each damage of her attacks and of
 //   any damage of her summons on an enemy: 停顿 `sluggish` s and 法术脆弱 (artsFragile damage_scale − 1, "同名效果取最高") for
 //   weak[magic][limit] s (a dodged hit still carries them [ASSUMED]). Passive "召唤物可部署在远程位…协同攻击": 桑特拉 (above).
+//   Its cast: the data's DEFAULT, and — the owner's larger-range rule of 2026-10-06 (it acts through her summons' damage)
+//   — also an enemy (air units too: S3 备注 "召唤物可对空") on a standing summon's range (summonTriggerArea).
 // - Modules SO-A 电弧特勤证章 / SO-B 新起点: their trait and talent parts act "在【岁的界园志异】中" only (the client gates them to
 //   the 集成战略 theme rogue_yan / validInGameTag roguelike): N/A here — the module talents the composed record carries
 //   (SO-A's hidden respawn_time / prob / sp, SO-B's attack@max_target and x-5 recall) are ignored; their attributes are in the
@@ -54,7 +58,7 @@
 //   its tests.
 
 import { num, talentBb, skillRec, up } from '../shared/tier1.js';
-import { summonDeck, holdBuff, tokenStat } from '../shared/summoner.js';
+import { summonDeck, holdBuff, tokenStat, summonTriggerArea } from '../shared/summoner.js';
 import { acquireTargets } from '../../../ai.js';
 import { aggregateMods } from '../../../buffs.js';
 import { dirVec } from '../../../dir.js';
@@ -79,6 +83,9 @@ const BULLET_OFFSETS = Object.freeze([[0, 0], [-0.2, 0.2], [0.2, -0.2]]);
 const LINK_SPEED = 50;
 const SHIELD_TYPES = Object.freeze(['phys', 'arts', 'true']);
 const KEY_BARRIER = 'radian:s1:barrier';
+/** The summons' areas a skill casts on (summonTriggerArea): 赛柯's bullets hit ground enemies only, S3's summons air too. */
+const GROUND = Object.freeze({ canHitFly: false });
+const ANY = Object.freeze({ canHitFly: true });
 const TAG_BULLET = 'radian:bullet';
 const TAG_LINK = 'radian:link';
 
@@ -268,6 +275,9 @@ export default {
         // 加油~ lives in the deck's install above (its 鼓舞 at each deployment and every second)
       ],
       install(battle, unit) {
+        // S2 / S3's cast: an enemy on a standing summon's range too (the owner's larger-range rule, 2026-10-06)
+        summonTriggerArea(battle, unit, S2, (t) => ({ keys: t.rangeKeys, profile: GROUND }));
+        summonTriggerArea(battle, unit, S3, (t) => ({ keys: t.rangeKeys, profile: ANY }));
         // S3 手牵手: before each damage of her attacks / of her summons' damage on an enemy, 停顿 + 法术脆弱
         if (picked !== S3) return;
         const slug = num(b3.sluggish), dur = num(b3['weak[magic][limit]']), frag = num(b3.damage_scale, 1) - 1;

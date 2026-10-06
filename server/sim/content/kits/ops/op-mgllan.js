@@ -38,7 +38,9 @@
 // - S1 高效制冷模块 (MANUAL, data DEFAULT, 15 s): passive (while S1 is picked and not running) every attack@interval (3) s from
 //   her deployment / the skill's end, every enemy (air units too) on her attack range and on each of her standing drones'
 //   ranges (龙腾.F: x-4) takes 停顿 attack@sluggish s; while it runs, every 3 s from the cast, 束缚 attack@frozen_duration s
-//   instead. It acts while she is stunned or silenced (the buff is neither — isStunnable / isSilenceable 0).
+//   instead. It acts while she is stunned or silenced (the buff is neither — isStunnable / isSilenceable 0). Its cast:
+//   the data's DEFAULT, and — the owner's larger-range rule of 2026-10-06 (its 束缚 acts through the drones' ranges) —
+//   also an enemy (air units too) on a standing drone's range (shared/summoner.js summonTriggerArea, checked every tick).
 // - S2 激光开采模块 (MANUAL, data DEFAULT, 15 s): she and her drones ASPD +attack_speed; a 龙腾.L strikes every enemy on its tile
 //   (群体) while it runs. S3 武装打击模块 (MANUAL, data DEFAULT, 15 s): she and her drones ATK +atk; 龙腾.A's blast radius
 //   BLAST_S3 (1.25). Passive parts ("无人机可以部署在近战位 / 远程位"): placement — the piece's position, nothing in battle.
@@ -51,10 +53,12 @@
 //   drones' lower costs (the module variant); stage 2+ T1 "最多同时部署4个", stage 3 "属性更强的" (the module variant's stats).
 
 import { num, talentBb, traitBb, moduleOn, skillRec, up } from '../shared/tier1.js';
-import { summonDeck, holdBuff, tokenStat } from '../shared/summoner.js';
+import { summonDeck, holdBuff, tokenStat, summonTriggerArea } from '../shared/summoner.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
 
+/** S1's selection on her range and her drones' (air units too). */
+const ANY = Object.freeze({ canHitFly: true });
 const S1 = 'skchr_mgllan_1';
 const S2 = 'skchr_mgllan_2';
 const S3 = 'skchr_mgllan_3';
@@ -171,6 +175,8 @@ export default {
       install(battle, unit) {
         // S1 高效制冷模块: every attack@interval s, 停顿 (passive) / 束缚 (running) on her range and her drones' ranges
         if (picked !== S1) return;
+        // its cast: an enemy on a standing drone's range too (the owner's larger-range rule, 2026-10-06)
+        summonTriggerArea(battle, unit, S1, (d) => ({ keys: d.rangeKeys, profile: ANY }));
         const iv = num(b1['attack@interval'], 3);
         if (!(iv > 0)) return;
         const restart = (c) => { if (c.unit === unit) unit.mem.mgllanPulseAt = battle.time + iv; };
@@ -186,7 +192,7 @@ export default {
           if (!(duration > 0)) return;
           const done = new Set();
           for (const src of [unit, ...(unit.mem.summonDeck?.standing() ?? [])]) {
-            for (const e of battle.enemiesInKeys(src.rangeKeys, src, { canHitFly: true })) {
+            for (const e of battle.enemiesInKeys(src.rangeKeys, src, ANY)) {
               if (done.has(e)) continue;
               done.add(e);
               battle.applyStatus(e, key, { duration, source: src });

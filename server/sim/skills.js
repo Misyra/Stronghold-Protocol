@@ -8,7 +8,8 @@
 // Trigger rules (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; data: tools/build-data.mjs resolveTrigger):
 //   DEFAULT — the basic strategy: ready + about to attack/heal + enemy / injured ally in the INITIAL range (or blocked by
 //   a melee unit) — or, checked every tick, an enemy inside one of the content trigger ranges added with
-//   addTriggerRange: 海嗣, 流形;
+//   addTriggerRange: 海嗣, 流形, 谬因 S2's beam, the summons' areas a skill acts through (麦哲伦 S1, 令 S3, 电弧 S2 / S3 —
+//   the owner's larger-range rule, 2026-10-06: kits/shared/summoner.js summonTriggerArea);
 //   SKILL_RANGE — a MANUAL skill with a 技能范围 of its own: "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其
 //   不可选中）时释放技能": any living enemy on the trigger grid (the skill range; stealthed / untargetable / flying ones
 //   too), checked every tick, no attack needed. Kit option `trigger.allies` (+ `hpAtMost`, default 1): a healable,
@@ -135,9 +136,12 @@ export class SkillRuntime {
 
   /**
    * Extra DEFAULT-trigger range (海嗣 "攻击范围视为自身攻击范围的延伸", 流形): `fn(battle, unit)` returns a list whose
-   * entries are ally units (their current `rangeKeys` count while they are on the field) or arrays of absolute tile
-   * keys. A targetable enemy (flyers included) on those tiles satisfies the DEFAULT rule (and unknown DEFAULT-like
-   * rules); it is checked every tick, since the unit itself may have nothing to attack. Returns an unregister fn.
+   * entries are ally units (their current `rangeKeys` count while they are on the field), arrays of absolute tile
+   * keys, or `{ keys, profile }` — tile keys with the enemy profile the effect selects by (`canHitFly` false: ground
+   * enemies only — the owner's larger-range rule through a summon's area, kits/shared/summoner.js summonTriggerArea;
+   * 0.2.0 WV, additive). A targetable enemy (flyers included unless the entry's profile says otherwise) on those tiles
+   * satisfies the DEFAULT rule (and unknown DEFAULT-like rules); it is checked every tick, since the unit itself may
+   * have nothing to attack. Returns an unregister fn.
    */
   addTriggerRange(fn) {
     if (typeof fn !== 'function') return () => {};
@@ -153,10 +157,11 @@ export class SkillRuntime {
       const list = b._safe(() => fn(b, u), 'skill.triggerRange', u);
       if (!list || typeof list[Symbol.iterator] !== 'function') continue;
       for (const x of list) {
-        let keys = null;
+        let keys = null, prof = TRIGGER_PROFILE;
         if (Array.isArray(x)) keys = x;
         else if (x && typeof x === 'object' && x.side === 'ally' && x.alive && x.deployed && !x.hidden) keys = x.rangeKeys;
-        if (keys && keys.length && b.enemiesInKeys(keys, u, TRIGGER_PROFILE).length) return true;
+        else if (x && typeof x === 'object' && Array.isArray(x.keys)) { keys = x.keys; if (x.profile) prof = x.profile; }
+        if (keys && keys.length && b.enemiesInKeys(keys, u, prof).length) return true;
       }
     }
     return false;

@@ -225,6 +225,50 @@ export function tc(context, msgid, params) {
   return t(id, params);
 }
 
+/** A tParts() param kept as it is: an object that is not a `{ dn }` name (a vnode), or an array holding one. */
+const isMarkup = (v) => !!v && typeof v === 'object' && !own(v, 'dn') && (!Array.isArray(v) || v.some((x) => isMarkup(x)));
+
+/**
+ * A message as pieces for a renderer, for a sentence with markup inside (「第 <b>14</b> 回合」): the translation split at
+ * its placeholders; a param that is markup (a vnode, or an array holding vnodes) is kept as it is, the others render as
+ * in t() ({ dn } names, lists, {n|one|other}). Adjacent text joins, empty text is dropped, so the Chinese pieces are the
+ * text around the markup exactly as written before:
+ *   html`<span>${tParts('第 {r} 回合 · 最终攻势', { r: html`<b class="num">${n}</b>` })}</span>`
+ * @param {unknown} msgid
+ * @param {Record<string, unknown> | unknown[] | null} [params]
+ * @returns {unknown[]} strings and the markup params, in the order of the translation
+ */
+export function tParts(msgid, params) {
+  const id = msgid == null ? '' : String(msgid);
+  let text = id;
+  if (current !== DEFAULT_LANG) {
+    const tr = catalogs.get(current)?.get(id);
+    if (tr) text = tr;
+  }
+  /** @type {unknown[]} */
+  const out = [];
+  const push = (s) => {
+    if (s === '') return;
+    if (typeof out[out.length - 1] === 'string') out[out.length - 1] += s;
+    else out.push(s);
+  };
+  let last = 0;
+  if (params && typeof params === 'object') {
+    for (const m of text.matchAll(PLACEHOLDER)) {
+      const [whole, key, one, other] = m;
+      if (!own(params, key)) continue;
+      push(text.slice(last, m.index));
+      const v = /** @type {any} */ (params)[key];
+      if (one !== undefined) push(Number(v) === 1 ? one : other);
+      else if (isMarkup(v)) out.push(v);
+      else push(renderValue(v, current, nameResolver));
+      last = m.index + whole.length;
+    }
+  }
+  push(text.slice(last));
+  return out;
+}
+
 /**
  * Mark a string as a msgid without translating it (module-level tables: translate with t() where it is shown).
  * @template {string} S

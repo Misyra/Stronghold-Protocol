@@ -2,7 +2,7 @@
 // tools/i18n.mjs — UI string tooling for the gettext-style i18n (shared/i18n.js, public/i18n/<lang>.json; docs/I18N.md).
 //
 //   node tools/i18n.mjs extract [paths…] [--list] [--json]
-//       per file: the msgids passed to t() / tc() / N_() / msg(), and the Chinese literals still shown untranslated
+//       per file: the msgids passed to t() / tc() / tParts() / N_() / msg(), and the Chinese literals still shown untranslated
 //       (string literals, template literals, html`` text and attribute values outside those calls; comments,
 //       console.* and Error messages are ignored). --list prints each literal with its line.
 //   node tools/i18n.mjs check [paths…] [--lang en] [--strict] [--stale]
@@ -34,14 +34,14 @@ const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
 const DEFAULT_ROOTS = ['public/js', 'shared', 'server'];
 const SKIP_DIRS = new Set(['node_modules', 'vendor', 'assets', 'fonts', 'dev']);
 /** Calls whose first argument is a msgid (tc: the second, keyed `context::msgid`). */
-const MSGID_CALLS = new Set(['t', 'N_', 'msg']);
+const MSGID_CALLS = new Set(['t', 'tParts', 'N_', 'msg']);
 /**
  * Server messaging methods (m.toast, ctx.toast, this.tickerText …, called on an object): a Chinese string literal they
  * get is sent as text and translated by the client as a msgid (main.js translateWire).
  */
 const SERVER_TEXT_CALLS = new Set(['toast', 'tickerText', 'ticker']);
 /** Calls whose arguments are never UI text to wrap. */
-const SKIP_CALLS = new Set(['t', 'tc', 'N_', 'msg', 'tName', 'dn', 'format', 'renderMessage', 'require', 'import']);
+const SKIP_CALLS = new Set(['t', 'tc', 'tParts', 'N_', 'msg', 'tName', 'dn', 'format', 'renderMessage', 'require', 'import']);
 /** String methods: a literal argument is data, not display text. */
 const STRING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'indexOf', 'lastIndexOf', 'replace', 'replaceAll', 'split',
   'match', 'matchAll', 'test', 'search', 'has', 'get', 'set', 'delete', 'localeCompare', 'padStart', 'padEnd', 'join', 'add']);
@@ -560,7 +560,7 @@ async function cmdExtract(flags) {
   }
   const cat = readCatalog(flags.lang || 'en');
   const ready = rows.reduce((n, r) => n + r.literals.filter((l) => typeof cat[l.msgid] === 'string' && cat[l.msgid]).length, 0);
-  console.log(`total: ${tCount} msgids in t() / tc() / N_() / msg(); ${litCount} Chinese literals not wrapped, in ${rows.filter((r) => r.untranslated).length} files`
+  console.log(`total: ${tCount} msgids in t() / tc() / tParts() / N_() / msg(); ${litCount} Chinese literals not wrapped, in ${rows.filter((r) => r.untranslated).length} files`
     + ` (${ready} of them already translated in public/i18n/${flags.lang || 'en'}.json, ready for the codemod)`);
 }
 

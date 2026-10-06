@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  t, tc, N_, setLang, getLang, onLangChange, addMessages, setMessages, hasMessage, normalizeLang, format, setNameResolver,
+  t, tc, tParts, N_, setLang, getLang, onLangChange, addMessages, setMessages, hasMessage, normalizeLang, format, setNameResolver,
   tName, dn, msg, renderMessage, wireMessage, translateWire, DEFAULT_LANG,
 } from '../shared/i18n.js';
 import { templateMsgid, paramName, quote, codemodSource, scanSource } from '../tools/i18n.mjs';
@@ -54,6 +54,22 @@ test('tc(): a context key wins, else the plain msgid; Chinese shows the msgid', 
   assert.equal(tc('dialog', '关闭'), 'Close');
   assert.equal(t('关闭'), 'Close');
   assert.equal(N_('标记'), '标记', 'N_ only marks a msgid');
+});
+
+test('tParts(): a sentence with markup inside — the translation split at its placeholders, object params kept as they are', () => {
+  const b = { type: 'b', props: { children: 14 } }; // a vnode stand-in
+  addMessages('en', { '第 {r} 回合 · 最终攻势': 'Final Assault in round {r}', '{n} 名{who}已调整': '{n} {n|operator|operators} of {who} adjusted' });
+  assert.deepEqual(tParts('第 {r} 回合 · 最终攻势', { r: b }), ['第 ', b, ' 回合 · 最终攻势'], 'zh: the text around the markup as written');
+  assert.deepEqual(tParts('只有文字'), ['只有文字']);
+  assert.deepEqual(tParts('{a}{b}', { a: '甲', b: 2 }), ['甲2'], 'plain values join the text around them');
+  assert.deepEqual(tParts('{r}', { r: b }), [b], 'empty text is dropped');
+  assert.deepEqual(tParts('留着 {x}', {}), ['留着 {x}'], 'a missing value keeps the placeholder');
+  assert.deepEqual(tParts('禁用{names}盟约', { names: [b, b] }), ['禁用', [b, b], '盟约'], 'an array of vnodes is markup too');
+  assert.deepEqual(tParts('{names}', { names: ['甲', dn('乙')] }), ['甲、乙'], 'an array of texts is a list');
+  setLang('en');
+  assert.deepEqual(tParts('第 {r} 回合 · 最终攻势', { r: b }), ['Final Assault in round ', b], 'the English word order');
+  setNameResolver((name) => ({ 阿米娅: 'Amiya' })[name] || name);
+  assert.deepEqual(tParts('{n} 名{who}已调整', { n: 1, who: dn('阿米娅') }), ['1 operator of Amiya adjusted'], 'plurals and data names as in t()');
 });
 
 test('data names: { dn } params and tName go through the resolver, only outside Chinese; player names never do', () => {
@@ -160,4 +176,8 @@ test('tools/i18n.mjs: msgids of template literals name their params; the codemod
   assert.match(out.src, />\$\{t\('你好'\)\} \$\{name \|\| t\('博士'\)\} \$\{t\('世界'\)\}<b>/);
   assert.match(out.src, /<\/b> \$\{t\('回合'\)\}<\/p>/);
   assert.equal(out.manual.length, 1);
+  // tParts() is a msgid call: its msgid is extracted, the text inside is not a literal left to wrap
+  const scanned = await scanSource("const v = html`<span>${tParts('第 {r} 回合', { r: html`<b>${n}</b>` })}</span>`;", 'x.js');
+  assert.deepEqual(scanned.msgids.map((m) => [m.msgid, m.via]), [['第 {r} 回合', 'tParts']]);
+  assert.deepEqual(scanned.literals.filter((l) => !l.reason), []);
 });

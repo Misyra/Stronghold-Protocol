@@ -17,11 +17,14 @@ export class BattleBlocking {
    * ties → the first in row-then-column scan order. The air radius grows with the blocker's 阻挡半径倍率 (PRTS 游戏数据基础
    * "飞行阻挡半径 = 0.8944 × 阻挡半径倍率"; mod `blockRadiusScale` = 倍率 − 1: 凯尔希·思衡托's 遗尘守望 / S1, +0.23); ground
    * blocking ignores it (PRTS 数值范围 "对地面阻挡的单位不生效"). Below 1.5 tiles the 3×3 scan still finds every blocker.
+   * Never blocked: an enemy holding 不可阻挡 (PRTS 异常效果 BLOCK_FREE 「无法阻挡/被阻挡，自动解除阻挡」) — the flag itself
+   * (恐惧 / 诱导 carry it), 浮空, and 沉睡 (SLEEPING = 无法行动+无敌+不可阻挡: a sleeper takes no block slot, DESIGN §24.9);
+   * once it wakes it is blocked again only by a blocker with room.
    */
   _checkBlock(e) {
     if (e.blockedBy || e.hidden || !e.alive) return !!e.blockedBy;
     const f = e.s.flags;
-    if (f.unblockable || f.levitate || f.fear) return false;
+    if (f.unblockable || f.levitate || f.fear || f.sleep) return false;
     const r0 = Math.round(e.y), c0 = Math.round(e.x);
     const w = e.blockWeight ?? 1;
     let u = null, bd = Infinity;

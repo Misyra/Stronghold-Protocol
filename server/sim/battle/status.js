@@ -143,7 +143,8 @@ export class BattleStatus {
    * （7级~专精二）…的虚弱（仅影响叠加优先级，不影响实际效果）"; other statuses refresh to the longer duration. 诱导 (`attract`) walks the enemy to `point`
    * ([r, c] or {x, y}; default the source's tile — a new application moves the point); 恐惧 (`fear`) stamps where it
    * was applied and from where (fear.js stampFear: the fan of 恐惧可达地块 its movement uses). A stunned/sleeping operator
-   * releases the enemies it blocks; a feared/levitated/unblockable/attracted enemy is released by its blocker.
+   * releases the enemies it blocks; a feared/levitated/unblockable/attracted/sleeping enemy is released by its blocker
+   * (沉睡 = 无法行动+无敌+不可阻挡, PRTS 异常效果: the slot frees for the next enemy, the sleeper stays put — DESIGN §24.9).
    * `statusApplied` reports the final duration and `entered` (the target did not carry the status before) — or, with
    * `reenter`, entered anyway: a pulse whose own short status the caller re-applies as a fresh one each time (缇缇 S2's
    * sleep ward, DESIGN §24.8); the buff itself is refreshed as usual.
@@ -213,7 +214,7 @@ export class BattleStatus {
       if (key === 'fear' && b && target.side === 'enemy') stampFear(this, target, b, source);
     }
     const f = tpl.flags;
-    if (f && target.side === 'enemy' && (f.levitate || f.unblockable || f.fear)) this._unblock(target);
+    if (f && target.side === 'enemy' && (f.levitate || f.unblockable || f.fear || f.sleep)) this._unblock(target);
     if (f && target.side === 'ally' && f.noBlock) this.releaseBlocked(target);
     if (this._hooks.statusApplied) this.emit('statusApplied', { source, target, status: key, duration, value, entered });
     return true;

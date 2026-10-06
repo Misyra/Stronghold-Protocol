@@ -795,10 +795,10 @@
         ["p1","~3","token","token_10030_mlyss_wtrman",null,null,1041,1,39,0,203,0,0,3,null]
       ],
       "enemies": {"enemy_1288_duskls":[11,11,0,210,63415],"enemy_1288_duskls_2":[7,7,0,0,48419],"enemy_1292_duskld":[5,5,0,1224,57650]},
-      "hooks": [1,38,2463,282,321,531,531,506,23,25,19,15,0,11343,240,29,23,0,1,53,0,0,0],
+      "hooks": [1,38,2463,282,321,531,531,506,23,25,19,15,0,11343,240,30,23,0,1,53,0,0,0],
       "events": {"atk":345,"deploy":12,"die":25,"dmg":531,"engage":12,"fx":192,"skill":34,"spawn":38,"status":429},
       "fx": {"aoe":2,"copy":1,"crit":4,"dp":2,"ember":23,"iceSpike":64,"palsy":2,"sleep":3,"split":3,"weightless":2,"zone":86},
-      "snaps": "d611730f 72f36081 20e513c9 9b1492ea 30a7bcff a2282bf5 a4da67f3 a9100f8f 355ac0d2"
+      "snaps": "d611730f 72f36081 20e513c9 9b1492ea 30a7bcff a2282bf5 ab6d9c8c 510e3001 1eb34354"
     },
     "bond-miraShip-low": {
       "about": "奇迹 low: tier 1 layers 1; chess_char_4_01_a chess_char_2_11_a chess_char_3_18_a chess_char_3_01_a chess_char_3_17_a chess_char_3_20_a chess_char_3_21_a chess_char_4_02_a",

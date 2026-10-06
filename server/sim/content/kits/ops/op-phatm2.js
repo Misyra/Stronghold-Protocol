@@ -56,8 +56,9 @@
 //   phatm2_s_3[token_cooldown].interval (30) s more; her leaving withdraws them.
 //   迷狂牢笼 (kit below): 孤立 + 禁疗, no attack, 迷彩 (only the enemies it blocks target it), every damage it takes from
 //   one of them is 1, any other damage (无来源 too) none — 3 HP: three hits; at its spawn / refresh it blocks every unblocked
-//   enemy on its tile, ground or air, whatever its capacity, back to full HP, block count = their weight; it takes no other
-//   enemy by contact (flag `noNewBlock`); with nobody blocked it leaves at once.
+//   enemy on its tile, ground or air, whatever its capacity — none holding 不可阻挡 (恐惧, 诱导, 浮空, 沉睡: DESIGN §24.9) —,
+//   back to full HP, block count = their weight; it takes no other enemy by contact (flag `noNewBlock`); with nobody blocked
+//   it leaves at once.
 // Statuses: 束缚 (S1), 停顿 + 诱导 (本能的召唤); 神经损伤 bursts (engine: 3 麻痹 + 6000 元素伤害).
 
 import { num, up, traitBb, talentBb, skillRec, once } from '../shared/tier1.js';
@@ -195,13 +196,17 @@ function cageKit() {
   };
 }
 
-/** A 牢笼 blocks every unblocked enemy on its tile (spawn / refresh): full HP again, block count = their weight. */
+/**
+ * A 牢笼 blocks every unblocked enemy on its tile (spawn / refresh): full HP again, block count = their weight. Never one
+ * holding 不可阻挡 — as Battle._checkBlock: the flag (恐惧 / 诱导 carry it), 浮空, 沉睡 (SLEEPING = 无法行动+无敌+不可阻挡, DESIGN
+ * §24.9: a sleeper on its tile stays free and is not counted).
+ */
 function cageBlock(battle, cage) {
   let added = 0;
   for (const e of battle.enemies) {
     if (!e.alive || e.hidden || e.blockedBy || Math.round(e.y) !== cage.tileR || Math.round(e.x) !== cage.tileC) continue;
     const f = e.s.flags;
-    if (f.unblockable || f.levitate || f.fear) continue;
+    if (f.unblockable || f.levitate || f.fear || f.sleep) continue;
     e.blockedBy = cage;
     cage.blocking.push(e);
     e.moving = false;

@@ -230,8 +230,11 @@ ground enemy (PRTS 围墙 / 围栏 地形机制 "部署在其中的单位，若�
 unit; it walks on from there (found while checking community report F4 after 0.1.0, 深巡 on a fenced tile: 薄绿 S2 held
 the enemies she dragged against the fence; test/sim/feedback1f-fence.test.js). Air blocking (blockFly against flyers)
 stays [ASSUMED: PRTS restricts the rule to 地面阻挡], and a unit on a fenced tile still attacks whatever stands on its
-range tiles. It is checked every tick for every unblocked enemy, moving or
-not: an enemy that overlaps an operator when its blocker dies / is withdrawn / is stunned, or when the operator's
+range tiles. Never blocked: an enemy holding 不可阻挡 (PRTS 异常效果 BLOCK_FREE 「无法阻挡/被阻挡，自动解除阻挡」) —
+the `unblockable` flag (恐惧, 诱导 and many enemy abilities carry it), 浮空, and 沉睡 (SLEEPING = 无法行动+无敌+不可阻挡: an
+enemy falling asleep is released at once, its slot freeing for the next enemy, and stays where it is; once awake it is
+blocked again only by a blocker with room, else it walks on — DESIGN §24.9). It is checked every tick for every
+unblocked enemy, moving or not: an enemy that overlaps an operator when its blocker dies / is withdrawn / is stunned, or when the operator's
 blocked enemy dies, is taken over at once; an enemy that finds no room walks on (pass-through). Several blockers in
 contact → the nearest [ASSUMED]. A head-on enemy therefore stops at contact, ~0.71 tile from the blocker's centre, on the
 tile in front of it (PRTS 作战机制: a blocked enemy's collider does not enter the blocker's tile; the official few
@@ -436,7 +439,7 @@ Guarantees content can rely on (pinned by `test/sim/robustness.test.js`):
 - **Runaway content.** At most `MAX_ALIVE_ENEMIES` (600) living enemies per field (`spawnEnemy` returns **null** beyond —
   content must handle it); a SpawnSpec `count` is capped the same way and `time: Infinity` spawns are never scheduled.
 - **Movement.** Route legs outside the rect are clamped onto it (h07_01's extra fly route runs along row 6, outside the
-  boss rect: without the clamp the flyer hovered at the border forever). An enemy that gains `unblockable`/`levitate`
+  boss rect: without the clamp the flyer hovered at the border forever). An enemy that gains `unblockable`/`levitate`/`sleep`
   through a plain buff is released by its blocker on its next update.
 - **Listener hygiene.** When a unit is removed for good (enemy killed/leaked, token expired or dead, device destroyed,
   permanent retreat) its hooks and periodic `every` timers registered with `{ owner: unit }` are dropped at the end of
@@ -591,7 +594,7 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `stun` | cannot act / move; **a stunned operator blocks nothing** (its blocked enemies are released: taken over by another operator in contact with room, else they walk on — §1.2 Blocking) | – |
 | `freeze` | stun; **enemies** also RES −15 | – |
 | `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` for max(remaining cold, the incoming cold after 抵抗) — PRTS 术语释义 寒冷 「持续时间取双方之中最高」 (`COLD_FREEZE_DURATION` 3 s only when neither side has a duration; unless frozen-immune). [ASSUMED] the one catalogue cold uses that 友方 sentence for an enemy-applied cold too | – |
-| `sleep` | 无敌且无法行动: inactive, untargetable, **takes no damage** (unless the attacker profile has `hitSleep` or the damage `ignoreSleep`), blocks nothing | – |
+| `sleep` | 无敌且无法行动: inactive, untargetable, **takes no damage** (unless the attacker profile has `hitSleep` or the damage `ignoreSleep`), blocks nothing; PRTS 异常效果 SLEEPING = 无法行动+无敌+**不可阻挡**: an enemy asleep **cannot be blocked and takes no block slot** — its blocker lets go at once (the slot frees for the next enemy), it stays where it is, and when it wakes it is blocked again only by a blocker with room, else it walks on (DESIGN §24.9) | – |
 | `slow` | moveMul 1 − value (*strongest*) | default 0.5 |
 | `sluggish` (停顿) | moveMul 0.2 | – |
 | `bind` (束缚) | cannot move | – |
@@ -614,7 +617,8 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `defDown` / `resDown` | defMul 1 − value / RES −value (*strongest*) | 0.3 / 20 |
 
 Unknown keys become a flag buff `{ [key]: true }`. Flags `noBlock` (blocks nothing) and `tremble` exist for custom buffs;
-a custom buff with `flags.sleep` also blocks nothing and is untargetable/invulnerable like the status. `noNewBlock` = the
+a custom buff with `flags.sleep` also blocks nothing, is untargetable/invulnerable and, on an enemy, cannot be blocked
+(its blocker lets go on the enemy's next update: `ai.js updateEnemy`) like the status. `noNewBlock` = the
 unit takes no new enemy by contact (`Battle._blockerFor`) and keeps the blocks it holds — content hands it its blockees
 (酒神's 迷狂牢笼, kits/ops/op-phatm2.js: PRTS "只在生成/刷新时判定阻挡新的敌人"); `undying` = a content 不死 window (淬羽赫默 S3,
 kits/ops/op-slent2.js — its own `fatal` hook holds it), which items/battle.js `holdsUndying` reports like 坚固维式重锤's.

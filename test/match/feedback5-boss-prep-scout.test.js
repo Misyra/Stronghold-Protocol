@@ -43,7 +43,7 @@ test('a scout of a boss round\'s prep is the boss field: the player\'s half (mir
   assert.deepEqual([u.y, u.x, u.dir, u.facing], [want.row, want.col, 'LEFT', -1], 'mirrored onto the right half, still facing the leader');
   const bench = meta.units.find((x) => x.y === 0);
   assert.ok(bench && bench.x === 20 - 2, `the hand row on the half's bench row (boss row 0, mirrored): ${JSON.stringify(bench)}`);
-  for (const x of meta.units) assert.ok(x.y >= 0 && x.y <= 5 && x.x >= 10 && x.x <= 20, `on the right half: ${x.y},${x.x}`);
+  for (const x of meta.units.filter((x) => x.ownerId === 'p_1')) assert.ok(x.y >= 0 && x.y <= 5 && x.x >= 10 && x.x <= 20, `on the right half: ${x.y},${x.x}`);
   // the leader stands at its spawn tile: the client's leaderStand finds it in the scout's nextEnemies
   const stand = leaderStand(meta.nextEnemies, () => null, (x, y) => [[y, x]]);
   assert.ok(stand && stand.entry.boss && stand.row >= 0 && stand.row <= 5, `the leader with its spawn tile: ${JSON.stringify(stand?.entry)}`);
@@ -55,7 +55,9 @@ test('a scout of a boss round\'s prep is the boss field: the player\'s half (mir
   assert.deepEqual(m.handle('p_3', { t: 'g.watch', fieldId: 'n:p_0' }), { ok: true });
   const left = h.lastTo('p_3', 'm.field');
   assert.deepEqual([left.kind, left.side], ['boss', 'L']);
-  for (const x of left.units) assert.ok(x.x <= 10, 'the left half');
+  // its own pieces on the left half (since item 51 the partner p_1's board stands on the right half beside them)
+  for (const x of left.units.filter((x) => x.ownerId === 'p_0')) assert.ok(x.x <= 10, 'the left half');
+  assert.ok(left.units.some((x) => x.ownerId === 'p_1' && x.uid === onBoard.uid && x.x === want.col), 'p_1\'s piece on the right half');
   m.dispose();
 });
 

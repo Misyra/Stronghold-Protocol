@@ -240,13 +240,18 @@ export class MatchWatch {
 
   /** Board signature of a prep scout view (board, hand and temp rows: a shop or funds change is not a board change).
    *  Hand / temp entries carry their slot — `prepFieldMeta` draws x from it, so a piece moved to another slot is a
-   *  change (review of PR #129). */
+   *  change (review of PR #129). In a boss round's prep the pair partner's board is part of the view (item 51). */
   _prepScoutSig(ps) {
     const parts = [];
-    for (const { r, c, piece } of boardOrder(ps.board)) {
-      const items = piece.kind === 'chess' && Array.isArray(piece.items) ? piece.items.map((it) => `${it.uid}:${it.id}`).join(',') : '';
-      parts.push(`${piece.uid}:${piece.id}@${r},${c}:${pieceDir(piece)}:${items}`);
-    }
+    const boardSig = (q) => {
+      for (const { r, c, piece } of boardOrder(q.board)) {
+        const items = piece.kind === 'chess' && Array.isArray(piece.items) ? piece.items.map((it) => `${it.uid}:${it.id}`).join(',') : '';
+        parts.push(`${piece.uid}:${piece.id}@${r},${c}:${pieceDir(piece)}:${items}`);
+      }
+    };
+    boardSig(ps);
+    const m = this._bossMateOf(ps);
+    if (m) { parts.push(`|mate:${m.mate.playerId}:${m.side}`); boardSig(m.mate); }
     for (let i = 0; i < ps.hand.length; i++) {
       const piece = ps.hand[i];
       if (!piece) continue;

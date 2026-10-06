@@ -184,17 +184,17 @@ export class MatchViews {
     return previewOf([...this.wave.spawns, ...bounty]);
   }
 
-  /** UnitInfo list of a player's board and hand (prep scouting): board pieces on their tiles, held pieces on the
-   *   hand row (row 7) — the scout renders like the own prep bench. */
-  prepFieldMeta(ps) {
+  /** A 自选 piece's pick (like the sim's UnitInfo.diy): a scout's card composes the operator from it (shared/diy.js). */
+  _diyInfo(ps, piece) {
+    const p = piece.kind === 'chess' && typeof ps.diyPickOf === 'function' ? ps.diyPickOf(piece.id) : null;
+    return p ? { charId: p.charId, skillIndex: p.skillIndex, uniEquipId: p.uniEquipId } : undefined;
+  }
+
+  /** UnitInfo of a player's board pieces on their (board) tiles — a prep scout's board, the boss partner's (bossMateView). */
+  _prepBoardUnits(ps) {
     const units = [];
-    // the scouted player's own view of the data (0.2.0 自选编队: its slotted DIY slots are its operators — player/diy.js)
+    // the player's own view of the data (0.2.0 自选编队: its slotted DIY slots are its operators — player/diy.js)
     const gd = ps.gd || this.gd;
-    // a 自选 piece's pick (like the sim's UnitInfo.diy): the scout's card composes the operator from it (shared/diy.js)
-    const diyOf = (piece) => {
-      const p = piece.kind === 'chess' && typeof ps.diyPickOf === 'function' ? ps.diyPickOf(piece.id) : null;
-      return p ? { charId: p.charId, skillIndex: p.skillIndex, uniEquipId: p.uniEquipId } : undefined;
-    };
     for (const { r, c, piece } of boardOrder(ps.board)) {
       const chess = piece.kind === 'token' ? null : gd.chess(piece.id);
       // 0.2.0 补位: a chess this player fields as its stand-in is deployed with the stand-in's body — name, art, max HP,
@@ -214,9 +214,42 @@ export class MatchViews {
         // the equipped items (like the sim's UnitInfo): a 变形同构体 wearer shows as a member of the bond it grants
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: rec && rec.standInFor ? rec.standInFor : undefined,
-        diy: diyOf(piece),
+        diy: this._diyInfo(ps, piece),
       });
     }
+    return units;
+  }
+
+  /**
+   * A boss round's prep (最终攻势 / 隐秘核心: the pairing planned, no field up yet): the other player of `ps`'s pair as
+   * { mate: PlayerState, side: its half 'L' | 'R' }, else null (a lone player, any other phase).
+   */
+  _bossMateOf(ps) {
+    if (!ps || !this.bossWaves || this.fields.length) return null;
+    const g = this.bossGroupOf(ps);
+    const pid = g && g.players.length > 1 ? g.players.find((x) => x !== ps.playerId) : null;
+    const mate = pid ? this.players.get(pid) : null;
+    return mate ? { mate, side: g.side === 'R' ? 'L' : 'R' } : null;
+  }
+
+  /**
+   * m.private `bossMate` (community report of 2026-10-06, item 51): in a boss round's prep the partner's board on its
+   * half of the boss field, as the battle will place it (bossFieldPlacement: the right half mirrored, RIGHT ↔ LEFT) — the
+   * own prep view draws it beside the own half, read-only, as the official prep shows both players of a pair together
+   * (the official client knows every board: ChangePositionDn { boardStatus }, research 09). Null otherwise.
+   * @returns {{ playerId: string, side: 'L'|'R', units: object[] } | null}
+   */
+  bossMateView(ps) {
+    const m = ps && ps.alive ? this._bossMateOf(ps) : null;
+    if (!m) return null;
+    return { playerId: m.mate.playerId, side: m.side, units: this._prepBoardUnits(m.mate).map((u) => this._onBossHalf(u, m.side)) };
+  }
+
+  /** UnitInfo list of a player's board and hand (prep scouting): board pieces on their tiles, held pieces on the
+   *   hand row (row 7) — the scout renders like the own prep bench. */
+  prepFieldMeta(ps) {
+    const units = this._prepBoardUnits(ps);
+    const gd = ps.gd || this.gd;
     // the hand (整备区) and the 临时整备区 scout exactly like the own prep bench renders them: pieces as units on
     // their rows (hand row 7, col = hand slot; temp row 8, cols 4..8 = temp slots; no dir — bench pieces face right),
     // items included (the client draws their floating plates). PRTS 帮助 counts the temp area with the hand (review of
@@ -240,7 +273,7 @@ export class MatchViews {
         moduleId: lo && typeof lo.moduleId === 'string' ? lo.moduleId : undefined,
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: standIn && standIn.standInFor ? standIn.standInFor : undefined,
-        diy: diyOf(piece),
+        diy: this._diyInfo(ps, piece),
       });
     };
     for (let i = 0; i < ps.hand.length; i++) {
@@ -261,9 +294,12 @@ export class MatchViews {
     // round's leader at its spawn tile (nextEnemies `start`), framed by the boss-field prep camera of the player's side
     // (`side`). Until 0.2.0 an eliminated player or a spectator seat scouting a player then saw the normal board and no
     // leader at all (community report of 2026-10-06, item 55).
+    // The pair's other player stands on the other half (item 51: both players of a pair together, as in the battle).
     const g = this.fields.length ? null : this.bossGroupOf(ps);
-    if (g) return { ...meta, kind: 'boss', rect: { ...GEO.BOSS_RECT }, side: g.side, units: units.map((u) => this._onBossHalf(u, g.side)) };
-    return meta;
+    if (!g) return meta;
+    const mate = this.bossMateView(ps);
+    const own = units.map((u) => this._onBossHalf(u, g.side));
+    return { ...meta, kind: 'boss', rect: { ...GEO.BOSS_RECT }, side: g.side, units: mate ? [...own, ...mate.units] : own, ...(mate ? { mate: { playerId: mate.playerId, side: mate.side } } : {}) };
   }
 
   /** A prep UnitInfo (board, bench or temp row) placed on side 'L' | 'R' of the boss field (bossFieldPlacement). */

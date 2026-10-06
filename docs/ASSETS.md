@@ -99,7 +99,7 @@ The `stem` of a Spine model is the upstream file name. Two examples: `char_107_l
 
 ### Id scope
 
-- **Operators:** all 138 pool charIds from `activity_table` (`charShopChessDatas[*].charId ∪ backupCharId`), including hidden chess and backup operators; plus every unit of `data/backups.json` research 07 does not list — the 72 自选 owned-6★ picks (`diy.ownedPool`, DATA.md §18; the collab operators are not in the data) — planned from 07's URL patterns (`tools/assets/plan.mjs patternOperator`, `tools/fetch-assets.mjs dataExtras`): avatar and portrait (E0–E1 and E2), the default-skin battle Spine Front / Back, the icon and skill sound of each skill, the sub-profession icon. 210 operators in all (207 with a Back model).
+- **Operators:** all 138 pool charIds from `activity_table` (`charShopChessDatas[*].charId ∪ backupCharId`), including hidden chess and backup operators; plus every unit of `data/backups.json` research 07 does not list — the 71 自选 owned-6★ picks (`diy.ownedPool`, DATA.md §18; the collab operators are not in the data, and 焰狐龙梓兰's entries left the manifest when she left the pool in 0.2.0) — planned from 07's URL patterns (`tools/assets/plan.mjs patternOperator`, `tools/fetch-assets.mjs dataExtras`): avatar and portrait (E0–E1 and E2), the default-skin battle Spine Front / Back, the icon and skill sound of each skill, the sub-profession icon. 209 operators in all (206 with a Back model).
 - **Tokens:** the 20 pool tokens, and the 38 summons of the 自选 picks (`data/backups.json tokens`) as extra tokens (below): their avatars; their battle Spine exists upstream only as skin variants, which the default locations miss — no Spine yet (the client draws the avatar).
 - **Enemies:** 253 ids planned, 252 in the manifest (心烛 has no assets). The set is the union of:
   - the 07 enemy list;
@@ -111,7 +111,7 @@ The `stem` of a Spine model is the upstream file name. Two examples: `char_107_l
   - enemy units spawned by operator kits (research 03 skills/talents). For example, 隐德来希's default S3 summons 心烛 `enemy_5601_entlec` through the talent key `take_extra_enemy_key`. 心烛 has no icon and no Spine in any dump, so it has no manifest entry: it is reported as a miss, and the client must draw a glyph.
 - **Extra tokens:** any `token_*` key of `data/tokens.json` that research does not list gets the default avatar and Spine locations.
   - The non-token summons in that file (`enemy_9012_acloon` 炎佑, `char_605_cmedic`, `char_613_acmedc`) are found under `enemies` and `chars`.
-- **Skill icons:** every skill index of every planned operator (the default one first; DESIGN §16 loadouts, the 自选 picks' three skills): 525 icons.
+- **Skill icons:** every skill index of every planned operator (the default one first; DESIGN §16 loadouts, the 自选 picks' three skills): 522 icons.
 - **UI:**
   - every group from `07-assets.json → autochessUi`: rarity, elite and chess-level sprites, the shop panel and cards, HUD, bond board, equip slot, round dialog, band choose, settlement, prepare backdrop;
   - `arts` (rarity stars, elite icons, the camp logos of pool nations, the loading illustrations used by the act2 modes, battle common sprites, act2 entry backdrops and season logo, item rarity frames);
@@ -174,7 +174,8 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
                            resultFour, resultThree, resultTwo, resultLose } },
                            // 干员战斗语音: an operator's official battle lines (charword_table.json placeType → slot,
                            // tools/assets/audio.mjs VOICE_SLOTS); a slot with several lines is an array and the client
-                           // draws one (public/js/audio.js voice). Only these twelve ever play (DESIGN §21.30): the
+                           // draws one (public/js/audio.js voice); a slot whose lines are all missing on disk is left
+                           // out (an operator with none has no entry), never an empty array. Only these twelve ever play (DESIGN §21.30): the
                            // prep-only slots 干员报到 / 编入队伍 / 任命队长 are left out of the plan by default —
                            // nothing requests them and they cost 360 files (19.3 MB) per run — and `--voice-all` adds
                            // them (audio.mjs VOICE_PREP_SLOTS) for the complete official set

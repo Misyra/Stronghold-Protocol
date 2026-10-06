@@ -91,3 +91,19 @@ test('the committed data/assets.json lists every 自选 operator\'s avatar, port
   for (const t of dataExtras(BACKUPS, CHESS).moduleTypes) assert.ok(m.modules[t] && onDisk(m.modules[t]), `module type icon ${t}`);
   assert.equal(m.stats.modules, Object.keys(m.modules).length);
 });
+
+test('an operator left out of 自选 (data/backups.json diy.excluded: the collab picks, 焰狐龙梓兰 MH05 among them) keeps no art in data/assets.json, so the full release zip (tools/package.mjs) never ships it', () => {
+  const m = load('assets');
+  const text = JSON.stringify(m);
+  assert.ok(BACKUPS.diy.excluded.includes('char_1048_orchd2'), '焰狐龙梓兰 is excluded');
+  for (const id of BACKUPS.diy.excluded) {
+    const code = id.split('_').slice(2).join('_');
+    assert.equal(m.chars[id], undefined, `${id}: chars`);
+    assert.equal(m.audio.sfx.units[id], undefined, `${id}: unit sfx`);
+    assert.equal(m.audio.voice?.[id], undefined, `${id}: voice`);
+    assert.ok(!Object.keys(m.skills).some((k) => k.startsWith(`skchr_${code}_`)), `${id}: skill icons`);
+    assert.ok(!text.includes(id), `${id}: no file of theirs`);
+  }
+  assert.equal(m.stats.chars, Object.keys(m.chars).length);
+  assert.equal(m.stats.skills, Object.keys(m.skills).length);
+});

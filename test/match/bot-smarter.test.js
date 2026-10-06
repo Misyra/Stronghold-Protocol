@@ -237,11 +237,15 @@ test('坎诺特 (利滚利: leftover funds are kept, +1 at ≥ 5): with a full b
     assert.ok(m.gd.leftoverKeptBands.includes(ps.bandId));
     ps.funds = 14;
     const merges = ps.stats.merges;
+    // the level-up on the curve is paid for first (its price depends on the rounds the run levelled at: 9 or 10 here);
+    // after it the bot buys / refreshes nothing that takes it under the 5 capital
+    const level0 = ps.shop.level, price0 = ps.shop.upgradePrice;
     h.run(() => m.phase === PHASE.COMBAT && m.round === 7);
-    // (a merge may spend the reserve; the level-up on the curve is paid for first and leaves enough here)
+    // (a merge may spend the reserve)
     if (ps.stats.merges === merges) {
       checked++;
-      assert.ok(ps.funds >= 5, `seed ${seed}: ${ps.funds} funds banked`);
+      const afterLevelUp = 14 - (ps.shop.level > level0 ? price0 : 0);
+      assert.ok(ps.funds >= Math.min(5, afterLevelUp), `seed ${seed}: ${ps.funds} funds banked (${afterLevelUp} after the level-up)`);
     }
     m.dispose();
   }

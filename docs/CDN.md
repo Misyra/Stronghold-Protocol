@@ -123,3 +123,38 @@ node tools/r2-sync.mjs --bucket <bucket> --dry-run  # 只看将要上传的内�
 发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 重启服务器。脚本成功后会更新 `.assets-cdn-version`；`--push` 额外把这一个文件提交（`素材：R2 发布 <tag>`）并推送 master 到除 `origin` 外的所有远程（GitHub fork 与 Gitee）。部署机 `git pull` 后重启即完成同步，版本文件优先于网络请求，启动不依赖 CDN 可达。每个 tag 都是自洽的全量快照，旧 tag 的对象永久保留，旧页面与已缓存版本不受影响。玩家端 Service Worker 按文件内容哈希跨版本复用未变化的文件（见第 5 节），只有真正变化的文件会重新下载。
 
 费用：只有穿透到 R2 的读取（Class B）计费，边缘缓存命中不计费，流量免费；配合高命中率（建议开启 [Tiered Cache](https://developers.cloudflare.com/cache/how-to/tiered-cache/)）月请求量通常在免费额度内。
+
+### 6.1 本站实际部署（2026-10-06）
+
+- bucket：`weishu`；自定义域名：`https://assets.misyra.com`（zone `misyra.com`）；当前发布：`c42c1bf187c71866`（5503 个文件，约 334 MiB，双 key 共 11006 个对象）。
+- `public/dev/` 不上传；`/js/`、`/vendor/`、`/data/`、`/api/`、`/ws` 留在游戏服务器，不上 R2。
+
+**启用（游戏服务器上唯一要做的事）**：
+
+```powershell
+$env:SP_ASSETS_CDN = 'https://assets.misyra.com'
+npm start        # 或写进服务管理器的环境配置
+```
+
+不设置就维持本机加载素材的现状，完全无害；设置后只有 `/assets`、`/fonts`、`/media` 走 R2。版本号不用设——仓库里的 `.assets-cdn-version` 随 `git pull` 生效；回滚旧版本时才手动设 `SP_ASSETS_CDN_VERSION` 钉住。
+
+**重启后验收（约 30 秒）**：
+
+1. 打开 `https://<游戏域名>/healthz`，确认 `assetsCdn` 为 `https://assets.misyra.com`、`assetsCdnVersion` 为当前 tag；启动日志同时会打出 `assets CDN … release … (from the version file)`。
+2. 打开游戏页面，浏览器 Network 面板中图片 / 音频 / 字体请求应指向 `assets.misyra.com`，且 `/js/`、`/api/`、`/ws` 仍指向游戏域名。
+3. 跨域抽查（应含 `Access-Control-Allow-Origin: *`，第二次请求为 `CF-Cache-Status: HIT`）：
+
+```bash
+curl -I -H 'Origin: https://<游戏域名>' https://assets.misyra.com/_v/<tag>/assets/char/avatar/char_1012_skadi2.png
+```
+
+**日常发布美术（固定三步）**：
+
+```powershell
+node tools/r2-sync.mjs --bucket weishu --push   # 增量上传 + 更新版本文件 + 提交推送
+# 部署机：
+git pull
+重启服务器
+```
+
+**建议的一次性收尾**：Dashboard → misyra.com → Caching → Tiered Cache → 选 Smart Tiered Cache。多个边缘 PoP 未命中时先回源上层区域缓存而不是各自回源 R2，把 Class B 计费请求再压一个量级（免费额度 1000 万次/月，按当前流量命中率 92% 估算约 $3.6/月，开启后趋近 $0）。

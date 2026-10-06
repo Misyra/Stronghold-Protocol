@@ -5,6 +5,9 @@
 //     constData maxLevelCnt 15 / specialEnemyNum 3 / enemyTypeIdentifierToFillRandom 1): each briefing type owns 3 of the
 //     15 round slots, SPECIAL (特异) the other 6, shuffled — R14 (leader) and R15 (hidden core) take slots too, so the 13
 //     normal rounds hold 7–9 type waves, at most 3 per type;
+//   item 35 「鸭爵策略的悬赏现在有时候会一波出现多只，比如多只鸭子」 — PRTS 下半/PRTS盟约记录 鸭爵 备注 「每回合将有0~2名敌人被
+//     替换为上述敌人之一」: each player's wave gets 0–2 swaps (bands/meta.js duckReplace), each one of the four at random, so
+//     two ducks in one wave is official (≈ 1 wave in 12 here); never more than 2 per player's wave;
 //   item 57 「囚犯敌人的解放状态联防时不应继承」 — a leaked prisoner re-enters 联防 as a new spawn (unite.js planUnite →
 //     waves.js buildUniteWave: its key and spawn mods only), confined again (archetypes.js prisoner spawn); the freed look
 //     the report saw was 普通 / 老练囚犯's red clip set drawn from the gate, fixed with the prisoners' forms (§25.14.1).
@@ -17,7 +20,7 @@ import { GameData } from '../../server/match/gamedata.js';
 import { setupMatchWaves, buildUniteWave } from '../../server/match/waves.js';
 import { planUnite } from '../../server/match/unite.js';
 import { createRng } from '../../server/sim/rng.js';
-import { DATA } from '../match/harness.js';
+import { DATA, makeMatch } from '../match/harness.js';
 
 test('item 6: the three briefing types fill 7–9 of the 13 normal waves (险境 / 绝境 / 终极), at most 3 each; the rest are SPECIAL', () => {
   for (const modeId of ['mode_multi_normal', 'mode_single_hard', 'mode_multi_abyss']) {
@@ -74,3 +77,25 @@ test('item 57: a prisoner freed in its own combat leaks and re-enters 联防 con
   assert.equal(q.stats.attacks, 4, 'at its 4th attack in 联防 (confinement.times), as in a fresh spawn');
   checkInvariants(u.b);
 });
+
+test('item 35: the 鸭爵 strategy swaps 0–2 enemies of each player\'s wave, each one of its four at random (two ducks in one wave included), never more', () => {
+  const hist = [0, 0, 0];
+  let twoSame = 0;
+  for (const seed of [31, 32]) {
+    const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', seed, fake: true }).start();
+    h.toPrep(6, { band: 'band_ducklord' });
+    for (const ps of h.m.alivePlayers()) {
+      for (let k = 0; k < 40; k++) {
+        const ducks = h.m._normalOpts(ps).spawns.filter((x) => x.tag === 'duck');
+        assert.ok(ducks.length <= 2, `${ducks.length} swaps in one wave`);
+        hist[ducks.length]++;
+        if (ducks.length === 2 && ducks[0].enemyKey === ducks[1].enemyKey) twoSame++;
+        for (const d of ducks) assert.deepEqual(d.bounty, { coins: 1, ownerPlayerId: ps.playerId });
+      }
+    }
+    h.m.dispose();
+  }
+  assert.ok(hist.every((n) => n > 0), `0, 1 and 2 swaps all occur: ${hist}`);
+  assert.ok(twoSame > 0, 'two of the same kind (e.g. two ducks) in one wave occurs');
+});
+

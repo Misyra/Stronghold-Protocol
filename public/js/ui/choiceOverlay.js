@@ -23,7 +23,8 @@ import { itemIconUrl, enemyIconUrl, uiUrl } from './assetUrls.js';
 import { richTextPlain } from './richText.js';
 import { sortedPlayers } from './gameLogic.js';
 import { data } from '../data.js';
-import { t } from '../../../shared/i18n.js';
+import { t, tName } from '../../../shared/i18n.js';
+import { sentText } from './lang.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -32,12 +33,14 @@ const bare = (t) => String(t || '').replace(/\s+/g, '');
 /**
  * A card's effect text: the card's own rich text, else the data's rich text (highlighted numbers, 下场作战, set bonuses,
  * line breaks — the detail card's text) while it says what the server's plain `desc` says, else that plain text (a
- * server-side wording the data does not have wins).
+ * server-side wording the data does not have wins). The server's texts are Chinese: `rawRich` is the record's Chinese
+ * rich text they are compared with, `rich` the same record in the current language (the two are one text in Chinese).
  * @param {{ descRaw?: string, desc?: string }} card @param {string} rich items.json / effects.json descRaw
+ * @param {string} [rawRich] its Chinese text (data.lookupRaw)
  */
-export function cardText(card, rich) {
-  if (card.descRaw) return card.descRaw;
-  if (rich && (!card.desc || bare(richTextPlain(rich)) === bare(card.desc))) return rich;
+export function cardText(card, rich, rawRich = rich) {
+  if (card.descRaw) return rich && card.descRaw === rawRich ? rich : card.descRaw;
+  if (rich && (!card.desc || bare(richTextPlain(rawRich || rich)) === bare(card.desc))) return rich;
   return card.desc || rich || '';
 }
 
@@ -53,6 +56,7 @@ export function resolveSpCard(card, family) {
   const eff = effectId ? data.lookup('effects', effectId) : null;
   const itemId = card.itemId || (!effectId && typeof card.id === 'string' && data.lookup('items', card.id) ? card.id : null);
   const item = itemId ? data.lookup('items', itemId) : null;
+  const rawRich = (itemId && data.lookupRaw('items', itemId)?.descRaw) || (effectId && data.lookupRaw('effects', effectId)?.descRaw) || '';
   const bounty = byEffect(choices?.cards?.bounty, effectId);
   const tactic = byEffect(choices?.cards?.tactic, effectId);
   const m = data.get('assets');
@@ -67,8 +71,8 @@ export function resolveSpCard(card, family) {
   else icon = uiUrl(m, `buffIcon/${team ? 'icon_team_buff' : 'icon_player_buff'}`);
   return {
     kind,
-    name: card.name || item?.name || eff?.name || bounty?.name || tactic?.name || t('机变'),
-    desc: cardText(card, item?.descRaw || eff?.descRaw || '') || item?.desc || eff?.desc || bounty?.desc || tactic?.desc || '',
+    name: tName(card.name) || item?.name || eff?.name || bounty?.name || tactic?.name || t('机变'),
+    desc: cardText(card, item?.descRaw || eff?.descRaw || '', rawRich) || item?.desc || eff?.desc || bounty?.desc || tactic?.desc || '',
     tier: Number.isFinite(card.tier) ? card.tier : item?.tier ?? bounty?.tier ?? null,
     icon,
     team: !!team,
@@ -156,6 +160,7 @@ export function ChoiceOverlay(props) {
 export function ChoiceView({ pub, sp, myId, solo, busyIdx = null, total = null, armed = null, onTap = () => {}, onConfirm = () => {}, onDisarm = () => {} }) {
   if (!sp) return null;
   const fam = data.get('choices')?.families?.[sp.family] || null;
+  const rawFam = data.getRaw('choices')?.families?.[sp.family] || null;
   const players = new Map(sortedPlayers(pub).map((p) => [p.playerId, p]));
   const myTurn = solo || sp.turnPid === myId;
   const mine = sp.pickOf.get(myId);
@@ -178,7 +183,7 @@ export function ChoiceView({ pub, sp, myId, solo, busyIdx = null, total = null, 
       <header class="spov__head">
         <div class="spov__titles">
           <${MicroLabel} tone="mint">${t('CONTINGENCY // 机变阶段')}</${MicroLabel}>
-          <h2 class=${cx('spov__title', special && 'is-special')}>${sp.name || fam?.name || t('机变')}<span class="spov__bar">|</span><span class="spov__desc"><${RichText} text=${sp.desc || fam?.desc || t('选择一项')} /></span></h2>
+          <h2 class=${cx('spov__title', special && 'is-special')}>${sentText(sp.name, rawFam?.name, fam?.name) || fam?.name || t('机变')}<span class="spov__bar">|</span><span class="spov__desc"><${RichText} text=${sentText(sp.desc, rawFam?.desc, fam?.desc) || fam?.desc || t('选择一项')} /></span></h2>
           <p class="spov__sub">${timed ? t('倒计时结束后仍未选定将自动分配') : t('选择一项（无时间限制）')}${mine == null && myTurn ? t(' · 点击卡牌选中，再次点击确认') : ''}</p>
         </div>
         <div class="spov__turn">

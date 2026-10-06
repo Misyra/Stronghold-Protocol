@@ -305,6 +305,17 @@ export function createDataStore(opts = {}) {
       if (id == null) return null;
       return index(name)?.get(String(id)) ?? null;
     },
+    /**
+     * Record by id from a loaded file exactly as downloaded (its Chinese texts), whatever the locale — what the server
+     * copied into a message, to compare with what it sent (ui/lang.js sentText).
+     */
+    lookupRaw(name, id) {
+      if (id == null) return null;
+      const e = entries.get(name);
+      if (!e || e.status !== 'ready') return null;
+      if (!e.index) e.index = buildIndex(name, e.value);
+      return e.index.get(String(id)) ?? null;
+    },
     /** All records of a loaded file as an array (empty when not loaded). */
     list: (name) => [...(index(name)?.values() ?? [])],
     /** Drop a cached file and refetch it now (subscribers are notified when it settles). */

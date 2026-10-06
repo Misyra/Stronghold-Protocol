@@ -153,6 +153,20 @@ export function LangToggle({ class: cls }) {
 }
 
 /**
+ * A game text the server sent in Chinese — a 机变 card's or an effect's description, a draft's name, a result title —
+ * in the current language: the localized record's text when the sent text is that record's own Chinese text
+ * (data.lookupRaw / getRaw), else the sent text as it is (a line the server reworded stays Chinese). In Chinese this is
+ * always the sent text. Names have a shorter way: tName() (every record name of the data is in the overlay's names).
+ * @param {unknown} sent the server's text
+ * @param {unknown} raw the record's Chinese text
+ * @param {unknown} local the record's text in the current language
+ */
+export function sentText(sent, raw, local) {
+  if (typeof sent !== 'string' || !sent) return sent;
+  return typeof raw === 'string' && raw === sent && typeof local === 'string' && local ? local : sent;
+}
+
+/**
  * The text of an m.ticker frame in the current language. A config.broadcasts line (`id` + `args`, server ≥ 0.2.0) is
  * rebuilt from the localized broadcast template — `{0}` is the player's name (never translated), other args are
  * game-data names or numbers; any other line goes through translateWire (msgid + params, or its text as a msgid).

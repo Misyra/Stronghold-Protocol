@@ -2,7 +2,7 @@
 
 import { GEO } from '../../../../shared/constants.js';
 import { isObj } from './shared.js';
-import { t } from '../../../../shared/i18n.js';
+import { t, tName } from '../../../../shared/i18n.js';
 
 
 // ---- shop ---------------------------------------------------------------------------------------------
@@ -119,7 +119,8 @@ export function completesMerge(priv, slot, { getChess = () => null, getItem = ()
 export function offerHeader(offer) {
   const slots = isObj(offer) && Array.isArray(offer.slots) ? offer.slots : [];
   const items = slots.some((s) => isObj(s) && s.kind === 'item');
-  const label = isObj(offer) && typeof offer.label === 'string' && offer.label ? offer.label : null;
+  // (the server names the offer by its source in Chinese: a strategy's effect, an item, an operator — a data name)
+  const label = isObj(offer) && typeof offer.label === 'string' && offer.label ? tName(offer.label) : null;
   const queued = isObj(offer) && Number.isInteger(offer.queued) && offer.queued > 0 ? offer.queued : 0;
   const tail = { queued, more: queued ? t('之后还有 {queued} 项', { queued }) : null };
   if (!items && (!isObj(offer) || offer.source === 'merge' || offer.source == null) && !label) {

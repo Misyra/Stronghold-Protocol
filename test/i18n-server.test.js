@@ -127,3 +127,39 @@ test('a real match: 歌蕾蒂娅 grants a chess → 「歌蕾蒂娅：获得X」
     m.dispose();
   }
 });
+
+test('server-sent game texts in English: 机变 cards, the draft name, effect entries and offer labels come from the localized data; a reworded text stays as sent; Chinese unchanged', async () => {
+  await data.loadAll('choices', 'effects', 'items', 'bands', 'garrisons');
+  const { resolveSpCard } = await import('../public/js/ui/choiceOverlay.js');
+  const { effectDesc } = await import('../public/js/ui/effectsList.js');
+  const { offerHeader } = await import('../public/js/ui/gameLogic/shop.js');
+  const HAN = /[一-鿿]/;
+  const raw = data.getRaw('choices');
+  // a 战术决策 card as server/match/choices.js tacticCard sends it (the card's Chinese name and plain text)
+  const tac = raw.cards.tactic.find((c) => c.effectId && c.name && c.desc && data.lookupRaw('effects', c.effectId)?.descRaw);
+  const card = { kind: 'tactic', id: tac.effectId, name: tac.name, desc: tac.desc };
+  const reworded = { ...card, desc: `${tac.desc}（服务器改写）` };
+  const zh = resolveSpCard(card, 'tactic');
+  assert.equal(zh.name, tac.name, 'Chinese: the name as sent');
+  const eff = data.lookupRaw('effects', tac.effectId);
+  const entry = { id: tac.effectId, iconId: tac.effectId, iconKind: 'choice', name: eff.name, desc: eff.descRaw };
+  assert.equal(effectDesc(entry), eff.descRaw, 'Chinese: the description as sent');
+  const band = data.list('bands').find((b) => b && b.effectName);
+  const offer = { source: 'special', label: band.effectName, slots: [{ kind: 'chess', id: 'x' }] };
+  assert.equal(offerHeader(offer).title, band.effectName);
+  setLang('en');
+  await data.setLocale('en');
+  try {
+    const en = resolveSpCard(card, 'tactic');
+    assert.ok(en.name && !HAN.test(en.name), `card name: ${en.name}`);
+    if (zh.desc === data.lookupRaw('effects', tac.effectId).descRaw) assert.equal(en.desc, data.lookup('effects', tac.effectId).descRaw, 'card text: the localized record');
+    assert.equal(resolveSpCard(reworded, 'tactic').desc, reworded.desc, 'a reworded text stays as the server sent it');
+    assert.equal(effectDesc(entry), data.lookup('effects', tac.effectId).descRaw);
+    assert.equal(effectDesc({ ...entry, desc: `${eff.descRaw}！` }), `${eff.descRaw}！`);
+    assert.ok(!HAN.test(offerHeader(offer).title), offerHeader(offer).title);
+    assert.equal(lang.sentText(raw.families.bounty.name, raw.families.bounty.name, data.get('choices').families.bounty.name), 'Bounty Decision');
+  } finally {
+    setLang('zh');
+    await data.setLocale('zh');
+  }
+});

@@ -23,6 +23,7 @@ import { data } from '../data.js';
 import { enemyIconUrl, titleIconUrl, uiUrl } from '../ui/assetUrls.js';
 import { store, useStore, emptyMatch } from '../store.js';
 import { audio } from '../audio.js';
+import { sentText } from '../ui/lang.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -49,8 +50,10 @@ export function LineupThumb({ u, gd }) {
 
 function PlayerCard({ p, myId, titles, best, solo = false }) {
   const gd = useGameData();
-  const titleRec = p.title ? titles.find((t) => t.id === p.title.id) || null : null;
-  const titleName = p.title?.name || titleRec?.name || null;
+  const titleRec = p.title ? titles.find((x) => x.id === p.title.id) || null : null;
+  // (the server sends the title's Chinese name: the localized config.titles record when it is that record's)
+  const rawTitle = p.title ? (data.getRaw('config')?.titles || []).find((x) => x && x.id === p.title.id) || null : null;
+  const titleName = sentText(p.title?.name, rawTitle?.name, titleRec?.name) || titleRec?.name || null;
   const stats = STAT_ROWS.filter(([k]) => Number.isFinite(p.stats[k])).slice(0, 7);
   const band = p.bandId ? gd.band(p.bandId) : null;
   const lineup = p.lineup.slice(0, 10);

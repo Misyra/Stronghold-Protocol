@@ -1,6 +1,7 @@
 // ui/gameLogic/result.js — end-of-match result normalisation. Re-exported from ../gameLogic.js.
 
 import { int, isObj, sortedPlayers } from './shared.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 // ---- result -----------------------------------------------------------------------------------------------------------
@@ -24,7 +25,7 @@ export function normalizeResult(res, pub) {
     return {
       playerId: p.playerId,
       seat: int(p.seat, int(pp.seat, 0)),
-      name: p.name || pp.name || '博士',
+      name: p.name || pp.name || t('博士'),
       isBot: !!(p.isBot ?? pp.isBot),
       alive,
       lp: teamLp != null ? (alive === false ? 0 : Math.max(0, teamLp)) : ownLp,

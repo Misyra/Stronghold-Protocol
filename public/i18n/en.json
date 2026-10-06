@@ -1069,5 +1069,11 @@
   "撤退[Q]": "Retreat [Q]",
   "出售（+{sell} 资金，X）": "Sell (+{sell} Funds, X)",
   "出售[X]": "Sell [X]",
-  "临时整备区 {n} 件道具待处理": "Temporary Bench: {n} {count|item|items} pending"
+  "临时整备区 {n} 件道具待处理": "Temporary Bench: {n} {count|item|items} pending",
+  "{name}：部分盟约所含干员阵容不完整（{bannedN} 名干员无法出现）": "{name}: some of the Alliance's Operators cannot appear ({bannedN} {bannedN|Operator|Operators} banned)",
+  "{name}：部分盟约所含干员阵容不完整": "{name}: some of the Alliance's Operators cannot appear",
+  "联防：{names}": "Unite: {names}",
+  "剩余资金": "Funds Left",
+  "继续整备": "Keep Preparing",
+  "还有 {funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？": "You still have {funds} unspent Funds. The round's leftover Funds are cleared when the Rest Phase ends. Ready anyway?"
 }

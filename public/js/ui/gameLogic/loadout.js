@@ -3,6 +3,7 @@
 import { MODULE_NONE, loadoutOptions, resolveLoadout } from '../../../../shared/protocol.js';
 import { loadoutRecord, resolveRecordLoadout } from '../../../../shared/loadoutRecord.js';
 import { isObj } from './shared.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 // ---- operator loadout (DESIGN §16) ----------------------------------------------------------------------------------
@@ -34,7 +35,7 @@ export function chessLoadout(chess, loadout, getChess = () => null) {
   let defaultModule = true;
   if (chess.isGolden) {
     const id = r.moduleId ?? (chess.module?.active ? chess.module.id : MODULE_NONE);
-    if (id === MODULE_NONE) module = { id: MODULE_NONE, name: '未装备模组', typeName: '', none: true };
+    if (id === MODULE_NONE) module = { id: MODULE_NONE, name: t('未装备模组'), typeName: '', none: true };
     else {
       const rec = (Array.isArray(chess.modules) ? chess.modules : []).find((m) => isObj(m) && m.uniEquipId === id)
         || (isObj(chess.module) && chess.module.id === id ? { uniEquipId: id, name: chess.module.name, typeName: chess.module.type } : null);

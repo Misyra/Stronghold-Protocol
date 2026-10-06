@@ -26,9 +26,10 @@ function realFinalAssault({ bossId, seed, clientCombat = true }) {
   h.setStage('act2autochess_m01');
   const m = h.m;
   m.bossId = bossId;
-  // the autoplay lineups cannot clear a full 绝境 pool: 5 % of it (the tuning knob GameData.bossHpMul) — the pool's
+  // the autoplay lineups cannot clear a full 绝境 pool: 5 % of the one-player table value (the tuning knob
+  // GameData.bossHpMul; the pool counts both players alive since DESIGN §25.13.4, so 2.5 % of it) — the pool's
   // arithmetic, not its size, stalled the fight
-  m.gd.bossHpMul = () => 0.05;
+  m.gd.bossHpMul = () => 0.025;
   h.autoHumans();
   m.start();
   let last = '';

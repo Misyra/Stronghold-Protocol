@@ -172,8 +172,8 @@ export function mitigate(amount, type, target, ign = {}) {
  * number. A 'hitCap' fx event `{ id, n: ceil(amount) }` marks it for the client, which draws nothing — the official
  * shows no number [ASSUMED]. Every HP-damage kind is checked as the official `modifier.isDamage` (phys, arts, true,
  * 元素伤害 incl. element bursts, DoT ticks — they all come through dealDamage — and losses passed on to a leader through
- * Battle.loseHp); element 损伤 (gauge fill, 'element') removes no HP and is never checked. Deterministic (Math.ceil of
- * the same double on every engine).
+ * Battle.loseHp, except the 胄 drone link's pool share: `noHitLimit`, DESIGN §25.13.4); element 损伤 (gauge fill,
+ * 'element') removes no HP and is never checked. Deterministic (Math.ceil of the same double on every engine).
  */
 export function leaderHitCancelled(battle, target, amount) {
   if (!(BOSS_HIT_LIMIT > 0) || !target || !target.isBoss || (battle.kind !== 'boss' && battle.kind !== 'hidden')) return false;

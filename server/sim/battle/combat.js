@@ -21,12 +21,13 @@ export class BattleCombat {
    * derived from 无来源 damage (`from.sourceless`, element bursts) is 无来源 too (hooks see no source, `source` is credited).
    * `sourceless: true` makes the loss itself 无来源 ("受到等量的无来源生命流失": hooks see no source; `source` keeps the
    * credit — the stats and the per-player shared-pool tally).
-   * On a leader in a boss / hidden battle a loss of ≥ BOSS_HIT_LIMIT is cancelled like a hit (damage.js leaderHitCancelled).
+   * On a leader in a boss / hidden battle a loss of ≥ BOSS_HIT_LIMIT is cancelled like a hit (damage.js leaderHitCancelled)
+   * — except with `noHitLimit: true`: a share of the leader's pool that is no hit (胄's 死亡集群 drone link, content/bosses.js).
    */
-  loseHp(target, amount, { source = null, silent = false, tags = null, from = null, sourceless = false } = {}) {
+  loseHp(target, amount, { source = null, silent = false, tags = null, from = null, sourceless = false, noHitLimit = false } = {}) {
     if (!target || !target.alive || !(amount > 0)) return 0;
-    // 限伤 (shared/constants.js BOSS_HIT_LIMIT): a loss passed on to a leader (parts' 传递, 无人机) is one hit too
-    if (leaderHitCancelled(this, target, amount)) return 0;
+    // 限伤 (shared/constants.js BOSS_HIT_LIMIT): a loss passed on to a leader (the parts' 传递) is one hit too
+    if (!noHitLimit && leaderHitCancelled(this, target, amount)) return 0;
     const t = ['hpLoss'];
     for (const list of [from && from.tags, tags]) if (Array.isArray(list)) for (const x of list) if (!t.includes(x)) t.push(x);
     return applyHpLoss(this, source, target, amount, { type: 'true', tags: t, noSp: true, silent, origin: from ?? null, sourceless: !!sourceless || !!(from && from.sourceless) });

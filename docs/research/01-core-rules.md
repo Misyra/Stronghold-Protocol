@@ -173,6 +173,8 @@ Boss HP scaling:
 - The boss HP is one shared pool for the whole team.
 - It shrinks when teammates are eliminated or leave [COMM: "联机队友变少，最后boss血条也会变少"].
 - Proposal: `hp = bloodPoint × alivePlayers / 4` [ASSUMED]. Solo uses `bloodPoint × 0.25` [ASSUMED].
+- [2026-10-06: the owner adopted PR #209 instead — `hp = bloodPoint × the players alive when the fight starts`, solo
+  `bloodPoint` (bloodPoint is one player's share; players' observation, no official text); DESIGN §25.13.4.]
 
 ---
 

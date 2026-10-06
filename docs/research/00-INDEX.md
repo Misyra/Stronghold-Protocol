@@ -142,7 +142,7 @@ The server draws a disabled bond set **D**: **3 core + 4 add-on** in NORMAL/HARD
 | 3 | Item slot odds and server pools `pool_equip_*` | Same tier shares; pool contents as in 04 §8 |
 | 4 | Disabled-bond counts for NORMAL/HARD | 3 core + 4 add-on |
 | 5 | 机变 family per SP round, card pools, 道具补给 tiers | 01 A4 table: HARD+ R3/R9 悬赏, R11 道具补给/机密商店. 道具补给 tier windows R3 I–IV, R6 II–V, R9 III–VI, R11 IV–VI. |
-| 6 | Boss HP pool vs alive players | `bloodPoint × alive/4`; solo ×0.25 |
+| 6 | Boss HP pool vs alive players | `bloodPoint × alive/4`; solo ×0.25 (since 2026-10-06, the owner's decision adopting PR #209: `bloodPoint × alive` at the fight's start, solo × 1 — DESIGN §25.13.4) |
 | 7 | Pair order in the Final Assault | Alive players by seat: (1,2), (3,4); an odd player gets an `_s` map |
 | 8 | 联防 helper choice when >2 are perfect; leaked-enemy HP | Highest LP, then seat; leaked enemies re-enter at full HP |
 | 9 | Per-turn band-draft timer | 12 s, with the 50 s step cap |

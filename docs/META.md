@@ -183,8 +183,8 @@ A `choice:<effectId>` registry handler overrides the default application (§2.4)
 * `g.autoplay { on }` ("AI 托管"): the bot plays the seat (drafts, buying, placement, ready) until turned off.
 * `onLeave` (quit / reconnect window expired): 中途退出 counts as elimination (research 00-INDEX §3, 01 §9, 06 §7 /
   §10.3): every copy the seat holds returns to the shared pool at once; the seat leaves the round loop and the Final
-  Assault pairing (re-planned when it quits before the boss fight; the boss pool stays bloodPoint — it would shrink to
-  × alive / 4 only with config `bossHpScale.aliveScaling`, off — the user chose the fixed pool, DESIGN §20.10); its
+  Assault pairing (re-planned when it quits before the boss fight) and the boss pool (bloodPoint per player alive when
+  the fight starts — a departed seat no longer counts, DESIGN §25.13.4); its
   running normal battle is force-ended; a pending band pick
   becomes the default band and a 机变 turn passes on. Status `left`, LP 0, rounds passed = the rounds it had survived.
   When no human is left at all the match ends immediately (`reason: 'abandoned'`); when only eliminated spectators are
@@ -626,13 +626,14 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   (own phase perfect) go to pending funds; bounty rounds decrement; LP ≤ 0 ⇒ eliminated (all copies back to the pool).
 * **Final Assault / Hidden Core**: finalAssault.js header. Boards are passed in board coordinates; the sim maps board
   rows 9–12 onto boss rows 2–5 (`BOSS_ROW_OFFSET` −7, matching every stage's boss rows) and mirrors the right side.
-  Pool (`finalAssault.js bossPoolHp` → `GameData.bossPoolShare`, DESIGN §20.10): one pool shared by every boss field
-  (official tip "最终攻势中，所有人将一起对敌方领袖造成伤害"); co-op = `bloodPoint[difficulty]` whatever the number of alive
-  players (notice 5114's "敌方领袖的总生命值不变" is about the mirrored copies of a pair field sharing the pool, not about that
-  number); `bossHpScale.aliveScaling` true (default false) would scale it × alive / `aliveFull` (4) — 巴哈姆特 12294
-  "聯機隊友(撤退/死掉)變少，最後boss血條也會變少" is one community note without a proportion, kept off until the user confirms
-  it (it would shorten the fight after eliminations, the opposite of the playtest report); solo = ×
-  `bossHpScale.solo` (0.25 = one player of four [ASSUMED]); leaders are never scaled by `enemyScale`. The merged team LP loses leaks (`lpr`), the overtime drain
+  Pool (`finalAssault.js bossPoolHp` → `GameData.bossPoolShare` → `gamedata.js bossPoolShareOf`, DESIGN §20.10,
+  §25.13.4): one pool shared by every boss field (official tip "最终攻势中，所有人将一起对敌方领袖造成伤害"; notice 5114's
+  "敌方领袖的总生命值不变" is about the mirrored copies of a pair field sharing it) = `bloodPoint[difficulty]` × the players
+  alive when the fight starts (bots and AI 托管 seats count, eliminated and departed seats do not; solo × 1) — the owner's
+  decision of 2026-10-06, adopting PR #209 by @qingjingshenghuo (players' observation: bloodPoint is one player's share),
+  which replaces the fixed pool of 「保持固定血量」 (config `bossHpScale.perPlayer: false` with `solo: 0.25` restores it;
+  its optional × alive / 4, `aliveScaling`, stays off); leaders are never scaled by `enemyScale`, their parts and escorts
+  keep their own HP. The merged team LP loses leaks (`lpr`), the overtime drain
   (`bossTurnHpReduceTime` 150 counts REAL seconds, like the boss level's 120 s maxPlayTime that runs out first — the
   battle goes on — so 1 LP per real second from 150 real s = 300 game s on the 2× field clock; `gd.bossOvertimeDue`)
   and leader "扣除目标生命" effects (the sim's `lpLoss` hook: boss_7 Doom, 斥退 …); after every change it is written back
@@ -659,13 +660,15 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   **限伤** (research 11 §2; client `AutoChessStepModeManager._OnBossEnemyTakeDamage`): in both boss rounds a single hit
   on a leader with ceil(damage) ≥ `BOSS_HIT_LIMIT` = 300000 (shared/constants.js; 0 / Infinity = off) is cancelled in the
   sim (`sim/damage.js leaderHitCancelled`, SIM.md §4) — it deals 0 and nothing reaches the shared pool, the per-player
-  boss damage or the BOSS_HIT tickers; minions, parts, normal rounds and 联防 are unaffected. The server's own runs, the
-  browsers' runs and the server's verification share the rule, so digests agree.
+  boss damage or the BOSS_HIT tickers; minions, parts, normal rounds and 联防 are unaffected. 胄's drone link (2 % of the
+  pool when a drone dies) is a share, no hit, and passes the limit (`Battle.loseHp noHitLimit`; with the per-player pool
+  a hidden 胄 终极 drone is 432 000 / 576 000 at 3 / 4 players [ASSUMED], §25.13.4). The server's own runs, the browsers'
+  runs and the server's verification share the rule, so digests agree.
 
 ### 3.1 Balance layer (data/tuning.json)
 `data/config.json` is generated and stays research-faithful. There is **no custom balance** any more (DESIGN §14
-corrections, research 08 §6): enemy numbers are the official ones (the PRTS `enemyScale` table, leader pool =
-`bloodPoint`). `data/tuning.json` (hand-maintained, loaded as `data.tuning`, layered on the config by gamedata.js only)
+corrections, research 08 §6): enemy numbers are the official ones (the PRTS `enemyScale` table, the leader table
+`bloodPoint` — × the players alive by the owner's decision of 2026-10-06, §25.13.4). `data/tuning.json` (hand-maintained, loaded as `data.tuning`, layered on the config by gamedata.js only)
 keeps just the result-title rules:
 
 ```jsonc

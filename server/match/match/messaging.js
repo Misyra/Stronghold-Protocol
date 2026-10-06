@@ -52,8 +52,17 @@ export class MatchMessaging {
   }
 
   markPublic() { this._pubDirty = true; }
-  /** A player's state changed: its m.private and (throttled, deduplicated) m.public (level, board, bonds…). */
-  markPrivate(ps) { if (ps) { this._privDirty.add(ps); this._pubDirty = true; } }
+  /**
+   * A player's state changed: its m.private and (throttled, deduplicated) m.public (level, board, bonds…) — in a boss
+   * round's prep also its pair partner's m.private, which shows this board on its other half (bossMate, item 51).
+   */
+  markPrivate(ps) {
+    if (!ps) return;
+    this._privDirty.add(ps);
+    this._pubDirty = true;
+    const m = this._bossMateOf(ps);
+    if (m) this._privDirty.add(m.mate);
+  }
 
   /** Send pending m.private (per player, only when changed) and m.public (throttled ≤ 10/s). */
   flush(forcePublic = false) {

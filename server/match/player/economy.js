@@ -92,6 +92,27 @@ export class PlayerEconomy {
     this.dirty();
   }
 
+  /**
+   * The 调度中心's upgrade opens the new level's extra slots at once, each with a new card drawn at the new level; the
+   * cards already shown stay where they are (chess slots keep their index, the item slot stays after them). Official: the
+   * tutorial's 休整期 page 「升级：…升级后将出现更多的商品栏位、可调度干员以及新装备」; the community report of 2026-10-06
+   * (item 19) 「升级商店获得新的商店位时用新卡补上，而不是空着」. Until 0.2.0 the extra slots waited for the next roll (a
+   * refresh or the round start). [ASSUMED] the new card follows the freeze toggle, as a manual refresh's cards do.
+   */
+  _openLevelSlots() {
+    const { chess: nChess, item: nItem } = this.gd.shopSlots(this.shop.level);
+    const old = this.shop.slots;
+    const layout = this.shop.layout || { chess: old.length, item: 0 };
+    if (nChess <= layout.chess && nItem <= layout.item) return;
+    const chess = old.slice(0, layout.chess);
+    const items = old.slice(layout.chess);
+    const fresh = (s) => { if (s) s.frozen = this.shop.frozen; return s; };
+    while (chess.length < nChess) chess.push(fresh(this._rollChessSlot()));
+    while (items.length < nItem) items.push(fresh(this._rollItemSlot()));
+    this.shop.slots = [...chess, ...items];
+    this.shop.layout = { chess: chess.length, item: items.length };
+  }
+
   /** Combat start: unfrozen slots are emptied (research 01 A1). */
   clearUnfrozenShop() {
     this.shop.slots = this.shop.slots.map((s) => (s && s.frozen && !s.sold ? s : null));
@@ -173,6 +194,7 @@ export class PlayerEconomy {
     this.spend(price);
     this.shop.level++;
     this.shop.upgradePrice = this.gd.upgradeBase(this.shop.level) ?? 0;
+    this._openLevelSlots();
     this.m.tickerFor('SHOP_LEVEL', [this.name, String(this.shop.level)], { playerId: this.playerId, param: String(this.shop.level) });
     this.m.dispatch(this, 'onLevelUp', { level: this.shop.level, price });
     this._afterSpend(price, 'levelUp');

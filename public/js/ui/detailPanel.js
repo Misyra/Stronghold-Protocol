@@ -40,7 +40,7 @@ import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
 import { attackRangeGrid } from '../../../shared/loadoutRecord.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
-import { moduleBadge } from './loadoutModel.js';
+import { moduleBadge, fullTraitText } from './loadoutModel.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { audio } from '../audio.js';
 
@@ -277,11 +277,11 @@ export function BondChips({ bondIds, bonds = [], onBond = null, off = null, gran
  */
 export function traitText(c, golden, lo) {
   const t = (lo?.record || c).trait || {};
-  const base = t.descRaw || t.desc || '';
-  if (!golden) return base;
-  // the record's own module line, also for a record cloned for another skill or module (a 不装备 record carries none) —
-  // until 0.1.2 a clone fell back to the class trait (Grok review of GitHub #64; the in-match card had it too)
-  return t.moduleDescRaw || base;
+  if (!golden) return t.descRaw || t.desc || '';
+  // the class trait (or the module's rewrite of it), then the record's own module line — also for a record cloned for
+  // another skill or module (a 不装备 record carries none). Until 0.1.2 a clone fell back to the class trait (Grok review
+  // of GitHub #64); until 0.2.0 the module line replaced the class trait (community report of 2026-10-06, item 16.2).
+  return fullTraitText(t);
 }
 
 /**

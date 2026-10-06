@@ -6,7 +6,8 @@
 //     replica of their battle; 返回战场 goes back;
 //   * 联防 / 最终攻势: the ‹ › pill switches the camera LEFT half / 全景 / RIGHT half of the own field; the other pair's
 //     boss field is never shown to a fighting player;
-//   * eliminated: anything.
+//   * eliminated: anything — each phase reset starts on the player it follows (the server's prep scout / b.start,
+//     followedScout).
 
 import { PHASE } from '../../../shared/constants.js';
 import { data } from '../data.js';
@@ -80,6 +81,23 @@ export function resumedWatch(b, { pub = null, myId = '', alive = true, watching 
   const f = fields(pub).find((x) => x.fieldId === b.fieldId);
   if (!f || f.kind !== 'normal' || !Array.isArray(f.players) || f.players.includes(myId)) return done;
   return { seen: b.battleId, fieldId: b.fieldId };
+}
+
+/**
+ * The prep board the server pushed to a viewer that follows a player (an eliminated player or a spectator seat:
+ * Match._followScout — the player it last watched, else the first player still in; community report of 2026-10-06,
+ * item 56, the idea of PR #189), to adopt as the watched board like a 前往查看 tap: `field` is such a scout (m.field
+ * `prep`, an `n:<pid>` id other than the own) and the screen watches nothing (`watching` null — a 返回战场 this phase is
+ * not overridden: the caller adopts a board once per phase). Null for a living player: its phase resets keep its own
+ * board.
+ * @param {{ field?: any, watching?: string|null, alive?: boolean, spectator?: boolean, myId?: string }} o
+ * @returns {string|null} the fieldId to watch
+ */
+export function followedScout({ field = null, watching = null, alive = true, spectator = false, myId = '' } = {}) {
+  if (watching || (alive && !spectator) || !isObj(field) || !field.prep) return null;
+  const fid = field.fieldId;
+  if (typeof fid !== 'string' || !fid.startsWith('n:') || fid === `n:${myId}`) return null;
+  return fid;
 }
 
 /** Teammates' progress for the waiting pill: [{ playerId, name, killed, total, done, isBot }]. */

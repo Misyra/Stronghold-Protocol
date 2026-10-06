@@ -78,7 +78,10 @@
 // boss rows 2–5, bench 7 → 0, temp 8 → 1, side 'R' mirrored col c → 20 − c with RIGHT ↔ LEFT. Every public
 // coordinate stays in BOARD space (pieceDrop targets, canPlace, highlightTiles, tileScreen, holdPiece, setPieceDir,
 // stored `dir`); `view.prepField()` → { kind, side, mirror } and `tileScreen(...).mirror` tell the direction wheel
-// that a screen-right swipe means board LEFT on the mirrored half.
+// that a screen-right swipe means board LEFT on the mirrored half. The pair partner's board stands on the other half
+// (`priv.bossMate` units, already in boss-field coordinates — server/match/match/views.js bossMateView), read-only
+// ('m:<uid>' views: never picked or dragged), and the lit rect is the whole boss field: both players of a pair are
+// shown together, as in the battle (community report of 2026-10-06, item 51).
 // Lost WebGL context of the 3D board: the 2D board takes over at once and the 3D board is rebuilt on a fresh context
 // a moment later (up to 3 tries; a context lost again right away counts as a failure; `setBoardMode('2d')` stops it).
 //
@@ -458,7 +461,8 @@ export async function createFieldView(host, options = {}) {
     if (k === 'pen') return { r0: 14, r1: 18, c0: 7, c1: 13 };
     // prep lights the bench (hand row 7 / temp row 8) with the field, like the official prep view
     if (camOpts.rect) { const r = normRect(camOpts.rect); return k === 'prep' ? { ...r, r0: Math.min(r.r0, GEO.HAND_ROW) } : r; }
-    if (k === 'bossPrep') return camOpts.side === 'R' ? { r0: 0, r1: 5, c0: 10, c1: 20 } : { r0: 0, r1: 5, c0: 0, c1: 10 };
+    // the boss round's prep lights the whole boss field: the pair partner's half is shown with its pieces (item 51)
+    if (k === 'bossPrep') return { ...GEO.BOSS_RECT };
     return k === 'boss' ? { ...GEO.BOSS_RECT } : k === 'unite' ? { ...GEO.UNITE_RECT } : k === 'prep' ? { r0: 7, r1: 12, c0: 0, c1: 10 } : { ...GEO.NORMAL_RECT };
   }
 
@@ -768,10 +772,40 @@ export async function createFieldView(host, options = {}) {
       if (e.area === 'board' && info.dir && !held.has(e.uid) && typeof v.setDir === 'function') v.setDir(info.dir);
     }
     for (const k of [...views.keys()]) if (String(k).startsWith('p:') && !seen.has(Number(String(k).slice(2)))) dropView(k);
+    // the boss round's prep: the pair partner's board on its half of the boss field (item 51; display only)
+    syncMates(prepXf.kind === 'bossPrep' && src.bossMate && Array.isArray(src.bossMate.units) ? src.bossMate.units : []);
     prepPieces = list.filter((e) => e.key && views.has(e.key));
     if (dragState && !views.has(dragState.key)) { drag.reset(); endDragVisual(false); }
     holdScene(false); // the prep pieces reference their models now (a battle's hold ends here)
     return true;
+  }
+
+  /**
+   * The pair partner's pieces in the Final Assault / Hidden Core prep (m.private bossMate units: UnitInfo in boss-field
+   * coordinates, facing as the battle will place them): read-only 'm:<uid>' views — not prep pieces, so they are never
+   * picked, dragged or swept with the own ones; a view is rebuilt when its body, tile or facing changes.
+   */
+  function syncMates(units) {
+    const keep = new Set();
+    for (const u of units) {
+      const info = u && Number.isInteger(u.uid) ? renderInfo({ ...u, id: `m:${u.uid}` }) : null;
+      if (!info) continue;
+      keep.add(info.id);
+      const sig = `${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}|${info.x},${info.y}|${info.dir || ''}|${(info.items || []).join(',')}`;
+      let v = views.get(info.id);
+      if (v && v._sig !== sig) { dropView(info.id); v = null; }
+      if (v) continue;
+      v = new UnitView(ctx, { ...info, maxHp: 1 }, { prep: true });
+      v._sig = sig;
+      v.setWorld(info.x, info.y, heightAt(info.y, info.x));
+      if (info.dir && typeof v.setDir === 'function') v.setDir(info.dir);
+      v._showFacing = true;
+      if (v.setItems && Array.isArray(info.items) && info.items.length) {
+        v.setItems(info.items.map((it) => { const r = data.item(it); return assets.itemIcon ? assets.itemIcon(r ? { trapId: r.trapId, iconId: r.iconId } : it) : null; }));
+      }
+      views.set(info.id, v);
+    }
+    for (const k of [...views.keys()]) if (String(k).startsWith('m:') && !keep.has(k)) dropView(k);
   }
 
   /**

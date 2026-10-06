@@ -13,7 +13,7 @@ import { html, Icon, Button, TierChip } from '../ui/components.js';
 import { Img, RichText, BondGlyph } from '../ui/gameComponents.js';
 import { chessAvatarUrl, chessPortraitUrl, profIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
 import { data } from '../data.js';
-import { PROF_NAME, skillLabel, moduleBadge } from '../ui/loadoutModel.js';
+import { PROF_NAME, skillLabel, moduleBadge, fullTraitText } from '../ui/loadoutModel.js';
 import { diySlotList, pickChoices, pickOptions, slotRecord, defaultPick } from '../ui/diyModel.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -117,7 +117,8 @@ function SkillRow({ m, s, on, locked, onPick }) {
 function ModuleRow({ id, rec, on, locked, onPick }) {
   const none = id == null;
   const talents = rec && Array.isArray(rec.talentChanges) ? rec.talentChanges.filter((x) => x && x.desc && !x.hidden) : [];
-  const trait = rec?.traitOverride ? (rec.traitOverride.moduleDescRaw || rec.traitOverride.moduleDesc || rec.traitOverride.descRaw || rec.traitOverride.desc) : null;
+  // the trait this module gives: the class trait (or the module's rewrite), then its extra line (item 16.2)
+  const trait = rec?.traitOverride ? fullTraitText(rec.traitOverride) || null : null;
   return html`<button type="button" role="radio" aria-checked=${on ? 'true' : 'false'} data-module=${none ? 'none' : id} disabled=${locked}
       class=${cx('diy-choice', 'diy-choice--mod', on && 'is-on')} onClick=${() => onPick(id)}>
     <span class="diy-choice__icon">${none ? html`<b>—</b>` : html`<${Img} src=${moduleTypeIconUrl(data.get('local'), rec.typeName)} fallback=${html`<b class="num">${moduleBadge(rec)}</b>`} />`}</span>

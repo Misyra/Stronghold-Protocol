@@ -64,7 +64,9 @@
 // addSpectator(id)          (optional for the platform) A spectator seat joined during the match, came back or asked
 //                           for a resync: register it (idempotent) and resend what an ELIMINATED player watching sees —
 //                           m.public and, while a battle runs, the b.start (watch) of the field it watches (default: the
-//                           first field; server-run mode: m.field + b.snap), or m.result once ended. A spectator gets
+//                           field of the player it follows — the one it last watched, else the first player still in;
+//                           server-run mode: m.field + b.snap), in a prep phase that player's board (m.field prep), or
+//                           m.result once ended. A spectator gets
 //                           every broadcast through the platform, never an m.private / m.toast / m.unitStats, is never
 //                           a field's player or authority, and is shown fields like an eliminated player in every phase.
 //                           handle(id, msg) answers only its 'g.watch' (anything else → SPECTATOR; the platform routes
@@ -358,6 +360,12 @@ export class Match {
     this.runner = null;
     /** playerId → fieldId */
     this.watchers = new Map();
+    /**
+     * Watch preference (community report of 2026-10-06, item 56; the idea of PR #189): viewer playerId → the player it
+     * last chose to watch with a manual g.watch. Every phase reset starts an eliminated human or a spectator seat on that
+     * player again (its prep board, its battle field) — else the first player still in — instead of its own empty board.
+     */
+    this.watchPref = new Map();
     this.lastResults = new Map();
     this.unitePlan = null;
     /** server-run 联防: the leakers' counts last published (_uniteTick) */

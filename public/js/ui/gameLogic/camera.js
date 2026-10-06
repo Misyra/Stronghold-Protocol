@@ -1,6 +1,6 @@
 // ui/gameLogic/camera.js — prep camera, boss-field tile mapping, owner band. Re-exported from ../gameLogic.js.
 
-import { GEO } from '../../../../shared/constants.js';
+import { GEO, PHASE } from '../../../../shared/constants.js';
 import { BOSS_ROW_SHIFT, MAX_COL } from '../../render/prepfield.js';
 import { int, isObj } from './shared.js';
 
@@ -24,6 +24,37 @@ export function prepCamera(pub, myId) {
   const idx = alive.findIndex((p) => p.playerId === myId);
   if (idx < 0) return normal; // eliminated / unknown: no board of its own on the boss field
   return { kind: 'bossPrep', opts: { side: idx % 2 === 1 ? 'R' : 'L' } };
+}
+
+const BOSS_PREP_PHASES = new Set([PHASE.ROUND_START, PHASE.SP_DRAFT, PHASE.PREP]);
+
+/**
+ * The players framed in green on the team panel (community report of 2026-10-06, item 51: 「同组两个玩家屏幕左边的头像也像原版
+ * 那样用绿框框起来」 — the official co-op frame, ui/battle `bg_team_border`): in a boss round (最终攻势 / 隐秘核心) the viewer
+ * and its pair partner — from the round's start (回合开始 / 机变 / 休整期: the pairing `prepCamera` reads, the players still
+ * in by seat, two by two — server/match/finalAssault.js pairPlayers) through the fight (the boss field listing the
+ * viewer). Empty for a lone player, an eliminated player or a spectator seat (no pair of its own) and in every other
+ * round. PR #191 framed the partner alone, in gold (not merged).
+ * @param {any} pub m.public @param {string|null} myId
+ * @returns {Set<string>}
+ */
+export function teamFrameIds(pub, myId) {
+  const none = new Set();
+  if (!pub || !myId) return none;
+  const players = Array.isArray(pub.players) ? pub.players.filter(isObj) : [];
+  const me = players.find((p) => p.playerId === myId);
+  if (!me || me.alive === false) return none;
+  const r = pub.round;
+  const bossRound = Number.isInteger(r) && r > 0 && (r === pub.bossRound || r === pub.hiddenRound);
+  if (pub.phase === PHASE.FINAL_ASSAULT || pub.phase === PHASE.HIDDEN_CORE) {
+    const f = (Array.isArray(pub.fields) ? pub.fields : []).find((x) => isObj(x) && (x.kind === 'boss' || x.kind === 'hidden') && Array.isArray(x.players) && x.players.includes(myId));
+    return f && f.players.length > 1 ? new Set(f.players) : none;
+  }
+  if (!bossRound || !BOSS_PREP_PHASES.has(pub.phase)) return none;
+  const alive = players.filter((p) => p.alive !== false).sort((a, b) => int(a.seat, 99) - int(b.seat, 99)).map((p) => p.playerId);
+  const idx = alive.indexOf(myId);
+  const pair = alive.slice(idx - (idx % 2), idx - (idx % 2) + 2);
+  return pair.length > 1 ? new Set(pair) : none;
 }
 
 /**

@@ -221,12 +221,23 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
       const price = ps.shop.upgradePrice;
       const f0 = ps.funds;
       const fx = hasSpendEffects(m, ps);
+      const slots0 = ps.shop.slots.slice();
+      const layout0 = ps.shop.layout || { chess: slots0.length, item: 0 };
       const res = orig();
       if (res && res.ok) check('levelUp', () => {
         if (ps.shop.level !== lv + 1) fail(`${ps.playerId}: level ${lv} → ${ps.shop.level}`);
         if (f0 - ps.funds !== price && !fx && !hasSpendEffects(m, ps)) fail(`${ps.playerId}: level-up paid ${f0 - ps.funds}, price ${price}`);
         const next = gd.upgradeBase(ps.shop.level) ?? 0;
         if (ps.shop.upgradePrice !== next) fail(`${ps.playerId}: upgrade price after level-up ${ps.shop.upgradePrice}, expected ${next}`);
+        // the new level's extra slots open at once (item 19 of 2026-10-06); the cards shown before stay in place
+        const { chess, item } = gd.shopSlots(ps.shop.level);
+        const want = Math.max(chess, layout0.chess) + Math.max(item, layout0.item);
+        if (ps.shop.slots.length !== want) fail(`${ps.playerId}: ${ps.shop.slots.length} shop slots after the level-up to ${ps.shop.level}, expected ${want}`);
+        const layout = ps.shop.layout || layout0;
+        slots0.forEach((s, i) => {
+          const at = i < layout0.chess ? i : layout.chess + (i - layout0.chess);
+          if (ps.shop.slots[at] !== s) fail(`${ps.playerId}: shop slot ${i} changed by the level-up`);
+        });
       });
       return res;
     });

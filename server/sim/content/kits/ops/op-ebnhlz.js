@@ -39,7 +39,10 @@
 //   (PRTS "大幅度缩短(*0.2)": batMod's ratio reading), every attack attack@atk_scale × ATK; the energies released meanwhile
 //   use that scale too (备注 "该技能的“每次攻击的攻击倍率”会实时应用在特性积攒的“攻击能量”抛射物上") × the energy scale.
 //   `attack@cnt` (1) has no text [unused].
-// - S2 荒芜回响 (AUTO, instant, data DEFAULT — an AUTO skill whose effect acts on enemies keeps the data rule): spends every
+// - S2 荒芜回响 (AUTO, instant): cast at full SP as soon as one placeable tile of his attack range is free — no enemy needed
+//   (PRTS 备注 "攻击范围内不存在可部署位时，技能不会被触发"; the skill prefab's `_trigger._minTileNum` 1 — O20's report; 0.2.0 WE2:
+//   until then the data's DEFAULT waited for an enemy in his range; `trigger: 'NEVER'` + this kit's cast, the pattern of
+//   伺夜's conditional casts): spends every
 //   stored energy (elite ones first: 备注 "可以消耗并优先消耗第一天赋储存的额外能量") and places energies + 1 旧日残影 on free
 //   placeable tiles of his attack range (部署位置 全部位), in the 备注's order: tiles holding a selectable ground enemy (the
 //   best of them first by his target order — 仇恨值 [ASSUMED: the engine's default operator order]), then the tiles nearest
@@ -88,6 +91,15 @@ export const eliteOrLeader = (e) => !!e && (!!e.isBoss || e.def?.rank === 'ELITE
 /** His stored energies (per deployment): `n` normal, `e` elite, `q` the volleys in flight per target id. */
 const stateOf = (unit) => unit.trait.ebn ?? (unit.trait.ebn = { n: 0, e: 0, q: new Map() });
 
+/** A tile 荒芜回响 may place a 旧日残影 on: inside the field, deployable (全部位) and free (Battle.isReservedTile). */
+const remnantTileOk = (battle, r, c) => battle.grid.inRect(r, c) && battle.grid.canStand(r, c, { ranged: true }) && !battle.isReservedTile(r, c);
+
+/** Whether `unit`'s attack range holds one tile 荒芜回响 may use (its cast condition; no rng, unlike remnantTiles). */
+function hasRemnantTile(battle, unit) {
+  for (const k of unit.rangeKeys || []) if (remnantTileOk(battle, Math.floor(k / COLS), k % COLS)) return true;
+  return false;
+}
+
 /**
  * The tiles 荒芜回响 may place 旧日残影 on (PRTS 备注 order): free deployable tiles of `unit`'s attack range — first those
  * holding a selectable ground enemy, by the best of them in his target order; then by the distance to the nearest
@@ -97,8 +109,7 @@ function remnantTiles(battle, unit) {
   const tiles = [];
   for (const k of unit.rangeKeys || []) {
     const r = Math.floor(k / COLS), c = k % COLS;
-    if (!battle.grid.inRect(r, c) || !battle.grid.canStand(r, c, { ranged: true }) || battle.isReservedTile(r, c)) continue;
-    tiles.push([r, c]);
+    if (remnantTileOk(battle, r, c)) tiles.push([r, c]);
   }
   if (!tiles.length) return tiles;
   const foes = battle.enemies.filter((e) => canTargetEnemy(unit, e, GROUND));
@@ -231,6 +242,7 @@ export default {
         },
         [S2]: {
           kind: 'instant',
+          trigger: 'NEVER',   // the kit's cast (install): full SP and one free placeable tile in his range
           onStart({ battle, unit, skill }) {
             const tiles = remnantTiles(battle, unit);
             if (!tiles.length) { skill.addCharge(1); return; }   // "攻击范围内不存在可部署位时，技能不会被触发"
@@ -260,6 +272,14 @@ export default {
         },
       },
       install(battle, unit) {
+        // S2 荒芜回响: cast at full SP with one free placeable tile in his range, no enemy needed (see the header)
+        if (unit.skill?.id === S2) {
+          battle.on('tick', () => {
+            const sk = unit.skill;
+            if (!sk || !sk.ready || sk.active || !up(unit) || !unit.canAct || unit.s.flags.silence) return;
+            if (hasRemnantTile(battle, unit)) sk.activate('SP_FULL');
+          }, { owner: unit });
+        }
         // MSC-Y: ASPD while any energy is stored
         const aspd = num(hidden.attack_speed);
         if (aspd) toggleBuff(battle, unit, 'trait:ebnhlz:stored', () => { const v = stateOf(unit); return v.n + v.e > 0; }, { aspd });

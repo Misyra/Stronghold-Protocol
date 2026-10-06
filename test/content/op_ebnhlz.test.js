@@ -76,7 +76,7 @@ function storeUp(h, u, n, e, max = 60) {
   return log;
 }
 
-test('黑键 in every 自选 form: his operator kit (all three skills authored), the form\'s stats + module attributes, 3-14, ranged arts every 3 s that hits air units, blocks 1, ground-targetable, the data\'s DEFAULT triggers, 空 bond, no 特质', () => {
+test('黑键 in every 自选 form: his operator kit (all three skills authored), the form\'s stats + module attributes, 3-14, ranged arts every 3 s that hits air units, blocks 1, ground-targetable, the data\'s DEFAULT triggers (S2: the kit casts it), 空 bond, no 特质', () => {
   assert.equal(OPERATOR_KITS[EBN], KITS[EBN]);
   for (const f of FORMS_ALL) {
     const [tier, elite, mod] = f;
@@ -88,7 +88,7 @@ test('黑键 in every 自选 form: his operator kit (all three skills authored),
         [form.stats.maxHp + (m?.attr.maxHp ?? 0), form.stats.atk + (m?.attr.atk ?? 0), form.stats.def + (m?.attr.def ?? 0), form.stats.res + (m?.attr.res ?? 0), 100 + (m?.attr.aspd ?? 0)], `${label(f)}: stats`);
       assert.deepEqual([u.s.blockCnt, u.profile.attack, u.profile.dmgType, u.profile.canHitFly, u.base.bat], [1, 'ranged', 'arts', true, 3], `${label(f)}: 秘术师`);
       assert.deepEqual(u.liveRangeGrid, form.rangeGrid, `${label(f)}: 3-14`);
-      assert.equal(u.skill.rule, 'DEFAULT', `${label(f)}: the data's trigger`);
+      assert.equal(u.skill.rule, skill === 1 ? 'NEVER' : 'DEFAULT', `${label(f)}: the data's trigger (S2: the kit's own cast)`);
       assert.deepEqual([u.def.bonds, u.def.raw.garrisonIds], [['emptyShip'], []], `${label(f)}: bonds / 特质`);
       assert.ok(!u.s.flags.liftoff && !u.s.flags.camou && !u.s.flags.stealth, `${label(f)}: ground enemies target him`);
       done(h);
@@ -292,16 +292,29 @@ test('S1 渐快急板 (MANUAL, data DEFAULT): 5 s, range 4-1, attack interval ×
   }
 });
 
-test('S2 荒芜回响 (AUTO, data DEFAULT): spends every energy (elite first) on energies + 1 旧日残影 on free tiles of his range — the enemy\'s tile first, then the nearest; fewer tiles ⇒ fewer spent; no free tile ⇒ no cast (the charge back)', () => {
+test('S2 荒芜回响 (AUTO: full SP and one free placeable tile in his range, no enemy needed — PRTS 备注, prefab _minTileNum 1): spends every energy (elite first) on energies + 1 旧日残影 on free tiles of his range — the enemy\'s tile first, then the nearest; fewer tiles ⇒ fewer spent; no free tile ⇒ no cast', () => {
   for (const [tier, elite, mod] of [[5, false, null], [6, true, MX]]) {
     const sk = skillOf(tier, elite, S2);
     assert.deepEqual([sk.skillType, sk.bb.atk_scale, sk.bb.force, sk.spCost, sk.initSp], ['AUTO', elite ? 2 : 1.7, 1, elite ? 14 : 15, 0]);
+    // no enemy on the field: it casts as soon as its SP is full
+    {
+      const { h, u } = field({ tier, elite, mod, skill: 1 });
+      assert.equal(u.skill.rule, 'NEVER', 'the kit casts it');
+      let before = stored(u);
+      for (let i = 0; i < (sk.spCost + 1) * 30 && u.skill.activations === 0; i++) { before = stored(u); h.step(); }
+      assert.equal(u.skill.activations, 1, 'cast at full SP with no enemy anywhere');
+      approx(h.b.time, sk.spCost, `T${tier}: at ${sk.spCost} s`, 0.2);
+      assert.equal(h.b.allyUnits.filter((t) => t.kind === 'token' && t.defId === REMNANT && t.alive).length, before.n + before.e + 1, 'the energies stored meanwhile + 1 remnants');
+      assert.deepEqual(stored(u), { n: 0, e: 0 }, 'every energy spent');
+      done(h);
+    }
     const { h, u } = field({ tier, elite, mod, skill: 1 });
     const N = traitOf(tier, elite, mod).times;
+    holdSkill(u);
     storeUp(h, u, N, 1);
-    u.skill.gainSp(999);
     const e = h.spawn('enemy_dummy', { pos: [10, 7] });
-    assert.ok(h.runUntil(() => u.skill.activations === 1, 5), 'cast with an enemy in range');
+    u.skill.gainSp(999);
+    assert.ok(h.runUntil(() => u.skill.activations === 1, 5), 'cast');
     const rem = h.b.allyUnits.filter((t) => t.kind === 'token' && t.defId === REMNANT);
     assert.equal(rem.length, N + 2, `${N} + 1 energies + 1 remnants`);
     assert.deepEqual([rem[0].tileR, rem[0].tileC], [10, 7], 'the enemy\'s tile first');
@@ -315,27 +328,30 @@ test('S2 荒芜回响 (AUTO, data DEFAULT): spends every energy (elite first) on
   // the flat stage's edge (col 2: RANGED tiles; cols 0–1 none): facing LEFT from (10, 2) no tile of his range is free
   {
     const { h, u } = field({ tier: 5, skill: 1, row: 10, col: 2, dir: 'LEFT' });
+    holdSkill(u);
     storeUp(h, u, 3, 1);
-    u.skill.gainSp(999);
     h.spawn('enemy_dummy', { pos: [10, 1] });
-    assert.ok(h.runUntil(() => u.skill.activations >= 1, 5), 'the DEFAULT condition holds (an enemy in range)');
-    assert.equal(h.b.allyUnits.filter((t) => t.kind === 'token').length, 0, 'no placeable tile: no remnant');
-    assert.ok(u.skill.ready, 'the charge is back');
+    u.skill.gainSp(999);
+    h.run(5);
+    assert.equal(u.skill.activations, 0, 'no placeable tile: no cast, an enemy in range notwithstanding');
+    assert.equal(h.b.allyUnits.filter((t) => t.kind === 'token').length, 0, 'no remnant');
+    assert.ok(u.skill.ready, 'the charge waits');
     done(h);
   }
   // fewer free tiles than energies + 1: facing LEFT from (10, 3) only (10, 2) and (11, 2) are placeable
   {
     const { h, u } = field({ tier: 5, skill: 1, row: 10, col: 3, dir: 'LEFT' });
+    holdSkill(u);
     storeUp(h, u, 3, 1);
-    u.skill.gainSp(999);
     let atEnd = null;
     h.b.on('skillEnd', (c) => { if (c.unit === u) atEnd = stored(u); });
     h.spawn('enemy_dummy', { pos: [10, 2] });
+    u.skill.gainSp(999);
     assert.ok(h.runUntil(() => u.skill.activations === 1, 5));
     const rem = h.b.allyUnits.filter((t) => t.kind === 'token' && t.defId === REMNANT);
     assert.deepEqual(rem.map((t) => [t.tileR, t.tileC]), [[10, 2], [11, 2]], 'the enemy\'s tile, then the other free one');
     assert.deepEqual(atEnd, { n: 3, e: 0 }, 'one energy spent — the elite one first');
-    assert.ok(h.runUntil(() => energyHits(h, u).length === 3, 2), 'the attack that follows releases the three left');
+    assert.ok(h.runUntil(() => energyHits(h, u).length === 3, 4), 'his next attack (3 s interval) releases the three left');
     done(h);
   }
 });

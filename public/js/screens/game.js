@@ -400,7 +400,10 @@ function MatchScreen() {
     const pf = (Array.isArray(pub?.fields) ? pub.fields : []).find((f) => f && f.fieldId === field.fieldId);
     const members = Array.isArray(pf?.players) ? pf.players : Array.isArray(field.players) ? field.players : [];
     const sides = field.sides && typeof field.sides === 'object' ? field.sides : null;
-    const side = sides && sides[myId] ? sides[myId] : members.length > 1 && members.indexOf(myId) === 1 ? 'R' : 'L';
+    // a scouted board of a boss round's prep (Match.prepFieldMeta: the boss-field rows, `side` = the scouted player's
+    // half) is framed by the boss-field prep camera of that half — the leader standing at its spawn (item 55)
+    const side = field.prep && (field.side === 'L' || field.side === 'R') ? field.side
+      : sides && sides[myId] ? sides[myId] : members.length > 1 && members.indexOf(myId) === 1 ? 'R' : 'L';
     // local simulation (client-side combat) feeds a frame per animation frame: no network jitter buffer
     view.raw?.setLocalFeed?.({ on: !!field.local, speed: field.speed });
     setLayer('ALL');

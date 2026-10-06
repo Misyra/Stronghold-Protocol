@@ -1,6 +1,7 @@
 // server/match/match/views.js — Match methods: the state builders — m.public (publicView with statusOf / fieldOf, the
 // fields' progress and the teammates' live pendingLp / uniteLeft), the nextEnemies preview of m.private and the prep
-// scout's m.field (prepFieldMeta: board, hand and temp as units, the scouted player's effects and coming enemies).
+// scout's m.field (prepFieldMeta: board, hand and temp as units, the scouted player's effects and coming enemies; in a
+// boss round's prep on the player's half of the boss field).
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { PHASE, GEO } from '../../../shared/constants.js';
@@ -9,6 +10,7 @@ import { bondList, offBondCounts } from '../bondsMeta.js';
 import { cardView } from '../choices.js';
 import { bountySpawns, previewOf } from '../waves.js';
 import { timelineAt } from '../fields.js';
+import { bossFieldPlacement } from '../finalAssault.js';
 import { battleProgress } from '../../sim/spec.js';
 
 export class MatchViews {
@@ -253,6 +255,24 @@ export class MatchViews {
     try { nextEnemies = this.nextEnemiesFor(ps); } catch (e) { this.reportError('nextEnemies', e); }
     // the scouted player's effects column (策略 / 机变 / 悬赏 …), display-ready (user playtest #2: while scouting, the
     // right column shows the watched player's effects, not one's own)
-    return { t: 'm.field', fieldId: `n:${ps.playerId}`, kind: 'normal', rect: { ...GEO.NORMAL_RECT }, stageId: this.stageId, units, effects: ps.effectsView(), prep: true, nextEnemies };
+    const meta = { t: 'm.field', fieldId: `n:${ps.playerId}`, kind: 'normal', rect: { ...GEO.NORMAL_RECT }, stageId: this.stageId, units, effects: ps.effectsView(), prep: true, nextEnemies };
+    // 最终攻势 / 隐秘核心 prep: the pieces stand on the player's half of the boss field — the scout shows them there (rows
+    // − 7, the right half mirrored with RIGHT ↔ LEFT: finalAssault.js bossFieldPlacement, as the own prep view), with the
+    // round's leader at its spawn tile (nextEnemies `start`), framed by the boss-field prep camera of the player's side
+    // (`side`). Until 0.2.0 an eliminated player or a spectator seat scouting a player then saw the normal board and no
+    // leader at all (community report of 2026-10-06, item 55).
+    const g = this.fields.length ? null : this.bossGroupOf(ps);
+    if (g) return { ...meta, kind: 'boss', rect: { ...GEO.BOSS_RECT }, side: g.side, units: units.map((u) => this._onBossHalf(u, g.side)) };
+    return meta;
+  }
+
+  /** A prep UnitInfo (board, bench or temp row) placed on side 'L' | 'R' of the boss field (bossFieldPlacement). */
+  _onBossHalf(u, side) {
+    const p = bossFieldPlacement(side, u.y, u.x, u.dir || 'RIGHT');
+    const v = { ...u, x: p.col, y: p.row };
+    // a board piece keeps facing the same way relative to the leader (mirrored on the right half); a bench piece has no
+    // stored facing (it faces right, as the own prep bench draws it)
+    if (u.dir) { v.dir = p.dir; v.facing = p.dir === 'LEFT' ? -1 : 1; }
+    return v;
   }
 }

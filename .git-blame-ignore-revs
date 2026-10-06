@@ -23,3 +23,5 @@ c1b8292f92f5f07581342babe84ba0ac8a1dcf82
 aaef748ad95b33117654bf2f82b956de6b6509ff
 # feedback5 R5: public/js/screens/game.js plates, marks and keepEarly → public/js/screens/game/*.js
 dd07dc1ec10a47cb93490018c047c1eac5ab5157
+# feedback5 WW: docs/DESIGN.md → docs/design/*.md (the rules) and docs/history/*.md (the revisions), verbatim; DESIGN.md the index
+da1f5830cad2516381ef083c9aa37b9d7b5b4bb1

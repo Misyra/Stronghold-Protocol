@@ -44,14 +44,18 @@ export class PlayerPlacement {
 
   /**
    * Where piece may stand on (r, c): the deploy map of its position class (board.js canPlace) and, for a summon whose
-   * text reads "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`: 伺夜's 狼群, 缪尔赛思's 流形), a tile of its owner's
-   * attack range (summonRange). `owner` = the owner's position after the move being checked ({ key, piece, dir }: a
-   * summon swapped with its own owner).
+   * text reads "只能部署在召唤者攻击范围内" (tokens.json `ownerRange`: 伺夜's 狼群, 缪尔赛思's 流形, Mon3tr's 重构体), a tile of
+   * its owner's attack range (summonRange); for one marked `ownerRangeOutside` (凯尔希·思衡托's 战术锚点), a tile outside it
+   * (summonExcluded). `owner` = the owner's position after the move being checked ({ key, piece, dir }: a summon swapped
+   * with its own owner).
    */
   _legal(piece, r, c, owner = null) {
     if (!canPlace(this.deployMap(), this._placementOf(piece), r, c)) return false;
+    const k = tileKey(r, c);
     const range = this.summonRange(piece, owner);
-    return !range || range.has(tileKey(r, c));
+    if (range && !range.has(k)) return false;
+    const out = this.summonExcluded(piece, owner);
+    return !out || !out.has(k);
   }
 
   /**
@@ -66,6 +70,24 @@ export class PlayerPlacement {
    */
   summonRange(piece, owner = null) {
     if (!piece || piece.kind !== 'token' || this.gd.token(piece.id)?.ownerRange !== true) return null;
+    return this._ownerRangeOf(piece, owner);
+  }
+
+  /**
+   * The 'r,c' keys an outside-bound summon may NOT stand on — its owner's attack range (tokens `ownerRangeOutside`: PRTS
+   * 战术锚点 "仅可以部署在凯尔希·思衡托攻击范围外的远程位"; 0.2.0 WE2) — or null (not outside-bound, or the owner is off the
+   * board). Same range as summonRange.
+   * @param {any} piece
+   * @param {{ key: string, piece: any, dir: string } | null} [owner]
+   * @returns {Set<string> | null}
+   */
+  summonExcluded(piece, owner = null) {
+    if (!piece || piece.kind !== 'token' || this.gd.token(piece.id)?.ownerRangeOutside !== true) return null;
+    return this._ownerRangeOf(piece, owner);
+  }
+
+  /** The owner's attack-range keys of a summon piece (summonRange / summonExcluded), or null when its owner is off the board. */
+  _ownerRangeOf(piece, owner = null) {
     let at = owner;
     if (!at) for (const [key, p] of this.board) if (p.uid === piece.ownerUid && p.kind === 'chess') { at = { key, piece: p, dir: pieceDir(p) }; break; }
     const chess = at && this.gd.chess(at.piece.id);
@@ -86,17 +108,23 @@ export class PlayerPlacement {
    * battle. Returns the number taken off the board; a toast names them.
    */
   _liftOutOfRange() {
-    const back = [], gone = [];
+    const back = [], gone = [], backOut = [], goneOut = [];
     for (const [k, p] of [...this.board]) {
       if (p.kind !== 'token') continue;
       const range = this.summonRange(p);
-      if (!range || range.has(k)) continue;
+      const out = this.summonExcluded(p);
+      const inside = !!(out && out.has(k));
+      if (!inside && (!range || range.has(k))) continue;
       this.board.delete(k);
-      (this._returnToken(p, null, { allowTemp: true }) ? back : gone).push(this.gd.token(p.id)?.name || p.id);
+      const ok = this._returnToken(p, null, { allowTemp: true });
+      (inside ? (ok ? backOut : goneOut) : (ok ? back : gone)).push(this.gd.token(p.id)?.name || p.id);
     }
     if (back.length) this.m.toast(this, 'warn', msg('{names}只能部署在召唤者攻击范围内，已退回整备区', { names: back.map(dn) }));
     if (gone.length) this.m.toast(this, 'warn', msg('{names}只能部署在召唤者攻击范围内，整备区已满，下回合返还', { names: gone.map(dn) }));
-    return back.length + gone.length;
+    // an outside-bound summon (战术锚点) its owner's new range now covers
+    if (backOut.length) this.m.toast(this, 'warn', msg('{names}只能部署在召唤者攻击范围外，已退回整备区', { names: backOut.map(dn) }));
+    if (goneOut.length) this.m.toast(this, 'warn', msg('{names}只能部署在召唤者攻击范围外，整备区已满，下回合返还', { names: goneOut.map(dn) }));
+    return back.length + gone.length + backOut.length + goneOut.length;
   }
 
   /**
@@ -111,7 +139,8 @@ export class PlayerPlacement {
     for (const [k, p] of this.board) {
       if (p.kind !== 'token' || p.ownerUid !== owner.uid || stacks.some((s) => s.id === p.id)) continue;
       const range = this.summonRange(p, at);
-      if (range && !range.has(k)) needSlot.add(p.id);
+      const out = this.summonExcluded(p, at);
+      if ((range && !range.has(k)) || (out && out.has(k))) needSlot.add(p.id);
     }
     return needSlot.size <= [...this.hand, ...this.temp].filter((p) => p == null).length;
   }

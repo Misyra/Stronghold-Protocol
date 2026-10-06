@@ -50,9 +50,9 @@
 //   a tile at a Manhattan distance ≥ max_distance from it, it is put back on that tile's centre (unblocked, its route
 //   re-planned from there; waypoints already passed stay passed), stealth or 无敌 notwithstanding; a 消失 (hidden) enemy loses
 //   its mark and every mark ends with the skill (the client attaches it to shu_s_3). No enemy of the mode holds
-//   免疫传送 (data otherImmunities). Trigger: the data rule is TRY_SEARCH_ALLY_SKILL (her own row, PRTS "技能范围内存在可治疗的
-//   我方单位时释放技能"), which the engine does not know (an unknown rule acts as DEFAULT): this kit maps it onto the engine's
-//   SKILL_RANGE + `allies` on x-2 (an injured, healable allied unit of the skill range, herself included; 古米 S1's option).
+//   免疫传送 (data otherImmunities). Trigger: the data's — her own row TRY_SEARCH_ALLY_SKILL (PRTS "技能范围内存在可治疗的我方
+//   单位时释放技能"), which tools/build-data.mjs (TRIGGER_ALLY_RULES) writes as the engine's SKILL_RANGE + `allies` on the
+//   skill range x-2 (an injured, healable allied unit there, herself included; 古米 S1's option).
 
 import { num, traitBb, skillRec, batMod, up, giveSp } from '../shared/tier1.js';
 import { COLS } from '../../../constants.js';
@@ -164,7 +164,6 @@ export default {
         },
         [S3]: {
           kind: 'duration',
-          trigger: { rule: 'SKILL_RANGE', grid: g3, allies: true },
           mods: { atkPct: num(b3.atk) },
           targeting: { rangeGrid: g3 },
           onStart({ unit }) { unit.mem.shuMarks = new Map(); },

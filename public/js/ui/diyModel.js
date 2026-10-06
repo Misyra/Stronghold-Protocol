@@ -2,7 +2,8 @@
 // 干员调配 overlay (screens/diy.js), shared with the sync (ui/loadoutSync.js), the match UI (ui/gameLogic/diy.js) and
 // the tests. Four DIY slots (data/backups.json `diy.slots`: two at tier 5, two at tier 6, sold from 调度中心 level 5 / 6);
 // each takes an operator: a 6★ the player owns outside the chess pool (`diy.ownedPool`) — any of its three skills and
-// any module of its elite form but a 集成战略 one (shared/diy.js isDiyModule) — or a prototype (原型干员) with its locked
+// any module of its elite form but one of another game mode (集成战略 / 生息演算: shared/diy.js isDiyModule) — or a
+// prototype (原型干员) with its locked
 // skill / module; only operators with a kit are offered (`kitted`: the server's `welcome.diyKitted`). A prototype may
 // fill a tier-5 and a tier-6 slot, an owned operator one slot; the picks of a tier differ (shared/diy.js
 // validateDiyPicks).

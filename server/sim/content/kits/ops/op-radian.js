@@ -50,7 +50,8 @@
 // - Modules SO-A 电弧特勤证章 / SO-B 新起点: their trait and talent parts act "在【岁的界园志异】中" only (the client gates them to
 //   the 集成战略 theme rogue_yan / validInGameTag roguelike): N/A here — the module talents the composed record carries
 //   (SO-A's hidden respawn_time / prob / sp, SO-B's attack@max_target and x-5 recall) are ignored; their attributes are in the
-//   stats. (DIY_EXCLUDED_MODULE_TYPE refuses ISW-* only, so a roster may carry them — see the report.)
+//   stats. A player's roster never carries them (shared/diy.js DIY_EXCLUDED_MODULE_TYPE, 0.2.0 WE2); the kit fields them for
+//   its tests.
 
 import { num, talentBb, skillRec, up } from '../shared/tier1.js';
 import { summonDeck, holdBuff, tokenStat } from '../shared/summoner.js';
@@ -231,8 +232,6 @@ export default {
       talents: [
         { install(battle, unit) { // 卡带里的灵感: the deck of her summon pieces and their kit
           const cnt = Math.max(0, Math.floor(num(t0.cnt)));
-          const tdef = tokenId ? battle.tokenDef(tokenId, unit) : null;
-          const extra = num(tokTalent(tdef, 'max_deploy_count')?.bb?.max_deploy_count, 0);
           const ratios = { atk: num(t1.atk), def: num(t1.def), hp: num(t1.max_hp) };
           const inspireOne = (s) => {
             if (!up(unit)) return;
@@ -250,8 +249,8 @@ export default {
           summonDeck(battle, unit, {
             tokenIds: TOWERS,
             charge: cnt,
-            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt) + num(tokTalent(tdef, 'max_deck_stack_cnt')?.bb?.max_deck_stack_cnt, 0),
-            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1) + extra,
+            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt),
+            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1),
             kit: (t) => towerKit(t, unit, opts),
           });
           // her skills on the standing summons at each start / end (a summon deployed meanwhile syncs itself); 鼓舞 again

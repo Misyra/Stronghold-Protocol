@@ -433,6 +433,13 @@ function immunitiesOf(attrs) {
 const TRIGGER_RENAME = { ALWAYS: 'SP_FULL', CUSTOM_RANGE_SEARCH_ENEMY: 'CUSTOM_RANGE' };
 
 /**
+ * Official rows the engine plays as one of its own rules on an ally condition (`allies: true` — server/sim/skills.js: a
+ * healable, injured ally on the trigger grid instead of an enemy): 黍 S3 离离枯荣's TRY_SEARCH_ALLY_SKILL, PRTS 卫戍协议/帮助
+ * 特殊策略 "技能范围内存在可治疗的我方单位时释放技能" — SKILL_RANGE on the skill's own range (x-2), checked every tick.
+ */
+const TRIGGER_ALLY_RULES = Object.freeze({ TRY_SEARCH_ALLY_SKILL: 'SKILL_RANGE' });
+
+/**
  * A skill whose rangeId is its new ATTACK range — "攻击范围扩大 / 改变 / 缩小 / 缩短", "攻击距离+1 / 加长 / 缩短", "攻击范围与
  * 溅射范围扩大" — and not a 技能范围 of its own (PRTS 卫戍协议/帮助 技能操作: "拥有技能范围的技能（非攻击距离增加）").
  * "攻击范围内…" (an effect on the attack range) does not match.
@@ -527,6 +534,8 @@ const ACTIVE_RANGE_OVER = new Set(['DEFAULT', 'SEARCH']);
  * - else, for an operator's MANUAL skill with a 技能范围 (a rangeId that is not an attack-range change): SKILL_RANGE,
  *   "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能", customRangeGrid = the skill range;
  * - else DEFAULT (the basic strategy: ready + about to attack / heal);
+ * - an ally row the engine plays as one of its rules (TRIGGER_ALLY_RULES: 黍 S3's TRY_SEARCH_ALLY_SKILL → SKILL_RANGE on
+ *   the skill range with `allies: true` — an injured, healable ally there);
  * - last, the deliberate deviations (TRIGGER_DEVIATIONS, per chess and skill; STANDIN_TRIGGER_DEVIATIONS, per stand-in
  *   unit and skill): `rule` from the table, `rawRule` the official row (a SKILL_RANGE deviation takes the skill's own
  *   range as `customRangeGrid`);
@@ -567,6 +576,10 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
   if (deviation === 'SKILL_RANGE') {
     if (!skill.rangeGrid) warn(`trigger deviation ${chessId} ${skill.skillId}: SKILL_RANGE without a 技能范围`);
     return { rule: deviation, rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null };
+  }
+  if (!deviation && TRIGGER_ALLY_RULES[rawRule]) {
+    if (!skill.rangeGrid) warn(`skill ${skill.skillId}: ${rawRule} without a 技能范围`);
+    return { rule: TRIGGER_ALLY_RULES[rawRule], rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null, allies: true };
   }
   const rule = deviation || TRIGGER_RENAME[rawRule] || rawRule;
   if (ACTIVE_RANGE_OVER.has(rule) && operator && manual && baseGrid?.length) {
@@ -792,9 +805,13 @@ function classifyAttack(char, traitText) {
   const prof = char.profession;
   const sub = char.subProfessionId;
   const trait = traitText || '';
+  // 驭法铁卫 (斩业星熊) "技能开启时普通攻击会造成法术伤害": arts is the skill-on type; the normal attack — the record's
+  // dmgType, what a card and the bot read — is physical (display only: her kit attacks physically off-skill and in arts
+  // while a skill runs, op-hsgma2.js)
+  const skillOnArts = /技能开启时[^，。；]*法术伤害/.test(trait);
   let dmgType;
   if ((prof === 'MEDIC' && sub !== 'incantationmedic') || sub === 'bard') dmgType = 'heal';
-  else if (/法术伤害/.test(trait) || prof === 'CASTER') dmgType = 'arts';
+  else if ((/法术伤害/.test(trait) && !skillOnArts) || prof === 'CASTER') dmgType = 'arts';
   else dmgType = 'phys';
 
   let attackKind;
@@ -1368,8 +1385,44 @@ function classifyToken(char, traitText) {
   return c;
 }
 
+/** The blackboard keys of a summon's own talents that add to its deploy limit / holding (statsFrom: deployLimit / deckStack). */
+const TOKEN_DECK_KEYS = Object.freeze(['max_deploy_count', 'max_deck_stack_cnt']);
+
 /**
- * Build one owner-specific variant of a token / map character at (phase, level, skill level).
+ * A summon's talent additions to its deploy limit and holding: the blackboard keys `max_deploy_count` /
+ * `max_deck_stack_cnt` of the token's own talents — the hidden "TOKEN数+N" talent of 麦哲伦's drones and 令's summons
+ * (E2: max_deck_stack_cnt 5, max_deploy_count 2), of 白铁's devices (E2: 3, 1), the visible 转瞬即逝的幻影 of 夜莺's
+ * 幻影 (max_deploy_count 2) — which the client adds to the attribute frame's maxDeployCount / maxDeckStackCnt (statsFrom
+ * reads the frame only): PRTS 幻影 备注 "每次部署夜莺时获得2个可部署的幻影，最大可部署数量为3" (1 + 2); the owners' own
+ * talents "最多同时部署3个" (麦哲伦 / 令: 1 + 2), "最多可部署2个" (白铁: 1 + 1); SUM-Y stage 2+ "最多同时部署4个" — its token part
+ * (the same talent, max_deploy_count 3) replaces the talent's values. The candidates as everywhere: the token's phase /
+ * level at potential 0 (望's rank-2 棋子 +1 stays out); a module's token part (`moduleTokenParts`, unlocked at the owner's
+ * phase / level as moduleTalentChanges) replaces the base candidate of the same prefabKey key by key (mergeTalentChanges:
+ * what it does not restate stays) — matched by prefabKey, not talentIndex (夜莺's RIN-Y stage 3 part names talentIndex 0
+ * for her 幻影's talent 1). The hand count of a placeable summon is this deploy limit (PRTS 卫戍协议/帮助 "根据召唤物部署数量
+ * 上限（非初始持有量），发送等量召唤物至手牌区"; gamedata / player/diy.js placeableTokens).
+ * @returns {Record<string, number>} the non-zero additions by blackboard key
+ */
+function tokenTalentDeckBonus(char, phase, level, moduleTokenParts, modPhase, modLevel) {
+  const byKey = new Map();
+  const take = (c, merge) => {
+    if (!c) return;
+    const key = String(c.prefabKey ?? '');
+    const bb = {};
+    for (const b of c.blackboard || []) if (TOKEN_DECK_KEYS.includes(b.key) && typeof b.value === 'number') bb[b.key] = b.value;
+    byKey.set(key, merge ? { ...(byKey.get(key) || {}), ...bb } : bb);
+  };
+  for (const t of char.talents || []) take(bestCandidate(t?.candidates, phase, level), false);
+  for (const part of moduleTokenParts || []) take(bestCandidate(part?.addOrOverrideTalentDataBundle?.candidates, modPhase, modLevel), true);
+  const out = {};
+  for (const bb of byKey.values()) for (const [k, v] of Object.entries(bb)) out[k] = (out[k] || 0) + v;
+  for (const k of Object.keys(out)) if (!out[k]) delete out[k];
+  return out;
+}
+
+/**
+ * Build one owner-specific variant of a token / map character at (phase, level, skill level). Its stats add the module's
+ * token attributes and the summon's talent additions to its deploy limit / holding (tokenTalentDeckBonus).
  * @returns {object}
  */
 function tokenVariant(ctx, tokenId, char, { phase, level, skillIndex, skillLevel, modulePhase, moduleTokenParts, label }) {
@@ -1378,6 +1431,7 @@ function tokenVariant(ctx, tokenId, char, { phase, level, skillIndex, skillLevel
   const bonus = {};
   const tokBonus = modulePhase?.tokenAttributeBlackboard?.[tokenId];
   for (const b of Array.isArray(tokBonus) ? tokBonus : []) bonus[b.key] = (bonus[b.key] || 0) + b.value;
+  for (const [k, v] of Object.entries(tokenTalentDeckBonus(char, ph, lv, moduleTokenParts, phase, level))) bonus[k] = (bonus[k] || 0) + v;
   const attrs = interpolateAttrs(char, ph, lv);
   const tc = bestCandidate(char.trait?.candidates, ph, lv);
   const tbb = flattenBB(tc?.blackboard);
@@ -1447,6 +1501,15 @@ const TOKEN_ABNORMAL = Object.freeze({
 });
 
 /**
+ * Summon deployment positions the client's token row gets wrong, from the PRTS summon pages: 望's 棋子 — PRTS 棋子
+ * 部署位置 "全部位", 备注 "游戏内召唤物信息与实际不符（显示为仅部署在近战位）" (character_table: MELEE). The record's `position`
+ * (the prep's placement class, board.js positionClass) takes this value.
+ */
+const TOKEN_POSITION_CORRECTIONS = Object.freeze({
+  token_10064_wang_stone1: 'ALL',   // 棋子
+});
+
+/**
  * The tokens.json record of a summon (buildTokens; the 自选 picks' summons, buildDiyTokens) from its per-owner
  * `variants` (key → variant; `owners` = the keys, in order; the defaults are the first owner's variant).
  * Hand cards placed during the prep phase (`placeable`) are the MANUALLY DEPLOYABLE summons (PRTS 卫戍协议/帮助
@@ -1459,24 +1522,39 @@ const TOKEN_ABNORMAL = Object.freeze({
  * 10055–10058, 10065), so no entry is read as the default display. HIDDEN tokens exist in battle only (e.g.
  * 投递坐标 — PRTS: "携带技能【使命必达！】的新约能天使，不会提供所属召唤物"). Only a token its owner actually makes
  * (`produced`: a talent or a skill of some loadout, `sources`) is a card; which loadouts make it is per variant
- * (`sources`, `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). In battle a skill's summon deploys once at the start, then
- * takes its tile again each time the skill gives one (sim/content/tokens.js dockSkillSummons, shared/constants.js
- * SKILL_SUMMON_START_DEPLOY).
+ * (`sources`, `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). And only a token an owner shows (`displayed`: the owner's
+ * displayTokenDict, the variants' `display` source): a summon no owner shows is its skill's own object, never a card —
+ * every such token of the season is HIDDEN in the shop state (纸偶, 香槟炸弹, 从不混淆的方向, …), and the one the shop state
+ * does not list is 予愿安洁莉娜 S3's “一会儿见！” (PRTS 予愿安洁莉娜 S3 备注 "每次移动后若不位于初始位置…于初始位置部署一个
+ * “一会儿见！”", PRTS “一会儿见！” "无法被玩家选择查看详细信息"; O20) — every summon a player places is displayed. In battle a
+ * skill's summon deploys once at the start, then takes its tile again each time the skill gives one
+ * (sim/content/tokens.js dockSkillSummons, shared/constants.js SKILL_SUMMON_START_DEPLOY).
  * `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
- * 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
- * ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere).
- * `abnormal` = TOKEN_ABNORMAL (PRTS).
+ * 特性) or an owner's talent naming it "可以在攻击范围内(的地面)部署 / 使用…" (`ownerTexts`: Mon3tr's 重构体 "可以在攻击范围内的地面
+ * 使用一个…重构体", 0.2.0 WE2; 莱伊's 沙地兽, whose text says it too): its hand piece may only be placed on a tile of its
+ * owner's attack range (server/match/board.js ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's
+ * tactical point could go anywhere). `ownerRangeOutside` (present when true): the token text "部署在…攻击范围外" — the
+ * piece may only stand OUTSIDE its owner's attack range; `rangedTilesOnly` (present when true): "仅可以部署在…远程位" — only
+ * on a ranged (高台) tile, the mode's "所有行动内远程干员可部署在近战位" being an operators' rule: 凯尔希·思衡托's 战术锚点
+ * "仅可以部署在凯尔希·思衡托攻击范围外的远程位" (PRTS 战术锚点 特性; 0.2.0 WE2, O24).
+ * `abnormal` = TOKEN_ABNORMAL (PRTS); `position` = TOKEN_POSITION_CORRECTIONS (PRTS) or the token row's.
  */
-function summonRecord(ctx, tokenId, char, variants, produced) {
+function summonRecord(ctx, tokenId, char, variants, produced, ownerTexts = []) {
   const displayType = ctx.ac.shopStateTokenDict?.[tokenId]?.tokenDisplayType || null;
   const owners = Object.keys(variants);
   const first = variants[owners[0]];
-  const ownerRange = /只能部署在\S*攻击范围内/.test(stripRich(first.trait.desc) || '');
+  const text = stripRich(first.trait.desc) || '';
+  const ownerRange = /只能部署在\S*攻击范围内/.test(text) || ownerTexts.some((d) => /可以在攻击范围内(?:的[^，。；]*?)?(?:部署|使用)/.test(stripRich(d) || ''));
+  const ownerRangeOutside = /部署在[^，。；]*攻击范围外/.test(text);
+  const rangedTilesOnly = /仅可以部署在[^，。；]*远程位/.test(text);
+  const shows = (list) => Array.isArray(list) && list.includes('display');
+  const displayed = Object.values(variants).some((v) => shows(v.sources) || Object.values(v.bySkill || {}).some((a) => shows(a.sources)));
   return {
     tokenId, kind: 'summon', name: char.name, appellation: char.appellation || null,
     desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
-    profession: char.profession, subProfessionId: char.subProfessionId, position: char.position,
-    displayType, placeable: displayType !== 'HIDDEN' && produced, ownerRange,
+    profession: char.profession, subProfessionId: char.subProfessionId, position: TOKEN_POSITION_CORRECTIONS[tokenId] ?? char.position,
+    displayType, placeable: displayType !== 'HIDDEN' && produced && displayed, ownerRange,
+    ...(ownerRangeOutside ? { ownerRangeOutside: true } : null), ...(rangedTilesOnly ? { rangedTilesOnly: true } : null),
     owners,
     // Defaults = first owner's variant; per-owner data in variants[owner].
     stats: first.stats, rangeGrid: first.rangeGrid, dmgType: first.dmgType, attackKind: first.attackKind,
@@ -1551,14 +1629,15 @@ function buildDiyTokens(ctx, units, owned) {
           }
         }
         if (!owners.has(tokenId)) owners.set(tokenId, []);
-        owners.get(tokenId).push({ key: `${charId}@${key}`, variant: v, produced });
+        const texts = form.talents.filter((t) => t.tokenKey === tokenId).map((t) => t.desc || '');
+        owners.get(tokenId).push({ key: `${charId}@${key}`, variant: v, produced, texts });
       }
     }
   }
   const out = {};
   for (const tokenId of [...owners.keys()].sort(naturalCmp)) {
     const list = owners.get(tokenId);
-    out[tokenId] = summonRecord(ctx, tokenId, charTable[tokenId], Object.fromEntries(list.map((o) => [o.key, o.variant])), list.some((o) => o.produced));
+    out[tokenId] = summonRecord(ctx, tokenId, charTable[tokenId], Object.fromEntries(list.map((o) => [o.key, o.variant])), list.some((o) => o.produced), list.flatMap((o) => o.texts));
   }
   return out;
 }
@@ -1601,7 +1680,8 @@ function buildTokens(ctx, chess, tokenOwners, enemies) {
     }
     const makes = (list) => (list || []).some((s) => s === 'talent' || s === 'skill');
     const produced = owners.some((o) => makes(o.sources) || (o.skillAlts || []).some((a) => makes(a.sources)));
-    out[tokenId] = summonRecord(ctx, tokenId, char, variants, produced);
+    const ownerTexts = owners.flatMap((o) => (chess[o.chessId]?.talents || []).filter((t) => t.tokenKey === tokenId).map((t) => t.desc || ''));
+    out[tokenId] = summonRecord(ctx, tokenId, char, variants, produced, ownerTexts);
   }
 
   // 炎佑 (yanShip 6-member summon) — allied flying unit built from its enemy template.
@@ -3739,6 +3819,11 @@ function validateAll(f) {
   for (const [id, fl] of Object.entries(TOKEN_ABNORMAL)) {
     if (!tokens[id]) err(`TOKEN_ABNORMAL: ${id} is not a token`);
     for (const f of fl) if (f !== 'healFree' && f !== 'isolated') err(`TOKEN_ABNORMAL: ${id}: unknown effect ${f}`);
+  }
+  for (const [id, pos] of Object.entries(TOKEN_POSITION_CORRECTIONS)) {
+    const t = tokens[id] ?? backups?.tokens?.[id];
+    if (!t || t.kind !== 'summon') err(`TOKEN_POSITION_CORRECTIONS: ${id} is not a summon`);
+    else if (t.position !== pos || !['MELEE', 'RANGED', 'ALL'].includes(pos)) err(`TOKEN_POSITION_CORRECTIONS: ${id}: position ${t.position}`);
   }
   for (const t of Object.values(tokens)) {
     if (!t.stats) err(`token ${t.tokenId}: no stats`);

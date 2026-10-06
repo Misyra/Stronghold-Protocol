@@ -34,9 +34,9 @@
 //   stage 3: the next attack@chain.extra_cnt jumps after that neither). Her heals pass 禁疗 ("治疗效果无视禁疗"); her selection
 //   takes her own 重构体 through its 禁疗 (`healThrough`), no other 禁疗 unit [ASSUMED: the jumps too].
 // - Module XAH-X 记忆存档: the trait's 0.85 per jump (traitOverride); stage 3 changes T1 (below); ATK / DEF from the attributes.
-// - T1 自我修复 (cnt 1): her 重构体 is a hand piece the player places (the talent's summon). "可以在攻击范围内的地面使用" — a
-//   ground tile of her attack range — is not in the token data (`ownerRange` false), so the match does not hold the piece to
-//   it and the battle takes it where it stands [open question]. Its kit: 禁疗 (only her heals reach it), blocks nothing, taunt
+// - T1 自我修复 (cnt 1): her 重构体 is a hand piece the player places (the talent's summon) on a ground tile of her attack
+//   range — "可以在攻击范围内的地面使用": the data's `ownerRange` from that talent text (tools/build-data.mjs summonRecord,
+//   0.2.0 WE2) and its MELEE position, enforced by the match. Its kit: 禁疗 (only her heals reach it), blocks nothing, taunt
 //   −1, loses 8 HP every 0.1 s from 1 s after it lands (流失, Battle.loseHp — PRTS "每0.1s流失8生命值"; trait damage_per_second
 //   80); every ally of its
 //   3×3 but itself (no 孤立 one) ATK +atk (0.15; XAH-X stage 3 0.25; 同名效果取最高). Gone (destroyed or withdrawn) ⇒ back on its

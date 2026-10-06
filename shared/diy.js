@@ -12,10 +12,11 @@
 // - no 特质 (PRTS "甄选加入的干员不会拥有任何特质"); bonds from the operator's factions (`diy.operators[id].bonds`);
 // - the normal form is E2 Lv1, skill rank 4, no module; the elite E2 Lv60, rank 7, its module at stage 1 (tier 5) or 3
 //   (tier 6) — the slot record's `status` (activity_table diyChessDict) picks the unit form;
-// - an owned pick chooses its skill (any of 3) and module (any of its modules, or none — a roster never carries a
-//   集成战略-only one: ISW-A, "在集成战略中…" [ASSUMED: not usable outside 集成战略, the owner's decision of 2026-10-05],
-//   validateDiyPicks / isDiyModule; the composed record and the sim still field any module, as the kits test them); a
-//   prototype carries the skill
+// - an owned pick chooses its skill (any of 3) and module (any of its modules, or none — a roster never carries a module
+//   whose own effect works in another game mode only: ISW-A "在集成战略中…", SO-A / SO-B "在【岁的界园志异】中…" /
+//   "在【沉沦者的黑流树海】中…", RA-A "在生息演算中…" [ASSUMED: not usable outside that mode, the owner's decision of
+//   2026-10-05 for ISW-A, the same reason for SO / RA], validateDiyPicks / isDiyModule; the composed record and the sim
+//   still field any module, as the kits test them); a prototype carries the skill
 //   and module of its 补位 rows at that tier (`diy.locked`: "技能携带规则与系统补位时一致" — [ASSUMED] that reading, the
 //   owner's decision of 2026-10-05);
 // - potential 0 for everyone [ASSUMED: no account].
@@ -28,11 +29,14 @@ import { composeUnitRecord, unitForm, statusKey } from './standIn.js';
 export const DIY_TIERS = Object.freeze([5, 6]);
 
 /**
- * Module types a player's 自选 roster never carries: the 集成战略 modules (ISW-A — their own effect applies only "在集成
- * 战略中") [ASSUMED: not usable outside 集成战略, the owner's decision of 2026-10-05]. A roster rule (validateDiyPicks,
- * the client's picker), like the kit list: checkDiyPick / diyRecordOf still compose any module of the form.
+ * Module types a player's 自选 roster never carries: the modules whose own effect works in one other game mode only — the
+ * text "在…中" and battle_equip_table's gate on those parts (`validInGameTag`): the 集成战略 modules ISW-A ("在集成战略中")
+ * and the 集成战略 themes' 特勤证章 SO-A / SO-B (电弧 "在【岁的界园志异】中", 机械师 "在【沉沦者的黑流树海】中"; roguelike), the
+ * 生息演算 modules RA-A (森蚺 "在生息演算中"; sandbox) [ASSUMED: not usable outside that mode — the owner's decision of
+ * 2026-10-05 for ISW-A, the same reason for SO / RA (follow-ups #10, #25)]. A roster rule (validateDiyPicks, the client's
+ * picker), like the kit list: checkDiyPick / diyRecordOf still compose any module of the form.
  */
-export const DIY_EXCLUDED_MODULE_TYPE = /^ISW-/;
+export const DIY_EXCLUDED_MODULE_TYPE = /^(?:ISW|SO|RA)-/;
 
 /**
  * Whether a module of a unit form (`forms[k].modules[]` entry) may be picked for a 自选 piece (DIY_EXCLUDED_MODULE_TYPE).
@@ -235,7 +239,7 @@ export function diyModuleOf(slotId, charId, uniEquipId, data) {
 
 /**
  * Check a whole 自选 roster: `picks` maps slot base ids to a pick (absent / null = an empty slot). Strict: an unknown
- * slot, an illegal pick (checkDiyPick), a 集成战略 module (isDiyModule), an operator without a kit (when `kitted` is
+ * slot, an illegal pick (checkDiyPick), a module of another game mode (isDiyModule: 集成战略 / 生息演算), an operator without a kit (when `kitted` is
  * given), the same operator twice in one tier, or an owned operator in two slots rejects the roster; a prototype may fill
  * a tier-5 and a tier-6 slot.
  * @param {any} picks
@@ -259,7 +263,7 @@ export function validateDiyPicks(picks, { data, kitted = null } = { data: null }
     const { charId } = c.pick;
     if (!ok(charId)) return { error: 'BAD_TARGET', detail: `${charId} has no kit yet` };
     const mod = c.pick.uniEquipId ? diyModuleOf(slotId, charId, c.pick.uniEquipId, data) : null;
-    if (mod && !isDiyModule(mod)) return { error: 'BAD_TARGET', detail: `${charId}: ${c.pick.uniEquipId} is a 集成战略 module (${mod.typeName})` };
+    if (mod && !isDiyModule(mod)) return { error: 'BAD_TARGET', detail: `${charId}: ${c.pick.uniEquipId} is a module of another game mode (${mod.typeName})` };
     const tier = diy.slots[slotId].tier;
     const inTier = byTier.get(tier) ?? new Set();
     if (inTier.has(charId)) return { error: 'BAD_TARGET', detail: `${charId} fills two tier-${tier} slots` };

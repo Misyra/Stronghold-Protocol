@@ -520,8 +520,10 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   picks, merges, promotions, sells, temp, elimination; `invariants.js` checks `left + held = cap` per player). The
   shop's chess slots and the reward offers' temporary refreshes roll it with the shared pool (`pool.roll({ extra })`,
   copy-weighted like any chess of its tier) once the 调度中心 reaches the slot's `shopLevel` (5 / 6) [ASSUMED for the
-  reward offers]; effects that draw a random operator from the shared pool never draw it, and 信标 never sends one to a
-  teammate [ASSUMED]. `battleInput` carries `diy` (the pick); `m.private.diy` / `diyBanned`; `prepFieldMeta` and
+  reward offers]; an effect, reward pool or 机变 card that grants the player a random operator draws its stock too
+  (effectsMeta `rollChess` / `rollPool`, the 驰援 fallback in choices.js: `ps.diyStockEntries()` — the roll's own tier
+  rules, no 调度中心 gate, bonds through the player's view; 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」, 0.2.0), and
+  信标 never sends one to a teammate [ASSUMED]. `battleInput` carries `diy` (the pick); `m.private.diy` / `diyBanned`; `prepFieldMeta` and
   `m.result` lineups carry the pick (`diy`) so other players' cards compose the operator.
 * **Hand**: 10 slots filled right→left, 5 temp slots for passive overflow (merge results, grants, returned equipment);
   a full hand refuses every buy and reward pick — also one whose copy would complete a merge at once (PRTS
@@ -576,7 +578,9 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   the tacticians' 援军, 伺夜 狼群 / 缪尔赛思 流形 — choosing the tactical point; player report #9 after 0.1.0) only goes on
   a tile of its owner's attack range: the owner's loadout grid (`attackRangeGrid`) rotated by its facing around its tile
   (`PlayerState._legal` / `summonRange`, `board.js ownerRangeKeys`; a summon dragged onto its own owner is checked from
-  the owner's new tile, an operator dragged onto the summon from the summon's new tile). When the owner is re-oriented in
+  the owner's new tile, an operator dragged onto the summon from the summon's new tile); Mon3tr's 重构体 likewise (her
+  talent), while 凯尔希·思衡托's 战术锚点 (`ownerRangeOutside` / `rangedTilesOnly`) goes only on a 高台 outside that range
+  (`summonExcluded`, board.js class `high`). When the owner is re-oriented in
   place (or promoted) a summon its new range leaves out goes back onto its stack with a toast (`_liftOutOfRange` in
   `recompute`) — one still inside stays [ASSUMED]. A re-orientation that would leave such a summon with no stack and no
   free hand / temp slot is refused (HAND_FULL, like withdrawing a summon into a full hand); in the other cases (a

@@ -19,7 +19,8 @@
 //                       Targets: bond_by_id / bond_self (own active bonds) / bond_actived_maxstack;
 //                       amounts: by_count / by_charcount_samerow / by_charlevel; conditions character_same_row /
 //                       character_same_col (≥ check_count incl. self). Gains go through support.gainLayers with
-//                       reason 'garrison', source = the trait's owner, cap = max_add_count_per_battle per (instance, bond).
+//                       reason 'garrison', source = the trait's owner, cap = max_add_count_per_battle per (instance, bond)
+//                       — per instance for bond_actived_maxstack (塑心: the highest bond may change, the cap does not).
 //   act1autochess_gar_event_addition_cnt (魔王)  layerGain: a 'garrison' gain whose source stands on the tile in front
 //                       of 魔王 (range_id 1-1) — or was knocked out there this instant (幽灵鲨 "被击倒时"; engine ctx.tile)
 //                       — gets +extra_cnt per bond (the extra does not count toward the source's per-battle cap).
@@ -191,10 +192,20 @@ export function fireGain(battle, it) {
   if (!conditionMet(battle, it)) return 0;
   const bonds = targetBonds(battle, it);
   if (!bonds.length) return 0;
-  const n = amountOf(battle, it);
+  let n = amountOf(battle, it);
+  // bond_actived_maxstack (塑心 garrison_90 "当前已激活且层数最多的盟约层数+1（每场作战至多10层）"): the cap is the instance's
+  // own over the battle, whichever bond is the highest at each gain — per (instance, bond) a change of the highest bond
+  // granted a fresh 10 (PR #178 review). The base amount counts toward it (魔王's extra does not, as in gainLayers).
+  const whole = it.bbStr.bond_type === 'bond_actived_maxstack' && Number.isFinite(it.cap);
+  if (whole) {
+    n = Math.min(Math.floor(n), Math.max(0, Math.floor(it.cap) - (it.wholeUsed ?? 0)));
+    if (!(n > 0)) return 0;
+  }
   const added = S.gainLayers(battle, {
-    playerId: it.unit.ownerId, bonds, n, requireActive: true, source: it.unit, reason: 'garrison', cap: it.cap, capKey: it.capKey,
+    playerId: it.unit.ownerId, bonds, n, requireActive: true, source: it.unit, reason: 'garrison',
+    cap: whole ? Infinity : it.cap, capKey: whole ? null : it.capKey,
   });
+  if (whole && added > 0) it.wholeUsed = (it.wholeUsed ?? 0) + n;
   if (added > 0) S.fxOn(battle, 'garrison', it.unit, `gar:${it.gid}`, it.key, { n: added });
   return added;
 }

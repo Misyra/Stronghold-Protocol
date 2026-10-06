@@ -852,9 +852,11 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   `fn(battle, unit)` → list of ally units (their current range) or tile-key arrays; returns an unregister fn; not for
   heal skills: 海嗣 "攻击范围视为自身攻击范围的延伸", 流形); `SKILL_RANGE` — "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能": any
   living enemy (stealthed, untargetable, flying included) on `trigger.customRangeGrid` (= the skill's rangeGrid), every
-  tick, no attack needed; a kit may set `trigger.allies` (+ `hpAtMost`, default 1) for an injured, healable ally of the
-  grid at or below that HP ratio instead (the AUTO heal skill 古米 S1: PRTS 备注 "此技能在存在生命值不满的可治疗角色时可
-  触发…直至古米完成一次普通攻击的治疗" — her heal mode waits for its heal); `ACTIVE_RANGE` — the owner's rule of 2026-10-05
+  tick, no attack needed; `trigger.allies` (+ `hpAtMost`, default 1) — set by a kit, or by the data for an ally row (黍 S3's
+  official `TRY_SEARCH_ALLY_SKILL`, "技能范围内存在可治疗的我方单位时释放技能": tools/build-data.mjs `TRIGGER_ALLY_RULES`,
+  simdata passes `allies` on) — asks for an injured, healable ally of the grid at or below that HP ratio instead (the AUTO
+  heal skill 古米 S1: PRTS 备注 "此技能在存在生命值不满的可治疗角色时可触发…直至古米完成一次普通攻击的治疗" — her heal mode
+  waits for its heal); `ACTIVE_RANGE` — the owner's rule of 2026-10-05
   (a deliberate deviation): a MANUAL skill on the basic strategy (深巡 S2's DEFAULT deviation included) or on the SEARCH
   row (薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3) whose attack range while it runs strictly contains the
   unit's own range checks the DEFAULT condition — a targetable enemy (or one it blocks), a heal skill an injured ally —
@@ -893,7 +895,8 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   `skillEnd` fires. `onAttack` ctx carries `noAmmo` (set it to true: this attack spends no bullet, no `ammoUsed` — 流明's
   free heals).
 - Runtime helpers on `unit.skill`: `activate(reason, {free})`, `end(reason)`, `stop()`, `addAmmo(n)`, `extend(s)`,
-  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`; fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
+  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`, `setTrigger(rule, grid)` (a kit's own rule change mid-battle —
+  薇薇安娜 S3's ACTIVE_RANGE on 3-2 after its first cast; 0.2.0); fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
   maxCharges, active, timeLeft, ammoLeft, ammoMax, activations, kind, rule, bb` (`ammoMax`: the most bullets the running ammo skill
   has held — set at activation, raised by skillStart additions and `addAmmo` above it; 0 when inactive).
 

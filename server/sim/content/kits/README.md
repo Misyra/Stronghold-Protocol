@@ -16,7 +16,6 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 | `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
 | `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
 | `shared/summoner.js` | the 召唤师 summon deck the 自选 kits of 麦哲伦 / 令 / 电弧 share (`summonDeck`: the holding, a placed piece's return, recalls, the summons leaving with their owner; `holdBuff`, `tokenStat`) |
-| `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
 id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4). A 补位 stand-in's
@@ -184,8 +183,10 @@ pick chooses any of the three, so write every skill under `skills: { [skillId]: 
 both tiers, both forms and both module stages. A 自选 piece has no 特质 and its bonds come from its factions: neither is
 the kit's business. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnToken(unit, …)` resolve the variant of the
 pick. A **placeable** summon (data/backups.json `tokens[id].placeable`, made by the pick's skill or a talent — the
-variant's `sources`) is a hand piece like any operator's: when the 自选 piece is deployed in prep its player gets one
-stack of the variant's `deployLimit` — the picked module's own when its variant has one (望's TRP-X: 7 棋子) —
+variant's `sources` — and shown by its owner: a skill's own object such as 予愿安洁莉娜's “一会儿见！” is not) is a hand piece like any operator's: when the 自选 piece is deployed in prep its player gets one
+stack of the variant's `deployLimit` — the picked module's own when its variant has one (望's TRP-X: 7 棋子); it holds
+the token's own talent additions (max_deploy_count / max_deck_stack_cnt, tools/build-data.mjs `tokenTalentDeckBonus`:
+麦哲伦 / 令 3, SUM-Y stage 2+ 4, 白铁 2, 夜莺 3), so a deck reads `deployLimit` / `deckStack` as they are —
 (server/match/player/diy.js `placeableTokens`, PlayerState `grantTokensFor`), places
 it on a legal tile (the token's position / `ownerRange`), loses it with its owner (sold, merged, moved back), and the
 match hands every placed piece to the battle as a PlayerBattleInput token unit `{ kind: 'token', tokenId, ownerUid }` —

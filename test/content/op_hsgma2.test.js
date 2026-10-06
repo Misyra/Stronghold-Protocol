@@ -62,7 +62,7 @@ test('斩业星熊 in every 自选 form: her operator kit (all three skills auth
       assert.deepEqual([u.def.charId, u.def.diyFor, u.skill.id, !!u.kit.generic, u.kit.skillSource], [HSG, SLOT[tier], form.skills[skill].skillId, false, 'skills'], label(f));
       assert.deepEqual([u.base.maxHp, u.base.atk, u.base.def, u.base.res], [form.stats.maxHp + (m?.attr.maxHp ?? 0), form.stats.atk + (m?.attr.atk ?? 0), form.stats.def, 15], `${label(f)}: stats`);
       assert.deepEqual([u.s.blockCnt, u.profile.attack, u.profile.canHitFly, u.profile.dmgType, u.base.bat], [3, 'melee', false, 'phys', 1.6], `${label(f)}: 驭法铁卫`);
-      assert.equal(form.dmgType, 'arts', 'the data carries the skill-on type');
+      assert.equal(form.dmgType, 'phys', 'the data carries the normal attack\'s type (build-data classifyAttack: "技能开启时…法术伤害")');
       assert.deepEqual(u.liveRangeGrid, form.rangeGrid, `${label(f)}: 1-1`);
       assert.deepEqual([u.def.bonds, u.def.raw.garrisonIds], [['yanShip'], []], `${label(f)}: bonds / 特质`);
       assert.ok(!u.s.flags.liftoff && !u.s.flags.camou && !u.s.flags.stealth && !u.s.flags.untargetable, `${label(f)}: ground enemies target her`);

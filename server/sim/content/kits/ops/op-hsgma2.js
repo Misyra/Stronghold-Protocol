@@ -16,7 +16,7 @@
 // 单位反弹伤害，伤害为法术普通伤害"), PRTS 卫戍协议/帮助 技能策略 (her S3 row "于技能持续时间过半后…关闭技能（进入其技能效果的
 // 临死模式）" added in 上半, REMOVED with 下半; "通常不会自动关闭技能").
 // - Trait (驭法铁卫) "技能开启时普通攻击会造成法术伤害": physical attacks while no skill runs (the kit's trait dmgType — the
-//   data's 'arts' is the skill-on type) and arts while one runs (every skill's attack override); block 3, ground-only
+//   data's 'phys' too since 0.2.0 WE2 — build-data classifyAttack) and arts while one runs (every skill's attack override); block 3, ground-only
 //   melee on her 1-1. Module AST-X 无迹 adds "且攻击和受到攻击时对目标额外造成10％攻击力的法术伤害" (trait bb atk_scale): every
 //   damage instance of her normal attacks (skill attacks included; not the shield, a counter or the module's own damage)
 //   is followed by atk_scale × ATK arts on that enemy (附加伤害: no dodge), and every enemy attack she takes returns

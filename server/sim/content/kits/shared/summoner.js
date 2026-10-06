@@ -5,8 +5,9 @@
 // Sources: the client's battle data (charpack char_248_mgllan / char_2023_ling / char_4195_radian: Talents/1
 // charge_token[born] — RechargeToken `cnt` at every deployment of the owner; CommonAbilities die_to_kill_token — KillTokens
 // when the owner leaves; the SUM-Y equips mgllan_equip_2_* / ling_equip_1_*: trigger_charge_token — RechargeToken the
-// trait's `cnt` once, on the undeployed card (`_attachPassiveBuffsOnDummy`); the token decks: max_deck_stack_cnt /
-// max_deploy_count of the tokens' hidden talent, deckStack / deployLimit of the token records); PRTS 分支特性信息 召唤师
+// trait's `cnt` once, on the undeployed card (`_attachPassiveBuffsOnDummy`); the token decks: deckStack / deployLimit of
+// the token records, which carry the tokens' hidden talent max_deck_stack_cnt / max_deploy_count — tools/build-data.mjs
+// tokenTalentDeckBonus); PRTS 分支特性信息 召唤师
 // ("干员离场后，附属的召唤物随之消失"); PRTS 卫戍协议/帮助 §作战阶段 (placed summons: "所有手动部署的召唤物，无视所属干员的持有
 // 状态，不消耗持有数量，作战开始时立即部署一次", "若战场区初始部署有召唤物，若召唤物在战斗期间退场，将在满足条件后立即原地再部署1个").
 //

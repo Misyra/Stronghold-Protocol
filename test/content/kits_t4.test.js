@@ -4,8 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { getDefaultSource } from '../../server/sim/simdata.js';
-import kits from '../../server/sim/content/kits/tier4.js';
+import { TIER_KITS } from '../../server/sim/content/kits/index.js';
 import { absoluteRangeKeys } from '../../server/sim/targeting.js';
+
+const kits = TIER_KITS[3];
 
 const ds = getDefaultSource();
 const D = (id) => ds.getChess(id);

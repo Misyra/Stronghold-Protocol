@@ -482,9 +482,13 @@ function applyDefault(m, ps, card) {
         handled = true;
         break;
       case 'single_special_choice_gain_bond_chess': {
+        // the player's 自选 stock joins the draw, its bonds read through the player's view (player/diy.js diyStockEntries)
+        const pgd = ps.gd || gd;
+        const hasBond = (cid) => { const c = pgd.chess(cid); return !!(c && Array.isArray(c.bonds) && c.bonds.includes(bs.bond)); };
         for (let i = 0; i < count; i++) {
-          const id = m.pool.roll(m.rngMeta, { maxTier: Math.max(1, ps.shop.level), filter: (cid) => { const c = gd.chess(cid); return !!(c && Array.isArray(c.bonds) && c.bonds.includes(bs.bond)); } })
-            || m.pool.roll(m.rngMeta, { maxTier: 6, filter: (cid) => { const c = gd.chess(cid); return !!(c && Array.isArray(c.bonds) && c.bonds.includes(bs.bond)); } });
+          const extra = typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null;
+          const id = m.pool.roll(m.rngMeta, { maxTier: Math.max(1, ps.shop.level), filter: hasBond, extra })
+            || m.pool.roll(m.rngMeta, { maxTier: 6, filter: hasBond, extra });
           if (id) ps.acquireChess(id, { source: 'choice' });
         }
         handled = true;

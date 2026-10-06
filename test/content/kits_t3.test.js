@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { getDefaultSource } from '../../server/sim/simdata.js';
 import { effectiveProfile } from '../../server/sim/ai.js';
-import KITS from '../../server/sim/content/kits/tier3.js';
+import { TIER_KITS } from '../../server/sim/content/kits/index.js';
 import { COLS } from '../../server/sim/constants.js';
+
+const KITS = TIER_KITS[2];
 
 const ds = getDefaultSource();
 const D = (id) => ds.getChess(id);

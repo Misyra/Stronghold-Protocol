@@ -227,8 +227,13 @@ export function piecePosition(ctx, piece) {
     if (meleeOnHighGround(rec)) return 'ALL';
     return rec?.position === 'MELEE' ? 'MELEE' : 'RANGED';
   }
-  // tokens: MELEE → ground only; RANGED / ALL → any deployable tile
-  if (piece.kind === 'token') return ctx.getToken(piece.id)?.position === 'MELEE' ? 'MELEE' : 'RANGED';
+  // tokens: MELEE → ground only; RANGED / ALL → any deployable tile; `rangedTilesOnly` (战术锚点 "仅可以部署在…远程位")
+  // → 'HIGH', the ranged tiles only (server/match/board.js positionClass 'high')
+  if (piece.kind === 'token') {
+    const t = ctx.getToken(piece.id);
+    if (t?.rangedTilesOnly === true) return 'HIGH';
+    return t?.position === 'MELEE' ? 'MELEE' : 'RANGED';
+  }
   return null;
 }
 
@@ -237,6 +242,7 @@ export function tileAllows(ctx, piece, row, col) {
   const pos = piecePosition(ctx, piece);
   if (!pos) return false;
   const k = tileKey(row, col);
+  if (pos === 'HIGH') return ctx.deploy.ranged.has(k) && !ctx.deploy.melee.has(k);
   return pos === 'MELEE' ? ctx.deploy.melee.has(k) : ctx.deploy.ranged.has(k);
 }
 
@@ -251,6 +257,23 @@ export function tileAllows(ctx, piece, row, col) {
  */
 export function summonRange(ctx, piece, owner = null) {
   if (!isObj(piece) || piece.kind !== 'token' || ctx?.getToken?.(piece.id)?.ownerRange !== true) return null;
+  return ownerRangeOf(ctx, piece, owner);
+}
+
+/**
+ * Board tiles ('r,c') an outside-bound summon may NOT stand on — its owner's attack range (tokens.json
+ * `ownerRangeOutside`: 凯尔希·思衡托's 战术锚点 "仅可以部署在凯尔希·思衡托攻击范围外的远程位") — or null. Mirror of
+ * server/match/player/placement.js summonExcluded.
+ * @param {ReturnType<typeof placementContext>} ctx
+ * @returns {Set<string> | null}
+ */
+export function summonExcluded(ctx, piece, owner = null) {
+  if (!isObj(piece) || piece.kind !== 'token' || ctx?.getToken?.(piece.id)?.ownerRangeOutside !== true) return null;
+  return ownerRangeOf(ctx, piece, owner);
+}
+
+/** The attack-range tiles of a summon piece's owner on the board (summonRange / summonExcluded), or null. */
+function ownerRangeOf(ctx, piece, owner = null) {
   let at = owner;
   if (!at) for (const e of ctx.boardAt.values()) if (e.piece.uid === piece.ownerUid && e.piece.kind === 'chess') { at = e; break; }
   const rec = at && ctx.getChess(at.piece.id);
@@ -260,11 +283,14 @@ export function summonRange(ctx, piece, owner = null) {
   return new Set(rangeTiles(grid || rec.rangeGrid, at.row, at.col, pieceDir(at.piece)).map(([r, c]) => tileKey(r, c)));
 }
 
-/** tileAllows plus the owner-range rule of a range-bound summon (summonRange). */
+/** tileAllows plus the owner-range rules of a range-bound summon (summonRange, summonExcluded). */
 function unitAllowed(ctx, piece, row, col, owner = null) {
   if (!tileAllows(ctx, piece, row, col)) return false;
+  const k = tileKey(row, col);
   const range = summonRange(ctx, piece, owner);
-  return !range || range.has(tileKey(row, col));
+  if (range && !range.has(k)) return false;
+  const out = summonExcluded(ctx, piece, owner);
+  return !out || !out.has(k);
 }
 
 /**
@@ -329,13 +355,16 @@ export function canPlace(ctx, uid, target) {
     if (src.area === 'board' && src.row === row && src.col === col) return { ok: true, action: 'orient' };
     if (!tileAllows(ctx, piece, row, col)) {
       const deployable = ctx.deploy.ranged.has(tileKey(row, col));
-      return no('BAD_TILE', deployable && piecePosition(ctx, piece) === 'MELEE' ? '近战单位只能部署在地面' : '无法部署在该位置');
+      const pos = piecePosition(ctx, piece);
+      return no('BAD_TILE', deployable && pos === 'MELEE' ? '近战单位只能部署在地面' : deployable && pos === 'HIGH' ? '只能部署在远程位' : '无法部署在该位置');
     }
     // a range-bound summon (战术点): inside its owner's attack range — seen from the summon's old tile when it is
-    // dropped onto its own owner (the two swap)
+    // dropped onto its own owner (the two swap); an outside-bound one (战术锚点) outside it
     const ownerSwap = src.area === 'board' && occ && occ.piece.uid === piece.ownerUid ? { row: src.row, col: src.col, piece: occ.piece } : null;
     const range = summonRange(ctx, piece, ownerSwap);
     if (range && !range.has(tileKey(row, col))) return no('BAD_TILE', '只能部署在召唤者攻击范围内');
+    const out = summonExcluded(ctx, piece, ownerSwap);
+    if (out && out.has(tileKey(row, col))) return no('BAD_TILE', '只能部署在召唤者攻击范围外');
     if (src.area === 'board') {
       // board → board: move or swap (the occupant must be legal on the source tile — the mover's own summon excepted:
       // a moved operator's summons go back to the hand anyway)

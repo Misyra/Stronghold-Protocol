@@ -2,7 +2,8 @@
 // abilities), stage (+ its pool: 战场固定 / 战场随机（共N张）), 特训敌人 factions (icon, name, description), the difficulty
 // tag, the ready count x/N with person pips, the 准备就绪 button (g.infoReady) and the countdown. The right column — 核心盟约
 // / 附加盟约 rows of bond discs (disabled bonds greyed with the banned-member badge), the legend and the 本局禁用干员
-// avatars — is ui/matchInfo.js MatchInfo, the same blocks the strategy draft's 本局信息 dialog shows (screens/bandDraft.js).
+// avatars, with the player's own 自选 pieces out of the shop (m.private.diyBanned) — is ui/matchInfo.js MatchInfo, the same
+// blocks the strategy draft's 本局信息 dialog shows (screens/bandDraft.js).
 
 import { useState } from '../../vendor/hooks.module.js';
 import { html, Button, Icon, MicroLabel } from '../ui/components.js';
@@ -14,12 +15,14 @@ import { actions } from '../ui/gameActions.js';
 import { factionTypes, sortedPlayers, phaseTotalSeconds } from '../ui/gameLogic.js';
 import { enemyIconUrl, factionIconUrl } from '../ui/assetUrls.js';
 import { useStore } from '../store.js';
+import { data } from '../data.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /** INFO_CHECK screen. */
 export function BriefingScreen() {
   const pub = useStore((s) => s.match.public);
+  const priv = useStore((s) => s.match.private);
   const myId = useStore((s) => s.me.playerId);
   const solo = useStore((s) => s.room?.mode === 'solo') || String(pub?.modeId || '').includes('single');
   const gd = useGameData();
@@ -31,7 +34,8 @@ export function BriefingScreen() {
   const me = players.find((p) => p.playerId === myId);
   const readyN = players.filter((p) => p.ready).length;
   const mode = gd.config?.modes?.[pub.modeId];
-  const info = matchInfoModel(pub, { bonds: gd.list('bonds'), chess: gd.chess, mode });
+  // (+ the own 自选 pieces this match leaves out of the shop: m.private.diyBanned)
+  const info = matchInfoModel(pub, { bonds: gd.list('bonds'), chess: gd.chess, mode, priv, diyData: { chess: data.get('chess'), backups: data.get('backups') } });
   const boss = pub.bossId ? gd.boss(pub.bossId) : null;
   const bossEnemy = boss ? gd.enemy(boss.enemyKey) : null;
   const stage = pub.stageId ? gd.stage(pub.stageId) : null;

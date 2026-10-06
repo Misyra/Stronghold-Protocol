@@ -98,13 +98,14 @@ test('电弧\'s skills in every form: the data\'s SP (time SP, spCost, initSp, c
   }
 });
 
-test('a 自选 pick: 电弧 is offered at tiers 5 and 6 and a roster with her passes validateDiyPicks (the 岁的界园志异 modules SO-A / SO-B are not ISW-*)', () => {
+test('a 自选 pick: 电弧 is offered at tiers 5 and 6 and a roster with her passes validateDiyPicks — without a module: the 岁的界园志异 modules SO-A / SO-B are refused like ISW-A (0.2.0 WE2)', () => {
   const data = { chess: CHESS, backups: BACKUPS };
   assert.ok(KITTED_CHARS.includes(RAD));
   for (const t of [5, 6]) assert.ok(diyPool(t, { data, kitted: KITTED_CHARS }).includes(RAD), `tier ${t}`);
-  for (const uniEquipId of [SOA, SOB, null]) {
-    assert.deepEqual(validateDiyPicks({ [SLOT[6]]: { charId: RAD, skillIndex: 0, uniEquipId } }, { data, kitted: KITTED_CHARS }),
-      { ok: true, picks: { [SLOT[6]]: { charId: RAD, skillIndex: 0, uniEquipId } } });
+  assert.deepEqual(validateDiyPicks({ [SLOT[6]]: { charId: RAD, skillIndex: 0, uniEquipId: null } }, { data, kitted: KITTED_CHARS }),
+    { ok: true, picks: { [SLOT[6]]: { charId: RAD, skillIndex: 0, uniEquipId: null } } });
+  for (const uniEquipId of [SOA, SOB]) {
+    assert.equal(validateDiyPicks({ [SLOT[6]]: { charId: RAD, skillIndex: 0, uniEquipId } }, { data, kitted: KITTED_CHARS }).error, 'BAD_TARGET', uniEquipId);
   }
 });
 

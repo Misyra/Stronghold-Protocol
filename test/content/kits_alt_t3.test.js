@@ -9,7 +9,9 @@ import { skillSpecSource } from '../../server/sim/content/index.js';
 import { effectiveProfile } from '../../server/sim/ai.js';
 import { kitCoverage } from '../../tools/kit-coverage.mjs';
 import { wolfShadows, wolfTacticalPoint } from '../../server/sim/content/tokens.js';
-import KITS from '../../server/sim/content/kits/tier3.js';
+import { TIER_KITS } from '../../server/sim/content/kits/index.js';
+
+const KITS = TIER_KITS[2];
 
 const ds = getDefaultSource();
 /** Skill index of `skillId` on chess `id`. */

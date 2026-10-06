@@ -8,8 +8,10 @@
 // (gameLogic disabledBondSets over config.modes[modeId].inactiveBondIds — the drawn set D "部分盟约所含干员阵容不完整",
 // still activatable through other bonds' operators or items, and the mode's static inactive bonds "本局禁用", e.g.
 // 标准模拟's 10), every bond in the briefing order (bondOrder, then identifier) split into 核心 / 附加, the banned
-// operators (m.public bannedChess, known chess only) sorted by tier, and the banned-member count per bond (gameLogic
-// bannedPerBond). The blocks are hookless (unit-tested by calling them): the 核心盟约 / 附加盟约 rows of bond discs —
+// operators (m.public bannedChess, known chess only) sorted by tier, the banned-member count per bond (gameLogic
+// bannedPerBond) and — from the viewer's own m.private — its slotted 自选 pieces left out of the shop because all their
+// bonds are off (gameLogic diyBannedPieces; 0.2.0). The blocks are hookless (unit-tested by calling them): the 核心盟约 /
+// 附加盟约 rows of bond discs —
 // greyed with the ✕, the red banned-member badge, the briefingBondTip tooltip — the legend and the 本局禁用干员 grid.
 // MatchInfoDialog shows the same blocks read-only in a components.js Modal (关闭, a tap outside or Esc close it) with a
 // status line from its caller (the draft's turn and countdown, so the running clock stays in view).
@@ -17,27 +19,31 @@
 
 import { html, Button, Icon, MicroLabel, BondDisc, Tooltip, Modal } from './components.js';
 import { UnitThumb } from './gameComponents.js';
-import { bannedPerBond, disabledBondSets, briefingBondTip } from './gameLogic.js';
+import { bannedPerBond, disabledBondSets, briefingBondTip, diyBannedPieces } from './gameLogic.js';
 import { bondIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
+import { t, dn } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /**
  * @typedef {{ sets: { drawn: Set<string>, off: Set<string> }, stateOf: (bondId: string) => 'off'|'drawn'|null,
- *   bonds: any[], core: any[], addon: any[], banned: string[], perBond: Map<string, number> }} MatchInfoModel
+ *   bonds: any[], core: any[], addon: any[], banned: string[], perBond: Map<string, number>,
+ *   diyBanned: Array<{ slotId: string, charId: string, name: string }> }} MatchInfoModel
  */
 
 /**
  * Everything the match-info blocks show.
  * @param {any} pub m.public (drawnDisabledBonds / disabledBonds, bannedChess)
- * @param {{ bonds?: any[], chess?: (id: string) => any, mode?: any }} [src]
- *   bonds: bonds.json records (data.list('bonds')); chess: the chess lookup; mode: config.json modes[pub.modeId]
+ * @param {{ bonds?: any[], chess?: (id: string) => any, mode?: any, priv?: any, diyData?: any }} [src]
+ *   bonds: bonds.json records (data.list('bonds')); chess: the chess lookup; mode: config.json modes[pub.modeId]; priv: the
+ *   viewer's m.private (its 自选 pieces out of the shop, diyBanned) with diyData (`{ chess, backups }`: data.get('chess') /
+ *   data.get('backups')) to name them
  * @returns {MatchInfoModel}
  *   stateOf: 'off' = the mode never activates the bond (本局禁用), 'drawn' = in the drawn set D (阵容不完整), null = normal;
  *   banned: the banned chess ids the data knows, by tier (ties keep the server's order); perBond: bondId → banned members
  */
-export function matchInfoModel(pub, { bonds = [], chess = () => null, mode = null } = {}) {
+export function matchInfoModel(pub, { bonds = [], chess = () => null, mode = null, priv = null, diyData = null } = {}) {
   const sets = disabledBondSets(pub, mode?.inactiveBondIds);
   const stateOf = (id) => (sets.off.has(id) ? 'off' : sets.drawn.has(id) ? 'drawn' : null);
   const list = (Array.isArray(bonds) ? bonds : []).filter((b) => !!b && typeof b === 'object' && typeof b.bondId === 'string')
@@ -48,7 +54,19 @@ export function matchInfoModel(pub, { bonds = [], chess = () => null, mode = nul
   return {
     sets, stateOf, bonds: list, core: list.filter((b) => b.isCore), addon: list.filter((b) => !b.isCore),
     banned, perBond: bannedPerBond(list, banned),
+    diyBanned: priv && diyData ? diyBannedPieces(priv, chess, diyData) : [],
   };
+}
+
+/**
+ * The viewer's 自选 pieces out of the shop this match (MatchInfoModel `diyBanned`): one line under 本局禁用干员, or nothing.
+ * @param {{ model: MatchInfoModel, class?: string }} props
+ */
+export function DiyBannedLine({ model, class: cls = 'brief-banned__diy' }) {
+  const list = model?.diyBanned || [];
+  if (!list.length) return null;
+  return html`<p class=${cls} data-testid="diy-banned"><span class="diybanned__tag">${t('自选')}</span>
+    ${t('{names}的盟约本局全部禁用，不会出现在你的商店', { names: list.map((x) => dn(x.name)) })}</p>`;
 }
 
 /**
@@ -97,6 +115,7 @@ export function BannedOperators({ model }) {
     ${banned.length ? html`<div class="brief-banned__grid">
       ${banned.map((id) => html`<${UnitThumb} key=${id} kind="chess" id=${id} size="sm" dim=${true} />`)}
     </div>` : html`<p class="t-dim">本局没有禁用干员</p>`}
+    <${DiyBannedLine} model=${model} />
   </div>`;
 }
 

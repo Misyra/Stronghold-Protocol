@@ -1075,5 +1075,8 @@
   "联防：{names}": "Unite: {names}",
   "剩余资金": "Funds Left",
   "继续整备": "Keep Preparing",
-  "还有 {funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？": "You still have {funds} unspent Funds. The round's leftover Funds are cleared when the Rest Phase ends. Ready anyway?"
+  "还有 {funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？": "You still have {funds} unspent Funds. The round's leftover Funds are cleared when the Rest Phase ends. Ready anyway?",
+  "选择「{name}」的朝向": "Choose {name}'s facing",
+  "选择朝向": "Choose a facing",
+  "朝向：{dir}": "Facing: {dir}"
 }

@@ -53,9 +53,9 @@
 //   abilities). Off her deployment tile, “一会儿见！” marks it (备注 "每次移动后若不位于初始位置且初始位置不存在标志物…部署一个").
 //   When the skill ends she goes back there by a 【移动】 (the marker leaves) unless she is knocked out.
 // - “一会儿见！” (its kit below): 无敌, 孤立, 不可选中 by enemies, blocks nothing, no attack (PRTS 备注; token_aglna2_passive).
-//   It is the skill's placeholder (skchr_aglna2_3 `_placeholderTokenKey`), not a player's summon: the data marks it
-//   placeable (the prep hands a piece out with S3 — open question), so a placed piece is used as that marker and never
-//   deploys by itself (`deferDeploy`; its tile stays reserved); without one the skill summons it.
+//   It is the skill's placeholder (skchr_aglna2_3 `_placeholderTokenKey`), not a player's summon: no owner shows it, so the
+//   data does not mark it placeable (tools/build-data.mjs summonRecord, 0.2.0 WE2 — until then the prep handed a piece out
+//   with S3 and this kit used it as the marker) and the skill summons it each time.
 
 import { num, talentBb, skillRec, batMod, up, installAura, toggleBuff } from '../shared/tier1.js';
 import { absoluteRangeKeys, canTargetEnemy, sortEnemyTargets } from '../../../targeting.js';
@@ -174,13 +174,11 @@ export default {
     }
     function placeMarker(battle, unit) {
       if (!st || (st.marker && st.marker.alive)) return;
-      const piece = battle.allyUnits.find((t) => t.kind === 'token' && t.defId === MARKER && t.ownerUnit === unit && t.uid != null && !t.alive && !t.removed);
-      if (piece && battle.redeploy(piece, { free: true, tile: [st.r0, st.c0] })) { st.marker = piece; return; }
       st.marker = battle.spawnToken(unit, MARKER, st.r0, st.c0, { kit: markerKit() });
     }
     function dropMarker(battle) {
       const m = st && st.marker;
-      if (m && m.alive) battle.retreat(m, { reason: 'expired', permanent: m.uid == null });
+      if (m && m.alive) battle.retreat(m, { reason: 'expired', permanent: true });
       if (st) st.marker = null;
     }
     /** Her S3 range for where she stands: the 3-9 ∪ x-4 at home; away, the x-4 here + the anchored 3-9 (extra keys). */
@@ -297,13 +295,6 @@ export default {
           if (ctx.target !== unit || !RESIST_STATUSES.has(ctx.status) || (ctx.source && ctx.source.side === 'ally')) return;
           if (unit.findBuff(CHANT_KEY) || unit.findBuff(MOVE_KEY)) ctx.cancel = true;
         }, { owner: unit });
-        // a placed “一会儿见！” piece is S3's marker: it never deploys by itself
-        for (const t of battle.allyUnits) {
-          if (t.kind !== 'token' || t.defId !== MARKER || t.ownerUnit !== unit || t.alive || t.deployed) continue;
-          if (t.kit) battle.offOwner(t);
-          battle._setupUnit(t, markerKit());
-          if (sid === S3) t.deferDeploy = true;
-        }
         if (sid !== S3) return;
         const dr = num(b3.damage_resistance), slow = -num(b3.move_speed);
         const aspdB = num(b3['aglna2_s_3[blocked].attack_speed']), aspdU = num(b3['aglna2_s_3[unblocked].attack_speed']);

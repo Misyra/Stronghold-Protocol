@@ -1505,9 +1505,13 @@ const TOKEN_POSITION_CORRECTIONS = Object.freeze({
  * 10055–10058, 10065), so no entry is read as the default display. HIDDEN tokens exist in battle only (e.g.
  * 投递坐标 — PRTS: "携带技能【使命必达！】的新约能天使，不会提供所属召唤物"). Only a token its owner actually makes
  * (`produced`: a talent or a skill of some loadout, `sources`) is a card; which loadouts make it is per variant
- * (`sources`, `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). In battle a skill's summon deploys once at the start, then
- * takes its tile again each time the skill gives one (sim/content/tokens.js dockSkillSummons, shared/constants.js
- * SKILL_SUMMON_START_DEPLOY).
+ * (`sources`, `bySkill[i].sources`: 赫默 / 巫恋 on S1 get none). And only a token an owner shows (`displayed`: the owner's
+ * displayTokenDict, the variants' `display` source): a summon no owner shows is its skill's own object, never a card —
+ * every such token of the season is HIDDEN in the shop state (纸偶, 香槟炸弹, 从不混淆的方向, …), and the one the shop state
+ * does not list is 予愿安洁莉娜 S3's “一会儿见！” (PRTS 予愿安洁莉娜 S3 备注 "每次移动后若不位于初始位置…于初始位置部署一个
+ * “一会儿见！”", PRTS “一会儿见！” "无法被玩家选择查看详细信息"; O20) — every summon a player places is displayed. In battle a
+ * skill's summon deploys once at the start, then takes its tile again each time the skill gives one
+ * (sim/content/tokens.js dockSkillSummons, shared/constants.js SKILL_SUMMON_START_DEPLOY).
  * `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
  * 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
  * ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere).
@@ -1518,11 +1522,13 @@ function summonRecord(ctx, tokenId, char, variants, produced) {
   const owners = Object.keys(variants);
   const first = variants[owners[0]];
   const ownerRange = /只能部署在\S*攻击范围内/.test(stripRich(first.trait.desc) || '');
+  const shows = (list) => Array.isArray(list) && list.includes('display');
+  const displayed = Object.values(variants).some((v) => shows(v.sources) || Object.values(v.bySkill || {}).some((a) => shows(a.sources)));
   return {
     tokenId, kind: 'summon', name: char.name, appellation: char.appellation || null,
     desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
     profession: char.profession, subProfessionId: char.subProfessionId, position: TOKEN_POSITION_CORRECTIONS[tokenId] ?? char.position,
-    displayType, placeable: displayType !== 'HIDDEN' && produced, ownerRange,
+    displayType, placeable: displayType !== 'HIDDEN' && produced && displayed, ownerRange,
     owners,
     // Defaults = first owner's variant; per-owner data in variants[owner].
     stats: first.stats, rangeGrid: first.rangeGrid, dmgType: first.dmgType, attackKind: first.attackKind,

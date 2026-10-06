@@ -39,12 +39,11 @@ const ANY_ATK = (h, u) => h.hooksOf('damaged').filter((c) => c.source === u && c
 const extras = (h, u) => h.hooksOf('damaged').filter((c) => c.source === u && (c.dmg?.tags || []).includes('aglna2:extra'));
 
 /** 予愿安洁莉娜 as uid 1 at (row, col) facing RIGHT, plus `others`. */
-function field({ tier = 5, elite = false, skill = 0, row = 10, col = 4, others = [], seed = 5, marker = null } = {}) {
-  const piece = marker ? [{ uid: 9, kind: 'token', tokenId: MARKER, ownerUid: 1, row: marker[0], col: marker[1] }] : [];
+function field({ tier = 5, elite = false, skill = 0, row = 10, col = 4, others = [], seed = 5 } = {}) {
   const h = makeBattle({
     defs: { enemies: ENEMIES }, timeLimit: 900, autoFinish: false, seed,
     flags: { dpPerSec: 0, dpMax: 999 }, hooks: ['damaged', 'skillStart', 'skillEnd', 'statusApplied', 'deploy', 'dodge'], captureNoisy: true,
-    units: [{ uid: 1, diy: { slot: SLOT[tier], charId: AGL, skillIndex: skill }, elite, row, col }, ...piece, ...others],
+    units: [{ uid: 1, diy: { slot: SLOT[tier], charId: AGL, skillIndex: skill }, elite, row, col }, ...others],
   });
   h.step();
   return { h, u: h.unit(1) };
@@ -347,19 +346,6 @@ test('S3 move: blocking nothing, she flies (2 tiles/s, 无敌, disarmed) to the 
     assert.ok(!m.alive, `${label(f)}: the marker left`);
     assert.deepEqual(u.liveRangeGrid, formOf(tier, elite).rangeGrid, `${label(f)}: 2-2`);
     assert.equal(u.extraRangeKeys, null);
-    done(h);
-  }
-  // a placed “一会儿见！” piece never deploys by itself; it is the marker
-  {
-    const { h, u } = field({ tier: 6, elite: true, skill: 2, marker: [12, 9] });
-    const piece = h.b.allyUnits.find((t) => t.kind === 'token' && t.uid === 9);
-    assert.ok(piece && !piece.alive && piece.deferDeploy, 'not deployed at the start');
-    u.skill.gainSp(999);
-    h.spawn('enemy_fly', { pos: [11, 7] });
-    assert.ok(h.runUntil(() => u.tileR === 11 && u.tileC === 7, 5));
-    assert.ok(piece.alive && piece.tileR === 10 && piece.tileC === 4, 'the piece marks her deployment tile');
-    u.skill.end('test');
-    assert.ok(!piece.alive && !piece.removed, 'withdrawn, kept as a piece');
     done(h);
   }
   // blocking something, she stays

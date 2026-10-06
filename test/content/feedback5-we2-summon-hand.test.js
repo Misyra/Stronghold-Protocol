@@ -4,6 +4,8 @@
 // hidden "TOKEN数" talent max_deploy_count / max_deck_stack_cnt on top of the attribute frame). Official counts: the owners'
 // talents (麦哲伦 / 令 / 电弧 "最多同时部署3个", SUM-Y stage 2+ "最多同时部署4个", 白铁 / 娜斯提 "最多可部署2个", 望 "可以使用6枚
 // 棋子", TRP-X +1), PRTS 幻影 备注 "最大可部署数量为3" (夜莺).
+// #24: a summon no owner shows (displayTokenDict: the variants' `display` source) is its skill's own object, never a hand
+// card — 予愿安洁莉娜 S3's “一会儿见！” (PRTS 予愿安洁莉娜 S3 备注: the skill deploys it at her initial tile).
 // Run: node --test test/content/feedback5-we2-summon-hand.test.js
 
 import { test } from 'node:test';
@@ -93,4 +95,27 @@ test('the data: deploy limit / holding = the attribute frame + the token talents
   const tokens = load('tokens');
   assert.equal(tokens.token_10041_cathy_catsld.variants.chess_char_4_11_a.stats.deployLimit, 2);
   assert.equal(tokens.token_10000_silent_healrb.variants.chess_char_2_02_a.stats.deployLimit, 1);
+});
+
+test('#24 a summon no owner shows is never a hand card: 予愿安洁莉娜 S3\'s “一会儿见！” is not placeable, every placeable summon is displayed', () => {
+  const MARKER = 'token_10071_aglna2_agairp';
+  const AGLNA2 = 'char_1015_aglna2';
+  assert.equal(BACKUPS.tokens[MARKER].placeable, false);
+  const shows = (v) => (v.sources ?? []).includes('display') || Object.values(v.bySkill ?? {}).some((a) => (a.sources ?? []).includes('display'));
+  for (const t of [...Object.values(load('tokens')), ...Object.values(BACKUPS.tokens)]) {
+    if (t.kind !== 'summon') continue;
+    if (t.placeable) assert.ok(Object.values(t.variants).some(shows), `${t.tokenId} ${t.name}: placeable and displayed`);
+    else if (!Object.values(t.variants).some(shows)) assert.ok(t.displayType === 'HIDDEN' || t.tokenId === MARKER, `${t.tokenId} ${t.name}: undisplayed ⇒ HIDDEN (or the marker)`);
+  }
+  for (const tier of [5, 6]) {
+    for (const elite of [false, true]) {
+      const slot = diySlot(SLOT[tier], DATA);
+      const id = elite ? slot.goldenId : slot.baseId;
+      for (const skillIndex of [0, 1, 2]) {
+        const rec = diyRecord(SLOT[tier], { charId: AGLNA2, skillIndex, uniEquipId: null }, { elite, data: DATA });
+        const view = diyGameData(gd, new Map([[id, rec]]));
+        assert.deepEqual(view.placeableTokens(id, { skillIndex, moduleId: null }), [], `T${tier} ${elite ? 'elite' : 'normal'} S${skillIndex + 1}: no hand piece`);
+      }
+    }
+  }
 });

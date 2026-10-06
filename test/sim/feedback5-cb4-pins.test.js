@@ -8,6 +8,17 @@
 //   item 35 「鸭爵策略的悬赏现在有时候会一波出现多只，比如多只鸭子」 — PRTS 下半/PRTS盟约记录 鸭爵 备注 「每回合将有0~2名敌人被
 //     替换为上述敌人之一」: each player's wave gets 0–2 swaps (bands/meta.js duckReplace), each one of the four at random, so
 //     two ducks in one wave is official (≈ 1 wave in 12 here); never more than 2 per player's wave;
+//   item 29 「会移动的关底boss在各个地图的移动路线复核下是否正确」 — the only leaders that walk are 铳 and 卢西恩 (the 巨型单位 are
+//     自缚: content/bosses.js SELF_BOUND); their official PATROL_MOVE checkpoints (level_act1autochess_h07_02 route 6,
+//     act2 h07_05: (3,9) → (2,3) → (5,9), looped) are walked on every boss field of the season over walkable tiles only,
+//     the pair's mirrored copy on the right half ((3,11) → (2,17) → (5,11)), and the loop never runs on to the goal;
+//   item 38 「干员野鬃放在红门前两格的时候有概率会把怪顶出地图显示漏怪」 — not reproduced: her pushes (Battle.push → displace)
+//     stop at the rect and at tiles a ground enemy cannot walk, so no pushed enemy stands off the map;
+//   item 39 「锏能拉动10重的关底boss」 — not reproduced: a leader (tag boss) is never displaced (Battle._displaceable), and
+//     her pulls (力度 1 / 2) move no weight ≥ 5 enemy (受力等级 ≤ −3, PRTS 推与拉);
+//   item 47 「昆图斯占地少最左边和最右边两排」 — not reproduced: its hit area is PRTS' 4.95 × 2.95 up 1.0 — 5 × 3 tiles — and an
+//     operator whose range reaches only its leftmost column hits it;
+//   item 52 「最终boss跟原版相比攻击欲望感觉低了」 — every leader attacks at its data interval while a target is in range;
 //   item 57 「囚犯敌人的解放状态联防时不应继承」 — a leaked prisoner re-enters 联防 as a new spawn (unite.js planUnite →
 //     waves.js buildUniteWave: its key and spawn mods only), confined again (archetypes.js prisoner spawn); the freed look
 //     the report saw was 普通 / 老练囚犯's red clip set drawn from the gate, fixed with the prisoners' forms (§25.14.1).
@@ -17,7 +28,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, chessRec, checkInvariants } from '../helpers/battleHarness.js';
 import { GameData } from '../../server/match/gamedata.js';
-import { setupMatchWaves, buildUniteWave } from '../../server/match/waves.js';
+import { setupMatchWaves, buildUniteWave, buildBossWave, buildNormalWave } from '../../server/match/waves.js';
+import { bodyKeys } from '../../server/sim/body.js';
 import { planUnite } from '../../server/match/unite.js';
 import { createRng } from '../../server/sim/rng.js';
 import { DATA, makeMatch } from '../match/harness.js';
@@ -97,5 +109,141 @@ test('item 35: the 鸭爵 strategy swaps 0–2 enemies of each player\'s wave, e
   }
   assert.ok(hist.every((n) => n > 0), `0, 1 and 2 swaps all occur: ${hist}`);
   assert.ok(twoSame > 0, 'two of the same kind (e.g. two ducks) in one wave occurs');
+});
+
+const BIG_POOL = () => ({ hp: 1e12, maxHp: 1e12, damage(pid, a) { this.hp = Math.max(0, this.hp - a); } });
+const PAIR = [{ playerId: 'p1', seat: 0, side: 'L', units: [], bonds: {} }, { playerId: 'p2', seat: 1, side: 'R', units: [], bonds: {} }];
+/** A leader field of the real template (the match passes waveId: content/bosses.js templateOf). */
+function leaderField(bossId, { solo = true, stageId = 'act1autochess_m01', round = 14, mode = 'mode_multi_hard', units = undefined, players = undefined, timeLimit = 600 } = {}) {
+  const gd = new GameData(DATA, mode);
+  const bw = buildBossWave(gd, createRng(5), setupMatchWaves(gd, createRng(1)).factions, round, { bossId, solo });
+  const L = bw.spawns.find((x) => x.tag === 'boss');
+  return makeBattle({
+    kind: round === 15 ? 'hidden' : 'boss', stageId, seed: 3, routes: bw.routes, sharedBoss: BIG_POOL(), autoFinish: false, timeLimit, units,
+    players: players ?? (solo ? undefined : PAIR), enemies: [{ key: L.enemyKey, time: L.time, route: L.routeIndex, mods: L.mods, tag: 'boss' }],
+    setup(b) { b.opts.waveId = bw.templateId; },
+  });
+}
+
+test('item 29: 铳 patrols (3,9) → (2,3) → (5,9) on every boss field over walkable tiles (the pair\'s copy the mirrored points); 卢西恩 loops without reaching the goal', () => {
+  const stages = Object.keys(DATA.stages).filter((id) => DATA.stages[id].active !== false && DATA.stages[id].weight > 0);
+  assert.equal(stages.length, 8);
+  for (const stageId of stages) {
+    for (const solo of [true, false]) {
+      const h = leaderField('boss_2', { solo, stageId });
+      const seen = new Map();
+      for (let t = 0; t < 240 * 30; t++) {
+        h.b.step();
+        for (const e of h.b.enemies) {
+          if (!e.alive || !e.isBoss) continue;
+          const r = Math.round(e.y), c = Math.round(e.x);
+          assert.ok(h.b.grid.walkable(r, c, true), `${stageId} ${solo ? 'solo' : 'pair'}: off the road at (${r},${c})`);
+          // the patrol targets in the order it walks them (the leg it is on)
+          const l = seen.get(e.id) ?? []; seen.set(e.id, l);
+          const leg = e.route.legs[e.route.legIdx];
+          const k = leg && leg.r != null ? `${leg.r},${leg.c}` : '-';
+          if (l[l.length - 1] !== k) l.push(k);
+        }
+      }
+      const tracks = [...seen.values()].map((l) => l.join(' '));
+      assert.equal(tracks.length, solo ? 1 : 2, stageId);
+      assert.ok(tracks.some((x) => x.startsWith('3,9 2,3 5,9 3,9')), `${stageId}: ${tracks}`);
+      if (!solo) assert.ok(tracks.some((x) => x.startsWith('3,11 2,17 5,11 3,11')), `${stageId}: the mirrored copy ${tracks}`);
+      checkInvariants(h.b);
+    }
+  }
+  const h = leaderField('boss_5');
+  const leaks = [];
+  h.b.on('enemyLeak', ({ enemy }) => leaks.push(enemy.defId));
+  let wrapped = false;
+  for (let t = 0; t < 420 * 30; t++) { h.b.step(); const e = h.b.enemies.find((x) => x.alive && x.isBoss); if (e && e.route.legIdx === 0 && h.b.time > 300) wrapped = true; }
+  assert.ok(wrapped, '卢西恩 starts its patrol again after its 19 checkpoints');
+  assert.deepEqual(leaks, []);
+});
+
+test('item 38: 野鬃\'s pushes towards the red gate never leave a ground enemy off the map (real waves, S2 running)', () => {
+  const gd = new GameData(DATA, 'mode_single_hard');
+  const setup = setupMatchWaves(gd, createRng(2));
+  let pushes = 0;
+  for (const r of [6, 12]) {
+    const w = buildNormalWave(gd, createRng(200 + r), setup.factions, r);
+    for (const [row, col] of [[9, 8], [12, 8], [12, 9]]) {
+      const h = makeBattle({ stageId: 'act1autochess_m01', seed: 2, routes: w.routes, timeLimit: w.timeLimit, units: [{ chessId: 'chess_char_1_19_b', row, col, dir: 'RIGHT' }],
+        enemies: w.spawns.map((x) => ({ key: x.enemyKey, time: x.time, route: x.routeIndex, count: x.count, interval: x.interval, mods: x.mods })) });
+      const u = h.unit('chess_char_1_19_b');
+      h.step();
+      h.b.on('tick', () => {
+        if (u.alive && u.skill && !u.skill.active) u.skill.gainSp(999, 'test');
+        for (const e of h.b.enemies) {
+          if (!e.alive || e.hidden || e.isFlying) continue;
+          assert.ok(h.b.grid.walkable(Math.round(e.y), Math.round(e.x), true), `R${r} (${row},${col}): ${e.defId} off the map at (${e.y.toFixed(2)},${e.x.toFixed(2)})`);
+        }
+      }, { priority: -1000 });
+      const orig = h.b.push.bind(h.b);
+      h.b.push = (...a) => { const m = orig(...a); if (m > 0) pushes++; return m; };
+      h.runToEnd(200);
+      assert.equal(h.b.errors.length, 0, JSON.stringify(h.b.errors[0]));
+      checkInvariants(h.b);
+    }
+  }
+  assert.ok(pushes >= 60, `she pushed (${pushes} pushes)`);
+});
+
+test('item 39: 锏\'s S3 never moves a leader (every leader of the season), nor any weight-10 enemy', () => {
+  for (const bossId of ['boss_1', 'boss_4', 'boss_6', 'boss_7']) {
+    const h = leaderField(bossId, { units: [{ chessId: 'chess_char_6_19_b', row: 9, col: 7, skillIndex: 3 }] });
+    h.step();
+    const u = h.unit('chess_char_6_19_b');
+    const boss = h.b.enemies.find((e) => e.isBoss);
+    boss.mods = { ...(boss.mods || {}), speedMul: 0 };
+    boss.markDirty?.();
+    const at = [boss.x, boss.y];
+    let moved = 0;
+    const orig = h.b.displace.bind(h.b);
+    h.b.displace = (e, ...a) => { const m = orig(e, ...a); if (e === boss) moved += m; return m; };
+    for (let t = 0; t < 40 * 30; t++) { h.b.step(); if (u.alive && u.skill && !u.skill.active) u.skill.gainSp(999, 'test'); }
+    assert.ok(u.skill.activations >= 3, `${bossId}: S3 cast`);
+    assert.equal(boss.s.massLevel, 10);
+    assert.equal(moved, 0, `${bossId}: never displaced`);
+    assert.deepEqual([boss.x, boss.y], at);
+  }
+  // a weight-10 enemy that is no leader (自在 as a bounty): 力度 2 − 10 ⇒ no pull
+  const h = makeBattle({ autoFinish: false, timeLimit: 30, units: [{ chessId: 'chess_char_6_19_b', row: 10, col: 6 }], enemies: [{ key: 'enemy_1517_xi', pos: [10, 8], mods: { speedMul: 0 } }] });
+  h.step();
+  const xi = h.enemy('enemy_1517_xi');
+  assert.equal(xi.s.massLevel, 10);
+  assert.equal(h.b.pull(xi, 2, { to: { x: 6, y: 10 } }), 0);
+  assert.equal(h.b.pull(xi, 5, { to: { x: 6, y: 10 } }), 0, 'not even 特大力');
+});
+
+test('item 47: 昆图斯 occupies 5 × 3 tiles (PRTS 4.95 × 2.95, up 1.0); an operator reaching only its leftmost column hits it', () => {
+  const h = makeBattle({ kind: 'boss', stageId: 'flat', sharedBoss: BIG_POOL(), autoFinish: false, timeLimit: 30,
+    units: [{ chessId: 'chess_char_1_12_a', row: 10, col: 7 }], enemies: [{ key: 'enemy_1521_dslily', pos: [3, 10], mods: { speedMul: 0 }, tag: 'boss' }] });
+  h.step();
+  const boss = h.b.enemies.find((e) => e.isBoss);
+  const tiles = bodyKeys(boss).map((k) => [Math.floor(k / 21), k % 21]);
+  assert.deepEqual([...new Set(tiles.map((t) => t[1]))], [8, 9, 10, 11, 12], '5 columns');
+  assert.deepEqual([...new Set(tiles.map((t) => t[0]))], [3, 4, 5], '3 rows (up 1.0)');
+  const u = h.unit('chess_char_1_12_a');
+  assert.deepEqual([u.tileR, u.tileC], [3, 7]);
+  h.run(8);
+  assert.ok(u.stats.attacks >= 3, `艾丝黛尔 next to its leftmost column attacks it (${u.stats.attacks})`);
+});
+
+test('item 52: each leader attacks at its data interval while it has a target (150 s, walls in range)', () => {
+  const units = [[9, 3], [10, 4], [11, 5], [12, 6], [9, 8], [10, 9], [12, 9], [11, 8]].map(([row, col], i) => ({ chessId: `t_w${i}`, row, col }));
+  const chess = {}, kits = {};
+  units.forEach((x) => { chess[x.chessId] = chessRec({ id: x.chessId, profession: 'TANK', stats: { atk: 1, maxHp: 1e9, def: 300, res: 30, blockCnt: 3 }, rangeGrid: [[0, 0]], skill: null }); kits[x.chessId] = () => ({ trait: { noAttack: true } }); });
+  for (const bossId of ['boss_1', 'boss_4', 'boss_6', 'boss_7']) {
+    const gd = new GameData(DATA, 'mode_multi_hard');
+    const bw = buildBossWave(gd, createRng(5), setupMatchWaves(gd, createRng(1)).factions, 14, { bossId, solo: true });
+    const L = bw.spawns.find((x) => x.tag === 'boss');
+    const h = makeBattle({ kind: 'boss', stageId: 'act1autochess_m01', seed: 3, routes: bw.routes, sharedBoss: BIG_POOL(), autoFinish: false, timeLimit: 160,
+      defs: { chess }, kits, units, enemies: [{ key: L.enemyKey, time: L.time, route: L.routeIndex, mods: L.mods, tag: 'boss' }], setup(b) { b.opts.waveId = bw.templateId; } });
+    h.run(150);
+    const boss = h.b.enemies.find((e) => e.isBoss);
+    const max = Math.floor(150 / boss.s.interval);
+    assert.ok(boss.stats.attacks >= max - 1, `${bossId} ${L.enemyKey}: ${boss.stats.attacks} attacks, ${max} at its ${boss.s.interval} s interval`);
+  }
 });
 

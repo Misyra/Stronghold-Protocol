@@ -15,7 +15,8 @@
 //                        ex_damage_scale_per_stack·L) instead; 6: cold wind (devices.js kjeragColdWind)
 //   拉特兰 lateranoShip  member ammo skills start with floor(ammo × (1 + base_ammo_percent + ammo_percent_per_stack·L));
 //                        6: every ammo used by a member → all members ATK +atk_per_consume (≤ max_atk_for_consume)
-//   阿戈尔 egirShip      members max HP +(base_max_hp + max_hp_per_stack·L) (直接乘算); battle start devour (see devour());
+//   阿戈尔 egirShip      members max HP +(base_max_hp + max_hp_per_stack·L) (直接乘算); battle start devour (see devour():
+//                        the marker's gained base ATK is a 最终加算, `atkFinal`, not scaled by its ATK +%);
 //                        5: the first max_free_respawn_cnt members knocked out (in knock-out order, the devour's food
 //                        included) each redeploy at once (free) on that first knock-out
 //   叙拉古 siracusaShip  every member deployment: ASPD +(base + per·L) for (base_duration + per·L) s; 6: 隐匿 for the same
@@ -354,14 +355,20 @@ function egirDownAtStart(battle, u) {
  * the operator on the tile in front of them (one step along each member's own direction `dir`), and through marked
  * members the tiles in front of
  * those (chain); never themselves, a unit already marked by them or a unit that marked them. The marker gains the base
- * ATK (atkFlat) and block count of everything it marked; then each mark makes its target lose damage_value HP as a
+ * ATK and block count of everything it marked — the ATK as a 最终加算 (`atkFinal`, PRTS 盟约记录 "该付与来源获得所有标记单位
+ * 的基础攻击力（最终加算）和阻挡数"): added after its percentages, so its skill's ATK +% does not scale it (it was `atkFlat`
+ * until 0.1.3: 1000 base ATK, +100 %, +2000 devoured gave 6000 instead of 4000; GitHub #165 point 2, PR #176, the owner's
+ * decision of 2026-10-06, DESIGN §24.7). Then each mark makes its target lose damage_value HP as a
  * 物理流失 (PRTS 盟约记录: "造成5000点物理流失", 修正 "【吞噬】的物理流失来源为被付与目标自身；单位被【吞噬】击杀时，击杀来源始终为
  * 对应标记的付与来源"; PRTS 作战机制: a 物理流失 "会受到目标当前防御力…影响而相应衰减") — less the target's DEF as a physical hit
  * (its own source: no DEF ignore), then battle.loseHp: no shields, dodge or damage multipliers (DEF-free until 0.1.1); the
  * kill is credited to the marker — in marking order. A target knocked out during the pass has its remaining marks
  * cancelled, also when it is back at once (the 5-tier 立刻复活, 不屈's 立刻重新部署, 埃芒加德 / M3茧甲): PRTS 盟约记录 "目标首次被
- * 击倒后解除自身被付与但还未触发的【吞噬】效果". A marker off the field gives no further mark (the rule since 0.1.0; one knocked
- * out and back in the same pass still gives its marks).
+ * 击倒后解除自身被付与但还未触发的【吞噬】效果". Only the target's state cancels a mark: a marker knocked out by an earlier
+ * mark still resolves its own, credited to it (PRTS names only the target; "击杀来源始终为对应标记的付与来源") — GitHub #165
+ * point 3, PR #176, the owner's decision of 2026-10-06; until 0.1.3 a marker off the field gave no further mark.
+ * Not modelled: the 流失's own source (PRTS: the target itself) — the hooks see the marker as the source, as for the
+ * credit (an open question, DESIGN §24.7).
  * 联防: the operators down since the end of their own combat (forced out by Battle.start) mark, are marked and resolve
  * their marks like standing ones, but nothing resolves on them (below; per players' reports, owner's decision 2026-10-04).
  * Whose operator stands in front does not matter (PRTS "依次吞噬身前一格干员", no own-side limit; the owner's decision of
@@ -410,7 +417,7 @@ function devour(battle, pid, bb, members) {
     let atk = 0, block = 0;
     for (const t of mine) { atk += num(t.base.atk, 0); block += num(t.base.blockCnt, 0); marks.push([m, t]); }
     const mods = {};
-    if (atk > 0) mods.atkFlat = atk;
+    if (atk > 0) mods.atkFinal = atk; // 最终加算 (units.js _recalc)
     if (block > 0) mods.blockCnt = block;
     if (Object.keys(mods).length) S.passiveBuff(battle, m, 'bond:egir:devour', mods);
   }
@@ -423,9 +430,10 @@ function devour(battle, pid, bb, members) {
   for (const [, t] of marks) if (!dep.has(t)) dep.set(t, items.deploymentOf(t));
   const knocked = (t) => !t.alive || items.deploymentOf(t) !== dep.get(t);
   for (const [m, t] of marks) {
-    // (a member down since its own combat — downAtStart — resolves its marks as if it stood; a mark on it resolves nothing:
-    // `knocked` — it is off the field)
-    if (knocked(t) || !(m.alive || downAtStart(m))) continue;
+    // every mark resolves whatever became of its marker — knocked out by an earlier mark (and revived or not), or down
+    // since its own combat (downAtStart); a mark on a unit knocked out during the pass, or lying down since the 联防
+    // start, resolves nothing (`knocked`: it is off the field)
+    if (knocked(t)) continue;
     S.fxOn(battle, 'devour', t, 'bond:egirShip', 'devour', { from: m.id });
     if (amount > 0) battle.loseHp(t, mitigate(amount, 'phys', t.s), { source: m, tags: ['bond:egir:devour'] });
     if (!layered.has(t)) {

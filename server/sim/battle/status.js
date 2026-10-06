@@ -130,7 +130,7 @@ export class BattleStatus {
   }
 
   /**
-   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point, resistApplied, stackAs } — returns
+   * Apply a catalogue status. opts: { duration, source, value, force, refresh, point, resistApplied, stackAs, reenter } — returns
    * true when applied. Honours enemy immunities (stun/silence/sleep/frozen/levitate/feared) unless `force`. `beforeStatus`
    * handlers may cancel it or change `duration` / `value`. Official rules (buffs.js STATUS): 抵抗 (the `resist` status)
    * shortens the RESIST_STATUSES by its value (default half; applied after `beforeStatus`; `resistApplied` skips that
@@ -144,7 +144,9 @@ export class BattleStatus {
    * ([r, c] or {x, y}; default the source's tile — a new application moves the point); 恐惧 (`fear`) stamps where it
    * was applied and from where (fear.js stampFear: the fan of 恐惧可达地块 its movement uses). A stunned/sleeping operator
    * releases the enemies it blocks; a feared/levitated/unblockable/attracted enemy is released by its blocker.
-   * `statusApplied` reports the final duration and `entered` (the target did not carry the status before).
+   * `statusApplied` reports the final duration and `entered` (the target did not carry the status before) — or, with
+   * `reenter`, entered anyway: a pulse whose own short status the caller re-applies as a fresh one each time (缇缇 S2's
+   * sleep ward, DESIGN §24.8); the buff itself is refreshed as usual.
    * A unit that is 无敌 and 无法选中 at once (a 重生 in progress, a hovering or 永久无敌 leader part) takes no status from
    * the other side, `force` included — PRTS 无敌 "无法被不同阵营选中": so a status carried by the very hit that knocked an
    * enemy out does not land after its 重生's cleanse (DESIGN §21.4). A ground enemy's status never lands on an airborne
@@ -198,7 +200,7 @@ export class BattleStatus {
     }
     const source = opts.source ?? null;
     let entered = true;
-    for (const b of target.buffs) if ((b.status ?? b.key) === key) { entered = false; break; }
+    if (opts.reenter !== true) for (const b of target.buffs) if ((b.status ?? b.key) === key) { entered = false; break; }
     if (tpl.palsy) {
       this.addBuff(target, { ...palsyBuff(value ?? 1), duration, source });
     } else if (tpl.valued != null && typeof tpl.mods === 'function' && opts.refresh == null) {

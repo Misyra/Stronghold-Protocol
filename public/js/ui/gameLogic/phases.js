@@ -4,6 +4,7 @@ import { PHASE } from '../../../../shared/constants.js';
 import { bossLevelSeconds } from '../matchStatus.js';
 import { clamp, int, isObj, sortedPlayers } from './shared.js';
 import { normalizeSp } from './draft.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 // ---- phases ----------------------------------------------------------------------------------------
@@ -43,18 +44,18 @@ export const isBossPhase = (phase) => phase === PHASE.FINAL_ASSAULT || phase ===
 export function phaseBanner(phase, pub) {
   const r = int(pub?.round, 0);
   switch (phase) {
-    case PHASE.BATTLE_CHECK: return { title: '协议启动', micro: 'PROTOCOL START', tone: 'mint', sub: '模拟即将开始', duration: 2600 };
-    case PHASE.ROUND_START: return { title: `第 ${r} 回合`, micro: `ROUND ${String(r).padStart(2, '0')}`, tone: 'mint', sub: '资金已到账' };
-    case PHASE.SP_DRAFT: return { title: '机变阶段', micro: 'CONTINGENCY', tone: 'gold', sub: '依次选择机变' };
-    case PHASE.PREP: return { title: '休整期', micro: `ROUND ${String(r).padStart(2, '0')} // REST`, tone: 'mint', sub: '部署干员，准备迎敌' };
-    case PHASE.COMBAT: return { title: '作战开始', micro: 'COMBAT', tone: 'orange', sub: '各自行动阶段' };
+    case PHASE.BATTLE_CHECK: return { title: t('协议启动'), micro: 'PROTOCOL START', tone: 'mint', sub: t('模拟即将开始'), duration: 2600 };
+    case PHASE.ROUND_START: return { title: t('第 {r} 回合', { r }), micro: `ROUND ${String(r).padStart(2, '0')}`, tone: 'mint', sub: t('资金已到账') };
+    case PHASE.SP_DRAFT: return { title: t('机变阶段'), micro: 'CONTINGENCY', tone: 'gold', sub: t('依次选择机变') };
+    case PHASE.PREP: return { title: t('休整期'), micro: `ROUND ${String(r).padStart(2, '0')} // REST`, tone: 'mint', sub: t('部署干员，准备迎敌') };
+    case PHASE.COMBAT: return { title: t('作战开始'), micro: 'COMBAT', tone: 'orange', sub: t('各自行动阶段') };
     case PHASE.UNITE: {
-      const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || '博士']));
+      const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || t('博士')]));
       const helpers = Array.isArray(pub?.unite?.helpers) ? pub.unite.helpers.map((id) => names.get(id)).filter(Boolean) : [];
-      return { title: '联防阶段', micro: 'JOINT DEFENSE', tone: 'orange', sub: helpers.length ? `联防：${helpers.join('、')}` : '完美作战的博士迎战突破防线的敌人' };
+      return { title: t('联防阶段'), micro: 'JOINT DEFENSE', tone: 'orange', sub: helpers.length ? t('联防：{names}', { names: helpers }) : t('完美作战的博士迎战突破防线的敌人') };
     }
-    case PHASE.FINAL_ASSAULT: return { title: '最终攻势', micro: 'FINAL ASSAULT', tone: 'red', sub: '击败敌方领袖' };
-    case PHASE.HIDDEN_CORE: return { title: '隐秘核心', micro: 'HIDDEN CORE', tone: 'red', sub: '被源石侵蚀的假想敌' };
+    case PHASE.FINAL_ASSAULT: return { title: t('最终攻势'), micro: 'FINAL ASSAULT', tone: 'red', sub: t('击败敌方领袖') };
+    case PHASE.HIDDEN_CORE: return { title: t('隐秘核心'), micro: 'HIDDEN CORE', tone: 'red', sub: t('被源石侵蚀的假想敌') };
     case PHASE.SETTLE: return null;
     default: return null;
   }
@@ -62,11 +63,11 @@ export function phaseBanner(phase, pub) {
 
 /** Label of the prep capsule ("休息一下" in the original). */
 export function prepCapsuleLabel(phase) {
-  if (phase === PHASE.SP_DRAFT) return '机变阶段';
-  if (phase === PHASE.ROUND_START) return '回合开始';
-  if (phase === PHASE.BATTLE_CHECK) return '协议启动';
-  if (phase === PHASE.SETTLE) return '回合结算';
-  return '休息一下';
+  if (phase === PHASE.SP_DRAFT) return t('机变阶段');
+  if (phase === PHASE.ROUND_START) return t('回合开始');
+  if (phase === PHASE.BATTLE_CHECK) return t('协议启动');
+  if (phase === PHASE.SETTLE) return t('回合结算');
+  return t('休息一下');
 }
 
 // ---- countdown -------------------------------------------------------------------------------------

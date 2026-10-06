@@ -22,7 +22,7 @@ import { LOADOUT_PREF, parseStored, toStored, sanitizeEntries } from './loadoutM
 import { OWNERSHIP_PREF, parseStoredOwnership, toStoredOwnership, cleanIds, sanitizeNotOwned } from './ownershipModel.js';
 import { DIY_PREF, parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks } from './diyModel.js';
 import { toast } from './toasts.js';
-import { t } from '../../../shared/i18n.js';
+import { t, N_ } from '../../../shared/i18n.js';
 
 export const SYNC_DEBOUNCE_MS = 500;
 export const RETRY_MS = 1500;
@@ -234,7 +234,7 @@ export function installLoadoutSync({ net, getChessReady, lookupChess, timers, ta
   const lookup = lookupChess || ((id) => data.lookup('chess', id));
   return installPrefSync({
     net, timers, target, notify, key: 'entries', stateKey: 'sync', msgType: 'room.loadout', field: 'entries', tag: 'loadout',
-    lockedText: '本局的干员调配已锁定，修改将在下一局生效',
+    lockedText: N_('本局的干员调配已锁定，修改将在下一局生效'),
     async prepare() {
       const current = target.get().entries;
       // an empty loadout needs no data (nothing to sanitise): a player who never opened 干员调配 does not download
@@ -257,7 +257,7 @@ export function installLoadoutSync({ net, getChessReady, lookupChess, timers, ta
 export function installOwnershipSync({ net, timers, target = loadoutStore, notify } = {}) {
   return installPrefSync({
     net, timers, target, notify, key: 'notOwned', stateKey: 'ownSync', msgType: 'room.ownership', field: 'notOwned', tag: 'ownership',
-    lockedText: '干员持有是局外设置，修改将在下一局生效',
+    lockedText: N_('干员持有是局外设置，修改将在下一局生效'),
     prepare: async () => cleanIds(target.get().notOwned),
   });
 }
@@ -277,7 +277,7 @@ export function installDiySync({ net, timers, target = loadoutStore, notify } = 
   });
   const sync = installPrefSync({
     net, timers, target, notify, key: 'diy', stateKey: 'diySync', msgType: 'room.diy', field: 'picks', tag: 'diy',
-    lockedText: '自选编队是局外设置，修改将在下一局生效',
+    lockedText: N_('自选编队是局外设置，修改将在下一局生效'),
     prepare: async () => cleanPicks(target.get().diy),
   });
   return { flush: sync.flush, dispose() { offKit?.(); sync.dispose(); } };

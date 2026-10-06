@@ -2,7 +2,7 @@
 // tools/i18n.mjs — UI string tooling for the gettext-style i18n (shared/i18n.js, public/i18n/<lang>.json; docs/I18N.md).
 //
 //   node tools/i18n.mjs extract [paths…] [--list] [--json]
-//       per file: the msgids passed to t() / tc() / N_() / msg(), and the Chinese literals still shown untranslated
+//       per file: the msgids passed to t() / tc() / tParts() / N_() / msg(), and the Chinese literals still shown untranslated
 //       (string literals, template literals, html`` text and attribute values outside those calls; comments,
 //       console.* and Error messages are ignored). --list prints each literal with its line.
 //   node tools/i18n.mjs check [paths…] [--lang en] [--strict] [--stale]
@@ -34,14 +34,14 @@ const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
 const DEFAULT_ROOTS = ['public/js', 'shared', 'server'];
 const SKIP_DIRS = new Set(['node_modules', 'vendor', 'assets', 'fonts', 'dev']);
 /** Calls whose first argument is a msgid (tc: the second, keyed `context::msgid`). */
-const MSGID_CALLS = new Set(['t', 'N_', 'msg']);
+const MSGID_CALLS = new Set(['t', 'tParts', 'N_', 'msg']);
 /**
  * Server messaging methods (m.toast, ctx.toast, this.tickerText …, called on an object): a Chinese string literal they
  * get is sent as text and translated by the client as a msgid (main.js translateWire).
  */
 const SERVER_TEXT_CALLS = new Set(['toast', 'tickerText', 'ticker']);
 /** Calls whose arguments are never UI text to wrap. */
-const SKIP_CALLS = new Set(['t', 'tc', 'N_', 'msg', 'tName', 'dn', 'format', 'renderMessage', 'require', 'import']);
+const SKIP_CALLS = new Set(['t', 'tc', 'tParts', 'N_', 'msg', 'tName', 'dn', 'format', 'renderMessage', 'require', 'import']);
 /** String methods: a literal argument is data, not display text. */
 const STRING_METHODS = new Set(['includes', 'startsWith', 'endsWith', 'indexOf', 'lastIndexOf', 'replace', 'replaceAll', 'split',
   'match', 'matchAll', 'test', 'search', 'has', 'get', 'set', 'delete', 'localeCompare', 'padStart', 'padEnd', 'join', 'add']);
@@ -143,22 +143,35 @@ const calleeName = (call) => {
   return null;
 };
 const isConsoleCall = (call) => call?.callee?.type === 'MemberExpression' && call.callee.object?.type === 'Identifier' && call.callee.object.name === 'console';
+/** A logger call (`log.warn(…)`, `this.m.log?.warn?.(…)`): developer text, like console.*. */
+const isLogCall = (call) => {
+  const c = call?.callee;
+  if (!c || c.type !== 'MemberExpression') return false;
+  const o = c.object;
+  const LOG = /^(log|logger)$/;
+  return (o.type === 'Identifier' && LOG.test(o.name)) || (o.type === 'MemberExpression' && !o.computed && o.property.type === 'Identifier' && LOG.test(o.property.name));
+};
+/** The developer detail of an error result (`{ error: 'BAD_TARGET', detail: '…' }`, `ev.detail = '…'`): never shown to players. */
+const isDetail = (node, parent) => (parent.type === 'Property' && parent.value === node && !parent.computed && (parent.key.name ?? parent.key.value) === 'detail')
+  || (parent.type === 'AssignmentExpression' && parent.right === node && parent.left.type === 'MemberExpression' && !parent.left.computed && parent.left.property.name === 'detail');
 
-/** Why a literal must not be wrapped (null = wrap it). */
-function skipReason(node, ancestors) {
+/** Why a literal must not be wrapped (null = wrap it). `aliases`: local name → shared/i18n.js export (`t as tr`). */
+function skipReason(node, ancestors, aliases = new Map()) {
   const parent = ancestors[ancestors.length - 1];
   for (let i = ancestors.length - 1; i >= 0; i--) {
     const a = ancestors[i];
     if (a.type === 'CallExpression') {
-      if (isConsoleCall(a)) return 'console';
+      if (isConsoleCall(a) || isLogCall(a)) return 'console';
       const name = calleeName(a);
-      if (SKIP_CALLS.has(name) && a.callee.type === 'Identifier') return 'in-call';
+      if (a.callee.type === 'Identifier' && SKIP_CALLS.has(aliases.get(name) ?? name)) return 'in-call';
     }
     if (a.type === 'NewExpression' && a.callee.type === 'Identifier' && /Error$/.test(a.callee.name)) return 'error';
     if (a.type === 'ThrowStatement') return 'error';
     if (a.type === 'ImportDeclaration' || a.type === 'ExportAllDeclaration' || (a.type === 'ExportNamedDeclaration' && a.source)) return 'import';
   }
   if (!parent) return null;
+  // (inside a detail too: `detail: \`… ${x ? '甲' : '乙'}\``)
+  if (isDetail(node, parent) || ancestors.some((a, i) => i > 0 && isDetail(a, ancestors[i - 1]))) return 'detail';
   if (parent.type === 'Property' && parent.key === node && !parent.computed) return 'key';
   if (parent.type === 'MemberExpression' && parent.property === node) return 'key';
   if (parent.type === 'BinaryExpression' && ['===', '!==', '==', '!=', 'in', 'instanceof'].includes(parent.operator)) return 'compare';
@@ -324,22 +337,33 @@ export async function scanSource(src, file = '<src>') {
   const msgids = [];
   const literals = [];
   const lineOf = (pos) => src.slice(0, pos).split('\n').length;
+  // shared/i18n.js functions imported under another name (`import { t as tr }` where `t` is a local variable)
+  const aliases = new Map();
+  for (const n of ast.body) {
+    if (n.type !== 'ImportDeclaration' || !/shared\/i18n\.js$/.test(String(n.source.value))) continue;
+    for (const sp of n.specifiers) if (sp.type === 'ImportSpecifier' && sp.imported.name !== sp.local.name) aliases.set(sp.local.name, sp.imported.name);
+  }
+  const fnName = (callee) => (callee.type === 'Identifier' ? aliases.get(callee.name) ?? callee.name : null);
   // a line marked `i18n-ignore` (in a comment) holds no UI text (font samples, data keys …)
   const ignored = new Set(src.split('\n').map((l, i) => (/i18n-ignore/.test(l) ? i + 1 : 0)).filter(Boolean));
+  // a file marked `i18n-ignore-file` (developer reports, bilingual error pages) holds no UI text to translate
+  const fileIgnored = /\/\/[^\n]*i18n-ignore-file/.test(src);
   walk(ast, (node, ancestors) => {
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'tc') {
+    if (node.type === 'CallExpression' && fnName(node.callee) === 'tc') {
       const [c, a] = node.arguments;
       if (c?.type === 'Literal' && a?.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: `${c.value}::${a.value}`, line: lineOf(a.start), via: 'tc' });
     }
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && MSGID_CALLS.has(node.callee.name)) {
+    if (node.type === 'CallExpression' && MSGID_CALLS.has(fnName(node.callee))) {
       const a = node.arguments[0];
-      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via: node.callee.name });
-      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via: node.callee.name });
+      const via = fnName(node.callee);
+      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via });
+      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via });
     }
     if (node.type === 'TaggedTemplateExpression' && node.tag.type === 'Identifier' && node.tag.name === 'html') {
       for (const seg of htmlSegments(node.quasi)) {
         const { msgid, params } = templateMsgid(seg.quasis, seg.exprs.map((e) => src.slice(e.start, e.end)));
-        literals.push({ kind: seg.kind, attr: seg.attr, start: seg.start, end: seg.end, line: lineOf(seg.start), msgid, params, exprs: seg.exprs.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason: null });
+        const line = lineOf(seg.start);
+        literals.push({ kind: seg.kind, attr: seg.attr, start: seg.start, end: seg.end, line, msgid, params, exprs: seg.exprs.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason: fileIgnored || ignored.has(line) ? 'ignored' : null });
       }
       // expressions inside are walked normally (nested html``, strings in ${…})
       return true;
@@ -357,7 +381,7 @@ export async function scanSource(src, file = '<src>') {
         return true;
       }
       const line = lineOf(node.start);
-      const reason = ignored.has(line) ? 'ignored' : skipReason(node, ancestors);
+      const reason = fileIgnored || ignored.has(line) ? 'ignored' : skipReason(node, ancestors, aliases);
       literals.push({ kind: 'str', start: node.start, end: node.end, line, msgid: node.value, params: [], module: !inFunction(ancestors), reason });
       return true;
     }
@@ -366,7 +390,7 @@ export async function scanSource(src, file = '<src>') {
       if (parent && parent.type === 'TaggedTemplateExpression') return true;
       const cooked = node.quasis.map((q) => q.value.cooked ?? q.value.raw);
       if (!cooked.some((s) => HAN.test(s))) return true;
-      const reason = ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors);
+      const reason = fileIgnored || ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors, aliases);
       const { msgid, params } = templateMsgid(cooked, node.expressions.map((e) => src.slice(e.start, e.end)));
       literals.push({ kind: 'tpl', start: node.start, end: node.end, line: lineOf(node.start), msgid, params, exprs: node.expressions.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason });
       return true;
@@ -560,7 +584,7 @@ async function cmdExtract(flags) {
   }
   const cat = readCatalog(flags.lang || 'en');
   const ready = rows.reduce((n, r) => n + r.literals.filter((l) => typeof cat[l.msgid] === 'string' && cat[l.msgid]).length, 0);
-  console.log(`total: ${tCount} msgids in t() / tc() / N_() / msg(); ${litCount} Chinese literals not wrapped, in ${rows.filter((r) => r.untranslated).length} files`
+  console.log(`total: ${tCount} msgids in t() / tc() / tParts() / N_() / msg(); ${litCount} Chinese literals not wrapped, in ${rows.filter((r) => r.untranslated).length} files`
     + ` (${ready} of them already translated in public/i18n/${flags.lang || 'en'}.json, ready for the codemod)`);
 }
 

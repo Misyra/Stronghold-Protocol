@@ -2,6 +2,7 @@
 
 import { isObj, sortedPlayers } from './shared.js';
 import { isCombatPhase } from './phases.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 /** Own normal field id (DESIGN §8.3). */
@@ -47,8 +48,8 @@ export function cycleField(fields, current, dir = 1) {
  * @returns {{ fieldId: string } | { reason: string }}
  */
 export function watchTarget(p, pub, myId) {
-  if (!isObj(p)) return { reason: '无效的目标' };
-  if (p.alive === false) return { reason: '该队友已被淘汰，无法查看其阵地' };
+  if (!isObj(p)) return { reason: t('无效的目标') };
+  if (p.alive === false) return { reason: t('该队友已被淘汰，无法查看其阵地') };
   const combat = isCombatPhase(pub?.phase);
   const fieldId = (combat && typeof p.fieldId === 'string' && p.fieldId) || ownFieldId(p.playerId);
   if (combat) {
@@ -57,7 +58,7 @@ export function watchTarget(p, pub, myId) {
     const me = sortedPlayers(pub).find((x) => x.playerId === myId);
     const mine = fields.find((x) => Array.isArray(x.players) && x.players.includes(myId));
     if (f && (f.kind === 'boss' || f.kind === 'hidden') && me?.alive !== false && mine && mine.fieldId !== f.fieldId) {
-      return { reason: '无法查看另一组队友的战场' };
+      return { reason: t('无法查看另一组队友的战场') };
     }
   }
   return { fieldId };
@@ -76,9 +77,9 @@ export function switcherLabel(pub, watching, myId, spectating = false) {
   const cur = fields.find((f) => f.fieldId === watching);
   if (cur) return fieldLabel(cur, pub, myId);
   if (typeof watching === 'string' && watching.startsWith('n:') && watching !== ownFieldId(myId)) {
-    return sortedPlayers(pub).find((p) => p.playerId === watching.slice(2))?.name || '队友';
+    return sortedPlayers(pub).find((p) => p.playerId === watching.slice(2))?.name || t('队友');
   }
-  return spectating ? '观战' : '自己';
+  return spectating ? t('观战') : t('自己');
 }
 
 /**
@@ -89,16 +90,16 @@ export function switcherLabel(pub, watching, myId, spectating = false) {
  */
 export function fieldLabel(field, pub, myId) {
   if (!isObj(field)) return '—';
-  const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || '博士']));
+  const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || t('博士')]));
   const ps = Array.isArray(field.players) ? field.players : [];
-  if (field.kind === 'unite') return ps.includes(myId) ? '联防（自己）' : '联防阵地';
+  if (field.kind === 'unite') return ps.includes(myId) ? t('联防（自己）') : t('联防阵地');
   if (field.kind === 'boss' || field.kind === 'hidden') {
-    if (ps.includes(myId)) return ps.length > 1 ? '全景' : '自己';
-    return ps.map((id) => names.get(id) || '博士').join(' · ') || '领袖战场';
+    if (ps.includes(myId)) return ps.length > 1 ? t('全景') : t('自己');
+    return ps.map((id) => names.get(id) || t('博士')).join(' · ') || t('领袖战场');
   }
-  if (ps.includes(myId) || field.fieldId === ownFieldId(myId)) return '自己';
+  if (ps.includes(myId) || field.fieldId === ownFieldId(myId)) return t('自己');
   const id = ps[0] ?? String(field.fieldId || '').replace(/^n:/, '');
-  return names.get(id) || '队友';
+  return names.get(id) || t('队友');
 }
 
 /**

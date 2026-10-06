@@ -2,6 +2,7 @@
 
 import { GEO } from '../../../../shared/constants.js';
 import { isObj } from './shared.js';
+import { t, tName } from '../../../../shared/i18n.js';
 
 
 // ---- shop ---------------------------------------------------------------------------------------------
@@ -118,14 +119,15 @@ export function completesMerge(priv, slot, { getChess = () => null, getItem = ()
 export function offerHeader(offer) {
   const slots = isObj(offer) && Array.isArray(offer.slots) ? offer.slots : [];
   const items = slots.some((s) => isObj(s) && s.kind === 'item');
-  const label = isObj(offer) && typeof offer.label === 'string' && offer.label ? offer.label : null;
+  // (the server names the offer by its source in Chinese: a strategy's effect, an item, an operator — a data name)
+  const label = isObj(offer) && typeof offer.label === 'string' && offer.label ? tName(offer.label) : null;
   const queued = isObj(offer) && Number.isInteger(offer.queued) && offer.queued > 0 ? offer.queued : 0;
-  const tail = { queued, more: queued ? `之后还有 ${queued} 项` : null };
+  const tail = { queued, more: queued ? t('之后还有 {queued} 项', { queued }) : null };
   if (!items && (!isObj(offer) || offer.source === 'merge' || offer.source == null) && !label) {
-    return { title: '晋升奖励', micro: 'PROMOTION', sub: '免费选择 1 名', icon: 'crown', items: false, pill: '晋升奖励待选择', ...tail };
+    return { title: t('晋升奖励'), micro: 'PROMOTION', sub: t('免费选择 1 名'), icon: 'crown', items: false, pill: t('晋升奖励待选择'), ...tail };
   }
-  const title = label || (items ? '装备补给' : '特殊招募');
-  return { title, micro: 'SPECIAL', sub: items ? '免费选择 1 件' : '免费选择 1 名', icon: 'refresh', items, pill: `${title}待选择`, ...tail };
+  const title = label || (items ? t('装备补给') : t('特殊招募'));
+  return { title, micro: 'SPECIAL', sub: items ? t('免费选择 1 件') : t('免费选择 1 名'), icon: 'refresh', items, pill: t('{title}待选择', { title }), ...tail };
 }
 
 /**
@@ -135,26 +137,26 @@ export function offerHeader(offer) {
  * @returns {string|null} Chinese reason
  */
 export function shopBlockReason(kind, { priv, editable, slot } = {}) {
-  if (!priv) return '尚未就绪';
-  if (priv.alive === false) return '你已被淘汰';
-  if (kind === 'ready') return priv.canReady === false ? '临时整备区不为空，请先处理溢出的资源' : null;
+  if (!priv) return t('尚未就绪');
+  if (priv.alive === false) return t('你已被淘汰');
+  if (kind === 'ready') return priv.canReady === false ? t('临时整备区不为空，请先处理溢出的资源') : null;
   if (!editable) {
-    if (kind === 'reward') return '当前无法选择';
-    return priv.ready ? '已准备就绪，取消准备后才能操作' : '当前阶段无法进行该操作';
+    if (kind === 'reward') return t('当前无法选择');
+    return priv.ready ? t('已准备就绪，取消准备后才能操作') : t('当前阶段无法进行该操作');
   }
   const funds = Number(priv.funds) || 0;
   const shop = priv.shop || {};
   if (kind === 'buy' || kind === 'reward') {
-    if (!isObj(slot) || slot.sold) return kind === 'reward' ? '已选择' : '已售出';
-    if ((Number(slot.price) || 0) > funds) return '资金不足';
+    if (!isObj(slot) || slot.sold) return kind === 'reward' ? t('已选择') : t('已售出');
+    if ((Number(slot.price) || 0) > funds) return t('资金不足');
     // a full hand refuses every purchase / pick, a merge-completing one too (PRTS 卫戍协议/帮助 §手牌区, GitHub #82)
-    if (handFull(priv)) return '整备区已满';
+    if (handFull(priv)) return t('整备区已满');
     return null;
   }
-  if (kind === 'refresh') return (Number(shop.refreshPrice) || 0) > funds ? '资金不足' : null;
+  if (kind === 'refresh') return (Number(shop.refreshPrice) || 0) > funds ? t('资金不足') : null;
   if (kind === 'levelUp') {
-    if ((Number(shop.level) || 1) >= (Number(shop.maxLevel) || 6)) return '调度中心已达最高等级';
-    return (Number(shop.upgradePrice) || 0) > funds ? '资金不足' : null;
+    if ((Number(shop.level) || 1) >= (Number(shop.maxLevel) || 6)) return t('调度中心已达最高等级');
+    return (Number(shop.upgradePrice) || 0) > funds ? t('资金不足') : null;
   }
   return null;
 }
@@ -177,7 +179,7 @@ export function readyFundsPrompt(priv, { ready = true, keptBands = null, autopla
   const kept = Array.isArray(keptBands) ? keptBands : ['band_cannot'];
   if (typeof priv.bandId === 'string' && kept.includes(priv.bandId)) return null;
   return {
-    title: '剩余资金', micro: 'FUNDS LEFT', okText: '准备就绪', cancelText: '继续整备',
-    text: `还有 ${funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？`,
+    title: t('剩余资金'), micro: 'FUNDS LEFT', okText: t('准备就绪'), cancelText: t('继续整备'),
+    text: t('还有 {funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？', { funds }),
   };
 }

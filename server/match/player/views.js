@@ -42,8 +42,8 @@ export class PlayerViews {
       const left = b.roundsLeft >= 90 ? null : b.roundsLeft;
       const eff = b.card.effectId ? this.gd.effect(b.card.effectId) : null;
       out.push({
-        id: b.id, name: b.card.name || '悬赏', desc: bountyText((eff && eff.descRaw) || b.card.desc || '', b.card), iconKind: 'choice', iconId: b.card.effectId || 'bounty',
-        counter: left, counterText: left == null ? '之后的每场作战' : `还剩 ${left} 场作战`,
+        id: b.id, name: b.card.name || '悬赏', desc: bountyText((eff && eff.descRaw) || b.card.desc || '', b.card), iconKind: 'choice', iconId: b.card.effectId || 'bounty', // i18n-ignore: a data-less card's fallback name
+        counter: left, counterText: left == null ? '之后的每场作战' : `还剩 ${left} 场作战`, // i18n-ignore: older clients (ui/effectsList.js builds it from counter)
       });
     }
     return out;

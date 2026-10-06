@@ -2,20 +2,21 @@
 
 import { UF } from '../../../../shared/constants.js';
 import { clamp, isObj, tileKey } from './shared.js';
+import { N_, getLang } from '../../../../shared/i18n.js';
 
 
 // ---- players, statuses, fields ------------------------------------------------------------------------
 
 /** Status → glyph + text (research 06 §11.1). */
 export const STATUS_META = Object.freeze({
-  acting: { glyph: 'dots', text: '行动中', tone: 'lo' },
-  ready: { glyph: 'check', text: '已就绪', tone: 'mint' },
-  deciding: { glyph: 'hourglass', text: '决策中', tone: 'gold' },
-  combat: { glyph: 'sword', text: '作战中', tone: 'orange' },
-  done: { glyph: 'check', text: '作战结束', tone: 'mint' },
-  helping: { glyph: 'shield', text: '联防中', tone: 'orange' },
-  left: { glyph: 'exit', text: '已离开', tone: 'red' },
-  dead: { glyph: 'close', text: '已淘汰', tone: 'red' },
+  acting: { glyph: 'dots', text: N_('行动中'), tone: 'lo' },
+  ready: { glyph: 'check', text: N_('已就绪'), tone: 'mint' },
+  deciding: { glyph: 'hourglass', text: N_('决策中'), tone: 'gold' },
+  combat: { glyph: 'sword', text: N_('作战中'), tone: 'orange' },
+  done: { glyph: 'check', text: N_('作战结束'), tone: 'mint' },
+  helping: { glyph: 'shield', text: N_('联防中'), tone: 'orange' },
+  left: { glyph: 'exit', text: N_('已离开'), tone: 'red' },
+  dead: { glyph: 'close', text: N_('已淘汰'), tone: 'red' },
 });
 
 // ---- snapshots / battle HUD ---------------------------------------------------------------------------------
@@ -69,12 +70,21 @@ export function attackInterval(bat, aspd = 100) {
   return b * 100 / a;
 }
 
-/** Compact number: 12345 → '12,345'; 1.5e6 → '150万'. */
+/**
+ * Compact number: 12345 → '12,345'; 1.5e6 → '150万' — in English the thousands-based units: 1.5e6 → '1.5M', 2.5e5 →
+ * '250K', 3e9 → '3B' (万 / 亿 count in 10⁴ / 10⁸ steps, no template can move the decimal point).
+ */
 export function fmtNum(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}亿`;
-  if (Math.abs(n) >= 1e5) return `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}万`;
+  if (getLang() === 'en') {
+    if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(Math.abs(n) >= 1e10 ? 0 : 1)}B`;
+    if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(Math.abs(n) >= 1e7 ? 0 : 1)}M`;
+    if (Math.abs(n) >= 1e5) return `${Math.round(n / 1e3)}K`;
+    return Math.round(n).toLocaleString('en-US');
+  }
+  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}亿`; // i18n-ignore: the Chinese units (English above)
+  if (Math.abs(n) >= 1e5) return `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}万`; // i18n-ignore
   return Math.round(n).toLocaleString('en-US');
 }
 

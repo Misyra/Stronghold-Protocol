@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks
 import { html } from './components.js';
 import { LocalSprite } from './gameComponents.js';
 import { DIRS, DIR_LABEL, DEAD_ZONE_TILES, dirFromDelta, dirFromKey, rangeTiles, normDir, boardDir, viewMirrored } from './facing.js';
+import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 const rawOf = (view) => (view && view.raw) || view || null;
@@ -249,7 +250,7 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
 
   const outside = !!drag && !!dir;
   const box = half * 2;
-  return html`<div class=${cx('fwheel', drag && 'is-pressed', dir && `is-${dir.toLowerCase()}`)} role="dialog" aria-label=${`选择${name ? `「${name}」的` : ''}朝向`}
+  return html`<div class=${cx('fwheel', drag && 'is-pressed', dir && `is-${dir.toLowerCase()}`)} role="dialog" aria-label=${name ? t('选择「{name}」的朝向', { name }) : t('选择朝向')}
       onPointerDown=${onDown} onPointerMove=${onMove} onPointerUp=${onUp} onPointerCancel=${onPointerCancel}
       onContextMenu=${(e) => { e.preventDefault(); onCancel(); }}>
     ${g ? html`<${Stripes} tiles=${tiles} view=${view} row=${row} col=${col} />` : null}
@@ -264,12 +265,12 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
         ${DIRS.map((d) => html`<${Chevron} key=${d} dir=${d} on=${dir === d} />`)}
       </svg>
       <button type="button" class="fwheel__cancel" onPointerDown=${(e) => e.stopPropagation()}
-        onClick=${(e) => { e.stopPropagation(); onCancel(); }} aria-label="点击取消">
+        onClick=${(e) => { e.stopPropagation(); onCancel(); }} aria-label=${t('点击取消')}>
         <${LocalSprite} name="cancel_icon" class="fwheel__x" fallback=${html`<span class="fwheel__x fwheel__x--txt">✕</span>`} />
-        <span>点击取消</span>
+        <span>${t('点击取消')}</span>
       </button>
-      ${outside ? html`<span class="fwheel__tip" role="status">拖回中心区域取消</span>` : null}
-      <span class="fwheel__sr" aria-live="polite">${dir ? `朝向：${DIR_LABEL[dir]}` : ''}</span>
+      ${outside ? html`<span class="fwheel__tip" role="status">${t('拖回中心区域取消')}</span>` : null}
+      <span class="fwheel__sr" aria-live="polite">${dir ? t('朝向：{dir}', { dir: t(DIR_LABEL[dir]) }) : ''}</span>
     </div>` : null}
   </div>`;
 }

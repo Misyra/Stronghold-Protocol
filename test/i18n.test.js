@@ -4,11 +4,11 @@
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  t, tc, N_, setLang, getLang, onLangChange, addMessages, setMessages, hasMessage, normalizeLang, format, setNameResolver,
+  t, tc, tParts, N_, setLang, getLang, onLangChange, addMessages, setMessages, hasMessage, normalizeLang, format, setNameResolver,
   tName, dn, msg, renderMessage, wireMessage, translateWire, DEFAULT_LANG,
 } from '../shared/i18n.js';
 import { templateMsgid, paramName, quote, codemodSource, scanSource } from '../tools/i18n.mjs';
@@ -56,6 +56,22 @@ test('tc(): a context key wins, else the plain msgid; Chinese shows the msgid', 
   assert.equal(N_('标记'), '标记', 'N_ only marks a msgid');
 });
 
+test('tParts(): a sentence with markup inside — the translation split at its placeholders, object params kept as they are', () => {
+  const b = { type: 'b', props: { children: 14 } }; // a vnode stand-in
+  addMessages('en', { '第 {r} 回合 · 最终攻势': 'Final Assault in round {r}', '{n} 名{who}已调整': '{n} {n|operator|operators} of {who} adjusted' });
+  assert.deepEqual(tParts('第 {r} 回合 · 最终攻势', { r: b }), ['第 ', b, ' 回合 · 最终攻势'], 'zh: the text around the markup as written');
+  assert.deepEqual(tParts('只有文字'), ['只有文字']);
+  assert.deepEqual(tParts('{a}{b}', { a: '甲', b: 2 }), ['甲2'], 'plain values join the text around them');
+  assert.deepEqual(tParts('{r}', { r: b }), [b], 'empty text is dropped');
+  assert.deepEqual(tParts('留着 {x}', {}), ['留着 {x}'], 'a missing value keeps the placeholder');
+  assert.deepEqual(tParts('禁用{names}盟约', { names: [b, b] }), ['禁用', [b, b], '盟约'], 'an array of vnodes is markup too');
+  assert.deepEqual(tParts('{names}', { names: ['甲', dn('乙')] }), ['甲、乙'], 'an array of texts is a list');
+  setLang('en');
+  assert.deepEqual(tParts('第 {r} 回合 · 最终攻势', { r: b }), ['Final Assault in round ', b], 'the English word order');
+  setNameResolver((name) => ({ 阿米娅: 'Amiya' })[name] || name);
+  assert.deepEqual(tParts('{n} 名{who}已调整', { n: 1, who: dn('阿米娅') }), ['1 operator of Amiya adjusted'], 'plurals and data names as in t()');
+});
+
 test('data names: { dn } params and tName go through the resolver, only outside Chinese; player names never do', () => {
   setNameResolver((name) => ({ 琳琅诗怀雅: 'Swire the Elegant Wit', 阿米娅: 'Amiya' })[name] || name);
   addMessages('en', { '{names}只能部署在召唤者攻击范围内，已退回整备区': '{names} were returned to the Bench', '{name}博士中途退出了模拟': 'Dr. {name} left the simulation' });
@@ -100,7 +116,7 @@ test('server wire format: text keeps the Chinese rendering for older clients; pa
 
 test('public/i18n/en.json: valid, English values, placeholders kept, the pilot screens and server messages translated', () => {
   const entries = Object.entries(EN).filter(([k]) => !k.startsWith('_'));
-  assert.ok(entries.length > 800, `seeded from PR #70: ${entries.length}`);
+  assert.ok(entries.length >= 1000, `PR #70's seed + phase 2: ${entries.length}`);
   for (const [k, v] of entries) {
     assert.equal(typeof v, 'string', k);
     assert.ok(v.trim(), `empty translation for ${k}`);
@@ -110,25 +126,40 @@ test('public/i18n/en.json: valid, English values, placeholders kept, the pilot s
     for (const p of want) assert.ok(have.has(p), `${k}: {${p}} missing in "${v}"`);
   }
   for (const k of ['开始', '博士代号', '设置', '语言', '同盟模拟', '创建同盟', '加入同盟', '开始模拟', 'toggle::关闭', '整备区已满',
+    '第 {r} 回合 · 最终攻势', '本局禁用{names}盟约，此策略效果可能无法发挥', 'bond-threshold::名', 'list::、', '干员持有', '先锋', '开心',
     '{names}只能部署在召唤者攻击范围内，已退回整备区', '{name}博士的目标生命值已耗尽', '联防阶段：{names} 迎战突破防线的敌人', '【维多利亚】获得{n}件维式重锤']) {
     assert.ok(EN[k], `en.json lacks ${k}`);
   }
 });
 
-test('every msgid of the pilot screens, the shell and the server messages is in public/i18n/en.json', async () => {
-  const files = ['public/js/screens/title.js', 'public/js/screens/lobby.js', 'public/js/screens/room.js', 'public/js/ui/settings.js',
-    'public/js/screens/diy.js',
-    'public/js/main.js', 'public/js/ui/toasts.js', 'server/match/match/messaging.js', 'server/match/player/placement.js',
-    'server/match/player/basics.js', 'server/match/player/acquire.js', 'server/match/effectsMeta.js', 'server/match/match/settle.js',
-    'server/match/match/platform.js', 'server/match/match/unitePhase.js', 'server/match/match/bossRounds.js',
-    'server/sim/content/bonds/addon/meta.js', 'server/sim/content/bonds/core.js'];
+test('the whole client, shared and the server messages: no Chinese literal left unwrapped, every msgid in public/i18n/en.json (extract 0, check --strict)', async () => {
+  // what tools/i18n.mjs scans: public/js (not dev / vendor / assets / fonts), shared, server — server/sim only for the
+  // texts it sends (msg() / ctx.toast), its own t() / N_() are other helpers
+  const SKIP = new Set(['node_modules', 'vendor', 'assets', 'fonts', 'dev']);
+  const files = [];
+  const visit = (rel) => {
+    for (const name of readdirSync(path.join(ROOT, rel)).sort()) {
+      if (SKIP.has(name) || name.startsWith('.')) continue;
+      const r = `${rel}/${name}`;
+      if (statSync(path.join(ROOT, r)).isDirectory()) visit(r);
+      else if (/\.m?js$/.test(name)) files.push(r);
+    }
+  };
+  for (const root of ['public/js', 'shared', 'server']) visit(root);
+  assert.ok(files.length > 300, `${files.length} files`);
   const missing = [];
+  let used = 0;
   for (const f of files) {
     const { msgids, literals } = await scanSource(readFileSync(path.join(ROOT, f), 'utf8'), f);
     const server = f.startsWith('server/');
-    for (const m of msgids) if ((!server || m.via === 'msg' || m.via === 'server') && !EN[m.msgid]) missing.push(`${f}:${m.line} ${m.msgid}`);
-    if (!server) for (const l of literals) if (!l.reason) missing.push(`${f}:${l.line} not wrapped: ${l.msgid}`);
+    for (const m of msgids) {
+      if (server && m.via !== 'msg' && m.via !== 'server') continue;
+      used++;
+      if (!EN[m.msgid]) missing.push(`${f}:${m.line} ${m.msgid}`);
+    }
+    if (!f.startsWith('server/sim/')) for (const l of literals) if (!l.reason) missing.push(`${f}:${l.line} not wrapped: ${l.msgid}`);
   }
+  assert.ok(used >= 1350, `msgid uses: ${used} (1 404 at phase 2)`);
   assert.deepEqual(missing, []);
 });
 
@@ -160,4 +191,20 @@ test('tools/i18n.mjs: msgids of template literals name their params; the codemod
   assert.match(out.src, />\$\{t\('你好'\)\} \$\{name \|\| t\('博士'\)\} \$\{t\('世界'\)\}<b>/);
   assert.match(out.src, /<\/b> \$\{t\('回合'\)\}<\/p>/);
   assert.equal(out.manual.length, 1);
+  // tParts() is a msgid call: its msgid is extracted, the text inside is not a literal left to wrap
+  const scanned = await scanSource("const v = html`<span>${tParts('第 {r} 回合', { r: html`<b>${n}</b>` })}</span>`;", 'x.js');
+  assert.deepEqual(scanned.msgids.map((m) => [m.msgid, m.via]), [['第 {r} 回合', 'tParts']]);
+  assert.deepEqual(scanned.literals.filter((l) => !l.reason), []);
+  // an aliased import (`t as tr`, where t is a local variable) is the same msgid call
+  const aliased = await scanSource("import { t as tr } from '../../../shared/i18n.js';\nconst t = 3;\nexport const f = () => tr('替补') + t;", 'x.js');
+  assert.deepEqual(aliased.msgids.map((m) => [m.msgid, m.via]), [['替补', 't']]);
+  assert.deepEqual(aliased.literals.filter((l) => !l.reason), []);
+  // developer text is not UI text: an error result's detail, a logger call, a file marked i18n-ignore-file
+  const dev = await scanSource([
+    "export const a = (x) => ({ error: 'BAD_TARGET', detail: `不是自选格子 ${x ? '甲' : '乙'}` });",
+    "export function b(ev, log) { ev.detail = '已经是精锐'; log.warn(`[match] 自选 被忽略`); this.m.log?.info?.('信息'); return '界面文字'; }",
+  ].join('\n'), 'x.js');
+  assert.deepEqual(dev.literals.filter((l) => !l.reason).map((l) => l.msgid), ['界面文字']);
+  const whole = await scanSource("// (i18n-ignore-file: developer reports)\nexport const r = ['开发者报告', `第${1}条`];", 'x.js');
+  assert.deepEqual(whole.literals.filter((l) => !l.reason), []);
 });

@@ -7,6 +7,7 @@ import { pieceDir, rangeTiles } from '../facing.js';
 import { isObj, tileKey } from './shared.js';
 import { boardTileOf, fieldTile } from './camera.js';
 import { deployedRecord, fieldsStandIn, standInOf } from './standIn.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 // ---- placement (canPlace mirror) ------------------------------------------------------------------------
@@ -310,45 +311,45 @@ function unitAllowed(ctx, piece, row, col, owner = null) {
  */
 export function canPlace(ctx, uid, target) {
   const no = (code, reason) => ({ ok: false, code, reason });
-  if (!ctx || !ctx.editable) return no('WRONG_PHASE', '当前阶段无法进行该操作');
+  if (!ctx || !ctx.editable) return no('WRONG_PHASE', t('当前阶段无法进行该操作'));
   const src = ctx.pieces.get(uid);
-  if (!src) return no('BAD_TARGET', '找不到该单位');
-  if (!isObj(target)) return no('BAD_TILE', '无法部署在该位置');
+  if (!src) return no('BAD_TARGET', t('找不到该单位'));
+  if (!isObj(target)) return no('BAD_TILE', t('无法部署在该位置'));
   const piece = src.piece;
   const isMagic = piece.kind === 'item' && ctx.getItem(piece.id)?.itemType === 'MAGIC';
 
   if (target.area === 'hand') {
     const idx = target.idx;
-    if (!Number.isInteger(idx) || idx < 0 || idx >= GEO.HAND_SIZE) return no('BAD_TILE', '无法放置在该位置');
-    if (src.area === 'hand' && src.idx === idx) return no('ALREADY', '位置未变化');
+    if (!Number.isInteger(idx) || idx < 0 || idx >= GEO.HAND_SIZE) return no('BAD_TILE', t('无法放置在该位置'));
+    if (src.area === 'hand' && src.idx === idx) return no('ALREADY', t('位置未变化'));
     const occ = ctx.handAt.get(idx);
     if (!occ) return { ok: true, action: 'move' };
     if (piece.kind === 'item') {
-      if (occ.piece.kind === 'chess') return isMagic ? no('BAD_TARGET', '该道具需要放置在战场上使用') : equipCheck(ctx, piece, occ.piece);
+      if (occ.piece.kind === 'chess') return isMagic ? no('BAD_TARGET', t('该道具需要放置在战场上使用')) : equipCheck(ctx, piece, occ.piece);
       return { ok: true, action: 'swap' };
     }
     if (src.area === 'board') {
       if (piece.kind === 'token') return { ok: true, action: 'move' }; // back onto its stack
       if (occ.piece.kind === 'chess') {
-        if (!tileAllows(ctx, occ.piece, src.row, src.col)) return no('BAD_TILE', '交换后的单位无法部署在原位置');
+        if (!tileAllows(ctx, occ.piece, src.row, src.col)) return no('BAD_TILE', t('交换后的单位无法部署在原位置'));
         return { ok: true, action: 'swap' };
       }
       // the withdrawn operator goes to another free slot
       const free = [...Array(GEO.HAND_SIZE).keys()].some((i) => !ctx.handAt.has(i));
-      return free ? { ok: true, action: 'move' } : no('HAND_FULL', '整备区已满');
+      return free ? { ok: true, action: 'move' } : no('HAND_FULL', t('整备区已满'));
     }
     return { ok: true, action: 'swap' };
   }
 
   if (target.area === 'board') {
     const { row, col } = target;
-    if (!Number.isInteger(row) || !Number.isInteger(col)) return no('BAD_TILE', '无法部署在该位置');
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return no('BAD_TILE', t('无法部署在该位置'));
     const inField = row >= GEO.FIELD.r0 && row <= GEO.FIELD.r1 && col >= GEO.FIELD.c0 && col <= GEO.FIELD.c1;
-    if (!inField) return no('BAD_TILE', '无法部署在该位置');
+    if (!inField) return no('BAD_TILE', t('无法部署在该位置'));
     const occ = ctx.boardAt.get(tileKey(row, col));
     if (piece.kind === 'item') {
       if (isMagic) return { ok: true, action: 'art' };
-      if (!occ) return no('BAD_TARGET', '请将装备拖拽至干员身上');
+      if (!occ) return no('BAD_TARGET', t('请将装备拖拽至干员身上'));
       return equipCheck(ctx, piece, occ.piece);
     }
     // its own tile: re-orient in place through the direction wheel (research 09 §1.2)
@@ -356,38 +357,38 @@ export function canPlace(ctx, uid, target) {
     if (!tileAllows(ctx, piece, row, col)) {
       const deployable = ctx.deploy.ranged.has(tileKey(row, col));
       const pos = piecePosition(ctx, piece);
-      return no('BAD_TILE', deployable && pos === 'MELEE' ? '近战单位只能部署在地面' : deployable && pos === 'HIGH' ? '只能部署在远程位' : '无法部署在该位置');
+      return no('BAD_TILE', deployable && pos === 'MELEE' ? t('近战单位只能部署在地面') : deployable && pos === 'HIGH' ? t('只能部署在远程位') : t('无法部署在该位置'));
     }
     // a range-bound summon (战术点): inside its owner's attack range — seen from the summon's old tile when it is
     // dropped onto its own owner (the two swap); an outside-bound one (战术锚点) outside it
     const ownerSwap = src.area === 'board' && occ && occ.piece.uid === piece.ownerUid ? { row: src.row, col: src.col, piece: occ.piece } : null;
     const range = summonRange(ctx, piece, ownerSwap);
-    if (range && !range.has(tileKey(row, col))) return no('BAD_TILE', '只能部署在召唤者攻击范围内');
+    if (range && !range.has(tileKey(row, col))) return no('BAD_TILE', t('只能部署在召唤者攻击范围内'));
     const out = summonExcluded(ctx, piece, ownerSwap);
-    if (out && out.has(tileKey(row, col))) return no('BAD_TILE', '只能部署在召唤者攻击范围外');
+    if (out && out.has(tileKey(row, col))) return no('BAD_TILE', t('只能部署在召唤者攻击范围外'));
     if (src.area === 'board') {
       // board → board: move or swap (the occupant must be legal on the source tile — the mover's own summon excepted:
       // a moved operator's summons go back to the hand anyway)
       const ownSummon = occ && occ.piece.kind === 'token' && occ.piece.ownerUid === piece.uid;
-      if (occ && !ownSummon && !unitAllowed(ctx, occ.piece, src.row, src.col)) return no('BAD_TILE', '交换后的单位无法部署在原位置');
+      if (occ && !ownSummon && !unitAllowed(ctx, occ.piece, src.row, src.col)) return no('BAD_TILE', t('交换后的单位无法部署在原位置'));
       return { ok: true, action: occ ? 'swap' : 'move' };
     }
     if (piece.kind === 'token') {
-      if (occ) return no('BAD_TILE', '该位置已有单位');
+      if (occ) return no('BAD_TILE', t('该位置已有单位'));
       const ownerDeployed = [...ctx.boardAt.values()].some((e) => e.piece.uid === piece.ownerUid);
-      if (Number.isInteger(piece.ownerUid) && !ownerDeployed) return no('BAD_TARGET', '召唤者尚未部署');
+      if (Number.isInteger(piece.ownerUid) && !ownerDeployed) return no('BAD_TARGET', t('召唤者尚未部署'));
       return { ok: true, action: 'move' };
     }
-    if ((!occ || occ.piece.kind !== 'chess') && ctx.count >= ctx.cap) return no('BOARD_FULL', '已达到部署上限');
+    if ((!occ || occ.piece.kind !== 'chess') && ctx.count >= ctx.cap) return no('BOARD_FULL', t('已达到部署上限'));
     return { ok: true, action: occ ? 'swap' : 'move' };
   }
-  return no('BAD_TILE', '无法放置在该位置');
+  return no('BAD_TILE', t('无法放置在该位置'));
 }
 
 function equipCheck(ctx, itemPiece, targetPiece) {
   const item = ctx.getItem(itemPiece.id);
-  if (item?.itemType === 'MAGIC') return { ok: false, code: 'BAD_TARGET', reason: '该道具需要放置在战场上使用' };
-  if (!isObj(targetPiece) || targetPiece.kind !== 'chess') return { ok: false, code: 'BAD_TARGET', reason: '装备只能配发给干员' };
+  if (item?.itemType === 'MAGIC') return { ok: false, code: 'BAD_TARGET', reason: t('该道具需要放置在战场上使用') };
+  if (!isObj(targetPiece) || targetPiece.kind !== 'chess') return { ok: false, code: 'BAD_TARGET', reason: t('装备只能配发给干员') };
   return { ok: true, action: 'equip' };
 }
 
@@ -477,10 +478,10 @@ export function dropFailureReason(ctx, uid, tile) {
   let target = null;
   if (tile.area === 'board') target = { area: 'board', row: tile.row, col: tile.col };
   else if (tile.area === 'hand') target = { area: 'hand', idx: Number.isInteger(tile.idx) ? tile.idx : tile.col };
-  else if (tile.area === 'temp') return ctx.pieces.get(uid).area === 'temp' ? null : '临时整备区无法放入单位';
-  else if (Number.isInteger(tile.row) && tile.row >= GEO.FIELD.r0 && tile.row <= GEO.FIELD.r1) return '无法部署在该位置';
+  else if (tile.area === 'temp') return ctx.pieces.get(uid).area === 'temp' ? null : t('临时整备区无法放入单位');
+  else if (Number.isInteger(tile.row) && tile.row >= GEO.FIELD.r0 && tile.row <= GEO.FIELD.r1) return t('无法部署在该位置');
   else return null;
   const res = canPlace(ctx, uid, target);
   if (res.ok || res.code === 'ALREADY') return null;
-  return res.reason || '无法放置在该位置';
+  return res.reason || t('无法放置在该位置');
 }

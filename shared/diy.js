@@ -155,12 +155,12 @@ export function diyPool(tier, { data, kitted = null } = { data: null }) {
  */
 export function checkDiyPick(slotId, pick, data) {
   const slot = diySlot(slotId, data);
-  if (!slot) return { error: `not a 自选 slot: ${slotId}` };
+  if (!slot) return { error: `not a 自选 slot: ${slotId}` }; // i18n-ignore: developer detail
   if (!isObj(pick) || typeof pick.charId !== 'string' || !ID.test(pick.charId)) return { error: `${slot.baseId}: bad pick` };
   const { charId } = pick;
   const diy = diyOf(data);
   const proto = isPrototypePick(data, slot.tier, charId);
-  if (!proto && !(diy.ownedPool ?? []).includes(charId)) return { error: `${charId} is not a tier-${slot.tier} 自选 pick` };
+  if (!proto && !(diy.ownedPool ?? []).includes(charId)) return { error: `${charId} is not a tier-${slot.tier} 自选 pick` }; // i18n-ignore: developer detail
   const want = pick.skillIndex ?? null;
   const wantMod = pick.uniEquipId === undefined || pick.uniEquipId === 'none' ? null : pick.uniEquipId;
   if (want !== null && !(Number.isInteger(want) && want >= 0 && want <= 9)) return { error: `${charId}: bad skill index ${want}` };
@@ -172,7 +172,7 @@ export function checkDiyPick(slotId, pick, data) {
     const lk = lockedSelection(data, slot.tier, charId);
     if (!lk) return { error: `${charId}: no locked selection at tier ${slot.tier}` };
     // omitted / null = its locked selection; another skill, another module or an explicit 'none' is refused
-    if (want !== null && want !== lk.skillIndex) return { error: `${charId}: a prototype carries skill ${lk.skillIndex} (与系统补位时一致)` };
+    if (want !== null && want !== lk.skillIndex) return { error: `${charId}: a prototype carries skill ${lk.skillIndex} (与系统补位时一致)` }; // i18n-ignore: developer detail
     if (pick.uniEquipId != null && wantMod !== lk.uniEquipId) return { error: `${charId}: a prototype carries module ${lk.uniEquipId ?? 'none'}` };
     ({ skillIndex, uniEquipId } = lk);
   } else {

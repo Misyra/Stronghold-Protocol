@@ -1071,16 +1071,68 @@ for (const key of ['enemy_1116_liprr', 'enemy_1116_liprr_2', 'enemy_1118_lidbox_
   });
 }
 
-test(`${nm('enemy_1072_dlancer')}: accelerates while walking; the first hit after being blocked scales with the build-up`, () => {
-  const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 3 }], captureNoisy: true, hooks: ['damaged'] });
+// PRTS 天赋 + the client's templates dlancer_t_listener[a/b/c], dlancer_t[trigger], dlancer_t_atk (DESIGN §25.18): every
+// 0.1 s 晕眩 / 束缚 end the acceleration (its layers with it), not blocked starts it; a layer of move speed +50 % every
+// 0.5 s, at most 25 tries, blocked or not; a hit while it accelerates adds 当前移动速度 × 600 phys (its own instance) and
+// ends it (community report of 2026-10-06, item 36: until 0.2.0 a stun kept the speed, and the hit was multiplied)
+const DL = 'enemy_1072_dlancer';
+const dlBase = () => E[DL].stats.moveSpeed;
+const dlMul = (n) => 1 + tb(DL, 'rush.dlancer_t[trigger].move_speed') * n;
+const DL_ROUTE = { motion: 'WALK', start: [9, 18], end: [9, 2], checkpoints: [] };
+test(`${nm(DL)}: a layer of move speed +${tb(DL, 'rush.dlancer_t[trigger].move_speed') * 100} % every ${tb(DL, 'rush.dlancer_t[trigger].interval')} s while it walks, at most ${tb(DL, 'rush.dlancer_t[trigger].trig_cnt')}`, () => {
+  const h = arena();
   h.step();
-  const e = put(h, 'enemy_1072_dlancer', [9, 10], { move: true });
-  h.run(3);
-  assert.ok(e.s.moveSpeed > E.enemy_1072_dlancer.stats.moveSpeed * 2);
-  h.runUntil(() => e.stats.attacks >= 2, 120);
-  const hits = h.hooksOf('damaged').filter((c) => c.source === e && c.dmg.isAttack).map((c) => c.amount);
-  assert.ok(hits[0] > hits[1] * 1.5, `${hits[0]} vs ${hits[1]}`);
-  approx(hits[1], e.s.atk);
+  const e = h.spawn(DL, { route: DL_ROUTE });
+  h.run(0.45);
+  approx(e.s.moveSpeed, dlBase(), 1e-9, 'the first layer 0.5 s after the start');
+  h.run(2.6);
+  approx(e.s.moveSpeed, dlBase() * dlMul(6), 1e-9, '6 layers after 3 s');
+  // the cap: a pinned one (speed ×0, never blocked) keeps trying — 25 tries, then the layers stay
+  const p = put(h, DL, [11, 12]);
+  h.run(14);
+  const max = tb(DL, 'rush.dlancer_t[trigger].trig_cnt');
+  assert.equal(p.mem.ab.list[0].n, max);
+  approx(p.findBuff('ab:rush').mods.moveMul, dlMul(max), 1e-9, 'capped at 25 layers');
+});
+
+test(`${nm(DL)}: a stun or a 束缚 ends the acceleration — its speed back to the base, building up again only afterwards; a slow, a freeze or a sleep does not`, () => {
+  for (const [status, value, resets] of [['stun', undefined, true], ['bind', undefined, true], ['slow', 0.5, false], ['freeze', undefined, false], ['sleep', undefined, false]]) {
+    const h = arena();
+    h.step();
+    const e = h.spawn(DL, { route: DL_ROUTE });
+    h.run(3.05);
+    approx(e.s.moveSpeed, dlBase() * dlMul(6), 1e-9, status);
+    h.b.applyStatus(e, status, { duration: 2, value });
+    h.run(2.2);
+    if (resets) {
+      approx(e.s.moveSpeed, dlBase(), 1e-9, `${status}: reset`);
+      h.run(1.05);
+      approx(e.s.moveSpeed, dlBase() * dlMul(2), 1e-9, `${status}: a fresh build-up`);
+    } else assert.ok(e.s.moveSpeed > dlBase() * dlMul(6) - 1e-9, `${status}: kept (${e.s.moveSpeed})`);
+  }
+});
+
+test(`${nm(DL)}: blocked, its first hit adds 当前移动速度 × ${tb(DL, 'firstattack.atk_scale')} physical damage (a second instance) and ends the acceleration; a stun between the block and the hit takes it away`, () => {
+  const hitsOf = (stunAtBlock) => {
+    const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 4 }], captureNoisy: true, hooks: ['damaged'] });
+    h.step();
+    const e = h.spawn(DL, { route: DL_ROUTE });
+    let speedAtHit = null;
+    h.b.on('damaged', (c) => { if (c.source === e && c.dmg.isAttack && speedAtHit === null) speedAtHit = e.s.moveSpeed; }, { priority: 100 });
+    assert.ok(h.runUntil(() => e.blockedBy, 120), 'blocked');
+    if (stunAtBlock) h.b.applyStatus(e, 'stun', { duration: 1 });
+    assert.ok(h.runUntil(() => e.stats.attacks >= 2, 60));
+    const own = h.hooksOf('damaged').filter((c) => c.source === e);
+    return { e, speedAtHit, attacks: own.filter((c) => c.dmg.isAttack).map((c) => c.amount), extra: own.filter((c) => !c.dmg.isAttack).map((c) => c.amount) };
+  };
+  const r = hitsOf(false);
+  assert.ok(r.speedAtHit > dlBase() * 4, `built up: ${r.speedAtHit}`);
+  assert.deepEqual(r.attacks.map((a) => Math.round(a)), [r.e.s.atk, r.e.s.atk], 'the attacks themselves are plain');
+  assert.equal(r.extra.length, 1, 'one extra instance, on the first hit only');
+  approx(r.extra[0], r.speedAtHit * tb(DL, 'firstattack.atk_scale'), 1e-6, 'speed × 600 (DEF 0)');
+  approx(r.e.s.moveSpeed, dlBase(), 1e-9, 'the hit ended the acceleration');
+  const s = hitsOf(true);
+  assert.deepEqual(s.extra, [], 'stunned after the block: no extra damage');
 });
 
 test(`${nm('enemy_1320_wdrrl_2')}: only blockers with block ≥3; first attack splashes ATK×${tb('enemy_1320_wdrrl_2', 'AOEAttack.atk_scale')} around the target`, () => {

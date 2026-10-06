@@ -126,23 +126,49 @@ function kitParrot(ab) {
   }];
 }
 
+/**
+ * 萨卡兹穿刺手 (PRTS 天赋; the battle prefab's Rush / FirstAttack abilities — templates dlancer_t_listener[a] / [b] / [c],
+ * dlancer_t[trigger], dlancer_t_atk): every RUSH_LISTEN (0.1) s — 晕眩 (STUNNED) or 束缚 (UNMOVABLE) ends the acceleration
+ * and its speed layers with it; not blocked and not accelerating starts it. While it accelerates, every
+ * `rush.dlancer_t[trigger].interval` (0.5) s — the first one 0.5 s after the start — one more layer of move speed
+ * +`move_speed` (50 %, MULTIPLIER, the layers add up), at most `trig_cnt` (25) tries — blocked or not, frozen, asleep or
+ * slowed or not (only the two flags stop it). Every normal attack carries dlancer_t_atk: while it accelerates, the hit
+ * adds 当前移动速度 × `firstattack.atk_scale` (600) physical damage — a second instance, melee, no 受击回复 (ignoreForSp) —
+ * and ends the acceleration, so once blocked only its first hit has it. Until 0.2.0 it kept accelerating through a stun
+ * and kept the speed after it, and the first hit after a block multiplied the attack instead (×(1 + 6 × layers / 25)),
+ * a stun in between included (community report of 2026-10-06, item 36).
+ */
+const RUSH_LISTEN = 0.1;
+
 function kitRush(ab) {
   const ms = T(ab, 'rush.dlancer_t[trigger].move_speed') ?? 0, iv = T(ab, 'rush.dlancer_t[trigger].interval') ?? 0.5;
-  const max = T(ab, 'rush.dlancer_t[trigger].trig_cnt') ?? 0, first = T(ab, 'firstattack.atk_scale') ?? 0;
+  const max = T(ab, 'rush.dlancer_t[trigger].trig_cnt') ?? 0, scale = T(ab, 'firstattack.atk_scale') ?? 0;
+  // 晕眩 / 束缚 only (the client's STUNNED / UNMOVABLE flags: not 冻结, 沉睡 or 浮空, which hold flags.stun here too)
+  const held = (e) => e.buffs.some((x) => x.status === 'stun' || x.status === 'bind');
+  const stop = (b, e, a) => { a.on = false; a.n = 0; b.removeBuff(e, 'ab:rush'); };
   return [{
-    iv,
-    spawn(b, e, a) { a.n = 0; },
-    tick(b, e, a) {
-      if (!e.moving || e.blockedBy || a.n >= max) return;
-      a.n++;
-      b.addBuff(e, { key: 'ab:rush', mods: { moveMul: 1 + ms * a.n }, persist: true });
+    iv: RUSH_LISTEN,
+    // the listeners first look at once (waitFirstTriggerInterval 0): a walker spawned unblocked starts at t = 0
+    spawn(b, e, a) { a.on = !e.blockedBy && !held(e); a.n = 0; a.tries = 0; a.acc = 0; },
+    tick(b, e, a, dt) {
+      if (held(e)) { if (a.on) stop(b, e, a); return; }
+      if (!a.on) {
+        if (!e.blockedBy) { a.on = true; a.tries = 0; a.acc = 0; }
+        return;
+      }
+      if (a.tries >= max || !(iv > 0)) return;
+      a.acc += dt;
+      let grew = false;
+      while (a.acc >= iv - 1e-9 && a.tries < max) { a.acc -= iv; a.tries++; a.n++; grew = true; }
+      if (grew) b.addBuff(e, { key: 'ab:rush', mods: { moveMul: 1 + ms * a.n }, persist: true });
     },
-    blocked(c, b, e, a) { a.charge = a.n; },
-    hitOut(c, b, e, a) {
-      if (!c.dmg.isAttack || !(a.charge > 0) || !(max > 0)) return;
-      c.dmg.amount *= 1 + (first / 100) * (a.charge / max); // 被阻挡后的首次攻击: extra damage from the built-up speed
+    dealt(c, b, e, a) {
+      if (!a.on) return;
+      const t = c.target;
+      const amount = e.s.moveSpeed * scale;
+      stop(b, e, a);
+      if (t && t.alive && amount > 0) b.dealDamage(e, t, { amount, type: 'phys', canDodge: false, isSkill: true, noSp: true, tags: ['enemyAbility', 'rush'] });
     },
-    attack(c, b, e, a) { if (a.charge > 0) { a.charge = 0; a.n = 0; b.removeBuff(e, 'ab:rush'); } },
   }];
 }
 

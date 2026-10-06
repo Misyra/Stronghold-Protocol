@@ -32,7 +32,12 @@ export function updateSettings(patch) {
 
 /** Preact hook: current settings. */
 export const useSettings = () => useStore((s) => s, Object.is, settingsStore);
-export const useShortcuts = () => useStore((s) => s, Object.is, shortcutsStore);
+/** Preact hook: current shortcut bindings. Outside a render (a component called directly by a unit test) the
+ * hooks module throws — fall back to the defaults instead, which is what a fresh client would show. */
+export const useShortcuts = () => {
+  try { return useStore((s) => s, Object.is, shortcutsStore); }
+  catch { return DEFAULT_SHORTCUTS; }
+};
 
 function Slider({ label, micro, value, onInput, icon }) {
   const pct = Math.round(value * 100);

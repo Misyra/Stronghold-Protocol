@@ -134,8 +134,9 @@ export class BattleSpawns {
     e.atkStandUntil = -Infinity;   // standing for its attack clip (ai.js attackStand)
     e.swing = false;               // a normal attack swung, its damage frame not reached yet (ai.js enemyAttack)
     // every enemy profile starts with the same fields (stable object shapes keep the hot loop's property reads fast);
-    // `dmgType` null = the data's (content may arm a data-unarmed enemy: ai.js enemyAttack)
-    e.profile = { noAttack: def.dmgType === 'none', maxTargets: 1, atkScale: 1, dmgType: null };
+    // `dmgType` null = the data's (content may arm a data-unarmed enemy: ai.js enemyAttack); `blockFree` = its 索敌不受阻挡
+    // 影响 (content: 自制投石机 — targeting.js canTargetAlly / sortAllyTargets, ai.js attackTargets)
+    e.profile = { noAttack: def.dmgType === 'none', maxTargets: 1, atkScale: 1, dmgType: null, blockFree: false };
     e.route = { legs: route ? compileRoute(route, this.rect) : [], legIdx: 0, pts: null, ptIdx: 0, suffix: null, version: -1, waitLeft: null };
     if (!e.route.legs.length) {
       const end = this.grid.specialTiles('end')[0];

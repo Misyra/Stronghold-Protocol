@@ -3,6 +3,7 @@
 // Installed on Battle.prototype by server/sim/Battle.js (a method container: never instantiated; `this` is the battle).
 
 import { COLS, BOSS_ROW_OFFSET } from '../constants.js';
+import { GEO } from '../../../shared/constants.js';
 import { Unit } from '../units.js';
 import { normDir, mirrorDir } from '../dir.js';
 import { SkillRuntime } from '../skills.js';
@@ -70,6 +71,29 @@ export class BattlePlayers {
   /** Board → field tile for a player (see header). */
   mapTile(ps, row, col, abs = false) {
     if (abs || ps.coords === 'field') return [row, col];
+    return this._boardTile(ps, row, col);
+  }
+
+  /**
+   * Whether field tile (r, c) lies on player `ps`'s own board: the board region GEO.FIELD (rows 9–12, cols 2–10, the
+   * tiles its pieces are deployed on) mapped onto this field — the 联防 right-hand helper's +8 columns, the boss field's
+   * rows 2–5, the mirrored right half of a pair (whatever coordinates the player's input uses). Never the hand / 临时
+   * 整备区 rows of a boss field (rows 0–1, inside BOSS_RECT) nor the other half of a 联防 or boss field. Automatic
+   * redeployments that must stay where the player could deploy read it (the 突袭 landing, bonds/addon/battle.js raidTile).
+   */
+  onOwnBoard(ps, r, c) {
+    if (!ps) return false;
+    let keys = ps._boardKeys;
+    if (!keys) {
+      keys = ps._boardKeys = new Set();
+      for (let br = GEO.FIELD.r0; br <= GEO.FIELD.r1; br++) {
+        for (let bc = GEO.FIELD.c0; bc <= GEO.FIELD.c1; bc++) { const [fr, fc] = this._boardTile(ps, br, bc); keys.add(fr * COLS + fc); }
+      }
+    }
+    return keys.has(r * COLS + c);
+  }
+
+  _boardTile(ps, row, col) {
     const bossLike = this.kind === 'boss' || this.kind === 'hidden';
     let r = row;
     if (ps.rowOffset != null) r = row + ps.rowOffset;

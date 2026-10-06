@@ -274,7 +274,8 @@ MELEE enemy only ever hits its blocker — data/enemies.json already zeroes thei
 for any source; content may set `enemy.profile.melee = false`). Target order
 (targeting.js `sortAllyTargets`, PRTS 作战机制 索敌 "阻挡→特殊优先级→仇恨值（更容易被攻击→…→最后部署的目标→不容易被攻击）"):
 its blocker → highest taunt level → latest deployed (`aggroSeq` = the deploy order: a redeploy or a mid-battle summon is the
-latest). `enemy.profile.canTarget(ally)` (content: 萨卡兹枯朽战车 "只攻击位于低地的我方单位，且不会攻击飞行单位", 掠海漂移体 / “萨科塔之眼” 不会攻击飞行单位 …) filters the candidates before the order;
+latest) — except an enemy whose 索敌不受阻挡影响 (`enemy.profile.blockFree`: 自制投石机), which selects among the allies in
+reach as if unblocked, no blocker first (DESIGN §25.18). `enemy.profile.canTarget(ally)` (content: 萨卡兹枯朽战车 "只攻击位于低地的我方单位，且不会攻击飞行单位", 掠海漂移体 / “萨科塔之眼” 不会攻击飞行单位 …) filters the candidates before the order;
 a special priority (假想敌：铳 / 昆图斯 highest DEF, 假想敌：胄 highest / lowest ATK, “自在” nearest …) sorts by its key and
 breaks ties by taunt, then latest deployed (`aggroCmp`); `untargetable` / sleeping allies and devices are never targets;
 an airborne ally (起飞, flag `liftoff`: 蒂比's skills) never for a ground enemy (对地规避 — `targeting.js evadesGround`,
@@ -288,7 +289,8 @@ took off (出血, 沙狱, burning DoTs, 淤困, 【自然涌动】 — a tick se
 sourceless 毒雾 of 假想敌：蚀裂 still reach it [ASSUMED]; a ground enemy's area skill whose cast depends on allies nearby counts only the targets of its trigger
 selection — 卢西恩's 【aoe】 ("需要目标"), 锏's CircleAttack (`targetsNear`, PRTS 选择器 "所有触发选择器通常不无视迷彩");
 a stealthed ally (隐匿, 排气格栅) only for the enemy it blocks — our operators keep 隐匿 while blocking (PRTS 作战机制
-§隐匿; 索敌的概念: a blocked enemy "强行无视对方可选性" attacks its blocker); a camouflaged one (迷彩, flag `camou`: ba.camou
+§隐匿; 索敌的概念: a blocked enemy "强行无视对方可选性" attacks its blocker) — except an enemy whose 索敌不受阻挡影响
+(profile `blockFree`: 自制投石机 — it selects as if unblocked, by 仇恨值, so a 隐匿 blocker is no target; DESIGN §25.18); a camouflaged one (迷彩, flag `camou`: ba.camou
 "不阻挡时不成为敌方普通攻击的目标") likewise (PRTS 异常效果: neither anomaly is "阻挡时解除") — for every target selection
 (attacks, skill picks, cast conditions, a normal attack on every operator in range — 斩胄之剑 / 破胄之锤's hover attack,
 “灵幛”). **Enemy area effects** — splash, death and self blasts, area skills and statuses, pulses, the zones an enemy
@@ -338,7 +340,7 @@ enemy: 隐匿 kept out, 起飞 not), 【污染秽蚀】 on every ally inside (fl
 `alliesInRadius`) — through `dealDamage`, so shields absorb a damage
 tick, damage-taken modifiers scale it and it counts for 受击回复 SP and TAKE_DAMAGE skills like any hit (§4; element fills
 excepted). 【污染秽蚀】 (萨卡兹枯朽战车's 秽蚀轰击,
-萨卡兹枯朽战士's death) is **true** damage, 50 / 25 per second on low / high ground (PRTS "每秒受到50/25点真实普通伤害 …
+萨卡兹枯朽战士's death — none when it dies silenced, its client template checks 沉默, DESIGN §25.18) is **true** damage, 50 / 25 per second on low / high ground (PRTS "每秒受到50/25点真实普通伤害 …
 同名效果不叠加", user playtest #6): a unit covered by several zones takes one tick per second (`unit.mem.pollutedAt`), so
 a crowd of dying 萨卡兹枯朽战士 totals 50 / s, not 50 × n. It is "可对空，无视无法选择": it also burns an airborne 起飞 ally
 (`ignoreSelect`), at the low-ground rate on a low tile. The other zones are no exception to 对地规避: a ground enemy's
@@ -829,6 +831,7 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
 | `addLayers(playerId, bondId, n, reason, {source})`, `addCoins(playerId, n)` | layers are a no-op when `flags.layerGainsEnabled` is false (unite/boss); a gain adds at most the room left under `BOND_LAYER_CAP` (999, shared/constants.js `layerGainRoom`: the client's `AddBondCount` min(L + n, 999)) on the live copy — or, without one, on the battle's own gains — and returns what it added (0 at the cap: no hook, no event) |
 | `getPlayer(playerId)` | `{ playerId, seat, side, colOffset, mirror, dir (default unit direction: RIGHT, mirrored side LEFT), facing (its sign), bonds (live copy, layers updated by addLayers), bandId, playerEffects, lpForBoss, dp, units }` |
 | `mapTile(ps, row, col, abs?)` / `mapDir(ps, dir, abs?)` | board → field tile / direction of a player (the FA right-side mirror) |
+| `onOwnBoard(ps, r, c)` | whether a field tile lies on the player's own board — GEO.FIELD (rows 9–12, cols 2–10) mapped onto this field: the 联防 right-hand helper's +8 columns, the boss field's rows 2–5 (never its hand / 临时整备区 rows 0–1), the mirrored right half; the 突袭 landing takes only such tiles (DESIGN §25.18) |
 | `addDp(playerId, n)`, `retreat(unit, {reason, permanent, dying})`, `relocate(unit, r, c)` | `relocate` only changes the tile (state kept, no event) |
 | `moveRedeploy(unit, r, c, { clearSp })` | a 【移动】 (PRTS 术语释义: "不退场，以当前血量在目标位置部署", a special retreat + redeploy): `relocate`'s checks (false = refused, nothing changed), then a new deployment (`deploySeq` / `aggroSeq` / `deployedAt`) and `deploy {initial:false, move:true}` (deploy effects fire again); no `die` / `death`, timer or cost (不屈 / 阿戈尔's revive never see it); HP, buffs and a running skill are kept (owner's deviation, DESIGN §22.3); `clearSp` empties the SP before the deploy handlers run — 乌尔比安 S3's move (kits/ops/chess_char_5_05-ulpia.js) and 【返回】 (`clearSp`; also the 从不混淆的方向 fallback, content/tokens.js) |
 | `redeploy(unit, { free=true, tile, keepSp })` | immediate (re)deployment of a dead/retreated ally (full HP, `deploy {initial:false}`); `free: false` pays `base.cost` DP (refused without it); without `tile` it lands on the unit's rest tile (`restTile`: where a knocked-out operator lies, else home); `tile: [r, c]` lands on that tile once (home unchanged; refused when off-rect, occupied or a knocked-out operator's tile, no fallback); `keepSp` keeps SP/charges (保留技力), restored before `deploy` fires — 突袭 raids, 阿戈尔 / 不屈 revives where the unit lies |

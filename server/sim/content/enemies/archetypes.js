@@ -630,7 +630,17 @@ const kitSelfFear = (ab) => [selfFear(ab)];
  *  after a block ends, the warrior's own block that the knock-out releases included (Battle._stealthSwitch). */
 const kitEmber = (ab) => [husk({ hits: T(ab, 'Revive[Trigger].prop_max_hp'), delay: T(ab, 'Revive[Trigger].interval') })];
 
+/**
+ * 萨卡兹枯朽战士 / 组长 · death: 【污染秽蚀】 (PRTS 天赋 "{{特殊机制|死亡爆炸}}（释放半径2.0，持续8s的【污染秽蚀】）"). Silenced at its
+ * death it releases nothing: PRTS 特殊机制 死亡爆炸 "如无特殊说明，此能力默认可沉默…若不处于沉默状态，将会…释放", and the
+ * client agrees — its PollutedDie ability is a buff of template `projectile_on_killed` (battle prefab
+ * enemy_1267_nhpbr / _2), whose ON_OWNER_KILLED first checks `CheckAbnormalFlag SILENCED` (unset) before it emits the
+ * pollution projectile — the template of 高能源石虫's SILENCE-flagged blast too. Its handbook line alone is NORMAL, the one
+ * exception to the handbook rule of content/enemies.js (community report of 2026-10-06, item 10: until 0.2.0 a
+ * silenced one still poisoned its blockers).
+ */
 const kitPolluted = (ab) => [{
+  sil: true,
   death(c, b, e) {
     if (c.reason !== 'killed') return;
     pollution(b, e, e.x, e.y, T(ab, 'PollutedDie.projectile_range') ?? 1, T(ab, 'PollutedDie.projectile_life_time') ?? 0,

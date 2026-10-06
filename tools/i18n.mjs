@@ -143,6 +143,17 @@ const calleeName = (call) => {
   return null;
 };
 const isConsoleCall = (call) => call?.callee?.type === 'MemberExpression' && call.callee.object?.type === 'Identifier' && call.callee.object.name === 'console';
+/** A logger call (`log.warn(…)`, `this.m.log?.warn?.(…)`): developer text, like console.*. */
+const isLogCall = (call) => {
+  const c = call?.callee;
+  if (!c || c.type !== 'MemberExpression') return false;
+  const o = c.object;
+  const LOG = /^(log|logger)$/;
+  return (o.type === 'Identifier' && LOG.test(o.name)) || (o.type === 'MemberExpression' && !o.computed && o.property.type === 'Identifier' && LOG.test(o.property.name));
+};
+/** The developer detail of an error result (`{ error: 'BAD_TARGET', detail: '…' }`, `ev.detail = '…'`): never shown to players. */
+const isDetail = (node, parent) => (parent.type === 'Property' && parent.value === node && !parent.computed && (parent.key.name ?? parent.key.value) === 'detail')
+  || (parent.type === 'AssignmentExpression' && parent.right === node && parent.left.type === 'MemberExpression' && !parent.left.computed && parent.left.property.name === 'detail');
 
 /** Why a literal must not be wrapped (null = wrap it). `aliases`: local name → shared/i18n.js export (`t as tr`). */
 function skipReason(node, ancestors, aliases = new Map()) {
@@ -150,7 +161,7 @@ function skipReason(node, ancestors, aliases = new Map()) {
   for (let i = ancestors.length - 1; i >= 0; i--) {
     const a = ancestors[i];
     if (a.type === 'CallExpression') {
-      if (isConsoleCall(a)) return 'console';
+      if (isConsoleCall(a) || isLogCall(a)) return 'console';
       const name = calleeName(a);
       if (a.callee.type === 'Identifier' && SKIP_CALLS.has(aliases.get(name) ?? name)) return 'in-call';
     }
@@ -159,6 +170,8 @@ function skipReason(node, ancestors, aliases = new Map()) {
     if (a.type === 'ImportDeclaration' || a.type === 'ExportAllDeclaration' || (a.type === 'ExportNamedDeclaration' && a.source)) return 'import';
   }
   if (!parent) return null;
+  // (inside a detail too: `detail: \`… ${x ? '甲' : '乙'}\``)
+  if (isDetail(node, parent) || ancestors.some((a, i) => i > 0 && isDetail(a, ancestors[i - 1]))) return 'detail';
   if (parent.type === 'Property' && parent.key === node && !parent.computed) return 'key';
   if (parent.type === 'MemberExpression' && parent.property === node) return 'key';
   if (parent.type === 'BinaryExpression' && ['===', '!==', '==', '!=', 'in', 'instanceof'].includes(parent.operator)) return 'compare';
@@ -333,6 +346,8 @@ export async function scanSource(src, file = '<src>') {
   const fnName = (callee) => (callee.type === 'Identifier' ? aliases.get(callee.name) ?? callee.name : null);
   // a line marked `i18n-ignore` (in a comment) holds no UI text (font samples, data keys …)
   const ignored = new Set(src.split('\n').map((l, i) => (/i18n-ignore/.test(l) ? i + 1 : 0)).filter(Boolean));
+  // a file marked `i18n-ignore-file` (developer reports, bilingual error pages) holds no UI text to translate
+  const fileIgnored = /\/\/[^\n]*i18n-ignore-file/.test(src);
   walk(ast, (node, ancestors) => {
     if (node.type === 'CallExpression' && fnName(node.callee) === 'tc') {
       const [c, a] = node.arguments;
@@ -347,7 +362,8 @@ export async function scanSource(src, file = '<src>') {
     if (node.type === 'TaggedTemplateExpression' && node.tag.type === 'Identifier' && node.tag.name === 'html') {
       for (const seg of htmlSegments(node.quasi)) {
         const { msgid, params } = templateMsgid(seg.quasis, seg.exprs.map((e) => src.slice(e.start, e.end)));
-        literals.push({ kind: seg.kind, attr: seg.attr, start: seg.start, end: seg.end, line: lineOf(seg.start), msgid, params, exprs: seg.exprs.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason: null });
+        const line = lineOf(seg.start);
+        literals.push({ kind: seg.kind, attr: seg.attr, start: seg.start, end: seg.end, line, msgid, params, exprs: seg.exprs.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason: fileIgnored || ignored.has(line) ? 'ignored' : null });
       }
       // expressions inside are walked normally (nested html``, strings in ${…})
       return true;
@@ -365,7 +381,7 @@ export async function scanSource(src, file = '<src>') {
         return true;
       }
       const line = lineOf(node.start);
-      const reason = ignored.has(line) ? 'ignored' : skipReason(node, ancestors, aliases);
+      const reason = fileIgnored || ignored.has(line) ? 'ignored' : skipReason(node, ancestors, aliases);
       literals.push({ kind: 'str', start: node.start, end: node.end, line, msgid: node.value, params: [], module: !inFunction(ancestors), reason });
       return true;
     }
@@ -374,7 +390,7 @@ export async function scanSource(src, file = '<src>') {
       if (parent && parent.type === 'TaggedTemplateExpression') return true;
       const cooked = node.quasis.map((q) => q.value.cooked ?? q.value.raw);
       if (!cooked.some((s) => HAN.test(s))) return true;
-      const reason = ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors, aliases);
+      const reason = fileIgnored || ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors, aliases);
       const { msgid, params } = templateMsgid(cooked, node.expressions.map((e) => src.slice(e.start, e.end)));
       literals.push({ kind: 'tpl', start: node.start, end: node.end, line: lineOf(node.start), msgid, params, exprs: node.expressions.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason });
       return true;

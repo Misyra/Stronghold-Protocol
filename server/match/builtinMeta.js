@@ -91,7 +91,7 @@ const ITEM_HANDLERS = {
       const n = int(paramsOf(ctx, ev.item).count, 1);
       const rec = ctx.gd.item(ev.item.id);
       ctx.addEffect({
-        id: `doll:${ev.item.uid}`, key: 'effect:builtin_round_coin', name: rec ? rec.name : '精打细算玩偶', desc: rec ? rec.desc : '',
+        id: `doll:${ev.item.uid}`, key: 'effect:builtin_round_coin', name: rec ? rec.name : '精打细算玩偶', desc: rec ? rec.desc : '', // i18n-ignore: the item's data name
         iconKind: 'item', iconId: rec ? rec.iconId || rec.id : ev.item.id, battle: false, params: { count: n },
       });
     },

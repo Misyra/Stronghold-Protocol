@@ -184,4 +184,12 @@ test('tools/i18n.mjs: msgids of template literals name their params; the codemod
   const aliased = await scanSource("import { t as tr } from '../../../shared/i18n.js';\nconst t = 3;\nexport const f = () => tr('替补') + t;", 'x.js');
   assert.deepEqual(aliased.msgids.map((m) => [m.msgid, m.via]), [['替补', 't']]);
   assert.deepEqual(aliased.literals.filter((l) => !l.reason), []);
+  // developer text is not UI text: an error result's detail, a logger call, a file marked i18n-ignore-file
+  const dev = await scanSource([
+    "export const a = (x) => ({ error: 'BAD_TARGET', detail: `不是自选格子 ${x ? '甲' : '乙'}` });",
+    "export function b(ev, log) { ev.detail = '已经是精锐'; log.warn(`[match] 自选 被忽略`); this.m.log?.info?.('信息'); return '界面文字'; }",
+  ].join('\n'), 'x.js');
+  assert.deepEqual(dev.literals.filter((l) => !l.reason).map((l) => l.msgid), ['界面文字']);
+  const whole = await scanSource("// (i18n-ignore-file: developer reports)\nexport const r = ['开发者报告', `第${1}条`];", 'x.js');
+  assert.deepEqual(whole.literals.filter((l) => !l.reason), []);
 });

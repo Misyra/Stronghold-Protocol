@@ -40,8 +40,8 @@ function yu(bb, chess, def) {
   // "将第二天赋效果赋予全场所有干员" belongs to S3 (the default skill) only
   const s3On = (unit) => isDef && !!unit.skill?.active;
   const skills = {
-    // S1 今日做东 (TAKE_DAMAGE, hurt SP): passive taunt +taunt_level; active: HP / DEF +, every attack taken ⇒
-    // ep_damage_ratio × ATK 灼燃损伤 on the attacker (install below)
+    // S1 今日做东 (TAKE_DAMAGE, hurt SP): passive taunt +taunt_level; active: HP / DEF +, every enemy damage instance taken ⇒
+    // ep_damage_ratio × ATK 灼燃损伤 on its source (install below)
     skchr_yu_1: { kind: 'duration', mods: { hpPct: num(bb.max_hp), defPct: num(bb.def) } },
     // S2 厚礼上宾 (cast with an enemy on its x-1: the data's SKILL_RANGE, a deliberate deviation from the 重装 TAKE_DAMAGE
     // row — tools/build-data.mjs TRIGGER_DEVIATIONS, DESIGN §22.10): atk_scale × ATK arts on every enemy of the skill range

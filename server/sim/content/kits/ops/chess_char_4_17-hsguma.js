@@ -5,7 +5,7 @@ import { AURA, num, tbb, whileDeployed, pulse, toggleBuff, isSel, alt, withDefau
 import { byEnemyAttack } from '../shared/tier1.js';
 
 export default withDefaults({
-  // ===== 星熊 (protector) S2 荆棘 (passive) — DEF +13 %, counters every attacker for 65 % ATK phys; talents
+  // ===== 星熊 (protector) S2 荆棘 (passive) — DEF +13 %, answers every enemy damage instance with 65 % ATK phys on its source; talents
   //       S1 战意 (TAKE_DAMAGE: DEF/ATK up); S3 力之锯 (ATK/DEF up, cuts every enemy on her front tile — all enemies of her
   //       range); module PRO-X (护身符): DEF +20 % while blocking
   chess_char_4_17_a: (bb, chess, def) => {

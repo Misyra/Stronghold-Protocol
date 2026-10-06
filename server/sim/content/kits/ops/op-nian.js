@@ -27,8 +27,8 @@
 //   no-SP-during-a-skill rule, tier1 giveSp).
 // - S1 锡灼 (MANUAL, time SP; data DEFAULT — the owner's 重装 cast-in-range exception, rawRule TAKE_DAMAGE): `duration` s of
 //   DEF +def and ATK +atk; normal attacks deal arts damage.
-// - S2 铜印 (MANUAL; data DEFAULT): `duration` s — stops attacking; DEF +def, block +block_cnt; every enemy attack she takes
-//   (each damage instance of one, as 星熊 荆棘 / 泡泡) deals atk_scale × ATK arts to the attacker and silences it `silence`
+// - S2 铜印 (MANUAL; data DEFAULT): `duration` s — stops attacking; DEF +def, block +block_cnt; every enemy damage instance she
+//   takes (its attack or not, as 星熊 荆棘 / 泡泡) deals atk_scale × ATK arts to its source and silences it `silence`
 //   s ("失去特殊能力"): a direct pick of the damage source (ignoreSelect), enemies only (PRTS 备注), even when a 护盾 layer
 //   negated the hit.
 // - S3 铁御 (MANUAL; data DEFAULT — its x-2 is a 技能范围 for the allies, no attack-range change): `duration` s of ATK

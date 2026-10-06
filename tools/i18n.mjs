@@ -144,15 +144,15 @@ const calleeName = (call) => {
 };
 const isConsoleCall = (call) => call?.callee?.type === 'MemberExpression' && call.callee.object?.type === 'Identifier' && call.callee.object.name === 'console';
 
-/** Why a literal must not be wrapped (null = wrap it). */
-function skipReason(node, ancestors) {
+/** Why a literal must not be wrapped (null = wrap it). `aliases`: local name → shared/i18n.js export (`t as tr`). */
+function skipReason(node, ancestors, aliases = new Map()) {
   const parent = ancestors[ancestors.length - 1];
   for (let i = ancestors.length - 1; i >= 0; i--) {
     const a = ancestors[i];
     if (a.type === 'CallExpression') {
       if (isConsoleCall(a)) return 'console';
       const name = calleeName(a);
-      if (SKIP_CALLS.has(name) && a.callee.type === 'Identifier') return 'in-call';
+      if (a.callee.type === 'Identifier' && SKIP_CALLS.has(aliases.get(name) ?? name)) return 'in-call';
     }
     if (a.type === 'NewExpression' && a.callee.type === 'Identifier' && /Error$/.test(a.callee.name)) return 'error';
     if (a.type === 'ThrowStatement') return 'error';
@@ -324,17 +324,25 @@ export async function scanSource(src, file = '<src>') {
   const msgids = [];
   const literals = [];
   const lineOf = (pos) => src.slice(0, pos).split('\n').length;
+  // shared/i18n.js functions imported under another name (`import { t as tr }` where `t` is a local variable)
+  const aliases = new Map();
+  for (const n of ast.body) {
+    if (n.type !== 'ImportDeclaration' || !/shared\/i18n\.js$/.test(String(n.source.value))) continue;
+    for (const sp of n.specifiers) if (sp.type === 'ImportSpecifier' && sp.imported.name !== sp.local.name) aliases.set(sp.local.name, sp.imported.name);
+  }
+  const fnName = (callee) => (callee.type === 'Identifier' ? aliases.get(callee.name) ?? callee.name : null);
   // a line marked `i18n-ignore` (in a comment) holds no UI text (font samples, data keys …)
   const ignored = new Set(src.split('\n').map((l, i) => (/i18n-ignore/.test(l) ? i + 1 : 0)).filter(Boolean));
   walk(ast, (node, ancestors) => {
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'tc') {
+    if (node.type === 'CallExpression' && fnName(node.callee) === 'tc') {
       const [c, a] = node.arguments;
       if (c?.type === 'Literal' && a?.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: `${c.value}::${a.value}`, line: lineOf(a.start), via: 'tc' });
     }
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && MSGID_CALLS.has(node.callee.name)) {
+    if (node.type === 'CallExpression' && MSGID_CALLS.has(fnName(node.callee))) {
       const a = node.arguments[0];
-      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via: node.callee.name });
-      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via: node.callee.name });
+      const via = fnName(node.callee);
+      if (a && a.type === 'Literal' && typeof a.value === 'string') msgids.push({ msgid: a.value, line: lineOf(a.start), via });
+      else if (a && a.type === 'TemplateLiteral' && !a.expressions.length) msgids.push({ msgid: a.quasis[0].value.cooked, line: lineOf(a.start), via });
     }
     if (node.type === 'TaggedTemplateExpression' && node.tag.type === 'Identifier' && node.tag.name === 'html') {
       for (const seg of htmlSegments(node.quasi)) {
@@ -357,7 +365,7 @@ export async function scanSource(src, file = '<src>') {
         return true;
       }
       const line = lineOf(node.start);
-      const reason = ignored.has(line) ? 'ignored' : skipReason(node, ancestors);
+      const reason = ignored.has(line) ? 'ignored' : skipReason(node, ancestors, aliases);
       literals.push({ kind: 'str', start: node.start, end: node.end, line, msgid: node.value, params: [], module: !inFunction(ancestors), reason });
       return true;
     }
@@ -366,7 +374,7 @@ export async function scanSource(src, file = '<src>') {
       if (parent && parent.type === 'TaggedTemplateExpression') return true;
       const cooked = node.quasis.map((q) => q.value.cooked ?? q.value.raw);
       if (!cooked.some((s) => HAN.test(s))) return true;
-      const reason = ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors);
+      const reason = ignored.has(lineOf(node.start)) ? 'ignored' : skipReason(node, ancestors, aliases);
       const { msgid, params } = templateMsgid(cooked, node.expressions.map((e) => src.slice(e.start, e.end)));
       literals.push({ kind: 'tpl', start: node.start, end: node.end, line: lineOf(node.start), msgid, params, exprs: node.expressions.map((e) => [e.start, e.end]), module: !inFunction(ancestors), reason });
       return true;

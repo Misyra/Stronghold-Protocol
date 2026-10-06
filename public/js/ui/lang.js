@@ -15,7 +15,9 @@ import { data } from '../data.js';
 import { html } from './components.js';
 
 /** Labels of the language switch (each in its own language). */
-export const LANG_LABELS = Object.freeze({ zh: '中文', en: 'English' });
+export const LANG_LABELS = Object.freeze({ zh: '中文', en: 'English' }); // i18n-ignore: each language in its own name
+/** The switch's own label, in both languages (whoever opens it may not read the current one). */
+const SWITCH_LABEL = 'Language / 语言'; // i18n-ignore
 const PREF_KEY = 'lang';
 /** How long boot waits for the UI translations before rendering in Chinese anyway (they apply when they arrive). */
 const BOOT_WAIT_MS = 2500;
@@ -78,7 +80,7 @@ function applyDocument(lang) {
   if (!doc) return;
   doc.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
   doc.documentElement.dataset.lang = lang;
-  doc.title = lang === 'en' ? 'Stronghold Protocol: Alliance · Web Simulation' : '卫戍协议：盟约 · STRONGHOLD PROTOCOL';
+  doc.title = lang === 'en' ? 'Stronghold Protocol: Alliance · Web Simulation' : '卫戍协议：盟约 · STRONGHOLD PROTOCOL'; // i18n-ignore: one title per language
 }
 
 // `{ dn }` params and tName(): Chinese game-data names → the current language (data/i18n/<lang>.json names)
@@ -144,7 +146,7 @@ export function useLang() {
  */
 export function LangToggle({ class: cls }) {
   const lang = useLang();
-  return html`<div class=${`set-seg lang-toggle${cls ? ` ${cls}` : ''}`} role="radiogroup" aria-label="Language / 语言" data-testid="lang-toggle">
+  return html`<div class=${`set-seg lang-toggle${cls ? ` ${cls}` : ''}`} role="radiogroup" aria-label=${SWITCH_LABEL} data-testid="lang-toggle">
     ${LANGS.map((l) => html`<button key=${l} type="button" role="radio" lang=${l === 'zh' ? 'zh-CN' : 'en'} aria-checked=${lang === l ? 'true' : 'false'}
       class=${lang === l ? 'is-on' : ''} data-lang=${l} onClick=${() => { if (lang !== l) switchLang(l); }}>${LANG_LABELS[l]}</button>`)}
   </div>`;

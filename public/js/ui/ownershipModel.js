@@ -13,6 +13,7 @@
 
 import { checkNotOwned, OWNERSHIP_LIMITS } from '../../../shared/protocol.js';
 import { isDroppableChess, standInRecord } from '../../../shared/standIn.js';
+import { t } from '../../../shared/i18n.js';
 
 /** localStorage key (store.js loadPref/savePref prefix `sp.pref.`) and format version. */
 export const OWNERSHIP_PREF = 'ownership';
@@ -153,17 +154,17 @@ export const serializeOwnership = (notOwned, opts) => JSON.stringify(exportOwner
 export function parseOwnershipImport(input) {
   let raw = input;
   if (typeof raw === 'string') {
-    if (raw.length > OWNERSHIP_IMPORT_MAX_BYTES) return { ok: false, error: '内容过长，无法导入' };
+    if (raw.length > OWNERSHIP_IMPORT_MAX_BYTES) return { ok: false, error: t('内容过长，无法导入') };
     const text = raw.trim();
-    if (!text) return { ok: false, error: '没有可导入的内容' };
-    try { raw = JSON.parse(text); } catch { return { ok: false, error: '无法识别的内容' }; }
+    if (!text) return { ok: false, error: t('没有可导入的内容') };
+    try { raw = JSON.parse(text); } catch { return { ok: false, error: t('无法识别的内容') }; }
   }
   if (Array.isArray(raw)) return { ok: true, notOwned: cleanIds(raw) };
-  if (!isObj(raw)) return { ok: false, error: '无法识别的格式' };
+  if (!isObj(raw)) return { ok: false, error: t('无法识别的格式') };
   const v = Number.isInteger(raw.v) ? raw.v : null;
-  if (v != null && v > OWNERSHIP_VERSION) return { ok: false, error: `这份数据来自更新的版本（v${v}），请先更新游戏` };
+  if (v != null && v > OWNERSHIP_VERSION) return { ok: false, error: t('这份数据来自更新的版本（v{v}），请先更新游戏', { v }) };
   const kind = typeof raw.kind === 'string' ? raw.kind : null;
-  if (kind && kind !== OWNERSHIP_EXPORT_KIND) return { ok: false, error: '这不是干员持有的数据' };
-  if (!Array.isArray(raw.notOwned)) return { ok: false, error: '里面没有干员持有的数据' };
+  if (kind && kind !== OWNERSHIP_EXPORT_KIND) return { ok: false, error: t('这不是干员持有的数据') };
+  if (!Array.isArray(raw.notOwned)) return { ok: false, error: t('里面没有干员持有的数据') };
   return { ok: true, notOwned: cleanIds(raw.notOwned) };
 }

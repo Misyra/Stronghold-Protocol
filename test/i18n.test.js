@@ -180,4 +180,8 @@ test('tools/i18n.mjs: msgids of template literals name their params; the codemod
   const scanned = await scanSource("const v = html`<span>${tParts('第 {r} 回合', { r: html`<b>${n}</b>` })}</span>`;", 'x.js');
   assert.deepEqual(scanned.msgids.map((m) => [m.msgid, m.via]), [['第 {r} 回合', 'tParts']]);
   assert.deepEqual(scanned.literals.filter((l) => !l.reason), []);
+  // an aliased import (`t as tr`, where t is a local variable) is the same msgid call
+  const aliased = await scanSource("import { t as tr } from '../../../shared/i18n.js';\nconst t = 3;\nexport const f = () => tr('替补') + t;", 'x.js');
+  assert.deepEqual(aliased.msgids.map((m) => [m.msgid, m.via]), [['替补', 't']]);
+  assert.deepEqual(aliased.literals.filter((l) => !l.reason), []);
 });

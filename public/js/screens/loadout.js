@@ -299,7 +299,7 @@ function Detail({ m, chess, golden, entries, onChange, onReset, locked, notOwned
         <h2 class="lo-dhead__name">${chess.name}</h2>
         <span class="lo-dhead__en">${chess.appellation || ''}</span>
         <span class="lo-dhead__class">
-          <${Img} src=${profGlyphUrl(m, chess.profession)} class="lo-dhead__prof lo-profglyph" />${PROF_NAME[chess.profession] || ''}
+          <${Img} src=${profGlyphUrl(m, chess.profession)} class="lo-dhead__prof lo-profglyph" />${t(PROF_NAME[chess.profession] || '')}
           <i class="lo-sep"></i><${Img} src=${subProfIconUrl(m, chess)} class="lo-dhead__prof" />${chess.subProfessionName || ''}
         </span>
         <span class="lo-dhead__bonds">${(chess.bonds || []).map((b) => html`<span key=${b} class="lo-bond">
@@ -365,8 +365,8 @@ function Filters({ m, filters, onFilters, bonds }) {
     <div class="lo-frow">
       <div class="lo-chips lo-chips--prof" role="group" aria-label=${t('职业')}>
         ${PROF_ORDER.map((p) => html`<button key=${p} type="button" class=${cx('lo-chip', 'lo-chip--prof', filters.prof === p && 'is-on')}
-          aria-pressed=${filters.prof === p ? 'true' : 'false'} title=${PROF_NAME[p]} onClick=${() => set({ prof: filters.prof === p ? null : p })}>
-          <${Img} src=${profGlyphUrl(m, p)} class="lo-chip__icon lo-profglyph" fallback=${html`<span>${PROF_NAME[p][0]}</span>`} /><span class="lo-chip__lbl">${PROF_NAME[p]}</span></button>`)}
+          aria-pressed=${filters.prof === p ? 'true' : 'false'} title=${t(PROF_NAME[p])} onClick=${() => set({ prof: filters.prof === p ? null : p })}>
+          <${Img} src=${profGlyphUrl(m, p)} class="lo-chip__icon lo-profglyph" fallback=${html`<span>${t(PROF_NAME[p])[0]}</span>`} /><span class="lo-chip__lbl">${t(PROF_NAME[p])}</span></button>`)}
       </div>
       <label class="lo-select">
         <span class="lo-select__k">${t('盟约')}</span>

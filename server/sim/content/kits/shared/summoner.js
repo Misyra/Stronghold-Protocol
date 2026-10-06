@@ -1,6 +1,7 @@
 // server/sim/content/kits/shared/summoner.js — the 召唤师 (summoner) branch in 卫戍: the summon deck the 自选 kits of 麦哲伦
 // (ops/op-mgllan.js), 令 (ops/op-ling.js) and 电弧 (ops/op-radian.js) share — the holding (持有), the return of a placed piece
-// that left the field, recalls (回收) and the summons vanishing with their owner. Kit contract and rules: ../README.md.
+// that left the field, recalls (回收), the summons vanishing with their owner, and the skills that cast on an enemy in a
+// summon's area (summonTriggerArea: the owner's larger-range rule, 2026-10-06). Kit contract and rules: ../README.md.
 //
 // Sources: the client's battle data (charpack char_248_mgllan / char_2023_ling / char_4195_radian: Talents/1
 // charge_token[born] — RechargeToken `cnt` at every deployment of the owner; CommonAbilities die_to_kill_token — KillTokens
@@ -40,6 +41,35 @@ export function holdBuff(battle, u, key, want, mods, extra = null) {
   const cur = has?.mods ?? {};
   if (has && Object.keys(mods).length === Object.keys(cur).length && Object.keys(mods).every((k) => cur[k] === mods[k])) return;
   battle.addBuff(u, { key, mods, tags: ['skill'], ...extra });
+}
+
+/**
+ * The owner's larger-range rule through summons (the owner's decision of 2026-10-06; ACTIVE_RANGE, server/sim/skills.js:
+ * "a skill whose effect reaches farther than the operator's own range casts when an enemy is inside the larger area"):
+ * when `owner`'s picked skill is `skillId`, it also casts while an enemy is inside the area it acts through around one of
+ * the owner's summons standing on the field — on top of its data rule (DEFAULT: an enemy in the owner's own range, about
+ * to attack). A content trigger range (SkillRuntime.addTriggerRange), checked every tick: `area(piece)` gives that
+ * summon's area as `{ keys, profile }` (absolute tile keys; the enemy profile the effect selects by — `canHitFly` false
+ * when it cannot reach air units) or null. Used by 麦哲伦 S1 (her drones' ranges), 令 S3 (each summon's x-5) and 电弧 S2 /
+ * S3 (赛柯's / 桑特拉's ranges). Returns the unregister fn, or null when the skill is another one.
+ * @param {object} battle
+ * @param {object} owner the summoner unit (its deck: owner.mem.summonDeck)
+ * @param {string} skillId
+ * @param {(piece: object) => ({ keys: number[], profile?: object } | null)} area
+ */
+export function summonTriggerArea(battle, owner, skillId, area) {
+  const sk = owner?.skill;
+  if (!sk || sk.id !== skillId) return null;
+  return sk.addTriggerRange(() => {
+    const deck = owner.mem.summonDeck;
+    if (!deck || !up(owner) || battle.finished) return [];
+    const out = [];
+    for (const t of deck.standing()) {
+      const a = area(t);
+      if (a && Array.isArray(a.keys) && a.keys.length) out.push(a);
+    }
+    return out;
+  });
 }
 
 /**

@@ -8,10 +8,12 @@ import {
 
 export default withDefaults({
   // ===== 泥岩 (unyield) S2 岩崩锤 — next attack: heal 4 %, 190 % phys to all ground enemies around, 30 % stun; talents
-  //       S1 防御力强化·γ型 (TAKE_DAMAGE); S3 秽壤的血脉 (10 s dormant — cannot act, takes no damage, keeps blocking —
-  //       with enemies around −60 % speed; then ground enemies around stunned 3 s/3.5 s and for the rest of the skill
-  //       BAT −0.3 s, ATK/DEF up, attacks every blocked enemy); module UNY-Y (沃土的愿景): ATK/DEF +8 % with no ally
-  //       on the 8 tiles around
+  //       S1 防御力强化·γ型 (TAKE_DAMAGE); S3 秽壤的血脉 (10 s dormant — PRTS 备注 "实际将会进入闭锁状态": 闭锁 = 强制缴械 +
+  //       无敌 + 不可阻挡 (PRTS 异常效果: SHELTERING; 不可阻挡 BLOCK_FREE "无法阻挡/被阻挡，自动解除阻挡") — she makes no attack,
+  //       takes no damage and blocks nobody: the enemies she held walk on (flag noBlock — "keeps blocking" until 0.2.0
+  //       WV); the 备注's 眩晕 / 冻结 / 沉默 反制 are not modelled — with enemies around −60 % speed; then ground
+  //       enemies around stunned 3 s/3.5 s and for the rest of the skill BAT −0.3 s, ATK/DEF up, attacks every blocked
+  //       enemy); module UNY-Y (沃土的愿景): ATK/DEF +8 % with no ally on the 8 tiles around
   chess_char_4_18_a: (bb, chess, def) => {
     const t0 = tbb(def, 0), t1 = tbb(def, 1);
     const tb = def.traitBb || {};
@@ -25,7 +27,8 @@ export default withDefaults({
           attack: { hitAllBlocked: true },
           onStart({ battle, unit }) {
             unit.mem.mudS3 = { awake: false, t: 0 };
-            battle.addBuff(unit, { key: 'mudrok:dormant', duration: sleep + 1, flags: { invulnerable: true, disarm: true }, visible: true });
+            // 闭锁: 强制缴械 + 无敌 + 不可阻挡 (her blocked enemies are released: ai.js lets go of a noBlock blocker)
+            battle.addBuff(unit, { key: 'mudrok:dormant', duration: sleep + 1, flags: { invulnerable: true, disarm: true, noBlock: true }, visible: true });
             battle.fx('stone', { x: unit.x, y: unit.y, id: unit.id });
           },
           onTick({ battle, unit, dt }) {

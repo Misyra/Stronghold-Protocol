@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { PROTECT, holdProtect } from '../../server/sim/content/kits/shared/tier1.js';
 import { getDefaultSource } from '../../server/sim/simdata.js';
@@ -78,4 +78,15 @@ test('余 (blocking), 缪尔赛思\'s melee copies, 赫拉格 / 左乐 (SBL-X, b
   h.step(3);
   assert.equal(u.findBuff(PROTECT), null, 'gone above 50 %');
   done(h);
+});
+
+test('0.2.0 WV: no kit keeps its own copy of the shared 庇护 key or mods — 淬羽赫默, 黍, 斥罪, 森蚺, 娜斯提 hold it through holdProtect, 遥\'s bubbles share only the mods', () => {
+  const dir = new URL('../../server/sim/content/kits/ops/', import.meta.url);
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+    const s = readFileSync(new URL(f, dir), 'utf8');
+    assert.doesNotMatch(s, /const (PROTECT|protectMods) =|applyStrongest\([^)]*['"]protect['"]|applyStrongest\(\w+, PROTECT\b/, `${f}: the shared tier1.js PROTECT / protectMods / holdProtect`);
+  }
+  for (const f of ['op-slent2.js', 'op-shu.js', 'op-judge.js', 'op-zumama.js', 'op-nasti.js']) {
+    assert.match(readFileSync(new URL(f, dir), 'utf8'), /holdProtect\(/, `${f} uses holdProtect`);
+  }
 });

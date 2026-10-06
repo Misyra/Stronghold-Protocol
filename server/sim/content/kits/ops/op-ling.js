@@ -42,7 +42,9 @@
 //   The 备注's cast with no target cannot happen here: the data's DEFAULT casts it on an attack.
 // - S3 宁作吾 (MANUAL, data DEFAULT, 30 s): she and her summons ATK +atk, DEF +def; every `interval` (0.5) s from the moment
 //   it covers a summon, every ground enemy on that summon's x-5 takes atk_scale × 令's ATK arts (溅射: not dodgeable, her
-//   damage — PRTS); +cnt held when it ends (not when she leaves). Passive: the 弦惊 merge — at a 弦惊's deployment, another
+//   damage — PRTS); +cnt held when it ends (not when she leaves). Its cast: the data's DEFAULT, and — the owner's
+//   larger-range rule of 2026-10-06 (its pulses act on each summon's x-5) — also a ground enemy on a standing summon's x-5
+//   (shared/summoner.js summonTriggerArea, checked every tick). Passive: the 弦惊 merge — at a 弦惊's deployment, another
 //   basic 弦惊 of hers on its range ⇒ that one turns 高级形态 and the new one is absorbed (withdrawn); else, the new one
 //   standing on the range of one or more basic ones ⇒ it turns 高级形态 and the latest deployed of them is absorbed. 高级形态
 //   (until it leaves the field): its skill's 2.max_hp / 2.atk / 2.def (直接乘算), RES ×(1 + 2.magic_resistance), attack
@@ -53,7 +55,7 @@
 //   stats). Its attributes are in the stats.
 
 import { num, talentBb, traitBb, moduleOn, skillRec, batMod, giveSp, up } from '../shared/tier1.js';
-import { summonDeck, holdBuff, tokenStat } from '../shared/summoner.js';
+import { summonDeck, holdBuff, tokenStat, summonTriggerArea } from '../shared/summoner.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { acquireTargets } from '../../../ai.js';
 import { COLS, PROJECTILE_SPEEDS } from '../../../constants.js';
@@ -72,6 +74,8 @@ export const RECYCLE_DELAY = 1.2;
 const X5 = Object.freeze([[1, 0], [0, -1], [0, 0], [0, 1], [-1, 0]]);
 const TAG_S2 = 'ling:s2';
 const TAG_S3 = 'ling:s3';
+/** S3's pulses: ground enemies only ("不可对空"). */
+const GROUND = Object.freeze({ canHitFly: false });
 
 const bbOf = (chess, id) => skillRec(chess, id)?.bb ?? {};
 const skillOn = (u, id) => !!(u && u.skill && u.skill.active && u.skill.id === id);
@@ -127,7 +131,7 @@ function soulKit(t, owner, opts) {
         if (battle.time + 1e-9 < s.mem.lingAoeAt) return;
         s.mem.lingAoeAt += iv;
         const keys = absoluteRangeKeys(X5, s.tileR, s.tileC, s.dir, 0);
-        for (const e of battle.enemiesInKeys(keys, s, { canHitFly: false })) {
+        for (const e of battle.enemiesInKeys(keys, s, GROUND)) {
           if (!e.alive) continue;
           battle.dealDamage(owner, e, { amount: owner.s.atk * num(opts.b3.atk_scale), type: 'arts', isSkill: true, isSplash: true, canDodge: false, tags: ['skill', TAG_S3] });
         }
@@ -241,6 +245,10 @@ export default {
         } },
         // 随付笺咏醉屠苏 lives in the deck's onLeave above
       ],
+      install(battle, unit) {
+        // S3's cast: a ground enemy on a standing summon's x-5 too (the owner's larger-range rule, 2026-10-06)
+        summonTriggerArea(battle, unit, S3, (t) => ({ keys: absoluteRangeKeys(X5, t.tileR, t.tileC, t.dir, 0), profile: GROUND }));
+      },
     };
   },
 };

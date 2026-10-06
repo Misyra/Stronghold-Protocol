@@ -2221,7 +2221,7 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - [ASSUMED] (kept from §23.35): the sim's automatic tile searches (突袭 landing, summon / device tiles, `grid.canStand`
   without `ranged`) still treat every MELEE unit as ground-only; a prep placement on a 高台 is the tile the battle
   deploys and redeploys on.
-- Note on GitHub #148 (「突袭近战干员部署在高台」, a battle screenshot on the 深水区 map): not changed here. The rule
+- Note on GitHub #148 (「突袭近战干员部署在高台」, a battle screenshot on the 深水区 map): not changed here (0.2.0: a melee 突袭 member prefers a landing tile where it can block — the owner's decision of 2026-10-06, §25). The rule
   above admits no 突袭 operator on a 高台, and the 突袭 landing search is meant to be ground-only (the [ASSUMED] above);
   a melee 突袭 member standing on a 高台 after its jump needs its own reproduction.
 - **Integrator**: §23.35 (title and **Now**) describes the 2026-10-04 rule; it needs a pointer here ("withdrawn in

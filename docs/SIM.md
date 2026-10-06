@@ -121,7 +121,8 @@ its loadout's `skillIndex` / `moduleId` and no equipment (the copies' items went
 Token pieces: `{ kind:'token', tokenId, ownerUid, row, col, dir? }` — the manually deployable summons the player placed
 (data `placeable`, PRTS 卫戍协议/帮助 §战斗部署; user playtest #6). A piece marks the tile its summon deploys on: a talent
 summon the owner holds from the start (狼群, 海嗣, 流形, 凯瑟琳's 爬行号·防护单元 — facing the operator it shields) deploys
-with the board; a skill's summon (赫默 S2 医疗探机, 巫恋 S2 诅咒娃娃, "获得一个…") deploys once at the battle start, free
+with the board (望's 棋子 too, each one occupying her stock while it stands and going back into it as it leaves — the
+owner's decision of 2026-10-06, kits/ops/op-wang.js); a skill's summon (赫默 S2 医疗探机, 巫恋 S2 诅咒娃娃, "获得一个…") deploys once at the battle start, free
 and regardless of the holding (PRTS §作战阶段 "所有手动部署的召唤物，无视所属干员的持有状态…作战开始时立即部署一次"), then
 waits on its tile and takes the field there each time the skill gives one (stock ≤ 1, after the token's redeploy time
 once it left, free; never while its owner is off the field [ASSUMED] — a stocked one deploys as soon as the owner is
@@ -853,8 +854,12 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
   (`unit.baseRangeKeys`: its own grid + its permanent rangeExtend — "攻击范围扩大" modules/talents as persist never-expiring
   `rangeExtend` buffs; no skill range, no temporary extend, no extra keys) or blocked by the melee unit — or, checked
   **every tick**, an enemy (flyers included) inside a content trigger range (`unit.skill.addTriggerRange(fn)`,
-  `fn(battle, unit)` → list of ally units (their current range) or tile-key arrays; returns an unregister fn; not for
-  heal skills: 海嗣 "攻击范围视为自身攻击范围的延伸", 流形); `SKILL_RANGE` — "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能": any
+  `fn(battle, unit)` → list of ally units (their current range), tile-key arrays or `{ keys, profile }` (tile keys with
+  the enemy profile the effect selects by — `canHitFly` false: ground enemies only); returns an unregister fn; not for
+  heal skills: 海嗣 "攻击范围视为自身攻击范围的延伸", 流形, 谬因 S2's beam, and the areas a skill acts through around its
+  owner's standing summons — 麦哲伦 S1 (her drones' ranges), 令 S3 (each summon's x-5, ground), 电弧 S2 (赛柯's range,
+  ground) / S3 (桑特拉's range): the owner's larger-range rule of 2026-10-06, kits/shared/summoner.js
+  `summonTriggerArea`); `SKILL_RANGE` — "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能": any
   living enemy (stealthed, untargetable, flying included) on `trigger.customRangeGrid` (= the skill's rangeGrid), every
   tick, no attack needed; `trigger.allies` (+ `hpAtMost`, default 1) — set by a kit, or by the data for an ally row (黍 S3's
   official `TRY_SEARCH_ALLY_SKILL`, "技能范围内存在可治疗的我方单位时释放技能": tools/build-data.mjs `TRIGGER_ALLY_RULES`,

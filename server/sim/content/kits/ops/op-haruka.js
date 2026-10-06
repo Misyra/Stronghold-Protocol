@@ -47,7 +47,7 @@
 //   invulnerable / untargetable one) and while it stays levitated takes atk_scale × her ATK arts damage per second (the
 //   first after 0.5 s, then every `interval` s; 持续伤害, not dodgeable; 无来源 at her last ATK once she left).
 
-import { num, up, traitBb, talentBb, skillRec, batMod, giveSp } from '../shared/tier1.js';
+import { num, up, traitBb, talentBb, skillRec, batMod, giveSp, protectMods } from '../shared/tier1.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
 
@@ -58,7 +58,6 @@ const S3 = 'skchr_haruka_3';
 export const BUBBLE = 'haruka:bubble';
 /** The S3 levitation damage (haruka_s_3_debuff). */
 export const FLOAT_DOT = 'haruka:float';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 /** 浮光泡影: the break delay when the talent carries no `interval`. */
 const BREAK_DELAY = 0.5;
 /** S3's levitation damage: the first tick (haruka_s_3_debuff firstTriggerInterval). */

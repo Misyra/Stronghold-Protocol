@@ -47,7 +47,7 @@
 // - S3 披荆斩棘 (MANUAL, hurt SP; data DEFAULT, rawRule TAKE_DAMAGE): at once barrier +hp_ratio × max HP (topping T1's,
 //   capped), then `duration` s ATK +atk, attack interval +base_attack_time s (a flat +0.9 on 1.6 s), taunt +taunt_level.
 
-import { num, traitBb, talentBb, skillRec, toggleBuff, batMod, up, enemiesInGrid } from '../shared/tier1.js';
+import { num, traitBb, talentBb, skillRec, toggleBuff, batMod, up, enemiesInGrid, holdProtect, PROTECT } from '../shared/tier1.js';
 import { isHpLoss } from '../../../damage.js';
 
 const S1 = 'skchr_judge_1';
@@ -60,9 +60,6 @@ const X4 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1,
 /** judge_s_2[aoe]: firstTriggerInterval 0.9 s, then triggerInterval 1 s. */
 const S2_FIRST = 0.9;
 const S2_EVERY = 1;
-/** 庇护 (ba.protect): one "同名效果取最高" effect per unit, whoever grants it (battle.applyStrongest). */
-const PROTECT = 'protect';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 
 const bbOf = (chess, id) => skillRec(chess, id)?.bb ?? {};
 const tagged = (d, tag) => !!(d && Array.isArray(d.tags) && d.tags.includes(tag));
@@ -79,7 +76,7 @@ export default {
     /** S2's 庇护 (damage_resistance[inf] for the skill's time). */
     const protect = (battle, unit, skill) => {
       const dr = num(b2.damage_resistance);
-      if (dr > 0) battle.applyStrongest(unit, PROTECT, { duration: Math.max(0.05, skill.timeLeft), value: dr, mods: protectMods, source: unit });
+      holdProtect(battle, unit, dr, Math.max(0.05, skill.timeLeft), unit);   // 庇护: the shared effect (同名效果取最高)
     };
     /** judge_t_1's shield_scale: 1, + S2's shield_scale while S2 runs. */
     const shieldScale = (unit) => 1 + (unit.skill?.active && unit.skill.id === S2 ? num(b2.shield_scale) : 0);

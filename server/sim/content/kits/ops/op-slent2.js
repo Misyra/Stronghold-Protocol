@@ -59,7 +59,7 @@
 //   held like the hammer's (PRIO_UNDYING_HELD −99).
 // Statuses: none applied to enemies. Damage: arts normal attacks only.
 
-import { num, up, traitBb, moduleBb, talentBb, skillRec, once } from '../shared/tier1.js';
+import { num, up, traitBb, moduleBb, talentBb, skillRec, once, holdProtect } from '../shared/tier1.js';
 import { releaseSkillSummon } from '../../tokens.js';
 import { holdsUndying, PRIO_UNDYING_HELD, PRIO_REVIVE, PRIO_RESPAWN } from '../../items/battle.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
@@ -69,9 +69,6 @@ const S1 = 'skchr_slent2_1';
 const S2 = 'skchr_slent2_2';
 const S3 = 'skchr_slent2_3';
 export const LAMP = 'token_10029_slent2_protrb';
-/** 庇护 (ba.protect, the client's damage_resistance[inf]): one "同名效果取最高" effect per unit (battle.applyStrongest). */
-export const PROTECT = 'protect';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 /** The client's trigger period of slent2_t_1 / slent2_t_2 (talent abilities, triggerInterval 0.1). */
 export const TALENT_IV = 0.1;
 /** Lifetime of a refreshed effect: a little longer than the refresh period, so it never lapses while it holds. */
@@ -136,7 +133,7 @@ function lampKit(t, owner, t1) {
         const keys = new Set(absoluteRangeKeys(grid, lamp.tileR, lamp.tileC, lamp.dir, 0));
         for (const a of alliesOn(battle, lamp, keys)) {
           const v = shelterOf(tb, a, scale);
-          if (v > 0) battle.applyStrongest(a, PROTECT, { duration: HOLD, value: v, mods: protectMods, source: lamp });
+          holdProtect(battle, a, v, HOLD, lamp);   // 庇护 (the client's damage_resistance[inf]): the shared effect
         }
       }, { owner: lamp, immediate: true });
     },
@@ -194,7 +191,7 @@ export default {
             const now = new Set(allies);
             for (const a of allies) {
               const v = shelterOf(t1, a, scale);
-              if (v > 0) battle.applyStrongest(a, PROTECT, { duration: HOLD, value: v, mods: protectMods, source: unit });
+              holdProtect(battle, a, v, HOLD, unit);
               const mult = isRhine(a) ? 2 : 1;
               if (maxHp > 0) battle.applyStrongest(a, MAXHP_KEY, { duration: HOLD, value: maxHp * mult, mods: (x) => ({ hpPct: x }), source: unit });
               if (regenRatio > 0 && a.hpRatio < regenBelow - 1e-9) {

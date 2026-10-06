@@ -2142,7 +2142,7 @@ Decisions of the owner, 2026-10-04: a 联防 devour counts members who enter alr
 
 ## 24. Community reports after 0.1.3
 
-Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1; 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, PR #69) → §24.2; the 5-阿戈尔 revives go to the first 3 members knocked out (GitHub #105, #140) → §24.3; 联防 阿戈尔 devours the operator in front whoever owns it (GitHub #140) → §24.4; a special terrain tile explains itself on a tap (GitHub #184, PR #185) → §24.5; 活性源石 was two different materials on the two boards (GitHub #184, PR #185) → §24.6; 阿戈尔's devoured base ATK is a 最终加算 and a fallen marker's marks still resolve (GitHub #165, PR #176) → §24.7. Merged pull requests keep their own notes where they changed the rules: deploy-timed skills as duration skills (PR #109, §5 skill contract), the teammate's hand / temp / equipment in prep scouting (PR #129), 灵巧's knocked-out aura and the hidden-layer bonds (PR #66, research 02).
+Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1; 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, PR #69) → §24.2; the 5-阿戈尔 revives go to the first 3 members knocked out (GitHub #105, #140) → §24.3; 联防 阿戈尔 devours the operator in front whoever owns it (GitHub #140) → §24.4; a special terrain tile explains itself on a tap (GitHub #184, PR #185) → §24.5; 活性源石 was two different materials on the two boards (GitHub #184, PR #185) → §24.6; 阿戈尔's devoured base ATK is a 最终加算 and a fallen marker's marks still resolve (GitHub #165, PR #176) → §24.7; 缇缇 S2's sleep pulses count for her trait (GitHub #162) → §24.8. Merged pull requests keep their own notes where they changed the rules: deploy-timed skills as duration skills (PR #109, §5 skill contract), the teammate's hand / temp / equipment in prep scouting (PR #129), 灵巧's knocked-out aura and the hidden-layer bonds (PR #66, research 02).
 
 ### 24.1 A skill clip with no Begin and no own Idle plays once — 德克萨斯 S2 剑雨 (player report) — `render/spine.js SpineActor.setSkill / update` (`SKILL_CLIP_MIN`, `skillClipOnce`, `skillEndPending`)
 
@@ -2379,3 +2379,34 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
   the kill is B's); all three fail on 0.1.3's code. `feedback3-egir-down`, `feedback4-egir-unite` and
   `feedback3-ulpia-move` read `atkFinal` instead of `atkFlat`; `test/match/bosshp.test.js` recomputes ATK with the
   最终加算. `facing`, `feedback2-doll`, `sim/core` pass unchanged.
+
+### 24.8 缇缇 S2 封护: every sleep pulse of the ward is a new 沉睡 entry for her trait (GitHub #162; the owner's decision of 2026-10-06) — `kits/tier5.js` (缇缇 `skchr_titi_2` `onTick`), `Battle.applyStatus` (`reenter`)
+
+- **Seen**: GitHub #162: the reporter remembers first-hand that in the official mode 缇缇's trait (garrison_125: 萨尔贡 /
+  精准 +1 per entry, elite +2, at most 24 / 48 per battle) climbs fast while S2 runs (「攻击范围内有陷入沉睡就开始迅速增加直至
+  上限」); in the remake an enemy held asleep by S2 counted once.
+- **Official**: the trait 「<战斗中>每当范围内有敌人或干员进入沉睡或晕眩时，使已激活的【萨尔贡】【精准】层数+1（每场战斗至多24层）」
+  (elite +2, 48); S2 「…技能开启时使自身与攻击范围内生命比例最低的干员陷入沉睡直到技能结束，期间持续使自身与该目标周围的敌人陷入
+  沉睡…」 (12 s / elite 15 s). Neither the data nor PRTS gives the pulse's interval or sleep length.
+- **Decision**: the owner's decision of 2026-10-06, following the report: each pulse counts as an entry.
+- **Cause**: the pulse re-applies a 0.5 s sleep every 0.25 s (`AURA_DUR` / `AURA_IV`), so an enemy beside a ward never
+  leaves 沉睡 and `statusApplied.entered` (the target did not carry the status) is true at the first pulse only; the
+  garrison event counts new entries only.
+- **Now**: the pulse calls `applyStatus(enemy, 'sleep', { duration: 0.5, source, reenter })`, a new opt-in that reports
+  `entered` anyway (the sleep buff refreshes as before): once per enemy and pulse — an enemy beside both wards re-enters
+  once — and not while a longer sleep from elsewhere holds it (more than 0.5 s left). The garrison rule is untouched: a
+  refresh elsewhere is still no entry (the 125 test's stun refresh), and the sleeper must be in 缇缇's attack range
+  (`S.inRange`) — an enemy at her back is slept by every pulse and adds nothing. One enemy in range: one entry per pulse
+  (the 0.25 s timer runs in 1/30 s ticks: every 8 ticks, 0.27 s), the cap (24 / 48, with the ward's own two operators)
+  5.63 s into S2. No enemy wakes between pulses (the 0.5 s outlasts the pulse) and no status event is added, so the
+  fight changes only through the earlier layers. `entered` is read by the two garrison events only (冻结 for 初雪 /
+  银灰; 沉睡 / 晕眩 by garrison_125_a / _b alone).
+- [ASSUMED]: the pulse timing (0.25 s / 0.5 s, unchanged) and that each pulse is an entry (the reporter's memory; no
+  source gives the official interval); a longer sleep from another source is no re-entry.
+- Golden: `roster-042` (缇缇 S2) — her trait's 24 layers now come within her first S2 (26.07–37.03 s) instead of over four
+  casts up to 176.73 s; the totals are the same (capped), and the earlier 萨尔贡 / 精准 layers end the fight at 166.97 s
+  instead of 182.03 s with 5 knock-outs instead of 7.
+- Tests: `test/content/garrisons_battle.test.js` — new '缇缇 125 + S2 封护 (GitHub #162) …' (the real 缇缇, normal and
+  elite, S2 cast: an enemy at her back sleeps through 8 s of pulses and adds nothing beyond the ward's two operators; an
+  enemy in range beside both wards — one entry per pulse — takes the trait to 24 / 48 within 6.5 s; fails on 0.1.3's
+  code). The 125 test (a stun refresh is not an entry) and `kits_alt_t5`'s S2 test pass unchanged.

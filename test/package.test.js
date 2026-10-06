@@ -67,7 +67,8 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
   for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
     assert.ok(!got.has(f), f);
   }
-  for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img)\//.test(f), f);
+  // the design document (the index docs/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
+  for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
   const code = [...got].filter((f) => /\.(?:m?js|py)$/.test(f));
   for (const f of code) {
     const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

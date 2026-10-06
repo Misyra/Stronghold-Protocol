@@ -146,10 +146,16 @@ function pullToFront(battle, unit, e, force) {
 }
 
 /** Physician module trait (录武官, 华法琳 elites): heals on allies below hp_ratio are ×heal_scale. */
-function installLowHpHealBonus(battle, unit, tb) {
+/**
+ * The module trait "治疗生命值低于50%的友方单位时治疗量提升15%" (heal_scale, hp_ratio): the client's module buff filters the
+ * target's HP before the heal with its own comparison — `atOrBelow` for the template heal_scale_up[hpratio][LE] (华法琳's
+ * PHY-X), strictly below otherwise (录武官's reckpr_e_002_tr: LT). [ASSUMED as before: not on herself]
+ */
+function installLowHpHealBonus(battle, unit, tb, { atOrBelow = false } = {}) {
   const s = num(tb.heal_scale, 0), r = num(tb.hp_ratio, 0);
   if (!(s > 0) || !(r > 0)) return;
-  battle.on('heal', (c) => { if (c.source === unit && c.target !== unit && c.target.hpRatio < r) c.amount *= s; }, { owner: unit });
+  const low = atOrBelow ? (t) => t.hpRatio <= r + 1e-9 : (t) => t.hpRatio < r;
+  battle.on('heal', (c) => { if (c.source === unit && c.target !== unit && low(c.target)) c.amount *= s; }, { owner: unit });
 }
 
 // DESIGN §5.6 documents `(bb, chess)`; content/index.js also passes the normalised def — rebuild it when absent.

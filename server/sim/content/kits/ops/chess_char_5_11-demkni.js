@@ -103,7 +103,7 @@ export default {
       install(battle, unit) {
         // S2 only: the NEVER-trigger skill casts itself when an ally in its area is injured
         if (!sid || sid === 'skchr_demkni_2') autoCast(battle, unit, () => zone(battle, unit).some((a) => a.hp < a.s.maxHp - 1e-6));
-        lowHpHealUp(battle, unit, tb);
+        lowHpHealUp(battle, unit, tb);   // GUA-X: set_heal_scale_by_hpratio filters LT (strictly below)
         if (num(tb.damage_resistance) > 0) permBuff(battle, unit, 'saria:moduleY', { dmgTakenMul: 1 - num(tb.damage_resistance) });
       },
     };

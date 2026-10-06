@@ -162,10 +162,10 @@ export default {
     };
     // S2: the pack's empowered next attack (armed by the cast; ×scale on its hits; a kill pays once)
     const installGift = (battle, unit) => {
-      // the cast: ready, the pack standing, no unused gift on it (PRTS 备注 「仅场上存在狼群，且狼群未获得此技能的充能时可触发
-      // 技能」; a pack in its 战术点形态 does not count — the 备注 does not say [ASSUMED])
+      // the cast: ready, the pack on the field in either form, no unused gift on it (PRTS 备注 「仅场上存在狼群，且狼群未获得此技能的
+      // 充能时可触发技能」 — the words of S1's, whose 备注 counts the 战术点形态 [ASSUMED the same for S2])
       battle.on('tick', () => {
-        const sk = unit.skill, w = wolfOf(unit);
+        const sk = unit.skill, w = packOf(unit);
         if (!alive(unit) || !sk || !sk.ready || sk.active || !unit.canAct || unit.s.flags.silence || !w || w.mem.vigilGift) return;
         sk.activate('SP_FULL');
       }, { owner: unit });
@@ -272,18 +272,20 @@ export default {
         }),
         // (自动触发, PRTS 备注 「仅场上存在狼群，且狼群未获得此技能的充能时可触发技能」: no enemy needed — the kit casts it as soon
         // as it is ready while the pack stands and holds no unused gift (installGift); until 0.2.0 the data's DEFAULT made it
-        // wait for 伺夜's own next attack, so it never fired with no enemy in his range. A pack in its 战术点形态 does not
-        // count: S1's 备注 lists that form, S2's says nothing of it, so S2 waits for the pack to come back [ASSUMED]; a gift
-        // the pack holds stays on it through the form [ASSUMED])
+        // wait for 伺夜's own next attack, so it never fired with no enemy in his range. A pack in its 战术点形态 counts as on the
+        // field — S2's 备注 uses S1's words and S1's lists that form [ASSUMED for S2; the 0.2.0 follow-up's recommended
+        // reading]: the cast pays its DP at once and the gift waits on the pack, its next attack once it is back (until 0.2.0
+        // S2 waited for the pack); a gift the pack holds stays on it through the form [ASSUMED])
         skchr_vigil_2: (s) => ({
           kind: 'instant',
           trigger: 'NEVER',
           onStart({ battle, unit }) {
             dpGain(battle, unit, num(s.bb.cost, 0));
-            const w = wolfOf(unit);
+            const w = packOf(unit);
             if (!w) return;
+            // (a pack in its 战术点形态 has no HP to restore: it comes back at full HP, the gift kept on it)
             const hr = num(s.bb['vigil_wolf_s_2.hp_ratio'], 0);
-            if (hr > 0) battle.heal(w, w, w.s.maxHp * hr, { self: true });
+            if (hr > 0 && w.alive) battle.heal(w, w, w.s.maxHp * hr, { self: true });
             w.mem.vigilGift = { scale: num(s.bb['vigil_wolf_s_2.atk_scale'], 1), dp: num(s.bb['vigil_wolf_s_2.cost'], 0), paid: false };
             fx(battle, 'buff', w, { src: unit.id, skill: 'vigil_2' });
           },

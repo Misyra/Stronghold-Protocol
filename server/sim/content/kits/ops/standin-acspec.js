@@ -12,8 +12,10 @@ import { bodyInKeys } from '../../../body.js';
 const S1 = 'skchr_acspec_1';
 const S2 = 'skchr_acspec_2';
 const S3 = 'skchr_acspec_3';
-const S1_KEY = 'acspec:s1';
 const PULL_TAG = 'acspec:pull';
+/** A 被动 ON_DEPLOY skill with a duration: a duration skill every deployment starts (no SP, never cast otherwise). */
+const ON_DEPLOY = Object.freeze({ kind: 'duration', activateOnDeploy: true, spCost: 0, spType: 'none', trigger: 'NEVER' });
+const s1On = (unit) => !!(unit.skill && unit.skill.active && unit.skill.id === S1);
 /**
  * 四维分离's "周围四格": her tile and the four tiles beside it [ASSUMED: her own tile counts — an enemy she blocks stands
  * on it, and the talent is about her being alone with one enemy].
@@ -63,9 +65,12 @@ export default {
   // attack@prob (PRTS 备注: it is her normal attack's basic logic; EXE-X levels 2 / 3 make it +atk ATK and a higher
   // chance). Talent 2 四维分离: ATK +atk while exactly `cnt` enemy stands on her tile or the four beside it.
   // All three skills are 被动, ON_DEPLOY — they start at every deployment (the battle-start one included, when no enemy
-  // is on the field yet: S3 then hits nothing, as in the official mode; it matters on a redeploy):
-  // S1 物理的服从: for the skill's duration (10 s) the talent-1 chance is attack@prob and physical dodge prob.
-  // S2 战争的恭顺: for the skill's duration (10 s) ATK +atk, ASPD +attack_speed.
+  // is on the field yet: S3 then hits nothing, as in the official mode; it matters on a redeploy). S1 / S2 last the
+  // skill's duration (10 s): duration skills started by the deployment (`activateOnDeploy`, the deploy-timed skill
+  // contract of PR #109 — their own skillStart / skillEnd and the client's skill on / off), not a passive holding a timed
+  // buff:
+  // S1 物理的服从: while it runs the talent-1 chance is attack@prob and physical dodge prob.
+  // S2 战争的恭顺: while it runs ATK +atk, ASPD +attack_speed.
   // S3 空间的归依: spaceBurst above (ground only), right after each deployment (install).
   // Module EXE-X (trait atk): ATK +atk while no ally stands on the four tiles beside her (PRTS: unlike the usual EXE-X;
   // shared/tier4.js lonely, as 缄默德克萨斯's module of the same text).
@@ -81,11 +86,11 @@ export default {
     const cnt = Math.max(1, Math.floor(num(t1.cnt, 1)));
     return {
       skills: {
-        [S1]: { kind: 'passive', onStart({ battle, unit }) { battle.addBuff(unit, { key: S1_KEY, duration: num(r1?.duration, 10), mods: { dodgePhys: num(b1.prob) }, tags: ['skill'] }); } },
-        [S2]: { kind: 'passive', onStart({ battle, unit }) { battle.addBuff(unit, { key: 'acspec:s2', duration: num(r2?.duration, 10), mods: { atkPct: num(b2.atk), aspd: num(b2.attack_speed) }, tags: ['skill'] }); } },
+        [S1]: { ...ON_DEPLOY, duration: num(r1?.duration, 10), mods: { dodgePhys: num(b1.prob) } },
+        [S2]: { ...ON_DEPLOY, duration: num(r2?.duration, 10), mods: { atkPct: num(b2.atk), aspd: num(b2.attack_speed) } },
         [S3]: { kind: 'passive' },
       },
-      trait: { hitsFn: (battle, unit) => (battle.rng.chance(unit.findBuff(S1_KEY) ? s1Prob : talentProb) ? 2 : 1) },
+      trait: { hitsFn: (battle, unit) => (battle.rng.chance(s1On(unit) ? s1Prob : talentProb) ? 2 : 1) },
       talents: [
         { install(battle, unit) { statBuff(battle, unit, 'acspec:t1', { atkPct: num(t0.atk) }); } },
         { install(battle, unit) { toggleBuff(battle, unit, 'acspec:t2', () => enemiesAround4(battle, unit) === cnt, { atkPct: num(t1.atk) }); } },

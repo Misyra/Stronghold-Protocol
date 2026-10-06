@@ -708,7 +708,11 @@ test('6_11 缪尔赛思 S2 生态耦合: +cost DP; melee copies regenerate and t
     const eco = tok().findBuff('mlyss:eco');
     assert.ok(eco, 'melee copy buffed');
     approx(eco.mods.hpRegenRatio, bb.hp_recovery_per_sec_by_max_hp_ratio);
-    approx(eco.mods.physTakenMul, 1 - bb.damage_resistance);
+    // 庇护: the shared effect of every source (同名效果取最高 — kits/shared/tier1.js holdProtect)
+    const protect = tok().findBuff('protect');
+    assert.ok(protect && protect.source === u, 'the 庇护 she grants');
+    approx(protect.mods.physTakenMul, 1 - bb.damage_resistance);
+    approx(protect.mods.artsTakenMul, 1 - bb.damage_resistance);
     done(h);
 
     // ranged copy: a sniper to copy

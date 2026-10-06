@@ -1036,7 +1036,7 @@ test('3_19 伺夜 S2 领袖的馈赠: +DP, the pack recovers HP, its next attack
   }
 });
 
-test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at full SP while the pack stands and holds no unused gift (PRTS 备注), never while it is in its 战术点形态 [ASSUMED] — cast once it is back (kit pack and prep piece)', () => {
+test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at full SP while the pack is on the field and holds no unused gift (PRTS 备注), in its 战术点形态 too [ASSUMED: S1\'s words] — the DP at once, the gift kept for the returning pack (kit pack and prep piece)', () => {
   for (const id of BOTH('chess_char_3_19_a')) for (const piece of [false, true]) {
     const b = SB(id, 'skchr_vigil_2'), tag = `${id} ${piece ? 'piece' : 'kit pack'}`;
     const h = makeBattle({ defs: { chess: noGarrison(id) }, timeLimit: 60, flags: { dpPerSec: 0 }, units: vigilUnits(id, 'skchr_vigil_2', piece) });
@@ -1052,17 +1052,20 @@ test('3_19 伺夜 S2 领袖的馈赠 (自动触发): no enemy needed — cast at
     fill(u);
     h.run(3);
     assert.equal(u.skill.activations, 1, '"狼群未获得此技能的充能时可触发": no second cast while the gift is unused');
-    // the gift spent (as by a bite), the pack in its 战术点形态: no cast (the 备注 does not count that form for S2 —
-    // [ASSUMED]); once it is back, the waiting cast fires
+    // the gift spent (as by a bite), the pack in its 战术点形态: the cast fires there too (its 备注 uses S1's words, which count
+    // that form — [ASSUMED]; until 0.2.0 it waited for the pack): +cost DP at once, the gift waits on the pack
     w.mem.vigilGift = null;
     for (let i = 0; i < 10 && w.alive; i++) h.b.dealDamage(null, w, { amount: 1e9, type: 'true' }); // a wolf is lost per KO
     assert.ok(wolfTacticalPoint(w), `${tag}: 战术点形态`);
-    h.run(5);
-    assert.equal(u.skill.activations, 1, `${tag}: no cast while the pack is in its 战术点形态`);
-    assert.ok(u.skill.ready, 'the SP waits full');
+    const dp1 = p.dp;
+    assert.ok(h.runUntil(() => u.skill.activations === 2, 0.5), `${tag}: cast while the pack is in its 战术点形态`);
+    approx(p.dp, dp1 + b.cost, 1e-6, `${tag}: +cost DP at once`);
+    assert.ok(w.mem.vigilGift && !w.alive, `${tag}: the gift waits on the pack`);
+    fill(u);
+    h.run(3);
+    assert.equal(u.skill.activations, 2, `${tag}: no second cast while that gift is unused`);
     assert.ok(h.runUntil(() => w.alive, WOLF_IV(id)), `${tag}: the pack is back`);
-    assert.ok(h.runUntil(() => u.skill.activations === 2, 0.5), `${tag}: cast once it stands again`);
-    assert.ok(w.mem.vigilGift, 'the returned pack holds the gift');
+    assert.ok(w.mem.vigilGift, `${tag}: the returned pack holds the gift for its next attack`);
     done(h);
   }
 });

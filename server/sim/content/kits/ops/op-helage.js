@@ -10,9 +10,8 @@
 // 属性加成，损失一定比例时达最大加成（同类属性取最高）") and ba.protect 庇护 ("受到的物理和法术伤害降低相应比例（同名效果取最高）"), his
 // battle skeleton char_188_helage.skel (Skill: two OnAttack, Skill_2: two, Skill_3_Loop: one).
 // - Trait (武者) "不成为其他角色的治疗目标，每次攻击到敌人后回复自身70生命": the profession default (professions.js `musha`: no
-//   heal from others, value HP per enemy an attack hits), ground-only melee on his 1-1, block 1. The branch heals on every
-//   damage instance he deals: the engine heals once per enemy an attack strikes, so the second hit of S1 / S2's 二连击 on
-//   an enemy heals once more here (the trait's `value`, a self heal).
+//   heal from others, `value` HP on every damage instance he deals — PRTS 分支特性信息 武者 — so the second hit of S1 / S2's
+//   二连击 heals too), ground-only melee on his 1-1, block 1.
 // - T1 月盈星亏 "在场时，自身获得最高+100攻击速度的坚忍（损失70%生命值时达到最大加成）": ASPD + min_attack_speed × the share of
 //   the HP lost up to 1 − min_hp_ratio (linear, 坚忍), refreshed every tick. SBL-X stage 3: +130 at 50 % lost (the module
 //   talent change).
@@ -26,7 +25,7 @@
 //   parts at once].
 // - Module SBL-X “藏锋” "生命值低于50%时，获得25%的庇护" (a display trait part; the effect is the hidden talent part hp_ratio /
 //   damage_resistance, merged into talent 0's blackboard): below hp_ratio of his max HP the physical and arts damage he takes
-//   ×(1 − damage_resistance) (as 宴's elite module).
+//   ×(1 − damage_resistance) (as 宴's elite module) — 庇护, "同名效果取最高": the shared effect (tier1.js holdProtect).
 // - Module SBL-Y “热的雪” "被击倒时不撤退且回复30%生命（单次部署只触发1次）" (trait bb hp_ratio): the first lethal blow of a
 //   deployment leaves him on the field at hp_ratio of his max HP (a kit saver, priority −50 as 斯卡蒂's module).
 // - S1 新月 (AUTO, attack SP, DEFAULT): the next attack at atk_scale × ATK, twice (Skill clip: two OnAttack).
@@ -34,7 +33,7 @@
 // - S3 满月 (MANUAL, time SP, data ACTIVE_RANGE on the running 1-1 + 1): `duration` s — ATK +atk, attack range +1 tile
 //   forward (ability_range_forward_extend), up to attack@max_target targets at once; back to 1-1 after.
 
-import { num, traitBb, skillRec, toggleBuff, up, onHitOn } from '../shared/tier1.js';
+import { num, traitBb, skillRec, toggleBuff, up, onHitOn, holdProtect, PROTECT_TICK_HOLD } from '../shared/tier1.js';
 
 const S1 = 'skchr_helage_1';
 const S2 = 'skchr_helage_2';
@@ -90,22 +89,13 @@ export default {
         } },
       ],
       install(battle, unit) {
-        // 武者: the trait heal on every damage instance — the engine heals once per enemy an attack strikes, so each further
-        // hit of the same attack on that enemy (S1, S2's 二连击) heals once more
-        battle.on('damaged', (c) => {
-          const d = c.dmg;
-          if (c.source !== unit || !unit.alive || !d || !d.isAttack || !d.attackId || !c.target || c.target.side !== 'enemy') return;
-          const m = unit.mem;
-          if (m.helageAttackId !== d.attackId) { m.helageAttackId = d.attackId; m.helageStruck = new Set(); }
-          if (!m.helageStruck.has(c.target.id)) { m.helageStruck.add(c.target.id); return; }
-          battle.heal(unit, unit, num(unit.profile?.selfHeal, num(tb.value, 70)), { self: true });
-        }, { owner: unit, priority: -10 });
-        // SBL-X “藏锋”: 生命值低于50%时，获得25%的庇护 (physical and arts damage taken)
+        // SBL-X “藏锋”: 生命值低于50%时，获得25%的庇护 — the shared 庇护 (holdProtect: the strongest of every source holds),
+        // refreshed every tick and at each hit on him while he is below
         const dr = num(t0.damage_resistance), drBelow = num(t0.hp_ratio);
         if (dr > 0 && drBelow > 0) {
-          onHitOn(battle, unit, ({ dmg }) => {
-            if ((dmg.type === 'phys' || dmg.type === 'arts') && unit.hpRatio < drBelow) dmg.mul *= 1 - dr;
-          });
+          const keep = () => { if (up(unit) && unit.hpRatio < drBelow) holdProtect(battle, unit, dr, PROTECT_TICK_HOLD, unit); };
+          battle.on('tick', keep, { owner: unit });
+          onHitOn(battle, unit, keep);
         }
         // SBL-Y “热的雪”: 被击倒时不撤退且回复30%生命（单次部署只触发1次）
         const rise = num(tb.hp_ratio);

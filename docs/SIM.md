@@ -301,7 +301,7 @@ and, unblocked, stand for each attack's clip — `attackStand`: data/enemies.jso
 (cooldown ≤ the strike frame, a target in range) and the rest of the clip after the strike, shortened when the attacks
 come quicker than the clip; `ATTACK_PAUSE` (0.35 s) after the strike when no clip is known; an `attackMoves`
 (「不停止移动」) enemy never stops; a stun ends the stand; only the walking waits — a route WAIT keeps running and
-DISAPPEAR / APPEAR legs still happen, hiding ends the stand; GitHub #58 — then walk on; `fear`/`disarm` stop attacks; `dmgType 'none'` enemies
+DISAPPEAR / APPEAR legs still happen, hiding ends the stand; GitHub #58 — then walk on. Every normal attack strikes at its clip's damage frame (`attackWindup`: `attackAnim.hit`, shortened like the clip; 0 with no clip known — the strike as the swing starts): the cooldown runs down to the frame and the swing (`enemy.swing`) starts when it reaches the wind-up with a target in reach — the whole wind-up from that tick when the cooldown ran out before (it walked ready, its swing was cut); a stun / freeze / sleep / 浮空, hiding, 缴械, 恐惧, 战栗 while blocked or losing every target before the frame cuts the swing — no strike, the next one starts from its wind-up (PRTS 状态机 ATTACK / COMBAT "每帧检查异常状态", 异常效果 STUNNED / DISARMED "正在进行的普通攻击将被中断"; GitHub #187 / #170, 0.2.0) —, a strike already made stays made (its shot lands); the targets are taken at the frame [ASSUMED]; `fear`/`disarm` stop attacks; `dmgType 'none'` enemies
 never attack — unless content arms them through `enemy.profile` (`noAttack: false`, `melee`, `dmgType`, `maxTargets`:
 转译基底·α's 寻仇者 / 特战术师 forms, which then attack like any enemy); `dmgType 'heal'` enemies heal the lowest-HP% enemy in their radius instead. A `noMove` enemy stands (not `moving`, drawn idle). Content can take over an
 enemy's attack: `enemy.profile.deferHit` = the engine makes the attack (target, timing, the `'atk'` event) but deals no
@@ -576,7 +576,7 @@ application competes with instead of its `value`, which stays its effect (Raidia
 catalogue status the same rule (one invisible buff `key` per target whatever applies it — no immunity, 抵抗, status hooks
 or icon): the engine default for two same-named buffs (PRTS 作战机制 "同名buff的默认叠加策略buff只能表现出一个"). 奥术 uses
 it, so the two players of a pair field compete for one instance instead of multiplying, and so do 灵知's 坚冰 and the
-莱恩哈特 / 缄默德克萨斯 RES cuts, once keyed per unit (DESIGN §20.10). "Strongest" = the largest |value|. PRTS 盟约记录's
+莱恩哈特 / 缄默德克萨斯 RES cuts, once keyed per unit (DESIGN §20.10). 庇护 (gamedata_const ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") is one such effect whoever grants it: every kit holds it under the shared key (`kits/shared/tier1.js` `PROTECT` / `holdProtect`, mods phys / artsTakenMul ×(1 − v)) — 宴, 余, 缪尔赛思, 赫拉格, 左乐 and 赫德雷 since 0.2.0 (they used private multipliers that multiplied with each other) —, except 遥's bubbles (the client's damage_resistance[bonus], which multiplies with the common damage_resistance[inf]). "Strongest" = the largest |value|. PRTS 盟约记录's
 奥术 note "※同一单位仅可对同一目标同时施加1个该盟约法术伤害提升效果" limits each unit to one instance per target; read with
 the engine default — a newer same-named buff waits inert until the earlier ones end (PRTS 常见同名状态 "默认叠加方式") — and
 巴哈姆特 12316 ("共享型buff會跟對面搶"), one instance is effective at a time, which is what applyStrongest keeps; strongest
@@ -1192,7 +1192,7 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 3.75 back = `BOOMERANG_RETURN_SPEED`, PRTS 跃跃; droneBomb 5 = 暴鸰's bomb, the official projectile_bombd); melee/`none` hits are
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
-`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
+`afterHit`, `afterAttack`, `canAttack`, `hitsFn(b, u, info)`, `storeEnergy` / `releaseEnergy` (the 秘术师 store, below), `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
 "优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰; `'elite'`: "优先攻击精英或领袖敌人", an ELITE / BOSS
 rank enemy or a leader first: 薇薇安娜 S3), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
 selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
@@ -1215,11 +1215,11 @@ header of professions.js).
 | reaperrange | hits every enemy in range; ×1.5 (bb atk_scale) on the trait front grid (or its own line ahead) — both along its direction |
 | chain | chain N (trait text/bb max_target) with −15 % per jump (bb chain.atk_scale), 1.7-tile jumps (constants.js CHAIN_RADIUS, PRTS 溅射半径一览: 链术师 1.7; 1.8 until 0.1.1), sluggish on each hit |
 | funnel | drone damage 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max) |
-| mystic | stores up to 3 (bb times) attacks while idle, fires them all at once |
+| mystic | 秘术师 (PRTS 分支特性信息 秘术师, GitHub #181): at its attack check (the attack ready, able to act, not disarmed) with no valid target — no target, or its kit's `canAttack` false (深靛 never picks a bound enemy) — it stores one energy (`storeEnergy`, up to bb times: 3, 深靛's MSC-X 4), an attack action: the attack interval restarts; a full store idles with the attack ready. The energies leave with its next attack that happens (`releaseEnergy` in `performAttack`, after `beforeAttack`: an attack cancelled before its shot keeps them) and land with the main hit, one arts attack hit each (`hitsFn` reads the hit's `info.energy`); a redeployment holds none [ASSUMED]. 维伊 / 黑键 plug their own `storeEnergy` (转置能量, elite energies) into the same check |
 | phalanx | no attack & DEF +200 %, RES +20 (bb) while the skill is off; while on, `rangeAoe`: each attack strikes every selectable enemy on its range at once (blocked enemies included; a stealthed one only when revealed or blocked), the same damage near and far, instant (`'beam'`) — "群体法术伤害" (secondary: Terra Wiki, Phalanx Caster: "attacks hit all enemies within their range"; supporting: PRTS 林 S3 备注 "单次普攻最多触发1次效果" — one normal attack can kill several — the same 锁定攻击范围 shape as the 轰击术师, and PRTS 溅射半径一览 documents no splash radius for it (it omits the 撼地者 too, so this is not proof); no primary source states a target cap; community report E3: it used to be one bolt + a 1.1 splash). 卡涅利安's charged S1 keeps the skill-off trait, 不攻击 included (kit `canAttack`, PRTS 备注) |
 | physician | heal the lowest HP% injured ally in range (a skill `targeting.maxTargets` widens any heal profile) |
 | ringhealer | heal 3 allies |
-| chainhealer | heal bounces 3× (−25 %, bb chain.*) within 2.5 tiles |
+| chainhealer | the heal jumps on to 3 units in all (−25 % per jump, bb chain.*), each jump inside the 3×3 of tiles around the last one healed (range x-4), never twice to one unit, the lowest HP ratio first — a full-HP ally too (healed for nothing, the chain goes on from it) — then the latest deployed; no 禁疗 / 孤立 unit (a healer's `healThrough` summon excepted) — PRTS 分支特性信息 链愈师 (`ai.js chainHealNext`, shared with Mon3tr's kit; until 0.2.0: the most injured ally within 2.5 tiles) |
 | healer (流明) | heal ×0.8 (bb heal_scale) beyond 2 tiles |
 | wandermedic | heal + reduce element gauges by 50 % ATK (bb ep_heal_ratio); also targets uninjured allies with gauge |
 | incantationmedic | arts attack; EVERY damage the unit deals heals the lowest ally in range for 50 % (bb scale) of it — the official trait buff (`vendla_tr` / `reed2_tr` / `titi_tr`) is ON_AFTER_OUTPUT_DAMAGE, so skill and DoT damage heals too (缇缇's 凝固的时光 ticks, 焰影苇草's S2 fireballs while she is disarmed); a skill that triggers it for one named ally says so ("仅对该角色触发…特性") and the damage instance carries that ally (`DamageInfo.traitAlly`) |
@@ -1228,8 +1228,8 @@ header of professions.js).
 | craftsman | melee phys (support devices via kit) |
 | shotprotector | ranged phys, can hit FLY, blocks 3 |
 | fortress | melee single target while blocking, ranged 1.0 splash otherwise, ground only (never hits FLY) |
-| unyield / musha / reaper | cannot be healed by others; the heal fires on every enemy the unit damages itself — a normal attack (musha 50 / bb value per hit; reaper 50 × min(hits, block)) and any damage it outputs that no buff produced (the official trait's ON_OUTPUT_DAMAGE, which is why 隐德来希's S2 血镰 cuts heal her while she is disarmed), 50 (bb value) per enemy, the reaper's capped at the block count per instant |
-| centurion / crusher / pusher | hit every blocked enemy at once |
+| unyield / musha / reaper | cannot be healed by others. musha: one heal of 50 (bb value) per damage instance it deals to an enemy (PRTS 分支特性信息 武者 "特性治疗于干员每次输出伤害时触发（不局限于攻击）"; the official `utage_trait` / `helage_trait` / `zuole_trait` ON_OUTPUT_DAMAGE): every hit of a normal attack — a double strike heals twice, a dodged hit not at all — and every skill / item / bond damage instance; not a 流失, an element 损伤 or a talent / DoT damage. reaper: 50 × min(enemies hit, block) per normal attack and 50 per other damage instance it outputs that no buff produced (the official trait's ON_OUTPUT_DAMAGE, which is why 隐德来希's S2 血镰 cuts heal her while she is disarmed), capped at the block count per instant. Both trait heals ignore 禁疗 (PRTS 分支特性信息 武者 / 收割者 "通过自身特性/天赋/技能产生的作用于自身的治疗效果会无视自身的禁疗") |
+| centurion / crusher / pusher | "同时攻击阻挡的所有敌人" (`hitAllBlocked`): each attack takes up to the block count of targets (never fewer than 1) from the range and the enemies it blocks, the blocked ones first — PRTS 分支特性信息 "普通攻击最大目标数等于阻挡数（不会低于1）", PRTS 作战机制 §AOE伤害判定 (强攻手: a 锁定人数 AoE taking the targets of its range up to its cap); the client's selector flag `_limitedMaxTargetNumToBlockedCnt`, carried by every skill worded so too (忍冬 S3, 左乐 S2, Mon3tr S3, 凯尔希's Mon3tr under S2 … — kits set `attack.hitAllBlocked`). Until 0.2.0 it struck the blocked enemies only |
 | hammer | 50 % splash (bb atk_scale_2) to others within 1 tile |
 | instructor | ×1.2 (bb atk_scale) vs enemies it doesn't block |
 | librator | no attack & block 0 while the skill is off; ATK +5 %/s up to +200 % (bb atk / max_stack_cnt), reset at skill end; elite module starts at +100 % (bb init_atk) |

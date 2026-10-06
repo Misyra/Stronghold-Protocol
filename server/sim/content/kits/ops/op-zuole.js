@@ -9,8 +9,8 @@
 // `[shield_core]`, `zuole_s_3` / `[shield]`, `zuole_e_002[resistance]`, `zuole_e_003_talent`, `zuole_e_003_trait`);
 // Arknights Terra Wiki "Zuo Le" (the barrier caps count each skill's own barrier only).
 // - Trait (武者) "不成为其他角色的治疗目标，每次攻击到敌人后回复自身70生命": the profession default (musha: no heal from
-//   others, `value` per enemy hit; zuole_trait heals on every damage he outputs — the profession heals a normal attack
-//   per target and any other damage per instance, so S1's extra strikes are separate damage instances).
+//   others; zuole_trait heals on every damage he outputs — the profession heals `value` per damage instance, PRTS 分支特性信息
+//   武者, so S1's extra strikes heal too).
 // - T1 秉烛照影 "在场时，自身获得最高+50攻击速度和技力自然回复速度+2/秒的坚忍（损失70%生命值时达到最大加成）" (bb
 //   min_attack_speed / min_sp_recovery_per_sec / min_hp_ratio): 坚忍 (ba.berserk "根据已损失的生命值获得相应比例的属性
 //   加成") — ASPD and SP recovery × min(1, lost HP ÷ (1 − min_hp_ratio)) while he is deployed. SBL-X stage 3: +70 /
@@ -20,7 +20,8 @@
 //   (zuole_e_003_talent, ON_CALCULATE_DAMAGE): "…且当次攻击的攻击力提升至120%…80%": a success also scales that damage
 //   instance by atk_scale.
 // - Module SBL-X “岂苦夜长” (trait moduleDesc "生命值低于50%时，获得25%的庇护"; the hidden part merged into the first talent's
-//   bb: hp_ratio / damage_resistance): 庇护 (ba.protect "受到的物理和法术伤害降低相应比例") while HP < hp_ratio
+//   bb: hp_ratio / damage_resistance): 庇护 (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）": the shared effect of
+//   every source, tier1.js holdProtect) while HP < hp_ratio
 //   (zuole_e_002[resistance]: the 庇护 buff is created when HP drops below it and finished when it is back). PRTS S2 备注:
 //   行险 resets it, it comes back 0.1 s later "并因此导致庇护的BUFF顺序落后于本技能的屏障" — a 庇护 created after his
 //   barrier cuts only what passes the barrier (the `hpDamage` hook), one created before it cuts the hit first.
@@ -29,7 +30,8 @@
 //   not while a 不死 already holds him ("_dontConsumeWhenUndeadable": 坚固维式重锤's window, items/battle.js holdsUndying).
 // - S1 破虏 (AUTO, 可充能 2 次): the next attack at atk_scale × ATK; "自身生命低于80%时额外攻击1次，低于50%时额外攻击2次"
 //   (hp_ratio_double / hp_ratio_tripple): one / two more strikes on that target at the same scale, separate damage
-//   instances [ASSUMED: the same target — nothing when it fell]. The data's DEFAULT trigger (an AUTO "next attack").
+//   instances [ASSUMED: the same target — nothing when it fell; the HP read when the skill fires, before the strike's
+//   own trait heal]. The data's DEFAULT trigger (an AUTO "next attack").
 // - S2 行险 (MANUAL, 12 s): "立即流失50%当前生命" (zuole_s_2[shield] DamageViaCurHpRatio, undeadable: never below 1 HP;
 //   a 流失), then a barrier of scale × max HP (ba.barrier "可以吸收一定数值的伤害") added to the one he still has, capped at
 //   max_scale × max HP at each gain (PRTS "上限于每次获取屏障时实时发生变化"; Terra: the cap counts this skill's barrier
@@ -45,7 +47,7 @@
 //   at max_scale × max HP at each gain, lasting shield_duration s from the latest gain (PRTS "每次获取屏障时重置剩余持续
 //   时间为15s").
 
-import { num, talentBb, traitBb, up, onHitBy, onHitOn, giveSp, skillRec } from '../shared/tier1.js';
+import { num, talentBb, traitBb, up, onHitBy, onHitOn, giveSp, skillRec, holdProtect, PROTECT, PROTECT_TICK_HOLD } from '../shared/tier1.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { isHpLoss } from '../../../damage.js';
 import { holdsUndying } from '../../items/battle.js';
@@ -96,10 +98,14 @@ export default {
       skills: {
         [S1]: {
           kind: num(s1?.maxChargeTime, 1) > 1 ? 'charges' : 'instant',
+          // the HP that decides the extra strikes: when the skill fires, before its strike lands (the trait heals at each
+          // damage instance — professions.js musha — so after the first strike he would read healed) [ASSUMED]
+          onStart({ unit }) { unit.mem.zuoleS1Hp = unit.hpRatio; },
           attack: {
             atkScale: num(b1.atk_scale, 1),
             onHit({ battle, unit, target }) {
-              const r = unit.hpRatio;
+              const r = unit.mem.zuoleS1Hp ?? unit.hpRatio;
+              unit.mem.zuoleS1Hp = null;
               const extra = (r < num(b1.hp_ratio_double, 0.8) ? 1 : 0) + (r < num(b1.hp_ratio_tripple, 0.5) ? 1 : 0);
               for (let i = 0; i < extra && target && target.alive; i++) {
                 battle.dealDamage(unit, target, { amount: unit.s.atk * num(b1.atk_scale, 1), type: 'phys', isSkill: true, tags: ['skill'] });
@@ -123,9 +129,12 @@ export default {
                 data: { createdAt: battle.time } });
             }
             battle.fx('shield', { x: unit.x, y: unit.y, id: unit.id });
-            // SBL-X: 行险 resets the 庇护, which is judged again PROTECT_RESET s later (after the barrier)
+            // SBL-X: 行险 resets the 庇护, which is judged again PROTECT_RESET s later (after the barrier) — his own held 庇护
+            // goes now (another source's comes back with its next refresh)
             P.since = null;
             P.blockedUntil = battle.time + PROTECT_RESET;
+            const held = unit.findBuff(PROTECT);
+            if (held && held.source === unit) battle.removeBuff(unit, held);
           },
         },
         [S3]: {
@@ -197,8 +206,10 @@ export default {
           if (!unit.mem.zuoleS3 || c.source !== unit || !c.target || c.target.side !== 'enemy' || isHpLoss(c.dmg) || c.type === 'element') return;
           gainS3Barrier(battle, unit);
         }, { owner: unit });
-        // SBL-X 庇护: active while HP < protectRatio, judged again PROTECT_RESET s after 行险
-        if (protectCut > 0) {
+        // SBL-X 庇护: active while HP < protectRatio, judged again PROTECT_RESET s after 行险 — the shared 庇护 (holdProtect: the
+        // strongest of every source holds), refreshed every tick and at each hit on him. When the 庇护 held is his own and his
+        // barrier is older than it, his cut comes after the barrier (the hpDamage hook) instead of before it
+        if (protectCut > 0 && protectCut < 1) {
           const active = () => {
             const now = battle.time;
             if (!up(unit) || now < P.blockedUntil - 1e-9) { P.since = null; return false; }
@@ -206,13 +217,16 @@ export default {
             P.since = null;
             return false;
           };
+          const keep = () => { if (active()) holdProtect(battle, unit, protectCut, PROTECT_TICK_HOLD, unit); };
+          const own = () => { const b = unit.findBuff(PROTECT); return !!b && b.source === unit && b.data?.value === protectCut; };
           const afterBarrier = new WeakSet();
-          battle.on('tick', active, { owner: unit });
+          battle.on('tick', keep, { owner: unit });
           onHitOn(battle, unit, ({ dmg }) => {
-            if ((dmg.type !== 'phys' && dmg.type !== 'arts') || !active()) return;
+            keep();
+            if ((dmg.type !== 'phys' && dmg.type !== 'arts') || P.since == null || !own()) return;
             const bar = barrierOf(unit);
-            if (bar && bar.shield > 0 && (bar.data?.createdAt ?? Infinity) < P.since) afterBarrier.add(dmg);
-            else dmg.mul *= 1 - protectCut;
+            // (the held buff's mods cut this hit before the barrier: undo that and cut what passes the barrier instead)
+            if (bar && bar.shield > 0 && (bar.data?.createdAt ?? Infinity) < P.since) { dmg.mul /= 1 - protectCut; afterBarrier.add(dmg); }
           });
           battle.on('hpDamage', (c) => { if (c.target === unit && afterBarrier.has(c.dmg)) c.amount *= 1 - protectCut; }, { owner: unit });
         }

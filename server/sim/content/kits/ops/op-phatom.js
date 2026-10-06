@@ -38,10 +38,10 @@
 //   each of its own deployments. When he leaves the field (knocked out, withdrawn, forced out) it is withdrawn (PRTS "强制
 //   撤退"; the client's KillTokens); a twin off the field comes back on its tile — paying its cost (5 DP) as a deployment,
 //   the 卫戍 auto redeploy of a placed summon [ASSUMED, as 鸿雪's 打字机 / 凯尔希's Mon3tr] — once its redeploy time has
-//   passed since its LAST DEPLOYMENT (PRTS 备注: the timer starts at the summon's deployment) and only while he stands (it
-//   is recharged by his deployment, withdrawn by his leaving) [ASSUMED: his redeployment does not cut the twin's own timer
-//   short — the client's RechargeToken NORMAL; 虚影精通 / EXE-X would matter little otherwise; the 凯尔希 kit reads the same
-//   charge_token[born] as "readies at once"]. EXE-Y stage 2+ "本体和虚影同时在场时，攻击力各+10%": the twin's hidden module
+//   passed since its LAST DEPLOYMENT (PRTS 备注: the timer starts at the summon's deployment; the twin's charge_token[finish]
+//   recharges it ON_FINISH) and only while he stands; his (re)deployment readies a waiting twin at once (his
+//   charge_token[born]: RechargeToken with timing NORMAL — read the same way for every summoner, 凯尔希's Mon3tr included;
+//   until 0.2.0 this kit let the twin's own timer run on). EXE-Y stage 2+ "本体和虚影同时在场时，攻击力各+10%": the twin's hidden module
 //   talent `atk` — ATK +atk on both while both are on the field.
 // - T2 虚影精通 "虚影的再部署时间-10秒" (EXE-X stage 3: −16): the twin's own talent respawn_time, added to its 45 s.
 // - S1 暗夜魅影 (被动, at each deployment): physical dodge `prob` and a 屏障 of hp_ratio × max HP that absorbs physical damage
@@ -209,6 +209,13 @@ export default {
             if (c.unit !== unit) return;
             // "傀影退场时强制撤退场上的镜中虚影" (KillTokens): a withdrawal, not a knock-out
             for (const t of twinsOf(battle, unit)) if (t.alive) battle.retreat(t, { reason: 'retreat' });
+          }, { owner: unit });
+          // charge_token[born] (RechargeToken, timing NORMAL): his (re)deployment readies a waiting twin at once — the
+          // twin's own timer is the ON_FINISH recharge of its charge_token[finish] (as every summoner kit reads it)
+          // [ASSUMED: NORMAL = usable now, from the enum and the first deployment]
+          battle.on('deploy', (c) => {
+            if (c.unit !== unit || c.move) return;
+            for (const t of twinsOf(battle, unit)) if (!t.alive && !t.removed) t.mem.twinReadyAt = battle.time;
           }, { owner: unit });
           // 本体和虚影同时在场时，攻击力各+N%: the twin's hidden module talent (his text when no twin def resolves)
           const both = num(tokTalentBb(battle.tokenDef(TWIN, unit), 'atk').atk, /本体和虚影同时在场时/.test(t0desc)

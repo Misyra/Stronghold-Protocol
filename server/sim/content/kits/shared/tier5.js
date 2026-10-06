@@ -150,13 +150,18 @@ function burstDamageUp(battle, unit, mul) {
   }, { owner: unit });
 }
 
-/** Modules PHY-X / GUA-X: heals on allies below hp_ratio ×heal_scale. */
-function lowHpHealUp(battle, unit, tb) {
+/**
+ * Modules PHY-X / GUA-X "治疗生命值低于50%的友方单位时治疗量提升15%": heals on allies below hp_ratio ×heal_scale. The client's
+ * module buff picks its comparison: `atOrBelow` for heal_scale_up[hpratio][LE] (华法琳's PHY-X), strictly below for 塞雷娅's
+ * GUA-X (set_heal_scale_by_hpratio: LT) and 录武官's PHY-X (reckpr_e_002_tr: LT).
+ */
+function lowHpHealUp(battle, unit, tb, { atOrBelow = false } = {}) {
   const mul = num(tb.heal_scale), thr = num(tb.hp_ratio);
   if (!(mul > 1) || !(thr > 0)) return;
+  const low = atOrBelow ? (t) => t.hpRatio <= thr + 1e-9 : (t) => t.hpRatio < thr;
   battle.on('heal', (c) => {
     if (c.source !== unit || c.opts?.regen || !c.target || c.target.side !== 'ally') return;
-    if (c.target.hpRatio < thr) c.amount *= mul;
+    if (low(c.target)) c.amount *= mul;
   }, { owner: unit });
 }
 

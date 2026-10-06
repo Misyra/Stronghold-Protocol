@@ -136,7 +136,8 @@ export default {
     if (num(tb.damage_resistance) > 0) {
       kit.install = (battle, unit) => battle.addBuff(unit, { key: 'trait:blemsh_guard', mods: { dmgTakenMul: 1 - num(tb.damage_resistance) }, persist: true, allowDead: true });
     } else if (num(tb.heal_scale) > 0) {
-      // GUA-X "治疗生命值低于50%的友方单位时治疗量提升15%" (the HP before the heal)
+      // GUA-X "治疗生命值低于50%的友方单位时治疗量提升15%" (the HP before the heal; strictly below — the client's blemsh_e_trait
+      // is set_heal_scale_by_hpratio, FilterByTargetHpRatio LT, unlike 黍's heal_scale_up[hpratio][LE])
       kit.install = (battle, unit) => battle.on('heal', (ctx) => {
         if (ctx.source === unit && ctx.target && ctx.target.hpRatio < num(tb.hp_ratio, 0.5)) ctx.amount *= num(tb.heal_scale, 1);
       }, { owner: unit });

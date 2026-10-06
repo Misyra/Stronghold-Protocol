@@ -1127,7 +1127,7 @@ export function compareFamily(stored, computed) {
 }
 
 export function formatDiffs(family, list, { maxScenarios = 12, maxDiffs = 8 } = {}) {
-  const fmt = (v) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > 160 ? `${s.slice(0, 157)}…` : s; };
+  const fmt = (v) => { const s = typeof v === 'string' ? v : (JSON.stringify(v) ?? String(v)); return s.length > 160 ? `${s.slice(0, 157)}…` : s; };
   const lines = [`golden ${family}: ${list.length} scenario(s) differ`];
   for (const { scenario, diffs } of list.slice(0, maxScenarios)) {
     lines.push(`  ${scenario}:`);

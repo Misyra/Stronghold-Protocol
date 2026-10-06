@@ -27,8 +27,9 @@
 // - T2 余火之氅 "使自身与身后一格的友军获得18%的庇护" (damage_resistance, talent grid b-1: his tile and the one behind; CRU-X
 //   stage 3 "28%…且造成的物理伤害提升10%" — hodrer_equip_1_3_p2 gives damage_resistance[inf] and hodrer_equip[damage_scale_up]
 //   (ON_OUTPUT_DAMAGE PHYSICAL ×damage_scale) to the same targets, ally side, any motion, removed when they leave): 庇护
-//   (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") = phys / artsTakenMul 1 − value as one instance per ally
-//   (applyStrongest) with physDealtMul ×damage_scale, renewed every PROTECT_IV s on the allies of the grid while he is deployed.
+//   (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") = phys / artsTakenMul 1 − value — the shared 庇护 of every source
+//   (tier1.js holdProtect: damage_resistance[inf] is the common key) — and physDealtMul ×damage_scale (its own one instance per
+//   ally), renewed every PROTECT_IV s on the allies of the grid while he is deployed.
 // - S1 重锋不熄 (AUTO, hit SP: INCREASE_WHEN_ATTACK, data DEFAULT): the next attack (every enemy he blocks) at atk_scale × ATK;
 //   hodrer_s[heal] (ON_ABILITY_SPELL_ON, HealViaMaxHpRatio) heals hp_ratio of his max HP once for that attack.
 // - S2 余烬重荷 (MANUAL, data DEFAULT): "被动效果：攻击力+16%" (atk; the skill's extra ability hodrer_s_2[passive]) while it is
@@ -44,7 +45,7 @@
 //   then on it takes attack@damage 无来源 true damage (NoSourceDamage PURE: damage.js periodicDamage, credited to him) every
 //   second of its own (triggerInterval 1 s from its mark) until the skill ends (a derived buff of the skill's).
 
-import { num, talentBb, talentGrid, moduleBb, traitBb, skillRec, statBuff, up, batMod, alliesInGridOf } from '../shared/tier1.js';
+import { num, talentBb, talentGrid, moduleBb, traitBb, skillRec, statBuff, up, batMod, alliesInGridOf, holdProtect } from '../shared/tier1.js';
 import { periodicDamage } from '../../../damage.js';
 
 const S1 = 'skchr_hodrer_1';
@@ -53,7 +54,8 @@ const S3 = 'skchr_hodrer_3';
 /** 余火之氅's grid when the data carries none: his tile and the one behind him (range b-1). */
 const BEHIND = Object.freeze([Object.freeze([0, -1]), Object.freeze([0, 0])]);
 const PROTECT_IV = 0.25;
-const PROTECT_KEY = 'talent:hodrer:protect';
+/** CRU-X stage 3's 物理伤害 + (hodrer_equip[damage_scale_up]): one instance per ally (the 庇护 is the shared key). */
+const DMG_UP_KEY = 'talent:hodrer:dmgUp';
 const S2_PASSIVE_KEY = 'skill:hodrer:s2passive';
 /** hodrer_s_3[damage] / hodrer_s_3[burn]: triggerInterval 1 s, waitFirstTriggerInterval. */
 const SMOKE_IV = 1;
@@ -140,10 +142,12 @@ export default {
           const dr = num(t1.damage_resistance), ds = num(t1.damage_scale, 1);
           const grid = talentGrid(chess, 1) ?? BEHIND;
           if (!(dr > 0) && ds === 1) return;
-          const mods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v, ...(ds !== 1 ? { physDealtMul: ds } : {}) });
           const give = () => {
             if (!up(unit)) return;
-            for (const a of alliesInGridOf(battle, unit, grid)) battle.applyStrongest(a, PROTECT_KEY, { duration: PROTECT_IV + 0.1, value: dr, mods, source: unit });
+            for (const a of alliesInGridOf(battle, unit, grid)) {
+              holdProtect(battle, a, dr, PROTECT_IV + 0.1, unit);
+              if (ds !== 1) battle.applyStrongest(a, DMG_UP_KEY, { duration: PROTECT_IV + 0.1, value: ds, mods: (v) => ({ physDealtMul: v }), source: unit });
+            }
           };
           battle.every(PROTECT_IV, give, { owner: unit });
           battle.on('battleStart', give, { owner: unit });

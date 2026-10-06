@@ -34,7 +34,7 @@ export default withDefaults({
           if (t.side !== 'ally' || !t.alive || !(c.amount > 0) || isHpLoss(c.dmg) || !t.findBuff(`reckpr:guard:${unit.id}`)) return;
           battle.heal(unit, t, num(bb['attack@fixed_heal_value'], 80));
         }, { owner: unit });
-        installLowHpHealBonus(battle, unit, tb);
+        installLowHpHealBonus(battle, unit, tb);   // PHY-X: reckpr_e_002_tr filters LT (strictly below)
       },
     };
   },

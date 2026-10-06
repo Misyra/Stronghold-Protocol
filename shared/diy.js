@@ -263,7 +263,7 @@ export function validateDiyPicks(picks, { data, kitted = null } = { data: null }
     const { charId } = c.pick;
     if (!ok(charId)) return { error: 'BAD_TARGET', detail: `${charId} has no kit yet` };
     const mod = c.pick.uniEquipId ? diyModuleOf(slotId, charId, c.pick.uniEquipId, data) : null;
-    if (mod && !isDiyModule(mod)) return { error: 'BAD_TARGET', detail: `${charId}: ${c.pick.uniEquipId} is a module of another game mode (${mod.typeName})` };
+    if (mod && !isDiyModule(mod)) return { error: 'BAD_TARGET', detail: `${charId}: ${c.pick.uniEquipId} is a module of another game mode (${mod.typeName}, ${/^RA-/.test(mod.typeName || '') ? '生息演算' : '集成战略'})` };
     const tier = diy.slots[slotId].tier;
     const inTier = byTier.get(tier) ?? new Set();
     if (inTier.has(charId)) return { error: 'BAD_TARGET', detail: `${charId} fills two tier-${tier} slots` };

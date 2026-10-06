@@ -1,7 +1,7 @@
 // server/sim/content/kits/ops/chess_char_1_18-utage.js — 宴 (char_337_utage) kit, tier 1.
 // Conventions of the tier-1 kits: ../shared/tier1.js; kit contract and rules: ../README.md.
 
-import { num, talentBb, up, onHitBy, onHitOn, skillBbOf } from '../shared/tier1.js';
+import { num, talentBb, up, onHitBy, onHitOn, skillBbOf, holdProtect, PROTECT_TICK_HOLD } from '../shared/tier1.js';
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
@@ -44,11 +44,14 @@ export default {
             battle.addBuff(unit, { key: 'utage:serious', mods: { aspd: v }, data: { v }, tags: ['talent'] });
           }, { owner: unit });
         }
-        // 庇护 (ba.protect): "受到的物理和法术伤害降低相应比例" — physical and arts damage only
+        // 庇护 (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") while below hp_ratio HP: the shared 庇护 — the
+        // strongest of every source holds (holdProtect) —, refreshed every tick and at each hit on her (a hit that takes
+        // her below it: the next ones already have it)
         if (t.damage_resistance != null && t.hp_ratio != null) {
-          onHitOn(battle, unit, ({ dmg }) => {
-            if ((dmg.type === 'phys' || dmg.type === 'arts') && unit.hpRatio < num(t.hp_ratio)) dmg.mul *= 1 - num(t.damage_resistance);
-          });
+          const dr = num(t.damage_resistance), below = num(t.hp_ratio);
+          const keep = () => { if (up(unit) && unit.hpRatio < below) holdProtect(battle, unit, dr, PROTECT_TICK_HOLD, unit); };
+          battle.on('tick', keep, { owner: unit });
+          onHitOn(battle, unit, keep);
         }
       } }],
     };

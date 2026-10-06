@@ -6,6 +6,7 @@ import {
   num, bv, tbb, moduleBb, live, opsOf, ANY, onDefaultSkill, selectedSkill, skillGridOf, AROUND8, onElementHit,
   elementDmg, aura,
 } from '../shared/tier6.js';
+import { holdProtect } from '../shared/tier1.js';
 
 /**
  * "传送至自身位置": a ground enemy that can reach `unit`'s tile on the ground grid is moved onto it (unblocked, its
@@ -89,9 +90,10 @@ function yu(bb, chess, def) {
     talents: [
       { install(battle, unit) { // 礼尚往来: 庇护 while blocking + DoT on blocked enemies
         const dr = num(t0.damage_resistance), sc = bv(t0, 'atk_scale'), er = bv(t0, 'ep_damage_ratio'), iv = Math.max(0.1, bv(t0, 'interval', 1));
-        // 庇护 (ba.protect): 受到的物理和法术伤害降低相应比例 — true / element damage is not reduced
+        // 庇护 (ba.protect): 受到的物理和法术伤害降低相应比例（同名效果取最高）— true / element damage is not reduced; the shared
+        // 庇护 (holdProtect: the strongest of every source holds)
         aura(battle, unit, 0.1, () => {
-          if (dr > 0 && unit.blocking.length) battle.addBuff(unit, { key: 'yu:shelter', mods: { physTakenMul: 1 - dr, artsTakenMul: 1 - dr }, duration: 0.2, refresh: 'replace' });
+          if (dr > 0 && unit.blocking.length) holdProtect(battle, unit, dr, 0.2, unit);
         });
         aura(battle, unit, iv, () => {
           for (const e of unit.blocking.slice()) {

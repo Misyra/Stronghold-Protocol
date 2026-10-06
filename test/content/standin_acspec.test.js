@@ -2,7 +2,9 @@
 // server/sim/content/kits/ops/standin-acspec.js) on every chess she replaces: 缄默德克萨斯 (tier 4, S2), 山 (tier 5, S3 +
 // EXE-X), 新约能天使 / 锏 (tier 6, S3 + EXE-X), normal (E2 Lv1, skill 4) and elite (E2 Lv60, skill 7). Her three skills
 // are ON_DEPLOY passives: they start at every deployment — at the battle start no enemy is on the field yet, so S3 hits
-// nothing there and matters on a redeploy (再部署时间大幅度减少: 18 s). Numbers are read back from data/backups.json.
+// nothing there and matters on a redeploy (再部署时间大幅度减少: 18 s). S1 / S2 last 10 s: since 0.2.0 they are duration skills
+// started by every deployment (activateOnDeploy — PR #109's deploy-timed contract, their own skillStart / skillEnd), no
+// longer a passive holding a 10 s buff. Numbers are read back from data/backups.json.
 // Run: node --test test/content/standin_acspec.test.js
 
 import { test } from 'node:test';
@@ -26,7 +28,7 @@ const ALLY = 'chess_char_1_02_a'; // 角峰, a melee blocker
 function battle(units, o = {}) {
   return makeBattle({
     defs: { enemies: ENEMIES }, units, timeLimit: o.timeLimit ?? 400, autoFinish: false, seed: o.seed ?? 5,
-    flags: { dpPerSec: 0 }, hooks: ['damaged', 'deploy', 'death'], captureNoisy: true,
+    flags: { dpPerSec: 0 }, hooks: ['damaged', 'deploy', 'death', 'skillStart', 'skillEnd'], captureNoisy: true,
   });
 }
 const MISERY = (id, standIn = true) => ({ chessId: id, row: 10, col: 4, standIn });
@@ -38,7 +40,7 @@ function done(h) {
   assert.equal(h.b.errors.length, 0, JSON.stringify(h.b.errors[0]));
 }
 
-test('Misery on every chess she replaces (normal + elite): her body (再部署 18 s), the backup skill as a passive, this kit; EXE-X on the tier-5 / 6 elites only', () => {
+test('Misery on every chess she replaces (normal + elite): her body (再部署 18 s), the backup skill (S2 a deploy-timed duration skill, S3 a passive), this kit; EXE-X on the tier-5 / 6 elites only', () => {
   const ids = UNIT.standsIn.flatMap((a) => [a, a.replace(/_a$/, '_b')]);
   assert.equal(ids.length, 8);
   const withModule = [];
@@ -48,7 +50,8 @@ test('Misery on every chess she replaces (normal + elite): her body (再部署 1
     h.step();
     const u = h.unit(1);
     const sk = form.skills.find((s) => s.index === c.backup.skillIndex);
-    assert.deepEqual([u.def.charId, u.def.standInFor, u.skill.id, u.skill.kind, !!u.kit.generic, u.kit.skillSource], [CHAR, c.charId, sk.skillId, 'passive', false, 'skills'], id);
+    const kind = sk.skillId === 'skchr_acspec_3' ? 'passive' : 'duration';
+    assert.deepEqual([u.def.charId, u.def.standInFor, u.skill.id, u.skill.kind, !!u.kit.generic, u.kit.skillSource], [CHAR, c.charId, sk.skillId, kind, false, 'skills'], id);
     assert.deepEqual([sk.skillType, sk.spType], ['PASSIVE', 'ON_DEPLOY'], id);
     const mod = c.backup.uniEquipId && c.status.equipLevel > 0 ? form.modules.find((m) => m.uniEquipId === c.backup.uniEquipId) : null;
     assert.equal(!!u.def.raw.module?.active, !!mod, `${id}: module`);
@@ -137,7 +140,7 @@ test('Misery S1 物理的服从 (no chess names it — a 自选 slot may): for 1
     const h = battle([MISERY(id, { skillIndex: 0 })]);
     h.step();
     const u = h.unit(1);
-    assert.deepEqual([u.skill.id, u.skill.kind, sk.duration], ['skchr_acspec_1', 'passive', 10]);
+    assert.deepEqual([u.skill.id, u.skill.kind, u.skill.duration, sk.duration], ['skchr_acspec_1', 'duration', 10, 10]);
     const prob = () => { let p = null; u.profile.hitsFn({ rng: { chance: (x) => { p = x; return false; } } }, u); return p; };
     const on = () => { approx(u.s.dodgePhys, bb.prob, `${id}: dodge ${bb.prob}`); assert.equal(prob(), bb['attack@prob'], `${id}: chance ${bb['attack@prob']}`); };
     const off = () => { assert.equal(u.s.dodgePhys, 0, `${id}: no dodge`); assert.equal(prob(), talentBb(u, 0)['attack@prob'], `${id}: the talent's chance`); };
@@ -162,9 +165,13 @@ test('Misery S2 战争的恭顺 (缄默德克萨斯): for 10 s from every deploy
     const h = battle([MISERY(id)]);
     h.step();
     const u = h.unit(1);
-    assert.deepEqual([u.skill.id, sk.duration], ['skchr_acspec_2', 10]);
-    const on = () => { approx(u.s.atk, u.base.atk * (1 + bb.atk), `${id}: ATK +${bb.atk}`); assert.equal(u.s.aspd, 100 + bb.attack_speed, `${id}: ASPD`); };
-    const off = () => { approx(u.s.atk, u.base.atk, `${id}: ATK back`); assert.equal(u.s.aspd, 100, `${id}: ASPD back`); };
+    assert.deepEqual([u.skill.id, u.skill.kind, u.skill.duration, sk.duration], ['skchr_acspec_2', 'duration', 10, 10]);
+    // the deploy-timed contract (PR #109): the skill runs — skillStart now, skillEnd 10 s later — and then is off
+    const on = () => { approx(u.s.atk, u.base.atk * (1 + bb.atk), `${id}: ATK +${bb.atk}`); assert.equal(u.s.aspd, 100 + bb.attack_speed, `${id}: ASPD`); assert.ok(u.skill.active, `${id}: running`); };
+    const off = () => { approx(u.s.atk, u.base.atk, `${id}: ATK back`); assert.equal(u.s.aspd, 100, `${id}: ASPD back`); assert.ok(!u.skill.active, `${id}: over`); };
+    const starts = () => h.hooksOf('skillStart').filter((c) => c.unit === u).length;
+    const ends = () => h.hooksOf('skillEnd').filter((c) => c.unit === u).length;
+    assert.deepEqual([starts(), ends()], [1, 0], `${id}: started by the deployment`);
     on();
     h.run(9.8);
     on();
@@ -176,6 +183,7 @@ test('Misery S2 战争的恭顺 (缄默德克萨斯): for 10 s from every deploy
     on();
     h.run(10.1);
     off();
+    assert.deepEqual([starts(), ends()], [2, 2], `${id}: one window per deployment (the retreat ends none — it had ended)`);
     done(h);
   }
 });

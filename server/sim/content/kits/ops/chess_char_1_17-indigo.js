@@ -11,7 +11,8 @@ export default {
   // 柔光缚目: attacks bind the target `duration` s with `prob`; bound enemies are never chosen as targets.
   // Alternate S1 灯塔守卫者: for `duration` s the skill range (4-1), attack interval ×(1 + base_attack_time) (PRTS:
   // "大幅度缩短(-80%)" ⇒ ×0.2 — a flat −0.8 s on 3 s would be less than S2's "略微缩短 ×0.7"), every attack hits for
-  // attack@atk_scale × ATK arts. Elite module MSC-X (store 4) is the mystic profile of the module trait (TUNE.mystic).
+  // attack@atk_scale × ATK arts. Elite module MSC-X (store 4) is the mystic profile of the module trait (TUNE.mystic);
+  // the store itself is the shared 秘术师 profile (professions.js installMystic: at the attack check, PRTS 分支特性信息).
   chess_char_1_17_a: (bb, chess, def) => {
     const t = talentBb(chess, 0);
     const dScale = num(bb['indigo_s_2[damage].atk_scale']);
@@ -28,12 +29,11 @@ export default {
         },
       },
       trait: {
-        // with only bound enemies in range (or blocked by her — always her targets, Battle.blockedTargets) she holds her
-        // fire (the mystic trait stores the energy meanwhile)
+        // with only bound enemies in range (or blocked by her — always her targets, Battle.blockedTargets) she has no valid
+        // target: she holds her fire and the mystic trait stores an energy at the attack check (professions.js
+        // installMystic; a bind on her only target included)
         canAttack(battle, u) {
-          const ok = battle.enemiesInKeys(u.rangeKeys, u, u.profile).some((e) => !bound(e)) || battle.blockedTargets(u, u.profile).some((e) => !bound(e));
-          if (!ok) u.trait.hadTarget = false;
-          return ok;
+          return battle.enemiesInKeys(u.rangeKeys, u, u.profile).some((e) => !bound(e)) || battle.blockedTargets(u, u.profile).some((e) => !bound(e));
         },
         afterHit(battle, u, target) {
           if (!target || !target.alive || target.side !== 'enemy') return;

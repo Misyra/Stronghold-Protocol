@@ -33,7 +33,9 @@
 //   [ASSUMED: given here]); its DEF is ×0 while its tile is outside her attack range (kalts_t_1[token_def_down]; PHY-Y stage
 //   3: inside it ASPD +attack_speed, DEF +def — kalts_t_1[token_def_down_finish]). It is withdrawn when she leaves (no
 //   rattle); it comes back on its tile its respawnTime (25 s) after it left, paying its cost (10 DP), only while she stands —
-//   her (re)deployment readies a waiting one at once (charge_token[born]) [ASSUMED: the 卫戍 auto redeploy of a placed summon].
+//   her (re)deployment readies a waiting one at once (charge_token[born]: RechargeToken with timing NORMAL, while its own timer
+//   is the summon's charge_token[finish], ON_FINISH — the one reading of every summoner kit, 傀影's twin included)
+//   [ASSUMED: the 卫戍 auto redeploy of a placed summon].
 // - T2 不毁重构: Mon3tr knocked out (not withdrawn; S3's 流失 counts) ⇒ every selectable enemy of its 3×3 (the talent's x-4,
 //   air units too) takes `value` (1200) true damage (溅射, not dodgeable) and is stunned `stun` (3) s. PHY-X stage 3 (the
 //   token's module talent: 3.5 s, 1500, hp_ratio): also once per deployment when a hit leaves it at or below hp_ratio of
@@ -41,8 +43,9 @@
 // - S1 指令：结构加固 (MANUAL, data DEFAULT — a heal skill: cast as she is about to heal): her DEF +def and Mon3tr's DEF
 //   +attack@def while it runs; 物理格挡 prob (damage_block[phy]: a physical damage instance she takes is blocked whole —
 //   not a dodge, nothing ignores it; a 流失 is no damage).
-// - S2 指令：战术协同 (MANUAL, data DEFAULT, 绑定 Mon3tr): her ASPD +attack_speed; Mon3tr ATK +attack@atk and each of its attacks
-//   strikes every enemy it blocks (one target when it blocks none [ASSUMED]).
+// - S2 指令：战术协同 (MANUAL, data DEFAULT, 绑定 Mon3tr): her ASPD +attack_speed; Mon3tr ATK +attack@atk and "可以攻击阻挡的所有
+//   敌人": each of its attacks takes up to its block count (3) of targets, the blocked ones first (the 强攻手 rule — PRTS 分支特性信息
+//   "普通攻击最大目标数等于阻挡数（不会低于1）"; its mode's _limitedMaxTargetNumToBlockedCnt).
 // - S3 指令：熔毁 (MANUAL, data DEFAULT, 绑定 Mon3tr, 18 s): Mon3tr DEF +attack@def, its attacks deal true damage, its ATK
 //   +attack@atk × the remaining share of the skill, updated every second from the cast (+190 % … +10.6 %); unless it killed
 //   an enemy meanwhile, at the skill's normal end it loses attack@hp_ratio × its max HP (a 流失 that may knock it out).
@@ -52,6 +55,7 @@
 import { num, talentBb, traitBb, moduleOn, skillRec, up } from '../shared/tier1.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
+import { acquireTargets } from '../../../ai.js';
 
 const S1 = 'skchr_kalts_1';
 const S2 = 'skchr_kalts_2';
@@ -130,11 +134,12 @@ function mon3trKit(owner, { t0, b1, b2, b3 }) {
         }
         holdBuff(battle, m, 'kalts:s3:mon3tr', skillOn(owner, S3), { atkPct: s3Atk, defPct: num(b3['attack@def']) });
       }, { owner: m });
-      // S2: each attack strikes every enemy it blocks
+      // S2: "Mon3tr可以攻击阻挡的所有敌人" — the 强攻手 rule (its mode's _limitedMaxTargetNumToBlockedCnt): up to its block count
+      // of targets, the blocked ones first (ai.js acquireTargets with `hitAllBlocked`)
       battle.on('beforeAttack', (c) => {
-        if (c.attacker !== m || !skillOn(owner, S2)) return;
-        const blocked = battle.blockedTargets(m, c.profile);
-        if (blocked.length) c.targets = blocked;
+        if (c.attacker !== m || !skillOn(owner, S2) || !c.profile) return;
+        const t = acquireTargets(battle, m, { ...c.profile, hitAllBlocked: true });
+        if (t.length) c.targets = t;
       }, { owner: m });
       // S3: true damage; a kill keeps its HP
       battle.on('hit', (c) => {

@@ -54,7 +54,7 @@
 //   单位时释放技能"), which tools/build-data.mjs (TRIGGER_ALLY_RULES) writes as the engine's SKILL_RANGE + `allies` on the
 //   skill range x-2 (an injured, healable allied unit there, herself included; 古米 S1's option).
 
-import { num, traitBb, skillRec, batMod, up, giveSp } from '../shared/tier1.js';
+import { num, traitBb, skillRec, batMod, up, giveSp, holdProtect } from '../shared/tier1.js';
 import { COLS } from '../../../constants.js';
 import { effectiveProfile, acquireTargets, performAttack } from '../../../ai.js';
 
@@ -80,9 +80,6 @@ const PROF_NEEDED = 3;
 const SUI_NEEDED = 4;
 /** 【岁】: character_table groupId 'sui' (data/backups.json diy.operators powers carry it for the 自选 picks). */
 const SUI = new Set(['char_2014_nian', 'char_2015_dusk', 'char_2023_ling', 'char_2024_chyue', 'char_2025_shu', 'char_2026_yu', 'char_2027_wang']);
-/** 庇护 (ba.protect): one "同名效果取最高" effect per unit, whoever grants it (battle.applyStrongest). */
-const PROTECT = 'protect';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 const FARM = 'talent:shu:farm';
 const HARVEST = 'skill:shu:harvest';
 
@@ -122,7 +119,7 @@ export default {
         if (hp > 0 && !(cur && cur.source !== unit && (cur.data?.v ?? 0) > hp && cur.timeLeft > 0.05)) {
           battle.addBuff(a, { key: FARM, duration: FARM_HOLD, mods: { hpRegen: hp }, source: unit, data: { v: hp }, tags: ['talent'] });
         }
-        if (dr > 0) battle.applyStrongest(a, PROTECT, { duration: FARM_HOLD, value: dr, mods: protectMods, source: unit });
+        holdProtect(battle, a, dr, FARM_HOLD, unit);   // 庇护: the shared effect (同名效果取最高)
       }
     };
     /** Sow the tiles of `grid` around (r, c) — only tiles that can be deployed on or walked. Returns the new ones. */

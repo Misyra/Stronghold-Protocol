@@ -42,7 +42,7 @@
 //   she is stunned `stun` s (zumama_s_3 ON_BUFF_FINISH 'stun'; a stunned operator blocks nobody).
 // - Melee physical, ground-only (data canHitFly false), block 1, range 1-1; ground enemies target her (no 起飞 / 迷彩).
 
-import { num, traitBb, skillRec, toggleBuff, batMod, up } from '../shared/tier1.js';
+import { num, traitBb, skillRec, toggleBuff, batMod, up, holdProtect } from '../shared/tier1.js';
 
 const S1 = 'skchr_zumama_1';
 const S2 = 'skchr_zumama_2';
@@ -51,9 +51,6 @@ const S3 = 'skchr_zumama_3';
 const T1_PERIOD = 0.1;
 /** 庇护 refresh: a little longer than the check period, so it never lapses while it holds. */
 const PROTECT_HOLD = T1_PERIOD + 0.05;
-/** 庇护 (ba.protect): one "同名效果取最高" effect per unit, whoever grants it (battle.applyStrongest). */
-const PROTECT = 'protect';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 /** S2's blockee stun, renewed every tick while it holds (three ticks long). */
 const STUN_PULSE = 0.1;
 const VALOR = 'talent:zumama:valor';
@@ -101,7 +98,7 @@ export default {
             const has = unit.findBuff(VALOR);
             if (high && !has && scale !== 1) battle.addBuff(unit, { key: VALOR, mods: { atkScaleMul: scale }, tags: ['talent'] });
             else if (!high && has) battle.removeBuff(unit, VALOR);
-            if (up(unit) && !high && dr > 0) battle.applyStrongest(unit, PROTECT, { duration: PROTECT_HOLD, value: dr, mods: protectMods, source: unit });
+            if (up(unit) && !high) holdProtect(battle, unit, dr, PROTECT_HOLD, unit);   // 庇护: the shared effect
           };
           battle.every(T1_PERIOD, check, { owner: unit, immediate: true });
           battle.on('deploy', (ctx) => { if (ctx.unit === unit) check(); }, { owner: unit });

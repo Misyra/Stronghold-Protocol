@@ -71,7 +71,7 @@
 // [ASSUMED] (beyond op-ironmn.js's): the 监工专员 loses its 1 HP per pulse with or without an operator in range (dec_blood is a
 // passive buff of the ability); the combined range one step deep; the 小工程师's 1 s heal / SP timer runs from its deployment.
 
-import { num, talentBb, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
+import { num, talentBb, traitBb, skillRec, up, giveSp, holdProtect } from '../shared/tier1.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
 import { frontOf } from '../../../dir.js';
@@ -86,9 +86,6 @@ export const NSTBLD = 'token_10061_nasti_nstbld';
 const DEVICES = new Set([NSTDEF, NSTCHR, NSTBLD]);
 /** A device's 1-1 when its def carries none. */
 const FRONT1 = Object.freeze([[0, 0], [0, 1]]);
-/** 庇护 (ba.protect): one "同名效果取最高" effect per unit, whoever grants it (battle.applyStrongest; op-judge.js, op-zumama.js). */
-const PROTECT = 'protect';
-const protectMods = (v) => ({ physTakenMul: 1 - v, artsTakenMul: 1 - v });
 /** 注意安全's 庇护 refresh: a little longer than the check period, so it never lapses while it holds. */
 const T2_PERIOD = 0.25;
 const PROTECT_HOLD = T2_PERIOD + 0.05;
@@ -402,13 +399,13 @@ export default {
             if (!up(unit)) { triggered = false; timers.clear(); return; }
             if (!triggered) triggered = battle.enemies.some((e) => e.alive && !e.hidden && RANGED_WAYS.has(String(e.def?.applyWay ?? '').toUpperCase()));
             if (!triggered) {
-              if (resBase > 0) battle.applyStrongest(unit, PROTECT, { duration: PROTECT_HOLD, value: resBase, mods: protectMods, source: unit });
+              holdProtect(battle, unit, resBase, PROTECT_HOLD, unit);   // 庇护: the shared effect (同名效果取最高)
               return;
             }
             const who = [unit, ...battle.allyUnits.filter((a) => a !== unit && up(a) && !a.hidden && a.kind === 'op' && RANGED_POS.has(String(a.def?.position ?? '').toUpperCase()))];
             for (const a of [...timers.keys()]) if (!who.includes(a)) timers.delete(a);
             for (const a of who) {
-              if (resPlus > 0) battle.applyStrongest(a, PROTECT, { duration: PROTECT_HOLD, value: resPlus, mods: protectMods, source: unit });
+              holdProtect(battle, a, resPlus, PROTECT_HOLD, unit);
               if (!(spEvery > 0)) continue;
               if (!timers.has(a)) { timers.set(a, battle.time + spEvery); continue; }
               if (battle.time + 1e-9 < timers.get(a)) continue;

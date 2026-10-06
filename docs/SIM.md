@@ -150,6 +150,8 @@ later redeploys keep those gifts); `carryState: { sp }` a board summon
 piece's SP only (PRTS "召唤物仅修改技力"). Nothing else is carried: a skill running at the end of the own combat enters
 switched off with the SP it had left — spent at its activation, 0 for a one-charge skill (`unitsEnd.skillActive` is
 reported, never carried; community report #34 — it used to restart for free).
+Timed deployment skills (`activateOnDeploy`) trigger once from the new deployment, consuming their deployment charge;
+they do not resume the previous skill state.
 `carryState: { down: true }` = an operator knocked out at the end of the helper's own combat (PRTS 卫戍协议/帮助 "上一阶段为
 退场状态的干员强制退场", user playtest #5 item 2): `start()` deploys it with everyone (initial `deploy` fires), then — before
 `battleStart` — withdraws it with reason `FORCED_EXIT` (constants.js `'forcedExit'`) and HP 0 (the end-of-phase HP ratio, as after
@@ -830,6 +832,11 @@ or guard with a per-unit flag while dealing it. When the guard trips, the logged
 - Kinds: `duration` (mods for `duration` s), `ammo` (mods until `ammo` attacks were made, optional duration cap),
   `instant` (onStart + optional one-shot attack override applied to the next attack), `charges` (instant with charges),
   `passive` (always on from deployment, no SP), `toggle` (stays on until death once activated).
+- Timed deployment skills use `duration`, `activateOnDeploy: true`, `spCost: 0`, `spType: 'none'`, `trigger: 'NEVER'`.
+  Landing state is set before `reset()` synchronously calls `activate('deploy')`; `skillStart` precedes the `deploy`
+  hooks. Each deployment grants and consumes one charge. Duration end clears effects and fires `skillEnd('duration')`;
+  staying deployed or receiving SP never refills that charge. Early removal ends the active window with `death`;
+  removing an expired skill emits no second end. `activations` accumulates across deployments.
 - `end()`: `active` turns false, then **onEnd runs while the skill's mods / range are still applied** (finishers and
   end bursts use the skill's stats and range), then they are removed (kept when onEnd re-activated the skill), then
   `skillEnd` fires. `onAttack` ctx carries `noAmmo` (set it to true: this attack spends no bullet, no `ammoUsed` — 流明's
@@ -869,6 +876,17 @@ has the generic spec. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnT
 (token skill of that slot: `variants[owner].bySkill[i]`, module attributes: `.byModule[id]`). Coverage of the selectable
 skills: `node tools/kit-coverage.mjs --missing [--tier N] [--strict]`.
 
+Timed deployment kits: 宴 S2 uses `bb.duration` and skill ATK mods, loses current HP once on landing, and converts normal
+physical attacks to arts only while S2 is active; S1 has no such conversion. 斯卡蒂 S2 uses its own record's
+`s.bb.duration` / `s.bb.atk`; DRE-Y revival in place does not restart it. 野鬃 S1 uses its record's `duration` /
+`bb.attack_speed`, with the existing deploy discount talent. 砾 S1/S2 retain their one-second DEF/barrier decay steps
+(damaged barrier scales with capacity); skill end removes the decay buff. 伊内丝 S3's first deployment places the sentry
+with zero effect time and retreats with a refreshed redeploy timer; later deployments recall it and open the full
+ATK/DP window, then stay deployed. 缄默德克萨斯 S1/S2/S3's first kill per deployment heals and explicitly ends/restarts
+the skill for a full duration, including a synchronous kill inside its deploy burst; S3 rain is cancelled on end,
+while enemy silence/DoT/RES cuts keep their own expiry. 耀骑士临光 S2 ends naturally by retreating with the preceding
+operator's faction-based redeploy multiplier; an early death only cleans the skill and shields.
+
 Element conventions of the kits (user playtest #5 #3; official term dictionary: 元素损伤 = the gauge, 元素伤害 = HP damage):
 - **元素损伤 dealt** = `{ type: 'element', element, amount }` with the official base: "N%攻击力的…损伤" ⇒ `N × ATK` at that
   moment, "伤害N%的…损伤" / "相当于法术伤害N%" ⇒ `N ×` the HP damage just dealt (post-mitigation, `damaged` ctx.amount).
@@ -896,9 +914,10 @@ Element conventions of the kits (user playtest #5 #3; official term dictionary: 
 ```js
 {
   kind: 'duration'|'ammo'|'instant'|'charges'|'passive'|'toggle',
+  activateOnDeploy: bool, // optional: reset activates synchronously and consumes a deployment charge
   duration,              // s (duration kind; optional cap for ammo)
   ammo,                  // attacks (ammo kind)
-  spCost, initSp, charges, spType: 'time'|'attack'|'hurt',   // optional overrides of the data values
+  spCost, initSp, charges, spType: 'time'|'attack'|'hurt'|'none',   // optional overrides of the data values
   trigger: 'DEFAULT' | { rule, grid, allies?, hpAtMost? },     // optional override (allies / hpAtMost: an injured ally condition, §7.1)
   heal: bool,            // heal-type skill for the DEFAULT trigger (default: unit is a healer)
   mods: { …mod keys },   // buff while active (instant: only during the pending attack)
@@ -941,8 +960,10 @@ whose skill "恢复…友方/友军…生命" heals the most injured ally in ran
 "立即流失N%当前生命" ⇒ self HP loss at start (宴, 风丸); `hp_ratio` + "恢复/回复…生命" ⇒ self heal at start; `force` ⇒ on-hit
 displacement by the official 力度 − 重量 rules (拖拽/hookmaster: `pullToFront`; else `push`, directional for 往攻击方向 / 朝部署方向 /
 向前 / 身前方向 and 推击手, radial otherwise — §6; only a fallback: hand-written kits follow the client templates
-`knockback[dir]` / `knockback[relative]`, e.g. 琳琅诗怀雅 S3's "向前推开" is radial). **Passive** skills only apply stat mods (timed when the text says "N秒内":
-宴 +65 % ATK for 14 s) and the self/counter effects — their scales describe procs that need a kit. Instant skills with
+`knockback[dir]` / `knockback[relative]`, e.g. 琳琅诗怀雅 S3's "向前推开" is radial). A passive with self stat mods,
+positive `bb.duration` and "N秒内" uses a deployment duration (宴 +65 % ATK for 14 s); its mods, targeting, arts conversion
+and attack/status overrides follow that window. Other **passive** skills apply permanent stat mods and self/counter
+effects — their scales describe procs that need a kit. Instant skills with
 mods/targeting but no attack override apply them to the next attack (the skill range is switched in for that attack).
 
 ### 7.5 Worked examples (real operators, numbers from blackboards)
@@ -1126,13 +1147,13 @@ table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡�
 | chainhealer | heal bounces 3× (−25 %, bb chain.*) within 2.5 tiles |
 | healer (流明) | heal ×0.8 (bb heal_scale) beyond 2 tiles |
 | wandermedic | heal + reduce element gauges by 50 % ATK (bb ep_heal_ratio); also targets uninjured allies with gauge |
-| incantationmedic | arts attack; heals the lowest ally in range for 50 % (bb scale) of damage dealt |
+| incantationmedic | arts attack; EVERY damage the unit deals heals the lowest ally in range for 50 % (bb scale) of it — the official trait buff (`vendla_tr` / `reed2_tr` / `titi_tr`) is ON_AFTER_OUTPUT_DAMAGE, so skill and DoT damage heals too (缇缇's 凝固的时光 ticks, 焰影苇草's S2 fireballs while she is disarmed); a skill that triggers it for one named ally says so ("仅对该角色触发…特性") and the damage instance carries that ally (`DamageInfo.traitAlly`) |
 | slower | sluggish 0.8 s on hit (bb sluggish) |
 | bard | no attack; every second heals allies in range 10 % ATK (bb atk_to_hp_recovery_ratio) |
 | craftsman | melee phys (support devices via kit) |
 | shotprotector | ranged phys, can hit FLY, blocks 3 |
 | fortress | melee single target while blocking, ranged 1.0 splash otherwise, ground only (never hits FLY) |
-| unyield / musha / reaper | cannot be healed by others; musha heals itself 50 (bb value) per hit; reaper hits every enemy in range and heals 50 × min(hits, block) |
+| unyield / musha / reaper | cannot be healed by others; the heal fires on every enemy the unit damages itself — a normal attack (musha 50 / bb value per hit; reaper 50 × min(hits, block)) and any damage it outputs that no buff produced (the official trait's ON_OUTPUT_DAMAGE, which is why 隐德来希's S2 血镰 cuts heal her while she is disarmed), 50 (bb value) per enemy, the reaper's capped at the block count per instant |
 | centurion / crusher / pusher | hit every blocked enemy at once |
 | hammer | 50 % splash (bb atk_scale_2) to others within 1 tile |
 | instructor | ×1.2 (bb atk_scale) vs enemies it doesn't block |
@@ -1161,6 +1182,8 @@ Unknown subprofessions fall back to the profession default (test `professions.te
 - `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, dps?, boss?, down?, elem? }`.
   `sp/spMax` show remaining duration/ammo as a draining bar while a timed skill is active (ammo: `ammoLeft / ammoMax`, the
   activation's real total — 拉特兰's and 逃犯引渡手续's extra bullets included, community report #35). Units in DIE state stay 0.8 s.
+  Active finite zero-SP duration skills display `timeLeft/duration` using `duration` as `spMax`; after end they show
+  `0/0`. This display capacity leaves runtime SP/cost unchanged; active skills carry `UF.SKILL`.
   `down: [[id, respawnAt, respawnTime, state, row, col]]` (only when non-empty) = operators lying down waiting to redeploy
   (`Battle.isDown(u)`: reason `'killed'` or `FORCED_EXIT` (§1.1 carryState `down`), or a forced exit `'retreat'` /
   `'merchant'` (GitHub #60) — every removal but the 突袭 `'raid'` —, not removed for good, deployed at least once, a finite
@@ -1173,7 +1196,8 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   (`none|arrow|bolt|bomb|lob|orb|drone|enemy|boomerang|droneBomb|chain|chainHeal`; a boomerang's way back has no event — the
   renderer flies it back to the thrower at `BOOMERANG_RETURN_SPEED`; an enemy's `profile.shot` may name another kind,
   e.g. `mortar` for 帝国炮火先兆者, which the renderer does not draw — its fx `bombardShell` is the shell), `['dmg', tgt, amount, type]` (`phys|arts|true|burn|neural|necrosis|apoptosis`),
-  `['heal', tgt, amount]`, `['skill', id, 1|0]`, `['die', id, reason]`, `['leak', id]`, `['status', id, key, 1|0]`,
+  `['heal', tgt, amount]`, `['skill', id, 1|0]`, `['engage', id]` (an ally's first attack that hits an enemy — the client's
+  行动开始 voice, DESIGN §21.30), `['die', id, reason]`, `['leak', id]`, `['status', id, key, 1|0]`,
   `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's hit cancelled by 限伤 — the renderer draws nothing;
   `extra.form` = the unit's model form from then on — an enemy's `content/enemies.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
   `['layer', playerId, bondId, n]` (n = the layers actually added, capped at 999), `['bounty', playerId, coins]`.

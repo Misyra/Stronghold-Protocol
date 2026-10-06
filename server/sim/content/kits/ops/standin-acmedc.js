@@ -25,7 +25,7 @@ export default {
   //   Talents 攫升 / 超脱: content/tokens.js mapCharTalents (the strategy's Touch too); the module's 超脱 upgrade (8 SP at
   //      module Lv3) comes with the record's talents.
   //   Module PHY-X (elite, trait addition): "治疗生命值低于50%的友方单位时治疗量提升15%" — every heal of hers on an ally
-  //      below `hp_ratio` HP (strictly: "低于") ×`heal_scale` (the trait blackboard). With S3's ×1.35 / ×1.40 it
+  //      below `hp_ratio` HP (strictly: "低于"; the client's acmedc_e_tr filters LT) ×`heal_scale` (the trait blackboard). With S3's ×1.35 / ×1.40 it
   //      multiplies (×1.61 at Lv7): both are `heal_scale` blackboards, the 治疗倍率, and PRTS 游戏数据基础 §倍率 says "同种
   //      倍率间叠乘" — no Touch-specific note or buff template exists. S3's extra heal is a heal of hers like any other: its
   //      recipient below `hp_ratio` gets the ×1.15 too (its base is taken before either bonus).

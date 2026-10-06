@@ -51,7 +51,8 @@ export default {
       install(battle, unit) {
         if (tb.hp_ratio == null || num(tb.heal_scale, 1) === 1) return;
         // GUA-X on her skill heals (S1's heal-mode attack, S2's attack heals while it runs — herself included, she stands
-        // in the grid), never her natural / self regeneration
+        // in the grid), never her natural / self regeneration; strictly below hp_ratio (the client's sunbr_e_trait is
+        // set_heal_scale_by_hpratio: FilterByTargetHpRatio LT)
         battle.on('heal', (ctx) => {
           if (ctx.source !== unit || !unit.skill?.active || ctx.opts?.regen || ctx.opts?.self) return;
           if (ctx.target.hpRatio < num(tb.hp_ratio)) ctx.amount *= num(tb.heal_scale, 1);

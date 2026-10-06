@@ -52,7 +52,7 @@ export default {
           c.amount += c.target.s.maxHp * ratio * num(unit.s.healingDealtMul, 1) * num(c.target.s.healingTakenMul, 1);
           battle.fx('healAoe', { x: c.target.x, y: c.target.y, id: c.target.id, r: 0.5 });
         }, { owner: unit, priority: 10 });
-        lowHpHealUp(battle, unit, tb);
+        lowHpHealUp(battle, unit, tb, { atOrBelow: true });   // PHY-X: heal_scale_up[hpratio][LE] (≤)
       },
     };
   },

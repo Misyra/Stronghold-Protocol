@@ -43,7 +43,7 @@ export default withDefaults({
         }, { owner: unit });
       } }],
       install(battle, unit) {
-        installLowHpHealBonus(battle, unit, tb);
+        installLowHpHealBonus(battle, unit, tb, { atOrBelow: true });   // PHY-X: heal_scale_up[hpratio][LE] (≤)
         if (!S1) return;
         battle.on('beforeAttack', (c) => {
           if (c.attacker !== unit) return;

@@ -10,7 +10,8 @@
 // - Trait (医师) "恢复友方单位生命": the profession default (one heal on the lowest-HP% injured ally of her 3-3 range).
 //   Module PHY-Y 干枯剑鞘 "治疗地面单位时治疗量提升15%" (trait bb heal_scale): ×heal_scale on a heal whose target stands on
 //   a 地面 tile (unit.ground, as 赫默's PHY-Y); PHY-X “使徒” "治疗生命值低于50%的友方单位时治疗量提升15%" (heal_scale,
-//   hp_ratio): ×heal_scale when the target is below hp_ratio of its max HP before the heal (as 录武官's / 华法琳's PHY-X).
+//   hp_ratio): ×heal_scale when the target is at or below hp_ratio of its max HP before the heal — the client's
+//   shining_e_003_tr is heal_scale_up[hpratio][LE] (as 华法琳's PHY-X; 录武官's reckpr_e_002_tr is LT, strictly below).
 // - T1 黑恶魔的庇护 "攻击范围内的友方单位防御力+60": every ally (operators and summons: 友方单位) standing in her current
 //   attack range — her own tile included — DEF +def (flat). PHY-Y stage 2+ "防御力+100，地面单位防御力额外+40" (talent
 //   change def / def_lowland): def_lowland more on a 地面 tile. Refreshed every AURA s; two sources keep the strongest.
@@ -130,7 +131,7 @@ export default {
         // module traits: PHY-Y heals on 地面 units, PHY-X heals on allies below hp_ratio, ×heal_scale
         const hs = num(tb.heal_scale, 1);
         if (!mod || hs === 1) return;
-        const boosted = mod === PHY_X ? (t) => t.hpRatio < num(tb.hp_ratio) : mod === PHY_Y ? (t) => !!t.ground : null;
+        const boosted = mod === PHY_X ? (t) => t.hpRatio <= num(tb.hp_ratio) + 1e-9 : mod === PHY_Y ? (t) => !!t.ground : null;
         if (!boosted) return;
         battle.on('heal', (ctx) => {
           if (ctx.source !== unit || ctx.opts?.regen || !ctx.target || !boosted(ctx.target)) return;

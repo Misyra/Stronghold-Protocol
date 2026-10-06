@@ -43,7 +43,7 @@ export default {
           const b = a.findBuff('reckpr:guard');
           if (b && b.data.src === unit) battle.heal(unit, a, num(b.data.value));
         }, { owner: unit });
-        lowHpHealUp(battle, unit, tb);
+        lowHpHealUp(battle, unit, tb);   // PHY-X: reckpr_e_002_tr filters LT (strictly below)
       },
     };
   },

@@ -261,6 +261,43 @@ test('a --no-install build of the temporary checkout zips exactly the plan in on
   }
 });
 
+test('content packs ship: every committed pack of both layouts, never one only on this machine; the stage gets packs/index.json listing exactly them', { skip: !hasZipTool && 'no zip / tar' }, () => {
+  const { dir, put } = fakeCheckout();
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-package-out-'));
+  const git = (...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  try {
+    const PACK_FILES = ['public/i18n/en.json', 'public/i18n/qaa.json', 'data/i18n/qaa.json', 'packs/README.md', 'packs/qab/pack.json', 'packs/qab/ui.json'];
+    put('public/i18n/en.json', JSON.stringify({ _meta: { name: 'English', complete: true }, 开始: 'Start' }));
+    put('public/i18n/qaa.json', JSON.stringify({ _meta: { name: 'Qaa', fallback: ['en'] }, 开始: 'Los' }));
+    put('data/i18n/qaa.json', JSON.stringify({ version: 1, lang: 'qaa', names: {}, files: {} }));
+    put('packs/README.md', '# packs\n');
+    put('packs/qab/pack.json', JSON.stringify({ type: 'lang', lang: 'qab', name: 'Qab', files: { ui: 'ui.json' } }));
+    put('packs/qab/ui.json', JSON.stringify({ 开始: 'Q' }));
+    assert.equal(git('add', ...PACK_FILES).status, 0);
+    // installed here, never committed: stays out; a stale index on disk is never shipped as it is
+    put('packs/local/pack.json', JSON.stringify({ type: 'lang', lang: 'qac', files: { ui: 'ui.json' } }));
+    put('packs/local/ui.json', JSON.stringify({ 开始: 'L' }));
+    put('packs/index.json', '{ "stale": true }\n');
+    const dry = runTool(['--root', dir, '--dry-run', '--list', '--lite', '--allow-dirty']);
+    assert.equal(dry.status, 0, dry.stdout + dry.stderr);
+    assert.deepEqual(listed(dry.stdout).sort(), [...SHIPPED_TRACKED, ...PACK_FILES, 'packs/index.json'].sort());
+    assert.match(dry.stdout, /^generated: packs\/index\.json \(the pack index of the shipped packs, for a static host\)$/m);
+    const r = runTool(['--root', dir, '--out', out, '--no-install', '--allow-dirty', '--lite', '--keep-stage']);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const stage = path.join(out, `${FOLDER}-v9.9.9-lite`, FOLDER);
+    const index = JSON.parse(fs.readFileSync(path.join(stage, 'packs/index.json'), 'utf8'));
+    assert.deepEqual(index.packs.map((x) => [x.id, x.type, x.files]), [
+      ['en', 'lang', { ui: '/i18n/en.json' }],
+      ['qaa', 'lang', { ui: '/i18n/qaa.json', data: '/data/i18n/qaa.json' }],
+      ['qab', 'lang', { ui: '/packs/qab/ui.json' }],
+    ]);
+    assert.ok(!fs.existsSync(path.join(stage, 'packs/local')), 'a pack only on this machine is not in the zip');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
 test('the personal scan reads bytes, never reports the matched text, and skips files it cannot read', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-package-scan-'));
   try {

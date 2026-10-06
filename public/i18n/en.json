@@ -1,4 +1,18 @@
 {
+  "_meta": {
+    "type": "lang",
+    "lang": "en",
+    "name": "English",
+    "englishName": "English",
+    "version": "0.2.0",
+    "app": ">=0.2.0",
+    "authors": [
+      "@YuriRestia (GitHub PR #70, the seed of these strings)",
+      "the Stronghold Protocol contributors"
+    ],
+    "credits": "Game texts (data/i18n/en.json): the official EN client data (© Hypergryph / Yostar) via ArknightsAssets/ArknightsGamedata.",
+    "complete": true
+  },
   "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
   "你已在其他同盟中，请先离开当前同盟": "You are already in another Alliance. Leave it first.",
   "你已不在该同盟中": "You are no longer in this Alliance",
@@ -116,6 +130,7 @@
   "请输入博士代号": "Please enter your Doctor callsign",
   "卫戍协议": "Stronghold Protocol",
   "盟约": "Alliance",
+  "卫戍协议：盟约 · STRONGHOLD PROTOCOL": "Stronghold Protocol: Alliance · Web Simulation",
   "调配资金与干员，与同伴协同布防，抵御多波次进攻，直至击败敌方领袖。": "Allocate Funds and Operators, coordinate defenses with your allies, hold off wave after wave, and defeat the Enemy Leader.",
   "收到同盟邀请": "Alliance invite received",
   "· 输入代号后将自动加入": "· You'll join automatically after entering your callsign",

@@ -4,8 +4,8 @@
 //   * TRUST_PROXY ('auto' default: honour CF-Connecting-IP / X-Real-IP / X-Forwarded-For only from loopback/private
 //     peers such as a local cloudflared; '1' always; '0' never) → net.js trustProxy;
 //   * DEBUG → the console logger's debug level;
-//   * the served directories (public/, data/, shared/ of this repository unless the options name others), and which
-//     startServer() options are handed on to net.js Network and lobby.js Lobby.
+//   * the served directories (public/, data/, shared/ and the content packs' packs/ of this repository unless the
+//     options name others), and which startServer() options are handed on to net.js Network and lobby.js Lobby.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,14 +34,15 @@ export function listenAddress(opts) {
 }
 
 /**
- * The directories the static server reads.
- * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string }} opts
+ * The directories the static server reads (packsDir: the pack folders, server/packs.js).
+ * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string }} opts
  */
 export function serveDirs(opts) {
   return {
     publicDir: opts.publicDir || path.join(ROOT, 'public'),
     dataDir: opts.dataDir || path.join(ROOT, 'data'),
     sharedDir: opts.sharedDir || path.join(ROOT, 'shared'),
+    packsDir: opts.packsDir || path.join(ROOT, 'packs'),
   };
 }
 

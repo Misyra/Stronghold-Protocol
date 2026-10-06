@@ -1712,7 +1712,7 @@
       "hooks": [1,28,1790,191,191,208,208,32,18,21,16,16,0,8141,3,27,17,1,1,18,0,0,0],
       "events": {"atk":226,"deploy":11,"die":20,"dmg":208,"engage":6,"fx":54,"heal":32,"leak":1,"skill":32,"spawn":26,"status":26},
       "fx": {"aoe":1,"displace":19,"liberate":3,"phase":4,"pull":19,"strike":3,"summon":2,"volley":3},
-      "snaps": "4f49e250 3e34819c f8f00406 187f8d75 6cef4054 31a272c7"
+      "snaps": "351c8009 987b22dd 7d790a0c fadc11f1 fb446f70 8805598c"
     },
     "bond-visiShip-high": {
       "about": "远见 high: tier 1 layers 999; chess_char_4_17_b chess_char_4_18_b chess_char_3_03_b chess_char_4_19_b chess_char_4_16_b chess_char_2_02_b chess_char_4_20_b chess_char_4_21_b token_10000_silent_healrb",
@@ -1750,7 +1750,7 @@
       "hooks": [1,34,2169,158,158,244,298,40,22,25,15,14,0,3657,17,18,18,0,1,22,0,0,9],
       "events": {"atk":162,"deploy":14,"die":25,"dmg":298,"engage":4,"fx":92,"heal":23,"skill":31,"spawn":29,"status":31},
       "fx": {"dodge":9,"featherArrow":1,"flame":3,"garrisonGrant":1,"healField":1,"pulse":43,"riposte":9,"summon":4,"swordRain":17,"swordStorm":4},
-      "snaps": "8108fcf3 523bf24b 4a55bea2 c6042705 c8db73ef 3aeb96c2 7a035fd1 8b9f2773"
+      "snaps": "f2695385 772aaaa3 406ef0c7 3308eca7 65753010 432ff52b 07e6e68b 2aca82b1"
     },
     "bond-yanShip-low": {
       "about": "炎 low: tier 1 layers 1; chess_char_3_16_a chess_char_3_03_a chess_char_3_18_a chess_char_1_03_a chess_char_2_04_a chess_char_3_14_a chess_char_3_17_a chess_char_3_19_a token_10028_vigil_wolf",

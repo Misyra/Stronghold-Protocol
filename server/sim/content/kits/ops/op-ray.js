@@ -62,6 +62,7 @@ import { acquireTargets, effectiveProfile } from '../../../ai.js';
 import { sortEnemyTargets } from '../../../targeting.js';
 import { bodyInKeys } from '../../../body.js';
 import { PUSH_DIRECTIONAL_MIN_DIST } from '../../../constants.js';
+import { startCountdown } from '../../tokens.js';
 
 const S1 = 'skchr_ray_1';
 const S2 = 'skchr_ray_2';
@@ -225,6 +226,7 @@ export default {
             m.rayBullets = 0;
             m.rayCounted = 0;
             battle.setExtraRange(unit, m.rayAreaKeys);
+            startCountdown(battle, t, life); // a countdown summon (content/tokens.js): its bar = the life left
             const seq = t.deploySeq;
             battle.after(life, () => { if (t.alive && t.deploySeq === seq) battle.retreat(t, { reason: 'expired', permanent: true }); }, { owner: unit });
           }, { owner: unit });

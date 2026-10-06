@@ -4,6 +4,7 @@
 import { aggregateMods } from '../../../buffs.js';
 import { COLS } from '../../../constants.js';
 import { bardRegen } from '../../../professions.js';
+import { startCountdown } from '../../tokens.js';
 import {
   num, bv, tbb, tdesc, moduleBb, parseN, live, enemiesIn, isTok, onDefaultSkill, selectedSkill, aura,
 } from '../shared/tier6.js';
@@ -148,6 +149,7 @@ function skadi2(bb, chess, def) {
           if (t.profile) t.profile.noAttack = true;
           const dur = num(t.def?.talents?.[0]?.bb?.duration, parseN(tdesc(def, 0), /持续(\d+(?:\.\d+)?)秒/, 25));
           const seq = t.deploySeq, r = t.tileR, c = t.tileC;
+          startCountdown(battle, t, dur); // a countdown summon: 无敌, 禁疗, its bar = the life left (content/tokens.js)
           battle.after(dur, () => {
             if (!t.alive || t.deploySeq !== seq) return;
             battle.retreat(t, { reason: 'expired', permanent: true });

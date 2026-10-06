@@ -48,6 +48,7 @@
 import { num, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
+import { startCountdown } from '../../tokens.js';
 
 const S1 = 'skchr_weedy_1';
 const S2 = 'skchr_weedy_2';
@@ -174,9 +175,10 @@ function cannonKit(t, owner) {
     },
     install(battle, unit) {
       battle.addBuff(unit, { key: 'trait:weedyCannon', flags: { noHeal: true }, persist: true, allowDead: true });   // 持有禁疗
-      // 部署后20秒自动撤退
+      // 部署后20秒自动撤退 — a countdown summon (content/tokens.js startCountdown): 无敌 [ASSUMED], 禁疗, its bar = the life left
       battle.on('deploy', (ctx) => {
         if (ctx.unit !== unit || !(life > 0)) return;
+        startCountdown(battle, unit, life);
         const seq = unit.deploySeq;
         battle.after(life, () => { if (unit.alive && unit.deploySeq === seq) battle.retreat(unit, { reason: 'expired', permanent: true }); }, { owner: unit });
       }, { owner: unit });

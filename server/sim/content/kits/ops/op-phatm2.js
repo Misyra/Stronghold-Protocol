@@ -63,7 +63,7 @@
 
 import { num, up, traitBb, talentBb, skillRec, once } from '../shared/tier1.js';
 import { isElite, onElementHit, elementDmg } from '../shared/tier6.js';
-import { releaseSkillSummon } from '../../tokens.js';
+import { releaseSkillSummon, startCountdown } from '../../tokens.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { bodyInKeys } from '../../../body.js';
 import { hasHp, burstLocked } from '../../../damage.js';
@@ -124,6 +124,7 @@ function callKit(t, owner, b2) {
         lured = [];
         endAt = battle.time + life;
         atk = owner.s.atk;   // 缓存攻击力: her ATK at the deployment (PRTS 备注)
+        startCountdown(battle, tok, life); // a countdown summon (content/tokens.js): 无敌, 禁疗 [ASSUMED], its bar = the life left
         const seq = tok.deploySeq;
         battle.after(life, () => { if (tok.alive && tok.deploySeq === seq) battle.retreat(tok, { reason: 'expired', permanent: true }); }, { owner: tok });
       }, { owner: tok });

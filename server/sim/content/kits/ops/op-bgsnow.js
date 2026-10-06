@@ -44,6 +44,7 @@ import { bodyKeys, bodyInKeys } from '../../../body.js';
 import { toLocal } from '../../../dir.js';
 import { hasHp } from '../../../damage.js';
 import { COLS } from '../../../constants.js';
+import { startCountdown } from '../../tokens.js';
 
 const S1 = 'skchr_bgsnow_1';
 const S2 = 'skchr_bgsnow_2';
@@ -141,9 +142,11 @@ function typewriterKit(t, owner, chess) {
     } }],
     install(battle, unit) {
       if (sk?.id === TS1) installIamb(battle, unit, num(tb.prob), num(tb.atk_scale, 1), skillOn);
-      // 持续25秒: leaves `life` s after each deployment
+      // 持续25秒: leaves `life` s after each deployment — a countdown summon (content/tokens.js startCountdown): 无敌,
+      // 禁疗 [ASSUMED], its bar = the life left
       battle.on('deploy', (ctx) => {
         if (ctx.unit !== unit || !(life > 0)) return;
+        startCountdown(battle, unit, life);
         const seq = unit.deploySeq;
         battle.after(life, () => { if (unit.alive && unit.deploySeq === seq) battle.retreat(unit, { reason: 'expired', permanent: true }); }, { owner: unit });
       }, { owner: unit });

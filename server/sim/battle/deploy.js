@@ -32,6 +32,7 @@ export class BattleDeploy {
     u.removed = false;
     u.hidden = false;
     u.body = null;
+    u.countdown = null; // a countdown summon's content starts its new life in the deploy hook (content/tokens.js startCountdown)
     u.x = C0; u.y = R0; u.tileR = R0; u.tileC = C0;
     u.blocking = [];
     u.deploySeq = ++this._deploySeq;

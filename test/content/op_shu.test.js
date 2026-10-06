@@ -80,7 +80,7 @@ test('黍 in every 自选 form: her operator kit (all three skills authored), th
       if (skill === 0) assert.deepEqual([u.skill.rule, sk.trigger.rawRule, sk.skillType, u.skill.triggerAllies, u.skill.triggerHpAtMost], ['DEFAULT', 'DEFAULT', 'AUTO', true, 0.5], `${label(f)}: S1`);
       if (skill === 1) assert.deepEqual([u.skill.rule, sk.trigger.rawRule, sk.skillType, u.skill.triggerAllies], ['DEFAULT', 'TAKE_DAMAGE', 'MANUAL', false], `${label(f)}: S2 (the 重装 exception)`);
       if (skill === 2) {
-        assert.deepEqual([sk.trigger.rule, sk.trigger.rawRule, sk.skillType], ['TRY_SEARCH_ALLY_SKILL', 'TRY_SEARCH_ALLY_SKILL', 'MANUAL'], `${label(f)}: S3 data rule`);
+        assert.deepEqual([sk.trigger.rule, sk.trigger.rawRule, sk.trigger.allies, sk.trigger.customRangeGrid, sk.skillType], ['SKILL_RANGE', 'TRY_SEARCH_ALLY_SKILL', true, sk.rangeGrid, 'MANUAL'], `${label(f)}: S3 data rule (build-data TRIGGER_ALLY_RULES)`);
         assert.deepEqual([u.skill.rule, u.skill.triggerAllies, u.skill.triggerGrid], ['SKILL_RANGE', true, sk.rangeGrid], `${label(f)}: S3 engine rule`);
       }
       done(h);

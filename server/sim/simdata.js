@@ -136,7 +136,8 @@ export function normalizeSkill(rec) {
     initSp: Math.max(0, num(s.initSp, 0)),
     maxCharges: Math.max(1, num(s.maxChargeTime ?? s.maxCharges ?? s.charges, 1)),
     rangeGrid: toArrayOfPairs(s.rangeGrid),
-    trigger: { rule, grid: trigGrid },
+    // `allies` (data: an ally row, tools/build-data.mjs TRIGGER_ALLY_RULES — 黍 S3) — skills.js `trigger.allies`
+    trigger: typeof trig === 'object' && trig.allies === true ? { rule, grid: trigGrid, allies: true } : { rule, grid: trigGrid },
     kind: s.kind ?? null,
     bb,
     description: s.description ?? s.desc ?? '',

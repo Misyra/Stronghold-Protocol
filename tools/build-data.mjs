@@ -433,6 +433,13 @@ function immunitiesOf(attrs) {
 const TRIGGER_RENAME = { ALWAYS: 'SP_FULL', CUSTOM_RANGE_SEARCH_ENEMY: 'CUSTOM_RANGE' };
 
 /**
+ * Official rows the engine plays as one of its own rules on an ally condition (`allies: true` — server/sim/skills.js: a
+ * healable, injured ally on the trigger grid instead of an enemy): 黍 S3 离离枯荣's TRY_SEARCH_ALLY_SKILL, PRTS 卫戍协议/帮助
+ * 特殊策略 "技能范围内存在可治疗的我方单位时释放技能" — SKILL_RANGE on the skill's own range (x-2), checked every tick.
+ */
+const TRIGGER_ALLY_RULES = Object.freeze({ TRY_SEARCH_ALLY_SKILL: 'SKILL_RANGE' });
+
+/**
  * A skill whose rangeId is its new ATTACK range — "攻击范围扩大 / 改变 / 缩小 / 缩短", "攻击距离+1 / 加长 / 缩短", "攻击范围与
  * 溅射范围扩大" — and not a 技能范围 of its own (PRTS 卫戍协议/帮助 技能操作: "拥有技能范围的技能（非攻击距离增加）").
  * "攻击范围内…" (an effect on the attack range) does not match.
@@ -527,6 +534,8 @@ const ACTIVE_RANGE_OVER = new Set(['DEFAULT', 'SEARCH']);
  * - else, for an operator's MANUAL skill with a 技能范围 (a rangeId that is not an attack-range change): SKILL_RANGE,
  *   "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能", customRangeGrid = the skill range;
  * - else DEFAULT (the basic strategy: ready + about to attack / heal);
+ * - an ally row the engine plays as one of its rules (TRIGGER_ALLY_RULES: 黍 S3's TRY_SEARCH_ALLY_SKILL → SKILL_RANGE on
+ *   the skill range with `allies: true` — an injured, healable ally there);
  * - last, the deliberate deviations (TRIGGER_DEVIATIONS, per chess and skill; STANDIN_TRIGGER_DEVIATIONS, per stand-in
  *   unit and skill): `rule` from the table, `rawRule` the official row (a SKILL_RANGE deviation takes the skill's own
  *   range as `customRangeGrid`);
@@ -567,6 +576,10 @@ function resolveTrigger(ctx, char, charId, skillIdx, skill, { operator = false, 
   if (deviation === 'SKILL_RANGE') {
     if (!skill.rangeGrid) warn(`trigger deviation ${chessId} ${skill.skillId}: SKILL_RANGE without a 技能范围`);
     return { rule: deviation, rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null };
+  }
+  if (!deviation && TRIGGER_ALLY_RULES[rawRule]) {
+    if (!skill.rangeGrid) warn(`skill ${skill.skillId}: ${rawRule} without a 技能范围`);
+    return { rule: TRIGGER_ALLY_RULES[rawRule], rawRule, customRangeGrid: skill.rangeGrid ? skill.rangeGrid.map((p) => p.slice()) : null, allies: true };
   }
   const rule = deviation || TRIGGER_RENAME[rawRule] || rawRule;
   if (ACTIVE_RANGE_OVER.has(rule) && operator && manual && baseGrid?.length) {

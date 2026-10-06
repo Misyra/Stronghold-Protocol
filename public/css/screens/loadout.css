@@ -32,8 +32,11 @@
 .lo > :where(:not(.lo__bg)) { position: relative; }
 
 /* ---- top bar ---------------------------------------------------------------------------------------------------- */
+/* The tabs stay centred while both sides fit in equal halves beside them; a wider side keeps its own width and shifts
+   the tabs instead (0.2.0: three tabs and the co-op countdown ran the right column into the tabs on phones and in
+   English), and only when nothing else is left does the tab strip scroll (.lo-tabs). */
 .lo-top {
-  flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .2rem;
+  flex: none; display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items: center; gap: .2rem;
   height: max(1rem, 48px); padding: 0 .36rem;
   background: linear-gradient(180deg, rgba(8, 10, 9, .95), rgba(10, 13, 12, .6));
   border-bottom: 1px solid var(--line);
@@ -43,7 +46,7 @@
   background: linear-gradient(90deg, var(--mint-700), transparent 26%, transparent 74%, var(--mint-700));
 }
 .lo-top__left { justify-self: start; display: flex; align-items: center; gap: .14rem; }
-.lo-top__center { display: flex; flex-direction: column; align-items: center; gap: .02rem; }
+.lo-top__center { display: flex; flex-direction: column; align-items: center; gap: .02rem; min-width: 0; }
 .lo-top__title { display: flex; align-items: center; gap: .12rem; margin: 0; font-size: max(.32rem, 16px); font-weight: 900; letter-spacing: .14em; line-height: 1.15; }
 .lo-top__icon { width: max(.3rem, 16px); height: max(.3rem, 16px); object-fit: contain; color: var(--mint-500); }
 .lo-top__right { justify-self: end; display: flex; align-items: center; gap: .16rem; min-width: 0; }
@@ -51,7 +54,8 @@
 .lo-count b { color: var(--mint-400); font-size: max(.22rem, 13px); margin: 0 .02rem 0 .06rem; }
 /* co-op briefing: time left before the match locks the loadout (the overlay covers the briefing's own countdown) */
 .lo-deadline { --cd-h: max(.44rem, 20px); flex: none; }
-.lo-deadline .countdown__label { font-size: max(.11rem, 8px); }
+/* its caption breaks at its spaces (Loadout / Deadline) rather than widening the column; 调配截止 stays one line */
+.lo-deadline .countdown__label { font-size: max(.11rem, 8px); width: min-content; word-break: keep-all; text-align: right; }
 .lo-sync { font-size: max(.14rem, 10px); padding: .03rem .1rem; border: 1px solid var(--line-2); color: var(--text-lo); white-space: nowrap; letter-spacing: .04em; }
 .lo-sync.is-ok { color: var(--mint-400); border-color: var(--mint-800); }
 .lo-sync.is-busy { color: var(--text-md); }
@@ -330,7 +334,7 @@
 .lo-locknote .icon { width: .16rem; height: .16rem; }
 
 /* ---- tabs: 干员调配 / 干员持有 (0.2.0 补位) ---------------------------------------------------------------------------- */
-.lo-tabs { display: flex; align-items: stretch; gap: .04rem; }
+.lo-tabs { display: flex; align-items: stretch; gap: .04rem; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .lo-tab {
   display: inline-flex; align-items: center; gap: .08rem; padding: .02rem .16rem; font: inherit; font-size: max(.24rem, 13px); font-weight: 900;
   letter-spacing: .12em; line-height: 1.2; color: var(--text-lo); background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
@@ -382,7 +386,6 @@
 @media (max-width: 760px) {
   .own { padding: .1rem .16rem .16rem; }
   .own__lead { display: none; }
-  .lo-tab { padding: .02rem .08rem; letter-spacing: .04em; }
 }
 
 /* ---- 自选编队 (screens/diy.js): four DIY slots by tier, the slot picker (operator list + skill / module) --------------- */
@@ -502,14 +505,27 @@
 .sp-loadout-open .app-root > .screen { visibility: hidden; }
 
 /* ---- narrow / short viewports ------------------------------------------------------------------------------------------- */
+/* tighter tabs below 1200 px: the co-op briefing's countdown, chips and buttons beside three English tabs */
+@media (max-width: 1200px) {
+  .lo-tab { padding: .02rem .08rem; letter-spacing: .04em; }
+}
 @media (max-width: 1100px) {
   .lo-body { grid-template-columns: minmax(0, 1fr) minmax(0, 6.4rem); gap: .16rem; padding: .12rem .2rem .16rem; }
   .lo-chip__lbl { display: none; }
+  /* the co-op briefing's countdown takes the place of the 已调整 / 同步 chips */
+  .lo-deadline ~ .lo-sync, .lo-deadline ~ .lo-count { display: none; }
+}
+/* phones in landscape (up to 932 px wide): the top bar keeps the tabs clear of the right column — no 已调整 / 同步 chips,
+   and 返回 / 全部恢复默认 (全部持有, 全部清空; each confirms first) show their icon only, the text staying their name */
+@media (max-width: 1000px) {
+  .lo-count, .lo-sync { display: none; }
+  .lo-top .btn__icon + .btn__label {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
 }
 /* phones (the root scale is clamped at 40 px: less than ~14 rem of width): the detail slides over the roster */
 @media (max-width: 760px) {
   .lo-top { padding: 0 .16rem; }
-  .lo-count, .lo-sync { display: none; }
   .lo-body { grid-template-columns: minmax(0, 1fr); }
   .lo-detail-wrap { display: none; }
   .lo-body.is-detail .lo-roster { display: none; }

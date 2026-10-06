@@ -231,8 +231,6 @@ export default {
       talents: [
         { install(battle, unit) { // 卡带里的灵感: the deck of her summon pieces and their kit
           const cnt = Math.max(0, Math.floor(num(t0.cnt)));
-          const tdef = tokenId ? battle.tokenDef(tokenId, unit) : null;
-          const extra = num(tokTalent(tdef, 'max_deploy_count')?.bb?.max_deploy_count, 0);
           const ratios = { atk: num(t1.atk), def: num(t1.def), hp: num(t1.max_hp) };
           const inspireOne = (s) => {
             if (!up(unit)) return;
@@ -250,8 +248,8 @@ export default {
           summonDeck(battle, unit, {
             tokenIds: TOWERS,
             charge: cnt,
-            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt) + num(tokTalent(tdef, 'max_deck_stack_cnt')?.bb?.max_deck_stack_cnt, 0),
-            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1) + extra,
+            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt),
+            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1),
             kit: (t) => towerKit(t, unit, opts),
           });
           // her skills on the standing summons at each start / end (a summon deployed meanwhile syncs itself); 鼓舞 again

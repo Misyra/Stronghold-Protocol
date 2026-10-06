@@ -1368,8 +1368,44 @@ function classifyToken(char, traitText) {
   return c;
 }
 
+/** The blackboard keys of a summon's own talents that add to its deploy limit / holding (statsFrom: deployLimit / deckStack). */
+const TOKEN_DECK_KEYS = Object.freeze(['max_deploy_count', 'max_deck_stack_cnt']);
+
 /**
- * Build one owner-specific variant of a token / map character at (phase, level, skill level).
+ * A summon's talent additions to its deploy limit and holding: the blackboard keys `max_deploy_count` /
+ * `max_deck_stack_cnt` of the token's own talents — the hidden "TOKEN数+N" talent of 麦哲伦's drones and 令's summons
+ * (E2: max_deck_stack_cnt 5, max_deploy_count 2), of 白铁's devices (E2: 3, 1), the visible 转瞬即逝的幻影 of 夜莺's
+ * 幻影 (max_deploy_count 2) — which the client adds to the attribute frame's maxDeployCount / maxDeckStackCnt (statsFrom
+ * reads the frame only): PRTS 幻影 备注 "每次部署夜莺时获得2个可部署的幻影，最大可部署数量为3" (1 + 2); the owners' own
+ * talents "最多同时部署3个" (麦哲伦 / 令: 1 + 2), "最多可部署2个" (白铁: 1 + 1); SUM-Y stage 2+ "最多同时部署4个" — its token part
+ * (the same talent, max_deploy_count 3) replaces the talent's values. The candidates as everywhere: the token's phase /
+ * level at potential 0 (望's rank-2 棋子 +1 stays out); a module's token part (`moduleTokenParts`, unlocked at the owner's
+ * phase / level as moduleTalentChanges) replaces the base candidate of the same prefabKey key by key (mergeTalentChanges:
+ * what it does not restate stays) — matched by prefabKey, not talentIndex (夜莺's RIN-Y stage 3 part names talentIndex 0
+ * for her 幻影's talent 1). The hand count of a placeable summon is this deploy limit (PRTS 卫戍协议/帮助 "根据召唤物部署数量
+ * 上限（非初始持有量），发送等量召唤物至手牌区"; gamedata / player/diy.js placeableTokens).
+ * @returns {Record<string, number>} the non-zero additions by blackboard key
+ */
+function tokenTalentDeckBonus(char, phase, level, moduleTokenParts, modPhase, modLevel) {
+  const byKey = new Map();
+  const take = (c, merge) => {
+    if (!c) return;
+    const key = String(c.prefabKey ?? '');
+    const bb = {};
+    for (const b of c.blackboard || []) if (TOKEN_DECK_KEYS.includes(b.key) && typeof b.value === 'number') bb[b.key] = b.value;
+    byKey.set(key, merge ? { ...(byKey.get(key) || {}), ...bb } : bb);
+  };
+  for (const t of char.talents || []) take(bestCandidate(t?.candidates, phase, level), false);
+  for (const part of moduleTokenParts || []) take(bestCandidate(part?.addOrOverrideTalentDataBundle?.candidates, modPhase, modLevel), true);
+  const out = {};
+  for (const bb of byKey.values()) for (const [k, v] of Object.entries(bb)) out[k] = (out[k] || 0) + v;
+  for (const k of Object.keys(out)) if (!out[k]) delete out[k];
+  return out;
+}
+
+/**
+ * Build one owner-specific variant of a token / map character at (phase, level, skill level). Its stats add the module's
+ * token attributes and the summon's talent additions to its deploy limit / holding (tokenTalentDeckBonus).
  * @returns {object}
  */
 function tokenVariant(ctx, tokenId, char, { phase, level, skillIndex, skillLevel, modulePhase, moduleTokenParts, label }) {
@@ -1378,6 +1414,7 @@ function tokenVariant(ctx, tokenId, char, { phase, level, skillIndex, skillLevel
   const bonus = {};
   const tokBonus = modulePhase?.tokenAttributeBlackboard?.[tokenId];
   for (const b of Array.isArray(tokBonus) ? tokBonus : []) bonus[b.key] = (bonus[b.key] || 0) + b.value;
+  for (const [k, v] of Object.entries(tokenTalentDeckBonus(char, ph, lv, moduleTokenParts, phase, level))) bonus[k] = (bonus[k] || 0) + v;
   const attrs = interpolateAttrs(char, ph, lv);
   const tc = bestCandidate(char.trait?.candidates, ph, lv);
   const tbb = flattenBB(tc?.blackboard);

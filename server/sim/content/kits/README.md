@@ -185,7 +185,9 @@ both tiers, both forms and both module stages. A 自选 piece has no 特质 and 
 the kit's business. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnToken(unit, …)` resolve the variant of the
 pick. A **placeable** summon (data/backups.json `tokens[id].placeable`, made by the pick's skill or a talent — the
 variant's `sources`) is a hand piece like any operator's: when the 自选 piece is deployed in prep its player gets one
-stack of the variant's `deployLimit` — the picked module's own when its variant has one (望's TRP-X: 7 棋子) —
+stack of the variant's `deployLimit` — the picked module's own when its variant has one (望's TRP-X: 7 棋子); it holds
+the token's own talent additions (max_deploy_count / max_deck_stack_cnt, tools/build-data.mjs `tokenTalentDeckBonus`:
+麦哲伦 / 令 3, SUM-Y stage 2+ 4, 白铁 2, 夜莺 3), so a deck reads `deployLimit` / `deckStack` as they are —
 (server/match/player/diy.js `placeableTokens`, PlayerState `grantTokensFor`), places
 it on a legal tile (the token's position / `ownerRange`), loses it with its owner (sold, merged, moved back), and the
 match hands every placed piece to the battle as a PlayerBattleInput token unit `{ kind: 'token', tokenId, ownerUid }` —

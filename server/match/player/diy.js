@@ -95,8 +95,10 @@ export function diyGameData(gd, records) {
     token: { value: (id) => gd.token(id) || tokenOf(id) },
     /**
      * GameData.placeableTokens for a slotted slot: the summons its record lists (the pick's skill and talents) that are
-     * placeable, by the variant of the owner form (`bySkill[skillIndex]` sources) — the deploy limit as the count, the
-     * active module's own when its variant has one (`byModule`: 望's TRP-X "可同时部署的陷阱数量提升", 6 → 7 棋子).
+     * placeable, by the variant of the owner form (`bySkill[skillIndex]` sources) — the deploy limit as the count (PRTS
+     * 卫戍协议/帮助 "根据召唤物部署数量上限（非初始持有量）"), the active module's own when its variant has one (`byModule`:
+     * 望's TRP-X "可同时部署的陷阱数量提升", 6 → 7 棋子; SUM-Y stage 2+ 4 drones / summons). The data's deploy limit holds the
+     * token's own talent additions (tools/build-data.mjs tokenTalentDeckBonus, 0.2.0): 麦哲伦 / 令 / 电弧 3, 白铁 2, 夜莺 3 幻影.
      */
     placeableTokens: {
       value: (chessId, loadout = null) => {

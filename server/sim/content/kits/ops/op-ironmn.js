@@ -68,8 +68,8 @@
 // - S3 铁钳号·原型机 (MANUAL, DEFAULT): 30 s, ATK +atk, ASPD +attack_speed; +1 stock at the start.
 // [ASSUMED] the stock refilled by +cnt on each deployment, capped at cnt + the CRA-X +1; a RechargeToken beyond the cap is lost;
 // the crab charges only from the attacks that select it (an ally's area skill that picks enemies does not see it); summons
-// attack it too. Open (data, report): the hand count of his devices is the data's deployLimit 1 — tools/build-data.mjs takes
-// the attribute frame's maxDeployCount and leaves out the token's hidden talent max_deploy_count +1 (E2 "最多可部署2个").
+// attack it too. The hand count of his devices is the data's deployLimit 2 (the attribute frame's 1 + the token's hidden talent
+// max_deploy_count 1 — E2 "最多可部署2个"; tools/build-data.mjs tokenTalentDeckBonus, 0.2.0).
 
 import { num, talentBb, talentGrid, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';

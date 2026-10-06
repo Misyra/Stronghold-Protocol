@@ -23,8 +23,9 @@
 //   target her; her summons leave the field with her (shared/summoner.js).
 // - T1 挑灯问梦 "可以使用5个召唤物（最多同时部署3个），功能随技能选择而改变": the summon of her pick's skill (“清平” / “逍遥” /
 //   “弦惊” — the skills' overrideTokenKey) is the hand piece the player places; the deck of ../shared/summoner.js with charge =
-//   cnt (5), cap = the summon deck (max_deck_stack_cnt 5, +3 with SUM-Y), at most 1 + max_deploy_count (2 ⇒ 3; SUM-Y stage 3:
-//   4) standing. Every summon holds 禁疗 (PRTS; [ASSUMED: given here — the data's `abnormal` lacks it]) and fights with its
+//   cnt (5), cap = the summon record's deckStack (5: its hidden talent's max_deck_stack_cnt, tools/build-data.mjs
+//   tokenTalentDeckBonus; +3 with SUM-Y), at most its deployLimit standing (3 = 1 + the talent's max_deploy_count 2; SUM-Y
+//   stage 2+: 4) — the hand count too. Every summon holds 禁疗 (PRTS; [ASSUMED: given here — the data's `abnormal` lacks it]) and fights with its
 //   own data: “清平” blocks 1 and strikes in melee (physical) on its 1-1, “逍遥” shoots arts on its 3-1 (air units too), “弦惊”
 //   blocks 2 and strikes every enemy it blocks (physical; its trait "攻击阻挡的所有敌人").
 // - T2 随付笺咏醉屠苏 "召唤物被击倒/吸收/回收时令额外获得3点技力、攻击力+3%（攻击力加成最多叠加5层）": a summon knocked out,
@@ -74,7 +75,6 @@ const TAG_S3 = 'ling:s3';
 
 const bbOf = (chess, id) => skillRec(chess, id)?.bb ?? {};
 const skillOn = (u, id) => !!(u && u.skill && u.skill.active && u.skill.id === id);
-const tokTalent = (def, key) => (def?.talents ?? []).find((t) => t && t.bb && t.bb[key] != null) ?? null;
 const tileOf = (u) => u.tileR * COLS + u.tileC;
 
 /** Her S1 / S3 acting on a summon (held from each skill start / end and each summon deployment). */
@@ -217,16 +217,13 @@ export default {
       talents: [
         { install(battle, unit) { // 挑灯问梦: the deck of her summon pieces and their kit
           const cnt = Math.max(0, Math.floor(num(t0.cnt)));
-          const tdef = tokenId ? battle.tokenDef(tokenId, unit) : null;
-          const deckBase = num(tokTalent(tdef, 'max_deck_stack_cnt')?.bb?.max_deck_stack_cnt, cnt);
-          const extra = num(tokTalent(tdef, 'max_deploy_count')?.bb?.max_deploy_count, 0);
           const sp = num(t1.sp), atk = num(t1.atk), stacks = Math.max(1, Math.floor(num(t1.max_stack_cnt, 1)));
           summonDeck(battle, unit, {
             tokenIds: SOULS,
             charge: cnt,
             start: sumY,
-            cap: deckBase + num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : 0, 0),
-            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1) + extra,
+            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt),
+            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1),
             kit: (t) => soulKit(t, unit, opts),
             // 随付笺咏醉屠苏: knocked out / absorbed / recalled ⇒ +sp SP and a stack of ATK +atk (not when they leave with her)
             onLeave(t, kind) {

@@ -105,12 +105,13 @@ test('白铁 in every 自选 form: his kit (all three skills authored), stats + 
     { ok: true, picks: { [SLOT[6]]: { charId: IRON, skillIndex: 2, uniEquipId: Y } } });
 });
 
-test('<支援装置> hand pieces: the picked skill\'s device only (variant sources), deploy limit 1 in the data (official 1 + max_deploy_count 1 = 2: reported), the module costs / redeploy times', () => {
+test('<支援装置> hand pieces: the picked skill\'s device only (variant sources), deploy limit 2 in the data (1 + the hidden max_deploy_count 1: E2 "最多可部署2个"), the module costs / redeploy times', () => {
   for (const [skill, id] of TOK.entries()) {
     for (const s of [0, 1, 2]) assert.equal(tokOf(id, 6, true, s, null).sources.includes('skill'), s === skill, `${id} under S${s + 1}`);
     const v = tokOf(id, 6, true, skill, null);
-    assert.equal(v.stats.deployLimit, 1, `${id}: the data's deploy limit`);
-    assert.equal(v.talents.find((t) => t.bb.max_deploy_count != null).bb.max_deploy_count, 1, `${id}: the hidden max_deploy_count (E2 "最多可部署2个")`);
+    assert.equal(v.talents.find((t) => t.bb.max_deploy_count != null).bb.max_deploy_count, 1, `${id}: the hidden max_deploy_count`);
+    assert.equal(v.stats.deployLimit, 2, `${id}: the data's deploy limit (tools/build-data.mjs tokenTalentDeckBonus)`);
+    assert.deepEqual([v.stats.deckStack, tokOf(id, 6, true, skill, X).stats.deckStack], [3, 4], `${id}: the holding 3 (CRA-X +1)`);
   }
   // CRA-X 部署费用 −1 / −1 / −4, CRA-Y 再部署时间 −5 / −5 / −10 (PRTS module page)
   const cost = (mod) => TOK.map((id, s) => tokOf(id, 6, true, s, mod).stats.cost);

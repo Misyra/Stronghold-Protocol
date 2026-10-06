@@ -23,8 +23,9 @@
 //   PRTS "可对空"), blocks 1, ground enemies target her. Her drones leave the field with her (shared/summoner.js).
 // - T1 支援无人机·龙腾 "可以使用5个不阻挡敌人的无人机（最多同时部署3个），功能随技能选择而改变": the drone of her pick's skill
 //   (龙腾.F / .L / .A — the skills' overrideTokenKey) is the hand piece the player places; the deck of ../shared/summoner.js
-//   with charge = cnt (5) at each of her deployments, cap = the drone deck (its hidden talent's max_deck_stack_cnt 5, +the
-//   SUM-Y deckStack 3), at most 1 + its max_deploy_count (2 ⇒ 3; SUM-Y stage 3: 3 ⇒ 4) standing. Every drone holds 禁疗
+//   with charge = cnt (5) at each of her deployments, cap = the drone record's deckStack (5: its hidden talent's
+//   max_deck_stack_cnt, tools/build-data.mjs tokenTalentDeckBonus; SUM-Y +3), at most its deployLimit standing (3 = 1 + the
+//   talent's max_deploy_count 2; SUM-Y stage 2+: 4) — the hand count too. Every drone holds 禁疗
 //   (PRTS; the data's `abnormal` lacks it [ASSUMED: given here]), blocks nothing, has no skill of its own here (its 回收 is
 //   her skills' end, below). 龙腾.F (ATK 0) makes no attack (the engine's rule for a 0-ATK summon; a commented-out PRTS
 //   note "缴械，普通攻击不造成伤害" agrees [ASSUMED]); 龙腾.L strikes one ground enemy on its own tile for arts damage; 龙腾.A
@@ -135,15 +136,12 @@ export default {
       talents: [
         { install(battle, unit) { // 支援无人机·龙腾: the deck of her drone pieces and their kit
           const cnt = Math.max(0, Math.floor(num(t0.cnt)));
-          const tdef = tokenId ? battle.tokenDef(tokenId, unit) : null;
-          const deckBase = num(tokTalent(tdef, 'max_deck_stack_cnt')?.bb?.max_deck_stack_cnt, cnt);
-          const extra = num(tokTalent(tdef, 'max_deploy_count')?.bb?.max_deploy_count, 0);
           summonDeck(battle, unit, {
             tokenIds: DRONES,
             charge: cnt,
             start: sumY,
-            cap: deckBase + num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : 0, 0),
-            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1) + extra,
+            cap: num(tokenId ? tokenStat(battle, unit, tokenId, 'deckStack') : cnt, cnt),
+            maxDeployed: num(tokenId ? tokenStat(battle, unit, tokenId, 'deployLimit') : 1, 1),
             kit: (t) => droneKit(t, unit, opts),
           });
           // her skills on the standing drones: at each start / end (a drone deployed meanwhile syncs itself)

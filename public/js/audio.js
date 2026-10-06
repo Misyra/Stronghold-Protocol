@@ -288,17 +288,23 @@ export function resultVoiceSlot(o = {}) {
  * to be looking at (review on #73): reading the tracked units of the field on screen made a teammate's operator say the
  * viewer's 作战结束 line while the viewer was watching them.
  * `pp` is that battle's own `perPlayer` entry (BattleResult, sim/Battle.js): `unitsEnd` lists what stood on its field
- * when the battle ended, `defId` being an operator (`char_*`) or a summon piece (`token_*`, which does not talk).
+ * when the battle ended. Its `defId` names the CHESS (`chess_char_*`) or a summon piece (`token_*`, which does not talk);
+ * the voice bank belongs to the operator (`char_*`), so `charOf` maps a chess id to its charId (the chess record's
+ * `charId`). Without it only ids that already are a charId count — a real result then has no speaker, which is how the
+ * line stayed silent in every battle until 0.1.4's fix.
  * Survivors speak first — the line reports how the battle went, and a wiped-out squad is the only case where a fallen
  * operator ends up saying it. Ties are drawn like every other unit sound.
  * @param {{ unitsEnd?: Array<{ defId?: string|null, alive?: boolean }> } | null | undefined} pp that battle's perPlayer
  * @param {() => number} [random]
+ * @param {((defId: string) => string|null|undefined) | null} [charOf] chess id → charId
  * @returns {string|null} charId, or null when that battle fielded no operator at all
  */
-export function resultSpeaker(pp, random = Math.random) {
+export function resultSpeaker(pp, random = Math.random, charOf = null) {
   const ops = [];
   for (const u of Array.isArray(pp?.unitsEnd) ? pp.unitsEnd : []) {
-    if (u && typeof u.defId === 'string' && u.defId.startsWith('char_')) ops.push({ id: u.defId, alive: !!u.alive });
+    if (!u || typeof u.defId !== 'string') continue;
+    const id = u.defId.startsWith('char_') ? u.defId : charOf ? charOf(u.defId) : null;
+    if (typeof id === 'string' && id.startsWith('char_')) ops.push({ id, alive: !!u.alive });
   }
   const standing = ops.filter((o) => o.alive);
   const pool = standing.length ? standing : ops;   // only a wiped-out squad is spoken for by a fallen operator

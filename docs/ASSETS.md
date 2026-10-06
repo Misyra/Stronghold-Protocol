@@ -206,7 +206,10 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
   // units' attack / hit (tools/assets/audio.mjs pickUnitSfx): operators get normal-mode banks only — the plain
   // `attack` / `combat` ability first, never a bank holding a skill-mode file (`_d` / `_h` / `_s`; the normal attack's end
   // in `_n`) — with their own projectile banks (ON_PROJECTILE_BORN / _HIT.projectile_chr_<name>) as fallbacks
-  // (DESIGN §18.4: 纯烬艾雅法拉's S3 impact used to be her `hit`); enemies and tokens take the first attack-like bank
+  // (DESIGN §18.4: 纯烬艾雅法拉's S3 impact used to be her `hit`); an operator with such a plain bank (its default mode is
+  // the unsuffixed ability) never takes a numbered variant `attack.N` — a skill mode's, whatever its file name (银灰's S3
+  // swing p_atk_silver_n, community report of 2026-10-06); one that numbers its default mode (`attack.0` …) keeps the
+  // numbered order; enemies and tokens take the first attack-like bank
   fonts: { css: '/fonts/fonts.css', faces: { [name]: { family, weight, woff2?, original } } }
 }
 ```

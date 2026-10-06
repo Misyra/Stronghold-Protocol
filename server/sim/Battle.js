@@ -403,48 +403,28 @@ export class Battle {
     // current phase: the remaining phases are skipped and the result is built once, so nothing mutates it later.
     this._stepping = true;
     try {
-      if (!this.started) this._phase('start', () => this.start());
+      if (!this.started) this._phase('start', this.start);
       const dt = this.dt;
-      this._phase('scheduled', () => this._runScheduled());
-      this._phase('spawns', () => this._processSpawns());
-      this._phase('dp', () => {
-        for (const ps of this.players) ps.dp = Math.min(this.flags.dpMax, ps.dp + this.flags.dpPerSec * dt);
-      });
-      this._phase('buffs', () => this._tickBuffs(dt));
-      this._phase('enemies', () => {
-        // enemies spawned by hooks during this loop start moving next tick (a leak hook that spawns an enemy which
-        // leaks at once would otherwise loop forever inside a single tick)
-        const list = this.enemies;
-        for (let i = 0, n = list.length; i < n && !this._endReq; i++) {
-          const e = list[i];
-          if (!e.alive) continue;
-          try { updateEnemy(this, e, dt); } catch (err) { this._internalError('updateEnemy', err); }
-          this._clampPos(e);
-        }
-      });
+      this._phase('scheduled', this._runScheduled);
+      this._phase('spawns', this._processSpawns);
+      this._phase('dp', this._phaseDp, dt);
+      this._phase('buffs', this._tickBuffs, dt);
+      // enemies spawned by hooks during this loop start moving next tick (a leak hook that spawns an enemy which
+      // leaks at once would otherwise loop forever inside a single tick)
+      this._phase('enemies', this._phaseEnemies, dt);
       this._compactEnemies();
-      this._phase('enemyIndex', () => this._buildEnemyIndex());
-      this._phase('allies', () => {
-        const list = this.allyUnits;
-        for (let i = 0; i < list.length && !this._endReq; i++) {
-          const u = list[i];
-          if (!u.alive || !u.deployed) continue;
-          try {
-            if (u.skill) u.skill.tick(dt);
-            if (u.alive && u.kind !== 'device') updateAlly(this, u, dt);
-          } catch (err) { this._internalError('updateAlly', err); }
-        }
-      });
-      this._phase('projectiles', () => this.projectiles.update(dt));
-      this._phase('redeploy', () => this._checkRedeploys());
-      this._phase('boss', () => this._bossSync());
-      if (this._hooks.tick) this._phase('tickHook', () => this.emit('tick', { dt }));
+      this._phase('enemyIndex', this._buildEnemyIndex);
+      this._phase('allies', this._phaseAllies, dt);
+      this._phase('projectiles', this._phaseProjectiles, dt);
+      this._phase('redeploy', this._checkRedeploys);
+      this._phase('boss', this._bossSync);
+      if (this._hooks.tick) this._phase('tickHook', this._phaseTickHook, dt);
       this._compactEnemies();
       if (this._toRelease.length) this._releaseRemoved();
       if (!this._endReq && !this.finished) {
         this.tickCount++;
         this.time = this.tickCount * dt; // no floating drift over long battles
-        this._phase('endCheck', () => this._checkEnd());
+        this._phase('endCheck', this._checkEnd);
       }
     } finally {
       this._stepping = false;
@@ -471,10 +451,42 @@ export class Battle {
     return this.finished ? this.result() : null;
   }
 
-  _phase(name, fn) {
+  _phase(name, fn, arg) {
     if (this.finished || this._endReq) return;
-    try { fn(); } catch (e) { this._internalError(name, e); }
+    try { fn.call(this, arg); } catch (e) { this._internalError(name, e); }
   }
+
+  // per-tick phase bodies (method references in step(): no closure per tick)
+
+  _phaseDp(dt) {
+    for (const ps of this.players) ps.dp = Math.min(this.flags.dpMax, ps.dp + this.flags.dpPerSec * dt);
+  }
+
+  _phaseEnemies(dt) {
+    const list = this.enemies;
+    for (let i = 0, n = list.length; i < n && !this._endReq; i++) {
+      const e = list[i];
+      if (!e.alive) continue;
+      try { updateEnemy(this, e, dt); } catch (err) { this._internalError('updateEnemy', err); }
+      this._clampPos(e);
+    }
+  }
+
+  _phaseAllies(dt) {
+    const list = this.allyUnits;
+    for (let i = 0; i < list.length && !this._endReq; i++) {
+      const u = list[i];
+      if (!u.alive || !u.deployed) continue;
+      try {
+        if (u.skill) u.skill.tick(dt);
+        if (u.alive && u.kind !== 'device') updateAlly(this, u, dt);
+      } catch (err) { this._internalError('updateAlly', err); }
+    }
+  }
+
+  _phaseProjectiles(dt) { this.projectiles.update(dt); }
+
+  _phaseTickHook(dt) { this.emit('tick', { dt }); }
 
   _checkEnd() {
     if (this.finished) return;
@@ -1325,9 +1337,9 @@ export class Battle {
               let n = 0;
               while (b._acc >= b.interval - 1e-9 && n++ < 8) {
                 b._acc -= b.interval;
-                this._safe(() => b.onTick({ battle: this, unit: u, buff: b, dt: b.interval }), 'buff.onTick', u);
+                this._safeCall(b.onTick, b, { battle: this, unit: u, buff: b, dt: b.interval }, 'buff.onTick', u);
               }
-            } else this._safe(() => b.onTick({ battle: this, unit: u, buff: b, dt }), 'buff.onTick', u);
+            } else this._safeCall(b.onTick, b, { battle: this, unit: u, buff: b, dt }, 'buff.onTick', u);
           }
           if (b.timeLeft !== Infinity) {
             b.timeLeft -= dt;
@@ -2425,6 +2437,19 @@ export class Battle {
     this._frameOwner[d] = owner;
     this._frameCtx[d] = null;
     try { return fn(); } catch (e) { this._handlerError(label, owner, e); return undefined; } finally { this._emitDepth--; }
+  }
+
+  /** _safe for a method-style callback (`fn.call(thisArg, ctx)`): the per-tick dispatch without a closure. */
+  _safeCall(fn, thisArg, ctx, label, owner = null) {
+    if (this._emitDepth >= MAX_HOOK_DEPTH) {
+      this._handlerError(`hookDepth:${label}`, owner, new Error(`callback nesting deeper than ${MAX_HOOK_DEPTH}; skipped — ${this._chain(label)}`));
+      return undefined;
+    }
+    const d = this._emitDepth++;
+    this._frameName[d] = label;
+    this._frameOwner[d] = owner;
+    this._frameCtx[d] = null;
+    try { return fn.call(thisArg, ctx); } catch (e) { this._handlerError(label, owner, e); return undefined; } finally { this._emitDepth--; }
   }
 
   _handlerError(label, owner, e, internal = false) {

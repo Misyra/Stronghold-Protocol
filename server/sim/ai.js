@@ -333,6 +333,27 @@ export function resolveHit(b, u, prof, target, info, x, y) {
   }
 }
 
+/**
+ * The next unit of a 链愈师 heal chain of `healer` from `prev` — PRTS 分支特性信息 链愈师: "跳跃范围为x-4，无特殊说明的场合一次
+ * 治疗链不会对已跳跃过的单位重复跳跃", "优先跳跃至范围内生命比例最低＞部署时间点最晚的我方单位。可选择满生命我方单位为跳跃目标，但仍受
+ * 禁疗制约": an ally on the 3×3 of tiles around prev's (range x-4), not yet in this chain (`seen` ids), no device, no hidden
+ * or 孤立 unit, no 禁疗 / 无法被治疗 one (as Battle.injuredAlliesInKeys: the healer's `healThrough` lets its own summon in —
+ * 凯尔希 / Mon3tr); the lowest HP ratio first — a full-HP ally too, healed for nothing, and the chain jumps on from it —,
+ * then the latest deployed (aggroSeq). Null when none. Shared by the profession (doHeal) and Mon3tr's kit.
+ */
+export function chainHealNext(b, healer, prev, seen) {
+  const through = healer && healer.profile && typeof healer.profile.healThrough === 'function' ? healer.profile.healThrough : null;
+  const r0 = prev.tileR, c0 = prev.tileC;
+  let best = null;
+  for (const a of b.allyUnits) {
+    if (!a.alive || !a.deployed || a.hidden || a.kind === 'device' || seen.has(a.id)) continue;
+    if (Math.abs(a.tileR - r0) > 1 || Math.abs(a.tileC - c0) > 1) continue;
+    if (a !== healer && (a.s.flags.isolated || (a.s.flags.noHeal && !(through && through(healer, a))) || (a.profile && a.profile.noHeal))) continue;
+    if (!best || a.hpRatio < best.hpRatio - 1e-12 || (Math.abs(a.hpRatio - best.hpRatio) <= 1e-12 && a.aggroSeq > best.aggroSeq)) best = a;
+  }
+  return best;
+}
+
 function doHeal(b, u, prof, t) {
   const atk = u.s.atk;
   const scale = (prof.atkScale ?? 1) * (prof.healScale ?? 1) * u.s.atkScaleMul;
@@ -346,13 +367,7 @@ function doHeal(b, u, prof, t) {
     let prev = t;
     const n = Math.max(1, h.count || 3);
     for (let k = 1; k < n; k++) {
-      let best = null, bd = Infinity;
-      for (const a of b.alliesInRadius(prev.x, prev.y, 2.5, null)) {
-        // 禁疗 / noHeal units are no heal target for the bounces either (as injuredAlliesInKeys; 史尔特尔's 余烬, GitHub #52)
-        if (seen.has(a.id) || a.hp >= a.s.maxHp || a.kind === 'device' || a.s.flags.noHeal || (a.profile && a.profile.noHeal)) continue;
-        const d = a.hpRatio;
-        if (d < bd) { bd = d; best = a; }
-      }
+      const best = chainHealNext(b, u, prev, seen);
       if (!best) break;
       seen.add(best.id);
       b._ev(['atk', prev.id, best.id, 'chainHeal']);

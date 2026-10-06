@@ -1065,23 +1065,23 @@
       "rngDraws": 2,
       "errors": {"count":0,"kinds":[]},
       "players": {
-        "p1": {"killed":15,"total":17,"perfect":false,"leaks":2,"leaksUncounted":0,"coins":0,"dmg":70415,"bossDmg":0,"heal":16499,"deaths":0,"layerGains":{"sargonShip":5}}
+        "p1": {"killed":15,"total":17,"perfect":false,"leaks":2,"leaksUncounted":0,"coins":0,"dmg":70415,"bossDmg":0,"heal":16347,"deaths":0,"layerGains":{"sargonShip":5}}
       },
       "units": [
-        ["p1",1,"op","chess_char_2_08_a",1,null,2300.11,1,2,2,2745,6042,2156,34,1],
-        ["p1",2,"op","chess_char_1_12_a",1,null,1840,1,1,0,0,0,63,0,0],
-        ["p1",3,"op","chess_char_4_22_a",2,null,2022,1,3,3,30743,1182,694,23,1],
-        ["p1",4,"op","chess_char_2_06_a",0,null,1440,1,4,0,0,916,6860,31,15],
-        ["p1",5,"op","chess_char_4_21_a",1,null,1271,1,7,0,0,2019,3276,40,1],
-        ["p1",6,"op","chess_char_4_25_a",2,null,1221,1,5,0,0,2137,698,0,1],
-        ["p1",7,"op","chess_char_4_26_a",0,null,1368,1,8,0,0,3145,2223,13,0],
-        ["p1",8,"op","chess_char_3_01_a",2,null,1471.8,1,6,10,36927,1389,530,51,1]
+        ["p1",1,"op","chess_char_2_08_a",1,null,2300.11,1,2,2,2745,6110,2375,34,1],
+        ["p1",2,"op","chess_char_1_12_a",1,null,1840,1,1,0,0,0,111,0,0],
+        ["p1",3,"op","chess_char_4_22_a",2,null,2022,1,3,3,30743,1232,716,23,1],
+        ["p1",4,"op","chess_char_2_06_a",0,null,1440,1,4,0,0,797,6475,32,15],
+        ["p1",5,"op","chess_char_4_21_a",1,null,1271,1,7,0,0,1951,3665,43,1],
+        ["p1",6,"op","chess_char_4_25_a",2,null,1221,1,5,0,0,2053,696,0,1],
+        ["p1",7,"op","chess_char_4_26_a",0,null,1368,1,8,0,0,3044,1697,15,0],
+        ["p1",8,"op","chess_char_3_01_a",2,null,1471.8,1,6,10,36927,1490,613,51,1]
       ],
-      "enemies": {"enemy_1267_nhpbr":[11,10,0,4553,43172],"enemy_1267_nhpbr_2":[5,5,0,1783,24750],"enemy_1272_nhtank":[1,0,0,10494,2493]},
-      "hooks": [1,25,3300,234,234,523,523,2355,15,15,20,20,0,14437,0,5,17,0,1,15,1,0,0],
-      "events": {"atk":316,"deploy":8,"die":15,"dmg":483,"engage":3,"fx":112,"heal":156,"layer":1,"skill":40,"spawn":25,"status":235},
+      "enemies": {"enemy_1267_nhpbr":[11,10,0,4678,43172],"enemy_1267_nhpbr_2":[5,5,0,1676,24750],"enemy_1272_nhtank":[1,0,0,10323,2493]},
+      "hooks": [1,25,3300,240,240,523,523,2589,15,15,20,20,0,14437,0,5,17,0,1,15,1,0,0],
+      "events": {"atk":332,"deploy":8,"die":15,"dmg":481,"engage":3,"fx":112,"heal":155,"layer":1,"skill":40,"spawn":25,"status":247},
       "fx": {"buff":1,"counter":15,"garrison":1,"healField":1,"mote":38,"redistribute":15,"reweave":1,"slash":17,"spGift":1,"truesilver":1,"zone":21},
-      "snaps": "0bdd9351 b24b323e bd7fa0e6 4703d650 28cb05fc cf42c370 8691643e b07ee7e3 98f5edc6 aed38d5e c73b513b"
+      "snaps": "0bdd9351 b24b323e ab95517a c55fba39 176cd8a6 f77ba7e2 c1b9c3f4 2b4fa92b 246b1e91 0f8ceadd 18c1b994"
     },
     "bond-sargonShip-high": {
       "about": "萨尔贡 high: tier 2 layers 999; chess_char_1_12_b chess_char_2_08_b chess_char_3_06_b chess_char_4_23_b chess_char_4_22_b chess_char_2_06_b chess_char_3_13_b chess_char_4_25_b",

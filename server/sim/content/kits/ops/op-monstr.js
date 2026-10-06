@@ -27,8 +27,9 @@
 // prosts_t_1[born_charge] BLOCK_CNT ×0, interval 0.1, firstTriggerInterval 1, FixedValueDamage PURE `damage` on itself);
 // buff_template_data (monstr_t_2[atk_spd] ON_OUTPUT_MODIFIER IsHeal; monstr_s_3[undead] ON_BEFORE_TRY_SET_HP_ZERO).
 // - Trait (链愈师) "恢复友方单位生命，且会在3个友方单位间跳跃，每次跳跃治疗量降低25%" — the chain is this kit's (the profession's
-//   2.5-tile chain is replaced: heal mode single + `chainFrom`), as her heal projectiles have it: after the heal on the main
-//   target the heal jumps to the lowest-HP-ratio injured ally of the 3×3 around the last one healed (x-4), each jump ×
+//   chain is replaced: heal mode single + `chainFrom`, its links the profession's — ai.js chainHealNext): after the heal on
+//   the main target the heal jumps to the lowest-HP-ratio ally (a full-HP one too — PRTS 分支特性信息 链愈师; ties: the latest
+//   deployed) of the 3×3 around the last one healed (x-4), each jump ×
 //   attack@chain.atk_scale (0.75; XAH-X 0.85), up to attack@chain.max_target units healed (3). A 重构体 (and she herself while S3
 //   runs: monstr[free_jump]) is a free link: healing it uses no target of the count and the next jump does not decay (XAH-X
 //   stage 3: the next attack@chain.extra_cnt jumps after that neither). Her heals pass 禁疗 ("治疗效果无视禁疗"); her selection
@@ -63,6 +64,7 @@
 
 import { num, talentBb, traitBb, skillRec, batMod, installAura, up } from '../shared/tier1.js';
 import { COLS } from '../../../constants.js';
+import { chainHealNext } from '../../../ai.js';
 
 const S1 = 'skchr_monstr_1';
 const S2 = 'skchr_monstr_2';
@@ -102,27 +104,12 @@ const prostsInRange = (battle, unit) => prostsOf(battle, unit).find((t) => up(t)
 const nearX4 = (a, b) => Math.abs(a.tileR - b.tileR) <= 1 && Math.abs(a.tileC - b.tileC) <= 1;
 
 /**
- * The next link of a chain heal from `cur`: the lowest-HP-ratio injured ally of its 3×3 not healed yet by this chain (her
- * own 重构体 even at full HP when `fullProsts`); never a 禁疗 unit but her 重构体.
- */
-function nextLink(battle, unit, cur, seen, fullProsts) {
-  let best = null;
-  for (const a of battle.allyUnits) {
-    if (!a.alive || !a.deployed || a.hidden || a.kind === 'device' || seen.has(a.id) || !nearX4(a, cur)) continue;
-    const mine = isProstsOf(a, unit);
-    if (a !== unit && ((a.s.flags.noHeal && !mine) || (a.profile && a.profile.noHeal))) continue;
-    if (!(a.hp < a.s.maxHp - 1e-6) && !(fullProsts && mine)) continue;
-    if (!best || a.hpRatio < best.hpRatio - 1e-12 || (Math.abs(a.hpRatio - best.hpRatio) <= 1e-12 && a.deploySeq < best.deploySeq)) best = a;
-  }
-  return best;
-}
-
-/**
  * A chain heal of hers from `main` (already healed by her attack when `mainDone`): up to `count` units healed, × `step` per
  * jump; a free link (her 重构体; herself with `selfFree`) uses no target of the count and the next 1 + `extra` jumps keep the
- * amount.
+ * amount. Each link is the 链愈师 one (ai.js chainHealNext — the 3×3 around the last one healed, the lowest HP ratio a
+ * full-HP ally included, then the latest deployed; no 禁疗 unit but her 重构体, her `healThrough`).
  */
-function chainFrom(battle, unit, main, base, { count, step, extra, fullProsts = false, mainDone = false, selfFree = false }) {
+function chainFrom(battle, unit, main, base, { count, step, extra, mainDone = false, selfFree = false }) {
   const free = (t) => isProstsOf(t, unit) || (selfFree && t === unit);
   let amount = base;
   if (!mainDone) battle.heal(unit, main, amount, HEAL_OPTS);
@@ -131,7 +118,7 @@ function chainFrom(battle, unit, main, base, { count, step, extra, fullProsts = 
   const seen = new Set([main.id]);
   let cur = main;
   while (counted < count) {
-    const next = nextLink(battle, unit, cur, seen, fullProsts);
+    const next = chainHealNext(battle, unit, cur, seen);
     if (!next) break;
     seen.add(next.id);
     if (calm > 0) calm--; else amount *= step;
@@ -280,12 +267,12 @@ export default {
             const base = unit.s.atk * (prof.atkScale ?? 1) * (prof.healScale ?? 1) * unit.s.atkScaleMul;
             for (const t of c.targets || []) {
               if (!t || t.side !== 'ally') continue;
-              chainFrom(battle, unit, t, base, { ...chain, count: s1on ? s1Count : chain.count, fullProsts: s2on, mainDone: true });
+              chainFrom(battle, unit, t, base, { ...chain, count: s1on ? s1Count : chain.count, mainDone: true });
               // S2: 0.6 s after her attack healed her 重构体, a second chain on it (her ATK × 1)
               if (s2on && isProstsOf(t, unit)) {
                 battle.after(S2_EXTRA_DELAY, () => {
                   if (!unit.alive || !up(t)) return;
-                  chainFrom(battle, unit, t, unit.s.atk * unit.s.atkScaleMul, { ...chain, fullProsts: skillOn(unit, S2) });
+                  chainFrom(battle, unit, t, unit.s.atk * unit.s.atkScaleMul, chain);
                 }, { owner: unit });
               }
             }

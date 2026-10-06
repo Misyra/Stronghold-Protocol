@@ -268,6 +268,30 @@ export class TokenBucket {
  */
 export const ENCODED = Symbol('sp.encoded');
 
+/** Monotonic outbound frame counters since process start (per-socket sends; /healthz `wire`). */
+export const wireStats = { frames: 0, bytes: 0, byType: new Map() };
+
+/**
+ * @param {string | null} kind frame type (null = unknown, counted in the totals only)
+ * @param {number} len data.length (UTF-16 units ≈ wire bytes for the ASCII-heavy frames here)
+ */
+function noteWireFrame(kind, len) {
+  wireStats.frames++;
+  wireStats.bytes += len;
+  if (kind == null) return;
+  let e = wireStats.byType.get(kind);
+  if (!e) { e = { frames: 0, bytes: 0 }; wireStats.byType.set(kind, e); }
+  e.frames++;
+  e.bytes += len;
+}
+
+/** Plain-object snapshot of wireStats for /healthz (diff two polls for rates). */
+export function wireStatsSnapshot() {
+  const byType = {};
+  for (const [k, v] of wireStats.byType) byType[k] = { frames: v.frames, bytes: v.bytes };
+  return { frames: wireStats.frames, bytes: wireStats.bytes, byType };
+}
+
 /**
  * JSON-encode a message; returns null (and never throws) on unserializable input. A message
  * carrying a string under `ENCODED` encodes to that string (see the symbol).
@@ -291,16 +315,17 @@ const onSendDone = (err) => { void err; }; // errors surface through the socket'
  * congested (> 1 MB queued), and terminates sockets whose queue exceeds 16 MB.
  * @param {import('ws').WebSocket | null | undefined} ws
  * @param {string} data
- * @param {{ droppable?: boolean }} [opts]
+ * @param {{ droppable?: boolean, kind?: string | null }} [opts] kind labels the frame in wireStats
  * @returns {boolean} true when the frame was queued
  */
-export function sendRaw(ws, data, { droppable = false } = {}) {
+export function sendRaw(ws, data, { droppable = false, kind = null } = {}) {
   if (!ws || ws.readyState !== WS_OPEN || typeof data !== 'string') return false;
   try {
     const queued = ws.bufferedAmount;
     if (queued > NET_DEFAULTS.hardBufferBytes) { ws.terminate(); return false; }
     if (droppable && queued > NET_DEFAULTS.snapDropBytes) return false;
     ws.send(data, onSendDone);
+    noteWireFrame(kind, data.length);
     return true;
   } catch {
     return false;
@@ -319,7 +344,8 @@ export const isDroppable = (msg) => !!msg && msg.t === 'b.snap';
 export function send(ws, msg) {
   const data = encode(msg);
   if (data == null) return false;
-  return sendRaw(ws, data, { droppable: isDroppable(msg) });
+  const kind = msg && typeof msg === 'object' && typeof msg.t === 'string' ? msg.t : null;
+  return sendRaw(ws, data, { droppable: isDroppable(msg), kind });
 }
 
 /**

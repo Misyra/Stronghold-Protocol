@@ -44,7 +44,7 @@ import { promisify } from 'node:util';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
+import { Network, SessionRegistry, NET_DEFAULTS, wireStatsSnapshot } from './net.js';
 import { Lobby, CODE_ALPHABET } from './lobby.js';
 import { Persister, restoreServer } from './persist.js';
 import { FileStateStore } from './stateFile.js';
@@ -868,6 +868,9 @@ export async function startServer(opts = {}) {
         memory: process.memoryUsage(),
         staticCache: serveStatic.cacheStats(),
         socketBuffers: network.bufferedBytes(),
+        // outbound frames since process start, per socket send (`byType` only knows the frame's type; poll twice
+        // for rates — which types dominate the broadcast/serialization cost)
+        wire: wireStatsSnapshot(),
         persist: persister ? { enabled: true, backend: store.kind || 'custom', mode: store.mode || null, writes: persister.writes,
           failures: persister.failures, checkpoints: persister.matchDocs.size,
           workerMemory: persister.encoder?.memory || null } : null,

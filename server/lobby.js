@@ -1134,7 +1134,7 @@ export class Lobby {
   broadcastState(room) {
     if (room.disposed) return;
     const data = encode(room.toState());
-    for (const session of this.memberSessions(room)) sendRaw(session.ws, data);
+    for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { kind: 'room.state' });
   }
 
   sendState(room, session) {
@@ -1147,7 +1147,8 @@ export class Lobby {
     const data = encode(msg);
     if (data == null) { this.log.error(`[lobby] ${room.code} unserializable broadcast ${msg && msg.t}`); return null; }
     const droppable = isDroppable(msg);
-    for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { droppable });
+    const kind = typeof msg?.t === 'string' ? msg.t : null;
+    for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { droppable, kind });
     return data;
   }
 

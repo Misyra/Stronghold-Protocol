@@ -302,7 +302,7 @@ test('余 文火慢炖: R8 round start — exactly 1 active bond +36 layers, oth
   cover('band_yu');
 });
 
-test('凯瑟琳 定向投放: every shop upgrade offers 3 different items (tier ≤ new level), 1 free pick', () => {
+test('凯瑟琳 定向投放: every shop upgrade offers 3 different shop items (any tier — community report of 2026-10-06), 1 free pick', () => {
   const { m, ps } = setup({ band: 'band_cathy', seed: 9 });
   for (const lvl of [2, 3]) {
     ps.shop.upgradePrice = 0;
@@ -313,7 +313,7 @@ test('凯瑟琳 定向投放: every shop upgrade offers 3 different items (tier 
     const ids = offer.slots.map((sl) => sl.id);
     assert.equal(ids.length, 3);
     assert.equal(new Set(ids).size, 3);
-    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && DATA.items[id].tier <= lvl && !DATA.items[id].isGolden, id);
+    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && !DATA.items[id].shopExcluded && !DATA.items[id].isGolden, id);
   }
   const f0 = ps.funds;
   const pick = ps.offers[0].slots[2].id;

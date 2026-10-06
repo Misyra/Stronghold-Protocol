@@ -135,9 +135,12 @@ export default {
           const extra = battle.alliesInGrid(unit).some((a) => a !== unit && isOp(a)) ? Math.min(num(t0.projectile_extend), num(t0.projectile_extend_max, Infinity)) : 0;
           // it drifts away from her deployment tile ("移动方向始终为远离棘刺部署位置中心的方向")
           const dx = t.x - unit.x, dy = t.y - unit.y, len = Math.hypot(dx, dy) || 1;
-          const z = { x: t.x, y: t.y, vx: (dx / len) * speed, vy: (dy / len) * speed, t: 0, acc: 0, dur: baseDur + extra };
+          // `key`: the fx re-sent every second as the unit drifts and grows is this one zone — the client updates it in
+          // place instead of stacking a new layer each second (render/fx/zones.js; community report of 2026-10-06)
+          const key = `thorn2:${unit.id}:${unit.mem.zoneSeq = (unit.mem.zoneSeq ?? 0) + 1}`;
+          const z = { x: t.x, y: t.y, vx: (dx / len) * speed, vy: (dy / len) * speed, t: 0, acc: 0, dur: baseDur + extra, key };
           (unit.mem.zones ??= []).push(z);
-          battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r: r0, duration: z.dur });
+          battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r: r0, duration: z.dur, key });
         },
       },
       talents: [
@@ -184,7 +187,7 @@ export default {
               for (const e of foes) battle.dealDamage(unit, e, { amount: unit.s.atk * num(bb.atk_scale), type: 'arts', isSkill: true, tags: ['skill', 'alchemy'] });
               const heal = unit.s.atk * num(bb.hp_recovery_per_sec_ratio_chr);
               if (heal > 0) for (const a of battle.alliesInRadius(z.x, z.y, r, null)) if (a.hp < a.s.maxHp) battle.heal(unit, a, heal, { aura: true });
-              battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r, duration: Math.max(0, z.dur - z.t) });
+              battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r, duration: Math.max(0, z.dur - z.t), key: z.key });
             }
           }
           for (const [e, steps] of seaHits) { // S3 debuff: 不叠加 — the strongest zone wins

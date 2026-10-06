@@ -3,6 +3,29 @@
 
 import { NO_OPTS, clamp, easeOut } from './limits.js';
 
+/** A zone lasting longer than this (real s) is a persistent area (炼金单元, fields): drawn dimmer than a skill's short burst. */
+export const ZONE_PERSIST = 3;
+/** Disc / edge alpha: a short zone, a persistent one (before the overlap damping), a telegraph. */
+export const ZONE_ALPHA = Object.freeze({ short: [0.28, 0.75], persist: [0.16, 0.5], warn: [0.35, 0.75] });
+
+/**
+ * [disc, edge] alpha of zone `zn` among `zones` (additive blending). A persistent area is dimmer and shares its light with
+ * the persistent areas overlapping it — ÷ √n for n of them, centres closer than ¾ of their radii summed —, so stacked
+ * alchemy units read as one brighter area, not a white blot (community report of 2026-10-06 「炼金单元等范围持续性技能特效太亮
+ * （尤其是多层叠加以后）」). Short bursts and telegraphs keep their full strength.
+ */
+export function zoneAlpha(zn, zones) {
+  if (zn.warn) return ZONE_ALPHA.warn;
+  if (!(zn.dur > ZONE_PERSIST)) return ZONE_ALPHA.short;
+  let n = 1;
+  for (const o of zones) {
+    if (o === zn || o.warn || !(o.dur > ZONE_PERSIST)) continue;
+    if (Math.hypot(o.x - zn.x, o.y - zn.y) < 0.75 * (o.r + zn.r)) n++;
+  }
+  const k = 1 / Math.sqrt(n);
+  return [ZONE_ALPHA.persist[0] * k, ZONE_ALPHA.persist[1] * k];
+}
+
 export class FxZones {
   /**
    * An explosion on the ground at (x, y, z) of radius r tiles: fireball in `col`, a white flash, a shockwave and a
@@ -65,15 +88,28 @@ export class FxZones {
     this.burst(g.x, g.y - g.s * 0.2, g.s, 6, tint, { speed: 2.4, life: 0.35 });
   }
 
-  /** Persistent ground area: soft disc + pulsing edge ring for `dur` real seconds (telegraphs pulse faster). */
-  zone(x, y, z, r, tint, dur, tex = 'soft', warn = false) {
+  /**
+   * Persistent ground area: soft disc + pulsing edge ring for `dur` real seconds (telegraphs pulse faster). `key` (the
+   * sim fx's `key`): a zone already up under that key is updated in place — moved, resized, its end `dur` from now —
+   * instead of a second one stacked on it (引星棘刺 S2's drifting alchemy unit is re-sent every second: twelve layers of the
+   * same zone used to pile up, community report of 2026-10-06 「炼金单元等范围持续性技能特效太亮（尤其是多层叠加以后）」).
+   */
+  zone(x, y, z, r, tint, dur, tex = 'soft', warn = false, key = null) {
+    if (key != null) {
+      const zn = this.zones.find((q) => q.key === key && q.t < q.dur);
+      if (zn) {
+        zn.x = x; zn.y = y; zn.z = z; zn.r = r; zn.tint = tint; zn.dur = zn.t + dur;
+        this._onGround(zn.disc, y, z); this._onGround(zn.edge, y, z);
+        return;
+      }
+    }
     const P = this.P;
     const disc = new P.Sprite(this.tex[tex === 'ring' ? 'soft' : tex] || this.tex.soft);
     disc.anchor.set(0.5); disc.blendMode = P.BLEND_MODES.ADD; disc.tint = tint;
     const edge = new P.Sprite(this.tex.ring);
     edge.anchor.set(0.5); edge.blendMode = P.BLEND_MODES.ADD; edge.tint = tint;
     this._onGround(disc, y, z); this._onGround(edge, y, z);
-    this.zones.push({ disc, edge, x, y, z, r, t: 0, dur, warn });
+    this.zones.push({ disc, edge, x, y, z, r, t: 0, dur, warn, key, tint });
     if (this.zones.length > 24) this._freeZone(this.zones.shift());
   }
 
@@ -86,6 +122,10 @@ export class FxZones {
     for (const zn of this.zones) {
       zn.t += dt;
       if (zn.t >= zn.dur) { this._freeZone(zn); continue; }
+      this.zones[w++] = zn;
+    }
+    this.zones.length = w;
+    for (const zn of this.zones) {
       const k = zn.t / zn.dur;
       const grow = Math.min(1, zn.t / 0.25);
       const rad = zn.r * (0.35 + 0.65 * easeOut(grow));
@@ -94,11 +134,11 @@ export class FxZones {
       const rx = p.s * rad, ry = Math.max(1, p.y - q.y);
       const fade = k > 0.8 ? (1 - k) / 0.2 : 1;
       const pulse = zn.warn ? 0.55 + 0.45 * Math.abs(Math.sin(zn.t * 7)) : 0.8 + 0.2 * Math.sin(zn.t * 3);
-      zn.disc.position.set(p.x, p.y); zn.disc.scale.set((rx * 2) / 128, (ry * 2) / 128); zn.disc.alpha = (zn.warn ? 0.35 : 0.28) * fade * pulse;
-      zn.edge.position.set(p.x, p.y); zn.edge.scale.set((rx * 2.1) / 128, (ry * 2.1) / 128); zn.edge.alpha = 0.75 * fade * pulse;
-      this.zones[w++] = zn;
+      const [discA, edgeA] = zoneAlpha(zn, this.zones);
+      zn.disc.tint = zn.edge.tint = zn.tint ?? zn.disc.tint;
+      zn.disc.position.set(p.x, p.y); zn.disc.scale.set((rx * 2) / 128, (ry * 2) / 128); zn.disc.alpha = discA * fade * pulse;
+      zn.edge.position.set(p.x, p.y); zn.edge.scale.set((rx * 2.1) / 128, (ry * 2.1) / 128); zn.edge.alpha = edgeA * fade * pulse;
     }
-    this.zones.length = w;
   }
 
   /** Flash a set of tiles ([[r,c]]) on the ground (telegraphed boxes, blast tiles). */

@@ -669,9 +669,10 @@ derived bonds, the operator's form at the slot's status with that skill and modu
 `diyFor` = the slot's base id —, `diyPool(tier, { data, kitted })` the legal picks of a tier (prototypes, then the owned
 pool; with `kitted`, only operators with a kit: server/sim/content/kits/index.js `KITTED_CHARS`) and
 `validateDiyPicks(picks, { data, kitted })` a roster (a prototype may fill a tier-5 and a tier-6 slot, an owned operator
-one slot, the picks of a tier differ, no 集成战略 module — `isDiyModule`: the ISW-A modules of 凯尔希, 傀影, 菲亚梅塔, 提丰,
-艾丽妮 and 霍尔海雅 are never a player's choice [ASSUMED], the owner's decision of 2026-10-05, while the record and the sim
-still compose them for the kits' tests). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
+one slot, the picks of a tier differ, no module of another game mode — `isDiyModule` / `DIY_EXCLUDED_MODULE_TYPE`: the
+集成战略 modules ISW-A (凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮, 霍尔海雅) and SO-A / SO-B (电弧, 机械师 — "在【岁的界园志异】中",
+"在【沉沦者的黑流树海】中") and the 生息演算 module RA-A (森蚺) are never a player's choice [ASSUMED], the owner's decision of
+2026-10-05 for ISW-A and the same reason for SO / RA, while the record and the sim still compose them for the kits' tests). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
 is fielded as `getChess(slotId, { diy })` (docs/SIM.md §12); its kit is `KITS[charId]` (kits/README.md "How to add an
 operator (自选)"). (`shared/standIn.js diyRecord(slot, charId, backups, sel)` is the older prototype-only form.)
 

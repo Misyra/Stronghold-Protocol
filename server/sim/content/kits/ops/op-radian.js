@@ -50,7 +50,8 @@
 // - Modules SO-A 电弧特勤证章 / SO-B 新起点: their trait and talent parts act "在【岁的界园志异】中" only (the client gates them to
 //   the 集成战略 theme rogue_yan / validInGameTag roguelike): N/A here — the module talents the composed record carries
 //   (SO-A's hidden respawn_time / prob / sp, SO-B's attack@max_target and x-5 recall) are ignored; their attributes are in the
-//   stats. (DIY_EXCLUDED_MODULE_TYPE refuses ISW-* only, so a roster may carry them — see the report.)
+//   stats. A player's roster never carries them (shared/diy.js DIY_EXCLUDED_MODULE_TYPE, 0.2.0 WE2); the kit fields them for
+//   its tests.
 
 import { num, talentBb, skillRec, up } from '../shared/tier1.js';
 import { summonDeck, holdBuff, tokenStat } from '../shared/summoner.js';

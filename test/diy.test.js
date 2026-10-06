@@ -103,21 +103,33 @@ test('checkDiyPick: an owned 6★ chooses any of its 3 skills and any module of 
   for (const [slot, pick, re] of bad) assert.match(checkDiyPick(slot, pick, DATA).error, re, JSON.stringify(pick));
 });
 
-test('validateDiyPicks: a roster never carries a 集成战略 module (ISW-A) [ASSUMED, the owner\'s decision of 2026-10-05]; the record still composes it', () => {
+test('validateDiyPicks: a roster never carries a module of another game mode — 集成战略 ISW-A / SO-A / SO-B, 生息演算 RA-A [ASSUMED, the owner\'s decision of 2026-10-05 for ISW-A]; the record still composes it', () => {
   const backups = DATA.backups;
-  let checked = 0;
+  const refused = new Set();
   for (const charId of backups.diy.ownedPool) {
     for (const [slot, key] of [[T5, '2/60/7/1'], [T6, '2/60/7/3']]) {
       for (const mod of backups.units[charId].forms[key]?.modules ?? []) {
         const pick = { charId, skillIndex: 0, uniEquipId: mod.uniEquipId };
         assert.ok(checkDiyPick(slot, pick, DATA).ok, `${charId} ${mod.uniEquipId}: a legal record (the sim and the kits field it)`);
         const v = validateDiyPicks({ [slot]: pick }, { data: DATA });
-        if (/^ISW-/.test(mod.typeName)) { assert.match(v.detail || '', /集成战略 module/, `${charId} ${mod.uniEquipId}`); assert.equal(isDiyModule(mod), false); checked++; }
-        else assert.ok(v.ok, `${charId} ${mod.uniEquipId}: ${v.detail}`);
+        if (/^(ISW|SO|RA)-/.test(mod.typeName)) {
+          assert.match(v.detail || '', /module of another game mode/, `${charId} ${mod.uniEquipId}`);
+          assert.equal(isDiyModule(mod), false);
+          refused.add(`${mod.typeName} ${mod.uniEquipId}`);
+        } else assert.ok(v.ok, `${charId} ${mod.uniEquipId}: ${v.detail}`);
       }
     }
   }
-  assert.ok(checked >= 6, 'the ISW-A modules of the pool (凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮, 霍尔海雅) at both stages');
+  // 凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮, 霍尔海雅 (ISW-A); 电弧 SO-A / SO-B, 机械师 SO-A; 森蚺 RA-A
+  assert.deepEqual([...refused].map((x) => x.split(' ')[0]).sort(), ['ISW-A', 'ISW-A', 'ISW-A', 'ISW-A', 'ISW-A', 'ISW-A', 'RA-A', 'SO-A', 'SO-A', 'SO-B']);
+  // every refused module's own parts are tied to its mode: the text "在…中" of its trait / talents
+  for (const charId of ['char_4195_radian', 'char_4230_mcnist', 'char_416_zumama']) {
+    for (const mod of backups.units[charId].forms['2/60/7/3'].modules) {
+      if (isDiyModule(mod)) continue;
+      const text = JSON.stringify([mod.traitOverride ?? null, mod.talentChanges ?? []]);
+      assert.match(text, /在(集成战略|【[^】]+】|生息演算)中/, `${charId} ${mod.uniEquipId}: a mode-only text`);
+    }
+  }
 });
 
 test('diyRecord: the slot\'s identity (tier, price, merge, status), no 特质, derived bonds, the operator\'s body at the slot form; module active on the elite only, stage 1 / 3', () => {

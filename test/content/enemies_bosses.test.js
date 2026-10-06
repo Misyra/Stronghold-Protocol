@@ -70,12 +70,17 @@ test('stats-only enemies attach no ability and fight with their data stats', () 
   }
 });
 
-test('沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced (every authored enemy)', () => {
+// Abilities the client makes silenceable although their handbook line is NORMAL (the battle prefab's buff template checks
+// SILENCED): 萨卡兹枯朽战士 / 组长's PollutedDie = template projectile_on_killed, the 死亡爆炸 template of 高能源石虫's
+// SILENCE-flagged blast too (community report of 2026-10-06, item 10; DESIGN §25.18.2)
+const SILENCE_BY_TEMPLATE = new Set(['enemy_1267_nhpbr', 'enemy_1267_nhpbr_2']);
+
+test('沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced (every authored enemy), plus the ones whose client template checks it', () => {
   const h = arena();
   h.step();
   for (const key of [...Object.keys(KITS), ...Object.keys(BOSS_KITS)]) {
     const e = put(h, key, [10, 7]);
-    const data = E[key].abilities.some((a) => a.format === 'SILENCE');
+    const data = E[key].abilities.some((a) => a.format === 'SILENCE') || SILENCE_BY_TEMPLATE.has(key);
     const kit = !!(e.mem.ab && e.mem.ab.list.some((a) => a && (a.sil || a.silAware)));
     assert.equal(kit, data, `${nm(key)}: ${E[key].abilities.map((a) => `[${a.format}]${a.text}`).join(' / ')}`);
     h.b.kill(e, null);
@@ -673,6 +678,30 @@ for (const key of ['enemy_1267_nhpbr', 'enemy_1267_nhpbr_2']) {
     killed(h, e, null);
     h.run(3.05);
     approx(h.unit('t_wall').stats.taken, 3 * tb(key, 'PollutedDie.polluted_damage_low'));
+  });
+
+  // PRTS 特殊机制 死亡爆炸 "默认可沉默…若不处于沉默状态，将会…释放"; client template projectile_on_killed: CheckAbnormalFlag
+  // SILENCED (unset) before EmitProjectile (community report of 2026-10-06, item 10: a silenced one still poisoned)
+  test(`${nm(key)}: silenced when it dies, it releases no 污染秽蚀; a silence that ran out does not stop it`, () => {
+    const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 6 }] });
+    h.step();
+    const e = put(h, key, [10, 7]);
+    h.b.applyStatus(e, 'silence', { duration: 30 });
+    h.step();
+    assert.ok(e.s.flags.silence);
+    killed(h, e, null);
+    h.run(3.05);
+    assert.equal(h.unit('t_wall').stats.taken, 0);
+    assert.equal(h.eventsOf('fx').filter((x) => x[1] === 'zone' && x[4] && x[4].kind === 'pollution').length, 0, 'no zone');
+    const h2 = arena({ units: [{ chessId: 't_wall', row: 10, col: 6 }] });
+    h2.step();
+    const e2 = put(h2, key, [10, 7]);
+    h2.b.applyStatus(e2, 'silence', { duration: 1 });
+    h2.run(1.5);
+    assert.ok(!e2.s.flags.silence);
+    killed(h2, e2, null);
+    h2.run(3.05);
+    approx(h2.unit('t_wall').stats.taken, 3 * tb(key, 'PollutedDie.polluted_damage_low'));
   });
 }
 

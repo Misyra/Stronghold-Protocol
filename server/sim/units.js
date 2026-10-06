@@ -130,6 +130,8 @@ export class Unit {
       blockCnt: Math.max(0, fin(Math.round(b.blockCnt + a('blockCnt')), 0)),
       moveSpeed: Math.max(0, fin((b.moveSpeed + a('moveFlat')) * m('moveMul'), fin(b.moveSpeed, 0))),
       rangeExtend: Math.max(0, Math.round(a('rangeExtend'))),
+      // 阻挡半径倍率 − 1 (PRTS 数值范围 BLOCK_RADIUS_SCALE "影响阻挡模式为飞行阻挡的单位的阻挡半径"): Battle._checkBlock
+      blockRadiusScale: Math.max(0, fin(a('blockRadiusScale'), 0)),
       baseRangeExtend: Math.max(0, fin(Math.round(permRangeExtend), 0)),   // permanent part (initial range)
       massLevel: Math.max(0, fin(fin(b.massLevel, 0) + a('massFlat'), 0)),
       maxTargets: a('maxTargets'),

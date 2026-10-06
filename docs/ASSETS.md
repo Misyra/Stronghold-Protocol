@@ -182,7 +182,7 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
                 defenceStart, defenceUnite, battleOverReduce, battleOverNoReduce, battleOverNormal, goFirst,
                 disconnect, settlementSucceed, settlementFail, settlementTeam, settlementBossSign,
                 goodEvaluation, load, start, matchSucceed, matchFail, matchCancel, joinRoom },
-      battle: { deploy, tokenDeploy, charDie, enemyDie, enemyDieHeavy, enemyHit, heal, win, lose, killCoin },
+      battle: { deploy, tokenDeploy, charDie, enemyDie, enemyDieHeavy, enemyHit, heal, leak, win, lose, killCoin },
       units:  { [charId|tokenId|enemyId]: { attack?, hit?, skill?, skills?: {[skillIndex]: url}, die?, born?,
                 mix?: { [attack|hit|die|born]: { p?, vol? } } } }
     }

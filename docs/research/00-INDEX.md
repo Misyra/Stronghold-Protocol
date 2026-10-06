@@ -11,7 +11,7 @@ Tags: **[DATA]** client game data · **[VERIFIED]** official or wiki rule text, 
 | File | What it holds | Key machine paths |
 |---|---|---|
 | `01-core-rules.md` / `01-core-data.json` | Modes, round schedule and timers, economy, shop, merging, LP, Final Assault and Hidden Core, 40 strategies (bands), 机变 choice events, scoring and tips. **Addendum A1–A5** has the verified rules, the ban rule and the enemy-multiplier table. | `modes`, `rounds`, `shopLevels`, `bands`, `choiceEvents`, `choiceAndEnemyEffects`, **`_criticAddendum`** (income, freeze, hand, bandDraft, bannedOperators, enemyStatMultipliers, specialPhase…) |
-| `02-bonds.md` / `02-bonds.json` | All 23 bonds (8 core, 15 add-on): activation, layer formulas, tier effects, layer sources and readers, band/choice/item interactions. Addendum: 华法琳 cap 12/24, ban interplay. | `bonds[*]`, `layerGarrisons`, `layerScalingGarrisons`, `bondGrantingItems` |
+| `02-bonds.md` / `02-bonds.json` | All 23 bonds (8 core, 15 add-on): activation, layer formulas, tier effects, layer sources and readers, band/choice/item interactions. Addendum: 华法琳 cap 7/14 (corrected 2026-10-06), ban interplay. | `bonds[*]`, `layerGarrisons`, `layerScalingGarrisons`, `bondGrantingItems` |
 | `03-operators.md` / `03-operators.json` | 133 chess ×2 (normal/elite): stats at the tier's status, range grids, the default skill with blackboard, talents, module, 特质 (garrison) blackboards, tokens, distribution. Addendum: **skill-trigger correction**, summons and hand, deploy rules, DIY. | `chess[*].stats/rangeGrid/skill/talents/garrisons/module`, `tokensUsedByPool`, `skillTriggerDataList` |
 | `04-items.md` / `04-items.json` | 56 equipment ×2 + 3 Arts: effects, formulas, merge, sources, 变形同构体 table, VI-tier combos. Addendum: **items can't be sold**, 机变 item card formats. | `items[*]`, `itemSources`, `bondGrantTable_for_变形同构体` |
 | `05-enemies-levels.md` / `05-enemies.json` / `05-maps.json` | Stage terrains (8 active), 38 wave templates with routes, 326 enemies, special-enemy pools, generation algorithm, bosses, bounties, LP rules. Addendum: DP, hidden-core thresholds, multi FUNNY rounds, stat scaling. | `05-maps.json: stages, roundLevels`; `05-enemies.json: enemies, specialEntries, bosses, bountyEffects, generation, _criticAddendum` |
@@ -131,7 +131,7 @@ The server draws a disabled bond set **D**: **3 core + 4 add-on** in NORMAL/HARD
 | TANK skill rule | 03: any skill index | **Skill 1 only** |
 | 联防 partner rule | 01: fewest leaks | Meaningless; **highest LP, then seat** [ASSUMED] |
 | FUNNY income bonus | 01: +2 | **None** (official intro shows 4 at R1 in 标准) |
-| 华法琳 granted cap | data 7/14 vs patch 12/24 | **12/24** (official 3/27 notice) |
+| 华法琳 granted cap | data 7/14 vs patch 12/24 | **7/14** (the PRTS 3/27 note lowers 12/24 to 7/14; first misread, corrected 2026-10-06 — GitHub #175) |
 
 ## 8. Remaining open questions, with recommended defaults
 

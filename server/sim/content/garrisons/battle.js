@@ -5,8 +5,9 @@
 //
 //   ADD_BOND            grants `give_garrison_id` to other operators before the first deployment (targets parsed from
 //                       the text: 身前一格 / 身前一格【X】/ 自身和身前一格 / 同一行最右边 / 所有【X】). A unit owns a garrison id
-//                       at most once (耀骑士临光 already carries the 144/159 it grants to itself). The 华法琳-granted trait
-//                       (garrison_95) is capped 12 / 24 per battle instead of the data's 7 / 14 (research 02 Addendum 1).
+//                       at most once (耀骑士临光 already carries the 144/159 it grants to itself). A granted trait keeps
+//                       its data cap like a native one: 华法琳's garrison_95 stops at 7 / 14 layers per battle (PRTS 下半
+//                       3月27日更新#2: 「从 初始12/精锐24 降低至 初始7/精锐14」; GitHub #175, PR #192 by @kukiC).
 //   layer events        act1autochess_gar_event_useskill (skillStart) · _selfkillenemy (kill, every check_cnt) ·
 //                       _selfdead (death 'killed'; texts with 替身 also on every substitute ⇄ body swap, read from the
 //                       dollkeeper flag unit.trait.doll) · _consume_ammo (ammoUsed; range_id 0-1 self, 1-1 front tile,
@@ -43,9 +44,6 @@ import * as S from '../support/index.js';
 import { mitigate } from '../../damage.js';
 import { frontOf } from '../../dir.js';
 
-/** 华法琳's granted trait: per-battle cap override (research 02 Addendum 1: PRTS 3/27 "初始7/精锐14 → 初始12/精锐24"). */
-export const GRANTED_CAP_OVERRIDE = Object.freeze({ garrison_95_a: 12, garrison_95_b: 24 });
-
 const ids = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
 const EMPTY = Object.freeze([]);
 /** Status keys for check_ab_flag values used by the data (16 = 冻结). */
@@ -68,8 +66,7 @@ export function install(battle) {
     if (set.has(g.garrisonId)) return null;
     set.add(g.garrisonId);
     const bb = g.bb || {};
-    const override = grantedBy ? GRANTED_CAP_OVERRIDE[g.garrisonId] : undefined;
-    const cap = override ?? (S.num(bb.max_add_count_per_battle, 0) > 0 ? S.num(bb.max_add_count_per_battle) : Infinity);
+    const cap = S.num(bb.max_add_count_per_battle, 0) > 0 ? S.num(bb.max_add_count_per_battle) : Infinity;
     const it = {
       unit, g, gid: g.garrisonId, key: g.effectKey, bb, bbStr: g.bbStr || {}, grantedBy,
       cap, capKey: `gar:${g.garrisonId}:${unit.id}`, cnt: 0, k: -1,

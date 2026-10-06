@@ -269,6 +269,17 @@ describe('3: the temp overflow row (临时整备区)', () => {
 // ---- 8: the operator's own effect first --------------------------------------------------------------------------------
 
 describe('8: 特质 right under the detail card\'s header', () => {
+  // GitHub #175 (from PR #192 by @kukiC): the card's 7 / 14 is the cap the battle applies
+  test('华法琳\'s normal and elite cards show the 7 / 14 layer caps (GitHub #175)', async () => {
+    await data.loadAll('chess', 'garrisons', 'assets', 'bonds', 'items');
+    for (const [id, cap] of [['chess_char_4_26_a', 7], ['chess_char_4_26_b', 14]]) {
+      const blocks = ChessDetail({ chess: data.lookup('chess', id), piece: null, editable: false, bonds: [], loadout: null });
+      const block = blocks.find((b) => b.key === 'garrison');
+      const rich = [...walk(block.type(block.props))].find((n) => n.props?.text != null);
+      assert.match(rich.props.text, new RegExp(`每场战斗至多${cap}层`));
+    }
+  });
+
   test('the block order', () => {
     assert.deepEqual(CHESS_SECTIONS, ['head', 'garrison', 'trait', 'stats', 'skill', 'module', 'equip', 'talents', 'actions']);
   });

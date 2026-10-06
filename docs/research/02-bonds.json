@@ -7601,7 +7601,7 @@
      "p": "min(1, 0.18 + 0.003*L)",
      "goldPayouts": "20 * floor(L/100)"
     },
-    "layerGain": "维娜·维多利亚 +2 per distinct-tier 奇迹; 录武官 获得时 +3; 伺夜 kills +1; 引星棘刺 +4 self & front; 华法琳 (奇迹 member) gives the operator in front \"开技能时 +1 own active bonds\" (data: <=7/battle, elite +2 <=14; PRTS 3/27 patch note says cap raised to 12/24).",
+    "layerGain": "维娜·维多利亚 +2 per distinct-tier 奇迹; 录武官 获得时 +3; 伺夜 kills +1; 引星棘刺 +4 self & front; 华法琳 (奇迹 member) gives the operator in front \"开技能时 +1 own active bonds\" (data: <=7/battle, elite +2 <=14 — the 3/27 update lowered it from 12/24, PRTS 下半 3月27日更新#2; Addendum 1).",
     "notes": [
      "blackboard probk = 0.3: meaning unknown (not in any description) [UNKNOWN]."
     ]

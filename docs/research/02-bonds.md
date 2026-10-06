@@ -842,7 +842,7 @@ Members (9 chess, 8 in current shop pool; by tier in shop: {'2': 1, '3': 2, '4':
 - **[2 distinct (board + bench)]** After each shop refresh, if the player has 0 free refreshes: with p = 0.18 + 0.003*L gain 1 free refresh.
 - **[every 100 layers]** +20 gold.
 - Formulas: `p = min(1, 0.18 + 0.003*L)`; `goldPayouts = 20 * floor(L/100)`
-- How layers are gained: 维娜·维多利亚 +2 per distinct-tier 奇迹; 录武官 获得时 +3; 伺夜 kills +1; 引星棘刺 +4 self & front; 华法琳 (奇迹 member) gives the operator in front "开技能时 +1 own active bonds" (data: <=7/battle, elite +2 <=14; PRTS 3/27 patch note says cap raised to 12/24).
+- How layers are gained: 维娜·维多利亚 +2 per distinct-tier 奇迹; 录武官 获得时 +3; 伺夜 kills +1; 引星棘刺 +4 self & front; 华法琳 (奇迹 member) gives the operator in front "开技能时 +1 own active bonds" (data: <=7/battle, elite +2 <=14 — the 3/27 update lowered it from 12/24, PRTS 下半 3月27日更新#2; Addendum 1).
 - Note: blackboard probk = 0.3: meaning unknown (not in any description) [UNKNOWN].
 - Garrisons that explicitly add layers to this bond: `garrison_54`, `garrison_153`, `garrison_156`, `garrison_157` (see section 4; plus the generic ones)
 
@@ -1325,7 +1325,7 @@ Bond items for 变形同构体 (`chess_item_6_09_e`, "携带者获得额外盟�
 
 ## 8. Open questions / discrepancies
 
-1. 华法琳 granted-trait cap: data garrison_95 = 7 (elite 14) per battle, PRTS 3/27 patch note says 12/24. Recommend the patch-note value if we want "latest official"; data value otherwise.
+1. 华法琳 granted-trait cap: data garrison_95 = 7 (elite 14) per battle; the PRTS 3/27 patch note lowers it from 12/24 to 7/14, so the data value is the latest official one (resolved: Addendum 1, corrected 2026-10-06).
 2. 调和 +1: applies to every core bond or only those with >=1 real member on board? (assumed the latter).
 3. 奇迹 blackboard `probk` 0.3 has no known meaning.
 4. `pool_equip_vict` content (assumed the 4 special 维式重锤).
@@ -1341,7 +1341,7 @@ Bond items for 变形同构体 (`chess_item_6_09_e`, "携带者获得额外盟�
 
 Written 2026-09-27 by the completeness critic. Sources: the official 3/27 notice (`ak.hypergryph.com/news/8584`), PRTS `卫戍协议：盟约_下半` 更新记录, BWIKI `盟约` / `盟约/S.W.E.E.P.报告`, and the screenshot `i.meee.com.tw/9H7Kugy.png`.
 
-1. **§8 Q1 (华法琳 cap): resolved → use 12 per battle normal, 24 elite.** The official 3/27 notice says "调整每场战斗至多获得的层数". PRTS gives the numbers: "付与的特质的叠层上限从初始7/精锐14提升至初始12/精锐24". The client data (`garrison_72_*` → `garrison_95_*`, `max_add_count_per_battle` 7/14) was not updated for this line, although it already carries the other 3/27 changes: 奇迹 `baseprob` 0.18, 远见 80/150, 商业包装方案 8/7. Override `max_add_count_per_battle` to 12/24.
+1. **§8 Q1 (华法琳 cap): resolved → the data's 7 per battle normal, 14 elite (corrected 2026-10-06, GitHub #175).** The official 3/27 notice says only "调整每场战斗至多获得的层数". PRTS `卫戍协议：盟约 下半`, 3月27日更新#2 (revision 439189), gives the numbers: "[Ⅳ阶]华法琳：赋予的特质的叠层上限从 初始12/精锐24 降低至 初始7/精锐14" — a nerf. The current 参战干员 record says 至多7层 / 14层, and the client data (`garrison_72_*` → `garrison_95_*`, `max_add_count_per_battle` 7/14) carries it with the other 3/27 changes (奇迹 `baseprob` 0.18, 远见 80/150, 商业包装方案 8/7). This addendum first read the line backwards (7/14 raised to 12/24), and until 0.2.0 the remake overrode the cap to 12/24 (`GRANTED_CAP_OVERRIDE`, removed with PR #192 by @kukiC: DESIGN §25.13.2). The 12/24 above is the pre-3/27 number.
 2. **Per-match incomplete bonds (new, verified).** See 01 Addendum A2.
    - Each match disables a random set D: 3 core + 4 add-on in NORMAL+; the static list + 1 add-on in FUNNY.
    - Every operator whose bonds are **all** in D leaves the pool.

@@ -71,12 +71,15 @@ export function updateAlly(b, u, dt) {
   if (!u.canAct || !u.profile) return;
   // a rangeExtend change (buff added / expired) rebuilds the range — also for units that never attack (auras)
   if (b.rangeChanged(u)) b._refreshRange(u);
+  // the cooldown exit comes first: while an attack is on cooldown the tick ends before the profile is built
+  // (it ran for every acting unit every tick — the sim's top self-time in the cpu profile). The checks moved
+  // above it are pure reads and nothing between them wrote state, so the order change is not observable.
+  if (u.s.flags.disarm) return;
+  if (u.atkCd > 0) return;
   const sk = u.skill;
   let prof = effectiveProfile(u);
   if (prof.noAttack) return;
   if (prof.noAttackUnlessSkill && !(sk && sk.active)) return;
-  if (u.s.flags.disarm) return;
-  if (u.atkCd > 0) return;
   if (prof.canAttack && !prof.canAttack(b, u)) return;
   let targets = acquireTargets(b, u, prof);
   if (!targets.length) { u.trait.hadTarget = false; return; }

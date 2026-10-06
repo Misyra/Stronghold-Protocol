@@ -98,13 +98,10 @@ export class PlayerAcquire {
       for (const it of l.piece.items || []) items.push(it);
       l.piece.items = [];
     }
+    // a new piece: this round's per-piece counters start at 0, none is carried over from the copies — a newly merged
+    // elite 拉普兰德 is a new 拉普兰德 and fires +8 on its own first manual refresh this round (GitHub #169; the owner's
+    // decision of 2026-10-06; pieceRoundCount)
     const elite = this.newPiece('chess', goldenId, { poolCopies: copies });
-    // this round's per-piece counters: the highest of the copies' (an elite made from 拉普兰德 that already saw their
-    // first refresh this round does not fire again this round — [ASSUMED] conservative, pieceRoundCount)
-    for (const l of consumed) {
-      const rc = l.piece.meta && l.piece.meta.round;
-      if (rc && rc.r === this.m.round) for (const [k, v] of Object.entries(rc.n)) this.bumpPieceRoundCount(elite, k, Math.max(0, v - this.pieceRoundCount(elite, k)));
-    }
     const deployed = consumed.filter((l) => l.key && !this.board.has(l.key)).map((l) => ({ key: l.key, dir: pieceDir(l.piece) }));
     const toTile = (t) => { elite.dir = parseDir(t.dir) || 'RIGHT'; this.board.set(t.key, elite); return 'board'; };
     const tile = mergeTile(deployed, (r, c) => this._legal(elite, r, c));

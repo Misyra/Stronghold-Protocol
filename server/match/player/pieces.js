@@ -114,9 +114,10 @@ export class PlayerPieces {
 
   /**
    * Per-piece counter of the current round (`piece.meta.round` = { r, n: { key: count } }): 0 for a key not counted yet
-   * this round. The counters belong to the operator: a move keeps them, a new piece (bought, granted, transformed)
-   * starts at 0, and an elite merged this round keeps the highest count of its copies (_mergeChess) — 拉普兰德's
-   * "本回合首次主动刷新" is the first manual refresh she witnesses (player feedback after 0.1.0, garrisons/meta.js).
+   * this round. The counters belong to the operator: a move keeps them, a new piece (bought, granted, transformed, or
+   * an elite merged this round — _mergeChess carries none over: GitHub #169, the owner's decision of 2026-10-06)
+   * starts at 0 — 拉普兰德's "本回合首次主动刷新" is the first manual refresh she witnesses (player feedback after 0.1.0,
+   * garrisons/meta.js).
    */
   pieceRoundCount(piece, key) {
     const rc = piece && piece.meta && piece.meta.round;

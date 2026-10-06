@@ -35,7 +35,7 @@
 //     outside PREP (a SETTLE merge's elite waits in temp for the next prep).
 //   * Per-piece round counters (pieceRoundCount, piece.meta.round): an operator's own counts of the current round
 //     (拉普兰德: the manual refreshes she witnessed — player feedback after 0.1.0); a new piece starts at 0, an elite
-//     merged this round keeps the highest of its copies' [ASSUMED].
+//     merged this round too (a new 拉普兰德 — GitHub #169, the owner's decision of 2026-10-06).
 //   * Transformations (transformChess, 突变细胞 — PRTS 备注 "生效时，原干员销毁，获得一名高一阶的随机初始干员"): a destroy
 //     followed by a gain. The carrier leaves wherever it stands (a board tile is freed, the deploy count drops), its
 //     equipment — the cell included — returns to the hand first (overflow temp), then the new chess is gained like any

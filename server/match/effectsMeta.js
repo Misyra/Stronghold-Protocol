@@ -493,8 +493,8 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     counter: (k) => (Number.isFinite(ps.counters[k]) ? ps.counters[k] : 0),
     setCounter: (k, v) => { if (typeof k === 'string' && Number.isFinite(v)) ps.counters[k] = v; return ps.counters[k] ?? 0; },
     incCounter: (k, n = 1) => { if (typeof k !== 'string' || !Number.isFinite(n)) return 0; ps.counters[k] = (Number.isFinite(ps.counters[k]) ? ps.counters[k] : 0) + n; return ps.counters[k]; },
-    /** Per-piece counter of the current round (0 in a new round / for a new piece; an elite merged this round keeps the
-     *  highest of its copies' — PlayerState.pieceRoundCount). */
+    /** Per-piece counter of the current round (0 in a new round / for a new piece, an elite merged this round included —
+     *  PlayerState.pieceRoundCount). */
     pieceCounter: (uid, k) => { const l = ps.find(uid); return l ? ps.pieceRoundCount(l.piece, k) : 0; },
     incPieceCounter: (uid, k, n = 1) => { const l = ps.find(uid); return l ? ps.bumpPieceRoundCount(l.piece, k, n) : 0; },
 

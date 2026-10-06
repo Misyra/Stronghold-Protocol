@@ -107,8 +107,32 @@ export const LOCAL_SPINE_ROLES = Object.freeze({
   },
 });
 
+/** The confined clips of 普通囚犯 / 老练囚犯: their grey *3 set (PREFAB_SPINE_ROLES). */
+const PRISONER_GREY_3 = Object.freeze({
+  idle: 'Idle3', deploy: 'Idle3', attack: clipOf('Attack3'), skill: { ...clipOf('Attack3', 'attack'), index: 0, idle: null },
+  die: 'Die3', move: clipOf('Move3'),
+});
 /**
- * `roles` with the fix of LOCAL_SPINE_ROLES applied: each fixed role whose clips all exist in `durations` replaces the
+ * Role fixes of web enemy models from their official battle prefabs, for skeletons whose clip names mislead the resolver
+ * (by name): model id → roles replacing the resolved ones (the others are kept); processModels applies them, so
+ * data/assets.json carries them. A fix naming a clip the skeleton lacks is dropped and reported. Source: the prefab's
+ * animation table (its Graphic component: anim key → clip) and the clip its Spine starts on, read from the local client's
+ * battle/enm_pfb_*.ab (tools/local-extract, UnityPy).
+ * - 普通囚犯 / 老练囚犯 (enemy_1116_liprr / _2, 孤岛风云 prisoners): three clip sets whose collar light is red (Idle, Move …),
+ *   blinking orange (Idle2 …) and grey (Idle3 …). The prefab maps its keys Idle / Move / Attack / Die to the grey *3 set
+ *   and starts on Default3 — mode Default, 【禁锢】 —, the orange *2 set is its mode R (the warning before the last
+ *   confined attack) and the red unnumbered set its mode L, 【解放】. The resolver took the unnumbered set, so they came out
+ *   of the gate already freed (community report of 2026-10-06). The other prisoners' names already resolve to their grey
+ *   set (强壮囚犯's Idle is its grey one; 拳师囚犯 / 重犯 / 传奇重犯 *_grey); every prisoner's later sets are the render/units.js
+ *   FORMS 'warning' / 'liberty' the sim switches to (content/enemies/archetypes.js prisoner).
+ */
+export const PREFAB_SPINE_ROLES = Object.freeze({
+  enemy_1116_liprr: PRISONER_GREY_3,
+  enemy_1116_liprr_2: PRISONER_GREY_3,
+});
+
+/**
+ * `roles` with the fix of LOCAL_SPINE_ROLES / PREFAB_SPINE_ROLES applied: each fixed role whose clips all exist in `durations` replaces the
  * resolved one; `missing` lists the roles left as resolved because a clip is missing.
  * @param {any} roles resolveRoles output
  * @param {Record<string, any>|undefined} fix
@@ -293,7 +317,10 @@ export async function processModels(models, { root, dl, cachePath, download = tr
     nextCache[m.skel.rel] = { key: ck, info: sk };
     if (sk.missingRegions?.length) problems.push(`${m.key}: ${sk.missingRegions.length} attachment(s) not in atlas (e.g. ${sk.missingRegions[0]})`);
     if (!sk.animations.length) { problems.push(`${m.key}: skeleton has no animations`); continue; }
-    const anims = resolveRoles(sk.animations, { skillIndices: m.skillIndices, durations: sk.durations });
+    const id = String(m.key).startsWith('enemy:') ? String(m.key).slice('enemy:'.length) : null;
+    const fixed = applyRoleFix(resolveRoles(sk.animations, { skillIndices: m.skillIndices, durations: sk.durations }), id ? PREFAB_SPINE_ROLES[id] : undefined, sk.durations);
+    if (fixed.missing.length) problems.push(`${m.key}: role fix not applied (clip missing) for ${fixed.missing.join(', ')}`);
+    const anims = fixed.roles;
     entries.set(m.key, {
       skel: assetUrl(m.skel.rel),
       atlas: assetUrl(m.atlas.rel),

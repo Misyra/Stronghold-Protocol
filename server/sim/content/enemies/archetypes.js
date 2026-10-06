@@ -232,16 +232,28 @@ const selfFear = (ab) => ({
   },
 });
 
-/** Prisoners (禁锢 → 解放). */
+/**
+ * Prisoners (孤岛风云: 禁锢 → 解放). The official battle prefabs (local client battle/enm_pfb_*.ab) have three modes and the
+ * buff templates (buff_template_data enemy_confinement, enemy_confinement[atk_cnt], enemy_liberty_listener[warning]) move
+ * between them: the 禁锢终端 starts with `confinement.times` charges; before each attack (ON_BEFORE_ATTACK — here the
+ * `before` hook: an attack 麻痹 interrupts never gets there, PRTS 拳师囚犯 "在持有麻痹的情况下，攻击不计数") one is spent, and
+ * the one that leaves a single charge switches it to mode R, the warning — still confined, its collar light blinking
+ * orange; before the next attack it switches to mode L, 【解放】, so the times-th attack already hits freed (PRTS
+ * "进行第4次攻击前，切换至解放状态"; until 0.2.0 it was freed after that attack's damage). The model follows the mode
+ * (setForm: UnitInfo `form`, render/units.js FORMS): the manifest's clips are the grey confined set, 'warning' the orange
+ * set, 'liberty' the red one — the 'liberate' fx carries it (a community report of 2026-10-06: they came out of the gate
+ * drawn freed and never changed).
+ */
 function prisoner(ab, { freeAll = false } = {}) {
   const t = (k) => T(ab, k) ?? 0;
+  const times = Math.max(1, Math.round(T(ab, 'confinement.times') ?? 4));
   const liberate = (b, e, a) => {
     if (a.free || !e.alive) return;
     a.free = true;
     b.removeBuff(e, 'ab:confined');
     b.addBuff(e, { key: 'ab:liberty', persist: true, visible: true, mods: {
       atkPct: t('liberty.atk'), defIgnorePct: t('liberty.def_penetrate'), resFlat: t('liberty.magic_resistance'), hpRegen: t('liberty.hp_recovery_per_sec') } });
-    b.fx('liberate', { x: e.x, y: e.y, id: e.id });
+    setForm(b, e, 'liberty', 'liberate');
     if (freeAll && !stOf(b).freedAll) {
       // "第一次解放时同时解放全场敌人"
       stOf(b).freedAll = true;
@@ -254,7 +266,11 @@ function prisoner(ab, { freeAll = false } = {}) {
       a.n = 0; a.free = false;
       b.addBuff(e, { key: 'ab:confined', persist: true, visible: true, mods: { aspd: t('confinement.attack_speed'), defFlat: t('confinement.def') } });
     },
-    attack(c, b, e, a) { if (!a.free && ++a.n >= (T(ab, 'confinement.times') ?? 4)) liberate(b, e, a); },
+    before(c, b, e, a) {
+      if (a.free) return;
+      if (++a.n >= times) liberate(b, e, a);
+      else if (a.n === times - 1) setForm(b, e, 'warning');
+    },
   };
 }
 

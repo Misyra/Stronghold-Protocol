@@ -139,10 +139,7 @@ export class BattleDeploy {
           if (pp) pp.killed++;
         }
         if (killer) killer.stats.kills++;
-        if (unit.bounty && unit.bounty.coins > 0) {
-          const payee = killer && killer.side === 'ally' && killer.ownerId != null ? killer.ownerId : (unit.bounty.ownerPlayerId ?? unit.ownerId);
-          this.addCoins(payee, unit.bounty.coins);
-        }
+        if (unit.bounty && unit.bounty.coins > 0) this.addCoins(this._bountyPayee(unit, killer), unit.bounty.coins);
       }
     }
     // the reason ('killed' | 'retreat' | 'expired' | …) lets the client keep the knock-down sound for real knock-outs

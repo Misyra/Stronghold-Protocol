@@ -1303,10 +1303,10 @@
         ["-","~3","device","trap_1105_accrate",null,null,100,1,3,0,0,0,0,0,null]
       ],
       "enemies": {"enemy_10124_uashld_2":[12,0,12,1215,103016],"enemy_1043_zomsbr":[72,22,50,4183,401369],"enemy_1061_zomshd":[30,1,29,10796,355420]},
-      "hooks": [1,136,6081,591,591,3365,3365,45973,35,126,19,18,39,24319,0,14,114,91,1,35,0,0,0],
+      "hooks": [1,136,6081,591,591,3365,3365,45970,35,126,19,18,39,24319,0,14,114,91,1,35,0,0,0],
       "events": {"atk":591,"deploy":19,"die":35,"dmg":3365,"engage":12,"fx":96,"leak":91,"skill":37,"spawn":129},
       "fx": {"veenBounce":42,"veenVolley":54},
-      "snaps": "10719944 a54473e5 586c12a4 e8572e94 cd658a5e 022bbca2 6875176a 88f39323 fe22255b b8659b38 b3436607 2bff9df5 448c5d3c bae393b0 7569d588 d5f887b5 1075cb4d 45d53303 6b53b401 8529d78b ee4d40ec"
+      "snaps": "10719944 a54473e5 586c12a4 e8572e94 cd658a5e 022bbca2 6875176a 88f39323 fe22255b b8659b38 b3436607 2bff9df5 448c5d3c 8f75174d 018a491f 6d520745 2a3af51d deab5773 1ce3e091 1f2d9d7b 8058d2fc"
     },
     "diy-033": {
       "about": "5_diy1_a=zuole/S1 5_diy2_a=zuole/S2 5_diy1_a=zuole/S3 5_diy2_b=zuole/S1 5_diy1_b=zuole/S2 5_diy2_b=zuole/S3 6_diy1_b=veen/S1 6_diy2_b=veen/S2 6_diy1_b=veen/S3 6_diy2_b=veen/S1/002_veen 6_diy1_b=veen/S2/002_veen 6_diy2_b=veen/S3/002_veen",
@@ -4905,7 +4905,7 @@
       "hooks": [1,218,6170,550,550,2484,2286,0,140,209,72,69,61,11555,18,37,189,65,1,153,0,0,0],
       "events": {"atk":913,"deploy":26,"die":144,"dmg":2286,"engage":11,"fx":143,"leak":65,"skill":141,"spawn":208,"status":408},
       "fx": {"aoe":4,"dash":3,"displace":8,"ember":13,"pull":8,"shieldBreak":37,"summon":36,"takeoff":9,"telegraph":13,"volley":12},
-      "snaps": "97d774f4 d56f2c40 38cfa54f 7e2be674 45424794 b549bc6d d02f3886 8eef35d8 186b734d ef22c4fe 6eed958f 1c82384a 2d257b7e e4c0bf84 b322c2f5 561c30ac c139ed4b 0f61007b e04f8bf8 c8e87b59 3c8fbdd4"
+      "snaps": "97d774f4 d56f2c40 38cfa54f 7e2be674 45424794 b549bc6d d02f3886 8eef35d8 186b734d ef22c4fe 6eed958f 1c82384a 63c04f9f c0a490ec c9ea14b7 fff9beee 565171e7 63cf5cdd 2e3d5bf0 137417b4 ba76aa79"
     },
     "diy-115": {
       "about": "5_diy1_b=ebnhlz/S1/002_ebnhlz 5_diy2_b=ebnhlz/S2/002_ebnhlz 5_diy1_b=ebnhlz/S3/002_ebnhlz 5_diy2_b=ebnhlz/S1/003_ebnhlz 5_diy1_b=ebnhlz/S2/003_ebnhlz 5_diy2_b=ebnhlz/S3/003_ebnhlz 5_diy1_b=ebnhlz/S1/004_ebnhlz 5_diy2_b=ebnhlz/S2/004_ebnhlz 5_diy1_b=ebnhlz/S3/004_ebnhlz 6_diy1_a=ebnhlz/S1 6_diy2_a=ebnhlz/S2 6_diy1_a=ebnhlz/S3",

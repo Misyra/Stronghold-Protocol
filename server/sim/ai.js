@@ -79,18 +79,28 @@ export function updateAlly(b, u, dt) {
   if (prof.noAttackUnlessSkill && !(sk && sk.active)) return;
   if (u.s.flags.disarm) return;
   if (u.atkCd > 0) return;
-  if (prof.canAttack && !prof.canAttack(b, u)) return;
+  // (a 秘术师's `canAttack` is its own target rule: false = no valid target — 深靛's bound enemies, 维伊's marked ones)
+  if (prof.canAttack && !prof.canAttack(b, u)) { if (prof.storeEnergy) { u.trait.hadTarget = false; storeEnergy(b, u, prof); } return; }
   let targets = acquireTargets(b, u, prof);
-  if (!targets.length) { u.trait.hadTarget = false; return; }
+  if (!targets.length) { u.trait.hadTarget = false; storeEnergy(b, u, prof); return; }
   u.trait.hadTarget = true;
   if (sk && sk.onAboutToAttack()) {
     prof = effectiveProfile(u);
     if (prof.noAttack || !u.alive) return;
     targets = acquireTargets(b, u, prof);
-    if (!targets.length) return;
+    if (!targets.length) { storeEnergy(b, u, prof); return; }   // the cast left none (a range change): still this check
   }
   performAttack(b, u, prof, targets);
   u.atkCd = Math.max(u.atkCd, u.s.interval);
+}
+
+/**
+ * The attack check of a ready unit found no valid target: a 秘术师 profile stores one energy instead (`storeEnergy`,
+ * professions.js installMystic — PRTS 分支特性信息 秘术师 "若无有效目标且能量储存数未满，则改为储存一份攻击能量（属于攻击
+ * 行为）": the attack interval starts again); with a full store it idles, ready to attack.
+ */
+function storeEnergy(b, u, prof) {
+  if (prof.storeEnergy && prof.storeEnergy(b, u)) u.atkCd = Math.max(u.atkCd, u.s.interval);
 }
 
 /** Release blocked enemies beyond the current block capacity (latest blocked first). */
@@ -174,11 +184,13 @@ export function performAttack(b, u, prof, targets, opts = null) {
   }
   const ranged = !prof._fortressMelee && prof.attack === 'ranged' && prof.projectile && prof.projectile !== 'none' && prof.projectile !== 'beam';
   const vis = prof._fortressMelee ? 'none' : (prof.projectile || 'none');
+  // 秘术师: the stored energies leave with this attack, at its main target (professions.js installMystic)
+  const energy = !isHeal && prof.releaseEnergy ? prof.releaseEnergy(b, u) : 0;
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     b._ev(['atk', u.id, t.id, vis]);
     if (isHeal) { doHeal(b, u, prof, t); continue; }
-    const info = { isSkill, index: i, attackId };
+    const info = { isSkill, index: i, attackId, energy: i === 0 ? energy : 0 };
     const foe = t.side === 'enemy' || b.isAllyTarget(t);
     if (ranged && foe && prof.projectile === 'boomerang') {
       throwBoomerang(b, u, prof, t, info);
@@ -260,7 +272,7 @@ export function resolveHit(b, u, prof, target, info, x, y) {
   if (target && target.alive) {
     let mulT = skillMul;
     if (prof.dmgMul) { const m = typeof prof.dmgMul === 'function' ? prof.dmgMul(b, u, target) : prof.dmgMul; if (Number.isFinite(m)) mulT *= m; }
-    const hits = prof.hitsFn ? prof.hitsFn(b, u) : Math.max(1, prof.hits || 1);
+    const hits = prof.hitsFn ? prof.hitsFn(b, u, info) : Math.max(1, prof.hits || 1);
     let dealtMain = 0;
     for (let h = 0; h < hits && target.alive; h++) {
       dealtMain += b.dealDamage(u, target, { amount: atk * scale * mulT, type: baseType, isAttack: true, isSkill: info.isSkill, tags: prof.tags || [], attackId });

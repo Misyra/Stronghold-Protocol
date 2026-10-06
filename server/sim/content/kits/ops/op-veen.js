@@ -9,9 +9,9 @@
 // - Trait (秘术师) "攻击造成法术伤害，在找不到攻击目标时可以将攻击能量储存起来之后一齐发射" (ranged arts, hits air units,
 //   targetable by ground enemies). PRTS 分支特性信息 秘术师: "能量储存与攻击占用相同的攻击间隔：在进行攻击判定时，若范围内存在
 //   有效目标，则进行普通攻击；若无有效目标且能量储存数未满，则改为储存一份攻击能量（属于攻击行为）" — when her attack is ready
-//   and she has no valid target she stores one energy and her attack interval starts again (this kit replaces the
-//   engine's mystic profile, which stores one interval after the attack is ready); the energies fly with her next attack,
-//   at its target ("由储存能量形成的弹道造成攻击力100%的法术普通伤害").
+//   and she has no valid target she stores one energy and her attack interval starts again (the shared 秘术师 profile,
+//   professions.js installMystic, with this kit's `storeEnergy`); the energies fly with her next attack, at its target
+//   ("由储存能量形成的弹道造成攻击力100%的法术普通伤害").
 //   T1 “在挥刀之前” "特性储存的能量达到3个时，合成为1个转置能量（至多储存等同于9倍的能量）" (trait bb merge_cnt 3, times 9):
 //   3 stored make 1 转置能量, at most times / merge_cnt of those, then no more storing (备注 "转置能量数量达到上限时，停止储存
 //   攻击能量"); a 转置能量 hits for merge_cnt × ATK (备注 "攻击力300%的法术普通伤害"). Every shot uses the ATK it left with
@@ -39,7 +39,7 @@
 //   preferring an enemy not hit yet by it, else another one, else the same (text "优先不同目标" [ASSUMED order]), each
 //   attack@bounce_atk_scale × the cached ATK arts. The skill ends when the bullets run out.
 
-import { num, talentBb, moduleBb, traitBb, skillRec, batMod, up, toggleBuff } from '../shared/tier1.js';
+import { num, talentBb, moduleBb, traitBb, skillRec, batMod, toggleBuff } from '../shared/tier1.js';
 import { canTargetEnemy, sortEnemyTargets } from '../../../targeting.js';
 
 const S1 = 'skchr_veen_1';
@@ -146,23 +146,19 @@ export default {
       trait: {
         hitsFn: () => 0,   // the volley's hits are the kit's (land)
         onEachHit(battle, unit, victim, hc) { if (hc.kind === 'main' && victim && victim.side === 'enemy') land(battle, unit, victim, hc.attackId, !!hc.isSkill); },
-        // only enemies under her 战争技艺 in range: she holds her fire (and stores energy)
-        canAttack(battle, u) {
-          const ok = validTargets(battle, u, u.profile).length > 0;
-          if (!ok) u.trait.hadTarget = false;
-          return ok;
+        // only enemies under her 战争技艺 in range: no valid target — she holds her fire (and stores energy)
+        canAttack(battle, u) { return validTargets(battle, u, u.profile).length > 0; },
+        // the mystic store (the shared profile calls it at her attack check with no valid target — professions.js
+        // installMystic: an attack action, the interval restarts): one energy, 3 merge into a 转置能量; none once the
+        // 转置能量 are at their cap (a full store: she idles)
+        storeEnergy(battle, unit) {
+          const v = stateOf(unit);
+          if (v.t >= tMax) return false;
+          if (++v.s >= merge) { v.s -= merge; v.t++; }
+          return true;
         },
         install(battle, unit) {
           battle.on('deploy', (ctx) => { if (ctx.unit === unit) unit.trait.veen = null; }, { owner: unit });
-          // the mystic store: her attack ready and no valid target ⇒ one energy, an attack action (the interval restarts);
-          // 3 merge into a 转置能量 (the attack loop ran first this tick: a valid target was attacked instead)
-          battle.on('tick', () => {
-            const v = stateOf(unit);
-            if (!up(unit) || !unit.canAct || unit.s.flags.disarm || unit.atkCd > 0 || v.t >= tMax) return;
-            if (validTargets(battle, unit, unit.profile).length) return;
-            if (++v.s >= merge) { v.s -= merge; v.t++; }
-            unit.atkCd = unit.s.interval;
-          }, { owner: unit });
           battle.on('death', (ctx) => { if (ctx.unit && ctx.unit.side === 'enemy') stateOf(unit).q.delete(ctx.unit.id); }, { owner: unit });
         },
       },

@@ -12,8 +12,8 @@
 // - Trait (秘术师) "攻击造成法术伤害，在找不到攻击目标时可以将攻击能量储存起来之后一齐发射（最多3个）" (bb times; MSC-X 4):
 //   ranged arts bolts, hits air units (分支特性信息 "可对空"), blocks 1, ground enemies target him. The store (分支特性信息:
 //   "能量储存与攻击占用相同的攻击间隔：…若无有效目标且能量储存数未满，则改为储存一份攻击能量（属于攻击行为）"): when his attack is
-//   ready and he has no valid target he stores one energy and his attack interval starts again — this kit's own store,
-//   as 维伊's (op-veen.js; the engine's mystic profile stores one interval after the attack is ready). His next attack
+//   ready and he has no valid target he stores one energy and his attack interval starts again — the shared 秘术师
+//   profile (professions.js installMystic) with this kit's `storeEnergy` (his elite energy, S3), as 维伊's. His next attack
 //   releases them at its target ("一齐发射"), each hitting for ATK × the attack's scale × the energy scale (talent 1) as
 //   an arts 普通伤害 attack hit ("由储存能量形成的弹道造成攻击力100%的法术普通伤害"); they land with the main bolt (one
 //   volley to one target [ASSUMED], as 维伊's), the later ones only on a target still alive. [ASSUMED] a redeployment holds
@@ -60,9 +60,8 @@
 //   only elite ones, and at its end at most times_2 stay elite, the rest normal (up to times). "可主动关闭" is a manual
 //   operation (no automatic stop).
 
-import { num, talentBb, moduleBb, traitBb, skillRec, batMod, up, toggleBuff } from '../shared/tier1.js';
+import { num, talentBb, moduleBb, traitBb, skillRec, batMod, toggleBuff } from '../shared/tier1.js';
 import { canTargetEnemy, sortEnemyTargets } from '../../../targeting.js';
-import { acquireTargets, effectiveProfile } from '../../../ai.js';
 import { hasHp } from '../../../damage.js';
 import { COLS } from '../../../constants.js';
 
@@ -204,21 +203,19 @@ export default {
       trait: {
         hitsFn: () => 1,   // the engine's main hit only: the stored energies are this kit's (land)
         onEachHit(battle, unit, victim, hc) { if (hc.kind === 'main' && victim && victim.side === 'enemy') land(battle, unit, victim, hc); },
+        // the store (the shared profile calls it at his attack check with no valid target — professions.js installMystic:
+        // an attack action, the interval restarts): the trait's energies first, then the elite one; during S3 elite ones
+        // only (false = a full store: he idles)
+        storeEnergy(battle, unit) {
+          const v = stateOf(unit);
+          if (skillOn(unit, S3)) { if (v.n + v.e >= N + E) return false; v.e++; }
+          else if (v.n < N) v.n++;
+          else if (v.e < E) v.e++;
+          else return false;
+          return true;
+        },
         install(battle, unit) {
           battle.on('deploy', (ctx) => { if (ctx.unit === unit && !ctx.move) unit.trait.ebn = null; }, { owner: unit });
-          // the store: his attack ready and no valid target ⇒ one energy, an attack action (the interval restarts); the
-          // attack loop ran first this tick (a valid target was attacked instead)
-          battle.on('tick', () => {
-            if (!up(unit) || !unit.canAct || unit.s.flags.disarm || unit.atkCd > 0) return;
-            const prof = effectiveProfile(unit);
-            if (prof.noAttack || acquireTargets(battle, unit, prof).length) return;
-            const v = stateOf(unit);
-            if (skillOn(unit, S3)) { if (v.n + v.e >= N + E) return; v.e++; }
-            else if (v.n < N) v.n++;
-            else if (v.e < E) v.e++;
-            else return;
-            unit.atkCd = unit.s.interval;
-          }, { owner: unit });
           battle.on('death', (ctx) => { if (ctx.unit && ctx.unit.side === 'enemy') stateOf(unit).q.delete(ctx.unit.id); }, { owner: unit });
         },
       },

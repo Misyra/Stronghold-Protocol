@@ -24,7 +24,10 @@
 //   skipEnemy(enemy) → bool (an enemy the unit never selects — targeting.js canTargetEnemy; 嵯峨 "不攻击重伤单位")
 //   healThrough(healer, ally) → bool (a healer that selects and heals that ally through its 禁疗 — Battle
 //                             injuredAlliesInKeys, damage.js heal; 凯尔希 on her Mon3tr)
-//   hitsFn(battle, unit) → n                   install(battle, unit) — per-unit hooks, called once at setup
+//   hitsFn(battle, unit, info) → n (info: the hit's { isSkill, index, attackId, energy })
+//   install(battle, unit) — per-unit hooks, called once at setup
+//   storeEnergy(battle, unit) → bool / releaseEnergy(battle, unit) → n (秘术师: the attack check found no valid target ⇒
+//                             store one energy, false when full; the energies leaving with an attack — installMystic)
 //   dollNoAttack bool (傀儡师: its <替身> makes no normal attack and casts no skill — 归溟幽灵鲨, kit trait)
 //   tb — the unit's trait blackboard (data `trait.bb`), used for tunables (module upgrades included on elites)
 // Behaviour per subprofession is documented in docs/SIM.md §Professions. Front / side tests use the unit's direction
@@ -362,16 +365,23 @@ const installFunnel = (battle, unit) => {
   unit.trait.funnelScale = unit.profile.funnel?.init ?? 0.2;
 };
 
+/**
+ * 秘术师 (mystic) trait "攻击造成法术伤害，在找不到攻击目标时可以将攻击能量储存起来之后一齐发射（最多3个）" (bb times; 深靛's
+ * MSC-X 4) with the branch rules of PRTS 分支特性信息 秘术师: "能量储存与攻击占用相同的攻击间隔：在进行攻击判定时，若范围内存在
+ * 有效目标，则进行普通攻击；若无有效目标且能量储存数未满，则改为储存一份攻击能量（属于攻击行为）；仅没有有效目标，且能量储存数已满的
+ * 情况下才进入待机状态". The attack loop (ai.js updateAlly) calls the profile's `storeEnergy` at its attack check — the attack
+ * ready, the unit able to act and not disarmed (PRTS 异常效果 缴械 "秘术师储存能量同样无法进行") — when it finds no valid target
+ * (no target, or the profile's `canAttack` false: a 秘术师 kit's own target rule — 深靛 never picks a bound enemy, so a bind
+ * on her only target is no valid target); a stored energy restarts the attack interval, a full store idles (the next
+ * valid target is attacked at once). The energies leave with the next attack that happens (`releaseEnergy`, called by
+ * performAttack after `beforeAttack`: "攻击被打断且弹道未能成功生成的情况下，储存的能量不会被消耗") with its main target and land
+ * with its main hit, one damage instance each (`hitsFn`; "由储存能量形成的弹道造成攻击力100%的法术普通伤害" — each as the
+ * main hit). [ASSUMED] a redeployment holds no energy (a free move — 乌尔比安 S3 — keeps them). Kits with their own store
+ * (维伊's 转置能量, 黑键's elite energies) replace `storeEnergy` and release theirs from an `attack` hook.
+ */
 const installMystic = (battle, unit) => {
   unit.trait.stored = 0;
-  const max = unit.profile.storeMax ?? 3;
-  battle.on('tick', () => {
-    if (!unit.canAct) return;
-    if (unit.atkCd <= 0 && !unit.trait.hadTarget && unit.trait.stored < max) {
-      unit.trait.storeAcc = (unit.trait.storeAcc ?? 0) + battle.dt;
-      if (unit.trait.storeAcc >= unit.s.interval) { unit.trait.storeAcc = 0; unit.trait.stored++; }
-    }
-  }, { owner: unit });
+  battle.on('deploy', (ctx) => { if (ctx.unit === unit && !ctx.move) unit.trait.stored = 0; }, { owner: unit });
 };
 
 /** Refresh period / lifetime (s) of a bard trait's 生命回复速度 buff: it lapses within BARD_REGEN_DUR once the bard stops. */
@@ -480,7 +490,14 @@ export const SUB = Object.freeze({
       return unit.trait.funnelScale;
     } }),
   mystic: P({ install: installMystic,
-    hitsFn: (battle, unit) => { const n = 1 + (unit.trait.stored ?? 0); unit.trait.stored = 0; return n; } }),
+    storeEnergy: (battle, unit) => {
+      const n = unit.trait.stored ?? 0;
+      if (n >= (unit.profile.storeMax ?? 3)) return false;
+      unit.trait.stored = n + 1;
+      return true;
+    },
+    releaseEnergy: (battle, unit) => { const n = unit.trait.stored ?? 0; unit.trait.stored = 0; return n; },
+    hitsFn: (battle, unit, info) => 1 + (info?.energy ?? 0) }),
   phalanx: P({ noAttackUnlessSkill: true, rangeAoe: true, install: installPhalanx }),
   primcaster: P({}),
   corecaster: P({}),

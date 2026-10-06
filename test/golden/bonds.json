@@ -931,14 +931,14 @@
       "total": 24,
       "unspawned": 0,
       "bossHpLeft": null,
-      "rngDraws": 21,
+      "rngDraws": 19,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":24,"total":24,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":144293,"bossDmg":0,"heal":1227,"deaths":2,"layerGains":{}}},
+      "players": {"p1":{"killed":24,"total":24,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":144433,"bossDmg":0,"heal":1227,"deaths":2,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_4_11_b",1,"uniequip_002_cathy",1459,1,8,0,0,1837,0,0,1],
         ["p1",2,"op","chess_char_4_09_b",1,"uniequip_002_mizuki",3992.8,1,6,0,0,0,0,0,0],
-        ["p1",3,"op","chess_char_1_09_b",1,"uniequip_002_caper",3876.25,1,4,12,50704,0,0,12,1],
-        ["p1",4,"op","chess_char_1_17_b",1,"uniequip_002_indigo",1356,1,5,0,0,0,0,8,1],
+        ["p1",3,"op","chess_char_1_09_b",1,"uniequip_002_caper",3876.25,1,4,10,41957,0,0,10,1],
+        ["p1",4,"op","chess_char_1_17_b",1,"uniequip_002_indigo",1356,1,5,2,8886,0,0,4,1],
         ["p1",5,"op","chess_char_2_01_b",1,"uniequip_002_excu",0,0,11,6,38016,2146,0,6,1],
         ["p1",6,"op","chess_char_4_10_b",1,"uniequip_002_aroma",1664,1,7,5,53097,0,0,7,1],
         ["p1",7,"op","chess_char_4_12_b",2,"uniequip_002_glady",2232,1,9,0,948,1227,1227,2,1],
@@ -950,10 +950,10 @@
         ["-","~3","device","trap_1105_accrate",null,null,100,1,3,0,0,0,0,0,null]
       ],
       "enemies": {"enemy_1019_jshoot_2":[7,7,0,3373,21773],"enemy_1299_ymkilr_2":[3,3,0,1837,38016],"enemy_1422_lrsldr_2":[14,14,0,0,88704]},
-      "hooks": [1,37,2071,84,84,166,166,663,26,26,7,6,0,4290,103,10,24,0,1,26,0,0,0],
-      "events": {"atk":84,"deploy":10,"die":26,"dmg":166,"engage":5,"fx":21,"skill":13,"spawn":37,"status":10},
+      "hooks": [1,37,2071,78,78,164,164,663,26,26,7,6,0,4290,103,10,24,0,1,26,0,0,0],
+      "events": {"atk":78,"deploy":10,"die":26,"dmg":164,"engage":5,"fx":21,"skill":13,"spawn":37,"status":10},
       "fx": {"crit":2,"frostNova":1,"levitate":7,"overclock":1,"pull":1,"slippery":1,"strike":2,"tornado":1,"tornadoPulse":5},
-      "snaps": "1c35197a b5a550c2 449f2d84 3e5d7032 3c466668 15903287 c2362cab"
+      "snaps": "1c35197a b5a550c2 449f2d84 3e5d7032 3c466668 eebb398a 6f954892"
     },
     "bond-raidShip-low": {
       "about": "突袭 low: tier 1 layers 1; chess_char_4_17_a chess_char_4_18_a chess_char_2_09_a chess_char_4_19_a chess_char_1_18_a chess_char_4_13_a chess_char_4_14_a chess_char_4_20_a",

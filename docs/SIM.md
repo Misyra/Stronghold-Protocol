@@ -1186,7 +1186,7 @@ S3 未照耀的荣光 — its CUSTOM_RANGE trigger also counts flyers). A stun /
 3.75 back = `BOOMERANG_RETURN_SPEED`, PRTS 跃跃; droneBomb 5 = 暴鸰's bomb, the official projectile_bombd); melee/`none` hits are
 instant, and so are `'beam'` hits (a 锁定攻击范围 AoE without a projectile — `rangeAoe` profiles: "在攻击前摇结束时选取范围内的全体目标，同时造成伤害", PRTS 作战机制). Kit-settable profile flags beyond the
 table: `hitSleep` (targets and damages sleeping enemies — "可以攻击沉睡的敌人"), `onEachHit(b, u, victim, hctx)`, `dmgMul`,
-`afterHit`, `afterAttack`, `canAttack`, `hitsFn`, `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
+`afterHit`, `afterAttack`, `canAttack`, `hitsFn(b, u, info)`, `storeEnergy` / `releaseEnergy` (the 秘术师 store, below), `priority` (targeting.js PRIORITY_FNS — `'heaviest'`: the 攻城手 trait
 "优先攻击重量最重的敌人", the highest current 重量等级 first: 早露 / 提丰; `'elite'`: "优先攻击精英或领袖敌人", an ELITE / BOSS
 rank enemy or a leader first: 薇薇安娜 S3), `blockFly`, `noHeal`, `skipEnemy(e)` (an enemy the unit never
 selects — its attacks, the enemies it blocks and its skill-trigger targets: targeting.js canTargetEnemy; 嵯峨 "不攻击重伤
@@ -1209,7 +1209,7 @@ header of professions.js).
 | reaperrange | hits every enemy in range; ×1.5 (bb atk_scale) on the trait front grid (or its own line ahead) — both along its direction |
 | chain | chain N (trait text/bb max_target) with −15 % per jump (bb chain.atk_scale), 1.7-tile jumps (constants.js CHAIN_RADIUS, PRTS 溅射半径一览: 链术师 1.7; 1.8 until 0.1.1), sluggish on each hit |
 | funnel | drone damage 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max) |
-| mystic | stores up to 3 (bb times) attacks while idle, fires them all at once |
+| mystic | 秘术师 (PRTS 分支特性信息 秘术师, GitHub #181): at its attack check (the attack ready, able to act, not disarmed) with no valid target — no target, or its kit's `canAttack` false (深靛 never picks a bound enemy) — it stores one energy (`storeEnergy`, up to bb times: 3, 深靛's MSC-X 4), an attack action: the attack interval restarts; a full store idles with the attack ready. The energies leave with its next attack that happens (`releaseEnergy` in `performAttack`, after `beforeAttack`: an attack cancelled before its shot keeps them) and land with the main hit, one arts attack hit each (`hitsFn` reads the hit's `info.energy`); a redeployment holds none [ASSUMED]. 维伊 / 黑键 plug their own `storeEnergy` (转置能量, elite energies) into the same check |
 | phalanx | no attack & DEF +200 %, RES +20 (bb) while the skill is off; while on, `rangeAoe`: each attack strikes every selectable enemy on its range at once (blocked enemies included; a stealthed one only when revealed or blocked), the same damage near and far, instant (`'beam'`) — "群体法术伤害" (secondary: Terra Wiki, Phalanx Caster: "attacks hit all enemies within their range"; supporting: PRTS 林 S3 备注 "单次普攻最多触发1次效果" — one normal attack can kill several — the same 锁定攻击范围 shape as the 轰击术师, and PRTS 溅射半径一览 documents no splash radius for it (it omits the 撼地者 too, so this is not proof); no primary source states a target cap; community report E3: it used to be one bolt + a 1.1 splash). 卡涅利安's charged S1 keeps the skill-off trait, 不攻击 included (kit `canAttack`, PRTS 备注) |
 | physician | heal the lowest HP% injured ally in range (a skill `targeting.maxTargets` widens any heal profile) |
 | ringhealer | heal 3 allies |

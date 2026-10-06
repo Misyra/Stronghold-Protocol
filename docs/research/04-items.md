@@ -215,7 +215,7 @@ Param names below are the keys of `items[].normal.params` / `items[].golden.para
   params: `hp_ratio=0.7/0.4`; buff keys: `env_gbuff_new_with_verify`
 - **护盾无人机** (`chess_item_4_11_e_a`, TIV, 2) - Each heal the carrier performs: prob chance to give the healed target 1 shield layer (max max_stack_cnt layers; 1 layer blocks one instance of damage).  
   params: `prob=0.1/0.15, max_stack_cnt=1.0`; buff keys: `env_gbuff_new_with_verify`
-- **M3茧甲** (`chess_item_4_12_e_a`, TIV, 3) - When the carrier is defeated during the battle phase: revive immediately in place at full HP [ASSUMED full HP] up to max_respawn_cnt times per battle.  
+- **M3茧甲** (`chess_item_4_12_e_a`, TIV, 3) - When the carrier is defeated during the battle phase: revive immediately at full HP up to max_respawn_cnt times per battle — PRTS 备注 "“复活”的实现方式为：受益者因移动之外的原因退场时下次部署的再部署时间和费用归零": since 0.2.0 the knock-out stands and the carrier redeploys at once, free, where it lies (its 被击倒时 and 部署时 effects run; in place before).  
   params: `max_respawn_cnt=1.0/2.0`; buff keys: `env_gbuff_new_with_verify`
 
 ### SP - 技力 SP gain

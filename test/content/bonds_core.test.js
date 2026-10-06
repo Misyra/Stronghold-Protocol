@@ -542,7 +542,7 @@ test('阿戈尔 5: a member devoured by several 阿戈尔 spends one slot at mos
   checkInvariants(t.b);
 });
 
-test('阿戈尔 5: an operator\'s own save uses no slot (斯卡蒂\'s DRE-Y, M3茧甲, 埃芒加德 [ASSUMED for the band]); the slot waits for its first real knock-out', () => {
+test('阿戈尔 5: an operator\'s own save or revive uses no slot (斯卡蒂\'s DRE-Y, M3茧甲, 埃芒加德 [ASSUMED for the band]); the slot waits for its first unanswered knock-out', () => {
   // 斯卡蒂 (elite, module DRE-Y by default) enters 联防 at half HP in front of 乌尔比安: his mark is lethal, DRE-Y saves her
   // (PRTS: once per deployment, full HP with max HP −60 %) — no knock-out, so no slot
   const SKADI = 'chess_char_3_05_b', ULPIA = 'chess_char_5_05_a', GHOST = 'chess_char_2_07_a', HN = 'chess_char_3_09_a', DEEP = 'chess_char_1_04_a';
@@ -568,20 +568,23 @@ test('阿戈尔 5: an operator\'s own save uses no slot (斯卡蒂\'s DRE-Y, M3�
   const list = [['g0_a', ['egirShip']], ['g1_a', ['egirShip']], ['g2_a', ['egirShip']], ['g3_a', ['egirShip']], ['g4_a', ['egirShip']]];
   const units = (it = {}) => list.map(([chessId], i) => ({ chessId, row: 9 + (i % 2) * 3, col: 3 + i, items: it[i] }));
   const killed = (b, id) => { const u = b.unit(id); b.b.dealDamage(null, u, { amount: 1e9, type: 'true' }); return u; };
-  // M3茧甲 (an item 复活, in place): g0 is saved, the 3 slots go to g1, g2, g3; g4 stays down
+  // M3茧甲 (an item 复活 — since 0.2.0 PRTS's form: a knock-out answered by a free redeploy, items reviveNow): g0 is knocked
+  // out and back at once, the 3 slots go to g1, g2, g3; g4 stays down
   const hi = makeBattle({ defs: defsOf(list), autoFinish: false, timeLimit: 60, hooks: ['death', 'deploy'], units: units({ 0: ['chess_item_4_12_e_a'] }), bonds: { egirShip: bondOn(5, 0, null, [3, 5]) } });
   hi.step(1);
   const g0 = killed(hi, 'g0_a');
-  assert.ok(g0.alive && hi.hooksOf('death').filter((c) => c.unit === g0).length === 0, 'item: saved in place (no knock-out)');
-  assert.deepEqual(['g1_a', 'g2_a', 'g3_a', 'g4_a'].map((id) => killed(hi, id).alive), [true, true, true, false], 'item: three slots left after the save');
+  assert.ok(g0.alive && hi.hooksOf('death').filter((c) => c.unit === g0 && c.reason === 'killed').length === 1, 'item: knocked out and revived');
+  assert.equal(hi.hooksOf('death').find((c) => c.unit === g0).revivedBy, 'item');
+  assert.deepEqual(['g1_a', 'g2_a', 'g3_a', 'g4_a'].map((id) => killed(hi, id).alive), [true, true, true, false], 'item: three slots left after the revive');
   checkInvariants(hi.b);
-  // 埃芒加德 (命结之秘: the battle's first 3 knock-downs revive in place — its own count, unchanged): g0, g1, g2 saved by it;
-  // the 阿戈尔 slots then go to g3, g4 and g0's first real knock-out; g1's real one finds none
+  // 埃芒加德 (命结之秘: the battle's first 3 knock-downs revive at once — its own count, unchanged): g0, g1, g2 revived by it;
+  // the 阿戈尔 slots then go to g3, g4 and g0's next knock-out (its first unanswered one); g1's finds none
   const hb = makeBattle({ defs: defsOf(list), autoFinish: false, timeLimit: 60, hooks: ['death', 'deploy'], units: units(), bandId: 'band_ermengard', bonds: { egirShip: bondOn(5, 0, null, [3, 5]) } });
   hb.step(1);
   for (const id of ['g0_a', 'g1_a', 'g2_a']) {
     const u = killed(hb, id);
-    assert.ok(u.alive && hb.hooksOf('death').filter((c) => c.unit === u).length === 0, `band: ${id} saved in place`);
+    const deaths = hb.hooksOf('death').filter((c) => c.unit === u);
+    assert.ok(u.alive && deaths.length === 1 && deaths[0].revivedBy === 'band', `band: ${id} knocked out and revived by the band`);
   }
   assert.deepEqual(hb.eventsOf('fx').filter((x) => x[1] === 'revive' && x[4] && x[4].left != null).map((x) => x[4].left), [2, 1, 0], '埃芒加德 spent its 3');
   assert.deepEqual(['g3_a', 'g4_a', 'g0_a', 'g1_a'].map((id) => killed(hb, id).alive), [true, true, true, false], 'band: the 阿戈尔 slots are untouched');

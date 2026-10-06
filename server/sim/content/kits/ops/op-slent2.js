@@ -55,13 +55,13 @@
 //   once per cast the first operator of her range taking lethal damage (not its own — CheckEntitySuicide; not while it already
 //   holds 不死 — "_dontConsumeWhenUndeadable") keeps ≥ 1 HP and holds 不死 for grave_duration s (slent2_shallow_grave, buff
 //   flag `undying`; it outlasts her leaving). Order of the `fatal` step (items/battle.js): after the kits' own savers, a
-//   傀儡师's switch and 坚固维式重锤's lock (PRIO_REVIVE −100), before the 复活 (PRIO_RESPAWN −101); the window it opens is
-//   held like the hammer's (PRIO_UNDYING_HELD −99).
+//   傀儡师's switch and 坚固维式重锤's lock (PRIO_REVIVE −100) — the 复活 (M3茧甲, 埃芒加德) act on the knock-out after the
+//   whole `fatal` step; the window it opens is held like the hammer's (PRIO_UNDYING_HELD −99).
 // Statuses: none applied to enemies. Damage: arts normal attacks only.
 
 import { num, up, traitBb, moduleBb, talentBb, skillRec, once, holdProtect } from '../shared/tier1.js';
 import { releaseSkillSummon } from '../../tokens.js';
-import { holdsUndying, PRIO_UNDYING_HELD, PRIO_REVIVE, PRIO_RESPAWN } from '../../items/battle.js';
+import { holdsUndying, PRIO_UNDYING_HELD, PRIO_REVIVE } from '../../items/battle.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS } from '../../../constants.js';
 
@@ -79,8 +79,8 @@ const REGEN_IV = 1;
 export const MAXHP_KEY = 'slent2:maxhp';
 /** S3's 不死 (slent2_shallow_grave). */
 export const GRAVE_KEY = 'slent2:grave';
-/** S3's place in the `fatal` step: after the items' 不死 lock (−100), before their 复活 (−101) — see the header. */
-const PRIO_GRAVE = (PRIO_REVIVE + PRIO_RESPAWN) / 2;
+/** S3's place in the `fatal` step: right after the items' 不死 lock (−100) — see the header. */
+const PRIO_GRAVE = PRIO_REVIVE - 0.5;
 /** 夜灯's area when its record carries no grid: its tile and the 8 around (x-4). */
 const X4 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1, -1], [-1, 0], [-1, 1]]);
 /** 【莱茵生命】 (character_table groupId "rhine": every member, so a 自选 pick counts too). */

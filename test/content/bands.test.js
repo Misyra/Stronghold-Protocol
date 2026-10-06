@@ -223,16 +223,16 @@ test('绮良 通关奖励: every 20 funds spent ⇒ 1 random operator of tier �
   cover('band_kirara');
 });
 
-test('佩佩 博学多通: upgrading to 2 / 4 / 6 gives 1 special (free) refresh whose operators are <萨尔贡> first', () => {
+test('佩佩 博学多通: upgrading to 2 / 4 / 6 makes the next refresh special (paid as usual) — its operators are <萨尔贡> first', () => {
   const seed = seedWithBond('sargonShip', 2, 2);
   const { m, ps } = setup({ band: 'band_pepe', seed });
   ps.shop.upgradePrice = 0;
   assert.deepEqual(m.handle('p_0', { t: 'g.levelUp' }), OK);
   assert.equal(ps.shop.level, 2);
-  assert.equal(ps.shop.freeRefreshes, 1);
+  assert.equal(ps.shop.freeRefreshes, 0, 'no free refresh comes with it (community report of 2026-10-06)');
   const f0 = ps.funds;
   assert.deepEqual(m.handle('p_0', { t: 'g.refresh' }), OK);
-  assert.equal(ps.funds, f0, 'free');
+  assert.equal(ps.funds, f0 - m.gd.refreshPrice, 'the usual refresh price');
   const chess = ps.shop.slots.filter((sl) => sl && sl.kind === 'chess');
   assert.ok(chess.length >= 3 && chess.every((sl) => DATA.chess[sl.id].bonds.includes('sargonShip')), 'all 萨尔贡');
   assert.equal(ps.counters['band:pepe:special'], 0, 'consumed');

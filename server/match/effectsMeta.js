@@ -544,20 +544,30 @@ export function makeCtx(m, ps, source, hook, ev = null) {
       });
       return p ? view(p) : null;
     },
-    /** Random chess id from the shared pool (copy-weighted). opts: { maxTier, tier, bond, filter(id) } */
+    /**
+     * Random chess id from the shared pool (copy-weighted) — and the player's own 自选 stock (player/diy.js
+     * diyStockEntries, 0.2.0: 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」). opts: { maxTier, tier, bond, filter(id) };
+     * bonds are read through the player's data view (a slotted slot: its operator's).
+     */
     rollChess: (opts = {}) => {
       const f = (id) => {
         if (opts.bond) { const c = gd.chess(id); if (!c || !Array.isArray(c.bonds) || !c.bonds.includes(opts.bond)) return false; }
         return typeof opts.filter === 'function' ? !!opts.filter(id) : true;
       };
-      return m.pool.roll(m.rngMeta, { maxTier: Number.isInteger(opts.maxTier) ? opts.maxTier : 6, tier: Number.isInteger(opts.tier) ? opts.tier : null, filter: f });
+      const extra = typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null;
+      return m.pool.roll(m.rngMeta, { maxTier: Number.isInteger(opts.maxTier) ? opts.maxTier : 6, tier: Number.isInteger(opts.tier) ? opts.tier : null, filter: f, extra });
     },
     rollItem: (opts = {}) => m.rollItemId(opts),
     /**
      * Roll a choices.json pool: equip pools → { kind: 'item', id }; chess pools (items / weighted / shopEligible with
      * tier, minTier, bond, golden) → { kind: 'chess', id, golden } (a pool chess needs a free copy). null when empty.
      */
-    rollPool: (poolId, opts = {}) => m.rollPool(poolId, { shopLevel: ps.shop.level, ...opts }),
+    rollPool: (poolId, opts = {}) => m.rollPool(poolId, {
+      shopLevel: ps.shop.level,
+      // a shared-pool draw also takes the player's 自选 stock, its bonds read through the player's view (rollChess)
+      extra: typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null, chessOf: (id) => gd.chess(id),
+      ...opts,
+    }),
     /**
      * Run another owned chess's 特质 of `eventType` now (SERVER_GAIN / SERVER_PREP_START / SERVER_PREP_FIN /
      * SERVER_CHESS_SOLD / SERVER_REFRESH_SHOP). opts.asUid: run them as if they belonged to that piece. Returns the

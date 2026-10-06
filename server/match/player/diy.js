@@ -25,7 +25,11 @@
 //     shop's chess slots and the reward offers' temporary refreshes [ASSUMED] — weighted like any chess of its tier, once
 //     the 调度中心 has reached the slot's shopLevel (activity_table shopLevelDisplayDataDict lists the tier-5 slots at
 //     level 5 and the tier-6 slots at level 6; PRTS 帮助 "仅在调度中心等级 ≥ 干员所在等阶"). The price is the slot's (any
-//     chess of its tier: 4). Effects that grant a random operator from the shared pool never draw it.
+//     chess of its tier: 4).
+//   * random grants (diyStockEntries, 0.2.0 WE2 #9): an effect, reward or 机变 card that grants this player a random
+//     operator from the pool draws its stock too — 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」 (bilibili), "调度中心
+//     随机资源的范围将被扩大" (PRTS 新手教程) — under the roll's own tier rules (the effect's tier / maxTier: no 调度中心 gate,
+//     as for a preset chess) and filters (bonds read through the player's data view).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -201,6 +205,17 @@ export class PlayerDiy {
     if (!this.diyStock || !this.diyStock.entries.size) return null;
     const out = [];
     for (const [id, e] of this.diyStock.entries) if (e.left > 0 && this.shop.level >= e.shopLevel) out.push([id, e]);
+    return out.length ? out : null;
+  }
+
+  /**
+   * The stock entries a random grant of this player draws besides the shared pool (see the header): every slotted piece
+   * with copies left, whatever the 调度中心 level (the roll's own tier rules apply), or null (none).
+   * @returns {Array<[string, { cap: number, left: number, tier: number, shopLevel: number }]> | null}
+   */
+  diyStockEntries() {
+    if (!this.diyStock || !this.diyStock.entries.size) return null;
+    const out = [...this.diyStock.entries].filter(([, e]) => e.left > 0);
     return out.length ? out : null;
   }
 

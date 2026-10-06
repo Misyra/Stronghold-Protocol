@@ -1530,15 +1530,23 @@ const TOKEN_POSITION_CORRECTIONS = Object.freeze({
  * skill's summon deploys once at the start, then takes its tile again each time the skill gives one
  * (sim/content/tokens.js dockSkillSummons, shared/constants.js SKILL_SUMMON_START_DEPLOY).
  * `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
- * 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
- * ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere).
+ * 特性) or an owner's talent naming it "可以在攻击范围内(的地面)部署 / 使用…" (`ownerTexts`: Mon3tr's 重构体 "可以在攻击范围内的地面
+ * 使用一个…重构体", 0.2.0 WE2; 莱伊's 沙地兽, whose text says it too): its hand piece may only be placed on a tile of its
+ * owner's attack range (server/match/board.js ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's
+ * tactical point could go anywhere). `ownerRangeOutside` (present when true): the token text "部署在…攻击范围外" — the
+ * piece may only stand OUTSIDE its owner's attack range; `rangedTilesOnly` (present when true): "仅可以部署在…远程位" — only
+ * on a ranged (高台) tile, the mode's "所有行动内远程干员可部署在近战位" being an operators' rule: 凯尔希·思衡托's 战术锚点
+ * "仅可以部署在凯尔希·思衡托攻击范围外的远程位" (PRTS 战术锚点 特性; 0.2.0 WE2, O24).
  * `abnormal` = TOKEN_ABNORMAL (PRTS); `position` = TOKEN_POSITION_CORRECTIONS (PRTS) or the token row's.
  */
-function summonRecord(ctx, tokenId, char, variants, produced) {
+function summonRecord(ctx, tokenId, char, variants, produced, ownerTexts = []) {
   const displayType = ctx.ac.shopStateTokenDict?.[tokenId]?.tokenDisplayType || null;
   const owners = Object.keys(variants);
   const first = variants[owners[0]];
-  const ownerRange = /只能部署在\S*攻击范围内/.test(stripRich(first.trait.desc) || '');
+  const text = stripRich(first.trait.desc) || '';
+  const ownerRange = /只能部署在\S*攻击范围内/.test(text) || ownerTexts.some((d) => /可以在攻击范围内(?:的[^，。；]*?)?(?:部署|使用)/.test(stripRich(d) || ''));
+  const ownerRangeOutside = /部署在[^，。；]*攻击范围外/.test(text);
+  const rangedTilesOnly = /仅可以部署在[^，。；]*远程位/.test(text);
   const shows = (list) => Array.isArray(list) && list.includes('display');
   const displayed = Object.values(variants).some((v) => shows(v.sources) || Object.values(v.bySkill || {}).some((a) => shows(a.sources)));
   return {
@@ -1546,6 +1554,7 @@ function summonRecord(ctx, tokenId, char, variants, produced) {
     desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
     profession: char.profession, subProfessionId: char.subProfessionId, position: TOKEN_POSITION_CORRECTIONS[tokenId] ?? char.position,
     displayType, placeable: displayType !== 'HIDDEN' && produced && displayed, ownerRange,
+    ...(ownerRangeOutside ? { ownerRangeOutside: true } : null), ...(rangedTilesOnly ? { rangedTilesOnly: true } : null),
     owners,
     // Defaults = first owner's variant; per-owner data in variants[owner].
     stats: first.stats, rangeGrid: first.rangeGrid, dmgType: first.dmgType, attackKind: first.attackKind,
@@ -1620,14 +1629,15 @@ function buildDiyTokens(ctx, units, owned) {
           }
         }
         if (!owners.has(tokenId)) owners.set(tokenId, []);
-        owners.get(tokenId).push({ key: `${charId}@${key}`, variant: v, produced });
+        const texts = form.talents.filter((t) => t.tokenKey === tokenId).map((t) => t.desc || '');
+        owners.get(tokenId).push({ key: `${charId}@${key}`, variant: v, produced, texts });
       }
     }
   }
   const out = {};
   for (const tokenId of [...owners.keys()].sort(naturalCmp)) {
     const list = owners.get(tokenId);
-    out[tokenId] = summonRecord(ctx, tokenId, charTable[tokenId], Object.fromEntries(list.map((o) => [o.key, o.variant])), list.some((o) => o.produced));
+    out[tokenId] = summonRecord(ctx, tokenId, charTable[tokenId], Object.fromEntries(list.map((o) => [o.key, o.variant])), list.some((o) => o.produced), list.flatMap((o) => o.texts));
   }
   return out;
 }
@@ -1670,7 +1680,8 @@ function buildTokens(ctx, chess, tokenOwners, enemies) {
     }
     const makes = (list) => (list || []).some((s) => s === 'talent' || s === 'skill');
     const produced = owners.some((o) => makes(o.sources) || (o.skillAlts || []).some((a) => makes(a.sources)));
-    out[tokenId] = summonRecord(ctx, tokenId, char, variants, produced);
+    const ownerTexts = owners.flatMap((o) => (chess[o.chessId]?.talents || []).filter((t) => t.tokenKey === tokenId).map((t) => t.desc || ''));
+    out[tokenId] = summonRecord(ctx, tokenId, char, variants, produced, ownerTexts);
   }
 
   // 炎佑 (yanShip 6-member summon) — allied flying unit built from its enemy template.

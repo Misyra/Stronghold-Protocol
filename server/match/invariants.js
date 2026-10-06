@@ -128,6 +128,9 @@ export function collectViolations(m, { limit = 25 } = {}) {
       // a "只能部署在召唤者攻击范围内" summon inside its owner's attack range (PlayerState.summonRange: a pure read)
       const range = p.kind === 'token' && typeof ps.summonRange === 'function' ? ps.summonRange(p) : null;
       if (range && !range.has(k)) fail(`${id}: ${p.id} on ${k}, outside its owner's attack range`);
+      // an outside-bound summon (战术锚点, PlayerState.summonExcluded) outside it
+      const out = p.kind === 'token' && typeof ps.summonExcluded === 'function' ? ps.summonExcluded(p) : null;
+      if (out && out.has(k)) fail(`${id}: ${p.id} on ${k}, inside its owner's attack range`);
       if (p.kind === 'chess') deployed++;
     }
     if (deployed > ps.deployCap) fail(`${id}: ${deployed} chess deployed > cap ${ps.deployCap}`);

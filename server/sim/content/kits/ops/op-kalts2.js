@@ -68,8 +68,8 @@
 //     the move be refused, she comes back on her own tile [ASSUMED; officially she is knocked out].
 //   At the skill's end any anchor of hers on the field is withdrawn and the stock emptied (token_ctrl). The flight's begin
 //   clip and its 生命回复速度 ×0 are not modelled [ASSUMED].
-// - 战术锚点 (token_10068_kalts2_mtship, placed in prep — "仅可以部署在凯尔希·思衡托攻击范围外的远程位" is the match's
-//   placement rule): 无敌 and never targeted ("不会受到攻击"), no attack, blocks nothing; its range (hers) is only shown.
+// - 战术锚点 (token_10068_kalts2_mtship, placed in prep on a ranged tile outside her attack range — "仅可以部署在凯尔希·思衡托
+//   攻击范围外的远程位": the data's `ownerRangeOutside` / `rangedTilesOnly`, enforced by the match, 0.2.0 WE2): 无敌 and never targeted ("不会受到攻击"), no attack, blocks nothing; its range (hers) is only shown.
 //   A placed piece is docked by content/tokens.js (a skill's summon: deployed for free at the battle start, then only when
 //   her S3 gives one and its 70 s redeploy time has passed, on its own tile).
 

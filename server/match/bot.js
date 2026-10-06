@@ -956,16 +956,18 @@ export function* planLayoutSteps(m, ps, pieces, params = LAYOUT_PARAMS, { occupi
     let bestV = -Infinity;
     // a "只能部署在召唤者攻击范围内" summon (伺夜's 狼群, 缪尔赛思's 流形): only the tiles of its owner's range
     const within = p.kind === 'token' && typeof ps.summonRange === 'function' ? ps.summonRange(p) : null;
+    // and an outside-bound one (凯尔希·思衡托's 战术锚点): never a tile of its owner's range
+    const without = p.kind === 'token' && typeof ps.summonExcluded === 'function' ? ps.summonExcluded(p) : null;
     // ground tiles for a MELEE blocker. placeClass 'all' on a MELEE record is a chess whose trait reads 「可以放置于远程位」
     // (歌蕾蒂娅, 崖心, 见行者, any module): it may stand on a 高台, and when one of those tiles covers the enemy road it is
     // planned there even with the ground free (owner 2026-10-04: the bot uses the 高台; 2026-10-05: every such chess).
-    const cls = p.kind === 'token' ? basePositionClass(r0) : placeClass(ps, pgd.chess(p.id) || r0);
+    const cls = p.kind === 'token' ? positionClass(r0) : placeClass(ps, pgd.chess(p.id) || r0);
     const preferHigh = cls === 'all' && basePositionClass(r0) === 'melee';
     let bestHigh = null;
     let bestHighV = -Infinity;
     for (const [r, c] of legalTiles(map, cls)) {
       const k = tileKey(r, c);
-      if (taken.has(k) || (within && !within.has(k))) continue;
+      if (taken.has(k) || (within && !within.has(k)) || (without && without.has(k))) continue;
       const noise = m.rngBots() * 1e-6;
       const seen = new Set();
       for (const dir of PLAN_DIRS) {

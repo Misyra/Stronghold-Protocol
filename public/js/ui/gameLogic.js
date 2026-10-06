@@ -33,7 +33,7 @@ export { sortedPlayers } from './gameLogic/shared.js';
 export { ownFieldId, homeFieldId, cycleField, watchTarget, switcherLabel, fieldLabel, activeBubbles } from './gameLogic/watch.js';
 export { sortBonds, bondTier, nextThreshold, grantedBonds, pieceBondIds, morphPairings, HARMONY_BOND, harmonyMembers, bondMembers, memberHeadCount, bannedPerBond, disabledBondSets, briefingBondTip, modeOffBonds, bandOffBonds, bandOffLine } from './gameLogic/bonds.js';
 export { priceTone, mergeProgress, mergeTarget, handFull, completesMerge, offerHeader, shopBlockReason, readyFundsPrompt } from './gameLogic/shop.js';
-export { deploySets, stageOverrides, deployMap, effectiveStage, indexPieces, placementContext, piecePosition, tileAllows, summonRange, canPlace, itemAttaches, equipMerges, boardTargets, dropIntent, dropFailureReason } from './gameLogic/placement.js';
+export { deploySets, stageOverrides, deployMap, effectiveStage, indexPieces, placementContext, piecePosition, tileAllows, summonRange, summonExcluded, canPlace, itemAttaches, equipMerges, boardTargets, dropIntent, dropFailureReason } from './gameLogic/placement.js';
 export { normalizeDraft, normalizeSp } from './gameLogic/draft.js';
 export { groupEnemies, PEN, penZoneTiles, penPlacement, previewEnemyKey, factionTypes } from './gameLogic/enemies.js';
 export { snapHud, bossFrac, bossPctText, hasFlag, UF, attackInterval, fmtNum, rangeGridBox } from './gameLogic/format.js';

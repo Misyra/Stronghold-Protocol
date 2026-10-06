@@ -513,8 +513,9 @@ function MatchScreen() {
         const mine = (pid && msg.result.perPlayer && msg.result.perPlayer[pid]) || null;
         const diff = st.match?.public?.difficulty;
         // the speaker comes from THIS battle's own field (`mine.unitsEnd`), not from the field on screen: watching a
-        // teammate used to make THEIR operator say the viewer's line (review on #73)
-        const charId = resultSpeaker(mine);
+        // teammate used to make THEIR operator say the viewer's line (review on #73). unitsEnd names chess ids: the
+        // chess record gives the operator whose voice bank speaks
+        const charId = resultSpeaker(mine, Math.random, (id) => data.lookup('chess', id)?.charId ?? null);
         if (!charId) return;
         audio.voice(charId, resultVoiceSlot({
           perfect: !!(mine?.perfect),

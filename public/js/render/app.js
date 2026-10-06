@@ -1405,6 +1405,12 @@ export async function createFieldView(host, options = {}) {
   // selects it and its underframe opens over the tile (clamped under the top bar on a phone), and the click pressed
   // 撤退 / 出售 (user playtest #4 item 1 on a phone). Cancelling touchend drops them.
   const onTouchEnd = (e) => { if (e.cancelable) e.preventDefault(); };
+  // The canvas is a click target too (a no-op listener). The browser's touch adjustment moves a tap onto a nearby
+  // element that responds to clicks (click / mousedown listeners, buttons, links; pointer listeners do not count) when the
+  // finger's contact area reaches one, so a tap on the back row right under the bond strip's discs (row 12 at 844×390 once
+  // the 收起 toggle of PR #149 moved the discs one button to the right) opened the bond popup instead of selecting the
+  // unit. As a click target that holds the finger's point the canvas wins: a tap on the board stays on the tile under it.
+  const onTapTarget = () => {};
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
@@ -1412,6 +1418,7 @@ export async function createFieldView(host, options = {}) {
   canvas.addEventListener('pointerleave', onPointerLeave);
   canvas.addEventListener('contextmenu', onContext);
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.addEventListener('click', onTapTarget);
 
   // ---- battle ---------------------------------------------------------------------------------------------
 
@@ -2007,6 +2014,7 @@ export async function createFieldView(host, options = {}) {
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('contextmenu', onContext);
       canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('click', onTapTarget);
       app.ticker.remove(frame);
       app.ticker.remove(preRender);
       app.ticker.remove(postRender);

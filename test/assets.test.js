@@ -2,7 +2,7 @@
 // data/assets.json. The pure helpers (animation-role resolver, atlas
 // normalizer, PNG/WOFF2/audio helpers, plan id sets) are always tested; the
 // on-disk checks run only when public/assets exists (it is git-ignored and
-// produced by `npm run assets`); the optional local-client enemy models
+// produced by `npm run assets`); the optional local-client enemy and token models
 // (spineLocal, tools/local-extract) only when data/local-assets.json lists them.
 
 import { test, describe } from 'node:test';
@@ -661,10 +661,10 @@ describe('generated manifest data/assets.json', () => {
     for (const e of Object.values(manifest.enemies)) if (e.spine) models.set(e.spine.skel, e.spine);
     for (const t of Object.values(manifest.tokens)) if (t.spine) models.set(t.spine.skel, t.spine);
     assert.ok(models.size > 400);
-    // the official enemy models of the local client, as the client resolves them (DESIGN §13: only when listed)
+    // the official enemy and token models of the local client, as the client resolves them (DESIGN §13: only when listed)
     const localPath = join(ROOT, 'data', 'local-assets.json');
     const local = existsSync(localPath) ? JSON.parse(readFileSync(localPath, 'utf8')) : null;
-    for (const id of Object.keys(manifest.enemies)) {
+    for (const id of [...Object.keys(manifest.enemies), ...Object.keys(manifest.tokens)]) {
       const s = local ? spineEntry(manifest, id, { local }) : null;
       if (s?.local && [s.skel, s.atlas, ...s.textures].every((u) => existsSync(join(PUBLIC, u)))) models.set(s.skel, s);
     }

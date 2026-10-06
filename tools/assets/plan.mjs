@@ -6,7 +6,7 @@
 //        that ends up on disk wins (later alts are fallbacks: other URLs for the
 //        same file, or other sounds of the same bank);
 //   { model: '<key>' }  a Spine model (skel + atlas + page PNGs) from plan.models;
-//   literal(value)  a value emitted as it is (no files: enemies[id].spineLocal).
+//   literal(value)  a value emitted as it is (no files: enemies[id] / tokens[id].spineLocal).
 // Inputs are the research JSONs (docs/research/03, 05, 07), the official
 // audio_data.json and Ark-Models' models_data.json.
 //
@@ -305,6 +305,9 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  * @param {Record<string, import('./spine.mjs').LocalSpineMeta>} [p.localEnemySpines] metadata of the enemy models the
  *   local client has (the committed tools/assets/local-enemy-spines.json, never the disk): each planned enemy listed
  *   gets `spineLocal` = { group: 'spine/enemy/<id>', ...meta } beside its web `spine`
+ * @param {Record<string, import('./spine.mjs').LocalSpineMeta>} [p.localTokenSpines] the same for the token (summon)
+ *   models (tools/assets/local-token-spines.json): each planned token listed gets `spineLocal` = { group:
+ *   'spine/token/<id>', ...meta } beside its web `spine`, if any (most have none: the client drew the avatar)
  * @param {Record<string, any>} [p.extraOperators] charId → { subProfessionId, nationId, skills: [{ index, skillId, iconId }] }
  *   of characters research 07 does not list (the 自选 owned-6★ picks, data/backups.json `units`): planned like the pool
  *   operators from patternOperator
@@ -314,7 +317,8 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  */
 export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, charword = null, voiceLang = 'cn',
   voiceSlots = VOICE_BATTLE_SLOTS,
-  extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {}, extraOperators = {}, moduleTypes = [] }) {
+  extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {}, localTokenSpines = {}, extraOperators = {},
+  moduleTypes = [] }) {
   const notes = [];
   /** @type {Map<string, any>} */
   const models = new Map();
@@ -417,6 +421,12 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
       if (model) entry.spineVariant = v;
     }
     entry.spine = model;
+    // the official model from the local client, drawn instead of the avatar (or of `spine`) when extracted (optional)
+    const loc = localTokenSpines && Object.hasOwn(localTokenSpines, id) ? localTokenSpines[id] : null;
+    if (loc && typeof loc === 'object') {
+      entry.spineLocal = literal({ group: `spine/token/${id}`, ...loc });
+      notes.push(`${id}: official Spine from the local client when extracted (spineLocal)`);
+    }
     tokens[id] = entry;
     const { roles: u, mix } = unitSounds(audio, pickUnitSfx(audio.unitBanks.get(id)));
     if (mix) u.mix = mix;

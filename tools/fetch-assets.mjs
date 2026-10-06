@@ -9,8 +9,11 @@
 // aliases"); the official ones the local client has (tools/local-extract/
 // extract.py ENEMY_SPINES, optional) are added as `spineLocal` from the
 // committed tools/assets/local-enemy-spines.json — never from the disk, so the
-// manifest is the same with or without the extraction. --local-spines rewrites
-// that file from the extracted models (after a game update).
+// manifest is the same with or without the extraction. The token (summon)
+// models no dump carries (extract.py TOKEN_SPINES) likewise, from
+// tools/assets/local-token-spines.json (ASSETS.md "Token models from the local
+// client"). --local-spines rewrites both files from the extracted models (after
+// a game update).
 //
 // Idempotent: existing files with the right size are skipped, so re-running is
 // cheap. Downloads use ~16 parallel connections, 3 retries per direct source,
@@ -51,7 +54,10 @@ import { normalizeProxyPrefix } from './assets/sources.mjs';
 import { loadIndexes } from './assets/cache.mjs';
 import { indexAudio, VOICE_DIRS } from './assets/audio.mjs';
 import { buildPlan } from './assets/plan.mjs';
-import { processModels, findLocalEnemyModels, localEnemySpineMeta, loadLocalEnemySpines, LOCAL_ENEMY_SPINES_FILE } from './assets/spine.mjs';
+import {
+  processModels, findLocalEnemyModels, findLocalTokenModels, localSpineMeta, loadLocalSpines, LOCAL_ENEMY_SPINES_FILE,
+  LOCAL_TOKEN_SPINES_FILE, LOCAL_ENEMY_SPINE_DIR, LOCAL_TOKEN_SPINE_DIR,
+} from './assets/spine.mjs';
 import { collectLeaves, downloadLeaves, resolveTemplate, totalBytes, contentHash, droppedEntries, MANIFEST_VERSION } from './assets/manifest.mjs';
 import { fontJobs, buildFonts } from './assets/fonts.mjs';
 import { skelParserAvailable } from './assets/skel.mjs';
@@ -62,7 +68,22 @@ const FONTS = join(ROOT, 'public', 'fonts');
 const CACHE = join(ROOT, '.cache');
 const MANIFEST = join(ROOT, 'data', 'assets.json');
 const REPORT = join(CACHE, 'assets-report.json');
-const LOCAL_SPINES = join(ROOT, LOCAL_ENEMY_SPINES_FILE);
+/**
+ * The local-client model overlays (spineLocal): the committed metadata file, where extract.py writes the models (under
+ * public/assets), how to find them, and the file's `about` line.
+ */
+const LOCAL_SPINE_KINDS = {
+  enemy: {
+    file: LOCAL_ENEMY_SPINES_FILE, dir: LOCAL_ENEMY_SPINE_DIR, find: findLocalEnemyModels, what: 'enemy',
+    about: 'Spine metadata of the enemy models only the local client has (tools/local-extract/extract.py ENEMY_SPINES); '
+      + 'data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md "Enemy aliases").',
+  },
+  token: {
+    file: LOCAL_TOKEN_SPINES_FILE, dir: LOCAL_TOKEN_SPINE_DIR, find: findLocalTokenModels, what: 'token',
+    about: 'Spine metadata of the token (summon) models only the local client has (tools/local-extract/extract.py TOKEN_SPINES); '
+      + 'data/assets.json tokens[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md "Token models from the local client").',
+  },
+};
 
 const HELP = `Usage: node tools/fetch-assets.mjs [options]
   --concurrency=N   parallel downloads (default 16)
@@ -80,8 +101,9 @@ const HELP = `Usage: node tools/fetch-assets.mjs [options]
                     (without it such a run keeps the current manifest, lists the entries and exits 1)
   --add-only        download only files missing on disk; never re-download, rewrite or delete an existing
                     file, no font rebuild (a worktree sharing public/assets and public/fonts)
-  --local-spines    rewrite ${LOCAL_ENEMY_SPINES_FILE} from the enemy models extracted
-                    by tools/local-extract/extract.py (public/assets/local/spine/enemy/)
+  --local-spines    rewrite ${LOCAL_ENEMY_SPINES_FILE} and ${LOCAL_TOKEN_SPINES_FILE} from the
+                    enemy and token models extracted by tools/local-extract/extract.py
+                    (public/assets/local/spine/enemy/, public/assets/local/spine/token/)
   --help            this text
 Environment: SP_ASSET_SOURCE sets the default source; SP_GITHUB_PROXY sets the
 HTTPS mirror prefix (default https://gh-proxy.com/; empty disables the proxy).
@@ -247,33 +269,32 @@ function requiredMisses(m, charIds) {
 }
 
 /**
- * Metadata of the local-client enemy models (the committed LOCAL_SPINES). With --local-spines it is rewritten from the
- * models extracted under public/assets/local/spine/enemy/ (read only); otherwise extracted models whose metadata differs
- * from the committed one only get a warning — the manifest never depends on what this machine extracted.
+ * Metadata of the local-client models of one kind (LOCAL_SPINE_KINDS: the committed file). With --local-spines it is
+ * rewritten from the models extracted under public/assets/local/spine/<kind>/ (read only); otherwise extracted models
+ * whose metadata differs from the committed one only get a warning — the manifest never depends on what this machine
+ * extracted.
+ * @param {{ localSpines: boolean, dryRun: boolean }} opts
+ * @param {'enemy'|'token'} kind
  */
-async function syncLocalEnemySpines(opts) {
-  const committed = await loadLocalEnemySpines(LOCAL_SPINES);
-  const found = await findLocalEnemyModels(ASSETS);
+async function syncLocalSpines(opts, kind) {
+  const k = LOCAL_SPINE_KINDS[kind];
+  const committed = await loadLocalSpines(join(ROOT, k.file));
+  const found = await k.find(ASSETS);
   if (!Object.keys(found).length) {
-    if (opts.localSpines) log(`[local-spines] no extracted enemy model under public/assets/local/spine/enemy/ — ${LOCAL_ENEMY_SPINES_FILE} kept`);
+    if (opts.localSpines) log(`[local-spines] no extracted ${k.what} model under public/assets/${k.dir} — ${k.file} kept`);
     return committed;
   }
-  const { meta, problems } = await localEnemySpineMeta(ASSETS, found);
+  const { meta, problems } = await localSpineMeta(ASSETS, found);
   for (const p of problems) log(`[local-spines] ${p}`);
   if (opts.localSpines && !opts.dryRun) {
     const models = { ...committed, ...meta };
-    const sorted = Object.fromEntries(Object.keys(models).sort().map((k) => [k, models[k]]));
-    const doc = {
-      about: 'Spine metadata of the enemy models only the local client has (tools/local-extract/extract.py ENEMY_SPINES); '
-        + 'data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md "Enemy aliases").',
-      models: sorted,
-    };
-    await writeJsonAtomic(LOCAL_SPINES, doc, 2);
-    log(`[local-spines] ${Object.keys(meta).length} model(s) → ${LOCAL_ENEMY_SPINES_FILE}`);
+    const sorted = Object.fromEntries(Object.keys(models).sort().map((id) => [id, models[id]]));
+    await writeJsonAtomic(join(ROOT, k.file), { about: k.about, models: sorted }, 2);
+    log(`[local-spines] ${Object.keys(meta).length} ${k.what} model(s) → ${k.file}`);
     return sorted;
   }
   for (const [id, m] of Object.entries(meta)) {
-    if (JSON.stringify(m) !== JSON.stringify(committed[id])) log(`[local-spines] ${id}: the extracted model differs from ${LOCAL_ENEMY_SPINES_FILE} (re-run with --local-spines to update it)`);
+    if (JSON.stringify(m) !== JSON.stringify(committed[id])) log(`[local-spines] ${id}: the extracted model differs from ${k.file} (re-run with --local-spines to update it)`);
   }
   return committed;
 }
@@ -304,7 +325,8 @@ async function main() {
   const extras = dataExtras(dataBackups, dataChess);
   const extraHandbook = {};
   for (const b of Object.values(dataBosses || {})) if (b?.enemyKey && typeof b.handbookId === 'string') extraHandbook[b.enemyKey] = b.handbookId;
-  const localEnemySpines = await syncLocalEnemySpines(opts);
+  const localEnemySpines = await syncLocalSpines(opts, 'enemy');
+  const localTokenSpines = await syncLocalSpines(opts, 'token');
   const plan = buildPlan({
     assets07, ops03, enemies05, maps05, audio, modelsData, charword, voiceLang: opts.voiceLang,
     // default: only the slots a battle can play (plan.mjs VOICE_BATTLE_SLOTS); --voice-all takes the whole official set
@@ -313,6 +335,7 @@ async function main() {
     extraTokenIds: [...Object.keys(dataTokens || {}), ...extras.tokenIds],
     extraHandbook,
     localEnemySpines,
+    localTokenSpines,
     extraOperators: extras.extraOperators,
     moduleTypes: extras.moduleTypes,
   });
@@ -409,6 +432,8 @@ async function main() {
   log(`on disk (manifest)  : ${mb(s.bytes)} in ${s.files} files`);
   log(`chars ${s.chars} (Back model ${s.charsWithBack}) · enemies ${s.enemies} (Spine ${s.enemiesWithSpine}) · tokens ${s.tokens} (Spine ${s.tokensWithSpine}) · Spine models ${s.spineModels}`);
   log(`bonds ${s.bonds} · items ${s.items} · bands ${s.bands} · skill icons ${s.skills} · UI ${s.ui} · units with SFX ${s.sfxUnits}`);
+  const overlays = (o) => Object.values(o || {}).filter((e) => e?.spineLocal).length;
+  log(`local-client models (spineLocal, drawn when extracted): enemies ${overlays(manifest.enemies)} · tokens ${overlays(manifest.tokens)}`);
   log(`operator battle voice: ${s.voiceChars} charIds (--voice-lang=${opts.voiceLang})`);
   log(`fonts: ${Object.values(fonts.files).map((f) => f.woff2 || f.original).join(', ') || 'none'}`);
   if (resolved.fallbacks.length) { log(`fallbacks used (${resolved.fallbacks.length}):`); for (const f of resolved.fallbacks.slice(0, 20)) log(`  ${f}`); }

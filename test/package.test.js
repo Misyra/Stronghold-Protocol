@@ -27,7 +27,8 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
   const { keep, drop } = selectTracked([
     'server/index.js', 'server/sim/rng.js', 'shared/constants.js', 'public/index.html', 'public/js/main.js', 'public/i18n/en.json',
     'data/chess.json', 'data/i18n/en.json', 'tools/setup.mjs', 'tools/vendor.mjs', 'tools/fetch-assets.mjs', 'tools/doctor.mjs',
-    'tools/crop-board-atlas.mjs', 'tools/assets/plan.mjs', 'tools/assets/local-enemy-spines.json', 'tools/local-extract/extract.py',
+    'tools/crop-board-atlas.mjs', 'tools/assets/plan.mjs', 'tools/assets/local-enemy-spines.json', 'tools/assets/local-token-spines.json',
+    'tools/local-extract/extract.py',
     'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/start.sh', 'scripts/start-windows.bat', 'scripts/launch.mjs',
     'scripts/install-service-windows.ps1', 'docs/PLAYING.md', 'docs/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
     'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md',
@@ -42,10 +43,11 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
     'public/.DS_Store', 'tools/local-extract/.venv-extract/x.py', 'node_modules/ws/index.js',
   ]);
   for (const f of ['server/index.js', 'public/i18n/en.json', 'data/i18n/en.json', 'tools/assets/local-enemy-spines.json',
-    'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/install-service-windows.ps1', 'docs/research/07-assets.json', 'CHANGELOG.md']) {
+    'tools/assets/local-token-spines.json', 'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/install-service-windows.ps1',
+    'docs/research/07-assets.json', 'CHANGELOG.md']) {
     assert.ok(keep.includes(f), `keeps ${f}`);
   }
-  assert.equal(keep.length, 34, keep.join(' '));
+  assert.equal(keep.length, 35, keep.join(' '));
   assert.equal(drop.length, 40, drop.join(' '));
   assert.ok(!keep.some((f) => drop.includes(f)));
 });
@@ -149,10 +151,12 @@ function fakeCheckout() {
   put('public/assets/char/char_1048_orchd2.png', PNG);
   put('public/assets/local/g/x.webp', PNG);
   put('public/assets/local/g/x.png', PNG);
+  put('public/assets/local/spine/token/token_x/token_x.skel', 'skel');   // a token model only the local client has (0.2.0)
   put('public/assets/.DS_Store', 'junk');
   put('public/fonts/fonts.css', '@font-face{}\n');
   put('public/fonts/x.woff2', PNG);
-  put('data/local-assets.json', JSON.stringify({ version: 1, groups: { g: { x: { path: '/assets/local/g/x.webp' } } } }));
+  put('data/local-assets.json', JSON.stringify({ version: 1, groups: { g: { x: { path: '/assets/local/g/x.webp' } },
+    'spine/token/token_x': { 'token_x.skel': { path: '/assets/local/spine/token/token_x/token_x.skel' } } } }));
   put('.cache/assets-report.json', '{}');
   put('pv/clip.txt', 'promo');
   const git = (...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
@@ -170,7 +174,7 @@ const SHIPPED_TRACKED = ['CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'README.md', 'T
   'tools/assets/network.mjs', 'tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/local-extract/extract.py',
   'tools/setup.mjs', 'tools/vendor.mjs'].sort();
 const ART = ['data/local-assets.json', 'public/assets/char/a.png', 'public/assets/local/g/x.png', 'public/assets/local/g/x.webp',
-  'public/assets/ui/b c.png', 'public/fonts/fonts.css', 'public/fonts/x.woff2'];
+  'public/assets/local/spine/token/token_x/token_x.skel', 'public/assets/ui/b c.png', 'public/fonts/fonts.css', 'public/fonts/x.woff2'];
 
 test('dry-run on a temporary checkout: the full and the lite file lists, the summary, nothing written', () => {
   const { dir } = fakeCheckout();

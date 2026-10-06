@@ -103,7 +103,7 @@ function kitParrot(ab) {
     },
     status(c, b, e, a) {
       if (c.status === 'freeze') { a.chill = true; return; }
-      if (a.down || !(c.status === 'stun' || c.status === 'sleep')) return;
+      if (a.down || !(c.status === 'stun' || c.status === 'sleep' || c.status === 'groundbind')) return;
       a.down = true;
       setFloat(b, e, false);
       b.removeBuff(e, 'ab:parrotRun');
@@ -114,8 +114,8 @@ function kitParrot(ab) {
     tick(b, e, a) {
       if (a.chill && !e.s.flags.freeze) { a.chill = false; b.applyStatus(e, 'stun', { duration: PARROT_CHILL_STUN, source: null }); }
       // "离开上述异常效果影响后进入初始模式": s.flags.stun also holds while asleep / frozen (units.js), so a sleep that
-      // outlasts the mode stun keeps it down
-      if (a.down && !e.s.flags.stun) {
+      // outlasts the mode stun keeps it down; so does a 缚地 (flag `groundbind`)
+      if (a.down && !e.s.flags.stun && !e.s.flags.groundbind) {
         a.down = false;
         b.removeBuff(e, 'ab:parrotDown');
         b.removeBuff(e, 'ab:parrotRun');

@@ -42,6 +42,8 @@ export const FLAG_KEYS = Object.freeze([
   // 自缚 (the unit's own immobility: 守墓石像's 转换模式, the 自缚 leaders) beside its `noMove` — 束缚 sets noMove too, and
   // only 自缚 makes a unit "不视为可达目标" for 余 S2's teleport (PRTS 余 S2 备注)
   'selfBound', 'healFree', 'stealthOff',
+  // 缚地 (status `groundbind`): an enemy air unit counts as a ground unit meanwhile (Unit.isFlying)
+  'groundbind',
 ]);
 
 /**
@@ -90,6 +92,11 @@ export const STATUS = Object.freeze({
   // 浮空: 变为空中单位 (Unit.isFlying)，无法移动、攻击及使用技能; 对重量大于3的单位持续时间减半; the state holds 不可阻挡 +
   // 失衡免疫 (noDisplace: "不会被位移影响", PRTS 异常效果)
   levitate: { flags: { levitate: true, stun: true, unblockable: true, noDisplace: true }, immune: 'levitate' },
+  // 缚地 (gamedata_const ba.groundbind "目标变为地面单位，无法移动；使部分近地悬浮敌人掉落；对重量大于3的单位持续时间减半"):
+  // an air unit (data flyer, 近地悬浮) counts as a ground unit (Unit.isFlying: melee operators hit it, ground blockers
+  // block it) and cannot move; half duration on units with massLevel > 3 (Battle.applyStatus, as 浮空); a 浮空 still
+  // lands on it (PRTS 异常效果 "若单位数据上为飞行单位且不持有缚地异常…则Buff取消"). 予愿安洁莉娜 S2 (kits/ops/op-aglna2.js)
+  groundbind: { flags: { groundbind: true, noMove: true }, mods: { moveMul: 0 } },
   // 麻痹: value = stacks (default 1, max 3); each stack cancels one enemy normal attack; lasts until consumed; honours
   // 麻痹免疫 (enemy_database palsyImmune, e.g. 假想敌：铳 — PRTS 元素: a 神经 burst gives 麻痹 only "若单位不具有麻痹免疫")
   palsy: { palsy: true, immune: 'palsy' },
@@ -120,12 +127,12 @@ export const STATUS = Object.freeze({
 });
 
 /**
- * Control statuses (异常状态) shortened by 抵抗: 晕眩 冻结 寒冷 沉睡 恐惧 战栗 诱导 浮空 束缚 沉默 缴械 停顿 减速. The
+ * Control statuses (异常状态) shortened by 抵抗: 晕眩 冻结 寒冷 沉睡 恐惧 战栗 诱导 浮空 束缚 沉默 缴械 停顿 减速 缚地. The
  * official term lists 晕眩/寒冷/冻结/恐惧/诱导…; the rest follow the operator kits that grant 抵抗 [ASSUMED]. 麻痹 is
  * stack-based: it decays instead (RESIST_PALSY_DECAY).
  */
 export const RESIST_STATUSES = Object.freeze(new Set(['stun', 'freeze', 'cold', 'sleep', 'fear', 'tremble', 'attract', 'levitate',
-  'bind', 'silence', 'disarm', 'sluggish', 'slow']));
+  'bind', 'silence', 'disarm', 'sluggish', 'slow', 'groundbind']));
 
 /** Statuses that should be reported to clients as `['status', id, key, on]`. */
 export const VISIBLE_STATUS = new Set(Object.keys(STATUS));

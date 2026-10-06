@@ -58,13 +58,13 @@ const SYUFO_CRAWL_STUN = 0.5;
 /**
  * 掠海漂移体 (PRTS): 初始模式 近地悬浮 + 失衡免疫, 不会攻击飞行单位; 受晕眩/无法行动/沉睡/冻结/缚地影响后进入爬行模式 for
  * good and is stunned 0.5 s — a ground unit (blockable, melee operators hit it) that "仅进行阻挡攻击" (only its blocker).
- * The engine has 晕眩 / 冻结 / 沉睡 (no operator here applies 无法行动 or 缚地). Erosion on every attack.
+ * The engine has 晕眩 / 冻结 / 沉睡 / 缚地 (予愿安洁莉娜 S2; no operator here applies 无法行动). Erosion on every attack.
  */
 function kitSyufo(ab) {
   return [float(), ep('erosion', T(ab, 'EpDamage.attack@ep_damage_ratio') ?? 0), {
     spawn(b, e) { e.profile.canTarget = (u) => !u.isFlying; },
     status(c, b, e, a) {
-      if (a.crawl || !(c.status === 'stun' || c.status === 'freeze' || c.status === 'sleep')) return;
+      if (a.crawl || !(c.status === 'stun' || c.status === 'freeze' || c.status === 'sleep' || c.status === 'groundbind')) return;
       a.crawl = true;
       setFloat(b, e, false);
       e.profile.melee = true;

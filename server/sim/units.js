@@ -179,13 +179,18 @@ export class Unit {
   /**
    * Air unit (空中单位) for every targeting / ground-only rule: FLY movers, and enemies that hover (近地悬浮, buff flag
    * `float` — PRTS 术语释义 ba.float "算作空中单位"; they keep walking the ground path) or are levitated (浮空, gamedata_const
-   * ba.levitate "变为空中单位"). Movement and pathing read `motion`, never this.
+   * ba.levitate "变为空中单位"). A 缚地 enemy (status `groundbind`, ba.groundbind "目标变为地面单位") is a ground unit
+   * meanwhile — unless a 浮空 lifts it again (浮空 lands on a 缚地 flyer: Battle.applyStatus). Movement and pathing read
+   * `motion`, never this.
    */
   get isFlying() {
-    if (this.motion === 'FLY') return true;
-    if (this.side !== 'enemy') return false;
-    const f = this.s.flags;
-    return !!(f.float || f.levitate);
+    if (this.side === 'enemy') {
+      const f = this.s.flags;
+      if (f.levitate) return true;
+      if (f.groundbind) return false;
+      return this.motion === 'FLY' || !!f.float;
+    }
+    return this.motion === 'FLY';
   }
 
   get hpRatio() { const mh = this.s.maxHp; return mh > 0 ? this.hp / mh : 0; }

@@ -24,7 +24,8 @@ export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands
  */
 export function useGameData() {
   const ready = useData(...GAME_FILES);
-  return useMemo(() => makeLookups(ready), [ready]);
+  // (config / factions / choices are read once per memo: a language switch reads them again in the new locale)
+  return useMemo(() => makeLookups(ready), [ready, data.locale()]);
 }
 
 /** A 自选 operator's summon record (data/backups.json `tokens`, 0.2.0), or null. */

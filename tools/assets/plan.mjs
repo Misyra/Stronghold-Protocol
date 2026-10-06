@@ -595,8 +595,11 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   // --- module type icons ----------------------------------------------------
   const modules = {};
   for (const t of [...new Set(moduleTypes || [])].filter((x) => typeof x === 'string' && /^[a-z0-9-]+$/i.test(x)).sort()) {
-    // the client's file name, else its lower-case form (the type id of a few modules is mixed case: WAH-Y → wah-y.png)
-    modules[t] = leaf(alt(`module/${safeName(t)}.png`, [...new Set([t, t.toLowerCase()])].map((n) => joinUrl(RAW.aa2, `arts/ui/uniequiptype/${n}.png`))));
+    // the client's file name, else its lower-case form (the type id of a few modules is mixed case: WAH-Y → wah-y.png).
+    // One lower-case file per type: the official data spells one DEC X module 'dec-X' (uniequip_003_aglina) and the
+    // others 'dec-x'; two paths that differ only in case are one file on Windows / macOS (and in a release zip built or
+    // extracted there), so a case-sensitive server would miss one of them.
+    modules[t] = leaf(alt(`module/${safeName(t).toLowerCase()}.png`, [...new Set([t, t.toLowerCase()])].map((n) => joinUrl(RAW.aa2, `arts/ui/uniequiptype/${n}.png`))));
   }
 
   // --- 干员战斗语音 (excel/charword_table.json → audio.voice) ---------------------------------------------

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dataExtras, parseArgs } from '../tools/fetch-assets.mjs';
+import { dataExtras, orphanFiles, parseArgs } from '../tools/fetch-assets.mjs';
 import { patternOperator, buildPlan } from '../tools/assets/plan.mjs';
 import { indexAudio } from '../tools/assets/audio.mjs';
 import { Downloader } from '../tools/assets/downloader.mjs';
@@ -65,6 +65,25 @@ test('patternOperator / buildPlan: an operator research 07 lacks gets the 07 URL
   assert.equal(t.template.prof.sub.pioneer.alts[0].rel, 'prof/sub/pioneer.png');
 });
 
+test('module type icons: one lower-case file per type, so the official \'dec-X\' (uniequip_003_aglina) and \'dec-x\' share one; --prune keeps a file whose name differs only in case', () => {
+  const t = buildPlan({ assets07: {}, ops03: {}, enemies05: {}, maps05: {}, audio: indexAudio({}), modelsData: {}, moduleTypes: ['dec-X', 'dec-x', 'WAH-Y'] });
+  const rel = (k) => t.template.modules[k].alts[0].rel;
+  assert.deepEqual([rel('dec-X'), rel('dec-x'), rel('WAH-Y')], ['module/dec-x.png', 'module/dec-x.png', 'module/wah-y.png']);
+  assert.match(t.template.modules['dec-X'].alts[0].urls[0], /uniequiptype\/dec-X\.png$/, 'the upstream name keeps its case first');
+  const m = load('assets');
+  assert.equal(m.modules['dec-X'], m.modules['dec-x']);
+  const byCase = new Map();
+  const walk = (v) => {
+    if (typeof v === 'string' && v.startsWith('/assets/')) {
+      const k = v.toLowerCase();
+      assert.ok(!byCase.has(k) || byCase.get(k) === v, `${v} and ${byCase.get(k)} differ only in case: one file on Windows / macOS`);
+      byCase.set(k, v);
+    } else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x);
+  };
+  walk(m);
+  assert.deepEqual(orphanFiles(['module/WAH-Y.png', 'module/old.png', 'local/x.png', 'char/a.png'], new Set(['module/wah-y.png', 'char/a.png'])), ['module/old.png']);
+});
+
 test('--add-only: parsed, refused with --prune / --force; its downloader keeps every existing file and records what it wrote', async () => {
   assert.equal(parseArgs(['--add-only']).addOnly, true);
   assert.equal(parseArgs([]).addOnly, false);
@@ -90,4 +109,20 @@ test('the committed data/assets.json lists every 自选 operator\'s avatar, port
   }
   for (const t of dataExtras(BACKUPS, CHESS).moduleTypes) assert.ok(m.modules[t] && onDisk(m.modules[t]), `module type icon ${t}`);
   assert.equal(m.stats.modules, Object.keys(m.modules).length);
+});
+
+test('an operator left out of 自选 (data/backups.json diy.excluded: the collab picks, 焰狐龙梓兰 MH05 among them) keeps no art in data/assets.json, so the full release zip (tools/package.mjs) never ships it', () => {
+  const m = load('assets');
+  const text = JSON.stringify(m);
+  assert.ok(BACKUPS.diy.excluded.includes('char_1048_orchd2'), '焰狐龙梓兰 is excluded');
+  for (const id of BACKUPS.diy.excluded) {
+    const code = id.split('_').slice(2).join('_');
+    assert.equal(m.chars[id], undefined, `${id}: chars`);
+    assert.equal(m.audio.sfx.units[id], undefined, `${id}: unit sfx`);
+    assert.equal(m.audio.voice?.[id], undefined, `${id}: voice`);
+    assert.ok(!Object.keys(m.skills).some((k) => k.startsWith(`skchr_${code}_`)), `${id}: skill icons`);
+    assert.ok(!text.includes(id), `${id}: no file of theirs`);
+  }
+  assert.equal(m.stats.chars, Object.keys(m.chars).length);
+  assert.equal(m.stats.skills, Object.keys(m.skills).length);
 });

@@ -362,6 +362,21 @@ describe('audio banks and plan id sets', () => {
     assert.equal(ok.value.p, '/assets/package.json');
     assert.equal(ok.fallbacks.length, 1);
   });
+
+  test('an array whose lines are all missing is dropped, with the entry it empties (a voice slot never downloaded)', () => {
+    const line = (rel) => ({ alts: [{ rel, urls: ['u'] }] });
+    const tpl = {
+      voice: {
+        a: { select: [line('nope/1.mp3'), line('nope/2.mp3')], place: [line('nope/3.mp3')] },
+        b: { select: [line('nope/4.mp3'), line('package.json')] },
+      },
+      empty: [],
+    };
+    const r = resolveTemplate(tpl, { root: ROOT, spine: new Map() });
+    assert.deepEqual(r.value.voice, { b: { select: ['/assets/package.json'] } }, 'operator a has no line on disk: no entry at all');
+    assert.deepEqual(r.value.empty, [], 'an array that was empty in the template stays');
+    assert.deepEqual(r.misses.sort(), ['voice.a.place[0]', 'voice.a.select[0]', 'voice.a.select[1]', 'voice.b.select[0]']);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -109,7 +109,9 @@ export function resourceContext() {
     let res;
     try {
       const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(10000) : undefined;
-      res = await fetch(MANIFEST_URL, { cache: 'no-store', signal });
+      // Revalidate the HTTP cache on every page load: on a 304 the browser supplies the cached body instead of
+      // re-downloading the manifest (the server answers with a strong ETag over the full response).
+      res = await fetch(MANIFEST_URL, { cache: 'no-cache', signal });
     } catch (err) {
       return { error: `无法读取资源清单：${err?.message || err}` };
     }

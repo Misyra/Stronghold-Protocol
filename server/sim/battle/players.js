@@ -79,7 +79,8 @@ export class BattlePlayers {
    * tiles its pieces are deployed on) mapped onto this field — the 联防 right-hand helper's +8 columns, the boss field's
    * rows 2–5, the mirrored right half of a pair (whatever coordinates the player's input uses). Never the hand / 临时
    * 整备区 rows of a boss field (rows 0–1, inside BOSS_RECT) nor the other half of a 联防 or boss field. Automatic
-   * redeployments that must stay where the player could deploy read it (the 突袭 landing, bonds/addon/battle.js raidTile).
+   * redeployments and moves that must stay where the player could deploy read it (the 突袭 landing, bonds/addon/battle.js
+   * raidTile; 乌尔比安's S3 【移动】, kits/ops/chess_char_5_05-ulpia.js).
    */
   onOwnBoard(ps, r, c) {
     if (!ps) return false;

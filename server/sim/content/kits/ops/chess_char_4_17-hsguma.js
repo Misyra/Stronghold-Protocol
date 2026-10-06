@@ -2,9 +2,10 @@
 // Conventions of the tier-4 kits: ../shared/tier4.js; kit contract and rules: ../README.md.
 
 import { AURA, num, tbb, whileDeployed, pulse, toggleBuff, isSel, alt, withDefaults } from '../shared/tier4.js';
+import { byEnemyAttack } from '../shared/tier1.js';
 
 export default withDefaults({
-  // ===== 星熊 (protector) S2 荆棘 (passive) — DEF +13 %, counters every attacker for 65 % ATK phys; talents
+  // ===== 星熊 (protector) S2 荆棘 (passive) — DEF +13 %, answers every enemy damage instance with 65 % ATK phys on its source; talents
   //       S1 战意 (TAKE_DAMAGE: DEF/ATK up); S3 力之锯 (ATK/DEF up, cuts every enemy on her front tile — all enemies of her
   //       range); module PRO-X (护身符): DEF +20 % while blocking
   chess_char_4_17_a: (bb, chess, def) => {
@@ -40,7 +41,8 @@ export default withDefaults({
         if (!S2) return;
         battle.on('damaged', (c) => {
           const src = c.source;
-          if (c.target !== unit || !unit.alive || !src || src.side !== 'enemy' || !src.alive || !c.dmg?.isAttack) return;
+          // 荆棘 = the official inverse_damage: every enemy damage instance, not its attacks only (tier1 byEnemyAttack)
+          if (c.target !== unit || !unit.alive || !byEnemyAttack(c) || !src.alive) return;
           battle.dealDamage(unit, src, { amount: unit.s.atk * num(bb.atk_scale, 0.65), type: 'phys', canDodge: false, isSkill: true, tags: ['counter'] });
           battle.fx('thorns', { x: unit.x, y: unit.y, id: unit.id });
         }, { owner: unit });

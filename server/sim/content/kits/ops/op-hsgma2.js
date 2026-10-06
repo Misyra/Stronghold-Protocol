@@ -19,8 +19,8 @@
 //   data's 'phys' too since 0.2.0 WE2 — build-data classifyAttack) and arts while one runs (every skill's attack override); block 3, ground-only
 //   melee on her 1-1. Module AST-X 无迹 adds "且攻击和受到攻击时对目标额外造成10％攻击力的法术伤害" (trait bb atk_scale): every
 //   damage instance of her normal attacks (skill attacks included; not the shield, a counter or the module's own damage)
-//   is followed by atk_scale × ATK arts on that enemy (附加伤害: no dodge), and every enemy attack she takes returns
-//   atk_scale × ATK arts (普通伤害) to the attacker — whether a skill runs or not [ASSUMED: PRTS's list of the checked
+//   is followed by atk_scale × ATK arts on that enemy (附加伤害: no dodge), and every enemy damage instance she takes
+//   returns atk_scale × ATK arts (普通伤害) to its source (tier1 byEnemyAttack) — whether a skill runs or not [ASSUMED: PRTS's list of the checked
 //   conditions names no skill period].
 // - T1 业火 "生命降至0时进入“我执”…": a lethal damage instance leaves her on the field in 我执 instead (the damage past her
 //   HP opens the negative pool — the engine keeps her at its 1-HP floor for the official 0); in 我执 every later damage
@@ -34,8 +34,8 @@
 // - T2 鬼之架势 "在场时，自身获得最高+50法术抗性和35%攻击力的坚忍（损失70%生命值时达到最大加成）": RES +min_magic_resistance and ATK
 //   +min_atk scaled linearly by the HP lost from max_hp_ratio down to min_hp_ratio (坚忍), re-read every tick; in 我执 at
 //   its maximum. AST-X stage 3: the maximum at 50 % lost (min_hp_ratio 0.5) and "达到最大加成时，攻击力额外+15％" (atk).
-// - S1 恶业苦果 (AUTO, 受击回复 SP, 持续时间无限 — a toggle): ATK +atk, DEF +def, arts attacks; every enemy attack she takes
-//   deals atk_scale × ATK arts to the attacker (a direct pick of the damage source, enemies only). A self buff: the owner's
+// - S1 恶业苦果 (AUTO, 受击回复 SP, 持续时间无限 — a toggle): ATK +atk, DEF +def, arts attacks; every enemy damage instance
+//   she takes deals atk_scale × ATK arts to its source (a direct pick of the damage source, enemies only). A self buff: the owner's
 //   AUTO rule fires it as soon as its SP is full (`trigger: 'SP_FULL'`, as 引星棘刺 S1 — kits/README.md checklist 5).
 // - S2 无始无明 (AUTO, attack SP; data DEFAULT): the cast replaces the attack about to be made — the shield throw, three hits
 //   of attack@atk_scale × ATK arts on every enemy she blocks (none blocked: her target [ASSUMED]); then the shield circles
@@ -52,7 +52,7 @@
 //   refund of a withdrawal is not modelled — no retreat in the sim refunds DP). No strategy of this mode closes it: PRTS
 //   帮助 lists the 上半 row that did as removed in 下半, so in a fight the skill simply runs its `duration`.
 
-import { num, talentBb, traitBb, skillRec, up } from '../shared/tier1.js';
+import { num, talentBb, traitBb, skillRec, up, byEnemyAttack } from '../shared/tier1.js';
 import { canTargetEnemy } from '../../../targeting.js';
 import { bodyInRadius } from '../../../body.js';
 import { hasHp } from '../../../damage.js';
@@ -252,15 +252,17 @@ export default {
         } },
       ],
       install(battle, unit) {
-        // S1 恶业苦果: every enemy attack she takes ⇒ atk_scale × ATK arts back to the attacker
+        // S1 恶业苦果: every enemy damage instance she takes (the official hsgma2_s_1 on ON_TAKE_DAMAGE, not its attacks only:
+        // tier1 byEnemyAttack) ⇒ atk_scale × ATK arts back to its source
         battle.on('damaged', (c) => {
           const s = c.source;
           if (c.target !== unit || !unit.alive || unit.skill?.id !== S1 || !unit.skill.active) return;
-          if (!s || s.side !== 'enemy' || !s.alive || !c.dmg?.isAttack) return;
+          if (!byEnemyAttack(c) || !s.alive) return;
           battle.dealDamage(unit, s, { amount: unit.s.atk * num(b1.atk_scale), type: 'arts', canDodge: false, isSkill: true, ignoreSelect: true, tags: ['skill', 'counter'] });
           battle.fx('counter', { x: s.x, y: s.y, id: unit.id });
         }, { owner: unit });
-        // AST-X 无迹: her attack damage ⇒ +atk_scale × ATK arts (附加伤害); an enemy attack she takes ⇒ atk_scale × ATK arts back
+        // AST-X 无迹: her attack damage ⇒ +atk_scale × ATK arts (附加伤害); an enemy damage instance she takes (the official
+        // hsgma2_e_003_tr_take: ON_TAKE_DAMAGE from the other side) ⇒ atk_scale × ATK arts back
         const astx = num(tb.atk_scale);
         if (astx > 0) {
           battle.on('damaged', (c) => {
@@ -270,7 +272,7 @@ export default {
           }, { owner: unit, priority: -20 });
           battle.on('damaged', (c) => {
             const s = c.source;
-            if (c.target !== unit || !unit.alive || !s || s.side !== 'enemy' || !s.alive || !c.dmg?.isAttack) return;
+            if (c.target !== unit || !unit.alive || !byEnemyAttack(c) || !s.alive) return;
             battle.dealDamage(unit, s, { amount: unit.s.atk * astx, type: 'arts', ignoreSelect: true, tags: ['module', ASTX, 'counter'] });
           }, { owner: unit });
         }

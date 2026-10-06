@@ -246,8 +246,26 @@ function hammerState(battle, rt, u) {
  */
 export function deploymentOf(u) { return `${u.deploySeq}:${u.mem.revives | 0}`; }
 
-/** An in-place 复活 (M3茧甲, 埃芒加德) happened: a new deployment for the once-per-deployment lock (deploymentOf). */
-export function revivedInPlace(u) { if (u && u.mem) u.mem.revives = (u.mem.revives | 0) + 1; }
+/**
+ * An in-place 复活 (M3茧甲, 埃芒加德) happened. PRTS's 复活 is 退场 + a 0-time / 0-cost redeploy (PRTS 盟约记录 备注) — a new
+ * deployment, of which the remake carries: the once-per-deployment lock (deploymentOf) and a deploy-timed skill ("部署后…秒内",
+ * SkillSpec `activateOnDeploy`: 缄默德克萨斯 S1–S3, 宴 S2, 斯卡蒂 S2, 砾's barrier …) running again — started anew when its window
+ * had ended, its window back to the full duration when it still ran (the next tick, out of the damage pipeline that set the
+ * revive off). Community report of 2026-10-06 (item 44): a 突袭 member counts such a running window as 技能就绪
+ * (bonds/addon/battle.js raidPoll), and after an in-place revive it waited out the 10 s idle time instead of jumping at once
+ * as after a redeploy. The SP reset and the other 部署时 effects of PRTS's form stay unmodelled (DESIGN §21.21).
+ */
+export function revivedInPlace(u) {
+  if (!u || !u.mem) return;
+  u.mem.revives = (u.mem.revives | 0) + 1;
+  const sk = u.skill;
+  if (!sk || sk.noSkill || !sk.spec || !sk.spec.activateOnDeploy || !sk.battle) return;
+  const seq = u.deploySeq, n = u.mem.revives;
+  sk.battle.after(0, () => {
+    if (!u.alive || !u.deployed || u.deploySeq !== seq || u.mem.revives !== n || u.skill !== sk) return;
+    if (sk.active) { if (sk.duration > 0) sk.timeLeft = sk.duration; } else sk.activate('deploy', { free: true });
+  }, { owner: u });
+}
 
 /**
  * Does `u` hold 坚固维式重锤's 不死 right now — a window started in this deployment that has not run out? The window lives

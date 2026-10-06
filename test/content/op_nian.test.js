@@ -127,7 +127,7 @@ test('S1 锡灼 (23 / 26 s): DEF +40 % / +55 %, ATK +20 % / +30 %, her normal at
   }
 });
 
-test('S2 铜印 (31 / 32 s): stops attacking; DEF +80 % / +100 %, block +1; every enemy attack she takes returns 60 % / 70 % ATK arts to the attacker (ranged ones too, a direct pick) and silences it 3 s; nothing for a non-attack hit, nothing once it ends', () => {
+test('S2 铜印 (31 / 32 s): stops attacking; DEF +80 % / +100 %, block +1; every enemy damage instance she takes (its attack or not — official ON_TAKE_DAMAGE) returns 60 % / 70 % ATK arts to its source (ranged ones too, a direct pick) and silences it 3 s; nothing for a 流失, nothing once it ends', () => {
   for (const [tier, elite, mod] of [[5, false, null], [6, true, null], [6, true, PROY]]) {
     const sk = skillOf(tier, elite, S2);
     const { h, u } = field({ tier, elite, mod, skill: 1 });
@@ -151,9 +151,14 @@ test('S2 铜印 (31 / 32 s): stops attacking; DEF +80 % / +100 %, block +1; ever
       const sil = h.hooksOf('statusApplied').filter((c) => c.source === u && c.target === src && c.status === 'silence').slice(-1)[0];
       assert.ok(sil && Math.abs(sil.duration - 3) < 1e-9, `T${tier}: ${src.defId} silenced 3 s`);
     }
+    // updated on purpose by the community report of 2026-10-06 (item 30): the official inverse_damage[magic] / nian_s_2 fire on
+    // ON_TAKE_DAMAGE from an enemy source — a non-attack hit is answered too (it returned nothing up to 0.2.0); a 流失 is not
     const before = h.hooksOf('damaged').length;
     h.b.dealDamage(near, u, { amount: 100, type: 'phys' });
-    assert.ok(!h.hooksOf('damaged').slice(before).some((c) => c.source === u), `T${tier}: a non-attack hit returns nothing`);
+    assert.equal(h.hooksOf('damaged').slice(before).filter((c) => c.source === u && c.target === near).length, 1, `T${tier}: a non-attack hit is answered`);
+    const beforeLoss = h.hooksOf('damaged').length;
+    h.b.loseHp(u, 100, { source: near });
+    assert.ok(!h.hooksOf('damaged').slice(beforeLoss).some((c) => c.source === u), `T${tier}: a 流失 returns nothing`);
     u.skill.extend(-999);
     h.run(0.1);
     const after = h.hooksOf('damaged').length;

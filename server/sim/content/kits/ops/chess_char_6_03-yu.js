@@ -6,7 +6,7 @@ import {
   num, bv, tbb, moduleBb, live, opsOf, ANY, onDefaultSkill, selectedSkill, skillGridOf, AROUND8, onElementHit,
   elementDmg, aura,
 } from '../shared/tier6.js';
-import { holdProtect } from '../shared/tier1.js';
+import { holdProtect, byEnemyAttack } from '../shared/tier1.js';
 
 /**
  * "传送至自身位置": a ground enemy that can reach `unit`'s tile on the ground grid is moved onto it (unblocked, its
@@ -40,8 +40,8 @@ function yu(bb, chess, def) {
   // "将第二天赋效果赋予全场所有干员" belongs to S3 (the default skill) only
   const s3On = (unit) => isDef && !!unit.skill?.active;
   const skills = {
-    // S1 今日做东 (TAKE_DAMAGE, hurt SP): passive taunt +taunt_level; active: HP / DEF +, every attack taken ⇒
-    // ep_damage_ratio × ATK 灼燃损伤 on the attacker (install below)
+    // S1 今日做东 (TAKE_DAMAGE, hurt SP): passive taunt +taunt_level; active: HP / DEF +, every enemy damage instance taken ⇒
+    // ep_damage_ratio × ATK 灼燃损伤 on its source (install below)
     skchr_yu_1: { kind: 'duration', mods: { hpPct: num(bb.max_hp), defPct: num(bb.def) } },
     // S2 厚礼上宾 (cast with an enemy on its x-1: the data's SKILL_RANGE, a deliberate deviation from the 重装 TAKE_DAMAGE
     // row — tools/build-data.mjs TRIGGER_DEVIATIONS, DESIGN §22.10): atk_scale × ATK arts on every enemy of the skill range
@@ -71,7 +71,8 @@ function yu(bb, chess, def) {
       battle.addBuff(unit, { key: 'yu:host', mods: { taunt: num(bb.taunt_level, 1) }, persist: true, allowDead: true });
       battle.on('damaged', (ctx) => {
         const s = ctx.source;
-        if (ctx.target !== unit || !unit.skill?.active || !s || s.side !== 'enemy' || !s.alive || !ctx.dmg?.isAttack) return;
+        // "每次受到攻击" = the official yu_s_1[inverse_damage]: every enemy damage instance (tier1 byEnemyAttack)
+        if (ctx.target !== unit || !unit.skill?.active || !byEnemyAttack(ctx) || !s.alive) return;
         elementDmg(battle, unit, s, 'burn', unit.s.atk * num(bb.ep_damage_ratio), ['skill']);
       }, { owner: unit });
     },

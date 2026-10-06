@@ -3,6 +3,15 @@
 
 import { num, talentBb, installAura } from '../shared/tier1.js';
 
+/**
+ * 砾's normal attack (PRTS 砾 特性备注): "在砾的攻击动作下，每次普通攻击造成两段伤害，但是每段最终只会造成50%的伤害（在计算防御/减伤后，在
+ * 重设伤害前）；第二段伤害不会触发目标的受击回复" — two damage instances of 50 % 伤害倍率 each (DamageInfo `mul`, after DEF: not a 50 %
+ * 攻击倍率), so a 频次 enemy loses 2 per attack; the second carries no 受击回复 (ai.js resolveHit `hitDmgMul`). Every attack she
+ * makes is a normal attack (both her skills are passive).
+ */
+const GRAVEL_HITS = 2;
+const GRAVEL_HIT_DMG_MUL = 0.5;
+
 export default {
   // ---------------------------------------------------------------------------------------------------------------
   // 2_12 砾 鼠群 (passive): at each deployment a barrier of hp_ratio × max HP that decays to 0 over `duration` s
@@ -10,10 +19,11 @@ export default {
   // 快速部署: own deployment cost +cost (−1). Elite 小个子支援: every unit whose initial deployment cost ≤ cond.cost
   // DEF +def while 砾 is on the field. (Elite module withdraw refund: no manual retreat in battle ⇒ no effect.)
   // S1 影袭 (alt, passive): at each deployment DEF +def, decaying linearly to 0 over `duration` s, updated once per
-  // second (PRTS: "防御力加成每秒更新一次").
+  // second (PRTS: "防御力加成每秒更新一次"). Trait note: every normal attack hits twice at 50 % (GRAVEL_HIT_DMG_MUL above).
   chess_char_2_12_a: (bb, chess) => {
     const t = talentBb(chess, 0);
     return {
+      trait: { hits: GRAVEL_HITS, hitDmgMul: GRAVEL_HIT_DMG_MUL },
       skill: {
         kind: 'duration', activateOnDeploy: true, duration: num(bb.duration, 10), spCost: 0, spType: 'none', trigger: 'NEVER',
         onStart({ battle, unit }) {

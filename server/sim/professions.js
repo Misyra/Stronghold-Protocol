@@ -26,6 +26,9 @@
 //   healThrough(healer, ally) → bool (a healer that selects and heals that ally through its 禁疗 — Battle
 //                             injuredAlliesInKeys, damage.js heal; 凯尔希 on her Mon3tr)
 //   hitsFn(battle, unit, info) → n (info: the hit's { isSkill, index, attackId, energy })
+//   hitDmgMul n (伤害倍率 of each of the `hits` instances on the main target: DamageInfo `mul`, applied after DEF / RES
+//                and the damage multipliers, not 攻击倍率 — a 频次 enemy still loses 1 per instance; the instances after
+//                the first carry `noSp`, no 受击回复: 砾's two 50 % hits, PRTS 砾 特性备注 — ai.js resolveHit)
 //   install(battle, unit) — per-unit hooks, called once at setup
 //   storeEnergy(battle, unit) → bool / releaseEnergy(battle, unit) → n (秘术师: the attack check found no valid target ⇒
 //                             store one energy, false when full; the energies leaving with an attack — installMystic)

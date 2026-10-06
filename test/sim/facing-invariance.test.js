@@ -48,7 +48,12 @@ function scenario(chessId, dir, secs) {
         e_fly: enemyRec({ key: 'e_fly', hp: 1e6, speed: 0, motion: 'FLY', def: 50, res: 30 }),
       },
     },
-    setup: (b) => b.on('deploy', ({ unit }) => { if (unit.uid >= 100) unit.hp = unit.s.maxHp * (0.3 + 0.1 * (unit.uid - 100)); }),
+    setup: (b) => {
+      b.on('deploy', ({ unit }) => { if (unit.uid >= 100) unit.hp = unit.s.maxHp * (0.3 + 0.1 * (unit.uid - 100)); });
+      // the open field has no boards: "a tile of the player's own board" (Battle.onOwnBoard — 乌尔比安 S3's landing) is a
+      // board-position rule (DESIGN), not a facing one — every tile counts here, so the anchor's landing turns with him
+      b.onOwnBoard = () => true;
+    },
   });
   h.run(secs);
   checkInvariants(h.b);

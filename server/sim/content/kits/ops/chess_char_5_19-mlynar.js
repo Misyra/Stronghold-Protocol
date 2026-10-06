@@ -5,6 +5,7 @@ import {
   num, on, inRange, talent, skillGrid, batPct, mods, inFaction, isOp, selectedId, lazySkills, skillRange, leaderOf,
   whileOn, permBuff,
 } from '../shared/tier5.js';
+import { byEnemyAttack } from '../shared/tier1.js';
 
 /** 玛恩纳 游侠 "周围存在3名及以上敌人" radius (8-neighbourhood). */
 const AROUND_RADIUS = 1.5;
@@ -18,7 +19,7 @@ export default {
   // PRTS 备注 the trait bonus drops by 10 % (per_kill_reduce, absolute: +400 % → +390 %) for each enemy knocked out by
   // his own attack (or the damage it carries — not 无动于衷's reflection, not a mark another operator's attack set off),
   // settled after that attack, never below +0 %. T1 游侠: ×1.1 ATK on attacks (×1.15 and −15 % damage taken with ≥3
-  // enemies around). T2 无动于衷: taunt +1, Kazimierz ops reflect 15 % of his ATK as true damage when attacked.
+  // enemies around). T2 无动于衷: taunt +1, Kazimierz ops reflect 15 % of his ATK as true damage when an enemy damages them.
   // S1 未声张的怒火 (duration, SEARCH): attacks attack@atk_scale × ATK, DEF +. S2 未宽解的悲哀 (duration): skill range,
   // BAT +0.3 s, attacks attack@atk_scale × ATK twice; a kill of his own attacks during the skill keeps the trait ramp
   // when it ends. S1 / S2 have no 对空 note: ground only, like his trait. S2's data rule is ACTIVE_RANGE on its 2-3 (the
@@ -85,7 +86,9 @@ export default {
           if (!(scale > 0)) return;
           battle.on('damaged', (c) => {
             const a = c.target, src = c.source;
-            if (a.side !== 'ally' || !isOp(a) || !isKazimierz(a) || !src || src.side !== 'enemy' || !src.alive || !c.dmg?.isAttack) return;
+            // the official mlynar_t_2[inverse] (ON_TAKE_DAMAGE, InverseDamage from an enemy source): every enemy damage instance
+            // a Kazimierz operator takes, not its attacks only (tier1 byEnemyAttack)
+            if (a.side !== 'ally' || !isOp(a) || !isKazimierz(a) || !byEnemyAttack(c) || !src.alive) return;
             if (!on(unit) || leaderOf(battle, unit) !== unit) return;
             battle.dealDamage(unit, src, { amount: unit.s.atk * scale, type: 'true', canDodge: false, tags: ['talent', 'reflect'] });
           }, { owner: unit });

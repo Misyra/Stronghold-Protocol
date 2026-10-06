@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "type": "lang",
+    "lang": "ja",
+    "name": "日本語",
+    "englishName": "Japanese",
+    "version": "0.2.0",
+    "app": ">=0.2.0",
+    "authors": [
+      "the Stronghold Protocol contributors"
+    ],
+    "credits": "Game texts (data/i18n/ja.json): the official JP client data (© Hypergryph / Yostar) via ArknightsAssets/ArknightsGamedata. The UI strings are not translated yet — they show in English until a community translation fills them in (docs/I18N.md §5).",
+    "fallback": [
+      "en"
+    ]
+  }
+}

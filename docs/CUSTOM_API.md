@@ -326,6 +326,9 @@ HEAD /api/announcement
 | `assetsCdnVersion` | string / null | 配置的远端素材版本，未配置为 `null` |
 | `workers` | object / null | 工作线程池统计，未启用为 `null` |
 | `persist` | object / null | 持久化统计，未启用为 `null` |
+| `memory` | object | 主进程内存（`process.memoryUsage()`；`rss` 覆盖全部线程，其余为该主线程的堆计数，单位字节） |
+| `staticCache` | object | 静态缓存占用：`gzipBytes` / `gzipEntries` / `gzipLimitBytes` / `gzipInflight`（gzip LRU），`transformedBytes` / `transformedEntries`（重写响应缓存） |
+| `socketBuffers` | object | 全部打开 WebSocket 的未发送字节 `{ total, max }`，排查积压的对端 |
 
 `workers` 对象字段：
 
@@ -336,8 +339,9 @@ HEAD /api/announcement
 | `submitted` / `completed` / `failed` / `cancelled` / `rejected` | 各类任务累计计数 |
 | `queueMs` / `computeMs` | 累计排队 / 计算毫秒数 |
 | `avgComputeMs` | `completed > 0` 时为 `computeMs / completed`，否则为 0 |
+| `memory` | 每线程 `{ threadId, busy, sample }` 数组；`sample` 为该线程最近一次回包携带的堆采样（`heapUsed` / `heapTotal` / `external` / `arrayBuffers` / `sampledAt`），尚未回包时为 `null` |
 
-`persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
+`persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）、`workerMemory`（持久化 Worker 最近一次回包的堆采样，尚未回包为 `null`）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
 
 ## 7. 资源预载清单与版本资源
 
@@ -377,7 +381,7 @@ HEAD /data/resource-manifest.json
 | `files[].size` | 可缺省；本机可确定的文件字节数 |
 | `files[].hash` | 缓存复用指纹；服务端动态清单为每项生成，可能是内容摘要或 `syn-` 回退值，不应一律作为文件完整性摘要 |
 
-清单按优先级、URL 排序，随 CDN 配置和资源版本重写 URL。返回 `Cache-Control: no-cache`、`Vary: Accept-Encoding`，支持 gzip。ETag 格式为 `"resources-<version>"`，gzip 表示为 `"resources-<version>-gz"`；`If-None-Match` 精确匹配当前表示的 ETag 时返回 304。
+清单按优先级、URL 排序，随 CDN 配置和资源版本重写 URL。返回 `Cache-Control: no-cache`、`ETag`、`Last-Modified` 与 `Vary: Accept-Encoding`，支持 gzip。ETag 为对完整响应体的 sha256（`"resources-<sha256>"`，gzip 表示为带 `-gz` 后缀）：内容不变时重启或重建保持不变，任何内容变化（含文件大小）都会更换；`If-None-Match`（含弱比较器与列表）或 `If-Modified-Since` 命中时返回 304，浏览器可用 `cache: 'no-cache'` 走再验证而不必整份重下。
 
 生成失败返回 500 HTML 错误页；不支持的方法返回 405 HTML 错误页。该清单只描述资源，不包含房间、对局或玩家状态。
 

@@ -43,7 +43,8 @@ export class SimulationPool {
     return { size: this.size, threads: this.slots.size, busy: [...this.slots].filter((s) => s.task).length,
       queued: this.queue.length, maxQueue: this.maxQueue, timeoutMs: this.timeoutMs,
       avgComputeMs: this.counters.completed > 0 ? this.counters.computeMs / this.counters.completed : 0,
-      ...this.counters };
+      ...this.counters,
+      memory: [...this.slots].map((s) => ({ threadId: s.worker.threadId, busy: !!s.task, sample: s.memory || null })) };
   }
 
   submit(type, payload, { priority = 0, onProgress = null } = {}) {
@@ -79,8 +80,15 @@ export class SimulationPool {
     if (task.settled) return;
     task.settled = true;
     clearTimeout(task.timer);
-    if (err) task.reject(err);
-    else task.resolve(value);
+    const { resolve, reject } = task;
+    // A kept cancel handle must not retain the settled task's input, progress closure or callbacks.
+    task.payload = null;
+    task.onProgress = null;
+    task.resolve = null;
+    task.reject = null;
+    task.timer = null;
+    if (err) reject(err);
+    else resolve(value);
   }
 
   _cancel(task) {
@@ -98,9 +106,10 @@ export class SimulationPool {
 
   _spawn() {
     const worker = new Worker(this.workerUrl, { workerData: { data: this.data } });
-    const slot = { worker, task: null, retired: false };
+    const slot = { worker, task: null, retired: false, memory: null };
     this.slots.add(slot);
     worker.on('message', (msg) => {
+      if (msg.memory) slot.memory = msg.memory;
       const task = slot.task;
       if (slot.retired || !task || msg.id !== task.id) return;
       if (msg.progress) {
@@ -141,6 +150,8 @@ export class SimulationPool {
       this.counters.failed++;
       this._settle(slot.task, failure('WORKER_FAILED', err.message));
     }
+    if (slot.task) slot.task.slot = null;
+    slot.task = null;
     // Keep the retiring thread in the size budget until it has actually stopped.
     const stopping = slot.worker.terminate().catch(() => {}).then(() => {
       this.slots.delete(slot);

@@ -247,6 +247,10 @@ describe('the served resource manifest', () => {
     assert.equal(notModified.status, 304);
     assert.equal(await notModified.text(), '');
     assert.equal(notModified.headers.get('etag'), head.headers.get('etag'), 'the validator stays the same');
+    const lastModified = head.headers.get('last-modified');
+    assert.ok(lastModified, 'the manifest carries Last-Modified');
+    const viaDate = await fetch(url, { headers: { 'if-modified-since': lastModified } });
+    assert.equal(viaDate.status, 304, 'If-Modified-Since revalidates the cached body too');
   });
 
   test('every entry carries a hash: the recorded one when known, a synthetic one otherwise', async (t) => {

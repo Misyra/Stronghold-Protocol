@@ -334,7 +334,10 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     const version = shortHash([cdnBase, ...files.map((f) => `${f.url}|${fileHashes.get(f.url)}`)].join('\n'));
     const manifest = buildResourceManifest({ files, sizes, version, hashes: fileHashes });
     const body = Buffer.from(JSON.stringify(manifest));
-    cache = { key, body, gzip: zlib.gzipSync(body), mtimeMs: Date.now(), manifest };
+    // Strong validator over the complete response: an unchanged rebuild or restart keeps it (the client revalidates
+    // with cache: 'no-cache'), while any content change — sizes included — produces a fresh one.
+    const etag = `"resources-${crypto.createHash('sha256').update(body).digest('hex')}"`;
+    cache = { key, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
     log?.info?.(`[resources] ${manifest.count} file(s), ${manifest.tier1} essential, ${manifest.sized} sized`
       + `${manifest.totalBytes ? `, ${(manifest.totalBytes / 1048576).toFixed(1)} MiB` : ''}, `
       + `${fileHashes.size ? [...fileHashes.values()].filter((h) => !h.startsWith('syn-')).length : 0} hashed`
@@ -343,7 +346,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   }
 
   return {
-    /** @returns {Promise<{ body: Buffer, gzip: Buffer, mtimeMs: number, manifest: any }>} */
+    /** @returns {Promise<{ body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any }>} */
     get() { pending ??= build().finally(() => { pending = null; }); return pending; },
     /** Drop the cache (tests). */
     reset() { cache = null; },

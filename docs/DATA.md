@@ -169,7 +169,7 @@ Top level: `{ season, seasonName, modes, economy, lpCapPerRound, bossOvertimeAft
 | `projectile` | `"arrow"` | `arrow` (phys ranged) / `bolt` (arts ranged) / `orb` (heal) / `none` |
 | `canHitFly` | `true` | |
 | `targetPriority` | `"fly"` | from trait text: `fly` (优先攻击空中单位), `lowestDef` (防御力最低), else `null` |
-| `trait` | `{"desc":"优先攻击空中单位","descRaw":"…","bb":{"atk_scale":1.1},"bbStr":{},"rangeGrid":null,"moduleDesc":"攻击空中单位时攻击力提升至110%","moduleDescRaw":"…"}` | profession trait (+ golden module trait upgrade merged into `bb`; `rangeGrid` = trait-effect area, e.g. 散射手 front row — **not** the attack range) |
+| `trait` | `{"desc":"优先攻击空中单位","descRaw":"…","bb":{"atk_scale":1.1},"bbStr":{},"rangeGrid":null,"moduleDesc":"攻击空中单位时攻击力提升至110%","moduleDescRaw":"…"}` | profession trait (+ golden module trait upgrade merged into `bb`; `rangeGrid` = trait-effect area, e.g. 散射手 front row — **not** the attack range). `desc` = the class trait, or the module's rewrite of it (official `overrideDescripton`); `moduleDesc` = the module's added line (official `additionalDescription`, PRTS 「特性追加」), which the client shows after `desc`, never alone (0.2.0, community report item 16.2) |
 | `skill` | see below | default skill at `status.skillLevel` (normal 4, golden 7) |
 | `skills[]` | `[{…skill record…, "index":0, "isDefault":false}, {…, "index":1, "isDefault":true}]` | **loadout choices** (DESIGN §16): every skill unlocked at `status` (E1 ⇒ S1–S2, E2 ⇒ S1–S3; the default is always listed), same shape as `skill` + `isDefault`, at the chess skill level, `trigger` resolved **for that skill index** (§2.2). The `isDefault` entry equals `skill` |
 | `modules[]`, `statsBase`, `traitBase`, `talentsBase` | see §2.2 | golden chess with `equipLevel > 0` only: selectable modules + the no-module base they apply to |
@@ -231,7 +231,7 @@ everything needed to resolve a unit for `(chessId, skillIndex, moduleId)` (`simd
 | `uniEquipId`, `name`, `typeName`, `typeIcon`, `icon` | `"uniequip_003_mlyss"`, `"落叶四季"`, `"TAC-Y"`, `"tac-y"`, `"uniequip_003_mlyss"` | |
 | `isDefault`, `level` | `false`, `3` | default = `defaultUniEquipId` (= `module.id`) |
 | `attr` | `{"maxHp":170,"atk":28,"def":28}` | flat stat additions (stat field names): `stats = statsBase[f] + attr[f]` (float-noise cleaned) |
-| `traitOverride` | `{"desc":"…提升至165%","descRaw":…,"bb":{"atk_scale":1.65},"bbStr":{},"rangeGrid":null,"moduleDesc"?:…}` \| `null` | the full trait with this module; `null` ⇒ `traitBase` |
+| `traitOverride` | `{"desc":"…提升至165%","descRaw":…,"bb":{"atk_scale":1.65},"bbStr":{},"rangeGrid":null,"moduleDesc"?:…}` \| `null` | the full trait with this module (`desc`, then the added line `moduleDesc` when present — see `trait` above); `null` ⇒ `traitBase` |
 | `talentChanges[]` | `{"talentIndex":1,"name":"开源节流","desc":…,"descRaw":…,"bb":{"cost":-2,"runtime_cost":-1},"bbStr":{},"rangeGrid":null,"tokenKey":null,"hidden":false}` | talent additions/overrides (`talentIndex` −1 = new hidden data-only talent); applied to `talentsBase` with the build's merge rule (`simdata composeTalents`: override of an existing index merges blackboards, module keys win) |
 
 - `statsBase` / `traitBase` / `talentsBase` — the golden record **without** any module (`stats` / `trait` / `talents`

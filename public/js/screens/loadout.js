@@ -29,7 +29,7 @@ import { useStore } from '../store.js';
 import { PHASE } from '../../../shared/constants.js';
 import {
   MODULE_NONE, PROF_ORDER, PROF_NAME, rosterOf, filterRoster, recordsOf, chessOptions, effectiveChoice, setChoice, resetChoice,
-  changedCount, skillLabel, moduleBadge, attrRows, skillTags, serializeExport, parseImport, LOADOUT_IMPORT_MAX_BYTES,
+  changedCount, skillLabel, moduleBadge, attrRows, skillTags, traitLines, serializeExport, parseImport, LOADOUT_IMPORT_MAX_BYTES,
 } from '../ui/loadoutModel.js';
 import { loadoutStore, openLoadout, closeLoadout, setEntries, applyLoadoutEntries, setNotOwned, applyOwnershipImport, setDiyPicks, applyDiyImport } from '../ui/loadoutSync.js';
 import { setOwned, notOwnedCount, serializeOwnership, parseOwnershipImport, OWNERSHIP_IMPORT_MAX_BYTES } from '../ui/ownershipModel.js';
@@ -198,7 +198,7 @@ function SkillOption({ m, opt, on, level, onPick }) {
   </button>`;
 }
 
-function ModuleInfo({ m, golden, opt }) {
+export function ModuleInfo({ m, golden, opt }) {
   if (!golden) return null;
   const rec = opt.id === MODULE_NONE ? null : opt.rec;
   if (!rec) {
@@ -209,8 +209,9 @@ function ModuleInfo({ m, golden, opt }) {
     </div>`;
   }
   const rows = attrRows(rec.attr);
-  const trait = rec.traitOverride;
-  const traitText = trait ? (trait.moduleDescRaw || trait.moduleDesc || trait.descRaw || trait.desc) : null;
+  // 特性: the trait the elite fights with under this module (the class trait, or the module's rewrite of it), then the
+  // module's extra line under PRTS's own label 特性追加 — the line adds to the class trait (item 16.2)
+  const lines = traitLines(rec.traitOverride);
   const talents = (Array.isArray(rec.talentChanges) ? rec.talentChanges : []).filter((t) => t && (t.name || t.desc) && !t.hidden);
   return html`<div class="lo-minfo">
     <div class="lo-minfo__title"><${Img} src=${moduleIconOf(m, rec)} class="lo-minfo__icon" /><span class="lo-minfo__type num">${rec.typeName || ''}</span><b>${rec.name || rec.uniEquipId}</b>
@@ -219,7 +220,8 @@ function ModuleInfo({ m, golden, opt }) {
       <span class="lo-minfo__k">${t('属性')}</span>
       <span class="lo-minfo__v lo-attrs">${rows.length ? rows.map((r) => html`<span key=${r.key} class=${cx('lo-attr', r.positive ? 'is-up' : 'is-down')}>${r.label}<b class="num">${r.text}</b></span>`) : html`<span class="t-dim">${t('无属性加成')}</span>`}</span>
     </div>
-    ${traitText ? html`<div class="lo-minfo__row"><span class="lo-minfo__k">${t('特性')}</span><${RichText} class="lo-minfo__v" text=${traitText} /></div>` : null}
+    ${lines.base ? html`<div class="lo-minfo__row" data-trait="base"><span class="lo-minfo__k">${t('特性')}</span><${RichText} class="lo-minfo__v" text=${lines.base} /></div>` : null}
+    ${lines.added ? html`<div class="lo-minfo__row" data-trait="added"><span class="lo-minfo__k">${t('特性追加')}</span><${RichText} class="lo-minfo__v" text=${lines.added} /></div>` : null}
     ${talents.map((tal, i) => html`<div key=${i} class="lo-minfo__row"><span class="lo-minfo__k">${t('天赋')}</span>
       <span class="lo-minfo__v">${tal.name ? html`<b class="lo-minfo__tname">${tal.name}</b>` : null}<${RichText} text=${tal.descRaw || tal.desc || ''} /></span></div>`)}
   </div>`;

@@ -20,7 +20,9 @@ export default {
   //      regen; 精锐 module SOL-X: ATK/DEF + while blocking
   //      S1 小施惩戒 (charges): next attack + extra_damage_ratio × ATK arts and +cost DP; S2 坠刃拷问 (charges, the data rule
   //      SKILL_RANGE: fires once an enemy is inside its own range 3-12, charges 3 s apart): +cost DP, ≤ max_target enemies of that range take atk_scale arts and
-  //      停顿 — the ones already 停顿 are also stunned. (SOL-Y "首次部署时部署费用-4": the initial deployment is free.)
+  //      停顿 — the ones already 停顿 are also stunned; its targets come from the 3-12 only (PRTS S2 备注 "可对空；无法选中被自身
+  //      阻挡而没有位于技能范围内的敌人" — an S2 note, not S3's: S3 隐狐之艺 has none, its client selector is the standard
+  //      「同时攻击阻挡的所有敌人」 one). (SOL-Y "首次部署时部署费用-4": the initial deployment is free.)
   chess_char_3_18_a: (bb, chess, def) => {
     const d = defOf(chess, def);
     const t0 = talentBb(d, 0), t1 = talentBb(d, 1);

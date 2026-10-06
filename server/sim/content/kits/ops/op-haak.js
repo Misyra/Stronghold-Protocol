@@ -43,7 +43,9 @@
 //   +attack_speed (S3) for the skill's duration (per 阿 on the target: independentCharacterSource). [ASSUMED] the volley
 //   lands at once (its 0.42 s of shots and flight are not modelled); with no ally in his range the cast does nothing (the
 //   client's sequence stops when its attack finds no target) — his skill still runs and spends its SP: the data's DEFAULT
-//   trigger needs an enemy, not an ally (reported as an open question).
+//   trigger needs an enemy, not an ally — settled by the sources in 0.2.0 WV: no skillTriggerDataList row names 阿 or 怪杰
+//   (the basic strategy), the skill prefabs cast with no target and keep the SP spent (skchr_haak_2 / _3 `_allowNoTarget`
+//   1, `_checkHasTargetBeforeDoCast` 0, `_recoverSpIfNoTarget` 0) and PRTS 阿 has no note on it.
 
 import { num, talentBb, moduleBb, moduleOn, skillRec, statBuff, toggleBuff, up } from '../shared/tier1.js';
 import { toLocal } from '../../../dir.js';

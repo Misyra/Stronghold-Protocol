@@ -97,9 +97,10 @@ const FX_GUESS = [
 
 /**
  * 'phase' (an enemy's mode change, render/units.js FORMS) kinds the model shows on its own: 暴鸰 'bombed' — its bomb is
- * the 'droneBomb' projectile of the same moment, a puff on the drone would read as something else (feedback D4).
+ * the 'droneBomb' projectile of the same moment, a puff on the drone would read as something else (feedback D4); a
+ * prisoner's 'warning' — its collar light starts blinking orange (the official mode R shows nothing else).
  */
-const SILENT_PHASES = new Set(['bombed']);
+const SILENT_PHASES = new Set(['bombed', 'warning']);
 
 /** Visual spec of an fx kind (see FX_KINDS); `extra.kind` / `extra.element` may pick a better colour. */
 export function fxSpec(kind, extra = {}) {

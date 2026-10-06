@@ -366,8 +366,9 @@ still standing after `Revive[Trigger].interval` s stands up again with full HP),
 instance or a block starts a 2 s change). Each form change goes through `setForm(b, e, form, fxKind, params)`: the
 unit keeps it (`e.form`, published as UnitInfo `form`, so a view built mid-battle from `fieldMeta()` — a watched
 teammate's field, 联防 observers, a reconnect — starts in it: `render/app/info.js renderInfo` hands it to the view) and the
-fx announces it as its `form`: a 'phase' fx (crawl, translator_* — also its `kind`), 'ember' ('husk'), 'revive'
-('revived' / 'form2' / 'fly'), 'telegraph' ('reborn') or 'stone' ('stone') — render/units.js FORMS. An operator has one
+fx announces it as its `form`: a 'phase' fx (crawl, translator_*, a prisoner's 'warning' — also its `kind`), 'ember'
+('husk'), 'revive' ('revived' / 'form2' / 'fly'), 'telegraph' ('reborn'), 'stone' ('stone') or 'liberate' (a prisoner's
+'liberty') — render/units.js FORMS. An operator has one
 form too: a 傀儡师's <替身> (`professions.js installDollkeeper`: `u.form` 'doll' from the switch to it — fx 'substitute'
 `{ form: 'doll', dur }` — until the switch back, fx 'swap' `{ form: null }`, or its knock-out, fx 'dollEnd' `{ form: null }`
 after the 'die' event). Barrier / charge

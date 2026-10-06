@@ -878,6 +878,7 @@
   "阶": "Tier",
   "自选编队：{name}（只在你的商店出现）": "Custom Squad: {name} (only in your shop)",
   "自选": "Custom",
+  "{names}的盟约本局全部禁用，不会出现在你的商店": "Every Alliance of {names} is disabled this match: not in your shop",
   "自选编队：所选技能与模组，没有特质，盟约按所属阵营分配": "Custom Squad: the chosen skill and module, no Attribute, Alliances by its factions",
   "自选编队：{name}": "Custom Squad: {name}",
   "替补": "Stand-in",

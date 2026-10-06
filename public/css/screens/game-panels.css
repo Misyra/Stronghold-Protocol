@@ -370,6 +370,10 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .ibond__ban .icon { width: .12rem; height: .12rem; }
 .ibanned { display: flex; flex-wrap: wrap; gap: .06rem; }
 .ibanned__one { padding: 0; background: none; border: 0; }
+/* 0.2.0: the player's own 自选 pieces out of the shop this match (ui/matchInfo.js DiyBannedLine) */
+.idiybanned { margin: .08rem 0 0; font-size: .13rem; line-height: 1.5; }
+.idiybanned .diybanned__tag { display: inline-block; margin-right: .05rem; padding: 0 .05rem; font-size: .11rem; font-weight: 700;
+  background: var(--mint-500); color: var(--text-on-mint); }
 
 /* ---- 机变 overlay ---- */
 .spov { position: absolute; inset: 0 0 0 2.8rem; z-index: 20; }

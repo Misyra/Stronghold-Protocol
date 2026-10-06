@@ -10,7 +10,7 @@
 import { html, Icon, Tabs, MicroLabel } from './components.js';
 import { Img, UnitThumb, BondGlyph, BandIcon, RichText, GIcon } from './gameComponents.js';
 import { groupEnemies, factionTypes, briefingBondTip } from './gameLogic.js';
-import { matchInfoModel } from './matchInfo.js';
+import { matchInfoModel, DiyBannedLine } from './matchInfo.js';
 import { factionIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
 
@@ -60,9 +60,12 @@ function EnemiesTab({ pub, priv, onEnemy }) {
 }
 
 function InfoTab({ pub, priv, onChess, bandId = null, bandOwner = null }) {
-  const { bonds, banned, perBond, stateOf } = matchInfoModel(pub, {
+  const model = matchInfoModel(pub, {
     bonds: data.list('bonds'), chess: (id) => data.lookup('chess', id), mode: data.get('config')?.modes?.[pub?.modeId],
+    // the own 自选 pieces this match leaves out of the shop (m.private.diyBanned) — not while scouting a teammate
+    priv: bandOwner ? null : priv, diyData: { chess: data.get('chess'), backups: data.get('backups') },
   });
+  const { bonds, banned, perBond, stateOf } = model;
   const disabled = new Set(bonds.filter((b) => stateOf(b.bondId)).map((b) => b.bondId));
   // while scouting a teammate's prep board the drawer shows THEIR 策略 in place of one's own (user playtest #2 item 2)
   const band = (bandId || priv?.bandId) ? data.lookup('bands', bandId || priv.bandId) : null;
@@ -85,6 +88,7 @@ function InfoTab({ pub, priv, onChess, bandId = null, bandOwner = null }) {
     </div>
     ${banned.length ? html`<div class="ibanned">${banned.map((id) => html`<button key=${id} type="button" class="ibanned__one" onClick=${() => onChess(id)}>
       <${UnitThumb} kind="chess" id=${id} size="sm" dim=${true} /></button>`)}</div>` : null}
+    <${DiyBannedLine} model=${model} class="idiybanned" />
   </div>`;
 }
 

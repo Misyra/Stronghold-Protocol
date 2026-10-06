@@ -74,5 +74,5 @@
 .rstat { display: flex; align-items: baseline; justify-content: space-between; gap: .06rem; padding: .05rem .1rem; background: #0e1210; box-shadow: 0 0 0 1px var(--line); font-size: .13rem; color: var(--text-lo); white-space: nowrap; min-width: 0; }
 .rstat b { font-size: .18rem; color: #fff; }
 .rstat.is-best b { color: var(--gold); }
-.result__foot { margin-top: auto; padding-top: .2rem; display: flex; }
-.result__foot .btn { min-width: 3.4rem; }
+.result__foot { margin-top: auto; padding-top: .2rem; display: flex; gap: .12rem; }
+.result__foot .btn { min-width: 0; flex: 1; }

@@ -33,7 +33,9 @@ export function shortcutFor(e) {
  * right-click or long press — or a battle / teammate unit). Shop, reward, bond-member and intel (enemy) cards stay.
  * @param {{ kind?: string }|null|undefined} detail
  */
-export const closesOnFieldPress = (detail) => detail?.kind === 'piece' || detail?.kind === 'unit';
+// a card opened BY a field press (a piece, a unit, a special terrain tile: issue #184) closes on the next press of
+// the field; the ones opened from the shop / hand / HUD stay until their own close button (or the flow that opened them)
+export const closesOnFieldPress = (detail) => detail?.kind === 'piece' || detail?.kind === 'unit' || detail?.kind === 'terrain';
 
 /**
  * Whether an open overlay swallows a game shortcut: a modal / the guide own the keyboard (Esc included — they close

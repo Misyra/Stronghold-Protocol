@@ -27,6 +27,8 @@
 .matching-panel__progress::-webkit-progress-value { background: var(--mint-500); }
 .matching-panel__progress::-moz-progress-bar { background: var(--mint-500); }
 .matching-panel__note,.matching-panel__foot { font-size: .17rem; color: var(--text-md); line-height: 1.8; }
+.matching-panel__note a { color: var(--mint-400); text-decoration: underline; text-underline-offset: .04rem; }
+.matching-panel__note a:hover { color: var(--mint-glow); }
 .matching-panel__foot { color: var(--text-lo); font-size: .14rem; }
 .matching-panel>.btn { align-self: center; }
 .diff-card:disabled { cursor: default; opacity: .65; }

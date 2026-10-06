@@ -2733,8 +2733,8 @@
     "algorithm": [
      "Order: 阿戈尔 members sorted leftmost first, then topmost (\"更靠左和靠上\").",
      "Each 阿戈尔 in order marks the unit on the tile directly in front of it (its facing direction) and also the front-tile unit of every 阿戈尔 it has marked (chain). It never marks itself, a unit it already marked, or a unit that marked it.",
-     "The marker immediately gains the base ATK of every unit it marked (added to base ATK at the final stage) and their block counts.",
-     "After all marks are placed, each mark makes its target suffer one 5000-point physical 流失 (HP loss, source = the target itself; if it dies, the kill is credited to the marker), resolved in marking order. A target that dies cancels its remaining pending marks.",
+     "The marker immediately gains the base ATK of every unit it marked (a 最终加算: added after its ATK percentages, PRTS \"基础攻击力（最终加算）\") and their block counts.",
+     "After all marks are placed, each mark makes its target suffer one 5000-point physical 流失 (HP loss, source = the target itself; if it dies, the kill is credited to the marker), resolved in marking order. A target that dies cancels its remaining pending marks; a marker knocked out earlier in the pass still resolves its own marks (only the target's state cancels a mark).",
      "Each devoured unit adds layers to 阿戈尔 equal to its tier (1-6), once per unit per battle.",
      "(5-member tier) Revive is implemented as: when the unit leaves the field for any reason other than being moved, its next deployment has 0 redeploy time and 0 cost (PRTS). Devour layers: each devoured unit adds its tier once per battle (refreshes next round)."
     ],

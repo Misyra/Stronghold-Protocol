@@ -52,7 +52,7 @@ test('联防: an 阿戈尔 devours a teammate\'s living operator in front — th
   const ref = buffOf(solo.unit(1), 'bond:egir:devour');
   const fodderBase = solo.unit(100).base;
   assert.ok(ref, 'solo: 乌尔比安 devours the operator in front');
-  close(ref.mods.atkFlat, fodderBase.atk, 1e-9, 'its base ATK');
+  close(ref.mods.atkFinal, fodderBase.atk, 1e-9, 'its base ATK');
   assert.equal(ref.mods.blockCnt, fodderBase.blockCnt, 'its block count');
   for (const [tag, h] of [['own', own], ['teammate\'s', mate]]) {
     const ulpia = h.unit(1), t = h.unit(100);
@@ -92,7 +92,7 @@ test('联防: the chain goes on through a teammate\'s 阿戈尔 — the gains eq
   const p2Units = [HN, MIZUKI, GLADY, DEEP].map((chessId, i) => ({ uid: 200 + i, kind: 'chess', chessId, row: 12, col: 3 + 2 * i, dir: 'RIGHT' }));
   const mate = field({ owner: 'mate', front: [GHOST, FODDER], p2Units, p2Bonds: { egirShip: bondOn(5) } });
   const ref = buffOf(own.unit(1), 'bond:egir:devour');
-  close(ref.mods.atkFlat, own.unit(100).base.atk + own.unit(101).base.atk, 1e-9, 'own chain: 幽灵鲨 and, through her, the fodder');
+  close(ref.mods.atkFinal, own.unit(100).base.atk + own.unit(101).base.atk, 1e-9, 'own chain: 幽灵鲨 and, through her, the fodder');
   assert.deepEqual(buffOf(mate.unit(1), 'bond:egir:devour')?.mods, ref.mods, 'the teammate\'s chain gives the same');
   assert.deepEqual(devours(mate).map((c) => [c.source.uid, c.target.uid]), devours(own).map((c) => [c.source.uid, c.target.uid]));
   const ghost = mate.unit(100);
@@ -134,7 +134,7 @@ test('联防 through unite.js: food knocked out by the own combat\'s devour ente
   u.step();
   const ulpia = u.unit(1);
   assert.deepEqual(buffOf(ulpia, 'bond:egir:devour')?.mods, gain, 'the own combat\'s gains');
-  close(gain.atkFlat, [2, 3, 4].reduce((s, uid) => s + u.unit(uid).base.atk, 0), 1e-9, '幽灵鲨 + 歌蕾蒂娅 + fodder base ATK');
+  close(gain.atkFinal, [2, 3, 4].reduce((s, uid) => s + u.unit(uid).base.atk, 0), 1e-9, '幽灵鲨 + 歌蕾蒂娅 + fodder base ATK');
   assert.equal(gain.blockCnt, [2, 3, 4].reduce((s, uid) => s + u.unit(uid).base.blockCnt, 0));
   for (const uid of [2, 3, 4]) assert.ok(!u.unit(uid).alive && u.unit(uid).removeReason === FORCED_EXIT, `${uid} forced out`);
   assert.equal(u.b.getPlayer('p1').bonds.egirShip.layers, 10, 'no layers in 联防');

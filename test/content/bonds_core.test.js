@@ -335,7 +335,29 @@ test('阿戈尔: HP ×(1.35+0.01L); devour chain (left first): 5000 物理流失
   checkInvariants(h.b);
 });
 
-test('阿戈尔 devour: 物理流失 ignores the marker’s damage bonuses and the target’s shields; a dead marker’s marks are cancelled; kill → marker', () => {
+test('阿戈尔 devour ATK is a 最终加算 (GitHub #165 point 2, PR #176): 1000 base ATK, +100 % skill ATK, +2000 devoured → 4000, not 6000', () => {
+  // PRTS 盟约记录 "该付与来源获得所有标记单位的基础攻击力（最终加算）"; PRTS 游戏数据基础 A_f = F_t[(A + D_p)(1 + D_t) + F_p]
+  const list = [
+    ['g1_a', ['egirShip']], ['g2_a', ['egirShip']], ['g3_a', ['egirShip']],
+    ['fod_a', ['preciShip'], { stats: { atk: 2000, maxHp: 20000, def: 0, blockCnt: 1 } }],
+  ];
+  // g1 (10,3) → fodder (10,4, 2000 base ATK); g2 / g3 face empty tiles
+  const units = [{ chessId: 'g1_a', row: 10, col: 3 }, { chessId: 'fod_a', row: 10, col: 4 }, { chessId: 'g2_a', row: 12, col: 3 }, { chessId: 'g3_a', row: 12, col: 5 }];
+  const h = makeBattle({ defs: defsOf(list), units, bonds: { egirShip: bondOn(3, 0, null, [3, 5]) } });
+  h.step(1);
+  const g1 = h.unit('g1_a');
+  assert.deepEqual(buffOf(g1, 'bond:egir:devour')?.mods, { atkFinal: 2000, blockCnt: 1 }, 'the fodder\'s base ATK as a 最终加算, its block count');
+  close(g1.s.atk, 1000 + 2000, 1e-6, 'no percentage: as before');
+  h.b.addBuff(g1, { key: 'test:skill', mods: { atkPct: 1 } });
+  close(g1.s.atk, 1000 * 2 + 2000, 1e-6, '+100 %: 4000 (0.1.3: (1000 + 2000) × 2 = 6000)');
+  h.b.addBuff(g1, { key: 'test:flat', mods: { atkFlat: 100 } });
+  close(g1.s.atk, (1000 + 100) * 2 + 2000, 1e-6, 'a 直接加算 is still scaled by the percentages');
+  h.b.addBuff(g1, { key: 'test:weaken', mods: { atkMul: 0.5 } });
+  close(g1.s.atk, ((1000 + 100) * 2 + 2000) * 0.5, 1e-6, 'the 最终乘算 (Πmul) scales the whole, the 最终加算 included');
+  checkInvariants(h.b);
+});
+
+test('阿戈尔 devour: 物理流失 ignores the marker’s damage bonuses and the target’s shields; a fallen marker’s marks still resolve (GitHub #165 point 3); kill → marker', () => {
   const list = [
     ['g1_a', ['egirShip', 'kjeragShip']], ['g2_a', ['egirShip'], { stats: { maxHp: 3000 } }], ['g3_a', ['egirShip']],
     ['fod_a', ['preciShip'], { tier: 2, stats: { maxHp: 20000, def: 500 } }],
@@ -353,11 +375,33 @@ test('阿戈尔 devour: 物理流失 ignores the marker’s damage bonuses and t
   assert.ok(!g2.alive, 'g2 devoured');
   assert.ok(h.hooksOf('kill').some((c) => c.victim === g2 && c.killer === g1), 'kill credited to the marker');
   const dv = tagged(h, 'bond:egir:devour');
-  assert.deepEqual(dv.map((c) => [c.source.defId, c.target.defId]), [['g1_a', 'g2_a'], ['g1_a', 'fod_a']], 'g2’s own mark on the fodder is cancelled');
-  close(f.hp, 20000 - (5000 - 500), 1e-6, '5000 less its DEF 500: no ×1.25, shield untouched');
+  // PRTS 盟约记录: only the knocked-out TARGET's pending marks are cancelled — g2, knocked out by the first mark, still
+  // resolves its own (until 0.1.3 a marker off the field gave no further mark)
+  assert.deepEqual(dv.map((c) => [c.source.defId, c.target.defId]), [['g1_a', 'g2_a'], ['g1_a', 'fod_a'], ['g2_a', 'fod_a']], 'g2’s own mark on the fodder resolves');
+  close(f.hp, 20000 - 2 * (5000 - 500), 1e-6, '5000 less its DEF 500, twice: no ×1.25, shield untouched');
   assert.equal(f.buffs.find((b) => b.key === 'test:shield')?.shield, 3000);
   close(g1.s.atk, 1000 + 1000 + 1000, 1e-6, 'the base ATK of everything it marked stays');
   assert.equal(h.b.getPlayer('p1').bonds.egirShip.layers, 1 + 2, 'layers = tiers of the devoured units');
+  checkInvariants(h.b);
+});
+
+test('阿戈尔 devour, A → B → C with B devoured first (GitHub #165 point 3, PR #176): C still takes B\'s 5000 and the kill is B\'s', () => {
+  const list = [
+    ['A_a', ['egirShip']], ['B_a', ['egirShip'], { stats: { maxHp: 3000 } }], ['g3_a', ['egirShip']],
+    ['C_a', ['preciShip'], { tier: 2, stats: { maxHp: 9000, def: 0 } }],
+  ];
+  // A (10,3) → B (10,4, 3000 × 1.35 HP: knocked out by A's mark) → C (10,5, 9000 HP, DEF 0: A's mark leaves 4000, B's
+  // knocks it out); g3 faces an empty tile. Marks: A → B, A → C (through B), B → C.
+  const units = [{ chessId: 'A_a', row: 10, col: 3 }, { chessId: 'B_a', row: 10, col: 4 }, { chessId: 'C_a', row: 10, col: 5 }, { chessId: 'g3_a', row: 12, col: 3 }];
+  const h = makeBattle({ defs: defsOf(list), units, bonds: { egirShip: bondOn(3, 0, null, [3, 5]) }, hooks: ['damaged', 'kill'], captureNoisy: true });
+  h.step(1);
+  const [A, B, C] = ['A_a', 'B_a', 'C_a'].map((id) => h.unit(id));
+  assert.deepEqual(tagged(h, 'bond:egir:devour').map((c) => [c.source.defId, c.target.defId]), [['A_a', 'B_a'], ['A_a', 'C_a'], ['B_a', 'C_a']]);
+  assert.ok(!B.alive && !C.alive, 'B falls to A\'s mark, C to B\'s (until 0.1.3 B\'s mark was dropped: C stood at 4000 HP)');
+  // PRTS 盟约记录 "单位被【吞噬】击杀时，击杀来源始终为对应标记的付与来源"
+  assert.deepEqual(h.hooksOf('kill').map((c) => [c.victim.defId, c.killer?.defId]), [['B_a', 'A_a'], ['C_a', 'B_a']], 'the kill credit is the mark\'s marker, down or not');
+  close(A.s.atk, 1000 + 1000 + 1000, 1e-6, 'A: the base ATK of B and C');
+  assert.equal(h.b.getPlayer('p1').bonds.egirShip.layers, 1 + 2, 'each devoured unit adds its tier once');
   checkInvariants(h.b);
 });
 
@@ -600,7 +644,7 @@ test('阿戈尔 devour, a unit back during the pass: a marker revived by the 5-t
   h.step(1);
   const [g2, f] = ['g2_a', 'fod_a'].map((id) => h.unit(id));
   assert.ok(g2.alive && h.hooksOf('deploy').some((c) => c.unit === g2 && !c.initial), 'g2 knocked out and revived');
-  // only a marker off the field gives no further mark (the rule since 0.1.0): g2, back at once, still devours g3 and the fodder
+  // every mark resolves whatever became of its marker (DESIGN §24.7): g2, back at once, still devours g3 and the fodder
   assert.deepEqual(tagged(h, 'bond:egir:devour').map((c) => [c.source.defId, c.target.defId]),
     [['g1_a', 'g2_a'], ['g1_a', 'g3_a'], ['g1_a', 'fod_a'], ['g2_a', 'g3_a'], ['g2_a', 'fod_a'], ['g3_a', 'fod_a']]);
   close(f.hp, 20000 - 3 * 5000, 1e-6, 'the fodder: g1, g2 and g3');

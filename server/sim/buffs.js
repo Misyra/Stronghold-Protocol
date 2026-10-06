@@ -16,9 +16,9 @@ function resistPalsyDecay({ battle, unit }) {
   if (--p.stacks <= 0) battle.removeBuff(unit, p); else unit.markDirty();
 }
 
-/** Additive mod keys (summed; × stacks). */
+/** Additive mod keys (summed; × stacks). `atkFinal` = 最终加算: added after the percentages (units.js _recalc). */
 export const ADD_KEYS = Object.freeze([
-  'atkFlat', 'atkPct', 'defFlat', 'defPct', 'hpFlat', 'hpPct', 'resFlat', 'aspd', 'batPct', 'blockCnt',
+  'atkFlat', 'atkPct', 'atkFinal', 'defFlat', 'defPct', 'hpFlat', 'hpPct', 'resFlat', 'aspd', 'batPct', 'blockCnt',
   'rangeExtend', 'defIgnoreFlat', 'defIgnorePct', 'resIgnoreFlat', 'resIgnorePct', 'dodgePhys', 'dodgeArts',
   'spRecoveryFlat', 'maxTargets', 'taunt', 'hpRegen', 'hpRegenRatio', 'spCostFlat', 'moveFlat', 'massFlat',
 ]);

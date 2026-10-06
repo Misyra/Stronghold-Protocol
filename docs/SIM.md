@@ -479,7 +479,8 @@ physDealtMul, artsDealtMul, dmgTakenMul, physTakenMul, artsTakenMul, trueTakenMu
 elementalTakenMul (元素脆弱: 元素伤害), healingDealtMul, healingTakenMul, atkScaleMul, spRecovery, spCostFlat, redeployMul,
 hpRegen, shield, flags{…}`.
 
-Aggregation: `ATK/DEF/maxHp = (base + Σflat) × (1 + Σpct) × Πmul`; `res = clamp((base + ΣresFlat) × ΠresMul, 0, 100)`;
+Aggregation: `ATK/DEF/maxHp = (base + Σflat) × (1 + Σpct) × Πmul`, for ATK with the 最终加算 `ΣatkFinal` after the
+percentages: `ATK = ((base + ΣatkFlat) × (1 + ΣatkPct) + ΣatkFinal) × ΠatkMul`; `res = clamp((base + ΣresFlat) × ΠresMul, 0, 100)`;
 `aspd = clamp(base + Σaspd, 20, 600)` (floor 20: PRTS 数值范围 ATTACK_SPEED 默认下限; user playtest #6); `interval = bat × (1 + ΣbatPct) × 100 / aspd`; `moveSpeed = (base + ΣmoveFlat) × ΠmoveMul`;
 tiles/s = `moveSpeed × MOVE_SCALE (0.5)`. A maxHp change keeps the HP ratio. Elite stats (module included) come from data.
 
@@ -490,7 +491,9 @@ ATK / DEF / max HP bonus of the 卫戍 systems — 盟约, 策略 (bands), 装�
 `content/support directMods({ atk, def, hp })` (constants.js `DIRECT_BONUS_STACKING` 'add'; 'multiply' = the v2.5
 per-source ×(1 + x), which compounded with layers: user report after playtest #6). `Πmul` is for 最终乘算 / "提升至X%"
 effects (炎佑 ×1.5 at 9 炎, 虚弱, 停顿 …) and the char_attribute_mul 特质 ("攻击力和生命值+20%", a rune on the base
-attributes). Damage multipliers (`dmgDealtMul`, "伤害提升至X%"; `*TakenMul`, 脆弱 / "受到的伤害+X%") multiply each other
+attributes). `atkFinal` is the **最终加算** (PRTS `A_f = F_t[(A + D_p)(1 + D_t) + F_p]`: added after the 直接乘算, inside
+the 最终乘算): 阿戈尔's devoured base ATK ("基础攻击力（最终加算）", DESIGN §24.7) — a skill's ATK +% does not scale it.
+Damage multipliers (`dmgDealtMul`, "伤害提升至X%"; `*TakenMul`, 脆弱 / "受到的伤害+X%") multiply each other
 (PRTS 游戏数据基础 "同种倍率间叠乘"), same-named statuses keep the strongest — catalogue statuses (§3) and the content
 effects routed through `battle.applyStrongest` (§3: 奥术, 灵知 坚冰, 莱恩哈特 / 缄默德克萨斯 RES cuts), also across the two
 players of a pair field or two copies of one operator. A content buff keyed per unit (`key:${unit.id}`) still stacks
@@ -509,7 +512,7 @@ mods, flags, onTick(ctx), interval, onExpire(ctx), onRemove(ctx), tags, shield, 
 - `shield` = HP absorbed (consumed, buff removed when empty); `shieldHits` = number of damage instances fully negated.
 - `visible: true` emits `['status', id, key, 1/0]` client events. `battle.removeBuff(unit, key|buff)`.
 
-**Mod keys** — additive: `atkFlat atkPct defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
+**Mod keys** — additive: `atkFlat atkPct atkFinal defFlat defPct hpFlat hpPct resFlat aspd batPct blockCnt rangeExtend
 defIgnoreFlat defIgnorePct resIgnoreFlat resIgnorePct dodgePhys dodgeArts spRecoveryFlat maxTargets taunt hpRegen
 hpRegenRatio spCostFlat moveFlat massFlat` (重量 levels: 失重 = `massFlat: −1`; never edit `base.massLevel`);
 multiplicative: `atkMul defMul hpMul resMul moveMul dmgDealtMul dmgTakenMul physTakenMul artsTakenMul trueTakenMul

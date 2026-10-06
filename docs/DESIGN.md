@@ -218,7 +218,7 @@ b.on(event, fn, { priority=0, owner } ) / b.off(...)   // hook bus (§5.4)
 Base stats (from data): `maxHp, atk, def, res` (0–100), `aspd` (100 base), `bat` (base attack time, s), `blockCnt`, `rangeGrid` (ops) / `rangeRadius` (enemies, 0 = melee), `moveSpeed`, `massLevel`, `weight`, `lpr` (enemies), `dmgType` ('phys'|'arts'|'heal'|'true'), `motion` ('WALK'|'FLY'), `cost`, `respawnTime`, `spRecovery`.
 
 **Aggregation** (`units.js`, recomputed lazily when buffs change):
-- `ATK = (base + Σflat) × (1 + Σpct) × Πmul` — same shape for `maxHp`, `def`; the 卫戍 systems' "+X%" ATK / DEF / max HP (盟约, 策略, 装备, 机变 cards, per-layer 特质) are 直接乘算 and go into `Σpct` with the skills' "+X%" (`sim/constants.js DIRECT_BONUS_STACKING 'add'`, content/support `directMods`; PRTS 盟约记录 / 游戏数据基础, §20.10) — "提升至X%" effects (炎佑 ×1.5) and the char_attribute_mul 特质 stay in `Πmul`; `res = clamp((base + Σflat) × Πmul, 0, 100)`; `aspd = clamp(100 + Σaspd + base-100, 20, 600)` (`constants.js ASPD_MIN` 20: PRTS 数值范围 "ATTACK_SPEED 默认下限 20", §20.3).
+- `ATK = ((base + Σflat) × (1 + Σpct) + ΣatkFinal) × Πmul` — `atkFinal` is the 最终加算 (阿戈尔's devoured base ATK, §24.7); the same shape without it for `maxHp`, `def`; the 卫戍 systems' "+X%" ATK / DEF / max HP (盟约, 策略, 装备, 机变 cards, per-layer 特质) are 直接乘算 and go into `Σpct` with the skills' "+X%" (`sim/constants.js DIRECT_BONUS_STACKING 'add'`, content/support `directMods`; PRTS 盟约记录 / 游戏数据基础, §20.10) — "提升至X%" effects (炎佑 ×1.5) and the char_attribute_mul 特质 stay in `Πmul`; `res = clamp((base + Σflat) × Πmul, 0, 100)`; `aspd = clamp(100 + Σaspd + base-100, 20, 600)` (`constants.js ASPD_MIN` 20: PRTS 数值范围 "ATTACK_SPEED 默认下限 20", §20.3).
 - `interval = bat × (1 + ΣbatPct) × 100 / aspd` (blackboard `base_attack_time` is treated as `batPct`, e.g. −0.3 → 70%).
 - Changing `maxHp` keeps the HP **ratio**.
 - Stats are rounded only for display; the sim keeps floats.
@@ -229,7 +229,7 @@ Base stats (from data): `maxHp, atk, def, res` (0–100), `aspd` (100 base), `ba
 
 `Buff = { key, source, duration /*s, Infinity*/, stacks=1, maxStacks=1, refresh: 'replace'|'extend'|'stack', mods, flags, onTick?, onExpire?, tags[] }`
 
-- `mods` keys (all optional, additive within a key): `atkFlat, atkPct, atkMul, defFlat, defPct, defMul, hpFlat, hpPct, hpMul, resFlat, resMul, aspd, batPct, blockCnt, rangeExtend (tiles), moveMul, dmgDealtMul (multiplicative, e.g. 1.2), dmgTakenMul, physTakenMul, artsTakenMul, trueTakenMul, defIgnoreFlat, defIgnorePct, resIgnoreFlat, resIgnorePct, dodgePhys, dodgeArts, healingDealtMul, healingTakenMul, spRecoveryFlat, spRecoveryMul, maxTargets (+n), shield (absorbs damage; consumed)`.
+- `mods` keys (all optional, additive within a key): `atkFlat, atkPct, atkFinal (最终加算: after the percentages), atkMul, defFlat, defPct, defMul, hpFlat, hpPct, hpMul, resFlat, resMul, aspd, batPct, blockCnt, rangeExtend (tiles), moveMul, dmgDealtMul (multiplicative, e.g. 1.2), dmgTakenMul, physTakenMul, artsTakenMul, trueTakenMul, defIgnoreFlat, defIgnorePct, resIgnoreFlat, resIgnorePct, dodgePhys, dodgeArts, healingDealtMul, healingTakenMul, spRecoveryFlat, spRecoveryMul, maxTargets (+n), shield (absorbs damage; consumed)`.
 - `flags`: `stun, freeze, sleep, silence (no skills), disarm (no attacks), stealth (untargetable by enemies/ops unless blocked or revealed — an operator's radius area damage skips it too, `Battle.foesInRadius`, PRTS 作战机制 §AOE伤害判定, §21.19, and so do an enemy's area effects and buff auras unless the 隐匿 ally blocks that enemy, `targeting.js areaSelectable` / `auraSelectable`, §22.12; an enemy's 隐匿 returns only 3 s after a block ends, or after its PRTS page's "（解除阻挡N秒后恢复）" — `stealthOff` buffs, `targeting.js enemyStealthed`, §22.8; an enemy's b.snap stealth bit is set only while its 隐匿 is on, §21.4), camou (an ally's 迷彩: like stealth for enemy targeting and on screen, but not 隐匿 for 隐匿 conditions — 叙拉古, 家族徽章; §20.2 — and an enemy's splash and other area effects still hit it, ba.camou "无法躲避溅射类攻击", §22.12), liftoff (an ally's 起飞, 蒂比's skills: it blocks flyers only and has 对地规避 — no ground enemy selects it, so no selected damage or status of one lands, while what selects nobody still does: `ignoreSelect` / 无来源 — 无视无法选择 abilities, direct picks, flying units' blasts, a debuff's ticks; it stays a ground unit on its tile; `targeting.js evadesGround`, §21.22), invulnerable, unblockable, levitate, fear (enemy: cannot attack, unblockable, runs to random tiles of the ±45° fan away from the source; no source or itself as source = inside its own tile — `fear.js`, §20.4), taunt (+aggro), cold, noHeal (no heals from others: 禁疗 summons and 孤立 units; an HP-regen attribute still applies — PRTS 安洁莉娜 备注), healFree (禁疗 that stops the unit's own heals too, shown as the status 'healFree': 史尔特尔's 余烬 sets it with noHeal — only an HP-regen attribute and her S3's "无视禁疗" start heal pass, §22.7), isolated (孤立: no friendly selector picks it — no heal, buff, aura or talent of an ally, `Battle.allySelectable`; §20.3)`.
 - **Status catalogue** (`buffs.js`, keys used by content): `stun`, `freeze` (stun + res −15), `cold` (aspd −30; a second cold while cold ⇒ freeze 3 s unless immune), `sleep` (stun; ends on damage? no: in AK sleep = untargetable & unable to act; keep AK: untargetable & inactive), `slow` (moveMul), `bind` (moveMul 0), `fragile` (dmgTakenMul), `artsFragile` (artsTakenMul), `silence`, `fear` (the 恐惧 walk, `fear.js`), `burnGauge`/`necrosis`/`neural` element gauges (see damage), `stealth`, `camou` (迷彩, its own keys: 忍冬 S3 `vulpis:camou` until her next cast, 寒芒克洛丝 S1), `reveal`.
 - Immunities from enemy data (`stunImmune`, `silenceImmune`, `sleepImmune`, `frozenImmune`, `levitateImmune`) are honoured by `applyStatus`; a unit both `invulnerable` and `untargetable` (a 重生, a 永久无敌 leader part) takes no status from the other side at all (PRTS 无敌 "无法被不同阵营选中", §21.19). Flag `selfBound` = 自缚 (守墓石像's 转换模式, the 自缚 leaders) beside its `noMove`: 余 S2 never teleports such a unit (束缚 sets `noMove` only).
@@ -2142,7 +2142,7 @@ Decisions of the owner, 2026-10-04: a 联防 devour counts members who enter alr
 
 ## 24. Community reports after 0.1.3
 
-Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1; 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, PR #69) → §24.2; the 5-阿戈尔 revives go to the first 3 members knocked out (GitHub #105, #140) → §24.3; 联防 阿戈尔 devours the operator in front whoever owns it (GitHub #140) → §24.4; a special terrain tile explains itself on a tap (GitHub #184, PR #185) → §24.5; 活性源石 was two different materials on the two boards (GitHub #184, PR #185) → §24.6. Merged pull requests keep their own notes where they changed the rules: deploy-timed skills as duration skills (PR #109, §5 skill contract), the teammate's hand / temp / equipment in prep scouting (PR #129), 灵巧's knocked-out aura and the hidden-layer bonds (PR #66, research 02).
+Reports after the 0.1.3 release. Each was checked against the official data and PRTS; anything with no source is marked [ASSUMED]. Where each is handled: a skill clip with no Begin and no own Idle plays once (德克萨斯 S2 剑雨) → §24.1; 高台 for every melee chess whose trait reads 「可以放置于远程位」 (GitHub #153, PR #69) → §24.2; the 5-阿戈尔 revives go to the first 3 members knocked out (GitHub #105, #140) → §24.3; 联防 阿戈尔 devours the operator in front whoever owns it (GitHub #140) → §24.4; a special terrain tile explains itself on a tap (GitHub #184, PR #185) → §24.5; 活性源石 was two different materials on the two boards (GitHub #184, PR #185) → §24.6; 阿戈尔's devoured base ATK is a 最终加算 and a fallen marker's marks still resolve (GitHub #165, PR #176) → §24.7. Merged pull requests keep their own notes where they changed the rules: deploy-timed skills as duration skills (PR #109, §5 skill contract), the teammate's hand / temp / equipment in prep scouting (PR #129), 灵巧's knocked-out aura and the hidden-layer bonds (PR #66, research 02).
 
 ### 24.1 A skill clip with no Begin and no own Idle plays once — 德克萨斯 S2 剑雨 (player report) — `render/spine.js SpineActor.setSkill / update` (`SKILL_CLIP_MIN`, `skillClipOnce`, `skillEndPending`)
 
@@ -2286,7 +2286,8 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - **Now**: `opAt` takes the operator on the front tile whoever owns it: a living one (`S.allyAt` without an owner), else
   one lying there since the 联防 start (`egirDownAtStart`: forced out, carry.down). The chain goes on through a marked
   阿戈尔 by `S.isMember` — for the player's own operators exactly its members, as before; a teammate's by its own bonds.
-  Everything else is the solo devour: the marker gains the target's base ATK (atkFlat) and block count; a mark on a
+  Everything else is the solo devour: the marker gains the target's base ATK (atkFlat when written; a 最终加算,
+  `atkFinal`, since §24.7) and block count; a mark on a
   standing teammate's operator resolves (5000 物理流失 less its DEF, the kill credited to the marker), a mark on a down
   one resolves nothing (it stays forced out — §19.3's "still counts as standing for its marking"); the knocked-out
   teammate's operator belongs to its owner (their 5-tier slot, 不屈 …). Layers: none in 联防 (`layerGainsEnabled`
@@ -2294,7 +2295,8 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - **Measured / verified**: the 0.1.3 own-board case holds through unite.js's real carry: a 30-s own combat in which the
   devour knocks out 幽灵鲨 → 歌蕾蒂娅 → fodder (3 阿戈尔, no revive) hands them to 联防 with `carryState.down`, and
   乌尔比安 gets exactly the own combat's atkFlat / blockCnt, with no layers. A teammate's fodder in front gives the same
-  atkFlat / blockCnt / 物理流失 as an own one and as a solo battle.
+  atkFlat / blockCnt / 物理流失 as an own one and as a solo battle. (§24.7 moved the ATK gain to `atkFinal`; the tests
+  compare that key now, with the same outcome.)
 - **Geometry** (for the owner): the remake's two 联防 helpers stand on board cols 3–9 (left) and 11–17 (right, colOffset
   8) with the road column 10 between them, and the boss halves are cols 3–9 / 11–17 too, so on the current maps no
   teammate's operator is ever on an 阿戈尔's front tile at the battle start. The tests place one on col 10 to exercise
@@ -2332,3 +2334,48 @@ Reports after the 0.1.3 release. Each was checked against the official data and 
 - **With the board art installed** the 2D tile is composed exactly like the 3D one: `DEFAULT_ART_LAYERS.infection` draws the official concrete slab (`board3d/atlas.js concrete`, the same atlas rect) and then the crust as a procedural layer; without the art the cell falls back to `MAT_DRAW.infection` (the procedural ground + the same crust). A second variant (`infection2`, the same art mirrored; `PROC_LAYERS.originium2` for the art path) is picked by tile (`tiles.js variantMat`), so a field of 活性源石 does not repeat one pattern.
 - **Not [ASSUMED]** — this is our own art: the palette and the recipe are ours, the tile it dresses and its numbers are the data's (a 机变 card can switch the terrain off, §24.5).
 - **Tests**: `test/render/originium-art.test.js` (the couplings: both renderers take the palette from `ORIGINIUM`, the canvas converts it, the recipe's thresholds agree, the 2D base slab is the same atlas rect the 3D board lays its crust on, the infection shader has no per-tile fade while the mire keeps its own, two variants are registered and picked, the pulse tint is the shared one), `test/render/originium-cell.e2e.test.js` (headless Chrome: the cell's veins hit the palette's displayed colour (`linearToHex(ORIGINIUM.vein)`), veins reach the border like the middle (no frame), the veins at opposite edges are alike (the cell joins itself), and the second variant is a different pattern).
+
+### 24.7 阿戈尔: the devoured base ATK is a 最终加算, and a fallen marker's marks still resolve (GitHub #165 points 2–3, PR #176 by @SpiritedAwayCN; the owner's decision of 2026-10-06) — `content/bonds/core.js devour`, `units.js _recalc` (`atkFinal`), `buffs.js ADD_KEYS`
+
+- **Seen**: GitHub #165 point 2 (PR #176 by @SpiritedAwayCN): PRTS makes the devoured base ATK a 最终加算, but the remake
+  added it before the percentages, so the marker's ATK +% scaled it — 1000 base ATK, a +100 % skill and 2000 devoured
+  gave 6000 instead of 4000. Point 3: the marks of a marker knocked out earlier in the pass were dropped, while PRTS
+  cancels only the knocked-out target's pending marks — in A → B → C with B devoured first, C never took B's 5000.
+- **Official**: PRTS 卫戍协议：盟约 下半/PRTS盟约记录, 阿戈尔 ※: 「该付与来源获得所有标记单位的基础攻击力（最终加算）和阻挡数」;
+  PRTS 游戏数据基础 属性基本公式 `A_f = F_t[(A + D_p)(1 + D_t) + F_p]` — the 最终加算 F_p comes after the 直接乘算 D_t and
+  inside the 最终乘算 F_t. The marks: 「所有【阿戈尔】干员完成标记后，每个标记令目标受到一次5000点物理流失的【吞噬】效果」,
+  「标记按付与顺序触发【吞噬】效果，目标首次被击倒后解除自身被付与但还未触发的【吞噬】效果」 — only the knocked-out TARGET's
+  pending marks are cancelled —, and 「【吞噬】的物理流失来源为被付与目标自身；单位被【吞噬】击杀时，击杀来源始终为对应标记的付与来源」.
+- **Decision**: the owner's decision of 2026-10-06: both as PRTS says (points 2 and 3 of #165, as PR #176 proposed).
+- **Cause**: `devour` put the gained ATK in `atkFlat`, inside `(base + atkFlat) × (1 + atkPct) × atkMul`, so every ATK +%
+  scaled it; the resolve loop skipped a mark whose marker was neither alive nor down since its own combat
+  (`!(m.alive || downAtStart(m))`, the rule since 0.1.0 — §22.3's "a marker off the field gives no further mark").
+- **Now**: a new additive mod key `atkFinal`, the 最终加算 (no existing channel had that place: 鼓舞 emulates one with a
+  compensated `atkFlat` refreshed by its aura): `ATK = ((base + ΣatkFlat) × (1 + ΣatkPct) + ΣatkFinal) × ΠatkMul`. The
+  devour buff is `{ atkFinal, blockCnt }`: 1000 base, +100 %, +2000 devoured → 4000 (0.1.3: 6000); a 最终乘算 (`atkMul`,
+  e.g. 虚弱) still scales the whole, the devoured part included, as F_t. Every other key keeps its meaning. Each mark
+  resolves unless its target was knocked out during the pass (or lies down since the 联防 start), whatever became of its
+  marker: B's mark lands on C after B fell to A's, and a knock-out by it is credited to B (`source: m`). Unchanged
+  (§24.3 / §24.4): the order of the marks and of their resolution, a target's pending marks cancelled once it is knocked
+  out (revived or not), the 3 revive slots in knock-out order, the 联防 front-tile devour of any owner's operator, the
+  down-at-start rules (it marks and resolves its marks, nothing resolves on it), the layers once per devoured unit.
+- **Open (point 5)**: PRTS makes the 流失's source the target itself and only the kill source the marker. `Battle.loseHp`
+  has one source for the hooks and the credit (only `sourceless` splits them), so the `damaged` / `fatal` hooks still
+  see the marker; a split needs a new `loseHp` option and changes what content and every devour test read from the
+  hooks — not the small, contained change the owner allowed, so it waits.
+- [ASSUMED]: a fallen marker's credited kill fires its kill effects like any credited kill in the engine (海霓's first
+  kill, 斯卡蒂's count): PRTS names the kill source, not whether a knocked-out operator's traits still answer.
+- Docs: DESIGN §5.2 / §5.3 and SIM.md §3 (the formula, the mod key), research 02 §3.6 and its JSON spec (data/bonds.json
+  `egirShip.spec` regenerated with `build-data --offline`; only `spec.algorithm[2]` / `[3]` changed), the core.js
+  comments; §24.4's `atkFlat` lines are marked. §22.3's marker line above is withdrawn by this section.
+- Golden: `bond-egirShip-high` — the three devourers (elite 深巡 / 幽灵鲨 / 斯卡蒂 on row 9) no longer scale the devoured
+  base ATK by their ATK +% (2867 / 2593 / 2024 ATK at 1 s instead of 3552 / 3288 / 2274), so its 19 enemies fall later
+  (74.03 → 89.03 s); `coop2-ABYSS-10-boosted` — from round 8 on ai_0 has 3 more 阿戈尔 and 3 more 奥术 layers (海霓's
+  first-kill trait, the one effect that adds both, now fires in that battle) and both bots' boss damage moves. The
+  fallen-marker rule moves no scenario.
+- Tests: `test/content/bonds_core.test.js` — new '阿戈尔 devour ATK is a 最终加算 …' (1000 / +100 % / +2000 → 4000, a
+  直接加算 still scaled, ×0.5 scales the whole), rewritten '… a fallen marker's marks still resolve …' (g2 falls to g1's
+  mark, its own on the fodder lands: 2 × (5000 − 500)), new '… A → B → C with B devoured first …' (C falls to B's mark,
+  the kill is B's); all three fail on 0.1.3's code. `feedback3-egir-down`, `feedback4-egir-unite` and
+  `feedback3-ulpia-move` read `atkFinal` instead of `atkFlat`; `test/match/bosshp.test.js` recomputes ATK with the
+  最终加算. `facing`, `feedback2-doll`, `sim/core` pass unchanged.

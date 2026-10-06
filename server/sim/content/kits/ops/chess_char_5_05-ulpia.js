@@ -16,6 +16,8 @@ export default {
   // (projectile_range); moves onto the anchor tile when deployable (a tile of his own board) and not his own (a 从不混淆的方向
   // marker keeps his tile)
   // and returns at skill end — both 【移动】, i.e. free redeploys (Battle.moveRedeploy; the return empties his SP).
+  // Knocked out while moved, he lies and redeploys on his deployment tile (Unit.downAtHome — the owner's decision of
+  // 2026-10-07, a deliberate deviation from PRTS's "where it fell", DESIGN §25.17.3).
   // T1 本性的坚守: heal 100 (160 below 50 %) on every hit taken. T2 血脉的哺养: per kill +120 max HP / +30 ATK (×9),
   // other Abyssal Hunters +50 %. Module (elite): healing received ×1.2.
   // S1 必须促成的接触 (instant): the anchor lands on the best enemy of the skill range (beyond his own range, unblocked
@@ -104,6 +106,11 @@ export default {
           // no exit) that keeps the running skill — "【移动】后仅继承下列效果：技能进度、第二天赋叠加层数"; the rest of
           // his buffs are kept too (owner's deviation, DESIGN §22.3). The marker is deployed after the move (备注 ③)
           if (!battle.moveRedeploy(unit, dest[0], dest[1]) || !unit.alive || !unit.skill?.active) return;
+          // knocked out while moved, he lies and redeploys on his deployment tile (Battle._layBody) — the owner's decision
+          // of 2026-10-07 (community report 28 「乌尔比安3技能期间死亡…应回到初始部署位复活」), a deliberate deviation from
+          // PRTS's "where it fell" (帮助 「原地留下一个“倒地干员”」), for this 【移动】 only; the return or his next
+          // deployment clears it
+          unit.downAtHome = true;
           const marker = battle.spawnToken(unit, tokenId, home[0], home[1], { untargetable: true, kit: { skill: null, trait: { noAttack: true } } });
           unit.mem.anchorHome = { r: home[0], c: home[1], marker };
           battle.fx('teleport', { x: unit.x, y: unit.y, id: unit.id, fromX, fromY });
@@ -111,6 +118,8 @@ export default {
         onEnd({ battle, unit }) {
           const h = unit.mem.anchorHome;
           unit.mem.anchorHome = null;
+          // the skill over with him standing: no longer moved by it (knocked out, the flag stays for Battle._layBody)
+          if (unit.alive) unit.downAtHome = false;
           if (!h) return;
           if (h.marker && h.marker.alive) battle.retreat(h.marker, { reason: 'expired', permanent: true });
           if (unit.alive && unit.deployed) {

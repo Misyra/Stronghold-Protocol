@@ -33,6 +33,7 @@ export class BattleDeploy {
     u.hidden = false;
     u.body = null;
     u.countdown = null; // a countdown summon's content starts its new life in the deploy hook (content/tokens.js startCountdown)
+    u.downAtHome = false; // a new deployment: a later knock-out lies where it falls again (Battle._layBody)
     u.x = C0; u.y = R0; u.tileR = R0; u.tileC = C0;
     u.blocking = [];
     u.deploySeq = ++this._deploySeq;

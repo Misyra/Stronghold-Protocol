@@ -84,6 +84,10 @@ export class Unit {
     // a countdown summon's life on the field ({ from, until } battle times; content/tokens.js startCountdown, cleared by
     // every deployment): its bar shows the time left (snapshot.js unitTuple), its HP never moves (无敌 + 禁疗)
     this.countdown = null;
+    // knocked out, the unit lies — and redeploys — on its home tile instead of where it fell (Battle._layBody) while content
+    // holds this: 乌尔比安 moved by his S3 (the owner's decision of 2026-10-07, a deviation from PRTS's "where it fell");
+    // every deployment clears it (battle/deploy.js _deploy)
+    this.downAtHome = false;
     this.trait = {};            // profession runtime state
     this.stats = { dmg: 0, kills: 0, heal: 0, taken: 0, attacks: 0 };
     this.hidden = false;        // enemies inside a DISAPPEAR segment

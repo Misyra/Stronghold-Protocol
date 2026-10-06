@@ -105,15 +105,17 @@ export class BattleTiles {
    * gone: a summon only leaves its home free once it has expired or been killed, so a removed one must count too), where
    * it goes back to its own home tile when that is in the rect and free (isReservedTile: no living unit, no other body,
    * no other waiting piece's tile). It stays where it fell when its home is taken [ASSUMED: one attempt, at the
-   * knock-out]. Only an operator moved off its board tile — a 突袭 jump, 乌尔比安's anchor — can fall elsewhere. Sets
-   * `u.body` (b.snap `down` carries it); x / y / tileR / tileC keep where it fell, so the `kill` / `death` handlers
-   * (被击倒时 effects) still act there.
+   * knock-out]. Only an operator moved off its board tile — a 突袭 jump, 乌尔比安's anchor — can fall elsewhere. One
+   * deliberate deviation, the owner's decision of 2026-10-07 (community report 28): a unit whose content holds
+   * `downAtHome` — 乌尔比安 moved by his S3 (kits/ops/chess_char_5_05-ulpia.js) — goes back to its home tile, its
+   * deployment tile, wherever it fell (that home taken: where it fell, as above). Sets `u.body` (b.snap `down` carries
+   * it); x / y / tileR / tileC keep where it fell, so the `kill` / `death` handlers (被击倒时 effects) still act there.
    */
   _layBody(u) {
     const r = u.tileR, c = u.tileC, hr = u.homeR, hc = u.homeC;
     u.body = [r, c];
     if (r === hr && c === hc) return;
-    if (!this.allyUnits.some((a) => a !== u && a.uid != null && (a.kind === 'op' || a.kind === 'token') && a.homeR === r && a.homeC === c)) return;
+    if (!u.downAtHome && !this.allyUnits.some((a) => a !== u && a.uid != null && (a.kind === 'op' || a.kind === 'token') && a.homeR === r && a.homeC === c)) return;
     if (!this.grid.inRect(hr, hc) || this.isReservedTile(hr, hc)) return;
     u.body = [hr, hc];
   }

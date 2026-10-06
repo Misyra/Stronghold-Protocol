@@ -90,7 +90,9 @@ timer done, tile free, DP ≥ cost), 不屈's, 阿戈尔's — comes back there 
 初始位置，则在被击倒后，尝试返回其自身的初始位置": one that fell on another board piece's home (a 突袭 member after its jump,
 乌尔比安 off his anchor; the piece on the field or not — a summon leaves its home free only once it has expired or been
 killed) lies on its own home instead when that is free (else it stays [ASSUMED: one attempt]); x / y / tileR / tileC keep
-where it fell for the `kill` / `death` handlers. "倒地干员所在地块视为可部署，但所有我方单位在此处的部署
+where it fell for the `kill` / `death` handlers. One deliberate deviation, the owner's decision of 2026-10-07 (community
+report 28): 乌尔比安 knocked out while his S3 has moved him lies on his deployment tile (his home) wherever he fell, when it
+is free (`Unit.downAtHome`, set by his kit for that 【移动】, cleared by the return and by every deployment; DESIGN §25.17.3). "倒地干员所在地块视为可部署，但所有我方单位在此处的部署
 行为将被阻止": `downOn(r, c)` — `_deploy` (redeploys, the 突袭 landing, summons), `spawnDevice` and `relocate` refuse that
 tile and `isReservedTile` reports it, so every automatic picker skips it. The rule covers every 退场 (GitHub #60): an
 operator forced out by its own effects (`retreat` reason `'retreat'`: 史尔特尔's 余烬, 耀骑士临光 S2, 骑士戒律 + 竞技旗,

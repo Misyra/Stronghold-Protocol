@@ -259,6 +259,11 @@ export default {
           battle.on('skillStart', (ctx) => { if (ctx.unit === unit && unit.skill?.kind !== 'passive') addCoins(battle, unit, num(t0.sp, 1)); }, { owner: unit });
         } },
         { install(battle, unit) { // 破财消灾
+          // the doubling cost restarts at 5 with every deployment: PRTS 备注 「再部署时重置本天赋费用消耗」 — the client buff
+          // swire2_t_2 keeps the doubled `cost` in its own blackboard, built anew when she is deployed (a battle start, 联防
+          // included — a new battle —, a redeploy, a 突袭 再部署). Until 0.2.0 a redeploy kept the doubled cost (community
+          // report of 2026-10-06 「正常对局中死亡之后再部署复活费用也应该重置」)
+          battle.on('deploy', (ctx) => { if (ctx.unit === unit) unit.mem.saveCount = 0; }, { owner: unit });
           battle.on('fatal', (ctx) => {
             if (ctx.unit !== unit || ctx.prevented) return;
             const n = unit.mem.saveCount ?? 0;

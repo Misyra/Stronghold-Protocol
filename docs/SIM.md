@@ -607,7 +607,10 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 | `defDown` / `resDown` | defMul 1 − value / RES −value (*strongest*) | 0.3 / 20 |
 
 Unknown keys become a flag buff `{ [key]: true }`. Flags `noBlock` (blocks nothing) and `tremble` exist for custom buffs;
-a custom buff with `flags.sleep` also blocks nothing and is untargetable/invulnerable like the status.
+a custom buff with `flags.sleep` also blocks nothing and is untargetable/invulnerable like the status. `noNewBlock` = the
+unit takes no new enemy by contact (`Battle._blockerFor`) and keeps the blocks it holds — content hands it its blockees
+(酒神's 迷狂牢笼, kits/ops/op-phatm2.js: PRTS "只在生成/刷新时判定阻挡新的敌人"); `undying` = a content 不死 window (淬羽赫默 S3,
+kits/ops/op-slent2.js — its own `fatal` hook holds it), which items/battle.js `holdsUndying` reports like 坚固维式重锤's.
 
 **Element gauges** (`unit.elem = {burn, neural, apoptosis, erosion, necrosis}`; capacity `unit.gaugeMax` = 1000, enemy
 leaders (rank BOSS / boss units) 2000): deal `{ type:'element', element, amount }` (fires `elementHit` first; the gauge
@@ -745,13 +748,14 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `deploy` | `{ unit, initial, move? }` | ops/tokens (initial & redeploy), enemies (`initial:false`), devices; `move: true` = a 【移动】 (`moveRedeploy`: 乌尔比安 S3 — no exit before it, the unit keeps its buffs) |
 | `tick` | `{ dt }` | end of every tick |
 | `beforeAttack` | `{ attacker, targets, isSkill, profile }` | allies **and** enemies; replace/filter `ctx.targets` |
+| `enemyAttackStart` | `{ enemy, targets }` | an enemy starts a normal attack (it has targets), **before** 麻痹 may interrupt it (ai.js enemyAttack; the client's ON_BEFORE_ABILITY_SPELL_ON): a burst a handler causes interrupts that very attack (酒神 堕梦, PRTS 备注 "触发的元素爆发可打断当次普攻"); a handler that kills or stuns the enemy ends it |
 | `attack` | `{ attacker, targets, isSkill }` | an attack/heal was performed (projectiles may still be in flight) |
 | `hit` | `{ source, target, dmg, credit }` | before mitigation; mutate `dmg` (not fired for gauge fills — see `elementHit`). `source` may be null (terrain; 无来源 `dmg.sourceless` bursts, whose `credit` names the unit credited) |
 | `elementHit` | `{ source, target, dmg }` | before a gauge fill (`dmg.type === 'element'`); mutate `dmg.amount`/`dmg.mul`, set `dmg.cancel` |
 | `damaged` | `{ source, target, amount, type, dmg, credit }` | after application (`amount` may be 0 when shielded); element fills too (with their source); 无来源: `source` null, `credit` set |
 | `hpDamage` | `{ source, target, amount, dmg, credit }` | a damage instance after shields, before the HP loss (§4; not a 流失): lower `amount` only (a raise is ignored) — HP floors / reductions ordered after a barrier (kits/ops/op-huang.js, op-zuole.js) |
 | `heal` | `{ source, target, amount, opts }` | mutable `amount` |
-| `fatal` | `{ unit, source, credit, dmg, amount, prevented }` | HP would reach 0 — set `prevented` (substitutes, kit savers, 不死 / 复活 items, 埃芒加德; 不屈 is a `death` hook). Fired by every HP loss of a unit without a boss pool — hits of any type, element bursts, 无来源 damage, `loseHp` 流失. Order: kits' own savers (10 … −60) → items' 不死 (坚固维式重锤 — once per deployment: `items/battle.js deploymentOf`, a key every deploy changes and an in-place 复活 changes too; one battle-level hook holds the running windows (`holdsUndying`), so a window outlasts a lend, DESIGN §21.21 — the lock `PRIO_REVIVE` −100 after the substitutes (−100, registered first), the running windows `PRIO_UNDYING_HELD` −99 before them: a 傀儡师 holding 不死 does not switch, PRTS 分支特性信息 傀儡师 "未持有不死的情况下", DESIGN §22.11) → items' 复活 (M3茧甲, `PRIO_RESPAWN` −101: PRTS "复活" acts on a knock-out, which a 不死 prevents) → 埃芒加德 (−110); both 复活 revive in place and call `revivedInPlace` (a new deployment for the lock) |
+| `fatal` | `{ unit, source, credit, dmg, amount, prevented }` | HP would reach 0 — set `prevented` (substitutes, kit savers, 不死 / 复活 items, 埃芒加德; 不屈 is a `death` hook). Fired by every HP loss of a unit without a boss pool — hits of any type, element bursts, 无来源 damage, `loseHp` 流失. Order: kits' own savers (10 … −60) → items' 不死 (坚固维式重锤 — once per deployment: `items/battle.js deploymentOf`, a key every deploy changes and an in-place 复活 changes too; one battle-level hook holds the running windows (`holdsUndying`), so a window outlasts a lend, DESIGN §21.21 — the lock `PRIO_REVIVE` −100 after the substitutes (−100, registered first), the running windows `PRIO_UNDYING_HELD` −99 before them: a 傀儡师 holding 不死 does not switch, PRTS 分支特性信息 傀儡师 "未持有不死的情况下", DESIGN §22.11) → 淬羽赫默 S3's 不死 (−100.5: PRTS 衍生生命 "无畏者协议提供的不死效果仅在目标没有不死效果时才会触发"; its running windows held at −99 like the hammer's) → items' 复活 (M3茧甲, `PRIO_RESPAWN` −101: PRTS "复活" acts on a knock-out, which a 不死 prevents) → 埃芒加德 (−110); both 复活 revive in place and call `revivedInPlace` (a new deployment for the lock) |
 | `dollSwitch` | `{ unit, reason, done }` | content switches a 傀儡师 to its <替身> now (归溟幽灵鲨 S2 "技能结束后立刻切换为<替身>": no lethal HP loss); its trait does it unless it already is one or is not on the field, and sets `done` |
 | `dollSwap` | `{ unit, form }` | a 傀儡师 starts a switch — to its <替身> (`form` `'doll'`) or back to its <本体> (`null`); not when it is knocked out as the 替身 (不屈 rolls on it: "切换<替身>与<本体>时") |
 | `kill` | `{ killer, victim }` | victim HP reached 0 (a handler may revive by restoring HP) |

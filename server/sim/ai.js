@@ -682,6 +682,13 @@ function enemyAttack(b, e) {
   if (own && targets.length) targets = targets.filter((a) => own(a));
   if (targets.length > 1) sortAllyTargets(e, targets);
   if (!targets.length) return false;
+  // `enemyAttackStart` { enemy, targets }: the enemy starts a normal attack, before 麻痹 may interrupt it (the client's
+  // ON_BEFORE_ABILITY_SPELL_ON of an attack that 麻痹 can interrupt — 酒神 堕梦 "攻击范围内的敌人普通攻击时受到70点神经损伤",
+  // PRTS 备注 "于敌人成功普通攻击前之前触发（意味着触发的元素爆发可打断当次普攻…）": a burst it causes interrupts this attack)
+  if (b._hooks.enemyAttackStart) {
+    b.emit('enemyAttackStart', { enemy: e, targets });
+    if (!e.alive || e.s.flags.stun) return false;
+  }
   // 麻痹 (ba.palsy): each stack interrupts one normal attack. The `palsyTrigger` hook { enemy, buff, keep } fires as it
   // does (PRTS 真言 备注: "触发麻痹时" = the attack interrupted by 麻痹, not a stack gained): a handler may set `keep` — the
   // stack is not consumed (真言 噤声限域 "触发麻痹时有N%概率不消耗麻痹层数") — or deal damage (the enemy may die there)

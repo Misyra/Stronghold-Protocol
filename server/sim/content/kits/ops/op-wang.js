@@ -22,12 +22,19 @@
 //   may). Module TRP-X "部署费用更低（-1）…可同时部署的陷阱数量提升（+1）": the 棋子 variant's cost 2 (the DP of its returns) and
 //   deploy limit 7 (the hand count — the match's); its attributes in the stats.
 // - T1 铸子 (cnt / attack@max_spawn_cnt; "最多拥有7枚"): the 棋子 are hand pieces the player places; they deploy with the board
-//   for free and without using her stock (stock = cnt at the start, at most STOCK_CAP; the skills add to it). 棋子 / 跟子
+//   for free. Her stock (持有库存: the 棋子 in her hand — cnt at the start, at most STOCK_CAP; the skills add to it) counts
+//   them — the owner's decision of 2026-10-06, a deliberate deviation from PRTS 卫戍协议/帮助 (placed summons "无视所属干员的
+//   持有状态，不消耗持有数量", which left her stock at cnt: one S1 / S2 cast reached the cap and 阻回 held her SP for the rest
+//   of the battle): every deployment of a 棋子 (the battle start's and each return) takes one from it, like one she deployed
+//   herself (never below 0 [ASSUMED: a 7th placed piece of TRP-X's deploy limit takes none]), and a 棋子 that leaves the
+//   field (set off, or gone with her) goes back into it at once by the official summon rule — its card back in her hand
+//   while its redeploy time runs (as shared/summoner.js's recall) —, at most the cap [ASSUMED: one over the cap is lost].
+//   So "立即获得两枚棋子" and the 阻回 at the cap keep cycling through the battle. 棋子 / 跟子
 //   that touch on a side (上下 / 左右) activate each other and stay active once activated [ASSUMED from the S2 备注]; an
 //   enemy (air units too) on an active one's tile sets it off: its effect, then it is used up (a 棋子 leaves the field; a
 //   跟子 is gone) [ASSUMED: a trap is spent by its trigger]. A spent 棋子 comes back on its tile ("原地再部署") after its
-//   redeploy time (2 s), paying its cost, while 望 is on the field — its own card returns to the stock as it leaves, so the
-//   stock does not change [ASSUMED]. That return is the mode's deployment of her card: it counts as a 手动部署 for 铸子 —
+//   redeploy time (2 s), paying its cost and one of her stock, while 望 is on the field. That return is the mode's
+//   deployment of her card: it counts as a 手动部署 for 铸子 —
 //   one 跟子 on a tile next to it (the PRTS order above), at most attack@max_spawn_cnt on the field [ASSUMED: the battle-start
 //   deployment does not count]. When 望 leaves the field her 棋子 and 跟子 vanish (PRTS 分支特性信息); the 棋子 come back
 //   with her.
@@ -195,7 +202,7 @@ export default {
       const at = battle.time + Math.max(0, num(stone.base.respawnTime));
       battle.every(RETRY, (b, sched) => {
         if (stone.alive || stone.removed || b.finished) { sched.cancel(); return; }
-        if (b.time + 1e-9 < at || !up(unit)) return;
+        if (b.time + 1e-9 < at || !up(unit) || unit.mem.wang.stock < 1) return;   // (one of her stock: the deployment takes it)
         const r = stone.homeR, c = stone.homeC;
         const s3on = unit.skill?.id === S3 && unit.skill.active && inHerRange(unit, r, c);
         if (groundFoeOn(b, r, c) && !s3on) return;   // "陷阱无法放置于敌人已在的格子中"
@@ -219,12 +226,16 @@ export default {
         battle.addBuff(unit, { key: 'trait:wangStone', flags: { untargetable: true }, persist: true, allowDead: true });
         battle.on('deploy', (ctx) => {
           if (ctx.unit !== unit) return;
-          unit.mem.wangNode = { seq: ++owner.mem.wang.seq, act: false, h: false, v: false, stacks: 0 };
+          const w = owner.mem.wang;
+          unit.mem.wangNode = { seq: ++w.seq, act: false, h: false, v: false, stacks: 0 };
+          w.stock = Math.max(0, w.stock - 1);   // it occupies her stock (the owner's decision of 2026-10-06)
         }, { owner: unit });
         battle.on('death', (ctx) => {
           if (ctx.unit !== unit || battle.finished) return;
           unit.removed = false;   // the piece is kept (Battle.redeploy accepts it; its hooks stay)
           unit.mem.wangNode = null;
+          const w = owner.mem.wang;
+          w.stock = Math.min(stockCap, w.stock + 1);   // its card goes back into her stock (the official summon rule)
           scheduleReturn(battle, owner, unit);
         }, { owner: unit, priority: -10 });
       },

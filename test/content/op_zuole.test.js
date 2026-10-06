@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { deploymentOf } from '../../server/sim/content/items/battle.js';
 import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { KITTED_CHARS, OPERATOR_KITS, KITS } from '../../server/sim/content/kits/index.js';
 import { diyPool, validateDiyPicks } from '../../shared/diy.js';
@@ -350,7 +351,7 @@ test('SBL-Y (stages 1 and 3): knocked out ⇒ he stays and heals 30 % max HP, on
     // a running 不死 (坚固维式重锤's window) keeps him up instead
     h.b.redeploy(u);
     const r = field({ tier, elite: true, mod: SBLY, skill: 1 });
-    r.u.mem.undyingAt = `${r.u.deploySeq}:0`;
+    r.u.mem.undyingAt = deploymentOf(r.u);
     r.u.mem.undyingUntil = r.h.b.time + 5;
     const hammer = r.h.b.on('fatal', (c) => { if (c.unit === r.u && !c.prevented) c.prevented = true; }, { priority: -99 });
     const f = r.h.spawn('enemy_dummy', { pos: [10, 6] });

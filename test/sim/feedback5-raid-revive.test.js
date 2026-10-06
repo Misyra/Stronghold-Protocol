@@ -2,8 +2,10 @@
 // 立马突袭出去，还要等突袭CD」. A 突袭 member counts a running deploy-timed skill ("部署后…秒内": 缄默德克萨斯 S1–S3 …) as 技能
 // 就绪 (bonds/addon/battle.js raidPoll, GitHub #49 / #109), so after a redeploy it jumps at once when nothing is in its range.
 // PRTS's 复活 (M3茧甲, 埃芒加德) is 退场 + a 0-time / 0-cost redeploy (PRTS 盟约记录 备注) — a new deployment — but the remake
-// revives in place: her window, over by then, stayed over and she waited out the 10 s idle time. Now an in-place revive
-// starts a deploy-timed skill again (content/items/battle.js revivedInPlace); 不屈's real redeploy already did.
+// revived in place: her window, over by then, stayed over and she waited out the 10 s idle time. CB3 started a deploy-timed
+// skill again after the in-place revive; since the CB1 merge the 复活 IS that redeploy (content/items/battle.js reviveNow:
+// knocked out, back at once, free, on her tile), whose skill reset starts the window anew — the tests hold for both, and
+// 不屈's real redeploy already did.
 // Run: node --test test/sim/feedback5-raid-revive.test.js
 
 import { test } from 'node:test';

@@ -503,7 +503,10 @@ test('灵知 S2: 130 % ATK arts + 2.5 s cold to all in range; fully charged cast
   assert.ok(h.runUntil(() => u.skill.activations >= 2, 20));
   const starts = noisy(h, 'skillStart').filter((c) => c.unit === u).map((c) => c.t);
   const colds = (T) => noisy(h, 'statusApplied').filter((c) => c.source === u && c.status === 'cold' && c.duration === bb.cold && c.t === T).length;
-  assert.equal(colds(starts[0]), 4, 'charged: two colds on each of the two enemies');
+  const freezes = (T) => noisy(h, 'statusApplied').filter((c) => c.source === u && c.status === 'freeze' && c.t === T).length;
+  // charged: two colds on each of the two enemies — each enemy's pair becomes one freeze (友方寒冷 「两两一对」, since 0.2.0)
+  assert.equal(colds(starts[0]), 2, 'charged: the first cold on each enemy lands as a cold');
+  assert.equal(freezes(starts[0]), 2, 'charged: the second cold on each enemy turns the pair into a freeze');
   assert.equal(colds(starts[1]), 2, 'single charge: one cold each');
   // normal attacks chill for 1 s
   assert.ok(noisy(h, 'statusApplied').some((c) => c.source === u && c.status === 'cold' && c.duration === t0.cold));

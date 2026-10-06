@@ -718,9 +718,12 @@ test('player feedback after 0.1.0 (DESIGN §21, v0.1.1): every report mapped, th
 test('batch 6 after 0.1.0 (DESIGN §21.21–§21.25): the hammer per deployment, 起飞, fenced tiles, bodies, the PR fixes — code and docs agree', async () => {
   const sec = (n) => DESIGN.slice(DESIGN.indexOf(`## ${n}.`), DESIGN.indexOf(`## ${n + 1}.`) > 0 ? DESIGN.indexOf(`## ${n + 1}.`) : undefined);
   // F1: 不死 before 复活, once per deployment (§5.4 = SIM = items/battle.js)
+  // (0.2.0: the 复活 answer the knock-out — `death` hooks ahead of 阿戈尔 5 (11) and 不屈 (10), community report on 埃芒加德)
   const { PRIO_REVIVE, PRIO_RESPAWN } = await import('../server/sim/content/items/battle.js');
-  assert.equal(PRIO_RESPAWN, PRIO_REVIVE - 1);
-  assert.match(sec(5), /\| `fatal` \|[^\n]*坚固维式重锤, once per deployment\) `PRIO_REVIVE` −100 → items' 复活 \(M3茧甲\) `PRIO_RESPAWN` −101 → 埃芒加德 −110/);
+  const { PRIO_BAND_REVIVE } = await import('../server/sim/content/bands/battle.js');
+  assert.ok(PRIO_REVIVE < 0 && PRIO_RESPAWN > PRIO_BAND_REVIVE && PRIO_BAND_REVIVE > 11);
+  assert.match(sec(5), /\| `fatal` \|[^\n]*坚固维式重锤, once per deployment\) `PRIO_REVIVE` −100/);
+  assert.match(sec(5), /\| `death` \|[^\n]*items' 复活 \(M3茧甲\) `PRIO_RESPAWN` 13 → 埃芒加德 `PRIO_BAND_REVIVE` 12/);
   assert.match(SIM, /坚固维式重锤 — once per deployment/);
   assert.match(PLAYING, /\*\*每次部署一次\*\*/);
   // F2: onBuy = a shop purchase (§6.4 = META)
@@ -764,11 +767,11 @@ test('batch 6 QA residuals (DESIGN §21.21–§21.25): the lock per deployment f
   const sub = (n) => { const a = DESIGN.indexOf(`### 21.${n} `); const b = DESIGN.indexOf('\n### 21.', a + 5); return DESIGN.slice(a, b > 0 ? b : DESIGN.indexOf('\n## 22.') > 0 ? DESIGN.indexOf('\n## 22.') : undefined); };
   // F1: the lock belongs to the deployment (deploymentOf), its window to the battle (holdsUndying); revives open one
   const IB = await import('../server/sim/content/items/battle.js');
-  for (const f of ['holdsUndying', 'revivedInPlace']) assert.equal(typeof IB[f], 'function', f);
+  for (const f of ['holdsUndying', 'reviveNow']) assert.equal(typeof IB[f], 'function', f);
   const items = doc('server/sim/content/items/battle.js');
   assert.match(items, /function deploymentOf\(u\)/);
   assert.ok(!/S\.on\('deploy', \(c\) => \{\s*if \(c\.unit !== u \|\| c\.initial\) return;\s*hs\.undyingUsed/.test(items), 'no per-grant re-arm hook');
-  assert.match(doc('server/sim/content/bands/battle.js'), /revivedInPlace\(u\)/);
+  assert.match(doc('server/sim/content/bands/battle.js'), /reviveNow\(battle, c, 'band'\)/); // since 0.2.0 a redeploy, no longer in place
   assert.match(doc('server/sim/content/kits/ops/chess_char_4_01-rmixer.js'), /if \(holdsUndying\(battle, unit\)\) return;/);
   assert.match(sub(21), /\*\*QA after the integration, fixed\*\*: \(1\) the lock lived in the hooks of the carrier's hammer grants/);
   assert.match(sub(21), /both in-place revives now call `revivedInPlace`/);

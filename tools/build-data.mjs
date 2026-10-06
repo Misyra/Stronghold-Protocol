@@ -3423,7 +3423,10 @@ function buildChoices(ctx, effects, items, chess) {
     pools: {
       pool_equip_normal: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
       pool_equip_shop_1: { kind: 'equip', rule: 'shopEligible', tiers: [1], assumed: true },
-      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
+      // 凯瑟琳 定向投放 (up_shop_add_special_goods): every shop-eligible item, whatever the shop level — players' first-hand
+      // report (community, 2026-10-06): 「原版凯瑟琳1升2都能有6本装备」; the pool itself is server-side, uniform [ASSUMED]
+      // (until 0.2.0 it was capped at the shop level, so the 1 → 2 offer only ever showed tiers I–II)
+      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', assumed: true },
       pool_equip_narant: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
       // "获得一件带有随机特殊效果的维式重锤": the 4 hammers with a special effect (never sold, SHOP_EXCLUDED_ITEMS); the
       // weights are server-side (PRTS 11-25 note: "装备【灼燃维式重锤】的出现概率调整") — uniform [ASSUMED]

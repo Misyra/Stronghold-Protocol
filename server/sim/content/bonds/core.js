@@ -424,7 +424,7 @@ function devour(battle, pid, bb, members) {
   const amount = num(bb.damage_value, 0);
   const layered = new Set();
   // a target knocked out during the pass = off the field, or in another deployment than when the marks were placed (items
-  // deploymentOf: the 5-tier revive and 不屈 redeploy it, 埃芒加德 / M3茧甲 revive it in place) — a revived member was
+  // deploymentOf: the 5-tier revive, 不屈 and the 复活 of 埃芒加德 / M3茧甲 redeploy it) — a revived member was
   // standing again when its pending marks used to knock it out a second time and spend every revive at t = 0 (GitHub #33)
   const dep = new Map();
   for (const [, t] of marks) if (!dep.has(t)) dep.set(t, items.deploymentOf(t));
@@ -457,10 +457,12 @@ function installEgir(battle, pid, bb, members) {
   // other, so the eaten food usually takes them at t = 0 and survivors = uneaten members + 3. A member takes at most one
   // slot, on its first knock-out ('killed') in the battle: its later knock-outs never take one, and a first knock-out
   // after the 3 are gone stays down. However many members mark it, its pending marks are cancelled once it is knocked
-  // out (devour), so a multi-devoured member spends one slot at most. Its own saver acts first: every kit, item or band
-  // revive that prevents or replaces the knock-out is a `fatal` hook (斯卡蒂's DRE-Y −50, kit savers 10 … −60, 坚固维式
-  // 重锤 PRIO_REVIVE −100, M3茧甲 PRIO_RESPAWN −101, 埃芒加德 −110), so the unit is never knocked out and no slot is used —
-  // the slot waits for its first real knock-out [ASSUMED for 埃芒加德, a band: as M3茧甲, the item revive the owner named].
+  // out (devour), so a multi-devoured member spends one slot at most. Its own saver acts first: a kit or item saver that
+  // prevents the knock-out is a `fatal` hook (斯卡蒂's DRE-Y −50, kit savers 10 … −60, 坚固维式重锤 PRIO_REVIVE −100), so the
+  // unit is never knocked out and no slot is used; a 复活 (M3茧甲 13, 埃芒加德 12 — items reviveNow, a knock-out and a free
+  // redeploy since 0.2.0) answers the knock-out before this hook and marks it `revivedBy`: that knock-out is not the
+  // member's first either — the slot waits for its first unanswered knock-out (the owner's decision of 2026-10-05: an
+  // operator's own revive uses no slot; [ASSUMED] for 埃芒加德, a band, as for M3茧甲, the item revive the owner named).
   // An operator entering 联防 down (FORCED_EXIT) is not knocked out either; a 调和 member counts like any other. Each
   // battle (normal, 联防, boss) counts its own. PRTS: the knocked-out unit's next deployment has 0 redeploy time and 0
   // cost, i.e. it IS knocked out (被击倒 triggers, 克莱门莎, 幽灵鲨 … fire) and redeploys at once where it lies (the
@@ -478,7 +480,7 @@ function installEgir(battle, pid, bb, members) {
   let revives = 0;
   battle.on('death', (c) => {
     const u = c.unit;
-    if (c.reason !== 'killed' || !memberOps.has(u) || knockedOut.has(u)) return;
+    if (c.reason !== 'killed' || c.revivedBy || !memberOps.has(u) || knockedOut.has(u)) return;
     knockedOut.add(u);
     if (revives >= max || u.alive || u.removed) return;
     if (!battle.redeploy(u, { free: true })) return;

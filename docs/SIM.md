@@ -600,7 +600,7 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 |---|---|---|
 | `stun` | cannot act / move; **a stunned operator blocks nothing** (its blocked enemies are released: taken over by another operator in contact with room, else they walk on — §1.2 Blocking) | – |
 | `freeze` | stun; **enemies** also RES −15 | – |
-| `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` for max(remaining cold, the incoming cold after 抵抗) — PRTS 术语释义 寒冷 「持续时间取双方之中最高」 (`COLD_FREEZE_DURATION` 3 s only when neither side has a duration; unless frozen-immune). [ASSUMED] the one catalogue cold uses that 友方 sentence for an enemy-applied cold too | – |
+| `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` for max(remaining cold, the incoming cold after 抵抗) — PRTS 术语释义 寒冷 「持续时间取双方之中最高」 (`COLD_FREEZE_DURATION` 3 s only when neither side has a duration; unless frozen-immune). On an enemy (友方寒冷) the pair becomes that freeze and no cold is left — 「两两一对产生友方冻结」, so a lone cold on a frozen enemy waits for a partner (0.2.0; the 谢拉格 wind no longer freezes for good); on an operator (敌方寒冷) the longer cold stays on with the freeze. [ASSUMED] the one catalogue cold uses the 友方 max for an enemy-applied cold too | – |
 | `sleep` | 无敌且无法行动: inactive, untargetable, **takes no damage** (unless the attacker profile has `hitSleep` or the damage `ignoreSleep`), blocks nothing; PRTS 异常效果 SLEEPING = 无法行动+无敌+**不可阻挡**: an enemy asleep **cannot be blocked and takes no block slot** — its blocker lets go at once (the slot frees for the next enemy), it stays where it is, and when it wakes it is blocked again only by a blocker with room, else it walks on (DESIGN §24.9) | – |
 | `slow` | moveMul 1 − value (*strongest*) | default 0.5 |
 | `sluggish` (停顿) | moveMul 0.2 | – |

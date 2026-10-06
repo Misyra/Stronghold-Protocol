@@ -675,7 +675,7 @@ one slot, the picks of a tier differ, no module of another game mode — `isDiyM
 "在【沉沦者的黑流树海】中") and the 生息演算 module RA-A (森蚺) are never a player's choice [ASSUMED], the owner's decision of
 2026-10-05 for ISW-A and the same reason for SO / RA, while the record and the sim still compose them for the kits' tests). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
 is fielded as `getChess(slotId, { diy })` (docs/SIM.md §12); its kit is `KITS[charId]` (kits/README.md "How to add an
-operator (自选)"). (`shared/standIn.js diyRecord(slot, charId, backups, sel)` is the older prototype-only form.)
+operator (自选)").
 
 `diy`:
 

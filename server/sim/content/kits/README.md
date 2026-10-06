@@ -16,7 +16,6 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 | `shared/tier1.js` | the general kit helpers (blackboard readers, unit predicates, hit hooks, area queries, buffs, zones, free tiles, skill records) and the notes of the tier-1 kits |
 | `shared/tier2.js` … `tier6.js` | helpers two or more kits of that tier use, and that tier's notes (conventions, simplifications, fx kinds) |
 | `shared/summoner.js` | the 召唤师 summon deck the 自选 kits of 麦哲伦 / 令 / 电弧 share (`summonDeck`: the holding, a placed piece's return, recalls, the summons leaving with their owner; `holdBuff`, `tokenStat`) |
-| `tier1.js` … `tier6.js` | re-export shims for the old import paths; removed after the 0.2.0 refactor |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
 id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4). A 补位 stand-in's

@@ -1,5 +1,6 @@
 // shared/standIn.js — a chess fielded with another character's body: the 补位 stand-in (原型干员) of a NORMAL chess
-// whose operator the player does not own, and a 自选 (DIY) slot filled with a prototype. Pure ESM shared by the build
+// whose operator the player does not own, and the composition a 自选 (DIY) slot uses (shared/diy.js diyRecordOf calls
+// composeUnitRecord with the pick). Pure ESM shared by the build
 // (tools/build-data.mjs proves composeUnitRecord rebuilds every PRESET chess from its own unit form), the simulation and
 // the client. Data: data/backups.json (docs/DATA.md §18).
 //
@@ -129,22 +130,4 @@ export function standInRecord(chess, backups) {
   const unit = backups?.units?.[b.charId] ?? null;
   return composeUnitRecord(chess, unit, unitForm(backups, b.charId, chess.status),
     { skillIndex: b.skillIndex, moduleId: b.uniEquipId ?? null, standInFor: chess.charId });
-}
-
-/**
- * A 自选 slot (DIY chess record, normal or elite) filled with a prototype `charId` (backups.diy.prototypes[tier]):
- * the slot's identity (tier, price, no 特质) with the pick's derived bonds (backups.diy.operators[charId].bonds). The
- * skill and module are the caller's — which skill a prototype carries in a slot is not in the data (DESIGN 0.2.0
- * draft, open question). Null when the pick is not a legal prototype of the slot's tier or the data lacks it.
- * @param {object} slot a DIY chess record (data/chess.json, `isDiy`)
- * @param {string} charId the picked prototype
- * @param {object} backups data/backups.json
- * @param {{ skillIndex?: number, moduleId?: string|null }} [opts]
- * @returns {object|null}
- */
-export function diyRecord(slot, charId, backups, { skillIndex, moduleId = null } = {}) {
-  if (!slot?.isDiy || !(backups?.diy?.prototypes?.[slot.tier] || []).includes(charId)) return null;
-  const unit = backups.units?.[charId] ?? null;
-  return composeUnitRecord(slot, unit, unitForm(backups, charId, slot.status),
-    { skillIndex, moduleId, bonds: backups.diy.operators?.[charId]?.bonds ?? null });
 }

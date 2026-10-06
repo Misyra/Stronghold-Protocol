@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { standInRecord, diyRecord, composeUnitRecord, unitForm, statusKey, IDENTITY_FIELDS } from '../shared/standIn.js';
+import { standInRecord, composeUnitRecord, unitForm, statusKey, IDENTITY_FIELDS } from '../shared/standIn.js';
+import { diyRecordOf, lockedSelection } from '../shared/diy.js';
 import { composeStats, composeTalents, resolveLoadout, loadoutRecord, normalizeChess } from '../server/sim/simdata.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -212,26 +213,26 @@ test('DIY: prototype picks — the 9 elites at tiers 5 and 6, six 4★ reserves 
   assert.deepEqual(prototypes['6'], ELITES);
   assert.deepEqual(prototypes['5'], [...RESERVES.filter((id) => !['char_600_cpione', 'char_607_cspec'].includes(id)), ...ELITES]);
   assert.equal(prototypes['5'].length, 15);
-  // every pick composes in every slot form, with any of its skills (which skill a prototype carries in a slot is an open
-  // question — the data supports any answer), with the derived bonds (协防干员: no prototype has a faction) and no 特质
+  // every pick composes in every slot form — at its locked selection (diy.locked: "技能携带规则与系统补位时一致"; shared/diy.js
+  // diyRecordOf, which replaced standIn.js's prototype-only diyRecord in 0.2.0) — with the derived bonds (协防干员: no
+  // prototype has a faction) and no 特质
+  const data = { chess, backups };
   for (const [id, s] of Object.entries(backups.diy.slots)) {
     for (const slot of [chess[id], chess[s.goldenId]]) {
       for (const p of prototypes[s.tier]) {
         const form = unitForm(backups, p, slot.status);
         assert.ok(form, `${slot.chessId} ${p}: form`);
-        for (const sk of form.skills) {
-          const mod = slot.status.equipLevel > 0 ? form.modules[0]?.uniEquipId ?? null : null;
-          const r = diyRecord(slot, p, backups, { skillIndex: sk.index, moduleId: mod });
-          assert.ok(r && r.skill.index === sk.index && r.charId === p, `${slot.chessId} ${p} S${sk.index + 1}`);
-          assert.deepEqual([r.bonds, r.garrisonIds, r.price, r.tier], [['emptyShip'], [], 4, s.tier]);
-          if (mod) assert.equal(r.module.active, true, `${slot.chessId} ${p}: module`);
-        }
+        const lk = lockedSelection(data, s.tier, p);
+        const r = diyRecordOf(slot, { charId: p }, data);
+        assert.ok(r && r.skill.index === lk.skillIndex && r.charId === p, `${slot.chessId} ${p}`);
+        assert.deepEqual([r.bonds, r.garrisonIds, r.price, r.tier], [['emptyShip'], [], 4, s.tier]);
+        if (slot.status.equipLevel > 0 && lk.uniEquipId) assert.equal(r.module.active, true, `${slot.chessId} ${p}: module`);
       }
     }
   }
-  assert.equal(diyRecord(chess.chess_char_6_diy1_a, 'char_601_cguard', backups, { skillIndex: 2 }), null, 'a reserve is not a tier-6 pick');
-  assert.equal(diyRecord(chess.chess_char_5_diy1_a, 'char_600_cpione', backups, { skillIndex: 2 }), null, '预备干员-先锋 is not a pick');
-  assert.equal(diyRecord(chess.chess_char_5_01_a, 'char_608_acpion', backups, { skillIndex: 2 }), null, 'not a DIY slot');
+  assert.equal(diyRecordOf(chess.chess_char_6_diy1_a, { charId: 'char_601_cguard' }, data), null, 'a reserve is not a tier-6 pick');
+  assert.equal(diyRecordOf(chess.chess_char_5_diy1_a, { charId: 'char_600_cpione' }, data), null, '预备干员-先锋 is not a pick');
+  assert.equal(diyRecordOf(chess.chess_char_5_01_a, { charId: 'char_608_acpion' }, data), null, 'not a DIY slot');
 });
 
 test('DIY: the 71 owned 6★ picks — a form at every slot status with all three skills, every module at stage 1 and 3, their summons', () => {

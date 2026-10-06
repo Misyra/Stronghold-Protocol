@@ -158,6 +158,19 @@ export function shrinkGuard(prev, next, { allowShrink = false, prune = false } =
   return { dropped, write: dropped.length === 0 || !!allowShrink || !!prune };
 }
 
+/**
+ * Files under public/assets the manifest does not reference (`--prune` deletes them). public/assets/local/** belongs to
+ * tools/local-extract (data/local-assets.json) and is never an orphan: --prune used to delete all of it. Compared without
+ * case: on Windows / macOS a listed path and a file whose name differs only in case are one file (module/WAH-Y.png on
+ * disk serves the listed module/wah-y.png), which --prune must not delete.
+ * @param {string[]} onDisk forward-slash paths relative to public/assets
+ * @param {Iterable<string>} referenced the manifest's files, same form
+ */
+export function orphanFiles(onDisk, referenced) {
+  const listed = new Set([...referenced].map((r) => r.toLowerCase()));
+  return onDisk.filter((r) => !listed.has(r.toLowerCase()) && !r.startsWith('local/'));
+}
+
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 const log = (m) => console.log(m);
 
@@ -363,9 +376,8 @@ async function main() {
   const guard = shrinkGuard(current, manifest, opts);
   if (guard.write) await writeJsonAtomic(MANIFEST, manifest);
 
-  // Orphans: files on disk that the manifest does not reference (e.g. after a mapping change). public/assets/local/**
-  // belongs to tools/local-extract (data/local-assets.json) and is never an orphan: --prune used to delete all of it.
-  const orphans = (await listFiles(ASSETS)).filter((r) => !resolved.files.has(r) && !r.startsWith('local/'));
+  // Orphans: files on disk that the manifest does not reference (e.g. after a mapping change).
+  const orphans = orphanFiles(await listFiles(ASSETS), resolved.files);
   if (opts.prune) for (const r of orphans) { try { await unlink(join(ASSETS, r)); } catch { /* ignore */ } }
 
   const charIds = Object.keys(assets07.operators || {});

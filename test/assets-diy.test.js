@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dataExtras, parseArgs } from '../tools/fetch-assets.mjs';
+import { dataExtras, orphanFiles, parseArgs } from '../tools/fetch-assets.mjs';
 import { patternOperator, buildPlan } from '../tools/assets/plan.mjs';
 import { indexAudio } from '../tools/assets/audio.mjs';
 import { Downloader } from '../tools/assets/downloader.mjs';
@@ -63,6 +63,25 @@ test('patternOperator / buildPlan: an operator research 07 lacks gets the 07 URL
   assert.deepEqual(Object.keys(t.template.modules), ['sol-x']);
   assert.match(t.template.modules['sol-x'].alts[0].urls[0], /arts\/ui\/uniequiptype\/sol-x\.png$/);
   assert.equal(t.template.prof.sub.pioneer.alts[0].rel, 'prof/sub/pioneer.png');
+});
+
+test('module type icons: one lower-case file per type, so the official \'dec-X\' (uniequip_003_aglina) and \'dec-x\' share one; --prune keeps a file whose name differs only in case', () => {
+  const t = buildPlan({ assets07: {}, ops03: {}, enemies05: {}, maps05: {}, audio: indexAudio({}), modelsData: {}, moduleTypes: ['dec-X', 'dec-x', 'WAH-Y'] });
+  const rel = (k) => t.template.modules[k].alts[0].rel;
+  assert.deepEqual([rel('dec-X'), rel('dec-x'), rel('WAH-Y')], ['module/dec-x.png', 'module/dec-x.png', 'module/wah-y.png']);
+  assert.match(t.template.modules['dec-X'].alts[0].urls[0], /uniequiptype\/dec-X\.png$/, 'the upstream name keeps its case first');
+  const m = load('assets');
+  assert.equal(m.modules['dec-X'], m.modules['dec-x']);
+  const byCase = new Map();
+  const walk = (v) => {
+    if (typeof v === 'string' && v.startsWith('/assets/')) {
+      const k = v.toLowerCase();
+      assert.ok(!byCase.has(k) || byCase.get(k) === v, `${v} and ${byCase.get(k)} differ only in case: one file on Windows / macOS`);
+      byCase.set(k, v);
+    } else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x);
+  };
+  walk(m);
+  assert.deepEqual(orphanFiles(['module/WAH-Y.png', 'module/old.png', 'local/x.png', 'char/a.png'], new Set(['module/wah-y.png', 'char/a.png'])), ['module/old.png']);
 });
 
 test('--add-only: parsed, refused with --prune / --force; its downloader keeps every existing file and records what it wrote', async () => {

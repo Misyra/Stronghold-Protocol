@@ -11,6 +11,7 @@ import { makeBattle, chessRec, checkInvariants } from '../helpers/battleHarness.
 import * as enemiesMod from '../../server/sim/content/enemies.js';
 import * as bossesMod from '../../server/sim/content/bosses.js';
 import { spawnYanyou } from '../../server/sim/content/tokens.js';
+import { attackWindup } from '../../server/sim/ai.js';
 
 const E = JSON.parse(fs.readFileSync(new URL('../../data/enemies.json', import.meta.url), 'utf8'));
 const W = JSON.parse(fs.readFileSync(new URL('../../data/waves.json', import.meta.url), 'utf8'));
@@ -291,8 +292,9 @@ for (const [key, n] of Object.entries(DEATH_SPAWN)) {
 
 for (const key of ['enemy_1207_sfji', 'enemy_1207_sfji_2']) {
   // PRTS 天赋 "攻击力+X%，持有4个【断刃】 / 每次成功攻击后消耗1个【断刃】，攻击结束时若已耗尽【断刃】，则立刻切换为无断刃模式并失去攻击力
-  // 加成" (popup: "清空当次攻击间隔" — it attacks again at once); GitHub #107: until 0.2.0 each attack stacked another layer
-  test(`${nm(key)}: one ATK layer while it holds a blade, gone with the 4th attack (which is followed at once by the next); unspent blades become 矛头 on death (at least 1)`, () => {
+  // 加成" (popup: "清空当次攻击间隔" — it attacks again at once: since 0.2.0 its next swing starts at once and strikes at the
+  // clip's damage frame, ai.js attackWindup); GitHub #107: until 0.2.0 each attack stacked another layer
+  test(`${nm(key)}: one ATK layer while it holds a blade, gone with the 4th attack (which is followed at once by the next swing); unspent blades become 矛头 on death (at least 1)`, () => {
     const per = tb(key, 'Atkup.atk') ?? tb(key, 'AtkUp.atk'), cnt = tb(key, 'DeadSpawn.cnt');
     const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 5 }] });
     h.step();
@@ -304,8 +306,10 @@ for (const key of ['enemy_1207_sfji', 'enemy_1207_sfji_2']) {
     h.runUntil(() => e.stats.attacks >= cnt, 20);
     approx(e.s.atk, base, 1e-6, 'the last blade spent: 无断刃模式, no bonus');
     const tLast = h.b.time;
-    assert.ok(h.runUntil(() => e.stats.attacks >= cnt + 1, 0.2), 'the mode switch clears the attack interval: the next attack at once');
-    assert.ok(h.b.time - tLast < e.s.interval / 2, `${h.b.time - tLast} s after the 4th attack`);
+    const wind = attackWindup(e);
+    assert.ok(wind > 0 && h.runUntil(() => e.stats.attacks >= cnt + 1, wind + 0.2), 'the mode switch clears the attack interval: the next swing at once');
+    assert.ok(Math.abs(h.b.time - tLast - wind) <= 3 * h.TICK, `${h.b.time - tLast} s after the 4th attack: its wind-up (${wind} s)`);
+    assert.ok(h.b.time - tLast < e.s.interval / 2);
     const child = E[key].talents.bbStr['DeadSpawn.enemy_key'];
     killed(h, e, null);
     assert.equal(alive(h, child).length, 1, 'no blade left: still one 矛头');
@@ -1289,6 +1293,7 @@ test(`${nm('enemy_10027_vtsk')}: entrance barrage (${skb('enemy_10027_vtsk', 'Ap
   assert.ok(barrage.every((c) => c.target === h.unit('t_wall')), 'the highest-HP unit');
   approx(barrage[0].amount, e.s.atk);
   h.runUntil(() => e.stats.attacks >= 1, 10);
+  h.run(1);   // (its shot lands: since 0.2.0 the first strike comes at the clip's damage frame, after the barrage window)
   const d = h.hooksOf('damaged').find((c) => c.source === e && c.dmg.isAttack);
   approx(d.amount, e.s.atk * tb('enemy_10027_vtsk', 'range.attack@atk_scale_range'));
   h.run(skb('enemy_10027_vtsk', 'MultiCombat').initCooldown + 6);
@@ -2412,7 +2417,8 @@ test('“斩胄之剑” / “破胄之锤” 初始模式 attack: every ally in
     const h = bossArena({ units: [{ chessId: 't_wall', row: 10, col: 9 }, { chessId: 't_wall2', row: 10, col: 7 }] });
     h.step();
     put(h, key, [3, 8], { tag: 'part' });
-    h.run(1);
+    // (the first attack: its 0.8 / 0.867 s wind-up, then the shots — since 0.2.0 an attack strikes at its damage frame)
+    h.runUntil(() => h.unit('t_wall').stats.taken > 0 && h.unit('t_wall2').stats.taken > 0, 3);
     approx(h.unit('t_wall').stats.taken, E[key].stats.atk * scale, 1e-6, key);
     approx(h.unit('t_wall2').stats.taken, E[key].stats.atk * scale, 1e-6, key);
   }

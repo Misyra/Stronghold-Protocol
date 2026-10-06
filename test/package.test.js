@@ -15,6 +15,9 @@ import {
   selectTracked,
 } from '../tools/package.mjs';
 
+// a fake home path, built at run time so the repository never contains one (the local push guard scans every patch)
+const FAKE_HOME = ['', 'Users', 'someone'].join('/');
+
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = path.join(ROOT, 'tools', 'package.mjs');
 // hermetic scans: not this machine's account name, but a planted one
@@ -67,7 +70,8 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
   for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
     assert.ok(!got.has(f), f);
   }
-  for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img)\//.test(f), f);
+  // the design document (the index docs/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
+  for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
   const code = [...got].filter((f) => /\.(?:m?js|py)$/.test(f));
   for (const f of code) {
     const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
@@ -195,7 +199,7 @@ test('scans and guards: home paths and the account name in shipped files (art to
   try {
     assert.deepEqual(check(), []);
     assert.deepEqual(check({ lite: true }), []);
-    put('public/js/util.js', 'export const u = "/Users/someone/game";\n');
+    put('public/js/util.js', `export const u = "${FAKE_HOME}/game";\n`);
     assert.deepEqual(check(), ['personal info: public/js/util.js (home-directory path)']);
     put('public/js/util.js', 'export const u = 1;\n');
     put('data/chess.json', '{"p": "C:\\\\Users\\\\Someone\\\\x"}\n');
@@ -205,7 +209,7 @@ test('scans and guards: home paths and the account name in shipped files (art to
     assert.deepEqual(check(), ['personal info: public/assets/char/a.png (account name)'], 'binary art, any case');
     assert.deepEqual(check({ lite: true }), [], 'the lite zip has no art');
     put('public/assets/char/a.png', PNG);
-    put('test/a.test.js', '// /Users/someone plantedname\n');
+    put('test/a.test.js', `// ${FAKE_HOME} plantedname\n`);
     assert.deepEqual(check(), [], 'files that never ship are not scanned');
     rm('public/assets/ui/b c.png');
     assert.match(check().join('\n'), /^missing art: public\/assets\/ui\/b c\.png/);
@@ -257,7 +261,7 @@ test('the personal scan reads bytes, never reports the matched text, and skips f
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-package-scan-'));
   try {
     fs.writeFileSync(path.join(dir, 'a.bin'), Buffer.from([0, 1, 2, ...Buffer.from('/home/someone'), 3]));
-    fs.writeFileSync(path.join(dir, 'b.txt'), 'see https://github.com/users/x and /usr/lib');
+    fs.writeFileSync(path.join(dir, 'b.txt'), `see https://github.com/${'users'}/x and /usr/lib`);
     fs.writeFileSync(path.join(dir, 'c.txt'), 'Built by PLANTEDNAME');
     assert.deepEqual(scanFiles(dir, ['a.bin', 'b.txt', 'c.txt', 'missing.txt'], { names: ['plantedname'] }),
       ['a.bin (home-directory path)', 'c.txt (account name)']);

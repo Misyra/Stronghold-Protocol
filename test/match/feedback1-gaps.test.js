@@ -9,6 +9,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { PHASE } from '../../shared/constants.js';
 import { GameData } from '../../server/match/gamedata.js';
 import { computeBonds, bondList, bondSnapshot, bondsWithGains, HARMONY_BOND } from '../../server/match/bondsMeta.js';
@@ -17,6 +18,7 @@ import { tileKey } from '../../server/match/board.js';
 import { validateClientResult } from '../../server/match/fields.js';
 import { bandBondIds as bandBondIdsOf } from '../../shared/bandBonds.js';
 import { DATA, makeMatch, give, legalTileFor, checkInvariants } from './harness.js';
+import { designText } from '../helpers/designDocs.js';
 
 const MLYSS = 'chess_char_6_11_a'; // 缪尔赛思 (调和)
 const members = (bond, n) => Object.values(DATA.chess).filter((c) => c.visible && !c.isGolden && c.bonds.includes(bond) && !c.bonds.includes(HARMONY_BOND)).map((c) => c.chessId).sort().slice(0, n);
@@ -256,7 +258,7 @@ describe('§21.26 found on the way — the client-result layer bound reads the l
 
 test('§21.26 docs: DESIGN (the subsection and the normative lines), META, PLAYING and the CHANGELOG say what the code does', () => {
   const doc = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
-  const DESIGN = doc('docs/DESIGN.md');
+  const DESIGN = designText(fileURLToPath(new URL('../../', import.meta.url)));   // the index + docs/design/ + docs/history/
   const at = DESIGN.indexOf('### 21.26 Gaps found while triaging GitHub issues #1 / #8 (v0.1.1)');
   assert.ok(at > 0, 'the subsection');
   const s = DESIGN.slice(at);

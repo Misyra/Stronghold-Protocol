@@ -2,7 +2,8 @@
 
 Audience: **content authors** writing prep-side ("SERVER_*") effects in `server/sim/content/*.js → registerMeta(registry)`,
 the **UI owner** consuming `m.public` / `m.private` / `m.result`, and anyone driving matches in tests or tools.
-Normative contracts stay in DESIGN.md §6 and §8; this file documents the implementation and every assumption it makes.
+Normative contracts stay in DESIGN.md §6 and §8 ([design/match.md](design/match.md),
+[design/network.md](design/network.md)); this file documents the implementation and every assumption it makes.
 
 ```
 server/match/

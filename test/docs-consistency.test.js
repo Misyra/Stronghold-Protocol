@@ -1,4 +1,5 @@
-// Documentation ⇄ code consistency (docs/DESIGN.md, DATA.md, META.md, SIM.md, README.md, DEPLOY.md, PLAYING.md).
+// Documentation ⇄ code consistency (docs/DESIGN.md with docs/design/ and docs/history/, DATA.md, META.md, SIM.md, README.md,
+// DEPLOY.md, PLAYING.md).
 // Every rule the final documentation sweep corrected is checked twice: the code still behaves as the docs now say, and
 // the stale wording does not come back. Topics: combat / boss clocks in REAL seconds (overtime after 150 real s,
 // m.public.overtimeAt), 联防 helper order (unite.helperOrder, research 08 §5), boss results handed over instead of a
@@ -48,6 +49,7 @@ import { SPINE_EVICT_DELAY_MS, SPINE_QUIET_DELAY_MS } from '../public/js/assets.
 import { RETRY_DELAYS_MS } from '../public/js/data.js';
 import { DATA, makeMatch } from './match/harness.js';
 import { KIT_FILES } from '../server/sim/content/kits/index.js';
+import { designText } from './helpers/designDocs.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const doc = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -59,7 +61,8 @@ const matchText = () => [doc('server/match/Match.js'), ...readdirSync(join(ROOT,
 const playerText = () => [doc('server/match/PlayerState.js'), ...readdirSync(join(ROOT, 'server/match/player')).sort().map((f) => doc(`server/match/player/${f}`))].join('\n');
 // the sources of a former kits/tierN.js: its helpers (kits/shared/tierN.js) and its kit files (kits/ops/, kits/index.js)
 const tierSources = (t) => [`server/sim/content/kits/shared/tier${t}.js`, ...KIT_FILES[t - 1].map((f) => `server/sim/content/kits/ops/${f}`)];
-const DESIGN = doc('docs/DESIGN.md');
+// the design document: the index docs/DESIGN.md and its sections in docs/design/ + docs/history/, in § order
+const DESIGN = designText(ROOT);
 const META = doc('docs/META.md');
 const DATA_MD = doc('docs/DATA.md');
 const SIM = doc('docs/SIM.md');

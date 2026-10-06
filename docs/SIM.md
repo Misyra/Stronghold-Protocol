@@ -1,9 +1,9 @@
 # SIM.md — battle simulation engine reference (server/sim)
 
 Audience: **content authors** (kits, bonds, garrisons, items, bands, enemies, bosses, devices, choices) and the
-**match owner** who drives `Battle`. The normative contract is DESIGN.md §5; this file documents the concrete
-implementation, every hook and helper, the SkillSpec schema with worked examples, the profession defaults and
-the test harness. Everything here is deterministic: the only randomness is `battle.rng()`.
+**match owner** who drives `Battle`. The normative contract is DESIGN.md §5 ([design/engine.md](design/engine.md));
+this file documents the concrete implementation, every hook and helper, the SkillSpec schema with worked examples,
+the profession defaults and the test harness. Everything here is deterministic: the only randomness is `battle.rng()`.
 
 ```
 server/sim/

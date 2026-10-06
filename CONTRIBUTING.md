@@ -52,7 +52,8 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   activity_table 的 act2autochess、enemy_database、关卡文件）和 [PRTS](https://prts.wiki/)（干员页、技能和天赋的「备注」、
   卫戍协议相关页面）。数值尽量取 blackboard，不要凭记忆写数字。官方实测的截图或录像也很有价值，请附在 Issue / PR 里。
 - **查不到出处**的细节按最简单、最接近官方的方式实现，在代码注释和 PR 描述里标 `[ASSUMED]`。维护者拍板的写成
-  “the owner's decision of YYYY-MM-DD”。有意和官方不同的规则只能由维护者决定，并写进 docs/DESIGN.md。
+  “the owner's decision of YYYY-MM-DD”。有意和官方不同的规则只能由维护者决定，并写进设计文档（[docs/DESIGN.md](docs/DESIGN.md)
+  是索引：现行规则在 `docs/design/`，各版本的修订与依据在 `docs/history/`）。
 - **版权**：不要把技能描述、剧情等受版权保护的文本大段复制进代码、文档或 PR，引一小句并注明出处即可。不要提交任何游戏
   素材文件（`public/assets/` 已被 `.gitignore` 排除）。
 - **数据**：不要手改 `data/*.json`。改 `tools/build-data.mjs`，用 `node tools/build-data.mjs --offline` 重新生成，再比较
@@ -66,7 +67,8 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   里写明并致谢作者。
 - PR 描述写：改了什么、为什么、出处（数据表字段、PRTS 链接）、`[ASSUMED]` 的地方、跑了哪些测试、黄金结果里哪些场景变了。
   界面改动附截图。
-- 规则改了，相关文档一起改：docs/DESIGN.md（规则与契约）、docs/SIM.md、docs/META.md、docs/DATA.md 等。
+- 规则改了，相关文档一起改：`docs/design/` 里对应的规则（章节号与文件见 docs/DESIGN.md 的索引）、`docs/history/` 里当前版本的
+  修订记录、docs/SIM.md、docs/META.md、docs/DATA.md 等。
   `test/docs-consistency.test.js` 固定了文档里的一些句子，改文档后跑一下。
 - 代码和注释用英文；玩家文档（README、PLAYING、DEPLOY）用简体中文，技术文档用英文。界面上的文字写中文并用 `t('…')`
   包起来，英文放进 `public/i18n/en.json`（[docs/I18N.md](docs/I18N.md)）。
@@ -100,8 +102,9 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   `npm run golden:update` and commits the digests with the change, naming the scenarios that moved.
 - **Fidelity**: the official tables (`.cache/gamedata/excel/`) and PRTS (including the 备注 notes) are the sources;
   numbers come from the blackboards. Anything no source settles is marked `[ASSUMED]` in the code and the pull
-  request; owner decisions are cited with their date; deliberate deviations are the owner's call and go into
-  docs/DESIGN.md. Do not paste copyrighted game text at length (quote briefly, cite) and never commit game assets.
+  request; owner decisions are cited with their date; deliberate deviations are the owner's call and go into the design
+  document (docs/DESIGN.md is its index: the rules in `docs/design/`, the per-release revisions in `docs/history/`).
+  Do not paste copyrighted game text at length (quote briefly, cite) and never commit game assets.
   Never hand-edit `data/*.json`: change `tools/build-data.mjs`, rebuild with `--offline`, compare the JSON.
 - **Commits and pull requests**: one change per pull request, one operator per kit pull request. A one-line commit
   message saying what changed, with the issue number; no attribution trailers such as `Co-Authored-By:` or

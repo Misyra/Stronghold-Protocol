@@ -1229,7 +1229,7 @@ header of professions.js).
 | merchant | −3 DP every 3 s (bb cost/interval); retreats when DP runs out |
 | skywalker | can block FLY enemies (蒂比's kit: only while airborne — 起飞, flag `liftoff`, which also releases the ground enemies she blocked) |
 | stalker | hits every enemy in range; 50 % dodge (bb prob), taunt −1 |
-| traper | ranged, ground only |
+| traper | ranged; the data's `canHitFly` decides — 望 hits air units (PRTS 分支特性信息 陷阱师 "可对空"; the table's ground-only default applies only to a record without the field). Her 棋子 / 跟子: kits/ops/op-wang.js |
 
 Unknown subprofessions fall back to the profession default (test `professions.test.js` checks every pool subprofession).
 

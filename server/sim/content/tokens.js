@@ -1286,17 +1286,34 @@ function yanyouKit(bb, raw) {
   };
 }
 
-/** Free field tile for a flyer: the player's half, void/non-deployable tiles first, nearest to the half's centre. */
+/**
+ * Stage positions held for the band map characters (data/stages.json `mapChars`: the levels' predefined 预备干员-医疗 /
+ * Touch of 外勤医疗, hidden until a player holds the strategy), as tile keys.
+ */
+function mapCharKeys(battle) {
+  const list = battle.stage?.raw?.mapChars ?? battle.stage?.mapChars ?? [];
+  const out = new Set();
+  for (const m of Array.isArray(list) ? list : []) if (m && Array.isArray(m.pos)) out.add(m.pos[0] * COLS + m.pos[1]);
+  return out;
+}
+
+/**
+ * Free field tile for a flyer: the player's half, void/non-deployable tiles first, nearest to the half's centre — never a
+ * map character's position: the 炎佑 spawns at the same battle start as 外勤医疗's medic and took its tile on the maps
+ * whose free void tiles nearest the centre include it (战场#08 涨潮控制 always, 战场#07 排气格栅 with 9 炎), so the medic
+ * never stood (community report of 2026-10-06 「Touch策略给的医疗干员会跟炎盟约的炎祐冲突，无法同时出场」).
+ */
 function airTile(battle, playerId, taken) {
   const R = battle.rect;
   const ps = battle.getPlayer(playerId);
   let c0 = R.c0, c1 = R.c1;
   if (battle.players.length > 1 && ps) { if (ps.half === 'R') c0 = Math.max(c0, 11); else c1 = Math.min(c1, 10); }
   const cr = (R.r0 + R.r1) / 2, cc = (c0 + c1) / 2;
+  const held = mapCharKeys(battle);
   let best = null, bs = null;
   for (let r = R.r0; r <= R.r1; r++) {
     for (let c = c0; c <= c1; c++) {
-      if (taken.has(r * COLS + c) || !tileFree(battle, r, c)) continue;
+      if (taken.has(r * COLS + c) || held.has(r * COLS + c) || !tileFree(battle, r, c)) continue;
       const t = battle.grid.tile(r, c);
       const cls = t.build === 'NONE' && t.pass !== 'ALL' ? 0 : t.build === 'NONE' ? 1 : 2;
       const s = [cls, Math.hypot(r - cr, c - cc), r * COLS + c];

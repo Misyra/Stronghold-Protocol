@@ -150,6 +150,9 @@ export class PlayerAcquire {
     piece.poolCopies = (piece.poolCopies || 0) + this.poolOf(base).take(base, extra);
     piece.id = goldenId;
     this.recompute();
+    // an elite on the board tops its summon stacks up to the elite's deploy limit, like an elite merged onto a tile
+    // (_mergeChess → grantTokensFor): 麦哲伦 / 令 3 → 4, 望 6 → 7 with their modules (0.2.0 review round 17)
+    if ([...this.board.values()].includes(piece)) this.grantTokensFor(piece);
     return true;
   }
 

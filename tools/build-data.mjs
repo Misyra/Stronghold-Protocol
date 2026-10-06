@@ -805,9 +805,13 @@ function classifyAttack(char, traitText) {
   const prof = char.profession;
   const sub = char.subProfessionId;
   const trait = traitText || '';
+  // 驭法铁卫 (斩业星熊) "技能开启时普通攻击会造成法术伤害": arts is the skill-on type; the normal attack — the record's
+  // dmgType, what a card and the bot read — is physical (display only: her kit attacks physically off-skill and in arts
+  // while a skill runs, op-hsgma2.js)
+  const skillOnArts = /技能开启时[^，。；]*法术伤害/.test(trait);
   let dmgType;
   if ((prof === 'MEDIC' && sub !== 'incantationmedic') || sub === 'bard') dmgType = 'heal';
-  else if (/法术伤害/.test(trait) || prof === 'CASTER') dmgType = 'arts';
+  else if ((/法术伤害/.test(trait) && !skillOnArts) || prof === 'CASTER') dmgType = 'arts';
   else dmgType = 'phys';
 
   let attackKind;

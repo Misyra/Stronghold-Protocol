@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APP_VERSION, PROTOCOL_VERSION } from '../shared/constants.js';
+import { APP_VERSION, PROTOCOL_VERSION, DEV_BUILD } from '../shared/constants.js';
+import { isDevVersion } from '../tools/package.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -14,7 +15,9 @@ const pkg = JSON.parse(read('package.json'));
 const lock = JSON.parse(read('package-lock.json'));
 
 test('one release version: package.json, package-lock.json and APP_VERSION', () => {
-  assert.match(APP_VERSION, /^\d+\.\d+\.\d+$/);
+  // a release x.y.z, or x.y.z-dev on the public dev branch (the owner's decision of 2026-10-06)
+  assert.match(APP_VERSION, /^\d+\.\d+\.\d+(-dev)?$/);
+  assert.equal(DEV_BUILD, APP_VERSION.endsWith('-dev'));
   assert.equal(pkg.version, APP_VERSION);
   assert.equal(lock.version, APP_VERSION);
   assert.equal(lock.packages[''].version, APP_VERSION);
@@ -26,11 +29,17 @@ test('CHANGELOG.md opens with the release version, and the README links it', () 
   const log = read('CHANGELOG.md');
   const first = log.match(/^## (\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})/m);
   assert.ok(first, 'a "## x.y.z — date" heading');
-  assert.equal(first[1], APP_VERSION, 'the newest entry is the current version');
+  if (DEV_BUILD) {
+    // a dev build has no entry of its own yet: the newest one is the last release, older than the version in development
+    const num = (v) => v.split(/[.-]/).slice(0, 3).map(Number);
+    const [a, b] = [num(first[1]), num(APP_VERSION)];
+    assert.ok(a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2]))), `the newest entry ${first[1]} precedes ${APP_VERSION}`);
+  } else assert.equal(first[1], APP_VERSION, 'the newest entry is the current version');
   assert.match(log, /^## 0\.1\.0 — 2026-10-02/m, 'the first public release stays listed');
   const readme = read('README.md');
   assert.match(readme, /\[CHANGELOG\.md\]\(CHANGELOG\.md\)/);
-  assert.match(readme, new RegExp(`badge/version-${APP_VERSION.replace(/\./g, '\\.')}-`), 'the README badge');
+  // shields.io escapes a '-' inside a badge field as '--'
+  assert.match(readme, new RegExp(`badge/version-${APP_VERSION.replace(/-/g, '--').replace(/\./g, '\\.')}-`), 'the README badge');
 });
 
 test('the release version is what players see', () => {
@@ -73,4 +82,14 @@ test('GPL-3.0-or-later: LICENSE, package metadata and notices', () => {
   const aklz4 = read('tools/local-extract/aklz4.py');
   assert.match(aklz4, /SPDX-License-Identifier: BSD-3-Clause/);
   assert.match(aklz4, /Copyright \(c\) 2022, Harry Huang/);
+});
+
+test('a development build says so everywhere a player or a host looks, and never packages as a release', () => {
+  if (!DEV_BUILD) return;
+  const readme = read('README.md');
+  assert.match(readme.split('\n').slice(0, 8).join('\n'), /开发版（dev 分支）：不稳定，请勿用于公开服务器/, 'the README warns right under the title');
+  assert.match(read('public/js/screens/title.js'), /DEV_BUILD \? html`<span class="title-dev"/, 'the title screen footer carries the dev tag');
+  assert.match(read('server/http/boot.js'), /if \(DEV_BUILD\) console\.log\(/, 'the boot banner warns the host');
+  assert.ok(isDevVersion(APP_VERSION) && !isDevVersion('0.1.4'), 'tools/package.mjs treats the version as a development one');
+  assert.match(read('tools/package.mjs'), /isDevVersion\(p\.version\) && !o\.allowDev/, 'packaging a dev version needs --allow-dev');
 });

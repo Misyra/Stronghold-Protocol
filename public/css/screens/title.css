@@ -261,3 +261,13 @@ html[data-lang="en"] .title-login .btn--xl { letter-spacing: .3em; }
   font-size: .13rem;
   color: var(--text-dim);
 }
+/* a development build (shared/constants.js DEV_BUILD): an unmissable tag in the footer */
+.title-dev {
+  padding: .03rem .1rem;
+  border: 1px solid #ff9f43;
+  border-radius: .04rem;
+  color: #ffb066;
+  background: rgba(255, 159, 67, .14);
+  font-weight: 700;
+  letter-spacing: .02em;
+}

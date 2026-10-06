@@ -456,10 +456,13 @@ export function build(root, p, { out, install = true, force = false, keepStage =
   return { zipPath, zipBytes: fileBytes(zipPath), files: staged.length, stage: keepStage ? stage : null };
 }
 
-const USAGE = 'usage: node tools/package.mjs [--lite] [--dry-run [--list]] [--out <dir>] [--force] [--keep-stage] [--no-install] [--allow-dirty] [--root <dir>]';
+const USAGE = 'usage: node tools/package.mjs [--lite] [--dry-run [--list]] [--out <dir>] [--force] [--keep-stage] [--no-install] [--allow-dirty] [--allow-dev] [--root <dir>]';
+
+/** Whether `version` is a development (pre-release) version, e.g. 0.2.0-dev. */
+export const isDevVersion = (version) => /-/.test(String(version || ''));
 
 export function parseArgs(argv) {
-  const o = { lite: false, dryRun: false, list: false, out: '', force: false, keepStage: false, install: true, allowDirty: false, root: REPO, help: false };
+  const o = { lite: false, dryRun: false, list: false, out: '', force: false, keepStage: false, install: true, allowDirty: false, allowDev: false, root: REPO, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--lite') o.lite = true;
@@ -469,6 +472,7 @@ export function parseArgs(argv) {
     else if (a === '--keep-stage') o.keepStage = true;
     else if (a === '--no-install') o.install = false;
     else if (a === '--allow-dirty') o.allowDirty = true;
+    else if (a === '--allow-dev') o.allowDev = true;
     else if (a === '--help' || a === '-h') o.help = true;
     else if (a === '--out' || a === '--root') {
       const v = argv[++i];
@@ -491,6 +495,12 @@ function main(argv) {
     return p.problems.length ? 1 : 0;
   }
   if (p.problems.length) return 1;
+  // a development version (0.2.0-dev on the public dev branch) never becomes a release zip by accident: its name carries
+  // the version, and building one needs --allow-dev (a test build, not a release)
+  if (isDevVersion(p.version) && !o.allowDev) {
+    console.error(`package: v${p.version} is a development version — a release zip needs a release version; --allow-dev builds a test zip named after it`);
+    return 1;
+  }
   try {
     const r = build(o.root, p, { out: o.out || path.join(os.tmpdir(), 'stronghold-protocol-release'), install: o.install, force: o.force, keepStage: o.keepStage });
     console.log(`zip: ${r.zipPath} (${MB(r.zipBytes)}, ${r.files} files)${r.stage ? ` · stage kept: ${r.stage}` : ''}`);

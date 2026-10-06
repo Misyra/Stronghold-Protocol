@@ -37,6 +37,21 @@ const STAT_ROWS = [
 ];
 
 /**
+ * The bonds a result card lists (at most 6): the active ones and those holding layers, most layers first. A bond whose
+ * layers the game never shows (bonds.json `noStack`: 调和 协防干员 独行 绝技 — PRTS 卫戍协议：盟约 下半/PRTS盟约记录 「部分盟约不会
+ * 显示叠加层数，但是叠加层数的特质/策略/装备等效果仍然对其生效」) counts none for the order and carries no number
+ * (`hideLayers`), as on the bond strip since 0.1.4 (PR #66) — the card printed them until 0.2.0 (community report
+ * 「独行这种盟约是不能叠层的」).
+ * @param {any[]} bonds m.result players[].bonds @param {(bondId: string) => any} bondRec bonds.json record lookup
+ */
+export function resultBonds(bonds, bondRec = () => null) {
+  const list = (Array.isArray(bonds) ? bonds : []).filter((b) => b && typeof b.bondId === 'string')
+    .map((b) => (bondRec(b.bondId)?.noStack ? { ...b, hideLayers: true } : b));
+  const shown = (b) => (b.hideLayers ? 0 : b.layers || 0);
+  return list.filter((b) => b.active || shown(b) > 0).sort((a, b) => shown(b) - shown(a)).slice(0, 6);
+}
+
+/**
  * One unit of a final lineup: a 自选 piece draws its operator; a 补位 piece (`standInFor`) its stand-in, with the small
  * 「替补」 mark — the title names the chess it fielded for.
  */
@@ -57,7 +72,7 @@ function PlayerCard({ p, myId, titles, best, solo = false }) {
   const stats = STAT_ROWS.filter(([k]) => Number.isFinite(p.stats[k])).slice(0, 7);
   const band = p.bandId ? gd.band(p.bandId) : null;
   const lineup = p.lineup.slice(0, 10);
-  const bonds = p.bonds.filter((b) => b.active || b.layers > 0).sort((a, b) => (b.layers || 0) - (a.layers || 0)).slice(0, 6);
+  const bonds = resultBonds(p.bonds, (id) => gd.bond(id));
   return html`<article class=${cx('rcard', p.playerId === myId && 'is-self', p.alive === false && 'is-dead')}>
     <header class="rcard__head">
       <${PlayerAvatar} player=${p} self=${p.playerId === myId} />
@@ -71,7 +86,7 @@ function PlayerCard({ p, myId, titles, best, solo = false }) {
             : html`<span class="rcard__noinfo">${p.alive === false ? t('阵容已撤离') : 'NO INFO'}</span>`}
         </div>
         ${bonds.length ? html`<div class="rcard__bonds">${bonds.map((b) => html`<span key=${b.bondId} class=${cx('rbond', b.active && 'is-on')} title=${gd.bond(b.bondId)?.name || b.bondId}>
-          <${BondGlyph} bondId=${b.bondId} /><b class="num">${b.layers ?? 0}</b></span>`)}</div>` : null}
+          <${BondGlyph} bondId=${b.bondId} />${b.hideLayers ? null : html`<b class="num">${b.layers ?? 0}</b>`}</span>`)}</div>` : null}
       </div>
       <div class="rcard__round"><${MicroLabel}>ROUNDS</${MicroLabel}><b class="num">${p.roundsPassed}</b>
         ${p.trophies > 0 || p.reward > 0 ? html`<span class="rcard__gain">${p.trophies > 0 ? html`<span title=${t('获得奖杯')}><${Icon} name="crown" /><b class="num">+${p.trophies}</b></span>` : null}${p.reward > 0 ? html`<span title=${t('卫戍认证')}><${Icon} name="shield" /><b class="num">+${p.reward}</b></span>` : null}</span>` : null}

@@ -314,6 +314,7 @@ export function LobbyScreen() {
           <div class="matching-panel__count"><${Spinner} label="SEARCHING" /><div><strong class="num">${matching.players}/${matching.target} 名博士</strong><p>${DIFFICULTY_NAMES[activeDifficulty]} · 当前站点</p></div></div>
           <progress class="matching-panel__progress" max=${matching.target} value=${matching.players} aria-label="匹配队列人数"></progress>
           <p class="matching-panel__note">等待同站同难度的博士，凑齐 4 人后直接进入模拟。可随时取消，不添加 AI 队友。</p>
+          ${elapsed >= 10 ? html`<p class="matching-panel__note">迟迟匹配不到人？可前往 <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a> 创建同盟并发布房间号，来人更快。</p>` : null}
           <${Button} variant="ghost" size="lg" icon="chevronLeft" loading=${busy === 'cancel'} onClick=${cancel}>取消搜寻<//>
           <p class="matching-panel__foot">匹配成功后无需房间准备，可在本局信息确认阶段查看同盟密钥。</p>
         </div>` : html`<div>

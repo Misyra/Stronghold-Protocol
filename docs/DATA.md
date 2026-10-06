@@ -480,7 +480,7 @@ Glyph legend (`rows`):
 | Field | Example (`token_10028_vigil_wolf`) | Meaning |
 |---|---|---|
 | `tokenId`, `kind`, `name`, `appellation`, `desc`, `descRaw` | …, `"summon"`, `"狼群"` | |
-| `profession`, `subProfessionId`, `position` | `"TOKEN"`, `"notchar1"`, `"MELEE"` | |
+| `profession`, `subProfessionId`, `position` | `"TOKEN"`, `"notchar1"`, `"MELEE"` | `position` = the token row's, except where PRTS records the client's row as wrong (`tools/build-data.mjs TOKEN_POSITION_CORRECTIONS`): 望's 棋子 `ALL` (PRTS 棋子 部署位置 "全部位", 备注 "游戏内召唤物信息与实际不符（显示为仅部署在近战位）") — the prep's placement class (board.js `positionClass`) |
 | `displayType`, `placeable` | `"DEFAULT"`, `true` | `shopStateTokenDict` DEFAULT / HIDDEN (battle-only) / `null` (not listed). `placeable` (a prep hand piece) = a manually deployable summon (PRTS 卫戍协议/帮助 "可手动部署的附属召唤物…加入手牌区"; user playtest #6): not HIDDEN and made by an owner's talent or skill — 医疗探机 (赫默 S2), 诅咒娃娃 (巫恋 S2), 海嗣, 狼群, 流形 and 爬行号·防护单元 (凯瑟琳's talent device — the only pool summon missing from `shopStateTokenDict`, read as shown: placed by hand in the base game, by the friend's report, and confirmed by the user after playtest #6, DESIGN §20); 投递坐标 (HIDDEN) is not. In battle a skill's summon deploys once at the battle start, then on its tile each time the skill gives one (SIM.md, token pieces) |
 | `ownerRange` | `true` | the token text reads "只能部署在召唤者攻击范围内" (`desc`; the tacticians' 援军 — 狼群, 流形; PRTS 狼群 特性): its hand piece may only stand on a tile of its owner's attack range (server/match/board.js `ownerRangeKeys`, `PlayerState._legal`, the client's `gameLogic.summonRange`; player report #9 after 0.1.0). `false` for every other token |
 | `owners[]` | `["chess_char_3_19_a","chess_char_3_19_b"]` | |

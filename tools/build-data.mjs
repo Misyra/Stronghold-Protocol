@@ -1484,6 +1484,15 @@ const TOKEN_ABNORMAL = Object.freeze({
 });
 
 /**
+ * Summon deployment positions the client's token row gets wrong, from the PRTS summon pages: 望's 棋子 — PRTS 棋子
+ * 部署位置 "全部位", 备注 "游戏内召唤物信息与实际不符（显示为仅部署在近战位）" (character_table: MELEE). The record's `position`
+ * (the prep's placement class, board.js positionClass) takes this value.
+ */
+const TOKEN_POSITION_CORRECTIONS = Object.freeze({
+  token_10064_wang_stone1: 'ALL',   // 棋子
+});
+
+/**
  * The tokens.json record of a summon (buildTokens; the 自选 picks' summons, buildDiyTokens) from its per-owner
  * `variants` (key → variant; `owners` = the keys, in order; the defaults are the first owner's variant).
  * Hand cards placed during the prep phase (`placeable`) are the MANUALLY DEPLOYABLE summons (PRTS 卫戍协议/帮助
@@ -1502,7 +1511,7 @@ const TOKEN_ABNORMAL = Object.freeze({
  * `ownerRange`: the token text "只能部署在召唤者攻击范围内" (the tacticians' 援军 — 伺夜's 狼群, 缪尔赛思's 流形; PRTS 狼群
  * 特性): its hand piece may only be placed on a tile of its owner's attack range (server/match/board.js
  * ownerRangeKeys, PlayerState._legal; player report #9 after 0.1.0: 伺夜's tactical point could go anywhere).
- * `abnormal` = TOKEN_ABNORMAL (PRTS).
+ * `abnormal` = TOKEN_ABNORMAL (PRTS); `position` = TOKEN_POSITION_CORRECTIONS (PRTS) or the token row's.
  */
 function summonRecord(ctx, tokenId, char, variants, produced) {
   const displayType = ctx.ac.shopStateTokenDict?.[tokenId]?.tokenDisplayType || null;
@@ -1512,7 +1521,7 @@ function summonRecord(ctx, tokenId, char, variants, produced) {
   return {
     tokenId, kind: 'summon', name: char.name, appellation: char.appellation || null,
     desc: stripRich(first.trait.desc), descRaw: first.trait.descRaw,
-    profession: char.profession, subProfessionId: char.subProfessionId, position: char.position,
+    profession: char.profession, subProfessionId: char.subProfessionId, position: TOKEN_POSITION_CORRECTIONS[tokenId] ?? char.position,
     displayType, placeable: displayType !== 'HIDDEN' && produced, ownerRange,
     owners,
     // Defaults = first owner's variant; per-owner data in variants[owner].
@@ -3776,6 +3785,11 @@ function validateAll(f) {
   for (const [id, fl] of Object.entries(TOKEN_ABNORMAL)) {
     if (!tokens[id]) err(`TOKEN_ABNORMAL: ${id} is not a token`);
     for (const f of fl) if (f !== 'healFree' && f !== 'isolated') err(`TOKEN_ABNORMAL: ${id}: unknown effect ${f}`);
+  }
+  for (const [id, pos] of Object.entries(TOKEN_POSITION_CORRECTIONS)) {
+    const t = tokens[id] ?? backups?.tokens?.[id];
+    if (!t || t.kind !== 'summon') err(`TOKEN_POSITION_CORRECTIONS: ${id} is not a summon`);
+    else if (t.position !== pos || !['MELEE', 'RANGED', 'ALL'].includes(pos)) err(`TOKEN_POSITION_CORRECTIONS: ${id}: position ${t.position}`);
   }
   for (const t of Object.values(tokens)) {
     if (!t.stats) err(`token ${t.tokenId}: no stats`);

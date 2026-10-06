@@ -76,6 +76,13 @@ export function underframeRect(g, rem = 100) {
   return { left, right, top: Math.min(g.y - half, btnTop - rem * 0.08), bottom: g.y + half };
 }
 
+/** The binding as an aria-keyshortcuts value (a bare letter / digit, or Space); undefined when it has no ARIA name. */
+const ariaKey = (shortcuts, action) => {
+  const label = shortcutLabel(shortcuts, action);
+  if (/^[A-Za-z0-9]$/.test(label)) return label;
+  return label === '空格' ? 'Space' : undefined;
+};
+
 /**
  * @param {{ view: any, uid?: number|null, row: number, col: number, actions: { retreat: boolean, sell: number|null, destroy: boolean },
  *   name?: string, busy?: boolean, onRetreat?: () => void, onSell?: () => void, onDestroy?: () => void }} props
@@ -94,11 +101,11 @@ export function Underframe({ view, uid = null, row, col, actions, name = '', bus
       <path class="uframe__corner" d="M-100 0 L-86 -14 M-100 0 L-86 14 M100 0 L86 -14 M100 0 L86 14 M0 -100 L-14 -86 M0 -100 L14 -86 M0 100 L-14 86 M0 100 L14 86" />
     </svg>
     ${actions.retreat ? html`<button type="button" class="uframe__btn uframe__btn--retreat" disabled=${busy} onPointerDown=${stop}
-        onClick=${(e) => { stop(e); onRetreat?.(); }} title=${`撤退至整备区（${shortcutLabel(shortcuts, 'retreat')}）`} aria-label="撤退">
+        onClick=${(e) => { stop(e); onRetreat?.(); }} title=${`撤退至整备区（${shortcutLabel(shortcuts, 'retreat')}）`} aria-label="撤退" aria-keyshortcuts=${ariaKey(shortcuts, 'retreat')}>
       <${RetreatGlyph} /><span class="uframe__label">撤退<kbd class="uframe__key">${shortcutLabel(shortcuts, 'retreat')}</kbd></span>
     </button>` : null}
     ${actions.sell != null ? html`<button type="button" class="uframe__btn uframe__btn--sell" disabled=${busy} onPointerDown=${stop}
-        onClick=${(e) => { stop(e); onSell?.(); }} title=${`出售（+${actions.sell} 资金，${shortcutLabel(shortcuts, 'sell')}）`} aria-label=${`出售，获得 ${actions.sell} 资金`}>
+        onClick=${(e) => { stop(e); onSell?.(); }} title=${`出售（+${actions.sell} 资金，${shortcutLabel(shortcuts, 'sell')}）`} aria-label=${`出售，获得 ${actions.sell} 资金`} aria-keyshortcuts=${ariaKey(shortcuts, 'sell')}>
       <${PlateIcon} sprite="icon_sell" glyph="sell" tone="sell" />
       <span class="uframe__label">出售<kbd class="uframe__key">${shortcutLabel(shortcuts, 'sell')}</kbd></span>
       <${HexBadge} value=${`+${actions.sell}`} tone="gold" size="sm" class="uframe__price" />

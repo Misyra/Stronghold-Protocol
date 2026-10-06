@@ -140,10 +140,6 @@ export function acquireTargets(b, u, prof) {
     }
     prof._fortressMelee = false;
   }
-  if (prof.hitAllBlocked && u.blocking.length) {
-    const t = u.blocking.filter((e) => canTargetEnemy(u, e, prof));
-    if (t.length) return t;
-  }
   const cands = b.enemiesInKeys(u.rangeKeys, u, prof);
   // "可以选择且优先选择阻挡单位" (PRTS 选择器): the enemies a unit blocks are always selectable by it — the block radius
   // (0.7071) reaches past its own tile, so a blocked enemy may stand outside a short range or behind its facing (user
@@ -155,14 +151,27 @@ export function acquireTargets(b, u, prof) {
     if (prof.allInRange) return cands.concat(extra);
     sortEnemyTargets(b, u, cands, prof.priority);
     const all = cands.concat(extra);
-    const n = Math.max(1, Math.floor((prof.maxTargets || 1) + u.s.maxTargets));
+    const n = targetCount(u, prof);
     return n >= all.length ? all : all.slice(0, n);
   }
   if (!cands.length) return cands;
   if (prof.allInRange) return cands;
-  const n = Math.max(1, Math.floor((prof.maxTargets || 1) + u.s.maxTargets));
+  const n = targetCount(u, prof);
   sortEnemyTargets(b, u, cands, prof.priority);
   return n >= cands.length ? cands : cands.slice(0, n);
+}
+
+/**
+ * How many targets one attack of `u` takes. `hitAllBlocked` — "同时攻击阻挡的所有敌人": the 强攻手 / 重剑手 / 推击手 traits and every
+ * skill worded so, whose client selectors carry `_limitedMaxTargetNumToBlockedCnt` (with `_allowZeroBlockCntLimit` off) —
+ * takes up to its block count, never fewer than 1, from its range and the enemies it blocks, the blocked ones first
+ * (acquireTargets' order): PRTS 分支特性信息 强攻手 / 重剑手 / 推击手 "普通攻击最大目标数等于阻挡数（不会低于1）", PRTS 作战机制 §AOE伤害判定
+ * "锁定人数的无弹道AOE攻击（例如近卫分支“强攻手”）…在抬手时选取范围内的全体目标（不超过其攻击目标上限）", PRTS 忍冬 S3 备注 "可对空" (a
+ * flyer she cannot block). Until 0.2.0 it struck the blocked enemies only (one in range when it blocked none).
+ */
+function targetCount(u, prof) {
+  const base = prof.hitAllBlocked ? Math.max(1, Math.floor(u.s.blockCnt)) : (prof.maxTargets || 1);
+  return Math.max(1, Math.floor(base + u.s.maxTargets));
 }
 
 /** Perform an attack/heal with profile `prof` against `targets`. opts: { noAmmo } (Battle.forceAttack). */

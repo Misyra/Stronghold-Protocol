@@ -8,7 +8,8 @@
 //   projectile 'none'|'beam'|'arrow'|'bolt'|'bomb'|'lob'|'orb'|'drone'|'boomerang' ('beam': an instant hit drawn as a
 //                             line; 'boomerang': out to the target and back to the thrower, ai.js throwBoomerang)
 //                             boomerang bool (回环射手: keeps 'boomerang')
-//   canHitFly bool            maxTargets n (≥1)          hitAllBlocked bool (attack every blocked enemy)
+//   canHitFly bool            maxTargets n (≥1)          hitAllBlocked bool ("同时攻击阻挡的所有敌人": up to the block count of
+//                             targets, blocked ones first — ai.js targetCount)
 //   allInRange bool (every enemy on the range at once)   splashRadius tiles (around the struck target)
 //   rangeAoe bool (a 锁定攻击范围 AoE without a projectile — SUB table or kit trait, applied by resolveProfile after
 //                  every override: allInRange + instant 'beam' hits on a ranged profile; only selectable enemies are

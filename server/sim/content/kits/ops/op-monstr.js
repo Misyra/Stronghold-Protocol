@@ -55,8 +55,9 @@
 // - S3 策略：熔毁 (MANUAL, data DEFAULT, 25 s; only while her 重构体 stands — the cast is refused otherwise): the 重构体 is withdrawn
 //   (its piece waits: back once its tile is free again) and she 【移动】s onto its tile; meanwhile range x-4, ATK +atk, base attack
 //   time base_attack_time (a flat −1.5 s on 2.85 s), block +block_cnt, max HP +max_hp (the HP ratio kept), 流失 of
-//   damage_per_second HP/s (8 every 0.1 s); her attacks hit every ground enemy she blocks (one in range when she blocks none —
-//   [ASSUMED] as 凯尔希's Mon3tr S2) for ATK true damage, and each attack starts a chain heal on herself at attack@heal_scale × ATK
+//   damage_per_second HP/s (8 every 0.1 s); "同时攻击阻挡的所有敌人" (her selector's _limitedMaxTargetNumToBlockedCnt): each attack
+//   takes up to her block count of ground enemies of her range, the blocked ones first (ai.js `hitAllBlocked`, the 强攻手 rule
+//   of PRTS 分支特性信息) for ATK true damage, and each attack starts a chain heal on herself at attack@heal_scale × ATK
 //   (she is a free link). 不死: a hit or 流失 that would knock her out leaves her at 1 HP, untargetable and blocking nothing, and
 //   the skill ends on the next tick. At the end she 【返回】s to the tile she left (her SP emptied; the max HP drop keeps the ratio,
 //   so after a fatal blow she stands at ≤ 1 HP) with 1 s of 不死. The 路标形态 marker on her tile is not modelled: should another
@@ -199,7 +200,7 @@ export default {
           kind: 'duration',
           mods: { atkPct: num(b3.atk), batPct: batMod(b3.base_attack_time, chess), blockCnt: num(b3.block_cnt), hpFlat: num(b3.max_hp) },
           targeting: s3?.rangeGrid ? { rangeGrid: s3.rangeGrid } : undefined,
-          attack: { dmgType: 'true', attack: 'melee', projectile: 'none', canHitFly: false, groundOnly: true, hitAllBlocked: true, maxTargets: 1 },
+          attack: { dmgType: 'true', attack: 'melee', projectile: 'none', canHitFly: false, groundOnly: true, hitAllBlocked: true },
           onStart({ battle, unit, skill }) {
             const r = prostsOf(battle, unit).find(up);
             if (!r) { skill.end('noToken'); skill.addCharge(1); return; }   // (refused before: the activate guard)

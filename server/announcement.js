@@ -3,7 +3,9 @@ import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
 const MAX_FILE_BYTES = 16 * 1024;
+const MAX_REMOTE_BYTES = 64 * 1024;
 const CACHE_MS = 1000;
+const POLL_MS = 10000;
 
 /** Validate configuration and derive a revision so edits reappear after a player dismissed an older notice. */
 export function parseAnnouncement(value) {
@@ -31,7 +33,8 @@ export function parseAnnouncement(value) {
 }
 
 /** Cache file reads across players, coalesce concurrent reads, and check expiration on every request. */
-export function createAnnouncementReader({ filePath, log, now = Date.now, cacheMs = CACHE_MS }) {
+export function createAnnouncementReader({ filePath, announcementUrl, pollMs = POLL_MS, log, now = Date.now, cacheMs = CACHE_MS }) {
+  if (announcementUrl != null && announcementUrl !== '') return createRemoteReader({ announcementUrl, pollMs, log, now });
   let notice = null;
   let nextRead = -Infinity;
   let pending = null;
@@ -67,5 +70,52 @@ export function createAnnouncementReader({ filePath, log, now = Date.now, cacheM
       await pending;
     }
     return notice && now() < notice.expiresAt ? notice : null;
+  };
+}
+
+// Central-source mode (the ops panel is the editing surface): poll the announcement URL and keep the
+// last good value while the source is unreachable, so a management-plane outage cannot blank a
+// maintenance notice players still need to see. An explicit `enabled: false` clears it immediately.
+function createRemoteReader({ announcementUrl, pollMs, log, now }) {
+  const interval = Math.max(3000, Math.min(600000, Number(pollMs) === pollMs ? pollMs : POLL_MS));
+  let notice = null;
+  let disabled = false;
+  let nextPoll = -Infinity;
+  let pending = null;
+  let lastError = null;
+  async function poll() {
+    try {
+      const response = await fetch(announcementUrl, { redirect: 'error', signal: AbortSignal.timeout(5000) });
+      const length = Number(response.headers.get('content-length'));
+      if (response.ok && Number.isFinite(length) && length > MAX_REMOTE_BYTES) throw new Error('response exceeds 64 KiB');
+      if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { expected: true });
+      const reader = response.body.getReader();
+      const chunks = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_REMOTE_BYTES) { await reader.cancel(); throw new Error('response exceeds 64 KiB'); }
+        chunks.push(value);
+      }
+      notice = parseAnnouncement(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      disabled = notice === null;
+      lastError = null;
+    } catch (error) {
+      const reason = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'source timed out' :
+        error?.expected ? error.message : error.message;
+      if (reason !== lastError) log?.warn?.('[announcement] central source unavailable:', reason);
+      lastError = reason;
+    }
+  }
+  return async () => {
+    if (pending) await pending;
+    else if (now() >= nextPoll) {
+      nextPoll = now() + interval;
+      pending = poll().finally(() => { pending = null; });
+      await pending;
+    }
+    return disabled || !notice || now() >= notice.expiresAt ? null : notice;
   };
 }

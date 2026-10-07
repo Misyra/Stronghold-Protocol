@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { parseAnnouncement, createAnnouncementReader } from '../server/announcement.js';
 import { startServer } from '../server/index.js';
 
@@ -11,6 +12,13 @@ async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'sp-announcement-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   return path.join(dir, 'announcement.json');
+}
+function upstream(t, handler) {
+  return new Promise((resolve) => {
+    const server = http.createServer(handler);
+    server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/` }));
+    t.after(() => new Promise((r) => server.close(r)));
+  });
 }
 
 test('announcement configuration is bounded, timezone explicit, and revisions follow content edits', () => {
@@ -69,6 +77,61 @@ test('hot reader expires cached notices, reloads edits, handles removal and malf
   await rm(filePath);
   now = 8000;
   assert.equal(await read(), null);
+});
+
+test('remote reader polls the panel on its interval and coalesces concurrent reads', async (t) => {
+  let polls = 0;
+  const source = await upstream(t, (req, res) => { polls++; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(config)); });
+  let now = 1000;
+  const read = createAnnouncementReader({ announcementUrl: source.url, now: () => now, pollMs: 10000 });
+  const a = await read();
+  assert.equal(a.title, config.title);
+  assert.equal(a.id, parseAnnouncement(config).id);
+  assert.equal(polls, 1);
+  assert.deepEqual(await Promise.all([read(), read(), read()]), [a, a, a]);
+  now = 5000;
+  assert.equal((await read()).id, a.id, 'reads inside the interval skip polling');
+  assert.equal(polls, 1);
+  now = 12000;
+  await read();
+  assert.equal(polls, 2, 'the interval elapsing triggers exactly one new poll');
+});
+
+test('remote reader keeps the last good notice during outages and honors explicit disable and expiry', async (t) => {
+  let body = JSON.stringify(config), status = 200, warnings = 0;
+  const source = await upstream(t, (req, res) => {
+    if (status >= 500) warnings++;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(body);
+  });
+  let now = 1000;
+  const read = createAnnouncementReader({ announcementUrl: source.url, now: () => now, pollMs: 10000, log: { warn: () => warnings++ } });
+  const a = await read();
+  status = 503; now = 12000;
+  assert.equal((await read()).id, a.id, 'an unreachable source keeps the last good notice');
+  body = 'not json'; status = 200; now = 22000;
+  assert.equal((await read()).id, a.id, 'invalid payloads keep the last good notice too');
+  body = JSON.stringify({ ...config, text: 'x'.repeat(70000) }); now = 32000;
+  assert.equal((await read()).id, a.id, 'oversized responses keep the last good notice');
+  body = JSON.stringify({ enabled: false }); now = 42000;
+  assert.equal(await read(), null, 'an explicit disable clears the notice immediately');
+  body = JSON.stringify(config); now = 52000;
+  assert.ok(await read(), 're-enabling restores the notice');
+  body = JSON.stringify({ ...config, expiresAt: '1970-01-01T00:00:01.000Z' }); now = 62000;
+  assert.equal(await read(), null, 'expiry is still enforced against the wall clock');
+  body = JSON.stringify(config); now = 72000;
+  assert.ok(await read(), 'a fresh deadline serves again');
+  assert.ok(warnings > 0, 'outages are logged');
+});
+
+test('startServer serves the central announcement source through the URL mode', async (t) => {
+  let body = JSON.stringify({ ...config, secret: 'internal-only' });
+  const source = await upstream(t, (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(body); });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementUrl: source.url });
+  t.after(() => srv.close());
+  const out = await (await fetch(`${srv.url}/api/announcement`)).json();
+  assert.deepEqual(out.announcement, parseAnnouncement(config));
+  assert.ok(!JSON.stringify(out).includes('internal-only'), 'only the public projection leaves the game');
 });
 
 test('announcement HTTP API is read-only, not cached, and exposes only the public projection', async (t) => {

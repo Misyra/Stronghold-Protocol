@@ -77,11 +77,17 @@ function refreshToken() {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       console.log('Refreshing wrangler OAuth token...');
-      await new Promise((resolve) => {
-        const child = spawn(process.execPath, [WRANGLER_BIN, 'whoami'], { stdio: 'ignore', cwd: ROOT });
+      // wrangler is not a project dependency: without a local install, `npx wrangler` fetches it
+      // into the npx cache — spawning the bare bin path would just fail with MODULE_NOT_FOUND.
+      const local = fs.existsSync(WRANGLER_BIN);
+      const done = await new Promise((resolve) => {
+        const child = local
+          ? spawn(process.execPath, [WRANGLER_BIN, 'whoami'], { stdio: 'ignore', cwd: ROOT })
+          : spawn('npx', ['wrangler', 'whoami'], { stdio: 'ignore', cwd: ROOT, shell: true });
         child.on('exit', resolve);
         child.on('error', resolve);
       });
+      if (done !== 0) console.log(`  wrangler whoami exited ${done}; re-reading the config anyway`);
       readToken();
     })();
     refreshPromise.finally(() => { refreshPromise = null; });

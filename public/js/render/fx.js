@@ -18,7 +18,8 @@
 //   blasts       explosions (fireball, flash, shockwave + coloured ground ring, sparks, smoke; heavy ones add debris
 //                and a scorch mark) for blast fx kinds and shell impacts
 //   bombard      蕾缪安 S3: fx 'lock' keeps a reticle on the locked enemy until the 'bombard' of the shell fired at it
-//                (or LOCK_T game s after the shooter's last lock / shell; the S2 aim lock until the snipe's 'crit'); 'bombardShell' = a shell fired now that
+//                (or LOCK_T game s after the shooter's last lock / shell — a held S3 lock, `hold`, LOCK_T after her skill
+//                ends: it waits with its bullets while nothing is in range; the S2 aim lock until the snipe's 'crit'); 'bombardShell' = a shell fired now that
 //                lands on the spot after `t` game s — a launch streak leaves the shooter upwards and the shell drops out
 //                of the sky onto the spot (a long flight climbs out of her first), a closing warning ring marks the spot
 //                meanwhile; 'bombard' is the big explosion at the impact

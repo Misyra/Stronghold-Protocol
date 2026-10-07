@@ -1,5 +1,14 @@
 import { assetCdnUrl } from '../../shared/assetCdn.js';
 
+/** The per-file art manifest (`/assets-manifest.json?v=<tag>`, fetched from <head> so it races the
+ *  module graph): once its hashes land, every CDN URL gains a per-file `?v=<hash>` query and a
+ *  release only re-busts the files it actually changed. Until then — or when the fetch fails —
+ *  assetCdnUrl's bare/prefix fallback answers, which the bucket always serves. */
+const cdn = globalThis.__spAssetCdn;
+if (cdn) Promise.resolve(globalThis.__spManifestReady).then((doc) => {
+  if (doc && typeof doc === 'object' && doc.hashes && typeof doc.hashes === 'object') cdn.hashes = doc.hashes;
+}).catch(() => {});
+
 /** Release paths keep Spine's relative atlas/page references in the same cache namespace. */
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);

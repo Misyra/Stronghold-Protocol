@@ -82,15 +82,17 @@ export function isResourcePath(pathname) {
 
 /**
  * Whether a manifest string is a file the client may request: a site path (`/assets/…`, `/fonts/…`) or an absolute
- * http(s) URL (the CDN shape), with a known resource extension and no query/control characters.
+ * http(s) URL (the CDN shape), with a known resource extension and no query/control characters — except the one
+ * query manifest mode itself appends, the per-file `?v=<16 hex>` cache-bust.
  */
 export function validateResourceUrl(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 512) return false;
-  if (/[\s?#\\"'<>\u0000-\u001f]/.test(url)) return false;
-  let pathname = url;
-  if (!url.startsWith('/') || url.startsWith('//')) {
-    if (!/^https?:\/\//i.test(url)) return false;
-    try { pathname = new URL(url).pathname; } catch { return false; }
+  const bare = String(url).replace(/\?v=[0-9a-f]{16}$/, '');
+  if (/[\s?#\\"'<>\u0000-\u001f]/.test(bare)) return false;
+  let pathname = bare;
+  if (!bare.startsWith('/') || bare.startsWith('//')) {
+    if (!/^https?:\/\//i.test(bare)) return false;
+    try { pathname = new URL(bare).pathname; } catch { return false; }
   }
   return isResourcePath(pathname) && !!resourceType(pathname);
 }
@@ -150,9 +152,12 @@ export function collectResourceFiles(assets, local) {
     .sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
+/** The per-file cache-bust query manifest mode appends (`?v=<16 hex>`): part of the URL, never of the file it names. */
+const BUST_QUERY = /\?v=[0-9a-f]{16}$/;
+
 /** Path part of a URL — the key real hashes are matched by (a CDN install rewrites the URLs, not the hash file). */
 export function pathKey(url, cdnBase = '') {
-  let s = String(url || '');
+  let s = String(url || '').replace(BUST_QUERY, '');
   if (cdnBase && s.startsWith(cdnBase + '/')) s = s.slice(cdnBase.length);
   let p = s;
   if (!s.startsWith('/') || s.startsWith('//')) { try { p = new URL(s).pathname; } catch { return s; } }
@@ -240,7 +245,7 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
  * A CDN URL maps back to the same tree (`https://cdn/assets/x.png` → `<publicDir>/assets/x.png`).
  */
 export function localPathFor(url, publicDir, cdnBase = '') {
-  let p = String(url || '');
+  let p = String(url || '').replace(/\?v=[0-9a-f]{16}$/, '');
   if (cdnBase && p.startsWith(cdnBase + '/')) p = p.slice(cdnBase.length) || '/';
   if (!p.startsWith('/') || p.startsWith('//')) return null;
   p = p.replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');

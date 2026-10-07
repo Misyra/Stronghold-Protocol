@@ -3,23 +3,28 @@
  * Sync public art (public/assets, public/fonts, public/media) to a Cloudflare R2 bucket
  * so it can be served via SP_ASSETS_CDN (https://developers.cloudflare.com/r2/).
  *
+ * Incremental: every file lives under its plain path (`assets/…`) and the repo's
+ * `.assets-manifest.json` records the content hash each published path had when this script
+ * last ran. A run uploads only the files whose hash differs — usually a handful — then
+ * rewrites the manifest (`{ tag, hashes }`); `tag` is the first 16 hex chars of sha256 over
+ * every path + hash, so it only changes when art actually changes. Servers commit the
+ * manifest with the release and hand it to clients (server/index.js), which turn it into a
+ * per-file `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts
+ * only the files it changed (see docs/CDN.md §6).
+ *
+ * The manifest IS the resume state: an interrupted run left it untouched, so the next run
+ * simply re-diffs against it and re-uploads what is still missing.
+ *
+ * The legacy `.assets-cdn-version` / `_v/<tag>/` snapshot layout stays readable for rollback
+ * (server/assetVersion.js still resolves it), but this script no longer writes either — an
+ * old server that pulled a new tag would otherwise point at `_v/` keys that no longer exist.
+ *
+ * Wrangler's OAuth token is re-read and refreshed (via `wrangler whoami`) when the API
+ * answers 401/403. `--push` additionally commits just the manifest and pushes master to
+ * every remote except `origin` (the upstream).
+ *
  * Usage:
- *   node tools/r2-sync.mjs [--bucket weishu] [--account <account_id>] [--dry-run]
- *
- * Every file is written under two keys:
- *   assets/...            plain path (used when SP_ASSETS_CDN_VERSION is unset)
- *   _v/<tag>/assets/...   content-addressed release (used with SP_ASSETS_CDN_VERSION=<tag>)
- * The tag is the first 16 hex chars of sha256 over every file's path + content hash,
- * so it only changes when art actually changes. On success it is written to the repo's
- * `.assets-cdn-version` (commit it with the release: servers resolve the tag from this file
- * after `git pull`, falling back to the published `_v/latest` object; see docs/CDN.md §6).
- *
- * Resumable: uploaded keys are recorded in .cache/r2-sync-progress.json, so an
- * interrupted run continues where it stopped. Wrangler's OAuth token is re-read
- * and refreshed (via `wrangler whoami`) when the API answers 401/403.
- *
- * `--push` additionally commits just the version file and pushes master to every remote
- * except `origin` (the upstream).
+ *   node tools/r2-sync.mjs [--bucket weishu] [--account <account_id>] [--dry-run] [--push]
  */
 
 import fs from 'node:fs';
@@ -31,10 +36,19 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
-const PROGRESS_FILE = path.join(ROOT, '.cache', 'r2-sync-progress.json');
+const MANIFEST_FILE = path.join(ROOT, '.assets-manifest.json');
 const WRANGLER_BIN = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 const args = process.argv.slice(2);
+const KNOWN_ARGS = new Set(['--bucket', '--account', '--dry-run', '--push']);
+for (const a of args) {
+  // The flags take no `=` values and unknown flags must fail loudly: a typo here used to be
+  // silently ignored and turned a `--help` into a real full upload.
+  if (a.startsWith('--') && !KNOWN_ARGS.has(a)) {
+    console.error(`Unknown option ${a}. Known options: ${[...KNOWN_ARGS].join(' ')} (--bucket/--account take a value).`);
+    process.exit(1);
+  }
+}
 const flag = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
@@ -159,32 +173,20 @@ async function put(key, abs, cacheControl) {
   await putObject(key, await fs.promises.readFile(abs), MIME[path.extname(key).toLowerCase()] ?? 'application/octet-stream', cacheControl);
 }
 
-/** Publish the current tag as `_v/latest` so servers resolve SP_ASSETS_CDN_VERSION automatically
- *  (shared/assetCdn.js resolveAssetsCdnVersion). no-store: every reader must see the real value. */
-async function publishLatest(tag) {
-  await putObject('_v/latest', Buffer.from(tag), 'text/plain', 'no-store');
-  console.log(`Published _v/latest = ${tag}`);
-}
-
-/** Ship the tag with the repo: servers read it at startup after `git pull` (server/assetVersion.js). */
-const VERSION_FILE = path.join(ROOT, '.assets-cdn-version');
-function writeVersionFile(tag) {
-  fs.writeFileSync(VERSION_FILE, tag + '\n');
-  console.log(`Wrote ${path.basename(VERSION_FILE)} = ${tag} — commit it with the release.`);
-}
-
-function pushVersionFile(tag) {
+/** Commit the manifest with the release: servers read it at startup after `git pull` (server/index.js). */
+function pushManifest(tag) {
   const git = (...args) => {
     const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${(r.stderr || r.stdout || '').trim()}`);
     return r.stdout;
   };
-  if (!git('status', '--porcelain', '--', path.basename(VERSION_FILE)).trim()) {
-    console.log('.assets-cdn-version unchanged; nothing to commit.');
+  const name = path.basename(MANIFEST_FILE);
+  if (!git('status', '--porcelain', '--', name).trim()) {
+    console.log(`${name} unchanged; nothing to commit.`);
     return;
   }
-  git('add', '--', path.basename(VERSION_FILE));
-  git('commit', '-m', `素材：R2 发布 ${tag}`, '--', path.basename(VERSION_FILE));
+  git('add', '--', name);
+  git('commit', '-m', `素材：R2 增量发布 ${tag}`, '--', name);
   const remotes = git('remote').split(/\r?\n/).filter((r) => r && r !== 'origin');
   for (const remote of remotes) {
     console.log(git('push', remote, 'master').trim());
@@ -199,48 +201,40 @@ for (const dir of ['assets', 'fonts', 'media']) {
 }
 if (!files.length) { console.error('No files found under public/{assets,fonts,media}.'); process.exit(1); }
 
-// ---- content-addressed version tag ----
+// ---- content-addressed manifest tag ----
 console.log(`Hashing ${files.length} files...`);
-for (const f of files) f.hash = await hashFile(f.abs);
+for (const f of files) f.hash = (await hashFile(f.abs)).slice(0, 16);
 const tagHash = createHash('sha256');
 for (const f of files.sort((a, b) => a.key.localeCompare(b.key, 'en'))) tagHash.update(`${f.key}\0${f.hash}\0`);
 const tag = tagHash.digest('hex').slice(0, 16);
 
-// ---- resume state ----
-let progress = { tag: null, uploaded: [] };
-try { progress = JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf8')); } catch {}
-if (progress.tag !== tag) progress = { tag, uploaded: [] };
-const uploadedSet = new Set(progress.uploaded);
-let flushTimer = null;
-function flushProgress(final = false) {
-  try {
-    fs.mkdirSync(path.dirname(PROGRESS_FILE), { recursive: true });
-    fs.writeFileSync(PROGRESS_FILE, JSON.stringify({ tag, uploaded: [...uploadedSet] }));
-  } catch {}
-  if (!final && !flushTimer) flushTimer = setTimeout(() => { flushTimer = null; }, 10000);
-}
+// ---- diff against the manifest the last run wrote (also the resume state) ----
+let previous = null;
+try {
+  const doc = JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'));
+  if (doc && /^[a-f0-9]{16}$/.test(doc.tag) && doc.hashes && typeof doc.hashes === 'object') previous = doc;
+} catch {}
+const jobs = previous
+  ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash).map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }))
+  : files.map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
 
-// ---- plan ----
-const jobs = files.flatMap((f) => [
-  { key: f.key, abs: f.abs, cc: 'public, max-age=3600' },
-  { key: `_v/${tag}/${f.key}`, abs: f.abs, cc: 'public, max-age=31536000, immutable' },
-]).filter((j) => !uploadedSet.has(j.key));
-
-console.log(`Version tag: ${tag}`);
+console.log(`Manifest tag: ${tag}${previous ? ` (previous ${previous.tag})` : ' (no previous manifest — uploading every file)'}`);
 if (!jobs.length) {
-  console.log(`All ${files.length * 2} objects already uploaded to bucket '${BUCKET}'. Nothing to do.`);
-  await publishLatest(tag);
-  writeVersionFile(tag);
-  if (args.includes('--push')) pushVersionFile(tag);
-  console.log(`SP_ASSETS_CDN_VERSION=${tag}`);
+  console.log(`All ${files.length} files already published to bucket '${BUCKET}'. Nothing to do.`);
+  if (args.includes('--push')) pushManifest(tag);
   process.exit(0);
 }
 const totalBytes = jobs.reduce((s, j) => s + fs.statSync(j.abs).size, 0);
-console.log(`${jobs.length} PUTs remaining (${(totalBytes / 1048576).toFixed(1)} MiB) of ${files.length * 2} total${DRY ? ' [dry run]' : ''}`);
-if (DRY) process.exit(0);
+console.log(`${jobs.length} PUTs remaining (${(totalBytes / 1048576).toFixed(1)} MiB) of ${files.length} files${DRY ? ' [dry run]' : ''}`);
+if (DRY) {
+  for (const j of jobs.slice(0, 20)) console.log(`  ${j.key}`);
+  if (jobs.length > 20) console.log(`  ... and ${jobs.length - 20} more`);
+  process.exit(0);
+}
 
-// ---- upload ----
-let done = 0, failed = 0;
+// ---- upload only what changed ----
+let done = 0;
+let failed = 0;
 const failures = [];
 const queue = [...jobs].reverse();
 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -249,24 +243,23 @@ const workers = Array.from({ length: CONCURRENCY }, async () => {
     if (!job) break;
     try {
       await put(job.key, job.abs, job.cc);
-      uploadedSet.add(job.key);
     } catch (err) {
       failed++; failures.push(String(err.message || err));
       continue;
     }
-    if (++done % 250 === 0) { console.log(`  ${done}/${jobs.length} uploaded`); flushProgress(); }
+    if (++done % 250 === 0) console.log(`  ${done}/${jobs.length} uploaded`);
   }
 });
 await Promise.all(workers);
-flushProgress(true);
 
+// The manifest is written only after every PUT succeeded, so a failed run leaves it untouched
+// and the rerun re-uploads exactly the files that are still missing.
 if (failed) {
   console.error(`\n${failed} uploads FAILED:`);
   for (const m of failures.slice(0, 20)) console.error('  ' + m);
   process.exit(1);
 }
-await publishLatest(tag);
-writeVersionFile(tag);
-if (args.includes('--push')) pushVersionFile(tag);
-console.log(`\nAll ${files.length * 2} objects uploaded to R2 bucket '${BUCKET}'.`);
-console.log(`Set in the server environment:\n  SP_ASSETS_CDN=https://<your-r2-domain>\n  SP_ASSETS_CDN_VERSION=${tag}`);
+fs.writeFileSync(MANIFEST_FILE, JSON.stringify({ tag, hashes: Object.fromEntries(files.map((f) => [`/${f.key}`, f.hash])) }) + '\n');
+console.log(`\nAll ${files.length} files published to R2 bucket '${BUCKET}' (manifest ${tag}).`);
+console.log(`Wrote ${path.basename(MANIFEST_FILE)} — commit it with the release, then \`git pull\` + restart the game servers.`);
+if (args.includes('--push')) pushManifest(tag);

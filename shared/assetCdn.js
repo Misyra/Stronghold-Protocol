@@ -1,5 +1,6 @@
-/** Public art only: game data, scripts, APIs and sockets stay on the game host. */
-const ART_PATH = /^(?:\/_v\/[a-f0-9]{16})?(\/(?:assets|fonts|media)\/.*)$/;
+/** Public art only: game data, scripts, APIs and sockets stay on the game host. The suffix group
+ *  keeps a caller's own query/fragment (the release-prefix shape re-emits it verbatim). */
+const ART_PATH = /^(?:\/_v\/[a-f0-9]{16})?(\/(?:assets|fonts|media)\/[^?#]*)([?#].*)?$/;
 
 export function assetCdnSettings(base, version) {
   const value = String(base ?? '').trim();
@@ -18,11 +19,22 @@ export function assetCdnSettings(base, version) {
   return { base: normalized, version: tag };
 }
 
-/** Strip the game host's version: only the CDN's own version can address its immutable resources. */
-export function assetCdnUrl(url, { base = '', version = '' } = {}) {
+/** Strip the game host's version and address the CDN copy. Three shapes, first match wins:
+ *  - per-file manifest mode (`hashes`): `<base><path>?v=<file hash>` — a query the CDN's cache keys
+ *    on, so a release re-busts only the files it changed and every URL is immutable;
+ *  - release-prefix mode (`version`): `<base>/_v/<tag><path>` — the whole-tree snapshot layout of
+ *    pre-manifest buckets;
+ *  - bare: `<base><path>` — a CDN without any release route (or a manifest-mode URL whose file the
+ *    manifest does not list). */
+export function assetCdnUrl(url, { base = '', version = '', manifest = '', hashes = null } = {}) {
   if (!base || typeof url !== 'string') return url;
   const match = ART_PATH.exec(url);
-  return match ? `${base}${version ? '/_v/' + version : ''}${match[1]}` : url;
+  if (!match) return url;
+  const path = match[1];
+  const hash = hashes?.[path];
+  if (hash) return `${base}${path}?v=${hash}`;
+  if (manifest) return `${base}${path}`;
+  return `${base}${version ? '/_v/' + version : ''}${path}${match[2] || ''}`;
 }
 
 /** The CDN's published current-release tag (tools/r2-sync.mjs writes it). A timestamp query keeps the

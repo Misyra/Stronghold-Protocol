@@ -104,15 +104,21 @@ describe('resource manifest building', () => {
       '/assets/x.png#a', '/assets/x', '/assets/x.txt', 'javascript:alert(1).png', '/assets/a b.png', null, 42]) {
       assert.equal(validateResourceUrl(bad), false, String(bad));
     }
+    assert.equal(validateResourceUrl('/assets/x.png?v=0123456789abcdef'), true, 'the per-file bust query is the one allowed query');
+    assert.equal(validateResourceUrl('https://cdn.example.com/assets/x.png?v=0123456789abcdef'), true);
+    assert.equal(validateResourceUrl('/assets/x.png?v=0123456789abcdef&x=1'), false, 'nothing may follow the bust query');
     assert.equal(isResourcePath('/assets/x.png'), true);
     assert.equal(isResourcePath('/data/x.json'), false);
     assert.equal(validateResourceUrl('/media/bgm/act1.mp3'), false, 'the manifest never lists the /media route (a CDN cannot resolve it)');
     assert.equal(resourceType('/assets/x.atlas'), 'text/plain; charset=utf-8');
     assert.equal(localPathFor('/assets/x.png', '/srv/public'), path.join(path.resolve('/srv/public'), 'assets/x.png'));
     assert.equal(localPathFor('https://cdn.example.com/base/assets/x.png', '/srv/public', 'https://cdn.example.com/base'), path.join(path.resolve('/srv/public'), 'assets/x.png'));
+    assert.equal(localPathFor('https://cdn.example.com/base/assets/x.png?v=0123456789abcdef', '/srv/public', 'https://cdn.example.com/base'), path.join(path.resolve('/srv/public'), 'assets/x.png'), 'the bust query never reaches the disk path');
     assert.equal(localPathFor('https://cdn.example.com/base/assets/x.png', '/srv/public'), null, 'outside the CDN prefix');
     assert.equal(localPathFor('/assets/../../etc/passwd', '/srv/public'), null, 'no traversal');
     assert.equal(localPathFor('/data/x.json', '/srv/public'), path.join(path.resolve('/srv/public'), 'data/x.json'), 'only the URL shape is refused here');
+    assert.equal(pathKey('https://cdn.example.com/assets/x.png?v=0123456789abcdef'), '/assets/x.png', 'hash lookups key on the bare path');
+    assert.equal(pathKey('/assets/x.png?v=0123456789abcdef'), '/assets/x.png');
   });
 
   test('tiers: avatars/icons/audio/fonts/UI are essential, portraits and Spine models are background', () => {

@@ -98,14 +98,16 @@ export function mediaCandidates(pathname) {
   return order.map((ext) => `${version}/assets/audio/${name}${ext}`);
 }
 
-/** A file this client may request and cache: a site path or an absolute http(s) CDN URL with a known extension. */
+/** A file this client may request and cache: a site path or an absolute http(s) CDN URL with a known extension.
+ *  The one allowed query is the per-file cache-bust the manifest mode appends itself (`?v=<16 hex>`). */
 export function isResourceUrl(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 512) return false;
-  if (/[\s?#\\"'<>\u0000-\u001f]/.test(url)) return false;
-  let pathname = url;
-  if (!url.startsWith('/') || url.startsWith('//')) {
-    if (!/^https?:\/\//i.test(url)) return false;
-    try { pathname = new URL(url).pathname; } catch { return false; }
+  const bare = url.replace(/\?v=[0-9a-f]{16}$/, '');
+  if (/[\s?#\\"'<>\u0000-\u001f]/.test(bare)) return false;
+  let pathname = bare;
+  if (!bare.startsWith('/') || bare.startsWith('//')) {
+    if (!/^https?:\/\//i.test(bare)) return false;
+    try { pathname = new URL(bare).pathname; } catch { return false; }
   }
   // The manifest never carries `/media/…` URLs (the worker maps them to these instead): they name no file a static host
   // can serve, so an entry listing one is a manifest this client will not chase 4 000 times.

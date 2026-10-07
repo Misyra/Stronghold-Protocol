@@ -391,3 +391,47 @@ describe('an enemy flyer crossing a raised tile keeps its height (GitHub #277)',
     assert.ok(Math.abs(op.z - RAISED.h) < 1e-6, `the operator stands on the high ground (${op.z})`);
   });
 });
+
+// PR #275 (@xcdoge): 猎狗pro ships Move_Loop 0.80 s next to Run_Loop 0.53 s and its moveSpeed is 1.9, so a fast enemy
+// walks on its model's own Run cycle (anims.run) while a standard one keeps Move; the cast slot composes with it.
+describe('a fast enemy walks on its Run cycle (PR #275)', () => {
+  const entry = {
+    skel: '/s/x.skel', atlas: '/s/x.atlas', textures: ['/s/x.png'],
+    anims: {
+      idle: 'Idle', deploy: 'Idle', die: 'Die', attack: null,
+      move: { begin: 'Move_Begin', loop: 'Move_Loop', end: 'Move_End' },
+      run: { begin: 'Run_Begin', loop: 'Run_Loop', end: 'Run_End' },
+      skill: { begin: null, loop: 'Skill_01', end: null, index: 0, idle: null },
+      skills: { 0: { begin: null, loop: 'Skill_01', end: null, index: 0, idle: null }, 1: { begin: null, loop: 'Skill_02', end: null, index: 1, idle: null } },
+    },
+    animations: { Idle: 1, Die: 0.67, Move_Begin: 0.17, Move_Loop: 0.8, Move_End: 0.17, Run_Begin: 0.17, Run_Loop: 0.53, Run_End: 0.17, Skill_01: 1, Skill_02: 1 },
+  };
+  const assets = {
+    picture: () => null, image: async () => null, spineEntry: () => entry,
+    spine: { acquire: async () => ({ animations: Object.keys(entry.animations).map((name) => ({ name })) }), release() {} },
+  };
+  const enemyView = async (id, speed, side = 'enemy') => {
+    const ctx = fakeViewCtx(fake.P, { assets, cam, lookupDef: () => ({ stats: { moveSpeed: speed } }) });
+    const v = new UnitView(ctx, { id, side, kind: side === 'enemy' ? 'enemy' : 'op', defId: 'enemy_1000_gopro_2', x: 5, y: 12, maxHp: 100 }, {});
+    await tick(); await tick();
+    assert.ok(v.actor, 'spine actor built');
+    return v;
+  };
+
+  test('moveSpeed 1.9 moves on Run, 1 on Move; the cast slot and the Run cycle compose', async () => {
+    const hound = await enemyView(1, 1.9);
+    assert.equal(hound.actor.roles.move.loop, 'Run_Loop');
+    const slug = await enemyView(2, 1);
+    assert.equal(slug.actor.roles.move.loop, 'Move_Loop');
+    // the MOVE anim code plays it
+    hound.sync({ x: 5, y: 12, hp: 100, maxHp: 100, sp: 0, spMax: 0, flags: 0, anim: 1, vx: 0.5 }, 1);
+    for (let i = 0; i < 20; i++) hound.update(1 / 60, cam(), i / 60);
+    assert.match(String(hound.actor.current), /^Run/, `playing ${hound.actor.current}`);
+    hound.setSkillSlot(1);
+    assert.equal(hound.actor.roles.skill.loop, 'Skill_02', 'the cast slot');
+    assert.equal(hound.actor.roles.move.loop, 'Run_Loop', 'and the Run cycle survives it');
+    hound.actor.setRunMode(false);
+    assert.equal(hound.actor.roles.move.loop, 'Move_Loop');
+    assert.equal(hound.actor.roles.skill.loop, 'Skill_02', 'the cast slot survives that too');
+  });
+});

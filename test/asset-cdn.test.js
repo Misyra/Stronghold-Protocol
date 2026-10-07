@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../server/index.js';
-import { readAssetsCdnVersionFile } from '../server/assetVersion.js';
+import { readAssetsCdnVersionFile, readAssetsManifestFile } from '../server/assetVersion.js';
 import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
@@ -28,6 +28,16 @@ test('CDN settings validate public bases and rewrite art without leaking the gam
   for (const url of ['/data/assets.json', '/js/main.js', '/vendor/pixi.min.js', '/api/rooms/ABCD/status', '/ws', 'https://third.example/assets/x.png']) {
     assert.equal(assetCdnUrl(url, cdn), url);
   }
+});
+
+test('a per-file manifest turns art into immutable ?v= URLs and falls back to bare for unlisted files', () => {
+  const cdn = { base: 'https://cdn.example/static', version: '', manifest: '/assets-manifest.json?v=1234567890abcdef', hashes: { '/assets/x.skel': 'aaaaaaaaaaaaaaaa' } };
+  assert.equal(assetCdnUrl('/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa');
+  assert.equal(assetCdnUrl('/assets/x.skel?v=2#f', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the per-file hash replaces any caller query');
+  assert.equal(assetCdnUrl('/assets/other.png', cdn), 'https://cdn.example/static/assets/other.png', 'an unlisted file falls back to bare');
+  assert.equal(assetCdnUrl('/_v/deadbeefdeadbeef/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the game-host namespace is stripped first');
+  assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, hashes: null }), 'https://cdn.example/static/assets/x.skel', 'before the manifest loads, bare URLs answer');
+  assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, manifest: '', version: '1234567890abcdef', hashes: null }), 'https://cdn.example/static/_v/1234567890abcdef/assets/x.skel', 'no manifest: the legacy release prefix');
 });
 
 test('browser helpers honor CDN configuration and preserve remote audio URLs', (t) => {
@@ -61,7 +71,7 @@ test('two hosts keep independent release versions, serve public CORS and retain 
   write('public/assets/local/tiles.json', JSON.stringify({ source: { D: { path: '/assets/x.png' } } }));
   write('data/assets.json', JSON.stringify({ spine: { skel: '/assets/x.skel', atlas: '/assets/x.atlas', textures: ['/assets/x.png'], anims: {} }, audio: '/assets/audio/a.mp3', foreign: 'https://third.example/x.png' }));
   write('data/chess.json', '{}');
-  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared') };
+  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), assetsManifestFile: path.join(root, 'absent') };
   const remote = await startServer(opts);
   t.after(() => remote.close());
   const remoteHealth = await (await fetch(remote.url + '/healthz')).json();
@@ -146,7 +156,7 @@ test('startServer resolves SP_ASSETS_CDN_VERSION from the CDN publication and ke
   write('public/fonts/a.woff2', 'font');
   write('public/assets/x.png', 'image');
   write('data/chess.json', '{}');
-  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared') };
+  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), assetsManifestFile: path.join(root, 'absent') };
 
   const cdnOrigin = http.createServer((req, res) => {
     if (new URL(req.url, 'http://x').pathname === '/_v/latest') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('fedcba9876543210\n'); return; }
@@ -193,7 +203,7 @@ test('the repo-shipped .assets-cdn-version wins over the network and travels wit
   const game = await startServer({
     port: 0, host: '127.0.0.1', quiet: true, workers: 0,
     publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
-    assetsCdn: 'http://127.0.0.1:1', assetsVersionFile: versionFile,
+    assetsCdn: 'http://127.0.0.1:1', assetsVersionFile: versionFile, assetsManifestFile: path.join(root, 'absent'),
   });
   t.after(() => game.close());
   const health = await (await fetch(game.url + '/healthz')).json();
@@ -203,4 +213,50 @@ test('the repo-shipped .assets-cdn-version wins over the network and travels wit
   fs.writeFileSync(versionFile, 'garbage\n');
   assert.equal(readAssetsCdnVersionFile(versionFile), '', 'a junk version file resolves to nothing');
   assert.equal(readAssetsCdnVersionFile(path.join(root, 'absent')), '');
+});
+
+test('a per-file manifest ships ?v= art URLs, its own endpoint and wins over the legacy tag chain', async (t) => {
+  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
+  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
+  delete process.env.SP_ASSETS_CDN;
+  delete process.env.SP_ASSETS_CDN_VERSION;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-manifest-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const write = (rel, body) => {
+    const target = path.join(root, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
+  };
+  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head></html>');
+  write('public/fonts/a.woff2', 'font');
+  write('public/assets/x.png', 'image');
+  write('data/assets.json', JSON.stringify({ pic: '/assets/x.png' }));
+  const manifestFile = path.join(root, '.assets-manifest.json');
+  const manifest = { tag: '0123456789abcdef', hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa', '/fonts/a.woff2': 'bbbbbbbbbbbbbbbb' } };
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  fs.writeFileSync(path.join(root, '.assets-cdn-version'), 'fedcba9876543210\n');
+  const game = await startServer({
+    port: 0, host: '127.0.0.1', quiet: true, workers: 0,
+    publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
+    assetsCdn: 'https://cdn.example', assetsManifestFile: manifestFile,
+  });
+  t.after(() => game.close());
+  const health = await (await fetch(game.url + '/healthz')).json();
+  assert.equal(health.assetsManifest, '0123456789abcdef');
+  assert.equal(health.assetsCdnVersion, null, 'manifest mode needs no release tag');
+  const html = await (await fetch(game.url + '/')).text();
+  assert.ok(html.includes('globalThis.__spManifestReady=fetch("/assets-manifest.json?v=0123456789abcdef")'), 'the manifest fetch starts in <head> (same-origin, so the URL is relative)');
+  assert.ok(!html.includes('"hashes"'), 'the hash map is fetched, never inlined into the page');
+  assert.ok(html.includes('href="https://cdn.example/fonts/a.woff2?v=bbbbbbbbbbbbbbbb"'), 'manifest-listed art gets a per-file hash');
+  const data = await (await fetch(game.url + `/_v/${health.build}/data/assets.json`)).json();
+  assert.equal(data.pic, 'https://cdn.example/assets/x.png?v=aaaaaaaaaaaaaaaa');
+  const served = await fetch(game.url + '/assets-manifest.json?v=0123456789abcdef');
+  assert.equal(served.status, 200);
+  assert.match(served.headers.get('cache-control'), /immutable/);
+  assert.deepEqual(await served.json(), manifest);
+  assert.equal((await fetch(game.url + '/assets-manifest.json')).status, 404, 'the untagged URL answers nothing cacheable');
+  assert.equal((await fetch(game.url + '/assets-manifest.json?v=ffffffffffffffff')).status, 404, 'a foreign tag gets no bytes');
+  // readAssetsManifestFile rejects junk
+  fs.writeFileSync(manifestFile, '{"tag":"nope"}');
+  assert.equal(readAssetsManifestFile(manifestFile), null);
+  assert.equal(readAssetsManifestFile(path.join(root, 'absent')), null);
 });

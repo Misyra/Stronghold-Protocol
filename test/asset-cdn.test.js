@@ -22,7 +22,9 @@ test('CDN settings validate public bases and rewrite art without leaking the gam
   assert.equal(assetCdnUrl('/_v/aaaaaaaaaaaaaaaa/assets/x.skel', cdn), 'https://cdn.example/static/_v/1234567890abcdef/assets/x.skel');
   assert.equal(assetCdnUrl('/fonts/a.woff2?x=1#f', cdn), 'https://cdn.example/static/_v/1234567890abcdef/fonts/a.woff2?x=1#f');
   assert.equal(validSpine({ skel: 'https://cdn.example/a.skel', atlas: 'https://cdn.example/a.atlas', anims: {} }), true);
-  for (const skel of ['javascript:alert(1).skel', 'data:application/octet-stream,x.skel', 'https://u:p@cdn.example/a.skel', 'https://cdn.example/a.png']) {
+  assert.equal(validSpine({ skel: 'https://cdn.example/a.skel?v=0123456789abcdef', atlas: 'https://cdn.example/a.atlas?v=0123456789abcdef', anims: {} }), true, 'the per-file cache-bust query is allowed');
+  for (const skel of ['javascript:alert(1).skel', 'data:application/octet-stream,x.skel', 'https://u:p@cdn.example/a.skel', 'https://cdn.example/a.png',
+    'https://cdn.example/a.skel?v=short', 'https://cdn.example/a.skel?x=1', 'https://cdn.example/a.skel?v=0123456789abcdef&x=1', 'https://cdn.example/a.skel#v=0123456789abcdef']) {
     assert.equal(validSpine({ skel, atlas: 'x', anims: {} }), false);
   }
   for (const url of ['/data/assets.json', '/js/main.js', '/vendor/pixi.min.js', '/api/rooms/ABCD/status', '/ws', 'https://third.example/assets/x.png']) {

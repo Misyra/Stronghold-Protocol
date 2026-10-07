@@ -1124,6 +1124,28 @@ test('Touch talents: 攫升 +3 SP to the healed unit, 超脱 +5 SP when an opera
   checkInvariants(h.b);
 });
 
+test('GitHub #260: the 外勤医疗 Touch casts 恳切福音 on an injured ally only inside the skill\'s 5-2 (ACTIVE_RANGE, as the 补位 Touch); a full-HP or unhealable one does not', REAL, () => {
+  // Touch stands on (10,2) facing right: her 3-3 reaches column 5, the skill's 5-2 column 7
+  const h = makeBattle({ stageId: 'act2autochess_m01', defs: { chess: { test_guard: guard({ stats: { maxHp: 10000, atk: 0 } }) } },
+    units: [{ chessId: 'test_guard', row: 10, col: 7 }], autoFinish: false, timeLimit: 60 });
+  h.step();
+  const touch = spawnMapChar(h.b, 'p1', TOKEN_IDS.touch);
+  assert.deepEqual([touch.tileR, touch.tileC], [10, 2]);
+  assert.equal(touch.skill.rule, 'ACTIVE_RANGE');
+  const ally = h.unit('test_guard');
+  touch.skill.gainSp(1000);
+  h.run(3);
+  assert.equal(touch.skill.activations, 0, 'every ally at full HP: no cast');
+  ally.hp = 4000;
+  const buff = h.b.addBuff(ally, { key: 'test:noHeal', flags: { noHeal: true } });
+  h.run(2);
+  assert.equal(touch.skill.activations, 0, 'an ally no heal can pick: no cast');
+  h.b.removeBuff(ally, buff);
+  assert.ok(h.runUntil(() => touch.skill.activations === 1, 2), 'the injured ally five tiles ahead (outside her 3-3) casts the skill');
+  assert.ok(h.runUntil(() => ally.hp > 4000, 5), 'and she heals it from the larger range');
+  checkInvariants(h.b);
+});
+
 test('spawnMapChar: per-player slots — unite: p1 #1 (10,2), p2 its multi-only slot (10,10); boss: L (3,2), R (3,18); solo never multi-only', REAL, () => {
   const players = [
     { playerId: 'p1', seat: 0, side: 'L', colOffset: 0, units: [], bonds: {} },

@@ -663,7 +663,7 @@ the source's side):
 |---|---|---|
 | `burn` 灼燃 | 1200 arts + RES −20, 10 s lock | 7000 元素伤害 + RES −20, 10 s lock |
 | `neural` 神经 | stun 10 s, then 1000 true (10 s lock) | 3 `palsy` (none with 麻痹免疫), then 6000 元素伤害, 10 s lock |
-| `apoptosis` 凋亡 | 15 s: 阻回 (`noSp`: no SP gain of any kind, skills.js) + 静默 (no skill activation), −1 SP/s, 100 arts/s | 15 s: 50 % weaken recovering over the burst, 800 元素伤害/s |
+| `apoptosis` 凋亡 | 15 s: 阻回 (`noSp`: no SP gain of any kind, skills.js) + 静默 (no skill activation), −1 技力/s — of `spTotal`, stored charges included (PRTS 技能 可充能 "当持有者的技力流失时，充能次数也会实时降低"; `setSpTotal`, a running timed skill untouched; PR #262), 100 arts/s | 15 s: 50 % weaken recovering over the burst, 800 元素伤害/s |
 | `erosion` 侵蚀 | permanent DEF −100 (stacking `erosionDown`) then 800 phys, 10 s lock | permanent DEF −120 then 5000 元素伤害, 8 s lock |
 | `necrosis` (legacy spare gauge) | 12 s: 100 true/s, ATK −20 % | same |
 
@@ -895,7 +895,9 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
   row (薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3) whose attack range while it runs strictly contains the
   unit's own range checks the DEFAULT condition — a targetable enemy (or one it blocks), a heal skill an injured ally —
   on `trigger.customRangeGrid` (= that running range, grown by the unit's permanent rangeExtend unless the skill's
-  `targeting.noRangeExtend`), every tick, no attack needed; `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
+  `targeting.noRangeExtend`), every tick, no attack needed (the 外勤医疗 map character Touch's 恳切福音 too, on its 5-2:
+  set by its kit, content/tokens.js `touchKit` — the map character's record keeps DEFAULT, build-data widens operators'
+  skills only; GitHub #260); `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
   `grid`) = the basic rule **and** such an ally on the grid: the cast replaces the attack about to be made (塞雷娅 S1 "触发
   时会替换当次攻击", ≤ half HP); a cast whose ally condition fails before that attack is withdrawn, its charge returned;
   `TAKE_DAMAGE` — ready and just hit (重装: "不受技能范围影响，受到伤害时释放技能"; in the data every MANUAL 重装 skill but

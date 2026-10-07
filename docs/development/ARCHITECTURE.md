@@ -2,12 +2,12 @@
 
 For a newcomer who wants to find their way before changing something. This file only maps the code. The contracts are
 in the design document — [DESIGN.md](DESIGN.md) is its index, the current rules are in `docs/design/` (§5 the battle
-engine: [design/engine.md](design/engine.md); §6 the match: [design/match.md](design/match.md); §8 the protocol and §14
-client-side combat: [design/network.md](design/network.md); §9 rendering: [design/client.md](design/client.md)), the
+engine: [design/engine.md](../design/engine.md); §6 the match: [design/match.md](../design/match.md); §8 the protocol and §14
+client-side combat: [design/network.md](../design/network.md); §9 rendering: [design/client.md](../design/client.md)), the
 per-release revisions and their evidence in `docs/history/`;
 the details in [SIM.md](SIM.md) (battle engine, hooks, SkillSpec), [META.md](META.md) (match engine, prep-phase
 effects), [DATA.md](DATA.md) (generated data), [ASSETS.md](ASSETS.md) (art and audio) and [I18N.md](I18N.md)
-(languages). How to set up, test and send a change: [CONTRIBUTING.md](../CONTRIBUTING.md).
+(languages). How to set up, test and send a change: [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## 1. What runs where
 
@@ -112,7 +112,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | `tools/` | `build-data.mjs`, `build-i18n.mjs`, `i18n.mjs` (UI strings, language packs), `packs.mjs` (content packs), `setup.mjs` / `fetch-assets.mjs` / `tools/assets/` (art and audio), `tools/local-extract/` (art from a local game client), `vendor.mjs`, `golden.mjs`, `check-imports.mjs`, `package.mjs` (the release zip), `doctor.mjs`; sweeps: `matchrun.mjs`, `simrun.mjs`, `botbench.mjs`, `balance.mjs` |
 | `test/` | `node:test` suites by area: `test/content/` (kits, enemies, bonds, items), `test/sim/` (the engine), `test/match/` (match engine, bots), `test/ui/`, `test/render/`, `test/golden/` (the stored digests), `test/helpers/` (`battleHarness.js`; `designDocs.js`, the design document in § order for the doc tests), `test/e2e/` (browser and bot runs) |
 | `types/` | JSDoc typedefs of the type-checked slice (`types/README.md`) |
-| `docs/` | the documents; `docs/DESIGN.md` the index of the design document, `docs/design/` its current rules, `docs/history/` its per-release revisions; `docs/research/` the research on the official mode |
+| `docs/` | `docs/README.md` the navigation; `docs/guides/` player guides, `docs/operations/` deployment and operations, `docs/development/` development references; `docs/development/DESIGN.md` the design index, `docs/design/` current rules, `docs/history/` per-release revisions and site changes; `docs/research/` research on the official mode |
 
 ## 4. Data flow
 
@@ -164,7 +164,7 @@ public/assets/ ─────────▶ public/js/render/, public/js/audio
 - **Lint and types.** `npm run lint` is a correctness-only ESLint (`eslint.config.js`: warnings are allowed, errors
   are not); `npm run typecheck` checks a JSDoc slice (`jsconfig.json`; `types/README.md` says how to widen it). CI
   runs both once, and the tests on Ubuntu and Windows with Node 22 and 24 (`.github/workflows/ci.yml`).
-- **Tests.** `node --test` runs every suite that needs no browser; the browser suites are opt-in ([CONTRIBUTING.md](../CONTRIBUTING.md) §2).
+- **Tests.** `node --test` runs every suite that needs no browser; the browser suites are opt-in ([CONTRIBUTING.md](../../CONTRIBUTING.md) §2).
   The battle harness `test/helpers/battleHarness.js` (SIM.md §10) sets up a battle in a few lines.
 
 ## 6. Where to start
@@ -189,4 +189,4 @@ public/assets/ ─────────▶ public/js/render/, public/js/audio
 
 Before changing a rule, read the DESIGN section that owns it (module headers cite their sections; the table in
 DESIGN.md names the file that holds each) and the official source; a rule no source settles is marked `[ASSUMED]`
-([CONTRIBUTING.md](../CONTRIBUTING.md) §3).
+([CONTRIBUTING.md](../../CONTRIBUTING.md) §3).

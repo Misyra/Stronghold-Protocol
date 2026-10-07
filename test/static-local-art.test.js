@@ -74,7 +74,7 @@ test('present data/local-assets.json is served as-is', async () => {
 test('docs and messages say what falls back without the local art and how a server without the client gets it (GitHub issue #42)', async () => {
   const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   const { LOCAL_ART_FALLBACK, LOCAL_ART_COPY_HINT } = await import('../tools/setup.mjs');
-  for (const f of ['README.md', 'docs/DEPLOY.md', 'tools/setup.mjs', 'tools/doctor.mjs']) {
+  for (const f of ['README.md', 'docs/operations/DEPLOY.md', 'tools/setup.mjs', 'tools/doctor.mjs']) {
     assert.ok(!/不影响游戏|其他功能不受影响|游戏不受影响/.test(read(f)), `${f}: never "the local art does not matter"`);
   }
   for (const re of [/3D 棋盘/, /界面图标/, /源石虫/]) assert.match(LOCAL_ART_FALLBACK, re);
@@ -84,7 +84,7 @@ test('docs and messages say what falls back without the local art and how a serv
   const noClientRow = read('tools/setup.mjs').split('\n').find((l) => l.includes("'未检测到本机明日方舟客户端'"));
   assert.ok(noClientRow && noClientRow.includes('LOCAL_ART_FALLBACK') && noClientRow.includes('DEPLOY.md 第 6 节') && !noClientRow.includes('LOCAL_ART_COPY_HINT'), noClientRow);
   assert.match(read('tools/doctor.mjs'), /未提取：\$\{LOCAL_ART_FALLBACK\}（\$\{LOCAL_ART_COPY_HINT\}）/);
-  const deploy = read('docs/DEPLOY.md');
+  const deploy = read('docs/operations/DEPLOY.md');
   const s6 = deploy.slice(deploy.indexOf('## 6. 本地客户端素材'));
   assert.ok(deploy.includes('## 6. 本地客户端素材') && s6.length > 200, 'DEPLOY §6');
   for (const re of [/同一版本/, /public\/assets\/local\//, /data\/local-assets\.json/, /3D 棋盘/, /源石虫/, /表情/, /玩法说明/]) assert.match(s6, re);
@@ -102,5 +102,5 @@ test('docs and messages say what falls back without the local art and how a serv
   assert.match(readme, /召唤物/);
   assert.match(readme, /表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载/);
   assert.match(readme, /\*\*同一版本\*\*的整合包/);
-  assert.ok(!/需本地提取/.test(read('docs/PLAYING.md')), 'PLAYING: the 玩法说明 pages come with the download');
+  assert.ok(!/需本地提取/.test(read('docs/guides/PLAYING.md')), 'PLAYING: the 玩法说明 pages come with the download');
 });

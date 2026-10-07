@@ -3,7 +3,7 @@
 A **content pack** is add-on content a server picks up from a folder: a manifest plus its files. The owner's decision of
 2026-10-07 made the language pack the first type of one general mechanism, so that later resource packs (art, audio,
 fonts) and server-side data packs reuse the same manifest, registry and index instead of each inventing its own. In
-0.2.0 one type loads, **`lang`** (a language: docs/I18N.md "Adding a language"); `assets` and `data` are planned.
+0.2.0 one type loads, **`lang`** (a language: docs/development/I18N.md "Adding a language"); `assets` and `data` are planned.
 
 | File | Role |
 |---|---|
@@ -63,7 +63,7 @@ would see one folder).
 | `name`, `englishName` | the name in its own language (a language pack: the language's own name, shown in the menu) and in English (the menu's tooltip) |
 | `authors`, `credits`, `license` | who made it; free text (`license`: an SPDX id or text) |
 | `files` | a folder pack: role → path inside the folder. Each type lists its roles and their extensions (`lang`: `ui` required, `data` optional, both `.json`) |
-| the type's fields | `lang`: `lang`, `base`, `fallback`, `complete`, `machineTranslated`, `numberUnits` (docs/I18N.md) |
+| the type's fields | `lang`: `lang`, `base`, `fallback`, `complete`, `machineTranslated`, `numberUnits` (docs/development/I18N.md) |
 | `machineTranslated` | `lang`, optional: `true` when the pack's UI strings come from a machine (a translation, or a conversion such as the Traditional Chinese pack's). The index entry carries it (only when true, like `complete`) and the client shows a note under the language switch in 设置 while that language is in use (`public/js/ui/lang.js` `machineTranslationNote`). A value other than `true` / `false` is a warning and reads as false |
 
 A **problem** keeps a pack from loading (unknown type, no `lang`, a file missing or outside the folder, broken JSON, an
@@ -144,7 +144,7 @@ Things later types must keep (the maintainers' study of mods, 2026-10-07):
 node tools/packs.mjs list [--json]          the packs by type, what was skipped and why, the warnings
 node tools/packs.mjs index [--out <file>]   write packs/index.json (the static index)
 node tools/packs.mjs check [--strict]       list; --strict exits 1 when a pack is skipped or warned about
-node tools/i18n.mjs template <code>         a new language pack (docs/I18N.md)
+node tools/i18n.mjs template <code>         a new language pack (docs/development/I18N.md)
 node tools/i18n.mjs check <code> | --all    a language pack's strings: coverage, placeholders
 ```
 

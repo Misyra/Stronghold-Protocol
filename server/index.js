@@ -101,7 +101,7 @@ export async function startServer(opts = {}) {
   }
   const workerPool = ownsWorkerPool ? (workerConfig.size > 0 ? new SimulationPool({ data, ...workerConfig }) : null) : opts.workerPool;
   const { registry, lobby, network } = createSessionStack({ ...opts, workerPool }, { data, log });
-  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
+  // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
 

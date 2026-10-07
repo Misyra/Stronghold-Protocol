@@ -28,7 +28,7 @@ Bot 布局预演、普通 / 联防战场的无画面模拟（包括掉线接管�
 | `SP_WORKER_TIMEOUT_MS` | 120000；1–3600000 | 单任务超时，包含排队时间。 |
 | `SP_BOT_REHEARSAL` | 3；0–8 | Bot 预演布局数；0 使用启发式摆阵。降低此值会影响 AI 质量。 |
 
-例如在 PowerShell 启动前设置 `$env:SP_WORKERS='2'`，然后 `npm start`。这些设置需重启生效；内存较紧张的部署可减少线程数。`/healthz.workers` 报告运行中线程、排队数、完成 / 失败 / 取消 / 拒绝计数和 `avgComputeMs`（成功任务占用线程的平均毫秒数，包含首次线程启动，排队另计）。复现本机基准：`node tools/workerbench.mjs --workers 4 --battles 24`，详情见 [PERFORMANCE.md](PERFORMANCE.md)。
+例如在 PowerShell 启动前设置 `$env:SP_WORKERS='2'`，然后 `npm start`。这些设置需重启生效；内存较紧张的部署可减少线程数。`/healthz.workers` 报告运行中线程、排队数、完成 / 失败 / 取消 / 拒绝计数和 `avgComputeMs`（成功任务占用线程的平均毫秒数，包含首次线程启动，排队另计）。复现本机基准：`node tools/workerbench.mjs --workers 4 --battles 24`，详情见 [PERFORMANCE.md](../development/PERFORMANCE.md)。
 
 ## 1. Windows 小主机：一步步
 
@@ -41,7 +41,7 @@ Bot 布局预演、普通 / 联防战场的无画面模拟（包括掉线接管�
    ```
    装完**关闭并重新打开**终端，`node -v` 应显示 v22 或更高（winget 的 LTS 目前是 v24.x，同样可用）。没有 winget 时从 <https://nodejs.org/zh-cn/download> 和 <https://git-scm.com/download/win> 下载安装。
 2. 下载，三选一。建议放在一个固定、短、**不在 OneDrive 同步范围内**的目录，例如 `C:\Stronghold-Protocol`：
-   - **完整包（推荐）**：在仓库的 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases) 页面下载最新版本的 `Stronghold-Protocol-v<版本>.zip`（约 430 MB，解压后约 625 MB；已含运行依赖、前端库和全部素材，包括官方 3D 棋盘等本地客户端素材），解压后把里面的 `Stronghold-Protocol` 文件夹放到上述位置。不需要 Git，首次启动也不用再下载素材。素材版权归上海鹰角网络 / Yostar，仅限非商业使用，见 [NOTICE.md](../NOTICE.md)。
+   - **完整包（推荐）**：在仓库的 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases) 页面下载最新版本的 `Stronghold-Protocol-v<版本>.zip`（约 430 MB，解压后约 625 MB；已含运行依赖、前端库和全部素材，包括官方 3D 棋盘等本地客户端素材），解压后把里面的 `Stronghold-Protocol` 文件夹放到上述位置。不需要 Git，首次启动也不用再下载素材。素材版权归上海鹰角网络 / Yostar，仅限非商业使用，见 [NOTICE.md](../../NOTICE.md)。
    - **精简包**：同一页面的 `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）。代码、运行依赖和前端库与完整包相同，但不带素材：美术、Spine 模型、音频、字体、表情和「玩法说明」教程图在首次启动时由 setup 从公开镜像下载（约 460 MB，显示进度，可中断续传；镜像设置见下面的「国内镜像下载」）。官方 3D 棋盘等本地客户端素材需要用本机客户端提取，或从同一版本的完整包复制（第 6 节）。适合下载大文件不方便、或想先下一个小包的情况；放置方式同完整包。
    - **源码**：
      ```powershell
@@ -251,7 +251,7 @@ game.example.com {
 
 **Nginx**：
 
-完整主配置模板见 [`scripts/nginx.conf.example`](../scripts/nginx.conf.example)，默认使用 `worker_processes auto;`，按可用 CPU 核心数选择 worker 数。首次部署时修改模板中的域名和证书路径；已有 nginx 的，在现有 `/etc/nginx/nginx.conf` 顶层将 `worker_processes` 设为 `auto`，保留已有站点配置：
+完整主配置模板见 [`scripts/nginx.conf.example`](../../scripts/nginx.conf.example)，默认使用 `worker_processes auto;`，按可用 CPU 核心数选择 worker 数。首次部署时修改模板中的域名和证书路径；已有 nginx 的，在现有 `/etc/nginx/nginx.conf` 顶层将 `worker_processes` 设为 `auto`，保留已有站点配置：
 
 ```nginx
 worker_processes auto;
@@ -298,7 +298,7 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 - `/healthz` 即使加了短缓存也不是探活接口：有缓存就有陈旧语义（配了 `proxy_cache_use_stale` 时故障期间还会回放旧值）。外部监控判断死活要用其他端点或直连 Node 端口。删除云监控 / 云盾 agent 之前先备好替代告警，否则监控出现空窗。
 - `sites-enabled/` 里的站点文件必须保持指向 `sites-available/` 的软链接：变成普通文件后，改 `sites-available` 不再生效、按旧文件回滚也会失效（2026-10-05 实际发生过）。
 - Node 的对局计算线程数由环境变量 `SP_WORKERS` 控制（`server/workers/pool.js`，取值 0..32，默认 `min(8, CPU 核数 - 2)`，2 核机器默认 1）。`/healthz` 的 `workers.queued` 持续大于 0 说明计算线程不够：设 `SP_WORKERS=2` 可消除排队延迟，但要真正扩容量需升配 CPU（4 核时默认值即为 2）。
-- 主配置模板 [`scripts/nginx.conf.example`](../scripts/nginx.conf.example) 已包含线上验证过的 `/_v/`、`/healthz`、`/api/announcement` 缓存块与坑位注释，改域名和证书路径后可直接使用。
+- 主配置模板 [`scripts/nginx.conf.example`](../../scripts/nginx.conf.example) 已包含线上验证过的 `/_v/`、`/healthz`、`/api/announcement` 缓存块与坑位注释，改域名和证书路径后可直接使用。
 
 ## 3. Docker
 
@@ -380,7 +380,7 @@ volumes:
 
 `public/assets/local/` 和 `data/local-assets.json` 是从本机安装的《明日方舟》客户端里提取的官方素材（`tools/local-extract`，DESIGN §13）：`node tools/setup.mjs` 检测到客户端时会询问是否提取，之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定客户端目录。setup 从公开镜像下载的素材不包含这部分，所以在没有客户端的电脑上（例如 Linux 服务器）用源码或精简包部署时不会有它；Releases 的完整包里已经带上了。
 
-**本分支已把上游 v0.1.3 完整包的这部分素材和清单纳入 Git**，因此拉取 `master` 就会获得官方 3D 棋盘、部分界面图标和本地独有的敌人模型，无需另行提取或复制。来源和完整包校验值见 [ASSETS.md](ASSETS.md)。更新时停止服务、执行 `git pull` 后重启，再运行 `node tools/doctor.mjs` 确认「3D 棋盘可用」。普通干员美术、音频和字体仍由 setup 下载。启用素材 CDN 的站点，维护者把新素材随 R2 发布（`node tools/r2-sync.mjs --bucket weishu --push`）后，部署机 `git pull` 并重启即可，见 [CDN.md](CDN.md)。
+**本分支已把上游 v0.1.3 完整包的这部分素材和清单纳入 Git**，因此拉取 `master` 就会获得官方 3D 棋盘、部分界面图标和本地独有的敌人模型，无需另行提取或复制。来源和完整包校验值见 [ASSETS.md](../development/ASSETS.md)。更新时停止服务、执行 `git pull` 后重启，再运行 `node tools/doctor.mjs` 确认「3D 棋盘可用」。普通干员美术、音频和字体仍由 setup 下载。启用素材 CDN 的站点，维护者把新素材随 R2 发布（`node tools/r2-sync.mjs --bucket weishu --push`）后，部署机 `git pull` 并重启即可，见 [CDN.md](CDN.md)。
 
 没有本地素材时游戏照常运行，只是下面几样换成替代样式：
 
@@ -409,7 +409,7 @@ npm run package -- --out <目录>        # 完整包 Stronghold-Protocol-v<版�
 npm run package:lite -- --out <目录>   # 精简包 Stronghold-Protocol-v<版本>-lite.zip
 ```
 
-- **打进去的**：`git ls-files` 里的 `server/`、`shared/`、`data/`、`public/`（不含 `public/dev/`）、`packs/`（随仓库提交的内容包；只在本机安装、没提交的不打进去）、启动脚本、玩家会运行的工具（setup、vendor、fetch-assets 与 `tools/assets/`、doctor，以及 setup 调用的 `tools/local-extract/` 和 `crop-board-atlas.mjs`）、服务器和 fetch-assets 读取的 4 张研究数据表（`docs/research/` 的 `03-operators`、`05-enemies`、`05-maps`、`07-assets` 四个 JSON）、`package.json` / `package-lock.json`、许可证与说明（`LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`、`README.md`、`CHANGELOG.md`）、`docs/PLAYING.md` 和本文；然后在临时目录里生成 `packs/index.json`（打进去的语言包和内容包的列表，供纯静态托管使用；服务器自己会实时列出，见 [PACKS.md](PACKS.md)），再 `npm ci --omit=dev` 装上运行依赖和 `public/vendor`。完整包再加上 `data/assets.json` 列出的素材、`public/fonts`，以及本地提取的 `public/assets/local/` 和 `data/local-assets.json`。磁盘上有、清单却没列出的文件不打进去（例如 0.2.0 移出自选的焰狐龙梓兰的旧素材）。
+- **打进去的**：`git ls-files` 里的 `server/`、`shared/`、`data/`、`public/`（不含 `public/dev/`）、`packs/`（随仓库提交的内容包；只在本机安装、没提交的不打进去）、启动脚本、玩家会运行的工具（setup、vendor、fetch-assets 与 `tools/assets/`、doctor，以及 setup 调用的 `tools/local-extract/` 和 `crop-board-atlas.mjs`）、服务器和 fetch-assets 读取的 4 张研究数据表（`docs/research/` 的 `03-operators`、`05-enemies`、`05-maps`、`07-assets` 四个 JSON）、`package.json` / `package-lock.json`、许可证与说明（`LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`、`README.md`、`CHANGELOG.md`）、`docs/guides/PLAYING.md` 和本文；然后在临时目录里生成 `packs/index.json`（打进去的语言包和内容包的列表，供纯静态托管使用；服务器自己会实时列出，见 [PACKS.md](../guides/PACKS.md)），再 `npm ci --omit=dev` 装上运行依赖和 `public/vendor`。完整包再加上 `data/assets.json` 列出的素材、`public/fonts`，以及本地提取的 `public/assets/local/` 和 `data/local-assets.json`。磁盘上有、清单却没列出的文件不打进去（例如 0.2.0 移出自选的焰狐龙梓兰的旧素材）。
 - **不打进去的**：`test/`、维护用的工具（数据构建、golden、botbench、i18n、导入检查、本工具等）、`scripts/make-windows-bundle.mjs`（Windows 便携包，见 [WINDOWS.md](WINDOWS.md)）、其他文档、研究笔记和 `docs/img/`、`handoff/`、`.github/`、`types/`、lint / 编辑器 / Docker 配置。和 0.1.x 的整树打包（全部跟踪文件加上 `public/assets` 的全部内容）相比，0.2.0 的完整包少了约 640 个文件、解压后小约 26 MB，zip 小约 8 MB。
 - **打包前的检查**（`--dry-run` 也全部做一遍）：拒绝名单（`pv`、`review`、`.cache`、`.claude`、`.git`、`logs`、`.env`、`scripts/service.env.cmd`、`handoff`、`test` 等）；每个打进去的模块的相对导入、玩家用的 npm 脚本（start / setup / doctor / launch / postinstall / vendor / assets）都指向包里的文件；完整包里 `data/assets.json` 和 `data/local-assets.json` 列出的文件都在（缺了先运行 `node tools/fetch-assets.mjs`）；没有只差大小写的两个路径；包里的文件（二进制素材也查）不含个人目录路径（`/Users/…`、`C:\Users\…`、`/home/…`）或本机的账户名（运行时从系统读取；`SP_PACKAGE_SCAN_NAMES=a,b` 可以再加名字）；打进去的已跟踪文件没有未提交的改动（重新生成的 `data/assets.json` 要先提交）。有任何问题都会列出原因、以非零状态结束，不写 zip；正式打包时还会核对临时目录里的文件和计划完全一致。
 - **需要**：已下载素材的仓库（完整包）——打包前先联网运行一次 `node tools/fetch-assets.mjs`，补齐清单计划但本机还没有的素材（清单只列出磁盘上有的文件，打包工具看不出缺了哪些；`data/assets.json` 有变化就先提交）；能访问 npm 的网络（`npm ci`）；`zip`（或 bsdtar 的 `tar`，Windows 10 起自带）。`--out` 默认是系统临时目录下的 `stronghold-protocol-release`，不能在仓库里面；`--force` 覆盖已有的 zip，`--keep-stage` 保留打包用的目录供检查。

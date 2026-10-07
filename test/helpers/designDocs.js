@@ -3,7 +3,7 @@
 //   import { designText } from '../helpers/designDocs.js';
 //   const DESIGN = designText(ROOT);   // the index's preamble, then every `## N.` block in § order
 //
-// docs/DESIGN.md is the index since 0.2.0: the current rules live in docs/design/*.md, the per-release revisions in
+// docs/development/DESIGN.md is the index since 0.2.0: the current rules live in docs/design/*.md, the per-release revisions in
 // docs/history/*.md, and every `## N.` block (its heading, text and the `---` after it) sits in one of those files
 // verbatim. designText() puts the blocks back in section order (not file order — the tests slice it as `## n.` →
 // `## n+1.`), so from `## 0.` on it is the pre-split DESIGN.md byte for byte. A section found twice throws.
@@ -42,7 +42,7 @@ export function splitBlocks(text) {
 
 /** The design text in § order: the index's preamble, then every part file's blocks sorted by section number. */
 export function designText(root) {
-  const index = readFileSync(join(root, 'docs/DESIGN.md'), 'utf8');
+  const index = readFileSync(join(root, 'docs/development/DESIGN.md'), 'utf8');
   const all = new Map();
   const { preamble, blocks: own } = splitBlocks(index);
   for (const [n, t] of own) all.set(n, t);

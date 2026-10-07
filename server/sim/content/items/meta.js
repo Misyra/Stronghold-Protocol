@@ -1,4 +1,4 @@
-// server/sim/content/items/meta.js — prep side of the items (docs/META.md registry API).
+// server/sim/content/items/meta.js — prep side of the items (docs/development/META.md registry API).
 //
 // The engine built-ins (server/match/builtinMeta.js) already implement most consume-on-equip items and Arts from the
 // concrete item's params; they are reviewed and kept (盟约之币, 骑士储蓄罐, 随身身份牌, 精打细算玩偶, 简易通讯机 (tier ≤

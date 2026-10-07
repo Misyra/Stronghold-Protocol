@@ -24,8 +24,8 @@
 //               (+ unit) with occurrence and battle counts, meta handler errors by registry key, match engine errors
 //   --odds      shop tier distribution of rolled chess slots per shop level (all runs)
 //   --json      print machine-readable results
-//   --tuning off     play on the research-faithful numbers (data/tuning.json ignored; docs/BALANCE.md)
-//   --legacy-time    read combat limits as game seconds (the reading before docs/BALANCE.md §2.1)
+//   --tuning off     play on the research-faithful numbers (data/tuning.json ignored; docs/development/BALANCE.md)
+//   --legacy-time    read combat limits as game seconds (the reading before docs/development/BALANCE.md §2.1)
 // Examples:
 //   node tools/matchrun.mjs --mode solo --difficulty FUNNY --seed 3
 //   node tools/matchrun.mjs --mode coop --difficulty HARD --players 4 --seeds 20

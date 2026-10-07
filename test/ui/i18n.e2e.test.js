@@ -5,13 +5,13 @@
 // The title screen opens in Chinese; 中文 | English → English in place (no reload): the title, the start button, the
 // connection line, <html lang>, the tab title; the choice is kept across a reload (localStorage sp.pref.lang) and the
 // game-data overlay (data/i18n/en.json) is applied; `?lang=zh` switches back and leaves the address bar. Language packs
-// (docs/I18N.md "Adding a language", docs/PACKS.md): a pack file dropped into public/i18n/ and a pack folder dropped
+// (docs/development/I18N.md "Adding a language", docs/guides/PACKS.md): a pack file dropped into public/i18n/ and a pack folder dropped
 // into packs/ while the server runs show in the menu and switch, with English filling what they lack; a removed pack
 // sends a stored choice back to Chinese. The shipped Japanese, Korean and Traditional Chinese packs (the owner's decisions of
 // 2026-10-07) switch to their official game texts and their own UI strings (what a pack lacks shows its fallback: English
 // for ja / ko, the Simplified Chinese for zh-TW); a pack marked `machineTranslated` says so in 设置 (none in Chinese).
 // With more than four languages the menu is a list (ui/lang.js SEGMENTED_MAX): the helpers read and pick either form.
-// No console / page / request errors. docs/I18N.md.
+// No console / page / request errors. docs/development/I18N.md.
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';

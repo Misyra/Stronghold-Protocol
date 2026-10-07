@@ -10,7 +10,7 @@
 // - Trait (中坚术师) "攻击造成法术伤害": the profession default (ranged arts bolt, hits air units, targetable by ground
 //   enemies). CCR-Δ “来自河谷的笔盒” adds "造成法术伤害时附带相当于8%伤害的凋亡损伤" (hidden module talent
 //   `ep_damage_ratio`): every arts damage he deals — attacks, the talent's extra hits, 殁亡's follow-up — fills 8 % of the
-//   HP it removed as 凋亡 损伤 (the kits' element convention, docs/SIM.md §7.2). CCR-Y “《语义范式百科》” adds
+//   HP it removed as 凋亡 损伤 (the kits' element convention, docs/development/SIM.md §7.2). CCR-Y “《语义范式百科》” adds
 //   "普通攻击命中精英或领袖敌人时获得1点技力" (trait bb `sp`): +sp SP per normal-attack hit on an elite or leader enemy
 //   (none while a timed skill runs — AK) and, per the 语汇演化 备注 "<Y模组>…可触发模组提供的额外特性", per talent hit too.
 // - T1 语汇演化 "对一个目标发起攻击时，有40%几率额外对攻击范围内一个随机目标造成相当于攻击力60%的法术伤害并使其停顿0.8秒"

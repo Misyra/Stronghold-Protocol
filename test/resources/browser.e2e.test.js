@@ -1,6 +1,6 @@
 // test/resources/browser.e2e.test.js — the optional offline-resource preload in headless Chrome: a Service Worker is
 // registered, the files land in Cache Storage and a resource request is answered with the network off
-// (docs/ASSETS.md「Preload」).
+// (docs/development/ASSETS.md「Preload」).
 //
 // Opt-in (starts Chrome): RESOURCE_E2E=1 node --test test/resources/browser.e2e.test.js
 // Chrome path: $CHROME_PATH or the macOS default. The fixture install (its own public/ + data/) lives in a temp dir, so

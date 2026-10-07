@@ -1,4 +1,4 @@
-// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later); see docs/PERFORMANCE.md.
+// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later); see docs/development/PERFORMANCE.md.
 import { parentPort, workerData } from 'node:worker_threads';
 import { setData } from '../data.js';
 import { memorySample } from './memory.js';

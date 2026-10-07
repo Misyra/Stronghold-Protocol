@@ -1,8 +1,8 @@
 /**
  * Core shapes for the sim and the wire protocol.
  *
- * Taken from docs/DESIGN.md §5.2 (Unit), §5.4 (DamageInfo), §8 (envelope, b.snap)
- * and docs/SIM.md §4 (DamageInfo as makeDamageInfo builds it) and §9 (snapshot tuples).
+ * Taken from docs/development/DESIGN.md §5.2 (Unit), §5.4 (DamageInfo), §8 (envelope, b.snap)
+ * and docs/development/SIM.md §4 (DamageInfo as makeDamageInfo builds it) and §9 (snapshot tuples).
  * The sim does not import this file. It is here so the shapes have one JSDoc home
  * while server/sim is still being split.
  */

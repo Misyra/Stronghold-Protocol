@@ -394,10 +394,10 @@ heuristics CPU 36 / 88 → 35 / 86 ms and 16 / 40 → 16 / 40 ms.
   also spawn in the Final Assault / Hidden Core, on the owner's half (route to its goal), are shown in the boss-round
   preview, and the boss battle uses up one of their battles (kill coins → pending funds for the Hidden Core prep).
 * A 驰援 card is never offered when its bond has no chess left in the match's pool (every member banned).
-* docs/META.md §2.6 example guards `ctx.source.kind === 'choice'` (its EffectRef reuses the handler's key).
+* docs/development/META.md §2.6 example guards `ctx.source.kind === 'choice'` (its EffectRef reuses the handler's key).
 * 坚若磐石 = least LP lost (`titles.comment_3 { stat: 'lpLost', rule: 'min' }` in tuning.json; results.js supports
   `rule: 'min'` among the players still alive).
-* 教鞭 / “神秘顾客” stay a random bounty, documented in docs/META.md §2.5.
+* 教鞭 / “神秘顾客” stay a random bounty, documented in docs/development/META.md §2.5.
 
 ---
 

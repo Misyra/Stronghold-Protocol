@@ -86,7 +86,7 @@ export function enterSession(rawName) {
   return true;
 }
 
-// data/assets.json `ui` keys are 'group/key' (docs/ASSETS.md).
+// data/assets.json `ui` keys are 'group/key' (docs/development/ASSETS.md).
 const BACKDROP_KEYS = ['titleBackdrop', 'entry/bkg_01', 'entry/bkg_02'];
 const RIDGE_KEYS = ['titleRidges', 'entry/bg_mountains_tiled'];
 

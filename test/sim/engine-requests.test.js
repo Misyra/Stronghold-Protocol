@@ -1,4 +1,4 @@
-// Engine change requests of the content review (docs/SIM.md): permanent rangeExtend in the initial range, forceAttack
+// Engine change requests of the content review (docs/development/SIM.md): permanent rangeExtend in the initial range, forceAttack
 // noAmmo, the massFlat mod, the attract (诱导) and resist (抵抗) statuses, extra range keys, content trigger ranges,
 // skill onEnd order, redeploy { tile, keepSp }, path-first tactical points, statusApplied `entered`, layerGain `tile`.
 import { test } from 'node:test';

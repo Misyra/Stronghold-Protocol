@@ -1,4 +1,4 @@
-// server/sim/content/support/meta.js — prep-side helpers shared by content wave B (docs/META.md registry API).
+// server/sim/content/support/meta.js — prep-side helpers shared by content wave B (docs/development/META.md registry API).
 //
 // registerSupportMeta(registry) is called once from bonds.js → registerMeta. It installs
 //   global:contentb_info   onBattleStart: writes `ev.input.contentInfo` (read in battles with support.contentInfo()):

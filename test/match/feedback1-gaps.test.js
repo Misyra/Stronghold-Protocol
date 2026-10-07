@@ -275,14 +275,14 @@ test('§21.26 docs: DESIGN (the subsection and the normative lines), META, PLAYI
   const s = DESIGN.slice(at);
   for (const k of ['morphPairings', 'harmonyMembers', '`harmony: 1`', 'bandBondIds', 'botPickBand', '0 of 200 and 0 of 800', '5 of 200 solo and 23 of 800 co-op',
     'shared/bandBonds.js', 'bandOffBonds', 'BandOffTag', '本局禁用【拉特兰】盟约，此策略效果可能无法发挥', 'it stays selectable']) assert.ok(s.includes(k), k);
-  assert.match(doc('docs/DATA.md'), /\| `bondIds` \| `\["lateranoShip"\]` \(潘格尼尼\) \/ `\[\]` \|/, 'DATA.md bands.json bondIds');
+  assert.match(doc('docs/development/DATA.md'), /\| `bondIds` \| `\["lateranoShip"\]` \(潘格尼尼\) \/ `\[\]` \|/, 'DATA.md bands.json bondIds');
   assert.match(DESIGN, /bonds:\[\{bondId,count,active,tier,layers,harmony\? \/\* 调和's \+1 is in count, §21\.26 \*\/\}\]/, '§8.2');
   assert.match(DESIGN, /bonds: \[ \{ bondId, count, active, tier, layers, harmony\? \/\* 调和's \+1 is in count, §21\.26 \*\/, thresholds, countsHand \} \]/, '§8.3');
   assert.match(DESIGN, /Strategy \(§21\.6\): pick a band \(weighted by starting LP; never one built around a bond the mode switches off — `gd\.bandBondIds`, §21\.26\)/, '§6.6');
-  const META = doc('docs/META.md');
+  const META = doc('docs/development/META.md');
   assert.match(META, /\*\*Strategy\*\* \(`botPickBand`\)/);
   assert.match(META, /carries `harmony: 1` in both lists/);
-  assert.match(doc('docs/PLAYING.md'), /盟约详情会写「含调和 \+1」/);
+  assert.match(doc('docs/guides/PLAYING.md'), /盟约详情会写「含调和 \+1」/);
   const log = doc('CHANGELOG.md');
   const v011 = log.slice(log.indexOf('## 0.1.1'), log.indexOf('## 0.1.0'));
   assert.match(v011, /变形同构体的详情卡列出天赋栏里的对应关系/);

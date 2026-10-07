@@ -1,6 +1,6 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 // public/js/resources/service.js — the Service Worker side of the asset preload: answer a request from Cache Storage, or
-// say "not mine" so the worker falls back to the network (docs/ASSETS.md「Preload」).
+// say "not mine" so the worker falls back to the network (docs/development/ASSETS.md「Preload」).
 //
 // Only /assets/**, /fonts/** and the extension-less /media/** audio route (site paths or CDN URLs) are ever answered, and
 // only from caches this app wrote (`X-SP-Resource`): code, data, API responses, manifests and WebSocket traffic never

@@ -343,7 +343,7 @@ HEAD /api/announcement
 | `avgComputeMs` | `completed > 0` 时为 `computeMs / completed`，否则为 0 |
 | `memory` | 每线程 `{ threadId, busy, sample }` 数组；`sample` 为该线程最近一次回包携带的堆采样（`heapUsed` / `heapTotal` / `external` / `arrayBuffers` / `sampledAt`），尚未回包时为 `null` |
 
-`persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）、`workerMemory`（持久化 Worker 最近一次回包的堆采样，尚未回包为 `null`）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
+`persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）、`workerMemory`（持久化 Worker 最近一次回包的堆采样，尚未回包为 `null`）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](../operations/PERSISTENCE.md)。
 
 ## 7. 资源预载清单与版本资源
 
@@ -397,7 +397,7 @@ HEAD /data/resource-manifest.json
 - `/assets/`、`/fonts/`、`/media/` 及对应版本素材路径新增公开 CORS：允许 GET / HEAD / OPTIONS、请求头 `Range`，暴露 `ETag, Content-Length, Content-Range, Accept-Ranges`；有效素材预检返回 204，`Access-Control-Max-Age: 86400`。
 - API、游戏数据和私有模块未因此开放 CORS；健康检查也没有开放 CORS。
 
-`SP_ASSETS_CDN` 配置素材基地址；素材版本由仓库根目录的 `.assets-manifest.json` 决定，素材 URL 形如 `<基地址>/assets/…?v=<文件哈希>`。只有素材 URL 使用 CDN，API 与 `/ws` 仍请求游戏站点。完整部署说明见 [CDN.md](CDN.md)。
+`SP_ASSETS_CDN` 配置素材基地址；素材版本由仓库根目录的 `.assets-manifest.json` 决定，素材 URL 形如 `<基地址>/assets/…?v=<文件哈希>`。只有素材 URL 使用 CDN，API 与 `/ws` 仍请求游戏站点。完整部署说明见 [CDN.md](../operations/CDN.md)。
 
 ## 8. 结算消息新增字段
 
@@ -411,18 +411,18 @@ HEAD /data/resource-manifest.json
 
 当前生成方式为 `roomCode + '-' + battlePrefix + '-' + startedAt`，但业务只应依赖其稳定性，以 `matchId` 去重，不应解析内部组成。
 
-这些字段用于浏览器本地战绩；当前没有服务端历史列表、战绩查询、上传、删除或完整录像 API。服务器检查点持久化也没有公开保存 / 恢复 HTTP API。战绩范围见 [MATCH_HISTORY.md](MATCH_HISTORY.md)。
+这些字段用于浏览器本地战绩；当前没有服务端历史列表、战绩查询、上传、删除或完整录像 API。服务器检查点持久化也没有公开保存 / 恢复 HTTP API。战绩范围见 [MATCH_HISTORY.md](../guides/MATCH_HISTORY.md)。
 
 ## 9. 实现出处与验证
 
 | 契约 | 实现 / 已有测试 |
 |---|---|
-| HTTP 路由、响应头、资源缓存 | [server/index.js](../server/index.js)、[test/asset-version.test.js](../test/asset-version.test.js)、[test/asset-cdn.test.js](../test/asset-cdn.test.js) |
-| 房间状态、限流 | [server/roomStatus.js](../server/roomStatus.js)、[test/room-status.test.js](../test/room-status.test.js) |
-| 公告 | [server/announcement.js](../server/announcement.js)、[test/announcement.test.js](../test/announcement.test.js) |
-| 匹配、延迟探测、难度名称 | [server/matchmaking.js](../server/matchmaking.js)、[server/lobby.js](../server/lobby.js)、[shared/protocol.js](../shared/protocol.js)、[test/matchmaking.test.js](../test/matchmaking.test.js) |
-| 资源清单 | [server/resources.js](../server/resources.js)、[test/resources/manifest.test.js](../test/resources/manifest.test.js) |
-| 结算扩展 | [server/match/results.js](../server/match/results.js)、[test/match/results.test.js](../test/match/results.test.js) |
+| HTTP 路由、响应头、资源缓存 | [server/index.js](../../server/index.js)、[test/asset-version.test.js](../../test/asset-version.test.js)、[test/asset-cdn.test.js](../../test/asset-cdn.test.js) |
+| 房间状态、限流 | [server/roomStatus.js](../../server/roomStatus.js)、[test/room-status.test.js](../../test/room-status.test.js) |
+| 公告 | [server/announcement.js](../../server/announcement.js)、[test/announcement.test.js](../../test/announcement.test.js) |
+| 匹配、延迟探测、难度名称 | [server/matchmaking.js](../../server/matchmaking.js)、[server/lobby.js](../../server/lobby.js)、[shared/protocol.js](../../shared/protocol.js)、[test/matchmaking.test.js](../../test/matchmaking.test.js) |
+| 资源清单 | [server/resources.js](../../server/resources.js)、[test/resources/manifest.test.js](../../test/resources/manifest.test.js) |
+| 结算扩展 | [server/match/results.js](../../server/match/results.js)、[test/match/results.test.js](../../test/match/results.test.js) |
 
 可在项目根目录运行已有接口测试核对契约：
 

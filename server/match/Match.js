@@ -1,7 +1,7 @@
 // server/match/Match.js — the match & meta engine: state machine, timers, round loop, co-op orchestration,
 // broadcasting views (DESIGN §6, §8). Rules are documented in the module headers of ./PlayerState.js, ./pool.js,
 // ./board.js, ./bondsMeta.js, ./effectsMeta.js, ./choices.js, ./waves.js, ./unite.js, ./finalAssault.js,
-// ./results.js, ./bot.js and in docs/META.md.
+// ./results.js, ./bot.js and in docs/development/META.md.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
 // MATCH INTERFACE (platform contract: server/lobby.js ⇄ server/match/Match.js)

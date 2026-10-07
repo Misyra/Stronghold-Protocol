@@ -20,7 +20,7 @@
 //   calculates its damage like an attack; the fixed-value poison ticks do not]. Module LOR-Δ “沙蚀” adds
 //   "造成伤害时附带相当于10%伤害的神经损伤" (trait ep_damage_ratio; thorns_e_003_tr: ON_AFTER_OUTPUT_DAMAGE, every damage
 //   type): ep_damage_ratio × the HP damage of every damage instance he deals — attacks, spikes, LOR-X additions and the
-//   poison ticks — as 神经损伤 (docs/SIM.md §7.2 element conventions).
+//   poison ticks — as 神经损伤 (docs/development/SIM.md §7.2 element conventions).
 // - T1 神经腐蚀 "攻击使目标中毒，在3秒内每秒受到125点法术伤害（对会远程攻击的目标伤害加倍）": every hit of his attacks (and
 //   of the S2 spikes, PRTS "所有攻击均能附加") poisons the target — one poison per 棘刺 (independentCharacterSource) for
 //   `duration` s, ticking every second, the first a second in (waitFirstTriggerInterval), damage[normal] or

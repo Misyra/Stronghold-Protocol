@@ -1,4 +1,4 @@
-// Documentation ⇄ code consistency (docs/DESIGN.md with docs/design/ and docs/history/, DATA.md, META.md, SIM.md, README.md,
+// Documentation ⇄ code consistency (docs/development/DESIGN.md with docs/design/ and docs/history/, DATA.md, META.md, SIM.md, README.md,
 // DEPLOY.md, PLAYING.md).
 // Every rule the final documentation sweep corrected is checked twice: the code still behaves as the docs now say, and
 // the stale wording does not come back. Topics: combat / boss clocks in REAL seconds (overtime after 150 real s,
@@ -61,14 +61,14 @@ const matchText = () => [doc('server/match/Match.js'), ...readdirSync(join(ROOT,
 const playerText = () => [doc('server/match/PlayerState.js'), ...readdirSync(join(ROOT, 'server/match/player')).sort().map((f) => doc(`server/match/player/${f}`))].join('\n');
 // the sources of a former kits/tierN.js: its helpers (kits/shared/tierN.js) and its kit files (kits/ops/, kits/index.js)
 const tierSources = (t) => [`server/sim/content/kits/shared/tier${t}.js`, ...KIT_FILES[t - 1].map((f) => `server/sim/content/kits/ops/${f}`)];
-// the design document: the index docs/DESIGN.md and its sections in docs/design/ + docs/history/, in § order
+// the design document: the index docs/development/DESIGN.md and its sections in docs/design/ + docs/history/, in § order
 const DESIGN = designText(ROOT);
-const META = doc('docs/META.md');
-const DATA_MD = doc('docs/DATA.md');
-const SIM = doc('docs/SIM.md');
+const META = doc('docs/development/META.md');
+const DATA_MD = doc('docs/development/DATA.md');
+const SIM = doc('docs/development/SIM.md');
 const README = doc('README.md');
-const DEPLOY = doc('docs/DEPLOY.md');
-const PLAYING = doc('docs/PLAYING.md');
+const DEPLOY = doc('docs/operations/DEPLOY.md');
+const PLAYING = doc('docs/guides/PLAYING.md');
 /** The table row of DATA.md whose first cell is `key` (backticked), or ''. */
 const dataRow = (key, from = 0) => {
   const i = DATA_MD.indexOf(`| \`${key}\` |`, from);
@@ -556,7 +556,7 @@ test('playtest6b follow-up (DESIGN §20.10–§20.13): leader HP, 直接乘算, 
   const subsec = (n) => { const a = S20.indexOf(`### 20.${n} `); const b = S20.indexOf('\n### 20.', a + 5); return S20.slice(a, b > 0 ? b : undefined); };
   const intro = S20.slice(0, S20.indexOf('### 20.1 '));
   const s209 = subsec(9);
-  const BALANCE = doc('docs/BALANCE.md');
+  const BALANCE = doc('docs/development/BALANCE.md');
   const R02 = doc('docs/research/02-bonds.md');
   const R11 = doc('docs/research/11-limits-official.md');
   // the intro names the follow-up and the four sections, in merge order
@@ -646,7 +646,7 @@ test('playtest6b QA residuals (DESIGN §20.14): the held boss result, the cue be
   const s2010 = S20.slice(S20.indexOf('### 20.10 '), S20.indexOf('### 20.11 '));
   assert.match(s2010, /\*\*Measured\*\* \(real seconds/);
   assert.match(s2010, /Integrated build \(QA 6b on `cca11e6`/);
-  const BALANCE = doc('docs/BALANCE.md');
+  const BALANCE = doc('docs/development/BALANCE.md');
   assert.match(BALANCE, /\*\*2026-10-02 — the integrated build \(QA 6b/);
   assert.match(BALANCE, /measured on the boss-HP workstream's boards, \*\*before\*\* the elite-to-board merge/);
 });
@@ -754,7 +754,7 @@ test('batch 6 after 0.1.0 (DESIGN §21.21–§21.25): the hammer per deployment,
   const { parseArgs, shrinkGuard } = await import('../tools/fetch-assets.mjs');
   assert.equal(parseArgs(['--allow-shrink']).allowShrink, true);
   assert.equal(shrinkGuard({ a: { b: 1 } }, { a: {} }, {}).write, false);
-  assert.match(doc('docs/ASSETS.md'), /\| `--allow-shrink` \|/);
+  assert.match(doc('docs/development/ASSETS.md'), /\| `--allow-shrink` \|/);
   assert.match(DATA_MD, /unless `--allow-shrink` \(or `--prune`\) is passed/);
   // CHANGELOG 0.1.1 credits both pull requests
   const log = doc('CHANGELOG.md');
@@ -907,8 +907,8 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
   // the docs
   assert.match(DESIGN, /### 21\.30 /);
   assert.match(DESIGN, /\*\*Where each line plays — battle only\.\*\*/);
-  assert.match(doc('docs/ASSETS.md'), /\| 干员战斗语音 \|/);
-  assert.match(doc('docs/ASSETS.md'), /voiceChars/);
+  assert.match(doc('docs/development/ASSETS.md'), /\| 干员战斗语音 \|/);
+  assert.match(doc('docs/development/ASSETS.md'), /voiceChars/);
   assert.match(SIM, /\['engage', id\]/);
   // the code: every slot the client asks for comes from a running battle's own stream — the three prep-only lines
   // (干员报到 / 编入队伍 / 任命队长) are never requested, and 选中干员 sits behind the panel's combat flag

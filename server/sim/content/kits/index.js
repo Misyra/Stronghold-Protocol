@@ -1,4 +1,4 @@
-// server/sim/content/kits/index.js — the operator kit registry (DESIGN §7, docs/SIM.md §7.2): baseChessId →
+// server/sim/content/kits/index.js — the operator kit registry (DESIGN §7, docs/development/SIM.md §7.2): baseChessId →
 // (bb, chess, def) => Kit. One file per kit in ops/ (README.md: what a kit file holds, naming, registration, tests).
 //
 // KIT_FILES lists every kit file, grouped by tier — the former kits/tier1.js … tier6.js, each group in that file's

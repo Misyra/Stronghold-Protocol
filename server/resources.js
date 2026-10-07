@@ -1,14 +1,14 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// server/resources.js — the optional preload manifest (docs/ASSETS.md「Preload」).
+// server/resources.js — the optional preload manifest (docs/development/ASSETS.md「Preload」).
 //
 // The client can preload every file a match may need into Cache Storage (Service Worker, public/js/resources/*), so
 // cached art can be read locally and reduces download waits when entering a battle.
 // That list needs no extra build step: it is derived from the asset manifests this server already serves, and it is
-// rewritten exactly like /data/assets.json (SP_ASSETS_CDN, docs/ASSETS.md「CDN」) — so the client preloads from the
+// rewritten exactly like /data/assets.json (SP_ASSETS_CDN, docs/development/ASSETS.md「CDN」) — so the client preloads from the
 // CDN. Local file sizes are added when this install has the files on disk (a CDN-only install simply omits them).
 //
 // Every entry carries a `hash`: the client stores the files under ONE cache name and replaces a file when its hash
-// changes, so an asset update only re-downloads what really changed (docs/ASSETS.md「Preload」) instead of the whole
+// changes, so an asset update only re-downloads what really changed (docs/development/ASSETS.md「Preload」) instead of the whole
 // ~310 MiB. Hashes come from the manifests themselves — `local-assets.json` entries (written by extract.py) and
 // `asset-hashes.json` (tools/asset-hashes.mjs over public/assets + public/fonts). A file without one keeps the old
 // local files are hashed lazily on the first manifest request. Missing/CDN-only files fall back to the source stamp.

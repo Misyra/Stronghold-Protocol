@@ -1,7 +1,7 @@
 # 参与贡献
 
 欢迎提 Issue 和 Pull Request：bug、和官方规则不一致的地方、新干员的战斗逻辑、翻译、文档都可以。动手之前先看一眼
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（代码地图：哪个规则在哪个文件）。English summary at the end.
+[docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md)（代码地图：哪个规则在哪个文件）。English summary at the end.
 
 ## 1. 准备环境
 
@@ -52,7 +52,7 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   activity_table 的 act2autochess、enemy_database、关卡文件）和 [PRTS](https://prts.wiki/)（干员页、技能和天赋的「备注」、
   卫戍协议相关页面）。数值尽量取 blackboard，不要凭记忆写数字。官方实测的截图或录像也很有价值，请附在 Issue / PR 里。
 - **查不到出处**的细节按最简单、最接近官方的方式实现，在代码注释和 PR 描述里标 `[ASSUMED]`。维护者拍板的写成
-  “the owner's decision of YYYY-MM-DD”。有意和官方不同的规则只能由维护者决定，并写进设计文档（[docs/DESIGN.md](docs/DESIGN.md)
+  “the owner's decision of YYYY-MM-DD”。有意和官方不同的规则只能由维护者决定，并写进设计文档（[docs/development/DESIGN.md](docs/development/DESIGN.md)
   是索引：现行规则在 `docs/design/`，各版本的修订与依据在 `docs/history/`）。
 - **版权**：不要把技能描述、剧情等受版权保护的文本大段复制进代码、文档或 PR，引一小句并注明出处即可。不要提交任何游戏
   素材文件（`public/assets/` 已被 `.gitignore` 排除）。
@@ -67,14 +67,14 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   里写明并致谢作者。
 - PR 描述写：改了什么、为什么、出处（数据表字段、PRTS 链接）、`[ASSUMED]` 的地方、跑了哪些测试、黄金结果里哪些场景变了。
   界面改动附截图。
-- 规则改了，相关文档一起改：`docs/design/` 里对应的规则（章节号与文件见 docs/DESIGN.md 的索引）、`docs/history/` 里当前版本的
-  修订记录、docs/SIM.md、docs/META.md、docs/DATA.md 等。
+- 规则改了，相关文档一起改：`docs/design/` 里对应的规则（章节号与文件见 docs/development/DESIGN.md 的索引）、`docs/history/` 里当前版本的
+  修订记录、docs/development/SIM.md、docs/development/META.md、docs/development/DATA.md 等。
   `test/docs-consistency.test.js` 固定了文档里的一些句子，改文档后跑一下。
 - 代码和注释用英文；玩家文档（README、PLAYING、DEPLOY）用简体中文，技术文档用英文。界面上的文字写中文并用 `t('…')`
-  包起来，英文放进 `public/i18n/en.json`（[docs/I18N.md](docs/I18N.md)）。
+  包起来，英文放进 `public/i18n/en.json`（[docs/development/I18N.md](docs/development/I18N.md)）。
 - 翻译成新的语言：一个语言就是 `public/i18n/` 里的一个文件，不用改代码。`node tools/i18n.mjs template <语言代码>` 生成骨架，
-  翻译后用 `node tools/i18n.mjs check <语言代码>` 检查，步骤见 [docs/I18N.md](docs/I18N.md)「Adding a language」；语言包是
-  内容包的第一种，格式见 [docs/PACKS.md](docs/PACKS.md)。
+  翻译后用 `node tools/i18n.mjs check <语言代码>` 检查，步骤见 [docs/development/I18N.md](docs/development/I18N.md)「Adding a language」；语言包是
+  内容包的第一种，格式见 [docs/guides/PACKS.md](docs/guides/PACKS.md)。
 - 提交的代码以 GPL-3.0-or-later 发布。本项目坚持非商业，请不要加入广告、付费、打赏等任何变现功能。
 
 ## 5. 添加干员（自选编队）
@@ -97,7 +97,7 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
 ## English summary
 
 - **Setup**: Node.js 22 or 24; `npm install`, `npm run setup` (art and audio — optional for tests), `npm run dev`.
-  The code map is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+  The code map is [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md).
 - **Tests**: run the targeted files (`node --test <file>`, `--test-name-pattern`), then `node --test` and
   `npm run golden` before a pull request; `npm run lint`, `npm run check:imports`, `npm run typecheck`. Browser suites
   are opt-in: `SP_E2E=1`, `SP_REAL_E2E=1` (needs downloaded art), `RENDER_E2E=1`, `SIM_E2E=1` (a local Chrome,
@@ -106,7 +106,7 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
 - **Fidelity**: the official tables (`.cache/gamedata/excel/`) and PRTS (including the 备注 notes) are the sources;
   numbers come from the blackboards. Anything no source settles is marked `[ASSUMED]` in the code and the pull
   request; owner decisions are cited with their date; deliberate deviations are the owner's call and go into the design
-  document (docs/DESIGN.md is its index: the rules in `docs/design/`, the per-release revisions in `docs/history/`).
+  document (docs/development/DESIGN.md is its index: the rules in `docs/design/`, the per-release revisions in `docs/history/`).
   Do not paste copyrighted game text at length (quote briefly, cite) and never commit game assets.
   Never hand-edit `data/*.json`: change `tools/build-data.mjs`, rebuild with `--offline`, compare the JSON.
 - **Commits and pull requests**: one change per pull request, one operator per kit pull request. A one-line commit
@@ -115,7 +115,7 @@ SIM_E2E=1 node --test 'test/sim/*.browser.test.js'               # 浏览器里�
   sources, the `[ASSUMED]` items, the tests and the golden scenarios that moved; update the docs a rule change makes
   wrong. Code and comments in English; player-facing text in Chinese through `t('…')` with the English in
   `public/i18n/en.json`. A new language is one file in `public/i18n/` and no code: `node tools/i18n.mjs template <code>`,
-  translate, `node tools/i18n.mjs check <code>` (docs/I18N.md "Adding a language"; packs in general: docs/PACKS.md).
+  translate, `node tools/i18n.mjs check <code>` (docs/development/I18N.md "Adding a language"; packs in general: docs/guides/PACKS.md).
   Code is GPL-3.0-or-later; no monetisation features.
 - **Adding an operator (自选)**: follow "How to add an operator (自选)" in
   [server/sim/content/kits/README.md](server/sim/content/kits/README.md): `op-<codename>.js` keyed by the charId,

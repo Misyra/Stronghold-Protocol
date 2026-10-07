@@ -4,7 +4,7 @@
 // Reads the official zh_CN client data (Kengxxiao/ArknightsGameData) plus the research JSON in
 // docs/research/ and emits compact, game-ready JSON into data/:
 //   config, chess, bonds, garrisons, items, bands, effects, choices, enemies, factions, waves,
-//   stages, bosses, tokens, backups (every field is documented in docs/DATA.md).
+//   stages, bosses, tokens, backups (every field is documented in docs/development/DATA.md).
 //
 // Usage:  node tools/build-data.mjs [--refresh | --offline] [--out <dir>] [--cache <dir>]
 //                                   [--report <file>] [--quiet] [--no-research] [--force]
@@ -345,7 +345,7 @@ async function loadContext() {
 }
 
 /**
- * The committed asset manifest data/assets.json (tools/fetch-assets.mjs; docs/ASSETS.md) — the enemies' attack clip
+ * The committed asset manifest data/assets.json (tools/fetch-assets.mjs; docs/development/ASSETS.md) — the enemies' attack clip
  * lengths (enemyAttackAnim); null when absent or unreadable (no `attackAnim` then, with a warning).
  */
 async function loadManifest() {
@@ -2322,7 +2322,7 @@ const MIRRORED_PREFABS = new Set(['enemy_1196_msfyin']);
  * its attack clip, server/sim/ai.js attackStand): the clip the client plays for its attacks (the asset manifest's
  * `anims.attack.loop` of the enemy's model — not an Idle stand-in, `via: 'idle'`), its length and its first strike
  * frame (`hits`: the clip's OnAttack event; absent when it has none — the sim then takes half the clip). Read from the
- * committed data/assets.json (written by tools/fetch-assets.mjs from the Spine skeletons; docs/ASSETS.md), so the sim
+ * committed data/assets.json (written by tools/fetch-assets.mjs from the Spine skeletons; docs/development/ASSETS.md), so the sim
  * never reads client files; an enemy whose model the manifest lacks gets none (the sim falls back to ATTACK_PAUSE).
  */
 function enemyAttackAnim(manifest, spineId) {

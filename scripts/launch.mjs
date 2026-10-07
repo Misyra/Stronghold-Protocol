@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/launch.mjs — cross-platform "prepare + start + open the browser", used by scripts/start-windows.bat,
-// scripts/start-windows.ps1 and scripts/start.sh (docs/DEPLOY.md).
+// scripts/start-windows.ps1 and scripts/start.sh (docs/operations/DEPLOY.md).
 //
 //   node scripts/launch.mjs [--port 3000] [--host 0.0.0.0] [--no-open] [--no-setup] [setup options…]
 //

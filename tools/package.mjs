@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/package.mjs — the two player release zips (docs/DEPLOY.md §7; README「方式一」says which one to pick).
+// tools/package.mjs — the two player release zips (docs/operations/DEPLOY.md §7; README「方式一」says which one to pick).
 //
 //   npm run package        → Stronghold-Protocol-v<version>.zip       full: what runs the game + the game art
 //   npm run package:lite   → Stronghold-Protocol-v<version>-lite.zip  the same without the art (`npm run setup`
@@ -9,12 +9,12 @@
 //
 // Both zips hold one folder, Stronghold-Protocol/, with only what a player runs — an allowlist over `git ls-files`, so
 // untracked work, caches, logs and per-machine config never get in: server/, shared/, data/, public/ (not public/dev/),
-// packs/ (the content packs that ship with the repository, docs/PACKS.md; a pack installed on this machine and not
+// packs/ (the content packs that ship with the repository, docs/guides/PACKS.md; a pack installed on this machine and not
 // committed stays out),
 // the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, and
 // what setup starts: tools/local-extract, crop-board-atlas), the research tables the Node server (server/sim/
 // nodeData.js fallback) and fetch-assets read, package.json / package-lock.json, LICENSE / NOTICE.md /
-// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/PLAYING.md and docs/DEPLOY.md. `npm ci --omit=dev` in the
+// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/guides/PLAYING.md and docs/operations/DEPLOY.md. `npm ci --omit=dev` in the
 // stage adds the production node_modules and (postinstall) public/vendor. The full zip adds the git-ignored art: the
 // files data/assets.json lists, public/fonts, and the local-client extraction (public/assets/local/,
 // data/local-assets.json) when present — nothing else on disk, so art the data no longer lists (焰狐龙梓兰, left out of
@@ -52,10 +52,10 @@ export const FOLDER = 'Stronghold-Protocol';
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md'];
+export const PLAYER_DOCS = ['docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md'];
 /** Research tables read at run time: server/sim/nodeData.js (the Node sim's fallback) and tools/fetch-assets.mjs. */
 export const RUNTIME_RESEARCH = ['docs/research/03-operators.json', 'docs/research/05-enemies.json', 'docs/research/05-maps.json', 'docs/research/07-assets.json'];
-/** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/WINDOWS.md). */
+/** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/operations/WINDOWS.md). */
 export const PLAYER_SCRIPTS = ['scripts/install-service-windows.ps1', 'scripts/launch.mjs', 'scripts/open-browser.mjs',
   'scripts/run-server.cmd', 'scripts/start-windows.bat', 'scripts/start-windows.ps1', 'scripts/start.sh'];
 /** The tools a player runs (npm run setup / doctor / assets, the postinstall) and the ones setup starts. */
@@ -78,7 +78,7 @@ export const PLAYER_NPM_SCRIPTS = ['start', 'setup', 'doctor', 'launch', 'postin
  * what 0.2.0 leaves out on purpose. A path is refused when it is one of these or lies under one.
  */
 export const REFUSE = ['pv', '3，9，11回合情况', 'review', 'docs/research/10-networking-hosting.md', '.cache', '.claude', '.git',
-  'logs', 'test/e2e/out', 'scripts/service.env.cmd', '.env', 'handoff',
+  '.smoke', 'logs', 'test/e2e/out', 'scripts/service.env.cmd', '.env', 'handoff',
   'test', '.github', 'AGENTS.md', 'public/dev', 'node_modules/.cache'];
 
 /** Home-directory paths: macOS / Linux (case as the OS writes them) and Windows (any case; / or \, JSON-escaped too). */

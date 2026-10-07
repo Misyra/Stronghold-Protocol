@@ -5,7 +5,7 @@
 // Chinese ('zh') is the default language; every other language is a pack (shared/i18nPacks.js): a file in
 // public/i18n/ (or a pack folder, shared/packs.js) that the client lists from /packs/index.json and loads on demand
 // (ui/lang.js). Nothing here knows a language by name (the owner's decisions of 2026-10-05 and 2026-10-07: Chinese by
-// default, a language is a file in the language folder). docs/I18N.md explains how to add and translate strings and how
+// default, a language is a file in the language folder). docs/development/I18N.md explains how to add and translate strings and how
 // to add a language.
 //
 // Fallback chain per string: the chosen pack → its base (pt-BR → pt; zh-TW has none) → the packs its `_meta.fallback`

@@ -1,5 +1,5 @@
 // server/http/common.js — what every HTTP answer shares:
-// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/I18N.md)
+// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/development/I18N.md)
 //
 //   * the security headers, set on every response before any route runs (routes.js);
 //   * splitUrl (raw path + query, also from absolute-form URLs), the bilingual error page (sendError) and JSON replies

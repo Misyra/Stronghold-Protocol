@@ -1,6 +1,6 @@
 // i18n core (shared/i18n.js) and the UI string table (public/i18n/en.json): t() / tc() fallback and params, plurals,
 // lists, data names, language state, the server message wire format (msg → wireMessage → translateWire), and the
-// tooling's msgid derivation (tools/i18n.mjs). docs/I18N.md.
+// tooling's msgid derivation (tools/i18n.mjs). docs/development/I18N.md.
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';

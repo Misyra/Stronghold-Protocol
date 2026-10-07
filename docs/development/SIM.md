@@ -1,7 +1,7 @@
 # SIM.md — battle simulation engine reference (server/sim)
 
 Audience: **content authors** (kits, bonds, garrisons, items, bands, enemies, bosses, devices, choices) and the
-**match owner** who drives `Battle`. The normative contract is DESIGN.md §5 ([design/engine.md](design/engine.md));
+**match owner** who drives `Battle`. The normative contract is DESIGN.md §5 ([design/engine.md](../design/engine.md));
 this file documents the concrete implementation, every hook and helper, the SkillSpec schema with worked examples,
 the profession defaults and the test harness. Everything here is deterministic: the only randomness is `battle.rng()`.
 
@@ -141,7 +141,7 @@ falls (or that is retreated) is not re-summoned: it stays its tile's piece in it
 reserved — for the 狼影 interval and comes back there with one 狼影 (tokens.js `installWolfTacticalPoint`, the piece and
 the 伺夜 kit's own pack alike; 伺夜 S1 ① ends the form at once, 伺夜 leaving ends it without a return). The start deploy
 is the user's call after playtest #6 (DESIGN §20); `shared/constants.js SKILL_SUMMON_START_DEPLOY = false` would bring
-back the playtest #4 reading (only with the skill) in the sim and the summon card's hint (docs/PLAYING.md §4 and this
+back the playtest #4 reading (only with the skill) in the sim and the summon card's hint (docs/guides/PLAYING.md §4 and this
 passage must follow; test/ui/playtest6_summons.test.js checks).
 
 **Facing (DESIGN §3, `sim/dir.js`).** Every ally has `unit.dir`; `unit.fwd` = its forward vector `[dRow, dCol]` (UP

@@ -11,7 +11,7 @@
 //     not placed ⇒ it never appears (the hidden 待部署区 deploys nothing by itself);
 //   * a talent's summon the owner holds from the start (凯瑟琳 "携带3个支援装置（最多部署2个）") deploys with the board;
 //   * not placed: a skill's summon, a device or 海嗣 never appears; the tacticians' 狼群 / 流形 still come as their 援军 on
-//     a tactical point (docs/PLAYING.md §4 and docs/SIM.md say exactly this).
+//     a tactical point (docs/guides/PLAYING.md §4 and docs/development/SIM.md say exactly this).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, chessRec, checkInvariants } from '../helpers/battleHarness.js';

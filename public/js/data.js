@@ -18,7 +18,7 @@
 // Synchronous getters (getChess, getBond, …) return null until the file has loaded; use
 // `loadData(...)` to await, or the `useData(...)` hook to re-render when files arrive.
 //
-// Language (docs/I18N.md): the files hold the official Chinese texts. `setLocale(lang, chain)` downloads (once each) the
+// Language (docs/development/I18N.md): the files hold the official Chinese texts. `setLocale(lang, chain)` downloads (once each) the
 // game-text overlays data/i18n/<code>.json of the chain — the language's own, its base's, a fallback's (ui/lang.js
 // passes the languages of the pack's chain that have one; default: the language alone) — built by tools/build-i18n.mjs
 // (the official texts by record id and field, shared/i18nData.js). From then on `get`, `lookup` and `list` — and every

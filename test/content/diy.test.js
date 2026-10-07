@@ -1,4 +1,4 @@
-// test/content/diy.test.js — 自选 pieces in battle (DATA.md §18, docs/SIM.md §12): simdata getChess(slotId, { diy }) /
+// test/content/diy.test.js — 自选 pieces in battle (DATA.md §18, docs/development/SIM.md §12): simdata getChess(slotId, { diy }) /
 // getDiy, the PlayerBattleInput `diy` field through Battle, the BattleSpec path and the per-battle loadout view, the
 // kit lookup by charId (an owned 6★'s operator kit, a prototype's stand-in kit, a 预备干员's generic kit, the generic kit
 // for an operator without one), the summons of an owned pick (data/backups.json `tokens`, getToken with the pick as the

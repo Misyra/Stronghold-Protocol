@@ -1,12 +1,12 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// public/js/resources/common.js — shared pieces of the optional asset preload (docs/ASSETS.md「Preload」).
+// public/js/resources/common.js — shared pieces of the optional asset preload (docs/development/ASSETS.md「Preload」).
 //
 // No DOM and no Preact: the page (store.js / index.js), the Service Worker (service.js) and the Node tests all import
 // this module. It owns the manifest shape, the URL/MIME rules and byte formatting — the same rules the server applies
 // when it generates /data/resource-manifest.json (server/resources.js).
 
 /** Cache Storage names this app owns. One cache holds every version: entries are replaced per file (by hash), so an
- * asset update re-downloads the changed files only (docs/ASSETS.md「Preload」). */
+ * asset update re-downloads the changed files only (docs/development/ASSETS.md「Preload」). */
 export const CACHE_PREFIX = 'stronghold-resources-v1-';
 export const CACHE_NAME = CACHE_PREFIX + 'all';
 /** The one synthetic entry of that cache: absolute URL → the hash of the bytes stored for it. */

@@ -2,8 +2,8 @@
 
 Audience: **content authors** writing prep-side ("SERVER_*") effects in `server/sim/content/*.js → registerMeta(registry)`,
 the **UI owner** consuming `m.public` / `m.private` / `m.result`, and anyone driving matches in tests or tools.
-Normative contracts stay in DESIGN.md §6 and §8 ([design/match.md](design/match.md),
-[design/network.md](design/network.md)); this file documents the implementation and every assumption it makes.
+Normative contracts stay in DESIGN.md §6 and §8 ([design/match.md](../design/match.md),
+[design/network.md](../design/network.md)); this file documents the implementation and every assumption it makes.
 
 ```
 server/match/
@@ -234,7 +234,7 @@ The rest of this section is the legacy server-run mode
 ∩ `modeInactiveBonds`: 标准's 潘格尼尼, 克莱门莎, 玛恩纳 — and with every offered band excluded it takes the default band;
 one rng draw per pick (DESIGN §21.26). The strategy draft marks the same bands 本局禁用 for humans (still selectable).
 Buys toward a full board first (the cap is 8 from R1; leftover funds are lost), completes the merges it can afford,
-then levels on a curve (L2 ≈ R3, L3 ≈ R5, L4 ≈ R7, L5 ≈ R10, L6 ≈ R12 — the competent curve of docs/BALANCE.md; free
+then levels on a curve (L2 ≈ R3, L3 ≈ R5, L4 ≈ R7, L5 ≈ R10, L6 ≈ R12 — the competent curve of docs/development/BALANCE.md; free
 levels always), then spends the rest (a band that keeps its leftover funds — 坎诺特 利滚利 — holds its interest capital
 of 5 back from refreshes, full-board buys that complete nothing, items and spare level-ups). It builds around a
 **focus core bond** (owned members × 10 + members the shop can still bring at its level + banked layers + 6 for last
@@ -621,7 +621,7 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
 * **Combat time limit**: data `combatTimeLimit` (the level's `maxPlayTime`) counts REAL seconds of the forced 2×
   battle; the Battle / 联防 limit is `gd.combatTimeLimit(r)` = 2 × that in game seconds (`config.combatTimeScale`,
   default 2). Read as game seconds the rounds' own spawn schedules would not fit (R2's last flyer spawns at 43 s of
-  45 s, R3's at 62 s of 55 s); × 2 every limit ≈ last spawn + one flyer crossing. docs/BALANCE.md §2.1.
+  45 s, R3's at 62 s of 55 s); × 2 every limit ≈ last spawn + one flyer crossing. docs/development/BALANCE.md §2.1.
 * **SETTLE**: LP −min(counted leaks, 10) (after 联防: survivors attributed to their source, same cap); IN_BATTLE layer
   gains applied, each bond up to `BOND_LAYER_CAP` (999, `layerGainRoom`, as `PlayerState.addLayers`); kill-bounty coins (paid by the Battle to the killer — a 联防 helper included; a death no operator caused pays the card's owner, in 联防 the helper whose half it fell on: `Battle._bountyPayee`) and perfect-bounty coins
   (own phase perfect) go to pending funds; bounty rounds decrement; LP ≤ 0 ⇒ eliminated (all copies back to the pool).
@@ -678,7 +678,7 @@ keeps just the result-title rules:
 The former `enemyHpMul` / `enemyAtkMul` / `enemySpeedMul` / `bossHpMul` / `flyPlaceholders` knobs were removed; a
 tuning file that still carries them is ignored (`gd.bossHpMul()` always returns 1). `tools/balance.mjs --tuning off`
 drops the file (titles only, so the numbers are the same). Titles: `rule: 'min'` ranks the players still alive by the
-smallest stat (坚若磐石 "目标生命值损失最少" = least `lpLost`). docs/BALANCE.md has the balance measurements.
+smallest stat (坚若磐石 "目标生命值损失最少" = least `lpLost`). docs/development/BALANCE.md has the balance measurements.
 
 ---
 
@@ -696,7 +696,7 @@ on their prep tiles; helpers' operators carry
 `{ hpPct, sp }` from `unitsEnd` ("阵地以其当前状态": the HP ratio and the 技力 only — a skill running at the end enters
 switched off; summon pieces `{ sp }`, "召唤物仅修改技力"); an operator knocked out at the end of the helper's own
 combat carries `{ down: true }` (PRTS 卫戍协议/帮助: "部署完成后…上一阶段为退场状态的干员强制退场"): deployed, then forced out
-at once, it lies on its tile with the redeploy ring and redeploys like after any knock-out (docs/SIM.md §1.1; user
+at once, it lies on its tile with the redeploy ring and redeploys like after any knock-out (docs/development/SIM.md §1.1; user
 playtest #5 item 2 — it used to stay out and vanish); its timer is its full redeploy time (the official setup carries
 only hp / tech per operator; confirmed by the user), with the redeploy-time effects that start with the battle (机变 征召); summons are
 fielded as the board has them (their SP carried); `flags.layerGainsEnabled = false`; time limit = the round's combat limit.
@@ -814,7 +814,7 @@ round was over. The official 1 s `broadcastBeginDelay` is not modelled.
   outcomes (wins, rounds passed, LP left, leaks per round, bounties taken / leaked and the kill-chance calibration,
   merges, board value, bond tiers, layers, elites) and its decision time per prep (wall clock and CPU, p50 / p95, the
   layout rehearsal apart); `--compare old.json new.json` prints the A/B tables (the same seeds on two builds).
-* `node tools/balance.mjs --mode multi --difficulty NORMAL` — the competent-board difficulty model (docs/BALANCE.md):
+* `node tools/balance.mjs --mode multi --difficulty NORMAL` — the competent-board difficulty model (docs/development/BALANCE.md):
   per round leaks / LP after 联防 / clear time of representative boards against the real waves, boss damage by 150 s
   and kill time; `--tuning off` (research numbers), `--legacy-time`, `--profile weak|strong`, `--bots N`, `--json`.
   Tests: `test/match/balance.test.js` (tuning layer, model), `test/match/followups.test.js`.

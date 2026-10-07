@@ -7,7 +7,7 @@ import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
 // ---- settings ------------------------------------------------------------------------------------------------------
 
 /** keys: the in-match shortcuts' key map (ui/gameLogic/shortcuts.js; settings → 快捷键).
- *  preload: this fork's offline resource preload (docs/ASSETS.md「Preload」, 设置 ▸ 离线资源). */
+ *  preload: this fork's offline resource preload (docs/development/ASSETS.md「Preload」, 设置 ▸ 离线资源). */
 export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false, damageNumbers: true, quality: 'high', preload: false, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 

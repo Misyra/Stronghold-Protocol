@@ -1,5 +1,5 @@
 // server/sim/content/kits/shared/tier5.js — helpers and notes of the hand-authored kits for every tier-5 chess (DESIGN
-// §7, docs/SIM.md §7.2; formerly tier5.js — the kits live one per file in ../ops/).
+// §7, docs/development/SIM.md §7.2; formerly tier5.js — the kits live one per file in ../ops/).
 //
 // export default { [baseChessId]: (bb, chess, def) => Kit }. `bb` = skill blackboard at the chess's level (normal Lv4 /
 // elite Lv7), `chess` = data/chess.json record (talents with their own bb — elite records already carry the module talent

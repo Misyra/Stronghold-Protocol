@@ -73,7 +73,7 @@
 // is offered or it pays much more —; tactic cards by what they act on (a 盟誓 / 驰援 card on the own bonds, 升华 …);
 // items by tier and use.
 // Placement quality (tools/matchrun sweeps, research-faithful waves): the planner beats random layouts by ≈ 8 points
-// of kill rate and rehearsal adds ≈ 5 more; see docs/META.md §1.5. Old vs new decisions on the same seeds:
+// of kill rate and rehearsal adds ≈ 5 more; see docs/development/META.md §1.5. Old vs new decisions on the same seeds:
 // tools/botbench.mjs.
 
 import { GEO } from '../../shared/constants.js';

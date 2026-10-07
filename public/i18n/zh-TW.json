@@ -9,7 +9,7 @@
     "authors": [
       "the Stronghold Protocol contributors"
     ],
-    "credits": "Game texts (data/i18n/zh-TW.json): the official TW client data (© Hypergryph) via ArknightsAssets/ArknightsGamedata. Interface strings machine-converted from the Simplified Chinese on 2026-10-07 (OpenCC, Taiwan phrases) using the official TW game terms, then read through by hand; corrections welcome on GitHub (docs/I18N.md §5).",
+    "credits": "Game texts (data/i18n/zh-TW.json): the official TW client data (© Hypergryph) via ArknightsAssets/ArknightsGamedata. Interface strings machine-converted from the Simplified Chinese on 2026-10-07 (OpenCC, Taiwan phrases) using the official TW game terms, then read through by hand; corrections welcome on GitHub (docs/development/I18N.md §5).",
     "fallback": [],
     "numberUnits": [
       "萬",

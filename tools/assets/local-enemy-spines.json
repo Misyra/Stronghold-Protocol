@@ -1,5 +1,5 @@
 {
-  "about": "Spine metadata of the enemy models only the local client has (tools/local-extract/extract.py ENEMY_SPINES); data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md \"Enemy aliases\").",
+  "about": "Spine metadata of the enemy models only the local client has (tools/local-extract/extract.py ENEMY_SPINES); data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/development/ASSETS.md \"Enemy aliases\").",
   "models": {
     "enemy_1305_mhslim": {
       "skel": "enemy_1305_mhslim.skel",

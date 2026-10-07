@@ -18,7 +18,7 @@ async function fixture(t) {
   const root = path.join(os.tmpdir(), 'sp-file-test-');
   const dir = await fs.mkdtemp(root);
   assert.ok(path.resolve(dir).startsWith(path.resolve(root)));
-  t.after(async () => { await fs.rm(dir, { recursive: true, force: true }); });
+  t.after(async () => { await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
   return { dir, file: path.join(dir, 'game.state.json') };
 }
 test('atomic file writes survive a new store, serialize concurrent saves, and refuse another live writer', async (t) => {
@@ -107,8 +107,16 @@ test('room spectators and pending settlement replay survive a document round tri
     assert.deepEqual(fresh.byId(p.playerId).pendingResult, p.pendingResult);
   } finally { lobby.shutdown(); restored.shutdown(); }
 });
-test('a hard-killed server restores its real room, identity and match from disk in a new process', { timeout: 20000 }, async (t) => {
+for (const layout of ['file', 'directory']) test(`a hard-killed server restores its real room, identity and match from ${layout} storage in a new process`, { timeout: 20000 }, async (t) => {
+  const children = [];
+  const clients = [];
+  // Cleanup hooks run in registration order: stop writers before removing their temporary directory.
+  t.after(async () => {
+    for (const c of children) if (c.exitCode === null && c.signalCode === null) { const exited = once(c, 'exit'); c.kill('SIGKILL'); await exited; }
+    for (const c of clients) await c.terminate();
+  });
   const { dir, file } = await fixture(t);
+  const stateFile = layout === 'file' ? file : path.join(dir, 'state');
   const childFile = path.join(dir, 'child.mjs');
   await fs.writeFile(childFile, `import { startServer } from ${JSON.stringify(new URL('../server/index.js', import.meta.url).href)};
 const quiet = {info(){},warn(){},error(){},debug(){}};
@@ -116,18 +124,14 @@ const srv = await startServer({ port: 0, host: '127.0.0.1', workers: 0, log: qui
 process.on('message', async (msg) => { if(msg === 'flush') { await srv.persister.flush('test'); process.send({ flushed: true }); } });
 process.send({ port: srv.port });
 `);
-  const children = [];
   const boot = async () => {
-    const child = fork(childFile, [], { env: { ...process.env, TEST_STATE_FILE: file }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    const child = fork(childFile, [], { env: { ...process.env, TEST_STATE_FILE: stateFile }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
     children.push(child);
     const [hello] = await once(child, 'message');
     return { child, port: hello.port };
   };
-  t.after(async () => {
-    for (const c of children) if (c.exitCode === null && c.signalCode === null) { const exited = once(c, 'exit'); c.kill('SIGKILL'); await exited; }
-  });
   const first = await boot();
-  const client = await TestClient.connect(`ws://127.0.0.1:${first.port}/ws`); t.after(() => client.close());
+  const client = await TestClient.connect(`ws://127.0.0.1:${first.port}/ws`); clients.push(client);
   const welcome = await client.hello('disk-player');
   await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   const state = await client.waitFor('room.state');
@@ -136,7 +140,7 @@ process.send({ port: srv.port });
   const flushed = once(first.child, 'message'); first.child.send('flush'); await flushed;
   const exited = once(first.child, 'exit'); first.child.kill('SIGKILL'); await exited;
   const second = await boot();
-  const resumed = await TestClient.connect(`ws://127.0.0.1:${second.port}/ws`); t.after(() => resumed.close());
+  const resumed = await TestClient.connect(`ws://127.0.0.1:${second.port}/ws`); clients.push(resumed);
   const back = await resumed.hello('disk-player', welcome.token);
   assert.equal(back.playerId, welcome.playerId);
   const room = await resumed.waitFor('room.state');

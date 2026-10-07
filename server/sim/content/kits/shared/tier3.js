@@ -1,7 +1,7 @@
 // server/sim/content/kits/shared/tier3.js — helpers and notes of the hand-authored kits for the 21 tier-3 chess (19
 // visible + 见行者/巫恋 hidden; formerly tier3.js — the kits live one per file in ../ops/).
 //
-// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/SIM.md §7.2). `bb` is the skill blackboard at the
+// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/development/SIM.md §7.2). `bb` is the skill blackboard at the
 // chess's level (normal Lv4 `_a` / elite Lv7 `_b`), `chess` the data/chess.json record (talents incl. module upgrades,
 // trait incl. module trait bb), `def` the normalised def. Every number comes from a blackboard; the few values that
 // only exist in the text ("三连击", "至多5个", "初始两只", "至多3只") are parsed from the description with fallbacks.

@@ -8,7 +8,7 @@
 // screen is complete before data is generated. Rounds: solo 标准 = 9, everything else 14 (+R15
 // hidden core on 险境+), per research 00-INDEX §2. Battlefield pool (`modes[].stages`): 标准 always
 // plays 战场#01, 险境 draws one of 8, 绝境 / 终极 one of 7 (m01 excluded).
-// Texts go through t() (docs/I18N.md); the module-level tables hold msgids (N_) translated where they are shown, the
+// Texts go through t() (docs/development/I18N.md); the module-level tables hold msgids (N_) translated where they are shown, the
 // config.json mode texts come localized from data.js.
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';

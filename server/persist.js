@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
-// server/persist.js — server state/checkpoints; storage backends live in server/stateFile.js (docs/PERSISTENCE.md).
+// server/persist.js — server state/checkpoints; storage backends live in server/stateFile.js (docs/operations/PERSISTENCE.md).
 //
 // WHAT SURVIVES A RESTART
 //   * Sessions — playerId, secret token, nickname, operator loadout, the room they are in and their reconnect window.
@@ -22,8 +22,8 @@
 // HOW IT IS WRITTEN. The main thread only *captures* a match (field selection, by reference — snapshot.captureMatch);
 // a dedicated persistence Worker (server/workers/persistence.js) encodes and JSON-validates it off the game loop. Each
 // checkpoint is stored as a clock-free body string plus a fresh clock envelope, so the store can tell an unchanged
-// room (rewritten: never) from a changed one, and an idle room costs one index entry per tick instead of a full
-// state rewrite. The store decides the on-disk layout: one JSON file, or a directory of per-room shards
+// room (rewritten: never) from a changed one. Directory stores refresh only a small runtime file for clocks and the
+// server heartbeat; their sessions/rooms index changes only with metadata. The store decides the on-disk layout
 // (server/stateFile.js). A Worker failure degrades to a synchronous encode — persistence never dies with the Worker.
 //
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
@@ -45,7 +45,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /**
  * One session as persisted. `disconnectedAt` is the moment its socket dropped; a session that was connected when the
- * document was written gets the write time (the crash is what cut it off — see the header).
+ * document was written has no disconnect time; recovery uses the last durable heartbeat (see the header).
  * @param {import('./net.js').Session} s
  * @param {number} now
  */
@@ -196,10 +196,10 @@ export class Persister {
    *   store: { save?: (doc: object) => Promise<boolean>, saveSharded?: (payload: object) => Promise<boolean>, log?: object },
    *   registry: import('./net.js').SessionRegistry,
    *   lobby: import('./lobby.js').Lobby,
-   *   log?: object, now?: () => number, saveMs?: number,
+   *   log?: object, now?: () => number, saveMs?: number, minFlushMs?: number,
    * }} opts
    */
-  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs = saveMs }) {
+  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs }) {
     this.store = store;
     this.registry = registry;
     this.lobby = lobby;
@@ -207,7 +207,7 @@ export class Persister {
     this.now = now;
     this.saveMs = Math.max(1000, Number(saveMs) || SAVE_MS);
     /** Minimum gap between two write rounds: checkpoint events coalesce into the next slot instead of a hot loop. */
-    this.minFlushMs = Math.max(0, Number(minFlushMs) || 0);
+    this.minFlushMs = minFlushMs == null ? this.saveMs : Math.max(0, Number(minFlushMs) || 0);
     /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
     /** Fresh phase clocks per room code (deadlineRemainingMs / startedAtAgoMs; written into the document envelope). */
@@ -226,7 +226,7 @@ export class Persister {
     this._again = false;
     /** @type {NodeJS.Timeout | null} the deferred flush slot (see flush) */
     this._cooldownTimer = null;
-    this._lastFlushAt = 0;
+    this._lastFlushAt = -Infinity;
     this.lobby.onCheckpoint = (code, match) => {
       if (!match) {
         this.matchDocs.delete(code);
@@ -322,6 +322,7 @@ export class Persister {
       }
     }
     if (this._cooldownTimer) { clearTimeout(this._cooldownTimer); this._cooldownTimer = null; }
+    this._again = false;                             // this round consumes the outstanding request
     // Capture the meta synchronously, at flush() call time: a shutdown's final write must hold the state as of the
     // moment it was asked for, not whatever the lobby looks like by the time the Worker answers.
     const meta = snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() });

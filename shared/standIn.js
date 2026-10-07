@@ -2,7 +2,7 @@
 // whose operator the player does not own, and the composition a 自选 (DIY) slot uses (shared/diy.js diyRecordOf calls
 // composeUnitRecord with the pick). Pure ESM shared by the build
 // (tools/build-data.mjs proves composeUnitRecord rebuilds every PRESET chess from its own unit form), the simulation and
-// the client. Data: data/backups.json (docs/DATA.md §18).
+// the client. Data: data/backups.json (docs/development/DATA.md §18).
 //
 // `backups.units[charId].forms[statusKey]` holds what a character is at one training status (stats, trait, talents,
 // every skill unlocked there, the modules of that equip level) with nothing selected. composeUnitRecord joins a form to

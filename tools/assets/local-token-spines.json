@@ -1,5 +1,5 @@
 {
-  "about": "Spine metadata of the token (summon) models only the local client has (tools/local-extract/extract.py TOKEN_SPINES); data/assets.json tokens[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md \"Token models from the local client\").",
+  "about": "Spine metadata of the token (summon) models only the local client has (tools/local-extract/extract.py TOKEN_SPINES); data/assets.json tokens[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/development/ASSETS.md \"Token models from the local client\").",
   "models": {
     "token_10002_kalts_mon3tr": {
       "skel": "token_10002_kalts_mon3tr.skel",

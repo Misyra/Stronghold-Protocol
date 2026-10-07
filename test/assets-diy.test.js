@@ -1,5 +1,5 @@
 // test/assets-diy.test.js — the art of the 自选 picks in the asset pipeline (tools/fetch-assets.mjs dataExtras,
-// tools/assets/plan.mjs patternOperator / buildPlan `extraOperators` / `moduleTypes`; docs/ASSETS.md): the owned-6★
+// tools/assets/plan.mjs patternOperator / buildPlan `extraOperators` / `moduleTypes`; docs/development/ASSETS.md): the owned-6★
 // units of data/backups.json are planned from research 07's URL patterns (avatar, portrait — E2 too —, battle Spine
 // Front / Back, every skill icon), their summons as tokens, and every module's type icon as manifest `modules`; the
 // committed data/assets.json lists them (checked against public/assets when present); --add-only never rewrites a file.

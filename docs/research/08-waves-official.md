@@ -160,7 +160,7 @@ Notes on the count rule:
 ### 2.5 Enemy stat scaling
 
 - The per-mode, per-round `atk × 1.1^kA`, `hp × 1.2^kH` table with base 0.7 / 0.8 / 1 is the **only** source [WIKI, PRTS 下半 §开始模拟, flagged "敌方属性加成情况由用户提供"].
-  - `data/config.json → modes[*].enemyScale` reproduces it. I spot-checked 险境 multi R1/R2/R4/R8/R9; docs/BALANCE.md §2 reports every mode and round as matching.
+  - `data/config.json → modes[*].enemyScale` reproduces it. I spot-checked 险境 multi R1/R2/R4/R8/R9; docs/development/BALANCE.md §2 reports every mode and round as matching.
   - The same table is in 01-core-data.json `_criticAddendum.enemyStatMultipliers`.
 - Base values [WIKI, mode descriptions]:
   - Solo: "所有敌人的生命值、攻击力降低至70%". 绝境 80 %; 终极 not reduced.
@@ -516,7 +516,7 @@ The gate is the start of the action's route. R1–R3 use only the lower gate. No
 | 18 | `economy.income` `min(3+r, 12)` | R4+ assumed | BWIKI (hidden text, older season): "从第2回合开始每回合获得资金数+1，上限12" | [WIKI], weak | keep |
 | 19 | `previewOf` | one list per key, no gate | per-action models placed in a gate zone (§4) | [DATA] | change |
 
-Everything in `docs/BALANCE.md` §4 (the tuned tables) and the `tools/balance.mjs --tuning` path becomes obsolete once #1–#6 are applied. The "competent board" model can still be used to *measure* difficulty, but no longer to tune it.
+Everything in `docs/development/BALANCE.md` §4 (the tuned tables) and the `tools/balance.mjs --tuning` path becomes obsolete once #1–#6 are applied. The "competent board" model can still be used to *measure* difficulty, but no longer to tune it.
 
 ---
 

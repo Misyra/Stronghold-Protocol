@@ -1,4 +1,4 @@
-// test/package.test.js — tools/package.mjs, the player release zips (docs/DEPLOY.md §7). No network, no npm install, no
+// test/package.test.js — tools/package.mjs, the player release zips (docs/operations/DEPLOY.md §7). No network, no npm install, no
 // zip of the repository: the selection rules on sample paths and on the real `git ls-files`, then the packager itself
 // (--dry-run, the scans and guards, one --no-install build) on a small temporary git checkout with fake art.
 // Run: node --test test/package.test.js
@@ -30,11 +30,11 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
     'tools/crop-board-atlas.mjs', 'tools/assets/plan.mjs', 'tools/assets/local-enemy-spines.json', 'tools/assets/local-token-spines.json',
     'tools/local-extract/extract.py',
     'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/start.sh', 'scripts/start-windows.bat', 'scripts/launch.mjs',
-    'scripts/install-service-windows.ps1', 'docs/PLAYING.md', 'docs/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
+    'scripts/install-service-windows.ps1', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
     'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md',
     // out
     'test/version.test.js', 'tools/golden.mjs', 'tools/build-data.mjs', 'tools/check-imports.mjs', 'tools/package.mjs',
-    'tools/i18n/fallback-remake.json', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'docs/WINDOWS.md', 'docs/ASSETS.md',
+    'tools/i18n/fallback-remake.json', 'scripts/make-windows-bundle.mjs', 'docs/development/DESIGN.md', 'docs/operations/WINDOWS.md', 'docs/development/ASSETS.md',
     'docs/img/combat.jpg', 'docs/research/00-INDEX.md', 'docs/research/01-core-data.json', 'docs/research/03-operators.md',
     'docs/research/10-networking-hosting.md', 'public/dev/game-mock.html', 'public/assets/x.png', 'public/fonts/fonts.css',
     'public/vendor/pixi.min.js', 'data/local-assets.json', 'handoff/HANDOFF.md', '.github/workflows/ci.yml', 'types/core.js',
@@ -67,12 +67,12 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
   const p = plan(ROOT, { lite: true, allowDirty: true, scan: false, measure: false });
   assert.deepEqual(p.problems, []);
   const got = new Set(p.files);
-  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/PLAYING.md', 'docs/DEPLOY.md',
+  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md',
     'package-lock.json', 'NOTICE.md', ...RUNTIME_RESEARCH]) assert.ok(got.has(f), f);
-  for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
+  for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/development/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
     assert.ok(!got.has(f), f);
   }
-  // the design document (the index docs/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
+  // the design document (the index docs/development/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
   for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
   const code = [...got].filter((f) => /\.(?:m?js|py)$/.test(f));
   for (const f of code) {
@@ -138,10 +138,10 @@ function fakeCheckout() {
   for (const f of ['tools/assets/network.mjs', 'tools/vendor.mjs', 'tools/fetch-assets.mjs', 'tools/doctor.mjs', 'tools/crop-board-atlas.mjs',
     'tools/local-extract/extract.py', 'tools/golden.mjs', 'tools/build-data.mjs', 'tools/package.mjs', 'scripts/launch.mjs',
     'scripts/make-windows-bundle.mjs', 'test/a.test.js', 'handoff/HANDOFF.md', '.github/workflows/ci.yml', 'types/core.js', 'eslint.config.js',
-    'Dockerfile', 'AGENTS.md', 'review/notes.md', 'docs/DESIGN.md', 'docs/research/00-INDEX.md', 'docs/research/10-networking-hosting.md']) put(f);
+    'Dockerfile', 'AGENTS.md', 'review/notes.md', 'docs/development/DESIGN.md', 'docs/research/00-INDEX.md', 'docs/research/10-networking-hosting.md']) put(f);
   put('scripts/start.sh', '#!/usr/bin/env bash\nexec node scripts/launch.mjs\n');
   fs.chmodSync(path.join(dir, 'scripts/start.sh'), 0o755);
-  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/PLAYING.md', 'docs/DEPLOY.md']) put(f, `# ${f}\n`);
+  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md']) put(f, `# ${f}\n`);
   for (const f of [...RUNTIME_RESEARCH, 'docs/research/01-core-data.json']) put(f, '{}\n');
   put('docs/img/x.jpg', PNG);
   put('.gitignore', 'public/assets/\npublic/fonts/\npublic/vendor/\ndata/local-assets.json\n.cache/\npv/\n');
@@ -169,7 +169,7 @@ const runTool = (args) => spawnSync(process.execPath, [TOOL, ...args], { encodin
 const listed = (stdout) => stdout.split('\n').filter((l) => l.startsWith('file ')).map((l) => l.slice(5));
 
 const SHIPPED_TRACKED = ['CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'README.md', 'THIRD-PARTY-NOTICES.md', 'data/assets.json', 'data/chess.json',
-  'docs/DEPLOY.md', 'docs/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
+  'docs/operations/DEPLOY.md', 'docs/guides/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
   'public/js/util.js', 'scripts/launch.mjs', 'scripts/start.sh', 'server/index.js', 'server/sim/rng.js', 'shared/constants.js',
   'tools/assets/network.mjs', 'tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/local-extract/extract.py',
   'tools/setup.mjs', 'tools/vendor.mjs'].sort();

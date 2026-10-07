@@ -45,19 +45,19 @@ English summary: [below](#english).
 
 | 方面 | 本分支的做法 |
 |---|---|
-| 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/PERSISTENCE.md](docs/PERSISTENCE.md) |
-| 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导出 JSON；见 [docs/MATCH_HISTORY.md](docs/MATCH_HISTORY.md) |
-| 资源预载 | 在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/CDN.md](docs/CDN.md) |
+| 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md) |
+| 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
+| 资源预载 | 在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：凑满 4 名真人才开局，不补 AI，断线自动出队 |
 | 维护公告 | 单条维护公告进入游戏即显示（主菜单、大厅与对局全程）、可关闭：设置 `SP_ANNOUNCEMENT_URL` 由运维面板统一发布（约 10 秒轮询热生效），或用本地文件 `SP_ANNOUNCEMENT_FILE` 热加载；配 `GET /api/announcement` |
-| 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/CUSTOM_API.md](docs/CUSTOM_API.md) |
+| 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) |
 | WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
-| 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
+| 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md) |
 | 素材与部署 | Git 仓库内附带 v0.1.3 本地客户端素材（`public/assets/local/`），源码部署无需本机提取；另附 nginx 多核配置示例 |
 
 另一个活跃分支 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 与本分支平行发展、同样基于 v0.1.3，思路不同、互有取舍：它把持久化放在 Redis（专用持久化 Worker 负责编码，可恢复不挂房间的匹配对局）、匹配走 solo/coop 队列（组队整体入队、60 秒后可由 AI 补位、支持无房间的独立对局）、内置受配额保护的开发者控制台（每回合 5 次 / 每局 50 次发放干员、装备、盟约）、全站定时公告与在线人数推送、资源清单 ETag/304 再验证、`SP_DATA_CDN` 数据外移与 `SP_MAX_*` 容量环境变量；本分支则在预载健壮性、Bot/战斗热路径性能、零依赖持久化、本地对局记录与压缩调优上更完整，并坚持纯真人匹配。可按自己的运营形态选用或互相借鉴。
 
-其中本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复，分别移植改编自 xinhai-ai 分支的对应实现（commit `2e89a90`、`20524bb` 等，双方均为 GPL-3.0-or-later），并按本分支的存储、CDN 与性能方案做了改造；相关文件头部有 `Adapted from xinhai-ai/Stronghold-Protocol` 标注，细节见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)、[docs/CDN.md](docs/CDN.md) 与 [docs/PERSISTENCE.md](docs/PERSISTENCE.md)。
+其中本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复，分别移植改编自 xinhai-ai 分支的对应实现（commit `2e89a90`、`20524bb` 等，双方均为 GPL-3.0-or-later），并按本分支的存储、CDN 与性能方案做了改造；相关文件头部有 `Adapted from xinhai-ai/Stronghold-Protocol` 标注，细节见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md)、[docs/operations/CDN.md](docs/operations/CDN.md) 与 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md)。
 
 ## 功能一览
 
@@ -73,8 +73,8 @@ English summary: [below](#english).
 - **联防**：有人漏怪、又有人完美作战时，完美作战的队友带着阵容帮忙拦截漏掉的敌人。
 - **最终攻势与隐秘核心**：两人共享一个战场，全队共同削减同一条领袖血条；10 个敌方领袖，巨型领袖约 5×3 格的受击范围，以及官方的限伤规则。
 - **结算称号**：卫戍之星、不朽盟约、坚若磐石等 6 个称号。
-- **本地对局记录**：结算时自动保存最近 100 局，在首页、大厅或结算页点击「对局记录」查看阵容与统计，支持 JSON 导出、删除和清空。记录保存在当前浏览器和当前站点；清除网站数据会删除记录。详见 [本地记录说明](docs/MATCH_HISTORY.md)。
-- **服务端断点恢复**：正常启动默认把身份、房间和安全阶段的对局状态保存到 `.state/`。保留此目录并使用兼容版本升级，重启后玩家可凭原身份回到对局；战斗中断时恢复到最近的检查点，重打该回合。详见 [持久化部署说明](docs/PERSISTENCE.md)。
+- **本地对局记录**：结算时自动保存最近 100 局，在首页、大厅或结算页点击「对局记录」查看阵容与统计，支持 JSON 导出、删除和清空。记录保存在当前浏览器和当前站点；清除网站数据会删除记录。详见 [本地记录说明](docs/guides/MATCH_HISTORY.md)。
+- **服务端断点恢复**：正常启动默认把身份、房间和安全阶段的对局状态保存到 `.state/`。保留此目录并使用兼容版本升级，重启后玩家可凭原身份回到对局；战斗中断时恢复到最近的检查点，重打该回合。详见 [持久化部署说明](docs/operations/PERSISTENCE.md)。
 - **断线重连**：同盟模拟断线后 10 分钟内重新打开页面即可回到原座位，掉线期间按原阵容自动作战，也可以「暂离」交给 AI 托管；独立模拟 24 小时内可以回来继续（同一个浏览器）。
 - **交互细节**：漏怪时顶栏的目标生命值实时减少（结算时确定）；点选、拖放和配发装备都按地上的方格；购买、升级和机变选卡都需要点两次确认；只有一名玩家时除作战外不计时。
 - **画面与声音**：真实 Spine 小人、官方 BGM 与音效、表情（6 套 × 6 个）、作战特效；官方 3D 棋盘（本分支已附带贴图，需浏览器支持 WebGL2）。
@@ -89,7 +89,7 @@ English summary: [below](#english).
 - **完整包** `Stronghold-Protocol-v<版本>.zip`（约 430 MB，解压后约 625 MB）：附带全部美术 / 音频（含官方 3D 棋盘贴图），解压就能玩，不需要再下载任何东西。**推荐。**
 - **精简包** `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）：不带素材，第一次启动时自动从公开镜像下载美术、Spine 模型、音频、字体、表情和「玩法说明」教程图（约 460 MB，可中断，再次启动会续传）；官方 3D 棋盘等本地客户端素材不在其中（见下面的「本地客户端素材」）。适合下载大文件不方便的情况。
 
-两种包都只含运行和部署需要的文件（服务器、客户端、数据、启动脚本、setup / doctor / 素材下载工具、许可证与说明、[docs/PLAYING.md](docs/PLAYING.md) 和 [docs/DEPLOY.md](docs/DEPLOY.md)）；测试、开发工具和设计文档只在源码仓库里。
+两种包都只含运行和部署需要的文件（服务器、客户端、数据、启动脚本、setup / doctor / 素材下载工具、许可证与说明、[docs/guides/PLAYING.md](docs/guides/PLAYING.md) 和 [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md)）；测试、开发工具和设计文档只在源码仓库里。
 
 1. **安装 Node.js 22 或 24（LTS）**
    - Windows：在 PowerShell 里运行 `winget install OpenJS.NodeJS.LTS`，或到 <https://nodejs.org/zh-cn/download> 下载安装包。
@@ -113,7 +113,7 @@ npm start          # 启动服务器：http://localhost:3000
 
 也可以直接运行启动脚本（Windows `scripts\start-windows.bat`，macOS / Linux `scripts/start.sh`）：首次会自动安装依赖、下载素材，然后启动服务器并打开浏览器。
 
-- **本地客户端素材**：本分支已提交上游 v0.1.3 完整包中的这部分素材和清单，git pull 后重启即可使用（3D 棋盘、部分界面图标与源石虫模型）。0.2.0 新增的 39 个召唤物官方模型不在其中：需要召唤物模型的源码部署，运行一次 `npm run setup -- --local` 提取，或从同版本完整包复制 `public/assets/local/`。以下为原始上游的提取方式：官方 3D 棋盘、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）、灼热 / 炽焰源石虫和 39 个召唤物（多数自选召唤物）的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫、召唤物头像。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [docs/DEPLOY.md](docs/DEPLOY.md) 的「本地客户端素材」。
+- **本地客户端素材**：本分支已提交上游 v0.1.3 完整包中的这部分素材和清单，git pull 后重启即可使用（3D 棋盘、部分界面图标与源石虫模型）。0.2.0 新增的 39 个召唤物官方模型不在其中：需要召唤物模型的源码部署，运行一次 `npm run setup -- --local` 提取，或从同版本完整包复制 `public/assets/local/`。以下为原始上游的提取方式：官方 3D 棋盘、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）、灼热 / 炽焰源石虫和 39 个召唤物（多数自选召唤物）的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫、召唤物头像。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) 的「本地客户端素材」。
 - 素材下载优先使用 GitHub，失败时自动改用 jsDelivr 镜像。
 - `npm run doctor`（即 `node tools/doctor.mjs`）可以随时诊断：Node 版本、素材是否完整、端口占用、局域网地址和防火墙。
 
@@ -138,9 +138,9 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `SP_WS_COMPRESSION` | `on` | WebSocket 状态消息压缩：`on` 开启低等级压缩；`off` 关闭。减少出网，但增加 CPU 和每连接内存；高并发部署先小流量验证 |
-| `SP_ANNOUNCEMENT_URL` | 空 | 运维面板公告源：设为 `https://<面板域名>/api/announce/v1/<站id>` 后按间隔轮询拉取，热生效，断源保留最后有效公告；设置后本地公告文件不再参与。见 [部署指南](docs/DEPLOY.md#16-维护公告) |
+| `SP_ANNOUNCEMENT_URL` | 空 | 运维面板公告源：设为 `https://<面板域名>/api/announce/v1/<站id>` 后按间隔轮询拉取，热生效，断源保留最后有效公告；设置后本地公告文件不再参与。见 [部署指南](docs/operations/DEPLOY.md#16-维护公告) |
 | `SP_ANNOUNCEMENT_POLL_MS` | `10000` | 公告源拉取间隔毫秒，允许 3000–600000；仅与 `SP_ANNOUNCEMENT_URL` 搭配 |
-| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 维护公告配置文件；相对路径以项目根目录为基准，修改后自动生效。设置内容、截止时间和关闭方式见 [部署指南](docs/DEPLOY.md#16-维护公告) |
+| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 维护公告配置文件；相对路径以项目根目录为基准，修改后自动生效。设置内容、截止时间和关闭方式见 [部署指南](docs/operations/DEPLOY.md#16-维护公告) |
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |
@@ -166,7 +166,7 @@ npm start          # 启动服务器：http://localhost:3000
 
 ## 联机方式
 
-朋友不在同一个局域网时，下面是几类常见做法，按自己的情况选一种即可。这里只做简单介绍，提到的工具和服务只是举例，本项目与它们没有任何关系，也不做推荐；具体的安装、费用和使用规则请以各自的官方说明为准。部署细节（防火墙、开机自启、反向代理与 HTTPS、Docker）见 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+朋友不在同一个局域网时，下面是几类常见做法，按自己的情况选一种即可。这里只做简单介绍，提到的工具和服务只是举例，本项目与它们没有任何关系，也不做推荐；具体的安装、费用和使用规则请以各自的官方说明为准。部署细节（防火墙、开机自启、反向代理与 HTTPS、Docker）见 **[docs/operations/DEPLOY.md](docs/operations/DEPLOY.md)**。
 
 | 方式 | 怎么做 | 适合 |
 |---|---|---|
@@ -191,32 +191,34 @@ npm start          # 启动服务器：http://localhost:3000
 | 出售 / 撤退 / 销毁装备 | 点击单位所在的格子 → 底部按钮「出售 +1」「撤退」；也可以把棋盘上的干员拖回整备区撤退。整备区里的装备与法术只能「销毁」，已配发的装备锁定在干员身上（干员出售或合成精锐时退回整备区） |
 | 装备 | 把装备拖到干员所在的格子上（每人 2 件；满了会弹出替换窗口，被替换的一件会被销毁）；法术拖到地块上并选方向 |
 | 查看详情 | 右键或长按单位 / 卡牌（属性为实时数值，高于基础值为绿色、低于为红色） |
-| 快捷键 | `R` 刷新 · `F` 冻结 · `D` 升级 · `Q` 撤退 / `X` 出售选中的干员 · `Space` 准备就绪 · `Esc` 取消 / 关闭；除 `Esc` 外都可以在「设置 → 快捷键」里改成别的键（[玩法指南 §11](docs/PLAYING.md#11-快捷键)） |
+| 快捷键 | `R` 刷新 · `F` 冻结 · `D` 升级 · `Q` 撤退 / `X` 出售选中的干员 · `Space` 准备就绪 · `Esc` 取消 / 关闭；除 `Esc` 外都可以在「设置 → 快捷键」里改成别的键（[玩法指南 §11](docs/guides/PLAYING.md#11-快捷键)） |
 | 方向轮盘键盘操作 | 方向键预览 · `Enter` 确认 · `Esc` 取消 |
 | 暂停（独立模拟） | 作战中（含最终攻势 / 隐秘核心）点顶栏的「暂停」或按 `Space`，再点「继续作战」（或 `Space`）继续；同盟模拟的作战不能暂停 |
 | 表情 | 左下角「交流」，左右滑动（或方向键）换主题，冷却 1 秒 |
 | 观战 | 自己的作战结束后（或休整期）点左侧队友头像 →「前往查看」；不参战的朋友可以在大厅输入同盟密钥点「观战」（每个同盟最多 2 名观战者，本作新增） |
 
-完整的规则、数值和小技巧见 **[docs/PLAYING.md](docs/PLAYING.md)**（游戏内左下角也有「玩法说明」）。
+完整的规则、数值和小技巧见 **[docs/guides/PLAYING.md](docs/guides/PLAYING.md)**（游戏内左下角也有「玩法说明」）。
 
 ## 文档
+
+完整分类入口见 **[文档导航](docs/README.md)**：玩法指南、部署运维、开发参考、设计历史与调研。
 
 | 文档 | 内容 |
 |---|---|
 | [CHANGELOG.md](CHANGELOG.md) | 更新记录：每个版本修复了什么、哪些反馈经核实不是问题 |
-| [docs/PLAYING.md](docs/PLAYING.md) | 玩法指南：流程、经济、招募与晋升、摆阵、联防、盟约、最终攻势、结算称号 |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | 部署指南：Windows 开服与开机自启、防火墙、组网 / 隧道、反向代理与 HTTPS、Docker、systemd、排错 |
-| [docs/CUSTOM_API.md](docs/CUSTOM_API.md) | 本分支 API 规范：房间号查询、延迟探测、维护公告、四人匹配及资源 / 结算扩展（排除上游已有接口） |
-| [docs/WINDOWS.md](docs/WINDOWS.md) | Windows 便携包：怎么打一份「零安装」包（`scripts/make-windows-bundle.mjs`）、包里放了什么、授权注意事项 |
-| [docs/DESIGN.md](docs/DESIGN.md) | 架构与契约（英文）：索引，按章节号找到文件；现行规则在 `docs/design/`（范围与目录分工、坐标与时间、战斗引擎、对局、网络协议、渲染与 UI），各次试玩和各版本的规则修订与依据在 `docs/history/` |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 代码地图（英文）：服务器、联机协议和前后端共用的战斗模拟，0.2.0 重构后的目录，数据流，黄金结果与导入边界，常见改动从哪里入手 |
+| [docs/guides/PLAYING.md](docs/guides/PLAYING.md) | 玩法指南：流程、经济、招募与晋升、摆阵、联防、盟约、最终攻势、结算称号 |
+| [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) | 部署指南：Windows 开服与开机自启、防火墙、组网 / 隧道、反向代理与 HTTPS、Docker、systemd、排错 |
+| [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) | 本分支 API 规范：房间号查询、延迟探测、维护公告、四人匹配及资源 / 结算扩展（排除上游已有接口） |
+| [docs/operations/WINDOWS.md](docs/operations/WINDOWS.md) | Windows 便携包：怎么打一份「零安装」包（`scripts/make-windows-bundle.mjs`）、包里放了什么、授权注意事项 |
+| [docs/development/DESIGN.md](docs/development/DESIGN.md) | 架构与契约（英文）：索引，按章节号找到文件；现行规则在 `docs/design/`（范围与目录分工、坐标与时间、战斗引擎、对局、网络协议、渲染与 UI），各次试玩和各版本的规则修订与依据在 `docs/history/` |
+| [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md) | 代码地图（英文）：服务器、联机协议和前后端共用的战斗模拟，0.2.0 重构后的目录，数据流，黄金结果与导入边界，常见改动从哪里入手 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 参与贡献：准备环境、运行测试、忠实原则、提交与 PR 约定、怎样添加自选干员（中文，末尾附英文摘要） |
-| [docs/SIM.md](docs/SIM.md) | 战斗模拟引擎参考（英文）：钩子、技能描述格式、职业默认行为 |
-| [docs/META.md](docs/META.md) | 对局与经济引擎（英文）：回合流程、商店、联防、最终攻势的实现细节 |
-| [docs/DATA.md](docs/DATA.md) | 由官方数据表生成的游戏数据（英文） |
-| [docs/ASSETS.md](docs/ASSETS.md) | 素材来源、目录结构与清单（英文） |
-| [docs/I18N.md](docs/I18N.md) | 界面语言（英文）：界面文字、游戏文本与服务器消息怎样翻译，覆盖范围；**添加一种语言只需在 `public/i18n/` 放一个语言文件**（社区翻译步骤见「Adding a language」，内容包格式见 [docs/PACKS.md](docs/PACKS.md)） |
-| [docs/BALANCE.md](docs/BALANCE.md) | 难度模型与测量（英文） |
+| [docs/development/SIM.md](docs/development/SIM.md) | 战斗模拟引擎参考（英文）：钩子、技能描述格式、职业默认行为 |
+| [docs/development/META.md](docs/development/META.md) | 对局与经济引擎（英文）：回合流程、商店、联防、最终攻势的实现细节 |
+| [docs/development/DATA.md](docs/development/DATA.md) | 由官方数据表生成的游戏数据（英文） |
+| [docs/development/ASSETS.md](docs/development/ASSETS.md) | 素材来源、目录结构与清单（英文） |
+| [docs/development/I18N.md](docs/development/I18N.md) | 界面语言（英文）：界面文字、游戏文本与服务器消息怎样翻译，覆盖范围；**添加一种语言只需在 `public/i18n/` 放一个语言文件**（社区翻译步骤见「Adding a language」，内容包格式见 [docs/guides/PACKS.md](docs/guides/PACKS.md)） |
+| [docs/development/BALANCE.md](docs/development/BALANCE.md) | 难度模型与测量（英文） |
 | [docs/research/](docs/research/00-INDEX.md) | 官方规则、数据与界面的调研记录 |
 
 ## 开发与测试
@@ -233,7 +235,7 @@ GOLDEN_FULL=1 node --test test/golden.test.js           # 黄金结果：固定�
 - 游戏数据由 `npm run build-data`（`tools/build-data.mjs`）从官方数据表生成，不要手工修改 `data/*.json`。
 - 只重构、不改玩法的提交不能改变 `test/golden/*.json`；有意改变玩法时运行 `npm run golden:update`，检查差异后随改动一起提交（见 [test/golden/README.md](test/golden/README.md)）。
 - GitHub Actions（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在 Ubuntu 与 Windows、Node 22 / 24 上运行 `npm ci`、`node --test` 和服务器冒烟测试。
-- 代码怎么分层、改某个规则该从哪个文件入手，见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+- 代码怎么分层、改某个规则该从哪个文件入手，见 [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md)。
 
 ## 项目结构
 
@@ -243,10 +245,12 @@ GOLDEN_FULL=1 node --test test/golden.test.js           # 黄金结果：固定�
 | `shared/` | 前后端共用的常量与网络协议 |
 | `public/` | 浏览器客户端（原生 ES 模块，PixiJS + pixi-spine、three.js 3D 棋盘、Preact + htm UI） |
 | `data/` | 由官方数据表生成的游戏数据与素材清单 `assets.json` |
-| `tools/` | `setup.mjs` / `doctor.mjs`、素材下载 `fetch-assets.mjs`、数据构建、本地提取 `local-extract/` |
-| `scripts/` | 启动脚本（Windows / macOS / Linux）、Windows 开机自启 |
-| `docs/` | 文档与调研 |
+| `tools/` | `setup.mjs` / `doctor.mjs`、素材下载、数据构建、本地提取；见[工具说明](tools/README.md) |
+| `scripts/` | 启动与部署脚本；见[脚本说明](scripts/README.md) |
+| `docs/` | [文档导航](docs/README.md)：`guides/` 玩法、`operations/` 运维、`development/` 开发；`design/`、`history/`、`research/` 保留专题资料 |
 | `test/` | `node:test` 测试 |
+| `.cache/` | 本地缓存、临时脚本、日志与报告（Git 忽略） |
+| `.state/` | 服务器对局存档（Git 忽略） |
 
 ## 许可证
 
@@ -257,11 +261,11 @@ GOLDEN_FULL=1 node --test test/golden.test.js           # 黄金结果：固定�
 ## 致谢与数据来源
 
 - 游戏数据：[Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)。
-- 素材来源：[yuanyan3060/ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource)、[fexli/ArknightsResource](https://github.com/fexli/ArknightsResource)、[isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models)、[ArknightsAssets/ArknightsAssets2](https://github.com/ArknightsAssets/ArknightsAssets2)；字体来自 [TimWangZi/The-font-of-Arknights](https://github.com/TimWangZi/The-font-of-Arknights) 与 Google Fonts（Noto Sans SC）。详见 [docs/ASSETS.md](docs/ASSETS.md)。
+- 素材来源：[yuanyan3060/ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource)、[fexli/ArknightsResource](https://github.com/fexli/ArknightsResource)、[isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models)、[ArknightsAssets/ArknightsAssets2](https://github.com/ArknightsAssets/ArknightsAssets2)；字体来自 [TimWangZi/The-font-of-Arknights](https://github.com/TimWangZi/The-font-of-Arknights) 与 Google Fonts（Noto Sans SC）。详见 [docs/development/ASSETS.md](docs/development/ASSETS.md)。
 - 规则核对参考：[PRTS 明日方舟中文 Wiki](https://prts.wiki/)。
 - LZ4AK 解包：`tools/local-extract/aklz4.py` 的算法来自 [isHarryh/Ark-Unpacker](https://github.com/isHarryh/Ark-Unpacker)（BSD-3-Clause，经 MooncellWiki/UnityPy）；解析 Unity 资源使用 [UnityPy](https://github.com/K0lb3/UnityPy)（MIT）。
 - 库：[PixiJS](https://pixijs.com/)（MIT）、[pixi-spine](https://github.com/pixijs/spine)（MIT；其中包含的 Spine Runtime 另受 [Spine Runtimes License](https://esotericsoftware.com/spine-runtimes-license) 约束）、[three.js](https://threejs.org/)（MIT）、[Preact](https://preactjs.com/) + [htm](https://github.com/developit/htm)（MIT）、[ws](https://github.com/websockets/ws)（MIT）。
-- 分支实现参考：[xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) —— 本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复移植改编自该分支（GPL-3.0-or-later），改造细节见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)、[docs/CDN.md](docs/CDN.md)、[docs/PERSISTENCE.md](docs/PERSISTENCE.md)。
+- 分支实现参考：[xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) —— 本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复移植改编自该分支（GPL-3.0-or-later），改造细节见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md)、[docs/operations/CDN.md](docs/operations/CDN.md)、[docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md)。
 
 感谢以上项目的作者与维护者，以及鹰角网络带来的这款游戏。
 
@@ -282,8 +286,8 @@ GOLDEN_FULL=1 node --test test/golden.test.js           # 黄金结果：固定�
 An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess tower-defense mode *Stronghold Protocol: Alliance*, played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host.
 
 - **Run:** download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads the art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction — the 39 summon models 0.2.0 added need one `npm run setup -- --local` or a copy from the same-version full bundle; WebGL2 is required for the 3D board).
-- **Languages:** Chinese (the default), English, 日本語, 한국어 and 繁體中文 — switch on the title screen or in Settings. Game texts come from the official clients; the Japanese, Korean and Traditional Chinese interface strings are machine translations (corrections welcome: [docs/I18N.md](docs/I18N.md)).
-- **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/DEPLOY.md](docs/DEPLOY.md).
+- **Languages:** Chinese (the default), English, 日本語, 한국어 and 繁體中文 — switch on the title screen or in Settings. Game texts come from the official clients; the Japanese, Korean and Traditional Chinese interface strings are machine translations (corrections welcome: [docs/development/I18N.md](docs/development/I18N.md)).
+- **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md).
 - **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Rights holders may request removal via an [Issue](../../issues) or email **misyra@163.com**; content will be removed immediately. Provided "as is", without warranty.
 - **License:** code GPL-3.0-or-later ([LICENSE](LICENSE)); game assets excluded. Portions of this fork (shared worker pool, resource preload, match checkpointing) are adapted from [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) (GPL-3.0-or-later).
-- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) (an English summary at its end); the code map is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) (an English summary at its end); the code map is [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md).

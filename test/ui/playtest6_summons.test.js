@@ -3,7 +3,7 @@
 // fires; 凯瑟琳's 支援装置 with the board — and shows what it does (the device's talent 定向支援信号, the doll's token
 // skill), with the numbers of the owner's own variant (a golden owner's summon is stronger: resolveDetail finds the
 // owner by `ownerUid`). One switch, shared/constants.js SKILL_SUMMON_START_DEPLOY (the PRTS start-of-battle deploy,
-// settled by the user after playtest #6), drives the sim and the hint; the guide (docs/PLAYING.md §4) and docs/SIM.md
+// settled by the user after playtest #6), drives the sim and the hint; the guide (docs/guides/PLAYING.md §4) and docs/development/SIM.md
 // must say the same. The rules themselves:
 // test/match/playtest6_summons.test.js (prep) and test/content/playtest6_summons.test.js (battle).
 import { test } from 'node:test';
@@ -62,8 +62,8 @@ test('one switch for the start-of-battle deploy: the sim and the hint read share
 });
 
 test('the guide and SIM.md state the start-of-battle rule the switch selects (flip it ⇒ update both)', () => {
-  const playing = readFileSync(path.join(ROOT, 'docs', 'PLAYING.md'), 'utf8');
-  const sim = readFileSync(path.join(ROOT, 'docs', 'SIM.md'), 'utf8');
+  const playing = readFileSync(path.join(ROOT, 'docs', 'guides', 'PLAYING.md'), 'utf8');
+  const sim = readFileSync(path.join(ROOT, 'docs', 'development', 'SIM.md'), 'utf8');
   if (SKILL_SUMMON_START_DEPLOY) {
     assert.match(playing, /医疗探机、诅咒娃娃[^\n]*开战时[^\n]*部署一次/, 'PLAYING.md §4: the drone / doll also deploy once at the start');
     assert.match(sim, /deploys once at the battle start/, 'SIM.md token pieces: the PRTS start deploy');

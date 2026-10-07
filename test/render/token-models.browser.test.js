@@ -1,5 +1,5 @@
 // test/render/token-models.browser.test.js — the 39 summon models only the local client has (tools/local-extract/
-// extract.py TOKEN_SPINES → data/assets.json tokens[id].spineLocal, docs/ASSETS.md "Token models from the local client")
+// extract.py TOKEN_SPINES → data/assets.json tokens[id].spineLocal, docs/development/ASSETS.md "Token models from the local client")
 // drawn on the prep board of the dev render demo (public/dev/render-demo.html) in headless Chrome: every summon placed on
 // a board tile draws its official model (the local entry, not the avatar diamond), on its own idle clip (the mapped ones
 // too: 电弧's 戴乌 C_Skill1_Idle, 酒神's 本能的召唤 Loop, 战术锚点 Default), really puts pixels over its tile, and faces

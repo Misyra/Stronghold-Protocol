@@ -1,7 +1,7 @@
 // server/sim/content/kits/shared/tier2.js — helpers and notes of the Tier 2 operator kits (formerly tier2.js; the kits
 // live one per file in ../ops/).
 //
-// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/SIM.md §7.2). Shared helpers live in shared/tier1.js
+// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/development/SIM.md §7.2). Shared helpers live in shared/tier1.js
 // (named exports). Numbers come from the skill / talent / trait blackboards (elite module upgrades are in the elite
 // record's trait.bb and hidden index −1 talents). fx kinds: see the shared/tier1.js header.
 //

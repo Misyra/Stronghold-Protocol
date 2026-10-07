@@ -1,8 +1,8 @@
-// The newcomer docs name only paths that exist: every repository path in docs/ARCHITECTURE.md and CONTRIBUTING.md
+// The newcomer docs name only paths that exist: every repository path in docs/development/ARCHITECTURE.md and CONTRIBUTING.md
 // (inline code, the diagrams and commands in fenced blocks) and every relative Markdown link. A path with a
 // placeholder (`<codename>`, `{a,b}`) or a glob (`*`) is checked up to its last fixed directory; a path ending in `/`
 // must be a directory. Outputs that a fresh checkout does not have (downloaded art, vendored libraries) are exempt.
-// The design document (0.2.0 split): docs/DESIGN.md is the index, every `## N.` section sits exactly once in
+// The design document (0.2.0 split): docs/development/DESIGN.md is the index, every `## N.` section sits exactly once in
 // docs/design/ (the current rules) or docs/history/ (the per-release revisions), the index names each file with its
 // sections, and every "DESIGN §N" / "DESIGN §N.M" cited anywhere in the repository is a heading of it.
 import { test } from 'node:test';
@@ -15,7 +15,7 @@ import { designText, DESIGN_DIRS } from './helpers/designDocs.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** Each document with the least number of paths it names (a guard against an extraction that finds nothing). */
-const DOCS = [['docs/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15]];
+const DOCS = [['docs/development/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15], ['docs/README.md', 0]];
 /** A repository path starts with one of these top-level directories … */
 const TOP = /^(?:server|shared|public|data|tools|test|docs|types|scripts|\.github)\//;
 /** … or is one of these root files (README.md is left out: a bare `README.md` often means a folder's own). */
@@ -94,13 +94,16 @@ test('the path extraction: placeholders, globs, directories and the exemptions',
 const sectionsOf = (md) => [...md.matchAll(/^## (\d+)\./gm)].map((m) => Number(m[1]));
 
 test('DESIGN: every section is a `## N.` heading exactly once in docs/design/ or docs/history/, and the index names its file', () => {
-  const index = readFileSync(join(ROOT, 'docs/DESIGN.md'), 'utf8');
+  const indexPath = 'docs/development/DESIGN.md';
+  const index = readFileSync(join(ROOT, indexPath), 'utf8');
   const where = new Map();                                    // § → the file that holds it
   for (const dir of DESIGN_DIRS) {
     for (const f of readdirSync(join(ROOT, dir)).filter((x) => x.endsWith('.md')).sort()) {
       const file = `${dir}/${f}`;
       const md = readFileSync(join(ROOT, file), 'utf8');
-      assert.match(md, /^# DESIGN §\d+(?:, §\d+)* — .+\n\nPart of \[DESIGN\.md\]\(\.\.\/DESIGN\.md\)/, `${file}: its title and the pointer to the index`);
+      const pointer = md.match(/^# DESIGN §\d+(?:, §\d+)* — .+\n\nPart of \[DESIGN\.md\]\(([^)]+)\)/);
+      assert.ok(pointer, `${file}: its title and the pointer to the index`);
+      assert.equal(normalize(join(dirname(file), pointer[1])).replaceAll('\\', '/'), indexPath, `${file}: the pointer resolves to the index`);
       for (const n of sectionsOf(md)) {
         assert.ok(!where.has(n), `§${n} is in ${where.get(n)} and in ${file}`);
         where.set(n, file);
@@ -114,8 +117,8 @@ test('DESIGN: every section is a `## N.` heading exactly once in docs/design/ or
   // the index's table: one row per file, naming exactly the sections that file holds, with a link that resolves
   const listed = new Map();
   for (const [, secs, text, href] of index.matchAll(/^\| ((?:§\d+(?:, )?)+) \| \[([^\]]+)\]\(([^)]+)\) \|/gm)) {
-    const file = `docs/${href}`;
-    assert.equal(text, href, `${file}: the link text is its path`);
+    const file = normalize(join(dirname(indexPath), href)).replaceAll('\\', '/');
+    assert.equal(text, file.slice('docs/'.length), `${file}: the link text is its path under docs/`);
     assert.ok(existsSync(join(ROOT, file)), `${file} exists`);
     const ns = secs.split(', ').map((x) => Number(x.slice(1)));
     const held = [...where].filter(([, f]) => f === file).map(([n]) => n).sort((a, b) => a - b);

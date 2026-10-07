@@ -133,7 +133,7 @@ curl -s -H "Authorization: Bearer <令牌>" http://127.0.0.1:3900/api/admin/v1/h
 
 ### 3. 本站 nginx 增加管理路由
 
-把 [deploy/nginx-agent.conf.example](../deploy/nginx-agent.conf.example) 合并进本站现有 HTTPS server 块：
+把 [deploy/nginx-agent.conf.example](deploy/nginx-agent.conf.example) 合并进本站现有 HTTPS server 块：
 
 - `location ^~ /api/admin/v1/` → 反代 `127.0.0.1:3900`，透传 `Authorization`，`auth_basic off`，不缓存；
 - 不要在本站暴露 3900 端口本身；

@@ -1,4 +1,4 @@
-// tools/persist-sim.mjs — local simulation for the persistence pipeline (docs/PERSISTENCE.md).
+// tools/persist-sim.mjs — local simulation for the persistence pipeline (docs/operations/PERSISTENCE.md).
 //
 // Phase A "multi-user hard kill": boots a real server in a child process, connects real WebSocket clients (four in a
 // co-op room, one solo), drives the matches into a checkpointable PREP with purchases, flushes, SIGKILLs the child,
@@ -52,7 +52,7 @@ process.on('unhandledRejection', (e) => { console.error('[child] unhandled rejec
 const srv = await startServer({ port: 0, host: '127.0.0.1', workers: 0, log: quiet, stateFile: process.env.SP_SIM_STATE, MatchClass: TestMatch });
 process.on('message', async (msg) => {
   if (msg === 'flush') {
-    const ok = await srv.persister.flush('sim');
+    const ok = await srv.persister.flush('test');
     process.send({ flushed: ok });
   } else if (msg === 'inspect') {
     const rooms = [...srv.lobby.rooms.values()].map((r) => ({
@@ -204,8 +204,8 @@ async function phaseMultiUser() {
     });
     if (!flushed.flushed) throw new Error('the flush did not land');
     const shardCodes = (await fs.readdir(path.join(stateDir, 'matches'))).sort();
-    const indexDoc = JSON.parse(await fs.readFile(path.join(stateDir, 'index.json'), 'utf8'));
-    console.log(`  落盘: index.json + ${shardCodes.length} 个分片(${shardCodes.join(', ')}),时钟信封 ${Object.keys(indexDoc.clocks).length} 项`);
+    const runtimeDoc = JSON.parse(await fs.readFile(path.join(stateDir, 'runtime.json'), 'utf8'));
+    console.log(`  落盘: index.json + runtime.json + ${shardCodes.length} 个分片(${shardCodes.join(', ')}),时钟信封 ${Object.keys(runtimeDoc.clocks).length} 项`);
 
     // hard kill, no goodbye
     await killAll();
@@ -277,7 +277,15 @@ async function phaseScale(rooms) {
   let srv;
   try {
     srv = await startServer({ port: 0, quiet: true, log: quiet, stateFile: stateDir, MatchClass: TestMatch, workers: 0 });
+    // Measure completed rounds, not requests deferred by the live checkpoint/interval throttle.
+    srv.persister.stop();
     const { registry, lobby } = srv;
+    let writtenBytes = 0;
+    const writeAtomic = srv.store.writeAtomic.bind(srv.store);
+    srv.store.writeAtomic = async (file, content) => {
+      await writeAtomic(file, content);
+      writtenBytes += Buffer.byteLength(content);
+    };
     const t0 = performance.now();
     for (let i = 0; i < rooms; i++) {
       const s = registry.create(`sim-${i}`);
@@ -301,15 +309,22 @@ async function phaseScale(rooms) {
     const timeFlush = async (label) => {
       maxLag = 0;
       const before = srv.store.shardWrites;
+      const beforeIndex = srv.store.indexWrites;
+      const beforeRuntime = srv.store.runtimeWrites;
+      const beforeBytes = writtenBytes;
       const t = performance.now();
-      const ok = await srv.persister.flush('sim');
+      const ok = await srv.persister.flush('test');
+      if (!ok) throw new Error(`${label}: flush failed`);
       const ms = performance.now() - t;
-      return { label, ok, ms, maxLag, shardWrites: srv.store.shardWrites - before };
+      return { label, ok, ms, maxLag, shardWrites: srv.store.shardWrites - before,
+        indexWrites: srv.store.indexWrites - beforeIndex, runtimeWrites: srv.store.runtimeWrites - beforeRuntime,
+        writtenBytes: writtenBytes - beforeBytes };
     };
 
     const cold = await timeFlush('cold (first flush)');
     const warm = await timeFlush('warm (no changes)');
     const warm2 = await timeFlush('warm (no changes)');
+    if (warm.shardWrites || warm2.shardWrites || warm.indexWrites || warm2.indexWrites) throw new Error('unchanged matches rewrote shards/index');
     const syncStart = performance.now();
     let syncBytes = 0;
     for (const room of lobby.rooms.values()) {
@@ -330,9 +345,15 @@ async function phaseScale(rooms) {
       }
     };
     await walk(stateDir);
+    const { layout, revision, ...legacyIndex } = JSON.parse(await fs.readFile(path.join(stateDir, 'index.json'), 'utf8'));
+    const runtime = JSON.parse(await fs.readFile(path.join(stateDir, 'runtime.json'), 'utf8'));
+    const legacyClocks = Object.fromEntries(Object.entries(runtime.clocks).map(([code, { revision, ...clocks }]) => [code, clocks]));
+    const previousIndexBytes = Buffer.byteLength(JSON.stringify({ ...legacyIndex, clocks: legacyClocks, matches: {} }));
 
     console.log(`  冷启动 flush:  ${cold.ms.toFixed(0)} ms · 事件循环最大停顿 ${cold.maxLag.toFixed(1)} ms · 分片写入 ${cold.shardWrites}`);
     console.log(`  稳态 flush ×2: ${warm.ms.toFixed(0)} / ${warm2.ms.toFixed(0)} ms · 最大停顿 ${warm.maxLag.toFixed(1)} / ${warm2.maxLag.toFixed(1)} ms · 分片写入 ${warm.shardWrites} / ${warm2.shardWrites}(脏检测生效≈0)`);
+    console.log(`  稳态落盘: index ${warm.indexWrites}/${warm2.indexWrites} 次 · runtime ${warm.runtimeWrites}/${warm2.runtimeWrites} 次 · 写入 ${(warm.writtenBytes / 1024).toFixed(1)}/${(warm2.writtenBytes / 1024).toFixed(1)} KB`);
+    console.log(`  同等数据旧 index: ${(previousIndexBytes / 1024).toFixed(1)} KB/轮 · 本次稳态写入字节减少 ${(100 * (1 - warm2.writtenBytes / previousIndexBytes)).toFixed(1)}%`);
     console.log(`  对照:旧路径同步编码 ${rooms} 房 ${syncMs.toFixed(0)} ms(单次,阻塞主线程;新路径同一工作在 Worker 线程)`);
     console.log(`  磁盘: ${files} 个文件,共 ${(bytes / 1024).toFixed(0)} KB(旧单文件布局每 tick 重写全部 ${(syncBytes / 1024).toFixed(0)} KB)`);
 

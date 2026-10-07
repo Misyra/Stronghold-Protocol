@@ -1,6 +1,6 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 // public/js/resources/store.js — the preload store: downloads the manifest's files into Cache Storage and reports what
-// is already there (docs/ASSETS.md「Preload」).
+// is already there (docs/development/ASSETS.md「Preload」).
 //
 // One cache (`CACHE_NAME`) holds every asset, whatever manifest it came from, and each file's *hash* decides whether the
 // stored bytes are still current: an asset update re-downloads the changed files only (~310 MiB → a few MiB), and a

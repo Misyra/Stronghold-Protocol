@@ -13,7 +13,7 @@
     "credits": "Game texts (data/i18n/en.json): the official EN client data (© Hypergryph / Yostar) via ArknightsAssets/ArknightsGamedata.",
     "complete": true
   },
-  "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
+  "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/development/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
   "你已在其他同盟中，请先离开当前同盟": "You are already in another Alliance. Leave it first.",
   "你已不在该同盟中": "You are no longer in this Alliance",
   "创建者已离开，同盟已解散": "The host left. The Alliance has been disbanded.",

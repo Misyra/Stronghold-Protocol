@@ -1,4 +1,4 @@
-// The worked examples of docs/SIM.md, executed (keeps the documentation honest).
+// The worked examples of docs/development/SIM.md, executed (keeps the documentation honest).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, enemyRec, chessRec, checkInvariants } from '../helpers/battleHarness.js';

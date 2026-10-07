@@ -1,4 +1,4 @@
-// test/resources/panel.test.js — the two faces of the preload UI (public/js/ui/resourcePanel.js, docs/ASSETS.md
+// test/resources/panel.test.js — the two faces of the preload UI (public/js/ui/resourcePanel.js, docs/development/ASSETS.md
 // 「Preload」): the numbers both render, and the wiring that puts the launcher in the title screen's bottom-right corner
 // (the settings modal is only reachable inside a match, so the home screen needs its own entry).
 

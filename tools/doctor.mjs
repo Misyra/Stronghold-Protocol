@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/doctor.mjs — diagnose an install (docs/DEPLOY.md「排错」). Read-only: changes nothing.
+// tools/doctor.mjs — diagnose an install (docs/operations/DEPLOY.md「排错」). Read-only: changes nothing.
 //
 //   node tools/doctor.mjs [--port 3000] [--host 0.0.0.0]
 //

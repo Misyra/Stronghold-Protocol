@@ -194,6 +194,28 @@ test('flush rounds honor the minimum gap: checkpoint events coalesce instead of 
 // live server: sessions and a room come back
 // ---------------------------------------------------------------------------------------------------
 
+test('a short configured interval still throttles checkpoint saves, and a normal round consumes the deferred request', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let at = 0;
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog, now: () => at, saveMs: 1 });
+  t.after(async () => { persister.stop(); await persister.encoder.close(); lobby.shutdown(); });
+  persister.running = true;
+  assert.equal(await persister.flush('interval'), true, 'a clock starting at zero must allow the first round');
+  at = 100;
+  persister.scheduleFlush('checkpoint');
+  await Promise.resolve();
+  assert.equal(store.writes, 1, 'checkpoint events honor the normalized 1000 ms minimum');
+  at = 1000;
+  assert.equal(await persister.flush('interval'), true);
+  t.mock.timers.tick(10_000);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(store.writes, 2, 'an interval round consumes the deferred request without another write');
+});
+
 test('a restart keeps players on their seats (tokens resolve, room state resumes)', async () => {
   const store = new MemoryStore();
   const srvA = await startServer({ port: 0, quiet: true, store, MatchClass: StubMatch, log: quietLog });

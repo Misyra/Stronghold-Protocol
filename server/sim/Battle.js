@@ -13,10 +13,10 @@
 // An operator that left the field — knocked out, or forced out by its own effects (史尔特尔's 余烬 …, GitHub #60) — lies
 // on its `body` tile — where it fell, or its own home when it fell on another board piece's home — and redeploys there;
 // no ally deploys or moves onto that tile meanwhile (PRTS 卫戍协议/帮助 §作战阶段 单位部署; `isDown`, `_layBody`, `downOn`,
-// `restTile`, `isReservedTile`; docs/SIM.md §1).
+// `restTile`, `isReservedTile`; docs/development/SIM.md §1).
 // Tick order: scheduled callbacks → spawns → DP → buffs → enemies (attack, move, block) → enemy index →
 //   allies (skill tick, attack) → projectiles → redeploys → boss sync → `tick` hook → release hooks of removed units →
-//   time += TICK → end checks. A forceEnd() requested mid-step ends the step after the current phase (docs/SIM.md §1.4).
+//   time += TICK → end checks. A forceEnd() requested mid-step ends the step after the current phase (docs/development/SIM.md §1.4).
 // Board → field coordinates: units are given in board coordinates (rows 9–12, cols 2–10). Normal/unite:
 //   (row, col + colOffset). Boss/hidden: row − 7 when row ≥ 7 (board rows → boss rows 2–5); side 'R' mirrors
 //   the column (col → 20 − col) and mirrors the direction (RIGHT ↔ LEFT, UP / DOWN kept). Every ally has a direction

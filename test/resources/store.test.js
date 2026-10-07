@@ -1,5 +1,5 @@
 // test/resources/store.test.js — the Cache Storage downloader (public/js/resources/store.js) and the Service Worker
-// handler (public/js/resources/service.js, docs/ASSETS.md「Preload」).
+// handler (public/js/resources/service.js, docs/development/ASSETS.md「Preload」).
 //
 // Cache Storage and fetch are injected: a tiny in-memory cache plus a scripted fetcher, so the tests describe exactly
 // what the browser would do (order, skipping, pauses, quota) without a browser and without megabytes of fixtures.

@@ -811,7 +811,7 @@ function wolfPack(bb, raw, def) {
           b.fx('wolfShadowLost', { x: u.x, y: u.y, id: u.id, n: 0 });
         },
       });
-      // 狼群天性 ("伺夜和狼群对其的攻击无视其175防御力") and the owner's S3 bonus ("狼群与伺夜攻击被狼群阻挡的单位造成伤害
+      // 狼群天性 ("伺夜和狼群对其的攻击无视其175防御力", 200 at full potential) and the owner's S3 bonus ("狼群与伺夜攻击被狼群阻挡的单位造成伤害
       // 时，额外造成相当于伺夜攻击力N%的法术伤害", one per damage instance = per bite) cover the pack's and 伺夜's own
       // attacks; with a hand-authored 伺夜 kit (managed) that kit applies both. The module guard is intrinsic.
       const packOrOwner = (s) => s === unit || (s != null && s === ownerOf(unit));

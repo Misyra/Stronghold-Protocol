@@ -585,14 +585,19 @@ export function buildUpdate(root, p, bases, { out, install = true, force = false
   log(`comparing ${staged.length} files with ${bases.map((b) => `v${b.version}`).join(', ')} …`);
   const next = new Map();
   for (const f of staged) if (f !== MANIFEST_FILE) next.set(f, digestOf(full, f));
-  const diff = diffBases(next, bases);
+  // without npm ci the stage has no node_modules / public/vendor, and the update would delete the bases' copies
+  for (const lib of ['node_modules/', 'public/vendor/']) {
+    const inBase = bases.find((b) => [...b.files.keys()].some((f) => f.startsWith(lib)));
+    if (inBase && ![...next.keys()].some((f) => f.startsWith(lib))) {
+      throw new Error(`v${inBase.version} ships ${lib} but this build has none (--no-install?): an update built so would delete it from every install`);
+    }
+  }
   // a path no update deletes (a per-machine name such as node_modules/x/.env.example) stays behind, named in the summary
-  diff.left = diff.removed.filter((r) => removalProblem(r.path)).map((r) => r.path);
+  const diff = diffBases(next, bases, { removable: (rel) => !removalProblem(rel) });
   for (const rel of diff.left) {
     const bad = pathProblem(rel);
     if (bad) throw new Error(`a base ships ${rel}, which is ${bad}`);
   }
-  diff.removed = diff.removed.filter((r) => !removalProblem(r.path));
   for (const rel of diff.ship) copyInto(full, stage, rel);
   copyInto(full, stage, MANIFEST_FILE);
   const update = { app: p.version, from: bases.map((b) => b.version), files: new Map(diff.ship.map((f) => [f, next.get(f)])), removed: diff.removed };
@@ -632,7 +637,7 @@ export function formatUpdate(r, version) {
   const gone = r.diff.removed.map((x) => x.path);
   lines.push(`removed: ${gone.length} file(s)${gone.length ? ` (${gone.slice(0, 8).join(', ')}${gone.length > 8 ? ' …' : ''})` : ''}`);
   if (r.diff.caseOnly.length) lines.push(`not removed (a new file differs only in case): ${r.diff.caseOnly.join(', ')}`);
-  if (r.diff.left?.length) lines.push(`not removed (an update never deletes these names): ${r.diff.left.join(', ')}`);
+  if (r.diff.left.length) lines.push(`not removed (an update never deletes these names): ${r.diff.left.join(', ')}`);
   return lines.join('\n') + '\n';
 }
 

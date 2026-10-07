@@ -190,13 +190,14 @@ export function readBase(source, { folder = 'Stronghold-Protocol', skip = () => 
 }
 
 /**
- * Compare the new full stage with the bases.
+ * Compare the new full stage with the bases. `removable(rel)`: false for a path no update deletes (it goes to `left`).
  * @param {Map<string, { size: number, sha256: string }>} next every file of the new version (the update files left out)
  * @param {{ version: string, files: Map<string, { size: number, sha256: string }> }[]} bases
- * @returns {{ ship: string[], removed: { path: string, sha256: string[] }[], caseOnly: string[],
+ * @param {{ removable?: (rel: string) => boolean }} [opts]
+ * @returns {{ ship: string[], removed: { path: string, sha256: string[] }[], caseOnly: string[], left: string[],
  *             perBase: { version: string, added: number, changed: number, unchanged: number, removed: number }[] }}
  */
-export function diffBases(next, bases) {
+export function diffBases(next, bases, { removable = () => true } = {}) {
   const ship = new Set();
   const perBase = [];
   for (const b of bases) {
@@ -211,10 +212,12 @@ export function diffBases(next, bases) {
   const lower = new Set([...next.keys()].map((f) => f.toLowerCase()));
   const removed = new Map();
   const caseOnly = new Set();
+  const left = new Set();
   for (const b of bases) {
     for (const [rel, d] of b.files) {
       if (next.has(rel)) continue;
       if (lower.has(rel.toLowerCase())) { caseOnly.add(rel); continue; }
+      if (!removable(rel)) { left.add(rel); continue; }
       if (!removed.has(rel)) removed.set(rel, new Set());
       removed.get(rel).add(d.sha256);
     }
@@ -223,6 +226,7 @@ export function diffBases(next, bases) {
     ship: [...ship].sort(),
     removed: [...removed.keys()].sort().map((rel) => ({ path: rel, sha256: [...removed.get(rel)].sort() })),
     caseOnly: [...caseOnly].sort(),
+    left: [...left].sort(),
     perBase,
   };
 }

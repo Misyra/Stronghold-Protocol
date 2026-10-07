@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
-import { APPLIED_FILE, MANIFEST_FILE, UPDATE_FILE, applyPendingUpdate, checkInstall, parseUpdate } from '../server/update.js';
+import { APPLIED_FILE, MANIFEST_FILE, UPDATE_FILE, applyPendingUpdate, checkInstall, parseUpdate, removalProblem } from '../server/update.js';
 import { compareVersions, diffBases, readBase, readZip } from '../tools/package-update.mjs';
 import { FOLDER, readBases, scanFiles, stageProblems } from '../tools/package.mjs';
 
@@ -70,6 +70,14 @@ test('diff with two bases: cumulative — one update works over each; a file cha
     ['0.2.0', 1, 1, 3, 2], // P/X.png is new to both bases (compared case-sensitively); removed: g and P/x.png
     ['0.2.1', 2, 2, 1, 3], // added: d and P/X.png; changed: a and c; removed: e, g and P/x.png
   ]);
+});
+
+test('diff: a name no update deletes (node_modules/x/.env.example) is left out of removed and listed as left', () => {
+  const base = { version: '0.2.0', files: files({ 'node_modules/x/index.js': 'x', 'node_modules/x/.env.example': 'E=1', 'server/a.js': 'a' }) };
+  const d = diffBases(files({ 'server/a.js': 'a' }), [base], { removable: (rel) => !removalProblem(rel) });
+  assert.deepEqual(d.removed.map((r) => r.path), ['node_modules/x/index.js']);
+  assert.deepEqual(d.left, ['node_modules/x/.env.example']);
+  assert.deepEqual(diffBases(files({}), [base]).left, [], 'everything is removable by default');
 });
 
 test('versions compare numerically, a pre-release before its release', () => {
@@ -262,26 +270,27 @@ test('bases are refused when they cannot be one: lite, an update zip, not older,
   }
 });
 
-test('a base folder: npm\'s files are compared like the stage\'s; a name an update never deletes stays out of removed, named', { skip: !hasZipTool && 'no zip / tar' }, () => {
+test('a base folder: npm\'s files are compared like the stage\'s, per-machine and clutter files left out; no update without npm ci', { skip: !hasZipTool && 'no zip / tar' }, () => {
   const co = fakeCheckout('9.9.8');
   const out = tmp('out');
   const base = tmp('base');
   try {
     assert.equal(runTool(['--root', co.dir, '--out', out, '--no-install', '--allow-dirty']).status, 0);
     extract(path.join(out, `${FOLDER}-v9.9.8.zip`), base);
-    // as if 9.9.8's npm ci had installed a package 9.9.9 no longer has, one file of it with a per-machine name
-    put(base, `${FOLDER}/node_modules/gone/index.js`, 'module.exports = 1;\n');
-    put(base, `${FOLDER}/node_modules/gone/.env.example`, 'X=1\n');
-    put(base, `${FOLDER}/logs/server.log`, 'a log');                      // per-machine: never part of a base
+    const root = path.join(base, FOLDER);
+    put(root, 'logs/server.log', 'a log');                  // per-machine: never part of a base
+    put(root, 'scripts/service.env.cmd', 'set PORT=3000');
+    put(root, 'public/.DS_Store', 'finder');
+    put(root, 'node_modules/ws/.DS_Store', 'npm ships what it ships');
+    const b = readBases([root], '9.9.9')[0];
+    assert.ok(![...b.files.keys()].some((f) => /^(?:logs|scripts\/service|public\/\.DS)/.test(f)));
+    assert.ok(b.files.has('node_modules/ws/.DS_Store'), 'node_modules is taken as npm wrote it, like the stage');
+    // a base with node_modules and a build without npm ci: refused, it would delete them everywhere
     bump(co, '9.9.9');
     assert.equal(co.git('add', '-A').status, 0);
-    const r = runTool(['--root', co.dir, '--out', out, '--no-install', '--allow-dirty', '--update', '--from', path.join(base, FOLDER), '--keep-stage']);
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /^removed: 1 file\(s\) \(node_modules\/gone\/index\.js\)$/m);
-    assert.match(r.stdout, /^not removed \(an update never deletes these names\): node_modules\/gone\/\.env\.example$/m);
-    const u = parseUpdate(read(path.join(out, `${FOLDER}-v9.9.9-update`, FOLDER), UPDATE_FILE));
-    assert.deepEqual(u.removed.map((x) => x.path), ['node_modules/gone/index.js']);
-    assert.ok(has(path.join(out, `${FOLDER}-v9.9.9-update`, '.full', FOLDER), MANIFEST_FILE), '--keep-stage keeps the full stage too');
+    const r = runTool(['--root', co.dir, '--out', out, '--no-install', '--allow-dirty', '--update', '--from', root]);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stderr, /v9\.9\.8 ships node_modules\/ but this build has none \(--no-install\?\): an update built so would delete it from every install/);
   } finally {
     for (const d of [co.dir, out, base]) fs.rmSync(d, { recursive: true, force: true });
   }

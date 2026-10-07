@@ -18,6 +18,7 @@
 - **R2 素材上传改为增量**：放弃「每次发布全量重传 1.4 万个对象（约 4 小时）」的双 key 快照方案，改为仓库清单（`.assets-manifest.json`）记录每个文件的发布哈希，`node tools/r2-sync.mjs` 只上传变化的文件（通常几秒到几十秒）。CDN URL 从 `_v/<tag>/…` 前缀改为逐文件 `?v=<文件哈希>` 查询串：内容不变则 URL 不变（永久命中缓存），文件更新只有它自己的 URL 变化。清单由游戏服务器同源提供（`/assets-manifest.json?v=<tag>`，不可变缓存），页面在 `<head>` 预取；清单不存在时回退旧的 `.assets-cdn-version` / `_v/` 解析链，线上旧代码与已缓存资源不受影响。断点续传文件（`.cache/r2-sync-progress.json`）删除——清单本身就是续传状态；未知命令行参数现在直接报错退出（此前 `--help` 会被静默忽略并触发真实全量上传）。
 - 合并上游 v0.1.4（9f93096）：沉睡不可阻挡、阿戈尔吞噬最终加算、高台特性放置、金标准测试网等。上游新增了干员战斗语音等素材引用，发布时需把新素材上传 R2（见 [docs/CDN.md](docs/CDN.md) §6.1：`node tools/r2-sync.mjs --bucket weishu --push`）。
 - 修复：CDN 查询串模式下 `validSpine` 把带 `?v=` 的 Spine 条目判为非法，人物骨骼全部不加载。校验与骨骼派生路径改为容忍逐文件穿透查询串（仅允许 `?v=<16 位哈希>`，其余查询仍拒绝），真机验证骨骼经 CDN 加载正常。
+- 修复：`tools/r2-sync.mjs` 的 OAuth 自动刷新指向不存在的 `node_modules/wrangler/bin/wrangler.js`（wrangler 并非项目依赖），从未生效过——长跑上传/删除在 token 过期后必然中断。现改为本地缺安装时经 `npx wrangler whoami` 刷新。
 
 ## 2026-10-04 ～ 2026-10-06（0.1.3 之后、合并上游 v0.1.4 之前）
 

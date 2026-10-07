@@ -62,7 +62,7 @@ function makeInstall() {
   import { resourceState, syncResources, clearResources, startResources, exportResources, importResources } from '/js/resources/index.js';
   // the fixture drives the real launcher, exactly as the title screen does
   let enabled = false;
-  let optional = false;
+  let optional = true;
   const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
     <\${ResourceHost} enabled=\${enabled} optional=\${optional} onChange=\${(v) => set(v)}
       onOptional=\${(v) => { optional = v; void syncResources(enabled, v); paint(); }} /></div>\`, document.getElementById('app'));
@@ -180,6 +180,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForSelector('.resource-manager');
     await page.waitForFunction("window.__res.state().phase === 'paused'");
     assert.equal(await page.evaluate(() => window.__res.state().enabled), false, 'opening the manager does not enable downloads');
+    assert.equal(await page.$eval('.resource-choice input', (el) => el.checked), true, 'both tiers are selected by default');
+    await page.click('.resource-choice input');
     await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
     await page.waitForFunction('window.__res.state().selectionComplete === true');
     assert.equal(await page.evaluate(() => window.__res.state().complete), false, 'optional audio is not fetched');

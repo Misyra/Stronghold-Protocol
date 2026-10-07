@@ -42,7 +42,7 @@ const state = {
   archivePhase: '',
   archivePercent: 0,
   archiveGroup: '',
-  optional: false,
+  optional: true,
   selectionComplete: false,
   groups: [],
 };
@@ -54,7 +54,7 @@ let contextPromise = null;
 let activeRun = null;
 let transferPromise = null;
 let archiveController = null;
-let optional = false;
+let optional = true;
 let wantRun = false;
 let workerPromise = null;
 

@@ -644,7 +644,8 @@ function TerrainDetail({ terrain }) {
  *   m.private.standIns — a unit carrying `standInFor`, and a teammate's bond popup row that says it (`target.standInFor`)
  *   — resolve with `standIn` (the composed stand-in record the card shows: portrait, name, body, with the chess's
  *   bonds and 特质); 0.2.0 自选编队: the player's own pieces and cards of a DIY slot it filled (m.private.diy) — and a
- *   unit carrying `diy` — resolve to the composed 自选 record (`chess`, the operator) with `diy` = the pick
+ *   unit carrying `diy`, and a teammate's bond popup 自选 row that hands its unit's pick on (`target.diy`, 0.2.1) —
+ *   resolve to the composed 自选 record (`chess`, the operator) with `diy` = the pick
  */
 export function resolveDetail(target, pieces, { priv = null, backups = data.get('backups') } = {}) {
   if (!target) return null;
@@ -676,7 +677,9 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     // do not read the viewer's 补位 list: a teammate's row shows the stand-in only when its unit says it is one —
     // `target.standInFor`, from UnitInfo through ui/watchBonds.js ownerBoard)
     const foreign = !!target.foreign || (target.owner != null && !!priv && target.owner !== priv.playerId);
-    const d = foreign ? null : ownDiy(c);
+    // (a teammate's 自选 row hands its unit's pick on, `target.diy`: their operator, not the empty 甄选干员 slot — 0.2.1)
+    const mate = foreign && c && target.diy && typeof target.diy === 'object' ? diyRecordFor(c, target.diy, dd) : null;
+    const d = mate ? { chess: mate, diy: target.diy } : foreign ? null : ownDiy(c);
     if (d) return { type: 'chess', chess: d.chess, hint: target.hint || null, standIn: null, diy: d.diy, ...(items.length ? { unitItems: items } : {}) };
     const si = !c ? null : foreign ? (typeof target.standInFor === 'string' && target.standInFor ? standInOf(c, backups) : null) : ownSi(c);
     return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: si, ...(items.length ? { unitItems: items } : {}) } : null;

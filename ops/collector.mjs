@@ -21,7 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { integer, loopback, periodic, fetchJson, safeUrl } from './lib/http.mjs';
-import { dayKey, nginxDay, privateAddress, atomicJson, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, logChunkLines } from './lib/collector-utils.mjs';
+import { dayKey, nginxDay, privateAddress, atomicJson, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, readLogBatch } from './lib/collector-utils.mjs';
 
 const T0 = Date.now();
 
@@ -70,7 +70,17 @@ let today = emptyDay(dayKey(new Date(), CFG.timeZone));
 const ipSet = new Set();
 let logOffset = 0;
 let logIno = 0;
-let carried = ''; // 换行截断时留下的不完整行
+const diagnostics = { nginx: { status: 'missing', error: 'NO_SAMPLE' }, storage: { status: 'ok', error: null } };
+const storageFailures = new Set();
+function storageIO(section, work) {
+  try { work(); storageFailures.delete(section); }
+  catch (error) {
+    if (!storageFailures.has(section)) console.warn('[monitor] 统计落盘失败:', section, error.code || 'WRITE_FAILED');
+    storageFailures.add(section);
+  }
+  diagnostics.storage = { status: storageFailures.size ? 'error' : 'ok', error: storageFailures.size ? 'STORAGE_WRITE_FAILED' : null };
+  return !storageFailures.has(section);
+}
 let dailyHistory = {};
 
 const fileToday = () => path.join(CFG.dataDir, `daily-${today.date}.json`);
@@ -108,17 +118,18 @@ let dayDirty = false, lastDaySave = 0;
 function saveDay(force = false) {
   const t = Date.now();
   if (!force && (!dayDirty || t - lastDaySave < 30000)) return;
-  dayDirty = false; lastDaySave = t;
   today.ips = Array.from(ipSet);
-  today.logOffset = Math.max(0, logOffset - Buffer.byteLength(carried));
+  today.logOffset = logOffset;
   today.logIno = logIno;
-  atomicJson(fileToday(), today);
+  if (!storageIO('daily', () => atomicJson(fileToday(), today))) return false;
+  dayDirty = false; lastDaySave = t;
+  return true;
 }
 
 function rolloverIfNeeded() {
   const key = dayKey(new Date(), CFG.timeZone);
-  if (key === today.date) return;
-  saveDay(true);
+  if (key === today.date) return true;
+  if (!saveDay(true)) return false;
   dailyHistory[today.date] = {
     date: today.date, requests: today.requests, pageViews: today.pageViews, assetHits: today.assetHits,
     wsConnects: today.wsConnects, errors: today.errors, bytes: today.bytes, visitors: ipSet.size,
@@ -126,10 +137,11 @@ function rolloverIfNeeded() {
   };
   const keys = Object.keys(dailyHistory).sort();
   while (keys.length > CFG.retainDays) delete dailyHistory[keys.shift()];
-  atomicJson(fileDaily(), dailyHistory);
+  if (!storageIO('history', () => atomicJson(fileDaily(), dailyHistory))) return false;
   today = emptyDay(key);
   ipSet.clear();
   pruneOldSamples();
+  return true;
 }
 
 function pruneOldSamples() {
@@ -149,26 +161,28 @@ function pruneOldSamples() {
 // ---------------------------------------------------------------------------- nginx 日志
 const LOG_RE = /^(\S+) \S+ \S+ \[[^\]]+\] "([^"]*)" (\d{3}) (\d+|-)/;
 
+function logStatus(code = null) {
+  if (code && diagnostics.nginx.error !== code) console.warn('[monitor] nginx 日志不可用:', code);
+  diagnostics.nginx = { status: code ? 'error' : 'ok', error: code };
+}
 function parseNginx() {
-  let stat;
-  try { stat = fs.statSync(CFG.nginxLog); } catch { return; }
-  if (stat.ino !== logIno || stat.size < logOffset) { logIno = stat.ino; logOffset = 0; carried = ''; }
-  if (stat.size === logOffset) return;
-  const len = Math.min(4 * 1024 * 1024, stat.size - logOffset);
-  const buf = Buffer.alloc(len);
-  const fd = fs.openSync(CFG.nginxLog, 'r');
-  let read = 0;
-  try { read = fs.readSync(fd, buf, 0, len, logOffset); } finally { fs.closeSync(fd); }
-  logOffset += read;
-  const text = carried + buf.subarray(0, read).toString('utf8');
-  // 行数预算：超出的行回退到 carried 并从内存 logOffset 里扣回，下一轮原样续读（字节数守恒，不丢行）。
-  const { lines, carried: nextCarried } = logChunkLines(text, CFG.logMaxLines);
-  carried = nextCarried;
-  logOffset -= Buffer.byteLength(carried, 'utf8');
+  let batch;
+  try {
+    batch = readLogBatch(CFG.nginxLog, { offset: logOffset, ino: logIno }, { maxLines: CFG.logMaxLines });
+  } catch (error) {
+    const code = error.code === 'ENOENT' ? 'LOG_MISSING' : ['EACCES', 'EPERM'].includes(error.code) ? 'LOG_UNREADABLE' :
+      error.code === 'LOG_LINE_TOO_LONG' ? 'LOG_LINE_TOO_LONG' : 'LOG_READ_FAILED';
+    logStatus(code);
+    return;
+  }
+  const { lines } = batch;
+  logOffset = batch.offset; logIno = batch.ino;
+  let recognized = 0;
   for (const line of lines) {
-    if (nginxDay(line, CFG.timeZone) !== today.date) continue;
-    const m = LOG_RE.exec(line);
-    if (!m) continue;
+    const date = nginxDay(line, CFG.timeZone), m = LOG_RE.exec(line);
+    if (!date || !m) continue;
+    recognized++;
+    if (date !== today.date) continue;
     const ip = m[1];
     const request = m[2];
     const status = m[3];
@@ -185,6 +199,9 @@ function parseNginx() {
     else if (status === '499') today.aborts++;
     if (!privateAddress(ip)) ipSet.add(ip);
   }
+  // With no new lines, retain a format error until a recognizable line actually arrives.
+  if (lines.length) logStatus(recognized ? null : 'LOG_FORMAT_INVALID');
+  else if (diagnostics.nginx.error !== 'LOG_FORMAT_INVALID') logStatus();
 }
 
 // ---------------------------------------------------------------------------- 系统指标
@@ -387,8 +404,7 @@ let lastSlowWarnAt = 0;
 
 async function takeSample() {
   const sampleStartedAt = Date.now();
-  rolloverIfNeeded();
-  parseNginx();
+  if (rolloverIfNeeded()) parseNginx();
   const g = await sampleGame();
   const dt = last ? Math.max(1, (Date.now() - last.t) / 1000) : CFG.intervalMs / 1000;
   // Failed health checks must not look like fresh game counts.
@@ -450,7 +466,7 @@ async function takeSample() {
   last = s;
   ring.push(s);
   if (ring.length > RING_MAX) ring.shift();
-  try { fs.appendFileSync(path.join(CFG.dataDir, `samples-${today.date}.jsonl`), `${JSON.stringify(s)}\n`); } catch { /* 忽略 */ }
+  storageIO('samples', () => fs.appendFileSync(path.join(CFG.dataDir, `samples-${today.date}.jsonl`), `${JSON.stringify(s)}\n`));
   dayDirty = true;
   saveDay();
   // 本地工作（不含健康检查的网络等待）超过 1 秒提示一次——正常只有几毫秒，出现说明日志积压或负载异常。
@@ -468,6 +484,7 @@ function apiData() {
   const hist = Object.values(dailyHistory).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-14);
   return {
     now: Date.now(),
+    diagnostics: structuredClone(diagnostics),
     timeZone: CFG.timeZone,
     collectorUptimeSec: Math.round((Date.now() - T0) / 1000),
     intervalSec: Math.round(CFG.intervalMs / 1000),
@@ -490,7 +507,7 @@ const server = http.createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.setHeader('Allow', 'GET, HEAD'); return json(req, res, 405, { error: 'read only' }); }
   const u = (req.url || '/').split('?')[0];
   if (u === '/api/data') return json(req, res, 200, apiData());
-  if (u === '/api/health') return json(req, res, 200, { ok: true, uptimeSec: Math.round((Date.now() - T0) / 1000), samples: ring.length });
+  if (u === '/api/health') return json(req, res, 200, { ok: true, ready: !!last && Date.now() - last.t <= Math.max(45000, CFG.intervalMs * 3), degraded: Object.values(diagnostics).some(s => s.status === 'error'), diagnostics, uptimeSec: Math.round((Date.now() - T0) / 1000), samples: ring.length });
   return json(req, res, 404, { ok: false, error: 'not found' });
 });
 

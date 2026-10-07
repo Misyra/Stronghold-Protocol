@@ -73,8 +73,8 @@ export function parsePressure(files) {
   return out;
 }
 
-// 按每轮预算切分日志文本：超出预算的完整行连同不完整尾巴一起留在 carried 里，下一轮从该字节
-// 位置继续读——不加轮次预算会允许最坏情况下单轮解析上百 MB，上限保证了单轮 CPU 有界且不丢行。
+// Pure text splitting helper. A caller retaining carried must not also rewind its read position.
+// The collector uses readLogBatch instead, checkpointing only consumed byte positions.
 export function logChunkLines(text, maxLines = Infinity) {
   const lines = String(text).split('\n');
   const carried = lines.pop() || '';
@@ -139,4 +139,36 @@ export function aggregateSeries(samples, from) {
   return [...buckets.values()].sort((a, b) => a.t - b.t).map((b) => ({ t: b.t,
     ...Object.fromEntries(keys.map((key) => [key, !b[key].length ? null :
       peaks.includes(key) ? Math.max(...b[key]) : Math.round(b[key].reduce((sum, n) => sum + n, 0) / b[key].length)])) }));
+}
+
+// Checkpoints are byte positions immediately after complete lines. Unprocessed bytes stay on disk,
+// so neither a line budget nor a partial UTF-8 sequence can duplicate data or grow a carried buffer.
+export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes = 4 * 1024 * 1024 } = {}) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw Object.assign(new Error('Log must be a regular file'), { code: 'LOG_READ_FAILED' });
+    let offset = Number.isSafeInteger(checkpoint.offset) && checkpoint.offset >= 0 ? checkpoint.offset : 0;
+    if (stat.ino !== checkpoint.ino || stat.size < offset) offset = 0;
+    const len = Math.min(maxBytes, stat.size - offset);
+    const buf = Buffer.alloc(len);
+    const lines = [];
+    let read = 0, start = 0, scanFrom = 0;
+    // Small reads stop as soon as the line budget is spent; a large backlog is not reread in full.
+    while (read < len && lines.length < maxLines) {
+      const count = fs.readSync(fd, buf, read, Math.min(64 * 1024, len - read), offset + read);
+      if (!count) break;
+      read += count;
+      let end;
+      while (lines.length < maxLines && (end = buf.subarray(0, read).indexOf(10, scanFrom)) >= 0) {
+        lines.push(buf.toString('utf8', start, end));
+        start = end + 1; scanFrom = start;
+      }
+      scanFrom = read;
+    }
+    if (!start && read === maxBytes) {
+      throw Object.assign(new Error('Log line exceeds read budget'), { code: 'LOG_LINE_TOO_LONG' });
+    }
+    return { lines, offset: offset + start, ino: stat.ino };
+  } finally { fs.closeSync(fd); }
 }

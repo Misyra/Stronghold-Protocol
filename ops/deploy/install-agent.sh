@@ -21,9 +21,6 @@ set -euo pipefail
 command -v node >/dev/null 2>&1 || { echo "✗ 未找到 node"; exit 1; }
 [[ $(node -p 'Number(process.versions.node.split(".")[0])') -ge 22 ]] || { echo "✗ 需要 Node.js >= 22（当前 $(node -v)）"; exit 1; }
 
-: "${SP_ADMIN_TOKEN_RO:?缺少 SP_ADMIN_TOKEN_RO（openssl rand -hex 32；同一个值要写入中间页 portal.env 的 SP_SITE_*_TOKEN_RO）}"
-: "${MON_NGINX_LOG:?缺少 MON_NGINX_LOG（本站 nginx 访问日志路径）}"
-[[ ${#SP_ADMIN_TOKEN_RO} -ge 32 ]] || { echo "✗ 令牌太短：至少 32 字符"; exit 1; }
 # 这些值会被写入 /etc/stronghold/*.env，必须不能换行（防止注入额外 env 行）。
 for name in SITE_NAME SP_ADMIN_TOKEN_RO MON_NGINX_LOG MON_IFACE MON_HEALTHZ MON_DATA_DIR MON_TIME_ZONE MON_ANNOUNCEMENT_URL MON_DISK_DEV; do
   eval "value=\${$name:-}"
@@ -44,8 +41,17 @@ MON_AGENT_INTERVAL_MS=${MON_AGENT_INTERVAL_MS:-10000}
   echo "✗ $APP_DIR 下没有 collector.mjs / agent.mjs / lib/，请先解压部署包"; exit 1; }
 
 if [[ -f /etc/stronghold/admin.env && ${FORCE:-0} != 1 ]]; then
+  [[ -f /etc/stronghold/monitor.env ]] || { echo "✗ monitor.env 缺失，请补齐配置或 FORCE=1 重建"; exit 1; }
   echo "== /etc/stronghold 已有配置，保留（FORCE=1 可覆盖）"
+  # Parse as data, never source an env file as shell code. Use the preserved paths and token.
+  saved_configuration=$(node -e 'const fs=require("node:fs"),{parseEnv}=require("node:util"); const m=parseEnv(fs.readFileSync("/etc/stronghold/monitor.env","utf8")),a=parseEnv(fs.readFileSync("/etc/stronghold/admin.env","utf8")); for(const v of [m.MON_DATA_DIR||"/opt/stronghold-monitor/data",m.MON_NGINX_LOG||"/var/log/nginx/game.rainya.me.access.log",a.SP_ADMIN_TOKEN_RO||""]) { if(/[\r\n]/.test(v)) process.exit(1); console.log(v); }')
+  mapfile -t saved_values <<< "$saved_configuration"
+  MON_DATA_DIR=${saved_values[0]}; MON_NGINX_LOG=${saved_values[1]}; SP_ADMIN_TOKEN_RO=${saved_values[2]:-}
+  unset saved_configuration saved_values
 else
+  : "${SP_ADMIN_TOKEN_RO:?缺少 SP_ADMIN_TOKEN_RO（openssl rand -hex 32；同一个值要写入中间页 portal.env 的 SP_SITE_*_TOKEN_RO）}"
+  : "${MON_NGINX_LOG:?缺少 MON_NGINX_LOG（本站 nginx 访问日志路径）}"
+  [[ ${#SP_ADMIN_TOKEN_RO} -ge 32 ]] || { echo "✗ 令牌太短：至少 32 字符"; exit 1; }
   mkdir -p /etc/stronghold
   {
     cat > /etc/stronghold/monitor.env <<EOF
@@ -75,7 +81,17 @@ EOF
   echo "== 已写入 /etc/stronghold/{monitor,admin}.env"
 fi
 
+# Only a dedicated absolute data directory is accepted in the generated systemd unit.
+[[ $MON_DATA_DIR =~ ^/[a-zA-Z0-9._/-]+$ ]] || { echo "✗ MON_DATA_DIR 必须是无空格的绝对路径"; exit 1; }
+MON_DATA_DIR=$(realpath -m -- "$MON_DATA_DIR")
+case $MON_DATA_DIR in /|/var|/var/lib|/etc|/opt|/usr|/home|/root|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "✗ MON_DATA_DIR 必须是独立持久目录"; exit 1;; esac
+[[ ${#SP_ADMIN_TOKEN_RO} -ge 32 ]] || { echo "✗ 已保存的令牌太短或缺失"; exit 1; }
 getent passwd spmonitor >/dev/null || useradd -r -s /usr/sbin/nologin spmonitor
+install -d -m 0750 -o spmonitor -g spmonitor -- "$MON_DATA_DIR"
+# Diagnose access without opening every nginx log to the probe user.
+if ! runuser -u spmonitor -- test -r "$MON_NGINX_LOG"; then
+  echo "△ spmonitor 无法读取访问日志：$MON_NGINX_LOG；请检查路径并配置该日志的只读 ACL（含 logrotate 后权限）"
+fi
 
 cat > /etc/systemd/system/sp-collector.service <<EOF
 [Unit]
@@ -103,7 +119,7 @@ MemoryMax=512M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/stronghold-monitor
+ReadWritePaths=${MON_DATA_DIR}
 ProtectHome=true
 UMask=0077
 
@@ -172,7 +188,7 @@ sleep 1
 echo "== 本机自检"
 curl -fsS http://127.0.0.1:3999/api/health >/dev/null && echo "✓ collector  3999 ok"
 curl -fsS -H "Authorization: Bearer ${SP_ADMIN_TOKEN_RO}" http://127.0.0.1:3900/api/admin/v1/health >/dev/null \
-  && echo "✓ agent      3900 ok（只读 API 已就绪）"
+  && echo "✓ agent      3900 可达（采样就绪与日志/落盘状态请查看 overview）"
 
 if [[ -n ${CENTRAL_HEALTH:-} ]]; then
   curl -fsS "$CENTRAL_HEALTH" >/dev/null 2>&1 && echo "✓ 中间页可达：${CENTRAL_HEALTH}" ||

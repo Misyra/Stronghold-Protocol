@@ -73,6 +73,10 @@
 .lo-note.is-locked .icon { color: var(--amber); }
 
 .lo-loading { flex: 1; display: flex; align-items: center; justify-content: center; gap: .14rem; color: var(--text-lo); font-size: max(.18rem, 12px); }
+/* the tab's game data did not load (GitHub #173): said in place of the roster */
+.lo-missing { flex-direction: column; gap: .1rem; padding: .3rem; text-align: center; color: var(--amber); }
+.lo-missing .icon { width: max(.32rem, 22px); height: max(.32rem, 22px); }
+.lo-missing p { margin: 0; max-width: 9rem; color: var(--text-lo); font-size: max(.16rem, 11px); line-height: 1.6; text-wrap: balance; }
 
 /* ---- body layout -------------------------------------------------------------------------------------------------- */
 .lo-body {

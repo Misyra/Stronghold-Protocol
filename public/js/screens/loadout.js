@@ -24,7 +24,7 @@ import { Img, RichText, UnitThumb } from '../ui/gameComponents.js';
 import { chessAvatarUrl, chessPortraitUrl, subProfIconUrl, bondIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
 import { chessStatsBlock, traitText, chessTalents } from '../ui/detailPanel.js';
 import { chessLoadout } from '../ui/gameLogic.js';
-import { data, useData, localAsset } from '../data.js';
+import { data, useData, localAsset, DATA_FILES } from '../data.js';
 import { useStore } from '../store.js';
 import { PHASE } from '../../../shared/constants.js';
 import {
@@ -394,6 +394,43 @@ const OWN_SYNC_TEXT = { ...SYNC_TEXT, locked: [N_('下一局生效'), 'is-warn']
 /** The 自选编队 tab's status line (msgids, translated where shown): out of match, like 干员持有. */
 const DIY_SYNC_TEXT = { ...OWN_SYNC_TEXT };
 
+/**
+ * The game-data files a tab cannot work without — its roster and its import's sanitiser: chess.json, plus backups.json
+ * for 自选编队 (its slots and the picks' forms) — that did not load. useData counts a file that never arrived (a 404, a
+ * blocked request, bad JSON: status 'missing') as settled like a loaded one, so the tab drew an empty roster and an
+ * import sanitised every entry away (GitHub #173). Empty while the files load and once they have.
+ * @param {string} tab 'loadout' | 'ownership' | 'diy'
+ * @param {(name: string) => string} [status] the data store's status (data.status)
+ * @returns {string[]} data file names
+ */
+export function missingGameData(tab, status = data.status) {
+  return (tab === 'diy' ? ['chess', 'backups'] : ['chess']).filter((name) => status(name) === 'missing');
+}
+
+/**
+ * Why an import of `kind` cannot run now, as its toast — the files still loading, or the game data missing — or null.
+ * Either way nothing is applied: sanitised against absent data, the 干员持有 / 自选编队 imports stored an empty list over
+ * the saved one (GitHub #173).
+ * @param {string} kind the dialog's tab @param {boolean} ready the screen's files are settled
+ * @param {(name: string) => string} [status]
+ * @returns {{ text: string, tone: 'warn'|'error' } | null}
+ */
+export function importRefusal(kind, ready, status = data.status) {
+  if (!ready) return { text: t('干员数据仍在载入，请稍候再导入'), tone: 'warn' };
+  if (missingGameData(kind, status).length) return { text: t('导入失败：游戏数据没有载入，未做任何改动。请刷新页面；仍不行时，请检查广告拦截插件和网络'), tone: 'error' };
+  return null;
+}
+
+/** In place of a tab whose game data did not load (missingGameData): which files, and what to try (GitHub #173). */
+export function DataMissing({ files }) {
+  const urls = files.map((name) => `/data/${DATA_FILES[name] || `${name}.json`}`);
+  return html`<div class="lo-loading lo-missing" role="alert" data-testid="loadout-data-missing">
+    <${Icon} name="warn" />
+    <b>${t('游戏数据没有载入')}</b>
+    <p>${t('{files} 没有下载成功，这一页无法显示；已保存的设置不受影响。请刷新页面；仍不行时，请检查广告拦截插件和网络。', { files: urls })}</p>
+  </div>`;
+}
+
 /** The overlay screen. */
 function LoadoutScreen({ st }) {
   const ready = useData('chess', 'bonds', 'assets', 'local', 'backups');
@@ -422,6 +459,7 @@ function LoadoutScreen({ st }) {
   const [io, setIo] = useState(null);                      // 导出 / 导入 dialog: { mode, text } | null
 
   const tab = st.tab === 'ownership' || st.tab === 'diy' ? st.tab : 'loadout';
+  const lost = ready ? missingGameData(tab) : [];
   const ownRoster = useOwnershipRoster(ready);
   const nNotOwned = notOwnedCount(st.notOwned, ownRoster);
   // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome)
@@ -475,8 +513,10 @@ function LoadoutScreen({ st }) {
     try { setIo({ ...io, mode: 'import', text: await readFileText(f) }); } catch { toast(t('读取文件失败'), 'error'); }
   };
   const ioApply = () => {
-    // an import before chess.json is loaded would sanitise every entry away — refuse instead of wiping the loadout
-    if (!ready) { toast(t('干员数据仍在载入，请稍候再导入'), 'warn'); return; }
+    // an import before chess.json is loaded, or when it never arrived, would sanitise every entry away — refuse instead
+    // of wiping the loadout
+    const refused = importRefusal(io.kind, ready);
+    if (refused) { toast(refused.text, refused.tone); return; }
     if (ioDiy) {
       const r = parseDiyImport(ioText);
       if (!r.ok) { toast(t('导入失败：{error}', { error: t(r.error, r.params) }), 'error'); return; }
@@ -588,7 +628,8 @@ function LoadoutScreen({ st }) {
       : tab === 'ownership'
       ? html`<p class=${cx('lo-note', ownLocked && 'is-locked')}><${Icon} name="info" />${ownText}</p>`
       : html`<p class=${cx('lo-note', locked && 'is-locked')}><${Icon} name="info" />${locked ? t('本局的调配已锁定（确认本局信息后无法修改），修改将在下一局生效') : fromText}</p>`}
-    ${!ready ? html`<div class="lo-loading"><${Spinner} size="sm" />${t('正在载入干员数据（打开页面后仅载入一次）…')}</div>` : tab === 'diy'
+    ${!ready ? html`<div class="lo-loading"><${Spinner} size="sm" />${t('正在载入干员数据（打开页面后仅载入一次）…')}</div>`
+      : lost.length ? html`<${DataMissing} files=${lost} />` : tab === 'diy'
       ? html`<${DiyPanel} m=${m} picks=${st.diy || {}} legal=${diyLegal} kitted=${st.diyKitted} onSet=${setDiySlot} />`
       : tab === 'ownership'
       ? html`<${OwnershipPanel} m=${m} roster=${ownRoster} notOwned=${st.notOwned} onToggle=${toggleOwned} />`

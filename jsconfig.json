@@ -12,7 +12,7 @@
     "strict": false,
     "skipLibCheck": true,
     "types": [],
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "maxNodeModuleJsDepth": 0
   },
   "include": [

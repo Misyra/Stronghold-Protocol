@@ -11,7 +11,8 @@
 // 瘫痪 (fx 'palsy': a 麻痹 stack interrupts an enemy attack) is checked on the same four specs with a golden 催泪瓦斯 in
 // every operator's second slot (withTearGas), compared Chrome vs Node like the others: the bots' only 麻痹 had been one
 // 5 % 催泪瓦斯 on one operator — a single hit at 0.1.4, none since 0.2.0's enemy damage frame (WE1) re-timed every fight.
-// 限伤 likewise, on a third copy of the four whose first player fields a fixed board of 999-layer heavy hitters
+// 限伤 (and 奥术, which the bots no longer draft either) likewise, on a third copy of the four whose first player fields a
+// fixed board of 999-layer heavy hitters
 // (withHeavyHitters): the bots' own hits of ≥ 300000 came from whatever 维多利亚 / 精准 / 奥术 mix they drafted — none
 // since 0.2.0's CB3 (the 受到攻击时 counters answer every damage instance) re-drafted seed 22, whose best hit is now
 // about half the limit; the cancel path itself is unchanged (the earlier captures still cancel the same hits).
@@ -36,7 +37,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const enabled = (process.env.RENDER_E2E === '1' || process.env.SIM_E2E === '1') && existsSync(CHROME);
 const skip = enabled ? false : 'set SIM_E2E=1 or RENDER_E2E=1 (needs Chrome)';
-const MAX_SECONDS = 600; // game seconds (Battle.runToEnd): every captured field clears long before
+// game seconds (Battle.runToEnd), a safety net only: every field must clear before it. The bots' boards follow the rules
+// of the whole match (seed 22): since 0.2.0's last fixes (GitHub #232 re-drafted the earlier rounds) the Hidden Core b1
+// board clears at about 511 s, its 催泪瓦斯 copy (the second item replaced) at about 619 s — twice that leaves room
+const MAX_SECONDS = 1200;
 
 /** The boss / hidden specs of a 4-bot co-op match (终极, seed 22, boss_1 then boss_8), every active bond at 999. */
 function captureBossSpecs() {
@@ -194,6 +198,8 @@ describe('Final Assault / Hidden Core fields in the browser sim', { skip }, () =
     assert.ok(sum(heavy, 'hitCap') >= 1, `a 999-layer hit reached 300000 and was cancelled (限伤: ${heavy.map((r) => r.fx.hitCap || 0)} with the heavy hitters, ${sum(real, 'hitCap')} on the bots' own boards)`);
     assert.ok(sum(gassed, 'palsy') >= 1, `瘫痪 occurred with the 催泪瓦斯 (${gassed.map((r) => r.fx.palsy || 0)})`);
     assert.ok(real.every((r) => r.hpLoss >= 1), `every field cost the leader 无来源 HP (drone links / 剑 · 锤 transfers: ${real.map((r) => r.hpLoss)})`);
-    assert.ok(real.some((r) => r.maxArcane === 1), 'the leader carried 奥术');
+    // 奥术 on the bots' own boards or on the heavy-hitter copy (洛洛 + 深靛 = 奥术 2): seed 22's bots stopped drafting it
+    // when 0.2.0's last fixes re-drafted the earlier rounds
+    assert.ok([...real, ...heavy].some((r) => r.maxArcane === 1), `the leader carried 奥术 (bots' boards ${real.map((r) => r.maxArcane)}, heavy hitters ${heavy.map((r) => r.maxArcane)})`);
   });
 });

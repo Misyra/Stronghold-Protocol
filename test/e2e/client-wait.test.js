@@ -28,7 +28,9 @@ function fakePage(trueAfter) {
 }
 
 test('a wait longer than one slice keeps polling the same predicate until it holds', async () => {
-  const page = fakePage(95);
+  // 200 ms and not 95: with the ~15.6 ms Windows timer resolution three 30 ms slices can cover a
+  // 95 ms wait, so the minimum-slice assertion below only held intermittently.
+  const page = fakePage(200);
   const fn = () => true;
   const got = await waitForFunctionLong(page, fn, { timeout: 1000, polling: 200, slice: 30 }, 'a', 2);
   assert.deepEqual(got, { handle: 'ok', args: ['a', 2] });

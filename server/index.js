@@ -18,7 +18,9 @@
 //                      GET /api/ping, GET /api/rooms/<code>/status (rate-limited, roomStatus.js), GET /api/announcement,
 //                      else static
 //   http/common.js     what every answer shares: security headers, URL split, error page, JSON replies, bare 400
-//   http/boot.js       banner (Local / LAN / tunnel URLs), port-in-use hint, graceful shutdown on SIGINT / SIGTERM
+//   http/boot.js       a pending update package first (update.js: old files deleted, the install verified against
+//                      MANIFEST.json), banner (Local / LAN / tunnel URLs), port-in-use hint, graceful shutdown on SIGINT /
+//                      SIGTERM
 //
 // This fork's extra wiring in startServer():
 //   * SimulationPool (server/workers/pool.js): bot rehearsal, normal / 联防 headless runs and SP_VERIFY=all

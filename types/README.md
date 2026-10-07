@@ -10,6 +10,9 @@ The first slice is the closed set that already typechecks:
 
 `strict` is off. `tsc` does not read `jsconfig.json` on its own; the script passes `-p`.
 
+The shared modules use Web APIs supported by browsers and Node 22 (`URL`, `fetch`, `AbortSignal.timeout`), so the
+compiler loads both `ES2022` and `DOM` declarations. This adds their types without changing the runtime.
+
 ## Widen it
 
 Add one file or one folder to `jsconfig.json` `include`, then run `npm run typecheck`. Fix JSDoc that disagrees with the code in that folder. Leave `strict` off until the folder reports nothing. Do not add `@ts-nocheck`.

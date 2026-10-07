@@ -2768,17 +2768,20 @@ function stageDisplayName(stageId, raw) {
 }
 
 /**
- * The 联防 maps' names: the tables and PRTS name neither map, so the label is the remake's own [ASSUMED] (PRTS
- * 卫戍协议/帮助 §联防阶段 calls the joined field "一处阵地"); no screen shows it today.
+ * The escaped levels' map names: the tables and PRTS name neither map, so the label is the remake's own [ASSUMED] (PRTS
+ * 卫戍协议/帮助 §联防阶段 calls the joined field "一处阵地"); no screen shows it.
  */
 const UNITE_STAGE_NAMES = { 1: '联防阵地（1名玩家）', 2: '联防阵地（2名玩家）' };
 
 /**
  * Build data/stages.json: 19×21 terrain grids (row 0 = bottom), legend, devices, special terrain
- * parameters, deployable tiles and helper ground paths — the 11 battle stages of stageDatasDict, then the two 联防
- * maps: act2autochess constData escapedBattleTemplateMapSinglePlayer / MultiPlayer name the level of the 联防 battle
- * (level_act1autochess_escaped_single / _multi), whose own map is the 联防 field — a road, not the round's stage (GitHub
- * #41). They carry `kind: 'unite'` and `helpers` (1 / 2), weight 0, no modes, and are never drawn as a match stage.
+ * parameters, deployable tiles and helper ground paths — the 11 battle stages of stageDatasDict, then the maps of the
+ * two escaped levels: act2autochess constData escapedBattleTemplateMapSinglePlayer / MultiPlayer name the level of the
+ * 联防 wave (level_act1autochess_escaped_single / _multi), whose own map is an empty road — the placeholder grid every
+ * wave template level carries (01…07, h01…h08, tr…: tile for tile the same). They carry `kind: 'unite'`
+ * and `helpers` (1 / 2), weight 0, no modes, and are never a match stage. 0.2.0 fought the 联防 battle on them (GitHub
+ * #41); since 0.2.1 the 联防 field is the round's battlefield again (server/match/unite.js, the owner's decision of
+ * 2026-10-07), and the two records stay as the official level data — sim tests use them as a plain two-halves road.
  */
 function buildStages(ctx, modesById) {
   const researchStages = ctx.research.maps?.stages || {};
@@ -3826,7 +3829,7 @@ function validateAll(f) {
     if (s.rows.some((r) => r.includes('?'))) err(`stage ${s.id}: unknown tile glyph`);
     if (s.name !== s.id && /[A-Za-z]/.test(s.name)) err(`stage ${s.id}: Latin text in player-facing name "${s.name}"`);
   }
-  // the 联防 field of 1 / 2 helpers is the map of its template (server/match/unite.js uniteStageId)
+  // the escaped level of 1 / 2 helpers (config.unite.templates) has its map record (kind 'unite'; no field uses it)
   for (const [n, id] of Object.entries(config.unite.templates)) {
     if (stages[id]?.kind !== 'unite' || stages[id].helpers !== Number(n) || stages[id].active) err(`unite template ${id}: no inactive 联防 stage for ${n} helper(s)`);
   }

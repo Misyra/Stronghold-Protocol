@@ -689,10 +689,10 @@ helpers = `unite.js helperOrder` (research 08 §5, PRTS 卫戍协议/帮助 §�
 chosen by most units on the field (downed included) > an active bond > most standing units > seat; the pair ordered by
 units > active bond > Σ active layers > standing > seat (LP plays no part), the first one on the right-hand field
 (colOffset +8, where escaped_multi enters), the other colOffset 0; the escaped template of that size routes the leaked
-enemies by slot class, and its own map is the field (`unite.js uniteStageId`: stages.json `act1autochess_escaped_single` /
-`_multi`, two road halves joined at col 10 — no water, crates or devices of the round's stage, no band map characters:
-the level has no predefined ones; the round's stage only with data that lacks them; GitHub #41), each helper's pieces
-on their prep tiles; helpers' operators carry
+enemies by slot class on the round's battlefield — the match stage opened to both halves (`GEO.UNITE_RECT`, cols 0–20),
+its terrain, crates, water, devices, runes and band map characters included, as in 0.1.x (the owner's decision of
+2026-10-07, 「官服保留地形」; 0.2.0 fought it on the escaped levels' own map, the placeholder road every wave template
+carries — GitHub #41, withdrawn), each helper's pieces on their prep tiles; helpers' operators carry
 `{ hpPct, sp }` from `unitsEnd` ("阵地以其当前状态": the HP ratio and the 技力 only — a skill running at the end enters
 switched off; summon pieces `{ sp }`, "召唤物仅修改技力"); an operator knocked out at the end of the helper's own
 combat carries `{ down: true }` (PRTS 卫戍协议/帮助: "部署完成后…上一阶段为退场状态的干员强制退场"): deployed, then forced out

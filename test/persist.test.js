@@ -12,7 +12,7 @@ import { Lobby } from '../server/lobby.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { VirtualScheduler } from '../server/match/scheduler.js';
-import { snapshotServer, restoreServer, sessionDoc, PERSIST_VERSION } from '../server/persist.js';
+import { snapshotServer, restoreServer, sessionDoc, PERSIST_VERSION, Persister } from '../server/persist.js';
 import { PHASE } from '../shared/constants.js';
 import { TestClient } from './helpers/wsClient.js';
 import { FakeBattle } from './match/fakeBattle.js';
@@ -148,16 +148,46 @@ test('a document from another version is refused', () => {
   assert.equal(stats.rooms, 0);
 });
 
-test('sessionDoc measures a connected session from the write time', () => {
+test('sessionDoc leaves connected sessions without a disconnect time and keeps the real one for dropped sessions', () => {
   const registry = new SessionRegistry();
   const s = registry.create('A');
   s.connected = true;
   s.disconnectedAt = null;
-  const doc = sessionDoc(s, 1234);
-  assert.equal(doc.disconnectedAt, 1234);
+  // a connected session has nothing to measure: stamping the write time here would dirty every online session on
+  // every save; restoreServer bounds a crash cut-off with doc.savedAt instead
+  assert.equal(sessionDoc(s, 1234).disconnectedAt, null);
   s.connected = false;
   s.disconnectedAt = 999;
   assert.equal(sessionDoc(s, 1234).disconnectedAt, 999);
+});
+
+test('flush rounds honor the minimum gap: checkpoint events coalesce instead of a hot write loop', async () => {
+  let at = 100_000;
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog, now: () => at, saveMs: 10_000 });
+  persister.running = true;
+
+  assert.equal(await persister.flush('interval'), true, 'the first round runs');
+  assert.equal(store.writes, 1);
+
+  // a checkpoint event 1 s later lands in the next slot instead of rewriting immediately
+  at += 1_000;
+  assert.equal(await persister.scheduleFlush('checkpoint'), undefined);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(store.writes, 1, 'the deferred round has not run yet');
+
+  // once the gap has elapsed the deferred round runs (the real timer fires on the wall clock, not the fake one)
+  persister.stop();
+  assert.equal(await persister.flush('test'), true, 'an explicit flush bypasses the gap');
+  assert.equal(store.writes, 2);
+
+  // shutdown always writes, whatever the clock says
+  at += 100;
+  assert.equal(await persister.shutdown('shutdown'), true);
+  assert.equal(store.writes, 3);
+  lobby.shutdown();
 });
 
 // ---------------------------------------------------------------------------------------------------

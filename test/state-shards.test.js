@@ -32,7 +32,7 @@ const index = (savedAt, clocks, rooms = ['ABCD']) => ({
   v: 1, snapshot: 1, savedAt, sessions: [], rooms: rooms.map((code) => ({ code })), clocks,
 });
 
-test('directory mode: shards are rewritten only when their body changes, the index always is', async (t) => {
+test('directory mode: shards are rewritten only when their body changes, the index only when its content changes', async (t) => {
   const { stateDir } = await fixture(t);
   const store = new FileStateStore({ file: stateDir, log });
   t.after(() => store.close());
@@ -42,10 +42,14 @@ test('directory mode: shards are rewritten only when their body changes, the ind
   const clocks = (deadlineRemainingMs) => ({ ABCD: { deadlineRemainingMs, startedAtAgoMs: 10 } });
   assert.equal(await store.saveSharded({ index: index(1, clocks(5000)), shards: new Map([['ABCD', shardV1]]) }), true);
   assert.equal(store.shardWrites, 1);
+  assert.equal(store.indexWrites, 1);
   assert.equal(await store.saveSharded({ index: index(2, clocks(4000)), shards: new Map([['ABCD', shardV1]]) }), true);
   assert.equal(store.shardWrites, 1, 'an unchanged shard is not rewritten');
+  assert.equal(store.indexWrites, 2, 'changed clocks are committed');
   assert.equal(await store.saveSharded({ index: index(3, clocks(3000)), shards: new Map([['ABCD', shardRound2]]) }), true);
   assert.equal(store.shardWrites, 2, 'a changed shard is rewritten');
+  assert.equal(await store.saveSharded({ index: index(4, clocks(3000)), shards: new Map([['ABCD', shardRound2]]) }), true);
+  assert.equal(store.indexWrites, 3, 'a round that only re-stamps savedAt skips the index rewrite');
 
   const doc = await store.load();
   assert.equal(doc.matches.ABCD.round, 2, 'the newest body');

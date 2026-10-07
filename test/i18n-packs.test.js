@@ -3,9 +3,10 @@
 // allowlist), the manifest (shared/packs.js: types, app ranges), the fallback chain (shared/i18n.js: base, fallback, the
 // Chinese msgid), placeholder validation, plural categories (Intl.PluralRules: English unchanged, Russian named forms),
 // the per-text fallback of game texts (shared/i18nData.js onto, data.js chains), the client loader and menu
-// (ui/lang.js), the translator tools (tools/i18n.mjs template / check, tools/packs.mjs index), and that the Chinese and
-// English output of t() is what it was before packs. The example packs live only here, in temporary folders ('qaa' …
-// 'qtz' are the ISO 639 codes reserved for local use).
+// (ui/lang.js), the translator tools (tools/i18n.mjs template / check, tools/packs.mjs index), the machine-translation
+// mark (`_meta.machineTranslated`: the manifest, the index, the client's registry, the 设置 note), and that the Chinese
+// and English output of t() is what it was before packs. The example packs live only here, in temporary folders ('qaa'
+// … 'qtz' are the ISO 639 codes reserved for local use).
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,8 +20,8 @@ import {
   t, tc, tParts, setLang, getLang, addMessages, setMessages, setI18nWarn, registerLangs, getLangs, langChain, langInfo, normalizeLang,
   checkTranslation, parsePluralForms, pluralCategory, format,
 } from '../shared/i18n.js';
-import { canonicalLang, computeChain, scriptOf, langFields } from '../shared/i18nPacks.js';
-import { normalizeManifest, appVersionMatches, isVersionRange, readPackIndex, langMetaOf, PACK_TYPES, isPackPath } from '../shared/packs.js';
+import { canonicalLang, computeChain, scriptOf, langFields, packMeta } from '../shared/i18nPacks.js';
+import { normalizeManifest, appVersionMatches, isVersionRange, readPackIndex, langMetaOf, PACK_TYPES, isPackPath, packIndexEntry } from '../shared/packs.js';
 import { buildRecordOverlay, applyFileOverlay, applyRecordOverlay } from '../shared/i18nData.js';
 import { buildOverlay, LANG_SOURCES } from '../tools/build-i18n.mjs';
 import { scanPacks, createPackRegistry, packIndexOf } from '../server/packs.js';
@@ -30,6 +31,9 @@ import { writePackIndex } from '../tools/packs.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EN = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/i18n/en.json'), 'utf8'));
+const ZH_TW = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/i18n/zh-TW.json'), 'utf8'));
+/** The 设置 note of a pack marked as machine translation (ui/lang.js machineTranslationNote). */
+const MT_NOTE = '当前语言的界面文字为机器翻译，可能不够准确，欢迎在 GitHub 上指正。';
 
 afterEach(() => {
   setLang('zh');
@@ -170,6 +174,44 @@ test('manifest: common fields, type fields, app ranges; English is a pack like a
   assert.deepEqual(en.warnings, []);
   assert.deepEqual([en.manifest.name, en.manifest.complete, en.manifest.fallback, en.manifest.numberUnits], ['English', true, [], null]);
   assert.ok(en.manifest.authors.some((a) => a.includes('@YuriRestia')), 'PR #70 credited');
+});
+
+test('manifest: machineTranslated — a boolean, carried into the index entry like complete and into the client\'s registry (from the index or the pack\'s own _meta); the shipped zh-TW pack has it', () => {
+  const ctx = { id: 'qam', type: 'lang', lang: 'qam', app: '0.2.0' };
+  const on = normalizeManifest({ name: 'Qam', machineTranslated: true }, ctx);
+  assert.deepEqual([on.problems, on.warnings, on.manifest.machineTranslated], [[], [], true]);
+  assert.equal(normalizeManifest({ name: 'Qam' }, ctx).manifest.machineTranslated, false, 'optional: absent reads as false');
+  const odd = normalizeManifest({ name: 'Qam', machineTranslated: 'yes' }, ctx);
+  assert.deepEqual(odd.problems, [], 'a warning, not a problem: the pack still loads');
+  assert.deepEqual(odd.warnings, ['"machineTranslated": "yes" is not true or false (read as false)']);
+  assert.equal(odd.manifest.machineTranslated, false);
+  assert.match(normalizeManifest({ machineTranslated: 1 }, ctx).warnings.join(), /"machineTranslated": 1 is not true or false/);
+  // the index entry: only when true (like complete)
+  const files = { ui: '/i18n/qam.json' };
+  assert.equal(packIndexEntry(on.manifest, { files, strings: 1 }).machineTranslated, true);
+  assert.equal(Object.hasOwn(packIndexEntry(odd.manifest, { files }), 'machineTranslated'), false);
+  // a checkout's packs → the index → readPackIndex / langMetaOf → the client's registry (langInfo)
+  const root = tmpdir('mt');
+  try {
+    put(root, 'public/i18n/qam.json', { _meta: { name: 'Qam', fallback: ['en'], machineTranslated: true }, 开始: 'Qam-Start' });
+    put(root, 'public/i18n/qan.json', { _meta: { name: 'Qan' }, 开始: 'Qan-Start' });
+    const index = packIndexOf(scanPacks(dirsOf(root), { app: '0.2.0' }).packs, { app: '0.2.0' });
+    const entries = readPackIndex(index, 'lang');
+    assert.deepEqual(entries.map((e) => [e.id, e.machineTranslated]), [['qam', true], ['qan', undefined]]);
+    registerLangs(entries.map(langMetaOf));
+    assert.deepEqual([langInfo('qam').machineTranslated, langInfo('qan').machineTranslated, langInfo('zh').machineTranslated], [true, false, false]);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // without an index the pack's own `_meta` registers it (addMessages → packMeta)
+  assert.equal(packMeta('qao', { _meta: { machineTranslated: true } }).machineTranslated, true);
+  addMessages('qao', { _meta: { name: 'Qao', machineTranslated: true }, 开始: 'Qao-Start' });
+  assert.equal(langInfo('qao').machineTranslated, true);
+  // the shipped Traditional Chinese pack: a machine conversion (OpenCC, the official TW terms, a manual pass), complete,
+  // no fallback (the Simplified Chinese msgids), the note in Traditional Chinese
+  const tw = normalizeManifest(ZH_TW._meta, { id: 'zh-TW', type: 'lang', lang: 'zh-TW', app: '0.2.0' });
+  assert.deepEqual([tw.problems, tw.warnings], [[], []]);
+  assert.deepEqual([tw.manifest.machineTranslated, tw.manifest.complete, tw.manifest.fallback, tw.manifest.numberUnits], [true, true, [], ['萬', '億']]);
+  assert.equal(ZH_TW[MT_NOTE], '目前語言的介面文字為機器翻譯，可能不夠準確，歡迎在 GitHub 上指正。');
+  assert.ok(EN[MT_NOTE], 'English has the note');
 });
 
 test('fallback chain: the pack, its base (pt-BR → pt; zh-TW none), its fallbacks, then the Chinese msgid; cycles end', () => {
@@ -346,8 +388,29 @@ test('client: the index registers the language packs; the menu lists them (butto
   assert.deepEqual(lang.initialLang('', () => 'qzz', { tentative: true }), { lang: 'qzz', fromUrl: false }, 'without an index: tried by its code');
   assert.deepEqual([scriptOf('Stronghold Protocol'), scriptOf('卫戍协议'), scriptOf('堅守協定'), scriptOf('위수 협의'), scriptOf('Протокол')], ['alphabetic', 'cjk', 'cjk', 'cjk', 'alphabetic']);
   assert.deepEqual(langMetaOf(readPackIndex(index, 'lang')[1]).numberUnits, ['W', 'Y']);
-  assert.deepEqual(langFields('qab', { base: 'zh', fallback: 'en' }), { lang: 'qab', base: null, fallback: ['en'], complete: false, numberUnits: null });
+  assert.deepEqual(langFields('qab', { base: 'zh', fallback: 'en' }), { lang: 'qab', base: null, fallback: ['en'], complete: false, machineTranslated: false, numberUnits: null });
   assert.equal(canonicalLang('zh-hant-tw'), 'zh-Hant-TW');
+});
+
+test('设置: the machine-translation note shows while the current language\'s pack is marked (ui/lang.js machineTranslationNote), in that language; none for Chinese, English or an unmarked pack', async () => {
+  const { machineTranslationNote } = await import('../public/js/ui/lang.js');
+  registerLangs([{ code: 'qap', name: 'Qap', fallback: ['en'], machineTranslated: true }, { code: 'qaq', name: 'Qaq', fallback: ['en'] }, { code: 'en', name: 'English' }]);
+  addMessages('en', { [MT_NOTE]: EN[MT_NOTE] });
+  addMessages('qap', { [MT_NOTE]: 'Qap-Hinweis' });
+  assert.equal(machineTranslationNote(), null, 'Chinese: no note');
+  setLang('qap');
+  assert.equal(machineTranslationNote(), 'Qap-Hinweis', 'the marked pack, in its own words');
+  setMessages('qap', {});
+  assert.equal(machineTranslationNote(), EN[MT_NOTE], 'a marked pack without the string: the next language of its chain');
+  setLang('qaq');
+  assert.equal(machineTranslationNote(), null, 'a pack that is not marked');
+  setLang('en');
+  assert.equal(machineTranslationNote(), null, 'English is not marked');
+  // the shipped zh-TW pack (no index here: its `_meta` registers it)
+  addMessages('zh-TW', ZH_TW);
+  setLang('zh-TW');
+  assert.equal(machineTranslationNote(), ZH_TW[MT_NOTE]);
+  assert.equal(t('设置'), '設定', 'and the rest of the interface in Traditional Chinese');
 });
 
 test('tools: template writes a skeleton (or adds the missing msgids to a pack), check reports coverage and errors per pack; packs index writes the static index', () => {

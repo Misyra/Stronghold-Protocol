@@ -7,8 +7,9 @@
 // game-data overlay (data/i18n/en.json) is applied; `?lang=zh` switches back and leaves the address bar. Language packs
 // (docs/I18N.md "Adding a language", docs/PACKS.md): a pack file dropped into public/i18n/ and a pack folder dropped
 // into packs/ while the server runs show in the menu and switch, with English filling what they lack; a removed pack
-// sends a stored choice back to Chinese. The shipped Japanese, Korean and Traditional Chinese packs (the owner's decision of
-// 2026-10-07) switch to their official game texts with the UI of their fallback (English; Simplified Chinese for zh-TW).
+// sends a stored choice back to Chinese. The shipped Japanese, Korean and Traditional Chinese packs (the owner's decisions of
+// 2026-10-07) switch to their official game texts and their own UI strings (what a pack lacks shows its fallback: English
+// for ja / ko, the Simplified Chinese for zh-TW); a pack marked `machineTranslated` says so in 设置 (none in Chinese).
 // With more than four languages the menu is a list (ui/lang.js SEGMENTED_MAX): the helpers read and pick either form.
 // No console / page / request errors. docs/I18N.md.
 
@@ -50,6 +51,23 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     else await page.click(`[data-testid="lang-toggle"] button[data-lang="${code}"]`);
   };
   const SHIPPED = [['zh', '中文'], ['en', 'English'], ['ja', '日本語'], ['ko', '한국어'], ['zh-TW', '繁體中文']];
+  const pack = (code) => JSON.parse(fs.readFileSync(path.join(ROOT, `public/i18n/${code}.json`), 'utf8'));
+  /** What a shipped pack shows for a msgid: its own string, else its fallbacks' (English for ja / ko), else the Chinese msgid. */
+  const uiText = (code, msgid) => {
+    const own = pack(code);
+    for (const p of [own, ...(own._meta?.fallback || []).map(pack)]) if (typeof p[msgid] === 'string' && p[msgid]) return p[msgid];
+    return msgid;
+  };
+  const MT_NOTE = '当前语言的界面文字为机器翻译，可能不够准确，欢迎在 GitHub 上指正。';
+  /** The note under the language switch in 设置 (null when there is none); the dialog opens from the title screen and closes. */
+  const settingsNote = async (page) => {
+    await page.click('.title-settings');
+    await page.waitForSelector('.modal .set-list');
+    const note = await page.$eval('.modal [data-testid="lang-mt-note"]', (el) => el.textContent.trim()).catch(() => null);
+    await page.click('.modal__actions .btn--primary'); // 完成 (an Esc right after the dialog shows may beat its key listener)
+    await page.waitForSelector('.modal', { hidden: true });
+    return note;
+  };
   /** A game text of a shipped pack's overlay (data/i18n/<code>.json; a leaf is a string or { _s }). */
   const gameText = (code) => { const v = JSON.parse(fs.readFileSync(path.join(ROOT, `data/i18n/${code}.json`), 'utf8')).files.config.modes.mode_multi_abyss.name; return typeof v === 'string' ? v : v._s; };
 
@@ -139,7 +157,7 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
       await page.close();
     }
   });
-  test('the shipped 日本語 / 한국어 / 繁體中文 packs: the official game texts, the UI of their fallback (English; Simplified Chinese for zh-TW)', async () => {
+  test('the shipped 日本語 / 한국어 / 繁體中文 packs: the official game texts, their UI strings, the 设置 note of a machine-translated pack', async () => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1600, height: 900 });
     const problems = [];
@@ -148,13 +166,16 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     page.on('response', (r) => { if (r.status() >= 400 && !/fonts\.(googleapis|gstatic)/.test(r.url())) problems.push(`http ${r.status()}: ${r.url()}`); });
     await page.goto(`${base}/?lang=zh`, { waitUntil: 'networkidle0' });
     await page.waitForSelector('.title-screen [data-testid="lang-toggle"]');
-    for (const [code, ui, htmlLang] of [['ja', 'Start', 'ja'], ['ko', 'Start', 'ko'], ['zh-TW', '开始', 'zh-TW']]) {
+    assert.equal(await settingsNote(page), null, 'Chinese: no machine-translation note');
+    for (const code of ['ja', 'ko', 'zh-TW']) {
       await pick(page, code);
       await page.waitForFunction((c) => globalThis.__SP__?.data?.locale() === c, { timeout: 8000 }, code);
       assert.equal(await page.evaluate(() => globalThis.__SP__.data.get('config').modes.mode_multi_abyss.name), gameText(code), `${code}: the official game text`);
-      assert.equal(await text(page, '.title-login .btn--primary'), ui, `${code}: the fallback UI`);
-      assert.equal(await page.evaluate(() => document.documentElement.lang), htmlLang);
+      assert.equal(await text(page, '.title-login .btn--primary'), uiText(code, '开始'), `${code}: the UI`);
+      assert.equal(await page.evaluate(() => document.documentElement.lang), code);
+      assert.equal(await settingsNote(page), pack(code)._meta.machineTranslated === true ? uiText(code, MT_NOTE) : null, `${code}: the 设置 note`);
     }
+    assert.equal(uiText('zh-TW', '开始'), '開始', 'zh-TW: its own Traditional Chinese UI');
     assert.deepEqual(problems, []);
     await page.close();
   });

@@ -63,7 +63,8 @@ would see one folder).
 | `name`, `englishName` | the name in its own language (a language pack: the language's own name, shown in the menu) and in English (the menu's tooltip) |
 | `authors`, `credits`, `license` | who made it; free text (`license`: an SPDX id or text) |
 | `files` | a folder pack: role → path inside the folder. Each type lists its roles and their extensions (`lang`: `ui` required, `data` optional, both `.json`) |
-| the type's fields | `lang`: `lang`, `base`, `fallback`, `complete`, `numberUnits` (docs/I18N.md) |
+| the type's fields | `lang`: `lang`, `base`, `fallback`, `complete`, `machineTranslated`, `numberUnits` (docs/I18N.md) |
+| `machineTranslated` | `lang`, optional: `true` when the pack's UI strings come from a machine (a translation, or a conversion such as the Traditional Chinese pack's). The index entry carries it (only when true, like `complete`) and the client shows a note under the language switch in 设置 while that language is in use (`public/js/ui/lang.js` `machineTranslationNote`). A value other than `true` / `false` is a warning and reads as false |
 
 A **problem** keeps a pack from loading (unknown type, no `lang`, a file missing or outside the folder, broken JSON, an
 id or a language already taken — the language folders' files come first, then the folders by id); a **warning** does
@@ -158,7 +159,9 @@ that ship. `test/package.test.js` checks both layouts and that a local pack stay
 ## Tests
 
 `test/i18n-packs.test.js` (discovery of both layouts, broken / planned / duplicate packs, a pack dropped in or removed
-while the server runs, the file allowlist, the manifest and app ranges, the fallback chain, placeholders, plurals,
+while the server runs, the file allowlist, the manifest and app ranges, the `machineTranslated` mark from the manifest
+to the 设置 note, the fallback chain, placeholders, plurals,
 the per-text game-text fallback, the client loader and menu, the tools, build-i18n `--lang` / `--dict`),
 `test/package.test.js`, `test/ui/i18n.e2e.test.js`
-(`SP_E2E=1`: a pack file and a pack folder dropped in while the server runs show in the menu and switch).
+(`SP_E2E=1`: a pack file and a pack folder dropped in while the server runs show in the menu and switch; the shipped
+packs with their UI strings and the 设置 note of a machine-translated one).

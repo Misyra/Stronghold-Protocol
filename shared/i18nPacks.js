@@ -20,6 +20,8 @@
 //                 pack for it — pt-BR → pt; never the Chinese source, so zh-TW has none); null switches it off
 //   fallback      packs tried after the base, before the Chinese msgid (["en"]: untranslated strings show English)
 //   complete      true: `node tools/i18n.mjs check` requires every msgid (English declares it)
+//   machineTranslated  true: the UI strings are machine translations (or a machine conversion, zh-TW); the 设置 dialog
+//                 says so under the language switch while the language is in use (ui/lang.js machineTranslationNote)
 //   numberUnits   two units for numbers counted in 10⁴ / 10⁸ steps (Chinese 万 / 亿; e.g. a Japanese pack ["万", "億"]);
 //                 without them large numbers use K / M / B (ui/gameLogic/format.js fmtNum)
 // The common fields (id, version, app, name, englishName, authors, credits, license) are shared/packs.js's.
@@ -84,7 +86,8 @@ export function langList(v) {
 }
 
 /**
- * @typedef {{ lang: string, base: string|null|undefined, fallback: string[], complete: boolean, numberUnits: string[]|null }} LangFields
+ * @typedef {{ lang: string, base: string|null|undefined, fallback: string[], complete: boolean, machineTranslated: boolean,
+ *   numberUnits: string[]|null }} LangFields
  */
 
 /**
@@ -101,7 +104,10 @@ export function langFields(code, m) {
   else if (typeof o.base === 'string') base = canonicalLang(o.base);
   if (base === SOURCE_LANG || base === code) base = null;
   const units = Array.isArray(o.numberUnits) && o.numberUnits.length === 2 && o.numberUnits.every((u) => str(u, 8)) ? o.numberUnits.map((u) => str(u, 8)) : null;
-  return { lang: code, base, fallback: langList(o.fallback).filter((c) => c !== code), complete: o.complete === true, numberUnits: units };
+  return {
+    lang: code, base, fallback: langList(o.fallback).filter((c) => c !== code), complete: o.complete === true,
+    machineTranslated: o.machineTranslated === true, numberUnits: units,
+  };
 }
 
 /**

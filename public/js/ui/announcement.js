@@ -4,16 +4,15 @@ import { startAnnouncementPolling } from './announcementClient.js';
 
 const DISMISSED_KEY = 'sp.announcement.dismissed';
 
-export function AnnouncementBanner({ active }) {
+// Dismissible server announcement, shown on every screen (title, lobby, room, match) from page load:
+// a maintenance notice must reach players before they enter a match, not only inside one.
+export function AnnouncementBanner() {
   const [notice, setNotice] = useState(null);
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(DISMISSED_KEY); } catch { return null; }
   });
-  useEffect(() => {
-    if (!active) { setNotice(null); return undefined; }
-    return startAnnouncementPolling({ onChange: setNotice });
-  }, [active]);
-  const visible = active && notice && notice.id !== dismissed && performance.now() < notice.deadline;
+  useEffect(() => startAnnouncementPolling({ onChange: setNotice }), []);
+  const visible = notice && notice.id !== dismissed && performance.now() < notice.deadline;
   useTicker(visible ? 1000 : 0);
   if (!visible) return null;
   const dismiss = () => {

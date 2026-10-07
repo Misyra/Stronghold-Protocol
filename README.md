@@ -49,7 +49,7 @@ English summary: [below](#english).
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导出 JSON；见 [docs/MATCH_HISTORY.md](docs/MATCH_HISTORY.md) |
 | 资源预载 | 在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/CDN.md](docs/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：凑满 4 名真人才开局，不补 AI，断线自动出队 |
-| 局内维护公告 | 单条维护公告热加载（`SP_ANNOUNCEMENT_FILE`），仅对局内显示、可关闭，配 `GET /api/announcement` |
+| 维护公告 | 单条维护公告热加载（`SP_ANNOUNCEMENT_FILE`），进入游戏即显示（主菜单、大厅与对局全程）、可关闭，配 `GET /api/announcement` |
 | 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/CUSTOM_API.md](docs/CUSTOM_API.md) |
 | WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
 | 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
@@ -133,7 +133,7 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `SP_WS_COMPRESSION` | `on` | WebSocket 状态消息压缩：`on` 开启低等级压缩；`off` 关闭。减少出网，但增加 CPU 和每连接内存；高并发部署先小流量验证 |
-| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 局内维护公告配置文件；相对路径以项目根目录为基准，修改后自动生效。设置内容、截止时间和关闭方式见 [部署指南](docs/DEPLOY.md#16-局内维护公告) |
+| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 维护公告配置文件；相对路径以项目根目录为基准，修改后自动生效。设置内容、截止时间和关闭方式见 [部署指南](docs/DEPLOY.md#16-维护公告) |
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |

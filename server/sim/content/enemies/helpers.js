@@ -44,6 +44,15 @@ const STEALTH_RESTORE_BY_KEY = Object.freeze({
   enemy_1283_sgkill_2: 1,    // 家族暗影灭迹人
 });
 
+/**
+ * 隐匿 of the 鸭爵 strategy's swapped-in enemies (spawn tag 'duck': content/bands/meta.js duckReplace) comes back no sooner
+ * than this many seconds after a block ends — in practice 流泪小子 (enemy_2034_sythef_2, the only one of the four with 隐匿;
+ * officially 0 s, STEALTH_RESTORE_BY_KEY). A deliberate deviation from the official game: the owner's decision of
+ * 2026-10-07 「鸭爵策略产生的泪眼汪汪…要不等待个1秒这样再重新隐匿」 (community report of 2026-10-07, GitHub #214). The same
+ * enemy anywhere else — the 流泪小子 of a bounty card (enemy_2034_sythef), a test spawn — keeps the official time.
+ */
+const DUCK_STEALTH_RESTORE = 1;
+
 /** Splash radius (中点判定 around the target) of 烹泉 / 沏虹's attack (PRTS 天赋 "普通攻击对目标对及目标周围半径1.0范围内的所有
  *  我方单位造成法术普通伤害（无视迷彩，不可对空）") and of 集团军重型火炮's shell (PRTS "对目标半径1.0范围内的所有我方单位造成攻击力
  *  100%的物理伤害（此弹道会强制击中主目标，碰撞无视迷彩，不可对空）"). */
@@ -387,6 +396,6 @@ const onTerrain = (b, u, terrain) => { const [r, c] = tileOf(u); return b.grid.t
 
 // used by the other enemy modules (content/enemies.js and content/enemies/*.js)
 export {
-  BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, TEA_SPLASH_RADIUS, SHELL_SPLASH_RADIUS, stOf, safe, dispatch,
+  BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, DUCK_STEALTH_RESTORE, TEA_SPLASH_RADIUS, SHELL_SPLASH_RADIUS, stOf, safe, dispatch,
   num, auraBuff, watchDeaths, onTerrain,
 };

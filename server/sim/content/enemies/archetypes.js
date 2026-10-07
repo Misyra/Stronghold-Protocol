@@ -3,9 +3,9 @@
 // unbalanced, artsBarrier, husk, statue, bleed, pollution, dmgZone, skill(), blinkForward … and the archetype kits
 // reused by several keys (kitEp, kitTimes …).
 
-import { MOVE_SCALE, COLS } from '../../constants.js';
+import { MOVE_SCALE, COLS, STEALTH_RESTORE } from '../../constants.js';
 import {
-  HUSK_REBIRTH, BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, nthOf, stOf, safe, num, T, elem, hurt,
+  HUSK_REBIRTH, BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, DUCK_STEALTH_RESTORE, nthOf, stOf, safe, num, T, elem, hurt,
   areaAllies, areaAlliesInTiles, zone, spawnChildren, stepToward, setHits, hitCount, setForm, absorbArts, auraBuff,
 } from './helpers.js';
 
@@ -14,11 +14,13 @@ import {
 
 /**
  * 隐匿: permanent stealth. Blocked it is lifted; it hides again STEALTH_RESTORE s after the block ends, or after its own
- * "（解除阻挡N秒后恢复）" (STEALTH_RESTORE_BY_KEY → buff `data.stealthRestore`; Battle._stealthSwitch).
+ * "（解除阻挡N秒后恢复）" (STEALTH_RESTORE_BY_KEY → buff `data.stealthRestore`; Battle._stealthSwitch) — a 鸭爵 swap (tag
+ * 'duck') no sooner than DUCK_STEALTH_RESTORE s (the owner's decision of 2026-10-07, a deliberate deviation).
  */
 const stealth = () => ({
   spawn(b, e, a, ab) {
-    const n = STEALTH_RESTORE_BY_KEY[ab.key];
+    let n = STEALTH_RESTORE_BY_KEY[ab.key];
+    if (e.tag === 'duck' && (n ?? STEALTH_RESTORE) < DUCK_STEALTH_RESTORE) n = DUCK_STEALTH_RESTORE;
     b.addBuff(e, { key: 'ab:stealth', flags: { stealth: true }, persist: true, data: n != null ? { stealthRestore: n } : {} });
   },
 });

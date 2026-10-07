@@ -373,7 +373,9 @@ K.preparation_start_add_special_goods_every_n_round = (ps) => ({
 // share taken over that half [ASSUMED: "你和队友遭遇的敌人" — the enemies heading for the player's own protection point;
 // each official client simulates its own battle, docs/research/08 appendix A]. The originals never exist, so none of
 // their death / kill / leak effects happen. Reaching the protection point costs 1 LP ("但进入保护目标点将减少1点目标生命值":
-// the enemies' data lpr, tools/build-data.mjs).
+// the enemies' data lpr, tools/build-data.mjs). The swaps carry the spawn tag 'duck': their 隐匿 (流泪小子) comes back no
+// sooner than 1 s after a block ends, not the official 0 s (content/enemies/helpers.js DUCK_STEALTH_RESTORE — the owner's
+// decision of 2026-10-07, a deliberate deviation).
 
 export const DUCK_BAND = 'band_ducklord';
 /** "击倒这些敌人者获得1资金奖励" (the blackboard's `count` is 1 too). */

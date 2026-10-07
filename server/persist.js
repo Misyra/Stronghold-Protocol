@@ -59,7 +59,9 @@ export function sessionDoc(s, now) {
     pendingResult: s.pendingResult || null,
     resumeWindowMs: typeof s.resumeWindowMs === 'number' && s.resumeWindowMs > 0 ? s.resumeWindowMs : null,
     connected: !!s.connected,
-    disconnectedAt: s.connected || s.disconnectedAt == null ? now : s.disconnectedAt,
+    // A connected session has no disconnect time — writing `now` here would dirty every online session on every
+    // save. restoreServer bounds a crash cut-off with doc.savedAt, which is the same stamp the old write produced.
+    disconnectedAt: s.connected ? null : s.disconnectedAt == null ? now : s.disconnectedAt,
   };
 }
 
@@ -196,13 +198,15 @@ export class Persister {
    *   log?: object, now?: () => number, saveMs?: number,
    * }} opts
    */
-  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS }) {
+  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs = saveMs }) {
     this.store = store;
     this.registry = registry;
     this.lobby = lobby;
     this.log = log;
     this.now = now;
     this.saveMs = Math.max(1000, Number(saveMs) || SAVE_MS);
+    /** Minimum gap between two write rounds: checkpoint events coalesce into the next slot instead of a hot loop. */
+    this.minFlushMs = Math.max(0, Number(minFlushMs) || 0);
     /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
     /** Fresh phase clocks per room code (deadlineRemainingMs / startedAtAgoMs; written into the document envelope). */
@@ -219,6 +223,9 @@ export class Persister {
     this._busy = false;
     this._pending = null;
     this._again = false;
+    /** @type {NodeJS.Timeout | null} the deferred flush slot (see flush) */
+    this._cooldownTimer = null;
+    this._lastFlushAt = 0;
     this.lobby.onCheckpoint = (code, match) => {
       if (!match) {
         this.matchDocs.delete(code);
@@ -298,14 +305,27 @@ export class Persister {
     return this.legacyDocument(snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() }));
   }
 
-  /** One save round (never throws). */
+  /** One save round (never throws). Rounds run at most once per minFlushMs; shutdown/test bypass the gap. */
   flush(reason = 'tick') {
     if (!this.store) return Promise.resolve(false);
     if (this._busy) return this._pending || Promise.resolve(false);
+    // Checkpoint events arrive far faster than saves are useful; an immediate re-run here (queueMicrotask) kept the
+    // loop hot forever under load. Defer into the next free slot instead — the saveMs contract bounds everything.
+    // Only the live loop defers: shutdown() has stopped the persister, and tests drive explicit rounds.
+    if (this.running && reason !== 'test') {
+      const since = this.now() - this._lastFlushAt;
+      if (since < this.minFlushMs) {
+        this._again = true;
+        this._armCooldown(this.minFlushMs - since);
+        return Promise.resolve(false);
+      }
+    }
+    if (this._cooldownTimer) { clearTimeout(this._cooldownTimer); this._cooldownTimer = null; }
     // Capture the meta synchronously, at flush() call time: a shutdown's final write must hold the state as of the
     // moment it was asked for, not whatever the lobby looks like by the time the Worker answers.
     const meta = snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() });
     this._busy = true;
+    this._lastFlushAt = this.now();
     this._pending = (async () => { try {
       await this.checkpointMatches();
       const ok = typeof this.store.saveSharded === 'function'
@@ -321,12 +341,22 @@ export class Persister {
     } finally {
       this._busy = false;
       this._pending = null;
-      if (this._again && this.running) { this._again = false; queueMicrotask(() => { void this.flush('checkpoint'); }); }
+      if (this._again && this.running) this._armCooldown(Math.max(0, this.minFlushMs - (this.now() - this._lastFlushAt)));
     } })();
     return this._pending;
   }
 
-  /** Ask for a flush: coalesced while one is already running (it re-runs once when the write settles). */
+  /** Schedule the deferred flush slot (coalesced; a flush that starts first clears it). */
+  _armCooldown(delayMs) {
+    if (this._cooldownTimer || !this.running) return;
+    this._cooldownTimer = setTimeout(() => {
+      this._cooldownTimer = null;
+      if (this._again && this.running) { this._again = false; void this.flush('checkpoint'); }
+    }, delayMs);
+    this._cooldownTimer.unref?.();
+  }
+
+  /** Ask for a flush: coalesced into the next write slot — at most one round per minFlushMs (shutdown bypasses). */
   scheduleFlush(reason) {
     if (this._busy) { this._again = true; return; }
     void this.flush(reason);
@@ -344,6 +374,7 @@ export class Persister {
   stop() {
     this.running = false;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this._cooldownTimer) { clearTimeout(this._cooldownTimer); this._cooldownTimer = null; }
   }
 
   /** Stop and write the final document. */

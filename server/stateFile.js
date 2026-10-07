@@ -4,16 +4,23 @@
 //   * file — one JSON document (a path ending in .json, or an existing plain file). The classic layout: rewritten
 //            atomically (tmp → fsync → rename) on every save. Right for the usual handful of rooms.
 //   * dir  — a directory (any other path): index.json (sessions, rooms, clock envelope) plus one shard per room with
-//            a running match (matches/<CODE>.json). A shard is written only when its encoded body changed, so an idle
-//            room costs one index entry per tick instead of a full-state rewrite — the layout for servers with
-//            hundreds of rooms. Shards are written before the index: the index is the commit point, so a crash in
-//            between leaves extra shards (cleaned up on load), never a missing one. A legacy sibling file
-//            `<dir>.state.json` (the old default layout) is migrated on the first load.
+//            a running match (matches/<CODE>.json). A shard is written only when its encoded body changed, and the
+//            index only when its content (savedAt aside) changed — an idle server costs no disk traffic at all, an
+//            active one one index entry per tick instead of a full-state rewrite. Shards are written before the
+//            index: the index is the commit point, so a crash in between leaves extra shards (cleaned up on load),
+//            never a missing one. A legacy sibling file `<dir>.state.json` (the old default layout) is migrated on
+//            the first load.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const SHARD_SUFFIX = '.json';
+
+/** The index without its per-write stamp: two indexes that compare equal carry the same information. */
+function canonicalIndex(index) {
+  const { savedAt, ...rest } = index;
+  return JSON.stringify(rest);
+}
 
 export class FileStateStore {
   constructor({ file, log = console }) {
@@ -30,6 +37,9 @@ export class FileStateStore {
     /** dir mode: exactly what is on disk per room code — the shard dirty check. */
     this.shards = new Map();
     this.shardWrites = 0;
+    /** dir mode: the index on disk, canonicalized (savedAt stripped — it stamps the last actual write). */
+    this.indexCommit = null;
+    this.indexWrites = 0;
   }
 
   async resolveMode() {
@@ -106,6 +116,7 @@ export class FileStateStore {
     if (!index || typeof index !== 'object' || Array.isArray(index)) {
       throw new Error('状态文件损坏，已保留原文件；请从备份恢复后再启动');
     }
+    this.indexCommit = canonicalIndex(index);
     const clocks = index.clocks && typeof index.clocks === 'object' ? index.clocks : {};
     const roomCodes = new Set((Array.isArray(index.rooms) ? index.rooms : []).map((r) => r?.code).filter(Boolean));
     const matches = {};
@@ -228,8 +239,17 @@ export class FileStateStore {
         if (err.code !== 'ENOENT') this.log.warn?.(`[persist] ${code}: shard removal failed`, err.message);
       });
     }
-    try { await this.writeAtomic(this.indexFile, JSON.stringify(index)); }
-    catch (err) { ok = false; this.log.warn?.('[persist] index write failed', err.message); }
+    // The index is the commit point (shards go first), but an index byte-identical to the one on disk — modulo
+    // savedAt, which stamps the last actual write — carries nothing new: skip the 850 KB rewrite. A round that
+    // changed a shard also changed that room's clocks (every encode refreshes them), so a skipped index never
+    // leaves a shard uncommitted.
+    const commit = canonicalIndex(index);
+    if (commit !== this.indexCommit) {
+      try { await this.writeAtomic(this.indexFile, JSON.stringify(index)); }
+      catch (err) { ok = false; this.log.warn?.('[persist] index write failed', err.message); }
+      this.indexCommit = commit;
+      this.indexWrites++;
+    }
     if (ok) this.saved++;
     return ok;
   }

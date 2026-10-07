@@ -289,7 +289,7 @@ function App() {
     <div class="app-bg" aria-hidden="true"></div>
     ${error ? html`<${ScreenCrashed} error=${error} reset=${resetError} />` : html`<${Screen} key=${route} />`}
     <${ConnectionBanner} />
-    <${AnnouncementBanner} active=${route === 'game'} />
+    <${AnnouncementBanner} />
     <${ToastHost} />
     <${UiHosts} />
     <${GuideHost} />

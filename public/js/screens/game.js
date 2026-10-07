@@ -1335,7 +1335,7 @@ function MatchScreen() {
           onClick=${() => {
             if (!bondsCollapsed && bondOpen?.from === 'strip') setBondOpen(null);
             setBondsCollapsed(!bondsCollapsed);
-          }}><${Icon} name=${bondsCollapsed ? 'chevronRight' : 'chevronLeft'} /><span>${bondsCollapsed ? t('盟约') : t('收起')}</span></button>
+          }}><${Icon} name=${bondsCollapsed ? 'chevronRight' : 'chevronLeft'} /></button>
         <div id="match-bond-strip" class="gm__bond-list" hidden=${bondsCollapsed}>
           <${BondStrip} bonds=${stripBonds} layersDisabled=${layersDisabled} openId=${bondPop && bondPop.ownerId === strip.ownerId ? bondPop.bondId : null}
             owner=${strip.name} onOpen=${(id) => openBond(id, strip.ownerId, 'strip')} />

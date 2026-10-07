@@ -4,6 +4,7 @@
 import { SHOT_HEIGHT, bodyZ } from './camera.js';
 import { FX_KINDS } from './kinds.js';
 import { easeOut } from './limits.js';
+import { UF } from '../../../../shared/constants.js';
 
 /**
  * Lock reticle: how long (game s) a lock outlives the last sign of its shooter's S3 going on — its latest lock, shell or
@@ -18,9 +19,11 @@ export class FxLocks {
   /**
    * fx 'lock': a reticle on the locked enemy (following its view; at the last spot once it is gone) until its shell
    * lands (mortar / _landed) or the aimed shot fires ('crit' from the same shooter); at most LOCK_T game seconds after
-   * the shooter's last lock / shell / bombard (_touchLocks).
+   * the shooter's last lock / shell / bombard (_touchLocks). A held lock (`hold`: 蕾缪安 S3, whose skill waits with its
+   * bullets and locks while nothing is in range) waits as long as its shooter's skill runs (the view's UF.SKILL), its
+   * LOCK_T counted from the skill's end.
    */
-  _lock(view, src, x, y, z) {
+  _lock(view, src, x, y, z, hold = false) {
     let L = this.lockFree.pop();
     if (!L) {
       const P = this.P;
@@ -34,7 +37,7 @@ export class FxLocks {
       L = { ring, core };
     }
     L.view = view; L.id = view ? view.id : null; L.src = src ?? null; L.x = x; L.y = y; L.z = z;
-    L.t = 0; L.idle = 0; L.max = LOCK_T / this._ts(); L.out = -1; L.shell = false; L.sx = x; L.sy = y;
+    L.t = 0; L.idle = 0; L.max = LOCK_T / this._ts(); L.out = -1; L.shell = false; L.sx = x; L.sy = y; L.hold = !!hold;
     L.ring.tint = L.core.tint = FX_KINDS.lock.c;
     L.ring.alpha = L.core.alpha = 0;
     L.ring.visible = L.core.visible = true;
@@ -77,10 +80,12 @@ export class FxLocks {
       L.t += dt;
       L.idle += dt;
       if (L.out < 0 && L.idle >= L.max) L.out = 0;
-      // the shooter knocked out / withdrawn: the sim fires no more shells — only a shell already in the air still lands
+      // the shooter knocked out / withdrawn: the sim fires no more shells — only a shell already in the air still lands;
+      // a held lock waits while its shooter's skill runs (蕾缪安 S3 with nothing in range: its bullets and locks wait)
       if (L.out < 0 && !L.shell && L.src != null && this.ctx.view) {
         const sv = this._viewOf(L.src);
         if (!sv || sv.alive === false) L.out = 0;
+        else if (L.hold && (sv.flags & UF.SKILL)) L.idle = 0;
       }
       if (L.out >= 0) { L.out += dt; if (L.out >= LOCK_FADE) { this._freeLock(L); continue; } }
       const v = L.view;

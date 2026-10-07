@@ -50,7 +50,7 @@ export class FxSim {
    * counter, dp, coin, crate, down, beam, bolt, strike, volley, pillar, lp, chill, element, flame), except kinds whose
    * archetype is 'none' (hitCap: a leader hit cancelled by 限伤 draws nothing); unknown kinds get a generic sparkle. `extra` keys used: id (anchor unit — or the shooter of a `pt` kind), r | radius, dur | duration,
    * t (shell flight, game s), src / from / to / target / targets (unit ids), fx, fy / fromX, fromY / tx, ty (positions),
-   * element, n, scale, kind, tiles.
+   * element, n, scale, kind, tiles, hold ('lock': the reticle waits while the shooter's skill runs).
    */
   simFx(kind, x, y, extra) {
     const ex = extra && typeof extra === 'object' ? extra : {};
@@ -178,9 +178,10 @@ export class FxSim {
       case 'mark': case 'reticle': {
         if (kind === 'lock') {
           // `id` is always the locked enemy: the reticle sticks to its view even a little off the event's spot
+          // (`hold`: 蕾缪安 S3 — the reticle waits while her skill runs, however long nothing is in range)
           const lv = at.v || this._viewOf(ex.id);
           this._touchLocks(ex.src ?? null);
-          this._lock(lv, ex.src ?? null, lv ? lv.x : at.x, lv ? lv.y : at.y, lv ? bodyZ(cam, lv, SHOT_HEIGHT.aim) : at.z + 0.55);
+          this._lock(lv, ex.src ?? null, lv ? lv.x : at.x, lv ? lv.y : at.y, lv ? bodyZ(cam, lv, SHOT_HEIGHT.aim) : at.z + 0.55, !!ex.hold);
           break;
         }
         const v = at.v;

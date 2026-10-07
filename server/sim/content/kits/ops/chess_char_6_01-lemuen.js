@@ -152,6 +152,14 @@ function lemuen(bb, chess, def) {
   };
   return {
     skills,
+    // S3 礼炮·强制追思, the lock phase: one lock every aim_interval s on an enemy in her range (the least locked first,
+    // then the lowest DEF), one bullet each; the skill ends when the bullets are spent, then bombard. With nothing in
+    // range it waits — bullets and locks kept (the marks follow their enemies / stay where they left) — and locks the
+    // next enemy that comes at once: an ammo skill has no time limit ("攻击装有5发弹药，打完后结束（可随时停止技能）"; in
+    // the client data her S3 lock needs a target and only the spent bullets end the skill buff lemuen_s_3) and the 卫戍协议
+    // automation never stops a skill (PRTS 卫戍协议/帮助 技能操作: "通常不会自动关闭技能"). Until 0.2.0 the skill ended at
+    // the first lock tick with nothing in range (community report: 「蕾缪安3技能范围里没人好像会自动结束」). Its fx 'lock'
+    // carries `hold`: the renderer keeps those reticles up while her skill runs (render/fx/locks.js).
     skill: {
       kind: 'ammo',
       ammo: Math.max(1, Math.floor(num(bb['attack@trigger_time'], 5))),
@@ -164,11 +172,11 @@ function lemuen(bb, chess, def) {
         if (!unit.canAct) return;
         m.lemAcc += dt;
         if (m.lemAcc + 1e-9 < aim) return;
-        m.lemAcc -= aim;
         const e = pickLock(battle, unit, m.lemLocks);
-        if (!e) { if (m.lemLocks.length) skill.end('ammo'); return; }
+        if (!e) { m.lemAcc = aim; return; }   // nothing to lock: wait, the next lock ready the moment an enemy comes
+        m.lemAcc -= aim;
         m.lemLocks.push({ e, x: e.x, y: e.y });
-        battle.fx('lock', { x: e.x, y: e.y, id: e.id, src: unit.id });
+        battle.fx('lock', { x: e.x, y: e.y, id: e.id, src: unit.id, hold: 1 });
         skill.ammoLeft--;
         battle.emit('ammoUsed', { unit, left: skill.ammoLeft, skill });
         if (skill.active && skill.ammoLeft <= 0) skill.end('ammo');

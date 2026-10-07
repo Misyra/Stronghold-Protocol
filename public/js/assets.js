@@ -46,6 +46,9 @@ import { resourceUrl, resourceCache } from './resourceUrl.js';
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const get = (o, k) => (isObj(o) && Object.hasOwn(o, k) ? o[k] : undefined);
+/** The URL without its per-file cache-bust query (CDN manifest mode appends `?v=<16 hex>`; the query is part of the
+ *  URL, never of the file it names — extension-based derivations must run on the bare path). */
+const bareAssetUrl = (u) => String(u).replace(/\?v=[0-9a-f]{16}$/, '');
 
 // ---- pure URL helpers (manifest first) ---------------------------------------------------------------------
 
@@ -188,7 +191,7 @@ export function localSpineEntry(sl, local, web) {
   const skel = url(sl.skel), atlas = url(sl.atlas);
   const textures = Array.isArray(sl.textures) ? sl.textures.map(url) : [];
   let entry = null;
-  if (skel && atlas && skel.replace(/\.skel$/, '.atlas') === atlas && textures.length && textures.every(Boolean)) {
+  if (skel && atlas && bareAssetUrl(skel).replace(/\.skel$/, '.atlas') === bareAssetUrl(atlas) && textures.length && textures.every(Boolean)) {
     entry = { skel, atlas, textures, pma: !!sl.pma, anims: sl.anims, animations: sl.animations, events: sl.events, hits: sl.hits, bounds: sl.bounds, local: true, fallback: web || null };
     if (!validSpine(entry)) entry = null;
   }
@@ -204,9 +207,12 @@ export function hasBackSpine(m, id) {
 
 export function validSpine(sp) {
   if (!isObj(sp) || typeof sp.skel !== 'string' || /\s/.test(sp.skel) || typeof sp.atlas !== 'string' || !isObj(sp.anims)) return false;
-  if (/^\/[^\s]*\.skel$/.test(sp.skel)) return true;
+  // A CDN URL may carry exactly the per-file cache-bust query (shared/assetCdn.js query mode); any other
+  // query still disqualifies the entry.
+  const skel = bareAssetUrl(sp.skel);
+  if (/^\/[^\s]*\.skel$/.test(skel)) return true;
   try {
-    const url = new URL(sp.skel);
+    const url = new URL(skel);
     return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash && url.pathname.endsWith('.skel');
   } catch { return false; }
 }
@@ -579,7 +585,7 @@ export function forgetPendingSpine(entry, keep) {
   if (!skel || !cache || typeof cache !== 'object') return 0;
   const done = (u) => { try { return !!PIXI.Assets.cache?.has?.(u); } catch { return true; } };
   if (done(skel)) return 0;
-  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || skel.replace(/\.skel$/, '.atlas');
+  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas');
   const urls = (done(atlas) ? [skel] : [skel, atlas, ...spinePages(entry)]).filter((u) => !(keep && keep.has(u)));
   let n = 0;
   // the loader keys its cache by the resolved URL: the manifest path itself, or that path made absolute
@@ -632,7 +638,7 @@ export function spinePages(entry) {
   const list = Array.isArray(entry.textures) ? entry.textures.filter((u) => str(u)) : [];
   if (list.length) return list;
   const skel = str(entry.skel);
-  return skel ? [skel.replace(/\.skel$/, '.png')] : [];
+  return skel ? [bareAssetUrl(skel).replace(/\.skel$/, '.png')] : [];
 }
 
 /**
@@ -653,7 +659,7 @@ export function unloadSpineData(entry, _value, keep) {
   const PIXI = globalThis.PIXI;
   const skel = entry && entry.skel;
   if (!skel || !PIXI?.Assets?.unload) return undefined;
-  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || skel.replace(/\.skel$/, '.atlas');
+  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas');
   const loader = PIXI.Assets.loader;
   const pending = [];
   const unload = (url, direct) => {

@@ -43,7 +43,7 @@ export const DEFAULT_LANG = SOURCE_LANG;
 /** The source language: built in, no pack, no catalog. */
 const SOURCE_META = Object.freeze({
   code: SOURCE_LANG, name: '中文', englishName: 'Chinese (Simplified)', authors: [], credits: '', version: '', app: '', // i18n-ignore: its own name
-  base: null, fallback: [], complete: true, numberUnits: ['万', '亿'], builtin: true, // i18n-ignore: the Chinese number units
+  base: null, fallback: [], complete: true, machineTranslated: false, numberUnits: ['万', '亿'], builtin: true, // i18n-ignore: the Chinese number units
 });
 
 /** @type {Map<string, LangMeta>} code → metadata: the source, the packs of the index, languages given messages */
@@ -109,7 +109,11 @@ export function getLangs() {
   return [registry.get(SOURCE_LANG), ...rest];
 }
 
-/** The metadata of a known language, or null. @param {string} [lang] */
+/**
+ * The metadata of a known language (its names, chain fields, `complete`, `machineTranslated` …: what registerLangs or its
+ * pack's `_meta` gave), or null.
+ * @param {string} [lang]
+ */
 export const langInfo = (lang = current) => registry.get(String(lang)) || null;
 
 /**

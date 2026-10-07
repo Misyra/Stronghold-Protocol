@@ -23,13 +23,14 @@
 //   englishName   its English name
 //   authors       a string or a list;  credits  free text;  license  an SPDX id or free text
 //   files         a folder pack: role → path inside the folder (type "lang": { "ui": "ui.json", "data": "data.json" })
-//   …             the type's own fields (type "lang": lang, base, fallback, complete, numberUnits — shared/i18nPacks.js)
+//   …             the type's own fields (type "lang": lang, base, fallback, complete, machineTranslated, numberUnits —
+//                 shared/i18nPacks.js; a machineTranslated that is not a boolean is warned about and reads as false)
 //
 // Index (GET /packs/index.json — the server's live list; `node tools/packs.mjs index` writes packs/index.json for a
 // static host): { version: 1, app: "<the server's app version>", packs: [entry …] } — the packs of supported types,
 // sorted by type then id. An entry: id, type, name, englishName, version?, app?, compatible, authors?, credits?,
 // license?, files (role → URL on this server) and the type's fields; a language entry: lang, base?, fallback,
-// complete?, numberUnits?, strings (how many translations its UI file holds).
+// complete?, machineTranslated?, numberUnits?, strings (how many translations its UI file holds).
 
 import { APP_VERSION } from './constants.js';
 import { SOURCE_LANG, canonicalLang, isLangCode, languageName, langFields } from './i18nPacks.js';
@@ -134,7 +135,8 @@ export function appVersionMatches(range, version = APP_VERSION) {
 /**
  * @typedef {{ id: string, type: string, name: string, englishName: string, version: string, app: string,
  *   compatible: boolean, authors: string[], credits: string, license: string, files: Record<string, string>,
- *   lang?: string, base?: string|null, fallback?: string[], complete?: boolean, numberUnits?: string[]|null }} PackManifest
+ *   lang?: string, base?: string|null, fallback?: string[], complete?: boolean, machineTranslated?: boolean,
+ *   numberUnits?: string[]|null }} PackManifest
  */
 
 /**
@@ -178,6 +180,9 @@ export function normalizeManifest(raw, ctx) {
     else {
       if (m.lang !== undefined && !isLangCode(m.lang) && !ctx.lang) warnings.push(`"lang": "${m.lang}" read as ${code}`);
       Object.assign(out, langFields(code, m));
+      // anything but true reads as false: say so when another value was meant
+      const mt = m.machineTranslated;
+      if (mt !== undefined && typeof mt !== 'boolean') warnings.push(`"machineTranslated": ${String(JSON.stringify(mt)).slice(0, 40)} is not true or false (read as false)`);
       out.name ||= languageName(code);
       out.englishName ||= languageName(code, 'en');
     }
@@ -220,6 +225,7 @@ export function packIndexEntry(manifest, extra) {
     if (manifest.base !== undefined) e.base = manifest.base;
     e.fallback = manifest.fallback || [];
     if (manifest.complete) e.complete = true;
+    if (manifest.machineTranslated) e.machineTranslated = true;
     if (manifest.numberUnits) e.numberUnits = manifest.numberUnits;
     e.strings = extra.strings ?? 0;
   }

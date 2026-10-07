@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import {
-  DEFAULT_LANG, normalizeLang, getLang, setLang, onLangChange, addMessages, setNameResolver, tName, format, translateWire, t,
+  DEFAULT_LANG, normalizeLang, getLang, setLang, onLangChange, addMessages, setNameResolver, tName, format, translateWire, t, N_,
   registerLangs, getLangs, langInfo, langChain, onLangsChange, setI18nWarn,
 } from '../../../shared/i18n.js';
 import { canonicalLang, computeChain, scriptOf } from '../../../shared/i18nPacks.js';
@@ -268,6 +268,19 @@ export function langMenuModel(langs, current) {
     on: m.code === current,
   }));
   return { kind: items.length > SEGMENTED_MAX ? 'select' : 'buttons', items };
+}
+
+/** The note itself (a msgid: each pack words it in its own language). */
+const MACHINE_TRANSLATION_NOTE = N_('当前语言的界面文字为机器翻译，可能不够准确，欢迎在 GitHub 上指正。');
+
+/**
+ * The note under the language switch in 设置 (ui/settings.js): while the current language's pack is marked as a machine
+ * translation (`_meta.machineTranslated`, docs/PACKS.md) it says so, in that language; null otherwise (Chinese, English,
+ * a pack translated by hand). Only the current pack counts, not its base or fallbacks.
+ * @returns {string | null}
+ */
+export function machineTranslationNote() {
+  return langInfo(getLang())?.machineTranslated === true ? t(MACHINE_TRANSLATION_NOTE) : null;
 }
 
 /**

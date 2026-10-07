@@ -1,6 +1,7 @@
 // Player settings (BGM/SFX/voice volume, mute, damage numbers, render quality, the shortcut keys): a tiny observable
 // store persisted in localStorage (`sp.pref.settings`), applied to the audio manager on every change, plus
-// the settings modal — which also holds the language switch (ui/lang.js; kept apart in `sp.pref.lang`) and the 快捷键
+// the settings modal — which also holds the language switch (ui/lang.js; kept apart in `sp.pref.lang`; under it a note
+// while the current language's pack is a machine translation, `_meta.machineTranslated`) and the 快捷键
 // section that rebinds the in-match shortcuts (the key map: ui/gameLogic/shortcuts.js; the community request
 // 「快捷键可不可以自己设置」, the owner's decision of 2026-10-07).
 
@@ -11,7 +12,7 @@ import { sanitizeSettings, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, hotkeyLabel, rebindH
 import { audio } from '../audio.js';
 import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
-import { LangToggle } from './lang.js';
+import { LangToggle, machineTranslationNote } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -151,6 +152,7 @@ export function SettingsModal({ open, onClose }) {
   const s = useSettings();
   const [tested, setTested] = useState(false);
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
+  const mtNote = machineTranslationNote(); // a pack marked as machine translation says so under the switch
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('设置')} micro="SETTINGS" width="7.4rem"
     actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>${t('玩法说明')}<//>
       <${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
@@ -159,6 +161,7 @@ export function SettingsModal({ open, onClose }) {
         <span class="set-row__label">${t('语言')}<${MicroLabel}>LANGUAGE<//></span>
         <${LangToggle} class="set-lang" />
       </div>
+      ${mtNote ? html`<p class="set-hint set-lang-note" data-testid="lang-mt-note">${mtNote}</p>` : null}
       <${Slider} label=${t('背景音乐')} micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
       <${Slider} label=${t('干员语音')} micro="VOICE" icon="mic" value=${s.voice} onInput=${(v) => updateSettings({ voice: v })} />
       <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}

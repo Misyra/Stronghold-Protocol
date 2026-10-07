@@ -101,12 +101,16 @@ MON_TIME_ZONE=Asia/Shanghai
 ```
 
 ```bash
-sudo useradd -r -s /usr/sbin/nologin stronghold-ops || true
-sudo mkdir -p /var/lib/stronghold-monitor && sudo chown stronghold-ops:stronghold-ops /var/lib/stronghold-monitor
-# 访问日志需要可读：给 stronghold-ops 组读权限或在 logrotate 里补一套
+sudo useradd -r -s /usr/sbin/nologin spmonitor || true
+sudo mkdir -p /var/lib/stronghold-monitor && sudo chown spmonitor:spmonitor /var/lib/stronghold-monitor
+# 访问日志需要可读：给 spmonitor 读取权限或在 logrotate 里补一套
 sudo systemctl enable --now sp-collector      # unit 模板见 deploy/stronghold-monitor.service.example
 curl -s http://127.0.0.1:3999/api/health      # → {"ok":true,...}
 ```
+
+访问日志使用 nginx 的 combined 格式。只授予 `spmonitor` 本站访问日志的读权限及父目录的遍历权限；不要授予私钥或日志写权限。若使用 ACL，可对该日志执行 `setfacl -m u:spmonitor:r-- <日志路径>`；同时在现有 logrotate 配置的 postrotate 中恢复该 ACL，或使用固定的只读日志组，确保轮转后仍可读。安装脚本会以 `spmonitor` 检查日志可读性；新探针把路径、权限、格式错误单独报告，访问统计显示“—”，游戏和系统采样继续。
+
+自定义 `MON_DATA_DIR` 使用独立持久目录（绝对路径，无空格；不使用 /tmp、/var/tmp）。安装脚本按现存 monitor.env 中的路径创建目录、设置属主并生成 ReadWritePaths；直接使用 unit 模板时需同步修改这一行。容量 `MON_CAPACITY` 按各站实际情况分别设定。
 
 注意：本机 nginx 日志路径须与 `MON_NGINX_LOG` 一致，且确认「面板与内部接口不计入统计」的路径过滤（`/api/admin/`、`/api/panel/`、`/healthz` 等）符合本站 vhost 实际路径。
 
@@ -165,7 +169,16 @@ SP_ANNOUNCEMENT_URL=https://<中间页域名>/api/announce/v1/<站id>
 
 验证：在 `/ops/` 发布一条公告，约 10 秒内该站「线上生效」列应从「无公告」变成公告标题。
 
-### 6. 探针的资源占用与限额
+### 6. 本次修复的升级与验证
+
+先更新 Web 服务器的 `lib/metrics.mjs` 和 `client/ops/` 并重启 sp-portal，让面板识别“访问日志状态 / 统计落盘状态”。各游戏服更新完整 ops/ 后重启 sp-collector、sp-admin，核对面板探针版本与本地 VERSION 一致。已有 unit 若使用自定义数据目录，应重新运行安装脚本（默认保留原有 env 与令牌），或修正 unit 的 ReadWritePaths 后 daemon-reload。
+
+- `/api/data` 的 diagnostics.nginx、diagnostics.storage 应为 ok；Agent overview 的 sections 同样报告它们。老探针缺失这些字段时显示“未知”。
+- `/api/health` 的 ready 表示存在近期采样，degraded 表示日志或落盘故障；ok 仅表示进程可达。
+- 日志读取按完整行的字节位点续读，默认每轮最多 10000 行 / 4 MiB，64 KiB 分段读取并在达到行数预算时停止。未处理的文本保留在日志文件中，不叠加 carried，也不会在落盘时再次回退位点。
+- 统计落盘失败会告警并保留待写状态，下一轮自动重试，不中断游戏和系统指标采样。
+
+### 7. 探针的资源占用与限额
 
 探针刻意做得很轻：collector 默认 15 秒采样一轮（`MON_INTERVAL_MS`），单轮本地工作只有几毫秒（读 /proc 若干小文件 + 增量解析日志 + 一次本地 healthz），常态 CPU 占用远低于 1% 单核。在此之上还有四层硬性保证，最坏情况也挤占不到游戏：
 

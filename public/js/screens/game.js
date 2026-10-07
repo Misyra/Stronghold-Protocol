@@ -576,7 +576,7 @@ function MatchScreen() {
     const prev = prevPhase.current;
     prevPhase.current = phase;
     if (prev === phase) return;
-    const b = phaseBanner(phase, pub);
+    const b = phaseBanner(phase, pub, { alive, spectator });
     if (b) setBanner({ ...b, key: phaseKey });
     if (phase === PHASE.ROUND_START) audio.sfx('roundStart');
     else if (phase === PHASE.PREP) audio.sfx('rest', { volume: 0.7 });

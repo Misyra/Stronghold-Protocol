@@ -40,12 +40,21 @@ export const isCombatPhase = (phase) => COMBAT_PHASES.has(phase);
 export const showDeadPill = (alive, phase) => !alive && !COMBAT_PHASES.has(phase) && phase !== PHASE.SETTLE;
 export const isBossPhase = (phase) => phase === PHASE.FINAL_ASSAULT || phase === PHASE.HIDDEN_CORE;
 
-/** Banner shown when a phase starts: { title, sub?, tone } or null. */
-export function phaseBanner(phase, pub) {
+/**
+ * Banner shown when a phase starts: { title, sub?, tone } or null.
+ * @param {string|null|undefined} phase
+ * @param {any} pub m.public
+ * @param {{ alive?: boolean, spectator?: boolean }} [viewer] the local viewer (screens/game.js): `alive` false for an
+ *   eliminated player, `spectator` for a spectator seat — it has no row in m.public, so `pub` cannot tell
+ */
+export function phaseBanner(phase, pub, { alive = true, spectator = false } = {}) {
   const r = int(pub?.round, 0);
   switch (phase) {
     case PHASE.BATTLE_CHECK: return { title: t('协议启动'), micro: 'PROTOCOL START', tone: 'mint', sub: t('模拟即将开始'), duration: 2600 };
-    case PHASE.ROUND_START: return { title: t('第 {r} 回合', { r }), micro: `ROUND ${String(r).padStart(2, '0')}`, tone: 'mint', sub: t('资金已到账') };
+    // round income goes to the seats still in only (server/match/match/phases.js startRound; eliminate() zeroes funds
+    // and pendingFunds): an eliminated player or a spectator seat reads 观战中, never 资金已到账 (GitHub #236, PR #237)
+    case PHASE.ROUND_START: return { title: t('第 {r} 回合', { r }), micro: `ROUND ${String(r).padStart(2, '0')}`, tone: 'mint',
+      sub: spectator || alive === false ? t('观战中') : t('资金已到账') };
     case PHASE.SP_DRAFT: return { title: t('机变阶段'), micro: 'CONTINGENCY', tone: 'gold', sub: t('依次选择机变') };
     case PHASE.PREP: return { title: t('休整期'), micro: `ROUND ${String(r).padStart(2, '0')} // REST`, tone: 'mint', sub: t('部署干员，准备迎敌') };
     case PHASE.COMBAT: return { title: t('作战开始'), micro: 'COMBAT', tone: 'orange', sub: t('各自行动阶段') };

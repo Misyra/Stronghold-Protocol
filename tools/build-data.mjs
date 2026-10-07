@@ -3467,7 +3467,13 @@ const DEFAULT_ENEMY_MULTIPLIERS = {
   abyssMoveSpeedMulFromRound3: 1.15,
 };
 
-/** Enemy stat multipliers {atk, hp, speed} of one round (research 01 A3; leader HP pools excluded). */
+/**
+ * Enemy stat multipliers {atk, hp, speed} of one round (research 01 A3; leader HP pools excluded). `supplyHp` (only
+ * when ≠ 1) = the share of `hp` that comes from 补给线 / 补给线II: the HP-only steps — 1.2^(kHp − kAtk), 补给线II "最大生命值
+ * +20%" with no ATK (攻坚装备 always brings ATK ×1.1, so kAtk counts its stacks) — times `extra` 1.08 (补给线). Those two
+ * effects leave out the 14 器物 hit-count keys (activity_table aceffect_enemy_2 / 2_2 `enemy_exclude`, data/effects.json),
+ * which take hp / supplyHp (server/sim/content/enemies/archetypes.js `times`).
+ */
 function enemyScaleFor(table, type, difficulty, round, isHidden) {
   const t = table?.[type === 'SINGLE' ? 'single' : 'multi']?.[difficulty];
   if (!t) return { atk: 1, hp: 1, speed: 1, assumed: true };
@@ -3477,8 +3483,10 @@ function enemyScaleFor(table, type, difficulty, round, isHidden) {
   const kHp = t.kHp ? pick(t.kHp, t.hiddenHp) : pick(t.k, t.hidden);
   const extra = t.hpExtra ? (isHidden ? t.hiddenHpExtra ?? 1 : t.hpExtra[Math.min(i, t.hpExtra.length - 1)] ?? 1) : 1;
   const speedMul = difficulty === 'ABYSS' && round >= 3 ? (table.abyssMoveSpeedMulFromRound3 ?? 1.15) : 1;
+  const supplyHp = cleanNum(1.2 ** Math.max(0, kHp - kAtk) * extra);
   return {
     atk: cleanNum(t.atkBase * 1.1 ** kAtk), hp: cleanNum(t.hpBase * 1.2 ** kHp * extra), speed: speedMul, kAtk, kHp,
+    ...(supplyHp !== 1 ? { supplyHp } : {}),
   };
 }
 

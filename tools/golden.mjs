@@ -68,7 +68,7 @@ import { DataSource } from '../server/sim/simdata.js';
 import { buildBattleSpec, createBattleFromSpec } from '../server/sim/spec.js';
 import { createRng, deriveSeed } from '../server/sim/rng.js';
 import { GameData } from '../server/match/gamedata.js';
-import { setupMatchWaves, buildNormalWave, buildBossWave, buildUniteWave, isFlyKey, routeByMotion } from '../server/match/waves.js';
+import { setupMatchWaves, buildNormalWave, buildBossWave, buildUniteWave, isFlyKey, routeByMotion, roundMods } from '../server/match/waves.js';
 import { uniteStageId } from '../server/match/unite.js';
 import { buildDeployMap, positionClass, canPlace, ownerRangeKeys, tileKey } from '../server/match/board.js';
 import { computeBonds, bondSnapshot } from '../server/match/bondsMeta.js';
@@ -407,7 +407,7 @@ function extraSpawns(gd, routes, keys, round, pid, t0 = 8, step = 5) {
     const fly = isFlyKey(gd, key);
     let routeIndex = routeByMotion(routes, fly);
     if (!(routeIndex >= 0)) routeIndex = 0;
-    const s = { time: t0 + i * step, enemyKey: key, routeIndex, count: 1, interval: 0, mods: { hpMul: scale.hpMul, atkMul: scale.atkMul, speedMul: scale.speedMul, slot: fly ? 'NF' : 'N' }, ownerPlayerId: pid };
+    const s = { time: t0 + i * step, enemyKey: key, routeIndex, count: 1, interval: 0, mods: { ...roundMods(scale), slot: fly ? 'NF' : 'N' }, ownerPlayerId: pid };
     if (i % 2 === 0) { s.tag = 'bounty'; s.bounty = { coins: 2, ownerPlayerId: pid }; s.mods.bountyCoins = 2; }
     return s;
   });
@@ -595,7 +595,7 @@ export function fieldScenarios() {
       scenarios.push({
         id: `${hidden ? 'hidden' : 'boss'}-${bossId}-${solo ? 'solo' : 'pair'}`, family: 'fields', kind: hidden ? 'hidden' : 'boss', modeId, round, stageId, seed,
         rect: { ...GEO.BOSS_RECT }, timeLimit: Infinity, routes: wave.routes, waveId: wave.templateId, enemyOverrides: wave.overrides,
-        flags: { layerGainsEnabled: false, ...gd.dp }, bossId, boss: { poolHp: pool, poolMax: pool }, fieldId: 'b1', cap: 200,
+        flags: { layerGainsEnabled: false, ...gd.dp, enemyScale: gd.enemyScale(round) }, bossId, boss: { poolHp: pool, poolMax: pool }, fieldId: 'b1', cap: 200,
         players, spawns: wave.spawns.map((s) => ({ ...s })),
         about: `${data.bosses[bossId].name} ${solo ? 'solo' : 'pair'} pool ${pool}: ${players.map((p) => placeName(p.units).join(' ')).join(' | ')}`,
       });

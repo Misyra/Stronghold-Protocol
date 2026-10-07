@@ -1,6 +1,6 @@
 // shared/diy.js — 自选编队: a 自选 (DIY) slot filled with an operator. Pure ESM shared by the simulation
 // (server/sim/simdata.js getChess(id, { diy })), the server and the client. Data: data/backups.json `units` / `tokens` /
-// `diy` (docs/DATA.md §18), composed with shared/standIn.js composeUnitRecord into a record shaped like a data/chess.json
+// `diy` (docs/development/DATA.md §18), composed with shared/standIn.js composeUnitRecord into a record shaped like a data/chess.json
 // record, so normalizeChess, resolveLoadout / loadoutRecord and the detail card read it unchanged.
 //
 // The rules (research 0.2.0 §2; PRTS 卫戍协议, 卫戍协议：盟约 下半/PRTS盟约记录; the owner's decisions of 2026-10-05):

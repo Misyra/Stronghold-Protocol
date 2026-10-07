@@ -12,7 +12,7 @@ http {
     }
 
     # ---- 版本化静态资源 /_v/<tag>/... 的共享缓存（2026-10-05 线上验证过的形态）----
-    # 坑位备忘（完整清单见 docs/DEPLOY.md「Nginx 运维备忘」）：
+    # 坑位备忘（完整清单见 docs/operations/DEPLOY.md「Nginx 运维备忘」）：
     #   * /_v/<tag>/ 是 Node 按启动时内容哈希解析的虚拟路径，磁盘上没有 public/_v：
     #     不能用 root/alias 直出，必须 proxy_pass 回 Node；
     #   * 只缓存 200/301/302：Node 对运行中被改动的版本资源返回不缓存的 503；

@@ -45,15 +45,21 @@ test('directory mode: shards are rewritten only when their body changes, the ind
   assert.equal(store.indexWrites, 1);
   assert.equal(await store.saveSharded({ index: index(2, clocks(4000)), shards: new Map([['ABCD', shardV1]]) }), true);
   assert.equal(store.shardWrites, 1, 'an unchanged shard is not rewritten');
-  assert.equal(store.indexWrites, 2, 'changed clocks are committed');
+  assert.equal(store.indexWrites, 1, 'changed clocks do not rewrite metadata');
+  assert.equal(store.runtimeWrites, 2, 'changed clocks are committed separately');
   assert.equal(await store.saveSharded({ index: index(3, clocks(3000)), shards: new Map([['ABCD', shardRound2]]) }), true);
   assert.equal(store.shardWrites, 2, 'a changed shard is rewritten');
   assert.equal(await store.saveSharded({ index: index(4, clocks(3000)), shards: new Map([['ABCD', shardRound2]]) }), true);
-  assert.equal(store.indexWrites, 3, 'a round that only re-stamps savedAt skips the index rewrite');
+  assert.equal(store.indexWrites, 1, 'checkpoints and heartbeat updates do not rewrite metadata');
+  assert.equal(store.runtimeWrites, 4, 'even an unchanged battle refreshes the heartbeat');
 
   const doc = await store.load();
   assert.equal(doc.matches.ABCD.round, 2, 'the newest body');
-  assert.equal(doc.matches.ABCD.deadlineRemainingMs, 3000, 'the index carries the freshest clocks');
+  assert.equal(doc.matches.ABCD.deadlineRemainingMs, 3000, 'runtime carries the freshest matching clocks');
+  assert.equal(doc.savedAt, 4, 'recovery sees the latest heartbeat, not the old index stamp');
+  const diskIndex = JSON.parse(await fs.readFile(path.join(stateDir, 'index.json'), 'utf8'));
+  assert.equal(diskIndex.savedAt, 1);
+  assert.equal('clocks' in diskIndex, false);
   assert.equal(doc.rooms[0].code, 'ABCD');
 });
 
@@ -221,9 +227,9 @@ test('a running match survives a restart through the sharded directory layout', 
     const funds = ps.funds;
     assert.ok(await srvA.persister.flush('test'), 'the sharded write landed');
     const shard = await fs.readFile(path.join(stateDir, 'matches', `${code}.json`), 'utf8');
-    assert.equal('deadlineRemainingMs' in JSON.parse(shard), false, 'the shard carries no clock');
-    const indexDoc = JSON.parse(await fs.readFile(path.join(stateDir, 'index.json'), 'utf8'));
-    assert.ok(Number.isFinite(indexDoc.clocks[code].deadlineRemainingMs), 'the clock envelope is on disk');
+    assert.equal('deadlineRemainingMs' in JSON.parse(shard).checkpoint, false, 'the checkpoint body carries no clock');
+    const runtimeDoc = JSON.parse(await fs.readFile(path.join(stateDir, 'runtime.json'), 'utf8'));
+    assert.ok(Number.isFinite(runtimeDoc.clocks[code].deadlineRemainingMs), 'the clock envelope is on disk');
     await c.close();
     await srvA.close();                                 // release the state lock before the second boot
 

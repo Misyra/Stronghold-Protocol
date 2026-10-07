@@ -219,8 +219,8 @@ test('#10: an operator standing on the boss (a free-capacity blocker in contact)
 });
 
 test('docs: SIM.md / DATA.md describe the hit areas and the block radius (user playtest #5)', () => {
-  const SIM = fs.readFileSync(new URL('../../docs/SIM.md', import.meta.url), 'utf8');
-  const DATA_MD = fs.readFileSync(new URL('../../docs/DATA.md', import.meta.url), 'utf8');
+  const SIM = fs.readFileSync(new URL('../../docs/development/SIM.md', import.meta.url), 'utf8');
+  const DATA_MD = fs.readFileSync(new URL('../../docs/development/DATA.md', import.meta.url), 'utf8');
   assert.match(SIM, /body\.js/);
   assert.match(SIM, /受击判定区域为长4\.95、宽2\.95的长方形，向上偏移1\.0/);
   assert.match(SIM, /BLOCK_RADIUS`: ground 0\.7071/);

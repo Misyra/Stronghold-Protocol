@@ -3,7 +3,7 @@
 // pick order, timers) lives in server/match/choices.js; this module owns what a picked card DOES.
 //
 // Prep side — registerMeta(registry) registers one `choice:<id>` handler per card id the draft can produce
-// (docs/META.md §2.6; the handler replaces the match's family default):
+// (docs/development/META.md §2.6; the handler replaces the match's family default):
 //   悬赏决策 (129 ENEMY_GAIN effects, data/effects.json): the effect's own bounty buff is read —
 //     add_enemy_kill_gain_coin {count, coin, round, enemy_id}          kill bounty: `count` enemies on the picker's
 //                                                                       next `round` battles (99 = all remaining); the

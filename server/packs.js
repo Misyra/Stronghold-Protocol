@@ -1,4 +1,4 @@
-// server/packs.js — this server's content packs (docs/PACKS.md; the format: shared/packs.js). Discovers
+// server/packs.js — this server's content packs (docs/guides/PACKS.md; the format: shared/packs.js). Discovers
 //
 //   * folder packs: packs/<id>/pack.json + the files its manifest names (any type);
 //   * single-file language packs: public/i18n/<code>.json (manifest: its `_meta`) + data/i18n/<code>.json when present;
@@ -11,7 +11,7 @@
 // load — no restart, no build step. A pack of a planned type, a broken manifest, a second pack with the same id or
 // language: reported (`skipped`: the start log, `node tools/packs.mjs list`), never served.
 //
-// Extension point (docs/PACKS.md "Adding a pack type"): a new type gets its PACK_TYPES entry (shared/packs.js) and a
+// Extension point (docs/guides/PACKS.md "Adding a pack type"): a new type gets its PACK_TYPES entry (shared/packs.js) and a
 // loader that reads `list(type)` — a client-side type through the index, a server-side one (type "data") once at start
 // (`live: false`: the simulation's data is fixed for the life of the process).
 

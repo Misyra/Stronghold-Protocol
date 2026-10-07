@@ -1,5 +1,5 @@
 // server/http/media.js — the extension-less audio route /media/… → public/assets/audio (see serveMedia).
-// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/I18N.md)
+// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/development/I18N.md)
 
 import fsp from 'node:fs/promises';
 import path from 'node:path';

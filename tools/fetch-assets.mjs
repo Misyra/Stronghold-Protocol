@@ -3,7 +3,7 @@
 // needs, from community dumps of the official client (research 07):
 //   public/assets/**   images, Spine models, audio   (git-ignored)
 //   public/fonts/**    Bender / Novecento (.otf/.ttf + .woff2) and fonts.css
-//   data/assets.json   manifest used by the client (schema: docs/ASSETS.md)
+//   data/assets.json   manifest used by the client (schema: docs/development/ASSETS.md)
 //
 // Enemy models no dump carries get another enemy's model (ASSETS.md "Enemy
 // aliases"); the official ones the local client has (tools/local-extract/
@@ -76,12 +76,12 @@ const LOCAL_SPINE_KINDS = {
   enemy: {
     file: LOCAL_ENEMY_SPINES_FILE, dir: LOCAL_ENEMY_SPINE_DIR, find: findLocalEnemyModels, what: 'enemy',
     about: 'Spine metadata of the enemy models only the local client has (tools/local-extract/extract.py ENEMY_SPINES); '
-      + 'data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md "Enemy aliases").',
+      + 'data/assets.json enemies[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/development/ASSETS.md "Enemy aliases").',
   },
   token: {
     file: LOCAL_TOKEN_SPINES_FILE, dir: LOCAL_TOKEN_SPINE_DIR, find: findLocalTokenModels, what: 'token',
     about: 'Spine metadata of the token (summon) models only the local client has (tools/local-extract/extract.py TOKEN_SPINES); '
-      + 'data/assets.json tokens[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/ASSETS.md "Token models from the local client").',
+      + 'data/assets.json tokens[id].spineLocal. Written by node tools/fetch-assets.mjs --local-spines (docs/development/ASSETS.md "Token models from the local client").',
   },
 };
 

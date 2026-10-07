@@ -1,4 +1,4 @@
-// Language switch of the client (docs/I18N.md): lists the language packs — the "lang" entries of the pack index
+// Language switch of the client (docs/development/I18N.md): lists the language packs — the "lang" entries of the pack index
 // /packs/index.json (shared/packs.js; the server's registry, server/packs.js, scans the language folders and the pack
 // folders; a static host serves the file `node tools/packs.mjs index` writes) — picks the language at boot, loads the UI
 // strings of the chosen pack and of its fallback chain (shared/i18n.js; the URLs the index gives: /i18n/<code>.json or
@@ -275,7 +275,7 @@ const MACHINE_TRANSLATION_NOTE = N_('当前语言的界面文字为机器翻译�
 
 /**
  * The note under the language switch in 设置 (ui/settings.js): while the current language's pack is marked as a machine
- * translation (`_meta.machineTranslated`, docs/PACKS.md) it says so, in that language; null otherwise (Chinese, English,
+ * translation (`_meta.machineTranslated`, docs/guides/PACKS.md) it says so, in that language; null otherwise (Chinese, English,
  * a pack translated by hand). Only the current pack counts, not its base or fallbacks.
  * @returns {string | null}
  */

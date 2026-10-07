@@ -25,4 +25,4 @@ A language can also be one file, `public/i18n/<code>.json`, with the same fields
 English ships. Types `assets` (art, audio, fonts) and `data` (data patches) are planned; this version lists such a pack
 as not supported and does not load it.
 
-The format, the rules and how later types plug in: [docs/PACKS.md](../docs/PACKS.md). Translating: [docs/I18N.md](../docs/I18N.md).
+The format, the rules and how later types plug in: [docs/guides/PACKS.md](../docs/guides/PACKS.md). Translating: [docs/development/I18N.md](../docs/development/I18N.md).

@@ -107,7 +107,7 @@
   --bk-w: 2px;
 }
 
-/* Language packs (docs/I18N.md): the same characters take their own glyph forms per language — Japanese kanji,
+/* Language packs (docs/development/I18N.md): the same characters take their own glyph forms per language — Japanese kanji,
    Traditional Chinese, a Korean face for Hangul (each stack falls back to the Simplified Chinese faces). */
 :root:lang(ja) { --cjk-faces: 'Noto Sans JP', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans SC', 'Microsoft YaHei'; }
 :root:lang(ko) { --cjk-faces: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans CJK KR', 'Noto Sans SC', 'Microsoft YaHei'; }

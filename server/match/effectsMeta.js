@@ -1,5 +1,5 @@
 // server/match/effectsMeta.js — registry + dispatcher of prep-phase ("SERVER_*") effects (DESIGN §6.4).
-// Full API reference with examples: docs/META.md.
+// Full API reference with examples: docs/development/META.md.
 //
 // Registry keys (one handler object per key; a later register() of the same key replaces the earlier one, so content
 // registered by server/sim/content/*.js → registerMeta(registry) overrides the engine's built-in defaults):
@@ -393,7 +393,7 @@ function stillEquipped(ps, holder, it) {
 }
 
 // =====================================================================================================
-// handler context — the ONLY way content mutates player state (see docs/META.md)
+// handler context — the ONLY way content mutates player state (see docs/development/META.md)
 
 const finiteInt = (n) => (Number.isFinite(n) ? Math.trunc(n) : 0);
 

@@ -1,5 +1,5 @@
 // server/http/static.js — the static file server (routes.js hands it every GET / HEAD that is not an API route):
-// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/I18N.md)
+// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/development/I18N.md)
 //
 //     /        → public/      (index.html for directories)
 //     /data/   → data/        (generated game data)

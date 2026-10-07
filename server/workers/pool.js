@@ -1,4 +1,4 @@
-// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later); see docs/PERFORMANCE.md.
+// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later); see docs/development/PERFORMANCE.md.
 // One process-wide pool for CPU work. Each thread loads game data once; tasks carry only battle inputs.
 import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';

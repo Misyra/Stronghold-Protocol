@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/balance.mjs — difficulty MEASUREMENT: how a COMPETENT player's board fares against the official waves of every
-// round (docs/BALANCE.md has the method, the curves' sources and the tables). Since research 08 the game uses the
+// round (docs/development/BALANCE.md has the method, the curves' sources and the tables). Since research 08 the game uses the
 // official numbers only (waves, counts, stat table, leader pool); this tool reports, it no longer tunes anything.
 //
 // For every mode (solo / multi) × difficulty × round r it builds representative boards for round r, samples many
@@ -34,7 +34,7 @@
 //   --profile         curve multiplier for elites, items and layers (weak 0.6, competent 1, strong 1.4, or a number;
 //                     a bond's layers stop at BOND_LAYER_CAP, 999)
 //   --tuning off      ignore data/tuning.json (it only holds title rules now: no effect on the numbers)
-//   --legacy-time     read the combat limits as game seconds (the reading before the fix of docs/BALANCE.md §2.1)
+//   --legacy-time     read the combat limits as game seconds (the reading before the fix of docs/development/BALANCE.md §2.1)
 //   --boss-lp N       team LP per alive player entering the Final Assault (default 15)
 //   --bots N          also run N bot matches per mode × difficulty (tools/matchrun.mjs logic, 4 AI in multi, the
 //                     match's default bot rehearsal) and print rounds survived / wins
@@ -61,7 +61,7 @@ import { TICK } from '../server/sim/constants.js';
 export const DIFFS = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
 export const DIFF_NAMES = { FUNNY: '标准', NORMAL: '险境', HARD: '绝境', ABYSS: '终极' };
 
-// ---- the competent-player model (index = round; see the header and docs/BALANCE.md §1.1) --------------------------
+// ---- the competent-player model (index = round; see the header and docs/development/BALANCE.md §1.1) --------------------------
 export const CURVES = Object.freeze({
   //            R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15
   level:       [1, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 6, 6],
@@ -584,7 +584,7 @@ async function main() {
   const full = getData({ log: QUIET_LOG });
   ENEMY_NAME = (k) => (full.enemies && full.enemies[k] ? full.enemies[k].name : k);
   let data = opt.tuning === 'off' ? withoutTuning(full) : full;
-  // --legacy-time: combat limits read as game seconds (the pre-fix reading, docs/BALANCE.md §2.1)
+  // --legacy-time: combat limits read as game seconds (the pre-fix reading, docs/development/BALANCE.md §2.1)
   if (opt['legacy-time']) data = Object.freeze({ ...data, config: { ...data.config, combatTimeScale: 1 } });
   const modes = opt.mode === 'all' ? ['solo', 'multi'] : [opt.mode === 'solo' ? 'solo' : 'multi'];
   const dArg = String(opt.difficulty || 'NORMAL').toUpperCase();

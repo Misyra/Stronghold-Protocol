@@ -1,6 +1,6 @@
 // Localized game data: the overlay format (shared/i18nData.js), its build (tools/build-i18n.mjs → data/i18n/en.json:
 // shape, freshness against data/*.json, coverage, rich text) and the client accessors (public/js/data.js setLocale).
-// docs/I18N.md.
+// docs/development/I18N.md.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -111,7 +111,7 @@ test('data/i18n/en.json: shape, the 盟约 season of the EN build, coverage and 
 });
 
 test('data/i18n/en.json matches the current data/*.json: every leaf replaces a Chinese string that still hashes the same', () => {
-  // A failure here means data/*.json was rebuilt after the overlay: run `node tools/build-i18n.mjs` (docs/I18N.md).
+  // A failure here means data/*.json was rebuilt after the overlay: run `node tools/build-i18n.mjs` (docs/development/I18N.md).
   for (const [file, fov] of Object.entries(OVERLAY.files)) {
     const data = readJson(`data/${file}.json`);
     let leaves = 0;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 卫戍协议：盟约 · macOS / Linux start script. Docs: docs/DEPLOY.md
+# 卫戍协议：盟约 · macOS / Linux start script. Docs: docs/operations/DEPLOY.md
 #   scripts/start.sh [--port 3001] [--no-open] [--no-local] [--no-assets] …   (arguments go to scripts/launch.mjs)
 # Checks Node.js ≥ 22, runs `npm ci` on the first run, then scripts/launch.mjs (tools/setup.mjs → server → browser).
 set -euo pipefail

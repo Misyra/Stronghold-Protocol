@@ -1,5 +1,5 @@
 // test/content/playtest5_followups.test.js — user playtest #5, cross-workstream follow-ups of the integration
-// (docs/DESIGN.md §19): the element pipeline rules the workstreams left to the integrator, 塑心 S2's timing and
+// (docs/development/DESIGN.md §19): the element pipeline rules the workstreams left to the integrator, 塑心 S2's timing and
 // 纯烬艾雅法拉's per-source 氤氲.
 //   * damage.js applyElement refuses a target with no HP left (hasHp — one shared helper): a rider in a `damaged` hook
 //     of a killing blow cannot burst the corpse, whatever content adds it.

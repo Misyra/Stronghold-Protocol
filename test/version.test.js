@@ -60,7 +60,7 @@ test('the English title is the official one: Stronghold Protocol: Alliance (as i
   assert.equal(pkg.name, 'stronghold-protocol-alliance');
   assert.equal(lock.name, pkg.name);
   assert.equal(lock.packages[''].name, pkg.name);
-  for (const f of ['README.md', 'server/index.js', 'server/http/boot.js', 'package.json', 'package-lock.json', 'NOTICE.md', 'public/index.html', 'docs/DEPLOY.md']) {
+  for (const f of ['README.md', 'server/index.js', 'server/http/boot.js', 'package.json', 'package-lock.json', 'NOTICE.md', 'public/index.html', 'docs/operations/DEPLOY.md']) {
     assert.ok(!/covenant/i.test(read(f)), `${f}: no "Covenant" title left`);
   }
 });

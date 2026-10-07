@@ -1,4 +1,4 @@
-// server/sim/content/garrisons/meta.js — prep-side ("SERVER_*") 特质 (docs/META.md §2.3).
+// server/sim/content/garrisons/meta.js — prep-side ("SERVER_*") 特质 (docs/development/META.md §2.3).
 //
 // One registry handler per effectKey (`garrison:<effectKey>`); the dispatcher calls it on the garrison's eventType hook
 // with ctx.source = { piece, garrisonId, garrison, bb, bbStr, where }. Numbers come from the garrison's own bb / bbStr

@@ -5,7 +5,7 @@
 // Forms (data/backups.json units.char_4229_aphris, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
 // elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
 // Summon: tokens.token_10070_aphris_pc “中继器” (talent 链路协议; a hand piece the player places with a facing — data
-// `placeable`, a talent summon: it deploys with the board, docs/SIM.md §1.1 token pieces).
+// `placeable`, a talent summon: it deploys with the board, docs/development/SIM.md §1.1 token pieces).
 // Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json); PRTS 谬因 (链路协议 备注:
 // her range "以自己所在格为起点向部署方向延伸，直至达到延伸距离上限" — 5 tiles from E1 —, "若延伸到了自身的中继器所在的地块，会令延伸
 // 距离上限增加（并非增加谬因的攻击距离属性）并改变接下来的延伸方向", "尝试延伸到已延伸到的地块或地图边界外时延伸会提前终止", "索敌与攻击

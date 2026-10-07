@@ -3,7 +3,7 @@
 // Arts kept rather than destroyed (never on a human's seat under AI 托管), a tactician's 援军 inside its attack range,
 // pairs completed through the shop freeze, 坎诺特's banked funds, a teammate's bond read from its bond strip, and a
 // cost guard on the prep heuristics. The outcome numbers (old vs new bot on the same seeds) are measured with
-// tools/botbench.mjs (docs/META.md §1.5).
+// tools/botbench.mjs (docs/development/META.md §1.5).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';

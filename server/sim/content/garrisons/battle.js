@@ -1,7 +1,7 @@
 // server/sim/content/garrisons/battle.js — IN_BATTLE 特质 (garrisons) of the operators on the field.
 //
 // Each operator carries `unit.def.raw.garrisonIds` (elite chess carry the `_b` garrisons); the IN_BATTLE ones are
-// dispatched here by their effectKey (bbStr.key for battle runes, else effectType — docs/DATA.md §4):
+// dispatched here by their effectKey (bbStr.key for battle runes, else effectType — docs/development/DATA.md §4):
 //
 //   ADD_BOND            grants `give_garrison_id` to other operators before the first deployment (targets parsed from
 //                       the text: 身前一格 / 身前一格【X】/ 自身和身前一格 / 同一行最右边 / 所有【X】). A unit owns a garrison id

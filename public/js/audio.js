@@ -1,6 +1,6 @@
 // Audio manager (Web Audio): BGM per phase, UI SFX, per-unit battle SFX, operator battle voice. Never throws.
 //
-// Sources: data/assets.json → audio (docs/ASSETS.md):
+// Sources: data/assets.json → audio (docs/development/ASSETS.md):
 //   bgm { lobby, prep, combat, combatAlts?: [ {intro?, loop}, … ], boss: { intro?, loop } },
 //   bossBgm { [bossId]: { intro?, loop } },
 //   voice { [charId]: { start, faceEnemy, select, place, skill1…skill4, squad, squadFirst, result*, gacha } },
@@ -135,7 +135,7 @@ export function resolveBgm(manifest, key) {
 
 /**
  * The last round that plays 无畏者 (1–7); from the next round on it is 骑士之日 (8–13) — the official schedule
- * (docs/ASSETS.md "BGM"; the two tracks are the 塞壬唱片 act13side battle themes).
+ * (docs/development/ASSETS.md "BGM"; the two tracks are the 塞壬唱片 act13side battle themes).
  */
 export const COMBAT_TRACK_SWITCH_ROUND = 7;
 

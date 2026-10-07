@@ -1,4 +1,4 @@
-// test/resources/manifest.test.js — /data/resource-manifest.json (server/resources.js, docs/ASSETS.md「Preload」): the
+// test/resources/manifest.test.js — /data/resource-manifest.json (server/resources.js, docs/development/ASSETS.md「Preload」): the
 // file list the client may preload, its two tiers, the sizes of the files this install has, the CDN rewrite and the
 // HTTP shape (no-cache + ETag/304 + gzip + HEAD).
 
@@ -25,7 +25,7 @@ const rewriteAssetPaths = (v, base) => {
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The shapes of data/assets.json the preload reads (docs/ASSETS.md). */
+/** The shapes of data/assets.json the preload reads (docs/development/ASSETS.md). */
 function manifest(over = {}) {
   return {
     version: 1,

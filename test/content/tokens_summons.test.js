@@ -1,4 +1,4 @@
-// Summon regressions from user playtest #2 (docs/DESIGN.md §14/§15; content/tokens.js, kits tier3 琳琅诗怀雅 / tier6
+// Summon regressions from user playtest #2 (docs/development/DESIGN.md §14/§15; content/tokens.js, kits tier3 琳琅诗怀雅 / tier6
 // 缪尔赛思, public/js/audio.js):
 //   #4 琳琅诗怀雅's 香槟炸弹 is a summon, not an operator: using it up is no knock-out (no operator-knocked-down sound,
 //      no death count, no "干员被击倒" effect); clients hear its explosion.

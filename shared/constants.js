@@ -74,7 +74,7 @@ export const PIECE_KIND = Object.freeze({ CHESS: 'chess', ITEM: 'item', TOKEN: '
  * playtest #4 reading ("是赫默开技能释放一次，不是开局直接就部署了"): it takes its tile only when the owner's skill gives one.
  * Either way the piece re-appears on its tile each time the owner's skill gives one.
  * One switch for everything that depends on it: the sim (server/sim/content/tokens.js dockSkillSummons) and the summon
- * card's hint (public/js/ui/detailPanel.js summonDeployHint). docs/PLAYING.md §4 and docs/SIM.md (token pieces) state
+ * card's hint (public/js/ui/detailPanel.js summonDeployHint). docs/guides/PLAYING.md §4 and docs/development/SIM.md (token pieces) state
  * the rule in prose — test/ui/playtest6_summons.test.js fails until they match the value.
  */
 export const SKILL_SUMMON_START_DEPLOY = true;

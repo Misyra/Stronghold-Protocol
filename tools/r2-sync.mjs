@@ -10,7 +10,7 @@
  * every path + hash, so it only changes when art actually changes. Servers commit the
  * manifest with the release and hand it to clients (server/index.js), which turn it into a
  * per-file `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts
- * only the files it changed (see docs/CDN.md §6).
+ * only the files it changed (see docs/operations/CDN.md §6).
  *
  * The manifest IS the resume state: an interrupted run left it untouched, so the next run
  * simply re-diffs against it and re-uploads what is still missing.

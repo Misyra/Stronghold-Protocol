@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/record-battle.mjs — run real battles headlessly with the simulation engine (server/sim, docs/SIM.md) and
+// tools/record-battle.mjs — run real battles headlessly with the simulation engine (server/sim, docs/development/SIM.md) and
 // record exactly what a watching client receives, for the render demo (public/dev/render-demo.html):
 //
 //   { version: 1, name, title, kind, stageId, modeId, round, tick: 1/30, snapEvery: 3, duration,

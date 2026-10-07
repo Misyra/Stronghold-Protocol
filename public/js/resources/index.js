@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// public/js/resources/index.js — the page side of the optional asset preload (docs/ASSETS.md「Preload」).
+// public/js/resources/index.js — the page side of the optional asset preload (docs/development/ASSETS.md「Preload」).
 //
 // Off by default (设置 ▸ 预载资源). When the player turns it on, this module fetches /data/resource-manifest.json,
 // registers the Service Worker (public/resource-sw.js, so the cached files are also served with no network) and fills

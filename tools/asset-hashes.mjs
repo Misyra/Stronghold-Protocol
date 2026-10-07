@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// tools/asset-hashes.mjs — per-file content hashes of the fetched assets (docs/ASSETS.md「Preload」).
+// tools/asset-hashes.mjs — per-file content hashes of the fetched assets (docs/development/ASSETS.md「Preload」).
 //
 // Why this file exists: the optional asset preload stores a file until its *content* changes. The client cannot ask
 // Cache Storage "did the bytes at this URL change?", so the server hands it a hash per file and it re-downloads only

@@ -1,7 +1,7 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
 // test/match/snapshot.test.js — match checkpoints (server/match/snapshot.js): a checkpoint restores the match
 // losslessly, and a restored match keeps playing *identically* to the one it replaced (same RNG positions, same pool,
-// same boards) — the guarantee the Redis recovery of docs/DEPLOY.md stands on.
+// same boards) — the guarantee the Redis recovery of docs/operations/DEPLOY.md stands on.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

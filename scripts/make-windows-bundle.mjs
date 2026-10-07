@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/make-windows-bundle.mjs — 打一份「开箱即用」的 Windows 便携包（docs/WINDOWS.md）。
+// scripts/make-windows-bundle.mjs — 打一份「开箱即用」的 Windows 便携包（docs/operations/WINDOWS.md）。
 //
 //   node scripts/make-windows-bundle.mjs [--out <dir>] [--no-node] [--force]
 //

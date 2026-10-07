@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// public/resource-sw.js — the optional asset-preload Service Worker (docs/ASSETS.md「Preload」).
+// public/resource-sw.js — the optional asset-preload Service Worker (docs/development/ASSETS.md「Preload」).
 //
 // Registered with `type: 'module'` by public/js/resources/index.js when the player turns the preload on (设置 ▸ 预载资源)
 // and unregistered when its retained cache is cleared. Its scope is "/", but it only ever touches GET requests for the resource trees

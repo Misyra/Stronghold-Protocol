@@ -3,7 +3,7 @@
 //
 // GitHub URLs support a prefix proxy and a jsDelivr fallback. jsDelivr does
 // not serve the voice branch, but the prefix proxy can still be tried there.
-// See docs/ASSETS.md for the full source list and credits.
+// See docs/development/ASSETS.md for the full source list and credits.
 
 export const DEFAULT_GITHUB_PROXY = 'https://gh-proxy.com/';
 

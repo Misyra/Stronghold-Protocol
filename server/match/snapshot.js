@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
-// server/match/snapshot.js — running-match checkpoints (docs/PERSISTENCE.md).
+// server/match/snapshot.js — running-match checkpoints (docs/operations/PERSISTENCE.md).
 //
 // WHY A CHECKPOINT AND NOT A REPLAY: the match engine is deterministic in virtual time (tests run whole matches on a
 // VirtualScheduler), but a *live* match is not: bot rehearsals and server-run fields are sliced by wall-clock budgets

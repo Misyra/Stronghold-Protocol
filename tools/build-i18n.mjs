@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/build-i18n.mjs — LOCALIZED GAME DATA: data/i18n/en.json from the official EN client data (and, with --lang, the
-// game texts of a language pack from another official client: ja, ko, zh-TW — docs/I18N.md "Adding a language").
+// game texts of a language pack from another official client: ja, ko, zh-TW — docs/development/I18N.md "Adding a language").
 //
 // The game texts of data/*.json (operators, skills, talents, modules, traits, enemies, bonds, items, effects, bands,
 // 特质, 机变 cards, modes, stages, tokens …) are the official zh_CN texts (tools/build-data.mjs). This tool writes their
@@ -236,7 +236,7 @@ function parseArgs(argv) {
   if (opts.refresh && opts.offline) throw new Error(`--refresh and --offline are mutually exclusive\n${USAGE}`);
   const lang = LANG_SOURCES[opts.lang];
   if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(opts.lang) || opts.lang === 'zh') throw new Error(`--lang ${opts.lang}: a language code (en, ja, zh-TW …; not zh, the source)`);
-  if (!lang && !opts.dict) throw new Error(`--lang ${opts.lang} has no official client here (${Object.keys(LANG_SOURCES).join(', ')}): give its game texts with --dict <file.json> (docs/I18N.md §2)`);
+  if (!lang && !opts.dict) throw new Error(`--lang ${opts.lang} has no official client here (${Object.keys(LANG_SOURCES).join(', ')}): give its game texts with --dict <file.json> (docs/development/I18N.md §2)`);
   if (lang && !lang.sources[opts.source]) throw new Error(`--source for ${opts.lang} must be one of ${Object.keys(lang.sources).join(', ')}`);
   if (!opts.cacheEn && lang) opts.cacheEn = join(ROOT, lang.sources[opts.source].cache);
   if (!opts.out) opts.out = join(ROOT, 'data', 'i18n', `${opts.lang}.json`);

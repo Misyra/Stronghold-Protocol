@@ -107,10 +107,10 @@ for (const clientCombat of [true, false]) {
   });
 }
 
-test('the docs describe the rule (docs/META.md §4, docs/SIM.md §1.1 / §9, docs/PLAYING.md §5)', async () => {
+test('the docs describe the rule (docs/development/META.md §4, docs/development/SIM.md §1.1 / §9, docs/guides/PLAYING.md §5)', async () => {
   const { readFileSync } = await import('node:fs');
   const read = (f) => readFileSync(new URL(`../../docs/${f}`, import.meta.url), 'utf8');
-  const META = read('META.md'), SIM = read('SIM.md'), PLAYING = read('PLAYING.md');
+  const META = read('development/META.md'), SIM = read('development/SIM.md'), PLAYING = read('guides/PLAYING.md');
   assert.match(META, /knocked out at the end of the helper's own\s+combat carries `\{ down: true \}`/);
   assert.ok(!/stays out of the 联防 battle/.test(META), 'META: the old "stays out" rule is gone');
   assert.ok(!/do not take part in the 联防 battle/.test(META), 'META §7: the old assumption is gone');

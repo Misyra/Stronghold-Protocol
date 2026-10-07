@@ -19,7 +19,7 @@
 //   while on the field (the module's buff atk_scale_by_distance: ON_OUTPUT_DAMAGE, no damage mask) — her attacks, the 灼地
 //   ticks and the 炎爆 灼伤 (PRTS: "于伊芙利特在场时受模组基础效果影响"). Stage 3 also changes T2 (below).
 // - Module BLA-D “热成形记忆” (trait ep_damage_ratio 0.08): "造成法术伤害时附带相当于8%伤害的灼燃损伤" (ifrit_e_003_tr: ON_AFTER_
-//   OUTPUT_DAMAGE, every MAGICAL damage of hers) — 8 % of the HP damage dealt as 灼燃损伤 (`type: 'element'`, docs/SIM.md §7.2
+//   OUTPUT_DAMAGE, every MAGICAL damage of hers) — 8 % of the HP damage dealt as 灼燃损伤 (`type: 'element'`, docs/development/SIM.md §7.2
 //   element conventions), the 灼伤 too while she stands. Stage 3 also changes T1 (below).
 // - T1 精神融解 "攻击范围内的敌军法术抗性-40%" (magic_resistance −0.4: a ratio; charpack ifrit_t_1, removed when the enemy leaves):
 //   RES ×0.6 on every enemy on her range, refreshed every AURA_IV s; several 伊芙利特 keep one (applyStrongest — the mode's

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/packs.mjs — the content packs of a checkout (docs/PACKS.md; server/packs.js is the registry the server runs,
+// tools/packs.mjs — the content packs of a checkout (docs/guides/PACKS.md; server/packs.js is the registry the server runs,
 // shared/packs.js the format):
 //
 //   node tools/packs.mjs list [--json]          the packs by type (folder packs in packs/, the language packs of
@@ -10,7 +10,7 @@
 //   node tools/packs.mjs check [--strict]       list, and exit 1 with --strict when a pack is skipped or warned about
 //   --root <dir>   another checkout or an unpacked release (default: this checkout)
 //
-// The strings of a language pack are checked by node tools/i18n.mjs check <code> (docs/I18N.md).
+// The strings of a language pack are checked by node tools/i18n.mjs check <code> (docs/development/I18N.md).
 
 import fs from 'node:fs';
 import path from 'node:path';

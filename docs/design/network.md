@@ -1,6 +1,6 @@
 # DESIGN §8, §14 — The network protocol and client-side combat
 
-Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
+Part of [DESIGN.md](../development/DESIGN.md) (the index; section numbers are global).
 
 ## 8. Network protocol (shared/protocol.js is normative)
 

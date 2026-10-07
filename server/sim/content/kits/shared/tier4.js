@@ -1,6 +1,6 @@
 // server/sim/content/kits/shared/tier4.js — helpers and notes of the hand-authored kits for every tier-4 chess (26: 22
 // visible + 4 hidden; formerly tier4.js — the kits live one per file in ../ops/).
-// export default { [baseChessId]: (bb, chess, def) => Kit }  (docs/SIM.md §7.2). The same kit serves the elite
+// export default { [baseChessId]: (bb, chess, def) => Kit }  (docs/development/SIM.md §7.2). The same kit serves the elite
 // (精锐 `_b`) id: `bb` is the Lv4 / Lv7 skill blackboard, talent/trait blackboards come from `def` (module talent and
 // trait upgrades of elites are already merged into the data), `def.raw.module.active` tells whether the module runs.
 // Every number comes from a blackboard (skill `bb`, `def.talents[i].bb`, `def.traitBb`, token data); literals below

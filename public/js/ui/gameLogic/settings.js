@@ -8,14 +8,14 @@ import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
 
 /** keys: the in-match shortcuts' key map (ui/gameLogic/shortcuts.js; settings → 快捷键).
  *  preload: this fork's offline resource preload (docs/development/ASSETS.md「Preload」, 设置 ▸ 离线资源). */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false, damageNumbers: true, quality: 'high', preload: false, keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false, damageNumbers: true, quality: 'high', preload: false, preloadOptional: false, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 
 /**
  * Sanitize persisted settings.
  * @param {any} raw
  * @returns {{ bgm: number, sfx: number, voice: number, muted: boolean, damageNumbers: boolean, quality: 'high'|'medium'|'low',
- *   preload: boolean, keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
+ *   preload: boolean, preloadOptional: boolean, keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
  */
 export function sanitizeSettings(raw) {
   const r = isObj(raw) ? raw : {};
@@ -28,6 +28,7 @@ export function sanitizeSettings(raw) {
     damageNumbers: typeof r.damageNumbers === 'boolean' ? r.damageNumbers : DEFAULT_SETTINGS.damageNumbers,
     quality: QUALITIES.includes(r.quality) ? r.quality : DEFAULT_SETTINGS.quality,
     preload: r.preload === true,
+    preloadOptional: r.preloadOptional === true,
     keys: sanitizeHotkeys(r.keys),
   };
 }

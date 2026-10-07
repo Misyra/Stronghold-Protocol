@@ -386,6 +386,27 @@ Other renderer rules from research 07 §5.4–5.5:
 - **Missing unit SFX:** use `audio.sfx.battle.enemyHit` or a WebAudio blip (research 07 §6.4).
 - **Bond icons:** if the real glyph ever fails, the stored file is the nation camp logo.
 
+## Preload
+
+The title screen and settings open one resource manager. Preloading is off by default; enabling it downloads required
+visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
+effects, music and tutorial illustrations. The choice persists in `preloadOptional`; old profiles default to false.
+Closing the manager keeps downloads running; pausing or disabling preload keeps verified files. Cache clearing waits
+for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
+
+The manager displays per-category counts and sizes and supports ZIP export/import. Export includes only cached files,
+with actual SHA-1 and SHA-256 digests. Import validates every ZIP entry before changing the live cache, then installs
+only files matching the current server manifest by canonical asset path, content hash and known size. This allows
+unchanged files from older packages or different CDN origins to be reused; missing files download incrementally.
+Synthetic server fingerprints cannot authorize ZIP imports. Both archive and decompressed totals are capped at 2 GiB;
+one resource is capped at 24 MiB. Cancelled imports keep completed verified files; malformed packages leave the live
+resources intact. ZIP code is loaded on demand from the locally vendored zip.js library, without ZIP Web Workers.
+
+The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
+`234dc52b` and subsequent resource updates). This fork retains streaming download limits, strict content verification,
+versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.
+See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
+
 ## Verification
 
 `node --test test/assets.test.js` covers the pure helpers: the resolver, the atlas normalizer, the format sniffers, WOFF2, audio banks, the plan id sets, the downloader against a fake network, and the self-heal of corrupt skeletons.

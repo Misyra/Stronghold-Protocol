@@ -7,7 +7,7 @@ import path from 'node:path';
 import { startServer } from '../../server/index.js';
 import { Client, hasChrome, sleep } from '../e2e/client.mjs';
 
-test('in-match announcement: hot edits, dismissal across reload, plain text, expiration and withdrawal', {
+test('server announcement: shown from the title screen, hot edits, dismissal across reload, plain text, expiration and withdrawal', {
   skip: process.env.SP_E2E !== '1' || !hasChrome(), timeout: 90_000,
 }, async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'sp-announcement-browser-'));
@@ -22,7 +22,8 @@ test('in-match announcement: hot edits, dismissal across reload, plain text, exp
   const c = new Client(puppeteer, srv.url, 'announcement', { prefix: 'announcement' });
   t.after(() => c.close());
   await c.open();
-  assert.equal(await c.page.$('.announcement'), null, 'not shown on the title screen');
+  await c.page.waitForSelector('.announcement', { timeout: 10_000 });
+  assert.equal(await c.page.$eval('.announcement__text', (el) => el.textContent), notice.text, 'shown on the title screen');
   await c.enter('公告测试');
   await c.click('.mode-card', '独立模拟');
   await c.click('.diff-card', '标准模拟');

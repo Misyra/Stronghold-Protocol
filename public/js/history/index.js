@@ -1,6 +1,7 @@
 import { createStore } from '../store.js';
 import { makeRecord } from './record.js';
 import { createHistoryStorage } from './storage.js';
+import { t } from '../../../shared/i18n.js';
 
 export const historyStore = createStore({ open: false, records: [], loading: false, error: '',
   saveState: 'idle', latestId: null, saveError: '' });
@@ -32,7 +33,7 @@ export async function refreshHistory() {
         ...(current.saveState === 'saved' && !records.some((r) => r.id === current.latestId) ? { saveState: 'idle' } : {}) });
     }
   } catch (err) {
-    if (version === revision) historyStore.set({ error: err.message || '本地记录读取失败', loading: false });
+    if (version === revision) historyStore.set({ error: err.message || t('本地记录读取失败'), loading: false });
   }
 }
 export function openHistory() {
@@ -53,7 +54,7 @@ export async function recordMatchResult(result, playerId, metadata) {
     if (seq === saveSeq) historyStore.set({ saveState: status === 'discarded' ? 'idle' : 'saved' });
     changed();
   } catch (err) {
-    if (seq === saveSeq) historyStore.set({ saveState: 'error', saveError: err.message || '本地记录保存失败' });
+    if (seq === saveSeq) historyStore.set({ saveState: 'error', saveError: err.message || t('本地记录保存失败') });
   }
 }
 export async function removeHistory(id) {

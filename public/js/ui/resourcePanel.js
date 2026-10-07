@@ -9,6 +9,7 @@ import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Button, MicroLabel, ProgressBar } from './components.js';
 import { formatBytes } from '../resources/common.js';
 import { clearResources, pauseResources, resourceState, startResources, subscribeResources, syncResources } from '../resources/index.js';
+import { t } from '../../../shared/i18n.js';
 
 /**
  * `1.2 GiB / 2.4 GiB` when the server could size the files, `2.4 GiB` when it could not, '' when it knows nothing.
@@ -25,8 +26,8 @@ export function byteText(st) {
 export function detailText(st) {
   if (!st.total) return '';
   return [
-    st.tier1Total ? `必需 ${st.tier1Done}/${st.tier1Total}` : '',
-    `全部 ${st.done}/${st.total}`,
+    st.tier1Total ? t('必需 {tier1Done}/{tier1Total}', { tier1Done: st.tier1Done, tier1Total: st.tier1Total }) : '',
+    t('全部 {done}/{total}', { done: st.done, total: st.total }),
     byteText(st),
   ].filter(Boolean).join(' · ');
 }
@@ -48,12 +49,12 @@ const otherTab = (st) => st.phase === 'foreign';
 function ResourceActions({ st, onClose }) {
   return html`<div class="res-actions">
     ${busy(st)
-      ? html`<${Button} variant="secondary" size="sm" icon="hourglass" onClick=${() => pauseResources()}>暂停<//>`
+      ? html`<${Button} variant="secondary" size="sm" icon="hourglass" onClick=${() => pauseResources()}>${t('暂停')}<//>`
       : st.complete
-        ? html`<${Button} variant="secondary" size="sm" icon="check" onClick=${() => { void clearResources(); }}>清理缓存<//>`
-        : html`<${Button} variant="secondary" size="sm" icon="play" onClick=${() => startResources()}>${otherTab(st) ? '再检查一次' : '继续下载'}<//>`}
-    ${busy(st) || st.complete ? null : html`<button type="button" class="res-link" onClick=${() => { void clearResources(); }}>清理缓存</button>`}
-    ${onClose ? html`<button type="button" class="res-link" onClick=${onClose}>关闭预载</button>` : null}
+        ? html`<${Button} variant="secondary" size="sm" icon="check" onClick=${() => { void clearResources(); }}>${t('清理缓存')}<//>`
+        : html`<${Button} variant="secondary" size="sm" icon="play" onClick=${() => startResources()}>${otherTab(st) ? t('再检查一次') : t('继续下载')}<//>`}
+    ${busy(st) || st.complete ? null : html`<button type="button" class="res-link" onClick=${() => { void clearResources(); }}>${t('清理缓存')}</button>`}
+    ${onClose ? html`<button type="button" class="res-link" onClick=${onClose}>${t('关闭预载')}</button>` : null}
   </div>`;
 }
 
@@ -66,22 +67,22 @@ export function ResourceRow({ enabled, onChange }) {
 
   return html`<div class="set-res">
     <div class="set-row">
-      <span class="set-row__label">预载资源<${MicroLabel}>PRELOAD<//></span>
+      <span class="set-row__label">${t('预载资源')}<${MicroLabel}>PRELOAD<//></span>
       <button type="button" class=${`set-toggle${enabled ? ' is-on' : ''}`} role="switch" aria-checked=${enabled ? 'true' : 'false'}
-        disabled=${!enabled && !st.supported ? 'disabled' : null} onClick=${() => onChange(!enabled)}><i></i><span>${enabled ? '开启' : '关闭'}</span></button>
+        disabled=${!enabled && !st.supported ? 'disabled' : null} onClick=${() => onChange(!enabled)}><i></i><span>${enabled ? t('开启') : t('关闭')}</span></button>
     </div>
     ${enabled || st.done
       ? html`<div class="set-res__body">
           ${st.supported ? html`<${ProgressBar} size="sm" value=${percent(st)} max=${100} tone=${st.error ? 'amber' : 'mint'} />` : null}
           <div class="set-res__line">
-            <span class="set-res__text">${st.message || (busy(st) ? '正在后台预载…' : detail)}</span>
+            <span class="set-res__text">${st.message || (busy(st) ? t('正在后台预载…') : detail)}</span>
             ${detail && st.supported ? html`<span class="set-res__num num">${detail}</span>` : null}
           </div>
           ${st.supported ? html`<${ResourceActions} st=${st} />` : null}
           ${st.worker ? html`<p class="set-hint set-res__warn">${st.worker}</p>` : null}
-          ${st.failed ? html`<p class="set-hint set-res__warn">${st.failed} 个文件未完成（下次继续时重试）</p>` : null}
+          ${st.failed ? html`<p class="set-hint set-res__warn">${t('{failed} 个文件未完成（下次继续时重试）', { failed: st.failed })}</p>` : null}
         </div>`
-      : html`<p class="set-hint">开启后会把对局需要的素材（字体、界面、立绘、小人、音效）保存到本机缓存，减少进入战斗时的下载等待；关闭时一切照旧按需加载。需要 HTTPS。</p>`}
+      : html`<p class="set-hint">${t('开启后会把对局需要的素材（字体、界面、立绘、小人、音效）保存到本机缓存，减少进入战斗时的下载等待；关闭时一切照旧按需加载。需要 HTTPS。')}</p>`}
   </div>`;
 }
 
@@ -97,29 +98,29 @@ export function ResourceLauncher({ enabled, onChange }) {
   useEffect(() => { syncResources(enabled).catch(() => {}); }, [enabled]);
   if (!enabled && !st.supported) return null;
   const detail = detailText(st);
-  const state = !enabled ? '预载'
-    : otherTab(st) ? '另一标签页预载中'
-      : busy(st) ? `预载中 ${percent(st)}%`
-        : st.complete ? '已保存'
-          : st.error ? '未完成' : '已暂停';
+  const state = !enabled ? t('预载')
+    : otherTab(st) ? t('另一标签页预载中')
+      : busy(st) ? t('预载中 {0}%', { 0: percent(st) })
+        : st.complete ? t('已保存')
+          : st.error ? t('未完成') : t('已暂停');
 
   return html`<div class=${`res-pill${enabled ? ' is-on' : ''}`}>
     <button type="button" class="res-pill__head" disabled=${enabled ? 'disabled' : null}
-      title=${enabled ? st.message || '预载资源已开启，可用下方按钮暂停或清理' : '把对局素材存到本机，减少进入战斗时的下载等待'}
+      title=${enabled ? st.message || t('预载资源已开启，可用下方按钮暂停或清理') : t('把对局素材存到本机，减少进入战斗时的下载等待')}
       onClick=${() => { if (!enabled) onChange(true); }}>
-      <span class="res-pill__label">预载资源<${MicroLabel}>PRELOAD<//></span>
+      <span class="res-pill__label">${t('预载资源')}<${MicroLabel}>PRELOAD<//></span>
       <span class="res-pill__state">${state}</span>
     </button>
     ${enabled
       ? html`<div class="res-pill__body">
           ${st.supported ? html`<${ProgressBar} size="sm" value=${percent(st)} max=${100} tone=${st.error ? 'amber' : 'mint'} />` : null}
-          <p class="res-pill__text">${st.message || detail || '正在准备…'}</p>
+          <p class="res-pill__text">${st.message || detail || t('正在准备…')}</p>
           ${st.message && detail ? html`<p class="res-pill__text is-dim">${detail}</p>` : null}
           ${st.worker ? html`<p class="res-pill__text is-warn">${st.worker}</p>` : null}
           ${st.supported
             ? html`<${ResourceActions} st=${st} onClose=${() => onChange(false)} />`
-            : html`<div class="res-actions"><button type="button" class="res-link" onClick=${() => onChange(false)}>关闭预载</button></div>`}
+            : html`<div class="res-actions"><button type="button" class="res-link" onClick=${() => onChange(false)}>${t('关闭预载')}</button></div>`}
         </div>`
-      : html`<p class="res-pill__hint">提前把对局素材存到本机，减少进入战斗时的下载等待</p>`}
+      : html`<p class="res-pill__hint">${t('提前把对局素材存到本机，减少进入战斗时的下载等待')}</p>`}
   </div>`;
 }

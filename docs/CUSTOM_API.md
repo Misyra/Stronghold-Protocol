@@ -397,7 +397,7 @@ HEAD /data/resource-manifest.json
 - `/assets/`、`/fonts/`、`/media/` 及对应版本素材路径新增公开 CORS：允许 GET / HEAD / OPTIONS、请求头 `Range`，暴露 `ETag, Content-Length, Content-Range, Accept-Ranges`；有效素材预检返回 204，`Access-Control-Max-Age: 86400`。
 - API、游戏数据和私有模块未因此开放 CORS；健康检查也没有开放 CORS。
 
-`SP_ASSETS_CDN` 配置素材基地址，`SP_ASSETS_CDN_VERSION` 可配置远端素材版本。只有素材 URL 使用 CDN，API 与 `/ws` 仍请求游戏站点。两个站点的素材版本可能不同，配置远端版本时应读取 **CDN 源站** 的 `artVersion`。完整部署说明见 [CDN.md](CDN.md)。
+`SP_ASSETS_CDN` 配置素材基地址；素材版本由仓库根目录的 `.assets-manifest.json` 决定，素材 URL 形如 `<基地址>/assets/…?v=<文件哈希>`。只有素材 URL 使用 CDN，API 与 `/ws` 仍请求游戏站点。完整部署说明见 [CDN.md](CDN.md)。
 
 ## 8. 结算消息新增字段
 

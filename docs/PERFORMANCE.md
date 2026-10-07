@@ -48,7 +48,7 @@
 - 已参考 [8d5f0fb](https://github.com/xinhai-ai/Stronghold-Protocol/commit/8d5f0fba581e1e20adf71a97f2e4e55bdd1adc08) 增加平均计算时间，并修正失败 / 取消任务污染成功平均值的问题；参考 [ce5133b](https://github.com/xinhai-ai/Stronghold-Protocol/commit/ce5133b168504681336de82013dad955ce77f2a2) 加入可选 Bot 预演次数配置，默认质量不变。
 - WebSocket 压缩当前已经存在，无须重复移植。容量限制原项目已有；这些限制用于保护服务，不会让单次模拟变快。
 - 后续已移植资源预载：逐文件 hash、Cache Storage、Service Worker、首页入口与设置面板，适配版本路径、CDN、音频 Range 和空间不足时的续传。默认关闭；跨素材版本复用未改变的二进制文件，避免因全站版本变化重下载所有素材。
-- Redis 恢复未作为性能补丁引入。CDN 在后续请求中单独接入：支持香港域名、独立的 CDN 素材版本及跨域响应，步骤见 [CDN.md](CDN.md)。
+- Redis 恢复未作为性能补丁引入。CDN 在后续请求中单独接入：素材外移 Cloudflare R2（逐文件 `?v=` 哈希穿透）及跨域响应，见 [CDN.md](CDN.md)。
 
 新增 worker 专项回归覆盖结果 / 时间线一致、布局评分一致、记录动画开关不影响选择、失败的本地预演回退、队列上限与优先级、取消 / 超时 / 崩溃替换、过期结果、严格 / 抽样校验、暂停以及真实 WebSocket 响应。
 
@@ -74,4 +74,4 @@ CDN 使用可配置的 `SP_ASSETS_CDN` 与可选的 `SP_ASSETS_CDN_VERSION`；�
 
 `node --test --test-concurrency=4`：全套 3746 项，3727 通过、0 失败、19 跳过，约 194 秒。最终预载与匹配专项另跑 72 项通过，覆盖检查清单时暂停/清理、快速关闭再开启、版本路径迁移和 CDN 错误指纹重试。原有重型领袖战场性能测试独立复测最佳约 0.104 ms/tick，符合 0.5 ms 门槛。
 
-Edge 的 5 项预载浏览器测试通过：首页启动、缓存读取与 Range、多标签页避免重复下载、复访复用，以及独立 CDN 域名的带版本素材。实装清单包含 4021 文件、282367440 字节（约 269 MiB）；对图片、Spine 骨骼/atlas、字体/CSS 和音频抽样预载后断网，均从 Service Worker 返回已缓存内容，没有页面错误。可选棋盘 OBJ/JSON 的版本命名空间另有静态服务回归覆盖。使用方法及代理路由要求见 [CDN.md](CDN.md#5-浏览器预载)。
+Edge 的 5 项预载浏览器测试通过：首页启动、缓存读取与 Range、多标签页避免重复下载、复访复用，以及独立 CDN 域名的带版本素材。实装清单包含 4021 文件、282367440 字节（约 269 MiB）；对图片、Spine 骨骼/atlas、字体/CSS 和音频抽样预载后断网，均从 Service Worker 返回已缓存内容，没有页面错误。可选棋盘 OBJ/JSON 的版本命名空间另有静态服务回归覆盖。使用方法及代理路由要求见 [CDN.md](CDN.md#4-浏览器预载)。

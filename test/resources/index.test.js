@@ -200,14 +200,15 @@ test('the preload controller: off by default, downloads in two passes, serves of
 
   assert.equal(mod.resourceState().phase, 'off');
   assert.equal(mod.resourceState().enabled, false);
+  assert.equal(mod.resourceState().optional, true, 'both tiers are selected by default');
 
   // nothing happens while the player has not turned it on (the settings store reports `preload: false` on every change)
   await mod.syncResources(false);
   assert.equal(env.calls.fetch.length, 0, 'no manifest request while the preload is off');
   assert.equal(env.calls.registered.length, 0);
 
-  // turning it on: manifest, worker, essential tier first, then the rest
-  await mod.syncResources(true, true);
+  // turning it on without an explicit scope: manifest, worker, essential tier first, then the rest
+  await mod.syncResources(true);
   const st = mod.resourceState();
   assert.equal(env.calls.registered.length, 1);
   assert.deepEqual(env.calls.registered[0], [SW_URL, { type: 'module', scope: '/', updateViaCache: 'none' }]);

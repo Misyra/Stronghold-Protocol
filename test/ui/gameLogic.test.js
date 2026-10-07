@@ -642,14 +642,15 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, muted: false, damageNumbers: false, quality: 'high', preload: false, preloadOptional: false, keys: { ...DEFAULT_SETTINGS.keys } },
+      { bgm: 1, sfx: 0, voice: 1, muted: false, damageNumbers: false, quality: 'high', preload: false, preloadOptional: true, keys: { ...DEFAULT_SETTINGS.keys } },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voice, DEFAULT_SETTINGS.voice, 'a saved profile without `voice` gets the default');
     assert.equal(sanitizeSettings({ bgm: 0.333 }).bgm, 0.33);
     assert.equal(sanitizeSettings({ quality: 'low' }).quality, 'low');
-    assert.equal(sanitizeSettings({ preload: true }).preloadOptional, false, 'existing users preload required resources by default');
+    assert.equal(sanitizeSettings({ preload: true }).preloadOptional, true, 'profiles without a scope select both tiers by default');
     assert.equal(sanitizeSettings({ preloadOptional: true }).preloadOptional, true);
-    assert.equal(sanitizeSettings({ preloadOptional: 'true' }).preloadOptional, false);
+    assert.equal(sanitizeSettings({ preloadOptional: false }).preloadOptional, false, 'an explicit saved opt-out is preserved');
+    assert.equal(sanitizeSettings({ preloadOptional: 'true' }).preloadOptional, true, 'invalid values fall back to the default');
   });
 });
 

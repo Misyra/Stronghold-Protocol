@@ -431,8 +431,10 @@ Writes (all validated, never throw on bad input, never make funds / pools negati
 ### 2.5 Items: consume-on-equip and Arts
 Items whose data `kind` starts with `consume_on_equip` resolve through their `item:` handler's `onEquip` and are
 destroyed (they never take a slot); set `ev.keep = true` to keep the item equipped instead (博士投影 normal), or
-`ev.error = 'BAD_TARGET'` (+ `ev.detail`) to refuse. Without a registered handler the equip is refused
-(`BAD_TARGET 'effect not available'`). Arts (`MAGIC`): `g.art` needs a handler; at most `maxArtsPerRound` (2) per round;
+`ev.error = 'BAD_TARGET'` (+ `ev.detail`) to refuse. On a full carrier the item `replaceUid` names (else the oldest) comes
+off before `onEquip` runs and is destroyed (`onDestroy` reason `replace`) once the effect went through — the carrier keeps
+a free slot, which a kept item takes —, and goes back where it was when the effect refuses (GitHub #263). Without a
+registered handler the equip is refused (`BAD_TARGET 'effect not available'`). Arts (`MAGIC`): `g.art` needs a handler; at most `maxArtsPerRound` (2) per round;
 `ev.targets` are the pieces under the Art's `rangeGrid` at (row, col); set `ev.error` to refuse, `ev.used = false` to keep it.
 Other equipment: 2 slots; a third replaces the equipped item the player picks in the replace dialog — `g.equip
 { itemUid, targetUid, replaceUid }` (research 09 §1.2 `UseEquipUp.unloadInstId`; absent ⇒ the oldest; a `replaceUid` not

@@ -72,6 +72,29 @@ describe('phases', () => {
     assert.equal(phaseBanner(PHASE.SETTLE, {}), null);
     assert.equal(prepCapsuleLabel(PHASE.PREP), '休息一下');
   });
+  test('the round-start banner says 资金已到账 to a player still in only — 观战中 to an eliminated player and a spectator seat (GitHub #236)', () => {
+    // round 2 after p_0 ran out of LP: p_1 is still in; the spectator seat s_spec has no row in m.public
+    const pub = { round: 2, phase: PHASE.ROUND_START, players: [
+      { playerId: 'p_0', seat: 0, alive: false }, { playerId: 'p_1', seat: 1, alive: true },
+    ] };
+    const round = (viewer) => phaseBanner(PHASE.ROUND_START, pub, viewer);
+    // a player still in (the server paid the round's income)
+    assert.equal(round({ alive: true, spectator: false }).sub, '资金已到账');
+    assert.equal(round().sub, '资金已到账', 'no viewer given: the copy of a player still in');
+    // an eliminated player (eliminate() zeroed funds and pendingFunds; startRound pays the seats still in only)
+    assert.equal(round({ alive: false, spectator: false }).sub, '观战中');
+    // a spectator seat (no seat, no funds), also when only `spectator` is given
+    assert.equal(round({ alive: false, spectator: true }).sub, '观战中');
+    assert.equal(round({ spectator: true }).sub, '观战中');
+    // the title and the other phases' copy are the same for every viewer
+    for (const v of [{ alive: true }, { alive: false }, { alive: false, spectator: true }]) {
+      assert.equal(round(v).title, '第 2 回合');
+      assert.equal(phaseBanner(PHASE.PREP, pub, v).sub, phaseBanner(PHASE.PREP, pub).sub);
+    }
+    // the match screen hands the banner its viewer (screens/game.js `alive` folds a spectator seat in)
+    const src = readFileSync(path.join(ROOT, 'public/js/screens/game.js'), 'utf8');
+    assert.match(src, /phaseBanner\(phase, pub, \{ alive, spectator \}\)/);
+  });
 });
 
 describe('countdown', () => {

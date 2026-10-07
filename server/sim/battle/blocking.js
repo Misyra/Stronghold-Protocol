@@ -13,10 +13,12 @@ export class BattleBlocking {
    * devices 0.4472), and the blocker has free capacity for the enemy's block weight (and may block it at all: a unit on
    * a fenced tile blocks no ground enemy, _blockerFor). Checked every tick for every
    * unblocked enemy, moving or not, so an enemy overlapping an operator is taken over as soon as its blocker is gone or
-   * the operator's capacity frees up (user playtest #5 item 4). Several blockers in contact → the nearest [ASSUMED],
-   * ties → the first in row-then-column scan order. The air radius grows with the blocker's 阻挡半径倍率 (PRTS 游戏数据基础
-   * "飞行阻挡半径 = 0.8944 × 阻挡半径倍率"; mod `blockRadiusScale` = 倍率 − 1: 凯尔希·思衡托's 遗尘守望 / S1, +0.23); ground
-   * blocking ignores it (PRTS 数值范围 "对地面阻挡的单位不生效"). Below 1.5 tiles the 3×3 scan still finds every blocker.
+   * the operator's capacity frees up (user playtest #5 item 4) — a stunned or frozen one too, an operator redeployed
+   * onto it included (晕眩 / 冻结 hold no 不可阻挡: ai.js updateEnemy, GitHub #232). Several blockers in contact → the
+   * nearest [ASSUMED], ties → the first in row-then-column scan order. The air radius grows with the blocker's
+   * 阻挡半径倍率 (PRTS 游戏数据基础 "飞行阻挡半径 = 0.8944 × 阻挡半径倍率"; mod `blockRadiusScale` = 倍率 − 1: 凯尔希·思衡托's
+   * 遗尘守望 / S1, +0.23); ground blocking ignores it (PRTS 数值范围 "对地面阻挡的单位不生效"). Below 1.5 tiles the 3×3 scan
+   * still finds every blocker.
    * Never blocked: an enemy holding 不可阻挡 (PRTS 异常效果 BLOCK_FREE 「无法阻挡/被阻挡，自动解除阻挡」) — the flag itself
    * (恐惧 / 诱导 carry it), 浮空, and 沉睡 (SLEEPING = 无法行动+无敌+不可阻挡: a sleeper takes no block slot, DESIGN §24.9);
    * once it wakes it is blocked again only by a blocker with room.

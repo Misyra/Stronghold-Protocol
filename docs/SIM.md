@@ -246,8 +246,11 @@ the `unblockable` flag (恐惧, 诱导 and many enemy abilities carry it), 浮�
 enemy falling asleep is released at once, its slot freeing for the next enemy, and stays where it is; once awake it is
 blocked again only by a blocker with room, else it walks on — DESIGN §24.9). It is checked every tick for every
 unblocked enemy, moving or not: an enemy that overlaps an operator when its blocker dies / is withdrawn / is stunned, or when the operator's
-blocked enemy dies, is taken over at once; an enemy that finds no room walks on (pass-through). Several blockers in
-contact → the nearest [ASSUMED]. A head-on enemy therefore stops at contact, ~0.71 tile from the blocker's centre, on the
+blocked enemy dies, is taken over at once; an enemy that finds no room walks on (pass-through). A stunned or frozen
+enemy is checked too — 晕眩 / 冻结 hold no 不可阻挡 (PRTS 异常效果: the STUN / FROZEN state machines stop its moves and
+attacks) —, so an operator redeployed beside a held enemy blocks it where it stands and lifts its 隐匿; one held short of
+contact is blocked once it walks in after the status (GitHub #232; until 0.2.0 the check waited for the status to end).
+Several blockers in contact → the nearest [ASSUMED]. A head-on enemy therefore stops at contact, ~0.71 tile from the blocker's centre, on the
 tile in front of it (PRTS 作战机制: a blocked enemy's collider does not enter the blocker's tile; the official few
 hundredths of a tile of deceleration are not modelled), and **every blocker** — melee units (要塞 / 领主 / 哨戒铁卫
 included), summons (流形's melee copy) and a ranged operator standing on a melee tile alike — may always target the
@@ -605,8 +608,8 @@ of coverage per 3 s), kept because the current wording no longer says so (feedba
 
 | key | effect | value |
 |---|---|---|
-| `stun` | cannot act / move; **a stunned operator blocks nothing** (its blocked enemies are released: taken over by another operator in contact with room, else they walk on — §1.2 Blocking) | – |
-| `freeze` | stun; **enemies** also RES −15 | – |
+| `stun` | cannot act / move; **a stunned operator blocks nothing** (its blocked enemies are released: taken over by another operator in contact with room, else they walk on — §1.2 Blocking); a stunned enemy is still blocked by contact (晕眩 holds no 不可阻挡 — GitHub #232) | – |
+| `freeze` | stun (a frozen enemy is still blocked by contact, as a stunned one); **enemies** also RES −15 | – |
 | `cold` | ASPD −30; a 2nd cold while cold ⇒ `freeze` for max(remaining cold, the incoming cold after 抵抗) — PRTS 术语释义 寒冷 「持续时间取双方之中最高」 (`COLD_FREEZE_DURATION` 3 s only when neither side has a duration; unless frozen-immune). On an enemy (友方寒冷) the pair becomes that freeze and no cold is left — 「两两一对产生友方冻结」, so a lone cold on a frozen enemy waits for a partner (0.2.0; the 谢拉格 wind no longer freezes for good); on an operator (敌方寒冷) the longer cold stays on with the freeze. [ASSUMED] the one catalogue cold uses the 友方 max for an enemy-applied cold too | – |
 | `sleep` | 无敌且无法行动: inactive, untargetable, **takes no damage** (unless the attacker profile has `hitSleep` or the damage `ignoreSleep`), blocks nothing; PRTS 异常效果 SLEEPING = 无法行动+无敌+**不可阻挡**: an enemy asleep **cannot be blocked and takes no block slot** — its blocker lets go at once (the slot frees for the next enemy), it stays where it is, and when it wakes it is blocked again only by a blocker with room, else it walks on (DESIGN §24.9) | – |
 | `slow` | moveMul 1 − value (*strongest*) | default 0.5 |

@@ -18,7 +18,7 @@ export async function startAgent(options = {}) {
   const staleMs = integer(options.staleMs, 45000, 100, 3600000);
   const now = options.now || Date.now;
   let metrics = null, notice = null, cert = null;
-  const sections = { collector: { status: 'missing', error: 'NO_SAMPLE' }, game: { status: 'unknown' },
+  const sections = { nginx: { status: 'unknown', error: null }, storage: { status: 'unknown', error: null }, collector: { status: 'missing', error: 'NO_SAMPLE' }, game: { status: 'unknown' },
     announcement: { status: announcementUrl ? 'missing' : 'disabled', error: announcementUrl ? null : 'NOT_CONFIGURED' },
     cert: { status: options.certFile ? 'missing' : 'disabled', error: options.certFile ? null : 'NOT_CONFIGURED' } };
   let certCheckedAt = 0;
@@ -33,6 +33,7 @@ export async function startAgent(options = {}) {
             return;
           }
           metrics = sanitizeMetrics(raw);
+          sections.nginx = metrics.diagnostics.nginx; sections.storage = metrics.diagnostics.storage;
           sections.collector = { status: 'ok', error: null };
           sections.game = { status: metrics.current.game ? 'ok' : 'error', error: metrics.current.game ? null : 'UPSTREAM_ERROR' };
         } catch (error) { sections.collector = { status: 'error', error: errorCode(error) }; }
@@ -62,6 +63,8 @@ export async function startAgent(options = {}) {
       currentSections.collector = { status: freshness === 'missing' ? 'missing' : 'stale',
         error: freshness === 'clock-skew' ? 'CLOCK_SKEW' : null };
     }
+    for (const key of ['nginx', 'storage']) if (currentSections[key].status === 'ok' &&
+      (freshness !== 'fresh' || currentSections.collector.status !== 'ok')) currentSections[key].status = 'stale';
     if (currentSections.game.status === 'ok' && (freshness !== 'fresh' || currentSections.collector.status !== 'ok')) {
       currentSections.game.status = 'stale';
     }
@@ -91,7 +94,7 @@ export async function startAgent(options = {}) {
       if (!metrics) return sendJson(req, res, 503, { error: { code: 'NO_SAMPLE' } });
       return sendJson(req, res, 200, { ...seriesFor(metrics, range, now()), sections: snapshot().sections });
     }
-    if (url.pathname === '/api/admin/v1/health') return sendJson(req, res, 200, { ok: true, ready: !!metrics });
+    if (url.pathname === '/api/admin/v1/health') return sendJson(req, res, 200, { ok: true, ready: !!metrics && snapshot().sections.collector.status === 'ok', degraded: Object.values(snapshot().sections).some(s => s.status === 'error') });
     return sendJson(req, res, 404, { error: { code: 'NOT_FOUND' } });
   }, options); } catch (error) { await poll.stop(); throw error; }
   const closeServer = service.close;

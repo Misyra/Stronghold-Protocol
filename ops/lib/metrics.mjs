@@ -10,6 +10,13 @@ const pick = (obj, keys) => Object.fromEntries(keys.map((key) => [key, numeric(o
 const text = (s, max = 100) => typeof s === 'string' ? s.slice(0, max) : null;
 const dateKey = (s) => typeof s === 'string' && /^\d{4}-\d\d-\d\d$/.test(s) ? s : null;
 
+const STATUSES = new Set(['ok', 'stale', 'missing', 'error', 'unknown', 'disabled']);
+const ERROR_CODES = new Set(['TIMEOUT', 'AUTH_FAILED', 'INVALID_RESPONSE', 'UPSTREAM_ERROR', 'UNREACHABLE', 'NOT_CONFIGURED', 'NO_SAMPLE', 'CLOCK_SKEW',
+  'LOG_MISSING', 'LOG_UNREADABLE', 'LOG_READ_FAILED', 'LOG_FORMAT_INVALID', 'LOG_LINE_TOO_LONG', 'STORAGE_WRITE_FAILED']);
+export function sanitizeSection(section) {
+  return { status: STATUSES.has(section?.status) ? section.status : 'unknown', error: ERROR_CODES.has(section?.error) ? section.error : null };
+}
+
 export function sanitizeMetrics(raw) {
   if (!raw || typeof raw !== 'object' || !raw.current || numeric(raw.current.t) === null ||
     typeof raw.current.game !== 'boolean' || !Array.isArray(raw.series) || !raw.today || !Array.isArray(raw.history)) {
@@ -18,13 +25,16 @@ export function sanitizeMetrics(raw) {
   const current = { t: numeric(raw.current.t), game: raw.current.game, app: text(raw.current.app),
     ...pick(raw.current, GAME), ...pick(raw.current, HOST) };
   // Never forward connsTop, visitor IP lists, log offsets or arbitrary upstream fields.
-  return { current, capacity: { ...pick(raw.capacity, ['limit', 'warnPct', 'critPct', 'cores']), basis: 'sessions',
+  const diagnostics = Object.fromEntries(['nginx', 'storage'].map(key => [key, sanitizeSection(raw.diagnostics?.[key])]));
+  const traffic = pick(raw.today, TRAFFIC);
+  if (diagnostics.nginx.status === 'error') for (const key of TRAFFIC) if (!key.startsWith('peak')) traffic[key] = null;
+  return { current, diagnostics, capacity: { ...pick(raw.capacity, ['limit', 'warnPct', 'critPct', 'cores']), basis: 'sessions',
     level: ['ok', 'warn', 'crit', 'full'].includes(raw.capacity?.level) ? raw.capacity.level : 'unknown' },
     intervalSec: numeric(raw.intervalSec), collectorUptimeSec: numeric(raw.collectorUptimeSec), samples: numeric(raw.samples),
     timeZone: text(raw.timeZone, 50),
     series: raw.series.slice(-600).filter((p) => numeric(p?.t) !== null).map((p) => ({ t: p.t,
       ...pick(p, ['sessions', 'sockets', 'humans', 'bots', 'cpu', 'psiIoSome']) })).sort((a, b) => a.t - b.t),
-    today: { date: dateKey(raw.today.date), ...pick(raw.today, TRAFFIC) },
+    today: { date: dateKey(raw.today.date), ...traffic },
     history: raw.history.slice(-30).filter((p) => dateKey(p?.date)).map((p) => ({ date: p.date, ...pick(p, TRAFFIC) })) };
 }
 
@@ -48,13 +58,8 @@ export function sanitizeSnapshot(raw) {
     throw Object.assign(new Error('Invalid Agent schema'), { code: 'INVALID_RESPONSE' });
   }
   const metrics = raw.metrics === null ? null : sanitizeMetrics(raw.metrics);
-  const allowed = new Set(['ok', 'stale', 'missing', 'error', 'unknown', 'disabled']);
-  const sections = Object.fromEntries(['collector', 'game', 'announcement', 'cert'].map((key) => {
-    const section = raw.sections[key] || {};
-    return [key, { status: allowed.has(section.status) ? section.status : 'unknown',
-      error: ['TIMEOUT', 'AUTH_FAILED', 'INVALID_RESPONSE', 'UPSTREAM_ERROR', 'UNREACHABLE', 'NOT_CONFIGURED', 'NO_SAMPLE', 'CLOCK_SKEW']
-        .includes(section.error) ? section.error : null }];
-  }));
+  const sections = Object.fromEntries(['collector', 'game', 'nginx', 'storage', 'announcement', 'cert']
+    .map(key => [key, sanitizeSection(raw.sections[key])]));
   const cert = raw.cert && typeof raw.cert === 'object' ? {
     notAfter: Number.isFinite(Date.parse(raw.cert.notAfter)) ? text(raw.cert.notAfter) : null,
     daysLeft: typeof raw.cert.daysLeft === 'number' && Number.isFinite(raw.cert.daysLeft) ? raw.cert.daysLeft : null,

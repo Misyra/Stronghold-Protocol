@@ -24,6 +24,9 @@
 //     X-Real-IP / X-Forwarded-For only from loopback/private peers such as a local cloudflared; '1' always; '0' never).
 //     SP_WS_COMPRESSION ('on' default; 'off' disables bounded per-message WebSocket compression).
 //     SP_ANNOUNCEMENT_FILE (default ROOT/announcement.json; local JSON, hot-loaded without restarting).
+//     SP_ANNOUNCEMENT_URL (optional; poll the ops panel's central announcement source instead of the
+//     local file — SP_ANNOUNCEMENT_POLL_MS, default 10s; the last good notice is kept while the source
+//     is unreachable, an explicit enabled:false clears it).
 //     Prints LAN URLs on boot.
 //   * Per-network limits for internet clients (see net.js clientAddress; local/LAN peers are exempt): open sockets
 //     (maxConnectionsPerAddr, refused at upgrade with 429), rooms and running matches (lobby.js).
@@ -732,6 +735,7 @@ function makeLogger(quiet) {
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object, wsCompression?: boolean,
  *   publicDir?: string, dataDir?: string, sharedDir?: string, announcementFile?: string,
+ *   announcementUrl?: string, announcementPollMs?: number,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
@@ -835,6 +839,8 @@ export async function startServer(opts = {}) {
   const allowStatus = createStatusLimiter({ trustProxy: netOptions.trustProxy });
   const readAnnouncement = createAnnouncementReader({
     filePath: path.resolve(ROOT, opts.announcementFile ?? process.env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json'), log,
+    announcementUrl: opts.announcementUrl ?? process.env.SP_ANNOUNCEMENT_URL,
+    pollMs: Number(process.env.SP_ANNOUNCEMENT_POLL_MS) || undefined,
   });
   const statusPath = new RegExp(`^/api/rooms/([${CODE_ALPHABET}]{${ROOM_CODE_LEN}})/status$`, 'i');
   const startedAt = Date.now();

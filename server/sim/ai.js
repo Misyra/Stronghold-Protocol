@@ -10,10 +10,10 @@
 // changes (obstacles) or content displaces the enemy (route.pts = null). FLY legs fly straight between checkpoints; the
 // path always follows `motion` — a hovering (近地悬浮) enemy is an air unit for targeting and blocking (Unit.isFlying)
 // but walks the ground. An unblocked enemy touching an ally with free block capacity — within its block radius (0.7071
-// ground, 0.8944 air, devices 0.4472; Battle._checkBlock) — is blocked, moving or not, so an enemy overlapping an
-// operator is taken over once its blocker is gone; never one holding 不可阻挡 (恐惧, 诱导, 浮空, 沉睡): an enemy falling
-// asleep is let go by its blocker, whose slot frees, and stays where it is until it wakes (DESIGN §24.9). Blocked
-// enemies fight their blocker (ranged ones may pick anyone in
+// ground, 0.8944 air, devices 0.4472; Battle._checkBlock) — is blocked, moving or not (stunned or frozen too: GitHub
+// #232), so an enemy overlapping an operator is taken over once its blocker is gone; never one holding 不可阻挡 (恐惧,
+// 诱导, 浮空, 沉睡): an enemy falling asleep is let go by its blocker, whose slot frees, and stays where it is until it
+// wakes (DESIGN §24.9). Blocked enemies fight their blocker (ranged ones may pick anyone in
 // range, blocker first); every blocker whose attack hits enemies — a ranged operator on a melee tile included — may
 // always target the enemies it blocks, in range or not, whatever its facing, and targets them first (acquireTargets,
 // Battle.blockedTargets; user playtest #6: "阻挡了就一定要能打到"); a heal attack keeps selecting injured allies while
@@ -543,10 +543,16 @@ export function updateEnemy(b, e, dt) {
   // a stun / freeze / sleep cuts the attack clip short: no stand left once it ends [ASSUMED]. 沉睡 also holds 不可阻挡
   // (PRTS 异常效果 SLEEPING = 无法行动+无敌+不可阻挡): a sleeper's blocker lets go — its swing was cut above; Battle.applyStatus
   // (battle/status.js) releases it at once, this catches a sleep added as a plain buff (`flags.sleep` makes it `stun` too,
-  // units.js) — and it stays where it is until it wakes (DESIGN §24.9)
+  // units.js) — and it stays where it is until it wakes (DESIGN §24.9). 晕眩 / 冻结 hold no 不可阻挡 (PRTS 异常效果: the
+  // STUN / FROZEN state machines stop the enemy's moves and attacks, not its being blocked; 术语释义 冻结 names no block):
+  // it is still blocked by contact where it stands, like a standing enemy — an operator redeployed or deployed onto it,
+  // another one taking it over or one whose capacity frees up blocks it, and the block lifts its 隐匿 (GitHub #232; until
+  // 0.2.0 the check waited for the status to end). The contact rule of a moving enemy (Battle._checkBlock, which still
+  // refuses 沉睡 / 浮空 / 恐惧 / 不可阻挡): one stunned short of its blocker is blocked once it walks into contact
   if (stunned && !e.hidden) {
     e.atkStandUntil = -Infinity;
     if (e.blockedBy && e.s.flags.sleep) b._unblock(e);
+    b._checkBlock(e);
     return;
   }
   if (e.blockedBy) {

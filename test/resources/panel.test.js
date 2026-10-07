@@ -49,3 +49,37 @@ describe('preload numbers', () => {
       'an intentionally skipped oversized file does not prevent completion');
   });
 });
+
+describe('where the preload is reachable', () => {
+  test('the settings modal still has its row (in-match management)', () => {
+    const settings = read('public/js/ui/settings.js');
+    assert.match(settings, /import \{ ResourceRow \} from '\.\/resourcePanel\.js';/);
+    assert.match(settings, /<\$\{ResourceRow\} enabled=\$\{s\.preload\} onChange=\$\{\(v\) => updateSettings\(\{ preload: v \}\)\} \/>/);
+  });
+
+  test('the title screen mounts the launcher in its bottom-right corner', () => {
+    const title = read('public/js/screens/title.js');
+    assert.match(title, /import \{ ResourceLauncher \} from '\.\.\/ui\/resourcePanel\.js';/);
+    assert.match(title, /import \{ useSettings, updateSettings \} from '\.\.\/ui\/settings\.js';/);
+    assert.match(title, /const settings = useSettings\(\);/);
+    assert.match(title, /<div class="title-preload"><\$\{ResourceLauncher\} enabled=\$\{settings\.preload\} onChange=\$\{\(v\) => updateSettings\(\{ preload: v \}\)\} \/><\/div>/);
+    const css = read('public/css/screens/title.css');
+    assert.match(css, /\.title-preload \{[^}]*position: absolute;[^}]*right: \.44rem;[^}]*bottom: \.86rem;/, 'bottom-right, above the footer');
+    assert.match(css, /\.res-pill \{/, 'the pill has its own styling');
+  });
+
+  test('both entry points open the shared manager with resource tiers and ZIP actions', () => {
+    const panel = read('public/js/ui/resourcePanel.js');
+    assert.equal((panel.match(/onClick=\$\{openResources\}/g) || []).length, 2);
+    const main = read('public/js/main.js');
+    assert.match(main, /<\$\{ResourceManagerHost\} \/>/);
+    assert.match(panel, /title=\$\{t\('预载资源管理'\)\}/);
+    assert.match(panel, /tier=\$\{1\}/);
+    assert.match(panel, /tier=\$\{2\}/);
+    assert.match(panel, /导入 ZIP/);
+    assert.match(panel, /导出 ZIP/);
+    assert.match(panel, /st\.worker/);
+    assert.match(panel, /onChange\(false\)/);
+    assert.equal(/可离线进入对局|断网[^。]*可用/.test(panel), false);
+  });
+});

@@ -12,9 +12,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.CHROME_PATH || (process.platform === 'win32'
+  ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const enabled = process.env.RESOURCE_E2E === '1' && fs.existsSync(CHROME);
 const skip = enabled ? false : 'set RESOURCE_E2E=1 (needs Chrome)';
 
@@ -33,7 +35,7 @@ function makeInstall() {
   fs.cpSync(path.join(ROOT, 'public', 'js'), path.join(publicDir, 'js'), { recursive: true });
   // the launcher needs preact/htm (ui/components.js) and the progress-bar styles
   fs.mkdirSync(path.join(publicDir, 'vendor'), { recursive: true });
-  for (const f of ['preact.module.js', 'hooks.module.js', 'htm.module.js']) {
+  for (const f of ['preact.module.js', 'hooks.module.js', 'htm.module.js', 'zip.module.js']) {
     fs.copyFileSync(path.join(ROOT, 'public', 'vendor', f), path.join(publicDir, 'vendor', f));
   }
   fs.mkdirSync(path.join(publicDir, 'css'), { recursive: true });
@@ -56,18 +58,21 @@ function makeInstall() {
 <script type="module">
   import { render } from '/vendor/preact.module.js';
   import { html } from '/js/ui/components.js';
-  import { ResourceLauncher } from '/js/ui/resourcePanel.js';
-  import { resourceState, syncResources, clearResources, startResources } from '/js/resources/index.js';
+  import { ResourceLauncher, ResourceHost } from '/js/ui/resourcePanel.js';
+  import { resourceState, syncResources, clearResources, startResources, exportResources, importResources } from '/js/resources/index.js';
   // the fixture drives the real launcher, exactly as the title screen does
   let enabled = false;
-  const paint = () => render(html\`<\${ResourceLauncher} enabled=\${enabled} onChange=\${(v) => set(v)} />\`, document.getElementById('app'));
-  const set = (v) => { enabled = v; void syncResources(v); paint(); };
+  let optional = false;
+  const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
+    <\${ResourceHost} enabled=\${enabled} optional=\${optional} onChange=\${(v) => set(v)}
+      onOptional=\${(v) => { optional = v; void syncResources(enabled, v); paint(); }} /></div>\`, document.getElementById('app'));
+  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional); paint(); };
   window.__res = {
-    resourceState, syncResources, clearResources, startResources,
+    resourceState, syncResources, clearResources, startResources, exportResources, importResources,
     state: () => ({ ...resourceState(), enabled }),
     click: () => document.querySelector('.res-pill__head').click(),
   };
-  window.__preload = set;
+  window.__preload = (v) => set(v, true);
   paint();
   window.__ready = true;
 </script></body></html>`);
@@ -119,7 +124,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     const manifest = await page.evaluate(() => fetch('/data/resource-manifest.json').then((r) => r.json()));
     assert.equal(manifest.count, 3);
     assert.deepEqual(manifest.files.map((f) => f.tier), [1, 1, 2]);
-    assert.deepEqual(manifest.files.map((f) => f.size), [14, 11, 8], 'essential tier first, then by URL');
+    assert.deepEqual(manifest.files.map((f) => f.size), [8, 11, 14], 'required visuals first, then optional audio');
 
     // off by default: nothing is fetched before the player asks for it
     assert.equal(await page.evaluate(() => window.__res.resourceState().phase), 'off');
@@ -162,23 +167,29 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.close();
   });
 
-  test('the home-screen pill starts the preload with one click and shows the counters', async () => {
+  test('the home-screen manager downloads required resources first and allows opting into audio', async () => {
     const { page, problems } = await open();
     await ready(page, problems);
 
     // a fresh device: off, collapsed, nothing cached
     await page.evaluate(() => caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))));
-    assert.equal(await page.$eval('.res-pill__state', (el) => el.textContent), '预载');
-    assert.equal(await page.$('.res-pill__body'), null, 'collapsed while off');
+    assert.equal(await page.$eval('.res-pill__state', (el) => el.textContent), '未开启');
     assert.equal(await page.evaluate(() => window.__res.state().done), 0);
 
     await page.evaluate(() => window.__res.click());
-    assert.equal(await page.evaluate(() => window.__res.state().enabled), true, 'one click turns the setting on');
+    await page.waitForSelector('.resource-manager');
+    await page.waitForFunction("window.__res.state().phase === 'paused'");
+    assert.equal(await page.evaluate(() => window.__res.state().enabled), false, 'opening the manager does not enable downloads');
+    await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
+    await page.waitForFunction('window.__res.state().selectionComplete === true');
+    assert.equal(await page.evaluate(() => window.__res.state().complete), false, 'optional audio is not fetched');
+    assert.equal(await page.evaluate(() => window.__res.state().done), 2);
+    await page.click('.resource-choice input');
     await page.waitForFunction('window.__res.state().complete === true', { timeout: 30000 });
-    assert.equal(await page.$eval('.res-pill__state', (el) => el.textContent), '已保存');
-    const body = await page.$eval('.res-pill__body', (el) => el.textContent);
-    assert.match(body, /全部 3\/3/, `progress text: ${body}`);
-    assert.match(body, /33 B \/ 33 B/, `bytes: ${body}`);
+    await page.waitForFunction("document.querySelector('.res-pill__state').textContent === '全部已保存'");
+    const body = await page.$eval('.resource-manager', (el) => el.textContent);
+    assert.match(body, /2 \/ 2 个文件/, `progress text: ${body}`);
+    assert.match(body, /19 B \/ 19 B/, `bytes: ${body}`);
     assert.equal(body.includes('undefined'), false, 'no undefined counter is ever rendered');
     const cached = await page.evaluate(async () => {
       const cache = await caches.open((await caches.keys()).find((n) => n.startsWith('stronghold-resources-v1-')));
@@ -210,7 +221,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     });
     await second.page.evaluate(() => window.__preload(true));
     await second.page.waitForFunction("window.__res.state().phase === 'foreign'", { timeout: 15000 });
-    assert.equal(await second.page.$eval('.res-pill__state', (el) => el.textContent), '另一标签页预载中');
+    await second.page.waitForFunction("document.querySelector('.res-pill__state').textContent === '另一标签页处理中'");
     assert.deepEqual(requested, [], 'the second tab asked for no resource file at all');
     assert.deepEqual(await second.page.evaluate(() => ({ done: window.__res.state().done, total: window.__res.state().total })), { done: 0, total: 3 });
 
@@ -236,11 +247,15 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.match(state.version, /^[0-9a-f]{12}$/);
     await page.close();
   });
-  test('versioned resources on a separate CDN origin are served from the game cache', async (t) => {
+  for (const perFile of [false, true]) test(`${perFile ? 'per-file query' : 'versioned'} resources on a separate CDN origin are served from the game cache`, async (t) => {
     const { startServer } = await import('../../server/index.js');
     const health = await (await fetch(srv.url + '/healthz')).json();
+    const manifestFile = path.join(install.dir, perFile ? 'assets-manifest.json' : 'no-assets-manifest.json');
+    if (perFile) fs.writeFileSync(manifestFile, JSON.stringify({ format: 1, tag: '0123456789abcdef',
+      hashes: Object.fromEntries(FILES.map((f) => [f.url, createHash('sha256').update(f.body).digest('hex').slice(0, 16)])) }));
     const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0,
-      publicDir: install.publicDir, dataDir: install.dataDir, assetsCdn: srv.url, assetsCdnVersion: health.artVersion });
+      publicDir: install.publicDir, dataDir: install.dataDir, assetsCdn: srv.url, assetsCdnVersion: health.artVersion,
+      assetsManifestFile: manifestFile });
     t.after(() => game.close());
     const page = await browser.newPage();
     t.after(() => page.close());
@@ -250,15 +265,52 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForFunction('window.__res.state().complete === true');
     await page.waitForFunction('!!navigator.serviceWorker.controller');
     const paths = await page.evaluate(() => fetch('/data/resource-manifest.json').then((r) => r.json()).then((m) => m.files.map((f) => f.url)));
-    assert.ok(paths.every((p) => p.startsWith(srv.url + '/_v/' + health.artVersion + '/assets/')));
+    assert.ok(paths.every((p) => perFile ? p.startsWith(srv.url + '/assets/') && /\?v=[a-f0-9]{16}$/.test(p)
+      : p.startsWith(srv.url + '/_v/' + health.artVersion + '/assets/')));
     await page.setOfflineMode(true);
     const result = await page.evaluate(async (urls) => {
-      const res = await fetch(urls.find((p) => p.endsWith('bgm.mp3')), { headers: { Range: 'bytes=0-2' } });
+      const res = await fetch(urls.find((p) => new URL(p).pathname.endsWith('bgm.mp3')), { headers: { Range: 'bytes=0-2' } });
       return { status: res.status, body: await res.text(), cached: res.headers.get('X-SP-Resource') };
     }, paths);
     assert.deepEqual(result, { status: 206, body: 'bgm', cached: '1' });
     await page.setOfflineMode(false);
     await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
+  });
+
+  test('manager ZIP export and file import restore verified resources without resource downloads', async (t) => {
+    const { page, problems } = await open();
+    t.after(() => page.close());
+    await ready(page, problems);
+    await page.evaluate(async () => {
+      await window.__res.clearResources();
+      window.__preload(true);
+    });
+    await page.waitForFunction('window.__res.state().complete');
+    await page.evaluate(() => {
+      const original = URL.createObjectURL;
+      URL.createObjectURL = (blob) => { window.__exported = blob; return original(blob); };
+      window.__res.click();
+    });
+    await page.waitForSelector('.resource-manager');
+    await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '导出 ZIP').click());
+    await page.waitForFunction('!!window.__exported && !window.__res.state().archive');
+    const bytes = await page.evaluate(async () => [...new Uint8Array(await window.__exported.arrayBuffer())]);
+    const file = path.join(install.dir, 'round-trip.zip');
+    fs.writeFileSync(file, Buffer.from(bytes));
+    await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
+    const requested = [];
+    page.on('request', (r) => { if (/\/assets\//.test(r.url())) requested.push(r.url()); });
+    await (await page.$('input[type=file]')).uploadFile(file);
+    await page.waitForFunction('window.__res.state().complete && window.__res.state().enabled && !window.__res.state().archive');
+    assert.deepEqual(requested, [], 'imported current resources need no downloads');
+    const restored = await page.evaluate(async () => {
+      const { store } = await (await import('/js/resources/index.js')).resourceContext();
+      const response = await (await caches.open(store.cacheName)).match(store.files.find((f) => f.url.endsWith('panel.png')).url);
+      return { type: response.headers.get('content-type'), body: await response.text() };
+    });
+    assert.deepEqual(restored, { type: 'image/png', body: 'panel-bytes' });
+    assert.deepEqual(problems, []);
+    await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
   });
 
 });

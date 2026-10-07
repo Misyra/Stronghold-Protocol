@@ -47,7 +47,7 @@ English summary: [below](#english).
 |---|---|
 | 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md) |
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
-| 资源预载 | 在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
+| 资源预载 | 移植 xinhai 资源管理更新：必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐；在按文件 hash 增量预载之上加固：跨版本缓存别名复用（升级不重下）、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：凑满 4 名真人才开局，不补 AI，断线自动出队 |
 | 维护公告 | 单条维护公告进入游戏即显示（主菜单、大厅与对局全程）、可关闭：设置 `SP_ANNOUNCEMENT_URL` 由运维面板统一发布（约 10 秒轮询热生效），或用本地文件 `SP_ANNOUNCEMENT_FILE` 热加载；配 `GET /api/announcement` |
 | 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) |
@@ -57,7 +57,7 @@ English summary: [below](#english).
 
 另一个活跃分支 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 与本分支平行发展、同样基于 v0.1.3，思路不同、互有取舍：它把持久化放在 Redis（专用持久化 Worker 负责编码，可恢复不挂房间的匹配对局）、匹配走 solo/coop 队列（组队整体入队、60 秒后可由 AI 补位、支持无房间的独立对局）、内置受配额保护的开发者控制台（每回合 5 次 / 每局 50 次发放干员、装备、盟约）、全站定时公告与在线人数推送、资源清单 ETag/304 再验证、`SP_DATA_CDN` 数据外移与 `SP_MAX_*` 容量环境变量；本分支则在预载健壮性、Bot/战斗热路径性能、零依赖持久化、本地对局记录与压缩调优上更完整，并坚持纯真人匹配。可按自己的运营形态选用或互相借鉴。
 
-其中本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复，分别移植改编自 xinhai-ai 分支的对应实现（commit `2e89a90`、`20524bb` 等，双方均为 GPL-3.0-or-later），并按本分支的存储、CDN 与性能方案做了改造；相关文件头部有 `Adapted from xinhai-ai/Stronghold-Protocol` 标注，细节见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md)、[docs/operations/CDN.md](docs/operations/CDN.md) 与 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md)。
+其中本分支的共享 worker 线程池、资源预载与服务端对局检查点/恢复，分别移植改编自 xinhai-ai 分支的对应实现（commit `2e89a90`、`20524bb`、`234dc52b` 等，双方均为 GPL-3.0-or-later），并按本分支的存储、CDN 与性能方案做了改造；相关文件头部有 `Adapted from xinhai-ai/Stronghold-Protocol` 标注，细节见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md)、[docs/operations/CDN.md](docs/operations/CDN.md) 与 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md)。
 
 ## 功能一览
 

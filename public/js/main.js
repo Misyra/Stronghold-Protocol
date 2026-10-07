@@ -45,7 +45,7 @@ import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
 import { RoomScreen } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
 import { installAudio } from './audio.js';
-import { settingsStore } from './ui/settings.js';
+import { settingsStore, useSettings, updateSettings } from './ui/settings.js';
 import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
@@ -54,6 +54,7 @@ import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { recordMatchResult } from './history/index.js';
 import { HistoryHost } from './ui/historyPanel.js';
+import { ResourceHost } from './ui/resourcePanel.js';
 import { APP_VERSION } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
@@ -291,6 +292,12 @@ function ScreenCrashed({ error, reset }) {
   </div>`;
 }
 
+function ResourceManagerHost() {
+  const settings = useSettings();
+  return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional}
+    onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })} />`;
+}
+
 function App() {
   const route = useStore(selectRoute);
   useLang(); // a language switch re-renders the whole tree in place
@@ -306,6 +313,7 @@ function App() {
     <${GuideHost} />
     <${LoadoutHost} />
     <${HistoryHost} />
+    <${ResourceManagerHost} />
   </div>`;
 }
 
@@ -403,7 +411,7 @@ async function boot() {
 
 function installResourcePreload() {
   import('./resources/index.js').then((r) => {
-    const apply = (s) => { r.syncResources(s.preload).catch((err) => console.warn('[resources] sync failed', err)); };
+    const apply = (s) => { r.syncResources(s.preload, s.preloadOptional).catch((err) => console.warn('[resources] sync failed', err)); };
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
   }).catch((err) => console.warn('[resources] unavailable', err));

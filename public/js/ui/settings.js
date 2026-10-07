@@ -18,7 +18,7 @@ import { t, tc, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
-/** Settings store: { bgm, sfx, voice, muted, damageNumbers, quality, keys }. */
+/** Settings store: { bgm, sfx, voice, muted, damageNumbers, quality, preload, preloadOptional, keys }. */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
 
 settingsStore.subscribe((s) => {

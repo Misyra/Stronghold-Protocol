@@ -82,18 +82,46 @@ const ZH_URL = 'https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/ma
 
 /**
  * The official clients by target language, each with its table sources. `untranslated`: how a target text that is not
- * a translation shows — 'cjk' (it still has Chinese characters: en, ko) or 'same' (it is the Chinese text itself: ja and
- * zh-TW write with Han characters). `composite`: the remake-made stage names are assembled (English wording only).
+ * a translation shows — 'cjk' (it still has Chinese characters: en, ko), 'same' (it is the Chinese text itself: zh-TW,
+ * whose fallback is the Chinese anyway) or 'native' (ja: the Chinese text itself, unless every Han character in it is one
+ * the client writes in its own translated texts — 炎, 武者, 速射手 are Japanese as they stand, 甄选干员 is not; see
+ * nativeCharset). `composite`: the remake-made stage names are assembled (English wording only).
  */
 export const LANG_SOURCES = Object.freeze({
   en: Object.freeze({ sources: EN_SOURCES, untranslated: 'cjk', composite: true }),
-  ja: Object.freeze({ sources: Object.freeze({ assets: assetsSource('jp', 'ja') }), untranslated: 'same', composite: false }),
+  ja: Object.freeze({ sources: Object.freeze({ assets: assetsSource('jp', 'ja') }), untranslated: 'native', composite: false }),
   ko: Object.freeze({ sources: Object.freeze({ assets: assetsSource('kr', 'ko') }), untranslated: 'cjk', composite: false }),
   'zh-TW': Object.freeze({ sources: Object.freeze({ assets: assetsSource('tw', 'zh-TW') }), untranslated: 'same', composite: false }),
 });
 
-/** The test "this target text is no translation of that Chinese one" of a language (LANG_SOURCES `untranslated`). */
-const untranslatedTest = (lang) => ((LANG_SOURCES[lang]?.untranslated ?? 'same') === 'same' ? (zh, t) => t === zh : (zh, t) => hasCjk(t));
+/**
+ * The test "this target text is no translation of that Chinese one" of a language (LANG_SOURCES `untranslated`).
+ * @param {string} lang
+ * @param {Set<string> | null} [native] for 'native': the Han characters of the client's clearly translated texts
+ */
+export const untranslatedTest = (lang, native = null) => {
+  const mode = LANG_SOURCES[lang]?.untranslated ?? 'same';
+  if (mode === 'cjk') return (zh, t) => hasCjk(t);
+  if (mode === 'native' && native) return (zh, t) => t === zh && [...t].some((ch) => CJK.test(ch) && !native.has(ch));
+  return (zh, t) => t === zh;
+};
+
+/**
+ * The Han characters a client writes in its own words: every character of the target texts that differ from their
+ * Chinese pair (walked like the pair index). A text identical to the Chinese whose Han characters are all in this set is
+ * the client's own (Japanese 炎, 不屈, 速射手); one with a character outside it is untranslated Chinese (甄选干员).
+ * @param {object[]} zh @param {object[]} target the picked sub-trees of TABLES, in order
+ * @returns {Set<string>}
+ */
+export function nativeCharset(zh, target) {
+  const chars = new Set();
+  const probe = new PairIndex((z, t) => {
+    if (t !== z) for (const ch of t) if (CJK.test(ch)) chars.add(ch);
+    return true; // collect only: nothing is indexed
+  });
+  for (let i = 0; i < zh.length; i++) probe.walk(zh[i], target[i], []);
+  return chars;
+}
 
 /** Official tables walked side by side (zh_CN ↔ EN), with the sub-trees that hold texts the remake uses. */
 const TABLES = [
@@ -621,7 +649,7 @@ const dictMap = (d, untranslated = (zh, t) => hasCjk(t)) => new Map(Object.entri
  *   zh / en: the picked sub-trees of TABLES, in order
  */
 export function buildOverlay({ zh, en, data, fallback = {}, source = null, lang = 'en' }) {
-  const untranslated = untranslatedTest(lang);
+  const untranslated = untranslatedTest(lang, LANG_SOURCES[lang]?.untranslated === 'native' ? nativeCharset(zh, en) : null);
   const index = new PairIndex(untranslated);
   for (let i = 0; i < zh.length; i++) index.walk(zh[i], en[i], []);
   const tr = new Translator(index, [

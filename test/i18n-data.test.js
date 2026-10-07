@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildRecordOverlay, applyRecordOverlay, applyFileOverlay, walkOverlay, getPath, textHash2 } from '../shared/i18nData.js';
-import { buildOverlay, inverseFormat, shapeKey, DATA_FILES, stripRich } from '../tools/build-i18n.mjs';
+import { buildOverlay, inverseFormat, shapeKey, DATA_FILES, stripRich, untranslatedTest, nativeCharset } from '../tools/build-i18n.mjs';
 import { createDataStore } from '../public/js/data.js';
 import { parseRichText, richTextPlain } from '../public/js/ui/richText.js';
 
@@ -206,4 +206,26 @@ test('data.js setLocale: without an overlay the texts stay Chinese (no throw, no
     assert.equal(await d.setLocale('en'), 'zh');
     assert.equal(d.locale(), 'zh');
   } finally { console.warn = w; }
+});
+
+test('build-i18n ja: a text written like the Chinese is the client\'s own when every Han character of it appears in the client\'s translated texts (炎, 速射手), untranslated otherwise (甄选干员)', () => {
+  // the JP client writes 炎 / 不屈 / 助力 / 速射手 exactly like the Chinese; 'same' dropped them, and the ja chain fell back
+  // to the English names (Yan / Resilient / Aid) in a Japanese interface
+  const zh = [{ a: { name: '炎', sub: '速射手', diy: '甄选干员', tip: '火焰射手出现' } }];
+  const ja = [{ a: { name: '炎', sub: '速射手', diy: '甄选干员', tip: '炎の速射手が出現' } }];
+  const chars = nativeCharset(zh, ja);
+  assert.deepEqual([...chars].sort(), [...'炎速射手出現'].sort(), 'only the texts that differ from their Chinese pair teach the charset');
+  const ut = untranslatedTest('ja', chars);
+  assert.equal(ut('炎', '炎'), false, '炎: every character is the client\'s own');
+  assert.equal(ut('速射手', '速射手'), false);
+  assert.equal(ut('甄选干员', '甄选干员'), true, '甄选干员: 甄 / 选 / 干 / 员 never appear in the client\'s own texts');
+  assert.equal(ut('W', 'W'), false, 'no Han character: as it stands');
+  assert.equal(ut('火焰射手出现', '炎の速射手が出現'), false, 'a different text is a translation');
+  // the other modes are unchanged: en / ko drop any target text with Chinese characters, zh-TW drops the Chinese itself
+  assert.equal(untranslatedTest('en')('炎', '炎'), true);
+  assert.equal(untranslatedTest('ko')('炎', '염'), false);
+  assert.equal(untranslatedTest('zh-TW')('炎', '炎'), true);
+  // the shipped ja overlay carries the bond names the JP client writes in kanji
+  const jaData = JSON.parse(readFileSync(path.join(ROOT, 'data/i18n/ja.json'), 'utf8'));
+  for (const n of ['炎', '不屈', '助力']) assert.equal(jaData.names[n], n, `${n} is Japanese as it stands`);
 });

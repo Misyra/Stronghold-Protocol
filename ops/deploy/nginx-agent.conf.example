@@ -1,0 +1,19 @@
+# Merge into each site's EXISTING HTTPS server block. Do not expose port 3900 publicly.
+# Check inherited add_header / cache / CORS directives in the existing configuration.
+location ^~ /api/admin/v1/ {
+    auth_basic off;
+    proxy_pass http://127.0.0.1:3900;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 10s;
+    proxy_cache off;
+    proxy_hide_header Access-Control-Allow-Origin;
+    add_header Cache-Control "no-store" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    # Do not add Access-Control-Allow-Origin or auth_basic here: the Agent checks Bearer.
+}
+location ^~ /internal/admin/ {
+    return 404;
+}

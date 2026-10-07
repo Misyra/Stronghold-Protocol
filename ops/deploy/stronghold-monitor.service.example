@@ -1,0 +1,33 @@
+[Unit]
+Description=Stronghold API-only metrics collector
+After=network.target
+
+[Service]
+Type=simple
+User=spmonitor
+Group=spmonitor
+WorkingDirectory=/opt/stronghold-ops
+EnvironmentFile=/etc/stronghold/monitor.env
+# Set MON_DATA_DIR=/var/lib/stronghold-monitor in monitor.env for this example.
+# Existing installations: preserve the existing dataDir and grant access to it instead.
+StateDirectory=stronghold-monitor
+ExecStart=/usr/bin/node /opt/stronghold-ops/collector.mjs
+Restart=on-failure
+RestartSec=5
+# 探针让路给游戏：后台调度 + 硬性 CPU 上限（单核 10%）+ 空闲 IO 优先级 + 内存护栏。
+# 常态占用远低于该上限；超限只会拖慢探针自身采样，不会挤占游戏进程。
+Nice=10
+CPUSchedulingPolicy=batch
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryHigh=200M
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/stronghold-monitor
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

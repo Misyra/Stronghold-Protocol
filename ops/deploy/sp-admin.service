@@ -1,0 +1,28 @@
+[Unit]
+Description=Stronghold read-only site management Agent
+After=network.target
+
+[Service]
+Type=simple
+User=spmonitor
+Group=spmonitor
+WorkingDirectory=/opt/stronghold-ops
+EnvironmentFile=/etc/stronghold/admin.env
+ExecStart=/usr/bin/node /opt/stronghold-ops/agent.mjs
+Restart=on-failure
+RestartSec=5
+# 探针让路给游戏：后台调度 + 硬性 CPU 上限（单核 10%）+ 内存护栏。
+Nice=10
+CPUSchedulingPolicy=batch
+CPUQuota=10%
+MemoryHigh=150M
+MemoryMax=384M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

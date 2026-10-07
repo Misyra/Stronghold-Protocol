@@ -193,10 +193,24 @@ function pushManifest(tag) {
   }
   git('add', '--', name);
   git('commit', '-m', `素材：R2 增量发布 ${tag}`, '--', name);
-  const remotes = git('remote').split(/\r?\n/).filter((r) => r && r !== 'origin');
+  // Push targets: every remote except the read-only references — `origin` (the upstream this
+  // fork syncs from) and `xinhai` (the lingxia repository, pull-only per AGENTS.md; pushing it
+  // used to 403 AFTER the other pushes and fail the whole run).
+  const pushable = (r) => {
+    if (!r || r === 'origin') return false;
+    const url = git('remote', 'get-url', r).trim();
+    return !/github\.com[:/]xinhai-ai\//i.test(url);
+  };
+  const remotes = git('remote').split(/\r?\n/).filter(pushable);
+  let failures = 0;
   for (const remote of remotes) {
-    console.log(git('push', remote, 'master').trim());
+    try { console.log(git('push', remote, 'master').trim()); }
+    catch (e) {
+      failures++;
+      console.error(`  push ${remote} failed (the manifest commit is local; retry later): ${e.message}`);
+    }
   }
+  if (failures === remotes.length && remotes.length > 0) throw new Error(`every push failed; the manifest is committed locally`);
 }
 
 // ---- collect files ----

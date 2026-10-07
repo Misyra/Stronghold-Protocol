@@ -24,7 +24,8 @@ LOBBY(room) → INFO_CHECK (co-op 25 s; solo and any single-human match untimed 
                     the layers their own combat reached (the round's pending gains, PRTS "以其阵地当前的状态" [ASSUMED]);
                     a helper's operator knocked out at the end of its own combat enters down — carryState { down: true },
                     PRTS "上一阶段为退场状态的干员强制退场", its full redeploy timer — confirmed by the user (§19.3))
-     SETTLE        (LP −min(leaks,10) per player (unite survivors to their source); eliminations; layer gains applied; coins; broadcast)
+     SETTLE        (LP −min(leaks,10) per player (unite survivors to their source); eliminations; layer gains applied; coins; broadcast;
+                    after a 联防 the outcome and every player's charge ride the SETTLE m.public as `uniteResult`, GitHub #235)
    R14 FINAL_ASSAULT (merged team LP; pairs by seat; shared boss pool; 120 real s countdown, no hard stop; overtime −1 team LP per
                     real s after 150 real s (§4, m.public.overtimeAt); no layer gains; team LP 0 ⇒ defeat at once (PRTS 直接失败),
                     pool 0 ⇒ victory — the first end the server registers decides, §20.5)

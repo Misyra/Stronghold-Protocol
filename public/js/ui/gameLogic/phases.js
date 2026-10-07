@@ -1,4 +1,5 @@
-// ui/gameLogic/phases.js — phase families, banners and countdowns. Re-exported from ../gameLogic.js.
+// ui/gameLogic/phases.js — phase families, banners, the round's result box and 战斗结束 sound, countdowns. Re-exported
+// from ../gameLogic.js.
 
 import { PHASE } from '../../../../shared/constants.js';
 import { bossLevelSeconds } from '../matchStatus.js';
@@ -59,6 +60,103 @@ export function phaseBanner(phase, pub) {
     case PHASE.SETTLE: return null;
     default: return null;
   }
+}
+
+// ---- the round's result box and 战斗结束 sound (GitHub #235; PR #112 by @Convey123) ------------------------------------
+// The official round result dialog (research 09 §3.1 "Round result dialog"): 「作战结束」 with 「全员无伤！」, or
+// 「生命值减少」 and the LP lost — official words only (the owner's review of PR #112, 2026-10-05: the
+// remake's own 「联防成功 / 联防失败：还有 N 只突破防线」 line is not in the official dialog). screens/game.js shows it
+// (ui/components.js ResultDialog) and plays the matching BATTLEOVER sound when SETTLE starts — the moment is [ASSUMED]:
+// the sources do not time the dialog, and a 联防 leaker's number exists only after the 联防. Boss rounds have no SETTLE
+// (最终攻势 / 隐秘核心 go to the result screen or the Hidden Core round), so they get neither [ASSUMED].
+
+/** How long a result box (ui/components.js ResultDialog) stays up, ms — inside SETTLE's 3 s (server DELAYS.SETTLE). */
+export const RESULT_BOX_MS = 2800;
+
+/**
+ * What this round's own battle cost the viewer: `min(cap, leaks)`, exactly what settlement charges outside a 联防.
+ * `cost` is what screens/game.js `roundLossRef` kept while the battle ran — `leaks` = counted enemies that got through
+ * (the highest the round showed: the settled state reads 0 again and must not wipe it), `cap` = the per-round LP cap.
+ * @param {{ leaks?: number, cap?: number } | null | undefined} cost
+ * @returns {number|null} null when this round's battle was never seen (not in the round, a reconnect landing on SETTLE)
+ */
+export function ownRoundLoss(cost) {
+  if (!cost) return null;
+  const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
+  if (leaks == null) return null;
+  const cap = Number.isFinite(cost.cap) && cost.cap > 0 ? Math.trunc(cost.cap) : 10; // no cap known → the official 10
+  return Math.min(cap, leaks);
+}
+
+/**
+ * 战斗结束: one of the official `BATTLEOVER_*` sounds (all three in data/assets.json audio.sfx.ui) — `battleOverReduce`
+ * when the round cost the viewer LP, `battleOverNoReduce` when a 联防 ran and the viewer was charged nothing,
+ * `battleOverNormal` otherwise; null when this round's battle was never seen. The client data names the three but not
+ * their triggers: the mapping is [ASSUMED] (PR #112; the owner's review called the three sounds right).
+ * The loss is the authority's per-player charge when a 联防 resolved (`uniteLoss`, m.public.uniteResult.losses — a
+ * leaker whose enemies the helpers stopped paid 0), else the own battle's (`ownRoundLoss`).
+ * @param {{ leaks?: number, cap?: number, unite?: boolean } | null | undefined} cost
+ * @param {number|null} [uniteLoss]
+ * @returns {'battleOverReduce'|'battleOverNoReduce'|'battleOverNormal'|null}
+ */
+export function battleOverSfx(cost, uniteLoss = null) {
+  if (!cost) return null;
+  // `uniteLoss == null` means "no 联防 figure" (Number(null) would read as 0)
+  const authority = uniteLoss == null ? NaN : Number(uniteLoss);
+  const loss = Number.isFinite(authority) ? Math.max(0, Math.trunc(authority)) : ownRoundLoss(cost);
+  if (loss == null) return null;
+  if (loss > 0) return 'battleOverReduce';
+  return cost.unite ? 'battleOverNoReduce' : 'battleOverNormal';
+}
+
+/**
+ * The official round result dialog for the viewer's own LP charge `loss`: 「作战结束」 + 「全员无伤！」 (mint) at 0, else
+ * 「生命值减少 −N」 (red).
+ * @param {number} loss
+ * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number }}
+ */
+export function roundResultBox(loss) {
+  const n = Math.max(0, Math.trunc(Number(loss) || 0));
+  return n === 0
+    ? { title: t('作战结束'), micro: 'BATTLE OVER', tone: 'mint', sub: t('全员无伤！'), duration: RESULT_BOX_MS }
+    : { title: t('作战结束'), micro: 'BATTLE OVER', tone: 'red', sub: t('生命值减少 −{n}', { n }), duration: RESULT_BOX_MS };
+}
+
+/**
+ * The result box of a round whose 联防 resolved: the same official dialog, its number the authority's charge for the
+ * viewer (m.public.uniteResult.losses — in a 联防 a leaker pays for the survivors, not for its own battle's leaks, so the
+ * client cannot work it out). The official words only, and only when they are true:
+ *   生命值减少 −N  the round charged the viewer N (red);
+ *   全员无伤！     nothing got through (`through` 0): nobody paid, true for every participant (mint);
+ *   title alone   the 联防 leaked but the viewer was not charged (a helper, a spared leaker — 全员无伤！ would claim the
+ *                 teammate who paid was unharmed too, and the official dialog has no other line; orange). Also the
+ *                 reading of a view without `losses`, which never falls back to the own battle's leaks.
+ * A viewer `losses` does not list — a spectator seat, a player eliminated before the round — gets no box, as in a
+ * round without 联防, where a viewer without a battle gets none (and no sound) [ASSUMED].
+ * @param {{ through?: number, losses?: Record<string, number> } | null | undefined} res m.public.uniteResult
+ * @param {string|null|undefined} selfId the viewer's playerId
+ * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null: no 联防 resolved, or not in the round
+ */
+export function uniteResultBox(res, selfId) {
+  const through = Number(res?.through);
+  if (!isObj(res) || !Number.isFinite(through) || through < 0) return null;
+  const losses = isObj(res.losses) ? res.losses : null;
+  if (losses && (selfId == null || !Object.hasOwn(losses, selfId))) return null;
+  const raw = losses ? Number(losses[selfId]) : NaN;
+  const loss = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
+  if (loss != null && loss > 0) return roundResultBox(loss);
+  if (loss != null && through === 0) return roundResultBox(0);
+  return { title: t('作战结束'), micro: 'BATTLE OVER', tone: 'orange', sub: '', duration: RESULT_BOX_MS };
+}
+
+/**
+ * The result box of a round without 联防: the own battle's cost as kept while it ran (`ownRoundLoss`; the live pending
+ * value is 0 again by the time SETTLE renders). null without a battle seen this round.
+ * @param {{ leaks?: number, cap?: number } | null | undefined} cost
+ */
+export function battleResultBox(cost) {
+  const loss = ownRoundLoss(cost);
+  return loss == null ? null : roundResultBox(loss);
 }
 
 /** Label of the prep capsule ("休息一下" in the original). */

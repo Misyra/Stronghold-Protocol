@@ -1,7 +1,7 @@
 // server/match/match/views.js — Match methods: the state builders — m.public (publicView with statusOf / fieldOf, the
-// fields' progress and the teammates' live pendingLp / uniteLeft), the nextEnemies preview of m.private and the prep
-// scout's m.field (prepFieldMeta: board, hand and temp as units, the scouted player's effects and coming enemies; in a
-// boss round's prep on the player's half of the boss field).
+// fields' progress, the teammates' live pendingLp / uniteLeft, the SETTLE uniteResult), the nextEnemies preview of
+// m.private and the prep scout's m.field (prepFieldMeta: board, hand and temp as units, the scouted player's effects and
+// coming enemies; in a boss round's prep on the player's half of the boss field).
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { PHASE, GEO } from '../../../shared/constants.js';
@@ -117,6 +117,13 @@ export class MatchViews {
       };
     }
     if (this.phase === PHASE.UNITE && this.unitePlan) v.unite = { helpers: this.unitePlan.helpers.map((p) => p.playerId), leakers: this.unitePlan.leakers.map((p) => p.playerId) };
+    // SETTLE after a 联防: its outcome as data (settle.js uniteResultView; GitHub #235, PR #112) — { through, helpers,
+    // leakers, losses: { playerId: the LP settlement charged this round } } — the client's result box reads the viewer's
+    // own charge from it; absent when no 联防 resolved (the client then shows the round's own battle result)
+    if (this.phase === PHASE.SETTLE && this.uniteResultView) {
+      const ur = this.uniteResultView;
+      v.uniteResult = { through: ur.through, helpers: ur.helpers.slice(), leakers: ur.leakers.slice(), losses: { ...ur.losses } };
+    }
     return v;
   }
 

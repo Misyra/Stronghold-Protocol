@@ -390,7 +390,8 @@ Other renderer rules from research 07 §5.4–5.5:
 
 The title screen and settings open one resource manager. Preloading is off by default; enabling it downloads required
 visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
-effects, music and tutorial illustrations. The choice persists in `preloadOptional`; old profiles default to false.
+effects, music and tutorial illustrations and is checked by default. The choice persists in `preloadOptional`;
+profiles without a saved choice default to true, while explicit saved choices are retained.
 Closing the manager keeps downloads running; pausing or disabling preload keeps verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 

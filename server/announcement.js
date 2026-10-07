@@ -1,6 +1,7 @@
 // Hot-loaded, read-only maintenance notice. The local configuration is never served directly.
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { N_ } from '../shared/i18n.js';
 
 const MAX_FILE_BYTES = 16 * 1024;
 const MAX_REMOTE_BYTES = 64 * 1024;
@@ -12,7 +13,7 @@ export function parseAnnouncement(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('expected an object');
   if (value.enabled === false) return null;
   if (value.enabled !== true) throw new Error('enabled must be true or false');
-  const title = value.title == null ? '维护公告' : value.title;
+  const title = value.title == null ? N_('维护公告') : value.title;
   if (typeof title !== 'string' || !title.trim() || title.length > 80) throw new Error('title must contain 1–80 characters');
   if (typeof value.text !== 'string' || !value.text.trim() || value.text.length > 2000) throw new Error('text must contain 1–2000 characters');
   // Require an explicit timezone; a server's local timezone must not silently move a maintenance deadline.

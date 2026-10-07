@@ -5,9 +5,10 @@
 // reload. A client-only battle fix shipped exactly that way and stayed invisible on the reporting player's page: the
 // nginx log shows the page loaded the PRE-fix module blob and made no module request at all for the rest of the session.
 //
-// HOW: the server injects this release's tag into the HTML and reports it at `/healthz.build`.
-// A plain static host without that stamp uses the first successful check as its baseline. The tag lives in page
-// memory: nothing survives a reload, and a duplicated tab must not inherit the first tab's tag.
+// HOW: the server stamps this release's tag into the HTML (assetVersion.js, `globalThis.__spAssetVersion`) and reports
+// it at `/healthz` as `build` (server/http/static.js). A plain static host without that stamp uses the first successful
+// check as its baseline. The tag lives in page memory: nothing survives a reload, and a duplicated tab must not
+// inherit the first tab's tag.
 // A later check reporting a DIFFERENT tag means the server changed under this page:
 //   * outside a match the page reloads itself, once;
 //   * during a match the guard never throws the player's game away — `onStale` fires (the connection banner offers

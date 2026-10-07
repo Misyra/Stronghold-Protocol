@@ -30,6 +30,7 @@
 
 import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
+import { N_ } from '../shared/i18n.js';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -144,7 +145,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
     const session = registry.adopt({
       playerId: s.playerId,
       token: s.token,
-      name: typeof s.name === 'string' && s.name ? s.name : '博士',
+      name: typeof s.name === 'string' && s.name ? s.name : N_('博士'),
       disconnectedAt: since,
       resumeWindowMs: windowMs,
       roomCode: s.roomCode,

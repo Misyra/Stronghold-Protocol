@@ -22,9 +22,8 @@
 //            turn; bonds from the board (bondsMeta.computeBonds) with 0–120 layers
 //   bonds    46 battles: every bond at its activation threshold (1 layer) and at its top tier (999 layers), 8 operators
 //   fields   22 battles: every Final Assault / Hidden Core leader on its pair and its solo template (a shared boss pool,
-//            ended at 200 game s) and 联防 fields (1 and 2 helpers on the 联防 map of their count — boards laid out on a
-//            battle stage —, carried HP / SP, a knocked-out operator, two leakers' enemies with a summoned-only kind and
-//            a bounty)
+//            ended at 200 game s) and 联防 fields (1 and 2 helpers on a battle stage, both halves, carried HP / SP, a
+//            knocked-out operator, two leakers' enemies with a summoned-only kind and a bounty)
 //   matches  18 matches run to the end in virtual time with the match's default bot rehearsal: 16 bot-only (solo 标准 /
 //            险境 / 绝境 / 终极 ×2 seeds, co-op 2 / 3 / 4, one server-run combat match, two with LP and layers raised at the
 //            first prep so they reach the Hidden Core), one co-op match whose human seat (AI 托管, offline: its
@@ -69,7 +68,6 @@ import { buildBattleSpec, createBattleFromSpec } from '../server/sim/spec.js';
 import { createRng, deriveSeed } from '../server/sim/rng.js';
 import { GameData } from '../server/match/gamedata.js';
 import { setupMatchWaves, buildNormalWave, buildBossWave, buildUniteWave, isFlyKey, routeByMotion } from '../server/match/waves.js';
-import { uniteStageId } from '../server/match/unite.js';
 import { buildDeployMap, positionClass, canPlace, ownerRangeKeys, tileKey } from '../server/match/board.js';
 import { computeBonds, bondSnapshot } from '../server/match/bondsMeta.js';
 import { Match } from '../server/match/Match.js';
@@ -246,7 +244,7 @@ const ENEMY_COLS = Object.freeze(['spawned', 'killed', 'leaked', 'dmg', 'taken']
 
 const CHESS = Object.values(data.chess).sort((a, b) => byId(a.chessId, b.chessId));
 const VISIBLE = CHESS.filter((c) => c.visible);
-// the battle stages (the two 联防 maps, stages.json kind 'unite', are the 联防 fields' own: server/match/unite.js uniteStageId)
+// the battle stages (data/stages.json also keeps the escaped levels' two maps, kind 'unite', which no field uses)
 const STAGES = Object.keys(data.stages).filter((id) => data.stages[id].kind !== 'unite').sort(byId);
 const BANDS = Object.keys(data.bands).sort(byId);
 const EQUIPS = Object.values(data.items).filter((i) => i.itemType === 'EQUIP').map((i) => i.id).sort(byId);
@@ -607,9 +605,8 @@ export function fieldScenarios() {
     const modeId = helpers === 1 ? 'mode_multi_normal' : 'mode_multi_hard';
     const gd = gdFor(modeId);
     const round = helpers === 1 ? 7 : 11;
-    // the helpers' boards are laid out on the round's stage; the 联防 battle runs on its own map (GitHub #41)
-    const boardStageId = STAGES[(i * 5) % STAGES.length];
-    const stageId = uniteStageId(gd, helpers) ?? boardStageId;
+    // the 联防 battle runs on the round's stage, the helpers' boards on its two halves (0.2.0's escaped-level map withdrawn)
+    const stageId = STAGES[(i * 5) % STAGES.length];
     const seed = deriveSeed(20261005, `unite:${helpers}`);
     const src = normalWave(gd, round, seed);
     const leakers = helpers === 1 ? ['p2', 'p3'] : ['p3', 'p4'];
@@ -624,7 +621,7 @@ export function fieldScenarios() {
     let uid = 1;
     const players = [];
     for (let h = 0; h < helpers; h++) {
-      const t = team(gd, boardStageId, 'normal', uid, 8, helpers > 1 && h === 0 ? 8 : 0);
+      const t = team(gd, stageId, 'normal', uid, 8, helpers > 1 && h === 0 ? 8 : 0);
       uid = t.nextUid;
       // carried end state of the helper's own battle: HP ratio + SP, one knocked out, summons with SP only
       t.units.forEach((u, k) => {

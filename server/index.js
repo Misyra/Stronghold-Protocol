@@ -50,7 +50,7 @@ import { Persister, restoreServer } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
-import { createAssetVersion, VERSION_PREFIX, readAssetsCdnVersionFile } from './assetVersion.js';
+import { createAssetVersion, VERSION_PREFIX, readAssetsCdnVersionFile, readAssetsManifestFile } from './assetVersion.js';
 import { createResourceIndex, RESOURCE_MANIFEST_FILE } from './resources.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { getData, loadData } from './data.js';
@@ -360,15 +360,22 @@ function splitUrl(url) {
 /**
  * Create the static request handler.
  * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, log?: object,
- *           assetsCdn?: string, assetsCdnVersion?: string }} dirs
+ *           assetsCdn?: string, assetsCdnVersion?: string, assetsManifest?: { tag: string, hashes: Record<string, string> } | null }} dirs
  * @returns {(req: http.IncomingMessage, res: http.ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
 /** Optional per-machine art manifest (tools/local-extract) and the empty stand-in served when it is absent. */
 const LOCAL_ART_MANIFEST = 'local-assets.json';
 const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none', count: 0, groups: {} }));
 
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), log = noopLog, assetsCdn = '', assetsCdnVersion = '' }) {
-  const cdn = assetCdnSettings(assetsCdn, assetsCdnVersion);
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), log = noopLog, assetsCdn = '', assetsCdnVersion = '', assetsManifest = null }) {
+  const settings = assetCdnSettings(assetsCdn, assetsCdnVersion);
+  const cdn = {
+    ...settings,
+    // Per-file manifest mode (tools/r2-sync.mjs): art URLs gain a per-file `?v=<hash>` query instead
+    // of the whole-tree `_v/<tag>/` prefix, so a release only re-busts the files it changed.
+    manifest: assetsManifest && settings.base ? `/assets-manifest.json?v=${assetsManifest.tag}` : '',
+    hashes: assetsManifest ? assetsManifest.hashes : null,
+  };
   const mounts = [
     { prefix: '/data/', name: 'data', dir: path.resolve(dataDir) },
     { prefix: '/shared/', name: 'shared', dir: path.resolve(sharedDir) },
@@ -421,6 +428,30 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         headers['Content-Length'] = body.length;
         res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : body);
       } catch (err) { log.error('[resources] manifest failed', err); sendError(req, res, 500, '无法生成资源清单'); }
+      return;
+    }
+    // The per-file art manifest (`.assets-manifest.json`, tools/r2-sync.mjs). Its body is a pure
+    // function of the `?v=<tag>` in the URL, so immutable cache headers are safe — and a tag that
+    // is not this boot's release (an older page, a newer server) gets a hard 404, mirroring the
+    // /_v/ rule: no release's hashes may be cached under another release's URL.
+    if (decoded === '/assets-manifest.json') {
+      if (!cdn.manifest || query !== `v=${assetsManifest.tag}`) {
+        sendError(req, res, 404, '页面不存在 · Not found');
+        return;
+      }
+      const body = Buffer.from(JSON.stringify(assetsManifest));
+      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding' };
+      if (acceptsGzip(req.headers['accept-encoding'])) {
+        const gzip = await gzipCache.get('/__assets-manifest__', { size: body.length, mtimeMs: 0 }, body, assetsManifest.tag);
+        headers['Content-Encoding'] = 'gzip';
+        headers['Content-Length'] = gzip.length;
+        res.writeHead(200, headers);
+        res.end(req.method === 'HEAD' ? undefined : gzip);
+        return;
+      }
+      headers['Content-Length'] = body.length;
+      res.writeHead(200, headers);
+      res.end(req.method === 'HEAD' ? undefined : body);
       return;
     }
     let versioned = false;
@@ -707,7 +738,7 @@ function makeLogger(quiet) {
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   workers?: number, workerQueue?: number, workerTimeoutMs?: number, workerPool?: SimulationPool | null,
- *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string,
+   *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: WebSocketServer,
@@ -723,20 +754,27 @@ export async function startServer(opts = {}) {
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
-  // Without an explicit SP_ASSETS_CDN_VERSION the release tag comes from the repo's `.assets-cdn-version`
-  // (written by tools/r2-sync.mjs, travels with `git pull`); when that is absent the CDN's own publication
-  // (`/_v/latest`) is asked, and a CDN without either simply stays unversioned.
+  // The per-file art manifest (`.assets-manifest.json`, shipped by tools/r2-sync.mjs and committed
+  // with the release) supersedes the release-tag lookup: with it, art URLs carry a per-file `?v=`
+  // query and no version is needed. Without it the legacy chain applies — the repo's
+  // `.assets-cdn-version` (travels with `git pull`), then the CDN's own `/_v/latest` publication —
+  // and a CDN without either simply stays unversioned.
   const cdnBase = opts.assetsCdn ?? process.env.SP_ASSETS_CDN;
-  let cdnVersion = opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION;
-  if (cdnBase && !cdnVersion) {
-    cdnVersion = readAssetsCdnVersionFile(opts.assetsVersionFile);
-    if (cdnVersion) log.info(`assets CDN ${cdnBase} release ${cdnVersion} (from the version file)`);
-    else {
-      cdnVersion = await resolveAssetsCdnVersion(cdnBase);
-      log.info(cdnVersion ? `assets CDN ${cdnBase} release ${cdnVersion} (from /_v/latest)` : `assets CDN ${cdnBase} publishes no release tag, serving unversioned URLs`);
+  const assetsManifest = cdnBase ? readAssetsManifestFile(opts.assetsManifestFile) : null;
+  let cdnVersion = '';
+  if (cdnBase && !assetsManifest) {
+    cdnVersion = opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION;
+    if (!cdnVersion) {
+      cdnVersion = readAssetsCdnVersionFile(opts.assetsVersionFile);
+      if (cdnVersion) log.info(`assets CDN ${cdnBase} release ${cdnVersion} (from the version file)`);
+      else {
+        cdnVersion = await resolveAssetsCdnVersion(cdnBase);
+        log.info(cdnVersion ? `assets CDN ${cdnBase} release ${cdnVersion} (from /_v/latest)` : `assets CDN ${cdnBase} publishes no release tag, serving unversioned URLs`);
+      }
     }
   }
   const cdn = assetCdnSettings(cdnBase, cdnVersion);
+  if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
@@ -793,7 +831,7 @@ export async function startServer(opts = {}) {
     throw err;
   }
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log, assetsCdn: cdn.base, assetsCdnVersion: cdn.version });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log, assetsCdn: cdn.base, assetsCdnVersion: cdn.version, assetsManifest });
   const allowStatus = createStatusLimiter({ trustProxy: netOptions.trustProxy });
   const readAnnouncement = createAnnouncementReader({
     filePath: path.resolve(ROOT, opts.announcementFile ?? process.env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json'), log,
@@ -862,6 +900,7 @@ export async function startServer(opts = {}) {
         artVersion: serveStatic.artVersion,
         assetsCdn: cdn.base || null,
         assetsCdnVersion: cdn.version || null,
+        assetsManifest: assetsManifest?.tag || null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
         workers: workerPool?.stats() || null,
         // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.

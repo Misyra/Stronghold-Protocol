@@ -111,22 +111,25 @@ node tools/r2-sync.mjs --bucket <bucket>            # 上传 public/{assets,font
 node tools/r2-sync.mjs --bucket <bucket> --dry-run  # 只看将要上传的内容
 ```
 
-脚本的行为：
+脚本的行为（**增量上传**）：
 
-- 每个文件写两个 key：`assets/…`（普通路径）和 `_v/<tag>/assets/…`（版本化发布）。`tag` 是全部美术文件「路径 + SHA-256 内容」哈希的前 16 位十六进制，美术不变则 tag 不变，重跑即 no-op。
-- 支持断点续传（`.cache/r2-sync-progress.json`）；OAuth token 过期时自动调 `wrangler whoami` 刷新。
-- 上传限速约 3 req/s 并对 429 全局退避：Cloudflare 管理 API 有每账户请求配额，并发猛打会大面积 429。
-- 成功后把 tag 写入 `_v/latest`（`Cache-Control: no-store`），供服务器启动时自动解析。
+- 每个文件只占一个 key：普通路径 `assets/…`。仓库根目录的 `.assets-manifest.json` 记录上次发布时每个路径的内容哈希（`{ tag, hashes }`，`tag` 是全部「路径 + SHA-256 前 16 位」哈希的前 16 位十六进制，美术不变则 tag 不变）。
+- 每次运行先和这份清单对比，**只上传哈希变化的文件**（通常是几个到几十个），全部成功后才重写清单；中断或失败不写清单，重跑自动补齐——清单本身就是断点续传状态，没有额外的进度文件。
+- 上传限速约 3 req/s 并对 429 全局退避：Cloudflare 管理 API 有每账户请求配额，并发猛打会大面积 429。OAuth token 过期时自动调 `wrangler whoami` 刷新。
+- 未知参数直接报错退出（历史上 `--help` 被静默忽略并触发过一次真实全量上传）。
 
-服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com`。**`SP_ASSETS_CDN_VERSION` 现在是可选项**，解析优先级为：显式设置的环境变量 → 仓库根目录的 `.assets-cdn-version`（由同步脚本写入、随发布提交）→ CDN 上的 `_v/latest` 对象（带时间戳查询参数，绕过所有缓存）→ 都没有则回退为无版本 URL，行为与第 2 节的兼容模式一致。手动设置该变量仍然生效，可用于钉住旧版本回滚。
+服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证仓库里有 `.assets-manifest.json`（随发布提交）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变（永远命中缓存），文件更新时只有它的 URL 变化。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取，浏览器每个版本只下载一次）。清单不存在时回退为旧版行为：`.assets-cdn-version` → `_v/latest` → 无版本普通路径。
 
-发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 重启服务器。脚本成功后会更新 `.assets-cdn-version`；`--push` 额外把这一个文件提交（`素材：R2 发布 <tag>`）并推送 master 到除 `origin` 外的所有远程（GitHub fork 与 Gitee）。部署机 `git pull` 后重启即完成同步，版本文件优先于网络请求，启动不依赖 CDN 可达。每个 tag 都是自洽的全量快照，旧 tag 的对象永久保留，旧页面与已缓存版本不受影响。玩家端 Service Worker 按文件内容哈希跨版本复用未变化的文件（见第 5 节），只有真正变化的文件会重新下载。
+发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 部署机 `git pull` → 重启服务器。`--push` 把 `.assets-manifest.json` 这一个文件提交（`素材：R2 增量发布 <tag>`）并推送 master 到除 `origin` 外的所有远程（GitHub fork 与 Gitee）。日常发布只传变化文件，通常几十秒内完成。
+
+回滚：旧版「`_v/<tag>/` 全量快照」布局的对象仍保留在 bucket 里，`.assets-cdn-version` 与手动 `SP_ASSETS_CDN_VERSION` 的解析链也还在——切回旧代码即回到 `_v/<tag>/` 的版本化 URL，无需动 bucket。同步脚本不再写入这两者（旧服务器若拉到新 tag，会指向已不再生成的 `_v/` key）。
 
 费用：只有穿透到 R2 的读取（Class B）计费，边缘缓存命中不计费，流量免费；配合高命中率（建议开启 [Tiered Cache](https://developers.cloudflare.com/cache/how-to/tiered-cache/)）月请求量通常在免费额度内。
 
 ### 6.1 本站实际部署（2026-10-06）
 
-- bucket：`weishu`；自定义域名：`https://assets.misyra.com`（zone `misyra.com`）；当前发布：`c42c1bf187c71866`（5503 个文件，约 334 MiB，双 key 共 11006 个对象）。
+- bucket：`weishu`；自定义域名：`https://assets.misyra.com`（zone `misyra.com`）；旧版快照发布：`c42c1bf187c71866`（5503 个文件，约 334 MiB，双 key 共 11006 个对象）。
+- 2026-10-06 起改为增量清单方案：bucket 只维护普通路径 key，仓库以 `.assets-manifest.json` 发布（首个清单 tag 见该文件；v0.1.4 的新语音、新美术已随迁移上传，线上未切换、无感知）。
 - `public/dev/` 不上传；`/js/`、`/vendor/`、`/data/`、`/api/`、`/ws` 留在游戏服务器，不上 R2。
 
 **启用（游戏服务器上唯一要做的事）**：
@@ -136,22 +139,22 @@ $env:SP_ASSETS_CDN = 'https://assets.misyra.com'
 npm start        # 或写进服务管理器的环境配置
 ```
 
-不设置就维持本机加载素材的现状，完全无害；设置后只有 `/assets`、`/fonts`、`/media` 走 R2。版本号不用设——仓库里的 `.assets-cdn-version` 随 `git pull` 生效；回滚旧版本时才手动设 `SP_ASSETS_CDN_VERSION` 钉住。
+不设置就维持本机加载素材的现状，完全无害；设置后只有 `/assets`、`/fonts`、`/media` 走 R2。版本号不用设——仓库里的 `.assets-manifest.json` 随 `git pull` 生效，启动日志会打出 `assets CDN … manifest … (per-file ?v= busting)`；回滚旧版本时才切回旧代码或手动设 `SP_ASSETS_CDN_VERSION` 钉住 `_v/` 快照。
 
 **重启后验收（约 30 秒）**：
 
-1. 打开 `https://<游戏域名>/healthz`，确认 `assetsCdn` 为 `https://assets.misyra.com`、`assetsCdnVersion` 为当前 tag；启动日志同时会打出 `assets CDN … release … (from the version file)`。
-2. 打开游戏页面，浏览器 Network 面板中图片 / 音频 / 字体请求应指向 `assets.misyra.com`，且 `/js/`、`/api/`、`/ws` 仍指向游戏域名。
+1. 打开 `https://<游戏域名>/healthz`，确认 `assetsCdn` 为 `https://assets.misyra.com`、`assetsManifest` 为当前清单 tag；启动日志同时会打出 `assets CDN … manifest …`。
+2. 打开游戏页面，浏览器 Network 面板中图片 / 音频 / 字体请求应指向 `assets.misyra.com` 且带 `?v=` 参数，`/assets-manifest.json?v=…` 只在首次访问下载一次；`/js/`、`/api/`、`/ws` 仍指向游戏域名。
 3. 跨域抽查（应含 `Access-Control-Allow-Origin: *`，第二次请求为 `CF-Cache-Status: HIT`）：
 
 ```bash
-curl -I -H 'Origin: https://<游戏域名>' https://assets.misyra.com/_v/<tag>/assets/char/avatar/char_1012_skadi2.png
+curl -I -H 'Origin: https://<游戏域名>' "https://assets.misyra.com/assets/char/avatar/char_1012_skadi2.png?v=<healthz 清单里该文件的哈希>"
 ```
 
 **日常发布美术（固定三步）**：
 
 ```powershell
-node tools/r2-sync.mjs --bucket weishu --push   # 增量上传 + 更新版本文件 + 提交推送
+node tools/r2-sync.mjs --bucket weishu --push   # 增量上传 + 更新清单 + 提交推送
 # 部署机：
 git pull
 重启服务器

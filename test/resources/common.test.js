@@ -61,6 +61,15 @@ describe('resource manifest validation', () => {
     assert.equal(isResourceUrl(42), false);
   });
 
+  test('the per-file cache-bust query is the one query a resource URL may carry', () => {
+    assert.equal(isResourceUrl('/assets/x.png?v=0123456789abcdef'), true, 'manifest mode appends ?v=<16 hex> itself');
+    assert.equal(isResourceUrl('https://cdn.example.com/assets/x.png?v=0123456789abcdef'), true);
+    for (const url of ['/assets/x.png?v=short', '/assets/x.png?v=0123456789abcdeg', '/assets/x.png?v=0123456789abcdef&x=1',
+      '/assets/x.png?x=1', '/assets/x.png#?v=0123456789abcdef']) {
+      assert.equal(isResourceUrl(url), false, url);
+    }
+  });
+
   test('paths, MIME types and cache names', () => {
     assert.equal(isResourcePath('/assets/x.png'), true);
     assert.equal(isResourcePath('/fonts/x.woff2'), true);

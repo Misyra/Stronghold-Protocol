@@ -147,9 +147,9 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 版本在进程启动时计算：代码和 JSON 按内容，大型二进制素材按路径、大小和修改时间。更新代码、下载素材、复制本地素材后都要重启服务器；不要在保留二进制文件大小和修改时间的同时替换内容。运行中改动的版本资源返回不缓存的 503，避免把新内容写进旧版本的长期缓存。反向代理需把 `/_v/` 原样交给 Node——它是 Node 按启动内容哈希解析的虚拟路径，磁盘上并不存在 `public/_v`，不能让代理用 `root` / `alias` 直出；不要对首页和 API 强制设置长期缓存。反代可以为 `/_v/` 加共享缓存降低 Node 的 CPU 与临时文件 I/O（未命中仍回源 Node，Node 始终是唯一权威），要点与坑位见下文 2.4 的「Nginx 运维备忘」。
 
-国内站可保留原 DNS，让素材使用香港站的 Cloudflare 缓存：设置 `SP_ASSETS_CDN=https://game.misyra.com`（不含 `/play`）。香港站须先启用素材跨域响应；两站版本缓存上线后，可用 `SP_ASSETS_CDN_VERSION` 指定香港站的 `artVersion`。完整步骤、nginx 片段与缓存规则见 [CDN.md](CDN.md)。
+素材也可以交给 CDN 承载（R2 或另一台游戏主机）：服务器只出代码、游戏数据、API 和 WebSocket，玩家加载图片 / Spine / 音频 / 字体走 CDN。启用步骤见下文 1.7；全部方案（含以另一台主机作 CDN 的旧方式）见 [CDN.md](CDN.md)。
 
-### 1.6 局内维护公告
+### 1.6 维护公告
 
 复制项目根目录的 `announcement.example.json` 为 `announcement.json`（PowerShell：`Copy-Item announcement.example.json announcement.json`；Linux / macOS：`cp announcement.example.json announcement.json`），修改为：
 
@@ -164,11 +164,28 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 将示例日期替换为实际维护日期；`expiresAt` 必须包含时区，例如北京时间用 `+08:00`，UTC 用 `Z`。公告从配置生效起显示到该时刻，到期自动隐藏，不会触发停服、踢人或结束对局。`title` 可省略（默认「维护公告」），最多 80 个字符；`text` 为纯文本，支持换行，最多 2000 个字符，不解析 HTML。
 
-局内（含开局简报、选羁绊和结算）显示带关闭按钮的公告条，每 30 秒检查更新，回到浏览器标签页时立即检查。关闭后同一浏览器记住当前公告，不因刷新或开始下一局重复出现；修改标题、正文或截止时间会作为新公告再次显示。浏览器禁用本地存储时，关闭状态只在本次页面内保留。
+进入游戏后（主菜单、大厅、同盟与对局全程）显示带关闭按钮的公告条，每 30 秒检查更新，回到浏览器标签页时立即检查。关闭后同一浏览器记住当前公告，不因刷新或开始下一局重复出现；修改标题、正文或截止时间会作为新公告再次显示。浏览器禁用本地存储时，关闭状态只在本次页面内保留。
 
-服务器最多每秒读取一次文件，多个玩家共享读取结果；保存完成后，局内通常在 31 秒内看到更新，无需重启服务器。立即撤下可设为 `{"enabled": false}`，或删除配置文件；文件缺失、无效或超过 16 KiB 时不显示公告，无效配置会记录警告。建议先写临时文件再重命名覆盖，避免保存到一半时被读取。
+服务器最多每秒读取一次文件，多个玩家共享读取结果；保存完成后，玩家通常在 31 秒内看到更新，无需重启服务器。立即撤下可设为 `{"enabled": false}`，或删除配置文件；文件缺失、无效或超过 16 KiB 时不显示公告，无效配置会记录警告。建议先写临时文件再重命名覆盖，避免保存到一半时被读取。
 
 配置文件放在项目根目录，不在 `public/` / `data/` 下，且已被 Git 忽略；可通过 `SP_ANNOUNCEMENT_FILE` 指定其他服务器本地路径（相对路径以项目根目录为基准）。`GET /api/announcement` 返回当前公告和服务器时间，Node 侧始终不缓存（`no-store`）；这是只读接口，发布和修改只能通过本地配置文件完成，无需管理页面或管理令牌。使用 nginx 时保持该 API 代理到 Node；如需减轻轮询压力，可为 `location = /api/announcement` 精确匹配加 5~10 秒的共享缓存（必须 `proxy_ignore_headers Cache-Control`），响应里的 `serverTime` 被客户端用于换算公告倒计时，TTL 越大偏差越大，不要超过 10 秒；`/api/` 其余端点保持不缓存。
+
+### 1.7 素材 CDN（R2，可选）
+
+美术（图片 / Spine / 音频 / 字体）可以放到 Cloudflare R2，由绑定的自定义域名经边缘缓存对外服务。游戏服务器设置一个环境变量即可启用：
+
+```powershell
+$env:SP_ASSETS_CDN = 'https://assets.example.com'
+npm start        # 或写进服务管理器的环境配置
+```
+
+启用后素材 URL 形如 `https://assets.example.com/assets/…?v=<文件哈希>`：URL 由文件内容决定，内容不变则 URL 不变，浏览器、预载 Service Worker 与 CDN 边缘三层缓存永久命中；发布只让**变化过的文件**重新下载，外加一份约 200 KB 的清单。代码、游戏数据、API 与 WebSocket 仍由游戏服务器直出。
+
+CDN 的发布清单（仓库根目录 `.assets-manifest.json`）由维护者在发布美术时用 `node tools/r2-sync.mjs --bucket <bucket> --push` 生成并提交：脚本只上传哈希变化的文件（几秒到几分钟），清单随 `git pull` 到达部署机，**不需要设置版本号**——清单不存在时自动回退为无版本 URL；如按旧方案手动设置过 `SP_ASSETS_CDN_VERSION`，切换后可清除。更新流程与 1.5 相同：`git pull` → 重启（清单在启动时读取）。
+
+验收约 30 秒：`/healthz` 出现 `"assetsManifest": "<16 位 tag>"`；浏览器 Network 面板中素材请求指向 CDN 域名且带 `?v=`，`/assets-manifest.json?v=<tag>` 每个版本只下载一次；`/js/`、`/api/`、`/ws` 仍指向游戏域名。
+
+回滚：旧版「`.assets-cdn-version` + `_v/<tag>/` 快照」链路仍受支持，切回旧代码即恢复旧 URL 形状，无需清理 bucket。bucket、自定义域名、CORS、缓存规则与费用的一次性配置见 [CDN.md](CDN.md) 第 6 节。
 
 ## 2. 让不在同一网络的朋友加入
 

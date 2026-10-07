@@ -65,8 +65,14 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
       }
       return open + JSON.stringify(map).replace(/</g, '\\u003c') + close;
     });
-    const settings = JSON.stringify(cdn).replace(/</g, '\\u003c');
-    return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};</script>`);
+  const settings = JSON.stringify({ base: cdn.base, version: cdn.version, manifest: cdn.manifest || '' }).replace(/</g, '\\u003c');
+  // Start the manifest fetch in <head> so it races the module graph: by the time any resourceUrl()
+  // call builds a CDN URL, the per-file hashes have usually landed (they turn bare URLs into
+  // per-file `?v=` ones). The page passes the promise through; resourceUrl.js consumes it.
+  const manifestFetch = cdn.manifest
+    ? `fetch(${JSON.stringify(cdn.manifest)}).then((r) => r.ok ? r.json() : null, () => null)`
+    : 'null';
+  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};globalThis.__spManifestReady=${manifestFetch};</script>`);
   }
   return { tag, artTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === `${stat.size}:${stat.mtimeMs}` };
 }
@@ -80,5 +86,27 @@ export function readAssetsCdnVersionFile(file = path.resolve(path.dirname(fileUR
     return /^[a-f0-9]{16}$/.test(tag) ? tag : '';
   } catch {
     return '';
+  }
+}
+
+/** The per-file art manifest tools/r2-sync.mjs ships with the repo (`.assets-manifest.json`):
+ *  `{ tag, hashes }` — `hashes` maps every published art path (`/assets/…`) to its content hash.
+ *  Servers pass it into every CDN URL as a per-file `?v=<hash>` query, so a release only re-busts
+ *  the files it changed; the tag doubles as the manifest's own immutable-cache key. Returns null
+ *  when the file is missing or does not hold a valid manifest. */
+export function readAssetsManifestFile(file = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.assets-manifest.json')) {
+  try {
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!doc || !/^[a-f0-9]{16}$/.test(doc.tag) || !doc.hashes || typeof doc.hashes !== 'object') return null;
+    const entries = Object.entries(doc.hashes);
+    if (entries.length > 50000) return null;
+    const hashes = {};
+    for (const [p, h] of entries) {
+      if (!/^\/(?:assets|fonts|media)\/[^\s?#]+$/.test(p) || !/^[a-f0-9]{16}$/.test(h)) return null;
+      hashes[p] = h;
+    }
+    return { tag: doc.tag, hashes };
+  } catch {
+    return null;
   }
 }

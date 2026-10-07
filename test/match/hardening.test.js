@@ -1,5 +1,5 @@
 // Regression tests for the adversarial review of the match engine: every defect fixed there and every registry
-// addition content needs (DESIGN §6.4/§7, docs/META.md). FakeBattle unless noted.
+// addition content needs (DESIGN §6.4/§7, docs/development/META.md). FakeBattle unless noted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHASE, GEO } from '../../shared/constants.js';
@@ -182,7 +182,7 @@ test('b.ev and b.snap always carry the game time gt (also on m.field resync); co
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// registry additions (docs/META.md §2)
+// registry additions (docs/development/META.md §2)
 
 test('onIncome rewrites the round income (老鲤-style withholding); onSpend reports every completed payment', () => {
   const reg = builtins();

@@ -2,7 +2,7 @@
 // entry whose files are missing on this machine, so a run where some downloads failed (or whose upstream index lost
 // them) dropped entries every other install still has — a pull request (PR #7) carried such a manifest, 42 audio
 // entries short. The run now keeps the current manifest, lists the entries it would drop and exits 1, unless
-// --allow-shrink (or --prune) is passed. DESIGN §21, docs/ASSETS.md.
+// --allow-shrink (or --prune) is passed. DESIGN §21, docs/development/ASSETS.md.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';

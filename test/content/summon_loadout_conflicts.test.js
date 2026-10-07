@@ -1,5 +1,5 @@
 // test/content/summon_loadout_conflicts.test.js — summoner kits read their summon's stats / blackboards for the OWNER's
-// loadout (DESIGN §16, docs/SIM.md §6 `battle.tokenDef(tokenId, ownerUnit)`), also when two players of one shared field
+// loadout (DESIGN §16, docs/development/SIM.md §6 `battle.tokenDef(tokenId, ownerUnit)`), also when two players of one shared field
 // (联防) run the same summoner with different skills / modules. The per-battle data view resolves an id-only
 // `battle.data.getToken(id, chessId)` with the FIRST player's loadout of that chess (`loadoutConflicts`), so a kit
 // reading it gave the second player the first one's variant. The real tokens.json variants of these summons differ

@@ -18,7 +18,7 @@ operators, the self-select 6★ operators, contributions from GitHub issue #136 
 | `shared/summoner.js` | the 召唤师 summon deck the 自选 kits of 麦哲伦 / 令 / 电弧 share (`summonDeck`: the holding, a placed piece's return, recalls, the summons leaving with their owner; `holdBuff`, `tokenStat`) |
 
 `content/index.js` takes `KITS` from `index.js`: a unit's kit is `KITS[def.baseId]` (also the exact or the suffix-less
-id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/SIM.md §7.4). A 补位 stand-in's
+id), else the generic kit built from the skill blackboard (`content/generic.js`, docs/development/SIM.md §7.4). A 补位 stand-in's
 and a 自选 piece's kit is `KITS[def.charId]` and nothing else (`content/index.js kitOf`): it keeps the chess's (the DIY
 slot's) ids, which name the replaced operator's kit (a slot has none).
 
@@ -59,7 +59,7 @@ export default {
   serves the elite `_b` record. `bb` = the SELECTED skill's blackboard at the chess's level (normal Lv4, elite Lv7),
   `chess` = the record as the unit's loadout makes it (talents, `trait.bb`, `module`), `def` = the normalised def. The
   Kit fields (`skill`, `skills: { [skillId]: SkillSpec }`, `talents`, `trait`, `install`) and how the loader picks the
-  selected skill's spec: docs/SIM.md §7.2; the SkillSpec schema: §7.3; worked examples with real operators: §7.5.
+  selected skill's spec: docs/development/SIM.md §7.2; the SkillSpec schema: §7.3; worked examples with real operators: §7.5.
 - Small real files to start from: `ops/chess_char_1_11-skgoat.js`, `ops/chess_char_1_02-yak.js`; one with every
   selectable skill: `ops/chess_char_3_04-swire2.js`; a large one with its own helpers: `ops/chess_char_6_18-whitw2.js`.
 - The tier-4 files wrap their entry in `withDefaults(…)` (`shared/tier4.js`: it rebuilds `def` for callers that pass
@@ -74,7 +74,7 @@ export default {
   `../shared/tierN.js` are usable too, but same-named helpers are not interchangeable: `num` of tier 1 / 4 also reads
   numeric strings, those of tiers 3 / 5 / 6 do not; `toggleBuff`, `talentBb`, `moduleBb`, `instantKind` take different
   arguments per tier. Read the helper before using it.
-- **The battle API** documented in docs/SIM.md: units (§2), buffs / mods / statuses (§3), the damage & heal pipeline
+- **The battle API** documented in docs/development/SIM.md: units (§2), buffs / mods / statuses (§3), the damage & heal pipeline
   (§4), the hook bus and its re-entrancy rule (§5), the engine helpers content must use (§6), the skill runtime (§7.1);
   engine modules by relative path (`../../../constants.js`, `targeting.js`, `body.js` for huge enemies, `dir.js` for
   facing, `damage.js` `hasHp` / `isHpLoss` / `mitigate`, `buffs.js`, `simdata.js` `normalizeChess`); content modules
@@ -91,7 +91,7 @@ export default {
 ## Registering a kit
 
 1. The chess needs its data record first: `data/chess.json` is generated from the official tables by
-   `tools/build-data.mjs` (docs/DATA.md) — skills, talents, trait, modules, ranges, tokens and the resolved auto-cast
+   `tools/build-data.mjs` (docs/development/DATA.md) — skills, talents, trait, modules, ranges, tokens and the resolved auto-cast
    trigger of every skill.
 2. Add the kit file to `ops/`, named as above.
 3. Append its file name to its tier's group in `index.js` `KIT_FILES` (never reorder the existing entries). Each file
@@ -103,7 +103,7 @@ export default {
 ## Stand-in kits (补位)
 
 A NORMAL chess whose operator the player does not own fights as its official stand-in (原型干员, data/backups.json,
-docs/DATA.md §18): the chess's ids, bonds, 特质, tier and price, the stand-in's body — stats, range, trait, talents, the
+docs/development/DATA.md §18): the chess's ids, bonds, 特质, tier and price, the stand-in's body — stats, range, trait, talents, the
 skill `backup.skillIndex` and the module `backup.uniEquipId` the chess names. The sim gets that def from
 `battle.data.getChess(chessId, { standIn: true })` (a PlayerBattleInput entry with `standIn: true` — in a match, the
 player's chess marked 未持有 on the 干员持有 tab, `PlayerState.battleInput`); `def.charId` is the stand-in's,
@@ -228,7 +228,7 @@ scenarios; no other family moves), and commit it with the kit (`test/golden/READ
 ## Testing a kit
 
 - The harness is `test/helpers/battleHarness.js` (`makeBattle`, `runUntil`, `hooksOf`, `eventsOf`, `checkInvariants`;
-  docs/SIM.md §10 has an example and every option). Seed everything, use synthetic `enemyRec` targets for exact
+  docs/development/SIM.md §10 has an example and every option). Seed everything, use synthetic `enemyRec` targets for exact
   numbers, assert on ids, end with `checkInvariants(h.b)`.
 - Patterns: `test/content/kits_t1t2.test.js` … `kits_t6.test.js` (the default skill and the talents of every chess),
   `test/content/kits_alt_t1.test.js` … `kits_alt_t6.test.js` (every selectable non-default skill and every module;
@@ -310,11 +310,11 @@ Each item is a mistake this project already made once. Tick every one for every 
   (号角 / 灰毫) is ground-only and never fires at FLY enemies" (DESIGN §22.13); `feedback1b_kits.test.js` "B4 玛恩纳 S3 …
   hits the air units" vs "S1 / S2 … stay ground-only"; 蒂比 `ops/chess_char_2_13-tippi.js` (`LIFTOFF_FLAGS`, DESIGN
   §21.22); `kits_t3.test.js` "忍冬 迷彩: … ranged enemies stop targeting her".
-- [ ] **7. Damage typing** — physical / arts / true / element (元素损伤 vs 元素伤害: docs/SIM.md §7.2), splash vs
+- [ ] **7. Damage typing** — physical / arts / true / element (元素损伤 vs 元素伤害: docs/development/SIM.md §7.2), splash vs
   normal (普通伤害), dodgeable or not, `isSkill`, and what triggers on-hit effects (a trait that heals on any damage
   dealt, e.g. 咒愈师). Examples: `enemies_bosses.test.js` "its attack splash (法术普通伤害) can be dodged; its death blast
   (法术溅射伤害) cannot"; DESIGN §23.29 (叙拉古 rolls on every 普通伤害 hit); `test/sim/professions.test.js` "incantation
-  medics heal an ally for 50 % of damage dealt"; the re-entrancy rule of docs/SIM.md §5.
+  medics heal an ally for 50 % of damage dealt"; the re-entrancy rule of docs/development/SIM.md §5.
 - [ ] **8. Summons / tokens** — placement rules (the owner's range, deployable tiles), redeploy, what they inherit from
   the owner's skill / module (`data/tokens.json` variants, `battle.tokenDef`). Examples:
   `test/match/feedback1-placement.test.js` "#9 data: 狼群 and 流形 are owner-range summons" (DESIGN §20.1, §21.3);

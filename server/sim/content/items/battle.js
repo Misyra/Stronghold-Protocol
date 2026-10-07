@@ -1,4 +1,4 @@
-// server/sim/content/items/battle.js — battle side of the 56 equipment items (research 04 §4, docs/DATA.md §5).
+// server/sim/content/items/battle.js — battle side of the 56 equipment items (research 04 §4, docs/development/DATA.md §5).
 //
 // Every operator's `unit.items` (equipped ids; merged items are golden `_b` ids with their own numbers) becomes a set of
 // item grants. A grant = one concrete item record installed on one unit through `installItem(battle, unit, itemId)`:

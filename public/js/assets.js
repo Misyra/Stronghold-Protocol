@@ -1,4 +1,4 @@
-// assets.js — asset manifest (/data/assets.json, docs/ASSETS.md) URL helpers, image cache/preload, and the
+// assets.js — asset manifest (/data/assets.json, docs/development/ASSETS.md) URL helpers, image cache/preload, and the
 // Spine loader (LRU + refcount + memory budget + timeout + concurrency cap) used by the battlefield renderer. A
 // skeleton is never handed out while its unload is in flight (RefLru; user playtest #3 item 1: invisible models).
 //
@@ -40,7 +40,7 @@
 //
 // Every URL helper is also exported as a pure function taking the manifest first (`avatarUrl(manifest, …)`),
 // so it can be unit tested without a browser. Helpers never throw on unknown ids — they return null and the
-// caller falls back (docs/ASSETS.md "Other fallbacks").
+// caller falls back (docs/development/ASSETS.md "Other fallbacks").
 
 import { resourceUrl, resourceCache } from './resourceUrl.js';
 
@@ -96,7 +96,7 @@ export function enemyIconUrl(m, enemyId) {
   return str(rec && rec.icon);
 }
 
-/** Token avatar, falling back to its owner's avatar (docs/ASSETS.md token fallbacks). */
+/** Token avatar, falling back to its owner's avatar (docs/development/ASSETS.md token fallbacks). */
 export function tokenAvatarUrl(m, tokenId) {
   const rec = get(get(m, 'tokens'), str(tokenId) || '');
   if (!rec) return null;
@@ -146,7 +146,7 @@ export function subProfIconUrl(m, sub) {
 /**
  * Spine manifest entry for a unit asset id (operator charId, token id, enemy id). `opts.back` asks for the Back
  * model (operators only; falls back to Front). Enemy aliases are resolved transparently. Returns the Spine
- * object of docs/ASSETS.md or null.
+ * object of docs/development/ASSETS.md or null.
  * `opts.local` (the data/local-assets.json manifest): an enemy or token whose official model only the local client has
  * (`spineLocal`, e.g. 灼热源石虫 — user feedback after 0.1.0, D3 — and most 自选 summons) gets that model when the
  * manifest lists every one of its files; the returned entry's `fallback` is the web model (an enemy's alias; a token's

@@ -8,7 +8,7 @@
 //
 // Index getters (DESIGN §2; same names as public/js/data.js): getChess, getBond, getGarrison, getItem, getBand,
 // getEffect, getEnemy, getWave, getStage, getBoss, getToken, getConfig, getMode. The id-keyed files are already
-// `{ [id]: record }` maps (docs/DATA.md), so a getter is an OWN-property lookup: ids that come from client
+// `{ [id]: record }` maps (docs/development/DATA.md), so a getter is an OWN-property lookup: ids that come from client
 // intents (e.g. `g.band {bandId: "constructor"}`) can never resolve to inherited Object.prototype members.
 // Every getter returns null for unknown ids / missing files and takes an optional data object (default:
 // the process-wide getData() singleton).

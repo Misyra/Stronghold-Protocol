@@ -26,7 +26,7 @@ const BOSS_RESULT_GRACE_MS = 6000;
  * Plausibility of a boss field's client reports (b.progress bossDmg / leaks, the b.result damage), on the SERVER's
  * field clock — so no single frame decides the Final Assault: the credited pool damage of one field stays ≤ the whole
  * pool per BOSS_MIN_CLEAR_GS game seconds (20 % of the pool per game second; the balance model's fastest mean kills
- * take ≈ 18–20 s at ≈ 5 %/s per field, docs/BALANCE.md §3), the credited LP cost ≤ BOSS_LP_BURST + BOSS_LP_PER_GS per
+ * take ≈ 18–20 s at ≈ 5 %/s per field, docs/development/BALANCE.md §3), the credited LP cost ≤ BOSS_LP_BURST + BOSS_LP_PER_GS per
  * game second (a leader's "扣除所有目标生命" comes after ≥ 200 s). Reports are cumulative: what exceeds the budget is
  * credited later as the budget grows (the boss clock re-applies the latest report), never lost — a 'cleared' b.result
  * whose report covers the pool waits for it too (`heldResult`; 999-layer kills take 2–4 game s), it is not handed over.

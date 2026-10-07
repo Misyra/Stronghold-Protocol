@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
-// public/js/ui/resourcePanel.js — the two faces of the optional preload (docs/ASSETS.md「Preload」):
+// public/js/ui/resourcePanel.js — the two faces of the optional preload (docs/development/ASSETS.md「Preload」):
 //   * ResourceRow      — the 「预载资源」 row of the settings modal;
 //   * ResourceLauncher — the compact pill the title screen shows in its bottom-right corner (the settings modal is only
 //                        reachable inside a match, so the home screen needs its own way in).

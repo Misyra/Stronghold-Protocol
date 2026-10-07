@@ -1,7 +1,7 @@
 // server/sim/content/kits/shared/tier1.js — the general kit helpers (formerly tier1.js's named exports; the tier-1
 // and tier-2 kits use them) and the notes of the Tier 1 operator kits, which live one per file in ../ops/.
 //
-// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/SIM.md §7.2). `bb` = skill blackboard at the chess's
+// export default { [baseChessId]: (bb, chess, def) => Kit } (docs/development/SIM.md §7.2). `bb` = skill blackboard at the chess's
 // level (normal Lv4 / elite Lv7), `chess` = raw data/chess.json record (talents with their own bb, trait.bb incl. the
 // elite module upgrade, module{active}), `def` = normalised def (def.skill.rangeGrid, def.skill.description …).
 // Every number comes from a blackboard; the few constants below exist nowhere in data and are documented.

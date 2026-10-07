@@ -1,5 +1,5 @@
 // server/match/invariants.js — engine invariants (DESIGN §11) as a non-throwing check. Used by the test harness
-// (i18n-ignore-file: developer reports in English with the game's terms, never shown to players — docs/I18N.md)
+// (i18n-ignore-file: developer reports in English with the game's terms, never shown to players — docs/development/I18N.md)
 // (test/match/harness.js checkInvariants asserts the list is empty) and by tools/matchrun.mjs --check sweeps.
 //
 // collectViolations(m) → string[] (empty when every invariant holds):

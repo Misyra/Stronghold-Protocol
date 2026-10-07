@@ -59,7 +59,7 @@ describe('bgm selection', () => {
     // both ends of a real run: a solo 标准 match is 9 rounds, so it hears 无畏者 and then 骑士之日
     assert.equal(bgmKeyFor('game', { phase: PHASE.COMBAT, round: 7 }, combatTrackFor(7)), 'combat:1');
     assert.equal(bgmKeyFor('game', { phase: PHASE.COMBAT, round: 8 }, combatTrackFor(8)), 'combat:0');
-    // the index↔track mapping this table assumes, from docs/ASSETS.md: combatAlts[0] = m_bat_kazimierz2_1 骑士之日,
+    // the index↔track mapping this table assumes, from docs/development/ASSETS.md: combatAlts[0] = m_bat_kazimierz2_1 骑士之日,
     // combatAlts[1] = m_bat_kazimierz2_2 无畏者 (a reordering upstream breaks this test, not the players' ears)
     const alt = manifest.audio.bgm.combatAlts;
     assert.ok(alt[0].loop.includes('m_bat_kazimierz2_1'), `combatAlts[0] is 骑士之日: ${alt[0].loop}`);

@@ -1,5 +1,5 @@
 // server/match/audit.js — rule auditor for sweeps and tests (tools/matchrun.mjs --check, test/match/fullmatch.test.js).
-// (i18n-ignore-file: developer reports in English with the game's terms, never shown to players — docs/I18N.md)
+// (i18n-ignore-file: developer reports in English with the game's terms, never shown to players — docs/development/I18N.md)
 //
 // attachAudit(m) wraps a live Match's phase transitions and a few prep handlers (instance-level wrappers; the engine
 // is untouched) and records every rule violation it observes, next to the structural invariants of invariants.js:

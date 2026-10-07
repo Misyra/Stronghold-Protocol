@@ -139,7 +139,7 @@ export const closeLoadout = () => loadoutStore.set({ open: false });
  */
 function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, field, prepare, lockedText, tag }) {
   const T = timers || { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: (id) => globalThis.clearTimeout(id) };
-  // (`lockedText` is a msgid: the toast is translated when it shows — docs/I18N.md)
+  // (`lockedText` is a msgid: the toast is translated when it shows — docs/development/I18N.md)
   const tell = notify || ((text) => toast(t(text), 'warn'));
   let timer = null;
   let seq = 0;            // requests sent (the reply of an older one never overrides a newer one's state)

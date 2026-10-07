@@ -40,7 +40,7 @@
 // - S3 佑序有炎 (MANUAL, data SKILL_RANGE on its 3-2): 7 slashes ("立刻…": all in the cast instant [ASSUMED: the kits'
 //   instant convention — his skeleton's 2 s Skill_3 clip spreads its 7 OnAttack events over 0.2 … 1.2 s, and the engine
 //   models no animation lock]), each on at most 3 enemies of the skill range (the 3 is the text's: no
-//   blackboard key; air units too [ASSUMED: no 对空 note — docs/SIM.md §8]) for atk_scale × ATK physical, the last
+//   blackboard key; air units too [ASSUMED: no 对空 note — docs/development/SIM.md §8]) for atk_scale × ATK physical, the last
 //   ×last_atk_bonus and 晕眩 `stun` s (zuole_s_3: AtkScaleUp once spell_times reaches times). Meanwhile the trait heals
 //   nothing (zuole_trait "CheckContainsBuff zuole_s_3 → IfNot → heal") and every damage instance he outputs adds
 //   value × shield_scale to a barrier (zuole_s_3 ON_OUTPUT_DAMAGE; PRTS "屏障获取不经过治疗流程，不受治疗倍率等影响"), capped

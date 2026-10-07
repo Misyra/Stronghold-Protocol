@@ -1,4 +1,4 @@
-// Server → client texts in the player's language (docs/I18N.md): m.toast / m.ticker frames carry the Chinese `text`
+// Server → client texts in the player's language (docs/development/I18N.md): m.toast / m.ticker frames carry the Chinese `text`
 // (older clients) plus `msgid` + `params`, a config.broadcasts line its `args`; the client renders them with
 // translateWire / ui/lang.js tickerText; error codes through ui/toasts.js describeError.
 

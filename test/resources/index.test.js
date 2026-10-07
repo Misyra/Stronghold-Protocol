@@ -1,4 +1,4 @@
-// test/resources/index.test.js — the preload controller (public/js/resources/index.js, docs/ASSETS.md「Preload」):
+// test/resources/index.test.js — the preload controller (public/js/resources/index.js, docs/development/ASSETS.md「Preload」):
 // settings → manifest → Service Worker → Cache Storage, with the browser APIs (fetch, caches, navigator.serviceWorker,
 // localStorage) stubbed. One test walks the whole lifecycle, because the controller is a module-level singleton.
 

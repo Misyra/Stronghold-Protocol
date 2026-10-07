@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/i18n.mjs — UI string tooling for the gettext-style i18n (shared/i18n.js, public/i18n/<lang>.json; docs/I18N.md).
+// tools/i18n.mjs — UI string tooling for the gettext-style i18n (shared/i18n.js, public/i18n/<lang>.json; docs/development/I18N.md).
 //
 //   node tools/i18n.mjs extract [paths…] [--list] [--json]
 //       per file: the msgids passed to t() / tc() / tParts() / N_() / msg(), and the Chinese literals still shown untranslated
@@ -11,7 +11,7 @@
 //       passes, or has a broken plural form (shared/i18n.js checkTranslation), a value that is not a string, a manifest
 //       problem. Missing strings are listed for a pack that declares `complete` (English) or with --list; --stale
 //       lists entries no code uses and no complete pack has (obsolete). --strict exits 1 on an error, or when a
-//       complete pack misses a msgid. A partial pack is fine: what it lacks falls back (docs/I18N.md).
+//       complete pack misses a msgid. A partial pack is fine: what it lacks falls back (docs/development/I18N.md).
 //   node tools/i18n.mjs template <code> [--fill <code>]
 //       write a pack skeleton public/i18n/<code>.json: a `_meta` manifest to fill in and every msgid with an empty
 //       value (--fill: the values of another pack, e.g. --fill en). An existing pack keeps its translations and

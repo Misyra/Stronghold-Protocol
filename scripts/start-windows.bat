@@ -1,5 +1,5 @@
 @echo off
-rem Stronghold Protocol - double-click to start (Windows). Docs: docs\DEPLOY.md
+rem Stronghold Protocol - double-click to start (Windows). Docs: docs\operations\DEPLOY.md
 rem Checks Node.js, installs dependencies on the first run, runs tools\setup.mjs (art download / resume),
 rem starts the server, prints the LAN addresses and opens the browser. Extra arguments are passed to
 rem scripts\launch.mjs, e.g.:  start-windows.bat --port 3001 --no-local

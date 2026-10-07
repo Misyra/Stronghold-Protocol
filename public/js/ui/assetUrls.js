@@ -1,4 +1,4 @@
-// Asset URL resolution against data/assets.json (docs/ASSETS.md). Pure: every function takes the
+// Asset URL resolution against data/assets.json (docs/development/ASSETS.md). Pure: every function takes the
 // manifest object (or null) and returns a URL string or null — callers draw their own fallback
 // (glyph, CSS shape) when null. Only URLs present in the manifest are ever returned, so the client
 // never requests files the asset pipeline did not produce (no 404 noise in the console).

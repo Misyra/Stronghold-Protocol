@@ -13,7 +13,7 @@
 //     a pair field sharing it) = bloodPoint[difficulty] × the players alive when the fight starts (bots and AI 托管 seats
 //     count, eliminated and departed seats do not; solo × 1) — the owner's decision of 2026-10-06, adopting PR #209 by
 //     @qingjingshenghuo, which replaces the fixed pool of 「保持固定血量」 (config bossHpScale perPlayer false / solo 0.25
-//     restores it); × the tuning bossHpMul when data/tuning.json still has one (docs/BALANCE.md); bosses are never scaled
+//     restores it); × the tuning bossHpMul when data/tuning.json still has one (docs/development/BALANCE.md); bosses are never scaled
 //     by enemyScale and their parts / escorts keep their own HP.
 //   * Overtime: bossTurnHpReduceTime counts REAL seconds like the level's 120 s maxPlayTime (which runs out first; the
 //     battle goes on): from 150 real s (300 game s on the 2× field clock) the team loses bossOvertimeDrainPerSec (1) LP

@@ -16,7 +16,7 @@ Add one file or one folder to `jsconfig.json` `include`, then run `npm run typec
 
 Suggested order once the sim split settles: `server/sim/grid.js`, `server/sim/body.js`, `server/sim/buffs.js`, then `server/sim/damage.js` against the typedefs in `types/core.js`. The sim does not import `types/`. The typedefs are a reference, not a runtime dependency.
 
-`types/core.js` follows docs/DESIGN.md §5.2, §5.4, §8 and docs/SIM.md §4, §9. Where those two disagree on `DamageInfo.type`, the typedef uses the union `makeDamageInfo` actually builds (`'elemental'` as well as `'element'`).
+`types/core.js` follows docs/development/DESIGN.md §5.2, §5.4, §8 and docs/development/SIM.md §4, §9. Where those two disagree on `DamageInfo.type`, the typedef uses the union `makeDamageInfo` actually builds (`'elemental'` as well as `'element'`).
 
 ## Not in the first slice
 

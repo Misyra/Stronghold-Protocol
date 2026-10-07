@@ -274,7 +274,7 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   letter-spacing: .02em;
 }
 
-/* ---- offline resource preload (docs/ASSETS.md「Preload」): the home screen's own way in ---------------- */
+/* ---- offline resource preload (docs/development/ASSETS.md「Preload」): the home screen's own way in ---------------- */
 .title-preload { position: absolute; z-index: 3; right: .44rem; bottom: .86rem; }
 .res-pill { width: 2.7rem; padding: .1rem .12rem; background: rgba(10, 14, 12, .74); border: 1px solid var(--line-2); }
 .res-pill.is-on { border-color: var(--mint-800); background: rgba(13, 20, 17, .86); }

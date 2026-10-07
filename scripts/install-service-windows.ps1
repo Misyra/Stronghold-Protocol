@@ -1,5 +1,5 @@
 ﻿<#
-  卫戍协议：盟约 · 开机自动在后台运行服务器（Windows 任务计划程序）+ 防火墙规则。文档：docs\DEPLOY.md
+  卫戍协议：盟约 · 开机自动在后台运行服务器（Windows 任务计划程序）+ 防火墙规则。文档：docs\operations\DEPLOY.md
   用法（会自动请求管理员权限）：
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1              # 安装并立即启动
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Port 8080 -Verify sample

@@ -13,7 +13,7 @@
 // - Module AFT-D 目不能及之处: trait "攻击灼燃损伤爆发期间的目标时额外造成攻击力15%的元素伤害" (trait bb ep_damage_ratio; PRTS
 //   "※于任意非本模组特性的伤害的输出伤害时触发"; vvana_e_002_trait: ON_OUTPUT_DAMAGE, not its own damage, the target in its FIRE
 //   爆发冷却 → ELEMENT damage ep_damage_ratio × ATK): every damage instance she outputs on an enemy holding the `burnBurst` lock
-//   (docs/SIM.md §3) — at the output (the `hit` step, before the target's dodge / cancel) — adds ep_damage_ratio × ATK
+//   (docs/development/SIM.md §3) — at the output (the `hit` step, before the target's dodge / cancel) — adds ep_damage_ratio × ATK
 //   元素伤害. Stage 3: 燃烛施明's 灼燃损伤 (below).
 // - Module AFT-Y “最后一行”: trait "自身阻挡的敌人受到10%的法术脆弱效果" (trait bb damage_scale 1.1; vvana_equip_2_*: weak[magic]
 //   to every blockee): the 法术脆弱 status (同名效果取最高) on each enemy she blocks, renewed every 0.2 s for 0.3 s (as 史尔特尔's

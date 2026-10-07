@@ -4,10 +4,10 @@ All files in `data/` except `data/assets.json` and `data/i18n/` are produced by 
 official zh_CN client data ([Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)) joined
 with `docs/research/*.json`. Do not edit them by hand — change the build script and rebuild.
 `data/i18n/en.json` (the official English texts of these files by record id and field) is written by
-`node tools/build-i18n.mjs` — rerun it after a build that changes a text (docs/I18N.md §2; `test/i18n-data.test.js`
+`node tools/build-i18n.mjs` — rerun it after a build that changes a text (docs/development/I18N.md §2; `test/i18n-data.test.js`
 fails while it is stale).
 `data/assets.json` is written by `tools/fetch-assets.mjs`, which keeps the current file rather than drop entries whose
-downloads failed on this machine unless `--allow-shrink` (or `--prune`) is passed (docs/ASSETS.md, DESIGN §21.25).
+downloads failed on this machine unless `--allow-shrink` (or `--prune`) is passed (docs/development/ASSETS.md, DESIGN §21.25).
 
 ```
 node tools/build-data.mjs              # build (downloads missing official files into .cache/gamedata/)
@@ -85,7 +85,7 @@ Top level: `{ season, seasonName, modes, economy, lpCapPerRound, bossOvertimeAft
 |---|---|---|
 | `template` | `"act1autochess_03"` | wave template (`waves.json`) for non-boss rounds; `null` for boss rounds |
 | `bossTemplates` | `{"boss_1":"act1autochess_h07_01",…}` | boss rounds: template per bossId (solo uses `_s`) |
-| `combatTimeLimit` | `55` | **real** seconds (= template `maxPlayTime`) of the forced-2× battle: the Battle / 联防 limit is 2 × this in game seconds (`gamedata.js combatTimeLimit`, `config.combatTimeScale` default 2; docs/BALANCE.md §2.1); `null` for boss rounds (no hard stop) |
+| `combatTimeLimit` | `55` | **real** seconds (= template `maxPlayTime`) of the forced-2× battle: the Battle / 联防 limit is 2 × this in game seconds (`gamedata.js combatTimeLimit`, `config.combatTimeScale` default 2; docs/development/BALANCE.md §2.1); `null` for boss rounds (no hard stop) |
 | `levelMaxPlayTime` | `120` | raw `maxPlayTime` of the (first) template in real seconds; boss rounds: the Final Assault / Hidden Core countdown (`m.public.deadline`, `gamedata.js bossLevelTime`) — not a hard stop, the battle goes on |
 | `prepTime` | `65` | multi/training prep timer (real seconds); **`null` for solo** (untimed in 下半) |
 | `prepTimeData` | `300` | official `normalPhaseTime` (optional "timed solo") |
@@ -490,7 +490,7 @@ Glyph legend (`rows`):
 | `stats`, `rangeGrid`, `dmgType`, `attackKind`, `projectile`, `canHitFly` | first owner's values | defaults |
 | `skill` | `{"skillId":"sktok_vigil_wolf_3","bb":{…}}` | default token skill (same slot as the owner's skill) |
 | `deployLimit`, `count` | `1`, `1` | `deployLimit` = the first owner's `stats.deployLimit`. `count` = copies sent to the hand / spawned (talent/skill `cnt`); `null` ⇒ use `deployLimit` |
-| `abnormal[]` | `["healFree"]` | abnormal effects the summon holds from the start, no official table carries them — `tools/build-data.mjs TOKEN_ABNORMAL` from the PRTS summon pages (user playtest #6 item 18): `healFree` = 禁疗 (“小自在”, “耀阳”, 斯卡蒂的海嗣, 沙之碑, 流形, 狼群, 迷迭香的战术装备, 黄金盟誓, 保护目标（冻结状态）), `isolated` = 孤立 "无法被同阵营选中" (“炎佑”, 从不混淆的方向); `[]` otherwise. The sim sets `noHeal` / `isolated` (docs/SIM.md §3) |
+| `abnormal[]` | `["healFree"]` | abnormal effects the summon holds from the start, no official table carries them — `tools/build-data.mjs TOKEN_ABNORMAL` from the PRTS summon pages (user playtest #6 item 18): `healFree` = 禁疗 (“小自在”, “耀阳”, 斯卡蒂的海嗣, 沙之碑, 流形, 狼群, 迷迭香的战术装备, 黄金盟誓, 保护目标（冻结状态）), `isolated` = 孤立 "无法被同阵营选中" (“炎佑”, 从不混淆的方向); `[]` otherwise. The sim sets `noHeal` / `isolated` (docs/development/SIM.md §3) |
 | `variants[ownerChessId]` | `{"phase":2,"level":1,"stats":{…},"immunities":{…},"rangeGrid":…,"trait":{…},"dmgType":…,"skill":{full skill record},"talents":[…],"count":1,"sources":["talent","display"]}` | stats at the owner's phase/level (clamped to the token's max level) + golden module `tokenAttributeBlackboard` + the token's own talent additions to `deployLimit` / `deckStack` (blackboard `max_deploy_count` / `max_deck_stack_cnt` — the hidden "TOKEN数" talent of 麦哲伦's / 令's summons and 白铁's devices, 夜莺's 幻影; a module token part of the same talent replaces it: `tools/build-data.mjs tokenTalentDeckBonus`, 0.2.0 — no tokens.json summon has one; PRTS 幻影 备注 "最大可部署数量为3", the owners' "最多同时部署3个"); the owner's module parts flagged `isToken` upgrade the variant's `trait` (+`moduleDesc`) and `talents` (伺夜's wolves, 缪尔赛思's 流形 `scale` 1, 浊心斯卡蒂's 海嗣 30 s, “耀阳” `atk_scale` 1.15). `sources` ⊆ `talent`/`skill`/`display`: how the owner produces it (`display` only = listed on the character but unused by its default skill/talents, e.g. 迷迭香 S2, 凛御银灰 eagle1/3). `count` = copies from a talent `cnt` or the default skill's `cnt` when that skill overrides this token; `null` ⇒ use `deployLimit` |
 | `variants[o].bySkill[i]` | `{"skill":{…},"count":1,"sources":["talent","display"]}` | owner loadout with the non-default skill index `i` (one entry per other selectable owner skill): the token skill of that slot (伺夜's wolves, 缪尔赛思's 流形, 凛御银灰's eagles…), the count and how the chess then produces it (`sources` may be `[]`: 风丸 S1 makes no 纸偶; 赫默 / 巫恋 S1 only `display` ⇒ no hand piece). The sim resolves them for an owner loadout: `simdata getToken(id, ownerChessId, loadout)` → `def.sources` / `def.count` |
 | `variants[o].byModule[m]` | `{"stats":{…},"immunities":{…},"trait":{…},"talents":[…]}` | golden owner with another module `m` or `'none'`: the token as that module makes it (module `tokenAttributeBlackboard`, `isToken` trait/talent parts) |
@@ -508,7 +508,7 @@ Glyph legend (`rows`):
    talent follows that skill's eagle (`simdata loadoutRecord`; `variants[o].bySkill[i].sources`).
 2. **DIY chess** (`chess_char_5_diy1/2`, `chess_char_6_diy1/2`, `_a` and `_b` = 8 records): no `charId`, no stats/skill; `visible:false`,
    name placeholder `甄选干员`, not in the shop. Their picks and bond rule are in `backups.json diy` (§18); a slot fights
-   only as a 自选 piece — a PlayerBattleInput entry with its `diy` pick (docs/SIM.md §12; shared/diy.js) — and a slot
+   only as a 自选 piece — a PlayerBattleInput entry with its `diy` pick (docs/development/SIM.md §12; shared/diy.js) — and a slot
    without a legal pick fields nothing. Played since 0.2.0: the player fills the slots on the 自选编队 tab (`room.diy`)
    and its own shop sells them (server/match/player/diy.js; §18).
 3. **Module-less chess**: 蒂比 (`chess_char_2_13`) and 凛御银灰 (`chess_char_5_14`) have no module; their golden
@@ -604,15 +604,15 @@ preference; against the pure official algorithm: identical route lengths, never 
 
 The data of two official features: **补位** — a NORMAL chess whose operator the player does not own is fielded as its
 official stand-in (原型干员); played since 0.2.0: the player marks operators as not owned on the 干员持有 tab
-(`room.ownership { notOwned }`, DESIGN §25.3, docs/PLAYING.md §3), the match fields those chess with
+(`room.ownership { notOwned }`, DESIGN §25.3, docs/guides/PLAYING.md §3), the match fields those chess with
 `standIn: true` — and **自选编队** — two tier-5 and two tier-6 DIY slots, each filled with a 6★ the player owns or a
 prototype. Built by `tools/build-data.mjs buildBackups`; `shared/standIn.js` composes it into chess-shaped records,
-`shared/diy.js` adds the 自选 rules on top. The sim fields both (docs/SIM.md §12). Played since 0.2.0: the player fills
-the four slots on the 自选编队 tab (`room.diy { picks }`, docs/PLAYING.md §3; shared/protocol.js checkDiyPicks keeps the
+`shared/diy.js` adds the 自选 rules on top. The sim fields both (docs/development/SIM.md §12). Played since 0.2.0: the player fills
+the four slots on the 自选编队 tab (`room.diy { picks }`, docs/guides/PLAYING.md §3; shared/protocol.js checkDiyPicks keeps the
 legal picks), the match takes the picks the seat had at its start (`PlayerState.diy`), and each slotted piece is sold in
 that player's shop only — its own stock (the tier's pool copies, 8 / 5 [ASSUMED]), from the 调度中心 level `shopLevel`,
 none when every bond of it is banned this match — and is the operator for every rule of that player (its data view:
-server/match/player/diy.js, docs/META.md §3). The rules in the data (activity_table act2autochess `charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约
+server/match/player/diy.js, docs/development/META.md §3). The rules in the data (activity_table act2autochess `charShopChessDatas`; PRTS 卫戍协议, 卫戍协议：盟约
 下半/PRTS盟约记录):
 
 - PRESET (74, 特许干员) always fields the real operator (`backup.charId` = itself); NORMAL (55) names one of 17 stand-ins —
@@ -657,7 +657,7 @@ which chess a player may mark as not owned (the 55 NORMAL base chess; `shared/pr
 特质, merges, pools) and is deployed as the stand-in (placement class, summon / bot ranges; no summons — none of the 17
 has one); what shows the piece shows the stand-in (the prep scouting art of board and bench pieces, the m.result
 lineup's `standInFor`, the elite and gift tickers' names — the owner's recall of the official mode, 2026-10-06). **In battle** a PlayerBattleInput entry with `standIn: true` (PlayerState.battleInput:
-the player's own field, 联防 and the boss fields alike) is fielded as `getChess(chessId, { standIn: true })` (docs/SIM.md
+the player's own field, 联防 and the boss fields alike) is fielded as `getChess(chessId, { standIn: true })` (docs/development/SIM.md
 §12: this record, normalised), and its kit is found by its `charId` (`server/sim/content/index.js kitOf`;
 kits/README.md "Stand-in kits") — never by the chess id it keeps, which names the replaced operator's kit. The client
 composes the same record (`public/js/ui/gameLogic/standIn.js standInOf`, the renderer's `data.standIn`) to show the
@@ -677,7 +677,7 @@ one slot, the picks of a tier differ, no module of another game mode — `isDiyM
 集成战略 modules ISW-A (凯尔希, 傀影, 菲亚梅塔, 提丰, 艾丽妮, 霍尔海雅) and SO-A / SO-B (电弧, 机械师 — "在【岁的界园志异】中",
 "在【沉沦者的黑流树海】中") and the 生息演算 module RA-A (森蚺) are never a player's choice [ASSUMED], the owner's decision of
 2026-10-05 for ISW-A and the same reason for SO / RA, while the record and the sim still compose them for the kits' tests). **In battle** a PlayerBattleInput entry of a DIY slot carries `diy` (the pick) and
-is fielded as `getChess(slotId, { diy })` (docs/SIM.md §12); its kit is `KITS[charId]` (kits/README.md "How to add an
+is fielded as `getChess(slotId, { diy })` (docs/development/SIM.md §12); its kit is `KITS[charId]` (kits/README.md "How to add an
 operator (自选)").
 
 `diy`:

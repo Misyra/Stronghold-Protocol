@@ -1,7 +1,7 @@
 // ui/gameLogic/terrain.js — special terrain tips (GitHub issue #184: 特殊地形的单击信息提示). Re-exported from
 // ../gameLogic.js.
 //
-// The words go through t() (docs/I18N.md: the Chinese text is the msgid, public/i18n/en.json the English): the name /
+// The words go through t() (docs/development/I18N.md: the Chinese text is the msgid, public/i18n/en.json the English): the name /
 // tag / fact tables are marked N_() and translated where terrainInfo hands them out, the mechanism lines are built
 // with their numbers as params.
 
@@ -13,7 +13,7 @@ import { t, N_ } from '../../../../shared/i18n.js';
 /**
  * What tapping a special tile says. `lines` are functions of the stage's own terrain parameters (`stage.special[<terrain>]`
  * and the tile's `bb`, the very numbers the sim runs on — server/sim/content/devices.js), so a tip can never disagree with
- * the battle; the prose is ours (docs/PLAYING.md wording, PRTS 特殊地形 / 沼泽控制 / 深水区 地形信息).
+ * the battle; the prose is ours (docs/guides/PLAYING.md wording, PRTS 特殊地形 / 沼泽控制 / 深水区 地形信息).
  * `tag` is the chip above the name; `fact` needs the tile's own legend entry (see terrainInfo).
  */
 const TERRAIN_TIPS = Object.freeze({

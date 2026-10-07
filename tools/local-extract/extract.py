@@ -14,7 +14,7 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     bundles (refs/arts/enm_art_*.ab) → spine/enemy/<enemyId>/<stem>.skel|.atlas + page PNGs with the [alpha] texture
     merged in (premultiplied RGB + A, the Ark-Models format; the atlas gets `size:` / `pma: true` like the fetched
     enemies); the client draws them instead of the web alias once this manifest lists them (data/assets.json
-    enemies[id].spineLocal, docs/ASSETS.md "Enemy aliases")
+    enemies[id].spineLocal, docs/development/ASSETS.md "Enemy aliases")
   - the token (summon) battle Spine models no community dump carries (TOKEN_SPINES: most 自选 summons, 凯瑟琳's
     爬行号·防护单元, 凛御银灰's 风雪之眼), from the battle token prefabs (pkgrps/btl_pfb_tokens_*.ab: the skeleton
     the prefab's Front / only Spine renderer draws) → spine/token/<tokenId>/<stem>.skel|.atlas + merged page PNGs, the

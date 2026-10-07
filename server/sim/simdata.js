@@ -8,7 +8,7 @@
 //                  fallback (docs/research/03-operators.json, 05-enemies.json, 05-maps.json), loaded by ./nodeData.js
 //                  so the sim and its tests work before/without generated data;
 //        browser — whatever the page injected with `setSimData(data)` (the fetched /data/*.json, DESIGN §14).
-// Both the research record shapes and the build-data shapes (docs/DATA.md) are accepted.
+// Both the research record shapes and the build-data shapes (docs/development/DATA.md) are accepted.
 //
 // Operator loadouts (DESIGN §16, DATA.md §2.2): `getChess(id, { skillIndex, moduleId })` resolves the def of a chess
 // with the selected skill (def.skill / its blackboard / trigger) and — elite only — module (stats = statsBase + attr,

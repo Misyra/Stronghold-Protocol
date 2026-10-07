@@ -1,4 +1,4 @@
-// Language packs as content packs (docs/I18N.md "Adding a language", docs/PACKS.md): discovery (server/packs.js — the
+// Language packs as content packs (docs/development/I18N.md "Adding a language", docs/guides/PACKS.md): discovery (server/packs.js — the
 // language folders and the pack folders, a pack dropped in shows without a restart; GET /packs/index.json and the file
 // allowlist), the manifest (shared/packs.js: types, app ranges), the fallback chain (shared/i18n.js: base, fallback, the
 // Chinese msgid), placeholder validation, plural categories (Intl.PluralRules: English unchanged, Russian named forms),

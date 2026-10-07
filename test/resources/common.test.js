@@ -1,5 +1,5 @@
 // test/resources/common.test.js — the pure half of the optional offline-resource preload (public/js/resources/common.js,
-// docs/ASSETS.md「Preload」): the manifest the server serves, URL rules, byte text and Range replies.
+// docs/development/ASSETS.md「Preload」): the manifest the server serves, URL rules, byte text and Range replies.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';

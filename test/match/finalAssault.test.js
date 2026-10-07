@@ -46,7 +46,7 @@ test('boss pool = bloodPoint[difficulty] × the players alive at the fight\'s st
   const perMode = { ...RAW, config: { ...RAW.config, modes: { ...RAW.config.modes, mode_multi_hard: { ...RAW.config.modes.mode_multi_hard, bossHpScale: { ...RAW.config.modes.mode_multi_hard.bossHpScale, perPlayer: false } } } } };
   assert.equal(bossPoolHp(new GameData(perMode, 'mode_multi_hard'), 'boss_1', 3), 1800000, 'the mode entry first');
   assert.equal(bossPoolHp(new GameData(perMode, 'mode_multi_abyss'), 'boss_1', 3), 3600000 * 3, 'other modes keep the global rule');
-  // the balance layer multiplies the pool (docs/BALANCE.md)
+  // the balance layer multiplies the pool (docs/development/BALANCE.md)
   for (const modeId of ['mode_single_funny', 'mode_multi_hard']) {
     const tuned = new GameData(DATA, modeId);
     const raw = new GameData(RAW, modeId);

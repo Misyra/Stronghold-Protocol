@@ -1,5 +1,5 @@
 // Balance: NO custom balance any more (research 08 §6: the official numbers only; data/tuning.json keeps result titles)
-// and the competent-board model of tools/balance.mjs, which now only MEASURES difficulty (docs/BALANCE.md).
+// and the competent-board model of tools/balance.mjs, which now only MEASURES difficulty (docs/development/BALANCE.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameData } from '../../server/match/gamedata.js';

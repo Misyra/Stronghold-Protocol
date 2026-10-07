@@ -44,7 +44,7 @@ const VOICE_ID_LANG = 'CN';
  * back to `enemy_1007_slime`: a different enemy rather than a variant of it, which is why the renderer tints it
  * (render/units.js ALIAS_TINT). The *mobile* build does ship their own model
  * (`enemy_spine/<enemyId>/<enemyId>.{skel,atlas,png}`), but the only public mirror of that build is a community wiki,
- * not a GitHub dump, so downloading from it would add a source the project deliberately does not use (docs/ASSETS.md
+ * not a GitHub dump, so downloading from it would add a source the project deliberately does not use (docs/development/ASSETS.md
  * "Enemy aliases"). The tinted alias therefore stays the web model until a GitHub dump carries these two.
  */
 export const ENEMY_SPINE_ALIAS = Object.freeze({

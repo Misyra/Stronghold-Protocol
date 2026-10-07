@@ -4,6 +4,10 @@
 .claude
 node_modules
 .cache
+.smoke
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
 .venv*
 **/__pycache__
 test

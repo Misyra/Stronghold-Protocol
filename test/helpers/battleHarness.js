@@ -1,4 +1,4 @@
-// test/helpers/battleHarness.js — convenience harness for sim-core and content tests (see docs/SIM.md §Testing).
+// test/helpers/battleHarness.js — convenience harness for sim-core and content tests (see docs/development/SIM.md §Testing).
 //
 //   import { makeBattle, flatStage, chessRec, enemyRec } from '../helpers/battleHarness.js';
 //   const h = makeBattle({ units: [{ chessId: 'chess_char_1_01_a', row: 10, col: 5 }],

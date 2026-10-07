@@ -1,7 +1,7 @@
 // server/match/match/messaging.js — Match methods: messaging — unicast, broadcast, toasts, the ticker lines
 // (config.broadcasts by type; the remake's CUSTOM lines), the dirty marks and flush: m.private per player only when it
 // changed (plus the prep scouts of that player's board), m.public throttled (DELAYS.PUBLIC_THROTTLE) and deduplicated.
-// i18n (docs/I18N.md): a toast / CUSTOM line is a string (its own msgid) or a shared/i18n.js msg(msgid, params); the frame
+// i18n (docs/development/I18N.md): a toast / CUSTOM line is a string (its own msgid) or a shared/i18n.js msg(msgid, params); the frame
 // carries `text` (the Chinese rendering, what older clients show) plus `msgid` / `params`; a broadcast line carries its
 // `args` so the client can fill the localized config.broadcasts template.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).

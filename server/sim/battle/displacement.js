@@ -139,6 +139,8 @@ export class BattleDisplacement {
     }
     if (moved > 0) {
       this._unblock(e);
+      // 失衡 ends the attack clip it stood for (PRTS 状态机: the states are exclusive — UNBALANCE, then DEFAULT → MOVE)
+      e.atkStandUntil = -Infinity;
       if (e.route) e.route.pts = null;
       this.fx('displace', { x: e.x, y: e.y, id: e.id });
     }

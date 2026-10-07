@@ -23,7 +23,9 @@
 // Every enemy attack strikes at its clip's damage frame after its swing starts (attackWindup; a stun before the frame
 // cuts the swing — enemyAttack, GitHub #187). Unblocked ranged enemies attack allies within their radius and stand for
 // each attack's clip — through its wind-up and until the clip ends — then walk on (attackStand, GitHub #58;
-// ATTACK_PAUSE after the strike when no clip is known; 「不停止移动」 attackers never stop); the candidates pass the
+// ATTACK_PAUSE after the strike when no clip is known; 「不停止移动」 attackers never stop); every enemy whose block ends
+// after its strike (its blocker stunned by that strike, knocked out, retreated) stands for the rest of the clip too
+// (PRTS 状态机: an enemy's COMBAT state ends with its attack, not with its blocker); the candidates pass the
 // enemy's own rule (`e.profile.canTarget`) and are ordered
 // blocker → taunt → latest deployed (targeting.js sortAllyTargets). An enemy's damage type is its data's unless content
 // arms it (`e.profile.dmgType`: 转译基底's forms, whose data never attacks). Reaching the final leg's end = leak. A `fear` (恐惧) status suspends the route: the
@@ -687,9 +689,11 @@ function advanceRoute(b, e, dt, R, standing = false) {
 }
 
 /**
- * How long an unblocked ranged enemy stands for one attack (GitHub #58 — the owner's decision of 2026-10-04 from
- * first-hand memory of the official game: a ranged enemy stops for each attack's animation and walks on between
- * attacks; the handbook names attacking on the move as a special ability, “十字路口”量产型's 「不停止移动的四向攻击」).
+ * How long an enemy stands for one attack: an unblocked ranged enemy for its whole clip (GitHub #58 — the owner's
+ * decision of 2026-10-04 from first-hand memory of the official game: a ranged enemy stops for each attack's animation
+ * and walks on between attacks; the handbook names attacking on the move as a special ability, “十字路口”量产型's
+ * 「不停止移动的四向攻击」), and any enemy for the rest of it after the strike once its block ends meanwhile (enemyAttack;
+ * PRTS 状态机 ATTACK / COMBAT "攻击结束后回退到MOVE状态", 0.2.0).
  * [ASSUMED] the stand lasts exactly its attack clip — data/enemies.json `attackAnim` { dur, hit }: the clip the client
  * plays for its attacks and its strike frame (tools/build-data.mjs, from the asset manifest) —, `hit` of it before
  * the strike (the wind-up, while a target is in range) and the rest after it, both shortened when the attacks come
@@ -850,8 +854,14 @@ function enemyAttack(b, e, prevCd) {
   }
   if (b._hooks.attack) b.emit('attack', { attacker: e, targets, isSkill: false });
   e.atkCd = e.s.interval;
-  // stands for the rest of its attack clip (attackStand; the wind-up was stood before the strike)
-  if (!e.blockedBy && radius > 0) e.atkStandUntil = b.time + attackStand(e, STAND).rest;
+  // stands for the rest of its attack clip (attackStand; the wind-up was stood before the strike) — every enemy, blocked
+  // or not: PRTS 状态机, an enemy's ATTACK / COMBAT state "攻击结束后回退到MOVE状态" and checks only 异常状态 every frame
+  // (only a character's COMBAT "检测到不存在阻挡对象时强行切回IDLE状态"), so an enemy whose block ends after its strike — the
+  // strike stunned its blocker (流泪小子: 晕眩 "无法…阻挡"), knocked it out, or the blocker retreated — finishes its clip
+  // before it walks on (until 0.2.0 it walked on at once; community report of 2026-10-07 「哭狗瞬间隐匿没有后摇」). A
+  // blocked enemy never walks, so the stand matters only once it is free; a stun / freeze / sleep / 浮空, hiding or a
+  // displacement (失衡) ends it (updateEnemy, advanceRoute, Battle.displace)
+  e.atkStandUntil = b.time + attackStand(e, STAND).rest;
   return false;
 }
 

@@ -113,8 +113,8 @@ const PRISONER_GREY_3 = Object.freeze({
   die: 'Die3', move: clipOf('Move3'),
 });
 /**
- * Role fixes of web enemy models from their official battle prefabs, for skeletons whose clip names mislead the resolver
- * (by name): model id → roles replacing the resolved ones (the others are kept); processModels applies them, so
+ * Role fixes of web models (enemies from their official battle prefabs; operators by character id) for skeletons whose clip
+ * names mislead the resolver (by name): model id → roles replacing the resolved ones (the others are kept); processModels applies them, so
  * data/assets.json carries them. A fix naming a clip the skeleton lacks is dropped and reported. Source: the prefab's
  * animation table (its Graphic component: anim key → clip) and the clip its Spine starts on, read from the local client's
  * battle/enm_pfb_*.ab (tools/local-extract, UnityPy).
@@ -126,9 +126,20 @@ const PRISONER_GREY_3 = Object.freeze({
  *   set (强壮囚犯's Idle is its grey one; 拳师囚犯 / 重犯 / 传奇重犯 *_grey); every prisoner's later sets are the render/units.js
  *   FORMS 'warning' / 'liberty' the sim switches to (content/enemies/archetypes.js prisoner).
  */
+/**
+ * 宴 (char_337_utage): her skeleton has one unnumbered skill set, Skill_Start / Skill_Loop / Skill_End — she sits down and
+ * rests: S1 分神's pose (停止攻击，防御力提升，每秒恢复生命). Her other skill, index 1 (S2, the 卫戍 default 落地斩·破门, an ATK
+ * buff for its first seconds after every deployment), attacks with her ordinary clips. The resolver (by name) gave both
+ * indices the unnumbered set, so she knelt through the opening seconds of every battle (the owner's playtest of
+ * 2026-10-07). [ASSUMED: by the clips' pose and S1's text; the prefab's skill table was not read]
+ */
+const UTAGE_S1 = Object.freeze({ begin: 'Skill_Start', loop: 'Skill_Loop', end: 'Skill_End', index: 0, idle: null });
+const UTAGE_S2 = Object.freeze({ ...clipOf('Attack', 'attack'), index: 1, idle: null });
 export const PREFAB_SPINE_ROLES = Object.freeze({
   enemy_1116_liprr: PRISONER_GREY_3,
   enemy_1116_liprr_2: PRISONER_GREY_3,
+  // operators by character id: both the front and the back model
+  char_337_utage: { skill: UTAGE_S2, skills: { 0: UTAGE_S1, 1: UTAGE_S2 } },
 });
 
 /**
@@ -317,7 +328,8 @@ export async function processModels(models, { root, dl, cachePath, download = tr
     nextCache[m.skel.rel] = { key: ck, info: sk };
     if (sk.missingRegions?.length) problems.push(`${m.key}: ${sk.missingRegions.length} attachment(s) not in atlas (e.g. ${sk.missingRegions[0]})`);
     if (!sk.animations.length) { problems.push(`${m.key}: skeleton has no animations`); continue; }
-    const id = String(m.key).startsWith('enemy:') ? String(m.key).slice('enemy:'.length) : null;
+    const key = String(m.key);
+    const id = key.startsWith('enemy:') ? key.slice('enemy:'.length) : key.startsWith('op:') ? key.split(':')[1] : null; // op:<char>:front|back
     const fixed = applyRoleFix(resolveRoles(sk.animations, { skillIndices: m.skillIndices, durations: sk.durations }), id ? PREFAB_SPINE_ROLES[id] : undefined, sk.durations);
     if (fixed.missing.length) problems.push(`${m.key}: role fix not applied (clip missing) for ${fixed.missing.join(', ')}`);
     const anims = fixed.roles;

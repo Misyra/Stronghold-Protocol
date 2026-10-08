@@ -455,6 +455,10 @@ describe('干员调配 overlay (real server, headless Chrome)', { skip: !ENABLED
     await page.type('.lo-search input', name);
     await page.waitForFunction((n) => document.querySelectorAll('.lo-card').length === 1 && document.querySelector('.lo-card .lo-card__name')?.textContent === n, { timeout: 5000 }, name);
     await page.click('.lo-card__pick');
+    // the detail shows the picked chess and its body is back at the top: screens/loadout.js resets the scroll for a new
+    // chess after paint, and a click that puppeteer scrolled into view before that reset lands outside the viewport (the
+    // 0.2.2 detail opens with 潜能与练度 and 特质, so 局内数值 / 模组 sit below the fold at 1920 × 1080)
+    await page.waitForFunction((n) => document.querySelector('.lo-dhead__name')?.textContent === n && document.querySelector('.lo-detail__body')?.scrollTop === 0, { timeout: 5000 }, name);
     await page.waitForSelector('.lo-sec--stats .dstat', { visible: true });
   }
 

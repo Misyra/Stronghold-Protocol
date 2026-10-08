@@ -205,7 +205,11 @@ Leader parts (`tag:'part'`) pass damage to their leader with `loseHp(leader, sha
 (无来源, credited to the attacker's `bossDamage`): `PART_TRANSFER` 1 for 斩胄之剑 / 破胄之锤 (`BLADE_TRANSFER`, the same
 constant) and 碎铳之簧 (PRTS "受到伤害时令假想敌：胄/铳受到等量的无来源生命流失"; DESIGN §20.10, §20.13). Content may replace a part mid-battle: every 剑/锤 sortie (content/bosses.js `kitBlade`)
 ends by spawning a new 初始模式 copy on its level branch route (`left_hand_origin` / `right_hand_origin`) with the old
-HP, then `kill(old, null)` — uncounted, no bounty; the client sees a `die` and a `spawn`.
+HP, then `kill(old, null)` — uncounted, no bounty; the client sees a `die` and a `spawn`. The Hidden Core 铳's 【末日布道】
+puts every 碎铳之簧 into 追逐模式 for its whole 5 s gain (`dog_duration`; invulnerable, no ordinary attacks): the spring
+keeps following the casting gun after reaching it (PR #347; until 0.2.1 arrival or 1 tile ended the chase), and each
+gun casts on its own data timer (20 s after it spawns, then every 45 s), so on a pair field the later call retargets
+every spring to that gun for a new 5 s (PRTS: 「持续召唤场上所有“碎铳之簧”向自身移动」).
 
 WALK legs pathfind on the stage grid inside the rect with the official flow field (grid.js: 4-direction SPFA from the
 destination, crates cost 1000, then Bresenham line-of-sight smoothing — research 08 §3.4). The official route stays

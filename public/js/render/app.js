@@ -316,6 +316,7 @@ export async function createFieldView(host, options = {}) {
     renderer: app.renderer,
     frameNo: () => frameNo,
     impostorInterval: () => impInterval,
+    impostorSlot: () => impSlot++,
     clipAllowed: () => clipAllowed,
     viewport: () => vp,
     loadLevel: () => loadLevel,
@@ -1565,6 +1566,10 @@ export async function createFieldView(host, options = {}) {
   let cpuMs = 0;
   let frameNo = 0;
   let impInterval = 0;
+  // Each frame the impostor units take slots 0, 1, 2 … in update order (units.js _updateImpostor): a unit refreshes when
+  // (frame + slot) % interval === 0, so a frame refreshes ⌊n/k⌋ or ⌈n/k⌉ of n units. Random per-unit phases left the
+  // busiest frame 20–66% above that (16–48 units, intervals 2–6) and set the frame-time peaks of a crowded battle.
+  let impSlot = 0;
   let vp = { width: s0.width, height: s0.height };   // viewport (CSS px) of this frame: unit culling
   let culledCount = 0;
   // Adaptive load level 0–3: a device that cannot hold the frame rate with the current work switches crowds to
@@ -1605,6 +1610,7 @@ export async function createFieldView(host, options = {}) {
   }
   function frameBody(now) {
     frameNo++;
+    impSlot = 0;
     if (frameNo % 30 === 1) {
       impInterval = pickImpostorInterval(); clipAllowed = pickClipping();
       culledCount = 0;

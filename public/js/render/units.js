@@ -1457,16 +1457,22 @@ export class UnitView {
       if (this.actor.spine.parent) this.actor.spine.parent.removeChild(this.actor.spine);
       if (atlas) atlas.park(this.actor.spine);
       this.body.addChild(sprite);
-      this.imp = { sprite, slot: null, rt: null, sc: 0, acc: 0, phase: (Math.random() * 64) | 0, dirty: true };
+      this.imp = { sprite, slot: null, rt: null, sc: 0, acc: 0, phase: (Math.random() * 64) | 0, dirty: true, last: 0 };
     }
     const imp = this.imp;
     imp.acc += animDt;
     const frame = this.ctx.frameNo ? this.ctx.frameNo() : 0;
-    const due = imp.dirty || interval <= 1 || (frame + imp.phase) % interval === 0 || Math.abs(sc - imp.sc) > imp.sc * 0.12;
+    // the view's slot in this frame's update order (app.js impostorSlot) spreads the refreshes evenly over the interval;
+    // a context without slots keeps the random phase. A unit whose slot keeps moving with the frame (the units before it
+    // culled on and off in step) is still refreshed after 2 intervals at the latest.
+    const turn = this.ctx.impostorSlot ? this.ctx.impostorSlot() : imp.phase;
+    const due = imp.dirty || interval <= 1 || (frame + turn) % interval === 0 || frame - imp.last >= 2 * interval
+      || Math.abs(sc - imp.sc) > imp.sc * 0.12;
     if (due) {
       this.actor.update(imp.acc);
       imp.acc = 0;
       imp.dirty = false;
+      imp.last = frame;
       this._renderImpostor(sc, atlas);
     }
     const k = imp.sc > 0 ? sc / imp.sc : 1;

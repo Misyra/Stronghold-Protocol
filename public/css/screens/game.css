@@ -543,6 +543,26 @@
 .set-keys__more > summary { padding: .06rem 0; font-size: .15rem; color: var(--mint-400); cursor: pointer; }
 .set-keys__more[open] > summary { margin-bottom: .08rem; }
 @keyframes set-key-wait { to { box-shadow: 0 0 .12rem rgba(246, 163, 41, .45); } }
+/* 问题反馈 (ui/settings.js DiagSection): laid out like 快捷键 — a head with its button, a hint, the result line; the
+   recorded-error count in the figure face of the slider values (amber once there is one); the report box only when the
+   clipboard refused it, styled like 干员调配's 导出 box (screens/loadout.css .lo-io__text) */
+.set-diag { display: flex; flex-direction: column; gap: .08rem; padding-top: .1rem; border-top: 1px solid var(--line); }
+.set-diag__meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .04rem .2rem; }
+.set-diag__stat { display: inline-flex; align-items: baseline; gap: .1rem; font-size: .14rem; color: var(--text-lo); }
+.set-diag__count { font-family: var(--font-num); font-size: .2rem; line-height: 1; color: var(--mint-400); }
+.set-diag__count.is-warn { color: var(--amber); }
+.set-diag__url { min-width: 0; font-size: .13rem; color: var(--text-dim); overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
+.set-diag__battle-hint { margin-top: -.06rem; }
+.set-diag__text {
+  box-sizing: border-box; width: 100%; height: max(2rem, 140px); min-height: 120px; resize: vertical;
+  padding: max(.1rem, 8px) max(.12rem, 10px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: max(.13rem, 11px); line-height: 1.5;
+  color: var(--text-hi); background: rgba(4, 10, 8, .55); border: 1px solid var(--line-2); border-radius: 2px; outline: none;
+  white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
+}
+.set-diag__text:focus { border-color: var(--mint-700); }
+/* touch: 16 px, below which iOS zooms into the focused box (as 干员调配's 导出 box and ui/clipboard.js) */
+.sp-coarse .set-diag__text { font-size: 16px; }
 @media (max-width: 767px) { .set-keys__list { grid-template-columns: minmax(0, 1fr); } }
 @media (max-height: 600px) and (pointer: coarse), (max-height: 600px) and (any-pointer: coarse) {
   .set-key { height: max(.38rem, 30px); }

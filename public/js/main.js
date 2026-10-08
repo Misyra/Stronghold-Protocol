@@ -53,6 +53,7 @@ import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/l
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
+import { recordError } from './diag.js';
 
 const RESTORE_GRACE_MS = 1500;
 const JOIN_DELAY_MS = 350;
@@ -311,12 +312,14 @@ function installGlobalErrorHandlers() {
     // expected browser behaviour, not app errors: log quietly, never toast.
     if (err && (err.name === 'NotAllowedError' || err.name === 'AbortError')) { console.warn('[app] ignored rejection', err.name); return; }
     console.error('[app] unhandled rejection', err);
+    recordError('rejection', err);
     if (err instanceof NetError) toastError(err);
     else toast(t('发生意外错误：{error}', { error: describeError(err) }).slice(0, 120), 'error');
   });
   window.addEventListener('error', (ev) => {
     if (!(ev instanceof ErrorEvent)) return; // resource load errors are not script errors
     console.error('[app] uncaught error', ev.error || ev.message);
+    recordError('error', ev.error || ev.message, ev.error ? null : `${ev.filename || '?'}:${ev.lineno || 0}:${ev.colno || 0}`);
   });
 }
 

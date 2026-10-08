@@ -1000,7 +1000,7 @@ test('凛御银灰 S3 变革已至: skill range, line attacks bird_atk_scale × 
 // =================================================================================================================
 // 引星棘刺
 
-test('引星棘刺 S1 度算浪波: an alchemy unit on the lowest-HP ally: DEF +def and hp ratio × ATK/s on the 3×3 around it (+3 s 心相)', () => {
+test('引星棘刺 S1 度算浪波: an alchemy unit on the lowest-HP ally: DEF +def and 生命回复速度 hp ratio × ATK/s on the 3×3 around it (+3 s 心相)', () => {
   for (const id of pair('15')) {
     const h = run({
       defs: { chess: { t_low: ally('t_low', { stats: { def: 100 } }), t_near: ally('t_near', { stats: { def: 100 } }), t_far: ally('t_far', { stats: { def: 100 } }) }, enemies: { enemy_dummy: dummy('enemy_dummy') } },
@@ -1019,7 +1019,10 @@ test('引星棘刺 S1 度算浪波: an alchemy unit on the lowest-HP ally: DEF +
     h.run(1.1);
     for (const a of [low, near]) assert.equal(a.s.def, 100 + bb.def, a.defId);
     assert.equal(far.s.def, 100);
-    approx(heals(h, u, (c) => c.target === near)[0].amount, u.s.atk * bb.hp_recovery_per_sec_ratio);
+    // 生命回复速度 (an hpRegen buff per unit, like 锡人 S2), not a heal of hers
+    for (const a of [low, near]) approx(a.buffs.find((b) => b.key === z.key)?.mods.hpRegen, u.s.atk * bb.hp_recovery_per_sec_ratio, a.defId);
+    assert.equal(far.buffs.some((b) => b.key === z.key), false);
+    assert.equal(heals(h, u, () => true).length, 0);
     mute(h, u);
     h.run(z.dur);
     assert.ok(!u.mem.zones.includes(z), 'expired');

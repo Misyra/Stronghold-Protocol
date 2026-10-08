@@ -743,7 +743,8 @@ selection (`injuredAlliesInKeys`) takes it — 凯尔希 on her Mon3tr (PRTS "�
 describes as raising the target's 生命回复速度 are hpRegen buffs, never `heal` calls, so 禁疗 and 无法被友方治疗 (`noHeal`:
 收割者 / 不屈者 / 武者) do not stop them: the 吟游者 trait (professions.js `bardRegen`, 分支特性信息 吟游者; 魔王's 微尘 ×1.5
 through its `bardRegen` hook; 浊心斯卡蒂 and her 海嗣), 调香师's 熏衣草, 瑕光 S2, 铃兰 S3 (none in its first second, refreshed
-every second), 锡人's 炼金单元 (GitHub #96 / #137); `overheal`
+every second), 锡人's 炼金单元 (GitHub #96 / #137) and 引星棘刺's S1 / S2 炼金单元 (the same wording and blackboard key as
+锡人 S2; a community report, 0.2.2); `overheal`
 turns the excess into an `overheal` shield. `battle.loseHp(target, amount, { source, from, tags, silent, sourceless })` = HP
 loss ignoring DEF/RES/shields/dodge (流失); `sourceless: true` makes it 无来源 ("受到等量的无来源生命流失": hooks see no source,
 `source` keeps the credit — stats and the per-player shared-pool tally), as does a 无来源 `from`. A 流失 skips the damage

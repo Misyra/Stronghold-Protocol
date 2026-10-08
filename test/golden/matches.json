@@ -1515,7 +1515,7 @@
       "combat": "client",
       "boost": null,
       "setup": {"stageId":"act1autochess_m01","bossId":"boss_5","hiddenBossId":"boss_10","factions":["DOT","INVISIBLE","REFLECTION"]},
-      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":107915,"virtualMs":119900},
+      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":87210,"virtualMs":119900},
       "rng": {"setup":25,"shop":511,"waves":0,"draft":34,"bots":18074,"meta":23},
       "errors": {"engine":0,"logged":0,"sim":0,"dispatcher":0},
       "rounds": [
@@ -1576,7 +1576,7 @@
         },
         {
           "round": 12,
-          "h_0": [1,28,14,0,0,6,8,"efcfaab5",123,"arcaneShip 0/7, kazimierzShip 0/8, miraShip 1/18, preciShip 1/24, siracusaShip 1/34, soloShip 1/0, suntShip 1/0, swiftShip 1/47, yanShip 0/13",15,31,16,116],
+          "h_0": [1,28,14,0,0,6,8,"efcfaab5",123,"arcaneShip 0/7, kazimierzShip 0/8, miraShip 1/18, preciShip 1/24, siracusaShip 1/34, soloShip 1/0, suntShip 1/0, swiftShip 1/47, yanShip 0/13",16,31,15,116],
           "ai_0": [1,23,12,0,1,6,8,"3f2e303b",262,"arcaneShip 0/2, deputShip 1/32, kazimierzShip 0/8, lateranoShip 1/57, miraShip 1/6, preciShip 0/2, raidShip 0/2, sargonShip 0/2, siracusaShip 1/42, skillfulShip 1/62, suntShip 1/14, swiftShip 1/49",31,31,0,112]
         },
         {
@@ -1596,7 +1596,7 @@
           "title": {"id":"comment_2","name":"不朽盟约","picId":"comment_icon_2","text":"激活的盟约层数总和最高"},
           "trophies": 3,
           "reward": 320,
-          "stats": {"activatedLayers":219,"bossDamage":248468,"dmgDealt":2618336,"gold":145,"itemsEquipped":18,"kills":245,"leaks":69,"lpLost":10,"merges":6,"perfectRounds":9,"refreshes":24},
+          "stats": {"activatedLayers":219,"bossDamage":251436,"dmgDealt":2637700,"gold":145,"itemsEquipped":18,"kills":245,"leaks":68,"lpLost":10,"merges":6,"perfectRounds":9,"refreshes":24},
           "lineup": ["3_13_b@12,3","5_10_a@12,7[1_02_e_b]","5_15_a@11,3[3_11_e_a]","5_02_a@11,8","3_19_b@10,3[6_01_e_b]","1_08_b@10,7[4_11_e_b+4_02_e_a]","4_16_a@10,8[4_03_e_b+3_07_e_a]","6_05_a@9,8[3_01_e_a+1_01_e_a]"],
           "bonds": ["arcaneShip 0/11","kazimierzShip 0/16","kjeragShip 0/8","miraShip 1/30","preciShip 1/52","sargonShip 1/24","siracusaShip 1/44","soloShip 1/0","suntShip 1/0","swiftShip 1/69","yanShip 0/13"]
         },
@@ -1610,7 +1610,7 @@
           "title": {"id":"comment_3","name":"坚若磐石","picId":"comment_icon_3","text":"目标生命值损失最少"},
           "trophies": 3,
           "reward": 320,
-          "stats": {"activatedLayers":163,"bossDamage":423617,"dmgDealt":3743301,"gold":141,"itemsEquipped":21,"kills":274,"leaks":47,"lpLost":10,"merges":6,"perfectRounds":12,"refreshes":19},
+          "stats": {"activatedLayers":163,"bossDamage":441354,"dmgDealt":3729119,"gold":141,"itemsEquipped":21,"kills":273,"leaks":47,"lpLost":10,"merges":6,"perfectRounds":12,"refreshes":19},
           "lineup": ["6_12_a@12,3","5_10_a@12,7","3_21_b@11,3[1_05_e_b+4_08_e_b]","5_20_a@11,8[3_08_e_b+3_07_e_b]","3_01_b@10,3[5_09_e_a+6_05_e_a]","4_16_a@10,7[4_11_e_a+4_02_e_a]","6_06_a@10,8","6_01_a@9,8"],
           "bonds": ["arcaneShip 0/2","deputShip 0/32","emptyShip 1/0","kazimierzShip 0/8","lateranoShip 1/79","miraShip 1/6","preciShip 1/2","raidShip 0/2","sargonShip 0/2","siracusaShip 1/62","skillfulShip 0/68","suntShip 1/14","swiftShip 0/55","visiShip 1/0"]
         }

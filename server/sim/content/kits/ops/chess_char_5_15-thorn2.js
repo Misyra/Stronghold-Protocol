@@ -37,12 +37,16 @@ function straightRun(battle, r, c) {
 export default {
   // ---------------------------------------------------------------------------------------------------------------
   // 引星棘刺 — S2 解构涌潮 (instant / 2 charges elite): throws an alchemy unit at the target: for 12/15 s ground enemies
-  // around it get healing ×0.5, take 120/140 % ATK arts per second, allies heal 12/15 % ATK per second; the unit drifts
+  // around it get healing ×0.5, take 120/140 % ATK arts per second, allies recover 12/15 % ATK per second; the unit drifts
   // along the throw direction and its radius grows. T1 心相: ATK +10 %, +3 s when another op is in range.
   // T2 视界: allies ASPD +5, enemies −5 (doubled on straight roads ≥ 6 tiles). Module (elite): +0.1 SP/s with a unit out.
   // S1 度算浪波 (instant): an alchemy unit thrown at the ally in her range with the lowest HP ratio: for
-  // projectile_delay_time s (+3 s 心相) allies on the landing tile and the 8 around it get DEF +def and heal
-  // hp_recovery_per_sec_ratio × ATK per second. S3 “我的海疆”: passive — her range is the skill range; active
+  // projectile_delay_time s (+3 s 心相) allies on the landing tile and the 8 around it get DEF +def and recover
+  // hp_recovery_per_sec_ratio × ATK per second. The recovery of S1 / S2 ("每秒回复/恢复相当于攻击力…的生命") is 生命回复速度,
+  // an hpRegen buff per alchemy unit set at each 1 s pulse until the next — the wording and blackboard key of 锡人 S2, whose
+  // PRTS 备注 says "生命恢复的提供方式为增加目标的“生命回复速度”属性，不受治疗加成和禁疗影响" (the only other 炼金师): 不屈者 and
+  // 禁疗 units recover too (community report: 炼金单元无法给不屈者等禁疗的干员提供生命恢复; it was a heal up to 0.2.1).
+  // S3 “我的海疆”: passive — her range is the skill range; active
   // (instant) — alchemy units on the max_target_token operators with the lowest block count: for projectile_delay_time s
   // the enemies around each of them (RING1, following it) get ATK/DEF/RES −, one strongest instance (不叠加), and take
   // atk_scale × ATK arts per second, everything ramping +per_interval each `interval` s up to max_stack_cnt steps.
@@ -66,8 +70,8 @@ export default {
         for (const a of allies) battle.addBuff(a, { key: 'thorn2:bastion', duration: AURA_DUR, mods: mods({ defFlat: num(bb.def) }) });
         if (z.acc >= 1 - 1e-9) {
           z.acc -= 1;
-          const heal = unit.s.atk * num(bb.hp_recovery_per_sec_ratio);
-          if (heal > 0) for (const a of allies) if (a.hp < a.s.maxHp) battle.heal(unit, a, heal, { aura: true });
+          const regen = unit.s.atk * num(bb.hp_recovery_per_sec_ratio);   // 生命回复速度 (see the header)
+          if (regen > 0) for (const a of allies) battle.addBuff(a, { key: z.key, duration: 1 + 2 * battle.dt, source: unit, mods: { hpRegen: regen } });
         }
         return;
       }
@@ -95,7 +99,8 @@ export default {
           onStart({ battle, unit }) {
             const t = battle.alliesInGrid(unit).filter((a) => a.hp > 0).sort((a, b) => a.hpRatio - b.hpRatio || b.blocking.length - a.blocking.length || dist(a, unit) - dist(b, unit) || a.id - b.id)[0];
             if (!t) return;
-            const z = { type: 'guard', r: t.tileR, c: t.tileC, x: t.x, y: t.y, t: 0, acc: 0, dur: num(bb.projectile_delay_time, 6) + extend(battle, unit) };
+            const key = `thorn2:guard:${unit.id}:${unit.mem.zoneSeq = (unit.mem.zoneSeq ?? 0) + 1}`;   // its regen buff ("效果均可叠加")
+            const z = { type: 'guard', r: t.tileR, c: t.tileC, x: t.x, y: t.y, t: 0, acc: 0, dur: num(bb.projectile_delay_time, 6) + extend(battle, unit), key };
             (unit.mem.zones ??= []).push(z);
             battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r: RING1, duration: z.dur });
           },
@@ -186,8 +191,12 @@ export default {
             if (z.acc >= 1 - 1e-9) {
               z.acc -= 1;
               for (const e of foes) battle.dealDamage(unit, e, { amount: unit.s.atk * num(bb.atk_scale), type: 'arts', isSkill: true, tags: ['skill', 'alchemy'] });
-              const heal = unit.s.atk * num(bb.hp_recovery_per_sec_ratio_chr);
-              if (heal > 0) for (const a of battle.alliesInRadius(z.x, z.y, r, null)) if (a.hp < a.s.maxHp) battle.heal(unit, a, heal, { aura: true });
+              const regen = unit.s.atk * num(bb.hp_recovery_per_sec_ratio_chr);   // 生命回复速度 (see the header)
+              if (regen > 0) {
+                for (const a of battle.alliesInRadius(z.x, z.y, r, null)) {
+                  if (battle.allySelectable(a, unit)) battle.addBuff(a, { key: `${z.key}:regen`, duration: 1 + 2 * battle.dt, source: unit, mods: { hpRegen: regen } });
+                }
+              }
               battle.fx('zone', { x: z.x, y: z.y, id: unit.id, r, duration: Math.max(0, z.dur - z.t), key: z.key });
             }
           }

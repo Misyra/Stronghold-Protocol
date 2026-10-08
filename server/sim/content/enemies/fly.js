@@ -1,7 +1,7 @@
 // server/sim/content/enemies/fly.js — FLY 飞行 kits (auras, 暴鸰, the “萨科塔”, 假想敌：黑云, shells, seeds) and their part of KITS
 // (split from content/enemies.js).
 
-import { TICK, MOVE_SCALE, PROJECTILE_SPEEDS } from '../../constants.js';
+import { TICK, MOVE_SCALE, PROJECTILE_SPEEDS, ALLY_COLLIDER_RADIUS } from '../../constants.js';
 import {
   num, T, hurt, targetsNear, allTargets, areaAllies, areaAlliesInTiles, fieldAllies, byPriority, spawnChildren,
   stepToward, setForm, expose,
@@ -27,9 +27,14 @@ export const BOMBD_RELEASE = 8 / 30;
  *  提升至200%"; the cast's end clip is already the bomb-less Idle_2 (`_endAnimKey`). */
 export const BOMBD_POST_DELAY = 0.667;
 
-/** 帝国炮火先兆者 shell (PRTS "普通攻击向目标所在位置发射一枚于3秒后命中的弹道，弹道对半径1.2范围内的所有我方单位造成攻击力
- *  100%的无来源物理伤害 … ※弹道始终使用缓存攻击力"): flight time and blast radius. */
-const SHELL_FLIGHT = 3, SHELL_RADIUS = 1.2;
+/** 帝国炮火先兆者 shell (PRTS 天赋 of both 先兆者 "普通攻击向目标所在位置发射一枚于3秒后命中的弹道，弹道对半径1.2范围内的所有我方单位造成
+ *  攻击力100%的无来源物理伤害（此弹道不会强制击中主目标，碰撞无视迷彩）… ※弹道始终使用缓存攻击力"): flight time and the written
+ *  blast radius. The landing is a 碰撞 — PRTS 作战机制 §碰撞体积: collider tests are the common way, an ally's collider a
+ *  circle of ALLY_COLLIDER_RADIUS — so an ally is hit when its collider touches the 1.2 circle: centre distance ≤ 1.45
+ *  (SHELL_REACH), the impact tile and the 8 around it (a diagonal tile centre is √2 ≈ 1.414 away; two tiles, 2, stay
+ *  out) — the 3×3 a player saw in the official game (GitHub #364; until 0.2.2 the bare 1.2: the cross only).
+ *  [ASSUMED] for this shell (its text names the 碰撞); other content zones keep their point radius (constants.js). */
+const SHELL_FLIGHT = 3, SHELL_RADIUS = 1.2, SHELL_REACH = SHELL_RADIUS + ALLY_COLLIDER_RADIUS;
 
 /** 假想敌：黑云 抓取: the blackboard radius counts ×2.5 (PRTS "2.5倍可变半径": range_radius 1.5 → 3.75), at most 3 prey,
  *  "短暂延迟后" the 延迟吞噬 lands (delay [ASSUMED] 0.5 s); its SP (= 全弹发射 hits) caps at the data's spData.maxSp. */
@@ -206,7 +211,8 @@ function kitBombd(ab) {
 
 /**
  * 帝国炮火先兆者 / 中枢先兆者 (PRTS): every normal attack fires a shell at the target's position that lands SHELL_FLIGHT s
- * later and deals 100 % of the ATK at launch as physical damage without a source to every ally within SHELL_RADIUS
+ * later and deals 100 % of the ATK at launch as physical damage without a source to every ally whose collider touches the
+ * SHELL_RADIUS circle (SHELL_REACH)
  * (it may miss the target that moved away; "碰撞无视迷彩"). The landing is the shell's area selection (areaAllies of the
  * enemy that fired it: no unblocking 隐匿 ally; the damage stays 无来源). The attack itself is the engine's (cooldown,
  * pause, 'atk' event of kind 'mortar'); the damage is the shell's (ai.js `profile.deferHit`).
@@ -218,10 +224,11 @@ function kitShell() {
       const atk = e.s.atk * (e.profile.atkScale ?? 1);
       for (const t of c.targets) {
         const x = t.x, y = t.y;
-        b.fx('bombardShell', { x, y, id: e.id, r: SHELL_RADIUS, t: SHELL_FLIGHT });
+        // (the telegraph and the blast are drawn at the reach: every ally whose centre lies in the circle is hit)
+        b.fx('bombardShell', { x, y, id: e.id, r: SHELL_REACH, t: SHELL_FLIGHT });
         b.after(SHELL_FLIGHT, () => {
-          b.fx('bombard', { x, y, r: SHELL_RADIUS, kind: 'emppnt' });
-          for (const u of areaAllies(b, e, x, y, SHELL_RADIUS)) hurt(b, null, u, atk, 'phys', { isSkill: false, tags: ['shell'] });
+          b.fx('bombard', { x, y, r: SHELL_REACH, kind: 'emppnt' });
+          for (const u of areaAllies(b, e, x, y, SHELL_REACH)) hurt(b, null, u, atk, 'phys', { isSkill: false, tags: ['shell'] });
         });
       }
     },

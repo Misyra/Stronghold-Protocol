@@ -1098,6 +1098,28 @@ test(`${nm('enemy_1112_emppnt')} / 中枢: every attack is a shell that lands 3 
   }
 });
 
+test(`${nm('enemy_1112_emppnt_2')} / 先兆者: the shell's 1.2 circle takes every ally whose collider touches it — the impact tile and the 8 around it, not the cross (GitHub #364)`, () => {
+  for (const key of ['enemy_1112_emppnt_2', 'enemy_1112_emppnt']) {
+    // the enemy on (10, 8) reaches only the wall on (10, 6): the impact; the others stand around it, out of its reach
+    const h = arena({ units: [
+      { chessId: 't_wall', row: 10, col: 6 }, { chessId: 't_wall2', row: 10, col: 5 },
+      { chessId: 't_wall3', row: 9, col: 5 }, { chessId: 't_wall4', row: 10, col: 4 },
+    ], captureNoisy: true });
+    h.step();
+    const e = put(h, key, [10, 8], { route: 2 });
+    assert.ok(h.runUntil(() => e.stats.attacks >= 1, 10), 'attacks');
+    const shell = h.eventsOf('fx').find((ev) => ev[1] === 'bombardShell');
+    assert.ok(Math.abs(shell[4].r - 1.45) < 1e-9, 'drawn at the reach: 1.2 + the 0.25 collider');
+    h.run(3.1);
+    const taken = (id) => h.unit(id).stats.taken;
+    for (const [id, what] of [['t_wall', 'the impact'], ['t_wall2', 'its orthogonal neighbour (1 away)'], ['t_wall3', 'a diagonal neighbour (√2 away)']]) {
+      assert.ok(Math.abs(taken(id) - e.s.atk) < 1e-6, `${key}: ${what} takes the shell`);
+    }
+    assert.equal(taken('t_wall4'), 0, `${key}: two tiles away stays out`);
+    checkInvariants(h.b);
+  }
+});
+
 test(`${nm('enemy_10084_hlegle')}: never attacks a flying ally (不会攻击飞行单位) — a ground one in range instead`, () => {
   // a flying ally (the 炎佑 is one) deployed after the wall, so the engine's order (latest deployed) would pick it
   const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 6 }, { chessId: 't_wall2', row: 10, col: 8 }] });

@@ -535,6 +535,7 @@ export function updateEnemy(b, e, dt) {
   if (!e.alive) return;
   // hidden (teleporting) enemies only advance wait legs
   const stunned = e.s.flags.stun;
+  if (stunned || e.hidden || e.s.flags.fear) b._cutAttackStand(e);
   const prevCd = e.atkCd;
   if (e.atkCd > 0 && !stunned && !e.hidden) e.atkCd = Math.max(0, e.atkCd - dt);
   // a stun / freeze / sleep / 浮空 — or leaving the field — takes the enemy out of its attack: a swing short of its damage
@@ -644,6 +645,7 @@ function advanceRoute(b, e, dt, R, standing = false) {
       continue;
     }
     if (leg.t === 'disappear') {
+      b._cutAttackStand(e);
       b._setHidden(e, true);
       e.atkStandUntil = -Infinity; standing = false;   // off the field: its attack clip is over
       R.legIdx++; R.pts = null;

@@ -3158,8 +3158,8 @@
         "enemy_9010_acpupp": [39,6,33,47997,613287]
       },
       "hooks": [1,188,6098,435,435,1218,1333,444,85,174,21,21,0,18383,8,44,156,89,1,91,0,0,4],
-      "events": {"atk":476,"deploy":30,"die":85,"dmg":1333,"engage":11,"fx":508,"heal":7,"leak":89,"skill":42,"spawn":170,"status":9},
-      "fx": {"blink":7,"dash":14,"dodge":4,"ember":6,"shield":138,"slash":308,"summon":21,"telegraph":6,"thorns":4},
+      "events": {"atk":476,"deploy":30,"die":85,"dmg":1333,"engage":11,"fx":1558,"heal":7,"leak":89,"skill":42,"spawn":170,"status":9},
+      "fx": {"blink":7,"chen3Wave":1050,"dash":14,"dodge":4,"ember":6,"shield":138,"slash":308,"summon":21,"telegraph":6,"thorns":4},
       "snaps": "f1faec58 cbf72c28 58e3f561 b8182f46 b1f5b0f5 1de38a22 bc7c2a2b f233c949 01d56108 560ee3fc 8ec7a4b9 b95b08ce 1943beb7 c593b60a e179c3a0 4a2ad117 171d3fbd 1e1c4411 efd84577 32339940 33fdecb2"
     },
     "diy-074": {
@@ -3197,8 +3197,8 @@
       ],
       "enemies": {"enemy_1229_darmy":[27,7,20,398,133429],"enemy_1229_darmy_2":[57,14,43,11905,308752],"enemy_1275_dwlock_2":[21,6,15,50953,369503]},
       "hooks": [1,133,6831,258,258,706,729,74,50,128,11,11,0,8921,19,29,105,78,1,50,0,2,24],
-      "events": {"atk":301,"deploy":28,"die":50,"dmg":729,"engage":12,"fx":272,"heal":1,"leak":78,"skill":22,"spawn":117,"status":9},
-      "fx": {"beam":46,"blink":4,"burst":2,"dash":8,"dodge":24,"shield":74,"slash":114},
+      "events": {"atk":301,"deploy":28,"die":50,"dmg":729,"engage":12,"fx":872,"heal":1,"leak":78,"skill":22,"spawn":117,"status":9},
+      "fx": {"beam":46,"blink":4,"burst":2,"chen3Wave":600,"dash":8,"dodge":24,"shield":74,"slash":114},
       "snaps": "498914af 0a79facb 2cda1fb6 0a030d4c 9ce66676 179c11c1 62b416c3 fe75747c 619a4d17 62a8fa9d 86e914bd b1b84020 f6408a48 d11bff81 68c04d21 052d976c 5b0d0f6d 7b80bb08 e10c9b3e 0befc79d 41d43704 1e0376b1 8d64e6cf"
     },
     "diy-075": {

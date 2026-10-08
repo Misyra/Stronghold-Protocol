@@ -1121,10 +1121,11 @@ test('画卷 (Art): copies the operator on the tile / in front with its elite st
   const copy = ps.hand.find((p) => p && p.kind === 'chess');
   assert.equal(copy && copy.id, DATA.chess[cid].goldenId, 'elite copy in the hand');
   // the copied 激光发射器 pairs with the original's (items merge "无论是否被装备") ⇒ the golden goes to the hand;
-  // 变形同构体 never merges ⇒ the copy wears it too
-  assert.deepEqual(copy.items.map((x) => x.id), [A('6_09')]);
+  // 变形同构体 never merges ⇒ its copy waits in the hand too, unequipped (PRTS 画卷 备注 "获得的装备为未装备状态";
+  // until 0.2.2 the copy wore it)
+  assert.deepEqual(copy.items.map((x) => x.id), [], 'the copy wears nothing');
   assert.deepEqual(ps.find(target.uid).piece.items.map((x) => x.id), [A('6_09')]);
-  assert.deepEqual(handIds(ps, 'item'), [B('3_03')], 'merged golden in the hand (regression: was equipped on the copy)');
+  assert.deepEqual(handIds(ps, 'item').slice().sort(), [B('3_03'), A('6_09')].sort(), 'the merged golden and the copied 变形同构体 in the hand');
   const art2 = giveItem(m, ps, 'chess_item_6_02_m');
   assert.equal(m.handle('p_0', { t: 'g.art', itemUid: art2.uid, row: 11, col: 7 }).error, 'BAD_TARGET', 'no operator in range');
   cover('chess_item_6_02_m');

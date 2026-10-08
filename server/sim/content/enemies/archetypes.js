@@ -356,6 +356,7 @@ function reborn({ dur = 0, hpRatio = 1, invincible = 0, onKo = null, during = nu
       a.state = 'reborn';
       a.t0 = b.time;
       a.noAtk = e.profile.noAttack;
+      e.unbalanceUntil = -Infinity;   // a 重生 is a forced state change: it ends a 失衡 (PRTS 失衡位移机制 「例如复活」)
       rebirthCleanse(b, e);
       e.hp = Math.min(1, e.s.maxHp);
       if (onKo) safe(b, e, () => onKo(b, e, a));

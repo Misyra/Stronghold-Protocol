@@ -178,16 +178,14 @@ const RAISED_Z = 0.12;
  */
 export const FLY_HOVER = 1.3;
 /**
- * A push / pull slide (推拉, PR #380 by @xcdoge): real seconds per √tile of travel. The sim displaces at once —
- * server/sim/battle/displacement.js walks its 0.1-tile steps inside one call — so the snapshots only ever show the
- * destination, and a pushed / pulled enemy appeared at the end of its path (a ≤ 2.5-tile push in one snapshot interval,
- * a longer pull snapped). The view now slides there under a constant deceleration (UnitView.slideTo): the official
- * knockback abilities (`Knockback`, `KnockBackWithDirection`, `DragTowardSource` in the client's metadata) carry an
- * impulse (`m_force`) and a velocity decaying under friction (`m_friction`, the tile's `additionalFriction`), and the data
- * has no per-skill duration (docs/research/13-knockback-official.md). The duration T = DISPLACE_SLIDE·√D, kept in
- * 0.12–0.45 s, is ours [ASSUMED: a fit so the view arrives where the sim put it — no source gives the official
- * timing]; v0 = 2D/T, a = v0/T then run the distance in exactly T. Purely visual: the sim's timing, damage, blocking and
- * the golden digests are untouched.
+ * A push / pull slide (推拉, PR #380 by @xcdoge). The sim displaces at once — server/sim/battle/displacement.js walks its
+ * 0.1-tile steps inside one call — and then holds the enemy in its 失衡 (UNBALANCE) state (PR #392's idea): a push for the
+ * 位移时间 of its 受力等级 (PRTS 游戏数据基础 推力-位移近似对应表: 0.2 … 35/30 game s), a pull for its force window (推与拉:
+ * 0.5 / 1 s). The snapshots only ever show the destination, so the view slides there under a constant deceleration
+ * (UnitView.slideTo) for that same span: the `displace` fx carries it (`dur`, game seconds) and the view divides it by the
+ * playback rate (ctx.animRate — 2 game s per real second by default: a 0.8 s push slides 0.4 real s) — it lands as the
+ * sim's state ends. v0 = 2D/T, a = v0/T then run the distance in exactly T. DISPLACE_SLIDE (real s per √tile, kept in
+ * 0.12–0.45 s) is only the fallback for an fx without `dur` (a recording made before 0.2.2) [ASSUMED].
  */
 export const DISPLACE_SLIDE = 0.14;
 /**
@@ -860,7 +858,8 @@ export class UnitView {
   }
 
   /**
-   * Slide to a displacement's destination (推拉, the `displace` fx at (x, y)) instead of appearing there (DISPLACE_SLIDE).
+   * Slide to a displacement's destination (推拉, the `displace` fx at (x, y)) instead of appearing there: `opts.dur` = the
+   * fx's 失衡 time in game seconds (real seconds = dur / ctx.animRate), else the DISPLACE_SLIDE·√D fallback.
    * `at` (game s): the time of the snapshot that carries the destination — render/app.js starts the slide as soon as the
    * interpolator shows the interval before it, and until the render clock reaches `at` the view holds where it stood
    * (the sample in between is a lerp or a snap towards the destination). From then on it eases from there into the
@@ -877,8 +876,9 @@ export class UnitView {
     const D = Math.hypot(dx, dy);
     if (!this.alive || !(D > 0.05)) { this.x = x; this.y = y; this.slide = null; return; }
     const f = Number.isFinite(opts.friction) && opts.friction > 0 ? opts.friction : SLIDE_FRICTION;
-    // a slippery tile (f < 1) slides longer; the duration still follows √D (constant deceleration)
-    const T = Math.max(0.05, (opts.dur > 0 ? opts.dur : clamp(DISPLACE_SLIDE * Math.sqrt(D), 0.12, 0.45)) / f);
+    // the sim's 失衡 time (game s) at the playback rate; a slippery tile (f < 1) slides longer
+    const rate = this.ctx.animRate?.() || 1;
+    const T = Math.max(0.05, (opts.dur > 0 ? opts.dur / rate : clamp(DISPLACE_SLIDE * Math.sqrt(D), 0.12, 0.45)) / f);
     // v0 = 2D/T and a = v0/T run the distance in exactly T with the velocity reaching 0 there, integrated in update().
     // The official turns a displaced unit towards the force (its _dontChangeFaceByDirection is an opt-in flag), while
     // our facing comes from the snapshot's vx — which points back down the route the enemy resumes after the

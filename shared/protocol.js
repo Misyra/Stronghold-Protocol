@@ -4,7 +4,7 @@
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
-import { cultivatedStats } from './potential.js';
+import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from './potential.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -65,12 +65,15 @@ export function isBattleResult(v) {
 // ---- operator loadout (DESIGN §16): room.loadout { entries } -------------------------------------------------
 
 /**
- * `room.loadout { entries }`: `entries` = `{ [baseChessId]: { skill?: skillIndex, module?: uniEquipId | 'none' } }`
- * (the per-browser loadout of the 干员调配 screen). Structural limits below; the semantic check against the game data
- * (known visible chess, legal skill index for the normal AND the elite status, legal module of the elite) is
- * `checkLoadout` — used by the server (lobby, match) and by the client to sanitise a stored loadout before sending.
+ * `room.loadout { entries, ops? }`: `entries` = `{ [baseChessId]: { skill?: skillIndex, module?: uniEquipId | 'none' } }`
+ * (the per-browser loadout of the 干员调配 screen); `ops` (0.2.2) = `{ [charId]: { potential?: 1–6, cultivate?: 0–3 } }`,
+ * the player's per-operator 潜能 and 练度 (shared/potential.js; absent / missing = 潜能 6, 精英2 Lv.60 — the owner's
+ * decision of 2026-10-08). Structural limits below; the semantic checks against the game data — known visible chess,
+ * legal skill index for the normal AND the elite status, legal module of the elite (`checkLoadout`); an operator of the
+ * 干员调配 roster or the 自选 owned pool (`checkLoadoutOps`) — are used by the server (lobby, match) and by the client to
+ * sanitise a stored loadout before sending.
  */
-export const LOADOUT_LIMITS = Object.freeze({ entries: 160, skillIndex: 9 });
+export const LOADOUT_LIMITS = Object.freeze({ entries: 160, skillIndex: 9, ops: 256 });
 /** The "no module" choice of an elite (模组: 不装备). */
 export const MODULE_NONE = 'none';
 const isLoadoutEntry = (e) => isPlain(e) && Object.keys(e).length > 0 && Object.keys(e).every((k) => k === 'skill' || k === 'module')
@@ -172,6 +175,52 @@ export function resolveLoadout(loadout, chess, getChess) {
   let moduleId = null;
   if (golden) moduleId = e && opt.modules.includes(e.module) ? e.module : opt.defaultModule;
   return { skillIndex, moduleId };
+}
+
+/** One `room.loadout.ops` entry: `{ potential?: 1–6, cultivate?: 0–3 }`, at least one of them. */
+const isOpsEntry = (e) => isPlain(e) && Object.keys(e).length > 0 && Object.keys(e).every((k) => k === 'potential' || k === 'cultivate')
+  && optional(isPotential)(e.potential) && optional(isCultivate)(e.cultivate);
+/** Structural check of `room.loadout.ops` (0.2.2): a map of ≤ 256 charIds → `{ potential?, cultivate? }`. */
+export const isLoadoutOps = (v) => isMap(v, LOADOUT_LIMITS.ops, isId, isOpsEntry);
+
+/**
+ * The operators a player sets a potential / 练度 for (0.2.2): the charIds of the 干员调配 roster — the visible normal chess
+ * (checkLoadout's targets; a hidden chess shares its visible twin's charId: 锡人, 耶拉 …) — and the owned 6★ 自选 picks
+ * (data/backups.json `diy.ownedPool`). A PRESET (特许) operator the player does not own is set by hand (潜能 1, 未精英化:
+ * the official 「未持有的特许按1潜」 and +0 %); a 补位 stand-in or a prototype pick takes neither.
+ * @param {Record<string, any>|null|undefined} chess data/chess.json
+ * @param {any} [backups] data/backups.json
+ * @returns {Set<string>}
+ */
+export function cultivationCharIds(chess, backups = null) {
+  const out = new Set();
+  for (const c of Object.values(chess && typeof chess === 'object' ? chess : {})) {
+    if (c && !c.isGolden && !c.isDiy && c.visible !== false && !c.isHidden && (!c.baseId || c.baseId === c.chessId) && isId(c.charId)) out.add(c.charId);
+  }
+  for (const id of Array.isArray(backups?.diy?.ownedPool) ? backups.diy.ownedPool : []) if (isId(id)) out.add(id);
+  return out;
+}
+
+/**
+ * Semantic check + normalisation of `room.loadout.ops` (0.2.2) — strict like checkLoadout: an operator `isOperator` does
+ * not know (cultivationCharIds) rejects the whole message. Entries equal to the defaults (潜能 6, 练度 3) are dropped, the
+ * rest stored complete `{ potential, cultivate }`. `undefined` / `null` = no settings (`{}`).
+ * @param {any} ops
+ * @param {(charId: string) => boolean} isOperator
+ * @returns {{ ok: true, ops: Record<string, { potential: number, cultivate: number }> } | { error: 'BAD_MSG'|'BAD_TARGET', detail: string }}
+ */
+export function checkLoadoutOps(ops, isOperator) {
+  if (ops == null) return { ok: true, ops: {} };
+  if (!isLoadoutOps(ops)) return { error: 'BAD_MSG', detail: 'bad operator settings' };
+  const out = {};
+  for (const id of Object.keys(ops)) {
+    if (typeof isOperator !== 'function' || !isOperator(id)) return { error: 'BAD_TARGET', detail: `unknown operator ${id}` };
+    const potential = ops[id].potential ?? POTENTIAL_DEFAULT;
+    const cultivate = ops[id].cultivate ?? CULTIVATE_DEFAULT;
+    if (potential === POTENTIAL_DEFAULT && cultivate === CULTIVATE_DEFAULT) continue;
+    out[id] = { potential, cultivate };
+  }
+  return { ok: true, ops: out };
 }
 
 // ---- operator ownership (干员持有, 0.2.0 补位): room.ownership { notOwned } -------------------------------------------
@@ -334,8 +383,9 @@ export const C2S = {
   // host confirmed — a seat that changed hands meanwhile is refused
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
-  // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK
-  'room.loadout': { entries: isLoadoutEntries },
+  // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):
+  // the per-operator 潜能 / 练度 (absent = none set: every operator at 潜能 6, 精英2 Lv.60)
+  'room.loadout': { entries: isLoadoutEntries, ops: isLoadoutOps, $optional: ['ops'] },
   // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it
   // started (an out-of-match setting — during a match it is stored for the next one: ROOM_STARTED)
   'room.ownership': { notOwned: isNotOwnedList },

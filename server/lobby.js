@@ -64,6 +64,9 @@
 //     (or outside a room) it simply replaces the stored one; while the room's match runs it is also handed to
 //     match.setLoadout(playerId, loadout), which accepts it only during INFO_CHECK (the 干员调配 entry of the briefing)
 //     and refuses it afterwards (WRONG_PHASE: the match's loadout is locked, the stored one applies to the next match).
+//     ▸ Its `ops` (0.2.2: the per-operator 潜能 / 练度, shared/protocol.js checkLoadoutOps — an operator of the 干员调配
+//     roster or the 自选 owned pool, strict like the entries) travel with it: session.ops / seat.ops / seats[].ops and
+//     match.setLoadout(playerId, loadout, ops); a message without `ops` sets none (every operator 潜能 6, 精英2 Lv.60).
 //   * Operator ownership (干员持有, 0.2.0 补位, owner's decision 2026-10-05): room.ownership { notOwned } — the base chess
 //     ids the player marked as not owned — is checked leniently (shared/protocol.js checkNotOwned: anything that is not
 //     a droppable NORMAL chess is dropped, never the whole list; only a malformed list is BAD_MSG) and stored on the
@@ -96,7 +99,7 @@
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
-import { checkLoadout, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
+import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
 import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
@@ -128,6 +131,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /**
  * @typedef {{ seat: number, playerId: string, name: string, isBot: boolean, ready: boolean,
  *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null,
+ *             ops?: Readonly<Record<string, { potential: number, cultivate: number }>> | null,
  *             notOwned?: readonly string[] | null, diy?: Readonly<Record<string, DiyLoadout>> | null }} Seat
  * @typedef {{ charId: string, skillIndex: number, uniEquipId: string|null }} DiyLoadout
  */
@@ -137,6 +141,22 @@ function freezeLoadout(loadout) {
   const out = {};
   for (const [id, e] of Object.entries(loadout || {})) out[id] = Object.freeze({ skill: e.skill, module: e.module ?? null });
   return Object.freeze(out);
+}
+
+/** Deep-frozen copy of checked operator settings (0.2.2 潜能 / 练度; shared by the session, the seat and the match). */
+function freezeOps(ops) {
+  const out = {};
+  for (const [id, e] of Object.entries(ops || {})) out[id] = Object.freeze({ potential: e.potential, cultivate: e.cultivate });
+  return Object.freeze(out);
+}
+
+/** The charIds a player may set a potential / 练度 for, per data object (shared/protocol.js cultivationCharIds). */
+const OPS_IDS = new WeakMap();
+function opsCharIds(data) {
+  if (!data || typeof data !== 'object') return new Set();
+  let ids = OPS_IDS.get(data);
+  if (!ids) { ids = cultivationCharIds(data.chess, data.backups); OPS_IDS.set(data, ids); }
+  return ids;
 }
 
 /** Deep-frozen copy of checked 自选 picks (shared by the session, the seat and the match's PlayerState). */
@@ -576,24 +596,30 @@ export class Lobby {
   }
 
   /**
-   * room.loadout (DESIGN §16): check the operator loadout against the game data, store it on the session and the seat,
-   * and — while a match runs — hand it to the match (accepted only during INFO_CHECK, see the header).
+   * room.loadout (DESIGN §16): check the operator loadout — and its per-operator 潜能 / 练度 `ops` (0.2.2) — against the
+   * game data, store both on the session and the seat, and — while a match runs — hand them to the match (accepted only
+   * during INFO_CHECK, see the header). Either part refused: nothing is stored.
    */
-  loadout(session, { entries }) {
+  loadout(session, { entries, ops }) {
     const data = this.safeData();
     const res = checkLoadout(entries, (id) => lookup('chess', id, data));
     if (!res || res.error) return fail(res && isErrCode(res.error) ? res.error : ERR.BAD_MSG, res && res.detail);
+    const ids = opsCharIds(data);
+    const resOps = checkLoadoutOps(ops, (id) => ids.has(id));
+    if (!resOps || resOps.error) return fail(resOps && isErrCode(resOps.error) ? resOps.error : ERR.BAD_MSG, resOps && resOps.detail);
     const loadout = freezeLoadout(res.loadout);
+    const opsSet = freezeOps(resOps.ops);
     session.loadout = loadout;
+    session.ops = opsSet;
     const room = this.roomOf(session);
     if (!room) return OK;
     const seat = room.seatOf(session.playerId);
-    if (seat) seat.loadout = loadout;
+    if (seat) { seat.loadout = loadout; seat.ops = opsSet; }
     if (!room.match || !seat) return OK; // a spectator's loadout stays on its session, never reaching the match
     if (typeof room.match.setLoadout !== 'function') return fail(ERR.ROOM_STARTED, 'stored for the next match');
     let r;
     try {
-      r = room.match.setLoadout(session.playerId, loadout);
+      r = room.match.setLoadout(session.playerId, loadout, opsSet);
     } catch (e) {
       this.log.error(`[lobby] ${room.code} match.setLoadout threw`, e);
       return fail(ERR.INTERNAL);
@@ -655,8 +681,9 @@ export class Lobby {
     if (host) host.ready = true;
     const seats = room.seats.filter(Boolean).map((s) => ({
       seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, connected: s.connected,
-      // DESIGN §16: the human's checked operator loadout (bots fight with the defaults)
+      // DESIGN §16: the human's checked operator loadout and (0.2.2) per-operator 潜能 / 练度 (bots fight with the defaults)
       loadout: s.isBot ? null : s.loadout || null,
+      ops: s.isBot ? null : s.ops || null,
       // 0.2.0 补位: the chess the human marked as not owned (bots own every operator)
       notOwned: s.isBot ? null : s.notOwned || null,
       // 0.2.0 自选编队: the human's checked DIY picks (bots field no 自选 piece [ASSUMED])
@@ -919,6 +946,7 @@ export class Lobby {
     return {
       seat: idx, playerId: session.playerId, name: session.name, isBot: false, ready: false, connected: session.connected, left: false,
       loadout: session.loadout || null,
+      ops: session.ops || null,
       notOwned: session.notOwned || null,
       diy: session.diy || null,
     };

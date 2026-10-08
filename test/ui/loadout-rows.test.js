@@ -162,6 +162,20 @@ test('the module card reads its talent changes at the operator\'s 潜能, as 局
   assert.match(src, /<\$\{ModuleInfo\} m=\$\{m\} golden=\$\{golden\} opt=\$\{modOpt\} potential=\$\{opsOf\(ops, chess\.charId\)\.potential\} \/>/);
 });
 
+test('css: the selected skill\'s frame is square around its icon (GitHub #398 / PR #399): no img max-width clamp, fill beats `.lo-sicon img`', () => {
+  // theme.css `img { max-width: 100% }` held the frame's width to the icon's while its height grew by .1rem (36 × 40 px
+  // on a phone, 70 × 80 at 1920 px), and the more specific `.lo-sicon img { object-fit: cover }` cropped its side lines
+  const css = readFileSync(path.join(ROOT, 'public/css/screens/loadout.css'), 'utf8');
+  const rule = css.match(/^([^{}\n]*\.lo-sicon__outline) \{([^}]*)\}/m);
+  assert.ok(rule, 'the frame rule');
+  assert.equal(rule[1], '.lo-sicon .lo-sicon__outline', 'more specific than `.lo-sicon img`');
+  assert.match(rule[2], /inset: -\.05rem; width: calc\(100% \+ \.1rem\) !important; height: calc\(100% \+ \.1rem\) !important;/);
+  assert.match(rule[2], /max-width: none;/);
+  assert.match(rule[2], /object-fit: fill;/);
+  assert.match(css, /\.lo-sicon img \{ width: 100%; height: 100%; object-fit: cover;/, 'the icon itself still covers');
+  assert.match(readFileSync(path.join(ROOT, 'public/css/theme.css'), 'utf8'), /\bimg \{ max-width: 100%; \}/, 'the global clamp the frame opts out of');
+});
+
 test('css: the head and the rows share one grid (columns aligned), quick targets grow on a coarse pointer, the detail slides over below 1000 px', () => {
   const css = readFileSync(path.join(ROOT, 'public/css/screens/loadout.css'), 'utf8');
   assert.match(css, /\.lo-list__head, \.lo \.lo-card \{ display: grid; grid-template-columns: var\(--cols\);/);

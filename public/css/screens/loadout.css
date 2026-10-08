@@ -235,7 +235,10 @@
 .lo-sicon--q { width: 86%; height: 86%; }
 .lo-sicon__glyph { font-family: var(--font-num); font-size: max(.2rem, 12px); font-weight: 700; color: var(--text-lo); letter-spacing: .04em; }
 .lo-sicon.is-on { border-color: #1ea0ff; }
-.lo-sicon__outline { position: absolute; inset: -.05rem; width: calc(100% + .1rem) !important; height: calc(100% + .1rem) !important; object-fit: fill; pointer-events: none; }
+/* the selected skill's frame (a 30 × 30 sprite, a 3 px ring to its edges) drawn .05rem outside the icon on every side, square:
+   theme.css `img { max-width: 100% }` clamped its width to the icon's while its height grew by .1rem, and `.lo-sicon img`
+   (more specific) made it `cover` — a tall, left-shifted frame with clipped side lines (GitHub #398, PR #399) */
+.lo-sicon .lo-sicon__outline { position: absolute; inset: -.05rem; width: calc(100% + .1rem) !important; height: calc(100% + .1rem) !important; max-width: none; object-fit: fill; pointer-events: none; }
 .lo-sicon__ring { position: absolute; inset: -.05rem; border: 2px solid #1ea0ff; pointer-events: none; }
 
 .lo-mglyph { position: relative; flex: none; display: inline-grid; place-items: center; width: max(.56rem, 30px); height: max(.56rem, 30px);

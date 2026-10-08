@@ -8,7 +8,8 @@
 // local art, 标准 = 战场#01 only; user playtest #3 (DESIGN §17): temp overflow kept until the first prep its player can
 // act in (never wiped at the round start), the 回环射手 boomerang and 蕾缪安's shells one by one, the live LP, the detail
 // card order and the static game data; user playtest #4 (DESIGN §18): picking by the tile under the pointer and the
-// dragged model held under it, a single human untimed, the strategy draft's one countdown, 机变 two taps, knocked-out
+// dragged model held under it (standing on that tile while it is a legal target, §27.62), a single human untimed, the
+// strategy draft's one countdown, 机变 two taps, knocked-out
 // operators and the official element gauges, live stats, the shop-only items, skill summons, 炎佑; user playtest #5
 // (DESIGN §19): blocking by contact radius, 联防 forced exit, huge-boss hit areas and 自缚, the element pipeline rules,
 // boss-field deployment, the phone prep camera — and the normative §3 / §5.1 / §5.5 / §6.1 / §7 lines that changed; user
@@ -294,11 +295,15 @@ test('lost models, live LP, detail card order, static game data (user playtest #
 });
 
 test('user playtest #4 (DESIGN §18): picking by tile, timers, 机变 two taps, down / element state, content — code and every doc agree', () => {
-  // #1 the tile under the pointer; the dragged model held under the pointer (no touch lift, probe or body shapes)
+  // #1 the tile under the pointer; the dragged model held under the pointer (no touch lift, probe or body shapes) —
+  // standing on the pointer's tile while that is a legal target (§27.62, the official deploy drag)
   assert.equal(ENEMY_REACH, 0.6);
   const app = readFileSync(join(ROOT, 'public/js/render/app.js'), 'utf8');
   const tune = readFileSync(join(ROOT, 'public/js/render/app/tune.js'), 'utf8');
   assert.match(tune, /export const DRAG_HOLD_TILES = 0\.45;/);
+  assert.match(app, /dragStandTile\(p\)/);
+  assert.match(DESIGN, /`dragStandTile/);
+  assert.match(PLAYING, /干员模型直接站在这一格上/);
   assert.ok(!/TOUCH_LIFT_TILES|drawnAt|pickShape|pieceDragOver/.test(app), 'no touch lift, pixel probe or body shapes (user playtest #4 item 1)');
   assert.match(DESIGN, /`DRAG_HOLD_TILES` = 0\.45 tile/);
   assert.match(DESIGN, /`ENEMY_REACH` 0\.6 tile/);

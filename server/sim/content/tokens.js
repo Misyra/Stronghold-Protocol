@@ -34,7 +34,8 @@
 //   香槟炸弹      untargetable trap: the first ground enemy touching its tile takes owner ATK × atk_scale phys (+1 hit
 //                 after duration_switch s on the field) and sluggish; the bomb is used up ('expired', never a knock-out;
 //                 its blast fx carries `consumed: true` so clients play the explosion, not a death sound); 禁疗, no HP
-//                 loss, never gone because of its HP (champagneHold — the owner's decision D2 of 2026-10-08)
+//                 loss, never gone because of its HP (champagneHold — the owner's decision D2 of 2026-10-08); an
+//                 unrevealed 隐匿 enemy does not set it off (CHAMPAGNE_TRIGGER)
 //   从不混淆的方向 untargetable marker; when the owner's skill ends it vanishes and the owner returns to its tile
 //   黄金盟誓      attacks deal true damage (trait); lasts while the owner's skill runs; 维娜 S3 places one on every
 //                 free deployable tile around her (kits/ops/chess_char_6_07-siege2.js) — no per-owner deploy limit (SKILL_SUMMON_UNCAPPED)
@@ -80,7 +81,8 @@
 //
 // Exports for other content: spawnYanyou, spawnMapChar, findSummonTile, summonToken, tacticalPoint, wolfShadows,
 // COUNTDOWN_SUMMONS / startCountdown (the countdown summons' 无敌 + 禁疗 and timer bar, shared with the kits that time them),
-// champagneHold (香槟炸弹's durability, shared with 琳琅诗怀雅's kit, kits/ops/chess_char_3_04-swire2.js),
+// champagneHold / CHAMPAGNE_TRIGGER (香槟炸弹's durability and the enemies it goes off on, shared with 琳琅诗怀雅's kit,
+// kits/ops/chess_char_3_04-swire2.js),
 // wolfShadowInterval, installWolfTacticalPoint, wolfTacticalPoint, wolfReturnNow (the 狼群's 战术点形态, shared with the
 // 伺夜 kit's own pack, kits/ops/chess_char_3_19-vigil.js), releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY,
 // TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 / 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit,
@@ -1047,6 +1049,14 @@ export function champagneHold(battle, bomb) {
   battle.on('damaged', (ctx) => { if (ctx.target === bomb && bomb.alive) bomb.hp = bomb.s.maxHp; }, { owner: bomb, priority: 1000 });
 }
 
+/**
+ * The enemies a 香槟炸弹 may set off on: ground and selectable (canTargetEnemy) — a 隐匿 enemy that is neither revealed nor
+ * blocked is none (PRTS 作战机制 §隐匿 "隐匿效果使得获得该效果的单位无法被任何敌方的能力索敌选中"; its pages carry no 无视隐匿 /
+ * 无视可选性 note; the other contact traps — 多萝西's 共振装置, 望's 棋子 — select so too). A community report the owner relayed
+ * (「香槟炸到没有破隐的隐匿敌人了」): until 0.2.1 it went off on any ground enemy, 隐匿 or not.
+ */
+export const CHAMPAGNE_TRIGGER = Object.freeze({ canHitFly: false, groundOnly: true });
+
 /** 香槟炸弹 (琳琅诗怀雅 S2): untargetable trap consumed by the first ground enemy touching its tile (champagneHold). */
 function champagne(bb) {
   const scale = num(bb['attack@atk_scale'] ?? bb.atk_scale, 0);
@@ -1059,7 +1069,7 @@ function champagne(bb) {
         if (!unit.alive) return;
         let hit = null;
         for (const e of battle.enemies) {
-          if (!e.alive || e.hidden || e.isFlying) continue;
+          if (!canTargetEnemy(unit, e, CHAMPAGNE_TRIGGER)) continue;   // (no unrevealed 隐匿 enemy)
           // touching its tile: a huge enemy on any tile of its body (body.js)
           const on = e.hitArea ? bodyOnTile(e, unit.tileR, unit.tileC) : Math.abs(e.x - unit.tileC) <= 0.5 && Math.abs(e.y - unit.tileR) <= 0.5;
           if (on && (!hit || e.spawnSeq < hit.spawnSeq)) hit = e;

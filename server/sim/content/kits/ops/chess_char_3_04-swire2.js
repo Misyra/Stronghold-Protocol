@@ -8,7 +8,8 @@ import {
   groundTile, enemiesOn,
 } from '../shared/tier3.js';
 import { powi } from '../../../detmath.js';
-import { champagneHold } from '../../tokens.js';
+import { champagneHold, CHAMPAGNE_TRIGGER } from '../../tokens.js';
+import { canTargetEnemy } from '../../../targeting.js';
 
 /** 琳琅诗怀雅 S3's coin range (PRTS 备注 "前方范围2-4"; range_table "2-4", facing right). */
 const SWIRE2_COIN_GRID = Object.freeze([[1, 1], [0, 0], [0, 1], [0, 2], [-1, 1]]);
@@ -78,7 +79,8 @@ export default {
         battle.on('tick', () => {
           if (!bomb.alive || !bomb.deployed) return;
           for (const e of battle.enemies) {
-            if (!e.alive || e.hidden || e.isFlying || e.s.flags.untargetable) continue;
+            // a ground enemy it may select — no 隐匿 one that is neither revealed nor blocked (tokens.js CHAMPAGNE_TRIGGER)
+            if (!canTargetEnemy(bomb, e, CHAMPAGNE_TRIGGER)) continue;
             if (!bodyOnTile(e, bomb.tileR, bomb.tileC)) continue;
             // first enemy touching it; after switchT s on the field the bomb deals its damage one extra time
             const hits = battle.time - bomb.deployedAt >= switchT - 1e-9 ? 2 : 1;

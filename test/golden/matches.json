@@ -738,7 +738,7 @@
           "title": {"id":"comment_5","name":"万事俱备","picId":"comment_icon_5","text":"装备配发数量最多"},
           "trophies": 3,
           "reward": 298,
-          "stats": {"activatedLayers":0,"bossDamage":0,"dmgDealt":3796247,"gold":135,"itemsEquipped":18,"kills":262,"leaks":36,"lpLost":27,"merges":3,"perfectRounds":9,"refreshes":16},
+          "stats": {"activatedLayers":0,"bossDamage":0,"dmgDealt":3795677,"gold":135,"itemsEquipped":18,"kills":262,"leaks":36,"lpLost":27,"merges":3,"perfectRounds":9,"refreshes":16},
           "lineup": [],
           "bonds": ["arcaneShip 0/30","kazimierzShip 0/2","preciShip 0/98","sargonShip 0/106","skillfulShip 0/24","swiftShip 0/8"]
         }

@@ -74,6 +74,11 @@ export default {
   `../shared/tierN.js` are usable too, but same-named helpers are not interchangeable: `num` of tier 1 / 4 also reads
   numeric strings, those of tiers 3 / 5 / 6 do not; `toggleBuff`, `talentBb`, `moduleBb`, `instantKind` take different
   arguments per tier. Read the helper before using it.
+- **Not in a kit**: a module's trait line 「攻击范围内存在N名及以上敌人时攻击速度+X」 (REA-Y: 圣约送葬人, 隐德来希) is applied
+  to every operator by the engine (`../traitMods.js`, called from `battle/players.js` `_setupUnit` after `kit.install`);
+  a kit adding it too would count it twice. The other conditional attack-speed lines of modules stay in their kits —
+  traitMods.js lists them and refuses them, and `test/sim/trait_attack_speed.test.js` scans every chess, 补位 and 自选
+  loadout so a new record with an unknown shape is noticed.
 - **The battle API** documented in docs/SIM.md: units (§2), buffs / mods / statuses (§3), the damage & heal pipeline
   (§4), the hook bus and its re-entrancy rule (§5), the engine helpers content must use (§6), the skill runtime (§7.1);
   engine modules by relative path (`../../../constants.js`, `targeting.js`, `body.js` for huge enemies, `dir.js` for

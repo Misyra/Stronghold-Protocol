@@ -702,22 +702,32 @@ function splitModuleParts(modulePhase) {
 
 /**
  * Apply module trait-override parts to a trait blackboard/text (golden chess or their tokens).
- * Mutates `traitBB`; returns the (possibly overridden) trait template, module text and trait range id.
- * @returns {{ template: string, moduleText: string|null, rangeId: string|null }}
+ * Mutates `traitBB`; returns the (possibly overridden) trait template, module text and trait range id, and `descBB` —
+ * the blackboard the trait's own line is written with: a part whose target is `DISPLAY` (display only) and that adds a
+ * line without rewriting the trait's feeds its blackboard to that added line only. 圣约送葬人 REA-Y (uniequip_003_excu2):
+ * its DISPLAY part's `value` 12 is the 「攻击速度+{value}」 of its own line, not the trait's 「回复自身{value}生命」 (50 —
+ * GitHub #400; the battle heals 50, its kit reads traitBase). `traitBB` (the battle's trait blackboard) still takes
+ * every part, as before (the kits that read it are written against it).
+ * @returns {{ template: string, moduleText: string|null, rangeId: string|null, descBB: { bb: object, bbStr: object } }}
  */
 function applyModuleTraitParts(parts, phase, level, traitBB, template, rangeId, label, potRank = 0) {
   let moduleText = null;
+  const descBB = { bb: { ...traitBB.bb }, bbStr: { ...traitBB.bbStr } };
   for (const part of parts || []) {
     const mc = bestCandidate(part.overrideTraitDataBundle?.candidates, phase, level, potRank);
     if (!mc) continue;
     const mb = flattenBB(mc.blackboard, `${label} module trait`);
     Object.assign(traitBB.bb, mb.bb);
     Object.assign(traitBB.bbStr, mb.bbStr);
+    if (part.target !== 'DISPLAY' || mc.overrideDescripton) {
+      Object.assign(descBB.bb, mb.bb);
+      Object.assign(descBB.bbStr, mb.bbStr);
+    }
     if (mc.overrideDescripton) template = mc.overrideDescripton;
     if (mc.additionalDescription) moduleText = mc.additionalDescription;
     if (mc.rangeId) rangeId = mc.rangeId;
   }
-  return { template, moduleText, rangeId };
+  return { template, moduleText, rangeId, descBB };
 }
 
 /**
@@ -730,7 +740,7 @@ function traitRecord(ctx, char, phase, level, opParts, chessId, potRank = 0) {
   const traitBB = flattenBB(tc?.blackboard, `${chessId} trait`);
   const traitMod = applyModuleTraitParts(opParts, phase, level, traitBB,
     tc?.overrideDescripton || char.description || '', tc?.rangeId || null, chessId, potRank);
-  const tp = textPair(traitMod.template, traitBB.bb, traitBB.bbStr, `${chessId} trait`);
+  const tp = textPair(traitMod.template, traitMod.descBB.bb, traitMod.descBB.bbStr, `${chessId} trait`);
   const trait = { desc: tp.desc, descRaw: tp.descRaw, bb: traitBB.bb, bbStr: traitBB.bbStr, rangeGrid: rangeGrid(ctx, traitMod.rangeId) };
   if (traitMod.moduleText) {
     const mp = textPair(traitMod.moduleText, traitBB.bb, traitBB.bbStr, `${chessId} module trait`);
@@ -1493,7 +1503,7 @@ function tokenVariant(ctx, tokenId, char, { phase, level, skillIndex, skillLevel
   const ownerPhase = phase, ownerLevel = level;
   const traitMod = applyModuleTraitParts(moduleTokenParts, ownerPhase, ownerLevel, tbb,
     tc?.overrideDescripton || char.description || '', null, label, potRank);
-  const tp = textPair(traitMod.template, tbb.bb, tbb.bbStr, `${label} trait`);
+  const tp = textPair(traitMod.template, traitMod.descBB.bb, traitMod.descBB.bbStr, `${label} trait`);
   const moduleTrait = traitMod.moduleText ? textPair(traitMod.moduleText, tbb.bb, tbb.bbStr, `${label} module trait`) : null;
   // Token skill: same index as the owner's skill when present, else the first defined one.
   const skills = char.skills || [];

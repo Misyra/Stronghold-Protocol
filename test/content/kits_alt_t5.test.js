@@ -178,6 +178,19 @@ test('圣约送葬人 module REA-Y (已知悉): ASPD +12 with ≥ 2 enemies in r
   }
 });
 
+test('圣约送葬人 heals 50 per enemy hit with REA-Y or no module, 60 with REA-X (the REA-Y line\'s 12 is its ASPD, GitHub #400)', () => {
+  for (const [moduleId, want] of [['uniequip_003_excu2', 50], ['uniequip_002_excu2', 60], ['none', 50]]) {
+    const h = run({
+      defs: { enemies: { enemy_dummy: dummy('enemy_dummy') } },
+      units: [{ chessId: 'chess_char_5_01_b', row: 10, col: 4, moduleId }],
+      enemies: [{ key: 'enemy_dummy', pos: [10, 5] }],
+    });
+    const u = h.unit('chess_char_5_01_b');
+    assert.equal(u.profile.selfHeal, want, moduleId);
+    done(h);
+  }
+});
+
 // =================================================================================================================
 // 缇缇
 

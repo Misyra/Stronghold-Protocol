@@ -157,6 +157,12 @@ test('the module card reads its talent changes at the operator\'s 潜能, as 局
   assert.ok(p1.some((x) => x.includes('生命上限1.5%的生命')), '潜能1');
   assert.ok(!p1.some((x) => x.includes('（+0.5%）')));
   assert.deepEqual(texts(ModuleInfo({ m: null, golden: g, opt: { id: 'none', rec: null }, potential: 1 })), [g.traitBase.descRaw], '不装备: the base 特性');
+  // 圣约送葬人 REA-Y (GitHub #400): 特性 heals 50 per enemy hit as in battle; 特性追加 is the module's ASPD line
+  const ex = get('chess_char_5_01_b');
+  const rea = ex.modules.find((x) => x.uniEquipId === 'uniequip_003_excu2');
+  const lines = texts(ModuleInfo({ m: null, golden: ex, opt: { id: rea.uniEquipId, rec: rea }, potential: 6 }));
+  assert.ok(lines.some((x) => x.includes('每攻击到一个敌人回复自身<@ba.kw>50</>生命')), lines.join(' | '));
+  assert.ok(lines.some((x) => x === '攻击范围内存在2名及以上敌人时攻击速度<@ba.kw>+12</>'));
   // the detail hands the operator's 潜能 to it
   const src = readFileSync(path.join(ROOT, 'public/js/screens/loadout.js'), 'utf8');
   assert.match(src, /<\$\{ModuleInfo\} m=\$\{m\} golden=\$\{golden\} opt=\$\{modOpt\} potential=\$\{opsOf\(ops, chess\.charId\)\.potential\} \/>/);

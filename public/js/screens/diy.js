@@ -9,7 +9,7 @@
 // the model is ui/diyModel.js. Styles: css/screens/loadout.css (diy-*). An owned pick's card carries its operator's 潜能 /
 // 练度 selects (0.2.2, screens/cultivation.js — the same per-operator settings as 干员调配, `ops`); a prototype has neither.
 
-import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { useLayoutEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, Button, TierChip } from '../ui/components.js';
 import { Img, RichText, BondGlyph } from '../ui/gameComponents.js';
 import { chessAvatarUrl, chessPortraitUrl, profIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
@@ -146,8 +146,10 @@ export function DiyPicker(props) {
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState(cur ? { ...cur } : null);
   // Esc cancels only the picker, like its 取消 (GitHub #284, idea from PR #286); the 干员调配 overlay's own Esc skips
-  // while a picker is open, and a dialog over the picker (导入) still takes Esc first
-  useEffect(() => {
+  // while a picker is open, and a dialog over the picker (导入) still takes Esc first. A layout effect: the listener is
+  // attached in the same commit as the picker (a plain effect waits for the next frame, and an Esc pressed in between
+  // was swallowed — the overlay skipped it, the picker did not hear it yet; the 0.2.2 full browser pass)
+  useLayoutEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.modal')) return;
       e.preventDefault();

@@ -134,6 +134,19 @@ describe('自选编队 picker: Esc closes only the picker (real server, no art n
         assert.ok(await c.page.$('.lo'), `${slot}: Esc keeps the 干员调配 overlay${search ? ' (from the search field)' : ''}`);
         assert.equal((await c.page.$$('.diy-slot')).length, 4, `${slot}: the four slots stay`);
       }
+      // an Esc pressed the moment the picker appears — before the next animation frame — closes it too: its listener comes
+      // with the picker's own commit (a plain effect attached it a frame later and the overlay skipped the key: the
+      // picker stayed open — the 0.2.2 full browser pass)
+      const opened = await c.page.evaluate(async (slot, sel) => {
+        document.querySelector(`.diy-slot[data-slot="${slot}"] .diy-slot__fill`).click();
+        for (let k = 0; k < 50 && !document.querySelector(sel); k++) await Promise.resolve();
+        const open = !!document.querySelector(sel);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        return open;
+      }, SLOT, picker);
+      assert.ok(opened, 'the picker opened');
+      await c.page.waitForSelector(picker, { hidden: true, timeout: 3000 });
+      assert.ok(await c.page.$('.lo'), 'an immediate Esc keeps the 干员调配 overlay');
       assert.equal(await saved(), before, 'cancelling a picker does not change the saved picks');
       await c.page.keyboard.press('Escape');
       await c.page.waitForFunction(() => !document.querySelector('.lo'), { timeout: 3000 });

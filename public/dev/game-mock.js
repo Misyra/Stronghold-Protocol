@@ -724,6 +724,15 @@ async function mockRequest(t, f = {}) {
       return {};
     }
     case 'g.autoplay': case 'g.leave': case 'room.leave': return {};
+    // the host frees a spectator seat (server/lobby.js removeSpectator; ?variant=spectators seats two, ?variant=notHost makes
+    // another player the host)
+    case 'room.removeSpectator': {
+      const room = store.get().room;
+      if (room?.hostId !== ME) fail('NOT_HOST');
+      if (!(room.spectators || []).some((x) => x.playerId === f.playerId)) fail('BAD_TARGET');
+      store.set({ room: { ...room, spectators: room.spectators.filter((x) => x.playerId !== f.playerId) } });
+      return {};
+    }
     default: return {};
   }
 }
@@ -798,7 +807,11 @@ async function boot() {
     me: { playerId: ME, name: '凯尔希', token: null },
     connection: { status: 'online', ping: 42, attempt: 0, retryAt: 0, lastError: null, everOnline: true },
     clock: { offset: 0, rtt: 20, synced: true },
-    room: { code: 'MOCK', hostId: ME, mode: 'coop', difficulty: 'HARD', inMatch: true, seats: PLAYERS.map((p) => ({ seat: p.seat, playerId: p.playerId, name: p.name, isBot: p.isBot, ready: true, connected: true })) },
+    room: {
+      code: 'MOCK', hostId: VARIANTS.has('notHost') ? 'ai_2' : ME, mode: 'coop', difficulty: 'HARD', inMatch: true,
+      seats: PLAYERS.map((p) => ({ seat: p.seat, playerId: p.playerId, name: p.name, isBot: p.isBot, ready: true, connected: true })),
+      ...(VARIANTS.has('spectators') ? { spectators: [{ playerId: 'sp_1', name: '观战者甲', connected: true }, { playerId: 'sp_2', name: '观战者乙', connected: false }] } : {}),
+    },
   });
   await data.loadAll(GAME_FILES);
   installDeviceSupport();

@@ -751,7 +751,11 @@ const sameMods = (a, b) => {
  * flat bound when one is uncapped) and ≤ the room left under BOND_LAYER_CAP (999) from the bond's starting layers, only
  * on bonds the player's lineup / band / effects / items name, none when the spec disables gains; coins ≤ the spawns' bounty coins;
  * perfect consistent with the counted leaks; unit states only for the player's own units, within range. `resolved` (the
- * HUD capsule's numerator) is kept as reported, clamped to the player's `total`; an absent one stays absent.
+ * HUD capsule's numerator): the result's own — the FIELD's, what the client's capsule showed — is kept as reported,
+ * clamped to the field's `total`, and is what m.public publishes (never the sum of the players': an enemy that crosses
+ * the midline of a two-half field is billed to one player's `total` and to the other's leak, so their own numbers
+ * clamp it to 0); the players' own (each clamped to their `total`) are the fallback of a result with none; absent when
+ * neither is complete.
  * @returns {{ ok: true, result: object } | { ok: false, reason: string }}
  */
 export function validateClientResult(spec, raw, { gd = null } = {}) {
@@ -888,12 +892,20 @@ export function validateClientResult(spec, raw, { gd = null } = {}) {
     }
     if (coinsSum > B.bountyCoins + 1e-6) return bad('coins');
     const result = { time: raw.time, reason: raw.reason, perPlayer, killed: 0, total: 0, errors: Math.max(0, Math.trunc(Number(raw.errors) || 0)) };
+    let ownResolved = 0, ownKnown = pids.length > 0;
     for (const pid of pids) {
       result.killed += perPlayer[pid].killed;
       result.total += perPlayer[pid].total;
-      result.resolved = (result.resolved ?? 0) + (Number.isInteger(perPlayer[pid].resolved) ? perPlayer[pid].resolved : 0);
+      if (Number.isInteger(perPlayer[pid].resolved)) ownResolved += perPlayer[pid].resolved; else ownKnown = false;
     }
-    if (pids.some((pid) => !Number.isInteger(perPlayer[pid].resolved))) delete result.resolved;
+    // The FIELD's capsule numerator (Battle.resolved, what the client's own capsule showed), kept as reported and clamped
+    // to the field's total — NOT the sum of the players' own numbers: an enemy that spawns on one half and leaks on the
+    // other (the 联防 lane, the boss pair's crossing routes) is billed to one player's `total` and to the other's
+    // `leakedInTotal`, so each player's own min(total, …) clamps it away (0 and 0 for an enemy the field resolved). The sum
+    // is only the fallback of a result with no field-level number; none of either stays absent (the teammate UI then
+    // falls back to `killed`, never to a fabricated 0).
+    if (Number.isInteger(raw.resolved) && raw.resolved >= 0) result.resolved = Math.min(result.total, raw.resolved);
+    else if (ownKnown) result.resolved = Math.min(result.total, ownResolved);
     if (spec.kind === 'unite' && Array.isArray(raw.unspawned)) {
       const unspawned = [];
       for (const u of raw.unspawned) {

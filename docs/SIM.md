@@ -431,8 +431,11 @@ recorded for the player whose half contains the goal it reached, with `sourcePla
   capsule's numerator (official: 开局 0/3 → 漏一个 1/3 → 打死一个 2/3 → 打死会分裂的 3/3). A leaked split child or summon
   moves none of them, while `leakedCount` / `leaked[]` still charge its LP and break 完美作战. The per-player numbers are
   attributed like their `counted` twins — a knock-out to the enemy's owner (as `total`), a leak to the player whose half it
-  reached (`_recordLeak`) — so in a 联防 field a per-player sum can pass that player's `total` and `resolved` clamps it
-  (the battle-level numbers stay exact).
+  reached (`_recordLeak`) — so in a two-half field (the 联防 lane, col 18 → col 2; the boss pair's crossing routes) an enemy
+  that spawns on one half and leaks on the other is in one player's `total` and in the other's `leakedInTotal`, and each
+  player's own `resolved` clamps it away (0 and 0 for an enemy the field resolved). Only the battle-level numbers are exact:
+  the match never sums the per-player `resolved` — `validateClientResult` keeps the result's own and `m.public` publishes
+  it (design/network.md 顶栏胶囊).
 - `killed` therefore may **exceed** `total` (it counts runtime children, they do not): 4 磨砻 killed plus one of their 8
   木制瑞印 reads `killed` 5 with `total` 4 and a capsule of 4/4. `spec.js compactResult` and the match's validation bound
   `killed` by the spec's content-spawn allowance (`4·spawns + 100`) instead of by `total`.

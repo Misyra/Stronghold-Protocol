@@ -151,14 +151,19 @@ export class MatchViews {
       return { killed: Number(b.killed) || 0, resolved: finiteOrNull(b.resolved, total), total, done: !f.live };
     }
     if (f.done && f.result) {
-      let killed = 0, total = 0, resolved = 0, known = true;
+      let killed = 0, total = 0, own = 0, ownKnown = true;
       for (const pp of Object.values(f.result.perPlayer || {})) {
         killed += Number(pp && pp.killed) || 0;
         total += Number(pp && pp.total) || 0;
-        if (Number.isFinite(pp && pp.resolved)) resolved += Number(pp.resolved); else known = false;
+        if (Number.isFinite(pp && pp.resolved)) own += Number(pp.resolved); else ownKnown = false;
       }
-      if (f.result.synthetic) { killed = f.progress.killed; total = f.progress.total; resolved = f.progress.resolved; known = Number.isFinite(resolved); }
-      return { killed, resolved: known ? Math.min(total, resolved) : null, total, done: true };
+      // the FIELD's numerator (the validated client result / Battle.result(): what the capsule showed) — not the sum of the
+      // players' own: an enemy that spawns on one half and leaks on the other (a 联防 lane, the boss pair's crossing routes)
+      // is billed to one player's `total` and to the other's leak, so their own min(total, …) clamp it to 0
+      let resolved = finiteOrNull(f.result.resolved, total);
+      if (resolved == null && ownKnown) resolved = Math.min(total, own);
+      if (f.result.synthetic) { killed = f.progress.killed; total = f.progress.total; resolved = finiteOrNull(f.progress.resolved, total); }
+      return { killed, resolved, total, done: true };
     }
     if (f.mode === 'server' && f.timeline) {
       // a server-run / bot field: no authority ever sends a b.progress, so the capsule reads the battle's own counters —

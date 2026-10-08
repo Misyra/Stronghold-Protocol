@@ -140,7 +140,10 @@ export function offerHeader(offer) {
 export function shopBlockReason(kind, { priv, editable, slot } = {}) {
   if (!priv) return t('尚未就绪');
   if (priv.alive === false) return t('你已被淘汰');
-  if (kind === 'ready') return priv.canReady === false ? t('临时整备区不为空，请先处理溢出的资源') : null;
+  if (kind === 'ready') {
+    if (priv.personalChoice) return t('请先完成教鞭选择');
+    return priv.canReady === false ? t('临时整备区不为空，请先处理溢出的资源') : null;
+  }
   if (!editable) {
     if (kind === 'reward') return t('当前无法选择');
     return priv.ready ? t('已准备就绪，取消准备后才能操作') : t('当前阶段无法进行该操作');

@@ -6,7 +6,7 @@
 import { PHASE } from '../../../shared/constants.js';
 import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
-import { bountyText } from '../choices.js';
+import { bountyText, bountyCard } from '../choices.js';
 
 export class PlayerViews {
   pieceView(p, rc = null) {
@@ -66,7 +66,13 @@ export class PlayerViews {
       funds: this.funds,
       bandId: this.bandId,
       ready: this.ready,
-      canReady: this.alive && this.tempEmpty && this.m.phase === PHASE.PREP,
+      canReady: this.alive && this.tempEmpty && !this.personalChoice && this.m.phase === PHASE.PREP,
+      personalChoice: this.personalChoice ? {
+        id: this.personalChoice.id,
+        round: this.personalChoice.round,
+        sourceItemId: this.personalChoice.sourceItemId,
+        cards: this.personalChoice.cards.map((c) => bountyCard(this.gd, c)),
+      } : null,
       shop: {
         level: this.shop.level,
         maxLevel: this.gd.maxShopLevel,

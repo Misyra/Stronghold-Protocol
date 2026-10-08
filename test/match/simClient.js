@@ -135,6 +135,7 @@ export class SimClient {
     if (bossLike) {
       const pool = e.battle.sharedBoss;
       msg.leaks = e.meter.lp;
+      if (p.leaksBy) msg.leaksBy = p.leaksBy; // like public/js/battle/runner.js
       msg.bossDmg = pool && Number.isFinite(pool.cum) ? pool.cum : 0;
       if (pool && pool.byPlayer) msg.by = { ...pool.byPlayer };
     } else {

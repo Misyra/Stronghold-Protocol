@@ -11,7 +11,7 @@ import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
   battleOverSfx, ownRoundLoss, uniteResultBox, battleResultBox, roundResultBox, RESULT_BOX_MS,
   bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
-  boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
+  boardTargets, dropIntent, normalizeDraft, normalizeSp, normalizePersonalChoice, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
   activeBubbles, sortedPlayers, tileKey, prepCapsuleLabel, prepCamera, dropFailureReason, terrainInfo,
 } from '../../public/js/ui/gameLogic.js';
@@ -583,6 +583,32 @@ describe('drafts', () => {
     assert.equal(sp2.turnPid, 'b'); assert.equal(sp2.cards[1].takenBy, 'b'); assert.equal(sp2.pickOf.has('x'), false);
     assert.equal(normalizeSp(null), null);
     assert.equal(normalizeSp({ cards: new Array(9).fill({}) }).cards.length, 6, 'at most 6 cards');
+  });
+  test('personal choice: only the living recipient in the current PREP, independent of the public draft', () => {
+    const pub = { phase: PHASE.PREP, round: 14, sp: { family: 'supply', cards: ['global'] } };
+    const priv = { playerId: 'a', alive: true, canReady: false, temp: [], personalChoice: {
+      id: 'seed.choice.3', round: 14, sourceItemId: 'chess_item_6_03_m',
+      cards: [{ id: 'e1', kind: 'bounty', name: '战术特训', coin: 2 }, { id: 'e2', kind: 'bounty' }],
+    } };
+    const before = JSON.stringify({ pub, priv });
+    const sp = normalizePersonalChoice(pub, priv, 'a');
+    assert.equal(sp.id, priv.personalChoice.id);
+    assert.equal(sp.family, 'bounty');
+    assert.equal(sp.name, '教鞭 · 战术特训');
+    assert.equal(sp.turnPid, 'a');
+    assert.equal(sp.pickOf.size, 0);
+    assert.deepEqual(sp.cards.map((c) => c.idx), [0, 1]);
+    assert.ok(sp.cards.every((c) => c.takenBy === null));
+    assert.equal(JSON.stringify({ pub, priv }), before);
+    assert.equal(shopBlockReason('ready', { priv, editable: true }), '请先完成教鞭选择');
+    assert.equal(shopBlockReason('ready', { priv: { ...priv, temp: [{}] }, editable: true }), '请先完成教鞭选择');
+    assert.match(shopBlockReason('ready', { priv: { ...priv, personalChoice: null }, editable: true }), /临时整备区/);
+    for (const phase of [PHASE.SP_DRAFT, PHASE.COMBAT, PHASE.ROUND_START]) assert.equal(normalizePersonalChoice({ ...pub, phase }, priv, 'a'), null);
+    assert.equal(normalizePersonalChoice(pub, null, 'a'), null, 'spectator has no private state');
+    assert.equal(normalizePersonalChoice(pub, priv, 'b'), null);
+    assert.equal(normalizePersonalChoice(pub, { ...priv, alive: false }, 'a'), null);
+    assert.equal(normalizePersonalChoice({ ...pub, round: 15 }, priv, 'a'), null);
+    assert.equal(normalizePersonalChoice(pub, { ...priv, personalChoice: null }, 'a'), null);
   });
 });
 

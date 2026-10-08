@@ -201,6 +201,13 @@ export class PlayerState {
     this.effects = [];
     /** active bounties: { id, card, roundsLeft, chooser } */
     this.bounties = [];
+    /**
+     * The open personal choice of the Art 教鞭 (Match.offerBountyChoice): up to three cards.bounty entries the owner picks one
+     * of with `g.choice { idx, choiceId }` — m.private only; Ready is refused while it is open, the prep's deadline (or the
+     * bot) resolves it
+     * @type {null | { id: string, round: number, sourceItemId: string, cards: any[] }}
+     */
+    this.personalChoice = null;
     /** free-form counters for content (ctx.counter / setCounter) */
     this.counters = {};
     /** per-round counters (reset at round start) */

@@ -34,6 +34,7 @@ export class MatchReports {
     if (f.kind === 'boss' || f.kind === 'hidden') {
       this._creditBoss(f, msg.bossDmg, msg.by);
       this._creditLp(f, msg.leaks, true);
+      this._noteLeaksBy(f, msg.leaksBy);
       this._checkFinalEnd();
       this._broadcastPool(false);
       // 4 Hz per field: b.pool carries the exact pool / team LP; m.public (boss HP, LP, progress) follows at ~1 Hz

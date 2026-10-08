@@ -104,7 +104,7 @@ function refreshPrivate() {
   const p = S.priv;
   p.deployCount = p.board.filter((x) => x.kind === 'chess').length;
   p.bonds = computeBonds(p);
-  p.canReady = !p.temp.some(Boolean);
+  p.canReady = !p.personalChoice && !p.temp.some(Boolean);
   const upg = [5, 8, 11, 12, 13];
   p.shop.maxLevel = 6;
   if (p.shop.upgradePrice == null) p.shop.upgradePrice = upg[p.shop.level - 1] ?? 0;
@@ -181,7 +181,7 @@ function buildState() {
   ].sort((a, b) => a.t - b.t);
 
   const priv = {
-    playerId: ME, seat: 0, alive: !VARIANTS.has('dead'), lp: 24, funds: 13, bandId: 'band_bldsk', ready: false, canReady: true,
+    playerId: ME, seat: 0, alive: !VARIANTS.has('dead'), lp: 24, funds: 13, bandId: 'band_bldsk', ready: false, canReady: true, personalChoice: null,
     shop: { level, maxLevel: 6, upgradePrice: 9, refreshPrice: 1, freeRefreshes: 0, frozen: VARIANTS.has('frozen'), slots, rewardOffer: null },
     hand, temp, board, deployCap: 8, deployCount: 0, bonds: [],
     effects: [
@@ -680,7 +680,16 @@ async function mockRequest(t, f = {}) {
       }
       pushPublic(); return {};
     }
-    case 'g.art': { prepOnly(); const it = findPiece(f.itemUid); if (!it) fail('BAD_TARGET'); removeAt(it); toast('奇术已生效', 'success'); refreshPrivate(); return {}; }
+    case 'g.art': {
+      prepOnly(); const it = findPiece(f.itemUid); if (!it) fail('BAD_TARGET');
+      if (it.piece.id === 'chess_item_6_03_m') {
+        if (p.personalChoice) fail('BAD_TARGET');
+        const cards = data.get('choices').cards.bounty.filter((c) => c.payout === 'perfect' && c.rounds < 90).slice(0, 3)
+          .map((c) => ({ ...c, kind: 'bounty', id: c.effectId, descRaw: data.lookup('effects', c.effectId)?.descRaw }));
+        p.personalChoice = { id: `mock.choice.${nextUid()}`, round: pub.round, sourceItemId: it.piece.id, cards };
+      }
+      removeAt(it); toast('奇术已生效', 'success'); refreshPrivate(); return {};
+    }
     case 'g.reward': {
       if (!p.shop.rewardOffer) fail('WRONG_PHASE');
       const s = p.shop.rewardOffer.slots[f.idx]; if (!s) fail('BAD_TARGET');
@@ -688,6 +697,15 @@ async function mockRequest(t, f = {}) {
       p.hand[idx] = chessPiece(data.lookup('chess', s.id)); p.shop.rewardOffer = null; refreshPrivate(); return {};
     }
     case 'g.choice': {
+      if (f.choiceId !== undefined) {
+        prepOnly();
+        const choice = p.personalChoice;
+        if (!choice || choice.id !== f.choiceId || choice.round !== pub.round || !choice.cards[f.idx]) fail('BAD_TARGET');
+        const card = choice.cards[f.idx];
+        p.effects.push({ id: choice.id, name: card.name, desc: card.descRaw || card.desc, iconKind: 'choice', iconId: card.id });
+        p.personalChoice = null;
+        refreshPrivate(); return {};
+      }
       if (!pub.sp) fail('WRONG_PHASE');
       const taken = Object.values(pub.sp.picks).includes(f.idx);
       if (taken) fail('BAD_TARGET');
@@ -695,6 +713,7 @@ async function mockRequest(t, f = {}) {
     }
     case 'g.ready': {
       if (pub.phase !== PHASE.PREP) fail('WRONG_PHASE');
+      if (f.ready && p.personalChoice) fail('BAD_TARGET');
       if (f.ready && !p.canReady) fail('TEMP_NOT_EMPTY');
       p.ready = !!f.ready; refreshPrivate(); return {};
     }

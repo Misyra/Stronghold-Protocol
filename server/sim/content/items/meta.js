@@ -13,17 +13,19 @@
 //               the target's items skipped the item after a merge)
 //   紧急调度券   a shop operator leaves its slot only when it was actually granted (built-in cleared the slot first)
 //   寻呼模块     the special refresh shows `refresh_cnt` DIFFERENT operators (fewer when the pool has no more)
-//   教鞭       trap_create_self_choice {choice_event: hunter_band_1}: the bounty is a 战术特训 card (choices.json
-//               cards.bounty payout `perfect`, e.g. 战术特训·飞行I "若各自行动阶段就达成完美作战，获得1资金") — PRTS
-//               卫戍协议：盟约 下半/PRTS盟约记录 §法术 教鞭 "于3个战术特训的悬赏任务中选择一项", §机变阶段 "※以下悬赏任务仅由
-//               法术教鞭生成", and 杜宾 加练！ "<教鞭>：使用后为下场战斗添加额外敌人，若自身战斗完美作战可获得资金" (user
-//               playtest #6 item 4 review; the built-in drew any tier ≤ II kill bounty, and research 04 §7 [ASSUMED]
-//               the band family `enemyeffect_b_*`).
-//   “神秘顾客”  the same trap_create_self_choice ("选择一项特殊悬赏任务"; no band grants it in act2, research 04): a band
-//               bounty `enemyeffect_b_*` (research 04 §7 [ASSUMED]: "adds 1 enemy to your next battle, killer gets `coin`
-//               funds").
-//               Both: [ASSUMED simplification, engine: no PERSONAL_CHOOSE overlay] 3 cards whose enemy can appear in the
-//               mode are drawn and one of them is taken at random; the built-in runs when the family is empty.
+//   教鞭       trap_create_self_choice {choice_event: hunter_band_1, choiceType PERSONAL_CHOOSE}: a personal choice of
+//               one of THREE 战术特训 cards (choices.json cards.bounty payout `perfect`, e.g. 战术特训·飞行I "若各自行动阶段就
+//               达成完美作战，获得1资金") whose enemy the mode can field — PRTS 卫戍协议：盟约 下半/PRTS盟约记录 §法术 教鞭
+//               "使用后销毁，于3个战术特训的悬赏任务中选择一项", §机变阶段 "※以下悬赏任务仅由法术教鞭生成", and 杜宾 加练！
+//               "<教鞭>：使用后为下场战斗添加额外敌人，若自身战斗完美作战可获得资金". onArt → ctx.offerBountyChoice
+//               (Match.offerBountyChoice): the three cards go to the owner alone, who confirms one inside the PREP
+//               (g.choice with the offer's id); the prep's deadline or an AI seat resolves it (docs/META.md §2.5). Until
+//               0.2.2 the engine took one of the three at random (user playtest #6 item 4 review; the built-in drew any
+//               tier ≤ II kill bounty, and research 04 §7 [ASSUMED] the band family `enemyeffect_b_*`).
+//   “神秘顾客”  the same trap_create_self_choice ("选择一项特殊悬赏任务"; no band grants it in act2, research 04, and PRTS
+//               lists no pool): still [ASSUMED simplification] 3 band bounties `enemyeffect_b_*` (research 04 §7 [ASSUMED]:
+//               "adds 1 enemy to your next battle, killer gets `coin` funds") whose enemy can appear in the mode, one of them
+//               taken at random; the built-in runs when the family is empty.
 //   “神秘顾客”  trap_disney_special: when actively destroyed, +count funds and the Art passes to the next alive player
 //               (seat order, cyclic)
 //   天师古鼎     equip_with_another_gain_coin_when_gain_char: a 【炎】 carrier also holding 炎国短刀 (either quality)
@@ -48,7 +50,7 @@ function pieceIsMember(ctx, piece, bondId) {
   return bonds.includes('maniShip') && isCoreBond(bondId) && ctx.bondActive('maniShip') && ctx.bondActive(bondId);
 }
 
-/** Offer size of the personal bounty choice (PRTS 法术 教鞭 "于3个战术特训的悬赏任务中选择一项"). */
+/** Cards drawn before “神秘顾客” takes one at random. */
 const OFFER_SIZE = 3;
 /** cards.bounty entries matching `test` whose enemy can appear in this mode. */
 function bountyCards(ctx, test) {
@@ -103,18 +105,24 @@ export function registerMeta(registry) {
     },
   }));
 
-  // 教鞭 / “神秘顾客” — trap_create_self_choice {choice_event}: 教鞭 a 战术特训 card, “神秘顾客” a band bounty (enemyeffect_b_*)
-  for (const [key, family] of [['chess_item_6_03_m', isTraining], ['chess_item_6_01_m', isBandBounty]]) {
-    wrap(registry, key, (base) => ({
-      onArt(ctx, ev) {
-        const cards = bountyCards(ctx, family);
-        if (!cards.length) { if (typeof base.onArt === 'function') base.onArt.call(base, ctx, ev); return; }
-        const offer = ctx.rng.shuffle(cards.slice()).slice(0, OFFER_SIZE);
-        const card = ctx.rng.pick(offer);
-        if (!card || !ctx.addBounty(card)) { ev.error = 'BAD_TARGET'; ev.detail = 'no bounty available'; }
-      },
-    }));
-  }
+  // 教鞭 — trap_create_self_choice {choice_event}: the server keeps the offered 战术特训 cards until confirmed.
+  wrap(registry, 'chess_item_6_03_m', () => ({
+    onArt(ctx, ev) {
+      const result = ctx.offerBountyChoice(bountyCards(ctx, isTraining), ev.item.id);
+      if (!result.ok) { ev.error = result.error; ev.detail = result.detail; }
+    },
+  }));
+
+  // “神秘顾客” — a random band bounty (enemyeffect_b_*).
+  wrap(registry, 'chess_item_6_01_m', (base) => ({
+    onArt(ctx, ev) {
+      const cards = bountyCards(ctx, isBandBounty);
+      if (!cards.length) { if (typeof base.onArt === 'function') base.onArt.call(base, ctx, ev); return; }
+      const offer = ctx.rng.shuffle(cards.slice()).slice(0, OFFER_SIZE);
+      const card = ctx.rng.pick(offer);
+      if (!card || !ctx.addBounty(card)) { ev.error = 'BAD_TARGET'; ev.detail = 'no bounty available'; }
+    },
+  }));
 
   // 画卷 — trap_copy_front_char: copy the operator in range (elite status included) and its equipment. The copied items
   // are gained unequipped, like any gained item — the hand, overflow temp, destroyed with the usual toast when both are

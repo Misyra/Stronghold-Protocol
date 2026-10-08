@@ -96,7 +96,7 @@ export const PLAYER_NPM_SCRIPTS = ['start', 'setup', 'doctor', 'launch', 'postin
 
 /**
  * THE SWITCH for the Japanese voice dub in the full zip (`audio.voiceJp` of data/assets.json: 2674 files under
- * public/assets/audio/voice/jp/, about 93 MB that zip compression barely shrinks). true (0.2.2): the full zip ships both
+ * public/assets/audio/voice/jp/, 89,388,041 bytes = 85.2 MiB on disk, about 76 MB zipped). true (0.2.2): the full zip ships both
  * dubs, so it still runs with nothing to download. false: the full zip (and an update zip built from it) leaves the JP
  * files out — setup downloads them on the first start like the lite zip's art, the 日本語 setting plays the Chinese line
  * until then (public/js/audio.js voiceLine), and an update never deletes a player's copy (`held`). The lite zip carries

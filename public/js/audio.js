@@ -280,7 +280,9 @@ export const VOICE_COOLDOWN_MS = Object.freeze({
  * The slot a player's tap asks for: 选中干员 (official FOCUS_CHAR — priority 10, cooldown 0, `overlapIfSamePriority:
  * true`). The battle lines are timed by the gate's global gap; a tap is the player's own request and answers at once:
  * on an idle channel it always plays (no gap, no cooldown), a newer tap replaces the 选中 line still on air (the same
- * priority, overlapIfSamePriority), and it still never interrupts a higher-priority line (部署, 作战中, 开战 …).
+ * priority, overlapIfSamePriority), and it still never interrupts a higher-priority line (部署, 作战中, 开战 …). Nor does
+ * it start a gap of its own: the battle lines keep the gap of the last battle line (a tap restarting it dropped a 部署 /
+ * 技能 / 接敌, which the battle asks for once, after a 选中 line shorter than the gap had already ended — many are).
  */
 export const VOICE_TAP_SLOTS = Object.freeze(['select']);
 
@@ -411,7 +413,8 @@ export class SfxLimiter {
 /**
  * Voice gate: one line at a time, a global gap between two lines, a per-unit per-slot cooldown, and takeover by a
  * clearly more important line (the caller fades the playing one out first). A tap's 选中干员 skips the gap and the
- * cooldown on an idle channel and replaces a 选中 line on air (VOICE_TAP_SLOTS). Pure — the clock is passed in.
+ * cooldown on an idle channel, replaces a 选中 line on air and starts no gap itself (VOICE_TAP_SLOTS). Pure — the clock
+ * is passed in.
  */
 export class VoiceGate {
   /** @param {{ gapMs?: number, preemptMargin?: number, maxUnits?: number }} [o] */
@@ -457,7 +460,7 @@ export class VoiceGate {
   /** Record a line that started (call right after request() answered play / preempt). */
   start(slot, unitKey, now) {
     this.playing = { slot, pri: VOICE_PRIORITY[slot] ?? 0 };
-    this.lastAt = now;
+    if (!VOICE_TAP_SLOTS.includes(slot)) this.lastAt = now;   // the gap is between battle lines: a tap starts none
     const cd = VOICE_COOLDOWN_MS[slot] ?? 0;
     if (unitKey != null && cd > 0) {
       if (this.unitUntil.size > this.maxUnits) this.unitUntil.clear();

@@ -264,7 +264,6 @@ describe('operator battle voice', () => {
     assert.equal(g.request('select', null, 0), 'play');
     g.start('select', null, 0); g.release();       // tap A, its line ended
     assert.equal(g.request('select', null, 300), 'play', 'an idle channel: the global gap never drops a tap');
-    assert.equal(g.request('place', 'u1', 300), 'drop', 'the battle lines keep the gap');
     g.start('select', 'u1', 300); g.release();
     assert.equal(g.request('select', 'u1', 400), 'play', 'no cooldown either, keyed or not');
     g.start('select', null, 400);
@@ -276,6 +275,18 @@ describe('operator battle voice', () => {
     g.reset();
     g.start('skill1', 'u3', 0);
     assert.equal(g.request('select', null, 100), 'drop', '… nor a 作战中 line');
+    g.reset();
+    // a tap starts no gap of its own (review of fb7-voices): a 部署 at 0 holds the battle lines until 1200; a tap at 500
+    // answers, its short line ends at 944, and a 作战中 the battle asks for once at 1300 still plays (it was dropped: the
+    // tap had moved the gap's start to 500)
+    g.start('place', 'u4', 0); g.release();
+    assert.equal(g.request('select', null, 500), 'play');
+    g.start('select', null, 500); g.release();
+    assert.equal(g.request('skill1', 'u5', 1100), 'drop', 'inside the 部署 gap a battle line still waits');
+    assert.equal(g.request('skill1', 'u5', 1300), 'play', 'the gap ends where the 部署 put it: the tap did not restart it');
+    g.reset();
+    g.start('select', null, 0); g.release();
+    assert.equal(g.request('place', 'u6', 100), 'play', 'a battle line right after a tap: no gap behind a 选中 line');
     g.reset();
     // the manager: two taps 0.3 s apart in the prep (no battle, the real gate) both speak, the second replacing the first
     const fw = fakeWindow();

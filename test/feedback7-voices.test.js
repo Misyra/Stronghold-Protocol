@@ -137,3 +137,40 @@ test('package: the full zip ships the JP dub by default; FULL_ZIP_JP_VOICE off h
   const src = fs.readFileSync(path.join(ROOT, 'tools/package.mjs'), 'utf8');
   assert.match(src, /removable: \(rel\) => !removalProblem\(rel\) && !heldBack\.has\(rel\)/);
 });
+
+test('选中干员 on every card tap (review of fb7-voices): two shop / reward cards of one operator are two taps, a re-render is none', async () => {
+  // shop / reward cards hand only the chess id to the detail target (no piece, no unit): game.js numbers every card it opens
+  // (`tap`), resolveDetail keeps it, and the panel's 选中 key (selectVoiceKey) includes it — the second 斯卡蒂 card spoke
+  // nothing before, nor replaced the first card's line (the pool deals duplicates)
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const name = String(url).split('/').pop();
+    let body;
+    try { body = readJson(`data/${name}`); } catch { return { ok: false, status: 404, json: async () => ({}) }; }
+    return { ok: true, status: 200, json: async () => body };
+  };
+  try {
+    const { resolveDetail, selectVoiceKey } = await import('../public/js/ui/detailPanel.js');
+    const { data } = await import('../public/js/data.js');
+    await data.loadAll('chess', 'backups');
+    const id = Object.values(readJson('data/chess.json')).find((c) => c.charId === 'char_263_skadi' && !c.isGolden).chessId;
+    const card = (tap) => resolveDetail({ kind: 'chess', id, hint: null, tap }, new Map(), { priv: null });
+    const a = card(1), b = card(2);
+    assert.equal(a.chess.charId, 'char_263_skadi');
+    assert.deepEqual([a.tap, b.tap], [1, 2], 'the tap rides along');
+    assert.notEqual(selectVoiceKey(a), selectVoiceKey(b), 'the second card of the same operator is a new opening');
+    assert.equal(selectVoiceKey(card(1)), selectVoiceKey(a), 'the same tap resolved again (a re-render) says nothing more');
+    assert.equal(resolveDetail({ kind: 'chess', id }, new Map(), { priv: null }).tap, undefined, 'no tap, no field');
+    // pieces and battle units keep their own identity; a non-operator card has no key
+    assert.equal(selectVoiceKey({ type: 'chess', chess: { chessId: 'x' }, piece: { uid: 4 } }), 'x:4:');
+    assert.equal(selectVoiceKey({ type: 'chess', chess: { chessId: 'x' }, unitId: 9 }), 'x:9:');
+    assert.equal(selectVoiceKey({ type: 'item' }), null);
+    assert.equal(selectVoiceKey(null), null);
+    // the panel keys its 选中 effect on it, and the game screen numbers every operator card it opens
+    assert.match(fs.readFileSync(path.join(ROOT, 'public/js/ui/detailPanel.js'), 'utf8'), /const selectKey = voice && detail\?\.type === 'chess' \? selectVoiceKey\(detail\) : null;/);
+    const game = fs.readFileSync(path.join(ROOT, 'public/js/screens/game.js'), 'utf8');
+    assert.match(game, /onDetail=\$\{\(id, kind, hint\) => setDetail\(\{ kind: kind === 'item' \? 'item' : 'chess', id, hint: hint \|\| null, tap: \+\+cardTap\.current \}\)\}/);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});

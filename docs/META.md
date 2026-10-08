@@ -489,7 +489,8 @@ it fits in the existing parts:
   `m.private.canReady` false), and the prep's own deadline resolves it: in a timed co-op prep `prepDeadline` takes one of
   the cards at random (the meta rng, like a 机变 turn that runs out) before the temp pieces and Ready; a solo or
   single-human prep is untimed and has no timer for it, and a disconnected player waits for the deadline like for any
-  other prep action. A seat the engine plays — an AI teammate, a human under AI 托管, one that left — picks like the bots do.
+  other prep action. A seat the engine plays — an AI teammate or a human under AI 托管 — picks like the bots do; a seat that
+  left is eliminated (`onLeave` → `eliminate`), which drops its open offer: nobody picks for it.
 * **The bots.** `bot.js` scores the three cards like a 机变 bounty draft (`botPickCard` → `bountyScore`: the expected
   payout minus the expected leaks × the value of an LP, against the own board; the bots' seeded rng only breaks ties), so
   the choice is deterministic for a seed: at the start of the bot's prep (an offer left by a human who turned 托管 on),

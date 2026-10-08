@@ -56,6 +56,56 @@ test('multi-round bounties spawn in the Final Assault on the owner\'s half, show
   m.dispose();
 });
 
+// A 战术特训 card pays its coins when the player's own battle is perfect (PRTS "若各自行动阶段就达成完美作战，获得N资金");
+// the Final Assault and the Hidden Core are such battles — they pay it with the kill coins, at the next income.
+test('perfect-payout bounties in the boss rounds: a 战术特训 card\'s coins join the kill coins at the next income (R14 → R15, then the Hidden Core)', () => {
+  const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, seed: 61, fake: true,
+    script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 1e9, coins: { p_0: 3 } } : {}) }).start();
+  const m = h.m;
+  h.toPrep(14);
+  const ps = h.ps('p_0');
+  const [card, second] = DATA.choices.cards.bounty.filter((c) => c.payout === 'perfect' && m.gd.enemy(c.enemyKey) && !m.gd.inactiveEnemies.has(c.enemyKey));
+  m.addBounty(ps, card);
+  const pending = ps.pendingFunds, gained = ps.stats.fundsGained;
+  h.drive(() => m.phase === PHASE.FINAL_ASSAULT);
+  m.hiddenLayerSum = 1e6; // the Hidden Core opens
+  assert.ok(bossFields()[0].opts.spawns.some((s) => s.tag === 'bounty' && s.enemyKey === card.enemyKey && s.ownerPlayerId === ps.playerId), 'the card\'s enemies are in the boss battle');
+  h.run(() => m.runner === null);
+  assert.equal(ps.pendingFunds, pending + 3 + card.coin, 'kill coins + one card amount, regardless of its enemy count');
+  assert.equal(ps.stats.fundsGained, gained + 3 + card.coin);
+  const left = bountyBattles(card);
+  assert.equal(ps.bounties.length, left > 1 ? 1 : 0, 'the boss battle used one of its battles');
+  if (left > 1) assert.equal(ps.bounties[0].roundsLeft, left - 1);
+  h.toPrep(15);
+  assert.equal(ps.pendingFunds, 0);
+  assert.equal(ps.funds, m.gd.income(15) + pending + 3 + card.coin, 'the base income is separate from the bounty funds');
+  m.addBounty(ps, second);
+  const owed = ps.bounties.filter((b) => b.card.payout === 'perfect').reduce((n, b) => n + b.card.coin, 0);
+  h.drive(() => m.phase === PHASE.HIDDEN_CORE);
+  assert.ok(bossFields().at(-1).opts.spawns.some((s) => s.tag === 'bounty' && s.enemyKey === second.enemyKey), 'and in the Hidden Core');
+  h.runToEnd();
+  assert.equal(ps.pendingFunds, 3 + owed, 'the Hidden Core pays by the same rule');
+  assert.equal(ps.bounties.length, 0, 'every bounty used its battles');
+  checkInvariants(m);
+  m.dispose();
+});
+
+test('boss victory without a perfect own result keeps the kill coins but gives no perfect-card funds', () => {
+  const h = makeMatch({ mode: 'coop', humans: 2, seed: 61, fake: true,
+    script: (b) => (b.kind === 'boss' ? { bossDps: 1e9, leaks: { p_0: 1 }, coins: { p_0: 3 } } : {}) }).start();
+  h.toPrep(14);
+  const m = h.m, ps = h.ps('p_0');
+  const card = DATA.choices.cards.bounty.find((c) => c.payout === 'perfect' && !m.gd.inactiveEnemies.has(c.enemyKey));
+  m.addBounty(ps, { ...card, rounds: 2, multiRound: false });
+  const gained = ps.stats.fundsGained;
+  const result = h.drive(() => h.ended != null);
+  assert.ok(result && h.ended.victory);
+  assert.equal(ps.pendingFunds, 3);
+  assert.equal(ps.stats.fundsGained, gained + 3);
+  assert.equal(ps.bounties[0].roundsLeft, 1);
+  m.dispose();
+});
+
 test('solo Final Assault: the bounty spawns on the `_s` template; bountySpawns route choice by side', () => {
   const h = makeMatch({ mode: 'solo', difficulty: 'HARD', seed: 62, fake: true, script: (b) => (b.kind === 'boss' ? { bossDps: 1e9 } : {}) }).start();
   const m = h.m;

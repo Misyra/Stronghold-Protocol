@@ -619,7 +619,11 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   `enemyScale[r]` × the tuning layer §3.1, bounties, boss templates, 联防 routing). Bounties with battles left (every one
   that lasts more than one battle; an official multi-round card lasts two, §1.2) also spawn in the Final Assault /
   Hidden Core, on the owner's half of the boss field (a route ending at its goal); the boss battle then uses up one of
-  the bounty's battles and its kill coins go to pending funds.
+  the bounty's battles and its kill coins go to pending funds — with, for every perfect-payout card (战术特训), its coins
+  as after a normal battle ("若各自行动阶段就达成完美作战，获得N资金"): once per player, when the team won (the first end the
+  server registered: the leader's pool empty), the result is a real one (not the stand-in of a field that never
+  reported) and the player's own field let no counted enemy through [ASSUMED: the text has no boss-battle exception, and
+  the card's enemies do come in the boss battle]. They are spent in the Hidden Core's prep like the kill coins.
 * **Combat time limit**: data `combatTimeLimit` (the level's `maxPlayTime`) counts REAL seconds of the forced 2×
   battle; the Battle / 联防 limit is `gd.combatTimeLimit(r)` = 2 × that in game seconds (`config.combatTimeScale`,
   default 2). Read as game seconds the rounds' own spawn schedules would not fit (R2's last flyer spawns at 43 s of

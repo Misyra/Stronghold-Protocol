@@ -372,11 +372,15 @@ export class MatchBoss {
   }
 
   /**
-   * Bounties after a boss field: kill-bounty coins go to pending funds (spent in the Hidden Core's prep) and every
-   * bounty used one of its battles, exactly like SETTLE does for normal rounds.
+   * Bounties after a boss field: kill-bounty coins and — when `perfect` — the coins of every perfect-payout bounty (a
+   * 战术特训 card: PRTS "若各自行动阶段就达成完美作战，获得N资金", the same sum SETTLE pays after a normal battle) go to
+   * pending funds (spent in the Hidden Core's prep), and every bounty used one of its battles, exactly like SETTLE does
+   * for normal rounds.
+   * @param {boolean} perfect the player's own field was perfect and the team won (`_finishFinal`)
    */
-  _settleBossBounties(ps, pp) {
-    const coins = Math.max(0, Math.trunc(Number(pp.coins) || 0));
+  _settleBossBounties(ps, pp, perfect) {
+    let coins = Math.max(0, Math.trunc(Number(pp.coins) || 0));
+    if (perfect) for (const b of ps.bounties) if (b.card.payout === 'perfect') coins += b.card.coin;
     if (coins > 0) { ps.pendingFunds += coins; ps.stats.fundsGained += coins; }
     if (!ps.bounties.length) return;
     for (const b of ps.bounties) b.roundsLeft--;
@@ -471,6 +475,9 @@ export class MatchBoss {
   _finishFinal(hidden, resultOf) {
     if (this.phase !== (hidden ? PHASE.HIDDEN_CORE : PHASE.FINAL_ASSAULT)) return;
     this._stopClientCombat();
+    // the end condition the server registered first decides (client-side combat: _endFinal — pool 0 → victory, team LP 0
+    // → defeat); a boss field's final result may never turn a defeat into a victory (user playtest #6 item 5)
+    const victory = this._finalEnding ? this._finalEnding === 'cleared' : this.bossPool.hp <= 0;
     for (const f of this.fields) {
       const res = resultOf(f);
       this._collectSimErrors(f, res);
@@ -485,13 +492,16 @@ export class MatchBoss {
           ps.dirty(); // m.private.stats
           this._charDamageTickers(ps, pp);
         }
-        if (pp && ps) this._settleBossBounties(ps, pp);
+        if (pp && ps) {
+          // the own battle counts as perfect when the team won, the result is a real one (not the stand-in of a field that
+          // never reported) and the player's own field let no counted enemy through [ASSUMED: the boss battle is a battle
+          // of the player's own — "下场作战" — so a perfect-payout card pays as after a normal one]
+          const perfect = victory && !res.synthetic && pp.perfect === true && !(pp.leaked || []).some((l) => l && l.counted !== false);
+          this._settleBossBounties(ps, pp, perfect);
+        }
         if (pp && ps) this.dispatch(ps, 'onBattleResult', { result: pp, lpLoss: 0, perfect: !!pp.perfect, boss: true });
       }
     }
-    // the end condition the server registered first decides (client-side combat: _endFinal — pool 0 → victory, team LP 0
-    // → defeat); a boss field's final result may never turn a defeat into a victory (user playtest #6 item 5)
-    const victory = this._finalEnding ? this._finalEnding === 'cleared' : this.bossPool.hp <= 0;
     this._syncTeamLp();
     this.deadline = 0;
     this.overtimeAt = 0;

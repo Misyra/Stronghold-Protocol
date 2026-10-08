@@ -9,7 +9,7 @@ import { PHASE } from '../../shared/constants.js';
 import { validateC2S, isBattleResult } from '../../shared/protocol.js';
 import { buildBattleSpec, createBattleFromSpec, resultDigest, compactResult, LocalBossPool, jsonClone } from '../../server/sim/spec.js';
 import { DataSource } from '../../server/sim/simdata.js';
-import { validateClientResult, specBounds } from '../../server/match/fields.js';
+import { validateClientResult, specBounds, syntheticResult } from '../../server/match/fields.js';
 import { CreditPool, SharedBossPool } from '../../server/match/finalAssault.js';
 import { FakeBattle } from './fakeBattle.js';
 import { DATA, makeMatch, checkInvariants, give, chessOfTier } from './harness.js';
@@ -509,6 +509,10 @@ test('Final Assault: an early boss b.result (forced at t≈0) does not end the p
 
 test('Final Assault: a 999-layer kill faster than the budget — the \'cleared\' b.result whose report covers the pool waits for the budget, no takeover (QA 6b)', () => {
   const { h, m, f } = faWithForger(9122);
+  const ps = h.ps('p_0');
+  const training = DATA.choices.cards.bounty.find((c) => c.payout === 'perfect' && m.gd.enemy(c.enemyKey));
+  m.addBounty(ps, { ...training, rounds: 2, multiRound: false });
+  const pending = ps.pendingFunds;
   const max = m.bossPool.maxHp;
   h.sched.advance(500); // 1 game s on the field clock: the budget credits ≤ 20 % of the pool
   const gt = m._fieldElapsed(f);
@@ -537,8 +541,42 @@ test('Final Assault: a 999-layer kill faster than the budget — the \'cleared\'
   assert.equal(f.resultSource, 'client', 'the held client result completed the field');
   assert.equal(m.verifyStats.takeovers, takeovers0);
   assert.equal(m.verifyStats.rejected, rejected0);
+  assert.equal(ps.pendingFunds, pending + training.coin, 'validated held client result earns the server card amount');
+  assert.equal(ps.bounties[0].roundsLeft, 1);
+  assert.deepEqual(m.handle('p_0', { t: 'b.result', battleId: f.battleId, result: res }), { ok: true });
+  assert.equal(ps.pendingFunds, pending + training.coin, 'duplicate accepted result does not pay twice');
+  assert.equal(ps.bounties[0].roundsLeft, 1);
   for (const pid of f.players) assert.ok(Math.abs((f.bossBy[pid] || 0) - Math.min(by[pid], max)) <= max * 1e-9 + 5, `${pid} credited as reported (${f.bossBy[pid]} vs ${by[pid]})`);
   m.dispose();
+});
+
+test('boss bounty eligibility: forced real results on a team victory qualify; synthetic, leaked and team defeat do not', () => {
+  for (const [ending, synthetic, perfect, leaked, eligible] of [
+    ['cleared', false, true, [], true],
+    ['cleared', true, true, [], false],
+    ['cleared', false, false, [], false],
+    ['cleared', false, true, [{ counted: true }], false],
+    ['cleared', false, true, [{ counted: false }], true],
+    ['forced', false, true, [], false],
+  ]) {
+    const { m, f } = faWithForger(9122);
+    const ps = m.players.get(f.players[0]);
+    const card = DATA.choices.cards.bounty.find((c) => c.payout === 'perfect' && m.gd.enemy(c.enemyKey));
+    m.addBounty(ps, { ...card, rounds: 2, multiRound: false });
+    m.addBounty(ps, { ...card, rounds: 2, multiRound: false });
+    const res = syntheticResult(f.players);
+    if (!synthetic) delete res.synthetic;
+    res.reason = 'forced';
+    Object.assign(res.perPlayer[ps.playerId], { perfect, leaked, coins: 3 });
+    const pending = ps.pendingFunds, gained = ps.stats.fundsGained;
+    m._finalEnding = ending;
+    m.bossPool.hp = 0; // even a late clearing report cannot override an already-registered team defeat
+    m._finishFinal(false, () => res);
+    assert.equal(ps.pendingFunds, pending + 3 + (eligible ? 2 * card.coin : 0));
+    assert.equal(ps.stats.fundsGained, gained + 3 + (eligible ? 2 * card.coin : 0));
+    assert.deepEqual(ps.bounties.map((b) => b.roundsLeft), [1, 1]);
+    m.dispose();
+  }
 });
 
 test('Final Assault: a \'cleared\' b.result whose report does NOT cover the pool is still handed over (the partner takes the field)', () => {

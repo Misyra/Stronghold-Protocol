@@ -1055,5 +1055,16 @@
   "选择「{name}」的朝向": "Choose {name}'s facing",
   "选择朝向": "Choose a facing",
   "朝向：{dir}": "Facing: {dir}",
-  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers"
+  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers",
+	"重刷本局": "Reroll Setup",
+	"重刷本局投票：{agreed}/{total}": "Setup Reroll Vote: {agreed}/{total}",
+	"全员同意后重新随机战场、领袖、特训敌人和禁用；确认倒计时已暂停。": "Unanimous consent rerolls the battlefield, leader, special enemies and bans. The briefing countdown is paused.",
+	"保留房间和个人配置，重新随机全部开局信息。": "Reroll all starting information, keeping the room and personal settings.",
+	"已同意": "Agreed",
+	"待同意": "Awaiting Consent",
+	"全体真人玩家一致同意后刷新，随机结果可能重复。": "Reroll after all human players agree. Random results may repeat.",
+	"请等待所有玩家连接后再发起投票": "Wait for all players to connect before starting a vote",
+	"同意重刷": "Agree to Reroll",
+	"拒绝重刷": "Reject Reroll",
+	"取消投票": "Cancel Vote"
 }

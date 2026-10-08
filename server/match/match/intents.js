@@ -14,8 +14,11 @@ export class MatchIntents {
     switch (msg.t) {
       case 'g.infoReady':
         if (this.phase !== PHASE.INFO_CHECK) return fail(ERR.WRONG_PHASE);
+				if (this.setupVote) return fail(ERR.WRONG_PHASE, 'setup reroll vote in progress');
+				if ((msg.setupRevision ?? 0) !== this.setupRevision) return fail(ERR.BAD_TARGET, 'setup changed; confirm the current revision');
         if (!ps.infoReady) { ps.infoReady = true; this.markPublic(); this.maybeEndInfo(); }
         return OK;
+			case 'g.rerollVote': return this.voteSetupReroll(ps, msg.voteId, msg.agree);
       case 'g.band': return this.pickBand(ps, msg.bandId);
       case 'g.bandSkip': return this.skipBand(ps);
       // the strategy highlighted in the draft screen (what a timed-out turn takes, timeoutBand)

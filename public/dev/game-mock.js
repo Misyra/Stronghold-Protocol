@@ -353,7 +353,9 @@ function buildResult(victory) {
     players: S.pub.players.map((p, i) => ({
       playerId: p.playerId, seat: p.seat, name: p.name, isBot: p.isBot, left: false, alive: i !== 3, victory, lp: [12, 12, 12, 0][i], bandId: p.bandId,
       roundsPassed: i === 3 ? 9 : victory ? 14 : 11, eliminatedRound: i === 3 ? 10 : null, title: pickTitle(i),
-      lineup: shuffle(S.pool).slice(0, 8 + (i % 2)).map((c, k) => ({ id: k < 3 ? c.goldenId : c.chessId, golden: k < 3, tier: c.tier, row: 9 + (k % 4), col: 2 + k, items: [] })),
+      lineup: shuffle(S.pool).slice(0, 8 + (i % 2)).map((c, k) => ({ id: k < 3 ? c.goldenId : c.chessId, golden: k < 3, tier: c.tier, row: 9 + (k % 4), col: 2 + k,
+				items: VARIANTS.has('equipped') ? data.list('items').filter((it) => it.itemType === 'EQUIP' && !!it.isGolden === (k % 2 === 0)).slice(0, k % 3).map((it) => ({ id: it.id })) : [],
+			})),
       bonds: shuffle(data.list('bonds')).slice(0, 4).map((b, k) => ({ bondId: b.bondId, count: 3 - (k % 3), layers: [359, 136, 34, 12][k], active: k < 3, tier: k < 3 ? 1 : 0 })),
       stats: {
         dmgDealt: [2310000, 1720000, 980000, 402000][i], kills: [412, 388, 301, 150][i], leaks: [3, 6, 9, 31][i], gold: [188, 164, 231, 90][i],

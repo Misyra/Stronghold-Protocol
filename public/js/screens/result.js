@@ -15,15 +15,16 @@
 //                 stats: { dmgDealt, kills, leaks, gold /* funds SPENT */, refreshes, merges, bossDamage?, itemsEquipped?,
 //                          activatedLayers?, lpLost?, perfectRounds? } }] }
 
-import { useEffect } from '../../vendor/hooks.module.js';
-import { html, Button, Icon, MicroLabel, DifficultyTag } from '../ui/components.js';
-import { useGameData, Img, UnitThumb, BandIcon, PlayerAvatar, BondGlyph, LpTower, Sprite } from '../ui/gameComponents.js';
+import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { html, Button, Icon, MicroLabel, DifficultyTag, Modal, TierChip } from '../ui/components.js';
+import { useGameData, Img, UnitThumb, BandIcon, PlayerAvatar, BondGlyph, LpTower, Sprite, RichText } from '../ui/gameComponents.js';
 import { normalizeResult, fmtNum, diyRecordFor, cardStandIn, standInForText } from '../ui/gameLogic.js';
 import { data } from '../data.js';
-import { enemyIconUrl, titleIconUrl, uiUrl } from '../ui/assetUrls.js';
+import { enemyIconUrl, titleIconUrl, uiUrl, chessPortraitUrl } from '../ui/assetUrls.js';
 import { store, useStore, emptyMatch } from '../store.js';
 import { audio } from '../audio.js';
 import { sentText } from '../ui/lang.js';
+import { useDocClass } from '../ui/device.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -56,11 +57,50 @@ export function resultBonds(bonds, bondRec = () => null) {
  * 「替补」 mark — the title names the chess it fielded for.
  */
 export function LineupThumb({ u, gd }) {
-  const chess = u.kind === 'token' ? null : gd.chess(u.id);
-  const dr = u.diy && chess ? diyRecordFor(chess, u.diy, { chess: data.get('chess'), backups: data.get('backups') }) : null;
-  const si = !dr && chess ? cardStandIn(chess, { unit: u, backups: gd.backups }) : null;
-  return html`<${UnitThumb} kind=${u.kind === 'token' ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm" rec=${dr || si}
-    title=${si ? t('{name}（{note}）', { name: si.name, note: standInForText(chess.name) }) : undefined} />`;
+	const [open, setOpen] = useState(false);
+	const token = u.kind === 'token';
+	const chess = token ? null : gd.chess(u.id);
+	const dr = u.diy && chess ? diyRecordFor(chess, u.diy, { chess: data.get('chess'), backups: data.get('backups') }) : null;
+	const si = !dr && chess ? cardStandIn(chess, { unit: u, backups: gd.backups }) : null;
+	const rec = dr || si || chess;
+	const name = rec?.name || (token ? gd.token(u.id)?.name : null) || u.id;
+	const title = si ? t('{name}（{note}）', { name: si.name, note: standInForText(chess.name) }) : name;
+	const items = (Array.isArray(u.items) ? u.items : []).map((it) => typeof it === 'string' ? it : it?.id)
+		.filter((id) => typeof id === 'string' && id).slice(0, 2);
+	const slots = [0, 1];
+	return html`<div class="runit">
+		<button type="button" class=${cx('runit__open', u.golden && 'is-golden')} title=${title} aria-label=${`${title} · ${t('装备')} ${items.length}/2`}
+			aria-haspopup="dialog" aria-expanded=${open} onClick=${() => setOpen(true)}>
+			<span class="runit__art"><${Img} src=${chessPortraitUrl(gd.m, rec)} alt=${name} class="runit__portrait"
+				fallback=${html`<${UnitThumb} kind=${token ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} tier=${u.tier} size="sm" showTier=${false} rec=${dr || si} title=${title} />`} />
+				${!token && (u.tier || rec?.tier) ? html`<${TierChip} tier=${u.tier || rec.tier} golden=${!!u.golden} size="sm" class="runit__tier" />` : null}
+				${si ? html`<span class="runit__standin">${t('替补')}</span>` : null}
+			</span>
+			${!token ? html`<span class="runit__items">${slots.map((slot) => items[slot]
+				? html`<${UnitThumb} key=${slot} kind="item" id=${items[slot]} size="xs" showTier=${false} title=${gd.item(items[slot])?.name || items[slot]} />`
+				: html`<span key=${slot} class="runit__empty" aria-hidden="true">—</span>`)}</span>` : null}
+		</button>
+		${open ? html`<${Modal} open=${true} title=${title} micro=${t('装备')} class="result-unit" width="min(6.8rem, 94vw)"
+			onClose=${() => setOpen(false)} actions=${html`<${Button} onClick=${() => setOpen(false)}>${t('关闭')}<//>`}>
+			<div class="result-unit__body">
+				<div class="result-unit__portrait"><${Img} src=${chessPortraitUrl(gd.m, rec)}
+					fallback=${html`<${UnitThumb} kind=${token ? 'token' : 'chess'} id=${u.id} golden=${!!u.golden} rec=${dr || si} size="lg" />`} />
+					${u.golden ? html`<span class="result-unit__elite">${t('精锐')}</span>` : null}</div>
+				<section class="result-unit__equipment" aria-label=${t('装备')}>
+					<h3>${t('装备')} <span class="num">${items.length}/2</span></h3>
+					${items.length ? items.map((id, i) => {
+						const item = gd.item(id);
+						return html`<div key=${i} class="result-unit__item">
+							<${UnitThumb} kind="item" id=${id} size="sm" />
+							<div><h4>${item?.name || id}${item?.isGolden ? html`<span class="result-unit__elite">${t('进阶')}</span>` : null}</h4>
+								<${RichText} as="p" text=${item?.descRaw || item?.desc || ''} />
+							</div>
+						</div>`;
+					}) : html`<p class="t-dim">—</p>`}
+				</section>
+			</div>
+		<//>` : null}
+	</div>`;
 }
 
 function PlayerCard({ p, myId, titles, best, solo = false }) {
@@ -105,6 +145,7 @@ function PlayerCard({ p, myId, titles, best, solo = false }) {
 
 /** RESULT screen. */
 export function ResultScreen() {
+	useDocClass('sp-result');
   const res = useStore((s) => s.match.result);
   const pub = useStore((s) => s.match.public);
   const myId = useStore((s) => s.me.playerId);
@@ -161,4 +202,3 @@ export function ResultScreen() {
     </main>
   </div>`;
 }
-

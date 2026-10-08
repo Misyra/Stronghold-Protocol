@@ -215,7 +215,9 @@ WALK legs pathfind on the stage grid inside the rect with the official flow fiel
 destination, crates cost 1000, then Bresenham line-of-sight smoothing — research 08 §3.4). The official route stays
 unless 0.1.0's road-over-floor preference route (the fewest non-blockable tiles among equal-length chains, a line of
 sight that never covers floor — diagonal-step corners included — its grid route does not walk; user playtest #2 item 2)
-crosses strictly fewer non-blockable tiles (floor / gate lanes); "crosses" = passes through the tile's interior, a
+crosses strictly fewer non-blockable tiles (floor / gate lanes) and no more 深水区 (GitHub #375: on 战场#08(下半) the
+patrolling 铳 / 卢西恩 waded through two water tiles to dodge one floor tile; the official upper road crosses one);
+"crosses" = passes through the tile's interior, a
 corner touch does not count (`grid.js` `segmentTiles`; community report D5 after 0.1.0: 战场#04's lower-gate enemies cut
 diagonally from row 9 into row 10 as officially), and on equal counts the official route stays.
 test/sim/pathing-official.test.js lists the 21 of 154 stage routes that still differ from the official ones (战场#01's

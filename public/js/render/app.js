@@ -1412,6 +1412,14 @@ export async function createFieldView(host, options = {}) {
           consumedIds.add(e[4].id);
           if (consumedIds.size > 200) consumedIds.delete(consumedIds.values().next().value);
         }
+        // 推拉: a push / pull (battle/displacement.js) moves the enemy inside one call; its `displace` fx carries the
+        // destination ['fx', 'displace', x, y, { id }] and the view slides there (UnitView.slideTo, PR #380) — normally
+        // started already by syncBattle's look-ahead, which this repeats harmlessly
+        if (e[1] === 'displace') {
+          const d = e[4] && typeof e[4] === 'object' ? e[4] : null;
+          const v = d && d.id != null ? views.get(d.id) : null;
+          if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]));
+        }
         // an enemy's mode change — the `form` of a sim setForm fx (shared/protocol.js fxForm: 掠海漂移体 → 爬行模式, user
         // playtest #5 item 1; 转译基底's forms, a 逐火 ember and its revival, the leaders' 重生, 守墓石像 — user report after
         // 0.1.0) — switches the view's clip set (UnitView.setForm; a kind without a clip set of that skeleton changes
@@ -1464,10 +1472,24 @@ export async function createFieldView(host, options = {}) {
     if (best) { tiles.flashObjective(best[0], best[1]); board3d?.flashObjective(best[0], best[1]); }
   }
 
+  /** syncBattle's look-ahead: a queued `displace` fx ['fx', 'displace', x, y, { id }] starts that view's slide. */
+  let slideAt = 0;
+  function startSlide(e) {
+    if (!Array.isArray(e) || e[0] !== 'fx' || e[1] !== 'displace') return;
+    const extra = e[4] && typeof e[4] === 'object' ? e[4] : null;
+    const v = extra && extra.id != null ? views.get(extra.id) : null;
+    if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]), { at: slideAt });
+  }
   let renderT0Battle = null;   // game time of the first rendered battle frame (spawn puffs skip the initial wave)
   let downSeq = 0;             // syncBattle pass counter: a view still marked down after a pass left the `down` list
   function syncBattle(renderT) {
     if (renderT0Battle == null) renderT0Battle = renderT;
+    // A push / pull's slide starts as soon as the interval sampled below ends on the snapshot that carries the
+    // destination: its `displace` fx is due only when renderT reaches that snapshot, and by then sample() has already
+    // lerped (≤ teleport) or snapped the enemy most of the way — no frames in between (PR #380). The fx are still queued
+    // here (processEvents took only those ≤ renderT); the view holds until `at`, then eases into the sim's position.
+    slideAt = interp.nextSnapT(renderT);
+    if (slideAt > renderT) interp.forEachUpcoming(renderT, slideAt, startSlide);
     interp.sample(renderT, sample);
     for (const [id, s] of sample) {
       let v = views.get(id);

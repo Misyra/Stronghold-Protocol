@@ -284,6 +284,16 @@ export class SnapshotBuffer {
   }
 
   /**
+   * Game time of the first snapshot after `time` (default renderT) — the newer end of the interval sample() interpolates
+   * — or NaN when there is none (extrapolating). render/app.js starts a push's slide while that interval is shown.
+   */
+  nextSnapT(time = this.renderT) {
+    const s = this.snaps;
+    const i = this._indexAt(time) + 1;
+    return Number.isFinite(time) && i < s.length ? s[i].t : NaN;
+  }
+
+  /**
    * The `down` list (knocked-out operators waiting to redeploy, see header) of the snapshot shown at `time` (default
    * renderT) — the same snapshot sample() reads flags from — or null.
    */

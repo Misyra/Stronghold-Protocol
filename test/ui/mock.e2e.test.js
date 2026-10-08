@@ -95,6 +95,70 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     });
   }
 
+  test('equip replace: focused buttons keep their native Enter action', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    const initial = await mockState(page);
+    const target = initial.board.find((p) => p.kind === 'chess' && p.items?.length === 2);
+    assert.ok(target, 'the fixture has an operator with two equipped items');
+    const item = initial.hand.find((p) => p?.kind === 'item' && !target.items.some((x) => x.id === p.id));
+    assert.ok(item, 'the fixture has a loose equipment item');
+    const requests = () => page.evaluate(() => globalThis.__MOCK__.S().requests.filter(([t]) => t === 'g.equip'));
+    const center = (sel) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const openReplace = async () => {
+      const from = await center(`.ff-piece[data-uid="${item.uid}"]`);
+      const to = await center(`.ff-piece[data-uid="${target.uid}"]`);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 8 });
+      await sleep(80);
+      await page.mouse.up();
+      await page.waitForSelector('.eqr__opt');
+      await sleep(500); // let the dialog's mount effect settle before selecting an item
+      await page.click(`.eqr__opt[data-uid="${target.items[1].uid}"]`);
+      await page.waitForSelector('.eqr__opt[aria-checked="true"]');
+    };
+    const tabToCancel = async () => {
+      for (let i = 0; i < 8; i++) {
+        if (await page.evaluate(() => document.activeElement?.matches('.eqr__cancel'))) return;
+        await page.keyboard.press('Tab');
+      }
+      assert.fail('Tab did not focus Cancel');
+    };
+
+    for (const key of ['Space', 'Enter']) {
+      await openReplace();
+      await tabToCancel();
+      await page.keyboard.press(key);
+      await page.waitForFunction(() => !document.querySelector('.eqr'));
+      await sleep(200);
+      assert.deepEqual(await requests(), [], `${key} on Cancel sends no equipment intent`);
+      const state = await mockState(page);
+      assert.deepEqual(state.board.find((p) => p.uid === target.uid).items, target.items, 'both equipped items remain');
+      assert.ok(state.hand.some((p) => p?.uid === item.uid), 'the new item remains in the hand');
+    }
+
+    // Enter on an equipment option toggles its selection; only the confirmation button replaces it.
+    await openReplace();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.eqr__opt[aria-checked="true"]'));
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.eqr__opt[aria-checked="true"]');
+    assert.deepEqual(await requests(), [], 'Enter on an option only changes the selected item');
+    await tabToCancel();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.matches('.eqr__ok')), true);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.eqr'));
+    await sleep(200);
+    assert.deepEqual(await requests(), [['g.equip', { itemUid: item.uid, targetUid: target.uid, replaceUid: target.items[1].uid }]]);
+    const replaced = await mockState(page);
+    assert.deepEqual(replaced.board.find((p) => p.uid === target.uid).items.map((x) => x.uid), [target.items[0].uid, item.uid]);
+    assert.ok(!replaced.hand.some((p) => p?.uid === item.uid), 'the confirmed equipment leaves the hand');
+    // This keyboard regression also runs without optional art/fonts; JavaScript exceptions still fail it.
+    assert.deepEqual(problems.filter((p) => p.startsWith('pageerror:')), []);
+    await page.close();
+  });
+
   test('prep: buy, shortcuts, ready, Esc', async () => {
     const { page, problems } = await open('phase=PREP');
     let s = await mockState(page);
@@ -147,6 +211,77 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     assert.equal(await page.$('.dpanel'), null, 'Esc closes the detail panel');
     assert.deepEqual(problems, []);
     await page.close();
+  });
+
+  test('prep: a shortcut upgrade clears the previous level confirmation', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    try {
+      await page.evaluate(() => globalThis.__MOCK__.mutate((S) => { S.priv.funds = 100; }));
+      const before = await mockState(page);
+      const pressed = () => page.$eval('.shopbar .lvcard', (el) => el.getAttribute('aria-pressed'));
+      await page.click('.shopbar .lvcard');
+      await page.waitForFunction(() => document.querySelector('.lvcard').getAttribute('aria-pressed') === 'true');
+      assert.equal((await mockState(page)).funds, before.funds, 'selecting does not charge');
+      await page.keyboard.press('KeyD');
+      await page.waitForFunction((lv) => globalThis.__MOCK__.S().priv.shop.level === lv + 1, {}, before.shop.level);
+      const upgraded = await mockState(page);
+      assert.equal(upgraded.funds, before.funds - before.shop.upgradePrice);
+      assert.equal(await pressed(), 'false', 'the completed upgrade must disarm its confirmation');
+      await page.click('.shopbar .lvcard');
+      await page.waitForFunction(() => document.querySelector('.lvcard').getAttribute('aria-pressed') === 'true');
+      await sleep(300); // allow a mistaken second upgrade to reach the mock server
+      assert.equal((await mockState(page)).shop.level, upgraded.shop.level, 'the next click only selects');
+      assert.equal((await mockState(page)).funds, upgraded.funds, 'the next click does not charge');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.querySelector('.lvcard').getAttribute('aria-pressed') === 'false');
+      await page.keyboard.press('KeyD');
+      await page.waitForFunction((lv) => globalThis.__MOCK__.S().priv.shop.level === lv + 1, {}, upgraded.shop.level);
+      assert.equal((await mockState(page)).funds, upgraded.funds - upgraded.shop.upgradePrice, 'D still upgrades directly');
+      // Optional art / audio may be absent; this state regression needs no asset pack.
+      assert.deepEqual(problems.filter((p) => p.startsWith('pageerror:')), []);
+    } finally { await page.close(); }
+  });
+
+  test('prep: mouse level confirmation survives same-level updates and resets after purchase', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    try {
+      await page.evaluate(() => globalThis.__MOCK__.mutate((S) => { S.priv.funds = 100; }));
+      const before = await mockState(page);
+      await page.click('.shopbar .lvcard');
+      await page.waitForFunction(() => document.querySelector('.lvcard').getAttribute('aria-pressed') === 'true');
+      await page.keyboard.press('KeyF');
+      await page.waitForFunction(() => globalThis.__MOCK__.S().priv.shop.frozen);
+      assert.equal(await page.$eval('.lvcard', (el) => el.getAttribute('aria-pressed')), 'true', 'an unrelated shop update keeps the selection');
+      await page.click('.shopbar .lvcard');
+      await page.waitForFunction((lv) => globalThis.__MOCK__.S().priv.shop.level === lv + 1, {}, before.shop.level);
+      const upgraded = await mockState(page);
+      assert.equal(upgraded.funds, before.funds - before.shop.upgradePrice);
+      assert.equal(await page.$eval('.lvcard', (el) => el.getAttribute('aria-pressed')), 'false');
+      await page.click('.shopbar .lvcard');
+      await page.waitForFunction(() => document.querySelector('.lvcard').getAttribute('aria-pressed') === 'true');
+      await sleep(300);
+      assert.equal((await mockState(page)).shop.level, upgraded.shop.level);
+      assert.equal((await mockState(page)).funds, upgraded.funds);
+      assert.deepEqual(problems.filter((p) => p.startsWith('pageerror:')), []);
+    } finally { await page.close(); }
+  });
+
+  test('prep: a level change preserves another shop card selection', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    try {
+      await page.evaluate(() => globalThis.__MOCK__.mutate((S) => { S.priv.funds = 100; }));
+      const before = await mockState(page);
+      await page.click('.shopbar__cards .scard:not(.scard--sold)');
+      await page.waitForSelector('.shopbar__cards .scard.is-armed');
+      const selected = await page.$eval('.shopbar__cards .scard.is-armed', (el) => el.getAttribute('aria-label'));
+      await page.keyboard.press('KeyD');
+      await page.waitForFunction((lv) => globalThis.__MOCK__.S().priv.shop.level === lv + 1, {}, before.shop.level);
+      assert.equal(await page.$eval('.shopbar__cards .scard.is-armed', (el) => el.getAttribute('aria-label')), selected);
+      assert.equal(await page.$eval('.lvcard', (el) => el.getAttribute('aria-pressed')), 'false');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.scard.is-armed', { hidden: true });
+      assert.deepEqual(problems.filter((p) => p.startsWith('pageerror:')), []);
+    } finally { await page.close(); }
   });
 
   test('prep: Q retreats and X sells only the selected operator', async () => {

@@ -39,7 +39,7 @@ export { terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits } from './gameLog
 export { normalizeDraft, normalizeSp } from './gameLogic/draft.js';
 export { groupEnemies, PEN, penZoneTiles, penPlacement, previewEnemyKey, factionTypes } from './gameLogic/enemies.js';
 export { snapHud, bossFrac, bossPctText, hasFlag, UF, attackInterval, fmtNum, rangeGridBox } from './gameLogic/format.js';
-export { shortcutFor, closesOnFieldPress, shortcutBlocked, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, isBindableCode, hotkeyLabel, sanitizeHotkeys, rebindHotkey, isDefaultHotkeys, hotkeyOf, actionForKey, captureHotkey, facingSwallows } from './gameLogic/shortcuts.js';
+export { shortcutFor, closesOnFieldPress, shortcutBlocked, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, isBindableCode, hotkeyLabel, sanitizeHotkeys, rebindHotkey, isDefaultHotkeys, hotkeyOf, actionForKey, captureHotkey, facingSwallows, facingEnter } from './gameLogic/shortcuts.js';
 export { DEFAULT_SETTINGS, VOICE_LANGS, sanitizeSettings } from './gameLogic/settings.js';
 export { normalizeResult } from './gameLogic/result.js';
 export { chessLoadout, unitLoadout } from './gameLogic/loadout.js';

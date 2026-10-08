@@ -1058,6 +1058,33 @@ test('引星棘刺 S1 度算浪波: two alchemy units on one ally add their DEF 
   done(h);
 });
 
+test('引星棘刺 S1 度算浪波: at an HP-ratio tie the unit goes to the latest deployed ally (PRTS 备注 「优先选择生命比例最低>最晚部署的我方单位」)', () => {
+  for (const id of pair('15')) {
+    const h = run({
+      defs: { chess: { t_first: ally('t_first'), t_last: ally('t_last') } },
+      // t_first stands nearer to her, t_last deploys after it (until 0.2.2 a tie went to more blocking, then the nearer)
+      units: [entry(id, 'skchr_thorn2_1', { row: 10, col: 3 }), { chessId: 't_first', row: 11, col: 4 }, { chessId: 't_last', row: 9, col: 5 }],
+      enemies: [],
+    });
+    const u = sel(h, id, 'skchr_thorn2_1');
+    const first = h.unit('t_first'), last = h.unit('t_last');
+    h.step();
+    assert.ok(last.deploySeq > first.deploySeq, 't_last is the later deployment');
+    first.hp = first.s.maxHp * 0.5; last.hp = last.s.maxHp * 0.5;
+    cast(h, u);
+    const z = u.mem.zones.find((x) => x.type === 'guard');
+    assert.deepEqual([z.r, z.c], [9, 5], 'the latest deployed of the two at 50 %');
+    // the lowest ratio still comes first
+    last.hp = last.s.maxHp; first.hp = first.s.maxHp * 0.4;
+    const n0 = u.skill.activations;
+    u.skill.gainSp(1000);
+    assert.ok(h.runUntil(() => u.skill.activations > n0, 15), 'cast again');
+    const z2 = u.mem.zones.filter((x) => x.type === 'guard').at(-1);
+    assert.deepEqual([z2.r, z2.c], [11, 4], 'a lower ratio beats a later deployment');
+    done(h);
+  }
+});
+
 test('引星棘刺 S1 度算浪波 (AUTO): fires as soon as its SP is full, no enemy needed (GitHub #124)', () => {
   for (const id of pair('15')) {
     const h = run({

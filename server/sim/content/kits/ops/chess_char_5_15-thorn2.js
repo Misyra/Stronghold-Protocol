@@ -96,7 +96,9 @@ export default {
           // (GitHub #124 「引星棘刺一技能不会在满技力时自动释放」)
           trigger: { rule: 'SP_FULL' },
           onStart({ battle, unit }) {
-            const t = battle.alliesInGrid(unit).filter((a) => a.hp > 0).sort((a, b) => a.hpRatio - b.hpRatio || b.blocking.length - a.blocking.length || dist(a, unit) - dist(b, unit) || a.id - b.id)[0];
+            // PRTS 备注 「※优先选择生命比例最低>最晚部署的我方单位（不含装置职业单位）」: the lowest HP ratio, a tie to the
+            // latest deployment (alliesInGrid has no devices); until 0.2.2 a tie went to more blocking, then the nearer
+            const t = battle.alliesInGrid(unit).filter((a) => a.hp > 0).sort((a, b) => a.hpRatio - b.hpRatio || b.deploySeq - a.deploySeq || a.id - b.id)[0];
             if (!t) return;
             const z = { type: 'guard', r: t.tileR, c: t.tileC, x: t.x, y: t.y, t: 0, acc: 0, dur: num(bb.projectile_delay_time, 6) + extend(battle, unit) };
             (unit.mem.zones ??= []).push(z);

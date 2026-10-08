@@ -269,6 +269,8 @@ export default {
         [S3]: {
           kind: 'duration',
           mods: { atkPct: num(b3.atk), batPct: batMod(b3.base_attack_time, chess) },
+          // [ASSUMED] the cross lands on an enemy target only: 白铁's 铁钳号 alone does not open it (skills.js allyTargetsOk)
+          allyTargets: false,
           // the attack is the cross: no damage on the target itself (its 0.8 s later landing does it)
           attack: { dmgType: 'arts', hitsFn: () => 0 },
           onAttack({ battle, unit, targets }) {

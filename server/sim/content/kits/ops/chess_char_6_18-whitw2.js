@@ -128,6 +128,8 @@ function whitw2(bb, chess, def) {
     // grid only selects those targets — no rangeId, no 攻击范围 in the text — so the card keeps her 3-1 (showOwnRange)
     skchr_whitw2_1: {
       kind: 'toggle',
+      // [ASSUMED] her drones lock enemies only (install): 白铁's 铁钳号 alone does not open S1 / S2 (skills.js allyTargetsOk)
+      allyTargets: false,
       mods: { atkPct: num(bb.atk) },
       targeting: { rangeGrid: WHOLE_FIELD, showOwnRange: true },
       onStart({ unit }) { unit.mem.lazyLock = null; },
@@ -136,6 +138,7 @@ function whitw2(bb, chess, def) {
     // (install); each drone hit ramps on its own target (trait init → max) and fears it attack@fear s with attack@prob
     skchr_whitw2_2: {
       kind: 'duration',
+      allyTargets: false,
       mods: { atkPct: num(bb.atk) },
       ...(skillGridW ? { targeting: { rangeGrid: skillGridW } } : {}),
       attack: {

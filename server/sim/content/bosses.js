@@ -524,11 +524,12 @@ function kitBlade(ab, e, b, tpl) {
         // 自缚 (moved by hand) · 不可阻挡 · 失衡免疫 (PRTS 天赋 "{{特殊机制|静态刚体}}，不可阻挡、失衡免疫…" — data `staticBody` too)
         b2.addBuff(e2, { key: 'boss:anchor', persist: true, flags: { noMove: true, selfBound: true, unblockable: true, noDisplace: true } });
         if (BLADE_ATK_SCALE[e2.defId]) e2.profile.atkScale = BLADE_ATK_SCALE[e2.defId];
+        e2.profile.canTarget = (u) => !u.isFlying;   // "…不可对空" (below)
       },
-      // 范围物理伤害 — "普通攻击对攻击范围内的所有我方单位造成…物理普通伤害": a normal attack on every operator it can target
+      // 范围物理伤害 — "普通攻击对攻击范围内的所有我方单位造成…物理普通伤害，不可对空": a normal attack on every operator it can target
       // (canTargetAlly: no 隐匿 or 迷彩 one — it is never blocked —, PRTS 选择器: a normal attack does not ignore 迷彩; until
-      // 0.1.2 it took them all, `ranged: false`)
-      before(c, b2, e2) { const l = targetsNear(b2, e2, e2.base.rangeRadius || 1.6); if (l.length) c.targets = l; },
+      // 0.1.2 it took them all, `ranged: false`), never a flying ally (the 炎佑 dragon — until 0.2.1 it was hit)
+      before(c, b2, e2) { const l = targetsNear(b2, e2, e2.base.rangeRadius || 1.6).filter((u) => !u.isFlying); if (l.length) c.targets = l; },
       taken(c, b2, e2) {
         if (c.amount > 0) { // 受到伤害时令假想敌：胄受到等量的无来源生命流失 (【瘫痪】; 出击模式 [ASSUMED], see PART_TRANSFER)
           const L = leader(b2);

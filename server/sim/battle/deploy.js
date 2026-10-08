@@ -56,7 +56,11 @@ export class BattleDeploy {
     const sk = u.skill;
     // "自动操作具有3s冷却，在完成一次操作或作战开始时部署的单位将进入冷却" (PRTS 卫戍协议/帮助; skills.js)
     if (initial) sk.opReadyAt = this.time + this.flags.startOpCooldown;
-    if (keepSp && !sk.noSkill && sk.kind !== 'passive' && !sk.active) {
+    // keepSp (突袭 "保留技力"): the SP / charges before the jump — not for a skill that costs no SP (spCost 0, the
+    // deploy-timed skills), which reset() just re-armed as at every deployment: the retreat ended it, so its snapshot
+    // holds 0 charges, and writing that back took the charge 伊内丝 S3's deploy hook casts with (community report:
+    // 伊内丝激活突袭瞬移以后3技能被吞; those with activateOnDeploy run already, skipped by `!sk.active`)
+    if (keepSp && !sk.noSkill && sk.kind !== 'passive' && !sk.active && sk.spCost > 0) {
       sk.charges = Math.max(0, Math.min(sk.maxCharges, Math.floor(fin(keepSp.charges, 0))));
       sk.sp = Math.max(0, Math.min(sk.spCost, fin(keepSp.sp, 0)));
       if (sk.charges >= sk.maxCharges) sk.sp = sk.spCost;

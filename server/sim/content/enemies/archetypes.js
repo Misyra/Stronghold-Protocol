@@ -181,15 +181,17 @@ const deathSpawn = (key, cnt, extra = {}) => ({
 
 /**
  * Death explosion on the allies within r it can select (areaAllies — PRTS 高能源石虫 / 冰爆源石虫 / 卷心籽 死亡爆炸 "…无视迷彩，
- * 不可对空", no 无视无法选择: a 隐匿 ally is spared; the dead enemy blocks nobody).
+ * 不可对空", no 无视无法选择: a 隐匿 ally is spared; the dead enemy blocks nobody). `noAir` (default — all three say so):
+ * a flying ally (the 炎佑 dragon) is skipped; until 0.2.1 it took the blast (community report: 炎祐吃到了不该吃到的地面伤害).
  */
-const deathBoom = ({ scale, type = 'phys', r = BOOM_RADIUS, status = null, sil = true, cond = null }) => ({
+const deathBoom = ({ scale, type = 'phys', r = BOOM_RADIUS, status = null, sil = true, cond = null, noAir = true }) => ({
   sil,
   death(c, b, e, a) {
     if (c.reason !== 'killed' || (cond && !cond(e, a))) return;
     const atk = e.s.atk;
     b.fx('explode', { x: e.x, y: e.y, r, kind: 'deathBoom', id: e.id });
     for (const u of areaAllies(b, e, e.x, e.y, r)) {
+      if (noAir && u.isFlying) continue;
       if (scale > 0) hurt(b, e, u, atk * scale, type);
       if (status && u.alive) b.applyStatus(u, status.key, { duration: status.dur, source: e, value: status.value });
     }

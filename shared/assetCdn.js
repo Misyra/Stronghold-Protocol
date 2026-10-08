@@ -28,10 +28,20 @@ export function assetCdnSettings(base, version) {
  *    manifest does not list). */
 export function assetCdnUrl(url, { base = '', version = '', manifest = '', hashes = null } = {}) {
   if (!base || typeof url !== 'string') return url;
-  const match = ART_PATH.exec(url);
+  const own = url.startsWith(base + '/');
+  // Keep published URLs (including a preload retry's &sp=) intact. Derived, bare URLs on
+  // this CDN still need their own file hash; other origins never enter this rewrite.
+  if (own && /[?&]v=[a-f0-9]{16}(?:[&#]|$)/.test(url)) return url;
+  const local = own ? url.slice(base.length) : url;
+  const match = ART_PATH.exec(local);
   if (!match) return url;
   const path = match[1];
-  const hash = hashes?.[path];
+  // R2 serves CSS verbatim. Keep stylesheets on the game host so its CSS transformer
+  // can attach each font/image's hash instead of leaving their nested URLs unversioned.
+  if (manifest && path.endsWith('.css')) return local;
+  let key = path;
+  try { key = decodeURI(path); } catch { /* malformed escaping keeps the ordinary fallback */ }
+  const hash = hashes?.[key];
   if (hash) return `${base}${path}?v=${hash}`;
   if (manifest) return `${base}${path}`;
   return `${base}${version ? '/_v/' + version : ''}${path}${match[2] || ''}`;

@@ -42,7 +42,7 @@
 // so it can be unit tested without a browser. Helpers never throw on unknown ids — they return null and the
 // caller falls back (docs/development/ASSETS.md "Other fallbacks").
 
-import { resourceUrl, resourceCache } from './resourceUrl.js';
+import { resourceUrl, resourceCache, resourceReady } from './resourceUrl.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -567,8 +567,25 @@ export function loadImageElement(url) {
 export async function loadSpineData(entry, opts) {
   const PIXI = globalThis.PIXI;
   if (!PIXI || !PIXI.Assets || !PIXI.spine) throw new Error('PIXI / pixi-spine not loaded');
+  await resourceReady();
   if (opts && opts.fresh) forgetPendingSpine(entry, opts.keep);
-  const res = await PIXI.Assets.load(entry.skel);
+  let source = entry.skel;
+  if (globalThis.__spAssetCdn?.manifest) {
+    const atlas = resourceUrl(str(entry.atlas) || bareAssetUrl(entry.skel).replace(/\.skel$/, '.atlas'));
+    const response = await fetch(atlas, { cache: resourceCache(atlas) });
+    if (!response.ok) throw new Error(`atlas failed (${response.status}): ${atlas}`);
+    const text = await response.text();
+    // The default loader drops page queries, and its preloaded-images path resolves
+    // before the atlas is assigned. Parse explicitly and resolve each actual page's hash.
+    const spineAtlas = await new Promise((resolve, reject) => {
+      new PIXI.spine.TextureAtlas(text, (name, done) => {
+        const page = resourceUrl(new URL(name, new URL(atlas, 'http://localhost')).href);
+        PIXI.Assets.loader.load(page).then((texture) => done(texture.baseTexture), () => done(null));
+      }, (parsed) => parsed ? resolve(parsed) : reject(new Error(`atlas texture failed: ${atlas}`)));
+    });
+    source = { src: resourceUrl(entry.skel), data: { spineAtlas } };
+  }
+  const res = await PIXI.Assets.load(source);
   const data = res && (res.spineData || res);
   if (!data || !Array.isArray(data.animations)) throw new Error(`bad spine data: ${entry.skel}`);
   return data;
@@ -586,11 +603,11 @@ export async function loadSpineData(entry, opts) {
 export function forgetPendingSpine(entry, keep) {
   const PIXI = globalThis.PIXI;
   const cache = PIXI && PIXI.Assets && PIXI.Assets.loader && PIXI.Assets.loader.promiseCache;
-  const skel = entry && entry.skel;
+  const skel = entry && resourceUrl(entry.skel);
   if (!skel || !cache || typeof cache !== 'object') return 0;
   const done = (u) => { try { return !!PIXI.Assets.cache?.has?.(u); } catch { return true; } };
   if (done(skel)) return 0;
-  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas');
+  const atlas = resourceUrl((typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas'));
   const urls = (done(atlas) ? [skel] : [skel, atlas, ...spinePages(entry)]).filter((u) => !(keep && keep.has(u)));
   let n = 0;
   // the loader keys its cache by the resolved URL: the manifest path itself, or that path made absolute
@@ -641,9 +658,9 @@ export function spineDataWeight(data) {
 export function spinePages(entry) {
   if (!isObj(entry)) return [];
   const list = Array.isArray(entry.textures) ? entry.textures.filter((u) => str(u)) : [];
-  if (list.length) return list;
+  if (list.length) return list.map((u) => resourceUrl(u));
   const skel = str(entry.skel);
-  return skel ? [bareAssetUrl(skel).replace(/\.skel$/, '.png')] : [];
+  return skel ? [resourceUrl(bareAssetUrl(skel).replace(/\.skel$/, '.png'))] : [];
 }
 
 /**
@@ -662,9 +679,9 @@ export function spinePages(entry) {
  */
 export function unloadSpineData(entry, _value, keep) {
   const PIXI = globalThis.PIXI;
-  const skel = entry && entry.skel;
+  const skel = entry && resourceUrl(entry.skel);
   if (!skel || !PIXI?.Assets?.unload) return undefined;
-  const atlas = (typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas');
+  const atlas = resourceUrl((typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas'));
   const loader = PIXI.Assets.loader;
   const pending = [];
   const unload = (url, direct) => {
@@ -674,7 +691,8 @@ export function unloadSpineData(entry, _value, keep) {
     } catch { /* ignore */ }
   };
   unload(skel, false);
-  unload(atlas, false);
+  // Manifest mode fetched the atlas text directly; it has no PIXI loader/cache entry.
+  if (!globalThis.__spAssetCdn?.manifest) unload(atlas, false);
   // pages were loaded by the atlas parser straight through the loader (never through Assets.load / the resolver)
   for (const url of spinePages(entry)) if (!(keep && keep.has(url))) unload(url, true);
   return Promise.all(pending).then(() => {});
@@ -844,7 +862,8 @@ export function createAssets(options) {
   });
 
   /** Image element (cached; failures resolve to null). */
-  function image(u) {
+  async function image(u) {
+    await resourceReady();
     const s = str(resourceUrl(u));
     if (!s) return Promise.resolve(null);
     let e = images.get(s);
@@ -923,7 +942,7 @@ export function createAssets(options) {
     /** Cached image element promise (null on failure). */
     image,
     /** Already-loaded image element or null (sync). */
-    imageNow(u) { const e = images.get(str(u) || ''); return e && e.done ? e.value : null; },
+    imageNow(u) { const e = images.get(str(resourceUrl(u)) || ''); return e && e.done ? e.value : null; },
     /**
      * Preload URLs; `onProgress(done, total, url)` after each. Resolves to { ok, failed } counts (never rejects).
      */

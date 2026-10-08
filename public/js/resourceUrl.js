@@ -4,10 +4,22 @@ import { assetCdnUrl } from '../../shared/assetCdn.js';
  *  module graph): once its hashes land, every CDN URL gains a per-file `?v=<hash>` query and a
  *  release only re-busts the files it actually changed. Until then — or when the fetch fails —
  *  assetCdnUrl's bare/prefix fallback answers, which the bucket always serves. */
-const cdn = globalThis.__spAssetCdn;
-if (cdn) Promise.resolve(globalThis.__spManifestReady).then((doc) => {
-  if (doc && typeof doc === 'object' && doc.hashes && typeof doc.hashes === 'object') cdn.hashes = doc.hashes;
-}).catch(() => {});
+const manifestWaits = new WeakMap();
+/** Wait for hashes before generating dynamic URLs, with a bounded availability fallback. */
+export function resourceReady(timeoutMs = 3000) {
+  const cdn = globalThis.__spAssetCdn;
+  if (!cdn?.manifest || cdn.hashes) return Promise.resolve();
+  if (manifestWaits.has(cdn)) return manifestWaits.get(cdn);
+  const ready = Promise.resolve(globalThis.__spManifestReady).then((doc) => {
+    if (doc && typeof doc === 'object' && doc.hashes && typeof doc.hashes === 'object') cdn.hashes = doc.hashes;
+  }).catch(() => {});
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+  const wait = Promise.race([ready, timeout]).finally(() => clearTimeout(timer));
+  manifestWaits.set(cdn, wait);
+  return wait;
+}
+void resourceReady();
 
 /** Release paths keep Spine's relative atlas/page references in the same cache namespace. */
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion : globalThis.__spAssetVersion) {

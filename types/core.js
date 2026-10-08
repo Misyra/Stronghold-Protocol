@@ -89,9 +89,22 @@
  */
 
 /**
+ * One HP-bar readout of a unit: `[id, left, max]` — the rounds left of a running ammo skill and its magazine (`ammo`), or the
+ * 狼影 left of 伺夜's 狼群 and the talent's maximum (`wolves`). Whole numbers.
+ *
+ * @typedef {[number, number, number]} CountSnap
+ */
+
+/**
+ * A negative-HP pool as a share of its cap (`neg`, 斩业星熊's 我执): `[id, fill]`, fill 0.01–1.
+ *
+ * @typedef {[number, number]} NegSnap
+ */
+
+/**
  * `snapshot()` (SIM §9). On the wire this object is the payload of `b.snap`,
  * and `t` is sent as `gt` because the frame's `t` is the message type (DESIGN §8.2).
- * `dp` is one number. `down` and `elem` are omitted when empty.
+ * `dp` is one number. `down`, `elem`, `ammo`, `wolves` and `neg` are omitted when empty.
  *
  * @typedef {Object} FieldSnapshot
  * @property {string} fieldId
@@ -104,6 +117,9 @@
  * @property {Object} [boss]
  * @property {DownSnap[]} [down]
  * @property {ElemSnap[]} [elem]
+ * @property {CountSnap[]} [ammo]
+ * @property {CountSnap[]} [wolves]
+ * @property {NegSnap[]} [neg]
  */
 
 /**

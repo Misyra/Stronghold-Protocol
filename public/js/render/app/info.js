@@ -37,6 +37,9 @@ export function renderInfo(u) {
     // DESIGN §16 loadout of an ally (UnitInfo.skillIndex / moduleId): the Spine actor plays that skill's clip, and a
     // tap hands them to the detail card (a teammate's unit shows its owner's skill / module)
     skillIndex: Number.isInteger(u.skillIndex) ? u.skillIndex : undefined,
+    // an ally whose skill is an ammo magazine (UnitInfo.ammoSkill): its rounds are the cells under the HP bar, so no sustained
+    // skill aura is drawn for it (render/fx/rings.js _aura)
+    ammoSkill: u.ammoSkill === true ? true : undefined,
     moduleId: typeof u.moduleId === 'string' ? u.moduleId : undefined,
     // the ally's equipped item ids (UnitInfo.items, DESIGN §16 / §21.11): the detail card needs them for a teammate's
     // unit (resolveDetail `unitItems` → the read-only 装备 section and the 变形同构体 pairing chips); the owner's own

@@ -180,6 +180,9 @@ export default {
           const capOf = () => num(t0.max_minus_hp_ratio, 2) * unit.s.maxHp;
           const quiet = num(t0['hsgma2_t_1[heal].interval'], 5);
           const regen = num(t0['hsgma2_t_1[heal].hp_recovery_per_sec_by_max_hp_ratio']);
+          // the pool as a share of its cap, read when a snapshot is taken (b.snap `neg`, snapshot.js negView): the green HP bar
+          // sits on the 1-HP floor in 我执, so the client draws the pool as the red bar — display only
+          unit.negFill = () => (unit.mem.hsEgo && unit.mem.hsEgo.pool > 0 ? unit.mem.hsEgo.pool / Math.max(1e-9, capOf()) : 0);
           const enter = (pool) => {
             unit.mem.hsEgo = { pool: Math.max(0, pool), lastHurt: battle.time };
             battle.addBuff(unit, { key: EGO, status: 'healFree', flags: { noHeal: true, healFree: true }, tags: ['talent'] });

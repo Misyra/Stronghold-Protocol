@@ -71,6 +71,35 @@ test('迅捷: member skill end +12 SP (p=1 at high L), ≥40 layers every operat
   assert.equal(off.s_x, 0);
 });
 
+test('迅捷 refills 引星棘刺 S1 at once: the instant cast still takes one attack cycle each, so attack speed paces it (GitHub #298)', () => {
+  // S1 度算浪波: AUTO, no duration, no attack of its own, SP_FULL, cost 6; 迅捷 refunds 12 + 15 SP at ≥ 40 layers
+  const casts = (aspd = 0, enemy = true) => {
+    const h = makeBattle({
+      seed: 1, bonds: { swiftShip: bond(2, 229, 3) }, autoFinish: false, timeLimit: 30,
+      units: [{ chessId: 'chess_char_5_15_b', skillIndex: 0, row: 10, col: 4 }],
+      enemies: enemy ? [{ key: 'enemy_still', route: { motion: 'WALK', start: [10, 6], end: [10, 6], checkpoints: [] } }] : [],
+      defs: { enemies: { enemy_still: enemyRec({ key: 'enemy_still', hp: 1e9, atk: 0, speed: 0, blockCnt: 0 }) } },
+    });
+    h.step();
+    const u = h.unit('chess_char_5_15_b');
+    if (aspd) h.b.addBuff(u, { key: 'test:aspd', mods: { aspd } });
+    if (enemy) assert.ok(h.b.enemiesInKeys(u.rangeKeys, u, u.profile).length, 'an enemy stays in range');
+    u.atkCd = 0;
+    u.skill.gainSp(u.skill.spCost, 'test');
+    const n0 = u.skill.activations, a0 = u.stats.attacks;
+    h.run(2);
+    checkInvariants(h.b);
+    return { n: u.skill.activations - n0, attacks: u.stats.attacks - a0, interval: u.s.interval };
+  };
+  const base = casts();
+  assert.ok(base.n >= 2 && base.n <= 3, `one cast per attack interval (${base.interval.toFixed(2)} s): ${base.n} in 2 s, not every tick`);
+  assert.equal(base.attacks, 0, 'each cast takes the attack cycle');
+  const fast = casts(500);
+  assert.ok(fast.n >= 8 && fast.n <= 9, `ASPD +500 (interval ${fast.interval.toFixed(2)} s): ${fast.n} casts`);
+  const alone = casts(0, false);
+  assert.ok(alone.n >= 2 && alone.n <= 3, `no enemy: still fires at full SP (#124), one per cycle — ${alone.n}`);
+});
+
 test('迅捷 / 突袭: SP gifts after end do not recharge a zero-SP deployment skill or trigger a ready raid', () => {
   const h = makeBattle({
     defs: { chess: { t_deploy: chessRec({ id: 't_deploy', bonds: ['swiftShip', 'raidShip'], skill: { spCost: 0 } }) } },

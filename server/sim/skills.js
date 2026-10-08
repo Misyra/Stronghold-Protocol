@@ -351,6 +351,10 @@ export class SkillRuntime {
     if (this.active && this.isTimed) return;
     // a cast "next attack" still waits for its attack: another charge now would be spent on the same attack
     if (this.pending || this._opCooling()) return;
+    // an instant / charge cast with no attack of its own takes the unit's attack cycle (activate: atkCd ≥ interval after
+    // it — GitHub #298), so the casts checked here wait while that cycle runs. skill.tick runs before updateAlly: a
+    // remainder ≤ dt ends this tick and the cast claims it (else the attack about to be made would take the cycle first)
+    if (!this.isTimed && !this.spec.attack && u.atkCd > dt + 1e-9) return;
     if (TICK_RULES.has(this.rule)) {
       if (this._tickRuleSatisfied()) this.activate(this.rule);
     } else if (this.rule !== 'TAKE_DAMAGE' && this.rule !== 'NEVER') {
@@ -451,7 +455,8 @@ export class SkillRuntime {
     if (this.pending || this._opCooling()) return false;
     if (!this._defaultCondition()) return false;
     if (this.triggerAllies && !this._allyTriggerSatisfied()) return false;
-    return this.activate('DEFAULT');
+    this._beforeAttack = true;   // the attack follows this cast in the same check (ai.js updateAlly): it owns the cycle
+    try { return this.activate('DEFAULT'); } finally { this._beforeAttack = false; }
   }
 
   /** TAKE_DAMAGE trigger + INCREASE_WHEN_TAKEN_DAMAGE SP. */
@@ -499,7 +504,15 @@ export class SkillRuntime {
     // bullets added in skillStart (拉特兰's ×(1.05 + 0.015 × layers), 逃犯引渡手续, talents): the bar's full mark
     // (community report #35: the extra bullets sat above a full bar until fewer than the base count were left)
     if (this.active && this.ammoLeft > this.ammoMax) this.ammoMax = this.ammoLeft;
-    if (!this.isTimed && !this.pending) this.end('instant');
+    if (!this.isTimed && !this.pending) {
+      this.end('instant');
+      // an instant / charge skill with no attack of its own (no spec.attack: a throw, a heal, a buff …) takes one attack
+      // cycle — its cast in place of an attack, so attack speed paces it (GitHub #298: 引星棘刺 S1 度算浪波, an SP_FULL
+      // cast, was recast every tick once 迅捷's refund refilled its bar at once, whatever the attack speed). [ASSUMED]
+      // one attack interval: PRTS prints no 前后摇 for such casts. A cast made right before an attack (DEFAULT) is
+      // followed by that attack as before; a cast onEnd opened again owns the cycle.
+      if (!this.active && !this.spec.attack && !this._beforeAttack && u.alive && u.s.interval > 0) u.atkCd = Math.max(u.atkCd, u.s.interval);
+    }
     return true;
   }
 

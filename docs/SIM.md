@@ -921,7 +921,12 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
   (`Battle._deploy` initial; `battle.flags.startOpCooldown`, default 3 — the test harness sets 0 unless told otherwise);
   AUTO skills are exempt; kits with their own automatic cast of a MANUAL skill check `skill.opCooling` (波登可 S1, 雪猎
   special bullets, 流形 copy). While a cast "next attack" (instant / charges with an attack override) waits for its
-  attack, no further charge is cast. `gainSp` is ignored while a duration/ammo/toggle skill
+  attack, no further charge is cast. An instant / charges skill with no attack override of its own (a throw, a heal, a
+  buff, a DP gain …) takes one attack cycle: its cast sets the unit's attack cooldown to at least its attack interval, and
+  the casts checked every tick (the rules above, the DEFAULT of units that never attack, content trigger ranges) wait while
+  that cooldown runs — attack speed paces them, and an SP refund that refills the bar at once (迅捷) no longer recasts one
+  every tick (GitHub #298, 引星棘刺 S1; [ASSUMED] one attack interval: PRTS prints no 前后摇 for such casts); a cast right
+  before an attack (DEFAULT) is followed by that attack as before. `gainSp` is ignored while a duration/ammo/toggle skill
   runs (its bar shows the skill), whatever the reason, and — any reason but `'init'` — while the unit has the `noSp`
   flag (阻回: "停止并阻止任意形式的技力回复"; the operators' 凋亡 burst, §3).
 - Kinds: `duration` (mods for `duration` s), `ammo` (mods until `ammo` attacks were made, optional duration cap),

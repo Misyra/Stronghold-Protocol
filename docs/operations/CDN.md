@@ -33,9 +33,11 @@ node tools/r2-sync.mjs --bucket <bucket> --dry-run  # 只看将要上传的内�
 
 ## 3. 游戏服务器接入
 
-服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证仓库里有 `.assets-manifest.json`（随发布提交）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变（永远命中缓存），文件更新时只有它的 URL 变化。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取，浏览器每个版本只下载一次）。清单不存在时回退为无版本 URL。
+服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证仓库里有 `.assets-manifest.json`（随发布提交）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取）。清单不存在时回退为无版本 URL。
 
 ### 3.1 本站实际部署（2026-10-06）
+
+嵌套资源也使用各自的文件哈希：字体 CSS 留在游戏服务器的 `/_v/<artVersion>/fonts/…` 路径，服务器把内部字体链接改写为 CDN 的 `?v=<字体哈希>`；R2 不负责改写 CSS。Spine 加载器按清单哈希请求并解析 atlas，为其实际引用的每张纹理补上独立哈希，再把解析后的 atlas 交给第三方加载器，避免默认派生地址时丢掉查询参数。2D、3D 地图等资源派生出的无版本 CDN 地址也会补上对应文件的哈希。客户端生成这些动态请求前等待哈希清单（最多 3 秒）；清单失败或超时时仍保留无版本回退，缓存时长由源站和缓存规则决定，迟到的清单仍可用于后续请求。
 
 - bucket：`weishu`；自定义域名：`https://assets.misyra.com`（zone `misyra.com`）。
 - bucket 只维护普通路径 key，仓库以 `.assets-manifest.json` 发布（首个清单 tag 见该文件；v0.1.4 的新语音、新美术已随迁移上传，线上未切换、无感知）。
@@ -68,7 +70,7 @@ git pull
 重启服务器
 ```
 
-**建议的一次性收尾**：Dashboard → misyra.com → Caching → Tiered Cache → 选 Smart Tiered Cache。多个边缘 PoP 未命中时先回源上层区域缓存而不是各自回源 R2，把 Class B 计费请求再压一个量级（免费额度 1000 万次/月，按当前流量命中率 92% 估算约 $3.6/月，开启后趋近 $0）。费用本身只有穿透到 R2 的读取（Class B）计费，边缘缓存命中不计费，流量免费；配合高命中率月请求量通常在免费额度内。
+**可选的回源优化**：[Smart Tiered Cache](https://developers.cloudflare.com/smart-shield/configuration/smart-tiered-cache/) 让多个边缘节点未命中时先查询上层缓存，减少各自直接读取 R2。实际节省取决于流量分布与缓存命中情况，应根据 R2 的 Class B 用量验证；不能仅凭 TTL 或单个 URL 的 HIT 推算月费用。
 
 ## 4. 浏览器预载
 
@@ -76,7 +78,9 @@ git pull
 
 支持 ZIP 导入导出：可导出已经缓存的资源，或导入其他站点、旧版本导出的包。导入先完整校验 ZIP 与文件摘要，再按当前清单的路径、内容 hash 和已知大小复用有效文件，开启预载后只补齐缺失资源。损坏包不会覆盖现有素材；取消导入保留已经验证并保存的进度。资源包与解压总大小最多 2 GiB，单文件最多 24 MiB。zip.js 通过 `npm ci`／`npm install` 安装并由 vendor 脚本复制到 `public/vendor/zip.module.js`，随游戏服务器提供，无需上传 R2。
 
-清单由 `/data/resource-manifest.json` 动态生成，沿用游戏的 CDN 配置和资源版本。Service Worker 只读取素材缓存；游戏仍需要服务器连接。内容未改变的二进制素材会跨版本路径复用，CSS/JSON 因可能被服务器重写而重新校验版本。单文件限制 24 MiB，已知超大文件跳过；空间不足会停止，并保留已有进度。另一标签页预载期间不能清理共享缓存，请先暂停该标签页。
+迁移多份旧缓存时，遇到过期副本仍会继续寻找其他可校验的有效副本，全部不匹配才下载。音频解码缓存保留内存上限；加载中的条目被淘汰后，其迟到结果不会干扰剩余缓存的大小统计。网络错误、服务端错误或限流造成的音频失败，至少等待 5 秒后在下一次播放时才重试；确定缺失的文件和无法解码的音频不会反复请求。
+
+清单由 `/data/resource-manifest.json` 动态生成，沿用游戏的 CDN 配置和资源版本。Service Worker 只读取素材缓存；游戏仍需要服务器连接。内容未改变的二进制素材会跨版本路径复用，CSS/JSON 因可能被服务器重写而重新校验版本。意外关闭页面后，已经保存但尚未写入索引的文件会先校验内容指纹，匹配就直接恢复，无需重新下载；过期副本会先清除，避免 Service Worker 返回旧内容而触发重试。单文件限制 24 MiB，已知超大文件跳过；空间不足会停止，并保留已有进度。另一标签页预载期间不能清理共享缓存，请先暂停该标签页。
 
 反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；清单和 Worker 脚本应遵循源站的 `no-cache`，不要套用素材一年缓存规则。
 

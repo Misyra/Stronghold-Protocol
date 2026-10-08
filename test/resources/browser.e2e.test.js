@@ -130,7 +130,10 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.equal(await page.evaluate(() => window.__res.resourceState().phase), 'off');
 
     await page.evaluate(() => window.__preload(true));
-    await page.waitForFunction('window.__res.resourceState().complete === true', { timeout: 30000 });
+    await page.waitForFunction(() => {
+      const state = window.__res.resourceState();
+      return state.complete && state.phase === 'ready';
+    }, { timeout: 30000 });
     const st = await page.evaluate(() => window.__res.resourceState());
     assert.equal(st.phase, 'ready');
     assert.deepEqual([st.done, st.total, st.bytes], [3, 3, 33]);

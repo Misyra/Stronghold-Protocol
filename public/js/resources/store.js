@@ -107,7 +107,7 @@ export class ResourceStore {
 
   /**
    * The hashes of what this cache holds: `<absolute url>` → hash. A missing or unreadable index means "nothing is
-   * verified", i.e. every entry is fetched again — what the first run of this version and a cleared cache need.
+   * verified": existing bodies must be checked against their content hash before they can be reused.
    * @param {any} cache
    */
   async #readIndex(cache) {
@@ -198,7 +198,7 @@ export class ResourceStore {
   }
 
   /**
-   * Rescue a file from a cache of the previous layout instead of downloading it again: hash the stored bytes and, when
+   * Recover an unindexed current entry or a file from the previous layout instead of downloading it again: hash the bytes and, when
    * they are exactly the revision this manifest wants, move the entry into the current cache. A mismatching entry is
    * dropped (the caller downloads the right bytes next) so a stale copy can never shadow the fresh one.
    * @returns {Promise<boolean>} true when the file needed no network at all
@@ -210,7 +210,16 @@ export class ResourceStore {
       const hit = await cache.match(alias.key);
       if (hit) { await cache.put(key, hit); return true; }
     }
-    if (!older.length || !file.hash || !CONTENT_HASH_RE.test(file.hash)) return false; // nothing to compare against
+    if (!file.hash || !CONTENT_HASH_RE.test(file.hash)) return false; // nothing to compare against
+    // A tab can close after cache.put but before the batched index flush. Recover those
+    // already-downloaded bytes instead of asking the network for the same file again.
+    const current = await cache.match(key);
+    if (current) {
+      if ((await digestOf(current)) === file.hash) return true;
+      // Otherwise the active worker could serve this stale copy to our next fetch,
+      // requiring another request with the integrity-retry query.
+      await cache.delete(key);
+    }
     for (const name of older) {
       const other = await this.caches.open(name);
       const hit = await other.match(key);
@@ -221,7 +230,6 @@ export class ResourceStore {
         return true;
       }
       await other.delete(key);
-      return false;
     }
     return false;
   }
@@ -360,7 +368,7 @@ export class ResourceStore {
             await cache.put(key, this.storable(res));
             downloaded++;
           }
-          // The file is current only once the index says so: a run stopped before its next flush re-fetches this one.
+          // A missing index record is recovered by verifying the saved bytes on the next run.
           if (file.hash) {
             index.files[key] = file.hash;
             if (++pendingFlush >= INDEX_FLUSH_EVERY) { pendingFlush = 0; await this.#writeIndex(cache, index.files, this.manifest.version); }
@@ -397,7 +405,7 @@ export class ResourceStore {
         checkAbort(signal);
       } finally {
         // Flush on every exit — an abort or a quota failure included: the files stored so far must count as current
-        // next time. A failing write only costs re-downloading them.
+        // next time. A failing write requires verifying their saved bytes on the next run.
         try { await this.#writeIndex(cache, index.files, this.manifest.version); } catch { /* out of storage: the run is already failing */ }
       }
     } else {

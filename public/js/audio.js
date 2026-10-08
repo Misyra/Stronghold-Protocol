@@ -42,6 +42,7 @@
 //   operator-knocked-down sound; summons use the token sounds; a summon used up by its own effect (fx `consumed`,
 //   香槟炸弹) plays its impact sound instead of a death sound.
 // - Buffers are fetched once and cached (LRU); failed fetch/decode ⇒ silent (logged once as a warning).
+//   Transient fetch failures can retry on the next use after 5 s; missing files and invalid audio stay suppressed.
 //
 // `bgmKeyFor(route, pub)` picks the track for the current screen/phase (main.js calls `audio.install()`,
 // which follows the store).
@@ -65,6 +66,8 @@ const LEAK_SFX_GAP_MS = 1500;
 const BUFFER_CACHE = 180;
 /** Decoded-PCM budget of the buffer cache beside its entry count: a voice line decodes to 0.4–1.3 MB (see _buffer). */
 const BUFFER_BYTES = 64 * 1024 * 1024;
+/** Retry transient network failures on a later use, never on every repeated sound event. */
+const BUFFER_RETRY_MS = 5000;
 const XFADE_S = 1;
 const FADE_S = 0.8;
 /** Voice: shortest gap between two lines, and the crossfade of a higher-priority line taking the channel (official 0.1 s). */
@@ -438,12 +441,13 @@ function isAudioResponse(res) {
 }
 export class AudioManager {
   /**
-   * @param {{ getManifest?: () => any, win?: any }} [opts]
+   * @param {{ getManifest?: () => any, win?: any, random?: () => number, now?: () => number }} [opts]
    */
   constructor(opts = {}) {
     this.getManifest = typeof opts.getManifest === 'function' ? opts.getManifest : () => null;
     this.random = typeof opts.random === 'function' ? opts.random : Math.random;   // a unit sound's chance (mix.p)
     this.win = opts.win ?? (typeof window !== 'undefined' ? window : null);
+    this.now = typeof opts.now === 'function' ? opts.now : () => Date.now();
     this.ctx = null;
     this.master = null;
     this.bgmGain = null;
@@ -452,6 +456,7 @@ export class AudioManager {
     this.volumes = { bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false };
     this.buffers = new Map(); // url → Promise<AudioBuffer|null> (insertion order = LRU)
     this.bufBytes = new Map(); // url → decoded PCM bytes (the byte budget of the LRU, see _buffer)
+    this.bufRetryAfter = new Map(); // failed URL → next allowed retry (Infinity for definite missing/bad audio)
     this.warned = new Set();
     this.limiter = new SfxLimiter();
     this.voiceGate = new VoiceGate();
@@ -613,11 +618,17 @@ export class AudioManager {
   _buffer(url) {
     if (!this.ctx || typeof url !== 'string' || !url) return Promise.resolve(null);
     const hit = this.buffers.get(url);
-    if (hit) {
+    if (hit && this.now() < (this.bufRetryAfter.get(url) ?? Infinity)) {
       this.buffers.delete(url);
       this.buffers.set(url, hit);
       return hit;
     }
+    if (hit) {
+      this.buffers.delete(url);
+      this.bufBytes.delete(url);
+      this.bufRetryAfter.delete(url);
+    }
+    let retryable = false;
     const p = (async () => {
       try {
         // Extension-less URL first so download managers leave the BGM alone; a host without /media/ still works.
@@ -628,7 +639,7 @@ export class AudioManager {
           try { await res.body?.cancel?.(); } catch { /* the fallback request matters more than draining this one */ }
           res = await fetch(url);
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
         const ab = await res.arrayBuffer();
         return await new Promise((resolve) => {
           try {
@@ -637,13 +648,22 @@ export class AudioManager {
           } catch { resolve(null); }
         });
       } catch (err) {
+        const status = Number(err?.status);
+        retryable = !(status >= 400 && status < 500 && status !== 408 && status !== 429);
         this._warn(url, err);
         return null;
       }
     })();
     this.buffers.set(url, p);
     p.then((buf) => {
-      if (!buf) return;
+      // A pending entry may have been evicted/replaced. Its late completion cannot
+      // create orphan byte accounting or overwrite the replacement's failure state.
+      if (this.buffers.get(url) !== p) return;
+      if (!buf) {
+        this.bufRetryAfter.set(url, retryable ? this.now() + BUFFER_RETRY_MS : Infinity);
+        return;
+      }
+      this.bufRetryAfter.delete(url);
       try {
         this.bufBytes.set(url, (buf.length || 0) * (buf.numberOfChannels || 1) * 4);
         this._trimBuffers();
@@ -668,6 +688,7 @@ export class AudioManager {
       bytes -= this.bufBytes.get(url) || 0;
       this.buffers.delete(url);
       this.bufBytes.delete(url);
+      this.bufRetryAfter.delete(url);
     }
   }
 

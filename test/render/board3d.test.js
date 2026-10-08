@@ -303,6 +303,26 @@ describe('BoardScene (three.js scene graph, stub renderer)', () => {
 });
 
 describe('asset pack loader (fake store)', () => {
+  test('a tiles URL derived from an absolute CDN image gets its own hash before fetch', async (t) => {
+    resetBoardPack();
+    const previous = { cdn: globalThis.__spAssetCdn, ready: globalThis.__spManifestReady, fetch: globalThis.fetch };
+    t.after(() => { globalThis.__spAssetCdn = previous.cdn; globalThis.__spManifestReady = previous.ready; globalThis.fetch = previous.fetch; resetBoardPack(); });
+    const base = 'https://cdn.example';
+    const dir = '/assets/local/map/autochess/';
+    globalThis.__spAssetCdn = { base, manifest: '/assets-manifest.json?v=1234567890abcdef' };
+    globalThis.__spManifestReady = Promise.resolve({ hashes: { [dir + 'tiles.json']: 'bbbbbbbbbbbbbbbb' } });
+    const requested = [];
+    globalThis.fetch = async (url) => { requested.push(url); return { ok: true, json: async () => ({ version: 1 }) }; };
+    const store = {
+      local: async () => ({}),
+      localUrl: (g, n) => g === 'map/autochess' && n === 'TX_autochessi_D' ? `${base}${dir}TX_autochessi_D.png?v=aaaaaaaaaaaaaaaa` : null,
+      image: async () => ({ width: 8, height: 8 }),
+    };
+    const pack = await loadBoardPack(store);
+    assert.equal(pack.tiles.version, 1);
+    assert.deepEqual(requested, [`${base}${dir}tiles.json?v=bbbbbbbbbbbbbbbb`]);
+  });
+
   test('loads images through the store and meshes through fetch; null without the diffuse atlas', async () => {
     resetBoardPack();
     const manifest = { groups: {} };

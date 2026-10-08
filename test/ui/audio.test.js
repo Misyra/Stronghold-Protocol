@@ -455,6 +455,66 @@ describe('AudioManager', () => {
       globalThis.fetch = origFetch;
     }
   });
+  test('transient audio failures share one request and retry on later use after a cooldown', async (t) => {
+    const previous = globalThis.fetch;
+    t.after(() => { globalThis.fetch = previous; });
+    let now = 0, calls = 0;
+    const url = 'https://cdn.example/assets/audio/recover.mp3?v=1234567890abcdef';
+    globalThis.fetch = async () => {
+      calls++;
+      return calls === 1 ? { ok: false, status: 503 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+    };
+    const manager = new AudioManager({ win: null, now: () => now });
+    const decoded = { duration: 1, length: 100, numberOfChannels: 1 };
+    manager.ctx = { decodeAudioData: (_bytes, success) => { success(decoded); } };
+    const first = manager._buffer(url);
+    assert.equal(manager._buffer(url), first, 'concurrent sound events share a pending fetch');
+    assert.equal(await first, null);
+    now = 4999;
+    assert.equal(await manager._buffer(url), null);
+    assert.equal(calls, 1, 'a failed resource is not requested on every sound event');
+    now = 5000;
+    assert.equal(await manager._buffer(url), decoded, 'the next use recovers once the network is available');
+    assert.equal(await manager._buffer(url), decoded);
+    assert.equal(calls, 2, 'successful bytes remain cached');
+  });
+
+  test('definite missing and undecodable audio stay suppressed instead of being polled', async (t) => {
+    const previous = globalThis.fetch;
+    t.after(() => { globalThis.fetch = previous; });
+    for (const missing of [true, false]) {
+      let now = 0, calls = 0;
+      globalThis.fetch = async () => {
+        calls++;
+        return missing ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+      };
+      const manager = new AudioManager({ win: null, now: () => now });
+      manager.ctx = { decodeAudioData: (_bytes, _success, failure) => { failure(); } };
+      const url = `https://cdn.example/assets/audio/${missing ? 'missing' : 'invalid'}.mp3`;
+      assert.equal(await manager._buffer(url), null);
+      now = 60000;
+      assert.equal(await manager._buffer(url), null);
+      assert.equal(calls, 1, 'a definite missing file or bad format does not cause background retries');
+    }
+  });
+
+  test('an evicted pending audio buffer cannot leave orphan decoded-byte accounting', async (t) => {
+    const previous = globalThis.fetch;
+    t.after(() => { globalThis.fetch = previous; });
+    globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const manager = new AudioManager({ win: null });
+    let finish;
+    manager.ctx = { decodeAudioData: (_bytes, success) => { finish = success; } };
+    const url = 'https://cdn.example/assets/audio/pending.mp3';
+    const pending = manager._buffer(url);
+    await new Promise(resolve => setImmediate(resolve));
+    manager.buffers.delete(url); // eviction while decoding is in flight
+    finish({ duration: 1, length: 1024, numberOfChannels: 2 });
+    await pending;
+    assert.equal(manager.bufBytes.has(url), false, 'discarded entries do not consume the remaining cache budget');
+    assert.equal(manager.bufRetryAfter.has(url), false);
+  });
+
   test('fetch failures are swallowed', async () => {
     const fw = fakeWindow();
     const origFetch = globalThis.fetch;

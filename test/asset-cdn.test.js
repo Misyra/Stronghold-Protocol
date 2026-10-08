@@ -7,9 +7,9 @@ import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from '../server/assetVersion.js';
 import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
-import { resourceUrl, resourceCache } from '../public/js/resourceUrl.js';
+import { resourceUrl, resourceCache, resourceReady } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
-import { validSpine } from '../public/js/assets.js';
+import { validSpine, loadSpineData, createAssets, unloadSpineData } from '../public/js/assets.js';
 
 test('CDN settings validate public bases and rewrite art without leaking the game version', () => {
   assert.deepEqual(assetCdnSettings(' https://game.misyra.com/ ', ''), { base: 'https://game.misyra.com', version: '' });
@@ -33,13 +33,92 @@ test('CDN settings validate public bases and rewrite art without leaking the gam
 });
 
 test('a per-file manifest turns art into immutable ?v= URLs and falls back to bare for unlisted files', () => {
-  const cdn = { base: 'https://cdn.example/static', version: '', manifest: '/assets-manifest.json?v=1234567890abcdef', hashes: { '/assets/x.skel': 'aaaaaaaaaaaaaaaa' } };
+  const cdn = { base: 'https://cdn.example/static', version: '', manifest: '/assets-manifest.json?v=1234567890abcdef', hashes: { '/assets/x.skel': 'aaaaaaaaaaaaaaaa', '/assets/[opt]x.png': 'bbbbbbbbbbbbbbbb' } };
   assert.equal(assetCdnUrl('/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa');
   assert.equal(assetCdnUrl('/assets/x.skel?v=2#f', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the per-file hash replaces any caller query');
   assert.equal(assetCdnUrl('/assets/other.png', cdn), 'https://cdn.example/static/assets/other.png', 'an unlisted file falls back to bare');
   assert.equal(assetCdnUrl('/_v/deadbeefdeadbeef/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the game-host namespace is stripped first');
   assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, hashes: null }), 'https://cdn.example/static/assets/x.skel', 'before the manifest loads, bare URLs answer');
   assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, manifest: '', version: '1234567890abcdef', hashes: null }), 'https://cdn.example/static/_v/1234567890abcdef/assets/x.skel', 'no manifest: the legacy release prefix');
+  assert.equal(assetCdnUrl('https://cdn.example/static/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'derived absolute CDN URLs gain their own hash');
+  assert.equal(assetCdnUrl('https://cdn.example/static/assets/%5Bopt%5Dx.png', cdn), 'https://cdn.example/static/assets/%5Bopt%5Dx.png?v=bbbbbbbbbbbbbbbb', 'encoded filenames match the manifest key');
+  const retry = 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa&sp=retry';
+  assert.equal(assetCdnUrl(retry, cdn), retry, 'keep published hashes and integrity retry parameters');
+  assert.equal(assetCdnUrl('/fonts/fonts.css', cdn), '/fonts/fonts.css', 'nested font URLs require game-host CSS transformation');
+});
+
+test('image requests wait for the hash manifest, and imageNow uses the same versioned key', async (t) => {
+  const previous = { cdn: globalThis.__spAssetCdn, ready: globalThis.__spManifestReady };
+  t.after(() => { globalThis.__spAssetCdn = previous.cdn; globalThis.__spManifestReady = previous.ready; });
+  globalThis.__spAssetCdn = { base: 'https://cdn.example', manifest: '/assets-manifest.json?v=1234567890abcdef' };
+  let publish;
+  globalThis.__spManifestReady = new Promise((resolve) => { publish = resolve; });
+  const calls = [];
+  const store = createAssets({ loadImage: async (src) => { calls.push(src); return { src }; } });
+  const pending = store.image('https://cdn.example/assets/x.png');
+  await Promise.resolve();
+  assert.deepEqual(calls, [], 'no bare request while the manifest is pending');
+  publish({ hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa' } });
+  const image = await pending;
+  assert.deepEqual(calls, ['https://cdn.example/assets/x.png?v=aaaaaaaaaaaaaaaa']);
+  assert.equal(store.imageNow('/assets/x.png'), image);
+  assert.equal(await store.image('/assets/x.png'), image);
+});
+
+test('a failed hash manifest keeps the available bare image fallback', async (t) => {
+  const previous = { cdn: globalThis.__spAssetCdn, ready: globalThis.__spManifestReady };
+  t.after(() => { globalThis.__spAssetCdn = previous.cdn; globalThis.__spManifestReady = previous.ready; });
+  globalThis.__spAssetCdn = { base: 'https://cdn.example', manifest: '/assets-manifest.json?v=1234567890abcdef' };
+  globalThis.__spManifestReady = Promise.reject(new Error('offline'));
+  const store = createAssets({ loadImage: async (src) => ({ src }) });
+  assert.equal((await store.image('/assets/x.png')).src, 'https://cdn.example/assets/x.png');
+});
+
+test('a stalled manifest cannot block loading forever, and late hashes still take effect', async (t) => {
+  const previous = { cdn: globalThis.__spAssetCdn, ready: globalThis.__spManifestReady };
+  t.after(() => { globalThis.__spAssetCdn = previous.cdn; globalThis.__spManifestReady = previous.ready; });
+  globalThis.__spAssetCdn = { base: 'https://cdn.example', manifest: '/assets-manifest.json?v=1234567890abcdef' };
+  let publish;
+  globalThis.__spManifestReady = new Promise((resolve) => { publish = resolve; });
+  await resourceReady(5);
+  assert.equal(resourceUrl('/assets/x.png'), 'https://cdn.example/assets/x.png');
+  publish({ hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa' } });
+  await Promise.resolve();
+  assert.equal(resourceUrl('/assets/x.png'), 'https://cdn.example/assets/x.png?v=aaaaaaaaaaaaaaaa');
+});
+
+test('Spine parses independently hashed atlas/pages and unloads those same keys', async (t) => {
+  const previous = { cdn: globalThis.__spAssetCdn, pixi: globalThis.PIXI, fetch: globalThis.fetch };
+  t.after(() => { globalThis.__spAssetCdn = previous.cdn; globalThis.PIXI = previous.pixi; globalThis.fetch = previous.fetch; });
+  globalThis.__spAssetCdn = {
+    base: 'https://cdn.example', manifest: '/assets-manifest.json?v=1234567890abcdef',
+    hashes: { '/assets/x.skel': 'aaaaaaaaaaaaaaaa', '/assets/x.atlas': 'bbbbbbbbbbbbbbbb', '/assets/x.png': 'cccccccccccccccc', '/assets/x2.png': 'dddddddddddddddd' },
+  };
+  const calls = [], unloaded = [];
+  const texture = { baseTexture: {} };
+  const parsedAtlas = { pages: [] };
+  globalThis.fetch = async (url) => { calls.push(url); return { ok: true, text: async () => 'atlas text' }; };
+  globalThis.PIXI = { spine: { TextureAtlas: class {
+    constructor(text, loadPage, done) {
+      assert.equal(text, 'atlas text');
+      let remaining = 2;
+      for (const name of ['x.png', 'x2.png']) loadPage(name, (base) => {
+        assert.equal(base, texture.baseTexture);
+        if (!--remaining) done(parsedAtlas);
+      });
+    }
+  } }, Assets: {
+    load: async (source) => { calls.push(source); return { animations: [] }; },
+    unload: async (url) => { unloaded.push(url); },
+    loader: { load: async (url) => { calls.push(url); return texture; }, unload: async (url) => { unloaded.push(url); } },
+  } };
+  const entry = { skel: 'https://cdn.example/assets/x.skel?v=aaaaaaaaaaaaaaaa', atlas: 'https://cdn.example/assets/x.atlas?v=bbbbbbbbbbbbbbbb', textures: ['https://cdn.example/assets/x.png', '/assets/x2.png'] };
+  await loadSpineData(entry);
+  assert.equal(calls[0], entry.atlas);
+  assert.deepEqual(calls.slice(1, 3), ['https://cdn.example/assets/x.png?v=cccccccccccccccc', 'https://cdn.example/assets/x2.png?v=dddddddddddddddd']);
+  assert.deepEqual(calls[3], { src: entry.skel, data: { spineAtlas: parsedAtlas } });
+  await unloadSpineData(entry);
+  assert.deepEqual(new Set(unloaded), new Set([entry.skel, ...calls.slice(1, 3)]));
 });
 
 test('browser helpers honor CDN configuration and preserve remote audio URLs', (t) => {
@@ -228,10 +307,11 @@ test('a per-file manifest ships ?v= art URLs, its own endpoint and wins over the
     const target = path.join(root, rel);
     fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
   };
-  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head></html>');
+  write('public/index.html', '<html><head><link href="/fonts/a.woff2"><link rel="stylesheet" href="/fonts/fonts.css"></head></html>');
   write('public/fonts/a.woff2', 'font');
   write('public/assets/x.png', 'image');
   write('data/assets.json', JSON.stringify({ pic: '/assets/x.png' }));
+  write('public/fonts/fonts.css', "@font-face{font-family:x;src:url('/fonts/a.woff2')}");
   const manifestFile = path.join(root, '.assets-manifest.json');
   const manifest = { tag: '0123456789abcdef', hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa', '/fonts/a.woff2': 'bbbbbbbbbbbbbbbb' } };
   fs.writeFileSync(manifestFile, JSON.stringify(manifest));
@@ -249,6 +329,12 @@ test('a per-file manifest ships ?v= art URLs, its own endpoint and wins over the
   assert.ok(html.includes('globalThis.__spManifestReady=fetch("/assets-manifest.json?v=0123456789abcdef")'), 'the manifest fetch starts in <head> (same-origin, so the URL is relative)');
   assert.ok(!html.includes('"hashes"'), 'the hash map is fetched, never inlined into the page');
   assert.ok(html.includes('href="https://cdn.example/fonts/a.woff2?v=bbbbbbbbbbbbbbbb"'), 'manifest-listed art gets a per-file hash');
+  const stylesheet = `/_v/${health.artVersion}/fonts/fonts.css`;
+  assert.ok(html.includes(`href="${stylesheet}"`), 'the game serves font CSS instead of verbatim R2 CSS');
+  const cssResponse = await fetch(game.url + stylesheet);
+  assert.equal(cssResponse.status, 200);
+  assert.match(cssResponse.headers.get('cache-control'), /immutable/);
+  assert.ok((await cssResponse.text()).includes("url('https://cdn.example/fonts/a.woff2?v=bbbbbbbbbbbbbbbb')"));
   const data = await (await fetch(game.url + `/_v/${health.build}/data/assets.json`)).json();
   assert.equal(data.pic, 'https://cdn.example/assets/x.png?v=aaaaaaaaaaaaaaaa');
   const served = await fetch(game.url + '/assets-manifest.json?v=0123456789abcdef');

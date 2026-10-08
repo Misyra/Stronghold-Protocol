@@ -42,7 +42,7 @@ export { snapHud, bossFrac, bossPctText, hasFlag, UF, attackInterval, fmtNum, ra
 export { shortcutFor, closesOnFieldPress, shortcutBlocked, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, isBindableCode, hotkeyLabel, sanitizeHotkeys, rebindHotkey, isDefaultHotkeys, hotkeyOf, actionForKey, captureHotkey, facingSwallows } from './gameLogic/shortcuts.js';
 export { DEFAULT_SETTINGS, sanitizeSettings } from './gameLogic/settings.js';
 export { normalizeResult } from './gameLogic/result.js';
-export { chessLoadout, unitLoadout } from './gameLogic/loadout.js';
+export { chessLoadout, unitLoadout, unitCultivation } from './gameLogic/loadout.js';
 export { standInIds, fieldsStandIn, standInOf, ownStandIn, cardStandIn, memberStandIn, standInGetter, standInLoadout, deployedRecord, deployedModuleId, standInLabel, standInForText, standInTip } from './gameLogic/standIn.js';
-export { diyPicks, ownDiyPick, diyRecordFor, ownDiyRecord, cardDiy, diyGetter, pickGetter, isDiyRecord, diyBannedPieces } from './gameLogic/diy.js';
+export { diyPicks, ownDiyPick, diyRecordFor, ownDiyRecord, cardDiy, unitPick, diyGetter, pickGetter, isDiyRecord, diyBannedPieces } from './gameLogic/diy.js';
 export { panelSide, panelSlots, PANEL_RIGHT_GAP, PANEL_RIGHT_BOTTOM, PANEL_RIGHT_BOTTOM_SHOP, BPOP, bondPopupPlace } from './gameLogic/panel.js';

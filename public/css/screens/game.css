@@ -501,6 +501,10 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- settings modal ------------------------------------------------------------------------------------------------ */
+/* the 设置 trigger of the lobby and the room (ui/settings.js SettingsButton, GitHub #238): the 玩法说明 button's twin; its gear sits
+   inside the label, so the label lays glyph and text out like the button itself */
+.settings-btn .btn__label { display: inline-flex; align-items: center; gap: .1rem; }
+.settings-btn .btn__icon { color: var(--mint-500); }
 .set-list { display: flex; flex-direction: column; gap: .16rem; padding-top: .06rem; }
 .set-row { display: grid; grid-template-columns: 3.3rem 1fr auto; align-items: center; gap: .18rem; min-height: .44rem; }
 .set-row__label { display: flex; align-items: center; gap: .1rem; font-size: .18rem; color: var(--text-hi); white-space: nowrap; }

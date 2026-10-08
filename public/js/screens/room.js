@@ -19,6 +19,7 @@ import {
 import { toast, toastError } from '../ui/toasts.js';
 import { copyText } from '../ui/clipboard.js';
 import { GuideButton } from '../ui/guide.js';
+import { SettingsButton } from '../ui/settings.js';
 import { LoadoutButton } from './loadout.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
@@ -277,6 +278,7 @@ export function RoomScreen() {
           <${PingPill} ms=${conn.ping} online=${online} />
           <${MicroLabel}>${t('当前延迟')}<//>
         </div>
+        <${SettingsButton} class="room-settings" variant="secondary" label=${t('设置')} />
         <${GuideButton} class="room-guide" variant="secondary" label=${t('玩法说明')} />
       </div>
       <div class="topbar__center">

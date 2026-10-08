@@ -7,6 +7,7 @@ import { MOVE_SCALE, COLS, STEALTH_RESTORE } from '../../constants.js';
 import {
   HUSK_REBIRTH, BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, DUCK_STEALTH_RESTORE, nthOf, stOf, safe, num, T, elem, hurt,
   areaAllies, areaAlliesInTiles, zone, spawnChildren, stepToward, setHits, hitCount, setForm, absorbArts, auraBuff,
+  unbalancedNow,
 } from './helpers.js';
 import { hypot } from '../../detmath.js';
 
@@ -356,6 +357,7 @@ function reborn({ dur = 0, hpRatio = 1, invincible = 0, onKo = null, during = nu
       a.state = 'reborn';
       a.t0 = b.time;
       a.noAtk = e.profile.noAttack;
+      e.unbalanceUntil = -Infinity;   // a 重生 is a forced state change: it ends a 失衡 (PRTS 失衡位移机制 「例如复活」)
       rebirthCleanse(b, e);
       e.hp = Math.min(1, e.s.maxHp);
       if (onKo) safe(b, e, () => onKo(b, e, a));
@@ -477,6 +479,7 @@ function husk({ hits, delay, stealthy = true, unblock = false, onHusk = null, ke
       if (a.state === 'husk' || !(hits > 0) || !(delay > 0)) return false;   // the husk's knock-out is the real death
       a.state = 'husk';
       a.rebornUntil = b.time + HUSK_REBIRTH;
+      e.unbalanceUntil = -Infinity;   // a 重生 is a forced state change: it ends a 失衡 (PRTS 失衡位移机制 「例如复活」)
       a.noAtk = e.profile.noAttack;
       a.max = a.max ?? e.base.maxHp;
       rebirthCleanse(b, e);
@@ -601,6 +604,7 @@ const skill = (s, fire, { cond = null, sil = false, cd = null, icd = null, id = 
 
 /** Blink past the blocker along the path (弑君者 / 卢西恩). Returns the start position. */
 export function blinkForward(b, e, dist) {
+  if (unbalancedNow(b, e)) return null;                              // 失衡: 「无法…使用技能」 — no blink meanwhile
   const from = { x: e.x, y: e.y };
   const R = e.route;
   let left = dist;

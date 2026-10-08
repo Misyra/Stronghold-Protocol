@@ -611,6 +611,24 @@ describe('a push / pull slide (推拉: the official impulse under friction)', ()
     assert.equal(ice.x, 7.7, 'the destination is authoritative whatever the floor');
   });
 
+  test('the slide takes the sim\'s 失衡 time: the fx `dur` (game s) at the playback rate — 0.8 s at 2× is 0.4 real s', async () => {
+    const at2 = async (id) => {
+      const ctx = fakeViewCtx(fake.P, { assets: store({ spine: true }), cam, animRate: () => 2 });
+      const v = new UnitView(ctx, { id, side: 'enemy', kind: 'enemy', defId: 'enemy_1007_slime', x: 5, y: 12, maxHp: 100 }, {});
+      await tick(); await tick();
+      return v;
+    };
+    const push = await at2(11), pull = await at2(12), old = await at2(13);
+    push.slideTo(6.7, 12, { dur: 0.8 });                    // a 受力等级 0 push (1.7 tiles, PRTS 位移时间 0.8 s)
+    assert.ok(Math.abs(push.slide.dur - 0.4) < 1e-9, `${push.slide.dur}`);
+    pull.slideTo(3, 12, { dur: 1 });                        // a pull's force window
+    assert.ok(Math.abs(pull.slide.dur - 0.5) < 1e-9, `${pull.slide.dur}`);
+    old.slideTo(6.7, 12);                                   // an fx without `dur` (an older recording): the fallback
+    assert.ok(Math.abs(old.slide.dur - Math.min(0.45, Math.max(0.12, 0.14 * Math.sqrt(1.7)))) < 1e-9, `${old.slide.dur}`);
+    step(push, push.slide.dur);
+    assert.equal(push.x, 6.7, 'lands on the destination');
+  });
+
   test('the duration follows √distance, not distance', async () => {
     const near = await view(4), far = await view(5);
     near.slideTo(6.2, 12); far.slideTo(10.5, 12);          // 1.2 vs 5.5 tiles

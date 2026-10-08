@@ -110,6 +110,16 @@ export function dieClipDur(entry) {
   const d = Object.hasOwn(durs, name) ? Number(durs[name]) : NaN;
   return Number.isFinite(d) && d > 0 ? d : 0;
 }
+/**
+ * render/app.js syncBattle's step for one view and its interpolated sample `s` at render time `t`: a living view (or a
+ * device) takes the whole sample; a dying one only the position — its DIE window in the snapshots; one shown alive
+ * again (redeployed without an event) stands up first.
+ */
+export function syncView(v, s, t) {
+  if (v.alive || v.info?.kind === 'device') v.sync(s, t);
+  else if (v.dying > 0) { if (typeof v.followSample === 'function') v.followSample(s, t); else { v.x = s.x; v.y = s.y; } }
+  else if (s.anim !== ANIM.DIE && s.hp > 0) { v.revive?.(); v.sync(s, t); }
+}
 /** World step (x = col, y = row) of a direction. */
 export const DIR_STEP = Object.freeze({ UP: [0, 1], RIGHT: [1, 0], DOWN: [0, -1], LEFT: [-1, 0] });
 const nowMs = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
@@ -763,11 +773,7 @@ export class UnitView {
     // the element gauge shown (b.snap `elem`): element, fill 0..1, cooldown end (game s) and length
     this.el = typeof s.el === 'string' ? s.el : null;
     this.elFill = this.el ? s.elFill || 0 : 0; this.elUntil = this.el ? s.elUntil || 0 : 0; this.elDur = this.el ? s.elDur || 0 : 0;
-    // a push / pull slide owns the drawn position (slideTo): the sample only anchors where it eases to, from the
-    // snapshot that carries the destination on (`at`) — before that the sample is still sliding or snapping there
-    const sl = this.slide;
-    if (!sl) { this.x = s.x; this.y = s.y; }
-    else if (!(t < sl.at)) { sl.lx = s.x; sl.ly = s.y; sl.live = true; }
+    this.followSample(s, t);
     this.flying = !!(s.flags & UF.FLYING) || this.info.motion === 'FLY';
     // enemies keep to the road plane: ground enemies only ever walk low tiles (a rounding step onto a block edge must not
     // pop them up), and a flyer hovers FLY_HOVER above the road whatever tile it crosses — the official lift is one
@@ -796,6 +802,18 @@ export class UnitView {
   }
 
   setWorld(x, y, z = 0) { this.x = x; this.y = y; this.z = z; }
+
+  /**
+   * The sampled position: the view's — unless a push / pull slide owns it (slideTo), which only anchors where it eases
+   * to on it, from the snapshot that carries the destination on (`at`; before that the sample is still sliding or
+   * snapping there). sync() starts with it; a dying view gets nothing else (syncView: the DIE window of the snapshots),
+   * so a unit killed on the step of its push still lands where the sim put the body (Grok's review of fb7-render).
+   */
+  followSample(s, t) {
+    const sl = this.slide;
+    if (!sl) { this.x = s.x; this.y = s.y; }
+    else if (!(t < sl.at)) { sl.lx = s.x; sl.ly = s.y; sl.live = true; }
+  }
 
   /**
    * Slide to a displacement's destination (推拉, the `displace` fx at (x, y)) instead of appearing there (DISPLACE_SLIDE).
@@ -1051,8 +1069,9 @@ export class UnitView {
       if (this.down) this.slide = null;   // a knocked-down view lies on its tile (setDown)
       else if (!sl.live) {
         this.x = sl.sx; this.y = sl.sy;
-        // never shown (the unit left the snapshots, a stalled stream): the snapshot takes the view back
-        if ((sl.wait += dt) > 0.5) this.slide = null;
+        // the destination's snapshot never shown (the unit left the snapshots, a stalled stream): it slides to the
+        // destination the fx named
+        if ((sl.wait += dt) > 0.5) sl.live = true;
       } else {
         if (!sl.run) { sl.run = true; sl.ox = sl.sx - sl.lx; sl.oy = sl.sy - sl.ly; }
         const step = Math.min(dt, 0.1);                // a hidden tab's catch-up frame must not overshoot

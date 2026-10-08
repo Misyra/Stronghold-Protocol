@@ -595,49 +595,59 @@ describe('a push / pull slide (推拉: the official impulse under friction)', ()
     assert.ok(Math.abs(v.x - landed) < 0.05, `landed on the walking enemy (${landed.toFixed(3)} → ${v.x.toFixed(3)})`);
   });
 
-  test('a slide that is never shown (the unit left the snapshots) hands the view back', async () => {
+  test('a slide whose destination snapshot never shows (the unit left the snapshots) goes to the fx\'s destination', async () => {
     const v = await view(13);
     v.slideTo(7.7, 12, { at: 3 });
-    for (let i = 0; i < 40; i++) v.update(1 / 60, cam(), 0);
+    for (let i = 0; i < 24; i++) v.update(1 / 60, cam(), 0);
+    assert.equal(v.x, 5, 'held while the snapshot may still come');
+    for (let i = 0; i < 30; i++) v.update(1 / 60, cam(), 0);
     assert.equal(v.slide, null);
+    assert.equal(v.x, 7.7, 'then slid to where the push put it');
     v.sync({ x: 6.1, y: 12, hp: 100, maxHp: 100, sp: 0, spMax: 0, flags: 0, anim: 1 }, 3.4);
-    assert.equal(v.x, 6.1);
+    assert.equal(v.x, 6.1, 'snapshots drive it again');
   });
 });
 
-// the app.js frame order (render/app.js: processEvents takes the events ≤ renderT, then syncBattle's look-ahead starts a
-// slide for a `displace` fx still queued up to the next snapshot, then sample → sync, then update) run over a real
-// battle: a pushed enemy is drawn sliding, not snapped
+// the app.js frame order (render/app.js: processEvents takes the events ≤ renderT — a 'die' kills the view —, then
+// syncBattle's look-ahead starts a slide for a `displace` fx still queued up to the next snapshot, then each sampled unit
+// goes through syncView — a dying view takes only the position —, then update) run over a real battle: a pushed enemy is
+// drawn sliding, not snapped, and one killed by the push lies where the sim put it
 describe('a push through SnapshotBuffer and UnitView in the app.js frame order (PR #380)', () => {
-  async function pushed({ kill = false } = {}) {
+  /**
+   * A real battle: an enemy (`kind` 'route': on its route; 'summon': spawned mid-battle; 'flyer': a flying one) pushed
+   * 1.7 tiles at 3 s, killed `killDelay` ticks later when `kill`. Returns the drawn x of every frame from renderT 2.8 to
+   * 4.6, the sim's position right after the push and where the body lies (the sim's position at the kill).
+   */
+  async function pushed({ kill = false, killDelay = 0, kind = 'route' } = {}) {
     const { makeBattle, enemyRec } = await import('../helpers/battleHarness.js');
     const { SnapshotBuffer } = await import('../../public/js/render/interp.js');
     const { snapFrame } = await import('../../server/match/fields.js');
-    const h = makeBattle({ defs: { enemies: { enemy_walker: enemyRec({ key: 'enemy_walker', hp: 1e6, speed: 0.8 }) } },
-      enemies: [{ key: 'enemy_walker', time: 0, route: 0 }], content: 'none', autoFinish: false, timeLimit: 60 });
+    const { syncView } = await import('../../public/js/render/units.js');
+    const rec = enemyRec({ key: 'enemy_walker', hp: 1e6, speed: 0.8, ...(kind === 'flyer' ? { motion: 'FLY' } : {}) });
+    const h = makeBattle({ defs: { enemies: { enemy_walker: rec } }, enemies: kind === 'summon' ? [] : [{ key: 'enemy_walker', time: 0, route: 0 }],
+      content: 'none', autoFinish: false, timeLimit: 60 });
     const frames = [];
-    let e = null, info = null, moved = 0, dest = null;
-    for (let i = 0; i < 30 * 6; i++) {
-      h.step();
+    let e = null, info = null, moved = 0, dest = null, since = -1, body = null;
+    for (let i = 0; i < 30 * 7; i++) {
+      h.b.step();   // the battle's own step: h.step() would drain the events into h.events
+      if (kind === 'summon' && !e && h.b.time >= 1) e = h.b.spawnEnemy('enemy_walker', { pos: [10, 8] });   // (h.spawn drains too)
       e = e || h.enemy('enemy_walker');
-      if (!moved && h.b.time >= 3) {
-        moved = h.b.displace(e, { x: 1, y: 0 }, 1.7);
-        dest = e.x;
-        if (kill) h.b.kill(e, null);
-      }
+      if (!moved && e && h.b.time >= 3) { moved = h.b.displace(e, { x: 1, y: 0 }, 1.7); dest = e.x; since = 0; }
+      else if (since >= 0) since++;
+      if (kill && since === killDelay) { h.b.kill(e, null); body = e.x; }
       if (i % 3 === 2) {
         const ev = h.b.drainEvents();
-        info = info || ev.find((x) => x[0] === 'spawn')?.[1];
+        info = info || ev.find((x) => x[0] === 'spawn' && e && x[1].id === e.id)?.[1];
         const s = h.b.snapshot();
         frames.push({ at: s.t / 2, snap: snapFrame('f', s), ev, gt: s.t });
       }
     }
     assert.ok(moved > 1, `the sim pushed it ${moved} tiles`);
-    const ctx = fakeViewCtx(fake.P, { cam });
-    const v = new UnitView(ctx, { ...info, id: e.id }, {});
+    assert.equal(e.alive, !kill);
+    const v = new UnitView(fakeViewCtx(fake.P, { cam }), info, {});
     const buf = new SnapshotBuffer(), sample = new Map(), xs = [];
     const start = (ev, at) => { if (ev[0] === 'fx' && ev[1] === 'displace' && ev[4]?.id === e.id) v.slideTo(Number(ev[2]), Number(ev[3]), at == null ? {} : { at }); };
-    for (let f = 0, fi = 0; f < 60 * 3; f++) {
+    for (let f = 0, fi = 0; f < 60 * 4; f++) {
       const now = f / 60;
       for (; fi < frames.length && frames[fi].at <= now; fi++) { buf.push(frames[fi].snap, frames[fi].at); buf.pushEvents(frames[fi].ev, frames[fi].at, frames[fi].gt); }
       const renderT = buf.update(now);
@@ -646,28 +656,51 @@ describe('a push through SnapshotBuffer and UnitView in the app.js frame order (
       const at = buf.nextSnapT(renderT);
       if (at > renderT) buf.forEachUpcoming(renderT, at, (ev) => start(ev, at));
       buf.sample(renderT, sample);
-      if (sample.get(e.id)) v.sync(sample.get(e.id), renderT);
+      if (sample.get(e.id)) syncView(v, sample.get(e.id), renderT);
       v.update(1 / 60, cam(), now);
-      if (renderT > 2.8 && renderT < 3.8) xs.push(v.x);
+      if (renderT > 2.8 && renderT < 4.6) xs.push(v.x);
     }
-    return { xs, dest };
+    return { xs, dest, body };
   }
+  /** The largest frame-to-frame step, the frames moving, the slide's first frame and any step back after it. */
+  const steps = (xs) => {
+    let big = 0, moving = 0, back = false;
+    const from = xs.findIndex((x, i) => i > 0 && x > xs[i - 1] + 0.01);   // the slide's first frame (it walked left before)
+    for (let i = 1; i < xs.length; i++) {
+      const d = xs[i] - xs[i - 1];
+      big = Math.max(big, Math.abs(d)); if (Math.abs(d) > 0.02) moving++;
+      if (from > 0 && i > from && d < -1e-9) back = true;
+    }
+    return { big, moving, from, back };
+  };
 
   test('a 1.7-tile push is drawn over a dozen frames, every frame a step under 0.35 tiles', async () => {
     const { xs } = await pushed();
-    let big = 0, moving = 0;
-    for (let i = 1; i < xs.length; i++) { const d = Math.abs(xs[i] - xs[i - 1]); big = Math.max(big, d); if (d > 0.02) moving++; }
+    const { big, moving } = steps(xs);
     assert.ok(moving >= 8, `${moving} frames show it moving (the bare interpolator: 3)`);
     assert.ok(big < 0.35, `largest step ${big.toFixed(3)} tiles (the bare interpolator: 0.58)`);
   });
 
-  test('killed right after the push, the body slides on to where the sim left it and stays there', async () => {
-    const { xs, dest } = await pushed({ kill: true });
-    assert.ok(Math.abs(xs[xs.length - 1] - dest) < 0.011, `${xs[xs.length - 1]} vs ${dest}`);
-    const from = xs.findIndex((x, i) => i > 0 && x > xs[i - 1] + 0.01);   // the slide's first frame (it walked left before)
-    assert.ok(from > 0);
-    for (let i = from; i < xs.length; i++) assert.ok(xs[i] >= xs[i - 1] - 1e-9, `never back towards where it stood (frame ${i})`);
-  });
+  // a unit killed on the very step of its push: its 'die' comes due with the displace fx, so its view is dying before the
+  // slide can anchor — and syncBattle gives a dying view only its position (syncView). The slide used to stay on hold,
+  // be dropped after 0.5 s, past the 0.8 s DIE window, and leave the body on its pre-push tile (Grok's review of fb7-render)
+  for (const [name, o] of [
+    ['killed on the step of the push', { kind: 'route', killDelay: 0 }],
+    ['a summoned enemy killed on the step of the push', { kind: 'summon', killDelay: 0 }],
+    ['a flyer killed on the step of the push', { kind: 'flyer', killDelay: 0 }],
+    ['killed 6 ticks after the push', { kind: 'route', killDelay: 6 }],
+  ]) {
+    test(`${name}: the body slides on to where the sim put it and stays there, no frame stepping 0.35 tiles`, async () => {
+      const { xs, dest, body } = await pushed({ kill: true, ...o });
+      const { big, moving, from, back } = steps(xs);
+      if (!o.killDelay) assert.equal(body, dest, 'killed where the push put it');
+      assert.ok(Math.abs(xs[xs.length - 1] - body) < 0.011, `lies at ${xs[xs.length - 1].toFixed(3)}, the sim's body at ${body.toFixed(3)}`);
+      assert.ok(from > 0 && moving >= 8, `${moving} frames show it sliding`);
+      assert.ok(big < 0.35, `largest step ${big.toFixed(3)} tiles`);
+      // (killed later, it walked back down its route a little first: the body eases onto that)
+      if (!o.killDelay) assert.ok(!back, 'never back towards where it stood');
+    });
+  }
 });
 
 // PR #380, death: a flyer holds its lift through the Die clip (the official client drops its fly offset in

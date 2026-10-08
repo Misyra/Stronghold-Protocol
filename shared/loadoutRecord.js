@@ -41,14 +41,22 @@ export function composeStats(statsBase, attr) {
 }
 
 /**
+ * A talent entry without its potential chain (shared/potential.js: `potMin` / `potBelow`).
+ * @param {any} t
+ * @returns {any}
+ */
+const unchained = ({ potMin: _m, potBelow: _b, ...t }) => t;
+
+/**
  * Talents with a module: apply ModuleRecord.talentChanges to the no-module talents — the merge rule of
  * tools/build-data.mjs mergeTalentChanges (override of an existing index: module values win, base keys the module does
- * not restate are kept; otherwise appended; empty placeholders dropped).
+ * not restate are kept; otherwise appended; empty placeholders dropped). The result carries no potential chains: a merged
+ * list is composed at one potential (resolve the inputs first — shared/potential.js atPotential).
  */
 export function composeTalents(base, changes) {
-  const talents = (base || []).map((t) => ({ ...t }));
-  for (const ch of changes || []) {
-    const { talentIndex, ...rest } = ch;
+  const talents = (base || []).map(unchained);
+  for (const ch0 of changes || []) {
+    const { talentIndex, ...rest } = unchained(ch0);
     const rec = { index: talentIndex, ...rest, fromModule: true };
     const at = talentIndex >= 0 ? talents.findIndex((x) => x.index === talentIndex) : -1;
     if (at >= 0) {

@@ -16,6 +16,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stripPotential } from '../shared/potential.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // DATA_DIR lets the suite validate an alternative build output (e.g. `--out /tmp/x`).
@@ -558,7 +559,8 @@ test('chess: golden modules[] (+ statsBase/traitBase/talentsBase) compose back t
     // default loadout = the record's own stats / trait / talents
     assert.deepEqual(composeStats(c.statsBase, dm?.attr), c.stats, `${c.chessId}: statsBase + default attr = stats`);
     assert.deepEqual(dm?.traitOverride ?? c.traitBase, c.trait, `${c.chessId}: trait`);
-    assert.deepEqual(composeTalents(c.talentsBase, dm?.talentChanges), c.talents, `${c.chessId}: talents`);
+    // (the record's own lists chain their lower-potential entries — shared/potential.js; a composed list carries none)
+    assert.deepEqual(composeTalents(c.talentsBase, dm?.talentChanges), stripPotential(c.talents), `${c.chessId}: talents`);
     assert.equal(new Set(c.modules.map((m) => m.uniEquipId)).size, c.modules.length);
     for (const m of c.modules) {
       nMods++;

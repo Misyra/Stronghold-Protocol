@@ -1,8 +1,13 @@
 # 卫戍协议：盟约 · Stronghold Protocol: Alliance
 
+> [!WARNING]
+> **开发版（dev 分支）：不稳定，请勿用于公开服务器。** 这里是 0.2.2 的开发中代码，规则、数据和存档格式随时会变，可能有未发现的问题。想玩或开服请使用 [Releases](../../releases/latest) 页面的正式版整合包，或 `master` 分支。反馈问题时请注明「dev」和版本号（标题页底部、启动横幅和 `/healthz` 都会显示 `0.2.2-dev`）。开发版与正式版在同一地址下共用浏览器里保存的设置和登录信息，来回切换后如果界面异常，清除这个网站的数据即可。开发版不提供整合包。
+>
+> *Development branch: unstable — do not run it as a public server. Rules, data and saved settings may change at any time. Play or host the latest release (or the `master` branch) instead; when you report a bug from this branch, say "dev" and the version shown on the title screen. It shares the browser's saved settings with a release served at the same address — clear the site's data if the interface misbehaves after switching. No release zips are built from this branch.*
+
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.2.1-2ea44f)
+![version](https://img.shields.io/badge/version-0.2.2--dev-orange)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -37,7 +42,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前版本 0.2.1：联防改回在本回合的战场上进行，干员按满潜能计算，并修复了 0.2.0 发布后玩家和 GitHub 上反馈的问题；从这个版本起提供只含改动文件的更新包，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
+- 本分支是 0.2.2 开发版（未发布）；最新正式版是 0.2.1，见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
 
 ## 功能一览
 

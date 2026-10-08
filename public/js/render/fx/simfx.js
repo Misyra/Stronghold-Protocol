@@ -101,7 +101,12 @@ export class FxSim {
         else this.zone(at.x, at.y, at.z, r, col, d, 'ring', true);
         break;
       }
-      case 'chill': this.flashScreen(col, 0.35, 0.8); this.snowfall(col); break;
+      // 盟约寒风 (谢拉格's field-wide wind — the device emits it with no anchor unit): a blizzard up the field and a
+      // stronger cold flash (PR #386); an operator's own cold (灵知 S3's start, 麦哲伦 S1's pulse every 3 s: `id` = the
+      // unit) keeps the light flurry and the softer flash — a full-screen blizzard every pulse would bury the field
+      case 'chill':
+        if (ex.id == null) { this.flashScreen(col, 0.45, 1); this.snowfall(col, true); } else { this.flashScreen(col, 0.35, 0.8); this.snowfall(col); }
+        break;
       case 'heal': this.heal(at.v || { x: at.x, y: at.y, z: at.z }, 0); break;
       case 'healAoe': {
         this.ring(at.x, at.y, at.z, 0.2, r, col, 0.6);

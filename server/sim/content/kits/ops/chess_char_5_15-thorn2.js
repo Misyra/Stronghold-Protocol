@@ -67,7 +67,10 @@ export default {
       if (z.type === 'guard') {
         const inZone = (a) => Math.abs(a.tileR - z.r) <= 1 && Math.abs(a.tileC - z.c) <= 1;
         const allies = battle.alliesFor(unit).filter(inZone);
-        for (const a of allies) battle.addBuff(a, { key: 'thorn2:bastion', duration: AURA_DUR, mods: mods({ defFlat: num(bb.def) }) });
+        // one DEF buff per alchemy unit, so two units on one ally add up (+60 +60; PRTS 度算浪波 备注 「效果均可叠加」,
+        // GitHub #388 — one shared key let the last unit's buff replace the other's)
+        z.defKey ??= `thorn2:bastion:${unit.id}:${unit.mem.bastionSeq = (unit.mem.bastionSeq ?? 0) + 1}`;
+        for (const a of allies) battle.addBuff(a, { key: z.defKey, duration: AURA_DUR, mods: mods({ defFlat: num(bb.def) }) });
         if (z.acc >= 1 - 1e-9) {
           z.acc -= 1;
           const regen = unit.s.atk * num(bb.hp_recovery_per_sec_ratio);   // 生命回复速度 (see the header)

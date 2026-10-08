@@ -273,7 +273,7 @@ function stopServer(child) {
 /** The smoke step of ci.yml's job `test`, on a free port instead of 3000 (a running game server must not clash). */
 async function smoke(env) {
   const port = await freePort();
-  // [ASSUMED] HOST=127.0.0.1 instead of ci.yml's default 0.0.0.0: the requests go to 127.0.0.1 either way, and
+  // [ASSUMED] HOST=127.0.0.1 instead of the unset-HOST default (::): the requests go to 127.0.0.1 either way, and
   // listening only on loopback spares a firewall prompt on Windows / macOS.
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: ROOT, env: { ...env, PORT: String(port), HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'],

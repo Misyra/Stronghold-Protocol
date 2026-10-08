@@ -99,7 +99,7 @@ import {
   terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
-  mergeTarget, modeOffBonds, readyFundsPrompt, ownerBandId, ownDiyRecord, ownStandIn,
+  mergeTarget, modeOffBonds, readyFundsPrompt, readyShopFold, ownerBandId, ownDiyRecord, ownStandIn,
 } from '../ui/gameLogic.js';
 import { toast } from '../ui/toasts.js';
 import { BriefingScreen } from './briefing.js';
@@ -289,6 +289,18 @@ function MatchScreen() {
   // the shop bar is shown folded (收起; the pen folds it for itself: the player's own state is the one it returns to) —
   // the own prep board then takes the official shop-collapsed camera (public issue #5, gameLogic prepCameraFor)
   const shopFolded = showShop && (pen ? penRef.current.collapsed : collapsed);
+  // 准备就绪 folds the shop bar, cancelling it unfolds the bar again (GitHub #138; gameLogic readyShopFold): the board is set,
+  // the fight is what to look at — the board camera follows the fold like a hand-made one (the effect below). Inside the pen
+  // the bar is folded for itself: the state it returns to is the one that changes.
+  const readySeen = useRef(null);
+  useEffect(() => {
+    const cur = phase === PHASE.PREP && priv && alive && !watchingOther ? { round: pub?.round, ready: !!priv.ready } : null;
+    const change = readyShopFold(readySeen.current, cur);
+    readySeen.current = cur;
+    if (!change) return;
+    if (penRef.current.on) penRef.current.collapsed = change === 'fold';
+    else setCollapsed(change === 'fold');
+  }, [phase, pub?.round, priv?.ready, !!priv, alive, watchingOther]);
   const cancelFacingRef = useRef(() => {});
   const setCam = useCallback((kind, opts) => {
     camRef.current = { kind, opts: opts || {} };

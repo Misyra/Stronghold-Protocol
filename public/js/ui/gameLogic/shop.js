@@ -1,4 +1,5 @@
-// ui/gameLogic/shop.js — shop prices, merges, offers, the ready-funds prompt. Re-exported from ../gameLogic.js.
+// ui/gameLogic/shop.js — shop prices, merges, offers, the ready-funds prompt, the shop bar's fold on 准备. Re-exported from
+// ../gameLogic.js.
 
 import { GEO } from '../../../../shared/constants.js';
 import { isObj } from './shared.js';
@@ -182,4 +183,19 @@ export function readyFundsPrompt(priv, { ready = true, keptBands = null, autopla
     title: t('剩余资金'), micro: 'FUNDS LEFT', okText: t('准备就绪'), cancelText: t('继续整备'),
     text: t('还有 {funds} 资金未使用。休整期结束时，本回合的剩余资金将清零。确定准备就绪吗？', { funds }),
   };
+}
+
+/**
+ * The shop bar follows the player's ready state (GitHub #138, the owner's decision of 2026-10-07): pressing 准备就绪 folds
+ * the bar — the board is set, the fight is what to look at —, cancelling it unfolds the bar again. Read from the own CONFIRMED
+ * state (m.private.ready — a refused 准备 folds nothing) and only a change inside one prep counts: the first state seen (a
+ * reconnect in the middle of a prep, the prep's start), the new round's reset to not ready and anything outside a prep are
+ * not a press. The player can still fold / unfold by hand in between.
+ * @param {{ round: any, ready: boolean }|null|undefined} prev the own prep state seen last (null: none — outside a prep)
+ * @param {{ round: any, ready: boolean }|null|undefined} cur the own prep state now (null outside a prep)
+ * @returns {'fold'|'unfold'|null}
+ */
+export function readyShopFold(prev, cur) {
+  if (!isObj(prev) || !isObj(cur) || prev.round !== cur.round || !!prev.ready === !!cur.ready) return null;
+  return cur.ready ? 'fold' : 'unfold';
 }

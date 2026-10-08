@@ -836,6 +836,8 @@
   "终极": "Ultimate",
   "rounds::回合": "Rounds",
   "{who}：获得{name}": "{who}: obtained {name}",
+  "{who}：卡池中已没有{name}": "{who}: no {name} left in the shared pool",
+  "{who}：没有可获得的同盟约干员": "{who}: no Operator of the same Alliance can be obtained",
   "获得{name}": "Obtained {name}",
   "联防阶段：{names} 迎战突破防线的敌人": "Unite Phase: {names} take on the enemies that broke through",
   "地形变化：{names}无法停留在原位置，已撤回整备区": "Terrain change: {names} can no longer stay in place and returned to the Bench",

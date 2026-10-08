@@ -741,6 +741,16 @@ const plain = (pred = () => true) => Object.values(DATA.chess)
   .filter((c) => c.visible && !c.isGolden && (c.garrisonIds || []).every((g) => DATA.garrisons[g].eventType === 'IN_BATTLE') && pred(c))
   .map((c) => c.chessId).sort();
 /** Record the chess granted by item effects (acquireChess with an `item:` source). */
+/** The warn toasts sent to the match's players from now on: [{ msgid, who, name }] (server msg() objects). */
+function spyWarns(m) {
+  const got = [];
+  const orig = m.toast.bind(m);
+  m.toast = (ps, kind, text) => {
+    if (kind === 'warn') got.push({ msgid: text?.msgid ?? text, who: text?.params?.who?.dn ?? null, name: text?.params?.name?.dn ?? null });
+    return orig(ps, kind, text);
+  };
+  return got;
+}
 function spyGrants(ps) {
   const got = [];
   const orig = ps.acquireChess.bind(ps);
@@ -958,11 +968,14 @@ test('拟态物质 with 2 copies owned and none left in the pool gives nothing �
     assert.equal(m.pool.left(cid), 0, 'elite 3 + 2 normal = the pool cap 5');
     const before = chessIn(ps);
     const got = spyGrants(ps);
+    const warns = spyWarns(m);
     const it = giveItem(m, ps, item);
     assert.deepEqual(equip(it, t), OK, item);
     assert.deepEqual(got, [], `${item}: nothing granted`);
     assert.deepEqual(chessIn(ps), before, `${item}: no other operator, no second elite`);
     assert.ok(!ps.find(it.uid), `${item}: consumed`);
+    // …and says why (GitHub #401, the owner's OK of 2026-10-09)
+    assert.deepEqual(warns, [{ msgid: '{who}：卡池中已没有{name}', who: '拟态物质', name: '溯光星源' }], `${item}: the toast`);
   }
   // 2 normal copies, no elite, the pool drained by other players: nothing either
   {
@@ -971,9 +984,11 @@ test('拟态物质 with 2 copies owned and none left in the pool gives nothing �
     give(m, ps, cid, 'hand');
     m.pool.take(cid, m.pool.left(cid));
     const got = spyGrants(ps);
+    const warns = spyWarns(m);
     assert.deepEqual(equip(giveItem(m, ps, A('5_05')), t), OK);
     assert.deepEqual(got, []);
     assert.deepEqual(chessIn(ps), [cid, cid]);
+    assert.deepEqual(warns.map((w) => w.msgid), ['{who}：卡池中已没有{name}']);
   }
   // 2 normal copies with copies left: the 3rd merges into the elite
   {
@@ -981,10 +996,25 @@ test('拟态物质 with 2 copies owned and none left in the pool gives nothing �
     const t = give(m, ps, cid, 'hand');
     give(m, ps, cid, 'hand');
     assert.equal(m.pool.left(cid), 3);
+    const warns = spyWarns(m);
     assert.deepEqual(equip(giveItem(m, ps, A('5_05')), t), OK);
     assert.deepEqual(chessIn(ps), [elite]);
+    assert.deepEqual(warns, [], 'a grant: no warn toast');
     assert.equal(m.pool.left(cid), 2, 'the elite holds 3 copies');
   }
+});
+
+test('拟态物质 with fewer than 2 copies and no same-bond operator left gives nothing and says so (GitHub #401)', () => {
+  // 缪尔赛思's only bond is 调和 and she is its only member: one copy owned, the rest of her pool taken by others
+  const cid = 'chess_char_6_11_a';
+  const { m, ps, equip } = setup({ seed: 9 });
+  const t = give(m, ps, cid, 'hand');
+  m.pool.take(cid, m.pool.left(cid));
+  const got = spyGrants(ps);
+  const warns = spyWarns(m);
+  assert.deepEqual(equip(giveItem(m, ps, A('5_05')), t), OK);
+  assert.deepEqual(got, [], 'nothing granted');
+  assert.deepEqual(warns, [{ msgid: '{who}：没有可获得的同盟约干员', who: '拟态物质', name: null }]);
 });
 
 test('博士投影: golden promotes at once; normal stays equipped and promotes at the next round start', () => {

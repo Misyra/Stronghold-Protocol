@@ -261,7 +261,9 @@ included), summons (流形's melee copy) and a ranged operator standing on a mel
 enemies it blocks, in range or not, whatever its facing, and targets them first ("可以选择且优先选择阻挡单位", PRTS 选择器;
 the user's rule after playtest #6, "阻挡了就一定要能打到": officially the collision pushes a blocked enemy to its blocker's
 front — `Battle.blockedTargets`, used by `ai.js acquireTargets` and the skills' DEFAULT trigger, and
-`sortEnemyTargets`; "自身这格内" rules name the blocked enemies separately — 瑕光 S2, PRTS 备注). A kit that picks its own
+`sortEnemyTargets`; one exception, the owner's decision of 2026-10-08 (GitHub #220): the 速射手 air priority —
+priority 'fly', trait 优先攻击空中单位 — comes before its own blocked enemy, so a 速狙 on a melee tile shoots a flyer in its
+range first, PRTS 索敌的概念 「阻挡（近战限定）→特殊优先级→…」; every other priority keeps the blocked enemy first; "自身这格内" rules name the blocked enemies separately — 瑕光 S2, PRTS 备注). A kit that picks its own
 targets from the range (`beforeAttack`) adds `battle.blockedTargets` to its candidates (深靛, 迷迭香 S3, 荒芜拉普兰德 S2,
 佩佩 S2, 灵知 S3, 远牙 S3); only skill texts that exclude targets keep their rule (普罗旺斯 S2: none above 80 % HP; 寒檀
 S2: icicles on random tiles of her range). This replaces the

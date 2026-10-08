@@ -362,6 +362,10 @@ one; the sourceless 毒雾 of 假想敌：蚀裂 skips a 隐匿 one but still re
 范围内的所有单位持续视为受到源石污染区影响，技力自然回复速度倍率-80%，每0.5秒受到50真实持续伤害（同类效果取最高）") is the same
 kind of damage — 无来源 true (like the terrain it stands for [ASSUMED]), the chimera credited — not a 流失 (player report
 D1 audit): radius 1.2, a tick every 0.5 s, one tick per unit per 0.5 s however many chimeras reach it (`mem.chimeraAt`).
+Every enemy effect PRTS marks "不可对空" skips a flying ally (the 炎佑 dragon, `isFlying`): the 死亡爆炸 of 高能源石虫 / 冰爆源石虫 /
+卷心籽 (archetypes.js `deathBoom`, `noAir` by default), 水遁忍者's 漩涡形态, 鼎沸's pulses, “萨科塔昂首”'s 祈祷邀约, the attack of
+“斩胄之剑” / “破胄之锤”, the splash and blast of 烹泉 / 沏虹, 庞贝's blast and 集团军重型火炮's shell and 燃烧区域 (the first six
+reached it until 0.2.1 — a community report).
 
 **Knock-outs that are not deaths** (`content/enemies/archetypes.js`; player reports after 0.1.0): a `killed` ability that keeps the
 enemy alive hides the knock-out from every later `kill` handler, the kill count, kill credit and the bounty — they all

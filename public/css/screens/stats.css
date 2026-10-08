@@ -1,0 +1,119 @@
+/* ==========================================================================================
+   stats.css — 统计数据 viewer (js/screens/stats.js): the local match record as overview cards,
+   per-difficulty / per-band tables, the six 评语 with counts, combat totals and a recent-games
+   list; 导出 / 导入 / 清空 in the header. Same overlay grammar as guide.css.
+   ========================================================================================== */
+
+.stats {
+  position: fixed; inset: 0; z-index: calc(var(--z-modal) + 4);
+  display: grid; place-items: center;
+  background: radial-gradient(ellipse at 50% 40%, rgba(8, 14, 12, .82), rgba(2, 4, 3, .94));
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  animation: stats-fade 180ms var(--ease-out);
+}
+@keyframes stats-fade { from { opacity: 0; } }
+
+.stats__box {
+  --bk-c: var(--mint-500);
+  position: relative; display: flex; flex-direction: column;
+  width: min(94vw, 9.6rem); max-height: calc(100vh - .6rem);
+  padding: .16rem .22rem;
+  background: linear-gradient(180deg, rgba(22, 28, 26, .98), rgba(10, 13, 12, .98));
+  border: 1px solid var(--line-2);
+  box-shadow: 0 .2rem .6rem rgba(0, 0, 0, .7), 0 0 0 1px rgba(78, 216, 175, .06) inset;
+  outline: none;
+  animation: stats-pop 220ms var(--ease-out);
+}
+@keyframes stats-pop { from { opacity: 0; transform: translateY(.12rem) scale(.985); } }
+
+/* header: titles + note | 导出/导入/清空 | close */
+.stats__head { display: flex; align-items: center; gap: .2rem; padding-bottom: .1rem; border-bottom: 1px solid var(--line); }
+.stats__titles { display: flex; flex-direction: column; gap: .02rem; margin-right: auto; min-width: 0; }
+.stats__title { margin: 0; font-size: .28rem; font-weight: 900; letter-spacing: .12em; color: var(--text-hi); line-height: 1.1; }
+.stats__note { font-size: .13rem; color: var(--text-lo); letter-spacing: .04em; }
+.stats-actions { display: flex; gap: .08rem; flex: none; }
+.stats-actions__confirm { animation: stats-blink 900ms steps(2) infinite; }
+@keyframes stats-blink { 50% { filter: brightness(1.5); } }
+.stats__close {
+  width: .5rem; height: .5rem; display: grid; place-items: center; flex: none;
+  background: rgba(0, 0, 0, .35); border: 1px solid var(--line-2); color: var(--text-md);
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.stats__close .icon { width: .26rem; height: .26rem; }
+.stats__close:hover { color: var(--text-hi); border-color: var(--red-premium); background: var(--red-a20); }
+
+/* body: the scrolling sections */
+.stats__body { overflow-y: auto; padding: .12rem .02rem .14rem; display: flex; flex-direction: column; gap: .18rem; }
+.stats__loading { display: grid; place-items: center; min-height: 2rem; }
+.stats-empty { margin: .4rem 0; text-align: center; font-size: .18rem; color: var(--text-lo); letter-spacing: .06em; }
+
+.stats-sec__h {
+  display: flex; align-items: baseline; gap: .12rem; margin: 0 0 .08rem;
+  font-size: .2rem; font-weight: 800; letter-spacing: .1em; color: var(--text-hi);
+}
+
+/* number cards */
+.stats-cards { display: flex; flex-wrap: wrap; gap: .08rem; align-items: flex-start; }
+.stcard {
+  flex: 1 1 1.1rem; min-width: 1.05rem; padding: .07rem .1rem .06rem;
+  display: flex; flex-direction: column; gap: .01rem;
+  background: rgba(255, 255, 255, .03); border: 1px solid var(--line);
+}
+.stcard--mint { border-color: var(--mint-800); background: var(--mint-a10); }
+.stcard--gold { border-color: rgba(246, 163, 41, .45); background: rgba(246, 163, 41, .07); }
+.stcard__num { font-size: .3rem; font-weight: 900; color: var(--text-hi); line-height: 1.15; }
+.stcard--mint .stcard__num { color: var(--mint-400); }
+.stcard--gold .stcard__num { color: #f6a329; }
+.stcard__label { font-size: .13rem; color: var(--text-md); letter-spacing: .06em; }
+
+/* compact sum chips (战斗累计) */
+.stats-cards--sums { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.5rem, 1fr)); gap: .06rem; }
+.ssum {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .08rem;
+  padding: .05rem .1rem; background: rgba(255, 255, 255, .03); border: 1px solid var(--line);
+}
+.ssum span { font-size: .14rem; color: var(--text-md); }
+.ssum b { font-size: .2rem; font-weight: 800; color: var(--text-hi); }
+
+/* data tables (总览难度 / 策略 / 最近对局) */
+.stats-table { width: 100%; border-collapse: collapse; font-size: .16rem; }
+.stats-table th {
+  padding: .04rem .1rem; text-align: left; font-size: .13rem; font-weight: 600; letter-spacing: .08em;
+  color: var(--text-lo); border-bottom: 1px solid var(--line-2); white-space: nowrap;
+}
+.stats-table td { padding: .05rem .1rem; color: var(--text-md); border-bottom: 1px solid var(--line); }
+.stats-table tbody tr:hover td { background: rgba(78, 216, 175, .05); }
+.stats-table .num { text-align: right; }
+.stats-table th.num { text-align: right; }
+.stats-band { display: flex; align-items: center; gap: .06rem; color: var(--text-hi); white-space: nowrap; }
+.stats-t { font-family: var(--font-num); font-size: .14rem; color: var(--text-lo); white-space: nowrap; }
+.stats-table tr.is-win .t-win { color: var(--mint-400); font-weight: 800; }
+.stats-table tr.is-lose .t-lose { color: var(--red-premium); font-weight: 800; }
+
+/* the six 评语 — a grid, so a short last row keeps its neighbours' width instead of stretching */
+.stats-titles { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.7rem, 1fr)); gap: .08rem; }
+.stit {
+  display: flex; align-items: center; gap: .08rem; min-width: 0;
+  padding: .06rem .1rem; background: rgba(255, 255, 255, .03); border: 1px solid var(--line);
+}
+.stit--none { opacity: .45; }
+.stit__icon { width: .36rem; height: .36rem; flex: none; object-fit: contain; }
+.stit__text { display: flex; flex-direction: column; min-width: 0; }
+.stit__text span { font-size: .15rem; color: var(--text-md); white-space: nowrap; }
+.stit__text b { font-size: .22rem; font-weight: 900; color: #f6a329; line-height: 1.1; }
+
+/* a replayed settlement replaces the whole panel: the real <ResultScreen/> fills the overlay */
+.stats__replay { position: absolute; inset: 0; }
+
+/* recent rows click through to the match's settlement screen (openRecordResult) */
+.stats-table tbody tr.is-clickable { cursor: pointer; }
+.stats-table tbody tr.is-clickable:hover td { background: rgba(78, 216, 175, .1); color: var(--text-hi); }
+.stats-table .stats-go { width: .24rem; color: var(--text-lo); }
+.stats-table tr.is-clickable:hover .stats-go { color: var(--mint-400); }
+.stats-hint { margin: .06rem 0 0; font-size: .13rem; color: var(--text-lo); letter-spacing: .04em; }
+
+@media (max-height: 560px) {
+  .stats__box { padding: .08rem .12rem; max-height: calc(100vh - .3rem); }
+  .stats__title { font-size: .22rem; }
+  .stats__note { display: none; }
+}

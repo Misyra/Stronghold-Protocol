@@ -43,8 +43,10 @@ export class MatchClientCombat {
       bossAcked: 0, bossBy: {}, lpAcked: 0, lpCum: 0, deadlineTimer: null, doneTimer: null, waitTimer: null,
       // boss fields: the latest client reports (re-credited as the plausibility budget grows), the server run's
       // CreditPool, humans demoted for an implausible result (never the authority of this field again), a 'cleared'
-      // b.result waiting for the budget to credit the pool it emptied (`heldResult`, _onResult)
-      bossReported: null, lpReported: 0, credit: null, demoted: new Set(), heldResult: null,
+      // b.result waiting for the budget to credit the pool it emptied (`heldResult`, _onResult); `leaksBy`: the authority's
+      // per-player split of the LP its enemy leaks cost (b.progress, the highest value seen; null until one carried it),
+      // which a result must not contradict before a perfect-payout bounty pays (_bossLeaksAgree)
+      bossReported: null, lpReported: 0, credit: null, demoted: new Set(), heldResult: null, leaksBy: null,
     };
   }
 

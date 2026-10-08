@@ -217,6 +217,12 @@ test('boss field: the local pool follows b.pool (server hp − unacknowledged lo
   assert.ok(last.bossDmg <= pool.cum);
   assert.ok(last.by && typeof last.by === 'object');
   assert.equal(typeof last.leaks, 'number');
+  // the per-player split of the leak LP (the server holds the result's leaked lists to it, Match._bossLeaksAgree): the
+  // leaks of every player of the field, never more than the field's LP cost (leader effects make up the rest)
+  assert.ok(last.leaksBy && typeof last.leaksBy === 'object', 'boss progress carries leaksBy');
+  assert.deepEqual(Object.keys(last.leaksBy).sort(), start.spec.players.map((p) => p.playerId).sort());
+  assert.ok(Object.values(last.leaksBy).every((n) => Number.isFinite(n) && n >= 0));
+  assert.ok(Object.values(last.leaksBy).reduce((a, b) => a + b, 0) <= last.leaks + 1e-9);
   r.net.emit('b.pool', { hp: pool.maxHp * 0.5, max: pool.maxHp, teamLp: 20, acked: { [start.fieldId]: pool.cum } });
   assert.ok(Math.abs(pool.hp - pool.maxHp * 0.5) < 1e-6, 'server hp when everything is acknowledged');
   r.runner.dispose();

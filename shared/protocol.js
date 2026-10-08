@@ -382,13 +382,16 @@ export const C2S = {
 
   // client-side combat (DESIGN §14): the authoritative client of a field reports its battle; a 联防 field adds
   // `left` = { [leakerId]: its enemies still standing (unspawned, alive, or through again) } (server/sim/spec.js
-  // uniteLeft; user playtest #6 item 7 — the leakers' live counter)
+  // uniteLeft; user playtest #6 item 7 — the leakers' live counter); a boss / hidden field adds `leaksBy` = { [playerId]:
+  // the cumulative LP the enemies that reached that player's goal cost } — `leaks` minus its sum is the leader's own
+  // "扣除目标生命" effects; the server holds the b.result's leaked lists to it (Match._bossLeaksAgree)
   'b.progress': {
     battleId: isId, gt: (v) => isNum(v, 0, 1e5), killed: (v) => isInt(v, 0, 1e5), total: (v) => isInt(v, 0, 1e5),
     leaks: (v) => isNum(v, 0, 1e6), bossDmg: (v) => isNum(v, 0, BIG),
     by: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, BIG)), done: isBool,
     left: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isInt(x, 0, 1e5)),
-    $optional: ['leaks', 'bossDmg', 'by', 'done', 'left'],
+    leaksBy: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, 1e6)),
+    $optional: ['leaks', 'bossDmg', 'by', 'done', 'left', 'leaksBy'],
   },
   'b.result': { battleId: isId, result: isBattleResult },
 };

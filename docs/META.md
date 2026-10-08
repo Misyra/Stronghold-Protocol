@@ -653,7 +653,12 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   as after a normal battle ("若各自行动阶段就达成完美作战，获得N资金"): once per player, when the team won (the first end the
   server registered: the leader's pool empty), the result is a real one (not the stand-in of a field that never
   reported) and the player's own field let no counted enemy through [ASSUMED: the text has no boss-battle exception, and
-  the card's enemies do come in the boss battle]. They are spent in the Hidden Core's prep like the kill coins.
+  the card's enemies do come in the boss battle] — and, for a field a client reported (the boss path never re-simulates
+  it), the result agrees with what its authority reported while it fought: LP it asked the team to pay must have been
+  split in `b.progress.leaksBy` (per player, the enemy leaks; the rest is the leader's own "扣除目标生命" effects), and a
+  player's leaked list must show at least its reported leak LP (`Match._bossLeaksAgree`), so a result cannot hide a charged
+  leak or hand it to the other seat; a server-run field is the truth itself. They are spent in the Hidden Core's prep like
+  the kill coins.
 * **Combat time limit**: data `combatTimeLimit` (the level's `maxPlayTime`) counts REAL seconds of the forced 2×
   battle; the Battle / 联防 limit is `gd.combatTimeLimit(r)` = 2 × that in game seconds (`config.combatTimeScale`,
   default 2). Read as game seconds the rounds' own spawn schedules would not fit (R2's last flyer spawns at 43 s of

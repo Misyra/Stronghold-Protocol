@@ -431,6 +431,9 @@ export function createBattleRunner(deps) {
     if (bossLike(e)) {
       const pool = e.battle.sharedBoss;
       msg.leaks = Math.min(1e6, e.meter.lp);
+      // the split of that LP between the players' own leaks (the rest is the leader's effects): the server holds the result's
+      // leaked lists to it before a perfect-payout bounty pays (Match._bossLeaksAgree)
+      if (p.leaksBy) msg.leaksBy = p.leaksBy;
       msg.bossDmg = pool && Number.isFinite(pool.cum) ? pool.cum : 0;
       if (pool && pool.byPlayer) {
         const by = {};

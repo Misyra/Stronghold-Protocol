@@ -263,7 +263,9 @@ export function uniteLeft(battle) {
 
 /**
  * Progress numbers of a battle for b.progress / the teammates' waiting UI: game time, kills, total, counted leaks
- * (normal / unite), the boss pool damage of this field and — unite fields — `left` (uniteLeft: each leaker's enemies
+ * (normal / unite), the boss pool damage of this field, `leaksBy` of a boss / hidden field — per player, the LP the
+ * enemies that reached its goal cost (every leak entry the result will show, × its `lpr`; the field's LP meter minus
+ * their sum is the leader's own "扣除目标生命" effects) — and, unite fields, `left` (uniteLeft: each leaker's enemies
  * still standing).
  */
 export function battleProgress(battle) {
@@ -284,6 +286,11 @@ export function battleProgress(battle) {
   if (battle && battle.kind === 'unite') {
     const left = uniteLeft(battle);
     if (left) out.left = left;
+  }
+  if (battle && (battle.kind === 'boss' || battle.kind === 'hidden')) {
+    const leaksBy = {};
+    for (const pid of Object.keys(pp).slice(0, 4)) leaksBy[pid] = Math.min(1e6, leakEntries(pp[pid]).reduce((n, l) => n + leakLpr(l), 0));
+    out.leaksBy = leaksBy;
   }
   return out;
 }
@@ -322,6 +329,10 @@ const cap = (list, n) => (Array.isArray(list) ? list.slice(0, n) : []);
 const isKey = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64 && /^[A-Za-z0-9_\-.:]+$/.test(v);
 const uidOr = (v) => (Number.isInteger(v) && v >= 1 && v <= 0x80000000 ? v : null);
 const keyOr = (v) => (isKey(v) ? v : null);
+/** A player's leak entries as the b.result carries them (compactResult: a valid enemy key, at most 400). */
+const leakEntries = (p) => cap(p && p.leaked, 400).filter((l) => l && isKey(l.enemyKey));
+/** What one leak entry costs the team on the wire: its `lpr` (0 … 1000), 1 when absent. */
+const leakLpr = (l) => Math.max(0, Math.min(1000, fnum(l && l.lpr, 1)));
 
 function compactMods(m) {
   if (!m || typeof m !== 'object') return null;
@@ -350,8 +361,8 @@ export function compactResult(res) {
     perPlayer[pid] = {
       killed: Math.min(total, Math.max(0, Math.trunc(fnum(p.killed)))),
       total,
-      leaked: cap(p.leaked, 400).filter((l) => l && isKey(l.enemyKey)).map((l) => {
-        const o = { enemyKey: l.enemyKey, mods: compactMods(l.mods), lpr: Math.max(0, Math.min(1000, fnum(l.lpr, 1))), sourcePlayerId: keyOr(l.sourcePlayerId), tag: typeof l.tag === 'string' && l.tag.length <= 16 ? l.tag : null, counted: l.counted !== false };
+      leaked: leakEntries(p).map((l) => {
+        const o = { enemyKey: l.enemyKey, mods: compactMods(l.mods), lpr: leakLpr(l), sourcePlayerId: keyOr(l.sourcePlayerId), tag: typeof l.tag === 'string' && l.tag.length <= 16 ? l.tag : null, counted: l.counted !== false };
         if (l.boss) o.boss = true;
         if (l.spawned) o.spawned = true;
         return o;

@@ -236,6 +236,11 @@
 .lo-dhead__reset { position: absolute; right: .12rem; top: .12rem; }
 
 .lo-detail__body { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: .12rem .18rem .2rem; scrollbar-width: thin; scrollbar-color: var(--line-3) transparent; }
+.lo-garrisons { margin-bottom: .18rem; }
+.lo-garrisons .dgarrison__k { font-size: max(.14rem, 11px); }
+.lo-garrisons .dgarrison__type { font-size: max(.12rem, 10px); }
+.lo-garrisons .dgarrison__icon { width: max(.18rem, 14px); height: max(.18rem, 14px); }
+.lo-garrisons .dgarrison__text { font-size: max(.15rem, 11px); }
 .lo-sec { display: flex; flex-direction: column; gap: .08rem; }
 .lo-sec + .lo-sec { margin-top: .18rem; }
 .lo-sec__head { display: flex; align-items: center; gap: .12rem; min-height: max(.36rem, 22px); }

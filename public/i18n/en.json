@@ -1055,5 +1055,11 @@
   "选择「{name}」的朝向": "Choose {name}'s facing",
   "选择朝向": "Choose a facing",
   "朝向：{dir}": "Facing: {dir}",
-  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers"
+  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers",
+  "攻回": "Offensive",
+  "受回": "Defensive",
+  "自回": "Auto",
+  "常驻": "Always",
+  "瞬发": "Instant",
+  "部署触发": "On deployment"
 }

@@ -30,7 +30,9 @@
 //   rule AND such an ally on the trigger grid — the cast replaces the attack about to be made (塞雷娅 S1 "触发时会替换当
 //   次攻击"); should that ally condition fail before the attack, the cast is withdrawn and its charge returned.
 //   A registered ally target (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon our attacks select) counts
-//   like an enemy in each of these enemy conditions for a non-heal skill (`_allyTargetIn` — the owner's rule of 2026-10-08).
+//   like an enemy in each of these enemy conditions for a skill that acts on it (`_allyTargetIn`, `allyTargetsOk` — the
+//   owner's rule of 2026-10-08): one that acts through the unit's own attacks, or whose kit flags `allyTargets: true` (its
+//   selectors take ally targets too); a skill that picks its own victims among enemies only is not opened by it.
 // Automatic operations cool down (constants.js AUTO_OP_COOLDOWN, "自动操作具有3s冷却，在完成一次操作或作战开始时部署的单位
 //   将进入冷却"): the engine auto-casts a MANUAL skill (def.skillType) no sooner than 3 s after its previous cast (so a
 //   charged skill spends its charges 3 s apart) or after the unit's deployment at the battle start (Battle._deploy
@@ -44,7 +46,8 @@
 //   mods, flags, targeting {maxTargets, rangeGrid, priority, allInRange, rangeExtend, noRangeExtend (the range ignores
 //   the unit's 攻击距离), showOwnRange (rangeGrid only selects targets: the detail card keeps the unit's own range)},
 //   attack {dmgType, atkScale, splashRadius, splashScale, hits, projectile, maxTargets, dmgMul, onHit, heal…},
-//   heal (bool: heal-type skill for the trigger rule), onStart(ctx), onEnd(ctx), onHit(ctx), onAttack(ctx), onTick(ctx).
+//   heal (bool: heal-type skill for the trigger rule), allyTargets (bool: the skill acts on a registered ally target — see
+//   `allyTargetsOk`), onStart(ctx), onEnd(ctx), onHit(ctx), onAttack(ctx), onTick(ctx).
 // ctx passed to spec callbacks: { battle, unit, skill, bb, target?, dealt?, targets?, dt?, reason? }; onAttack's ctx
 //   also carries `noAmmo` (set it to true: this attack spends no ammo). onEnd runs while the skill's mods / range are
 //   still applied (`active` is already false); they are removed right after it (unless onEnd re-activated the skill).
@@ -177,9 +180,29 @@ export class SkillRuntime {
    * canTargetEnemy (every other selector keeps to enemies); a heal skill never counts it (禁疗: not a patient).
    */
   _allyTargetIn(keys) {
-    if (this.healSkill || !keys) return false;
+    if (!keys || !this.allyTargetsOk) return false;
     const b = this.battle;
     return !!(b._allyTargets && b._allyTargets.size) && b.allyTargetsInKeys(keys, this.unit).length > 0;
+  }
+
+  /**
+   * Does this skill act on a registered ally target, so that one may start it (`_allyTargetIn`)? Never a heal skill.
+   * SkillSpec `allyTargets` (true / false) answers for a kit: true where its selectors take ally targets too
+   * (allyTargetsInKeys / allyTargetsInRadius — 蕾缪安 S3, 艾丽妮 S3, 陈 S2, 引星棘刺 S2), false where they never do although
+   * the skill keeps attacking. Without it: a skill that acts through the unit's own attacks — which select the device
+   * (ai.js acquireTargets) —, a timed one that keeps attacking (no `attack.noAttack`) or a cast that is the next attack
+   * (`spec.attack`), on a unit that attacks. [ASSUMED] Any other skill picks its victims itself among the enemies
+   * (enemiesInKeys, foesInRadius …) and would be spent on nothing: the device does not open it — it waits for an enemy.
+   * (Grok's review of round 22: 蕾缪安 S3 / 艾丽妮 S3 / 陈 S2 / 引星棘刺 S2 opened on the device alone and did nothing.)
+   */
+  get allyTargetsOk() {
+    if (this.healSkill || this.noSkill || this.kind === 'passive') return false;
+    const s = this.spec;
+    if (s.allyTargets != null) return !!s.allyTargets;
+    const p = this.unit.profile;
+    if (p && p.noAttack) return false;
+    if (s.attack && s.attack.noAttack) return false;
+    return this.isTimed || !!s.attack;
   }
 
   get spCost() {

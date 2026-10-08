@@ -168,9 +168,10 @@ export default {
     return {
       trait: atkTargets > 1 ? { maxTargets: atkTargets } : null,
       skills: {
-        [S1]: { kind: 'duration', mods: { aspd: num(b1.attack_speed) }, attack: healAttack(healTargets) },
+        // [ASSUMED] her skills' attacks heal: 白铁's 铁钳号 (禁疗, no patient) alone does not open them (skills.js allyTargetsOk)
+        [S1]: { kind: 'duration', mods: { aspd: num(b1.attack_speed) }, attack: healAttack(healTargets), allyTargets: false },
         [S2]: {
-          kind: 'duration', attack: healAttack(healTargets + Math.max(0, Math.floor(num(b2['attack@max_target_heal_add'])))),
+          kind: 'duration', attack: healAttack(healTargets + Math.max(0, Math.floor(num(b2['attack@max_target_heal_add'])))), allyTargets: false,
           onStart({ battle, unit }) {
             unit.mem.harukaS2Uses = (unit.mem.harukaS2Uses ?? 0) + 1;
             unit.mem.harukaS2Endless = unit.mem.harukaS2Uses >= 2;
@@ -185,6 +186,7 @@ export default {
           kind: 'duration',
           mods: { atkPct: num(b3.atk), batPct: batMod(b3.base_attack_time, chess) },
           targeting: { rangeGrid: s3?.rangeGrid ?? null },
+          allyTargets: false,
           attack: healAttack(healTargets),
           onStart({ battle, unit }) { rescale(battle, unit); },
           onEnd({ battle, unit }) { rescale(battle, unit); },   // (`active` is already false: ×1 again)

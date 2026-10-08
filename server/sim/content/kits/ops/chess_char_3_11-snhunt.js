@@ -58,9 +58,7 @@ export default {
           battle.on('tick', () => {
             const sk = unit.skill;
             if (!alive(unit) || !unit.canAct || !sk || !sk.ready || sk.opCooling || unit.s.flags.silence || (unit.trait.ammo ?? 1) > 0) return;
-            // (白铁's 铁钳号·原型机, an ally target, counts like an enemy — skills.js `_allyTargetIn`)
-            const keys = unit.baseRangeKeys || unit.rangeKeys;
-            if (battle.enemiesInKeys(keys, unit, unit.profile).length || battle.allyTargetsInKeys(keys, unit).length) sk.activate('DEFAULT');
+            if (battle.enemiesInKeys(unit.baseRangeKeys || unit.rangeKeys, unit, unit.profile).length) sk.activate('DEFAULT');
           }, { owner: unit });
         }
         if (extra > 0) {

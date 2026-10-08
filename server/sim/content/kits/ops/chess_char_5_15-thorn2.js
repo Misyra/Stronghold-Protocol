@@ -121,10 +121,13 @@ export default {
       }),
       skill: {
         kind: maxCharges(chess, def) > 1 ? 'charges' : 'instant',
+        // 白铁's 铁钳号·原型机 (a registered ally target) is a target like an enemy when no enemy is in her range — the owner's
+        // rule of 2026-10-08: the unit lands on it and its pulses hit it (cancelled by its kit) [ASSUMED] (skills.js allyTargetsOk)
+        allyTargets: true,
         onStart({ battle, unit }) {
           const list = battle.enemiesInKeys(unit.rangeKeys, unit, unit.profile);
           sortEnemyTargets(battle, unit, list, null);
-          let t = list.find((e) => !e.isFlying) ?? list[0];
+          let t = list.find((e) => !e.isFlying) ?? list[0] ?? battle.allyTargetsInKeys(unit.rangeKeys, unit)[0];
           if (!t) {
             // PRTS 备注: no enemy in range → thrown at the farthest tile straight ahead inside her range
             let best = null;
@@ -191,6 +194,8 @@ export default {
             if (z.acc >= 1 - 1e-9) {
               z.acc -= 1;
               for (const e of foes) battle.dealDamage(unit, e, { amount: unit.s.atk * num(bb.atk_scale), type: 'arts', isSkill: true, tags: ['skill', 'alchemy'] });
+              // (白铁's 铁钳号 too, like a ground enemy — its kit cancels the hit)
+              for (const a of battle.allyTargetsInRadius(z.x, z.y, r, unit)) battle.dealDamage(unit, a, { amount: unit.s.atk * num(bb.atk_scale), type: 'arts', isSkill: true, tags: ['skill', 'alchemy'] });
               const regen = unit.s.atk * num(bb.hp_recovery_per_sec_ratio_chr);   // 生命回复速度 (see the header)
               if (regen > 0) {
                 for (const a of battle.alliesInRadius(z.x, z.y, r, null)) {

@@ -131,14 +131,11 @@ test('#15 the automatic operations cool down 3 s: 锏 S2 (2 charges, skill range
   assert.equal(u.skill.maxCharges, 2);
   h.step();
   fill(u);
-  // S2 deals its damage itself (no spec.attack): each cast takes an attack cycle, so it waits for the running one
-  // (GitHub #298) — at most one attack interval
-  const slot = u.s.interval + 0.1;
-  assert.ok(h.runUntil(() => u.skill.activations === 1, slot));
+  assert.ok(h.runUntil(() => u.skill.activations === 1, 1));
   const t1 = h.b.time;
   h.run(AUTO_OP_COOLDOWN - 0.2);
   assert.equal(u.skill.activations, 1, 'the stored charge waits');
-  assert.ok(h.runUntil(() => u.skill.activations === 2, slot));
+  assert.ok(h.runUntil(() => u.skill.activations === 2, 1));
   assert.ok(h.b.time - t1 >= AUTO_OP_COOLDOWN - 1e-6);
   done(h);
 });

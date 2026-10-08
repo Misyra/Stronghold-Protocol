@@ -18,6 +18,8 @@
 // Idempotent: existing files with the right size are skipped, so re-running is
 // cheap. Downloads use ~16 parallel connections, 3 retries per direct source,
 // a jsDelivr fallback and an opt-in GitHub proxy (one short attempt per URL).
+// HTTP(S)_PROXY is picked up by restarting once with NODE_USE_ENV_PROXY=1
+// (Node >=22.21 or >=24). An older Node fails instead of fetching directly.
 // Spine atlases get `size:` (and `pma: true` for enemies); every skeleton is
 // parsed to resolve animation roles.
 //
@@ -49,6 +51,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Downloader } from './assets/downloader.mjs';
+import { restartForEnvProxy } from './assets/env-proxy.mjs';
 import { MirrorPolicy, selectDownloadSource, validateSource } from './assets/network.mjs';
 import { normalizeProxyPrefix } from './assets/sources.mjs';
 import { loadIndexes } from './assets/cache.mjs';
@@ -463,7 +466,7 @@ async function main() {
 
 // run only as a script (tests import parseArgs / shrinkGuard)
 const invoked = (() => { try { return pathToFileURL(realpathSync(process.argv[1] || '')).href; } catch { return null; } })();
-if (invoked === import.meta.url) {
+if (invoked === import.meta.url && !restartForEnvProxy()) {
   main().then((code) => { process.exitCode = code; }, (e) => {
     console.error(`[assets] FAILED: ${process.env.DEBUG ? e?.stack || e : e?.message || e}`);
     process.exitCode = 1;

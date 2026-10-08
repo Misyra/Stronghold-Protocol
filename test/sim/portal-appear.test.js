@@ -16,6 +16,21 @@ const REAL = { skip: !hasGeneratedData() && 'no generated data' };
 const sig = (r) => r.checkpoints.map((c) => c.type + (c.type === 'MOVE' || c.type === 'APPEAR' ? `[${c.pos[0]},${c.pos[1]}]` : ''));
 /** The test enemy's leaks (the templates' own spawns leak too). */
 const leaksOf = (h) => h.hooksOf('enemyLeak').filter((l) => l.enemy.defId === 'enemy_test_portal');
+/** The test enemy's hidden spans: [{ from: [r,c], to: [r,c], dt }] (vanish tile, reappear tile, seconds hidden). */
+function hiddenSpans(h) {
+  const spans = [];
+  let open = null;
+  const set = h.b._setHidden.bind(h.b);
+  h.b._setHidden = (e, on) => {
+    if (e.defId === 'enemy_test_portal' && on !== !!e.hidden) {
+      const at = [Math.round(e.y), Math.round(e.x)];
+      if (on) open = { at, t: h.b.time };
+      else if (open) { spans.push({ from: open.at, to: at, dt: h.b.time - open.t }); open = null; }
+    }
+    return set(e, on);
+  };
+  return spans;
+}
 
 test('normalizeRoute: DISAPPEAR → WAIT → MOVE gains the twin APPEAR at the move target', () => {
   const r = normalizeRoute({
@@ -81,6 +96,7 @@ for (const [tplId, routeIdx, motion] of CASES) {
 // ([5,10] — the same pairing every explicit DISAPPEAR / APPEAR pair in the data reads) and it walks on to the blue
 // door on that side of the field, where the leak happens (GitHub #336: 打 boss 小怪第一次进传送门就被判定进蓝门,
 // 官方是传送后走向蓝门). The solo boss routes are exactly this shape: straight from the centre into the corner portal.
+// Inside the portal it stays hidden for 3 s, as the explicit crossings of the same tiles (WAIT 3 in 85 of the 95).
 test('solo boss: a route ending on the left portal entrance leaks at the left blue door, not the portal', REAL, () => {
   const h = makeBattle({
     kind: 'boss', stageId: 'act1autochess_m01', rect: { r0: 0, r1: 5, c0: 0, c1: 20 },
@@ -89,6 +105,7 @@ test('solo boss: a route ending on the left portal entrance leaks at the left bl
     enemies: [{ key: 'enemy_test_portal', route: 0 }],
     autoFinish: true, timeLimit: 300, hooks: ['enemyLeak'],
   });
+  const spans = hiddenSpans(h);
   const e = () => h.enemy('enemy_test_portal');
   assert.ok(h.runUntil(() => e() && Math.round(e().y) === 1 && Math.round(e().x) === 3, 300), 'reaches the portal entrance [1,3]');
   assert.ok(h.runUntil(() => e() && Math.round(e().y) === 5 && Math.round(e().x) === 10, 300), 'teleports out of the exit [5,10]');
@@ -97,6 +114,9 @@ test('solo boss: a route ending on the left portal entrance leaks at the left bl
   assert.ok(leak, 'leaks eventually');
   assert.deepEqual([Math.round(leak.enemy.y), Math.round(leak.enemy.x)], [2, 2], 'the leak is at the left blue door [2,2]');
   assert.equal(more.length, 0, 'stepping into the portal entrance is no leak of its own');
+  assert.equal(spans.length, 1, 'one portal crossing');
+  assert.deepEqual([spans[0].from, spans[0].to], [[1, 3], [5, 10]], 'hidden from the entrance to the exit');
+  assert.ok(Math.abs(spans[0].dt - 3) < h.TICK * 1.5, `hidden 3 s inside the portal (${spans[0].dt.toFixed(3)} s)`);
 });
 
 test('a route ending on the right portal entrance mirrors: leak at the right blue door', REAL, () => {
@@ -106,9 +126,12 @@ test('a route ending on the right portal entrance mirrors: leak at the right blu
     enemies: [{ key: 'enemy_test_portal', route: { motion: 'WALK', start: [2, 10], end: [1, 17], checkpoints: [] } }],
     autoFinish: true, timeLimit: 300, hooks: ['enemyLeak'],
   });
+  const spans = hiddenSpans(h);
   h.runToEnd(400);
   const [leak, ...more] = leaksOf(h);
   assert.ok(leak, 'leaks eventually');
   assert.deepEqual([Math.round(leak.enemy.y), Math.round(leak.enemy.x)], [2, 18], 'the leak is at the right blue door [2,18]');
   assert.equal(more.length, 0, 'stepping into the portal entrance is no leak of its own');
+  assert.deepEqual(spans.map((x) => [x.from, x.to]), [[[1, 17], [5, 10]]], 'one crossing, entrance to exit');
+  assert.ok(Math.abs(spans[0].dt - 3) < h.TICK * 1.5, `hidden 3 s inside the portal (${spans[0].dt.toFixed(3)} s)`);
 });

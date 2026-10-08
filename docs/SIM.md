@@ -193,8 +193,8 @@ twins spell the `appear` out), so normalizeRoute re-inserts the exit `appear` ah
 walks the rest of its route hidden and leaks unseen (test/sim/portal-appear.test.js). A route that ENDS on an entrance
 (`tile_telin`; the boss / Hidden Core circuits end on [1,3] / [1,17]) does not leak there: the enemy vanishes, comes
 out of the far exit (`tile_telout`; both entrances feed [5,10], the pairing of every explicit `disappear`/`appear` pair
-of the data) and walks on to the blue door on the entrance's side, where it leaks (ai.js portalPickup; [ASSUMED] the
-pairing and no wait inside this portal).
+of the data) after 3 s hidden inside — the wait of the explicit crossings (85 of 95) — and walks on to the blue door
+on the entrance's side, where it leaks (ai.js portalPickup; [ASSUMED] the pairing and the 3 s).
 
 A `bounty` pays `coins` once, when the enemy really dies (not a knock-out it survives; a leak pays nothing), to
 `Battle._bountyPayee`: the player of the operator or summon that dealt the blow, if that player is in the battle; any

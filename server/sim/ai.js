@@ -701,13 +701,14 @@ function advanceRoute(b, e, dt, R, standing = false) {
  * exit and walks on to the blue door on the entrance's side, where it leaks. The boss / Hidden Core circuits end on
  * an entrance ([1,3] / [1,17]; 137 routes of data/waves.json); their mid-route crossings are the routes' own DISAPPEAR /
  * WAIT / APPEAR steps, every MOVE onto an entrance being followed by a DISAPPEAR, so only the route's end needs this.
- * Appends vanish → reappear → walk-to-door legs to the live route and returns true (false: not on an entrance, or no
- * exit in the field). The exit is the telout farthest from the entrance, the door the end tile nearest to it: every
- * explicit pair of the data (95, routes and extra routes) reads [1,3] / [1,17] → [5,10] — the farther of the two
- * telouts [5,10] / [2,10] of the battle stages — and the doors [2,2] / [2,18] stand beside the entrances.
- * [ASSUMED] the pairing (no tile carries a link) and no wait inside this portal (the explicit crossings write their
- * own: 3 s in 85 of the 95, 5 s in 9, 1 s in 1).
+ * Appends vanish → wait → reappear → walk-to-door legs to the live route and returns true (false: not on an entrance,
+ * or no exit in the field). The exit is the telout farthest from the entrance, the door the end tile nearest to it:
+ * every explicit pair of the data (95, routes and extra routes) reads [1,3] / [1,17] → [5,10] — the farther of the two
+ * telouts [5,10] / [2,10] of the battle stages — and the doors [2,2] / [2,18] stand beside the entrances. Inside the
+ * portal the enemy stays hidden PORTAL_WAIT s, the wait of the explicit crossings of the same tiles (WAIT 3 s in 85 of
+ * the 95; 5 s in 9, 1 s in 1). [ASSUMED] the pairing (no tile carries a link) and the 3 s (no source times this one).
  */
+const PORTAL_WAIT = 3;
 function portalPickup(b, e) {
   const r = Math.round(e.y), c = Math.round(e.x);
   if (!b.grid.inBounds(r, c) || b.grid.tile(r, c).special !== 'telin') return false;
@@ -716,7 +717,7 @@ function portalPickup(b, e) {
   const dist = (p) => hypot(p[0] - r, p[1] - c);
   const out = outs.reduce((a, x) => (dist(x) > dist(a) ? x : a));
   const R = e.route;
-  R.legs.splice(R.legIdx + 1, 0, { t: 'disappear' }, { t: 'appear', r: out[0], c: out[1] });
+  R.legs.splice(R.legIdx + 1, 0, { t: 'disappear' }, { t: 'wait', time: PORTAL_WAIT }, { t: 'appear', r: out[0], c: out[1] });
   const ends = b.grid.specialTiles('end');
   if (ends.length) {
     const door = ends.reduce((a, x) => (dist(x) < dist(a) ? x : a));

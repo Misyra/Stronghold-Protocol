@@ -49,6 +49,8 @@ import { settingsStore } from './ui/settings.js';
 import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
+import { StatsHost } from './screens/stats.js';
+import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -220,7 +222,13 @@ function wireNet() {
   net.on('m.public', (msg) => { matchAt = Date.now(); store.patch('match', { public: payload(msg) }); maybeFinishRestore(); });
   net.on('m.private', (msg) => { matchAt = Date.now(); store.patch('match', { private: payload(msg) }); });
   net.on('m.field', (msg) => store.patch('match', { field: payload(msg) }));
-  net.on('m.result', (msg) => store.patch('match', { result: payload(msg) }));
+  net.on('m.result', (msg) => {
+    const res = payload(msg);
+    store.patch('match', { result: res });
+    // 本机统计 (PR #323): every arrival, including the lobby's result replay after a reconnect / reload —
+    // replays dedupe by content id inside recordResult (spectator seats' copies build no record at all)
+    recordResult(res, { myId: store.get().me.playerId, roomMode: store.get().room?.mode ?? null, now: Date.now() });
+  });
   net.on('m.toast', (msg) => {
     const kind = ['info', 'success', 'warn', 'error'].includes(msg.kind) ? msg.kind : 'info';
     // msgid + params (server ≥ 0.2.0) or the text itself as a msgid, in the current language
@@ -288,6 +296,7 @@ function App() {
     <${UiHosts} />
     <${GuideHost} />
     <${LoadoutHost} />
+    <${StatsHost} />
   </div>`;
 }
 
@@ -342,6 +351,7 @@ async function boot() {
   }));
 
   wireNet();
+  installStatsRecorder(store); // follows the match on screen, so a 放弃模拟 can be recorded (ui/stats.js)
   installLoadoutSync({ net });
   installOwnershipSync({ net });
   installDiySync({ net });

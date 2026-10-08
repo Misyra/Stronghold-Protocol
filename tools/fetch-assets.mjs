@@ -95,7 +95,8 @@ const HELP = `Usage: node tools/fetch-assets.mjs [options]
   --offline         no network: post-process what is on disk and rebuild data/assets.json
   --dry-run         print the plan and exit
   --refresh-index   re-download the audio_data.json / charword_table.json / models_data.json indexes
-  --voice-lang=cn   operator battle voice language: cn (default) | jp | en | kr
+  --voice-lang=cn   the dub of audio.voice (the 中文 voice setting): cn (default) | jp | en | kr
+                    (audio.voiceJp, the 日本語 setting, is always the JP dub: both trees are planned)
   --voice-all       plan every official voice slot, including the prep-only lines no battle plays
                     (干员报到 / 编入队伍 / 任命队长; 360 files / 19.3 MB more per run — off by default)
   --prune           delete files under public/assets that the manifest no longer references
@@ -256,6 +257,7 @@ function countStats(m, bytes, files) {
     ui: Object.keys(m.ui || {}).length,
     sfxUnits: Object.keys(m.audio?.sfx?.units || {}).length,
     voiceChars: Object.keys(m.audio?.voice || {}).length,
+    voiceJpChars: Object.keys(m.audio?.voiceJp || {}).length,
   };
 }
 
@@ -347,7 +349,8 @@ async function main() {
     `(${Object.keys(plan.template.chars).length} chars, ${Object.keys(plan.template.enemies).length} enemies, ` +
     `${Object.keys(plan.template.tokens).length} tokens, ${Object.keys(plan.template.ui).length} UI sprites, ` +
     `${Object.keys(plan.template.audio.sfx.units).length} units with SFX, ` +
-    `${Object.keys(plan.template.audio.voice).length} operators with ${opts.voiceLang.toUpperCase()} voice)`);
+    `${Object.keys(plan.template.audio.voice).length} operators with ${opts.voiceLang.toUpperCase()} voice, ` +
+    `${Object.keys(plan.template.audio.voiceJp || {}).length} with JP voice)`);
   if (opts.dryRun) {
     for (const n of plan.notes) log(`  note: ${n}`);
     return 0;
@@ -437,7 +440,7 @@ async function main() {
   log(`bonds ${s.bonds} · items ${s.items} · bands ${s.bands} · skill icons ${s.skills} · UI ${s.ui} · units with SFX ${s.sfxUnits}`);
   const overlays = (o) => Object.values(o || {}).filter((e) => e?.spineLocal).length;
   log(`local-client models (spineLocal, drawn when extracted): enemies ${overlays(manifest.enemies)} · tokens ${overlays(manifest.tokens)}`);
-  log(`operator battle voice: ${s.voiceChars} charIds (--voice-lang=${opts.voiceLang})`);
+  log(`operator battle voice: ${s.voiceChars} charIds (--voice-lang=${opts.voiceLang}) · JP dub (audio.voiceJp): ${s.voiceJpChars} charIds`);
   log(`fonts: ${Object.values(fonts.files).map((f) => f.woff2 || f.original).join(', ') || 'none'}`);
   if (resolved.fallbacks.length) { log(`fallbacks used (${resolved.fallbacks.length}):`); for (const f of resolved.fallbacks.slice(0, 20)) log(`  ${f}`); }
   if (downloadErrors.length) log(`download errors (${downloadErrors.length}, re-run to retry): ${downloadErrors.slice(0, 10).join(', ')}`);

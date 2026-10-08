@@ -169,6 +169,9 @@ function MatchScreen() {
   const [bondOpen, setBondOpen] = useState(null);        // { id, ownerId, from }: the bond popup and whose bond it shows
   const [bondsCollapsed, setBondsCollapsed] = useState(false);
   const [detail, setDetail] = useState(null);            // detail target
+  // every shop / reward card opened by a tap is a new tap — `tap` in the target: two cards of one operator (the pool
+  // deals duplicates) carry the same chess id and no piece, and each must say its 选中干员 (detailPanel selectVoiceKey)
+  const cardTap = useRef(0);
   const [collapsed, setCollapsed] = useState(false);
   const [rewardMin, setRewardMin] = useState(false);
   const [emoteOpen, setEmoteOpen] = useState(false);
@@ -1355,7 +1358,7 @@ function MatchScreen() {
       ${showShop ? html`<${ShopBar} priv=${priv} editable=${editable} collapsed=${collapsed} onCollapse=${setCollapsed}
         barRef=${barRef} offBonds=${offBonds}
         onBuy=${buy} onLevel=${() => actions.levelUp()} onRefresh=${() => actions.refresh()} onFreeze=${() => actions.freeze()}
-        onDetail=${(id, kind, hint) => setDetail({ kind: kind === 'item' ? 'item' : 'chess', id, hint: hint || null })}
+        onDetail=${(id, kind, hint) => setDetail({ kind: kind === 'item' ? 'item' : 'chess', id, hint: hint || null, tap: ++cardTap.current })}
         onDetailClose=${() => setDetail((d) => (d?.kind === 'chess' || d?.kind === 'item' ? null : d))}
         onRefuse=${(reason) => { toast(reason, 'warn'); audio.sfx('error', { volume: 0.5 }); }}
         reward=${phase === PHASE.PREP && !rewardMin ? priv?.shop?.rewardOffer || null : null}
@@ -1391,7 +1394,7 @@ function MatchScreen() {
         onClose=${() => setBondOpen(null)} onMember=${(id, items, standInFor, diy) => setDetail({ kind: 'chess', id, owner: bondPop.ownerId, items: items || null, standInFor: standInFor || null, diy: diy || null })} />` : null}
 
       ${resolved ? html`<${DetailPanel} detail=${resolved} snapHp=${snapHp} onClose=${() => { setDetail(null); setSel(null); }}
-        bonds=${detailBonds} offBonds=${offBonds} loadout=${detailLoadout} side=${dSide} shopOpen=${shopOpen} live=${liveStats} voice=${combat}
+        bonds=${detailBonds} offBonds=${offBonds} loadout=${detailLoadout} side=${dSide} shopOpen=${shopOpen} live=${liveStats} voice=${true}
         onBond=${(id) => openBond(id, detailOwner, 'detail')} />` : null}
 
       ${selEntry && editable && !facing && !drag && showPrep ? html`<${Underframe} key=${sel.uid} view=${view} uid=${sel.uid}

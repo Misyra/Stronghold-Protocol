@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bgmKeyFor, resolveBgm, SfxLimiter, AudioManager, normalAttackSfx, installAudio, audio, combatTrackFor, COMBAT_TRACK_SWITCH_ROUND, VoiceGate, resultSpeaker, resultVoiceSlot, VOICE_PRIORITY, VOICE_COOLDOWN_MS } from '../../public/js/audio.js';
+import { bgmKeyFor, resolveBgm, SfxLimiter, AudioManager, normalAttackSfx, installAudio, audio, combatTrackFor, COMBAT_TRACK_SWITCH_ROUND, VoiceGate, resultSpeaker, resultVoiceSlot, VOICE_PRIORITY, VOICE_COOLDOWN_MS, voiceLine } from '../../public/js/audio.js';
 import { mediaUrl } from '../../public/js/media.js';
 import { PHASE } from '../../shared/constants.js';
 import { makeBattle, chessRec } from '../helpers/battleHarness.js';
@@ -250,6 +250,128 @@ describe('operator battle voice', () => {
     g2.release();
     g2.reset();
     assert.equal(g2.request('skill1', 'u1', 10001), 'play', 'a new battle inherits no cooldown');
+  });
+
+  test('选中干员 on every tap (0.2.2; official FOCUS_CHAR: priority 10, cooldown 0): the prep speaks too, an idle channel always answers, a newer tap replaces it, a higher line is never interrupted', async () => {
+    // the owner's request of 2026-10-08 「添加一下干员点击上去的语气一样的语音」: the game screen lets the detail panel speak
+    // in every phase — a tap on a piece in the field / hand, a shop card — not only while a battle runs
+    const game = readFileSync(path.join(ROOT, 'public/js/screens/game.js'), 'utf8');
+    assert.match(game, /<\$\{DetailPanel\}[^`]*?voice=\$\{true\}/, 'the detail panel speaks outside battle too');
+    assert.doesNotMatch(game, /voice=\$\{combat\}/);
+    assert.equal(VOICE_PRIORITY.select, 10, 'official FOCUS_CHAR priority');
+    assert.equal(VOICE_COOLDOWN_MS.select, 0, 'official FOCUS_CHAR cooldown 0');
+    const g = new VoiceGate();                     // the real 1.2 s global gap
+    assert.equal(g.request('select', null, 0), 'play');
+    g.start('select', null, 0); g.release();       // tap A, its line ended
+    assert.equal(g.request('select', null, 300), 'play', 'an idle channel: the global gap never drops a tap');
+    g.start('select', 'u1', 300); g.release();
+    assert.equal(g.request('select', 'u1', 400), 'play', 'no cooldown either, keyed or not');
+    g.start('select', null, 400);
+    assert.equal(g.request('select', null, 600), 'preempt', 'a newer tap replaces the 选中 line on air (overlapIfSamePriority)');
+    g.start('select', null, 600);
+    assert.equal(g.request('place', 'u2', 700), 'preempt', '部署 (20) still takes the channel from 选中 (10)');
+    g.start('place', 'u2', 700);
+    assert.equal(g.request('select', null, 800), 'drop', 'a tap never interrupts a higher-priority line');
+    g.reset();
+    g.start('skill1', 'u3', 0);
+    assert.equal(g.request('select', null, 100), 'drop', '… nor a 作战中 line');
+    g.reset();
+    // a tap starts no gap of its own (review of fb7-voices): a 部署 at 0 holds the battle lines until 1200; a tap at 500
+    // answers, its short line ends at 944, and a 作战中 the battle asks for once at 1300 still plays (it was dropped: the
+    // tap had moved the gap's start to 500)
+    g.start('place', 'u4', 0); g.release();
+    assert.equal(g.request('select', null, 500), 'play');
+    g.start('select', null, 500); g.release();
+    assert.equal(g.request('skill1', 'u5', 1100), 'drop', 'inside the 部署 gap a battle line still waits');
+    assert.equal(g.request('skill1', 'u5', 1300), 'play', 'the gap ends where the 部署 put it: the tap did not restart it');
+    g.reset();
+    g.start('select', null, 0); g.release();
+    assert.equal(g.request('place', 'u6', 100), 'play', 'a battle line right after a tap: no gap behind a 选中 line');
+    g.reset();
+    // the manager: two taps 0.3 s apart in the prep (no battle, the real gate) both speak, the second replacing the first
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    try {
+      const vm = { audio: { sfx: { ui: {}, battle: {}, units: {} }, voice: { char_a: { select: '/v/a_sel.mp3' }, char_b: { select: '/v/b_sel.mp3' } } } };
+      const a = new AudioManager({ win: fw.win, getManifest: () => vm });
+      a.install();
+      fw.fire('pointerdown');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voice('char_a', 'select'), true, 'tap A');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voiceNode?.url, '/v/a_sel.mp3');
+      assert.equal(a.voice('char_b', 'select'), true, 'tap B while A still speaks');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voiceNode?.url, '/v/b_sel.mp3', 'B replaced A');
+      a._stopVoice();                              // B ended
+      assert.equal(a.voice('char_a', 'select'), true, 'tap A again right after: no gap');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  test('语音语言 (0.2.2): 日本語 plays audio.voiceJp — the same slots and file names — and falls back to the Chinese line per slot and per line', async () => {
+    const audioM = {
+      voice: { char_a: { select: ['/a/voice/cn/char_a/cn_021.mp3', '/a/voice/cn/char_a/cn_022.mp3'], place: '/a/voice/cn/char_a/cn_023.mp3', start: '/a/voice/cn/char_a/cn_019.mp3' } },
+      voiceJp: { char_a: { select: ['/a/voice/jp/char_a/cn_021.mp3', '/a/voice/jp/char_a/cn_022.mp3'], place: '/a/voice/jp/char_a/cn_023.mp3' } },
+    };
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'place'), { url: '/a/voice/cn/char_a/cn_023.mp3', fallback: null }, '中文 by default');
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'place', 'cn'), { url: '/a/voice/cn/char_a/cn_023.mp3', fallback: null });
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'place', 'jp'), { url: '/a/voice/jp/char_a/cn_023.mp3', fallback: '/a/voice/cn/char_a/cn_023.mp3' });
+    // a drawn line keeps its Chinese twin as the fallback (选中干员2 ⇒ 选中干员2)
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'select', 'jp', () => 0.99), { url: '/a/voice/jp/char_a/cn_022.mp3', fallback: '/a/voice/cn/char_a/cn_022.mp3' });
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'select', 'jp', () => 0), { url: '/a/voice/jp/char_a/cn_021.mp3', fallback: '/a/voice/cn/char_a/cn_021.mp3' });
+    assert.deepEqual(voiceLine(audioM, 'char_a', 'start', 'jp'), { url: '/a/voice/cn/char_a/cn_019.mp3', fallback: null }, 'a slot the JP tree lacks: the Chinese line');
+    assert.equal(voiceLine(audioM, 'char_zz', 'select', 'jp'), null, 'an operator no dub voices (stand-ins, 盟约·辅助干员, summons) stays silent');
+    assert.equal(voiceLine({ voice: {} }, 'char_a', 'select', 'jp'), null);
+    assert.equal(voiceLine(null, 'char_a', 'select', 'jp'), null);
+    assert.deepEqual(voiceLine({ voice: audioM.voice }, 'char_a', 'place', 'jp'), { url: '/a/voice/cn/char_a/cn_023.mp3', fallback: null }, 'a manifest without voiceJp');
+    // the real manifest: every operator with a Chinese line has its Japanese twin
+    const real = voiceLine(manifest.audio, 'char_263_skadi', 'select', 'jp', () => 0);
+    assert.match(real.url, /^\/assets\/audio\/voice\/jp\/char_263_skadi\/cn_021\.mp3$/);
+    assert.equal(real.fallback, '/assets/audio/voice/cn/char_263_skadi/cn_021.mp3');
+
+    // the manager: the setting picks the tree; a JP file the host lacks (404) plays the Chinese one, holding the channel
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    const urls = [];
+    const missing = new Set(['/a/voice/jp/char_a/cn_023.mp3', mediaUrl('/a/voice/jp/char_a/cn_023.mp3')]);
+    globalThis.fetch = async (u) => { urls.push(u); return missing.has(u) ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }; };
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    try {
+      const a = new AudioManager({ win: fw.win, getManifest: () => ({ audio: { sfx: { ui: {}, battle: {}, units: {} }, ...audioM } }) });
+      a.voiceGate = new VoiceGate({ gapMs: 0 });   // the gap itself is covered above
+      a.install();
+      fw.fire('pointerdown');
+      await tick();
+      assert.equal(a.voiceLang, 'cn');
+      a.setVoiceLang('jp');
+      assert.equal(a.voiceLang, 'jp');
+      assert.equal(a.voice('char_a', 'select'), true);
+      await tick();
+      assert.match(a.voiceNode?.url ?? '', /^\/a\/voice\/jp\/char_a\/cn_02[12]\.mp3$/, '日本語: the JP line');
+      a._stopVoice();
+      assert.equal(a.voice('char_a', 'place', { unitKey: 1 }), true);
+      await tick(); await tick();
+      assert.ok(asked(urls, '/a/voice/jp/char_a/cn_023.mp3'), 'the JP file was asked for first');
+      assert.equal(a.voiceNode?.url, '/a/voice/cn/char_a/cn_023.mp3', 'the host lacks it: the Chinese line of the same name plays');
+      assert.equal(a.voice('char_a', 'place', { unitKey: 2 }), false, 'the fallback holds the channel like any line');
+      a._stopVoice();
+      a.setVoiceLang('cn');
+      assert.equal(a.voice('char_a', 'select'), true);
+      await tick();
+      assert.match(a.voiceNode?.url ?? '', /^\/a\/voice\/cn\/char_a\/cn_02[12]\.mp3$/, '中文 again');
+      a._stopVoice();
+      a.setVoiceLang('kr');
+      assert.equal(a.voiceLang, 'cn', 'no other dub: anything but jp is 中文');
+      // the settings store hands the choice over (installAudio and ui/settings.js)
+      const settings = readFileSync(path.join(ROOT, 'public/js/ui/settings.js'), 'utf8');
+      assert.match(settings, /audio\.setVoiceLang\(s\.voiceLang\)/);
+      assert.match(settings, /t\('语音语言'\)/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 
   test('AudioManager.voice: manifest slots (a drawn array), the gate, and the battle events that drive them', async () => {

@@ -681,6 +681,7 @@
   " · 未装备模组": " · No Module equipped",
   "已购买": "Purchased",
   "已招募": "Recruited",
+  "空栏位：刷新或下回合开始时补满": "Empty slot: filled by the next refresh or at the start of the next round",
   "再次点击确认升级（{price} 资金）": "Tap again to confirm upgrade ({price} Funds)",
   "升级调度中心（{price} 资金） · {key}": "Upgrade Dispatch Center ({price} Funds) · {key}",
   "已满级": "Max Level",

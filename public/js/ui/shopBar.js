@@ -175,6 +175,17 @@ function SoldCard({ item = false }) {
   </div>`;
 }
 
+/**
+ * A slot with no card in it: the one a 调度中心 upgrade has just opened (a `null` slot — server/match/player/economy.js
+ * _openLevelSlots; GitHub #332 / PR #333: the official shop shows the new slot, empty, until the next refresh or round
+ * start fills it). Never 已招募 / SOLD OUT: nothing was bought there.
+ */
+function EmptyCard({ item = false }) {
+  // `scard--sold` too: the same inert frame (no hover lift, not a buyable card for every `:not(.scard--sold)` rule); `scard--empty` only restyles it
+  return html`<div class=${cx('scard', 'scard--sold', 'scard--empty', item && 'scard--item')} role="img" aria-label=${t('空栏位：刷新或下回合开始时补满')}
+    title=${t('空栏位：刷新或下回合开始时补满')}></div>`;
+}
+
 function LevelCard({ shop, reason, armed = false, onTap }) {
   const lv = shop?.level ?? 1;
   const max = lv >= (shop?.maxLevel ?? 6);
@@ -346,7 +357,8 @@ export function ShopBar({ priv, editable, collapsed, onCollapse, onBuy, onLevel,
           armed=${armed} onTap=${tapCard} offBonds=${offBonds} />`
         : html`<div class="shopbar__cards">
         ${chessSlots.map(({ s, i }) => {
-          if (!s || s.sold) return html`<${SoldCard} key=${`s${i}`} />`;
+          if (!s) return html`<${EmptyCard} key=${`e${i}`} />`;
+          if (s.sold) return html`<${SoldCard} key=${`s${i}`} />`;
           const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
           return html`<${ChessCard} key=${`c${i}:${s.id}`} slot=${s} idx=${i} priv=${priv} frozen=${frozen} onBuy=${onBuy} onDetail=${onDetail} offBonds=${offBonds}
               reason=${reason} armed=${armed === armKey('c', i, s)} onTap=${editable ? (idx) => tapCard('c', idx, s, 'chess', reason, onBuy) : null} />`;

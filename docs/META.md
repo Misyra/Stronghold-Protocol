@@ -508,7 +508,7 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
 * **Shop**: `shopSlots[level]` chess slots + item slot(s), copy-weighted rolls over remaining pool copies of unbanned,
   visible chess with tier ≤ level; item slot: tier by the same shares, uniform item within the tier. Level-up price =
   base per mode, −1 each round start (floor 0), reset to the next base after upgrading; an upgrade opens the new level's
-  extra slots at once with new cards (the cards shown stay); `MAX_LEVEL` at 6. One freeze
+  extra slots at once, empty (the cards shown stay; the empty slots fill on the next roll); `MAX_LEVEL` at 6. One freeze
   toggle freezes every unsold slot until the next round start; a manual refresh rerolls everything (new slots stay
   frozen). Unfrozen slots are cleared at combat start. Slot positions are stable (frozen slots keep their index).
 * **Pool**: copies 12/14/18/16/8/5 (缪尔赛思 4); a normal piece holds 1 copy, an elite 3; displays never reserve copies;
@@ -826,9 +826,11 @@ round was over. The official 1 s `broadcastBeginDelay` is not modelled.
   units > active bond > Σ active layers > standing > seat; the ranks marked 存疑 in PRTS). Unite enemies re-enter with
   their original stats on the official 联防 spawn timing (waves.js `buildUniteWave`, DATA.md §15 #22).
 * A manual refresh while frozen keeps the new slots frozen until the next round start.
-* A level-up opens the new level's extra slots at once, each with a new card drawn at the new level, and keeps the
-  cards shown (0.2.0, community report item 19; the official tutorial's 「升级后将出现更多的商品栏位」); the new card
-  follows the freeze toggle like a manual refresh's cards.
+* A level-up opens the new level's extra slots at once — empty, with no card drawn into them (official footage, GitHub
+  #332: bilibili BV1AXwuzdEys 1:39, a 1→2 upgrade with the new slot visible and empty; the official texts only ever say
+  「升级后将出现更多的商品栏位」/「增加刷新栏位」) — and keeps the cards shown. The empty slots fill on the next roll (a manual
+  refresh or the round start), like every unfrozen slot; the shop draws an empty slot as a bare frame, never 已招募. 0.2.0
+  drew a card into each new slot (community report item 19, one uncorroborated remark): reverted in 0.2.2.
 * Buying a second copy of an equipped normal item merges into the golden item in the hand (not equipped).
 * Promotions by effects (升华, 博士投影) keep the equipment; merges return it; 突变细胞's transformation returns it (the
   cell included) before its new operator is gained into the 整备区 — the carrier's tile is left empty (official footage,

@@ -593,7 +593,7 @@ async function mockRequest(t, f = {}) {
       prepOnly();
       if (p.shop.refreshPrice > p.funds) fail('NO_FUNDS');
       if (p.shop.freeRefreshes > 0) p.shop.freeRefreshes--; else p.funds -= 1;
-      const n = p.shop.slots.filter((s) => s.kind !== 'item').length;
+      const n = p.shop.slots.filter((s) => !s || s.kind !== 'item').length;
       p.shop.slots = [...Array.from({ length: n }, () => makeSlot(p.shop.level)), makeItemSlot()];
       refreshPrivate(); return {};
     }
@@ -604,7 +604,8 @@ async function mockRequest(t, f = {}) {
       if (p.shop.upgradePrice > p.funds) fail('NO_FUNDS');
       p.funds -= p.shop.upgradePrice; p.shop.level++; p.shop.upgradePrice = [5, 8, 11, 12, 13][p.shop.level - 1] ?? 0;
       const n = p.shop.level >= 4 ? 5 : 4;
-      while (p.shop.slots.filter((s) => s.kind !== 'item').length < n) p.shop.slots.splice(p.shop.slots.length - 1, 0, makeSlot(p.shop.level));
+      // the upgrade opens the new slot EMPTY (server/match/player/economy.js _openLevelSlots: a null slot; a refresh fills it)
+      while (p.shop.slots.filter((s) => !s || s.kind !== 'item').length < n) p.shop.slots.splice(p.shop.slots.length - 1, 0, null);
       toast(`调度中心等级提升至 ${p.shop.level}`, 'success');
       refreshPrivate(); return {};
     }

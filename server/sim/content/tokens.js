@@ -33,7 +33,8 @@
 //                 (never while 缪尔赛思 is down: her redeploy brings it back; split clones are never her 援军)
 //   香槟炸弹      untargetable trap: the first ground enemy touching its tile takes owner ATK × atk_scale phys (+1 hit
 //                 after duration_switch s on the field) and sluggish; the bomb is used up ('expired', never a knock-out;
-//                 its blast fx carries `consumed: true` so clients play the explosion, not a death sound)
+//                 its blast fx carries `consumed: true` so clients play the explosion, not a death sound); 禁疗, no HP
+//                 loss, never gone because of its HP (champagneHold — the owner's decision D2 of 2026-10-08)
 //   从不混淆的方向 untargetable marker; when the owner's skill ends it vanishes and the owner returns to its tile
 //   黄金盟誓      attacks deal true damage (trait); lasts while the owner's skill runs; 维娜 S3 places one on every
 //                 free deployable tile around her (kits/ops/chess_char_6_07-siege2.js) — no per-owner deploy limit (SKILL_SUMMON_UNCAPPED)
@@ -79,6 +80,7 @@
 //
 // Exports for other content: spawnYanyou, spawnMapChar, findSummonTile, summonToken, tacticalPoint, wolfShadows,
 // COUNTDOWN_SUMMONS / startCountdown (the countdown summons' 无敌 + 禁疗 and timer bar, shared with the kits that time them),
+// champagneHold (香槟炸弹's durability, shared with 琳琅诗怀雅's kit, kits/ops/chess_char_3_04-swire2.js),
 // wolfShadowInterval, installWolfTacticalPoint, wolfTacticalPoint, wolfReturnNow (the 狼群's 战术点形态, shared with the
 // 伺夜 kit's own pack, kits/ops/chess_char_3_19-vigil.js), releaseSkillSummon, SKILL_SUMMON_START_DEPLOY, CAT_SHIELD_KEY,
 // TOKEN_IDS; mapCharTalents and touchGospel (Touch's 攫升 / 超脱 and 恳切福音, shared with the Touch 补位 stand-in kit,
@@ -1029,7 +1031,23 @@ function manifold(bb, raw, def) {
   };
 }
 
-/** 香槟炸弹 (琳琅诗怀雅 S2): untargetable trap consumed by the first ground enemy touching its tile. */
+/**
+ * 香槟炸弹's durability — the owner's decision D2 of 2026-10-08, a deliberate deviation (PRTS 香槟炸弹: 1000 HP and the 备注
+ * "即使自身生命值未满，模型下方也不会显示生命值槽" — officially it can lose HP; no 无敌 / 禁疗 note): it holds 禁疗 (no heal
+ * reaches it, no healer picks it), loses no HP (every damage to it is cancelled — the 活性源石 tick, an element hit too —
+ * and a 流失 is given back before the knock-out check) and so never leaves because of its HP; it goes when its 见面礼 is
+ * spent, as before. Flags only: no status icon, no 无敌 badge (its HP bar is hidden by the client). The token kit below
+ * and 琳琅诗怀雅's own bomb (kits/ops/chess_char_3_04-swire2.js) both install it. Until 0.2.1 a bomb on 活性源石 lost 70 HP/s
+ * and a medic healed a hurt one.
+ */
+export function champagneHold(battle, bomb) {
+  battle.addBuff(bomb, { key: 'token:champagneHold', flags: { noHeal: true, healFree: true }, persist: true, allowDead: true });
+  battle.on('hit', (ctx) => { if (ctx.target === bomb) ctx.dmg.cancel = true; }, { owner: bomb, priority: 1000 });
+  battle.on('elementHit', (ctx) => { if (ctx.target === bomb) ctx.dmg.cancel = true; }, { owner: bomb, priority: 1000 });
+  battle.on('damaged', (ctx) => { if (ctx.target === bomb && bomb.alive) bomb.hp = bomb.s.maxHp; }, { owner: bomb, priority: 1000 });
+}
+
+/** 香槟炸弹 (琳琅诗怀雅 S2): untargetable trap consumed by the first ground enemy touching its tile (champagneHold). */
 function champagne(bb) {
   const scale = num(bb['attack@atk_scale'] ?? bb.atk_scale, 0);
   const slug = num(bb['attack@sluggish'] ?? bb.sluggish, 0);
@@ -1056,7 +1074,7 @@ function champagne(bb) {
       },
     },
     trait: { noAttack: true },
-    install(battle, unit) { untargetable(battle, unit); },
+    install(battle, unit) { untargetable(battle, unit); champagneHold(battle, unit); },
   };
 }
 

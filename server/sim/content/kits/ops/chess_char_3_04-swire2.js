@@ -8,6 +8,7 @@ import {
   groundTile, enemiesOn,
 } from '../shared/tier3.js';
 import { powi } from '../../../detmath.js';
+import { champagneHold } from '../../tokens.js';
 
 /** 琳琅诗怀雅 S3's coin range (PRTS 备注 "前方范围2-4"; range_table "2-4", facing right). */
 const SWIRE2_COIN_GRID = Object.freeze([[1, 1], [0, 0], [0, 1], [0, 2], [-1, 1]]);
@@ -73,6 +74,7 @@ export default {
       skill: null,
       trait: { noAttack: true },
       install(battle, bomb) {
+        champagneHold(battle, bomb);   // 禁疗, no HP loss, never gone because of its HP (the owner's decision D2 of 2026-10-08)
         battle.on('tick', () => {
           if (!bomb.alive || !bomb.deployed) return;
           for (const e of battle.enemies) {

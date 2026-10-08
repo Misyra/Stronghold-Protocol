@@ -1793,7 +1793,7 @@
       "bossHpLeft": null,
       "rngDraws": 10,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":21,"total":21,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":263171,"bossDmg":0,"heal":6511,"deaths":0,"layerGains":{}}},
+      "players": {"p1":{"killed":21,"total":21,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":263171,"bossDmg":0,"heal":1471,"deaths":0,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",3513,1,8,0,0,0,0,0,0],
         ["p1",2,"op","chess_char_6_03_b",2,"uniequip_002_yu",3700,1,6,0,0,0,0,0,0],
@@ -1803,14 +1803,14 @@
         ["p1",6,"op","chess_char_2_04_b",1,"uniequip_002_grabds",1270,1,5,0,0,0,0,0,0],
         ["p1",7,"op","chess_char_5_03_b",2,"uniequip_002_blaze2",632.96,1,12,3,51359,2310,1471,8,2],
         ["p1",8,"op","chess_char_5_12_b",0,"uniequip_002_dusk",1787,1,7,4,68403,0,0,4,4],
-        ["p1",9,"op","chess_char_5_23_b",1,"uniequip_002_reckpr",1610,1,10,0,0,0,5040,27,2],
+        ["p1",9,"op","chess_char_5_23_b",1,"uniequip_002_reckpr",1610,1,10,0,0,0,0,0,0],
         ["-","~1","device","trap_1105_accrate",null,null,100,1,1,0,0,0,0,0,null],
         ["-","~2","device","trap_1105_accrate",null,null,100,1,2,0,0,0,0,0,null],
         ["-","~3","device","trap_1105_accrate",null,null,100,1,3,0,0,0,0,0,null],
         ["p1","~1","token","enemy_9012_acloon",null,null,17300.16,1,13,4,49667,389,0,2,2],
         ["p1","~2","token","enemy_9012_acloon",null,null,13634.89,1,14,2,28865,4054,0,1,1],
         ["p1","~1","token","token_10031_swire2_gdtrap",null,null,1000,0,15,0,0,0,0,0,null],
-        ["p1","~2","token","token_10031_swire2_gdtrap",null,null,930,1,18,0,0,5110,0,0,null],
+        ["p1","~2","token","token_10031_swire2_gdtrap",null,null,1000,1,18,0,0,0,0,0,null],
         ["p1","~3","token","token_10031_swire2_gdtrap",null,null,1000,0,27,0,0,0,0,0,null],
         ["p1","~4","token","token_10031_swire2_gdtrap",null,null,1000,0,30,0,0,0,0,0,null],
         ["p1","~5","token","token_10031_swire2_gdtrap",null,null,1000,0,33,0,0,0,0,0,null],
@@ -1822,10 +1822,10 @@
         ["p1","~10","token","token_10031_swire2_gdtrap",null,null,1000,1,46,0,0,0,0,0,null]
       ],
       "enemies": {"enemy_1019_jshoot_2":[7,7,0,1748,47029],"enemy_1381_winman":[9,9,0,0,129890],"enemy_1389_winbab_2":[5,5,0,5215,87091]},
-      "hooks": [1,46,2282,121,121,188,224,960,22,30,12,9,6,5355,1,4,21,0,1,23,0,0,0],
-      "events": {"atk":121,"deploy":22,"die":30,"dmg":224,"engage":6,"fx":46,"heal":27,"skill":25,"spawn":46,"status":3},
+      "hooks": [1,46,2282,94,94,188,151,933,22,30,10,8,6,4515,1,4,21,0,1,23,0,0,0],
+      "events": {"atk":94,"deploy":22,"die":30,"dmg":151,"engage":6,"fx":46,"skill":22,"spawn":46,"status":3},
       "fx": {"coin":14,"downed":1,"explode":8,"revive":1,"splash":6,"summon":11,"yanyouFlame":3,"yanyouSummon":2},
-      "snaps": "a8dd7569 06196293 7fe10e91 ba972d4d 6d08cfcf fb599bc6 1b50192f 15529175"
+      "snaps": "663ec4b2 fcbf72b6 e7a436e9 b069f338 26ddf9b5 aebe36fd afb4e8de 79b62d42"
     }
   }
 }

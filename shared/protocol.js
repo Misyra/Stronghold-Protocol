@@ -4,6 +4,7 @@
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
+import { cultivatedStats } from './potential.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -270,7 +271,8 @@ const statView = (x) => ({
 
 /**
  * The detail card's stats of a sim unit (server/sim/units.js Unit): its effective stats `s` (the aggregated `unit.s`,
- * or the last ones the sim computed) next to its own `unit.base` (no buffs) — max HP, ATK, DEF, RES, attack interval
+ * or the last ones the sim computed) next to its own numbers — `unit.base` with its 练度 multiplier (`unit.cultMul`,
+ * 0.2.2: part of the operator's own numbers, as on the record cards; no buffs) — max HP, ATK, DEF, RES, attack interval
  * (s), block, move speed — rounded for display (the sim keeps floats), plus the current HP. The shape of the
  * `m.unitStats` units (Match.unitStats: what the board's units start their next battle with) and of the browser
  * runner's live battle stats (public/js/battle/runner.js unitStats). An ally with a range also carries `range`: the grid
@@ -285,7 +287,8 @@ const statView = (x) => ({
  *   range?: Array<[number, number]> }}
  */
 export function unitStatsEntry(u, s = null) {
-  const base = u && u.base && typeof u.base === 'object' ? u.base : {};
+  const own = u && u.base && typeof u.base === 'object' ? u.base : {};
+  const base = u && u.cultMul ? cultivatedStats(own, u.cultMul) : own;
   const cur = s && typeof s === 'object' ? s : base;
   const range = u?.side !== 'enemy' && Array.isArray(u?.liveRangeGrid)
     ? u.liveRangeGrid.filter((p) => Array.isArray(p) && Number.isInteger(p[0]) && Number.isInteger(p[1])).map((p) => [p[0], p[1]])

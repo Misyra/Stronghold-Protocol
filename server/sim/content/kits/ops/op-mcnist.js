@@ -59,6 +59,7 @@ import { num, skillRec, batMod, up } from '../shared/tier1.js';
 import { COLS } from '../../../constants.js';
 import { dirVec } from '../../../dir.js';
 import { hypot } from '../../../detmath.js';
+import { atPotential } from '../../../../../shared/potential.js';
 
 const S1 = 'skchr_mcnist_1';
 const S2 = 'skchr_mcnist_2';
@@ -284,7 +285,7 @@ export default {
       },
       talents: [
         { install(battle, unit) { // 结构性原理: her pieces run the token's kit (set up before the battle starts)
-          const raw = battle.data.rawToken?.(MCGRAF)?.variants?.[unit.def?.tokenOwner] ?? null;
+          const raw = atPotential(battle.data.rawToken?.(MCGRAF)?.variants?.[unit.def?.tokenOwner] ?? null, unit.def?.loadout?.potential);
           for (const t of battle.allyUnits) {
             if (!isGrafOf(t, unit) || t.alive || t.deployed) continue;
             // its life: the base variant's (the SO-A stage-3 skill@duration −1 is 集成战略-only)

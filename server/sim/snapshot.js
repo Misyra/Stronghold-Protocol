@@ -59,6 +59,10 @@ export function unitInfo(u) {
     standInFor: u.side === 'ally' && u.kind === 'op' && typeof d.standInFor === 'string' ? d.standInFor : undefined,
     // 自选: the pick of a DIY slot's piece (the detail card composes its record, shared/diy.js diyRecord)
     diy: u.side === 'ally' && u.kind === 'op' && d.diyFor && d.loadout?.diy ? { ...d.loadout.diy } : undefined,
+    // 0.2.2: an ally operator's potential below 6 and its 练度 tier (a teammate's unit shows ITS owner's numbers; absent:
+    // full potential, no 练度 — a stand-in, a prototype 自选 pick)
+    potential: u.side === 'ally' && u.kind === 'op' && d.loadout?.potentialIsDefault === false ? d.loadout.potential : undefined,
+    cultivate: u.side === 'ally' && u.kind === 'op' && Number.isInteger(u.cultivate) ? u.cultivate : undefined,
   };
 }
 

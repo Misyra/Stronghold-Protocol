@@ -302,6 +302,22 @@ test('余 文火慢炖: R8 round start — exactly 1 active bond +36 layers, oth
   cover('band_yu');
 });
 
+test('余 文火慢炖 adds no layers to a bond without layers (noStack: 独行, 绝技 …) — the owner\'s decision of 2026-10-08', () => {
+  assert.deepEqual(Object.values(DATA.bonds).filter((b) => b.noStack).map((b) => b.name).sort(), ['协防干员', '独行', '绝技', '调和'].sort());
+  for (const [bonus, want] of [
+    [{ soloShip: 1 }, {}],                          // the one active bond is 独行: nothing at all
+    [{ suntShip: 5 }, {}],                          // … or 绝技
+    [{ soloShip: 1, yanShip: 20 }, { yanShip: 12 }], // two active (the sentence's count): the layered one +12, 独行 none
+  ]) {
+    const s = setup({ band: 'band_yu' });
+    Object.assign(s.ps.bondCountBonus, bonus); s.ps.recompute();
+    for (const id of Object.keys(bonus)) assert.ok(s.ps.bonds[id]?.active, `${id} active`);
+    s.roundStart(8);
+    const got = Object.fromEntries(Object.entries(s.ps.layers).filter(([, v]) => v > 0));
+    assert.deepEqual(got, want, JSON.stringify(bonus));
+  }
+});
+
 test('凯瑟琳 定向投放: every shop upgrade offers 3 different shop items (any tier — community report of 2026-10-06), 1 free pick', () => {
   const { m, ps } = setup({ band: 'band_cathy', seed: 9 });
   for (const lvl of [2, 3]) {

@@ -292,6 +292,8 @@ test('her stock (the owner\'s decision of 2026-10-06): the placed 棋子 occupy 
     assert.deepEqual([u.skill.activations, w.stock], [1, 7], `${S}: 立即获得两枚棋子`);
     h.step();
     assert.ok(!u.s.flags.noSp, `${S}: below the cap, no 阻回`);
+    assert.ok(u.skill.nextCastAt > h.b.time, `${S}: the next cast waits one attack interval (GitHub #298)`);
+    h.run(u.skill.nextCastAt - h.b.time);           // wait it out
     u.skill.gainSp(999);
     h.step();
     assert.deepEqual([u.skill.activations, w.stock], [2, 8], `${S}: 最多拥有8枚`);

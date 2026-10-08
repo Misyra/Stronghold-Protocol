@@ -2,6 +2,7 @@
 // content/enemies.js).
 
 import { canTargetAlly, enemyStealthed } from '../../targeting.js';
+import { ALLY_COLLIDER_RADIUS } from '../../constants.js';
 import { T, elem, hurt, targetsNear, byPriority, auraBuff } from './helpers.js';
 import { stealth, onHitStatus, skill, kitStealth } from './archetypes.js';
 import { hypot } from '../../detmath.js';
@@ -9,7 +10,8 @@ import { hypot } from '../../detmath.js';
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
 
-/** "数个目标" of 假想敌：骨刺 while stealthed [ASSUMED]. */
+/** 假想敌：骨刺's targets at once while its 隐匿 holds: 3 — the level's own description 「隐匿；隐匿状态下同时攻击3个目标。」
+ *  (enemy_database; the handbook line says 「数个目标」) and PRTS 天赋 「隐匿期间可同时攻击3个目标」 (GitHub #365). */
 const ACBUNN_TARGETS = 3;
 
 /** 重弩突袭者 直击 reach along a row/column [ASSUMED]; the skill's length and its charge before the bolt (PRTS 直击 "蓄力1.4s后
@@ -114,11 +116,24 @@ function kitShadowBlade(ab) {
   }];
 }
 
+/**
+ * 假想敌：骨刺 — PRTS 天赋 (级别0): 「自身普通攻击索敌不受阻挡影响」 — profile `blockFree` (as 自制投石机): blocked, and so out of its
+ * 隐匿, it still picks by priority among the allies in reach, not its blocker first, and a 隐匿 / 迷彩 blocker is no target
+ * (targeting.js canTargetAlly); 「不会攻击飞行单位」 — profile `canTarget`; 「隐匿（解除阻挡0秒后恢复）」 — stealth(); 「隐匿期间
+ * 可同时攻击3个目标」: while its 隐匿 holds, the first ACBUNN_TARGETS by priority among the allies its normal attack could hit
+ * (ai.js attackTargets: the same reach — rangeRadius + the ally collider — and the same rules); one otherwise. Until
+ * 0.2.2 (PR #365 by @Sukvii, the PRTS lines checked for this port): blocker first, flyers hit, the 3 picked within the bare
+ * rangeRadius.
+ */
 function kitBoneSpike() {
   return [stealth(), {
+    spawn(b, e) {
+      e.profile.blockFree = true;
+      e.profile.canTarget = (u) => !u.isFlying;
+    },
     before(c, b, e) {
-      if (!enemyStealthed(e)) return;                             // 隐匿状态下同时攻击数个目标 (back 0 s after a block)
-      const l = byPriority(e, targetsNear(b, e, e.base.rangeRadius));
+      if (!enemyStealthed(e)) return;
+      const l = byPriority(e, targetsNear(b, e, e.base.rangeRadius + ALLY_COLLIDER_RADIUS).filter(e.profile.canTarget));
       if (l.length) c.targets = l.slice(0, ACBUNN_TARGETS);
     },
   }];

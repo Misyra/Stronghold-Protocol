@@ -108,6 +108,7 @@ export class SkillRuntime {
     // the official skill strategies automate the manual 开启: only MANUAL skills wait for the operation cooldown
     this.manual = String(d.skillType ?? 'MANUAL').toUpperCase() === 'MANUAL';
     this.opReadyAt = -Infinity;   // no automatic cast before this battle time (AUTO_OP_COOLDOWN)
+    this.nextCastAt = -Infinity;  // instant / charges with no attack of its own: no cast from the tick before (GitHub #298)
     if (this.kind === 'passive') this.baseSpCost = 0;
     this._spCostMul = 1;          // content may set spCostMul (e.g. 绝技 ×0.7) — see the accessor below
     this.sp = 0;
@@ -269,6 +270,7 @@ export class SkillRuntime {
     this._trigKeys = null;
     this._trigSet = null;
     this.opReadyAt = -Infinity;   // (Battle._deploy starts the operation cooldown of the battle-start deployment)
+    this.nextCastAt = -Infinity;
     if (this.noSkill) return;
     if (this.kind === 'passive') {
       this._startPassive();
@@ -389,6 +391,9 @@ export class SkillRuntime {
     if (this.active && this.isTimed) return;
     // a cast "next attack" still waits for its attack: another charge now would be spent on the same attack
     if (this.pending || this._opCooling()) return;
+    // an instant / charge skill with no attack of its own is cast at most once per attack interval of its unit
+    // (activate sets nextCastAt; GitHub #298): the casts checked here wait for it — the unit's attacks are not touched
+    if (!this.isTimed && !this.spec.attack && this.battle.time < this.nextCastAt - 1e-9) return;
     if (TICK_RULES.has(this.rule)) {
       if (this._tickRuleSatisfied()) this.activate(this.rule);
     } else if (this.rule !== 'TAKE_DAMAGE' && this.rule !== 'NEVER') {
@@ -493,7 +498,8 @@ export class SkillRuntime {
     if (this.pending || this._opCooling()) return false;
     if (!this._defaultCondition()) return false;
     if (this.triggerAllies && !this._allyTriggerSatisfied()) return false;
-    return this.activate('DEFAULT');
+    this._beforeAttack = true;   // the attack follows this cast in the same check (ai.js updateAlly): attacks pace it
+    try { return this.activate('DEFAULT'); } finally { this._beforeAttack = false; }
   }
 
   /** TAKE_DAMAGE trigger + INCREASE_WHEN_TAKEN_DAMAGE SP. */
@@ -541,7 +547,16 @@ export class SkillRuntime {
     // bullets added in skillStart (拉特兰's ×(1.05 + 0.015 × layers), 逃犯引渡手续, talents): the bar's full mark
     // (community report #35: the extra bullets sat above a full bar until fewer than the base count were left)
     if (this.active && this.ammoLeft > this.ammoMax) this.ammoMax = this.ammoLeft;
-    if (!this.isTimed && !this.pending) this.end('instant');
+    if (!this.isTimed && !this.pending) {
+      this.end('instant');
+      // an instant / charge skill with no attack of its own (no spec.attack: a throw, a heal, a buff, DP …) waits one
+      // attack interval of its unit before it is cast again from the tick (GitHub #298: 引星棘刺 S1 度算浪波, an SP_FULL
+      // cast, was recast every tick once 迅捷's refund refilled its bar at once, whatever the attack speed) — on the skill
+      // only: the cast is no attack, the unit's attacks / heals keep their own rhythm. [ASSUMED] one attack interval: PRTS
+      // prints no 前后摇 for such casts. A cast made right before an attack (DEFAULT) is paced by those attacks already;
+      // a cast onEnd opened again owns its own gap.
+      if (!this.active && !this.spec.attack && !this._beforeAttack && u.alive && u.s.interval > 0) this.nextCastAt = b.time + u.s.interval;
+    }
     return true;
   }
 

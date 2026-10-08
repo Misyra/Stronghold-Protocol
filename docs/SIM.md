@@ -277,7 +277,9 @@ included), summons (流形's melee copy) and a ranged operator standing on a mel
 enemies it blocks, in range or not, whatever its facing, and targets them first ("可以选择且优先选择阻挡单位", PRTS 选择器;
 the user's rule after playtest #6, "阻挡了就一定要能打到": officially the collision pushes a blocked enemy to its blocker's
 front — `Battle.blockedTargets`, used by `ai.js acquireTargets` and the skills' DEFAULT trigger, and
-`sortEnemyTargets`; "自身这格内" rules name the blocked enemies separately — 瑕光 S2, PRTS 备注). A kit that picks its own
+`sortEnemyTargets`; one exception, the owner's decision of 2026-10-08 (GitHub #220): the 速射手 air priority —
+priority 'fly', trait 优先攻击空中单位 — comes before its own blocked enemy, so a 速狙 on a melee tile shoots a flyer in its
+range first, PRTS 索敌的概念 「阻挡（近战限定）→特殊优先级→…」; every other priority keeps the blocked enemy first; "自身这格内" rules name the blocked enemies separately — 瑕光 S2, PRTS 备注). A kit that picks its own
 targets from the range (`beforeAttack`) adds `battle.blockedTargets` to its candidates (深靛, 迷迭香 S3, 荒芜拉普兰德 S2,
 佩佩 S2, 灵知 S3, 远牙 S3); only skill texts that exclude targets keep their rule (普罗旺斯 S2: none above 80 % HP; 寒檀
 S2: icicles on random tiles of her range). This replaces the
@@ -635,7 +637,9 @@ and the 浮空 weight rule, then `statusApplied { source, target, status, durati
 = the target carried no buff of that status before (a refresh / a weaker "取最高" application is not an entry: "进入…时"). Effects follow the official term table
 (`gamedata_const.termDescriptionDict`, `ba.*`). Same-key statuses refresh to the longer duration, except the
 "同名效果取最高" ones marked *strongest* below: the strongest value wins, a weaker application never overrides it and,
-if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out); `stackAs` = the strength such an
+if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out) — every such waiting application keeps
+its own end, and they resume strongest first (`buff.data.tail` is a chain ordered by strength: of 30 % / 25 % / 20 %
+applied one after another, the 25 % follows the 30 %, then the 20 % — GitHub #342, PR #348); `stackAs` = the strength such an
 application competes with instead of its `value`, which stays its effect (Raidian S3's 虚弱: PRTS 备注 "在叠加时视为90%…的
 虚弱（仅影响叠加优先级，不影响实际效果）").
 `battle.applyStrongest(target, key, { duration, value, mods: (v) => mods, source })` gives a content effect that is not a
@@ -963,7 +967,12 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
   (`Battle._deploy` initial; `battle.flags.startOpCooldown`, default 3 — the test harness sets 0 unless told otherwise);
   AUTO skills are exempt; kits with their own automatic cast of a MANUAL skill check `skill.opCooling` (波登可 S1, 雪猎
   special bullets, 流形 copy). While a cast "next attack" (instant / charges with an attack override) waits for its
-  attack, no further charge is cast. `gainSp` is ignored while a duration/ammo/toggle skill
+  attack, no further charge is cast. An instant / charges skill with no attack override of its own (a throw, a heal, a
+  buff, a DP gain …) is cast from the tick (the rules above, the DEFAULT of units that never attack, content trigger
+  ranges) at most once per attack interval of its unit — `skill.nextCastAt`, set by such a cast, reset on deployment —:
+  attack speed paces it, and an SP refund that refills the bar at once (迅捷) no longer recasts it every tick (GitHub #298,
+  引星棘刺 S1; [ASSUMED] one attack interval: PRTS prints no 前后摇 for such casts). The cast is no attack: the unit's
+  attacks and heals keep their own rhythm, and its first cast comes as soon as it is ready (#124). `gainSp` is ignored while a duration/ammo/toggle skill
   runs (its bar shows the skill), whatever the reason, and — any reason but `'init'` — while the unit has the `noSp`
   flag (阻回: "停止并阻止任意形式的技力回复"; the operators' 凋亡 burst, §3).
 - Kinds: `duration` (mods for `duration` s), `ammo` (mods until `ammo` attacks were made, optional duration cap),

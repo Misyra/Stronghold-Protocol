@@ -119,17 +119,23 @@ export function registerMeta(registry) {
   // 画卷 — trap_copy_front_char: copy the operator in range (elite status included) with its equipment. A copied
   // normal item that completes a pair with an owned one merges at once and the golden stays in the hand (research 04
   // addendum "两个同名道具（无论是否被装备）会自动合并…并自动返回整备区"); the built-in equipped that golden on the copy.
+  // A copy that completes a three-copy merge (GitHub #389, PR #390): the elite wears nothing — the promotion returns the
+  // copies' equipment to the hand (PRTS 帮助 "在失去该干员（…合并等）…时自动卸除") — and the copied items stay in the hand
+  // too (PRTS 画卷 备注 "获得的装备为未装备状态"), a copied normal item merging with the returned original.
   wrap(registry, 'chess_item_6_02_m', () => ({
     onArt(ctx, ev) {
       const target = (ev.targets || []).find((p) => p && p.kind === 'chess');
       if (!target) { ev.error = 'BAD_TARGET'; ev.detail = 'no operator in range'; return; }
+      // snapshot before the gain: a gain that completes a merge consumes the target and empties `target.items`, and an
+      // item merge detaches the original's copy from `target.items` while we iterate (the built-in's live loop then
+      // skipped the next item)
+      const itemIds = (target.items || []).map((it) => it.id);
       const copy = ctx.grantChess(target.id, { requirePool: false, source: 'item:chess_item_6_02_m' });
       if (!copy) { ev.error = 'HAND_FULL'; return; }
-      // snapshot first: a merge detaches the original's copy of the item from `target.items` while we iterate
-      // (the built-in's live loop then skipped the next item)
-      for (const itemId of (target.items || []).map((it) => it.id)) {
+      const promoted = copy.id !== target.id;
+      for (const itemId of itemIds) {
         const got = ctx.grantItem(itemId, { source: 'item:chess_item_6_02_m' });
-        const holder = got ? ctx.piece(copy.uid) : null;
+        const holder = got && !promoted ? ctx.piece(copy.uid) : null;
         if (got && got.id === itemId && holder && holder.kind === 'chess') ctx.equipDirect(got.uid, holder.uid);
       }
     },

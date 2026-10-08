@@ -57,6 +57,14 @@ export function mergeHint(priv, chessId) {
   return mergeTarget(priv, chessId, LOOKUPS.getChess) ? t('精锐干员将出现在作战区原位置') : t('精锐干员将进入整备区');
 }
 
+/**
+ * Whether a shop card shows its frost: its own slot's `frozen` (m.private shop.slots[i].frozen) — the 冻结 toggle copies onto
+ * every unsold slot, and 梓兰's 猎头顾问 freezes ONE copied card with every active refresh while the toggle stays off
+ * (GitHub #354: the bar drew only the toggle, so the frozen card showed no frost) — or the toggle itself (a frame without
+ * per-slot flags). The 冻结 button and the bar's frame keep following the toggle alone.
+ */
+export const slotFrozen = (slot, toggle = false) => !!slot?.frozen || !!toggle;
+
 /** The armed (first-tapped) card's confirm strip: 确认购买 / 确认选择, or 无法购买 + why. */
 function ArmedTag({ reason, free }) {
   if (reason) return html`<span class="scard__confirm is-no" role="status"><b>${t('无法购买')}</b><small>${reason}</small></span>`;
@@ -348,7 +356,7 @@ export function ShopBar({ priv, editable, collapsed, onCollapse, onBuy, onLevel,
         ${chessSlots.map(({ s, i }) => {
           if (!s || s.sold) return html`<${SoldCard} key=${`s${i}`} />`;
           const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
-          return html`<${ChessCard} key=${`c${i}:${s.id}`} slot=${s} idx=${i} priv=${priv} frozen=${frozen} onBuy=${onBuy} onDetail=${onDetail} offBonds=${offBonds}
+          return html`<${ChessCard} key=${`c${i}:${s.id}`} slot=${s} idx=${i} priv=${priv} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} offBonds=${offBonds}
               reason=${reason} armed=${armed === armKey('c', i, s)} onTap=${editable ? (idx) => tapCard('c', idx, s, 'chess', reason, onBuy) : null} />`;
         })}
       </div>`}
@@ -357,7 +365,7 @@ export function ShopBar({ priv, editable, collapsed, onCollapse, onBuy, onLevel,
           ? itemSlots.map(({ s, i }) => {
             if (s.sold) return html`<${SoldCard} key=${`is${i}`} item=${true} />`;
             const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
-            return html`<${ItemCard} key=${`i${i}:${s.id}`} slot=${s} idx=${i} frozen=${frozen} onBuy=${onBuy} onDetail=${onDetail} reason=${reason}
+            return html`<${ItemCard} key=${`i${i}:${s.id}`} slot=${s} idx=${i} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} reason=${reason}
               armed=${armed === armKey('i', i, s)} onTap=${editable ? (idx) => tapCard('i', idx, s, 'item', reason, onBuy) : null} />`;
           })
           : html`<${SoldCard} item=${true} />`}

@@ -36,7 +36,7 @@ S→C:
 ```js
 { playerId, seat, alive, lp, funds, bandId, ready, canReady /* false while temp non-empty */,
   shop: { level, maxLevel: 6, upgradePrice, refreshPrice /* effective (0 when a free refresh is available) */, freeRefreshes,
-          frozen, slots: [ { kind: 'chess'|'item', id, price, basePrice, sold } | null ],
+          frozen, slots: [ { kind: 'chess'|'item', id, price, basePrice, sold, frozen } | null ],  // slot.frozen: the 冻结 toggle copies onto every unsold slot, and 梓兰's 猎头顾问 freezes ONE card of an active refresh with the toggle off — every card draws its own flag (GitHub #354)
           rewardOffer: null | { tier, source: 'merge'|'special', label, queued, slots: [ { kind: 'chess'|'item', id, price: 0, sold } ] } },  // §21.2
   hand:  [ Piece | null ],   // length 10, index = hand slot
   temp:  [ Piece | null ],   // length 5

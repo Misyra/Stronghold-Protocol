@@ -28,10 +28,11 @@
 // (PRTS 状态机: an enemy's COMBAT state ends with its attack, not with its blocker); the candidates pass the
 // enemy's own rule (`e.profile.canTarget`) and are ordered
 // blocker → taunt → latest deployed (targeting.js sortAllyTargets). An enemy's damage type is its data's unless content
-// arms it (`e.profile.dmgType`: 转译基底's forms, whose data never attacks). Reaching the final leg's end = leak. A `fear` (恐惧) status suspends the route: the
-// enemy runs between random checkpoints away from the fear's source (fear.js moveFeared; a self-inflicted fear
-// flutters inside its own tile); an `attract` (诱导) status walks it to the status point instead (moveAttracted);
-// both re-plan the route when released (恐惧 outranks 诱导).
+// arms it (`e.profile.dmgType`: 转译基底's forms, whose data never attacks). Reaching the final leg's end = leak — on a
+// portal entrance it is a teleport to the far exit and a walk to that side's blue door instead (portalPickup). A `fear`
+// (恐惧) status suspends the route: the enemy runs between random checkpoints away from the fear's source (fear.js
+// moveFeared; a self-inflicted fear flutters inside its own tile); an `attract` (诱导) status walks it to the status
+// point instead (moveAttracted); both re-plan the route when released (恐惧 outranks 诱导).
 
 import { ATTACK_PAUSE, ALLY_COLLIDER_RADIUS, MOVE_SCALE, PROJECTILE_SPEEDS, PROJECTILE_SPEED, BOOMERANG_RETURN_SPEED, COLS, CHAIN_RADIUS } from './constants.js';
 import { sortEnemyTargets, sortAllyTargets, canTargetEnemy, canTargetAlly, tileKeyOf } from './targeting.js';
@@ -634,7 +635,10 @@ function advanceRoute(b, e, dt, R, standing = false) {
   let guard = 16;
   while (budget > 1e-9 && guard-- > 0 && e.alive) {
     const leg = R.legs[R.legIdx];
-    if (!leg) { b.leak(e); return; }
+    if (!leg) {
+      if (!portalPickup(b, e)) { b.leak(e); return; }
+      continue;
+    }
     if (leg.t === 'wait') {
       if (R.waitLeft == null) R.waitLeft = leg.time;
       const use = Math.min(budget, R.waitLeft);
@@ -684,11 +688,46 @@ function advanceRoute(b, e, dt, R, standing = false) {
     }
     budget = dist / speed;
     if (R.pts && R.ptIdx >= R.pts.length) {
-      if (leg.final) { b.leak(e); return; }
+      if (leg.final) {
+        if (!portalPickup(b, e)) { b.leak(e); return; }
+      }
       R.legIdx++;
       R.pts = null;
     }
   }
+}
+
+/**
+ * Boss-field portal pickup (tile_telin / tile_telout; GitHub #336, PR #337 by @2321Robin, both with a recording of the
+ * official game): a route that ENDS on a portal entrance does not leak there — the enemy is teleported out of the far
+ * exit and walks on to the blue door on the entrance's side, where it leaks. The boss / Hidden Core circuits end on
+ * an entrance ([1,3] / [1,17]; 137 routes of data/waves.json); their mid-route crossings are the routes' own DISAPPEAR /
+ * WAIT / APPEAR steps, every MOVE onto an entrance being followed by a DISAPPEAR, so only the route's end needs this.
+ * Appends vanish → wait → reappear → walk-to-door legs to the live route and returns true (false: not on an entrance,
+ * or no exit in the field). The exit is the telout farthest from the entrance, the door the end tile nearest to it:
+ * every explicit pair of the data (95, routes and extra routes) reads [1,3] / [1,17] → [5,10] — the farther of the two
+ * telouts [5,10] / [2,10] of the battle stages — and the doors [2,2] / [2,18] stand beside the entrances. Inside the
+ * portal the enemy stays hidden PORTAL_WAIT s, the wait of the explicit crossings of the same tiles (WAIT 3 s in 85 of
+ * the 95; 5 s in 9, 1 s in 1). [ASSUMED] the pairing (no tile carries a link) and the 3 s (no source times this one).
+ */
+const PORTAL_WAIT = 3;
+function portalPickup(b, e) {
+  const r = Math.round(e.y), c = Math.round(e.x);
+  if (!b.grid.inBounds(r, c) || b.grid.tile(r, c).special !== 'telin') return false;
+  const outs = b.grid.specialTiles('telout');
+  if (!outs.length) return false;
+  const dist = (p) => hypot(p[0] - r, p[1] - c);
+  const out = outs.reduce((a, x) => (dist(x) > dist(a) ? x : a));
+  const R = e.route;
+  R.legs.splice(R.legIdx + 1, 0, { t: 'disappear' }, { t: 'wait', time: PORTAL_WAIT }, { t: 'appear', r: out[0], c: out[1] });
+  const ends = b.grid.specialTiles('end');
+  if (ends.length) {
+    const door = ends.reduce((a, x) => (dist(x) < dist(a) ? x : a));
+    R.legs.push({ t: 'move', r: door[0], c: door[1], final: true });
+  }
+  R.pts = null;
+  R.tailVersion = -1;   // the appended tail invalidates the cached remaining-distance suffixes
+  return true;
 }
 
 /**

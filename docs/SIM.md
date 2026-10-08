@@ -190,7 +190,14 @@ a part) is not, even when it counts for LP (`counted`).
 `RouteSpec` accepts data/waves.json routes (`{motion, start, end, checkpoints:[[r,c]…], steps:[{t:'move',p},{t:'wait',s},{t:'disappear'},{t:'appear',p}]}`)
 and research routes (`{m, s, e, cp:[['MOVE',r,c]…]}`). `spawnsFromTemplate(waveEntry, {mods})` (simdata.js) converts a
 template into `{ routes, spawns, maxPlayTime, overrides, extraRoutes }` (non-spawn `action` entries are skipped; `unharmful`
-and `tag:'part'` spawns don't count in `total`).
+and `tag:'part'` spawns don't count in `total`). The boss templates' 传送门 reads as "reappear on the far side" (GitHub
+#336, PR #337): four official routes write the crossing as `disappear → wait → move` to the exit with no `appear` (their
+twins spell the `appear` out), so normalizeRoute re-inserts the exit `appear` ahead of that move — otherwise the enemy
+walks the rest of its route hidden and leaks unseen (test/sim/portal-appear.test.js). A route that ENDS on an entrance
+(`tile_telin`; the boss / Hidden Core circuits end on [1,3] / [1,17]) does not leak there: the enemy vanishes, comes
+out of the far exit (`tile_telout`; both entrances feed [5,10], the pairing of every explicit `disappear`/`appear` pair
+of the data) after 3 s hidden inside — the wait of the explicit crossings (85 of 95) — and walks on to the blue door
+on the entrance's side, where it leaks (ai.js portalPickup; [ASSUMED] the pairing and the 3 s).
 
 A `bounty` pays `coins` once, when the enemy really dies (not a knock-out it survives; a leak pays nothing), to
 `Battle._bountyPayee`: the player of the operator or summon that dealt the blow, if that player is in the battle; any
@@ -201,13 +208,19 @@ Leader parts (`tag:'part'`) pass damage to their leader with `loseHp(leader, sha
 (无来源, credited to the attacker's `bossDamage`): `PART_TRANSFER` 1 for 斩胄之剑 / 破胄之锤 (`BLADE_TRANSFER`, the same
 constant) and 碎铳之簧 (PRTS "受到伤害时令假想敌：胄/铳受到等量的无来源生命流失"; DESIGN §20.10, §20.13). Content may replace a part mid-battle: every 剑/锤 sortie (content/bosses.js `kitBlade`)
 ends by spawning a new 初始模式 copy on its level branch route (`left_hand_origin` / `right_hand_origin`) with the old
-HP, then `kill(old, null)` — uncounted, no bounty; the client sees a `die` and a `spawn`.
+HP, then `kill(old, null)` — uncounted, no bounty; the client sees a `die` and a `spawn`. The Hidden Core 铳's 【末日布道】
+puts every 碎铳之簧 into 追逐模式 for its whole 5 s gain (`dog_duration`; invulnerable, no ordinary attacks): the spring
+keeps following the casting gun after reaching it (PR #347; until 0.2.1 arrival or 1 tile ended the chase), and each
+gun casts on its own data timer (20 s after it spawns, then every 45 s), so on a pair field the later call retargets
+every spring to that gun for a new 5 s (PRTS: 「持续召唤场上所有“碎铳之簧”向自身移动」).
 
 WALK legs pathfind on the stage grid inside the rect with the official flow field (grid.js: 4-direction SPFA from the
 destination, crates cost 1000, then Bresenham line-of-sight smoothing — research 08 §3.4). The official route stays
 unless 0.1.0's road-over-floor preference route (the fewest non-blockable tiles among equal-length chains, a line of
 sight that never covers floor — diagonal-step corners included — its grid route does not walk; user playtest #2 item 2)
-crosses strictly fewer non-blockable tiles (floor / gate lanes); "crosses" = passes through the tile's interior, a
+crosses strictly fewer non-blockable tiles (floor / gate lanes) and no more 深水区 (GitHub #375: on 战场#08(下半) the
+patrolling 铳 / 卢西恩 waded through two water tiles to dodge one floor tile; the official upper road crosses one);
+"crosses" = passes through the tile's interior, a
 corner touch does not count (`grid.js` `segmentTiles`; community report D5 after 0.1.0: 战场#04's lower-gate enemies cut
 diagonally from row 9 into row 10 as officially), and on equal counts the official route stays.
 test/sim/pathing-official.test.js lists the 21 of 154 stage routes that still differ from the official ones (战场#01's

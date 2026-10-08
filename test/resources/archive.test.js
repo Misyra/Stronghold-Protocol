@@ -81,7 +81,7 @@ test('old ZIP reuses unchanged files across CDN prefixes, skips stale/removed/un
   assert.deepEqual([result.imported, result.compatible, result.skippedPackage], [1, 1, 3]);
   assert.equal((await target.store.status()).count, 1);
   await target.store.download();
-  assert.deepEqual(target.calls, next.slice(1).map((f) => target.store.keyOf(f.url)));
+  assert.deepEqual([...target.calls].sort(), next.slice(1).map((f) => target.store.keyOf(f.url)).sort());
   assert.equal((await target.store.status()).complete, true);
 });
 

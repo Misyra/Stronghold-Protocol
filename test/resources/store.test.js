@@ -282,6 +282,34 @@ describe('ResourceStore', () => {
     assert.equal(res.complete, true);
   });
 
+  test('bodies saved before an index flush are recovered without downloading them again', async () => {
+    const body = 'finished-before-tab-closed';
+    const file = { url: '/assets/a.png', tier: 1, size: body.length, hash: await digest(body) };
+    const caches = new MemoryCaches();
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(`${ORIGIN}${file.url}`, new Response(body));
+    const { fetch, calls } = fetcherFor();
+    const s = store(manifest([file]), { caches, fetch });
+    assert.equal((await s.status()).count, 0, 'the body has no recorded fingerprint yet');
+    const res = await s.download();
+    assert.deepEqual(calls, [], 'verified local bytes need no network request');
+    assert.deepEqual([res.adopted, res.downloaded, res.complete], [1, 0, true]);
+    assert.equal((await (await cache.match(indexUrl(ORIGIN))).json()).files[`${ORIGIN}${file.url}`], file.hash);
+  });
+
+  test('a stale current-cache body is removed before fetching, avoiding a worker integrity retry', async () => {
+    const fresh = 'new-correct-bytes';
+    const file = { url: '/assets/a.png', tier: 1, size: fresh.length, hash: await digest(fresh) };
+    const caches = new MemoryCaches();
+    const cache = await seed(caches, `${ORIGIN}${file.url}`, 'old-bytes', await digest('old-bytes'));
+    const calls = [];
+    const fetch = async (url) => { calls.push(url); return (await cache.match(url)) || new Response(fresh); };
+    const res = await store(manifest([file]), { caches, fetch }).download();
+    assert.deepEqual(calls, [`${ORIGIN}${file.url}`], 'the worker cannot return the stale body once it is removed');
+    assert.deepEqual([res.failed, res.adopted, res.downloaded], [0, 0, 1]);
+    assert.equal(await (await cache.match(`${ORIGIN}${file.url}`)).text(), fresh);
+  });
+
   test('a cache of the previous layout is migrated, not re-downloaded', async () => {
     const bodies = { '/assets/a.png': 'aaa-bytes', '/assets/b.png': 'bbb-bytes-longer' };
     const files = [];
@@ -303,6 +331,19 @@ describe('ResourceStore', () => {
     const again = await store(manifest(files), { caches, fetch: fetcherFor().fetch }).download();
     assert.equal(again.complete, true);
     assert.equal(again.adopted, 0);
+  });
+
+  test('a stale first legacy cache does not hide a verified copy in another legacy cache', async () => {
+    const body = 'already-downloaded-correct-bytes';
+    const file = { url: '/assets/a.png', tier: 1, size: body.length, hash: await digest(body) };
+    const caches = new MemoryCaches();
+    await (await caches.open(cacheName('v1'))).put(`${ORIGIN}${file.url}`, new Response('stale'));
+    await (await caches.open(cacheName('v2'))).put(`${ORIGIN}${file.url}`, new Response(body));
+    const { fetch, calls } = fetcherFor();
+    const result = await store(manifest([file]), { caches, fetch }).download();
+    assert.deepEqual(calls, [], 'a later hash-verified cached copy avoids a network download');
+    assert.deepEqual([result.adopted, result.downloaded, result.complete], [1, 0, true]);
+    assert.equal(await (await (await caches.open(CACHE_NAME)).match(`${ORIGIN}${file.url}`)).text(), body);
   });
 
   test('a stale entry in an old cache is dropped and fetched, never left to shadow the new file', async () => {

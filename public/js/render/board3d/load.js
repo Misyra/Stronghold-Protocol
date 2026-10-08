@@ -12,7 +12,7 @@
 
 import { resolveUvTable } from './atlas.js';
 import { parseObj } from './obj.js';
-import { resourceUrl, resourceCache } from '../../resourceUrl.js';
+import { resourceUrl, resourceCache, resourceReady } from '../../resourceUrl.js';
 
 export const THREE_URL = '/vendor/three.module.js';
 
@@ -84,10 +84,10 @@ export async function boardArtListed(assets) {
 }
 
 async function fetchText(url) {
-  try { url = resourceUrl(url); const r = await fetch(url, { cache: resourceCache(url) }); return r.ok ? await r.text() : null; } catch { return null; }
+  try { await resourceReady(); url = resourceUrl(url); const r = await fetch(url, { cache: resourceCache(url) }); return r.ok ? await r.text() : null; } catch { return null; }
 }
 async function fetchJson(url) {
-  try { url = resourceUrl(url); const r = await fetch(url, { cache: resourceCache(url) }); return r.ok ? await r.json() : null; } catch { return null; }
+  try { await resourceReady(); url = resourceUrl(url); const r = await fetch(url, { cache: resourceCache(url) }); return r.ok ? await r.json() : null; } catch { return null; }
 }
 
 /**

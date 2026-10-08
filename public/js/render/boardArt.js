@@ -11,7 +11,7 @@
 // (board3d/load.js, which reads the manifest only) and this art share one download — also when the manifest lists
 // the WebP copy tools/local-extract writes and the table still names the PNG.
 
-import { resourceCache } from '../resourceUrl.js';
+import { resourceUrl, resourceCache, resourceReady } from '../resourceUrl.js';
 
 let cached = null;
 
@@ -44,7 +44,8 @@ export function loadBoardArt(assets) {
     const dir = atlasUrl.replace(/\/[^/]*$/, '');
     let tiles = null;
     try {
-      const url = `${dir}/tiles.json`;
+      await resourceReady();
+      const url = resourceUrl(`${dir}/tiles.json`);
       const res = await fetch(url, { cache: resourceCache(url) });
       tiles = res.ok ? await res.json() : null;
     } catch { tiles = null; }

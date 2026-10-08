@@ -313,6 +313,25 @@ describe('local-art manifest helpers', () => {
     assert.equal(await broken.local(), null);
   });
 
+  test('the 2D board waits for hashes and versions its derived CDN crop table', async (t) => {
+    const previous = { fetch: globalThis.fetch, cdn: globalThis.__spAssetCdn, ready: globalThis.__spManifestReady };
+    t.after(() => { globalThis.fetch = previous.fetch; globalThis.__spAssetCdn = previous.cdn; globalThis.__spManifestReady = previous.ready; resetBoardArt(); });
+    const base = 'https://cdn.example', dir = '/assets/local/map/autochess/';
+    globalThis.__spAssetCdn = { base, manifest: '/assets-manifest.json?v=1234567890abcdef' };
+    let publish;
+    globalThis.__spManifestReady = new Promise((resolve) => { publish = resolve; });
+    const asked = [];
+    const tiles = { materials: {}, source: { D: { path: dir + 'TX_autochessi_D.png' } } };
+    globalThis.fetch = async (url) => { asked.push(url); return { ok: true, json: async () => tiles }; };
+    resetBoardArt();
+    const loading = loadBoardArt({ local: async () => ({}), localUrl: () => `${base}${dir}TX_autochessi_D.png?v=aaaaaaaaaaaaaaaa`, image: async () => ({ width: 4 }) });
+    await Promise.resolve();
+    assert.deepEqual(asked, [], 'no unversioned request while the manifest is pending');
+    publish({ hashes: { [dir + 'tiles.json']: 'bbbbbbbbbbbbbbbb' } });
+    assert.ok((await loading)?.images.D);
+    assert.deepEqual(asked, [`${base}${dir}tiles.json?v=bbbbbbbbbbbbbbbb`]);
+  });
+
   test('board art loads the crop-table textures at the URLs the manifest lists (one download with the 3D board)', async () => {
     const at = (n, ext) => `/assets/local/map/autochess/${n}.${ext}`;
     const m = { groups: { 'map/autochess': { TX_autochessi_D: { path: at('TX_autochessi_D', 'webp') }, TX_autochessi_BG: { path: at('TX_autochessi_BG', 'webp') } } } };

@@ -423,11 +423,16 @@ export function packageOutIsUnsafe(out, root = REPO) {
   return inside(r, o) || inside(o, r);
 }
 
-function zipFolder(cwd, zipPath) {
+/**
+ * Zip `cwd`/FOLDER into `zipPath`: Info-ZIP `zip`, else a bsdtar `tar --format zip` (Windows 10+, macOS). bsdtar writes
+ * the names in UTF-8 (flag bit 11) only when told: its default is the system code page, which loses a name it cannot
+ * spell (卫戍 becomes ?? on Windows code page 1252) and leaves no UTF-8 copy for a reader.
+ */
+export function zipFolder(cwd, zipPath) {
   // deflate everything: storing PNG / MP3 as they are made the full zip 8.5 MB larger and saved no real time
   const z = spawnSync('zip', ['-q', '-r', '-X', zipPath, FOLDER], { cwd, stdio: 'inherit' });
   if (!z.error && z.status === 0) return;
-  const t = spawnSync('tar', ['-c', '--format', 'zip', '-f', zipPath, FOLDER], { cwd, stdio: 'inherit' }); // bsdtar (Windows 10+, macOS)
+  const t = spawnSync('tar', ['-c', '--format', 'zip', '--options', 'zip:hdrcharset=UTF-8', '-f', zipPath, FOLDER], { cwd, stdio: 'inherit' });
   if (t.error || t.status !== 0 || !isFile(zipPath)) throw new Error('zipping failed: install `zip` (or a bsdtar `tar`)');
 }
 

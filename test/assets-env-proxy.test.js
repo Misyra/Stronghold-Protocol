@@ -55,13 +55,14 @@ test('startup switch: the variable, the flag, and NODE_OPTIONS; a late or lookal
   assert.equal(startedWithEnvProxy({}, []), false);
 });
 
-test('plan: unset proxy is off; a proxy restarts, is already on, or is refused', () => {
+test('plan: unset proxy is off; a proxy restarts, is already on, or (old Node) goes direct with a warning', () => {
   assert.equal(proxyConfigured({}), false);
   assert.equal(proxyConfigured({ HTTP_PROXY: '   ', NO_PROXY: 'localhost' }), false);
   assert.equal(envProxyPlan({}).action, 'off');
   assert.equal(envProxyPlan({ NO_PROXY: '127.0.0.1' }).action, 'off');
   assert.equal(envProxyPlan({ HTTP_PROXY: 'http://proxy.example:8080' }, '22.20.0', false).action, 'unsupported');
   assert.match(envProxyPlan({ HTTP_PROXY: 'http://proxy.example:8080' }, '23.11.0', true).reason, /Node 23\.11\.0/);
+  assert.match(envProxyPlan({ HTTP_PROXY: 'http://proxy.example:8080' }, '22.20.0', false).reason, /downloading directly instead/);
   assert.equal(envProxyPlan({ http_proxy: 'http://proxy.example:8080' }, '22.21.0', false).action, 'reexec');
   assert.match(envProxyPlan({ HTTPS_PROXY: 'http://proxy.example:8080' }, '24.0.0', false).reason, /Refusing to fetch directly/);
   // The flag on the object is not the startup snapshot: the third argument is.
@@ -147,12 +148,13 @@ test('restart decision: nothing to do, one spawn, or a hard stop — and the mar
       spawnImpl,
       error: (line) => logs.push(line),
     });
-    assert.equal(stopped, true);
     if (!nodeHonoursEnvProxy(process.versions.node)) {
+      assert.equal(stopped, false, 'an old Node goes on in this process (direct download)');
       assert.equal(spawned.length, 0);
       assert.match(logs.join('\n'), /does not route fetch/);
       return;
     }
+    assert.equal(stopped, true);
     assert.equal(spawned.length, 1);
     const [bin, args, opts] = spawned[0];
     assert.equal(bin, process.execPath);
@@ -302,4 +304,24 @@ test('built-in fetch tunnels through HTTP_PROXY only when NODE_USE_ENV_PROXY was
   const bypass = await run({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, NO_PROXY: '127.0.0.1', NODE_USE_ENV_PROXY: '1' });
   assert.equal(bypass.body.body, 'from-target');
   assert.deepEqual(bypass.hits, ['TARGET /x']);
+});
+
+test('an old Node with HTTP(S)_PROXY set warns and downloads directly instead of stopping (0.2.2: a stray proxy variable must not break setup)', () => {
+  const prev = process.exitCode;
+  const spawned = [];
+  const logs = [];
+  try {
+    const goOn = restartForEnvProxy({
+      env: cleanEnv({ HTTPS_PROXY: 'http://proxy.example:8080' }),
+      version: '22.20.0',
+      spawnImpl: (...args) => { spawned.push(args); return new EventEmitter(); },
+      error: (line) => logs.push(line),
+    });
+    assert.equal(goOn, false, 'the caller continues in this process');
+    assert.equal(spawned.length, 0, 'no restart: this Node cannot proxy fetch()');
+    assert.notEqual(process.exitCode, 1, 'no failure exit code');
+    assert.match(logs.join('\n'), /Node 22\.20\.0 does not route fetch\(\) through it .*downloading directly instead/);
+  } finally {
+    process.exitCode = prev;
+  }
 });

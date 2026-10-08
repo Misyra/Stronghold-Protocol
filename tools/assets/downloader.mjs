@@ -9,7 +9,8 @@
 //   first (when enabled), then the original URL and jsDelivr fallback. The proxy gets one short attempt
 //   per file and shares a run-wide circuit breaker with the index/font fetchers.
 // - HTTP(S)_PROXY: the default fetch uses it only when this process was started
-//   with NODE_USE_ENV_PROXY=1 (Node >=22.21 or >=24). Otherwise it fails closed
+//   with NODE_USE_ENV_PROXY=1 (Node >=22.21 or >=24); on such a Node started
+//   without it, it fails closed; an older Node warns and connects directly
 //   (tools/assets/env-proxy.mjs). Pass fetchImpl to bypass that, as tests do.
 // - Idempotent: an existing file is kept when its size matches the ledger entry
 //   of a previous download or the expected byte count from research, or (when

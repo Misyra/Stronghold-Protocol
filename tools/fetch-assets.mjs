@@ -19,7 +19,7 @@
 // cheap. Downloads use ~16 parallel connections, 3 retries per direct source,
 // a jsDelivr fallback and an opt-in GitHub proxy (one short attempt per URL).
 // HTTP(S)_PROXY is picked up by restarting once with NODE_USE_ENV_PROXY=1
-// (Node >=22.21 or >=24). An older Node fails instead of fetching directly.
+// (Node >=22.21 or >=24). An older Node warns and fetches directly, as before.
 // Spine atlases get `size:` (and `pma: true` for enemies); every skeleton is
 // parsed to resolve animation roles.
 //

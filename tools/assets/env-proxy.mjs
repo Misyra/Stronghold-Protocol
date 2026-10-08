@@ -5,13 +5,15 @@
 // fetch() honours this on Node >=22.21.0 and >=24.0.0. The CLI flag on the 24
 // line is >=24.5.0, so the restart sets the variable, which 24.0.0 already honours.
 // Assigning the variable later does nothing. Node 22.0–22.20 and 23 have no such
-// switch; engines stay ">=22", and a proxy there is an error rather than a direct
-// download.
+// switch; engines stay ">=22": there the downloader warns and downloads directly,
+// as every version did before 0.2.2 (a proxy variable left over from another tool
+// must not stop a player's setup).
 //
 // Nothing else reaches the built-in fetch: `node:undici` is not a public builtin,
 // and setGlobalDispatcher on the npm `undici` package does not affect it. The
-// fetch-assets script therefore restarts itself once. Any other caller of the
-// default fetch is rejected here while a proxy is configured.
+// fetch-assets script therefore restarts itself once. On a Node that can proxy,
+// any other caller of the default fetch is rejected while a proxy is configured
+// and the process was not started with the switch.
 
 import { spawn } from 'node:child_process';
 
@@ -72,8 +74,8 @@ export function envProxyPlan(env = process.env, version = process.versions.node,
   if (!nodeHonoursEnvProxy(version)) {
     return {
       action: 'unsupported',
-      reason: `HTTP(S)_PROXY is set, but Node ${version} does not route fetch() through it. `
-        + 'Need Node >=22.21.0 or >=24.0.0, started with NODE_USE_ENV_PROXY=1. Refusing to fetch directly.',
+      reason: `HTTP(S)_PROXY is set, but Node ${version} does not route fetch() through it `
+        + '(that needs Node >=22.21.0 or >=24.0.0, started with NODE_USE_ENV_PROXY=1); downloading directly instead.',
     };
   }
   if (startedWithFlag) return { action: 'already', reason: '' };
@@ -86,16 +88,19 @@ export function envProxyPlan(env = process.env, version = process.versions.node,
 
 /**
  * The built-in fetch, or the caller's own implementation unchanged.
- * When a proxy is configured and this process cannot use it, the default fetch
- * rejects instead of connecting to the origin.
+ * When a proxy is configured and this Node could use it but was not started with
+ * the switch, the default fetch rejects instead of connecting to the origin; on a
+ * Node that cannot proxy at all it warns once and connects directly.
  * @param {typeof fetch} [fetchImpl]
  * @returns {typeof fetch}
  */
 export function guardDefaultFetch(fetchImpl = globalThis.fetch) {
   if (fetchImpl !== globalThis.fetch) return fetchImpl;
+  let warned = false;
   return (input, init) => {
     const plan = envProxyPlan();
-    if (plan.action === 'reexec' || plan.action === 'unsupported') return Promise.reject(new Error(plan.reason));
+    if (plan.action === 'reexec') return Promise.reject(new Error(plan.reason));
+    if (plan.action === 'unsupported' && !warned) { warned = true; console.warn(`[assets] ${plan.reason}`); }
     return fetchImpl(input, init);
   };
 }
@@ -109,7 +114,8 @@ export function guardDefaultFetch(fetchImpl = globalThis.fetch) {
  * @param {string[]} [io.argv]
  * @param {NodeJS.ProcessEnv} [io.env]
  * @param {(line: string) => void} [io.error]
- * @returns {boolean} true when the caller must not continue (restarted, or refused)
+ * @param {string} [io.version] process.versions.node
+ * @returns {boolean} true when the caller must not continue (restarted, or refused); false to go on in this process
  */
 export function restartForEnvProxy({
   spawnImpl = spawn,
@@ -118,13 +124,13 @@ export function restartForEnvProxy({
   argv = process.argv,
   env = process.env,
   error = (line) => console.error(line),
+  version = process.versions.node,
 } = {}) {
-  const plan = envProxyPlan(env);
+  const plan = envProxyPlan(env, version);
   if (plan.action === 'off' || plan.action === 'already') return false;
   if (plan.action === 'unsupported') {
     error(`[assets] ${plan.reason}`);
-    process.exitCode = 1;
-    return true;
+    return false;
   }
   if (env[REEXEC_MARKER] === '1') {
     error('[assets] refused to restart again for HTTP(S)_PROXY');

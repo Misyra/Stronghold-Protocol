@@ -225,7 +225,8 @@ export class MatchViews {
     return p ? { charId: p.charId, skillIndex: p.skillIndex, uniEquipId: p.uniEquipId } : undefined;
   }
 
-  /** UnitInfo of a player's board pieces on their (board) tiles — a prep scout's board, the boss partner's (bossMateView). */
+  /** UnitInfo of a player's board pieces on their (board) tiles — a prep scout's board, the boss partner's (bossMateView).
+   *  `area: 'board'` (a bench unit says 'hand' / 'temp': prepFieldMeta). */
   _prepBoardUnits(ps) {
     const units = [];
     // the player's own view of the data (0.2.0 自选编队: its slotted DIY slots are its operators — player/diy.js)
@@ -241,6 +242,7 @@ export class MatchViews {
       const lo = piece.kind === 'chess' && chess ? ps.loadoutFor(chess) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : 'op', side: 'ally', ownerId: ps.playerId, defId: piece.id,
+        area: 'board',
         name: rec ? rec.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
         spine: assets.spine || (rec && rec.charId) || piece.id, avatar: assets.avatar || (rec && rec.charId) || piece.id,
         x: c, y: r, dir: pieceDir(piece), facing: pieceDir(piece) === 'LEFT' ? -1 : 1, maxHp: rec && rec.stats && Number.isFinite(rec.stats.maxHp) ? rec.stats.maxHp : 1,
@@ -292,7 +294,11 @@ export class MatchViews {
     // (test/match/spectator.test.js). User playtest #2 item 1 (GitHub #44).
     // (a held chess the player fields as its stand-in is the stand-in there too — name, art, max HP — and carries
     // `standInFor`, like a board piece: the owner's recall of the official mode, 2026-10-06, the hand shows the stand-in)
-    const benchUnit = (piece, i, y) => {
+    // Each unit says where it waits (`area` 'hand' | 'temp'; a board unit 'board'): the bond popup of a watched player
+    // counts it like the player's own (ui/watchBonds.js ownerBoard — a hand operator is owned and counts for 投资人 远见
+    // 奇迹, a temp one counts for nothing; GitHub #385, PR #387). The tag survives the boss-half remap (_onBossHalf), the
+    // row does not.
+    const benchUnit = (piece, i, y, area) => {
       const rec = piece.kind === 'item' ? gd.item(piece.id) : piece.kind === 'token' ? gd.token(piece.id) : gd.chess(piece.id);
       const standIn = piece.kind === 'chess' && rec && ps.fieldsStandIn(rec) ? this.gd.standIn(rec.chessId) : null;
       const body = standIn || rec;
@@ -300,7 +306,7 @@ export class MatchViews {
       const lo = piece.kind === 'chess' && rec ? ps.loadoutFor(rec) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : piece.kind === 'item' ? 'item' : 'op',
-        side: 'ally', ownerId: ps.playerId, defId: piece.id,
+        side: 'ally', ownerId: ps.playerId, defId: piece.id, area,
         name: body ? body.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
         spine: assets.spine || (body && body.charId) || piece.id, avatar: assets.avatar || (body && body.charId) || piece.id,
         x: i, y, maxHp: body && body.stats && Number.isFinite(body.stats.maxHp) ? body.stats.maxHp : 1,
@@ -312,10 +318,10 @@ export class MatchViews {
       });
     };
     for (let i = 0; i < ps.hand.length; i++) {
-      if (ps.hand[i]) benchUnit(ps.hand[i], i, GEO.HAND_ROW);
+      if (ps.hand[i]) benchUnit(ps.hand[i], i, GEO.HAND_ROW, 'hand');
     }
     for (let i = 0; i < ps.temp.length; i++) {
-      if (ps.temp[i]) benchUnit(ps.temp[i], GEO.TEMP_C0 + i, GEO.TEMP_ROW);
+      if (ps.temp[i]) benchUnit(ps.temp[i], GEO.TEMP_C0 + i, GEO.TEMP_ROW, 'temp');
     }
     // `nextEnemies`: the scouted player's coming enemies — their preview pen shows on the scouting board too (research 09
     // §2.2 "Teammates"; render/app.js enterBattle({ prep: true, nextEnemies }))

@@ -1296,7 +1296,7 @@ function MatchScreen() {
   }, [strip.ownerId]);
   // the popup shows the player it was opened for (ui/watchBonds.js popupView): their entry + live layers, their name,
   // and as members your pieces or their operators on the field on screen — under client-side combat the battle's own
-  // (the runner's field meta is taken before they deploy); their hand is never sent
+  // (the runner's field meta is taken before they deploy); a battle sends no bench (a prep scout does: ownerBoard)
   const popOps = cc && battleRunner && field?.local && bondOpen && bondOpen.ownerId !== myId ? battleRunner.ownerOps(bondOpen.ownerId, field.fieldId) : null;
   const bondPop = popupView({ open: bondOpen, pub, priv, myId, field, units: popOps, live: liveLayers });
   const openBond = (id, ownerId, from) => { setBondOpen((b) => toggleBond(b, id, ownerId, from)); audio.sfx('click', { volume: 0.4 }); };

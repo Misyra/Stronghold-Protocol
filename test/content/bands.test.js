@@ -587,6 +587,18 @@ test('大帝 加急调派: every deployment halves the operator\'s next redeploy
   cover('band_emperor');
 });
 
+test('大帝 加急调派 stacks without a cap: the 21st and 22nd deployments still halve the next redeploy (PRTS "※该策略效果可无限叠加"; GitHub #328, PR #329)', () => {
+  const h = fight({ band: 'band_emperor', units: [{ chessId: 't_op', row: 10, col: 4 }] });
+  h.step(1);
+  const u = h.unit('t_op');
+  for (let n = 1; n <= 22; n++) {
+    h.b.retreat(u, { reason: 'raid' });
+    close(u.respawnAt - u.deathAt, 20 / 2 ** n, `after deployment ${n}`);
+    if (n < 22) assert.ok(h.b._deploy(u), `deployment ${n + 1}`);
+  }
+  assert.equal(u.findBuff('band:band_emperor').stacks, 22);
+});
+
 test('桑葚 药枚实验: the units on the right-most column get a 25 % chance per attack of 1 shield layer (max 1)', () => {
   const ops = { t_op: op('t_op'), t_b: op('t_b') };
   for (const [v, want] of [[0.24, 1], [0.26, 0]]) {

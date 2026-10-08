@@ -52,7 +52,7 @@ describe('user playtest #2 item 1 — loadout chosen in the UI fights in the loc
       await c.click('.lo-search input');
       await c.page.keyboard.type('野鬃');
       await c.page.waitForFunction(() => document.querySelectorAll('.lo-card').length === 1, { timeout: 5000 });
-      await c.click('.lo-card');
+      await c.click('.lo-card__pick');
       await c.click('.lo-detail .lo-skill[data-skill="0"]');
       await c.click('.lo-detail .lo-mod[data-module="none"]');
       await c.page.waitForFunction(() => document.querySelector('.lo-skill.is-on[data-skill="0"]') && document.querySelector('.lo-mod.is-on[data-module="none"]'), { timeout: 3000 });

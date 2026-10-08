@@ -21,6 +21,17 @@ const finiteOrNull = (v, cap = Infinity) => {
   return Math.max(0, Math.min(Number.isFinite(cap) ? cap : Infinity, Math.trunc(n)));
 };
 
+/**
+ * A scouted operator's potential (below 6) and 练度 (0.2.2), like the sim's UnitInfo: PlayerState.loadoutFor's
+ * `potential` / `cultivate` (null for a stand-in or a prototype 自选 pick: neither field).
+ */
+function cultivationInfo(lo) {
+  const out = {};
+  if (lo && Number.isInteger(lo.potential) && lo.potential < 6) out.potential = lo.potential;
+  if (lo && Number.isInteger(lo.cultivate)) out.cultivate = lo.cultivate;
+  return out;
+}
+
 export class MatchViews {
   statusOf(ps) {
     if (ps.left) return 'left';
@@ -238,7 +249,7 @@ export class MatchViews {
       const rec = piece.kind === 'token' ? gd.token(piece.id) : ps.fieldRecord(chess);
       const assets = (rec && rec.assets) || {};
       // DESIGN §16: the skill / module THIS player's operator fights with (the scout's detail card shows it, like the
-      // sim's UnitInfo in a shared field); moduleId only for an elite
+      // sim's UnitInfo in a shared field); moduleId only for an elite; 0.2.2 its potential (below 6) and 练度
       const lo = piece.kind === 'chess' && chess ? ps.loadoutFor(chess) : null;
       units.push({
         id: piece.uid, uid: piece.uid, kind: piece.kind === 'token' ? 'token' : 'op', side: 'ally', ownerId: ps.playerId, defId: piece.id,
@@ -252,6 +263,7 @@ export class MatchViews {
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: rec && rec.standInFor ? rec.standInFor : undefined,
         diy: this._diyInfo(ps, piece),
+        ...cultivationInfo(lo),
       });
     }
     return units;
@@ -315,6 +327,7 @@ export class MatchViews {
         items: piece.kind === 'chess' && Array.isArray(piece.items) && piece.items.length ? piece.items.map((it) => it.id) : undefined,
         standInFor: standIn && standIn.standInFor ? standIn.standInFor : undefined,
         diy: this._diyInfo(ps, piece),
+        ...cultivationInfo(lo),
       });
     };
     for (let i = 0; i < ps.hand.length; i++) {

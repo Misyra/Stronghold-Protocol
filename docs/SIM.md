@@ -572,8 +572,9 @@ ATK / DEF / max HP bonus of the 卫戍 systems — 盟约, 策略 (bands), 装�
 卫戍协议：盟约 下半/PRTS盟约记录 "盟约效果，策略效果，装备效果提供的属性加成均为直接乘算"). Content builds those with
 `content/support directMods({ atk, def, hp })` (constants.js `DIRECT_BONUS_STACKING` 'add'; 'multiply' = the v2.5
 per-source ×(1 + x), which compounded with layers: user report after playtest #6). `Πmul` is for 最终乘算 / "提升至X%"
-effects (炎佑 ×1.5 at 9 炎, 虚弱, 停顿 …) and the char_attribute_mul 特质 ("攻击力和生命值+20%", a rune on the base
-attributes). `atkFinal` is the **最终加算** (PRTS `A_f = F_t[(A + D_p)(1 + D_t) + F_p]`: added after the 直接乘算, inside
+effects (炎佑 ×1.5 at 9 炎, 虚弱, 停顿 …), the char_attribute_mul 特质 ("攻击力和生命值+20%", a rune on the base
+attributes) and the unit's 练度 `cultMul` (自持有, the same char_attribute_mul key, 0.2.2: ATK / DEF / max HP of the owned
+operator's tier, §12). `atkFinal` is the **最终加算** (PRTS `A_f = F_t[(A + D_p)(1 + D_t) + F_p]`: added after the 直接乘算, inside
 the 最终乘算): 阿戈尔's devoured base ATK ("基础攻击力（最终加算）", DESIGN §24.7) — a skill's ATK +% does not scale it.
 Damage multipliers (`dmgDealtMul`, "伤害提升至X%"; `*TakenMul`, 脆弱 / "受到的伤害+X%") multiply each other
 (PRTS 游戏数据基础 "同种倍率间叠乘"), same-named statuses keep the strongest — catalogue statuses (§3) and the content
@@ -1390,7 +1391,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's hit cancelled by 限伤 — the renderer draws nothing;
   `extra.form` = the unit's model form from then on — an enemy's `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`),
   `['layer', playerId, bondId, n]` (n = the layers actually added, capped at 999), `['bounty', playerId, coins]`.
-- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items?, standInFor?, diy? }` (`standInFor`: a 补位 stand-in's replaced operator charId — `spine` / `avatar` / `name` are the stand-in's, DATA.md §18; the prep scouting units of `Match.prepFieldMeta` carry it too, board and held pieces alike with the stand-in's art (the owner's recall of the official mode, 2026-10-06), and so do the m.result lineups; `diy`: a 自选 piece's pick `{ charId, skillIndex, uniEquipId }` — `defId` is its slot, `spine` / `avatar` / `name` the operator's; the prep scouting units of `Match.prepFieldMeta` and the m.result lineups carry it too (server/match/player/diy.js, the client composes the operator's card from it); `skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
+- `UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?, form?, skillIndex?, moduleId?, items?, standInFor?, diy?, potential?, cultivate? }` (`potential` / `cultivate`: an ally operator's potential below 6 and its 练度 tier, 0.2.2 — a teammate's card composes its numbers from them) (`standInFor`: a 补位 stand-in's replaced operator charId — `spine` / `avatar` / `name` are the stand-in's, DATA.md §18; the prep scouting units of `Match.prepFieldMeta` carry it too, board and held pieces alike with the stand-in's art (the owner's recall of the official mode, 2026-10-06), and so do the m.result lineups; `diy`: a 自选 piece's pick `{ charId, skillIndex, uniEquipId }` — `defId` is its slot, `spine` / `avatar` / `name` the operator's; the prep scouting units of `Match.prepFieldMeta` and the m.result lineups carry it too (server/match/player/diy.js, the client composes the operator's card from it); `skillIndex`: an ally's equipped skill, DESIGN §16; `form`: the unit's current model form — `content/enemies/helpers.js setForm`: 掠海漂移体 `'crawl'`, 暴鸰 `'bombed'` after its drop, 转译基底·α's forms …; a 傀儡师 fighting as its 替身 `'doll'` — so a view built mid-battle from `fieldMeta()` starts on that clip set; `items`: an ally operator's equipped item ids — a 变形同构体 wearer is a member of the bond it grants on the client too, the bond popup and the detail card's chips)
   (`dir` = the unit direction, allies meaningful, enemies 'RIGHT'; `facing` = its horizontal sign for sprite flipping)
   (`spine`/`avatar` are asset ids from data).
 - flags: UF bits (blocked 1, stunned 2, frozen 4, stealth 8 — 隐匿 (an enemy's only while not blocked / revealed and not within 3 s of a block's end) or an ally's 迷彩 — skill 16, shield 32, invuln 64, cold 128, sleep 256, flying 512);
@@ -1477,8 +1478,14 @@ never displaced, §6), tags, abilities, skills, talent, raw`. Tokens use `varian
 `skcom_withdraw` token skills are ignored.
 Operator loadouts (DESIGN §16, DATA.md §2.2 / §14): `getChess(id, { skillIndex, moduleId })` = the def with the selected
 skill (`def.skill`, its bb / SP / trigger) and, for elites, the module's stats / trait / talents; `def.loadout` = the
-resolved loadout `{ skillIndex, moduleId, skillIsDefault, moduleIsDefault, isDefault }` (illegal choices fall back to the
-default; cached per loadout; the default loadout is the same object as `getChess(id)`). `getToken(id, ownerChessId,
+resolved loadout `{ skillIndex, moduleId, potential, skillIsDefault, moduleIsDefault, potentialIsDefault, isDefault }`
+(illegal choices fall back to the default; cached per loadout; the default loadout is the same object as `getChess(id)`).
+Potential (0.2.2, DATA.md §2.3, shared/potential.js): a loadout's `potential` (潜能 1–6; default 6 = the data's full
+potential) composes the record at it first (`loadoutRecord` → `atPotential`: stats, statsBase, talents, module talent
+changes); `getToken` composes the owner variant at the owner's `loadout.potential` (talents; a 自选 summon's deploy
+limit / holding / count) and `getDiy(slotId, pick, potential)` an owned pick's form (a prototype has none: `diyProto`);
+the kits that read a summon variant raw (content/tokens.js `ownVariant`, `kits/shared/summoner.js tokenStat`, 多萝西,
+麦克尼斯特) compose it the same way. `getToken(id, ownerChessId,
 ownerLoadout)` = the summon for that owner loadout (`bySkill` / `byModule` merged; `def.sources` ⊆ ['talent', 'skill',
 'display'] and `def.count` of that loadout — `[]` / `['display']`: the owner does not make it). Every Battle gets a
 per-battle view (`withUnitLoadouts`: id-only `getChess(id)` / `getToken(id, owner)` use the loadout the inputs give that
@@ -1490,7 +1497,17 @@ the source's `backups` (data/backups.json; `rawBackups()` follows the fallback c
 the replaced operator's, `loadout` the backup selection (`standIn: true`); its skill / module ignore the loadout's
 ("对于补位干员其技能不可更改", shared/standIn.js). A PRESET / DIY chess or a source without backups (a browser that did not
 fetch backups.json) gives the chess's own def. A PlayerBattleInput entry carries it as `standIn: true` (spec.js keeps
-nothing else); the per-battle view maps id-only lookups of that chess id to the stand-in.
+nothing else — no `potential` / `cultivate`: a stand-in has neither); the per-battle view maps id-only lookups of that
+chess id to the stand-in.
+潜能 / 练度 in a PlayerBattleInput operator entry (0.2.2; the owner's decision of 2026-10-08 — the player's 干员调配 settings,
+PlayerState.battleInput states both for every owned operator, bots the defaults 6 / 3): `potential` (1–6) → the def of
+`getChess(chessId, { …, potential })`; `cultivate` (0–3) → `unit.cultivate` and `unit.cultMul` = `data.cultivateMul(n)`,
+the effects.json CHAR_MAP `aceffect_char_<n+1>` `char_attribute_mul` (×ATK / ×DEF / ×max HP: 1 / 1.05·1.05·1 / 1.1·1.05·1.05
+/ 1.1 each), a multiplier of its own in the Πmul of §2 (never summed with the 直接乘算 percentages: PRTS 盟约记录
+「…与自持有干员的属性加成独立」); a stand-in or a prototype 自选 def never takes it, summons neither [ASSUMED: the official
+buff names the operator]. spec.js keeps each only when well-formed (never on a stand-in or a summon); absent = full
+potential and no 练度 (a raw unit: tests, tools). `unitStatsEntry` counts the 练度 in the unit's own numbers (`base`), as
+the record cards do; UnitInfo carries `potential` (below 6) and `cultivate`.
 自选 (DATA.md §18): `getChess(slotId, { diy })` = `getDiy(slotId, pick)` — shared/diy.js `diyRecordOf` of the DIY slot
 record (`_a` normal, `_b` elite) with the pick over this source, normalised: `id` / `baseId` / `golden` / `tier` of the
 slot, `bonds` the pick's derived ones, `raw.garrisonIds` `[]` (no 特质), every combat field of the operator at the slot's

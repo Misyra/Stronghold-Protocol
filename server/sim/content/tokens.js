@@ -97,6 +97,7 @@ import { bardRegen } from '../professions.js';
 import { normDir, localOrder } from '../dir.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
 import { hypot } from '../detmath.js';
+import { atPotential } from '../../../shared/potential.js';
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : d));
 const GRID_3X3 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1, -1], [-1, 0], [-1, 1]]);
@@ -161,7 +162,8 @@ function ownVariant(raw, owner) {
   const oid = owner?.def?.tokenOwner ?? owner?.defId;
   if (!vs || typeof vs !== 'object' || !oid) return null;
   const v = vs[oid] ?? vs[String(oid).replace(/_b$/, '_a')] ?? null;
-  return v ? withLoadout(v, owner.def?.loadout) : null;
+  // at the owner's potential (0.2.2: a 自选 summon's deploy limit / count, the talents — shared/potential.js)
+  return v ? withLoadout(atPotential(v, owner.def?.loadout?.potential), owner.def?.loadout) : null;
 }
 
 /**

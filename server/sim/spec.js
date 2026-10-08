@@ -25,9 +25,15 @@
 // 自选 (DATA.md §18): an operator entry of a DIY slot (`chessId` its `_a` / `_b` id) carries `diy: { charId, skillIndex?,
 // uniEquipId? }` (kept when well-formed; the data layer checks legality — shared/diy.js checkDiyPick) and is fielded as
 // simdata getChess(id, { diy }).
+// Potential and 练度 (0.2.2, shared/potential.js — the player's 干员调配 settings, the owner's decision of 2026-10-08): an
+// operator entry may carry `potential` (潜能 1–6: the def at that potential, its summons' talents at it) and
+// `cultivate` (练度 0–3: the effects.json CHAR_MAP aceffect_char_1…4 — a ×ATK / ×DEF / ×max HP of the unit, its own
+// multiplier); each kept only when well-formed and never on a stand-in. Absent: full potential and no 练度 (a raw
+// unit — the match always states both for an owned operator: PlayerState.battleInput).
 
 import { Battle } from './Battle.js';
 import { toDataSource, withUnitLoadouts } from './simdata.js';
+import { isPotential, isCultivate } from '../../shared/potential.js';
 import { BOSS_POOL_MIN_HP } from './constants.js';
 
 export const SPEC_VERSION = 1;
@@ -101,14 +107,18 @@ function cleanDiyPick(d) {
 
 /**
  * Keep a unit's `skillIndex` / `moduleId` only when well-formed (the data layer checks legality), `standIn` only when
- * exactly `true` (补位) and `diy` only as a well-formed pick (自选). Mutates `u`.
+ * exactly `true` (补位), `diy` only as a well-formed pick (自选), `potential` (1–6) / `cultivate` (0–3) only when
+ * well-formed and not on a stand-in. Mutates `u`.
  */
 export function sanitizeUnitLoadout(u) {
   if ('skillIndex' in u && !(Number.isInteger(u.skillIndex) && u.skillIndex >= 0 && u.skillIndex <= 9)) delete u.skillIndex;
   if ('moduleId' in u && !(typeof u.moduleId === 'string' && LOADOUT_ID.test(u.moduleId))) delete u.moduleId;
   if ('standIn' in u && u.standIn !== true) delete u.standIn;
   if ('diy' in u) { const d = cleanDiyPick(u.diy); if (d) u.diy = d; else delete u.diy; }
-  if (u.kind === 'token') { delete u.skillIndex; delete u.moduleId; delete u.standIn; delete u.diy; }
+  if ('potential' in u && !isPotential(u.potential)) delete u.potential;
+  if ('cultivate' in u && !isCultivate(u.cultivate)) delete u.cultivate;
+  if (u.standIn === true) { delete u.potential; delete u.cultivate; }
+  if (u.kind === 'token') { delete u.skillIndex; delete u.moduleId; delete u.standIn; delete u.diy; delete u.potential; delete u.cultivate; }
   return u;
 }
 

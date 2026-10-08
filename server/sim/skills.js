@@ -29,6 +29,8 @@
 //   (noAttack profiles) evaluate DEFAULT every tick instead. DEFAULT with `trigger.allies` (+ `hpAtMost`): the basic
 //   rule AND such an ally on the trigger grid — the cast replaces the attack about to be made (塞雷娅 S1 "触发时会替换当
 //   次攻击"); should that ally condition fail before the attack, the cast is withdrawn and its charge returned.
+//   A registered ally target (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon our attacks select) counts
+//   like an enemy in each of these enemy conditions for a non-heal skill (`_allyTargetIn` — the owner's rule of 2026-10-08).
 // Automatic operations cool down (constants.js AUTO_OP_COOLDOWN, "自动操作具有3s冷却，在完成一次操作或作战开始时部署的单位
 //   将进入冷却"): the engine auto-casts a MANUAL skill (def.skillType) no sooner than 3 s after its previous cast (so a
 //   charged skill spends its charges 3 s apart) or after the unit's deployment at the battle start (Battle._deploy
@@ -161,10 +163,23 @@ export class SkillRuntime {
         if (Array.isArray(x)) keys = x;
         else if (x && typeof x === 'object' && x.side === 'ally' && x.alive && x.deployed && !x.hidden) keys = x.rangeKeys;
         else if (x && typeof x === 'object' && Array.isArray(x.keys)) { keys = x.keys; if (x.profile) prof = x.profile; }
-        if (keys && keys.length && b.enemiesInKeys(keys, u, prof).length) return true;
+        if (keys && keys.length && (b.enemiesInKeys(keys, u, prof).length || this._allyTargetIn(keys))) return true;
       }
     }
     return false;
+  }
+
+  /**
+   * A registered ally target (Battle.setAllyTarget: 白铁's 铁钳号·原型机, a summon of the enemy camp our attacks select) on
+   * `keys` (tile keys or a Set): a non-heal skill's automatic start counts it like an enemy — the owner's rule of
+   * 2026-10-08 (a community report and their recall of the official mode: 干员攻击范围/技能范围内有白铁的装置时技能也自动开、自动
+   * 消耗，装置对干员的仇恨类似敌方单位; PRTS 铁钳号·原型机 备注 "该召唤物阵营为敌方"). It stays out of enemiesInKeys /
+   * canTargetEnemy (every other selector keeps to enemies); a heal skill never counts it (禁疗: not a patient).
+   */
+  _allyTargetIn(keys) {
+    if (this.healSkill || !keys) return false;
+    const b = this.battle;
+    return !!(b._allyTargets && b._allyTargets.size) && b.allyTargetsInKeys(keys, this.unit).length > 0;
   }
 
   get spCost() {
@@ -405,27 +420,31 @@ export class SkillRuntime {
     // SEARCH: an enemy inside the initial attack range, every tick (librators / phalanxes and 安洁莉娜 do not attack
     // while the skill is off, so DEFAULT's "about to attack" never comes)
     if (this.rule === 'SEARCH') return this._defaultCondition();
+    // (CUSTOM_RANGE / SKILL_RANGE / GDGLOW_SKILL_2 / the DEFAULT condition: a registered ally target — 白铁's 铁钳号·原型机 —
+    // counts like an enemy for a non-heal skill, `_allyTargetIn`)
     if (this.rule === 'CUSTOM_RANGE') {
       if (!this.triggerGrid) return this._defaultCondition();
-      return b.enemiesInKeys(this._triggerKeys(), u, { canHitFly: true }).length > 0;
+      const keys = this._triggerKeys();
+      return b.enemiesInKeys(keys, u, { canHitFly: true }).length > 0 || this._allyTargetIn(this._trigSet);
     }
     if (this.rule === 'SKILL_RANGE') {
       if (this.triggerAllies) return this._allyTriggerSatisfied();
       if (!this.triggerGrid) return this._defaultCondition();
-      return b.anyEnemyInKeys(this._triggerKeys());
+      return b.anyEnemyInKeys(this._triggerKeys()) || this._allyTargetIn(this._trigSet);
     }
     if (this.rule === 'ACTIVE_RANGE') return this._defaultCondition(this.triggerGrid ? this._triggerKeys() : null);
     // GDGLOW_SKILL_2 "全场存在可选目标时释放技能": a targetable enemy anywhere (heal skill: an ally that needs healing)
     if (this.rule === 'GDGLOW_SKILL_2') {
       if (this.healSkill) return b.injuredAlliesInKeys(ALL_TILES, u, !!u.profile?.heal?.elementHealRatio).length > 0;
-      return b.enemies.some((e) => canTargetEnemy(u, e, TRIGGER_PROFILE));
+      return b.enemies.some((e) => canTargetEnemy(u, e, TRIGGER_PROFILE)) || this._allyTargetIn(ALL_TILES);
     }
     return false;
   }
 
   /**
    * DEFAULT rule condition: an enemy (or injured ally for heal skills) inside the initial range (baseRangeKeys: own
-   * grid + permanent rangeExtend), or an enemy inside a content trigger range (addTriggerRange; not for heal skills).
+   * grid + permanent rangeExtend) — a registered ally target there too (`_allyTargetIn`: 铁钳号·原型机; not for heal
+   * skills) — or an enemy inside a content trigger range (addTriggerRange; not for heal skills).
    * `range` (ACTIVE_RANGE): those absolute tile keys instead of the initial range.
    */
   _defaultCondition(range = null) {
@@ -435,7 +454,7 @@ export class SkillRuntime {
     const keys = range || u.baseRangeKeys || u.rangeKeys;
     if (keys) {
       if (this.healSkill) return b.injuredAlliesInKeys(keys, u).length > 0;
-      if (b.enemiesInKeys(keys, u, u.profile).length > 0) return true;
+      if (b.enemiesInKeys(keys, u, u.profile).length > 0 || this._allyTargetIn(keys)) return true;
     }
     // the enemies a unit blocks are always its targets (Battle.blockedTargets), in range or not — PRTS 卫戍协议/帮助
     // "敌人被近战干员自身阻挡" satisfies the target condition of the basic strategy (a ranged blocker too: user playtest #6)

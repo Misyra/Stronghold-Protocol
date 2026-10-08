@@ -111,3 +111,44 @@ test('Picture Scroll: a full hand and temp without promotion keeps the refused s
   assert.deepEqual(ps.privateView(), before);
   h.invariants();
 });
+
+// PRTS 画卷 备注 「使用后销毁，获得的装备为未装备状态」: without a promotion too, the copied items are gained like any item —
+// the hand, overflow temp — and never put on the copy (until 0.2.2 a copy that did not merge was equipped onto it)
+const ADV = [HAMMER, SHIELD].map((id) => id.replace(/_a$/, '_b'));
+const looseItems = (ps) => [...ps.hand, ...ps.temp].filter((p) => p?.kind === 'item').map((p) => p.id).sort();
+for (const golden of [false, true]) {
+  test(`Picture Scroll: one ${golden ? 'elite' : 'normal'} target — the copied (advanced) items arrive unequipped in the hand`, (t) => {
+    const { h, m, ps, target, cast } = prep(t, { copies: 1, golden, items: ADV });
+    assert.deepEqual(cast(), OK);
+    const copy = ps.allChess().find((p) => p.id === target.id && p !== target);
+    assert.ok(copy, 'the copy was gained');
+    assert.deepEqual(copy.items, [], 'the copy wears nothing');
+    assert.deepEqual(target.items.map((p) => p.id).sort(), [...ADV].sort(), 'the target keeps its own');
+    assert.deepEqual(looseItems(ps), [...ADV].sort(), 'the copied items wait in the hand');
+    assert.equal(m.gd.chess(copy.id).isGolden, golden);
+    h.invariants();
+  });
+}
+
+test('Picture Scroll: a full hand — the copy and its items overflow into temp; an item with no slot left is destroyed like any gained item', (t) => {
+  for (const free of [3, 2]) {
+    const { h, ps, target, cast } = prep(t, { copies: 1, items: ADV });
+    while (ps.hand.some((p) => p == null)) assert.ok(ps.acquireItem(FILLER));
+    while (ps.temp.filter((p) => p == null).length > free) assert.ok(ps.acquireItem(FILLER));
+    const toasts = () => h.allTo('p_0', 'm.toast').map((x) => JSON.stringify(x));
+    const before = toasts().length;
+    assert.deepEqual(cast(), OK);
+    const copy = ps.allChess().find((p) => p.id === target.id && p !== target);
+    const where = copy ? ps.find(copy.uid)?.area : null;
+    assert.ok(where === 'temp' || where === 'hand', `free ${free}: the copy was gained into temp (the hand fills from temp once the scroll left)`);
+    assert.deepEqual(copy.items, [], `free ${free}: the copy wears nothing`);
+    assert.deepEqual(target.items.map((p) => p.id).sort(), [...ADV].sort());
+    const got = looseItems(ps).filter((id) => id !== FILLER);
+    if (free === 3) assert.deepEqual(got, [...ADV].sort(), 'room for the copy and both items');
+    else {
+      assert.equal(got.length, 1, 'room for the copy and one item: the other is destroyed');
+      assert.ok(toasts().slice(before).some((s) => s.includes('整备区已满，获得的装备已销毁')), 'with the usual toast');
+    }
+    h.invariants();
+  }
+});

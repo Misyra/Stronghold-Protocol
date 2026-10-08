@@ -458,7 +458,7 @@ bilibili BV1vzyVBuEN9 ≈ 8:24 / BV1Qkw1zMEoR ≈ 7:25, pointed out in PR #2 —
 is not consumed: PRTS 下半 记录 备注 "生效时，原干员销毁，获得一名高一阶的随机初始干员（最高六阶）", PRTS 卫戍协议/帮助 "佩戴的
 装备无法手动卸除，在失去该干员（干员出售、销毁、合并等）…时自动卸除", players re-inject it every round; player feedback after
 0.1.0), 画卷 (copy the operator in range with its
-items), 教鞭 / “神秘顾客” (a random bounty is added).
+items — the copied items arrive unequipped in the hand, PRTS 画卷 备注 "获得的装备为未装备状态"), 教鞭 / “神秘顾客” (a random bounty is added).
 
 **教鞭 / “神秘顾客” stay a random bounty (deliberate).** The official Arts open a personal 悬赏 choice
 ("选择一项（特殊）悬赏任务进行挑战", `choice_event hunter_band_1`). The server applies a random bounty instead: content

@@ -2068,7 +2068,7 @@ test(`${nm('enemy_10098_crhro')}: 重生 once after ${tb('enemy_10098_crhro', 'r
   assert.ok(!e.alive);
 });
 
-test('失衡: 弧光锋卫 bleeds per tile pushed; 冒失的小弟 is stunned; 拥霜羽兽 drops its egg (faster, unblockable)', () => {
+test('失衡: 弧光锋卫 bleeds every 0.066 s while unbalanced; 冒失的小弟 is stunned; 拥霜羽兽 drops its egg (faster, unblockable)', () => {
   const h = arena({ hooks: ['statusApplied'] });
   h.step();
   const j = put(h, 'enemy_1328_cbjedi', [10, 7]);
@@ -2076,17 +2076,20 @@ test('失衡: 弧光锋卫 bleeds per tile pushed; 冒失的小弟 is stunned; �
   const p = put(h, 'enemy_10141_xdpeng_2', [12, 7]);
   h.step(2);
   const hp0 = j.hp;
-  const moved = h.b.displace(j, { x: 1, y: 0 }, 1, { force: 3 });
+  // 弧光锋卫: its 失衡 state — a 受力等级 0 push holds 0.8 s (24 frames) — bleeds unbalanced_bleed.damage every .interval s
+  // (PRTS "处于失衡状态时，每0.066s受到400点无来源真实持续伤害"): 12 hits; until 0.2.2 one hit per tile moved [ASSUMED]
+  h.b.push(j, j.s.massLevel, { from: { x: j.x - 1, y: j.y } });
   h.b.displace(g, { x: 1, y: 0 }, 1, { force: 3 });
   h.b.displace(p, { x: 1, y: 0 }, 1, { force: 3 });
   h.step();
-  approx(hp0 - j.hp, (tb('enemy_1328_cbjedi', 'unbalanced_bleed.damage') * moved) / (tb('enemy_1328_cbjedi', 'unbalanced_bleed.interval') * 5), 0.05);
   assert.equal(statuses(h, g.id, 'stun').length, 1);
   approx(statuses(h, g.id, 'stun')[0].duration, tb('enemy_10112_ymgds', 'StunAfterUnbalance.stun'));
   assert.ok(p.s.flags.unblockable);
   assert.equal(p.findBuff('ab:noEgg').mods.moveMul, 1 + tb('enemy_10141_xdpeng_2', 'speed.move_speed'));
   assert.ok(p.profile.noAttack, '拥霜羽兽 失去蛋的模式: 不进行普通攻击 (no attack, so no stand for its clip)');
   assert.equal(typeof p.profile.canTarget === 'function' && p.profile.canTarget({ isFlying: true }), false, '拥霜羽兽: 不会攻击飞行单位');
+  h.run(0.8);
+  approx(hp0 - j.hp, 12 * tb('enemy_1328_cbjedi', 'unbalanced_bleed.damage'), 1e-6);
   // 雪孩子: pushed into high ground (row 12 col 2 is 'h' on the flat stage) ⇒ hitWall.value
   const sn = put(h, 'enemy_10138_xdsnow', [10, 3]);
   const sn2 = put(h, 'enemy_10138_xdsnow', [11, 6]);

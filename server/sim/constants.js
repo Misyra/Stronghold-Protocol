@@ -136,7 +136,8 @@ export const PUSH_DIRECTIONAL_MIN_DIST = 0.25;
  * 27, 32, 35; the 0.1 s floor is inside them); PULL_UNBALANCE / PULL_UNBALANCE_WEAK = a pull's force window — 推与拉 §拉力
  * 「作用时间默认为 1 s；若本次受力等级 < −1，作用时间改为 0.5 s」, the state lasting to its end after the 急停 too (「目标将仍保持
  * 失衡状态至拉力作用时间结束为止」); UNBALANCE_MIN = the 失衡硬直 floor (「立刻拥有 0.1 s 的“失衡硬直”。此期间无法解除失衡状态机
- * ——哪怕已经没有被移动或者受力」) — what a 静态刚体 hit by a force gets (特殊机制 静态刚体 「失衡状态拥有 0.1 秒保底持续时间」).
+ * ——哪怕已经没有被移动或者受力」) — what a 静态刚体 hit by a push gets (特殊机制 静态刚体 「失衡状态拥有 0.1 秒保底持续时间」; a pulled
+ * one stays for the pull's window, its force lasting that long).
  * PR #392 by @xcdoge brought the state; its 0.6387·√tiles was derived from the page's μ = 0.5 单位假设, not printed.
  */
 export const PUSH_UNBALANCE = Object.freeze({ '-2': 0.2, '-1': 0.4, 0: 0.8, 1: 0.9, 2: 32 / 30, 3: 35 / 30 });

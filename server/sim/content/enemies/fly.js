@@ -4,7 +4,7 @@
 import { TICK, MOVE_SCALE, PROJECTILE_SPEEDS, ALLY_COLLIDER_RADIUS } from '../../constants.js';
 import {
   num, T, hurt, targetsNear, allTargets, areaAllies, areaAlliesInTiles, fieldAllies, byPriority, spawnChildren,
-  stepToward, setForm, expose,
+  stepToward, setForm, expose, unbalancedNow,
 } from './helpers.js';
 import { enemyAura, allyAura, selfFear, skill, kitSelfFear } from './archetypes.js';
 import { hypot } from '../../detmath.js';
@@ -258,6 +258,7 @@ export const FLY_KITS = Object.freeze({
     spawn(b, e) { e.profile.noAttack = true; },
     tick(b, e, a, dt) {
       if (a.t && !a.t.alive) { a.t = null; b.removeBuff(e, 'ab:dive'); }
+      if (unbalancedNow(b, e)) return;                               // 失衡: no dive, no blast meanwhile
       if (!a.t) {
         const l = targetsNear(b, e, e.base.rangeRadius || 1).sort((p, q) => hypot(p.x - e.x, p.y - e.y) - hypot(q.x - e.x, q.y - e.y));
         if (!l.length) return;

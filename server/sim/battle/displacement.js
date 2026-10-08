@@ -55,7 +55,7 @@ export class BattleDisplacement {
    * Returns the tiles moved.
    */
   push(e, force, { from = null, dir = null, fixed = false, fixedAngle = false, inward = false, effect = false } = {}) {
-    if (!this._displaceable(e)) { this._staticForce(e, force); return 0; }
+    if (!this._displaceable(e)) { this._staticForce(e, force, false); return 0; }
     let level = this.forceLevel(e, force);
     const fx0 = fin(from?.x, e.x), fy0 = fin(from?.y, e.y);
     const vx = e.x - fx0, vy = e.y - fy0, d = hypot(vx, vy);
@@ -89,9 +89,9 @@ export class BattleDisplacement {
    */
   pull(e, force, { to, center = null, stop = PULL_STOP_RADIUS } = {}) {
     if (!to) return 0;
-    if (!this._displaceable(e)) { this._staticForce(e, force); return 0; }
     // an enemy the puller itself blocks already stands in front of it (at contact) [ASSUMED: no pull, no unblocking]
-    if (center && center.side === 'ally' && e.blockedBy === center) return 0;
+    if (e && center && center.side === 'ally' && e.blockedBy === center) return 0;
+    if (!this._displaceable(e)) { this._staticForce(e, force, true); return 0; }
     const level = this.forceLevel(e, force);
     // 失衡 for the force window, whatever the travel: the 急停 zeroes the movement, the state lasts to the window's end
     const hold = pullUnbalance(level);
@@ -140,13 +140,16 @@ export class BattleDisplacement {
   }
 
   /**
-   * A push / pull of 力度 `force` on a 静态刚体 (data `staticBody`; not 失衡免疫 `noDisplace` — PRTS 特殊机制 静态刚体: unlike
-   * 失衡免疫 it "可以进入失衡状态并启用物理，但物理层面上无法产生任何速度或移动", leaving it 「在失去施力后立刻」 with 「0.1 秒保底持续
-   * 时间」): a force > 0 (受力等级 ≥ −2) gives the UNBALANCE_MIN state, no movement. Leaders (the boss pool) stay out.
+   * A push (`pull` false) / pull of 力度 `force` on a 静态刚体 (data `staticBody`; not 失衡免疫 `noDisplace` — PRTS 特殊机制
+   * 静态刚体: unlike 失衡免疫 it "可以进入失衡状态并启用物理，但物理层面上无法产生任何速度或移动", leaving it 「在失去施力后立刻」 with
+   * 「0.1 秒保底持续时间」): no movement, the state as long as the force acts — a push's is instant (推与拉 「作用时间：瞬间」) so
+   * the UNBALANCE_MIN floor, a pull's is its window (pullUnbalance: 1 s, 0.5 s below −1); a force > 0 (受力等级 ≥ −2) only.
+   * Leaders (the boss pool) stay out.
    */
-  _staticForce(e, force) {
+  _staticForce(e, force, pull = false) {
     if (!(e && e.alive && e.side === 'enemy' && !e.isBoss && !e.s.flags.noDisplace && e.def && e.def.staticBody)) return;
-    if (this.forceLevel(e, force) >= -2) this._unbalance(e, UNBALANCE_MIN);
+    const level = this.forceLevel(e, force);
+    if (level >= -2) this._unbalance(e, pull ? Math.max(UNBALANCE_MIN, pullUnbalance(level)) : UNBALANCE_MIN);
   }
 
   /**
@@ -155,8 +158,9 @@ export class BattleDisplacement {
    * updateEnemy reads `unbalanceUntil`: the enemy neither walks (恐惧 / 诱导 included) nor starts a normal attack, a swing
    * short of its frame is cut; checks that ignore the state (水遁忍者's damage, content abilities) go on. The state machine
    * switch ends the attack clip it stood for (PRTS 状态机: the states are exclusive — UNBALANCE, then DEFAULT → MOVE). It
-   * ends with its time, or at once with 浮空 (术语释义 浮空 「触发浮空时清除受到的推/拉力…无法陷入失衡」, ai.js) or a 重生.
-   * No global skill lock: enemy abilities keep ticking (the 「使用技能」 part is not modelled — docs/SIM.md).
+   * ends with its time, or at once with 浮空 (术语释义 浮空 「触发浮空时清除受到的推/拉力…无法陷入失衡」, ai.js), a 重生 or a route
+   * APPEAR (forced state switches). No skill meanwhile either (失衡免疫 「…使用技能」): content skills, blinks and scripted moves
+   * check `enemies/helpers.js unbalancedNow` (docs/SIM.md lists what deliberately keeps running).
    */
   _unbalance(e, dur) {
     if (!(dur > 0) || !e || !e.alive) return;

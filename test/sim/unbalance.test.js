@@ -9,6 +9,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, enemyRec, chessRec, checkInvariants } from '../helpers/battleHarness.js';
 import { PUSH_UNBALANCE, PULL_UNBALANCE, PULL_UNBALANCE_WEAK, UNBALANCE_MIN, PUSH_TILES, TICK } from '../../server/sim/constants.js';
+import { hasGeneratedData } from '../../server/sim/simdata.js';
+import * as enemiesMod from '../../server/sim/content/enemies.js';
+import { canCast } from '../../server/sim/content/enemies/helpers.js';
+import { blinkForward } from '../../server/sim/content/enemies/archetypes.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const WALL = chessRec({ id: 't_wall', profession: 'TANK', stats: { atk: 0, maxHp: 1e7, blockCnt: 0 }, rangeGrid: [[0, 0]], skill: null });
@@ -148,4 +152,107 @@ test('the displace fx carries the state\'s game seconds for the client\'s slide'
   h.b.push(e, 1, { from: { x: e.x - 1, y: e.y } });
   const fx = (h.b.drainEvents() || []).find((t) => t[0] === 'fx' && t[1] === 'displace');
   assert.ok(fx && near(fx[4].dur, PUSH_UNBALANCE[1]), JSON.stringify(fx));
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the branch review (fb7-unbalance): exact frames, a 静态刚体 pulled, 弧光锋卫's bleed, skills and scripted moves, the
+// forced state switches
+
+test('every push row holds its exact frames at 30 fps (6, 12, 24, 27, 32, 35) — the enemy walks on the next frame', () => {
+  for (const [force, frames] of [[-1, 6], [0, 12], [1, 24], [2, 27], [3, 32], [4, 35]]) {
+    const { h, e } = field();
+    h.b.push(e, force, { from: { x: e.x + 1, y: e.y } });
+    const x = e.x, y = e.y;
+    let k = 0;
+    while (k < 60) { h.step(); k++; if (!near(e.x, x) || !near(e.y, y)) break; }
+    assert.equal(k, frames + 1, `力度 ${force} (受力等级 ${force - 1}): held ${k - 1} frames, want ${frames}`);
+  }
+});
+
+test('a 静态刚体 pulled is held for the pull\'s force window (1 s; 0.5 s below 受力等级 −1), a pushed one 0.1 s — never moved', () => {
+  for (const [kind, force, want] of [['pull', 1, PULL_UNBALANCE], ['pull', -1, PULL_UNBALANCE_WEAK], ['push', 3, UNBALANCE_MIN]]) {
+    const s = field({ enemy: { motion: 'FLY' } });
+    s.e.def = { ...s.e.def, staticBody: true };
+    const x0 = s.e.x, t0 = s.h.b.time;
+    if (kind === 'pull') s.h.b.pull(s.e, force, { to: { x: 3, y: 10 } });
+    else s.h.b.push(s.e, force, { from: { x: s.e.x - 1, y: s.e.y } });
+    assert.equal(s.e.x, x0, `${kind}: not moved`);
+    assert.ok(near(s.e.unbalanceUntil - t0, want), `${kind} 力度 ${force}: ${s.e.unbalanceUntil - t0} s, want ${want}`);
+  }
+});
+
+const REAL = { skip: !hasGeneratedData() };
+/** A pinned real enemy (data/enemies.json) on the open stage, with its content kit. */
+function real(key, o = {}) {
+  const h = makeBattle({ content: 'generic', extraContent: [enemiesMod], seed: 7, autoFinish: false, timeLimit: 60, captureNoisy: true,
+    hooks: ['damaged'], defs: { chess: { t_wall: { ...WALL, stats: { ...WALL.stats, blockCnt: 3 } } } }, ...o });
+  h.step();
+  const e = h.spawn(key, { pos: o.pos ?? [10, 7], routeIndex: 0, mods: { speedMul: o.move ? 1 : 0 } });
+  h.step();
+  return { h, e };
+}
+
+test('弧光锋卫 bleeds 400 true damage every 0.066 s for as long as the state lasts (PRTS 天赋) — a push, a 急停 pull, a wall-shortened slide', REAL, () => {
+  const bleed = (act) => {
+    const { h, e } = real('enemy_1328_cbjedi');
+    const hp0 = e.hp;
+    act(h, e);
+    h.run(2);
+    const hits = h.hooksOf('damaged').filter((c) => c.target === e && c.dmg.tags?.includes('unbalanced'));
+    return { lost: hp0 - e.hp, hits: hits.length };
+  };
+  // weight 1: 力度 1 → 受力等级 0, 0.8 s → 12 × 400; a 急停 pull (no movement) 1 s → 15 × 400; the wall keeps the 0.8 s row
+  assert.deepEqual(bleed((h, e) => h.b.push(e, 1, { from: { x: e.x + 1, y: e.y } })), { lost: 4800, hits: 12 });
+  assert.deepEqual(bleed((h, e) => h.b.pull(e, 2, { to: { x: e.x - 0.3, y: e.y }, center: { x: e.x - 0.3, y: e.y } })), { lost: 6000, hits: 15 });
+  assert.deepEqual(bleed((h, e) => { e.x = 9.6; h.b.push(e, 1, { from: { x: e.x - 1, y: e.y } }); }), { lost: 4800, hits: 12 });
+});
+
+test('no skill, blink or scripted move while it lasts (失衡免疫 「失衡期间无法自主移动、发动攻击、使用技能」)', REAL, () => {
+  // the skill gate and the blink
+  const { h, e } = field();
+  h.b.pull(e, 1, { to: { x: e.x - 0.3, y: e.y }, center: { x: e.x - 0.3, y: e.y } });    // 1 s, no movement
+  assert.equal(canCast(e, false, h.b), false, 'canCast');
+  const x0 = e.x;
+  assert.equal(blinkForward(h.b, e, 1.5), null, 'blinkForward');
+  assert.equal(e.x, x0);
+  h.run(1.05);
+  assert.equal(canCast(e, false, h.b), true, 'after the state');
+  // 枯朽之种 (a 静态刚体 flyer: a pull's window, no movement): no dive, no blast meanwhile
+  const s = real('enemy_1269_nhfly', { units: [{ chessId: 't_wall', row: 10, col: 6 }], pos: [10, 7] });
+  const t0 = s.h.b.time;
+  s.h.b.pull(s.e, 3, { to: { x: 3, y: 10 } });
+  assert.ok(near(s.e.unbalanceUntil - t0, PULL_UNBALANCE));
+  const sx = s.e.x, sy = s.e.y;
+  s.h.run(0.9);
+  assert.ok(s.e.alive && near(s.e.x, sx) && near(s.e.y, sy), 'still where it was, not exploded');
+  assert.ok(s.h.runUntil(() => !s.e.alive, 5), 'then it dives and blows up');
+});
+
+test('乌顶巨角卢鲁: a 失衡 that does not move it holds its clash until the state ends', REAL, () => {
+  const { h, e } = real('enemy_10144_xdelk_2', { units: [{ chessId: 't_wall', row: 10, col: 6 }], move: true });
+  assert.ok(h.runUntil(() => h.eventsOf('fx').some((x) => x[1] === 'telegraph' && x[4]?.kind === 'elkCharge'), 10), 'the charge starts');
+  const start = h.b.time, dur = 8;
+  h.run(dur - 0.5);
+  h.b.pull(e, 5, { to: { x: e.x + 0.2, y: e.y }, center: { x: e.x + 0.2, y: e.y } });   // 急停 at once: 1 s, no movement
+  const until = e.unbalanceUntil;
+  assert.ok(until > start + dur, 'the state outlasts the charge timer');
+  const clash = () => h.eventsOf('fx').some((x) => x[1] === 'explode' && x[4]?.kind === 'elkClash');
+  assert.ok(h.runUntil(clash, 3), 'it clashes');
+  assert.ok(h.b.time >= until - 1e-9, `not before the state ends (${h.b.time.toFixed(3)} vs ${until.toFixed(3)})`);
+});
+
+test('a route APPEAR (a forced relocation) and a 逐火 重生 end the state', REAL, () => {
+  const { h, e } = field({ mass: 0 });
+  h.b.push(e, 3, { from: { x: e.x - 1, y: e.y } });
+  assert.ok(e.unbalanceUntil > h.b.time);
+  e.route.legs.splice(e.route.legIdx, 0, { t: 'appear', r: 10, c: 3 });
+  h.step();
+  assert.equal(e.x, 3, 'relocated');
+  assert.ok(!(e.unbalanceUntil > h.b.time), 'APPEAR ended it');
+  const w = real('enemy_1288_duskls');
+  w.h.b.push(w.e, 4, { from: { x: w.e.x + 1, y: w.e.y } });
+  assert.ok(w.e.unbalanceUntil > w.h.b.time);
+  w.h.b.dealDamage(null, w.e, { amount: 1e9, type: 'true' });
+  assert.ok(w.e.alive, 'it fell into its 余烬 (重生)');
+  assert.ok(!(w.e.unbalanceUntil > w.h.b.time), 'the 重生 ended it');
 });

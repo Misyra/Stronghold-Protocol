@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';
 import { fieldModel, planLayout, rehearse, rangeTiles, REHEARSAL_VARIANTS, LAYOUT_PARAMS, botPickCard, botPickBand } from '../../server/match/bot.js';
 import { FIELD, canPlace, placeClass, parseKey } from '../../server/match/board.js';
-import { makeMatch, checkInvariants, give, DATA } from './harness.js';
+import { makeMatch, checkInvariants, give, giveItem, DATA } from './harness.js';
 
 const soloBot = (o = {}) => makeMatch({ mode: 'solo', difficulty: 'NORMAL', seats: [{ seat: 0, playerId: 'ai_0', name: 'AI', isBot: true, connected: true }], ...o });
 
@@ -220,6 +220,32 @@ test('a sliced rehearsal is dropped when the prep ends first; the default layout
   assert.equal(m.errorCount, 0);
   checkInvariants(m);
   m.dispose();
+});
+
+test('AI takeover resolves a personal choice in untimed PREP, including generator-error Ready cleanup', () => {
+  for (const broken of [false, true]) {
+    const h = makeMatch({ mode: 'coop', humans: 1, seed: 6, fake: true, botSliceMs: 0 }).start();
+    h.toPrep(1);
+    const m = h.m, ps = h.ps('p_0');
+    assert.equal(m.deadline, 0, 'single-human co-op is untimed');
+    const art = giveItem(m, ps, 'chess_item_6_03_m');
+    assert.deepEqual(ps.useArt(art.uid, 10, 5), { ok: true });
+    const pick = m.autoPickPersonalChoice.bind(m), modes = [];
+    m.autoPickPersonalChoice = (p, mode) => {
+      if (p.personalChoice) modes.push(mode);
+      if (broken && mode === 'bot') throw new Error('scripted choice scoring failure');
+      return pick(p, mode);
+    };
+    assert.deepEqual(m.handle(ps.playerId, { t: 'g.autoplay', on: true }), { ok: true });
+    assert.ok(h.run(() => m.phase !== PHASE.PREP));
+    assert.equal(ps.personalChoice, null);
+    assert.equal(ps.bounties.length, 1);
+    assert.equal(ps.round.arts, 1);
+    assert.ok(ps.ready);
+    assert.ok(modes.includes(broken ? 'random' : 'bot'));
+    assert.equal(m.errorCount > 0, broken);
+    m.dispose();
+  }
 });
 
 test('economy: the bot fills the board first (8 units by round 4), levels on its curve and keeps a hand slot free', () => {

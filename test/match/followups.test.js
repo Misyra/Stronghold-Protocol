@@ -11,7 +11,7 @@ import { fieldModel } from '../../server/match/bot.js';
 import { FIELD, parseKey } from '../../server/match/board.js';
 import { createRng } from '../../server/sim/rng.js';
 import { FakeBattle } from './fakeBattle.js';
-import { DATA, makeMatch, checkInvariants } from './harness.js';
+import { DATA, makeMatch, checkInvariants, giveItem } from './harness.js';
 
 const bossFields = () => FakeBattle.instances.filter((b) => b.kind === 'boss' || b.kind === 'hidden');
 
@@ -86,6 +86,40 @@ test('perfect-payout bounties in the boss rounds: a 战术特训 card\'s coins j
   h.runToEnd();
   assert.equal(ps.pendingFunds, 3 + owed, 'the Hidden Core pays by the same rule');
   assert.equal(ps.bounties.length, 0, 'every bounty used its battles');
+  checkInvariants(m);
+  m.dispose();
+});
+
+test('教鞭 in the boss rounds (R14, R15): the card the owner chose spawns in the boss battle and pays at the next income, the Hidden Core takes another choice', () => {
+  const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, seed: 61, fake: true,
+    script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 1e9, coins: { p_0: 3 } } : {}) }).start();
+  const m = h.m;
+  h.toPrep(14);
+  const ps = h.ps('p_0');
+  const art = giveItem(m, ps, 'chess_item_6_03_m');
+  assert.deepEqual(ps.useArt(art.uid, 10, 5), { ok: true });
+  assert.equal(ps.bounties.length, 0, 'nothing is applied before the owner confirms');
+  assert.equal(ps.setReady(true).error, 'BAD_TARGET', 'Ready waits for the choice');
+  const card = ps.personalChoice.cards[2];
+  assert.deepEqual(m.handle(ps.playerId, { t: 'g.choice', idx: 2, choiceId: ps.personalChoice.id }), { ok: true });
+  assert.equal(ps.bounties[0].card.effectId, card.effectId, 'the card of the tapped slot');
+  const pending = ps.pendingFunds;
+  h.drive(() => m.phase === PHASE.FINAL_ASSAULT);
+  m.hiddenLayerSum = 1e6;
+  assert.ok(bossFields()[0].opts.spawns.some((s) => s.tag === 'bounty' && s.enemyKey === card.enemyKey && s.ownerPlayerId === ps.playerId), 'the chosen card\'s enemies come in the boss battle');
+  h.run(() => m.runner === null);
+  assert.equal(ps.pendingFunds, pending + 3 + card.coin, 'kill coins + the chosen card\'s coins');
+  h.toPrep(15);
+  assert.equal(ps.funds, m.gd.income(15) + pending + 3 + card.coin, 'paid at the R15 income, apart from the base income');
+  const hiddenArt = giveItem(m, ps, 'chess_item_6_03_m');
+  assert.deepEqual(ps.useArt(hiddenArt.uid, 10, 5), { ok: true });
+  const hiddenCard = ps.personalChoice.cards[0];
+  assert.deepEqual(m.handle(ps.playerId, { t: 'g.choice', idx: 0, choiceId: ps.personalChoice.id }), { ok: true });
+  const owed = ps.bounties.filter((b) => b.card.payout === 'perfect').reduce((n, b) => n + b.card.coin, 0);
+  h.drive(() => m.phase === PHASE.HIDDEN_CORE);
+  assert.ok(bossFields().at(-1).opts.spawns.some((s) => s.tag === 'bounty' && s.enemyKey === hiddenCard.enemyKey));
+  h.runToEnd();
+  assert.equal(ps.pendingFunds, 3 + owed, 'the Hidden Core pays by the same rule');
   checkInvariants(m);
   m.dispose();
 });

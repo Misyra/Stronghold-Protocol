@@ -15,7 +15,7 @@
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,6 +71,16 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
   }
   const mockState = (page) => page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__MOCK__.S().priv)));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const useWhip = (page) => page.evaluate(async () => {
+    const { net } = await import('/js/net.js');
+    const uid = 900000 + globalThis.__MOCK__.S().requests.length;
+    globalThis.__MOCK__.mutate((S) => {
+      const idx = S.priv.hand.findIndex((p) => !p);
+      S.priv.hand[idx] = { uid, kind: 'item', id: 'chess_item_6_03_m', tier: 6 };
+    });
+    await net.request('g.art', { itemUid: uid, row: 10, col: 5 });
+    return globalThis.__MOCK__.S().priv.personalChoice;
+  });
   /** Swipe the open direction wheel from its centre towards `dir` and release (research 09 §1.2). */
   const swipeWheel = async (page, dir = 'RIGHT') => {
     await page.waitForSelector('.fwheel__dia', { timeout: 4000 });
@@ -341,6 +351,135 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     await sleep(300);
     const txt = await page.$eval('.brief-ready__txt', (el) => el.textContent);
     assert.match(txt, /3/);
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
+
+  test('教鞭: PREP cards confirm twice, use its timer, reset on a new ID; old replies cannot clear a new busy pick', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    await page.click('.gm__gear');
+    await page.waitForSelector('.modal .set-keys');
+    await page.click('.set-key[data-action="ready"]');
+    await page.waitForSelector('.set-key.is-waiting[data-action="ready"]');
+    await page.keyboard.press('KeyW');
+    await page.waitForFunction(() => document.querySelector('.set-key[data-action="ready"]')?.textContent.trim() === 'W');
+    await page.click('.modal__actions .btn--primary');
+    await page.waitForSelector('.modal', { hidden: true });
+    const deadline = await page.evaluate(() => globalThis.__MOCK__.S().pub.deadline);
+    const first = await useWhip(page);
+    await page.waitForSelector('.spov[aria-label="教鞭选择"]');
+    assert.equal(await page.evaluate(() => globalThis.__MOCK__.S().pub.deadline), deadline);
+    assert.equal(await page.$('.spov__order'), null);
+    assert.ok(await page.$('.spov .countdown'));
+    assert.doesNotMatch(await page.$eval('.spov', (el) => el.textContent), /机变阶段|当前轮到|正在决策/);
+    assert.equal(await page.$eval('.readybtn', (el) => el.disabled), true);
+    assert.match(await page.$eval('[data-testid="ready-why"]', (el) => el.textContent), /请先完成教鞭选择/);
+    await page.evaluate(async () => { await (await import('/js/ui/lang.js')).loadLangIndex(); });
+    for (const lang of ['en', 'ja', 'ko', 'zh-TW']) {
+      const messages = JSON.parse(readFileSync(path.join(ROOT, `public/i18n/${lang}.json`), 'utf8'));
+      await page.evaluate(async (code) => {
+        await (await import('/js/ui/lang.js')).switchLang(code);
+        globalThis.__MOCK__.pushPublic(); // this harness has no App/useLang root; render again with the active language
+      }, lang);
+      await page.waitForFunction((label) => document.querySelector('.spov')?.getAttribute('aria-label') === label, {}, messages['教鞭选择']);
+      assert.equal(await page.$eval('.spov__title', (el) => el.textContent), `${messages['教鞭 · 战术特训']}|${messages['请选择一项战术特训']}`);
+      assert.match(await page.$eval('.spov__sub', (el) => el.textContent), new RegExp(messages['休整期结束时未选择将自动选定']));
+      assert.equal(await page.$eval('[data-testid="ready-why"]', (el) => el.textContent), messages['请先完成教鞭选择']);
+      assert.equal((await mockState(page)).personalChoice.id, first.id, 'language switch keeps the same pending offer');
+    }
+    await page.evaluate(async () => { await (await import('/js/ui/lang.js')).switchLang('zh'); globalThis.__MOCK__.pushPublic(); });
+    await page.waitForSelector('.spov[aria-label="教鞭选择"]');
+    const requests = await page.evaluate(() => globalThis.__MOCK__.S().requests.length);
+    for (const key of ['KeyW', 'KeyR', 'KeyF', 'KeyD', 'KeyQ', 'KeyX']) await page.keyboard.press(key);
+    await sleep(150);
+    assert.equal(await page.evaluate(() => globalThis.__MOCK__.S().requests.length), requests, 'background shortcuts send no intents');
+    assert.match(await page.$$eval('.toast', (els) => els.map((el) => el.textContent).join('\n')), /请先完成教鞭选择/);
+    assert.equal(await page.$eval('.readybtn__key', (el) => el.textContent), 'W');
+    await page.click('.spcard.is-pickable');
+    await page.waitForSelector('.spcard.is-armed');
+    await sleep(200); // the overlay attaches its Escape listener in an effect, a frame after the highlight shows
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.spcard.is-armed'));
+    assert.equal((await mockState(page)).personalChoice.id, first.id, 'Escape only removes the highlight');
+    await page.screenshot({ path: path.join(OUT, 'ui-personal-choice-1920.png') });
+    await page.evaluate(async (id) => {
+      const { net } = await import('/js/net.js');
+      const request = net.request;
+      globalThis.__choiceReplies = {};
+      net.request = async (t, fields) => {
+        if (t !== 'g.choice' || fields.choiceId === undefined) return request(t, fields);
+        if (fields.choiceId === id) {
+          const result = await request(t, fields);
+          await new Promise((resolve) => { globalThis.__choiceReplies[fields.choiceId] = resolve; });
+          return result;
+        }
+        await new Promise((resolve) => { globalThis.__choiceReplies[fields.choiceId] = resolve; });
+        return request(t, fields);
+      };
+    }, first.id);
+    await page.click('.spcard.is-pickable');
+    assert.equal((await mockState(page)).personalChoice.id, first.id, 'one tap does not apply it');
+    await page.click('.spcard.is-armed');
+    await page.waitForFunction(() => !document.querySelector('.spov'));
+    const firstRequest = await page.evaluate(() => globalThis.__MOCK__.S().requests.filter(([t]) => t === 'g.choice').at(-1));
+    assert.deepEqual(firstRequest, ['g.choice', { idx: 0, choiceId: first.id }]);
+    const second = await useWhip(page);
+    await page.waitForSelector('.spov');
+    await page.click('.spcard.is-pickable');
+    await page.waitForSelector('.spcard.is-armed');
+    const thirdId = second.id + '.next';
+    await page.evaluate((id) => globalThis.__MOCK__.mutate((S) => { S.pub.deadline = 0; S.priv.personalChoice.id = id; }), thirdId);
+    await page.waitForFunction(() => !document.querySelector('.spcard.is-armed'));
+    assert.equal(await page.$('.spov .countdown'), null, 'co-op PREP without a deadline is untimed');
+    await page.click('.spcard.is-pickable');
+    await page.click('.spov__confirm');
+    await page.waitForSelector('.spcard.is-busy');
+    await page.waitForFunction((id) => !!globalThis.__choiceReplies[id], {}, first.id);
+    await page.evaluate((id) => globalThis.__choiceReplies[id](), first.id);
+    await sleep(150);
+    assert.ok(await page.$('.spcard.is-busy'), 'old reply leaves the newer choice busy');
+    await page.evaluate((id) => globalThis.__choiceReplies[id](), thirdId);
+    await page.waitForFunction(() => !document.querySelector('.spov'));
+    assert.equal((await mockState(page)).personalChoice, null);
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
+
+  test('教鞭 appearing cancels the uncommitted direction wheel and active drag, releasing its held piece', async () => {
+    const { page, problems } = await open('phase=PREP', { render: 'fallback' });
+    const s = await mockState(page);
+    const hand = s.hand.find((p) => p && p.kind === 'chess');
+    const target = s.board.find((p) => p.kind === 'chess' && p.row === 9);
+    const selector = `.ff-piece[data-uid="${hand.uid}"]`;
+    const center = (sel) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const homeStyle = await page.$eval(selector, (el) => el.style.transform);
+    const from = await center(selector), to = await center(`.ff-piece[data-uid="${target.uid}"]`);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await sleep(80);
+    await page.mouse.up();
+    await page.waitForSelector('.fwheel');
+    await useWhip(page);
+    await page.waitForSelector('.spov');
+    await page.waitForFunction(() => !document.querySelector('.fwheel'));
+    await page.waitForFunction((sel, transform) => document.querySelector(sel)?.style.transform === transform, {}, selector, homeStyle);
+    assert.equal(await page.$eval(selector, (el) => el.style.transform), homeStyle, 'cancelFacing released the held bench piece');
+    assert.equal(await page.$('.ff-piece.is-draggable'), null);
+    await page.click('.spcard.is-pickable');
+    await page.click('.spov__confirm');
+    await page.waitForFunction(() => !document.querySelector('.spov'));
+    const current = await center(selector);
+    await page.mouse.move(current.x, current.y);
+    await page.mouse.down();
+    await page.mouse.move(current.x + 90, current.y - 40, { steps: 8 });
+    await page.waitForSelector('.gm.is-dragging');
+    await useWhip(page);
+    await page.waitForSelector('.spov');
+    await page.waitForFunction(() => !document.querySelector('.gm.is-dragging, .ff-piece.is-lifted'));
+    await page.mouse.up();
+    assert.deepEqual((await mockState(page)).board, s.board);
+    assert.ok(!(await page.evaluate(() => globalThis.__MOCK__.S().requests.some(([t]) => t === 'g.move'))));
     assert.deepEqual(problems, []);
     await page.close();
   });

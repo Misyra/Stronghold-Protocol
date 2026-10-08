@@ -175,18 +175,18 @@ A `choice:<effectId>` registry handler overrides the default application (§2.4)
 
 ### 1.3 Disconnects, AI takeover
 * Disconnected human: the seat keeps playing its last lineup; drafts auto-resolve at their deadlines, prep auto-readies at
-  the deadline (the temp pieces due at that prep sold/destroyed). Nothing is bought for them. A battle the human was authority of goes to the server
+  the deadline (an open 教鞭 choice is picked at random first, §2.5; then the temp pieces due at that prep are sold/destroyed). Nothing is bought for them. A battle the human was authority of goes to the server
   (normal / 联防: re-simulated from t = 0) or, on a boss field, to the partner's replica (DESIGN §14). The session stays
   resumable for 10 min (net.js `reconnectWindowMs`); a **solo** run's for the official `constants.singleReconnectTime`
   (86 400 s = 24 h, lobby.js `soloResumeWindowMs`) — nothing in a solo run is timed, so it simply waits. `onReconnect`
   resends `m.public`, `m.private` and the `b.start` of the field the player is on / watching.
-* `g.autoplay { on }` ("AI 托管"): the bot plays the seat (drafts, buying, placement, ready) until turned off.
+* `g.autoplay { on }` ("AI 托管"): the bot plays the seat (drafts, buying, placement, an open 教鞭 choice, ready) until turned off.
 * `onLeave` (quit / reconnect window expired): 中途退出 counts as elimination (research 00-INDEX §3, 01 §9, 06 §7 /
   §10.3): every copy the seat holds returns to the shared pool at once; the seat leaves the round loop and the Final
   Assault pairing (re-planned when it quits before the boss fight) and the boss pool (bloodPoint per player alive when
   the fight starts — a departed seat no longer counts, DESIGN §25.13.4); its
   running normal battle is force-ended; a pending band pick
-  becomes the default band and a 机变 turn passes on. Status `left`, LP 0, rounds passed = the rounds it had survived.
+  becomes the default band, a 机变 turn passes on and an open 教鞭 choice goes with the seat (`eliminate`). Status `left`, LP 0, rounds passed = the rounds it had survived.
   When no human is left at all the match ends immediately (`reason: 'abandoned'`); when only eliminated spectators are
   left it ends as `'eliminated'`.
 
@@ -263,7 +263,8 @@ like any owned unit — AI 托管 too; the buy loop's bench shed, which sells by
 never sells a piece gained since the bot's last prep ended, `rememberOwned`), 身份牌 / 通讯机 / 寻呼模块 on a focus
 member; 画卷 copies the most
 valuable deployed operator; 教鞭 / “神秘顾客” are used after a perfect battle and otherwise kept in the hand — a bot drops
-a kept one only when it needs the hand slot (“神秘顾客” then pays its fund), a human's seat under AI 托管 never. 机变: a
+a kept one only when it needs the hand slot (“神秘顾客” then pays its fund), a human's seat under AI 托管 never; 教鞭's three
+cards are scored like a 机变 bounty draft (§2.5). 机变: a
 bounty card is scored by its expected payout minus its expected leaks × the value of an LP (2 + 20 / LP), the kill
 chance from the exposure model below for that one enemy against the own board as it stands (its HP × the round's
 multiplier, DEF / RES, speed, route kind) — an expected-value comparison: it prefers the card with the best payout
@@ -425,6 +426,7 @@ Writes (all validated, never throw on bad input, never make funds / pools negati
 | `setDeviceActive(alias, on)` / `setTileOverride(r, c, 'melee'\|'ranged'\|'none')` | terrain changes of this player's board (legality + battle input `deviceOverrides`) |
 | `addEffect(ref)` / `removeEffect(id)` / `setEffectCounter(id, v)` | EffectRefs `{ id, key?, name, desc, iconKind, iconId, counter?, battle=true, params?, data?, hidden? }` — shown in `m.private.effects`, passed to battles as `playerEffects` when `battle` |
 | `addBounty(card)` | a bounty (choices.json cards.bounty shape) on the next battles |
+| `offerBountyChoice(cards, sourceItemId)` | 教鞭 only: open a PERSONAL choice of up to three of `cards` (cards.bounty entries) for this player — shuffled once with the meta rng, kept in `m.private.personalChoice` until the owner confirms one (`g.choice { idx, choiceId }`) or the prep's deadline / an AI seat picks (§2.5); returns the intent result (`{ ok }`, or `{ error, detail }` for a phase that is not PREP, a Ready player, a choice already open or no card — before any rng draw or id, so the Art stays in the hand) |
 | `toast(text, kind)` / `ticker(text)` / `giftTicker(fromName, chessId)` | messages |
 | `teammates()` / `player(playerId)` | ctx objects of other alive players (team effects) |
 
@@ -458,20 +460,46 @@ bilibili BV1vzyVBuEN9 ≈ 8:24 / BV1Qkw1zMEoR ≈ 7:25, pointed out in PR #2 —
 is not consumed: PRTS 下半 记录 备注 "生效时，原干员销毁，获得一名高一阶的随机初始干员（最高六阶）", PRTS 卫戍协议/帮助 "佩戴的
 装备无法手动卸除，在失去该干员（干员出售、销毁、合并等）…时自动卸除", players re-inject it every round; player feedback after
 0.1.0), 画卷 (copy the operator in range with its
-items), 教鞭 / “神秘顾客” (a random bounty is added).
+items), 教鞭 (a personal choice of three 战术特训 cards), “神秘顾客” (a random bounty is added).
 
-**教鞭 / “神秘顾客” stay a random bounty (deliberate).** The official Arts open a personal 悬赏 choice
-("选择一项（特殊）悬赏任务进行挑战", `choice_event hunter_band_1`). The server applies a random bounty instead: content
-(server/sim/content/items/meta.js) draws 3 cards and takes one at random — 教鞭 from the 20 战术特训 cards (payout
-`perfect`: extra enemies, the card's coins when the own phase is perfect; PRTS 下半 记录 §法术 教鞭 "于3个战术特训的悬赏
-任务中选择一项", §机变阶段 "※以下悬赏任务仅由法术教鞭生成", 杜宾 加练！ "若自身战斗完美作战可获得资金"; user playtest #6
-item 4 review), “神秘顾客” (granted by nothing in act2) from the band-bounty family `enemyeffect_b_*` [ASSUMED] — each
-limited to enemies the mode can field (the built-in fallback: a random tier ≤ II bounty of `cards.bounty`), and adds it
-with `ctx.addBounty`. A personal choice overlay would need its own phase / protocol message outside SP_DRAFT (a
-second, simultaneous draft in co-op, with timers and AI takeover) for a rarely used Art, while the random pick keeps the
-risk / reward the item is about. The
-bounty then behaves like any other (next battles, 联防 payouts, Final Assault spawns). 神秘顾客's destroy clause (+1
-fund, the Art passes to the next alive player) is content too (`onDestroy`).
+**教鞭 offers a personal choice of three 战术特训 cards (0.2.2); “神秘顾客” stays a random bounty.** The official Arts open a
+personal 悬赏 choice ("选择一项（特殊）悬赏任务进行挑战", `choice_event hunter_band_1`, choiceType `PERSONAL_CHOOSE`). 教鞭
+(PRTS 下半 记录 §法术 教鞭 "使用后销毁，于3个战术特训的悬赏任务中选择一项"; §机变阶段 "※以下悬赏任务仅由法术教鞭生成"; 杜宾
+加练！ "<教鞭>：使用后为下场战斗添加额外敌人，若自身战斗完美作战可获得资金"; user playtest #6 item 4 review) offers three of
+the 20 战术特训 cards (payout `perfect`: extra enemies, the card's coins when the own phase is perfect), each limited to
+enemies the mode can field. Until 0.2.1 the server took one of the three at random — a deliberate simplification: a
+personal choice looked like it needed a phase of its own, a protocol message outside SP_DRAFT, a timer and an AI
+takeover for a rarely used Art. The owner decided on 2026-10-08 to follow the official choice (PR #353 by @Sukvii), and
+it fits in the existing parts:
+
+* **Offer.** Content (server/sim/content/items/meta.js) calls `ctx.offerBountyChoice(cards, itemId)` (`Match.offerBountyChoice`,
+  match/spDraft.js): the eligible cards are shuffled once with the meta rng and up to three different ones are kept in
+  `ps.personalChoice { id, round, sourceItemId, cards }`. The Art is used up (and counts for the two per round) when the
+  offer is made; nothing is applied yet. Refused — the Art stays in the hand, no rng draw, no id — outside the player's
+  PREP, for a Ready player, while an offer is already open and when no card is left to offer.
+* **Private.** Only the owner sees it: `m.private.personalChoice` (re-sent on a reconnect or a refresh, so the same cards
+  and id come back); never `m.public`, a scout's view or a spectator. Players have offers of their own, at the same time.
+* **Confirm.** `g.choice { idx, choiceId }` (`Match.pickPersonalChoice`) validates the owner, the id, the round and the
+  index, then adds the card with `addBounty` and closes the offer; a request without a `choiceId` is the public 机变 draft
+  as ever, and a stale, foreign or repeated id never falls through to it (`BAD_TARGET`). The client shows the overlay of
+  the 机变 draft (`ChoiceOverlay`, `personal`: the same two taps, no order, no turns) over a locked prep.
+* **No phase, no timer.** The offer lives inside PREP. Ready is refused while it is open (`setReady`: `BAD_TARGET`;
+  `m.private.canReady` false), and the prep's own deadline resolves it: in a timed co-op prep `prepDeadline` takes one of
+  the cards at random (the meta rng, like a 机变 turn that runs out) before the temp pieces and Ready; a solo or
+  single-human prep is untimed and has no timer for it, and a disconnected player waits for the deadline like for any
+  other prep action. A seat the engine plays — an AI teammate, a human under AI 托管, one that left — picks like the bots do.
+* **The bots.** `bot.js` scores the three cards like a 机变 bounty draft (`botPickCard` → `bountyScore`: the expected
+  payout minus the expected leaks × the value of an LP, against the own board; the bots' seeded rng only breaks ties), so
+  the choice is deterministic for a seed: at the start of the bot's prep (an offer left by a human who turned 托管 on),
+  right after it cast the Art, and before Ready. When a step of the bot's prep fails, the scheduler's fallback readies the
+  seat with the random pick instead — no seat is ever left un-ready by an offer.
+* The chosen bounty is a bounty like any other: next battles (a multi-round card lasts two, §1.2), 联防 payouts, the Final
+  Assault / Hidden Core spawns — and in the boss rounds its perfect-battle coins (§3 Waves).
+
+“神秘顾客” (granted by nothing in act2, no PRTS list of its cards) remains random: three cards are drawn from the band-bounty
+family `enemyeffect_b_*` [ASSUMED], limited to enemies the mode can field, and one is added with `ctx.addBounty` (the
+built-in fallback: a random tier ≤ II bounty of `cards.bounty`). Its destroy clause (+1 fund, the Art passes to the next
+alive player) is content too (`onDestroy`).
 EffectRefs: `effect:builtin_round_coin`, `effect:builtin_gift`, `effect:builtin_next_buy_golden_item` (整备),
 `effect:builtin_next_buy_elite` (升华). An eliminated player gets no dispatch, except an EffectRef whose handler sets
 `afterElimination: true` (its `onRoundStart` still runs: `EffectDispatcher.dispatchEliminated`, called by

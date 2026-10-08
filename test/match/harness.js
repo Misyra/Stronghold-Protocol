@@ -122,6 +122,7 @@ export function makeMatch(o = {}) {
           if (idx != null) m.handle(ps.playerId, { t: 'g.choice', idx });
         }
         if (ready && m.phase === 'PREP' && ps.alive && !ps.ready) {
+          if (ps.personalChoice) m.handle(ps.playerId, { t: 'g.choice', idx: 0, choiceId: ps.personalChoice.id });
           if (!ps.tempEmpty) ps.resolveTemp();
           m.handle(ps.playerId, { t: 'g.ready', ready: true });
         }

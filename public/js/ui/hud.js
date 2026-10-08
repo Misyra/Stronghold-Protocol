@@ -207,24 +207,27 @@ export function tempReadyReason(priv) {
 }
 
 /**
- * Ready toggle (PREP only). Disabled while the temp row holds pieces — the reason shows under it (not only on hover):
- * "临时整备区 N 个单位待处理" (user playtest #3 item 3).
+ * Ready toggle (PREP only). Disabled while the temp row holds pieces or a personal choice (教鞭) is open — the reason shows
+ * under it (not only on hover): "临时整备区 N 个单位待处理" (user playtest #3 item 3), "请先完成教鞭选择".
  * @param {{ priv:any, onToggle:(ready:boolean)=>void, busy?:boolean, readyCount?:number, total?:number }} props
  */
 export function ReadyToggle({ priv, onToggle, busy, readyCount, total }) {
   const ready = !!priv?.ready;
   const temp = tempInfo(priv);
-  const reason = !ready ? tempReadyReason(priv) || shopBlockReason('ready', { priv, editable: true }) : null;
+  const choice = !!priv?.personalChoice;
+  const reason = !ready ? (choice ? shopBlockReason('ready', { priv, editable: true }) : tempReadyReason(priv) || shopBlockReason('ready', { priv, editable: true })) : null;
+  const why = !ready && (choice || temp.count > 0);
   const btn = html`<button type="button" class=${cx('readybtn', 'tapx', ready && 'is-on', busy && 'is-busy')} disabled=${!!reason || busy}
-      aria-pressed=${ready ? 'true' : 'false'} aria-describedby=${!ready && temp.count ? 'readywrap-why' : undefined} onClick=${() => onToggle(!ready)}>
+      aria-pressed=${ready ? 'true' : 'false'} aria-describedby=${why ? 'readywrap-why' : undefined} onClick=${() => onToggle(!ready)}>
     <span class="readybtn__box">${ready ? html`<${Icon} name="check" />` : null}</span>
     <span class="readybtn__label">${ready ? t('取消准备') : t('准备就绪')}</span>
     <kbd class="readybtn__key">${hotkeyLabelOf('ready')}</kbd>
   </button>`;
   return html`<div class="readywrap">
     ${reason ? html`<${Tooltip} text=${reason} placement="bottom">${btn}<//>` : btn}
-    ${!ready && temp.count ? html`<span class="readywrap__why" id="readywrap-why" role="status" data-testid="ready-why">
-      <${Icon} name="warn" /><span>${tParts('临时整备区 {n} 个单位待处理', { n: html`<b class="num">${temp.count}</b>`, count: temp.count })}</span></span>` : null}
+    ${why ? html`<span class="readywrap__why" id="readywrap-why" role="status" data-testid="ready-why">
+      <${Icon} name="warn" />${choice ? html`<span>${reason}</span>`
+        : html`<span>${tParts('临时整备区 {n} 个单位待处理', { n: html`<b class="num">${temp.count}</b>`, count: temp.count })}</span>`}</span>` : null}
     ${Number.isFinite(total) && total > 1 ? html`<span class="readywrap__count">${t('已就绪')} <b class="num">${readyCount}</b>/<span class="num">${total}</span></span>` : null}
   </div>`;
 }

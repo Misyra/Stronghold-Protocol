@@ -1329,6 +1329,7 @@ export function botPrepBegin(m, ps) {
  */
 export function* botPrepBeginSteps(m, ps) {
   if (!ps.alive || ps.ready) return null;
+  m.autoPickPersonalChoice(ps, 'bot');
   // 1. reward offers (free)
   takeOffers(m, ps);
   yield;
@@ -1366,6 +1367,7 @@ export function* botPrepEndSteps(m, ps, job = null) {
   if (freeSlot(ps.hand) < 0) freeHandSlot(m, ps);
   // what the next prep's bench shed may judge by value: what is owned now (later gains wait for a placement step)
   rememberOwned(ps);
+  m.autoPickPersonalChoice(ps, 'bot');
   tryDo(() => ps.setReady(true));
 }
 
@@ -1807,8 +1809,8 @@ const isBountyArt = (gd, itemId) => { const rec = gd.item(itemId); return !!rec 
 
 /**
  * Use an Art: 画卷 copies the operator on its tile (its range is the tile + the one in front) — the most valuable
- * deployed operator, with a free hand slot for the copy; 教鞭 / “神秘顾客” add a bounty to the next battle (one the engine
- * draws, not chosen) — only after a perfect battle with LP to spare, else the Art stays in the hand for a later round
+ * deployed operator, with a free hand slot for the copy; 教鞭 offers a scored personal bounty choice, “神秘顾客” adds a
+ * random bounty — only after a perfect battle with LP to spare, else the Art stays in the hand for a later round
  * (destroying 教鞭 gives nothing; a full hand at the prep end: freeHandSlot).
  */
 function useArt(m, ps, item, ctx) {
@@ -1825,7 +1827,10 @@ function useArt(m, ps, item, ctx) {
   if (keys.includes('trap_create_self_choice')) {
     if (!lastPerfect(m, ps) || ps.lp < 10) return; // kept
     const [key] = [...ps.board.keys()];
-    if (key) { const [r, c] = parseKey(key); tryDo(() => ps.useArt(item.uid, r, c)); }
+    if (key) {
+      const [r, c] = parseKey(key);
+      if (tryDo(() => ps.useArt(item.uid, r, c))) m.autoPickPersonalChoice(ps, 'bot');
+    }
     return;
   }
   const [key] = [...ps.board.keys()];

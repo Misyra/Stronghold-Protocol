@@ -120,6 +120,14 @@ export const LOST_RESULT_CODES = Object.freeze(['DISCONNECTED', 'OFFLINE', 'TIME
 /** Ticks per frame at a speed (same cap as the server pacing: server/match/fields.js maxTicksPerInterval). */
 export const ticksPerFrameCap = (speed) => Math.max(8, Math.ceil((Number(speed) || 2) * 4));
 
+/**
+ * What the runner compares between two looks at a 联防 battle (noteUniteLeft) before it reads the leakers' enemies still
+ * standing again: a knock-out, a leak, a spawn, the end. `total` stands for the spawns no longer — a split child or a summon
+ * is outside the capsule's denominator (DESIGN §14 顶栏胶囊) — so the length of the enemy list does.
+ * @param {any} b the battle
+ */
+export const uniteLeftMark = (b) => `${Number(b.killed) || 0}:${Number(b.leakedCount) || 0}:${Number(b.total) || 0}:${Array.isArray(b.enemies) ? b.enemies.length : 0}:${b.finished ? 1 : 0}`;
+
 function deepFreeze(root) {
   const stack = [root];
   while (stack.length) {
@@ -292,7 +300,7 @@ export function createBattleRunner(deps) {
 
   function noteUniteLeft(e) {
     const b = e.battle;
-    const mark = `${Number(b.killed) || 0}:${Number(b.leakedCount) || 0}:${Number(b.total) || 0}:${b.finished ? 1 : 0}`;
+    const mark = uniteLeftMark(b);
     if (mark === e.leakMark) return;
     e.leakMark = mark;
     let left = e.left;
@@ -433,6 +441,10 @@ export function createBattleRunner(deps) {
     e.lastProgressAt = t;
     const p = e.sim.spec.battleProgress(e.battle);
     const msg = { battleId: e.battleId, gt: Math.min(1e5, p.gt), killed: Math.min(p.killed, p.total), total: Math.min(1e5, p.total), done: !!p.done };
+    // the HUD capsule's numerator of this field (shared/protocol.js b.progress `resolved`): the field's own scheduled
+    // enemies knocked out or leaked. Sent only when the battle reports one (Battle.resolved) — an absent field leaves
+    // the teammate UI on its `resolved ?? killed` fallback
+    if (Number.isFinite(p.resolved)) msg.resolved = Math.max(0, Math.min(msg.total, p.resolved));
     if (bossLike(e)) {
       const pool = e.battle.sharedBoss;
       msg.leaks = Math.min(1e6, e.meter.lp);

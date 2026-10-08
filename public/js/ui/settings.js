@@ -4,10 +4,13 @@
 // while the current language's pack is a machine translation, `_meta.machineTranslated`) and the 快捷键
 // section that rebinds the in-match shortcuts (the key map: ui/gameLogic/shortcuts.js; the community request
 // 「快捷键可不可以自己设置」, the owner's decision of 2026-10-07) and 问题反馈, which copies the diagnostics of this page
-// for a bug report (diag.js: the error log, this browser, optionally the battle on screen; nothing is uploaded).
+// for a bug report (diag.js: the error log, this browser, optionally the battle on screen; nothing is uploaded). The
+// lobby and the room open it from a 设置 button next to 玩法说明 (SettingsButton, GitHub #238); the title screen and the
+// match have their own gear.
 
 import { useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button, Icon, MicroLabel } from './components.js';
+import { GIcon } from './gameComponents.js';
 import { createStore, useStore, loadPref, savePref, store } from '../store.js';
 import { sanitizeSettings, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, hotkeyLabel, rebindHotkey, isDefaultHotkeys, captureHotkey, VOICE_LANGS } from './gameLogic.js';
 import { audio } from '../audio.js';
@@ -246,4 +249,17 @@ export function SettingsModal({ open, onClose }) {
       <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
     </div>
   <//>`;
+}
+
+/**
+ * The 设置 button of the lobby and the room (GitHub #238 — before it the settings were reachable only from the title
+ * screen and a running match): the twin of the 玩法说明 button (ui/guide.js GuideButton), with the settings modal behind it
+ * (mounted only while open). The same modal as the title screen's and the match's: nothing in it is match-only.
+ * @param {{ class?: string, size?: 'sm'|'md'|'lg'|'xl', variant?: string, label?: string }} props
+ */
+export function SettingsButton({ class: cls, size = 'sm', variant = 'ghost', label = t('设置') }) {
+  const [open, setOpen] = useState(false);
+  return html`<${Button} variant=${variant} size=${size} class=${cx('settings-btn', cls)} onClick=${() => setOpen(true)}
+      title=${t('设置')} aria-label=${t('设置')} data-testid="settings-btn"><${GIcon} name="gear" class="btn__icon" />${label}<//>
+    ${open ? html`<${SettingsModal} open=${true} onClose=${() => setOpen(false)} />` : null}`;
 }

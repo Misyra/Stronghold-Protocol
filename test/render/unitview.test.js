@@ -279,6 +279,77 @@ describe('enemy preview pen figures (lod idle)', () => {
   });
 });
 
+// The impostor refreshes of a frame are spread evenly over the interval (app.js impostorSlot: each frame the impostor
+// units take slots 0, 1, 2 … in update order): a frame refreshes ⌊n/k⌋ or ⌈n/k⌉ of n units. With a random phase per
+// unit, the busiest frame did 20–66% more refreshes than that (16–48 units, intervals 2–6) — the frame-time peaks of a
+// crowded battle on a slow device.
+describe('impostor refresh slots', () => {
+  /** n pen figures (lod idle: interval 3) in one context; `slotOf(frame, i)` gives view i its slot, or null: no slots. */
+  async function crowd(n, slotOf) {
+    let frame = 0;
+    let i = 0;
+    const atlas = {
+      alloc: (w, h) => ({ w, h, tex: new fake.P.Texture(), clip: false }),
+      free() {}, park(o) { o.visible = false; }, unpark(o) { o.visible = true; }, draw() {},
+    };
+    const ctx = fakeViewCtx(fake.P, {
+      assets: store({ spine: true }), cam, frameNo: () => frame, impostors: atlas,
+      renderer: { resolution: 1, render() {} },
+      ...(slotOf ? { impostorSlot: () => slotOf(frame, i) } : {}),
+    });
+    const views = [];
+    for (let k = 0; k < n; k++) {
+      views.push(new UnitView(ctx, { id: `e:${k}`, side: 'enemy', kind: 'enemy', defId: 'enemy_1007_slime', tier: 1, x: 9, y: 15, maxHp: 1, facing: -1 }, { prep: true, lod: 'idle' }));
+    }
+    await tick(); await tick();
+    const refreshed = views.map(() => []);
+    views.forEach((v, k) => {
+      assert.ok(v.spineReady, 'spine ready');
+      const upd = v.actor.update.bind(v.actor);
+      v.actor.update = (dt) => { refreshed[k].push(frame); return upd(dt); };
+    });
+    const step = () => { views.forEach((v, k) => { i = k; v.update(1 / 60, cam(), frame / 60); }); frame++; };
+    return { step, refreshed, frames: () => frame };
+  }
+  const perFrame = (refreshed, from, to) => {
+    const c = new Map();
+    for (const list of refreshed) for (const f of list) if (f >= from && f < to) c.set(f, (c.get(f) || 0) + 1);
+    return Array.from({ length: to - from }, (_, j) => c.get(from + j) || 0);
+  };
+
+  test('slots in update order: every frame refreshes ⌊n/3⌋ or ⌈n/3⌉ units, each unit every 3rd frame', async () => {
+    for (const n of [7, 16, 24]) {
+      const { step, refreshed } = await crowd(n, (frame, k) => k);
+      for (let f = 0; f < 31; f++) step();
+      // frame 0: every new impostor is drawn once (dirty); from frame 1 on, the interval rules
+      const counts = perFrame(refreshed, 1, 31);
+      assert.ok(counts.every((c) => c === Math.floor(n / 3) || c === Math.ceil(n / 3)), `${n} units: ${counts.join(' ')}`);
+      for (const list of refreshed) {
+        const after = list.filter((f) => f >= 1);
+        assert.equal(after.length, 10, `each unit refreshed 10 times in 30 frames (${after.join(',')})`);
+        assert.ok(after.every((f, j) => j === 0 || f - after[j - 1] === 3), 'exactly every 3rd frame');
+      }
+    }
+  });
+
+  test('a slot that moves with the frame never starves a unit: refreshed at least every 2 intervals', async () => {
+    // (frame + slot) % 3 is never 0: the turn alone would never come
+    const { step, refreshed } = await crowd(3, (frame) => 4 - (frame % 3));
+    for (let f = 0; f < 31; f++) step();
+    for (const list of refreshed) {
+      const after = list.filter((f) => f >= 1);
+      assert.ok(after.length >= 5, `refreshed ${after.length} times`);
+      assert.ok([0, ...after].every((f, j, a) => j === 0 || f - a[j - 1] <= 6), `gaps ≤ 6 frames (${after.join(',')})`);
+    }
+  });
+
+  test('without slots (a context that has none) the random phase still refreshes every 3rd frame', async () => {
+    const { step, refreshed } = await crowd(5, null);
+    for (let f = 0; f < 31; f++) step();
+    for (const list of refreshed) assert.equal(list.filter((f) => f >= 1).length, 10);
+  });
+});
+
 // Player report 2026-10-05: 「无人机等飞行单位贴图位置明显偏低」, and the follow-up "绝对不止 0.35" with an official
 // screenshot of 帝国炮火先兆者 over a tile (PR #211 by @xcdoge; the owner's decision of 2026-10-06). The lift is the
 // official client's own single constant — Vector3(0, 0.35, 0) written by Torappu.Battle.CharacterAnimator's constructor

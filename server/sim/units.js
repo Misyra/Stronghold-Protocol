@@ -84,6 +84,9 @@ export class Unit {
     // a countdown summon's life on the field ({ from, until } battle times; content/tokens.js startCountdown, cleared by
     // every deployment): its bar shows the time left (snapshot.js unitTuple), its HP never moves (无敌 + 禁疗)
     this.countdown = null;
+    // a unit with a negative-HP pool (斩业星熊's 我执, kits/ops/op-hsgma2.js) sets this to a function returning the share of the
+    // pool's cap it holds (0–1): b.snap's `neg` list (snapshot.js negView) draws it as the red bar; display only
+    this.negFill = null;
     // knocked out, the unit lies — and redeploys — on its home tile instead of where it fell (Battle._layBody) while content
     // holds this: 乌尔比安 moved by his S3 (the owner's decision of 2026-10-07, a deviation from PRTS's "where it fell");
     // every deployment clears it (battle/deploy.js _deploy)

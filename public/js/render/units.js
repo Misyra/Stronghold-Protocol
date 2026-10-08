@@ -184,6 +184,17 @@ export const ALIAS_TINT = Object.freeze({ enemy_1305_mhslim: 0xffc48a, enemy_130
  * between `pulse` and 1 at `pulseHz` (real time).
  */
 export const EL_BAR = Object.freeze({ icon: 0.15, min: 8, max: 15, enemy: 0.8, gap: 1, pulse: 0.45, pulseHz: 1.5 });
+/**
+ * The HP-bar readouts under the bars (b.snap `ammo`, `wolves`, `neg`; render/interp.js header):
+ *  - AMMO_BAR — the ammo skill's segmented bar replaces the SP bar: a cell per round, `height` of the HP bar's thickness
+ *    (the SP bar's is 0.6), cells drawn only while they are at least `minCell` px wide;
+ *  - WOLF_PIPS — 伺夜's 狼影 count as `size` (tiles) wide diamonds, clamped to `min`…`max` px, `gap` px apart, `pad` px
+ *    below the rows above; a lit diamond is a 狼影 left, a dim one a spent slot (`dim` alpha).
+ * [ASSUMED] the look: the count is data (skill_table `attack@trigger_time` 14 for 隐现's S2; the talent text 「至多3只」), the
+ * official HUD art of neither is in the game data.
+ */
+export const AMMO_BAR = Object.freeze({ height: 0.85, minCell: 2 });
+export const WOLF_PIPS = Object.freeze({ size: 0.1, min: 5, max: 9, gap: 2, pad: 1.5, dim: 0.25 });
 
 /**
  * Enemy modes drawn with another clip set of the same skeleton (the `form` of a sim fx — shared/protocol.js fxForm —
@@ -407,6 +418,9 @@ export class UnitView {
     this.visFacing = this.isEnemy ? -1 : this.facing;
     this.hp = Number(info.maxHp) || 1; this.maxHp = Number(info.maxHp) || 1; this.ghostHp = this.hp;
     this.sp = 0; this.spMax = 0;
+    this.ammo = null;             // [rounds left, rounds in the magazine] while an ammo skill runs (sync; b.snap `ammo`)
+    this.wolves = null;           // [狼影 left, the talent's maximum] of a 狼群 (sync; b.snap `wolves`)
+    this.neg = 0;                 // the share of its cap a negative-HP pool holds, 0 = none (sync; b.snap `neg`, 斩业星熊's 我执)
     this.flags = 0; this.anim = ANIM.IDLE;
     this.statuses = new Set();
     this.alive = true;
@@ -417,6 +431,8 @@ export class UnitView {
     this.gameT = 0;               // battle game time of the frame (render clock), for the redeploy ring's countdown and the element bar's refill
     this.el = null; this.elFill = 0; this.elUntil = 0; this.elDur = 0;   // shown element gauge (sync)
     this._elBar = null;           // { root, disc, bg, fill } sprites of the element gauge row, built on first use
+    this._wolfPips = null;        // { root, back[], lit[] } diamonds of the 狼影 row, built on first use
+    this.ammoCuts = [];           // the thin separators between the ammo bar's cells (_updateAmmoCuts)
     this._downRing = null;        // { disc, track, arc, text } sprites, built on first use
     this.alpha = 1; this.fadeIn = this.prep ? 1 : 0;
     this.lunge = 0; this.lungeDir = { x: 1, y: 0 };
@@ -649,6 +665,8 @@ export class UnitView {
     this.hpBg = bar(P, h, COLORS.hpBack, 0.85);
     this.hpGhost = bar(P, h, COLORS.hpGhost, 0.9);
     this.hpFill = bar(P, h, this.isEnemy ? (this.isBoss ? COLORS.hpBoss : COLORS.hpEnemy) : COLORS.hpAlly);
+    // a negative-HP pool (斩业星熊's 我执), drawn over the drained HP bar as the red bar
+    this.negFill = bar(P, h, COLORS.hpNeg);
     this.shieldBar = bar(P, h, COLORS.shield, 0.95);
     this.spBg = bar(P, h, COLORS.hpBack, 0.85);
     this.spFill = bar(P, h, COLORS.sp);
@@ -658,7 +676,7 @@ export class UnitView {
     this.spGlow.blendMode = P.BLEND_MODES.ADD;
     h.addChild(this.spGlow);
     // nothing shows until the first HUD update decides (a culled or prep view never draws bars)
-    for (const b of [this.hpBg, this.hpGhost, this.hpFill, this.shieldBar, this.spBg, this.spFill, this.spGlow]) b.visible = false;
+    for (const b of [this.hpBg, this.hpGhost, this.hpFill, this.negFill, this.shieldBar, this.spBg, this.spFill, this.spGlow]) b.visible = false;
     this.chip = null;
     // operators only: summon tokens have no tier (hand and field alike)
     if (!this.isEnemy && !this.isToken && this.info.kind !== 'device') {
@@ -744,6 +762,7 @@ export class UnitView {
     if (hp < this.hp - 0.5 && this.isBoss) this.shake = 0.25;
     this.hp = hp;
     this.sp = s.sp; this.spMax = s.spMax;
+    this.ammo = s.ammo || null; this.wolves = s.wolves || null; this.neg = s.neg > 0 ? Math.min(1, s.neg) : 0;
     const prevFlags = this.flags;
     this.flags = s.flags | 0;
     this.anim = s.anim | 0;
@@ -1174,24 +1193,32 @@ export class UnitView {
       this.hpFill.position.set(x0, cy); this.hpFill.width = bw * k; this.hpFill.height = bh;
       if (!this.isEnemy) this.hpFill.tint = k < 0.3 ? COLORS.hpAllyLow : COLORS.hpAlly;
     }
+    // 业火 我执: her HP sits on the 1-HP floor and the damage past it fills a pool — the red bar over the drained green one
+    const neg = showHp ? this.neg : 0;
+    this.negFill.visible = neg > 0;
+    if (neg > 0) { this.negFill.position.set(x0, cy); this.negFill.width = bw * neg; this.negFill.height = bh; }
     const shielded = showHp && (this.flags & UF.SHIELD);
     this.shieldBar.visible = !!shielded;
     if (shielded) { this.shieldBar.position.set(x0, cy - bh / 2 - 1); this.shieldBar.width = bw; this.shieldBar.height = Math.max(1.5, bh * 0.35); }
-    // SP
-    const showSp = showBars && !this.isEnemy && this.spMax > 0;
+    // SP — or, while an ammo skill runs, its magazine: yellow cells, one per round, emptying from the right (b.snap `ammo`;
+    // the SP bar's own fraction, ammoLeft / ammoMax, is the same width). Without an `ammo` row the bar is the plain SP bar.
+    const ammo = !this.isEnemy ? this.ammo : null;
+    const showSp = showBars && !this.isEnemy && (this.spMax > 0 || !!ammo);
     this.spBg.visible = this.spFill.visible = showSp;
-    const spH = Math.max(2, bh * 0.6);
+    const spH = Math.max(2, bh * (ammo ? AMMO_BAR.height : 0.6));
     let ready = false;
+    let sy = 0;
     if (showSp) {
       const active = !!(this.flags & UF.SKILL);
-      const k = clamp(this.sp / this.spMax, 0, 1);
+      const k = ammo ? ammo[0] / ammo[1] : clamp(this.sp / this.spMax, 0, 1);
       ready = !active && k >= 0.999;
-      const sy = cy + bh / 2 + spH / 2 + 1.5;
+      sy = cy + bh / 2 + spH / 2 + 1.5;
       this.spBg.position.set(x0 - 1, sy); this.spBg.width = bw + 2; this.spBg.height = spH + 2;
       this.spFill.position.set(x0, sy); this.spFill.width = bw * k; this.spFill.height = spH;
-      this.spFill.tint = active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
+      this.spFill.tint = ammo ? COLORS.ammo : active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
       this._spY = sy;
     }
+    this._updateAmmoCuts(showSp && !!ammo, ammo, x0, sy, bw, spH);
     this.spGlow.visible = ready;
     if (ready) {
       const pulse = 0.55 + 0.35 * Math.sin(t * 6);
@@ -1222,8 +1249,11 @@ export class UnitView {
       ic.width = ic.height = isz;
       ic.position.set(x - ((icons.length - 1) * (isz + 2)) / 2 + i * (isz + 2), iy);
     }
-    // element gauge row under the bars (b.snap `elem`); redeploy ring above a knocked-down operator (b.snap `down`)
-    this._updateElementBar(showBars && !!this.el, x0, bw, cy + bh / 2 + (showSp ? spH + 1.5 : 0) + 1, spH, s, t);
+    // 狼影 pips under the bars (b.snap `wolves`), then the element gauge row under them (b.snap `elem`); redeploy ring above a
+    // knocked-down operator (b.snap `down`)
+    const rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
+    const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
+    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + 1, spH, s, t);
     this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
     // blocked marker at the feet (enemies held by a blocker)
     const blocked = !prep && this.alive && this.isEnemy && (this.flags & UF.BLOCKED);
@@ -1246,6 +1276,62 @@ export class UnitView {
       pip.position.set(this.screen.x - s * 0.36 + i * (ps + 1), this.screen.y - s * 0.05);
       pip.visible = this.alive;
     }
+  }
+
+  /**
+   * The thin dark separators between the ammo bar's cells (see _updateHud): one at every round boundary of the `n`-round
+   * magazine across the bar `x0` … `x0 + bw` at height `y`, `h` tall; none while a cell would be under AMMO_BAR.minCell px
+   * (the fill keeps its exact width). Sprites are built as the magazines need them and hidden when not in use.
+   */
+  _updateAmmoCuts(show, ammo, x0, y, bw, h) {
+    const cuts = this.ammoCuts;
+    const n = show ? ammo[1] : 0;
+    const step = n > 1 ? bw / n : 0;
+    const want = step >= AMMO_BAR.minCell ? n - 1 : 0;
+    while (cuts.length < want) cuts.push(bar(this.P, this.hud, COLORS.hpBack, 0.9));
+    for (let i = 0; i < cuts.length; i++) {
+      const c = cuts[i];
+      c.visible = i < want;
+      if (c.visible) { c.position.set(x0 + (i + 1) * step - 0.5, y); c.width = 1; c.height = h; }
+    }
+  }
+
+  /**
+   * 伺夜's 狼群 count (b.snap `wolves`, [left, maximum]): a row of diamonds from `x0`, its top at `top`, one per 狼影 the
+   * talent allows, the first `left` of them lit. Built on the first count, hidden without one. Returns the height the row
+   * takes (0 while hidden) so the element gauge row can sit below it.
+   */
+  _updateWolfPips(show, x0, top, s) {
+    let r = this._wolfPips;
+    if (!show) { if (r) r.root.visible = false; return 0; }
+    const P = this.P;
+    const [left, max] = this.wolves;
+    if (!r) {
+      r = this._wolfPips = { root: new P.Container(), back: [], lit: [] };
+      this.hud.addChild(r.root);
+    }
+    const mk = (list, color, alpha) => {
+      const d = new P.Sprite(white());
+      d.anchor.set(0.5); d.rotation = Math.PI / 4; d.tint = color; d.alpha = alpha;
+      r.root.addChild(d);
+      list.push(d);
+    };
+    while (r.lit.length < max) { mk(r.back, COLORS.hpBack, 0.85); mk(r.lit, COLORS.wolf, 1); }
+    const d = clamp(s * WOLF_PIPS.size, WOLF_PIPS.min, WOLF_PIPS.max);   // a diamond's diagonal
+    const side = d / Math.SQRT2;
+    const cy = top + WOLF_PIPS.pad + d / 2 + 1;
+    for (let i = 0; i < r.lit.length; i++) {
+      const on = i < max;
+      const b = r.back[i], l = r.lit[i];
+      b.visible = l.visible = on;
+      if (!on) continue;
+      const cx = x0 + d / 2 + 1 + i * (d + 2 + WOLF_PIPS.gap);
+      b.position.set(cx, cy); b.width = b.height = side + 2;
+      l.position.set(cx, cy); l.width = l.height = side;
+      l.alpha = i < left ? 1 : WOLF_PIPS.dim;
+    }
+    r.root.visible = true;
+    return d + 2 + WOLF_PIPS.pad;
   }
 
   /** True while the shown gauge is in its 爆发冷却 (b.snap `elem` carries the cooldown's end and length). */
@@ -1371,16 +1457,22 @@ export class UnitView {
       if (this.actor.spine.parent) this.actor.spine.parent.removeChild(this.actor.spine);
       if (atlas) atlas.park(this.actor.spine);
       this.body.addChild(sprite);
-      this.imp = { sprite, slot: null, rt: null, sc: 0, acc: 0, phase: (Math.random() * 64) | 0, dirty: true };
+      this.imp = { sprite, slot: null, rt: null, sc: 0, acc: 0, phase: (Math.random() * 64) | 0, dirty: true, last: 0 };
     }
     const imp = this.imp;
     imp.acc += animDt;
     const frame = this.ctx.frameNo ? this.ctx.frameNo() : 0;
-    const due = imp.dirty || interval <= 1 || (frame + imp.phase) % interval === 0 || Math.abs(sc - imp.sc) > imp.sc * 0.12;
+    // the view's slot in this frame's update order (app.js impostorSlot) spreads the refreshes evenly over the interval;
+    // a context without slots keeps the random phase. A unit whose slot keeps moving with the frame (the units before it
+    // culled on and off in step) is still refreshed after 2 intervals at the latest.
+    const turn = this.ctx.impostorSlot ? this.ctx.impostorSlot() : imp.phase;
+    const due = imp.dirty || interval <= 1 || (frame + turn) % interval === 0 || frame - imp.last >= 2 * interval
+      || Math.abs(sc - imp.sc) > imp.sc * 0.12;
     if (due) {
       this.actor.update(imp.acc);
       imp.acc = 0;
       imp.dirty = false;
+      imp.last = frame;
       this._renderImpostor(sc, atlas);
     }
     const k = imp.sc > 0 ? sc / imp.sc : 1;

@@ -577,6 +577,89 @@ describe('AudioManager', () => {
       } finally { globalThis.fetch = origFetch; }
     }
   });
+
+  // 「技能音效有时候不触发」 (PR #292 by @LimitlessHPPK): the sim emits the cast of a deployment that fires inside its own first
+  // tick (`initSp` already at `spCost`, 宴's deploy-timed skill, 银灰 S3 真银斩 …) before the unit's `['spawn', unitInfo]` — the
+  // same batch, or the next — so `handleBattleEvents` used to skip the cue for good: that first cast was silent and every
+  // later one played. The cue is held and answered once, when the unit is tracked (`_track`); it never outlives its field.
+  test('a cast that arrives before its unit is known is held and plays once when the unit is tracked', () => {
+    const vm = { audio: { sfx: { ui: {}, battle: {}, units: { char_a: { skill: '/s/a_skill.mp3' } } },
+      voice: { char_a: { skill3: '/v/a_s3.mp3' } } } };
+    const a = new AudioManager({ win: null, getManifest: () => vm });
+    a.ctx = {};                                   // unlocked: every path below is the real one
+    const played = [], voiced = [];
+    a._play = (url) => { played.push(url); };     // the cue itself, and the 作战中 line that goes with it
+    a.voice = (charId, slot, o) => { voiced.push([charId, slot, o.unitKey]); return true; };
+    /** UnitInfo of the operator `char_a` (spine = the sfx.units key; skillIndex picks its 作战中N slot). */
+    const info = (id, skillIndex) => ({ id, side: 'ally', spine: 'char_a', kind: 'op', skillIndex });
+
+    // (1) the sim's order inside one batch: the cast, then the unit's spawn — the cast waits, then sounds once
+    a.handleBattleEvents([['skill', 8, 1]]);
+    assert.deepEqual(played, [], 'nothing to play yet: the unit is unknown');
+    a.handleBattleEvents([['spawn', info(8, 2)]]);
+    assert.deepEqual(played, ['/s/a_skill.mp3'], 'the held cast plays as soon as the unit is tracked');
+    assert.deepEqual(voiced, [['char_a', 'skill3', 8]], 'with the 作战中N line its skillIndex picks');
+    a.handleBattleEvents([['skill', 7, 1], ['atk', 7, 8, 'none'], ['spawn', info(7, 0)]]);
+    assert.equal(played.length, 2, 'the same batch: the cast waits for the spawn of its own batch');
+    assert.deepEqual(voiced.at(-1), ['char_a', 'skill1', 7]);
+    // (2) once: a unit that is told about again (a repeated spawn) never replays it; a later cast plays directly
+    a.handleBattleEvents([['spawn', info(8, 2)], ['spawn', info(7, 0)]]);
+    assert.equal(played.length, 2, 'no second cue for the held cast');
+    a.handleBattleEvents([['skill', 8, 1]]);
+    assert.equal(played.length, 3, 'a later cast of a known unit plays through');
+    assert.deepEqual(voiced.at(-1), ['char_a', 'skill3', 8], 'and sounds the same as the replayed one');
+    // (3) skill off (`['skill', id, 0]`) is no cast: nothing is held for it
+    a.handleBattleEvents([['skill', 9, 0]]);
+    a.handleBattleEvents([['spawn', info(9, 0)]]);
+    assert.equal(played.length, 3, 'the off event holds nothing');
+    assert.equal(a.pendingSkill.size, 0);
+  });
+
+  test('a held cast does not outlive its field: a unit of the next field that shares its id does not sound it', () => {
+    const vm = { audio: { sfx: { ui: {}, battle: {}, units: { char_a: { skill: '/s/a_skill.mp3' } } }, voice: {} } };
+    const a = new AudioManager({ win: null, getManifest: () => vm });
+    a.ctx = {};
+    const played = [];
+    a._play = (url) => { played.push(url); };
+    a.voice = () => true;
+    const info = (id) => ({ id, side: 'ally', spine: 'char_a', kind: 'op' });
+    a.handleBattleEvents([['skill', 9, 1]]);          // a cast whose unit never appeared on this field
+    assert.equal(a.pendingSkill.size, 1);
+    a.setFieldUnits([info(9)]);                       // another battle: unit ids are per battle, 9 is a different unit
+    assert.equal(a.pendingSkill.size, 0, 'the field change drops the hold');
+    a.handleBattleEvents([['spawn', info(9)]]);
+    assert.deepEqual(played, [], 'the old field\'s cast never sounds in the new one');
+    // the hold is bounded: casts of units that never appear cannot pile up
+    for (let id = 100; id < 400; id++) a.handleBattleEvents([['skill', id, 1]]);
+    assert.ok(a.pendingSkill.size <= 64, `${a.pendingSkill.size} holds`);
+    assert.ok(a.pendingSkill.has(399) && !a.pendingSkill.has(100), 'the oldest holds go first');
+  });
+
+  test('a real battle: the deploy-tick cast of a deployment-activated skill is heard, once', () => {
+    // The reported shape in 0.2.0's own sim: 宴's kit activates its skill on deployment (activateOnDeploy, PR #109), and
+    // `sim/battle/deploy.js` runs `skill.reset()` (→ `activate` → `['skill', id, 1]`) BEFORE it emits
+    // `['spawn', unitInfo]` — three events earlier in 宴's case (a status and an fx come between). Fed to the audio as
+    // the socket delivers it, that cast used to be dropped for good.
+    const chessId = 'chess_char_1_18_a';   // 宴 (char_337_utage): a deploy-timed skill with a skill sound
+    const h = makeBattle({ seed: 7, autoFinish: false, timeLimit: 5, units: [{ chessId, row: 9, col: 5 }] });
+    h.step(3);
+    const ev = h.events;
+    const iCast = ev.findIndex((e) => e[0] === 'skill' && e[2]);
+    const iSpawn = ev.findIndex((e) => e[0] === 'spawn');
+    assert.ok(iCast >= 0 && iSpawn > iCast, `the sim emits the deploy-tick cast before the unit info (${iCast} < ${iSpawn})`);
+    // the cast's sound, resolved as `unit()` does (the equipped skill's own ON_SKILL_START file, else its `skill`)
+    const info = ev[iSpawn][1];
+    const rec = manifest.audio.sfx.units[info.spine];
+    const url = (Number.isInteger(info.skillIndex) && rec?.skills ? rec.skills[info.skillIndex] : null) ?? rec?.skill;
+    assert.ok(typeof url === 'string', `前提：${info.spine} 有技能音效`);
+    const played = [];
+    const a = new AudioManager({ win: null, getManifest: () => manifest });
+    a.ctx = {};
+    a._play = (u) => { played.push(u); };
+    a.voice = () => true;
+    a.handleBattleEvents(ev);
+    assert.equal(played.filter((u) => u === url).length, 1, 'the cast of the deployment is heard, exactly once');
+  });
 });
 
 // user playtest #4 item 6: 纯烬艾雅法拉's skill sound rang outside her skill — her manifest `hit` is her S3 impact

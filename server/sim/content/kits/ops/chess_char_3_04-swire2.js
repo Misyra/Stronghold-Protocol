@@ -7,6 +7,7 @@ import {
   num, defOf, talentBb, moduleTalentBb, selectedId, altSkills, alive, gridKeys, fx, copyGrid, textNum, freeTile,
   groundTile, enemiesOn,
 } from '../shared/tier3.js';
+import { powi } from '../../../detmath.js';
 
 /** 琳琅诗怀雅 S3's coin range (PRTS 备注 "前方范围2-4"; range_table "2-4", facing right). */
 const SWIRE2_COIN_GRID = Object.freeze([[1, 1], [0, 0], [0, 1], [0, 2], [-1, 1]]);
@@ -267,7 +268,7 @@ export default {
           battle.on('fatal', (ctx) => {
             if (ctx.unit !== unit || ctx.prevented) return;
             const n = unit.mem.saveCount ?? 0;
-            const cost = Math.abs(num(t1.cost, -5)) * Math.pow(num(t1.cost_multi, 2), n);
+            const cost = Math.abs(num(t1.cost, -5)) * powi(num(t1.cost_multi, 2), n);
             const pl = battle.getPlayer(unit.ownerId);
             if (!pl || pl.dp + 1e-9 < cost) return;
             battle.addDp(unit.ownerId, -cost);

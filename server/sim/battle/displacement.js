@@ -4,6 +4,7 @@
 
 import { COLS, PUSH_TILES, PUSH_TILES_EFFECT, PULL_WEAK_SHARE, PULL_CRAWL, PULL_ORIGIN, PULL_STOP_RADIUS, PUSH_DIRECTIONAL_MIN_DIST } from '../constants.js';
 import { fin } from './util.js';
+import { hypot } from '../detmath.js';
 
 /**
  * Official push distance (tiles) of a 受力等级 (constants.js PUSH_TILES: ≤ −3 → 0, ≥ 3 → the 3 value); `effect` = a 特效
@@ -42,10 +43,10 @@ export class BattleDisplacement {
     if (!this._displaceable(e)) return 0;
     let level = this.forceLevel(e, force);
     const fx0 = fin(from?.x, e.x), fy0 = fin(from?.y, e.y);
-    const vx = e.x - fx0, vy = e.y - fy0, d = Math.hypot(vx, vy);
+    const vx = e.x - fx0, vy = e.y - fy0, d = hypot(vx, vy);
     let ux = 0, uy = 0;
     const dirX = dir ? fin(dir.x, 0) : 0, dirY = dir ? fin(dir.y, 0) : 0;
-    const dl = Math.hypot(dirX, dirY);
+    const dl = hypot(dirX, dirY);
     if (dl > 0) {
       ux = dirX / dl; uy = dirY / dl;
       if (from && !fixed && (d < PUSH_DIRECTIONAL_MIN_DIST || (!fixedAngle && vx * ux + vy * uy < d * Math.SQRT1_2))) {
@@ -71,7 +72,7 @@ export class BattleDisplacement {
     // an enemy the puller itself blocks already stands in front of it (at contact) [ASSUMED: no pull, no unblocking]
     if (center && center.side === 'ally' && e.blockedBy === center) return 0;
     const tx = fin(to.x, e.x), ty = fin(to.y, e.y);
-    const dx = tx - e.x, dy = ty - e.y, d0 = Math.hypot(dx, dy);
+    const dx = tx - e.x, dy = ty - e.y, d0 = hypot(dx, dy);
     if (!(d0 > 1e-6)) return 0;
     const ux = dx / d0, uy = dy / d0;
     // travel until inside the stop circle around `center` (smaller root of |e + t·u − c| = stop), else up to `to`
@@ -122,7 +123,7 @@ export class BattleDisplacement {
   displace(e, dir, distance) {
     if (!this._displaceable(e) || !dir) return 0;
     const dxv = fin(dir.x, 0), dyv = fin(dir.y, 0);
-    const len = Math.hypot(dxv, dyv);
+    const len = hypot(dxv, dyv);
     if (!(len > 0)) return 0;
     const eff = Math.min(fin(distance, 0), 2 * COLS);
     if (!(eff > 0)) return 0;

@@ -54,6 +54,7 @@
 // off-centre unit may walk straight to a tile centre (ai.js planLeg, fear.js: else it steps back to its tile centre).
 
 import { ROWS, COLS } from './constants.js';
+import { hypot } from './detmath.js';
 
 /** Move cost of an obstacle-like tile (client `Tile.get_moveCost`: obstacle-like ? 1000 : 1). */
 export const OBSTACLE_COST = 1000;
@@ -376,7 +377,7 @@ export class Grid {
     for (let i = stack.length - 1; i >= 0; i--) {
       const a = stack[i], b = f.next[a];
       const ar = (a / COLS) | 0, ac = a - ar * COLS, br = (b / COLS) | 0, bc = b - br * COLS;
-      f.len[a] = f.len[b] + Math.hypot(br - ar, bc - ac);
+      f.len[a] = f.len[b] + hypot(br - ar, bc - ac);
     }
     return f.len[k];
   }
@@ -420,7 +421,7 @@ export class Grid {
   /** Length (tiles) of a polyline of [r,c] points. */
   static pathLength(pts) {
     let len = 0;
-    for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    for (let i = 1; i < pts.length; i++) len += hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     return len;
   }
 }

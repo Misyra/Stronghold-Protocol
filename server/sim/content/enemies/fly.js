@@ -7,6 +7,7 @@ import {
   stepToward, setForm, expose,
 } from './helpers.js';
 import { enemyAura, allyAura, selfFear, skill, kitSelfFear } from './archetypes.js';
+import { hypot } from '../../detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -62,7 +63,7 @@ function kitBlackCloud(ab, e) {
   const prey = (b, e2) => b.enemiesInRadius(e2.x, e2.y, grabR).filter((o) => isPrey(b, e2, o));
   return [
     skill(k, (b, e2) => {
-      const list = prey(b, e2).sort((p, q) => Math.hypot(p.x - e2.x, p.y - e2.y) - Math.hypot(q.x - e2.x, q.y - e2.y)).slice(0, GRAB_MAX_PREY);
+      const list = prey(b, e2).sort((p, q) => hypot(p.x - e2.x, p.y - e2.y) - hypot(q.x - e2.x, q.y - e2.y)).slice(0, GRAB_MAX_PREY);
       if (!list.length) return;
       b.addBuff(e2, { key: 'ab:grabbing', duration: dur, flags: { bind: true, noMove: true } });   // 技能持续4秒，期间持有束缚
       b.fx('beam', { x: e2.x, y: e2.y, from: e2.id, to: list[0].id, kind: 'devour' });
@@ -250,12 +251,12 @@ export const FLY_KITS = Object.freeze({
     tick(b, e, a, dt) {
       if (a.t && !a.t.alive) { a.t = null; b.removeBuff(e, 'ab:dive'); }
       if (!a.t) {
-        const l = targetsNear(b, e, e.base.rangeRadius || 1).sort((p, q) => Math.hypot(p.x - e.x, p.y - e.y) - Math.hypot(q.x - e.x, q.y - e.y));
+        const l = targetsNear(b, e, e.base.rangeRadius || 1).sort((p, q) => hypot(p.x - e.x, p.y - e.y) - hypot(q.x - e.x, q.y - e.y));
         if (!l.length) return;
         a.t = l[0];
         b.addBuff(e, { key: 'ab:dive', flags: { noMove: true } });
       }
-      if (!stepToward(e, a.t.x, a.t.y, Math.max(e.s.moveSpeed, 0.5) * MOVE_SCALE * dt) && Math.hypot(a.t.x - e.x, a.t.y - e.y) > 0.3) return;
+      if (!stepToward(e, a.t.x, a.t.y, Math.max(e.s.moveSpeed, 0.5) * MOVE_SCALE * dt) && hypot(a.t.x - e.x, a.t.y - e.y) > 0.3) return;
       hurt(b, e, a.t, e.s.atk, 'phys');
       b.fx('explode', { x: e.x, y: e.y, r: 0.5, kind: 'seed' });
       b.kill(e, null);

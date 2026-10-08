@@ -3,7 +3,9 @@
 Audience: **content authors** (kits, bonds, garrisons, items, bands, enemies, bosses, devices, choices) and the
 **match owner** who drives `Battle`. The normative contract is DESIGN.md §5 ([design/engine.md](design/engine.md));
 this file documents the concrete implementation, every hook and helper, the SkillSpec schema with worked examples,
-the profession defaults and the test harness. Everything here is deterministic: the only randomness is `battle.rng()`.
+the profession defaults and the test harness. Everything here is deterministic: the only randomness is `battle.rng()`,
+and the only floating-point functions are correctly rounded ones (`detmath.js` below), so a battle gives the same bits in
+every browser and on the server.
 
 ```
 server/sim/
@@ -13,6 +15,8 @@ server/sim/
                    tiles (relocation, bodies, tactical points), displacement, economy (DP, layers, coins), events
   constants.js     TICK, MOVE_SCALE, ATTACK_PAUSE, element numbers, tuning knobs
   rng.js           mulberry32 PRNG (+ int/range/chance/pick/shuffle/weighted)
+  detmath.js       hypot / powi / sin / cos / atan2 with the same bits on every engine — the sim never calls the
+                   implementation-approximated Math functions (hypot, sin, cos, atan2, pow, ** …; lint + test enforce it)
   grid.js          stage grid, tile semantics, 8-dir A* (no corner cutting), obstacles
   units.js         Unit model + stat aggregation
   buffs.js         Buff model, mod keys, status catalogue
@@ -851,7 +855,7 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
 | `push(enemy, force, {from, dir, fixed, fixedAngle, inward, effect})`, `pull(enemy, force, {to, center, stop})`, `pullToFront(enemy, unit, force)`, `forceLevel(enemy, force)`, `pushDistance(enemy, force, {effect})` | the official 位移 (PRTS 游戏数据基础 §重量公式 / 推与拉; user playtest #6 item 14): 受力等级 = 力度 (微小力 −1, 小力 0, 中力 1, 较大力 2, 大力 3 …) − current 重量等级 (massLevel, 失重 counts). Push distance per level (`constants.js PUSH_TILES`, PRTS 推与拉's 弹道 column): ≤ −3 → 0, −2 → 0.12, −1 → 0.44, 0 → 1.7, 1 → 2.14, 2 → 2.96, ≥ 3 → 3.53 tiles; `effect` = a 特效 push (`PUSH_TILES_EFFECT`: −2 → 0.085, −1 → 0.374, 0 → 1.562, 1 → 1.987, 2 → 2.773, ≥ 3 → 3.331 — 见行者 S1 / S2, `PUSH_EFFECT_SKILLS`; every other pusher uses the 弹道 column [ASSUMED]); radial (away from `from`; the client's buff template `knockback[relative]`: 莫斯提马 S3, 山 S3, 琳琅诗怀雅 S3 — also PRTS 备注 "推开效果为径向推动") unless `dir` (directional; template `knockback[dir]` = Knockback {`_useSourceDirection` true, `_decreaseForceLevelWhenNotInDirection` 2}: 推击手, 野鬃 S2 "往攻击方向" (charpack char_496_wildmn: buff `wildmn_s_2[force]`) — > 45° off or < 0.25 tile ⇒ radial and level −2; `fixed` waives both (圣聆初雪 S1 朝部署方向, `KnockBackWithCharacterDirection`), `fixedAngle` only the angle (见行者 S2)); `inward` = a push towards `from` (薄绿 S2), stopping at the 急停 radius. Pull: level ≥ 0 → to `to` / the 急停 radius around `center`, −1 → 35 % of the way, −2 → 0.03, ≤ −3 → 0; `pullToFront` aims at the 拉力起点 0.5 tile ahead of the unit with the 急停 radius 0.6708 around it (never moves an enemy the unit itself blocks — nor does a pull towards an ally's centre, e.g. the 流形 S3 pulse) A 静态刚体 (data `staticBody`: every air unit of the mode except “炎佑”, plus 昆图斯 — PRTS 特殊机制 "可以进入失衡状态…但物理层面上无法产生任何速度或移动", "与单位的行动方式无关") moves 0 from every source while the skills that reach it still hit it (薄绿 S2, 锏 S3, the 钩索师 …; player report after 0.1.0) |
 | `displace(enemy, {x, y}, tiles)` | the raw mover behind push / pull: along passable tiles (by `motion`: FLY in the rect, else ground-passable), no weight rule; nothing for 失衡免疫 (`noDisplace`: 近地悬浮 incl. 喷气人's 飞行模式, 浮空, the 胄 parts, 守墓石像's statue and flight), 静态刚体 (`def.staticBody`) and leaders (`_displaceable`); unblocks + re-paths |
 | `after(seconds, fn, {owner})`, `every(seconds, fn, {owner, immediate})` | return `{cancel()}`; fn(battle, sched) |
-| `fx(kind, params)`, `rng()` (+ `rng.int/range/chance/pick/shuffle/weighted`) | never use Math.random |
+| `fx(kind, params)`, `rng()` (+ `rng.int/range/chance/pick/shuffle/weighted`) | never use Math.random; for distances, angles and powers use `hypot`, `sin`, `cos`, `atan2`, `powi` from `server/sim/detmath.js`, never `Math.hypot` / `sin` / `cos` / `atan2` / `pow` / `**` (their last bits differ between browsers) |
 | `forceAttack(unit, targets?, { noAmmo })` | an immediate attack with the current profile (hooks, attack SP, a running ammo skill's bullet); `noAmmo: true` = spends no bullet and emits no `ammoUsed` (圣约送葬人 extra attack). Returns true when it attacked |
 | `findTacticalPoint(unit)`, `groundPathTiles()` | tactical point (战术点, tactician 援军 / talent tokens): a free (`isReservedTile`) walkable, standable (`canStand`: never the 深水区) tile of the initial range **on an enemy ground path first** (`groundPathTiles`: grid paths of every non-FLY route, cached per grid version), then nearest (Chebyshev, rows break ties), then the lowest tile key |
 | `effectiveProfile(unit)`, `reduceElement(unit, amount, el?)` | |

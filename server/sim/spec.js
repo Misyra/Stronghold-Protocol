@@ -320,7 +320,7 @@ export function resultDigest(result) {
 const fnum = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const cap = (list, n) => (Array.isArray(list) ? list.slice(0, n) : []);
 const isKey = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64 && /^[A-Za-z0-9_\-.:]+$/.test(v);
-const uidOr = (v) => (Number.isInteger(v) && v >= 1 && v <= 2 ** 31 ? v : null);
+const uidOr = (v) => (Number.isInteger(v) && v >= 1 && v <= 0x80000000 ? v : null);
 const keyOr = (v) => (isKey(v) ? v : null);
 
 function compactMods(m) {

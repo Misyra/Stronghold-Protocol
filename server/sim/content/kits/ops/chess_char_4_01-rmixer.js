@@ -7,6 +7,7 @@ import {
   AURA, num, tbb, grid, nationOf, enemiesOnRange, targetsInRange, whileDeployed, reveal, skillActive, isSel, alt,
   instantKind, withDefaults,
 } from '../shared/tier4.js';
+import { hypot } from '../../../detmath.js';
 
 /** Is module `id` the active one? (elites; `'none'` / normal chess ⇒ false) */
 const moduleIs = (def, id) => !!(def?.raw?.module?.active && def.raw.module.id === id);
@@ -39,7 +40,7 @@ export default withDefaults({
               const n = num(bb.charge, 1);
               const cand = battle.alliesInRadius(unit.x, unit.y, 1.5, unit.ownerId)
                 .filter((a) => a !== unit && a.kind === 'op' && nationOf(a) === 'laterano' && a.skill && a.skill.active && a.skill.kind === 'ammo')
-                .sort((a, b) => Math.hypot(a.x - unit.x, a.y - unit.y) - Math.hypot(b.x - unit.x, b.y - unit.y) || a.id - b.id);
+                .sort((a, b) => hypot(a.x - unit.x, a.y - unit.y) - hypot(b.x - unit.x, b.y - unit.y) || a.id - b.id);
               if (!cand[0] || !(n > 0)) return;
               cand[0].skill.addAmmo(n);
               battle.fx('reload', { x: cand[0].x, y: cand[0].y, id: cand[0].id, n });

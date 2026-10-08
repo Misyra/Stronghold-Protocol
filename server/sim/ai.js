@@ -38,6 +38,7 @@ import { sortEnemyTargets, sortAllyTargets, canTargetEnemy, canTargetAlly, tileK
 import { reduceElement } from './damage.js';
 import { straightClear } from './grid.js';
 import { moveFeared, endFear } from './fear.js';
+import { hypot, powi } from './detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // profiles
@@ -325,13 +326,13 @@ export function resolveHit(b, u, prof, target, info, x, y) {
       let best = null, bd = Infinity;
       for (const e of b.enemiesInRadius(prev.x, prev.y, prof.chain.radius || CHAIN_RADIUS)) {
         if (hit.has(e.id) || !canTargetEnemy(u, e, prof)) continue;
-        const d = Math.hypot(e.x - prev.x, e.y - prev.y);
+        const d = hypot(e.x - prev.x, e.y - prev.y);
         if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && best && e.spawnSeq < best.spawnSeq)) { bd = d; best = e; }
       }
       if (!best) break;
       hit.add(best.id);
       b._ev(['atk', prev.id, best.id, 'chain']);
-      const d = b.dealDamage(u, best, { amount: atk * scale * skillMul * Math.pow(1 - (prof.chain.falloff ?? 0.15), k), type: baseType, isAttack: true, isSkill: info.isSkill, tags: ['chain'], attackId });
+      const d = b.dealDamage(u, best, { amount: atk * scale * skillMul * powi(1 - (prof.chain.falloff ?? 0.15), k), type: baseType, isAttack: true, isSkill: info.isSkill, tags: ['chain'], attackId });
       dealtTotal += d;
       if (prof.chain.sluggish && best.alive) b.applyStatus(best, 'sluggish', { duration: prof.chain.sluggish, source: u });
       if (each) each(best, d, 'chain');
@@ -389,7 +390,7 @@ function doHeal(b, u, prof, t) {
       if (!best) break;
       seen.add(best.id);
       b._ev(['atk', prev.id, best.id, 'chainHeal']);
-      b.heal(u, best, amount * Math.pow(1 - (h.falloff ?? 0.25), k));
+      b.heal(u, best, amount * powi(1 - (h.falloff ?? 0.25), k));
       prev = best;
     }
   }
@@ -475,7 +476,7 @@ function planLeg(b, e, leg) {
   R.version = b.grid.version;
   // suffix lengths for remaining-distance queries
   const suf = new Float64Array(pts.length);
-  for (let i = pts.length - 2; i >= 0; i--) suf[i] = suf[i + 1] + Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+  for (let i = pts.length - 2; i >= 0; i--) suf[i] = suf[i + 1] + hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
   R.suffix = suf;
 }
 
@@ -497,7 +498,7 @@ function tailLength(b, e, idx) {
       let len = 0;
       if (L.t === 'move') {
         const [sr, sc] = starts[i];
-        len = Math.hypot(L.r - sr, L.c - sc);
+        len = hypot(L.r - sr, L.c - sc);
         if (e.motion !== 'FLY' && b.grid.inBounds(sr, sc)) {
           const f = legField(b, L.r, L.c, sr * COLS + sc);
           const fl = f ? b.grid.fieldLength(f, sr * COLS + sc) : Infinity;
@@ -519,9 +520,9 @@ export function remainingDistance(b, e) {
   const leg = R.legs[R.legIdx];
   if (leg && leg.t === 'move' && R.pts && R.ptIdx < R.pts.length) {
     const p = R.pts[R.ptIdx];
-    d += Math.hypot(p.x - e.x, p.y - e.y) + R.suffix[R.ptIdx];
+    d += hypot(p.x - e.x, p.y - e.y) + R.suffix[R.ptIdx];
   } else if (leg && leg.t === 'move') {
-    d += Math.hypot(leg.c - e.x, leg.r - e.y);
+    d += hypot(leg.c - e.x, leg.r - e.y);
   }
   return d;
 }
@@ -614,7 +615,7 @@ function moveAttracted(b, e, dt) {
   let moved = false;
   while (dist > 1e-9 && A.i < A.pts.length) {
     const p = A.pts[A.i];
-    const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy);
+    const dx = p.x - e.x, dy = p.y - e.y, d = hypot(dx, dy);
     if (d <= dist) { e.x = p.x; e.y = p.y; dist -= d; A.i++; } else { e.x += (dx / d) * dist; e.y += (dy / d) * dist; dist = 0; }
     moved = true;
   }
@@ -667,7 +668,7 @@ function advanceRoute(b, e, dt, R, standing = false) {
       if (R.ptIdx >= R.pts.length) break;
       const p = R.pts[R.ptIdx];
       const dx = p.x - e.x, dy = p.y - e.y;
-      const d = Math.hypot(dx, dy);
+      const d = hypot(dx, dy);
       if (d <= dist) {
         e.x = p.x; e.y = p.y;
         dist -= d;
@@ -848,7 +849,7 @@ function enemyAttack(b, e, prevCd) {
       if (!tt || !tt.alive || !e.alive && !rangedShot) return;
       b.dealDamage(e, tt, { amount: e.s.atk * (e.profile?.atkScale ?? 1), type, isAttack: true, attackId, isProjectile });
     };
-    if (rangedShot && Math.hypot(t.x - e.x, t.y - e.y) > 0.75) {
+    if (rangedShot && hypot(t.x - e.x, t.y - e.y) > 0.75) {
       b.addProjectile({ from: e, target: t, speed: PROJECTILE_SPEEDS.enemy, visual: 'enemy', source: e, onHit: (c) => hit(c.target, true) });
     } else hit(t);
   }

@@ -111,6 +111,7 @@
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS, ROWS, PULL_STOP_RADIUS } from '../../../constants.js';
 import { hasHp } from '../../../damage.js';
+import { hypot } from '../../../detmath.js';
 
 // ------------------------------------------------------------------------------------------------------------------
 // helpers
@@ -237,7 +238,7 @@ function bestTile(battle, tiles) {
   let best = tiles[0], bd = Infinity;
   for (const t of tiles) {
     let d = Infinity;
-    for (const e of en) d = Math.min(d, Math.hypot(e.x - t[1], e.y - t[0]));
+    for (const e of en) d = Math.min(d, hypot(e.x - t[1], e.y - t[0]));
     if (d < bd - 1e-9) { bd = d; best = t; }
   }
   return best;

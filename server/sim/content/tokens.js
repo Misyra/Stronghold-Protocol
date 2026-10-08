@@ -92,6 +92,7 @@ import { genericKit } from './generic.js';
 import { bardRegen } from '../professions.js';
 import { normDir, localOrder } from '../dir.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
+import { hypot } from '../detmath.js';
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : d));
 const GRID_3X3 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1, -1], [-1, 0], [-1, 1]]);
@@ -451,7 +452,7 @@ export function findSummonTile(battle, owner, placement = 'melee', opts = {}) {
     let cover = 0;
     if (placement === 'enemy' || placement === 'melee') cover = countNear(enemies, r, c, 1);
     else if (placement === 'ally') cover = countNear(injured, r, c, 1);
-    const d = placement === 'ally' ? Math.hypot(c - owner.x, r - owner.y) : Math.hypot(c - focus.x, r - focus.y);
+    const d = placement === 'ally' ? hypot(c - owner.x, r - owner.y) : hypot(c - focus.x, r - focus.y);
     // last: the tile's offset in the owner's facing-RIGHT frame (for a RIGHT owner = the tile key order), so equal
     // candidates resolve the same way whichever direction the owner faces
     const [lr, lc] = localOrder(r - owner.tileR, c - owner.tileC, owner.dir);
@@ -1236,7 +1237,7 @@ function yanyouKit(bb, raw) {
     const keys = [];
     const r0 = Math.floor(u.y - radius), r1 = Math.ceil(u.y + radius), c0 = Math.floor(u.x - radius), c1 = Math.ceil(u.x + radius);
     for (let r = Math.max(0, r0); r <= Math.min(ROWS - 1, r1); r++) {
-      for (let c = Math.max(0, c0); c <= Math.min(COLS - 1, c1); c++) if (Math.hypot(c - u.x, r - u.y) <= radius + 1e-9) keys.push(r * COLS + c);
+      for (let c = Math.max(0, c0); c <= Math.min(COLS - 1, c1); c++) if (hypot(c - u.x, r - u.y) <= radius + 1e-9) keys.push(r * COLS + c);
     }
     u.rangeKeys = keys;
     u.rangeKeySet = new Set(keys);
@@ -1299,7 +1300,7 @@ function yanyouKit(bb, raw) {
           const tgt = lockOf(unit) ?? topAggroEnemy(battle, unit);
           if (tgt) {
             const dx = tgt.x - unit.x, dy = tgt.y + num(unit.mem.hoverDy, 0) - unit.y;
-            const d = Math.hypot(dx, dy);
+            const d = hypot(dx, dy);
             if (d > YANYOU_STOP + 1e-6) {
               const step = Math.min(d - YANYOU_STOP, speed * dt);
               const R = battle.rect;
@@ -1351,7 +1352,7 @@ function airTile(battle, playerId, taken) {
       if (taken.has(r * COLS + c) || held.has(r * COLS + c) || !tileFree(battle, r, c)) continue;
       const t = battle.grid.tile(r, c);
       const cls = t.build === 'NONE' && t.pass !== 'ALL' ? 0 : t.build === 'NONE' ? 1 : 2;
-      const s = [cls, Math.hypot(r - cr, c - cc), r * COLS + c];
+      const s = [cls, hypot(r - cr, c - cc), r * COLS + c];
       let less = !bs;
       if (!less) for (let i = 0; i < 3; i++) { if (s[i] < bs[i] - 1e-9) { less = true; break; } if (s[i] > bs[i] + 1e-9) break; }
       if (less) { best = [r, c]; bs = s; }

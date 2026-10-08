@@ -6,6 +6,7 @@ import {
   AURA, num, tbb, moduleBb, grid, batFlat, enemyHasTag, targetsInRange, whileDeployed, pulse, alt, instantKind,
   pullToFront, withDefaults,
 } from '../shared/tier4.js';
+import { hypot } from '../../../detmath.js';
 
 const ABYSSAL = new Set(['char_143_ghost', 'char_263_skadi', 'char_474_glady', 'char_4145_ulpia', 'char_1023_ghost2']);
 const isAbyssal = (u) => u?.def?.raw?.groupId === 'abyssal' || ABYSSAL.has(u?.def?.charId ?? u?.def?.raw?.charId);
@@ -28,7 +29,7 @@ export default withDefaults({
     };
     // module HOK-Y: "向自身拖拽较远的敌人时力度提升一个等级"
     const farR = num(mb['skill@range_radius'], num(mb['attack@range_radius'], 0)), farF = num(mb['skill@delta_force'], num(mb['attack@delta_force'], 0));
-    const selfForce = (unit, e, f) => (farR > 0 && farF > 0 && Math.hypot(e.x - unit.x, e.y - unit.y) > farR + 1e-9 ? f + farF : f);
+    const selfForce = (unit, e, f) => (farR > 0 && farF > 0 && hypot(e.x - unit.x, e.y - unit.y) > farR + 1e-9 ? f + farF : f);
     const pullSelf = (battle, unit, e, f) => { if (e && e.alive) dragDmg(battle, unit, e, pullToFront(battle, unit, e, selfForce(unit, e, f))); };
     return {
       skills: alt(def, {

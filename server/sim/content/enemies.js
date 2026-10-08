@@ -116,6 +116,7 @@ import { REFLECTION_KITS } from './enemies/reflection.js';
 import { FLY_KITS } from './enemies/fly.js';
 import { SPECIAL_KITS } from './enemies/special.js';
 import { LEADER_KITS } from './enemies/leaders.js';
+import { hypot } from '../detmath.js';
 
 export {
   EROSION, EROSION_BURST, HUSK_REBIRTH, nthOf, abOf, attach, T, silenced, canCast, elem, hurt, alliesInTiles,
@@ -312,7 +313,7 @@ function chaliceShare(b, c) {
   for (const o of b.enemies) {
     if (!o.alive || o === t || o.defId !== 'enemy_1430_lrrook' || !o.mem.ab) continue;
     const a = o.mem.ab.list[0];
-    if (!a || !(a.share > 0) || Math.hypot(o.x - t.x, o.y - t.y) > a.r) continue;
+    if (!a || !(a.share > 0) || hypot(o.x - t.x, o.y - t.y) > a.r) continue;
     const part = c.dmg.amount * a.share;
     c.dmg.amount -= part;
     // a 无来源 burst's share stays 无来源, credited like the burst (damage.js)

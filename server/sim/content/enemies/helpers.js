@@ -6,6 +6,7 @@
 import { ELEMENT } from '../../constants.js';
 import { canTargetAlly, sortAllyTargets, areaSelectable, auraSelectable } from '../../targeting.js';
 import { mitigate } from '../../damage.js';
+import { hypot } from '../../detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -295,7 +296,7 @@ export function spawnChildren(b, parent, key, n, opts = {}) {
 /** Move a unit straight toward (tx, ty) by `dist` tiles. Returns true on arrival. */
 export function stepToward(u, tx, ty, dist) {
   const dx = tx - u.x, dy = ty - u.y;
-  const d = Math.hypot(dx, dy);
+  const d = hypot(dx, dy);
   if (d <= dist + 1e-9) { u.x = tx; u.y = ty; return true; }
   u.x += (dx / d) * dist;
   u.y += (dy / d) * dist;

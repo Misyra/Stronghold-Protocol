@@ -12,6 +12,7 @@ import {
   unblockable, maxTargets, onHitStatus, splashAttack, pathKeysAhead, noAirTargets, resist, nthAttackStatus, lowHpBuff,
   freeAllPrisoners, reborn, frontGuard, faceCrowd, unbalanced, artsBarrier, skill, blinkForward,
 } from './archetypes.js';
+import { hypot, powi } from '../../detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -312,7 +313,7 @@ function kitLeaderMisc(key, ab, e) {
             const nx = areaAllies(b, e2, prev.x, prev.y, jr).find((u) => !hit.has(u));
             if (!nx) break;
             hit.add(nx);
-            hurt(b, e2, nx, e2.s.atk * Math.pow(fall, k), 'arts');
+            hurt(b, e2, nx, e2.s.atk * powi(fall, k), 'arts');
             if (nx.alive && cold > 0) b.applyStatus(nx, 'cold', { duration: cold, source: e2 });
             prev = nx;
           }
@@ -323,7 +324,7 @@ function kitLeaderMisc(key, ab, e) {
       skill(cb, (b, e2) => {
         const bb = cb.bb, jump = bb.projectile_range ?? jr, max = bb['chain.max_target'] ?? 3;
         const near = (x, y, r, seen) => b.enemiesInRadius(x, y, r).filter((o) => o !== e2 && !seen.has(o))
-          .sort((p, q) => Math.hypot(p.x - x, p.y - y) - Math.hypot(q.x - x, q.y - y) || p.spawnSeq - q.spawnSeq)[0];
+          .sort((p, q) => hypot(p.x - x, p.y - y) - hypot(q.x - x, q.y - y) || p.spawnSeq - q.spawnSeq)[0];
         const seen = new Set();
         let prev = e2, cur = near(e2.x, e2.y, e2.base.rangeRadius || 3.5, seen);
         while (cur && seen.size < max) {
@@ -357,7 +358,7 @@ function kitLeaderMisc(key, ab, e) {
 function segDist(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
   const t = L > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) : 0;
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  return hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
 /** A second normal hit on the same target ("二连击"): same damage type, no further on-hit procs. */
@@ -454,7 +455,7 @@ function kitWarden(ab) {
 function kitXi(ab) {
   const cross = ab.sk.CrossAttack, sb = ab.sk.ShieldBurst, sb2 = ab.sk.ShieldBurstReborn;
   const P = { form2: false };
-  const byDist = (b, e) => allTargets(b, e).sort((p, q) => Math.hypot(p.x - e.x, p.y - e.y) - Math.hypot(q.x - e.x, q.y - e.y) || aggroCmp(p, q));
+  const byDist = (b, e) => allTargets(b, e).sort((p, q) => hypot(p.x - e.x, p.y - e.y) - hypot(q.x - e.x, q.y - e.y) || aggroCmp(p, q));
   const crossAt = (b, e, t) => {
     const r0 = t.tileR, c0 = t.tileC;
     b.fx('telegraph', { x: c0, y: r0, r: XI_CROSS_REACH, kind: 'xiCross', tiles: 'plus', id: e.id });
@@ -783,7 +784,7 @@ export const LEADER_KITS = Object.freeze({
     if (st > 0) b.applyStatus(e, 'stun', { duration: st, source: null });
   })],
   enemy_10138_xdsnow: (ab) => [unbalanced((b, e, a) => {             // 雪孩子 · pushed / pulled into high ground ⇒ hitWall.value damage
-    const dx = e.x - a.lx, dy = e.y - a.ly, d = Math.hypot(dx, dy);
+    const dx = e.x - a.lx, dy = e.y - a.ly, d = hypot(dx, dy);
     if (!(d > 0)) return;
     const r = Math.round(e.y + (dy / d) * 0.6), c = Math.round(e.x + (dx / d) * 0.6);
     if (b.grid.isLow(r, c) && b.grid.groundPassable(r, c)) return;   // stopped by nothing: no collision

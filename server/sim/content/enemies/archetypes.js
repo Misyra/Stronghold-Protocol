@@ -8,6 +8,7 @@ import {
   HUSK_REBIRTH, BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, DUCK_STEALTH_RESTORE, nthOf, stOf, safe, num, T, elem, hurt,
   areaAllies, areaAlliesInTiles, zone, spawnChildren, stepToward, setHits, hitCount, setForm, absorbArts, auraBuff,
 } from './helpers.js';
+import { hypot } from '../../detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // archetypes
@@ -105,7 +106,7 @@ function pathKeysAhead(e) {
   if (!R || !Array.isArray(R.pts)) return keys;
   let x = e.x, y = e.y;
   for (let i = R.ptIdx ?? 0; i < R.pts.length; i++) {
-    const p = R.pts[i], n = Math.max(1, Math.ceil(Math.hypot(p.x - x, p.y - y) * 4));
+    const p = R.pts[i], n = Math.max(1, Math.ceil(hypot(p.x - x, p.y - y) * 4));
     for (let k = 1; k <= n; k++) keys.add(Math.round(y + ((p.y - y) * k) / n) * COLS + Math.round(x + ((p.x - x) * k) / n));
     x = p.x; y = p.y;
   }
@@ -405,7 +406,7 @@ function unbalanced(onMove) {
       a.px = e.x; a.py = e.y; a.hid = e.hidden;
       if (px == null || hid || e.hidden) return;
       const own = e.s.moveSpeed * MOVE_SCALE * dt * 1.5 + 1e-3;
-      const extra = Math.hypot(e.x - px, e.y - py) - own;
+      const extra = hypot(e.x - px, e.y - py) - own;
       a.lx = px; a.ly = py;                                          // where the move started (direction for onMove)
       if (extra > 0.05) onMove(b, e, a, extra);
     },
@@ -605,7 +606,7 @@ export function blinkForward(b, e, dist) {
     let i = R.ptIdx;
     while (left > 1e-9 && i < R.pts.length) {
       const p = R.pts[i];
-      const d = Math.hypot(p.x - e.x, p.y - e.y);
+      const d = hypot(p.x - e.x, p.y - e.y);
       if (d <= left) { e.x = p.x; e.y = p.y; left -= d; i++; } else { stepToward(e, p.x, p.y, left); left = 0; }
     }
   } else if (R && R.legs && R.legs[R.legIdx] && R.legs[R.legIdx].r != null) {

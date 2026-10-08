@@ -34,8 +34,12 @@ effects), [DATA.md](DATA.md) (generated data), [ASSETS.md](ASSETS.md) (art and a
   against the spec (`server/match/fields.js` `validateClientResult`), runs the battles no connected human owns (bots, a
   dropped player, an authority that missed its deadline) and can re-simulate results (`SP_VERIFY`). `SP_COMBAT=server`
   is the older mode in which the server runs every battle and streams snapshots. DESIGN §14.
-- **Determinism** is what makes this work: fixed 1/30 s ticks, a seeded PRNG (`server/sim/rng.js`), no wall clock and
-  no `Math.random` in the sim, so the same spec and data give the same battle on every machine, bit for bit. The golden
+- **Determinism** is what makes this work: fixed 1/30 s ticks, a seeded PRNG (`server/sim/rng.js`), no wall clock,
+  no `Math.random` and only correctly rounded arithmetic in the sim, so the same spec and data give the same battle on
+  every machine, bit for bit. ECMA-262 leaves `Math.hypot`, `sin`, `cos`, `atan2`, `pow` (and `**`) implementation-
+  approximated and the engines differ in their last bits (V8, SpiderMonkey and JavaScriptCore each compute `hypot`
+  differently; Chrome's and Node's `sin` differ), so the sim takes them from `server/sim/detmath.js`, built only from
+  + − × ÷ and `Math.sqrt`; ESLint and `test/sim/detmath.test.js` refuse the Math ones in `server/sim/`. The golden
   results (§5) rely on it.
 
 ## 2. The WebSocket protocol

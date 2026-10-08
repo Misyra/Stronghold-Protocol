@@ -75,6 +75,7 @@ import {
   ensureInstalled, abOf, attach, T, elem, hurt, targetsNear, allTargets, byPriority, areaAllies, areaAlliesInTiles, fieldAllies,
   remainingRoute, stayRoute, stepToward, setHits, hitCount, lpLoss, blinkForward, canCast, absorbArts, nthOf,
 } from './enemies.js';
+import { hypot, powi } from '../detmath.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants
@@ -209,7 +210,7 @@ function rawRouteOf(b, e, tpl) {
 function toGoal(b, x, y, motion = 'WALK') {
   const ends = b.grid.specialTiles('end');
   let best = ends[0] ?? [Math.round(y), Math.round(x)], bd = Infinity;
-  for (const p of ends) { const d = Math.hypot(p[0] - y, p[1] - x); if (d < bd) { bd = d; best = p; } }
+  for (const p of ends) { const d = hypot(p[0] - y, p[1] - x); if (d < bd) { bd = d; best = p; } }
   return { motion, start: [y, x], end: best, checkpoints: [] };
 }
 
@@ -318,7 +319,7 @@ function mirror(b, e, tpl) {
 const opsOnly = (list) => list.filter((u) => u.kind === 'op');
 const nearestOf = (b, e, pred) => {
   let best = null, bd = Infinity;
-  for (const o of b.enemies) { if (!o.alive || o === e || !pred(o)) continue; const d = Math.hypot(o.x - e.x, o.y - e.y); if (d < bd) { bd = d; best = o; } }
+  for (const o of b.enemies) { if (!o.alive || o === e || !pred(o)) continue; const d = hypot(o.x - e.x, o.y - e.y); if (d < bd) { bd = d; best = o; } }
   return best;
 };
 /** Apply a floor to an enemy whose data attack speed is 0 (skill-driven leaders: 铳/管/弦). */
@@ -370,7 +371,7 @@ function stunBlast(b, src, by, r, c, stun, dot, dur, kind) {
 function segDist(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
   const t = L > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) : 0;
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  return hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -708,7 +709,7 @@ function kitSpring(ab, e) {
         const d = e2.mem.ab.dash;
         if (!d) return;
         const g = d.gun && d.gun.alive ? d.gun : gun(b);
-        const arrived = !g || stepToward(e2, g.x, g.y, e2.s.moveSpeed * d.mul * MOVE_SCALE * dt) || Math.hypot(g.x - e2.x, g.y - e2.y) < 1;
+        const arrived = !g || stepToward(e2, g.x, g.y, e2.s.moveSpeed * d.mul * MOVE_SCALE * dt) || hypot(g.x - e2.x, g.y - e2.y) < 1;
         // 追逐模式 "对进入自身0.35半径范围内的我方单位（包括飞行单位）造成一次攻击力100%的物理普通伤害" (until 0.1.3: radius 0.5)
         for (const u of areaAllies(b, e2, e2.x, e2.y, CHARGE_RADIUS)) if (!d.hit.has(u)) { d.hit.add(u); hurt(b, e2, u, e2.s.atk, 'phys'); }
         if (arrived || b.time >= d.until) { e2.mem.ab.dash = null; b.removeBuff(e2, 'boss:dash'); if (e2.route) e2.route.pts = null; }
@@ -730,9 +731,9 @@ function kitSpring(ab, e) {
           for (let k = 0; k < times && t; k++) {
             hit.add(t);
             b.fx('beam', { x: e2.x, y: e2.y, from: e2.id, to: t.id, kind: 'springBullet' });
-            elem(b, e2, t, 'erosion', e2.s.atk * ratio * Math.pow(SPRING_BOUNCE_FALLOFF, k));
+            elem(b, e2, t, 'erosion', e2.s.atk * ratio * powi(SPRING_BOUNCE_FALLOFF, k));
             const prev = t;
-            t = areaAllies(b, e2, prev.x, prev.y, SPRING_BOUNCE_RANGE).filter((u) => !hit.has(u)).sort((p, q) => Math.hypot(p.x - prev.x, p.y - prev.y) - Math.hypot(q.x - prev.x, q.y - prev.y) || aggroCmp(p, q))[0];
+            t = areaAllies(b, e2, prev.x, prev.y, SPRING_BOUNCE_RANGE).filter((u) => !hit.has(u)).sort((p, q) => hypot(p.x - prev.x, p.y - prev.y) - hypot(q.x - prev.x, q.y - prev.y) || aggroCmp(p, q))[0];
           }
         } else { // 十连击
           b.fx('beam', { x: e2.x, y: e2.y, from: e2.id, to: t0.id, kind: 'springCombo' });

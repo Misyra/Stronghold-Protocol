@@ -8,6 +8,7 @@ import {
   AURA_IV, AURA_DUR, RING1, num, on, talent, skillGrid, maxCharges, mods, dist, isOp, selectedId, lazySkills,
   instantKind, whileOn, permBuff,
 } from '../shared/tier5.js';
+import { hypot } from '../../../detmath.js';
 
 /** Straight-road length through each tile (max of the horizontal and vertical runs of ground-passable tiles). */
 const ROAD_CACHE = new WeakMap();
@@ -134,7 +135,7 @@ export default {
           }
           const extra = battle.alliesInGrid(unit).some((a) => a !== unit && isOp(a)) ? Math.min(num(t0.projectile_extend), num(t0.projectile_extend_max, Infinity)) : 0;
           // it drifts away from her deployment tile ("移动方向始终为远离棘刺部署位置中心的方向")
-          const dx = t.x - unit.x, dy = t.y - unit.y, len = Math.hypot(dx, dy) || 1;
+          const dx = t.x - unit.x, dy = t.y - unit.y, len = hypot(dx, dy) || 1;
           // `key`: the fx re-sent every second as the unit drifts and grows is this one zone — the client updates it in
           // place instead of stacking a new layer each second (render/fx/zones.js; community report of 2026-10-06)
           const key = `thorn2:${unit.id}:${unit.mem.zoneSeq = (unit.mem.zoneSeq ?? 0) + 1}`;

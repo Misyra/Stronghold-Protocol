@@ -58,6 +58,7 @@
 import { num, skillRec, batMod, up } from '../shared/tier1.js';
 import { COLS } from '../../../constants.js';
 import { dirVec } from '../../../dir.js';
+import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_mcnist_1';
 const S2 = 'skchr_mcnist_2';
@@ -197,7 +198,7 @@ function grafKit(owner, { life, t2, b2, b3, aura }) {
 function chargeGraf(battle, mcn, t, b3) {
   if (!up(t)) return;
   const { stop, land } = chargeEnd(battle, t);
-  const dist = Math.hypot(stop[0] - t.tileR, stop[1] - t.tileC);
+  const dist = hypot(stop[0] - t.tileR, stop[1] - t.tileC);
   t.mem.charging = true;
   battle.fx('charge', { x: t.x, y: t.y, id: t.id, tx: stop[1], ty: stop[0] });
   battle.retreat(t, { reason: 'expired', permanent: true });

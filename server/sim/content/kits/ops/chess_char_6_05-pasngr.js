@@ -5,6 +5,7 @@ import { absoluteRangeKeys, canTargetEnemy } from '../../../targeting.js';
 import { CHAIN_RADIUS } from '../../../constants.js';
 import { bodyDist, bodyInKeys } from '../../../body.js';
 import { num, bv, tbb, live, ANY, enemiesIn, batOf, N4, aura } from '../shared/tier6.js';
+import { powi } from '../../../detmath.js';
 
 // ------------------------------------------------------------------------------------------------------------------
 // 异客 chess_char_6_05 (链术师) — S3 辉煌裂片; 机理分析; 孤卒
@@ -25,7 +26,7 @@ function pasngr(bb, chess, def) {
     for (let i = 0; i < count && prev; i++) {
       hit.add(prev.id);
       battle.fx('lightning', { x: prev.x, y: prev.y, id: prev.id, src: unit.id });
-      battle.dealDamage(unit, prev, { amount: unit.s.atk * scale * Math.pow(1 - num(ch.falloff, 0.15), i), type: 'arts', isSkill: true, isAttack: true, tags: ['skill', 'storm'] });
+      battle.dealDamage(unit, prev, { amount: unit.s.atk * scale * powi(1 - num(ch.falloff, 0.15), i), type: 'arts', isSkill: true, isAttack: true, tags: ['skill', 'storm'] });
       if (slug > 0 && prev.alive) battle.applyStatus(prev, 'sluggish', { duration: slug, source: unit });
       let best = null, bd = Infinity;
       for (const x of battle.foesInRadius(prev.x, prev.y, ch.radius || CHAIN_RADIUS)) {

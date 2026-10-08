@@ -596,7 +596,9 @@ and the 浮空 weight rule, then `statusApplied { source, target, status, durati
 = the target carried no buff of that status before (a refresh / a weaker "取最高" application is not an entry: "进入…时"). Effects follow the official term table
 (`gamedata_const.termDescriptionDict`, `ba.*`). Same-key statuses refresh to the longer duration, except the
 "同名效果取最高" ones marked *strongest* below: the strongest value wins, a weaker application never overrides it and,
-if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out); `stackAs` = the strength such an
+if it outlasts it, resumes when the strong one expires (pass `refresh` to opt out) — every such waiting application keeps
+its own end, and they resume strongest first (`buff.data.tail` is a chain ordered by strength: of 30 % / 25 % / 20 %
+applied one after another, the 25 % follows the 30 %, then the 20 % — GitHub #342, PR #348); `stackAs` = the strength such an
 application competes with instead of its `value`, which stays its effect (Raidian S3's 虚弱: PRTS 备注 "在叠加时视为90%…的
 虚弱（仅影响叠加优先级，不影响实际效果）").
 `battle.applyStrongest(target, key, { duration, value, mods: (v) => mods, source })` gives a content effect that is not a

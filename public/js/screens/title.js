@@ -246,7 +246,10 @@ export function TitleScreen() {
     </div>
     <div class="title-corner title-corner--tr">
       <div>
-        <${LangToggle} class="title-lang" />
+        <div class="title-corner__tools">
+          <${Button} variant="ghost" size="sm" icon="chart" class="title-stats" onClick=${openStats} title=${t('统计数据')}>${t('统计')}<//>
+          <${LangToggle} class="title-lang" />
+        </div>
         <${MicroLabel} tone="hi">TARGET POINT<//><br /><${MicroLabel}>STRONGHOLD PROTOCOL<//>
       </div>
     </div>
@@ -273,7 +276,6 @@ export function TitleScreen() {
           <span class=${`status-dot ${dotClass}`}></span>
           <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
           ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
-          <${Button} variant="ghost" size="sm" icon="signal" onClick=${openStats} title=${t('统计数据')}>${t('统计')}<//>
           <${GuideButton} class="title-guide" label=${t('玩法说明')} />
           <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>

@@ -108,6 +108,11 @@ test('the detail\'s section: 潜能 1–6 and the four official 练度 tiers, th
   tiers[1].props.onClick();
   assert.deepEqual(sets, [[id, { potential: 1 }], [id, { cultivate: 1 }]]);
   assert.equal(cultivateName(0), '未精英化');
+  // the rule line says what an operator with nothing set fights at — the default, 满潜能 / 精英2 Lv.60 — and that an unowned
+  // 特许 operator at the official 潜能1 / 未精英化 is the player's own setting (Grok review of the branch: it read as automatic)
+  const note = textOf(find(sec, (v) => hasClass(v, 'lo-cult__note'))[0]);
+  assert.match(note, /^默认满潜能、精英2 Lv\.60（满加成）。/);
+  assert.match(note, /未持有的特许干员在官方按潜能1、没有加成，要照官方打请手动设为潜能1、未精英化。$/);
   const st = CultivationSection({ charId: id, ops: {}, onSet: () => {}, standIn: true });
   assert.ok(hasClass(st, 'is-moot'));
   assert.match(textOf(find(st, (v) => hasClass(v, 'lo-cult__note'))[0]), /替补干员没有潜能与练度/);

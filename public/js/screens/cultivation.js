@@ -89,6 +89,6 @@ export function CultivationSection({ charId, ops, onSet, standIn = false }) {
     <p class="lo-cult__eff" data-cultivate=${cur.cultivate}><b>${cultivateName(cur.cultivate)}</b> <span>${cultivateDesc(cur.cultivate)}</span></p>
     <p class="lo-cult__note">${standIn
       ? t('干员持有中标记为未持有：替补干员没有潜能与练度；这里的设置在改回「持有」后生效')
-      : t('潜能取你自己的潜能；练度是自持有加成（已持有的同名干员的养成，攻击 / 防御 / 生命单独乘算）。未持有的特许干员按潜能1、未精英化。')}</p>
+      : t('默认满潜能、精英2 Lv.60（满加成）。官方的潜能取你自己的潜能，练度是自持有加成（已持有的同名干员的养成，攻击 / 防御 / 生命单独乘算）；未持有的特许干员在官方按潜能1、没有加成，要照官方打请手动设为潜能1、未精英化。')}</p>
   </section>`;
 }

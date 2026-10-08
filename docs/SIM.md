@@ -565,6 +565,16 @@ Aggregation: `ATK/DEF/maxHp = (base + Σflat) × (1 + Σpct) × Πmul`, for ATK 
 percentages: `ATK = ((base + ΣatkFlat) × (1 + ΣatkPct) + ΣatkFinal) × ΠatkMul`; `res = clamp((base + ΣresFlat) × ΠresMul, 0, 100)`;
 `aspd = clamp(base + Σaspd, 20, 600)` (floor 20: PRTS 数值范围 ATTACK_SPEED 默认下限; user playtest #6); `interval = bat × (1 + ΣbatPct) × 100 / aspd`; `moveSpeed = (base + ΣmoveFlat) × ΠmoveMul`;
 tiles/s = `moveSpeed × MOVE_SCALE (0.5)`. A maxHp change keeps the HP ratio. Elite stats (module included) come from data.
+The attack cooldown `atkCd` starts at `interval` and counts down by `TICK`; what is left within 1e-9 of 0 is 0
+(`ai.js attackCountdown`, the tolerance of skill `timeLeft`, buff intervals and `every()`; PR #402 by @Cloudnyco, 0.2.2),
+so an interval of a whole number of ticks takes exactly that many: 1 s = 30 ticks, 3 s = 90 (floating point alone left
+2.1e-16 after thirty steps of 1/30, and every such attack came a tick late — 31, 91). The same countdown runs the 双眼皮
+turrets (`content/devices.js`) and 寒檀's S2 icicles; the drones of 澄闪 / 荒芜拉普兰德 and 电弧's 赛柯 volleys compared
+with 1e-9 already. Content clocks that count up and restart from 0 (the boss self-timers of `content/bosses.js`, kit auras)
+are not covered. Official (PRTS 作战机制/sandbox 「帧对齐机制对攻速的影响」): the time unit is one frame, 1/30 s, and since
+the 2019-12-24 update a non-integer frame count is rounded (四舍五入; before, 进一取整); an exact one stays. Here a
+non-integer count still ends on the tick that crosses 0 — ⌈30 × interval⌉ ticks (1.2 s = 36, 1.25 s = 38; 能天使's
+0.678 s is 21 here, 20 frames officially): an older difference from the official rounding, not changed by this rule.
 
 **Which bucket (PRTS 游戏数据基础 属性基本公式 / 作战机制, DESIGN §20.10).** `Σpct` is the official **直接乘算** class — its
 values are summed (`A = (A₀ + D_p)(1 + D_t)`, D_t = t₁ + … + tₙ): a skill's or talent's "攻击力+X%" **and** every "+X%"
@@ -918,7 +928,9 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
   PRTS 异常效果 晕眩 names no SP effect — community report #18). Attack-type SP: attacks made
   by the skill (the pending "next attack" of an instant/charge skill, every shot of a timed skill including the one that
   ends it) recover nothing, so a cost-N skill fires every **N+1** attacks (AK). Charges (`maxChargeTime > 1`):
-  SP fills to cost → +1 charge (SP restarts) until charges are full (then SP stays full).
+  SP fills to cost → +1 charge (SP restarts) until charges are full (then SP stays full). SP within 1e-9 of the cost is
+  the cost (`gainSp`, `_normalize`; a tiny negative remainder is 0): the float sum of the 1/30-SP time gains can stop
+  2.5e-14 short of it — a 10-SP skill at 1 SP/s took 301 ticks, now 300 (PR #402, 0.2.2).
 - Triggers (`skill.trigger.rule` in data — the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作, resolved by
   `tools/build-data.mjs resolveTrigger`: charId rows by skill index; the class rows (重装 / 执旗手 / 战术家 / 吟游者 / 解放者 /
   阵法术师) for **every MANUAL skill** of the class; SKILL_RANGE for a MANUAL skill with a 技能范围 of its own; ACTIVE_RANGE

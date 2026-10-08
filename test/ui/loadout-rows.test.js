@@ -15,7 +15,7 @@ globalThis.fetch = async (url) => {
   const name = String(url).split('/').pop();
   try { const body = readFileSync(path.join(ROOT, 'data', name), 'utf8'); return { ok: true, status: 200, json: async () => JSON.parse(body) }; } catch { return { ok: false, status: 404, json: async () => ({}) }; }
 };
-const { RosterRow, RosterHead, statsPreview, LoadoutStats } = await import('../../public/js/screens/loadout.js');
+const { RosterRow, RosterHead, statsPreview, LoadoutStats, ModuleInfo } = await import('../../public/js/screens/loadout.js');
 const { CultivationSelects, CultivationSection, cultivateName } = await import('../../public/js/screens/cultivation.js');
 const { DiyPanelView } = await import('../../public/js/screens/diy.js');
 const { data } = await import('../../public/js/data.js');
@@ -142,6 +142,24 @@ test('局内数值 at the operator\'s settings: 刺玫 at 潜能1 / 未精英化
   // the caption says the numbers carry 潜能 and 练度 (an owned operator; effects.json loaded)
   const cap = (tree) => textOf(find(tree, (n) => hasClass(n, 'lo-stats__cap'))[0]);
   assert.match(cap(LoadoutStats({ base: v, golden: g, entries: {}, level: 'elite', onLevel() {}, getChess: get, ops: {} })), /^数值含所选模组；含潜能与练度；不含技能发动/);
+});
+
+test('the module card reads its talent changes at the operator\'s 潜能, as 局内数值 and the battle do (余 闲云隐市: 2%（+0.5%） / 1.5%)', () => {
+  // (Grok review of the branch: the card printed the full-potential line whatever the setting)
+  const g = get('chess_char_6_03_b');
+  const mod = g.modules.find((x) => x.uniEquipId === 'uniequip_002_yu');
+  const opt = { id: mod.uniEquipId, rec: mod, isDefault: !!mod.isDefault };
+  const texts = (tree) => find(tree, (v) => typeof v.type === 'function' && v.type.name === 'RichText').map((v) => String(v.props.text));
+  const full = texts(ModuleInfo({ m: null, golden: g, opt }));
+  assert.ok(full.some((x) => x.includes('生命上限2%<@ba.talpu>（+0.5%）</>')), 'full potential (none given)');
+  assert.deepEqual(texts(ModuleInfo({ m: null, golden: g, opt, potential: 6 })), full);
+  const p1 = texts(ModuleInfo({ m: null, golden: g, opt, potential: 1 }));
+  assert.ok(p1.some((x) => x.includes('生命上限1.5%的生命')), '潜能1');
+  assert.ok(!p1.some((x) => x.includes('（+0.5%）')));
+  assert.deepEqual(texts(ModuleInfo({ m: null, golden: g, opt: { id: 'none', rec: null }, potential: 1 })), [g.traitBase.descRaw], '不装备: the base 特性');
+  // the detail hands the operator's 潜能 to it
+  const src = readFileSync(path.join(ROOT, 'public/js/screens/loadout.js'), 'utf8');
+  assert.match(src, /<\$\{ModuleInfo\} m=\$\{m\} golden=\$\{golden\} opt=\$\{modOpt\} potential=\$\{opsOf\(ops, chess\.charId\)\.potential\} \/>/);
 });
 
 test('css: the head and the rows share one grid (columns aligned), quick targets grow on a coarse pointer, the detail slides over below 1000 px', () => {

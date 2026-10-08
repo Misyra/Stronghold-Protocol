@@ -34,11 +34,12 @@ import { PHASE } from '../../../shared/constants.js';
 import {
   MODULE_NONE, PROF_ORDER, PROF_NAME, rosterOf, filterRoster, recordsOf, chessOptions, effectiveChoice, setChoice, resetChoice,
   changedCount, skillLabel, moduleBadge, attrRows, skillTags, quickSkillTags, traitLines, serializeExport, parseImport, LOADOUT_IMPORT_MAX_BYTES,
-  opsOf, setOps, resetOps,
+  opsOf, setOps, resetOps, moduleRecord,
 } from '../ui/loadoutModel.js';
 import { loadoutStore, openLoadout, closeLoadout, setEntries, setOpsMap, applyLoadoutEntries, setNotOwned, applyOwnershipImport, setDiyPicks, applyDiyImport } from '../ui/loadoutSync.js';
 import { CultivationSelects, CultivationSection } from './cultivation.js';
 import { cultivationCharIds } from '../../../shared/protocol.js';
+import { atPotential } from '../../../shared/potential.js';
 import { setOwned, notOwnedCount, serializeOwnership, parseOwnershipImport, OWNERSHIP_IMPORT_MAX_BYTES } from '../ui/ownershipModel.js';
 import { OwnershipPanel, useOwnershipRoster } from './ownership.js';
 import { DiyPanel, diyData } from './diy.js';
@@ -263,9 +264,16 @@ function SkillOption({ m, opt, on, level, onPick }) {
   </button>`;
 }
 
-export function ModuleInfo({ m, golden, opt }) {
+/**
+ * The chosen module's card: its stat bonus, the 特性 it fights with, its talent changes — read at the operator's 潜能
+ * (`potential`, 0.2.2: the elite composed at it first, shared/potential.js atPotential, as 局内数值 and the battle do; the
+ * data record is the full-potential one — 余's 闲云隐市 「生命上限2%（+0.5%）」 is 「1.5%」 at 潜能1). null = full potential.
+ * @param {{ m: any, golden: any, opt: { id: string, rec: any, isDefault?: boolean }, potential?: number|null }} props
+ */
+export function ModuleInfo({ m, golden, opt, potential = null }) {
   if (!golden) return null;
-  const rec = opt.id === MODULE_NONE ? null : opt.rec;
+  const at = atPotential(golden, potential);
+  const rec = opt.id === MODULE_NONE ? null : at === golden ? opt.rec : moduleRecord(at, opt.id) || opt.rec;
   if (!rec) {
     const traitBase = golden.traitBase || null;
     return html`<div class="lo-minfo lo-minfo--none">
@@ -412,7 +420,7 @@ function Detail({ m, chess, golden, entries, ops = {}, onChange, onOps, onReset,
             ${mo.isDefault ? html`<span class="lo-badge lo-badge--def lo-mod__def">${t('默认')}</span>` : null}
           </button>`)}
         </div>
-        ${modOpt ? html`<${ModuleInfo} m=${m} golden=${golden} opt=${modOpt} />` : null}
+        ${modOpt ? html`<${ModuleInfo} m=${m} golden=${golden} opt=${modOpt} potential=${opsOf(ops, chess.charId).potential} />` : null}
       </section>` : null}
       ${notOwned ? html`<p class="lo-locknote lo-locknote--standin" data-testid="loadout-standin-note"><${Icon} name="info" />${standInName(chess) ? t('干员持有中标记为未持有：此棋子由替补干员 {name} 上场，技能与模组固定（补位干员技能不可更改）；这里的调配在改回「持有」后生效', { name: standInName(chess) })
         : t('干员持有中标记为未持有：此棋子由替补干员上场，技能与模组固定（补位干员技能不可更改）；这里的调配在改回「持有」后生效')}</p>` : null}

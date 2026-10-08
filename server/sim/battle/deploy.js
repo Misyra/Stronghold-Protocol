@@ -97,6 +97,7 @@ export class BattleDeploy {
   }
 
   _remove(unit, reason, killer = null, permanent = false, dying = false) {
+    this._cutAttackStand(unit);
     unit.alive = false;
     unit.removeReason = reason;
     unit.deployed = false;

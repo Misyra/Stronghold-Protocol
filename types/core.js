@@ -91,7 +91,9 @@
 /**
  * `snapshot()` (SIM §9). On the wire this object is the payload of `b.snap`,
  * and `t` is sent as `gt` because the frame's `t` is the message type (DESIGN §8.2).
- * `dp` is one number. `down` and `elem` are omitted when empty.
+ * `dp` is one number. `down`, `elem`, `stand` and `standCut` are omitted when empty: `stand` [id, until] = the game
+ * time an enemy's attack recovery ends, `standCut` [id, at] = the latest time it was cut or ignored (enemies in the
+ * snapshot's death window included).
  *
  * @typedef {Object} FieldSnapshot
  * @property {string} fieldId
@@ -104,6 +106,8 @@
  * @property {Object} [boss]
  * @property {DownSnap[]} [down]
  * @property {ElemSnap[]} [elem]
+ * @property {[number, number][]} [stand]
+ * @property {[number, number][]} [standCut]
  */
 
 /**

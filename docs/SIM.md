@@ -1296,7 +1296,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
 
 ## 9. Wire format (snapshot.js, DESIGN §8.2)
 
-- `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, dps?, boss?, down?, elem? }`.
+- `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, dps?, boss?, down?, elem?, stand?, standCut? }`.
   `sp/spMax` show remaining duration/ammo as a draining bar while a timed skill is active (ammo: `ammoLeft / ammoMax`, the
   activation's real total — 拉特兰's and 逃犯引渡手续's extra bullets included, community report #35). Units in DIE state stay 0.8 s.
   Active finite zero-SP duration skills display `timeLeft/duration` using `duration` as `spMax`; after end they show
@@ -1309,6 +1309,19 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   knocked-out operator's tile, §1; `row, col` = the tile it lies on and comes back on, `unit.body`); `elem: [[id, element, fill,
   cooldownEnd, cooldown]]` (only when non-empty) = `elementView` of every unit with a gauge or a running 爆发冷却 (§3).
   `fieldMeta()` lists the knocked-out operators too (a client joining mid-battle shows them; DESIGN §18.3).
+  `stand: [[id, until]]` (only when non-empty) = the game time each enemy's attack recovery ends (`atkStandUntil`: it
+  stands for the rest of its attack clip, §1.2 `attackStand`) — enemies alive, deployed, visible, neither feared nor stunned;
+  display metadata the battle never reads (PR #381). When `until` falls between two snapshots the renderer holds the older
+  position until then and interpolates the rest of the interval (HP / SP keep the whole interval); a newer snapshot that
+  moved before `until` is interpolated linearly; while the newest snapshot still holds a stand nothing is extrapolated
+  (the next one confirms the move). A snapshot without the field interpolates over the whole interval, a teleport or a
+  redeploy still snaps first, and nothing is inferred from the attack animation. `standCut: [[id, at]]` (only when
+  non-empty) = the latest game time each enemy's recovery was cut or ignored (a displacement — 失衡 —, fear, a stun, hiding,
+  leaving the field), one per enemy: an interval whose newer snapshot carries a cut inside it is interpolated linearly even
+  when the older stand ended inside it too, and an older cut leaves a later stand alone. It covers the enemies listed in
+  `units` (the 0.8 s death window included), never a hidden or unlisted one. The newest snapshot showing a death, a stun
+  (freeze, sleep, 浮空 included) or a block is not extrapolated until a later snapshot shows it moving again; the
+  extrapolated velocity uses the same moving span as the interpolation (the stand is not in its denominator).
 - `drainEvents()` tuples: `['spawn', UnitInfo]` (first appearance), `['deploy', id]` (every (re)deploy and 【移动】 — the client plays the deploy and its interpolation snaps instead of sliding), `['atk', src, tgt, projKind]`
   (`none|arrow|bolt|bomb|lob|orb|drone|enemy|boomerang|droneBomb|chain|chainHeal`; a boomerang's way back has no event — the
   renderer flies it back to the thrower at `BOOMERANG_RETURN_SPEED`; an enemy's `profile.shot` may name another kind,

@@ -33,11 +33,25 @@ export class BattleEvents {
   }
 
   /**
+   * Record that an enemy's attack recovery (atkStandUntil) is cut or ignored now — snapshot `standCut`, display metadata
+   * (render/interp.js); never changes the attack's timing or state.
+   */
+  _cutAttackStand(unit) {
+    if (unit.side === 'enemy' && Number.isFinite(unit.atkStandUntil) && unit.atkStandUntil > this.time) {
+      unit.atkStandCutAt = this.time;
+    }
+  }
+
+  /**
    * Compact full snapshot of this field (DESIGN §8.2 b.snap), plus (only when non-empty):
    *   down: [[id, respawnAt, respawnTime, state, row, col]] — operators that left the field waiting to redeploy (isDown): the
    *         game time their respawn timer ends, its length (s), constants.js DOWN_STATE and the tile they lie on (and
    *         come back on: _layBody — where they fell, or their home);
    *   elem: [[id, element, fill, cooldownEnd, cooldown]] — the element gauge each unit shows (damage.js elementView).
+   *   stand: [[id, until]] — when each enemy's attack recovery ends (atkStandUntil; alive, deployed, visible, not
+   *         feared or stunned) — display metadata (render/interp.js holds the position until then);
+   *   standCut: [[id, at]] — the latest time each listed enemy's recovery was cut or ignored (_cutAttackStand), the
+   *         dying ones in their death window included.
    */
   snapshot() {
     const snap = {
@@ -60,13 +74,24 @@ export class BattleEvents {
       (down || (down = [])).push([u.id, r2(u.respawnAt), r2(Math.max(0, u.respawnAt - u.deathAt)), this._downState(u), ...this.restTile(u)]);
     }
     if (down) snap.down = down;
-    let elem = null;
+    let elem = null, stand = null, standCut = null;
+    let listed = null;   // the ids in snap.units, built for the first enemy with a cut to report
     for (const u of this.units) {
+      if (u.side === 'enemy' && u.atkStandCutAt >= 0) {
+        const cutAt = Math.round(u.atkStandCutAt * 1000) / 1000;
+        if (cutAt <= snap.t && (listed || (listed = new Set(snap.units.map((x) => x[0])))).has(u.id)) (standCut || (standCut = [])).push([u.id, cutAt]);
+      }
       if (!u.alive || !u.deployed || u.hidden) continue;
+      const until = Math.round(u.atkStandUntil * 1000) / 1000;
+      if (u.side === 'enemy' && !u.s.flags.fear && !u.s.flags.stun && Number.isFinite(until) && until > snap.t) {
+        (stand || (stand = [])).push([u.id, until]);
+      }
       const v = elementView(u, this.time);
       if (v) (elem || (elem = [])).push([u.id, v[0], v[1], v[2], v[3]]);
     }
     if (elem) snap.elem = elem;
+    if (stand) snap.stand = stand;
+    if (standCut) snap.standCut = standCut;
     return snap;
   }
 

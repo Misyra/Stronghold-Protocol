@@ -1028,6 +1028,36 @@ test('引星棘刺 S1 度算浪波: an alchemy unit on the lowest-HP ally: DEF +
   }
 });
 
+test('引星棘刺 S1 度算浪波: two alchemy units on one ally add their DEF (PRTS 备注 「效果均可叠加」, GitHub #388)', () => {
+  // two 引星棘刺 (a normal and an elite: +60 and +75) throw at the same lowest-HP ally; one shared buff key used to let the
+  // last unit's DEF replace the other's (+75 instead of +135) while both heals already landed
+  const [na, el] = pair('15');
+  const h = run({
+    defs: { chess: { t_low: ally('t_low', { stats: { def: 100 } }) } },
+    units: [entry(na, 'skchr_thorn2_1', { row: 10, col: 3 }), entry(el, 'skchr_thorn2_1', { row: 11, col: 3 }), { chessId: 't_low', row: 10, col: 5 }],
+    enemies: [],
+  });
+  const a = sel(h, na, 'skchr_thorn2_1'), b = sel(h, el, 'skchr_thorn2_1');
+  const low = h.unit('t_low');
+  h.step();
+  low.hp = low.s.maxHp * 0.3;
+  for (const u of [a, b]) u.skill.gainSp(1000);
+  h.runUntil(() => [a, b].every((u) => (u.mem.zones || []).some((z) => z.type === 'guard')), 10);
+  h.run(1.1);
+  const [za, zb] = [a, b].map((u) => u.mem.zones.find((z) => z.type === 'guard'));
+  assert.deepEqual([za.r, za.c, zb.r, zb.c], [10, 5, 10, 5], 'both on the lowest-HP ally');
+  assert.equal(low.s.def, 100 + bbOf(a).def + bbOf(b).def, '+60 +75');
+  assert.ok(low.hp > low.s.maxHp * 0.3, 'and they restore its HP');
+  // one unit runs out: the other's DEF stays
+  mute(h, a); mute(h, b);
+  h.run(Math.max(0, za.dur - za.t) + 0.6);
+  assert.ok(!a.mem.zones.includes(za) && b.mem.zones.includes(zb), 'the elite\'s unit (7 s) outlasts the normal one (6 s)');
+  assert.equal(low.s.def, 100 + bbOf(b).def, 'its DEF stays alone');
+  h.run(zb.dur);
+  assert.equal(low.s.def, 100, 'no DEF bonus afterwards');
+  done(h);
+});
+
 test('引星棘刺 S1 度算浪波 (AUTO): fires as soon as its SP is full, no enemy needed (GitHub #124)', () => {
   for (const id of pair('15')) {
     const h = run({

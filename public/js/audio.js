@@ -18,11 +18,14 @@
 //   schedule), so every client of a match hears the same one, a fight never switches track halfway through and the
 //   联防 that follows a 作战 keeps its round's track.
 // - 干员战斗语音 (`audio.voice`, user request): an operator says the official line of the moment it is in —
-//   行动出发 start, 行动开始 faceEnemy, 选中干员 select, 部署 place, 作战中1-4 skillN and the settlement's
-//   结算 result* (all battle-only; the 休整期 is silent). Voices are seconds long and a battle deploys eight
+//   行动出发 start, 行动开始 faceEnemy, 部署 place, 作战中1-4 skillN and the settlement's 结算 result* (battle-only),
+//   and 选中干员 select whenever the player taps an operator — in the prep, the shop and the hand too (the owner's
+//   request of 2026-10-08 「添加一下干员点击上去的语气一样的语音」, which lifts 2026-10-03's 「整备阶段不需要干员语音」 for
+//   this line only). Voices are seconds long and a battle deploys eight
 //   operators, then fires dozens of skills, so they run on their own channel (own gain, settings 干员语音) through
 //   VoiceGate: one line at a time, a global gap, a per-unit per-slot cooldown, and a higher-priority line taking the
-//   channel over — the official scheduling of `audio_data.json battleVoice.voiceTypeOptions`.
+//   channel over — the official scheduling of `audio_data.json battleVoice.voiceTypeOptions` (a tap's 选中 line skips
+//   the gap: VOICE_TAP_SLOTS).
 // - Battle SFX from `b.ev` tuples (`handleBattleEvents`): at most MAX_VOICES concurrent unit sounds, at most
 //   MAX_PER_URL overlapping copies of one sound (the official banks' maxSoundAllowed 2), a per-unit cooldown and a
 //   per-URL minimum gap (SfxLimiter), so a 60-unit fight stays listenable.
@@ -248,9 +251,9 @@ export function unitSoundPlays(mix, roll) {
 /**
  * Voice priorities — the official battle voice types (`audio_data.json battleVoice.voiceTypeOptions`) mapped onto the
  * manifest's slots: BATTLE_START 100, BATTLE_FACE_ENEMY 90, SKILL_ACTIVE 70, PASSIVE_IMP 60, PASSIVE_NOR 50,
- * PLACE_CHAR 20, FOCUS_CHAR 10. The settlement lines are no battle voice of the official scheduler: they sit at 85,
- * above 作战中 (70) but below 接敌 (90), so a battle's last word is never cut off by an ordinary line. The four prep
- * slots (部署 / 编入队伍 / 任命队长 / 干员报到) keep their levels although the 休整期 is silent (see the header).
+ * PLACE_CHAR 20, FOCUS_CHAR 10 (选中干员). The settlement lines are no battle voice of the official scheduler: they sit at
+ * 85, above 作战中 (70) but below 接敌 (90), so a battle's last word is never cut off by an ordinary line. The three
+ * prep-only slots (编入队伍 / 任命队长 / 干员报到) keep their levels although nothing plays them (see the header).
  */
 export const VOICE_PRIORITY = Object.freeze({
   start: 100, faceEnemy: 90,
@@ -259,13 +262,24 @@ export const VOICE_PRIORITY = Object.freeze({
   gacha: 60, squadFirst: 45, squad: 30, place: 20, select: 10,
 });
 
-/** Per-unit per-slot cooldowns (ms): the official 10 s of the 作战中 (passive skill) lines, 3 s between 接敌 lines. */
+/**
+ * Per-unit per-slot cooldowns (ms): the official 10 s of the 作战中 (passive skill) lines, 3 s between 接敌 lines. 选中干员
+ * has none — official FOCUS_CHAR `cooldown: 0` (it was 1.5 s until 0.2.2, when a tap in the prep made it audible).
+ */
 export const VOICE_COOLDOWN_MS = Object.freeze({
   start: 0, faceEnemy: 3000,
   skill1: 10000, skill2: 10000, skill3: 10000, skill4: 10000,
   resultFour: 0, resultThree: 0, resultTwo: 0, resultLose: 0,
-  gacha: 0, squadFirst: 0, squad: 0, place: 0, select: 1500,
+  gacha: 0, squadFirst: 0, squad: 0, place: 0, select: 0,
 });
+
+/**
+ * The slot a player's tap asks for: 选中干员 (official FOCUS_CHAR — priority 10, cooldown 0, `overlapIfSamePriority:
+ * true`). The battle lines are timed by the gate's global gap; a tap is the player's own request and answers at once:
+ * on an idle channel it always plays (no gap, no cooldown), a newer tap replaces the 选中 line still on air (the same
+ * priority, overlapIfSamePriority), and it still never interrupts a higher-priority line (部署, 作战中, 开战 …).
+ */
+export const VOICE_TAP_SLOTS = Object.freeze(['select']);
 
 /**
  * The settlement slot of a finished 作战: 完美作战 ⇒ 3星结束行动 (绝境 / 终极 ⇒ 完成高难行动 instead), a leaked enemy
@@ -365,7 +379,8 @@ export class SfxLimiter {
 
 /**
  * Voice gate: one line at a time, a global gap between two lines, a per-unit per-slot cooldown, and takeover by a
- * clearly more important line (the caller fades the playing one out first). Pure — the clock is passed in.
+ * clearly more important line (the caller fades the playing one out first). A tap's 选中干员 skips the gap and the
+ * cooldown on an idle channel and replaces a 选中 line on air (VOICE_TAP_SLOTS). Pure — the clock is passed in.
  */
 export class VoiceGate {
   /** @param {{ gapMs?: number, preemptMargin?: number, maxUnits?: number }} [o] */
@@ -396,10 +411,13 @@ export class VoiceGate {
    */
   request(slot, unitKey, now) {
     const pri = VOICE_PRIORITY[slot] ?? 0;
+    const tap = VOICE_TAP_SLOTS.includes(slot);
     if (this.playing) {
+      if (tap && this.playing.slot === slot) return 'preempt';   // a newer tap replaces the 选中 line on air
       if (pri < this.playing.pri + this.preemptMargin) return 'drop';
       return 'preempt';                       // a clearly more important line takes the channel
     }
+    if (tap) return 'play';                   // a tap on an idle channel always answers (FOCUS_CHAR cooldown 0, no gap)
     if (now - this.lastAt < this.gapMs) return 'drop';
     if (unitKey != null && now < (this.unitUntil.get(`${unitKey}:${slot}`) || 0)) return 'drop';
     return 'play';
@@ -824,8 +842,9 @@ export class AudioManager {
 
   /**
    * Play an operator's battle line (`audio.voice[charId][slot]`; a slot with several lines draws one at random).
-   * Only in battle: every caller is a running battle's own event stream or its settlement (user request — the 休整期
-   * is silent). The line must pass VoiceGate: one at a time, a global gap, a per-unit cooldown, higher priority wins.
+   * Every caller is a running battle's own event stream or its settlement, except 选中干员: the detail panel opening on
+   * an operator the player tapped, in every phase (ui/detailPanel.js `voice`; the owner's request of 2026-10-08). The
+   * line must pass VoiceGate: one at a time, a global gap, a per-unit cooldown, higher priority wins.
    * @param {string} charId e.g. 'char_263_skadi'
    * @param {'start'|'faceEnemy'|'select'|'place'|'skill1'|'skill2'|'skill3'|'skill4'|'squad'|'squadFirst'
    *   |'resultFour'|'resultThree'|'resultTwo'|'resultLose'|'gacha'} slot

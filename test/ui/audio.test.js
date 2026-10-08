@@ -252,6 +252,54 @@ describe('operator battle voice', () => {
     assert.equal(g2.request('skill1', 'u1', 10001), 'play', 'a new battle inherits no cooldown');
   });
 
+  test('选中干员 on every tap (0.2.2; official FOCUS_CHAR: priority 10, cooldown 0): the prep speaks too, an idle channel always answers, a newer tap replaces it, a higher line is never interrupted', async () => {
+    // the owner's request of 2026-10-08 「添加一下干员点击上去的语气一样的语音」: the game screen lets the detail panel speak
+    // in every phase — a tap on a piece in the field / hand, a shop card — not only while a battle runs
+    const game = readFileSync(path.join(ROOT, 'public/js/screens/game.js'), 'utf8');
+    assert.match(game, /<\$\{DetailPanel\}[^`]*?voice=\$\{true\}/, 'the detail panel speaks outside battle too');
+    assert.doesNotMatch(game, /voice=\$\{combat\}/);
+    assert.equal(VOICE_PRIORITY.select, 10, 'official FOCUS_CHAR priority');
+    assert.equal(VOICE_COOLDOWN_MS.select, 0, 'official FOCUS_CHAR cooldown 0');
+    const g = new VoiceGate();                     // the real 1.2 s global gap
+    assert.equal(g.request('select', null, 0), 'play');
+    g.start('select', null, 0); g.release();       // tap A, its line ended
+    assert.equal(g.request('select', null, 300), 'play', 'an idle channel: the global gap never drops a tap');
+    assert.equal(g.request('place', 'u1', 300), 'drop', 'the battle lines keep the gap');
+    g.start('select', 'u1', 300); g.release();
+    assert.equal(g.request('select', 'u1', 400), 'play', 'no cooldown either, keyed or not');
+    g.start('select', null, 400);
+    assert.equal(g.request('select', null, 600), 'preempt', 'a newer tap replaces the 选中 line on air (overlapIfSamePriority)');
+    g.start('select', null, 600);
+    assert.equal(g.request('place', 'u2', 700), 'preempt', '部署 (20) still takes the channel from 选中 (10)');
+    g.start('place', 'u2', 700);
+    assert.equal(g.request('select', null, 800), 'drop', 'a tap never interrupts a higher-priority line');
+    g.reset();
+    g.start('skill1', 'u3', 0);
+    assert.equal(g.request('select', null, 100), 'drop', '… nor a 作战中 line');
+    g.reset();
+    // the manager: two taps 0.3 s apart in the prep (no battle, the real gate) both speak, the second replacing the first
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    try {
+      const vm = { audio: { sfx: { ui: {}, battle: {}, units: {} }, voice: { char_a: { select: '/v/a_sel.mp3' }, char_b: { select: '/v/b_sel.mp3' } } } };
+      const a = new AudioManager({ win: fw.win, getManifest: () => vm });
+      a.install();
+      fw.fire('pointerdown');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voice('char_a', 'select'), true, 'tap A');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voiceNode?.url, '/v/a_sel.mp3');
+      assert.equal(a.voice('char_b', 'select'), true, 'tap B while A still speaks');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(a.voiceNode?.url, '/v/b_sel.mp3', 'B replaced A');
+      a._stopVoice();                              // B ended
+      assert.equal(a.voice('char_a', 'select'), true, 'tap A again right after: no gap');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   test('AudioManager.voice: manifest slots (a drawn array), the gate, and the battle events that drive them', async () => {
     const fw = fakeWindow();
     const origFetch = globalThis.fetch;

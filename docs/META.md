@@ -276,7 +276,9 @@ its enemies; an exposure model (time on each tile × DPS against the round's arm
 unit's cover is the range it is deployed with under the player's loadout, `rangeRec` = `attackRangeGrid`, the grid the
 server's `summonRange` and the card use —, blocker hold time, anti-air only on flying routes) is maximized greedily
 (blockers, then damage dealers, then healers) over the server's deploy map (no 深水区, PlayerState.deployMap); a
-tactician's 援军 goes on a tile of the tactician's attack range (`PlayerState.summonRange`, the server's own rule; player
+blocker whose range is its own tile only (range 0-1, the one grid (0,0): 角峰, 古米, 泡泡, 折桠, 菲莱, 蛇屠箱, 塞雷娅, 余) takes a free
+tile of the enemy road first — it blocks and hits nothing off it — and only when the road has none free any legal tile (0.2.2, PR #339 by
+@IceCodeNew); a tactician's 援军 goes on a tile of the tactician's attack range (`PlayerState.summonRange`, the server's own rule; player
 report #9 after 0.1.0), and a tile the server's `g.move` refuses is skipped for the next best one (the planner reads
 `board.js legalTiles` on the deploy map; `g.move` is the judge). Boss
 rounds: the player's boss-field template (`Match.bossWaves`) is mapped onto the own board (rows −7, the right player

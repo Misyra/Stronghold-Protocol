@@ -81,6 +81,7 @@ describe('render engine in headless Chrome', { skip }, () => {
       st.prepMapChars = [{ id: -1, uid: -1, kind: 'token', side: 'ally', ownerId: 'p_0',
         defId: 'char_605_cmedic', name: '预备干员-医疗', spine: 'char_605_cmedic', avatar: 'char_605_cmedic',
         area: 'board', x: 2, y: 10, dir: 'RIGHT', facing: 1, maxHp: 1202 }];
+      window.__touchPrepChar = st.prepMapChars[0];
       v.setPrep(st, { editable: true });
       const medic = v.debug.views.get('m:-1');
       const p = v.tileScreen(10, 2), rect = v.debug.app.view.getBoundingClientRect();
@@ -105,12 +106,27 @@ describe('render engine in headless Chrome', { skip }, () => {
       v.setPrep(st, { editable: true });
       return !v.debug.views.has('m:-1');
     });
+    const fallback = await page.evaluate(async () => {
+      const { createFallbackView } = await import('/js/ui/fallbackField.js');
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;width:800px;height:600px';
+      document.body.appendChild(host);
+      const ff = createFallbackView(host, { data: { get: () => null, lookup: () => null } });
+      ff.setPrep({ board: [], hand: [], temp: [], prepMapChars: [window.__touchPrepChar] }, { editable: true });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const el = host.querySelector('.ff-piece--map-char');
+      const out = { exists: !!el, name: el?.title, pointerEvents: el ? getComputedStyle(el).pointerEvents : null,
+        movableId: el?.dataset.uid ?? null };
+      ff.destroy(); host.remove();
+      return out;
+    });
     await page.close();
     assert.deepEqual(problems, []);
     assert.deepEqual(first, { exists: true, id: 'char_605_cmedic', x: 2, y: 10,
       draggable: false });
     assert.deepEqual(boss, [18, 3, 'LEFT']);
     assert.equal(removed, true);
+    assert.deepEqual(fallback, { exists: true, name: '预备干员-医疗', pointerEvents: 'none', movableId: null });
   });
 
   test('fx gallery: every sim fx kind, projectile and status renders without errors; board art in use', async () => {

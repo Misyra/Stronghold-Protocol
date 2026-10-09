@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/package.mjs — the player release zips (docs/operations/DEPLOY.md §7; README「方式一」says which one to pick).
+// tools/package.mjs — the player release zips (docs/operations/PACKAGING.md; README「方式一」says which one to pick).
 //
 //   npm run package        → Stronghold-Protocol-v<version>.zip         full: what runs the game + the game art
 //   npm run package:lite   → Stronghold-Protocol-v<version>-lite.zip    the same without the art (`npm run setup`
@@ -17,7 +17,7 @@
 // the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, and
 // what setup starts: tools/local-extract, crop-board-atlas), the research tables the Node server (server/sim/
 // nodeData.js fallback) and fetch-assets read, package.json / package-lock.json, LICENSE / NOTICE.md /
-// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/guides/PLAYING.md and docs/operations/DEPLOY.md. `npm ci --omit=dev` in the
+// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/guides/PLAYING.md and the runtime operations guides (PLAYER_DOCS). `npm ci --omit=dev` in the
 // stage adds the production node_modules and (postinstall) public/vendor. The full zip adds the git-ignored art: the
 // files data/assets.json lists, public/fonts, and the local-client extraction (public/assets/local/,
 // data/local-assets.json) when present — nothing else on disk, so art the data no longer lists (焰狐龙梓兰, left out of
@@ -67,13 +67,13 @@ import {
 } from '../server/update.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** The one folder inside both zips (DEPLOY §1.1: "解压后把里面的 Stronghold-Protocol 文件夹放到…"). */
+/** The one folder inside both zips (HOME_SERVER §1.1: "解压后把里面的 Stronghold-Protocol 文件夹放到…"). */
 export const FOLDER = 'Stronghold-Protocol';
 
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md'];
+export const PLAYER_DOCS = ['docs/guides/PLAYING.md', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `docs/operations/${name}.md`)];
 /** Research tables read at run time: server/sim/nodeData.js (the Node sim's fallback) and tools/fetch-assets.mjs. */
 export const RUNTIME_RESEARCH = ['docs/research/03-operators.json', 'docs/research/05-enemies.json', 'docs/research/05-maps.json', 'docs/research/07-assets.json'];
 /** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/operations/WINDOWS.md). */

@@ -1,4 +1,4 @@
-// tools/package-update.mjs — what `node tools/package.mjs --update --from <base>[,<base>…]` (docs/operations/DEPLOY.md §7) needs
+// tools/package-update.mjs — what `node tools/package.mjs --update --from <base>[,<base>…]` (docs/operations/PACKAGING.md) needs
 // besides the stage: read an earlier release — its full zip, or the folder that zip was extracted to — into
 // {path → size + sha256}, compare the new full stage with every base, and write MANIFEST.json / UPDATE.json.
 // tools/package.mjs builds the stage, copies what ships, checks and zips it; server/update.js finishes the update on

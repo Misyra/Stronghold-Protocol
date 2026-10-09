@@ -13,14 +13,14 @@ import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
 export const VOICE_LANGS = Object.freeze(['cn', 'jp']);
 
 /** keys: the in-match shortcuts' key map (ui/gameLogic/shortcuts.js; settings → 快捷键). voiceLang: VOICE_LANGS. */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', muted: false, damageNumbers: true, quality: 'high', preload: false, preloadOptional: true, keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', muted: false, damageNumbers: true, quality: 'high', preload: false, preloadOptional: true, preloadAllVoices: false, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 
 /**
  * Sanitize persisted settings.
  * @param {any} raw
  * @returns {{ bgm: number, sfx: number, voice: number, voiceLang: 'cn'|'jp', muted: boolean, damageNumbers: boolean, quality: 'high'|'medium'|'low',
- *   preload: boolean, preloadOptional: boolean, keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
+ *   preload: boolean, preloadOptional: boolean, preloadAllVoices: boolean, keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
  */
 export function sanitizeSettings(raw) {
   const r = isObj(raw) ? raw : {};
@@ -35,6 +35,7 @@ export function sanitizeSettings(raw) {
     quality: QUALITIES.includes(r.quality) ? r.quality : DEFAULT_SETTINGS.quality,
     preload: r.preload === true,
     preloadOptional: typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadOptional,
+    preloadAllVoices: r.preloadAllVoices === true,
     keys: sanitizeHotkeys(r.keys),
   };
 }

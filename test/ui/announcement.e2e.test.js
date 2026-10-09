@@ -16,7 +16,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   const notice = { enabled: true, title: '维护公告', text: '服务器将于 17:00 维护，请提前结束模拟。',
     expiresAt: new Date(Date.now() + 120_000).toISOString() };
   await writeFile(filePath, JSON.stringify(notice));
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementFile: filePath });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'file', announcementFile: filePath });
   t.after(() => srv.close());
   const puppeteer = (await import('puppeteer-core')).default;
   const c = new Client(puppeteer, srv.url, 'announcement', { prefix: 'announcement' });
@@ -50,7 +50,8 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.keyboard.press('Space');
   await c.page.waitForSelector('.announcement', { hidden: true });
   assert.equal((await c.st()).ready, false, 'Space on close must not also ready the player');
-  await c.page.reload({ waitUntil: 'networkidle0' });
+  // Resource preloading continues in the background; the restored match below is the readiness signal.
+  await c.page.reload({ waitUntil: 'domcontentloaded' });
   await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
   await sleep(200);
   assert.equal(await c.page.$('.announcement'), null, 'the dismissed revision stays dismissed after reload');

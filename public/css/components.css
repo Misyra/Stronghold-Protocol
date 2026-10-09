@@ -1122,3 +1122,11 @@
 @media (pointer: coarse) {
   .resource-choice, .resource-modal .btn, .resource-manager__maintenance .res-link { min-height: 44px; }
 }
+
+.resource-cache { padding: .18rem; border: 1px solid var(--line-2); }
+.resource-cache h3 { margin: 0 0 .06rem; font-size: .19rem; color: var(--text-hi); }
+.resource-cache p, .resource-manager__voice p { font-size: .14rem; color: var(--text-dim); }
+.resource-cache .res-actions { margin-top: .14rem; }
+.resource-archive__result { margin-top: .12rem; padding: .12rem; background: rgba(23, 249, 183, .05); overflow-wrap: anywhere; }
+.resource-archive__result.is-error, .resource-manager__failures { color: var(--amber); }
+.resource-manager__failures ul { margin: .08rem 0; padding-left: .2rem; overflow-wrap: anywhere; }

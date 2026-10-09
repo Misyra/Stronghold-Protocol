@@ -85,10 +85,10 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
  *             rawPath: string, query: string) => Promise<void>,
  *           health: Parameters<typeof healthReport>[0], log: object,
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
- *           readAnnouncement?: () => Promise<object | null> }} deps
+ *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null } }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowStatus = null, readAnnouncement = null }) {
+export function createRequestHandler({ serveStatic, health, log, allowStatus = null, readAnnouncement = null, announcementSource = null }) {
   const healthBody = createHealthBody(health);
   const methodAllowed = (req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') return true;
@@ -150,7 +150,7 @@ export function createRequestHandler({ serveStatic, health, log, allowStatus = n
         sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' });
         return;
       }
-      sendJson(req, res, 200, { announcement: await readAnnouncement(), serverTime: Date.now() });
+      sendJson(req, res, 200, { announcement: await readAnnouncement(), serverTime: Date.now(), source: announcementSource });
       return;
     }
     if (req.method === 'OPTIONS' && /^\/(?:assets|fonts|media)\/|^\/_v\/[a-f0-9]{16}\/(?:assets|fonts|media)\//.test(parts.rawPath)) {

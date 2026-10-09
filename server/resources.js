@@ -264,9 +264,10 @@ export function localPathFor(url, publicDir, cdnBase = '') {
 /**
  * The served resource manifest, built from the data directory and cached until one of its sources changes.
  * @param {{ dataDir: string, publicDir: string, cdnBase?: string, rewrite?: (v: any) => any,
- *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, log?: any }} opts
+ *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, log?: any,
+ *           assetsManifest?: { hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} opts
  */
-export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p), log = null } = {}) {
+export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p), log = null, assetsManifest = null } = {}) {
   /** @type {{ key: string, body: Buffer, gzip: Buffer, mtimeMs: number, manifest: any } | null} */
   let cache = null;
   let pending = null;
@@ -285,8 +286,8 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   }
 
   /** File sizes of the files present on disk (bounded concurrency: ~4 000 stats of a real install). */
-  async function measure(files, real) {
-    const sizes = new Map();
+  async function measure(files, real, publishedSizes) {
+    const sizes = new Map(publishedSizes);
     let next = 0;
     const lanes = Math.min(4, files.length);
     await Promise.all(Array.from({ length: lanes }, async () => {
@@ -297,7 +298,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
           const stat = await statFile(abs);
           if (!stat.isFile()) continue;
           const f = files[i];
-          sizes.set(f.url, stat.size);
+          if (!sizes.has(f.url)) sizes.set(f.url, stat.size);
           const canonical = pathKey(f.url, cdnBase);
           if (stat.size <= MAX_FILE_BYTES && !real.has(canonical)) {
             const signature = abs + ':' + stat.size + ':' + stat.mtimeMs;
@@ -336,7 +337,22 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     if (cache && cache.key === key) return cache;
     const t0 = Date.now();
     const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null, cdnBase);
-    for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES) {
+    const publishedSizes = new Map();
+    if (cdnBase && assetsManifest?.preload) {
+      const published = new Map(Object.entries(assetsManifest.preload).map(([p, entry]) =>
+        [pathKey(p), { ...entry, version: assetsManifest.hashes[p] }]));
+      for (const f of collected) {
+        const entry = published.get(pathKey(f.url, cdnBase));
+        // The URL must name exactly the bytes the publisher fingerprinted, including its per-file version.
+        if (entry && f.url.startsWith(cdnBase + '/') && /^[a-f0-9]{12}$/.test(entry.hash)
+          && /^[a-f0-9]{16}$/.test(entry.version) && f.url.endsWith('?v=' + entry.version)
+          && Number.isSafeInteger(entry.size) && entry.size >= 0) {
+          real.set(pathKey(f.url, cdnBase), entry.hash);
+          publishedSizes.set(f.url, entry.size);
+        }
+      }
+    }
+    for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES && !publishedSizes.has(tile.url)) {
       real.set(pathKey(tile.url, cdnBase), crypto.createHash('sha1').update(await fsp.readFile(tile.abs)).digest('hex').slice(0, 12));
     }
     const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url, cdnBase)));
@@ -344,7 +360,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       web: assetsDoc && assetsDoc.hash ? assetsDoc.hash : assets ? `m${Math.floor(assets.mtimeMs)}` : 'none',
       local: localDoc && localDoc.hash ? localDoc.hash : local ? `l${Math.floor(local.mtimeMs)}` : 'none',
     };
-    const sizes = await measure(files, real);
+    const sizes = await measure(files, real, publishedSizes);
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);
     // CSS/JSON can be rewritten by the serving host. Their index fingerprint includes the URL namespace, but is
     // deliberately not a raw-byte digest: a CDN host may rewrite these small files differently from this game host.

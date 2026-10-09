@@ -214,7 +214,7 @@ HEAD /api/announcement
 
 没有公告写入 API。POST / PUT / DELETE / OPTIONS 等方法返回 405、`Allow: GET, HEAD`，响应体为 HTML 错误页。
 
-管理员通过 `SP_ANNOUNCEMENT_FILE` 指定本地配置文件，默认项目根目录 `announcement.json`；相对路径以项目根目录为基准。文件最多 16 KiB，读取缓存默认 1 秒，修改后无需重启。
+默认来源为管理面板中央 feed：`SP_PORTAL_URL` 默认 `https://game.rainya.me`，`SP_SITE_ID` 默认西安站 `site-ad797aa8`；显式完整 `SP_ANNOUNCEMENT_URL` 优先。空 URL 或已有本地文件不会切换来源。响应额外包含 `source: { mode, siteId }`，便于核对当前配置；它不表示上游读取成功。仅显式设置 `SP_ANNOUNCEMENT_SOURCE=file` 才通过 `SP_ANNOUNCEMENT_FILE` 热读本地配置，默认项目根目录 `announcement.json`；文件最多 16 KiB，读取缓存默认 1 秒。部署说明统一见 [ANNOUNCEMENTS.md](../operations/ANNOUNCEMENTS.md)。
 
 ```json
 {
@@ -227,7 +227,7 @@ HEAD /api/announcement
 
 开启公告须设置 `enabled: true`、非空正文（最多 2000 个 JS 字符单位）和带明确时区的 ISO 截止时间。标题省略时使用“维护公告”，显式设置时须非空且不超过 80 个 JS 字符单位；标题和正文会去除首尾空白。`enabled: false` 关闭公告。本地配置文件不会直接公开，只返回上述公开字段。
 
-也可以不使用本地文件，改由运维面板统一管理：设置 `SP_ANNOUNCEMENT_URL`（可选 `SP_ANNOUNCEMENT_POLL_MS`，默认 10000，钳制在 3 秒到 10 分钟）后，服务器按间隔拉取该地址的公告配置，响应体格式与本节文件格式完全一致（`{ "enabled", "title", "text", "expiresAt" }`）。拉取失败、响应非法或超过 64 KiB 时保留上一次成功取得的公告，显式 `enabled: false` 立即关闭公告，到期拦截不变；进程重启后重新拉取。设置该变量时本地文件不再参与。
+中央模式通过 `SP_ANNOUNCEMENT_URL` 或面板地址与站点 ID 组合读取公开 feed（可选 `SP_ANNOUNCEMENT_POLL_MS`，默认 10000，钳制在 3 秒到 10 分钟）后，服务器按间隔拉取该地址的公告配置，响应体格式与本节文件格式完全一致（`{ "enabled", "title", "text", "expiresAt" }`）。拉取失败、响应非法或超过 64 KiB 时保留上一次成功取得的公告，显式 `enabled: false` 立即关闭公告，到期拦截不变；进程重启后重新拉取。中央模式下本地文件不参与，故障时也不会回退本地；切换来源需要重启游戏进程。
 
 ## 5. 四人同站匹配（WebSocket）
 

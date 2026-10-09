@@ -40,6 +40,7 @@
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
+import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from './stateTransport.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
@@ -66,9 +67,9 @@ export const NET_DEFAULTS = Object.freeze({
  * edits), room.ownership
  * (a ≤ 160-id list, the same way), room.diy (≤ 8 自选 picks checked against the data, the same way) and room.spectate
  * (taking a spectator seat in a running match resends its state like a watcher's g.watch — server/lobby.js spectate)
- * and matchmaking.join (this fork's alliance queue).
+ * and matchmaking.join (this fork's alliance queue). state.resync requests a full recovery through the same limits.
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.spectate']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.spectate', 'state.resync']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, POLICY: 1008, SHUTDOWN: 1001 });
@@ -355,13 +356,23 @@ export const isDroppable = (msg) => !!msg && msg.t === 'b.snap';
  * Encode and send one message to a socket. Never throws.
  * @param {import('ws').WebSocket | null | undefined} ws
  * @param {object} msg
+ * @param {string | null} [encoded] trusted encoding of this exact message
  * @returns {boolean}
  */
-export function send(ws, msg) {
-  const data = encode(msg);
-  if (data == null) return false;
+export function send(ws, msg, encoded = null) {
+  const data = encoded ?? encode(msg);
+  if (data == null || !ws || ws.readyState !== WS_OPEN) return false;
   const kind = msg && typeof msg === 'object' && typeof msg.t === 'string' ? msg.t : null;
-  return sendRaw(ws, data, { droppable: isDroppable(msg), kind });
+  try {
+    const frame = prepareStateFrame(ws, msg, data);
+    // Preserve logical message types in wireStats; count the actual full/delta frame length.
+    const queued = sendRaw(ws, frame.data, { droppable: isDroppable(msg), kind });
+    if (queued) {
+      frame.commit();
+      if (kind === 'm.result' || kind === 'room.closed') resetStateDelta(ws);
+    }
+    return queued;
+  } catch { return false; }
 }
 
 /**
@@ -370,9 +381,9 @@ export function send(ws, msg) {
  * @param {object} msg
  * @returns {boolean}
  */
-export function sendSession(session, msg) {
+export function sendSession(session, msg, encoded = null) {
   if (!session || !session.connected) return false;
-  return send(session.ws, msg);
+  return send(session.ws, msg, encoded);
 }
 
 /** @param {unknown} rid */
@@ -736,6 +747,7 @@ export class Network {
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
+    negotiateStateDelta(conn.ws, msg.stateDelta);
 
     let extra = null;
     try { extra = this.handler.welcomeInfo?.() ?? null; } catch (e) { this.log.error('[net] welcomeInfo crashed', e); }

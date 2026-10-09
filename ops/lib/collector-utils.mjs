@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 const formatters = new Map();
 export function dayKey(date = new Date(), timeZone = 'Asia/Shanghai') {
   let formatter = formatters.get(timeZone);
@@ -143,8 +144,8 @@ export function aggregateSeries(samples, from) {
 
 // Checkpoints are byte positions immediately after complete lines. Unprocessed bytes stay on disk,
 // so neither a line budget nor a partial UTF-8 sequence can duplicate data or grow a carried buffer.
-export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes = 4 * 1024 * 1024 } = {}) {
-  const fd = fs.openSync(file, 'r');
+export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes = 4 * 1024 * 1024, fd: suppliedFd } = {}) {
+  const fd = suppliedFd ?? fs.openSync(file, 'r');
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) throw Object.assign(new Error('Log must be a regular file'), { code: 'LOG_READ_FAILED' });
@@ -169,6 +170,65 @@ export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes
     if (!start && read === maxBytes) {
       throw Object.assign(new Error('Log line exceeds read budget'), { code: 'LOG_LINE_TOO_LONG' });
     }
-    return { lines, offset: offset + start, ino: stat.ino };
-  } finally { fs.closeSync(fd); }
+    return { lines, offset: offset + start, ino: stat.ino, inoKey: String(fs.fstatSync(fd, { bigint: true }).ino), backlogBytes: Math.max(0, stat.size - offset - start) };
+  } finally { if (suppliedFd == null) fs.closeSync(fd); }
+}
+
+// Keep the old inode alive across nginx rename/reopen. On restart, locate an uncompressed
+// rotated file by inode before moving to the active log; never silently abandon unread bytes.
+export class LogReader {
+  constructor(file) { this.file = file; this.fd = null; this.drained = new Set(); }
+  open(checkpoint) {
+    let file = this.file;
+    const current = fs.statSync(file);
+    if (checkpoint.ino && checkpoint.ino !== current.ino) {
+      const dir = path.dirname(this.file);
+      const base = path.basename(this.file);
+      let found = false;
+      let names = []; try { names = fs.readdirSync(dir); } catch {}
+      for (const name of names) {
+        if ((!name.startsWith(base + '.') && !name.startsWith(base + '-')) || name.endsWith('.gz')) continue;
+        const candidate = path.join(dir, name);
+        try { const stat = fs.statSync(candidate); if (stat.isFile() && stat.ino === checkpoint.ino) { file = candidate; found = true; break; } } catch {}
+      }
+      this.gap = !found;
+    }
+    this.fd = fs.openSync(file, 'r');
+  }
+  read(checkpoint = {}, options = {}) {
+    if (this.fd == null) this.open(checkpoint);
+    let stat = fs.fstatSync(this.fd), current = fs.statSync(this.file);
+    if (stat.ino !== current.ino && checkpoint.ino === stat.ino && checkpoint.offset >= stat.size) {
+      const dir = path.dirname(this.file), base = path.basename(this.file);
+      let rotations = [];
+      try {
+        rotations = fs.readdirSync(dir).filter(name => (name.startsWith(base + '.') || name.startsWith(base + '-')) && !name.endsWith('.gz'))
+          .map(name => ({ name, file: path.join(dir, name), stat: fs.statSync(path.join(dir, name)) })).filter(item => item.stat.isFile());
+      } catch {}
+      const old = rotations.find(item => item.stat.ino === stat.ino);
+      this.drained.add(stat.ino); rotations = rotations.filter(item => !this.drained.has(item.stat.ino));
+      let next;
+      const suffix = old?.name.slice(base.length + 1);
+      if (suffix && /^\d{1,4}$/.test(suffix)) {
+        const number = Number(suffix);
+        if (number > 1) {
+          next = rotations.filter(item => /^\d{1,4}$/.test(item.name.slice(base.length + 1)) && Number(item.name.slice(base.length + 1)) < number)
+            .sort((a, b) => Number(b.name.slice(base.length + 1)) - Number(a.name.slice(base.length + 1)))[0];
+          if (!next || Number(next.name.slice(base.length + 1)) !== number - 1) this.gap = true;
+        }
+      } else if (suffix && /^\d{4}[-_.]?\d{2}[-_.]?\d{2}/.test(suffix)) {
+        next = rotations.filter(item => item.name.slice(base.length + 1) > suffix).sort((a, b) => a.name.localeCompare(b.name))[0];
+      } else {
+        next = rotations.filter(item => item.stat.ino !== stat.ino && (item.stat.mtimeMs > stat.mtimeMs || old && item.stat.mtimeMs === stat.mtimeMs && item.name > old.name))
+          .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.name.localeCompare(b.name))[0];
+      }
+      this.close(); this.fd = fs.openSync(next?.file || this.file, 'r'); stat = fs.fstatSync(this.fd);
+    }
+    const result = readLogBatch(this.file, checkpoint, { ...options, fd: this.fd });
+    current = fs.statSync(this.file);
+    if (current.ino !== result.ino) result.backlogBytes += current.size;
+    result.gap = this.gap === true; this.gap = false;
+    return result;
+  }
+  close() { if (this.fd != null) fs.closeSync(this.fd); this.fd = null; }
 }

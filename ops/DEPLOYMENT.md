@@ -180,12 +180,20 @@ SP_ANNOUNCEMENT_URL=https://<中间页域名>/api/announce/v1/<站id>
 
 ### 7. 探针的资源占用与限额
 
-探针刻意做得很轻：collector 默认 15 秒采样一轮（`MON_INTERVAL_MS`），单轮本地工作只有几毫秒（读 /proc 若干小文件 + 增量解析日志 + 一次本地 healthz），常态 CPU 占用远低于 1% 单核。在此之上还有四层硬性保证，最坏情况也挤占不到游戏：
+探针刻意做得很轻：collector 默认 15 秒采样一轮（`MON_INTERVAL_MS`），单轮本地工作只有几毫秒（读 /proc 若干小文件 + 增量解析日志 + 一次本地 healthz），常态 CPU 占用远低于 1% 单核。在此之上还有四层硬性保证，限制异常情况下的资源占用：
 
-1. **systemd `CPUQuota=10%`**——两个 unit 各自硬性封顶单核 10%，超限只会拖慢探针自己的采样，不会抢游戏的 CPU；另有 `Nice=10` + `CPUSchedulingPolicy=batch`（CPU 让路）、`IOSchedulingClass=idle`（磁盘让路）、`MemoryMax`（内存护栏，collector 512M / agent 384M）。
+1. **systemd `CPUQuota=10%`**——两个 unit 各自硬性封顶单核 10%，超限只会拖慢探针自己的采样，限制它们对游戏的 CPU 影响；另有 `Nice=10` + `CPUSchedulingPolicy=batch`（CPU 让路）、`IOSchedulingClass=idle`（磁盘让路）、`MemoryMax`（内存护栏，collector 512M / agent 384M）。
 2. **日志解析行数预算** `MON_LOG_MAX_LINES`（默认 10000 行/轮）——单轮最多解析这么多行，积压顺延到下一轮且字节守恒不丢行；单轮 CPU 因而有界。
 3. **进程 RSS 扫描降频**——全量 /proc 扫描每 15 轮一次，其余轮次只回读缓存的几个 pid。
-4. **慢轮自监控**——单轮本地工作超过 1 秒会在 journal 里告警（`journalctl -u sp-collector` 可见），正常永远到不了这个阈值。
+4. **慢轮自监控**——单轮本地工作超过 1 秒会在 journal 里告警（`journalctl -u sp-collector` 可见），异常积压或 IO 延迟可触发这个阈值。
+
+### 8. 集中历史保存与本次升级
+
+监控机器需要 Node.js >= 22.13，并在 portal.env 设置 PANEL_HISTORY_FILE=/var/lib/sp-portal/monitor-history.sqlite；新版 sp-portal.service 已有该默认值。中央库永久保留完整原始采样、每日统计和状态记录，游戏服 MON_RETAIN_DAYS 仅控制有限补传缓存。先更新中央端，再更新游戏服完整 ops/ 并重启 sp-collector、sp-admin，最后重启 sp-portal；已有 unit 不必重装探针，新增模块由游戏仓库同步分发。
+
+浏览器在站点详情页查询日期、分页日归档、导出 CSV/JSONL。面板会显示归档采样数量、覆盖时间、补传进度、错误或已过保留期的缺口。旧探针兼容轮询保存，但无法补传原始采样。查看 [集中历史保存、备份与分析](HISTORY.md)；必须使用一致性备份方式复制运行中的 SQLite 数据库。
+
+MON_STALE_MS/PANEL_STALE_MS 未显式设置时自动按采样/轮询周期调整；已有固定配置是明确覆盖，如需自动调整请移除该固定值。日志积压/处理延迟通过 logBacklogBytes/logLagSec 显示；游戏 RSS 优先读取 healthz.memory.rss，仅旧服务使用 /proc 回退。
 
 ## 三、安全边界
 

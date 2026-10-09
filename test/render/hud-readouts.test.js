@@ -288,6 +288,91 @@ describe('an ammo skill has no standing aura', () => {
 });
 
 describe('the chain: sim → snapshot → SnapshotBuffer → UnitView', () => {
+  test('user coin HUD: Given real Swire skills, When coins accumulate and are spent, Then the visible balance includes zero', () => {
+    for (const skillIndex of [0, 1, 2]) {
+      const h = makeBattle({
+        units: [{ chessId: 'chess_char_3_04_a', row: 10, col: 5, skillIndex }],
+        flags: { dpInit: 99, dpMax: 99, dpPerSec: 3 }, timeLimit: 120,
+      });
+      h.step();
+      const u = h.unit('chess_char_3_04_a');
+      const v = new UnitView(fakeViewCtx(fake.P, { cam }), renderInfo(unitInfo(u)));
+      const buffer = new SnapshotBuffer({ delay: 0 });
+      const show = (expected) => {
+        const snap = h.b.snapshot();
+        assert.deepEqual(snap.coins, [[u.id, expected]]);
+        buffer.push(snap, snap.t);
+        v.sync(buffer.sample(snap.t).get(u.id), snap.t);
+        frames(v);
+        assert.equal(v.coinHud.root.visible, true);
+        assert.equal(v.coinHud.text.text, String(expected));
+        assert.ok(v.coinHud.root.position.y > v.hpBg.position.y);
+      };
+      if (skillIndex === 2) {
+        show(0);
+        assert.ok(u.skill.activate('test', { free: true }));
+        h.step();
+        show(1);
+        h.run(3);
+        show(2);
+        u.skill.end('manual');
+        h.step();
+        show(0);
+      } else if (skillIndex === 1) {
+        show(0);
+        assert.ok(h.runUntil(() => u.mem.coins === 3, 60));
+        show(3);
+        const bomb = h.b.allyUnits.find((a) => a.alive && a.defId === 'token_10031_swire2_gdtrap');
+        h.b.retreat(bomb, { reason: 'expired', permanent: true });
+        assert.ok(h.runUntil(() => u.mem.coins === 2, 5));
+        show(2);
+      } else {
+        show(1);
+        h.run(3);
+        show(2);
+        h.b.dealDamage(null, u, { amount: u.s.maxHp * 0.5, type: 'true' });
+        assert.ok(h.runUntil(() => u.mem.coins === 1, 2));
+        show(1);
+      }
+      v.prep = true;
+      frames(v);
+      assert.equal(v.coinHud.root.visible, false);
+      v.prep = false;
+      v.sync(sample());
+      frames(v);
+      assert.equal(v.coinHud.root.visible, false, 'an old snapshot clears the balance');
+      u.hidden = true;
+      assert.equal(h.b.snapshot().coins, undefined, 'hidden units do not publish a purse');
+      u.hidden = false;
+      u.deployed = false;
+      assert.equal(h.b.snapshot().coins, undefined, 'undeployed units do not publish a purse');
+      u.deployed = true;
+      h.b.retreat(u, { reason: 'expired', permanent: true });
+      assert.equal(h.b.snapshot().coins, undefined);
+      v.sync(sample({ coins: 0 }));
+      frames(v);
+      assert.equal(v.coinHud.root.visible, true);
+      v.die();
+      frames(v);
+      assert.equal(v.coinHud.root.visible, false);
+      assert.deepEqual(h.b.errors, []);
+      v.destroy();
+    }
+  });
+
+  test('user coin HUD: Given adjacent snapshots, When sampling a spend, Then zero arrives only at the snapshot boundary', () => {
+    const buf = new SnapshotBuffer({ delay: 0 });
+    buf.push({ t: 1, units: [tuple(1)], coins: [[1, 2], [1, -1], [1, 0.5], [9, 4], null] }, 0);
+    buf.push({ t: 2, units: [tuple(1)], coins: [[1, 0]] }, 0.5);
+    buf.push({ t: 3, units: [tuple(1)] }, 1);
+    const out = buf.sample(1.99);
+    assert.equal(out.get(1).coins, 2);
+    buf.sample(2, out);
+    assert.equal(out.get(1).coins, 0);
+    buf.sample(3, out);
+    assert.equal(out.get(1).coins, null);
+  });
+
   test('隐现 S2: 14 cells, 13 after the first round, one more gone per attack; no aura; the plain SP bar after the last round', () => {
     const h = makeBattle({
       defs: { enemies: { enemy_dummy: enemyRec({ key: 'enemy_dummy', hp: 1e7, speed: 0 }) } },

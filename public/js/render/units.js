@@ -477,6 +477,8 @@ export class UnitView {
     this.sp = 0; this.spMax = 0;
     this.ammo = null;             // [rounds left, rounds in the magazine] while an ammo skill runs (sync; b.snap `ammo`)
     this.wolves = null;           // [狼影 left, the talent's maximum] of a 狼群 (sync; b.snap `wolves`)
+    this.coins = null;            // Swire's balance, including zero; null without a purse
+    this.coinHud = null;
     this.neg = 0;                 // the share of its cap a negative-HP pool holds, 0 = none (sync; b.snap `neg`, 斩业星熊's 我执)
     this.flags = 0; this.anim = ANIM.IDLE;
     this.statuses = new Set();
@@ -825,6 +827,7 @@ export class UnitView {
     this.hp = hp;
     this.sp = s.sp; this.spMax = s.spMax;
     this.ammo = s.ammo || null; this.wolves = s.wolves || null; this.neg = s.neg > 0 ? Math.min(1, s.neg) : 0;
+    this.coins = s.coins ?? null;
     const prevFlags = this.flags;
     this.flags = s.flags | 0;
     this.anim = s.anim | 0;
@@ -1412,7 +1415,8 @@ export class UnitView {
     // knocked-down operator (b.snap `down`)
     const rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
     const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
-    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + 1, spH, s, t);
+    const coinH = this._updateCoins(showBars && !this.isEnemy && this.coins !== null, x0, rowsTop + wolfH, s);
+    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + 1, spH, s, t);
     this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
     // blocked marker at the feet (enemies held by a blocker)
     const blocked = !prep && this.alive && this.isEnemy && (this.flags & UF.BLOCKED);
@@ -1491,6 +1495,29 @@ export class UnitView {
     }
     r.root.visible = true;
     return d + 2 + WOLF_PIPS.pad;
+  }
+
+  /** [ASSUMED] Coin icon + integer below the bars; the balance comes only from snapshots, not transient FX. */
+  _updateCoins(show, x, top, s) {
+    let r = this.coinHud;
+    if (!show) { if (r) r.root.visible = false; return 0; }
+    const P = this.P;
+    if (!r) {
+      const root = new P.Container();
+      const icon = new P.Sprite(fxAtlas().tex.coin);
+      icon.width = icon.height = 16;
+      const text = new P.Text('', { fontFamily: 'Bender, Oxanium, sans-serif', fontSize: 16, fontWeight: '700', fill: '#ffd04a', stroke: '#0b0f0e', strokeThickness: 3 });
+      text.position.set(19, -2);
+      root.addChild(icon, text);
+      this.hud.addChild(root);
+      r = this.coinHud = { root, icon, text };
+    }
+    r.text.text = String(this.coins);
+    const size = clamp(s * 0.2, 10, 16);
+    r.root.scale.set(size / 16);
+    r.root.position.set(x, top + 3);
+    r.root.visible = true;
+    return size + 5;
   }
 
   /** True while the shown gauge is in its 爆发冷却 (b.snap `elem` carries the cooldown's end and length). */

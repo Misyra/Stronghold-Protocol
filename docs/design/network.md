@@ -38,6 +38,11 @@ S→C:
   listed enemy's recovery was cut or ignored (失衡, fear, stun, hiding, leaving): an interval with a cut inside it stays
   linear. A newest snapshot showing a death, a stun or a block is not extrapolated. Old snapshots without them
   interpolate linearly; nothing is inferred from the attack animation.
+- Optional `b.snap.coins: [[id, balance]]` carries 琳琅诗怀雅's whole-coin balance (`mem.coins`), including zero, for living,
+  deployed, visible allies. The client samples it at the older snapshot boundary, as with `wolves`; malformed rows and
+  unknown ids are ignored, and an absent entry clears the display. A coin icon and integer sit below HP/SP and above the
+  element gauge, hidden in prep and while down. The icon reuses the coin FX texture from `render/textures.js`.
+  [ASSUMED] HUD placement/style; no coin mechanics change.
 - `b.ev` — `{ fieldId, ev: [ ... ] }` event tuples: `['spawn', UnitInfo]`, `['atk', srcId, tgtId, projKind]`, `['dmg', tgtId, amount, type]`, `['heal', tgtId, amount]`, `['skill', id, on:0|1]`, `['die', id, reason]` (reason `'killed'`, `'retreat'`, `'expired'` …; only `'killed'` plays an operator's knock-down sound), `['status', id, key, on]`, `['fx', kind, x, y, extra]` (`'hitCap' {id, n}` = a cancelled 限伤 hit, drawn as nothing, §20.12; `extra.form` = the unit's model form from then on (an enemy's mode, a 傀儡师's 替身 §22.11) — `shared/protocol.js fxForm`, state like a spawn: never dropped by the client, §21.4), `['layer', playerId, bondId, n]`, `['bounty', playerId, coins]`, `['deploy', id]`
 - `m.toast {kind, text}` · `m.ticker {text, id, type, priority, playerId}` (the strip plays the highest priority first, §21.10) · `m.emote {playerId, id}` · `m.result {...}`
 - `m.unitStats {seq, round, units: [unitStatsEntry]}` — the answer to `g.unitStats` (`seq` echoed): every own board operator / summon by uid with `{id, uid, defId, hp, alive, maxHp, atk, def, res, interval, blockCnt, moveSpeed, range?, base: {…same}}` and `dir?` (shared/protocol.js `unitStatsEntry`; `range` = an ally's live range grid, facing RIGHT, never a target-selection grid, §21.16; `dir` = the unit's facing now, UP|RIGHT|DOWN|LEFT — the snapshot tuples carry none and UnitInfo `dir` is the facing at send time — which the detail card's range overlay rotates by, GitHub PR #281) as its next battle starts (§18.5)

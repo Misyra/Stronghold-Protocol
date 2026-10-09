@@ -121,6 +121,7 @@
  * @property {ElemSnap[]} [elem]
  * @property {CountSnap[]} [ammo]
  * @property {CountSnap[]} [wolves]
+ * @property {[number, number][]} [coins] Swire's whole-coin balance, including zero
  * @property {NegSnap[]} [neg]
  * @property {[number, number][]} [stand]
  * @property {[number, number][]} [standCut]

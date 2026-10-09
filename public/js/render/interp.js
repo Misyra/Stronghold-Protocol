@@ -29,10 +29,11 @@
 //   * `down` [[id, respawnAt, respawnTime, state, row?, col?]] — knocked-out operators waiting to redeploy (they are no
 //     longer in `units`) and the tile they lie on (where they fell, or their home — sim Battle._layBody; kept only when
 //     both are integers): downAt(time) returns the list of the snapshot at `time`;
-//   * three HP-bar readouts, kept per snapshot beside the tuples (the tuple layout is unchanged) and handed out by sample()
+//   * HP-bar readouts, kept per snapshot beside the tuples (the tuple layout is unchanged) and handed out by sample()
 //     from the older snapshot like flags, so they step with the skill flag instead of sliding:
 //       `ammo`   [[id, rounds left, rounds in the magazine]]  → sample().ammo   [left, magazine] | null (whole numbers only)
 //       `wolves` [[id, 狼影 left, the talent's maximum]]      → sample().wolves [left, maximum]  | null
+//       `coins`  [[id, whole-coin balance]]                  → sample().coins  number | null (zero is a balance)
 //       `neg`    [[id, fill]] (0.01–1: the negative-HP pool's share of its cap) → sample().neg  number (0: none)
 //     An entry that is malformed, or names a unit the snapshot does not list, is dropped; a snapshot without the list
 //     clears the readout (render/units.js: the segmented ammo bar, the wolf pips, the red bar of 斩业星熊's 我执).
@@ -117,6 +118,13 @@ export function normalizeSnapshot(snap) {
     }
   }
   const ammo = countList(snap.ammo, units), wolves = countList(snap.wolves, units);
+  let coins = null;
+  if (Array.isArray(snap.coins)) {
+    for (const e of snap.coins) {
+      if (!Array.isArray(e) || !units.has(e[0]) || !Number.isSafeInteger(e[1]) || e[1] < 0) continue;
+      (coins || (coins = new Map())).set(e[0], e[1]);
+    }
+  }
   let neg = null;
   if (Array.isArray(snap.neg)) {
     for (const e of snap.neg) {
@@ -147,7 +155,7 @@ export function normalizeSnapshot(snap) {
       (standCut || (standCut = new Map())).set(e[0], e[1]);
     }
   }
-  return { t, units, down, ammo, wolves, neg, stand, standCut, raw: snap };
+  return { t, units, down, ammo, wolves, coins, neg, stand, standCut, raw: snap };
 }
 
 /**
@@ -356,7 +364,7 @@ export class SnapshotBuffer {
     const stamp = A.t;
     for (const [id, a] of A.units) {
       let o = out.get(id);
-      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, ammo: null, wolves: null, neg: 0 }; out.set(id, o); }
+      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, ammo: null, wolves: null, coins: null, neg: 0 }; out.set(id, o); }
       const b = B ? B.units.get(id) : null;
       if (b) {
         const dx = b[1] - a[1], dy = b[2] - a[2];
@@ -402,6 +410,7 @@ export class SnapshotBuffer {
       // the HP-bar readouts come with the older snapshot, like flags (whole rounds step with the skill flag)
       o.ammo = A.ammo ? A.ammo.get(id) || null : null;
       o.wolves = A.wolves ? A.wolves.get(id) || null : null;
+      o.coins = A.coins?.get(id) ?? null;
       o.neg = A.neg ? A.neg.get(id) || 0 : 0;
       o.seen = stamp;
     }

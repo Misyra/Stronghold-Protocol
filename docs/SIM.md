@@ -1399,6 +1399,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   readouts of `snapshot.js` `ammoView` (an ally's running ammo skill: whole rounds, the magazine = `ammoMax`), `wolfView` (伺夜's 狼群:
   `mem.shadows` of `mem.wolfCapacity`) and `negView` (`unit.negFill()`, set by 斩业星熊's T1 业火: the 我执 pool as a share of its cap);
   UnitInfo `ammoSkill` marks an ally whose skill is an ammo magazine (DESIGN §8.2).
+  Optional `coins` carries 琳琅诗怀雅's balance; its wire and display contract is in [DESIGN §8.2](design/network.md#82-match).
   `fieldMeta()` lists the knocked-out operators too (a client joining mid-battle shows them; DESIGN §18.3).
   `stand: [[id, until]]` (only when non-empty) = the game time each enemy's attack recovery ends (`atkStandUntil`: it
   stands for the rest of its attack clip, §1.2 `attackStand`) — enemies alive, deployed, visible, neither feared nor stunned;

@@ -102,6 +102,10 @@ export class BattleEvents {
       if (wv) (wolves || (wolves = [])).push([u.id, wv[0], wv[1]]);
       const ng = negView(u);
       if (ng) (neg || (neg = [])).push([u.id, ng]);
+      // Swire's purse is initialized on deploy; zero is a balance, absence is no purse.
+      if (u.side === 'ally' && Number.isSafeInteger(u.mem.coins) && u.mem.coins >= 0) {
+        (snap.coins || (snap.coins = [])).push([u.id, u.mem.coins]);
+      }
     }
     if (elem) snap.elem = elem;
     if (ammo) snap.ammo = ammo;

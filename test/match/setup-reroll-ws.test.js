@@ -35,6 +35,8 @@ test('real four-player sockets: host-only proposal, unanimous sync, reconnect an
 		return c;
 	};
 	const host = await player('Host');
+	const ops = { char_017_huang: { potential: 2, cultivate: 1 } };
+	await ok(host, { t: 'room.loadout', entries: {}, ops });
 	await ok(host, { t: 'room.create', mode: 'coop', difficulty: 'HARD' });
 	const room = await host.waitFor('room.state');
 	const guests = [];
@@ -76,6 +78,8 @@ test('real four-player sockets: host-only proposal, unanimous sync, reconnect an
 	assert.notDeepEqual(setupOf(fresh[0]), { ...setupOf(initial), setupRevision: 1 });
 	assert.equal(srv.lobby.rooms.get(room.code).match, m, 'room/match instance and sockets retained');
 	assert.ok(all.every((c) => c.isOpen));
+	assert.deepEqual(m.players.get(host.id).ops, ops, 'the new loadout fields survive reroll');
+	assert.deepEqual((await host.waitFor('m.private', (p) => p.ops?.char_017_huang?.potential === 2)).ops, ops);
 	await err(guests[0], { t: 'g.infoReady', setupRevision: 0 }, ERR.BAD_TARGET);
 	await err(guests[0], { t: 'g.infoReady' }, ERR.BAD_TARGET);
 	await err(host, { t: 'room.rerollSetup', setupRevision: 0 }, ERR.BAD_TARGET);

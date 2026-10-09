@@ -53,9 +53,10 @@ test('four humans must agree; rerolls the entire official setup and stock, prese
 	const players = [...m.order];
 	const rngs = [m.rngSetup, m.rngShop, m.rngDraft, m.rngWaves, m.rngBots, m.rngMeta].map((r) => [r, r.state()]);
 	const p0 = h.ps('p_0');
+	assert.equal(p0.setLoadout(p0.loadout, { char_017_huang: { potential: 2, cultivate: 1 } }), true);
 	assert.equal(p0.setDiy({ chess_char_5_diy1_a: { charId: 'char_017_huang', skillIndex: 0 } }), true);
 	p0.initDiyStock(new Set([...m.disabledBonds, ...m.staticInactiveBonds]));
-	const settings = [p0.loadout, p0.standIns, p0.diy];
+	const settings = [p0.loadout, p0.standIns, p0.diy, p0.ops];
 	const stock = p0.diyStock;
 	m.handle('p_1', { t: 'g.infoReady' });
 	h.sched.advance(500);
@@ -80,8 +81,10 @@ test('four humans must agree; rerolls the entire official setup and stock, prese
 	assert.equal(m.stage, m.gd.stage(m.stageId));
 	assert.notEqual(m.pool, pool);
 	assert.deepEqual(m.order, players);
-	assert.deepEqual([p0.loadout, p0.standIns, p0.diy], settings);
+	assert.deepEqual([p0.loadout, p0.standIns, p0.diy, p0.ops], settings);
 	assert.equal(p0.diy, settings[2]);
+	assert.equal(p0.ops, settings[3], 'per-operator potential and cultivation stay unchanged');
+	assert.deepEqual(h.lastTo('p_0', 'm.private').ops, settings[3]);
 	assert.notEqual(p0.diyStock, stock);
 	const off = new Set([...bans.drawn, ...bans.staticOff]);
 	const diy = p0.gd.chess('chess_char_5_diy1_a');

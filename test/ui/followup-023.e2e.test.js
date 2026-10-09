@@ -170,6 +170,20 @@ describe('0.2.3 follow-up client features', { skip: !ENABLED }, () => {
       const client = await page.createCDPSession();
       const manifest = await client.send('Page.getAppManifest');
       assert.deepEqual(manifest.errors, []);
+      const icons = await page.evaluate(async () => {
+        const m = await (await fetch('/manifest.json')).json();
+        const entries = [...m.icons, ...[...document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')]
+          .map((link) => ({ src: link.getAttribute('href'), purpose: link.rel }))];
+        return Promise.all(entries.map(async (entry) => {
+          const response = await fetch(entry.src);
+          if (!response.ok) throw new Error(`${entry.src}: ${response.status}`);
+          const img = new Image(); img.src = entry.src; await img.decode();
+          return { purpose: entry.purpose, width: img.naturalWidth, height: img.naturalHeight };
+        }));
+      });
+      assert.deepEqual(icons.filter((i) => i.purpose === 'maskable').map((i) => i.width).sort((a, b) => a - b), [192, 512]);
+      assert.ok(icons.every((i) => i.width > 0 && i.width === i.height));
+      assert.ok(icons.some((i) => i.purpose === 'apple-touch-icon' && i.width === 180));
       const install = await client.send('Page.getInstallabilityErrors');
       assert.deepEqual(install.installabilityErrors, []);
       await page.evaluate(() => {

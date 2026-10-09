@@ -2,8 +2,52 @@
 
 Owner: `tools/fetch-assets.mjs` and `tools/assets/*`. Research background: `docs/research/07-assets.md`.
 
-All art, Spine models and audio are **downloaded at install time**. They are never committed; `public/assets/` is git-ignored.
-Everything the client needs is listed in **`data/assets.json`**. The client should only request URLs that appear in that manifest.
+All official game art, Spine models and audio are **downloaded at install time**. They are never committed; `public/assets/` is git-ignored.
+All downloaded game assets the client needs are listed in **`data/assets.json`**. Game-art requests must use that manifest.
+The original project icons below are shipped static files, not downloaded game assets.
+
+## Original project application icons (#413)
+
+`public/icons/app.svg` is the original vector master for the **卫戍协议 series**, independent of any season.
+Three battlements lead into a shield-shaped wall around one square tactical cell: defending a position on a board.
+The only colours are charcoal `#242424` and off-white `#f2f2f2`; the mark contains no text, gradients or fine texture.
+It contains no 「盟约」 lettering, Alliance badge or season-exclusive colours / elements.
+
+**Originality statement (2026-10-10):** the SVG geometry was drawn from basic rectangles and polygons for this
+project. No official logo, artwork, icon or font was used, downloaded, embedded, traced or redrawn to make it.
+The vector and exports are project-owned work under the repository's GPL-3.0-or-later licence, separate from the
+Hypergryph / Yostar game assets below. The abstract fortification / tactical-board idea does not assert official branding.
+
+Rebuild offline with Python 3 and Pillow (the same image library used by local-extract):
+
+```bash
+python3 tools/export-app-icons.py
+# Optional review export without replacing shipped files:
+python3 tools/export-app-icons.py --out /tmp/stronghold-icons
+```
+
+The script reads only the master SVG's flat rectangle / polygon geometry, renders at 8× and downsamples; unsupported
+SVG elements fail rather than silently disappearing. It needs no game art, fonts, browser or network.
+
+| Files in `public/icons/` | Use |
+|---|---|
+| `app-192.png`, `app-512.png` | Manifest `purpose: any`, 192 / 512 px |
+| `app-maskable-192.png`, `app-maskable-512.png` | Manifest `purpose: maskable`, opaque full-bleed background |
+| `favicon-16.png`, `favicon-32.png`, `favicon-48.png`, `favicon.ico` | Tab / legacy favicon; ICO contains 16 / 32 / 48 px frames |
+| `apple-touch-icon.png` | 180 px home-screen icon |
+| `app.svg` | Scalable favicon and editable source |
+
+The maskable mark is scaled to 87.5% around the canvas centre. Its outermost vertex is about 34.8% of the canvas
+width from that centre; even antialiased edge pixels stay inside the **40%-radius safe circle** specified by
+[Web Application Manifest §2.3](https://www.w3.org/TR/appmanifest/#icon-masks).
+The background remains opaque to every edge; launcher masks may remove the background outside the safe zone.
+Normal icons and favicons retain the larger mark for readability. `public/index.html` links the SVG / ICO / PNG
+favicons and Apple icon; `public/manifest.json` lists all four install icons. All these static files must be tracked
+and included by the full and lite package allowlist; no changes to `data/assets.json` are needed.
+
+`test/ui/pwa-install-023.test.js` checks decoded pixels, mask safety and references; `test/package.test.js` checks
+packaging inclusion. The local handoff holds old/new light/dark, small-size and phone-layout previews with their
+render script. These are offline review renders, not evidence of browser or native OS installation.
 
 ## Running
 

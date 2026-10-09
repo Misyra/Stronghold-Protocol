@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#0c0f0e"/><path fill="#4ed8af" d="M5 3h3v2h2V3h4v2h2V3h3v5l-2 2v7l2 2v2H5v-2l2-2v-7L5 8z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Stronghold Protocol — fortress and defended square</title>
+  <desc>Original geometric project mark. No official artwork, lettering or seasonal insignia.</desc>
+  <rect width="512" height="512" fill="#242424"/>
+  <g id="mark">
+    <polygon fill="#f2f2f2" points="112,112 176,112 176,152 224,152 224,112 288,112 288,152 336,152 336,112 400,112 400,304 352,352 256,416 160,352 112,304"/>
+    <polygon fill="#242424" points="176,216 336,216 336,280 304,312 256,344 208,312 176,280"/>
+    <rect x="232" y="240" width="48" height="48" fill="#f2f2f2"/>
+  </g>
+</svg>

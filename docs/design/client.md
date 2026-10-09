@@ -115,8 +115,13 @@ refused recovery can return to the previous identity and nickname. It does not i
 Without BroadcastChannel it refuses shared recovery. Server restart / expiry clears
 obsolete metadata on the next welcome. A spectator never registers a recoverable player seat.
 
-`manifest.json` enables browser installation; its original fortress favicon is packaged as actual 192/512 px icons in
-`public/icons/`, including lite packages. The install button appears only for a live browser install offer and hides
+`manifest.json` enables browser installation. The original season-independent fortress / shield mark in
+`public/icons/app.svg` uses neutral greys and no official art, logos, icons, fonts or season-specific insignia.
+`tools/export-app-icons.py` exports 192/512 px PNGs for `any` and separate opaque `maskable` icons: the latter scale
+only the mark to 87.5%, keeping every foreground pixel inside the central circle of radius 40% of the canvas.
+The same master supplies 16/32/48 px PNG / ICO favicons and the 180 px Apple touch icon linked from `index.html`.
+These project-owned assets live in `public/icons/` and ship in full and lite packages; ASSETS.md records their provenance.
+The install button appears only for a live browser install offer and hides
 in standalone/fullscreen windows or after installation. Every offer is consumed before awaiting the prompt, including
 cancellation or failure. No service worker, offline cache or persistent server is introduced; HTTPS or localhost and
 browser support still govern installation.

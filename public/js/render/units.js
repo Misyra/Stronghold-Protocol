@@ -67,7 +67,7 @@
 
 import { UF, ANIM } from '../../../shared/constants.js';
 import { SpineActor } from './spine.js';
-import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTexture, hudRings, ringArc, HUD_DISC, ELEMENT_RING } from './textures.js';
+import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTexture, hudRings, ringArc, downLabel, HUD_DISC, ELEMENT_RING } from './textures.js';
 import { COLORS, TIER_COLORS, ENEMY_FRAME, UNIT, PROJ, statusIconKey, statusIconSuppressed } from './style.js';
 import { drawCrate, rowDepthKey, ROW_KEY, deviceBoxOf, DEVICE_BOX } from './tiles.js';
 
@@ -490,7 +490,7 @@ export class UnitView {
     this._elBar = null;           // { root, disc, bg, fill } sprites of the element gauge row, built on first use
     this._wolfPips = null;        // { root, back[], lit[] } diamonds of the 狼影 row, built on first use
     this.ammoCuts = [];           // the thin separators between the ammo bar's cells (_updateAmmoCuts)
-    this._downRing = null;        // { disc, track, arc, text } sprites, built on first use
+    this._downRing = null;        // { disc, track, arc, text } sprites (text: the shared label, textures.js downLabel), built on first use
     this.alpha = 1; this.fadeIn = this.prep ? 1 : 0;
     this.lunge = 0; this.lungeDir = { x: 1, y: 0 };
     this.flash = 0;
@@ -1220,18 +1220,26 @@ export class UnitView {
         this._far = this._far ? s < 60 : s < 52;
         if (lvl >= 2 || this._far) interval = Math.max(interval, 2);
       }
+      let clipFlip = false;
       if (this.actor.clipped) {
         const clip = this.ctx.clipAllowed ? this.ctx.clipAllowed() : true;
+        const was = this.actor.clipOn;
         this.actor.setClipping(clip);
+        clipFlip = was !== this.actor.clipOn;
         if (clip && this.ctx.impostors) interval = Math.max(1, interval);
       }
+      // a pose that cannot change (a knocked-out operator lying in its held Die pose, a frozen model) is neither re-posed
+      // nor redrawn — it would draw the same pixels again; the actor's clock still runs
+      const held = !clipFlip && this.actor.poseHeld();
       if (interval > 0 && this.ctx.renderer) {
-        this._updateImpostor(sc, flip, tint, animDt, interval);
+        if (clipFlip && this.imp) this.imp.dirty = true;   // masks on / off: the slot is redrawn either way
+        this._updateImpostor(sc, flip, tint, animDt, interval, held);
       } else {
         if (this.imp) this._leaveImpostor();
         this.actor.spine.alpha = this.swapT;
         this.actor.spine.scale.set(sc * flip, sc * this.modelKY);
-        this.actor.update(animDt);
+        if (held) this.actor.clock += animDt;
+        else this.actor.update(animDt);
         if (this._tint !== tint) { this._tint = tint; this.actor.spine.tint = tint; }
       }
     }
@@ -1549,10 +1557,8 @@ export class UnitView {
       const root = new P.Container();
       const mk = (tx) => { const sp = new P.Sprite(tx); sp.anchor.set(0.5); root.addChild(sp); return sp; };
       const disc = mk(tex.downDisc), track = mk(tex.track), arc = mk(tex.arcs[0]);
-      const text = new P.Text('', { fontFamily: 'Bender, Oxanium, "Noto Sans SC", sans-serif', fontSize: 32, fontWeight: '700', fill: '#ffffff', stroke: '#0b0f0e', strokeThickness: 6 });
-      text.anchor.set(0.5);
-      root.addChild(text);
-      r = this._downRing = { root, disc, track, arc, text, label: null };
+      const text = mk(P.Texture.EMPTY);
+      r = this._downRing = { root, disc, track, arc, text, label: null, res: 0 };
       this.hud.addChild(root);
     }
     const dn = this.down;
@@ -1562,10 +1568,11 @@ export class UnitView {
     const color = DOWN_LOOK.ring[dn.state] ?? DOWN_LOOK.ring[DOWN_STATE.COUNTING];
     r.arc.tint = color;
     const label = counting ? String(Math.ceil(left - 1e-6)) : dn.state === DOWN_STATE.WAIT_DP ? 'DP' : '!';
-    if (r.label !== label) {
+    const res = this.ctx.renderer?.resolution || 1;
+    if (r.label !== label || r.res !== res) {
       r.label = label;
-      r.text.text = label;
-      r.text.style.fill = counting ? '#ffffff' : '#' + color.toString(16).padStart(6, '0');
+      r.res = res;
+      r.text.texture = downLabel(label, counting ? '#ffffff' : '#' + color.toString(16).padStart(6, '0'), res);
     }
     const d = clamp(s * DOWN_LOOK.size, 22, 52);
     const k = d / tex.size;
@@ -1595,7 +1602,7 @@ export class UnitView {
     return this._box;
   }
 
-  _updateImpostor(sc, flip, tint, animDt, interval) {
+  _updateImpostor(sc, flip, tint, animDt, interval, held = false) {
     const P = this.P;
     const atlas = this.ctx.impostors || null;
     if (!this.imp) {
@@ -1612,8 +1619,11 @@ export class UnitView {
     // a context without slots keeps the random phase. A unit whose slot keeps moving with the frame (the units before it
     // culled on and off in step) is still refreshed after 2 intervals at the latest.
     const turn = this.ctx.impostorSlot ? this.ctx.impostorSlot() : imp.phase;
-    const due = imp.dirty || interval <= 1 || (frame + turn) % interval === 0 || frame - imp.last >= 2 * interval
-      || Math.abs(sc - imp.sc) > imp.sc * 0.12;
+    const rescale = Math.abs(sc - imp.sc) > imp.sc * 0.12;
+    // a held pose (SpineActor.poseHeld) keeps the image its slot already shows; only its clock moves on
+    const still = held && !imp.dirty && !rescale;
+    if (still) { this.actor.clock += imp.acc; imp.acc = 0; }
+    const due = !still && (imp.dirty || interval <= 1 || (frame + turn) % interval === 0 || frame - imp.last >= 2 * interval || rescale);
     if (due) {
       this.actor.update(imp.acc);
       imp.acc = 0;

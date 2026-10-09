@@ -84,3 +84,8 @@ Target: a **real 3D board layer** rendered with three.js (vendored ESM, no CDN) 
 Clipboard exports (`ui/clipboard.js`, §28.3) first use the secure Clipboard API. The textarea fallback for LAN
 play stays inside the active modal/guide focus boundary; it copies only after focus and the complete selection
 are verified, and cleans up / restores focus on both success and failure. Failure exposes the existing manual-copy UI.
+
+
+Push/pull slides preserve the target's pre-hit facing through the waiting and moving phases (`keepFacing`, §28.9).
+Explicit false and unmarked raw displacements face the travel direction. Normal snapshot facing resumes on landing.
+[ASSUMED] unrecorded push sources and reverse-facing hook pulls use the same display rule as the cited examples.

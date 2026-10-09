@@ -1,5 +1,7 @@
 # 卫戍协议：盟约 · Stronghold Protocol: Alliance
 
+> 开发版（dev 分支）：不稳定，请勿用于公开服务器。最近正式版请从 Releases 下载。
+
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
 ![version](https://img.shields.io/badge/version-0.2.3--dev-2ea44f)

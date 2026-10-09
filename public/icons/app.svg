@@ -1,10 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <title>Stronghold Protocol — fortress and defended square</title>
-  <desc>Original geometric project mark. No official artwork, lettering or seasonal insignia.</desc>
-  <rect width="512" height="512" fill="#242424"/>
+  <title>Stronghold Protocol — refined mint rook</title>
+  <desc>Refines the existing 0.2.x project castle: three battlements, inset tower and splayed base. Original project geometry; no official artwork, lettering, gradients or texture.</desc>
+  <rect width="512" height="512" fill="#0c0f0e"/>
   <g id="mark">
-    <polygon fill="#f2f2f2" points="112,112 176,112 176,152 224,152 224,112 288,112 288,152 336,152 336,112 400,112 400,304 352,352 256,416 160,352 112,304"/>
-    <polygon fill="#242424" points="176,216 336,216 336,280 304,312 256,344 208,312 176,280"/>
-    <rect x="232" y="240" width="48" height="48" fill="#f2f2f2"/>
+    <polygon fill="#4ed8af" points="128,88 184,88 184,128 224,128 224,88 288,88 288,128 328,128 328,88 384,88 384,184 344,224 344,352 384,392 384,424 128,424 128,392 168,352 168,224 128,184"/>
   </g>
 </svg>

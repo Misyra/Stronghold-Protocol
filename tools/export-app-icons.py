@@ -6,7 +6,9 @@ only this source's flat rect/polygon vocabulary; unsupported SVG fails loudly.
 No fonts, game art, browser, network or platform image service is involved.
 """
 import argparse
+from io import BytesIO
 from pathlib import Path
+import struct
 import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw
@@ -54,6 +56,26 @@ def render(size, maskable=False):
     return image.resize((size, size), Image.Resampling.BOX)
 
 
+def write_ico(path):
+    # Native-size renders preserve the same pixels as each PNG favicon. Write
+    # the DIBs explicitly: Pillow's RGB ICO writer does not pad 1-bit mask rows
+    # to 4 bytes, and can reuse the last size's mask for every smaller frame.
+    sizes = (16, 32, 48)
+    directory, frames = bytearray(), bytearray()
+    offset = 6 + 16 * len(sizes)
+    for size in sizes:
+        dib = BytesIO()
+        render(size).save(dib, format="DIB")
+        frame = bytearray(dib.getvalue())
+        # ICO DIB height includes both the colour bitmap and the AND mask.
+        struct.pack_into("<i", frame, 8, size * 2)
+        frame.extend(bytes(((size + 31) // 32) * 4 * size))  # Opaque, padded AND rows
+        directory.extend(struct.pack("<BBBBHHII", size, size, 0, 0, 1, 24, len(frame), offset))
+        frames.extend(frame)
+        offset += len(frame)
+    path.write_bytes(struct.pack("<HHH", 0, 1, len(sizes)) + directory + frames)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "public/icons")
@@ -67,7 +89,7 @@ def main():
         render(size).save(args.out / f"favicon-{size}.png")
     render(180).save(args.out / "apple-touch-icon.png")
     # BMP-backed frames also work in older ICO readers; PNG favicons ship separately.
-    render(48).save(args.out / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)], bitmap_format="bmp")
+    write_ico(args.out / "favicon.ico")
     print(f"Exported 9 icon files to {args.out}")
 
 

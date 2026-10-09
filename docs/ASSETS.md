@@ -8,15 +8,17 @@ The original project icons below are shipped static files, not downloaded game a
 
 ## Original project application icons (#413)
 
-`public/icons/app.svg` is the original vector master for the **卫戍协议 series**, independent of any season.
-Three battlements lead into a shield-shaped wall around one square tactical cell: defending a position on a board.
-The only colours are charcoal `#242424` and off-white `#f2f2f2`; the mark contains no text, gradients or fine texture.
-It contains no 「盟约」 lettering, Alliance badge or season-exclusive colours / elements.
+By the maintainer's revised decision of 2026-10-10, **沿用 0.2.x 的薄荷绿城堡并精修**.
+`public/icons/app.svg` retains the existing mint rook's three battlements, inset tower and splayed base.
+The selected refinement (B) narrows the tower, balances the battlements, reduces the base thickness and adds breathing
+room. On the 512 px canvas the mark spans x=128–384 and y=88–424; the tower is 176 px wide and the base is 32 px thick.
+The original colours remain mint `#4ed8af` and dark `#0c0f0e`, with no text, gradients, gloss or texture.
 
-**Originality statement (2026-10-10):** the SVG geometry was drawn from basic rectangles and polygons for this
-project. No official logo, artwork, icon or font was used, downloaded, embedded, traced or redrawn to make it.
+**Provenance / originality statement (2026-10-10):** this is a proportion refinement of this project's existing
+`public/icons/app.svg` from before `ba5b998a`, expressed as basic rectangles and polygons.
+No official logo, artwork, icon or font was used, downloaded, embedded, traced or redrawn for this refinement.
 The vector and exports are project-owned work under the repository's GPL-3.0-or-later licence, separate from the
-Hypergryph / Yostar game assets below. The abstract fortification / tactical-board idea does not assert official branding.
+Hypergryph / Yostar game assets below. The castle mark does not assert official branding.
 
 Rebuild offline with Python 3 and Pillow (the same image library used by local-extract):
 
@@ -28,6 +30,8 @@ python3 tools/export-app-icons.py --out /tmp/stronghold-icons
 
 The script reads only the master SVG's flat rectangle / polygon geometry, renders at 8× and downsamples; unsupported
 SVG elements fail rather than silently disappearing. It needs no game art, fonts, browser or network.
+ICO frames use the same native-size renders as the PNG favicons, with explicit 24-bit DIBs and opaque 1-bit masks
+whose rows are padded to 4 bytes. This avoids malformed transparency masks in Pillow's RGB ICO export.
 
 | Files in `public/icons/` | Use |
 |---|---|
@@ -37,7 +41,7 @@ SVG elements fail rather than silently disappearing. It needs no game art, fonts
 | `apple-touch-icon.png` | 180 px home-screen icon |
 | `app.svg` | Scalable favicon and editable source |
 
-The maskable mark is scaled to 87.5% around the canvas centre. Its outermost vertex is about 34.8% of the canvas
+The maskable mark is scaled to 87.5% around the canvas centre. Its outermost vertex is about 36.1% of the canvas
 width from that centre; even antialiased edge pixels stay inside the **40%-radius safe circle** specified by
 [Web Application Manifest §2.3](https://www.w3.org/TR/appmanifest/#icon-masks).
 The background remains opaque to every edge; launcher masks may remove the background outside the safe zone.
@@ -46,8 +50,9 @@ favicons and Apple icon; `public/manifest.json` lists all four install icons. Al
 and included by the full and lite package allowlist; no changes to `data/assets.json` are needed.
 
 `test/ui/pwa-install-023.test.js` checks decoded pixels, mask safety and references; `test/package.test.js` checks
-packaging inclusion. The local handoff holds old/new light/dark, small-size and phone-layout previews with their
-render script. These are offline review renders, not evidence of browser or native OS installation.
+packaging inclusion. The local handoff `claude-review-023/icon-v2/` holds the original and A/B/C SVGs, light/dark
+256 px and 16/32/48/96 px comparisons, and phone-layout / mask previews with their render script.
+These are offline review renders, not evidence of browser or native OS installation.
 
 ## Running
 

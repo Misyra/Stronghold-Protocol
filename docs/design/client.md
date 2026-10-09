@@ -115,8 +115,11 @@ refused recovery can return to the previous identity and nickname. It does not i
 Without BroadcastChannel it refuses shared recovery. Server restart / expiry clears
 obsolete metadata on the next welcome. A spectator never registers a recoverable player seat.
 
-`manifest.json` enables browser installation. The original season-independent fortress / shield mark in
-`public/icons/app.svg` uses neutral greys and no official art, logos, icons, fonts or season-specific insignia.
+`manifest.json` enables browser installation. The maintainer's revised decision of 2026-10-10 is to
+**沿用 0.2.x 的薄荷绿城堡并精修**: `public/icons/app.svg` keeps the existing three-battlement rook, inset tower
+and splayed base in mint `#4ed8af` on dark `#0c0f0e`. Refinement B narrows the tower, balances the battlements,
+thins the base and increases breathing room. It has no lettering, gradients or gloss and uses no official art,
+logos, icons or fonts.
 `tools/export-app-icons.py` exports 192/512 px PNGs for `any` and separate opaque `maskable` icons: the latter scale
 only the mark to 87.5%, keeping every foreground pixel inside the central circle of radius 40% of the canvas.
 The same master supplies 16/32/48 px PNG / ICO favicons and the 180 px Apple touch icon linked from `index.html`.

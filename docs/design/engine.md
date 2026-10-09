@@ -182,3 +182,7 @@ Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies
 - choices: 机变 families (悬赏决策 bounties, 道具补给, 机密商店, 战术决策 team/personal buffs). 悬赏决策 = the official structure of its round (choices.json `bountyDrafts`, 86 drafted cards: R3 a fixed set of six 两场 cards, R9 6 of a boss group's list, R11 6 of a seen 7-card list; §21.2); 机密商店 (R11 the official composition) and 战术决策 can offer the same card twice (`shopDraft` / `tacticDraft`); bounty cards carry `descRaw`; no draft offers a multi-round card, and 教鞭's lasts two battles (`choices.js MULTI_ROUND_BOUNTY_BATTLES`, §20.6). Pointing Stick (教鞭) offers up to three private Tactical Training cards during PREP; the owner confirms one through `g.choice` with its `choiceId`, with Ready blocked until confirmation or the existing prep deadline's auto-pick. “神秘顾客” remains random (META §2.5).
 
 ---
+
+蕾缪安's wanted tiles extend both attacks and the existing content skill-trigger range (§28.4). New detection
+requires selectability; an attached timer needs continuous detection range, and each on-field source owns its timers
+and marks. Leaving clears that source's state without clearing another still-deployed source's marks.

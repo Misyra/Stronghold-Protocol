@@ -1322,7 +1322,7 @@
       "combat": "client",
       "boost": {"lp":400,"layers":300},
       "setup": {"stageId":"act1autochess_m02","bossId":"boss_5","hiddenBossId":"boss_10","factions":["TIMES","ELEMENT","DOT"]},
-      "end": {"victory":true,"roundsPassed":15,"hiddenReached":true,"hiddenCleared":true,"reason":"victory","teamLp":399,"bossPoolLeft":0,"virtualMs":113700},
+      "end": {"victory":true,"roundsPassed":15,"hiddenReached":true,"hiddenCleared":true,"reason":"victory","teamLp":397,"bossPoolLeft":0,"virtualMs":113700},
       "rng": {"setup":25,"shop":346,"waves":0,"draft":42,"bots":10350,"meta":3},
       "errors": {"engine":0,"logged":0,"sim":0,"dispatcher":0},
       "rounds": [
@@ -1385,12 +1385,12 @@
           "victory": true,
           "roundsPassed": 15,
           "eliminatedRound": null,
-          "lp": 399,
+          "lp": 397,
           "bandId": "band_paganini",
           "title": {"id":"comment_1","name":"卫戍之星","picId":"comment_icon_1","text":"对敌方领袖造成伤害最高（仅胜利时）"},
           "trophies": 0,
           "reward": 425,
-          "stats": {"activatedLayers":2279,"bossDamage":4580000,"dmgDealt":6596430,"gold":175,"itemsEquipped":25,"kills":375,"leaks":1,"lpLost":1,"merges":5,"perfectRounds":12,"refreshes":34},
+          "stats": {"activatedLayers":2279,"bossDamage":4580000,"dmgDealt":6596436,"gold":175,"itemsEquipped":25,"kills":376,"leaks":1,"lpLost":1,"merges":5,"perfectRounds":12,"refreshes":34},
           "lineup": ["4_02_b@12,7[3_08_e_a+1_02_e_b]","6_01_a@12,8[3_03_e_a+3_02_e_a]","6_16_a@11,5","3_18_a@11,8[4_11_e_a+4_05_e_b]","4_10_a@10,4[1_05_e_b]","6_05_a@10,5","4_01_b@10,6[4_06_e_a+4_05_e_a]","1_08_b@9,9[4_10_e_a]"],
           "bonds": ["arcaneShip 2/389","deputShip 0/300","egirShip 0/300","emptyShip 0/300","indomShip 0/308","investShip 0/300","kazimierzShip 0/308","kjeragShip 0/300","lateranoShip 1/320","maniShip 0/300","miraShip 0/300","preciShip 1/302","raidShip 0/300","sargonShip 0/300","siracusaShip 1/345","skillfulShip 0/335","soloShip 1/307","steadShip 0/300","suntShip 1/300","swiftShip 1/316","victoriaShip 0/300","visiShip 0/300","yanShip 0/300"]
         }

@@ -103,7 +103,8 @@ import { createRngFromState } from './sim/rng.js';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
-import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
+import { encode, isErrCode, sendRaw, sendSession } from './net.js';
+import { resetStateDelta } from './stateTransport.js';
 import { matchStatus, roomStatus } from './roomStatus.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
@@ -322,7 +323,7 @@ export class Lobby {
         session.notice = null;
       }
       if (session.pendingResult) {
-        for (const frame of session.pendingResult) if (frame) sendRaw(session.ws, frame);
+        for (const frame of session.pendingResult) if (frame) sendSession(session, JSON.parse(frame), frame);
         session.pendingResult = null;
       }
       return;
@@ -351,6 +352,7 @@ export class Lobby {
    */
   onMessage(session, msg) {
     switch (msg.t) {
+      case 'state.resync': this.resync(session, true); return OK;
       case 'matchmaking.join': return this.matchmaking.join(session, msg.difficulty);
       case 'matchmaking.cancel': return this.roomOf(session) ? fail(ERR.ROOM_STARTED) : this.matchmaking.cancel(session);
       case 'room.create': return this.create(session, msg);
@@ -1016,6 +1018,7 @@ export class Lobby {
   /** @param {import('./net.js').Session} session */
   runResync(session) {
     if (!session.connected || this.registry.byId(session.playerId) !== session) return;
+    resetStateDelta(session.ws);
     const room = this.roomOf(session);
     if (!room) return;
     session.resyncAt = this.now();
@@ -1024,7 +1027,7 @@ export class Lobby {
       return;
     }
     const frames = this.replayFor(room, session.playerId);
-    if (frames) for (const frame of frames) sendRaw(session.ws, frame);
+    if (frames) for (const frame of frames) sendSession(session, JSON.parse(frame), frame);
   }
 
   clearResync(playerId) {
@@ -1285,9 +1288,7 @@ export class Lobby {
     if (room.disposed) return null;
     const data = encode(msg);
     if (data == null) { this.log.error(`[lobby] ${room.code} unserializable broadcast ${msg && msg.t}`); return null; }
-    const droppable = isDroppable(msg);
-    const kind = typeof msg?.t === 'string' ? msg.t : null;
-    for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { droppable, kind });
+    for (const session of this.memberSessions(room)) sendSession(session, msg, data);
     return data;
   }
 

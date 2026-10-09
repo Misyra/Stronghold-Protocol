@@ -51,7 +51,7 @@ function makeInstall() {
     chars: { char_e2e: { portrait: FILES[2].url } },
   }));
   fs.writeFileSync(path.join(publicDir, 'index.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
-<title>resource e2e</title><link rel="stylesheet" href="/css/components.css" /></head><body><div id="app"></div>
+<title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /></head><body><div id="app"></div>
 <script type="module">
   import { render } from '/vendor/preact.module.js';
   import { html } from '/js/ui/components.js';
@@ -60,10 +60,11 @@ function makeInstall() {
   // the fixture drives the real launcher, exactly as the title screen does
   let enabled = false;
   let optional = true;
+  let allVoices = false;
   const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
-    <\${ResourceHost} enabled=\${enabled} optional=\${optional} onChange=\${(v) => set(v)}
-      onOptional=\${(v) => { optional = v; void syncResources(enabled, v); paint(); }} /></div>\`, document.getElementById('app'));
-  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional); paint(); };
+    <\${ResourceHost} enabled=\${enabled} optional=\${optional} allVoices=\${allVoices} onAllVoices=\${(v) => { allVoices = v; void syncResources(enabled, optional, "cn", v); paint(); }} onChange=\${(v) => set(v)}
+      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, "cn", allVoices); paint(); }} /></div>\`, document.getElementById('app'));
+  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional, "cn", allVoices); paint(); };
   window.__res = {
     resourceState, syncResources, clearResources, startResources, exportResources, importResources,
     state: () => ({ ...resourceState(), enabled }),
@@ -89,7 +90,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
       port: 0, host: '127.0.0.1', quiet: true, publicDir: install.publicDir, dataDir: install.dataDir, store: null,
       log: { info() {}, warn() {}, error() {}, debug() {} },
     });
-    browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
+    browser = await puppeteer.launch({ browser: process.env.RESOURCE_BROWSER === 'firefox' ? 'firefox' : 'chrome',
+      executablePath: CHROME, headless: true, args: process.env.RESOURCE_BROWSER === 'firefox' ? [] : ['--no-first-run'] });
   });
 
   after(async () => {
@@ -353,6 +355,30 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(restored, { type: 'image/png', body: 'panel-bytes' });
     assert.deepEqual(problems, []);
     await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
+  });
+
+  test('manager exposes storage and cleanup controls, preserving required resources and personal settings', async (t) => {
+    const { page, problems } = await open(); t.after(() => page.close()); await ready(page, problems);
+    await page.evaluate(async () => { await window.__res.clearResources(); window.__preload(true); });
+    await page.waitForFunction('window.__res.state().complete');
+    await page.evaluate(() => { localStorage.setItem('sp.pref.settings', JSON.stringify({ voiceLang: 'jp', bgm: 0.23 })); window.__res.click(); });
+    await page.waitForSelector('.resource-cache');
+    assert.match(await page.$eval('.resource-cache', (el) => el.textContent), /预计新增/);
+    await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '清理可选资源').click());
+    await page.waitForFunction('!window.__res.state().clearing && !window.__res.state().optional && window.__res.state().tier2Done === 0');
+    const required = await page.evaluate(() => ({ done: window.__res.state().tier1Done, total: window.__res.state().tier1Total,
+      settings: JSON.parse(localStorage.getItem('sp.pref.settings')) }));
+    assert.equal(required.done, required.total); assert.ok(required.done > 0);
+    assert.deepEqual(required.settings, { voiceLang: 'jp', bgm: 0.23 });
+    await page.waitForFunction('window.__res.state().phase === "ready"');
+    await page.click('.resource-manager__voice input');
+    await page.waitForFunction('window.__res.state().allVoices');
+    await page.waitForFunction('window.__res.state().phase === "ready"');
+    await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '清理全部资源').click());
+    await page.waitForFunction('!window.__res.state().clearing && window.__res.state().done === 0');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('sp.pref.settings'))), required.settings);
+    assert.deepEqual(await page.evaluate(async () => (await caches.keys()).filter((name) => name.startsWith('stronghold-resources-'))), []);
+    assert.deepEqual(problems, []);
   });
 
 });

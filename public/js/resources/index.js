@@ -12,6 +12,7 @@
 
 import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
 import { ResourceStore } from './store.js';
+import { missingStorage, storageEstimate } from './storage.js';
 import { t } from '../../../shared/i18n.js';
 
 /** @type {any} */
@@ -45,6 +46,12 @@ const state = {
   optional: true,
   selectionComplete: false,
   groups: [],
+  failures: [],
+  archiveResult: null,
+  storage: null,
+  voiceLang: 'cn',
+  allVoices: false,
+  clearing: false,
 };
 
 const listeners = new Set();
@@ -57,6 +64,16 @@ let archiveController = null;
 let optional = true;
 let wantRun = false;
 let workerPromise = null;
+let voiceLang = 'cn';
+let allVoices = false;
+let intentRevision = 0;
+let clearPromise = null;
+
+async function updateStorage(store, status, plan) {
+  const revision = intentRevision;
+  const storage = await storageEstimate(plan || missingStorage(store, status, optional));
+  if (revision === intentRevision) set({ storage });
+}
 
 /** Subscribe to preload state changes (returns the unsubscribe function). */
 export function subscribeResources(fn) {
@@ -171,14 +188,18 @@ async function dropWorker() {
  * Turn the preload on or off (idempotent: the settings store fires on every volume change).
  * @param {boolean} enabled
  */
-export async function syncResources(enabled, includeOptional = optional) {
+export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices) {
   enabled = !!enabled;
-  const changed = optional !== !!includeOptional;
+  language = language === 'jp' ? 'jp' : 'cn';
+  const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices;
   if (enabled === current && !changed) { set({ enabled }); return; }
+  intentRevision++;
   current = enabled;
   wantRun = enabled;
   optional = !!includeOptional;
-  set({ enabled, optional, error: false, message: '' });
+  voiceLang = language;
+  allVoices = !!includeAllVoices;
+  set({ enabled, optional, voiceLang, allVoices, error: false, message: '' });
   if (!enabled) {
     controller?.abort();
     archiveController?.abort();
@@ -186,6 +207,8 @@ export async function syncResources(enabled, includeOptional = optional) {
     return;
   }
   if (changed) controller?.abort();
+  const pending = transferPromise || clearPromise;
+  if (pending) { await pending.catch(() => {}); if (!current || !wantRun) return; }
   // An aborted run restarts in start()'s finally when wantRun remains true. Reuse that promise instead of starting
   // a second run after the restart has already finished (rapid off/on or tier changes).
   return start();
@@ -229,6 +252,7 @@ function watchOtherTab(store) {
 }
 
 function start() {
+  if (clearPromise) return clearPromise;
   if (transferPromise) return transferPromise.catch(() => {});
   if (activeRun) return activeRun;
   controller = new AbortController();
@@ -257,6 +281,7 @@ async function startDownload(signal) {
     return;
   }
   const store = ctx.store;
+  store.setVoiceScope(voiceLang, allVoices);
   set({ supported: true, version: store.manifest.version });
   // registering an already-registered worker is a cheap no-op, so every start can retry a failed one. A failure here
   // does NOT stop the download (the page fills Cache Storage itself) — it only means nothing can be served offline.
@@ -265,6 +290,7 @@ async function startDownload(signal) {
     set({ worker: t('预载服务未启用（{0}），资源仍会下载，但不会从本机缓存读取。', { 0: err?.message || err }) });
   });
   const before = await store.status();
+  await updateStorage(store, before);
   console.info('[resources] preload check timings', { manifestMs: manifestReady - checkStart,
     ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
@@ -274,7 +300,7 @@ async function startDownload(signal) {
   const onProgress = (p) => {
     // "整理" instead of "下载" when the files came out of an older cache: nothing is being fetched (store.js 的迁移).
     const message = p.adopted > 0 && p.downloaded === 0 ? t('正在整理已保存的资源（无需重新下载）…') : '';
-    set({ ...counters(p), phase: 'download', failed: p.failed, error: false, message });
+    set({ ...counters(p), phase: 'download', failed: p.failed, failures: p.failures || [], error: false, message });
   };
   try {
     // Required visuals first, then optional audio/tutorials when selected.
@@ -282,15 +308,17 @@ async function startDownload(signal) {
       checkAbort(signal);
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
       const rest = optional ? await store.download({ tiers: [TIER_REST], signal,
-        onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed }) }) : { failed: 0 };
-      return { busy: false, failed: essential.failed + rest.failed };
+        onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
+      return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10) };
     });
     if (outcome.busy) { await watchOtherTab(store); return; }
     const after = await store.status();
+    await updateStorage(store, after);
     set({
       ...counters(after),
       phase: 'ready',
       failed: outcome.failed,
+      failures: outcome.failures,
       error: outcome.failed > 0,
       message: !optional && selectionComplete(after) ? t('必备资源已预载完成；可选资源按需加载。') : after.complete
         ? t('资源已全部预载完成（{0}）。', { 0: formatBytes(after.bytes) })
@@ -312,6 +340,7 @@ async function startDownload(signal) {
 
 /** Stop downloading (keeps what is cached). */
 export function pauseResources() {
+  intentRevision++;
   wantRun = false;
   archiveController?.abort();
   if (controller) {
@@ -330,24 +359,30 @@ export async function importResources(file, { onImported } = {}) {
   return outcome;
 }
 
-export function exportResources() {
-  return transferArchive('export');
+export async function exportResources() {
+  const resume = current && wantRun && !!activeRun;
+  const revision = intentRevision;
+  try { return await transferArchive('export'); }
+  finally {
+    if (resume && current && revision === intentRevision) void startResources();
+  }
 }
 
 function transferArchive(kind, file) {
+  if (transferPromise || clearPromise) return Promise.reject(new Error('资源包正在处理中'));
   wantRun = false;
-  if (transferPromise) return Promise.reject(new Error('资源包正在处理中'));
   // Stop the whole two-tier run, not just the currently active store.download() call.
   controller?.abort();
   archiveController = new AbortController();
   const signal = archiveController.signal;
-  set({ archive: kind, archivePhase: '', archivePercent: 0, archiveGroup: '',
+  set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '',
     message: kind === 'import' ? t('正在准备导入资源包…') : t('正在准备导出资源包…'), error: false });
   transferPromise = (async () => {
     if (activeRun) await activeRun;
     const ctx = await resourceContext();
     if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
     checkAbort(signal);
+    ctx.store.setVoiceScope(voiceLang, allVoices);
     const outcome = await withDownloadLock(async () => {
       set(counters(await ctx.store.status()));
       const archive = await import('./archive.js');
@@ -369,17 +404,22 @@ function transferArchive(kind, file) {
       };
       return kind === 'import'
         ? archive.importResourceZip(ctx.store, file, { signal, onProgress,
+          onPlan: (plan) => updateStorage(ctx.store, null, plan),
           onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
         : archive.exportResourceZip(ctx.store, { signal, onProgress });
     });
     if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
     checkAbort(signal);
+    set({ archivePhase: '', archiveGroup: '' });
     const status = await ctx.store.status();
+    await updateStorage(ctx.store, status);
     const missing = status.tier1Wanted - status.tier1Present + (optional ? status.tier2Wanted - status.tier2Present : 0);
     set({ ...counters(status), failed: 0, phase: selectionComplete(status) ? 'ready' : 'paused',
       message: kind === 'export'
         ? t('已导出 {count} 个资源文件。', { count: outcome.count })
-        : t('已导入 {imported} 个资源文件，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
+        : t('已导入 {imported} 个资源文件，已有 {already} 个，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, already: outcome.already || 0, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
+    set({ archiveResult: { kind, status: 'success', imported: outcome.imported || 0, already: outcome.already || 0,
+      count: outcome.count, skippedPackage: outcome.skippedPackage || 0, skipReasons: outcome.skipReasons || {}, message: state.message } });
     if (kind === 'import') {
       await ensureWorker().catch((err) => set({ worker: t('预载服务未启用（{0}）', { 0: err?.message || err }) }));
     }
@@ -393,6 +433,7 @@ function transferArchive(kind, file) {
       message: aborted ? t('资源包处理已取消，已保存的资源保留。')
         : isQuotaError(err) || /空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')
           : t('资源包{0}失败：{1}', { 0: kind === 'import' ? t('导入') : t('导出'), 1: err?.message || err }) });
+    set({ archiveResult: { kind, status: aborted ? 'cancelled' : 'error', message: state.message } });
     throw err;
   }).finally(() => {
     archiveController = null;
@@ -405,41 +446,51 @@ function transferArchive(kind, file) {
 /**
  * Delete every cached resource (all versions) and stop.
  */
-export async function clearResources() {
+export function clearResources({ optionalOnly = false } = {}) {
+  if (clearPromise) return clearPromise;
+  intentRevision++;
   wantRun = false;
   controller?.abort();
   archiveController?.abort();
-  if (activeRun) await activeRun;
-  if (transferPromise) { try { await transferPromise; } catch { /* cancelled */ } }
-  const ctx = await resourceContext();
-  // a run that was mid-file finishes (or aborts) before the caches go away, so nothing lands after the clear
-  if (ctx.store?.running) { try { await ctx.store.running; } catch { /* aborted — nothing to keep */ } }
-  const outcome = await withDownloadLock(async () => {
-    if (ctx.store) await ctx.store.clear();
-    else if (globalThis.caches) {
-      const names = await globalThis.caches.keys();
-      await Promise.all(names.filter((n) => n.startsWith(CACHE_PREFIX)).map((n) => globalThis.caches.delete(n)));
+  set({ clearing: true });
+  clearPromise = (async () => {
+    if (activeRun) await activeRun;
+    if (transferPromise) { try { await transferPromise; } catch { /* cancelled */ } }
+    const ctx = await resourceContext();
+    if (ctx.store?.running) { try { await ctx.store.running; } catch { /* aborted */ } }
+    const outcome = await withDownloadLock(async () => {
+      let status;
+      if (ctx.store) status = await ctx.store.clear({ optionalOnly });
+      else if (optionalOnly) throw new Error('无法读取资源清单，请重试或清理全部资源');
+      else if (globalThis.caches) {
+        const names = await caches.keys();
+        await Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX)).map((name) => caches.delete(name)));
+      }
+      if (!current) { await workerPromise; await dropWorker(); }
+      return { busy: false, status };
+    });
+    if (outcome.busy) {
+      set({ error: true, message: t('另一个标签页正在预载，请先暂停该标签页再清理缓存。') });
+      return outcome;
     }
-    if (!current) { await workerPromise; await dropWorker(); }
-    return { busy: false };
-  });
-  if (outcome.busy) {
-    set({ error: true, message: t('另一个标签页正在预载，请先暂停该标签页再清理缓存。') });
-    return;
-  }
-  set({
-    done: 0, tier1Done: 0, tier2Done: 0, bytes: 0, failed: 0, complete: false, error: false,
-    phase: current ? 'paused' : 'off',
-    message: t('已清理预载资源缓存。'),
-    selectionComplete: false,
-    groups: state.groups.map((g) => ({ ...g, present: 0, bytes: 0 })),
-  });
+    const status = outcome.status;
+    if (status) { set(counters(status)); await updateStorage(ctx.store, status); }
+    set({ failed: 0, failures: [], error: false, archiveResult: null,
+      phase: current ? 'paused' : 'off',
+      message: optionalOnly ? t('已清理可选资源缓存，必备资源和个人设置保留。') : t('已清理预载资源缓存。'),
+    });
+    return outcome;
+  })().catch((err) => {
+    set({ error: true, message: t('清理缓存失败：{0}', { 0: err?.message || err }) });
+    return { busy: false, error: true };
+  }).finally(() => { clearPromise = null; set({ clearing: false }); });
+  return clearPromise;
 }
 
 /** Opening the manager checks the cache without starting network asset downloads. */
 export async function inspectResources() {
   // An active run already publishes authoritative counters; opening the panel must not enqueue another cache scan.
-  if (activeRun || transferPromise) return;
+  if (activeRun || transferPromise || clearPromise) return;
   if (!activeRun && !transferPromise) set({ phase: 'checking', error: false, message: t('正在检查已保存的资源…') });
   const ctx = await resourceContext();
   if (!ctx.store) {
@@ -449,8 +500,12 @@ export async function inspectResources() {
     return;
   }
   try {
-    if (activeRun || transferPromise) return;
+    if (activeRun || transferPromise || clearPromise) return;
+    const revision = intentRevision;
+    ctx.store.setVoiceScope(voiceLang, allVoices);
     const status = await ctx.store.status();
+    await updateStorage(ctx.store, status);
+    if (activeRun || transferPromise || clearPromise || revision !== intentRevision) return;
     set({ ...counters(status), version: ctx.manifest.version, supported: true,
       ...(!activeRun && !transferPromise ? { phase: selectionComplete(status) ? 'ready' : 'paused', message: '', error: false } : {}) });
   } catch (err) {

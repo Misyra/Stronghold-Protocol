@@ -3,7 +3,7 @@
 #
 # Code: GPL-3.0-or-later (LICENSE). Game art/audio is © Hypergryph / Yostar, not covered by the GPL, non-commercial use
 # only (NOTICE.md). This fork includes local-client art; two ways to add the remaining downloaded art:
-#   A) download it while building (~250 MB, needs internet during the build):
+#   A) download it while building (needs internet during the build):
 #        docker build -t stronghold-protocol --build-arg FETCH_ASSETS=1 .
 #   B) build without it and mount the host's copy (prepared with `node tools/setup.mjs` on the host):
 #        docker build -t stronghold-protocol .
@@ -12,7 +12,7 @@
 #      (public/fonts, data/assets.json and data/local-assets.json are copied from the build context when present)
 # Without any art the game still runs with placeholder visuals.
 #
-# Run:  docker run -d --name stronghold -p 3000:3000 --restart unless-stopped stronghold-protocol
+# Run:  see docs/operations/DEPLOY.md for CDN, announcement site ID and persistent state mounts.
 # Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
 
 ARG NODE_IMAGE=node:22-alpine
@@ -49,6 +49,8 @@ COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/server ./server
+# Published art fingerprints are needed even when the CDN serves all binary assets.
+COPY .assets-manifest.json ./.assets-manifest.json
 COPY --from=build /app/data ./data
 COPY --from=build /app/public ./public
 # research tables: read by server/sim/nodeData.js as a fallback

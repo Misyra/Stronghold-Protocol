@@ -1,4 +1,4 @@
-// test/package.test.js — tools/package.mjs, the player release zips (docs/operations/DEPLOY.md §7). No network, no npm install, no
+// test/package.test.js — tools/package.mjs, the player release zips (docs/operations/PACKAGING.md). No network, no npm install, no
 // zip of the repository: the selection rules on sample paths and on the real `git ls-files`, then the packager itself
 // (--dry-run, the scans and guards, one --no-install build) on a small temporary git checkout with fake art.
 // Run: node --test test/package.test.js

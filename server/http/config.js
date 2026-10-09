@@ -27,6 +27,39 @@ const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMa
  */
 export const DEFAULT_BIND_HOST = '::';
 
+// This fork's new Xi'an instance. Existing sites keep their explicit feed URL/site ID.
+export const DEFAULT_ANNOUNCEMENT_PORTAL = 'https://game.rainya.me';
+export const DEFAULT_ANNOUNCEMENT_SITE = 'site-ad797aa8';
+
+/**
+ * Resolve once at boot; an empty URL never selects local-file mode.
+ * @param {{ announcementSource?: string, announcementFile?: string, announcementPollMs?: number,
+ * announcementSiteId?: string, announcementPortalUrl?: string, announcementUrl?: string }} opts
+ * @param {Record<string, string | undefined>} env
+ */
+export function announcementOptionsFrom(opts = {}, env = process.env) {
+  const source = opts.announcementSource ?? env.SP_ANNOUNCEMENT_SOURCE ?? 'panel';
+  if (!['panel', 'file'].includes(source)) throw new RangeError('SP_ANNOUNCEMENT_SOURCE must be panel or file');
+  const filePath = path.resolve(ROOT, opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json');
+  const pollMs = opts.announcementPollMs ?? Number(env.SP_ANNOUNCEMENT_POLL_MS || 10000);
+  if (!Number.isFinite(pollMs)) throw new RangeError('invalid SP_ANNOUNCEMENT_POLL_MS');
+  if (source === 'file') return { filePath, pollMs, announcementUrl: null, source: { mode: 'file', siteId: null } };
+  const explicitUrl = opts.announcementUrl || env.SP_ANNOUNCEMENT_URL;
+  let url;
+  if (explicitUrl) url = new URL(explicitUrl);
+  else {
+    const siteId = opts.announcementSiteId ?? env.SP_SITE_ID ?? DEFAULT_ANNOUNCEMENT_SITE;
+    if (!/^[a-z0-9-]{1,40}$/.test(siteId)) throw new RangeError('invalid SP_SITE_ID');
+    const portal = opts.announcementPortalUrl ?? env.SP_PORTAL_URL ?? DEFAULT_ANNOUNCEMENT_PORTAL;
+    url = new URL(`/api/announce/v1/${siteId}`, portal);
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
+    throw new RangeError('announcement URL must be HTTP(S) without credentials or a fragment');
+  }
+  return { filePath, pollMs, announcementUrl: url.href,
+    source: { mode: 'panel', siteId: /^\/api\/announce\/v1\/([a-z0-9-]{1,40})$/.exec(url.pathname)?.[1] ?? null } };
+}
+
 /**
  * Where to listen: the `port` / `host` options, else PORT / HOST, else port 3000 on DEFAULT_BIND_HOST.
  * An empty host is treated as unset.

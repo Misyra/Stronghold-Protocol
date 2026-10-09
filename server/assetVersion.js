@@ -90,10 +90,11 @@ export function readAssetsCdnVersionFile(file = path.resolve(path.dirname(fileUR
 }
 
 /** The per-file art manifest tools/r2-sync.mjs ships with the repo (`.assets-manifest.json`):
- *  `{ tag, hashes }` — `hashes` maps every published art path (`/assets/…`) to its content hash.
+ *  `{ tag, hashes, preload? }` — `hashes` maps every published art path (`/assets/…`) to its content hash.
  *  Servers pass it into every CDN URL as a per-file `?v=<hash>` query, so a release only re-busts
  *  the files it changed; the tag doubles as the manifest's own immutable-cache key. Returns null
- *  when the file is missing or does not hold a valid manifest. */
+ *  when the file is missing or does not hold a valid manifest. Optional `preload` supplies server-side
+ *  SHA-1/size metadata for resource import validation on CDN-only installs. */
 export function readAssetsManifestFile(file = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.assets-manifest.json')) {
   try {
     const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -105,7 +106,16 @@ export function readAssetsManifestFile(file = path.resolve(path.dirname(fileURLT
       if (!/^\/(?:assets|fonts|media)\/[^\s?#]+$/.test(p) || !/^[a-f0-9]{16}$/.test(h)) return null;
       hashes[p] = h;
     }
-    return { tag: doc.tag, hashes };
+    // Optional server-side SHA-1/size metadata for CDN-only installs. Ignore malformed rows;
+    // an unlisted path cannot authorize a cache import.
+    const preload = {};
+    if (doc.preload && typeof doc.preload === 'object' && !Array.isArray(doc.preload)) {
+      for (const [p, entry] of Object.entries(doc.preload).slice(0, 50000)) {
+        if (Object.hasOwn(hashes, p) && entry && /^[a-f0-9]{12}$/.test(entry.hash)
+          && Number.isSafeInteger(entry.size) && entry.size >= 0) preload[p] = { hash: entry.hash, size: entry.size };
+      }
+    }
+    return Object.keys(preload).length ? { tag: doc.tag, hashes, preload } : { tag: doc.tag, hashes };
   } catch {
     return null;
   }

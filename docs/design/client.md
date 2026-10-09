@@ -101,8 +101,18 @@ room loadouts and their exports.
 
 The title and lobby offer explicit recovery of a previously saved local match seat. `sp.matches` stores bounded name /
 room-code metadata indexed by token hash; the existing four-entry `sp.tokens` ring remains the authority. Recovery
-rechecks BroadcastChannel claims before adopting the selected token, then reloads. It does not identify players by
-name or IP or displace a live tab. Without BroadcastChannel it refuses shared recovery. Server restart / expiry clears
+rechecks BroadcastChannel claims before selecting the token in memory and reconnecting in the same document.
+Only the server's `welcome` (`saveToken`) persists that selection and its first-welcome stamp (`sp.tokenWelcome`,
+bound to the token hash). Refreshing or reconnecting the same token preserves that stamp. A tab with a session token
+initializes with that token or null, never another recent token, and answers ownership queries during initialization.
+An earlier welcome takes precedence; equal stamps prefer an already welcomed live document over a copied session,
+then tab id breaks ties. A session token without a stamp still outranks a tentative shared-token selection. A pending
+recovery yields when the original owner returns; a later welcomed holder also gives up its local claim and pending
+reconnect. `hello.noReplace` prevents tentative recovery from evicting a connected session even if its hello is already
+in flight; `hello.claimAt` preserves the earlier-welcome priority for established holders' in-flight reconnects. A stale
+welcome never reaches the store or flushes queued game actions. Nickname persistence also waits for welcome, so a
+refused recovery can return to the previous identity and nickname. It does not identify players by name or IP.
+Without BroadcastChannel it refuses shared recovery. Server restart / expiry clears
 obsolete metadata on the next welcome. A spectator never registers a recoverable player seat.
 
 `manifest.json` enables browser installation; its original fortress favicon is packaged as actual 192/512 px icons in

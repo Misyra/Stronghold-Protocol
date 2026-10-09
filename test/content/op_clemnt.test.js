@@ -9,7 +9,7 @@ const C = 'char_4231_clemnt';
 const data = Object.fromEntries(['chess', 'backups'].map((f) => [f, JSON.parse(readFileSync(new URL(`../../data/${f}.json`, import.meta.url)))]));
 const approx = (a, b, label = '') => assert.ok(Math.abs(a - b) < 1e-5 * Math.max(1, Math.abs(b)), `${label}: ${a} != ${b}`);
 const enemy = (key, opts = {}) => enemyRec({ key, hp: 1e8, atk: 0, speed: 0, ...opts });
-const defs = { enemies: { dummy: enemy('dummy'), light: enemy('light', { mass: 3 }), heavy: enemy('heavy', { mass: 9 }),
+const defs = { enemies: { dummy: enemy('dummy'), light: enemy('light', { mass: 3 }), mid: enemy('mid', { mass: 4 }), heavy: enemy('heavy', { mass: 9 }),
   fly: enemy('fly', { motion: 'FLY' }), zero: enemy('zero', { mass: 0 }), armored: enemy('armored', { def: 100 }) } };
 function field({ tier = 6, elite = true, skill = 0, potential = 6, dir = 'RIGHT', row = 10, col = 3 } = {}) {
   const h = makeBattle({ seed: 23, autoFinish: false, timeLimit: 180, defs,
@@ -102,6 +102,68 @@ test('风暴潮 caps passengers at fifteen and cleans them on early skill end', 
   const es = [...u.mem.clemntCabin.passengers]; u.skill.stop();
   assert.ok(es.every((e) => !e.s.flags.disarm && !e.s.flags.unblockable && !e.s.flags.noMove));
   assert.equal(u.mem.clemntCabin, null); done(h);
+});
+
+for (const reason of ['death', 'hidden', 'self-bound', 'teleport-immune', 'no-path']) {
+  test(`风暴潮 releases ${reason} passengers before admitting a replacement in the same tick`, () => {
+    const { h, u } = field({ skill: 1 });
+    const victim = h.spawn('light', { pos: [10, 4] });
+    const survivor = h.spawn('light', { pos: [10, 4] });
+    start(u); h.run(0.7);
+    const c = u.mem.clemntCabin, carry = `clemnt:carry:${u.id}`;
+    assert.deepEqual(c.passengers.map((e) => e.id), [victim.id, survivor.id]);
+    assert.equal(c.mass, 2);
+    if (reason === 'death') h.b.dealDamage(u, victim, { amount: 1e12, type: 'true' });
+    if (reason === 'hidden') victim.hidden = true;
+    if (reason === 'self-bound') h.b.addBuff(victim, { key: 'test:bound', flags: { selfBound: true } });
+    if (reason === 'teleport-immune') victim.def = { ...victim.def, immune: new Set(['teleport']) };
+    if (reason === 'no-path') {
+      victim.x = 7; victim.y = 12;
+      for (const [r, col] of [[11, 6], [11, 7], [11, 8], [12, 6], [12, 8]]) h.b.grid.setObstacle(r, col, true);
+      assert.equal(h.b.grid.findPath(12, 7, Math.round(c.y), Math.round(c.x)), null);
+    }
+    const replacement = h.spawn('light', { pos: [c.y, c.x] });
+    h.step();
+    assert.deepEqual(c.passengers.map((e) => e.id), [survivor.id, replacement.id]);
+    assert.equal(c.mass, 2);
+    assert.ok(!victim.findBuff(carry));
+    assert.ok(replacement.findBuff(carry));
+    approx(replacement.x, c.x); approx(survivor.x, c.x);
+    h.step(); assert.equal(c.mass, 2, 'released weight is returned only once');
+    done(h);
+  });
+}
+
+for (const [kind, count] of [['zero', 15], ['mid', 1]]) {
+  test(`风暴潮 frees the ${kind === 'zero' ? 'fifteenth slot' : 'four-weight budget'} after a passenger dies`, () => {
+    const { h, u } = field({ skill: 1 });
+    const riders = Array.from({ length: count }, () => h.spawn(kind, { pos: [10, 4] }));
+    start(u); h.run(0.7);
+    const c = u.mem.clemntCabin;
+    assert.equal(c.passengers.length, count);
+    h.b.dealDamage(u, riders[0], { amount: 1e12, type: 'true' });
+    const replacement = h.spawn(kind, { pos: [c.y, c.x] });
+    h.step();
+    assert.equal(c.passengers.length, count);
+    assert.ok(!c.passengers.includes(riders[0]));
+    assert.ok(c.passengers.includes(replacement));
+    assert.equal(c.mass, kind === 'zero' ? 8 : 4);
+    done(h);
+  });
+}
+
+test('风暴潮 returns a released passenger’s current weight after a weight modifier', () => {
+  const { h, u } = field({ skill: 1 });
+  const victim = h.spawn('light', { pos: [10, 4] });
+  start(u); h.run(0.7);
+  const c = u.mem.clemntCabin;
+  assert.equal(c.mass, 5);
+  h.b.addBuff(victim, { key: 'test:lighter', mods: { massFlat: -1 }, flags: { selfBound: true } });
+  assert.equal(victim.weight, 2);
+  h.step();
+  assert.equal(c.passengers.length, 0);
+  assert.equal(c.mass, 7, 'return current weight 2, not boarding weight 3');
+  done(h);
 });
 
 test('风暴潮 stops before a blocked tile; vortex keeps its continuous stop point, hits air and applies normal erosion resistance', () => {

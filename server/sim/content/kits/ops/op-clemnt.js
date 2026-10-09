@@ -79,6 +79,17 @@ export default {
       if (!c.stopped) {
         c.moved = Math.min(c.distance, c.moved + SPEED * dt);
         c.x = c.ox + c.dc * c.moved; c.y = c.oy + c.dr * c.moved;
+        // Release before either boarding limit is checked: invalid riders occupy neither a slot
+        // nor weight. Return their current weight, including modifiers applied during the ride.
+        for (let i = c.passengers.length - 1; i >= 0; i--) {
+          const e = c.passengers[i], [er, ec] = tile(e);
+          if (!e.alive || e.hidden || cannotCarry(e)
+            || !battle.grid.findPath(er, ec, Math.round(c.y), Math.round(c.x))) {
+            battle.removeBuff(e, CARRY + unit.id);
+            c.passengers.splice(i, 1);
+            c.mass += e.weight;
+          }
+        }
         const cap = num(b2['attack@max_passenger_cnt'], 15);
         for (const e of battle.enemies) {
           if (c.passengers.length >= cap) break;
@@ -93,10 +104,7 @@ export default {
           battle.addBuff(e, { key: CARRY + unit.id, flags: { noMove: true, disarm: true, unblockable: true }, source: unit, tags: ['skill'] });
         }
         for (const e of c.passengers) {
-          if (!e.alive || e.hidden || cannotCarry(e)) { battle.removeBuff(e, CARRY + unit.id); continue; }
           if (!e.findBuff(CARRY + unit.id)) continue;
-          const [er, ec] = tile(e);
-          if (!battle.grid.findPath(er, ec, Math.round(c.y), Math.round(c.x))) { battle.removeBuff(e, CARRY + unit.id); continue; }
           const fromX = e.x, fromY = e.y;
           e.x = c.x; e.y = c.y;
           if (e.route) e.route.pts = null;

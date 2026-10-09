@@ -172,6 +172,9 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).
 
 - kits: all 112 visible chess + hidden ones used by effects (盟约·辅助干员), default skill + talents + trait specifics; tokens. The 72 non-collaboration 6★ DIY operators include 克莱门莎 (§28.1); her launch-day provisional mechanics are local to her kit. 黍 GUA-Y and 乌尔比安 CRU-Y follow the generated module blackboards and existing module-level rules (§28.2).
+  克莱门莎 S2 removes dead, hidden, self-bound / teleport-immune and unreachable passengers before checking new
+  boarding in the same tick. Each released passenger returns its current weight to the cabin's remaining budget
+  and frees its slot (§28.27); neither corpses nor failed carries reserve capacity.
 - bonds: 23 (battle + meta), exact per-layer formulas from research 02.
 - garrisons: 43 effect keys (IN_BATTLE via hooks; SERVER_* via meta registry).
   远牙's granted `garrison_108_a/b` additionally gains on both directions of `dollSwap`, sharing its deployment

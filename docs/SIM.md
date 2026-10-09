@@ -535,6 +535,11 @@ flag `float` (近地悬浮, PRTS 术语释义 "算作空中单位") or `levitate
 walking the ground path). `deploySeq` counts deployments (and identifies one: `seq === u.deploySeq`);
 `aggroSeq` is the aggro order (= deploySeq, except the summons of the initial deployment, §1).
 
+克莱门莎 S2's kit stores its cabin in `unit.mem.clemntCabin`. Before boarding each tick, it removes passengers
+that died, became hidden / uncarryable or cannot path to the next cabin position, removes their carry buff and
+returns their current `weight` (including modifiers). The same tick's count and weight limits use that cleaned
+list and budget (DESIGN §28.27); this is local to the kit, not a change to general displacement.
+
 **Hit areas (`body.js`, user playtest #5 item 10).** A regular enemy is a point: in a grid range when the tile of its
 position (`round(y)`, `round(x)`) is a range tile, in a radius when its position is (DESIGN §3). A huge enemy (巨型单位:
 `enemy.hitArea` from data/enemies.json `hitArea` — 假想敌：胄 / 管 / 盐风主教昆图斯 / 阿利斯泰尔 / “萨米的意志”, PRTS

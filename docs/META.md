@@ -174,6 +174,11 @@ otherwise every "之后 / 后续的每场作战" card — e.g. 教鞭's 法术�
 A `choice:<effectId>` registry handler overrides the default application (§2.4).
 
 ### 1.3 Disconnects, AI takeover
+* Local multi-window recovery (#431, DESIGN §28.27) sends optional `hello.noReplace` for a tentative shared token,
+  and `hello.claimAt` for a previously welcomed token. Before binding a different socket, the server rejects a
+  connected seat when no replacement was allowed or the request has a later stamp than the attached holder
+  (`SESSION_IN_USE`). Equal stamps still allow normal reload/reconnect. These hints do not authenticate players
+  and do not change the bearer token or expiration rules below.
 * Disconnected human: the seat keeps playing its last lineup; drafts auto-resolve at their deadlines, prep auto-readies at
   the deadline (an open 教鞭 choice is picked at random first, §2.5; then the temp pieces due at that prep are sold/destroyed). Nothing is bought for them. A battle the human was authority of goes to the server
   (normal / 联防: re-simulated from t = 0) or, on a boss field, to the partner's replica (DESIGN §14). The session stays

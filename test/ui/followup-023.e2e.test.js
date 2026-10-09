@@ -14,9 +14,10 @@ describe('0.2.3 follow-up client features', { skip: !ENABLED }, () => {
     browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox'] });
   });
   after(async () => { await browser?.close(); await server?.close(); });
-  async function pageIn(ctx, phone = false) {
+  async function pageIn(ctx, phone = false, random = null) {
     const page = await ctx.newPage();
     await page.setViewport({ width: phone ? 844 : 1440, height: phone ? 390 : 900 });
+    if (random != null) await page.evaluateOnNewDocument((value) => { Math.random = () => value; }, random);
     await page.evaluateOnNewDocument(() => { localStorage.setItem('sp.name', 'Recovery Test'); sessionStorage.setItem('sp.entered', '1'); });
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online' && document.querySelector('.lobby-screen'));
@@ -40,10 +41,69 @@ describe('0.2.3 follow-up client features', { skip: !ENABLED }, () => {
       await b.close();
       await a.click('[data-testid="resume-local-match"]');
       await a.waitForSelector('.modal .btn--block');
-      await Promise.all([a.waitForNavigation({ waitUntil: 'domcontentloaded' }), a.click('.modal .btn--block')]);
+      await a.evaluate(() => { globalThis.recoveryDocument = true; });
+      await a.click('.modal .btn--block');
       await a.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'INFO_CHECK');
       const after = await a.evaluate(() => { const s = globalThis.__SP__.store.get(); return { id: s.me.playerId, code: s.room.code }; });
       assert.deepEqual(after, before);
+      assert.equal(await a.evaluate(() => globalThis.recoveryDocument), true, 'welcome arrives in the same document');
+    } finally { await ctx.close(); }
+  });
+  test('a refreshing match window keeps its seat while its init is waiting and another window clicks recovery', async () => {
+    const ctx = await browser.createBrowserContext();
+    try {
+      const guest = await pageIn(ctx, false, 0.01), owner = await pageIn(ctx, false, 0.99);
+      const before = await owner.evaluate(async () => {
+        const { net, store } = globalThis.__SP__;
+        await net.request('room.create', { mode: 'solo', difficulty: 'NORMAL' });
+        await net.request('room.start', {});
+        return { id: store.get().me.playerId, code: store.get().room.code, token: sessionStorage.getItem('sp.token') };
+      });
+      const guestId = await guest.evaluate(() => globalThis.__SP__.store.get().me.playerId);
+      await owner.waitForFunction(() => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK');
+      await guest.waitForSelector('[data-testid="resume-local-match"]');
+      await owner.evaluateOnNewDocument(() => {
+        // Hold precisely the timeout scheduled immediately after the real identity query.
+        // Messages still use Chrome's BroadcastChannel; only init's completion is controlled.
+        const Channel = globalThis.BroadcastChannel, timer = globalThis.setTimeout;
+        let hold = false;
+        globalThis.BroadcastChannel = class extends Channel {
+          constructor(name) { super(name); this.identityChannel = name === 'sp.identity'; }
+          postMessage(message) {
+            super.postMessage(message);
+            if (this.identityChannel && message.type === 'who') hold = true;
+          }
+        };
+        globalThis.setTimeout = (fn, ms, ...args) => {
+          if (hold) {
+            hold = false;
+            globalThis.finishIdentityInit = () => fn(...args);
+            return 0;
+          }
+          return timer(fn, ms, ...args);
+        };
+      });
+      await owner.reload({ waitUntil: 'domcontentloaded' });
+      await owner.waitForFunction(() => typeof globalThis.finishIdentityInit === 'function');
+      await guest.bringToFront();
+      await guest.click('[data-testid="resume-local-match"]');
+      await guest.waitForSelector('.modal .btn--block');
+      await guest.click('.modal .btn--block');
+      await guest.waitForFunction(() => document.body.textContent.includes('此对局仍在其他窗口中'));
+      assert.equal(await owner.evaluate(() => sessionStorage.getItem('sp.token')), before.token);
+      await owner.evaluate(() => globalThis.finishIdentityInit());
+      await owner.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'INFO_CHECK');
+      const after = await owner.evaluate(() => {
+        const s = globalThis.__SP__.store.get();
+        return { id: s.me.playerId, code: s.room.code, token: sessionStorage.getItem('sp.token') };
+      });
+      assert.deepEqual(after, before);
+      assert.equal(await guest.evaluate(() => globalThis.__SP__.store.get().me.playerId), guestId);
+      for (const page of [guest, owner]) {
+        const pong = await page.evaluate(() => globalThis.__SP__.net.request('ping', { c: Date.now() }));
+        assert.equal(pong.t, 'pong');
+        assert.equal(await page.evaluate(() => globalThis.__SP__.store.get().connection.status), 'online');
+      }
     } finally { await ctx.close(); }
   });
   test('co-op opening reroll shows a unanimous vote, clears stale readiness and can be rejected', { timeout: 45000 }, async () => {

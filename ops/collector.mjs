@@ -19,9 +19,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { DailyStats } from './lib/daily-stats.mjs';
+import { sampleHistory, SampleWriter } from './lib/sample-history.mjs';
 import { execFileSync } from 'node:child_process';
 import { integer, loopback, periodic, fetchJson, safeUrl } from './lib/http.mjs';
-import { dayKey, nginxDay, privateAddress, atomicJson, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, readLogBatch } from './lib/collector-utils.mjs';
+import { dayKey, nginxDay, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, LogReader } from './lib/collector-utils.mjs';
 
 const T0 = Date.now();
 
@@ -58,20 +61,15 @@ const ring = [];
 let last = null;
 let seq = 0;
 let alertLevel = 'ok';
+const sampleWriter = new SampleWriter(CFG.dataDir, RING_MAX);
 
 // ---------------------------------------------------------------------------- 每日统计
 
-function emptyDay(date) {
-  // logOffset / logIno 持久化：重启后从上次位置继续读日志，避免重复计数
-  return { date, requests: 0, pageViews: 0, assetHits: 0, wsConnects: 0, aborts: 0, errors: 0, bytes: 0, ips: [], peakSessions: 0, peakSockets: 0, peakHumans: 0, peakBots: null, peakTxKB: 0, logOffset: 0, logIno: 0 };
-}
-
-let today = emptyDay(dayKey(new Date(), CFG.timeZone));
-const ipSet = new Set();
-let logOffset = 0;
-let logIno = 0;
+const stats = new DailyStats({ dir: CFG.dataDir, timeZone: CFG.timeZone, retainDays: CFG.retainDays });
+const logReader = new LogReader(CFG.nginxLog);
 const diagnostics = { nginx: { status: 'missing', error: 'NO_SAMPLE' }, storage: { status: 'ok', error: null } };
 const storageFailures = new Set();
+let lastLogAt = null, logBacklogBytes = null;
 function storageIO(section, work) {
   try { work(); storageFailures.delete(section); }
   catch (error) {
@@ -81,67 +79,19 @@ function storageIO(section, work) {
   diagnostics.storage = { status: storageFailures.size ? 'error' : 'ok', error: storageFailures.size ? 'STORAGE_WRITE_FAILED' : null };
   return !storageFailures.has(section);
 }
-let dailyHistory = {};
-
-const fileToday = () => path.join(CFG.dataDir, `daily-${today.date}.json`);
-const fileDaily = () => path.join(CFG.dataDir, 'daily-history.json');
-
+function saveDay(force = false) { return storageIO('daily', () => stats.save(force)); }
 function loadState() {
   try {
-    dailyHistory = JSON.parse(fs.readFileSync(fileDaily(), 'utf8')) || {};
-  } catch { dailyHistory = {}; }
-  try {
-    const s = JSON.parse(fs.readFileSync(fileToday(), 'utf8'));
-    if (s && s.date === dayKey(new Date(), CFG.timeZone)) {
-      today = { ...emptyDay(dayKey(new Date(), CFG.timeZone)), ...s };
-      for (const ip of s.ips || []) ipSet.add(ip);
-      logOffset = Number(s.logOffset) || 0;
-      logIno = Number(s.logIno) || 0;
-    }
-  } catch { /* 首次运行 */ }
-  try {
-    const files = fs.readdirSync(CFG.dataDir).filter((f) => f.startsWith('samples-')).sort().slice(-2);
-    for (const f of files) {
-      const lines = fs.readFileSync(path.join(CFG.dataDir, f), 'utf8').trim().split('\n').slice(-RING_MAX);
-      for (const line of lines) {
-        try { ring.push(JSON.parse(line)); } catch { /* 跳过坏行 */ }
+    const files = fs.readdirSync(CFG.dataDir).filter(f => /^samples-\d{4}-\d\d-\d\d\.jsonl$/.test(f)).sort().slice(-2);
+    for (const file of files) {
+      for (const line of fs.readFileSync(path.join(CFG.dataDir, file), 'utf8').trim().split('\n').slice(-RING_MAX)) {
+        try { const s = JSON.parse(line); if (Number.isFinite(s.t) && typeof s.game === 'boolean') ring.push(s); } catch {}
       }
     }
     if (ring.length > RING_MAX) ring.splice(0, ring.length - RING_MAX);
-    last = ring[ring.length - 1] || null;
-  } catch { /* 忽略 */ }
-}
-
-// 每轮采样都会更新今日统计，但落盘按 30 秒节流（含访客 IP 全量数组的序列化）；
-// 换日与停机时强制写入，崩溃最多丢 30 秒的日志读取位点。
-let dayDirty = false, lastDaySave = 0;
-function saveDay(force = false) {
-  const t = Date.now();
-  if (!force && (!dayDirty || t - lastDaySave < 30000)) return;
-  today.ips = Array.from(ipSet);
-  today.logOffset = logOffset;
-  today.logIno = logIno;
-  if (!storageIO('daily', () => atomicJson(fileToday(), today))) return false;
-  dayDirty = false; lastDaySave = t;
-  return true;
-}
-
-function rolloverIfNeeded() {
-  const key = dayKey(new Date(), CFG.timeZone);
-  if (key === today.date) return true;
-  if (!saveDay(true)) return false;
-  dailyHistory[today.date] = {
-    date: today.date, requests: today.requests, pageViews: today.pageViews, assetHits: today.assetHits,
-    wsConnects: today.wsConnects, errors: today.errors, bytes: today.bytes, visitors: ipSet.size,
-    peakSessions: today.peakSessions, peakSockets: today.peakSockets, peakHumans: today.peakHumans, peakBots: today.peakBots ?? null,
-  };
-  const keys = Object.keys(dailyHistory).sort();
-  while (keys.length > CFG.retainDays) delete dailyHistory[keys.shift()];
-  if (!storageIO('history', () => atomicJson(fileDaily(), dailyHistory))) return false;
-  today = emptyDay(key);
-  ipSet.clear();
+    last = ring.at(-1) || null;
+  } catch {}
   pruneOldSamples();
-  return true;
 }
 
 function pruneOldSamples() {
@@ -168,7 +118,7 @@ function logStatus(code = null) {
 function parseNginx() {
   let batch;
   try {
-    batch = readLogBatch(CFG.nginxLog, { offset: logOffset, ino: logIno }, { maxLines: CFG.logMaxLines });
+    batch = logReader.read(stats.checkpoint, { maxLines: CFG.logMaxLines });
   } catch (error) {
     const code = error.code === 'ENOENT' ? 'LOG_MISSING' : ['EACCES', 'EPERM'].includes(error.code) ? 'LOG_UNREADABLE' :
       error.code === 'LOG_LINE_TOO_LONG' ? 'LOG_LINE_TOO_LONG' : 'LOG_READ_FAILED';
@@ -176,29 +126,18 @@ function parseNginx() {
     return;
   }
   const { lines } = batch;
-  logOffset = batch.offset; logIno = batch.ino;
+  stats.consume(batch); logBacklogBytes = batch.backlogBytes;
   let recognized = 0;
   for (const line of lines) {
     const date = nginxDay(line, CFG.timeZone), m = LOG_RE.exec(line);
     if (!date || !m) continue;
     recognized++;
-    if (date !== today.date) continue;
-    const ip = m[1];
-    const request = m[2];
-    const status = m[3];
-    const bytes = m[4];
-    const urlPath = (request.split(' ')[1] || '').split('?')[0];
-    // 面板与内部接口的访问不计入游戏统计
-    if (urlPath.startsWith('/monitor') || urlPath.startsWith('/api/admin/') || urlPath.startsWith('/api/panel/') || urlPath.startsWith('/internal/') || urlPath === '/api/status' || urlPath === '/healthz') continue;
-    today.requests++;
-    today.bytes += Number(bytes) || 0;
-    if (status === '101' && urlPath.startsWith('/ws')) today.wsConnects++;
-    else if (urlPath === '/' || urlPath === '/play') today.pageViews++;
-    else if (urlPath.startsWith('/assets/')) today.assetHits++;
-    if (Number(status) >= 500) today.errors++;
-    else if (status === '499') today.aborts++;
-    if (!privateAddress(ip)) ipSet.add(ip);
+    const stamp = /\[(\d\d)\/([A-Za-z]{3})\/(\d{4}):(\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)\]/.exec(line);
+    if (stamp) lastLogAt = Date.parse(stamp[1] + ' ' + stamp[2] + ' ' + stamp[3] + ' ' + stamp[4] + ' ' + stamp[5] + stamp[6]);
+    const route = (m[2].split(' ')[1] || '').split('?')[0];
+    stats.ingest({ date, ip: m[1], route, status: m[3], bytes: m[4] });
   }
+  if (batch.gap) { logStatus('LOG_ROTATION_GAP'); return; }
   // With no new lines, retain a format error until a recognizable line actually arrives.
   if (lines.length) logStatus(recognized ? null : 'LOG_FORMAT_INVALID');
   else if (diagnostics.nginx.error !== 'LOG_FORMAT_INVALID') logStatus();
@@ -281,15 +220,16 @@ function netRate(dtSec) {
 // 全扫要逐个读几百个 /proc/<pid>/cmdline，缓存后单轮固定只读个位数的文件。
 const RESCAN_EVERY = 15;
 let pidCache = null;
+let needGameRss = true;
 let samplesSinceScan = 0;
 function findMonitoredPids() {
-  const whichOf = (cmd) => cmd.includes('server/index.js') ? 'game' : cmd.includes('nginx') ? 'nginx' : null;
+  const whichOf = (cmd) => needGameRss && cmd.includes('server/index.js') ? 'game' : cmd.includes('nginx') ? 'nginx' : null;
   const verify = () => pidCache.filter(({ pid, which }) => {
     try { return whichOf(fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')) === which; } catch { return false; }
   });
   samplesSinceScan++;
   // 游戏进程不在缓存里（刚启动/刚重启/首次运行）时立即重扫，避免 RSS 空转一整个重扫周期。
-  if (!pidCache || samplesSinceScan >= RESCAN_EVERY || !pidCache.some((p) => p.which === 'game')) {
+  if (!pidCache || samplesSinceScan >= RESCAN_EVERY || (needGameRss && !pidCache.some((p) => p.which === 'game'))) {
     samplesSinceScan = 0; pidCache = [];
     let names = [];
     try { names = fs.readdirSync('/proc'); } catch { return pidCache; }
@@ -308,8 +248,9 @@ function findMonitoredPids() {
   return pidCache;
 }
 
-function rssOf() {
-  if (os.platform() === 'win32') return { game: null, nginx: null };
+function rssOf(gameRss) {
+  needGameRss = gameRss === null;
+  if (os.platform() === 'win32') return { game: gameRss, nginx: null };
   const out = { game: 0, nginx: 0 };
   for (const { pid, which } of findMonitoredPids()) {
     try {
@@ -317,7 +258,7 @@ function rssOf() {
       if (m) out[which] += Number(m[1]) / 1024;
     } catch { /* 进程已退出，下轮缓存校验会清掉 */ }
   }
-  out.game = Math.round(out.game * 10) / 10;
+  out.game = gameRss ?? Math.round(out.game * 10) / 10;
   out.nginx = Math.round(out.nginx * 10) / 10;
   return out;
 }
@@ -370,7 +311,7 @@ function alertCheck(s) {
   }
   if (lvl === 'ok' && s.load1 !== null && s.load1 >= os.cpus().length) lvl = 'warn';
   if (lvl !== alertLevel) {
-    console.log(`[monitor][alert] ${alertLevel} -> ${lvl} · 在线 ${s.sockets ?? '?'} · 保留会话 ${online ?? '?'}/${cap} · 负载 ${s.load1} · CPU ${s.cpu}%（IO 等待 ${s.iowaitPct}%） · PSI IO some/full ${s.psiIoSome}/${s.psiIoFull} · 出网 ${s.txKB} KB/s · 5xx ${today.errors}`);
+    console.log(`[monitor][alert] ${alertLevel} -> ${lvl} · 在线 ${s.sockets ?? '?'} · 保留会话 ${online ?? '?'}/${cap} · 负载 ${s.load1} · CPU ${s.cpu}%（IO 等待 ${s.iowaitPct}%） · PSI IO some/full ${s.psiIoSome}/${s.psiIoFull} · 出网 ${s.txKB} KB/s · 5xx ${stats.today.errors}`);
     alertLevel = lvl;
   }
 }
@@ -404,7 +345,7 @@ let lastSlowWarnAt = 0;
 
 async function takeSample() {
   const sampleStartedAt = Date.now();
-  if (rolloverIfNeeded()) parseNginx();
+  stats.rollover(); parseNginx();
   const g = await sampleGame();
   const dt = last ? Math.max(1, (Date.now() - last.t) / 1000) : CFG.intervalMs / 1000;
   // Failed health checks must not look like fresh game counts.
@@ -414,11 +355,12 @@ async function takeSample() {
   const disk = diskSample(dt);
   const memTotal = Math.round(os.totalmem() / 1024 ** 2);
   const memUsed = memTotal - Math.round(os.freemem() / 1024 ** 2);
-  const rss = rssOf();
+  const gameRss = g.ok && typeof g.memory?.rss === 'number' && Number.isFinite(g.memory.rss) && g.memory.rss >= 0 ? Math.round(g.memory.rss / 1024 ** 2 * 10) / 10 : null;
+  const rss = rssOf(gameRss);
   const d = diskInfo();
   const cc = clientConns();
   const s = {
-    seq: ++seq,
+    seq: ++seq, sampleId: randomUUID(),
     t: Date.now(),
     game: g.ok,
     sockets: g.ok ? (g.sockets ?? null) : null,
@@ -454,20 +396,16 @@ async function takeSample() {
     conns: cc.total,
     connsUniqueIps: cc.unique,
     hostUptimeSec: Math.round(os.uptime()),
+    logBacklogBytes, logLagSec: logBacklogBytes > 0 && Number.isFinite(lastLogAt) ? Math.max(0, Math.round((Date.now() - lastLogAt) / 1000)) : logBacklogBytes === 0 ? 0 : null,
   };
-  if (s.sessions !== null) {
-    today.peakSessions = Math.max(today.peakSessions, s.sessions);
-    today.peakSockets = Math.max(today.peakSockets, s.sockets);
-    today.peakHumans = Math.max(today.peakHumans, s.humans);
-  }
-  if (typeof s.bots === 'number' && Number.isFinite(s.bots)) today.peakBots = Math.max(today.peakBots ?? 0, s.bots);
-  if (typeof s.txKB === 'number') today.peakTxKB = Math.max(today.peakTxKB, s.txKB);
+  stats.rollover(); stats.peaks(s);
   alertCheck(s);
   last = s;
   ring.push(s);
   if (ring.length > RING_MAX) ring.shift();
-  storageIO('samples', () => fs.appendFileSync(path.join(CFG.dataDir, `samples-${today.date}.jsonl`), `${JSON.stringify(s)}\n`));
-  dayDirty = true;
+  s.monitor = { diagnostics: structuredClone(diagnostics), today: stats.snapshot().today, timeZone: CFG.timeZone, intervalSec: CFG.intervalMs / 1000, collectorUptimeSec: Math.round((s.t - T0) / 1000), samples: ring.length, capacity: capacity() };
+  sampleWriter.enqueue(`samples-${dayKey(new Date(s.t), CFG.timeZone)}.jsonl`, s);
+  storageIO('samples', () => sampleWriter.flush());
   saveDay();
   // 本地工作（不含健康检查的网络等待）超过 1 秒提示一次——正常只有几毫秒，出现说明日志积压或负载异常。
   const localMs = Date.now() - sampleStartedAt - (g.latencyMs || 0);
@@ -480,19 +418,20 @@ async function takeSample() {
 // ---------------------------------------------------------------------------- API
 function buildSeries(hours) { return aggregateSeries(ring, Date.now() - hours * 3600 * 1000); }
 
+function capacity() { return { basis: 'sessions', limit: CFG.capacity, warnPct: CFG.warnPct, critPct: CFG.critPct, level: alertLevel, cores: os.cpus().length }; }
 function apiData() {
-  const hist = Object.values(dailyHistory).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-14);
+  const daily = stats.snapshot();
   return {
     now: Date.now(),
     diagnostics: structuredClone(diagnostics),
     timeZone: CFG.timeZone,
     collectorUptimeSec: Math.round((Date.now() - T0) / 1000),
     intervalSec: Math.round(CFG.intervalMs / 1000),
-    capacity: { basis: 'sessions', limit: CFG.capacity, warnPct: CFG.warnPct, critPct: CFG.critPct, level: alertLevel, cores: os.cpus().length },
-    current: last,
+    capacity: capacity(),
+    current: last ? { ...last, monitor: undefined } : null,
     series: buildSeries(24),
-    today: { ...today, ips: undefined, visitors: ipSet.size },
-    history: hist,
+    today: daily.today, history: daily.history,
+    capabilities: { sampleHistory: true },
     samples: ring.length,
   };
 }
@@ -506,6 +445,10 @@ function json(req, res, code, obj) {
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.setHeader('Allow', 'GET, HEAD'); return json(req, res, 405, { error: 'read only' }); }
   const u = (req.url || '/').split('?')[0];
+  if (u === '/api/samples') {
+    try { const url = new URL(req.url, 'http://localhost'); return json(req, res, 200, sampleHistory(CFG.dataDir, { cursor: url.searchParams.get('cursor'), limit: url.searchParams.get('limit') || 200 })); }
+    catch (error) { return json(req, res, error.code === 'INVALID_CURSOR' || error.message.startsWith('Expected an integer') ? 400 : 503, { error: { code: error.code || 'HISTORY_UNAVAILABLE' } }); }
+  }
   if (u === '/api/data') return json(req, res, 200, apiData());
   if (u === '/api/health') return json(req, res, 200, { ok: true, ready: !!last && Date.now() - last.t <= Math.max(45000, CFG.intervalMs * 3), degraded: Object.values(diagnostics).some(s => s.status === 'error'), diagnostics, uptimeSec: Math.round((Date.now() - T0) / 1000), samples: ring.length });
   return json(req, res, 404, { ok: false, error: 'not found' });
@@ -519,6 +462,6 @@ server.listen(CFG.port, CFG.bind, () => {
 loadState();
 const polling = periodic(takeSample, CFG.intervalMs, (e) => console.error('[monitor] 采样失败:', e?.message || e));
 
-async function shutdown() { await polling.stop(); try { saveDay(true); } catch {} server.close(() => process.exit(0)); server.closeIdleConnections(); }
+async function shutdown() { await polling.stop(); try { saveDay(true); sampleWriter.flush(); } catch {} logReader.close(); server.close(() => process.exit(0)); server.closeIdleConnections(); }
 process.once('SIGTERM', shutdown);
 process.once('SIGINT', shutdown);

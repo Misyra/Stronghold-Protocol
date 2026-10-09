@@ -57,10 +57,21 @@ export function integer(value, fallback, min, max) {
   return n;
 }
 
+// Reject promptly even when an operation is still waiting in a serialized upstream queue.
+export function withAbort(promise, signal) {
+  if (!signal) return promise;
+  return new Promise((resolve, reject) => {
+    const finish = (settle, value) => { signal.removeEventListener('abort', abort); settle(value); };
+    const abort = () => finish(reject, signal.reason);
+    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(value => finish(resolve, value), error => finish(reject, error));
+  });
+}
+
 // Fixed destinations only. Limit body bytes while reading, including chunked responses.
-export async function fetchJson(url, { token, authorization, timeoutMs = 5000, maxBytes = 1024 * 1024 } = {}) {
+export async function fetchJson(url, { token, authorization, signal, timeoutMs = 5000, maxBytes = 1024 * 1024 } = {}) {
   const response = await fetch(url, { headers: token || authorization ? { Authorization: token ? `Bearer ${token}` : authorization } : {},
-    signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), redirect: 'error' });
   if (!response.ok) {
     await response.body?.cancel();
     const error = new Error('Upstream HTTP error');

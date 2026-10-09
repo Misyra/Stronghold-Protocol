@@ -784,6 +784,10 @@ PREP ready/acting · COMBAT/boss combat/done · UNITE helping/done · others don
 `m.private` = DESIGN §8.3 exactly (sent per player whenever it changed). `nextEnemies` = the current round's wave
 (+ the player's bounty enemies, tag `bounty`; boss rounds: the player's boss field, tag `boss` — the leader's entry with its
 spawn tile `start`, where the boss-field prep shows it —, + its bounties).
+During PREP, `prepMapChars` carries the read-only 预备干员-医疗 UnitInfo for every living player's field when any living
+player holds 外勤医疗. It uses the stage's normal-board map-character slot; the own board draws it separately from
+`board` (so it cannot be moved or sold), and `prepFieldMeta` includes it for scouts. In a boss prep, the same slot is
+mapped to each player's half, including `bossMate.units`. Touch replaces this reserve medic only at battle start.
 
 Bond layers in the views (DESIGN §20.15): from the end of COMBAT (`_finishCombat`, every normal result in) until SETTLE,
 `m.private bonds` and `m.public players[].bonds` add the finished battle's IN_BATTLE gains (`PlayerState.pendingLayerGains`

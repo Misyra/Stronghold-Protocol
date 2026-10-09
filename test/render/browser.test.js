@@ -73,6 +73,46 @@ describe('render engine in headless Chrome', { skip }, () => {
     });
   }
 
+  test('外勤医疗 reserve medic is visible but not draggable in normal and right boss preparation', async () => {
+    const { page, problems } = await open('scene=prep&panel=0', 1600, 900);
+    const first = await page.evaluate(() => {
+      const v = window.__demo.view;
+      const st = JSON.parse(JSON.stringify(window.__demo.scene.state));
+      st.prepMapChars = [{ id: -1, uid: -1, kind: 'token', side: 'ally', ownerId: 'p_0',
+        defId: 'char_605_cmedic', name: '预备干员-医疗', spine: 'char_605_cmedic', avatar: 'char_605_cmedic',
+        area: 'board', x: 2, y: 10, dir: 'RIGHT', facing: 1, maxHp: 1202 }];
+      v.setPrep(st, { editable: true });
+      const medic = v.debug.views.get('m:-1');
+      const p = v.tileScreen(10, 2), rect = v.debug.app.view.getBoundingClientRect();
+      const out = { exists: !!medic, id: medic?.info.defId, x: medic?.x, y: medic?.y,
+        draggable: !!v.debug.pick.pieceAt(p.x - rect.left, p.y - rect.top) };
+      return out;
+    });
+    await wait(500);
+    await page.screenshot({ path: path.join(OUT, 'touch-prep-normal.png') });
+    const boss = await page.evaluate(() => {
+      const v = window.__demo.view;
+      v.setCamera('bossPrep', { side: 'R', instant: true });
+      const mirrored = v.debug.views.get('m:-1');
+      return [mirrored?.x, mirrored?.y, mirrored?.dir];
+    });
+    await wait(500);
+    await page.screenshot({ path: path.join(OUT, 'touch-prep-boss-right.png') });
+    const removed = await page.evaluate(() => {
+      const v = window.__demo.view;
+      const st = JSON.parse(JSON.stringify(window.__demo.scene.state));
+      st.prepMapChars = [];
+      v.setPrep(st, { editable: true });
+      return !v.debug.views.has('m:-1');
+    });
+    await page.close();
+    assert.deepEqual(problems, []);
+    assert.deepEqual(first, { exists: true, id: 'char_605_cmedic', x: 2, y: 10,
+      draggable: false });
+    assert.deepEqual(boss, [18, 3, 'LEFT']);
+    assert.equal(removed, true);
+  });
+
   test('fx gallery: every sim fx kind, projectile and status renders without errors; board art in use', async () => {
     const { page, problems } = await open('scene=fx&panel=0', 1280, 720);
     // cycle through the whole FX_KINDS table (one kind every 0.5 game s = 0.25 real s), watching the FX system: shots

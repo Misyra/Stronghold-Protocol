@@ -707,6 +707,63 @@ test('Touch 外勤医疗: every player of a match with the band gets 预备干�
   cover('band_amedic');
 });
 
+test('外勤医疗 map character already on its slot keeps earlier aggro than the initially deployed operators', () => {
+  for (const [golden, mapCharId] of [[false, 'char_605_cmedic'], [true, 'char_613_acmedc']]) {
+    const defs = {
+      e1: op('e1', { golden, stats: { maxHp: 1e7, atk: 0 } }),
+      e2: op('e2', { golden, stats: { maxHp: 1e7, atk: 0 } }),
+      last: op('last', { stats: { maxHp: 1e7, atk: 0 } }),
+    };
+    const sharedBoss = { hp: 1e6, maxHp: 1e6, damage(pid, n) { this.hp -= n; } };
+    const h = makeBattle({
+      kind: 'boss', stageId: 'act2autochess_m01', bandId: 'band_amedic', sharedBoss,
+      defs: { chess: defs }, units: [
+        { chessId: 'e1', row: 10, col: 5 }, { chessId: 'e2', row: 11, col: 6 }, { chessId: 'last', row: 12, col: 7 },
+      ],
+      timeLimit: 100, autoFinish: false,
+    });
+    h.step();
+    const mapChar = h.unit(mapCharId);
+    assert.ok(mapChar?.alive, mapCharId);
+    assert.ok(h.unit('e1').aggroSeq < h.unit('e2').aggroSeq);
+    assert.ok(h.unit('e2').aggroSeq < h.unit('last').aggroSeq);
+    assert.ok(mapChar.aggroSeq < h.unit('e1').aggroSeq, `${mapCharId} keeps its pre-battle slot priority`);
+
+    const boss = h.spawn('enemy_9033_acdeer', { pos: [3, 10], routeIndex: 0, mods: { speedMul: 0 }, tag: 'boss' });
+    assert.ok(boss);
+    h.run(boss.s.interval + 0.1);
+    const columns = h.eventsOf('fx').filter((f) => f[1] === 'column').map((f) => f[4].c);
+    assert.equal(columns[0], 7, `${mapCharId}: 萨米的意志 targets the last deployed operator's column`);
+    checkInvariants(h.b);
+  }
+});
+
+test('外勤医疗 Touch does not take either player’s first 冰凌 on a shared boss field', () => {
+  const defs = {
+    e1: op('e1', { golden: true, stats: { maxHp: 1e7, atk: 0 } }),
+    e2: op('e2', { golden: true, stats: { maxHp: 1e7, atk: 0 } }),
+    last: op('last', { stats: { maxHp: 1e7, atk: 0 } }),
+  };
+  const players = ['p1', 'p2'].map((playerId, seat) => ({
+    playerId, seat, side: seat ? 'R' : 'L', colOffset: 0, bandId: 'band_amedic', bonds: {}, playerEffects: [],
+    units: ['e1', 'e2', 'last'].map((chessId, i) => ({ uid: seat * 10 + i + 1, kind: 'chess', chessId, row: 10 + i, col: 5 + i })),
+  }));
+  const sharedBoss = { hp: 1e6, maxHp: 1e6, damage(pid, n) { this.hp -= n; } };
+  const h = makeBattle({ kind: 'boss', stageId: 'act2autochess_m01', players, sharedBoss,
+    defs: { chess: defs }, timeLimit: 100, autoFinish: false });
+  h.step();
+  const touches = h.allies().filter((u) => u.defId === 'char_613_acmedc');
+  assert.equal(touches.length, 2);
+  assert.ok(touches.every((u) => u.aggroSeq < h.allies().filter((a) => a.kind === 'op' && a.ownerId === u.ownerId)[0].aggroSeq));
+
+  const boss = h.spawn('enemy_9033_acdeer', { pos: [3, 10], routeIndex: 0, mods: { speedMul: 0 }, tag: 'boss' });
+  assert.ok(boss);
+  h.run(boss.s.interval * 2 + 0.1);
+  const columns = h.eventsOf('fx').filter((f) => f[1] === 'column').map((f) => f[4].c);
+  assert.deepEqual(columns.slice(0, 2), [7, 13]);
+  checkInvariants(h.b);
+});
+
 test('coverage: every band is exercised by a test above', () => {
   cover('band_dusk'); // 夕: 画卷 grant (fixed-round test) + 墨色真颜 (battle test)
   const missing = Object.keys(DATA.bands).filter((id) => !COVER.has(id)).sort();

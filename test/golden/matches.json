@@ -1598,7 +1598,7 @@
           "title": {"id":"comment_4","name":"精英云集","picId":"comment_icon_4","text":"晋升精锐次数最多"},
           "trophies": 4,
           "reward": 400,
-          "stats": {"activatedLayers":220,"bossDamage":344186,"dmgDealt":3000543,"gold":134,"itemsEquipped":22,"kills":272,"leaks":40,"lpLost":10,"merges":3,"perfectRounds":11,"refreshes":21},
+          "stats": {"activatedLayers":220,"bossDamage":344186,"dmgDealt":2999081,"gold":134,"itemsEquipped":22,"kills":272,"leaks":40,"lpLost":10,"merges":3,"perfectRounds":11,"refreshes":21},
           "lineup": ["6_18_a@12,3[4_11_e_a]","4_10_a@12,4","1_17_b@11,3[4_03_e_a+1_01_e_a]","5_20_a@11,8[6_05_e_a+3_06_e_a]","3_17_b@10,3","3_12_a@10,4[1_02_e_a+3_11_e_a]","5_07_a@10,7[4_02_e_b+2_01_e_b]","1_19_b@10,8[2_01_e_b+4_04_e_b]"],
           "bonds": ["arcaneShip 2/24","kazimierzShip 1/64","miraShip 1/12","preciShip 0/8","raidShip 1/108","siracusaShip 1/12","skillfulShip 0/3","soloShip 1/0","suntShip 1/0","swiftShip 0/23","yanShip 0/1"]
         },

@@ -41,6 +41,8 @@ export class BattleSummons {
    * skill, a summon that skill does not produce (producesToken) is refused unless `opts.anySource`: hand-authored kit
    * install hooks are written for the default skill and run under every skill (琳琅诗怀雅 S1/S3 would drop 香槟炸弹);
    * under the default skill the kit stays the authority.
+   * `opts.preBattleAggro` is only for a prepared stage map character instantiated at battleStart after its variant
+   * is chosen; its aggro precedes initial operators despite the later deploy event.
    */
   spawnToken(owner, tokenId, row, col, opts = {}) {
     const ownerUnit = owner && typeof owner === 'object' ? owner : null;
@@ -66,6 +68,9 @@ export class BattleSummons {
       this.offOwner(u);
       return null;
     }
+    // A map character already visible in preparation may be instantiated at battleStart after the elite count is
+    // known. [ASSUMED] Its replacement keeps the slot's pre-deployment aggro order; ordinary summons stay latest.
+    if (opts.preBattleAggro) u.aggroSeq = -1; // aggroCmp falls back to deploySeq when aggroSeq is zero
     if (opts.hp != null && Number.isFinite(Number(opts.hp))) u.hp = Math.max(1, Math.min(u.s.maxHp, Number(opts.hp)));
     if (opts.duration > 0 && Number.isFinite(Number(opts.duration))) this.after(Number(opts.duration), () => { if (u.alive) this.retreat(u, { reason: 'expired', permanent: true }); }, { owner: u });
     return u;

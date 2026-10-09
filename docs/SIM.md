@@ -78,7 +78,9 @@ summon piece content flags `deferDeploy` (one its owner's loadout does not make,
 one) — firing `deploy {initial:true}` for
 each, forces out the operators that enter knocked out (`carryState.down`, 联防 — §1.1), then fires `battleStart`. Every
 summon that came in during the initial deployment (also one an operator's deploy brought along) then ranks after all
-the operators in the aggro order (`unit.aggroSeq`, §1.2). On a shared field (联防, the boss field)
+the operators in the aggro order (`unit.aggroSeq`, §1.2). The 外勤医疗 stage map character (预备干员-医疗 or its Touch
+replacement) is the exception: its slot exists before this deployment, so its aggro order precedes the operators
+although `battleStart` creates its sim unit after counting the deployed elites [ASSUMED for the exact order]. On a shared field (联防, the boss field)
 the players' fields deploy side by side: the i-th operators of all players come in together (in `players` order), then
 the summons the same way, and the summons rank after the operators of all players **[ASSUMED]** (PRTS describes one
 field — units deploy one after another with a fixed delay from the battle start — and "两处阵地将前后拼接为一处阵地"). Register hooks before the first step (e.g. `opts.setup(battle)` or right after `new Battle`).

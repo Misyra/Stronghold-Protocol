@@ -241,7 +241,9 @@ function installMapChars(battle) {
     for (const ps of holders) {
       const elites = deployedOps(battle, ps.playerId).filter(isElite).length;
       for (const id of amedicCharsFor(elites, variants)) {
-        const u = spawnMapChar(battle, ps.playerId, id);
+        // The map character is visible before combat; Touch replaces it here once the elite count is known.
+        // [ASSUMED] The replacement retains the stage slot's earlier aggro order.
+        const u = spawnMapChar(battle, ps.playerId, id, { preBattle: true });
         if (u) fxOn(battle, 'summon', u, keyOf(AMEDIC_BAND), AMEDIC_BAND);
       }
     }

@@ -10,6 +10,7 @@
 | 内容包 | `packs.mjs` | 内容包校验与索引；见[内容包指南](../docs/guides/PACKS.md) |
 | 代码检查与回归 | `check-imports.mjs`、`kit-coverage.mjs`、`golden.mjs` | 导入边界、技能覆盖和黄金结果 |
 | 对局与性能分析 | `simrun.mjs`、`matchrun.mjs`、`record-battle.mjs`、`balance.mjs`、`botbench.mjs`、`workerbench.mjs`、`memorybench.mjs` | 模拟、录像、平衡与性能测量；见[难度说明](../docs/development/BALANCE.md)和[性能说明](../docs/development/PERFORMANCE.md) |
+| 网络与健康检查性能 | `healthbench.mjs`、`bench-cooperative.mjs`、`bench-state-delta.mjs` | 健康统计成本、真实 Bot 并发时的 WebSocket RTT、增量广播成本；见[延迟测试](../docs/development/LATENCY.md)和[增量测试](../docs/development/STATE_DELTA_BENCHMARK.md) |
 | 持久化验证 | `persist-sim.mjs` | 写入量、恢复和故障测试；见[持久化说明](../docs/operations/PERSISTENCE.md) |
 | 发布与 CDN | `package.mjs`、`r2-sync.mjs`、`asset-hashes.mjs` | 发布包构建、资源上传和哈希；见[部署指南](../docs/operations/DEPLOY.md)和[CDN 说明](../docs/operations/CDN.md) |
 

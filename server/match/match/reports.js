@@ -163,7 +163,7 @@ export class MatchReports {
         f.rearmDeadline = false;
       }
       const schedule = () => {
-        const timer = this.later(0, slice);
+        const timer = this.laterWork(slice);
         if (required) f.verifyTimer = timer;
       };
       const slice = () => {
@@ -207,7 +207,7 @@ export class MatchReports {
     // Sample jobs use only match-level timers: field completion must not cancel the diagnostic work.
     if (h % 8 === 0) {
       if (this.workerPool) start();
-      else this.later(0, start);
+      else this.laterWork(start);
     }
     accept(result);
   }

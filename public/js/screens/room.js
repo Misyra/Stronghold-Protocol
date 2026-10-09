@@ -60,10 +60,13 @@ export function roomFacts(room, myId) {
   const isReady = (s) => !!s.ready || s.playerId === room?.hostId;
   const readyHumans = humans.filter(isReady).length;
   const othersReady = others.every((s) => s.ready && s.connected !== false);
+  const searching = !!room?.matchmaking;
   return {
-    seats, occupied, humans, mine, isHost, readyHumans, isReady,
+    seats, occupied, humans, mine, isHost, readyHumans, isReady, searching,
     emptySeats: seats.filter((s) => !s).length,
-    canStart: isHost && othersReady && !!mine,
+    canStart: isHost && othersReady && !!mine && !searching,
+    canMatch: isHost && othersReady && !!mine && mine.connected !== false && !searching && room?.mode === 'coop' &&
+      occupied.length < MAX_SEATS && occupied.every((s) => !s.isBot),
     othersReady,
     // spectator seats (never players: not in `humans`, never counted for ready / start)
     spectators: Array.isArray(room?.spectators) ? room.spectators.filter((s) => s && typeof s === 'object') : [],
@@ -112,7 +115,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       </div>
       <footer class="seat__foot">
         ${canAdd
-          ? html`<${Button} variant="secondary" size="sm" icon="robot" block=${true} loading=${busy === `add`} onClick=${onAddBot}>${t('添加 AI 队友')}<//>`
+          ? html`<${Button} variant="secondary" size="sm" icon="robot" block=${true} disabled=${facts.searching} loading=${busy === `add`} onClick=${onAddBot}>${t('添加 AI 队友')}<//>`
           : html`<span class="seat__state t-dim">${t('空位')}</span>`}
       </footer>
     </article>`;
@@ -224,10 +227,21 @@ export function RoomScreen() {
   const room = useStore((s) => s.room);
   const me = useStore((s) => s.me, shallowEqual);
   const conn = useStore((s) => s.connection, shallowEqual);
+  const matching = useStore((s) => s.matchmaking, shallowEqual);
   const [busy, setBusy] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [fillTeam, setFillTeam] = useState(false);
+  const fillAvailable = room?.mode === 'coop' && (room.seats || []).filter(Boolean).length < MAX_SEATS &&
+    !(room.seats || []).some((s) => s?.isBot);
+  useEffect(() => { setFillTeam(false); }, [room?.code, room?.hostId, fillAvailable]);
   const alive = useRef(true);
   const inFlight = useRef(false); // synchronous guard against double clicks (state updates are async)
   useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    if (!matching || !room?.matchmaking) { setElapsed(0); return; }
+    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() + (store.get().clock.offset || 0) - matching.joinedAt) / 1000)));
+    update(); const timer = setInterval(update, 1000); return () => clearInterval(timer);
+  }, [matching?.joinedAt, room?.matchmaking]);
 
   if (!room) return null;
   const online = conn.status === 'online';
@@ -249,6 +263,8 @@ export function RoomScreen() {
 
   const toggleReady = () => run('ready', () => net.request('room.ready', { ready: !myReady }));
   const start = () => run('start', () => net.request('room.start', {}));
+  const search = () => run('search', () => net.request('room.matchmaking', {}));
+  const cancel = () => run('cancel', () => net.request('matchmaking.cancel', {}));
   const addBot = () => run('add', () => net.request('room.addBot', {}));
   const removeBot = (seat) => run(`rm${seat}`, () => net.request('room.removeBot', { seat }));
   // the host removes a human before the match (community report #17): asked first; the player may join again. The
@@ -288,6 +304,8 @@ export function RoomScreen() {
     ? html`<span class="t-orange"><${Icon} name="wifiOff" />${t('连接中断，正在重连…')}</span>`
     : facts.spectating
       ? html`<span class="t-lo"><${Icon} name="eye" />${t('观战中 · 不占博士席位，模拟开始后可切换观看各位博士')}</span>`
+    : facts.searching
+      ? html`<span class="t-mint"><${Icon} name="hourglass" />${t('正在搜寻队友')} · ${matching?.players ?? facts.humans.length}/${MAX_SEATS} ${t('名博士')}</span>`
     : !coop
       ? html`<span class="t-mint">${t('*模拟协议已就绪，准许进入模拟')}</span>`
     : facts.isHost
@@ -337,12 +355,17 @@ export function RoomScreen() {
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
 
+    ${facts.searching && elapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
+      ${t('迟迟匹配不到人？可前往')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a>
+      ${t('发布当前同盟的房间号，来人更快。')}
+    </p>` : null}
+
     <footer class="room-bar">
       <div class="room-bar__left">
         <span class="room-bar__label">${t('模拟难度')}<${MicroLabel}>DIFFICULTY<//></span>
         <div class="room-bar__opts">
-          <${DifficultyPicker} room=${room} isHost=${facts.isHost} busy=${busy} onPick=${setDifficulty} />
-          <${AiLastToggle} option=${aiLastOption(room, me.playerId)} busy=${busy} onToggle=${setAiLast} />
+          <${DifficultyPicker} room=${room} isHost=${facts.isHost} busy=${busy || facts.searching} onPick=${setDifficulty} />
+          <${AiLastToggle} option=${aiLastOption(room, me.playerId)} busy=${busy || facts.searching} onToggle=${setAiLast} />
         </div>
       </div>
       <div class="room-bar__center">
@@ -358,13 +381,23 @@ export function RoomScreen() {
       <div class="room-bar__right">
         <${LoadoutButton} from="room" size="lg" class="room-loadout" label=${t('干员调配')} />
         ${facts.isHost
-          ? html`<${Tooltip} text=${facts.canStart ? null : t('仍有博士未准备就绪')}>
-              <${Button} variant="primary" size="xl" icon="play" loading=${busy === 'start'} disabled=${!facts.canStart || !online} onClick=${start}>${t('开始模拟')}<//>
-            <//>`
+          ? html`<div class="room-start-actions">
+            ${coop && (facts.emptySeats > 0 || facts.searching) ? html`<label class=${`room-matchmaking${facts.searching || fillTeam ? ' is-checked' : ''}${busy || !online || facts.searching || !fillAvailable ? ' is-disabled' : ''}`} title=${t('队友准备后，可匹配真人补齐 4 人')}>
+              <input type="checkbox" checked=${facts.searching || fillTeam} disabled=${!!busy || !online || facts.searching || !fillAvailable}
+                onChange=${(e) => setFillTeam(e.currentTarget.checked)} />
+              <span>${t('匹配补齐')}</span>
+            </label>` : null}
+            <${Tooltip} text=${facts.searching ? t('取消匹配后保留当前同盟') : !facts.canStart ? t('仍有博士未准备就绪') : null}>
+              <${Button} class="room-start" variant=${facts.searching ? 'secondary' : 'primary'} size="xl" icon=${facts.searching ? 'hourglass' : 'play'}
+                loading=${busy === 'start' || busy === 'search' || busy === 'cancel'}
+                disabled=${!online || (!facts.searching && !(fillTeam && fillAvailable ? facts.canMatch : facts.canStart))}
+                onClick=${facts.searching ? cancel : fillTeam && fillAvailable ? search : start}>${facts.searching ? t('取消搜寻') : t('开始模拟')}<//>
+            <//>
+          </div>`
           : facts.spectating
             ? html`<${Button} variant="secondary" size="xl" icon="eye" disabled=${true}>${t('观战中')}<//>`
           : html`<${Button} variant=${myReady ? 'primary' : 'secondary'} size="xl" icon=${myReady ? 'check' : 'hourglass'} active=${myReady}
-              loading=${busy === 'ready'} disabled=${!online || !facts.mine} onClick=${toggleReady}>${myReady ? t('已就绪') : t('准备就绪')}<//>`}
+              loading=${busy === 'ready'} disabled=${!online || !facts.mine || facts.searching} onClick=${toggleReady}>${myReady ? t('已就绪') : t('准备就绪')}<//>`}
       </div>
     </footer>
   </div>`;

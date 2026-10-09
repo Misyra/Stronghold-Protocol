@@ -33,13 +33,10 @@ function makeInstall() {
   const dataDir = path.join(dir, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.cpSync(path.join(ROOT, 'public', 'js'), path.join(publicDir, 'js'), { recursive: true });
-  // the launcher needs preact/htm (ui/components.js) and the progress-bar styles
-  fs.mkdirSync(path.join(publicDir, 'vendor'), { recursive: true });
-  for (const f of ['preact.module.js', 'hooks.module.js', 'htm.module.js', 'zip.module.js']) {
-    fs.copyFileSync(path.join(ROOT, 'public', 'vendor', f), path.join(publicDir, 'vendor', f));
-  }
-  fs.mkdirSync(path.join(publicDir, 'css'), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, 'public', 'css', 'components.css'), path.join(publicDir, 'css', 'components.css'));
+  // The automatic-preload check also boots the real app shell beside the isolated manager fixture.
+  fs.cpSync(path.join(ROOT, 'public', 'vendor'), path.join(publicDir, 'vendor'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'public', 'css'), path.join(publicDir, 'css'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'public', 'index.html'), path.join(publicDir, 'app.html'));
   fs.copyFileSync(path.join(ROOT, 'public', 'resource-sw.js'), path.join(publicDir, 'resource-sw.js'));
   for (const f of FILES) {
     const abs = path.join(publicDir, f.url);
@@ -115,6 +112,46 @@ describe('offline resources in headless Chrome', { skip }, () => {
   }
   const ready = (page, problems) => page.waitForFunction('window.__ready === true', { timeout: 20000 })
     .catch((err) => { throw new Error(`${err.message} — ${problems.join(' | ') || 'no console error'}`); });
+
+  test('the real app automatically preloads on entry, preserves the optional range, and reuses cache on reload', async (t) => {
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    const problems = [];
+    const resourceRequests = [];
+    page.on('request', (r) => { if (/\/assets\/e2e\//.test(r.url())) resourceRequests.push(r.url()); });
+    page.on('pageerror', (e) => problems.push(e.message));
+    await page.evaluateOnNewDocument(() => {
+      localStorage.setItem('sp.pref.settings', JSON.stringify({ preload: false, preloadOptional: false }));
+    });
+    await page.goto(`http://127.0.0.1:${srv.port}/app.html`);
+    await page.waitForFunction('!!window.__SP__');
+    await page.waitForFunction(async () => {
+      const st = (await import('/js/resources/index.js')).resourceState();
+      return st.enabled && st.selectionComplete && st.phase === 'ready';
+    }, { timeout: 30000 });
+    const initial = await page.evaluate(async () => ({
+      state: (await import('/js/resources/index.js')).resourceState(),
+      settings: (await import('/js/ui/settings.js')).settingsStore.get(),
+    }));
+    assert.equal(initial.settings.preload, true, 'even a saved disabled setting starts automatically');
+    assert.equal(initial.settings.preloadOptional, false, 'the chosen download range stays unchanged');
+    assert.equal(initial.state.done, 2);
+    assert.equal(resourceRequests.length, 2, 'only the two required fixture assets are downloaded');
+    resourceRequests.length = 0;
+    await page.reload();
+    await page.waitForFunction('!!window.__SP__');
+    await page.waitForFunction(async () => (await import('/js/resources/index.js')).resourceState().selectionComplete);
+    const reloaded = await page.evaluate(async () => (await import('/js/resources/index.js')).resourceState());
+    assert.equal(reloaded.done, 2);
+    assert.deepEqual(resourceRequests, [], 'verified files are reused without another download');
+    await page.evaluate(async () => (await import('/js/ui/settings.js')).updateSettings({ preload: false }));
+    await page.waitForFunction(async () => !(await import('/js/resources/index.js')).resourceState().enabled);
+    await page.evaluate(async () => (await import('/js/ui/settings.js')).updateSettings({ sfx: 0.25 }));
+    assert.equal(await page.evaluate(async () => (await import('/js/resources/index.js')).resourceState().enabled), false,
+      'other settings do not restart a manually stopped preload');
+    await page.evaluate(async () => (await import('/js/resources/index.js')).clearResources());
+    assert.deepEqual(problems, []);
+  });
 
   test('the settings switch downloads the files and the worker serves them with the network off', async () => {
     const { page, problems } = await open();

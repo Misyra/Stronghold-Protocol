@@ -1,6 +1,9 @@
 // A bounded settlement snapshot, independent of the live match and its session credentials.
+import { N_ } from '../../../shared/i18n.js';
+
 export const HISTORY_LIMIT = 100;
 export const HISTORY_SCHEMA = 1;
+export const HISTORY_IMPORT_BYTES = 16 * 1024 * 1024;
 
 const pick = (value, keys) => Object.fromEntries(keys.filter((k) => value?.[k] != null &&
   ['string', 'number', 'boolean'].includes(typeof value[k])).map((k) => [k, value[k]]));
@@ -45,4 +48,31 @@ export function newestFirst(records) {
 export function exportRecords(records) {
   return JSON.stringify({ format: 'stronghold-match-history', schema: HISTORY_SCHEMA,
     exportedAt: new Date().toISOString(), records }, null, 2);
+}
+
+/** Validate the entire export before any storage write, rebuilding snapshots without unknown fields. */
+export function parseRecords(text) {
+  if (typeof text !== 'string' || text.length > HISTORY_IMPORT_BYTES) throw new Error(N_('对局记录文件过大，请选择不超过 16 MB 的 JSON 文件。'));
+  let doc;
+  try { doc = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error(N_('无法读取 JSON，请选择本游戏导出的对局记录文件。')); }
+  if (!doc || doc.format !== 'stronghold-match-history' || !Array.isArray(doc.records) || doc.records.length > 1000) {
+    throw new Error(N_('对局记录文件格式无效，请选择本游戏导出的 JSON 文件。'));
+  }
+  if (doc.schema !== HISTORY_SCHEMA) throw new Error(N_('对局记录版本不兼容，请使用当前版本导出的文件。'));
+  return doc.records.map((raw) => {
+    const invalid = () => new Error(N_('导入文件包含无效的对局记录，未做任何改动。'));
+    if (!raw || raw.schema !== HISTORY_SCHEMA || raw.deleted || typeof raw.id !== 'string' ||
+      typeof raw.playerId !== 'string' || !raw.playerId || typeof raw.origin !== 'string' ||
+      typeof raw.appVersion !== 'string' || !Number.isFinite(raw.recordedAt) || raw.recordedAt < 0 ||
+      !Number.isFinite(raw.endedAt) || raw.endedAt < 0 || !Array.isArray(raw.result?.players) ||
+      raw.result.players.length < 1 || raw.result.players.length > 4 || JSON.stringify(raw).length > 128 * 1024 ||
+      raw.result.players.some((p) => !p || typeof p.playerId !== 'string' || !p.playerId) ||
+      new Set(raw.result.players.map((p) => p.playerId)).size !== raw.result.players.length) throw invalid();
+    let record;
+    try { record = makeRecord(raw.result, raw.playerId, { now: raw.recordedAt, origin: raw.origin, appVersion: raw.appVersion }); }
+    catch { throw invalid(); }
+    if (!record || record.id !== raw.id) throw invalid();
+    record.endedAt = raw.endedAt;
+    return record;
+  });
 }

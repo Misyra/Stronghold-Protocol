@@ -246,6 +246,26 @@
 /* 统计 (the local stats page) beside the language menu in the top-right corner */
 .title-corner__tools { display: flex; align-items: center; justify-content: flex-end; gap: .1rem; margin-bottom: .1rem; }
 .title-corner__tools .title-lang { margin-bottom: 0; }
+.title-actions { display: grid; grid-template-columns: repeat(3, auto) .38rem .38rem; align-items: center; gap: .08rem; }
+.title-actions > .btn { width: 100%; min-width: 0; height: .38rem; padding: 0 .06rem; gap: .05rem; font-size: .14rem; letter-spacing: 0; white-space: nowrap; }
+.title-actions > .btn .icon { width: .16rem; height: .16rem; }
+.title-actions > .fsbtn { width: .38rem; height: .38rem; }
+.about-panel { max-width: calc(100vw - .4rem); }
+.about-panel .modal__body { font-size: .17rem; line-height: 1.8; color: var(--text-md); }
+.about-panel p { margin: 0 0 .16rem; }
+.about-intro { color: var(--text-hi); font-size: .22rem; font-weight: 700; }
+.about-intro .num { margin-left: .08rem; color: var(--mint-400); font-size: .17rem; }
+.about-links { display: grid; grid-template-columns: 1fr 1fr; gap: .2rem .28rem; margin: .2rem 0 .24rem; }
+.about-links div { min-width: 0; }
+.about-links dt { color: var(--text-lo); font-size: .15rem; }
+.about-links dd { margin: .04rem 0 0; }
+.about-panel a { color: var(--mint-400); text-decoration: underline; overflow-wrap: anywhere; }
+.about-panel a:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 3px; }
+.about-section { margin-top: .22rem; padding-top: .18rem; border-top: 1px solid var(--line-2); }
+.about-section h3 { margin: 0 0 .12rem; color: var(--text-hi); font-size: .18rem; }
+.about-credits { display: flex; flex-direction: column; gap: .05rem; }
+.about-credits h3 { margin-bottom: .04rem; }
+@media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }
 /* language menu (中文 | English | …, ui/lang.js) in the top-right corner; more than four languages make it a list */
 .title-lang { display: inline-flex; margin-bottom: .1rem; }
 .title-lang button { min-width: .74rem; height: .3rem; font-size: .14rem; cursor: pointer; }

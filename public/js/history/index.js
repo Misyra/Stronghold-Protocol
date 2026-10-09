@@ -1,5 +1,5 @@
 import { createStore } from '../store.js';
-import { makeRecord } from './record.js';
+import { makeRecord, parseRecords } from './record.js';
 import { createHistoryStorage } from './storage.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -68,4 +68,12 @@ export async function clearHistory() {
   historyStore.set({ saveState: 'idle', latestId: null, saveError: '' });
   changed();
   await refreshHistory();
+}
+
+export async function importHistory(text) {
+  const records = parseRecords(text);
+  const summary = await historyStorage.import(records);
+  changed();
+  await refreshHistory();
+  return summary;
 }

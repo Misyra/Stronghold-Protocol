@@ -11,6 +11,12 @@ import {
 } from '../../public/js/resources/common.js';
 import { MEDIA_PREFIX as SHARED_MEDIA_PREFIX, AUDIO_EXTS as SHARED_AUDIO_EXTS } from '../../shared/media.js';
 
+test('bracket paths share one cache key without encoding IPv6 hosts', () => {
+  const raw = '/assets/local/map/fx/[opt]merged_textures.png';
+  assert.equal(absoluteUrl(raw, 'https://game.example'), absoluteUrl(encodeURI(raw), 'https://game.example'));
+  assert.equal(absoluteUrl('http://[::1]:3000' + raw), 'http://[::1]:3000/assets/local/map/fx/%5Bopt%5Dmerged_textures.png');
+});
+
 describe('resource manifest validation', () => {
   test('a well-formed manifest passes and is returned as is', () => {
     const m = { format: RESOURCES_FORMAT, version: 'abc-1', count: 2, totalBytes: 30, files: [{ url: '/assets/a.png', tier: 1, size: 10 }, { url: 'https://cdn.example.com/assets/b.skel', tier: 2, size: 20 }] };

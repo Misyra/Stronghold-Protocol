@@ -1,8 +1,8 @@
-import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Button, Modal, MicroLabel, DifficultyTag, Spinner, confirmDialog } from './components.js';
 import { useStore } from '../store.js';
-import { historyStore, openHistory, closeHistory, refreshHistory, removeHistory, clearHistory } from '../history/index.js';
-import { HISTORY_LIMIT, exportRecords } from '../history/record.js';
+import { historyStore, openHistory, closeHistory, refreshHistory, removeHistory, clearHistory, importHistory } from '../history/index.js';
+import { HISTORY_LIMIT, HISTORY_IMPORT_BYTES, exportRecords } from '../history/record.js';
 import { useGameData } from './gameComponents.js';
 import { normalizeResult } from './gameLogic.js';
 import { PlayerCard } from './resultPlayerCard.js';
@@ -50,6 +50,10 @@ function HistoryContent() {
   const [selected, select] = useState(null);
   const [operationError, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState(null);
+  const fileInput = useRef(null);
+  const importInFlight = useRef(false);
   const record = records.find((r) => r.id === selected);
   useEffect(() => { if (selected && !record && !loading) select(null); }, [selected, record, loading]);
   async function erase(all) {
@@ -63,13 +67,32 @@ function HistoryContent() {
     catch (err) { setError(err.message || t('删除失败，请重试')); }
     finally { setBusy(false); }
   }
+  async function readImport(e) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file || importInFlight.current || busy) return;
+    importInFlight.current = true; setBusy(true); setImporting(true); setError(''); setImportNotice(null);
+    try {
+      if (file.size > HISTORY_IMPORT_BYTES) throw new Error(t('对局记录文件过大，请选择不超过 16 MB 的 JSON 文件。'));
+      const summary = await importHistory(await file.text());
+      select(null); setImportNotice(summary);
+    } catch (err) { setError(err.message ? t(err.message) : t('导入失败，请重试')); }
+    finally { importInFlight.current = false; setBusy(false); setImporting(false); }
+  }
   return html`<${Modal} open=${true} title=${t('对局记录')} micro="LOCAL MATCH HISTORY" onClose=${closeHistory}
     width="14rem" class="history-panel" actions=${html`
       ${record ? html`<${Button} icon="chevronLeft" onClick=${() => select(null)} disabled=${busy}>${t('返回列表')}<//>` : null}
+      <${Button} class="history-import" variant="secondary" disabled=${loading || busy} loading=${importing} onClick=${() => fileInput.current?.click()}>${t('导入记录')}<//>
       <${Button} variant="secondary" disabled=${loading || busy || !records.length} onClick=${() => download(record ? [record] : records)}>${record ? t('导出本局') : t('导出全部')}<//>
       <${Button} disabled=${loading || busy || !records.length} onClick=${() => erase(!record)}>${record ? t('删除本局') : t('清空记录')}<//>
       <${Button} variant="primary" onClick=${closeHistory}>${t('关闭')}<//>`}>
     <p class="history-notice">${t('结算时自动保存最近 {HISTORY_LIMIT} 局，仅保存在当前浏览器和当前站点。清除网站数据会删除记录。', { HISTORY_LIMIT })}</p>
+    <p class="history-notice">${t('支持导入本游戏导出的 JSON 文件，与已有记录合并，重复记录自动跳过，仅保留最近 {HISTORY_LIMIT} 局。', { HISTORY_LIMIT })}</p>
+    <input ref=${fileInput} class="history-import-file" type="file" accept=".json,application/json" hidden onChange=${readImport} />
+    ${importNotice ? html`<p class="history-import-notice" role="status">
+      ${t('导入完成：新增 {added} 局，跳过 {skipped} 局重复记录。', importNotice)}
+      ${importNotice.discarded ? t('{n} 局较早的记录超出保存上限，未保留。', { n: importNotice.discarded }) : ''}
+    </p>` : null}
     ${error || operationError || saveError ? html`<p class="history-error" role="alert">${operationError || error || saveError}
       <${Button} size="sm" icon="refresh" onClick=${refreshHistory}>${t('重试读取')}<//></p>` : null}
     ${loading ? html`<div class="history-empty"><${Spinner} />${t('读取记录…')}</div>` : record ? html`<${HistoryDetail} record=${record} />` :

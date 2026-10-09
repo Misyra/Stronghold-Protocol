@@ -1464,7 +1464,9 @@ export async function createFieldView(host, options = {}) {
         if (e[1] === 'displace') {
           const d = e[4] && typeof e[4] === 'object' ? e[4] : null;
           const v = d && d.id != null ? views.get(d.id) : null;
-          if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]), Number(d.dur) > 0 ? { dur: Number(d.dur) } : {});
+          if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]), {
+            ...(Number(d.dur) > 0 ? { dur: Number(d.dur) } : {}), keepFacing: d.keepFacing === true,
+          });
         }
         // an enemy's mode change — the `form` of a sim setForm fx (shared/protocol.js fxForm: 掠海漂移体 → 爬行模式, user
         // playtest #5 item 1; 转译基底's forms, a 逐火 ember and its revival, the leaders' 重生, 守墓石像 — user report after
@@ -1525,7 +1527,9 @@ export async function createFieldView(host, options = {}) {
     const extra = e[4] && typeof e[4] === 'object' ? e[4] : null;
     const v = extra && extra.id != null ? views.get(extra.id) : null;
     // `dur`: the push / pull's 失衡 time in game seconds (battle/displacement.js) — the slide's length
-    if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]), Number(extra.dur) > 0 ? { at: slideAt, dur: Number(extra.dur) } : { at: slideAt });
+    if (v && v.slideTo) v.slideTo(Number(e[2]), Number(e[3]), {
+      at: slideAt, ...(Number(extra.dur) > 0 ? { dur: Number(extra.dur) } : {}), keepFacing: extra.keepFacing === true,
+    });
   }
   let renderT0Battle = null;   // game time of the first rendered battle frame (spawn puffs skip the initial wave)
   let downSeq = 0;             // syncBattle pass counter: a view still marked down after a pass left the `down` list

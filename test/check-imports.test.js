@@ -93,7 +93,7 @@ test('this repo: only the Node data loader crosses the sim boundary', () => {
   const { violations, notes } = scan(ROOT);
   assert.deepEqual(violations.map((v) => `${v.file}:${v.line}: ${v.spec} [${v.code}]`), [
     // this fork: the match engine hands its dedup string to net.js's encoder (ENCODED) — no other match → http edge
-    'server/match/fields.js:34: ../net.js [match-http]',
+    'server/match/fields.js:36: ../net.js [match-http]',
     'server/match/match/messaging.js:11: ../../net.js [match-http]',
     'server/sim/nodeData.js:11: node:fs [sim-node]',
     'server/sim/nodeData.js:12: node:path [sim-node]',

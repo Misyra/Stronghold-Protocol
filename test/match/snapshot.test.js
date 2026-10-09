@@ -267,3 +267,30 @@ test('a checkpoint that does not fit the instance is refused instead of half-app
   assert.equal(restoreMatch(b.m, { ...doc, phase: PHASE.COMBAT }, DEPS), false);
   assert.equal(restoreMatch(b.m, null, DEPS), false);
 });
+
+
+test('0.2.2 operator settings and a personal bounty choice survive a checkpoint, including old checkpoints', () => {
+  const { a, b } = pair(7);
+  try {
+    a.m.start();
+    assert.ok(driveTo(a, () => a.m.phase === PHASE.PREP && canSnapshot(a.m), { ready: false }));
+    a.m.aiPicksLast = true;
+    const ps = a.m.players.get('p_0');
+    assert.equal(ps.setLoadout({}, { char_003_kalts: { potential: 2, cultivate: 0 } }), true);
+    ps.personalChoice = { id: 'saved-choice', cards: [{ id: 'bounty_1' }], round: a.m.round };
+    const doc = snapshotMatch(a.m);
+    assert.ok(restoreMatch(b.m, doc, DEPS));
+    assert.equal(b.m.aiPicksLast, true);
+    assert.deepEqual(b.m.players.get('p_0').ops, ps.ops);
+    assert.deepEqual(b.m.players.get('p_0').personalChoice, ps.personalChoice);
+    for (const p of doc.players) { delete p.ops; delete p.personalChoice; }
+    delete doc.aiPicksLast;
+    const old = makeMatch(OPTIONS);
+    try {
+      assert.ok(restoreMatch(old.m, doc, DEPS));
+      assert.equal(old.m.aiPicksLast, false);
+      assert.deepEqual(old.m.players.get('p_0').ops, {});
+      assert.equal(old.m.players.get('p_0').personalChoice, null);
+    } finally { old.m.dispose(); }
+  } finally { a.m.dispose(); b.m.dispose(); }
+});

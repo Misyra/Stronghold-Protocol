@@ -966,9 +966,11 @@ flag alters movement or 失衡.
   on `trigger.customRangeGrid` (= that running range, grown by the unit's permanent rangeExtend unless the skill's
   `targeting.noRangeExtend`), every tick, no attack needed (the 外勤医疗 map character Touch's 恳切福音 too, on its 5-2:
   set by its kit, content/tokens.js `touchKit` — the map character's record keeps DEFAULT, build-data widens operators'
-  skills only; GitHub #260); `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
-  `grid`) = the basic rule **and** such an ally on the grid: the cast replaces the attack about to be made (塞雷娅 S1 "触发
-  时会替换当次攻击", ≤ half HP); a cast whose ally condition fails before that attack is withdrawn, its charge returned;
+  skills only; GitHub #260). A mixed attack/heal skill may set `trigger.enemies` to also open for a selectable enemy
+  on that range (凯尔希·思衡托 S2), retaining the injured-ally condition; `DEFAULT` with `trigger.allies` (+ `hpAtMost`,
+  `grid`) = an attack interval ready **and** such an ally on the grid, without requiring an enemy:
+  the cast replaces that attack with a heal (塞雷娅 / 黍 S1, ≤ half HP). The check follows cooldown decrement
+  and control/disarm checks, preserving the same cadence with or without enemies; a cast whose ally condition fails before that attack is withdrawn, its charge returned;
   `TAKE_DAMAGE` — ready and just hit (重装: "不受技能范围影响，受到伤害时释放技能"; in the data every MANUAL 重装 skill but
   the six of DESIGN §21.29 — 深巡 / 雷蛇 S2, 号角 S2 / S3, 灰毫 S1 / S2 — which are `DEFAULT`, a deliberate deviation (深巡
   S2 then `ACTIVE_RANGE` on its 3-2), and 余 S2 厚礼上宾, `SKILL_RANGE` on its own x-1 since DESIGN §22.10);
@@ -1096,8 +1098,8 @@ Element conventions of the kits (user playtest #5 #3; official term dictionary: 
   duration,              // s (duration kind; optional cap for ammo)
   ammo,                  // attacks (ammo kind)
   spCost, initSp, charges, spType: 'time'|'attack'|'hurt'|'none',   // optional overrides of the data values
-  trigger: 'DEFAULT' | { rule, grid, allies?, hpAtMost? },     // optional override (allies / hpAtMost: an injured ally condition, §7.1)
-  heal: bool,            // heal-type skill for the DEFAULT trigger (default: unit is a healer)
+  trigger: 'DEFAULT' | { rule, grid, allies?, hpAtMost?, enemies? },     // optional override (allies / hpAtMost: an injured ally condition, §7.1)
+  heal: bool,            // heal-type skill for the DEFAULT trigger (default: unit is a healer); trigger.enemies also permits enemies
   mods: { …mod keys },   // buff while active (instant: only during the pending attack)
   flags: { …flags },
   targeting: { maxTargets, rangeGrid, rangeExtend, priority, allInRange, canHitFly,

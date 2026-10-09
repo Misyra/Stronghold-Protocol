@@ -101,6 +101,13 @@ export function updateAlly(b, u, dt) {
   // (a 秘术师's `canAttack` is its own target rule: false = no valid target — 深靛's bound enemies, 维伊's marked ones)
   if (prof.canAttack && !prof.canAttack(b, u)) { if (prof.storeEnergy) { u.trait.hadTarget = false; storeEnergy(b, u, prof); } return; }
   let targets = acquireTargets(b, u, prof);
+  // A DEFAULT charged heal can replace this attack with an eligible ally even when no enemy exists.
+  // Run after cooldown/control checks so silence, disarm and the exact attack cadence still apply (#406).
+  if (!targets.length && sk?.triggerAllies && sk.onAboutToAttack()) {
+    prof = effectiveProfile(u);
+    if (prof.noAttack || !u.alive) return;
+    targets = acquireTargets(b, u, prof);
+  }
   if (!targets.length) { u.trait.hadTarget = false; storeEnergy(b, u, prof); return; }
   u.trait.hadTarget = true;
   if (sk && sk.onAboutToAttack()) {

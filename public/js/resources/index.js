@@ -1,16 +1,16 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 // public/js/resources/index.js — the page side of the optional asset preload (docs/development/ASSETS.md「Preload」).
 //
-// Off by default (设置 ▸ 预载资源). When the player turns it on, this module fetches /data/resource-manifest.json,
+// Started automatically after app boot (设置 ▸ 预载资源). This module fetches /data/resource-manifest.json,
 // registers the Service Worker (public/resource-sw.js, so the cached files are also served with no network) and fills
 // Cache Storage with required visuals first, then optional audio/tutorials when selected. Turning it off stops the
-// downloads; 「清理缓存」 deletes them. Nothing here touches the match: a player who never enables it never downloads
-// anything, and a failed download only costs a console message.
+// downloads for the current visit; 「清理缓存」 deletes them. Cached files are reused on later visits. Nothing here
+// blocks entering or playing a match, and a failed download is reported in the resource manager.
 //
 // The settings panel (public/js/ui/resourcePanel.js) renders `resourceState()`; main.js calls `syncResources()` with the
 // persisted setting at boot and on every settings change.
 
-import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, resourceGroup, validateManifest } from './common.js';
+import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
 import { ResourceStore } from './store.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -245,7 +245,9 @@ function start() {
 
 async function startDownload(signal) {
   set({ phase: 'checking', message: t('正在检查已保存的资源…'), error: false });
+  const checkStart = performance.now();
   const ctx = await resourceContext();
+  const manifestReady = performance.now();
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
   if (ctx.error || ctx.unsupported || ctx.empty) {
     const message = ctx.error || ctx.unsupported || t('服务器没有可预载的资源');
@@ -263,6 +265,8 @@ async function startDownload(signal) {
     set({ worker: t('预载服务未启用（{0}），资源仍会下载，但不会从本机缓存读取。', { 0: err?.message || err }) });
   });
   const before = await store.status();
+  console.info('[resources] preload check timings', { manifestMs: manifestReady - checkStart,
+    ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
   const ready = selectionComplete(before);
   set({ ...counters(before), phase: ready ? 'ready' : 'download', message: ready ? optional ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
@@ -317,8 +321,13 @@ export function pauseResources() {
 }
 
 /** ZIP support stays out of the initial module graph. An import can be started before enabling network preloading. */
-export function importResources(file) {
-  return transferArchive('import', file);
+export async function importResources(file, { onImported } = {}) {
+  const outcome = await transferArchive('import', file);
+  // Persist the UI setting after a successful import, then enable/resume the selected incremental downloads.
+  onImported?.();
+  const run = current ? startResources() : syncResources(true);
+  void run.catch((err) => console.warn('[resources] enable after import failed', err));
+  return outcome;
 }
 
 export function exportResources() {
@@ -333,7 +342,7 @@ function transferArchive(kind, file) {
   archiveController = new AbortController();
   const signal = archiveController.signal;
   set({ archive: kind, archivePhase: '', archivePercent: 0, archiveGroup: '',
-    message: kind === 'import' ? t('正在准备校验资源包…') : t('正在准备导出资源包…'), error: false });
+    message: kind === 'import' ? t('正在准备导入资源包…') : t('正在准备导出资源包…'), error: false });
   transferPromise = (async () => {
     if (activeRun) await activeRun;
     const ctx = await resourceContext();
@@ -359,7 +368,8 @@ function transferArchive(kind, file) {
           message: t('{0}资源包：{percent}%', { 0: p.phase === 'export' ? t('正在导出') : p.phase === 'verify' ? t('正在校验') : t('正在导入'), percent }) });
       };
       return kind === 'import'
-        ? archive.importResourceZip(ctx.store, file, { signal, onProgress })
+        ? archive.importResourceZip(ctx.store, file, { signal, onProgress,
+          onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
         : archive.exportResourceZip(ctx.store, { signal, onProgress });
     });
     if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
@@ -381,7 +391,7 @@ function transferArchive(kind, file) {
     const aborted = err?.name === 'AbortError';
     set({ ...(status ? counters(status) : {}), phase: aborted ? 'paused' : 'error', error: !aborted,
       message: aborted ? t('资源包处理已取消，已保存的资源保留。')
-        : /quota|空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')
+        : isQuotaError(err) || /空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')
           : t('资源包{0}失败：{1}', { 0: kind === 'import' ? t('导入') : t('导出'), 1: err?.message || err }) });
     throw err;
   }).finally(() => {
@@ -389,8 +399,6 @@ function transferArchive(kind, file) {
     transferPromise = null;
     set({ archive: '', archivePhase: '', archiveGroup: '' });
   });
-  // The caller enables preloading after a successful import; an already-enabled preload resumes incrementally.
-  if (kind === 'import') transferPromise.then(() => { if (current) void startResources().catch(() => {}); }, () => {});
   return transferPromise;
 }
 
@@ -430,6 +438,8 @@ export async function clearResources() {
 
 /** Opening the manager checks the cache without starting network asset downloads. */
 export async function inspectResources() {
+  // An active run already publishes authoritative counters; opening the panel must not enqueue another cache scan.
+  if (activeRun || transferPromise) return;
   if (!activeRun && !transferPromise) set({ phase: 'checking', error: false, message: t('正在检查已保存的资源…') });
   const ctx = await resourceContext();
   if (!ctx.store) {
@@ -439,6 +449,7 @@ export async function inspectResources() {
     return;
   }
   try {
+    if (activeRun || transferPromise) return;
     const status = await ctx.store.status();
     set({ ...counters(status), version: ctx.manifest.version, supported: true,
       ...(!activeRun && !transferPromise ? { phase: selectionComplete(status) ? 'ready' : 'paused', message: '', error: false } : {}) });

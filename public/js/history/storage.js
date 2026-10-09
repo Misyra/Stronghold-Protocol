@@ -50,6 +50,24 @@ export function createHistoryStorage(options = {}) {
         };
       };
     }),
+    // Explicit imports may restore deleted rows. One transaction keeps a failed import from partially writing.
+    import: (incoming) => transact('readwrite', (s, done) => {
+      s.getAll().onsuccess = (e) => {
+        const rows = new Map(e.target.result.map((r) => [r.id, r]));
+        const added = new Set();
+        let skipped = 0;
+        for (const r of incoming) {
+          const existing = rows.get(r.id);
+          if (existing && !existing.deleted) { skipped++; continue; }
+          rows.set(r.id, r); added.add(r.id); s.put(r);
+        }
+        const records = newestFirst([...rows.values()]);
+        const pruned = records.filter((r) => !r.deleted).slice(limit);
+        for (const old of [...pruned, ...records.filter((r) => r.deleted).slice(1000)]) s.delete(old.id);
+        const discarded = pruned.filter((r) => added.has(r.id)).length;
+        done({ added: added.size - discarded, skipped, discarded });
+      };
+    }),
     // Small tombstones suppress a reconnect's replay of the latest result after the user deleted it.
     remove: (id) => transact('readwrite', (s) => {
       s.get(id).onsuccess = (e) => {

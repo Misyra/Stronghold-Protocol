@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalResourceUrl } from '../shared/resourcePaths.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const HASHES_VERSION = 1;
@@ -47,7 +48,7 @@ export async function listResourceFiles(dir, { root = ROOT } = {}) {
       if (!e.isFile()) continue;
       const ext = path.extname(e.name).slice(1).toLowerCase();
       if (!EXTENSIONS.has(ext)) continue;
-      out.push('/' + path.relative(path.join(root, 'public'), child).split(path.sep).join('/'));
+      out.push(canonicalResourceUrl('/' + path.relative(path.join(root, 'public'), child).split(path.sep).join('/')));
     }
   };
   await walk(path.resolve(root, dir));
@@ -83,7 +84,7 @@ export async function collectHashes({ root = ROOT, trees = TREES, concurrency = 
   await Promise.all(Array.from({ length: lanes }, async () => {
     for (let i = next++; i < urls.length; i = next++) {
       const url = urls[i];
-      const abs = path.join(root, 'public', url.slice(1));
+      const abs = path.join(root, 'public', decodeURIComponent(url.slice(1)));
       try {
         const { hash, bytes: n } = await hashFile(abs);
         files[url] = hash;

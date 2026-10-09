@@ -22,6 +22,7 @@ import fsp from 'node:fs/promises';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
 
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
 /** Per-file content hashes of the fetched assets, written by tools/asset-hashes.mjs (optional). */
@@ -129,8 +130,13 @@ export function collectResourceFiles(assets, local) {
       if (!validateResourceUrl(node)) return;
       // Audio is optional even when a new manifest nests it inside an otherwise required character/map section.
       const tier = resourceType(node)?.startsWith('audio/') ? TIER_REST : tierForPath(keyPath);
-      const prev = byUrl.get(node);
-      if (prev == null || tier < prev.tier) byUrl.set(node, { tier, source });
+      const url = canonicalResourceUrl(node);
+      const prev = byUrl.get(url);
+      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source });
+      // The crop table sits beside the atlas and is not listed in local-assets.json.
+      if (source === 'local' && /\/assets\/local\/map\/autochess\/TX_autochessi_D\.(?:png|webp)(?:\?v=[0-9a-f]{16})?$/.test(url)) {
+        byUrl.set(url.replace(/[^/]+$/, 'tiles.json'), { tier: TIER_ESSENTIAL, source });
+      }
       return;
     }
     if (Array.isArray(node)) {
@@ -154,7 +160,7 @@ const BUST_QUERY = /\?v=[0-9a-f]{16}$/;
 
 /** Path part of a URL — the key real hashes are matched by (a CDN install rewrites the URLs, not the hash file). */
 export function pathKey(url, cdnBase = '') {
-  let s = String(url || '').replace(BUST_QUERY, '');
+  let s = canonicalResourceUrl(url || '').replace(BUST_QUERY, '');
   if (cdnBase && s.startsWith(cdnBase + '/')) s = s.slice(cdnBase.length);
   let p = s;
   if (!s.startsWith('/') || s.startsWith('//')) { try { p = new URL(s).pathname; } catch { return s; } }
@@ -246,6 +252,8 @@ export function localPathFor(url, publicDir, cdnBase = '') {
   if (cdnBase && p.startsWith(cdnBase + '/')) p = p.slice(cdnBase.length) || '/';
   if (!p.startsWith('/') || p.startsWith('//')) return null;
   p = p.replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');
+  try { p = decodeURIComponent(p); } catch { return null; }
+  if (/[\\\u0000-\u001f]/.test(p)) return null;
   const root = path.resolve(publicDir);
   const segments = p.slice(1).split('/');
   if (segments.some((s) => s === '' || s === '.' || s === '..')) return null;
@@ -312,14 +320,26 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     const assets = await readJson('assets.json');
     const local = await readJson('local-assets.json');
     const hashesDoc = await readJson(ASSET_HASHES_FILE);
-    const key = [assets ? `${assets.mtimeMs}:${assets.size}` : '-', local ? `${local.mtimeMs}:${local.size}` : '-',
-      hashesDoc ? `${hashesDoc.mtimeMs}:${hashesDoc.size}` : '-', cdnBase].join('|');
-    if (cache && cache.key === key) return cache;
-    const t0 = Date.now();
     const assetsDoc = assets ? rewrite(assets.doc) : null;
     const localDoc = local ? rewrite(local.doc) : null;
-    const files = collectResourceFiles(assetsDoc, localDoc);
+    const collected = collectResourceFiles(assetsDoc, localDoc);
+    const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
+    const tiles = await Promise.all(tileFiles.map(async (file) => {
+      const abs = localPathFor(file.url, publicDir, cdnBase);
+      try {
+        const stat = abs && await statFile(abs);
+        return stat?.isFile() ? { url: file.url, abs, stamp: `${stat.mtimeMs}:${stat.size}`, size: stat.size } : null;
+      } catch { return null; }
+    }));
+    const key = [assets ? `${assets.mtimeMs}:${assets.size}` : '-', local ? `${local.mtimeMs}:${local.size}` : '-',
+      hashesDoc ? `${hashesDoc.mtimeMs}:${hashesDoc.size}` : '-', cdnBase, ...tiles.map((f) => f?.stamp || '-')].join('|');
+    if (cache && cache.key === key) return cache;
+    const t0 = Date.now();
     const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null, cdnBase);
+    for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES) {
+      real.set(pathKey(tile.url, cdnBase), crypto.createHash('sha1').update(await fsp.readFile(tile.abs)).digest('hex').slice(0, 12));
+    }
+    const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url, cdnBase)));
     const stamps = {
       web: assetsDoc && assetsDoc.hash ? assetsDoc.hash : assets ? `m${Math.floor(assets.mtimeMs)}` : 'none',
       local: localDoc && localDoc.hash ? localDoc.hash : local ? `l${Math.floor(local.mtimeMs)}` : 'none',
@@ -328,7 +348,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);
     // CSS/JSON can be rewritten by the serving host. Their index fingerprint includes the URL namespace, but is
     // deliberately not a raw-byte digest: a CDN host may rewrite these small files differently from this game host.
-    for (const f of files) if (/\.(?:css|json)$/.test(f.url)) {
+    for (const f of files) if (/\.(?:css|json)(?:\?v=[0-9a-f]{16})?$/.test(f.url) && !isBoardResourceJson(f.url)) {
       fileHashes.set(f.url, 'syn-' + shortHash(fileHashes.get(f.url) + '|' + f.url));
     }
     // The version is informational now (the client keys its cache per file), but it must still change whenever the set

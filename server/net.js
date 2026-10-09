@@ -71,7 +71,7 @@ export const NET_DEFAULTS = Object.freeze({
  * (taking a spectator seat in a running match resends its state like a watcher's g.watch — server/lobby.js spectate)
  * and matchmaking.join (this fork's alliance queue). state.resync requests a full recovery through the same limits.
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.spectate', 'state.resync']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.matchmaking', 'room.spectate', 'state.resync']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, POLICY: 1008, SHUTDOWN: 1001 });

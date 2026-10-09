@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeRecord, newestFirst, exportRecords } from '../../public/js/history/record.js';
+import { makeRecord, newestFirst, exportRecords, parseRecords, HISTORY_IMPORT_BYTES } from '../../public/js/history/record.js';
 import { createHistoryStorage } from '../../public/js/history/storage.js';
 
 const result = () => ({ matchId: 'match-1', finishedAt: 1000, seed: 7, victory: true, durationMs: 12345,
@@ -59,4 +59,35 @@ test('unavailable IndexedDB produces an explicit retryable error', async () => {
   const storage = createHistoryStorage({ indexedDB: null });
   await assert.rejects(storage.list(), /不支持/);
   await assert.rejects(storage.list(), /不支持/);
+});
+
+test('exports round trip through import with IDs, origin, dates and reports preserved', () => {
+  const record = makeRecord(result(), 'p1', { now: 2000, origin: 'https://old.example', appVersion: '0.2.1' });
+  assert.deepEqual(parseRecords(exportRecords([record])), [record]);
+  assert.deepEqual(parseRecords('\uFEFF' + exportRecords([record])), [record], 'UTF-8 BOM is accepted');
+  assert.deepEqual(parseRecords(exportRecords([])), []);
+});
+
+test('record imports validate the whole document, participant identity, schema and bounds', () => {
+  const record = makeRecord(result(), 'p1');
+  const doc = JSON.parse(exportRecords([record]));
+  assert.throws(() => parseRecords('not JSON'), /JSON/);
+  assert.throws(() => parseRecords('null'), /格式/);
+  assert.throws(() => parseRecords(JSON.stringify({ ...doc, format: 'other' })), /格式/);
+  assert.throws(() => parseRecords(JSON.stringify({ ...doc, schema: 2 })), /版本/);
+  for (const bad of [{ ...record, id: 'forged' }, { ...record, schema: 2 }, { ...record, endedAt: 'yesterday' },
+    { ...record, playerId: 'spectator' }, { ...record, origin: null }, { ...record, deleted: true },
+    { ...record, result: { ...record.result, players: [record.result.players[0], record.result.players[0]] } }]) {
+    assert.throws(() => parseRecords(exportRecords([record, bad])), /无效/);
+  }
+  assert.throws(() => parseRecords(' '.repeat(HISTORY_IMPORT_BYTES + 1)), /过大/);
+  assert.throws(() => parseRecords(exportRecords(Array(1001).fill(record))), /格式/);
+});
+
+test('imported records discard unknown fields and session credentials before storage', () => {
+  const record = makeRecord(result(), 'p1');
+  const source = { ...record, token: 'import-secret', result: { ...result(), token: 'import-secret' } };
+  const parsed = parseRecords(exportRecords([source]));
+  assert.deepEqual(parsed, [record]);
+  assert.ok(!JSON.stringify(parsed).includes('secret'));
 });

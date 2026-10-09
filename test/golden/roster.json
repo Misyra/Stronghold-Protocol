@@ -454,19 +454,7 @@
       "rngDraws": 43,
       "errors": {"count":0,"kinds":[]},
       "players": {
-        "p1": {
-          "killed": 58,
-          "total": 83,
-          "perfect": false,
-          "leaks": 29,
-          "leaksUncounted": 1,
-          "coins": 8,
-          "dmg": 584652,
-          "bossDmg": 0,
-          "heal": 5484,
-          "deaths": 18,
-          "layerGains": {"egirShip":18,"raidShip":36}
-        }
+        "p1": {"killed":58,"total":83,"perfect":false,"leaks":29,"leaksUncounted":1,"coins":8,"dmg":584652,"bossDmg":0,"heal":5484,"deaths":18,"layerGains":{"raidShip":36}}
       },
       "units": [
         ["p1",1,"op","chess_char_3_06_b",1,"uniequip_002_philae",0,0,6,3,8669,8443,0,11,1],
@@ -524,9 +512,9 @@
         "enemy_2021_syfish": [60,46,14,2435,336653],
         "enemy_2025_syufo": [13,3,7,30859,107202]
       },
-      "hooks": [1,136,5100,622,622,1146,1244,412,76,130,23,25,0,8861,90,55,88,26,1,81,15,12,0],
-      "events": {"atk":700,"bounty":4,"deploy":48,"die":104,"dmg":1157,"engage":12,"fx":224,"heal":412,"layer":15,"leak":26,"skill":50,"spawn":126,"status":151},
-      "fx": {"aoe":21,"blink":2,"buff":1,"burst":12,"coin":26,"displace":30,"explode":31,"garrison":9,"layer":6,"pull":30,"revive":5,"shield":1,"shieldBreak":1,"stone":1,"strike":11,"summon":27,"telegraph":1,"volley":9},
+      "hooks": [1,136,5100,622,622,1146,1244,412,76,130,23,25,0,8861,90,55,88,26,1,81,9,12,0],
+      "events": {"atk":700,"bounty":4,"deploy":48,"die":104,"dmg":1157,"engage":12,"fx":218,"heal":412,"layer":9,"leak":26,"skill":50,"spawn":126,"status":151},
+      "fx": {"aoe":21,"blink":2,"buff":1,"burst":12,"coin":26,"displace":30,"explode":31,"garrison":9,"pull":30,"revive":5,"shield":1,"shieldBreak":1,"stone":1,"strike":11,"summon":27,"telegraph":1,"volley":9},
       "snaps": "b19807c9 91093618 e23e7617 b1bc3a57 24c17dc9 e4263c69 ce35e0e8 34019a9b d63a9b7b 8f9d73c2 d3acc943 cbc3410b 6b14e481 7d8bf5fe 9a5b67ba 72b72b18 90c03fa8"
     },
     "roster-009": {

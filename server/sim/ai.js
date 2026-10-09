@@ -906,6 +906,8 @@ function enemyAttack(b, e, prevCd) {
   // — the 'atk' event (kind `e.profile.shot`, drawn by the content's own fx), cooldown, pause, the 'attack' hook — and
   // the content's 'attack' handler deals its damage
   const deferred = !!(e.profile && e.profile.deferHit);
+  // A lethal strike may immediately redeploy its target. Post-attack effects still belong to the struck deployment.
+  const targetDeployments = new Map(targets.map((t) => [t, t.deploySeq]));
   for (const t of targets) {
     b._ev(['atk', e.id, t.id, deferred ? (e.profile.shot || 'none') : rangedShot ? 'enemy' : 'none']);
     if (deferred) continue;
@@ -919,7 +921,7 @@ function enemyAttack(b, e, prevCd) {
       b.addProjectile({ from: e, target: t, speed: PROJECTILE_SPEEDS.enemy, visual: 'enemy', source: e, onHit: (c) => hit(c.target, true) });
     } else hit(t);
   }
-  if (b._hooks.attack) b.emit('attack', { attacker: e, targets, isSkill: false });
+  if (b._hooks.attack) b.emit('attack', { attacker: e, targets, targetDeployments, isSkill: false });
   e.atkCd = e.s.interval;
   // stands for the rest of its attack clip (attackStand; the wind-up was stood before the strike) — every enemy, blocked
   // or not: PRTS 状态机, an enemy's ATTACK / COMBAT state "攻击结束后回退到MOVE状态" and checks only 异常状态 every frame

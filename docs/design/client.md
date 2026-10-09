@@ -121,3 +121,7 @@ sound. A selected mode with no mix uses its own default volume/probability, not 
 A model that arrives after an actual deployment continues Start at the elapsed game time; after the clip's duration it
 shows the current base pose. A subsequent attack/death supersedes that pending entrance. No extra deployment sound
 or per-phase animation schedule is added by this change.
+
+The simplified-view notice describes a renderer load failure, rather than declaring the device incapable of 3D.
+The same fallback covers import failure, timeout and WebGL initialization errors; a reload can retry.
+It does not diagnose a particular user's GPU or persist a disabled renderer preference (§28.25).

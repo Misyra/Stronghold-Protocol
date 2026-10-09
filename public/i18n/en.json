@@ -239,7 +239,7 @@
   "继续作战": "Resume Battle",
   "正在载入模拟数据…": "Loading simulation data...",
   "正在进入模拟…": "Entering simulation...",
-  "当前设备无法启用 3D / WebGL 渲染，已切换为简化视图（功能不受影响）": "3D / WebGL rendering is unavailable on this device; switched to a simplified view (all features still work)",
+  "渲染器暂时未能加载，已切换为简化视图（功能不受影响，可刷新重试）": "The renderer could not load. Switched to the simplified view (all features remain available; reload to retry).",
   "已配发的装备无法销毁": "Equipped Equipment cannot be destroyed",
   "销毁道具": "Destroy Item",
   "道具": "Item",

@@ -621,13 +621,16 @@ function kitGun(ab, e, b) {
     },
   ];
   if (hidden) {
-    list.push({
-      iv: 0.25,
-      tick(b2, e2) { // 【未尽的告解】 physical / arts damage taken ×4.damage_scale while the 碎铳之簧 it came with remain
-        const springs = b2.enemies.some((o) => o.alive && isSpring(o));
-        if (springs) { const m = T(ab, '4.damage_scale') ?? 1; b2.addBuff(e2, { key: 'boss:confession', duration: 0.35, refresh: 'replace', mods: { physTakenMul: m, artsTakenMul: m } }); }
-      },
-    });
+    // PRTS 未尽的告解: another gun OR spring keeps the reduction. Refresh on hit as well so the first hit and
+    // a hit immediately after the last companion dies see the current condition, not a stale polling result.
+    const confession = (b2, e2) => {
+      const other = b2.enemies.some((o) => o !== e2 && o.alive && (isGun(o) || isSpring(o)));
+      if (other) {
+        const m = T(ab, '4.damage_scale') ?? 1;
+        b2.addBuff(e2, { key: 'boss:confession', duration: 0.35, refresh: 'replace', mods: { physTakenMul: m, artsTakenMul: m } });
+      } else b2.removeBuff(e2, 'boss:confession');
+    };
+    list.push({ iv: 0.25, tick: confession, hitIn(c, b2, e2) { confession(b2, e2); } });
     if (s3) list.push({
       iv: s3.bb.interval ?? 1,
       tick(b2, e2) { // 【盲信之誓】 links: phys per second on operators standing on a line ("无视无法选择、迷彩": 起飞 too)

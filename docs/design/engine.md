@@ -202,3 +202,17 @@ the existing per-tick behavior. The optional flag defaults to false for compatib
 0.2.3 echo/counter interaction (DESIGN §28.24): recursively earned “余音” pulses are drained FIFO by that echo in the
 same call, retaining the earned attack value and the lethal-hit pulse. [ASSUMED] This local order avoids exhausting
 the hook-depth guard on scaled hit-count HP; the guard remains unchanged for other recursive handlers.
+
+### Community corrections (2026-10-10, §28.25)
+
+- A normal enemy attack's post-hit status belongs to the target's deployment at the strike. If lethal damage
+  immediately redeploys the target (不屈), that old attack cannot stun the new deployment.
+- Bard continuous regeneration, including 浊心斯卡蒂's replacement trait, continues through stun; leaving the field
+  stops refreshing its aura. Stun still prevents attacks and skill use.
+- 黄沙罗盘 SP ignores both an active skill's recovery lock and `noSp`, including the caster and other 萨尔贡 recipients
+  of the 浓茶 combination. Other SP gifts retain their existing restrictions.
+- 克莱门莎's 崇高牺牲 strategy requires 阿戈尔 to be active before a knock-out grants layers.
+- 隐秘核心 铳 takes 20% physical/arts damage while another gun or spring remains. The condition is checked on each hit
+  as well as by its aura tick, including the first hit and immediately after the last companion leaves.
+
+Sources and the feedback items requiring no simulation change are recorded in [§28.25](../history/0.2.3.md#2825-community-feedback-of-2026-10-10).

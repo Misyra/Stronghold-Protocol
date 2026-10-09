@@ -19,7 +19,7 @@ const GROUND = Object.freeze({ canHitFly: false, groundOnly: true });
 const AIR = Object.freeze({ canHitFly: true });
 const SPEED = 2, DISTANCE = 3, CATCH_HALF = 0.55, VORTEX_RADIUS = 1.5;
 const SPLASH_RADIUS = 1.5; // [ASSUMED] PRTS has not published S2's normal attack splash radius.
-const FIRST_BOMB = 0.5; // [ASSUMED] PRTS lists the landing delay as unknown.
+const FIRST_BOMB = 0.5; // [ASSUMED] Neither PRTS nor the edited official demo settles the first landing offset.
 const CAST = 'clemnt:cast', CARRY = 'clemnt:carry:';
 const skillBb = (raw, id) => skillRec(raw, id)?.bb ?? {};
 const tile = (u) => [Math.round(u.y), Math.round(u.x)];

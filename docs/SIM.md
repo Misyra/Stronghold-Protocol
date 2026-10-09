@@ -840,7 +840,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `tick` | `{ dt }` | end of every tick |
 | `beforeAttack` | `{ attacker, targets, isSkill, profile }` | allies **and** enemies; replace/filter `ctx.targets` |
 | `enemyAttackStart` | `{ enemy, targets }` | an enemy starts a normal attack (it has targets), **before** 麻痹 may interrupt it (ai.js enemyAttack; the client's ON_BEFORE_ABILITY_SPELL_ON): a burst a handler causes interrupts that very attack (酒神 堕梦, PRTS 备注 "触发的元素爆发可打断当次普攻"); a handler that kills or stuns the enemy ends it |
-| `attack` | `{ attacker, targets, isSkill }` | an attack/heal was performed (projectiles may still be in flight) |
+| `attack` | `{ attacker, targets, isSkill, targetDeployments? }` | an attack/heal was performed (projectiles may still be in flight). Normal enemy attacks provide a `Map<Unit, deploySeq>` captured before their damage; post-attack control effects must not cross a target redeployment. |
 | `hit` | `{ source, target, dmg, credit }` | before mitigation; mutate `dmg` (not fired for gauge fills — see `elementHit`). `source` may be null (terrain; 无来源 `dmg.sourceless` bursts, whose `credit` names the unit credited) |
 | `elementHit` | `{ source, target, dmg }` | before a gauge fill (`dmg.type === 'element'`); mutate `dmg.amount`/`dmg.mul`, set `dmg.cancel` |
 | `damaged` | `{ source, target, amount, type, dmg, credit }` | after application (`amount` may be 0 when shielded); element fills too (with their source); 无来源: `source` null, `credit` set |
@@ -996,8 +996,10 @@ flag alters movement or 失衡.
   attack speed paces it, and an SP refund that refills the bar at once (迅捷) no longer recasts it every tick (GitHub #298,
   引星棘刺 S1; [ASSUMED] one attack interval: PRTS prints no 前后摇 for such casts). The cast is no attack: the unit's
   attacks and heals keep their own rhythm, and its first cast comes as soon as it is ready (#124). `gainSp` is ignored while a duration/ammo/toggle skill
-  runs (its bar shows the skill), whatever the reason, and — any reason but `'init'` — while the unit has the `noSp`
-  flag (阻回: "停止并阻止任意形式的技力回复"; the operators' 凋亡 burst, §3).
+  runs (its bar shows the skill), and while the unit has `noSp` (阻回; the operators' 凋亡 burst, §3), except for
+  deployment initialization (`reason: 'init'`) and explicitly documented bypasses.
+  `gainSp(n, reason, silent, { ignoreLock: true })` bypasses both locks while retaining the source reason, charge cap
+  and `spGain` hook; used by 黄沙罗盘 (PRTS says all its SP ignores 阻回), including its caster's +3 SP.
 - Kinds: `duration` (mods for `duration` s), `ammo` (mods until `ammo` attacks were made, optional duration cap),
   `instant` (onStart + optional one-shot attack override applied to the next attack), `charges` (instant with charges),
   `passive` (always on from deployment, no SP), `toggle` (stays on until death once activated).

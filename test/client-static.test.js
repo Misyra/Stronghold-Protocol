@@ -1121,6 +1121,14 @@ describe('screen helpers', () => {
     room.seats[1].ready = true;
     f = roomFacts(room, 'h');
     assert.equal(f.canStart, true, 'host start does not need the host to be ready');
+    assert.equal(f.canMatch, false, 'AI seats cannot enter human matchmaking');
+    room.seats[3] = null;
+    assert.equal(roomFacts(room, 'h').canMatch, true, 'ready premade can fill empty seats');
+    assert.equal(roomFacts(room, 'g').canMatch, false, 'only the host queues the party');
+    room.matchmaking = true;
+    assert.equal(roomFacts(room, 'h').canStart, false, 'searching party cannot manually start');
+    assert.equal(roomFacts(room, 'h').canMatch, false, 'searching party cannot queue again');
+    room.matchmaking = false;
     room.seats[1].connected = false;
     assert.equal(roomFacts(room, 'h').canStart, false, 'disconnected guest blocks start');
     assert.equal(roomFacts(room, 'g').canStart, false, 'guests cannot start');

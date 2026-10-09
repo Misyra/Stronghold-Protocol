@@ -236,6 +236,7 @@ export class Room {
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
       inMatch: !!this.match,
+      matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
         ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left }
         : null)),
@@ -275,7 +276,8 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
-    this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
+    this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s),
+      partyChanged: (room) => this.broadcastState(room), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -354,7 +356,8 @@ export class Lobby {
     switch (msg.t) {
       case 'state.resync': this.resync(session, true); return OK;
       case 'matchmaking.join': return this.matchmaking.join(session, msg.difficulty);
-      case 'matchmaking.cancel': return this.roomOf(session) ? fail(ERR.ROOM_STARTED) : this.matchmaking.cancel(session);
+      case 'matchmaking.cancel': return this.cancelMatchmaking(session);
+      case 'room.matchmaking': return this.queueParty(session);
       case 'room.create': return this.create(session, msg);
       case 'room.join': return this.join(session, msg);
       case 'room.leave': return this.leave(session);
@@ -464,6 +467,7 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
+    if (room.matchmaking) this.matchmaking.cancel(this.registry.byId(room.hostId));
     if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (cur) this.removeMember(cur, session.playerId);
     room.seats[idx] = this.humanSeat(idx, session);
@@ -476,8 +480,11 @@ export class Lobby {
   }
 
   leave(session) {
-    if (this.matchmaking.has(session)) return this.matchmaking.cancel(session);
     const room = this.roomOf(session);
+    if (this.matchmaking.has(session)) {
+      this.matchmaking.cancel(session);
+      if (!room) return OK;
+    }
     if (!room) return fail(ERR.NOT_IN_ROOM);
     this.removeMember(room, session.playerId);
     return OK;
@@ -485,12 +492,13 @@ export class Lobby {
 
   /** Allocate a fresh private co-op room and start it with exactly four opted-in humans. */
   allocateMatchmaking(group, difficulty) {
-    if (group.length !== MAX_SEATS || group.some((s) => !s.connected || this.roomOf(s))) return fail(ERR.NOT_READY);
+    if (group.length !== MAX_SEATS || group.some((s) => !s.connected)) return fail(ERR.NOT_READY);
     // Every participant's network budget applies, including when that player is not the generated room's host.
     const keys = new Set(group.map((s) => s.limitKey).filter(Boolean));
     if (this.opts.maxMatchesPerAddr > 0) for (const key of keys) {
       if (this.countRooms((r) => !!r.match && (r.matchKey === key || r.activeHumans().some((seat) => this.registry.byId(seat.playerId)?.limitKey === key))) >= this.opts.maxMatchesPerAddr) return fail(ERR.RATE);
     }
+    if (group.some((s) => this.roomOf(s))) return this.allocatePartyMatchmaking(group, difficulty);
     const created = this.create(group[0], { mode: 'coop', difficulty });
     if (!created.ok) return created;
     const room = this.roomOf(group[0]);
@@ -507,6 +515,72 @@ export class Lobby {
       this.disposeRoom(room, 'matchmaking_failed'); this.log.error('[matchmaking] allocation failed', error);
       return fail(ERR.INTERNAL);
     }
+  }
+
+  /** The host opts the whole ready alliance into four-human matchmaking. */
+  queueParty(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.mode !== 'coop' || room.seats.some((s) => s?.isBot) || room.freeSeat() < 0) return fail(ERR.BAD_MSG);
+    if (room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return fail(ERR.NOT_READY);
+    return this.matchmaking.joinParty(room);
+  }
+
+  cancelMatchmaking(session) {
+    const room = this.roomOf(session);
+    if (room?.match) return fail(ERR.ROOM_STARTED);
+    if (room) {
+      if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+      if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    }
+    return this.matchmaking.cancel(session);
+  }
+
+  /** Keep the oldest alliance's code and host; merge whole parties, restoring them if start fails. */
+  allocatePartyMatchmaking(group, difficulty) {
+    const origins = group.map((s) => this.roomOf(s));
+    const parties = [...new Set(origins.filter(Boolean))];
+    if (parties.some((r) => r.match || r.disposed || r.mode !== 'coop' || r.difficulty !== difficulty ||
+      r.seats.some((s) => s?.isBot) || r.activeHumans().some((s) => !group.some((p) => p.playerId === s.playerId)))) return fail(ERR.NOT_READY);
+    const room = parties[0];
+    const spectators = parties.flatMap((r) => r.spectators);
+    if (spectators.length > MAX_SPECTATORS) return fail(ERR.ROOM_FULL);
+    const previous = { seats: room.seats, spectators: room.spectators, matchCount: room.matchCount, replay: room.replay };
+    room.seats = room.seats.map((s) => s ? { ...s, ready: true } : null);
+    room.spectators = spectators;
+    for (const s of group) {
+      if (!room.seatOf(s.playerId)) {
+        const seat = room.freeSeat();
+        room.seats[seat] = { ...this.humanSeat(seat, s), ready: true };
+      }
+      s.roomCode = room.code;
+    }
+    for (const s of spectators) {
+      const session = this.registry.byId(s.playerId);
+      if (session) session.roomCode = room.code;
+    }
+    let result;
+    try { result = this.start(this.registry.byId(room.hostId)); } catch { result = fail(ERR.INTERNAL); }
+    if (result.ok) {
+      for (const source of parties.slice(1)) this.disposeRoom(source, 'merged');
+    } else {
+      Object.assign(room, previous);
+      for (let i = 0; i < group.length; i++) {
+        group[i].roomCode = origins[i]?.code || null;
+        if (!origins[i]) sendSession(group[i], { t: 'room.closed', reason: 'matchmaking_failed' });
+      }
+      for (const source of parties) {
+        for (const s of source.spectators) {
+          const session = this.registry.byId(s.playerId);
+          if (session) session.roomCode = source.code;
+        }
+        this.broadcastState(source);
+      }
+    }
+    return result;
   }
 
   /**
@@ -563,6 +637,7 @@ export class Lobby {
     this.dropReplay(room, session.playerId);
     const seat = room.seatOf(session.playerId);
     if (seat.ready !== ready) {
+      if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
       seat.ready = ready;
       this.broadcastState(room);
     }
@@ -576,6 +651,7 @@ export class Lobby {
     if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
     if (room.difficulty !== difficulty) {
+      if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
       room.difficulty = difficulty;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
@@ -609,6 +685,7 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo rooms cannot have AI teammates');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
+    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     const used = new Set(room.seats.filter((s) => s && s.isBot).map((s) => s.name));
     const name = BOT_NAMES.find((n) => !used.has(n)) || `AI·${idx + 1}`;
     let playerId;
@@ -660,6 +737,7 @@ export class Lobby {
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.matchmaking) return fail(ERR.ALREADY, 'cancel matchmaking before starting');
     const humans = room.activeHumans();
     for (const s of humans) {
       if (s.playerId !== room.hostId && (!s.connected || !s.ready)) return fail(ERR.NOT_READY);
@@ -1148,6 +1226,7 @@ export class Lobby {
    */
   removeMember(room, playerId) {
     const session = this.registry.byId(playerId);
+    if (session && this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (session && session.roomCode === room.code) session.roomCode = null;
     this.clearGrace(playerId);
     this.dropReplay(room, playerId);
@@ -1221,6 +1300,8 @@ export class Lobby {
    */
   disposeRoom(room, reason) {
     if (room.disposed) return;
+    const queued = room.activeHumans().map((s) => this.registry.byId(s.playerId)).find((s) => s && this.matchmaking.has(s));
+    if (queued) this.matchmaking.cancel(queued);
     room.disposed = true;
     if (this.rooms.get(room.code) === room) this.rooms.delete(room.code);
     const ctx = room.matchCtx;

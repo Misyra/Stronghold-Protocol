@@ -6,7 +6,7 @@
 // only from caches this app wrote (`X-SP-Resource`): code, data, API responses, manifests and WebSocket traffic never
 // pass through this module.
 
-import { CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
+import { CACHE_NAME, CACHE_PREFIX, absoluteUrl, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
 
 /**
  * @param {Request} request
@@ -38,7 +38,11 @@ export async function handleResourceRequest(request, { caches = globalThis.cache
  */
 function cacheKeys(url) {
   const candidates = mediaCandidates(url.pathname);
-  if (!candidates.length) return [url.href];
+  if (!candidates.length) {
+    const key = absoluteUrl(url.href);
+    const legacy = key.replace(/%5B/gi, '[').replace(/%5D/gi, ']');
+    return key === legacy ? [key] : [key, legacy];
+  }
   const keys = [];
   for (const path of candidates) {
     try { keys.push(new URL(path, url).href); } catch { /* one impossible candidate less */ }
@@ -58,7 +62,6 @@ async function matchResource(url, caches) {
   for (const name of names) {
     const cache = await caches.open(name);
     for (const key of keys) {
-      // eslint-disable-next-line no-await-in-loop
       const res = await cache.match(key);
       if (res) return res;
     }

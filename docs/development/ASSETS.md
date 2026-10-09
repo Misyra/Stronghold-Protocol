@@ -398,23 +398,40 @@ Other renderer rules from research 07 §5.4–5.5:
 
 ## Preload
 
-The title screen and settings open one resource manager. Preloading is off by default; enabling it downloads required
+The board crop table `assets/local/map/autochess/tiles.json` is discovered beside the listed
+`TX_autochessi_D.png` or `.webp` atlas when installed locally or present in the hash table. Its size/mtime
+invalidate the manifest cache and its contents determine its fingerprint. Board JSON sidecars
+(`map/fx/materials.json`, `map/fx/prefab.json`, `map/autochess/materials.json`, `map/autochess/tiles.json`
+under `/assets/local/`) retain their original bytes on versioned routes, allowing content verification
+and ZIP reuse across local/CDN hosts. Other JSON resources keep the existing response rewriting and
+synthetic fingerprints. Brackets in resource paths use `%5B`/`%5D` consistently in manifests, cache
+keys and ZIP identities; legacy raw-bracket packages and cached responses remain readable.
+Adapted from xinhai-ai/Stronghold-Protocol commit `a94c720`.
+
+The title screen and settings open one resource manager. Each page visit automatically starts background preloading
+after app boot, including profiles with an older disabled `preload` setting. It downloads required
 visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
 effects, music and tutorial illustrations and is checked by default. The choice persists in `preloadOptional`;
 profiles without a saved choice default to true, while explicit saved choices are retained.
-Closing the manager keeps downloads running; pausing or disabling preload keeps verified files. Cache clearing waits
+Closing the manager keeps downloads running; pausing or disabling preload stops this visit's downloads and keeps
+verified files. The next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
 The manager displays per-category counts and sizes and supports ZIP export/import. Export includes only cached files,
-with actual SHA-1 and SHA-256 digests. Import validates every ZIP entry before changing the live cache, then installs
+as ZIP v2 with a full SHA-1 digest and its 12-hex fingerprint; legacy ZIP v1 with SHA-256 remains importable.
+Import validates each entry's header, CRC, size and digest before writing that entry, then installs
 only files matching the current server manifest by canonical asset path, content hash and known size. This allows
 unchanged files from older packages or different CDN origins to be reused; missing files download incrementally.
 Synthetic server fingerprints cannot authorize ZIP imports. Both archive and decompressed totals are capped at 2 GiB;
-one resource is capped at 24 MiB. Cancelled imports keep completed verified files; malformed packages leave the live
-resources intact. ZIP code is loaded on demand from the locally vendored zip.js library, without ZIP Web Workers.
+one resource is capped at 24 MiB. Cancelled or failed imports keep completed verified files; failed entries are never
+written. Small entries run in up to four concurrent lanes within a 1 MiB raw-byte budget, while larger entries run
+exclusively. ZIP reads reuse two 16 MiB blocks (32 MiB total), and verified digests are reused for cache writes.
+Successful imports enable the saved preload setting and incrementally fetch missing selected resources.
+Concurrent startup cache checks share an in-flight scan of cache keys and index records without reading resource bodies.
+ZIP and CRC code are loaded on demand from the locally vendored zip.js library, without ZIP Web Workers.
 
 The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
-`234dc52b` and subsequent resource updates). This fork retains streaming download limits, strict content verification,
+`234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
 versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.
 See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
 

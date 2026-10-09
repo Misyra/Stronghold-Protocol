@@ -1,5 +1,6 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 import { N_ } from '../../../shared/i18n.js';
+import { canonicalResourceUrl } from '../../../shared/resourcePaths.js';
 // public/js/resources/common.js — shared pieces of the optional asset preload (docs/development/ASSETS.md「Preload」).
 //
 // No DOM and no Preact: the page (store.js / index.js), the Service Worker (service.js) and the Node tests all import
@@ -148,7 +149,7 @@ export function cacheName(version) {
 
 /** Absolute URL of a manifest entry (the cache key): `/assets/x.png` → `https://site/assets/x.png`. */
 export function absoluteUrl(url, origin = globalThis.location?.origin || 'http://localhost') {
-  try { return new URL(String(url), origin).href; } catch { return null; }
+  try { return new URL(canonicalResourceUrl(url), origin).href; } catch { return null; }
 }
 
 /** Absolute URL of the preload index entry (`INDEX_PATH` lives in the same cache as the files it describes). */

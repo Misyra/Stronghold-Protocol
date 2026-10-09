@@ -192,7 +192,7 @@ function onRoomState(msg) {
   const prevRoom = store.get().room;
   // A (new) match starts: forget the previous match's state so stale results never show.
   if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch() });
-  store.set({ room, matchmaking: null });
+  store.set({ room, matchmaking: room.matchmaking ? store.get().matchmaking : null });
   if (room.mode === 'coop' && typeof room.code === 'string') rememberRoom(room.code);
   maybeFinishRestore();
 }
@@ -420,6 +420,8 @@ async function boot() {
 }
 
 function installResourcePreload() {
+  // Each page visit starts background preload; pausing still lasts for this page's lifetime.
+  updateSettings({ preload: true });
   import('./resources/index.js').then((r) => {
     const apply = (s) => { r.syncResources(s.preload, s.preloadOptional).catch((err) => console.warn('[resources] sync failed', err)); };
     apply(settingsStore.get());

@@ -395,6 +395,7 @@ export const C2S = {
   // host confirmed — a seat that changed hands meanwhile is refused
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
+  'room.matchmaking': {},
   'matchmaking.join': { difficulty: (v) => DIFFICULTIES.includes(v) },
   'matchmaking.cancel': {},
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):

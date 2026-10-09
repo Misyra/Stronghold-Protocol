@@ -78,7 +78,8 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     page.on('response', (r) => { if (r.status() >= 400 && !/fonts\.(googleapis|gstatic)/.test(r.url())) problems.push(`http ${r.status()}: ${r.url()}`); });
-    await page.goto(`${base}/`, { waitUntil: 'networkidle0' });
+    // Background resource preload can outlive page startup; the title selectors below gate UI readiness.
+    await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.title-screen [data-testid="lang-toggle"]');
     assert.equal(await text(page, '.title-cn'), '卫戍协议：盟约');
     assert.equal(await text(page, '.title-login .btn--primary'), '开始');
@@ -98,12 +99,12 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     await page.waitForFunction(() => globalThis.__SP__?.data?.locale() === 'en', { timeout: 8000 });
     assert.equal(await page.evaluate(() => globalThis.__SP__.data.get('config').modes.mode_multi_abyss.name), 'Ultimate Simulation');
 
-    await page.reload({ waitUntil: 'networkidle0' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.title-screen .title-cn');
     assert.equal(await text(page, '.title-cn'), 'Stronghold Protocol: Alliance', 'the choice survives a reload');
     assert.equal(await text(page, '.title-login .btn--primary'), 'Start');
 
-    await page.goto(`${base}/?lang=zh`, { waitUntil: 'networkidle0' });
+    await page.goto(`${base}/?lang=zh`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.title-screen .title-cn');
     await sleep(200);
     assert.equal(await text(page, '.title-cn'), '卫戍协议：盟约');
@@ -125,7 +126,7 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
       fs.writeFileSync(path.join(PACK_DIR, 'pack.json'), JSON.stringify({ type: 'lang', lang: 'qab', name: 'Qabisch', files: { ui: 'ui.json' } }));
       fs.writeFileSync(path.join(PACK_DIR, 'ui.json'), JSON.stringify({ 开始: 'Qab-Start' }));
       await sleep(1100); // the server's registry looks at the folders again after a second
-      await page.goto(`${base}/?lang=zh`, { waitUntil: 'networkidle0' });
+      await page.goto(`${base}/?lang=zh`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => [...document.querySelectorAll('.title-screen [data-testid="lang-toggle"] :is(button, option)')].some((e) => (e.dataset.lang ?? e.value) === 'qaa'), { timeout: 8000 });
       assert.deepEqual(await menu(page), [...SHIPPED.slice(0, 4), ['qaa', 'Testisch'], ['qab', 'Qabisch'], SHIPPED[4]]);
 
@@ -147,7 +148,7 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
       await page.waitForFunction(() => document.querySelector('.title-login .btn--primary')?.textContent.includes('Los'), { timeout: 8000 });
       removePacks();
       await sleep(1100);
-      await page.reload({ waitUntil: 'networkidle0' });
+      await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForSelector('.title-screen .title-cn');
       assert.equal(await text(page, '.title-cn'), '卫戍协议：盟约', 'the stored pack is gone: Chinese');
       assert.deepEqual(await menu(page), SHIPPED);
@@ -164,7 +165,7 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     page.on('response', (r) => { if (r.status() >= 400 && !/fonts\.(googleapis|gstatic)/.test(r.url())) problems.push(`http ${r.status()}: ${r.url()}`); });
-    await page.goto(`${base}/?lang=zh`, { waitUntil: 'networkidle0' });
+    await page.goto(`${base}/?lang=zh`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.title-screen [data-testid="lang-toggle"]');
     assert.equal(await settingsNote(page), null, 'Chinese: no machine-translation note');
     for (const code of ['ja', 'ko', 'zh-TW']) {

@@ -16,7 +16,7 @@
 | `/healthz` | HTTP GET / HEAD | 增加素材版本、CDN、工作线程、持久化信息 | 未开放 CORS |
 | `/data/resource-manifest.json` | HTTP GET / HEAD | 动态生成资源预载清单 | 未开放 CORS |
 | `/_v/:version/...` 及素材路径 | HTTP 资源请求 | 版本缓存、素材 CORS | 仅素材开放 CORS |
-| `/ws` → `matchmaking.join` / `matchmaking.cancel` | WebSocket JSON | 四人同站匹配 | 按原有 WebSocket 连接规则 |
+| `/ws` → `matchmaking.join` / `room.matchmaking` / `matchmaking.cancel` | WebSocket JSON | 四人同站匹配，支持组队补齐 | 按原有 WebSocket 连接规则 |
 | `/ws` ← `matchmaking.state` | WebSocket JSON | 推送匹配进度与结果 | 按原有 WebSocket 连接规则 |
 | `/ws` ← `m.result` | WebSocket JSON | 增加稳定的结算 ID 和时间 | 按原有 WebSocket 连接规则 |
 
@@ -251,7 +251,15 @@ HEAD /api/announcement
 { "t": "matchmaking.cancel", "rid": 3 }
 ```
 
-取消成功回复 `{"t":"ok","rid":3}` 并推送 `idle`。未在队列时取消也成功；已经进入房间时返回 `ROOM_STARTED`，不能用取消匹配离开已分配房间。
+取消成功回复 `{"t":"ok","rid":3}` 并推送 `idle`。未在队列时取消也成功；对局已经开始时返回 `ROOM_STARTED`。同盟队列仅创建者可主动取消，取消会让整队退出队列并保留原同盟。
+
+已有同盟的创建者可发送：
+
+```json
+{ "t": "room.matchmaking", "rid": 4 }
+```
+
+使用同盟当前难度，要求 1–3 名在线真人、无 AI、其他队员已准备。整队进入队列，不拆散队员；支持 2+1+1、3+1、2+2 等组合。队列中的同盟通过 `room.state.matchmaking: true` 显示匹配状态，暂停直接开局。其他玩家可凭同盟密钥加入，成功加入会让整队退出队列，待新队员准备后创建者可重新发起匹配。凑齐四人后保留较早入队同盟的密钥和创建者，其他同盟合并进入该房间；观战者一起迁移，合并后观战席仍最多两人。
 
 ### 5.2 状态推送
 
@@ -267,7 +275,7 @@ HEAD /api/announcement
 | `serverNow` | 每种状态均有，服务器时间 |
 | `difficulty` | `searching`、`matched`、`failed` 时有 |
 | `joinedAt` | 仅 `searching`，当前难度入队时间 |
-| `players` | 仅 `searching`，同难度有效队列人数，上限 4；不是本站在线人数 |
+| `players` | 仅 `searching`，保持本队完整且符合观战席容量时可组合的同难度队列人数，上限 4；不是本站在线人数 |
 | `target` | 仅 `searching`，固定为 4 |
 | `code` | 仅 `matched`，已分配的大写房间号 |
 | `error` | 仅 `failed`，分配 / 启动失败错误码 |
@@ -286,21 +294,23 @@ HEAD /api/announcement
 { "t": "matchmaking.state", "status": "failed", "difficulty": "NORMAL", "error": "RATE", "serverNow": 1791190810000 }
 ```
 
-匹配成功自动创建同盟房间并开局，沿用上游 `room.state` 和 `m.public` 进入 `INFO_CHECK`。这些房间 / 对局推送可能先于 `matched` 或请求的直接 `ok` 到达，调用端应独立处理推送和直接回复，不要假定严格的到达顺序。
+匹配成功自动创建或复用同盟房间并开局，沿用上游 `room.state` 和 `m.public` 进入 `INFO_CHECK`。这些房间 / 对局推送可能先于 `matched` 或请求的直接 `ok` 到达，调用端应独立处理推送和直接回复，不要假定严格的到达顺序。
 
 ### 5.3 队列规则与错误
 
-队列仅限同一游戏进程、同难度、主动入队且在线的真人，按先到先配凑齐 4 人，不补 AI，不要求发送 `room.ready`。已有玩家席位或观战席位的用户须先离开房间。
+队列仅限同一游戏进程、同难度、主动入队且在线的真人，优先按入队顺序选择能完整凑齐 4 人的队伍，不补 AI。单人 `matchmaking.join` 不要求发送 `room.ready`，已有房间的玩家通过创建者的 `room.matchmaking` 整队入队；观战者不占匹配人数且不能发起匹配。
 
-断线会立即退出队列，重连不会自动重新入队。手动创建、加入房间或进入观战席位成功时也退出队列。服务器重启后队列清空；多个进程之间不共享队列。分配失败释放部分房间和座位，并移除该组的排队记录，用户可重新加入。
+断线会立即退出队列，重连不会自动重新入队；同盟任一队员断线、离队、被移出或取消准备时整队出队。更改难度、添加 AI 或手动创建、加入其他房间、进入观战席位成功时也退出队列。服务器重启后队列清空；多个进程之间不共享队列。分配失败移除该组的排队记录，已有同盟恢复原来的队员、密钥与准备状态，单人释放临时座位，用户可重新加入。
 
 | 错误码 | 触发条件 |
 |---|---|
 | `BAD_MSG` | 非法难度、不符合消息格式，或尚未完成握手（`detail: "hello required"`） |
-| `NOT_READY` | 服务端会话不处于已连接状态 |
+| `NOT_READY` | 服务端会话不处于已连接状态，或组队成员离线 / 未准备 |
 | `ALREADY` | 用户已在房间中，包括观战者 |
 | `RATE` | 请求限流、队列已满（默认最多 2000 人）或网络资源限制 |
-| `ROOM_STARTED` | 已进入房间后取消匹配 |
+| `ROOM_STARTED` | 对局已开始后加入 / 取消匹配 |
+| `NOT_HOST` | 同盟非创建者发起 / 取消整队匹配 |
+| `SPECTATOR` | 观战者发起 / 取消整队匹配 |
 | `INTERNAL` | 房间分配或对局启动失败等内部错误 |
 
 直接错误回复沿用上游格式，例如：
@@ -311,7 +321,7 @@ HEAD /api/announcement
 
 `msg` 以实际服务端文本为准，`detail` 可缺省；业务判断使用 `code`。分配失败也可能通过 `matchmaking.state.error` 推送，不一定表现为加入请求的直接错误。
 
-`matchmaking.join` 新增到原有重请求限流桶，默认每连接每秒补充 2 次、突发容量 6 次，并同时受普通消息桶限制（默认每秒 40 次、突发 40 次）。这些默认值可由程序配置覆盖。
+`matchmaking.join` 和 `room.matchmaking` 使用原有重请求限流桶，默认每连接每秒补充 2 次、突发容量 6 次，并同时受普通消息桶限制（默认每秒 40 次、突发 40 次）。这些默认值可由程序配置覆盖。
 
 ### 5.4 WebSocket 压缩扩展
 

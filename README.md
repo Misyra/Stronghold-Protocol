@@ -51,6 +51,7 @@ English summary: [below](#english).
 | 匹配 | 「同站四人」纯真人匹配：凑满 4 名真人才开局，不补 AI，断线自动出队 |
 | 维护公告 | 单条维护公告进入游戏即显示（主菜单、大厅与对局全程）、可关闭：设置 `SP_ANNOUNCEMENT_URL` 由运维面板统一发布（约 10 秒轮询热生效），或用本地文件 `SP_ANNOUNCEMENT_FILE` 热加载；配 `GET /api/announcement` |
 | 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) |
+| 状态增量传输 | 支持协商的客户端首次全量同步，后续只传公共／私人状态变化；基线失配自动全量恢复，兼容旧客户端；见 [传输说明](docs/development/STATE_DELTA.md) |
 | WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
 | 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md) |
 | 素材与部署 | Git 仓库内附带 v0.1.3 本地客户端素材（`public/assets/local/`），源码部署无需本机提取；另附 nginx 多核配置示例 |

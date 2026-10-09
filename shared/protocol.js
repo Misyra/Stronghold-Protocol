@@ -378,8 +378,9 @@ const target = (v) => {
 /** @type {Record<string, Record<string, (v:any)=>boolean> & { $optional?: string[] }>} */
 export const C2S = {
   // session & lobby
-  hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6), $optional: ['token', 'version'] },
+  hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6), stateDelta: (v) => isInt(v, 0, 1e6), $optional: ['token', 'version', 'stateDelta'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
+  'state.resync': {},
   'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v) },
   'room.join': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v) },
   'room.leave': {},
@@ -470,6 +471,7 @@ export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'room.state', 'room.closed',
   'matchmaking.state',
+  'm.state', // opt-in stateDelta: 1: { kind, seq, full } or { kind, seq, base, patch }
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
   // m.unitStats { seq, round, units: [unitStatsEntry] } — the answer to g.unitStats (the requester only)
   'm.unitStats',

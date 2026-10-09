@@ -38,6 +38,8 @@
 //   onExpire(session)                      the session was purged (disconnected longer than the window)
 
 import { randomBytes } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from './stateTransport.js';
@@ -339,9 +341,11 @@ export function sendRaw(ws, data, { droppable = false, kind = null } = {}) {
   if (!ws || ws.readyState !== WS_OPEN || typeof data !== 'string') return false;
   try {
     const queued = ws.bufferedAmount;
-    if (queued > NET_DEFAULTS.hardBufferBytes) { ws.terminate(); return false; }
-    if (droppable && queued > NET_DEFAULTS.snapDropBytes) return false;
-    ws.send(data, onSendDone);
+    const diagnostics = socketDiagnostics.get(ws);
+    if (queued > NET_DEFAULTS.hardBufferBytes) { if (diagnostics) diagnostics.slowDisconnects++; ws.terminate(); return false; }
+    if (droppable && queued > NET_DEFAULTS.snapDropBytes) { if (diagnostics) diagnostics.droppedSnapshots++; return false; }
+    ws.send(data, diagnostics?.sendCallback() || onSendDone);
+    diagnostics?.sent(data);
     noteWireFrame(kind, data.length);
     return true;
   } catch {
@@ -598,6 +602,7 @@ export class Network {
     /** @type {Map<string, number>} open sockets per client network key */
     this.connsPerKey = new Map();
     this.closed = false;
+    this.diagnostics = new NetDiagnostics();
     this.heartbeatTimer = setInterval(() => this.heartbeat(), this.opts.heartbeatMs);
     this.heartbeatTimer.unref?.();
     const sweepMs = Math.max(20, Math.min(15_000, Math.floor(this.opts.reconnectWindowMs / 4)));
@@ -642,9 +647,13 @@ export class Network {
     if (this.closed) { try { ws.close(CLOSE.SHUTDOWN, 'server shutdown'); } catch { /* ignore */ } return; }
     const conn = new Connection(ws, clientAddress(req, this.opts.trustProxy), this.now(), this.opts);
     this.conns.set(ws, conn);
+    socketDiagnostics.set(ws, this.diagnostics);
     if (conn.key) this.connsPerKey.set(conn.key, (this.connsPerKey.get(conn.key) || 0) + 1);
     ws.on('message', (data, isBinary) => {
+      const start = performance.now();
+      conn.frameType = 'invalid';
       try { this.onFrame(conn, data, isBinary); } catch (e) { this.log.error('[net] frame handler crashed', e); }
+      finally { this.diagnostics.received(conn.frameType, data.length || 0, performance.now() - start); }
     });
     ws.on('pong', () => { conn.alive = true; if (conn.session && conn.session.ws === ws) conn.session.lastSeen = this.now(); });
     ws.on('error', (e) => { this.log.debug?.('[net] socket error', e?.code || e?.message); });
@@ -686,6 +695,7 @@ export class Network {
     }
     const reason = validateC2S(msg);
     if (reason) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, reason)); return; }
+    conn.frameType = msg.t;
 
     if (msg.t === 'ping') {
       const pong = { t: 'pong', c: msg.c, s: now };
@@ -774,6 +784,7 @@ export class Network {
 
   /** @param {Connection} conn */
   onClose(conn) {
+    socketDiagnostics.delete(conn.ws);
     if (this.conns.delete(conn.ws) && conn.key) {
       const n = (this.connsPerKey.get(conn.key) || 1) - 1;
       if (n > 0) this.connsPerKey.set(conn.key, n);
@@ -829,6 +840,7 @@ export class Network {
   close(code = CLOSE.SHUTDOWN, reason = 'server shutdown') {
     if (this.closed) return;
     this.closed = true;
+    this.diagnostics.close();
     clearInterval(this.heartbeatTimer);
     clearInterval(this.sweepTimer);
     for (const conn of this.conns.values()) {

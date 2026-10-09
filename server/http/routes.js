@@ -4,7 +4,8 @@
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
-//     rooms, matches), never cached; this fork adds worker/memory/static-cache/socket-buffer/wire/persist diagnostics;
+//     rooms, matches), HTTP no-store with a one-second internal snapshot; this fork adds worker/memory/static-cache/socket-buffer/wire/persist diagnostics;
+//   * GET /metrics → fresh detailed health plus bounded WebSocket latency diagnostics;
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network and never a room listing; no other /api/rooms route exists;
@@ -12,10 +13,12 @@
 //   * everything else → the static files (static.js).
 // A route that throws is logged and answers 500.
 
+// Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
+import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
 import { wireStatsSnapshot } from '../net.js';
-import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
+import { setSecurityHeaders, sendError, sendJson, sendJsonBody, splitUrl } from './common.js';
 
 const MAX_URL_LENGTH = 4096;
 
@@ -49,6 +52,33 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
   };
 }
 
+/** Cache expensive collection and encoded JSON for at most one second per server.
+ * Cheap connection/session/uptime fields stay current. Topology changes invalidate immediately.
+ * Refresh errors propagate; HTTP remains no-store. /metrics always collects fresh diagnostics.
+ */
+export function createHealthBody(health, { now = () => performance.now(), maxAgeMs = 1000 } = {}) {
+  let snapshot = null, body = null, expiresAt = -Infinity;
+  let rooms = -1, queued = -1, sockets = -1, sessions = -1, uptimeSec = -1;
+  return () => {
+    const at = now(), currentRooms = health.lobby.rooms.size;
+    const currentQueued = health.lobby.matchmaking?.entries.size ?? 0;
+    const refresh = !snapshot || at >= expiresAt || currentRooms !== rooms || currentQueued !== queued;
+    const currentSockets = health.network.connectionCount, currentSessions = health.registry.size;
+    const currentUptime = Math.round((Date.now() - health.startedAt) / 1000);
+    if (!body || refresh || currentSockets !== sockets || currentSessions !== sessions || currentUptime !== uptimeSec) {
+      const next = refresh ? healthReport(health) : snapshot;
+      const encoded = Buffer.from(JSON.stringify({ ...next, sockets: currentSockets, sessions: currentSessions, uptimeSec: currentUptime }));
+      // Commit only after collection and encoding both succeed: failed refreshes must retry.
+      if (refresh) {
+        snapshot = next; expiresAt = at + maxAgeMs;
+        rooms = currentRooms; queued = currentQueued;
+      }
+      body = encoded; sockets = currentSockets; sessions = currentSessions; uptimeSec = currentUptime;
+    }
+    return body;
+  };
+}
+
 /**
  * The request listener for `http.createServer`.
  * @param {{ serveStatic: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
@@ -59,6 +89,18 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
 export function createRequestHandler({ serveStatic, health, log, allowStatus = null, readAnnouncement = null }) {
+  const healthBody = createHealthBody(health);
+  const methodAllowed = (req, res) => {
+    if (req.method === 'GET' || req.method === 'HEAD') return true;
+    res.setHeader('Allow', 'GET, HEAD');
+    sendError(req, res, 405, '不支持的请求方法 · Method not allowed');
+    return false;
+  };
+  const serveHealth = (req, res) => { if (methodAllowed(req, res)) sendJsonBody(req, res, 200, healthBody()); };
+  const failed = (req, res, e) => {
+    log.error('[http] request failed', e);
+    sendError(req, res, 500, '服务器内部错误 · Internal error');
+  };
   const statusPath = new RegExp(`^/api/rooms/([${CODE_ALPHABET}]{${ROOM_CODE_LEN}})/status$`, 'i');
   async function handleRequest(req, res) {
     const url = req.url || '/';
@@ -66,7 +108,12 @@ export function createRequestHandler({ serveStatic, health, log, allowStatus = n
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
     if (parts.rawPath === '/healthz') {
-      sendJson(req, res, 200, healthReport(health));
+      serveHealth(req, res);
+      return;
+    }
+    if (parts.rawPath === '/metrics') {
+      if (methodAllowed(req, res)) sendJson(req, res, 200, { ...healthReport(health),
+        websocket: { diagnostics: health.network.diagnostics.stats() } });
       return;
     }
     // Public latency probe, deliberately tiny and session-free. No credentials or room information.
@@ -120,9 +167,11 @@ export function createRequestHandler({ serveStatic, health, log, allowStatus = n
 
   return (req, res) => {
     setSecurityHeaders(res);
-    handleRequest(req, res).catch((e) => {
-      log.error('[http] request failed', e);
-      sendError(req, res, 500, '服务器内部错误 · Internal error');
-    });
+    const url = req.url || '/';
+    if (url.length <= MAX_URL_LENGTH && (url === '/healthz' || url.startsWith('/healthz?') || url.startsWith('/healthz#'))) {
+      try { serveHealth(req, res); } catch (e) { failed(req, res, e); }
+      return;
+    }
+    handleRequest(req, res).catch((e) => failed(req, res, e));
   };
 }

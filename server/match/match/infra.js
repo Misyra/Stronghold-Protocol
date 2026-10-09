@@ -62,6 +62,19 @@ export class MatchInfra {
     this._timers.delete(h);
   }
 
+  /** Real CPU work yields through the shared queue; virtual/custom schedulers retain their timer contract. */
+  laterWork(fn) {
+    if (!this.sched.setWork) return this.later(0, fn);
+    if (this.disposed) return null;
+    let h = null;
+    h = this.sched.setWork(() => {
+      this._timers.delete(h);
+      if (!this.disposed) this.guard(fn);
+    });
+    if (h) this._timers.add(h);
+    return h;
+  }
+
   scaled(ms) { return Math.max(0, Math.round(ms * this.timerScale)); }
 
   /**

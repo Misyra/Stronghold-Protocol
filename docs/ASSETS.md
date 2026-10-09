@@ -24,6 +24,7 @@ npm run assets       # = node tools/vendor.mjs && node tools/fetch-assets.mjs
 | `--voice-all` | Plan every official voice slot, including the prep-only lines no battle plays (干员报到 / 编入队伍 / 任命队长 — 360 files, one per operator and slot). Off by default: nothing requests them, so planning them only makes every run download more. |
 | `--prune` | Delete files under `public/assets/` that the manifest no longer references, for example after a mapping change. Without this flag they are only listed in the report. `public/assets/local/` (written by `tools/local-extract`) is never pruned. Implies `--allow-shrink`. |
 | `--allow-shrink` | Write `data/assets.json` even when it loses entries the current one has (see "The manifest never shrinks by accident" below). |
+| `--strict` | Exit 1 when a leaf was dropped for having no file on disk, instead of only reporting it (see "A dropped leaf is reported" below). The same as the environment variable `SP_ASSETS_STRICT=1` — for CI and packaging builds. |
 | `--add-only` | For a checkout whose `public/assets/` and `public/fonts/` are shared with another one (a git worktree with symlinked asset folders): download only the files missing on disk and never re-download, rewrite or delete an existing file — atlases already on disk are left as they are, the fonts are not rebuilt (the manifest keeps its current `fonts`). Not with `--prune` / `--force`. |
 | `--local-spines` | Rewrite `tools/assets/local-enemy-spines.json` and `tools/assets/local-token-spines.json` (the metadata of the enemy and token models only the local client has, see "Enemy aliases" and "Token models from the local client") from the models `tools/local-extract/extract.py` extracted to `public/assets/local/spine/enemy/` and `public/assets/local/spine/token/`. Run it after a game update changed them; without it the committed files are used and a differing extraction only gets a warning. |
 
@@ -37,6 +38,23 @@ smaller manifest is intended, for example after a mapping change. Build fields (
 `stats`), new entries and a changed value are never a drop (`tools/assets/manifest.mjs droppedEntries`). A run whose
 plan legitimately narrows — like the 干员战斗语音 default, which no longer plans the three prep-only slots (360 entries,
 DESIGN §21.30) — reports exactly those entries and needs `--allow-shrink` once; the list it prints is the check.
+
+**A dropped leaf is reported, never silent.** `resolveTemplate` leaves out every entry none of whose alternative files
+is on disk — for a leaf that is an entry the client loses outright: a unit whose `attack` sound was never downloaded has
+no `audio.sfx.units[charId].attack` at all, so the sound is simply missing (nothing falls back; there is no URL to
+retry). That is a different thing from an entry whose *fallback* was used. The run therefore prints a summary naming at most eight such leaves
+and records the complete list as `droppedLeaves` (a subset of `misses`, which also lists the
+unresolved Spine models):
+
+```
+[assets] 1 leaf dropped: no alternative on disk (audio.sfx.units.some_char.attack)
+```
+
+A run with nothing dropped prints `[assets] no leaf dropped: every planned leaf has a file on disk`. This is only
+observability: which files are planned, downloaded and written does not change. `--strict` (or `SP_ASSETS_STRICT=1`)
+turns those drops into a failure (exit 1, the leaves named) so a CI or packaging run cannot ship a manifest with such
+holes — the committed manifest's shrink guard cannot see them once the entry is already gone. The manifest may
+already have been written before this check returns failure; strict mode does not roll it back.
 
 The script is **idempotent**. A file on disk is kept, not re-downloaded, when any one of these holds:
 - its size matches the ledger entry from a previous download (`.cache/assets-ledger.json`);
@@ -59,10 +77,12 @@ Outputs:
 - `data/assets.json`: the manifest (committed).
 - `public/assets/**`: art and audio (git-ignored).
 - `public/fonts/*`: fonts and `fonts.css`.
-- `.cache/assets-report.json`: misses, fallbacks and notes from the last run.
+- `.cache/assets-report.json`: misses, fallbacks, `droppedLeaves` (the leaves left out of the manifest for having no file
+  on disk) and notes from the last run.
 - `.cache/spine-info.json`: skeleton parse cache.
 
-The run exits with code 1 if any pool operator is missing its avatar, its portrait or its Front Spine.
+The run exits with code 1 if any pool operator is missing its avatar, its portrait or its Front Spine, and — with
+`--strict` / `SP_ASSETS_STRICT=1` — if any leaf was dropped for having no file on disk.
 
 Upstream indexes are cached under `.cache/`. They are downloaded when missing:
 - `.cache/gamedata/excel/audio_data.json`, from `Kengxxiao/ArknightsGameData` (zh_CN).
@@ -100,7 +120,7 @@ The `stem` of a Spine model is the upstream file name. Two examples: `char_107_l
 
 ### Id scope
 
-- **Operators:** all 138 pool charIds from `activity_table` (`charShopChessDatas[*].charId ∪ backupCharId`), including hidden chess and backup operators; plus every unit of `data/backups.json` research 07 does not list — the 71 自选 owned-6★ picks (`diy.ownedPool`, DATA.md §18; the collab operators are not in the data, and 焰狐龙梓兰's entries left the manifest when she left the pool in 0.2.0) — planned from 07's URL patterns (`tools/assets/plan.mjs patternOperator`, `tools/fetch-assets.mjs dataExtras`): avatar and portrait (E0–E1 and E2), the default-skin battle Spine Front / Back, the icon and skill sound of each skill, the sub-profession icon. 209 operators in all (206 with a Back model).
+- **Operators:** all 138 pool charIds from `activity_table` (`charShopChessDatas[*].charId ∪ backupCharId`), including hidden chess and backup operators; plus every unit of `data/backups.json` research 07 does not list — the 72 自选 owned-6★ picks (`diy.ownedPool`, DATA.md §18; the collab operators are not in the data, and 焰狐龙梓兰's entries left the manifest when she left the pool in 0.2.0) — planned from 07's URL patterns (`tools/assets/plan.mjs patternOperator`, `tools/fetch-assets.mjs dataExtras`): avatar and portrait (E0–E1 and E2), the default-skin battle Spine Front / Back, the icon and skill sound of each skill, the sub-profession icon. 209 operators in all (206 with a Back model).
 - **Tokens:** the 20 pool tokens, and the 38 summons of the 自选 picks (`data/backups.json tokens`) as extra tokens (below): their avatars; no dump carries the battle Spine of the 自选 summons (upstream has at most skin variants, which the default locations miss), so the web manifest has no model for them — 35 of them, and 4 pool summons, have the official model as an optional local-client overlay ("Token models from the local client"); 3 have no model in the game at all.
 - **Enemies:** 253 ids planned, 252 in the manifest (心烛 has no assets). The set is the union of:
   - the 07 enemy list;

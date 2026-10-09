@@ -1308,3 +1308,49 @@ describe('multi-device & browser compatibility (static)', () => {
     assert.match(src, /--tap-min: 44px/);
   });
 });
+
+describe('explicit local match recovery (#431)', () => {
+  test('an idle tab can reclaim a closed match tab without taking a live one', async () => {
+    const { createIdentity } = await mod('net.js');
+    const local = memStorage(), hub = channelHub(), ca = hub.create(), cb = hub.create();
+    const a = createIdentity({ local, session: memStorage(), tabId: 'a', channel: ca, queryMs: 5 });
+    const b = createIdentity({ local, session: memStorage(), tabId: 'b', channel: cb, queryMs: 5 });
+    await a.init(); a.saveToken('idle-token');
+    await b.init(); b.saveToken('match-token'); b.rememberMatch({ name: 'Doctor B', code: 'ABC123' });
+    const [item] = a.recoverable();
+    assert.equal(item.name, 'Doctor B');
+    assert.equal(JSON.stringify(item).includes('match-token'), false);
+    assert.equal(await a.resume(item.id), false, 'live original keeps its seat');
+    assert.equal(a.getToken(), 'idle-token');
+    cb.close();
+    assert.equal(await a.resume(item.id), true);
+    assert.equal(a.getToken(), 'match-token');
+    a.rememberMatch(null);
+    assert.deepEqual(JSON.parse(local.getItem('sp.matches')), {});
+    ca.close();
+  });
+  test('simultaneous recoveries pick one winner; absent channels and unknown ids cannot recover', async () => {
+    const { createIdentity } = await mod('net.js');
+    const local = memStorage(), hub = channelHub();
+    local.setItem('sp.tokens', JSON.stringify(['idle-b', 'idle-a']));
+    const sa = memStorage(), sb = memStorage(); sa.setItem('sp.token', 'idle-a'); sb.setItem('sp.token', 'idle-b');
+    const a = createIdentity({ local, session: sa, tabId: 'a', channel: hub.create(), queryMs: 5 });
+    const b = createIdentity({ local, session: sb, tabId: 'b', channel: hub.create(), queryMs: 5 });
+    await Promise.all([a.init(), b.init()]);
+    const closed = createIdentity({ local, session: memStorage(), channel: null });
+    closed.saveToken('closed-token'); closed.rememberMatch({ name: 'C', code: 'XYZ' });
+    const id = a.recoverable()[0].id;
+    assert.deepEqual(await Promise.all([a.resume(id), b.resume(id)]), [true, false]);
+    assert.equal(await b.resume('unknown'), false);
+    assert.equal(await closed.resume(id), false);
+  });
+  test('server replacement clears expired metadata and malformed storage remains safe', async () => {
+    const { createIdentity } = await mod('net.js');
+    const local = memStorage(); const a = createIdentity({ local, session: memStorage(), channel: null });
+    a.saveToken('old'); a.rememberMatch({ name: 'D', code: 'AAA' }); a.saveToken('new');
+    assert.deepEqual(a.recoverable(), []);
+    for (const bad of ['null', '[]', '{', '"hello"']) {
+      local.setItem('sp.matches', bad); assert.deepEqual(a.recoverable(), []);
+    }
+  });
+});

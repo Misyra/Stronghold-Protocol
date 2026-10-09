@@ -221,7 +221,8 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
                 disconnect, settlementSucceed, settlementFail, settlementTeam, settlementBossSign,
                 goodEvaluation, load, start, matchSucceed, matchFail, matchCancel, joinRoom },
       battle: { deploy, tokenDeploy, charDie, enemyDie, enemyDieHeavy, enemyHit, heal, leak, win, lose, killCoin },
-      units:  { [charId|tokenId|enemyId]: { attack?, hit?, skill?, skills?: {[skillIndex]: url}, die?, born?,
+      units:  { [charId|tokenId|enemyId]: { attack?, hit?, skill?, skills?: {[skillIndex]: url}, attacks?: {[skillIndex]: url}, hits?: {[skillIndex]: url}, die?, born?,
+                attackMix?: {[skillIndex]: {p?, vol?}}, hitMix?: {[skillIndex]: {p?, vol?}},
                 mix?: { [attack|hit|die|born]: { p?, vol? } } } }
     }
   },
@@ -452,3 +453,12 @@ The project's code is GPL-3.0-or-later (`LICENSE`); none of the items below is c
   - **Novecento Wide:** © Jan Tonellato / Synthview. Free licence.
   - Both are mirrored from TimWangZi/The-font-of-Arknights.
   - Noto Sans SC and Noto Serif SC (SIL OFL) are loaded from Google Fonts, not self-hosted.
+
+### Skill attack banks (0.2.3, PR #410)
+
+`pickModeAttacks` / `pickModeHits` select a uniform d/h/s bank from the official audio table (attack/combat abilities
+only). A skill's activation sound supplies its mode letter; without one, d/h/s = slots 1/2/3 is [ASSUMED]. Competing
+banks prefer START over ON, then plain/numeric order; this is a deterministic approximation, not proof of every
+operator's runtime ability graph. Mixed-letter banks are skipped. Preserve `mixOf` for each selected bank separately;
+`attacks`/`hits` and `attackMix`/`hitMix` use matching skill keys. Regenerate the current manifest instead of importing
+an older PR's full JSON, preserving JP voices and current operators. See DESIGN §28.17.

@@ -774,15 +774,25 @@ export function setEchoForm(b, echo, form) {
 export function echoHit(b, echo) {
   const ab = echo.mem.ab;
   if (!ab || !echo.alive) return;
-  const atk = echo.s.atk;
-  b.fx('explode', { x: echo.x, y: echo.y, r: ECHO_PULSE_RADIUS, kind: 'echoPulse' });
-  for (const u of areaAllies(b, echo, echo.x, echo.y, ECHO_PULSE_RADIUS)) {
-    hurt(b, echo, u, atk * (T(ab, '3.atk_scale') ?? 0), 'arts');
-    elem(b, echo, u, 'apoptosis', atk * (T(ab, '3.ep_damage_ratio') ?? 0));
-  }
-  const need = ab.form === 'gold' ? T(ab, '1.hit_times_to_switch') : T(ab, '2.hit_times_to_switch');
-  ab.strikes = (ab.strikes ?? 0) + 1;
-  if (need > 0 && ab.strikes >= need) setEchoForm(b, echo, ab.form === 'gold' ? 'dark' : 'gold');
+  // [ASSUMED] Resolve recursively earned pulses FIFO after the current pulse. A counter can remove dozens of
+  // hit-count HP here; synchronous damaged → counter → pulse nesting used to trip the engine's 32-hook guard.
+  // Keep the pulse earned by the lethal hit, too. No timer, extra RNG or skipped damage (DESIGN §28.24).
+  (ab.pulses ||= []).push(echo.s.atk);
+  if (ab.pulsing) return;
+  ab.pulsing = true;
+  try {
+    for (let i = 0; i < ab.pulses.length; i++) {
+      const atk = ab.pulses[i];
+      b.fx('explode', { x: echo.x, y: echo.y, r: ECHO_PULSE_RADIUS, kind: 'echoPulse' });
+      for (const u of areaAllies(b, echo, echo.x, echo.y, ECHO_PULSE_RADIUS)) {
+        hurt(b, echo, u, atk * (T(ab, '3.atk_scale') ?? 0), 'arts');
+        elem(b, echo, u, 'apoptosis', atk * (T(ab, '3.ep_damage_ratio') ?? 0));
+      }
+      const need = ab.form === 'gold' ? T(ab, '1.hit_times_to_switch') : T(ab, '2.hit_times_to_switch');
+      ab.strikes = (ab.strikes ?? 0) + 1;
+      if (echo.alive && need > 0 && ab.strikes >= need) setEchoForm(b, echo, ab.form === 'gold' ? 'dark' : 'gold');
+    }
+  } finally { ab.pulses.length = 0; ab.pulsing = false; }
 }
 
 function kitEcho(ab, e) {

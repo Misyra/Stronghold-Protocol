@@ -59,3 +59,11 @@ test('immediate redeployment cannot attack through a cleared wanted range', () =
   h.step();assert.equal(u.stats.attacks, before, 'the allies phase sees the cleared range immediately');
   done(h);
 });
+
+for (const skillIndex of [0, 1, 2]) test(`wanted S${skillIndex + 1} waits for the next attack, not the next tick`, () => {
+  const { h, u, e } = field({ skillIndex });
+  u.skill.sp = 0;h.run(8.5);assert.ok(e.findBuff('lemuen:wanted'));
+  u.atkCd = 0.7;u.skill.gainSp(999);
+  h.run(0.3);assert.equal(u.skill.activations, 0);
+  h.run(0.6);assert.equal(u.skill.activations, 1);done(h);
+});

@@ -660,6 +660,7 @@ export class Net {
 const K_NAME = 'sp.name';
 const K_TOKEN = 'sp.token';      // sessionStorage: this tab's token
 const K_RECENT = 'sp.tokens';    // localStorage: this browser's recent tokens, most recent first
+const K_MATCHES = 'sp.matches'; // local metadata for explicit recovery of another closed tab's seat
 const K_ENTERED = 'sp.entered';  // sessionStorage: this tab passed the title screen
 const RECENT_MAX = 4;
 const TOKEN_MAX_LEN = 64;        // protocol limit for hello.token
@@ -725,6 +726,7 @@ export function createIdentity(deps = {}) {
   let channel = null;
   let initPromise = null;
   let initialized = false;
+  let resumeBusy = false;
   let current = null;    // token this tab uses (null = let the server create a session)
   let resolving = null;  // { hashes: Set<hash>, taken: Set<hash> } while init() waits for claims
 
@@ -737,6 +739,25 @@ export function createIdentity(deps = {}) {
     }
   };
   const writeRecent = (list) => sset(local, K_RECENT, JSON.stringify([...new Set(list)].slice(0, RECENT_MAX)));
+
+  const readMatches = () => {
+    try {
+      const v = JSON.parse(sget(local, K_MATCHES) || '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch { return {}; }
+  };
+  const rememberMatch = (info) => {
+    if (!current) return;
+    const old = readMatches(), next = {};
+    for (const token of readRecent()) {
+      const hash = tokenHash(token);
+      const v = token === current ? info : old[hash];
+      if (v && typeof v.name === 'string' && typeof v.code === 'string') {
+        next[hash] = { name: v.name.slice(0, 64), code: v.code.slice(0, 32) };
+      }
+    }
+    sset(local, K_MATCHES, JSON.stringify(next));
+  };
 
   const post = (msg) => {
     try { channel?.postMessage({ ...msg, from: tabId }); } catch { /* channel closed */ }
@@ -773,6 +794,10 @@ export function createIdentity(deps = {}) {
     // Without a channel we cannot tell whether a shared token is in use: never adopt one.
     const candidates = [...new Set([ownOk, ...(channel ? readRecent() : [])].filter(isToken))];
     if (!channel || candidates.length === 0) return ownOk;
+    return queryCandidates(candidates);
+  }
+
+  async function queryCandidates(candidates) {
     resolving = { hashes: new Set(candidates.map(tokenHash)), taken: new Set() };
     post({ type: 'who', hashes: [...resolving.hashes] });
     await new Promise((r) => setTimer(r, queryMs));
@@ -802,6 +827,32 @@ export function createIdentity(deps = {}) {
       }
       return initPromise;
     },
+    /** Record only display metadata; the existing recent-token ring remains the authority. */
+    rememberMatch,
+    recoverable() {
+      const matches = readMatches();
+      return readRecent().filter((token) => token !== current).flatMap((token) => {
+        const hash = tokenHash(token), v = matches[hash];
+        return v && typeof v.name === 'string' && typeof v.code === 'string'
+          ? [{ id: hash, name: v.name.slice(0, 64), code: v.code.slice(0, 32) }] : [];
+      });
+    },
+    /** Explicit recovery only. Recheck live claims immediately before selecting a saved seat. */
+    async resume(id) {
+      await this.init();
+      if (!channel || resumeBusy) return false;
+      const token = readRecent().find((t) => t !== current && tokenHash(t) === id);
+      if (!token || !this.recoverable().some((m) => m.id === id)) return false;
+      resumeBusy = true;
+      try {
+        const pick = await queryCandidates([token]);
+        if (!pick) return false;
+        current = pick;
+        sset(session, K_TOKEN, pick);
+        return true;
+      } catch { return false; }
+      finally { resumeBusy = false; }
+    },
     /** @returns {string} remembered player name ('' if none) */
     loadName: () => (sget(local, K_NAME) || '').slice(0, 64),
     /** @param {string} name */
@@ -816,12 +867,14 @@ export function createIdentity(deps = {}) {
     /** @param {string} token from `welcome` */
     saveToken(token) {
       if (!isToken(token)) return;
+      if (current !== token) rememberMatch(null);
       current = token;
       sset(session, K_TOKEN, token);
       writeRecent([token, ...readRecent().filter((t) => t !== token)]);
     },
     /** Forget this tab's token (e.g. the server said the session is invalid). */
     clearToken() {
+      rememberMatch(null);
       const t = current || sget(session, K_TOKEN);
       current = null;
       sdel(session, K_TOKEN);

@@ -125,6 +125,7 @@ export class SkillRuntime {
     this._trigKeys = null;
     this._trigSet = null;
     this.triggerRanges = [];      // content trigger ranges (addTriggerRange)
+    this.attackTriggerRanges = new Set(); // special targeting checked only at the next attack
     this.noSkill = !spec;         // unit without any skill spec
   }
 
@@ -147,20 +148,23 @@ export class SkillRuntime {
    * keys, or `{ keys, profile }` — tile keys with the enemy profile the effect selects by (`canHitFly` false: ground
    * enemies only — the owner's larger-range rule through a summon's area, kits/shared/summoner.js summonTriggerArea;
    * 0.2.0 WV, additive). A targetable enemy (flyers included unless the entry's profile says otherwise) on those tiles
-   * satisfies the DEFAULT rule (and unknown DEFAULT-like rules); it is checked every tick, since the unit itself may
-   * have nothing to attack. Returns an unregister fn.
+   * satisfies the DEFAULT rule (and unknown DEFAULT-like rules). Summon effect areas are checked every tick;
+   * { attackOnly: true } is for special targeting that must wait for the next attack (蕾缪安, 死芒).
+   * Returns an unregister fn.
    */
-  addTriggerRange(fn) {
+  addTriggerRange(fn, { attackOnly = false } = {}) {
     if (typeof fn !== 'function') return () => {};
     this.triggerRanges.push(fn);
-    return () => { const i = this.triggerRanges.indexOf(fn); if (i >= 0) this.triggerRanges.splice(i, 1); };
+    if (attackOnly) this.attackTriggerRanges.add(fn);
+    return () => { this.attackTriggerRanges.delete(fn); const i = this.triggerRanges.indexOf(fn); if (i >= 0) this.triggerRanges.splice(i, 1); };
   }
 
   /** An enemy inside one of the content trigger ranges. */
-  _extraTriggerSatisfied() {
+  _extraTriggerSatisfied(allowAttackOnly = true) {
     const b = this.battle;
     const u = this.unit;
     for (const fn of this.triggerRanges) {
+      if (!allowAttackOnly && this.attackTriggerRanges.has(fn)) continue;
       const list = b._safe(() => fn(b, u), 'skill.triggerRange', u);
       if (!list || typeof list[Symbol.iterator] !== 'function') continue;
       for (const x of list) {
@@ -405,7 +409,7 @@ export class SkillRuntime {
       const prof = u.profile;
       if (prof && (prof.noAttack || (prof.noAttackUnlessSkill && !this.active))) {
         if (this._defaultCondition()) this.activate('DEFAULT');
-      } else if (this.triggerRanges.length && !this.healSkill && this._extraTriggerSatisfied()) this.activate('DEFAULT');
+      } else if (this.triggerRanges.length && !this.healSkill && this._extraTriggerSatisfied(false)) this.activate('DEFAULT');
     }
   }
 

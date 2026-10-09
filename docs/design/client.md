@@ -89,3 +89,35 @@ are verified, and cleans up / restores focus on both success and failure. Failur
 Push/pull slides preserve the target's pre-hit facing through the waiting and moving phases (`keepFacing`, §28.9).
 Explicit false and unmarked raw displacements face the travel direction. Normal snapshot facing resumes on landing.
 [ASSUMED] unrecorded push sources and reverse-facing hook pulls use the same display rule as the cited examples.
+
+### Local preferences and recovery (§28.14, §28.18–20)
+
+Settings persist `textSize` (sm/md/lg/xl; default sm) and `voiceOverrides` (charId → cn/jp; default empty) alongside the
+existing global `voiceLang`. CSS text uses `--t`; the layout rem, camera and board geometry stay unchanged. Larger text
+and translated controls wrap within the settings modal. The normal roster detail and chosen DIY cards expose each
+operator's voice preference, shared across that charId's forms. An absent override follows the global preference;
+missing Japanese lines retain the existing Chinese fallback. Overrides are local listening preferences, absent from
+room loadouts and their exports.
+
+The title and lobby offer explicit recovery of a previously saved local match seat. `sp.matches` stores bounded name /
+room-code metadata indexed by token hash; the existing four-entry `sp.tokens` ring remains the authority. Recovery
+rechecks BroadcastChannel claims before adopting the selected token, then reloads. It does not identify players by
+name or IP or displace a live tab. Without BroadcastChannel it refuses shared recovery. Server restart / expiry clears
+obsolete metadata on the next welcome. A spectator never registers a recoverable player seat.
+
+`manifest.json` enables browser installation; its original fortress favicon is packaged as actual 192/512 px icons in
+`public/icons/`, including lite packages. The install button appears only for a live browser install offer and hides
+in standalone/fullscreen windows or after installation. Every offer is consumed before awaiting the prompt, including
+cancellation or failure. No service worker, offline cache or persistent server is introduced; HTTPS or localhost and
+browser support still govern installation.
+
+### Skill-mode sound and delayed models (§28.17, §28.22)
+
+The audio manifest can carry `attacks` / `hits` plus independent `attackMix` / `hitMix` by skill index. Only an active
+skill uses a mode bank. Impacts remember the mode at the time of the attack; an end event cancels a queued start for
+an unknown unit, and a late-join snapshot restores the current mode. A mode without a bank falls back to its normal
+sound. A selected mode with no mix uses its own default volume/probability, not the ordinary bank's mix.
+
+A model that arrives after an actual deployment continues Start at the elapsed game time; after the clip's duration it
+shows the current base pose. A subsequent attack/death supersedes that pending entrance. No extra deployment sound
+or per-phase animation schedule is added by this change.

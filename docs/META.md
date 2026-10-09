@@ -898,3 +898,15 @@ round was over. The official 1 s `broadcastBeginDelay` is not modelled.
 * A merge completed after the prep (SETTLE effects) keeps its reward offer for the next prep; its elite goes where a prep
   merge's would — onto the tile of a consumed deployed copy (PRTS 卫戍协议/帮助 "若消耗已部署至作战区的干员，则发送至作战区
   对应位置"), else to the hand, overflowing into temp (temp pieces that arrive after the prep wait through the next prep).
+
+## Opening rerolls and bot reactions (0.2.3)
+
+`match/setupVote.js` owns the INFO_CHECK vote and transactional opening replacement; `Lobby.rerollSetup` checks host
+permission for `room.rerollSetup {setupRevision}` and `room.cancelReroll {voteId}`. Participants send
+`g.rerollVote {voteId, agree}`; `g.infoReady {setupRevision?}` accepts an omitted revision only before the first reroll.
+`m.public` includes `setupRevision` and `rerollVote` (null or `{id, proposerId, voters, agreed}`). Old vote/revision
+requests cannot affect a new opening. See DESIGN §28.21 for cancellation and timer behavior.
+
+`botEmotes.js` is isolated from bot decisions and RNG. It sends the existing `m.emote` only in mixed matches, under
+normal cooldown/whitelist rules; `SP_BOT_EMOTES=0` disables it. The cooperation score in `bot.js` and these cosmetic
+choices are explicitly [ASSUMED]; DESIGN §28.15–16 records the source and validation.

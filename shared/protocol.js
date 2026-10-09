@@ -394,6 +394,8 @@ export const C2S = {
   // host confirmed — a seat that changed hands meanwhile is refused
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
+  'room.rerollSetup': { setupRevision: (v) => isInt(v, 0, 2 ** 31) },
+  'room.cancelReroll': { voteId: (v) => isInt(v, 1, 2 ** 31) },
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):
   // the per-operator 潜能 / 练度 (absent = none set: every operator at 潜能 6, 精英2 Lv.60)
   'room.loadout': { entries: isLoadoutEntries, ops: isLoadoutOps, $optional: ['ops'] },
@@ -410,7 +412,8 @@ export const C2S = {
   'room.removeSpectator': { playerId: isId },
 
   // match
-  'g.infoReady': {},
+  'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },
+  'g.rerollVote': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
   'g.band': { bandId: isId },
   'g.bandSkip': {},
   // the strategy highlighted in the draft screen (user playtest #4 item 4): a turn that runs out takes it while it is

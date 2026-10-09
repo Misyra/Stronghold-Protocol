@@ -232,7 +232,7 @@ function lemuen(bb, chess, def) {
           return keys;
         };
         // #428: extra attack range also opens her skill under the existing content-trigger contract.
-        unit.skill?.addTriggerRange(() => [{ keys: wantedKeys(), profile: unit.profile }]);
+        unit.skill?.addTriggerRange(() => [{ keys: wantedKeys(), profile: unit.profile }], { attackOnly: true });
         let sig = null;
         const refresh = () => { // update immediately when the last source leaves, before another attack can run
           const keys = live(unit) ? wantedKeys() : [];

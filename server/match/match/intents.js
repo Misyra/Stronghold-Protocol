@@ -8,14 +8,18 @@ import { unitStatsEntry } from '../../../shared/protocol.js';
 import { PHASE, ERR, EMOTES, EMOTE_COOLDOWN_MS, GEO } from '../../../shared/constants.js';
 import { deriveSeed } from '../../sim/rng.js';
 import { OK, fail } from './common.js';
+import { onHumanEmote } from '../botEmotes.js';
 
 export class MatchIntents {
   _handle(ps, msg) {
     switch (msg.t) {
       case 'g.infoReady':
         if (this.phase !== PHASE.INFO_CHECK) return fail(ERR.WRONG_PHASE);
+        if (this.setupVote) return fail(ERR.WRONG_PHASE, 'setup reroll vote in progress');
+        if ((msg.setupRevision ?? 0) !== this.setupRevision) return fail(ERR.BAD_TARGET, 'setup changed; confirm the current revision');
         if (!ps.infoReady) { ps.infoReady = true; this.markPublic(); this.maybeEndInfo(); }
         return OK;
+      case 'g.rerollVote': return this.voteSetupReroll(ps, msg.voteId, msg.agree);
       case 'g.band': return this.pickBand(ps, msg.bandId);
       case 'g.bandSkip': return this.skipBand(ps);
       // the strategy highlighted in the draft screen (what a timed-out turn takes, timeoutBand)
@@ -55,6 +59,8 @@ export class MatchIntents {
     if (now - ps.lastEmoteAt < EMOTE_COOLDOWN_MS) return fail(ERR.RATE);
     ps.lastEmoteAt = now;
     this.broadcast({ t: 'm.emote', playerId: ps.playerId, id });
+    // an AI teammate can react to a human's emote (enabled by default: server/match/botEmotes.js, SP_BOT_EMOTES=0 silences it)
+    onHumanEmote(this, ps.playerId, id);
     return OK;
   }
 

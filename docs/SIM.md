@@ -947,13 +947,13 @@ flag alters movement or 失衡.
   **and** about to attack/heal **and** an enemy (heal skills: an injured ally) inside the **initial** range
   (`unit.baseRangeKeys`: its own grid + its permanent rangeExtend — "攻击范围扩大" modules/talents as persist never-expiring
   `rangeExtend` buffs; no skill range, no temporary extend, no extra keys) or blocked by the melee unit — or, checked
-  **every tick**, an enemy (flyers included) inside a content trigger range (`unit.skill.addTriggerRange(fn)`,
+  **every tick**, an enemy (flyers included) inside a content trigger range (`unit.skill.addTriggerRange(fn, { attackOnly: false })`,
   `fn(battle, unit)` → list of ally units (their current range), tile-key arrays or `{ keys, profile }` (tile keys with
   the enemy profile the effect selects by — `canHitFly` false: ground enemies only); returns an unregister fn; not for
   heal skills: 海嗣 "攻击范围视为自身攻击范围的延伸", 流形, 谬因 S2's beam, and the areas a skill acts through around its
   owner's standing summons — 麦哲伦 S1 (her drones' ranges), 令 S3 (each summon's x-5, ground), 电弧 S2 (赛柯's range,
   ground) / S3 (桑特拉's range): the owner's larger-range rule of 2026-10-06, kits/shared/summoner.js
-  `summonTriggerArea`); `SKILL_RANGE` — "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能": any
+  `summonTriggerArea`). With `{ attackOnly: true }`, the extra range is checked only at the normal attack opportunity, not each tick: 蕾缪安’s own wanted targets and 死芒’s own living summons’ blocked targets (S1/S2); normal selectability and the skill’s actual effect range remain intact (§28.13). `SKILL_RANGE` — "不通过普通攻击/治疗触发技能，仅在技能范围内存在敌人（无视其不可选中）时释放技能": any
   living enemy (stealthed, untargetable, flying included) on `trigger.customRangeGrid` (= the skill's rangeGrid), every
   tick, no attack needed; `trigger.allies` (+ `hpAtMost`, default 1) — set by a kit, or by the data for an ally row (黍 S3's
   official `TRY_SEARCH_ALLY_SKILL`, "技能范围内存在可治疗的我方单位时释放技能": tools/build-data.mjs `TRIGGER_ALLY_RULES`,
@@ -1011,7 +1011,7 @@ flag alters movement or 失衡.
   `skillEnd` fires. `onAttack` ctx carries `noAmmo` (set it to true: this attack spends no bullet, no `ammoUsed` — 流明's
   free heals).
 - Runtime helpers on `unit.skill`: `activate(reason, {free})`, `end(reason)`, `stop()`, `addAmmo(n)`, `extend(s)`,
-  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn)`, `setTrigger(rule, grid)` (a kit's own rule change mid-battle —
+  `addCharge(n)`, `gainSp(n, reason)`, `addTriggerRange(fn, { attackOnly?: boolean })`, `setTrigger(rule, grid)` (a kit's own rule change mid-battle —
   薇薇安娜 S3's ACTIVE_RANGE on 3-2 after its first cast; 0.2.0); fields `sp, spCost (= floor(base×spCostMul + spCostFlat)), spCostMul, charges,
   maxCharges, active, timeLeft, ammoLeft, ammoMax, activations, kind, rule, bb` (`ammoMax`: the most bullets the running ammo skill
   has held — set at activation, raised by skillStart additions and `addAmmo` above it; 0 when inactive).
@@ -1547,3 +1547,8 @@ window — `push` / `pull`; a wall-shortened slide keeps its row time, a wall at
 platforms/mounds are ground obstacles that elevate operators; the generic kit maps 凋亡 to `apoptosis` (侵蚀 has no element key
 yet — enemy content must pick one); 抵抗 covers the control statuses of `RESIST_STATUSES` (the official term lists 晕眩/寒冷/
 冻结/恐惧/诱导…, the rest follow the operator kits that grant it) and caps at 0.95; tactical points prefer enemy path tiles.
+
+
+“余音” owns a same-call pulse queue (DESIGN §28.24): reflected hits enqueue their earned pulses instead of recursively
+entering another pulse. This retains the lethal-hit pulse and prevents valid high hit-count chains from tripping the
+general hook guard. The queue is emptied in `finally`; it introduces no timer or simulation RNG.

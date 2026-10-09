@@ -189,3 +189,16 @@ and marks. Leaving clears that source's state without clearing another still-dep
 
 凯尔希·思衡托 S2 uses its mixed attack/heal target condition for automatic activation: either an injured, healable ally
 or a selectable enemy in its expanded running range; operation cooldown and other controls still apply (§28.10).
+
+### Additional DEFAULT trigger targets (§28.13)
+
+`addTriggerRange(fn, { attackOnly: true })` extends the DEFAULT target check at the owner's next attack opportunity.
+It does not create a per-tick trigger. 蕾缪安 S1–S3 use only their own wanted targets; 死芒 S1/S2 use targets blocked by
+living summons owned by that operator. Sleeping or otherwise unselectable enemies do not count. This only changes
+the condition for activation: 死芒 S2 still links inside its own effect range. Other registered summon areas retain
+the existing per-tick behavior. The optional flag defaults to false for compatibility.
+
+
+0.2.3 echo/counter interaction (DESIGN §28.24): recursively earned “余音” pulses are drained FIFO by that echo in the
+same call, retaining the earned attack value and the lethal-hit pulse. [ASSUMED] This local order avoids exhausting
+the hook-depth guard on scaled hit-count HP; the guard remains unchanged for other recursive handlers.

@@ -530,6 +530,7 @@ export class UnitView {
     this.actor = null;
     this.spineReady = false;
     this._modelDirty = false;            // died / stood up since the last frame: update() checks Front ⇄ Back (_syncModel)
+    this._pendingDeployElapsed = null;  // elapsed game seconds until a late model can continue Start
     this._spineBusy = false;             // a Spine load of this view is in flight
     this._spineTries = 0;                // failed loads since the last model (SPINE_RETRY_MS)
     this._retryAt = 0;                   // when the next retry is due (ms, performance clock; 0 = none)
@@ -650,7 +651,8 @@ export class UnitView {
       // no fallback diamond in between; a deploy clip it was playing goes on on the new model (an operator facing UP
       // redeployed: its Back model takes over from the Front model it lay down with)
       const swap = !!this.actor;
-      const deployed = swap && this.alive ? this.actor.deployElapsed() : null;
+      const deployed = swap && this.alive ? this.actor.deployElapsed() : this._pendingDeployElapsed;
+      this._pendingDeployElapsed = null;
       if (swap) this._dropActor();
       this.actor = actor;
       this._actorEntry = entry;
@@ -961,6 +963,7 @@ export class UnitView {
   /** An attack was made (b.ev 'atk'). `target` = view or null. */
   onAttack(target, now, kind) {
     if (!this.alive) return;
+    this._pendingDeployElapsed = null;
     // a one-off cast (PROJ[kind].once: 暴鸰's bomb drop) is no attack rhythm: its clip plays once at its own speed
     const once = !!PROJ[kind]?.once;
     if (!once) {
@@ -1018,6 +1021,7 @@ export class UnitView {
   onDeploy() {
     this.fadeIn = 0;
     if (!this.alive) this.revive();
+    this._pendingDeployElapsed = this.actor ? null : 0;
     if (this.actor) this.actor.deploy();
   }
 
@@ -1038,6 +1042,7 @@ export class UnitView {
    */
   die(instant = false) {
     if (!this.alive) return;
+    this._pendingDeployElapsed = null;
     this.alive = false;
     this._modelDirty = true;
     this._dieForm = this._formSpec();
@@ -1105,6 +1110,7 @@ export class UnitView {
   /** @param {number} dt real seconds @param {any} cam camera @param {number} t real clock */
   update(dt, cam, t) {
     if (this.destroyed) return;
+    if (this._pendingDeployElapsed != null) this._pendingDeployElapsed += dt * (this.ctx.animRate?.() || 1);
     // a displacement's slide (slideTo): held where it stood until the snapshot with the destination is shown, then
     // eased into the sampled position (sync keeps `lx, ly` current) under a constant deceleration
     if (this.slide) {

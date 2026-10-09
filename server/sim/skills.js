@@ -101,8 +101,9 @@ export class SkillRuntime {
     if (this.rule.startsWith('CUSTOM_RANGE')) this.rule = 'CUSTOM_RANGE';
     this.triggerGrid = trig.grid ?? trig.rangeGrid ?? d.trigger?.grid ?? null;
     // kit options: an injured, healable ally of the trigger grid with an HP ratio of at most `hpAtMost` (SKILL_RANGE:
-    // instead of an enemy; DEFAULT: in addition to the basic rule)
+    // instead of an enemy; DEFAULT: a heal target at the normal attack cadence)
     this.triggerAllies = !!trig.allies;
+    this.triggerEnemies = !!trig.enemies; // mixed attack/heal skills may also open for a selectable enemy
     this.triggerHpAtMost = Number.isFinite(+trig.hpAtMost) && +trig.hpAtMost > 0 ? +trig.hpAtMost : 1;
     this.healSkill = s.heal ?? (unit.profile && unit.profile.dmgType === 'heal' && !!unit.profile.heal);
     // the official skill strategies automate the manual 开启: only MANUAL skills wait for the operation cooldown
@@ -483,7 +484,8 @@ export class SkillRuntime {
     if (b.rangeChanged(u)) b._refreshRange(u);
     const keys = range || u.baseRangeKeys || u.rangeKeys;
     if (keys) {
-      if (this.healSkill) return b.injuredAlliesInKeys(keys, u).length > 0;
+      if (this.healSkill) return b.injuredAlliesInKeys(keys, u).length > 0
+        || (this.triggerEnemies && b.enemiesInKeys(keys, u, TRIGGER_PROFILE).length > 0);
       if (b.enemiesInKeys(keys, u, u.profile).length > 0 || this._allyTargetIn(keys)) return true;
     }
     // the enemies a unit blocks are always its targets (Battle.blockedTargets), in range or not — PRTS 卫戍协议/帮助
@@ -498,8 +500,8 @@ export class SkillRuntime {
     if (this.active && this.isTimed) return false;
     if (this.rule === 'TAKE_DAMAGE' || this.rule === 'NEVER' || TICK_RULES.has(this.rule)) return false;
     if (this.pending || this._opCooling()) return false;
-    if (!this._defaultCondition()) return false;
-    if (this.triggerAllies && !this._allyTriggerSatisfied()) return false;
+    // Guardian charged heals supply their own attack target; no enemy is required (#406).
+    if (this.triggerAllies ? !this._allyTriggerSatisfied() : !this._defaultCondition()) return false;
     this._beforeAttack = true;   // the attack follows this cast in the same check (ai.js updateAlly): attacks pace it
     try { return this.activate('DEFAULT'); } finally { this._beforeAttack = false; }
   }

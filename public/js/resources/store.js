@@ -32,16 +32,16 @@ const IMPORT_BUFFER_BYTES = 4 * SMALL_IMPORT_BYTES;
  * through the single big-file lane, so at most one of them is ever in memory).
  * @param {Response} response
  * @param {{ consume?: boolean }} [opts]
- * @returns {Promise<string|null>} null when the browser cannot hash (no WebCrypto, an unreadable body)
+ * @returns {Promise<string>} rejects when verification cannot be completed
  */
 async function digestOf(response, { consume = false } = {}) {
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) return null;
+  if (!subtle) throw new Error('当前浏览器无法计算资源指纹');
   try {
     const bits = await subtle.digest('SHA-1', await (consume ? response : response.clone()).arrayBuffer());
     return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
-  } catch {
-    return null;
+  } catch (cause) {
+    throw new Error('无法校验资源内容，请重试', { cause });
   }
 }
 
@@ -64,7 +64,23 @@ export class ResourceStore {
     /** @type {Promise<any> | null} */
     this.running = null;
     this.statusPromise = null;
+    this.voiceScope = null;
+    this.scopedFiles = this.files;
   }
+
+  /** Voice selection affects download/status only; all manifest entries remain importable and retained. */
+  setVoiceScope(language = 'cn', all = false) {
+    const scope = all ? null : (language === 'jp' ? 'jp' : 'cn');
+    if (scope === this.voiceScope) return;
+    this.voiceScope = scope;
+    this.scopedFiles = scope ? this.files.filter((file) => {
+      const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(file.url, this.origin).pathname)?.[1];
+      return !language || language === scope;
+    }) : this.files;
+    this.statusPromise = null;
+  }
+
+  get selectedFiles() { return this.scopedFiles; }
 
   /** Cache key (absolute URL) of a manifest entry. */
   keyOf(url) {
@@ -90,13 +106,14 @@ export class ResourceStore {
     const allowed = new Set(this.files);
     const groups = new Map(before.groups.map((group) => [group.id, group]));
     const byKey = new Map();
-    for (const file of this.files) {
+    for (const file of this.selectedFiles) {
       if (!this.eligible(file)) continue;
       const key = this.keyOf(file.url);
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push(file);
     }
     let imported = 0;
+    let already = 0;
     let processed = 0;
     let failed = false;
     let failure;
@@ -149,6 +166,7 @@ export class ResourceStore {
           const existing = before.present.has(key) ? await cache.match(key) : null;
           current = !!existing && await digestOf(existing, { consume: true }) === file.hash;
         } finally { timings.cacheCheckMs += performance.now() - cacheStart; }
+        if (current) already++;
         if (!current) {
           const data = prepared || await entry.read();
           const verifiedBytes = verifiedResourceBytes(data, file.hash);
@@ -209,7 +227,7 @@ export class ResourceStore {
       averageCacheWriteMs: timings.cacheWriteCount ? timings.cacheWriteMs / timings.cacheWriteCount : 0 };
     try { onDiagnostics?.(report); } catch { /* diagnostics must not affect verified imports */ }
     if (failed) throw failure;
-    return { ...await this.status(), imported, timings: report };
+    return { ...await this.status(), imported, already, timings: report };
   }
 
   /**
@@ -367,7 +385,9 @@ export class ResourceStore {
 
   /** Counters for a set of cached URLs (shared by status() and clear(), which must not re-create a cache). */
   #tally(present) {
-    const total = this.files.length;
+    const selected = this.selectedFiles;
+    const total = selected.length;
+    const scopedSizes = this.voiceScope ? selected.filter((f) => Number.isSafeInteger(f.size)) : null;
     let count = 0;
     let bytes = 0;
     let sized = 0;
@@ -380,7 +400,7 @@ export class ResourceStore {
     let tier2Wanted = 0;
     const groups = Object.fromEntries(Object.entries(RESOURCE_GROUPS).map(([id, group]) => [id,
       { id, ...group, total: 0, wanted: 0, present: 0, bytes: 0, totalBytes: 0, unknownSize: 0 }]));
-    for (const f of this.files) {
+    for (const f of selected) {
       const hit = present.has(this.keyOf(f.url));
       const group = groups[resourceGroup(f)];
       group.total++;
@@ -406,9 +426,10 @@ export class ResourceStore {
       wanted,
       skipped,
       bytes,
-      totalBytes: Number.isSafeInteger(this.manifest.totalBytes) ? this.manifest.totalBytes : null,
+      totalBytes: scopedSizes ? (scopedSizes.length ? scopedSizes.reduce((n, f) => n + f.size, 0) : null)
+        : Number.isSafeInteger(this.manifest.totalBytes) ? this.manifest.totalBytes : null,
       sized,
-      sizedTotal: Number.isSafeInteger(this.manifest.sized) ? this.manifest.sized : null,
+      sizedTotal: scopedSizes ? scopedSizes.length : Number.isSafeInteger(this.manifest.sized) ? this.manifest.sized : null,
       tier1,
       tier1Present,
       tier2,
@@ -438,7 +459,7 @@ export class ResourceStore {
     const index = await this.#readIndex(cache);
     const start = await this.status();
     checkAbort(signal);
-    const work = this.files.filter((f) => wanted.has(f.tier) && this.eligible(f) && !start.present.has(this.keyOf(f.url)));
+    const work = this.selectedFiles.filter((f) => wanted.has(f.tier) && this.eligible(f) && !start.present.has(this.keyOf(f.url)));
     let done = start.count;
     let bytes = start.bytes;
     let sized = start.sized;
@@ -490,10 +511,10 @@ export class ResourceStore {
             // A second mismatch fails this file; never mark mismatching bytes as the requested revision.
             if (file.hash && CONTENT_HASH_RE.test(file.hash)) {
               const seen = await digestOf(res);
-              if (seen && seen !== file.hash) {
+              if (seen !== file.hash) {
                 res = await this.#fetchStorable(`${key}${key.includes('?') ? '&' : '?'}sp=${file.hash}`, signal);
                 const retried = await digestOf(res);
-                if (retried && retried !== file.hash) throw new Error('资源内容与清单不一致，请更新 CDN 缓存或资源指纹');
+                if (retried !== file.hash) throw new Error('资源内容与清单不一致，请更新 CDN 缓存或资源指纹');
               }
             }
             await cache.put(key, this.storable(res));
@@ -550,8 +571,23 @@ export class ResourceStore {
     return result;
   }
   /** Delete every cache this app owns, of every version — 「清理缓存」 in the settings panel. Never re-creates one. */
-  async clear() {
+  async clear({ optionalOnly = false } = {}) {
     this.statusPromise = null;
+    if (optionalOnly) {
+      const identity = (url) => new URL(url, this.origin).pathname.match(/\/(?:assets|fonts)\/.*/)?.[0];
+      const optional = new Set(this.files.filter((f) => f.tier === TIER_REST).map((f) => identity(f.url)));
+      const isOptional = (url) => optional.has(identity(url)) || /\/assets\/audio\//.test(new URL(url, this.origin).pathname);
+      for (const name of await this.caches.keys()) {
+        if (!name.startsWith(CACHE_PREFIX)) continue;
+        const cache = await this.caches.open(name);
+        const keys = await cache.keys();
+        for (const key of keys) if (isOptional(key.url)) await cache.delete(key);
+        const index = await this.#readIndex(cache);
+        for (const key of Object.keys(index.files)) if (isOptional(key)) delete index.files[key];
+        await this.#writeIndex(cache, index.files, this.manifest.version);
+      }
+      return this.status();
+    }
     if (this.caches?.keys) {
       const names = await this.caches.keys();
       await Promise.all(names.filter((n) => n.startsWith(CACHE_PREFIX)).map((n) => this.caches.delete(n)));
@@ -564,8 +600,20 @@ export class ResourceStore {
   async pruneOld() {
     const names = (await this.caches.keys()) || [];
     const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && n !== this.cacheName);
-    await Promise.all(stale.map((n) => this.caches.delete(n)));
-    return stale;
+    const removed = [];
+    for (const name of stale) {
+      if (this.voiceScope) {
+        const cache = await this.caches.open(name);
+        const keep = (await cache.keys()).some((key) => {
+          const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(key.url).pathname)?.[1];
+          return language && language !== this.voiceScope;
+        });
+        if (keep) continue;
+      }
+      await this.caches.delete(name);
+      removed.push(name);
+    }
+    return removed;
   }
 
   /**

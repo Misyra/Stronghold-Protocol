@@ -6,11 +6,13 @@
  * Incremental: every file lives under its plain path (`assets/…`) and the repo's
  * `.assets-manifest.json` records the content hash each published path had when this script
  * last ran. A run uploads only the files whose hash differs — usually a handful — then
- * rewrites the manifest (`{ tag, hashes }`); `tag` is the first 16 hex chars of sha256 over
+ * rewrites the manifest (`{ tag, hashes, preload }`); `tag` is the first 16 hex chars of sha256 over
  * every path + hash, so it only changes when art actually changes. Servers commit the
  * manifest with the release and hand it to clients (server/index.js), which turn it into a
  * per-file `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts
- * only the files it changed (see docs/operations/CDN.md §6).
+ * only the files it changed (see docs/operations/CDN.md). Server-only `preload` metadata
+ * holds SHA-1 fingerprints and sizes of the same bytes for cache import verification.
+ * `--metadata-only` refreshes it offline, refusing any unpublished file changes.
  *
  * The manifest IS the resume state: an interrupted run left it untouched, so the next run
  * simply re-diffs against it and re-uploads what is still missing.
@@ -24,13 +26,13 @@
  * every remote except `origin` (the upstream).
  *
  * Usage:
- *   node tools/r2-sync.mjs [--bucket weishu] [--account <account_id>] [--dry-run] [--push]
+ *   node tools/r2-sync.mjs [--bucket weishu] [--account <account_id>] [--dry-run] [--push] [--metadata-only]
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { createHash } from 'node:crypto';
+import { fingerprintPublishedAsset, publishedAssetsManifest } from './published-assets.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -40,12 +42,12 @@ const MANIFEST_FILE = path.join(ROOT, '.assets-manifest.json');
 const WRANGLER_BIN = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 const args = process.argv.slice(2);
-const KNOWN_ARGS = new Set(['--bucket', '--account', '--dry-run', '--push']);
+const KNOWN_ARGS = new Set(['--bucket', '--account', '--dry-run', '--push', '--metadata-only']);
 for (const a of args) {
   // The flags take no `=` values and unknown flags must fail loudly: a typo here used to be
   // silently ignored and turned a `--help` into a real full upload.
   if (a.startsWith('--') && !KNOWN_ARGS.has(a)) {
-    console.error(`Unknown option ${a}. Known options: ${[...KNOWN_ARGS].join(' ')} (--bucket/--account take a value).`);
+    console.error(`Unknown option ${a}. Known options: ${[...KNOWN_ARGS].join(' ')} (--bucket/--account take a value). --metadata-only refuses unpublished bytes.`);
     process.exit(1);
   }
 }
@@ -94,9 +96,6 @@ function refreshToken() {
   }
   return refreshPromise;
 }
-const CONFIG_ACCOUNT = readToken();
-const ACCOUNT = flag('--account', CONFIG_ACCOUNT || '66c7c5b7bad286a799db484a5ba4a7fb');
-const API = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/r2/buckets/${BUCKET}/objects`;
 
 const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
@@ -119,12 +118,6 @@ function walk(dir, prefix, out) {
   }
 }
 
-async function hashFile(abs) {
-  return new Promise((resolve, reject) => {
-    const h = createHash('sha256');
-    fs.createReadStream(abs).on('data', (c) => h.update(c)).on('end', () => resolve(h.digest('hex'))).on('error', reject);
-  });
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let nextSlot = 0;
@@ -223,10 +216,9 @@ if (!files.length) { console.error('No files found under public/{assets,fonts,me
 
 // ---- content-addressed manifest tag ----
 console.log(`Hashing ${files.length} files...`);
-for (const f of files) f.hash = (await hashFile(f.abs)).slice(0, 16);
-const tagHash = createHash('sha256');
-for (const f of files.sort((a, b) => a.key.localeCompare(b.key, 'en'))) tagHash.update(`${f.key}\0${f.hash}\0`);
-const tag = tagHash.digest('hex').slice(0, 16);
+for (const f of files) Object.assign(f, await fingerprintPublishedAsset(f.abs));
+const manifest = publishedAssetsManifest(files);
+const tag = manifest.tag;
 
 // ---- diff against the manifest the last run wrote (also the resume state) ----
 let previous = null;
@@ -239,9 +231,12 @@ const jobs = previous
   : files.map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
 
 console.log(`Manifest tag: ${tag}${previous ? ` (previous ${previous.tag})` : ' (no previous manifest — uploading every file)'}`);
+if (args.includes('--metadata-only') && jobs.length) throw new Error('Unpublished asset changes found; metadata-only cannot authorize bytes not yet uploaded.');
 if (!jobs.length) {
-  console.log(`All ${files.length} files already published to bucket '${BUCKET}'. Nothing to do.`);
-  if (args.includes('--push')) pushManifest(tag);
+  // Old releases lack preload metadata. Refresh it locally even when no object needs uploading.
+  if (!DRY) fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+  console.log(`All ${files.length} files already published to bucket '${BUCKET}'. No object uploads; preload fingerprints ${DRY ? 'checked' : 'updated'}.`);
+  if (!DRY && args.includes('--push')) pushManifest(tag);
   process.exit(0);
 }
 const totalBytes = jobs.reduce((s, j) => s + fs.statSync(j.abs).size, 0);
@@ -251,6 +246,10 @@ if (DRY) {
   if (jobs.length > 20) console.log(`  ... and ${jobs.length - 20} more`);
   process.exit(0);
 }
+
+const CONFIG_ACCOUNT = readToken();
+const ACCOUNT = flag('--account', CONFIG_ACCOUNT || '66c7c5b7bad286a799db484a5ba4a7fb');
+const API = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/r2/buckets/${BUCKET}/objects`;
 
 // ---- upload only what changed ----
 let done = 0;
@@ -279,7 +278,7 @@ if (failed) {
   for (const m of failures.slice(0, 20)) console.error('  ' + m);
   process.exit(1);
 }
-fs.writeFileSync(MANIFEST_FILE, JSON.stringify({ tag, hashes: Object.fromEntries(files.map((f) => [`/${f.key}`, f.hash])) }) + '\n');
+fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
 console.log(`\nAll ${files.length} files published to R2 bucket '${BUCKET}' (manifest ${tag}).`);
 console.log(`Wrote ${path.basename(MANIFEST_FILE)} — commit it with the release, then \`git pull\` + restart the game servers.`);
 if (args.includes('--push')) pushManifest(tag);

@@ -1,5 +1,7 @@
 # 服务端断点恢复
 
+游戏安装和统一配置从[部署指南](DEPLOY.md)开始；本文说明对局数据的保存、备份与恢复。
+
 与浏览器本地战绩不同，这个功能保存正在进行的服务端对局。检查点与恢复逻辑移植自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol/tree/20524bb07dff68743980ec8e6b4a8e458f3720b6)，遵循 GPL-3.0-or-later；本仓库增加原子文件存储、独占写入锁、开战前检查点、关服写入等待、观战与结算补推恢复，以及持久化 Worker 与分片存储（见下）。
 
 ## 启用与升级

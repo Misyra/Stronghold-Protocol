@@ -64,7 +64,7 @@ const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none',
  * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, packsDir?: string,
  *   packs?: ReturnType<typeof createPackRegistry>, log?: object,
  *   assetsCdn?: string, assetsCdnVersion?: string,
- *   assetsManifest?: { tag: string, hashes: Record<string, string> } | null }} dirs
+ *   assetsManifest?: { tag: string, hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} dirs
  *   packs: the server's pack registry (default: one over publicDir, dataDir and packsDir — ROOT/packs)
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
@@ -89,7 +89,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new GzipCache();
   const release = createAssetVersion(mounts, DATA_SHIM_JS, cdn);
-  const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn.base,
+  const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn.base, assetsManifest,
     rewrite: (v) => JSON.parse(release.transform(JSON.stringify(v), '.json')), log });
   // Small transformed responses share both the read and the result; bounded independently of the gzip cache.
   const transformed = new Map();
@@ -142,7 +142,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         sendError(req, res, 404, '页面不存在 · Not found');
         return;
       }
-      const body = Buffer.from(JSON.stringify(assetsManifest));
+      // Keep the immutable client manifest byte-for-byte compatible when only server metadata is added.
+      const body = Buffer.from(JSON.stringify({ tag: assetsManifest.tag, hashes: assetsManifest.hashes }));
       const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding' };
       if (req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')) {
         const gzip = await gzipCache.get('/__assets-manifest__', { size: body.length, mtimeMs: 0 }, body, assetsManifest.tag);

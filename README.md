@@ -12,7 +12,7 @@
 > - 本项目是玩家自制的**非官方同人作品**，与上海鹰角网络科技有限公司（Hypergryph）、Yostar 及其关联方**没有任何关系**，未获其授权或认可。
 > - 《明日方舟》及「卫戍协议」相关的名称、角色、美术、音乐、音效、文本与数据等素材，版权归原权利人所有。这些素材**不适用**本项目的 GPL-3.0 许可证；GPL 只覆盖本项目自己编写的代码。
 > - 仅供学习交流与个人非商业使用。**严禁任何形式的盈利**，包括但不限于：售卖本项目或整合包、付费下载或付费分发、收费服务器或收费代开、广告 / 打赏 / 会员等变现方式，以及其他任何商业用途。
-> - 仓库源码不包含游戏的美术与音频素材（只有由官方数据表生成的数据和几张游戏截图，同样不适用 GPL）；[Releases](../../releases/latest) 中的整合包为了方便玩家附带了素材，下载即视为同意本声明。请勿将素材用于本项目以外的用途或单独再分发。完整条款见 [NOTICE.md](NOTICE.md)。
+> - 本分支包含由官方数据表生成的数据、部分本地客户端素材和截图；这些内容不适用代码的 GPL 授权；[Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest) 中的整合包为了方便玩家附带了素材，下载即视为同意本声明。请勿将素材用于本项目以外的用途或单独再分发。完整条款见 [NOTICE.md](NOTICE.md)。
 > - 权利人如认为本项目侵犯其权益，请通过 Issue 或邮件 **misyra@163.com** 联系，我们会**立即删除**相关内容。
 > - 本项目按「现状」提供，**不提供任何担保**，使用风险自负。
 
@@ -27,7 +27,7 @@ English summary: [below](#english).
 ## 目录
 
 - [声明](#声明) · [简介](#简介) · [本分支差异](#本分支差异) · [功能一览](#功能一览)
-- [快速开始](#快速开始)：[整合包](#方式一整合包推荐) · [从源码运行](#方式二从源码运行) · [系统要求](#系统要求) · [端口与配置](#端口与配置) · [局域网联机](#和朋友一起玩局域网)
+- [快速开始](#快速开始)：[整合包](#方式一上游整合包家用) · [从源码运行](#方式二从源码运行) · [系统要求](#系统要求) · [端口与配置](#端口与配置) · [局域网联机](#和朋友一起玩局域网)
 - [联机方式](#联机方式) · [操作](#操作) · [文档](#文档) · [开发与测试](#开发与测试) · [项目结构](#项目结构)
 - [许可证](#许可证) · [致谢与数据来源](#致谢与数据来源) · [贡献](#贡献)
 
@@ -49,7 +49,7 @@ English summary: [below](#english).
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导入与导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
 | 资源预载 | 进入页面后自动在后台预载，复用已缓存资源；支持必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐、跨版本缓存别名复用、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：支持同盟先组队再匹配补齐，整队入队且不拆散；凑满 4 名真人才开局，不补 AI，队员断线整队出队，取消后保留同盟 |
-| 维护公告 | 单条维护公告进入游戏即显示（主菜单、大厅与对局全程）、可关闭：设置 `SP_ANNOUNCEMENT_URL` 由运维面板统一发布（约 10 秒轮询热生效），或用本地文件 `SP_ANNOUNCEMENT_FILE` 热加载；配 `GET /api/announcement` |
+| 维护公告 | 维护公告进入游戏即显示、可关闭；默认接入运维面板中央 feed，本地 JSON 需显式选择 `file` 模式。`GET /api/announcement` 返回当前公告及来源诊断，见 [公告接入](docs/operations/ANNOUNCEMENTS.md) |
 | 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) |
 | 状态增量传输 | 支持协商的客户端首次全量同步，后续只传公共／私人状态变化；基线失配自动全量恢复，兼容旧客户端；见 [传输说明](docs/development/STATE_DELTA.md) |
 | WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
@@ -83,9 +83,11 @@ English summary: [below](#english).
 
 ## 快速开始
 
-### 方式一：整合包（推荐）
+本分支生产部署使用下面的源码方式，统一流程见[部署指南](docs/operations/DEPLOY.md)。上游整合包方便家用运行，其程序不包含本分支全部运维改造。
 
-[Releases](../../releases/latest) 里有两种整合包，代码和运行依赖完全相同，二选一；已经装好 0.2.x 的，升级时只下载更新包即可：
+### 方式一：上游整合包（家用）
+
+[Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest) 里有两种整合包，代码和运行依赖完全相同，二选一；已经装好 0.2.x 的，升级时只下载更新包即可：
 
 - **完整包** `Stronghold-Protocol-v<版本>.zip`（约 505 MB，解压后约 710 MB）：附带全部美术 / 音频（含中文、日文两套干员语音和官方 3D 棋盘贴图），解压就能玩，不需要再下载任何东西。**推荐。**
 - **精简包** `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）：不带素材，第一次启动时自动从公开镜像下载美术、Spine 模型、音频、字体、表情和「玩法说明」教程图（约 550 MB，可中断，再次启动会续传）；官方 3D 棋盘等本地客户端素材不在其中（见下面的「本地客户端素材」）。适合下载大文件不方便的情况。
@@ -97,7 +99,7 @@ English summary: [below](#english).
    - Windows：在 PowerShell 里运行 `winget install OpenJS.NodeJS.LTS`，或到 <https://nodejs.org/zh-cn/download> 下载安装包。
    - macOS：`brew install node@22`，或到官网下载安装包。
    - Linux：发行版的包管理器、nvm 或 fnm。
-2. **下载**：在 [Releases](../../releases/latest) 页面下载最新版本的完整包（或精简包），解压到一个路径较短的文件夹（Windows 上建议不要放在 OneDrive 同步的目录里）。
+2. **下载**：在 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest) 页面下载最新版本的完整包（或精简包），解压到一个路径较短的文件夹（Windows 上建议不要放在 OneDrive 同步的目录里）。
 3. **启动**
    - Windows：双击 **`scripts\start-windows.bat`**。如果弹出「安全警告」，点「运行」；Windows 防火墙弹窗请勾选「专用网络」并允许。
    - macOS / Linux：在解压出的文件夹里运行 `./scripts/start.sh`（或 `bash scripts/start.sh`）。
@@ -106,7 +108,7 @@ English summary: [below](#english).
 ### 方式二：从源码运行
 
 ```bash
-git clone https://github.com/sganggs/Stronghold-Protocol.git
+git clone https://github.com/Misyra/Stronghold-Protocol.git
 cd Stronghold-Protocol
 npm install        # 安装依赖（postinstall 会把 pixi / preact / three 复制到 public/vendor）
 npm run setup      # 检查环境，并从公开镜像下载约 550 MB 美术 / 音频（可中断，再次运行会续传）
@@ -140,9 +142,11 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `SP_WS_COMPRESSION` | `on` | WebSocket 状态消息压缩：`on` 开启低等级压缩；`off` 关闭。减少出网，但增加 CPU 和每连接内存；高并发部署先小流量验证 |
-| `SP_ANNOUNCEMENT_URL` | 空 | 运维面板公告源：设为 `https://<面板域名>/api/announce/v1/<站id>` 后按间隔轮询拉取，热生效，断源保留最后有效公告；设置后本地公告文件不再参与。见 [部署指南](docs/operations/DEPLOY.md#16-维护公告) |
-| `SP_ANNOUNCEMENT_POLL_MS` | `10000` | 公告源拉取间隔毫秒，允许 3000–600000；仅与 `SP_ANNOUNCEMENT_URL` 搭配 |
-| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 维护公告配置文件；相对路径以项目根目录为基准，修改后自动生效。设置内容、截止时间和关闭方式见 [部署指南](docs/operations/DEPLOY.md#16-维护公告) |
+| `SP_ANNOUNCEMENT_SOURCE` | `panel` | 默认从管理面板读取；显式 `file` 才启用本地 JSON，故障不会自动切回文件。见[公告接入](docs/operations/ANNOUNCEMENTS.md) |
+| `SP_PORTAL_URL` / `SP_SITE_ID` | `https://game.rainya.me` / `site-ad797aa8` | 默认西安站；国内、国内2、香港分别设置 `shiyan`、`aliyun`、`hongkong`。新站使用面板实际 ID |
+| `SP_ANNOUNCEMENT_URL` | 由面板地址与站点 ID 组合 | 显式完整 feed URL 优先，兼容现有部署；未设置或空字符串仍使用中央源 |
+| `SP_ANNOUNCEMENT_POLL_MS` | `10000` | 中央公告源最短拉取间隔毫秒，允许 3000–600000 |
+| `SP_ANNOUNCEMENT_FILE` | `announcement.json` | 仅 `SP_ANNOUNCEMENT_SOURCE=file` 时读取；相对路径以项目根目录为基准，内容热加载 |
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |
@@ -156,7 +160,7 @@ npm start          # 启动服务器：http://localhost:3000
 3. 所有人点「准备就绪」后房主开始。
 4. 同一 Wi-Fi / 路由器下的朋友打开启动窗口里列出的地址（形如 `http://192.168.x.x:3000`）即可。打不开时多半是防火墙：Windows 首次启动时在弹窗中允许「专用网络」，或运行 `npm run doctor` 查看具体命令；访客 Wi-Fi 常开启「AP 隔离」，也会导致连不上。
 
-刷新页面或断线后，同盟模拟 10 分钟内、独立模拟 24 小时内重新打开即可回到原座位。服务器把房间和对局都保存在内存里，**重启服务器会结束所有对局**。
+刷新页面或断线后，同盟模拟 10 分钟内、独立模拟 24 小时内重新打开即可回到原座位。服务端默认保存检查点，保留状态目录可在重启后恢复最近的安全阶段；作战进行中可能重打该回合，见[持久化说明](docs/operations/PERSISTENCE.md)。
 
 ### 房间状态接口
 
@@ -210,7 +214,7 @@ npm start          # 启动服务器：http://localhost:3000
 |---|---|
 | [CHANGELOG.md](CHANGELOG.md) | 更新记录：每个版本修复了什么、哪些反馈经核实不是问题 |
 | [docs/guides/PLAYING.md](docs/guides/PLAYING.md) | 玩法指南：流程、经济、招募与晋升、摆阵、联防、盟约、最终攻势、结算称号 |
-| [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) | 部署指南：Windows 开服与开机自启、防火墙、组网 / 隧道、反向代理与 HTTPS、Docker、systemd、排错 |
+| [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) | 部署总入口：Linux / Docker、更新与验收，导航到 Windows、公告、监控、CDN 与持久化专项说明 |
 | [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) | 本分支 API 规范：房间号查询、延迟探测、维护公告、四人匹配及资源 / 结算扩展（排除上游已有接口） |
 | [docs/operations/WINDOWS.md](docs/operations/WINDOWS.md) | Windows 便携包：怎么打一份「零安装」包（`scripts/make-windows-bundle.mjs`）、包里放了什么、授权注意事项 |
 | [docs/development/DESIGN.md](docs/development/DESIGN.md) | 架构与契约（英文）：索引，按章节号找到文件；现行规则在 `docs/design/`（范围与目录分工、坐标与时间、战斗引擎、对局、网络协议、渲染与 UI），各次试玩和各版本的规则修订与依据在 `docs/history/` |
@@ -290,9 +294,9 @@ node tools/perfbench.mjs --cpu 1,4,6 --profile             # 真实战斗的帧�
 
 An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess tower-defense mode *Stronghold Protocol: Alliance*, played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host.
 
-- **Run:** download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From 0.2.1 on, `…-update.zip` contains only changes since earlier 0.2.x bundles: stop the server, extract it over a matching install and start again; the first start verifies the files and removes obsolete unmodified files. From source: `npm install && npm run setup && npm start` (setup downloads the art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction — the 39 summon models 0.2.0 added need one `npm run setup -- --local` or a copy from the same-version full bundle; WebGL2 is required for the 3D board).
+- **Run:** download the all-in-one bundle from [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From 0.2.1 on, `…-update.zip` contains only changes since earlier 0.2.x bundles: stop the server, extract it over a matching install and start again; the first start verifies the files and removes obsolete unmodified files. From source: `npm install && npm run setup && npm start` (setup downloads the art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction — the 39 summon models 0.2.0 added need one `npm run setup -- --local` or a copy from the same-version full bundle; WebGL2 is required for the 3D board).
 - **Languages:** Chinese (the default), English, 日本語, 한국어 and 繁體中文 — switch on the title screen or in Settings. Game texts come from the official clients; the Japanese, Korean and Traditional Chinese interface strings are machine translations (corrections welcome: [docs/development/I18N.md](docs/development/I18N.md)).
 - **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md).
-- **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Rights holders may request removal via an [Issue](../../issues) or email **misyra@163.com**; content will be removed immediately. Provided "as is", without warranty.
+- **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Rights holders may request removal via an [Issue](https://github.com/Misyra/Stronghold-Protocol/issues) or email **misyra@163.com**; content will be removed immediately. Provided "as is", without warranty.
 - **License:** code GPL-3.0-or-later ([LICENSE](LICENSE)); game assets excluded. Portions of this fork (shared worker pool, resource preload, match checkpointing) are adapted from [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) (GPL-3.0-or-later).
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) (an English summary at its end); the code map is [docs/development/ARCHITECTURE.md](docs/development/ARCHITECTURE.md).

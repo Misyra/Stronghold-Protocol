@@ -300,8 +300,9 @@ function ScreenCrashed({ error, reset }) {
 
 function ResourceManagerHost() {
   const settings = useSettings();
-  return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional}
-    onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })} />`;
+  return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} allVoices=${settings.preloadAllVoices}
+    onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
+    onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })} />`;
 }
 
 function App() {
@@ -423,7 +424,7 @@ function installResourcePreload() {
   // Each page visit starts background preload; pausing still lasts for this page's lifetime.
   updateSettings({ preload: true });
   import('./resources/index.js').then((r) => {
-    const apply = (s) => { r.syncResources(s.preload, s.preloadOptional).catch((err) => console.warn('[resources] sync failed', err)); };
+    const apply = (s) => { r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices).catch((err) => console.warn('[resources] sync failed', err)); };
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
   }).catch((err) => console.warn('[resources] unavailable', err));

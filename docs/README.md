@@ -15,7 +15,11 @@
 
 | 文档 | 内容 |
 |---|---|
-| [部署指南](operations/DEPLOY.md) | 开服、反向代理、Docker 与排错 |
+| [部署指南（总入口）](operations/DEPLOY.md) | Linux / Docker、统一配置、更新与验收 |
+| [Windows 与家用开服](operations/HOME_SERVER.md) | Windows 自启、整合包更新与家用网络 |
+| [游戏内公告](operations/ANNOUNCEMENTS.md) | 默认中央源、站点 ID、显式本地模式与排错 |
+| [监控接入](operations/MONITORING.md) | 游戏、探针、中央面板的分工与接入 |
+| [发行包制作](operations/PACKAGING.md) | 维护者制作完整、精简与更新包 |
 | [Windows 便携包](operations/WINDOWS.md) | 制作与使用便携包 |
 | [CDN 与资源更新](operations/CDN.md) | 静态资源分发、预载与缓存 |
 | [对局持久化](operations/PERSISTENCE.md) | 检查点、索引、运行时钟与恢复 |
@@ -49,4 +53,4 @@
 
 临时脚本、分析结果和下载缓存统一放入 Git 忽略的 `.cache/`：日志用 `.cache/logs/`，临时冒烟脚本用 `.cache/smoke/`，检查报告用 `.cache/reports/`。可复用的正式工具放入 `tools/`，自动化测试放入 `test/`，启动与部署脚本放入 `scripts/`。
 
-根目录保留项目入口、构建配置、许可证和部署配置。`.state/` 是实际对局存档，`announcement.json` 是本机维护公告；本地 `AGENTS.md` 是仓库工作说明，均应按各自用途保留。
+根目录保留项目入口、构建配置、许可证和部署配置。`.state/` 是实际对局存档，`announcement.json` 仅在显式文件模式下作为本机维护公告；本地 `AGENTS.md` 是仓库工作说明，均应按各自用途保留。

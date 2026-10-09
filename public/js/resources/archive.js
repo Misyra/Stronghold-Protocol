@@ -136,7 +136,7 @@ export async function exportResourceZip(store, { signal, onProgress } = {}) {
   }
 }
 
-export async function importResourceZip(store, blob, { signal, onProgress, onDiagnostics, concurrency = 4 } = {}) {
+export async function importResourceZip(store, blob, { signal, onProgress, onDiagnostics, onPlan, concurrency = 4 } = {}) {
   if (!blob || typeof blob.slice !== 'function' || !Number.isSafeInteger(blob.size) || blob.size > MAX_ARCHIVE_BYTES) {
     throw new Error('请选择不超过 2 GiB 的资源 ZIP 包');
   }
@@ -186,6 +186,30 @@ export async function importResourceZip(store, blob, { signal, onProgress, onDia
     const compatible = store.files.filter((f) => store.eligible(f) && CONTENT_HASH_RE.test(f.hash || '')
       && available.has(`${resourcePath(f.url)}|${f.hash}`)
       && (f.size == null || f.size === available.get(`${resourcePath(f.url)}|${f.hash}`).size));
+    const currentPaths = new Map();
+    for (const file of store.files) {
+      const key = resourcePath(file.url);
+      if (!currentPaths.has(key)) currentPaths.set(key, []);
+      currentPaths.get(key).push(file);
+    }
+    const skipReasons = { removed: 0, fingerprint: 0, changed: 0, size: 0, oversized: 0 };
+    const matched = new Set(compatible.map((f) => resourcePath(f.url)));
+    for (const row of doc.files) {
+      const key = resourcePath(row.url);
+      if (matched.has(key)) continue;
+      const current = currentPaths.get(key);
+      if (!current) skipReasons.removed++;
+      else if (!current.some((f) => CONTENT_HASH_RE.test(f.hash || ''))) skipReasons.fingerprint++;
+      else if (!current.some((f) => store.eligible(f))) skipReasons.oversized++;
+      else if (!current.some((f) => f.hash === row.hash)) skipReasons.changed++;
+      else skipReasons.size++;
+    }
+    const existing = await store.status();
+    const additional = new Map(compatible.filter((f) => !existing.present.has(store.keyOf(f.url)))
+      .map((f) => [store.keyOf(f.url), available.get(resourcePath(f.url) + '|' + f.hash).size]));
+    await onPlan?.({ packageCount: doc.files.length, compatible: compatible.length, skipReasons,
+      requiredBytes: [...additional.values()].reduce((sum, size) => sum + size, 0) });
+    checkAbort(signal);
     const destinations = new Map();
     for (const file of compatible) {
       const row = available.get(`${resourcePath(file.url)}|${file.hash}`);
@@ -217,7 +241,7 @@ export async function importResourceZip(store, blob, { signal, onProgress, onDia
         total: doc.files.length, file, getStatus }),
       onDiagnostics: (metrics) => onDiagnostics?.({ ...timings, ...metrics, ...source.timings }),
     });
-    return { ...outcome, packageCount: doc.files.length, compatible: compatible.length,
+    return { ...outcome, skipReasons, packageCount: doc.files.length, compatible: compatible.length,
       skippedPackage: doc.files.length - new Set(compatible.map((f) => resourcePath(f.url))).size };
   } finally {
     await reader.close();

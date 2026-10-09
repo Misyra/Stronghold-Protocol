@@ -197,12 +197,12 @@ export function checkAssets() {
 }
 
 /**
- * What the game draws instead when the local-client art is absent (DESIGN §13, docs/operations/DEPLOY.md §6). The battle emotes and
+ * What the game draws instead when the local-client art is absent (DESIGN §13, docs/development/ASSETS.md). The battle emotes and
  * the 玩法说明 pages are not in the list: step 5 downloads them from the public mirror with the other assets (GitHub
  * issue #42). Shown by setup and doctor.
  */
 export const LOCAL_ART_FALLBACK = '3D 棋盘改用 2D，部分官方界面图标、灼热/炽焰源石虫模型和多数自选召唤物模型用替代样式';
-/** Where a machine without the client gets the local art (docs/operations/DEPLOY.md §6「本地客户端素材」); shown by doctor (setup's row,
+/** Where a machine without the client gets the local art (docs/development/ASSETS.md「本地客户端素材」); shown by doctor (setup's row,
  * printed on every start by scripts/launch.mjs, only points to that section). */
 export const LOCAL_ART_COPY_HINT = '没有客户端的服务器可以从同一版本的整合包（完整包）复制 public/assets/local 和 data/local-assets.json';
 
@@ -455,7 +455,7 @@ async function main() {
     if (!client) {
       if (already && local.board3d && !local.tiles && !opts.check) cropBoardTiles(log);
       add(already ? 'ok' : 'skip', '本地客户端美术（可选）', already ? `已提取 ${local.count} 项`
-        : `${opts.game ? `找不到 ${opts.game}` : '未检测到本机明日方舟客户端'}：${LOCAL_ART_FALLBACK}（见 docs/operations/DEPLOY.md 第 6 节）`);
+        : `${opts.game ? `找不到 ${opts.game}` : '未检测到本机明日方舟客户端'}：${LOCAL_ART_FALLBACK}（见 docs/development/ASSETS.md）`);
     } else if (!client.autochess) {
       add(already ? 'ok' : 'warn', '本地客户端美术（可选）', `${client.kind} 客户端缺少卫戍协议资源（请在游戏内下载全部资源）：${client.path}`);
     } else if (already && opts.local !== 'force') {

@@ -28,8 +28,8 @@
 //   * Persister / FileStateStore (server/persist.js, server/stateFile.js): SP_STATE_FILE (default .state/server-<PORT>:
 //     `.state/server-<PORT>/` sharded directory layout, `off` disables) keeps sessions, rooms and running matches across
 //     restarts; restored before listening, final write on graceful shutdown. It must not sit in a public directory.
-//   * Announcement reader (server/announcement.js): SP_ANNOUNCEMENT_FILE (default ROOT/announcement.json) or the
-//     central source SP_ANNOUNCEMENT_URL (SP_ANNOUNCEMENT_POLL_MS) → GET /api/announcement.
+//   * Announcement reader (server/announcement.js): central panel feed by default (http/config.js);
+//     SP_ANNOUNCEMENT_SOURCE=file explicitly selects SP_ANNOUNCEMENT_FILE → GET /api/announcement.
 //   * Assets CDN (SP_ASSETS_CDN + .assets-manifest.json / .assets-cdn-version / CDN /_v/latest): static.js rewrites
 //     art URLs to the CDN; /healthz reports the resolved release.
 //   * Lobby: 同盟匹配 (matchmaking.js), the room status projection (roomStatus.js) and the persistence checkpoints
@@ -41,7 +41,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
@@ -69,7 +69,8 @@ export {
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object, wsCompression?: boolean | string,
  *   publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string,
- *   announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
+ *   announcementSource?: 'panel' | 'file', announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
+ *   announcementSiteId?: string, announcementPortalUrl?: string,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
@@ -88,6 +89,7 @@ export {
 export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
   const log = opts.log || makeLogger(!!opts.quiet);
+  const announcementOptions = announcementOptionsFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
@@ -165,11 +167,8 @@ export async function startServer(opts = {}) {
   }
 
   const allowStatus = createStatusLimiter({ trustProxy: parseTrustProxy(opts.trustProxy ?? process.env.TRUST_PROXY) });
-  const readAnnouncement = createAnnouncementReader({
-    filePath: path.resolve(ROOT, opts.announcementFile ?? process.env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json'), log,
-    announcementUrl: opts.announcementUrl ?? process.env.SP_ANNOUNCEMENT_URL,
-    pollMs: Number(process.env.SP_ANNOUNCEMENT_POLL_MS) || undefined,
-  });
+  const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
+  log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
@@ -178,7 +177,7 @@ export async function startServer(opts = {}) {
   const server = http.createServer(createRequestHandler({
     serveStatic,
     health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest },
-    log, allowStatus, readAnnouncement,
+    log, allowStatus, readAnnouncement, announcementSource: announcementOptions.source,
   }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });

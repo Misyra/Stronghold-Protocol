@@ -1,6 +1,6 @@
 # 启动与部署脚本
 
-从仓库根目录运行脚本；完整流程见[部署指南](../docs/operations/DEPLOY.md)。
+从仓库根目录运行脚本；完整流程统一见[部署指南](../docs/operations/DEPLOY.md)，Windows 自启见[家用开服](../docs/operations/HOME_SERVER.md)，公告来源见[公告接入](../docs/operations/ANNOUNCEMENTS.md)。
 
 | 文件 | 用途 |
 |---|---|

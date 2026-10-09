@@ -178,7 +178,7 @@ function withProps(value, extra) {
  * order, pool, schedulers) or transient (clocks, view plumbing, timers, battle objects).
  */
 const MATCH_FIELDS = Object.freeze([
-  'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'battlePrefix', 'timerScale', 'gameSpeed',
+  'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
@@ -188,7 +188,7 @@ const MATCH_FIELDS = Object.freeze([
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
 const PLAYER_FIELDS = Object.freeze([
   'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'alive', 'lp', 'bandId', 'funds',
-  'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
+  'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult',
@@ -316,7 +316,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   if (typeof createRngFromState !== 'function') throw new TypeError('restoreMatch: createRngFromState required');
 
   const now = m.sched.now();
-  for (const k of MATCH_FIELDS) if (k !== 'round') m[k] = decodeState(doc[k]);
+  for (const k of MATCH_FIELDS) if (k !== 'round') m[k] = k === 'aiPicksLast' ? doc[k] === true : decodeState(doc[k]);
   m.round = Number(doc.round) || 0;
   m.phase = doc.phase;
   m.ended = false;
@@ -369,7 +369,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   for (const p of players) {
     const ps = m.players.get(p.playerId);
     for (const k of PLAYER_FIELDS) {
-      if (k === 'playerId') continue;
+      if (k === 'playerId' || (!Object.hasOwn(p, k) && (k === 'ops' || k === 'personalChoice'))) continue;
       ps[k] = decodeState(p[k]);
     }
     if (ps._tempDue === null || !(ps._tempDue instanceof Map)) ps._tempDue = new Map();

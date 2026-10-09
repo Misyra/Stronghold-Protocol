@@ -56,6 +56,9 @@ export function sessionDoc(s, now) {
     name: s.name,
     roomCode: s.roomCode || null,
     loadout: s.loadout || null,
+    ops: s.ops || null,
+    notOwned: s.notOwned || null,
+    diy: s.diy || null,
     notice: s.notice || null,
     pendingResult: s.pendingResult || null,
     resumeWindowMs: typeof s.resumeWindowMs === 'number' && s.resumeWindowMs > 0 ? s.resumeWindowMs : null,
@@ -72,6 +75,9 @@ function seatDoc(seat) {
     seat: seat.seat, playerId: seat.playerId, name: seat.name, isBot: !!seat.isBot,
     ready: !!seat.ready, left: !!seat.left, connected: !!seat.connected && !seat.left,
     loadout: seat.loadout || null,
+    ops: seat.ops || null,
+    notOwned: seat.notOwned || null,
+    diy: seat.diy || null,
   };
 }
 
@@ -81,6 +87,7 @@ export function roomDoc(room) {
     code: room.code,
     mode: room.mode,
     difficulty: room.difficulty,
+    aiPicksLast: room.aiPicksLast === true,
     hostId: room.hostId || null,
     ownerKey: room.ownerKey || null,
     matchKey: room.matchKey || null,
@@ -150,6 +157,9 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       resumeWindowMs: windowMs,
       roomCode: s.roomCode,
       loadout: s.loadout,
+      ops: s.ops,
+      notOwned: s.notOwned,
+      diy: s.diy,
       addr: s.addr,
       notice: s.notice,
       pendingResult: s.pendingResult,

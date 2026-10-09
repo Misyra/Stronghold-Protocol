@@ -361,3 +361,23 @@ test('a checkpoint whose player lost their session is not resumed (room stays in
   assert.equal(srvB.lobby.rooms.size, 0, 'no room without a session');
   assert.equal(srvB.registry.size, 0, 'no session either');
 });
+
+
+test('operator potential and development survive session and room metadata recovery', () => {
+  const now = Date.now();
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const player = registry.create('A');
+  player.ops = { char_003_kalts: { potential: 2, cultivate: 0 } };
+  lobby.create(player, { mode: 'coop', difficulty: 'NORMAL' });
+  lobby.setAiPicksLast(player, { on: true });
+  const doc = snapshotServer({ registry, lobby, now });
+  const registry2 = new SessionRegistry();
+  const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  try {
+    assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now, log: quietLog }).ok, true);
+    assert.equal(lobby2.getRoom(player.roomCode).aiPicksLast, true);
+    assert.deepEqual(registry2.byId(player.playerId).ops, player.ops);
+    assert.deepEqual(lobby2.getRoom(player.roomCode).seatOf(player.playerId).ops, player.ops);
+  } finally { lobby.shutdown(); lobby2.shutdown(); }
+});

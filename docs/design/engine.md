@@ -198,6 +198,11 @@ living summons owned by that operator. Sleeping or otherwise unselectable enemie
 the condition for activation: 死芒 S2 still links inside its own effect range. Other registered summon areas retain
 the existing per-tick behavior. The optional flag defaults to false for compatibility.
 
+赤刃明霄陈 S3 also registers selectable air targets in its expanded attack grid for `ACTIVE_RANGE` automation
+(§28.26): its sword wave can hit flyers while its normal attacks remain ground-only. The existing operation cooldown,
+silence and control checks apply. [ASSUMED] The activation area is that grid plus permanent attack-range extension,
+not every tile the roaming wave might eventually reach.
+
 
 0.2.3 echo/counter interaction (DESIGN §28.24): recursively earned “余音” pulses are drained FIFO by that echo in the
 same call, retaining the earned attack value and the lethal-hit pulse. [ASSUMED] This local order avoids exhausting

@@ -87,7 +87,8 @@ export class MatchIntents {
    * band and 机变 effects — computed exactly by the shared sim. The player's battle input after the onBattleStart meta
    * handlers (`ev.preview: true`, no enemies — those handlers must not change the match for a preview) builds a Battle
    * of the battle's options that is started (initial deployment + battleStart hooks), read and dropped: it is never
-   * stepped, so skills and timed effects do not show. Pushed to the player as `m.unitStats { seq, round, units }`
+   * stepped: deployment skills contribute their initial stats but their timers do not advance. No SP / skill timer is
+   * sent, and the real battle gets fresh units. Pushed to the player as `m.unitStats { seq, round, units }`
    * (units: shared/protocol.js unitStatsEntry, board operators and summons by uid); cached per input (a build costs
    * ≈ 0.3–0.7 ms). Prep phases only (ROUND_START, 机变, PREP); a battle's live stats come from the browser's own sim.
    * @param {PlayerState} ps @param {number|null} seq echoed (the client keeps the newest answer)

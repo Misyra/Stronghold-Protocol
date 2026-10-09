@@ -17,6 +17,25 @@ function field({ skillIndex = 2, second = false, unite = false } = {}) {
   const h = makeBattle(config);h.step();return { h, u: h.unit(1), e: h.enemies()[0] };
 }
 function done(h) { checkInvariants(h.b); assert.deepEqual(h.b.errors, []); }
+for (const elite of [false, true]) test(`rear player's 蕾缪安 S3 locks and spends ammo on the front player's wanted target (elite=${elite})`, () => {
+  const h = makeBattle({ kind: 'unite', autoFinish: false, flags: { startOpCooldown: 3 },
+    hooks: ['ammoUsed'], captureNoisy: true,
+    defs: { enemies: { target: enemyRec({ key: 'target', rank: 'ELITE', hp: 1e9, atk: 0, speed: 0 }) } },
+    players: [
+      { playerId: 'front', seat: 0, side: 'L', colOffset: 0, bonds: {},
+        units: [{ kind: 'chess', uid: 1, chessId: 'chess_char_2_01_a', row: 9, col: 7 }] },
+      { playerId: 'rear', seat: 1, side: 'L', colOffset: 0, bonds: {},
+        units: [{ kind: 'chess', uid: 2, chessId: elite ? 'chess_char_6_01_b' : LEM, row: 12, col: 2,
+          skillIndex: 2, carryState: { sp: 999 } }] },
+    ], enemies: [{ key: 'target', pos: [9, 8] }],
+  });
+  h.step(); const u = h.unit(2), e = h.enemies()[0];
+  assert.equal(u.ownerId, 'rear'); assert.equal(h.b.enemiesInKeys(u.baseRangeKeys, u, u.profile).length, 0);
+  assert.ok(h.runUntil(() => h.hooksOf('ammoUsed').some(c => c.unit === u), 25));
+  assert.ok(e.findBuff('lemuen:wanted')); assert.ok(u.mem.lemLocks.some(l => l.e === e));
+  assert.ok(u.skill.activations > 0); done(h);
+});
+
 for (const skillIndex of [0, 1, 2]) for (const unite of [false, true]) {
   test(`通缉 opens S${skillIndex + 1} outside original range (unite=${unite})`, () => {
     const { h, u, e } = field({ skillIndex, unite });

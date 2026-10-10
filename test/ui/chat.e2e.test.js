@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { startServer } from '../../server/index.js';
 import { StubMatch } from '../../server/match/StubMatch.js';
 import { Client, hasChrome, sleep } from '../e2e/client.mjs';
@@ -7,8 +10,14 @@ import { Client, hasChrome, sleep } from '../e2e/client.mjs';
 test('real browser: hidden when disabled, Unicode limit, IME Enter, masked send, mute countdown and reconnect', {
   skip: process.env.SP_E2E !== '1' || !hasChrome(), timeout: 60000,
 }, async t => {
-  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, chatEnabled: true, workers: 0, MatchClass: StubMatch });
-  t.after(() => server.close());
+  const chatLogDir = mkdtempSync(path.join(tmpdir(), 'sp-chat-browser-'));
+  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, chatEnabled: true, chatLogDir, workers: 0, MatchClass: StubMatch });
+  t.after(async () => {
+    await server.close();
+    assert.equal(path.dirname(path.resolve(chatLogDir)), path.resolve(tmpdir()));
+    assert.ok(path.basename(chatLogDir).startsWith('sp-chat-browser-'));
+    rmSync(chatLogDir, { recursive: true, force: true });
+  });
   const puppeteer = (await import('puppeteer-core')).default;
   const c = new Client(puppeteer, server.url, 'chat-ui', { prefix: 'chat-ui' });
   t.after(() => c.close()); await c.open();

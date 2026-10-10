@@ -54,6 +54,7 @@ import { Persister, restoreServer } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
+import { ChatLog } from './chatLog.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from './assetVersion.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
@@ -71,7 +72,7 @@ export {
  *   publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string,
  *   announcementSource?: 'agent' | 'panel' | 'file', announcementAgentFile?: string, announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
  *   announcementSiteId?: string, announcementPortalUrl?: string,
- *   chatEnabled?: boolean,
+ *   chatEnabled?: boolean, chatLogDir?: string,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
@@ -84,7 +85,7 @@ export {
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPackRegistry>,
- *                     workerPool: SimulationPool | null, store: object | null, persister: Persister | null,
+ *                     workerPool: SimulationPool | null, store: object | null, persister: Persister | null, chatLog: ChatLog,
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -92,6 +93,8 @@ export async function startServer(opts = {}) {
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
+  const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
+    publicDirs: [publicDir, dataDir, sharedDir, packsDir], log });
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
@@ -105,7 +108,7 @@ export async function startServer(opts = {}) {
     throw new RangeError('workers must be 0..32');
   }
   const workerPool = ownsWorkerPool ? (workerConfig.size > 0 ? new SimulationPool({ data, ...workerConfig }) : null) : opts.workerPool;
-  const { registry, lobby, network } = createSessionStack({ ...opts, workerPool }, { data, log });
+  const { registry, lobby, network } = createSessionStack({ ...opts, workerPool }, { data, log, chatLog });
   // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
@@ -239,6 +242,7 @@ export async function startServer(opts = {}) {
       }
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       network.close();
+      await chatLog.close();
       if (ownsWorkerPool) await workerPool?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
@@ -251,7 +255,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, workerPool, store, persister, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, workerPool, store, persister, chatLog, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

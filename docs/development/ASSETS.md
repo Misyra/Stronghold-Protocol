@@ -490,15 +490,35 @@ after app boot, including profiles with an older disabled `preload` setting. It 
 visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
 effects, music and tutorial illustrations and is checked by default. The choice persists in `preloadOptional`;
 profiles without a saved choice default to true, while explicit saved choices are retained.
-Voices default to the current `voiceLang`; the separate `preloadAllVoices` checkbox opts into both languages.
+The manager exposes Chinese/Japanese buttons synchronized with the game's `voiceLang` setting (Chinese by default);
+the separate `preloadAllVoices` checkbox opts into both languages and is disabled when optional preloading is off.
 Switching language downloads only missing voices. Other cached languages remain available and exportable, and
 ZIP imports may still restore every language.
 Closing the manager keeps downloads running; pausing or disabling preload stops this visit's downloads and keeps
 verified files. The next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
+Each preload fetch has a 30-second deadline covering both headers and the complete response body, with at most two
+retries for network failures, timeouts, HTTP 408/429 and 5xx. Backoff starts at 500 ms and doubles; Retry-After is
+honored up to 30 seconds. Pausing interrupts downloads/backoff; 404, integrity and storage errors are not retried blindly.
+The queue prioritizes resources referenced by the current match (operators, enemies/aliases and board art) as match
+snapshots arrive. During COMBAT, queued required downloads use one lane and optional downloads wait for combat to end;
+already-running requests finish normally. Outside combat the existing bounded concurrency resumes.
+
+The worker also saves complete game-loaded resources listed in the current manifest with a verifiable content hash,
+after checking SHA-1/known size. Concurrent game/preload requests share one in-flight fetch and receive separate bodies;
+media routes map to canonical manifest files and retain Range support. Worker fetches use a 25-second deadline without
+their own retry loop, leaving preload retries to the page. Unlisted files, other revision queries and corrupt/partial
+responses never enter this read-through cache. The page remains the sole index writer and adopts verified worker-written
+entries through the existing interrupted-download recovery path. Worker writes are suspended/drained before archive
+operations or cache deletion, and in-flight downloads from an earlier generation cannot write after cleanup.
+Disabling bulk preloading keeps cached resources usable; resources actually requested by the game may still be saved.
+
 The manager displays per-category counts and sizes and supports ZIP export/import. Export includes only cached files,
-as ZIP v2 with a full SHA-1 digest and its 12-hex fingerprint; legacy ZIP v1 with SHA-256 remains importable.
+including verified game-loaded files not yet adopted into the preload index. Unindexed stale bytes are excluded;
+indexed current files with damaged contents fail export. Equivalent CDN aliases are exported once per canonical path,
+and conflicting contents for that path fail export instead of producing an unimportable package.
+Packages use ZIP v2 with a full SHA-1 digest and its 12-hex fingerprint; legacy ZIP v1 with SHA-256 remains importable.
 Import validates each entry's header, CRC, size and digest before writing that entry, then installs
 only files matching the current server manifest by canonical asset path, content hash and known size. This allows
 unchanged files from older packages or different CDN origins to be reused; missing files download incrementally.
@@ -506,8 +526,11 @@ For CDN-only installs, the publisher records SHA-1 fingerprints and sizes in `.a
 the server uses them only for matching per-file CDN URL versions. The public immutable hash manifest keeps its
 original `{ tag, hashes }` response. Old ZIPs exported under synthetic server hashes still contain actual content
 digests and become reusable after this metadata is deployed. Existing cache bodies are verified and adopted
-without downloading them again. Synthetic server fingerprints cannot authorize ZIP imports. Both archive and decompressed totals are capped at 2 GiB;
-one resource is capped at 24 MiB. Cancelled or failed imports keep completed verified files; failed entries are never
+without downloading them again. Synthetic server fingerprints cannot authorize ZIP imports.
+Host-rewritten CSS/JSON with synthetic fingerprints are intentionally skipped during import and supplemented from
+the current server; an exported package can therefore restore fewer files than its entry count without failing.
+Both archive and decompressed totals are capped at 2 GiB; one resource is capped at 24 MiB.
+Cancelled or failed imports keep completed verified files; failed entries are never
 written. Small entries run in up to four concurrent lanes within a 1 MiB raw-byte budget, while larger entries run
 exclusively. ZIP reads reuse two 16 MiB blocks (32 MiB total), and verified digests are reused for cache writes.
 Successful imports enable the saved preload setting and incrementally fetch missing selected resources.
@@ -538,6 +561,9 @@ When `public/assets` exists, the same file also checks the generated output:
 
 `node --test test/resources/cdn-import.test.js` checks CDN-only ZIP reuse, stale local files, cache adoption,
 manifest validation and offline metadata publishing without changing CDN keys.
+`node --test test/resources/network-scheduling.test.js` covers deadlines, retry cancellation, combat scheduling,
+read-through integrity, in-flight sharing and cleanup races. `RESOURCE_E2E=1 node --test test/resources/browser.e2e.test.js`
+also checks voice switching, retained language caches, game-loaded offline resources and the mobile manager layout.
 
 `test/feedback1d-models.test.js` (enemies) and `test/local-token-models.test.js` (tokens) check the local-client overlays: the plan, the committed metadata, the manifest without `/assets/local/` URLs, the client's choice of model; `test/local-extract.test.js` the extractor's job table and helpers.
 

@@ -27,7 +27,7 @@ const FILES = [
 ];
 
 /** A minimal install: the client modules, the worker and a fixture asset tree. */
-function makeInstall() {
+function makeInstall({ voices = false, dynamic = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-e2e-res-'));
   const publicDir = path.join(dir, 'public');
   const dataDir = path.join(dir, 'data');
@@ -38,7 +38,10 @@ function makeInstall() {
   fs.cpSync(path.join(ROOT, 'public', 'css'), path.join(publicDir, 'css'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'public', 'index.html'), path.join(publicDir, 'app.html'));
   fs.copyFileSync(path.join(ROOT, 'public', 'resource-sw.js'), path.join(publicDir, 'resource-sw.js'));
-  for (const f of FILES) {
+  const voiceFiles = voices ? ['cn', 'jp'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
+  const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
+    { url: '/assets/local/map/common/materials.json', body: '{ "material": true }' }] : [];
+  for (const f of [...FILES, ...voiceFiles, ...dynamicFiles]) {
     const abs = path.join(publicDir, f.url);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, f.body);
@@ -46,8 +49,8 @@ function makeInstall() {
   fs.writeFileSync(path.join(dataDir, 'assets.json'), JSON.stringify({
     version: 1,
     hash: 'e2e0000',
-    ui: { 'e2e/panel': FILES[0].url },
-    audio: { bgm: { e2e: { loop: FILES[1].url } } },
+    ui: { 'e2e/panel': FILES[0].url, ...(dynamic ? { dynamic: dynamicFiles.map((f) => f.url) } : {}) },
+    audio: { bgm: { e2e: { loop: FILES[1].url } }, ...(voices ? { voice: voiceFiles.map((f) => f.url) } : {}) },
     chars: { char_e2e: { portrait: FILES[2].url } },
   }));
   fs.writeFileSync(path.join(publicDir, 'index.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
@@ -61,10 +64,13 @@ function makeInstall() {
   let enabled = false;
   let optional = true;
   let allVoices = false;
+  let voiceLang = 'cn';
   const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
-    <\${ResourceHost} enabled=\${enabled} optional=\${optional} allVoices=\${allVoices} onAllVoices=\${(v) => { allVoices = v; void syncResources(enabled, optional, "cn", v); paint(); }} onChange=\${(v) => set(v)}
-      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, "cn", allVoices); paint(); }} /></div>\`, document.getElementById('app'));
-  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional, "cn", allVoices); paint(); };
+    <\${ResourceHost} enabled=\${enabled} optional=\${optional} allVoices=\${allVoices} voiceLang=\${voiceLang}
+      onVoiceLang=\${(v) => { voiceLang = v; void syncResources(enabled, optional, v, allVoices); paint(); }}
+      onAllVoices=\${(v) => { allVoices = v; void syncResources(enabled, optional, voiceLang, v); paint(); }} onChange=\${(v) => set(v)}
+      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, voiceLang, allVoices); paint(); }} /></div>\`, document.getElementById('app'));
+  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional, voiceLang, allVoices); paint(); };
   window.__res = {
     resourceState, syncResources, clearResources, startResources, exportResources, importResources,
     state: () => ({ ...resourceState(), enabled }),
@@ -222,13 +228,13 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForSelector('.resource-manager');
     await page.waitForFunction("window.__res.state().phase === 'paused'");
     assert.equal(await page.evaluate(() => window.__res.state().enabled), false, 'opening the manager does not enable downloads');
-    assert.equal(await page.$eval('.resource-choice input', (el) => el.checked), true, 'both tiers are selected by default');
-    await page.click('.resource-choice input');
+    assert.equal(await page.$eval('.resource-tier .resource-choice input', (el) => el.checked), true, 'both tiers are selected by default');
+    await page.click('.resource-tier .resource-choice input');
     await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
     await page.waitForFunction('window.__res.state().selectionComplete === true');
     assert.equal(await page.evaluate(() => window.__res.state().complete), false, 'optional audio is not fetched');
     assert.equal(await page.evaluate(() => window.__res.state().done), 2);
-    await page.click('.resource-choice input');
+    await page.click('.resource-tier .resource-choice input');
     await page.waitForFunction('window.__res.state().complete === true', { timeout: 30000 });
     await page.waitForFunction("document.querySelector('.res-pill__state').textContent === '全部已保存'");
     const body = await page.$eval('.resource-manager', (el) => el.textContent);
@@ -357,6 +363,90 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
   });
 
+  test('Chrome imports legacy compressed packages, reports invalid packages and preserves verified progress on corruption/cancel', async (t) => {
+    const { page, problems } = await open(); t.after(() => page.close()); await ready(page, problems);
+    const result = await page.evaluate(async (files) => {
+      const manager = await import('/js/resources/index.js');
+      const { importResourceZip, ARCHIVE_MANIFEST } = await import('/js/resources/archive.js');
+      const { BlobReader, BlobWriter, ZipWriter } = await import('/vendor/zip.module.js');
+      const digest = async (body, algorithm) => [...new Uint8Array(await crypto.subtle.digest(algorithm, new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const make = async (version, corrupt = false) => {
+        const writer = new ZipWriter(new BlobWriter(), { useWebWorkers: false, level: version === 1 ? 6 : 0 });
+        const rows = [];
+        for (const [i, file] of files.entries()) {
+          const sha1 = await digest(file.body, 'SHA-1');
+          rows.push({ path: `resources/${i}`, url: file.url, hash: sha1.slice(0, 12), size: file.body.length,
+            ...(version === 1 ? { sha256: await digest(file.body, 'SHA-256') } : { sha1 }) });
+          await writer.add(`resources/${i}`, new BlobReader(new Blob([corrupt && i === 1 ? 'x'.repeat(file.body.length) : file.body])));
+        }
+        await writer.add(ARCHIVE_MANIFEST, new BlobReader(new Blob([JSON.stringify({ format: 'stronghold-resource-zip', version, files: rows })])));
+        return writer.close();
+      };
+      await manager.clearResources();
+      let invalid = '';
+      try { await manager.importResources(new Blob(['not a ZIP'])); } catch (err) { invalid = err.message; }
+      const invalidState = manager.resourceState();
+      const legacy = await manager.importResources(await make(1));
+      await manager.syncResources(true);
+      await manager.clearResources();
+      const { store } = await manager.resourceContext();
+      let corruption = '';
+      try { await importResourceZip(store, await make(2, true), { concurrency: 1 }); } catch (err) { corruption = err.message; }
+      const afterCorruption = (await store.status()).count;
+      await manager.clearResources();
+      const controller = new AbortController(); let cancelled = '';
+      try {
+        await importResourceZip(store, await make(2), { concurrency: 1, signal: controller.signal,
+          onProgress: ({ done }) => { if (done === 1) controller.abort(); } });
+      } catch (err) { cancelled = err.name; }
+      const afterCancel = (await store.status()).count;
+      await manager.syncResources(false); await manager.clearResources();
+      return { invalid: !!invalid, invalidStatus: invalidState.archiveResult?.status, invalidError: invalidState.error,
+        legacyImported: legacy.imported, corruption, afterCorruption, cancelled, afterCancel };
+    }, FILES);
+    assert.equal(result.invalid, true); assert.equal(result.invalidStatus, 'error'); assert.equal(result.invalidError, true);
+    assert.equal(result.legacyImported, 3); assert.match(result.corruption, /校验失败/); assert.equal(result.afterCorruption, 1);
+    assert.equal(result.cancelled, 'AbortError'); assert.equal(result.afterCancel, 1);
+    assert.deepEqual(problems, []);
+  });
+
+  test('Chrome import supplements host-rewritten CSS/JSON only, and repeating the import needs no downloads', async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const install = makeInstall({ dynamic: true });
+    const local = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: install.publicDir,
+      dataDir: install.dataDir, store: null, log: { info() {}, warn() {}, error() {}, debug() {} } });
+    const page = await browser.newPage();
+    t.after(async () => { await page.close(); await local.close(); fs.rmSync(install.dir, { recursive: true, force: true }); });
+    const problems = []; page.on('pageerror', (err) => problems.push(err.message));
+    await page.goto(`${local.url}/index.html`); await ready(page, problems);
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
+    const exported = await page.evaluate(async () => {
+      const result = await window.__res.exportResources(); window.__package = result.blob;
+      await window.__res.clearResources(); return result.count;
+    });
+    assert.equal(exported, 5);
+    const requested = [];
+    local.server.on('request', (req) => { if (/\/(assets|fonts)\//.test(req.url)) requested.push(req.url); });
+    const result = await page.evaluate(async () => {
+      const outcome = await window.__res.importResources(window.__package);
+      return { imported: outcome.imported, skipped: outcome.skippedPackage, fingerprint: outcome.skipReasons.fingerprint };
+    });
+    await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
+    assert.deepEqual(result, { imported: 3, skipped: 2, fingerprint: 2 });
+    assert.equal(requested.length, 2);
+    assert.ok(requested.some((url) => url.endsWith('/fonts/fonts.css')));
+    assert.ok(requested.some((url) => url.endsWith('/assets/local/map/common/materials.json')));
+    requested.length = 0;
+    const repeat = await page.evaluate(async () => {
+      const outcome = await window.__res.importResources(window.__package);
+      return { imported: outcome.imported, already: outcome.already, skipped: outcome.skippedPackage };
+    });
+    await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
+    assert.deepEqual(repeat, { imported: 0, already: 3, skipped: 2 });
+    assert.deepEqual(requested, []); assert.deepEqual(problems, []);
+  });
+
   test('manager exposes storage and cleanup controls, preserving required resources and personal settings', async (t) => {
     const { page, problems } = await open(); t.after(() => page.close()); await ready(page, problems);
     await page.evaluate(async () => { await window.__res.clearResources(); window.__preload(true); });
@@ -371,6 +461,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.equal(required.done, required.total); assert.ok(required.done > 0);
     assert.deepEqual(required.settings, { voiceLang: 'jp', bgm: 0.23 });
     await page.waitForFunction('window.__res.state().phase === "ready"');
+    assert.equal(await page.$eval('.resource-manager__voice input', (el) => el.disabled), true);
+    await page.click('.resource-tier .resource-choice input');
+    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().optional');
     await page.click('.resource-manager__voice input');
     await page.waitForFunction('window.__res.state().allVoices');
     await page.waitForFunction('window.__res.state().phase === "ready"');
@@ -378,6 +471,60 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForFunction('!window.__res.state().clearing && window.__res.state().done === 0');
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('sp.pref.settings'))), required.settings);
     assert.deepEqual(await page.evaluate(async () => (await caches.keys()).filter((name) => name.startsWith('stronghold-resources-'))), []);
+    assert.deepEqual(problems, []);
+  });
+
+  test('voice tabs download Chinese by default, add Japanese on switch, retain both; game loads fill the verified cache', { timeout: 60000 }, async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const install = makeInstall({ voices: true });
+    const local = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: install.publicDir,
+      dataDir: install.dataDir, store: null, log: { info() {}, warn() {}, error() {}, debug() {} } });
+    const page = await browser.newPage();
+    t.after(async () => { await page.close(); await local.close(); fs.rmSync(install.dir, { recursive: true, force: true }); });
+    const counts = { cn: 0, jp: 0 };
+    local.server.on('request', (req) => { const lang = /\/voice\/(cn|jp)\//.exec(req.url)?.[1]; if (lang) counts[lang]++; });
+    const problems = []; page.on('pageerror', (err) => problems.push(err.message));
+    await page.goto(`${local.url}/index.html`); await ready(page, problems);
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction('window.__res.state().selectionComplete && window.__res.state().phase === "ready"');
+    assert.deepEqual(counts, { cn: 1, jp: 0 });
+    await page.waitForFunction('!!navigator.serviceWorker.controller');
+    await page.evaluate(() => window.__res.click()); await page.waitForSelector('.resource-voice-tabs');
+    await page.click('.resource-voice-tabs button:nth-child(2)');
+    await page.waitForFunction('window.__res.state().voiceLang === "jp" && window.__res.state().phase === "ready"');
+    assert.deepEqual(counts, { cn: 1, jp: 1 });
+    await page.click('.resource-voice-tabs button:first-child');
+    await page.waitForFunction('window.__res.state().voiceLang === "cn" && window.__res.state().phase === "ready"');
+    assert.deepEqual(counts, { cn: 1, jp: 1 }, 'switching back reuses the Chinese voice');
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    const layout = await page.$eval('.resource-modal', (el) => ({ width: el.getBoundingClientRect().width, overflow: el.scrollWidth > el.clientWidth + 1 }));
+    assert.ok(layout.width <= 390); assert.equal(layout.overflow, false);
+    const out = path.join(ROOT, '.state'); fs.mkdirSync(out, { recursive: true });
+    await page.screenshot({ path: path.join(out, 'resource-manager-mobile.png') });
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.screenshot({ path: path.join(out, 'resource-manager-desktop.png') });
+    // Clear pauses bulk downloads but keeps the worker: the next request comes only from the game.
+    await page.evaluate(async () => { await window.__res.clearResources(); });
+    await page.waitForFunction('!!navigator.serviceWorker.controller');
+    const jpUrl = await page.evaluate(async () => (await fetch('/data/resource-manifest.json').then((r) => r.json())).files.find((f) => f.url.includes('/voice/jp/')).url);
+    assert.equal(await page.evaluate((url) => fetch(url).then((r) => r.text()), jpUrl), 'jp-voice');
+    assert.equal(counts.jp, 2);
+    await page.setOfflineMode(true);
+    assert.equal(await page.evaluate((url) => fetch(url).then((r) => r.text()), jpUrl), 'jp-voice');
+    await page.setOfflineMode(false);
+    const gameExport = await page.evaluate(async () => {
+      const result = await window.__res.exportResources();
+      const { store } = await (await import('/js/resources/index.js')).resourceContext();
+      const { importResourceZip } = await import('/js/resources/archive.js');
+      await window.__res.clearResources();
+      const imported = await importResourceZip(store, result.blob);
+      return { count: result.count, imported: imported.imported };
+    });
+    assert.deepEqual(gameExport, { count: 1, imported: 1 }, 'game-cached Japanese voice exports even before index adoption, with Chinese selected');
+    await page.click('.resource-voice-tabs button:nth-child(2)');
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction('window.__res.state().selectionComplete && window.__res.state().phase === "ready"');
+    assert.equal(counts.jp, 2, 'bulk preload verifies and adopts game-cached bytes without downloading again');
     assert.deepEqual(problems, []);
   });
 

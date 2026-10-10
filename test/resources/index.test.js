@@ -393,7 +393,7 @@ test('the worker entry (public/resource-sw.js) intercepts resources only', async
   Object.defineProperty(globalThis, 'caches', { value: caches, configurable: true, writable: true });
   t.after(() => { for (const [k, d] of saved) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; } });
   await import('../../public/resource-sw.js');
-  assert.deepEqual(Object.keys(handlers).sort(), ['activate', 'fetch', 'install'], 'the worker registers its listeners');
+  assert.deepEqual(Object.keys(handlers).sort(), ['activate', 'fetch', 'install', 'message'], 'the worker registers its listeners');
 
   const answered = [];
   const fire = (url, method = 'GET') => {

@@ -90,18 +90,28 @@ async function extract(entry, limit, signal, source, timings) {
 export async function exportResourceZip(store, { signal, onProgress } = {}) {
   checkAbort(signal);
   const status = await store.status();
-  const files = store.files.filter((f) => store.eligible(f) && status.present.has(store.keyOf(f.url)));
-  if (!files.length) throw new Error('没有已缓存的资源，请先预载或导入资源');
   const cache = await store.caches.open(store.cacheName);
+  const cached = new Set((await cache.keys()).map((request) => request.url));
+  // Game requests also populate this cache, without updating the page-owned index. Recover those bytes by digest;
+  // an unindexed older version is simply unavailable, while an indexed current file failing verification is damage.
+  const files = store.files.filter((f) => store.eligible(f) && (status.present.has(store.keyOf(f.url))
+    || (CONTENT_HASH_RE.test(f.hash || '') && cached.has(store.keyOf(f.url)))));
+  if (!files.length) throw new Error('没有已缓存的资源，请先预载或导入资源');
   const writer = new ZipWriter(new BlobWriter('application/zip'), { ...OPTIONS, level: 0 });
   const rows = [];
+  const paths = new Map();
   let total = 0;
+  let done = 0;
   try {
     onProgress?.({ phase: 'export', done: 0, total: files.length });
     for (const file of files) {
       checkAbort(signal);
       const response = await cache.match(store.keyOf(file.url));
-      if (!response || response.type === 'opaque' || !response.ok) throw new Error('缓存资源不可读取，请重新预载');
+      if (!response || response.type === 'opaque' || !response.ok) {
+        if (status.present.has(store.keyOf(file.url))) throw new Error('缓存资源不可读取，请重新预载');
+        onProgress?.({ phase: 'export', done: ++done, total: files.length });
+        continue;
+      }
       const chunks = [];
       let size = 0;
       await response.body.pipeTo(new WritableStream({ write(chunk) {
@@ -111,17 +121,28 @@ export async function exportResourceZip(store, { signal, onProgress } = {}) {
         chunks.push(chunk);
       } }), { signal });
       const blob = new Blob(chunks);
-      total += blob.size;
-      if (total > MAX_ARCHIVE_BYTES - MAX_MANIFEST_BYTES) throw new Error('资源包超过 2 GiB，请减少预载资源后导出');
       const digest = await resourceDigests(new Uint8Array(await blob.arrayBuffer()));
+      checkAbort(signal);
       if (CONTENT_HASH_RE.test(file.hash || '') && digest.hash !== file.hash) {
-        throw new Error(`缓存资源校验失败，请清理后重新预载：${file.url}`);
+        if (status.present.has(store.keyOf(file.url))) throw new Error(`缓存资源校验失败，请清理后重新预载：${file.url}`);
+        onProgress?.({ phase: 'export', done: ++done, total: files.length });
+        continue;
       }
-      const path = `resources/${rows.length}`;
-      rows.push({ path, url: resourcePath(file.url), hash: digest.hash, sha1: digest.sha1, size: blob.size });
-      await writer.add(path, new BlobReader(blob), { signal });
-      onProgress?.({ phase: 'export', done: rows.length, total: files.length });
+      const url = resourcePath(file.url);
+      const previous = paths.get(url);
+      if (previous && previous !== digest.sha1) throw new Error(`同一资源存在不同内容，无法导出：${url}`);
+      if (!previous) {
+        if (rows.length >= MAX_FILES) throw new Error('资源包文件数量超限');
+        total += blob.size;
+        if (total > MAX_ARCHIVE_BYTES - MAX_MANIFEST_BYTES) throw new Error('资源包超过 2 GiB，请减少预载资源后导出');
+        const path = `resources/${rows.length}`;
+        rows.push({ path, url, hash: digest.hash, sha1: digest.sha1, size: blob.size });
+        paths.set(url, digest.sha1);
+        await writer.add(path, new BlobReader(blob), { signal });
+      }
+      onProgress?.({ phase: 'export', done: ++done, total: files.length });
     }
+    if (!rows.length) throw new Error('没有已缓存的当前资源，请先预载或导入资源');
     const manifest = new Blob([JSON.stringify({ format: 'stronghold-resource-zip', version: 2,
       resourceVersion: store.manifest.version, files: rows })]);
     if (manifest.size > MAX_MANIFEST_BYTES) throw new Error('资源包清单过大');

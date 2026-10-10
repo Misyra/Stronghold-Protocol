@@ -40,7 +40,7 @@ import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
-import { TitleScreen, sanitizeName } from './screens/title.js';
+import { TitleScreen, sanitizeName, isValidName } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
 import { RoomScreen } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
@@ -57,7 +57,7 @@ import { AnnouncementBanner } from './ui/announcement.js';
 import { recordMatchResult } from './history/index.js';
 import { HistoryHost } from './ui/historyPanel.js';
 import { ResourceHost } from './ui/resourcePanel.js';
-import { APP_VERSION } from '../../shared/constants.js';
+import { APP_VERSION, ERR } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError } from './diag.js';
@@ -217,7 +217,13 @@ function wireNet() {
   });
   net.on('clock', (c) => store.set({ clock: { offset: c.offset, rtt: c.rtt, synced: c.synced } }));
   net.on('welcome', onWelcome);
-  net.on('helloError', (err) => toastError(err));
+  net.on('helloError', (err) => {
+    if (err.code === ERR.NICKNAME_SENSITIVE) {
+      identity.setEntered(false);
+      store.set((s) => ({ session: { ...s.session, entered: false } }));
+    }
+    toastError(err);
+  });
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
@@ -368,7 +374,7 @@ async function boot() {
 
   const pendingJoin = parseRoomParam(location.search);
   const savedName = sanitizeName(identity.loadName());
-  const entered = identity.wasEntered() && !!savedName;
+  const entered = identity.wasEntered() && isValidName(savedName);
   store.set((s) => ({
     me: { ...s.me, name: savedName },
     session: { entered },

@@ -1,5 +1,5 @@
 [Unit]
-Description=Stronghold read-only site management Agent
+Description=Stronghold monitoring and announcement Agent
 After=network.target
 
 [Service]
@@ -20,6 +20,7 @@ MemoryMax=384M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ReadWritePaths=/var/lib/stronghold-announcement
 ProtectHome=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077

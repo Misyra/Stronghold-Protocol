@@ -2,7 +2,7 @@
 // (中文 | English | every pack in public/i18n/, ui/lang.js; a title in an alphabetic script — English — is the big one and
 // the small wordmark above it hides).
 //
-// Pressing 开始 validates the nickname (1..NAME_MAX_LEN chars, no control characters), stores it,
+// Pressing 开始 first POSTs the nickname for server approval (no dictionary is delivered), then stores it,
 // marks this tab as "entered" (so reloads skip the title) and hands the name to net.js, which
 // sends `hello` (now, or as soon as the socket is open). The router then shows the lobby.
 //
@@ -10,8 +10,8 @@
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 
-import { useMemo, useState } from '../../vendor/hooks.module.js';
-import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
+import { useMemo, useState, useRef, useEffect } from '../../vendor/hooks.module.js';
+import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD, ERR_TEXT, ERR } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
 import { HistoryButton } from '../ui/historyPanel.js';
@@ -23,7 +23,7 @@ import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
 import { LangToggle, useLang } from '../ui/lang.js';
-import { t, N_ } from '../../../shared/i18n.js';
+import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
@@ -70,22 +70,51 @@ export function sanitizeName(raw) {
   return s;
 }
 
+/** @param {any} raw @returns {string | null} */
+export function nameError(raw) {
+  const name = sanitizeName(raw);
+  return !name ? N_('请输入博士代号') : null;
+}
 /** @param {any} raw @returns {boolean} */
-export const isValidName = (raw) => sanitizeName(raw).length > 0;
+export const isValidName = (raw) => nameError(raw) === null;
 
 /**
- * Enter the game shell with a nickname (title → lobby).
+ * Persist and enter only after server approval. A stale/unmounted attempt cannot commit.
  * @param {string} rawName
- * @returns {boolean} false when the name is invalid
+ * @param {{ signal?: AbortSignal, isCurrent?: () => boolean }} options
+ * @returns {Promise<boolean>}
  */
-export function enterSession(rawName) {
+export async function enterSession(rawName, { signal, isCurrent = () => true } = {}) {
   const name = sanitizeName(rawName);
-  if (!name) return false;
-  identity.saveName(name);
-  identity.setEntered(true);
-  store.set((s) => ({ me: { ...s.me, name }, session: { ...s.session, entered: true } }));
-  net.setName(name);
-  return true;
+  if (!isValidName(name)) return false;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) return false;
+  signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(abort, 8000);
+  try {
+    const response = await fetch('/api/nickname/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }), cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+    });
+    const result = await response.json();
+    if (controller.signal.aborted || !isCurrent()) return false;
+    if (!response.ok || result?.ok !== true) {
+      // Only known codes are interpreted; never display arbitrary response data.
+      throw new Error(result?.code === ERR.NICKNAME_SENSITIVE ? ERR_TEXT.NICKNAME_SENSITIVE : N_('昵称校验失败，请稍后重试'));
+    }
+    identity.saveName(name);
+    identity.setEntered(true);
+    store.set((s) => ({ me: { ...s.me, name }, session: { ...s.session, entered: true } }));
+    net.setName(name);
+    return true;
+  } catch (error) {
+    if (signal?.aborted || !isCurrent()) return false;
+    if (error?.message === ERR_TEXT.NICKNAME_SENSITIVE) throw error;
+    throw new Error(N_('昵称校验失败，请稍后重试'), { cause: error });
+  } finally {
+    clearTimeout(timer); signal?.removeEventListener('abort', abort);
+  }
 }
 
 // data/assets.json `ui` keys are 'group/key' (docs/development/ASSETS.md).
@@ -197,6 +226,14 @@ export function TitleScreen() {
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
+  const [checking, setChecking] = useState(false);
+  const [serverError, setServerError] = useState(() => conn.lastError?.code === ERR.NICKNAME_SENSITIVE ? ERR_TEXT.NICKNAME_SENSITIVE : null);
+  const attempt = useRef(null);
+  useEffect(() => () => { attempt.current?.abort(); attempt.current = null; }, []);
+  const editName = value => {
+    attempt.current?.abort(); attempt.current = null;
+    setChecking(false); setServerError(null); setName(value);
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const assetsSettled = useData('assets');
@@ -213,10 +250,20 @@ export function TitleScreen() {
   // CSS ridgelines only when there is no ridge art (avoids a swap flash when the art arrives).
   const cssRidges = assetsSettled && (!ridges || ridgesFailed);
 
+  const error = serverError || nameError(name);
   const valid = isValidName(name);
-  const start = () => {
-    if (!valid) { toast(t('请输入博士代号'), 'warn'); return; }
-    enterSession(name);
+  const start = async () => {
+    if (attempt.current) return;
+    if (!valid) { toast(t(error), 'warn'); return; }
+    const request = new AbortController();
+    attempt.current = request; setChecking(true); setServerError(null);
+    try {
+      await enterSession(name, { signal: request.signal, isCurrent: () => attempt.current === request });
+    } catch (error) {
+      if (attempt.current === request) setServerError(error.message);
+    } finally {
+      if (attempt.current === request) { attempt.current = null; setChecking(false); }
+    }
   };
 
   const online = conn.status === 'online' || conn.status === 'connected';
@@ -276,8 +323,14 @@ export function TitleScreen() {
         </div>` : null}
         <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
           placeholder=${t('输入你的代号（最多 {NAME_MAX_LEN} 字）', { NAME_MAX_LEN })} autoFocus=${!touchUi}
-          onInput=${setName} onEnter=${start} />
-        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid} onClick=${start}>${t('开始')}<//>
+          onInput=${editName} onEnter=${start} invalid=${!!name && !!error} hint=${name && error ? t(error) : null} />
+        ${serverError === ERR_TEXT.NICKNAME_SENSITIVE ? html`<p class="title-name-feedback" role="status">
+          ${tParts('如果你认为昵称没有问题，可以{feedback}。', {
+            feedback: html`<a href="https://github.com/sganggs/Stronghold-Protocol/issues/new?template=BugReport.yml"
+              target="_blank" rel="noopener noreferrer">${t('前往 GitHub 反馈')}</a>`,
+          })}
+        </p>` : null}
+        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid || checking} onClick=${start}>${checking ? t('正在校验昵称') : t('开始')}<//>
         <div class="title-conn">
           <span class=${`status-dot ${dotClass}`}></span>
           <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>

@@ -28,7 +28,7 @@
 //   * Persister / FileStateStore (server/persist.js, server/stateFile.js): SP_STATE_FILE (default .state/server-<PORT>:
 //     `.state/server-<PORT>/` sharded directory layout, `off` disables) keeps sessions, rooms and running matches across
 //     restarts; restored before listening, final write on graceful shutdown. It must not sit in a public directory.
-//   * Announcement reader (server/announcement.js): central panel feed by default (http/config.js);
+//   * Announcement reader (server/announcement.js): probe-managed announcement file by default (http/config.js);
 //     SP_ANNOUNCEMENT_SOURCE=file explicitly selects SP_ANNOUNCEMENT_FILE → GET /api/announcement.
 //   * Assets CDN (SP_ASSETS_CDN + .assets-manifest.json / .assets-cdn-version / CDN /_v/latest): static.js rewrites
 //     art URLs to the CDN; /healthz reports the resolved release.
@@ -69,7 +69,7 @@ export {
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object, wsCompression?: boolean | string,
  *   publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string,
- *   announcementSource?: 'panel' | 'file', announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
+ *   announcementSource?: 'agent' | 'panel' | 'file', announcementAgentFile?: string, announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
  *   announcementSiteId?: string, announcementPortalUrl?: string,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
@@ -166,6 +166,7 @@ export async function startServer(opts = {}) {
     throw err;
   }
 
+  const allowNickname = createStatusLimiter({ trustProxy: parseTrustProxy(opts.trustProxy ?? process.env.TRUST_PROXY) });
   const allowStatus = createStatusLimiter({ trustProxy: parseTrustProxy(opts.trustProxy ?? process.env.TRUST_PROXY) });
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
@@ -177,7 +178,7 @@ export async function startServer(opts = {}) {
   const server = http.createServer(createRequestHandler({
     serveStatic,
     health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest },
-    log, allowStatus, readAnnouncement, announcementSource: announcementOptions.source,
+    log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
   }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });

@@ -37,20 +37,10 @@ PORT=3000
 HOST=127.0.0.1
 SP_STATE_FILE=/var/lib/stronghold/game
 SP_ASSETS_CDN=https://assets.misyra.com
-SP_ANNOUNCEMENT_SOURCE=panel
-SP_PORTAL_URL=https://game.rainya.me
-# 本分支默认是西安 / 新国内，其他实例按面板的稳定 ID 修改这一行。
-SP_SITE_ID=site-ad797aa8
+SP_ANNOUNCEMENT_SOURCE=agent
 ```
 
-| 站点 | 面板 ID |
-|---|---|
-| 国内（十堰） | `shiyan` |
-| 国内2（阿里云） | `aliyun` |
-| 香港 | `hongkong` |
-| 西安 / 新国内 / 测试勿选（wei.rainya.me:16657） | `site-ad797aa8` |
-
-默认公告来源是管理面板，未设置 URL 或保留旧 `announcement.json` 都不会切回本地文件。已有 `SP_ANNOUNCEMENT_URL` 优先，务必检查旧值是否指向正确站点；新接入站点从面板站点配置读取 ID，不能用显示名称代替。完整规则见[公告接入](ANNOUNCEMENTS.md)。
+公告默认读取探针管理文件。在面板配置好本站探针和管理密钥即可发布，无需绑定游戏站点 ID。已有 feed 部署升级时显式改为 agent 并重启；无探针站点可保留 feed。完整步骤见[公告接入](ANNOUNCEMENTS.md)。
 
 默认开启服务端检查点；保留状态目录可恢复最近的安全阶段，作战进行中重启可能重打该回合。状态目录包含私有重连身份，必须随配置一起备份。具体恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
 
@@ -145,14 +135,16 @@ services:
     environment:
       HOST: "0.0.0.0"
       SP_STATE_FILE: /app/.state/server.state.json
-    volumes: ["stronghold-state:/app/.state"]
+    volumes:
+      - "stronghold-state:/app/.state"
+      - "/var/lib/stronghold-announcement:/var/lib/stronghold-announcement:ro"
     restart: unless-stopped
     stop_grace_period: 30s
 volumes:
   stronghold-state:
 ```
 
-更新镜像后复用同一个持久卷。容器备份与恢复见 [PERSISTENCE.md](PERSISTENCE.md#docker)。
+先运行探针安装脚本创建宿主机公告目录，再启动容器；公告目录整体只读挂载以支持原子替换。更新镜像后复用同一个持久卷。容器备份与恢复见 [PERSISTENCE.md](PERSISTENCE.md#docker)。
 
 <a id="15-更新"></a>
 
@@ -176,7 +168,7 @@ sudo systemctl start stronghold
 验收：
 
 1. `curl -s http://127.0.0.1:3000/healthz`：版本、`persist`、`assetsCdn`、`assetsManifest` 符合部署配置。
-2. `curl -s http://127.0.0.1:3000/api/announcement`：`source.mode` 为 `panel`，`source.siteId` 对应本站；在面板发布后确认正文生效。
+2. `curl -s http://127.0.0.1:3000/api/announcement`：`source.mode` 为 `agent`（无探针 feed 站点为 `panel`）；在面板发布后确认正文生效。
 3. 浏览器打开游戏，创建并加入房间；确认 WebSocket 正常连接，刷新后可重连。
 4. CDN 模式检查图片和音频请求带 `?v=`；预载窗口可导入资源包并显示结果。
 
@@ -186,7 +178,7 @@ sudo systemctl start stronghold
 |---|---|
 | 端口占用 | 是否重复启动了 systemd、计划任务或手动进程；先停止重复进程 |
 | 画面或声音缺失 | `node tools/doctor.mjs`；CDN 模式核对清单和资源 URL，本机模式补跑 setup |
-| 面板已发布，游戏无公告 | 核对 `/api/announcement.source`、旧 `SP_ANNOUNCEMENT_URL`、站点 ID 和日志 `[announcement]`；见[公告排错](ANNOUNCEMENTS.md#排错) |
+| 面板已发布，游戏无公告 | 核对 `/api/announcement.source`、探针推送状态、文件路径和日志 `[announcement]`；见[公告排错](ANNOUNCEMENTS.md#排错) |
 | 重启后无法恢复 | `/healthz.persist` 和状态目录权限；是否挂载原持久卷；见[持久化说明](PERSISTENCE.md) |
 | 游戏能访问，面板监控无数据 | 探针、令牌及 nginx 管理路由；见[监控接入](MONITORING.md) |
 | CPU / 内存过高 | Worker 数量、队列与校验模式，见[性能说明](../development/PERFORMANCE.md) |
@@ -206,3 +198,17 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 本地客户端素材见 [ASSETS.md](../development/ASSETS.md)。
 <a id="7-打包发布维护者"></a>
 发行包制作移至 [PACKAGING.md](PACKAGING.md)。
+
+## 昵称审查
+
+点击“开始”后，浏览器先向同源 `POST /api/nickname/validate` 提交 `{"name":"博士代号"}`，服务器通过才保存昵称并进入游戏。拒绝只回固定错误码，客户端显示“代号包含不适宜内容，请更换昵称”，并提示“如果你认为昵称没有问题，可以前往 GitHub 反馈”，提供本站仓库的 Bug 反馈链接；网络失败停留标题页，可重试。WebSocket `hello` 在创建会话、重连接管和改名前再次检查，不能靠跳过 HTTP 预检绕过。
+
+词库来自 [konsheng/Sensitive-lexicon](https://github.com/konsheng/Sensitive-lexicon)，固定版本 `d967c30b053fa40b06c5a0dddf0be493f2dfae46` 的 17 份 `Vocabulary/*.txt` 与本站补充规则，已在部署前归一化、筛选、排序并去重，整合为唯一有效词表 `server/moderation/lexicon/words.b64`（42,895 条）。游戏启动只读取这一份词表，统一编译字典树及片段集合，没有单独的补充词循环，也没有运行时外部审核请求。空词、单字、超过昵称长度的词和少量普通词在整合时排除；筛选记录、上游原始文件摘要及合并文件摘要见同目录 `SOURCE.json`，完整 MIT 许可证见 `LICENSE`。英文及纯数字按完整片段匹配，全角、零宽、大小写及插入符号在比较时归一化。词表仍可能误伤，按实际反馈维护规则。
+
+**仅服务端持有词库**：不放入 `shared/`、`data/`、`public/`、`server/sim/`、浏览器资源包或 CDN，不开放下载、列举或命中详情接口。维护昵称规则直接编辑 `server/moderation/lexicon/words.b64`（每行一个字面词，不支持正则，`#` 开头为注释），同步 `SOURCE.json` 的词数与 SHA-256，保留许可证并重启服务；升级上游时重新整合并更新来源记录，无需向玩家分发词表。HTTP 预检按网络限流，与房间状态接口预算分离。
+
+**反向代理**：`/api/nickname/validate` 必须转发到游戏 Node，并关闭缓存。在同机 `/api/` 已转发给 sp-portal 的部署中，增加 `location = /api/nickname/validate` 精确规则（参照 `scripts/nginx.conf.example`），避免被面板路由接走。不要用仓库根目录作为静态站点根目录。
+
+标题页提交后显示校验结果；服务端在首次 hello、重复 hello 改名和令牌重连时最终检查，拒绝发生在创建或接管会话之前。旧保存昵称命中词表时回到标题页修改。新增规则不会主动踢出正在游戏中的玩家；其下次登录或重连按新规则校验。
+
+词表使用 Base64 编码，服务端仅在内存中解码。Base64 不是加密，不提交解码明文。

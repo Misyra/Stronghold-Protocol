@@ -1,93 +1,63 @@
-# 游戏内公告：管理面板接入
+# 游戏内公告
 
-游戏内公告默认由 sp-portal 管理面板编辑；本地文件只在显式选择 `file` 模式时使用。游戏服务器和监控探针是不同进程，安装探针本身不会改变游戏公告源。
+面板是唯一编辑入口。配置好探针后，在管理页发布即可写到对应游戏服务器，无需为游戏逐台绑定面板站点 ID。
 
-## 数据流
+## 默认链路
 
 ```text
-/ops/manage.html「游戏内公告」
-    → PUT /api/panel/v1/announcements
-    → PANEL_ANNOUNCE_FILE（/var/lib/sp-portal/announcements.json）
-    → GET /api/announce/v1/<siteId>（公开 feed）
-    → 游戏服务端读取 / 轮询（至少间隔 10 秒）
-    → GET /api/announcement
-    → 玩家浏览器（30 秒检查一次，切回标签页立即检查）
+/ops/manage.html 发布 → 面板公告存储（PANEL_ANNOUNCE_FILE）
+    → PUT /api/admin/v1/announcement（本站探针，管理密钥）
+    → /var/lib/stronghold-announcement/announcement.json（原子替换）
+    → 游戏 GET /api/announcement → 玩家浏览器
 ```
 
-面板发布只更新中央存储，不会远程修改游戏进程的环境变量。服务端按公告 API 请求触发拉取，同一进程合并并发请求并缓存拉取结果，最短间隔由 `SP_ANNOUNCEMENT_POLL_MS` 控制；没有读取请求时不主动访问 feed。面板探针默认也每 10 秒读取游戏公告。因此“10 秒同步”不是玩家端显示的总延迟；还需考虑浏览器 30 秒轮询和代理缓存。
+面板先持久化内容和每站递增版本，再并行推送。失败站点在监控轮询时重试（默认 10 秒），面板重启后也会补发；成功站点不受其他站点故障影响。探针拒绝旧版本覆盖，重复请求可安全重试。停用或删除公告也会作为带版本的撤下指令补发。公告到期由游戏和浏览器独立判断。
 
-## 默认配置与站点身份
+游戏每秒最多读取一次文件，浏览器每 30 秒检查一次，切回标签页立即检查；代理缓存会额外增加少量延迟。「已写入探针」表示文件写入成功，「线上生效」列显示实际游戏接口内容。
 
-本分支默认接入西安 / 新国内站：
+## 接入和升级
+
+1. 游戏及中央 sp-portal 更新到支持探针推送的版本；游戏仓库的 ops/ 已包含对应探针。
+2. 按 [MONITORING.md](MONITORING.md) 运行安装脚本。已有 env 保留，脚本自动补充独立的 `SP_ADMIN_TOKEN_RW`、公告目录及 systemd 写权限。
+3. 在面板站点配置中填写本站探针 URL 和 `admin.env` 中的 `SP_ADMIN_TOKEN_RW`，测试连接后保存。它可读取监控并写公告；旧 `SP_ADMIN_TOKEN_RO` 仍只能读取监控。
+4. 升级已有 feed 部署时，把**游戏服务**环境设置为 `SP_ANNOUNCEMENT_SOURCE=agent` 后重启游戏。新安装不设置来源即可使用 agent。安装脚本不会擅自改动游戏服务环境。
+5. 在管理页发布并检查推送状态及线上内容。
+
+默认 Linux 公告目录为 `/var/lib/stronghold-announcement`，由 spmonitor 持有，目录 0755、公告文件 0644，只存放玩家可见内容。探针仅有该目录的写权限，不允许通过请求修改路径、游戏程序或服务配置。自定义目录需使用安装器支持的 /var/lib 下独立目录，并同时设置探针 `MON_ANNOUNCEMENT_FILE` 和游戏 `SP_ANNOUNCEMENT_AGENT_FILE`。
+
+Docker 游戏须将宿主机**整个公告目录**只读挂载到容器同一路径（不要只挂载单个文件，原子替换会更换 inode）；见 [DEPLOY.md](DEPLOY.md#docker)。Windows 游戏默认读项目 `.state/announcement.json`；若自行运行探针，请将两个进程的上述文件配置设成同一个绝对路径。
+
+| 游戏环境变量 | 行为 |
+|---|---|
+| `SP_ANNOUNCEMENT_SOURCE` | 默认 agent；显式 URL 且未指定来源时兼容为 panel；另支持 file |
+| `SP_ANNOUNCEMENT_AGENT_FILE` | agent 模式的探针管理文件；Linux 默认上述路径 |
+| `SP_ANNOUNCEMENT_URL` | panel 模式的完整 feed URL；已有显式 URL 继续有效 |
+| `SP_PORTAL_URL` / `SP_SITE_ID` | panel 模式未指定完整 URL 时必填；没有绑定某一站点的默认值 |
+| `SP_ANNOUNCEMENT_POLL_MS` | feed 最短拉取间隔 10000 毫秒，限制 3000–600000 |
+| `SP_ANNOUNCEMENT_FILE` | 仅显式 file 模式使用；默认根目录 announcement.json |
+
+## 无探针站点的 feed 接入
+
+面板仍提供公开 `GET /api/announce/v1/<siteId>`，仅包含玩家可见字段。游戏可继续配置：
 
 ```dotenv
 SP_ANNOUNCEMENT_SOURCE=panel
-SP_PORTAL_URL=https://game.rainya.me
-SP_SITE_ID=site-ad797aa8
+SP_ANNOUNCEMENT_URL=https://game.rainya.me/api/announce/v1/<面板中本站的实际ID>
 ```
 
-这是仓库的默认目标，不是自动识别机器。部署到国内、国内2、香港时分别设置 `SP_SITE_ID=shiyan`、`aliyun`、`hongkong`；未来新增站点在面板站点配置中读取实际 ID。显示名称可以修改，ID 决定公告归属。
+国内、国内2、香港 ID 分别为 shiyan、aliyun、hongkong；其他站点从面板配置读取实际 ID。feed 拉取失败保留最后有效值；明确 enabled:false 撤下，到期仍隐藏。故障不会自动切换来源。没有配置探针的站点在面板显示「由游戏拉取 feed」。
 
-| 配置 | 默认 / 优先级 |
-|---|---|
-| `SP_ANNOUNCEMENT_SOURCE` | `panel`；只有显式 `file` 才读取本地公告 |
-| `SP_ANNOUNCEMENT_URL` | 未设置或空字符串时由下面两项组合；已有完整 URL 优先，兼容现有部署 |
-| `SP_PORTAL_URL` | `https://game.rainya.me`；公开 feed 所在服务的根地址 |
-| `SP_SITE_ID` | `site-ad797aa8`；必须与面板站点 ID 相同 |
-| `SP_ANNOUNCEMENT_POLL_MS` | `10000`，限制在 3000–600000 毫秒 |
-| `SP_ANNOUNCEMENT_FILE` | `<项目根目录>/announcement.json`；仅文件模式使用 |
+## 手工文件模式
 
-等价的完整 URL：
-
-```dotenv
-SP_ANNOUNCEMENT_URL=https://game.rainya.me/api/announce/v1/site-ad797aa8
-```
-
-环境配置必须属于**游戏服务**，例如[部署指南](DEPLOY.md#配置)的 `/etc/stronghold/game.env`；写进探针的 `admin.env` 或面板的 `portal.env` 对游戏无效。修改后重启游戏进程。已有完整 URL 会覆盖 `SP_SITE_ID`，切换站点时同时删除或修正旧 URL。
-
-## 验证
-
-```bash
-curl -s https://game.rainya.me/api/announce/v1/site-ad797aa8
-curl -s http://127.0.0.1:3000/api/announcement
-```
-
-第一条应返回 `{enabled,title,text,expiresAt}`，未发布或显式停用时为 `{"enabled":false}`；不存在的站点返回 404。第二条返回 `announcement`、`serverTime` 和配置诊断 `source`：
-
-```json
-{"announcement":null,"serverTime":1791532800000,"source":{"mode":"panel","siteId":"site-ad797aa8"}}
-```
-
-`source` 表示进程选择的来源，不代表上游已成功读取；实际正文须与 feed 对照。启动日志 `[announcement] panel <URL>` 显示解析后的完整 URL，拉取失败记录 `central source unavailable`。第一次读取失败时 `announcement` 为 null；后续失败保留最后有效公告，到期仍隐藏。只有中央源明确返回 `enabled:false` 才主动撤下。任何故障都不会自动切回本地文件，进程重启后重新读取中央源。
-
-## 显式使用本地文件
-
-离线自用或独立运营时选择：
-
-```dotenv
-SP_ANNOUNCEMENT_SOURCE=file
-SP_ANNOUNCEMENT_FILE=announcement.json
-```
-
-复制根目录 `announcement.example.json` 后修改标题、正文及 `expiresAt`。时间必须带时区，例如 `2026-10-16T19:52:00+08:00`；标题最多 80 字符，正文最多 2000 字符，支持换行且不解析 HTML。文件最多 16 KiB，每秒最多读取一次，修改内容无需重启；切换来源需要重启。设置 `enabled:false` 或删除文件撤下；文件无效时不显示并记录警告。
-
-仅设置文件路径、留下旧 `announcement.json` 或清空远程 URL 都不会启用文件模式。公告关闭和到期只影响提示，不会停服、踢人或结束对局。
+仅用于独立部署：显式设置 `SP_ANNOUNCEMENT_SOURCE=file`，按 `announcement.example.json` 创建手工公告。根目录旧 announcement.json 不会被默认 agent 模式读取；探针只写受管理文件。标题 1–80 字符、正文 1–2000 字符，expiresAt 必须是带时区的 ISO 时间。内容支持换行，不解析 HTML。文件最多 16 KiB，修改无需重启。
 
 ## 排错
 
-- 面板有配置、线上无公告：先看游戏 API 的 `source` 和游戏服务日志，核对站点 ID。正确发布与游戏进程正确配置是两步。
-- 改环境变量后仍读取旧地址：检查 systemd `EnvironmentFile`、drop-in、容器 `--env-file` 或 Windows `scripts/service.env.cmd`，重启实际承载本站端口的进程。
-- feed 404：检查站点是否仍在面板站点配置中，以及 URL 中 ID 是否准确。不要换成本地 JSON 掩盖中央源配置问题。
-- feed 正常，游戏请求失败：从游戏服务器测试出站 DNS、HTTPS 和 feed 访问；日志会给出超时或 HTTP 错误。
-- 代理返回旧值：`/api/announcement` 精确匹配代理至游戏 Node，共享缓存保持 5 秒，最多 10 秒；feed 由 sp-portal 提供，不能误代理回游戏公告接口。
+- 「请升级探针并填写管理密钥」：探针缺少写入能力，或面板仍在用只读密钥。
+- 「等待重试」：检查探针连接、密钥、目录权限及 `journalctl -u sp-admin`。不要只重启游戏。
+- 「游戏仍使用旧公告来源」：游戏环境切为 agent 后重启；核对 `curl -s http://127.0.0.1:3000/api/announcement` 的 source.mode。
+- 文件已写入但游戏无公告：核对两个进程文件路径、游戏账号读取权限、Docker 目录挂载、过期时间。
+- 代理返回旧值：游戏 /api/announcement 精确反代至游戏 Node，共享缓存保持 5 秒，最多 10 秒；中央 feed 由 sp-portal 提供。
+- 版本冲突：检查该探针是否被误配置到两个面板站点，修正后重新发布。中央公告存储需和私有探针配置一起备份。
 
-## 与中间页公告的区别
-
-| | 游戏内公告 | 中间页公告 |
-|---|---|---|
-| 面板文件 | `/var/lib/sp-portal/announcements.json` | `PORTAL_ANNOUNCEMENT_FILE`，例如 `/etc/stronghold/portal-announcement.json` |
-| 编辑入口 | 「游戏内公告」 | 「中间页公告」 |
-| 出口 | `/api/announce/v1/<siteId>` → 游戏 `/api/announcement` | `/api/notices` → 联机入口页 |
-| 内容 | 每站一份，截止时间 `expiresAt` | 多条、级别、起止时间及历史归档 |
-
-游戏只提供公告读取接口；面板写入、权限和存储以 sp-portal 项目为准。公开 API 字段见 [CUSTOM_API.md](../development/CUSTOM_API.md#4-维护公告)；不要将两套公告 JSON 相互覆盖。
+游戏内公告和入口页公告是独立系统：前者保存在 PANEL_ANNOUNCE_FILE、每站一份；后者由 PORTAL_ANNOUNCEMENT_FILE 管理、多条轮播，通过 /api/notices 展示。不要交叉修改两套文件。

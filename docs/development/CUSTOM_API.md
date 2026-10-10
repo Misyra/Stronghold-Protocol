@@ -12,6 +12,7 @@
 |---|---|---|---|
 | `/api/rooms/:code/status` | HTTP GET / HEAD | 按房间号查询公开状态，含难度名称 | 未开放 CORS |
 | `/api/ping` | HTTP GET / HEAD / OPTIONS | 无会话的 HTTP 延迟探测 | `Access-Control-Allow-Origin: *` |
+| `/api/nickname/validate` | HTTP POST | 进入游戏前校验昵称；不返回词表或命中详情 | 未开放 CORS |
 | `/api/announcement` | HTTP GET / HEAD | 读取当前维护公告 | 未开放 CORS |
 | `/healthz` | HTTP GET / HEAD | 增加素材版本、CDN、工作线程、持久化信息 | 未开放 CORS |
 | `/data/resource-manifest.json` | HTTP GET / HEAD | 动态生成资源预载清单 | 未开放 CORS |
@@ -214,7 +215,7 @@ HEAD /api/announcement
 
 没有公告写入 API。POST / PUT / DELETE / OPTIONS 等方法返回 405、`Allow: GET, HEAD`，响应体为 HTML 错误页。
 
-默认来源为管理面板中央 feed：`SP_PORTAL_URL` 默认 `https://game.rainya.me`，`SP_SITE_ID` 默认西安站 `site-ad797aa8`；显式完整 `SP_ANNOUNCEMENT_URL` 优先。空 URL 或已有本地文件不会切换来源。响应额外包含 `source: { mode, siteId }`，便于核对当前配置；它不表示上游读取成功。仅显式设置 `SP_ANNOUNCEMENT_SOURCE=file` 才通过 `SP_ANNOUNCEMENT_FILE` 热读本地配置，默认项目根目录 `announcement.json`；文件最多 16 KiB，读取缓存默认 1 秒。部署说明统一见 [ANNOUNCEMENTS.md](../operations/ANNOUNCEMENTS.md)。
+默认来源为 agent：管理面板以管理密钥推送到本站探针，探针原子写入 `/var/lib/stronghold-announcement/announcement.json`，游戏热读取。Windows 默认 `.state/announcement.json`；`SP_ANNOUNCEMENT_AGENT_FILE` 可指定与探针一致的路径。响应包含 `source: { mode, siteId }` 供诊断。已有显式完整 `SP_ANNOUNCEMENT_URL` 且未指定来源时继续使用 panel 模式；无探针站点可显式选择 panel。仅 `SP_ANNOUNCEMENT_SOURCE=file` 使用手工 `SP_ANNOUNCEMENT_FILE`，默认根目录 announcement.json。文件最多 16 KiB，读取缓存 1 秒。部署说明见 [ANNOUNCEMENTS.md](../operations/ANNOUNCEMENTS.md)。
 
 ```json
 {
@@ -439,3 +440,9 @@ HEAD /data/resource-manifest.json
 ```sh
 node --test test/room-status.test.js test/matchmaking.test.js test/announcement.test.js test/asset-version.test.js test/asset-cdn.test.js test/resources/manifest.test.js test/match/results.test.js test/ws-compression.test.js
 ```
+
+### 昵称预检
+
+`POST /api/nickname/validate`，同源 JSON 请求 `{"name":"正常博士"}`，成功为 200 `{"ok":true}`，敏感昵称为 422 `{"ok":false,"code":"NICKNAME_SENSITIVE"}`。所有结果 `Cache-Control: no-store`，不回显昵称、匹配词或词表。客户端只有收到成功才保存昵称和进入；登录 `hello` 仍执行同款校验。
+
+仅支持 POST；请求体最大 1 KiB、读取超时 5 秒；格式错误 400、方法错误 405、超时 408、过大 413、非 JSON 415、限流 429。限流响应附 `Retry-After: 1`，按与 WebSocket 相同的可信代理/网络策略独立限流（每秒补充 2 次、突发 10 次）。无 CORS 授权，浏览器跨站请求拒绝。运行时只读服务端随包词库，不调用外部服务。

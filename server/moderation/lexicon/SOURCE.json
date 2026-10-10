@@ -1,0 +1,116 @@
+{
+  "repository": "https://github.com/konsheng/Sensitive-lexicon",
+  "commit": "d967c30b053fa40b06c5a0dddf0be493f2dfae46",
+  "license": "MIT",
+  "upstreamFiles": [
+    {
+      "path": "LICENSE",
+      "sha256": "0ba4738a228fe09c4fa60a5c8cfb0ccacb436e72602ea43786d3f5ee4838c458"
+    },
+    {
+      "path": "Vocabulary/COVID-19词库.txt",
+      "sha256": "019d56e1dd5dd88907c17f66511fe34c5512d83ae2de511fafc443b3fc9bdf4d"
+    },
+    {
+      "path": "Vocabulary/GFW补充词库.txt",
+      "sha256": "fac55e314c39532c64b5aba8c3a7bc534ab87e3830f6c3861ad29e08d1d4ac96"
+    },
+    {
+      "path": "Vocabulary/其他词库.txt",
+      "sha256": "504ac4dcffa2a078957750c3ad06713cd1ee883af23310507ed85a01bac0ec2f"
+    },
+    {
+      "path": "Vocabulary/反动词库.txt",
+      "sha256": "b1f24a2b856445f0d4f106a487f9fd1c114c17dac64853108539874ffc3c6714"
+    },
+    {
+      "path": "Vocabulary/广告类型.txt",
+      "sha256": "8f3d5451b8392c1a6b629d504e437b92ef1fdb3128581f6362a495d6fec41473"
+    },
+    {
+      "path": "Vocabulary/政治类型.txt",
+      "sha256": "0aa2ea38cb8164705068cab8f0ef060bc65b2bb8053bc07ff2b5bd96f928743e"
+    },
+    {
+      "path": "Vocabulary/新思想启蒙.txt",
+      "sha256": "63460b19174237e686a549f7b7756eefbd03f13f8a6a0103a9ab3d032ab7feec"
+    },
+    {
+      "path": "Vocabulary/暴恐词库.txt",
+      "sha256": "16221e4c76641b13513bb8e775840f08716b80dcd285f8cc78fb040314814631"
+    },
+    {
+      "path": "Vocabulary/民生词库.txt",
+      "sha256": "d61b97b789daf977ee78e6fccc5e143d22bc7f2a829a1f150b682dbf102ec97a"
+    },
+    {
+      "path": "Vocabulary/涉枪涉爆.txt",
+      "sha256": "b0323790e2e91d6453c944022b90a10aa5110ecfd857c9ec0e84a478e5f9a8fe"
+    },
+    {
+      "path": "Vocabulary/网易前端过滤敏感词库.txt",
+      "sha256": "36f071c80440f3fccec32340324ad45ade6df6ab423b9a2641c9fcf8f0e5f95a"
+    },
+    {
+      "path": "Vocabulary/色情类型.txt",
+      "sha256": "3e844e67b1f3dd50c21273beffa0c2f4c9f3b8fe3f7999353a0b5e6ff0cf94bc"
+    },
+    {
+      "path": "Vocabulary/色情词库.txt",
+      "sha256": "9e3a27bf849acb3a907278218cd883c33347edd9f55d7bb26cc4b84bf956bc99"
+    },
+    {
+      "path": "Vocabulary/补充词库.txt",
+      "sha256": "4fa11b6a2f5e33f3227613a92c4579c37f12bd533090db0720f15025ae19ce65"
+    },
+    {
+      "path": "Vocabulary/贪腐词库.txt",
+      "sha256": "2b76b487081d81817c9097a04267435abf5fdb4b87ce25ceecb27d6d70cc78d3"
+    },
+    {
+      "path": "Vocabulary/零时-Tencent.txt",
+      "sha256": "292d12724734f29e8ecc776b1aa3f6167029a015b64fcddc660c9b8ec2378a34"
+    },
+    {
+      "path": "Vocabulary/非法网址.txt",
+      "sha256": "09452d23f6acf0be7bcdd113e0b91b2dfde79ae818f9d8746c305439c3d9a6d1"
+    }
+  ],
+  "merge": {
+    "file": "words.b64",
+    "sha256": "1126d401f1571e15a55ceefd348b14990b6cbaf8792def4a46f53e6c7fef2201",
+    "terms": 42895,
+    "upstreamInputLines": 87044,
+    "upstreamUniqueTerms": 42829,
+    "upstreamSkippedLines": 13339,
+    "siteInputTerms": 192,
+    "siteAddedTerms": 66,
+    "encoding": "base64",
+    "charset": "utf-8",
+    "decodedSha256": "27228557e0e6e37c11c9066e89974a4575f8fc6566e7778c3bed603dcb39fd69"
+  },
+  "filtering": {
+    "normalization": "NFKD, lowercase, retain Unicode letters and numbers",
+    "upstreamMinCodePoints": 2,
+    "upstreamMaxUtf16Length": 12,
+    "upstreamExcludedTerms": [
+      "中国",
+      "香港",
+      "台湾",
+      "台灣",
+      "自由",
+      "民主",
+      "主席",
+      "包子",
+      "小熊维尼",
+      "小熊維尼",
+      "1989",
+      "64",
+      "一个",
+      "维尼",
+      "維尼",
+      "独立",
+      "獨立"
+    ]
+  }
+}

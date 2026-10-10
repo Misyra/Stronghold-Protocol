@@ -1,4 +1,4 @@
-# 探针（collector + 只读 Agent）
+# 探针（collector + 管理 Agent）
 
 本目录由 sp-portal 仓库的 deploy/sync-agent.mjs 生成，请勿手改；源码以 sp-portal 为准。
 版本见 VERSION（探针文件内容哈希），面板站点卡片会显示它，用于核对各服务器是否更新到位。

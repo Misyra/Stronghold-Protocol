@@ -1013,11 +1013,40 @@ describe('screen helpers', () => {
     assert.equal(sanitizeName(null), '');
     assert.equal(isValidName('   '), false);
     assert.equal(isValidName('Doctor'), true);
+    for (const bad of ['傻逼', '操 你 妈', 'ｆｕｃｋ', '傻\u200b逼', '习·近平', '法輪功', '香港獨立', '８９６４']) assert.equal(isValidName(bad), true, 'client only checks format, dictionary stays on server');
+    for (const good of ['Scunthorpe', 'Assassin', '阿米娅']) assert.equal(isValidName(good), true);
     assert.equal(findUiAsset({ ui: { 'entry/bkg_01': '/assets/ui/entry/bkg_01.png' } }, ['titleBackdrop', 'entry/bkg_01']), '/assets/ui/entry/bkg_01.png');
     assert.equal(findUiAsset({ ui: { titleBackdrop: { url: '/a.png' } } }, ['titleBackdrop']), '/a.png');
     assert.equal(findUiAsset({ files: ['/assets/ui/entry_bkg_01.webp'] }, ['entry_bkg_01']), '/assets/ui/entry_bkg_01.webp');
     assert.equal(findUiAsset(null, ['x']), null);
     assert.equal(findUiAsset({ ui: {} }, ['x']), null);
+  });
+
+  test('title waits for server approval and never persists rejected, failed or stale checks', async () => {
+    const { enterSession, nameError } = await mod('screens/title.js');
+    const { store } = await mod('store.js');
+    const before = store.get(), originalFetch = globalThis.fetch;
+    const { ERR_TEXT } = await import('../shared/constants.js');
+    try {
+      globalThis.fetch = async (url, options) => {
+        assert.equal(url, '/api/nickname/validate');
+        assert.equal(options.method, 'POST');
+        assert.deepEqual(JSON.parse(options.body), { name: '傻·逼' });
+        assert.equal(store.get(), before);
+        return { ok: false, json: async () => ({ ok: false, code: 'NICKNAME_SENSITIVE' }) };
+      };
+      await assert.rejects(enterSession('傻·逼'), { message: ERR_TEXT.NICKNAME_SENSITIVE });
+      assert.equal(store.get(), before);
+      globalThis.fetch = async () => { throw new Error('offline'); };
+      await assert.rejects(enterSession('正常博士'), { message: '昵称校验失败，请稍后重试' });
+      assert.equal(store.get(), before);
+      globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+      assert.equal(await enterSession('正常博士', { isCurrent: () => false }), false);
+      const controller = new AbortController(); controller.abort();
+      assert.equal(await enterSession('正常博士', { signal: controller.signal }), false);
+      assert.equal(store.get(), before);
+      assert.equal(nameError('傻·逼'), null, 'no dictionary on the client');
+    } finally { globalThis.fetch = originalFetch; }
   });
 
   test('title exposes the shared settings modal', () => {

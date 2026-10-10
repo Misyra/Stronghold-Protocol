@@ -47,6 +47,10 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     (els) => els.map((e) => [e.dataset.lang ?? e.value, e.textContent.trim()]));
   /** Pick a language: its button, or its option in the list. */
   const pick = async (page, code) => {
+    if (await page.$('.fullscreen-prompt')) {
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.fullscreen-prompt', { hidden: true });
+    }
     if (await page.$('[data-testid="lang-toggle"] select')) await page.select('[data-testid="lang-toggle"] select', code);
     else await page.click(`[data-testid="lang-toggle"] button[data-lang="${code}"]`);
   };
@@ -81,6 +85,9 @@ describe('language switch on the title screen', { skip: !ENABLED && 'set SP_E2E=
     // Background resource preload can outlive page startup; the title selectors below gate UI readiness.
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.title-screen [data-testid="lang-toggle"]');
+    await page.waitForSelector('.fullscreen-prompt');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.fullscreen-prompt', { hidden: true });
     assert.equal(await text(page, '.title-cn'), '卫戍协议：盟约');
     assert.equal(await text(page, '.title-login .btn--primary'), '开始');
     assert.equal(await page.evaluate(() => document.documentElement.lang), 'zh-CN');

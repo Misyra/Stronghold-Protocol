@@ -486,6 +486,14 @@
 }
 @keyframes modal-fade { from { opacity: 0; } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(.14rem) scale(.985); } }
+.fullscreen-prompt { min-width: min(360px, 94vw); }
+.fullscreen-prompt .modal__head { padding: max(.22rem, 16px) max(.3rem, 20px) 4px; }
+.fullscreen-prompt .modal__title { font-size: max(calc(.26 * var(--t)), 18px); }
+.fullscreen-prompt .modal__body { padding: 12px max(.3rem, 20px) 20px; }
+.fullscreen-prompt .modal__text { margin: 0; font-size: max(calc(.18 * var(--t)), 14px); }
+.fullscreen-prompt .modal__text + .modal__text { margin-top: .12rem; }
+.fullscreen-prompt .modal__actions { flex-wrap: wrap; gap: 12px; padding: 12px max(.3rem, 20px); }
+.fullscreen-prompt .btn { min-height: 44px; font-size: max(calc(.18 * var(--t)), 14px); }
 
 /* ---- tooltip -------------------------------------------------------------------------------------- */
 .tt-anchor { display: inline-flex; }

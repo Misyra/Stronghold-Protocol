@@ -13,6 +13,7 @@
 //                           variant (iPadOS / older Safari); iPhone Safari has no element fullscreen → unsupported and the
 //                           button hides. Android: after entering, the orientation is locked to landscape when allowed.
 //   FullscreenButton        HUD / title button (hidden where unsupported), follows fullscreenchange.
+//   FullscreenPrompt        one dismissible offer per page visit, including automatic session resumes.
 //   long-press              a still touch of LONG_PRESS_MS on a DOM control → a synthetic `contextmenu` (= detail) when
 //                           the browser sends none (iOS Safari); when a handler took it (preventDefault: detail card,
 //                           tooltip) the click of the release is swallowed — otherwise the slow tap stays a tap.
@@ -21,7 +22,7 @@
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { pwaInstall } from '../pwa.js';
-import { html, Icon, Button } from './components.js';
+import { html, Icon, Button, Modal } from './components.js';
 import { t } from '../../../shared/i18n.js';
 
 /** A touch held this long without moving opens the detail (contextmenu) on DOM controls. */
@@ -161,6 +162,37 @@ export function FullscreenButton({ class: cls = '' }) {
       onClick=${() => fullscreen.toggle()}>
     <${Icon} name=${on ? 'collapse' : 'expand'} />
   </button>`;
+}
+
+/** No saved dismissal: a new page visit offers fullscreen again; route changes do not reopen it. */
+export function FullscreenPrompt() {
+  const [open, setOpen] = useState(() => fullscreen.supported() && !fullscreen.active() && !detectFeatures().standalone);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const close = () => setOpen(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const changed = () => { if (fullscreen.active()) setOpen(false); };
+    document.addEventListener('fullscreenchange', changed);
+    document.addEventListener('webkitfullscreenchange', changed);
+    return () => {
+      document.removeEventListener('fullscreenchange', changed);
+      document.removeEventListener('webkitfullscreenchange', changed);
+    };
+  }, [open]);
+  const enter = async () => {
+    setBusy(true); setFailed(false);
+    // Request within the click's user activation; never request fullscreen automatically at boot.
+    const ok = await fullscreen.enter();
+    setBusy(false);
+    if (ok) close(); else setFailed(true);
+  };
+  return html`<${Modal} open=${open} title=${t('全屏游玩')} class="fullscreen-prompt" width="min(5.2rem, 94vw)" onClose=${close}
+      actions=${html`<${Button} variant="secondary" onClick=${close}>${t('暂不全屏')}<//>
+        <${Button} variant="primary" icon="expand" loading=${busy} data-autofocus onClick=${enter}>${t('进入全屏')}<//>`}>
+    <p class="modal__text">${t('点击下方按钮，即可全屏游玩。')}</p>
+    ${failed ? html`<p class="modal__text t-amber" role="status">${t('无法进入全屏，请重试或继续使用窗口模式。')}</p>` : null}
+  <//>`;
 }
 
 /** Only a browser-issued install offer shows a button; installed and unsupported environments stay quiet. */

@@ -323,11 +323,11 @@ test('user playtest #4 (DESIGN §18): picking by tile, timers, 机变 two taps, 
   assert.match(META, /solo \/ single human untimed/);
   assert.match(PLAYING, /只有你一名玩家/);
   // #4 one countdown: BAND_TURN_SECONDS per turn (code = data = docs)
-  assert.equal(BAND_TURN_SECONDS, 30);
+  assert.equal(BAND_TURN_SECONDS, 50);
   assert.equal(DATA.config.timers.bandTurn, BAND_TURN_SECONDS);
-  assert.match(DESIGN, /`BAND_TURN_SECONDS` 30 s per turn = m\.public\.deadline/);
-  assert.match(META, /`Match\.BAND_TURN_SECONDS` 30/);
-  assert.match(PLAYING, /\*\*每人 30 秒\*\*/);
+  assert.match(DESIGN, /`BAND_TURN_SECONDS` 50 s per turn = m\.public\.deadline/);
+  assert.match(META, /`Match\.BAND_TURN_SECONDS` 50/);
+  assert.match(PLAYING, /\*\*每人 50 秒\*\*/);
   assert.ok(!/12 s\/turn/.test(DESIGN) && !/`bandTurn` 12/.test(META) && !/每人 12 秒/.test(PLAYING), 'the old 12 s turn is gone');
   assert.match(META, /`ev\.preview` true/, 'META: onBattleStart handlers must not change the match for the stats preview');
   // #2 机变 two taps
@@ -919,7 +919,7 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
   assert.equal(Object.keys(manifest.audio?.voiceJp ?? {}).length, charIds.length, 'every voiced operator has its JP tree');
   assert.equal(manifest.stats.voiceJpChars, charIds.length);
   assert.match(doc('docs/development/ASSETS.md'), /voiceJp: \{ \[charId\]: \{ …the slots of `voice` \} \}/);
-  assert.match(doc('docs/operations/DEPLOY.md'), /`FULL_ZIP_JP_VOICE` 改成 `false` 时/);
+  assert.match(doc('docs/operations/PACKAGING.md'), /`FULL_ZIP_JP_VOICE` 改成 `false` 时/);
   assert.match(PLAYING, /「语音语言」选 \*\*中文 \/ 日本語\*\*（默认中文，和界面语言无关/);
   assert.match(PLAYING, /会说一句官方的「选中干员」语音，休整期也一样/);
   assert.match(SIM, /\['engage', id\]/);

@@ -1434,5 +1434,11 @@
   "宁宁 Ciallo": "Nene Ciallo",
   "巡 Ciallo": "Meguri Ciallo",
   "请文明交流": "Please keep chat respectful",
-  "聊天规则": "Chat rules"
+  "聊天规则": "Chat rules",
+  "先保存画面资源，再下载所选语音等可选资源。对局所需资源优先，作战时降低后台下载速度。": "Save visual resources first, followed by the selected voices and other optional resources. Match resources take priority; background downloads slow down during combat.",
+  "语音预载": "Voice preload",
+  "预载中文和日语语音。": "Preload both Chinese and Japanese voices.",
+  "仅预载{language}语音；切换语言后补载缺少的资源，已缓存语音保留。": "Preload only {language} voices. Switching languages downloads missing resources and keeps cached voices.",
+  "可选资源预载已关闭，语音在使用时加载。": "Optional preloading is off. Voices load when needed.",
+  "作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。": "In combat: visual resources preload slowly; voices and other optional downloads resume after combat."
 }

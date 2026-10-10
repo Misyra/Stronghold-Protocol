@@ -111,7 +111,7 @@ function ResourceTier({ st, tier, optional, onOptional, disabled }) {
     <${ProgressBar} value=${done} max=${Math.max(1, total)} size="sm" tone=${tier === 1 ? 'mint' : 'amber'} />
     <ul class="resource-tier__list">
       ${groups.map((group) => html`<li key=${group.id}
-        class=${st.archivePhase === 'import' && st.archiveGroup === group.id ? 'is-importing' : ''}><span>${t(group.name)}
+        class=${st.archivePhase === 'import' && st.archiveGroup === group.id ? 'is-importing' : ''}><span>${t(group.name)}${group.id === 'voice' && !st.allVoices ? ` · ${st.voiceLang === 'jp' ? t('日语') : t('中文')}` : ''}
           ${st.archivePhase === 'import' && st.archiveGroup === group.id ? html`<small>${t('正在导入')}</small>` : null}</span>
         <span class="num">${group.present}/${group.wanted}</span>
         <span class="num">${group.unknownSize ? t('大小待确认') : formatBytes(group.totalBytes)}</span></li>`)}
@@ -120,7 +120,7 @@ function ResourceTier({ st, tier, optional, onOptional, disabled }) {
 }
 
 /** Mounted once in main.js, above all screens including the settings modal. */
-export function ResourceHost({ enabled, optional, allVoices, onChange, onOptional, onAllVoices }) {
+export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', onVoiceLang, onChange, onOptional, onAllVoices }) {
   const { open } = useStore((s) => s, Object.is, resourceUi);
   const st = useResources();
   const fileInput = useRef(null);
@@ -156,16 +156,23 @@ export function ResourceHost({ enabled, optional, allVoices, onChange, onOptiona
           onClick=${() => enabled ? startResources() : onChange(true)}>${st.selectionComplete ? t('检查资源') : enabled ? t('继续下载') : t('开始预载')}<//>`}
       <${Button} variant="secondary" onClick=${closeResources}>${t('关闭')}<//>`}>
     <div class="resource-manager">
-      <p class="resource-manager__intro">${t('先预载必备资源；可选资源可按需加载。关闭此窗口后，下载会在后台继续。')}</p>
+      <p class="resource-manager__intro">${t('先保存画面资源，再下载所选语音等可选资源。对局所需资源优先，作战时降低后台下载速度。')}</p>
+      <section class="resource-manager__voice" aria-label=${t('语音预载')}>
+        <div class="resource-manager__voice-head"><h3>${t('语音语言')}</h3>
+          <div class="resource-voice-tabs" role="group" aria-label=${t('语音语言')}>
+            ${['cn', 'jp'].map((lang) => html`<button type="button" aria-pressed=${voiceLang === lang}
+              disabled=${archiveBusy || !onVoiceLang} onClick=${() => onVoiceLang?.(lang)}>${lang === 'cn' ? t('中文') : t('日语')}</button>`)}
+          </div>
+        </div>
+        <p>${optional ? allVoices ? t('预载中文和日语语音。') : t('仅预载{language}语音；切换语言后补载缺少的资源，已缓存语音保留。', { language: voiceLang === 'jp' ? t('日语') : t('中文') }) : t('可选资源预载已关闭，语音在使用时加载。')}</p>
+        <label class="resource-choice resource-voice-all"><input type="checkbox" checked=${allVoices} disabled=${archiveBusy || !optional}
+          onChange=${(e) => onAllVoices(e.currentTarget.checked)} />${t('同时预载全部语音语言')}</label>
+      </section>
       <div class="resource-manager__tiers">
         <${ResourceTier} st=${st} tier=${1} />
         <${ResourceTier} st=${st} tier=${2} optional=${optional} onOptional=${onOptional} disabled=${archiveBusy} />
       </div>
-      <div class="resource-manager__voice">
-        <label class="resource-choice"><input type="checkbox" checked=${allVoices} disabled=${archiveBusy}
-          onChange=${(e) => onAllVoices(e.currentTarget.checked)} />${t('同时预载全部语音语言')}</label>
-        <p>${t('当前语音：{language}；未勾选时仅预载当前语言，其他已缓存语音保留。', { language: st.voiceLang === 'jp' ? t('日语') : t('中文') })}</p>
-      </div>
+      ${st.combat && enabled ? html`<p class="resource-manager__intro">${t('作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。')}</p>` : null}
       <p class=${`resource-manager__status${st.error ? ' is-error' : ''}`} role="status" aria-live="polite">
         ${st.message || (enabled ? t('预载已开启') : t('选择下载范围，然后开始预载；也可以直接导入资源包。'))}</p>
       ${st.worker ? html`<p class="resource-manager__warn">${st.worker}</p>` : null}

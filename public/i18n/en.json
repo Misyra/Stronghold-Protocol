@@ -1413,5 +1413,17 @@
   "请等待所有玩家连接后再发起投票": "Wait for all players to connect before starting a vote.",
   "同意重刷": "Agree to reroll",
   "拒绝重刷": "Reject reroll",
-  "取消投票": "Cancel vote"
+  "取消投票": "Cancel vote",
+  "当前服务器未开启聊天": "Chat is disabled on this server",
+  "连续 5 条消息触发敏感词审查，聊天已暂停 12 小时": "Five consecutive messages triggered the word filter. Chat is suspended for 12 hours.",
+  "消息中的敏感内容已替换为星号": "Filtered content in your message was replaced with asterisks.",
+  "局内聊天": "Match chat",
+  "聊天": "Chat",
+  "聊天记录": "Chat history",
+  "暂无消息": "No messages yet",
+  "聊天已暂停，剩余约 {minutes} 分钟": "Chat suspended: about {minutes} minutes remaining",
+  "每条最多 30 字；敏感内容会替换为星号，连续 5 条触发审查将暂停聊天 12 小时。": "Up to 30 characters per message. Filtered words become asterisks; five consecutive filtered messages suspend chat for 12 hours.",
+  "观战玩家只能查看聊天": "Spectators can only read chat",
+  "聊天消息": "Chat message",
+  "发送": "Send"
 }

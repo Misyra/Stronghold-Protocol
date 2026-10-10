@@ -730,3 +730,6 @@
 .shortcut-key.is-listening { color: var(--amber); border-color: var(--amber); animation: shortcut-pulse 1s ease-in-out infinite; }
 .shortcut-error { margin: .04rem 0 0; color: var(--red-premium); font-size: calc(.14 * var(--t)); }
 @keyframes shortcut-pulse { 50% { box-shadow: 0 0 .16rem rgba(246, 163, 41, .35); } }
+
+.gm__chat { position: relative; font-size: .14rem; }
+.gm__chat small { position: absolute; top: -.04rem; right: -.04rem; min-width: .16rem; border-radius: .08rem; background: var(--mint-400); color: #08110e; font-size: .1rem; line-height: .16rem; }

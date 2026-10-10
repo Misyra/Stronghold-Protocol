@@ -59,5 +59,5 @@ desktop.ini
 *.state.json.lock
 *.state.json.*.tmp
 
-# Do not commit decoded moderation data.
+# Never track a decoded nickname dictionary.
 /server/moderation/lexicon/words.txt

@@ -100,6 +100,7 @@ import { createRngFromState } from './sim/rng.js';
 //     code; a player never switches to spectating in place (ALREADY). Disconnect / grace / reconnect / expiry work as for
 //     a player seat (the seat is kept and given back on resume).
 
+import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
@@ -117,6 +118,7 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 /** Tunables. */
 export const LOBBY_DEFAULTS = Object.freeze({
+  chatEnabled: false,
   lobbyGraceMs: 60_000,   // disconnected humans keep their lobby seat this long
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
@@ -196,6 +198,8 @@ export class Room {
     /** @type {{ live: boolean, ended: boolean, disposed: boolean, match: any } | null} */
     this.matchCtx = null;
     this.matchCount = 0;
+    this.chatMessages = [];
+    this.chatSeq = 0;
     /** @type {any} summary passed to onEnd by the last match */
     this.lastSummary = null;
     /**
@@ -268,6 +272,7 @@ export class Lobby {
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
+    this.opts.chatEnabled = chatEnabled(options.chatEnabled ?? false);
     /** @type {Map<string, Room>} */
     this.rooms = new Map();
     /** @type {Map<string, NodeJS.Timeout>} lobby grace timers by playerId */
@@ -313,6 +318,7 @@ export class Lobby {
    * @param {{ resumed: boolean, repeat: boolean }} info
    */
   onHello(session, { resumed, repeat }) {
+    this.sendChatState(session, false);
     if ((resumed || repeat) && (this.matchmaking.has(session) || session.matchmakingCancelledOnDisconnect)) {
       this.matchmaking.sync(session);
       session.matchmakingCancelledOnDisconnect = false;
@@ -609,7 +615,7 @@ export class Lobby {
     session.notice = null;
     session.pendingResult = null;
     this.broadcastState(room);
-    if (room.match) this.callMatch(room, 'addSpectator', session.playerId);
+    if (room.match) { this.callMatch(room, 'addSpectator', session.playerId); this.sendChatState(session); }
     return OK;
   }
 
@@ -840,7 +846,7 @@ export class Lobby {
 
   /** Extra fields of every `welcome` (net.js): the operators a 自选 slot may field (shared/diy.js `kitted`). */
   welcomeInfo() {
-    return { diyKitted: KITTED_CHARS };
+    return { diyKitted: KITTED_CHARS, chatEnabled: this.opts.chatEnabled };
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -995,6 +1001,7 @@ export class Lobby {
       room.matchKey = key;
       room.replay = null;
       room.matchCount++;
+      room.chatMessages = [];
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting (${room.mode}/${room.difficulty}, ${seats.length} seats, seed ${seed})`);
       this.broadcastState(room);
       match.start();
@@ -1110,6 +1117,7 @@ export class Lobby {
   runResync(session) {
     if (!session.connected || this.registry.byId(session.playerId) !== session) return;
     resetStateDelta(session.ws);
+    this.sendChatState(session);
     const room = this.roomOf(session);
     if (!room) return;
     session.resyncAt = this.now();
@@ -1143,6 +1151,13 @@ export class Lobby {
     return n;
   }
 
+  sendChatState(session, includeHistory = true) {
+    if (!this.opts.chatEnabled) return;
+    const room = this.roomOf(session);
+    sendSession(session, { t: 'm.chatState', enabled: this.opts.chatEnabled, mutedUntil: session.chatMutedUntil,
+      serverTime: this.now(), ...(includeHistory ? { messages: this.opts.chatEnabled ? room?.chatMessages || [] : [] } : {}) });
+  }
+
   /** Route a 'g.*' intent to the running match. */
   routeGame(session, msg) {
     const room = this.roomOf(session);
@@ -1154,6 +1169,20 @@ export class Lobby {
     }
     // a spectator only watches (header): nothing else of it ever reaches the match
     if (msg.t !== 'g.watch' && room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    if (msg.t === 'g.chat') {
+      if (!this.opts.chatEnabled) return fail(ERR.CHAT_DISABLED);
+      const result = moderateChat(session, msg.text, this.now());
+      if (result.error) { this.sendChatState(session, false); return fail(result.error); }
+      const seat = room.seatOf(session.playerId);
+      const message = { t: 'm.chat', id: ++room.chatSeq, playerId: session.playerId, name: seat.name, text: result.text, at: this.now() };
+      room.chatMessages.push(message);
+      if (room.chatMessages.length > 50) room.chatMessages.shift();
+      this.broadcastRoom(room, message);
+      this.sendChatState(session, false);
+      if (result.hit) sendSession(session, { t: 'm.toast', kind: 'warn', text: session.chatMutedUntil > this.now()
+        ? N_('连续 5 条消息触发敏感词审查，聊天已暂停 12 小时') : N_('消息中的敏感内容已替换为星号') });
+      return OK;
+    }
     let res;
     try {
       res = room.match.handle(session.playerId, msg);

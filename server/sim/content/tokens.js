@@ -1043,10 +1043,11 @@ function manifold(bb, raw, def) {
  * and a 流失 is given back before the knock-out check) and so never leaves because of its HP; it goes when its 见面礼 is
  * spent, as before. Flags only: no status icon, no 无敌 badge (its HP bar is hidden by the client). The token kit below
  * and 琳琅诗怀雅's own bomb (kits/ops/chess_char_3_04-swire2.js) both install it. Until 0.2.1 a bomb on 活性源石 lost 70 HP/s
- * and a medic healed a hurt one.
+ * and a medic healed a hurt one. As a device it also rejects ordinary friendly selection (PRTS entity type 装置,
+ * #442): the internal `isolated` flag supplies that barrier to ally selectors without a visible status.
  */
 export function champagneHold(battle, bomb) {
-  battle.addBuff(bomb, { key: 'token:champagneHold', flags: { noHeal: true, healFree: true }, persist: true, allowDead: true });
+	battle.addBuff(bomb, { key: 'token:champagneHold', flags: { noHeal: true, healFree: true, isolated: true }, persist: true, allowDead: true });
   battle.on('hit', (ctx) => { if (ctx.target === bomb) ctx.dmg.cancel = true; }, { owner: bomb, priority: 1000 });
   battle.on('elementHit', (ctx) => { if (ctx.target === bomb) ctx.dmg.cancel = true; }, { owner: bomb, priority: 1000 });
   battle.on('damaged', (ctx) => { if (ctx.target === bomb && bomb.alive) bomb.hp = bomb.s.maxHp; }, { owner: bomb, priority: 1000 });

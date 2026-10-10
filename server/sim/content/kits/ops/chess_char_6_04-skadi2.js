@@ -121,7 +121,10 @@ function skadi2(bb, chess, def) {
         battle.on('hit', (ctx) => {
           const t = ctx.target, d = ctx.dmg;
           if (!(share > 0) || !t || t === unit || t.side !== 'ally' || t.kind === 'device' || !live(unit) || !unit.skill?.active) return;
-          if (d.type === 'element' || d.type === 'elemental' || d.skadiShare || d.tags?.includes('transfer') || !inCover(battle, unit, t)) return;
+          // damage another sharing effect already redirected (坚守 bond:stead:share) is not redirected again: the two
+          // would bounce it between Skadi and the 坚守 members until the hook depth guard (docs/SIM.md §5 re-entrancy
+          // rule) [ASSUMED: the official game does not chain the two transfers either]
+          if (d.type === 'element' || d.type === 'elemental' || d.skadiShare || d.steadShare || d.tags?.includes('transfer') || d.tags?.includes('bond:stead:share') || !inCover(battle, unit, t)) return;
           d.skadiShare = { share, tag: TAG }; // 同类效果取最高: one transfer per damage instance
           d.mul *= 1 - share;
         }, { owner: unit, priority: -20 });

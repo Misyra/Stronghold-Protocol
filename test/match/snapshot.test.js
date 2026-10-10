@@ -64,6 +64,7 @@ function runBoth(a, b, pred, maxSteps = 2e6) {
  * Normalizes what a restore deliberately changes or what the two matches legitimately disagree about:
  * - the battle-id sequence is bumped (a re-fought round may not reuse the ids of the interrupted one);
  * - every human starts disconnected (the lobby rebinds them on hello);
+ * - emote timestamps follow the restored phase clocks, which can differ from the uninterrupted match;
  * - `ready` is a client-driven flag of the same kind (a reconnecting player presses it again), and a restored match
  *   re-arms its clocks from the *remaining* time, so the two instances may sit at different points of the ready cycle
  *   even after the same number of harness steps. Everything else — boards, pool, funds, round, RNG positions — must
@@ -75,6 +76,7 @@ function norm(state, { seqGap = 0 } = {}) {
   for (const p of Object.values(out.players)) {
     p.connected = true;
     p.ready = true;
+    delete p.lastEmoteAt;
   }
   return out;
 }
@@ -102,6 +104,8 @@ test('a checkpoint restores the match losslessly (PREP, mid-prep actions)', () =
   a.m.handle('p_0', { t: 'g.levelUp' });
   checkInvariants(a.m);
 
+  a.m._botEmotesSettledRound = a.m.round - 1;
+  a.m._botEmotesMerges = new Map([['ai_0', 2]]);
   const doc = snapshotMatch(a.m);
   assert.ok(doc, 'checkpoint taken');
   assert.equal(doc.v, SNAPSHOT_VERSION);
@@ -114,6 +118,7 @@ test('a checkpoint restores the match losslessly (PREP, mid-prep actions)', () =
   assert.equal(restoreMatch(b.m, doc, DEPS), true);
   assert.equal(b.m.phase, PHASE.PREP);
   assert.equal(b.m.round, 1);
+  for (const ps of a.m.order) assert.equal(b.m.players.get(ps.playerId).lastEmoteAt, ps.lastEmoteAt, 'emote cooldown restored');
   assert.ok(b.m.deadline > b.m.sched.now(), 'prep deadline re-armed in the future');
   assert.deepEqual(norm(matchState(b.m), { seqGap: 1000 }), norm(matchState(a.m)));
   checkInvariants(b.m);
@@ -293,4 +298,53 @@ test('0.2.2 operator settings and a personal bounty choice survive a checkpoint,
       assert.equal(old.m.players.get('p_0').personalChoice, null);
     } finally { old.m.dispose(); }
   } finally { a.m.dispose(); b.m.dispose(); }
+});
+
+// 0.2.3 opening votes share the fork's checkpoint/reconnect path.
+test('opening rerolls keep their revision and a pending vote across checkpoint recovery', () => {
+  const { a, b } = pair(7);
+  a.m.start();
+  assert.equal(a.m.phase, PHASE.INFO_CHECK);
+  assert.deepEqual(a.m.requestSetupReroll('p_0', 0), { ok: true });
+  assert.deepEqual(a.m.voteSetupReroll(a.m.players.get('p_1'), a.m.setupVote.id, true), { ok: true });
+  assert.equal(a.m.setupRevision, 1);
+  a.sched.advance(350);
+  assert.deepEqual(a.m.requestSetupReroll('p_0', 1), { ok: true });
+  const doc = snapshotMatch(a.m);
+  assert.equal(restoreMatch(b.m, doc, DEPS), true);
+  assert.equal(b.m.setupRevision, 1);
+  assert.deepEqual(b.m.setupVote, a.m.setupVote);
+  assert.equal(b.m.deadline, 0, 'the info clock stays paused during the vote');
+  assert.equal(b.m._setupVoteSeq, a.m._setupVoteSeq);
+  assert.equal(b.m.players.get('p_1').connected, false);
+  b.m.players.get('p_1').connected = true;
+  assert.deepEqual(b.m.voteSetupReroll(b.m.players.get('p_1'), b.m.setupVote.id, true), { ok: true });
+  assert.equal(b.m.setupRevision, 2);
+  assert.equal(b.m.setupVote, null);
+  assert.equal(b.m.handle('p_1', { t: 'g.infoReady', setupRevision: 1 }).error, 'BAD_TARGET');
+  assert.deepEqual(b.m.handle('p_1', { t: 'g.infoReady', setupRevision: 2 }), { ok: true });
+});
+
+test('a checkpoint keeps personal stock copy counts, class methods and rerolled bans', () => {
+  const { a, b } = pair(7);
+  a.m.start();
+  const human = a.m.players.get('p_0');
+  assert.equal(human.setDiy({ chess_char_6_diy1_a: { charId: 'char_112_siege', skillIndex: 2 } }), true);
+  human.diyStock.entries.set('chess_char_6_diy1_a', { cap: 5, left: 3, tier: 6, shopLevel: 5 });
+  human.diyBanned = ['chess_char_6_02_a'];
+  assert.equal(restoreMatch(b.m, snapshotMatch(a.m), DEPS), true);
+  const restored = b.m.players.get('p_0');
+  assert.equal(restored.diyStock.has('chess_char_6_diy1_a'), true);
+  assert.deepEqual(restored.diy, human.diy);
+  assert.equal(restored.gd.chess('chess_char_6_diy1_a').charId, 'char_112_siege', 'the restored data overlay uses the selected operator');
+  assert.deepEqual(restored.diyStock.entries, human.diyStock.entries);
+  assert.deepEqual(restored.diyBanned, human.diyBanned);
+  const legacy = snapshotMatch(a.m);
+  delete legacy.setupRevision; delete legacy.setupVote;
+  delete legacy._setupVoteSeq; delete legacy._lastSetupVoteAt;
+  for (const p of legacy.players) { delete p.diy; delete p.diyStock; delete p.diyBanned; }
+  const { m } = makeMatch({ ...OPTIONS, seed: 7 });
+  assert.equal(restoreMatch(m, legacy, DEPS), true);
+  assert.equal(m.setupRevision, 0, 'old checkpoints keep the constructor default');
+  assert.equal(m.setupVote, null);
 });

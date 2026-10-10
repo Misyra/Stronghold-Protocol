@@ -182,7 +182,7 @@ const MATCH_FIELDS = Object.freeze([
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
-  'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves',
+  'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_lastSetupVoteAt', '_botEmotesSettledRound', '_botEmotesMerges',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
@@ -191,7 +191,7 @@ const PLAYER_FIELDS = Object.freeze([
   'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
-  'lastResult',
+  'lastResult', 'diy', 'diyStock', 'diyBanned',
 ]);
 
 /** The RNG streams the match owns (server/sim/rng.js createRng, state()/setState). */
@@ -316,7 +316,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   if (typeof createRngFromState !== 'function') throw new TypeError('restoreMatch: createRngFromState required');
 
   const now = m.sched.now();
-  for (const k of MATCH_FIELDS) if (k !== 'round') m[k] = k === 'aiPicksLast' ? doc[k] === true : decodeState(doc[k]);
+  for (const k of MATCH_FIELDS) if (k !== 'round' && Object.hasOwn(doc, k)) m[k] = k === 'aiPicksLast' ? doc[k] === true : decodeState(doc[k]);
   m.round = Number(doc.round) || 0;
   m.phase = doc.phase;
   m.ended = false;
@@ -342,6 +342,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   // transient view / timer plumbing
   m._timers.clear();
   m._phaseTimer = null;
+  m._infoAdvanceTimer = null;
   m._turnTimer = null;
   m._pubTimer = null;
   m._pubDirty = false;
@@ -368,15 +369,22 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
 
   for (const p of players) {
     const ps = m.players.get(p.playerId);
+    ps.m = m;
+    ps.gd = m.gd;
     for (const k of PLAYER_FIELDS) {
-      if (k === 'playerId' || (!Object.hasOwn(p, k) && (k === 'ops' || k === 'personalChoice'))) continue;
-      ps[k] = decodeState(p[k]);
+      if (k === 'playerId' || !Object.hasOwn(p, k)) continue;
+      const value = decodeState(p[k]);
+      if (k === 'diy') { ps.setDiy(value); continue; }
+      if (k === 'diyStock') {
+        // Keep the DiyStock methods; only its copy counts belong in the checkpoint.
+        if (value?.entries instanceof Map) ps.diyStock.entries = value.entries;
+        continue;
+      }
+      ps[k] = value;
     }
     if (ps._tempDue === null || !(ps._tempDue instanceof Map)) ps._tempDue = new Map();
     if (ps.board === null || !(ps.board instanceof Map)) ps.board = new Map();
-    // derived state
-    ps.m = m;
-    ps.gd = m.gd;
+    // derived state: setDiy above has already rebuilt the player's data overlay.
     ps.connected = ps.isBot ? true : false;   // every socket is gone: the lobby rebinds on hello
     if (doc.phase === PHASE.PREP && !ps.botControlled) ps.ready = false;
     ps._deployMap = null;
@@ -396,7 +404,7 @@ function enterPhase(m, doc, now) {
   switch (doc.phase) {
     case PHASE.INFO_CHECK: {
       // solo waits for 准备就绪; co-op keeps the official guard (a fresh one)
-      if (m.soloUntimed) m.setDeadline(0);
+      if (m.soloUntimed || m.setupVote) m.setDeadline(0);
       else m.setDeadline(Math.max(5, Math.round(remaining / 1000)), () => m.enterBandDraft());
       m.markPublic();
       m.maybeEndInfo();

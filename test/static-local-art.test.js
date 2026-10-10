@@ -80,15 +80,15 @@ test('docs and messages say what falls back without the local art and how a serv
   for (const re of [/3D 棋盘/, /界面图标/, /源石虫/]) assert.match(LOCAL_ART_FALLBACK, re);
   assert.ok(!/表情|玩法说明/.test(LOCAL_ART_FALLBACK), 'the emotes and the 玩法说明 pages are downloaded, not local-only');
   assert.match(LOCAL_ART_COPY_HINT, /同一版本的整合包/);
-  // setup's row is printed on every start (scripts/launch.mjs): it names the fallbacks and points to DEPLOY §6; doctor adds the hint
+  // setup's row is printed on every start (scripts/launch.mjs): it names the fallbacks and points to ASSETS.md; doctor adds the hint
   const noClientRow = read('tools/setup.mjs').split('\n').find((l) => l.includes("'未检测到本机明日方舟客户端'"));
-  assert.ok(noClientRow && noClientRow.includes('LOCAL_ART_FALLBACK') && noClientRow.includes('DEPLOY.md 第 6 节') && !noClientRow.includes('LOCAL_ART_COPY_HINT'), noClientRow);
+  assert.ok(noClientRow && noClientRow.includes('LOCAL_ART_FALLBACK') && noClientRow.includes('docs/development/ASSETS.md') && !noClientRow.includes('LOCAL_ART_COPY_HINT'), noClientRow);
   assert.match(read('tools/doctor.mjs'), /未提取：\$\{LOCAL_ART_FALLBACK\}（\$\{LOCAL_ART_COPY_HINT\}）/);
-  const deploy = read('docs/operations/DEPLOY.md');
-  const s6 = deploy.slice(deploy.indexOf('## 6. 本地客户端素材'));
-  assert.ok(deploy.includes('## 6. 本地客户端素材') && s6.length > 200, 'DEPLOY §6');
+  const assets = read('docs/development/ASSETS.md');
+  const s6 = assets.slice(assets.indexOf('## Local client art'));
+  assert.ok(assets.includes('## Local client art') && s6.length > 200, 'local art documentation');
   for (const re of [/同一版本/, /public\/assets\/local\//, /data\/local-assets\.json/, /3D 棋盘/, /源石虫/, /表情/, /玩法说明/]) assert.match(s6, re);
-  // 0.2.0: the summon models of the local client (extract.py TOKEN_SPINES) — named in the fallbacks, DEPLOY §6 and README,
+  // 0.2.0: the summon models of the local client (extract.py TOKEN_SPINES) — named in the fallbacks, ASSETS.md and README,
   // and an extraction made before them is reported by setup as lacking them (re-extract with --local)
   assert.match(LOCAL_ART_FALLBACK, /召唤物/);
   assert.match(s6, /召唤物/);

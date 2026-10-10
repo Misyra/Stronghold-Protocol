@@ -48,7 +48,7 @@ import { GameScreen } from './screens/game.js';
 import { installAudio } from './audio.js';
 import { settingsStore, useSettings, updateSettings } from './ui/settings.js';
 import { GuideHost } from './ui/guide.js';
-import { installDeviceSupport } from './ui/device.js';
+import { installDeviceSupport, FullscreenPrompt } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
 import { StatsHost } from './screens/stats.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
@@ -353,6 +353,7 @@ function App() {
     <${HistoryHost} />
     <${ResourceManagerHost} />
     <${StatsHost} />
+    <${FullscreenPrompt} />
   </div>`;
 }
 

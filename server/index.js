@@ -71,6 +71,7 @@ export {
  *   publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string,
  *   announcementSource?: 'agent' | 'panel' | 'file', announcementAgentFile?: string, announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
  *   announcementSiteId?: string, announcementPortalUrl?: string,
+ *   chatEnabled?: boolean,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,

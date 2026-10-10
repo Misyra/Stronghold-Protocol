@@ -8,7 +8,8 @@ import { ERR, EMOTES } from '../../shared/constants.js';
 import { createRng } from '../../server/sim/rng.js';
 import { DATA, makeMatch, checkInvariants } from './harness.js';
 
-const GAME = Object.keys(C2S).filter((t) => t.startsWith('g.') && t !== 'g.leave');
+// Chat is handled by Lobby before the simulation (covered in test/chat.test.js).
+const GAME = Object.keys(C2S).filter((t) => t.startsWith('g.') && !['g.leave', 'g.chat'].includes(t));
 const BANDS = Object.keys(DATA.bands);
 
 function randomIntent(rng, m, ps) {

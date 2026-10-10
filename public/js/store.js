@@ -83,6 +83,7 @@ export const initialState = Object.freeze({
   match: emptyMatch(),
   ticker: [],
   emotes: [],
+  chat: { enabled: false, messages: [], mutedUntil: 0, deadline: 0 },
   clock: { offset: 0, rtt: null, synced: false },
   ui: { pendingJoin: null, restoring: false, buildStale: false },
 });

@@ -132,6 +132,9 @@ export class Session {
      * window). A solo run keeps its session resumable for the official `singleReconnectTime` (24 h) — see lobby.js.
      */
     this.resumeWindowMs = null;
+    this.chatStrikes = 0;
+    this.chatMutedUntil = 0;
+    this.chatLastSentAt = -Infinity;
   }
 }
 
@@ -201,6 +204,8 @@ export class SessionRegistry {
     s.ops = doc.ops && typeof doc.ops === 'object' ? doc.ops : null;
     s.notOwned = Array.isArray(doc.notOwned) ? doc.notOwned : null;
     s.diy = doc.diy && typeof doc.diy === 'object' ? doc.diy : null;
+    s.chatStrikes = Number.isInteger(doc.chatStrikes) && doc.chatStrikes >= 0 && doc.chatStrikes < 5 ? doc.chatStrikes : 0;
+    s.chatMutedUntil = Number.isFinite(doc.chatMutedUntil) ? Math.max(0, Math.min(doc.chatMutedUntil, now + 43_200_000)) : 0;
     s.addr = typeof doc.addr === 'string' ? doc.addr : '?';
     s.notice = typeof doc.notice === 'string' ? doc.notice : null;
     s.pendingResult = Array.isArray(doc.pendingResult) ? doc.pendingResult.filter((f) => typeof f === 'string') : null;
@@ -227,7 +232,7 @@ export class SessionRegistry {
 
   /** @param {Session} s @param {number} now */
   isExpired(s, now) {
-    return !s.connected && s.disconnectedAt != null && now - s.disconnectedAt > this.windowOf(s);
+    return !s.connected && s.disconnectedAt != null && now >= s.chatMutedUntil && now - s.disconnectedAt > this.windowOf(s);
   }
 
   /**
@@ -245,7 +250,7 @@ export class SessionRegistry {
   /** Evict the oldest disconnected session that is not in a room. @returns {boolean} */
   evictOne() {
     for (const s of this.byPlayerId.values()) {
-      if (!s.connected && !s.roomCode) { this.remove(s); return true; }
+      if (!s.connected && !s.roomCode && s.chatMutedUntil <= this.now()) { this.remove(s); return true; }
     }
     return false;
   }

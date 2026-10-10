@@ -8,6 +8,7 @@
 //     SP_WS_COMPRESSION ('on' default; 'off' disables): small frames bypass zlib, dictionaries reset between
 //     messages and each connection's deflate window is capped (this fork's bounded permessage-deflate).
 
+import { chatEnabled } from '../moderation/chat.js';
 import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from '../net.js';
 import { Lobby } from '../lobby.js';
@@ -49,9 +50,10 @@ export function perMessageDeflateFor(option) {
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
 export function createSessionStack(opts, { data, log }) {
+  const enabled = chatEnabled(opts.chatEnabled ?? process.env.SP_CHAT_ENABLED);
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
-  const lobbyOptions = lobbyOptionsFrom(opts);
+  const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   return { registry, lobby, network };

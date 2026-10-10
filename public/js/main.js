@@ -145,11 +145,12 @@ function backToLobby() {
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
-  store.set({ room: null, matchmaking: null, match: emptyMatch(), ticker: [], emotes: [] });
+  store.set({ room: null, matchmaking: null, match: emptyMatch(), ticker: [], emotes: [], chat: { ...store.get().chat, messages: [] } });
   store.patch('ui', { restoring: false });
 }
 
 function onWelcome(msg) {
+  store.patch('chat', { enabled: msg.chatEnabled === true });
   identity.saveToken(msg.token);
   identity.rememberMatch(null);
   const prev = store.get();
@@ -194,7 +195,7 @@ function onRoomState(msg) {
   }
   const prevRoom = store.get().room;
   // A (new) match starts: forget the previous match's state so stale results never show.
-  if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch() });
+  if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch(), chat: { ...store.get().chat, messages: [] } });
   store.set({ room, matchmaking: room.matchmaking ? store.get().matchmaking : null });
   identity.rememberMatch(room.inMatch && seats.some((seat) => seat?.playerId === myId)
     ? { name: store.get().me.name, code: room.code || '' } : null);
@@ -271,6 +272,16 @@ function wireNet() {
     // its broadcast priority: the strip plays the highest first (ui/ticker.js enqueueTickerLines)
     const priority = Number.isFinite(msg.priority) ? msg.priority : 0;
     store.set((s) => ({ ticker: [...s.ticker.slice(-(TICKER_KEEP - 1)), { id: ++seq, text, at: Date.now(), type, playerId, round: s.match?.public?.round ?? null, priority }] }));
+  });
+  net.on('m.chatState', (msg) => {
+    const remaining = Math.max(0, Number(msg.mutedUntil) - Number(msg.serverTime));
+    store.patch('chat', { enabled: msg.enabled === true, mutedUntil: Number(msg.mutedUntil) || 0,
+      deadline: performance.now() + (Number.isFinite(remaining) ? remaining : 0),
+      ...(Array.isArray(msg.messages) ? { messages: msg.messages.slice(-50) } : {}) });
+  });
+  net.on('m.chat', (msg) => {
+    if (typeof msg.text !== 'string' || typeof msg.name !== 'string') return;
+    store.patch('chat', (chat) => ({ messages: [...chat.messages.filter(m => m.id !== msg.id).slice(-49), payload(msg)] }));
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));

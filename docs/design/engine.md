@@ -224,3 +224,9 @@ the hook-depth guard on scaled hit-count HP; the guard remains unchanged for oth
   as well as by its aura tick, including the first hit and immediately after the last companion leaves.
 
 Sources and the feedback items requiring no simulation change are recorded in [§28.25](../history/0.2.3.md#2825-community-feedback-of-2026-10-10).
+
+
+**Pinecone S2 (松果 电能过载).** The ATK ramp counts casts since the current deployment and resets whenever she
+is deployed again. Its counter belongs to that unit's kit; the engine's `SkillRuntime.activations` remains a
+cumulative activation sequence. Source: [PRTS 松果](https://prts.wiki/w/松果), S2 备注; rank-specific steps are read
+from `data/chess.json` blackboards. No mode rule carries this ramp through a new deployment.

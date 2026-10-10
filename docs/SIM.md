@@ -1561,3 +1561,12 @@ yet — enemy content must pick one); 抵抗 covers the control statuses of `RES
 “余音” owns a same-call pulse queue (DESIGN §28.24): reflected hits enqueue their earned pulses instead of recursively
 entering another pulse. This retains the lethal-hit pulse and prevents valid high hit-count chains from tripping the
 general hook guard. The queue is emptied in `finally`; it introduces no timer or simulation RNG.
+
+
+### Per-deployment skill counters
+
+An operator-specific ramp that resets on deployment uses its own `unit.mem` counter, cleared by its `deploy` hook.
+Do not reset `SkillRuntime.activations`: it is the cumulative sequence used by skill lifecycle/reentry guards.
+松果 S2 uses `pinecnS2Uses` this way (PRTS 松果 S2 备注); each new deployment starts at the first blackboard step,
+while further casts within that deployment advance and cap normally. S1 and her deployment SP-recovery talent keep
+their existing behavior.

@@ -621,7 +621,10 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   (`PlayerState._legal` / `summonRange`, `board.js ownerRangeKeys`; a summon dragged onto its own owner is checked from
   the owner's new tile, an operator dragged onto the summon from the summon's new tile); Mon3tr's 重构体 likewise (her
   talent), while 凯尔希·思衡托's 战术锚点 (`ownerRangeOutside` / `rangedTilesOnly`) goes only on a 高台 outside that range
-  (`summonExcluded`, board.js class `high`). When the owner is re-oriented in
+  (`summonExcluded`, board.js class `high`). 涤火杰西卡's 机动盾牌 instead uses the four orthogonally adjacent tiles
+  (`shared/summonPlacement.js`, her T1 in backups.json / PRTS 涤火杰西卡 天赋), regardless of her facing, skill or
+  module; diagonal and distant tiles are refused in prep. The same `summonRange` feeds server placement, swaps, the
+  client's drag highlights and bot planning. When the owner is re-oriented in
   place (or promoted) a summon its new range leaves out goes back onto its stack with a toast (`_liftOutOfRange` in
   `recompute`) — one still inside stays [ASSUMED]. A re-orientation that would leave such a summon with no stack and no
   free hand / temp slot is refused (HAND_FULL, like withdrawing a summon into a full hand); in the other cases (a

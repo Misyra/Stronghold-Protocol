@@ -24,7 +24,11 @@ export const MAX_FILE_BYTES = 24 * 1024 * 1024;
 export const TIER_ESSENTIAL = 1;
 /** Optional: voices, sound effects, music and tutorial illustrations. */
 export const TIER_REST = 2;
-export const MANIFEST_URL = '/data/resource-manifest.json';
+/** Release-scoped shared cache; old/static pages and the worker can still use the short-lived plain route. */
+export function resourceManifestUrl(version = globalThis.__spAssetVersion) {
+  return '/data/resource-manifest.json' + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
+}
+export const MANIFEST_URL = resourceManifestUrl();
 export const SW_URL = '/resource-sw.js';
 
 export const RESOURCE_GROUPS = Object.freeze({

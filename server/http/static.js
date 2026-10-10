@@ -28,11 +28,13 @@
 //     media files (503 after a deploy that changed them).
 
 import fsp from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
 import { ROOT, noopLog } from './config.js';
 import { sendError, sendJson } from './common.js';
-import { MIME, GzipCache, IMMUTABLE_CACHE, isNotModified, serveFile } from './files.js';
+import { MIME, GzipCache, IMMUTABLE_CACHE, acceptsGzip, isNotModified, serveFile } from './files.js';
 import { serveMedia } from './media.js';
 import { createPackRegistry } from '../packs.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
@@ -84,6 +86,11 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     // of the whole-tree `_v/<tag>/` prefix, so a release only re-busts the files it changed.
     manifest: assetsManifest && settings.base ? `/assets-manifest.json?v=${assetsManifest.tag}` : '',
     hashes: assetsManifest ? assetsManifest.hashes : null,
+    // Metadata and generator changes can leave the art publication tag unchanged. They must
+    // still rotate the page release before it keys a long-lived preload manifest.
+    preloadVersion: createHash('sha256').update(JSON.stringify(assetsManifest?.preload || {}))
+      .update(readFileSync(new URL('../resources.js', import.meta.url)))
+      .update(readFileSync(new URL(import.meta.url))).digest('hex').slice(0, 16),
   };
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
@@ -91,6 +98,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const release = createAssetVersion(mounts, DATA_SHIM_JS, cdn);
   const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn.base, assetsManifest,
     rewrite: (v) => JSON.parse(release.transform(JSON.stringify(v), '.json')), log });
+  let assetsManifestBody;
   // Small transformed responses share both the read and the result; bounded independently of the gzip cache.
   const transformed = new Map();
   let transformedBytes = 0;
@@ -116,16 +124,23 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     // The offline preload manifest (server/resources.js): ETag-hashed, `no-cache`, generated on demand.
     if (decoded.toLowerCase() === '/data/' + RESOURCE_MANIFEST_FILE) {
+      const versionedManifest = query === `v=${release.tag}`;
+      if (query && !versionedManifest) {
+        sendError(req, res, 404, '资源版本已更新 · Reload required'); return;
+      }
       try {
         const idx = await resources.get();
-        const gz = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip');
+        const gz = acceptsGzip(req.headers['accept-encoding']);
         const body = gz ? idx.gzip : idx.body;
         // The ETag hashes the complete response, so unchanged rebuilds and restarts keep the validator and the
         // browser can revalidate (cache: 'no-cache') instead of re-downloading; each encoding gets its own tag.
         const etag = gz ? `${idx.etag.slice(0, -1)}-gz"` : idx.etag;
         const mtime = new Date(idx.mtimeMs);
         const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', ETag: etag,
-          'Last-Modified': mtime.toUTCString(), Vary: 'Accept-Encoding' };
+          'Last-Modified': mtime.toUTCString(), Vary: 'Accept-Encoding',
+          // Only the current release URL may be shared for 12h. Legacy clients and the worker's
+          // unversioned fallback retain a 15s proxy TTL. Browsers continue to revalidate.
+          'X-Accel-Expires': versionedManifest ? '43200' : '15' };
         if (gz) headers['Content-Encoding'] = 'gzip';
         if (isNotModified(req, etag, mtime)) { res.writeHead(304, headers); res.end(); return; }
         headers['Content-Length'] = body.length;
@@ -143,11 +158,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         return;
       }
       // Keep the immutable client manifest byte-for-byte compatible when only server metadata is added.
-      const body = Buffer.from(JSON.stringify({ tag: assetsManifest.tag, hashes: assetsManifest.hashes }));
-      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding' };
-      if (req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip')) {
+      const body = assetsManifestBody ??= Buffer.from(JSON.stringify({ tag: assetsManifest.tag, hashes: assetsManifest.hashes }));
+      const gz = acceptsGzip(req.headers['accept-encoding']);
+      const etag = `"assets-${assetsManifest.tag}${gz ? '-gz' : ''}"`;
+      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding', ETag: etag };
+      if (gz) headers['Content-Encoding'] = 'gzip';
+      if (req.headers['if-none-match'] && isNotModified(req, etag, new Date(0))) { res.writeHead(304, headers); res.end(); return; }
+      if (gz) {
         const gzip = await gzipCache.get('/__assets-manifest__', { size: body.length, mtimeMs: 0 }, body, assetsManifest.tag);
-        headers['Content-Encoding'] = 'gzip';
         headers['Content-Length'] = gzip.length;
         res.writeHead(200, headers);
         res.end(req.method === 'HEAD' ? undefined : gzip);

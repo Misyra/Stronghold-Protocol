@@ -57,7 +57,7 @@ SP_ANNOUNCEMENT_URL=https://game.rainya.me/api/announce/v1/<面板中本站的�
 - 「等待重试」：检查探针连接、密钥、目录权限及 `journalctl -u sp-admin`。不要只重启游戏。
 - 「游戏仍使用旧公告来源」：游戏环境切为 agent 后重启；核对 `curl -s http://127.0.0.1:3000/api/announcement` 的 source.mode。
 - 文件已写入但游戏无公告：核对两个进程文件路径、游戏账号读取权限、Docker 目录挂载、过期时间。
-- 代理返回旧值：游戏 /api/announcement 精确反代至游戏 Node，共享缓存保持 5 秒，最多 10 秒；中央 feed 由 sp-portal 提供。
+- 代理返回旧值：游戏 /api/announcement 精确反代至游戏 Node，共享缓存为 30 秒，浏览器另有 30 秒轮询等待；缓存中的 serverTime 可使客户端到期显示产生约 30 秒偏差。源站失败时不继续返回过期缓存；中央 feed 由 sp-portal 提供。
 - 版本冲突：检查该探针是否被误配置到两个面板站点，修正后重新发布。中央公告存储需和私有探针配置一起备份。
 
 游戏内公告和入口页公告是独立系统：前者保存在 PANEL_ANNOUNCE_FILE、每站一份；后者由 PORTAL_ANNOUNCEMENT_FILE 管理、多条轮播，通过 /api/notices 展示。不要交叉修改两套文件。

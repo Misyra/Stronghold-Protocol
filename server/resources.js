@@ -269,21 +269,35 @@ export function localPathFor(url, publicDir, cdnBase = '') {
  *           assetsManifest?: { hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} opts
  */
 export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p), log = null, assetsManifest = null } = {}) {
-  /** @type {{ key: string, body: Buffer, gzip: Buffer, mtimeMs: number, manifest: any } | null} */
+  /** @type {{ key: string, sourceKey: string, tileFiles: any[], body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any } | null} */
   let cache = null;
   let pending = null;
   const contentHashes = new Map();
 
-  async function readJson(name) {
+  async function sourceStat(name) {
     const file = path.join(dataDir, name);
     try {
       const stat = await statFile(file);
       if (!stat.isFile()) return null;
-      return { doc: JSON.parse(await fsp.readFile(file, 'utf8')), mtimeMs: stat.mtimeMs, size: stat.size };
+      return { mtimeMs: stat.mtimeMs, size: stat.size };
     } catch (e) {
       if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return null;
       throw e;
     }
+  }
+
+  async function readJson(name, stat) {
+    return stat ? { ...stat, doc: JSON.parse(await fsp.readFile(path.join(dataDir, name), 'utf8')) } : null;
+  }
+
+  async function tileSources(files) {
+    return Promise.all(files.map(async (file) => {
+      const abs = localPathFor(file.url, publicDir, cdnBase);
+      try {
+        const stat = abs && await statFile(abs);
+        return stat?.isFile() ? { url: file.url, abs, stamp: `${stat.mtimeMs}:${stat.size}`, size: stat.size } : null;
+      } catch { return null; }
+    }));
   }
 
   /** File sizes of the files present on disk (bounded concurrency: ~4 000 stats of a real install). */
@@ -319,12 +333,11 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   }
 
   async function build() {
-    const assets = await readJson('assets.json');
-    const local = await readJson('local-assets.json');
-    const hashesDoc = await readJson(ASSET_HASHES_FILE);
-    const assetsDoc = assets ? rewrite(assets.doc) : null;
-    const localDoc = local ? rewrite(local.doc) : null;
-    const collected = collectResourceFiles(assetsDoc, localDoc);
+    // Check only cheap source metadata on the hot path, including 304 revalidation. JSON reads/parsing,
+    // CDN rewriting and traversal must all stay behind this gate, not just the final body/gzip generation.
+    const [assetsStat, localStat, hashesStat] = await Promise.all([
+      sourceStat('assets.json'), sourceStat('local-assets.json'), sourceStat(ASSET_HASHES_FILE),
+    ]);
     // Small site-owned emotes ship with the code, independently of the optional official extraction manifest.
     const custom = await Promise.all(CUSTOM_EMOTE_THEME.emotes.map(async (emote) => {
       const url = emoteArtPath(emote.id);
@@ -333,23 +346,28 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
         return stat.isFile() ? { url, stamp: `${stat.mtimeMs}:${stat.size}` } : null;
       } catch { return null; }
     }));
+    const sourceKey = [assetsStat ? `${assetsStat.mtimeMs}:${assetsStat.size}` : '-', localStat ? `${localStat.mtimeMs}:${localStat.size}` : '-',
+      hashesStat ? `${hashesStat.mtimeMs}:${hashesStat.size}` : '-', cdnBase, ...custom.map(f => f?.stamp || '-')].join('|');
+    let tiles;
+    if (cache && cache.sourceKey === sourceKey) {
+      // Remember dependencies even when tiles.json is absent: creation/deletion must invalidate the cached list.
+      tiles = await tileSources(cache.tileFiles);
+      if (cache.key === [sourceKey, ...tiles.map(f => f?.stamp || '-')].join('|')) return cache;
+    }
+    const t0 = Date.now();
+    const [assets, local, hashesDoc] = await Promise.all([
+      readJson('assets.json', assetsStat), readJson('local-assets.json', localStat), readJson(ASSET_HASHES_FILE, hashesStat),
+    ]);
+    const assetsDoc = assets ? rewrite(assets.doc) : null;
+    const localDoc = local ? rewrite(local.doc) : null;
+    const collected = collectResourceFiles(assetsDoc, localDoc);
     for (const file of custom) if (file && !collected.some(f => f.url === file.url)) {
       collected.push({ url: file.url, tier: TIER_ESSENTIAL, source: 'local' });
     }
     collected.sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
-    const tiles = await Promise.all(tileFiles.map(async (file) => {
-      const abs = localPathFor(file.url, publicDir, cdnBase);
-      try {
-        const stat = abs && await statFile(abs);
-        return stat?.isFile() ? { url: file.url, abs, stamp: `${stat.mtimeMs}:${stat.size}`, size: stat.size } : null;
-      } catch { return null; }
-    }));
-    const key = [assets ? `${assets.mtimeMs}:${assets.size}` : '-', local ? `${local.mtimeMs}:${local.size}` : '-',
-      hashesDoc ? `${hashesDoc.mtimeMs}:${hashesDoc.size}` : '-', cdnBase,
-      ...custom.map(f => f?.stamp || '-'), ...tiles.map((f) => f?.stamp || '-')].join('|');
-    if (cache && cache.key === key) return cache;
-    const t0 = Date.now();
+    tiles ??= await tileSources(tileFiles);
+    const key = [sourceKey, ...tiles.map(f => f?.stamp || '-')].join('|');
     const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null, cdnBase);
     const publishedSizes = new Map();
     if (cdnBase && assetsManifest?.preload) {
@@ -389,7 +407,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     // Strong validator over the complete response: an unchanged rebuild or restart keeps it (the client revalidates
     // with cache: 'no-cache'), while any content change — sizes included — produces a fresh one.
     const etag = `"resources-${crypto.createHash('sha256').update(body).digest('hex')}"`;
-    cache = { key, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
+    cache = { key, sourceKey, tileFiles, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
     log?.info?.(`[resources] ${manifest.count} file(s), ${manifest.tier1} essential, ${manifest.sized} sized`
       + `${manifest.totalBytes ? `, ${(manifest.totalBytes / 1048576).toFixed(1)} MiB` : ''}, `
       + `${fileHashes.size ? [...fileHashes.values()].filter((h) => !h.startsWith('syn-')).length : 0} hashed`

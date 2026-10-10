@@ -108,7 +108,48 @@ game.example.com {
 
 nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机时不必对公网开放 3000；公网入口使用 HTTPS。不要让多个 Node 实例共享一个状态目录。
 
-`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。公告 API 如加共享缓存，保持 5 秒，不超过 10 秒；普通 API 不缓存。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，遵循源站缓存头，不能套用素材一年缓存规则。
+`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。公告 API 共享缓存设为 30 秒；普通 API 不缓存。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，不能套用素材一年缓存规则。清单共享缓存的例外见下节，Worker 和普通 JS/CSS 继续遵循源站复验规则。
+
+### 清单性能修复与 nginx 一次性更新
+
+代码修复将资源清单的缓存判断提前到 JSON 读取、解析、URL 改写和遍历之前，未变化时直接复用结果；素材哈希清单每个进程只序列化一次。首次生成和源文件变化后仍需重建。没有新增环境变量，不需要重传 R2 素材，也不需要清理玩家浏览器资源包。
+
+线上使用 [nginx-game-cache.conf.example](../../scripts/nginx-game-cache.conf.example) 的四个 location：
+
+| 路径 | 策略 |
+|---|---|
+| `/data/resource-manifest.json?v=<页面发布版本>` | nginx 缓存 12 小时，查询参数参与 key；Node 校验版本，错误版本返回不缓存的 404 |
+| 不带版本的 `/data/resource-manifest.json` | 兼容旧客户端和 Worker 后备读取，仅缓存 15 秒 |
+| `/assets-manifest.json?v=<素材版本>` | nginx 缓存 30 天；浏览器保留源站不可变缓存头；只缓存 200 |
+| `/api/announcement` | 缓存 30 秒，源站失败不继续返回过期公告 |
+| `/icons/` | nginx 直接读取图标，缓存 1 小时；文件名无版本，更新图标最多延迟 1 小时 |
+
+新页面自动带资源清单版本，发布版本随代码、数据、素材及预载元数据变化。浏览器仍复验；12 小时是 nginx 的共享缓存期限，由 Node 的 `X-Accel-Expires: 43200` 控制；普通地址是 `15`。不要忽略 `X-Accel-Expires`，不要从缓存键去掉查询串，也不要关闭上游 `Vary` 处理。资源清单和公告都禁止过期回退。长期缓存只用于有版本的清单；上线后资源或数据再次改变，须重启 Node 生成新页面版本，不能仅热覆盖文件。
+
+已有 nginx 站点不用整份替换主配置，按以下步骤合入：
+
+1. 保留现有域名、证书、WebSocket、`/_v/`、普通 JS/CSS 和 ping 路由。在 `http {}` 中确认已有 `sp_assets` 缓存区（完整定义见 [nginx.conf.example](../../scripts/nginx.conf.example)），无需新建 `sp_status`。
+2. 安装片段，修改片段里所有 Node 端口及图标 `root`。本站独立静态目录可为 `/opt/sp-public`；普通源码部署可为 `/opt/Stronghold-Protocol/public`；须确认 nginx 能读取 `root/icons/app.svg`。Docker 若宿主机无图标目录，可先删除图标块，继续由 Node 提供。
+3. 将原有上述同路径 location **替换或删除**，然后在游戏站点 `server {}` 加一行 `include /etc/nginx/snippets/stronghold-game-cache.conf;`。不要重复定义。片段的 `add_header` 在旧版 nginx 会覆盖继承的 `add_header`；站点原有必需响应头需一并保留。
+
+```bash
+cd /opt/Stronghold-Protocol
+git pull --ff-only
+npm ci --omit=dev
+sudo install -d /etc/nginx/snippets
+sudo install -m 644 scripts/nginx-game-cache.conf.example /etc/nginx/snippets/stronghold-game-cache.conf
+# 编辑片段的端口、图标 root，并合入上面的 server include 后：
+sudo nginx -t
+# 检查通过再依次执行；重启会短暂断连，恢复边界见 PERSISTENCE.md。
+sudo systemctl restart stronghold
+sudo systemctl reload nginx
+```
+
+资源清单使用新的缓存键前缀，不需删除整个 nginx 缓存。不要修改状态目录、公告目录或审核密钥。重启同时会关闭本次临时开启的 inspector；若启动参数本身包含 `--inspect`/`NODE_OPTIONS=--inspect`，需先去掉该选项。
+
+公告缓存 30 秒，浏览器也每 30 秒轮询，发布或撤销后还需等待缓存过期与下次轮询。缓存响应中的 `serverTime` 也会延迟，因此客户端到期显示最多存在约 30 秒偏差；这是本部署接受的取舍，不缓存错误响应，也不在源站失败时继续使用过期缓存。
+
+验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 请求应返回 304。素材清单看 `X-Asset-Manifest-Cache`，公告看 `X-Announcement-Cache`。`/api/ping` 不应有共享缓存，普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
 
 <a id="3-docker"></a>
 

@@ -86,7 +86,7 @@ git pull
 
 清单由 `/data/resource-manifest.json` 动态生成，沿用游戏的 CDN 配置和资源版本。Service Worker 只读取素材缓存；游戏仍需要服务器连接。内容未改变的二进制素材会跨版本路径复用，CSS/JSON 因可能被服务器重写而重新校验版本。意外关闭页面后，已经保存但尚未写入索引的文件会先校验内容指纹，匹配就直接恢复，无需重新下载；过期副本会先清除，避免 Service Worker 返回旧内容而触发重试。单文件限制 24 MiB，已知超大文件跳过；界面显示本站存储占用、预计可用空间和预计新增大小；导入前按兼容条目估算，提示仅供参考。空间不足会停止，并保留已有进度。下载失败可展开文件与错误详情。「清理可选资源」删除所有语种的语音、音效、音乐及可选图片，并关闭可选预载；「清理全部资源」删除本站预载缓存并暂停下载。两者均保留个人设置和其他应用缓存。另一标签页预载期间不能清理共享缓存，请先暂停该标签页。
 
-反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；清单和 Worker 脚本应遵循源站的 `no-cache`，不要套用素材一年缓存规则。
+反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；浏览器继续遵循源站 `no-cache`。nginx 可按 [部署指南](DEPLOY.md#清单性能修复与-nginx-一次性更新) 缓存带页面发布版本的资源清单 12 小时，普通地址仅 15 秒；素材哈希清单按其 `?v=` 缓存 30 天。更新资源/数据后必须重启 Node 生成新版本；不要把 Worker、普通 JS/CSS 或无版本资源清单套用长期缓存。
 
 本地已有文件在首次读取清单时补算内容指纹，不增加启动时的素材读取。也可在部署前运行 `node tools/asset-hashes.mjs`，生成本机 `data/asset-hashes.json`（不提交 Git）；用 `node tools/asset-hashes.mjs --check` 检查。素材改变后重生成指纹并重启。CDN 部署从发布清单的 `preload` 读取内容指纹和大小，无需在服务器保存完整素材或运行 `asset-hashes.mjs`。旧发布清单缺少这些字段且本地也没有素材时，才回退到合成指纹，相关文件不能从 ZIP 导入。补齐并部署清单后，原来导出的 ZIP 可直接再次导入；已有浏览器缓存会校验后复用。CDN 两次返回与内容指纹不符的文件不会标记为完成，请先重新发布素材（`node tools/r2-sync.mjs --bucket <bucket> --push`）再重试。
 

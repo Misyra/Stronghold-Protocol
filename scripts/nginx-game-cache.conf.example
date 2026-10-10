@@ -1,0 +1,74 @@
+# Include INSIDE the game's server {}. Requires the existing http-level sp_assets zone.
+# Install as /etc/nginx/snippets/stronghold-game-cache.conf; remove old locations with these paths.
+# Change all Node ports and the icons root to this machine's paths before nginx -t / reload.
+# Keep Vary processing enabled. nginx separates gzip/identity responses using upstream Vary.
+# This file's add_header directives replace inherited add_header directives on older nginx;
+# retain any site-required security headers in these locations or a shared header include.
+
+location = /data/resource-manifest.json {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 20s;
+
+    proxy_cache sp_assets;
+    proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
+    proxy_ignore_headers Cache-Control Expires;
+    # Node X-Accel-Expires overrides this: current ?v=<release> 12h, plain URL 15s.
+    # Do not ignore X-Accel-Expires or drop query parameters from the cache key.
+    proxy_cache_valid 200 15s;
+    proxy_cache_lock on;
+    proxy_cache_revalidate on;
+    proxy_cache_background_update off;
+    proxy_cache_use_stale off;
+    add_header X-Resource-Cache $upstream_cache_status;
+}
+
+location = /assets-manifest.json {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_read_timeout 20s;
+
+    proxy_cache sp_assets;
+    proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
+    # Override the upstream 1-year TTL only for nginx; retain the browser's immutable headers.
+    proxy_ignore_headers Cache-Control Expires;
+    proxy_cache_valid 200 30d;
+    proxy_cache_lock on;
+    proxy_cache_background_update on;
+    proxy_cache_use_stale updating error timeout;
+    add_header X-Asset-Manifest-Cache $upstream_cache_status;
+}
+
+location = /api/announcement {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 20s;
+
+    proxy_cache sp_assets;
+    proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
+    proxy_ignore_headers Cache-Control Expires;
+    proxy_cache_valid 200 30s;
+    proxy_cache_lock on;
+    proxy_cache_background_update off;
+    proxy_cache_use_stale off;
+    add_header X-Announcement-Cache $upstream_cache_status;
+}
+
+location ^~ /icons/ {
+    # /icons/app.svg -> /opt/sp-public/icons/app.svg (root, not alias).
+    # For a normal source install this may instead be /opt/Stronghold-Protocol/public.
+    root /opt/sp-public;
+    try_files $uri =404;
+    autoindex off;
+    expires 1h;
+    access_log off;
+}

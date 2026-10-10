@@ -55,6 +55,22 @@ packaging inclusion. The local handoff `claude-review-023/icon-v2/` holds the or
 256 px and 16/32/48/96 px comparisons, and phone-layout / mask previews with their render script.
 These are offline review renders, not evidence of browser or native OS installation.
 
+## Server manifest caching
+
+`/data/resource-manifest.json` checks source file size/mtime before reading JSON, rewriting URLs or traversing
+resources. Unchanged requests, including conditional 304 checks, reuse the generated body, gzip and ETag.
+The cache also tracks custom emotes and derived map `tiles.json` dependencies, including missing files so their
+creation invalidates the cache. Concurrent requests share one check/build. The first request after startup or a
+source change still builds the manifest; this optimization removes repeated work on unchanged requests.
+
+`/assets-manifest.json?v=<tag>` serializes its immutable public fields once per server instance, caches gzip and
+supports encoding-specific ETags. Server-only preload metadata is excluded as before.
+
+The page requests the preload manifest with `?v=<page release>`; the server rejects foreign versions and emits
+`X-Accel-Expires: 43200` for a 12-hour nginx shared cache, while plain URLs retain a 15-second proxy TTL. Browser
+responses remain `no-cache`. Preload-only publication metadata also participates in the release hash. Restart after
+deploying changed code/data/art/metadata so new pages select a new cache key; see the deployment guide's cache snippet.
+
 ## Local client art
 
 The tracked local-client art was copied unchanged from the upstream [v0.1.3 complete release](https://github.com/sganggs/Stronghold-Protocol/releases/tag/v0.1.3), `Stronghold-Protocol-v0.1.3.zip` (SHA256: `165e55063971dc413fc184ad9185104357dfe4b8d51036f38da2848aaf61299e`). Only `public/assets/local/` and `data/local-assets.json` were extracted: 1,482 resource files plus the manifest, approximately 65 MiB. Keep both together when updating or deploying to the CDN host.

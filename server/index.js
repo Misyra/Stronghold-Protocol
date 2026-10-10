@@ -72,7 +72,7 @@ export {
  *   publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string,
  *   announcementSource?: 'agent' | 'panel' | 'file', announcementAgentFile?: string, announcementFile?: string, announcementUrl?: string, announcementPollMs?: number,
  *   announcementSiteId?: string, announcementPortalUrl?: string,
- *   chatEnabled?: boolean, chatLogDir?: string,
+ *   chatEnabled?: boolean, chatLogDir?: string, chatLogCompressAfterDays?: number, chatLogRetentionDays?: number,
  *   MatchClass?: Function, seedFn?: () => number,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
@@ -94,6 +94,8 @@ export async function startServer(opts = {}) {
   const announcementOptions = announcementOptionsFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
+    compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
+    retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
     publicDirs: [publicDir, dataDir, sharedDir, packsDir], log });
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
@@ -181,7 +183,7 @@ export async function startServer(opts = {}) {
 
   const server = http.createServer(createRequestHandler({
     serveStatic,
-    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest },
+    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
   }));
   server.on('clientError', answerClientError);
@@ -226,6 +228,7 @@ export async function startServer(opts = {}) {
   }
   server.on('error', (e) => log.error('[http] server error', e));
   persister?.start();
+  chatLog.start();
   if (workerPool) log.info(`[workers] ${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)`);
 
   const addr = server.address();

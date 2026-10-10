@@ -12,6 +12,7 @@
 
 import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
 import { ResourceStore } from './store.js';
+import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
 import { missingStorage, storageEstimate } from './storage.js';
 import { t } from '../../../shared/i18n.js';
@@ -186,7 +187,11 @@ export function resourceContext() {
       return { error: String(err?.message || err) };
     }
     if (!manifest.files.length) return { manifest, empty: true };
-    return { manifest, store: new ResourceStore(manifest, { schedule }) };
+    const ensureCached = createWorkerCache(async () => {
+      const worker = globalThis.navigator?.serviceWorker?.controller || (await workerPromise)?.active;
+      return worker?.scriptURL === new URL(SW_URL, location.origin).href ? worker : null;
+    });
+    return { manifest, store: new ResourceStore(manifest, { schedule, ensureCached }) };
   })();
   return contextPromise;
 }

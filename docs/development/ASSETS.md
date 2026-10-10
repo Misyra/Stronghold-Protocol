@@ -509,8 +509,13 @@ The worker also saves complete game-loaded resources listed in the current manif
 after checking SHA-1/known size. Concurrent game/preload requests share one in-flight fetch and receive separate bodies;
 media routes map to canonical manifest files and retain Range support. Worker fetches use a 25-second deadline without
 their own retry loop, leaving preload retries to the page. Unlisted files, other revision queries and corrupt/partial
-responses never enter this read-through cache. The page remains the sole index writer and adopts verified worker-written
-entries through the existing interrupted-download recovery path. Worker writes are suspended/drained before archive
+responses never enter this read-through cache. A versioned private MessageChannel lets preload ask the worker to
+verify and save each manifest URL, then receive a metadata-only receipt after the cache write completes. The page
+remains the sole index writer; it avoids a second body transfer, SHA-1 check and resource write, and can adopt already
+marked local entries without rehashing. URL/hash/known size must match both manifests; HTTP response headers alone
+never authorize this shortcut. Old/unavailable workers and mismatching manifests use the independently verified page
+path. Worker storage errors propagate to preload while game loading remains usable. Pausing detaches the preload
+waiter without cancelling a shared game request. Worker writes are suspended/drained before archive
 operations or cache deletion, and in-flight downloads from an earlier generation cannot write after cleanup.
 Disabling bulk preloading keeps cached resources usable; resources actually requested by the game may still be saved.
 
@@ -562,7 +567,9 @@ When `public/assets` exists, the same file also checks the generated output:
 `node --test test/resources/cdn-import.test.js` checks CDN-only ZIP reuse, stale local files, cache adoption,
 manifest validation and offline metadata publishing without changing CDN keys.
 `node --test test/resources/network-scheduling.test.js` covers deadlines, retry cancellation, combat scheduling,
-read-through integrity, in-flight sharing and cleanup races. `RESOURCE_E2E=1 node --test test/resources/browser.e2e.test.js`
+read-through integrity, in-flight sharing and cleanup races. `test/resources/worker-cache.test.js` also compares digest
+and resource write counts, exercises private receipts, forged headers, old-worker fallback, retries and quota failures.
+`RESOURCE_E2E=1 node --test test/resources/browser.e2e.test.js`
 also checks voice switching, retained language caches, game-loaded offline resources and the mobile manager layout.
 
 `test/feedback1d-models.test.js` (enemies) and `test/local-token-models.test.js` (tokens) check the local-client overlays: the plan, the committed metadata, the manifest without `/assets/local/` URLs, the client's choice of model; `test/local-extract.test.js` the extractor's job table and helpers.

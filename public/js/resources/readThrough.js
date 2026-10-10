@@ -42,26 +42,26 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
   }
 
   async function persist(cache, key, response, generation) {
-    if (!enabled || generation !== epoch) return;
-    if (!cache) return;
+    if (!enabled || generation !== epoch || !cache) return { stored: false };
     const write = cache.put(key, response.clone());
     writes.add(write);
-    try { await write; } catch { /* cache quota/errors must not interrupt the game */ }
+    try { await write; return { stored: true }; }
+    catch (error) { return { stored: false, error }; } // the game can play; preload must see quota failures
     finally { writes.delete(write); }
   }
 
   async function load(file, key, generation) {
-    const cache = await caches.open(CACHE_NAME).catch(() => null);
+    let openError;
+    const cache = await caches.open(CACHE_NAME).catch((error) => { openError = error; return null; });
     const cached = await cache?.match(key).catch(() => null);
-    if (cached?.headers.get('X-SP-Resource-Hash') === file.hash) return cached;
+    if (cached?.headers.get('X-SP-Resource-Hash') === file.hash) return { response: cached, stored: true, downloaded: false };
     if (cached) {
       try {
         const bytes = await cached.clone().arrayBuffer();
         if (bytes.byteLength <= MAX_FILE_BYTES && (await resourceDigests(bytes)).hash === file.hash) {
           const headers = new Headers(cached.headers); headers.set('X-SP-Resource-Hash', file.hash);
           const marked = new Response(bytes, { headers });
-          await persist(cache, key, marked, generation);
-          return marked;
+          return { response: marked, ...await persist(cache, key, marked, generation), downloaded: false };
         }
       } catch { /* unreadable cache entries must not prevent normal game loading */ }
     }
@@ -69,14 +69,44 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     const bytes = await response.arrayBuffer();
     let digest;
     try { digest = await resourceDigests(bytes); }
-    catch { return new Response(bytes, { headers: response.headers }); }
+    catch { return { response: new Response(bytes, { headers: response.headers }), stored: false }; }
     // Return playable bytes even if a broken CDN serves the wrong revision, but never mark/cache them as current.
-    if (digest.hash !== file.hash || (file.size != null && bytes.byteLength !== file.size)) return new Response(bytes, { headers: response.headers });
+    if (digest.hash !== file.hash || (file.size != null && bytes.byteLength !== file.size)) return { response: new Response(bytes, { headers: response.headers }), stored: false };
     const headers = new Headers(response.headers);
     headers.set('X-SP-Resource', '1'); headers.set('X-SP-Resource-Hash', file.hash); headers.set('Accept-Ranges', 'bytes');
     const stored = new Response(bytes, { headers });
-    await persist(cache, key, stored, generation);
-    return stored;
+    return { response: stored, error: openError, ...await persist(cache, key, stored, generation), downloaded: true };
+  }
+
+  function sharedLoad(file, key) {
+    let job = pending.get(key);
+    if (!job || job.generation !== epoch) {
+      job = { generation: epoch };
+      job.promise = load(file, key, epoch).finally(() => { if (pending.get(key) === job) pending.delete(key); });
+      pending.set(key, job);
+    }
+    return job.promise;
+  }
+
+  // A private MessagePort acknowledgement, never an HTTP header, authorizes the page to skip hashing/writing.
+  async function ensureCached({ url, hash, size, cachedOnly = false }) {
+    if (!enabled || typeof url !== 'string') return null;
+    const generation = epoch;
+    let file;
+    try { file = await lookup(new URL(url)); } catch { return null; } // unavailable/stale worker manifest: let the page verify
+    if (!file || absoluteUrl(file.url, origin) !== url || file.hash !== hash || (file.size ?? null) !== (size ?? null)) return null;
+    if (!enabled || generation !== epoch) return null;
+    let result;
+    if (cachedOnly) {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(url);
+      // Only local writers issue this marker after verification. Raw network headers cannot reach this branch.
+      if (cached?.headers.get('X-SP-Resource-Hash') !== hash) return null;
+      result = { stored: true, downloaded: false };
+    } else result = await sharedLoad(file, url);
+    if (!enabled || generation !== epoch) return null;
+    if (result.error) throw result.error;
+    return result.stored ? { cached: true, url, hash, size: file.size ?? null, downloaded: !!result.downloaded } : null;
   }
 
   async function respond(request) {
@@ -87,14 +117,9 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     try { file = await lookup(url); } catch { /* manifest unavailable: preserve normal game loading */ }
     if (!file || !enabled) return (await handleResourceRequest(request, { caches }).catch(() => null)) || fetcher(request);
     const key = absoluteUrl(file.url, origin);
-    let job = pending.get(key);
-    if (!job) {
-      job = load(file, key, epoch).finally(() => { if (pending.get(key) === job) pending.delete(key); });
-      pending.set(key, job);
-    }
     // Requests own independent bodies; cancelling a preload must not cancel a simultaneous game image/audio load.
     let response;
-    try { response = (await job).clone(); }
+    try { response = (await sharedLoad(file, key)).response.clone(); }
     catch (err) {
       // Public images may work without CORS even when the CDN cannot support verified preloading.
       if (request.mode === 'no-cors' && err instanceof TypeError) return fetcher(request);
@@ -104,5 +129,5 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     return range ? rangeResponse(response, range) : response;
   }
 
-  return { respond, mode };
+  return { respond, mode, ensureCached };
 }

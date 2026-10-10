@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, mkdirSync, writeFileSync, symlinkSync, statSync, utimesSync } from 'node:fs';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ChatLog } from '../server/chatLog.js';
@@ -133,4 +134,138 @@ test('direct clients cannot forge proxy IPs when trust is off; disabled chat cre
       assert.equal(response.code, ERR.CHAT_DISABLED); assert.equal(existsSync(logDir), false);
     }
   }
+});
+
+test('archive streams ended UTC days losslessly, retains today/future days, and reports bytes without private fields', async t => {
+  const { dir, dispose } = temporary(t), now = Date.parse('2026-10-10T12:00:00Z');
+  const body = (JSON.stringify({ ip: '203.0.113.1', name: '博士', text: ' 原文 😀 "换行"\n ' }) + '\n').repeat(20000);
+  for (const day of ['08', '09', '10', '11']) writeFileSync(path.join(dir, `2026-10-${day}.jsonl`), body);
+  const logger = new ChatLog({ dir, now: () => now }); dispose.push(() => logger.close());
+  const stats = await logger.maintain();
+  for (const day of ['08', '09']) {
+    assert.equal(existsSync(path.join(dir, `2026-10-${day}.jsonl`)), false);
+    assert.equal(gunzipSync(readFileSync(path.join(dir, `2026-10-${day}.jsonl.gz`))).toString(), body);
+  }
+  for (const day of ['10', '11']) assert.equal(readFileSync(path.join(dir, `2026-10-${day}.jsonl`), 'utf8'), body);
+  assert.equal(stats.files, 4); assert.equal(stats.plainFiles, 2); assert.equal(stats.archiveFiles, 2);
+  assert.equal(stats.plainBytes, Buffer.byteLength(body) * 2); assert.ok(stats.archiveBytes < stats.plainBytes / 5);
+  assert.equal(stats.totalBytes, readdirSync(dir).reduce((sum, name) => sum + statSync(path.join(dir, name)).size, 0));
+  assert.equal(stats.retentionDays, 0); assert.equal(stats.maintenanceFailures, 0);
+  assert.ok(!JSON.stringify(stats).includes('203.0.113.1')); assert.ok(!JSON.stringify(stats).includes(dir));
+  assert.deepEqual(await logger.maintain(), stats, 'a second sweep does not duplicate or recompress archives');
+});
+
+test('explicit retention keeps N UTC calendar days, removes expired plain/archived logs, and leaves unrelated paths alone', async t => {
+  const { dir, dispose } = temporary(t), logs = path.join(dir, 'logs'), outside = path.join(dir, 'outside');
+  mkdirSync(logs); mkdirSync(outside); writeFileSync(path.join(outside, 'keep'), 'outside');
+  symlinkSync(outside, path.join(logs, '2026-10-01.jsonl'), process.platform === 'win32' ? 'junction' : 'dir');
+  for (const day of ['03', '04', '10', '11']) writeFileSync(path.join(logs, `2026-10-${day}.jsonl`), day);
+  writeFileSync(path.join(logs, '2026-10-03.jsonl.gz'), gzipSync('03'));
+  writeFileSync(path.join(logs, '2026-02-30.jsonl'), 'invalid date');
+  writeFileSync(path.join(logs, 'notes.txt'), 'notes');
+  const logger = new ChatLog({ dir: logs, retentionDays: 7, now: () => Date.parse('2026-10-10T23:59:59Z') });
+  dispose.push(() => logger.close()); await logger.maintain();
+  assert.equal(existsSync(path.join(logs, '2026-10-03.jsonl')), false);
+  assert.equal(existsSync(path.join(logs, '2026-10-03.jsonl.gz')), false);
+  assert.equal(gunzipSync(readFileSync(path.join(logs, '2026-10-04.jsonl.gz'))).toString(), '04');
+  for (const day of ['10', '11']) assert.equal(readFileSync(path.join(logs, `2026-10-${day}.jsonl`), 'utf8'), day);
+  assert.equal(readFileSync(path.join(logs, '2026-02-30.jsonl'), 'utf8'), 'invalid date');
+  assert.equal(readFileSync(path.join(logs, 'notes.txt'), 'utf8'), 'notes');
+  assert.equal(readFileSync(path.join(outside, 'keep'), 'utf8'), 'outside');
+  assert.equal(logger.stats().files, 3);
+});
+
+test('compression and expiration can both be disabled; hourly sweeps honor a UTC day rollover', async t => {
+  const { dir, dispose } = temporary(t);
+  writeFileSync(path.join(dir, '2026-10-09.jsonl'), 'yesterday');
+  writeFileSync(path.join(dir, '2026-10-10.jsonl'), 'today');
+  const disabled = new ChatLog({ dir, compressAfterDays: 0, retentionDays: 0, now: () => Date.parse('2026-10-10T12:00Z') });
+  dispose.push(() => disabled.close()); await disabled.maintain();
+  assert.equal(disabled.stats().plainFiles, 2); assert.equal(disabled.stats().archiveFiles, 0);
+  let now = Date.parse('2026-10-10T12:00Z');
+  const logger = new ChatLog({ dir, retentionDays: 2, now: () => now }); dispose.push(() => logger.close());
+  await logger.maintain(); assert.equal(logger.stats().archiveFiles, 1);
+  now += 86400000; await logger.maintain();
+  assert.equal(existsSync(path.join(dir, '2026-10-09.jsonl.gz')), false);
+  assert.equal(gunzipSync(readFileSync(path.join(dir, '2026-10-10.jsonl.gz'))).toString(), 'today');
+  assert.equal(logger.stats().files, 1);
+});
+
+test('interrupted publication recovers only identical bytes; conflicting/corrupt archives keep original files and report safe errors', async t => {
+  const { dir, dispose } = temporary(t), errors = [], secret = '原始私有消息 203.0.113.1 博士';
+  for (const day of ['07', '08', '09']) writeFileSync(path.join(dir, `2026-10-${day}.jsonl`), secret);
+  writeFileSync(path.join(dir, '2026-10-07.jsonl.gz'), gzipSync(secret));
+  writeFileSync(path.join(dir, '2026-10-08.jsonl.gz'), gzipSync('different'));
+  writeFileSync(path.join(dir, '2026-10-09.jsonl.gz'), 'broken archive');
+  const logger = new ChatLog({ dir, now: () => Date.parse('2026-10-10T12:00Z'), log: { error: value => errors.push(value) } });
+  dispose.push(() => logger.close()); await logger.maintain();
+  assert.equal(existsSync(path.join(dir, '2026-10-07.jsonl')), false);
+  for (const day of ['08', '09']) assert.equal(readFileSync(path.join(dir, `2026-10-${day}.jsonl`), 'utf8'), secret);
+  assert.equal(gunzipSync(readFileSync(path.join(dir, '2026-10-08.jsonl.gz'))).toString(), 'different');
+  assert.equal(logger.stats().maintenanceFailures, 2); assert.equal(errors.length, 1);
+  assert.ok(!errors[0].includes(secret)); assert.ok(!errors[0].includes(dir));
+});
+
+test('messages arriving during maintenance stay queued, shutdown waits for archival and every accepted append', async t => {
+  const { dir, dispose } = temporary(t), body = 'old log\n'.repeat(200000), now = Date.parse('2026-10-10T12:00Z');
+  writeFileSync(path.join(dir, '2026-10-09.jsonl'), body);
+  const logger = new ChatLog({ dir, now: () => now }); dispose.push(() => logger.close());
+  const maintenance = logger.maintain();
+  const simultaneous = logger.maintain();
+  assert.equal(logger.record({ at: now, ip: '127.0.0.1', playerId: 'p1', name: '博士', roomCode: 'ABCD', text: ' 维护时的新消息 😀 ' }), true);
+  assert.equal(logger.pending, null, 'append cannot overlap archive publication');
+  await logger.close(); await maintenance;
+  assert.equal((await simultaneous).archiveFiles, 1, 'coalesced maintenance callers also receive the aggregate result');
+  assert.equal(gunzipSync(readFileSync(path.join(dir, '2026-10-09.jsonl.gz'))).toString(), body);
+  assert.equal(records(dir)[0].text, ' 维护时的新消息 😀 ');
+  assert.equal(logger.stats().pendingRecords, 0); assert.equal(logger.stats().droppedRecords, 0);
+  assert.equal(logger.stats().totalBytes, readdirSync(dir).reduce((sum, name) => sum + statSync(path.join(dir, name)).size, 0));
+});
+
+test('invalid retention/compression settings fail early; health exposes aggregate log usage without path or contents', async t => {
+  const { dir, dispose } = temporary(t);
+  for (const value of [-1, 1.5, 'bad', 36501]) {
+    assert.throws(() => new ChatLog({ dir, compressAfterDays: value }), /SP_CHAT_LOG_COMPRESS_AFTER_DAYS/);
+    assert.throws(() => new ChatLog({ dir, retentionDays: value }), /SP_CHAT_LOG_RETENTION_DAYS/);
+  }
+  const now = Date.now(), oldDay = new Date(now - 4 * 86400000).toISOString().slice(0, 10), secret = '私有原文 203.0.113.55';
+  writeFileSync(path.join(dir, oldDay + '.jsonl'), secret);
+  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, stateFile: 'off',
+    chatLogDir: dir, chatLogCompressAfterDays: 2, chatLogRetentionDays: 30 });
+  dispose.push(() => server.close()); await server.chatLog.maintain();
+  for (const route of ['/healthz', '/metrics']) {
+    const data = await (await fetch(server.url + route)).json();
+    assert.equal(data.chatLog.archiveFiles, 1); assert.equal(data.chatLog.plainFiles, 0);
+    assert.equal(data.chatLog.retentionDays, 30); assert.equal(data.chatLog.compressAfterDays, 2);
+    assert.ok(data.chatLog.totalBytes > 0); assert.ok(data.chatLog.lastMaintenanceAt);
+    const serialized = JSON.stringify(data);
+    assert.ok(!serialized.includes(secret)); assert.ok(!serialized.includes(dir));
+  }
+});
+
+test('maintenance recycles only its own stale temporary archives and leaves recent work untouched', async t => {
+  const { dir, dispose } = temporary(t), now = Date.parse('2026-10-10T12:00Z');
+  const stale = '.chat-archive-00000000-0000-0000-0000-000000000001.tmp';
+  const recent = '.chat-archive-00000000-0000-0000-0000-000000000002.tmp';
+  for (const name of [stale, recent, '.unrelated.tmp']) writeFileSync(path.join(dir, name), 'temporary');
+  utimesSync(path.join(dir, stale), new Date(now - 2 * 86400000), new Date(now - 2 * 86400000));
+  utimesSync(path.join(dir, recent), new Date(now), new Date(now));
+  const logger = new ChatLog({ dir, now: () => now }); dispose.push(() => logger.close());
+  await logger.maintain();
+  assert.equal(existsSync(path.join(dir, stale)), false);
+  for (const name of [recent, '.unrelated.tmp']) assert.equal(readFileSync(path.join(dir, name), 'utf8'), 'temporary');
+  assert.equal(logger.stats().temporaryFiles, 1); assert.equal(logger.stats().temporaryBytes, 9);
+});
+
+test('compression delay keeps the configured number of dates, and missing/blocked directories do not crash maintenance', async t => {
+  const { dir, dispose } = temporary(t), now = Date.parse('2026-10-10T12:00Z'), logs = path.join(dir, 'logs');
+  const errors = [], logger = new ChatLog({ dir: logs, compressAfterDays: 3, now: () => now, log: { error: value => errors.push(value) } });
+  dispose.push(() => logger.close());
+  await logger.maintain(); assert.equal(logger.stats().files, 0); assert.equal(existsSync(logs), false);
+  writeFileSync(logs, 'blocked'); await logger.maintain();
+  assert.equal(logger.stats().maintenanceFailures, 1); assert.equal(errors.length, 1); assert.ok(!errors[0].includes(logs));
+  rmSync(logs); mkdirSync(logs);
+  for (const day of ['07', '08', '09', '10']) writeFileSync(path.join(logs, `2026-10-${day}.jsonl`), day);
+  await logger.maintain(); assert.equal(logger.stats().archiveFiles, 1); assert.equal(logger.stats().plainFiles, 3);
+  assert.equal(gunzipSync(readFileSync(path.join(logs, '2026-10-07.jsonl.gz'))).toString(), '07');
 });

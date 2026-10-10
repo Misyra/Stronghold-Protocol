@@ -21,6 +21,14 @@ const responder = createResourceResponder({ network: { timeoutMs: 25000, retries
 } });
 
 self.addEventListener('message', (event) => {
+  if (event.data?.type === 'sp-resource-cache-v1') {
+    const reply = (data) => { event.ports[0]?.postMessage(data); event.ports[0]?.close(); };
+    if (event.data.hello) { reply({ protocol: 1 }); return; }
+    event.waitUntil(responder.ensureCached(event.data).then((result) => reply({ result }), (err) => reply({ error: {
+      name: err?.name, message: err?.message, status: err?.status, retryAfter: err?.retryAfter, transient: err?.transient,
+    } })));
+    return;
+  }
   if (event.data?.type !== 'sp-resource-mode') return;
   event.waitUntil(responder.mode(event.data.enabled).then(() => event.ports[0]?.postMessage({ ok: true })));
 });

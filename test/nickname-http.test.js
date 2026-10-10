@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { startServer } from '../server/index.js';
 import { selectTracked } from '../tools/package.mjs';
+import { loadLexicon } from '../server/moderation/lexicon.js';
 
 async function boot(t) {
   const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
@@ -90,7 +91,10 @@ test('server dictionary cannot be downloaded through static or versioned mounts'
     '/_v/' + build + '/shared/nicknamePolicy.js',
     '/_v/' + build + '/server/moderation/lexicon/SOURCE.json',
     '/_v/' + build + '/server/moderation/lexicon/words.txt',
-    '/_v/' + build + '/server/moderation/lexicon/words.b64'];
+    '/_v/' + build + '/server/moderation/lexicon/words.b64',
+    '/server/moderation/lexicon/words.enc', '/shared/words.enc', '/data/words.enc',
+    '/.state/moderation.key', '/_v/' + build + '/.state/moderation.key',
+    '/_v/' + build + '/server/moderation/lexicon/words.enc'];
   for (const path of paths) {
     const response = await fetch(server.url + path);
     assert.ok(response.status === 404 || response.status === 403, path + ': ' + response.status);
@@ -105,17 +109,22 @@ test('single merged dictionary retains pinned provenance, checksum, license and 
   assert.equal(source.repository, 'https://github.com/konsheng/Sensitive-lexicon');
   assert.match(source.commit, /^[a-f0-9]{40}$/);
   assert.equal(source.upstreamFiles.filter(file => file.path.startsWith('Vocabulary/')).length, 17);
-  assert.equal(source.merge.file, 'words.b64');
-  assert.equal(source.merge.encoding, 'base64');
+  assert.equal(source.merge.file, 'words.enc');
+  assert.equal(source.merge.encoding, 'aes-256-gcm');
+  assert.equal(source.merge.compression, 'gzip');
+  assert.equal(source.merge.format, 'SPLEX001');
   assert.equal(source.merge.charset, 'utf-8');
   assert.equal(existsSync(new URL('words.txt', root)), false, 'no plaintext dictionary on disk');
   const bytes = readFileSync(new URL(source.merge.file, root));
   assert.equal(createHash('sha256').update(bytes).digest('hex'), source.merge.sha256);
-  const decoded = Buffer.from(bytes.toString('ascii').trim(), 'base64');
-  assert.equal(decoded.toString('base64'), bytes.toString('ascii').trim(), 'canonical Base64');
-  assert.equal(createHash('sha256').update(decoded).digest('hex'), source.merge.decodedSha256);
+  assert.equal(existsSync(new URL('words.b64', root)), false, 'no retired reversible dictionary');
+  assert.equal(bytes.subarray(0, 8).toString(), 'SPLEX001');
+  const decoded = loadLexicon();
+  if (!process.env.SP_MODERATION_LEXICON_FILE)
+    assert.equal(createHash('sha256').update(decoded).digest('hex'), source.merge.decodedSha256);
   const words = decoded.toString('utf8').split(/\r?\n/).filter(line => line && !line.startsWith('#'));
-  assert.equal(words.length, source.merge.terms);
+  if (!process.env.SP_MODERATION_LEXICON_FILE) assert.equal(words.length, source.merge.terms);
+  else assert.ok(words.length > 0, 'independent CI dictionary');
   assert.equal(new Set(words).size, words.length);
   for (const word of words) {
     assert.ok(word.length <= 12 && [...word].length >= 2, word);
@@ -127,7 +136,8 @@ test('single merged dictionary retains pinned provenance, checksum, license and 
   assert.equal(createHash('sha256').update(license).digest('hex'), source.upstreamFiles.find(file => file.path === 'LICENSE').sha256);
   assert.equal(existsSync(new URL('Vocabulary/', root)), false, 'no scattered runtime dictionaries');
   assert.equal(existsSync(new URL('../site-policy.js', root)), false, 'site additions are in the same word list');
-  const paths = ['server/moderation/nickname.js', 'server/moderation/lexicon/words.b64',
+  const paths = ['server/moderation/nickname.js', 'server/moderation/lexicon.js', 'server/moderation/lexicon/words.enc',
     'server/moderation/lexicon/SOURCE.json', 'server/moderation/lexicon/LICENSE'];
   assert.deepEqual(selectTracked(paths).keep, paths.sort());
+  assert.deepEqual(selectTracked(['.state/moderation.key', 'server/moderation/lexicon/words.txt']).keep, []);
 });

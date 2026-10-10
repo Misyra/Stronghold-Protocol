@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hasSensitiveNickname } from '../server/moderation/nickname.js';
-import { readFileSync } from 'node:fs';
+import { loadLexicon } from '../server/moderation/lexicon.js';
 import { ERR, ERR_TEXT } from '../shared/constants.js';
 import { startServer } from '../server/index.js';
 import { TestClient } from './helpers/wsClient.js';
@@ -15,9 +15,18 @@ test('nickname policy catches common abuse and normalized evasions without block
     assert.equal(hasSensitiveNickname(value), false, JSON.stringify(value));
 });
 
+test('ordinary family names, food, game vocabulary and abbreviations do not cause nickname false positives', () => {
+  const ordinary = ['哥哥', '圣葬哥哥的小娇妻', '龙哥哥的小批', '冯宝宝', '冰冻爷爷', '克洛丝老婆贴贴',
+    '普瑞赛斯的妻子', '拉普兰德小姐的狗', '苹果派', '青苹果（网络延迟版）', '土豆片', '塔卫二的太阳',
+    '初音未来', '第一次玩卫戍', 'M3世界第一可爱', 'AAA专业谢拉格', 'AAA不融冰批发', '审判时间',
+    '服务器别断了', '无人和悲歌', '逗比', '逗比寒MillerRHa', '南京大学', '咖啡因', '三点水', '10086', '24', '250', 'game', 'ice', 'please', 'QQ', 'kg'];
+  for (const name of ordinary) assert.equal(hasSensitiveNickname(name), false, name);
+  // Removing a neutral term does not whitelist the entire surrounding nickname.
+  for (const name of ['哥哥', '苹果', '第一', '逗比']) assert.equal(hasSensitiveNickname(name + blocked[0]), true, name);
+});
+
 test('merged dictionary indexes every effective term and keeps ordinary words and unrelated numbers allowed', () => {
-  const encoded = readFileSync(new URL('../server/moderation/lexicon/words.b64', import.meta.url), 'ascii');
-  const words = Buffer.from(encoded, 'base64').toString('utf8')
+  const words = loadLexicon().toString('utf8')
     .split(/\r?\n/).filter(line => line && !line.startsWith('#'));
   assert.equal(new Set(words).size, words.length, 'deduplicated before startup');
   assert.deepEqual(words, [...words].sort(), 'stable ordering for review');

@@ -281,7 +281,13 @@ function wireNet() {
   });
   net.on('m.chat', (msg) => {
     if (typeof msg.text !== 'string' || typeof msg.name !== 'string') return;
-    store.patch('chat', (chat) => ({ messages: [...chat.messages.filter(m => m.id !== msg.id).slice(-49), payload(msg)] }));
+    store.set((s) => ({
+      chat: { ...s.chat, messages: [...s.chat.messages.filter(m => m.id !== msg.id).slice(-49), payload(msg)] },
+      // Only live broadcasts become avatar bubbles. Resynced history must never pop up again.
+      ...(!s.chat.messages.some(m => m.id === msg.id) ? {
+        emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, text: msg.text, at: Date.now() }],
+      } : {}),
+    }));
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));

@@ -646,6 +646,18 @@ describe('fields, players, emotes', () => {
     assert.equal(m.get('a').id, 'thanks'); assert.equal(m.has('b'), false);
     assert.equal(activeBubbles(undefined, now).size, 0);
   });
+  test('chat and emotes replace each other per avatar and expire on the same timeline', () => {
+    const events = [{ seq: 1, playerId: 'a', id: 'happy', at: 8000 },
+      { seq: 2, playerId: 'a', text: '你好 ****', at: 9000 },
+      { seq: 3, playerId: 'b', text: '队友好', at: 9500 }];
+    assert.equal(activeBubbles(events, 10000).get('a').text, '你好 ****');
+    assert.equal(activeBubbles(events, 10000).get('a').at, 9000);
+    assert.equal(activeBubbles(events, 10000).get('b').text, '队友好');
+    events.push({ seq: 4, playerId: 'a', id: 'thanks', at: 10000 });
+    const latest = activeBubbles(events, 10000).get('a');
+    assert.equal(latest.id, 'thanks'); assert.equal(latest.text, undefined);
+    assert.equal(activeBubbles(events, 13000).size, 0);
+  });
 });
 
 describe('enemies, HUD, stats', () => {

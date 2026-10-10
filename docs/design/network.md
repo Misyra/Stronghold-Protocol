@@ -121,7 +121,7 @@ Piece = { uid, kind: 'chess'|'item'|'token', id, golden: bool, tier, items: [ { 
 - Ground pathing: official SPFA-style 4-direction search from the goal with crates as cost-1000 tiles, then straight-line smoothing (research 08 §3.4). act1 m02 crates #001–#004 inactive in 下半. Remake refinement (user playtest #2, narrowed by §21.15): route lengths and routes stay the official ones unless 0.1.0's road-over-floor preference route crosses strictly fewer non-blockable (floor / gate / 深水区) tiles and no more 深水区 (GitHub #375) — a corner touch is not a crossing; ties keep the official route. E.g. 战场#01's lower-gate enemies take the col-8 road, while 战场#04's keep the official diagonal from row 9 into row 10 (server/sim/grid.js header; test/sim/pathing-official.test.js, pathing-blockable.test.js).
 - Observing: no watching while your own normal battle runs; after it ends (and in prep) tap a teammate → 前往查看 (local replica, fast-forwarded). ‹ › only inside 联防/FA fields; FA: own pair only; eliminated: free.
 - Prep interactions: tap a unit → underframe with 出售 +1 (and 撤退 on board); items/Arts → 销毁; shop and upgrade are two-tap (select → confirm; the remake's 机变 cards too, §18.2); strategy draft forbids a strategy already taken by a teammate (队友已选).
-- Emotes: 6 themes × 6 battle emotes (research 09 §4.2), image-only bubbles beside the sender avatar, 1 s cooldown, 3 s bubble; `g.emote {id}` with the official emoji id.
+- Emotes: 6 official themes plus the bundled Ciallo theme (7 × 6 battle emotes) (research 09 §4.2), image-only bubbles beside the sender avatar, 1 s cooldown, 3 s bubble; `g.emote {id}` with a catalog-whitelisted emoji id.
 
 ---
 

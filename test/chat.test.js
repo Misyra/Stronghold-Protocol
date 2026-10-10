@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { maskSensitiveText, hasSensitiveNickname } from '../server/moderation/nickname.js';
 import { chatEnabled, moderateChat, CHAT_MUTE_MS, CHAT_WINDOW_MS } from '../server/moderation/chat.js';
 import { Session, SessionRegistry } from '../server/net.js';
@@ -135,9 +138,15 @@ test('environment defaults off, controls the real server welcome, and rejects mi
 });
 
 async function setup(t, enabled = true) {
-  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, chatEnabled: enabled, MatchClass: StubMatch, workers: 0 });
+  const chatLogDir = mkdtempSync(path.join(tmpdir(), 'sp-chat-test-'));
+  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, chatEnabled: enabled, chatLogDir, MatchClass: StubMatch, workers: 0 });
   const clients = [];
-  t.after(async () => { await Promise.all(clients.map(c => c.close())); await server.close(); });
+  t.after(async () => {
+    await Promise.all(clients.map(c => c.close())); await server.close();
+    assert.equal(path.dirname(path.resolve(chatLogDir)), path.resolve(tmpdir()));
+    assert.ok(path.basename(chatLogDir).startsWith('sp-chat-test-'));
+    rmSync(chatLogDir, { recursive: true, force: true });
+  });
   const player = async name => {
     const c = await TestClient.connect(server.url.replace('http:', 'ws:') + '/ws'); clients.push(c);
     c.welcome = await c.hello(name); return c;

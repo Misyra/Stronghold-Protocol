@@ -12,6 +12,7 @@
 
 import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
 import { ResourceStore } from './store.js';
+import { ResourceSchedule } from './schedule.js';
 import { missingStorage, storageEstimate } from './storage.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -52,6 +53,7 @@ const state = {
   voiceLang: 'cn',
   allVoices: false,
   clearing: false,
+  combat: false,
 };
 
 const listeners = new Set();
@@ -68,6 +70,32 @@ let voiceLang = 'cn';
 let allVoices = false;
 let intentRevision = 0;
 let clearPromise = null;
+const schedule = new ResourceSchedule();
+
+export function updateResourcePriority(context) {
+  schedule.update(context);
+  set({ combat: schedule.combat });
+}
+
+/** Suspend worker writes before imports/deletes, including writes already started in another tab. */
+async function workerWrites(enabled) {
+  const registration = await workerPromise;
+  const worker = globalThis.navigator?.serviceWorker?.controller || registration?.active || registration?.installing;
+  if (!worker || typeof MessageChannel === 'undefined') return;
+  await new Promise((resolve, reject) => {
+    const channel = new MessageChannel();
+    const cleanup = () => { clearTimeout(timer); channel.port1.close(); channel.port2.close(); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('资源缓存服务响应超时，请刷新页面后重试')); }, 5000);
+    channel.port1.onmessage = () => { cleanup(); resolve(undefined); };
+    worker.postMessage({ type: 'sp-resource-mode', enabled }, [channel.port2]);
+  });
+}
+
+async function withWorkerWritesPaused(job) {
+  await workerWrites(false);
+  try { return await job(); }
+  finally { await workerWrites(true).catch(() => {}); }
+}
 
 async function updateStorage(store, status, plan) {
   const revision = intentRevision;
@@ -158,7 +186,7 @@ export function resourceContext() {
       return { error: String(err?.message || err) };
     }
     if (!manifest.files.length) return { manifest, empty: true };
-    return { manifest, store: new ResourceStore(manifest) };
+    return { manifest, store: new ResourceStore(manifest, { schedule }) };
   })();
   return contextPromise;
 }
@@ -383,7 +411,7 @@ function transferArchive(kind, file) {
     if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
     checkAbort(signal);
     ctx.store.setVoiceScope(voiceLang, allVoices);
-    const outcome = await withDownloadLock(async () => {
+    const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
       set(counters(await ctx.store.status()));
       const archive = await import('./archive.js');
       checkAbort(signal);
@@ -407,7 +435,7 @@ function transferArchive(kind, file) {
           onPlan: (plan) => updateStorage(ctx.store, null, plan),
           onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
         : archive.exportResourceZip(ctx.store, { signal, onProgress });
-    });
+    }));
     if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
     checkAbort(signal);
     set({ archivePhase: '', archiveGroup: '' });
@@ -458,7 +486,7 @@ export function clearResources({ optionalOnly = false } = {}) {
     if (transferPromise) { try { await transferPromise; } catch { /* cancelled */ } }
     const ctx = await resourceContext();
     if (ctx.store?.running) { try { await ctx.store.running; } catch { /* aborted */ } }
-    const outcome = await withDownloadLock(async () => {
+    const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
       let status;
       if (ctx.store) status = await ctx.store.clear({ optionalOnly });
       else if (optionalOnly) throw new Error('无法读取资源清单，请重试或清理全部资源');
@@ -468,7 +496,7 @@ export function clearResources({ optionalOnly = false } = {}) {
       }
       if (!current) { await workerPromise; await dropWorker(); }
       return { busy: false, status };
-    });
+    }));
     if (outcome.busy) {
       set({ error: true, message: t('另一个标签页正在预载，请先暂停该标签页再清理缓存。') });
       return outcome;

@@ -1126,6 +1126,16 @@
 .resource-cache { padding: .18rem; border: 1px solid var(--line-2); }
 .resource-cache h3 { margin: 0 0 .06rem; font-size: calc(.19 * var(--t)); color: var(--text-hi); }
 .resource-cache p, .resource-manager__voice p { font-size: calc(.14 * var(--t)); color: var(--text-dim); }
+.resource-manager__voice { padding: .16rem .18rem; border: 1px solid var(--line-2); background: rgba(23, 249, 183, .025); }
+.resource-manager__voice-head { display: flex; align-items: center; justify-content: space-between; gap: .12rem; margin-bottom: .1rem; }
+.resource-manager__voice h3 { margin: 0; color: var(--text-hi); font-size: calc(.19 * var(--t)); }
+.resource-voice-tabs { display: flex; flex-shrink: 0; border: 1px solid var(--line-2); }
+.resource-voice-tabs button { padding: .07rem .18rem; border: 0; background: transparent; color: var(--text-md); font: inherit; cursor: pointer; }
+.resource-voice-tabs button[aria-pressed="true"] { background: rgba(23, 249, 183, .12); color: var(--mint-400); }
+.resource-voice-tabs button:disabled { opacity: .5; cursor: default; }
+.resource-voice-tabs button:focus-visible { outline: 2px solid var(--mint-400); outline-offset: -2px; }
+.resource-voice-all { margin-top: .09rem; font-size: calc(.14 * var(--t)); color: var(--text-md); white-space: normal; }
+@media (pointer: coarse) { .resource-voice-tabs button { min-height: 44px; } }
 .resource-cache .res-actions { margin-top: .14rem; }
 .resource-archive__result { margin-top: .12rem; padding: .12rem; background: rgba(23, 249, 183, .05); overflow-wrap: anywhere; }
 .resource-archive__result.is-error, .resource-manager__failures { color: var(--amber); }

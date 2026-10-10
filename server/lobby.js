@@ -261,14 +261,16 @@ export class Lobby {
    *   seedFn?: () => number,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    *   workerPool?: object | null,
+   *   chatLog?: import('./chatLog.js').ChatLog | null,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null, chatLog = null }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
     this.workerPool = workerPool;
+    this.chatLog = chatLog;
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
@@ -1175,6 +1177,8 @@ export class Lobby {
       if (result.error) { this.sendChatState(session, false); return fail(result.error); }
       const seat = room.seatOf(session.playerId);
       const message = { t: 'm.chat', id: ++room.chatSeq, playerId: session.playerId, name: seat.name, text: result.text, at: this.now() };
+      this.chatLog?.record({ at: message.at, ip: session.addr, playerId: session.playerId,
+        name: seat.name, roomCode: room.code, text: msg.text });
       room.chatMessages.push(message);
       if (room.chatMessages.length > 50) room.chatMessages.shift();
       this.broadcastRoom(room, message);

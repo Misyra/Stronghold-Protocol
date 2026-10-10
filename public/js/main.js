@@ -38,7 +38,8 @@ import { ConnectionBanner } from './ui/connBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
-import { data } from './data.js';
+import { data, getChess } from './data.js';
+import { matchResourceUrls } from './resources/schedule.js';
 import { GAME_FILES } from './ui/gameComponents.js';
 import { TitleScreen, sanitizeName, isValidName } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
@@ -57,7 +58,7 @@ import { AnnouncementBanner } from './ui/announcement.js';
 import { recordMatchResult } from './history/index.js';
 import { HistoryHost } from './ui/historyPanel.js';
 import { ResourceHost } from './ui/resourcePanel.js';
-import { APP_VERSION, ERR } from '../../shared/constants.js';
+import { APP_VERSION, ERR, PHASE } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError } from './diag.js';
@@ -330,6 +331,7 @@ function ScreenCrashed({ error, reset }) {
 function ResourceManagerHost() {
   const settings = useSettings();
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} allVoices=${settings.preloadAllVoices}
+    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })}
     onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
     onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })} />`;
 }
@@ -456,6 +458,18 @@ function installResourcePreload() {
     const apply = (s) => { r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices).catch((err) => console.warn('[resources] sync failed', err)); };
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
+    let timer;
+    const priority = () => {
+      const s = store.get();
+      r.updateResourcePriority({ active: selectRoute(s) === 'game', combat: s.match?.public?.phase === PHASE.COMBAT,
+        urls: matchResourceUrls(s.match, data.get('assets'), getChess, data.get('local')) });
+    };
+    const schedule = () => { timer ??= setTimeout(() => { timer = null; priority(); }, 300); };
+    store.subscribe((s, prev) => {
+      if (s.match.public !== prev.match.public || s.match.private !== prev.match.private || s.match.field !== prev.match.field) schedule();
+    });
+    data.subscribe((name) => { if (['assets', 'local', 'chess'].includes(name)) schedule(); });
+    priority();
   }).catch((err) => console.warn('[resources] unavailable', err));
 }
 

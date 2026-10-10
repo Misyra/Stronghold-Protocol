@@ -87,6 +87,45 @@ test('export/import round trip includes only cached files and serves imported by
   assert.equal((await importResourceZip(target.store, exported.blob)).imported, 1, 'a damaged cached copy is replaced by verified package bytes');
 });
 
+test('export recovers current game-cached bytes without an index and excludes stale unindexed bytes', async () => {
+  const files = [file('/assets/game.png', 'current'), file('/assets/old.png', 'new-version')];
+  const source = store(files);
+  const cache = await source.caches.open(CACHE_NAME);
+  await cache.put(source.store.keyOf(files[0].url), new Response(files[0].body));
+  await cache.put(source.store.keyOf(files[1].url), new Response('old-version'));
+  assert.equal((await source.store.status()).count, 0, 'no page-owned index has been written');
+  const exported = await exportResourceZip(source.store);
+  assert.equal(exported.count, 1);
+  const target = store(files);
+  assert.equal((await importResourceZip(target.store, exported.blob)).imported, 1);
+  assert.deepEqual(source.calls, []);
+  assert.deepEqual(target.calls, []);
+});
+
+test('export of only stale unindexed bytes reports no current resources', async () => {
+  const source = store([file('/assets/game.png', 'current')]);
+  await (await source.caches.open(CACHE_NAME)).put(source.store.keyOf('/assets/game.png'), new Response('old'));
+  await assert.rejects(exportResourceZip(source.store), /没有已缓存的当前资源/);
+});
+
+test('export deduplicates canonical CDN aliases into an importable package', async () => {
+  const files = [file('/assets/game.png', 'same'), file('https://cdn.example/release/assets/game.png', 'same')];
+  const source = store(files);
+  await source.store.download();
+  const progress = [];
+  const exported = await exportResourceZip(source.store, { onProgress: (v) => progress.push(v) });
+  assert.equal(exported.count, 1);
+  assert.equal(progress.at(-1).done, progress.at(-1).total);
+  const target = store(files);
+  assert.equal((await importResourceZip(target.store, exported.blob)).imported, 2);
+});
+
+test('export refuses conflicting contents for the same canonical resource', async () => {
+  const source = store([file('/assets/game.png', 'one'), file('https://cdn.example/assets/game.png', 'two')]);
+  await source.store.download();
+  await assert.rejects(exportResourceZip(source.store), /同一资源存在不同内容/);
+});
+
 test('board JSON metadata and bracket textures preload, round-trip through ZIP and match encoded CDN requests', async () => {
   const paths = ['/assets/local/map/fx/materials.json', '/assets/local/map/fx/prefab.json', '/assets/local/map/autochess/tiles.json',
     '/assets/local/map/fx/[opt]merged_textures.png', '/assets/local/map/water/[ucp]TX_water_normal.png'];

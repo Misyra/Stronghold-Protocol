@@ -16,6 +16,7 @@ import {
   CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isQuotaError,
 } from './common.js';
 import { verifiedResourceBytes } from './integrity.js';
+import { fetchResource } from './network.js';
 
 /** Files above this are downloaded one at a time (a 20 MiB Spine texture should not race three others). */
 const BIG_FILE_BYTES = 4 << 20;
@@ -49,9 +50,9 @@ export class ResourceStore {
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
    * @param {{ caches?: any, fetcher?: typeof fetch, origin?: string, smallLanes?: number, bigLanes?: number,
-   *           now?: () => number }} [opts]
+   *           now?: () => number, network?: any, schedule?: any }} [opts]
    */
-  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now() } = {}) {
+  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null } = {}) {
     this.manifest = manifest;
     this.files = Array.isArray(manifest.files) ? manifest.files : [];
     this.caches = caches;
@@ -60,6 +61,8 @@ export class ResourceStore {
     this.smallLanes = Math.max(1, smallLanes);
     this.bigLanes = Math.max(1, bigLanes);
     this.now = now;
+    this.network = network;
+    this.schedule = schedule;
     this.cacheName = CACHE_NAME;
     /** @type {Promise<any> | null} */
     this.running = null;
@@ -183,7 +186,7 @@ export class ResourceStore {
           const response = new Response(bytes, { headers: { 'Content-Type': resourceType(new URL(file.url, this.origin).pathname), 'Content-Length': String(bytes.byteLength) } });
           const writeStart = performance.now();
           timings.cacheWriteCount++;
-          try { await cache.put(key, this.storable(response)); }
+          try { await cache.put(key, this.storable(response, file.hash)); }
           finally { timings.cacheWriteMs += performance.now() - writeStart; }
           // A put cannot be cancelled: always index successful writes, even when another lane has since failed.
           index.files[key] = file.hash;
@@ -258,7 +261,7 @@ export class ResourceStore {
   }
 
   /** The response we store: original type, `Accept-Ranges` (the worker answers ranges) and our marker. */
-  storable(response) {
+  storable(response, verifiedHash = '') {
     const headers = new Headers();
     const type = response.headers.get('content-type');
     if (type) headers.set('Content-Type', type);
@@ -273,6 +276,7 @@ export class ResourceStore {
     }
     headers.set('Accept-Ranges', 'bytes');
     headers.set('X-SP-Resource', '1');
+    if (CONTENT_HASH_RE.test(verifiedHash)) headers.set('X-SP-Resource-Hash', verifiedHash);
     return new Response(response.body, { status: 200, statusText: 'OK', headers });
   }
 
@@ -332,18 +336,7 @@ export class ResourceStore {
 
   /** Fetch a file and hand back a storable response (an opaque or empty or failed answer throws). */
   async #fetchStorable(url, signal) {
-    const res = await this.fetcher(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal });
-    if (res.type === 'opaque' || !res.body) throw new Error('响应不可读取（缺少 CORS 头或空响应）');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let bytes = 0;
-    const body = res.body.pipeThrough(new TransformStream({
-      transform(chunk, output) {
-        bytes += chunk.byteLength;
-        if (bytes > MAX_FILE_BYTES) throw new Error('单个资源超过 24 MiB 缓存上限');
-        output.enqueue(chunk);
-      },
-    }));
-    return new Response(body, { status: res.status, headers: res.headers });
+    return fetchResource(url, { ...this.network, fetcher: this.fetcher, signal });
   }
 
   /**
@@ -517,7 +510,7 @@ export class ResourceStore {
                 if (retried !== file.hash) throw new Error('资源内容与清单不一致，请更新 CDN 缓存或资源指纹');
               }
             }
-            await cache.put(key, this.storable(res));
+            await cache.put(key, this.storable(res, file.hash));
             downloaded++;
           }
           // A missing index record is recovered by verifying the saved bytes on the next run.
@@ -544,11 +537,33 @@ export class ResourceStore {
       };
       const drain = async (list, lanes) => {
         let next = 0;
+        let revision = -1;
         let failure = null;
-        await Promise.all(Array.from({ length: Math.min(lanes, list.length) }, async () => {
-          try { for (let i = next++; i < list.length && !failure; i = next++) await one(list[i]); }
-          catch (err) { failure ??= err; }
-        }));
+        const drained = new AbortController();
+        const abortWait = () => drained.abort(signal.reason);
+        signal?.addEventListener('abort', abortWait, { once: true });
+        const waitSignal = drained.signal;
+        if (signal?.aborted) abortWait();
+        try { await Promise.all(Array.from({ length: Math.min(lanes, list.length) }, async (_, lane) => {
+          try {
+            while (next < list.length && !failure) {
+              await this.schedule?.wait(waitSignal, lane, list[next].tier, () => next < list.length && !failure);
+              checkAbort(signal);
+              if (next >= list.length || failure) break;
+              if (this.schedule && revision !== this.schedule.revision) {
+                revision = this.schedule.revision;
+                const buckets = [[], [], []];
+                for (let i = next; i < list.length; i++) buckets[this.schedule.priority(list[i].url)].push(list[i]);
+                const tail = [...buckets[2], ...buckets[1], ...buckets[0]];
+                list.splice(next, tail.length, ...tail);
+              }
+              const file = list[next++];
+              if (next === list.length) this.schedule?.wake();
+              await one(file);
+            }
+          }
+          catch (err) { failure ??= err; drained.abort(err); }
+        })); } finally { signal?.removeEventListener('abort', abortWait); }
         if (failure) throw failure;
       };
       try {

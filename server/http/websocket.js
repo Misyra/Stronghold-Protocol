@@ -46,15 +46,15 @@ export function perMessageDeflateFor(option) {
 /**
  * The session stack of one server.
  * @param {{ MatchClass?: Function, seedFn?: () => number, [option: string]: any }} opts startServer() options
- * @param {{ data: object, log: object }} deps the game data the lobby's matches use, the logger
+ * @param {{ data: object, log: object, chatLog?: import('../chatLog.js').ChatLog }} deps the game data, logger and private chat log
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log }) {
+export function createSessionStack(opts, { data, log, chatLog }) {
   const enabled = chatEnabled(opts.chatEnabled ?? process.env.SP_CHAT_ENABLED);
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   return { registry, lobby, network };
 }

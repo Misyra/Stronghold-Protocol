@@ -10,11 +10,13 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  EMOTES, EMOTE_THEMES, EMOTE_CATALOG, EMOTE_THEME, EMOTE_LABEL, EMOTE_COOLDOWN_MS, EMOTE_BUBBLE_MS,
+  EMOTES, EMOTE_THEMES, OFFICIAL_EMOTE_THEMES, CUSTOM_EMOTE_THEME, EMOTE_CATALOG, EMOTE_THEME, EMOTE_LABEL, EMOTE_COOLDOWN_MS, EMOTE_BUBBLE_MS,
   emoteInfo, emoteArtPath, emoteArtGroup,
 } from '../../shared/constants.js';
+import { selectTracked } from '../../tools/package.mjs';
+import { createResourceIndex } from '../../server/resources.js';
 import { validateC2S } from '../../shared/protocol.js';
-import { buildEmotes, formatEmotes, THEME_DIRS } from '../../tools/build-emotes.mjs';
+import { buildEmotes, appendCustomEmotes, formatEmotes, THEME_DIRS } from '../../tools/build-emotes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const readJson = (rel) => JSON.parse(readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -25,15 +27,16 @@ const ENABLED = ['emoticon_autochess_basic', 'emoticon_originium_slug', 'emotico
   'emoticon_foolsday_doctor', 'emoticon_foolsday_amiya', 'emoticon_foolsday_wisdel'];
 
 describe('emote catalog (shared/constants.js)', () => {
-  test('6 themes × 6 battle emotes = 36 unique official ids, in wheel order', () => {
-    assert.deepEqual(EMOTE_THEMES.map((t) => t.themeId), ENABLED, 'pages follow autoChessData.enabledEmoticonThemeIdList');
+  test('6 official pages plus the site page = 42 unique battle ids, in wheel order', () => {
+    assert.deepEqual(OFFICIAL_EMOTE_THEMES.map((t) => t.themeId), ENABLED, 'pages follow autoChessData.enabledEmoticonThemeIdList');
     for (const t of EMOTE_THEMES) {
       assert.equal(t.emotes.length, 6, t.themeId);
       const sorts = t.emotes.map((e) => e.sortId);
       assert.deepEqual(sorts, [...sorts].sort((a, b) => a - b), `${t.themeId} by sortId`);
     }
-    assert.equal(EMOTES.length, 36);
-    assert.equal(new Set(EMOTES).size, 36);
+    assert.equal(EMOTE_THEMES.length, 7);
+    assert.equal(EMOTES.length, 42);
+    assert.equal(new Set(EMOTES).size, 42);
     assert.deepEqual([...EMOTES], EMOTE_CATALOG.map((e) => e.id));
     for (const id of EMOTES) assert.match(id, /^(slug_)?autochess_battle_[a-z0-9_]+$/, id);
     assert.ok(Object.isFrozen(EMOTES) && Object.isFrozen(EMOTE_THEMES) && Object.isFrozen(EMOTE_THEMES[0].emotes));
@@ -63,11 +66,11 @@ describe('emote catalog (shared/constants.js)', () => {
       assert.equal(EMOTE_THEME[bad], undefined, `EMOTE_THEME[${bad}]`);
       assert.equal(EMOTE_LABEL[bad], undefined, `EMOTE_LABEL[${bad}]`);
     }
-    assert.equal(Object.keys(EMOTE_THEME).length, 36);
+    assert.equal(Object.keys(EMOTE_THEME).length, 42);
     assert.ok(Object.isFrozen(EMOTE_THEME) && Object.isFrozen(EMOTE_LABEL));
   });
 
-  test('protocol accepts exactly the 36 official battle ids (g.emote { id })', () => {
+  test('protocol accepts exactly the 42 registered battle ids (g.emote { id })', () => {
     for (const id of EMOTES) assert.equal(validateC2S({ t: 'g.emote', id }), null, id);
     for (const id of ['happy', 'thanks', 'autochess_room_hello', 'multiv3_battle_thanks', 'duel_battle_happy', '__proto__', '', 7, null]) {
       assert.notEqual(validateC2S({ t: 'g.emote', id }), null, String(id));
@@ -103,7 +106,7 @@ describe('data/emotes.json (tools/build-emotes.mjs)', () => {
       items: tryJson('.cache/gamedata/excel/item_table.json'),
     });
     assert.deepEqual(warnings, []);
-    assert.equal(formatEmotes(doc), readFileSync(path.join(ROOT, 'data/emotes.json'), 'utf8'));
+    assert.equal(formatEmotes(appendCustomEmotes(doc)), readFileSync(path.join(ROOT, 'data/emotes.json'), 'utf8'));
   });
 
   test('builder: scene filter, enabled-list page order, sortId order, picId from the table, fallbacks', () => {
@@ -163,8 +166,8 @@ describe('data/emotes.json (tools/build-emotes.mjs)', () => {
   });
 
   test('theme dirs agree between the builder, the constants and data/emotes.json', () => {
-    for (const t of EMOTE_THEMES) assert.equal(THEME_DIRS[t.themeId], t.dir, t.themeId);
-    assert.equal(Object.keys(THEME_DIRS).length, EMOTE_THEMES.length);
+    for (const t of OFFICIAL_EMOTE_THEMES) assert.equal(THEME_DIRS[t.themeId], t.dir, t.themeId);
+    assert.equal(Object.keys(THEME_DIRS).length, OFFICIAL_EMOTE_THEMES.length);
   });
 });
 
@@ -176,8 +179,8 @@ describe('local-client extraction (tools/local-extract/extract.py)', () => {
     const r = spawnSync(PY, [path.join(ROOT, 'tools/local-extract/extract.py'), '--print-jobs'], { encoding: 'utf8', env: PY_ENV });
     assert.equal(r.status, 0, r.stderr);
     const { emoteThemes, jobs } = JSON.parse(r.stdout);
-    assert.deepEqual(emoteThemes, EMOTE_THEMES.map((t) => ({ themeId: t.themeId, dir: t.dir })));
-    for (const t of EMOTE_THEMES) {
+    assert.deepEqual(emoteThemes, OFFICIAL_EMOTE_THEMES.map((t) => ({ themeId: t.themeId, dir: t.dir })));
+    for (const t of OFFICIAL_EMOTE_THEMES) {
       const job = jobs.find((j) => j.sub === `emoticon/${t.dir}`);
       assert.ok(job, t.themeId);
       assert.equal(job.bundle, `ui/emoticon/theme/[uc]${t.themeId}.ab`);
@@ -201,7 +204,7 @@ print(json.dumps({
     const r = spawnSync(PY, ['-c', code], { encoding: 'utf8', env: PY_ENV });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(out.emo, EMOTE_THEMES.map((t) => `emoticon/${t.dir}`));
+    assert.deepEqual(out.emo, OFFICIAL_EMOTE_THEMES.map((t) => `emoticon/${t.dir}`));
     assert.deepEqual(out.slug, ['emoticon/slug']);
     assert.equal(out.all, true);
     assert.deepEqual(out.none, [], 'prefixes match whole path segments');
@@ -211,14 +214,14 @@ print(json.dumps({
 
   const manifest = tryJson('data/local-assets.json');
   test('the extracted manifest lists all 36 pictures under their picId', { skip: !manifest && 'no data/local-assets.json' }, () => {
-    for (const e of EMOTE_CATALOG) {
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) {
       const entry = manifest.groups[emoteArtGroup(e.id)]?.[e.picId];
       assert.ok(entry, `${e.id} → ${e.picId}`);
       assert.equal(entry.path, emoteArtPath(e.id));
       assert.ok(entry.w >= 64 && entry.h >= 64 && entry.w <= 160 && entry.h <= 160, `${e.picId} ${entry.w}×${entry.h}`);
       assert.equal(entry.kind, 'Sprite');
     }
-    for (const t of EMOTE_THEMES) {
+    for (const t of OFFICIAL_EMOTE_THEMES) {
       const names = Object.keys(manifest.groups[`emoticon/${t.dir}`]);
       assert.deepEqual(names.sort(), t.emotes.map((e) => e.picId).sort(), `${t.dir}: only the battle sprites`);
     }
@@ -258,6 +261,7 @@ describe('public/js/ui/emotes.js helpers', () => {
       const { emoteArtUrl, emoteUiSprite } = await import('../../public/js/ui/emotes.js');
       assert.equal(emoteArtUrl('autochess_battle_fooldoctor_06'), '/assets/local/emoticon/fooldoctor/pic_fooldoctor_08_battle.png');
       assert.equal(emoteArtUrl('autochess_battle_fooldoctor_05'), null, 'unlisted');
+      for (const e of CUSTOM_EMOTE_THEME.emotes) assert.equal(emoteArtUrl(e.id), emoteArtPath(e.id), 'site art works without an extraction manifest');
       assert.equal(emoteArtUrl('happy'), null, 'v1 id');
       assert.equal(emoteArtUrl('__proto__'), null);
       assert.equal(emoteUiSprite('emoji_bubble_bkg'), '/assets/local/ui/battle/emoji_bubble_bkg.png');
@@ -269,7 +273,7 @@ describe('public/js/ui/emotes.js helpers', () => {
 
   test('pager helpers: clamp, swipe threshold, remembered theme', async () => {
     const { clampPage, swipeStep, themeIndex, lastThemeIndex, rememberTheme } = await import('../../public/js/ui/emotes.js');
-    assert.deepEqual([clampPage(-3), clampPage(2), clampPage(99), clampPage('x'), clampPage(2.7)], [0, 2, 5, 0, 2]);
+    assert.deepEqual([clampPage(-3), clampPage(2), clampPage(99), clampPage('x'), clampPage(2.7)], [0, 2, 6, 0, 2]);
     assert.deepEqual([swipeStep(-60), swipeStep(60), swipeStep(-10), swipeStep(0), swipeStep(-40)], [1, -1, 0, 0, 1]);
     assert.equal(themeIndex('emoticon_foolsday_amiya'), 4);
     assert.equal(themeIndex('nope'), 0);
@@ -477,6 +481,33 @@ describe('public/js/ui/emotes.js helpers', () => {
     for (const m of src.matchAll(/\.label\b/g)) {
       const before = src.slice(Math.max(0, m.index - 40), m.index);
       assert.match(before, /aria-label=\$\{[^}]*$/, `label used outside aria-label: …${before}`);
+    }
+  });
+});
+
+
+describe('bundled Ciallo emotes', () => {
+  test('all six PNGs ship independently of optional extracted resources', () => {
+    const paths = CUSTOM_EMOTE_THEME.emotes.map(e => `public${emoteArtPath(e.id)}`);
+    assert.deepEqual(selectTracked([...paths, 'public/assets/local/emoticon/basic/pic_happy_battle.png']).keep, [...paths].sort());
+    for (const rel of paths) {
+      const png = readFileSync(path.join(ROOT, rel));
+      assert.equal(png.subarray(1, 4).toString(), 'PNG');
+      assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [162, 162]);
+    }
+    assert.deepEqual(appendCustomEmotes(appendCustomEmotes(EMOTES_JSON)), EMOTES_JSON, 'regeneration never duplicates the page');
+  });
+
+  test('resource preload includes all six with real hashes and sizes, even without manifests and with CDN enabled', async () => {
+    const index = createResourceIndex({ dataDir: path.join(ROOT, 'test/fixtures/no-manifests'), publicDir: path.join(ROOT, 'public'), cdnBase: 'https://cdn.example.test' });
+    const { manifest } = await index.get();
+    assert.equal(manifest.count, 6);
+    for (const e of CUSTOM_EMOTE_THEME.emotes) {
+      const f = manifest.files.find(f => f.url === emoteArtPath(e.id));
+      assert.ok(f, e.id);
+      assert.equal(f.tier, 1);
+      assert.match(f.hash, /^[a-f0-9]{12}$/);
+      assert.equal(f.size, readFileSync(path.join(ROOT, 'public', f.url)).length);
     }
   });
 });

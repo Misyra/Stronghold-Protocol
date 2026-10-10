@@ -621,8 +621,9 @@ describe('emotes and 玩法说明 pages from the public mirror (GitHub issue #42
 
   test('the plan fetches the 36 battle emotes and the 19 guide pages from ArknightsAssets2 cn, keyed like the local art', () => {
     const ui = plan().ui;
-    assert.equal(EMOTE_CATALOG.length, 36);
-    for (const e of EMOTE_CATALOG) {
+    assert.equal(EMOTE_CATALOG.filter(e => !e.custom).length, 36);
+    for (const e of EMOTE_CATALOG.filter(e => e.custom)) assert.equal(ui[`${emoteArtGroup(e.id)}/${e.picId}`], undefined, 'bundled art is never fetched from the official mirror');
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) {
       const key = `${emoteArtGroup(e.id)}/${e.picId}`; // the local manifest's group + name (emoticon/<dir>/<picId>)
       assert.deepEqual(ui[key]?.alts, [{ rel: `ui/${key}.png`, urls: [`${AA2}ui/emoticon/theme/%5Buc%5D${e.themeId}/icon/${e.picId}.png`], kind: 'png' }], key);
     }
@@ -663,7 +664,7 @@ describe('emotes and 玩法说明 pages from the public mirror (GitHub issue #42
   test('the committed data/assets.json lists all 55, so setup on an install made before them downloads them', () => {
     // tools/setup.mjs runs fetch-assets when data/assets.json lists a file that is not on disk (checkAssets)
     const m = readJson('data/assets.json');
-    for (const e of EMOTE_CATALOG) assert.equal(m.ui[`emoticon/${e.dir}/${e.picId}`], `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) assert.equal(m.ui[`emoticon/${e.dir}/${e.picId}`], `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
     for (const k of GUIDE_PAGES) assert.equal(m.ui[`guide/${k}`], `/assets/ui/guide/${k}.png`, k);
     assert.equal(m.stats.ui, Object.keys(m.ui).length);
     assert.ok(!JSON.stringify(m).includes('/assets/local/'), 'never a local-client path');

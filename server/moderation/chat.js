@@ -1,7 +1,8 @@
 // i18n-ignore-file: server-only moderation policy, no UI strings.
 import { maskSensitiveText } from './nickname.js';
 import { ERR } from '../../shared/constants.js';
-export const CHAT_MUTE_MS = 12 * 60 * 60 * 1000;
+import { CHAT_MUTE_MS, recentChatHits } from './chatState.js';
+export { CHAT_MUTE_MS, CHAT_WINDOW_MS } from './chatState.js';
 export const CHAT_COOLDOWN_MS = 1000;
 export function chatEnabled(value = process.env.SP_CHAT_ENABLED) {
   const v = String(value ?? '').trim().toLowerCase();
@@ -14,13 +15,16 @@ export function moderateChat(session, text, now) {
   if (session.chatMutedUntil > now) return { error: ERR.CHAT_MUTED };
   if (typeof text !== 'string' || !text.trim() || [...text].length > 30 || /[\p{Cc}\p{Cs}]/u.test(text)) return { error: ERR.BAD_MSG };
   if (now - session.chatLastSentAt < CHAT_COOLDOWN_MS) return { error: ERR.RATE };
-  if (session.chatMutedUntil) { session.chatMutedUntil = 0; session.chatStrikes = 0; }
+  if (session.chatMutedUntil) session.chatMutedUntil = 0;
+  session.chatHitTimes = recentChatHits(session.chatHitTimes, now);
   const result = maskSensitiveText(text.trim());
   session.chatLastSentAt = now;
-  session.chatStrikes = result.hit ? session.chatStrikes + 1 : 0;
+  if (result.hit) session.chatHitTimes.push(now);
+  session.chatStrikes = session.chatHitTimes.length;
   if (session.chatStrikes >= 5) {
     session.chatMutedUntil = now + CHAT_MUTE_MS;
     session.chatStrikes = 0;
+    session.chatHitTimes = [];
   }
   return { text: result.text, hit: result.hit };
 }

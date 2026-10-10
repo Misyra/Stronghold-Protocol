@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
+import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
 
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
 /** Per-file content hashes of the fetched assets, written by tools/asset-hashes.mjs (optional). */
@@ -324,6 +325,18 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     const assetsDoc = assets ? rewrite(assets.doc) : null;
     const localDoc = local ? rewrite(local.doc) : null;
     const collected = collectResourceFiles(assetsDoc, localDoc);
+    // Small site-owned emotes ship with the code, independently of the optional official extraction manifest.
+    const custom = await Promise.all(CUSTOM_EMOTE_THEME.emotes.map(async (emote) => {
+      const url = emoteArtPath(emote.id);
+      try {
+        const stat = await statFile(localPathFor(url, publicDir));
+        return stat.isFile() ? { url, stamp: `${stat.mtimeMs}:${stat.size}` } : null;
+      } catch { return null; }
+    }));
+    for (const file of custom) if (file && !collected.some(f => f.url === file.url)) {
+      collected.push({ url: file.url, tier: TIER_ESSENTIAL, source: 'local' });
+    }
+    collected.sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
     const tiles = await Promise.all(tileFiles.map(async (file) => {
       const abs = localPathFor(file.url, publicDir, cdnBase);
@@ -333,7 +346,8 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       } catch { return null; }
     }));
     const key = [assets ? `${assets.mtimeMs}:${assets.size}` : '-', local ? `${local.mtimeMs}:${local.size}` : '-',
-      hashesDoc ? `${hashesDoc.mtimeMs}:${hashesDoc.size}` : '-', cdnBase, ...tiles.map((f) => f?.stamp || '-')].join('|');
+      hashesDoc ? `${hashesDoc.mtimeMs}:${hashesDoc.size}` : '-', cdnBase,
+      ...custom.map(f => f?.stamp || '-'), ...tiles.map((f) => f?.stamp || '-')].join('|');
     if (cache && cache.key === key) return cache;
     const t0 = Date.now();
     const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null, cdnBase);

@@ -9,7 +9,8 @@
     {"themeId":"emoticon_autochess_basic_2","dir":"basic_2","sortId":100001,"isBasic":true,"name":"表情套组：卫戍协议","emotes":["autochess_battle_noproblem","autochess_battle_respect","autochess_battle_call","autochess_battle_playingcool","autochess_battle_sad","autochess_battle_dying"]},
     {"themeId":"emoticon_foolsday_doctor","dir":"fooldoctor","sortId":1002,"isBasic":false,"name":"表情套组：博士士","emotes":["autochess_battle_fooldoctor_01","autochess_battle_fooldoctor_02","autochess_battle_fooldoctor_03","autochess_battle_fooldoctor_04","autochess_battle_fooldoctor_05","autochess_battle_fooldoctor_06"]},
     {"themeId":"emoticon_foolsday_amiya","dir":"foolamiya","sortId":1003,"isBasic":false,"name":"表情套组：米米子","emotes":["autochess_battle_foolamiya_01","autochess_battle_foolamiya_02","autochess_battle_foolamiya_03","autochess_battle_foolamiya_04","autochess_battle_foolamiya_05","autochess_battle_foolamiya_06"]},
-    {"themeId":"emoticon_foolsday_wisdel","dir":"foolwisdel","sortId":1004,"isBasic":false,"name":"表情套组：维维美","emotes":["autochess_battle_foolwisdel_01","autochess_battle_foolwisdel_02","autochess_battle_foolwisdel_03","autochess_battle_foolwisdel_04","autochess_battle_foolwisdel_05","autochess_battle_foolwisdel_06"]}
+    {"themeId":"emoticon_foolsday_wisdel","dir":"foolwisdel","sortId":1004,"isBasic":false,"name":"表情套组：维维美","emotes":["autochess_battle_foolwisdel_01","autochess_battle_foolwisdel_02","autochess_battle_foolwisdel_03","autochess_battle_foolwisdel_04","autochess_battle_foolwisdel_05","autochess_battle_foolwisdel_06"]},
+    {"themeId":"emoticon_site_ciallo","dir":"ciallo","sortId":100003,"isBasic":false,"name":"表情套组：Ciallo","emotes":["autochess_battle_ciallo_murasame","autochess_battle_ciallo_yoshino","autochess_battle_ciallo_lena","autochess_battle_ciallo_mako","autochess_battle_ciallo_nene","autochess_battle_ciallo_meguri"]}
   ],
   "emotes": [
     {"id":"autochess_battle_happy","themeId":"emoticon_autochess_basic","sortId":1001,"picId":"pic_happy_battle","art":"/assets/local/emoticon/basic/pic_happy_battle.png","label":"开心"},
@@ -47,6 +48,12 @@
     {"id":"autochess_battle_foolwisdel_03","themeId":"emoticon_foolsday_wisdel","sortId":1062,"picId":"pic_foolwisdel_03_battle","art":"/assets/local/emoticon/foolwisdel/pic_foolwisdel_03_battle.png","label":"维维美 3"},
     {"id":"autochess_battle_foolwisdel_04","themeId":"emoticon_foolsday_wisdel","sortId":1063,"picId":"pic_foolwisdel_04_battle","art":"/assets/local/emoticon/foolwisdel/pic_foolwisdel_04_battle.png","label":"维维美 4"},
     {"id":"autochess_battle_foolwisdel_05","themeId":"emoticon_foolsday_wisdel","sortId":1064,"picId":"pic_foolwisdel_05_battle","art":"/assets/local/emoticon/foolwisdel/pic_foolwisdel_05_battle.png","label":"维维美 5"},
-    {"id":"autochess_battle_foolwisdel_06","themeId":"emoticon_foolsday_wisdel","sortId":1065,"picId":"pic_foolwisdel_06_battle","art":"/assets/local/emoticon/foolwisdel/pic_foolwisdel_06_battle.png","label":"维维美 6"}
+    {"id":"autochess_battle_foolwisdel_06","themeId":"emoticon_foolsday_wisdel","sortId":1065,"picId":"pic_foolwisdel_06_battle","art":"/assets/local/emoticon/foolwisdel/pic_foolwisdel_06_battle.png","label":"维维美 6"},
+    {"id":"autochess_battle_ciallo_murasame","themeId":"emoticon_site_ciallo","sortId":20001,"picId":"pic_ciallo_murasame_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_murasame_battle.png","label":"丛雨 Ciallo"},
+    {"id":"autochess_battle_ciallo_yoshino","themeId":"emoticon_site_ciallo","sortId":20002,"picId":"pic_ciallo_yoshino_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_yoshino_battle.png","label":"芳乃 Ciallo"},
+    {"id":"autochess_battle_ciallo_lena","themeId":"emoticon_site_ciallo","sortId":20003,"picId":"pic_ciallo_lena_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_lena_battle.png","label":"蕾娜 Ciallo"},
+    {"id":"autochess_battle_ciallo_mako","themeId":"emoticon_site_ciallo","sortId":20004,"picId":"pic_ciallo_mako_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_mako_battle.png","label":"茉子 Ciallo"},
+    {"id":"autochess_battle_ciallo_nene","themeId":"emoticon_site_ciallo","sortId":20005,"picId":"pic_ciallo_nene_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_nene_battle.png","label":"宁宁 Ciallo"},
+    {"id":"autochess_battle_ciallo_meguri","themeId":"emoticon_site_ciallo","sortId":20006,"picId":"pic_ciallo_meguri_battle","art":"/assets/local/emoticon/ciallo/pic_ciallo_meguri_battle.png","label":"巡 Ciallo"}
   ]
 }

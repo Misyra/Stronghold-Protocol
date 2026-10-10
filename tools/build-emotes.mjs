@@ -25,6 +25,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const GAMEDATA_URL = 'https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/';
@@ -117,6 +118,19 @@ export function formatEmotes(doc) {
     + `  "emotes": [\n${doc.emotes.map((e) => `    ${line(e)}`).join(',\n')}\n  ]\n}\n`;
 }
 
+/** Append the code-owned site page when regenerating the shipped catalog from official tables. */
+export function appendCustomEmotes(doc) {
+  const t = CUSTOM_EMOTE_THEME;
+  return { ...doc,
+    themes: [...doc.themes.filter(e => e.themeId !== t.themeId), {
+      themeId: t.themeId, dir: t.dir, sortId: t.sortId, isBasic: t.isBasic, name: t.name, emotes: t.emotes.map(e => e.id),
+    }],
+    emotes: [...doc.emotes.filter(e => e.themeId !== t.themeId), ...t.emotes.map(e => ({
+      id: e.id, themeId: t.themeId, sortId: e.sortId, picId: e.picId, art: emoteArtPath(e.id), label: e.label,
+    }))],
+  };
+}
+
 async function ensureGamedata(cache, rel, { offline, optional = false }) {
   const abs = join(cache, rel);
   if (existsSync(abs)) return abs;
@@ -161,15 +175,16 @@ async function main(argv) {
   if (!items) console.warn('build-emotes: item_table unavailable, theme names fall back to theme ids');
   const { doc, warnings } = buildEmotes({ display, activity, items });
   for (const w of warnings) console.warn(`build-emotes: ${w}`);
-  const text = formatEmotes(doc);
+  const shipped = appendCustomEmotes(doc);
+  const text = formatEmotes(shipped);
   if (opts.check) {
     const old = existsSync(opts.out) ? await readFile(opts.out, 'utf8') : null;
     if (old !== text) { console.error(`build-emotes: ${opts.out} is out of date (run node tools/build-emotes.mjs)`); return 1; }
-    console.log(`build-emotes: ${opts.out} is up to date (${doc.themes.length} themes, ${doc.emotes.length} emotes)`);
+    console.log(`build-emotes: ${opts.out} is up to date (${shipped.themes.length} themes, ${shipped.emotes.length} emotes)`);
     return 0;
   }
   await writeFile(opts.out, text);
-  console.log(`build-emotes: wrote ${opts.out} (${doc.themes.length} themes, ${doc.emotes.length} emotes)`);
+  console.log(`build-emotes: wrote ${opts.out} (${shipped.themes.length} themes, ${shipped.emotes.length} emotes)`);
   return 0;
 }
 

@@ -1180,7 +1180,7 @@ export class Lobby {
       this.broadcastRoom(room, message);
       this.sendChatState(session, false);
       if (result.hit) sendSession(session, { t: 'm.toast', kind: 'warn', text: session.chatMutedUntil > this.now()
-        ? N_('连续 5 条消息触发敏感词审查，聊天已暂停 12 小时') : N_('消息中的敏感内容已替换为星号') });
+        ? N_('10 分钟内累计 5 条消息触发敏感词审查，聊天已暂停 12 小时') : N_('消息中的敏感内容已替换为星号') });
       return OK;
     }
     let res;

@@ -31,6 +31,7 @@
 import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
+import { recentChatHits, chatRetentionUntil } from './moderation/chatState.js';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -61,7 +62,8 @@ export function sessionDoc(s, now) {
     diy: s.diy || null,
     notice: s.notice || null,
     pendingResult: s.pendingResult || null,
-    chatStrikes: s.chatStrikes,
+    chatHitTimes: recentChatHits(s.chatHitTimes, now),
+    chatStrikes: recentChatHits(s.chatHitTimes, now).length,
     chatMutedUntil: s.chatMutedUntil,
     resumeWindowMs: typeof s.resumeWindowMs === 'number' && s.resumeWindowMs > 0 ? s.resumeWindowMs : null,
     connected: !!s.connected,
@@ -150,7 +152,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       : Number.isFinite(doc.savedAt) ? doc.savedAt : now;
     const windowMs = Number.isFinite(s.resumeWindowMs) && s.resumeWindowMs > 0 ? Number(s.resumeWindowMs) : null;
     const window = windowMs != null && windowMs > registry.reconnectWindowMs ? windowMs : registry.reconnectWindowMs;
-    if (now - since > window && !(s.chatMutedUntil > now)) { stats.expired++; continue; }
+    if (now - since > window && chatRetentionUntil(s, now) <= now) { stats.expired++; continue; }
     const session = registry.adopt({
       playerId: s.playerId,
       token: s.token,
@@ -166,6 +168,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       notice: s.notice,
       pendingResult: s.pendingResult,
       chatStrikes: s.chatStrikes,
+      chatHitTimes: s.chatHitTimes,
       chatMutedUntil: s.chatMutedUntil,
     });
     if (session) stats.sessions++;

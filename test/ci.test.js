@@ -16,7 +16,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 
 /** ci.yml's smoke run block as smoke() in tools/ci.mjs mirrors it (lines trimmed, comments dropped). */
 const SMOKE_CI_RUN = [
-  'node server/index.js > server.log 2>&1 &',
+  'node --import ./test/helpers/moderation-fixture.js server/index.js > server.log 2>&1 &',
   'pid=$!',
   'ok=',
   'for i in $(seq 1 30); do',

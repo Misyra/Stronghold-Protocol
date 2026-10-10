@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EMOTE_THEMES } from '../../shared/constants.js';
+import { EMOTE_THEMES, EMOTE_CATALOG, CUSTOM_EMOTE_THEME } from '../../shared/constants.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, 'test/e2e/out');
@@ -101,7 +101,7 @@ describe('official emotes in the browser', { skip: !ENABLED && 'set SP_E2E=1 (an
     assert.equal(s.imgs, 6, 'official pictures loaded');
     assert.equal(s.panelText, '', 'no text in the panel');
     assert.equal(s.dotOn, 0);
-    assert.equal(await page.$$eval('.emo-cat img', (els) => els.filter((i) => i.complete && i.naturalWidth > 0).length), 36, 'all 36 pictures load');
+    assert.equal(await page.$$eval('.emo-cat img', (els) => els.filter((i) => i.complete && i.naturalWidth > 0).length), EMOTE_CATALOG.length, 'all registered pictures load');
     await section.screenshot({ path: path.join(OUT, 'emotes-uikit.png') });
 
     // swipe left → next theme (mouse drag across the pager)
@@ -166,6 +166,31 @@ describe('official emotes in the browser', { skip: !ENABLED && 'set SP_E2E=1 (an
     assert.ok(op < 0.05, `faded after 3 s (opacity ${op})`);
     const texts = await page.$$eval('.ebubble', (els) => els.map((b) => b.textContent.trim()).filter(Boolean));
     assert.deepEqual(texts, [], 'no bubble ever shows text');
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
+
+  test('Ciallo page: six bundled images load and send into the existing avatar bubble', async () => {
+    const { page, problems } = await open('/dev/uikit.html', { manifest: { version: 1, groups: {} } });
+    await page.waitForSelector('#emo-stage .ewheel__panel');
+    await page.$eval('#emo-stage', el => el.closest('section').scrollIntoView());
+    await sleep(500); // wait for the panel's entrance animation before clicking a small pager dot
+    assert.equal(await page.$$eval('#emo-stage .ewheel__dot', dots => dots.every(dot => {
+      const r = dot.getBoundingClientRect();
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === dot;
+    })), true, 'every dot can be clicked without the arrows overlapping it');
+    await page.click('#emo-stage .ewheel__dot:nth-child(7)');
+    await page.waitForFunction(() => [...document.querySelectorAll('#emo-stage .ewheel__item img')].length === 6
+      && [...document.querySelectorAll('#emo-stage .ewheel__item img')].every(i => i.complete && i.naturalWidth === 162));
+    assert.equal((await wheelState(page, '#emo-stage')).theme, CUSTOM_EMOTE_THEME.themeId);
+    const sent = CUSTOM_EMOTE_THEME.emotes[0].id;
+    await page.click(`#emo-stage .ewheel__item[data-emote="${sent}"]`);
+    await page.waitForFunction(id => document.querySelector('.emo-row .ebubble')?.dataset.emote === id, {}, sent);
+    assert.equal((await wheelState(page, '#emo-stage')).open, false);
+    const art = await page.$eval('.emo-row .ebubble img', i => ({ loaded: i.complete && i.naturalWidth === 162, src: i.getAttribute('src') }));
+    assert.equal(art.loaded, true);
+    assert.match(art.src, /\/assets\/local\/emoticon\/ciallo\//);
+    await (await page.$('#emo-stage')).screenshot({ path: path.join(OUT, 'emotes-ciallo.png') });
     assert.deepEqual(problems, []);
     await page.close();
   });
@@ -299,8 +324,8 @@ describe('official emotes in the browser', { skip: !ENABLED && 'set SP_E2E=1 (an
     // neither the local-client art nor the copies setup downloads (GitHub #42) load: the glyph is the last link
     const { page, problems } = await open('/dev/uikit.html', {
       manifest: { version: 1, groups: { 'emoticon/basic': { pic_happy_battle: { path: '/assets/local/emoticon/basic/nope_404.png', w: 120, h: 120 } } } },
-      block: /\/assets\/ui\/emoticon\//,
-      ignore: [/nope_404\.png/, /\/assets\/ui\/emoticon\//, /Failed to load resource/],
+      block: /\/assets\/(?:ui\/emoticon|local\/emoticon\/ciallo)\//,
+      ignore: [/nope_404\.png/, /\/assets\/(?:ui\/emoticon|local\/emoticon\/ciallo)\//, /Failed to load resource/],
     });
     await page.evaluate(() => localStorage.removeItem('sp.pref.emoteTheme'));
     await page.reload({ waitUntil: 'networkidle0' });

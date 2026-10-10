@@ -156,7 +156,7 @@ export const ERR = Object.freeze({
 
 export const ERR_TEXT = {
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
-  CHAT_MUTED: N_('连续 5 条消息触发敏感词审查，聊天已暂停 12 小时'),
+  CHAT_MUTED: N_('10 分钟内累计 5 条消息触发敏感词审查，聊天已暂停 12 小时'),
   NICKNAME_SENSITIVE: N_('代号包含不适宜内容，请更换昵称'),
   SESSION_IN_USE: N_('此对局仍在其他窗口中，或当前浏览器无法安全恢复。请关闭原窗口后重试。'),
   BAD_MSG: N_('无效的请求'), RATE: N_('操作过于频繁'), NOT_IN_ROOM: N_('你不在房间中'), ROOM_NOT_FOUND: N_('未找到该同盟密钥对应的房间'),
@@ -179,7 +179,7 @@ export const ERR_TEXT = {
 // local picture first, then the mirror copy, and shows a neutral glyph when neither is there. The picId is not
 // derived from the id (autochess_battle_fooldoctor_03…06 → pic_fooldoctor_04/05/06/08_battle).
 const emo = (id, sortId, picId, label) => Object.freeze({ id, sortId, picId, label });
-export const EMOTE_THEMES = Object.freeze([
+export const OFFICIAL_EMOTE_THEMES = Object.freeze([
   { themeId: 'emoticon_autochess_basic', dir: 'basic', sortId: 100000, isBasic: true, name: N_('表情套组：卫戍协议'), emotes: [
     emo('autochess_battle_happy', 1001, 'pic_happy_battle', N_('开心')),
     emo('autochess_battle_scared', 1002, 'pic_scared_battle', N_('害怕')),
@@ -229,9 +229,22 @@ export const EMOTE_THEMES = Object.freeze([
     emo('autochess_battle_foolwisdel_06', 1065, 'pic_foolwisdel_06_battle', N_('维维美 6')),
   ] },
 ].map((t) => Object.freeze({ ...t, emotes: Object.freeze(t.emotes) })));
+/** Site-supplied images ship with the code; never fetch them from the official game mirror. */
+export const CUSTOM_EMOTE_THEME = Object.freeze({
+  themeId: 'emoticon_site_ciallo', dir: 'ciallo', sortId: 100003, isBasic: false, name: N_('表情套组：Ciallo'),
+  emotes: Object.freeze([
+    emo('autochess_battle_ciallo_murasame', 20001, 'pic_ciallo_murasame_battle', N_('丛雨 Ciallo')),
+    emo('autochess_battle_ciallo_yoshino', 20002, 'pic_ciallo_yoshino_battle', N_('芳乃 Ciallo')),
+    emo('autochess_battle_ciallo_lena', 20003, 'pic_ciallo_lena_battle', N_('蕾娜 Ciallo')),
+    emo('autochess_battle_ciallo_mako', 20004, 'pic_ciallo_mako_battle', N_('茉子 Ciallo')),
+    emo('autochess_battle_ciallo_nene', 20005, 'pic_ciallo_nene_battle', N_('宁宁 Ciallo')),
+    emo('autochess_battle_ciallo_meguri', 20006, 'pic_ciallo_meguri_battle', N_('巡 Ciallo')),
+  ]),
+});
+export const EMOTE_THEMES = Object.freeze([...OFFICIAL_EMOTE_THEMES, CUSTOM_EMOTE_THEME]);
 /** Every emote with its theme: `{ id, sortId, picId, label, themeId, dir }`, in wheel order. */
-export const EMOTE_CATALOG = Object.freeze(EMOTE_THEMES.flatMap((t) => t.emotes.map((e) => Object.freeze({ ...e, themeId: t.themeId, dir: t.dir }))));
-/** The 36 official emote ids (protocol whitelist: `EMOTES.includes(id)`). */
+export const EMOTE_CATALOG = Object.freeze(EMOTE_THEMES.flatMap((t) => t.emotes.map((e) => Object.freeze({ ...e, themeId: t.themeId, dir: t.dir, custom: t === CUSTOM_EMOTE_THEME }))));
+/** Official and site emote ids (protocol whitelist: `EMOTES.includes(id)`). */
 export const EMOTES = Object.freeze(EMOTE_CATALOG.map((e) => e.id));
 const EMOTE_INDEX = new Map(EMOTE_CATALOG.map((e) => [e.id, e]));
 /** Catalog record of an emote id, or null (safe for any input, including '__proto__'). */

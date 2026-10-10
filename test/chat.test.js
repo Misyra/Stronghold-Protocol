@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { maskSensitiveText, hasSensitiveNickname } from '../server/moderation/nickname.js';
-import { chatEnabled, moderateChat, CHAT_MUTE_MS } from '../server/moderation/chat.js';
+import { chatEnabled, moderateChat, CHAT_MUTE_MS, CHAT_WINDOW_MS } from '../server/moderation/chat.js';
 import { Session, SessionRegistry } from '../server/net.js';
 import { sessionDoc, snapshotServer, restoreServer } from '../server/persist.js';
 import { Lobby } from '../server/lobby.js';
@@ -20,21 +20,71 @@ test('mask only offending spans, with Unicode offsets, separators, overlapping m
   assert.equal(maskSensitiveText(null).hit, false);
 });
 
-test('consecutive hits reset on clean messages; fifth hit mutes exactly 12 hours without extending on retries', () => {
+test('five hits within 10 minutes mute for 12 hours despite clean messages between them; retries do not extend the mute', () => {
+  assert.equal(CHAT_WINDOW_MS, 10 * 60 * 1000);
+  assert.equal(CHAT_MUTE_MS, 12 * 60 * 60 * 1000);
   const s = newSession(); let now = 1000;
   for (let i = 0; i < 4; i++, now += 1000) assert.equal(moderateChat(s, abuse, now).hit, true);
   assert.equal(moderateChat(s, '队友好', now).hit, false); now += 1000;
-  assert.equal(s.chatStrikes, 0);
-  for (let i = 0; i < 5; i++, now += 1000) assert.equal(moderateChat(s, abuse, now).text, '****');
-  const until = now - 1000 + CHAT_MUTE_MS;
+  assert.equal(s.chatStrikes, 4);
+  now += 5 * 60 * 1000;
+  assert.equal(moderateChat(s, abuse, now).text, '****');
+  const until = now + CHAT_MUTE_MS;
   assert.equal(s.chatMutedUntil, until);
   assert.equal(moderateChat(s, '队友好', now).error, ERR.CHAT_MUTED);
   assert.equal(s.chatMutedUntil, until);
   assert.equal(moderateChat(s, '队友好', until).hit, false);
   assert.equal(s.chatMutedUntil, 0);
+  assert.equal(s.chatHitTimes.length, 0);
 });
 
-test('length is Unicode characters, invalid and rapid messages neither count nor reset the streak', () => {
+test('ordinary game conversation neither masks text nor adds moderation strikes', () => {
+  const s = newSession(); let now = 1000;
+  for (const text of ['哥哥你好', '第一次玩卫戍', '土豆和苹果', '初音未来', '服务器没有问题', '逗比']) {
+    assert.deepEqual(moderateChat(s, text, now), { text, hit: false });
+    now += 1000;
+  }
+  assert.equal(s.chatStrikes, 0);
+  assert.equal(s.chatMutedUntil, 0);
+});
+
+test('rolling window drops expired hits at the 10-minute boundary and counts one hit per message', () => {
+  const s = newSession();
+  assert.equal(moderateChat(s, `${abuse} ${abuse}`, 1000).hit, true);
+  assert.equal(s.chatStrikes, 1);
+  for (let i = 1; i <= 3; i++) moderateChat(s, abuse, 1000 + i * 60 * 1000);
+  assert.equal(s.chatStrikes, 4);
+  moderateChat(s, abuse, 1000 + CHAT_WINDOW_MS);
+  assert.equal(s.chatMutedUntil, 0, 'the first hit has just expired');
+  assert.equal(s.chatStrikes, 4);
+  moderateChat(s, '队友好', 2000 + CHAT_WINDOW_MS);
+  assert.equal(s.chatStrikes, 4, 'a clean message does not reset the window');
+  moderateChat(s, abuse, 3000 + CHAT_WINDOW_MS);
+  assert.equal(s.chatMutedUntil, 3000 + CHAT_WINDOW_MS + CHAT_MUTE_MS);
+});
+
+test('partial hit history survives checkpoints, reconnect expiry and eviction pressure', () => {
+  let now = 1000;
+  const registry = new SessionRegistry({ reconnectWindowMs: 100, maxSessions: 1, now: () => now });
+  const s = registry.create('博士');
+  for (let i = 0; i < 4; i++) { moderateChat(s, abuse, now); now += 1000; }
+  const lobby = new Lobby({ registry, now: () => now });
+  const doc = snapshotServer({ registry, lobby, now });
+  now += 5 * 60 * 1000;
+  assert.equal(registry.sweep().length, 0);
+  assert.equal(registry.create('队友'), null);
+  const restored = new SessionRegistry({ reconnectWindowMs: 100, now: () => now });
+  const restoredLobby = new Lobby({ registry: restored, now: () => now });
+  assert.equal(restoreServer({ doc, registry: restored, lobby: restoredLobby, now }).sessions, 1);
+  const copy = restored.byToken(s.token);
+  assert.deepEqual(copy.chatHitTimes, s.chatHitTimes);
+  moderateChat(copy, '队友好', now); now += 1000;
+  moderateChat(copy, abuse, now);
+  assert.equal(copy.chatMutedUntil, now + CHAT_MUTE_MS);
+  lobby.shutdown(); restoredLobby.shutdown();
+});
+
+test('length is Unicode characters, invalid and rapid messages neither count nor reset the hit history', () => {
   const s = newSession();
   assert.equal(moderateChat(s, '😀'.repeat(30), 1000).error, undefined);
   assert.equal(moderateChat(s, '😀'.repeat(31), 2000).error, ERR.BAD_MSG);
@@ -62,9 +112,26 @@ test('mute survives persistence, disconnected-session expiry and registry pressu
   lobby.shutdown(); restoredLobby.shutdown();
 });
 
-test('environment defaults off and rejects misspellings', () => {
+test('environment defaults off, controls the real server welcome, and rejects misspellings', async () => {
   assert.equal(chatEnabled(''), false); assert.equal(chatEnabled('off'), false); assert.equal(chatEnabled('on'), true);
   assert.equal(chatEnabled(true), true); assert.throws(() => chatEnabled('onn'), /SP_CHAT_ENABLED/);
+  const previous = process.env.SP_CHAT_ENABLED;
+  try {
+    for (const value of [undefined, 'off', 'on']) {
+      if (value === undefined) delete process.env.SP_CHAT_ENABLED;
+      else process.env.SP_CHAT_ENABLED = value;
+      const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, stateFile: 'off' });
+      let client;
+      try {
+        client = await TestClient.connect(server.url.replace('http:', 'ws:') + '/ws');
+        const welcome = await client.hello('博士');
+        assert.equal(welcome.chatEnabled, value === 'on', `SP_CHAT_ENABLED=${value ?? '(unset)'}`);
+      } finally { await client?.close(); await server.close(); }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.SP_CHAT_ENABLED;
+    else process.env.SP_CHAT_ENABLED = previous;
+  }
 });
 
 async function setup(t, enabled = true) {
@@ -96,13 +163,16 @@ test('real WebSocket: masked room-only broadcast, history resync, spectator refu
   assert.equal((await outsider.request({ t: 'g.chat', text: '队友好' })).code, ERR.NOT_IN_ROOM);
   assert.equal((await outsider.request({ t: 'room.spectate', code: room.code })).t, 'ok');
   assert.equal((await outsider.request({ t: 'g.chat', text: '队友好' })).code, ERR.SPECTATOR);
-  for (let i = 0; i < 4; i++) assert.equal((await send(abuse)).t, 'ok');
+  for (let i = 0; i < 4; i++) {
+    assert.equal((await send('队友好')).t, 'ok');
+    assert.equal((await send(abuse)).t, 'ok');
+  }
   const s = server.registry.byToken(a.welcome.token), until = s.chatMutedUntil;
   assert.equal(until, now + CHAT_MUTE_MS);
   assert.equal((await send('队友好')).code, ERR.CHAT_MUTED);
   await a.hello('博士甲', a.welcome.token);
   const state = await a.waitFor('m.chatState', m => m.mutedUntil === until && Array.isArray(m.messages));
-  assert.equal(state.messages.length, 5);
+  assert.equal(state.messages.length, 9);
   assert.ok(state.messages.every(m => !m.text.includes(abuse)));
   assert.equal((await a.request({ t: 'room.leave' })).t, 'ok');
   assert.equal(s.chatMutedUntil, until, 'leaving does not clear mute');

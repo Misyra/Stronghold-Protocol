@@ -29,5 +29,5 @@
 public/assets/local/** -text
 
 # Keep the merged dictionary and upstream license identical to SOURCE.json checksums.
-server/moderation/lexicon/words.b64 -text
+server/moderation/lexicon/words.enc binary
 server/moderation/lexicon/LICENSE -text

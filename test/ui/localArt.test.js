@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EMOTES, EMOTE_CATALOG, emoteArtPath, emoteArtGroup, emoteInfo } from '../../shared/constants.js';
+import { EMOTE_CATALOG, emoteArtPath, emoteArtGroup, emoteInfo } from '../../shared/constants.js';
 import { GUIDE_PAGES } from '../../tools/assets/plan.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -74,14 +74,14 @@ describe('local-client art fallbacks', () => {
     const { emoteArtUrl } = await import('../../public/js/ui/emotes.js');
     const { guidePages } = await import('../../public/js/ui/guide.js');
     const { tierChipUrl } = await import('../../public/js/ui/components.js');
-    for (const id of EMOTES) assert.equal(emoteArtUrl(id), null);
+    for (const { id } of EMOTE_CATALOG.filter(e => !e.custom)) assert.equal(emoteArtUrl(id), null);
     assert.deepEqual(guidePages(), []);
     assert.equal(tierChipUrl(1), null);
   });
 
   test('the real manifest (when extracted) lists all 36 emotes and all 19 guide pages', { skip: !safeRead() && 'no data/local-assets.json' }, () => {
     const real = JSON.parse(safeRead());
-    for (const id of EMOTES) {
+    for (const { id } of EMOTE_CATALOG.filter(e => !e.custom)) {
       const entry = real.groups[emoteArtGroup(id)]?.[emoteInfo(id).picId];
       assert.ok(entry, `emote ${id}`);
       assert.equal(entry.path, emoteArtPath(id));
@@ -136,7 +136,7 @@ describe('emotes and 玩法说明 pages: local art first, then the mirror copy (
     await reload(data);
     const { emoteArtUrl } = await import('../../public/js/ui/emotes.js');
     const { guidePages } = await import('../../public/js/ui/guide.js');
-    for (const e of EMOTE_CATALOG) assert.equal(emoteArtUrl(e.id), `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) assert.equal(emoteArtUrl(e.id), `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
     const pages = guidePages();
     assert.deepEqual(pages.map((p) => p.key), GUIDE_PAGES);
     assert.deepEqual(pages.map((p) => p.url), GUIDE_PAGES.map((k) => `/assets/ui/guide/${k}.png`));

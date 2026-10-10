@@ -6,7 +6,7 @@
 // its time SP keeps recovering (PRTS: only 阻回 pauses the SP cooldown; 晕眩 does not — community report #18).
 // Charges (maxCharges > 1): SP fills to spCost → +1 charge (SP restarts) until charges == max (SP stays full).
 // Trigger rules (the official 技能策略, PRTS 卫戍协议/帮助 §作战阶段 技能操作; data: tools/build-data.mjs resolveTrigger):
-//   DEFAULT — the basic strategy: ready + about to attack/heal + enemy / injured ally in the INITIAL range (or blocked by
+//   DEFAULT — the basic strategy: ready + about to attack/heal + enemy / ally needing HP or element recovery in the INITIAL range (or blocked by
 //   a melee unit) — or, checked every tick, an enemy inside one of the content trigger ranges added with
 //   addTriggerRange: 海嗣, 流形, 谬因 S2's beam, the summons' areas a skill acts through (麦哲伦 S1, 令 S3, 电弧 S2 / S3 —
 //   the owner's larger-range rule, 2026-10-06: kits/shared/summoner.js summonTriggerArea);
@@ -19,7 +19,7 @@
 //   DEFAULT deviation included) or on the SEARCH row (薄绿 S1, 玛恩纳 S2, 安洁莉娜 S3 …) whose attack range while it runs
 //   strictly contains the unit's own range checks the DEFAULT condition on that larger range (trigger grid = the running
 //   range, grown by the unit's permanent rangeExtend unless the skill ignores 攻击距离), every tick, no attack needed —
-//   an enemy the unit can target there (or one it blocks), a heal skill an injured ally;
+//   an enemy the unit can target there (or one it blocks), a heal skill an ally needing HP or element recovery;
 //   TAKE_DAMAGE (ready + just took a hit: 重装 "不受技能范围影响，受到伤害时释放技能"), SP_FULL/ALWAYS (as soon as ready),
 //   CUSTOM_RANGE (enemy inside the custom trigger grid), SEARCH (an enemy inside the INITIAL range, checked every tick
 //   without waiting for an attack: "不受基础策略影响，在初始攻击范围内存在敌人时释放技能" — not any enemy on the field,
@@ -478,7 +478,7 @@ export class SkillRuntime {
   }
 
   /**
-   * DEFAULT rule condition: an enemy (or injured ally for heal skills) inside the initial range (baseRangeKeys: own
+   * DEFAULT rule condition: an enemy (or ally needing HP / element recovery for heal skills) inside the initial range (baseRangeKeys: own
    * grid + permanent rangeExtend) — a registered ally target there too (`_allyTargetIn`: 铁钳号·原型机; not for heal
    * skills) — or an enemy inside a content trigger range (addTriggerRange; not for heal skills).
    * `range` (ACTIVE_RANGE): those absolute tile keys instead of the initial range.
@@ -489,7 +489,7 @@ export class SkillRuntime {
     if (b.rangeChanged(u)) b._refreshRange(u);
     const keys = range || u.baseRangeKeys || u.rangeKeys;
     if (keys) {
-      if (this.healSkill) return b.injuredAlliesInKeys(keys, u).length > 0
+      if (this.healSkill) return b.injuredAlliesInKeys(keys, u, !!u.profile?.heal?.elementHealRatio).length > 0
         || (this.triggerEnemies && b.enemiesInKeys(keys, u, TRIGGER_PROFILE).length > 0);
       if (b.enemiesInKeys(keys, u, u.profile).length > 0 || this._allyTargetIn(keys)) return true;
     }

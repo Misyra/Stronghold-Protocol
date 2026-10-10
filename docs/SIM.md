@@ -949,7 +949,8 @@ flag alters movement or 失衡.
   阵法术师) for **every MANUAL skill** of the class; SKILL_RANGE for a MANUAL skill with a 技能范围 of its own; ACTIVE_RANGE
   for a MANUAL skill on the basic strategy or the SEARCH row whose running attack range strictly contains the own range;
   AUTO skills take no row — they keep their own rule, DEFAULT or a kit override): `DEFAULT` — the basic strategy: ready
-  **and** about to attack/heal **and** an enemy (heal skills: an injured ally) inside the **initial** range
+  **and** about to attack/heal **and** an enemy (heal skills: an ally needing HP recovery, or element recovery when the
+  healer's profile has `heal.elementHealRatio`, including a full-HP ally) inside the **initial** range
   (`unit.baseRangeKeys`: its own grid + its permanent rangeExtend — "攻击范围扩大" modules/talents as persist never-expiring
   `rangeExtend` buffs; no skill range, no temporary extend, no extra keys) or blocked by the melee unit — or, checked
   **every tick**, an enemy (flyers included) inside a content trigger range (`unit.skill.addTriggerRange(fn, { attackOnly: false })`,
@@ -969,7 +970,7 @@ flag alters movement or 失衡.
   waits for its heal); `ACTIVE_RANGE` — the owner's rule of 2026-10-05
   (a deliberate deviation): a MANUAL skill on the basic strategy (深巡 S2's DEFAULT deviation included) or on the SEARCH
   row (薄绿 S1, 蜜蜡 S1, 卡涅利安 S3, 玛恩纳 S2, 安洁莉娜 S3) whose attack range while it runs strictly contains the
-  unit's own range checks the DEFAULT condition — a targetable enemy (or one it blocks), a heal skill an injured ally —
+  unit's own range checks the DEFAULT condition — a targetable enemy (or one it blocks), a heal skill an ally needing its HP or element recovery —
   on `trigger.customRangeGrid` (= that running range, grown by the unit's permanent rangeExtend unless the skill's
   `targeting.noRangeExtend`), every tick, no attack needed (the 外勤医疗 map character Touch's 恳切福音 too, on its 5-2:
   set by its kit, content/tokens.js `touchKit` — the map character's record keeps DEFAULT, build-data widens operators'

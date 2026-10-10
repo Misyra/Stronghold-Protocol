@@ -794,6 +794,7 @@ export function validateClientResult(spec, raw, { gd = null } = {}) {
       const p = raw.perPlayer[pid];
       if (!p || typeof p !== 'object') return bad('player');
       const own = B.players.get(pid);
+			if (p.creditedKills !== undefined && (!Number.isInteger(p.creditedKills) || p.creditedKills < 0 || p.creditedKills > 1e9)) return bad('kill credit');
       // `killed` counts every counted knock-out — a runtime split child / summon too — while `total` counts only the
       // enemies the round scheduled, so `killed ≤ total` no longer holds (PR #157 capsule semantics): bound it by
       // maxTotal (the spec's content-spawn allowance) instead, exactly like `total`
@@ -885,6 +886,7 @@ export function validateClientResult(spec, raw, { gd = null } = {}) {
         killed: p.killed, total: p.total, leaked, perfect: countedLeaks === 0, layerGains, coins,
         damageDealt: stat(p.damageDealt), bossDamage: stat(p.bossDamage), healingDone: stat(p.healingDone), deaths: Math.trunc(stat(p.deaths)),
         unitsEnd, unitStats,
+				creditedKills: Number.isInteger(p.creditedKills) ? p.creditedKills : unitStats.reduce((n, u) => n + u.kills, 0),
       };
       // the HUD capsule's numerator: kept only when the client reported one (an absent value must stay absent — the
       // teammate UI then falls back to `killed`, never to a fabricated 0); clamped to the denominator

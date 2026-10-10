@@ -321,10 +321,14 @@ function numberOrNull(v, cap = Infinity) {
 const r4 = (v) => Math.round((Number(v) || 0) * 1e4) / 1e4;
 const modsKey = (m) => (m && typeof m === 'object' ? JSON.stringify(Object.keys(m).filter((k) => m[k] !== undefined).sort().map((k) => [k, m[k]])) : '');
 
-/**
- * Canonical summary of a BattleResult (everything the match consumes): used to compare a client's result with the
- * server's re-simulation (SP_VERIFY) and by the determinism tests. Returns `{ json, hash }`.
- */
+/** Actual enemy kills credited to a player, with a fallback for older reports. @param {any} player */
+export function creditedKillsOf(player) {
+	if (Number.isInteger(player?.creditedKills) && player.creditedKills >= 0) return player.creditedKills;
+	// Compatibility with battle reports made before the summary existed; never use wave-owned `killed` here.
+	return (Array.isArray(player?.unitStats) ? player.unitStats : []).reduce((n, u) => n + (Number.isFinite(u?.kills) ? Math.max(0, Math.trunc(u.kills)) : 0), 0);
+}
+
+/** Canonical battle summary for client verification, including actual kill credit. */
 export function resultDigest(result) {
   const res = result && typeof result === 'object' ? result : {};
   const per = res.perPlayer && typeof res.perPlayer === 'object' ? res.perPlayer : {};
@@ -338,6 +342,7 @@ export function resultDigest(result) {
       // mods included: a leak re-enters the 联防 with them (round multipliers, bounty id)
       (Array.isArray(p.leaked) ? p.leaked : []).map((l) => `${l && l.enemyKey}|${l && l.counted === false ? 0 : 1}|${(l && l.sourcePlayerId) || ''}|${modsKey(l && l.mods)}`).sort(),
       Math.round(Number(p.damageDealt) || 0), Math.round(Number(p.bossDamage) || 0),
+			creditedKillsOf(p),
       (Array.isArray(p.unitsEnd) ? p.unitsEnd : []).map((u) => [u && u.uid, r4(u && u.hpPct), r4(u && u.sp), !!(u && u.alive)]),
     ];
   });
@@ -385,6 +390,7 @@ export function compactResult(res) {
       // `killed` keeps the sim's reading (every counted knock-out, runtime splits / summons included) and is deliberately
       // NOT clamped to `total`: the denominator counts only the round's own scheduled enemies (Battle.resolved)
       killed: Math.max(0, Math.trunc(fnum(p.killed))),
+			creditedKills: creditedKillsOf(p),
       total,
       leaked: leakEntries(p).map((l) => {
         const o = { enemyKey: l.enemyKey, mods: compactMods(l.mods), lpr: leakLpr(l), sourcePlayerId: keyOr(l.sourcePlayerId), tag: typeof l.tag === 'string' && l.tag.length <= 16 ? l.tag : null, counted: l.counted !== false };

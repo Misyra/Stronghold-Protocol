@@ -143,3 +143,13 @@ or per-phase animation schedule is added by this change.
 The simplified-view notice describes a renderer load failure, rather than declaring the device incapable of 3D.
 The same fallback covers import failure, timeout and WebGL initialization errors; a reload can retry.
 It does not diagnose a particular user's GPU or persist a disabled renderer preference (§28.25).
+
+### Single-match records in local statistics
+
+The statistics overview displays 单局最多消耗资金, 单局最多晋升次数 and 单局最多击败数 in one three-column row,
+including on narrow screens. Each is an independent maximum across the local player's settled matches (victories
+and defeats); partial quit records and teammates' rows are not single-match totals. Funds spent and promotions use
+existing `stats.gold` / `stats.merges`, so older records remain usable for those two metrics. Defeats use the actual
+`creditedKills` total (operators and summons, 联防 included); wave-owned kills cannot reconstruct it. Storage v2
+retains that optional field through compaction and JSON export/import; missing data displays —, distinct from a
+known zero. v1 records migrate without inventing an actual kill count.

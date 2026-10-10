@@ -47,6 +47,7 @@ const isPerPlayer = (p) => isPlain(p) && isInt(p.killed, 0, 1e5) && isInt(p.tota
   // knock-out — a runtime split child / summon too — and may therefore exceed `total`, which counts only the round's own
   // scheduled enemies (server/match/fields.js validateClientResult bounds it against maxTotal instead).
   && optional((x) => isInt(x, 0, 1e5))(p.resolved)
+	&& optional((x) => isInt(x, 0, 1e9))(p.creditedKills)
   && isList(p.leaked, RESULT_LIMITS.leaked, isLeak) && isBool(p.perfect)
   && isMap(p.layerGains, RESULT_LIMITS.layerGains, isId, (v) => isNum(v, 0, 1e4))
   && isStat(p.coins) && isStat(p.damageDealt) && isStat(p.bossDamage) && isStat(p.healingDone) && isStat(p.deaths)

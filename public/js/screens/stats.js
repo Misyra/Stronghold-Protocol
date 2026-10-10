@@ -130,7 +130,9 @@ function Overview({ agg, gd }) {
       <${StatCard} micro="BEST ROUND" value=${fmtNum(agg.rounds.max)} label=${t('最远回合')} />
       <${StatCard} micro="TIME PLAYED" value=${playedText(agg.duration.totalMs)} label=${t('累计时长')} />
     </div>
+    <${MatchRecords} maxima=${agg.maxima} />
     <p class="st-split"><span>${t('单人')} <b class="num">${fmtNum(agg.byMode.solo)}</b></span><span>${t('同盟')} <b class="num">${fmtNum(agg.byMode.coop)}</b></span></p>
+		<p class="st-rule">${t('单局纪录按已结算对局统计；击败数包含联防实际击杀，旧战绩无法补算。')}</p>
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
       <thead><tr><th>${t('难度')}</th><th class="num">${t('局数')}</th><th class="num">${t('胜场')}</th><th class="num">${t('胜率')}</th><th class="num">${t('隐秘核心通关')}</th></tr></thead>
       <tbody>
@@ -156,6 +158,19 @@ function Overview({ agg, gd }) {
     <p class="st-rule"><${Icon} name="info" />${t('计入统计：打到结算的对局，以及中途退出前至少清完 1 个回合的对局；更早退出的对局只留在对局记录里。')}${agg.excluded
       ? html` <b>${t('另有 {n} 局未计入统计', { n: agg.excluded })}</b>` : null}</p>
   <//>`;
+}
+
+/** Single-match records, always in the requested funds / promotions / defeats order. */
+function MatchRecords({ maxima }) {
+	const rows = [
+		['gold', N_('单局最多消耗资金'), 'FUNDS'],
+		['merges', N_('单局最多晋升次数'), 'PROMOTIONS'],
+		['kills', N_('单局最多击败数'), 'DEFEATS'],
+	];
+	return html`<div class="st-cards st-cards--records" data-testid="stats-match-records">
+		${rows.map(([key, label, micro]) => html`<${StatCard} key=${key} micro=${micro}
+			value=${maxima[key] == null ? '—' : fmtNum(maxima[key])} label=${t(label)} tone="gold" />`)}
+	</div>`;
 }
 
 /** 策略: per-band used / passed / pass rate, most used first (the user's headline ask). */

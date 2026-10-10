@@ -82,6 +82,7 @@
 
 /* number cards */
 .st-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(1.5rem, 96px), 1fr)); gap: .08rem; }
+.st-cards--records { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: .08rem; }
 .st-card {
   display: flex; flex-direction: column; gap: .02rem; min-width: 0; padding: .08rem .12rem .07rem;
   background: rgba(255, 255, 255, .03); border: 1px solid var(--line);

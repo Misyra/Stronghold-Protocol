@@ -229,6 +229,7 @@ export class PlayerState {
       bossDamage: 0, lpLost: 0, buys: 0, sells: 0, perfectRounds: 0, fundsGained: 0, healing: 0,
     };
     this.eliminatedRound = null;
+		this.creditedKills = 0;
     this.lpAtFinal = null;
     /** last combat result for this player (unite carry state, bounties) */
     this.lastResult = null;

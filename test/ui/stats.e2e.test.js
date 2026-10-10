@@ -103,7 +103,7 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     // 总览: 24 settled + the quit after 6 rounds count, the first-round one does not
     const cards = await texts(c, '.st-card__num');
     assert.equal(cards[0], '25', 'games');
-    assert.match(await c.page.$eval('.st-rule', (e) => e.textContent), /另有 1 局未计入统计/);
+    assert.match(await c.page.$$eval('.st-rule', (els) => els.map((e) => e.textContent).join(' ')), /另有 1 局未计入统计/);
     assert.equal(await c.page.$$eval('.st-title', (els) => els.length), 6, 'the six 评语');
     await c.page.screenshot({ path: path.join(OUT, 'stats-overview-desktop.png') });
     // 策略 / 战斗累计
@@ -308,7 +308,7 @@ describe('统计数据: the real flows (a fast real server, headless Chrome)', {
       await c.click('.lobby-screen .topbar__right .btn', '统计');
       await c.page.waitForSelector('.st .st-card', { visible: true });
       assert.equal((await c.page.$$eval('.st-card__num', (els) => els.map((e) => e.textContent)))[0], '1');
-      assert.match(await c.page.$eval('.st-rule', (e) => e.textContent), /另有 1 局未计入统计/);
+      assert.match(await c.page.$$eval('.st-rule', (els) => els.map((e) => e.textContent).join(' ')), /另有 1 局未计入统计/);
       await c.click('.st-tab[data-tab="history"]');
       const rows = await c.page.$$eval('.st-table--history tbody tr', (trs) => trs.map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
       assert.equal(rows.length, 2);

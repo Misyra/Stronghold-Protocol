@@ -810,7 +810,7 @@ hiddenCleared, reason: 'victory'|'defeat'|'eliminated'|'abandoned'|'error', team
 it; players[].lp are the alive players' shares), modeId, difficulty, stageId, bossId,
 hiddenBossId, seed, durationMs, players:[{ playerId, seat, name, isBot, left, alive, victory (the team won AND this
 player was still in at the end), roundsPassed,
-eliminatedRound, lp, bandId, lineup:[{ id, golden, tier, row, col, items }], bonds, stats:{ dmgDealt, kills, leaks, gold,
+eliminatedRound, creditedKills, lp, bandId, lineup:[{ id, golden, tier, row, col, items }], bonds, stats:{ dmgDealt, kills, leaks, gold,
 refreshes, merges, itemsEquipped, bossDamage, activatedLayers, lpLost, perfectRounds }, title:{ id, name, picId, text }|null,
 trophies, reward }] }`. Trophies and 卫戍认证 follow each row's OWN rounds passed (research 06 §6 / §10.4): the
 Hidden-Core trophy row only for the players still in when it was cleared — a teammate eliminated or departed earlier
@@ -915,3 +915,11 @@ requests cannot affect a new opening. See DESIGN §28.21 for cancellation and ti
 `botEmotes.js` is isolated from bot decisions and RNG. It sends the existing `m.emote` only in mixed matches, under
 normal cooldown/whitelist rules; `SP_BOT_EMOTES=0` disables it. The cooperation score in `bot.js` and these cosmetic
 choices are explicitly [ASSUMED]; DESIGN §28.15–16 records the source and validation.
+
+### Actual kills in single-match records
+
+`players[].creditedKills` in `m.result` is the player's actual enemy kill total for the whole match: normal combat,
+联防, the Final Assault and Hidden Core add their credits. The sim's `BattleResult.perPlayer[].creditedKills` sums
+operator / summon kill counters before truncating unitStats. It is independent of wave-owned `killed` / existing
+`stats.kills`; neither the old counters nor gameplay change. Enemy kills before elimination are included. Enemy
+revives, leaks and deaths without an attributable allied killer add no credit.

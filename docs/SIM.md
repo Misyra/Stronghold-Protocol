@@ -1561,3 +1561,10 @@ yet — enemy content must pick one); 抵抗 covers the control statuses of `RES
 “余音” owns a same-call pulse queue (DESIGN §28.24): reflected hits enqueue their earned pulses instead of recursively
 entering another pulse. This retains the lethal-hit pulse and prevents valid high hit-count chains from tripping the
 general hook guard. The queue is emptied in `finally`; it introduces no timer or simulation RNG.
+
+### Player kill credit
+
+`BattleResult.perPlayer[playerId].creditedKills` totals that player's operator and summon kill counters before
+compacting unitStats. The compact report and verification digest preserve this number, including teammates' leaked
+enemies killed during 联防. The match adds phase credits into its single-match total; combat rules and wave-owned
+`killed` remain unchanged.

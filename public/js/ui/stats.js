@@ -37,7 +37,7 @@
 import { PHASE } from '../../../shared/constants.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 /** localStorage key under the app's `sp.pref.` prefix (store.js loadPref). */
 export const STATS_PREF_KEY = 'stats';
 /** Oldest records are dropped beyond this many matches. */
@@ -153,6 +153,7 @@ function normalizePlayerRow(raw, quit = false) {
     alive: bool(p.alive, true),
     victory: bool(p.victory), // server semantics: team won AND this player was still in at the end
     roundsPassed: quit ? num(p.roundsPassed) : int(p.roundsPassed, 0),
+		...(Number.isInteger(p.creditedKills) && p.creditedKills >= 0 && p.creditedKills <= 1e9 ? { creditedKills: p.creditedKills } : {}),
     eliminatedRound: num(p.eliminatedRound),
     lp: num(p.lp),
     bandId: str(p.bandId),
@@ -210,11 +211,14 @@ export function normalizeRecord(raw) {
 
 /**
  * The MIGRATIONS chain: `MIGRATIONS[v]` upgrades a v-envelope to v+1, for v = STATS_VERSION and down.
- * Empty at v1 — the steps exist so the next format change lands as one function here and every stored /
+ * v1 → v2 adds optional actual player kill totals; older records keep them unknown. Every stored /
  * imported envelope walks the whole chain.
  * @type {Record<number, (stats: any) => any>}
  */
-export const MIGRATIONS = {};
+export const MIGRATIONS = {
+	// v1 only recorded wave-owned kills; normalizeRecord keeps actual player kills unknown instead of guessing.
+	1: ({ records }) => ({ records }),
+};
 
 /** Newest first (the stored order): by time, then id. */
 const newestFirst = (a, b) => (b.t - a.t) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -298,6 +302,7 @@ export function compactRecord(rec) {
   out.players = self ? [{
     playerId: self.playerId, seat: self.seat, alive: self.alive, victory: self.victory, roundsPassed: self.roundsPassed,
     eliminatedRound: self.eliminatedRound, bandId: self.bandId, title: self.title, left: self.left, stats: self.stats,
+		...(self.creditedKills != null ? { creditedKills: self.creditedKills } : {}),
   }] : [];
   return out;
 }
@@ -700,9 +705,17 @@ export function aggregateStats(records) {
     hidden: { reached: 0, cleared: 0 },
     byDifficulty: {}, byMode: { solo: 0, coop: 0 },
     titles: {}, bands: {}, sums: {},
+		maxima: { gold: null, merges: null, kills: null },
   };
   for (const rec of rs) {
     const self = selfRowOf(rec);
+		// Single-match records only use settled totals, never a partial quit or a teammate's row.
+		if (rec.end !== 'quit' && self) {
+			const values = { gold: self.stats?.gold, merges: self.stats?.merges, kills: self.creditedKills };
+			for (const [key, value] of Object.entries(values)) {
+				if (Number.isFinite(value) && value >= 0) out.maxima[key] = Math.max(out.maxima[key] ?? 0, value);
+			}
+		}
     const won = selfWon(rec, self);
     if (won) out.wins++;
     const rounds = roundsOf(rec);

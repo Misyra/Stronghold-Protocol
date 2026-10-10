@@ -212,6 +212,9 @@ export class BattleLifecycle {
       // the HUD capsule's numerator of this field (DESIGN §14): this player's own scheduled enemies resolved — knocked
       // down or leaked (`counted` keeps the LP / 完美作战 reading, runtime splits and summons included)
       pp.resolved = Math.min(pp.total, pp.killedInTotal + pp.leakedInTotal);
+			// Actual enemy deaths credited to this player's operators / summons, independent of the enemy's wave owner.
+			// Sum the full unit list before compactBattleResult caps unitStats (long fights may spawn many summons).
+			pp.creditedKills = ps.units.reduce((n, u) => n + u.stats.kills, 0);
       // the operators and the board's summon pieces (a board uid): 联防 carries an operator's HP ratio and SP, a summon's
       // SP only (match/unite.js). `sp` is the official 技力 — stored charges included (PRTS 技能 "可充能X次…当前技力上限等于该
       // 技能技力需求的X倍"); a running skill spent its SP at activation, so it reports what was left (0 for one charge).

@@ -35,6 +35,9 @@ describe('local match history in Chrome', { skip: enabled ? false : 'set HISTORY
     await page.setViewport({ width: 1366, height: 768 });
     await page.goto(base);
     await page.waitForFunction('!!window.__SP__');
+    await page.waitForSelector('.fullscreen-prompt');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.fullscreen-prompt', { hidden: true });
     // Keep all title actions on one row with equal button heights, including on landscape phones.
     for (const viewport of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
       await page.setViewport(viewport);
@@ -126,6 +129,8 @@ describe('local match history in Chrome', { skip: enabled ? false : 'set HISTORY
   test('reload preserves the record and reconnect replay does not duplicate it', async () => {
     await page.reload();
     await page.waitForFunction('!!window.__SP__ && window.__SP__.net.status === "online"');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.fullscreen-prompt', { hidden: true });
     const before = await list();
     assert.equal(before.length, 1);
     await page.evaluate(async (r) => {

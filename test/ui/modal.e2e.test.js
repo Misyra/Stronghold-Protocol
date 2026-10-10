@@ -155,6 +155,9 @@ describe('Modal keyboard focus', { skip: !ENABLED && 'set SP_E2E=1 and have Chro
       await page.setViewport({ width: 1280, height: 720 });
       page.setDefaultTimeout(5000);
       await page.goto(srv.url, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('.fullscreen-prompt');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.fullscreen-prompt', { hidden: true });
       await page.waitForSelector('.title-settings');
       await page.click('.title-settings');
       await page.waitForFunction(() => document.querySelector('.modal__box')?.contains(document.activeElement));
@@ -183,8 +186,12 @@ describe('Modal keyboard focus', { skip: !ENABLED && 'set SP_E2E=1 and have Chro
   test('settings lets the higher guide keep keyboard focus and resumes after it closes', async () => {
     const page = await browser.newPage();
     try {
+      await page.setViewport({ width: 1280, height: 720 });
       page.setDefaultTimeout(5000);
       await page.goto(srv.url, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('.fullscreen-prompt');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.fullscreen-prompt', { hidden: true });
       await page.waitForSelector('.title-settings');
       await page.click('.title-settings');
       await page.waitForSelector('.set-guide');

@@ -661,7 +661,7 @@ test('家族徽章 (叙拉古): ATK +2 %/s while 隐匿 (max +100 %) until the f
     h.b.applyStatus(u, 'stealth', { duration: 10 });
     h.run(10);
     const ramp = u.s.atk / atk0;
-    h.run(0.5);
+    assert.ok(!u.s.flags.stealth, 'damage immediately after stealth expires');
     const e = foe(h);
     const hp0 = e.hp;
     hitTrue(h, u, e, 100);

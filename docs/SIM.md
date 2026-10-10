@@ -1561,3 +1561,11 @@ yet — enemy content must pick one); 抵抗 covers the control statuses of `RES
 “余音” owns a same-call pulse queue (DESIGN §28.24): reflected hits enqueue their earned pulses instead of recursively
 entering another pulse. This retains the lethal-hit pulse and prevents valid high hit-count chains from tripping the
 general hook guard. The queue is emptied in `finally`; it introduces no timer or simulation RNG.
+
+
+### Family Crest damage-event timing
+
+`content/items/battle.js` consumes 家族徽章's accumulated ATK at the first positive damage event without the `item` tag after the
+Siracusa carrier's effective 隐匿 ends, without waiting for the growth timer. Its 叙拉古正装 combo is claimed before
+synchronous nested damage and uses the boosted ATK before the buff is removed. A later hit cannot consume it again.
+Leaving the field clears the accumulation; 迷彩 does not count as 隐匿 (see §3). Source: `data/items.json`.

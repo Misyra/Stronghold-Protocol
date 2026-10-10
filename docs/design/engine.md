@@ -224,3 +224,11 @@ the hook-depth guard on scaled hit-count HP; the guard remains unchanged for oth
   as well as by its aura tick, including the first hit and immediately after the last companion leaves.
 
 Sources and the feedback items requiring no simulation change are recorded in [§28.25](../history/0.2.3.md#2825-community-feedback-of-2026-10-10).
+
+
+**Family Crest (家族徽章).** On a Siracusa carrier, the accumulated ATK lasts through the first positive damage
+instance after effective 隐匿 ends. At that damage event, the crest + 叙拉古正装 combo uses the accumulated ATK for its
+true damage, then removes the bonus. The first hit does not wait for the next 0.25 s growth poll. Consumption is
+claimed before nested combo damage, so a multi-hit/AOE attack consumes it once; tagged item procs do not consume it.
+Source: `data/items.json` 家族徽章 `desc` / `descRaw` and the
+`act2autochess_equip_acarm122_global_buff` blackboard in `buffs`; the existing proc exclusion is preserved.

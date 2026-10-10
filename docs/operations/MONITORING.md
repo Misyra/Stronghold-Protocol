@@ -7,14 +7,14 @@
 | 服务 | 位置 | 作用 |
 |---|---|---|
 | 游戏 Node | 各游戏服，通常 3000 | 对局、WebSocket、游戏公告只读出口 |
-| collector + Agent | 各游戏服，回环 3999 / 3900 | 本机采集和只读监控 API |
+| collector + Agent | 各游戏服，回环 3999 / 3900 | 本机采集、监控 API 和限定公告写入 |
 | sp-portal | 中央服务器，通常回环 4200 | 联机入口、`/ops/` 管理面板、公告 feed 和中央历史库 |
 
 探针代码随本仓库 `ops/` 分发；其源码在 sp-portal 项目，通过 `deploy/sync-agent.mjs` 同步。`ops/DEPLOYMENT.md`、`ops/HISTORY.md` 是同步时的文档快照，不是本游戏的另一套部署入口；中央服务部署以 sp-portal 当前文档和模板为准，旧 `sp-monitor` 仅作历史参考。
 
 ## 游戏服首次安装探针
 
-游戏已经运行，准备本站独立只读令牌；同一个令牌需配置到面板对应站点。路径和日志名按实际服务器修改：
+游戏已经运行，准备本站独立只读令牌；脚本另生成管理密钥用于面板监控与公告发布。路径和日志名按实际服务器修改：
 
 ```bash
 sudo env APP_DIR=/opt/Stronghold-Protocol/ops SITE_NAME=西安 \
@@ -24,14 +24,16 @@ sudo env APP_DIR=/opt/Stronghold-Protocol/ops SITE_NAME=西安 \
   /opt/Stronghold-Protocol/ops/deploy/install-agent.sh
 ```
 
-脚本创建 `/etc/stronghold/monitor.env`、`admin.env`、数据目录及 `sp-collector` / `sp-admin` 单元，已有环境文件默认保留。按脚本输出将生成的 nginx 片段 include 到本站 HTTPS server 块，`nginx -t` 通过后 reload。不要直接对公网开放 3999 / 3900。
+脚本创建 `/etc/stronghold/monitor.env`、`admin.env`、数据目录及 `sp-collector` / `sp-admin` 单元，已有环境文件默认保留，升级时自动补充独立管理密钥和公告目录写权限。按脚本输出将生成的 nginx 片段 include 到本站 HTTPS server 块，`nginx -t` 通过后 reload。不要直接对公网开放 3999 / 3900。
 
-面板站点配置中填写实际 Agent HTTPS URL 和只读密钥，先测试连接再保存。密钥只保存在服务端，不放 Git 或公开文档。访问日志需要给 `spmonitor` 只读权限，日志轮转后仍须可读；自定义数据目录须与 unit 的可写目录一致。
+面板站点配置中填写实际 Agent HTTPS URL 和 admin.env 中的 SP_ADMIN_TOKEN_RW 管理密钥，先测试连接再保存。密钥只保存在服务端，不放 Git 或公开文档。访问日志需要给 `spmonitor` 只读权限，日志轮转后仍须可读；自定义数据目录须与 unit 的可写目录一致。
+
+旧 SP_ADMIN_TOKEN_RO 仍仅监控。公告由面板写入独立的 /var/lib/stronghold-announcement/announcement.json，游戏默认热读取；升级已有游戏的来源切换见 [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md)。
 
 ## 更新与验证
 
 ```bash
-# 代码已按游戏部署流程拉取后
+# 代码已按游戏部署流程拉取后；首次升级写公告能力时先重新运行安装脚本
 sudo systemctl restart sp-collector sp-admin
 curl -s http://127.0.0.1:3999/api/health
 ```

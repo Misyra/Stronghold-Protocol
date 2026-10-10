@@ -58,3 +58,6 @@ desktop.ini
 *.state.json
 *.state.json.lock
 *.state.json.*.tmp
+
+# Do not commit decoded moderation data.
+/server/moderation/lexicon/words.txt

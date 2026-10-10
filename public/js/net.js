@@ -29,7 +29,7 @@
 // Shared modules are imported relatively: in the browser '../../shared/x.js' from /js/ resolves
 // to /shared/x.js (URL resolution clamps at the root); under Node it resolves to <repo>/shared.
 
-import { PROTOCOL_VERSION, ERR_TEXT } from '../../shared/constants.js';
+import { PROTOCOL_VERSION, ERR_TEXT, ERR } from '../../shared/constants.js';
 import { validateC2S } from '../../shared/protocol.js';
 import { N_ } from '../../shared/i18n.js';
 import { StateReceiver, STATE_DELTA_VERSION } from '../../shared/stateDelta.js';
@@ -407,6 +407,7 @@ export class Net {
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;
     this.lastError = new NetError(msg.code, msg.msg, msg.detail);
+    if (msg.code === ERR.NICKNAME_SENSITIVE) this.name = ''; // wait for a replacement, even after reconnect
     this._setStatus('connected');
     // Queued requests can't be sent without a session.
     this._failPending('OFFLINE', true);

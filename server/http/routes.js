@@ -2,7 +2,8 @@
 // (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/development/I18N.md)
 //
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
-//   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
+//   * POST /api/nickname/validate → server-only nickname preflight, bounded and rate-limited;
+//   * other routes reject methods but GET / HEAD with 405;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
 //     rooms, matches), HTTP no-store with a one-second internal snapshot; this fork adds worker/memory/static-cache/socket-buffer/wire/persist diagnostics;
 //   * GET /metrics → fresh detailed health plus bounded WebSocket latency diagnostics;
@@ -14,6 +15,7 @@
 // A route that throws is logged and answers 500.
 
 // Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
+import { validateNickname } from './nickname.js';
 import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
@@ -84,11 +86,12 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
  * @param {{ serveStatic: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
  *             rawPath: string, query: string) => Promise<void>,
  *           health: Parameters<typeof healthReport>[0], log: object,
+ *           allowNickname?: (req: import('node:http').IncomingMessage) => boolean,
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
  *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null } }} deps
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowStatus = null, readAnnouncement = null, announcementSource = null }) {
+export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null }) {
   const healthBody = createHealthBody(health);
   const methodAllowed = (req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') return true;
@@ -107,6 +110,10 @@ export function createRequestHandler({ serveStatic, health, log, allowStatus = n
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    if (parts.rawPath === '/api/nickname/validate') {
+      await validateNickname(req, res, allowNickname);
+      return;
+    }
     if (parts.rawPath === '/healthz') {
       serveHealth(req, res);
       return;

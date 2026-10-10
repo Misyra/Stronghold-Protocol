@@ -1,3 +1,4 @@
+import { announcementWriter, readAnnouncementPush, DEFAULT_AGENT_ANNOUNCEMENT_FILE } from './lib/agent-announcement.mjs';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { decodeSampleCursor } from './lib/sample-history.mjs';
@@ -14,6 +15,10 @@ export async function startAgent(options = {}) {
   const announcementUrl = options.announcementUrl ? safeUrl(options.announcementUrl) : null;
   const token = options.token || '';
   if (token && Buffer.byteLength(token) < 32) throw new Error('Agent read token must contain at least 32 bytes');
+  const writeToken = options.writeToken || '';
+  if (writeToken && (Buffer.byteLength(writeToken) < 32 || writeToken === token)) throw new Error('Agent management token must be at least 32 bytes and different from the read token');
+  const writer = writeToken ? announcementWriter(options.announcementFile || DEFAULT_AGENT_ANNOUNCEMENT_FILE) : null;
+  let gameSource = null;
   const intervalMs = integer(options.intervalMs, 10000, 100, 300000);
   const timeoutMs = integer(options.timeoutMs, 5000, 10, 30000);
   const staleMs = options.staleMs == null || options.staleMs === '' ? undefined : integer(options.staleMs, 45000, 100, 3600000);
@@ -41,7 +46,8 @@ export async function startAgent(options = {}) {
       })(),
       (async () => {
         if (!announcementUrl) return;
-        try { notice = announcement(await fetchJson(announcementUrl, { timeoutMs, maxBytes: 32 * 1024 }));
+        try { const body = await fetchJson(announcementUrl, { timeoutMs, maxBytes: 32 * 1024 });
+          notice = announcement(body); gameSource = ['agent', 'panel', 'file'].includes(body.source?.mode) ? body.source.mode : null;
           sections.announcement = { status: 'ok', error: null };
         } catch (error) { sections.announcement = { status: 'error', error: errorCode(error) }; }
       })(),
@@ -57,7 +63,7 @@ export async function startAgent(options = {}) {
       })(),
     ]);
   }
-  function snapshot() {
+  function snapshot(canWrite = false) {
     const currentSections = structuredClone(sections);
     const freshness = sampleFreshness(metrics?.current?.t, now(), freshnessWindow(metrics, { override: staleMs, intervalMs, timeoutMs }));
     if (currentSections.collector.status === 'ok' && freshness !== 'fresh') {
@@ -71,24 +77,40 @@ export async function startAgent(options = {}) {
     }
     return { schemaVersion: 1, generatedAt: now(), opsVersion: OPS_VERSION, staleAfterMs: freshnessWindow(metrics, { override: staleMs, intervalMs, timeoutMs }), metrics, sections: currentSections,
       announcement: notice && now() < notice.expiresAt ? notice : null,
+      announcementDelivery: { gameSource },
       cert: cert ? { ...cert, daysLeft: Math.floor((Date.parse(cert.notAfter) - now()) / 86400000) } : null,
-      capabilities: { metrics: true, sampleHistory: sampleHistoryEnabled, announcementRead: !!announcementUrl, announcementWrite: false, sessions: false, rooms: false } };
+      capabilities: { metrics: true, sampleHistory: sampleHistoryEnabled, announcementRead: !!announcementUrl, announcementWrite: !!writer && canWrite, sessions: false, rooms: false } };
   }
   const poll = periodic(refresh, intervalMs);
   let service;
   try { service = await listen(async (req, res) => {
-    if (!equalSecret(req.headers.authorization, `Bearer ${token}`) || !token) {
+    const canWrite = !!writer && equalSecret(req.headers.authorization, `Bearer ${writeToken}`);
+    if (!canWrite && !(token && equalSecret(req.headers.authorization, `Bearer ${token}`))) {
       // Slow down online token guessing reached through the site's nginx route.
       await new Promise((resolve) => setTimeout(resolve, 200));
       return sendJson(req, res, 403, { error: { code: 'FORBIDDEN' } });
     }
+    const url = new URL(req.url, 'http://localhost');
+    if (url.searchParams.has('token')) return sendJson(req, res, 400, { error: { code: 'QUERY_TOKEN_FORBIDDEN' } });
+    if (url.pathname === '/api/admin/v1/announcement' && req.method === 'PUT') {
+      if (!canWrite) return sendJson(req, res, 403, { error: { code: 'ANNOUNCEMENT_WRITE_FORBIDDEN' } });
+      try {
+        const result = await writer.write(await readAnnouncementPush(req));
+        return sendJson(req, res, 200, { ok: true, ...result });
+      } catch (error) {
+        if (error.code === 'PAYLOAD_TOO_LARGE') { req.resume(); res.setHeader('Connection', 'close'); }
+        return sendJson(req, res, error.status || 503, { error: { code: error.status ? error.code : 'ANNOUNCEMENT_WRITE_FAILED' } });
+      }
+    }
     if (!['GET', 'HEAD'].includes(req.method)) {
       res.setHeader('Allow', 'GET, HEAD'); return sendJson(req, res, 405, { error: { code: 'READ_ONLY' } });
     }
-    const url = new URL(req.url, 'http://localhost');
-    if (url.searchParams.has('token')) return sendJson(req, res, 400, { error: { code: 'QUERY_TOKEN_FORBIDDEN' } });
-    if (url.pathname === '/api/admin/v1/overview') return sendJson(req, res, 200, snapshot());
-    if (url.pathname === '/api/admin/v1/capabilities') return sendJson(req, res, 200, snapshot().capabilities);
+    if (url.pathname === '/api/admin/v1/overview') {
+      const snap = snapshot(canWrite);
+      if (writer) { try { snap.announcementDelivery.revision = (await writer.read()).revision; } catch { snap.announcementDelivery.revision = null; } }
+      return sendJson(req, res, 200, snap);
+    }
+    if (url.pathname === '/api/admin/v1/capabilities') return sendJson(req, res, 200, snapshot(canWrite).capabilities);
     if (url.pathname === '/api/admin/v1/samples') {
       if (!sampleHistoryEnabled) return sendJson(req, res, 404, { error: { code: 'HISTORY_UNAVAILABLE' } });
       try {
@@ -116,19 +138,21 @@ export async function startAgent(options = {}) {
     return sendJson(req, res, 404, { error: { code: 'NOT_FOUND' } });
   }, options); } catch (error) { await poll.stop(); throw error; }
   const closeServer = service.close;
-  return { ...service, refresh: poll.refresh, snapshot, close: async () => { await poll.stop(); await closeServer(); } };
+  return { ...service, refresh: poll.refresh, snapshot, close: async () => { await poll.stop(); await writer?.close(); await closeServer(); } };
 }
 
 if (isEntry(import.meta.url)) {
   try {
     const token = process.env.SP_ADMIN_TOKEN_RO || '';
-    if (!token) console.warn('[agent] SP_ADMIN_TOKEN_RO is missing; all requests will be rejected');
+    if (!token) console.warn('[agent] SP_ADMIN_TOKEN_RO is missing; monitoring requires the management token');
     const service = await startAgent({ host: process.env.SP_ADMIN_BIND || '127.0.0.1',
       port: integer(process.env.SP_ADMIN_PORT, 3900, 1, 65535), token,
+      writeToken: process.env.SP_ADMIN_TOKEN_RW,
+      announcementFile: process.env.MON_ANNOUNCEMENT_FILE || DEFAULT_AGENT_ANNOUNCEMENT_FILE,
       collectorUrl: process.env.MON_COLLECTOR_URL || 'http://127.0.0.1:3999/api/data',
       announcementUrl: process.env.MON_ANNOUNCEMENT_URL || 'http://127.0.0.1:3000/api/announcement',
       certFile: process.env.MON_CERT_FILE,
       intervalMs: process.env.MON_AGENT_INTERVAL_MS, timeoutMs: process.env.MON_TIMEOUT_MS, staleMs: process.env.MON_STALE_MS });
-    console.log(`[agent] ${service.url} · read-only API`); onShutdown(service);
+    console.log(`[agent] ${service.url} · monitoring + scoped announcement API`); onShutdown(service);
   } catch (error) { console.error('[agent]', error.message); process.exitCode = 1; }
 }

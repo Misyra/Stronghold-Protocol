@@ -22,6 +22,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DailyStats } from './lib/daily-stats.mjs';
 import { sampleHistory, SampleWriter } from './lib/sample-history.mjs';
+import { onlineCapacity } from './lib/metrics.mjs';
 import { execFileSync } from 'node:child_process';
 import { integer, loopback, periodic, fetchJson, safeUrl } from './lib/http.mjs';
 import { dayKey, nginxDay, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, LogReader } from './lib/collector-utils.mjs';
@@ -303,15 +304,9 @@ function clientConns() {
 /** 跨过阈值时往 journal 打一条告警（可在 journalctl -u stronghold-monitor 看到）。 */
 function alertCheck(s) {
   const cap = CFG.capacity;
-  const online = s.sessions;
-  let lvl = online === null || !s.game ? 'unknown' : 'ok';
-  if (online !== null && cap > 0) {
-    const pct = (online / cap) * 100;
-    lvl = pct >= 100 ? 'full' : (pct >= CFG.critPct ? 'crit' : (pct >= CFG.warnPct ? 'warn' : 'ok'));
-  }
-  if (lvl === 'ok' && s.load1 !== null && s.load1 >= os.cpus().length) lvl = 'warn';
+  const lvl = onlineCapacity(s, { limit: cap, warnPct: CFG.warnPct, critPct: CFG.critPct, cores: os.cpus().length }).level;
   if (lvl !== alertLevel) {
-    console.log(`[monitor][alert] ${alertLevel} -> ${lvl} · 在线 ${s.sockets ?? '?'} · 保留会话 ${online ?? '?'}/${cap} · 负载 ${s.load1} · CPU ${s.cpu}%（IO 等待 ${s.iowaitPct}%） · PSI IO some/full ${s.psiIoSome}/${s.psiIoFull} · 出网 ${s.txKB} KB/s · 5xx ${stats.today.errors}`);
+    console.log(`[monitor][alert] ${alertLevel} -> ${lvl} · 在线 ${s.sockets ?? '?'}/${cap} · 保留会话 ${s.sessions ?? '?'} · 负载 ${s.load1} · CPU ${s.cpu}%（IO 等待 ${s.iowaitPct}%） · PSI IO some/full ${s.psiIoSome}/${s.psiIoFull} · 出网 ${s.txKB} KB/s · 5xx ${stats.today.errors}`);
     alertLevel = lvl;
   }
 }
@@ -418,7 +413,7 @@ async function takeSample() {
 // ---------------------------------------------------------------------------- API
 function buildSeries(hours) { return aggregateSeries(ring, Date.now() - hours * 3600 * 1000); }
 
-function capacity() { return { basis: 'sessions', limit: CFG.capacity, warnPct: CFG.warnPct, critPct: CFG.critPct, level: alertLevel, cores: os.cpus().length }; }
+function capacity() { return { basis: 'sockets', limit: CFG.capacity, warnPct: CFG.warnPct, critPct: CFG.critPct, level: alertLevel, cores: os.cpus().length }; }
 function apiData() {
   const daily = stats.snapshot();
   return {

@@ -35,11 +35,11 @@ test('default compression reduces large JSON frames, skips small frames and pres
     else assert.ok(sentBytes < rawBytes / 3, 'large frame is compressed on the wire');
   }
 
-  const welcome = await client.hello('压缩测试');
+  const welcome = await client.hello('压缩校验');
   assert.ok(welcome.token);
   assert.equal((await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
   const room = await client.waitFor('room.state');
-  assert.equal(room.seats[0].name, '压缩测试');
+  assert.equal(room.seats[0].name, '压缩校验');
 });
 
 test('environment switch and explicit override enable or disable negotiation', async (t) => {
@@ -55,7 +55,7 @@ test('environment switch and explicit override enable or disable negotiation', a
       process.env.SP_WS_COMPRESSION = env;
       const { client } = await connect(t, options);
       assert.equal(client.ws.extensions, enabled ? 'permessage-deflate' : '');
-      assert.ok((await client.hello('开关测试')).playerId);
+      assert.ok((await client.hello('开关校验')).playerId);
     });
   }
   process.env.SP_WS_COMPRESSION = 'unexpected';

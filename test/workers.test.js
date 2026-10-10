@@ -347,7 +347,7 @@ test('server shares one pool across matches, reports health, and responds over W
   await cpu.submit('burn', {}).promise;
   const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
   t.after(() => c.close());
-  await c.hello('Worker test');
+  await c.hello('Worker');
   await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   const room = await c.waitFor('room.state');
   await c.request({ t: 'room.start' });

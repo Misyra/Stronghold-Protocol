@@ -48,7 +48,7 @@ test('publicWireFrame splices serverNow into the dedup string as valid JSON', ()
 
 test('wire counters in /healthz grow per frame type', async (t) => {
   const { srv, client } = await connect(t);
-  const welcome = await client.hello('线帧测试');
+  const welcome = await client.hello('线帧校验');
   assert.ok(welcome.token);
   const first = await healthz(srv.port);
   assert.ok(first.wire && first.wire.frames >= 1 && first.wire.bytes > 0, 'queued frames are counted');
@@ -65,7 +65,7 @@ test('wire counters in /healthz grow per frame type', async (t) => {
 
 test('m.public frames through the spliced wire form still parse with serverNow', async (t) => {
   const { srv, client } = await connect(t);
-  await client.hello('快照测试');
+  await client.hello('快照校验');
   await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   await client.waitFor('room.state');
   await client.request({ t: 'room.start' });

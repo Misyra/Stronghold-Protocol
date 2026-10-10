@@ -2,6 +2,7 @@
 # Check inherited add_header / cache / CORS directives in the existing configuration.
 location ^~ /api/admin/v1/ {
     auth_basic off;
+    client_max_body_size 16k;
     proxy_pass http://127.0.0.1:3900;
     proxy_set_header Authorization $http_authorization;
     proxy_set_header Host $host;

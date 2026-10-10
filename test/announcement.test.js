@@ -155,58 +155,52 @@ test('announcement HTTP API is read-only, not cached, and exposes only the publi
   assert.equal(srv.registry.size, 0);
 });
 
-test('central panel is the default, including blank URL and a configured local file path', () => {
+test('probe-managed file is the default; existing explicit feed URLs remain compatible', () => {
   for (const env of [{}, { SP_ANNOUNCEMENT_URL: '' }, { SP_ANNOUNCEMENT_FILE: 'old-notice.json' }]) {
     const options = announcementOptionsFrom({}, env);
-    assert.equal(options.announcementUrl, 'https://game.rainya.me/api/announce/v1/site-ad797aa8');
-    assert.deepEqual(options.source, { mode: 'panel', siteId: 'site-ad797aa8' });
+    assert.equal(options.announcementUrl, null);
+    assert.deepEqual(options.source, { mode: 'agent', siteId: null });
+    assert.ok(options.filePath.endsWith('announcement.json'));
+    assert.ok(!options.filePath.endsWith('old-notice.json'));
   }
-  const env = { SP_SITE_ID: 'aliyun', SP_PORTAL_URL: 'https://panel.example/', SP_ANNOUNCEMENT_POLL_MS: '30000' };
+  const env = { SP_ANNOUNCEMENT_SOURCE: 'panel', SP_SITE_ID: 'aliyun', SP_PORTAL_URL: 'https://panel.example/', SP_ANNOUNCEMENT_POLL_MS: '30000' };
   assert.equal(announcementOptionsFrom({}, env).announcementUrl, 'https://panel.example/api/announce/v1/aliyun');
   assert.equal(announcementOptionsFrom({}, env).pollMs, 30000);
-  const explicit = announcementOptionsFrom({ announcementUrl: 'https://old.example/api/announce/v1/shiyan', announcementPollMs: 5000 }, env);
-  assert.equal(explicit.source.siteId, 'shiyan', 'existing full feed URLs keep their own identity');
-  assert.equal(explicit.pollMs, 5000, 'programmatic interval wins over the environment');
-  assert.equal(announcementOptionsFrom({}, { SP_ANNOUNCEMENT_URL: 'https://old.example/api/announce/v1/hongkong',
-    SP_SITE_ID: '', SP_PORTAL_URL: 'unused-invalid-base' }).source.siteId, 'hongkong', 'a complete feed URL needs no base or site ID');
+  const explicit = announcementOptionsFrom({ announcementUrl: 'https://old.example/api/announce/v1/shiyan', announcementPollMs: 5000 }, {});
+  assert.equal(explicit.source.siteId, 'shiyan');
+  assert.equal(explicit.pollMs, 5000);
   const local = announcementOptionsFrom({}, { ...env, SP_ANNOUNCEMENT_SOURCE: 'file', SP_ANNOUNCEMENT_URL: 'https://unused.example/' });
-  assert.equal(local.announcementUrl, null, 'file mode requires an explicit source choice');
+  assert.equal(local.announcementUrl, null);
   assert.deepEqual(local.source, { mode: 'file', siteId: null });
-  for (const bad of [{ SP_ANNOUNCEMENT_SOURCE: 'files' }, { SP_SITE_ID: '../other' }, { SP_ANNOUNCEMENT_POLL_MS: 'bad' },
+  const managed = announcementOptionsFrom({ announcementSource: 'agent' }, { SP_ANNOUNCEMENT_URL: 'https://unused.example/' });
+  assert.equal(managed.announcementUrl, null);
+  for (const bad of [{ SP_ANNOUNCEMENT_SOURCE: 'files' }, { SP_ANNOUNCEMENT_SOURCE: 'panel' },
+    { ...env, SP_SITE_ID: '../other' }, { SP_ANNOUNCEMENT_POLL_MS: 'bad' },
     { SP_ANNOUNCEMENT_URL: 'file:///tmp/notice' }, { SP_ANNOUNCEMENT_URL: 'https://user:secret@example.com/' }]) {
     assert.throws(() => announcementOptionsFrom({}, bad));
   }
 });
 
-test('default server uses the panel feed even with a valid local notice; outages never switch to the file', async (t) => {
-  const filePath = await fixture(t);
-  await writeFile(filePath, JSON.stringify({ ...config, text: 'LOCAL: must never appear' }));
-  const nativeFetch = globalThis.fetch;
-  let status = 503, calls = 0;
-  t.mock.method(globalThis, 'fetch', (url, options) => {
-    if (String(url) === 'https://game.rainya.me/api/announce/v1/site-ad797aa8') {
-      calls++;
-      return Promise.resolve(new Response(JSON.stringify(config), { status }));
-    }
-    return nativeFetch(url, options);
-  });
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementFile: filePath, announcementPollMs: 3000 });
+test('default server hot-reads the managed file and ignores a manual local notice', async (t) => {
+  const filePath = await fixture(t), managed = filePath + '.managed';
+  await writeFile(filePath, JSON.stringify({ ...config, text: 'manual notice' }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementFile: filePath, announcementAgentFile: managed });
   t.after(() => srv.close());
-  const first = await (await fetch(`${srv.url}/api/announcement`)).json();
-  assert.equal(first.announcement, null, 'unavailable central feed does not load the local file');
-  assert.deepEqual(first.source, { mode: 'panel', siteId: 'site-ad797aa8' });
-  status = 200;
-  await new Promise(resolve => setTimeout(resolve, 3050));
-  const second = await (await fetch(`${srv.url}/api/announcement`)).json();
+  const first = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(first.announcement, null);
+  assert.deepEqual(first.source, { mode: 'agent', siteId: null });
+  await writeFile(managed, JSON.stringify({ ...config, _delivery: { revision: 1 } }));
+  await new Promise(resolve => setTimeout(resolve, 1050));
+  const second = await (await fetch(srv.url + '/api/announcement')).json();
   assert.deepEqual(second.announcement, parseAnnouncement(config));
-  assert.equal(calls, 2);
+  assert.ok(!JSON.stringify(second).includes('_delivery'));
 });
 
 test('site ID and portal URL compose the feed for newly deployed sites', async (t) => {
   let requested;
   const source = await upstream(t, (req, res) => { requested = req.url; res.end(JSON.stringify(config)); });
   const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true,
-    announcementPortalUrl: source.url, announcementSiteId: 'new-domestic' });
+    announcementSource: 'panel', announcementPortalUrl: source.url, announcementSiteId: 'new-domestic' });
   t.after(() => srv.close());
   const body = await (await fetch(`${srv.url}/api/announcement`)).json();
   assert.equal(requested, '/api/announce/v1/new-domestic');

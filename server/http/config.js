@@ -27,31 +27,34 @@ const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMa
  */
 export const DEFAULT_BIND_HOST = '::';
 
-// This fork's new Xi'an instance. Existing sites keep their explicit feed URL/site ID.
-export const DEFAULT_ANNOUNCEMENT_PORTAL = 'https://game.rainya.me';
-export const DEFAULT_ANNOUNCEMENT_SITE = 'site-ad797aa8';
+// The probe writes public notice content here; the game never writes this directory.
+export const DEFAULT_AGENT_ANNOUNCEMENT_FILE = process.platform === 'win32'
+  ? path.join(ROOT, '.state', 'announcement.json') : '/var/lib/stronghold-announcement/announcement.json';
 
 /**
- * Resolve once at boot; an empty URL never selects local-file mode.
- * @param {{ announcementSource?: string, announcementFile?: string, announcementPollMs?: number,
+ * The default source is the managed probe file. Explicit feed URLs remain compatible.
+ * @param {{ announcementSource?: string, announcementFile?: string, announcementAgentFile?: string, announcementPollMs?: number,
  * announcementSiteId?: string, announcementPortalUrl?: string, announcementUrl?: string }} opts
  * @param {Record<string, string | undefined>} env
  */
 export function announcementOptionsFrom(opts = {}, env = process.env) {
-  const source = opts.announcementSource ?? env.SP_ANNOUNCEMENT_SOURCE ?? 'panel';
-  if (!['panel', 'file'].includes(source)) throw new RangeError('SP_ANNOUNCEMENT_SOURCE must be panel or file');
-  const filePath = path.resolve(ROOT, opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json');
+  const explicitUrl = opts.announcementUrl || env.SP_ANNOUNCEMENT_URL;
+  const source = opts.announcementSource ?? env.SP_ANNOUNCEMENT_SOURCE ?? (explicitUrl ? 'panel' : 'agent');
+  if (!['agent', 'panel', 'file'].includes(source)) throw new RangeError('SP_ANNOUNCEMENT_SOURCE must be agent, panel or file');
+  const filePath = path.resolve(ROOT, source === 'agent'
+    ? opts.announcementAgentFile ?? env.SP_ANNOUNCEMENT_AGENT_FILE ?? DEFAULT_AGENT_ANNOUNCEMENT_FILE
+    : opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json');
   const pollMs = opts.announcementPollMs ?? Number(env.SP_ANNOUNCEMENT_POLL_MS || 10000);
   if (!Number.isFinite(pollMs)) throw new RangeError('invalid SP_ANNOUNCEMENT_POLL_MS');
-  if (source === 'file') return { filePath, pollMs, announcementUrl: null, source: { mode: 'file', siteId: null } };
-  const explicitUrl = opts.announcementUrl || env.SP_ANNOUNCEMENT_URL;
+  if (source !== 'panel') return { filePath, pollMs, announcementUrl: null, source: { mode: source, siteId: null } };
   let url;
   if (explicitUrl) url = new URL(explicitUrl);
   else {
-    const siteId = opts.announcementSiteId ?? env.SP_SITE_ID ?? DEFAULT_ANNOUNCEMENT_SITE;
-    if (!/^[a-z0-9-]{1,40}$/.test(siteId)) throw new RangeError('invalid SP_SITE_ID');
-    const portal = opts.announcementPortalUrl ?? env.SP_PORTAL_URL ?? DEFAULT_ANNOUNCEMENT_PORTAL;
-    url = new URL(`/api/announce/v1/${siteId}`, portal);
+    const siteId = opts.announcementSiteId ?? env.SP_SITE_ID;
+    if (!/^[a-z0-9-]{1,40}$/.test(siteId || '')) throw new RangeError('panel source requires a valid SP_SITE_ID or SP_ANNOUNCEMENT_URL');
+    const portal = opts.announcementPortalUrl ?? env.SP_PORTAL_URL;
+    if (!portal) throw new RangeError('panel source requires SP_PORTAL_URL or SP_ANNOUNCEMENT_URL');
+    url = new URL('/api/announce/v1/' + siteId, portal);
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
     throw new RangeError('announcement URL must be HTTP(S) without credentials or a fragment');

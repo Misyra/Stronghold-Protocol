@@ -42,6 +42,7 @@ import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
+import { hasSensitiveNickname } from './moderation/nickname.js';
 import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from './stateTransport.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
@@ -735,6 +736,8 @@ export class Network {
     }
     const name = sanitizeName(msg.name);
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
+    // Check before creating, renaming or taking over a session, including token-based reconnects.
+    if (hasSensitiveNickname(name)) { this.reply(conn, errorMsg(ERR.NICKNAME_SENSITIVE, rid)); return; }
 
     let session = conn.session;
     let resumed = false;

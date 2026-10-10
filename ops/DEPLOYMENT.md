@@ -10,7 +10,8 @@
 ```text
 浏览器 ──► nginx(阿里云) ──► node server.mjs ──轮询──► 各站 Agent (Bearer)
                                     │
-游戏进程(各站) ──10秒拉取──► /api/announce/v1/<站id>   ← 面板公告存储（唯一编辑入口在 /ops/）
+面板公告存储（/ops/ 唯一编辑入口）──管理密钥推送──► 本站 Agent ──原子写入──► 游戏公告文件
+无探针站点：游戏进程 ──按需拉取──► /api/announce/v1/<站id>
 Agent(各站) ──读──► collector(3999) + 游戏 /healthz + 证书
 ```
 
@@ -19,8 +20,8 @@ Agent(各站) ──读──► collector(3999) + 游戏 /healthz + 证书
 1. 备份现有 `/opt/stronghold-portal` 与 `/etc/stronghold/portal.env`、`/var/lib/sp-portal/rooms.json`。
 2. 复制新代码到 `/opt/stronghold-portal`（根目录 .mjs、`lib/`、`client/` 全部，含 `client/ops/`）。
 3. `portal-sites.json` 按新 `sites.example.json` 增加 `adminUrl` / `tokenEnv` 字段（站点其余字段不变；临夏站不加）。
-4. `portal.env` 增加面板与探针令牌变量（见 README 环境变量块）：`PANEL_AUTH_USER`、`PANEL_AUTH_PASSWORD`、`PANEL_ANNOUNCE_FILE`、三个 `SP_SITE_*_TOKEN_RO`。
-5. 更新 nginx（`deploy/nginx-portal.conf.example`）：`/api/panel/` 的 `client_max_body_size` 放宽到 32k；新增 `location ^~ /ops/`（托管 `client/ops/` 静态文件）；`/api/admin/` 保持 404；`/api/` 反代不变（公告拉取与面板 API 都走它）。
+4. `portal.env` 配置 `PANEL_AUTH_USER`、`PANEL_AUTH_PASSWORD`、`PANEL_ANNOUNCE_FILE`，设置 `PORTAL_SERVE_CLIENT=1`，以便使用下述同源页面反代模板。已有 `SP_SITE_*_TOKEN_RO` 可继续使用；新增监控站点可以在管理页直接填写实际管理密钥，无需重启。设置 `PORTAL_CREDENTIALS_FILE=/var/lib/sp-portal/probe.secrets.json`（新版 unit 已有此默认值）；服务账号必须能写入该私密文件及站点配置所在目录。更新 unit 后先执行 `systemctl daemon-reload`。
+5. 按 [动态页面 CSP 迁移步骤](PAGE_POLICY.md) 安装 `deploy/nginx-portal-pages.conf.example` 为 `/etc/nginx/snippets/sp-portal-pages.conf`，合并到目标 HTTPS server，替换旧精确匹配和静态页面路由，覆盖 `/` 与 `/index.html`，删除入口页面继承的旧 CSP。共享游戏 vhost 只合并页面片段，保留游戏路由；独立入口可使用完整模板 `deploy/nginx-portal.conf.example`。`/api/panel/` 的 `client_max_body_size` 为 64k，`/api/admin/` 保持 404。先 `nginx -t`，通过后 reload，再执行 `node tools/check-page-policy.mjs https://<入口域名>/ http://127.0.0.1:4200/`；页面 CSP 与 API 策略版本必须一致。
 6. `systemctl restart sp-portal`，验证：
    - `curl -s http://127.0.0.1:4200/api/health` → `{"ok":true,...}`
    - `curl -s http://127.0.0.1:4200/api/announce/v1/aliyun` → `{"enabled":...}`
@@ -69,7 +70,7 @@ sudo env SITE_NAME=十堰 \
 # 2) 按脚本结尾提示，把  include snippets/stronghold-ops.conf;  加进本站 HTTPS server 块后 reload nginx
 ```
 
-脚本行为：生成 `/etc/stronghold/{monitor,admin}.env`（600 权限；已存在则保留，`FORCE=1` 覆盖）、安装 `sp-collector`/`sp-admin` systemd 单元（含硬化选项）、写 `/etc/nginx/snippets/stronghold-ops.conf`、启动服务并 curl 自检（collector 3999 / Agent 3900 / 可选中间页连通性）。nginx 的 include 与 reload 留给人执行，避免脚本改坏线上 vhost。完成后跳到下面第 4 步验证；下面 1–3 是手动等价步骤，供排查或不用脚本时参考。
+脚本行为：自动生成独立 SP_ADMIN_TOKEN_RW（不输出密钥），补齐公告目录和 systemd 写权限；生成 `/etc/stronghold/{monitor,admin}.env`（600 权限；已存在则保留原设置并补齐公告配置，`FORCE=1` 重建）、安装 `sp-collector`/`sp-admin` systemd 单元（含硬化选项）、写 `/etc/nginx/snippets/stronghold-ops.conf`、启动服务并 curl 自检（collector 3999 / Agent 3900 / 可选中间页连通性）。nginx 的 include 与 reload 留给人执行，避免脚本改坏线上 vhost。完成后跳到下面第 4 步验证；下面 1–3 是手动等价步骤，供排查或不用脚本时参考。
 
 ### 手动步骤（与脚本等价）
 
@@ -110,16 +111,18 @@ curl -s http://127.0.0.1:3999/api/health      # → {"ok":true,...}
 
 访问日志使用 nginx 的 combined 格式。只授予 `spmonitor` 本站访问日志的读权限及父目录的遍历权限；不要授予私钥或日志写权限。若使用 ACL，可对该日志执行 `setfacl -m u:spmonitor:r-- <日志路径>`；同时在现有 logrotate 配置的 postrotate 中恢复该 ACL，或使用固定的只读日志组，确保轮转后仍可读。安装脚本会以 `spmonitor` 检查日志可读性；新探针把路径、权限、格式错误单独报告，访问统计显示“—”，游戏和系统采样继续。
 
-自定义 `MON_DATA_DIR` 使用独立持久目录（绝对路径，无空格；不使用 /tmp、/var/tmp）。安装脚本按现存 monitor.env 中的路径创建目录、设置属主并生成 ReadWritePaths；直接使用 unit 模板时需同步修改这一行。容量 `MON_CAPACITY` 按各站实际情况分别设定。
+自定义 `MON_DATA_DIR` 使用独立持久目录（绝对路径，无空格；不使用 /tmp、/var/tmp）。安装脚本按现存 monitor.env 中的路径创建目录、设置属主并生成 ReadWritePaths；直接使用 unit 模板时需同步修改这一行。容量 `MON_CAPACITY` 按各站实际情况分别设定，告警统一按 WebSocket 在线连接数判断。
 
 注意：本机 nginx 日志路径须与 `MON_NGINX_LOG` 一致，且确认「面板与内部接口不计入统计」的路径过滤（`/api/admin/`、`/api/panel/`、`/healthz` 等）符合本站 vhost 实际路径。
 
-### 2. 只读 Agent（回环 3900）
+### 2. 管理 Agent（回环 3900）
 
 `/etc/stronghold/admin.env`（权限 600，不要提交 Git）：
 
 ```ini
-SP_ADMIN_TOKEN_RO=<第 0 步生成的令牌>
+SP_ADMIN_TOKEN_RO=<第 0 步生成的只读令牌>
+SP_ADMIN_TOKEN_RW=<另行生成的独立管理密钥，至少32字符>
+MON_ANNOUNCEMENT_FILE=/var/lib/stronghold-announcement/announcement.json
 MON_COLLECTOR_URL=http://127.0.0.1:3999/api/data
 MON_ANNOUNCEMENT_URL=http://127.0.0.1:3000/api/announcement
 SP_ADMIN_PORT=3900
@@ -131,6 +134,8 @@ MON_STALE_MS=45000
 ```
 
 ```bash
+sudo install -d -m 0755 -o spmonitor -g spmonitor /var/lib/stronghold-announcement
+# unit 的 ReadWritePaths 仅允许写入上述专用目录
 sudo systemctl enable --now sp-admin          # unit 见 deploy/sp-admin.service
 curl -s -H "Authorization: Bearer <令牌>" http://127.0.0.1:3900/api/admin/v1/health
 ```
@@ -155,19 +160,15 @@ curl -s -H "Authorization: Bearer <本站令牌>" https://<本站域名>/api/adm
 
 面板 `/ops/` 中该站卡片应从「尚未配置」变为「运行正常」；趋势与归档约几分钟后出现数据。两台都完成后，三个自建站全部显示；重启面板不需要动游戏进程。
 
-### 5. 游戏内公告接入（可选但推荐）
+### 5. 游戏内公告接入
 
-在每台自建游戏站（十堰、阿里云、香港）游戏进程的环境里设置：
+游戏更新后默认 agent 模式，热读取 /var/lib/stronghold-announcement/announcement.json。面板站点配置中填写 SP_ADMIN_TOKEN_RW，可同时读取监控和发布公告。旧 SP_ADMIN_TOKEN_RO 继续只读；连接测试会提示是否具有公告写入能力。
 
-```ini
-SP_ANNOUNCEMENT_URL=https://<中间页域名>/api/announce/v1/<站id>
-# 可选：拉取间隔，默认 10 秒（允许 3 秒～10 分钟）
-# SP_ANNOUNCEMENT_POLL_MS=10000
-```
+已有游戏配置了 SP_ANNOUNCEMENT_URL 或 SOURCE=panel 时，设置**游戏服务**环境 SP_ANNOUNCEMENT_SOURCE=agent 并重启。安装脚本不会修改游戏服务环境。自定义目录需同时设置游戏 SP_ANNOUNCEMENT_AGENT_FILE；Docker 将整个公告目录只读挂载到容器同一路径，不要挂载单个文件。Windows 游戏默认 .state/announcement.json，自行运行探针时须配置相同的绝对文件路径。
 
-重启游戏进程后，`/ops/` 发布的公告约 10 秒内到达该站：拉取失败或断源保留上一条有效公告，面板显式停用（`enabled: false`）立即撤下，到期自动隐藏。若该站此前配过本地公告文件 `SP_ANNOUNCEMENT_FILE`，设置本变量后本地文件不再参与（二选一，拉取优先接管）。拉取是纯出站请求，游戏站不需要开放任何入站端口或路由（面板 nginx 的 `/api/` 反代已覆盖公告 feed）。临夏站为第三方分支（xinhai），其游戏端没有 `SP_ANNOUNCEMENT_URL`，暂无法接入。
+在 /ops/manage.html 发布后，面板先保存再推送，显示各站「已写入探针」或失败原因；断连/写入失败默认每 10 秒重试，中央进程重启后也会补发，停用和删除同样重试。游戏每秒最多读取一次文件，玩家浏览器每 30 秒检查或切回标签页检查。线上生效列来自实际游戏 API，与文件写入成功分开显示。
 
-验证：在 `/ops/` 发布一条公告，约 10 秒内该站「线上生效」列应从「无公告」变成公告标题。
+无探针站点保留公开 feed，游戏可显式设置 SP_ANNOUNCEMENT_SOURCE=panel 和 SP_ANNOUNCEMENT_URL=https://<中间页域名>/api/announce/v1/<实际站id>；需要对方游戏支持 feed。面板没有为任何游戏写死默认站点 ID。
 
 ### 6. 本次修复的升级与验证
 
@@ -197,9 +198,10 @@ MON_STALE_MS/PANEL_STALE_MS 未显式设置时自动按采样/轮询周期调整
 
 ## 三、安全边界
 
-- 面板凭据（Basic Auth）与各站探针令牌只存在服务端环境文件；浏览器只接触面板同域 API，从不持有探针令牌。
+- 面板凭据（Basic Auth）保存在服务端环境文件。探针令牌可来自环境变量，或由管理员在同域面板的密码框录入并提交；服务端不回显密钥，不写浏览器持久存储。直接录入的令牌以明文保存在 `PORTAL_CREDENTIALS_FILE` 私密文件中，Linux 权限为 `0600`、systemd 使用 `UMask=0077`；站点配置只保存随机引用。私密文件不可放入静态目录或 Git，备份时与站点配置一起保护和恢复。
 - 面板 API、/ops 静态页与探针 Agent 对**鉴权失败统一延迟 200ms**（配合常数时间比较），拖慢在线爆破；可在 nginx 对 `/api/panel/` 加 `limit_req` 进一步收紧（见示例注释），或直接上 fail2ban。
-- Agent 只读：无写方法、无玩家 IP 列表、无会话明细；指标经白名单脱敏后才进入面板。
+- Agent 的 RO 密钥仅监控；独立 RW 管理密钥还可 PUT 公告。仅允许固定公告文件的原子替换，不接受任意路径或配置修改，无玩家 IP 列表、无会话明细。
+- 公告目录由 spmonitor 持有（0755），文件为玩家公开内容（0644）；systemd 仅授予该独立目录写权限。推送限制 JSON、16 KiB 并拒绝浏览器 Origin / Fetch Metadata。
 - `/api/announce/v1/` 是面板唯一无鉴权前缀，仅返回玩家可见的公告字段。
 - 探针管理路由的 CORS 关闭、无缓存；令牌只走 `Authorization` 头（query 传令牌直接 400）。
 - 面板写接口带同源校验 + JSON 限定；`/api/admin/*` 不经公网（nginx 404），脚本在同机回环调用。

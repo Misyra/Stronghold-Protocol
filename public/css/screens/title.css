@@ -230,6 +230,8 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
+.title-name-feedback { margin: -.04rem 0 0; font-size: .13rem; line-height: 1.6; color: var(--text-dim); }
+.title-name-feedback a { color: var(--mint-500); text-decoration: underline; text-underline-offset: .02rem; }
 .title-invite {
   display: flex;
   align-items: center;

@@ -12,7 +12,7 @@
 #      (public/fonts, data/assets.json and data/local-assets.json are copied from the build context when present)
 # Without any art the game still runs with placeholder visuals.
 #
-# Run:  see docs/operations/DEPLOY.md for CDN, announcement site ID and persistent state mounts.
+# Run:  see docs/operations/DEPLOY.md for CDN, probe announcement directory and persistent state mounts.
 # Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
 
 ARG NODE_IMAGE=node:22-alpine

@@ -6,6 +6,14 @@ const HOST = ['cpu', 'iowaitPct', 'psiCpuSome', 'psiCpuFull', 'psiIoSome', 'psiI
 const TRAFFIC = ['requests', 'pageViews', 'assetHits', 'wsConnects', 'aborts', 'errors', 'bytes', 'visitors',
   'peakSessions', 'peakSockets', 'peakHumans', 'peakBots', 'peakTxKB'];
 export const numeric = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+// Capacity always measures live WebSocket connections, including snapshots from older probes.
+export function onlineCapacity(current, capacity) {
+  const online = numeric(current?.sockets), limit = numeric(capacity?.limit);
+  const ratio = current?.game && online != null && limit > 0 ? online / limit * 100 : null;
+  let level = ratio == null ? 'unknown' : ratio >= 100 ? 'full' : ratio >= (capacity.critPct ?? 90) ? 'crit' : ratio >= (capacity.warnPct ?? 70) ? 'warn' : 'ok';
+  if (level === 'ok' && capacity.cores > 0 && numeric(current.load1) != null && current.load1 >= capacity.cores) level = 'warn';
+  return { ...capacity, basis: 'sockets', level };
+}
 const pick = (obj, keys) => Object.fromEntries(keys.map((key) => [key, numeric(obj?.[key])]));
 const text = (s, max = 100) => typeof s === 'string' ? s.slice(0, max) : null;
 const dateKey = (s) => typeof s === 'string' && /^\d{4}-\d\d-\d\d$/.test(s) ? s : null;
@@ -28,8 +36,7 @@ export function sanitizeMetrics(raw) {
   const diagnostics = Object.fromEntries(['nginx', 'storage'].map(key => [key, sanitizeSection(raw.diagnostics?.[key])]));
   const traffic = pick(raw.today, TRAFFIC);
   if (diagnostics.nginx.status === 'error') for (const key of TRAFFIC) if (!key.startsWith('peak')) traffic[key] = null;
-  return { current, diagnostics, capacity: { ...pick(raw.capacity, ['limit', 'warnPct', 'critPct', 'cores']), basis: 'sessions',
-    level: ['ok', 'warn', 'crit', 'full'].includes(raw.capacity?.level) ? raw.capacity.level : 'unknown' },
+  return { current, diagnostics, capacity: onlineCapacity(current, pick(raw.capacity, ['limit', 'warnPct', 'critPct', 'cores'])),
     intervalSec: numeric(raw.intervalSec), collectorUptimeSec: numeric(raw.collectorUptimeSec), samples: numeric(raw.samples),
     timeZone: text(raw.timeZone, 50),
     series: raw.series.slice(-600).filter((p) => numeric(p?.t) !== null).map((p) => ({ t: p.t,
@@ -66,7 +73,9 @@ export function sanitizeSnapshot(raw) {
     scope: 'origin',
   } : null;
   return { schemaVersion: 1, opsVersion: text(raw.opsVersion, 40), staleAfterMs: numeric(raw.staleAfterMs), metrics, sections, announcement: announcement({ announcement: raw.announcement }), cert,
-    capabilities: { metrics: true, sampleHistory: raw.capabilities?.sampleHistory === true, announcementRead: raw.capabilities?.announcementRead === true, announcementWrite: false, sessions: false, rooms: false } };
+    announcementDelivery: { gameSource: ['agent', 'panel', 'file'].includes(raw.announcementDelivery?.gameSource) ? raw.announcementDelivery.gameSource : null,
+      revision: Number.isSafeInteger(raw.announcementDelivery?.revision) && raw.announcementDelivery.revision >= 0 ? raw.announcementDelivery.revision : null },
+    capabilities: { metrics: true, sampleHistory: raw.capabilities?.sampleHistory === true, announcementRead: raw.capabilities?.announcementRead === true, announcementWrite: raw.capabilities?.announcementWrite === true, sessions: false, rooms: false } };
 }
 
 export function seriesFor(metrics, range, now = Date.now()) {

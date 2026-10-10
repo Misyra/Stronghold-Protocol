@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 卫戍协议探针一键安装（collector + 只读 Agent）。在每台游戏服务器上以 root 运行一次。
+# 卫戍协议探针一键安装（collector + 管理 Agent）。在每台游戏服务器上以 root 运行一次。
 #
 # 前置：部署包（dist/sp-ops-agent.zip）已解压到 /opt/stronghold-ops（或用 APP_DIR 指定），
 #       服务器有 Node.js >= 22，本站令牌已在中间页 /etc/stronghold/portal.env 配置为 SP_SITE_*_TOKEN_RO。
@@ -22,7 +22,7 @@ command -v node >/dev/null 2>&1 || { echo "✗ 未找到 node"; exit 1; }
 [[ $(node -p 'Number(process.versions.node.split(".")[0])') -ge 22 ]] || { echo "✗ 需要 Node.js >= 22（当前 $(node -v)）"; exit 1; }
 
 # 这些值会被写入 /etc/stronghold/*.env，必须不能换行（防止注入额外 env 行）。
-for name in SITE_NAME SP_ADMIN_TOKEN_RO MON_NGINX_LOG MON_IFACE MON_HEALTHZ MON_DATA_DIR MON_TIME_ZONE MON_ANNOUNCEMENT_URL MON_DISK_DEV; do
+for name in SITE_NAME SP_ADMIN_TOKEN_RO SP_ADMIN_TOKEN_RW MON_ANNOUNCEMENT_FILE MON_NGINX_LOG MON_IFACE MON_HEALTHZ MON_DATA_DIR MON_TIME_ZONE MON_ANNOUNCEMENT_URL MON_DISK_DEV; do
   eval "value=\${$name:-}"
   case $value in *$'\n'*|*$'\r'*) echo "✗ $name 不能包含换行符"; exit 1;; esac
 done
@@ -36,6 +36,7 @@ MON_DATA_DIR=${MON_DATA_DIR:-/var/lib/stronghold-monitor}
 MON_TIME_ZONE=${MON_TIME_ZONE:-Asia/Shanghai}
 MON_ANNOUNCEMENT_URL=${MON_ANNOUNCEMENT_URL:-http://127.0.0.1:3000/api/announcement}
 MON_AGENT_INTERVAL_MS=${MON_AGENT_INTERVAL_MS:-10000}
+MON_ANNOUNCEMENT_FILE=${MON_ANNOUNCEMENT_FILE:-/var/lib/stronghold-announcement/announcement.json}
 
 [[ -f $APP_DIR/collector.mjs && -f $APP_DIR/agent.mjs && -d $APP_DIR/lib ]] || {
   echo "✗ $APP_DIR 下没有 collector.mjs / agent.mjs / lib/，请先解压部署包"; exit 1; }
@@ -44,9 +45,10 @@ if [[ -f /etc/stronghold/admin.env && ${FORCE:-0} != 1 ]]; then
   [[ -f /etc/stronghold/monitor.env ]] || { echo "✗ monitor.env 缺失，请补齐配置或 FORCE=1 重建"; exit 1; }
   echo "== /etc/stronghold 已有配置，保留（FORCE=1 可覆盖）"
   # Parse as data, never source an env file as shell code. Use the preserved paths and token.
-  saved_configuration=$(node -e 'const fs=require("node:fs"),{parseEnv}=require("node:util"); const m=parseEnv(fs.readFileSync("/etc/stronghold/monitor.env","utf8")),a=parseEnv(fs.readFileSync("/etc/stronghold/admin.env","utf8")); for(const v of [m.MON_DATA_DIR||"/opt/stronghold-monitor/data",m.MON_NGINX_LOG||"/var/log/nginx/game.rainya.me.access.log",a.SP_ADMIN_TOKEN_RO||""]) { if(/[\r\n]/.test(v)) process.exit(1); console.log(v); }')
+  saved_configuration=$(node -e 'const fs=require("node:fs"),{parseEnv}=require("node:util"); const m=parseEnv(fs.readFileSync("/etc/stronghold/monitor.env","utf8")),a=parseEnv(fs.readFileSync("/etc/stronghold/admin.env","utf8")); for(const v of [m.MON_DATA_DIR||"/opt/stronghold-monitor/data",m.MON_NGINX_LOG||"/var/log/nginx/game.rainya.me.access.log",a.SP_ADMIN_TOKEN_RO||"",a.SP_ADMIN_TOKEN_RW||"",a.MON_ANNOUNCEMENT_FILE||"/var/lib/stronghold-announcement/announcement.json"]) { if(/[\r\n]/.test(v)) process.exit(1); console.log(v); }')
   mapfile -t saved_values <<< "$saved_configuration"
   MON_DATA_DIR=${saved_values[0]}; MON_NGINX_LOG=${saved_values[1]}; SP_ADMIN_TOKEN_RO=${saved_values[2]:-}
+  SP_ADMIN_TOKEN_RW=${saved_values[3]:-}; MON_ANNOUNCEMENT_FILE=${saved_values[4]}
   unset saved_configuration saved_values
 else
   : "${SP_ADMIN_TOKEN_RO:?缺少 SP_ADMIN_TOKEN_RO（openssl rand -hex 32；同一个值要写入中间页 portal.env 的 SP_SITE_*_TOKEN_RO）}"
@@ -69,7 +71,7 @@ EOF
     true
   }
   cat > /etc/stronghold/admin.env <<EOF
-# ${SITE_NAME} · 只读 Agent（本机回环，中间页面板经 nginx 反代轮询）
+# ${SITE_NAME} · 管理 Agent（本机回环，中间页面板经 nginx 反代轮询）
 SP_ADMIN_TOKEN_RO=${SP_ADMIN_TOKEN_RO}
 MON_COLLECTOR_URL=http://127.0.0.1:3999/api/data
 MON_ANNOUNCEMENT_URL=${MON_ANNOUNCEMENT_URL}
@@ -81,6 +83,22 @@ EOF
   echo "== 已写入 /etc/stronghold/{monitor,admin}.env"
 fi
 
+# A separate management key permits only announcement writes; existing RO keys remain read-only.
+SP_ADMIN_TOKEN_RW=${SP_ADMIN_TOKEN_RW:-$(node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))')}
+[[ ${#SP_ADMIN_TOKEN_RW} -ge 32 && $SP_ADMIN_TOKEN_RW != "$SP_ADMIN_TOKEN_RO" ]] || { echo "✗ 管理密钥至少 32 字符且必须与只读密钥不同"; exit 1; }
+[[ $MON_ANNOUNCEMENT_FILE =~ ^/[a-zA-Z0-9._/-]+/announcement\.json$ ]] || { echo "✗ MON_ANNOUNCEMENT_FILE 必须是独立目录下的 announcement.json 绝对路径"; exit 1; }
+MON_ANNOUNCEMENT_FILE=$(realpath -m -- "$MON_ANNOUNCEMENT_FILE")
+announcement_dir=$(dirname -- "$MON_ANNOUNCEMENT_FILE")
+case $announcement_dir in /var/lib/*) ;; *) echo "✗ 公告写入目录必须是 /var/lib 下的独立目录"; exit 1;; esac
+[[ $announcement_dir != "$MON_DATA_DIR" ]] || { echo "✗ 公告目录不能与监控存储混用"; exit 1; }
+# Save configuration as data; never execute its contents or print credentials.
+export SP_ADMIN_TOKEN_RW MON_ANNOUNCEMENT_FILE
+node --input-type=module -e 'import fs from "node:fs"; import {parseEnv} from "node:util";
+const file="/etc/stronghold/admin.env", text=fs.readFileSync(file,"utf8"), saved=parseEnv(text);
+const additions=Object.entries({SP_ADMIN_TOKEN_RW:process.env.SP_ADMIN_TOKEN_RW,MON_ANNOUNCEMENT_FILE:process.env.MON_ANNOUNCEMENT_FILE}).filter(([key,value])=>saved[key]!==value);
+if(additions.length){const keys=new Set(additions.map(([key])=>key)); const kept=text.split(/\r?\n/).filter(line=>!keys.has(line.match(/^([A-Z_]+)=/)?.[1])).join("\n");
+const tmp=file+".tmp"; fs.writeFileSync(tmp,kept.replace(/\n*$/, "\n")+additions.map(([key,value])=>key+"="+JSON.stringify(value)).join("\n")+"\n",{mode:0o600});fs.renameSync(tmp,file);}'
+
 # Only a dedicated absolute data directory is accepted in the generated systemd unit.
 [[ $MON_DATA_DIR =~ ^/[a-zA-Z0-9._/-]+$ ]] || { echo "✗ MON_DATA_DIR 必须是无空格的绝对路径"; exit 1; }
 MON_DATA_DIR=$(realpath -m -- "$MON_DATA_DIR")
@@ -88,6 +106,7 @@ case $MON_DATA_DIR in /|/var|/var/lib|/etc|/opt|/usr|/home|/root|/tmp|/tmp/*|/va
 [[ ${#SP_ADMIN_TOKEN_RO} -ge 32 ]] || { echo "✗ 已保存的令牌太短或缺失"; exit 1; }
 getent passwd spmonitor >/dev/null || useradd -r -s /usr/sbin/nologin spmonitor
 install -d -m 0750 -o spmonitor -g spmonitor -- "$MON_DATA_DIR"
+install -d -m 0755 -o spmonitor -g spmonitor -- "$announcement_dir"
 # Diagnose access without opening every nginx log to the probe user.
 if ! runuser -u spmonitor -- test -r "$MON_NGINX_LOG"; then
   echo "△ spmonitor 无法读取访问日志：$MON_NGINX_LOG；请检查路径并配置该日志的只读 ACL（含 logrotate 后权限）"
@@ -129,7 +148,7 @@ EOF
 
 cat > /etc/systemd/system/sp-admin.service <<EOF
 [Unit]
-Description=Stronghold read-only site management Agent
+Description=Stronghold monitoring and announcement Agent
 After=network.target
 
 [Service]
@@ -150,6 +169,7 @@ MemoryMax=384M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ReadWritePaths=${announcement_dir}
 ProtectHome=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077
@@ -160,11 +180,12 @@ EOF
 
 mkdir -p /etc/nginx/snippets
 cat > /etc/nginx/snippets/stronghold-ops.conf <<'EOF'
-# 本站管理路由（探针只读 API）。合并进本站现有 HTTPS server 块：
+# 本站管理路由（探针监控与公告 API）。合并进本站现有 HTTPS server 块：
 #   在 server { } 里加一行：  include snippets/stronghold-ops.conf;
 # 不要在本站暴露 3900 端口，也不要添加 Access-Control-Allow-Origin。
 location ^~ /api/admin/v1/ {
     auth_basic off;
+    client_max_body_size 16k;
     proxy_pass http://127.0.0.1:3900;
     proxy_set_header Authorization $http_authorization;
     proxy_set_header Host $host;
@@ -200,7 +221,12 @@ cat <<'NEXT'
 == 剩余手工步骤 ==
 1) 在本站 HTTPS server 块加入：  include snippets/stronghold-ops.conf;
    然后：  nginx -t && systemctl reload nginx
-2) 回中间页验证（把 <令牌> 换成本站 SP_ADMIN_TOKEN_RO）：
+2) 查看 /etc/stronghold/admin.env 的 SP_ADMIN_TOKEN_RW，在面板站点配置的探针密钥框填写它。
+   旧 SP_ADMIN_TOKEN_RO 仍可读监控，但不能发布公告。
+   回中间页验证（把 <令牌> 换成本站 SP_ADMIN_TOKEN_RW）：
    curl -s -H "Authorization: Bearer <令牌>" https://<本站域名>/api/admin/v1/overview | head -c 300
-3) 打开中间页 /ops/ —— 本站卡片应变为「运行正常」。
+3) 游戏更新到支持 agent 模式的版本，移除旧 SP_ANNOUNCEMENT_URL / SOURCE=panel，
+   或设置游戏环境 SP_ANNOUNCEMENT_SOURCE=agent 后重启游戏。自定义文件路径时同时设置
+   SP_ANNOUNCEMENT_AGENT_FILE；Docker 将公告目录只读挂载至容器同一路径。
+4) 在 /ops/manage.html 发布公告，检查「已写入探针」和线上生效状态。
 NEXT

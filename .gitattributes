@@ -27,3 +27,7 @@
 *.ogg binary
 # Preserve the release's resource bytes (including OBJ/atlas sidecars) across platforms.
 public/assets/local/** -text
+
+# Keep the merged dictionary and upstream license identical to SOURCE.json checksums.
+server/moderation/lexicon/words.b64 -text
+server/moderation/lexicon/LICENSE -text

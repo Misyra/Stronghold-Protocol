@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { writeFile, rename, rm } from 'node:fs/promises';
+import { writeFile, rename, rm, chmod } from 'node:fs/promises';
 import path from 'node:path';
 
 export function equalSecret(value, expected) {
@@ -11,10 +11,11 @@ export function equalSecret(value, expected) {
 }
 
 // Temp file in the target directory + rename, so readers never observe a half-written config.
-export async function atomicWriteFile(file, text) {
+export async function atomicWriteFile(file, text, options) {
   const tmp = `${file}.${randomBytes(6).toString('hex')}.tmp`;
   try {
-    await writeFile(tmp, text);
+    await writeFile(tmp, text, options);
+    if (options?.mode != null) await chmod(tmp, options.mode);
     await rename(tmp, file);
   } catch (error) { await rm(tmp, { force: true }); throw error; }
 }
@@ -46,7 +47,7 @@ export function safeUrl(value) {
   const url = new URL(value);
   if (url.username || url.password || url.search || url.hash ||
     (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback(url.hostname)))) {
-    throw new Error('Use HTTPS for remote services; credentials must be supplied through environment variables');
+    throw new Error('远程服务请使用 HTTPS，URL 中不能包含账号密码、查询参数或片段');
   }
   return url;
 }
@@ -69,8 +70,9 @@ export function withAbort(promise, signal) {
 }
 
 // Fixed destinations only. Limit body bytes while reading, including chunked responses.
-export async function fetchJson(url, { token, authorization, signal, timeoutMs = 5000, maxBytes = 1024 * 1024 } = {}) {
-  const response = await fetch(url, { headers: token || authorization ? { Authorization: token ? `Bearer ${token}` : authorization } : {},
+export async function fetchJson(url, { token, authorization, signal, timeoutMs = 5000, maxBytes = 1024 * 1024, method = 'GET', body } = {}) {
+  const response = await fetch(url, { method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { ...(token || authorization ? { Authorization: token ? `Bearer ${token}` : authorization } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), redirect: 'error' });
   if (!response.ok) {
     await response.body?.cancel();

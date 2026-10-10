@@ -1207,5 +1207,10 @@
   "请等待所有玩家连接后再发起投票": "Wait for all players to connect before starting a vote.",
   "同意重刷": "Agree to reroll",
   "拒绝重刷": "Reject reroll",
-  "取消投票": "Cancel vote"
+  "取消投票": "Cancel vote",
+  "只能部署在召唤者相邻四格": "Can only be deployed on the four tiles adjacent to the summoner",
+  "{names}只能部署在召唤者相邻四格，已退回整备区": "{names} can only be deployed on the four tiles adjacent to the summoner and returned to the Bench",
+  "{names}只能部署在召唤者相邻四格，整备区已满，下回合返还": "{names} can only be deployed on the four tiles adjacent to the summoner; the Bench is full, so they come back next round",
+  "装备库存不足，未获得该装备": "Equipment stock is insufficient; no equipment was received",
+  "库存不足": "Out of stock"
 }

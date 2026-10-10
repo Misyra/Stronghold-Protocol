@@ -38,6 +38,7 @@ HOST=127.0.0.1
 SP_STATE_FILE=/var/lib/stronghold/game
 SP_ASSETS_CDN=https://assets.misyra.com
 SP_ANNOUNCEMENT_SOURCE=agent
+SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key
 ```
 
 公告默认读取探针管理文件。在面板配置好本站探针和管理密钥即可发布，无需绑定游戏站点 ID。已有 feed 部署升级时显式改为 agent 并重启；无探针站点可保留 feed。完整步骤见[公告接入](ANNOUNCEMENTS.md)。
@@ -121,6 +122,8 @@ docker run -d --name stronghold --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   --env-file /etc/stronghold/game.env \
   -e HOST=0.0.0.0 -e SP_STATE_FILE=/app/.state/server.state.json \
+  -e SP_MODERATION_KEY_FILE=/run/secrets/moderation.key \
+  -v /etc/stronghold/moderation.key:/run/secrets/moderation.key:ro \
   -v stronghold-state:/app/.state stronghold-protocol
 ```
 
@@ -137,8 +140,10 @@ services:
     environment:
       HOST: "0.0.0.0"
       SP_STATE_FILE: /app/.state/server.state.json
+      SP_MODERATION_KEY_FILE: /run/secrets/moderation.key
     volumes:
       - "stronghold-state:/app/.state"
+      - "/etc/stronghold/moderation.key:/run/secrets/moderation.key:ro"
       - "/var/lib/stronghold-announcement:/var/lib/stronghold-announcement:ro"
     restart: unless-stopped
     stop_grace_period: 30s
@@ -205,9 +210,13 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 点击“开始”后，浏览器先向同源 `POST /api/nickname/validate` 提交 `{"name":"博士代号"}`，服务器通过才保存昵称并进入游戏。拒绝只回固定错误码，客户端显示“代号包含不适宜内容，请更换昵称”，并提示“如果你认为昵称没有问题，可以前往 GitHub 反馈”，提供本站仓库的 Bug 反馈链接；网络失败停留标题页，可重试。WebSocket `hello` 在创建会话、重连接管和改名前再次检查，不能靠跳过 HTTP 预检绕过。
 
-词库来自 [konsheng/Sensitive-lexicon](https://github.com/konsheng/Sensitive-lexicon)，固定版本 `d967c30b053fa40b06c5a0dddf0be493f2dfae46` 的 17 份 `Vocabulary/*.txt` 与本站补充规则，已在部署前归一化、筛选、排序并去重，整合为唯一有效词表，以 Base64 编码存储于 `server/moderation/lexicon/words.b64`（42,895 条）。服务端启动时只在内存中解码这一份文件，不将解码后的明文写入磁盘，再统一编译字典树及片段集合，没有单独的补充词循环，也没有运行时外部审核请求。空词、单字、超过昵称长度的词和少量普通词在整合时排除；筛选记录、上游原始文件摘要及合并文件摘要见同目录 `SOURCE.json`，完整 MIT 许可证见 `LICENSE`。英文及纯数字按完整片段匹配，全角、零宽、大小写及插入符号在比较时归一化。词表仍可能误伤，按实际反馈维护规则。
+词库来自 [konsheng/Sensitive-lexicon](https://github.com/konsheng/Sensitive-lexicon)，固定版本 `d967c30b053fa40b06c5a0dddf0be493f2dfae46` 的 17 份 `Vocabulary/*.txt` 与本站补充规则，已在部署前归一化、筛选、排序并去重，整合为唯一有效词表。42,812 条词先 gzip 压缩，再使用 AES-256-GCM 加密为 `server/moderation/lexicon/words.enc`；文件包含版本、随机 nonce、认证标签和密文，密钥独立保管。服务端启动时仅在内存中解密一次，再编译原有字典树及片段集合；每次昵称和聊天审核不进行解密，也不请求外部服务。空词、单字、超过昵称长度的词和已确认误伤的普通称呼、食物、游戏用语等词条在整合时排除（按完整词条删除，违规长词仍独立保留）；筛选记录、上游原始文件摘要及合并文件摘要见同目录 `SOURCE.json`，完整 MIT 许可证见 `LICENSE`。英文及纯数字按完整片段匹配，全角、零宽、大小写及插入符号在比较时归一化。词表仍可能误伤，按实际反馈维护规则。
 
-**仅服务端持有词库**：不放入 `shared/`、`data/`、`public/`、`server/sim/`、浏览器资源包或 CDN，不开放下载、列举或命中详情接口。维护昵称规则时在仓库外解码编辑（UTF-8 文本，每行一个字面词，不支持正则，`#` 开头为注释），重新编码为 `words.b64` 后再放回仓库。只提交编码文件，不提交解码明文；同步 `SOURCE.json` 的词数、编码文件 SHA-256 与 `decodedSha256`，保留许可证并重启服务；升级上游时重新整合并更新来源记录，无需向玩家分发词表。HTTP 预检按网络限流，与房间状态接口预算分离。Base64 是可逆编码，不是加密；已对本仓库的相关历史提交清除明文词表，历史改写后旧克隆需要重新克隆或按新的提交同步；远程平台缓存、其他人的克隆不受 Git 推送控制。
+**密钥部署（升级前必须完成）**：本次迁移生成的随机密钥只保存在开发机 `.state/moderation.key`，不随 Git、发行包或镜像分发。把同一份密钥通过私有渠道复制到每台服务器，例如 `/etc/stronghold/moderation.key`，赋予游戏运行账号只读权限（如 `root:stronghold`、`0640`），并在环境文件中设置 `SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key`。也可将 64 位十六进制值配置到 `SP_MODERATION_KEY`，该变量优先于密钥文件；默认读取项目根目录 `.state/moderation.key`。不要在服务器重新生成密钥：随机新密钥无法解开现有词表。缺少密钥、密钥错误或词表损坏会阻止启动，不会降级为不审核。密钥需纳入私有备份；不要提交、输出到日志或放入公开静态目录。Docker 需要只读挂载密钥文件，并设置容器内的 `SP_MODERATION_KEY_FILE`。
+
+**仅服务端持有词库**：不放入 `shared/`、`data/`、`public/`、`server/sim/`、浏览器资源包或 CDN，不开放下载、列举或命中详情接口。维护规则时在仓库外编辑 UTF-8 文本（每行一个字面词，不支持正则，`#` 开头为注释），在已配置密钥的环境中运行 `node tools/encrypt-lexicon.mjs /私有路径/words.txt server/moderation/lexicon/words.enc`。同步 `SOURCE.json` 的词数、密文 SHA-256 与 `decodedSha256`，保留许可证并重启服务；只提交密文，不提交密钥和源明文。公开 CI 使用显式测试预加载器 `node --import ./test/helpers/moderation-fixture.js --test`，在未配置真实密钥时创建独立的小型测试词表，不需要生产密钥；正常启动不加载测试词表。HTTP 预检按网络限流，与房间状态接口预算分离。
+
+加密保护的是当前文件，无法收回之前已公开的明文或 Base64 版本。旧 Git 历史、远程平台缓存及已有克隆需分别处理；密钥泄漏后应重新加密并更换部署密钥。公开上游词库本身仍可独立获取。
 
 **反向代理**：`/api/nickname/validate` 必须转发到游戏 Node，并关闭缓存。在同机 `/api/` 已转发给 sp-portal 的部署中，增加 `location = /api/nickname/validate` 精确规则（参照 `scripts/nginx.conf.example`），避免被面板路由接走。不要用仓库根目录作为静态站点根目录。
 
@@ -215,6 +224,8 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 ### 局内聊天
 
-默认关闭。设置环境变量 `SP_CHAT_ENABLED=on` 开启，`off` 关闭；修改后重启游戏服务。各服务器独立配置。
+默认关闭。设置环境变量 `SP_CHAT_ENABLED=on` 开启，`SP_CHAT_ENABLED=off` 关闭，未设置时也关闭；修改后重启游戏服务。各服务器独立配置。关闭时隐藏整个聊天区域，「交流」恢复为紧凑的纯表情面板，不保留输入框、提示或空白占位；服务端也拒绝聊天发送请求。
 
-每条消息最多 30 个 Unicode 字符，至少间隔 1 秒。服务端使用私有 Base64 词表审查，只广播替换为星号后的内容，局内最多保留 50 条；观战者只读。正常消息清零连续命中计数，连续 5 条命中后按玩家会话身份禁言 12 小时，刷新、重连、换房不解除。配置 `SP_STATE_FILE` 后禁言随会话保存并恢复，关闭状态保存时重启会丢失。当前没有登录账号，清除身份或换浏览器仍可获得新身份。
+局内工具栏点击「交流」，同一面板上方输入聊天，下方选择表情；关闭面板保留草稿，发送成功后自动收起。关闭聊天功能时仍保留表情面板。经服务端屏蔽的文字显示在发送者头像右侧，与表情共用弹出和淡出动画、显示时长（默认约 3 秒）；同一玩家新文字或表情替换上一条，其他玩家互不影响。重连同步的历史不会重新弹出气泡。
+
+每条消息最多 30 个 Unicode 字符，至少间隔 1 秒。服务端使用启动时已解密的私有词表审查，只广播替换为星号后的内容，局内最多保留 50 条；观战者只读。使用滚动 12 小时窗口统计命中的消息数，正常消息不清零；窗口内累计 5 条命中后按玩家会话身份禁言 12 小时，刷新、重连、换房不清除累计记录或解除禁言。旧版未记录命中时间戳，升级后累计窗口从新记录开始，已有禁言保留。配置 `SP_STATE_FILE` 后禁言随会话保存并恢复，关闭状态保存时重启会丢失。当前没有登录账号，清除身份或换浏览器仍可获得新身份。

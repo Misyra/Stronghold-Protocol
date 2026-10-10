@@ -45,12 +45,13 @@ jobs:
         run: node tools/setup.mjs --check --no-local
 
       - name: Unit & integration tests
-        run: node --test
+        # Production keys stay off public CI; this explicit preload provides independent test data when needed.
+        run: node --import ./test/helpers/moderation-fixture.js --test
 
       - name: Server smoke test (boot, /healthz, index.html, doctor)
         shell: bash
         run: |
-          node server/index.js > server.log 2>&1 &
+          node --import ./test/helpers/moderation-fixture.js server/index.js > server.log 2>&1 &
           pid=$!
           ok=
           for i in $(seq 1 30); do

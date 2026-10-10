@@ -47,12 +47,15 @@
 /* ---- panel: one page per theme ----------------------------------------------------------------------------- */
 /* emoji_bkg is 313×231 with a soft shadow margin; its opaque plate spans x 15–297, y 13–212. The cells, the pager
    and the CSS fallback plate all use that geometry. */
-.ewheel__panel {
+.ewheel__popup {
   position: absolute; left: -.15rem; bottom: calc(100% + .02rem); z-index: 5;
+  width: 3.13rem; transform-origin: .45rem 100%;
+  animation: emo-panel-in 160ms var(--ease-out);
+}
+.ewheel__panel {
+  position: relative; left: auto; bottom: auto; animation: none;
   width: 3.13rem; height: 2.31rem; padding: 0; box-sizing: border-box;
   background: none; border: 0; border-radius: 0; box-shadow: none;
-  transform-origin: .45rem 100%;
-  animation: emo-panel-in 160ms var(--ease-out);
   touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
 .ewheel__panel::before { /* CSS look-alike of the emoji_bkg plate */
@@ -100,10 +103,36 @@
   background: none; border: 0; color: rgba(255, 255, 255, .6); transition: color var(--t-fast), opacity var(--t-fast);
 }
 .ewheel__nav .icon { width: .18rem; height: .18rem; }
-.ewheel__nav.is-prev { left: .7rem; }
-.ewheel__nav.is-next { right: .7rem; }
+.ewheel__nav.is-prev { left: .4rem; }
+.ewheel__nav.is-next { right: .4rem; }
 .ewheel__nav:hover:not(:disabled) { color: #fff; }
 .ewheel__nav:disabled { opacity: .18; cursor: default; }
+
+/* Optional chat composer sits above the emote pager in the same popup. */
+.ewheel__chat {
+  position: relative; z-index: 1; margin: .13rem .15rem -.13rem; padding: .12rem;
+  background: rgba(19, 19, 19, .96); border-bottom: 1px solid var(--line); border-radius: .06rem .06rem 0 0;
+  box-shadow: 0 .06rem .16rem rgba(0, 0, 0, .4);
+}
+.ewheel__chat-count { flex: none; font-size: max(.12rem, 10px); color: var(--text-dim); letter-spacing: 0; }
+.ewheel__chat-form { display: flex; align-items: center; gap: .08rem; }
+.ewheel__chat-form .field__box { flex: 1; min-width: 0; height: .4rem; padding: 0 .08rem; }
+.ewheel__chat-form .field__input { font-size: max(.16rem, 12px); }
+.ewheel__chat-form .btn { flex: none; height: .4rem; min-height: 0; padding: 0 .1rem; font-size: max(.14rem, 11px); letter-spacing: 0; white-space: nowrap; }
+.ewheel__chat-send { position: relative; flex: none; }
+.ewheel__chat-help {
+  position: absolute; top: -.08rem; right: -.07rem; display: grid; place-items: center;
+  width: max(.18rem, 16px); height: max(.18rem, 16px); padding: 0; border: 1px solid var(--line); border-radius: 50%;
+  background: #232323; color: var(--text-hi); font: inherit; font-size: max(.12rem, 11px); line-height: 1; cursor: pointer;
+}
+.ewheel__chat-help:focus-visible { outline: 2px solid var(--mint-500); outline-offset: 2px; }
+.ewheel__chat-rules {
+  position: absolute; z-index: 3; right: .12rem; bottom: calc(100% + .08rem); width: calc(100% - .24rem);
+  box-sizing: border-box; margin: 0; padding: .12rem; border: 1px solid var(--line); border-radius: .06rem;
+  background: rgba(19, 19, 19, .98); box-shadow: 0 .04rem .12rem rgba(0, 0, 0, .4);
+  color: var(--text-hi); font-size: max(.13rem, 11px); line-height: 1.5; overflow-wrap: anywhere;
+}
+.ewheel__chat-note { margin: .08rem 0 0; font-size: max(.12rem, 10px); line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
 
 /* ---- bubble beside the sender's avatar (picture only) ------------------------------------------------------ */
 /* emoji_bubble_bkg is 108×97: plate x 22–97, y 8–85, tail tip at x 9, y ≈ 46 (pointing left, toward the avatar). */
@@ -133,6 +162,18 @@
 .ebubble__icon { position: absolute; left: .26rem; top: .12rem; width: .68rem; height: .70rem; display: grid; place-items: center; }
 .ebubble .eart { width: 100%; height: 100%; }
 
+/* Chat shares the emote's anchor, pop/fade and lifetime, with a flexible text plate. */
+.ebubble.ebubble--chat {
+  width: max-content; height: auto; min-height: .48rem; max-width: min(3.2rem, 50vw);
+  padding: .09rem .14rem .09rem .25rem; color: var(--text-hi); font-size: .16rem; line-height: 1.5;
+  font-weight: 500; white-space: normal;
+}
+.ebubble.ebubble--chat::before {
+  left: .18rem; top: 0; width: calc(100% - .18rem); height: 100%;
+}
+.ebubble.ebubble--chat::after { left: .05rem; top: calc(50% - .08rem); }
+.ebubble__message { position: relative; display: block; overflow-wrap: anywhere; }
+
 @keyframes emo-panel-in { from { opacity: 0; transform: translateY(.06rem) scale(.96); } }
 @keyframes emo-page-in { from { opacity: 0; } }
 @keyframes emo-page-from-right { from { opacity: .2; transform: translateX(45%); } }
@@ -145,6 +186,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ewheel__panel, .ewheel__page, .ewheel__page.is-from-right, .ewheel__page.is-from-left { animation: none; }
+  .ewheel__popup, .ewheel__panel, .ewheel__page, .ewheel__page.is-from-right, .ewheel__page.is-from-left { animation: none; }
   .ebubble { animation: emo-bubble-out 1ms linear calc(var(--ebubble-ttl) - 1ms - var(--ebubble-age)) forwards; }
 }

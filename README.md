@@ -49,7 +49,7 @@ English summary: [below](#english).
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导入与导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
 | 资源预载 | 进入页面后自动在后台预载，复用已缓存资源；支持必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐、跨版本缓存别名复用、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：支持同盟先组队再匹配补齐，整队入队且不拆散；凑满 4 名真人才开局，不补 AI，队员断线整队出队，取消后保留同盟 |
-| 局内聊天 | `SP_CHAT_ENABLED=on` 开启，默认关闭；每条最多 30 字，服务端敏感词替换为星号，连续 5 条命中后禁言 12 小时；见 [部署说明](docs/operations/DEPLOY.md#局内聊天) |
+| 局内聊天 | `SP_CHAT_ENABLED=on` 开启，默认关闭；每条最多 30 字，服务端敏感词替换为星号，10 分钟内累计 5 条命中后禁言 12 小时；见 [部署说明](docs/operations/DEPLOY.md#局内聊天) |
 | 昵称审查 | 点击开始先向服务端校验，通过后才进入；登录、改名和重连再次校验。接入 Sensitive-lexicon 固定版本及本站补充规则，词表仅存于服务端，不随网页、资源包或接口返回；见 [部署说明](docs/operations/DEPLOY.md#昵称审查) |
 | 维护公告 | 维护公告进入游戏即显示、可关闭；默认接收运维面板经探针写入的公告，无探针站点兼容 feed；手工 JSON 需显式选择 `file` 模式。`GET /api/announcement` 返回当前公告及来源诊断，见 [公告接入](docs/operations/ANNOUNCEMENTS.md) |
 | 外部接口 | 只读房间状态 `GET /api/rooms/<房间码>/status`、延迟探测 `GET /api/ping`（供外部中间页使用）；见 [docs/development/CUSTOM_API.md](docs/development/CUSTOM_API.md) |
@@ -144,6 +144,8 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `SP_CHAT_ENABLED` | `off` | 局内聊天开关：`on` 开启，`off` 关闭；各服务器独立配置，修改后重启 |
+| `SP_MODERATION_KEY` / `SP_MODERATION_KEY_FILE` | 私有文件 `.state/moderation.key` | 加密词表的 64 位十六进制密钥；环境变量优先，密钥须单独交付服务器，不入库、不发给浏览器。缺失或错误会阻止启动 |
+| `SP_MODERATION_LEXICON_FILE` | `server/moderation/lexicon/words.enc` | 自定义私有加密词表路径；与密钥配套，修改后重启 |
 | `SP_WS_COMPRESSION` | `on` | WebSocket 状态消息压缩：`on` 开启低等级压缩；`off` 关闭。减少出网，但增加 CPU 和每连接内存；高并发部署先小流量验证 |
 | `SP_ANNOUNCEMENT_SOURCE` | `agent` | 默认读取探针管理文件，面板为编辑入口；另支持 `panel` feed 与手工 `file`，故障不切换来源。见[公告接入](docs/operations/ANNOUNCEMENTS.md) |
 | `SP_ANNOUNCEMENT_AGENT_FILE` | Linux：`/var/lib/stronghold-announcement/announcement.json` | 探针写入文件；Windows 默认 `.state/announcement.json` |

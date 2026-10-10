@@ -61,3 +61,6 @@ desktop.ini
 
 # Never track a decoded nickname dictionary.
 /server/moderation/lexicon/words.txt
+# Retired reversible dictionary encoding and per-deployment encryption keys.
+/server/moderation/lexicon/words.b64
+*.moderation.key

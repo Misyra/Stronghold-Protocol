@@ -1,7 +1,7 @@
 // i18n-ignore-file: server-only moderation data; no UI strings.
 // Server-only: never import this module from public/, shared/ or server/sim/.
 // Vendored literal terms, compiled once. No remote calls during validation.
-import { readFileSync } from 'node:fs';
+import { loadLexicon } from './lexicon.js';
 import { NAME_MAX_LEN } from '../../shared/constants.js';
 
 const comparable = value => value.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
@@ -9,9 +9,10 @@ const latin = new Set(), numbers = new Set(), alphanumeric = new Set();
 /** @typedef {{ end?: boolean, next: Map<string, Trie> }} Trie */
 /** @type {Trie} */
 const root = { next: new Map() };
-// Decode once in server memory; never write or serve the plaintext dictionary. Base64 is encoding, not encryption.
-const encodedWords = readFileSync(new URL('./lexicon/words.b64', import.meta.url), 'ascii');
-const lines = Buffer.from(encodedWords, 'base64').toString('utf8').split(/\r?\n/);
+// Decrypt once in server memory. The key is private deployment configuration, never bundled with the dictionary.
+const plaintext = loadLexicon();
+const lines = plaintext.toString('utf8').split(/\r?\n/);
+plaintext.fill(0);
 for (const line of lines) {
   if (!line.trim() || line.trimStart().startsWith('#')) continue;
   const term = comparable(line.trim());
@@ -26,6 +27,7 @@ for (const line of lines) {
   }
   node.end = true;
 }
+lines.length = 0;
 
 /** Match in normalized text while retaining offsets into the original Unicode characters. */
 export function maskSensitiveText(value) {

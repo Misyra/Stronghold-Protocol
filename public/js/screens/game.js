@@ -78,8 +78,7 @@ import { RewardOverlay } from '../ui/rewardOverlay.js';
 import { ChoiceOverlay } from '../ui/choiceOverlay.js';
 import { EnemyDrawer } from '../ui/enemyDrawer.js';
 import { Ticker } from '../ui/ticker.js';
-import { ChatPanel } from '../ui/chat.js';
-import { EmoteWheel } from '../ui/emotes.js';
+import { Communication } from '../ui/chat.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { SettingsModal, settingsStore } from '../ui/settings.js';
@@ -733,14 +732,14 @@ function MatchScreen() {
     prevActive.current = activeBonds;
   }, [activeBonds]);
 
-  // emote bubbles (and a sound for teammates' emotes)
+  // Shared avatar bubbles for emotes and masked chat (sound only for teammates' emotes).
   const bubbleMs = (gd.config?.timers?.chatBubble ?? 3) * 1000;
   const bubbles = activeBubbles(emotes, Date.now(), bubbleMs);
   useTicker(bubbles.size ? 500 : 0); // re-render only while a bubble is showing (to expire it)
   const lastEmote = useRef(emotes.length ? emotes[emotes.length - 1].seq : 0);
   useEffect(() => {
     const e = emotes[emotes.length - 1];
-    if (e && e.seq > lastEmote.current) { lastEmote.current = e.seq; if (e.playerId !== myId) audio.sfx('emote', { volume: 0.6 }); }
+    if (e && e.seq > lastEmote.current) { lastEmote.current = e.seq; if (e.playerId !== myId && typeof e.text !== 'string') audio.sfx('emote', { volume: 0.6 }); }
   }, [emotes]);
 
   // ---- actions ----------------------------------------------------------------------------------------------
@@ -1461,8 +1460,7 @@ function MatchScreen() {
       <${Ticker} />
 
       <div class="gm__corner">
-        <${ChatPanel} spectator=${spectator} />
-        ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        ${spectator ? null : html`<${Communication} open=${emoteOpen} onToggle=${setEmoteOpen} />`}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />

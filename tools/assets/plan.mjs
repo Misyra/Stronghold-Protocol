@@ -113,7 +113,7 @@ export const UI_EXTRAS = (() => {
   L.push(['prepReady', 'countdown_arrow', `${pr}countdown_arrow.png`]);
   const si = 'ui/autochess/[uc]autochessouter/stageinfo/auto_chess_stage_info_state/';
   for (const k of ['img_title_mode_abyss', 'img_title_mode_funny', 'img_title_mode_hard', 'img_title_mode_normal', 'btn_confirm', 'btn_confirmed']) L.push(['stageInfo', k, `${si}${k}.png`]);
-  for (const e of EMOTE_CATALOG) L.push([`emoticon/${e.dir}`, e.picId, `ui/emoticon/theme/[uc]${e.themeId}/icon/${e.picId}.png`]);
+  for (const e of EMOTE_CATALOG) if (!e.custom) L.push([`emoticon/${e.dir}`, e.picId, `ui/emoticon/theme/[uc]${e.themeId}/icon/${e.picId}.png`]);
   for (const k of GUIDE_PAGES) L.push(['guide', k, `arts/guidebookpages/[pack]autochess/${k}.png`]);
   return Object.freeze(L.map((x) => Object.freeze(x)));
 })();

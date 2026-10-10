@@ -91,7 +91,7 @@ html:not(.sp-in-match) .toast-host { margin-top: var(--sa-t); }
   .gtop__iconbtn.has-sprite, .enemybtn.has-sprite { height: max(.46rem, 26px); width: calc(max(.46rem, 26px) * 35 / 29); }
   .gtop__iconbtn.has-sprite.is-wide, .enemybtn.has-sprite.is-wide { width: calc(max(.46rem, 26px) * 61 / 29); }
   .gtop__iconbtn:not(.has-sprite), .enemybtn:not(.has-sprite) { height: max(.46rem, 26px); min-width: max(.46rem, 26px); }
-  .ewheel__panel { scale: 1.3; transform-origin: 0 100%; }
+  .ewheel__popup { scale: 1.3; transform-origin: 0 100%; }
   .fwheel__cancel { min-height: 30px; }
   .set-toggle, .set-seg button { height: max(.38rem, 30px); }
   /* a taller range input whose visible track stays thin: transparent borders are part of the hit area */

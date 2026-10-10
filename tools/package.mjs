@@ -111,7 +111,8 @@ export const JP_VOICE_DIR = 'public/assets/audio/voice/jp/';
  * what 0.2.0 leaves out on purpose. A path is refused when it is one of these or lies under one.
  */
 export const REFUSE = ['pv', '3，9，11回合情况', 'review', 'docs/research/10-networking-hosting.md', '.cache', '.claude', '.git',
-  '.smoke', 'logs', 'test/e2e/out', 'scripts/service.env.cmd', '.env', 'handoff',
+  '.smoke', '.state', 'server/moderation/lexicon/words.txt', 'server/moderation/lexicon/words.b64',
+  'logs', 'test/e2e/out', 'scripts/service.env.cmd', '.env', 'handoff',
   'test', '.github', 'AGENTS.md', 'public/dev', 'node_modules/.cache'];
 
 /** Home-directory paths: macOS / Linux (case as the OS writes them) and Windows (any case; / or \, JSON-escaped too). */
@@ -145,6 +146,8 @@ export function isJunk(rel) {
 export function isPlayerFile(rel) {
   const p = posixRel(rel);
   if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === GENERATED_PACK_INDEX) return false;
+  // Site emotes are small tracked runtime assets, included even in the lite package without an extraction manifest.
+  if (p.startsWith('public/assets/local/emoticon/ciallo/') && p.endsWith('.png')) return true;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;
   return ROOT_FILES.includes(p) || PLAYER_DOCS.includes(p) || RUNTIME_RESEARCH.includes(p) || PLAYER_SCRIPTS.includes(p) || PLAYER_TOOLS.includes(p);

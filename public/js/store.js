@@ -11,7 +11,7 @@
 //                 every local clock; `leaks`: { [fieldId]: counted leaks so far } of every normal field simulated
 //                 locally (the live LP of ui/hud.js liveLp, user playtest #3 item 2). Under client-side combat `field`
 //                 is published by the runner (the m.field shape of the battle on screen, `local: true`).
-//   ticker      – recent `m.ticker` lines, emotes – recent `m.emote` events
+//   ticker      – recent `m.ticker` lines, emotes – live avatar bubbles from `m.emote` and masked `m.chat`
 //   clock       – { offset, rtt } server clock correction: serverNow ≈ Date.now() + offset
 //   ui          – small bits of local UI state shared between screens
 //

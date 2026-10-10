@@ -126,7 +126,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
     t.after(() => page.close());
     const problems = [];
     const resourceRequests = [];
-    page.on('request', (r) => { if (/\/assets\/e2e\//.test(r.url())) resourceRequests.push(r.url()); });
+    const countRequest = (req) => { if (/\/assets\/e2e\//.test(req.url)) resourceRequests.push(req.url); };
+    srv.server.on('request', countRequest);
+    t.after(() => srv.server.off('request', countRequest));
     page.on('pageerror', (e) => problems.push(e.message));
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('sp.pref.settings', JSON.stringify({ preload: false, preloadOptional: false }));
@@ -254,14 +256,16 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.close();
   });
 
-  test('a second tab does not download the same files twice (real Web Locks)', async () => {
+  test('a second tab does not download the same files twice (real Web Locks)', async (t) => {
     const first = await open();
     await ready(first.page, first.problems);
     await first.page.evaluate(() => caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))));
     const second = await open();
     await ready(second.page, second.problems);
     const requested = [];
-    second.page.on('request', (r) => { if (/\/assets\//.test(r.url())) requested.push(r.url()); });
+    const countRequest = (req) => { if (/\/assets\//.test(req.url)) requested.push(`http://127.0.0.1:${srv.port}${req.url}`); };
+    srv.server.on('request', countRequest);
+    t.after(() => srv.server.off('request', countRequest));
 
     // the first tab holds the preload lock, exactly as it does while downloading
     await first.page.evaluate(() => {
@@ -349,7 +353,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
     fs.writeFileSync(file, Buffer.from(bytes));
     await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
     const requested = [];
-    page.on('request', (r) => { if (/\/assets\//.test(r.url())) requested.push(r.url()); });
+    const countRequest = (req) => { if (/\/assets\//.test(req.url)) requested.push(req.url); };
+    srv.server.on('request', countRequest);
+    t.after(() => srv.server.off('request', countRequest));
     await (await page.$('input[type=file]')).uploadFile(file);
     await page.waitForFunction('window.__res.state().complete && window.__res.state().enabled && !window.__res.state().archive');
     assert.deepEqual(requested, [], 'imported current resources need no downloads');

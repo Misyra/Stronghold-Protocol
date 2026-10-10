@@ -7,7 +7,8 @@
 // re-run of the extraction or a redeploy with unchanged art costs nothing. The hashes of the stored files live in one
 // index entry inside that cache, written as the run advances — an interrupted run keeps the progress it flushed.
 //
-// The page does the downloading (a plain `fetch` per file, stored with `cache.put`), so a page without a Service Worker
+// The current worker verifies/writes once and acknowledges over a private channel; the page owns the index.
+// Without a compatible worker the page does the downloading (`fetch` plus `cache.put`), so a page without a Service Worker
 // still builds the cache and only *serving it from the cache* needs one. Files are fetched with `cache: 'no-store'` on
 // purpose: they are stored in Cache Storage, and letting the HTTP cache keep a second copy would double the disk the
 // browser needs (~250 MiB of art). Everything is injected (`caches`, `fetcher`) so this module is unit-testable.
@@ -50,9 +51,9 @@ export class ResourceStore {
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
    * @param {{ caches?: any, fetcher?: typeof fetch, origin?: string, smallLanes?: number, bigLanes?: number,
-   *           now?: () => number, network?: any, schedule?: any }} [opts]
+   *           now?: () => number, network?: any, schedule?: any, ensureCached?: any }} [opts]
    */
-  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null } = {}) {
+  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null, ensureCached = null } = {}) {
     this.manifest = manifest;
     this.files = Array.isArray(manifest.files) ? manifest.files : [];
     this.caches = caches;
@@ -63,6 +64,7 @@ export class ResourceStore {
     this.now = now;
     this.network = network;
     this.schedule = schedule;
+    this.ensureCached = ensureCached;
     this.cacheName = CACHE_NAME;
     /** @type {Promise<any> | null} */
     this.running = null;
@@ -345,7 +347,7 @@ export class ResourceStore {
    * dropped (the caller downloads the right bytes next) so a stale copy can never shadow the fresh one.
    * @returns {Promise<boolean>} true when the file needed no network at all
    */
-  async #adopt(file, cache, older, aliases) {
+  async #adopt(file, cache, older, aliases, signal) {
     const key = this.keyOf(file.url);
     const alias = aliases.get(key.replace(/\/_v\/[a-f0-9]{16}(?=\/)/, ''));
     if (file.hash && CONTENT_HASH_RE.test(file.hash) && alias?.hash === file.hash && alias.key !== key) {
@@ -357,6 +359,7 @@ export class ResourceStore {
     // already-downloaded bytes instead of asking the network for the same file again.
     const current = await cache.match(key);
     if (current) {
+      if (await this.ensureCached?.(file, { signal, cachedOnly: true })) return true;
       if ((await digestOf(current)) === file.hash) return true;
       // Otherwise the active worker could serve this stale copy to our next fetch,
       // requiring another request with the integrity-retry query.
@@ -495,24 +498,31 @@ export class ResourceStore {
         checkAbort(signal);
         const key = this.keyOf(file.url);
         try {
-          if (await this.#adopt(file, cache, older, aliases)) adopted++;
+          if (await this.#adopt(file, cache, older, aliases, signal)) adopted++;
           else {
-            let res = await this.#fetchStorable(key, signal);
-            // `cache: 'no-store'` bypasses the HTTP cache, not Cache Storage: a Service Worker of an older build may
-            // answer this fetch out of its own cache (and a stale one at that). Verify the bytes against the manifest
-            // hash and, when they disagree, ask again on a URL no cache entry can match — the worker matches full URLs.
-            // A second mismatch fails this file; never mark mismatching bytes as the requested revision.
-            if (file.hash && CONTENT_HASH_RE.test(file.hash)) {
-              const seen = await digestOf(res);
-              if (seen !== file.hash) {
-                res = await this.#fetchStorable(`${key}${key.includes('?') ? '&' : '?'}sp=${file.hash}`, signal);
-                const retried = await digestOf(res);
-                if (retried !== file.hash) throw new Error('资源内容与清单不一致，请更新 CDN 缓存或资源指纹');
+            const receipt = await this.ensureCached?.(file, { signal });
+            checkAbort(signal);
+            if (receipt) { if (receipt.downloaded) downloaded++; else adopted++; }
+            else {
+              let res = await this.#fetchStorable(key, signal);
+              // `cache: 'no-store'` bypasses the HTTP cache, not Cache Storage: a Service Worker of an older build may
+              // answer this fetch out of its own cache (and a stale one at that). Verify the bytes against the manifest
+              // hash and, when they disagree, ask again on a URL no cache entry can match — the worker matches full URLs.
+              // A second mismatch fails this file; never mark mismatching bytes as the requested revision.
+              if (file.hash && CONTENT_HASH_RE.test(file.hash)) {
+                const seen = await digestOf(res);
+                if (seen !== file.hash) {
+                  res = await this.#fetchStorable(`${key}${key.includes('?') ? '&' : '?'}sp=${file.hash}`, signal);
+                  const retried = await digestOf(res);
+                  if (retried !== file.hash) throw new Error('资源内容与清单不一致，请更新 CDN 缓存或资源指纹');
+                }
               }
+              checkAbort(signal);
+              await cache.put(key, this.storable(res, file.hash));
+              downloaded++;
             }
-            await cache.put(key, this.storable(res, file.hash));
-            downloaded++;
           }
+          checkAbort(signal);
           // A missing index record is recovered by verifying the saved bytes on the next run.
           if (file.hash) {
             index.files[key] = file.hash;

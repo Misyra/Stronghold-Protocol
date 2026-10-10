@@ -28,9 +28,10 @@ const MAX_URL_LENGTH = 4096;
  * The GET /healthz body.
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, workerPool: object | null, persister: object | null, store: object | null,
- *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null }} health
+ *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null,
+ *           chatLog?: import('../chatLog.js').ChatLog }} health
  */
-export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null }) {
+export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, chatLog = null }) {
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -45,6 +46,7 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
     memory: process.memoryUsage(),
     socketBuffers: network.bufferedBytes?.() || null,
+    chatLog: chatLog?.stats() || null,
     // outbound frames since process start, per socket send (`byType` only knows the frame's type; poll twice
     // for rates — which types dominate the broadcast/serialization cost)
     wire: wireStatsSnapshot(),

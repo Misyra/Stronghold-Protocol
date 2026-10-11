@@ -53,7 +53,7 @@
 //   view.holdPiece(uid, {row,col} | null)       keep a dropped prep piece standing on a tile while its direction is
 //                                               chosen / the move is in flight (null releases; setPrep then settles it)
 //   view.setPieceDir(uid, dir)                  show a prep piece facing UP|RIGHT|DOWN|LEFT (wheel preview / stored dir)
-//   view.setSettings({ damageNumbers, quality: 'high'|'medium'|'low' }) ; view.resize() ; view.destroy()
+//   view.setSettings({ damageNumbers, quality: 'high'|'medium'|'low', fpsLimit: 0|30|60|120 }) ; view.resize() ; view.destroy()
 //   view.stats() → { fps, frameMs, cpuMs, renderMs, units, particles, impostor, impostorAtlas, boardArt, … } (dev / perf)
 //
 // Enemy preview pen (research 09 §2.2 / 08 §4.2, render/pen.js): in prep the next round's enemies idle in the pen
@@ -132,6 +132,7 @@ import { layoutPen, penSignature } from './pen.js';
 import { IDENTITY, bossPrepField, tilesToDisp, leaderStand } from './prepfield.js';
 import { pickOnTile, pickBattle, hitTiles } from './pick.js';
 import { promotionsOf } from './promote.js';
+import { applyFrameRate, renderFrameBudget } from '../frameRate.js';
 import { ensurePixi } from './app/pixi.js';
 import { pieceDirOf, pickUnitOf } from './app/pick.js';
 import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS } from './app/tune.js';
@@ -149,7 +150,7 @@ export { releaseGl } from './app/host.js';
 /**
  * Create the battlefield view inside `host` (an element sized by CSS; the canvas fills it).
  * @param {HTMLElement} host
- * @param {{ data?: any, assets?: any, audio?: any, settings?: { damageNumbers?: boolean, quality?: string }, signal?: AbortSignal,
+ * @param {{ data?: any, assets?: any, audio?: any, settings?: { damageNumbers?: boolean, quality?: string, fpsLimit?: number }, signal?: AbortSignal,
  *           padding?: object|((kind:string, size:{width:number,height:number}) => object),
  *           hud?: {top:number,bottom:number}|((kind:'prep'|'bossPrep', size:{width:number,height:number}, o:{shop:boolean}) => {top:number,bottom:number}|null) }} [opts]
  */
@@ -162,7 +163,7 @@ export async function createFieldView(host, options = {}) {
   signal?.throwIfAborted();
   const assets = resolveAssets(opts.assets);
   const data = makeData(opts.data);
-  const settings = { damageNumbers: true, quality: 'high', ...(opts.settings || {}) };
+  const settings = { damageNumbers: true, quality: 'high', fpsLimit: 0, ...(opts.settings || {}) };
   // the 3D board (three.js + the official art) loads in parallel with everything else
   const boardPref = boardPreference(opts.board);
   const want3d = boardPref !== '2d' && webgl2Available(boardPref === '3d');
@@ -196,6 +197,7 @@ export async function createFieldView(host, options = {}) {
     width: s0.width, height: s0.height, antialias: opts.antialias ?? (settings.quality === 'high' && (globalThis.devicePixelRatio || 1) < 1.5), backgroundColor: 0x0a0e0d, backgroundAlpha: 0,
     resolution: dpr(), autoDensity: true, powerPreference: 'high-performance',
   });
+  settings.fpsLimit = applyFrameRate(app.ticker, settings.fpsLimit);
   const canvas = app.view;
   setupCleanup.push(() => {
     releaseGl(app.renderer);
@@ -1628,8 +1630,9 @@ export async function createFieldView(host, options = {}) {
   function adaptLoad(dtRaw) {
     if (!(dtRaw > 0) || dtRaw > 0.25 || globalThis.document?.hidden) return;
     const busy = views.size + penViews.size > 8;
-    if (frameMs > 19.5 && busy) { slowFor += dtRaw; fastFor = 0; }
-    else if (frameMs < 17.6) { fastFor += dtRaw; slowFor = 0; }
+    const budget = renderFrameBudget(settings.fpsLimit);
+    if (frameMs > budget * 1.17 && busy) { slowFor += dtRaw; fastFor = 0; }
+    else if (frameMs < budget * 1.056) { fastFor += dtRaw; slowFor = 0; }
     if (slowFor > 1 && loadLevel < 3) { loadLevel++; slowFor = 0; fastFor = 0; impInterval = pickImpostorInterval(); }
     else if (loadLevel > 0 && (fastFor > 6 * loadLevel || !busy && fastFor > 2)) { loadLevel--; fastFor = 0; impInterval = pickImpostorInterval(); }
   }
@@ -1881,6 +1884,15 @@ export async function createFieldView(host, options = {}) {
       const q = settings.quality;
       if (typeof s.damageNumbers === 'boolean') settings.damageNumbers = s.damageNumbers;
       if (s.quality === 'high' || s.quality === 'medium' || s.quality === 'low') settings.quality = s.quality;
+      if ('fpsLimit' in s) {
+        const before = settings.fpsLimit;
+        settings.fpsLimit = applyFrameRate(app.ticker, s.fpsLimit);
+        if (before !== settings.fpsLimit) {
+          slowFor = fastFor = 0;
+          frameMs = renderFrameBudget(settings.fpsLimit);
+          lastNow = performance.now();
+        }
+      }
       if (q !== settings.quality) { board3d?.setQuality?.(settings.quality); resize(); }
     },
     resize,

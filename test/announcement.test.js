@@ -9,6 +9,14 @@ import { startServer } from '../server/index.js';
 import { announcementOptionsFrom } from '../server/http/config.js';
 
 const config = { enabled: true, title: '维护公告', text: '17:00 开始维护，请提前结束模拟。', expiresAt: '2099-10-04T17:00:00+08:00' };
+test('display policy preserves legacy revisions and changes only for visit mode', () => {
+  const legacy = parseAnnouncement(config);
+  assert.deepEqual(parseAnnouncement({ ...config, displayMode: 'once' }), legacy);
+  const visit = parseAnnouncement({ ...config, displayMode: 'visit' });
+  assert.equal(visit.displayMode, 'visit');
+  assert.notEqual(visit.id, legacy.id);
+  for (const displayMode of ['cooldown', '', 1, {}]) assert.throws(() => parseAnnouncement({ ...config, displayMode }));
+});
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'sp-announcement-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

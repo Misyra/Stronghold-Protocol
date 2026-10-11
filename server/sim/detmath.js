@@ -67,13 +67,15 @@ function mul2(ah, al, bh, bl, out) {
 /**
  * xⁿ for an integer n (the sim's powers are stack counts, chain bounces …). The square-and-multiply runs in
  * double-double and rounds once, so the result is correctly rounded in practice; a non-integer exponent or a huge
- * base falls back to Math.pow.
+ * base falls back to Math.pow. A zero base takes Math.pow's exact results: an odd power keeps the sign of −0, which
+ * the double-double sum would lose ((−0)¹ = −0, (−0)⁻¹ = −∞).
  * @param {number} x
  * @param {number} n
  */
 export function powi(x, n) {
   // eslint-disable-next-line no-restricted-properties -- outside the integer domain only (never in the sim)
   if (!Number.isInteger(n) || !Number.isFinite(x) || Math.abs(x) > P500) return Math.pow(x, n);
+  if (x === 0) { const odd = n % 2 !== 0; return n === 0 ? 1 : n > 0 ? (odd ? x : 0) : (odd ? 1 / x : Infinity); }
   if (n < 0) return 1 / powi(x, -n);
   ACC[0] = 1; ACC[1] = 0; BASE[0] = x; BASE[1] = 0;
   let k = n;

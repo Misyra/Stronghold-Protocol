@@ -163,12 +163,22 @@ test('two hosts keep independent release versions, serve public CORS and retain 
   assert.notEqual(health.build, remoteHealth.build);
   assert.equal(health.assetsCdnVersion, remoteHealth.artVersion);
   const localPrefix = `/_v/${health.build}`;
+  assert.match(health.runtimeVersion, /^[a-f0-9]{16}$/);
+  assert.equal(health.runtimeVersion, remoteHealth.runtimeVersion, 'CDN settings do not change executable modules');
+  assert.notEqual(health.runtimeVersion, health.build);
+  assert.notEqual(health.runtimeVersion, health.artVersion);
+  const runtimePrefix = `/_v/${health.runtimeVersion}`;
   const remotePrefix = `${remote.url}/_v/${remoteHealth.artVersion}`;
   const html = await (await fetch(game.url + '/')).text();
   assert.ok(html.includes(`href="${remotePrefix}/fonts/fonts.css"`));
-  assert.ok(html.includes(`src="${localPrefix}/js/main.js"`));
+  assert.ok(html.includes(`src="${runtimePrefix}/js/main.js"`));
   const imports = JSON.parse(html.match(/type="importmap">(.*?)<\/script>/)[1]).imports;
-  assert.equal(imports.preact, localPrefix + '/vendor/preact.js');
+  assert.equal(imports.preact, runtimePrefix + '/vendor/preact.js');
+  const code = await fetch(game.url + runtimePrefix + '/js/main.js');
+  assert.equal(code.status, 200);
+  assert.match(code.headers.get('cache-control'), /immutable/);
+  assert.equal(await code.text(), 'export const ready = true;');
+  assert.equal((await fetch(game.url + localPrefix + '/js/main.js')).status, 200, 'current release URLs retain legacy code compatibility');
   const manifest = await (await fetch(game.url + localPrefix + '/data/assets.json')).json();
   assert.ok(validSpine(manifest.spine));
   assert.equal(manifest.spine.skel, remotePrefix + '/assets/x.skel');
@@ -188,7 +198,7 @@ test('two hosts keep independent release versions, serve public CORS and retain 
   assert.equal(audio.status, 206);
   assert.equal(await audio.text(), '2345');
   assert.equal(audio.headers.get('access-control-allow-origin'), '*');
-  for (const path of ['/healthz', localPrefix + '/data/assets.json', localPrefix + '/js/main.js']) {
+  for (const path of ['/healthz', localPrefix + '/data/assets.json', runtimePrefix + '/js/main.js']) {
     assert.equal((await fetch(game.url + path)).headers.get('access-control-allow-origin'), null);
   }
   assert.equal((await fetch(game.url + '/api/rooms/ABCD/status', { method: 'OPTIONS' })).status, 405);

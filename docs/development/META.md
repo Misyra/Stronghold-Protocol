@@ -925,7 +925,19 @@ choices are explicitly [ASSUMED]; DESIGN §28.15–16 records the source and val
 
 ### Shared inventory after 0.2.3 (DESIGN §29.8)
 
-`SharedItemPool` derives equipment availability from current ownership across all players: ordinary 1, upgraded 2.
+`SharedItemPool` derives equipment availability from stock-backed ownership across all players: ordinary 1, upgraded 2.
+**Branch rule (2026-10-11): operator passive/trait gifts occupy no shared stock and are never blocked by stock
+exhaustion.** This includes fixed/random gifts, copied/retriggered traits and prep-end gifts; the server's
+`kind: 'garrison'` effect context identifies the origin, not the equipment's name. Ordinary shop, draft/reward,
+strategy/item-effect and console gains keep their stock checks. Random passive equipment draws ignore stock only,
+retaining their tier rules and weights.
+
+Gift instances record server-owned `itemPoolCopies: 0`; a mixed ordinary/gift merge records 1, while an
+ordinary/ordinary merge keeps 2. Equipping, returning and merging retain those actual reservations; upgrading a
+pure gift stays free. Checkpoints (the persistence worker's snapshot documents) preserve the optional instance
+field through existing hand/temp/equipped serialization. Old items without provenance still default to 1/2; their
+original grant source cannot be safely reconstructed after the fact. No client-provided flag can authorize this
+exemption.
 Equips, merges and returns cannot lose reservations. Consumptions/destruction release ownership [ASSUMED removal
 interpretation]. Shop/reward displays reserve nothing; rejected exhausted purchases retain funds and offers.
 整备 upgrades the purchased item only when `left` still has the golden's second copy; otherwise the item stays

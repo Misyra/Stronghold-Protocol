@@ -97,6 +97,33 @@ test('controller ZIP import/export uses shared lock, automatically enables prelo
   await mod.syncResources(false);
 });
 
+test('a timed-out worker pause resumes late worker writes without deleting cached resources', async (t) => {
+  const env = stubEnv();
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?pause-timeout');
+  await mod.syncResources(true, false);
+  const before = await (await env.caches.open(CACHE_NAME)).keys();
+  const modes = [];
+  let writesEnabled = true;
+  globalThis.navigator.serviceWorker.controller = {
+    postMessage(message, ports) {
+      modes.push(message.enabled);
+      // Apply pause but lose its acknowledgement, as a delayed worker would.
+      writesEnabled = message.enabled;
+      if (message.enabled) ports[0].postMessage({ ok: true });
+    },
+  };
+  const nativeTimeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (fn, delay, ...args) => nativeTimeout(fn, delay === 5000 ? 5 : delay, ...args));
+  assert.equal((await mod.clearResources()).error, true);
+  assert.match(mod.resourceState().message, /响应超时/);
+  assert.deepEqual(modes, [false, true]);
+  assert.equal(writesEnabled, true);
+  assert.deepEqual(await (await env.caches.open(CACHE_NAME)).keys(), before, 'unacknowledged pause must prevent destructive work');
+  assert.equal(mod.resourceState().clearing, false);
+  await mod.syncResources(false);
+});
+
 test('changing download scope and disabling preload while checking does not restart an obsolete request', async (t) => {
   const env = stubEnv();
   t.after(env.restore);

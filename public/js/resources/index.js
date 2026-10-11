@@ -88,13 +88,18 @@ async function workerWrites(enabled) {
     const cleanup = () => { clearTimeout(timer); channel.port1.close(); channel.port2.close(); };
     const timer = setTimeout(() => { cleanup(); reject(new Error('资源缓存服务响应超时，请刷新页面后重试')); }, 5000);
     channel.port1.onmessage = () => { cleanup(); resolve(undefined); };
-    worker.postMessage({ type: 'sp-resource-mode', enabled }, [channel.port2]);
+    try { worker.postMessage({ type: 'sp-resource-mode', enabled }, [channel.port2]); }
+    catch (err) { cleanup(); reject(err); }
   });
 }
 
 async function withWorkerWritesPaused(job) {
-  await workerWrites(false);
-  try { return await job(); }
+  try {
+    // A missing acknowledgement does not mean the worker ignored the pause.
+    // Always send resume, even when the pause times out; never run the job then.
+    await workerWrites(false);
+    return await job();
+  }
   finally { await workerWrites(true).catch(() => {}); }
 }
 

@@ -10,6 +10,7 @@
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 
+import { AnnouncementButton } from '../ui/announcement.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useMemo, useState, useRef, useEffect } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD, ERR_TEXT, ERR } from '../../../shared/constants.js';
@@ -332,19 +333,24 @@ export function TitleScreen() {
           })}
         </p>` : null}
         <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid || checking} onClick=${start}>${checking ? t('正在校验昵称') : t('开始')}<//>
-        <div class="title-conn">
-          <span class=${`status-dot ${dotClass}`}></span>
-          <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
-          ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+        <div class="title-meta">
+          <div class="title-conn">
+            <span class=${`status-dot ${dotClass}`}></span>
+            <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
+            ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
+          </div>
+          <div class="title-tools">
+            <${GuideButton} class="title-guide" label=${t('玩法说明')} />
+            <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
+              onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
+            <${FullscreenButton} class="title-fs" />
+          </div>
         </div>
-        <div class="title-actions">
-          <${GuideButton} class="title-guide" label=${t('玩法说明')} />
-          <${HistoryButton} />
-          <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
-          <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
-            onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
-          <${FullscreenButton} class="title-fs" />
-        </div>
+      </div>
+      <div class="title-actions">
+        <${AnnouncementButton} />
+        <${HistoryButton} />
+        <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
       </div>
     </main>
 
@@ -353,8 +359,10 @@ export function TitleScreen() {
     <${AboutModal} open=${aboutOpen} onClose=${() => setAboutOpen(false)} />
 
     <footer class="title-foot">
-      <${ResumeMatchButton} />
-      <${PwaInstallButton} />
+      <div class="title-foot__actions">
+        <${PwaInstallButton} />
+        <${ResumeMatchButton} />
+      </div>
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <${MicroLabel}>v${APP_VERSION} · WEB SIMULATION<//>
       ${DEV_BUILD ? html`<span class="title-dev" role="note">${t('开发版 · 不稳定，请勿用于公开服务器')}</span>` : null}

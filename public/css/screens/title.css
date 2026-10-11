@@ -248,10 +248,18 @@
 /* 统计 (the local stats page) beside the language menu in the top-right corner */
 .title-corner__tools { display: flex; align-items: center; justify-content: flex-end; gap: .1rem; margin-bottom: .1rem; }
 .title-corner__tools .title-lang { margin-bottom: 0; }
-.title-actions { display: grid; grid-template-columns: repeat(3, auto) .38rem .38rem; align-items: center; gap: .08rem; }
-.title-actions > .btn { width: 100%; min-width: 0; height: .38rem; padding: 0 .06rem; gap: .05rem; font-size: calc(.14 * var(--t)); letter-spacing: 0; white-space: nowrap; }
-.title-actions > .btn .icon { width: .16rem; height: .16rem; }
-.title-actions > .fsbtn { width: .38rem; height: .38rem; }
+.title-meta { display: flex; align-items: center; justify-content: center; gap: .2rem; }
+.title-meta .title-conn { justify-content: flex-start; flex-wrap: wrap; min-width: 0; }
+.title-tools { display: flex; align-items: center; flex: none; gap: .08rem; }
+.title-tools > .fsbtn { width: max(.38rem, 28px); height: max(.38rem, 28px); margin: 0; }
+.title-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .12rem; max-width: 4.9rem; margin-top: .12rem; }
+.title-actions > .btn, .title-tools > .btn { min-width: 0; min-height: max(.38rem, 28px); height: auto; padding: .06rem .08rem; gap: .05rem; font-size: calc(.14 * var(--t)); letter-spacing: 0; white-space: normal; text-align: center; }
+.title-actions > .btn .icon, .title-tools > .btn .icon { width: .16rem; height: .16rem; }
+@media (max-width: 767px), (pointer: coarse) {
+  .title-actions > .btn { min-height: 36px; }
+  .title-tools > .fsbtn { width: 36px; height: 36px; }
+  .title-meta { gap: .1rem; flex-wrap: wrap; }
+}
 .about-panel { max-width: calc(100vw - .4rem); }
 .about-panel .modal__body { font-size: calc(.17 * var(--t)); line-height: 1.8; color: var(--text-md); }
 .about-panel p { margin: 0 0 .16rem; }
@@ -290,6 +298,7 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   font-size: calc(.13 * var(--t));
   color: var(--text-dim);
 }
+.title-foot__actions { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; }
 /* a development build (shared/constants.js DEV_BUILD): an unmissable tag in the footer */
 .title-dev {
   padding: .03rem .1rem;

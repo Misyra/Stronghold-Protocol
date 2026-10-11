@@ -20,7 +20,7 @@ export default withDefaults({
         attack: {
           // every drone ramps on its own locked target (trait init/delta/max): the multipliers are queued per target
           // by the beforeAttack hook below (two drones on the same enemy ramp independently)
-          dmgMul: (battle, unit, target) => {
+          funnelMul: (battle, unit, target) => {
             const q = unit.mem.kjeraQueue && unit.mem.kjeraQueue.get(target.id);
             return q && q.length ? q.shift() : funnel(unit).init;
           },

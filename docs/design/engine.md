@@ -167,6 +167,16 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 
 ---
 
+Unreleased `funnel` drones deal **additional** arts damage alongside the caster's ordinary attack (PRTS
+[驭械术师](https://prts.wiki/w/分支特性信息/data#驭械术师)). The engine keeps a 100% ATK body instance and a separate
+drone instance, each through mitigation and shields. `funnelMul` holds only the drone ramp; the attack's `dmgMul`
+(至简's talent) is shared once. Extra attached drones raise `hits`, not the body count; 至简's charged S2 explicitly
+sets `funnelBodyHits` to two. Both components share one `attackId`, attack hook and SP/charge use; additions have
+`addition, funnel` tags and do not count as `isAttack`. [ASSUMED] Body instances precede additions at the existing
+projectile impact; consecutive hits keep one ramp per volley. This correction covers ordinary and strengthened
+ordinary attacks. Released skill paths retain their existing behaviour; it does not establish whether those
+skills should also have body attacks (耶拉 S2 / 澄闪 S1 and S2 remain to be reconciled separately).
+
 ## 7. Content modules (server/sim/content + match/effectsMeta handlers)
 
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).

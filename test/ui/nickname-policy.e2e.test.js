@@ -39,7 +39,7 @@ test('nickname policy: server preflight feedback, normal login, server rejection
   }));
   assert.match(feedback.text, /如果你认为昵称没有问题/);
   assert.match(feedback.text, /GitHub 反馈/);
-  assert.equal(feedback.href, 'https://github.com/sganggs/Stronghold-Protocol/issues/new?template=BugReport.yml');
+  assert.equal(feedback.href, 'https://github.com/Misyra/Stronghold-Protocol/issues/new?template=BugReport.yml');
   assert.equal(feedback.target, '_blank');
   assert.match(feedback.rel, /noopener/); assert.match(feedback.rel, /noreferrer/);
   await enter('正常博士');

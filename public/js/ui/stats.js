@@ -302,6 +302,7 @@ export function compactRecord(rec) {
   out.players = self ? [{
     playerId: self.playerId, seat: self.seat, alive: self.alive, victory: self.victory, roundsPassed: self.roundsPassed,
     eliminatedRound: self.eliminatedRound, bandId: self.bandId, title: self.title, left: self.left, stats: self.stats,
+		trophies: self.trophies,
 		...(self.creditedKills != null ? { creditedKills: self.creditedKills } : {}),
   }] : [];
   return out;
@@ -703,6 +704,7 @@ export function aggregateStats(records) {
     rounds: { total: 0, max: 0 },
     duration: { totalMs: 0 },
     hidden: { reached: 0, cleared: 0 },
+		trophies: 0,
     byDifficulty: {},
 		byMode: { solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 } },
     titles: {}, bands: {}, sums: {},
@@ -725,6 +727,8 @@ export function aggregateStats(records) {
     out.duration.totalMs += num(rec.durationMs) || 0;
     if (rec.hiddenReached) out.hidden.reached++;
     if (rec.hiddenCleared) out.hidden.cleared++;
+		// Sum the actual settlement award, including defeats, rather than teammates' or solo-mode trophies.
+		if (rec.end !== 'quit' && rec.roomMode === 'coop' && Number.isFinite(self?.trophies)) out.trophies += Math.max(0, self.trophies);
 
     const d = rec.difficulty || 'UNKNOWN';
     const bd = (out.byDifficulty[d] ||= { games: 0, wins: 0, hiddenCleared: 0 });
@@ -760,4 +764,11 @@ export function aggregateStats(records) {
     }
   }
   return out;
+}
+
+/** Highest earned trophy tier from the official config, independent of the order of its medal rows. */
+export function trophyMedalOf(total, medals) {
+	const count = Number.isFinite(total) ? Math.max(0, total) : 0;
+	return (Array.isArray(medals) ? medals : []).reduce((best, medal) =>
+		Number.isFinite(medal?.count) && medal.count >= 0 && medal.count <= count && (!best || medal.count > best.count) ? medal : best, null);
 }

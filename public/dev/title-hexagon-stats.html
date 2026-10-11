@@ -24,6 +24,7 @@
 		import { html, UiHosts } from '/js/ui/components.js';
 		import { StatsHost, openStats } from '/js/screens/stats.js';
 		import { buildRecord, STATS_VERSION } from '/js/ui/stats.js';
+		import { store } from '/js/store.js';
 		const records = [
 			['comment_1', 22], ['comment_2', 21], ['comment_3', 33],
 			['comment_4', 22], ['comment_5', 16], ['comment_6', 30],
@@ -31,7 +32,7 @@
 			seed: group * 100 + i, victory: true, roundsPassed: 14, durationMs: 600000,
 			difficulty: 'HARD', modeId: 'mode_multi_hard',
 			players: [{ playerId: 'self', alive: true, victory: true, roundsPassed: 14, bandId: 'band_amiya',
-				title: { id }, stats: { gold: 500, merges: 5 }, creditedKills: 100 }],
+				name: 'Siornya', title: { id }, trophies: 5, stats: { gold: 500, merges: 5 }, creditedKills: 100 }],
 		}, { myId: 'self', now: Date.now() - (group * 100 + i) * 86400000 })));
 		const memory = new Map([['sp.pref.stats', JSON.stringify({ v: STATS_VERSION, records })]]);
 		Object.defineProperty(window, 'localStorage', { value: {
@@ -39,6 +40,7 @@
 			setItem: (key, value) => memory.set(key, String(value)),
 			removeItem: (key) => memory.delete(key),
 		} });
+		store.patch('me', { name: 'Siornya' });
 		render(html`<${StatsHost} /><${UiHosts} />`, document.getElementById('app'));
 		openStats();
 	</script>

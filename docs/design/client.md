@@ -153,6 +153,13 @@ record inclusion rule. Successful defense counts the
 local player's victory (final leader defeated, player not eliminated); breakthrough additionally requires a
 hidden-core clear. A failed hidden core does not remove a successful defense. Both rows remain visible at zero.
 
+Above the mode grid, display `Dr. <nickname>` (current identity name, saved nickname, then the newest self record's
+name) and the sum of the local player's settled co-op trophy awards in the retained records. Defeats can award
+trophies; solo and partial quit records never add to this total. The official `config.trophies.medals` chooses the
+icon at thresholds 0 / 10 / 30 / 60 / 100 (five tiers, PRTS 下半 §同盟成就奖杯). The icon uses the existing asset
+manifest. Compaction and export/import retain trophy awards; older already-compacted rows whose awards were
+discarded cannot be restored by this display. This is local recorded data, not an official account trophy balance.
+
 The statistics overview displays 单局最多消耗资金, 单局最多晋升次数 and 单局最多击败数 in one three-column row,
 including on narrow screens. Each is an independent maximum across the local player's settled matches (victories
 and defeats); partial quit records and teammates' rows are not single-match totals. Funds spent and promotions use

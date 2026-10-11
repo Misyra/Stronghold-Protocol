@@ -15,6 +15,7 @@ import {
   loadStats, saveStats, migrateStats, normalizeRecord, importStats, exportStats, aggregateStats, selfRowOf, roomModeOf,
   recordToResult, compactRecord, fitToBudget, countsTowardStats, roundsOf, clearedRounds, createLiveMatch, observeMatch,
   buildQuitRecord, installStatsRecorder, liveMatch, MIGRATIONS,
+	trophyMedalOf,
 } from '../../public/js/ui/stats.js';
 import { createStore, emptyMatch } from '../../public/js/store.js';
 import { normalizeResult } from '../../public/js/ui/gameLogic.js';
@@ -387,7 +388,7 @@ describe('local stats: bounded storage', () => {
     const coop = (i) => baseResult({ seed: i, modeId: 'mode_multi_hard', players: [row(1), row(2), row(3), row(4)].map((r, k) => (k === 0 ? { ...r, playerId: 'p1' } : r)) });
     const stats = manyRecords(MAX_RECORDS, coop);
     const fit = fitToBudget(stats.records);
-    assert.ok(fit.length >= 900 && fit.length <= MAX_RECORDS, `kept ${fit.length}`);
+    assert.ok(fit.length > FULL_KEEP && fit.length <= MAX_RECORDS, `kept ${fit.length}; full replays and compacted history must both remain`);
     assert.equal(fit[0].t, MAX_RECORDS - 1, 'the newest first');
     assert.ok(JSON.stringify({ v: 1, records: fit }).length <= MAX_CHARS);
     withStorage((ls) => { assert.equal(saveStats(stats), true); assert.ok(ls.raw.length <= MAX_CHARS); });
@@ -680,6 +681,30 @@ describe('local stats: aggregation (what the page renders)', () => {
 		assert.deepEqual(aggregateStats([]).byMode, {
 			solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 },
 		});
+	});
+
+	test('trophy totals count self settled co-op awards, including defeats, and survive compaction and transfer', () => {
+		const records = [['coop', 5, true, 'match'], ['coop', 2, false, 'match'], ['solo', 999, true, 'match'], ['coop', 999, false, 'quit']].map(([mode, award, won, end], i) => {
+			const rec = buildRecord(baseResult({ seed: i + 1, victory: won, modeId: mode === 'coop' ? 'mode_multi_hard' : 'mode_single_hard',
+				players: [{ ...baseResult().players[0], trophies: award, victory: won }, { ...baseResult().players[1], trophies: 999 }],
+			}), { myId: 'p1', roomMode: mode, now: i + 1 });
+			rec.end = end;
+			return rec;
+		});
+		assert.equal(aggregateStats(records).trophies, 7, 'solo, quit and teammate awards must not inflate the total');
+		const compacted = records.map(compactRecord);
+		const transferred = importStats(exportStats({ v: STATS_VERSION, records: compacted }), emptyStats());
+		assert.equal(aggregateStats(transferred.stats.records).trophies, 7, 'discarding replay details and exporting must retain actual rewards');
+	});
+
+	test('trophy medals choose the highest eligible configured threshold regardless of row order', () => {
+		const medals = [{ count: 20, iconId: 'high' }, { count: 0, iconId: 'base' }, { count: 5, iconId: 'mid' }];
+		assert.equal(trophyMedalOf(4, medals).iconId, 'base');
+		assert.equal(trophyMedalOf(5, medals).iconId, 'mid');
+		assert.equal(trophyMedalOf(19, medals).iconId, 'mid');
+		assert.equal(trophyMedalOf(20, medals).iconId, 'high');
+		assert.equal(trophyMedalOf(100, medals).iconId, 'high');
+		assert.equal(trophyMedalOf(0, null), null);
 	});
 
   test('combat sums over the self player only', () => {

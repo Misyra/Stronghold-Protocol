@@ -95,6 +95,14 @@
 .st-card__label { font-size: max(.14rem, 10px); color: var(--text-md); letter-spacing: .06em; }
 /* Two rows of four cards to the left of the title diagram. */
 .st-overview-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: .22rem; margin-top: .2rem; }
+.st-mode-summary { min-width: 0; }
+.st-profile { display: flex; align-items: center; justify-content: space-between; gap: .16rem; margin-bottom: .12rem; }
+.st-profile__name { min-width: 0; font-size: max(.25rem, 16px); line-height: 1.25; color: var(--text-hi); overflow-wrap: anywhere; }
+.st-profile__trophies { display: flex; align-items: center; gap: .08rem; flex: none; }
+.st-profile__medal, .st-profile__trophies > .icon { width: max(.54rem, 32px); height: max(.54rem, 32px); object-fit: contain; }
+.st-profile__trophies > div { display: flex; flex-direction: column; gap: .02rem; }
+.st-profile__trophies span { font-size: max(.14rem, 10px); color: var(--text-md); }
+.st-profile__trophies b { font-size: max(.25rem, 16px); line-height: 1.1; color: var(--mint-400); }
 .st-modegrid { display: grid; gap: .08rem; min-width: 0; }
 .st-modegrid__row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .08rem; }
 .st-modegrid__mode { justify-content: center; }

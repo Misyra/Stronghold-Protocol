@@ -18,10 +18,12 @@
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS } from '../../../shared/constants.js';
 import { html, Icon, MicroLabel, Spinner, Button, confirmDialog } from '../ui/components.js';
-import { useGameData, makeLookups, BandIcon } from '../ui/gameComponents.js';
+import { useGameData, makeLookups, BandIcon, Img } from '../ui/gameComponents.js';
 import { data, useData } from '../data.js';
 import { fmtNum } from '../ui/gameLogic.js';
 import { useDocClass } from '../ui/device.js';
+import { uiUrl } from '../ui/assetUrls.js';
+import { identity } from '../net.js';
 import { TITLE_HEX_SECTORS, titleSectorPoints } from '../ui/titleHexagon.js';
 import { createStore, useStore, selectRoute } from '../store.js';
 import { ResultView } from './result.js';
@@ -29,6 +31,7 @@ import { toast, toastError } from '../ui/toasts.js';
 import {
   loadStats, saveStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
   recordToResult, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
+	trophyMedalOf,
 } from '../ui/stats.js';
 import { t, N_ } from '../../../shared/i18n.js';
 
@@ -117,7 +120,7 @@ function Section({ title, micro, children, class: cls }) {
 }
 
 /** 总览: cards, the per-difficulty table, the six titles, and the line about what counts. */
-function Overview({ agg, gd }) {
+function Overview({ agg, gd, nickname }) {
   const rows = DIFFICULTIES.filter((d) => agg.byDifficulty[d]).concat(Object.keys(agg.byDifficulty).filter((d) => !DIFFICULTIES.includes(d)));
   const titles = (Array.isArray(gd.config?.titles) ? gd.config.titles : []).map((x) => ({ ...x, count: agg.titles[x.id]?.count || 0 }));
   return html`<${Section} title=${t('总览')} micro="OVERVIEW">
@@ -148,6 +151,15 @@ function Overview({ agg, gd }) {
       </tbody>
     </table></div>` : null}
 		<div class="st-overview-details">
+			<div class="st-mode-summary">
+				<div class="st-profile">
+					<b class="st-profile__name">Dr. ${nickname || t('未知')}</b>
+					<div class="st-profile__trophies" title=${t('累计本机保留战绩中获得的奖杯')}>
+						<${Img} src=${uiUrl(gd.m, `medalIcon/${trophyMedalOf(agg.trophies, gd.config?.trophies?.medals)?.iconId || ''}`)}
+							class="st-profile__medal" fallback=${html`<${Icon} name="crown" />`} />
+						<div><span>${t('获得奖杯')}</span><b class="num">${fmtNum(agg.trophies)}</b></div>
+					</div>
+				</div>
 			<div class="st-modegrid">
 				${[['solo', N_('独立模拟')], ['coop', N_('联合模拟')]].map(([mode, label]) => {
 					const v = agg.byMode[mode];
@@ -159,6 +171,7 @@ function Overview({ agg, gd }) {
 						<${StatCard} micro="CORE CLEAR" value=${fmtNum(v.hiddenCleared)} label=${t('绝境突破')} tone="gold" />
 					</div>`;
 				})}
+			</div>
 			</div>
 			${titles.length ? html`<div class="st-title-panel"><h4 class="st-sub">${t('称号')}</h4>
 				<${TitleHexagon} titles=${titles} /></div>` : null}
@@ -316,6 +329,8 @@ function StatsScreen({ tab }) {
   const replayRef = useRef(null);
   replayRef.current = replay;
   const inMatch = useStore((s) => selectRoute(s) === 'game');
+	const currentName = useStore((s) => s.me.name);
+	const nickname = currentName || identity.loadName() || selfRowOf(stats.records[0])?.name || '';
   useDocClass('sp-stats-open');
 
   // a match starting (the host pressed 开始) takes the player to its briefing: the overlay must not sit on top of it
@@ -406,7 +421,7 @@ function StatsScreen({ tab }) {
             : tab === 'bands' ? html`<${Bands} agg=${agg} gd=${gd} />`
               : tab === 'totals' ? html`<${CombatSums} agg=${agg} />`
                 : tab === 'history' ? html`<${History} records=${stats.records} gd=${gd} onOpen=${setReplay} />`
-                  : html`<${Overview} agg=${agg} gd=${gd} />`}
+                  : html`<${Overview} agg=${agg} gd=${gd} nickname=${nickname} />`}
     </main>
   </div>`;
 }

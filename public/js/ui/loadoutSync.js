@@ -169,6 +169,7 @@ function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, 
   const tell = notify || ((text) => toast(t(text), 'warn'));
   let timer = null;
   let seq = 0;            // requests sent (the reply of an older one never overrides a newer one's state)
+  let revision = 0;       // edits / welcomes invalidate preparation still waiting for game data
   let pendingJson = null; // JSON of the newest request still awaiting its reply
   let lastSent = null;    // JSON of the last payload the server accepted (on this session)
   let edited = false;     // an edit is waiting to be sent (a lock refusal is then worth telling the player)
@@ -189,9 +190,11 @@ function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, 
   async function flush() {
     if (disposed) return;
     if (net.status !== 'online') { setState('idle'); return; } // the next welcome resends
+    const preparing = revision;
     try {
       const payload = await prepare();
-      if (disposed) return;
+      // A reset/new edit may already have sent a newer payload while this one awaited chess/backups.
+      if (disposed || preparing !== revision) return;
       // never sanitise against missing data: every entry would be dropped and the server's copy cleared
       if (payload == null) { setState('error'); return; }
       const json = JSON.stringify(payload);
@@ -221,15 +224,16 @@ function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, 
         else { console.warn(`[${tag}] ${msgType} refused`, code, err && err.detail); setState('error'); }
       }
     } catch (e) {
+      if (disposed || preparing !== revision) return;
       console.warn(`[${tag}] sync failed`, e);
       setState('error');
     }
   }
 
-  const offWelcome = net.on('welcome', () => { lastSent = null; pendingJson = null; seq++; schedule(50); });
+  const offWelcome = net.on('welcome', () => { revision++; lastSent = null; pendingJson = null; seq++; schedule(50); });
   const keys = Array.isArray(key) ? key : [key];
   const offStore = target.subscribe((s, prev) => {
-    if (keys.some((k) => s[k] !== prev[k])) { edited = true; schedule(); }
+    if (keys.some((k) => s[k] !== prev[k])) { revision++; edited = true; schedule(); }
     // closing the overlay sends a pending edit at once (review fix): the player's next click — 准备就绪 in the solo
     // briefing, 开始模拟 in the room — must not overtake the debounced message (the match locks its loadout when
     // INFO_CHECK ends, so a late edit would silently only apply to the next match). Same socket ⇒ ordered.

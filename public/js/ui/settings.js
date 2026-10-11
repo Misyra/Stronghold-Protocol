@@ -184,8 +184,8 @@ function HotkeySection({ keys, touchUi }) {
   </section>`;
 }
 
-/** Where a report goes: the upstream issue tracker (shown as text the player can select; a link may open nothing). */
-export const ISSUES_URL = 'https://github.com/sganggs/Stronghold-Protocol/issues';
+/** Where a report goes: this repository's issue tracker (shown as text the player can select; a link may open nothing). */
+export const ISSUES_URL = 'https://github.com/Misyra/Stronghold-Protocol/issues';
 
 /**
  * 问题反馈: copy the diagnostics of this page (diag.js) for a GitHub issue — the errors recorded since the page opened,

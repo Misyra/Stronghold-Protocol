@@ -123,15 +123,41 @@ test('effect-only items are never shop items: not in shopItemsByTier, never in t
   m.dispose();
 });
 
-test('维多利亚 25-layer reward and 洛洛的定制品: the 4 special 维式重锤 (and nothing else)', () => {
+test('维多利亚 25-layer reward: the 4 special 维式重锤 (and nothing else)', () => {
   const special = ['chess_item_2_03_e_a', 'chess_item_3_09_e_a', 'chess_item_3_10_e_a', 'chess_item_4_09_e_a'];
   const m = makeMatch({ mode: 'coop', seed: 3, fake: true }).m;
-  for (const pid of ['pool_equip_vict', 'pool_equip_rockr']) {
-    assert.deepEqual([...DATA.choices.pools[pid].items].sort(), special, pid);
-    const seen = new Set();
-    for (let i = 0; i < 200; i++) seen.add(m.rollPool(pid).id);
-    assert.deepEqual([...seen].sort(), special, `${pid}: every special hammer can come, nothing else`);
-  }
+  const pid = 'pool_equip_vict';
+  assert.deepEqual([...DATA.choices.pools[pid].items].sort(), special, pid);
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) seen.add(m.rollPool(pid).id);
+  assert.deepEqual([...seen].sort(), special, `${pid}: every special hammer can come, nothing else`);
+  m.dispose();
+});
+
+test('洛洛的定制品: the 8-item weighted pool of 路标月报#2 item 6 (10/2/2/2/2/1/4/4)', () => {
+  const m = makeMatch({ mode: 'coop', seed: 3, fake: true }).m;
+  const weighted = DATA.choices.pools.pool_equip_rockr.weighted;
+  assert.deepEqual(weighted, [
+    ['chess_item_1_01_e_a', 10], ['chess_item_2_03_e_a', 2], ['chess_item_3_09_e_a', 2], ['chess_item_3_10_e_a', 2],
+    ['chess_item_4_09_e_a', 2], ['chess_item_4_03_e_a', 1], ['chess_item_4_11_e_a', 4], ['chess_item_3_03_e_a', 4],
+  ]);
+  const seen = new Map();
+  for (let i = 0; i < 400; i++) { const id = m.rollPool('pool_equip_rockr').id; seen.set(id, (seen.get(id) || 0) + 1); }
+  assert.deepEqual([...seen.keys()].sort(), [...weighted.map(([id]) => id)].sort(), 'every entry can come, nothing else');
+  // the weight-10 plain hammer clearly dominates the weight-2 special hammers (the four special ones stay exclusive
+  // to this pool and 维多利亚's); the shop-sold entries route through the item stock (canGain filter)
+  assert.ok(seen.get('chess_item_1_01_e_a') > 3 * Math.max(...['chess_item_2_03_e_a', 'chess_item_3_09_e_a', 'chess_item_3_10_e_a', 'chess_item_4_09_e_a'].map((id) => seen.get(id) || 0)));
+  m.dispose();
+});
+
+test('焰尾的干员子池 draws 野鬃/灰毫/远牙 by 10/10/3 (路标月报#2 item 6)', () => {
+  const m = makeMatch({ mode: 'coop', seed: 3, fake: true }).m;
+  assert.deepEqual(DATA.choices.pools.pool_char_pinus.weighted, [['chess_char_1_19_a', 10], ['chess_char_2_18_a', 10], ['chess_char_4_20_a', 3]]);
+  const seen = new Map();
+  for (let i = 0; i < 460; i++) { const id = m.rollPool('pool_char_pinus').id; seen.set(id, (seen.get(id) || 0) + 1); }
+  assert.deepEqual([...seen.keys()].sort(), ['chess_char_1_19_a', 'chess_char_2_18_a', 'chess_char_4_20_a']);
+  assert.ok(Math.abs(seen.get('chess_char_1_19_a') - seen.get('chess_char_2_18_a')) <= 0.15 * 460, '野鬃 and 灰毫 draw even (weight 10 each)');
+  assert.ok(seen.get('chess_char_4_20_a') < seen.get('chess_char_1_19_a') / 2, '远牙 stays the rare one');
   m.dispose();
 });
 

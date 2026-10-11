@@ -113,9 +113,8 @@ function StatCard({ label, micro, value, tone }) {
   </div>`;
 }
 
-function Section({ title, micro, children, class: cls }) {
+function Section({ children, class: cls }) {
   return html`<section class=${cx('st-sec', cls)}>
-    <h3 class="st-sec__h"><span>${title}</span><${MicroLabel}>${micro}<//></h3>
     ${children}
   </section>`;
 }

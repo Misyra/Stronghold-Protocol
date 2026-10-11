@@ -59,7 +59,7 @@ test('the ladder restarts at a warning once 30 minutes pass without a violation;
   assert.equal(s.chatStrikes, 4);
   now += CHAT_WINDOW_MS;
   assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED });
-  assert.equal(s.chatStrikes, 1, '30 quiet minutes after the served mute restart the ladder at a warning');
+  assert.equal(s.chatStrikes, 1, 'one quiet hour after the served mute restarts the ladder at a warning');
   assert.ok(s.chatMutedUntil <= now, 'the warning re-mutes nothing');
 });
 

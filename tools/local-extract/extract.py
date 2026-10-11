@@ -33,6 +33,10 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     roughness map in G (1 − smoothness; metalness B = 0), written next to the source as <name>_rgb.png / _rough.png
   - WebP copies of the board textures every player downloads with the 3D board (WEBP), written next to their PNGs;
     the manifest lists the copy
+  - the official battlefield scenes (scenes.py SCENES: one prebuilt scene per 卫戍协议 battlefield) → scene/<stageId>/
+    scene.json + scene.bin + lightmap pages and scene/tex/ (the materials' albedo textures). The scene bundles ship
+    only while the season runs: they are read from the client when it has them, else from --scenes <dir> (default
+    .cache/official-scenes/*, filled by tools/local-extract/fetch_scenes.py)
 
 Usage:
   python3 -m venv .venv && .venv/bin/pip install -r tools/local-extract/requirements.txt
@@ -40,6 +44,7 @@ Usage:
   python3 tools/local-extract/extract.py --print-jobs     (the job table as JSON; needs no dependencies)
   python3 tools/local-extract/extract.py --webp           (only the WebP copies, from the PNGs already extracted —
                                                           e.g. the local art copied from a release bundle; needs Pillow)
+  .venv/bin/python tools/local-extract/extract.py --only scene [--scenes <dir of in-season bundles>]
 
 Writes <out>/**.png|.webp|.skel|.atlas and data/local-assets.json (manifest of what was extracted). With --only, just
 the jobs whose output subdir starts with one of the prefixes run, and their groups replace those of the existing
@@ -54,6 +59,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import scenes  # noqa: E402  (the battlefield scene table and exporter; imports UnityPy only when it runs)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path.home()
@@ -718,6 +724,39 @@ def write_spine(objects, sda, sub, name, out_root, manifest, log):
     return len(files) + len(pages)
 
 
+def scene_ids(only):
+    """The stage ids of scenes.SCENES that run under --only (all with no prefix, `scene` or a parent of it)."""
+    return spine_ids(only, scenes.SCENE_SUB, [sid for sid, _ in scenes.SCENES])
+
+
+def scene_roots(ab_root, extra):
+    """AB roots searched for the scene bundles, in order: the client, --scenes dirs, then every version kept under
+    .cache/official-scenes (newest name first)."""
+    kept = ROOT / '.cache' / 'official-scenes'
+    cached = sorted((p for p in kept.iterdir() if p.is_dir()), reverse=True) if kept.is_dir() else []
+    return [Path(ab_root), *[Path(p) for p in extra], *cached]
+
+
+def export_scenes(ab_root, out_root, manifest, log, ids, roots):
+    """scenes.SCENES (the ids in `ids`) → scene/<stageId>/ (scenes.export_scene); a stage without a scene bundle in
+    any root is skipped."""
+    root = Path(ab_root)
+    shader_deps = dep_bundles(root, {'Material'})
+    n = 0
+    for sid, deps in scenes.SCENES:
+        if sid not in ids:
+            continue
+        src = scenes.find_scene(sid, roots)
+        if src is None:
+            log(f'skip (no scene bundle: off-season client, see --scenes) {scenes.scene_bundle(sid)}')
+            continue
+        try:
+            n += scenes.export_scene(sid, deps, src, root, out_root, manifest, log, material_info, shader_deps)
+        except Exception as e:  # one broken scene must not stop the others
+            log(f'FAIL scene {sid}: {e}')
+    return n
+
+
 def export_enemy_spines(ab_root, out_root, manifest, log, ids=None):
     """ENEMY_SPINES (or `ids`) from the enemy art bundles (each bundle loaded on its own; stops once every model was
     found)."""
@@ -798,6 +837,9 @@ def main():
     ap.add_argument('--manifest', default=str(ROOT / 'data/local-assets.json'))
     ap.add_argument('--only', action='append', default=[], metavar='SUBDIR',
                     help='only run the jobs whose output subdir starts with this prefix (repeatable), e.g. emoticon')
+    ap.add_argument('--scenes', action='append', default=[], metavar='DIR',
+                    help='an AB root holding the battlefield scene bundles of an in-season version (repeatable; '
+                         'searched after --game and before .cache/official-scenes/*)')
     ap.add_argument('--print-jobs', action='store_true', help='print the job table as JSON and exit')
     ap.add_argument('--webp', action='store_true',
                     help='only write the WebP copies of the board textures from the PNGs already under --out and list '
@@ -812,7 +854,10 @@ def main():
         print(json.dumps({'emoteThemes': [{'themeId': t, 'dir': d} for t, d in EMOTE_THEMES], 'jobs': jobs,
                           'derived': derived, 'webp': webp,
                           'enemySpines': {'bundles': ENEMY_ART, 'sub': ENEMY_SPINE_SUB, 'ids': ENEMY_SPINES},
-                          'tokenSpines': {'bundles': TOKEN_PACKS, 'sub': TOKEN_SPINE_SUB, 'ids': TOKEN_SPINES}},
+                          'tokenSpines': {'bundles': TOKEN_PACKS, 'sub': TOKEN_SPINE_SUB, 'ids': TOKEN_SPINES},
+                          'scenes': {'sub': scenes.SCENE_SUB, 'tex': scenes.TEX_SUB,
+                                     'stages': [{'id': sid, 'bundle': scenes.scene_bundle(sid), 'deps': deps}
+                                                for sid, deps in scenes.SCENES]}},
                          ensure_ascii=False))
         return 0
     if args.webp:
@@ -825,7 +870,8 @@ def main():
     jobs = select_jobs(args.only)
     enemy_ids = spine_ids(args.only, ENEMY_SPINE_SUB, ENEMY_SPINES)
     token_ids = spine_ids(args.only, TOKEN_SPINE_SUB, TOKEN_SPINES)
-    if not jobs and not enemy_ids and not token_ids:
+    stage_ids = scene_ids(args.only)
+    if not jobs and not enemy_ids and not token_ids and not stage_ids:
         print(f'--only {args.only}: no job matches', file=sys.stderr)
         return 2
     out_root = Path(args.out)
@@ -838,6 +884,8 @@ def main():
         total += export_enemy_spines(ab_root, out_root, manifest, print, enemy_ids)
     if token_ids:
         total += export_token_spines(ab_root, out_root, manifest, print, token_ids)
+    if stage_ids:
+        total += export_scenes(ab_root, out_root, manifest, print, stage_ids, scene_roots(ab_root, args.scenes))
     old = {}
     if args.only and Path(args.manifest).exists():
         try:

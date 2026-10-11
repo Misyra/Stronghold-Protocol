@@ -24,6 +24,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.open();
   await c.page.waitForSelector('.announcement', { timeout: 10_000 });
   assert.equal(await c.page.$eval('.announcement__text', (el) => el.textContent), notice.text, 'shown on the title screen');
+  assert.equal(await c.page.$('.announcement__title'), null, 'strip shows body text only');
   await c.page.waitForSelector('.fullscreen-prompt');
   await c.click('.fullscreen-prompt button', '暂不全屏');
   await c.enter('Bob');
@@ -40,6 +41,12 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.click('.dband', null, { nth: 1 });
   await c.click('.draft-detail__btns .btn--primary', '确认选择');
   await c.waitFor((s) => s.phase === 'PREP', 'first prep');
+  // Both entry points read the same current notice, including after dismissing its strip.
+  await c.page.click('.announcement__content');
+  await c.page.waitForSelector('.announcement-detail');
+  assert.equal(await c.page.$eval('.announcement-detail__text', el => el.textContent), notice.text);
+  await c.page.click('.announcement-detail__close');
+  await c.page.waitForSelector('.announcement-detail', { hidden: true });
   await c.shot('desktop');
   await c.page.setViewport({ width: 844, height: 390 });
   await c.page.waitForFunction(() => {
@@ -48,10 +55,14 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
     return rect && rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
   });
   await c.shot('mobile');
-  await c.page.$eval('.announcement button', (button) => button.focus());
+  await c.page.$eval('.announcement > .btn', (button) => button.focus());
   await c.page.keyboard.press('Space');
   await c.page.waitForSelector('.announcement', { hidden: true });
   assert.equal((await c.st()).ready, false, 'Space on close must not also ready the player');
+  await c.page.click('.gm__announcement');
+  await c.page.waitForSelector('.announcement-detail');
+  assert.equal(await c.page.$eval('.announcement-detail__text', el => el.textContent), notice.text);
+  await c.page.click('.announcement-detail__close');
   // Resource preloading continues in the background; the restored match below is the readiness signal.
   await c.page.reload({ waitUntil: 'domcontentloaded' });
   await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
@@ -64,7 +75,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   };
   await refresh({ ...notice, displayMode: 'visit', text: '每次进入显示' });
   await c.page.waitForSelector('.announcement');
-  await c.page.$eval('.announcement button', button => button.click());
+  await c.page.$eval('.announcement > .btn', button => button.click());
   await c.page.waitForSelector('.announcement', { hidden: true });
   await c.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await sleep(300);
@@ -73,7 +84,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
   await c.page.waitForSelector('.announcement');
   assert.equal(await c.page.$eval('.announcement__text', el => el.textContent), '每次进入显示');
-  await c.page.$eval('.announcement button', button => button.click());
+  await c.page.$eval('.announcement > .btn', button => button.click());
   await c.page.waitForSelector('.announcement', { hidden: true });
   await refresh({ ...notice, text: '<img src=x onerror="window.noticeInjected=true">维护延后' });
   await c.page.waitForSelector('.announcement');
@@ -82,10 +93,26 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await refresh({ ...notice, expiresAt: new Date(Date.now() + 4500).toISOString() });
   await c.page.waitForFunction(() => document.querySelector('.announcement__text')?.textContent === '服务器将于 17:00 维护，请提前结束模拟。');
   await c.page.waitForSelector('.announcement', { hidden: true, timeout: 6500 });
+  // Reload can reopen the optional fullscreen prompt; close it before testing pointer interaction.
+  await c.page.waitForSelector('.fullscreen-prompt');
+  await c.click('.fullscreen-prompt button', '暂不全屏');
+  await refresh({ ...notice, text: '很长的公告内容 '.repeat(100) + '\n第二行公告' });
+  await c.page.waitForSelector('.announcement__track.is-scrolling');
+  const rect = await c.page.$eval('.announcement', el => ({ height: el.getBoundingClientRect().height }));
+  assert.ok(rect.height < 70, 'long notices stay in one compact row');
+
+  await c.page.click('.announcement__content');
+  await c.page.waitForSelector('.announcement-detail');
+  assert.ok((await c.page.$eval('.announcement-detail__text', el => el.textContent)).includes('\n第二行公告'));
+  await c.page.click('.announcement-detail__close');
   await refresh({ ...notice, text: '第二条公告' });
   await c.page.waitForSelector('.announcement');
   await refresh({ enabled: false });
   await c.page.waitForSelector('.announcement', { hidden: true });
+  await c.page.click('.gm__announcement');
+  await c.page.waitForSelector('.announcement-detail');
+  assert.ok((await c.page.$eval('.announcement-detail', el => el.textContent)).includes('当前暂无公告'));
+  await c.page.click('.announcement-detail__close');
   assert.equal((await c.st()).phase, 'PREP', 'publishing/expiry does not end the running match');
   // External fonts are optional and unavailable in network-restricted test environments.
   const problems = c.problems.filter(p => !(p.includes('https://fonts.googleapis.com/') && p.includes('net::ERR_NETWORK_ACCESS_DENIED')));

@@ -64,6 +64,7 @@
 // team row → 前往查看 any player; in 休整期 / 机变 / round start it is shown the first player's board by itself (once per
 // phase). Its pill reads 观战中, never "你已被淘汰"; its exit only leaves the seat (ui/matchChrome.js ExitModal).
 
+import { AnnouncementButton } from '../ui/announcement.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
@@ -1494,6 +1495,7 @@ function MatchScreen() {
         ${spectator ? null : html`<${Communication} open=${emoteOpen} onToggle=${setEmoteOpen} />`}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
+        <${AnnouncementButton} class="gm__gear gm__announcement" square=${true} />
         <${FullscreenButton} class="gm__gear gm__fs" />
       </div>
 

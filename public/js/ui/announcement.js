@@ -68,7 +68,6 @@ export function AnnouncementBanner() {
       class="announcement-detail">
       <${Button} class="announcement-detail__close" size="sm" variant="ghost" square icon="close"
         title=${t('关闭公告')} aria-label=${t('关闭公告')} onClick=${close} />
-      ${active ? html`<h3 class="announcement-detail__title">${notice.title}</h3>
-        <p class="announcement-detail__text">${notice.text}</p>` : html`<p>${t('当前暂无公告')}</p>`}
+      ${active ? html`<p class="announcement-detail__text">${notice.text}</p>` : html`<p>${t('当前暂无公告')}</p>`}
     <//>`;
 }

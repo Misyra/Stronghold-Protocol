@@ -42,6 +42,9 @@ scripts/service.env.cmd
 # Hot-loaded server announcement (deployment-specific content).
 /announcement.json
 
+# --- local dev notes (session-local remediation plans etc., not for the repo) -----------------------
+docs/dev/
+
 # --- OS / editor clutter ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db

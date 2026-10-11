@@ -137,7 +137,7 @@ nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机�
 
 代码修复将资源清单的缓存判断提前到 JSON 读取、解析、URL 改写和遍历之前，未变化时直接复用结果；素材哈希清单每个进程只序列化一次。首次生成和源文件变化后仍需重建。热路径上只有缺失（ENOENT/ENOTDIR）才算依赖不存在，其他 stat 错误按失败拒绝而不是悄悄丢掉依赖；测试重置缓存时，进行中的旧构建仍会回答自己的调用方，但不会覆盖重置后新构建的缓存。没有新增环境变量，不需要重传 R2 素材，也不需要清理玩家浏览器资源包。
 
-线上使用 [nginx-game-cache.conf.example](../../scripts/nginx-game-cache.conf.example) 的四个 location：
+线上使用 [nginx-game-cache.conf.example](../../scripts/nginx-game-cache.conf.example) 的缓存与直出配置，Node 同时提供安装清单缓存：
 
 | 路径 | 策略 |
 |---|---|
@@ -145,7 +145,8 @@ nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机�
 | 不带版本的 `/data/resource-manifest.json` | 兼容旧客户端和 Worker 后备读取，仅缓存 15 秒 |
 | `/assets-manifest.json?v=<素材版本>` | nginx 缓存 30 天；浏览器保留源站不可变缓存头；只缓存 200 |
 | `/api/announcement` | 缓存 30 秒，源站失败不继续返回过期公告 |
-| `/icons/` | nginx 直接读取图标，缓存 1 小时；文件名无版本，更新图标最多延迟 1 小时 |
+| `/icons/` | nginx 直接读取图标，缓存 1 小时；未配置直出时 Node 同样缓存 1 小时；文件名无版本，更新图标最多延迟 1 小时 |
+| `/manifest.json` | Node 提供，浏览器缓存 1 小时，过期后通过 ETag 复验 |
 
 新页面自动带资源清单版本，发布版本随代码、数据、素材及预载元数据变化。浏览器仍复验；12 小时是 nginx 的共享缓存期限，由 Node 的 `X-Accel-Expires: 43200` 控制；普通地址是 `15`。不要忽略 `X-Accel-Expires`，不要从缓存键去掉查询串，也不要关闭上游 `Vary` 处理。资源清单和公告都禁止过期回退。长期缓存只用于有版本的清单；上线后资源或数据再次改变，须重启 Node 生成新页面版本，不能仅热覆盖文件。
 

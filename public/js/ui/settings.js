@@ -24,13 +24,14 @@ import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
 import { LangToggle, machineTranslationNote } from './lang.js';
 import { ResourceRow } from './resourcePanel.js';
+import { FRAME_RATES } from '../frameRate.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
-/** Settings store: { bgm, sfx, voice, voiceLang, voiceOverrides, muted, damageNumbers, quality, textSize, preload, preloadOptional, preloadAllVoices, keys }. */
+/** Settings store: { bgm, sfx, voice, voiceLang, voiceOverrides, muted, damageNumbers, quality, fpsLimit, textSize, preload, preloadOptional, preloadAllVoices, keys }. */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
 
 /**
@@ -270,6 +271,14 @@ export function SettingsModal({ open, onClose }) {
         <div class="set-seg" role="radiogroup">
           ${QUALITY.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.quality === id ? 'true' : 'false'}
             class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
+        </div>
+      </div>
+      <div class="set-row" data-testid="fps-limit">
+        <span class="set-row__label">${t('帧率上限')}<${MicroLabel}>FRAME RATE<//></span>
+        <div class="set-seg" role="radiogroup" aria-label=${t('帧率上限')}>
+          ${FRAME_RATES.map((limit) => html`<button key=${limit} type="button" role="radio" aria-checked=${s.fpsLimit === limit ? 'true' : 'false'}
+            aria-label=${limit ? `${limit} FPS` : t('不限帧率')} class=${s.fpsLimit === limit ? 'is-on' : ''}
+            onClick=${() => updateSettings({ fpsLimit: limit })}>${limit || t('不限')}</button>`)}
         </div>
       </div>
       <div class="set-row">

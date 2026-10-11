@@ -1,8 +1,8 @@
 // render/board3d/materials.js — three.js materials of the official board scene (DESIGN §15). THREE is injected
 // (the renderer loads /vendor/three.module.js; Node tests pass the npm package).
 //
-//   MT_autochess        → MeshStandardMaterial: albedo TX_autochessi_D (sRGB), normal TX_autochessi_N (BC5 → RGB,
-//                         tools/local-extract DERIVED), roughness 1 − smoothness of TX_autochessi_M (DERIVED), metal 0,
+//   MT_autochess        → MeshStandardMaterial: albedo TX_autochessi_D (sRGB), normal TX_autochessi_N (BC5 / DXT5nm →
+//                         RGB, tools/local-extract DERIVED), roughness 1 − smoothness of TX_autochessi_M (DERIVED), metal 0,
 //                         emission TX_autochessi_E (_EmissionColor white), vertex colours = baked AO / tints
 //   MT_autochess_common → device plates of TX_autochessi_common_D, alpha test 0.408, emission _E × 0.559
 //   MT_autochessi_BG    → unlit TX_autochessi_BG × 0.713 (Torappu/Unlit/Texture, _Color)

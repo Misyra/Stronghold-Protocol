@@ -155,6 +155,9 @@ record inclusion rule. Successful defense counts the
 local player's victory (final leader defeated, player not eliminated); breakthrough additionally requires a
 hidden-core clear. A failed hidden core does not remove a successful defense. Both rows remain visible at zero.
 
+Accumulated play time appears first in the 战斗累计 tab, alongside the combat sums, rather than in 总览. It uses
+the same `duration.totalMs` aggregation and existing minute / hour formatting; the move changes no counting rule.
+
 Above the mode grid, display `Dr. <nickname>` (current identity name, saved nickname, then the newest self record's
 name) and the sum of the local player's settled co-op trophy awards in the retained records. Defeats can award
 trophies; solo and partial quit records never add to this total. The official `config.trophies.medals` chooses the

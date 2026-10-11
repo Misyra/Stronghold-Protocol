@@ -3,10 +3,10 @@
 // title screen / lobby / room (`openStats()`); <StatsHost/> is mounted once by main.js. Ported from PR #323 by
 // @2321Robin; reworked for 0.2.2 in the grammar of 干员调配 (top bar with tabs, a note line, a scrolling body).
 //
-//   总览      – games, wins, win rate, hidden-core reaches / clears, best round, time played; the difficulties; the six
+//   总览      – games, wins, win rate, hidden-core reaches / clears, best round; the difficulties; the six
 //               评语 (titles) with their counts; what counts and what was left out
 //   策略      – top three most used strategies; per strategy: games used / passed / pass rate
-//   战斗累计  – the player's summed combat bookkeeping of the settled matches
+//   战斗累计  – time played; the player's summed combat bookkeeping of the settled matches
 //   对局记录  – every stored match, newest first. A settled row re-views that match's settlement screen (the record is
 //               inverted into an m.result payload for <ResultView/>); a match given up early is marked 中途退出 and,
 //               when it did not count, 不计入统计
@@ -157,7 +157,6 @@ function Overview({ agg, gd, nickname }) {
       <${StatCard} micro="HIDDEN CORE" value=${fmtNum(agg.hidden.reached)} label=${t('到达隐秘核心')} />
       <${StatCard} micro="HIDDEN CLEAR" value=${fmtNum(agg.hidden.cleared)} label=${t('通关隐秘核心')} />
       <${StatCard} micro="BEST ROUND" value=${fmtNum(agg.rounds.max)} label=${t('最远回合')} />
-      <${StatCard} micro="TIME PLAYED" value=${playedText(agg.duration.totalMs)} label=${t('累计时长')} />
     </div>
     <${MatchRecords} maxima=${agg.maxima} />
 		<p class="st-rule">${t('单局纪录按已结算对局统计；击败数包含联防实际击杀，旧战绩无法补算。')}</p>
@@ -259,13 +258,14 @@ const SUM_ROWS = [
   ['refreshes', N_('刷新次数')], ['leaks', N_('未击倒')], ['lpLost', N_('损失生命')],
 ];
 
-/** 战斗累计: the self player's sums over the settled matches. */
+/** 战斗累计: accumulated time played and the self player's sums over the settled matches. */
 function CombatSums({ agg }) {
   const rows = SUM_ROWS.filter(([k]) => Number.isFinite(agg.sums[k]));
   return html`<${Section} title=${t('战斗累计')} micro="COMBAT TOTALS">
-    ${rows.length ? html`<div class="st-sums">
+		<div class="st-sums">
+			<div class="st-sum"><span>${t('累计时长')}</span><b class="num">${playedText(agg.duration.totalMs)}</b></div>
       ${rows.map(([k, label]) => html`<div key=${k} class="st-sum"><span>${t(label)}</span><b class="num">${fmtNum(agg.sums[k])}</b></div>`)}
-    </div>` : html`<p class="st-empty">${t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`}
+		</div>
   <//>`;
 }
 

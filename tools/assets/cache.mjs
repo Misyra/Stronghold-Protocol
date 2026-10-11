@@ -4,7 +4,7 @@
 //   .cache/ark-models/models_data.json        (isHarryh/Ark-Models enemy Spine index)
 // Downloaded once when missing (or with --refresh-index), then reused.
 
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { RAW } from './sources.mjs';
 import { MirrorPolicy } from './network.mjs';

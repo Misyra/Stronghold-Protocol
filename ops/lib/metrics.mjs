@@ -84,13 +84,13 @@ export function sanitizeSnapshot(raw) {
 }
 
 export function seriesFor(metrics, range, now = Date.now()) {
-  if (!['1h', '24h', '7d'].includes(range)) return null;
-  if (range === '7d') {
-    // Existing collector only exports 24h curves. Daily peaks are a different, explicitly labelled series.
+  if (!['1h', '24h', '7d', '30d'].includes(range)) return null;
+  if (range === '7d' || range === '30d') {
+    // Agent 本地只有日归档：无中央归档时 7d/30d 退化为每日峰值（有归档时端点直接出小时桶采样）。
     const history = [...metrics.history, metrics.today].filter((d) => d.date);
     const days = new Map(history.map((d) => [d.date, d]));
     return { range, resolution: '1d', kind: 'daily-peaks', timeZone: metrics.timeZone,
-      points: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-7).map((d) => ({
+      points: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(range === '30d' ? -30 : -7).map((d) => ({
         date: d.date, sessions: d.peakSessions, sockets: d.peakSockets, humans: d.peakHumans, bots: d.peakBots, cpu: null })) };
   }
   return { range, resolution: '5m', kind: 'sampled-mixed', aggregation: { sessions: 'mean', sockets: 'max', humans: 'max', bots: 'max', cpu: 'max', psiIoSome: 'max', ...Object.fromEntries(DIAGNOSTIC_SERIES.map(k => [k, 'max'])) }, timeZone: metrics.timeZone,

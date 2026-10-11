@@ -88,3 +88,58 @@ test('another unit deployment and a free move keep this ramp; unrelated trait st
   assert.equal(u.trait.testUnrelated, sentinel);
   near(u.trait.funnelScale, u.profile.funnel.init);
 });
+
+test('an old in-flight drone can advance the reset ramp before the first fresh drone lands', t => {
+  for (const drainOld of [false, true]) {
+    const h = make(), u = h.unit('chess_char_2_10_a');
+    ramp(h, u);
+    const e = h.enemies()[0], launches = new Map(), impacts = [], events = [];
+    const state = () => ({ at: h.b.time, currentSeq: u.deploySeq, scale: u.trait.funnelScale, hp: e.hp });
+    h.b.on('attack', c => {
+      if (c.attacker !== u) return;
+      const shot = { kind: 'launch', attackId: h.b._attackSeq, ...state() };
+      launches.set(shot.attackId, shot);
+      events.push(shot);
+    });
+    h.b.on('deploy', c => {
+      if (c.unit === u) events.push({ kind: 'deploy', target: u.trait.funnelTarget, ...state() });
+    }, { priority: -1000 });
+    h.b.on('damaged', c => {
+      if (c.source !== u || c.target !== e) return;
+      const launch = launches.get(c.dmg.attackId);
+      const hit = { kind: 'impact', attackId: c.dmg.attackId, launchAt: launch?.at,
+        launchSeq: launch?.currentSeq, ...state(), amount: c.amount, hpBefore: e.hp + c.amount };
+      impacts.push(hit);
+      events.push(hit);
+    });
+    assert.equal(h.runUntil(() => launches.size === 1, 3), true);
+    const oldShot = [...launches.values()][0];
+    assert.equal(impacts.length, 0);
+    assert.ok(h.b.projectiles.list.some(p => p.source === u && p.target === e));
+    if (drainOld) assert.equal(h.runUntil(() => impacts.length === 1, 1), true);
+    h.b.retreat(u); // controlled exit; no projectile, attack, HP or SP state is injected
+    assert.equal(h.b.redeploy(u), true);
+    const seq = u.deploySeq;
+    assert.equal(h.runUntil(() => impacts.some(i => i.launchSeq === seq), 2), true);
+    t.diagnostic(JSON.stringify({ drainOld, events }));
+    const deployment = events.find(i => i.kind === 'deploy');
+    assert.equal(deployment.target, null);
+    near(deployment.scale, u.profile.funnel.init);
+    const oldHit = impacts.find(i => i.attackId === oldShot.attackId);
+    const freshHit = impacts.find(i => i.launchSeq === seq);
+    assert.equal(oldHit.launchSeq, oldShot.currentSeq);
+    assert.notEqual(oldHit.launchSeq, freshHit.launchSeq);
+    assert.ok(oldHit.at < freshHit.at);
+    assert.equal(oldHit.currentSeq, drainOld ? oldShot.currentSeq : seq);
+    near(oldHit.scale, drainOld ? u.profile.funnel.max : u.profile.funnel.init);
+    near(freshHit.scale, u.profile.funnel.init + (drainOld ? 0 : u.profile.funnel.delta));
+    near(oldHit.amount, u.s.atk * oldHit.scale);
+    near(freshHit.amount, u.s.atk * freshHit.scale);
+    near(oldShot.hp - oldHit.hp, oldHit.amount);
+    near(oldHit.hp, freshHit.hpBefore);
+    near(freshHit.hpBefore - freshHit.hp, freshHit.amount);
+    assert.ok(freshHit.hp > 0);
+    checkInvariants(h.b);
+    assert.deepEqual(h.b.errors, []);
+  }
+});

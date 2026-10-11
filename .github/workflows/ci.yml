@@ -44,6 +44,9 @@ jobs:
       - name: Setup check (no downloads)
         run: node tools/setup.mjs --check --no-local
 
+      - name: Build production client
+        run: npm run build
+
       - name: Unit & integration tests
         # Production keys stay off public CI; this explicit preload provides independent test data when needed.
         run: node --import ./test/helpers/moderation-fixture.js --test

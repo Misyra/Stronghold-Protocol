@@ -27,13 +27,15 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean -
 # ---- 2. vendor libs + optional art download ---------------------------------------------------------
 FROM deps AS build
 ARG FETCH_ASSETS=0
+RUN npm ci --include=dev --ignore-scripts --no-audit --no-fund
+COPY vite.config.js ./vite.config.js
 COPY shared ./shared
 COPY server ./server
 COPY tools ./tools
 COPY data ./data
 COPY public ./public
 COPY docs/research ./docs/research
-RUN node tools/vendor.mjs \
+RUN npm run build \
  && if [ "$FETCH_ASSETS" = "1" ]; then \
       node tools/fetch-assets.mjs || echo "WARNING: art download incomplete; the image falls back to placeholder art"; \
     fi \

@@ -9,6 +9,7 @@
 //
 // Steps, in the order of ci.yml (job `test`, then job `tooling`):
 //   setup      node tools/setup.mjs --check --no-local
+//   build      node tools/vendor.mjs, then vite build
 //   test       node --import ./test/helpers/moderation-fixture.js --test
 //   smoke      the server on a free port on 127.0.0.1: GET /healthz, / (must contain <html) and /vendor/pixi.min.js,
 //              then node tools/doctor.mjs (its exit code is ignored, like `|| true` in ci.yml), then the server stops
@@ -52,6 +53,7 @@ export const SKIPPED_CI_STEPS = [
  */
 export const STEPS = [
   { id: 'setup', ci: { job: 'test', name: 'Setup check (no downloads)' }, describe: 'node tools/setup.mjs --check --no-local' },
+  { id: 'build', ci: { job: 'test', name: 'Build production client' }, npm: 'build', describe: 'npm run vendor && vite build' },
   { id: 'test', ci: { job: 'test', name: 'Unit & integration tests' }, describe: 'node --import ./test/helpers/moderation-fixture.js --test' },
   { id: 'smoke', ci: { job: 'test', name: 'Server smoke test (boot, /healthz, index.html, doctor)' },
     describe: `server on a free port: GET ${SMOKE_PATHS.join(', ')}; node tools/doctor.mjs` },
@@ -320,9 +322,13 @@ async function smoke(env) {
 }
 
 /** @param {Step} step @param {Record<string, string | undefined>} env */
-function runStep(step, env) {
+async function runStep(step, env) {
   switch (step.id) {
     case 'setup': return node(['tools/setup.mjs', '--check', '--no-local'], env);
+    case 'build': {
+      const vendor = await node(['tools/vendor.mjs'], env);
+      return vendor === 0 ? node([binPath('vite', 'vite'), 'build'], env) : vendor;
+    }
     case 'test': return node(['--import', './test/helpers/moderation-fixture.js', '--test'], env);
     case 'smoke': return smoke(env);
     case 'lint': return node([binPath('eslint', 'eslint'), '.'], env);

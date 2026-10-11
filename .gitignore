@@ -4,6 +4,7 @@ node_modules/
 .npm-cache/
 # copied from node_modules by tools/vendor.mjs (postinstall); never commit third-party builds
 public/vendor/
+public/build/
 
 # --- game assets: (c) Hypergryph / Yostar (see NOTICE.md) ------------------------------------------
 # tools/fetch-assets.mjs → public/assets/** (~270 MB) and public/fonts/** (+ fonts.css)

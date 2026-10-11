@@ -58,6 +58,7 @@ export default [
     ignores: [
       'node_modules/**',
       'public/vendor/**',
+      'public/build/**',
       'public/assets/**',
       'public/fonts/**',
       'public/dev/**',

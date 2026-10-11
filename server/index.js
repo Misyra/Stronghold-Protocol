@@ -138,7 +138,8 @@ export async function startServer(opts = {}) {
   if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
 
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, log,
-    assetsCdn: cdn.base, assetsCdnVersion: cdn.version, assetsManifest });
+    assetsCdn: cdn.base, assetsCdnVersion: cdn.version, assetsManifest,
+    clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
   // Persistence: SP_STATE_FILE (a directory → the sharded layout, a .json path → the single file, 'off' → memory only).
   const stateFile = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;

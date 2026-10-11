@@ -24,7 +24,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "dev": "node --watch server/index.js --source-client",
+    "build": "npm run vendor && vite build",
     "test": "node --test",
     "golden": "node tools/golden.mjs",
     "golden:update": "node tools/golden.mjs --update",
@@ -59,6 +60,7 @@
     "eslint": "^10.12.0",
     "globals": "^17.13.0",
     "puppeteer-core": "^25.12.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vite": "^6.4.4"
   }
 }

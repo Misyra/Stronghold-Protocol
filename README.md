@@ -56,6 +56,7 @@ English summary: [below](#english).
 | 状态增量传输 | 支持协商的客户端首次全量同步，后续只传公共／私人状态变化；基线失配自动全量恢复，兼容旧客户端；见 [传输说明](docs/development/STATE_DELTA.md) |
 | WebSocket 压缩 | 低等级 permessage-deflate（level 1、1 KiB 阈值），`SP_WS_COMPRESSION=off` 可关闭；配置非法直接拒绝启动 |
 | 性能优化 | Bot 布局增量求值、预演不记录无人消费的事件、战斗调度器单趟扫描等热路径优化；见 [docs/development/PERFORMANCE.md](docs/development/PERFORMANCE.md) |
+| 前端构建 | `npm run build` 生成 Vite 哈希分包，模拟器、渲染器、Three.js 和 ZIP 按需加载；保留旧 chunk，兼容运行时 CDN 和源码模式；见 [生产构建说明](docs/operations/DEPLOY.md#生产前端构建) |
 | 素材与部署 | Git 仓库内附带 v0.1.3 本地客户端素材（`public/assets/local/`），源码部署无需本机提取；另附 nginx 多核配置示例 |
 
 另一个活跃分支 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 与本分支平行发展、同样基于 v0.1.3，思路不同、互有取舍：它把持久化放在 Redis（专用持久化 Worker 负责编码，可恢复不挂房间的匹配对局）、匹配走 solo/coop 队列（组队整体入队、60 秒后可由 AI 补位、支持无房间的独立对局）、内置受配额保护的开发者控制台（每回合 5 次 / 每局 50 次发放干员、装备、盟约）、全站定时公告与在线人数推送、资源清单 ETag/304 再验证、`SP_DATA_CDN` 数据外移与 `SP_MAX_*` 容量环境变量；本分支则在预载健壮性、Bot/战斗热路径性能、零依赖持久化、本地对局记录与压缩调优上更完整，并坚持纯真人匹配。可按自己的运营形态选用或互相借鉴。

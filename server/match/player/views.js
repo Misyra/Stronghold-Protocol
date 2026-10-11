@@ -8,7 +8,23 @@ import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
 import { bountyText, bountyCard } from '../choices.js';
 
+const publicBondViews = new WeakMap();
+
 export class PlayerViews {
+  publicBondsView(gd = this.gd) {
+    // Progress reports do not change membership. Dirty state and pending combat gains do.
+    const gains = JSON.stringify(this.pendingLayerGains || null);
+    let cached = publicBondViews.get(this);
+    if (!cached || cached.revision !== this._viewRevision || cached.bonds !== this.bonds
+      || cached.gains !== gains || cached.gd !== gd || cached.playerGd !== this.gd) {
+      cached = { revision: this._viewRevision, bonds: this.bonds, gains, gd, playerGd: this.gd,
+        list: bondList(gd, this.bondsView(), { off: offBondCounts(this.gd || gd, this) }) };
+      publicBondViews.set(this, cached);
+    }
+    // Views remain caller-owned; mutating one response must not poison later broadcasts.
+    return cached.list.map((entry) => ({ ...entry }));
+  }
+
   pieceView(p, rc = null) {
     const rec = p.kind === 'item' ? this.gd.item(p.id) : p.kind === 'token' ? this.gd.token(p.id) : this.gd.chess(p.id);
     const v = {

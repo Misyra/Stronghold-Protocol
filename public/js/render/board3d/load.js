@@ -26,7 +26,9 @@ export function loadThree(url = THREE_URL) {
     if (threeFailures >= 3) return Promise.resolve(null);
     const source = new URL(url, import.meta.url);
     if (threeFailures) source.searchParams.set('sp-retry', String(threeFailures));
-    const pending = import(/* @vite-ignore */ source.href).then((m) => (m && m.WebGLRenderer ? m : null), () => null).then((m) => {
+    const pending = (import.meta.env?.PROD && url === THREE_URL && !threeFailures
+      ? import('/vendor/three.module.js') : import(/* @vite-ignore */ source.href))
+      .then((m) => (m && m.WebGLRenderer ? m : null), () => null).then((m) => {
       if (!m && threePromise === pending) { threePromise = null; threeFailures++; }
       return m;
     });

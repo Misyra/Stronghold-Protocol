@@ -34,10 +34,10 @@ const MAX_URL_LENGTH = 4096;
 export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, chatLog = null }) {
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-    // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
+    // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: serveStatic ? serveStatic.version : null,
-    ...(serveStatic ? { artVersion: serveStatic.artVersion, staticCache: serveStatic.cacheStats() } : {}),
+    ...(serveStatic ? { runtimeVersion: serveStatic.runtimeVersion, artVersion: serveStatic.artVersion, staticCache: serveStatic.cacheStats() } : {}),
     assetsCdn: cdn?.base || null,
     assetsCdnVersion: cdn?.version || null,
     assetsManifest: assetsManifest?.tag || null,

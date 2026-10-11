@@ -94,11 +94,15 @@ journalctl -u stronghold -f
 
 macOS 临时运行可用 `scripts/start.sh`；Windows 自启见 [HOME_SERVER.md](HOME_SERVER.md#14-开机自动在后台运行)。
 
+启动时会流式读取可公开资源的全部内容，计算跨机器一致的版本哈希；约 500 MB 素材需要读取同等规模的数据，耗时取决于磁盘速度和系统缓存。部署时记录从启动到 `/healthz` 首次成功的耗时，并给健康检查预留相应启动时间；不要用 mtime 代替内容哈希。
+
 <a id="24-反向代理与-https有域名时"></a>
 
 ## 反向代理
 
 游戏必须在域名根路径运行；转发 WebSocket `/ws`，其余请求交给同一个 Node 实例。完整 nginx 配置使用 [scripts/nginx.conf.example](../../scripts/nginx.conf.example)，替换域名、证书及 Node 端口。`worker_processes auto;` 放在主配置顶层；`map` 放在 `http` 中。
+
+首次采用或升级到该 nginx 示例时，必须先将 [nginx-log-format.conf.example](../../scripts/nginx-log-format.conf.example) 安装为 `/etc/nginx/conf.d/sp-log-format.conf`，并确保只在 `http` 级加载一次（已有 `conf.d/*.conf` 通配 include 时不要重复 include）。缺少此文件会导致 `nginx -t` 和启动失败；安装及检查命令见下节迁移步骤。
 
 Caddy 的最小配置：
 

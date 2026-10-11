@@ -11,7 +11,7 @@ function fixture() {
       diagnostics: { stats: () => ({ marker: 'live' }) } },
     lobby: { rooms: new Map([['room', {}]]), matchmaking: { entries: new Map() }, stats() { scans++; return { ...counts }; } },
     workerPool: { stats() { workerScans++; return { size: 2, completed: workerScans }; } },
-    serveStatic: { version: 'code-tag', artVersion: 'art-tag', cacheStats: () => ({ gzipBytes: 9 }) },
+    serveStatic: { version: 'code-tag', runtimeVersion: 'runtime-tag', artVersion: 'art-tag', cacheStats: () => ({ gzipBytes: 9 }) },
     cdn: { base: 'https://assets.example', version: 'cdn-tag' }, assetsManifest: { tag: 'manifest-tag' },
     persister: { writes: 7, failures: 0, matchDocs: new Map(), encoder: { memory: { heapUsed: 42 } } },
     store: { kind: 'file', mode: 'sharded' } };
@@ -32,6 +32,7 @@ test('health: 10000 stable reads reuse one full collection and encoding; detaile
   assert.equal(f.scans(),1); assert.equal(f.workerScans(),1); assert.equal(f.bufferScans(),1);
   const report=JSON.parse(first);
   assert.equal(report.build,'code-tag'); assert.equal(report.artVersion,'art-tag');
+  assert.equal(report.runtimeVersion, 'runtime-tag');
   assert.equal(report.assetsCdnVersion,'cdn-tag'); assert.equal(report.assetsManifest,'manifest-tag');
   assert.ok(report.memory.rss>0); assert.ok(report.wire.byType);
   assert.deepEqual(report.socketBuffers,{total:12,max:8});

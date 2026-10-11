@@ -131,12 +131,22 @@ test('failed collection returns 500 and retries; stale success is never substitu
 test('real HTTP: health keeps operations metadata, metrics exposes per-instance network diagnostics', async (t) => {
   const srv=await startServer({host:'127.0.0.1',port:0,quiet:true,workers:0,store:null,announcementFile:null});
   t.after(()=>srv.close());
+  const diag=srv.network.diagnostics;
+  diag.received('ping',6,2);diag.intervals.settle();
   const h=await (await fetch(srv.url+'/healthz')).json();
   assert.ok(h.memory.rss>0);assert.ok(h.wire.byType);assert.equal(h.workers,null);assert.equal(h.persist,null);
   const m=await (await fetch(srv.url+'/metrics')).json();
   assert.equal(m.build,h.build);assert.equal(m.websocket.diagnostics.period,'sinceStart');
   assert.equal(m.websocket.diagnostics.eventLoop.resolutionMs,20);
   assert.ok(Number.isFinite(m.websocket.diagnostics.eventLoop.p95Ms));
+  assert.ok(m.websocket.diagnostics.processCpu.userSeconds>=0&&m.websocket.diagnostics.processCpu.systemSeconds>=0);
+  assert.equal(m.websocket.diagnostics.handlerMs.ping.sumMs,2);
+  assert.equal(m.websocket.diagnostics.handlerMs.ping.buckets.at(-1).leMs,'+Inf');
+  assert.equal(m.websocket.diagnostics.handlerMs.ping.buckets.at(-1).count,1);
+  const latest=h.processDiagnostics.latest;assert.ok(latest);
+  const util=latest.eventLoop.utilization;
+  assert.ok(util==null||(util>=0&&util<=1));
+  assert.ok(latest.processCpuDelta&&Number.isFinite(latest.processCpuDelta.userSeconds)&&Number.isFinite(latest.processCpuDelta.systemSeconds));
   const head=await fetch(srv.url+'/metrics',{method:'HEAD'});assert.equal(head.status,200);assert.equal(await head.text(),'');
 });
 

@@ -33,6 +33,7 @@ test('a short real event-loop freeze survives subsequent diagnostic reads', asyn
   d.settle();
   const first = d.snapshot();
   assert.ok(first.latest.eventLoop.maxMs > 60);
+  assert.ok(Number.isFinite(first.latest.eventLoop.p95Ms) && first.latest.eventLoop.p95Ms >= first.latest.eventLoop.p90Ms);
   assert.deepEqual(d.snapshot(), first);
   assert.ok(first.latest.windowMs > 100);
 });
@@ -50,7 +51,54 @@ test('timing histogram has bounded storage, upper-bound percentiles and finite e
   for(const n of [NaN,Infinity,-1])h.record(n);
   const s=h.stats();assert.equal(s.count,100);assert.equal(s.avgMs,50.5);
   assert.ok(s.p95UpperMs>=95&&s.p95UpperMs<=100);assert.equal(s.maxMs,100);
+  assert.equal(s.sumMs,5050);assert.equal(s.buckets.at(-1).count,100);
   assert.equal(h.buckets.length,21);
+});
+
+test('histogram snapshots expose the exact sum and cumulative buckets without leaking internals', () => {
+  const h=new TimingHistogram();
+  for(const ms of [0.01,0.25,2,5,80000])h.record(ms);
+  const view=h.stats();
+  assert.equal(view.count,5);assert.equal(view.sumMs,80007.26);assert.equal(view.p95UpperMs,80000);
+  assert.equal(view.buckets.at(-1).leMs,'+Inf');assert.equal(view.buckets.at(-1).count,5);
+  assert.equal(view.buckets.find((b)=>b.leMs===2).count,3);
+  assert.ok(view.buckets.every((b,i)=>!i||b.count>=view.buckets[i-1].count));
+  view.buckets[0].count=999;view.sumMs=-1;
+  assert.equal(h.stats().buckets[0].count,1);assert.equal(h.stats().sumMs,80007.26);
+});
+
+test('injected CPU sampler freezes per-window deltas, clamps regressions and passes through NetDiagnostics', (t) => {
+  const ticks=[[0,0],[1500000,500000],[3000000,1000000],[2900000,1000000]];let i=0;
+  const d=new ProcessIntervals({windowMs:15000,cpuUsage:()=>({user:ticks[i][0],system:ticks[i++][1]})});
+  t.after(()=>d.close());
+  d.settle();d.settle();
+  const windows=d.snapshot().windows;
+  assert.deepEqual(windows.map((w)=>w.sequence),[1,2]);
+  assert.deepEqual(windows[0].processCpuDelta,{userSeconds:1.5,systemSeconds:0.5});
+  assert.deepEqual(windows[1].processCpuDelta,{userSeconds:1.5,systemSeconds:0.5});
+  d.settle();
+  assert.deepEqual(d.snapshot().latest.processCpuDelta,{userSeconds:0,systemSeconds:0});
+  assert.deepEqual(d.snapshot(),d.snapshot());
+  const passthrough=[[0,0],[500000,250000]];let j=0;
+  const n=new NetDiagnostics({windowMs:15000,cpuUsage:()=>({user:passthrough[j][0],system:passthrough[j++][1]})});
+  t.after(()=>n.close());
+  n.intervals.settle();
+  assert.deepEqual(n.intervals.snapshot().latest.processCpuDelta,{userSeconds:0.5,systemSeconds:0.25});
+});
+
+test('injected ELU sampler freezes exact window utilization; zero activity is null and windows never overlap', (t) => {
+  const samples=[{idle:10,active:2},{idle:13,active:3},{idle:16,active:7},{idle:16,active:7}];let i=0;
+  const d=new ProcessIntervals({windowMs:15000,eluNow:()=>samples[i++]});
+  t.after(()=>d.close());
+  d.settle();d.settle();
+  const windows=d.snapshot().windows;
+  assert.deepEqual(windows.map((w)=>w.eventLoop.utilization),[0.25,4/7]);
+  assert.deepEqual(d.snapshot(),d.snapshot());
+  assert.equal(i,3); // one baseline plus exactly one sample per settle: window deltas sum to the total delta
+  const flat=new ProcessIntervals({windowMs:15000,eluNow:()=>({idle:5,active:5})});
+  t.after(()=>flat.close());
+  flat.settle();
+  assert.equal(flat.snapshot().latest.eventLoop.utilization,null);
 });
 
 test('diagnostic message keys are bounded and never contain client-controlled unknown type names', (t) => {

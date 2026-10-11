@@ -5,7 +5,7 @@
 //
 //   总览      – games, wins, win rate, hidden-core reaches / clears, best round; the difficulties; the six
 //               评语 (titles) with their counts; what counts and what was left out
-//   策略      – top three most used strategies; per strategy: games used / passed / pass rate
+//   盟约&策略 – top three most used active settlement alliances and strategies; per strategy: games / passed / rate
 //   战斗累计  – time played; the player's summed combat bookkeeping of the settled matches
 //   对局记录  – every stored match, newest first. A settled row re-views that match's settlement screen (the record is
 //               inverted into an m.result payload for <ResultView/>); a match given up early is marked 中途退出 and,
@@ -13,12 +13,12 @@
 // Everything is 本机数据 (localStorage, `sp.pref.stats`) and the page says so, teammates' names included. 导出 / 导入 (a
 // JSON file, merged by record id on the way in) moves it between devices; 清空 resets it after a confirm dialog.
 // The host renders nothing until opened and the game data files the replay needs load only then (the lobby alone never
-// downloads them): the overview reads config / bands / assets only.
+// downloads them): the statistics tabs read config / bands / bonds / assets only.
 
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS } from '../../../shared/constants.js';
 import { html, Icon, MicroLabel, Spinner, Button, confirmDialog } from '../ui/components.js';
-import { useGameData, makeLookups, BandIcon, Img } from '../ui/gameComponents.js';
+import { useGameData, makeLookups, BandIcon, BondGlyph, Img } from '../ui/gameComponents.js';
 import { data, useData } from '../data.js';
 import { fmtNum } from '../ui/gameLogic.js';
 import { useDocClass } from '../ui/device.js';
@@ -46,6 +46,7 @@ const statsStore = createStore({ open: false, tab: 'overview' });
 export function openStats() {
   data.load('config');
   data.load('bands');
+	data.load('bonds');
   data.load('assets');
   statsStore.set({ open: true, tab: 'overview' });
 }
@@ -53,7 +54,7 @@ export const closeStats = () => statsStore.set({ open: false });
 
 const TABS = [
   { id: 'overview', name: N_('总览'), micro: 'OVERVIEW' },
-  { id: 'bands', name: N_('策略'), micro: 'STRATEGIES' },
+	{ id: 'bands', name: N_('盟约&策略'), micro: 'ALLIANCES / STRATEGIES' },
   { id: 'totals', name: N_('战斗累计'), micro: 'COMBAT TOTALS' },
   { id: 'history', name: N_('对局记录'), micro: 'HISTORY' },
 ];
@@ -217,10 +218,22 @@ function MatchRecords({ maxima }) {
 	</div>`;
 }
 
-/** 策略: per-band used / passed / pass rate, most used first (the user's headline ask). */
+/** 盟约&策略: top-three active settlement alliances and strategies, followed by the existing strategy table. */
 function Bands({ agg, gd }) {
   const rows = Object.entries(agg.bands).sort((a, b) => (b[1].games - a[1].games) || (b[1].wins - a[1].wins));
-  return html`<${Section} title=${t('策略')} micro="STRATEGIES">
+	const bonds = Object.entries(agg.bonds).sort((a, b) => (b[1].games - a[1].games) || a[0].localeCompare(b[0]));
+	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
+		<h4 class="st-sub st-favorites__heading">${t('最常使用的盟约')}</h4>
+		${bonds.length ? html`<div class="st-favorites">
+			${bonds.slice(0, 3).map(([bondId, v]) => {
+				const name = gd.bond(bondId)?.name || bondId;
+				return html`<div key=${bondId} class="st-favorite">
+					<${BondGlyph} bondId=${bondId} />
+					<div class="st-favorite__text"><span class="st-favorite__name" title=${name}>${name}</span>
+						<span class="st-favorite__count num" title=${t('使用局数')}>×${fmtNum(v.games)}</span></div>
+				</div>`;
+			})}
+		</div>` : html`<p class="st-hint">${t('暂无盟约使用记录')}</p>`}
 		${rows.length ? html`<h4 class="st-sub st-favorites__heading">${t('最常使用的策略')}</h4>
 			<div class="st-favorites">
 				${rows.slice(0, 3).map(([bandId, v]) => {
@@ -320,7 +333,7 @@ function Replay({ rec, onBack }) {
 
 /** The overlay, rendered while open (its data hooks run only then). */
 function StatsScreen({ tab }) {
-  const ready = useData('config', 'bands', 'assets');
+	const ready = useData('config', 'bands', 'bonds', 'assets');
   const gd = useMemo(() => makeLookups(ready), [ready, data.locale()]);
   const [stats, setStats] = useState(() => loadStats());
   const [replay, setReplay] = useState(null);

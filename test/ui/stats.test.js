@@ -671,6 +671,35 @@ describe('local stats: aggregation (what the page renders)', () => {
     assert.equal(agg.titles.comment_1.count, 1); // only the win granted 卫戍之星
   });
 
+	test('alliance usage counts self active settlement bonds once per match, independent of layers', () => {
+		const first = buildRecord(baseResult({ players: [
+			{ ...baseResult().players[0], bonds: [
+				{ bondId: 'yanShip', active: true, layers: 0 }, { bondId: 'yanShip', active: true, layers: 999 },
+				{ bondId: 'steadShip', active: false, layers: 500 }, { bondId: 'soloShip', active: true, layers: 0 },
+			] }, { ...baseResult().players[1], bonds: [{ bondId: 'egirShip', active: true, layers: 999 }] },
+		] }), { myId: 'p1', now: 1 });
+		const second = buildRecord(baseResult({ seed: 2, victory: false, players: [{ ...baseResult().players[0], victory: false,
+			bonds: [{ bondId: 'yanShip', active: true, layers: 1 }, { bondId: 'steadShip', active: true, layers: 10 }],
+		}] }), { myId: 'p1', now: 2 });
+		const quit = { ...first, id: 'quit', end: 'quit' };
+		assert.deepEqual({ ...aggregateStats([first, second, quit]).bonds }, {
+			yanShip: { games: 2 }, soloShip: { games: 1 }, steadShip: { games: 1 },
+		});
+	});
+
+	test('active alliance usage survives compaction and transfer; v2 rows with discarded bonds stay unknown', () => {
+		const full = buildRecord(baseResult(), { myId: 'p1', now: 1 });
+		const compact = compactRecord(full);
+		assert.deepEqual(compact.players[0].usedBondIds, ['steadShip']);
+		assert.equal(compact.players[0].bonds, undefined, 'the replay-only bond details are still discarded');
+		const transferred = importStats(exportStats({ v: STATS_VERSION, records: [compact] }), emptyStats());
+		assert.deepEqual({ ...aggregateStats(transferred.stats.records).bonds }, { steadShip: { games: 1 } });
+		const legacy = { ...compact, id: 'old', players: [{ ...compact.players[0], usedBondIds: undefined }] };
+		const migrated = migrateStats({ v: 2, records: [full, legacy] });
+		assert.equal(migrated.stats.v, STATS_VERSION);
+		assert.deepEqual({ ...aggregateStats(migrated.stats.records).bonds }, { steadShip: { games: 1 } });
+	});
+
 	test('mode rows separate successful defense from hidden-core clears and use the player outcome', () => {
 		const solo = buildRecord(baseResult({ hiddenCleared: false }), { myId: 'p1', roomMode: 'solo', now: 1 });
 		const coop = buildRecord(baseResult(), { myId: 'p1', roomMode: 'coop', now: 2 });

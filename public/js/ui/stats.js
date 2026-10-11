@@ -37,7 +37,7 @@
 import { PHASE } from '../../../shared/constants.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
-export const STATS_VERSION = 2;
+export const STATS_VERSION = 3;
 /** localStorage key under the app's `sp.pref.` prefix (store.js loadPref). */
 export const STATS_PREF_KEY = 'stats';
 /** Oldest records are dropped beyond this many matches. */
@@ -162,6 +162,7 @@ function normalizePlayerRow(raw, quit = false) {
     reward: int(p.reward, 0),
     lineup,
     bonds,
+		...(Array.isArray(p.usedBondIds) ? { usedBondIds: usedBondIdsOf(p) } : {}),
     stats: normalizeStatBlock(p.stats),
   };
 }
@@ -211,13 +212,15 @@ export function normalizeRecord(raw) {
 
 /**
  * The MIGRATIONS chain: `MIGRATIONS[v]` upgrades a v-envelope to v+1, for v = STATS_VERSION and down.
- * v1 → v2 adds optional actual player kill totals; older records keep them unknown. Every stored /
+ * v1 → v2 adds actual player kill totals; v2 → v3 preserves active bond IDs in compacted rows. Every stored /
  * imported envelope walks the whole chain.
  * @type {Record<number, (stats: any) => any>}
  */
 export const MIGRATIONS = {
 	// v1 only recorded wave-owned kills; normalizeRecord keeps actual player kills unknown instead of guessing.
 	1: ({ records }) => ({ records }),
+	// v2 compacted rows discarded bonds; retain available full-row data without fabricating missing usage.
+	2: ({ records }) => ({ records }),
 };
 
 /** Newest first (the stored order): by time, then id. */
@@ -296,6 +299,7 @@ const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRo
  */
 export function compactRecord(rec) {
   const self = selfRowOf(rec);
+	const usedBondIds = usedBondIdsOf(self);
   const out = {};
   for (const k of COMPACT_FRAME) if (rec[k] != null) out[k] = rec[k];
   out.compact = true;
@@ -303,6 +307,7 @@ export function compactRecord(rec) {
     playerId: self.playerId, seat: self.seat, alive: self.alive, victory: self.victory, roundsPassed: self.roundsPassed,
     eliminatedRound: self.eliminatedRound, bandId: self.bandId, title: self.title, left: self.left, stats: self.stats,
 		trophies: self.trophies,
+		...(usedBondIds.length ? { usedBondIds } : {}),
 		...(self.creditedKills != null ? { creditedKills: self.creditedKills } : {}),
   }] : [];
   return out;
@@ -689,6 +694,13 @@ export function countsTowardStats(rec) {
   return self.alive === false || (Number.isFinite(self.roundsPassed) && self.roundsPassed >= 1);
 }
 
+/** Active settlement bonds, deduplicated per player and bounded like imported bond rows. */
+function usedBondIdsOf(player) {
+	const ids = Array.isArray(player?.usedBondIds) ? player.usedBondIds
+		: (Array.isArray(player?.bonds) ? player.bonds : []).filter((b) => b?.active === true).map((b) => b.bondId);
+	return [...new Set(ids.filter((id) => typeof id === 'string' && id.length).map((id) => id.slice(0, 64)))].slice(0, MAX_BONDS);
+}
+
 /**
  * Aggregate records for the stats page — over the records that count; `total` / `excluded` say how many did not.
  * Everything is keyed by ids (bandId / titleId / difficulty); the page maps them to names and icons through the game
@@ -708,6 +720,7 @@ export function aggregateStats(records) {
     byDifficulty: {},
 		byMode: { solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 } },
     titles: {}, bands: {}, sums: {},
+		bonds: Object.create(null),
 		maxima: { gold: null, merges: null, kills: null },
   };
   for (const rec of rs) {
@@ -755,6 +768,14 @@ export function aggregateStats(records) {
       b.games++;
       if (won) b.wins++;
     }
+
+		// [ASSUMED] Usage means active in the self player's settlement; once per match, irrespective of layers.
+		if (rec.end !== 'quit') {
+			for (const id of usedBondIdsOf(self)) {
+				const bond = (out.bonds[id] ||= { games: 0 });
+				bond.games++;
+			}
+		}
 
     if (rec.end !== 'quit' && self && isObj(self.stats)) {
       for (const k of SELF_STATS) {

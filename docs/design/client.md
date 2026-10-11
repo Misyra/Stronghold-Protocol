@@ -173,7 +173,12 @@ existing `stats.gold` / `stats.merges`, so older records remain usable for those
 retains that optional field through compaction and JSON export/import; missing data displays —, distinct from a
 known zero. v1 records migrate without inventing an actual kill count.
 
-The strategies tab places the three most used strategies above its existing table, in a single three-column row.
+The 盟约&策略 tab first shows the three most used alliances, followed by the three most used strategies and the
+existing strategy table. Both top-three groups use a single three-column row with icons, names and usage counts.
+[ASSUMED] Alliance usage means active in the local player's final settlement: once per match, independent of layers;
+inactive bonds retaining layers, teammates and partial quit snapshots do not count. Storage v3 keeps `usedBondIds`
+when discarding full replay details; v1/v2 full rows still work, but discarded old bond data is not reconstructed.
+The three most used strategies appear above their existing table, in a single three-column row.
 Each entry has the strategy icon on the left and the existing strategy name / `×` usage count on two lines to its right.
 The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
 been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.

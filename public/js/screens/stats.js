@@ -181,7 +181,7 @@ function Overview({ agg, gd, nickname }) {
   <//>`;
 }
 
-/** Title wedges reach full height at 20 awards; only counts above 20 get a bright number and glow. */
+/** [ASSUMED] Full fill and count highlight begin at 20 awards. */
 function TitleHexagon({ titles }) {
 	const byId = new Map(titles.map((x) => [x.id, x]));
 	return html`<div class="st-titlehex" role="group" aria-label=${t('称号')}>
@@ -198,7 +198,7 @@ function TitleHexagon({ titles }) {
 			${TITLE_HEX_SECTORS.map(([id], i) => {
 				const x = byId.get(id);
 				return x ? html`<li key=${id} class=${cx('st-titlehex__label', `st-titlehex__label--${i}`)} title=${x.text || ''}>
-					<b class=${cx('st-titlehex__count num', x.count > 20 && 'is-bright')}>${fmtNum(x.count)}</b><span class="st-titlehex__name">${x.name}</span>
+					<b class=${cx('st-titlehex__count num', x.count >= 20 && 'is-bright')}>${fmtNum(x.count)}</b><span class="st-titlehex__name">${x.name}</span>
 				</li>` : null;
 			})}
 		</ul>

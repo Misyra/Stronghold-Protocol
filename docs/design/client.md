@@ -149,11 +149,11 @@ It does not diagnose a particular user's GPU or persist a disabled renderer pref
 
 ### Single-match records in local statistics
 
-The overview starts with the nickname / trophy header and a 2×4 grid to the left of the title hexagon, followed by
-the general cards, single-match records and difficulty table. The hexagon has no visible 称号 heading. The mode grid
+The overview starts with the nickname / trophy header and a 2×4 grid, followed by
+the general cards, single-match records and difficulty table. The mode grid
 uses the same number-card style as the general cards. Its two rows are 独立模拟 and 联合模拟; each has a mode card,
 总模拟数, 成功卫戍 and 绝境突破.
-On narrow screens (≤680px), the grid goes above the diagram while retaining four columns. Totals follow the existing
+On narrow screens (≤680px), the grid retains four columns. Totals follow the existing
 record inclusion rule. Successful defense counts the
 local player's victory (final leader defeated, player not eliminated); breakthrough additionally requires a
 hidden-core clear. A failed hidden core does not remove a successful defense. Both rows remain visible at zero.
@@ -190,17 +190,13 @@ Each entry has the strategy icon on the left and the existing strategy name / `�
 The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
 been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.
 
-The overview's six title counts form a flat-top hexagon from six solid teal triangles with a subtle glow, without an
-overall outline or fill gradient. Each triangular tile has its three corners clipped by 5% of the adjoining edges,
-forming six sides (three long and three short), with the same geometry for the teal and gray layers. Scale the raw
-triangle first, then clip it by 5% of the original edge length so partial tiles retain the visible apex cut; cap the
-cut at 25% of the current edge on very small tiles. Clockwise from the top:
-精英云集, 万事俱备, 挥金如土, 卫戍之星, 不朽盟约, 坚若磐石 (the owner's image reference). Each face has its
-actual count and localized title outside it. Each triangle scales from the center by `min(count / 20, 1)`: below
-20 its height decreases proportionally, exposing a full-size `#1a2531` gray triangle underneath (zero is entirely
-gray). Only the teal triangles glow. Counts above 20 are white with a fluorescent
-green glow behind the number. Counts of 20 or less remain green (20 has full height without glow). The diagram
-scales to its container on phones, with readable minimum text sizes.
+[ASSUMED] Title-count display uses the following 20-award boundary:
+
+| Count | Display behavior |
+|---|---|
+| Below 20 | Not full; fill grows with the count; no count highlight. |
+| Exactly 20 | Full fill and count highlight. |
+| Above 20 | Full fill and count highlight; the number continues to show the actual count. |
 
 Community UI and recovery (§29.6): DIY reuses roster stats and skill previews; Swire's coins show current/cap. The lobby player chip opens statistics and the responsive header keeps optional controls from overlapping its title. Settlement's summary scrolls separately from Return. Failed board art can retry, and failed three.js imports use two bounded fresh URLs. Failed engine initialization can remount on online/visibility, at most twice consecutively, cleaning up each previous view; explicit fallback/2D stays selected.
 

@@ -135,18 +135,26 @@ function Overview({ agg, gd, nickname }) {
 						<div><span>${t('获得奖杯')}</span><b class="num">${fmtNum(agg.trophies)}</b></div>
 					</div>
 				</div>
-			<div class="st-modegrid">
+			<table class="st-modegrid"><tbody>
 				${[['solo', N_('独立模拟')], ['coop', N_('联合模拟')]].map(([mode, label]) => {
 					const v = agg.byMode[mode];
-					return html`<div key=${mode} class="st-modegrid__row" role="group" aria-label=${t(label)}>
-						<div class="st-card st-modegrid__mode"><${MicroLabel}>${mode === 'solo' ? 'SOLO' : 'TEAM'}<//>
-							<b class="st-modegrid__name">${t(label)}</b></div>
-						<${StatCard} micro="TOTAL" value=${fmtNum(v.games)} label=${t('总模拟数')} />
-						<${StatCard} micro="SUCCESS" value=${fmtNum(v.wins)} label=${t('成功卫戍')} tone="mint" />
-						<${StatCard} micro="CORE CLEAR" value=${fmtNum(v.hiddenCleared)} label=${t('绝境突破')} tone="gold" />
-					</div>`;
+					const metrics = [
+						{ value: v.games, label: N_('总模拟数') },
+						{ value: v.wins, label: N_('成功卫戍') },
+						{ value: v.hiddenCleared, label: N_('绝境突破') },
+					];
+					return html`<tr key=${mode} class="st-modegrid__row">
+						<th scope="row" class="st-modegrid__mode">
+							<${Icon} name=${mode === 'solo' ? 'user' : 'users'} />
+							<span class="st-modegrid__name">${t(label)}</span>
+						</th>
+						${metrics.map(({ value, label }) => html`<td key=${label} class="st-modegrid__cell">
+							<b class="st-modegrid__value num">${fmtNum(value)}</b>
+							<span class="st-modegrid__label">${t(label)}</span>
+						</td>`)}
+					</tr>`;
 				})}
-			</div>
+			</tbody></table>
 			</div>
 			${titles.length ? html`<div class="st-title-panel">
 				<${TitleHexagon} titles=${titles} /></div>` : null}

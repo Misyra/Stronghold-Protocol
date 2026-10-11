@@ -149,19 +149,12 @@ It does not diagnose a particular user's GPU or persist a disabled renderer pref
 
 ### Single-match records in local statistics
 
-The overview starts with the nickname / trophy header and a 2×4 grid, followed by
-the general cards, single-match records and difficulty table. The mode grid
-uses the same number-card style as the general cards. Its two rows are 独立模拟 and 联合模拟; each has a mode card,
-总模拟数, 成功卫戍 and 绝境突破.
-On narrow screens (≤680px), the grid retains four columns. Totals follow the existing
-record inclusion rule. Successful defense counts the
-local player's victory (final leader defeated, player not eliminated); breakthrough additionally requires a
-hidden-core clear. A failed hidden core does not remove a successful defense. Both rows remain visible at zero.
+The statistics page is being progressively aligned with the [official statistics template](https://ak-webview.hypergryph.com/autoChess/act1autochess).
 
 Accumulated play time appears first in the 战斗累计 tab, alongside the combat sums, rather than in 总览. It uses
 the same `duration.totalMs` aggregation and existing minute / hour formatting; the move changes no counting rule.
 
-Above the mode grid, display `Dr. <nickname>` from the active session's `me.name` only. A successful history import
+The overview displays `Dr. <nickname>` from the active session's `me.name` only. A successful history import
 restores the newest usable self nickname from that file only when the current name is empty; an existing name wins.
 Validate restored names with the title entry's sanitizer, update `me.name` and saved `sp.name`, and fill an empty
 entry field without entering the lobby. Entering a nickname and server welcome already update both name locations.

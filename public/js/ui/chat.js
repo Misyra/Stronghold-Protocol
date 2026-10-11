@@ -5,7 +5,7 @@ import { useStore } from '../store.js';
 import { actions } from './gameActions.js';
 import { t } from '../../../shared/i18n.js';
 
-/** All message text here has already been masked by the server; never render markup from a message. */
+/** The server refuses flagged messages outright, so only clean text ever reaches this panel; never render markup from a message. */
 export function Communication({ open, onToggle }) {
   const chat = useStore(s => s.chat), online = useStore(s => s.connection.status === 'online');
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false);
@@ -19,7 +19,7 @@ export function Communication({ open, onToggle }) {
   }, [open, chat.enabled]);
   const length = [...draft].length, muted = chat.deadline > now;
   const minutes = Math.max(1, Math.ceil((chat.deadline - now) / 60000));
-  const rules = t('每条最多 30 字；敏感内容会替换为星号，10 分钟内累计 5 条触发审查将暂停聊天 12 小时。');
+  const rules = t('每条最多 30 字；包含不适宜内容的消息无法发送，多次违规将暂停聊天。');
   const submit = async (e) => {
     e.preventDefault();
     if (sending || !chat.enabled || !online || chat.deadline > performance.now() || cooldown > performance.now() || !draft.trim() || length > 30) return;

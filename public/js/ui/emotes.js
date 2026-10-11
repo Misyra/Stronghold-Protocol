@@ -182,7 +182,7 @@ export function EmoteArt({ id, class: cls }) {
 }
 
 /**
- * Pop bubble beside the sender's avatar: an emote picture or server-masked chat text. Key it by the event's seq
+ * Pop bubble beside the sender's avatar: an emote picture or server-checked chat text. Key it by the event's seq
  * (a newer emote replaces the bubble and pops again).
  * @param {{ id?: string, text?: string, class?: string, ttl?: number, at?: number }} props ttl = display time in ms (fade-out at the
  *   end); at = when the emote arrived (Date.now() clock): a bubble mounted after that resumes its pop / fade timeline

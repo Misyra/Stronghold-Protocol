@@ -1173,6 +1173,7 @@ export class Lobby {
     if (msg.t !== 'g.watch' && room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
     if (msg.t === 'g.chat') {
       if (!this.opts.chatEnabled) return fail(ERR.CHAT_DISABLED);
+      // Flagged messages are refused outright (moderateChat returns the error); only clean ones broadcast.
       const result = moderateChat(session, msg.text, this.now());
       if (result.error) { this.sendChatState(session, false); return fail(result.error); }
       const seat = room.seatOf(session.playerId);
@@ -1183,8 +1184,6 @@ export class Lobby {
       if (room.chatMessages.length > 50) room.chatMessages.shift();
       this.broadcastRoom(room, message);
       this.sendChatState(session, false);
-      if (result.hit) sendSession(session, { t: 'm.toast', kind: 'warn', text: session.chatMutedUntil > this.now()
-        ? N_('10 分钟内累计 5 条消息触发敏感词审查，聊天已暂停 12 小时') : N_('消息中的敏感内容已替换为星号') });
       return OK;
     }
     let res;

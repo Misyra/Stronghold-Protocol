@@ -82,7 +82,6 @@
 
 /* number cards */
 .st-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(1.5rem, 96px), 1fr)); gap: .08rem; }
-.st-cards--records { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: .08rem; }
 .st-card {
   display: flex; flex-direction: column; gap: .02rem; min-width: 0; padding: .08rem .12rem .07rem;
   background: rgba(255, 255, 255, .03); border: 1px solid var(--line);
@@ -93,6 +92,28 @@
 .st-card--mint .st-card__num { color: var(--mint-400); }
 .st-card--gold .st-card__num { color: var(--amber); }
 .st-card__label { font-size: max(.14rem, 10px); color: var(--text-md); letter-spacing: .06em; }
+/* Single-match records follow the official statistics template. */
+.st-records { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.16875rem, 8px); margin-top: .3rem; }
+.st-record {
+	position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: center;
+	min-width: 0; min-height: max(.95625rem, 92px); padding: .1rem max(.20625rem, 12px); --st-record-color: #4ed7b8;
+}
+.st-record::before, .st-record::after {
+	content: ''; position: absolute; top: 0; bottom: 0; width: max(.1125rem, 7px);
+	border: max(.01875rem, 1px) solid rgba(222, 238, 243, .2); pointer-events: none;
+}
+.st-record::before { left: 0; border-right: none; }
+.st-record::after { right: 0; border-left: none; }
+.st-record--gold { --st-record-color: #ffba00; }
+.st-record--merges { --st-record-color: #e87112; }
+.st-record__icon { position: absolute; z-index: -1; top: 50%; right: .16875rem; transform: translateY(-50%); width: min(36%, 1.23125rem); height: auto; pointer-events: none; }
+.st-record--gold .st-record__icon { width: min(36%, 1.05625rem); }
+.st-record--kills .st-record__icon { width: min(36%, .9875rem); }
+.st-record__decoration { display: block; width: max(.6625rem, 42px); height: max(.0875rem, 5px); object-fit: contain; object-position: left; }
+.st-record__label { margin-top: max(.08125rem, 6px); font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-size: max(.1875rem, 11px); line-height: 1.3; color: #898989; overflow-wrap: anywhere; }
+.st-record__value { display: flex; align-items: baseline; gap: .045rem; margin-top: max(.0375rem, 3px); font-family: 'Official Stats Numerals', var(--font-num); line-height: 1; }
+.st-record__value > span { color: #fff; font-size: max(.28125rem, 16px); }
+.st-record__value > b { min-width: 0; color: var(--st-record-color); font-size: max(.41875rem, 24px); font-weight: 400; overflow-wrap: anywhere; }
 /* Mode summary follows the official statistics template's two-row table. */
 .st-overview-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: .22rem; margin: .02rem 0 .2rem; }
 .st-mode-summary { min-width: 0; }

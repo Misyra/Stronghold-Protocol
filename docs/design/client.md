@@ -165,8 +165,8 @@ icon at thresholds 0 / 10 / 30 / 60 / 100 (five tiers, PRTS 下半 §同盟成�
 manifest. Compaction and export/import retain trophy awards; older already-compacted rows whose awards were
 discarded cannot be restored by this display. This is local recorded data, not an official account trophy balance.
 
-The statistics overview displays 单局最多消耗资金, 单局最多晋升次数 and 单局最多击败数 in one three-column row,
-including on narrow screens. Each is an independent maximum across the local player's settled matches (victories
+The statistics overview displays 单局最多消耗资金, 单局最多晋升次数 and 单局最多击败数.
+Each is an independent maximum across the local player's settled matches (victories
 and defeats); partial quit records and teammates' rows are not single-match totals. Funds spent and promotions use
 existing `stats.gold` / `stats.merges`, so older records remain usable for those two metrics. Defeats use the actual
 `creditedKills` total (operators and summons, 联防 included); wave-owned kills cannot reconstruct it. Storage v2

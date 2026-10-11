@@ -14,10 +14,17 @@ png.writeUInt32BE(1, 20);
 png.write('IEND', 37);
 const glow = `data:image/png;base64,${png.toString('base64')}`;
 const mask = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64')}`;
-const css = `.other { background:url(${glow}) } .WqPlp7 { mask:url(${mask}) } .LOEhW2.zrK7_e:before { background:url(${glow}) }`;
+const recordSelectors = ['.D_liCN .C8cb_l .grJEuP', '.D_liCN .C8cb_l:first-child .QjacBn', '.D_liCN .C8cb_l:nth-child(2) .QjacBn', '.D_liCN .C8cb_l:nth-child(3) .QjacBn'];
+const recordUrls = recordSelectors.map((_, i) => {
+	const image = Buffer.from(png);
+	image.writeUInt32BE(i + 2, 16);
+	return `data:image/png;base64,${image.toString('base64')}`;
+});
+const recordImages = recordSelectors.map((selector, i) => `${selector} { background:url(${recordUrls[i]}) }`).join(' ');
+const css = `.other { background:url(${glow}) } .WqPlp7 { mask:url(${mask}) } .LOEhW2.zrK7_e:before { background:url(${glow}) } ${recordImages}`;
 
-test('official asset extraction selects the mask and count glow, rejecting missing or invalid payloads', () => {
-	assert.deepEqual(embeddedStatsAssets(css), { titleMask: mask, countGlow: glow });
+test('official asset extraction selects embedded artwork, rejecting missing or invalid payloads', () => {
+	assert.deepEqual(embeddedStatsAssets(css), { titleMask: mask, countGlow: glow, recordLabel: recordUrls[0], recordFunds: recordUrls[1], recordPromotions: recordUrls[2], recordDefeats: recordUrls[3] });
 	assert.throws(() => embeddedStatsAssets(css.replace('WqPlp7', 'missing')), /missing official stats asset/);
 	assert.throws(() => embeddedStatsAssets(css.replaceAll(glow, 'data:image/png;base64,YmFk')), /invalid official stats asset/);
 	assert.throws(() => embeddedStatsAssets(css.replace(mask, glow)), /missing official stats asset/);

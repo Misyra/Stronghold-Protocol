@@ -123,8 +123,10 @@ function Section({ title, micro, children, class: cls }) {
 /** 总览: cards, the per-difficulty table, the six titles, and the line about what counts. */
 function Overview({ agg, gd, nickname }) {
   const rows = DIFFICULTIES.filter((d) => agg.byDifficulty[d]).concat(Object.keys(agg.byDifficulty).filter((d) => !DIFFICULTIES.includes(d)));
+	const fonts = uiUrl(gd.m, 'statistics/fontStyles');
   const titles = (Array.isArray(gd.config?.titles) ? gd.config.titles : []).map((x) => ({ ...x, count: agg.titles[x.id]?.count || 0 }));
   return html`<${Section} title=${t('总览')} micro="OVERVIEW">
+		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
 		<div class="st-overview-details">
 			<div class="st-mode-summary">
 				<div class="st-profile">
@@ -167,7 +169,7 @@ function Overview({ agg, gd, nickname }) {
       <${StatCard} micro="HIDDEN CLEAR" value=${fmtNum(agg.hidden.cleared)} label=${t('通关隐秘核心')} />
       <${StatCard} micro="BEST ROUND" value=${fmtNum(agg.rounds.max)} label=${t('最远回合')} />
     </div>
-    <${MatchRecords} maxima=${agg.maxima} />
+    <${MatchRecords} maxima=${agg.maxima} manifest=${gd.m} />
 		<p class="st-rule">${t('单局纪录按已结算对局统计；击败数包含联防实际击杀，旧战绩无法补算。')}</p>
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
       <thead><tr><th>${t('难度')}</th><th class="num">${t('局数')}</th><th class="num">${t('胜场')}</th><th class="num">${t('胜率')}</th><th class="num">${t('隐秘核心通关')}</th></tr></thead>
@@ -194,7 +196,6 @@ function TitleHexagon({ titles, manifest }) {
 	const byId = new Map(titles.map((x) => [x.id, x]));
 	const mask = uiUrl(manifest, 'statistics/titleMask');
 	const glow = uiUrl(manifest, 'statistics/countGlow');
-	const fonts = uiUrl(manifest, 'statistics/fontStyles');
 	const [loadedArt, setLoadedArt] = useState([]);
 	useEffect(() => {
 		let active = true;
@@ -208,7 +209,6 @@ function TitleHexagon({ titles, manifest }) {
 	}, [mask, glow]);
 	return html`<div class=${cx('st-titlehex', mask && loadedArt.includes(mask) && 'has-reference-mask')} role="group" aria-label=${t('称号')}
 		style=${{ '--st-title-mask': mask ? `url("${mask}")` : undefined, '--st-title-glow': glow && loadedArt.includes(glow) ? `url("${glow}")` : undefined }}>
-		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
 		<div class="st-titlehex__graphic" aria-hidden="true">
 			${TITLE_HEX_SECTORS.map(([id, angle]) => {
 				const clip = titleSectorClip(byId.get(id)?.count || 0);
@@ -234,15 +234,19 @@ function TitleHexagon({ titles, manifest }) {
 }
 
 /** Single-match records, always in the requested funds / promotions / defeats order. */
-function MatchRecords({ maxima }) {
+function MatchRecords({ maxima, manifest }) {
 	const rows = [
-		['gold', N_('单局最多消耗资金'), 'FUNDS'],
-		['merges', N_('单局最多晋升次数'), 'PROMOTIONS'],
-		['kills', N_('单局最多击败数'), 'DEFEATS'],
+		['gold', N_('单局最多消耗资金'), 'recordFunds'],
+		['merges', N_('单局最多晋升次数'), 'recordPromotions'],
+		['kills', N_('单局最多击败数'), 'recordDefeats'],
 	];
-	return html`<div class="st-cards st-cards--records" data-testid="stats-match-records">
-		${rows.map(([key, label, micro]) => html`<${StatCard} key=${key} micro=${micro}
-			value=${maxima[key] == null ? '—' : fmtNum(maxima[key])} label=${t(label)} tone="gold" />`)}
+	return html`<div class="st-records" data-testid="stats-match-records">
+		${rows.map(([key, label, art]) => html`<div key=${key} class=${`st-record st-record--${key}`}>
+			<${Img} src=${uiUrl(manifest, `statistics/${art}`)} class="st-record__icon" />
+			<${Img} src=${uiUrl(manifest, 'statistics/recordLabel')} class="st-record__decoration" />
+			<span class="st-record__label">${t(label)}</span>
+			<div class="st-record__value num"><span aria-hidden="true">x</span><b>${maxima[key] == null ? '—' : fmtNum(maxima[key])}</b></div>
+		</div>`)}
 	</div>`;
 }
 

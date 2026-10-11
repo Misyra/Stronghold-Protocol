@@ -10,7 +10,7 @@ const FONT_CSS = `@font-face { font-family: 'Official Stats Numerals'; font-disp
 @font-face { font-family: 'Official Stats Labels'; font-display: swap; src: url('label-font.woff2') format('woff2'); }
 `;
 
-/** Extract the two embedded images, checking their types before exposing download jobs. */
+/** Extract embedded images, checking their types before exposing download jobs. */
 export function embeddedStatsAssets(css) {
 	const extract = (selector, type) => {
 		const rule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((match) => match[1].includes(selector));
@@ -22,13 +22,20 @@ export function embeddedStatsAssets(css) {
 		}
 		return url;
 	};
-	return { titleMask: extract('.WqPlp7', 'image/svg+xml'), countGlow: extract('.zrK7_e:before', 'image/png') };
+	return {
+		titleMask: extract('.WqPlp7', 'image/svg+xml'),
+		countGlow: extract('.zrK7_e:before', 'image/png'),
+		recordLabel: extract('.D_liCN .C8cb_l .grJEuP', 'image/png'),
+		recordFunds: extract('.D_liCN .C8cb_l:first-child .QjacBn', 'image/png'),
+		recordPromotions: extract('.D_liCN .C8cb_l:nth-child(2) .QjacBn', 'image/png'),
+		recordDefeats: extract('.D_liCN .C8cb_l:nth-child(3) .QjacBn', 'image/png'),
+	};
 }
 
 /** Jobs shared by the full asset setup and the focused stats downloader. */
 export async function statsTemplateJobs(root, { offline = false, fetchImpl = globalThis.fetch, log = console.log } = {}) {
 	const cache = join(root, '.cache', 'stats-template-41668e.css');
-	/** @type {{ titleMask?: string, countGlow?: string }} */
+	/** @type {Partial<ReturnType<typeof embeddedStatsAssets>>} */
 	let embedded = {};
 	try {
 		let css;
@@ -57,6 +64,10 @@ export async function statsTemplateJobs(root, { offline = false, fetchImpl = glo
 		['numberFont', 'number-font.woff2', `${CDN}/fonts/NovecentoWide-Medium.fb69ff.woff2`],
 		['labelFont', 'label-font.woff2', `${CDN}/fonts/SourceHanSans-Medium.678769.woff2`],
 		['fontStyles', 'fonts.css', `data:text/css;charset=utf-8,${encodeURIComponent(FONT_CSS)}`],
+		['recordLabel', 'record-label.png', embedded.recordLabel],
+		['recordFunds', 'record-funds.png', embedded.recordFunds],
+		['recordPromotions', 'record-promotions.png', embedded.recordPromotions],
+		['recordDefeats', 'record-defeats.png', embedded.recordDefeats],
 	];
 	return sources.map(([name, file, url]) => ({
 		name, rel: `ui/statistics/${file}`, urls: url ? [url] : [],

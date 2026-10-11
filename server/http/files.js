@@ -66,6 +66,7 @@ const GZIP_CACHE_MAX_TOTAL = 96 << 20;
 // (the R2 manifest mode); both are immutable. Plain URLs stay compatible with static hosts and older
 // clients: one day, revalidated after that with a cheap 304.
 const LONG_CACHE = 'public, max-age=86400';          // 1 day
+const INSTALL_CACHE = 'public, max-age=3600';       // unversioned installation icons/manifest: 1 hour
 export const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const LONG_CACHE_DIRS = ['assets', 'fonts', 'vendor']; // first path segment under public/
 
@@ -194,6 +195,8 @@ function cacheControlFor(ext, mountName, segments, query, versioned = false) {
   // it cannot be checked against the bytes on disk (upstream 0.2.0's own test asserts this; this fork
   // made the change first for the per-file art manifest, whose `?v=` busting lives on the CDN).
   if (versioned) return IMMUTABLE_CACHE;
+  if (mountName === 'public' && ((segments.length > 1 && segments[0] === 'icons')
+    || (segments.length === 1 && segments[0] === 'manifest.json'))) return INSTALL_CACHE;
   if (mountName === 'public' && segments.length > 1 && LONG_CACHE_DIRS.includes(segments[0])) return LONG_CACHE;
   return 'no-cache';
 }

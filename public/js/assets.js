@@ -593,6 +593,12 @@ export async function loadSpineData(entry, opts) {
       }, (parsed) => parsed ? resolve(parsed) : reject(new Error(`atlas texture failed: ${atlas}`)));
     });
     source = { src: resourceUrl(entry.skel), data: { spineAtlas } };
+    // Assets.load keeps resolver metadata after unload and ignores new metadata for a known URL.
+    // Replace the old atlas before parsing again: its page textures may already have been destroyed.
+    if (PIXI.Assets.resolver?.hasKey(source.src)) {
+      const resolved = PIXI.Assets.resolver.resolve(source.src);
+      resolved.data = { ...resolved.data, spineAtlas };
+    }
   }
   const res = await PIXI.Assets.load(source);
   const data = res && (res.spineData || res);

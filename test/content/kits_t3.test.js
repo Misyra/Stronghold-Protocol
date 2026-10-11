@@ -1249,7 +1249,7 @@ test('忍冬 追凶 never feeds on itself: a hit turned into HP loss credited to
   const e = h.enemy('enemy_times');
   const atks = u.stats.attacks;
   assert.ok(atks >= 3);
-  // first attack marks the enemy (1 HP), every later attack: 1 HP + one 追凶 bonus instance (1 HP)
-  assert.equal(e.s.maxHp - e.hp, 1 + 2 * (atks - 1));
+  // Every attack, the first included: 1 HP + one 追凶 bonus instance (1 HP), never recursive bonuses.
+  assert.equal(e.s.maxHp - e.hp, 2 * atks);
   done(h);
 });

@@ -1065,6 +1065,11 @@ has the generic spec. Summons: `battle.tokenDef(tokenId, unit)` / `battle.spawnT
 (token skill of that slot: `variants[owner].bySkill[i]`, module attributes: `.byModule[id]`). Coverage of the selectable
 skills: `node tools/kit-coverage.mjs --missing [--tier N] [--strict]`.
 
+忍冬's 追凶 records the per-enemy start time and applies its arts addition in the same `damaged` callback,
+including the first instance (PRTS talent remarks; DESIGN §29.15). It does not refresh the ten-second window on
+repeated hits. Its `vulpisHunt` / `addition` tags and re-entrancy guard prevent the rider from feeding itself.
+`test/content/vulpis-first-hit.test.js` checks actual HP loss and damage events with naturally ready skills.
+
 Timed deployment kits: 宴 S2 uses `bb.duration` and skill ATK mods, loses current HP once on landing, and converts normal
 physical attacks to arts only while S2 is active; S1 has no such conversion. 斯卡蒂 S2 uses its own record's
 `s.bb.duration` / `s.bb.atk`; DRE-Y revival in place does not restart it. 野鬃 S1 uses its record's `duration` /

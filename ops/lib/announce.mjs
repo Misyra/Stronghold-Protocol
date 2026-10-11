@@ -19,7 +19,9 @@ export function parseGameAnnouncement(value) {
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) throw new Error('expiresAt 日期无效');
-  return { enabled: true, title: title.trim(), text: value.text.trim(), expiresAt: value.expiresAt };
+  if (value.displayMode != null && !['once', 'visit'].includes(value.displayMode)) throw new Error('显示方式必须是 once 或 visit');
+  return { enabled: true, title: title.trim(), text: value.text.trim(), expiresAt: value.expiresAt,
+    ...(value.displayMode === 'visit' ? { displayMode: 'visit' } : {}) };
 }
 
 // A corrupt or partly invalid file degrades to the entries that still parse, never to a crash.

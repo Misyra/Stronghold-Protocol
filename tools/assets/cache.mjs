@@ -34,10 +34,7 @@ export async function cachedJson({ cacheFile, url, refresh = false, offline = fa
     try {
       verifiedSource = await verifier.resolve(url);
       if (!verifiedSource) throw new Error(`source index missing ${url}`);
-    } catch (e) {
-      await unlink(cacheFile).catch((err) => { if (err.code !== 'ENOENT') throw err; });
-      throw e;
-    }
+    } catch (e) { throw e; }
   }
   // Same rule as the file downloader: a configured proxy must not be skipped.
   const fetchFn = guardDefaultFetch(fetchImpl);
@@ -50,7 +47,6 @@ export async function cachedJson({ cacheFile, url, refresh = false, offline = fa
       if (offline) throw new Error(`--offline: cached index ${cacheFile} is missing or corrupt (${e.message}); run once online`);
     }
   }
-  if (verifier) await unlink(cacheFile).catch((err) => { if (err.code !== 'ENOENT') throw err; });
   const network = mirrorPolicy ?? new MirrorPolicy({ source, proxyPrefix, log });
   let lastErr = null;
   for (const src of network.urls(verifiedSource?.pinnedUrl ?? url)) {

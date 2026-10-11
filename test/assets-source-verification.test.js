@@ -70,7 +70,7 @@ test('user same-path remapping replaces equal-size bytes despite an old ledger U
   assert.equal(f.dl.ledger.files['asset.bin'].url, raw + 'new.bin');
 });
 
-test('user failed replacement removes old output and cannot resolve an unverified cached alternative', async (t) => {
+test('user failed replacement preserves the last verified output and cannot resolve an unverified cached alternative', async (t) => {
   const good = Buffer.from('new!');
   const f = await fixture(t, { 'a.bin': good, 'fallback.bin': good }, { payload: () => Buffer.from('old!') });
   await writeFile(join(f.root, 'a.bin'), 'old!');
@@ -79,8 +79,8 @@ test('user failed replacement removes old output and cannot resolve an unverifie
     { rel: 'a.bin', urls: [raw + 'a.bin'], kind: 'bin' },
     { rel: 'fallback.bin', urls: [raw + 'fallback.bin'], kind: 'bin' },
   ] } };
-  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), ['item']);
-  await assert.rejects(access(join(f.root, 'a.bin')), { code: 'ENOENT' });
+  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), []);
+  assert.equal((await readFile(join(f.root, 'a.bin'))).toString(), 'old!');
   assert.equal(f.dl.ledger.files['a.bin'], undefined);
   const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => f.dl.accepted.has(rel) });
   assert.deepEqual(resolved.droppedLeaves, ['item']);
@@ -126,10 +126,10 @@ test('user source API failure fails closed even for matching cached assets and i
   const result = await f.dl.run([{ rel: 'a.json', urls: [raw + 'a.json'], kind: 'json' }]);
   assert.equal(result.get('a.json').status, 'error');
   assert.match(result.get('a.json').error, /source tree API HTTP 503/);
-  await assert.rejects(access(cacheFile), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(cacheFile), good);
   await writeFile(cacheFile, good);
   await assert.rejects(cachedJson({ cacheFile, url: raw + 'a.json', verifier: f.verifier, fetchImpl: f.fetchImpl }), /source tree API HTTP 503/);
-  await assert.rejects(access(cacheFile), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(cacheFile), good);
 });
 
 test('user retries source lookup after an API outage and reuses the recovered tree offline', async () => {
@@ -206,11 +206,11 @@ test('user changed font originals are verified before WOFF2 generation and faile
     fetchImpl: f.fetchImpl, force: true, retries: 1, backoffMs: 0, log: quiet });
   const result = await forceDl.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
   assert.equal(result.get(name + '.otf').status, 'error');
-  await assert.rejects(access(join(f.root, name + '.otf')), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(join(f.root, name + '.otf')), good);
   const failed = await buildFonts(f.root, quiet, { verified: true });
-  assert.deepEqual(failed.files, {});
-  await assert.rejects(access(join(f.root, name + '.woff2')), { code: 'ENOENT' });
-  await assert.rejects(access(join(f.root, 'fonts.css')), { code: 'ENOENT' });
+  assert.ok(failed.files[name].woff2, 'the preserved original can still regenerate the derived font');
+  await access(join(f.root, name + '.woff2'));
+  await access(join(f.root, 'fonts.css'));
 });
 
 test('user truncated or unavailable recursive Git tree uses complete bounded subtrees', async () => {

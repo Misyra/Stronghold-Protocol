@@ -202,7 +202,9 @@ export class Downloader {
         return { status: 'ok', bytes: r.buf.length, url: src, sizeChanged };
       }
     }
-    if (this.verifier) await this.rejectExisting(job);
+    // A failed fetch is not proof that the current file is obsolete. Keep a
+    // previously verified file until the source is confirmed missing.
+    if (this.verifier && !lastError) await this.rejectExisting(job);
     if (lastError) this.network.directFailureHint();
     return lastError ? { status: 'error', bytes: 0, error: lastError } : { status: 'miss', bytes: 0, error: 'not found (404) on all sources' };
   }
@@ -211,10 +213,7 @@ export class Downloader {
   async verifiedCandidate(job, url) {
     let source;
     try { source = await this.verifier.resolve(url); }
-    catch (e) {
-      await this.rejectExisting(job);
-      return { result: { status: 'error', bytes: 0, error: e.message } };
-    }
+    catch (e) { return { result: { status: 'error', bytes: 0, error: e.message } }; }
     if (!source) return {};
     if (!this.force && !job.mutable) {
       try {
@@ -227,7 +226,6 @@ export class Downloader {
         }
       } catch { /* Missing or rejected bytes: fetch this candidate, not an old ledger URL. */ }
     }
-    await this.rejectExisting(job);
     return { source };
   }
 

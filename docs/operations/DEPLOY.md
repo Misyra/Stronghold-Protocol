@@ -264,6 +264,8 @@ sudo systemctl start stronghold
 
 `SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/healthz` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
 
+`SP_ROOM_WORKERS`（默认 0，可选 1 到 SP_WORKERS，不得超过 SP_WORKERS，否则拒绝启动）启用按房间分组的模拟泳道：每个房间的模拟任务固定排进同一泳道的独立队列，不同房间的任务互不插队；对局本身仍留在主线程。开启后 `/healthz` 的 `workers.kind` 变为 `room-lanes`，并逐泳道给出房间数与任务明细。它只改变排队方式（队列隔离），不承诺任何性能收益；是否开启请结合 `/healthz` 的实测数据决定，变量修改需重启。
+
 <!-- 保留旧文档锚点，外部链接继续到达对应说明。 -->
 <a id="16-维护公告"></a>
 公告完整流程移至 [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md)。

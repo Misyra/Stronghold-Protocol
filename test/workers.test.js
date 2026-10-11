@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { SimulationPool, workerSettings } from '../server/workers/pool.js';
+import { RoomWorkerPool } from '../server/workers/roomPool.js';
 import { startServer } from '../server/index.js';
 import { TestClient } from './helpers/wsClient.js';
 import { DATA, makeMatch } from './match/harness.js';
@@ -363,4 +364,87 @@ test('server shares one pool across matches, reports health, and responds over W
   const disabled = await startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 0, store: null });
   t.after(() => disabled.close());
   assert.equal(disabled.workerPool, null);
+});
+
+// RoomWorkerPool (opt-in room lanes, server/index.js SP_ROOM_WORKERS; ported from xinhai 40d4505f).
+test('room lanes: a room key stays on its lane; release lets the lane place the room again', (t) => {
+  const pool = new RoomWorkerPool({ lanes: 2, totalWorkers: 2, workerUrl: fixture });
+  t.after(() => pool.close());
+  const a = pool.assign('room:A');
+  assert.equal(pool.assign('room:A'), a, 'the same key returns the same sticky lane pool');
+  const b = pool.assign('room:B');
+  assert.notEqual(b, a);
+  assert.equal(pool.lanes[0].pool, a);
+  assert.equal(pool.lanes[1].pool, b);
+  const stats = pool.stats();
+  assert.equal(stats.kind, 'room-lanes');
+  assert.deepEqual(stats.lanes.map((lane) => lane.rooms), [1, 1]);
+  pool.release('room:A');
+  assert.equal(pool.assign('room:A'), pool.lanes[0].pool, 'a released key is placed on a least-loaded lane again');
+  pool.release('unknown'); // unknown keys are ignored
+  assert.deepEqual(pool.stats().lanes.map((lane) => lane.rooms), [1, 1]);
+  assert.equal(pool.assign('room:A'), pool.lanes[0].pool, 'the re-assigned key is sticky again');
+});
+
+test('room lanes: the thread budget is split across lanes and sums to totalWorkers', () => {
+  const pool = new RoomWorkerPool({ lanes: 2, totalWorkers: 3, workerUrl: fixture });
+  assert.deepEqual(pool.lanes.map((lane) => lane.pool.size), [2, 1]);
+  assert.equal(pool.lanes.reduce((n, lane) => n + lane.pool.size, 0), 3);
+  assert.throws(() => new RoomWorkerPool({ lanes: 2, totalWorkers: 1 }), RangeError);
+  assert.throws(() => new RoomWorkerPool({ lanes: 0 }), RangeError);
+});
+
+test('room lanes: a crashed lane worker self-heals in its lane; other lanes never see the failure', async (t) => {
+  const pool = new RoomWorkerPool({ lanes: 2, totalWorkers: 2, workerUrl: fixture });
+  t.after(() => pool.close());
+  const laneA = pool.assign('room:A');
+  const laneB = pool.assign('room:B');
+  await assert.rejects(laneA.submit('crash', {}).promise, { code: 'WORKER_FAILED' });
+  assert.equal(await laneA.submit('burn', { value: 'recovered' }).promise, 'recovered');
+  assert.equal(await laneB.submit('burn', { value: 'untouched' }).promise, 'untouched');
+  assert.deepEqual(pool.stats().lanes.map((lane) => lane.failed), [1, 0]);
+});
+
+test('room lanes: one room\'s tasks run on its single-thread lane in submission order', async (t) => {
+  const pool = new RoomWorkerPool({ lanes: 1, totalWorkers: 1, workerUrl: fixture });
+  t.after(() => pool.close());
+  const lane = pool.assign('room:A');
+  const order = [];
+  const first = lane.submit('burn', { ms: 100, value: 1 }).promise.then((v) => order.push(v));
+  const second = lane.submit('burn', { ms: 50, value: 2 }).promise.then((v) => order.push(v));
+  await Promise.all([first, second]);
+  assert.deepEqual(order, [1, 2]);
+});
+
+test('room lanes: opt-in server wiring pins a started match to one lane; the env var and bad budgets refuse', async (t) => {
+  await assert.rejects(startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 2, roomWorkers: 3, store: null }),
+    { message: 'roomWorkers cannot exceed workers' });
+  await assert.rejects(startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 2, roomWorkers: 'x', store: null }),
+    { message: 'roomWorkers must be 0..32' });
+  process.env.SP_ROOM_WORKERS = '4';
+  try {
+    await assert.rejects(startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 2, store: null }),
+      { message: 'roomWorkers cannot exceed workers' });
+  } finally {
+    delete process.env.SP_ROOM_WORKERS;
+  }
+  const srv = await startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 2, roomWorkers: 2, store: null });
+  t.after(() => srv.close());
+  const stats = srv.workerPool.stats();
+  assert.equal(stats.kind, 'room-lanes');
+  assert.deepEqual(stats.lanes.map((lane) => lane.size), [1, 1]);
+  const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
+  t.after(() => c.close());
+  await c.hello('Lanes');
+  await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
+  const room = await c.waitFor('room.state');
+  await c.request({ t: 'room.start' });
+  const match = srv.lobby.rooms.get(room.code).match;
+  assert.ok(match.workerPool && match.workerPool !== srv.workerPool, 'the match runs on a lane pool, not the wrapper');
+  assert.ok(srv.workerPool.lanes.some((lane) => lane.pool === match.workerPool));
+  const health = await (await fetch(`${srv.url}/healthz`)).json();
+  assert.equal(health.workers.kind, 'room-lanes');
+  assert.deepEqual(health.workers.lanes.map((lane) => [lane.id, lane.rooms]), [[0, 1], [1, 0]]);
+  await srv.close();
+  assert.equal(srv.workerPool.closed, true);
 });

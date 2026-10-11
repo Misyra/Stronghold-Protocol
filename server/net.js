@@ -619,6 +619,11 @@ export class Network {
     this.connsPerKey = new Map();
     this.closed = false;
     this.diagnostics = new NetDiagnostics();
+    /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
+    this._fanout = [];
+    this._fanoutImmediate = null;
+    this._fanoutRunning = false;
+    this._heartbeatPending = false;
     this.heartbeatTimer = setInterval(() => this.heartbeat(), this.opts.heartbeatMs);
     this.heartbeatTimer.unref?.();
     const sweepMs = Math.max(20, Math.min(15_000, Math.floor(this.opts.reconnectWindowMs / 4)));
@@ -638,6 +643,61 @@ export class Network {
       if (n > max) max = n;
     }
     return { total, max };
+  }
+
+  /**
+   * Queue a per-connection callback over a snapshot of the current sockets and pump it in small slices
+   * (at most 128 visits or 2 ms per turn, then `setImmediate`) so one huge fanout cannot stall the event
+   * loop or starve fresh I/O: work that arrives between slices (new frames, replies) runs first. `fn` must
+   * not throw — callbacks are invoked from setImmediate, an exception would surface as uncaughtException.
+   * @param {(conn: Connection) => void} fn
+   * @param {'broadcast' | 'heartbeat'} [kind]
+   */
+  _eachConnection(fn, kind = 'broadcast') {
+    if (this.closed) return;
+    this._fanout.push({ connections: [...this.conns.values()], index: 0, fn, kind });
+    if (!this._fanoutRunning && this._fanoutImmediate === null) this._pumpFanout();
+  }
+
+  /** Drain the fanout FIFO one slice; a connection is visited only while still live (this.conns owns it). */
+  _pumpFanout() {
+    this._fanoutImmediate = null;
+    this._fanoutRunning = true;
+    const deadline = performance.now() + 2;
+    let visited = 0;
+    try {
+      while (!this.closed && this._fanout.length && visited < 128) {
+        const job = this._fanout[0];
+        if (job.index === job.connections.length) {
+          this._fanout.shift();
+          if (job.kind === 'heartbeat') this._heartbeatPending = false; // the next heartbeat() may queue a new round
+          continue;
+        }
+        const conn = job.connections[job.index++];
+        if (this.conns.get(conn.ws) === conn) job.fn(conn);
+        visited++;
+        if (performance.now() >= deadline) break;
+      }
+    } finally {
+      this._fanoutRunning = false;
+      if (!this.closed && this._fanout.length) {
+        this._fanoutImmediate = setImmediate(() => this._pumpFanout());
+        this._fanoutImmediate.unref?.();
+      }
+    }
+  }
+
+  /**
+   * Reserved global-announcement entry point (no callers yet): encode once and queue the frame for every
+   * open, non-closing socket through the pumped fanout. Per-socket FIFO order and the usual send() path
+   * (stateTransport passthrough, backpressure guards) apply unchanged.
+   * @param {object} msg
+   */
+  broadcastAll(msg) {
+    if (this.closed) return;
+    const data = encode(msg);
+    if (data == null) return;
+    this._eachConnection((conn) => { if (!conn.closing) send(conn.ws, msg, data); });
   }
 
   /**
@@ -826,26 +886,30 @@ export class Network {
 
   /** Ping every socket; terminate the ones that did not answer since the previous heartbeat. */
   heartbeat() {
-    const now = this.now();
-    for (const conn of this.conns.values()) {
+    if (this.closed || this._heartbeatPending) return;
+    this._heartbeatPending = true;
+    // One `now` per connection, not one per round: the pumped fanout slices across event-loop turns,
+    // a timestamp taken at enqueue time would go stale for later slices (hello timeout would misfire).
+    this._eachConnection((conn) => {
+      const now = this.now();
       try {
         if (conn.closing) {
           // Closing handshake never completed within a heartbeat interval → drop the TCP connection.
           if (!conn.alive) conn.ws.terminate();
           conn.alive = false;
-          continue;
+          return;
         }
         if (!conn.session && now - conn.openedAt > this.opts.helloTimeoutMs) {
           conn.close(CLOSE.HELLO_TIMEOUT, 'hello timeout');
-          continue;
+          return;
         }
-        if (!conn.alive) { conn.ws.terminate(); continue; }
+        if (!conn.alive) { conn.ws.terminate(); return; }
         conn.alive = false;
         conn.ws.ping();
       } catch (e) {
         this.log.debug?.('[net] heartbeat error', e?.message);
       }
-    }
+    }, 'heartbeat');
   }
 
   /** Purge expired sessions and tell the handler. */
@@ -864,6 +928,9 @@ export class Network {
   close(code = CLOSE.SHUTDOWN, reason = 'server shutdown') {
     if (this.closed) return;
     this.closed = true;
+    if (this._fanoutImmediate !== null) clearImmediate(this._fanoutImmediate);
+    this._fanoutImmediate = null;
+    this._fanout.length = 0;
     this.diagnostics.close();
     clearInterval(this.heartbeatTimer);
     clearInterval(this.sweepTimer);

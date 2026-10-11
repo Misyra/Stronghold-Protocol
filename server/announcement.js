@@ -28,7 +28,10 @@ export function parseAnnouncement(value) {
   if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) {
     throw new Error('invalid calendar date in expiresAt');
   }
-  const notice = { title: title.trim(), text: value.text.trim(), expiresAt };
+  if (value.displayMode != null && !['once', 'visit'].includes(value.displayMode)) throw new Error('displayMode must be once or visit');
+  // Omit the legacy default from the hash so already-dismissed notices keep their identity.
+  const notice = { title: title.trim(), text: value.text.trim(), expiresAt,
+    ...(value.displayMode === 'visit' ? { displayMode: 'visit' } : {}) };
   const id = createHash('sha256').update(JSON.stringify(notice)).digest('hex').slice(0, 24);
   return { id, ...notice };
 }

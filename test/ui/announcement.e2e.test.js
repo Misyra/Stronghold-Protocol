@@ -62,6 +62,19 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
     await sleep(1100); // Let the shared file cache expire; returning to the tab triggers an immediate check.
     await c.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   };
+  await refresh({ ...notice, displayMode: 'visit', text: '每次进入显示' });
+  await c.page.waitForSelector('.announcement');
+  await c.page.$eval('.announcement button', button => button.click());
+  await c.page.waitForSelector('.announcement', { hidden: true });
+  await c.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await sleep(300);
+  assert.equal(await c.page.$('.announcement'), null, 'regular checks do not reopen visit notices');
+  await c.page.reload({ waitUntil: 'domcontentloaded' });
+  await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
+  await c.page.waitForSelector('.announcement');
+  assert.equal(await c.page.$eval('.announcement__text', el => el.textContent), '每次进入显示');
+  await c.page.$eval('.announcement button', button => button.click());
+  await c.page.waitForSelector('.announcement', { hidden: true });
   await refresh({ ...notice, text: '<img src=x onerror="window.noticeInjected=true">维护延后' });
   await c.page.waitForSelector('.announcement');
   assert.equal(await c.page.$eval('.announcement__text', (el) => el.children.length), 0, 'HTML remains literal text');
@@ -74,5 +87,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await refresh({ enabled: false });
   await c.page.waitForSelector('.announcement', { hidden: true });
   assert.equal((await c.st()).phase, 'PREP', 'publishing/expiry does not end the running match');
-  assert.deepEqual(c.problems, [], 'no browser errors');
+  // External fonts are optional and unavailable in network-restricted test environments.
+  const problems = c.problems.filter(p => !(p.includes('https://fonts.googleapis.com/') && p.includes('net::ERR_NETWORK_ACCESS_DENIED')));
+  assert.deepEqual(problems, [], 'no application browser errors');
 });

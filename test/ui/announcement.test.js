@@ -1,6 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { announcementSnapshot, startAnnouncementPolling } from '../../public/js/ui/announcementClient.js';
+import { createAnnouncementDisplay } from '../../public/js/ui/announcementDisplay.js';
+
+test('once survives reload, visit closes for this page only, edits show again, unavailable storage works', () => {
+  const values = new Map();
+  const storage = { getItem: k => values.get(k), setItem: (k, v) => values.set(k, v) };
+  const once = { id: 'legacy' }, visit = { id: 'repeated', displayMode: 'visit' };
+  const first = createAnnouncementDisplay({ storage });
+  first.dismiss(once); first.dismiss(visit);
+  assert.equal(first.isDismissed(once), true);
+  assert.equal(first.isDismissed({ ...visit }), true, 'polling the same revision does not reopen it');
+  const reload = createAnnouncementDisplay({ storage });
+  assert.equal(reload.isDismissed(once), true);
+  assert.equal(reload.isDismissed(visit), false);
+  assert.equal(reload.isDismissed({ id: 'edited' }), false);
+  const blocked = createAnnouncementDisplay({ storage: { getItem() { throw Error(); }, setItem() { throw Error(); } } });
+  assert.equal(blocked.isDismissed(once), false);
+  blocked.dismiss(once);
+  assert.equal(blocked.isDismissed(once), true);
+});
 
 const body = { serverTime: 1000, announcement: { id: 'revision', title: '维护公告', text: '<script>plain text</script>', expiresAt: 2000 } };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));

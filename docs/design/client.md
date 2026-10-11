@@ -146,8 +146,10 @@ It does not diagnose a particular user's GPU or persist a disabled renderer pref
 
 ### Single-match records in local statistics
 
-Below the difficulty table, the overview places a 2×4 grid of the same number cards used above to the left of the
-title hexagon. Its two rows are 独立模拟 and 联合模拟; each has a mode card, 总模拟数, 成功卫戍 and 绝境突破.
+The overview starts with the nickname / trophy header and a 2×4 grid to the left of the title hexagon, followed by
+the general cards, single-match records and difficulty table. The hexagon has no visible 称号 heading. The mode grid
+uses the same number-card style as the general cards. Its two rows are 独立模拟 and 联合模拟; each has a mode card,
+总模拟数, 成功卫戍 and 绝境突破.
 On narrow screens (≤680px), the grid goes above the diagram while retaining four columns. Totals follow the existing
 record inclusion rule. Successful defense counts the
 local player's victory (final leader defeated, player not eliminated); breakthrough additionally requires a

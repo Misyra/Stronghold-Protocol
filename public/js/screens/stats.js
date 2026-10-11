@@ -124,6 +124,32 @@ function Overview({ agg, gd, nickname }) {
   const rows = DIFFICULTIES.filter((d) => agg.byDifficulty[d]).concat(Object.keys(agg.byDifficulty).filter((d) => !DIFFICULTIES.includes(d)));
   const titles = (Array.isArray(gd.config?.titles) ? gd.config.titles : []).map((x) => ({ ...x, count: agg.titles[x.id]?.count || 0 }));
   return html`<${Section} title=${t('总览')} micro="OVERVIEW">
+		<div class="st-overview-details">
+			<div class="st-mode-summary">
+				<div class="st-profile">
+					<b class="st-profile__name">Dr. ${nickname || t('未知')}</b>
+					<div class="st-profile__trophies" title=${t('累计本机保留战绩中获得的奖杯')}>
+						<${Img} src=${uiUrl(gd.m, `medalIcon/${trophyMedalOf(agg.trophies, gd.config?.trophies?.medals)?.iconId || ''}`)}
+							class="st-profile__medal" fallback=${html`<${Icon} name="crown" />`} />
+						<div><span>${t('获得奖杯')}</span><b class="num">${fmtNum(agg.trophies)}</b></div>
+					</div>
+				</div>
+			<div class="st-modegrid">
+				${[['solo', N_('独立模拟')], ['coop', N_('联合模拟')]].map(([mode, label]) => {
+					const v = agg.byMode[mode];
+					return html`<div key=${mode} class="st-modegrid__row" role="group" aria-label=${t(label)}>
+						<div class="st-card st-modegrid__mode"><${MicroLabel}>${mode === 'solo' ? 'SOLO' : 'TEAM'}<//>
+							<b class="st-modegrid__name">${t(label)}</b></div>
+						<${StatCard} micro="TOTAL" value=${fmtNum(v.games)} label=${t('总模拟数')} />
+						<${StatCard} micro="SUCCESS" value=${fmtNum(v.wins)} label=${t('成功卫戍')} tone="mint" />
+						<${StatCard} micro="CORE CLEAR" value=${fmtNum(v.hiddenCleared)} label=${t('绝境突破')} tone="gold" />
+					</div>`;
+				})}
+			</div>
+			</div>
+			${titles.length ? html`<div class="st-title-panel">
+				<${TitleHexagon} titles=${titles} /></div>` : null}
+		</div>
     <div class="st-cards">
       <${StatCard} micro="GAMES" value=${fmtNum(agg.count)} label=${t('总局数')} />
       <${StatCard} micro="WINS" value=${fmtNum(agg.wins)} label=${t('胜场')} tone="mint" />
@@ -150,32 +176,6 @@ function Overview({ agg, gd, nickname }) {
         })}
       </tbody>
     </table></div>` : null}
-		<div class="st-overview-details">
-			<div class="st-mode-summary">
-				<div class="st-profile">
-					<b class="st-profile__name">Dr. ${nickname || t('未知')}</b>
-					<div class="st-profile__trophies" title=${t('累计本机保留战绩中获得的奖杯')}>
-						<${Img} src=${uiUrl(gd.m, `medalIcon/${trophyMedalOf(agg.trophies, gd.config?.trophies?.medals)?.iconId || ''}`)}
-							class="st-profile__medal" fallback=${html`<${Icon} name="crown" />`} />
-						<div><span>${t('获得奖杯')}</span><b class="num">${fmtNum(agg.trophies)}</b></div>
-					</div>
-				</div>
-			<div class="st-modegrid">
-				${[['solo', N_('独立模拟')], ['coop', N_('联合模拟')]].map(([mode, label]) => {
-					const v = agg.byMode[mode];
-					return html`<div key=${mode} class="st-modegrid__row" role="group" aria-label=${t(label)}>
-						<div class="st-card st-modegrid__mode"><${MicroLabel}>${mode === 'solo' ? 'SOLO' : 'TEAM'}<//>
-							<b class="st-modegrid__name">${t(label)}</b></div>
-						<${StatCard} micro="TOTAL" value=${fmtNum(v.games)} label=${t('总模拟数')} />
-						<${StatCard} micro="SUCCESS" value=${fmtNum(v.wins)} label=${t('成功卫戍')} tone="mint" />
-						<${StatCard} micro="CORE CLEAR" value=${fmtNum(v.hiddenCleared)} label=${t('绝境突破')} tone="gold" />
-					</div>`;
-				})}
-			</div>
-			</div>
-			${titles.length ? html`<div class="st-title-panel"><h4 class="st-sub">${t('称号')}</h4>
-				<${TitleHexagon} titles=${titles} /></div>` : null}
-		</div>
     <p class="st-rule"><${Icon} name="info" />${t('计入统计：打到结算的对局，以及中途退出前至少清完 1 个回合的对局；更早退出的对局只留在对局记录里。')}${agg.excluded
       ? html` <b>${t('另有 {n} 局未计入统计', { n: agg.excluded })}</b>` : null}</p>
   <//>`;

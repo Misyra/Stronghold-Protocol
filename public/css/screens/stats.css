@@ -94,7 +94,7 @@
 .st-card--gold .st-card__num { color: var(--amber); }
 .st-card__label { font-size: max(.14rem, 10px); color: var(--text-md); letter-spacing: .06em; }
 /* Two rows of four cards to the left of the title diagram. */
-.st-overview-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: .22rem; margin-top: .2rem; }
+.st-overview-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: .22rem; margin: .02rem 0 .2rem; }
 .st-mode-summary { min-width: 0; }
 .st-profile { display: flex; align-items: center; justify-content: space-between; gap: .16rem; margin-bottom: .12rem; }
 .st-profile__name { min-width: 0; font-size: max(.25rem, 16px); line-height: 1.25; color: var(--text-hi); overflow-wrap: anywhere; }
@@ -109,7 +109,6 @@
 .st-modegrid__name { font-size: max(.2rem, 12px); line-height: 1.25; color: var(--text-hi); overflow-wrap: anywhere; }
 .st-modegrid .micro { white-space: normal; overflow-wrap: anywhere; }
 .st-title-panel { min-width: 0; }
-.st-title-panel > .st-sub { margin-top: 0; }
 @media (max-width: 680px) {
 	.st-overview-details { grid-template-columns: minmax(0, 1fr); gap: .18rem; }
 }

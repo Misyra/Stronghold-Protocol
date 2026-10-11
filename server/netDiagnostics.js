@@ -24,18 +24,22 @@ export class TimingHistogram {
       }
       return this.maxMs;
     };
+    let cumulative = 0;
     return { count: this.count, avgMs: this.count ? this.totalMs / this.count : 0,
-      maxMs: this.maxMs, p95UpperMs: percentile(0.95), p99UpperMs: percentile(0.99) };
+      maxMs: this.maxMs, p95UpperMs: percentile(0.95), p99UpperMs: percentile(0.99),
+      sumMs: this.totalMs,
+      // Cumulative bucket counts let ops merge histograms across time; never average quantiles.
+      buckets: BOUNDS.map((leMs, i) => ({ leMs: Number.isFinite(leMs) ? leMs : '+Inf', count: cumulative += this.buckets[i] })) };
   }
 }
 
 export class NetDiagnostics {
-  constructor({ windowMs = 15000 } = {}) {
+  constructor({ windowMs = 15000, cpuUsage, eluNow } = {}) {
     this.startedAt = performance.now();
     this.eluStart = performance.eventLoopUtilization();
     this.loop = monitorEventLoopDelay({ resolution: 20 });
     this.loop.enable();
-    this.intervals = new ProcessIntervals({ windowMs });
+    this.intervals = new ProcessIntervals({ windowMs, cpuUsage, eluNow });
     this.receivedFrames = 0;
     this.receivedBytes = 0;
     this.handlers = new Map();
@@ -66,7 +70,10 @@ export class NetDiagnostics {
   }
   stats() {
     const ms = (value) => Number.isFinite(value) ? value / 1e6 : 0;
+    const cpu = process.cpuUsage();
     return { period: 'sinceStart', elapsedSec: (performance.now() - this.startedAt) / 1000,
+      // Cumulative CPU time covers the whole game process, including Workers and zlib; not event-loop utilization.
+      processCpu: { userSeconds: cpu.user / 1e6, systemSeconds: cpu.system / 1e6 },
       eventLoop: { resolutionMs: 20, utilization: performance.eventLoopUtilization(this.eluStart).utilization,
         meanMs: this.loop.count ? ms(this.loop.mean) : 0, maxMs: this.loop.count ? ms(this.loop.max) : 0,
         p95Ms: this.loop.count ? ms(this.loop.percentile(95)) : 0, p99Ms: this.loop.count ? ms(this.loop.percentile(99)) : 0 },
@@ -82,9 +89,14 @@ export class NetDiagnostics {
 // Completed windows are independent of readers. Keep two minutes of bounded
 // history so polling on either side of a boundary need not lose a short freeze.
 export class ProcessIntervals {
-  constructor({ windowMs = 15000 } = {}) {
+  constructor({ windowMs = 15000, cpuUsage = () => process.cpuUsage(),
+    eluNow = () => performance.eventLoopUtilization() } = {}) {
     if (!Number.isFinite(windowMs) || windowMs < 50) throw new RangeError('Invalid diagnostics window');
     this.windowMs = windowMs;
+    this.cpuUsage = cpuUsage;
+    this.eluNow = eluNow;
+    this.cpuPrev = this.cpuUsage();
+    this.eluPrev = this.eluNow();
     this.startedAt = Date.now();
     this.monoStart = performance.now();
     this.sequence = 0;
@@ -118,17 +130,26 @@ export class ProcessIntervals {
   settle() {
     this.recordGc(this.observer.takeRecords());
     const endedAt = Date.now(), monoEnd = performance.now();
+    // Sample once per settle and freeze results into the completed window; snapshot() must never recompute.
+    const cpuNow = this.cpuUsage(), eluNow = this.eluNow();
+    const activeDelta = Math.max(0, eluNow.active - this.eluPrev.active);
+    const idleDelta = Math.max(0, eluNow.idle - this.eluPrev.idle);
     const ms = (n) => this.loop.count && Number.isFinite(n) ? n / 1e6 : null;
     const window = { sequence: ++this.sequence, startedAt: this.startedAt, endedAt,
       windowMs: monoEnd - this.monoStart,
       eventLoop: { resolutionMs: 20, count: this.loop.count,
+        utilization: activeDelta + idleDelta > 0 ? activeDelta / (activeDelta + idleDelta) : null,
         p50Ms: ms(this.loop.percentile(50)), p90Ms: ms(this.loop.percentile(90)),
-        p99Ms: ms(this.loop.percentile(99)), maxMs: ms(this.loop.max) },
+        p95Ms: ms(this.loop.percentile(95)), p99Ms: ms(this.loop.percentile(99)), maxMs: ms(this.loop.max) },
+      // Deltas of the cumulative process.cpuUsage() counters; regressions clamp to 0, never negative.
+      processCpuDelta: { userSeconds: Math.max(0, cpuNow.user - this.cpuPrev.user) / 1e6,
+        systemSeconds: Math.max(0, cpuNow.system - this.cpuPrev.system) / 1e6 },
       gc: this.gc };
     this.history.push(window);
     if (this.history.length > 8) this.history.shift();
     this.loop.reset(); this.gc = this.emptyGc();
     this.startedAt = endedAt; this.monoStart = monoEnd;
+    this.cpuPrev = cpuNow; this.eluPrev = eluNow;
   }
   snapshot() {
     // Defensive copies prevent API callers from altering later observations.

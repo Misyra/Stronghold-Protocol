@@ -87,6 +87,10 @@ nginx 可在完整 combined 前缀之后追加 rt=$request_time urt=$upstream_re
 
 新增字段经白名单清洗后落入样本及补传，中央 SQLite 与探针聚合均保留诊断峰值。daily 增加事件循环 p99 和主线程 CPU 峰值，旧历史缺失不补零。CSV 在第一条旧记录也预声明新诊断列；JSONL 保留完整脱敏结构。worker 排队毫秒及 persist failures 为累计值；累计均值并非本轮时延。
 
+## 窗口 ELU 与进程 CPU（2026-10-12）
+
+诊断窗口新增 eventLoop.utilization（0–1，15 秒窗口内事件循环利用率）与 p95Ms，以及 processCpuDelta（该窗口内进程 user/system CPU 秒增量，计数回退按 0 计）。探针换算为 gameEventLoopUtilization 与 gameProcessCpuUserPct/gameProcessCpuSystemPct：进程 CPU 占比以单核 100% 为基准，覆盖含 worker 线程与 zlib 在内的整个游戏进程，多线程满载时可大于 100%，不能与主线程口径 gameMainThreadCpuPct 相加成总占用；since-start 累计 CPU 计数器仅在 /metrics 的 websocket.diagnostics.processCpu 暴露，探针只消费窗口增量。各类型消息的跨时段时延分位数暂缓：服务器在 /metrics 暴露各直方图的累计分桶（handlerMs.*.buckets 与 sendCompletionMs.buckets，计数 cumulative、末桶 '+Inf' 等于总数、另有精确 sumMs），未来对比应合并直方图后重新取分位数，不能平均分位数。
+
 门户前端和 ops 前端由同一个文件内容构建版本标识；服务启动时固定这份前端，部署后重启门户。代码变化会更新版本，mtime 不参与。旧页面只提示刷新，不自动打断管理编辑；CSP policyVersion 继续独立反映站点来源变化。独立 classic 启动脚本可报告主模块加载错误/可见页面启动超时。
 
 ## 本地告警（2026-10-11）

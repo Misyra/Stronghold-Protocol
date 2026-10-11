@@ -11,6 +11,7 @@
 // button for 观战中 and offers 入座 (room.join of the room) while a player seat is free.
 // Texts go through t() (docs/development/I18N.md).
 
+import { AnnouncementButton } from '../ui/announcement.js';
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
 import {
@@ -328,6 +329,7 @@ export function RoomScreen() {
         </div>
         <${Button} variant="secondary" size="sm" icon="chart" class="stats-entry" onClick=${openStats} title=${t('统计数据')} aria-label=${t('统计数据')}>${t('统计')}<//>
         <${SettingsButton} class="room-settings" variant="secondary" label=${t('设置')} />
+        <${AnnouncementButton} variant="secondary" />
         <${GuideButton} class="room-guide" variant="secondary" label=${t('玩法说明')} />
       </div>
       <div class="topbar__center">

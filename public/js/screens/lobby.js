@@ -11,6 +11,7 @@
 // Texts go through t() (docs/development/I18N.md); the module-level tables hold msgids (N_) translated where they are shown, the
 // config.json mode texts come localized from data.js.
 
+import { AnnouncementButton } from '../ui/announcement.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
@@ -332,6 +333,7 @@ export function LobbyScreen() {
         <span class="topbar__sep" aria-hidden="true"></span>
         <div class="topbar__tools">
           <${SettingsButton} class="lobby-settings" variant="secondary" square=${true} />
+          <${AnnouncementButton} variant="secondary" square=${true} />
           <${GuideButton} class="lobby-guide" variant="secondary" square=${true} />
           <${PwaInstallButton} class="lobby-pwa" square=${true} />
         </div>

@@ -8,7 +8,7 @@ import { clearResources, exportResources, importResources, inspectResources, pau
   resourceState, startResources, subscribeResources } from '../resources/index.js';
 import { t } from '../../../shared/i18n.js';
 
-const RESOURCE_DOWNLOAD_URL = 'https://t.bilibili.com/1256354225629167619';
+const RESOURCE_DOWNLOAD_URL = 'https://b23.tv/A4vdQ1k';
 
 export function byteText(st) {
   const total = Number.isFinite(st.totalBytes) && st.totalBytes > 0 ? st.totalBytes : 0;
@@ -156,15 +156,14 @@ export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', o
           onClick=${() => enabled ? startResources() : onChange(true)}>${st.selectionComplete ? t('检查资源') : enabled ? t('继续下载') : t('开始预载')}<//>`}
       <${Button} variant="secondary" onClick=${closeResources}>${t('关闭')}<//>`}>
     <div class="resource-manager">
-      <p class="resource-manager__intro">${t('先保存画面资源，再下载所选语音等可选资源。对局所需资源优先，作战时降低后台下载速度。')}</p>
-      <section class="resource-manager__voice" aria-label=${t('语音预载')}>
+      <section class="resource-manager__voice" aria-label=${t('语音预载')}
+        title=${optional ? allVoices ? t('预载中文和日语语音。') : t('仅预载{language}语音；切换语言后补载缺少的资源，已缓存语音保留。', { language: voiceLang === 'jp' ? t('日语') : t('中文') }) : t('可选资源预载已关闭，语音在使用时加载。')}>
         <div class="resource-manager__voice-head"><h3>${t('语音语言')}</h3>
           <div class="resource-voice-tabs" role="group" aria-label=${t('语音语言')}>
             ${['cn', 'jp'].map((lang) => html`<button type="button" aria-pressed=${voiceLang === lang}
               disabled=${archiveBusy || !onVoiceLang} onClick=${() => onVoiceLang?.(lang)}>${lang === 'cn' ? t('中文') : t('日语')}</button>`)}
           </div>
         </div>
-        <p>${optional ? allVoices ? t('预载中文和日语语音。') : t('仅预载{language}语音；切换语言后补载缺少的资源，已缓存语音保留。', { language: voiceLang === 'jp' ? t('日语') : t('中文') }) : t('可选资源预载已关闭，语音在使用时加载。')}</p>
         <label class="resource-choice resource-voice-all"><input type="checkbox" checked=${allVoices} disabled=${archiveBusy || !optional}
           onChange=${(e) => onAllVoices(e.currentTarget.checked)} />${t('同时预载全部语音语言')}</label>
       </section>
@@ -182,36 +181,43 @@ export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', o
         <ul>${st.failures.map((failure) => html`<li>${new URL(failure.url, window.location.href).pathname} — ${failure.message}</li>`)}</ul>
       </details>` : null}
       <section class="resource-archive">
-        <h3>${t('ZIP 资源包')}</h3>
-        <p>${t('可将已缓存的资源导出为 ZIP 并发送给朋友，也可以前往 xinhai 的资源包页面。支持导入旧版本资源包；导入会校验完整性，只复用当前版本仍有效的文件，并增量下载缺少的资源。')}</p>
+        <div class="resource-archive__toolbar">
+          <h3>${t('ZIP 资源包')}</h3>
+          <div class="res-actions">
+            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported} onClick=${() => fileInput.current?.click()}>${t('导入 ZIP')}<//>
+            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported || !st.done} onClick=${exportFile}>${t('导出 ZIP')}<//>
+            <${Button} variant="secondary" size="sm" icon="link"
+              onClick=${() => window.open(RESOURCE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')}>${t('前往下载')}<//>
+          </div>
+        </div>
+        <details class="resource-archive__help">
+          <summary>${t('资源包说明')}</summary>
+          <p>${t('点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含中日语音、音效、音乐等；也可导出已缓存资源分享。')}</p>
+          <p>${t('导入时会校验文件，并跳过不适用的资源；开启预载后可补齐缺少部分。若提示校验失败或 ZIP 损坏，请重新下载完整资源包。')}</p>
+          <p>${t('跨站导入说明：本站资源包包含额外的地图与模型配置，导入 xinhai（linxia）站点时可能提示「资源路径无效」并中止。请使用目标站点提供的资源包。')}</p>
+        </details>
         ${st.archiveResult ? html`<div class=${`resource-archive__result${st.archiveResult.status === 'error' ? ' is-error' : ''}`} role="status" aria-live="polite">
           <p>${st.archiveResult.message}</p>
           ${skipReasonText(st.archiveResult.skipReasons) ? html`<p>${skipReasonText(st.archiveResult.skipReasons)}</p>` : null}
         </div>` : null}
         ${st.archive ? html`<${ProgressBar} value=${st.archivePercent} max=${100} size="sm" tone="mint" />` : null}
         <input ref=${fileInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onChange=${importFile} />
-        <div class="res-actions">
-          <${Button} variant="secondary" disabled=${archiveBusy || !st.supported} onClick=${() => fileInput.current?.click()}>${t('导入 ZIP')}<//>
-          <${Button} variant="secondary" disabled=${archiveBusy || !st.supported || !st.done} onClick=${exportFile}>${t('导出 ZIP')}<//>
-          <${Button} variant="secondary" icon="link" disabled=${!RESOURCE_DOWNLOAD_URL}
-            title=${RESOURCE_DOWNLOAD_URL ? t('前往 xinhai 的资源包页面') : t('下载链接待补充')}
-            onClick=${() => window.open(RESOURCE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')}>${t('前往下载')}<//>
-        </div>
       </section>
-      <section class="resource-cache">
-        <h3>${t('缓存清理')}</h3>
-        <p>${storageText(st.storage)}</p>
-        ${st.storage?.low ? html`<p class="resource-manager__warn">${t('预计可用空间可能不足。可先清理可选资源；浏览器仍可能因存储限制而停止处理，已保存进度会保留。')}</p>` : null}
-        <p>${t('只清理本站预载资源，保留个人设置。清理全部资源后暂停下载。')}</p>
-        <div class="res-actions">
-          <${Button} variant="secondary" disabled=${archiveBusy || !st.supported} onClick=${clearOptional}>${t('清理可选资源')}<//>
-          <${Button} variant="secondary" disabled=${archiveBusy || !st.supported} onClick=${() => { void clearResources(); }}>${t('清理全部资源')}<//>
+      ${st.storage?.low ? html`<p class="resource-manager__warn">${t('预计可用空间可能不足。可先清理可选资源；浏览器仍可能因存储限制而停止处理，已保存进度会保留。')}</p>` : null}
+      <details class="resource-cache">
+        <summary><span class="resource-cache__title">${t('缓存清理')}</span><span class="resource-cache__storage">${storageText(st.storage)}</span></summary>
+        <div class="resource-cache__body">
+          <p>${t('只清理本站预载资源，保留个人设置。清理全部资源后暂停下载。')}</p>
+          <div class="res-actions">
+            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported} onClick=${clearOptional}>${t('清理可选资源')}<//>
+            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported} onClick=${() => { void clearResources(); }}>${t('清理全部资源')}<//>
+          </div>
+          <div class="resource-manager__maintenance">
+            ${enabled ? html`<button type="button" class="res-link" onClick=${() => onChange(false)}>${t('关闭预载')}</button>` : null}
+            <span>${t('关闭预载会保留已缓存资源。')}</span>
+          </div>
         </div>
-      </section>
-      <div class="resource-manager__maintenance">
-        ${enabled ? html`<button type="button" class="res-link" onClick=${() => onChange(false)}>${t('关闭预载')}</button>` : null}
-        <span>${t('关闭预载会保留已缓存资源。')}</span>
-      </div>
+      </details>
     </div>
   <//>`;
 }

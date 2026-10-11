@@ -182,7 +182,9 @@ export class SharedPool {
   }
 }
 
-/** Shared equipment stock, derived from actual ownership. Merges, equips and returns cannot lose a reservation:
+/** Shared equipment stock, derived from stock-backed ownership. Operator passive gifts occupy zero copies.
+ * Merges preserve the sum of real reservations (a mixed gift/purchase elite holds one, not two).
+ * Merges, equips and returns cannot lose a reservation:
  * normal equipment occupies one, upgraded equipment two. Shop/choice displays reserve nothing. Source: the original
  * experiment BV1eLXXBqEgF, 1:30 and 2:30. [ASSUMED] An item that is consumed/destroyed or removed by elimination no
  * longer occupies stock, consistently with the video's ownership model; this is not a per-match purchase limit. */
@@ -190,13 +192,18 @@ export class SharedItemPool {
   constructor(gd, players) { this.gd = gd; this.players = players; }
   cap(id) { return this.gd.itemPoolCopies(id); }
   need(id) { return this.gd.isGolden(id) ? 2 : 1; }
+  /** Optional server-owned provenance; old records without it keep the original 1/2-copy occupancy. */
+  occupied(piece) {
+    const full = this.need(piece.id), copies = piece.itemPoolCopies;
+    return Number.isInteger(copies) && copies >= 0 && copies <= full ? copies : full;
+  }
   held(id) {
     const base = this.gd.baseIdOf(id);
     let count = 0;
     const see = p => {
       if (!p) return;
-      if (p.kind === 'item' && this.gd.baseIdOf(p.id) === base) count += this.need(p.id);
-      for (const item of p.items || []) if (this.gd.baseIdOf(item.id) === base) count += this.need(item.id);
+      if (p.kind === 'item' && this.gd.baseIdOf(p.id) === base) count += this.occupied(p);
+      for (const item of p.items || []) if (this.gd.baseIdOf(item.id) === base) count += this.occupied(item);
     };
     for (const ps of this.players()) {
       for (const p of ps.hand) see(p);
@@ -209,8 +216,8 @@ export class SharedItemPool {
   canGain(id) { return this.left(id) >= this.need(id); }
   /** Stock gates eligibility, not probability: retain the existing uniform item draw or explicit data weights.
    * The measured stock table alone does not establish shop probabilities. */
-  pick(rng, ids, weights = null) {
-    const list = [...new Set(ids)].filter(id => this.canGain(id));
+  pick(rng, ids, weights = null, { ignoreStock = false } = {}) {
+    const list = [...new Set(ids)].filter(id => ignoreStock || this.canGain(id));
     const pairs = list.map(id => [id, weights ? Math.max(0, Number(weights.get(id)) || 0) : 1]);
     const total = pairs.reduce((n, p) => n + Math.max(0, p[1]), 0);
     if (!(total > 0)) return null;

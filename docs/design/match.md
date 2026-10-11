@@ -126,6 +126,12 @@ Official rule (bwiki 盟约, 更新公告 5114): before a match the player canno
 active bonds overlap another living teammate's opening strategy. Human and AI teammates are treated equally; it
 neither reserves stock nor prevents a stronger purchase. Existing strategy presets and rehearsal counts are unchanged.
 
+Branch exception (2026-10-11): equipment gifted by an operator passive/trait is outside shared equipment stock,
+including random, copied and prep-end traits. Ordinary purchase/reward/strategy/item-effect/console routes keep their
+stock limits. Per-instance provenance preserves zero gifted copies and the real one-copy contribution of a mixed
+gift/purchase elite through equipment, returns, destruction and checkpoint restore; legacy records without
+provenance retain ordinary 1/2-copy occupancy. See [META.md](../development/META.md#shared-inventory-after-023-design-298).
+
 [ASSUMED] AI reactions are cosmetic social choices, enabled by default and disabled with `SP_BOT_EMOTES=0`. Only
 mixed human/AI matches emit them, through the existing whitelist and cooldown. A human emote gets at most one eligible
 bot reply. Settlement uses that round's results (kills then damage, stable seat tie-break), once per round; the third

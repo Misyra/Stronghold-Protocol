@@ -16,6 +16,11 @@ through.
 
 ## The corpus
 
+2026-10-11 移植 xinhai `1cf48618`（干员被动/特质赠送装备不占用、不受共享装备库存限制，装备实例以可选
+`itemPoolCopies` 记录真实占用）。本地按官方语料完整重算 287 场景：零场景变化——官方基线的 20 场对局与
+267 场战斗都没有触发赠送与库存耗尽的交互路径（xinhai 分支仅 `coop4-FUNNY-6` 变化，来自其既有语料差异）。
+豁免、混合合成占用与快照恢复由 `test/match/passive-item-stock.test.js` 覆盖。
+
 | family | what runs |
 |---|---|
 | `roster` | 49 battles: every visible chess record (normal and elite) with every selectable skill and module (DESIGN §16), 12 operators per battle on a real stage (all 11 in turn) against the round's real wave three times over, every non-leader enemy kind of `data/enemies.json` as extra spawns (half of them bounties), placeable summons on the board, every equipment item, band, battle-side 机变 card and stage map card in turn, bonds from the board |

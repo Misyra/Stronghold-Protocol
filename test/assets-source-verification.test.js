@@ -123,10 +123,12 @@ test('user source API failure fails closed even for matching cached assets and i
   const f = await fixture(t, { 'a.json': good }, { apiStatus: 503 });
   const cacheFile = join(f.root, 'a.json');
   await writeFile(cacheFile, good);
+  f.dl.ledger.files['a.json'] = { url: raw + 'a.json', bytes: good.length, blob: digest(good), commit };
   const result = await f.dl.run([{ rel: 'a.json', urls: [raw + 'a.json'], kind: 'json' }]);
   assert.equal(result.get('a.json').status, 'error');
   assert.match(result.get('a.json').error, /source tree API HTTP 503/);
   assert.deepEqual(await readFile(cacheFile), good);
+  assert.ok(f.dl.accepted.has('a.json'), 'the last verified file remains usable in the manifest');
   await writeFile(cacheFile, good);
   await assert.rejects(cachedJson({ cacheFile, url: raw + 'a.json', verifier: f.verifier, fetchImpl: f.fetchImpl }), /source tree API HTTP 503/);
   assert.deepEqual(await readFile(cacheFile), good);

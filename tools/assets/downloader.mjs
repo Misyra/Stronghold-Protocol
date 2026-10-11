@@ -67,6 +67,8 @@ export class Downloader {
     this.keepExisting = !!keepExisting;
     /** @type {Set<string>} the files (paths under root) this run wrote */
     this.written = new Set();
+    /** @type {Set<string>} previously verified files retained after a transient failure */
+    this.retained = new Set();
     this.accepted = new Set();
     this.log = log;
     this.fetch = guardDefaultFetch(fetchImpl);
@@ -204,7 +206,8 @@ export class Downloader {
     }
     // A failed fetch is not proof that the current file is obsolete. Keep a
     // previously verified file until the source is confirmed missing.
-    if (this.verifier && !lastError) await this.rejectExisting(job);
+    if (this.verifier && lastError) await this.retainExisting(job);
+    else if (this.verifier) await this.rejectExisting(job);
     if (lastError) this.network.directFailureHint();
     return lastError ? { status: 'error', bytes: 0, error: lastError } : { status: 'miss', bytes: 0, error: 'not found (404) on all sources' };
   }
@@ -213,7 +216,10 @@ export class Downloader {
   async verifiedCandidate(job, url) {
     let source;
     try { source = await this.verifier.resolve(url); }
-    catch (e) { return { result: { status: 'error', bytes: 0, error: e.message } }; }
+    catch (e) {
+      await this.retainExisting(job);
+      return { result: { status: 'error', bytes: 0, error: e.message } };
+    }
     if (!source) return {};
     if (!this.force && !job.mutable) {
       try {
@@ -227,6 +233,17 @@ export class Downloader {
       } catch { /* Missing or rejected bytes: fetch this candidate, not an old ledger URL. */ }
     }
     return { source };
+  }
+
+  async retainExisting(job) {
+    if (this.retained.has(job.rel)) return;
+    const led = this.ledger.files[job.rel];
+    if (!led?.blob) return;
+    try {
+      const buf = await readFile(join(this.root, job.rel));
+      this.verifier.verify(buf, { blob: led.blob, url: led.url || job.rel });
+      if (validate(job.kind, buf)) this.retained.add(job.rel);
+    } catch { /* No verified fallback is available. */ }
   }
 
   async rejectExisting(job) {
@@ -265,7 +282,7 @@ export class Downloader {
         let r;
         try { r = await this.runJob(job); } catch (e) { r = { status: 'error', bytes: 0, error: e?.message || String(e) }; }
         results.set(job.rel, r);
-        if (r.status === 'ok' || r.status === 'skip') this.accepted.add(job.rel);
+        if (r.status === 'ok' || r.status === 'skip' || this.retained.has(job.rel)) this.accepted.add(job.rel);
         else this.accepted.delete(job.rel);
         counts[r.status]++;
         this.totals[r.status]++;

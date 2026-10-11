@@ -112,7 +112,7 @@ branch for cache grouping and Spine page lookup, rather than the mirror or pinne
 JSON indexes are verified before parsing or planning. Missing snapshot entries, unsupported source URLs, malformed
 API responses and API failures fail closed; they do not allow stale cache reuse. A confirmed missing source may remove
 its obsolete output, but a source API outage, network failure, or content mismatch preserves the last verified file and
-its provenance for a later retry. Unattempted cached alternatives cannot enter the rebuilt manifest. A verified run exits 1 on
+its provenance for a later retry; that retained file remains eligible for the rebuilt manifest. Unattempted cached alternatives cannot enter the rebuilt manifest. A verified run exits 1 on
 download errors or font-generation errors; missing optional sources still follow the existing fallback/drop rules,
 and `--strict` rejects dropped leaves. The manifest shrink guard remains in effect.
 

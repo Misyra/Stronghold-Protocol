@@ -580,6 +580,23 @@ describe('local stats: corrupt and old storage', () => {
 });
 
 describe('local stats: export / import merge', () => {
+	test('an import offers the newest valid self nickname without taking a teammate or existing-history name', () => {
+		const newest = buildRecord(baseResult({ seed: 3 }), { myId: 'p1', now: 3 });
+		newest.players[0].name = '\u200b';
+		newest.players[1].name = 'Teammate';
+		const named = buildRecord(baseResult({ seed: 2 }), { myId: 'p1', now: 2 });
+		named.players[0].name = '  Archive\u200bID  ';
+		const older = buildRecord(baseResult({ seed: 1 }), { myId: 'p1', now: 1 });
+		older.players[0].name = 'OldID';
+		const existing = buildRecord(baseResult({ seed: 4 }), { myId: 'p1', now: 4 });
+		existing.players[0].name = 'ExistingID';
+		const incoming = { v: STATS_VERSION, records: [older, newest, named] };
+		assert.equal(importStats(incoming, { records: [existing] }).name, 'ArchiveID');
+		assert.equal(importStats(incoming, { records: [existing, newest, named, older] }).name, 'ArchiveID', 'duplicate imports can also recover an unknown ID');
+		assert.equal(importStats({ v: STATS_VERSION, records: [compactRecord(named), newest] }, { records: [existing] }).name, '', 'no usable imported self name stays unknown');
+		assert.equal(importStats({ v: STATS_VERSION, records: [] }, { records: [existing] }).name, '');
+	});
+
   test('export → import round-trips; merge unions by id, newest first, and counts added / skipped', () => {
     withStorage(() => {
       const rec = recordResult(baseResult(), { myId: 'p1', now: 1000 });

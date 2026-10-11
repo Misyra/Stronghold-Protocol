@@ -64,7 +64,7 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
   after(async () => { for (const c of clients) await c.close(); await srv?.stop(); });
 
   /** A fresh browser on `base` with `sp.pref.stats` (a string) stored before the page loads. */
-  async function open({ w = 1920, h = 1080, stored = null, entered = true, base = srv.base, lang = null } = {}) {
+	async function open({ w = 1920, h = 1080, stored = null, entered = true, base = srv.base, lang = null, nickname = 'Doctor' } = {}) {
     const c = new Client(puppeteer, base, 'stats', { prefix: 'stats', w, h });
     clients.push(c);
     c.browser = await puppeteer.launch({
@@ -76,12 +76,12 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     await c.page.setViewport({ width: w, height: h, hasTouch: w < 1000, isMobile: w < 1000 });
     c.page.on('console', (m) => { if (m.type() === 'error') c.problems.push(`console: ${m.text()}`); });
     c.page.on('pageerror', (e) => c.problems.push(`pageerror: ${e.message}`));
-    await c.page.evaluateOnNewDocument((stored, entered, lang) => {
-      localStorage.setItem('sp.name', 'Doctor');
+		await c.page.evaluateOnNewDocument((stored, entered, lang, nickname) => {
+			if (nickname !== null) localStorage.setItem('sp.name', nickname);
       if (entered) sessionStorage.setItem('sp.entered', '1');
       if (lang) localStorage.setItem('sp.pref.lang', JSON.stringify(lang));
       if (stored != null && !sessionStorage.getItem('sp.e2e.seeded')) { localStorage.setItem('sp.pref.stats', stored); sessionStorage.setItem('sp.e2e.seeded', '1'); }
-    }, stored, entered, lang);
+		}, stored, entered, lang, nickname);
     await c.page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await c.page.waitForFunction((needOnline) => (!needOnline || globalThis.__SP__?.store.get().connection.status === 'online') && !!document.querySelector('.screen'), { timeout: 30000 }, entered);
     return c;
@@ -94,6 +94,57 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
   };
   const toast = (c) => c.page.waitForFunction(() => document.querySelector('.toast')?.textContent || false, { timeout: 8000 }).then((h) => h.jsonValue());
   const noProblems = (c) => assert.deepEqual(c.problems, [], 'no console errors / failed requests');
+
+	test('current nickname follows the active session rather than saved history', async () => {
+		const env = seed(1);
+		for (const rec of env.records) rec.players.find((p) => p.playerId === rec.selfId).name = 'ArchiveID';
+		const c = await open({ stored: JSON.stringify(env), entered: false });
+		await c.page.$eval('.title-login input', (input) => {
+			input.value = 'ActiveID';
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		});
+		await c.click('.title-login .btn--primary', '开始');
+		await c.page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online');
+		assert.deepEqual(await c.page.evaluate(() => ({
+			current: globalThis.__SP__.store.get().me.name, saved: localStorage.getItem('sp.name'),
+		})), { current: 'ActiveID', saved: 'ActiveID' }, 'entering a new ID updates the session and saved identity');
+		await openStats(c);
+		await c.page.waitForFunction(() => document.querySelector('.st-profile__name')?.textContent.trim() === 'Dr. ActiveID');
+		await c.page.evaluate(() => {
+			localStorage.setItem('sp.name', 'StaleID');
+			globalThis.__SP__.store.patch('me', { name: 'LiveID' });
+		});
+		await c.page.waitForFunction(() => document.querySelector('.st-profile__name')?.textContent.trim() === 'Dr. LiveID');
+		await c.page.evaluate(() => globalThis.__SP__.store.patch('me', { name: '' }));
+		await c.page.waitForFunction(() => document.querySelector('.st-profile__name')?.textContent.trim() === 'Dr. 未知');
+		noProblems(c);
+	});
+
+	test('import restores and saves an unknown ID while preserving an already selected ID', async () => {
+		const env = seed(1);
+		for (const rec of env.records) rec.players.find((p) => p.playerId === rec.selfId).name = 'ArchiveID';
+		const dir = mkdtempSync(path.join(tmpdir(), 'sp-stats-name-'));
+		const file = path.join(dir, 'stats.json');
+		writeFileSync(file, JSON.stringify(env));
+		for (const nickname of [null, 'SessionID']) {
+			const c = await open({ entered: false, nickname });
+			await openStats(c, '.title-corner .btn');
+			await c.page.waitForFunction((name) => document.querySelector('.st-profile__name')?.textContent.trim() === `Dr. ${name}`, {}, nickname || '未知');
+			const input = await c.page.$('.st input[type="file"]');
+			await input.uploadFile(file);
+			const expected = nickname || 'ArchiveID';
+			await c.page.waitForFunction((name) => document.querySelector('.st-profile__name')?.textContent.trim() === `Dr. ${name}`, {}, expected);
+			await toast(c);
+			assert.deepEqual(await c.page.evaluate(() => ({
+				current: globalThis.__SP__.store.get().me.name, saved: localStorage.getItem('sp.name'),
+			})), { current: expected, saved: expected });
+			await c.page.keyboard.press('Escape');
+			await c.page.waitForFunction((name) => document.querySelector('.title-login input')?.value === name, {}, expected);
+			assert.ok(await c.exists('.title-screen'), 'importing history does not start a session');
+			noProblems(c);
+			await c.close();
+		}
+	});
 
   test('desktop: tabs, the counting rule on screen, a settlement re-viewed, Esc, the title entry', async () => {
     const env = seed();

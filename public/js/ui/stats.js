@@ -35,6 +35,7 @@
 // saveStats / their helpers.
 
 import { PHASE } from '../../../shared/constants.js';
+import { sanitizeName } from './playerName.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
 export const STATS_VERSION = 3;
@@ -605,9 +606,9 @@ export function mergeStats(a, b) {
  * Parse + migrate + merge an exported / pasted payload into the current data.
  * @param {any} raw parsed JSON of the imported file
  * @param {{ records: any[] }} current current envelope
- * @returns {{ stats: { v: number, records: any[] }, added: number, skipped: number, dropped: number }}
+ * @returns {{ stats: { v: number, records: any[] }, added: number, skipped: number, dropped: number, name: string }}
  *   added = records new to this device; skipped = duplicates of records it has; dropped = rows of the file that could
- *   not be read
+ *   not be read; name = newest usable imported self nickname (the caller only adopts it when its current name is empty)
  */
 export function importStats(raw, current) {
   if (isObj(raw) && raw.kind != null && raw.kind !== 'local-stats') {
@@ -629,7 +630,9 @@ export function importStats(raw, current) {
   const have = new Set((Array.isArray(current?.records) ? current.records : []).map((r) => r.id));
   const merged = mergeStats(current, incoming);
   const added = incoming.records.filter((r) => !have.has(r.id)).length;
-  return { stats: merged, added, skipped: incoming.records.length - added, dropped };
+	// Incoming rows are newest first; compacted or unnamed rows cannot restore a nickname.
+	const name = incoming.records.map((rec) => sanitizeName(selfRowOf(rec)?.name)).find(Boolean) || '';
+	return { stats: merged, added, skipped: incoming.records.length - added, dropped, name };
 }
 
 /**

@@ -25,7 +25,7 @@ import { useDocClass } from '../ui/device.js';
 import { uiUrl } from '../ui/assetUrls.js';
 import { identity } from '../net.js';
 import { TITLE_HEX_SECTORS, titleSectorPoints } from '../ui/titleHexagon.js';
-import { createStore, useStore, selectRoute } from '../store.js';
+import { store, createStore, useStore, selectRoute } from '../store.js';
 import { ResultView } from './result.js';
 import { toast, toastError } from '../ui/toasts.js';
 import {
@@ -342,8 +342,7 @@ function StatsScreen({ tab }) {
   const replayRef = useRef(null);
   replayRef.current = replay;
   const inMatch = useStore((s) => selectRoute(s) === 'game');
-	const currentName = useStore((s) => s.me.name);
-	const nickname = currentName || identity.loadName() || selfRowOf(stats.records[0])?.name || '';
+	const nickname = useStore((s) => s.me.name);
   useDocClass('sp-stats-open');
 
   // a match starting (the host pressed 开始) takes the player to its briefing: the overlay must not sit on top of it
@@ -378,8 +377,12 @@ function StatsScreen({ tab }) {
     if (file.size > IMPORT_MAX_CHARS) { toast(t('文件过大，无法导入'), 'error'); return; }
     try {
       const raw = JSON.parse(await readFileText(file));
-      const { stats: merged, added, skipped, dropped } = importStats(raw, loadStats());
+			const { stats: merged, added, skipped, dropped, name } = importStats(raw, loadStats());
       if (added && !saveStats(merged)) { toast(t('无法写入本机存储，可能已满'), 'error'); return; }
+			if (!store.get().me.name && name) {
+				identity.saveName(name);
+				store.patch('me', { name });
+			}
       reload();
       const tail = (skipped ? t('（跳过重复 {skipped} 条）', { skipped }) : '') + (dropped ? t('（{n} 条无法读取）', { n: dropped }) : '');
       toast(added ? t('已导入 {added} 条记录{tail}', { added, tail }) : t('没有新记录（全部与现有数据重复）'), 'success');

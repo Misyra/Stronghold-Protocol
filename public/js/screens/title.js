@@ -327,7 +327,7 @@ export function TitleScreen() {
           onInput=${editName} onEnter=${start} invalid=${!!name && !!error} hint=${name && error ? t(error) : null} />
         ${serverError === ERR_TEXT.NICKNAME_SENSITIVE ? html`<p class="title-name-feedback" role="status">
           ${tParts('如果你认为昵称没有问题，可以{feedback}。', {
-            feedback: html`<a href="https://github.com/sganggs/Stronghold-Protocol/issues/new?template=BugReport.yml"
+            feedback: html`<a href="https://github.com/Misyra/Stronghold-Protocol/issues/new?template=BugReport.yml"
               target="_blank" rel="noopener noreferrer">${t('前往 GitHub 反馈')}</a>`,
           })}
         </p>` : null}

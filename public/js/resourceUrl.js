@@ -22,7 +22,8 @@ export function resourceReady(timeoutMs = 3000) {
 void resourceReady();
 
 /** Release paths keep Spine's relative atlas/page references in the same cache namespace. */
-export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion : globalThis.__spAssetVersion) {
+export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion :
+  /^\/(?:js|vendor|shared|sim)\//.test(url) ? (globalThis.__spRuntimeVersion || globalThis.__spAssetVersion) : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);
   if (remote !== url) return remote;
   if (!version || typeof url !== 'string' || !/^\/(?:assets|data|vendor|fonts|js|shared|sim|media)\//.test(url)) return url;

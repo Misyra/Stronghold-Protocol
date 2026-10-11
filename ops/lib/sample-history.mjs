@@ -26,10 +26,10 @@ export function sampleHistory(dir, { cursor: encoded, limit = 200 } = {}) {
     if (cursor && file < cursor.file) continue;
     if (records.length >= limit || scanned >= 1024 * 1024) { hasMore = true; break; }
     const stat = fs.statSync(path.join(dir, file));
-    const checkpoint = cursor?.file === file ? { offset: cursor.offset, ino: Number(cursor.ino) } : { offset: 0, ino: stat.ino };
+    const checkpoint = cursor?.file === file ? { offset: cursor.offset, ino: Number(cursor.ino), inoKey: String(cursor.ino) } : { offset: 0, ino: stat.ino };
     if (cursor?.file === file && String(cursor.ino) !== String(fs.statSync(path.join(dir, file), { bigint: true }).ino)) gap = true;
     const batch = readLogBatch(path.join(dir, file), checkpoint, { maxLines: limit - records.length, maxBytes: 1024 * 1024 - scanned });
-    scanned += batch.offset - (batch.ino === checkpoint.ino && checkpoint.offset <= stat.size ? checkpoint.offset : 0);
+    scanned += batch.offset - ((checkpoint.inoKey ? batch.inoKey === checkpoint.inoKey : batch.ino === checkpoint.ino) && checkpoint.offset <= stat.size ? checkpoint.offset : 0);
     for (const line of batch.lines) {
       let row;
       try { row = JSON.parse(line); } catch { throw Object.assign(new Error('Corrupt sample log'), { code: 'INVALID_RESPONSE' }); }

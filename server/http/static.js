@@ -183,7 +183,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         sendError(req, res, 404, '页面不存在 · Not found'); return;
       }
       // Never serve this release's bytes under an old immutable URL after deployment.
-      if (match[1] !== release.expectedTag(match[2])) { sendError(req, res, 404, '资源版本已更新 · Reload required'); return; }
+      const legacyCode = /^\/(?:js|vendor|shared|sim)\//.test(match[2]) || match[2] === '/data.js';
+      if (match[1] !== release.expectedTag(match[2]) && !(legacyCode && match[1] === release.tag)) { sendError(req, res, 404, '资源版本已更新 · Reload required'); return; }
       decoded = match[2];
       versioned = true;
     }

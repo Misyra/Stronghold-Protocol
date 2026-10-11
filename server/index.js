@@ -12,7 +12,7 @@
 //                      tools/r2-sync.mjs, /data/resource-manifest.json for the offline preload, URL rewriting + CORS)
 //   http/media.js      /media/bgm/act1 → public/assets/audio/bgm/act1.mp3 (audio addressed without its extension)
 //   http/files.js      one file → response: MIME, gzip + memory cache, ETag / Last-Modified / 304, Cache-Control, ranges
-//   http/buildTag.js   the build tag of the served browser runtime (/healthz `build`, public/js/ui/buildGuard.js)
+//   assetVersion.js    the served release tag (/healthz `build`, public/js/ui/buildGuard.js)
 //   http/routes.js     the request listener: security headers, 414 / 400 / 405, GET /healthz → JSON status (this fork:
 //                      worker / memory / static-cache / socket-buffer / wire / persist diagnostics),
 //                      GET /api/ping, GET /api/rooms/<code>/status (rate-limited, roomStatus.js), GET /api/announcement,
@@ -177,9 +177,8 @@ export async function startServer(opts = {}) {
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
-  // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
-  resetBuildTag();
-  buildTag();
+  // createStaticHandler already computes the authoritative 16-character release
+  // tag. The legacy buildTag exports remain compatibility helpers only.
 
   const server = http.createServer(createRequestHandler({
     serveStatic,

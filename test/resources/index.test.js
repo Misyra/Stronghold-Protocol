@@ -389,7 +389,7 @@ test('the worker entry (public/resource-sw.js) intercepts resources only', async
   const caches = new MemoryCaches();
   const asset = `${ORIGIN}/assets/e2e/a.png`;
   await (await caches.open(cacheName('sw'))).put(asset, new Response('cached-bytes'));
-  Object.defineProperty(globalThis, 'self', { value: { addEventListener: (name, fn) => { handlers[name] = fn; } }, configurable: true, writable: true });
+  Object.defineProperty(globalThis, 'self', { value: { location: { href: ORIGIN + SW_URL }, addEventListener: (name, fn) => { handlers[name] = fn; } }, configurable: true, writable: true });
   Object.defineProperty(globalThis, 'caches', { value: caches, configurable: true, writable: true });
   t.after(() => { for (const [k, d] of saved) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; } });
   await import('../../public/resource-sw.js');

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { gameDiagnostics } from './lib/game-diagnostics.mjs';
 /**
  * Stronghold Protocol 在线监控采集器（零第三方依赖，仅 Node 内置模块）
  *
@@ -15,6 +16,8 @@
  * 基于用户提供的 sp-export/管理面板-collector.mjs 改造。
  * 仅监听回环；不生成 HTML。由站点 Agent 提供带鉴权的管理 API。
  */
+import { LinuxDiagnostics } from './lib/linux-diagnostics.mjs';
+import { RequestDiagnostics, RequestMinutes, parseAccessLine } from './lib/request-diagnostics.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,7 +28,7 @@ import { sampleHistory, SampleWriter } from './lib/sample-history.mjs';
 import { onlineCapacity } from './lib/metrics.mjs';
 import { execFileSync } from 'node:child_process';
 import { integer, loopback, periodic, fetchJson, safeUrl } from './lib/http.mjs';
-import { dayKey, nginxDay, aggregateSeries, cpuTimesFromStat, cpuAccounting, parsePressure, diskCountersFromStats, diskRate, LogReader } from './lib/collector-utils.mjs';
+import { dayKey, nginxDay, aggregateSeries, cpuTimesFromStat, cpuAccounting, cpuStealAccounting, parsePressure, diskCountersFromStats, diskRate, LogReader } from './lib/collector-utils.mjs';
 
 const T0 = Date.now();
 
@@ -68,6 +71,7 @@ const sampleWriter = new SampleWriter(CFG.dataDir, RING_MAX);
 
 const stats = new DailyStats({ dir: CFG.dataDir, timeZone: CFG.timeZone, retainDays: CFG.retainDays });
 const logReader = new LogReader(CFG.nginxLog);
+const requestMinutes = new RequestMinutes({ state: stats.requestMinutes });
 const diagnostics = { nginx: { status: 'missing', error: 'NO_SAMPLE' }, storage: { status: 'ok', error: null } };
 const storageFailures = new Set();
 let lastLogAt = null, logBacklogBytes = null;
@@ -116,14 +120,16 @@ function logStatus(code = null) {
   if (code && diagnostics.nginx.error !== code) console.warn('[monitor] nginx 日志不可用:', code);
   diagnostics.nginx = { status: code ? 'error' : 'ok', error: code };
 }
+let requestDiagnostics = new RequestDiagnostics();
 function parseNginx() {
+  requestDiagnostics = new RequestDiagnostics();
   let batch;
   try {
     batch = logReader.read(stats.checkpoint, { maxLines: CFG.logMaxLines });
   } catch (error) {
     const code = error.code === 'ENOENT' ? 'LOG_MISSING' : ['EACCES', 'EPERM'].includes(error.code) ? 'LOG_UNREADABLE' :
       error.code === 'LOG_LINE_TOO_LONG' ? 'LOG_LINE_TOO_LONG' : 'LOG_READ_FAILED';
-    logStatus(code);
+    logStatus(code); requestMinutes.invalidate();
     return;
   }
   const { lines } = batch;
@@ -131,14 +137,16 @@ function parseNginx() {
   let recognized = 0;
   for (const line of lines) {
     const date = nginxDay(line, CFG.timeZone), m = LOG_RE.exec(line);
-    if (!date || !m) continue;
+    if (!date || !m) { requestMinutes.invalidate(); continue; }
     recognized++;
+    const request = parseAccessLine(line);
+    requestDiagnostics.ingest(request); requestMinutes.ingest(request);
     const stamp = /\[(\d\d)\/([A-Za-z]{3})\/(\d{4}):(\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)\]/.exec(line);
     if (stamp) lastLogAt = Date.parse(stamp[1] + ' ' + stamp[2] + ' ' + stamp[3] + ' ' + stamp[4] + ' ' + stamp[5] + stamp[6]);
     const route = (m[2].split(' ')[1] || '').split('?')[0];
     stats.ingest({ date, ip: m[1], route, status: m[3], bytes: m[4] });
   }
-  if (batch.gap) { logStatus('LOG_ROTATION_GAP'); return; }
+  if (batch.gap) { logStatus('LOG_ROTATION_GAP'); requestMinutes.invalidate(); return; }
   // With no new lines, retain a format error until a recognizable line actually arrives.
   if (lines.length) logStatus(recognized ? null : 'LOG_FORMAT_INVALID');
   else if (diagnostics.nginx.error !== 'LOG_FORMAT_INVALID') logStatus();
@@ -163,7 +171,7 @@ function readCpuTimes() {
 // cpu + iowait always equals top's 1 − idle. See cpuAccounting in lib/collector-utils.mjs.
 function cpuSample() {
   const cur = readCpuTimes();
-  const result = cpuAccounting(cur, cpuPrev);
+  const result = { ...cpuAccounting(cur, cpuPrev), stealPct: cpuStealAccounting(cur, cpuPrev) };
   cpuPrev = cur;
   return result;
 }
@@ -221,7 +229,7 @@ function netRate(dtSec) {
 // 全扫要逐个读几百个 /proc/<pid>/cmdline，缓存后单轮固定只读个位数的文件。
 const RESCAN_EVERY = 15;
 let pidCache = null;
-let needGameRss = true;
+const needGameRss = true;
 let samplesSinceScan = 0;
 function findMonitoredPids() {
   const whichOf = (cmd) => needGameRss && cmd.includes('server/index.js') ? 'game' : cmd.includes('nginx') ? 'nginx' : null;
@@ -250,7 +258,7 @@ function findMonitoredPids() {
 }
 
 function rssOf(gameRss) {
-  needGameRss = gameRss === null;
+  // Keep the game PID for thread diagnostics even when health already supplies RSS.
   if (os.platform() === 'win32') return { game: gameRss, nginx: null };
   const out = { game: 0, nginx: 0 };
   for (const { pid, which } of findMonitoredPids()) {
@@ -337,6 +345,9 @@ async function sampleGame() {
 }
 
 let lastSlowWarnAt = 0;
+let clockTicks = null;
+if (os.platform() === 'linux') { try { const n = Number(execFileSync('getconf', ['CLK_TCK'], {encoding:'utf8',timeout:1000})); if(Number.isFinite(n) && n>0)clockTicks=n; } catch { /* CPU unknown without the platform clock tick rate */ } }
+const linuxDiagnostics = new LinuxDiagnostics({ticksPerSec:clockTicks});
 
 async function takeSample() {
   const sampleStartedAt = Date.now();
@@ -355,6 +366,9 @@ async function takeSample() {
   const d = diskInfo();
   const cc = clientConns();
   const s = {
+    ...requestDiagnostics.snapshot(diagnostics.nginx.status === 'ok'),
+    ...requestMinutes.snapshot({ok:diagnostics.nginx.status === 'ok',backlogBytes:logBacklogBytes}),
+    requestMinuteWindows: requestMinutes.updates({ok:diagnostics.nginx.status === 'ok',backlogBytes:logBacklogBytes}),
     seq: ++seq, sampleId: randomUUID(),
     t: Date.now(),
     game: g.ok,
@@ -367,8 +381,11 @@ async function takeSample() {
     uptimeSec: g.ok ? g.uptimeSec : null,
     app: g.ok ? g.app : null,
     healthzMs: g.latencyMs ?? null,
+    ...gameDiagnostics(g),
+    ...linuxDiagnostics.sample({pid: os.platform() === 'linux' ? (() => { const games=findMonitoredPids().filter(p=>p.which==='game'); return games.length===1 ? games[0].pid : null; })() : null, iface:CFG.iface}),
     cpu: cpu.pct,
     iowaitPct: cpu.iowaitPct,
+    cpuStealPct: cpu.stealPct,
     psiCpuSome: psi.cpuSome, psiCpuFull: psi.cpuFull,
     psiIoSome: psi.ioSome, psiIoFull: psi.ioFull,
     psiMemSome: psi.memSome, psiMemFull: psi.memFull,
@@ -393,6 +410,7 @@ async function takeSample() {
     hostUptimeSec: Math.round(os.uptime()),
     logBacklogBytes, logLagSec: logBacklogBytes > 0 && Number.isFinite(lastLogAt) ? Math.max(0, Math.round((Date.now() - lastLogAt) / 1000)) : logBacklogBytes === 0 ? 0 : null,
   };
+  s.collectorLocalMs = Math.max(0, Date.now() - sampleStartedAt - (g.latencyMs || 0));
   stats.rollover(); stats.peaks(s);
   alertCheck(s);
   last = s;
@@ -401,6 +419,7 @@ async function takeSample() {
   s.monitor = { diagnostics: structuredClone(diagnostics), today: stats.snapshot().today, timeZone: CFG.timeZone, intervalSec: CFG.intervalMs / 1000, collectorUptimeSec: Math.round((s.t - T0) / 1000), samples: ring.length, capacity: capacity() };
   sampleWriter.enqueue(`samples-${dayKey(new Date(s.t), CFG.timeZone)}.jsonl`, s);
   storageIO('samples', () => sampleWriter.flush());
+  stats.requestMinutes = requestMinutes.serialize();
   saveDay();
   // 本地工作（不含健康检查的网络等待）超过 1 秒提示一次——正常只有几毫秒，出现说明日志积压或负载异常。
   const localMs = Date.now() - sampleStartedAt - (g.latencyMs || 0);

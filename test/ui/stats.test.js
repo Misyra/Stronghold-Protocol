@@ -229,7 +229,7 @@ describe('local stats: the counting rule (a match entered and left right away do
     assert.equal(agg.rounds.total, 16 + 5, 'the peek adds nothing');
     assert.equal(agg.byDifficulty.HARD.games, 2);
     assert.deepEqual(agg.bands.band_amiya, { games: 2, wins: 1 });
-    assert.equal(agg.byMode.solo, 2);
+    assert.equal(agg.byMode.solo.games, 2);
   });
 
   test('combat totals read the settled records only (a quit record has no stat block)', () => {
@@ -654,8 +654,8 @@ describe('local stats: aggregation (what the page renders)', () => {
     assert.equal(agg.duration.totalMs, 952123 + 300000);
     assert.equal(agg.hidden.reached, 1);
     assert.equal(agg.hidden.cleared, 1);
-    assert.equal(agg.byMode.solo, 1);
-    assert.equal(agg.byMode.coop, 1);
+    assert.equal(agg.byMode.solo.games, 1);
+    assert.equal(agg.byMode.coop.games, 1);
   });
 
   test('per-difficulty rows; an unknown difficulty is keyed UNKNOWN (never a translated text)', () => {
@@ -669,6 +669,18 @@ describe('local stats: aggregation (what the page renders)', () => {
     assert.deepEqual(agg.bands.band_amiya, { games: 2, wins: 1 });
     assert.equal(agg.titles.comment_1.count, 1); // only the win granted 卫戍之星
   });
+
+	test('mode rows separate successful defense from hidden-core clears and use the player outcome', () => {
+		const solo = buildRecord(baseResult({ hiddenCleared: false }), { myId: 'p1', roomMode: 'solo', now: 1 });
+		const coop = buildRecord(baseResult(), { myId: 'p1', roomMode: 'coop', now: 2 });
+		const eliminated = buildRecord(baseResult(), { myId: 'p2', roomMode: 'coop', now: 3 });
+		const summary = aggregateStats([solo, coop, eliminated]);
+		assert.deepEqual(summary.byMode.solo, { games: 1, wins: 1, hiddenCleared: 0 }, 'failing the hidden core keeps the final-boss win');
+		assert.deepEqual(summary.byMode.coop, { games: 2, wins: 1, hiddenCleared: 1 }, 'an eliminated teammate gets neither a personal clear nor a breakthrough');
+		assert.deepEqual(aggregateStats([]).byMode, {
+			solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 },
+		});
+	});
 
   test('combat sums over the self player only', () => {
     assert.equal(agg.sums.kills, 41 + 10);

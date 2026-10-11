@@ -93,8 +93,18 @@
 .st-card--mint .st-card__num { color: var(--mint-400); }
 .st-card--gold .st-card__num { color: var(--amber); }
 .st-card__label { font-size: max(.14rem, 10px); color: var(--text-md); letter-spacing: .06em; }
-.st-split { display: flex; gap: .26rem; margin: .1rem 0 .14rem; font-size: max(.15rem, 11px); color: var(--text-md); }
-.st-split b { margin-left: .06rem; font-size: max(.18rem, 12px); color: var(--text-hi); }
+/* Two rows of four cards to the left of the title diagram. */
+.st-overview-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: .22rem; margin-top: .2rem; }
+.st-modegrid { display: grid; gap: .08rem; min-width: 0; }
+.st-modegrid__row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .08rem; }
+.st-modegrid__mode { justify-content: center; }
+.st-modegrid__name { font-size: max(.2rem, 12px); line-height: 1.25; color: var(--text-hi); overflow-wrap: anywhere; }
+.st-modegrid .micro { white-space: normal; overflow-wrap: anywhere; }
+.st-title-panel { min-width: 0; }
+.st-title-panel > .st-sub { margin-top: 0; }
+@media (max-width: 680px) {
+	.st-overview-details { grid-template-columns: minmax(0, 1fr); gap: .18rem; }
+}
 
 /* The three most used strategies stay side by side, each with its icon and two text lines. */
 .st-favorites__heading { margin-top: 0; }
@@ -215,7 +225,6 @@
 @media (max-height: 520px) {
   .st-note { display: none; }
   .st-body { padding-top: .12rem; }
-  .st-split { margin: .06rem 0 .08rem; }
 }
 .sp-coarse .st-tab, .sp-coarse .st-table tr.is-clickable td { min-height: 30px; }
 @media (prefers-reduced-motion: reduce) { .st { animation: none; } }

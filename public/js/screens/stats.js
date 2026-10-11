@@ -131,7 +131,6 @@ function Overview({ agg, gd }) {
       <${StatCard} micro="TIME PLAYED" value=${playedText(agg.duration.totalMs)} label=${t('累计时长')} />
     </div>
     <${MatchRecords} maxima=${agg.maxima} />
-    <p class="st-split"><span>${t('单人')} <b class="num">${fmtNum(agg.byMode.solo)}</b></span><span>${t('同盟')} <b class="num">${fmtNum(agg.byMode.coop)}</b></span></p>
 		<p class="st-rule">${t('单局纪录按已结算对局统计；击败数包含联防实际击杀，旧战绩无法补算。')}</p>
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
       <thead><tr><th>${t('难度')}</th><th class="num">${t('局数')}</th><th class="num">${t('胜场')}</th><th class="num">${t('胜率')}</th><th class="num">${t('隐秘核心通关')}</th></tr></thead>
@@ -148,8 +147,22 @@ function Overview({ agg, gd }) {
         })}
       </tbody>
     </table></div>` : null}
-		${titles.length ? html`<h4 class="st-sub">${t('称号')}</h4>
-			<${TitleHexagon} titles=${titles} />` : null}
+		<div class="st-overview-details">
+			<div class="st-modegrid">
+				${[['solo', N_('独立模拟')], ['coop', N_('联合模拟')]].map(([mode, label]) => {
+					const v = agg.byMode[mode];
+					return html`<div key=${mode} class="st-modegrid__row" role="group" aria-label=${t(label)}>
+						<div class="st-card st-modegrid__mode"><${MicroLabel}>${mode === 'solo' ? 'SOLO' : 'TEAM'}<//>
+							<b class="st-modegrid__name">${t(label)}</b></div>
+						<${StatCard} micro="TOTAL" value=${fmtNum(v.games)} label=${t('总模拟数')} />
+						<${StatCard} micro="SUCCESS" value=${fmtNum(v.wins)} label=${t('成功卫戍')} tone="mint" />
+						<${StatCard} micro="CORE CLEAR" value=${fmtNum(v.hiddenCleared)} label=${t('绝境突破')} tone="gold" />
+					</div>`;
+				})}
+			</div>
+			${titles.length ? html`<div class="st-title-panel"><h4 class="st-sub">${t('称号')}</h4>
+				<${TitleHexagon} titles=${titles} /></div>` : null}
+		</div>
     <p class="st-rule"><${Icon} name="info" />${t('计入统计：打到结算的对局，以及中途退出前至少清完 1 个回合的对局；更早退出的对局只留在对局记录里。')}${agg.excluded
       ? html` <b>${t('另有 {n} 局未计入统计', { n: agg.excluded })}</b>` : null}</p>
   <//>`;

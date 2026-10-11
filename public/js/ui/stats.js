@@ -703,7 +703,8 @@ export function aggregateStats(records) {
     rounds: { total: 0, max: 0 },
     duration: { totalMs: 0 },
     hidden: { reached: 0, cleared: 0 },
-    byDifficulty: {}, byMode: { solo: 0, coop: 0 },
+    byDifficulty: {},
+		byMode: { solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 } },
     titles: {}, bands: {}, sums: {},
 		maxima: { gold: null, merges: null, kills: null },
   };
@@ -731,7 +732,12 @@ export function aggregateStats(records) {
     if (won) bd.wins++;
     if (rec.hiddenCleared) bd.hiddenCleared++;
 
-    if (rec.roomMode === 'solo' || rec.roomMode === 'coop') out.byMode[rec.roomMode]++;
+		if (rec.roomMode === 'solo' || rec.roomMode === 'coop') {
+			const mode = out.byMode[rec.roomMode];
+			mode.games++;
+			if (won) mode.wins++;
+			if (won && rec.hiddenCleared) mode.hiddenCleared++;
+		}
 
     const titleId = self?.title?.id;
     if (titleId) {

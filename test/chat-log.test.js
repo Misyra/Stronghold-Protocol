@@ -71,7 +71,7 @@ test('chat log configuration refuses public directories, including directory lin
   }
 });
 
-test('real chat logs server-confirmed IP and nickname with original text, while broadcasts and resync stay masked', async t => {
+test('real chat logs server-confirmed IP and nickname with original text, while refused messages never broadcast or log', async t => {
   const { dir, dispose } = temporary(t), logDir = path.join(dir, 'logs');
   const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, stateFile: 'off',
     MatchClass: StubMatch, chatEnabled: true, chatLogDir: logDir, trustProxy: true });
@@ -86,34 +86,35 @@ test('real chat logs server-confirmed IP and nickname with original text, while 
   await a.request({ t: 'room.start' });
   let now = Date.parse('2026-10-10T10:00:00Z'); server.lobby.now = () => now;
   const abuse = Buffer.from('ZnVjaw==', 'base64').toString(), original = ` 你好 "${abuse}" 😀 `;
-  assert.equal((await a.request({ t: 'g.chat', text: original, ip: 'spoofed', name: '冒名', playerId: 'spoofed', token: 'secret' })).t, 'ok');
-  const broadcast = await b.waitFor('m.chat');
-  assert.equal(broadcast.text, '你好 "****" 😀'); assert.equal(broadcast.name, '博士甲');
-  assert.ok(!JSON.stringify(broadcast).includes(abuse)); assert.equal(broadcast.ip, undefined);
+  assert.equal((await a.request({ t: 'g.chat', text: original, ip: 'spoofed', name: '冒名', playerId: 'spoofed', token: 'secret' })).code, ERR.CHAT_BLOCKED);
+  assert.equal((await b.waitFor('m.chat', m => JSON.stringify(m).includes(abuse), 150).catch(() => null)), null, 'a refused message never broadcasts');
   assert.equal((await b.request({ t: 'g.chat', text: '逗比' })).t, 'ok');
   assert.equal((await a.request({ t: 'g.chat', text: '😀'.repeat(31) })).code, ERR.BAD_MSG);
   assert.equal((await a.request({ t: 'g.chat', text: '频繁发送' })).code, ERR.RATE);
-  for (let i = 0; i < 4; i++) { now += 1100; assert.equal((await a.request({ t: 'g.chat', text: abuse })).t, 'ok'); }
   now += 1100;
+  assert.equal((await a.request({ t: 'g.chat', text: '队友好' })).t, 'ok');
+  assert.equal((await b.waitFor('m.chat', m => m.text === '队友好')).text, '队友好');
+  now += 1100;
+  assert.equal((await a.request({ t: 'g.chat', text: abuse })).code, ERR.CHAT_BLOCKED, 'the second violation starts a ten-minute mute');
   assert.equal((await a.request({ t: 'g.chat', text: '禁言期间的拒绝消息' })).code, ERR.CHAT_MUTED);
   await a.request({ t: 'state.resync' });
-  const history = await a.waitFor('m.chatState', msg => msg.messages?.length === 6);
+  const history = await a.waitFor('m.chatState', msg => msg.messages?.length === 2);
   assert.ok(!JSON.stringify(history).includes(abuse)); assert.ok(history.messages.every(msg => msg.ip === undefined));
   await server.chatLog.flush();
   const rows = records(logDir);
-  assert.equal(rows.length, 6, 'only accepted messages, including the fifth hit, are logged once');
-  assert.deepEqual(rows[0], { at: '2026-10-10T10:00:00.000Z', ip: '203.0.113.19', playerId: a.welcome.playerId, name: '博士甲', roomCode: room.code, text: original });
-  assert.equal(rows[1].ip, '2001:db8::1234'); assert.equal(rows[1].name, '博士乙'); assert.equal(rows[1].text, '逗比');
-  assert.equal(rows.at(-1).text, abuse);
+  assert.equal(rows.length, 2, 'only accepted messages are logged, each once');
+  assert.deepEqual(rows[0], { at: '2026-10-10T10:00:00.000Z', ip: '2001:db8::1234', playerId: b.welcome.playerId, name: '博士乙', roomCode: room.code, text: '逗比' });
+  assert.equal(rows[1].ip, '203.0.113.19'); assert.equal(rows[1].name, '博士甲'); assert.equal(rows[1].text, '队友好');
+  assert.ok(rows.every(row => !JSON.stringify(row).includes(abuse)));
   assert.ok(rows.every(row => !Object.hasOwn(row, 'token')));
   for (const url of ['/.state/chat-logs/2026-10-10.jsonl', '/chat-logs/2026-10-10.jsonl', '/api/chat-logs']) {
     const response = await fetch(server.url + url);
-    assert.equal(response.status, 404); assert.ok(!(await response.text()).includes(original));
+    assert.equal(response.status, 404); assert.ok(!(await response.text()).includes('队友好'));
   }
   now = server.registry.byToken(b.welcome.token).chatLastSentAt + 1100;
   await b.request({ t: 'g.chat', text: '退出前' });
   await server.close();
-  assert.equal(records(logDir).length, 7, 'server close flushes the final append');
+  assert.equal(records(logDir).length, 3, 'server close flushes the final append');
 });
 
 test('direct clients cannot forge proxy IPs when trust is off; disabled chat creates no log files', async t => {

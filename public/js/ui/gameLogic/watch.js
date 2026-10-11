@@ -103,7 +103,7 @@ export function fieldLabel(field, pub, myId) {
 }
 
 /**
- * Active avatar bubbles: the latest emote or masked chat per player, younger than ttl.
+ * Active avatar bubbles: the latest emote or chat per player, younger than ttl.
  * @param {Array<{seq:number, playerId:string, id?:string, text?:string, at:number}>} emotes
  * @param {number} now
  * @param {number} [ttl]

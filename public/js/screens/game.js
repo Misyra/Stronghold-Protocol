@@ -763,7 +763,7 @@ function MatchScreen() {
     prevActive.current = activeBonds;
   }, [activeBonds]);
 
-  // Shared avatar bubbles for emotes and masked chat (sound only for teammates' emotes).
+  // Shared avatar bubbles for emotes and chat (sound only for teammates' emotes).
   const bubbleMs = (gd.config?.timers?.chatBubble ?? 3) * 1000;
   const bubbles = activeBubbles(emotes, Date.now(), bubbleMs);
   useTicker(bubbles.size ? 500 : 0); // re-render only while a bubble is showing (to expire it)

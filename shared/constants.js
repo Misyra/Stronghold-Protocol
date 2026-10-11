@@ -128,6 +128,7 @@ export const ANIM = Object.freeze({ IDLE: 0, MOVE: 1, ATTACK: 2, SKILL: 3, DIE: 
 export const ERR = Object.freeze({
   CHAT_DISABLED: 'CHAT_DISABLED',
   CHAT_MUTED: 'CHAT_MUTED',
+  CHAT_BLOCKED: 'CHAT_BLOCKED',
   NICKNAME_SENSITIVE: 'NICKNAME_SENSITIVE', // nickname rejected by the shared word policy
   BAD_MSG: 'BAD_MSG',             // malformed / unknown message
   SESSION_IN_USE: 'SESSION_IN_USE', // a local recovery candidate cannot replace the connected holder
@@ -156,7 +157,8 @@ export const ERR = Object.freeze({
 
 export const ERR_TEXT = {
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
-  CHAT_MUTED: N_('10 分钟内累计 5 条消息触发敏感词审查，聊天已暂停 12 小时'),
+  CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
+  CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),
   NICKNAME_SENSITIVE: N_('代号包含不适宜内容，请更换昵称'),
   SESSION_IN_USE: N_('此对局仍在其他窗口中，或当前浏览器无法安全恢复。请关闭原窗口后重试。'),
   BAD_MSG: N_('无效的请求'), RATE: N_('操作过于频繁'), NOT_IN_ROOM: N_('你不在房间中'), ROOM_NOT_FOUND: N_('未找到该同盟密钥对应的房间'),

@@ -163,6 +163,35 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
   });
 
+  test('versioned worker requests versioned manifests and cleanup unregisters its query URL', async (t) => {
+    const context = await browser.createBrowserContext();
+    t.after(() => context.close());
+    const requests = [];
+    const record = req => { if (req.url.startsWith('/data/resource-manifest.json')) requests.push(req.url); };
+    srv.server.on('request', record);
+    t.after(() => srv.server.off('request', record));
+    const page = await context.newPage();
+    await page.goto(srv.url + '/index.html');
+    await ready(page, []);
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction(() => window.__res.resourceState().phase === 'ready' && !!navigator.serviceWorker.controller);
+    const result = await page.evaluate(async () => {
+      const version = globalThis.__spAssetVersion;
+      const workerVersion = new URL(navigator.serviceWorker.controller.scriptURL).searchParams.get('v');
+      const ctx = await (await import('/js/resources/index.js')).resourceContext();
+      const response = await fetch(ctx.manifest.files[0].url);
+      await response.arrayBuffer();
+      await window.__res.syncResources(false);
+      await window.__res.clearResources();
+      return { version, workerVersion, registrations: (await navigator.serviceWorker.getRegistrations()).length };
+    });
+    assert.match(result.version, /^[a-f0-9]{16}$/);
+    assert.equal(result.workerVersion, result.version);
+    assert.equal(result.registrations, 0);
+    assert.ok(requests.length >= 2, 'page and worker both load their manifests');
+    assert.ok(requests.every(url => url === '/data/resource-manifest.json?v=' + result.version));
+  });
+
   test('the settings switch downloads the files and the worker serves them with the network off', async () => {
     const { page, problems } = await open();
     await ready(page, problems);

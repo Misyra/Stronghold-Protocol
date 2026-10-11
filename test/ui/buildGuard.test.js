@@ -10,10 +10,47 @@ import { checkBuildOnce, startBuildGuard, fetchBuild, BUILD_CHECK_MS, BUILD_FETC
 
 /** A fake fetch answering /healthz with `build` (null → the frame carries none). */
 const fetchOf = (build) => async (url, init) => {
-  assert.equal(url, '/healthz');
+  assert.equal(url, '/healthz?build=1');
   assert.equal(init.cache, 'no-store');
   return { ok: true, status: 200, json: async () => ({ ok: true, build }) };
 };
+
+test('hidden tabs pause build polling, resume immediately and detach listeners on stop', async () => {
+  const doc = new EventTarget(); doc.hidden = true;
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  let tick, calls = 0, reloads = 0, build = 'aaa';
+  const guard = startBuildGuard({ document: doc,
+    fetchFn: async () => { calls++; return { ok: true, json: async () => ({ build }) }; },
+    setInterval: fn => { tick = fn; return 1; }, clearInterval: () => {}, reload: () => reloads++,
+  });
+  await settle(); tick(); await settle();
+  assert.equal(calls, 0);
+  assert.equal((await guard.check()).status, 'paused');
+  doc.hidden = false; doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(calls, 1); assert.equal(guard.known(), 'aaa');
+  build = 'bbb'; await guard.check();
+  doc.hidden = true; doc.dispatchEvent(new Event('visibilitychange'));
+  tick(); await settle(); assert.equal(calls, 2);
+  doc.hidden = false; doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(reloads, 0, 'returning to a tab still requires two fresh agreeing checks');
+  await guard.check(); assert.equal(reloads, 1);
+  doc.dispatchEvent(new Event('visibilitychange')); await settle(); assert.equal(calls, 4);
+  guard.stop();
+  doc.dispatchEvent(new Event('visibilitychange')); await settle(); assert.equal(calls, 4);
+});
+
+test('a build request completing after the tab becomes hidden cannot reload it', async () => {
+  const doc = new EventTarget(); doc.hidden = false;
+  let respond, reloads = 0;
+  const guard = startBuildGuard({ document: doc,
+    fetchFn: () => new Promise(resolve => { respond = resolve; }),
+    setInterval: () => 1, clearInterval: () => {}, reload: () => reloads++,
+  });
+  doc.hidden = true; doc.dispatchEvent(new Event('visibilitychange'));
+  respond({ok:true,json:async()=>({build:'aaa'})});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(guard.known(), null); assert.equal(reloads, 0); guard.stop();
+});
 
 test('fetchBuild: the tag, or null when unreachable / not reported / too slow', async () => {
   assert.equal(await fetchBuild(fetchOf('aaa')), 'aaa');

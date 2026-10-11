@@ -586,6 +586,10 @@ function LoadoutScreen({ st }) {
     }
     const res = parseImport(ioText);
     if (!res.ok) { toast(t('导入失败：{error}', { error: res.error }), 'error'); return; }
+    // Cultivation settings need the same data as DIY: backups.json supplies the owned operator pool. Refuse the
+    // whole import if it is missing, including an empty ops map which would replace the current settings.
+    const opsRefused = res.ops && importRefusal('diy', ready);
+    if (opsRefused) { toast(opsRefused.text, opsRefused.tone); return; }
     // 0.2.2: a payload with `ops` replaces the 潜能 / 练度 too (an older export leaves them alone)
     const opIds = res.ops ? cultivationCharIds(data.get('chess'), data.get('backups')) : null;
     const r = applyLoadoutEntries(res.entries, getChess, res.ops ? { ops: res.ops, isOperator: (id) => opIds.has(id) } : {});

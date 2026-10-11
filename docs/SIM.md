@@ -1496,6 +1496,26 @@ skill × module, every bond at its threshold and at 999 layers, every leader fie
 reduced to digests in `test/golden/*.json`; `test/golden.test.js` fails, naming the scenario and the field, when a
 digest moves. A refactor must leave them unchanged; `npm run golden:update` records an intended gameplay change.
 
+Cross-engine check (`tools/sim-check.mjs`, `public/dev/sim-check.html`): a browser simulates its battles and the server
+re-simulates them (SP_VERIFY, takeovers), so every engine must give the bits Node gives. `node tools/sim-check.mjs`
+builds the golden battle corpus (roster, bonds, fields, standins, diy — 267 BattleSpecs) and traces it in Node into
+`public/dev/simcheck/data/` (git-ignored, about a minute): after every tick the state (battle time, RNG state and per
+unit alive / removed / deployed, x, y, hp, atkCd, SP, the five element gauges, damage dealt / taken, healing, blocking
+count) hashed to the exact IEEE-754 bits, one hash per 30 ticks; every 30 ticks `b.snapshot()` (what viewers are sent);
+every 150 ticks the deep state (every value reachable from the units, the definitions and buffs.js's process-wide `seq`
+left out); and `resultDigest(b.result())`. `/dev/sim-check.html` — on any device that reaches the server, a phone
+included — runs the corpus (or its fast subset, or a family) with the client's own loader (`loadBrowserSim`) and
+compares block by block: a battle that parts is reported with the first ticks that differ, the level (the outcome, the
+snapshot, the state, or the hidden state only), and a download of that block's state vectors;
+`node tools/sim-check.mjs --diff <file>` replays the same ticks in Node and names the first unit and field that differ
+(with both values' bits). `--engines chromium,firefox,webkit [--subset fast|all|<family>]` runs the page headless after
+the trace (Firefox and WebKit through the `playwright` package when it is installed, `npx playwright install firefox
+webkit`; Chrome through puppeteer-core otherwise) and exits 1 on a difference. The tracing, comparison and page
+(`public/dev/simcheck/core.js`, `ui.js`, `node.mjs`) have no dependency on this repository; `stronghold.js` is the part
+that knows the sim. At 0.2.4 all 267 battles are bit-identical in Chrome 154, Firefox 157 and WebKit 27.2; with
+`Math.hypot` put back into `detmath.js hypot`, 25 of the 55 fast battles part in Firefox and 27 in WebKit, the first at
+tick 569 of `roster-004` (an enemy's `y`, one ulp).
+
 ## 12. Data notes (simdata.js)
 
 Defs are normalised from data/*.json (DATA.md) with research JSON as a fallback. Chess: `stats {maxHp, atk, def, res, aspd,

@@ -146,7 +146,8 @@ export function botPickBand(m, ps) {
   const ids = gd.bandIds();
   if (!ids.length) return gd.defaultBandId;
   const lateFunds = (id) => /暂存/.test(String(gd.band(id)?.desc || ''));
-  const offBond = (id) => gd.bandBondIds(id).some((b) => gd.modeInactiveBonds.has(b));
+  const reserved = new Set(m.alivePlayers().filter((p) => p !== ps).flatMap((p) => gd.bandBondIds(p.bandId)));
+  const offBond = (id) => gd.bandBondIds(id).some((b) => gd.modeInactiveBonds.has(b) || reserved.has(b));
   const pairs = ids.map((id) => [id, offBond(id) ? 0 : Math.max(1, (gd.startLp(id) - 18) ** 2) * (m.isSolo && lateFunds(id) ? 0.02 : 1)]);
   let total = 0;
   for (const [, w] of pairs) total += w;
@@ -353,7 +354,8 @@ function mainCoreBond(m, p) {
  * across rounds.
  */
 export function bondPlan(m, ps, owned = ownedBonds(m, ps)) {
-  const key = `${m.round}|${ps.shop.level}|${[...owned.counts.entries()].map(([k, v]) => k + v).join()}`;
+  const key = `${m.round}|${ps.shop.level}|${[...owned.counts.entries()].map(([k, v]) => k + v).join()}|${m.alivePlayers()
+    .filter((p) => p !== ps).flatMap((p) => m.gd.bandBondIds(p.bandId)).sort().join()}`;
   if (ps._botFocus && ps._botFocus.key === key) return ps._botFocus;
   const prev = ps._botFocusId ?? null;
   const mates = new Set();
@@ -361,6 +363,7 @@ export function bondPlan(m, ps, owned = ownedBonds(m, ps)) {
     if (p === ps) continue;
     const b = mainCoreBond(m, p);
     if (b) mates.add(b);
+    for (const id of m.gd.bandBondIds(p.bandId)) mates.add(id);
   }
   let focus = null;
   let bestS = 0;

@@ -7,11 +7,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';
-import { botPickCard, bountyKillChance, itemTarget, arrange, botPrepBegin, botPrepEnd, bondPlan, rangeTiles, effDps, rangeRec, buyScoreOf } from '../../server/match/bot.js';
+import { botPickBand, botPickCard, bountyKillChance, itemTarget, arrange, botPrepBegin, botPrepEnd, bondPlan, rangeTiles, effDps, rangeRec, buyScoreOf } from '../../server/match/bot.js';
 import { parseKey, tileKey } from '../../server/match/board.js';
 import { makeMatch, checkInvariants, give, giveItem, legalTileFor, DATA } from './harness.js';
 
 const soloBot = (o = {}) => makeMatch({ mode: 'solo', difficulty: 'NORMAL', seats: [{ seat: 0, playerId: 'ai_0', name: 'AI', isBot: true, connected: true }], ...o });
+
+test('#514: bots respect a human opening faction before deployment and release it after elimination', () => {
+  const { m } = makeMatch({ humans: 2, difficulty: 'HARD', seed: 11 }).start().toPrep();
+  const [human, bot] = m.order;
+  try {
+    bot.isBot = true;
+    human.bandId = 'band_chiave';
+    give(m, bot, 'chess_char_1_01_a', 'hand'); // Siracusa, despite no human board yet
+    give(m, bot, 'chess_char_1_19_a', 'hand'); // Kazimierz alternative
+    assert.notEqual(bondPlan(m, bot).focus, 'siracusaShip');
+    assert.notEqual(bondPlan(m, bot).second, 'siracusaShip');
+    human.bandId = 'band_pepe';
+    for (let i = 0; i < 100; i++) {
+      assert.ok(!m.gd.bandBondIds(botPickBand(m, bot)).includes('sargonShip'), 'avoid both Sargon strategies');
+    }
+    human.bandId = 'band_chiave';
+    assert.notEqual(bondPlan(m, bot).focus, 'siracusaShip', 'same-round changes invalidate the plan');
+    human.alive = false;
+    assert.notEqual(bondPlan(m, bot).focus, 'siracusaShip', 'the bot still compares its own bond value after elimination');
+  } finally { m.dispose(); }
+});
+
+test('#514: a bot leaves Lappland for a human Chiave even when it could complete its own merge', () => {
+  for (const reward of [false, true]) {
+    const { m } = makeMatch({ humans: 2, difficulty: 'HARD', seed: 11 }).start().toPrep();
+    const [human, bot] = m.order;
+    try {
+      human.bandId = 'band_chiave';
+      bot.isBot = true;
+      const lappland = 'chess_char_6_18_a', alternative = 'chess_char_6_17_a';
+      bot.shop.level = 6;
+      bot.funds = reward ? 0 : 5;
+      bot.shop.slots = reward ? [] : [lappland, alternative].map((id) => ({ kind: 'chess', id, basePrice: 5, sold: false }));
+      if (reward) bot.pushRewardOffer('merge', { tier: 6, ids: [lappland, alternative] });
+      assert.ok(buyScoreOf(m, bot, alternative) > buyScoreOf(m, bot, lappland), 'prefer the non-reserved high-tier card');
+    } finally { m.dispose(); }
+  }
+});
 
 test('user: Given a faction strategy teammate, When scoring shared high-tier chess, Then humans and bots receive the same preference even with full stock', () => {
   const { m } = makeMatch({ humans: 3, seed: 11 }).start().toPrep();

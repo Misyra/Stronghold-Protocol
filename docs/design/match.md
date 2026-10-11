@@ -122,7 +122,9 @@ Official rule (bwiki 盟约, 更新公告 5114): before a match the player canno
 
 [ASSUMED] Bot purchasing applies one soft 18-point penalty to non-elite, non-DIY tier V/VI shared-pool cards whose
 active bonds overlap another living teammate's opening strategy. Human and AI teammates are treated equally; it
-neither reserves stock nor prevents a stronger purchase. Existing strategy presets and rehearsal counts are unchanged.
+neither reserves stock nor prevents a stronger purchase. A living teammate's selected strategy also reserves its bond
+for bot strategy selection and focus planning before any member is deployed. The reservation ends when that teammate is
+eliminated. Existing strategy presets and rehearsal counts are unchanged.
 
 [ASSUMED] AI reactions are cosmetic social choices, enabled by default and disabled with `SP_BOT_EMOTES=0`. Only
 mixed human/AI matches emit them, through the existing whitelist and cooldown. A human emote gets at most one eligible

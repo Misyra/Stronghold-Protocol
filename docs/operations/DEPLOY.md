@@ -21,6 +21,23 @@ cd /opt/Stronghold-Protocol
 npm ci --omit=dev
 ```
 
+### 生产前端构建
+
+源码模式仍可直接运行。生产推荐在独立构建目录安装开发依赖并生成 Vite 产物：
+
+```bash
+npm ci --include=dev
+npm run build
+```
+
+构建输出为 `public/build/`，不会复制整套美术资源。服务启动时检测到 `public/build/index.html` 就使用构建入口；缺少构建时自动使用源码入口。`npm run dev` 或 `node server/index.js --source-client` 始终使用源码入口。
+
+以下源码更新命令不会自动刷新已有构建。启用构建模式的站点，每次更新代码时都必须同步同一版本的新 `public/build/`；不能只拉代码并重启。发行 ZIP 仍按原流程使用源码入口，不会自动收录本机未跟踪的构建目录。
+
+发布时先上传新哈希资源，再原子替换构建入口，并按正常维护流程重启业务服务以刷新版本信息；不要在运行目录边构建边覆盖入口。构建默认保留旧 chunk，发布同步也不得使用删除旧 chunk 的规则，否则旧标签页后续加载会失败。清理期限需要覆盖允许的旧页面及对局存活期。
+
+这只保留构建 JS/CSS 等内容哈希资源；现有 `/_v/` 数据、资源清单和服务端协议仍有独立兼容边界，不能据此承诺跨不兼容版本不停服。开发依赖只用于构建，运行机器可以只安装生产依赖；同时运行一次 `node tools/vendor.mjs`，保留源码回退和可选加载所需的库。Docker 构建阶段已包含 Vite，最终镜像仍仅含生产依赖。
+
 素材来源选择一种：
 
 - 本机提供素材：运行 `node tools/setup.mjs`，下载失败可重跑续传；缺失明细和环境诊断用 `node tools/doctor.mjs`。
@@ -210,6 +227,8 @@ volumes:
 
 先正常停止游戏并备份状态目录和 `/etc/stronghold/game.env`，再更新程序；首次从不支持持久化的旧版升级时，等旧进程的对局结束。
 
+构建模式须先在独立目录准备本次版本的 Vite 产物；在下面启动服务之前，按「生产前端构建」的顺序同步新资源及入口。源码模式无需此步骤。
+
 ```bash
 sudo systemctl stop stronghold
 # 此时备份 /var/lib/stronghold 和 /etc/stronghold/game.env 到你的私有备份位置
@@ -218,6 +237,7 @@ git status --short
 git pull --ff-only
 npm ci --omit=dev
 # 本机素材模式才需 node tools/setup.mjs；CDN 模式随代码更新发布清单即可。
+# 构建模式：此时同步同版本的新 public/build/，保留旧哈希资源。
 sudo systemctl start stronghold
 ```
 

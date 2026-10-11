@@ -27,7 +27,7 @@
 //     media files (503 after a deploy that changed them).
 
 import fsp from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
@@ -63,13 +63,15 @@ const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none',
 /**
  * Create the static request handler.
  * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, packsDir?: string,
- *   packs?: ReturnType<typeof createPackRegistry>, log?: object,
+ *   packs?: ReturnType<typeof createPackRegistry>, log?: object, clientBuild?: boolean,
  *   assetsCdn?: string, assetsCdnVersion?: string,
  *   assetsManifest?: { tag: string, hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} dirs
  *   packs: the server's pack registry (default: one over publicDir, dataDir and packsDir — ROOT/packs)
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), packs = null, log = noopLog, assetsCdn = '', assetsCdnVersion = '', assetsManifest = null }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), packs = null, log = noopLog, assetsCdn = '', assetsCdnVersion = '', assetsManifest = null, clientBuild = true }) {
+  const builtIndex = path.join(publicDir, 'build', 'index.html');
+  const useBuiltClient = clientBuild && existsSync(builtIndex);
   const registry = packs || createPackRegistry({ publicDir, dataDir, packsDir }, { log: /** @type {any} */ (log) });
   const mounts = [
     { prefix: '/data/', name: 'data', dir: path.resolve(dataDir) },
@@ -121,6 +123,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
     }
+    if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) decoded = '/build/index.html';
     // The offline preload manifest (server/resources.js): ETag-hashed, `no-cache`, generated on demand.
     if (decoded.toLowerCase() === '/data/' + RESOURCE_MANIFEST_FILE) {
       const versionedManifest = query === `v=${release.tag}`;
@@ -286,7 +289,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     const rewrite = ['.html', '.htm'].includes(ext) || (versioned && (ext === '.css' || (ext === '.json'
       && !isBoardResourceJson(decoded) && (mount.name === 'data' || segments[0] === 'assets'))));
     const body = rewrite ? await bodyFor(absPath, stat, ext) : null;
-    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, body, rewrite ? release.tag : '', versioned);
+    const builtAsset = /^\/build\/assets\/[\w.-]+-[\w-]{8,}\.[a-z0-9]+$/.test(decoded);
+    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, body, rewrite ? release.tag : '', versioned || builtAsset);
   };
   handler.version = release.tag;
   handler.runtimeVersion = release.runtimeTag;

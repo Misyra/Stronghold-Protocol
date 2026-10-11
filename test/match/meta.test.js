@@ -34,6 +34,26 @@ test('built-ins register consume-on-equip items by buff key; createRegistry = bu
   assert.ok(full.has('item:chess_item_1_03_e'));
 });
 
+test('global index preserves replacement order, snapshots and unregister/re-register semantics', () => {
+  const reg = new MetaRegistry();
+  const a = { onBuy() {} }, b = { onPrice() {} }, replacement = { onRefresh() {} };
+  reg.global('a', a).band('unrelated', {}).global('b', b);
+  const snapshot = reg.globals();
+  reg.global('a', replacement);
+  assert.deepEqual(reg.globals(), [['global:a', replacement], ['global:b', b]]);
+  assert.deepEqual(snapshot, [['global:a', a], ['global:b', b]]);
+  snapshot[0][0] = 'modified';
+  snapshot.pop();
+  assert.equal(reg.globals().length, 2);
+  assert.equal(reg.unregister('global:a'), true);
+  assert.equal(reg.unregister('global:a'), false);
+  reg.global('a', a);
+  assert.deepEqual(reg.globals(), [['global:b', b], ['global:a', a]]);
+  // A dispatch must no longer walk the full registry to find three global entries.
+  reg._h[Symbol.iterator] = () => { throw new Error('full registry scan'); };
+  assert.deepEqual(reg.globals(), [['global:b', b], ['global:a', a]]);
+});
+
 function metaMatch(reg, o = {}) {
   const h = makeMatch({ mode: 'solo', seed: o.seed ?? 70, registry: reg, fake: true, ...o }).start();
   h.toPrep(1);

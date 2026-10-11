@@ -238,5 +238,5 @@ export class PlayerBasics {
     return moved;
   }
 
-  dirty() { this.m.markPrivate(this); }
+  dirty() { this._viewRevision = (this._viewRevision || 0) + 1; this.m.markPrivate(this); }
 }

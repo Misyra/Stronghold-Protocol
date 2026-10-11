@@ -71,6 +71,7 @@ export class MetaRegistry {
   constructor() {
     /** @type {Map<string, object>} */
     this._h = new Map();
+    this._globals = new Map();
     /** registration problems that do not throw (unknown hook names — usually a typo) */
     this.warnings = [];
   }
@@ -90,10 +91,11 @@ export class MetaRegistry {
       }
     }
     this._h.set(key, h);
+    if (key.startsWith('global:')) this._globals.set(key, h);
     return this;
   }
 
-  unregister(key) { return this._h.delete(key); }
+  unregister(key) { this._globals.delete(key); return this._h.delete(key); }
   get(key) { return this._h.get(key) ?? null; }
   has(key) { return this._h.has(key); }
   keys() { return [...this._h.keys()]; }
@@ -108,9 +110,8 @@ export class MetaRegistry {
   global(name, h) { return this.register(`global:${name}`, h); }
 
   globals() {
-    const out = [];
-    for (const [k, h] of this._h) if (k.startsWith('global:')) out.push([k, h]);
-    return out;
+    // Snapshot only global handlers; registration during dispatch takes effect on the next call.
+    return [...this._globals];
   }
 }
 

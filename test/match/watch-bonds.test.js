@@ -26,6 +26,39 @@ import { FakeBattle } from './fakeBattle.js';
 const row = (h, pid) => h.m.publicView().players.find((p) => p.playerId === pid);
 const entry = (list, id) => (list || []).find((b) => b.bondId === id) || null;
 
+test('public bond views reuse unchanged computation but invalidate on state and pending gains', () => {
+  const h = makeMatch({ mode: 'coop', humans: 2, seed: 91, fake: true }).start();
+  try {
+    h.toPrep(1);
+    const ps = h.ps('p_0');
+    ps.layers.yanShip = 3;
+    ps.recompute();
+    const original = ps.bondsView;
+    let calls = 0;
+    ps.bondsView = function () { calls++; return original.call(this); };
+    const first = row(h, 'p_0').bonds;
+    assert.equal(entry(first, 'yanShip').layers, 3);
+    first[0].layers = -100;
+    const second = row(h, 'p_0').bonds;
+    assert.equal(calls, 1, 'progress-only broadcasts do not rebuild bonds');
+    assert.equal(entry(second, 'yanShip').layers, 3, 'responses cannot mutate the cache');
+    ps.pendingLayerGains = { yanShip: 2 };
+    assert.equal(entry(row(h, 'p_0').bonds, 'yanShip').layers, 5);
+    ps.pendingLayerGains.yanShip = 4;
+    assert.equal(entry(row(h, 'p_0').bonds, 'yanShip').layers, 7, 'in-place pending changes are visible');
+    ps.pendingLayerGains = null;
+    ps.layers.yanShip = 8;
+    ps.recompute();
+    assert.equal(entry(row(h, 'p_0').bonds, 'yanShip').layers, 8);
+    const beforeDirty = calls;
+    ps.dirty();
+    row(h, 'p_0');
+    assert.equal(calls, beforeDirty + 1);
+    ps.eliminate(1);
+    assert.deepEqual(row(h, 'p_0').bonds, []);
+  } finally { h.m.dispose(); }
+});
+
 test('m.public players[].bonds: every bond with members, layers or a tier — the m.private list minus thresholds / countsHand', () => {
   const h = makeMatch({ mode: 'coop', humans: 2, seed: 91, fake: true }).start();
   h.toPrep(1);

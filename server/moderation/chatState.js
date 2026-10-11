@@ -1,8 +1,8 @@
 // Shared by moderation, session expiry and persistence; does not load the private dictionary.
 /** A violation stops counting toward the ban ladder this long after the last one (a clean stretch restarts at a warning). */
 export const CHAT_WINDOW_MS = 30 * 60 * 1000;
-/** Ban ladder by violation count in ms: 1st a warning only, then 10 min, 30 min, 6 h; 5th and beyond 24 h. */
-export const CHAT_MUTE_LADDER = [0, 10 * 60 * 1000, 30 * 60 * 1000, 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000];
+/** First three violations are warnings only; later mutes are 5 min, 15 min, 1 h, then 6 h maximum. */
+export const CHAT_MUTE_LADDER = [0, 0, 0, 5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000];
 export const CHAT_MUTE_MAX_MS = CHAT_MUTE_LADDER.at(-1);
 
 /** Violations still counting toward the ladder: none once 30 minutes have passed since the last violation or the end of the served mute. */

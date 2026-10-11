@@ -56,8 +56,10 @@ test('real browser: hidden when disabled, Unicode limit, IME Enter, refused send
   now += 1100;
   await c.page.evaluate(() => globalThis.__SP__.net.request('g.chat', { text: '队友好' }));
   await c.page.waitForFunction(() => globalThis.__SP__.store.get().emotes.at(-1)?.text === '队友好');
-  now += 1100;
-  await c.page.evaluate(text => globalThis.__SP__.net.request('g.chat', { text }).catch(() => {}), abuse);
+  for (let strike = 2; strike <= 4; strike++) {
+    now += 1100;
+    await c.page.evaluate(text => globalThis.__SP__.net.request('g.chat', { text }).catch(() => {}), abuse);
+  }
   await c.page.waitForFunction(() => document.querySelector('#chat-fixture [role="status"]')?.textContent.includes('聊天已暂停'));
   assert.equal(await c.page.$eval(input, el => el.disabled), true);
   assert.equal(await c.page.$$eval('#chat-fixture .ewheel__item', els => els.every(el => !el.disabled)), true, 'chat mute does not disable emotes');

@@ -94,8 +94,10 @@ test('real chat logs server-confirmed IP and nickname with original text, while 
   now += 1100;
   assert.equal((await a.request({ t: 'g.chat', text: '队友好' })).t, 'ok');
   assert.equal((await b.waitFor('m.chat', m => m.text === '队友好')).text, '队友好');
-  now += 1100;
-  assert.equal((await a.request({ t: 'g.chat', text: abuse })).code, ERR.CHAT_BLOCKED, 'the second violation starts a ten-minute mute');
+  for (let strike = 2; strike <= 4; strike++) {
+    now += 1100;
+    assert.equal((await a.request({ t: 'g.chat', text: abuse })).code, ERR.CHAT_BLOCKED, `violation ${strike} is refused`);
+  }
   assert.equal((await a.request({ t: 'g.chat', text: '禁言期间的拒绝消息' })).code, ERR.CHAT_MUTED);
   await a.request({ t: 'state.resync' });
   const history = await a.waitFor('m.chatState', msg => msg.messages?.length === 2);

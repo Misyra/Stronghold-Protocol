@@ -265,13 +265,14 @@ export function localPathFor(url, publicDir, cdnBase = '') {
 /**
  * The served resource manifest, built from the data directory and cached until one of its sources changes.
  * @param {{ dataDir: string, publicDir: string, cdnBase?: string, rewrite?: (v: any) => any,
- *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, log?: any,
+ *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, readFile?: typeof fsp.readFile, log?: any,
  *           assetsManifest?: { hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} opts
  */
-export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p), log = null, assetsManifest = null } = {}) {
+export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p),
+  readFile = (p, opts) => fsp.readFile(p, opts), log = null, assetsManifest = null } = {}) {
   /** @type {{ key: string, sourceKey: string, tileFiles: any[], body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any } | null} */
   let cache = null;
-  let pending = null;
+  let pending = null, generation = 0;
   const contentHashes = new Map();
 
   async function sourceStat(name) {
@@ -287,7 +288,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   }
 
   async function readJson(name, stat) {
-    return stat ? { ...stat, doc: JSON.parse(await fsp.readFile(path.join(dataDir, name), 'utf8')) } : null;
+    return stat ? { ...stat, doc: JSON.parse(await readFile(path.join(dataDir, name), 'utf8')) } : null;
   }
 
   async function tileSources(files) {
@@ -296,7 +297,11 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       try {
         const stat = abs && await statFile(abs);
         return stat?.isFile() ? { url: file.url, abs, stamp: `${stat.mtimeMs}:${stat.size}`, size: stat.size } : null;
-      } catch { return null; }
+      } catch (error) {
+        // Like the source manifests: only absence is a negative lookup; any other error must not drop a remembered dependency.
+        if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
+        throw error;
+      }
     }));
   }
 
@@ -332,7 +337,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     return sizes;
   }
 
-  async function build() {
+  async function build(epoch) {
     // Check only cheap source metadata on the hot path, including 304 revalidation. JSON reads/parsing,
     // CDN rewriting and traversal must all stay behind this gate, not just the final body/gzip generation.
     const [assetsStat, localStat, hashesStat] = await Promise.all([
@@ -385,7 +390,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       }
     }
     for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES && !publishedSizes.has(tile.url)) {
-      real.set(pathKey(tile.url, cdnBase), crypto.createHash('sha1').update(await fsp.readFile(tile.abs)).digest('hex').slice(0, 12));
+      real.set(pathKey(tile.url, cdnBase), crypto.createHash('sha1').update(await readFile(tile.abs)).digest('hex').slice(0, 12));
     }
     const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url, cdnBase)));
     const stamps = {
@@ -407,18 +412,26 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     // Strong validator over the complete response: an unchanged rebuild or restart keeps it (the client revalidates
     // with cache: 'no-cache'), while any content change — sizes included — produces a fresh one.
     const etag = `"resources-${crypto.createHash('sha256').update(body).digest('hex')}"`;
-    cache = { key, sourceKey, tileFiles, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
+    const result = { key, sourceKey, tileFiles, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
+    // A reset() during this build starts a new generation: the stale result still answers its own callers,
+    // but must not replace a cache that a newer build already installed.
+    if (epoch === generation) cache = result;
     log?.info?.(`[resources] ${manifest.count} file(s), ${manifest.tier1} essential, ${manifest.sized} sized`
       + `${manifest.totalBytes ? `, ${(manifest.totalBytes / 1048576).toFixed(1)} MiB` : ''}, `
       + `${fileHashes.size ? [...fileHashes.values()].filter((h) => !h.startsWith('syn-')).length : 0} hashed`
       + `, version ${version} (${Date.now() - t0} ms)`);
-    return cache;
+    return result;
   }
 
   return {
     /** @returns {Promise<{ body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any }>} */
-    get() { pending ??= build().finally(() => { pending = null; }); return pending; },
-    /** Drop the cache (tests). */
-    reset() { cache = null; },
+    get() {
+      if (pending) return pending;
+      const work = build(generation).finally(() => { if (pending === work) pending = null; });
+      pending = work;
+      return work;
+    },
+    /** Drop the cache (tests). A build already in flight finishes for its callers but cannot repopulate the cache. */
+    reset() { cache = null; pending = null; generation++; },
   };
 }

@@ -82,6 +82,41 @@ test('early cache gate preserves tile/emote creation, updates/deletion, hash-fil
   assert.equal((await changed()).manifest.files.some(f => f.url.includes('/map/')), false);
 });
 
+test('warm-path tile errors reject instead of masquerading as missing dependencies', async t => {
+  const inst = install(t);
+  let fail = false;
+  const index = createResourceIndex({ ...inst, statFile: file => {
+    if (fail && String(file).endsWith('tiles.json')) return Promise.reject(Object.assign(new Error('tile stat failed'), { code: 'EIO' }));
+    return fsp.stat(file);
+  } });
+  const previous = await index.get();
+  fail = true;
+  await assert.rejects(index.get(), /tile stat failed/);
+  fail = false;
+  assert.equal(await index.get(), previous);
+});
+
+test('reset during an in-flight build keeps the stale generation from replacing the newer cache', async t => {
+  const inst = install(t);
+  let release, entered, block = true;
+  const gate = new Promise(resolve => { release = resolve; });
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const index = createResourceIndex({ ...inst, readFile: async (file, opts) => {
+    const body = await fsp.readFile(file, opts);
+    if (block && String(file) === path.join(inst.dataDir, 'assets.json')) { block = false; entered(); await gate; }
+    return body;
+  } });
+  const old = index.get();
+  await waiting;
+  index.reset();
+  inst.write('data/assets.json', { ui: { test: '/assets/new-generation.png' } });
+  const fresh = await index.get();
+  release();
+  const stale = await old;
+  assert.notEqual(stale.manifest.version, fresh.manifest.version);
+  assert.equal(await index.get(), fresh);
+});
+
 test('HTTP 200, HEAD and 304 warm revalidation avoid JSON reads and keep encoding-specific validators', async t => {
   const inst = install(t), base = await serve(t, inst), counts = reads(t, inst.dataDir);
   const url = base + '/data/resource-manifest.json';

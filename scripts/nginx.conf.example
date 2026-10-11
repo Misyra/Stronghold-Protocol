@@ -6,6 +6,8 @@ events {
 }
 
 http {
+    # Install scripts/nginx-log-format.conf.example at this http-level path first.
+    include /etc/nginx/conf.d/sp-log-format.conf;
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
@@ -15,18 +17,13 @@ http {
     # 坑位备忘（完整清单见 docs/operations/DEPLOY.md「Nginx 运维备忘」）：
     #   * /_v/<tag>/ 是 Node 按启动时内容哈希解析的虚拟路径，磁盘上没有 public/_v：
     #     不能用 root/alias 直出，必须 proxy_pass 回 Node；
-    #   * 只缓存 200/301/302：Node 对运行中被改动的版本资源返回不缓存的 503；
-    #   * nginx 会按上游 Vary: Accept-Encoding 分桶；保留 Vary 处理，已有 key 里的
-    #     $sp_ae_key 也保留以兼容现有缓存布局；新清单缓存直接使用 Vary；
+    #   * 只缓存 200：Node 对运行中被改动的版本资源返回不缓存的 503；
+    #   * nginx 会按上游 Vary: Accept-Encoding 分桶；不要忽略 Vary；
     #   * 不要往 key 里加 $request_method：默认 proxy_cache_convert_head on 已让 HEAD
     #     复用 GET 条目，加了反而各存一份（仅当显式关闭转换时才应加）；
-    #   * Range 请求不从缓存切片：206 是回源 Node 拿的、也不入缓存，别试图缓存 206；
+    #   * Range 可以从已缓存的完整 200 响应切片，但不要另行缓存上游 206；
     #   * location 内的 add_header 会屏蔽从 server 继承的 add_header，新增前先确认；
     #   * 这层缓存不减少出站带宽，只省 Node 的 CPU 与临时文件 I/O。
-    map $http_accept_encoding $sp_ae_key {
-        default  raw;
-        "~*gzip" gz;
-    }
     proxy_cache_path /var/cache/nginx/sp_assets levels=1:2 keys_zone=sp_assets:10m
                      max_size=1g inactive=30d use_temp_path=off;
 
@@ -35,6 +32,8 @@ http {
         server_name game.example.com;
         ssl_certificate     /etc/letsencrypt/live/game.example.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/game.example.com/privkey.pem;
+        # Keep the actual log path/rotation and grant the collector read access.
+        access_log /var/log/nginx/sp/stronghold.access.log sp_game buffer=64k flush=5s;
 
         # 版本化资源：命中走本机缓存，未命中仍回源 Node（Node 始终是唯一权威）。
         location ^~ /_v/ {
@@ -49,17 +48,17 @@ http {
             proxy_read_timeout 1h;
 
             proxy_cache                   sp_assets;
-            proxy_cache_key               "$scheme$host$request_uri$sp_ae_key";
-            proxy_cache_valid             200 301 302 30d;
+            proxy_buffering               on;
+            proxy_cache_key               "sp-versioned-v2|$scheme|$host|$server_port|$proxy_host|$request_uri";
+            proxy_cache_valid             200 30d;
             proxy_cache_lock              on;
             proxy_cache_background_update on;
             proxy_cache_use_stale         updating error timeout;
             add_header X-Asset-Cache $upstream_cache_status;
         }
 
-        # /healthz：上游声明 no-store，缓存必须显式忽略上游头。
-        # 它是浏览器检测新版本用的轮询接口，不是探活端点（有缓存陈旧语义），
-        # 外部监控不要拿它判断服务器死活。不需要削轮询的部署可整块删除。
+        # Collectors need current samples; the browser uses the tiny ?build=1 response.
+        # Never override no-store or share a cached full/compact health response.
         location = /healthz {
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
@@ -68,12 +67,7 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
-            proxy_ignore_headers     Cache-Control;
-            proxy_cache              sp_assets;
-            proxy_cache_key          "$scheme$host$request_uri";
-            proxy_cache_valid        200 5s;
-            proxy_cache_lock         on;
-            add_header X-Cache-Status $upstream_cache_status;
+            proxy_cache off;
         }
 
         # 清单共享缓存、公告 30s 缓存和图标直出。先安装并修正片段里的端口、图标目录：
@@ -92,6 +86,7 @@ http {
         }
 
         location / {
+            proxy_cache off;
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;

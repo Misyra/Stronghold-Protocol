@@ -4,6 +4,7 @@
 # Keep Vary processing enabled. nginx separates gzip/identity responses using upstream Vary.
 # This file's add_header directives replace inherited add_header directives on older nginx;
 # retain any site-required security headers in these locations or a shared header include.
+# Cached locations explicitly enable buffering even if the parent disables it for WebSockets.
 
 location = /data/resource-manifest.json {
     proxy_pass http://127.0.0.1:3000;
@@ -15,6 +16,7 @@ location = /data/resource-manifest.json {
     proxy_read_timeout 20s;
 
     proxy_cache sp_assets;
+    proxy_buffering on;
     proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
     proxy_ignore_headers Cache-Control Expires;
     # Node X-Accel-Expires overrides this: current ?v=<release> 12h, plain URL 15s.
@@ -34,6 +36,7 @@ location = /assets-manifest.json {
     proxy_read_timeout 20s;
 
     proxy_cache sp_assets;
+    proxy_buffering on;
     proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
     # Override the upstream 1-year TTL only for nginx; retain the browser's immutable headers.
     proxy_ignore_headers Cache-Control Expires;
@@ -54,6 +57,7 @@ location = /api/announcement {
     proxy_read_timeout 20s;
 
     proxy_cache sp_assets;
+    proxy_buffering on;
     proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
     proxy_ignore_headers Cache-Control Expires;
     proxy_cache_valid 200 30s;

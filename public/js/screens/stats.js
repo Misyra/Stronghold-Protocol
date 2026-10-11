@@ -18,11 +18,11 @@
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS } from '../../../shared/constants.js';
 import { html, Icon, MicroLabel, Spinner, Button, confirmDialog } from '../ui/components.js';
-import { useGameData, makeLookups, BandIcon, Img } from '../ui/gameComponents.js';
+import { useGameData, makeLookups, BandIcon } from '../ui/gameComponents.js';
 import { data, useData } from '../data.js';
 import { fmtNum } from '../ui/gameLogic.js';
-import { titleIconUrl } from '../ui/assetUrls.js';
 import { useDocClass } from '../ui/device.js';
+import { TITLE_HEX_SECTORS, titleSectorPoints } from '../ui/titleHexagon.js';
 import { createStore, useStore, selectRoute } from '../store.js';
 import { ResultView } from './result.js';
 import { toast, toastError } from '../ui/toasts.js';
@@ -148,16 +148,35 @@ function Overview({ agg, gd }) {
         })}
       </tbody>
     </table></div>` : null}
-    ${titles.length ? html`<h4 class="st-sub">${t('称号')}</h4>
-      <div class="st-titles">
-        ${titles.map((x) => html`<div key=${x.id} class=${cx('st-title', !x.count && 'is-none')} title=${x.text || ''}>
-          <${Img} src=${titleIconUrl(gd.m, x.picId)} class="st-title__icon" fallback=${html`<${Icon} name="crown" />`} />
-          <div class="st-title__text"><span>${x.name}</span><b class="num">${fmtNum(x.count)}</b></div>
-        </div>`)}
-      </div>` : null}
+		${titles.length ? html`<h4 class="st-sub">${t('称号')}</h4>
+			<${TitleHexagon} titles=${titles} />` : null}
     <p class="st-rule"><${Icon} name="info" />${t('计入统计：打到结算的对局，以及中途退出前至少清完 1 个回合的对局；更早退出的对局只留在对局记录里。')}${agg.excluded
       ? html` <b>${t('另有 {n} 局未计入统计', { n: agg.excluded })}</b>` : null}</p>
   <//>`;
+}
+
+/** Title wedges reach full height at 20 awards; only counts above 20 get a bright number and glow. */
+function TitleHexagon({ titles }) {
+	const byId = new Map(titles.map((x) => [x.id, x]));
+	return html`<div class="st-titlehex" role="group" aria-label=${t('称号')}>
+		<svg class="st-titlehex__graphic" viewBox="0 0 460 350" aria-hidden="true" focusable="false">
+			${TITLE_HEX_SECTORS.map(([id, vertices]) => html`<polygon key=${id} class="st-titlehex__base" points=${titleSectorPoints(vertices)} />`)}
+			<g class="st-titlehex__active">
+				${TITLE_HEX_SECTORS.map(([id, vertices]) => {
+					const points = titleSectorPoints(vertices, byId.get(id)?.count || 0);
+					return points ? html`<polygon key=${id} class="st-titlehex__sector" points=${points} />` : null;
+				})}
+			</g>
+		</svg>
+		<ul class="st-titlehex__labels">
+			${TITLE_HEX_SECTORS.map(([id], i) => {
+				const x = byId.get(id);
+				return x ? html`<li key=${id} class=${cx('st-titlehex__label', `st-titlehex__label--${i}`)} title=${x.text || ''}>
+					<b class=${cx('st-titlehex__count num', x.count > 20 && 'is-bright')}>${fmtNum(x.count)}</b><span class="st-titlehex__name">${x.name}</span>
+				</li>` : null;
+			})}
+		</ul>
+	</div>`;
 }
 
 /** Single-match records, always in the requested funds / promotions / defeats order. */

@@ -158,3 +158,15 @@ The strategies tab places the three most used strategies above its existing tabl
 Each entry has the strategy icon on the left and the existing strategy name / `×` usage count on two lines to its right.
 The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
 been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.
+
+The overview's six title counts form a flat-top hexagon from six solid teal triangles with a subtle glow, without an
+overall outline or fill gradient. Each triangular tile has its three corners clipped by 5% of the adjoining edges,
+forming six sides (three long and three short), with the same geometry for the teal and gray layers. Scale the raw
+triangle first, then clip it by 5% of the original edge length so partial tiles retain the visible apex cut; cap the
+cut at 25% of the current edge on very small tiles. Clockwise from the top:
+精英云集, 万事俱备, 挥金如土, 卫戍之星, 不朽盟约, 坚若磐石 (the owner's image reference). Each face has its
+actual count and localized title outside it. Each triangle scales from the center by `min(count / 20, 1)`: below
+20 its height decreases proportionally, exposing a full-size `#1a2531` gray triangle underneath (zero is entirely
+gray). Only the teal triangles glow. Counts above 20 are white with a fluorescent
+green glow behind the number. Counts of 20 or less remain green (20 has full height without glow). The diagram
+scales to its container on phones, with readable minimum text sizes.

@@ -148,14 +148,29 @@
 .st-more { display: flex; justify-content: center; margin: .14rem 0 0; }
 .st-hint { margin: .1rem 0 0; font-size: max(.13rem, 10px); line-height: 1.6; color: var(--text-lo); letter-spacing: .04em; }
 
-/* the six 评语 with their counts */
-.st-titles { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(1.9rem, 120px), 1fr)); gap: .08rem; }
-.st-title { display: flex; align-items: center; gap: .08rem; min-width: 0; padding: .06rem .1rem; background: rgba(255, 255, 255, .03); border: 1px solid var(--line); }
-.st-title.is-none { opacity: .45; }
-.st-title__icon { width: max(.38rem, 24px); height: max(.38rem, 24px); flex: none; object-fit: contain; }
-.st-title__text { display: flex; flex-direction: column; min-width: 0; }
-.st-title__text span { font-size: max(.15rem, 10px); color: var(--text-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.st-title__text b { font-size: max(.22rem, 14px); font-weight: 900; color: var(--amber); line-height: 1.1; }
+/* Title wedges scale from the center to full height at 20; higher counts glow behind white numbers. */
+.st-titlehex { position: relative; width: min(100%, max(4.6rem, 320px)); aspect-ratio: 460 / 350; margin: .08rem auto .18rem; }
+.st-titlehex__graphic { display: block; width: 100%; height: 100%; }
+.st-titlehex__active { filter: drop-shadow(0 0 max(.04rem, 2px) rgba(46, 242, 211, .3)); }
+.st-titlehex__base, .st-titlehex__sector { stroke: #0b2425; stroke-width: 4; stroke-linejoin: miter; }
+.st-titlehex__base { fill: #1a2531; }
+.st-titlehex__sector { fill: #20babb; }
+.st-titlehex__labels { margin: 0; padding: 0; list-style: none; }
+.st-titlehex__label { position: absolute; width: 25%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; text-align: center; gap: .02rem; }
+.st-titlehex__label--0 { left: 50%; top: 1%; }
+.st-titlehex__label--1 { left: 87%; top: 22%; }
+.st-titlehex__label--2 { left: 87%; top: 66%; }
+.st-titlehex__label--3 { left: 50%; top: 88%; }
+.st-titlehex__label--4 { left: 13%; top: 66%; }
+.st-titlehex__label--5 { left: 13%; top: 22%; }
+.st-titlehex__count { position: relative; isolation: isolate; font-size: max(.25rem, 16px); font-weight: 900; line-height: 1.1; color: var(--mint-400); }
+.st-titlehex__count.is-bright { color: #fff; text-shadow: 0 0 max(.05rem, 2px) rgba(185, 255, 233, .75); }
+.st-titlehex__count.is-bright::before {
+	content: ''; position: absolute; z-index: -1; top: 12%; bottom: 12%; left: calc(-1 * max(.14rem, 8px)); right: calc(-1 * max(.14rem, 8px));
+	background: radial-gradient(ellipse, rgba(65, 255, 185, .9), rgba(65, 255, 185, .35) 50%, transparent 75%);
+	filter: blur(max(.04rem, 2px)); pointer-events: none;
+}
+.st-titlehex__name { font-size: max(.15rem, 11px); line-height: 1.2; color: var(--text-md); overflow-wrap: anywhere; }
 
 /* what counts (the rule of ui/stats.js countsTowardStats) */
 .st-rule { display: flex; flex-wrap: wrap; align-items: center; gap: .06rem; margin: .24rem 0 0; font-size: max(.14rem, 10px); line-height: 1.6; color: var(--text-lo); }

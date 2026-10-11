@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Local stats preview with memory-only storage: never reads or overwrites the player's saved records. -->
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Title hexagon · Stats mock</title>
+	<link rel="icon" href="data:," />
+	<link rel="stylesheet" href="/css/theme.css" />
+	<link rel="stylesheet" href="/css/components.css" />
+	<link rel="stylesheet" href="/css/screens/game.css" />
+	<link rel="stylesheet" href="/css/screens/game-panels.css" />
+	<link rel="stylesheet" href="/css/screens/result.css" />
+	<link rel="stylesheet" href="/css/screens/stats.css" />
+	<link rel="stylesheet" href="/css/devices.css" />
+	<script type="importmap">
+		{ "imports": { "preact": "/vendor/preact.module.js", "preact/hooks": "/vendor/hooks.module.js", "htm": "/vendor/htm.module.js" } }
+	</script>
+</head>
+<body>
+	<div id="app"></div>
+	<script type="module">
+		import { render } from '/vendor/preact.module.js';
+		import { html, UiHosts } from '/js/ui/components.js';
+		import { StatsHost, openStats } from '/js/screens/stats.js';
+		import { buildRecord, STATS_VERSION } from '/js/ui/stats.js';
+		const records = [
+			['comment_1', 22], ['comment_2', 21], ['comment_3', 33],
+			['comment_4', 22], ['comment_5', 16], ['comment_6', 30],
+		].flatMap(([id, count], group) => Array.from({ length: count }, (_, i) => buildRecord({
+			seed: group * 100 + i, victory: true, roundsPassed: 14, durationMs: 600000,
+			difficulty: 'HARD', modeId: 'mode_multi_hard',
+			players: [{ playerId: 'self', alive: true, victory: true, roundsPassed: 14, bandId: 'band_amiya',
+				title: { id }, stats: { gold: 500, merges: 5 }, creditedKills: 100 }],
+		}, { myId: 'self', now: Date.now() - (group * 100 + i) * 86400000 })));
+		const memory = new Map([['sp.pref.stats', JSON.stringify({ v: STATS_VERSION, records })]]);
+		Object.defineProperty(window, 'localStorage', { value: {
+			getItem: (key) => memory.get(key) ?? null,
+			setItem: (key, value) => memory.set(key, String(value)),
+			removeItem: (key) => memory.delete(key),
+		} });
+		render(html`<${StatsHost} /><${UiHosts} />`, document.getElementById('app'));
+		openStats();
+	</script>
+</body>
+</html>

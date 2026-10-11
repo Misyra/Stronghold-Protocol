@@ -104,7 +104,6 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     const cards = await texts(c, '.st-card__num');
     assert.equal(cards[0], '25', 'games');
     assert.match(await c.page.$$eval('.st-rule', (els) => els.map((e) => e.textContent).join(' ')), /另有 1 局未计入统计/);
-    assert.equal(await c.page.$$eval('.st-title', (els) => els.length), 6, 'the six 评语');
     await c.page.screenshot({ path: path.join(OUT, 'stats-overview-desktop.png') });
     // 策略 / 战斗累计
     await c.click('.st-tab[data-tab="bands"]');

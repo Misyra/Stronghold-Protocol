@@ -45,7 +45,7 @@ curl -sS --max-time 20 -D - -o /dev/null http://127.0.0.1:3000/data/resource-man
 
 用页面实际出现的当前 `/_v/<tag>/js/...` URL 核对正文/缓存头与 Node 一致；无效旧 tag 不应永久映射到当前代码。分别检查裸路径和版本路径的 `/sim/nodeData.js` 及大小写变体，不得返回私有文件内容；403/404 都可接受。
 
-新增版本简版接口上线后，`/healthz?build=1` 应只返回 build，`/healthz` 仍是完整监控响应；代理不得忽略 query 而混用二者。
+新增版本简版接口上线后，`/healthz?build=1` 应只返回 build，`/healthz` 仍是完整监控响应；代理不得忽略 query 而混用二者。完整响应的 `runtimeVersion` 对应 JS/vendor/shared/sim 代码 URL，`artVersion` 对应本站素材，`build` 对应 release（数据/CSS 及客户端更新检查）；代码 URL 的 tag 应与 `runtimeVersion` 一致。部署时另记录进程启动到 `/healthz` 首次成功的耗时，涵盖全量资源内容哈希的读盘成本。
 
 返回两条脱敏日志样例和计时字段是否存在即可，不需要整份 nginx -T 或整份访问日志。
 

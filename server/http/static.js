@@ -17,9 +17,8 @@
 //     /packs/<id>/<file> → a file of a pack folder — only one its manifest names (server/packs.js servable)
 //
 // This fork adds the release/CDN asset layer (assetVersion.js + tools/r2-sync.mjs):
-//     /_v/<tag>/…        → a validated release URL of any mount path: served only while the release tag is
-//                          this boot's, with immutable caching (the tag lives in the page HTML and every
-//                          rewritten module URL; buildGuard.js reads it at /healthz.build).
+//     /_v/<tag>/…        → validated immutable URLs: code uses runtimeVersion, art uses artVersion,
+//                          and transformed data/CSS uses the release tag (/healthz.build).
 //     /assets-manifest.json?v=<tag> → the per-file art hash manifest shipped by tools/r2-sync.mjs; the
 //                          client's resourceUrl.js turns art URLs into per-file `?v=<hash>` CDN queries.
 //     /data/resource-manifest.json → the offline preload manifest (server/resources.js, 设置 ▸ 离线资源).
@@ -290,6 +289,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, body, rewrite ? release.tag : '', versioned);
   };
   handler.version = release.tag;
+  handler.runtimeVersion = release.runtimeTag;
   handler.artVersion = release.artTag;
   /** Cache usage for /healthz: the gzip LRU and the small transformed-response cache. */
   handler.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size,

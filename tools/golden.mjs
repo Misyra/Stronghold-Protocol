@@ -39,7 +39,9 @@
 //            each of its skills, then every prototype pick with a kit at its locked selection, both forms of each tier;
 //            12 pieces per battle on a real stage against the round's real wave three times over (diyScenarios)
 // Battles run through the production BattleSpec path (server/sim/spec.js buildBattleSpec → createBattleFromSpec, the
-// path browsers and the server's headless fields use) with every option explicit; matches construct Match directly
+// path browsers and the server's headless fields use) with every option explicit — every operator the player owns at
+// the default player's settings, 潜能 6 and 练度 精英2 Lv.60 (PlayerBattleInput `potential` / `cultivate`, as
+// PlayerState.battleInput states them, 0.2.2; a stand-in and a prototype 自选 pick neither); matches construct Match directly
 // with a VirtualScheduler (as tools/botbench.mjs) — test-harness defaults never move a digest.
 //
 // Digest (battle): end time, ticks, reason, kills / total / leaks, per player (kills, leaks, coins, damage, boss
@@ -75,10 +77,13 @@ import { VirtualScheduler } from '../server/match/scheduler.js';
 import { resolveRecordLoadout, loadoutRecord, attackRangeGrid } from '../shared/loadoutRecord.js';
 import { diyRecordOf, DIY_TIERS } from '../shared/diy.js';
 import { unitForm } from '../shared/standIn.js';
+import { POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from '../shared/potential.js';
 import { OPERATOR_KITS, KITTED_CHARS } from '../server/sim/content/kits/index.js';
 import { GEO } from '../shared/constants.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+/** The default player's 潜能 / 练度 of every owned operator (shared/potential.js; the owner's decision of 2026-10-08). */
+const DEFAULT_CULTIVATION = Object.freeze({ potential: POTENTIAL_DEFAULT, cultivate: CULTIVATE_DEFAULT });
 export const GOLDEN_DIR = join(ROOT, 'test', 'golden');
 export const FAMILY_NAMES = Object.freeze(['roster', 'bonds', 'fields', 'matches', 'standins', 'diy']);
 
@@ -351,6 +356,7 @@ function layout(gd, stageId, wanted, { field = 'normal', colOffset = 0, max = 12
     if (w.skillIndex != null) u.skillIndex = w.skillIndex;
     if (w.moduleId != null) u.moduleId = w.moduleId;
     if (w.standIn) u.standIn = true;
+    else Object.assign(u, DEFAULT_CULTIVATION); // an owned operator: the default player's 潜能 / 练度 (0.2.2)
     if (w.carryState) u.carryState = w.carryState;
     units.push(u);
   }
@@ -716,6 +722,10 @@ export function matchScenarios() {
   // (its 调度中心 starts at level 5, like the boosted runs' raised LP: the 自选 pieces are sold from level 5 / 6, which the
   // AI otherwise reaches only with a full board, where a single new operator rarely improves its lineup)
   out.push({ id: `coop2-NORMAL-${MATCH_DIY_SEED}-diy`, mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: MATCH_DIY_SEED, human: { diy: MATCH_DIY, shopLevel: 5 } });
+  // The measured shared-stock changes leave the original seeds without a fielded DIY/stand-in operator. Keep those
+  // original outcomes, and add companion seeds that still exercise the complete shop → deployment → battle path.
+  out.push({ id: 'coop2-NORMAL-1-coverage-standins', mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: 1, human: { notOwned: MATCH_NOT_OWNED } });
+  out.push({ id: 'coop2-NORMAL-5-coverage-diy', mode: 'coop', difficulty: 'NORMAL', bots: 1, seed: 5, human: { diy: MATCH_DIY, shopLevel: 5 } });
   const humanAbout = (h) => (h.notOwned ? ` + 1 human seat (AI 托管) without ${h.notOwned.length} operators (补位 stand-ins)`
     : ` + 1 human seat (AI 托管) with ${Object.keys(h.diy || {}).length} 自选 picks${h.shopLevel ? ` and its 调度中心 at level ${h.shopLevel} from the first prep` : ''}`);
   return out.map((m) => ({ ...m, family: 'matches', kind: 'match', about: `${m.mode} ${m.difficulty}, ${m.bots} bot seat(s)${m.human ? humanAbout(m.human) : ''}, seed ${m.seed}${m.clientCombat === false ? ', server-run combat' : ''}${m.boost ? `, LP ${m.boost.lp} and ${m.boost.layers} layers per bond from the first prep` : ''}` }));
@@ -953,7 +963,8 @@ function diyLayout(stageId, wanted) {
     const [r, c] = free[0];
     used.add(tileKey(r, c));
     const dir = units.length % 7 === 6 ? ['UP', 'LEFT', 'DOWN'][Math.floor(units.length / 7) % 3] : 'RIGHT';
-    units.push({ uid: uid++, kind: 'chess', chessId: w.chessId, diy: { ...w.diy }, row: r, col: c, dir, items: [] });
+    // an owned pick at the default player's 潜能 / 练度 (0.2.2); a prototype has neither
+    units.push({ uid: uid++, kind: 'chess', chessId: w.chessId, diy: { ...w.diy }, row: r, col: c, dir, items: [], ...(w.rec.diyProto ? null : DEFAULT_CULTIVATION) });
   }
   return units;
 }
@@ -1022,7 +1033,7 @@ const ABOUT = {
  * fields (one of them a Hidden Core), six matches (solo 标准 / 绝境, co-op 2 / 4, the boosted Hidden Core run, the 补位
  * match) and the normal-record stand-in battles.
  */
-const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted', 'coop2-NORMAL-14-standins', `coop2-NORMAL-${MATCH_DIY_SEED}-diy`]);
+const FAST_MATCHES = new Set(['solo-FUNNY-1', 'solo-HARD-1', 'coop2-NORMAL-3', 'coop4-ABYSS-7', 'solo-HARD-9-boosted', 'coop2-NORMAL-14-standins', `coop2-NORMAL-${MATCH_DIY_SEED}-diy`, 'coop2-NORMAL-1-coverage-standins', 'coop2-NORMAL-5-coverage-diy']);
 const FAST_FIELDS = new Set(['boss-boss_1-pair', 'boss-boss_4-solo', 'boss-boss_7-pair', 'hidden-boss_9-pair', 'unite-1', 'unite-2']);
 export function isFast(sc) {
   if (sc.family === 'matches') return FAST_MATCHES.has(sc.id);

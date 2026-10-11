@@ -3,6 +3,7 @@
 import { GEO } from '../../../../shared/constants.js';
 import { attackRangeGrid } from '../../../../shared/loadoutRecord.js';
 import { meleeOnHighGround } from '../../../../shared/highGround.js';
+import { summonPlacementGrid } from '../../../../shared/summonPlacement.js';
 import { pieceDir, rangeTiles } from '../facing.js';
 import { isObj, tileKey } from './shared.js';
 import { boardTileOf, fieldTile } from './camera.js';
@@ -250,15 +251,18 @@ export function tileAllows(ctx, piece, row, col) {
 /**
  * Board tiles ('r,c') where a summon whose text reads "只能部署在召唤者攻击范围内" may stand (tokens.json `ownerRange`:
  * 伺夜's 狼群, 缪尔赛思's 流形 — the tactical point; player report #9 after 0.1.0): its owner's attack range (the
- * loadout's grid, shared/loadoutRecord.js attackRangeGrid, rotated by the owner's facing around its tile). Null when
+ * loadout's grid, shared/loadoutRecord.js attackRangeGrid, rotated by the owner's facing around its tile).
+ * Jessica's shield uses the four-adjacent-tile grid instead, independent of facing/skill/module. Null when
  * the piece is not range-bound or its owner is not on the board. `owner` ({ row, col, piece }) replaces the owner's
  * current position (a summon swapped with its own owner). Mirror of server/match/PlayerState.js summonRange.
  * @param {ReturnType<typeof placementContext>} ctx
  * @returns {Set<string> | null}
  */
 export function summonRange(ctx, piece, owner = null) {
-  if (!isObj(piece) || piece.kind !== 'token' || ctx?.getToken?.(piece.id)?.ownerRange !== true) return null;
-  return ownerRangeOf(ctx, piece, owner);
+  if (!isObj(piece) || piece.kind !== 'token') return null;
+  const grid = summonPlacementGrid(piece.id);
+  if (!grid && ctx?.getToken?.(piece.id)?.ownerRange !== true) return null;
+  return ownerRangeOf(ctx, piece, owner, grid);
 }
 
 /**
@@ -273,14 +277,14 @@ export function summonExcluded(ctx, piece, owner = null) {
   return ownerRangeOf(ctx, piece, owner);
 }
 
-/** The attack-range tiles of a summon piece's owner on the board (summonRange / summonExcluded), or null. */
-function ownerRangeOf(ctx, piece, owner = null) {
+/** The attack or fixed placement range of a summon piece's owner on the board, or null. */
+function ownerRangeOf(ctx, piece, owner = null, placementGrid = null) {
   let at = owner;
   if (!at) for (const e of ctx.boardAt.values()) if (e.piece.uid === piece.ownerUid && e.piece.kind === 'chess') { at = e; break; }
   const rec = at && ctx.getChess(at.piece.id);
   if (!rec) return null;
   let grid = null;
-  try { grid = attackRangeGrid(deployedRecord(rec, ctx.priv, ctx.getChess, ctx.backups) || rec); } catch { /* the data grid */ }
+  try { grid = placementGrid || attackRangeGrid(deployedRecord(rec, ctx.priv, ctx.getChess, ctx.backups) || rec); } catch { /* the data grid */ }
   return new Set(rangeTiles(grid || rec.rangeGrid, at.row, at.col, pieceDir(at.piece)).map(([r, c]) => tileKey(r, c)));
 }
 
@@ -301,7 +305,8 @@ function unitAllowed(ctx, piece, row, col, owner = null) {
  *     must be legal on the source tile); from hand/temp the deploy cap applies unless a chess occupant swaps out.
  *   board ← token: legal tile; from the hand the tile must be empty and its summoner deployed; board ↔ board swaps.
  *   hand ← chess from the board: empty slot (withdraw), chess occupant (swap, legal on the source tile), otherwise
- *     it goes to any free slot (HAND_FULL when none). hand ← token from the board: always (back onto its stack).
+ *     it uses a free slot or one freed by its own summon stack (HAND_FULL when none). hand ← token from the board:
+ *     always (back onto its stack).
  *   hand ← hand/temp piece: move / swap. hand ← EQUIP item onto a chess: equip; onto a non-chess: swap.
  *   board ← EQUIP item: equip the chess on that tile. board ← MAGIC (Arts): used on that tile.
  * @param {ReturnType<typeof placementContext>} ctx
@@ -334,8 +339,11 @@ export function canPlace(ctx, uid, target) {
         if (!tileAllows(ctx, occ.piece, src.row, src.col)) return no('BAD_TILE', t('交换后的单位无法部署在原位置'));
         return { ok: true, action: 'swap' };
       }
-      // the withdrawn operator goes to another free slot
-      const free = [...Array(GEO.HAND_SIZE).keys()].some((i) => !ctx.handAt.has(i));
+      // Withdrawal removes the operator's own summon stacks, freeing their hand slots too.
+      const free = [...Array(GEO.HAND_SIZE).keys()].some((i) => {
+        const p = ctx.handAt.get(i)?.piece;
+        return !p || (p.kind === 'token' && p.ownerUid === piece.uid);
+      });
       return free ? { ok: true, action: 'move' } : no('HAND_FULL', t('整备区已满'));
     }
     return { ok: true, action: 'swap' };
@@ -363,7 +371,7 @@ export function canPlace(ctx, uid, target) {
     // dropped onto its own owner (the two swap); an outside-bound one (战术锚点) outside it
     const ownerSwap = src.area === 'board' && occ && occ.piece.uid === piece.ownerUid ? { row: src.row, col: src.col, piece: occ.piece } : null;
     const range = summonRange(ctx, piece, ownerSwap);
-    if (range && !range.has(tileKey(row, col))) return no('BAD_TILE', t('只能部署在召唤者攻击范围内'));
+    if (range && !range.has(tileKey(row, col))) return no('BAD_TILE', summonPlacementGrid(piece.id) ? t('只能部署在召唤者相邻四格') : t('只能部署在召唤者攻击范围内'));
     const out = summonExcluded(ctx, piece, ownerSwap);
     if (out && out.has(tileKey(row, col))) return no('BAD_TILE', t('只能部署在召唤者攻击范围外'));
     if (src.area === 'board') {

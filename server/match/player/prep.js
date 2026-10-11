@@ -31,6 +31,7 @@ export class PlayerPrep {
     const handFull = freeSlot(this.hand) < 0;
     if (slot.kind === 'item') {
       if (!this.gd.item(slot.id)) return fail(ERR.BAD_TARGET);
+      if (!this.m.itemPool.canGain(slot.id)) return fail(ERR.SOLD_OUT);
       if (handFull) return fail(ERR.HAND_FULL);
     } else {
       const rec = this.gd.chess(slot.id);
@@ -56,6 +57,7 @@ export class PlayerPrep {
   setReady(on) {
     if (!this.alive) return fail(ERR.ELIMINATED);
     if (this.m.phase !== PHASE.PREP) return fail(ERR.WRONG_PHASE);
+    if (on && this.personalChoice) return fail(ERR.BAD_TARGET, '请先完成教鞭选择'); // i18n-ignore: developer error detail
     if (on && !this.tempEmpty) return fail(ERR.TEMP_NOT_EMPTY);
     if (this.ready === !!on) return OK;
     this.ready = !!on;

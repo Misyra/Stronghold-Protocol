@@ -9,7 +9,9 @@ import { normDir, mirrorDir } from '../dir.js';
 import { SkillRuntime } from '../skills.js';
 import { resolveProfile } from '../professions.js';
 import { normalizeToken } from '../simdata.js';
+import { isPotential, isCultivate } from '../../../shared/potential.js';
 import { setupUnitKit } from '../content/index.js';
+import { installTraitAttackSpeed } from '../content/traitMods.js';
 import { clone } from './util.js';
 
 export class BattlePlayers {
@@ -39,8 +41,11 @@ export class BattlePlayers {
     };
     this.players.push(ps);
     this._perPlayer[ps.playerId] = {
-      killed: 0, total: 0, leaked: [], perfect: true, layerGains: {}, coins: 0,
-      damageDealt: 0, bossDamage: 0, healingDone: 0, deaths: 0, unitsEnd: [], unitStats: [],
+      // `killed` / `total` / `leaked` / `perfect` keep the official `counted` reading (DESIGN §5.1); `killedInTotal` /
+      // `leakedInTotal` are the HUD capsule's counters of this player's own field (only enemies the round scheduled:
+      // spawns.js `_queueSpawn` / `inTotal`, deploy.js), `resolved` is derived from them at result time.
+      killed: 0, total: 0, leaked: [], perfect: true, killedInTotal: 0, leakedInTotal: 0,
+      layerGains: {}, coins: 0, damageDealt: 0, bossDamage: 0, healingDone: 0, deaths: 0, unitsEnd: [], unitStats: [],
     };
     const late = [];
     for (const u of p.units ?? []) {
@@ -80,7 +85,7 @@ export class BattlePlayers {
    * rows 2–5, the mirrored right half of a pair (whatever coordinates the player's input uses). Never the hand / 临时
    * 整备区 rows of a boss field (rows 0–1, inside BOSS_RECT) nor the other half of a 联防 or boss field. Moves that must
    * stay where the player could deploy read it (乌尔比安's S3 【移动】, kits/ops/chess_char_5_05-ulpia.js); the 突袭
-   * landing reads onFieldBoard (any player of this field).
+   * landing reads onFieldBoard (any player of this field), with a Raid-only multiplayer boss/hidden exception (§29.13).
    */
   onOwnBoard(ps, r, c) {
     if (!ps) return false;
@@ -99,7 +104,8 @@ export class BattlePlayers {
    * the players whose units this battle holds (a teammate eliminated before it or playing another field is not one).
    * Both halves on the two-helper 联防 field and on a Final Assault / Hidden Core pair field; the own half only for a
    * lone 联防 helper and on a solo boss field; never a boss field's hand / 临时整备区 rows. The 突袭 landing reads it
-   * (bonds/addon/battle.js raidTile — the owner's decision of 2026-10-07, DESIGN §26.1).
+   * (bonds/addon/battle.js raidTile — the owner's decision of 2026-10-07, DESIGN §26.1), then separately admits the
+   * empty deployment half in multiplayer boss/hidden battles only (§29.13); this general method is unchanged.
    */
   onFieldBoard(r, c) {
     for (const ps of this.players) if (this.onOwnBoard(ps, r, c)) return true;
@@ -141,10 +147,12 @@ export class BattlePlayers {
     // the unit's own loadout (DESIGN §16): an entry without loadout fields is the DEFAULT — never another player's
     // choice for the same chess id in a multi-player field (the per-battle data view maps id-only lookups); `standIn:
     // true` fields the chess as its 补位 stand-in (simdata getStandIn: the stand-in's body, the chess's identity); `diy`
-    // fills a 自选 slot with its pick (simdata getDiy: the slot's identity, the operator's body, skill and module)
+    // fills a 自选 slot with its pick (simdata getDiy: the slot's identity, the operator's body, skill and module);
+    // `potential` (潜能 1–6, 0.2.2) composes the def at it (never a stand-in's)
     const lo = { skillIndex: inp.skillIndex ?? null, moduleId: inp.moduleId ?? null };
     if (inp.standIn === true) lo.standIn = true;
     if (inp.diy && typeof inp.diy === 'object') lo.diy = inp.diy;
+    if (inp.standIn !== true && isPotential(inp.potential)) lo.potential = inp.potential;
     const def = this.data.getChess(inp.chessId, lo);
     if (!def) { this.log(`unknown chess ${inp.chessId}${lo.diy ? ' (illegal 自选 pick)' : ''}`); return null; }
     // a DIY slot has no body of its own (甄选干员): it fights only as a 自选 piece (its `diy` pick)
@@ -152,6 +160,12 @@ export class BattlePlayers {
     const u = this._makeAlly(ps, def, 'op', r, c, { uid: inp.uid, dir });
     u.items = [...(inp.items ?? [])];
     u.carry = inp.carryState ?? null;
+    // 练度 (自持有, 0.2.2): the owned operator's ×ATK / ×DEF / ×max HP (units.js Πmul) — never a 补位 stand-in's nor a
+    // prototype 自选 pick's (another character than the one the player owns)
+    if (isCultivate(inp.cultivate) && !def.standInFor && !def.raw?.diyProto) {
+      const mul = typeof this.data.cultivateMul === 'function' ? this.data.cultivateMul(inp.cultivate) : null;
+      if (mul) { u.cultivate = inp.cultivate; u.cultMul = Object.freeze({ ...mul }); u.markDirty(); }
+    }
     return u;
   }
 
@@ -217,6 +231,13 @@ export class BattlePlayers {
       if (t && typeof t.install === 'function') this._safe(() => t.install(this, u), 'talent.install', u);
     }
     if (typeof u.kit.install === 'function') this._safe(() => u.kit.install(this, u), 'kit.install', u);
+    // trait lines the ENGINE owns for every operator (content/traitMods.js: the module attack-speed riders whose
+    // condition is a pure function of the field — 「攻击范围内存在N名及以上敌人时攻击速度+X」). Runs after kit.install:
+    // a kit that implements its own line for this trait is never double-counted — traitMods.js refuses every condition
+    // shape a kit already owns (`reason: 'kit'`), and the kits whose line it DOES take over (the two REA-Y ones) had
+    // their hand-written copy deleted in the same change. Calling it before kit.install would let a kit's own buff and
+    // this rule both land on the same unit.
+    this._safe(() => installTraitAttackSpeed(this, u), 'traitMods.attackSpeed', u);
     return u.kit;
   }
 }

@@ -6,15 +6,19 @@
 // 原型 / 已持有 tag —, an operator held by another slot greyed out with where it is. In the match the operator is sold
 // only in this player's shop, from 调度中心 level 5 (tier 5) / 6 (tier 6), and fights with the pick (server/match/player
 // /diy.js). Out of match: the next match takes the picks. The picks live in ui/loadoutSync.js (localStorage + room.diy);
-// the model is ui/diyModel.js. Styles: css/screens/loadout.css (diy-*).
+// the model is ui/diyModel.js. Styles: css/screens/loadout.css (diy-*). An owned pick's card carries its operator's 潜能 /
+// 练度 selects (0.2.2, screens/cultivation.js — the same per-operator settings as 干员调配, `ops`); a prototype has neither.
 
-import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { useLayoutEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, Button, TierChip } from '../ui/components.js';
 import { Img, RichText, BondGlyph } from '../ui/gameComponents.js';
 import { chessAvatarUrl, chessPortraitUrl, profIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
 import { data } from '../data.js';
-import { PROF_NAME, skillLabel, moduleBadge, fullTraitText } from '../ui/loadoutModel.js';
+import { PROF_NAME, skillLabel, moduleBadge, fullTraitText, skillTags } from '../ui/loadoutModel.js';
 import { diySlotList, pickChoices, pickOptions, slotRecord, defaultPick } from '../ui/diyModel.js';
+import { OperatorVoice } from '../ui/operatorVoice.js';
+import { LoadoutStats } from '../ui/loadoutStats.js';
+import { CultivationSelects } from './cultivation.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -38,8 +42,8 @@ function Bonds({ bonds }) {
   return html`<span class="diy-bonds">${(bonds || []).map((b) => html`<span key=${b} class="diy-bond"><${BondGlyph} bondId=${b} /><span>${bondName(b)}</span></span>`)}</span>`;
 }
 
-/** One slot: the pick (operator, class, bonds, skill, module) or an empty slot to fill. */
-function SlotCard({ m, slot, pick, illegal, onOpen, onClear }) {
+/** One slot: the pick (operator, class, bonds, skill, module, an owned pick's 潜能 / 练度) or an empty slot to fill. */
+function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = null }) {
   const D = diyData();
   const rec = pick ? slotRecord(slot.slotId, pick, D) : null;
   const elite = pick ? slotRecord(slot.slotId, pick, D, { elite: true }) : null;
@@ -73,6 +77,9 @@ function SlotCard({ m, slot, pick, illegal, onOpen, onClear }) {
         ${mod ? html`<${Img} src=${moduleTypeIconUrl(data.get('local'), mod.type)} class="diy-slot__micon" fallback=${html`<b class="num">${moduleBadge({ typeName: mod.type })}</b>`} />` : html`<span class="diy-slot__micon diy-slot__micon--none">—</span>`}
         <span>${mod ? html`<b class="num">${mod.type || ''}</b> ${mod.name || ''}` : t('不装备模组')} <small class="t-dim">${t('（精锐时生效）')}</small></span>
       </span>
+      ${proto ? html`<small class="diy-slot__cult t-dim">${t('原型干员没有潜能与练度')}</small>`
+        : onOps ? html`<span class="diy-slot__cult"><${CultivationSelects} charId=${rec.charId} ops=${ops} onSet=${onOps} /></span>` : null}
+      <${OperatorVoice} charId=${rec.charId} />
       ${illegal ? html`<p class="diy-slot__bad"><${Icon} name="warn" />${t('这项自选在当前版本不可用，开局时会被移除')}</p>` : null}
     </div>
     <div class="diy-slot__acts">
@@ -101,14 +108,16 @@ function OptionCard({ m, opt, selected, onSel }) {
 }
 
 /** A skill choice of an owned pick (or the locked skill of a prototype). */
-function SkillRow({ m, s, on, locked, onPick }) {
-  const rec = s.elite || s.normal;
+function SkillRow({ m, s, on, locked, onPick, level }) {
+  const rec = level === 'elite' ? s.elite || s.normal : s.normal || s.elite;
+  const tags = skillTags(rec);
   return html`<button type="button" role="radio" aria-checked=${on ? 'true' : 'false'} data-skill=${s.index} disabled=${locked}
       class=${cx('diy-choice', on && 'is-on')} onClick=${() => onPick(s.index)}>
     <span class="diy-choice__icon"><${Img} src=${skillRecordIconUrl(m, rec, { empty: false })} fallback=${html`<b class="num">${skillLabel(s.index)}</b>`} /></span>
     <span class="diy-choice__body">
       <span class="diy-choice__head"><b class="num">${skillLabel(s.index)}</b><b>${rec?.name || ''}</b>${on ? html`<span class="lo-badge lo-badge--on"><${Icon} name="check" />${locked ? t('锁定') : t('已选择')}</span>` : null}</span>
-      <${RichText} as="span" class="diy-choice__desc" text=${s.normal?.descRaw || s.normal?.desc || ''} />
+      <span class="diy-choice__tags"><span>${tags.sp}</span>${!tags.passive ? html`<span>${t('初始')} ${tags.init} · ${t('消耗')} ${tags.cost}</span>` : null}${tags.duration ? html`<span>${tags.duration}</span>` : null}</span>
+      <${RichText} as="span" class="diy-choice__desc" text=${rec?.descRaw || rec?.desc || ''} />
     </span>
   </button>`;
 }
@@ -137,13 +146,16 @@ function ModuleRow({ id, rec, on, locked, onPick }) {
  * @param {{ m: any, slot: any, picks: Record<string, any>, kitted: string[]|null, onDone: (pick: any) => void, onClose: () => void }} props
  */
 export function DiyPicker(props) {
+  const [previewLevel, setPreviewLevel] = useState('elite');
   const cur = props.picks[props.slot.slotId] || null;
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState(cur ? { ...cur } : null);
   // Esc cancels only the picker, like its 取消 (GitHub #284, idea from PR #286); the 干员调配 overlay's own Esc skips
-  // while a picker is open, and a dialog over the picker (导入) still takes Esc first
-  useEffect(() => {
+  // while a picker is open, and a dialog over the picker (导入) still takes Esc first. A layout effect: the listener is
+  // attached in the same commit as the picker (a plain effect waits for the next frame, and an Esc pressed in between
+  // was swallowed — the overlay skipped it, the picker did not hear it yet; the 0.2.2 full browser pass)
+  useLayoutEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.modal')) return;
       e.preventDefault();
@@ -153,14 +165,14 @@ export function DiyPicker(props) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [props.onClose]);
-  return DiyPickerView({ ...props, filter, query, draft, onFilter: setFilter, onQuery: setQuery, onDraft: setDraft });
+  return DiyPickerView({ ...props, previewLevel, onPreviewLevel: setPreviewLevel, filter, query, draft, onFilter: setFilter, onQuery: setQuery, onDraft: setDraft });
 }
 
 /**
  * The picker's view (no hooks: the tests draw it): `filter` 'all' | 'proto' | 'owned', `query`, `draft` the pick being
  * made (null = none chosen yet) and their setters.
  */
-export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter, query, draft, onFilter: setFilter, onQuery: setQuery, onDraft: setDraft }) {
+export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter, query, draft, onFilter: setFilter, onQuery: setQuery, onDraft: setDraft, ops = {}, onOps = null, previewLevel = 'elite', onPreviewLevel = () => {} }) {
   const D = diyData();
   const cur = picks[slot.slotId] || null;
   const options = pickOptions(slot.slotId, picks, D, kitted);
@@ -168,12 +180,20 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
   const list = options.filter((o) => (filter === 'all' || (filter === 'proto') === o.proto)
     && (!q || [o.unit?.name, o.unit?.appellation, o.unit?.subProfessionName, t(PROF_NAME[o.unit?.profession] || ''), ...o.bonds.map(bondName)].some((x) => typeof x === 'string' && x.toLowerCase().includes(q))));
   const ch = draft ? pickChoices(draft.charId, slot.slotId, D) : null;
-  const sel = (charId) => setDraft(cur && cur.charId === charId ? { ...cur } : defaultPick(charId, slot.slotId, D));
+  const sel = (charId) => {
+    if (draft?.charId === charId) return;
+    setDraft(cur && cur.charId === charId ? { ...cur } : defaultPick(charId, slot.slotId, D));
+  };
   const lk = ch?.locked || null;
   const skillOn = ch ? (ch.proto ? lk?.skillIndex : draft.skillIndex) : null;
   const modOn = ch ? (ch.proto ? lk?.uniEquipId ?? null : draft.uniEquipId ?? null) : null;
   const unit = draft ? D.backups?.units?.[draft.charId] : null;
   const label = t('{tier}阶 自选', { tier: slot.tier });
+  const potential = ops[draft?.charId]?.potential ?? 6;
+  const base = draft ? slotRecord(slot.slotId, draft, D, { potential }) : null;
+  const golden = draft ? slotRecord(slot.slotId, draft, D, { elite: true, potential }) : null;
+  const previewEntries = base ? { [base.baseId || base.chessId]: { skill: skillOn, module: modOn || 'none' } } : {};
+  const previewChess = (id) => id === golden?.chessId ? golden : base;
   return html`<section class="diy-pick" role="dialog" aria-label=${t('{slot}：选择干员', { slot: label })} data-testid="diy-picker" data-slot=${slot.slotId}>
     <header class="diy-pick__head">
       <${TierChip} tier=${slot.tier} size="sm" /><b>${label}</b>
@@ -201,9 +221,12 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
             <span class="diy-pick__wtxt"><b>${unit.name}</b><small>${classLine(unit)}</small></span>
             <${KindTag} proto=${ch.proto} />
           </div>
+          ${!ch.proto && onOps ? html`<section class="lo-sec"><header class="lo-sec__head"><h3>${t('潜能与练度')}</h3></header><${CultivationSelects} charId=${draft.charId} ops=${ops} onSet=${onOps} /></section>` : null}
+          <${LoadoutStats} base=${base} golden=${golden} entries=${previewEntries} level=${previewLevel}
+            onLevel=${onPreviewLevel} getChess=${previewChess} ops=${ch.proto ? null : ops} />
           <h4 class="diy-pick__sec">${t('技能')}${ch.proto ? html`<small>${t('原型干员的技能与补位时一致，不可更改')}</small>` : null}</h4>
           <div role="radiogroup" aria-label=${t('选择技能')} class="diy-pick__choices">
-            ${ch.skills.filter((s) => !ch.proto || s.index === skillOn).map((s) => html`<${SkillRow} key=${s.index} m=${m} s=${s} on=${s.index === skillOn} locked=${ch.proto}
+            ${ch.skills.filter((s) => !ch.proto || s.index === skillOn).map((s) => html`<${SkillRow} key=${s.index} m=${m} s=${s} level=${previewLevel} on=${s.index === skillOn} locked=${ch.proto}
               onPick=${(i) => setDraft({ ...draft, skillIndex: i })} />`)}
           </div>
           <h4 class="diy-pick__sec">${t('模组')}<small>${t('精锐时生效 · 模组等级 {stage}', { stage: ch.stage })}</small></h4>
@@ -226,7 +249,9 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
 /**
  * The tab's body: the four slots by tier, and the picker of the slot being filled (`picking`, kept here).
  * @param {{ m: any, picks: Record<string, any>, legal: Record<string, any>, kitted: string[]|null,
- *   onSet: (slotId: string, pick: any) => void }} props
+ *   onSet: (slotId: string, pick: any) => void, ops?: Record<string, any>,
+ *   onOps?: ((charId: string, patch: { potential?: number, cultivate?: number }) => void) | null }} props
+ *   `ops` / `onOps`: the stored 潜能 / 练度 and their setter (0.2.2 — an owned pick's card shows its selects)
  */
 export function DiyPanel(props) {
   const [picking, setPicking] = useState(null);
@@ -234,7 +259,7 @@ export function DiyPanel(props) {
 }
 
 /** The tab's view (no hooks: the tests draw it): `picking` = the slot being filled, or null. */
-export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking }) {
+export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking, ops = {}, onOps = null }) {
   const slots = diySlotList(diyData());
   const slot = picking ? slots.find((s) => s.slotId === picking) : null;
   const tiers = [...new Set(slots.map((s) => s.tier))];
@@ -247,11 +272,11 @@ export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPickin
         <h3 class="own-tier__head"><${TierChip} tier=${tier} size="sm" /><span class="num">${ROMAN[tier]}</span><span>${t('阶')}</span></h3>
         <div class="diy-grid">
           ${slots.filter((s) => s.tier === tier).map((s) => html`<${SlotCard} key=${s.slotId} m=${m} slot=${s} pick=${picks[s.slotId] || null}
-            illegal=${!!picks[s.slotId] && !legal[s.slotId]} onOpen=${setPicking} onClear=${(id) => onSet(id, null)} />`)}
+            illegal=${!!picks[s.slotId] && !legal[s.slotId]} onOpen=${setPicking} onClear=${(id) => onSet(id, null)} ops=${ops} onOps=${onOps} />`)}
         </div>
       </section>`)}
     </div>
-    ${slot ? html`<${DiyPicker} m=${m} slot=${slot} picks=${picks} kitted=${kitted} onClose=${() => setPicking(null)}
+    ${slot ? html`<${DiyPicker} m=${m} slot=${slot} picks=${picks} kitted=${kitted} ops=${ops} onOps=${onOps} onClose=${() => setPicking(null)}
       onDone=${(pick) => { onSet(slot.slotId, pick); setPicking(null); }} />` : null}
   </main>`;
 }

@@ -1,8 +1,8 @@
 import { REQUEST_DIAGNOSTICS } from './request-diagnostics.mjs';
 import { LINUX_DIAGNOSTICS } from './linux-diagnostics.mjs';
 // Public numeric diagnostics only; no arbitrary upstream fields.
-export const GAME_DIAGNOSTICS = ["gameSocketBuffersTotal","gameSocketBuffersMax","gameWorkersQueued","gameWorkersBusy","gameWorkersQueueMs","gameWorkersAvgComputeMs","gamePersistFailures","gamePersistCheckpoints","gameHeapUsedMB","gameHeapTotalMB","gameEventLoopP99Ms","gameEventLoopMaxMs","gameGcCount","gameGcTotalMs","gameGcMaxMs","gameGcOver50","gameDiagWindowMs","gameDiagEndedAt","gamePersistSaveLastMs","gameMaintenance","gameEventLoopLatestP99Ms","gameEventLoopLatestMaxMs"];
-export const DIAGNOSTIC_SERIES = ['cpuStealPct',...REQUEST_DIAGNOSTICS.filter(k => ['httpP99Ms','httpAborts','httpErrors','httpRateLimited','httpMinuteP99Ms','httpMinuteAborts','httpMinuteErrors','httpMinuteRateLimited'].includes(k)), 'gameEventLoopP99Ms', 'gameEventLoopMaxMs', 'gameGcTotalMs', ...LINUX_DIAGNOSTICS.filter(k => ['gameMainThreadCpuPct','gameNvcswPerSec'].includes(k))];
+export const GAME_DIAGNOSTICS = ["gameSocketBuffersTotal","gameSocketBuffersMax","gameWorkersQueued","gameWorkersBusy","gameWorkersQueueMs","gameWorkersAvgComputeMs","gamePersistFailures","gamePersistCheckpoints","gameHeapUsedMB","gameHeapTotalMB","gameEventLoopP99Ms","gameEventLoopMaxMs","gameGcCount","gameGcTotalMs","gameGcMaxMs","gameGcOver50","gameDiagWindowMs","gameDiagEndedAt","gamePersistSaveLastMs","gameMaintenance","gameEventLoopLatestP99Ms","gameEventLoopLatestMaxMs","gameEventLoopLatestP95Ms","gameEventLoopUtilization","gameProcessCpuUserPct","gameProcessCpuSystemPct"];
+export const DIAGNOSTIC_SERIES = ['cpuStealPct',...REQUEST_DIAGNOSTICS.filter(k => ['httpP99Ms','httpAborts','httpErrors','httpRateLimited','httpMinuteP99Ms','httpMinuteAborts','httpMinuteErrors','httpMinuteRateLimited'].includes(k)), 'gameEventLoopP99Ms', 'gameEventLoopMaxMs', 'gameEventLoopUtilization', 'gameProcessCpuUserPct', 'gameProcessCpuSystemPct', 'gameGcTotalMs', ...LINUX_DIAGNOSTICS.filter(k => ['gameMainThreadCpuPct','gameNvcswPerSec'].includes(k))];
 const numeric = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
 export function gameDiagnostics(g, now = Date.now()) {
   const out = Object.fromEntries(GAME_DIAGNOSTICS.map(k => [k, null]));
@@ -24,6 +24,12 @@ export function gameDiagnostics(g, now = Date.now()) {
   const latest = recent.at(-1);
   if (latest) {
     get('gameEventLoopLatestP99Ms', latest.eventLoop?.p99Ms); get('gameEventLoopLatestMaxMs', latest.eventLoop?.maxMs);
+    get('gameEventLoopLatestP95Ms', latest.eventLoop?.p95Ms);
+    get('gameEventLoopUtilization', latest.eventLoop?.utilization);
+    // CPU seconds over the window's wall ms: single-core 100% basis, includes worker threads (may exceed 100%).
+    const cpuPct = (seconds) => numeric(seconds) == null ? null : seconds / latest.windowMs * 100000;
+    get('gameProcessCpuUserPct', cpuPct(latest.processCpuDelta?.userSeconds));
+    get('gameProcessCpuSystemPct', cpuPct(latest.processCpuDelta?.systemSeconds));
     get('gameDiagWindowMs', latest.windowMs); get('gameDiagEndedAt', latest.endedAt);
     get('gameEventLoopP99Ms', Math.max(...recent.map(w => numeric(w.eventLoop?.p99Ms) ?? -1)));
     get('gameEventLoopMaxMs', Math.max(...recent.map(w => numeric(w.eventLoop?.maxMs) ?? -1)));

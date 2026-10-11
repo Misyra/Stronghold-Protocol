@@ -142,7 +142,7 @@
 .st-band .bandicon { flex: none; }
 .st-t { font-family: var(--font-num); font-size: max(.15rem, 10px); color: var(--text-lo); white-space: nowrap; }
 .st-rate { white-space: nowrap; }
-.st-rate b { color: var(--text-hi); font-weight: 700; }
+.st-rate b { display: inline-block; width: 4ch; text-align: right; color: var(--text-hi); font-weight: 700; }
 .st-bar { display: inline-block; width: max(.8rem, 48px); height: max(.07rem, 4px); margin-right: .1rem; vertical-align: middle; background: var(--line); }
 .st-bar i { display: block; height: 100%; background: var(--mint-500); }
 

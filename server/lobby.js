@@ -858,6 +858,16 @@ export class Lobby {
   /** @param {Room} room @param {string | null} [key] per-network limit key of the starter */
   startMatch(room, key = null) { return this.startMatchWith(room, key, null); }
 
+  /**
+   * The pool a match's simulation tasks run on. A RoomWorkerPool (opt-in room lanes, server/index.js) pins the room
+   * to its own lane queue; a plain SimulationPool has no assign and is passed through unchanged.
+   * @param {string} key the room code (stable per room, so its matches share one lane)
+   * @returns {object | null} the pool for the match's `workerPool` option
+   */
+  workerPoolFor(key) {
+    return this.workerPool?.assign ? this.workerPool.assign(key) : this.workerPool;
+  }
+
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
   restoreRooms(docs, { now = this.now() } = {}) {
     const stats = { rooms: 0, seats: 0, droppedSeats: 0 };
@@ -953,7 +963,10 @@ export class Lobby {
         diy: s.isBot ? null : s.diy || null,
       }));
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
-    const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, status: null, sharedResult: null, results: new Map() };
+    // workerPoolKey names the room for a RoomWorkerPool lane (release in disposeMatchCtx); `key` above is only the
+    // starter's per-network limit key and would collide lanes across that network's rooms.
+    const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, status: null,
+      sharedResult: null, results: new Map(), workerPoolKey: room.code };
     const matchNo = checkpoint ? Math.max(1, room.matchCount) : room.matchCount + 1;
     let seed = 0;
     try { seed = this.seedFn() >>> 0; } catch { seed = randomInt(2 ** 32); }
@@ -973,7 +986,7 @@ export class Lobby {
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
         matchNo,
         data: this.safeData(),
-        workerPool: this.workerPool,
+        workerPool: this.workerPoolFor(room.code),
         log: this.log,
         now: this.now,
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),
@@ -1225,6 +1238,10 @@ export class Lobby {
     ctx.disposed = true;
     ctx.live = false;
     try { ctx.match?.dispose?.(); } catch (e) { this.log.error('[lobby] match.dispose threw', e); }
+    // RoomWorkerPool lanes: give the room's lane back when its match context dies. A plain SimulationPool has no
+    // release and stays a no-op; an unknown key is ignored too.
+    const key = ctx.workerPoolKey || ctx.match?.roomCode;
+    if (key) this.workerPool?.release?.(key);
   }
 
   safeData() {

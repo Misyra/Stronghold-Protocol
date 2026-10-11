@@ -50,6 +50,7 @@
 
 - 已移植 [worker 提交 2e89a90](https://github.com/xinhai-ai/Stronghold-Protocol/commit/2e89a90164383bf70db2815fc366912f5524c2cd) 的线程池、模拟任务、Bot 输入捕获与异步战斗接入，复用测试与基准脚本。
 - 已参考 [8d5f0fb](https://github.com/xinhai-ai/Stronghold-Protocol/commit/8d5f0fba581e1e20adf71a97f2e4e55bdd1adc08) 增加平均计算时间，并修正失败 / 取消任务污染成功平均值的问题；参考 [ce5133b](https://github.com/xinhai-ai/Stronghold-Protocol/commit/ce5133b168504681336de82013dad955ce77f2a2) 加入可选 Bot 预演次数配置，默认质量不变。
+- 已移植 [40d4505f](https://github.com/xinhai-ai/Stronghold-Protocol/commit/40d4505ff7530f1e7a1d1c0d79f4b3709e05ded0) 的按房间泳道线程分组（`SP_ROOM_WORKERS`，默认关闭，且不得超过 SP_WORKERS）：同一房间的模拟任务固定到一条泳道队列。它解决的是队列隔离而非正确性——同一房间内战斗结果的先后安全已由现有的结果把关（clientCombat / prep / reports 的 valid() 校验与任务取消）保证，开启与否不影响结果。
 - WebSocket 压缩当前已经存在，无须重复移植。容量限制原项目已有；这些限制用于保护服务，不会让单次模拟变快。
 - 后续已移植资源预载：逐文件 hash、Cache Storage、Service Worker、首页入口与设置面板，适配版本路径、CDN、音频 Range 和空间不足时的续传。默认关闭；跨素材版本复用未改变的二进制文件，避免因全站版本变化重下载所有素材。
 - Redis 恢复未作为性能补丁引入。CDN 在后续请求中单独接入：素材外移 Cloudflare R2（逐文件 `?v=` 哈希穿透）及跨域响应，见 [CDN.md](../operations/CDN.md)。

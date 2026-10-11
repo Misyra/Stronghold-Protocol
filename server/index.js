@@ -25,6 +25,8 @@
 // This fork's extra wiring in startServer():
 //   * SimulationPool (server/workers/pool.js): bot rehearsal, normal / 联防 headless runs and SP_VERIFY=all
 //     verifications run in worker threads (SP_WORKERS etc.; 0 disables). The pool is created here and closed on close().
+//   * RoomWorkerPool (server/workers/roomPool.js): opt-in room lanes (SP_ROOM_WORKERS 1..N, default 0; must not exceed
+//     SP_WORKERS) — each room's simulation tasks are pinned to one lane's own queue instead of the shared one.
 //   * Persister / FileStateStore (server/persist.js, server/stateFile.js): SP_STATE_FILE (default .state/server-<PORT>:
 //     `.state/server-<PORT>/` sharded directory layout, `off` disables) keeps sessions, rooms and running matches across
 //     restarts; restored before listening, final write on graceful shutdown. It must not sit in a public directory.
@@ -57,6 +59,7 @@ import { createAnnouncementReader } from './announcement.js';
 import { ChatLog } from './chatLog.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from './assetVersion.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
+import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -78,14 +81,15 @@ export {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
- *   workers?: number, workerQueue?: number, workerTimeoutMs?: number, workerPool?: SimulationPool | null,
+ *   workers?: number, roomWorkers?: number, workerQueue?: number, workerTimeoutMs?: number,
+ *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPackRegistry>,
- *                     workerPool: SimulationPool | null, store: object | null, persister: Persister | null, chatLog: ChatLog,
+ *                     workerPool: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null, store: object | null, persister: Persister | null, chatLog: ChatLog,
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -109,7 +113,17 @@ export async function startServer(opts = {}) {
   if (!Number.isInteger(workerConfig.size) || workerConfig.size < 0 || workerConfig.size > 32) {
     throw new RangeError('workers must be 0..32');
   }
-  const workerPool = ownsWorkerPool ? (workerConfig.size > 0 ? new SimulationPool({ data, ...workerConfig }) : null) : opts.workerPool;
+  // Opt-in room lanes (server/workers/roomPool.js): SP_ROOM_WORKERS / opts.roomWorkers, 0 keeps the plain shared pool.
+  const rawRoomWorkers = opts.roomWorkers ?? process.env.SP_ROOM_WORKERS;
+  const roomWorkers = rawRoomWorkers == null || String(rawRoomWorkers).trim() === '' ? 0 : Number(rawRoomWorkers);
+  if (!Number.isInteger(roomWorkers) || roomWorkers < 0 || roomWorkers > 32) throw new RangeError('roomWorkers must be 0..32');
+  if (roomWorkers > workerConfig.size) throw new RangeError('roomWorkers cannot exceed workers');
+  const workerPool = ownsWorkerPool ? (workerConfig.size > 0
+    ? (roomWorkers > 0
+      ? new RoomWorkerPool({ data, lanes: roomWorkers, totalWorkers: workerConfig.size,
+        maxQueue: workerConfig.maxQueue, timeoutMs: workerConfig.timeoutMs })
+      : new SimulationPool({ data, ...workerConfig }))
+    : null) : opts.workerPool;
   const { registry, lobby, network } = createSessionStack({ ...opts, workerPool }, { data, log, chatLog });
   // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
@@ -229,7 +243,12 @@ export async function startServer(opts = {}) {
   server.on('error', (e) => log.error('[http] server error', e));
   persister?.start();
   chatLog.start();
-  if (workerPool) log.info(`[workers] ${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)`);
+  if (Array.isArray(workerPool?.lanes)) {
+    const threads = workerPool.lanes.reduce((n, lane) => n + lane.pool.size, 0);
+    log.info(`[workers] ${workerPool.lanes.length} room lanes over ${threads} threads, queue ${workerPool.lanes[0].pool.maxQueue}, timeout ${workerPool.lanes[0].pool.timeoutMs} ms (lazy start; /healthz workers.kind room-lanes)`);
+  } else if (workerPool) {
+    log.info(`[workers] ${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)`);
+  }
 
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;

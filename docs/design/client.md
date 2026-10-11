@@ -153,3 +153,8 @@ existing `stats.gold` / `stats.merges`, so older records remain usable for those
 `creditedKills` total (operators and summons, 联防 included); wave-owned kills cannot reconstruct it. Storage v2
 retains that optional field through compaction and JSON export/import; missing data displays —, distinct from a
 known zero. v1 records migrate without inventing an actual kill count.
+
+The strategies tab places the three most used strategies above its existing table, in a single three-column row.
+Each entry has the strategy icon on the left and the existing strategy name / `×` usage count on two lines to its right.
+The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
+been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.

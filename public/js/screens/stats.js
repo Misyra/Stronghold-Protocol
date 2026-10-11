@@ -5,7 +5,7 @@
 //
 //   总览      – games, wins, win rate, hidden-core reaches / clears, best round, time played; the difficulties; the six
 //               评语 (titles) with their counts; what counts and what was left out
-//   策略      – per strategy (band): games used / passed (self alive on a winning team) / pass rate
+//   策略      – top three most used strategies; per strategy: games used / passed / pass rate
 //   战斗累计  – the player's summed combat bookkeeping of the settled matches
 //   对局记录  – every stored match, newest first. A settled row re-views that match's settlement screen (the record is
 //               inverted into an m.result payload for <ResultView/>); a match given up early is marked 中途退出 and,
@@ -177,6 +177,19 @@ function MatchRecords({ maxima }) {
 function Bands({ agg, gd }) {
   const rows = Object.entries(agg.bands).sort((a, b) => (b[1].games - a[1].games) || (b[1].wins - a[1].wins));
   return html`<${Section} title=${t('策略')} micro="STRATEGIES">
+		${rows.length ? html`<h4 class="st-sub st-favorites__heading">${t('最常使用的策略')}</h4>
+			<div class="st-favorites">
+				${rows.slice(0, 3).map(([bandId, v]) => {
+					const name = gd.band(bandId)?.name || bandId;
+					return html`<div key=${bandId} class="st-favorite">
+						<${BandIcon} bandId=${bandId} />
+						<div class="st-favorite__text">
+							<span class="st-favorite__name" title=${name}>${name}</span>
+							<span class="st-favorite__count num" title=${t('使用局数')}>×${fmtNum(v.games)}</span>
+						</div>
+					</div>`;
+				})}
+			</div>` : null}
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
       <thead><tr><th>${t('策略')}</th><th class="num">${t('使用局数')}</th><th class="num">${t('通过局数')}</th><th class="num">${t('通过率')}</th></tr></thead>
       <tbody>

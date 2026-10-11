@@ -96,6 +96,18 @@
 .st-split { display: flex; gap: .26rem; margin: .1rem 0 .14rem; font-size: max(.15rem, 11px); color: var(--text-md); }
 .st-split b { margin-left: .06rem; font-size: max(.18rem, 12px); color: var(--text-hi); }
 
+/* The three most used strategies stay side by side, each with its icon and two text lines. */
+.st-favorites__heading { margin-top: 0; }
+.st-favorites { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.08rem, 6px); margin-bottom: .18rem; }
+.st-favorite {
+	display: flex; align-items: center; gap: max(.1rem, 6px); min-width: 0; padding: max(.08rem, 6px);
+	background: rgba(78, 216, 175, .05); border: 1px solid var(--line);
+}
+.st-favorite .bandicon { --bi: clamp(28px, .56rem, 56px); }
+.st-favorite__text { display: flex; flex-direction: column; gap: .03rem; min-width: 0; }
+.st-favorite__name { font-size: max(.18rem, 11px); font-weight: 700; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-favorite__count { font-size: max(.2rem, 12px); line-height: 1.2; color: var(--mint-400); white-space: nowrap; }
+
 /* tables (难度 / 策略 / 对局记录) */
 .st-tablewrap { overflow-x: auto; }
 .st-table { width: 100%; border-collapse: collapse; font-size: max(.17rem, 11px); }

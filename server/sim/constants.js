@@ -220,6 +220,15 @@ export const MAX_ALIVE_ENEMIES = 600;
 /** Heal-over-time / regen events are aggregated and only emitted when they reach this amount. */
 export const REGEN_EVENT_MIN = 1;
 
+/**
+ * How far inside the field rectangle an enemy is held (tiles; Battle._clampPos). The rectangle's edge lies exactly
+ * halfway between two tiles, where the tile of a position — rounded half to even (body.js; PRTS 作战机制 四舍六入五成双)
+ * — would depend on whether the row / column number is even. Held this little inside, an enemy at the edge is always on
+ * the edge tile. 2^-20 (about a millionth of a tile) is exact in binary and far above the rounding error of a position,
+ * yet too small to change a slide of 0.1-tile steps against the edge.
+ */
+export const FIELD_EDGE_INSET = 1 / 1048576;
+
 /** Row offset mapping board rows (9..12) onto boss-field rows (2..5). */
 export const BOSS_ROW_OFFSET = -7;
 

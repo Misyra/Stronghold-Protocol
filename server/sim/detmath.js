@@ -46,6 +46,17 @@ export function hypot(x, y) {
   return Math.sqrt(x * x + y * y);
 }
 
+/**
+ * x rounded to an integer, ties to even (2.5 → 2, 3.5 → 4, −2.5 → −2): the rule PRTS 作战机制 gives for the tile of a
+ * target — 受击方坐标经round函数取整(四舍六入五成双)得到其所属格坐标. Math.round rounds ties up (2.5 → 3). Exact; never −0.
+ * @param {number} x
+ */
+export function roundHalfEven(x) {
+  const f = Math.floor(x);
+  if (x - f !== 0.5) return Math.round(x) + 0;
+  return (f % 2 === 0 ? f : f + 1) + 0;
+}
+
 // ---- integer powers ----------------------------------------------------------------------------------------------
 
 const SPLIT = 134217729; // 2^27 + 1 (Dekker)

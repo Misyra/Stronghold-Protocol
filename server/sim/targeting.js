@@ -17,6 +17,7 @@
 import { COLS, ROWS } from './constants.js';
 import { normDir, rotateOffset } from './dir.js';
 import { bodyDist } from './body.js';
+import { roundHalfEven } from './detmath.js';
 
 /**
  * Build the absolute tile-key list of a grid for a unit standing at (r,c) facing `dir` ('UP'|'RIGHT'|'DOWN'|'LEFT';
@@ -50,9 +51,9 @@ export function absoluteRangeKeys(grid, r, c, dir, extend = 0) {
 // record range (shared/loadoutRecord.js attackRangeGrid), re-exported here for the battle (Battle._refreshRange).
 export { extendedGrid } from '../../shared/loadoutRecord.js';
 
-/** Tile key of a unit's current position. */
+/** Tile key of a unit's current position (rounded half to even, as body.js). */
 export function tileKeyOf(u) {
-  const r = Math.round(u.y), c = Math.round(u.x);
+  const r = roundHalfEven(u.y), c = roundHalfEven(u.x);
   if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return -1;
   return r * COLS + c;
 }

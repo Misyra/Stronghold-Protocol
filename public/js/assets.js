@@ -871,11 +871,12 @@ export function createAssets(options) {
   });
 
   /** Image element (cached; failures resolve to null). */
-  async function image(u) {
+  async function image(u, { retry = false } = {}) {
     await resourceReady();
     const s = str(resourceUrl(u));
     if (!s) return Promise.resolve(null);
     let e = images.get(s);
+    if (retry && e?.done && !e.value) { images.delete(s); e = null; }
     if (!e) {
       e = { value: null, done: false, promise: null };
       e.promise = Promise.resolve().then(() => loadImage(s)).then(

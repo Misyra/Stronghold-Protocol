@@ -1445,5 +1445,10 @@
   "预载中文和日语语音。": "Preload both Chinese and Japanese voices.",
   "仅预载{language}语音；切换语言后补载缺少的资源，已缓存语音保留。": "Preload only {language} voices. Switching languages downloads missing resources and keeps cached voices.",
   "可选资源预载已关闭，语音在使用时加载。": "Optional preloading is off. Voices load when needed.",
-  "作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。": "In combat: visual resources preload slowly; voices and other optional downloads resume after combat."
+  "作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。": "In combat: visual resources preload slowly; voices and other optional downloads resume after combat.",
+  "只能部署在召唤者相邻四格": "Can only be deployed on the four tiles adjacent to the summoner",
+  "{names}只能部署在召唤者相邻四格，已退回整备区": "{names} can only be deployed on the four tiles adjacent to the summoner and returned to the Bench",
+  "{names}只能部署在召唤者相邻四格，整备区已满，下回合返还": "{names} can only be deployed on the four tiles adjacent to the summoner; the Bench is full, so they come back next round",
+  "装备库存不足，未获得该装备": "Equipment stock is insufficient; no equipment was received",
+  "库存不足": "Out of stock"
 }

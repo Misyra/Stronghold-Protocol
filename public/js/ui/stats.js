@@ -704,6 +704,21 @@ function usedBondIdsOf(player) {
 	return [...new Set(ids.filter((id) => typeof id === 'string' && id.length).map((id) => id.slice(0, 64)))].slice(0, MAX_BONDS);
 }
 
+/** Strategy corner badges use official band victorCount thresholds; training awards no progress. */
+export function strategyBadgeIds(records, bands) {
+	const clears = new Map();
+	for (const rec of Array.isArray(records) ? records : []) {
+		if (!rec || rec.end === 'quit' || rec.difficulty === 'TRAINING' || rec.modeId === 'mode_training_1') continue;
+		const self = selfRowOf(rec);
+		if (!self?.bandId || !selfWon(rec, self)) continue;
+		clears.set(self.bandId, (clears.get(self.bandId) || 0) + 1);
+	}
+	return Object.values(bands || {}).filter((band) => Number.isInteger(band.victorCount) && band.victorCount > 0
+		&& (clears.get(band.bandId) || 0) >= band.victorCount)
+		.sort((a, b) => (a.sortId || 0) - (b.sortId || 0) || a.bandId.localeCompare(b.bandId))
+		.map((band) => band.bandId);
+}
+
 /**
  * Aggregate records for the stats page — over the records that count; `total` / `excluded` say how many did not.
  * Everything is keyed by ids (bandId / titleId / difficulty); the page maps them to names and icons through the game

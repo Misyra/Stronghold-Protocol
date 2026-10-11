@@ -29,6 +29,9 @@ export function embeddedStatsAssets(css) {
 		recordFunds: extract('.D_liCN .C8cb_l:first-child .QjacBn', 'image/png'),
 		recordPromotions: extract('.D_liCN .C8cb_l:nth-child(2) .QjacBn', 'image/png'),
 		recordDefeats: extract('.D_liCN .C8cb_l:nth-child(3) .QjacBn', 'image/png'),
+		strategyTopFrame: extract('.MjyVeP .oetJsV', 'image/png'),
+		strategyBadgeFrame: extract('.jDhW1o', 'image/png'),
+		strategyBadge: extract('.jDhW1o.GajVs2:after', 'image/png'),
 	};
 }
 
@@ -68,6 +71,9 @@ export async function statsTemplateJobs(root, { offline = false, fetchImpl = glo
 		['recordFunds', 'record-funds.png', embedded.recordFunds],
 		['recordPromotions', 'record-promotions.png', embedded.recordPromotions],
 		['recordDefeats', 'record-defeats.png', embedded.recordDefeats],
+		['strategyTopFrame', 'strategy-top-frame.png', embedded.strategyTopFrame],
+		['strategyBadgeFrame', 'strategy-badge-frame.png', embedded.strategyBadgeFrame],
+		['strategyBadge', 'strategy-badge.png', embedded.strategyBadge],
 	];
 	return sources.map(([name, file, url]) => ({
 		name, rel: `ui/statistics/${file}`, urls: url ? [url] : [],

@@ -141,7 +141,7 @@
 	.st-overview-details { grid-template-columns: minmax(0, 1fr); gap: .18rem; }
 }
 
-/* The three most used strategies stay side by side, each with its icon and two text lines. */
+/* Most used alliances. */
 .st-favorites__heading { margin-top: 0; }
 .st-favorites { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.08rem, 6px); margin-bottom: .18rem; }
 .st-favorite {
@@ -153,6 +153,32 @@
 .st-favorite__text { display: flex; flex-direction: column; gap: .03rem; min-width: 0; }
 .st-favorite__name { font-size: max(.18rem, 11px); font-weight: 700; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-favorite__count { font-size: max(.2rem, 12px); line-height: 1.2; color: var(--mint-400); white-space: nowrap; }
+
+/* Strategy records follow the official statistics template. */
+.st-strategies__heading { margin-top: .3rem; font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-weight: 500; color: #898989; }
+.st-top-strategies { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.125rem, 6px); margin: .2rem 0 .3rem; }
+.st-top-strategy { display: flex; align-items: center; gap: max(.125rem, 5px); min-width: 0; }
+.st-top-strategy__art { position: relative; width: min(44%, 1.35rem); aspect-ratio: 216 / 218; flex: none; }
+.st-strategy-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.st-top-strategy__art .bandicon, .st-strategy-badge__art .bandicon {
+	position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 96.3%; height: 95.4%; background: transparent;
+}
+.st-top-strategy__art .bandicon img, .st-strategy-badge__art .bandicon img { object-fit: contain; }
+.st-top-strategy__rank { position: absolute; z-index: 1; top: 7.8%; left: 7.8%; font-family: var(--font-num); font-size: max(.225rem, 9px); line-height: 1; color: rgba(233, 233, 233, .3); }
+.st-top-strategy__text { min-width: 0; }
+.st-top-strategy__name { display: block; font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-size: max(.20625rem, 11px); line-height: 1.3; color: #e9e9e9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-top-strategy__count { display: flex; align-items: baseline; gap: .04rem; margin-top: max(.125rem, 5px); font-family: 'Official Stats Numerals', var(--font-num); line-height: 1; }
+.st-top-strategy__count > span { color: #fff; font-size: max(.1625rem, 10px); }
+.st-top-strategy__count > b { color: #4ed7b8; font-size: max(.31875rem, 16px); font-weight: 400; }
+.st-strategy-badges { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: max(.3rem, 18px) max(.28125rem, 12px); max-width: 9rem; margin: .3rem auto; padding: 0; list-style: none; }
+.st-strategy-badge { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.st-strategy-badge__art { position: relative; width: min(100%, 1.275rem); aspect-ratio: 1; }
+.st-strategy-badge__art .bandicon { width: 101.96%; height: 101.96%; }
+.st-strategy-badge__mark { position: absolute; top: -10.8%; right: -10.8%; width: 82.35%; height: 84.8%; object-fit: contain; pointer-events: none; }
+.st-strategy-badge__name { max-width: 100%; margin-top: max(.09rem, 6px); font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-size: max(.20625rem, 11px); color: #e9e9e9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) {
+	.st-strategy-badges { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 /* tables (难度 / 策略 / 对局记录) */
 .st-tablewrap { overflow-x: auto; }

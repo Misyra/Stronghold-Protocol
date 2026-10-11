@@ -147,7 +147,7 @@ and a different field never inherits the previous field's devices.
 The same fallback covers import failure, timeout and WebGL initialization errors; a reload can retry.
 It does not diagnose a particular user's GPU or persist a disabled renderer preference (§28.25).
 
-### Single-match records in local statistics
+### Local statistics
 
 The statistics page is being progressively aligned with the [official statistics template](https://ak-webview.hypergryph.com/autoChess/act1autochess).
 
@@ -165,23 +165,11 @@ icon at thresholds 0 / 10 / 30 / 60 / 100 (five tiers, PRTS 下半 §同盟成�
 manifest. Compaction and export/import retain trophy awards; older already-compacted rows whose awards were
 discarded cannot be restored by this display. This is local recorded data, not an official account trophy balance.
 
-The statistics overview displays 单局最多消耗资金, 单局最多晋升次数 and 单局最多击败数.
-Each is an independent maximum across the local player's settled matches (victories
-and defeats); partial quit records and teammates' rows are not single-match totals. Funds spent and promotions use
-existing `stats.gold` / `stats.merges`, so older records remain usable for those two metrics. Defeats use the actual
-`creditedKills` total (operators and summons, 联防 included); wave-owned kills cannot reconstruct it. Storage v2
-retains that optional field through compaction and JSON export/import; missing data displays —, distinct from a
-known zero. v1 records migrate without inventing an actual kill count.
+A strategy earns its corner badge after 3 successful defenses (`bands.victorCount`; [research 01](../research/01-core-rules.md)).
 
-The 盟约&策略 tab first shows the three most used alliances, followed by the three most used strategies and the
-existing strategy table. Both top-three groups use a single three-column row with icons, names and usage counts.
 [ASSUMED] Alliance usage means active in the local player's final settlement: once per match, independent of layers;
 inactive bonds retaining layers, teammates and partial quit snapshots do not count. Storage v3 keeps `usedBondIds`
 when discarding full replay details; v1/v2 full rows still work, but discarded old bond data is not reconstructed.
-The three most used strategies appear above their existing table, in a single three-column row.
-Each entry has the strategy icon on the left and the existing strategy name / `×` usage count on two lines to its right.
-The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
-been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.
 
 Title-count display uses the following 20-award boundary, confirmed in the official statistics template:
 

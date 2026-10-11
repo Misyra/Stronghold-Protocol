@@ -31,7 +31,7 @@ import { toast, toastError } from '../ui/toasts.js';
 import {
   loadStats, saveStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
   recordToResult, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
-	trophyMedalOf,
+	trophyMedalOf, strategyBadgeIds,
 } from '../ui/stats.js';
 import { t, N_ } from '../../../shared/i18n.js';
 
@@ -251,10 +251,13 @@ function MatchRecords({ maxima, manifest }) {
 }
 
 /** 盟约&策略: top-three active settlement alliances and strategies, followed by the existing strategy table. */
-function Bands({ agg, gd }) {
+function Bands({ agg, gd, records }) {
+	const fonts = uiUrl(gd.m, 'statistics/fontStyles');
+	const badges = strategyBadgeIds(records, data.get('bands'));
   const rows = Object.entries(agg.bands).sort((a, b) => (b[1].games - a[1].games) || (b[1].wins - a[1].wins));
 	const bonds = Object.entries(agg.bonds).sort((a, b) => (b[1].games - a[1].games) || a[0].localeCompare(b[0]));
 	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
+		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
 		<h4 class="st-sub st-favorites__heading">${t('最常使用的盟约')}</h4>
 		${bonds.length ? html`<div class="st-favorites">
 			${bonds.slice(0, 3).map(([bondId, v]) => {
@@ -266,19 +269,37 @@ function Bands({ agg, gd }) {
 				</div>`;
 			})}
 		</div>` : html`<p class="st-hint">${t('暂无盟约使用记录')}</p>`}
-		${rows.length ? html`<h4 class="st-sub st-favorites__heading">${t('最常使用的策略')}</h4>
-			<div class="st-favorites">
-				${rows.slice(0, 3).map(([bandId, v]) => {
+		${rows.length ? html`<h4 class="st-sub st-strategies__heading">${t('最常使用的策略')}</h4>
+			<div class="st-top-strategies">
+				${rows.slice(0, 3).map(([bandId, v], index) => {
 					const name = gd.band(bandId)?.name || bandId;
-					return html`<div key=${bandId} class="st-favorite">
-						<${BandIcon} bandId=${bandId} />
-						<div class="st-favorite__text">
-							<span class="st-favorite__name" title=${name}>${name}</span>
-							<span class="st-favorite__count num" title=${t('使用局数')}>×${fmtNum(v.games)}</span>
+					return html`<div key=${bandId} class="st-top-strategy">
+						<div class="st-top-strategy__art">
+							<${Img} src=${uiUrl(gd.m, 'statistics/strategyTopFrame')} class="st-strategy-frame" />
+							<${BandIcon} bandId=${bandId} />
+							<span class="st-top-strategy__rank">${t('TOP{n}', { n: index + 1 })}</span>
+						</div>
+						<div class="st-top-strategy__text">
+							<span class="st-top-strategy__name" title=${name}>${name}</span>
+							<div class="st-top-strategy__count num" title=${t('使用局数')}><span aria-hidden="true">x</span><b>${fmtNum(v.games)}</b></div>
 						</div>
 					</div>`;
 				})}
 			</div>` : null}
+		${badges.length ? html`<h4 class="st-sub st-strategies__heading">${t('已获得特殊标识的策略')}</h4>` : null}
+		${badges.length ? html`<ul class="st-strategy-badges">
+			${badges.map((bandId) => {
+				const name = gd.band(bandId)?.name || bandId;
+				return html`<li key=${bandId} class="st-strategy-badge">
+					<div class="st-strategy-badge__art">
+						<${Img} src=${uiUrl(gd.m, 'statistics/strategyBadgeFrame')} class="st-strategy-frame" />
+						<${BandIcon} bandId=${bandId} />
+						<${Img} src=${uiUrl(gd.m, 'statistics/strategyBadge')} class="st-strategy-badge__mark" />
+					</div>
+					<span class="st-strategy-badge__name" title=${name}>${name}</span>
+				</li>`;
+			})}
+		</ul>` : html`<p class="st-hint">${t('暂无获得特殊标识的策略')}</p>`}
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
       <thead><tr><th>${t('策略')}</th><th class="num">${t('使用局数')}</th><th class="num">${t('通过局数')}</th><th class="num">${t('通过率')}</th></tr></thead>
       <tbody>
@@ -286,7 +307,7 @@ function Bands({ agg, gd }) {
           const band = gd.band(bandId);
           const rate = v.games > 0 ? Math.round((v.wins / v.games) * 100) : 0;
           return html`<tr key=${bandId}>
-            <td><span class="st-band">${band ? html`<${BandIcon} bandId=${band.bandId} size="xs" />${band.name}` : bandId}</span></td>
+            <td><span class="st-band">${band?.name || bandId}</span></td>
             <td class="num">${fmtNum(v.games)}</td>
             <td class="num">${fmtNum(v.wins)}</td>
             <td class="num st-rate"><span class="st-bar" aria-hidden="true"><i style=${`width:${rate}%`}></i></span><b>${pct(v.wins, v.games)}</b></td>
@@ -466,7 +487,7 @@ function StatsScreen({ tab }) {
       ${!ready ? html`<div class="st-loading"><${Spinner} size="md" /></div>`
         : stats.newer ? html`<p class="st-empty">${t('检测到更新版本的统计数据，请先升级客户端再查看，以免覆盖数据。')}</p>`
           : empty ? html`<p class="st-empty">${t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`
-            : tab === 'bands' ? html`<${Bands} agg=${agg} gd=${gd} />`
+            : tab === 'bands' ? html`<${Bands} agg=${agg} gd=${gd} records=${stats.records} />`
               : tab === 'totals' ? html`<${CombatSums} agg=${agg} />`
                 : tab === 'history' ? html`<${History} records=${stats.records} gd=${gd} onOpen=${setReplay} />`
                   : html`<${Overview} agg=${agg} gd=${gd} nickname=${nickname} />`}

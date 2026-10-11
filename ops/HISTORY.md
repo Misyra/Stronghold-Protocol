@@ -106,3 +106,22 @@ nginx 可在完整 combined 前缀之后追加 rt=$request_time urt=$upstream_re
 没有日志访问时间也能统计状态码；若原日志未带 rt/urt，则分钟延迟为 null。没有用用户 IP 或任意路径作为分钟维度，清单/房间属于固定分类。门户随机加入在错误响应中输出受控的 X-Portal-Reason，nginx 日志追加 reason=$upstream_http_x_portal_reason 后可分别计数繁忙、上游不可用、候选预算耗尽和超时；没有新字段的旧日志仍为未分类，不能由 503 猜测业务原因。
 
 `cpuStealPct` 来自 /proc/stat 的 steal 增量，表示虚拟 CPU 被宿主调度去执行其他工作的时间比例。Windows、首个样本或计数回退为 null；现有 cpu 口径保持不变（包含 steal，不应将两者相加）。该指标可作为宿主竞争的证据，但 0 不足以排除所有云侧性能问题。持续超过 5% 在面板提示，生产阈值仍需基线校准。
+
+## 面板 UI 重构与全网聚合（2026-10-11）
+
+新增跨站聚合层 lib/aggregate.mjs：计数与各站峰值求和、百分比／延迟取峰值、缺失不补零。中央有归档时由 SQLite 两阶段聚合（seriesAll/dailyAll，站点内 5 分钟桶 sessions 均值、其余峰值，再跨站合并），无归档（含 demo）回退实时采样，口径一致。两个只读端点：`GET /api/panel/v1/overview/metrics?range=1h|24h|7d`（聚合曲线，各桶带上报站数）与 `GET /api/panel/v1/overview/history?type=daily`（聚合每日归档，分页契约与单站一致）。visitors 是各站去重 IP 相加，界面必须保留这层口径说明。
+
+/ops/ 三个页面共用重构后的设计系统（中性深灰面板 + Grafana Dark 语义色）与统一图表模块 client/ops/charts.js：坐标轴取 1/2/2.5/5×10^n 整数刻度、图例自带最后/峰值统计、悬停十字线与按值排序的数值提示、缺失断线不补零、日期/时间双模式自动识别。概览页新增全网趋势（1h/24h/7d 切换）、活动告警条目卡与事件时间线、站点卡近 14 天峰值迷你趋势（平坦数据居中，不退化为色块）与全网每日归档合计表；站点详情五张曲线全部换用统一模块；游戏公告表格显示送达状态徽标（已写入/等待重试/配置待修正/尚未推送），Ctrl+Enter 可直接发布。
+
+UI 变更由 `node tools/verify-ui.mjs` 自动核验：demo 服务 + DOM 契约 + 390/320px 溢出检查 + 聚合 API 探测 + 全页截图与报告（test/e2e/out/ui-verify-report.*），未实现项自动 SKIP，FAIL 即退出码非零；清单与迭代记录在 docs/ui-optimization-plan.md。新增前端文件必须登记进 server.mjs 的 OPS_FILES，才会进入构建版本哈希与静态映射。
+
+概览页数据到 DOM 的映射由 Preact 组件声明式完成：vendor 单文件 client/ops/vendor/preact.mjs（Preact + hooks + htm，约 15KB，`npm run build:vendor` 重建；htm 是标签模板、无 eval，兼容面板严格 CSP `script-src 'self'`，产物提交进仓库，部署与运行不需要构建）。容器沿用静态骨架，Preact 只接管子树；轮询、请求层与 e2e DOM 契约（#summary、.site-card、#alerts、data-width 等）保持不变。全网每日归档表支持点击列头排序（aria-sort）；全网趋势新增「叠加各站」：复用单站曲线接口在聚合曲线下层细线画出各站自身在线数，图例与悬停提示带各站数值，缓存 60 秒。Preact 首次 render 不清空容器既有子节点——挂载点必须是空元素。
+
+站点详情页与管理页随后也完成 Preact 迁移：详情页服务器资源拆为四组带小标题的键值分区、指标卡按语义与阈值着色、当前公告渲染为绿色卡片、口径说明默认折叠；管理页公告表格、门户列表（按级别着色）与站点配置行组件化，表单与草稿逻辑保持原生。Preact 复用输入框元素，全量重渲染后须显式回填或清空密码框，才能复刻 innerHTML 方案的空值语义。**htm 的 void 元素（input 等）必须写自闭合 <input />，否则解析器停留在未闭合状态，整个模板静默退化为文本**——这是本次迁移最大的一次踩坑，核验与 e2e 均已覆盖。
+
+7 天曲线改为优先按 1 小时桶从中央归档聚合全量采样（series/seriesAll 支持 bucketMs），包含当天截至当前的实时峰值与诊断序列；无归档或归档为空时回退原来的每日峰值口径。.resolution 随桶宽返回 5m/1h，前端分辨率说明与聚合曲线注释同步。每日峰值点只有 7 个、且不含当天——这是旧口径在归档出现之前的妥协，现已由 1 小时桶取代（约 168 个点/周）。
+
+范围继续扩展：新增 30 天区间（单站与全网聚合均为 6 小时桶、约 120 点；无归档回退 30 天每日峰值）；新增只读导出端点 GET /api/panel/v1/overview/history/export?format=csv|ndjson（流式带背压，CSV 预声明全部合计列，demo 无归档时 503）；series/seriesAll 的 resolution 随桶宽返回 5m/1h/6h；图表坐标轴左上角增加单位角标。后续可选：小时级 rollup 表加速 30 天以上聚合、observations 告警历史检索页。
+
+游戏公告补齐删除能力：管理页「当前发布状态」每行新增「删除」按钮（两步确认，按钮变「确认删除」），向 PUT /api/panel/v1/announcements 发送 `{sites:{[id]:null}}`——面板记录整体移除（而不是留一条停用记录），并按既有推送链路把 `{enabled:false}` 写给探针使游戏端公告一并下线；写入被拒（retrying/blocked）时保留「线上生效」现场并在反馈中说明，写入被接受时本地直接把该站 live 公告置空，不再等下一轮管理轮询。修订号保留，删除后重新发布按正常版本推进。禁用态红色链接（.link.danger:disabled）回归灰色，避免未设置公告的行看起来可删。
+\n\n三个页面整合为单壳应用：client/ops/shell.js 以 hash 路由（#/overview、#/site/<id>、#/manage/<页签>）承载概览／站点详情／管理三个视图，视图模块经 registerView 自注册，section 显隐由壳统一切换。schedulePoll 改为按 tick 分键并按活动视图门控——隐藏视图停止轮询，切回立即拉取；刷新按钮与页签可见性的暂停/恢复从各页面的 bindChrome 收敛到壳。site 切站与 manage 页签统一走路由（页签点击先同步翻面再改 hash，避免异步窗口），未保存草稿因 DOM 常驻天然跨视图存活。旧地址 site.html?id=、manage.html#tab 由 client/ops/redirect.js 重定向（面板 CSP 禁内联脚本，故用同源外部脚本，等 load 再跳以便自动化拿到完整加载事件）。视图启动异步化后，#chart-note 的静态默认文案改为「正在读取趋势…」，避免测试等待条件被静态文本提前满足。

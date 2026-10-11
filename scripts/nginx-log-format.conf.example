@@ -1,0 +1,15 @@
+# Install in an http-level include, e.g. /etc/nginx/conf.d/sp-log-format.conf.
+# Keep the complete combined prefix, including User-Agent. Do not put log_format
+# inside server/location. This defines a format; it does not change other sites.
+log_format sp_game '$remote_addr - $remote_user [$time_local] "$request" '
+                   '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                   'rt=$request_time urt=$upstream_response_time '
+                   'cache=$upstream_cache_status host=$host '
+                   'reason=$upstream_http_x_portal_reason';
+
+# In the target server/location, replace the existing access_log format only:
+# access_log /var/log/nginx/sp/stronghold.access.log sp_game buffer=64k flush=5s;
+# Validate the FULL installed config with nginx -t, then reload (not restart).
+# Preserve the existing log path, ownership, rotation and collector settings.
+# Old and new lines may coexist; old lines have unknown latency, not zero.
+# Collector histograms exclude WS lifetime and do not export IPs, UA or raw URLs.

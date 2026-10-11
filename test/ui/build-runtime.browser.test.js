@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { installTestLexicon } from '../helpers/moderation-fixture.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -57,6 +58,9 @@ render();
 </script>`;
 
 function fixture() {
+  // The throwaway server has no deployment secrets. Use an independent test
+  // dictionary/key rather than copying the real .state directory into it.
+  installTestLexicon({ force: true });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-build-browser-'));
   for (const rel of ['server', 'shared', 'data', 'public/js', 'public/css', 'public/index.html',
     'public/vendor/hooks.module.js', 'public/vendor/preact.module.js', 'package.json']) {

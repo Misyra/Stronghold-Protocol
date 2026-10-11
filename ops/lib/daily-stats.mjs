@@ -3,8 +3,8 @@ import path from 'node:path';
 import { atomicJson, dayKey, privateAddress } from './collector-utils.mjs';
 
 export const TRAFFIC_KEYS = ['requests', 'pageViews', 'assetHits', 'wsConnects', 'aborts', 'errors', 'bytes',
-  'peakSessions', 'peakSockets', 'peakHumans', 'peakBots', 'peakTxKB'];
-const empty = date => ({ date, ...Object.fromEntries(TRAFFIC_KEYS.map(k => [k, k === 'peakBots' ? null : 0])), ips: [] });
+  'peakSessions', 'peakSockets', 'peakHumans', 'peakBots', 'peakTxKB', 'peakEventLoopP99Ms', 'peakMainThreadCpuPct'];
+const empty = date => ({ date, ...Object.fromEntries(TRAFFIC_KEYS.map(k => [k, ['peakBots','peakEventLoopP99Ms','peakMainThreadCpuPct'].includes(k) ? null : 0])), ips: [] });
 const read = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
 // A single atomic recovery frame commits BOTH counts and the log cursor. Daily files/history
@@ -16,6 +16,7 @@ export class DailyStats {
     this.checkpoint = {}; this.lastSave = 0; this.checkpointDirty = false;
     this.stateFile = path.join(dir, 'collector-state.json');
     const frame = read(this.stateFile);
+    this.requestMinutes = frame?.schemaVersion === 1 ? frame.requestMinutes || null : null;
     const names = fs.readdirSync(dir).filter(f => /^daily-\d{4}-\d\d-\d\d\.json$/.test(f)).sort();
     this.history = read(path.join(dir, 'daily-history.json')) || {};
     let latest;
@@ -67,16 +68,16 @@ export class DailyStats {
     const day = this.day(date); day.requests++; day.bytes += Number(bytes) || 0;
     if (status === '101' && route.startsWith('/ws')) day.wsConnects++;
     else if (route === '/' || route === '/play') day.pageViews++;
-    else if (route.startsWith('/assets/')) day.assetHits++;
+    else if ((/^\/(?:_v\/[a-f0-9]{16}\/)?assets\//.test(route))) day.assetHits++;
     if (Number(status) >= 500) day.errors++; else if (status === '499') day.aborts++;
     if (!privateAddress(ip)) day.ips.add(ip);
     this.dirty.add(date);
     if (date !== this.today.date) this.history[date] = this.summary(day);
   }
-  consume(checkpoint) { this.checkpoint = { offset: checkpoint.offset, ino: checkpoint.ino }; this.checkpointDirty = true; }
+  consume(checkpoint) { this.checkpoint = { offset: checkpoint.offset, ino: checkpoint.ino, ...(checkpoint.inoKey ? { inoKey: checkpoint.inoKey } : {}) }; this.checkpointDirty = true; }
   peaks(s) {
     for (const [key, value] of [['peakSessions', s.sessions], ['peakSockets', s.sockets], ['peakHumans', s.humans],
-      ['peakBots', s.bots], ['peakTxKB', s.txKB]]) {
+      ['peakBots', s.bots], ['peakTxKB', s.txKB], ['peakEventLoopP99Ms', s.gameEventLoopP99Ms], ['peakMainThreadCpuPct', s.gameMainThreadCpuPct]]) {
       if (typeof value === 'number' && Number.isFinite(value)) this.today[key] = Math.max(this.today[key] ?? 0, value);
     }
     this.dirty.add(this.today.date);
@@ -87,7 +88,7 @@ export class DailyStats {
       const day = this.days.get(date);
       return { ...day, ips: [...day.ips], logOffset: this.checkpoint.offset || 0, logIno: this.checkpoint.ino || 0 };
     });
-    atomicJson(this.stateFile, { schemaVersion: 1, checkpoint: this.checkpoint, days: serialized });
+    atomicJson(this.stateFile, { schemaVersion: 1, checkpoint: this.checkpoint, days: serialized, requestMinutes: this.requestMinutes });
     for (const day of serialized) atomicJson(path.join(this.dir, 'daily-' + day.date + '.json'), day);
     this.trimHistory(); atomicJson(path.join(this.dir, 'daily-history.json'), this.history);
     this.dirty.clear(); this.checkpointDirty = false; this.lastSave = this.now();

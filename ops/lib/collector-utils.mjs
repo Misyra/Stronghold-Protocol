@@ -1,3 +1,4 @@
+import { DIAGNOSTIC_SERIES } from './game-diagnostics.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 const formatters = new Map();
@@ -46,9 +47,15 @@ export function cpuTimesFromStat(line) {
   const fields = line.trim().split(/\s+/).slice(1, 9).map(Number);
   if (fields.length < 8 || fields.some((n) => !Number.isFinite(n) || n < 0)) return null;
   const [user, nice, system, idle, iowait, irq, softirq, steal] = fields;
-  return { idle, iowait, total: user + nice + system + idle + iowait + irq + softirq + steal };
+  return { idle, iowait, steal, total: user + nice + system + idle + iowait + irq + softirq + steal };
 }
 
+// Steal is reported separately while preserving the existing cpu accounting.
+export function cpuStealAccounting(cur, prev) {
+ if(!cur||!prev||!Number.isFinite(cur.steal)||!Number.isFinite(prev.steal)||cur.total<=prev.total||cur.steal<prev.steal)return null;
+ const pct=(cur.steal-prev.steal)/(cur.total-prev.total)*100;
+ return pct<=100?Math.round(pct*10)/10:null;
+}
 export function cpuAccounting(cur, prev) {
   if (!cur || !prev || cur.total <= prev.total) return { pct: null, iowaitPct: null };
   const dt = cur.total - prev.total;
@@ -121,19 +128,30 @@ export function diskRate(cur, prev, dtSec) {
 }
 
 export function aggregateSeries(samples, from) {
-  const keys = ['sessions', 'sockets', 'humans', 'bots', 'cpu', 'psiIoSome'];
-  const peaks = ['sockets', 'humans', 'bots', 'cpu', 'psiIoSome'];
-  const buckets = new Map();
+  const keys = ['sessions', 'sockets', 'humans', 'bots', 'cpu', 'psiIoSome', ...DIAGNOSTIC_SERIES];
+  const peaks = ['sockets', 'humans', 'bots', 'cpu', 'psiIoSome', ...DIAGNOSTIC_SERIES];
+  const buckets = new Map(), minutes = new Map();
   for (const sample of samples) {
+    for (const minute of [...(sample.requestMinuteWindows || []), sample]) {
+      const at=minute.httpMinuteStartedAt;
+      if(Number.isFinite(at) && at>=from && minute.httpMinuteEndedAt===at+60000 && (!minutes.has(at) || minutes.get(at).observed<=sample.t))minutes.set(at,{...minute,observed:sample.t});
+    }
     if (sample.t < from) continue;
     const t = Math.floor(sample.t / 300000) * 300000;
-    const bucket = buckets.get(t) || { t, sessions: [], sockets: [], humans: [], bots: [], cpu: [], psiIoSome: [] };
+    const bucket = buckets.get(t) || { t, ...Object.fromEntries(keys.map(k => [k, []])) };
     for (const key of keys) {
+      if(key.startsWith('httpMinute'))continue;
       // CPU and IO pressure are measured independently of game health; game counts follow the game.
-      const value = key === 'cpu' || key === 'psiIoSome' || sample.game === true ? sample[key] : null;
+      const value = key.startsWith('http') || key === 'cpu' || key === 'cpuStealPct' || key === 'psiIoSome' || key === 'gameMainThreadCpuPct' || key === 'gameNvcswPerSec' || sample.game === true ? sample[key] : null;
       if (typeof value === 'number' && Number.isFinite(value)) bucket[key].push(value);
     }
     buckets.set(t, bucket);
+  }
+  for(const minute of minutes.values()) {
+    const t=Math.floor(minute.httpMinuteStartedAt/300000)*300000;
+    const b=buckets.get(t)||{t,...Object.fromEntries(keys.map(k=>[k,[]]))};
+    for(const key of keys.filter(k=>k.startsWith('httpMinute')))if(typeof minute[key]==='number'&&Number.isFinite(minute[key]))b[key].push(minute[key]);
+    buckets.set(t,b);
   }
   // Peaks per bucket for online seats/CPU/pressure so short spikes survive; sessions keep their mean
   // because the capacity threshold compares against the sustained reserved-session count.
@@ -142,15 +160,24 @@ export function aggregateSeries(samples, from) {
       peaks.includes(key) ? Math.max(...b[key]) : Math.round(b[key].reduce((sum, n) => sum + n, 0) / b[key].length)])) }));
 }
 
+// Node's numeric inode can round distinct NTFS file IDs to the same value.
+const logStat = (target, descriptor = false) => {
+  const read = descriptor ? fs.fstatSync : fs.statSync;
+  const stat = read(target);
+  stat.inoKey = Number.isSafeInteger(stat.ino) ? String(stat.ino) : String(read(target, { bigint: true }).ino);
+  return stat;
+};
+const sameLog = (a, b) => b?.inoKey != null ? a.inoKey === b.inoKey : Number.isSafeInteger(b?.ino) && a.ino === b.ino;
+
 // Checkpoints are byte positions immediately after complete lines. Unprocessed bytes stay on disk,
 // so neither a line budget nor a partial UTF-8 sequence can duplicate data or grow a carried buffer.
 export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes = 4 * 1024 * 1024, fd: suppliedFd } = {}) {
   const fd = suppliedFd ?? fs.openSync(file, 'r');
   try {
-    const stat = fs.fstatSync(fd);
+    const stat = logStat(fd, true);
     if (!stat.isFile()) throw Object.assign(new Error('Log must be a regular file'), { code: 'LOG_READ_FAILED' });
     let offset = Number.isSafeInteger(checkpoint.offset) && checkpoint.offset >= 0 ? checkpoint.offset : 0;
-    if (stat.ino !== checkpoint.ino || stat.size < offset) offset = 0;
+    if (!sameLog(stat, checkpoint) || stat.size < offset) offset = 0;
     const len = Math.min(maxBytes, stat.size - offset);
     const buf = Buffer.alloc(len);
     const lines = [];
@@ -170,7 +197,7 @@ export function readLogBatch(file, checkpoint = {}, { maxLines = 10000, maxBytes
     if (!start && read === maxBytes) {
       throw Object.assign(new Error('Log line exceeds read budget'), { code: 'LOG_LINE_TOO_LONG' });
     }
-    return { lines, offset: offset + start, ino: stat.ino, inoKey: String(fs.fstatSync(fd, { bigint: true }).ino), backlogBytes: Math.max(0, stat.size - offset - start) };
+    return { lines, offset: offset + start, ino: stat.ino, inoKey: stat.inoKey, backlogBytes: Math.max(0, stat.size - offset - start) };
   } finally { if (suppliedFd == null) fs.closeSync(fd); }
 }
 
@@ -180,8 +207,8 @@ export class LogReader {
   constructor(file) { this.file = file; this.fd = null; this.drained = new Set(); }
   open(checkpoint) {
     let file = this.file;
-    const current = fs.statSync(file);
-    if (checkpoint.ino && checkpoint.ino !== current.ino) {
+    const current = logStat(file);
+    if ((checkpoint.ino || checkpoint.inoKey) && !sameLog(current, checkpoint)) {
       const dir = path.dirname(this.file);
       const base = path.basename(this.file);
       let found = false;
@@ -189,7 +216,7 @@ export class LogReader {
       for (const name of names) {
         if ((!name.startsWith(base + '.') && !name.startsWith(base + '-')) || name.endsWith('.gz')) continue;
         const candidate = path.join(dir, name);
-        try { const stat = fs.statSync(candidate); if (stat.isFile() && stat.ino === checkpoint.ino) { file = candidate; found = true; break; } } catch {}
+        try { const stat = logStat(candidate); if (stat.isFile() && sameLog(stat, checkpoint)) { file = candidate; found = true; break; } } catch {}
       }
       this.gap = !found;
     }
@@ -197,16 +224,16 @@ export class LogReader {
   }
   read(checkpoint = {}, options = {}) {
     if (this.fd == null) this.open(checkpoint);
-    let stat = fs.fstatSync(this.fd), current = fs.statSync(this.file);
-    if (stat.ino !== current.ino && checkpoint.ino === stat.ino && checkpoint.offset >= stat.size) {
+    let stat = logStat(this.fd, true), current = logStat(this.file);
+    if (stat.inoKey !== current.inoKey && sameLog(stat, checkpoint) && checkpoint.offset >= stat.size) {
       const dir = path.dirname(this.file), base = path.basename(this.file);
       let rotations = [];
       try {
         rotations = fs.readdirSync(dir).filter(name => (name.startsWith(base + '.') || name.startsWith(base + '-')) && !name.endsWith('.gz'))
-          .map(name => ({ name, file: path.join(dir, name), stat: fs.statSync(path.join(dir, name)) })).filter(item => item.stat.isFile());
+          .map(name => ({ name, file: path.join(dir, name), stat: logStat(path.join(dir, name)) })).filter(item => item.stat.isFile());
       } catch {}
-      const old = rotations.find(item => item.stat.ino === stat.ino);
-      this.drained.add(stat.ino); rotations = rotations.filter(item => !this.drained.has(item.stat.ino));
+      const old = rotations.find(item => item.stat.inoKey === stat.inoKey);
+      this.drained.add(stat.inoKey); rotations = rotations.filter(item => !this.drained.has(item.stat.inoKey));
       let next;
       const suffix = old?.name.slice(base.length + 1);
       if (suffix && /^\d{1,4}$/.test(suffix)) {
@@ -219,14 +246,14 @@ export class LogReader {
       } else if (suffix && /^\d{4}[-_.]?\d{2}[-_.]?\d{2}/.test(suffix)) {
         next = rotations.filter(item => item.name.slice(base.length + 1) > suffix).sort((a, b) => a.name.localeCompare(b.name))[0];
       } else {
-        next = rotations.filter(item => item.stat.ino !== stat.ino && (item.stat.mtimeMs > stat.mtimeMs || old && item.stat.mtimeMs === stat.mtimeMs && item.name > old.name))
+        next = rotations.filter(item => item.stat.inoKey !== stat.inoKey && (item.stat.mtimeMs > stat.mtimeMs || old && item.stat.mtimeMs === stat.mtimeMs && item.name > old.name))
           .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.name.localeCompare(b.name))[0];
       }
-      this.close(); this.fd = fs.openSync(next?.file || this.file, 'r'); stat = fs.fstatSync(this.fd);
+      this.close(); this.fd = fs.openSync(next?.file || this.file, 'r'); stat = logStat(this.fd, true);
     }
     const result = readLogBatch(this.file, checkpoint, { ...options, fd: this.fd });
-    current = fs.statSync(this.file);
-    if (current.ino !== result.ino) result.backlogBytes += current.size;
+    current = logStat(this.file);
+    if (current.inoKey !== result.inoKey) result.backlogBytes += current.size;
     result.gap = this.gap === true; this.gap = false;
     return result;
   }

@@ -1,4 +1,6 @@
-// server/http/buildTag.js — the build tag of the browser runtime this process serves (/healthz `build`).
+// Legacy fingerprint helper, retained for API compatibility and historical tests.
+// Production /healthz.build and HTML use assetVersion.js's 16-character release
+// tag. Do not add this scan back to server startup.
 
 import fs from 'node:fs';
 import path from 'node:path';

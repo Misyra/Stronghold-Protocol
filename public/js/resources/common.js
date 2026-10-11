@@ -30,6 +30,17 @@ export function resourceManifestUrl(version = globalThis.__spAssetVersion) {
 }
 export const MANIFEST_URL = resourceManifestUrl();
 export const SW_URL = '/resource-sw.js';
+/** Keep the worker at the root scope while passing the page's release into its independent global. */
+export function resourceWorkerUrl(version = globalThis.__spAssetVersion) {
+  return SW_URL + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
+}
+/** Both old unversioned and new versioned workers speak the hash-checked resource protocol. */
+export function isResourceWorker(scriptUrl, origin) {
+  try {
+    const url = new URL(scriptUrl, origin);
+    return url.origin === origin && url.pathname === SW_URL;
+  } catch { return false; }
+}
 
 export const RESOURCE_GROUPS = Object.freeze({
   map: { name: N_('地图与棋盘'), tier: TIER_ESSENTIAL },

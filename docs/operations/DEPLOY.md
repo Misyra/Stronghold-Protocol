@@ -84,6 +84,8 @@ WantedBy=multi-user.target
 
 代码和依赖须对 `stronghold` 可读，状态目录须可写。按 `command -v node` 修正 Node 路径，然后启动：
 
+发布沿用现有停止保存、重启恢复和客户端自动重连流程，无需等待对局结束。先确认部署启用了存档目录且新旧进程使用同一目录；停止须留足最终存档时间，避免强制杀死。
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now stronghold

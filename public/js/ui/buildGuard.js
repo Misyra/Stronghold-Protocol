@@ -41,7 +41,8 @@ export async function fetchBuild(fetchFn, o = {}) {
     timer = setT(() => { try { ctrl?.abort(); } catch { /* ignore */ } reject(new Error('timeout')); }, timeoutMs);
   });
   try {
-    const res = await Promise.race([fetchFn('/healthz', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }), tooSlow]);
+    // Older servers ignore the query and return full health, whose build field still works.
+    const res = await Promise.race([fetchFn('/healthz?build=1', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }), tooSlow]);
     if (!res || !res.ok) return null;
     const body = await res.json();
     return body && typeof body.build === 'string' && body.build ? body.build : null;
@@ -67,7 +68,7 @@ export async function checkBuildOnce(o = {}) {
 
 /**
  * Watch for a new build.
- * @param {{ fetchFn?: Function, reload?: Function, inMatch?: () => boolean, intervalMs?: number, timeoutMs?: number,
+ * @param {{ fetchFn?: Function, reload?: Function, inMatch?: () => boolean, intervalMs?: number, timeoutMs?: number, document?: Document,
  *           setInterval?: Function, clearInterval?: Function, setTimeout?: Function, clearTimeout?: Function,
  *           onStale?: (info: { build: string, known: string|null, waiting: boolean }) => void }} [o]
  * @returns {{ stop: () => void, check: () => Promise<object>, stale: () => boolean, known: () => string|null }}
@@ -79,6 +80,7 @@ export function startBuildGuard(o = {}) {
   const setIv = o.setInterval || ((fn, ms) => globalThis.setInterval(fn, ms));
   const clearIv = o.clearInterval || ((h) => globalThis.clearInterval(h));
   const intervalMs = Number.isFinite(o.intervalMs) && o.intervalMs > 0 ? o.intervalMs : BUILD_CHECK_MS;
+  const doc = o.document === undefined ? globalThis.document : o.document;
   let known = globalThis.__spAssetVersion || null; // stamped into this page before its modules load
   let candidate = null;  // the last new build seen; needs BUILD_CONFIRMATIONS checks in a row to be acted on
   let seen = 0;          // consecutive checks that reported `candidate`
@@ -88,16 +90,18 @@ export function startBuildGuard(o = {}) {
   let stopped = false;
 
   const stopTimer = () => { if (timer != null) { clearIv(timer); timer = null; } };
-  const reloadNow = () => { stopped = true; stopTimer(); reload(); };
+  const reloadNow = () => { stopped = true; stopTimer(); doc?.removeEventListener('visibilitychange', visibility); reload(); };
 
   const check = async () => {
     if (stopped) return { status: 'stopped', build: null };
+    if (doc?.hidden) return { status: 'paused', build: null };
     if (pending) return { status: 'pending', build: null };
     pending = true;
     let r;
     try { r = await checkBuildOnce({ fetchFn, known, timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout }); }
     finally { pending = false; }
     if (stopped) return { status: 'stopped', build: null };
+    if (doc?.hidden) { candidate = null; seen = 0; return { status: 'paused', build: null }; }
     if (r.status === 'unknown') { candidate = null; seen = 0; return r; }   // review: a failed check never reloads
     if (r.status === 'first') { known = r.build; return r; }
     if (r.status === 'current') { candidate = null; seen = 0; return r; }
@@ -114,10 +118,15 @@ export function startBuildGuard(o = {}) {
   };
 
   const tick = () => { check().catch(() => {}); };
+  const visibility = () => {
+    if (doc?.hidden) { candidate = null; seen = 0; }
+    else tick();
+  };
+  doc?.addEventListener('visibilitychange', visibility);
   check().catch(() => {});
   timer = setIv(tick, intervalMs);
   return {
-    stop: () => { stopped = true; stopTimer(); },
+    stop: () => { stopped = true; stopTimer(); doc?.removeEventListener('visibilitychange', visibility); },
     check,
     stale: () => stale,
     known: () => known,

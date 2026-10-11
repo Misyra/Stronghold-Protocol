@@ -10,7 +10,7 @@
 // The settings panel (public/js/ui/resourcePanel.js) renders `resourceState()`; main.js calls `syncResources()` with the
 // persisted setting at boot and on every settings change.
 
-import { CACHE_PREFIX, MANIFEST_URL, SW_URL, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
+import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
 import { ResourceStore } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
@@ -189,7 +189,7 @@ export function resourceContext() {
     if (!manifest.files.length) return { manifest, empty: true };
     const ensureCached = createWorkerCache(async () => {
       const worker = globalThis.navigator?.serviceWorker?.controller || (await workerPromise)?.active;
-      return worker?.scriptURL === new URL(SW_URL, location.origin).href ? worker : null;
+      return isResourceWorker(worker?.scriptURL, location.origin) ? worker : null;
     });
     return { manifest, store: new ResourceStore(manifest, { schedule, ensureCached }) };
   })();
@@ -200,7 +200,7 @@ export function resourceContext() {
 async function ensureWorker() {
   const nav = globalThis.navigator;
   if (!nav?.serviceWorker) throw new Error('不支持 Service Worker');
-  const reg = await nav.serviceWorker.register(SW_URL, { type: 'module', scope: '/', updateViaCache: 'none' });
+  const reg = await nav.serviceWorker.register(resourceWorkerUrl(), { type: 'module', scope: '/', updateViaCache: 'none' });
   set({ worker: '' });
   return reg;
 }
@@ -211,8 +211,7 @@ async function dropWorker() {
   if (!nav?.serviceWorker) return;
   try {
     for (const reg of await nav.serviceWorker.getRegistrations()) {
-      const url = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
-      if (url.endsWith(SW_URL)) await reg.unregister();
+      if ([reg.active, reg.installing, reg.waiting].some(worker => isResourceWorker(worker?.scriptURL, location.origin))) await reg.unregister();
     }
   } catch { /* the worker is optional */ }
 }

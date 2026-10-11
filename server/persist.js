@@ -32,6 +32,7 @@ import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './ma
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
 import { recentChatHits, chatRetentionUntil } from './moderation/chatState.js';
+import { performance } from 'node:perf_hooks';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -237,6 +238,7 @@ export class Persister {
     this.writes = 0;
     this.skipped = 0;
     this.failures = 0;
+    this.lastSaveMs = null;
     this.running = false;
     this._busy = false;
     this._pending = null;
@@ -344,6 +346,7 @@ export class Persister {
     // moment it was asked for, not whatever the lobby looks like by the time the Worker answers.
     const meta = snapshotServer({ registry: this.registry, lobby: this.lobby, now: this.now() });
     this._busy = true;
+    const saveStarted = performance.now();
     this._lastFlushAt = this.now();
     this._pending = (async () => { try {
       await this.checkpointMatches();
@@ -358,6 +361,7 @@ export class Persister {
       this.log.warn?.('[persist] save failed', e);
       return false;
     } finally {
+      this.lastSaveMs = performance.now() - saveStarted;
       this._busy = false;
       this._pending = null;
       if (this._again && this.running) this._armCooldown(Math.max(0, this.minFlushMs - (this.now() - this._lastFlushAt)));

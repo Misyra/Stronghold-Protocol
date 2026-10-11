@@ -1,6 +1,5 @@
-// test/build.test.js — the served-runtime build tag (server/http/buildTag.js computeBuildTag / buildTag, exported by
-// server/index.js): the signal that lets an already-open page notice a deploy (public/js/ui/buildGuard.js;
-// /healthz `build`).
+// Legacy fingerprint compatibility tests. Production HTML and /healthz use the
+// assetVersion release; healthz-cache and resource version tests cover that path.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

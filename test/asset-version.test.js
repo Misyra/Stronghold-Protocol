@@ -8,6 +8,32 @@ import { createStaticHandler } from '../server/index.js';
 import { resourceUrl, resourceCache } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
 import { validSpine } from '../public/js/assets.js';
+import { createAssetVersion } from '../server/assetVersion.js';
+
+test('release content is stable across mtimes and executable URLs survive art/CDN updates', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-content-release-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'assets')); fs.mkdirSync(path.join(root, 'js'));
+  const art = path.join(root, 'assets/a.png'), code = path.join(root, 'js/a.js');
+  fs.writeFileSync(art, 'art'); fs.writeFileSync(code, 'export const value=1;');
+  const mounts = [{ dir: root, prefix: '/' }];
+  const first = createAssetVersion(mounts, 'shim');
+  fs.utimesSync(art, new Date(100000), new Date(100000));
+  fs.utimesSync(code, new Date(200000), new Date(200000));
+  const touched = createAssetVersion(mounts, 'shim');
+  assert.equal(touched.tag, first.tag); assert.equal(touched.artTag, first.artTag);
+  fs.writeFileSync(art, 'new art');
+  const next = createAssetVersion(mounts, 'shim');
+  assert.notEqual(next.artTag, first.artTag); assert.notEqual(next.tag, first.tag);
+  assert.equal(next.url('/js/a.js'), first.url('/js/a.js'));
+  assert.notEqual(next.url('/data/assets.json'), first.url('/data/assets.json'));
+  assert.notEqual(next.transform('body{background:url(/assets/a.png)}', '.css'), first.transform('body{background:url(/assets/a.png)}', '.css'));
+  const cdn = createAssetVersion(mounts, 'shim', { base: 'https://cdn.example', version: '0123456789abcdef' });
+  assert.equal(cdn.runtimeTag, next.runtimeTag); assert.notEqual(cdn.tag, next.tag);
+  fs.writeFileSync(code, 'export const value=2;');
+  const codeUpdate = createAssetVersion(mounts, 'shim');
+  assert.notEqual(codeUpdate.runtimeTag, next.runtimeTag); assert.equal(codeUpdate.artTag, next.artTag);
+});
 
 test('release paths cover the module graph, CSS, manifests, Spine dependencies and audio; deploys invalidate them', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-release-'));
@@ -37,12 +63,13 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   try {
     const html = await (await get('/')).text();
     const artPrefix = `/_v/${JSON.parse(html.match(/__spArtVersion=("[^"]+")/)[1])}`;
+    const codePrefix = `/_v/${JSON.parse(html.match(/__spRuntimeVersion=("[^"]+")/)[1])}`;
     assert.match(html, /globalThis\.__spAssetVersion=/);
-    assert.ok(html.includes(`src="${prefix}/js/main.js"`));
+    assert.ok(html.includes(`src="${codePrefix}/js/main.js"`));
     const imports = JSON.parse(html.match(/type="importmap">(.*?)<\/script>/)[1]).imports;
-    assert.equal(imports.preact, prefix + '/vendor/preact.js');
-    assert.equal(imports['/shared/'], prefix + '/shared/');
-    assert.equal(imports['/_v/shared/'], prefix + '/shared/');
+    assert.equal(imports.preact, codePrefix + '/vendor/preact.js');
+    assert.equal(imports['/shared/'], codePrefix + '/shared/');
+    assert.equal(imports['/_v/shared/'], codePrefix + '/shared/');
     assert.equal(new URL('../../../shared/a.js', 'http://localhost' + prefix + '/js/render/app.js').pathname, '/_v/shared/a.js');
     const script = await get(prefix + '/js/main.js');
     assert.match(script.headers.get('cache-control'), /31536000, immutable/);

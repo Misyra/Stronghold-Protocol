@@ -7,14 +7,17 @@ import { assetCdnUrl } from '../shared/assetCdn.js';
 const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js(?:[?#]|$)/;
 export const VERSION_PREFIX = '/_v/';
 
-/** One release namespace, computed at startup. Code/data use content hashes; large binary assets use size/mtime. */
+/** Content-based namespaces, computed at startup. Transformed data and page
+ * releases retain art dependencies; unchanged executable modules keep their URLs. */
 export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }) {
   // A change to URL/response rewriting must also invalidate the bytes it previously generated.
   const transformer = Buffer.concat([fs.readFileSync(new URL(import.meta.url)), fs.readFileSync(new URL('../shared/assetCdn.js', import.meta.url))]);
   const runtimeHash = createHash('sha256').update(shim).update(transformer).update(fs.readFileSync(new URL('./index.js', import.meta.url)));
   const artHash = createHash('sha256').update(transformer).update(JSON.stringify(cdn));
   const isArt = (url) => /^\/(?:assets|fonts|media)\//.test(url);
+  const isCode = (url) => /^\/(?:js|vendor|shared|sim)\//.test(url) || /^\/data\.js(?:[?#]|$)/.test(url);
   const signatures = new Map();
+  const chunk = Buffer.allocUnsafe(1024 * 1024);
   function walk(dir, prefix, mount) {
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -27,17 +30,25 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
       signatures.set(abs, `${stat.size}:${stat.mtimeMs}`);
       const hash = isArt(url) ? artHash : runtimeHash;
       hash.update(url + '\0');
-      // Don't read hundreds of MB of art/audio just to start a LAN server.
-      if (/\.(?:html?|css|m?js|json)$/.test(e.name)) hash.update(fs.readFileSync(abs));
-      else hash.update(`${stat.size}:${stat.mtimeMs}`);
+      // Never put mtime in a public fingerprint: checkouts on different machines
+      // must identify identical bytes identically. Stream large files in bounded
+      // chunks instead of allocating the whole art tree at startup.
+      const fd = fs.openSync(abs, 'r');
+      try {
+        let bytes;
+        while ((bytes = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) hash.update(chunk.subarray(0, bytes));
+      } finally { fs.closeSync(fd); }
       hash.update('\0');
     }
   }
   for (const m of mounts) walk(m.dir, m.prefix, m);
   const artTag = artHash.digest('hex').slice(0, 16);
-  const tag = runtimeHash.update(artTag).digest('hex').slice(0, 16);
-  const prefix = `${VERSION_PREFIX}${tag}`;
-  const expectedTag = (s) => isArt(s) ? artTag : tag;
+  const runtimeTag = runtimeHash.digest('hex').slice(0, 16);
+  // JSON/CSS and preload manifests embed art addresses, so their release MUST
+  // change with art/CDN inputs. Only untransformed module URLs are independent.
+  const tag = createHash('sha256').update(runtimeTag).update(artTag).digest('hex').slice(0, 16);
+  const prefix = `${VERSION_PREFIX}${runtimeTag}`;
+  const expectedTag = (s) => isArt(s) ? artTag : isCode(s) ? runtimeTag : tag;
   const url = (s) => {
     const remote = assetCdnUrl(s, cdn);
     if (remote !== s) return remote;
@@ -72,9 +83,9 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   const manifestFetch = cdn.manifest
     ? `fetch(${JSON.stringify(cdn.manifest)}).then((r) => r.ok ? r.json() : null, () => null)`
     : 'null';
-  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};globalThis.__spManifestReady=${manifestFetch};</script>`);
+  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};globalThis.__spManifestReady=${manifestFetch};</script>`);
   }
-  return { tag, artTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === `${stat.size}:${stat.mtimeMs}` };
+  return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === `${stat.size}:${stat.mtimeMs}` };
 }
 
 /** The CDN release tag shipped with the repo (`.assets-cdn-version`, written by tools/r2-sync.mjs and

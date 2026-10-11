@@ -83,6 +83,23 @@ test('health routing: synchronous GET/HEAD, query/absolute URL, no-store and met
   await Promise.resolve(); assert.equal(staticCalls,1);
 });
 
+test('build-only health skips diagnostics and keeps GET/HEAD, absolute URLs and no-store semantics', async () => {
+  const f = fixture();
+  const handler = createRequestHandler({ health: f.health, log: { error: assert.fail }, serveStatic: assert.fail });
+  for (const url of ['/healthz?build=1', 'http://localhost/healthz?build=1']) {
+    for (const method of ['GET', 'HEAD']) {
+      const res = response(); handler({ url, method }, res); await Promise.resolve();
+      assert.equal(res.status, 200); assert.equal(res.headers['cache-control'], 'no-store');
+      if (method === 'GET') assert.deepEqual(JSON.parse(res.body), { build: 'code-tag' });
+      else assert.equal(res.body, undefined);
+    }
+  }
+  assert.equal(f.scans(), 0); assert.equal(f.workerScans(), 0); assert.equal(f.bufferScans(), 0);
+  const bad = response(); handler({ url: '/healthz?build=1', method: 'POST' }, bad); assert.equal(bad.status, 405);
+  const full = response(); handler({ url: '/healthz', method: 'GET' }, full);
+  assert.equal(JSON.parse(full.body).build, 'code-tag'); assert.ok(JSON.parse(full.body).memory.rss > 0);
+});
+
 test('metrics: fresh detailed collections do not read or replace the cached health snapshot', async () => {
   const f=fixture();
   const handler=createRequestHandler({health:f.health,log:{error:assert.fail},serveStatic:assert.fail});

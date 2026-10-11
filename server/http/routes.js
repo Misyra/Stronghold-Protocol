@@ -46,12 +46,14 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
     memory: process.memoryUsage(),
     socketBuffers: network.bufferedBytes?.() || null,
+    processDiagnostics: network.diagnostics?.intervals?.snapshot() || null,
     chatLog: chatLog?.stats() || null,
     // outbound frames since process start, per socket send (`byType` only knows the frame's type; poll twice
     // for rates — which types dominate the broadcast/serialization cost)
     wire: wireStatsSnapshot(),
     persist: persister ? { enabled: true, backend: store?.kind || 'custom', mode: store?.mode || null, writes: persister.writes,
       failures: persister.failures, checkpoints: persister.matchDocs.size,
+      lastSaveMs: persister.lastSaveMs ?? null,
       workerMemory: persister.encoder?.memory || null } : null,
   };
 }
@@ -101,7 +103,13 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     sendError(req, res, 405, '不支持的请求方法 · Method not allowed');
     return false;
   };
-  const serveHealth = (req, res) => { if (methodAllowed(req, res)) sendJsonBody(req, res, 200, healthBody()); };
+  const serveHealth = (req, res) => {
+    if (!methodAllowed(req, res)) return;
+    // Players only need the release tag; keep full diagnostics for collectors.
+    if (new URLSearchParams(splitUrl(req.url)?.query).get('build') === '1') {
+      sendJson(req, res, 200, { build: health.serveStatic ? health.serveStatic.version : null });
+    } else sendJsonBody(req, res, 200, healthBody());
+  };
   const failed = (req, res, e) => {
     log.error('[http] request failed', e);
     sendError(req, res, 500, '服务器内部错误 · Internal error');

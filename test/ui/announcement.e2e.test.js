@@ -24,7 +24,9 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.open();
   await c.page.waitForSelector('.announcement', { timeout: 10_000 });
   assert.equal(await c.page.$eval('.announcement__text', (el) => el.textContent), notice.text, 'shown on the title screen');
-  await c.enter('公告测试');
+  await c.page.waitForSelector('.fullscreen-prompt');
+  await c.click('.fullscreen-prompt button', '暂不全屏');
+  await c.enter('Bob');
   await c.click('.mode-card', '独立模拟');
   await c.click('.diff-card', '标准模拟');
   await c.click('.create-box button', '开始独立模拟');

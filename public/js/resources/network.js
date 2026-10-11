@@ -12,7 +12,7 @@ export function waitForResource(ms, signal) {
 
 /** Read a complete, bounded response so a stalled body cannot hold a download lane forever. */
 export async function fetchResource(url, { fetcher = globalThis.fetch?.bind(globalThis), signal,
-  timeoutMs = 30000, retries = 2, retryDelayMs = 500 } = {}) {
+  timeoutMs = 30000, retries = 2, retryDelayMs = 500, cache = /** @type {RequestCache} */ ('no-store') } = {}) {
   for (let attempt = 0; ; attempt++) {
     checkAbort(signal);
     const controller = new AbortController();
@@ -25,7 +25,7 @@ export async function fetchResource(url, { fetcher = globalThis.fetch?.bind(glob
     let reader;
     try {
       return await Promise.race([deadline, (async () => {
-        const response = await fetcher(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: controller.signal });
+        const response = await fetcher(url, { mode: 'cors', credentials: 'omit', cache, signal: controller.signal });
         if (!response.ok) {
           const retryAfter = response.headers.get('Retry-After');
           void response.body?.cancel().catch(() => {});

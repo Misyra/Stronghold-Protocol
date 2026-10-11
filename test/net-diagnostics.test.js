@@ -2,8 +2,40 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
-import { TimingHistogram, NetDiagnostics, socketDiagnostics } from '../server/netDiagnostics.js';
+import { TimingHistogram, NetDiagnostics, ProcessIntervals, socketDiagnostics } from '../server/netDiagnostics.js';
 import { Network, SessionRegistry, send, NET_DEFAULTS } from '../server/net.js';
+
+test('completed diagnostic windows are reader-independent, bounded and reset GC', (t) => {
+  const d = new ProcessIntervals(); t.after(() => d.close());
+  assert.equal(d.snapshot().latest, null);
+  d.recordGc([{ duration: 60, detail: { kind: 1 } }, { duration: 25, detail: { kind: 999 } }]);
+  d.settle();
+  const first = d.snapshot();
+  assert.equal(first.latest.gc.totalMs, 85);
+  assert.equal(first.latest.gc.over50, 1);
+  assert.equal(first.latest.gc.byKind.minor, 1);
+  assert.equal(first.latest.gc.byKind.unknown, 1);
+  assert.deepEqual(d.snapshot(), first);
+  first.latest.gc.count = 999;
+  assert.equal(d.snapshot().latest.gc.count, 2);
+  d.settle(); assert.equal(d.snapshot().latest.gc.count, 0);
+  for (let i = 0; i < 12; i++) d.settle();
+  assert.equal(d.snapshot().windows.length, 8);
+  assert.equal(d.snapshot().latest.sequence, 14);
+});
+
+test('a short real event-loop freeze survives subsequent diagnostic reads', async (t) => {
+  const d = new ProcessIntervals({ windowMs: 1000 }); t.after(() => d.close());
+  await delay(50);
+  const until = performance.now() + 90;
+  while (performance.now() < until) { /* controlled main-thread stall */ }
+  await delay(35);
+  d.settle();
+  const first = d.snapshot();
+  assert.ok(first.latest.eventLoop.maxMs > 60);
+  assert.deepEqual(d.snapshot(), first);
+  assert.ok(first.latest.windowMs > 100);
+});
 
 function socket(network) {
   const ws=new EventEmitter();Object.assign(ws,{readyState:1,bufferedAmount:0,frames:[],callbacks:[]});

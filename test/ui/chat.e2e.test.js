@@ -7,7 +7,7 @@ import { startServer } from '../../server/index.js';
 import { StubMatch } from '../../server/match/StubMatch.js';
 import { Client, hasChrome, sleep } from '../e2e/client.mjs';
 
-test('real browser: hidden when disabled, Unicode limit, IME Enter, masked send, mute countdown and reconnect', {
+test('real browser: hidden when disabled, Unicode limit, IME Enter, refused send, mute countdown and reconnect', {
   skip: process.env.SP_E2E !== '1' || !hasChrome(), timeout: 60000,
 }, async t => {
   const chatLogDir = mkdtempSync(path.join(tmpdir(), 'sp-chat-browser-'));
@@ -50,22 +50,22 @@ test('real browser: hidden when disabled, Unicode limit, IME Enter, masked send,
   let now = Date.now(); server.lobby.now = () => now;
   const abuse = Buffer.from('ZnVjaw==', 'base64').toString();
   await fill(`你好 ${abuse}`); await c.page.focus(input); await c.page.keyboard.press('Enter');
-  await c.page.waitForFunction(() => globalThis.__SP__.store.get().emotes.at(-1)?.text === '你好 ****');
-  await c.page.waitForFunction(() => !document.querySelector('#chat-fixture [role="dialog"]'));
-  assert.ok(!(await c.page.evaluate(() => globalThis.__SP__.store.get().emotes.at(-1).text)).includes(abuse));
-  for (let i = 0; i < 4; i++) {
-    now += 1100;
-    await c.page.evaluate(text => globalThis.__SP__.net.request('g.chat', { text }), abuse);
-  }
-  await c.page.click('#chat-fixture .ewheel__btn');
-  await c.page.waitForFunction(() => document.querySelector('#chat-fixture [role="status"]').textContent.includes('聊天已暂停'));
+  await c.page.waitForFunction(() => [...document.querySelectorAll('.toast__text')].some(el => el.textContent.includes('请文明交流')));
+  await sleep(300);
+  assert.ok(!(await c.page.evaluate(() => globalThis.__SP__.store.get().emotes.at(-1)?.text ?? '')).includes(abuse), 'a refused message never becomes a bubble');
+  now += 1100;
+  await c.page.evaluate(() => globalThis.__SP__.net.request('g.chat', { text: '队友好' }));
+  await c.page.waitForFunction(() => globalThis.__SP__.store.get().emotes.at(-1)?.text === '队友好');
+  now += 1100;
+  await c.page.evaluate(text => globalThis.__SP__.net.request('g.chat', { text }).catch(() => {}), abuse);
+  await c.page.waitForFunction(() => document.querySelector('#chat-fixture [role="status"]')?.textContent.includes('聊天已暂停'));
   assert.equal(await c.page.$eval(input, el => el.disabled), true);
   assert.equal(await c.page.$$eval('#chat-fixture .ewheel__item', els => els.every(el => !el.disabled)), true, 'chat mute does not disable emotes');
   const token = await c.page.evaluate(() => globalThis.__SP__.store.get().me.token);
   assert.ok(server.registry.byToken(token).chatMutedUntil > now);
   const bubbleSeq = await c.page.evaluate(() => globalThis.__SP__.store.get().emotes.at(-1).seq);
   await c.page.evaluate(async () => { await globalThis.__SP__.net.request('state.resync'); });
-  await c.page.waitForFunction(() => globalThis.__SP__.store.get().chat.messages.length === 5);
+  await c.page.waitForFunction(() => globalThis.__SP__.store.get().chat.messages.length === 1);
   assert.equal(await c.page.evaluate(() => globalThis.__SP__.store.get().emotes.at(-1).seq), bubbleSeq, 'history resync does not replay bubbles');
   await c.page.keyboard.press('Escape');
   await c.page.waitForFunction(() => !document.querySelector('#chat-fixture [role="dialog"]'));
@@ -136,7 +136,7 @@ test('communication popup combines emotes and chat, preserves drafts, fits deskt
     const heightBefore = await c.page.$eval('.ewheel__popup', el => el.getBoundingClientRect().height);
     await c.page.click('.ewheel__chat-help');
     await c.page.waitForSelector('.ewheel__chat-rules');
-    assert.match(await c.page.$eval('.ewheel__chat-rules', el => el.textContent), /10 分钟内累计 5 条/);
+    assert.match(await c.page.$eval('.ewheel__chat-rules', el => el.textContent), /无法发送/);
     const help = await c.page.$eval('.ewheel__popup', el => {
       const tooltip = el.querySelector('.ewheel__chat-rules').getBoundingClientRect();
       const button = el.querySelector('[type="submit"]').getBoundingClientRect();

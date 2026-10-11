@@ -66,6 +66,11 @@ export function maskSensitiveText(value) {
   return { text: original.map((char, i) => masked.has(i) ? '*' : char).join(''), hit: masked.size > 0 };
 }
 
-export function hasSensitiveNickname(value) {
+/** Detection without the masked form — chat refusals never need the starred text. */
+export function hasSensitiveText(value) {
   return maskSensitiveText(value).hit;
+}
+
+export function hasSensitiveNickname(value) {
+  return hasSensitiveText(value);
 }

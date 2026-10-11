@@ -31,7 +31,7 @@
 import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
-import { recentChatHits, chatRetentionUntil } from './moderation/chatState.js';
+import { chatRetentionUntil } from './moderation/chatState.js';
 import { performance } from 'node:perf_hooks';
 
 /** Document layout version (bumped when the shape below changes). */
@@ -63,8 +63,8 @@ export function sessionDoc(s, now) {
     diy: s.diy || null,
     notice: s.notice || null,
     pendingResult: s.pendingResult || null,
-    chatHitTimes: recentChatHits(s.chatHitTimes, now),
-    chatStrikes: recentChatHits(s.chatHitTimes, now).length,
+    chatStrikes: Number.isInteger(s.chatStrikes) && s.chatStrikes > 0 ? s.chatStrikes : 0,
+    chatLastHitAt: Number.isFinite(s.chatLastHitAt) && s.chatLastHitAt > 0 ? s.chatLastHitAt : 0,
     chatMutedUntil: s.chatMutedUntil,
     resumeWindowMs: typeof s.resumeWindowMs === 'number' && s.resumeWindowMs > 0 ? s.resumeWindowMs : null,
     connected: !!s.connected,
@@ -169,7 +169,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       notice: s.notice,
       pendingResult: s.pendingResult,
       chatStrikes: s.chatStrikes,
-      chatHitTimes: s.chatHitTimes,
+      chatLastHitAt: s.chatLastHitAt,
       chatMutedUntil: s.chatMutedUntil,
     });
     if (session) stats.sessions++;

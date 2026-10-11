@@ -43,7 +43,7 @@ import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { hasSensitiveNickname } from './moderation/nickname.js';
-import { recentChatHits, chatRetentionUntil } from './moderation/chatState.js';
+import { chatRetentionUntil, CHAT_MUTE_MAX_MS, CHAT_WINDOW_MS } from './moderation/chatState.js';
 import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from './stateTransport.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
@@ -133,7 +133,7 @@ export class Session {
      * window). A solo run keeps its session resumable for the official `singleReconnectTime` (24 h) — see lobby.js.
      */
     this.resumeWindowMs = null;
-    this.chatHitTimes = [];
+    this.chatLastHitAt = 0;
     this.chatStrikes = 0;
     this.chatMutedUntil = 0;
     this.chatLastSentAt = -Infinity;
@@ -206,9 +206,14 @@ export class SessionRegistry {
     s.ops = doc.ops && typeof doc.ops === 'object' ? doc.ops : null;
     s.notOwned = Array.isArray(doc.notOwned) ? doc.notOwned : null;
     s.diy = doc.diy && typeof doc.diy === 'object' ? doc.diy : null;
-    s.chatHitTimes = recentChatHits(doc.chatHitTimes, now);
-    s.chatStrikes = s.chatHitTimes.length;
-    s.chatMutedUntil = Number.isFinite(doc.chatMutedUntil) ? Math.max(0, Math.min(doc.chatMutedUntil, now + 43_200_000)) : 0;
+    // Documents from the ban-window policy tracked hit timestamps; the newest one and their count carry
+    // over (each was one violation) and expire by the same rule going forward.
+    const legacy = Array.isArray(doc.chatHitTimes)
+      ? doc.chatHitTimes.filter((at) => Number.isFinite(at) && at >= 0 && at > now - CHAT_WINDOW_MS && at <= now) : [];
+    s.chatLastHitAt = Number.isFinite(doc.chatLastHitAt) && doc.chatLastHitAt > 0 ? doc.chatLastHitAt
+      : legacy.length ? legacy[legacy.length - 1] : 0;
+    s.chatStrikes = Number.isInteger(doc.chatStrikes) && doc.chatStrikes > 0 ? doc.chatStrikes : legacy.length;
+    s.chatMutedUntil = Number.isFinite(doc.chatMutedUntil) ? Math.max(0, Math.min(doc.chatMutedUntil, now + CHAT_MUTE_MAX_MS)) : 0;
     s.addr = typeof doc.addr === 'string' ? doc.addr : '?';
     s.notice = typeof doc.notice === 'string' ? doc.notice : null;
     s.pendingResult = Array.isArray(doc.pendingResult) ? doc.pendingResult.filter((f) => typeof f === 'string') : null;

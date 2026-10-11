@@ -31,10 +31,8 @@ export async function cachedJson({ cacheFile, url, refresh = false, offline = fa
   if (verifier && offline) throw new Error('source verification is incompatible with --offline');
   let verifiedSource;
   if (verifier) {
-    try {
-      verifiedSource = await verifier.resolve(url);
-      if (!verifiedSource) throw new Error(`source index missing ${url}`);
-    } catch (e) { throw e; }
+    verifiedSource = await verifier.resolve(url);
+    if (!verifiedSource) throw new Error(`source index missing ${url}`);
   }
   // Same rule as the file downloader: a configured proxy must not be skipped.
   const fetchFn = guardDefaultFetch(fetchImpl);

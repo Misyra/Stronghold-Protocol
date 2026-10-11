@@ -146,7 +146,9 @@ export function botPickBand(m, ps) {
   const ids = gd.bandIds();
   if (!ids.length) return gd.defaultBandId;
   const lateFunds = (id) => /暂存/.test(String(gd.band(id)?.desc || ''));
-  const reserved = new Set(m.alivePlayers().filter((p) => p !== ps).flatMap((p) => gd.bandBondIds(p.bandId)));
+  const reserved = new Set(ps && typeof m.alivePlayers === 'function'
+    ? m.alivePlayers().filter((p) => p !== ps).flatMap((p) => gd.bandBondIds(p.bandId))
+    : []);
   const offBond = (id) => gd.bandBondIds(id).some((b) => gd.modeInactiveBonds.has(b) || reserved.has(b));
   const pairs = ids.map((id) => [id, offBond(id) ? 0 : Math.max(1, (gd.startLp(id) - 18) ** 2) * (m.isSolo && lateFunds(id) ? 0.02 : 1)]);
   let total = 0;

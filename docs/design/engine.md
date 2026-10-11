@@ -167,6 +167,12 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 
 ---
 
+Funnel drone ramps return to the configured initial scale on a normal deployment, including automatic revival
+against the same living target ([PRTS branch traits, 驭械术师](https://prts.wiki/w/分支特性信息/data#驭械术师)).
+The profession resets its target/scale and any per-target ramp map, leaving other trait state alone. A free
+`moveRedeploy` keeps the ramp under the existing move carry decision (§22.3); uninterrupted attacks still ramp and
+cap normally, and changing targets still starts at the initial scale.
+
 ## 7. Content modules (server/sim/content + match/effectsMeta handlers)
 
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).

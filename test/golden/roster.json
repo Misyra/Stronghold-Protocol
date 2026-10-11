@@ -1630,7 +1630,7 @@
       "bossHpLeft": null,
       "rngDraws": 179,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":19,"total":71,"perfect":false,"leaks":54,"leaksUncounted":0,"coins":6,"dmg":212430,"bossDmg":0,"heal":2065,"deaths":22,"layerGains":{}}},
+      "players": {"p1":{"killed":19,"total":71,"perfect":false,"leaks":54,"leaksUncounted":0,"coins":6,"dmg":210891,"bossDmg":0,"heal":2065,"deaths":22,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_3_12_a",0,null,0,0,99,2,9831,6171,2065,21,4],
         ["p1",2,"op","chess_char_3_16_a",0,null,0,0,101,0,4246,4781,0,15,1],
@@ -1639,7 +1639,7 @@
         ["p1",5,"op","chess_char_3_09_a",0,null,1393.7,1,103,1,16928,1394,0,24,3],
         ["p1",6,"op","chess_char_3_10_a",0,null,0,0,89,1,36230,3630,0,22,5],
         ["p1",7,"op","chess_char_3_11_a",0,null,0,0,7,1,12325,1448,0,6,1],
-        ["p1",8,"op","chess_char_3_13_a",0,null,0,0,53,0,3936,5199,0,23,1],
+        ["p1",8,"op","chess_char_3_13_a",0,null,0,0,53,0,2397,5199,0,23,1],
         ["p1",9,"op","chess_char_3_14_a",0,null,0,0,79,0,13946,2752,0,15,0],
         ["p1",10,"op","chess_char_3_17_a",0,null,1218.8,1,96,4,42240,3722,0,49,9],
         ["p1",11,"op","chess_char_3_19_a",0,null,0,0,77,1,20696,3166,0,32,0],
@@ -1653,7 +1653,7 @@
       "enemies": {
         "enemy_10042_prtrop": [12,0,12,7101,28836],
         "enemy_10042_prtrop_2": [12,0,10,6218,18414],
-        "enemy_10043_sailor": [39,12,27,20980,197254],
+        "enemy_10043_sailor": [39,12,27,20980,195715],
         "enemy_1005_yokai_2": [1,1,0,68,2678],
         "enemy_10156_mncrer": [1,1,0,140,6912],
         "enemy_1116_liprr_2": [1,1,0,247,12960],
@@ -1667,7 +1667,7 @@
       "hooks": [1,102,4200,412,412,1525,1585,10,42,95,33,33,0,10321,22,47,73,52,1,46,0,0,0],
       "events": {"atk":478,"bounty":3,"deploy":26,"die":43,"dmg":1585,"engage":14,"fx":26,"heal":10,"leak":52,"skill":66,"spawn":90,"status":54},
       "fx": {"dp":7,"explode":3,"revive":4,"sp":4,"strike":1,"summon":2,"telegraph":2,"wolfShadow":1,"wolfShadowLost":2},
-      "snaps": "226d72ef 4944a14f b2954de1 522e52cb dd46cce1 b1febb8b ac7e7cf4 bb6af571 080c3ba3 fc1505bd c0528264 4a64f7c2 beffba7c a423b42e"
+      "snaps": "226d72ef 4944a14f b2954de1 3ffcf693 a30dc502 d84524d6 4ead34e9 4b042eb0 8e0173d6 43359664 a5bda569 a184d2eb 172129c9 aa1a4797"
     },
     "roster-027": {
       "about": "pass 1 band 4: chess_char_3_06_b chess_char_3_12_b chess_char_3_02_b chess_char_3_03_b chess_char_3_04_b chess_char_3_05_b chess_char_3_21_a chess_char_3_01_b chess_char_3_08_b chess_char_3_09_b chess_char_3_10_b chess_char_3_11_b",

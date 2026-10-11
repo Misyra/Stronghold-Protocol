@@ -246,7 +246,7 @@
       "combat": "client",
       "boost": null,
       "setup": {"stageId":"act1autochess_m03","bossId":"boss_5","hiddenBossId":"boss_8","factions":["TIMES","DOT","INVISIBLE"]},
-      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":341377,"virtualMs":107800},
+      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":341949,"virtualMs":107800},
       "rng": {"setup":25,"shop":215,"waves":0,"draft":42,"bots":8070,"meta":1},
       "errors": {"engine":0,"logged":0,"sim":0,"dispatcher":0},
       "rounds": [
@@ -299,7 +299,7 @@
           "title": {"id":"comment_2","name":"不朽盟约","picId":"comment_icon_2","text":"激活的盟约层数总和最高"},
           "trophies": 0,
           "reward": 340,
-          "stats": {"activatedLayers":212,"bossDamage":438623,"dmgDealt":2261523,"gold":135,"itemsEquipped":16,"kills":402,"leaks":14,"lpLost":14,"merges":4,"perfectRounds":10,"refreshes":17},
+          "stats": {"activatedLayers":212,"bossDamage":438051,"dmgDealt":2260950,"gold":135,"itemsEquipped":16,"kills":402,"leaks":14,"lpLost":14,"merges":4,"perfectRounds":10,"refreshes":17},
           "lineup": ["3_13_a@12,5[1_01_e_b+3_08_e_a]","3_20_a@11,8[5_02_e_a]","4_13_a@10,3","6_19_a@10,5[1_02_e_a+3_11_e_a]","6_17_a@10,8[2_01_e_a+5_01_e_a]","2_08_a@9,3[4_02_e_a+3_07_e_b]","1_19_b@9,4","1_12_b@9,5[4_10_e_a]"],
           "bonds": ["deputShip 0/24","kazimierzShip 1/26","kjeragShip 1/15","sargonShip 1/41","skillfulShip 1/31","soloShip 0/15","steadShip 0/11","suntShip 1/22","swiftShip 1/77"]
         }
@@ -384,7 +384,7 @@
       "combat": "client",
       "boost": null,
       "setup": {"stageId":"act1autochess_m03","bossId":"boss_5","hiddenBossId":"boss_8","factions":["TIMES","DOT","INVISIBLE"]},
-      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":2832671,"virtualMs":107800},
+      "end": {"victory":false,"roundsPassed":13,"hiddenReached":false,"hiddenCleared":false,"reason":"defeat","teamLp":0,"bossPoolLeft":2833084,"virtualMs":107800},
       "rng": {"setup":25,"shop":215,"waves":0,"draft":42,"bots":8070,"meta":1},
       "errors": {"engine":0,"logged":0,"sim":0,"dispatcher":0},
       "rounds": [
@@ -437,7 +437,7 @@
           "title": {"id":"comment_2","name":"不朽盟约","picId":"comment_icon_2","text":"激活的盟约层数总和最高"},
           "trophies": 0,
           "reward": 340,
-          "stats": {"activatedLayers":220,"bossDamage":167329,"dmgDealt":3078206,"gold":135,"itemsEquipped":16,"kills":386,"leaks":22,"lpLost":20,"merges":4,"perfectRounds":11,"refreshes":17},
+          "stats": {"activatedLayers":220,"bossDamage":166916,"dmgDealt":3077793,"gold":135,"itemsEquipped":16,"kills":386,"leaks":22,"lpLost":20,"merges":4,"perfectRounds":11,"refreshes":17},
           "lineup": ["3_20_a@12,5[5_02_e_a]","4_13_a@11,8","3_13_a@10,3[1_01_e_b+3_08_e_a]","2_08_a@10,5[4_02_e_a+3_07_e_b]","6_17_a@10,8","1_12_b@9,4[4_10_e_a]","6_19_a@9,5[1_02_e_a+3_11_e_a]","1_19_b@9,9[2_01_e_a+5_01_e_a]"],
           "bonds": ["deputShip 0/24","kazimierzShip 1/26","kjeragShip 1/15","sargonShip 1/41","skillfulShip 1/31","soloShip 0/15","steadShip 0/11","suntShip 1/22","swiftShip 1/85"]
         }

@@ -385,8 +385,15 @@ const installTactician = (battle, unit) => {
 };
 
 const installFunnel = (battle, unit) => {
-  unit.trait.funnelTarget = null;
-  unit.trait.funnelScale = unit.profile.funnel?.init ?? 0.2;
+  // PRTS branch traits, funnel: redeployment resets the ramp even against the same living enemy.
+  const reset = () => {
+    unit.trait.funnelTarget = null;
+    unit.trait.funnelScale = unit.profile.funnel?.init ?? 0.2;
+    unit.trait.funnelMap?.clear(); // Minimalist / Kjera keep one ramp per target.
+  };
+  reset();
+  // A free move keeps the existing state under the owner's carry decision (DESIGN §22.3).
+  battle.on('deploy', (ctx) => { if (ctx.unit === unit && !ctx.move) reset(); }, { owner: unit });
 };
 
 /**

@@ -1,10 +1,10 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 // public/js/resources/index.js — the page side of the optional asset preload (docs/development/ASSETS.md「Preload」).
 //
-// Started automatically after app boot (设置 ▸ 预载资源). This module fetches /data/resource-manifest.json,
+// Resumed after app boot when enabled in the saved settings (设置 ▸ 预载资源). This module fetches /data/resource-manifest.json,
 // registers the Service Worker (public/resource-sw.js, so the cached files are also served with no network) and fills
 // Cache Storage with required visuals first, then optional audio/tutorials when selected. Turning it off stops the
-// downloads for the current visit; 「清理缓存」 deletes them. Cached files are reused on later visits. Nothing here
+// downloads until enabled again; 「清理缓存」 deletes them. Cached files are reused on later visits. Nothing here
 // blocks entering or playing a match, and a failed download is reported in the resource manager.
 //
 // The settings panel (public/js/ui/resourcePanel.js) renders `resourceState()`; main.js calls `syncResources()` with the

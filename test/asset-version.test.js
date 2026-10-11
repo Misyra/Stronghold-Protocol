@@ -45,6 +45,8 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   write('public/css/a.css', "a{background:url('/assets/p.png')}b{background:url(../assets/p.png)}");
   write('public/js/main.js', "import './child.js'; import '/shared/a.js';");
   write('public/js/child.js', 'export const x = 1;');
+  write('public/icons/app.svg', '<svg/>');
+  write('public/manifest.json', '{"icons":[{"src":"/icons/app.svg"}]}');
   write('shared/a.js', 'export const a = 1;');
   write('sim/a.js', 'export const a = 1;');
   write('sim/nodeData.js', 'private');
@@ -96,6 +98,20 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     assert.equal(range.status, 206); assert.equal(await range.text(), '2345');
     for (const denied of ['/sim/nodeData.js', '/assets/.hidden', '/shared/../sim/nodeData.js']) assert.equal((await get(prefix + denied)).status, 404);
     assert.equal((await get('/js/main.js?v=made-up')).headers.get('cache-control'), 'no-cache');
+    for (const url of ['/icons/app.svg', '/manifest.json']) {
+      const response = await get(url);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'public, max-age=3600');
+      await response.arrayBuffer();
+      const head = await get(url, { method: 'HEAD' });
+      assert.equal(head.headers.get('cache-control'), 'public, max-age=3600');
+      assert.equal(await head.text(), '');
+      const cached = await get(url, { headers: { 'If-None-Match': response.headers.get('etag') } });
+      assert.equal(cached.status, 304);
+      assert.equal(cached.headers.get('cache-control'), 'public, max-age=3600');
+    }
+    assert.equal((await get('/icons/missing.svg')).status, 404);
+    assert.equal((await get('/')).headers.get('cache-control'), 'no-cache');
     const stable = createStaticHandler(dirs).version;
     assert.equal(stable, handler.version);
     write('shared/a.js', 'export const a = 2;'); // same size; content is hashed

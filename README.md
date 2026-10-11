@@ -47,7 +47,7 @@ English summary: [below](#english).
 |---|---|
 | 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md) |
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导入与导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
-| 资源预载 | 进入页面后自动在后台预载，复用已缓存资源；支持必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐、跨版本缓存别名复用、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
+| 资源预载 | 按保存的开关设置在后台预载，关闭后刷新仍保持关闭，复用已缓存资源；支持必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐、跨版本缓存别名复用、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：支持同盟先组队再匹配补齐，整队入队且不拆散；凑满 4 名真人才开局，不补 AI，队员断线整队出队，取消后保留同盟 |
 | 局内聊天 | `SP_CHAT_ENABLED=on` 开启，默认关闭；每条最多 30 字，命中服务端词表的消息直接拒绝发送并提示文明交流；前三次违规仅提示，之后禁言 5 分钟、15 分钟、1 小时，最高 6 小时；违规或禁言结束后 1 小时无新违规，计数归零；服务端私有日志记录原文、玩家 IP 和昵称，按天保存并压缩归档，可配置保留天数；见 [部署说明](docs/operations/DEPLOY.md#局内聊天) |
 | 昵称审查 | 点击开始先向服务端校验，通过后才进入；登录、改名和重连再次校验。接入 Sensitive-lexicon 固定版本及本站补充规则，词表仅存于服务端，不随网页、资源包或接口返回；见 [部署说明](docs/operations/DEPLOY.md#昵称审查) |

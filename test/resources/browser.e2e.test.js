@@ -121,7 +121,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
   const ready = (page, problems) => page.waitForFunction('window.__ready === true', { timeout: 20000 })
     .catch((err) => { throw new Error(`${err.message} — ${problems.join(' | ') || 'no console error'}`); });
 
-  test('the real app automatically preloads on entry, preserves the optional range, and reuses cache on reload', async (t) => {
+  test('the real app respects saved preload preferences, resumes enabled downloads, and reuses cache on reload', async (t) => {
     const page = await browser.newPage();
     t.after(() => page.close());
     const problems = [];
@@ -130,11 +130,14 @@ describe('offline resources in headless Chrome', { skip }, () => {
     srv.server.on('request', countRequest);
     t.after(() => srv.server.off('request', countRequest));
     page.on('pageerror', (e) => problems.push(e.message));
-    await page.evaluateOnNewDocument(() => {
-      localStorage.setItem('sp.pref.settings', JSON.stringify({ preload: false, preloadOptional: false }));
-    });
+    await page.goto(`http://127.0.0.1:${srv.port}/index.html`);
+    await page.evaluate(() => localStorage.setItem('sp.pref.settings', JSON.stringify({ preload: false, preloadOptional: false })));
     await page.goto(`http://127.0.0.1:${srv.port}/app.html`);
     await page.waitForFunction('!!window.__SP__');
+    await page.waitForFunction(async () => !(await import('/js/resources/index.js')).resourceState().optional);
+    assert.equal(await page.evaluate(async () => (await import('/js/ui/settings.js')).settingsStore.get().preload), false);
+    assert.deepEqual(resourceRequests, [], 'a saved disabled setting does not download assets');
+    await page.evaluate(async () => (await import('/js/ui/settings.js')).updateSettings({ preload: true }));
     await page.waitForFunction(async () => {
       const st = (await import('/js/resources/index.js')).resourceState();
       return st.enabled && st.selectionComplete && st.phase === 'ready';
@@ -143,7 +146,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
       state: (await import('/js/resources/index.js')).resourceState(),
       settings: (await import('/js/ui/settings.js')).settingsStore.get(),
     }));
-    assert.equal(initial.settings.preload, true, 'even a saved disabled setting starts automatically');
+    assert.equal(initial.settings.preload, true, 'the player can enable background downloads');
     assert.equal(initial.settings.preloadOptional, false, 'the chosen download range stays unchanged');
     assert.equal(initial.state.done, 2);
     assert.equal(resourceRequests.length, 2, 'only the two required fixture assets are downloaded');
@@ -159,6 +162,13 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.evaluate(async () => (await import('/js/ui/settings.js')).updateSettings({ sfx: 0.25 }));
     assert.equal(await page.evaluate(async () => (await import('/js/resources/index.js')).resourceState().enabled), false,
       'other settings do not restart a manually stopped preload');
+    await page.reload();
+    await page.waitForFunction('!!window.__SP__');
+    await page.waitForFunction(async () => !(await import('/js/resources/index.js')).resourceState().optional);
+    assert.equal(await page.evaluate(async () => (await import('/js/ui/settings.js')).settingsStore.get().preload), false,
+      'a saved pause survives reload');
+    assert.equal(await page.evaluate(async () => (await import('/js/resources/index.js')).resourceState().enabled), false);
+    assert.deepEqual(resourceRequests, [], 'reloading a paused page does not download assets');
     await page.evaluate(async () => (await import('/js/resources/index.js')).clearResources());
     assert.deepEqual(problems, []);
   });

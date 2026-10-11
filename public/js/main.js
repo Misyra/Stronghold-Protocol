@@ -453,8 +453,7 @@ async function boot() {
 }
 
 function installResourcePreload() {
-  // Each page visit starts background preload; pausing still lasts for this page's lifetime.
-  updateSettings({ preload: true });
+  // Resume only when the player enabled preload; a saved pause survives page reloads.
   import('./resources/index.js').then((r) => {
     const apply = (s) => { r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices).catch((err) => console.warn('[resources] sync failed', err)); };
     apply(settingsStore.get());

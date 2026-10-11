@@ -183,7 +183,7 @@ Each entry has the strategy icon on the left and the existing strategy name / `Ã
 The row follows the table's usage-descending order (wins break ties), shows fewer entries when fewer strategies have
 been used, and is absent for an empty history. Narrow screens keep the row; long names ellipsize with the full title.
 
-[ASSUMED] Title-count display uses the following 20-award boundary:
+Title-count display uses the following 20-award boundary, confirmed in the official statistics template:
 
 | Count | Display behavior |
 |---|---|

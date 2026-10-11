@@ -1,0 +1,65 @@
+// Public, versioned official webview assets. Image bytes are extracted at setup time, never kept in git.
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
+import { join } from 'node:path';
+import { guardDefaultFetch } from './env-proxy.mjs';
+import { isCompletePng } from './formats.mjs';
+
+export const STATS_TEMPLATE_CSS = 'https://web.hycdn.cn/arknights/webview/act1autochess.41668e.css';
+const CDN = 'https://web.hycdn.cn/arknights/webview/assets';
+const FONT_CSS = `@font-face { font-family: 'Official Stats Numerals'; font-display: swap; src: url('number-font.woff2') format('woff2'); }
+@font-face { font-family: 'Official Stats Labels'; font-display: swap; src: url('label-font.woff2') format('woff2'); }
+`;
+
+/** Extract the two embedded images, checking their types before exposing download jobs. */
+export function embeddedStatsAssets(css) {
+	const extract = (selector, type) => {
+		const rule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((match) => match[1].includes(selector));
+		const url = rule?.[2].match(/url\(["']?(data:[^\s)"']+)["']?\)/)?.[1];
+		if (!url?.startsWith(`data:${type};base64,`)) throw new Error(`missing official stats asset ${selector}`);
+		const bytes = Buffer.from(url.split(',')[1], 'base64');
+		if (type === 'image/png' ? !isCompletePng(bytes) : !/^<svg\b/.test(bytes.toString('utf8'))) {
+			throw new Error(`invalid official stats asset ${selector}`);
+		}
+		return url;
+	};
+	return { titleMask: extract('.WqPlp7', 'image/svg+xml'), countGlow: extract('.zrK7_e:before', 'image/png') };
+}
+
+/** Jobs shared by the full asset setup and the focused stats downloader. */
+export async function statsTemplateJobs(root, { offline = false, fetchImpl = globalThis.fetch, log = console.log } = {}) {
+	const cache = join(root, '.cache', 'stats-template-41668e.css');
+	/** @type {{ titleMask?: string, countGlow?: string }} */
+	let embedded = {};
+	try {
+		let css;
+		try {
+			css = await readFile(cache, 'utf8');
+			embeddedStatsAssets(css);
+		} catch (error) {
+			if (offline) throw error;
+			guardDefaultFetch(fetchImpl, 'official stats template');
+			const response = await fetchImpl(STATS_TEMPLATE_CSS, { signal: AbortSignal.timeout(20000) });
+			if (!response.ok) throw new Error(`stats template HTTP ${response.status}`, { cause: error });
+			css = await response.text();
+			embeddedStatsAssets(css);
+			await mkdir(join(root, '.cache'), { recursive: true });
+			await writeFile(`${cache}.tmp`, css);
+			await rename(`${cache}.tmp`, cache);
+		}
+		embedded = embeddedStatsAssets(css);
+	} catch (error) {
+		log(`[stats-assets] ${error.message}; keep any existing files`);
+	}
+	const sources = [
+		['titleMask', 'title-mask.svg', embedded.titleMask],
+		['countGlow', 'count-glow.png', embedded.countGlow],
+		['decoration', 'dash.png', `${CDN}/img/dash.99f37d.png`],
+		['numberFont', 'number-font.woff2', `${CDN}/fonts/NovecentoWide-Medium.fb69ff.woff2`],
+		['labelFont', 'label-font.woff2', `${CDN}/fonts/SourceHanSans-Medium.678769.woff2`],
+		['fontStyles', 'fonts.css', `data:text/css;charset=utf-8,${encodeURIComponent(FONT_CSS)}`],
+	];
+	return sources.map(([name, file, url]) => ({
+		name, rel: `ui/statistics/${file}`, urls: url ? [url] : [],
+		kind: file.endsWith('.png') ? 'png' : file.endsWith('.woff2') ? 'font' : 'bin',
+	}));
+}

@@ -24,7 +24,7 @@ import { fmtNum } from '../ui/gameLogic.js';
 import { useDocClass } from '../ui/device.js';
 import { uiUrl } from '../ui/assetUrls.js';
 import { identity } from '../net.js';
-import { TITLE_HEX_SECTORS, titleSectorPoints } from '../ui/titleHexagon.js';
+import { TITLE_HEX_SECTORS, titleSectorClip } from '../ui/titleHexagon.js';
 import { store, createStore, useStore, selectRoute } from '../store.js';
 import { ResultView } from './result.js';
 import { toast, toastError } from '../ui/toasts.js';
@@ -157,7 +157,7 @@ function Overview({ agg, gd, nickname }) {
 			</tbody></table>
 			</div>
 			${titles.length ? html`<div class="st-title-panel">
-				<${TitleHexagon} titles=${titles} /></div>` : null}
+				<${TitleHexagon} titles=${titles} manifest=${gd.m} /></div>` : null}
 		</div>
     <div class="st-cards">
       <${StatCard} micro="GAMES" value=${fmtNum(agg.count)} label=${t('总局数')} />
@@ -189,19 +189,39 @@ function Overview({ agg, gd, nickname }) {
   <//>`;
 }
 
-/** [ASSUMED] Full fill and count highlight begin at 20 awards. */
-function TitleHexagon({ titles }) {
+/** The official statistics view fills and highlights counts at 20 awards. */
+function TitleHexagon({ titles, manifest }) {
 	const byId = new Map(titles.map((x) => [x.id, x]));
-	return html`<div class="st-titlehex" role="group" aria-label=${t('称号')}>
-		<svg class="st-titlehex__graphic" viewBox="0 0 460 350" aria-hidden="true" focusable="false">
-			${TITLE_HEX_SECTORS.map(([id, vertices]) => html`<polygon key=${id} class="st-titlehex__base" points=${titleSectorPoints(vertices)} />`)}
-			<g class="st-titlehex__active">
-				${TITLE_HEX_SECTORS.map(([id, vertices]) => {
-					const points = titleSectorPoints(vertices, byId.get(id)?.count || 0);
-					return points ? html`<polygon key=${id} class="st-titlehex__sector" points=${points} />` : null;
-				})}
-			</g>
-		</svg>
+	const mask = uiUrl(manifest, 'statistics/titleMask');
+	const glow = uiUrl(manifest, 'statistics/countGlow');
+	const fonts = uiUrl(manifest, 'statistics/fontStyles');
+	const [loadedArt, setLoadedArt] = useState([]);
+	useEffect(() => {
+		let active = true;
+		const images = [mask, glow].filter(Boolean).map((url) => {
+			const image = new Image();
+			image.onload = () => { if (active) setLoadedArt((loaded) => loaded.includes(url) ? loaded : [...loaded, url]); };
+			image.src = url;
+			return image;
+		});
+		return () => { active = false; for (const image of images) image.onload = null; };
+	}, [mask, glow]);
+	return html`<div class=${cx('st-titlehex', mask && loadedArt.includes(mask) && 'has-reference-mask')} role="group" aria-label=${t('称号')}
+		style=${{ '--st-title-mask': mask ? `url("${mask}")` : undefined, '--st-title-glow': glow && loadedArt.includes(glow) ? `url("${glow}")` : undefined }}>
+		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
+		<div class="st-titlehex__graphic" aria-hidden="true">
+			${TITLE_HEX_SECTORS.map(([id, angle]) => {
+				const clip = titleSectorClip(byId.get(id)?.count || 0);
+				return html`<div key=${id} class="st-titlehex__wedge"
+					style=${{ '--sector-angle': `${angle}deg`, '--texture-angle': `${-angle}deg` }}>
+					<div class="st-titlehex__base"></div>
+					${clip ? html`<div class="st-titlehex__active"><div class="st-titlehex__sector" style=${{ clipPath: clip }}>
+						<div class="st-titlehex__texture"></div>
+					</div></div>` : null}
+				</div>`;
+			})}
+			<${Img} src=${uiUrl(manifest, 'statistics/decoration')} class="st-titlehex__decoration" />
+		</div>
 		<ul class="st-titlehex__labels">
 			${TITLE_HEX_SECTORS.map(([id], i) => {
 				const x = byId.get(id);

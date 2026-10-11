@@ -23,19 +23,18 @@ test('mask only offending spans, with Unicode offsets, separators, overlapping m
   assert.equal(maskSensitiveText(null).hit, false);
 });
 
-test('a flagged message is refused outright and climbs the ladder: warning, 10 min, 30 min, 6 h, then 24 h', () => {
-  assert.deepEqual(CHAT_MUTE_LADDER, [0, 10 * 60 * 1000, 30 * 60 * 1000, 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000]);
-  assert.equal(CHAT_MUTE_MAX_MS, 24 * 60 * 60 * 1000);
+test('a flagged message is refused outright; first three violations warn before the relaxed mute ladder', () => {
+  assert.deepEqual(CHAT_MUTE_LADDER, [0, 0, 0, 5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000]);
+  assert.equal(CHAT_MUTE_MAX_MS, 6 * 60 * 60 * 1000);
   const s = newSession(); let now = 1000;
-  assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED });
-  assert.equal(s.chatStrikes, 1); assert.equal(s.chatMutedUntil, 0, 'the first violation is a warning only');
-  now += 1000;
-  // strikes 2..6: each muting run has to be served first — messages during a mute are refused without counting
-  for (let i = 2; i <= 6; i++, now = s.chatMutedUntil + 1000) {
-    if (i > 2) assert.deepEqual(moderateChat(s, '队友好', now - 1100), { error: ERR.CHAT_MUTED }, `violation ${i}: still muted before serving`);
+  // Each mute has to be served before the next violation can count.
+  for (let i = 1; i <= 7; i++) {
+    if (s.chatMutedUntil > now) now = s.chatMutedUntil;
     assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED }, `violation ${i}`);
     assert.equal(s.chatStrikes, i);
-    assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[Math.min(i, CHAT_MUTE_LADDER.length) - 1], `violation ${i}`);
+    const mute = CHAT_MUTE_LADDER[Math.min(i, CHAT_MUTE_LADDER.length) - 1];
+    assert.equal(s.chatMutedUntil, mute ? now + mute : 0, `mute duration after violation ${i}`);
+    now += 1000;
   }
 });
 
@@ -48,12 +47,16 @@ test('the ladder restarts at a warning once 30 minutes pass without a violation;
   assert.equal(s.chatStrikes, 1, 'a clean message does not reset the ladder');
   now += CHAT_WINDOW_MS - 2000;
   assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED }, 'just inside the window');
-  assert.equal(s.chatStrikes, 2); assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[1]);
+  assert.equal(s.chatStrikes, 2); assert.equal(s.chatMutedUntil, 0, 'second violation is still a warning');
   now += 1000;
-  assert.equal(moderateChat(s, '队友好', now).error, ERR.CHAT_MUTED, 'still muted');
+  assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED }, 'third violation is still a warning');
+  assert.equal(s.chatStrikes, 3); assert.equal(s.chatMutedUntil, 0);
+  now += 1000;
+  assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED }, 'fourth violation starts the first mute');
+  assert.equal(s.chatStrikes, 4); assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[3]);
   now = s.chatMutedUntil;
   assert.equal(moderateChat(s, '队友好', now).text, '队友好', 'the mute has just ended; the strikes live on');
-  assert.equal(s.chatStrikes, 2);
+  assert.equal(s.chatStrikes, 4);
   now += CHAT_WINDOW_MS;
   assert.deepEqual(moderateChat(s, abuse, now), { error: ERR.CHAT_BLOCKED });
   assert.equal(s.chatStrikes, 1, '30 quiet minutes after the served mute restart the ladder at a warning');
@@ -74,8 +77,8 @@ test('active violations and mutes survive checkpoints, reconnect expiry and evic
   let now = 1000;
   const registry = new SessionRegistry({ reconnectWindowMs: 100, maxSessions: 1, now: () => now });
   const s = registry.create('博士');
-  for (let i = 0; i < 2; i++) { moderateChat(s, abuse, now); now += 1000; }
-  assert.equal(s.chatMutedUntil, 2000 + CHAT_MUTE_LADDER[1], 'the second violation mutes for ten minutes');
+  for (let i = 0; i < 4; i++) { moderateChat(s, abuse, now); now += 1000; }
+  assert.equal(s.chatMutedUntil, 4000 + CHAT_MUTE_LADDER[3], 'the fourth violation mutes for five minutes');
   const lobby = new Lobby({ registry, now: () => now });
   const doc = snapshotServer({ registry, lobby, now });
   now += 5 * 60 * 1000;
@@ -90,7 +93,7 @@ test('active violations and mutes survive checkpoints, reconnect expiry and evic
   assert.equal(copy.chatMutedUntil, s.chatMutedUntil);
   moderateChat(copy, '队友好', copy.chatMutedUntil); now = copy.chatMutedUntil + 1000;
   assert.deepEqual(moderateChat(copy, abuse, now), { error: ERR.CHAT_BLOCKED });
-  assert.equal(copy.chatMutedUntil, now + CHAT_MUTE_LADDER[2], 'the restored strikes climb to the third rung');
+  assert.equal(copy.chatMutedUntil, now + CHAT_MUTE_LADDER[4], 'the restored strikes climb to the second mute');
   lobby.shutdown(); restoredLobby.shutdown();
 });
 
@@ -98,12 +101,12 @@ test('documents of the old timestamp policy migrate their hit count and newest t
   const registry = new SessionRegistry({ reconnectWindowMs: 1000, now: () => 60 * 60 * 1000 });
   const adopted = registry.adopt({ playerId: 'p_old', token: '01234567890123456789012345678901', name: '博士',
     disconnectedAt: 59 * 60 * 1000, connected: false,
-    chatHitTimes: [59 * 60 * 1000 - 1000, 59 * 60 * 1000], chatStrikes: 2, chatMutedUntil: 0 });
-  assert.equal(adopted.chatStrikes, 2);
+    chatHitTimes: [57 * 60 * 1000, 58 * 60 * 1000, 59 * 60 * 1000], chatStrikes: 3, chatMutedUntil: 0 });
+  assert.equal(adopted.chatStrikes, 3);
   assert.equal(adopted.chatLastHitAt, 59 * 60 * 1000);
   assert.deepEqual(moderateChat(adopted, Buffer.from('ZnVjaw==', 'base64').toString(), 60 * 60 * 1000), { error: ERR.CHAT_BLOCKED });
-  assert.equal(adopted.chatStrikes, 3, 'migrated strikes keep climbing the same ladder');
-  assert.equal(adopted.chatMutedUntil, 60 * 60 * 1000 + CHAT_MUTE_LADDER[2]);
+  assert.equal(adopted.chatStrikes, 4, 'migrated strikes keep climbing the same ladder');
+  assert.equal(adopted.chatMutedUntil, 60 * 60 * 1000 + CHAT_MUTE_LADDER[3]);
 });
 
 test('length is Unicode characters; invalid and rapid messages neither count nor reset the violation ladder', () => {
@@ -196,11 +199,16 @@ test('real WebSocket: flagged messages are refused and never broadcast, spectato
   await send(abuse, ERR.CHAT_BLOCKED);
   const s = server.registry.byToken(a.welcome.token);
   assert.equal(s.chatStrikes, 2);
-  now = s.chatMutedUntil; await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 3);
-  now = s.chatMutedUntil; await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 4);
+  await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 3);
+  await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 4);
+  assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[3]);
   now = s.chatMutedUntil; await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 5);
+  assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[4]);
+  now = s.chatMutedUntil; await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 6);
+  assert.equal(s.chatMutedUntil, now + CHAT_MUTE_LADDER[5]);
+  now = s.chatMutedUntil; await send(abuse, ERR.CHAT_BLOCKED); assert.equal(s.chatStrikes, 7);
   const until = s.chatMutedUntil;
-  assert.equal(until, now + CHAT_MUTE_LADDER[4], 'the fifth violation mutes for 24 hours');
+  assert.equal(until, now + CHAT_MUTE_LADDER[6], 'the seventh and later violations cap at six hours');
   await send('队友好', ERR.CHAT_MUTED);
   await a.hello('博士甲', a.welcome.token);
   const state = await a.waitFor('m.chatState', m => m.mutedUntil === until && Array.isArray(m.messages));

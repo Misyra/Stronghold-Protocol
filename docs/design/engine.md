@@ -167,6 +167,12 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 
 ---
 
+Rockrock S2 releases its trait drone into an independent skill tick (§29.16). Acquisition uses the body's normal
+target selection; a living selectable lock stays valid outside the body's range. The body retains its own ranged
+ordinary attacks. The released ramp inherits the trait state but is isolated from older projectiles. Ending the
+skill returns that ramp to the trait and restores the normal multiplier and overload cap. S1 and other operators'
+funnel attacks keep their existing paths.
+
 ## 7. Content modules (server/sim/content + match/effectsMeta handlers)
 
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).

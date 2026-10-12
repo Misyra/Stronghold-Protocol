@@ -13,7 +13,8 @@
 // match changes the picture the piece already on the board draws (render/units.js retryAssets — the field view's
 // pieceArt introspection), and switched off brings the installation's back (DESIGN §32 P1a review round 2).
 // A server without plugins: its page never asks for the catalogue, a visual set or a plugin file — the title shows no
-// count, the room's 插件 panel says there is none, 设置 has no 外观插件 (/healthz and welcome send no count).
+// count, the room's 插件 panel says there is none, 设置 has no 外观插件 (/healthz and welcome send no count) — and its title
+// page loads none of the plugin panel, the asset store or what composes a set (the panel's code only once it opens).
 //
 // Screenshots: test/e2e/out/plugins-*.png, plugins-board-*.png.
 import { test, describe } from 'node:test';
@@ -160,6 +161,10 @@ describe('cosmetic plugins in the browser (P1a)', { skip: !ENABLED && 'set SP_E2
       await sleep(300);
       assert.equal(await c.page.evaluate(() => globalThis.__SP__.store.get().installedPlugins), 0, '/healthz sent no count');
       assert.equal(await c.page.$('[data-testid="title-plugins"]'), null, 'no count on the title');
+      const lazy = ['/js/assets.js', '/js/ui/pluginPanel.js', '/shared/plugins/visual.js'];
+      const loaded = (u) => seen.some((x) => x.split('?')[0] === u);
+      assert.ok(loaded('/js/content.js') && loaded('/js/cosmetics.js'), 'the small parts load with the page');
+      for (const u of lazy) assert.equal(loaded(u), false, `the title page does not load ${u}`);
       await c.enter('凯尔希');
       await c.click('.mode-card', '同盟模拟');
       await c.click('.diff-card', '标准模拟');
@@ -174,6 +179,9 @@ describe('cosmetic plugins in the browser (P1a)', { skip: !ENABLED && 'set SP_E2
       assert.equal(await c.page.$('[data-testid="personal-plugins"]'), null, 'no 外观插件 section');
       await sleep(500);
       assert.deepEqual(seen.filter((u) => /^\/(plugins|vs|p)\//.test(u)), [], 'no catalogue, no visual set, no plugin file');
+      assert.equal(loaded('/js/ui/pluginPanel.js'), true, 'the panel\'s code once it opened');
+      assert.equal(loaded('/shared/plugins/visual.js'), false, 'never what composes a set');
+      assert.equal(loaded('/js/assets.js'), false, 'nor the asset store before a match');
       const art = fs.existsSync(path.join(ROOT, 'public/assets'));
       assert.deepEqual(problemsOf([c]).filter((p) => art || !/\/assets\//.test(p)), []);
     } finally {

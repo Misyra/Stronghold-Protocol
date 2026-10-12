@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCosmeticLayers, createAssets } from '../../public/js/assets.js';
+import { loadVisual } from '../../public/js/cosmetics.js';
 import { createDataStore } from '../../public/js/data.js';
 import { createStore } from '../../public/js/store.js';
 import {
@@ -26,6 +27,8 @@ import { visualHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/pl
 import { sha256Hex } from '../../shared/sha256.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// what composes a set's document loads with the first document (cosmetics.js loadVisual): here before any layer is laid
+await loadVisual();
 const BASE = { version: 1, chars: { char_102_texas: { avatar: '/assets/~1111111111111111/texas.png' }, char_112_siege: { avatar: '/assets/siege.png' } } };
 const fileSha = (id, rel) => sha256Hex(`${id}:${rel}`);
 /** A plugin file's URL as the page builds it from the composition: /p/<id>/<first 8 hex of its SHA-256>/<path>. */
@@ -392,6 +395,24 @@ describe('the 插件 panel (ui/pluginPanel.js) and the room screen', () => {
     assert.equal(pluginTagText(room({ plugins: [] })), '原版');
     assert.deepEqual([sizeText(2048), sizeText(3 * 1048576), sizeText(NaN)], ['2 KB', '3.0 MB', '']);
     assert.equal(pluginMicro({ id: 'a', version: '1.0.0', artBytes: 4096 }), 'a · v1.0.0 · 4 KB');
+  });
+
+  test('a vanilla page loads none of the panel, the asset store or what composes a set at start (the import graph of main.js)', () => {
+    const seen = new Set();
+    const walk = (rel) => {
+      if (seen.has(rel)) return;
+      seen.add(rel);
+      let src;
+      try { src = readFileSync(path.join(ROOT, rel), 'utf8'); } catch { return; }
+      for (const m of src.matchAll(/^\s*(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"]([^'"]+)['"]/gm)) {
+        if (m[1].startsWith('.')) walk(path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])));
+      }
+    };
+    walk('public/js/main.js');
+    assert.ok(seen.has('public/js/content.js') && seen.has('public/js/cosmetics.js') && seen.has('public/js/ui/pluginTag.js'), 'the small parts are there');
+    for (const lazy of ['public/js/assets.js', 'public/js/ui/pluginPanel.js', 'shared/plugins/visual.js', 'shared/plugins/order.js']) {
+      assert.equal(seen.has(lazy), false, `${lazy} loads only when it is needed`);
+    }
   });
 
   test('the room screen shows the tag under its title; the settings show 外观插件; the texts are in every pack', () => {

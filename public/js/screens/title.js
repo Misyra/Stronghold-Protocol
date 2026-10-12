@@ -10,10 +10,10 @@
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 //
-// Plugins (DESIGN §32 P1a, the design study's §7.4): when the server has unofficial plugins (welcome.content.plugins —
-// content.js installedCount), the footer says 「本服务器安装了 N 个插件」 — a button that lists them (ui/pluginPanel.js
-// InstalledPlugins, which fetches the catalogue when it opens); nothing on a server without any, which the page never
-// asks for its catalogue.
+// Plugins (DESIGN §32 P1a, the design study's §7.4): when the server has unofficial plugins (content.plugins of /healthz or
+// welcome — content.js installedCount), the footer says 「本服务器安装了 N 个插件」 — a button that loads the list
+// (ui/pluginPanel.js InstalledPlugins, which fetches the catalogue when it opens); nothing on a server without any, which
+// the page never asks for its catalogue — and the title page loads none of the panel's code.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useMemo, useState } from '../../vendor/hooks.module.js';
@@ -32,7 +32,6 @@ import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
 import { installedCount } from '../content.js';
-import { InstalledPlugins } from '../ui/pluginPanel.js';
 
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
 // the client accepts is never rejected by the server's hello validation.
@@ -201,7 +200,11 @@ export function TitleScreen() {
   useLang(); // re-render on a language switch
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
+  // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
+  const [Installed, setInstalled] = useState(null);
+  const openPlugins = () => {
+    import('../ui/pluginPanel.js').then((m) => setInstalled(() => m.InstalledPlugins), (err) => console.warn('[plugins] the list did not load', err));
+  };
   const installed = useStore(installedCount);
   const assetsSettled = useData('assets');
   const assets = data.get('assets');
@@ -295,12 +298,12 @@ export function TitleScreen() {
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
-    ${pluginsOpen ? html`<${InstalledPlugins} open=${true} onClose=${() => setPluginsOpen(false)} />` : null}
+    ${Installed ? html`<${Installed} open=${true} onClose=${() => setInstalled(null)} />` : null}
 
     <footer class="title-foot">
       <${ResumeMatchButton} />
       <${PwaInstallButton} />
-      ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${() => setPluginsOpen(true)}>
+      ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${openPlugins}>
         <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed })}</button>` : null}
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <span class="title-foot__meta">

@@ -82,6 +82,13 @@ const IMAGE = ['.png', '.jpg', '.webp'];
 const SPINE = ['.skel', '.atlas'];
 const AUDIO = ['.mp3', '.ogg'];
 const FONT = ['.woff2'];
+/** The image files a cosmetic plugin's overlay names (shared/plugins/visual.js). */
+export const PLUGIN_IMAGE_EXTS = Object.freeze([...IMAGE]);
+/**
+ * The audio files a cosmetic plugin's overlay names — also fetched without the extension (server/http/static.js,
+ * public/js/media.js: here, so the page's audio code needs nothing more of the plugin system at start).
+ */
+export const PLUGIN_AUDIO_EXTS = Object.freeze([...AUDIO]);
 /** The extensions an `assets` entry may name. */
 export const ASSET_EXT = Object.freeze([...IMAGE, ...SPINE, ...AUDIO, ...FONT]);
 const MEDIA = ['.json', ...ASSET_EXT];

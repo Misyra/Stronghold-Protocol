@@ -33,7 +33,7 @@ import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
 import { catalog, loadCatalog, cosmeticPlugins, installedCount, personal, personalApplied, personalSet, pluginName, setPersonalPlugin } from '../content.js';
 import { toast, describeError } from './toasts.js';
-import { pluginMicro } from './pluginPanel.js';
+import { pluginMicro } from './pluginTag.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 

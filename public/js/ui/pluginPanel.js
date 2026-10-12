@@ -1,9 +1,9 @@
-// ui/pluginPanel.js — the room's 插件 panel (DESIGN §32 P1a; the design study's §7.1) and the list of a server's plugins:
+// ui/pluginPanel.js — the room's 插件 panel (DESIGN §32 P1a; the design study's §7.1) and the list of a server's plugins.
+// Loaded only when one of them opens (the room's tag, ui/pluginTag.js; the title screen's button, screens/title.js), so
+// the title page and the room carry none of it:
 //
-//   * PluginTag — the tag at the top of the room (screens/room.js): 「原版」, or 「插件 ×N」 once its host switched plugins
-//     on; it opens the panel.
 //   * PluginPanel — the cosmetic plugins this server has for rooms (the catalogue: content.js loadCatalog — fetched when
-//     the panel opens, and only on a server that has plugins: welcome.content.plugins > 0), each with its
+//     the panel opens, and only on a server that has plugins: content.plugins > 0), each with its
 //     switch for the host and its state for everybody else (the other players and the spectators read it), its version,
 //     authors, size and a 非官方 mark; 「自动」 on one switched on because another needs it; the warnings of the room's set
 //     (two plugins change the same art — the later one applies; a plugin made for other game versions, still usable:
@@ -13,7 +13,8 @@
 //     makes the set of the files as they are now. Art only in this version: the battles stay the original ones.
 //   * InstalledPlugins — the title screen's 「本服务器安装了 N 个插件」 (screens/title.js; §7.4): every unofficial plugin
 //     the catalogue lists — any class, with what this version does with it (the catalogue fetched when it opens).
-// Texts go through t() (docs/I18N.md).
+// The tag and the small facts (roomPluginFacts, sizeText, pluginTagText, pluginMicro) are ui/pluginTag.js's, re-exported
+// here. Texts go through t() (docs/I18N.md).
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { APP_VERSION } from '../../../shared/constants.js';
@@ -23,32 +24,11 @@ import { net } from '../net.js';
 import { useStore } from '../store.js';
 import { catalog, loadCatalog, cosmeticPlugins, installedCount, pluginName, unofficialPlugins } from '../content.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
+import { sizeText, roomPluginFacts, pluginTagText, pluginMicro } from './pluginTag.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
-/** A size in KB / MB. @param {number} n */
-export const sizeText = (n) => (!Number.isFinite(n) ? '' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-
-/**
- * What the room's plugins are for this player: `count` (0 = the original art), the ids switched on and those switched on
- * automatically, whether this player may change them (the host, outside a match), the room's warnings.
- * @param {any} room room.state payload
- * @param {any} myId
- */
-export function roomPluginFacts(room, myId) {
-  const list = Array.isArray(room?.content?.plugins) ? room.content.plugins.filter((p) => p && typeof p.id === 'string') : [];
-  return {
-    count: list.length,
-    plugins: list,
-    on: new Set(list.map((p) => p.id)),
-    auto: new Set(list.filter((p) => p.auto).map((p) => p.id)),
-    chosen: list.filter((p) => !p.auto).map((p) => p.id),
-    editable: room?.hostId != null && room.hostId === myId && !room.inMatch,
-    inMatch: !!room?.inMatch,
-    warnings: Array.isArray(room?.content?.warnings) ? room.content.warnings.filter((w) => w && typeof w.code === 'string') : [],
-    vs: typeof room?.content?.vs === 'string' ? room.content.vs : null,
-  };
-}
+export { sizeText, roomPluginFacts, pluginTagText, pluginMicro };
 
 /**
  * The ids room.setPlugins sends when the host switches `id` on or off: the plugins the host chose, without the
@@ -72,17 +52,6 @@ function warningText(w, nameOf) {
   }
   if (w.code === 'app') return t('「{name}」适配 {app}，本服务器是 {version}（外观插件，仍可使用）', { name: nameOf(w.params?.id), app: String(w.params?.app || ''), version: APP_VERSION });
   return w.code;
-}
-
-/** The tag at the top of the room: 「原版」 or 「插件 ×N」; opens the panel. */
-export function PluginTag({ room, myId }) {
-  const [open, setOpen] = useState(false);
-  const f = roomPluginFacts(room, myId);
-  return html`<button type="button" class=${cx('plugtag', f.count && 'is-modded')} data-testid="plugin-tag" onClick=${() => setOpen(true)}
-      title=${t('插件')} aria-label=${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}>
-    <${Icon} name=${f.count ? 'edit' : 'check'} />${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}
-  </button>
-  ${open ? html`<${PluginPanel} open=${true} room=${room} myId=${myId} onClose=${() => setOpen(false)} />` : null}`;
 }
 
 /** The room's 插件 panel (see the header). */
@@ -191,10 +160,3 @@ export function InstalledPlugins({ open, onClose }) {
     </div>
   <//>`;
 }
-
-/** Re-exported for the room screen's tests: what the tag says. @param {any} room */
-export const pluginTagText = (room) => { const n = roomPluginFacts(room, null).count; return n ? t('插件 ×{n}', { n }) : t('原版'); };
-
-/** A label for a catalogue entry's micro line in 设置 (ui/settings.js). @param {any} p */
-export const pluginMicro = (p) => [p?.id, p?.version ? `v${p.version}` : null, Number.isFinite(p?.artBytes) ? sizeText(p.artBytes) : null].filter(Boolean).join(' · ');
-

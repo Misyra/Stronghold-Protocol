@@ -1,20 +1,22 @@
 // content.js — what this page shows beyond the installation's own art (DESIGN §32 P1a, docs/PLUGINS.md §9): the room's
 // visual set — the cosmetic plugins its host switched on, named by room.state.content.vs — and the player's personal
 // cosmetic plugins (设置 → 外观插件, kept in this browser only: `sp.pref.cosmetics`), laid over the art manifest every
-// screen reads (assets.js `cosmetics`; data.js shows `assets` through them, so `data.get('assets')` is the art the room
+// screen reads (cosmetics.js `cosmetics`; data.js shows `assets` through them, so `data.get('assets')` is the art the room
 // draws). Nothing here changes a battle: a room's `cs` stays the vanilla one, and nobody else sees a personal plugin.
 //
 //   * The room: whenever room.state.content.vs changes, /vs/<vs16>/overlay.json is fetched as text, parsed and checked
 //     (shared/plugins/visual.js checkVisualDoc — its composition hashes to the `vs` the room named) and becomes the room
 //     layer: the page composes the art itself, on the manifest it loaded — every plugin URL built from that composition's
-//     file table, every reference copied out of its own manifest, a write that does not fit left out (assets.js
-//     createCosmeticLayers) —, never a manifest the server put together. Leaving the room, or a room without plugins,
+//     file table, every reference copied out of its own manifest, a write that does not fit left out (cosmetics.js
+//     createCosmeticLayers) —, never a manifest the server put together. What checks and composes a document
+//     (shared/plugins/visual.js) is loaded only when there is one (cosmetics.js loadVisual): a page without plugins never
+//     loads it. Leaving the room, or a room without plugins,
 //     takes the layer away again: one room's art never stays behind or piles up. A document that fails the check or
 //     will not download (two retries; an attempt is given up after VISUAL_TIMEOUT_MS) leaves the original art; that, a
 //     write left out or a plugin file that will not load is said once (a toast). A plugin file that will not load — an
 //     `<img>` of the interface (caught here, for every image of the page), an image or a model of the board (assets.js
 //     reports its own), a sound (audio.js, through main.js) — makes its entry fall back to the art beneath it: the
-//     installation's, or the room's under a personal plugin (assets.js createCosmeticLayers fail).
+//     installation's, or the room's under a personal plugin (cosmetics.js createCosmeticLayers fail).
 //   * Personal plugins: the catalogue (/plugins/index.json — loadCatalog) names each loaded cosmetic plugin of scope
 //     `personal` with the `vs` of the set of it alone and what the load order reads of it (requires, conflicts,
 //     loadAfter / loadBefore, priority). The plugins the player switched on are ordered exactly like a room's set
@@ -33,9 +35,9 @@
 
 import { createStore, loadPref, savePref, store as appStore } from './store.js';
 import { data as dataStore } from './data.js';
-import { cosmetics } from './assets.js';
+import { cosmetics, loadVisual, visualNow } from './cosmetics.js';
 import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
-import { VISUAL_DOC_FILE, VISUAL_SETS_URL, checkVisualDoc, isVisualHash, vsUrlPart } from '../../shared/plugins/visual.js';
+import { isContentHash as isVisualHash } from '../../shared/plugins/identity.js';
 import { getLang, langChain, t, N_ } from '../../shared/i18n.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of the personal cosmetic plugins: their ids. */
@@ -203,6 +205,9 @@ export function setPersonalPlugin(id, on) {
  */
 export async function fetchVisualDoc(vs, { fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep, timeoutMs = VISUAL_TIMEOUT_MS } = {}) {
   if (!isVisualHash(vs)) return { error: 'no visual hash' };
+  let visual = visualNow();
+  if (!visual) { try { visual = await loadVisual(); } catch { return { error: 'shared/plugins/visual.js did not load' }; } }
+  const { VISUAL_SETS_URL, VISUAL_DOC_FILE, vsUrlPart, checkVisualDoc } = visual;
   const url = `${VISUAL_SETS_URL}${vsUrlPart(vs)}/${VISUAL_DOC_FILE}`;
   for (let attempt = 0; ; attempt++) {
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;

@@ -59,7 +59,7 @@ import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError, installTrafficMeter } from './diag.js';
 import { installContent } from './content.js';
-import { cosmetics } from './assets.js';
+import { cosmetics } from './cosmetics.js';
 
 const RESTORE_GRACE_MS = 1500;
 const JOIN_DELAY_MS = 350;

@@ -63,7 +63,7 @@
 
 import { sha256Hex } from '../sha256.js';
 import { canonicalJson, isContentHash } from './identity.js';
-import { isPackPath, extOf } from './manifest.js';
+import { isPackPath, extOf, PLUGIN_IMAGE_EXTS, PLUGIN_AUDIO_EXTS } from './manifest.js';
 
 /** The version of the `vs` composition above (a change of it changes every `vs`; 2: the `writes` of each overlay). */
 export const VISUAL_HASH_VERSION = 2;
@@ -102,12 +102,10 @@ export const isVisualHash = isContentHash;
 /** The URL form of `vs`: its first VS_URL_DIGITS digits. @param {string} vs */
 export const vsUrlPart = (vs) => String(vs).slice(0, VS_URL_DIGITS);
 
-const IMAGE = Object.freeze(['.png', '.jpg', '.webp']);
-const AUDIO = Object.freeze(['.mp3', '.ogg']);
-/** The image files a cosmetic plugin's overlay names. */
-export const PLUGIN_IMAGE_EXTS = IMAGE;
-/** The audio files a cosmetic plugin's overlay names (also fetched without the extension: server/http/static.js). */
-export const PLUGIN_AUDIO_EXTS = AUDIO;
+const IMAGE = PLUGIN_IMAGE_EXTS;
+const AUDIO = PLUGIN_AUDIO_EXTS;
+/** The image and audio files a cosmetic plugin's overlay names (defined in ./manifest.js). */
+export { PLUGIN_IMAGE_EXTS, PLUGIN_AUDIO_EXTS };
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);

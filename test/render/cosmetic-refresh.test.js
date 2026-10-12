@@ -15,6 +15,10 @@ import { fileURLToPath } from 'node:url';
 import { installFakePixi, fakeViewCtx } from './fakepixi.js';
 import { presetCamera } from '../../public/js/render/projection.js';
 import { createAssets, createCosmeticLayers } from '../../public/js/assets.js';
+import { loadVisual } from '../../public/js/cosmetics.js';
+
+// what composes a set's document loads with the first document (cosmetics.js loadVisual): here before any layer is laid
+await loadVisual();
 import { visualHashOf, modelHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
 

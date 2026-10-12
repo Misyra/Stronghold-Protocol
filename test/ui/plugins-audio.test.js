@@ -10,6 +10,10 @@ import assert from 'node:assert/strict';
 import { AudioManager, VoiceGate } from '../../public/js/audio.js';
 import { mediaUrl } from '../../public/js/media.js';
 import { createCosmeticLayers } from '../../public/js/assets.js';
+import { loadVisual } from '../../public/js/cosmetics.js';
+
+// what composes a set's document loads with the first document (cosmetics.js loadVisual): here before any layer is laid
+await loadVisual();
 import { visualHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
 

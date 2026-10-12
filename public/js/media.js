@@ -24,7 +24,7 @@
 // path with the SPA's index.html).
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../../shared/media.js';
 import { splitHashedPath } from '../../shared/assetPaths.js';
-import { PLUGIN_AUDIO_EXTS } from '../../shared/plugins/visual.js';
+import { PLUGIN_AUDIO_EXTS } from '../../shared/plugins/manifest.js';
 
 const AUDIO_PATH = /^\/assets\/audio\/(.+)$/i;
 /** A cosmetic plugin's audio file: /p/<id>/<hash8>/<path>.<mp3 | ogg> (shared/plugins/visual.js pluginFileUrl). */

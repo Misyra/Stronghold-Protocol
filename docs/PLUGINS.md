@@ -20,8 +20,10 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
 | `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
-| `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest (`public/js/assets.js` cosmetic layers) |
-| `public/js/ui/pluginPanel.js` | the room's 插件 tag and panel, the title screen's list of the server's plugins |
+| `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest |
+| `public/js/cosmetics.js` | the cosmetic layers every screen draws through (small: the title page carries it; `shared/plugins/visual.js` loads with the first set) |
+| `public/js/ui/pluginTag.js` | the room's 插件 tag and the small facts the screens show (the panel loads when the tag is tapped) |
+| `public/js/ui/pluginPanel.js` | the room's 插件 panel and the title screen's list of the server's plugins — loaded when one opens |
 | `tools/plugin.mjs` | `list`, `check`, `pack` |
 | `plugins/README.md`, `plugins/_template/cosmetic/` | the folder's readme and the cosmetic template — the only tracked files of the folder |
 
@@ -348,9 +350,11 @@ content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`. A server sa
 in `/healthz` (which every page reads at once: the build guard) and in `welcome`, as `content.plugins` — only when there
 are some; the title screen's 「本服务器安装了 N 个插件」 is that count, and the catalogue is fetched only then, when
 something needs it (the title's list, the 插件 panel, 设置's 外观插件, a switched-on personal plugin). So a page of a server
-without plugins makes no request more than 0.2.6's but for its code: four more modules at once (`public/js/content.js`,
-`public/js/ui/pluginPanel.js`, `shared/plugins/visual.js`, and `public/js/assets.js`, which 0.2.6 loads with the first
-match); the load-order function (`shared/plugins/order.js`) comes only with the catalogue.
+without plugins makes no request more than 0.2.6's but for three small modules at start (`public/js/content.js`,
+`public/js/cosmetics.js` — the layers —, `public/js/ui/pluginTag.js` — the room's tag); the panel
+(`public/js/ui/pluginPanel.js`) loads when it opens, what checks and composes a set (`shared/plugins/visual.js`) with
+the first set, the load-order function (`shared/plugins/order.js`) with the catalogue, and the asset store
+(`public/js/assets.js`) with the first match, as in 0.2.6.
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
 this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. The

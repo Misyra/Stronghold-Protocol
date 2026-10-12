@@ -376,11 +376,18 @@ links, the pack view and `/packs/index.json` unchanged, `/plugins/index.json`, a
 the release zips), `test/plugins/identity.test.js` (SHA-256 vectors, Node and a bare realm agreeing, the composition,
 the same input → the same `cs`, one changed byte → another, the served bytes, the wire fields), and still
 `test/i18n-packs.test.js`. P1a: `test/plugins/visual.test.js` (the overlay, references — a missing one refused —,
-permissions, the lock, resolution, the merge order and its warnings, `vs`, the browser's check),
-`test/plugins/order.test.js`, `test/plugins/visualSet.test.js` (sets refused or resolved, `/vs/`, `/p/` — its whitelist,
-traversal, dot files, a link out, immutable or not —, one changed byte → another `vs`, `/data/assets.json` unchanged),
-`test/plugins/tool.test.js` (`pack`, `check`, the template), `test/lobby-plugins.test.js` (`room.setPlugins`: the host,
-before the match, un-readying, the vanilla `cs`, refusals), `test/ui/plugins-client.test.js` (the cosmetic layers, the
-data view, content.js, the panel), `test/diag.test.js` (the content line) and the browser test
-`test/ui/plugins.e2e.test.js` (`SP_E2E=1`: the host's plugin shows on another player's page, a personal plugin on its own
-page only).
+permissions, the lock, the browser's composition — every plugin URL from the file table, references from its own
+manifest, what does not fit dropped, a failed file left out —, the merge order and its warnings, `vs`, the browser's
+check), `test/plugins/order.test.js`, `test/plugins/visualSet.test.js` (sets refused or resolved, `/vs/`, `/p/` — its
+whitelist, traversal, dot files, links out of the folder and into it, a folder replaced by a link, immutable or not, a
+rewrite with its old mtime, audio without its extension —, one changed byte → another `vs`, `/data/assets.json`
+unchanged), `test/plugins/tool.test.js` (`pack`, `check`, the template), `test/lobby-plugins.test.js` (`room.setPlugins`:
+the host, before the match, un-readying, the vanilla `cs`, refusals, the result replay, the count in `/healthz` and
+`welcome`, the host told when a plugin changes on disk), `test/ui/plugins-client.test.js` (the cosmetic layers, the data
+view, content.js — the catalogue only on a server with plugins, an interface image falling back, the personal set —,
+the panel), `test/ui/plugins-audio.test.js` (a plugin sound without its extension, falling back),
+`test/render/cosmetic-refresh.test.js` (views already drawn follow a changed manifest; a failed model or picture falls back),
+`test/ui/stats.test.js` (the records' `vs`), `test/media-url.test.js`, `test/ui/buildGuard.test.js` (onHealth),
+`test/diag.test.js` (the content line) and the browser test `test/ui/plugins.e2e.test.js` (`SP_E2E=1`: the host's plugin
+shows on another player's page, a personal plugin on its own page only; a server without plugins is never asked for its
+catalogue; a personal plugin switched during a match changes the piece already on the board).

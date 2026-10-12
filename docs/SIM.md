@@ -1617,3 +1617,7 @@ general hook guard. The queue is emptied in `finally`; it introduces no timer or
 - Healing skill activation includes elemental-only injury when the operator's heal profile can cure it. Pinecone S2 growth is deployment-local. Skadi S1 and Stead preserve redirect ancestry and take both shares from the pre-redirect hit, so the total damage is conserved.
 
 `champagneHold` includes the internal `isolated` ally-selection flag (§29.11): device-type champagne bombs are excluded from ordinary allied auras/inspiration in both creation paths. Other unhealable summons retain their own selection behavior.
+
+维什戴尔's `shadowTile` filters the boss/hidden bench rows before ranking summon candidates. See
+[DESIGN §3](design/geometry-time.md#3-coordinates-fields-and-geometry) for the deployment boundary; `grid.inRect`
+alone also admits those bench rows.

@@ -60,7 +60,8 @@
 import { num, talentBb, traitBb, skillRec, up, batMod } from '../shared/tier1.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { hasHp } from '../../../damage.js';
-import { COLS } from '../../../constants.js';
+import { COLS, BOSS_ROW_OFFSET } from '../../../constants.js';
+import { GEO } from '../../../../../shared/constants.js';
 import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_wisdel_1';
@@ -138,6 +139,8 @@ function shadowTile(battle, host) {
   let best = null, bd = Infinity;
   for (const k of host.rangeKeys ?? []) {
     const r = Math.floor(k / COLS), c = k % COLS;
+    // BOSS_RECT includes the hand/temp rows (0–1); they are not combat deployment tiles.
+    if ((battle.kind === 'boss' || battle.kind === 'hidden') && r < GEO.FIELD.r0 + BOSS_ROW_OFFSET) continue;
     if (!battle.grid.inRect(r, c) || !battle.grid.canStand(r, c, { ranged: true }) || battle.isReservedTile(r, c)) continue;
     const d = hypot(r - host.tileR, c - host.tileC);
     if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && (r < best[0] || (r === best[0] && c < best[1])))) { bd = d; best = [r, c]; }

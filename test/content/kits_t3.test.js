@@ -794,12 +794,21 @@ test('3_20 耶拉: 低眉 ATK (ground tiles in range); 心随意动 +1 drone, AT
   assert.ok(first[1] > first[0], 'drone ramps on the same target');
   fill(u);
   assert.ok(h.runUntil(() => u.skill.active, 5));
+  const tOn = h.b.time;
   approx(u.s.atk, u.base.atk * (1 + t0['kjera_t_1[high].atk'] + bb.atk));
+  const full = u.s.atk * u.s.atkScaleMul;
   h.runUntil(() => !u.skill.active, 30);
-  const sk = h.hooksOf('attack').filter((c) => c.attacker === u && c.isSkill);
-  assert.ok(sk.length > 5 && sk.every((c) => c.targets.length === 1 + bb['attack@cnt']), 'two drone locks');
+  const during = (c) => c.t + 1e-9 >= tOn - h.b.dt && c.t + 1e-9 < h.b.time;
+  const atks = h.hooksOf('attack').filter((c) => c.attacker === u && during(c) && !c.isSkill);
+  assert.ok(atks.length > 5 && atks.every((c) => c.targets.length === 1), 'the body keeps a single in-range target');
+  const drones = h.hooksOf('damaged').filter((c) => c.source === u && during(c) && c.dmg?.tags?.includes('kjera:drone'));
+  assert.ok(drones.length >= atks.length, 'released drones keep firing');
+  const bodies = h.hooksOf('damaged').filter((c) => c.source === u && during(c) && c.dmg?.isAttack && !c.dmg.isSkill
+    && Math.abs(c.amount - full) < 1e-4);
+  assert.ok(bodies.length >= 2, 'her own hits stay at 100% ATK');
   const colds = h.hooksOf('statusApplied').filter((c) => c.source === u && c.status === 'cold');
-  assert.ok(colds.length >= 1 && colds.length < sk.length * 2, `cold procs (${colds.length}/${sk.length * 2})`);
+  const chances = bodies.length + drones.length;
+  assert.ok(colds.length >= 1 && colds.length < chances, `cold procs (${colds.length}/${chances})`);
   approx(colds[0].duration, bb['attack@cold']);
   done(h);
 });
@@ -1076,7 +1085,7 @@ test('3_19 伺夜: the pack never takes a later board unit’s tile; a 狼群 pi
 });
 
 test('3_20 耶拉: 心随意动 with a single enemy — both drones lock it and ramp in parallel', () => {
-  const id = 'chess_char_3_20_b', bb = BB(id), tb = TR(id);
+  const id = 'chess_char_3_20_b', tb = TR(id);
   const h = makeBattle({
     defs: { enemies: { enemy_a: dummy('enemy_a') } }, timeLimit: 80, hooks: ['damaged', 'attack'], captureNoisy: true,
     units: [{ chessId: id, row: 10, col: 2 }], enemies: [{ key: 'enemy_a', pos: [10, 4] }],
@@ -1087,13 +1096,22 @@ test('3_20 耶拉: 心随意动 with a single enemy — both drones lock it and 
   approx(plain[plain.length - 1], tb.max_atk_scale, 1e-6, 'module ramp cap');
   fill(u);
   assert.ok(h.runUntil(() => u.skill.active, 5));
+  const t0 = h.b.time;
   const n0 = h.hooksOf('damaged').length;
   h.run(8);
-  const sk = h.hooksOf('attack').filter((c) => c.attacker === u && c.isSkill);
-  assert.ok(sk.length >= 3 && sk.every((c) => c.targets.length === 1 + bb['attack@cnt'] && c.targets.every((t) => t.defId === 'enemy_a')));
-  const hits = h.hooksOf('damaged').slice(n0).filter((c) => c.source === u && c.dmg?.isAttack);
-  assert.ok(hits.length >= 2 * (sk.length - 1));
-  for (let i = 0; i + 1 < hits.length; i += 2) approx(hits[i].amount, hits[i + 1].amount, 1e-9, 'same volley, same scale');
+  const atks = h.hooksOf('attack').filter((c) => c.attacker === u && c.t + 1e-9 >= t0 - h.b.dt && !c.isSkill);
+  assert.ok(atks.length >= 3 && atks.every((c) => c.targets.length === 1 && c.targets.every((t) => t.defId === 'enemy_a')), 'one body target');
+  const drones = h.hooksOf('damaged').slice(n0).filter((c) => c.source === u && c.dmg?.tags?.includes('kjera:drone'));
+  assert.ok(drones.length >= 4, 'both drones stay on the lone enemy');
+  const byT = new Map();
+  for (const c of drones) (byT.get(c.t) ?? byT.set(c.t, []).get(c.t)).push(c);
+  const pairs = [...byT.values()].filter((v) => v.length === 2);
+  assert.ok(pairs.length >= 2, 'the two drones share a volley');
+  for (const v of pairs) approx(v[0].amount, v[1].amount, 1e-9, 'same volley, same scale');
+  const full = u.s.atk * u.s.atkScaleMul;
+  const body = h.hooksOf('damaged').slice(n0).filter((c) => c.source === u && c.dmg?.isAttack && !c.dmg.isSkill
+    && Math.abs(c.amount - full) < 1e-4);
+  assert.ok(body.length >= 2, 'body stays at 100% ATK while the drones ramp');
   done(h);
 });
 

@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBattle, chessRec, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { hitCount } from '../../server/sim/content/enemies/helpers.js';
+import { bodyInKeys } from '../../server/sim/body.js';
+import { DRONE_TAG } from '../../server/sim/content/kits/ops/chess_char_3_20-kjera.js';
 
 const near = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a} vs ${b}`);
 const ordinary = ['2_10', '3_13', '3_20', '4_03', '6_18'].flatMap((id) => ['a', 'b'].map((f) => ({ chessId: `chess_char_${id}_${f}` })));
@@ -79,15 +81,36 @@ test('unreleased attribute skills keep a body hit; released Kjera drones and Lol
     for (const v of volleys(h, u)) assert.equal(v.length, 2, `${id}: one pair per attack`);
     done(h);
   }
-  for (const id of ['chess_char_3_20_a', 'chess_char_3_20_b']) {
+  for (const id of ['chess_char_3_20_a', 'chess_char_3_20_b', 'chess_char_4_03_a', 'chess_char_4_03_b']) {
     const { h, u } = field({ chessId: id });
+    h.run(2);
+    const before = mine(h, u).filter((c) => c.dmg.tags?.includes('funnel'));
+    assert.ok(before.length >= 1, `${id}: a pre-skill drone hit`);
+    const preScale = before.at(-1).amount / u.s.atk;
     u.skill.gainSp(999);
     assert.ok(h.runUntil(() => u.skill.active, 5));
-    const start = mine(h, u).length;
+    const t0 = h.b.time;
     h.run(2);
-    const active = mine(h, u).slice(start);
-    assert.ok(active.length > 0, `${id}: skill hits`);
-    assert.ok(active.every((c) => c.dmg.isSkill && c.dmg.isAttack && !c.dmg.tags?.includes('funnel')), `${id}: no extra body`);
+    const full = u.s.atk * u.s.atkScaleMul;
+    const later = mine(h, u).filter((c) => c.t + 1e-9 >= t0 - h.b.dt);
+    const body = later.filter((c) => c.dmg.isAttack && !c.dmg.isSkill && !(c.dmg.tags || []).includes('funnel'));
+    const drones = later.filter((c) => (c.dmg.tags || []).includes(DRONE_TAG));
+    assert.ok(body.length > 0, `${id}: the operator's own hit`);
+    assert.ok(drones.length >= 2, `${id}: both released drones`);
+    for (const c of body) {
+      near(c.amount, full, `${id} body is 100% ATK`);
+      assert.ok(!(c.dmg.tags || []).includes('addition'));
+    }
+    for (const c of drones) {
+      assert.ok(c.dmg.isSkill && !c.dmg.isAttack && c.type === 'arts', `${id}: drone skill hit`);
+      assert.ok(!(c.dmg.tags || []).includes('addition') && !(c.dmg.tags || []).includes('funnel'));
+      const r = c.amount / full;
+      assert.ok(r + 1e-6 >= u.profile.funnel.init && r <= u.profile.funnel.max + 1e-6, `${id} drone scale ${r}`);
+    }
+    const first = drones[0].amount / full;
+    if (id.startsWith('chess_char_4_03')) near(first, u.profile.funnel.init, `${id} restarts at the initial scale`);
+    else assert.ok(first > u.profile.funnel.init + 1e-6 && first + 1e-6 >= Math.min(u.profile.funnel.max, preScale + u.profile.funnel.delta) - 1e-6,
+      `${id} continues the pre-skill ramp (${first} after ${preScale})`);
     done(h);
   }
 });
@@ -128,18 +151,71 @@ test('Minimalist charged S2: two body hits and two drone additions share one tal
   }
 });
 
-test('released Kjera S2 locks retain their existing volley count; no body is added once per lock', () => {
-  for (const id of ['chess_char_3_20_a', 'chess_char_4_03_a']) {
-    for (const count of [1, 2]) {
-      const { h, u } = field({ chessId: id });
-      if (count === 2) h.spawn('enemy_dummy', { pos: [11, 6] });
-      u.skill.gainSp(999);
-      h.run(2);
-      const vs = volleys(h, u).filter((v) => v[0].dmg.isSkill);
-      assert.ok(vs.length > 0);
-      for (const v of vs) assert.equal(v.length, 2, `${id}: existing two released drones`);
-      done(h);
+test('Whitw2 S1 on: the toggle keeps one body hit and both unreleased additions', () => {
+  for (const id of ['chess_char_6_18_a', 'chess_char_6_18_b']) {
+    const { h, u } = field({ chessId: id, skillIndex: 0 });
+    assert.ok(u.skill.activate('test', { free: true }));
+    const t0 = h.b.time;
+    h.run(2);
+    const vs = volleys(h, u).filter((v) => v[0].t + 1e-9 >= t0);
+    assert.ok(vs.length >= 1, `${id}: attacks while S1 is on`);
+    for (const v of vs) {
+      const body = v.filter((c) => c.dmg.isAttack && !(c.dmg.tags || []).includes('addition'));
+      const drone = v.filter((c) => (c.dmg.tags || []).includes('funnel'));
+      assert.equal(body.length, 1, `${id}: the 100% body is not dropped`);
+      assert.equal(drone.length, 2, `${id}: both unreleased drones`);
+      near(body[0].amount, u.s.atk * u.s.atkScaleMul, `${id} body`);
+      for (const c of drone) {
+        assert.ok(!c.dmg.isAttack);
+        const r = c.amount / body[0].amount;
+        assert.ok(r + 1e-6 >= u.profile.funnel.init && r <= u.profile.funnel.max + 1e-6, `${id} ramp ${r}`);
+      }
     }
+    done(h);
+  }
+});
+
+test('Whitw2 S2 stays drone-only: no full-ATK body beside the ramp', () => {
+  for (const id of ['chess_char_6_18_a', 'chess_char_6_18_b']) {
+    const { h, u } = field({ chessId: id, skillIndex: 1 });
+    u.skill.gainSp(999);
+    assert.ok(h.runUntil(() => u.skill.active, 8));
+    const t0 = h.b.time;
+    h.run(2);
+    const full = u.s.atk * u.s.atkScaleMul;
+    const active = mine(h, u).filter((c) => c.t + 1e-9 >= t0 - h.b.dt && c.dmg.isSkill);
+    assert.ok(active.length > 0, `${id}: skill hits`);
+    assert.ok(active.every((c) => c.dmg.isAttack && !(c.dmg.tags || []).includes('funnel')), `${id}: ramp stays on the attack`);
+    assert.equal(active.filter((c) => Math.abs(c.amount - full) < 1e-4).length, 0, `${id}: no 100% body`);
+    done(h);
+  }
+});
+
+test('Kjera S2: a lock that leaves her range still takes drone hits, and the body does not follow it', () => {
+  const route = {
+    motion: 'FLY', start: [10, 6], end: [9, 2],
+    steps: [{ t: 'wait', s: 1.2 }, { t: 'move', p: [12, 6] }, { t: 'wait', s: 20 }, { t: 'move', p: [9, 2] }],
+  };
+  for (const id of ['chess_char_3_20_a', 'chess_char_4_03_a']) {
+    const h = makeBattle({
+      seed: 4, autoFinish: false, timeLimit: 40, captureNoisy: true, hooks: ['damaged', 'attack'],
+      defs: { enemies: { enemy_lock: enemyRec({ key: 'enemy_lock', hp: 1e8, speed: 1, motion: 'FLY' }) } },
+      units: [{ uid: 1, row: 10, col: 4, chessId: id, carryState: { sp: 999 } }],
+      enemies: [{ key: 'enemy_lock', route }],
+    });
+    h.step();
+    const u = h.unit(1), e = h.enemies()[0];
+    assert.ok(u.skill.active, `${id} opens on the carried SP`);
+    assert.ok(h.runUntil(() => e.alive && !bodyInKeys(e, u.rangeKeySet), 8), `${id}: the lock leaves range`);
+    h.run(1.5);
+    const t = h.b.time, attacks = u.stats.attacks;
+    h.run(3);
+    assert.ok(e.alive && u.skill.active && !bodyInKeys(e, u.rangeKeySet));
+    const out = mine(h, u).filter((c) => c.target === e && c.t + 1e-9 >= t);
+    assert.ok(out.length > 0, `${id}: damage outside range`);
+    assert.ok(out.every((c) => (c.dmg.tags || []).includes(DRONE_TAG) && c.dmg.isSkill && !c.dmg.isAttack), `${id}: drone only`);
+    assert.equal(u.stats.attacks, attacks, `${id}: the body does not attack with nobody in range`);
+    done(h);
   }
 });
 

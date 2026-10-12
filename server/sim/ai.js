@@ -319,10 +319,12 @@ export function resolveHit(b, u, prof, target, info, x, y) {
     let mulT = skillMul;
     if (prof.dmgMul) { const m = typeof prof.dmgMul === 'function' ? prof.dmgMul(b, u, target) : prof.dmgMul; if (Number.isFinite(m)) mulT *= m; }
     const funnelMul = prof.funnelMul ? prof.funnelMul(b, u, target) : 1;
-    const attachedFunnel = !!prof.funnelMul && (!info.isSkill || prof.funnelBodyHits > 0);
-    // Unreleased drones are additional damage (PRTS 驭械术师), not a replacement for the caster's attack. A volley
-    // shares one talent roll and attackId; extra drones never duplicate the body. Released skill paths stay separate.
+    // Unreleased drones are additional damage on the caster's attack (PRTS 驭械术师), including a skill that only
+    // buffs or retargets that attack. `info.isSkill` is set for every attack or targeting override, so it must not
+    // decide this. `funnelBodyHits === 0` is the drone-only opt-out (the ramp stays inside the hits, no body).
+    // A volley shares one talent roll and attackId; extra drones never duplicate the body.
     // [ASSUMED] Body instances precede additions at the existing projectile impact; a multi-hit volley keeps one ramp.
+    const attachedFunnel = !!prof.funnelMul && prof.funnelBodyHits !== 0;
     if (!attachedFunnel) mulT *= funnelMul;
     const hits = prof.hitsFn ? prof.hitsFn(b, u, info) : Math.max(1, prof.hits || 1);
     // `hitDmgMul` (professions.js header): each instance's 伤害倍率 — the DamageInfo `mul`, after DEF / RES — and only the
@@ -330,7 +332,7 @@ export function resolveHit(b, u, prof, target, info, x, y) {
     const split = Number.isFinite(prof.hitDmgMul) && prof.hitDmgMul > 0 ? prof.hitDmgMul : null;
     let dealtMain = 0;
     if (attachedFunnel && info.index === 0) {
-      const bodyHits = Math.max(1, prof.funnelBodyHits || 1);
+      const bodyHits = Math.max(1, prof.funnelBodyHits > 0 ? prof.funnelBodyHits : 1);
       for (let h = 0; h < bodyHits && target.alive; h++) {
         dealtMain += b.dealDamage(u, target, { amount: atk * scale * mulT, type: baseType,
           isAttack: true, isSkill: info.isSkill, tags: prof.tags || [], attackId });

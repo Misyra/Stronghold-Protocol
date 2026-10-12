@@ -181,10 +181,11 @@ The engine keeps a 100 % ATK body instance and a separate drone instance, each t
 `funnelMul` holds only the drone ramp; the attack's `dmgMul` (至简's talent) is shared once. Extra attached drones
 raise `hits`, not the body count; 至简's charged S2 sets `funnelBodyHits` to two. Both share one `attackId`, attack
 hook and SP / charge use; additions have `addition` and `funnel` tags and do not count as `isAttack`. [ASSUMED] Body
-instances precede additions at the existing projectile impact; consecutive hits keep one ramp per volley. This
-correction covers ordinary attacks and unreleased skill attacks that set `funnelBodyHits`. Released skill paths retain
-their existing behaviour; it does not establish whether those skills should also have body attacks (耶拉 S2, 澄闪 S1
-and S2 remain to be reconciled separately).
+instances precede additions at the existing projectile impact; consecutive hits keep one ramp per volley. A skill
+that only buffs or retargets the normal attack keeps the body; `isSkill` is not the switch. `funnelBodyHits === 0`
+is drone-only (荒芜拉普兰德 S2): the ramp stays inside those hits. 耶拉 S2 detaches `funnelMul` the way 洛洛 S2 does:
+one 100 % body inside her range, the unreleased addition off, and the released drones as separate skill hits that
+keep the lock until the enemy dies or the skill ends (§30.17). 澄闪's skills stay on their own `dealDamage` paths.
 
 Funnel ramps return to the initial scale on a normal deployment, including automatic revival against the same living
 target (§30.18). The reset clears the current target, the scale and any per-target ramp map, and leaves other trait

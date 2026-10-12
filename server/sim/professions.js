@@ -22,7 +22,8 @@
 //   noHeal bool (cannot be healed by others)   blockFly bool   onHitStatus {key, duration, value}
 //   dmgMul(battle, unit, target) → number      afterHit(battle, unit, target, {dealt,x,y})
 //   funnelMul(battle, unit, target) → number (drone ramp, separate from the caster's attack multiplier)
-//   funnelBodyHits n (an unreleased skill attack's body hit count; default normal attack: one, drones: `hits`)
+//   funnelBodyHits n (body hits kept beside that ramp. Omit it for one. 0: drone-only, ramp folded into the hits,
+//                     no body — 荒芜拉普兰德 S2. >0: that many body hits — 至简 S2. Not keyed off the skill flag)
 //   canAttack(battle, unit) → bool             afterAttack(battle, unit, targets)
 //   skipEnemy(enemy) → bool (an enemy the unit never selects — targeting.js canTargetEnemy; 嵯峨 "不攻击重伤单位")
 //   healThrough(healer, ally) → bool (a healer that selects and heals that ally through its 禁疗 — Battle

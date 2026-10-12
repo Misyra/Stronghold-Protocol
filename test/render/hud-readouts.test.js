@@ -96,6 +96,32 @@ describe('interp: ammo / wolves / neg', () => {
 });
 
 describe('UnitView: the ammo skill\'s segmented bar', () => {
+  test('user sees exact ammunition through spending, refills and skill end, even without cell separators', () => {
+    // Given a magazine too dense to count its cells, When snapshots change, Then the readout stays exact.
+    const v = view();
+    try {
+      for (const [left, max] of [[137, 240], [136, 240], [260, 260], [0, 260]]) {
+        v.sync(sample({ flags: UF.SKILL, ammo: [left, max] }));
+        frames(v);
+        assert.equal(v.ammoText?.text, `${left}/${max}`);
+        assert.equal(v.ammoText.visible, true);
+        assert.equal(v.ammoCuts.filter((c) => c.visible).length, 0);
+      }
+      // When the skill ends or an older peer omits the row, Then no stale number remains.
+      v.sync(sample({ sp: 6, spMax: 24 }));
+      frames(v);
+      assert.equal(v.ammoText.visible, false);
+      v.sync(sample({ flags: UF.SKILL, ammo: [5, 14] }));
+      v.prep = true;
+      frames(v);
+      assert.equal(v.ammoText.visible, false);
+      v.prep = false;
+      v.die();
+      frames(v);
+      assert.equal(v.ammoText.visible, false);
+    } finally { v.destroy(); }
+  });
+
   test('replaces the SP bar while the magazine runs: a yellow cell per round, the fill is rounds left / magazine, a thin cut at every boundary', () => {
     const v = view();
     v.sync(sample({ flags: UF.SKILL, sp: 22.3, spMax: 24, ammo: [13, 14] }));

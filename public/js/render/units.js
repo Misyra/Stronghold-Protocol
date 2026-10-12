@@ -469,8 +469,9 @@ export const IMP_BOX = Object.freeze({ steady: 5, transient: 2, pad: 0.03, padMi
  * one-off clip). A clip that does not fit and is not inside the box anyway is `over`: its unit is drawn directly while it
  * plays (units.js _updateImpostor), so a rare huge clip (a deploy drop from above, a screen-wide sweep) does not grow every
  * refresh of the unit's slot. Padded by IMP_BOX.pad. The setup pose needs no room: no model shows it (spine.js
- * SpineActor.update poses one frozen before its first update at its clip's first frame). Without an idle clip that draws
- * anything, the looping clips make the core. null when nothing is drawn.
+ * SpineActor.update poses one frozen before its first update at its clip's first frame). A clip whose rect is `false`
+ * (its sampling threw, spine.js clipBounds) is `over` as well — drawn directly, never taken as drawing nothing. Without an
+ * idle clip that draws anything, the looping clips make the core. null when nothing is drawn.
  * @returns {{ x0: number, y0: number, w: number, h: number, over: Set<string> } | null}
  */
 export function impostorBox(idle, clips = []) {
@@ -490,7 +491,7 @@ export function impostorBox(idle, clips = []) {
     if (area(u) <= (c.once ? IMP_BOX.transient : IMP_BOX.steady) * limit) box = u;
     else left.push(c);
   }
-  const over = new Set();
+  const over = new Set(clips.filter(([, r]) => r === false).map(([name]) => name));
   for (const c of left) if (c.r[0] < box[0] || c.r[1] < box[1] || c.r[2] > box[2] || c.r[3] > box[3]) over.add(c.name);
   const pad = IMP_BOX.pad * Math.max(box[2] - box[0], box[3] - box[1]) + IMP_BOX.padMin;
   return { x0: box[0] - pad, y0: box[1] - pad, w: box[2] - box[0] + 2 * pad, h: box[3] - box[1] + 2 * pad, over };
@@ -1745,13 +1746,19 @@ export class UnitView {
     const rects = typeof a.clipBounds === 'function' ? a.clipBounds([...names.keys()]) : false;
     if (rects === null) return null;
     let box = null;
+    const unmeasured = new Set();   // clips whose sampling threw (false): drawn directly while they play
     if (rects) {
       const idle = this._idleClip();
+      const rect = (name) => (rects.has(name) ? rects.get(name) : null);
       const rest = [];
-      for (const [name, once] of names) if (name !== idle) rest.push([name, rects.get(name) || null, once]);
-      box = impostorBox(idle ? rects.get(idle) || null : null, rest);
+      for (const [name, once] of names) {
+        if (rect(name) === false) unmeasured.add(name);
+        if (name !== idle) rest.push([name, rect(name), once]);
+      }
+      box = impostorBox(idle && rect(idle) !== false ? rect(idle) : null, rest);
+      if (box && idle && unmeasured.has(idle)) box.over.add(idle);
     }
-    this._box = box || this._legacyBox();
+    this._box = box || this._legacyBox(unmeasured);
     return this._box;
   }
 
@@ -1789,8 +1796,11 @@ export class UnitView {
     return out;
   }
 
-  /** The box sized from the pose drawn now, for a runtime whose clips cannot be measured (the pre-#542 rule). */
-  _legacyBox() {
+  /**
+   * The box sized from the pose drawn now, for a runtime whose clips cannot be measured (the pre-#542 rule); `over` =
+   * clips that could not be measured (drawn directly while they play).
+   */
+  _legacyBox(over = NO_CLIPS) {
     let b = null;
     try { b = this.actor.spine.getLocalBounds(); } catch { b = null; }
     let x0 = -220, y0 = -420, x1 = 220, y1 = 40;
@@ -1799,7 +1809,7 @@ export class UnitView {
       x0 = Math.min(b.x - padX, -140); x1 = Math.max(b.x + b.width + padX, 140);
       y0 = Math.min(b.y - padY, -260); y1 = Math.max(b.y + b.height + padY * 0.4, 30);
     }
-    return { x0, y0, w: x1 - x0, h: y1 - y0, over: NO_CLIPS };
+    return { x0, y0, w: x1 - x0, h: y1 - y0, over: over && over.size ? over : NO_CLIPS };
   }
 
   /** Is a clip outside the box (`over`) on screen — the track's clip or one it is still mixing out of? */

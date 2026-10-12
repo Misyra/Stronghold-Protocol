@@ -104,6 +104,43 @@ describe('clip bounds (render/spine.js): what a skeleton draws, measured once pe
     assert.equal(spine.stepClipBounds(), 0, 'an empty queue costs nothing');
   });
 
+  test('a record leaves the queue when its last actor is destroyed — pending clips, the clip in progress and its scratch skeleton —; a later actor queues them again', () => {
+    const data = skeleton();
+    /** A SpineActor stand-in on the real runtime skeleton (clipBounds / destroy are the real methods). */
+    const actor = () => Object.assign(Object.create(spine.SpineActor.prototype), { spine: { spineData: data, skeleton: new rt.Skeleton(data), destroy() {} } });
+    const a = actor(), b = actor();
+    assert.equal(a.clipBounds(['Wave', 'Flash']), null, 'queued');
+    assert.equal(b.clipBounds(['Wave', 'Flash']), null);
+    spine.stepClipBounds(0);                            // one pose of Wave: a clip in progress
+    const rec = spine.requestClipBounds(data, rt.Skeleton, []);
+    assert.ok(rec.job && rec.skel, 'sampling Wave on its scratch skeleton');
+    a.destroy();
+    assert.equal(spine.pendingClipBounds(), 2, 'b still uses the skeleton: still queued');
+    b.destroy();                                        // e.g. the battlefield torn down with its units
+    assert.equal(spine.pendingClipBounds(), 0, 'nothing left to sample');
+    assert.ok(rec.job === null && rec.todo.length === 0 && rec.skel === null, 'no clip in progress, no todo, no scratch skeleton held');
+    const c = actor();                                  // the same skeleton in the next scene
+    assert.equal(c.clipBounds(['Wave', 'Flash']), null, 'queued again (no todo left behind to block it)');
+    assert.equal(spine.pendingClipBounds(), 2);
+    drain();
+    near(c.clipBounds(['Wave', 'Flash']).get('Wave'), [-50, -200, 425, 25], 'measured');
+    c.destroy();
+  });
+
+  test('a clip whose sampling throws is recorded as not measurable (false), never as drawing nothing', () => {
+    const data = skeleton();
+    const wave = data.findAnimation('Wave');
+    const apply = wave.apply.bind(wave);
+    wave.apply = (skel, last, t, ...rest) => { if (t > 0.5) throw new Error('a broken timeline'); return apply(skel, last, t, ...rest); };
+    const rec = spine.requestClipBounds(data, rt.Skeleton, ['Wave', 'Still']);
+    drain();
+    assert.equal(rec.rects.get('Wave'), false, 'not measurable');
+    near(rec.rects.get('Still'), [-50, -200, 125, 25], 'the other clip is measured');
+    assert.equal(rec.rects.get('Nope'), undefined);
+    const b = units.impostorBox([-50, -200, 125, 25], [['Wave', false, false], ['Still', rec.rects.get('Still'), false]]);
+    assert.deepEqual([...b.over], ['Wave'], 'drawn directly while it plays');
+  });
+
   test('SpineActor.clipBounds: null while queued, then a Map clip → rect; false for a runtime that cannot be posed', () => {
     const data = skeleton();
     const stand = { spine: { spineData: data, skeleton: new rt.Skeleton(data) } };
@@ -142,6 +179,17 @@ describe('a model frozen before its first update shows its clip\'s first frame, 
     a.setBase('idle');                                  // the stun ends: animated again
     a.update(0.1);
     assert.deepEqual(posed, [0, 0.1]);
+  });
+
+  test('a first update that throws is tried again: the frozen model is posed once an update succeeds', () => {
+    const { a, posed } = actor({ animations: [{ name: 'Idle' }, { name: 'Die' }] }, ENTRY);
+    let broken = true;
+    a.spine.update = (dt) => { posed.push(dt); if (broken) { broken = false; throw new Error('a broken skeleton'); } };
+    a.setBase('stun');
+    a.update(0.1);                                      // throws inside pixi-spine (caught): not posed yet
+    a.update(0.1);                                      // tried again at the clip's first frame: posed
+    a.update(0.1);                                      // held
+    assert.deepEqual(posed, [0, 0]);
   });
 
   test('stunned after it was posed: the pose it had holds (unchanged)', () => {
@@ -353,6 +401,28 @@ describe('UnitView impostor mode (render/units.js)', () => {
     assert.ok(sprite.visible && v.actor.spine.parent !== v.body, 'the impostor again');
     assert.ok(log.draw > c0.draw, 'redrawn into its slot');
     assert.equal(log.alloc, c0.alloc, 'the same slot');
+  });
+
+  test('a clip whose sampling threw is drawn directly while it plays — the attack, or even the idle clip —, never cut by the slot', async () => {
+    const broken = new Map(MEASURED).set('Attack', false);
+    const { v, step, log } = await operator(() => broken);
+    step(3);
+    assert.ok(v.imp && v._box.over.has('Attack'));
+    const draws = log.draw;
+    v.actor._play('Attack', false, { mix: 0 });
+    step(2);
+    assert.equal(v.imp.bypass, true, 'the attack is drawn directly');
+    assert.equal(log.draw, draws, 'not into the slot');
+    const idleBroken = new Map(MEASURED).set('Idle', false);
+    const w = (await operator(() => idleBroken)).v;
+    w.update(1 / 60, cam(), 0);
+    assert.ok(w._box.over.has('Idle'), 'an unmeasurable idle clip: drawn directly while it idles');
+    const b = w._box, c = MEASURED.get('Attack');
+    assert.ok(b.x0 <= c[0] && b.x0 + b.w >= c[2], 'the box built from the clips that were measured');
+    const none = new Map([...MEASURED.keys()].map((n) => [n, false]));
+    const z = (await operator(() => none)).v;
+    z.update(1 / 60, cam(), 0);
+    assert.deepEqual([...z._box.over].sort(), ['Attack', 'Die', 'Idle', 'Start'], 'nothing measurable: every clip drawn directly');
   });
 
   test('a runtime whose clips cannot be measured keeps the box from the pose shown (the pre-#542 rule)', async () => {

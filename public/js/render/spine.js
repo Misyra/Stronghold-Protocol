@@ -129,12 +129,16 @@ function slotCentre(slot, att, buf, out) {
 // by render/app.js once per frame, samples within that time budget: the clips a unit plays take ≈ 9 ms per skeleton on
 // the current roster (53 ms at most), so a model is measured a few frames after it loads, long before a crowd needs its
 // impostor. [ASSUMED] the rate, the cap and the budget (a pose between two samples is covered by the box's padding,
-// units.js IMP_BOX, and anything past it is cut by the atlas slot's scissor, never left behind).
+// units.js IMP_BOX, and anything past it is cut by the atlas slot's scissor, never left behind). A record is queued only
+// while an actor uses its skeleton data: when the last one is destroyed (a model swap, a battlefield torn down) its pending
+// clips and its scratch skeleton are dropped — nothing holds a skeleton the Spine store let go, and nothing stale is
+// measured ahead of the next scene's models —, and a later actor queues what was never measured again. A clip whose
+// sampling throws is recorded as not measurable (false): units.js draws it directly while it plays, never as empty.
 export const CLIP_SAMPLE_HZ = 60;
 export const CLIP_SAMPLE_MAX = 48;
 export const CLIP_BOUNDS_BUDGET_MS = 2.5;
 const ATT_REGION = 0, ATT_MESH = 2;      // pixi-spine AttachmentType
-const boundsOf = new WeakMap();          // skeleton data → { data, Skeleton, skel, rects: Map<clip, rect|null>, todo, job, failed }
+const boundsOf = new WeakMap();          // skeleton data → { data, Skeleton, skel, rects: Map<clip, rect|null|false>, todo, job, users, failed }
 const boundsQueue = [];                  // records with clips still to sample, oldest request first
 const nowMs = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
 const emptyRect = () => [Infinity, Infinity, -Infinity, -Infinity];
@@ -185,7 +189,7 @@ function scratchSkeleton(rec) {
 function boundsRecord(data, Skeleton) {
   let rec = boundsOf.get(data);
   if (rec) return rec;
-  rec = { data, Skeleton, skel: null, rects: new Map(), todo: [], job: null, failed: false, buf: { v: new Float32Array(256) } };
+  rec = { data, Skeleton, skel: null, rects: new Map(), todo: [], job: null, users: 0, failed: false, buf: { v: new Float32Array(256) } };
   try {
     const skel = scratchSkeleton(rec);
     skel.setToSetupPose();
@@ -223,7 +227,23 @@ export function requestClipBounds(data, Skeleton, names) {
     if (typeof n === 'string' && !rec.rects.has(n) && !rec.todo.includes(n) && !(rec.job && rec.job.name === n)) { rec.todo.push(n); added = true; }
   }
   if (added && !boundsQueue.includes(rec)) boundsQueue.push(rec);
+  else if (!boundsQueue.includes(rec)) rec.skel = null;   // nothing to sample: no scratch skeleton kept
   return rec;
+}
+
+/**
+ * One actor more (+1, SpineActor.clipBounds) or less (−1, SpineActor.destroy) measures record `rec`; with none left, the
+ * record leaves the queue with its pending clips (todo and the clip in progress) and its scratch skeleton — a later actor
+ * queues what was never measured again (a todo left behind would read as queued and never be measured).
+ */
+function useBounds(rec, delta) {
+  rec.users = Math.max(0, rec.users + delta);
+  if (rec.users > 0) return;
+  const i = boundsQueue.indexOf(rec);
+  if (i >= 0) boundsQueue.splice(i, 1);
+  rec.todo.length = 0;
+  rec.job = null;
+  rec.skel = null;
 }
 
 /**
@@ -240,8 +260,10 @@ export function stepClipBounds(budgetMs = CLIP_BOUNDS_BUDGET_MS) {
     if (!rec.job) {
       const name = rec.todo.shift();
       if (name === undefined) { boundsQueue.shift(); rec.skel = null; continue; }
-      try { rec.job = startClip(rec, name); } catch { rec.job = null; }
-      if (!rec.job) { rec.rects.set(name, null); finished++; continue; }
+      let broken = false;
+      try { rec.job = startClip(rec, name); } catch { rec.job = null; broken = true; }
+      // no such clip: it never plays (null); a clip that could not be set up: not measurable (false)
+      if (!rec.job) { rec.rects.set(name, broken ? false : null); finished++; continue; }
     }
     const j = rec.job;
     try {
@@ -255,9 +277,10 @@ export function stepClipBounds(budgetMs = CLIP_BOUNDS_BUDGET_MS) {
         posed++;
         if (nowMs() >= end) break;
       }
-    } catch { j.i = j.n + 1; j.r = emptyRect(); }
+    } catch { j.i = j.n + 1; j.broken = true; }
     if (j.i > j.n) {
-      rec.rects.set(j.name, rectOk(j.r) ? j.r : null);
+      // a pose that threw: the clip is not measurable (false) — drawn directly while it plays, not taken as empty
+      rec.rects.set(j.name, j.broken ? false : rectOk(j.r) ? j.r : null);
       rec.job = null;
       finished++;
     }
@@ -804,8 +827,10 @@ export class SpineActor {
     // left in its setup pose, which no clip shows and the impostor box does not cover (GitHub #542: 隐现's Back model
     // stands 900 units to the right of its feet in the setup pose)
     if (!this.frozen || !this._posed) {
-      try { this.spine.update(this.frozen ? 0 : dt); } catch { /* a broken skeleton must not stop the frame */ }
-      this._posed = true;
+      try {
+        this.spine.update(this.frozen ? 0 : dt);
+        this._posed = true;               // (a first update that threw is tried again: no setup pose left on screen)
+      } catch { /* a broken skeleton must not stop the frame */ }
     }
     if (this.clipped && !this.clipOn) this._eyeMaskFallback();
     this._applied = true;
@@ -863,8 +888,9 @@ export class SpineActor {
 
   /**
    * Skeleton-space bounds of clips `names` ("clip bounds" above; render/units.js _impBox): a Map name → rect (null: draws
-   * nothing / no such clip) once every clip is sampled; null while some still wait — they are queued here and
-   * render/app.js samples them (stepClipBounds); false when this runtime cannot be posed off-screen (a test double).
+   * nothing / no such clip; false: its sampling threw, not measurable) once every clip is sampled; null while some still
+   * wait — they are queued here and render/app.js samples them (stepClipBounds); false when this runtime cannot be posed
+   * off-screen (a test double). The actor counts as a user of its skeleton's record until it is destroyed.
    * @param {string[]} names
    */
   clipBounds(names) {
@@ -874,6 +900,11 @@ export class SpineActor {
     let rec = boundsOf.get(data);
     if (!rec || names.some((n) => !rec.rects.has(n))) rec = requestClipBounds(data, sp.skeleton && sp.skeleton.constructor, names);
     if (rec.failed) return false;
+    if (this._bounds !== rec) {
+      if (this._bounds) useBounds(this._bounds, -1);
+      this._bounds = rec;
+      useBounds(rec, 1);
+    }
     const clips = new Map();
     for (const n of names) {
       if (!rec.rects.has(n)) return null;
@@ -890,6 +921,7 @@ export class SpineActor {
   }
 
   destroy() {
+    if (this._bounds) { useBounds(this._bounds, -1); this._bounds = null; }   // the last user gone: its queue entry goes
     try { this.spine.destroy({ children: true, texture: false, baseTexture: false }); } catch { /* ignore */ }
     this.spine = null;
   }

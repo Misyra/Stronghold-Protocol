@@ -518,19 +518,23 @@ export function pluginIndexOf(plugins, { app = APP_VERSION, vanilla = null } = {
   return buildPluginIndex(plugins, { app, vanilla });
 }
 
-/** What changes when a pack or plugin is added, removed or edited: names, sizes and times of the files the scan reads. */
+/**
+ * What changes when a pack or plugin is added, removed or edited: names, sizes and times of the files the scan reads —
+ * for a plugin's files their whole stat identity (statIdentity: also the inode and ctime, so a file rewritten with its
+ * old size and mtime put back is noticed by the folders' own check, not only when a page asks for it at /p/).
+ */
 function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   const parts = [];
-  const add = (dir, depth, tag, namesOnly = false) => {
+  const add = (dir, depth, tag, namesOnly = false, identity = false) => {
     for (const n of readDirSorted(dir)) {
       const abs = path.join(dir, n);
       let st;
       try { st = fs.statSync(abs); } catch { continue; }
       if (st.isDirectory()) {
-        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`); }
+        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`, namesOnly, identity); }
         continue;
       }
-      parts.push(namesOnly ? `${tag}${n}` : `${tag}${n}:${st.size}:${Math.floor(st.mtimeMs)}`);
+      parts.push(namesOnly ? `${tag}${n}` : identity ? `${tag}${n}:${st.size}:${st.mtimeMs}:${st.ino}:${st.ctimeMs}` : `${tag}${n}:${st.size}:${Math.floor(st.mtimeMs)}`);
     }
   };
   add(path.join(publicDir, LANG_DIR), 0, 'u:');
@@ -539,7 +543,7 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   // a cosmetic plugin's art sits deeper (spine/<model>/front/…): six levels below plugins/; the art manifest its
   // references name counts too (a setup run that rewrote it while the server runs)
   if (pluginsDir) {
-    add(pluginsDir, 6, 'x:');
+    add(pluginsDir, 6, 'x:', false, true);
     try { const st = fs.statSync(path.join(dataDir, 'assets.json')); parts.push(`a:${st.size}:${Math.floor(st.mtimeMs)}`); } catch { /* none */ }
   }
   return parts.join('\n');

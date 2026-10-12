@@ -269,7 +269,8 @@ change, and when `data/assets.json` changes): its shape, files, references — w
 manifest at most 2 MB [ASSUMED] — and permissions, the lock — a problem keeps it out like any other — and hashes the
 files that shape it (SHA-256, kept by path while a file keeps its size, mtime, inode and ctime: a rescan reads only what
 changed, and a file rewritten with its old size and mtime put back — `rsync -t`, `touch -r` — is read again, its ctime
-gives it away) [ASSUMED: at scan, a 200 MB plugin costs about a second once].
+gives it away; the folders' own check looks at the same four, so such a rewrite is noticed without a request for it)
+[ASSUMED: at scan, a 200 MB plugin costs about a second once].
 
 **The visual hash.** A set of cosmetic plugins in load order is named by
 `vs = sha256(canonical({ v: 2, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files, writes }] }))`,

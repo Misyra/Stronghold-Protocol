@@ -331,35 +331,67 @@ describe('the visual sets of a server', () => {
   });
 
   test('a file rewritten with its old size and mtime put back (rsync -t, touch -r) is no longer the hashed one: no-cache, a rescan, then a new vs', async () => {
-    const file = path.join(root, 'plugins', 'blue', 'blue.png');
-    const T = new Date(Math.floor(Date.now() / 1000) * 1000 - 60000);
+    // a registry that trusts its last look for a while (the server's own: 1 s) — the request itself finds the change
+    const dirs = { publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins') };
+    const slow = createPluginRegistry(dirs, { recheckMs: 600000 });
+    const slowSets = createVisualSets({ registry: slow });
+    const serve = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: slow, visual: slowSets });
+    const s2 = http.createServer((req, res) => { const u = splitUrl(req.url); serve(req, res, u.rawPath, u.query).catch(() => res.destroy()); });
+    await new Promise((r) => s2.listen(0, '127.0.0.1', r));
+    const getFrom = (p) => new Promise((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port: s2.address().port, path: p, agent: false }, (res) => {
+        const chunks = []; res.on('data', (c) => chunks.push(c)); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      }).on('error', reject);
+    });
+    try {
+      const file = path.join(root, 'plugins', 'blue', 'blue.png');
+      const T = new Date(Math.floor(Date.now() / 1000) * 1000 - 60000);
+      fs.utimesSync(file, T, T);
+      slow.rescan();
+      const scanned = slow.plugin('blue').visual.served.get('blue.png');
+      assert.equal(scanned.mtimeMs, T.getTime(), 'the scan recorded that mtime');
+      const set0 = slowSets.resolve(['blue']).set;
+      // other pixels of the same size (a deflated PNG's length depends on its pixels)
+      let bytes = null;
+      for (let c = 1; c < 255 && !bytes; c++) { const b = png(4, 4, [0, 0, c, 255]); if (b.length === scanned.bytes && sha(b) !== scanned.sha256) bytes = b; }
+      assert.ok(bytes, 'a PNG of the same size');
+      fs.writeFileSync(file, bytes);
+      fs.utimesSync(file, T, T);
+      assert.deepEqual([fs.statSync(file).size, fs.statSync(file).mtimeMs], [scanned.bytes, scanned.mtimeMs], 'size and mtime as scanned');
+      assert.notEqual(sha(bytes), scanned.sha256);
+      let noted = 0;
+      slowSets.noteChanged = () => { noted++; };
+      const r = await getFrom(`/p/blue/${scanned.sha256.slice(0, 8)}/blue.png`);
+      assert.deepEqual([r.status, r.headers['cache-control']], [200, 'no-cache'], 'never immutable: its ctime (and maybe inode) changed');
+      assert.notEqual(r.headers.etag, `"${scanned.sha256.slice(0, 16)}"`, 'never the old content hash as its ETag');
+      assert.equal(sha(r.body), sha(bytes), 'the current bytes');
+      assert.equal(noted, 1, 'the registry is asked to read the folders again');
+      slow.rescan();
+      const now = slow.plugin('blue').visual.served.get('blue.png');
+      assert.equal(now.sha256, sha(bytes), 'hashed again, though its size and mtime look unchanged');
+      assert.notEqual(slowSets.resolve(['blue']).set.vs, set0.vs, 'another vs');
+      assert.equal((await getFrom(`/p/blue/${now.sha256.slice(0, 8)}/blue.png`)).headers['cache-control'], 'public, max-age=31536000, immutable');
+    } finally {
+      await new Promise((r) => s2.close(r));
+      registry.rescan();
+    }
+  });
+
+  test('a quiet rewrite (size and mtime put back) is noticed by the folders\' own check — no /p/ request needed', () => {
+    const file = path.join(root, 'plugins', 'mine', 'm.png');
+    const T = new Date(Math.floor(Date.now() / 1000) * 1000 - 90000);
     fs.utimesSync(file, T, T);
     registry.rescan();
-    const scanned = registry.plugin('blue').visual.served.get('blue.png');
-    assert.equal(scanned.mtimeMs, T.getTime(), 'the scan recorded that mtime');
-    const set0 = visual.resolve(['blue']).set;
-    // other pixels of the same size (a deflated PNG's length depends on its pixels)
+    const before = registry.plugin('mine').visual.served.get('m.png');
     let bytes = null;
-    for (let c = 1; c < 255 && !bytes; c++) { const b = png(4, 4, [0, 0, c, 255]); if (b.length === scanned.bytes && sha(b) !== scanned.sha256) bytes = b; }
+    for (let c = 1; c < 255 && !bytes; c++) { const b = png(4, 4, [c, 9, 9, 255]); if (b.length === before.bytes && sha(b) !== before.sha256) bytes = b; }
     assert.ok(bytes, 'a PNG of the same size');
     fs.writeFileSync(file, bytes);
     fs.utimesSync(file, T, T);
-    assert.deepEqual([fs.statSync(file).size, fs.statSync(file).mtimeMs], [scanned.bytes, scanned.mtimeMs], 'size and mtime as scanned');
-    assert.notEqual(sha(bytes), scanned.sha256);
-    let noted = 0;
-    const note = visual.noteChanged;
-    visual.noteChanged = () => { noted++; };
-    let r;
-    try { r = await get(`/p/blue/${scanned.sha256.slice(0, 8)}/blue.png`); } finally { visual.noteChanged = note; }
-    assert.deepEqual([r.status, r.headers['cache-control']], [200, 'no-cache'], 'never immutable: its ctime (and maybe inode) changed');
-    assert.notEqual(r.headers.etag, `"${scanned.sha256.slice(0, 16)}"`, 'never the old content hash as its ETag');
-    assert.equal(sha(r.body), sha(bytes), 'the current bytes');
-    assert.equal(noted, 1, 'the registry is asked to read the folders again');
-    registry.rescan();
-    const now = registry.plugin('blue').visual.served.get('blue.png');
-    assert.equal(now.sha256, sha(bytes), 'hashed again, though its size and mtime look unchanged');
-    assert.notEqual(visual.resolve(['blue']).set.vs, set0.vs, 'another vs');
-    assert.equal((await get(`/p/blue/${now.sha256.slice(0, 8)}/blue.png`)).headers['cache-control'], 'public, max-age=31536000, immutable');
+    // no rescan(), no request: the registry's look at its folders (here on every call: recheckMs 0) sees the new ctime
+    const now = registry.plugin('mine').visual.served.get('m.png');
+    assert.equal(now.sha256, sha(bytes), 'hashed again');
+    assert.notEqual(registry.plugin('mine').visual.vs, null);
   });
 
   test('the compressed-body cache tells a file rewritten with its old size and mtime from the old one (its inode, its ctime)', async () => {

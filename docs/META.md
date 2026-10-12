@@ -566,7 +566,7 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   `min(shopLevel + 1, 6)`, so a tier-5 自选 piece can appear when the 调度中心 reaches 4 and a tier-6 piece when it
   reaches 5 — one shop level before the ordinary shop, and not guaranteed. 卫戍协议/帮助 干员晋升 names one refresh one
   tier above the 调度中心 and no separate pool; the owner decided on 2026-10-12 that the refresh includes 自选 of that
-  tier (0.2.0 had [ASSUMED] the shop-level gate for the reward too, DESIGN §25; §30.20 reverses it). An effect, reward
+  tier (0.2.0 had [ASSUMED] the shop-level gate for the reward too, DESIGN §25; §30.23 reverses it). An effect, reward
   pool or 机变 card that grants the player a random operator draws its stock too
   (effectsMeta `rollChess` / `rollPool`, the 驰援 fallback in choices.js: `ps.diyStockEntries()` — the roll's own tier
   rules, no 调度中心 gate, bonds through the player's view; 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」, 0.2.0), and

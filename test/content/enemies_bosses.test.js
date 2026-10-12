@@ -72,7 +72,7 @@ test('stats-only enemies attach no ability and fight with their data stats', () 
 
 // 萨卡兹枯朽战士 / 组长's PollutedDie is silenced even though the handbook line is NORMAL and the PRTS / in-game text
 // says 「不可沉默」. The owner's official-play recall of 2026-10-12 (GitHub #470) is that a death while silenced
-// creates no fog. Only these two keys share that ability (DESIGN §30.20; 0.2.0's client-template reading is §25.18.2).
+// creates no fog. Only these two keys share that ability (DESIGN §30.23; 0.2.0's client-template reading is §25.18.2).
 const SILENCE_BY_TEMPLATE = new Set(['enemy_1267_nhpbr', 'enemy_1267_nhpbr_2']);
 
 test('沉默: exactly the abilities whose handbook line is SILENCE-flagged can be silenced (every authored enemy), plus 萨卡兹枯朽战士 / 组长\'s death fog', () => {

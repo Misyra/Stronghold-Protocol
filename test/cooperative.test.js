@@ -43,7 +43,7 @@ test('real schedulers cancel queued CPU work on timer cancellation and disposal'
 
 function manualWork(sched) {
   const jobs=new Map(),clear=sched.clearTimeout.bind(sched);
-  sched.setWork=(fn)=>{const h={};jobs.set(h,fn);return h;};
+  Object.defineProperty(sched, 'setWork', { configurable: true, value: (fn)=>{const h={};jobs.set(h,fn);return h;} });
   sched.clearTimeout=(h)=>{if(!jobs.delete(h))clear(h);};
   return { jobs, step() { const [h,fn]=jobs.entries().next().value; jobs.delete(h);fn(); },
     drain() { let n=0;while(jobs.size){if(++n>10000)assert.fail('work did not drain');this.step();}return n; } };
@@ -79,7 +79,7 @@ test('laterWork includes guarded state flushes, tracks cancellation and preserve
 });
 
 test('real Bot generator split across queued continuations preserves economy, inventory, layout and RNG', (t) => {
-  const a=prep(t),b=prep(t);const work=manualWork(b.sched);
+  const a=prep(t),b=prep(t);const work=manualWork(b.m.sched);
   a.m.scheduleBotPrep(a.m.order[0]);a.sched.advance(0);
   b.m.scheduleBotPrep(b.m.order[0]);b.sched.advance(0);
   assert.equal(b.m.order[0].ready,false);assert.ok(work.jobs.size>0);
@@ -88,7 +88,7 @@ test('real Bot generator split across queued continuations preserves economy, in
 });
 
 test('queued Bot work checks phase/token again and disposal releases pending callbacks', (t) => {
-  const h=prep(t),work=manualWork(h.sched);h.m.scheduleBotPrep(h.m.order[0]);h.sched.advance(0);
+  const h=prep(t),work=manualWork(h.m.sched);h.m.scheduleBotPrep(h.m.order[0]);h.sched.advance(0);
   const before=matchState(h.m);h.m.phase='COMBAT';work.drain();h.m.phase='PREP';
   assert.deepEqual(matchState(h.m),before);
   h.m.scheduleBotPrep(h.m.order[0]);h.sched.advance(0);assert.ok(work.jobs.size>0);
@@ -96,7 +96,7 @@ test('queued Bot work checks phase/token again and disposal releases pending cal
 });
 
 test('Worker-selected Bot end is queued, then ignores a result from an older prep token', async (t) => {
-  const h=prep(t),work=manualWork(h.sched),ps=h.m.order[0];let resolve;
+  const h=prep(t),work=manualWork(h.m.sched),ps=h.m.order[0];let resolve;
   h.m.botRehearsal=1;
   h.m.workerPool={submit:()=>({promise:new Promise(yes=>{resolve=yes;}),cancel(){}})};
   h.m.scheduleBotPrep(ps);h.sched.advance(0);work.drain();assert.equal(typeof resolve,'function');
@@ -111,7 +111,7 @@ function combat(t) {
 }
 
 test('bounded local takeover uses queued work; cancellation drops stale slices; output stays exact', (t) => {
-  const h=combat(t),m=h.m,f=m.fields[0],work=manualWork(h.sched);
+  const h=combat(t),m=h.m,f=m.fields[0],work=manualWork(m.sched);
   const expected=runHeadless(createBattleFromSpec(f.spec,m.ds),{players:f.players}).result;
   m._runOnServer(f,'test',{local:true});assert.ok(f.sliceTimer);assert.ok(work.jobs.has(f.sliceTimer));
   m._clearFieldTimers(f);assert.equal(work.jobs.size,0);assert.equal(f.job,null);assert.equal(f.result,null);
@@ -120,7 +120,7 @@ test('bounded local takeover uses queued work; cancellation drops stale slices; 
 });
 
 test('strict local verification queues slices, holds paused results and cancels replaced fields', (t) => {
-  const h=combat(t),m=h.m,f=m.fields[0],work=manualWork(h.sched);m.verifyMode='all';
+  const h=combat(t),m=h.m,f=m.fields[0],work=manualWork(m.sched);m.verifyMode='all';
   const result=compactResult(runHeadless(createBattleFromSpec(f.spec,m.ds),{players:f.players}).result);
   m.handle('p_0',{t:'b.result',battleId:f.battleId,result});assert.ok(work.jobs.has(f.verifyTimer));
   m._clearFieldTimers(f);assert.equal(work.jobs.size,0);assert.equal(f.result,null);

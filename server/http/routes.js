@@ -9,7 +9,7 @@
 //   * GET /metrics → fresh detailed health plus bounded WebSocket latency diagnostics;
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
-//     network and never a room listing; no other /api/rooms route exists;
+//     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);
 //   * GET /api/announcement → the hot-loaded maintenance notice and the server time (no write API);
 //   * everything else → the static files (static.js).
 // A route that throws is logged and answers 500.
@@ -42,6 +42,8 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
     assetsCdnVersion: cdn?.version || null,
     assetsManifest: assetsManifest?.tag || null,
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+    roomProtection: lobby.roomActions.stats(),
+    rehearsalPressure: network.diagnostics?.rehearsalPressure?.stats() || null,
     workers: workerPool?.stats() || null,
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
     memory: process.memoryUsage(),
@@ -143,7 +145,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
       sendJson(req, res, 200, { ok: true });
       return;
     }
-    // No collection route: even malformed /api/rooms requests consume the lookup budget.
+    // Even malformed public /api/rooms requests consume the lookup budget.
     if (parts.rawPath === '/api/rooms' || parts.rawPath.startsWith('/api/rooms/')) {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
       if (allowStatus && !allowStatus(req)) {

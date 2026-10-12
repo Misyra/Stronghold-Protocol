@@ -501,8 +501,9 @@ synthetic fingerprints. Brackets in resource paths use `%5B`/`%5D` consistently 
 keys and ZIP identities; legacy raw-bracket packages and cached responses remain readable.
 Adapted from xinhai-ai/Stronghold-Protocol commit `a94c720`.
 
-The title screen and settings open one resource manager. Each page visit automatically starts background preloading
-after app boot, including profiles with an older disabled `preload` setting. It downloads required
+The title screen and settings open one resource manager. Preloading is off by default; after app boot the page resumes
+background preloading only when the saved `preload` setting is enabled, and a saved pause survives page reloads.
+It downloads required
 visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
 effects, music and tutorial illustrations and is checked by default. The choice persists in `preloadOptional`;
 profiles without a saved choice default to true, while explicit saved choices are retained.
@@ -510,8 +511,9 @@ The manager exposes Chinese/Japanese buttons synchronized with the game's `voice
 the separate `preloadAllVoices` checkbox opts into both languages and is disabled when optional preloading is off.
 Switching language downloads only missing voices. Other cached languages remain available and exportable, and
 ZIP imports may still restore every language.
-Closing the manager keeps downloads running; pausing or disabling preload stops this visit's downloads and keeps
-verified files. The next page visit resumes automatically and reuses verified files. Cache clearing waits
+Closing the manager keeps downloads running; pausing stops this visit's downloads and keeps verified files, while
+disabling preload persists as well, so later page visits stay paused until it is enabled again. When the setting is
+enabled, the next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
 Each preload fetch has a 30-second deadline covering both headers and the complete response body, with at most two

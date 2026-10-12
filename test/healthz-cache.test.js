@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHealthBody, createRequestHandler } from '../server/http/routes.js';
 import { startServer } from '../server/index.js';
+import { RoomActionLimiter } from '../server/roomProtection.js';
 
 function fixture() {
   let scans = 0, workerScans = 0, bufferScans = 0;
@@ -9,7 +10,7 @@ function fixture() {
   const health = { startedAt: Date.now() - 10000, registry: { size: 4 },
     network: { connectionCount: 4, bufferedBytes() { bufferScans++; return { total: 12, max: 8 }; },
       diagnostics: { stats: () => ({ marker: 'live' }) } },
-    lobby: { rooms: new Map([['room', {}]]), matchmaking: { entries: new Map() }, stats() { scans++; return { ...counts }; } },
+    lobby: { rooms: new Map([['room', {}]]), roomActions: new RoomActionLimiter(), matchmaking: { entries: new Map() }, stats() { scans++; return { ...counts }; } },
     workerPool: { stats() { workerScans++; return { size: 2, completed: workerScans }; } },
     serveStatic: { version: 'code-tag', runtimeVersion: 'runtime-tag', artVersion: 'art-tag', cacheStats: () => ({ gzipBytes: 9 }) },
     cdn: { base: 'https://assets.example', version: 'cdn-tag' }, assetsManifest: { tag: 'manifest-tag' },
@@ -35,6 +36,7 @@ test('health: 10000 stable reads reuse one full collection and encoding; detaile
   assert.equal(report.runtimeVersion, 'runtime-tag');
   assert.equal(report.assetsCdnVersion,'cdn-tag'); assert.equal(report.assetsManifest,'manifest-tag');
   assert.ok(report.memory.rss>0); assert.ok(report.wire.byType);
+  assert.equal(report.roomProtection.createDenied, 0);
   assert.deepEqual(report.socketBuffers,{total:12,max:8});
   assert.equal(report.persist.backend,'file'); assert.equal(report.persist.workerMemory.heapUsed,42);
   assert.equal(report.staticCache.gzipBytes,9); assert.equal(report.workers.size,2);

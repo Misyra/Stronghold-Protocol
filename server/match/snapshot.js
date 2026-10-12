@@ -243,7 +243,7 @@ export function captureMatch(m) {
   if (doc.sp && typeof doc.sp === 'object' && 'turnDeadline' in doc.sp) doc.sp = { ...doc.sp, turnDeadline: 0 };
   // the phase clock travels as *remaining* time: the match is frozen while the server is down
   const clocks = {
-    deadlineRemainingMs: m.deadline > 0 ? Math.max(0, Math.round(m.deadline - now)) : 0,
+    deadlineRemainingMs: m.deadline > 0 ? Math.max(0, Math.round(m.deadline - (m.offlinePaused ? m._offlineAt : now))) : 0,
     startedAtAgoMs: Math.max(0, Math.round(now - (Number(m.startedAt) || now))),
   };
   // the shared pool: only the remaining copies live in the checkpoint (cap/tier are data-derived)
@@ -317,6 +317,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
 
   const now = m.sched.now();
   for (const k of MATCH_FIELDS) if (k !== 'round' && Object.hasOwn(doc, k)) m[k] = k === 'aiPicksLast' ? doc[k] === true : decodeState(doc[k]);
+  m.botRehearsal = Math.min(m.botRehearsal, m.botRehearsalLimit ?? 8);
   m.round = Number(doc.round) || 0;
   m.phase = doc.phase;
   m.ended = false;

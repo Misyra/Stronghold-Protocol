@@ -78,8 +78,11 @@ function fuzzOne(seed, { fake }) {
     }
     if (step % 20 === 0) checkInvariants(m);
   }
-  // finish the match: everyone left on AI 托管
-  for (const ps of m.players.values()) if (!ps.isBot && !ps.left) m.handle(ps.playerId, { t: 'g.autoplay', on: true });
+  // Reconnect remaining humans before finishing: unattended matches intentionally suspend now.
+  for (const ps of m.players.values()) if (!ps.isBot && !ps.left) {
+    m.onReconnect(ps.playerId);
+    m.handle(ps.playerId, { t: 'g.autoplay', on: true });
+  }
   h.drive(() => h.ended != null);
   assert.ok(h.ended, `seed ${seed}: match did not end (${m.phase} R${m.round})`);
   assert.equal(h.endedCount, 1);

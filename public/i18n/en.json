@@ -26,6 +26,7 @@
   "模拟已结束": "Simulation Over",
   "同盟已过期": "The Alliance has expired",
   "服务器维护中，同盟已关闭": "Server maintenance in progress. The Alliance has been closed.",
+  "管理员已关闭该同盟": "An administrator closed this Alliance.",
   "该身份已在其他页面登录，本页已断开": "This identity signed in on another page. This page has been disconnected.",
   "同盟已关闭：{reason}": "Alliance closed: {reason}",
   "同盟已关闭": "Alliance closed",

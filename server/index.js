@@ -43,7 +43,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
@@ -61,6 +61,7 @@ import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
+import { listenRoomAdmin, loadRoomLimit } from './roomAdmin.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
 export {
@@ -83,6 +84,8 @@ export {
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   workers?: number, roomWorkers?: number, workerQueue?: number, workerTimeoutMs?: number,
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
+ *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, roomCreateBurst?: number, roomCreateRefillMs?: number,
+ *   matchStartBurst?: number, matchStartRefillMs?: number,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -96,7 +99,21 @@ export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
+  const roomAdminToken = roomAdminTokenFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
+  const lobbyOptions = lobbyOptionsFrom(opts);
+  const roomAdminStateFile = path.resolve(opts.roomAdminStateFile ?? process.env.SP_ROOM_ADMIN_STATE_FILE ?? path.join(ROOT, '.state', 'room-admin.json'));
+  for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
+    const relative = path.relative(path.resolve(root), roomAdminStateFile);
+    if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))
+      throw new Error('SP_ROOM_ADMIN_STATE_FILE 不能位于公开静态目录');
+  }
+  let savedRoomLimit = null;
+  if (roomAdminToken) {
+    try { savedRoomLimit = await loadRoomLimit(roomAdminStateFile); }
+    catch (error) { log.error('[room-admin] saved room limit unavailable; using startup configuration', error); }
+  }
+  lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomLimit ?? lobbyOptions.maxRooms ?? 1000;
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
@@ -124,7 +141,7 @@ export async function startServer(opts = {}) {
         maxQueue: workerConfig.maxQueue, timeoutMs: workerConfig.timeoutMs })
       : new SimulationPool({ data, ...workerConfig }))
     : null) : opts.workerPool;
-  const { registry, lobby, network } = createSessionStack({ ...opts, workerPool }, { data, log, chatLog });
+  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, workerPool }, { data, log, chatLog });
   // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
@@ -204,7 +221,7 @@ export async function startServer(opts = {}) {
   const wss = attachWebSocket(server, { network, log, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
-  let boundHost;
+  let boundHost, roomAdmin = null;
   try {
     // A host with IPv6 switched off refuses '::'. Fall back to IPv4 rather than not booting. Only the default is
     // retried: an explicit HOST is literal (server/http/config.js bindCandidates).
@@ -232,7 +249,14 @@ export async function startServer(opts = {}) {
     }
     if (bound === null) throw lastError;
     boundHost = bound;
+    try {
+      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken,
+        port: opts.roomAdminPort ?? (process.env.SP_ROOM_ADMIN_PORT ? Number(process.env.SP_ROOM_ADMIN_PORT) : 3001),
+        stateFile: roomAdminStateFile, log });
+    } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }
   } catch (e) {
+    await roomAdmin?.close().catch(() => {});
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
     network.close(); // stop heartbeat/sweep timers of the half-built server
     persister?.stop();
     lobby.shutdown('shutdown');
@@ -271,13 +295,14 @@ export async function startServer(opts = {}) {
         server.closeIdleConnections?.();
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
+      await roomAdmin?.close();
       try { wss.close(); } catch { /* ignore */ }
       await store?.close();
     })();
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, workerPool, store, persister, chatLog, close };
+  return { port: actualPort, host: boundHost, url, roomAdminUrl: roomAdmin?.url || null, server, wss, lobby, network, registry, packs, workerPool, store, persister, chatLog, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

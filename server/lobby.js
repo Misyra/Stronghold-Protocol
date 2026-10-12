@@ -111,6 +111,7 @@ import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { N_ } from '../shared/i18n.js';
+import { RoomActionLimiter } from './roomProtection.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -122,6 +123,10 @@ export const LOBBY_DEFAULTS = Object.freeze({
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
   maxMatchesPerAddr: 8,   // matches started from one client network that may run at once (0 = unlimited)
+  roomCreateBurst: 4,
+  roomCreateRefillMs: 15000,
+  matchStartBurst: 4,
+  matchStartRefillMs: 30000,
   resyncMinGapMs: 1000,   // heavy resyncs (match state / result replay) per session at most this often on repeated hellos
   soloReconnectWindowMs: null, // a dropped solo run stays resumable this long (null = data singleReconnectTime, 24 h)
 });
@@ -274,6 +279,9 @@ export class Lobby {
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
     this.opts.chatEnabled = chatEnabled(options.chatEnabled ?? false);
+    this.roomActions = new RoomActionLimiter({ now, createBurst: this.opts.roomCreateBurst,
+      createRefillMs: this.opts.roomCreateRefillMs, startBurst: this.opts.matchStartBurst,
+      startRefillMs: this.opts.matchStartRefillMs });
     /** @type {Map<string, Room>} */
     this.rooms = new Map();
     /** @type {Map<string, NodeJS.Timeout>} lobby grace timers by playerId */
@@ -295,18 +303,40 @@ export class Lobby {
     return room && !room.disposed ? roomStatus(room, this.now()) : null;
   }
 
+  audit(action, session, room = null, extra = {}) {
+    this.log.info('[audit] ' + JSON.stringify({ at: new Date(this.now()).toISOString(), action,
+      ip: session?.addr || null, network: session?.limitKey || null,
+      playerId: session?.playerId || null, name: session?.name || null,
+      roomCode: room?.code || null,
+      ...(room ? { roomCreatedAt: room.createdAt, matchCount: room.matchCount, mode: room.mode,
+        difficulty: room.difficulty, bots: room.seats.filter((s) => s?.isBot && !s.left).length } : {}), ...extra }));
+  }
+
+  denyRoomAction(session, action, room, reason) {
+    const suppressed = this.roomActions.denied(session?.limitKey, action);
+    if (suppressed !== null) this.audit(action === 'create' ? 'room.create.denied' : 'match.start.denied',
+      session, room, { reason, suppressed });
+  }
+
+  allowRoomAction(session, action, room = null) {
+    if (this.roomActions.take(session?.limitKey, action)) return true;
+    this.denyRoomAction(session, action, room, 'action_budget');
+    return false;
+  }
+
   /** Counters for /healthz. */
   stats() {
-    let matches = 0;
+    let matches = 0, offlinePausedMatches = 0;
     let humans = 0;
     let bots = 0;
     let spectators = 0;
     for (const r of this.rooms.values()) {
       if (r.match) matches++;
+      if (r.match?.offlinePaused) offlinePausedMatches++;
       for (const s of r.seats) if (s && !s.left) (s.isBot ? bots++ : humans++);
       spectators += r.spectators.length;
     }
-    return { rooms: this.rooms.size, matches, humans, bots, spectators };
+    return { rooms: this.rooms.size, matches, humans, bots, spectators, offlinePausedMatches };
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -390,6 +420,7 @@ export class Lobby {
 
   /** The session's socket closed. @param {import('./net.js').Session} session */
   onDisconnect(session) {
+    this.audit('session.disconnected', session, this.roomOf(session));
     if (this.matchmaking.has(session)) session.matchmakingCancelledOnDisconnect = true;
     this.matchmaking.cancel(session, false);
     this.clearResync(session.playerId); // the next resume resyncs immediately
@@ -443,12 +474,13 @@ export class Lobby {
       // The room being left disappears with this create when the creator is its only human (a spectator is none).
       const leaving = cur && cur.ownerKey === key && cur.activeHumans().length === 1 && !cur.spectatorOf(session.playerId) ? 1 : 0;
       if (this.countRooms((r) => r.ownerKey === key) - leaving >= this.opts.maxRoomsPerAddr) {
-        this.limitWarn(`room limit (${this.opts.maxRoomsPerAddr}) reached for ${session.addr}`);
+        this.denyRoomAction(session, 'create', cur, 'network_room_limit');
         return fail(ERR.RATE, 'too many rooms from your network');
       }
     }
     const code = this.genCode();
     if (!code) return fail(ERR.INTERNAL, 'no room code available');
+    if (!this.allowRoomAction(session, 'create', cur)) return fail(ERR.RATE, 'room creation rate exceeded');
     if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now());
@@ -460,6 +492,7 @@ export class Lobby {
     session.notice = null;
     session.pendingResult = null;
     this.log.info(`[lobby] ${code} created (${mode}/${difficulty}) by ${session.name}`);
+    this.audit('room.created', session, room, { mode, difficulty });
     this.broadcastState(room);
     return OK;
   }
@@ -484,6 +517,7 @@ export class Lobby {
     session.notice = null;
     session.pendingResult = null;
     if (!room.hostId) room.hostId = session.playerId;
+    this.audit('room.joined', session, room);
     this.broadcastState(room);
     return OK;
   }
@@ -574,6 +608,10 @@ export class Lobby {
     let result;
     try { result = this.start(this.registry.byId(room.hostId)); } catch { result = fail(ERR.INTERNAL); }
     if (result.ok) {
+      for (let i = 0; i < group.length; i++) if (origins[i] !== room) {
+        if (origins[i]) this.audit('room.left', group[i], origins[i], { reason: 'merged' });
+        this.audit('room.joined', group[i], room, { reason: 'merged', sourceRoomCode: origins[i]?.code || null });
+      }
       for (const source of parties.slice(1)) this.disposeRoom(source, 'merged');
     } else {
       Object.assign(room, previous);
@@ -700,6 +738,7 @@ export class Lobby {
     let playerId;
     do playerId = 'ai_' + randomBytes(4).toString('hex'); while (room.seatOf(playerId));
     room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false };
+    this.audit('room.botAdded', session, room, { botPlayerId: playerId, seat: idx });
     this.broadcastState(room);
     return OK;
   }
@@ -713,6 +752,7 @@ export class Lobby {
     const target = room.seats[seat];
     if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
     room.seats[seat] = null;
+    this.audit('room.botRemoved', session, room, { botPlayerId: target.playerId, seat });
     this.broadcastState(room);
     return OK;
   }
@@ -757,7 +797,7 @@ export class Lobby {
     }
     const key = session.limitKey || null;
     if (key && this.opts.maxMatchesPerAddr > 0 && this.countRooms((r) => !!r.match && r.matchKey === key) >= this.opts.maxMatchesPerAddr) {
-      this.limitWarn(`match limit (${this.opts.maxMatchesPerAddr}) reached for ${session.addr}`);
+      this.denyRoomAction(session, 'start', room, 'network_match_limit');
       return fail(ERR.RATE, 'too many running matches from your network');
     }
     return this.startMatch(room, key);
@@ -941,6 +981,8 @@ export class Lobby {
   }
 
   startMatchWith(room, key, checkpoint) {
+    const starter = this.registry.byId(room.hostId);
+    if (!checkpoint && !this.allowRoomAction(starter, 'start', room)) return fail(ERR.RATE, 'match start rate exceeded');
     const host = room.seatOf(room.hostId);
     if (host && !checkpoint) host.ready = true;
     const seats = checkpoint
@@ -986,12 +1028,14 @@ export class Lobby {
         matchNo,
         data: this.safeData(),
         workerPool: this.workerPoolFor(room.code),
+        rehearsalPressure: this.rehearsalPressure,
         log: this.log,
         now: this.now,
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),
         broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
         onCheckpoint: (m) => this.onCheckpoint?.(room.code, m),
+        onAudit: (action, extra) => this.audit(action, this.registry.byId(room.hostId), room, extra),
       });
       ctx.match = match;
       if (checkpoint) {
@@ -1005,6 +1049,8 @@ export class Lobby {
         room.matchCtx = ctx;
         room.matchKey = key;
         room.replay = null;
+        match.syncOfflinePause?.();
+        this.audit('match.restored', starter, room, { round: match.round, phase: match.phase });
         this.log.info(`[lobby] ${room.code} match #${room.matchCount} restored (${room.mode}/${room.difficulty}, round ${match.round}, ${match.phase})`);
         this.broadcastState(room);
         this.onCheckpoint?.(room.code, match);
@@ -1017,6 +1063,8 @@ export class Lobby {
       room.matchCount++;
       room.chatMessages = [];
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting (${room.mode}/${room.difficulty}, ${seats.length} seats, seed ${seed})`);
+      this.audit('match.started', starter, room, { matchCount: room.matchCount,
+        mode: room.mode, difficulty: room.difficulty, bots: seats.filter((s) => s.isBot).length });
       this.broadcastState(room);
       match.start();
       this.onCheckpoint?.(room.code, match);
@@ -1041,6 +1089,7 @@ export class Lobby {
     room.replay = this.buildReplay(room, ctx);
     setImmediate(() => this.disposeMatchCtx(ctx));
     this.log.info(`[lobby] ${room.code} match #${room.matchCount} ended`);
+    this.audit('match.ended', this.registry.byId(room.hostId), room);
     for (let i = 0; i < room.seats.length; i++) {
       const s = room.seats[i];
       if (!s || s.isBot) continue;
@@ -1294,6 +1343,7 @@ export class Lobby {
     if (this.freeSpectatorSeat(room, playerId)) return;
     const seat = room.seatOf(playerId);
     if (!seat || seat.isBot || seat.left || room.disposed) return;
+    this.audit('room.left', session || { playerId, name: seat.name }, room);
     if (room.match) {
       seat.left = true;
       seat.connected = false;
@@ -1361,6 +1411,7 @@ export class Lobby {
    */
   disposeRoom(room, reason) {
     if (room.disposed) return;
+    this.audit('room.disposed', this.registry.byId(room.hostId), room, { reason });
     const queued = room.activeHumans().map((s) => this.registry.byId(s.playerId)).find((s) => s && this.matchmaking.has(s));
     if (queued) this.matchmaking.cancel(queued);
     room.disposed = true;

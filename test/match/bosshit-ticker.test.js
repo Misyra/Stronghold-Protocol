@@ -110,9 +110,9 @@ test('C1 (solo, client-side combat, server takeover mid-fight): the re-simulated
   const { m, end, hits } = toHiddenCore({ mode: 'solo', difficulty: 'HARD', clientCombat: true, seed: 67, bossId: 'boss_4', hiddenBossId: 'boss_9', hiddenDps: 0.02,
     onHidden: (h) => {
       h.sched.advance(3000); // the browser reported a few seconds of the fight
-      h.m.onDisconnect('p_0');
+      // All-human disconnect now suspends solo games; force an authority timeout to exercise takeover.
+      h.m._authorityLost(h.m.players.get('p_0'), 'timeout');
       tookOver = h.m.fields[0].mode === 'server';
-      h.m.onReconnect('p_0');
     } });
   assert.ok(tookOver, 'the server took the hidden field over (CreditPool)');
   assert.equal(end.hiddenReached, true);

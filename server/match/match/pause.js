@@ -6,13 +6,44 @@ import { PHASE, ERR } from '../../../shared/constants.js';
 import { BOSS_CLOCK_MS, OK, fail } from './common.js';
 
 export class MatchPause {
+  /** No connected player remains: retain reconnection state, but stop all game work. */
+  syncOfflinePause() {
+    if (this.disposed || this.ended) return;
+    const humans = this.order.filter((p) => !p.isBot && !p.left);
+    if (!humans.length) return;
+    const absent = !humans.some((p) => p.connected);
+    if (absent && !this.offlinePaused) {
+      this._offlineWasPaused = this.paused;
+      this._offlineAt = this.sched.now();
+      this.offlinePaused = true;
+      if (!this.paused) { this.paused = true; this._pausedAt = this._offlineAt; }
+      this.sched.suspend();
+      for (const task of this._workerTasks) task.suspend();
+      this.onAudit?.('match.offlinePaused', { round: this.round, phase: this.phase });
+      this.markPublic();
+    } else if (!absent && this.offlinePaused) {
+      const duration = Math.max(0, this.sched.now() - this._offlineAt);
+      this.offlinePaused = false;
+      // Timers resume with their remaining delay; visible wall-clock deadlines move with them.
+      if (this.draft?.turnDeadline) this.draft.turnDeadline += duration;
+      if (this.pacer?.last != null) this.pacer.last += duration;
+      if (this.runner?.last != null) this.runner.last += duration;
+      this.sched.resume();
+      if (!this._offlineWasPaused) this._resume();
+      for (const task of this._workerTasks) task.resume();
+      for (const ps of humans) if (!ps.connected && this.clientCombat) this._authorityLost(ps, 'disconnect');
+      this.onAudit?.('match.offlineResumed', { round: this.round, phase: this.phase, offlineMs: duration });
+      this.markPublic();
+    }
+  }
+
   /**
    * Solo pause (official PauseUp / ResumeUp; DESIGN §14 "Solo pause"): g.pause { on } freezes the running battle — the
    * field clock (b.start `elapsed`, the boss budgets and overtime), the result deadline / server release timers, the
    * boss clock, the HUD `deadline` / `overtimeAt` (shifted by the pause on resume) and the server-run pacers
    * (FieldRunner / HeadlessPacer skip their intervals) — and the browser's runner stops its local clock while
    * `m.public.paused` is true. Solo matches only (co-op battles never pause: WRONG_PHASE) and only while a battle runs;
-   * `{ on: false }` is always accepted. A disconnect / leave, or the battle phase ending, resumes.
+   * `{ on: false }` is always accepted. A solo reconnect retains an existing manual pause.
    */
   setPause(ps, on) {
     void ps;
@@ -35,6 +66,7 @@ export class MatchPause {
 
   /** End a solo pause: every clock and deadline moves on by the paused time (no-op when not paused). */
   _resume() {
+    if (this.offlinePaused) return;
     if (!this.paused) return;
     const d = Math.max(0, this.sched.now() - this._pausedAt);
     this.paused = false;

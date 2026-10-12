@@ -171,6 +171,16 @@ export function acquireTargets(b, u, prof) {
   if (u.blocking.length) for (const e of b.blockedTargets(u, prof)) if (!cands.includes(e)) cands.push(e);
   // an ally target (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon with 嘲讽等级 −2) after every enemy
   const extra = b._allyTargets && b._allyTargets.size ? b.allyTargetsInKeys(u.rangeKeys, u) : null;
+  // Fortress has an extra melee tile even against enemies it cannot block (PRTS branch / 号角). Its ordinary
+  // ranged targets still take priority; this does not fill the other tiles in its ranged blind spot.
+  if (prof.fortress && !cands.length && !extra?.length) {
+    const here = [u.tileR * COLS + u.tileC];
+    const near = b.enemiesInKeys(here, u, prof);
+    if (!near.length && b._allyTargets?.size) near.push(...b.allyTargetsInKeys(here, u));
+    prof._fortressMelee = near.length > 0;
+    sortEnemyTargets(b, u, near, prof.priority);
+    return near.slice(0, 1);
+  }
   if (extra && extra.length) {
     if (prof.allInRange) return cands.concat(extra);
     sortEnemyTargets(b, u, cands, prof.priority);
@@ -225,7 +235,8 @@ export function performAttack(b, u, prof, targets, opts = null) {
     const t = targets[i];
     b._ev(['atk', u.id, t.id, vis]);
     if (isHeal) { doHeal(b, u, prof, t); continue; }
-    const info = { isSkill, index: i, attackId, energy: i === 0 ? energy : 0 };
+    // Target acquisition mutates the fortress profile. Keep this shot's mode while its shell is in flight.
+    const info = { isSkill, index: i, attackId, fortressMelee: !!prof._fortressMelee, energy: i === 0 ? energy : 0 };
     const foe = t.side === 'enemy' || b.isAllyTarget(t);
     if (ranged && foe && prof.projectile === 'boomerang') {
       throwBoomerang(b, u, prof, t, info);
@@ -323,7 +334,7 @@ export function resolveHit(b, u, prof, target, info, x, y) {
     x = target.x; y = target.y;
   }
   // splash: a 中点判定 radius around the target's position — a huge enemy counts by its 判定中心 (Battle.enemiesInRadius)
-  if (prof.splashRadius > 0) {
+  if (prof.splashRadius > 0 && (!info.fortressMelee || prof.fortressMeleeSplash)) {
     const r = prof.splashRadius;
     const sc = prof.splashScale ?? 1;
     for (const e of b.foesInRadius(x, y, r, true)) {

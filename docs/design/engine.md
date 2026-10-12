@@ -4,6 +4,15 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 ## 5. Simulation (server/sim) — engine contract
 
+联防 restoration (§30.13): the initial setup establishes buffs and devour attributes before restoring living
+operators' exact HP ratio and total SP; summons restore SP only. Opening Egir devour does not damage a carried
+survivor a second time. Forced-down carry stays out without spending an Egir revival; subsequent real knock-outs
+and redeploys are unchanged. No 1% / 1-HP floor is added to a positive carried ratio.
+
+Expanded automatic skill areas (§30.11) include 司霆惊蛰 S2's current low-terrain flood when it strictly contains the
+initial area, 斩业星熊 S3's selectable air targets, and 予愿安洁莉娜 S3's initial 3-9 ∪ x-4.
+Permanent range extension, control/operation cooldown and targetability still apply; normal attacks are unchanged.
+
 ### 5.1 Battle API (implemented by the sim-core owner; consumed by match & content)
 
 ```js
@@ -172,6 +181,8 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).
 
 - kits: all 112 visible chess + hidden ones used by effects (盟约·辅助干员), default skill + talents + trait specifics; tokens. The 72 non-collaboration 6★ DIY operators include 克莱门莎 (§28.1); her launch-day provisional mechanics are local to her kit. 黍 GUA-Y and 乌尔比安 CRU-Y follow the generated module blackboards and existing module-level rules (§28.2).
+  忍冬's 追凶 adds arts damage on the first qualifying instance too; the per-enemy window starts on that instance,
+  and repeated hits do not extend it. The addition keeps its own tag and re-entrancy guard (§30.3).
   克莱门莎 S2 removes dead, hidden, self-bound / teleport-immune and unreachable passengers before checking new
   boarding in the same tick. Each released passenger returns its current weight to the cabin's remaining budget
   and frees its slot (§28.27); neither corpses nor failed carries reserve capacity.
@@ -233,3 +244,14 @@ tile and attack-reach checks. Hand/temp rows, empty halves in single-player mode
 The general `onOwnBoard`/`onFieldBoard` contracts, other movement, summons and preparation placement remain unchanged.
 
 香槟炸弹 also rejects ordinary allied auras and inspiration as a device, through its shared internal selection barrier (§29.11). This does not isolate other unhealable summons or alter its detonation.
+
+§30.3 corrections: fortress targeting is blocked → ordinary range → own tile (selectable ground targets only).
+Automatic skill checks include that extra tile. Melee attacks are single-target unless the skill explicitly gives
+melee splash (Horn S2). Each shot retains its launch-time melee mode while flying. The bounty catapult's normal
+triple attack splashes at radius 1.5; 0.5 belongs to its 入戏 override. Clementia S3 accepts enemy erosion bursts only.
+Kjerag Ice and Tear Gas proc on actual carrier damage to enemies, including DoT/skill/splash; elemental gauge fill,
+HP loss, bare attack events and zero damage do not qualify. These changes do not alter other items' attack hooks.
+
+Xi alone opts into hostile selection immunity during its ten-second post-rebirth invincibility (§30.8).
+The generic `invulnerable` flag remains damage protection only; other rebirth kits retain their existing choices.
+Presence-only and SP-only skill triggers are not suppressed merely because their enemies are unselectable.

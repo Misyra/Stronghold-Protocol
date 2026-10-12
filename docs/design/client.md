@@ -4,6 +4,12 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 ## 9. Client rendering contract (public/js/render)
 
+Bond-layer audio (#482): live own preparation gains arrive as `m.layer`; the displayed battle's `layer` tuples
+play the same `bondUp` cue. A gain of several layers plays once, including gains to inactive bonds. The official
+`ON_ACT1AUTOCHESS_ADD_BOND` bank allows one sound and replaces the oldest; there is no added cooldown. Existing
+bond activation cues use this same channel. State snapshots, settlement backfill and buffered field-entry events
+do not generate layer cues. Field entry, leaving the game and muting cancel playing or still-decoding layer audio.
+
 `import { createFieldView } from './render/app.js'`
 
 ```js
@@ -150,3 +156,17 @@ It does not diagnose a particular user's GPU or persist a disabled renderer pref
 Community UI and recovery (§29.6): DIY reuses roster stats and skill previews; Swire's coins show current/cap. The lobby player chip opens statistics and the responsive header keeps optional controls from overlapping its title. Settlement's summary scrolls separately from Return. Failed board art can retry, and failed three.js imports use two bounded fresh URLs. Failed engine initialization can remount on online/visibility, at most twice consecutively, cleaning up each previous view; explicit fallback/2D stays selected.
 
 Replacing a field renderer also resets the game screen's entered-view identity. Frames are buffered while the replacement loads; after subscribing, the local runner re-shows full current metadata/snapshot, or the server resends the watched field. Real local and server-streamed battles preserve the same simulation object and clock through recovery, including enemies spawned before the new renderer existed.
+
+§30.4: the HP tower retains current HP until settlement and shows pending loss separately. Shop refresh is single
+flight per client until its promise settles (success or error); the button and R key share that state. DIY-only
+potential/cultivation changes are exportable; spectator member resolution includes the owner's DIY selection.
+Bond tooltips show banned visible members in one clamped scrollable compound box, stacked on narrow screens.
+An open list updates on member changes; long-press lists persist for reading and close on outside tap/Escape.
+The developer simulation checker and its bounded verification claims are specified in SIM §11 and history §30.5.
+
+Operator attack clips play once per actual attack (§30.7), retaining their interval-based speed. A prepared wind-up
+is consumed without replay; a later queued attack may start during the previous recovery. Without another attack
+the actor returns to base/skill idle. Late operator events still start at the strike frame; no sim timing changes.
+
+Connection recovery sits above the AI-away overlay and below global modals (§30.8), so a replaced session can
+be reclaimed by pointer while away. This does not change the stacking behavior of modals nested inside a screen.

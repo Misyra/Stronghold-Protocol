@@ -173,7 +173,9 @@ test('buy → 3 copies merge into the elite (the stock pays the copies); sell / 
   for (let i = 0; i < 8; i++) gain(p0, T5A);
   assert.equal(p0.diyStock.left(T5A), 0);
   p0.shop.slots[0] = { kind: 'chess', id: T5A, basePrice: 4, frozen: false, sold: false };
-  assert.equal(m.handle('p_0', { t: 'g.buy', slot: 0 }).error, 'SOLD_OUT');
+  assert.ok(m.handle('p_0', { t: 'g.buy', slot: 0 }).ok, 'a displayed operator remains purchasable after exhaustion');
+  assert.equal(p0.allChess().filter(p => p0.gd.baseIdOf(p.id) === T5A).reduce((n, p) => n + p.poolCopies, 0), 9);
+  assert.equal(p0.diyStock.left(T5A), 0, 'the extra copy does not reopen available stock');
   h.invariants();
   // reward offers (the temporary refresh) draw it once the 调度中心 is at the slot's level
   clear(p0);

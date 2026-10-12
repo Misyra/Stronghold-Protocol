@@ -11,7 +11,8 @@
 //
 // Classes (PLUGIN_CLASSES; `status` says what this version does with one):
 //   lang       a language: UI strings and, optionally, game texts             loaded (as the language packs always were)
-//   cosmetic   art, models, audio, fonts, theme colours                      planned (P1a): validated, listed, not applied
+//   cosmetic   art, models, audio (the asset overlay: shared/plugins/visual.js) loaded (P1a): the room's host switches
+//                                                                            it on for the room, a player for themself
 //   content    data patches and new records: operators, enemies, waves …    planned (P1b): validated, listed, not applied
 //   script     code the battle or the match runs                             unsupported: listed, never loaded
 //   ui         interface widgets in a sandboxed frame                        unsupported
@@ -88,7 +89,7 @@ const MEDIA = ['.json', ...ASSET_EXT];
 /** @type {Readonly<Record<string, Readonly<PluginClass>>>} the classes, in display order (see the header) */
 export const PLUGIN_CLASSES = Object.freeze({
   lang: Object.freeze({ status: 'supported', summary: 'a language: UI strings and, optionally, game texts', scopes: ['personal'], defaultScope: ['personal'], unofficial: false, packType: 'lang', ext: ['.json'] }),
-  cosmetic: Object.freeze({ status: 'planned', summary: 'art, models, audio, fonts and theme colours (P1a)', scopes: ['room', 'personal'], defaultScope: ['room', 'personal'], unofficial: true, packType: 'assets', ext: MEDIA }),
+  cosmetic: Object.freeze({ status: 'supported', summary: 'art, models and audio: the room\'s host switches it on for the room, a player for themself (P1a)', scopes: ['room', 'personal'], defaultScope: ['room', 'personal'], unofficial: true, packType: 'assets', ext: MEDIA }),
   content: Object.freeze({ status: 'planned', summary: 'data patches and new records: operators, enemies, waves, modes (P1b)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'data', ext: MEDIA }),
   script: Object.freeze({ status: 'unsupported', summary: 'code the battle or the match runs (never loaded by this version)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'script', ext: [...MEDIA, '.js'] }),
   ui: Object.freeze({ status: 'unsupported', summary: 'interface widgets in a sandboxed frame (never loaded by this version)', scopes: ['personal'], defaultScope: ['personal'], unofficial: true, packType: 'ui', ext: ['.json', '.html', '.js', '.css', '.png'] }),
@@ -471,8 +472,9 @@ function readSetting(key, def, sourceLang, problems, warnings) {
 
 /**
  * The files an inline `assets` object names: every string ending in a file extension (a dot, a letter, up to 7 more
- * letters or digits — '1.5' is no file), but a `ref` (a record of the installation's own manifest). [ASSUMED] P0 checks
- * the paths only; the shape of the asset entries is P1a's.
+ * letters or digits — '1.5' is no file), but a `ref` (a record of the installation's own manifest). The manifest checks
+ * the paths; the shape of the asset entries, the files of an `assets` .json file and the references are checked by
+ * shared/plugins/visual.js readAssetOverlay (the registry, for a cosmetic plugin).
  * @param {unknown} v
  * @returns {{ path: string, value: string }[]}
  */
@@ -709,7 +711,7 @@ export function readPluginManifest(raw, ctx) {
 
 /** Documents a plugin may carry next to its files: never served, never counted against its class. */
 const isDocument = (rel) => /\.(?:md|txt)$/i.test(rel) || /^(?:.*\/)?(?:README|LICEN[CS]E|COPYING|NOTICE|AUTHORS|CHANGELOG|CREDITS)$/i.test(rel);
-/** The manifest and the lock file `tools/plugin.mjs pack` will write (P1). */
+/** The manifest and the lock file `tools/plugin.mjs pack` writes (shared/plugins/visual.js LOCK_FILE). */
 const isOwnFile = (rel) => rel === PLUGIN_MANIFEST || rel === 'plugin.lock.json';
 
 /**
@@ -786,7 +788,7 @@ export function checkJsonLimits(value) {
 // ---- the catalogue ----------------------------------------------------------------------------------------------------
 
 /**
- * What this version does with a class: 'loaded' (lang), 'planned' (validated and listed, not applied yet) or
+ * What this version does with a class: 'loaded' (lang, cosmetic), 'planned' (validated and listed, not applied yet) or
  * 'unsupported' (code: listed, never loaded).
  * @param {string} cls
  * @returns {'loaded' | 'planned' | 'unsupported'}
@@ -798,12 +800,15 @@ export function classStatus(cls) {
 
 /**
  * @typedef {{ id: string, class: string, status: string, source: string, manifest: PluginManifest, bytes?: number,
- *   count?: number }} PluginEntry what the registry knows of one plugin or pack (server/plugins/registry.js)
+ *   count?: number, visual?: { vs: string | null, bytes: number } }} PluginEntry what the registry knows of one plugin or
+ *   pack (server/plugins/registry.js; `visual`: a loaded cosmetic plugin's own visual set and the bytes of art it serves)
  */
 
 /**
  * The catalogue entry of a plugin or pack (GET /plugins/index.json): what a client may know — never a path on the
- * server. `unofficial` marks every class but lang.
+ * server. `unofficial` marks every class but lang; a loaded cosmetic plugin adds `vs` (the visual set of that plugin
+ * alone: a player's personal plugin is fetched as /vs/<vs16>/overlay.json, shared/plugins/visual.js) and `artBytes` (the
+ * art it serves).
  * @param {PluginEntry} p
  * @returns {Record<string, unknown>}
  */
@@ -829,6 +834,8 @@ export function pluginIndexEntry(p) {
   if (m.permissions.length) e.permissions = [...m.permissions];
   if (Number.isFinite(p.bytes)) e.bytes = p.bytes;
   if (Number.isFinite(p.count)) e.files = p.count;
+  if (p.visual && typeof p.visual.vs === 'string') e.vs = p.visual.vs;
+  if (p.visual && Number.isFinite(p.visual.bytes)) e.artBytes = p.visual.bytes;
   return e;
 }
 

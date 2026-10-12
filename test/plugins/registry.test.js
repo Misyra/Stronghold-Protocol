@@ -1,6 +1,6 @@
 // test/plugins/registry.test.js — the plugin registry (DESIGN §32, server/plugins/registry.js): one scan over the
-// language folders, packs/ and plugins/ — manifest 1 read as before, manifest 2 by class (lang loaded, cosmetic /
-// content planned, code unsupported), broken manifests, stray files and links, duplicate ids (across packs/ and
+// language folders, packs/ and plugins/ — manifest 1 read as before, manifest 2 by class (lang and cosmetic loaded —
+// P1a —, content planned, code unsupported), broken manifests, stray files and links, duplicate ids (across packs/ and
 // plugins/, any case) and languages skipped with a reason, `_` templates and top-level files never read; the
 // language-pack view and /packs/index.json unchanged (server/packs.js is a compatibility export), a lang plugin served
 // like a pack folder and nothing else of plugins/ served; GET /plugins/index.json with the vanilla content hash; a
@@ -76,15 +76,18 @@ function exampleRoot() {
   return dir;
 }
 
-test('one scan: the language packs, packs/ and plugins/ by class — lang loaded, cosmetic / content planned, code unsupported', () => {
+test('one scan: the language packs, packs/ and plugins/ by class — lang and cosmetic loaded, content planned, code unsupported', () => {
   const root = exampleRoot();
   try {
     const scan = scanPlugins(dirsOf(root), { app: '0.3.0' });
     assert.deepEqual(scan.plugins.map((p) => [p.id, p.class, p.status, p.source]), [
       ['en', 'lang', 'loaded', 'i18n'], ['qaa', 'lang', 'loaded', 'i18n'], ['qab', 'lang', 'loaded', 'packs'],
       ['kit', 'script', 'unsupported', 'plugins'], ['marathon', 'content', 'planned', 'plugins'], ['needs', 'content', 'planned', 'plugins'],
-      ['qac', 'lang', 'loaded', 'plugins'], ['skin', 'cosmetic', 'planned', 'plugins'],
+      ['qac', 'lang', 'loaded', 'plugins'], ['skin', 'cosmetic', 'loaded', 'plugins'],
     ]);
+    // a loaded cosmetic plugin is no language entry; its overlay was read (no data/assets.json here: no vs)
+    const skin = scan.plugins.find((p) => p.id === 'skin');
+    assert.deepEqual([skin.supported, skin.visual.ops.length, [...skin.visual.served.keys()], skin.visual.vs], [false, 1, ['art/avatar.png'], null]);
     const why = Object.fromEntries(scan.skipped.map((s) => [s.where, s.problems.join('; ')]));
     assert.match(why['packs/art/'], /type "assets" is planned .*its successor is a cosmetic plugin/);
     assert.match(why['packs/upper/'], /no pack\.json \(plugin\.json belongs in plugins\/upper\/\)/);
@@ -142,14 +145,17 @@ test('the registry: only a lang folder\'s named files are servable; the catalogu
     assert.equal(reg.servable('qac', 'plugin.json'), null);
     assert.equal(reg.servable('marathon', 'data/economy.json'), null, 'a planned class serves nothing');
     assert.equal(reg.servable('kit', 'sim/index.js'), null, 'code is never served');
-    assert.equal(reg.servable('skin', 'art/avatar.png'), null);
+    assert.equal(reg.servable('skin', 'art/avatar.png'), null, 'a cosmetic plugin\'s art is no pack file (it is served at /p/)');
+    assert.equal(reg.pluginFile('skin', 'art/avatar.png')?.abs, path.join(root, 'plugins/skin/art/avatar.png'));
+    assert.equal(reg.pluginFile('skin', 'plugin.json'), null);
+    assert.equal(reg.pluginFile('marathon', 'data/economy.json'), null, 'nothing of a planned class');
     assert.deepEqual(reg.list().map((p) => p.id), ['en', 'qaa', 'qab', 'qac']);
     assert.deepEqual(reg.plugins('content').map((p) => p.id), ['marathon', 'needs']);
     const body = reg.pluginIndex({ vanilla: 'cd'.repeat(32) });
     assert.deepEqual(body.content, { vanilla: 'cd'.repeat(32) });
     assert.deepEqual(body.plugins.map((e) => [e.id, e.class, e.status]), [
       ['en', 'lang', 'loaded'], ['qaa', 'lang', 'loaded'], ['qab', 'lang', 'loaded'], ['qac', 'lang', 'loaded'],
-      ['skin', 'cosmetic', 'planned'], ['marathon', 'content', 'planned'], ['needs', 'content', 'planned'], ['kit', 'script', 'unsupported'],
+      ['skin', 'cosmetic', 'loaded'], ['marathon', 'content', 'planned'], ['needs', 'content', 'planned'], ['kit', 'script', 'unsupported'],
     ]);
     assert.ok(body.plugins.filter((e) => e.class !== 'lang').every((e) => e.unofficial === true), 'every non-language plugin is marked unofficial');
     assert.ok(!JSON.stringify(body).includes(root), 'no server path in the catalogue');

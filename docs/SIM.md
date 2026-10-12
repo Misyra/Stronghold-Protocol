@@ -81,7 +81,15 @@ summon that came in during the initial deployment (also one an operator's deploy
 the operators in the aggro order (`unit.aggroSeq`, §1.2). On a shared field (联防, the boss field)
 the players' fields deploy side by side: the i-th operators of all players come in together (in `players` order), then
 the summons the same way, and the summons rank after the operators of all players **[ASSUMED]** (PRTS describes one
-field — units deploy one after another with a fixed delay from the battle start — and "两处阵地将前后拼接为一处阵地"). Register hooks before the first step (e.g. `opts.setup(battle)` or right after `new Battle`).
+field — units deploy one after another with a fixed delay from the battle start — and "两处阵地将前后拼接为一处阵地").
+
+外勤医疗's prepared slot is a preparation view record, not a combat `Unit`. The `battleStart` handler creates either
+预备干员-医疗 or Touch after counting deployed elites. [ASSUMED] Its effective targeting order precedes ordinary
+initial deployments (`preBattleAggroSeq`); its actual `deploySeq` still identifies the later runtime spawn. Prepared
+slots on a shared field follow player order [ASSUMED]. A later `spawnMapChar` without this option keeps its ordinary
+summon order (§30.17).
+
+Register hooks before the first step (e.g. `opts.setup(battle)` or right after `new Battle`).
 
 **Tick order:** scheduled callbacks → spawns → DP → buffs (+HP regen) → enemies (attack, move, block) →
 enemy tile index → allies (skill tick, attack) → projectiles → auto-redeploys → boss pool sync → `tick` hook →
@@ -537,7 +545,8 @@ Getters: `s` (aggregated stats), `maxHp`, `atk`, `hpRatio`, `sp`, `spMax`, `canA
 flag `float` (近地悬浮, PRTS 术语释义 "算作空中单位") or `levitate` (浮空 "变为空中单位") — never an enemy under 缚地 (flag
 `groundbind`, "目标变为地面单位") unless a 浮空 lifts it again; movement and pathing read `motion` (a hovering enemy keeps
 walking the ground path). `deploySeq` counts deployments (and identifies one: `seq === u.deploySeq`);
-`aggroSeq` is the aggro order (= deploySeq, except the summons of the initial deployment, §1).
+`aggroSeq` is the aggro order (= deploySeq, except the summons of the initial deployment and prepared 外勤医疗 map
+characters, §1).
 
 克莱门莎 S2's kit stores its cabin in `unit.mem.clemntCabin`. Before boarding each tick, it removes passengers
 that died, became hidden / uncarryable or cannot path to the next cabin position, removes their carry buff and
@@ -895,7 +904,7 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
 | `applyStatus(tgt, key, {duration, source, value, force, point, stackAs})`, `removeStatus(tgt, key)`, `resistOf(unit)` | §3 |
 | `applyStrongest(tgt, key, {duration, value, mods, source})` | §3 — "同名效果取最高" for a non-catalogue effect |
 | `addBuff(unit, buff)`, `removeBuff(unit, key)` | §3 |
-| `spawnToken(ownerUnit | playerId, tokenId, row, col, { def, stats, hp, duration, untargetable, dir, kit, force, anySource })` | field tiles; def from data/tokens.json `variants[ownerChessId]` for the owner unit's selected skill / module (`tokenDef`); `dir` defaults to the owner unit's (else the player's: RIGHT, mirrored side LEFT; a legacy `facing` ±1 is still read); returns the token or null (tile busy; or the owner runs a **non-default** skill that does not produce the token — `producesToken` — unless `anySource`: kit install hooks written for the default skill run under every skill). `spawnDevice(key, row, col, { …, dir })` likewise |
+| `spawnToken(ownerUnit | playerId, tokenId, row, col, { def, stats, hp, duration, untargetable, dir, kit, force, anySource, preBattleAggroSeq })` | field tiles; def from data/tokens.json `variants[ownerChessId]` for the owner unit's selected skill / module (`tokenDef`); `dir` defaults to the owner unit's (else the player's: RIGHT, mirrored side LEFT; a legacy `facing` ±1 is still read); `preBattleAggroSeq` is a negative priority reserved for a prepared stage map character, before ordinary initial units; returns the token or null (tile busy; or the owner runs a **non-default** skill that does not produce the token — `producesToken` — unless `anySource`: kit install hooks written for the default skill run under every skill). `spawnDevice(key, row, col, { …, dir })` likewise |
 | `tokenDef(tokenId, ownerUnit | chessId)`, `producesToken(ownerUnit, tokenId)` | the token def a summon of that owner gets — `getToken(id, owner.defId, owner.def.loadout)`, exact even when two players of one field give the same chess different loadouts (prefer it over an id-only `battle.data.getToken(id, unit.defId)` for summon stats / blackboards); whether the owner's loadout makes the token (DATA.md §14 `sources` has 'skill' or 'talent'; true when the data does not tell: no own variant, player-owned summons) |
 | `spawnEnemy(enemyKey, { routeIndex, route, pos, mods, tag, sourcePlayerId, ownerPlayerId, bounty, countInTotal, inTotal, def })` | returns the enemy, or null past `MAX_ALIVE_ENEMIES`; `def` = inline record (enemies.json shape or normalised) for keys missing from data. A runtime spawn is never `inTotal` (§1.3 — the HUD capsule's own set) unless content passes `inTotal: true` explicitly |
 | `spawnDevice(key, row, col, { hp, obstacle, blockCnt, name, def, res, atk, bat, aspd })`, `setObstacle(r, c, on)` | obstacles re-path enemies; spawnDevice returns null outside the rect, on a living unit or on a knocked-out operator's tile |

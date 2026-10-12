@@ -224,7 +224,8 @@ export function sortEnemyTargets(battle, attacker, cands, priority) {
 /**
  * Enemy target selection among allies (PRTS 作战机制 索敌, 敌方: "阻挡→特殊优先级→仇恨值（更容易被攻击→…→最后部署的目标→
  * 不容易被攻击）→最早出现"): its blocker first → highest taunt level → latest deployed (`aggroSeq`: the deploy order —
- * Battle.start deploys the operators first and ranks the start-of-battle summons after them). Special priorities
+ * Battle.start deploys the operators first and ranks the start-of-battle summons after them; a prepared 外勤医疗 map
+ * character keeps an earlier aggro order). Special priorities
  * (优先攻击…) are the enemies' own content: `e.profile.canTarget` filters, key sorts broken by `aggroCmp`.
  */
 export function sortAllyTargets(enemy, cands) {

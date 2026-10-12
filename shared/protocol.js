@@ -6,6 +6,7 @@ import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from './potential.js';
 import { isContentHash } from './plugins/identity.js';
+import { isPluginId } from './plugins/manifest.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -26,6 +27,7 @@ const isMap = (v, max, key, val) => {
   return true;
 };
 const isList = (v, max, item) => Array.isArray(v) && v.length <= max && v.every(item);
+const isScalar = (v) => isStr(v, 64) || isNum(v) || isBool(v);
 
 // ---- client-side combat (DESIGN §14): b.progress / b.result payloads -------------------------------------------
 
@@ -412,6 +414,12 @@ export const C2S = {
   // room.closed { reason: 'kicked' }). room.leave / g.leave leave a spectator seat like a player seat.
   'room.spectate': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v) },
   'room.removeSpectator': { playerId: isId },
+  // the room's plugins (DESIGN §32, P1a; host, before the match — like a difficulty change it un-readies the others):
+  // the plugins of this server the room switches on, in any order (the server closes the set over their requirements
+  // and sorts it: shared/plugins/order.js); [] = the original content. Only cosmetic plugins in this version; `settings`
+  // is for the classes that have settings (a cosmetic plugin has none, so it is ignored). room.state.content names the set
+  'room.setPlugins': { plugins: (v) => isList(v, 32, (p) => isPlain(p) && isPluginId(p.id)
+    && (p.settings === undefined || isMap(p.settings, 32, (k) => isStr(k, 32), isScalar))) },
 
   // match
   'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },

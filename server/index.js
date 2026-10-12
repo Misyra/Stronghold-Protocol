@@ -96,7 +96,7 @@ export async function startServer(opts = {}) {
   const assetIndex = indexOptions ? createAssetIndex({ publicDir, log, ...indexOptions }) : null;
   const views = assetIndex ? createManifestViews({ dataDir, index: assetIndex, log }) : null;
   // the visual sets of the cosmetic plugins (DESIGN §32 P1a): what a room's host switches on, served at /vs/ and /p/
-  const visual = createVisualSets({ registry: packs, views, log });
+  const visual = createVisualSets({ registry: packs, log });
   const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: visual });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual });
   const startedAt = Date.now();

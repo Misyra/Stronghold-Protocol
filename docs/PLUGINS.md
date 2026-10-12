@@ -18,7 +18,7 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
 | `shared/sha256.js` | SHA-256 in plain JavaScript (the same digest in Node and every browser, no `crypto.subtle`) |
 | `server/plugins/registry.js` | the registry: the language folders, `packs/` and `plugins/` — discovery, validation (a cosmetic plugin's overlay too, its files hashed), `/packs/index.json`, `/plugins/index.json`, what may be served |
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
-| `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/assets.json` and `/vs/<vs16>/overlay.json` |
+| `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest (`public/js/assets.js` cosmetic layers) |
 | `public/js/ui/pluginPanel.js` | the room's 插件 tag and panel, the title screen's list of the server's plugins |
@@ -284,13 +284,12 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
   hashed with, the answer is `immutable` for a year; at any other hash, or for a file changed since the scan, the current
   file with `no-cache` (as for `/assets/~<hash>/…`, ASSETS.md), and a changed file has the registry read the folders
   again.
-- `GET /vs/<vs16>/assets.json` — the effective art manifest of a set: the served `data/assets.json` (its
-  `/assets/~<hash>/…` URLs) with the set's overlays laid over it in load order — the later plugin wins where two change
-  the same thing — and the composition in `visual: { v, vs, assets, overlays }`. `GET /vs/<vs16>/overlay.json` — the
-  overlay alone: `{ visual, ops }` (the resolved writes). Both `no-cache` with the body's hash as ETag [ASSUMED: not
-  immutable — the installation's URLs inside follow the asset index, not `vs`]; 404 for a set the server does not know (a
-  set is known once a room resolved it, or the catalogue named a plugin's own; a room holds its set while it uses it, of
-  the others the last 256 are kept [ASSUMED]; a document is built once however many ask).
+- `GET /vs/<vs16>/overlay.json` — a set: `{ visual: { v, vs, assets, overlays: [{ id, version, files }] }, writes: [{ id,
+  ops }] }`, its composition (what `vs` hashes) and each plugin's writes in its own terms — paths of its folder,
+  references, a Spine model's clip data from the lock —, never a URL and never a copy of the art manifest (a few KB).
+  `no-cache` with the body's hash as ETag [ASSUMED: a 304 costs next to nothing]; 404 for a set the server does not know
+  (a set is known once a room resolved it, or the catalogue named a plugin's own; a room holds its set while it uses it,
+  of the others the last 256 are kept [ASSUMED]; a document is built once however many ask).
 
 **A room's plugins.** The room's top bar shows 「原版」 or 「插件 ×N」; it opens the 插件 panel (`public/js/ui/pluginPanel.js`):
 the server's cosmetic plugins of scope `room`, with the host's switches (read-only for the other players and the
@@ -302,10 +301,16 @@ not when only the 「自动」 marks change; the heavy rate-limit bucket): the s
 references copy over 4 MB of the art manifest [ASSUMED] (`PLUGIN_UNKNOWN`, `PLUGIN_BLOCKED`, `PLUGIN_DEPENDENCY`,
 `PLUGIN_CONFLICT`, `PLUGIN_LIMIT`), sorts it (`shared/plugins/order.js`: requires / optional / loadAfter / loadBefore, then priority, then
 id) and the room's content becomes `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings,
-bytes }` — `cs` the vanilla one. Every member's page fetches `/vs/<vs16>/assets.json`, checks that its composition hashes
-to the room's `vs` (`checkVisualDoc`; the bytes carry this server's asset URLs, so they are not what is checked
-[ASSUMED]) and draws with it; leaving the room takes the art away again. A document that fails the check or will not
-download (an attempt is given up after 30 s [ASSUMED], two retries) leaves the original art (a toast). Art switched on
+bytes }` — `cs` the vanilla one. Every member's page fetches `/vs/<vs16>/overlay.json`, checks that its composition
+hashes to the room's `vs` (`checkVisualDoc`) and composes the art itself on the manifest it loaded (`/data/assets.json`,
+its `/assets/~<hash>/…` URLs; `shared/plugins/visual.js` prepareVisualDoc / layVisualOps): every plugin URL is built
+from the composition's file table — `/p/<id>/<the first 8 hex digits of the file's SHA-256, or of its model's>/<path>` —,
+every reference copied out of the page's own manifest, the plugins in the composition's load order, so what it draws is
+exactly what `vs` names; a write that does not fit (a file the table lacks, of another kind than its field, a path
+outside the containers, a model out of its folder or of the lock's shape, a reference the page's manifest lacks) is left
+out and its entry keeps the installation's art. Leaving the room takes the art away again. A document that fails the
+check or will not download (an attempt is given up after 30 s [ASSUMED], two retries), or a write left out, leaves the
+original art there (one toast per page). Art switched on
 during a match shows on what is drawn afterwards; a model already on the board keeps its own [ASSUMED]. A plugin the
 server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
 content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`; the page's code has three more modules
@@ -314,9 +319,9 @@ the catalogue on the title screen, in 设置 and in the panel — nothing else m
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
 this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. A
-switched-on plugin is fetched as `/vs/<vs16>/overlay.json` of its catalogue `vs`, checked the same way, and laid over
-whatever the page draws (the room's art too), in the catalogue's order [ASSUMED] (fetched side by side); one the server
-no longer has is skipped and stays switched on for when it is back.
+switched-on plugin is fetched as `/vs/<vs16>/overlay.json` of its catalogue `vs`, checked and composed the same way, and
+laid over whatever the page draws (the room's art too), in the catalogue's order [ASSUMED] (fetched side by side); one
+the server no longer has is skipped and stays switched on for when it is back.
 
 **Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
 the statistics overview [ASSUMED, for the owner to confirm]. The diagnostics name the art: `content: vanilla cs=… cosmetic

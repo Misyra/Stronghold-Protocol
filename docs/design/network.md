@@ -110,11 +110,13 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
 - `GET /plugins/index.json` — the plugin catalogue (`{ version, app, api, content: { vanilla }, plugins: [entry …] }`,
   every plugin and language pack by class with its status and the `unofficial` mark; a loaded cosmetic plugin's entry
   adds `vs`, the set of it alone, and `artBytes`), never cached;
-- `GET /vs/<first 16 hex digits of vs>/assets.json` — a visual set's effective art manifest: the served
-  `data/assets.json` (its `/assets/~<hash>/…` URLs) with the set's overlays over it, and `visual: { v, vs, assets,
-  overlays }`, whose composition a browser hashes to check it against the room's `vs`; `GET /vs/<vs16>/overlay.json` —
-  `{ visual, ops: [{ at, value }] }`, the set's resolved writes (a player's personal plugin: the set of it alone). Both
-  `no-cache` with the body's hash as ETag; 404 for a set the server does not know;
+- `GET /vs/<first 16 hex digits of vs>/overlay.json` — a visual set: `{ visual: { v, vs, assets, overlays: [{ id,
+  version, files }] }, writes: [{ id, ops }] }` — its composition, which a browser hashes to check it against the room's
+  `vs` (a player's personal plugin: the set of it alone, the catalogue's `vs`), and each plugin's writes (paths of its
+  folder and references — no URL). The browser composes the art on the manifest it loaded (`/data/assets.json`): every
+  plugin URL built from the file table, every reference copied out of its own manifest, a write that does not fit left
+  out (`shared/plugins/visual.js` prepareVisualDoc / layVisualOps). `no-cache` with the body's hash as ETag; 404 for a
+  set the server does not know;
 - `GET /p/<id>/<hash8>/<path>` — a file a loaded cosmetic plugin's overlay names (nothing else of its folder); `<hash8>`
   the first 8 hex digits of its SHA-256 (of its Spine model's files' SHA-256s for a model's skeleton, atlas and pages):
   `immutable` at that hash, the current file with `no-cache` at another;

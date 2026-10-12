@@ -1,17 +1,22 @@
 // test/plugins/visual.test.js — the cosmetic plugins' format (DESIGN §32 P1a, shared/plugins/visual.js): an asset overlay
 // read into ops (the containers and fields of data/assets.json, a plugin's own files by extension, Spine models next to
 // their atlas, whole-record and field references to the installation's manifest — a missing one is a problem —, the
-// permissions a write needs), plugin.lock.json and a model's clip data (a stale lock refused), resolution (a file's
-// /p/<id>/<hash8>/ URL, one hash for every file of a model, a reference copied from the manifest it reads), applyOps
-// (a value written whole, nothing changed in place), the merge of several plugins (the later one applies, an override
-// warning), the visual hash `vs` (the same input → the same hash, one changed byte → another) and the check a browser
-// runs on a served document.
+// permissions a write needs), plugin.lock.json and a model's clip data (a stale lock refused), the browser's composition
+// of a set's document (prepareVisualDoc / layVisualOps: every plugin URL built from the composition's file table — a
+// file's /p/<id>/<hash8>/ URL, one hash for every file of a model —, a reference copied out of the page's own manifest,
+// the composition's load order; whatever does not fit dropped — a file the table lacks, of another kind, a path outside
+// the containers, a model out of its folder or of the lock's shape, a reference the page lacks, any URL the document
+// would carry — so its entry keeps the art beneath it; a file that failed to load left out), applyOps (a value written
+// whole, nothing changed in place), the merge of several plugins (the later one applies, an override warning), the
+// visual hash `vs` (the same input → the same hash, one changed byte → another) and the check a browser runs on a
+// served document.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  ASSET_CONTAINERS, VISUAL_HASH_VERSION, VISUAL_LIMITS, applyOps, attachSpineMeta, checkVisualDoc, getPath, isAssetKey, mergePluginOps,
-  modelHashOf, pluginFileUrl, readAssetOverlay, readPluginLock, resolveOps, visualHashInput, visualHashOf, vsUrlPart,
+  ASSET_CONTAINERS, VISUAL_HASH_VERSION, VISUAL_LIMITS, applyOps, attachSpineMeta, checkVisualDoc, getPath, isAssetKey, layVisualOps,
+  locateAssetPath, mergePluginOps, modelHashOf, pluginFileUrl, prepareVisualDoc, readAssetOverlay, readPluginLock, visualHashInput,
+  visualHashOf, vsUrlPart,
 } from '../../shared/plugins/visual.js';
 import { canonicalJson } from '../../shared/plugins/identity.js';
 import { sha256Hex } from '../../shared/sha256.js';
@@ -31,6 +36,14 @@ const FILES = new Set(['art/a.png', 'art/b.webp', 'v/s1.mp3', 'v/s2.ogg', 'spine
 const has = (rel) => FILES.has(rel);
 const sha = (rel) => sha256Hex(`bytes of ${rel}`);
 const read = (assets, ctx = {}) => readAssetOverlay(assets, { vanilla: VANILLA, permissions: ['assets.override', 'assets.add'], has, ...ctx });
+/** A set's document as server/plugins/visualSet.js serves it: the composition (file tables) and each plugin's writes. */
+const setDoc = (plugins) => {
+  const overlays = plugins.map((p) => ({ id: p.id, version: '1.0.0', files: Object.fromEntries((p.files || [...FILES, 'plugin.json']).map((rel) => [rel, sha(rel)])) }));
+  const parts = { assets: 'aa'.repeat(32), overlays };
+  return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: plugins.map((p) => ({ id: p.id, ops: p.ops })) };
+};
+/** What a page draws: the document composed on `base`. */
+const compose = (base, ...docs) => layVisualOps(base, docs.map((d) => prepareVisualDoc(d))).manifest;
 
 describe('reading an overlay', () => {
   test('the containers and fields of data/assets.json → ops in the plugin\'s order; its files and models', () => {
@@ -112,10 +125,9 @@ describe('reading an overlay', () => {
       ['enemies.enemy_x', 'ref'],
     ], 'a whole-record reference takes the referenced record as it is');
     const lock = readPluginLock({ lock: 1, spine: { 'spine/front/t.skel': { sha256: sha('spine/front/t.skel'), anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null } } }).lock;
-    const res = resolveOps(attachSpineMeta(r.ops, lock, sha).ops, { id: 'p', sha, base: vanilla });
-    assert.deepEqual(res.problems, []);
-    const { ops } = res;
-    const out = applyOps(vanilla, ops);
+    const doc = setDoc([{ id: 'p', ops: attachSpineMeta(r.ops, lock, sha).ops }]);
+    assert.equal(prepareVisualDoc(doc).droppedCount, 0);
+    const out = compose(vanilla, doc);
     assert.deepEqual(out.audio.bgm.lobby, { loop: `/p/p/${sha('v/s1.mp3').slice(0, 8)}/v/s1.mp3` }, 'no intro left behind');
     assert.deepEqual(Object.keys(out.audio.bgm.prep), ['intro', 'loop']);
     assert.equal('spineLocal' in out.enemies.enemy_1305_mhslim, false, 'the plugin\'s model is drawn, not the local one');
@@ -229,25 +241,99 @@ describe('plugin.lock.json and the models\' clip data', () => {
 });
 
 describe('resolution, merge, application', () => {
-  test('a file → /p/<id>/<its first 8 hex>/<path>; every file of a model → the model\'s hash; a reference → a copy of the base\'s value', () => {
+  test('the browser composes: every plugin URL from the composition\'s file table (a file\'s own hash, a model\'s for each of its files); a reference out of the page\'s own manifest', () => {
     const r0 = read({ chars: { char_102_texas: { avatar: 'art/a.png', spine: { front: { skel: 'spine/front/t.skel' } } }, char_112_siege: { ref: 'char_102_texas' } },
       audio: { voice: { char_102_texas: { select: ['v/s1.mp3', 'v/s2.ogg'] } } } });
     const lock = readPluginLock({ lock: 1, spine: { 'spine/front/t.skel': { sha256: sha('spine/front/t.skel'), anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null } } }).lock;
-    const { ops } = attachSpineMeta(r0.ops, lock, sha);
-    const { ops: out, problems } = resolveOps(ops, { id: 'my-skin', sha, base: VANILLA });
-    assert.deepEqual(problems, []);
-    assert.equal(out[0].value, `/p/my-skin/${sha('art/a.png').slice(0, 8)}/art/a.png`);
+    const doc = setDoc([{ id: 'my-skin', ops: attachSpineMeta(r0.ops, lock, sha).ops }]);
+    assert.equal(checkVisualDoc(doc, doc.visual.vs), null);
+    assert.doesNotMatch(JSON.stringify(doc.writes), /\/p\/|\/assets\//, 'the document names paths of the folder and references — never a URL');
+    const prep = prepareVisualDoc(doc);
+    assert.deepEqual([prep.droppedCount, prep.dropped], [0, []]);
+    const out = compose(VANILLA, doc);
+    assert.equal(out.chars.char_102_texas.avatar, `/p/my-skin/${sha('art/a.png').slice(0, 8)}/art/a.png`);
     const m = modelHashOf(['spine/front/t.skel', 'spine/front/t.atlas', 'spine/front/t.png'].map(sha)).slice(0, 8);
-    assert.deepEqual(out[1].value, {
+    assert.deepEqual(out.chars.char_102_texas.spine.front, {
       skel: `/p/my-skin/${m}/spine/front/t.skel`, atlas: `/p/my-skin/${m}/spine/front/t.atlas`, textures: [`/p/my-skin/${m}/spine/front/t.png`], pma: false,
       anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null,
     }, 'pixi-spine finds the atlas next to the skeleton and the pages next to the atlas: one folder');
-    assert.deepEqual(out[2].value, VANILLA.chars.char_102_texas);
-    assert.notEqual(out[2].value, VANILLA.chars.char_102_texas, 'a copy');
-    assert.deepEqual(out[3].value, [`/p/my-skin/${sha('v/s1.mp3').slice(0, 8)}/v/s1.mp3`, `/p/my-skin/${sha('v/s2.ogg').slice(0, 8)}/v/s2.ogg`]);
+    assert.equal(out.chars.char_112_siege, VANILLA.chars.char_102_texas, 'a whole-record reference: the page\'s own entry (shared — nothing changes it in place)');
+    assert.deepEqual(out.audio.voice.char_102_texas.select, [`/p/my-skin/${sha('v/s1.mp3').slice(0, 8)}/v/s1.mp3`, `/p/my-skin/${sha('v/s2.ogg').slice(0, 8)}/v/s2.ogg`]);
+    assert.equal(out.audio.voice.char_102_texas.skill1, VANILLA.audio.voice.char_102_texas.skill1, 'what no write touches stays the page\'s');
+    assert.deepEqual([...prep.urls].sort(), [out.chars.char_102_texas.avatar, ...Object.values(out.chars.char_102_texas.spine.front).filter((v) => typeof v === 'string'),
+      ...out.chars.char_102_texas.spine.front.textures, ...out.audio.voice.char_102_texas.select].sort(), 'every plugin URL it writes');
     assert.equal(pluginFileUrl('p', '01234567', 'a b/c.png'), '/p/p/01234567/a%20b/c.png', 'every segment encoded');
-    const missing = resolveOps([{ at: ['chars', 'x'], ref: 'y', from: ['chars', 'y'] }], { id: 'p', sha, base: VANILLA });
-    assert.deepEqual([missing.ops, missing.problems.length], [[], 1]);
+    // a page whose manifest is another (the server's references copied the committed one): the reference follows the page's
+    const other = { ...VANILLA, chars: { ...VANILLA.chars, char_102_texas: { avatar: '/assets/~9999999999999999/char/avatar/texas.png' } } };
+    assert.equal(compose(other, doc).chars.char_112_siege, other.chars.char_102_texas);
+  });
+
+  test('what does not fit the set is dropped — its entry keeps the art beneath it; no URL is ever taken from the document', () => {
+    const lockMeta = { anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null };
+    const spine = (o) => ({ at: ['chars', 'char_102_texas', 'spine', 'front'], spine: { skel: 'spine/front/t.skel', atlas: 'spine/front/t.atlas', textures: ['spine/front/t.png'], pma: false, meta: lockMeta, ...o } });
+    const bad = [
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'art/missing.png' },                      // not in the file table
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'v/s1.mp3' },                             // a sound as an image
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'plugin.json' },                          // in the table, but no image
+      { at: ['chars', 'char_102_texas', 'avatar'], value: 'https://evil.example/track.png' },     // a URL: no write of a plugin
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'https://evil.example/a.png' },
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'data:image/png;base64,AAAA' },
+      { at: ['chars', 'char_102_texas', 'avatar'], file: '/assets/char/avatar/siege.png' },
+      { at: ['fonts', 'main'], file: 'art/a.png' },                                                // outside the containers
+      { at: ['chars', 'char_102_texas', 'name'], file: 'art/a.png' },                              // a field a record has not
+      { at: ['chars', '__proto__', 'avatar'], file: 'art/a.png' },
+      spine({ textures: ['other/x.png'] }),                                                         // a page outside its folder
+      spine({ atlas: 'other/x.atlas' }),                                                            // an atlas not beside it
+      spine({ meta: { ...lockMeta, anims: { idle: 'Nope' } } }),                                    // clip data out of the lock's shape
+      spine({ meta: undefined }),
+      { at: ['chars', 'char_112_siege', 'avatar'], from: ['ui', 'hudPanel/icon_hp'] },               // a reference to another container
+      { at: ['chars', 'char_112_siege', 'avatar'], from: ['chars', 'char_102_texas', 'portrait'] },  // to another field
+      { at: ['chars', 'char_102_texas', 'avatar'], clear: true },                                   // a clear of no local model
+    ];
+    const doc = setDoc([{ id: 'p', ops: [...bad, { at: ['ui', 'hudPanel/icon_lp'], file: 'art/b.webp' }] }]);
+    const prep = prepareVisualDoc(doc);
+    assert.equal(prep.droppedCount, bad.length, prep.dropped.join('\n'));
+    assert.ok(prep.dropped.length <= 16 && prep.dropped.every((d) => d.startsWith('p: ')), 'the reasons, bounded');
+    const out = compose(VANILLA, doc);
+    assert.equal(out.chars.char_102_texas.avatar, VANILLA.chars.char_102_texas.avatar, 'the installation\'s art');
+    assert.equal(out.chars.char_102_texas.spine.front, VANILLA.chars.char_102_texas.spine.front);
+    assert.equal(out.ui['hudPanel/icon_lp'], `/p/p/${sha('art/b.webp').slice(0, 8)}/art/b.webp`, 'a write that fits still applies');
+    assert.doesNotMatch(JSON.stringify(out), /evil|data:image/);
+    assert.equal(({}).avatar, undefined);
+    // a reference the page's manifest lacks: dropped when laid (told), the entry the page's
+    const ref = setDoc([{ id: 'p', ops: [{ at: ['chars', 'char_112_siege'], from: ['chars', 'char_000_nobody'], ref: 'char_000_nobody' }] }]);
+    const laid = layVisualOps(VANILLA, [prepareVisualDoc(ref)]);
+    assert.equal(laid.manifest.chars.char_112_siege, VANILLA.chars.char_112_siege);
+    assert.match(laid.dropped.join(), /has no chars\.char_000_nobody/);
+    // a plugin the composition does not name writes nothing; a document's writes never reorder the composition
+    assert.equal(prepareVisualDoc({ ...setDoc([{ id: 'p', ops: [] }]), writes: [{ id: 'stranger', ops: [{ at: ['ui', 'hudPanel/icon_lp'], file: 'art/a.png' }] }] }).ops.length, 0);
+    const a = { id: 'a', ops: [{ at: ['ui', 'hudPanel/icon_hp'], file: 'art/a.png' }] };
+    const b = { id: 'b', ops: [{ at: ['ui', 'hudPanel/icon_hp'], file: 'art/b.webp' }] };
+    const ab = setDoc([a, b]);
+    assert.match(compose(VANILLA, { ...ab, writes: [...ab.writes].reverse() }).ui['hudPanel/icon_hp'], /^\/p\/b\//, 'the composition\'s load order: b, the later, applies');
+  });
+
+  test('locateAssetPath: the container, key, fields and kind of a manifest path — null outside the containers', () => {
+    assert.deepEqual(locateAssetPath(['chars', 'char_102_texas', 'spine', 'front']), { container: ['chars'], key: 'char_102_texas', field: ['spine', 'front'], kind: 'spine' });
+    assert.equal(locateAssetPath(['audio', 'bgm', 'combat']).kind, 'track');
+    assert.equal(locateAssetPath(['audio', 'voice', 'char_102_texas', 'select']).kind, 'audioList');
+    assert.equal(locateAssetPath(['audio', 'sfx', 'units', 'char_102_texas', 'skills', '1']).kind, 'audio');
+    assert.equal(locateAssetPath(['ui', 'hudPanel/icon_hp']).kind, 'image');
+    assert.equal(typeof locateAssetPath(['chars', 'char_102_texas']).kind, 'object', 'a whole record');
+    for (const at of [['audio', 'bgm', 'combatAlts'], ['chars'], ['chars', 'x', 'nope'], ['ui', 'k', 'deeper'], ['skillsById', 'x'], 'chars', null, ['chars', 'constructor']]) {
+      assert.equal(locateAssetPath(at), null, JSON.stringify(at));
+    }
+  });
+
+  test('a plugin file that failed to load is left out: its entry falls back to the art beneath it (the room\'s under a personal plugin)', () => {
+    const room = setDoc([{ id: 'room', ops: [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'art/a.png' }] }]);
+    const mine = setDoc([{ id: 'mine', ops: [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'art/b.webp' }] }]);
+    const sets = [prepareVisualDoc(room), prepareVisualDoc(mine)];
+    const roomUrl = `/p/room/${sha('art/a.png').slice(0, 8)}/art/a.png`;
+    const mineUrl = `/p/mine/${sha('art/b.webp').slice(0, 8)}/art/b.webp`;
+    assert.equal(layVisualOps(VANILLA, sets).manifest.chars.char_102_texas.avatar, mineUrl);
+    assert.equal(layVisualOps(VANILLA, sets, { failed: new Set([mineUrl]) }).manifest.chars.char_102_texas.avatar, roomUrl);
+    assert.equal(layVisualOps(VANILLA, sets, { failed: new Set([mineUrl, roomUrl]) }).manifest.chars.char_102_texas.avatar, VANILLA.chars.char_102_texas.avatar);
   });
 
   test('applyOps: each value written whole at its path, the objects on the way copied — nothing changed in place', () => {

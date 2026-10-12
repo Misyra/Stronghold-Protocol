@@ -18,6 +18,7 @@ import { TestClient } from './helpers/wsClient.js';
 import { png, writePlugin, cosmetic } from './helpers/pluginFixtures.js';
 import { ERR } from '../shared/constants.js';
 import { validateC2S } from '../shared/protocol.js';
+import { layVisualOps, prepareVisualDoc } from '../shared/plugins/visual.js';
 
 class RecordingStub extends StubMatch {
   static last = null;
@@ -75,10 +76,11 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     assert.deepEqual(s1.content.warnings, [{ code: 'override', params: { path: 'chars.char_102_texas.avatar', plugins: ['texas-blue', 'texas-red'] } }]);
     assert.ok(s1.content.bytes > 0);
     assert.equal(s1.seats.find((x) => x && x.playerId === guest.id).ready, false, 'un-readied like a difficulty change');
-    // the room's set is served: its composition is what room.state named
-    const doc = await (await fetch(`${srv.url}/vs/${s1.content.vs.slice(0, 16)}/assets.json`)).json();
+    // the room's set is served: its composition is what room.state named, and a page composing it draws the later plugin
+    const doc = await (await fetch(`${srv.url}/vs/${s1.content.vs.slice(0, 16)}/overlay.json`)).json();
     assert.equal(doc.visual.vs, s1.content.vs);
-    assert.match(doc.chars.char_102_texas.avatar, /^\/p\/texas-red\//, 'the later plugin applies');
+    const view = await (await fetch(`${srv.url}/data/assets.json`)).json();
+    assert.match(layVisualOps(view, [prepareVisualDoc(doc)]).manifest.chars.char_102_texas.avatar, /^\/p\/texas-red\//, 'the later plugin applies');
     // the same set again: nothing changes, nobody is un-readied, no room.state
     assert.equal((await guest.request({ t: 'room.ready', ready: true })).t, 'ok');
     await host.waitFor('room.state', (s) => s.seats.some((x) => x && x.playerId === guest.id && x.ready));

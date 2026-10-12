@@ -1250,5 +1250,6 @@
   "该插件不能在房间中启用": "That plugin cannot be switched on for a room",
   "缺少该插件需要的其他插件": "A plugin it requires is missing",
   "所选插件互相冲突": "The chosen plugins conflict with each other",
-  "所选插件的素材总量超出本服务器的上限": "The chosen plugins' art exceeds this server's limit"
+  "所选插件的素材总量超出本服务器的上限": "The chosen plugins' art exceeds this server's limit",
+  "部分外观插件素材无法使用，相应位置显示原版素材": "Some cosmetic plugin art could not be used; the original art shows there instead"
 }

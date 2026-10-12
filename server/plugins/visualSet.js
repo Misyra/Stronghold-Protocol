@@ -1,32 +1,30 @@
 // server/plugins/visualSet.js — the visual sets of this server (DESIGN §32 P1a, docs/PLUGINS.md §9; the format:
 // shared/plugins/visual.js): a set of loaded cosmetic plugins, closed over their requirements and in load order
-// (shared/plugins/order.js), named by its visual hash `vs`, and the two documents it is served as —
+// (shared/plugins/order.js), named by its visual hash `vs`, and the document it is served as —
 //
-//   GET /vs/<vs16>/assets.json    the effective manifest: the served data/assets.json (server/http/assetViews.js — its
-//                                 /assets/~<hash>/… URLs; the committed file until the asset index is ready, or without
-//                                 one) with the set's overlays laid over it in load order, and the set's composition in
-//                                 `visual` — what a room member's page draws with (public/js/content.js)
-//   GET /vs/<vs16>/overlay.json   the overlay alone: `{ visual, ops }`, the resolved writes (shared/plugins/visual.js
-//                                 applyOps) — a player's personal plugin is the set of that plugin alone (the catalogue's
-//                                 `vs` of it), laid over whatever the page draws with
+//   GET /vs/<vs16>/overlay.json   `{ visual: { v, vs, assets, overlays }, writes: [{ id, ops }] }`: the set's composition
+//                                 (each plugin's id, version and file table — what `vs` hashes) and each plugin's writes
+//                                 (paths of its folder and references, never a URL). A room member's page checks the
+//                                 composition against room.state.content.vs and composes the art on the manifest it
+//                                 loaded itself, every plugin URL built from the file table (public/js/content.js,
+//                                 shared/plugins/visual.js prepareVisualDoc) — no copy of the art manifest goes out. A
+//                                 player's personal plugin is the set of that plugin alone (the catalogue's `vs` of it).
 //
-// Both answer `no-cache` with their body's hash as ETag, like the served manifests: the installation's URLs inside follow
-// the asset index, not `vs` [ASSUMED: not immutable as the design study had it — 0.2.6's content-hashed asset URLs came
-// after it]. A set is known once something resolved it — a room's host chose it (resolve) or a browser asked for the
-// set of one plugin the catalogue named — and holds the plugins as they were then: a plugin changed on disk afterwards
-// is served at its new bytes under the old URL with `no-cache` (server/http/static.js), a removed one's files 404. A set
-// a room uses is held (hold / release: server/lobby.js) and never dropped; of the others the 256 most recently used are
-// kept, and the documents of the last 8 built, one build of a document at a time [ASSUMED]. A set holds only loaded
-// cosmetic plugins of the scope it is for (room / personal), serves VISUAL_LIMITS.setBytes (300 MB) of art at most and
-// copies VISUAL_LIMITS.setCopyBytes (4 MB) of the installation's manifest through references at most [ASSUMED].
-// Nothing here changes a battle: a room's `cs` stays the vanilla one whatever its visual set.
+// It answers `no-cache` with its body's hash as ETag [ASSUMED: like the served manifests; a set's document never changes
+// for one vs, but a 304 costs next to nothing]. A set is known once something resolved it — a room's host chose it
+// (resolve) or a browser asked for the set of one plugin the catalogue named — and holds the plugins as they were then:
+// a plugin changed on disk afterwards is served at its new bytes under the old URL with `no-cache`
+// (server/http/static.js), a removed one's files 404. A set a room uses is held (hold / release:
+// server/lobby.js) and never dropped; of the others the 256 most recently used are kept, and the documents of the last
+// 8 built, one build of a document at a time [ASSUMED]. A set holds only loaded cosmetic plugins of the scope it is for
+// (room / personal), serves VISUAL_LIMITS.setBytes (300 MB) of art at most and copies VISUAL_LIMITS.setCopyBytes (4 MB)
+// of the installation's manifest through references at most [ASSUMED]. Nothing here changes a battle: a room's `cs`
+// stays the vanilla one whatever its visual set.
 
 import { createHash } from 'node:crypto';
 import { ERR } from '../../shared/constants.js';
 import { resolvePluginOrder } from '../../shared/plugins/order.js';
-import {
-  VISUAL_HASH_VERSION, VISUAL_LIMITS, applyOps, mergePluginOps, resolveOps, visualHashOf, vsUrlPart,
-} from '../../shared/plugins/visual.js';
+import { VISUAL_HASH_VERSION, VISUAL_LIMITS, mergePluginOps, visualHashOf, vsUrlPart } from '../../shared/plugins/visual.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** Sets kept by vs16, most recently used last. */
@@ -45,18 +43,19 @@ const hash16 = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 
  *   `app` { id, app } — a plugin made for other game versions (a cosmetic one is still allowed: only a warning)
  * @typedef {{ vs: string, plugins: SetPlugin[], warnings: SetWarning[], bytes: number }} VisualSet
  * @typedef {{ vs: string, assets: string, overlays: import('../../shared/plugins/visual.js').VisualOverlay[],
- *   plugins: { id: string, ops: import('../../shared/plugins/visual.js').AssetOp[], shas: Record<string, string> }[] }} KnownSet
+ *   plugins: { id: string, hash: string, ops: import('../../shared/plugins/visual.js').AssetOp[] }[] }} KnownSet
+ *   a set as it was resolved: its plugins' writes then and the hash of their composition (a plugin whose hash differs
+ *   in the registry now has changed on disk)
  */
 
 /**
  * The visual sets of one server.
- * @param {{ registry: ReturnType<typeof import('./registry.js').createPluginRegistry>,
- *   views?: ReturnType<typeof import('../http/assetViews.js').createManifestViews> | null, log?: object,
+ * @param {{ registry: ReturnType<typeof import('./registry.js').createPluginRegistry>, log?: object,
  *   limits?: { setBytes: number, setCopyBytes: number, warnings: number }, maxSets?: number }} opts
- *   registry: the plugin registry (its loaded cosmetic plugins, the installation's art manifest); views: the served
- *   manifests (none: the committed data/assets.json is the base); maxSets: the sets kept that no room holds (256)
+ *   registry: the plugin registry (its loaded cosmetic plugins, the installation's art manifest); maxSets: the sets kept
+ *   that no room holds (256)
  */
-export function createVisualSets({ registry, views = null, log = noopLog, limits = VISUAL_LIMITS, maxSets = MAX_SETS }) {
+export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMITS, maxSets = MAX_SETS }) {
   /** @type {Map<string, KnownSet>} */
   const sets = new Map();
   /** @type {Map<string, number>} vs16 → how many rooms hold the set (never dropped while held) */
@@ -65,9 +64,6 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
   const docs = new Map();
   /** @type {Map<string, Promise<{ body: Buffer, hash: string } | null>>} documents being built (one build each) */
   const building = new Map();
-  /** @type {{ hash: string, doc: any } | null} the last parsed view of data/assets.json */
-  let parsedView = null;
-  const warned = new Set();
 
   /**
    * Keep a set (most recently used last); of the sets no room holds, keep the `maxSets` most recently used — never
@@ -85,7 +81,7 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
       free--;
     }
   };
-  const snapshot = (p) => ({ id: p.id, ops: p.visual.ops, shas: Object.fromEntries([...p.visual.served].map(([rel, f]) => [rel, f.sha256])) });
+  const snapshot = (p) => ({ id: p.id, hash: p.visual.hash, ops: p.visual.ops });
   /** Is `p` a loaded cosmetic plugin with an overlay (of `scope`, when given)? */
   const usable = (p, scope) => !!p && p.class === 'cosmetic' && p.status === 'loaded' && !!p.visual && (!scope || p.manifest.scope.includes(scope));
 
@@ -146,54 +142,29 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
     return null;
   }
 
-  /** The manifest the documents are built on: the served view of data/assets.json, else the committed file. */
-  async function base() {
-    const view = views ? await views.get('assets.json') : null;
-    if (view) {
-      if (!parsedView || parsedView.hash !== view.hash) parsedView = { hash: view.hash, doc: JSON.parse(view.body.toString('utf8')) };
-      return parsedView;
-    }
-    const art = registry.vanillaAssets();
-    return art?.manifest ? { hash: `file-${String(art.sha256).slice(0, 16)}`, doc: art.manifest } : null;
-  }
-
   /**
    * A set's document (see the header), built on first request — once: a request while it is being built waits for it.
    * @param {string} vs16 the first 16 hex digits of its vs
-   * @param {'assets' | 'overlay'} kind
    * @returns {Promise<{ body: Buffer, hash: string } | null>} null for a set this server does not know
    */
-  async function doc(vs16, kind) {
+  async function doc(vs16) {
     const set = known(vs16);
     if (!set) return null;
-    const b = await base();
-    if (!b) return null;
-    const key = `${vs16}|${kind}|${b.hash}`;
-    const hit = docs.get(key);
-    if (hit) { docs.delete(key); docs.set(key, hit); return hit; }
-    const pending = building.get(key);
+    const hit = docs.get(vs16);
+    if (hit) { docs.delete(vs16); docs.set(vs16, hit); return hit; }
+    const pending = building.get(vs16);
     if (pending) return pending;
-    const p = Promise.resolve().then(() => build(set, vs16, kind, b, key)).finally(() => building.delete(key));
-    building.set(key, p);
+    const p = Promise.resolve().then(() => build(set, vs16)).finally(() => building.delete(vs16));
+    building.set(vs16, p);
     return p;
   }
 
-  /** Build a document (doc) and keep it. */
-  function build(set, vs16, kind, b, key) {
-    const ops = [];
-    for (const p of set.plugins) {
-      const r = resolveOps(p.ops, { id: p.id, sha: (rel) => p.shas[rel] ?? null, base: b.doc });
-      ops.push(...r.ops);
-      for (const why of r.problems) {
-        const line = `[plugins] ${p.id}: ${why} (left out of set ${vs16})`;
-        if (!warned.has(line)) { warned.add(line); log.warn?.(line); }
-      }
-    }
+  /** Build a document (doc) and keep it: the composition and each plugin's writes, in load order. */
+  function build(set, vs16) {
     const visual = { v: VISUAL_HASH_VERSION, vs: set.vs, assets: set.assets, overlays: set.overlays };
-    const out = kind === 'assets' ? { ...applyOps(b.doc, ops), visual } : { visual, ops };
-    const body = Buffer.from(JSON.stringify(out));
+    const body = Buffer.from(JSON.stringify({ visual, writes: set.plugins.map((p) => ({ id: p.id, ops: p.ops })) }));
     const built = { body, hash: hash16(body) };
-    docs.set(key, built);
+    docs.set(vs16, built);
     while (docs.size > MAX_DOCS) docs.delete(docs.keys().next().value);
     return built;
   }

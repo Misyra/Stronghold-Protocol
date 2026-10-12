@@ -1,11 +1,13 @@
 // test/ui/plugins-client.test.js — the browser side of the cosmetic plugins (DESIGN §32 P1a): the cosmetic layers of
-// public/js/assets.js (the installation's manifest → the room's visual set, which takes its place → the personal
-// plugins on top; the same object while nothing changed; the asset store's helpers and onChange follow them), data.js's
-// view of `assets`, public/js/content.js (a visual set's document fetched, parsed and checked against the room's vs —
-// retried when the network failed, refused when its composition does not hash to it; the room layer follows
-// room.state.content.vs and goes with the room, a late answer for a room left is dropped; the personal plugins come from
-// the catalogue's vs of each, a plugin the server lacks is skipped, nothing is fetched while none is switched on), the
-// 插件 panel's facts (ui/pluginPanel.js) and the room screen's tag.
+// public/js/assets.js (the installation's manifest → the room's visual set → the personal plugins on top, composed on the
+// page's own manifest: every plugin URL built from a set's composition, a URL in a document never drawn, a write that
+// does not fit left out and told once, a plugin file that failed to load falling back to the art beneath it; the same
+// object while nothing changed; the asset store's helpers and onChange follow them), data.js's view of `assets`,
+// public/js/content.js (a visual set's document fetched, parsed and checked against the room's vs — retried when the
+// network failed, refused when its composition does not hash to it; the room layer follows room.state.content.vs and
+// goes with the room, a late answer for a room left is dropped; the personal plugins come from the catalogue's vs of
+// each, a plugin the server lacks is skipped, nothing is fetched while none is switched on), the 插件 panel's facts
+// (ui/pluginPanel.js) and the room screen's tag.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,32 +21,42 @@ import {
 } from '../../public/js/content.js';
 import { roomPluginFacts, nextChoice, sizeText, pluginTagText, pluginMicro } from '../../public/js/ui/pluginPanel.js';
 import { visualHashOf } from '../../shared/plugins/visual.js';
+import { sha256Hex } from '../../shared/sha256.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const BASE = { version: 1, chars: { char_102_texas: { avatar: '/assets/~1111111111111111/texas.png' }, char_112_siege: { avatar: '/assets/siege.png' } } };
-const composition = (id) => ({ assets: 'aa'.repeat(32), overlays: [{ id, version: '1.0.0', files: { 'plugin.json': 'bb'.repeat(32) } }] });
-const visualOf = (id) => { const c = composition(id); return { v: 1, vs: visualHashOf(c), ...c }; };
-/** The room's effective manifest of a set of one plugin that paints Texas red. */
-const roomDoc = (id = 'red') => ({ ...BASE, chars: { ...BASE.chars, char_102_texas: { avatar: `/p/${id}/01234567/a.png` } }, visual: visualOf(id) });
-const overlayDoc = (id, ops) => ({ visual: visualOf(id), ops });
+const fileSha = (id, rel) => sha256Hex(`${id}:${rel}`);
+/** A plugin file's URL as the page builds it from the composition: /p/<id>/<first 8 hex of its SHA-256>/<path>. */
+const urlOf = (id, rel) => `/p/${id}/${fileSha(id, rel).slice(0, 8)}/${rel}`;
+/** A set's document (server/plugins/visualSet.js) of one plugin: its composition and its writes. */
+const setDocOf = (id, ops, files = ['a.png']) => {
+  const parts = { assets: 'aa'.repeat(32), overlays: [{ id, version: '1.0.0', files: Object.fromEntries(['plugin.json', ...files].map((rel) => [rel, fileSha(id, rel)])) }] };
+  return { visual: { v: 1, vs: visualHashOf(parts), ...parts }, writes: [{ id, ops }] };
+};
+/** The room's set of one plugin that paints Texas (its a.png). */
+const roomDoc = (id = 'red') => setDocOf(id, [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'a.png' }]);
+/** A personal plugin that paints Siege (its `rel`). */
+const personalDoc = (id, rel = 'm.png') => setDocOf(id, [{ at: ['chars', 'char_112_siege', 'avatar'], file: rel }], [rel]);
 const res = (status, body) => ({ ok: status >= 200 && status < 300, status, text: async () => (typeof body === 'string' ? body : JSON.stringify(body)), json: async () => body });
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const until = async (pred, what) => { for (let i = 0; i < 200; i++) { if (pred()) return; await tick(); } assert.fail(`timed out: ${what}`); };
 
 describe('the cosmetic layers (public/js/assets.js)', () => {
-  test('base → the room\'s manifest (in its place) → personal writes on top; the same object while nothing changed', () => {
+  test('base → the room\'s set composed on it → personal writes on top; the same object while nothing changed', () => {
     const layers = createCosmeticLayers();
     assert.equal(layers.apply(BASE), BASE, 'no layer: the base itself');
     let told = 0;
     layers.subscribe(() => told++);
     const room = roomDoc();
     layers.setRoom(room);
-    assert.equal(layers.apply(BASE), room);
-    layers.setPersonal([{ id: 'mine', ops: [{ at: ['chars', 'char_112_siege', 'avatar'], value: '/p/mine/89abcdef/m.png' }] }]);
+    const r1 = layers.apply(BASE);
+    assert.equal(r1.chars.char_102_texas.avatar, urlOf('red', 'a.png'), 'built from the composition');
+    assert.equal(r1.chars.char_112_siege, BASE.chars.char_112_siege, 'what no write touches is the page\'s own');
+    layers.setPersonal([{ id: 'mine', doc: personalDoc('mine') }]);
     const eff = layers.apply(BASE);
-    assert.equal(eff.chars.char_102_texas.avatar, '/p/red/01234567/a.png', 'the room\'s art');
-    assert.equal(eff.chars.char_112_siege.avatar, '/p/mine/89abcdef/m.png', 'the personal plugin over it');
-    assert.equal(room.chars.char_112_siege.avatar, '/assets/siege.png', 'the room\'s document is never changed');
+    assert.equal(eff.chars.char_102_texas.avatar, urlOf('red', 'a.png'), 'the room\'s art');
+    assert.equal(eff.chars.char_112_siege.avatar, urlOf('mine', 'm.png'), 'the personal plugin over it');
+    assert.equal(BASE.chars.char_112_siege.avatar, '/assets/siege.png', 'the base is never changed');
     assert.equal(layers.apply(BASE), eff, 'memoised');
     layers.setRoom(room);
     assert.equal(told, 2, 'the same room again tells nobody');
@@ -55,9 +67,58 @@ describe('the cosmetic layers (public/js/assets.js)', () => {
     assert.equal(layers.active, false);
   });
 
+  test('the page draws exactly what the vs names: a URL in a document is never taken, a write that does not fit is left out (told once)', () => {
+    const layers = createCosmeticLayers();
+    const told = [];
+    layers.onDrop((why, n) => told.push([n, why.join(' ')]));
+    const doc = setDocOf('red', [
+      { at: ['chars', 'char_102_texas', 'avatar'], value: 'https://evil.example/track.png' },
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'https://evil.example/a.png' },
+      { at: ['chars', 'char_102_texas', 'avatar'], file: 'missing.png' },
+      { at: ['chars', 'char_112_siege', 'avatar'], file: 'a.png' },
+    ]);
+    layers.setRoom(doc);
+    const m = layers.apply(BASE);
+    assert.equal(m.chars.char_102_texas.avatar, BASE.chars.char_102_texas.avatar, 'the installation\'s art');
+    assert.equal(m.chars.char_112_siege.avatar, urlOf('red', 'a.png'));
+    assert.doesNotMatch(JSON.stringify(m), /evil/);
+    assert.equal(told.length, 1);
+    assert.equal(told[0][0], 3);
+    layers.setRoom(null);
+    layers.setRoom(doc);
+    layers.apply(BASE);
+    assert.equal(told.length, 1, 'once per document');
+    // a reference this page's manifest lacks: left out when laid, told once per change
+    layers.setRoom(setDocOf('ref', [{ at: ['chars', 'char_102_texas'], from: ['chars', 'char_000_nobody'], ref: 'char_000_nobody' }]));
+    assert.equal(layers.apply(BASE).chars.char_102_texas, BASE.chars.char_102_texas);
+    layers.apply(JSON.parse(JSON.stringify(BASE)));
+    assert.equal(told.length, 2);
+    assert.match(told[1][1], /has no chars\.char_000_nobody/);
+  });
+
+  test('a plugin file that failed to load: its entry falls back to the art beneath it — the room\'s under a personal plugin, then the installation\'s', () => {
+    const layers = createCosmeticLayers();
+    let told = 0;
+    layers.subscribe(() => told++);
+    layers.setRoom(roomDoc());
+    layers.setPersonal([{ id: 'mine', doc: setDocOf('mine', [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'b.png' }], ['b.png']) }]);
+    assert.equal(layers.apply(BASE).chars.char_102_texas.avatar, urlOf('mine', 'b.png'));
+    told = 0;
+    assert.equal(layers.fail(`http://localhost${urlOf('mine', 'b.png')}`), true, 'an <img>\'s absolute src');
+    assert.equal(told, 1, 'the listeners re-resolve their art');
+    assert.equal(layers.apply(BASE).chars.char_102_texas.avatar, urlOf('red', 'a.png'));
+    assert.equal(layers.fail(urlOf('red', 'a.png')), true);
+    assert.equal(layers.apply(BASE).chars.char_102_texas.avatar, BASE.chars.char_102_texas.avatar);
+    assert.equal(layers.fail(urlOf('red', 'a.png')), false, 'told once');
+    assert.equal(layers.fail('/assets/siege.png'), false, 'not a layer\'s file');
+    assert.equal(layers.fail('https://elsewhere.example/p/mine/00000000/b.png'), false, 'another origin');
+    assert.equal(told, 2);
+    assert.deepEqual(layers.failed.sort(), [urlOf('mine', 'b.png'), urlOf('red', 'a.png')].sort());
+  });
+
   test('the memo is per base object: data.js\'s copy and the store\'s each keep theirs', () => {
     const layers = createCosmeticLayers();
-    layers.setPersonal([{ id: 'mine', ops: [{ at: ['chars', 'char_112_siege', 'avatar'], value: '/p/mine/89abcdef/m.png' }] }]);
+    layers.setPersonal([{ id: 'mine', doc: personalDoc('mine') }]);
     const other = JSON.parse(JSON.stringify(BASE));
     const a = layers.apply(BASE);
     const b = layers.apply(other);
@@ -75,8 +136,8 @@ describe('the cosmetic layers (public/js/assets.js)', () => {
     assert.equal(store.avatar('char_102_texas'), BASE.chars.char_102_texas.avatar);
     layers.setRoom(roomDoc());
     assert.deepEqual(heard, ['manifest']);
-    assert.equal(store.avatar('char_102_texas'), '/p/red/01234567/a.png');
-    assert.equal(store.manifest.chars.char_102_texas.avatar, '/p/red/01234567/a.png', 'manifest: what the helpers read');
+    assert.equal(store.avatar('char_102_texas'), urlOf('red', 'a.png'));
+    assert.equal(store.manifest.chars.char_102_texas.avatar, urlOf('red', 'a.png'), 'manifest: what the helpers read');
     assert.equal(createAssets({ manifest: BASE }).avatar('char_102_texas'), BASE.chars.char_102_texas.avatar, 'a store without layers');
   });
 
@@ -89,7 +150,7 @@ describe('the cosmetic layers (public/js/assets.js)', () => {
     layers.setRoom(roomDoc());
     d.setView('assets', (v) => layers.apply(v));
     assert.deepEqual(heard, ['assets']);
-    assert.equal(d.get('assets').chars.char_102_texas.avatar, '/p/red/01234567/a.png');
+    assert.equal(d.get('assets').chars.char_102_texas.avatar, urlOf('red', 'a.png'));
     assert.equal(d.getRaw('assets').chars.char_102_texas.avatar, BASE.chars.char_102_texas.avatar);
     d.setView('assets', null);
     assert.equal(d.get('assets'), d.getRaw('assets'));
@@ -97,24 +158,24 @@ describe('the cosmetic layers (public/js/assets.js)', () => {
 });
 
 describe('content.js', () => {
-  test('fetchVisualDoc: as text, parsed, checked against the vs; a network failure or 5xx retried, a 404 or a bad composition refused', async () => {
+  test('fetchVisualDoc: /vs/<vs16>/overlay.json as text, parsed, checked against the vs; a network failure or 5xx retried, a 404 or a bad composition refused', async () => {
     const doc = roomDoc();
     const vs = doc.visual.vs;
     const urls = [];
-    const ok = await fetchVisualDoc('assets', vs, { fetch: async (u, init) => { urls.push([u, init.cache]); return res(200, doc); } });
+    const ok = await fetchVisualDoc(vs, { fetch: async (u, init) => { urls.push([u, init.cache]); return res(200, doc); } });
     assert.deepEqual(ok, { doc });
-    assert.deepEqual(urls, [[`/vs/${vs.slice(0, 16)}/assets.json`, 'no-cache']]);
+    assert.deepEqual(urls, [[`/vs/${vs.slice(0, 16)}/overlay.json`, 'no-cache']]);
     let n = 0;
-    const flaky = await fetchVisualDoc('overlay', vs, { retryDelays: [0, 0], wait: async () => {}, fetch: async () => { n++; if (n === 1) throw new Error('offline'); if (n === 2) return res(503, ''); return res(200, doc); } });
+    const flaky = await fetchVisualDoc(vs, { retryDelays: [0, 0], wait: async () => {}, fetch: async () => { n++; if (n === 1) throw new Error('offline'); if (n === 2) return res(503, ''); return res(200, doc); } });
     assert.deepEqual([flaky.doc === undefined, n], [false, 3]);
-    assert.match((await fetchVisualDoc('assets', vs, { fetch: async () => res(404, '') })).error, /HTTP 404/);
-    assert.match((await fetchVisualDoc('assets', 'cd'.repeat(32), { fetch: async () => res(200, doc) })).error, /names another set/);
-    assert.match((await fetchVisualDoc('assets', vs, { fetch: async () => res(200, '{"nope') })).error, /not JSON/);
-    assert.match((await fetchVisualDoc('assets', 'short')).error, /no visual hash/);
+    assert.match((await fetchVisualDoc(vs, { fetch: async () => res(404, '') })).error, /HTTP 404/);
+    assert.match((await fetchVisualDoc('cd'.repeat(32), { fetch: async () => res(200, doc) })).error, /names another set/);
+    assert.match((await fetchVisualDoc(vs, { fetch: async () => res(200, '{"nope') })).error, /not JSON/);
+    assert.match((await fetchVisualDoc('short')).error, /no visual hash/);
     // an attempt that never answers is given up after the timeout (and tried again like a network error)
     let tries = 0;
-    const stalled = await fetchVisualDoc('assets', vs, { timeoutMs: 20, retryDelays: [0], wait: async () => {}, fetch: () => { tries++; return new Promise(() => {}); } });
-    assert.deepEqual([stalled.error, tries], [`/vs/${vs.slice(0, 16)}/assets.json: unreachable`, 2]);
+    const stalled = await fetchVisualDoc(vs, { timeoutMs: 20, retryDelays: [0], wait: async () => {}, fetch: () => { tries++; return new Promise(() => {}); } });
+    assert.deepEqual([stalled.error, tries], [`/vs/${vs.slice(0, 16)}/overlay.json: unreachable`, 2]);
   });
 
   test('installContent: the room layer follows room.state.content.vs, goes with the room, ignores a late answer, says a failure once', async () => {
@@ -130,16 +191,16 @@ describe('content.js', () => {
     const off = installContent({ store: app, data, layers, fetch, toast: (text, kind) => toasts.push([text, kind]), retryDelays: [] });
     assert.equal(pending.size, 0, 'no room, no personal plugin: nothing is fetched');
     app.set({ room: { code: 'ABCD', content: { cs: 'ee'.repeat(32), vanilla: true, vs: red.visual.vs, plugins: [{ id: 'red' }] } } });
-    const redUrl = `/vs/${red.visual.vs.slice(0, 16)}/assets.json`;
+    const redUrl = `/vs/${red.visual.vs.slice(0, 16)}/overlay.json`;
     assert.ok(pending.has(redUrl));
     // the room changes to blue before red's document arrives: red's late answer is dropped
     app.set({ room: { code: 'ABCD', content: { cs: 'ee'.repeat(32), vanilla: true, vs: blue.visual.vs, plugins: [{ id: 'blue' }] } } });
     pending.get(redUrl)(res(200, red));
-    pending.get(`/vs/${blue.visual.vs.slice(0, 16)}/assets.json`)(res(200, blue));
+    pending.get(`/vs/${blue.visual.vs.slice(0, 16)}/overlay.json`)(res(200, blue));
     await until(() => layers.room === null ? false : layers.room.visual.vs === blue.visual.vs, 'blue applied');
     await tick();
     assert.equal(layers.room.visual.vs, blue.visual.vs, 'never the late red');
-    assert.equal(data.get('assets').chars.char_102_texas.avatar, '/p/blue/01234567/a.png', 'every data.get(\'assets\') of the interface draws it');
+    assert.equal(data.get('assets').chars.char_102_texas.avatar, urlOf('blue', 'a.png'), 'every data.get(\'assets\') of the interface draws it');
     // leaving the room: its art goes too
     app.set({ room: null });
     assert.equal(layers.room, null);
@@ -147,7 +208,7 @@ describe('content.js', () => {
     // a document that fails its check: the original art, one toast
     const bad = roomDoc('bad');
     app.set({ room: { content: { vs: 'ab'.repeat(32) } } });
-    pending.get(`/vs/${'ab'.repeat(8)}/assets.json`)(res(200, bad));
+    pending.get(`/vs/${'ab'.repeat(8)}/overlay.json`)(res(200, bad));
     await until(() => toasts.length === 1, 'the toast');
     assert.equal(layers.room, null);
     assert.equal(toasts[0][1], 'warn');
@@ -156,8 +217,8 @@ describe('content.js', () => {
   });
 
   test('installContent: the personal plugins come from the catalogue\'s vs of each, in its order; a missing one is skipped', async () => {
-    const mine = overlayDoc('mine', [{ at: ['chars', 'char_112_siege', 'avatar'], value: '/p/mine/89abcdef/m.png' }]);
-    const zed = overlayDoc('zed', [{ at: ['chars', 'char_112_siege', 'avatar'], value: '/p/zed/11111111/z.png' }]);
+    const mine = personalDoc('mine', 'm.png');
+    const zed = personalDoc('zed', 'z.png');
     const entries = [
       { id: 'mine', class: 'cosmetic', status: 'loaded', scope: ['personal'], vs: mine.visual.vs, unofficial: true },
       { id: 'room-only', class: 'cosmetic', status: 'loaded', scope: ['room'], vs: 'cc'.repeat(32), unofficial: true },
@@ -185,11 +246,11 @@ describe('content.js', () => {
     assert.deepEqual(personal.get().ids, ['gone', 'mine', 'zed']);
     await until(() => layers.personal.length === 2, 'two personal plugins');
     assert.deepEqual(layers.personal.map((p) => p.id), ['mine', 'zed'], 'the catalogue\'s order; a plugin the server lacks is skipped');
-    assert.equal(data.get('assets').chars.char_112_siege.avatar, '/p/zed/11111111/z.png', 'the later one applies');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, urlOf('zed', 'z.png'), 'the later one applies');
     assert.ok(!asked.some((u) => u.includes('cc'.repeat(8))), 'a room-only plugin is never a personal one');
     setPersonalPlugin('zed', false);
     await until(() => layers.personal.length === 1, 'one left');
-    assert.equal(data.get('assets').chars.char_112_siege.avatar, '/p/mine/89abcdef/m.png');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, urlOf('mine', 'm.png'));
     setPersonalPlugin('mine', false);
     setPersonalPlugin('gone', false);
     await until(() => layers.personal.length === 0, 'none');

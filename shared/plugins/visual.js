@@ -1,12 +1,12 @@
 // shared/plugins/visual.js — the cosmetic plugins (DESIGN §32 P1a, docs/PLUGINS.md §9): the asset overlay a cosmetic
 // plugin carries — its `assets` part, written in the shape of data/assets.json (docs/ASSETS.md "Manifest schema") with
-// the plugin's own files and references to the installation's entries — read and checked (readAssetOverlay), resolved
-// against a manifest and rewritten to the plugin's served URLs (resolveOps), merged in load order with a warning where
-// two plugins change the same thing (mergePluginOps) and laid over a manifest (applyOps); the visual hash `vs` that
-// names a set of them (visualHashOf) and the check a browser runs on what it downloaded (checkVisualDoc). No Node
-// builtin: the server builds a room's visual set with it (server/plugins/registry.js reads, server/plugins/visualSet.js
-// builds), the browser lays the player's personal plugins over the page's manifest with it (public/js/assets.js), the
-// tools check and pack with it (tools/plugin.mjs).
+// the plugin's own files and references to the installation's entries — read and checked (readAssetOverlay), merged in
+// load order with a warning where two plugins change the same thing (mergePluginOps); the visual hash `vs` that names a
+// set of them (visualHashOf); the document a set is served as and the check a browser runs on it (checkVisualDoc); and
+// what the browser makes of it (prepareVisualDoc, layVisualOps): the art it draws, composed on its own manifest. No Node
+// builtin: the server reads and checks with it (server/plugins/registry.js) and serves the sets
+// (server/plugins/visualSet.js), the browser composes with it (public/js/assets.js cosmetic layers), the tools check and
+// pack with it (tools/plugin.mjs).
 //
 // The overlay (`assets`, inline in plugin.json or a .json file of the plugin) — the record containers of data/assets.json
 // a plugin may write (ASSET_CONTAINERS), each record in the manifest's own shape:
@@ -32,19 +32,29 @@
 // model `spineLocal` — the client would draw that one first (public/js/assets.js spineEntry) [ASSUMED].
 //
 // The ops: the overlay as a list of writes `{ at: [path…], … }` in the order the plugin wrote them — a plugin file
-// (`file` / `files`), a Spine model (`spine`), a reference (`ref`, `from`: the path it reads). Resolved (resolveOps),
-// each op is `{ at, value }`: a file becomes `/p/<id>/<8 hex>/<path>` (PLUGIN_FILES_URL; the first 8 hex digits of the
-// file's SHA-256 — of a Spine model's files' hashes for every file of the model, so the skeleton, the atlas and the pages
-// share one folder, as pixi-spine needs), a reference the entry's value in the manifest it is resolved against (the
-// served one: its /assets/~<hash>/ URLs). applyOps writes the values: a whole value at its path (a record replaced by a
-// whole-record reference, a Spine object, a file list), the objects on the way copied, never changed in place.
+// (`file` / `files`), a BGM track (`track`), a Spine model (`spine`, with its clip data from the lock: `meta`), a reference
+// (`ref`, `from`: the path it reads), an implied clear (`clear`: an enemy's or a token's `spineLocal`). They name paths of
+// the plugin folder, never a URL.
 //
 //   vs = sha256(canonical({ v: 1, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files }] }))
 //   files: { <path>: SHA-256 } — every file that shapes the plugin's overlay: plugin.json, plugin.lock.json, the
-//   `assets` file and every file the overlay serves [ASSUMED] — so a changed byte in any of them changes `vs`. The
-//   asset URLs of the installation's entries (0.2.6: /assets/~<hash>/…) follow the server's asset index, not `vs`: the
-//   documents a visual set is served as (/vs/<vs16>/assets.json, /vs/<vs16>/overlay.json) carry their composition, and a
-//   browser checks that the composition hashes to the `vs` it was told (checkVisualDoc) — cosmetics never change a battle.
+//   `assets` file and every file the overlay serves [ASSUMED] — so a changed byte in any of them changes `vs`.
+//
+// The document of a set (/vs/<vs16>/overlay.json, server/plugins/visualSet.js): `{ visual: { v, vs, assets, overlays },
+// writes: [{ id, ops }] }` — its composition and each plugin's ops. A browser checks that the composition hashes to the
+// `vs` it was told (checkVisualDoc) and then composes the art itself, on the manifest it already loaded (its own
+// /data/assets.json: 0.2.6's /assets/~<hash>/ URLs) — it never adopts a manifest the server put together, so what it
+// draws is exactly what `vs` names (and the document stays small: no copy of the manifest):
+//   * prepareVisualDoc: every plugin URL is built from the composition's file table — /p/<id>/<8 hex>/<path>
+//     (PLUGIN_FILES_URL; the first 8 hex digits of the file's SHA-256 there, or for every file of a Spine model of its
+//     files' SHA-256s — modelHashOf —, so the skeleton, the atlas and the pages share one folder, as pixi-spine needs);
+//     an op naming a file the table lacks or of another kind than its field takes (an image as a sound, a page outside
+//     its atlas's folder …), a path outside the containers or a clip data out of the lock's shape is dropped — never a
+//     URL from anywhere else (no http(s):, no data:, no other path of the server);
+//   * layVisualOps: a reference is copied out of that manifest itself (an entry it lacks: dropped), the writes laid over
+//     it in load order (applyOps: the objects on the way copied, never changed in place).
+// A dropped write leaves the art beneath it (the installation's) and the page says so once (public/js/content.js).
+// Cosmetics never change a battle.
 
 import { sha256Hex } from '../sha256.js';
 import { canonicalJson, isContentHash } from './identity.js';
@@ -58,8 +68,10 @@ export const VS_URL_DIGITS = 16;
 export const FILE_URL_DIGITS = 8;
 /** Where a cosmetic plugin's files are served (server/http/static.js). */
 export const PLUGIN_FILES_URL = '/p/';
-/** Where visual sets are served: /vs/<vs16>/assets.json (the effective manifest), /vs/<vs16>/overlay.json (the overlay). */
+/** Where visual sets are served: /vs/<vs16>/overlay.json (the set's composition and its plugins' writes). */
 export const VISUAL_SETS_URL = '/vs/';
+/** The name of a set's document under VISUAL_SETS_URL/<vs16>/. */
+export const VISUAL_DOC_FILE = 'overlay.json';
 /** The lock file tools/plugin.mjs pack writes next to plugin.json. */
 export const LOCK_FILE = 'plugin.lock.json';
 /** The version of plugin.lock.json. */
@@ -87,6 +99,10 @@ export const vsUrlPart = (vs) => String(vs).slice(0, VS_URL_DIGITS);
 
 const IMAGE = Object.freeze(['.png', '.jpg', '.webp']);
 const AUDIO = Object.freeze(['.mp3', '.ogg']);
+/** The image files a cosmetic plugin's overlay names. */
+export const PLUGIN_IMAGE_EXTS = IMAGE;
+/** The audio files a cosmetic plugin's overlay names (also fetched without the extension: server/http/static.js). */
+export const PLUGIN_AUDIO_EXTS = AUDIO;
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -148,9 +164,6 @@ export function getPath(obj, path) {
   return node;
 }
 
-/** A deep copy of plain JSON data. @template T @param {T} v @returns {T} */
-const cloneJson = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-
 /**
  * @typedef {{ anims: Record<string, any>, animations: Record<string, number>, events: string[],
  *   hits: Record<string, number[]>, bounds: { x: number, y: number, width: number, height: number } | null }} SpineMeta
@@ -161,6 +174,7 @@ const cloneJson = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
  *   one write of an overlay (see the header); `clear`: the entry's value taken away (an enemy's or a token's
  *   `spineLocal` when its model is written — `implied`: a consequence of another write, never an override of its own)
  * @typedef {{ at: string[], value: any }} ResolvedOp
+ *   a write with its value (applyOps): `undefined` takes the entry away
  * @typedef {{ ops: AssetOp[], files: string[], models: string[][], copyBytes: number, problems: string[], warnings: string[] }} AssetOverlay
  *   copyBytes: what its references copy out of the installation's manifest (JSON text; 0 without the manifest)
  */
@@ -508,49 +522,189 @@ export const pluginFileUrl = (id, hash8, rel) => `${PLUGIN_FILES_URL}${id}/${has
 export const modelHashOf = (shas) => sha256Hex(shas.join('\n'));
 
 /**
- * Resolve the ops of one plugin: its files to their served URLs, its references to the values of `base` (see the header).
- * @param {AssetOp[]} ops
- * @param {{ id: string, sha: (rel: string) => string | null, base: any }} ctx
- *   sha: the SHA-256 of a file of the plugin; base: the manifest references read (the served one)
- * @returns {{ ops: ResolvedOp[], problems: string[] }}
+ * Where a path of the manifest lands among the containers (see the header): the container, the record key, the fields
+ * below it and the kind there (AssetKind: 'image', 'spine' … or an object kind — a whole record, `spine` of an
+ * operator), or null for a path outside them (another section, a key that is no entry key, a field a record has not).
+ * @param {unknown} at
+ * @returns {{ container: string[], key: string, field: string[], kind: AssetKind } | null}
  */
-export function resolveOps(ops, { id, sha, base }) {
-  const problems = [];
-  /** @type {ResolvedOp[]} */
-  const out = [];
-  const url = (rel, hash) => pluginFileUrl(id, String(hash).slice(0, FILE_URL_DIGITS), rel);
-  const fileUrl = (rel) => { const h = sha(rel); if (!h) problems.push(`${rel}: not hashed`); return h ? url(rel, h) : null; };
-  for (const op of ops) {
-    if (op.ref !== undefined) {
-      const v = getPath(base, op.from || []);
-      if (v === undefined) { problems.push(`${pathText(op.at)}: { "ref": "${op.ref}" } — the manifest has no ${(op.from || []).join('.')}`); continue; }
-      out.push({ at: op.at, value: cloneJson(v) });
-    } else if (op.file !== undefined) {
-      const u = fileUrl(op.file);
-      if (u) out.push({ at: op.at, value: u });
-    } else if (op.files) {
-      const list = op.files.map(fileUrl);
-      if (list.every(Boolean)) out.push({ at: op.at, value: list });
-    } else if (op.track) {
-      const loop = fileUrl(op.track.loop);
-      const intro = op.track.intro !== undefined ? fileUrl(op.track.intro) : null;
-      if (loop && (op.track.intro === undefined || intro)) out.push({ at: op.at, value: intro ? { intro, loop } : { loop } });
-    } else if (op.clear) {
-      out.push({ at: op.at, value: undefined });
-    } else if (op.spine) {
-      const s = op.spine;
-      const shas = [s.skel, s.atlas, ...s.textures].map((rel) => sha(rel));
-      if (shas.some((h) => !h)) { problems.push(`${pathText(op.at)}: a file of the model is not hashed`); continue; }
-      if (!s.meta) { problems.push(`${pathText(op.at)}: no clip data (${LOCK_FILE})`); continue; }
-      const m = modelHashOf(shas);
-      out.push({ at: op.at, value: {
-        skel: url(s.skel, m), atlas: url(s.atlas, m), textures: s.textures.map((rel) => url(rel, m)), pma: s.pma,
-        anims: cloneJson(s.meta.anims), animations: cloneJson(s.meta.animations), events: [...s.meta.events], hits: cloneJson(s.meta.hits),
-        bounds: s.meta.bounds ? { ...s.meta.bounds } : null,
-      } });
+export function locateAssetPath(at) {
+  if (!Array.isArray(at) || at.length < 2 || at.length > 8 || !at.every((k) => typeof k === 'string' && k.length > 0 && k.length <= 128 && !FORBIDDEN.has(k))) return null;
+  let node = TREE;
+  for (let i = 0; i < at.length; i++) {
+    node = has(node, at[i]) ? node[at[i]] : null;
+    if (!node) return null;
+    const c = /** @type {AssetContainer | undefined} */ (node.$container);
+    if (!c) continue;
+    const key = at[i + 1];
+    if (!isAssetKey(key) || (c.keys && !c.keys.includes(key))) return null;
+    const field = at.slice(i + 2);
+    /** @type {any} */
+    let kind = c.record;
+    for (const f of field) {
+      if (typeof kind === 'string') return null;
+      kind = kind.fields ? (has(kind.fields, f) ? kind.fields[f] : null) : (kind.key.test(f) ? kind.each : null);
+      if (!kind) return null;
+    }
+    return { container: c.path, key, field, kind };
+  }
+  return null;
+}
+
+/**
+ * @typedef {{ at: string[], value: any, urls: string[] } | { at: string[], from: string[] }} PreparedOp
+ *   a write of a set's document made ready for any manifest: its value with the plugin URLs it writes, or a reference
+ *   (`from`: the path it copies, read out of the manifest it is laid over — layVisualOps)
+ * @typedef {{ ops: PreparedOp[], urls: Set<string>, dropped: string[], droppedCount: number }} PreparedSet
+ *   urls: every plugin URL the set writes; dropped: why ops were left out (the first 16), droppedCount: how many
+ */
+
+/** At most this many reasons are kept of the ops a document drops (the count is exact). */
+const DROPPED_KEPT = 16;
+
+/**
+ * A checked set document (checkVisualDoc) made ready to be laid over a manifest (see the header): every plugin URL built
+ * from the composition's file table — never taken from the document —, every op checked against the field it writes, in
+ * the composition's load order. What does not fit is dropped (with the reason): that entry keeps the art beneath it.
+ * @param {any} doc `{ visual: { overlays: [{ id, version, files }] }, writes: [{ id, ops }] }`
+ * @returns {PreparedSet}
+ */
+export function prepareVisualDoc(doc) {
+  /** @type {PreparedOp[]} */
+  const ops = [];
+  /** @type {Set<string>} */
+  const urls = new Set();
+  /** @type {string[]} */
+  const dropped = [];
+  let droppedCount = 0;
+  const overlays = isObj(doc) && isObj(doc.visual) && Array.isArray(doc.visual.overlays) ? doc.visual.overlays : [];
+  /** @type {Map<string, any[]>} */
+  const writes = new Map();
+  for (const w of isObj(doc) && Array.isArray(doc.writes) ? doc.writes : []) {
+    if (isObj(w) && typeof w.id === 'string' && Array.isArray(w.ops) && !writes.has(w.id)) writes.set(w.id, w.ops);
+  }
+  for (const o of overlays) {
+    if (!isObj(o) || typeof o.id !== 'string' || !isObj(o.files)) continue;
+    const id = o.id;
+    const files = o.files;
+    const list = writes.get(id) || [];
+    const drop = (at, why) => {
+      droppedCount++;
+      if (dropped.length < DROPPED_KEPT) dropped.push(`${id}: ${Array.isArray(at) ? pathText(at.map(String)) : 'assets'}: ${why}`);
+    };
+    /** The URL of a file of the composition, of one of `exts` (null: not one). */
+    const fileUrl = (rel, exts, hash = null) => {
+      if (typeof rel !== 'string' || !isPackPath(rel) || !exts.includes(extOf(rel)) || !has(files, rel) || !isHex64(files[rel])) return null;
+      return pluginFileUrl(id, String(hash || files[rel]).slice(0, FILE_URL_DIGITS), rel);
+    };
+    for (const [n, op] of list.entries()) {
+      if (n >= VISUAL_LIMITS.ops) { drop(null, `more than ${VISUAL_LIMITS.ops} writes`); break; }
+      if (!isObj(op)) { drop(null, 'not a write'); continue; }
+      const at = op.at;
+      // an implied clear: an enemy's or a token's local-client model, when its model is written
+      if (op.clear === true) {
+        if (Array.isArray(at) && at.length === 3 && LOCAL_MODELS.has(at[0]) && isAssetKey(at[1]) && at[2] === 'spineLocal') ops.push({ at: [...at], value: undefined, urls: [] });
+        else drop(at, 'a clear of something else than a local-client model');
+        continue;
+      }
+      const loc = locateAssetPath(at);
+      if (!loc) { drop(at, 'not something a cosmetic plugin changes'); continue; }
+      const kind = loc.kind;
+      if (op.from !== undefined) {
+        const from = op.from;
+        const depth = loc.container.length;
+        const ok = Array.isArray(from) && from.length === at.length && loc.container.every((k, i) => from[i] === k) && isAssetKey(from[depth])
+          && loc.field.every((k, i) => from[depth + 1 + i] === k);
+        if (ok) ops.push({ at: [...at], from: [...from] });
+        else drop(at, 'a reference to another place than the same field of an entry of its container');
+        continue;
+      }
+      if (op.file !== undefined) {
+        const u = kind === 'image' ? fileUrl(op.file, IMAGE) : kind === 'audio' || kind === 'audioList' ? fileUrl(op.file, AUDIO) : null;
+        if (u) { ops.push({ at: [...at], value: u, urls: [u] }); urls.add(u); } else drop(at, `${short(op.file)} is no ${kindName(kind)} of the set`);
+        continue;
+      }
+      if (op.files !== undefined) {
+        const list2 = kind === 'audioList' && Array.isArray(op.files) && op.files.length && op.files.length <= VISUAL_LIMITS.listFiles ? op.files.map((rel) => fileUrl(rel, AUDIO)) : null;
+        if (list2 && list2.every(Boolean)) { ops.push({ at: [...at], value: list2, urls: list2 }); for (const u of list2) urls.add(u); } else drop(at, 'not a list of audio files of the set');
+        continue;
+      }
+      if (op.track !== undefined) {
+        const tr = op.track;
+        const loop = kind === 'track' && isObj(tr) ? fileUrl(tr.loop, AUDIO) : null;
+        const intro = loop && tr.intro !== undefined ? fileUrl(tr.intro, AUDIO) : null;
+        if (loop && (tr.intro === undefined || intro)) {
+          const value = intro ? { intro, loop } : { loop };
+          ops.push({ at: [...at], value, urls: intro ? [intro, loop] : [loop] });
+          urls.add(loop);
+          if (intro) urls.add(intro);
+        } else drop(at, 'not a track of audio files of the set');
+        continue;
+      }
+      if (op.spine !== undefined) {
+        const sp = op.spine;
+        const value = kind === 'spine' && isObj(sp) ? spineValue(sp, files, fileUrl) : null;
+        if (value) { ops.push({ at: [...at], value, urls: [value.skel, value.atlas, ...value.textures] }); for (const u of [value.skel, value.atlas, ...value.textures]) urls.add(u); } else drop(at, 'not a Spine model of the set (its files, its folder, its clip data)');
+        continue;
+      }
+      drop(at, 'not a write a cosmetic plugin makes');
     }
   }
-  return { ops: out, problems };
+  return { ops, urls, dropped, droppedCount };
+}
+
+/**
+ * A Spine op of a set document as the manifest's Spine object, its URLs built from the file table (the model's hash for
+ * every file of it), its clip data rebuilt in the lock's shape — or null when it is not one (see readSpine and
+ * readLockSpine: the atlas beside its skeleton with its name, the pages in the atlas's folder, the clip data within
+ * LOCK_LIMITS).
+ * @param {any} sp @param {Record<string, string>} files @param {(rel: unknown, exts: readonly string[], hash?: string | null) => string | null} fileUrl
+ */
+function spineValue(sp, files, fileUrl) {
+  if (typeof sp.skel !== 'string' || !isPackPath(sp.skel) || extOf(sp.skel) !== '.skel') return null;
+  const dir = sp.skel.replace(/[^/]*$/, '');
+  const name = sp.skel.slice(dir.length, -'.skel'.length);
+  if (sp.atlas !== `${dir}${name}.atlas` || !Array.isArray(sp.textures) || !sp.textures.length || sp.textures.length > 64) return null;
+  if (!sp.textures.every((t) => typeof t === 'string' && t.startsWith(dir))) return null;
+  const model = [sp.skel, sp.atlas, ...new Set(sp.textures)];
+  if (!model.every((rel) => has(files, rel) && isHex64(files[rel]))) return null;
+  const m = modelHashOf(model.map((rel) => files[rel]));
+  const skel = fileUrl(sp.skel, ['.skel'], m);
+  const atlas = fileUrl(sp.atlas, ['.atlas'], m);
+  const textures = [...new Set(sp.textures)].map((rel) => fileUrl(rel, IMAGE, m));
+  if (!skel || !atlas || !textures.every(Boolean)) return null;
+  const meta = isObj(sp.meta) ? readLockSpine({ ...sp.meta, sha256: files[sp.skel] }) : null;
+  if (!meta) return null;
+  return { skel, atlas, textures: /** @type {string[]} */ (textures), pma: sp.pma === true, anims: meta.anims, animations: meta.animations, events: meta.events, hits: meta.hits, bounds: meta.bounds };
+}
+
+/**
+ * Lay prepared sets over a manifest, in their order (the room's set, then the player's plugins): a reference copied out of
+ * `base` itself — the page's own manifest (an entry it lacks is dropped, the reason in `dropped`) —, a write whose URL
+ * failed to load (`failed`: public/js/assets.js) left out so its entry shows the art beneath it.
+ * @param {any} base
+ * @param {PreparedSet[]} sets
+ * @param {{ failed?: Set<string> | null }} [opts]
+ * @returns {{ manifest: any, dropped: string[] }}
+ */
+export function layVisualOps(base, sets, { failed = null } = {}) {
+  /** @type {ResolvedOp[]} */
+  const ops = [];
+  /** @type {string[]} */
+  const dropped = [];
+  for (const set of sets) {
+    for (const op of set.ops) {
+      if ('from' in op) {
+        const v = getPath(base, op.from);
+        if (v === undefined) { if (dropped.length < DROPPED_KEPT) dropped.push(`${pathText(op.at)}: this page's manifest has no ${op.from.join('.')}`); continue; }
+        ops.push({ at: op.at, value: v });
+        continue;
+      }
+      if (failed && failed.size && op.urls.some((u) => failed.has(u))) continue;
+      ops.push({ at: op.at, value: op.value });
+    }
+  }
+  return { manifest: applyOps(base, ops), dropped };
 }
 
 /**
@@ -655,9 +809,10 @@ export function visualHashInput({ assets, overlays = [] }) {
 export const visualHashOf = (parts) => sha256Hex(canonicalJson(visualHashInput(parts)));
 
 /**
- * The check a browser runs on a visual set's document (/vs/<vs16>/assets.json or overlay.json, its `visual` block
- * `{ v, vs, assets, overlays }`): the composition hashes to the `vs` the room (or the catalogue) named. null when it
- * does, else what is wrong.
+ * The check a browser runs on a visual set's document (/vs/<vs16>/overlay.json, its `visual` block
+ * `{ v, vs, assets, overlays }`): the composition hashes to the `vs` the room (or the catalogue) named — then every plugin
+ * URL the page draws is built from that composition's file table (prepareVisualDoc). null when it does, else what is
+ * wrong.
  * @param {any} doc the parsed document
  * @param {string} vs the expected visual hash (64 hex)
  * @returns {string | null}

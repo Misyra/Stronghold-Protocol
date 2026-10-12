@@ -25,8 +25,10 @@
 //
 // Cosmetic plugins (DESIGN §32 P1a, docs/PLUGINS.md §9): the manifest the helpers read is the installation's with the
 // cosmetic layers laid over it — `cosmetics` (createCosmeticLayers; public/js/content.js sets them): the room's visual
-// set, then the player's personal plugins. A layer change is told like a late manifest (onChange 'manifest'): views
-// built afterwards draw the new art; a model already on the board keeps its own until it is built again [ASSUMED].
+// set, then the player's personal plugins, composed here on the page's own manifest (every plugin URL built from a set's
+// checked composition, every reference copied out of that manifest: shared/plugins/visual.js). A layer change is told
+// like a late manifest (onChange 'manifest'). A plugin file that fails to load (an image, a model) is reported
+// (`cosmetics.fail`): its entry falls back to the art beneath it.
 //
 // Pure at import time: no PIXI, no DOM access until a loader actually runs (Node tests import this file).
 //
@@ -47,7 +49,7 @@
 // so it can be unit tested without a browser. Helpers never throw on unknown ids — they return null and the
 // caller falls back (docs/ASSETS.md "Other fallbacks").
 
-import { applyOps } from '../../shared/plugins/visual.js';
+import { layVisualOps, prepareVisualDoc } from '../../shared/plugins/visual.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -259,58 +261,121 @@ export function unitSfxUrl(m, id, kind, skillIndex) {
 const EMPTY_MANIFEST = Object.freeze({});
 
 /**
- * The cosmetic layers of the art a page draws with (see the header), in this order:
- *   1. the installation's manifest (/data/assets.json — the `base` apply() is given);
- *   2. the room's visual set: its effective manifest (/vs/<vs16>/assets.json), which already holds the installation's
- *      entries with the room's plugins over them — so while the page is in that room it takes the base's place (setRoom;
- *      null again outside the room: a room's art never stays behind or piles up);
- *   3. the player's personal cosmetic plugins: their resolved writes (/vs/<vs16>/overlay.json `ops`), one after the
- *      other (setPersonal) — over the room's art too.
- * `apply(base)` → the manifest to draw with: `base` itself without a layer, else the same object while neither the
- * base nor a layer changed. `subscribe(fn)` hears every change.
+ * A URL as the layers keep it: a same-origin path (with its query), whatever form a loader reports it in (an `<img>`'s
+ * absolute `src`, the manifest's own path); null for another origin or no URL.
+ * @param {unknown} url
+ */
+function plainUrl(url) {
+  const s = typeof url === 'string' ? url : '';
+  if (!s) return null;
+  if (s.startsWith('/') && !s.startsWith('//')) return s.split('#')[0];
+  try {
+    const here = globalThis.location?.href || 'http://localhost/';
+    const u = new URL(s, here);
+    if (u.origin !== new URL(here).origin) return null;
+    return u.pathname + u.search;
+  } catch { return null; }
+}
+
+/**
+ * The cosmetic layers of the art a page draws with (see the header), laid over the page's own manifest in this order:
+ *   1. the installation's manifest — /data/assets.json as the page loaded it (its /assets/~<hash>/ URLs): the `base`
+ *      apply() is given;
+ *   2. the room's visual set (setRoom: its checked document, /vs/<vs16>/overlay.json; null outside a room or in a room
+ *      without plugins: a room's art never stays behind or piles up);
+ *   3. the player's personal plugins (setPersonal: `[{ id, doc }]`, in the order they apply) — over the room's art too.
+ * Every plugin URL is built from a document's composition and every reference is copied out of `base` itself
+ * (shared/plugins/visual.js prepareVisualDoc, layVisualOps), so what the page draws is exactly what the documents' `vs`
+ * name; a write that does not fit is left out (its entry keeps the art beneath it) and told to `onDrop` (once per
+ * document, and once per change for references the base lacks). A plugin URL that failed to load (fail: an image, a
+ * model, a sound) is left out from then on: its entry falls back to the art beneath it — the installation's, or the
+ * room's under a personal plugin [ASSUMED: for the rest of the page's life; a set with that file changed has another
+ * URL]. `apply(base)` → the manifest to draw with: `base` itself without a layer, else the same object while neither the
+ * base nor a layer changed (per base object). `subscribe(fn)` hears every change.
  */
 export function createCosmeticLayers() {
-  /** @type {any} */
+  /** @typedef {{ doc: any, prep: import('../../shared/plugins/visual.js').PreparedSet }} Layer */
+  /** @type {Layer | null} */
   let room = null;
-  /** @type {{ id: string, ops: any[] }[]} */
+  /** @type {(Layer & { id: string })[]} */
   let personal = [];
+  /** @type {Set<string>} plugin URLs that failed to load */
+  const failed = new Set();
   let gen = 0;
   // the manifest drawn with, per base object (data.js's copy and the asset store's may be two: each keeps its own)
   let memo = new WeakMap(); // base → { gen, value }
   const listeners = new Set();
+  /** @type {((why: string[], count: number) => void) | null} */
+  let dropFn = null;
+  let toldLay = -1;
+  const prepared = new WeakMap(); // document → its PreparedSet (a document never changes)
+  const prepare = (doc) => {
+    let p = prepared.get(doc);
+    if (!p) {
+      p = prepareVisualDoc(doc);
+      prepared.set(doc, p);
+      if (p.droppedCount) { try { dropFn?.(p.dropped, p.droppedCount); } catch { /* the listener's own trouble */ } }
+    }
+    return p;
+  };
   const changed = () => {
     gen++;
     memo = new WeakMap();
     for (const fn of [...listeners]) { try { fn(); } catch (err) { console.warn('[assets] cosmetic layer listener failed', err); } }
   };
   return {
-    /** The room's effective manifest, or null (no room, or a room without plugins). */
-    setRoom(m) {
-      const next = isObj(m) ? m : null;
-      if (next === room) return;
-      room = next;
+    /** The room's visual set: its checked document (/vs/<vs16>/overlay.json), or null (no room, a room without plugins). */
+    setRoom(doc) {
+      const next = isObj(doc) ? doc : null;
+      if (next === (room ? room.doc : null)) return;
+      room = next ? { doc: next, prep: prepare(next) } : null;
       changed();
     },
-    /** The player's personal plugins: `[{ id, ops }]`, in the order they apply. */
+    /** The player's personal plugins: `[{ id, doc }]` — each its checked document —, in the order they apply. */
     setPersonal(list) {
-      const next = (Array.isArray(list) ? list : []).filter((p) => isObj(p) && Array.isArray(p.ops));
-      if (next.length === personal.length && next.every((p, i) => p === personal[i])) return;
-      personal = next;
+      const next = (Array.isArray(list) ? list : []).filter((p) => isObj(p) && typeof p.id === 'string' && isObj(p.doc));
+      if (next.length === personal.length && next.every((p, i) => p.id === personal[i].id && p.doc === personal[i].doc)) return;
+      personal = next.map((p) => ({ id: p.id, doc: p.doc, prep: prepare(p.doc) }));
       changed();
     },
-    get room() { return room; },
+    /** The room's document, or null. */
+    get room() { return room ? room.doc : null; },
+    /** The personal plugins applied: `[{ id, doc }]`. */
     get personal() { return personal; },
     /** Is any layer on (a room set or a personal plugin)? */
     get active() { return !!room || personal.length > 0; },
+    /**
+     * A file of a layer failed to load (an image, a Spine model — any of its files —, a sound): its writes are left out
+     * from now on and the listeners are told (the entry draws the art beneath it). Whether it was one of the layers'.
+     * @param {unknown} url as the loader reports it (absolute or a path)
+     * @returns {boolean}
+     */
+    fail(url) {
+      const u = plainUrl(url);
+      if (!u || failed.has(u)) return false;
+      if (!(room && room.prep.urls.has(u)) && !personal.some((p) => p.prep.urls.has(u))) return false;
+      failed.add(u);
+      console.warn(`[assets] ${u} did not load: its entry falls back to the art beneath it`);
+      changed();
+      return true;
+    },
+    /** The plugin URLs that failed to load (diagnostics, tests). */
+    get failed() { return [...failed]; },
+    /** `fn(reasons, count)` when writes had to be left out (see above); one listener. */
+    onDrop(fn) { dropFn = typeof fn === 'function' ? fn : null; },
     apply(base) {
       if (!room && !personal.length) return base;
       const key = isObj(base) ? base : EMPTY_MANIFEST;
       const hit = memo.get(key);
       if (hit && hit.gen === gen) return hit.value;
-      let m = room || base;
-      for (const p of personal) m = applyOps(m, p.ops);
-      memo.set(key, { gen, value: m });
-      return m;
+      const { manifest, dropped } = layVisualOps(key, [...(room ? [room.prep] : []), ...personal.map((p) => p.prep)], { failed });
+      // a reference the page's manifest lacks (told once per change, for a manifest that is loaded)
+      if (dropped.length && key !== EMPTY_MANIFEST && toldLay !== gen) {
+        toldLay = gen;
+        try { dropFn?.(dropped, dropped.length); } catch { /* the listener's own trouble */ }
+      }
+      memo.set(key, { gen, value: manifest });
+      return manifest;
     },
     /** `fn()` after every change; returns the unsubscribe. */
     subscribe(fn) {

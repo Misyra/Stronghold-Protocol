@@ -4,12 +4,15 @@
 // screen reads (assets.js `cosmetics`; data.js shows `assets` through them, so `data.get('assets')` is the art the room
 // draws). Nothing here changes a battle: a room's `cs` stays the vanilla one, and nobody else sees a personal plugin.
 //
-//   * The room: whenever room.state.content.vs changes, /vs/<vs16>/assets.json is fetched as text, parsed and checked
-//     (shared/plugins/visual.js checkVisualDoc — its composition hashes to the `vs` the room named; the document carries
-//     this server's asset URLs, which follow its asset index, so its bytes are not what is checked [ASSUMED]) and becomes
-//     the room layer. Leaving the room, or a room without plugins, takes the layer away again: one room's art never
-//     stays behind or piles up. A document that fails the check or will not download (two retries; an attempt is given
-//     up after VISUAL_TIMEOUT_MS) leaves the original art and says so once (a toast).
+//   * The room: whenever room.state.content.vs changes, /vs/<vs16>/overlay.json is fetched as text, parsed and checked
+//     (shared/plugins/visual.js checkVisualDoc — its composition hashes to the `vs` the room named) and becomes the room
+//     layer: the page composes the art itself, on the manifest it loaded — every plugin URL built from that composition's
+//     file table, every reference copied out of its own manifest, a write that does not fit left out (assets.js
+//     createCosmeticLayers) —, never a manifest the server put together. Leaving the room, or a room without plugins,
+//     takes the layer away again: one room's art never stays behind or piles up. A document that fails the check or
+//     will not download (two retries; an attempt is given up after VISUAL_TIMEOUT_MS) leaves the original art; that, a
+//     write left out or a plugin file that will not load (its entry falls back to the art beneath it) is said once (a
+//     toast).
 //   * Personal plugins: the catalogue (/plugins/index.json — loadCatalog) names each loaded cosmetic plugin of scope
 //     `personal` with the `vs` of the set of it alone; every switched-on one is fetched as /vs/<vs16>/overlay.json,
 //     checked the same way (fetched side by side) and applied after the room's, in the catalogue's order (by id)
@@ -22,8 +25,8 @@ import { createStore, loadPref, savePref, store as appStore } from './store.js';
 import { data as dataStore } from './data.js';
 import { cosmetics } from './assets.js';
 import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
-import { VISUAL_SETS_URL, checkVisualDoc, isVisualHash, vsUrlPart } from '../../shared/plugins/visual.js';
-import { getLang, langChain, t } from '../../shared/i18n.js';
+import { VISUAL_DOC_FILE, VISUAL_SETS_URL, checkVisualDoc, isVisualHash, vsUrlPart } from '../../shared/plugins/visual.js';
+import { getLang, langChain, t, N_ } from '../../shared/i18n.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of the personal cosmetic plugins: their ids. */
 export const PERSONAL_PREF = 'cosmetics';
@@ -31,6 +34,9 @@ export const PERSONAL_PREF = 'cosmetics';
 export const VISUAL_RETRY_MS = Object.freeze([600, 2000]);
 /** How long one attempt at a visual set's document may take before it counts as a transient failure [ASSUMED]. */
 export const VISUAL_TIMEOUT_MS = 30000;
+/** What the page says (once) when a set's document will not load, or when writes were left out / a file failed. */
+const NOT_LOADED = N_('外观插件没有载入，显示原版素材');
+const PARTLY = N_('部分外观插件素材无法使用，相应位置显示原版素材');
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isIds = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9-]{1,31}$/.test(x));
@@ -109,17 +115,16 @@ export function setPersonalPlugin(id, on) {
 }
 
 /**
- * Fetch a visual set's document (/vs/<vs16>/assets.json or overlay.json) as text, parse it and check it against `vs`
+ * Fetch a visual set's document (/vs/<vs16>/overlay.json) as text, parse it and check it against `vs`
  * (shared/plugins/visual.js checkVisualDoc). A network error, an attempt over `timeoutMs` (VISUAL_TIMEOUT_MS) or HTTP 5xx
  * / 408 / 429 is tried again (VISUAL_RETRY_MS).
- * @param {'assets' | 'overlay'} kind
  * @param {string} vs the full visual hash the room (or the catalogue) named
  * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number }} [opts]
  * @returns {Promise<{ doc: any } | { error: string }>}
  */
-export async function fetchVisualDoc(kind, vs, { fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep, timeoutMs = VISUAL_TIMEOUT_MS } = {}) {
+export async function fetchVisualDoc(vs, { fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep, timeoutMs = VISUAL_TIMEOUT_MS } = {}) {
   if (!isVisualHash(vs)) return { error: 'no visual hash' };
-  const url = `${VISUAL_SETS_URL}${vsUrlPart(vs)}/${kind}.json`;
+  const url = `${VISUAL_SETS_URL}${vsUrlPart(vs)}/${VISUAL_DOC_FILE}`;
   for (let attempt = 0; ; attempt++) {
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     let timer = null;
@@ -155,11 +160,18 @@ export function installContent({ store = appStore, data = dataStore, layers = co
   data.setView('assets', view);
   // every layer change: data.js tells the `assets` subscribers (useData('assets') re-renders the interface's art)
   const offLayers = layers.subscribe(() => data.setView('assets', view));
+  // the page says it once, whatever the trouble: a document that will not load, writes left out, a file that failed
   let told = false;
-  const tell = (why) => {
+  const tell = (why, text = NOT_LOADED) => {
     console.warn(`[content] ${why}`);
-    if (!told && toast) { told = true; toast(t('外观插件没有载入，显示原版素材'), 'warn'); }
+    if (!told && toast) { told = true; toast(t(text), 'warn'); }
   };
+  layers.onDrop((reasons, count) => tell(`${count} write(s) of a visual set left out: ${reasons.join('; ')}`, PARTLY));
+  let failedTold = layers.failed?.length || 0;
+  const offFailed = layers.subscribe(() => {
+    const now = layers.failed?.length || 0;
+    if (now > failedTold) { failedTold = now; tell(`a plugin file did not load: ${layers.failed[now - 1]}`, PARTLY); }
+  });
 
   // the room's visual set
   let roomVs = null;
@@ -170,7 +182,7 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     roomVs = vs;
     const req = ++roomReq;
     if (!vs) { layers.setRoom(null); return; }
-    fetchVisualDoc('assets', vs, { fetch: doFetch, retryDelays }).then((r) => {
+    fetchVisualDoc(vs, { fetch: doFetch, retryDelays }).then((r) => {
       if (req !== roomReq) return; // another room (or none) meanwhile
       if ('error' in r) { layers.setRoom(null); tell(r.error); return; }
       layers.setRoom(r.doc);
@@ -187,13 +199,13 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     if (!ids.length) { layers.setPersonal([]); return; }
     const entries = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal').filter((p) => ids.includes(p.id) && isVisualHash(p.vs));
     // side by side; applied in the catalogue's order
-    for (const p of entries) if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc('overlay', p.vs, { fetch: doFetch, retryDelays }));
+    for (const p of entries) if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc(p.vs, { fetch: doFetch, retryDelays }));
     const results = await Promise.all(entries.map((p) => overlays.get(p.vs)));
     const list = [];
     entries.forEach((p, i) => {
       const r = results[i];
       if ('error' in r) { overlays.delete(p.vs); tell(r.error); return; }
-      list.push({ id: p.id, ops: Array.isArray(r.doc.ops) ? r.doc.ops : [] });
+      list.push({ id: p.id, doc: r.doc });
     });
     if (req === personalReq) layers.setPersonal(list);
   };
@@ -205,7 +217,7 @@ export function installContent({ store = appStore, data = dataStore, layers = co
   let catalogAt = catalog.get().at;
   const offCatalog = catalog.subscribe((c) => { if (c.at !== catalogAt) { catalogAt = c.at; if (personal.get().ids.length) syncPersonal(); } });
   if (personal.get().ids.length) syncPersonal();
-  return () => { offStore(); offPersonal(); offCatalog(); offLayers(); data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]); };
+  return () => { offStore(); offPersonal(); offCatalog(); offLayers(); offFailed(); layers.onDrop(null); data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]); };
 }
 
 /**

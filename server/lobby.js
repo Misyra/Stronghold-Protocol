@@ -98,7 +98,8 @@
 //     `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings, bytes }`: `cs` stays the vanilla
 //     one — art never changes a battle, so the match, its BattleSpecs and the golden results are those of the original
 //     content and ▸ such a match still counts as the original game (the statistics overview) [ASSUMED] —, `vs` names the
-//     art every member's page draws with (/vs/<vs16>/assets.json, public/js/content.js). An empty list brings back
+//     art every member's page draws with (/vs/<vs16>/overlay.json, composed by public/js/content.js on the page's own
+//     manifest). An empty list brings back
 //     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the
 //     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
 //     un-readies nobody and leaves the host's result replay (a settlement screen still open: dropReplay — only a set

@@ -1,9 +1,10 @@
 // test/plugins/visualSet.test.js — the visual sets of a server and the files of cosmetic plugins (DESIGN §32 P1a,
 // server/plugins/visualSet.js, server/http/static.js /vs/ and /p/): a set resolved for a room or a player (loaded
 // cosmetic plugins of the scope, their requirements switched on, in load order, within the size limit — refused
-// otherwise), its vs stable for the same files and new for one changed byte; GET /vs/<vs16>/assets.json — the served
-// art manifest (its /assets/~<hash>/ URLs, as with no plugin) with the set laid over it and its composition, which a
-// browser's check accepts — and /vs/<vs16>/overlay.json; GET /p/<id>/<hash8>/<path> — only a file an overlay names
+// otherwise), its vs stable for the same files and new for one changed byte; GET /vs/<vs16>/overlay.json — the set's
+// composition, which a browser's check accepts, and each plugin's writes (no URL, no copy of the art manifest), which a
+// page composes on the served manifest it loaded (its /assets/~<hash>/ URLs); GET /p/<id>/<hash8>/<path> — only a file
+// an overlay names
 // (never plugin.json, the lock, a document, a dot file, a path out of the folder or a link out of it), `immutable` at
 // the hash of its bytes (its own, or its Spine model's), the current file with `no-cache` at any other — and the
 // vanilla /data/assets.json unchanged by any plugin. Art is generated on the spot (test/helpers/pluginFixtures.js).
@@ -21,7 +22,7 @@ import { createStaticHandler } from '../../server/http/static.js';
 import { createAssetIndex } from '../../server/http/assetIndex.js';
 import { createManifestViews } from '../../server/http/assetViews.js';
 import { splitUrl } from '../../server/http/common.js';
-import { checkVisualDoc, visualHashOf, modelHashOf, VISUAL_LIMITS } from '../../shared/plugins/visual.js';
+import { checkVisualDoc, layVisualOps, prepareVisualDoc, visualHashOf, modelHashOf, VISUAL_LIMITS } from '../../shared/plugins/visual.js';
 import { main as pluginTool } from '../../tools/plugin.mjs';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
@@ -88,7 +89,7 @@ describe('the visual sets of a server', () => {
     await assetIndex.whenReady();
     const views = createManifestViews({ dataDir: dirs.dataDir, index: assetIndex });
     await views.rebuildAll();
-    visual = createVisualSets({ registry, views });
+    visual = createVisualSets({ registry });
     const serveStatic = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: registry, views, assetIndex, visual });
     server = http.createServer((req, res) => { const p = splitUrl(req.url); serveStatic(req, res, p.rawPath, p.query).catch(() => res.destroy()); });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -122,33 +123,41 @@ describe('the visual sets of a server', () => {
     assert.equal(tight.resolve(['red']).error, 'PLUGIN_LIMIT');
   });
 
-  test('GET /vs/<vs16>/assets.json: the served manifest with the set over it — the installation\'s URLs keep their hash segment', async () => {
+  test('GET /vs/<vs16>/overlay.json: the composition and each plugin\'s writes (no URL); composed on the served manifest, the installation\'s URLs keep their hash segment', async () => {
     const { set } = visual.resolve(['red', 'blue']);
-    const r = await get(`/vs/${set.vs.slice(0, 16)}/assets.json`);
+    const url = `/vs/${set.vs.slice(0, 16)}/overlay.json`;
+    const r = await get(url);
     assert.equal(r.status, 200);
     assert.equal(r.headers['cache-control'], 'no-cache');
     assert.match(r.headers['content-type'], /^application\/json/);
-    const m = JSON.parse(r.body.toString('utf8'));
-    assert.equal(checkVisualDoc(m, set.vs), null, 'its composition hashes to the room\'s vs');
-    assert.deepEqual(m.visual.overlays.map((o) => o.id), ['red', 'blue']);
-    const blue = registry.plugin('blue').visual.served.get('blue.png');
-    assert.equal(m.chars.char_102_texas.avatar, `/p/blue/${blue.sha256.slice(0, 8)}/blue.png`, 'the later plugin applies');
+    const doc = JSON.parse(r.body.toString('utf8'));
+    assert.equal(checkVisualDoc(doc, set.vs), null, 'its composition hashes to the room\'s vs');
+    assert.deepEqual(doc.visual.overlays.map((o) => o.id), ['red', 'blue']);
+    assert.deepEqual(doc.writes.map((w) => w.id), ['red', 'blue']);
+    assert.deepEqual(Object.keys(doc).sort(), ['visual', 'writes'], 'no copy of the art manifest');
+    assert.doesNotMatch(JSON.stringify(doc.writes), /\/p\/|\/assets\//, 'paths of the folders and references, never a URL');
+    assert.ok(r.body.length < 4096, `a few KB, not the manifest (${r.body.length} bytes)`);
+    // what a page draws: the document composed on the manifest it loaded (the served view)
     const view = JSON.parse((await get('/data/assets.json')).body.toString('utf8'));
     assert.match(view.chars.char_112_siege.avatar, /^\/assets\/~[0-9a-f]{16}\/char\/avatar\/char_112_siege\.png$/, 'the served manifest (0.2.6)');
+    const prep = prepareVisualDoc(doc);
+    assert.equal(prep.droppedCount, 0, prep.dropped.join('; '));
+    const m = layVisualOps(view, [prep]).manifest;
+    const blue = registry.plugin('blue').visual.served.get('blue.png');
+    assert.equal(m.chars.char_102_texas.avatar, `/p/blue/${blue.sha256.slice(0, 8)}/blue.png`, 'the later plugin applies');
     assert.equal(m.chars.char_112_siege.avatar, view.chars.char_112_siege.avatar, 'an entry no plugin changes is the served one');
-    assert.deepEqual(m.chars.char_x_new, view.chars.char_112_siege, 'a whole-record reference copies the served entry');
+    assert.deepEqual(m.chars.char_x_new, view.chars.char_112_siege, 'a whole-record reference copies the page\'s entry');
     assert.equal(m.ui['hudPanel/icon_hp'], view.ui['hudPanel/icon_hp']);
     const front = m.chars.char_102_texas.spine.front;
     const red = registry.plugin('red').visual;
     const mh = modelHashOf(['spine/t/t.skel', 'spine/t/t.atlas', 'spine/t/t.png'].map((rel) => red.served.get(rel).sha256)).slice(0, 8);
     assert.deepEqual([front.skel, front.atlas, front.textures], [`/p/red/${mh}/spine/t/t.skel`, `/p/red/${mh}/spine/t/t.atlas`, [`/p/red/${mh}/spine/t/t.png`]]);
     assert.deepEqual([front.anims.idle, front.anims.attack.loop, front.hits, front.animations.Attack], ['Idle', 'Attack', { Attack: [0.5] }, 0.5], 'the clip data from the lock');
-    // revalidated with its ETag; the view itself is unchanged by any plugin
-    assert.equal((await get(`/vs/${set.vs.slice(0, 16)}/assets.json`, { 'If-None-Match': r.headers.etag })).status, 304);
-    const overlay = await json(`/vs/${set.vs.slice(0, 16)}/overlay.json`);
-    assert.equal(checkVisualDoc(overlay, set.vs), null);
-    assert.deepEqual(overlay.ops.map((o) => o.at.join('.')), ['chars.char_102_texas.avatar', 'chars.char_102_texas.spine.front', 'chars.char_x_new', 'ui.hudPanel/icon_hp', 'chars.char_102_texas.avatar']);
-    for (const p of [`/vs/${'0'.repeat(16)}/assets.json`, `/vs/${set.vs}/assets.json`, `/vs/${set.vs.slice(0, 16)}/other.json`, '/vs/']) assert.equal((await get(p)).status, 404, p);
+    // every URL it builds is one /p/ serves immutably
+    for (const u of prep.urls) assert.equal((await get(u)).headers['cache-control'], 'public, max-age=31536000, immutable', u);
+    // revalidated with its ETag
+    assert.equal((await get(url, { 'If-None-Match': r.headers.etag })).status, 304);
+    for (const p of [`/vs/${set.vs.slice(0, 16)}/assets.json`, `/vs/${'0'.repeat(16)}/overlay.json`, `/vs/${set.vs}/overlay.json`, `/vs/${set.vs.slice(0, 16)}/other.json`, '/vs/']) assert.equal((await get(p)).status, 404, p);
   });
 
   test('a set a room holds is never dropped; the others beyond the limit are; a document is built once however many ask', async () => {
@@ -158,16 +167,16 @@ describe('the visual sets of a server', () => {
     small.hold(room);
     const other = small.resolve(['needs-red']).set.vs;
     small.resolve(['needs-red', 'blue']);
-    assert.notEqual(await small.doc(room.slice(0, 16), 'overlay'), null, 'held: still served');
-    assert.equal(await small.doc(other.slice(0, 16), 'overlay'), null, 'neither held nor recent: dropped (404)');
+    assert.notEqual(await small.doc(room.slice(0, 16)), null, 'held: still served');
+    assert.equal(await small.doc(other.slice(0, 16)), null, 'neither held nor recent: dropped (404)');
     assert.deepEqual([small.stats().held, small.stats().sets], [1, 2]);
     small.release(room);
     small.resolve(['needs-red']);
     small.resolve(['needs-red', 'blue']);
-    assert.equal(await small.doc(room.slice(0, 16), 'overlay'), null, 'released: dropped like any other');
+    assert.equal(await small.doc(room.slice(0, 16)), null, 'released: dropped like any other');
     // two requests at once: one build, the same body
     const vs = small.resolve(['blue', 'red']).set.vs;
-    const [a, b] = await Promise.all([small.doc(vs.slice(0, 16), 'assets'), small.doc(vs.slice(0, 16), 'assets')]);
+    const [a, b] = await Promise.all([small.doc(vs.slice(0, 16)), small.doc(vs.slice(0, 16))]);
     assert.ok(a && a === b);
   });
 
@@ -186,8 +195,8 @@ describe('the visual sets of a server', () => {
     assert.equal(cat.plugins.find((p) => p.id === 'gameplay').vs, undefined, 'only a loaded cosmetic plugin has one');
     const doc = await json(`/vs/${mine.vs.slice(0, 16)}/overlay.json`);
     assert.equal(checkVisualDoc(doc, mine.vs), null);
-    assert.equal(doc.ops.length, 1);
-    assert.match(doc.ops[0].value, /^\/p\/mine\/[0-9a-f]{8}\/m\.png$/);
+    assert.deepEqual(doc.writes, [{ id: 'mine', ops: [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'm.png' }] }]);
+    assert.match(layVisualOps({}, [prepareVisualDoc(doc)]).manifest.chars.char_112_siege.avatar, /^\/p\/mine\/[0-9a-f]{8}\/m\.png$/);
   });
 
   test('GET /p/: only a file an overlay names, immutable at the hash of its bytes (its own or its model\'s), no-cache at another', async () => {

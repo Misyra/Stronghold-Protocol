@@ -45,7 +45,11 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.click('.announcement__content');
   await c.page.waitForSelector('.announcement-detail');
   assert.equal(await c.page.$eval('.announcement-detail__text', el => el.textContent), notice.text);
-  await c.page.click('.announcement-detail__close');
+  assert.equal(await c.page.$('.announcement-detail__title'), null, 'the detail does not repeat the notice title');
+  assert.equal((await c.page.$eval('.announcement-detail', el => el.textContent)).includes(notice.title), false,
+    'the notice title stays out of the detail body (the modal header is 服务器公告, not the notice title)');
+  assert.equal(await c.page.$$eval('.announcement-detail button', els => els.length), 1, 'one shared close button');
+  await c.page.click('.announcement-detail .utility-modal__close');
   await c.page.waitForSelector('.announcement-detail', { hidden: true });
   await c.shot('desktop');
   await c.page.setViewport({ width: 844, height: 390 });
@@ -62,7 +66,8 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.click('.gm__announcement');
   await c.page.waitForSelector('.announcement-detail');
   assert.equal(await c.page.$eval('.announcement-detail__text', el => el.textContent), notice.text);
-  await c.page.click('.announcement-detail__close');
+  assert.equal(await c.page.$$eval('.announcement-detail button', els => els.length), 1, 'one close button on mobile too');
+  await c.page.click('.announcement-detail .utility-modal__close');
   // Resource preloading continues in the background; the restored match below is the readiness signal.
   await c.page.reload({ waitUntil: 'domcontentloaded' });
   await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
@@ -104,7 +109,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.click('.announcement__content');
   await c.page.waitForSelector('.announcement-detail');
   assert.ok((await c.page.$eval('.announcement-detail__text', el => el.textContent)).includes('\n第二行公告'));
-  await c.page.click('.announcement-detail__close');
+  await c.page.click('.announcement-detail .utility-modal__close');
   await refresh({ ...notice, text: '第二条公告' });
   await c.page.waitForSelector('.announcement');
   await refresh({ enabled: false });
@@ -112,7 +117,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.click('.gm__announcement');
   await c.page.waitForSelector('.announcement-detail');
   assert.ok((await c.page.$eval('.announcement-detail', el => el.textContent)).includes('当前暂无公告'));
-  await c.page.click('.announcement-detail__close');
+  await c.page.click('.announcement-detail .utility-modal__close');
   assert.equal((await c.st()).phase, 'PREP', 'publishing/expiry does not end the running match');
   // External fonts are optional and unavailable in network-restricted test environments.
   const problems = c.problems.filter(p => !(p.includes('https://fonts.googleapis.com/') && p.includes('net::ERR_NETWORK_ACCESS_DENIED')));

@@ -1207,8 +1207,6 @@
 .announcement__content:focus-visible .announcement__track { animation-play-state: paused; }
 .announcement__content:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 @keyframes announcement-scroll { to { transform: translateX(var(--announcement-distance)); } }
-.announcement-detail__close { position: absolute; top: .15rem; right: .15rem; }
-.announcement-detail .modal__head { padding-right: .6rem; }
 .announcement-detail__text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 @media (prefers-reduced-motion: reduce) {
   .announcement__track.is-scrolling { animation: none; }

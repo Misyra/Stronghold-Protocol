@@ -66,8 +66,6 @@ export function AnnouncementBanner() {
     ${active && !display.isDismissed(notice) ? html`<${AnnouncementStrip} key=${notice.id} notice=${notice} onClose=${dismiss} />` : null}
     <${Modal} open=${open} title=${t('服务器公告')} micro="ANNOUNCEMENT" tone="amber" width="7.2rem" onClose=${close} utility=${true}
       class="announcement-detail">
-      <${Button} class="announcement-detail__close" size="sm" variant="ghost" square icon="close"
-        title=${t('关闭公告')} aria-label=${t('关闭公告')} onClick=${close} />
       ${active ? html`<p class="announcement-detail__text">${notice.text}</p>` : html`<p>${t('当前暂无公告')}</p>`}
     <//>`;
 }

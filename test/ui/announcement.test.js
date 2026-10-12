@@ -1,7 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { announcementSnapshot, startAnnouncementPolling } from '../../public/js/ui/announcementClient.js';
 import { createAnnouncementDisplay } from '../../public/js/ui/announcementDisplay.js';
+
+test('announcement detail uses the shared utility close button, without a second custom close', () => {
+  const source = readFileSync(new URL('../../public/js/ui/announcement.js', import.meta.url), 'utf8');
+  const detail = source.slice(source.indexOf('<${Modal}'));
+  assert.match(detail, /onClose=\$\{close\} utility=\$\{true\}/);
+  assert.doesNotMatch(detail, /<\$\{Button\}|<button|announcement-detail__close/);
+});
 
 test('once survives reload, visit closes for this page only, edits show again, unavailable storage works', () => {
   const values = new Map();

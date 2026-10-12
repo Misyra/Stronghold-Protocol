@@ -11,6 +11,7 @@
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 
 import { AnnouncementButton } from '../ui/announcement.js';
+import { recoverImageError } from '../image.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useMemo, useState, useRef, useEffect } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD, ERR_TEXT, ERR } from '../../../shared/constants.js';
@@ -278,14 +279,15 @@ export function TitleScreen() {
   const alphabetic = scriptOf(t('卫戍协议')) === 'alphabetic';
   return html`<div class="screen title-screen">
     <div class=${`title-bg${bgLoaded ? ' has-art' : ''}${ridgesLoaded ? ' has-ridges' : ''}`} aria-hidden="true">
-      ${backdrop ? html`<img class="title-bg__art" src=${backdrop} alt="" draggable=${false}
-        onLoad=${() => setBgLoadedUrl(backdrop)} />` : null}
+      ${backdrop ? html`<img crossorigin="anonymous" class="title-bg__art" src=${backdrop} alt="" draggable=${false}
+        onLoad=${() => setBgLoadedUrl(backdrop)} onError=${recoverImageError} />` : null}
       <div class="title-bg__glow"></div>
       <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
       <div class="title-bg__target"></div>
       ${cssRidges ? html`<${Ridges} />` : null}
       ${ridges && !ridgesFailed ? html`<div class="title-bg__ridge-art" style=${`background-image:url("${ridges}")`}>
-        <img src=${ridges} alt="" hidden onLoad=${() => setRidgesLoadedUrl(ridges)} onError=${() => setRidgesFailedUrl(ridges)} />
+        <img crossorigin="anonymous" src=${ridges} alt="" hidden onLoad=${() => setRidgesLoadedUrl(ridges)}
+          onError=${(event) => recoverImageError(event, () => setRidgesFailedUrl(ridges))} />
       </div>` : null}
       <div class="title-bg__haze"></div>
       <span class="cross" style="left:7%;top:22%"></span>

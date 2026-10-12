@@ -313,6 +313,32 @@ describe('resolution, merge, application', () => {
     assert.match(compose(VANILLA, { ...ab, writes: [...ab.writes].reverse() }).ui['hudPanel/icon_hp'], /^\/p\/b\//, 'the composition\'s load order: b, the later, applies');
   });
 
+  test('an enemy\'s local-client model is taken away only with its new model: a model write dropped, failed or a reference missing leaves it', () => {
+    const vanilla = { ...VANILLA, enemies: { enemy_1305_mhslim: { icon: '/assets/e.png', spine: { skel: '/assets/e.skel', atlas: '/assets/e.atlas', anims: { idle: 'Idle' } }, spineLocal: { group: 'spine/enemy/mh' } },
+      enemy_1007_slime: { icon: '/assets/s.png', spine: { skel: '/assets/s.skel', atlas: '/assets/s.atlas', anims: { idle: 'Idle' } } } } };
+    const meta = { anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null };
+    const model = (o = {}) => ({ at: ['enemies', 'enemy_1305_mhslim', 'spine'], spine: { skel: 'spine/front/t.skel', atlas: 'spine/front/t.atlas', textures: ['spine/front/t.png'], pma: false, meta, ...o } });
+    const clear = { at: ['enemies', 'enemy_1305_mhslim', 'spineLocal'], clear: true, implied: true };
+    const local = (doc, failed) => layVisualOps(vanilla, [prepareVisualDoc(doc)], { failed }).manifest.enemies.enemy_1305_mhslim;
+    // written: the local model goes (the client would draw it first)
+    const ok = local(setDoc([{ id: 'p', ops: [model(), clear] }]));
+    assert.equal('spineLocal' in ok, false);
+    assert.match(ok.spine.skel, /^\/p\/p\//);
+    // the write dropped (clip data out of the lock's shape): the clear goes with it
+    const bad = setDoc([{ id: 'p', ops: [model({ meta: { ...meta, anims: { idle: 'Nope' } } }), clear] }]);
+    assert.equal(prepareVisualDoc(bad).droppedCount, 2);
+    assert.deepEqual(local(bad), vanilla.enemies.enemy_1305_mhslim, 'the installation\'s model and its local one');
+    // the model's file failed to load: left out with it
+    const good = setDoc([{ id: 'p', ops: [model(), clear] }]);
+    const skelUrl = prepareVisualDoc(good).ops[0].value.skel;
+    assert.deepEqual(local(good, new Set([skelUrl])), vanilla.enemies.enemy_1305_mhslim);
+    // a reference the page's manifest lacks: its clear stays out too
+    const ref = setDoc([{ id: 'p', ops: [{ at: ['enemies', 'enemy_1305_mhslim', 'spine'], ref: 'enemy_gone', from: ['enemies', 'enemy_gone', 'spine'] }, clear] }]);
+    assert.deepEqual(local(ref), vanilla.enemies.enemy_1305_mhslim);
+    // a clear with no model write before it (a document out of order): dropped
+    assert.equal(prepareVisualDoc(setDoc([{ id: 'p', ops: [clear] }])).ops.length, 0);
+  });
+
   test('locateAssetPath: the container, key, fields and kind of a manifest path — null outside the containers', () => {
     assert.deepEqual(locateAssetPath(['chars', 'char_102_texas', 'spine', 'front']), { container: ['chars'], key: 'char_102_texas', field: ['spine', 'front'], kind: 'spine' });
     assert.equal(locateAssetPath(['audio', 'bgm', 'combat']).kind, 'track');

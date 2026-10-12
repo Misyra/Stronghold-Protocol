@@ -15,10 +15,12 @@ import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createVisualSets } from '../../server/plugins/visualSet.js';
 import { createStaticHandler } from '../../server/http/static.js';
+import { CompressCache } from '../../server/http/files.js';
 import { createAssetIndex } from '../../server/http/assetIndex.js';
 import { createManifestViews } from '../../server/http/assetViews.js';
 import { splitUrl } from '../../server/http/common.js';
@@ -354,6 +356,37 @@ describe('the visual sets of a server', () => {
     assert.equal(now.sha256, sha(bytes), 'hashed again, though its size and mtime look unchanged');
     assert.notEqual(visual.resolve(['blue']).set.vs, set0.vs, 'another vs');
     assert.equal((await get(`/p/blue/${now.sha256.slice(0, 8)}/blue.png`)).headers['cache-control'], 'public, max-age=31536000, immutable');
+  });
+
+  test('the compressed-body cache tells a file rewritten with its old size and mtime from the old one (its inode, its ctime)', async () => {
+    const file = path.join(root, 'rewritten.atlas');
+    const T = new Date(Math.floor(Date.now() / 1000) * 1000 - 120000);
+    fs.writeFileSync(file, 'A'.repeat(2000));
+    fs.utimesSync(file, T, T);
+    const cache = new CompressCache();
+    assert.equal(zlib.gunzipSync(await cache.get(file, fs.statSync(file), 'gzip')).toString()[0], 'A');
+    fs.writeFileSync(file, 'B'.repeat(2000));
+    fs.utimesSync(file, T, T);
+    const st = fs.statSync(file);
+    assert.deepEqual([st.size, st.mtimeMs], [2000, T.getTime()], 'size and mtime as before');
+    assert.equal(zlib.gunzipSync(await cache.get(file, st, 'gzip')).toString()[0], 'B', 'the new bytes, not the cached old ones');
+  });
+
+  test('a plugins folder spelled in another case than on disk (macOS, Windows) still serves its files', async (t) => {
+    const alt = path.join(path.dirname(root), path.basename(root).toUpperCase());
+    if (alt === root || !fs.existsSync(path.join(alt, 'plugins'))) { t.skip('a case-sensitive file system'); return; }
+    const dirs = { publicDir: path.join(alt, 'public'), dataDir: path.join(alt, 'data'), packsDir: path.join(alt, 'packs'), pluginsDir: path.join(alt, 'plugins') };
+    const reg = createPluginRegistry(dirs, { recheckMs: 0 });
+    const serve = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: reg, visual: createVisualSets({ registry: reg }) });
+    const s2 = http.createServer((req, res) => { const u = splitUrl(req.url); serve(req, res, u.rawPath, u.query).catch(() => res.destroy()); });
+    await new Promise((r) => s2.listen(0, '127.0.0.1', r));
+    try {
+      const f = reg.plugin('red').visual.served.get('art/red.png');
+      const status = await new Promise((resolve, reject) => {
+        http.get({ host: '127.0.0.1', port: s2.address().port, path: `/p/red/${f.sha256.slice(0, 8)}/art/red.png`, agent: false }, (res) => { res.resume(); resolve(res.statusCode); }).on('error', reject);
+      });
+      assert.equal(status, 200, 'the scan and the request read the real path the same way (the native realpath)');
+    } finally { await new Promise((r) => s2.close(r)); }
   });
 
   test('no plugin changes the vanilla manifest a page loads (/data/assets.json is the served view as without plugins)', async () => {

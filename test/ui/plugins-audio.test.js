@@ -88,3 +88,34 @@ test('a plugin sound is fetched without its extension; one that will not load fa
     globalThis.fetch = origFetch;
   }
 });
+
+test('the music follows the art: a room\'s set arriving under the prep track switches to its track; the same loop keeps playing', async () => {
+  const fw = fakeWindow();
+  const origFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (u) => { urls.push(u); return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }; };
+  try {
+    const layers = createCosmeticLayers();
+    const a = new AudioManager({ win: fw.win, getManifest: () => layers.apply(BASE), onFailed: (u) => layers.fail(u) });
+    layers.subscribe(() => a.refreshBgm()); // main.js
+    a.install();
+    fw.fire('pointerdown');
+    a.playBgm('prep');
+    for (let i = 0; i < 3; i++) await tick();
+    assert.equal(a.bgm?.loopUrl, BASE.audio.bgm.prep.loop, 'the installation\'s track');
+    layers.setRoom(doc);
+    for (let i = 0; i < 3; i++) await tick();
+    assert.equal(a.bgm?.loopUrl, url('b/loop.mp3'), 'the room\'s track now');
+    const n = urls.length;
+    layers.setPersonal([]); // no change at all
+    layers.fail('/assets/nothing.png');
+    for (let i = 0; i < 3; i++) await tick();
+    assert.equal(a.bgm?.loopUrl, url('b/loop.mp3'));
+    assert.equal(urls.length, n, 'nothing fetched again');
+    layers.setRoom(null);
+    for (let i = 0; i < 3; i++) await tick();
+    assert.equal(a.bgm?.loopUrl, BASE.audio.bgm.prep.loop, 'the room left: the installation\'s again');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});

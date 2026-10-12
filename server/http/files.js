@@ -117,9 +117,13 @@ export class CompressCache {
     /** @type {Map<string, Promise<Buffer>>} */ this.inflight = new Map();
   }
 
-  /** @returns {Promise<Buffer>} the file identified by (path, size, mtime) compressed with `encoding` ('gzip' by default) */
+  /**
+   * @returns {Promise<Buffer>} the file identified by (path, size, mtime, inode, ctime) compressed with `encoding` ('gzip'
+   *   by default) — the inode and ctime too: a file rewritten with its old size and mtime put back (rsync -t, touch -r)
+   *   is another file (a cosmetic plugin's served at its new hash must not come out of the cache with the old bytes)
+   */
   get(absPath, stat, encoding = 'gzip') {
-    return this.compressed(`${absPath}\0${stat.size}\0${stat.mtimeMs}`, () => fsp.readFile(absPath), encoding, path.extname(absPath).toLowerCase());
+    return this.compressed(`${absPath}\0${stat.size}\0${stat.mtimeMs}\0${stat.ino}\0${stat.ctimeMs}`, () => fsp.readFile(absPath), encoding, path.extname(absPath).toLowerCase());
   }
 
   /**

@@ -67,6 +67,7 @@ describe('mediaUrl: 音频地址去掉扩展名（躲开下载器嗅探）', () 
     assert.equal(mediaUrl('https://cdn.example.com/p/my-skin/0123abcd/v/a.mp3', ORIGIN), 'https://cdn.example.com/p/my-skin/0123abcd/v/a.mp3');
     assert.equal(mediaUrl('/p/my-skin/0123/v/a.mp3', ORIGIN), '/p/my-skin/0123/v/a.mp3', '哈希段不是 8 位十六进制');
     assert.equal(mediaUrl('/p/My-Skin/0123abcd/v/a.mp3', ORIGIN), '/p/My-Skin/0123abcd/v/a.mp3', '不是插件 id');
+    assert.equal(mediaUrl('/p/my-skin/0123abcd/v/A.MP3', ORIGIN), '/p/my-skin/0123abcd/v/A.MP3', '大写扩展名不去掉（服务端按小写的 .mp3 / .ogg 找，去掉只会先多一次 404）');
   });
 
   test('没有 location 时（测试环境）用传入的 origin 判断同源', () => {

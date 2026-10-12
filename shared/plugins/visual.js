@@ -552,9 +552,10 @@ export function locateAssetPath(at) {
 }
 
 /**
- * @typedef {{ at: string[], value: any, urls: string[] } | { at: string[], from: string[] }} PreparedOp
+ * @typedef {{ at: string[], value: any, urls: string[], after?: PreparedOp } | { at: string[], from: string[] }} PreparedOp
  *   a write of a set's document made ready for any manifest: its value with the plugin URLs it writes, or a reference
- *   (`from`: the path it copies, read out of the manifest it is laid over — layVisualOps)
+ *   (`from`: the path it copies, read out of the manifest it is laid over — layVisualOps); `after`: the write an implied
+ *   clear goes with (an enemy's or a token's `spineLocal` taken away only when its new model is written)
  * @typedef {{ ops: PreparedOp[], urls: Set<string>, dropped: string[], droppedCount: number }} PreparedSet
  *   urls: every plugin URL the set writes; dropped: why ops were left out (the first 16), droppedCount: how many
  */
@@ -597,18 +598,30 @@ export function prepareVisualDoc(doc) {
       if (typeof rel !== 'string' || !isPackPath(rel) || !exts.includes(extOf(rel)) || !has(files, rel) || !isHex64(files[rel])) return null;
       return pluginFileUrl(id, String(hash || files[rel]).slice(0, FILE_URL_DIGITS), rel);
     };
+    /** @type {PreparedOp | null} what the previous write became (null: dropped) — an implied clear goes with it */
+    let prev = null;
     for (const [n, op] of list.entries()) {
       if (n >= VISUAL_LIMITS.ops) { drop(null, `more than ${VISUAL_LIMITS.ops} writes`); break; }
-      if (!isObj(op)) { drop(null, 'not a write'); continue; }
+      const before = ops.length;
+      prepareOne(op);
+      prev = ops.length > before ? ops[ops.length - 1] : null;
+    }
+    /** One op of the plugin `id` → pushed onto `ops` (prepared), or dropped with its reason. @param {any} op */
+    function prepareOne(op) {
+      if (!isObj(op)) { drop(null, 'not a write'); return; }
       const at = op.at;
-      // an implied clear: an enemy's or a token's local-client model, when its model is written
+      // an implied clear: an enemy's or a token's local-client model, taken away with the write of its model just before
+      // it (readAssetOverlay puts it there) — dropped with that write, left out with it when its file fails (its URLs)
+      // or its reference is missing (layVisualOps `after`); else the entry would lose its local model for nothing
       if (op.clear === true) {
-        if (Array.isArray(at) && at.length === 3 && LOCAL_MODELS.has(at[0]) && isAssetKey(at[1]) && at[2] === 'spineLocal') ops.push({ at: [...at], value: undefined, urls: [] });
-        else drop(at, 'a clear of something else than a local-client model');
-        continue;
+        const path = Array.isArray(at) && at.length === 3 && LOCAL_MODELS.has(at[0]) && isAssetKey(at[1]) && at[2] === 'spineLocal';
+        const parent = path && prev && prev.at.length === 3 && prev.at[0] === at[0] && prev.at[1] === at[1] && prev.at[2] === 'spine' ? prev : null;
+        if (parent) ops.push({ at: [...at], value: undefined, urls: 'urls' in parent ? parent.urls : [], after: parent });
+        else drop(at, path ? 'a clear of a local-client model whose model write is left out' : 'a clear of something else than a local-client model');
+        return;
       }
       const loc = locateAssetPath(at);
-      if (!loc) { drop(at, 'not something a cosmetic plugin changes'); continue; }
+      if (!loc) { drop(at, 'not something a cosmetic plugin changes'); return; }
       const kind = loc.kind;
       if (op.from !== undefined) {
         const from = op.from;
@@ -617,17 +630,17 @@ export function prepareVisualDoc(doc) {
           && loc.field.every((k, i) => from[depth + 1 + i] === k);
         if (ok) ops.push({ at: [...at], from: [...from] });
         else drop(at, 'a reference to another place than the same field of an entry of its container');
-        continue;
+        return;
       }
       if (op.file !== undefined) {
         const u = kind === 'image' ? fileUrl(op.file, IMAGE) : kind === 'audio' || kind === 'audioList' ? fileUrl(op.file, AUDIO) : null;
         if (u) { ops.push({ at: [...at], value: u, urls: [u] }); urls.add(u); } else drop(at, `${short(op.file)} is no ${kindName(kind)} of the set`);
-        continue;
+        return;
       }
       if (op.files !== undefined) {
         const list2 = kind === 'audioList' && Array.isArray(op.files) && op.files.length && op.files.length <= VISUAL_LIMITS.listFiles ? op.files.map((rel) => fileUrl(rel, AUDIO)) : null;
         if (list2 && list2.every(Boolean)) { ops.push({ at: [...at], value: list2, urls: list2 }); for (const u of list2) urls.add(u); } else drop(at, 'not a list of audio files of the set');
-        continue;
+        return;
       }
       if (op.track !== undefined) {
         const tr = op.track;
@@ -639,13 +652,13 @@ export function prepareVisualDoc(doc) {
           urls.add(loop);
           if (intro) urls.add(intro);
         } else drop(at, 'not a track of audio files of the set');
-        continue;
+        return;
       }
       if (op.spine !== undefined) {
         const sp = op.spine;
         const value = kind === 'spine' && isObj(sp) ? spineValue(sp, files, fileUrl) : null;
         if (value) { ops.push({ at: [...at], value, urls: [value.skel, value.atlas, ...value.textures] }); for (const u of [value.skel, value.atlas, ...value.textures]) urls.add(u); } else drop(at, 'not a Spine model of the set (its files, its folder, its clip data)');
-        continue;
+        return;
       }
       drop(at, 'not a write a cosmetic plugin makes');
     }
@@ -692,14 +705,21 @@ export function layVisualOps(base, sets, { failed = null } = {}) {
   const ops = [];
   /** @type {string[]} */
   const dropped = [];
+  /** @type {Set<PreparedOp>} references left out here (the base lacks them): the clear that goes with one goes too */
+  const missing = new Set();
   for (const set of sets) {
     for (const op of set.ops) {
       if ('from' in op) {
         const v = getPath(base, op.from);
-        if (v === undefined) { if (dropped.length < DROPPED_KEPT) dropped.push(`${pathText(op.at)}: this page's manifest has no ${op.from.join('.')}`); continue; }
+        if (v === undefined) {
+          missing.add(op);
+          if (dropped.length < DROPPED_KEPT) dropped.push(`${pathText(op.at)}: this page's manifest has no ${op.from.join('.')}`);
+          continue;
+        }
         ops.push({ at: op.at, value: v });
         continue;
       }
+      if (op.after && missing.has(op.after)) continue;
       if (failed && failed.size && op.urls.some((u) => failed.has(u))) continue;
       ops.push({ at: op.at, value: op.value });
     }

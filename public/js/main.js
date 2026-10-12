@@ -390,6 +390,8 @@ async function boot() {
   // a cosmetic plugin's sound that will not load falls back like its art (content.js, DESIGN §32 P1a)
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get(),
     onFailed: (url) => cosmetics.fail(url) });
+  // …and the music follows the art: the screen's track again when the cosmetic layers change its URLs
+  cosmetics.subscribe(() => audio.refreshBgm());
   data.load('assets').catch(() => {});
   // Warm the data cache in the background (missing files are tolerated).
   data.loadAll('config').catch(() => {});

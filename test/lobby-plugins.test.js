@@ -53,6 +53,7 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     writePlugin(path.join(plugins, 'base'), cosmetic({ assets: { chars: { char_112_siege: { avatar: 'b.png' } } } }), { 'b.png': png(2, 2) });
     writePlugin(path.join(plugins, 'top'), cosmetic({ requires: { base: '*' }, assets: { chars: { char_102_texas: { avatar: 't.png' } } } }), { 't.png': png(2, 2) });
     writePlugin(path.join(plugins, 'fresh'), cosmetic({ assets: { chars: { char_112_siege: { avatar: 'f.png' } } } }), { 'f.png': png(2, 2, [1, 1, 1, 255]) });
+    writePlugin(path.join(plugins, 'later'), cosmetic({ assets: { chars: { char_112_siege: { portrait: 'l.png' } } } }), { 'l.png': png(2, 2, [5, 5, 5, 255]) });
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, MatchClass: RecordingStub, assetIndex: false });
   });
   after(async () => {
@@ -63,9 +64,9 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
 
   test('/healthz and welcome count the server\'s unofficial plugins (the title screen\'s N; a server without any sends no count)', async () => {
     const c = await player('Closure');
-    // texas-red, texas-blue, mine, base, top, fresh (cosmetic) and rules (content, planned): every class but a language
-    assert.deepEqual(c.welcome.content, { vanilla: srv.content.cs, plugins: 7 });
-    assert.deepEqual((await (await fetch(`${srv.url}/healthz`)).json()).content, { vanilla: srv.content.cs, sets: 0, plugins: 7 }, 'before any hello: the title screen');
+    // texas-red, texas-blue, mine, base, top, fresh, later (cosmetic) and rules (content, planned): every class but a language
+    assert.deepEqual(c.welcome.content, { vanilla: srv.content.cs, plugins: 8 });
+    assert.deepEqual((await (await fetch(`${srv.url}/healthz`)).json()).content, { vanilla: srv.content.cs, sets: 0, plugins: 8 }, 'before any hello: the title screen');
     const lobby = new Lobby({ registry: new SessionRegistry(), content: { cs: 'ab'.repeat(32) }, plugins: { resolve: () => null, unofficial: () => 0 } });
     assert.deepEqual(lobby.welcomeInfo().content, { vanilla: 'ab'.repeat(32) }, 'none: exactly the welcome of a server without plugins');
     lobby.shutdown();
@@ -167,6 +168,24 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     const s2 = await guest.waitFor('room.state', (s) => !!s.content?.vs && s.content.vs !== s1.content.vs);
     assert.deepEqual(s2.content.plugins.map((p) => p.id), ['fresh']);
     assert.notEqual(s2.content.plugins[0].hash, s1.content.plugins[0].hash);
+  });
+
+  test('a plugin that changes during a match: the host hears it once the room is back in its lobby, when it can be applied again', async () => {
+    const MSG = '房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」';
+    const host = await player('Mudrock');
+    await room(host, 'solo');
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [{ id: 'later' }] })).t, 'ok');
+    await host.waitFor('room.state', (s) => !!s.content?.vs);
+    assert.equal((await host.request({ t: 'room.start' })).t, 'ok');
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    host.clearInbox();
+    fs.writeFileSync(path.join(tmp, 'plugins', 'later', 'l.png'), png(2, 2, [6, 6, 6, 255]));
+    srv.packs.rescan();
+    await host.expectNone('m.toast', (m) => m.msgid === MSG, 200);
+    host.send({ t: 'g.infoReady' }); // the stub match ends once every human is ready
+    await host.waitFor('room.state', (s) => s.inMatch === false);
+    const toast = await host.waitFor('m.toast', (m) => m.msgid === MSG);
+    assert.equal(toast.params?.names, 'later');
   });
 
   test('a room holds its visual set while it uses it: released when it changes and when the room goes', () => {

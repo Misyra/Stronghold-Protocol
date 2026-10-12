@@ -32,7 +32,6 @@
 //     the list behind the title screen's 「本服务器安装了 N 个插件」 (that count is the server's).
 
 import { createStore, loadPref, savePref, store as appStore } from './store.js';
-import { resolvePluginOrder } from '../../shared/plugins/order.js';
 import { data as dataStore } from './data.js';
 import { cosmetics } from './assets.js';
 import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
@@ -61,9 +60,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const catalog = createStore({ status: 'idle', plugins: [], app: null, at: 0 });
 let catalogLoad = null;
 
+/** shared/plugins/order.js — loaded with the catalogue (a page of a server without plugins never needs it). */
+let orderModule = null;
+/** Load the load-order function (with the catalogue; tests). @returns {Promise<boolean>} whether it is there */
+export const loadPluginOrder = () => (orderModule ? Promise.resolve(true)
+  : import('../../shared/plugins/order.js').then((m) => { orderModule = m; return true; }, () => false));
+
 /**
- * Fetch the catalogue (never cached by the browser: the server lists what its plugins/ holds now). Shared while one is
- * on its way; `force` fetches again even when one is there (a panel opened later sees a plugin dropped in meanwhile).
+ * Fetch the catalogue (never cached by the browser: the server lists what its plugins/ holds now) — and the load-order
+ * function the personal plugins need with it (loadPluginOrder). Shared while one is on its way; `force` fetches again
+ * even when one is there (a panel opened later sees a plugin dropped in meanwhile).
  * @param {{ force?: boolean, fetch?: typeof fetch }} [opts]
  * @returns {Promise<any[]>} the entries ([] when it is unavailable)
  */
@@ -78,6 +84,7 @@ export function loadCatalog({ force = false, fetch: doFetch = defaultFetch } = {
       if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
       const body = await res.json();
       const plugins = isObj(body) && Array.isArray(body.plugins) ? body.plugins.filter(isObj) : [];
+      await loadPluginOrder();
       catalog.set({ status: 'ready', plugins, app: typeof body?.app === 'string' ? body.app : null, at: Date.now() });
       return plugins;
     } catch (err) {
@@ -145,6 +152,9 @@ export function personalSet(ids, entries) {
   const byId = new Map((Array.isArray(entries) ? entries : []).filter((p) => p && typeof p.id === 'string').map((p) => [p.id, orderEntry(p)]));
   const lookup = (id) => byId.get(id) || null;
   const chosen = [...new Set(ids)].filter((id) => byId.has(id)).sort();
+  // (the function comes with the catalogue — without it, which never happens once the catalogue is there: as chosen)
+  const resolvePluginOrder = orderModule?.resolvePluginOrder;
+  if (!resolvePluginOrder) return { order: chosen, auto: [], skipped: [] };
   const full = resolvePluginOrder(chosen, lookup);
   if (!('error' in full)) return { order: full.order, auto: full.auto, skipped: [] };
   let kept = [];
@@ -169,11 +179,11 @@ export function setPersonalPlugin(id, on) {
   const ids = personal.get().ids.filter((x) => x !== id);
   if (on) {
     const cat = catalog.get();
-    if (cat.status === 'ready') {
+    if (cat.status === 'ready' && orderModule) {
       const entries = cosmeticPlugins(cat.plugins, 'personal').filter((p) => isVisualHash(p.vs));
       if (entries.some((p) => p.id === id)) {
         const byId = new Map(entries.map((p) => [p.id, orderEntry(p)]));
-        const r = resolvePluginOrder([...new Set([...ids, id])].filter((x) => byId.has(x)).sort(), (x) => byId.get(x) || null);
+        const r = orderModule.resolvePluginOrder([...new Set([...ids, id])].filter((x) => byId.has(x)).sort(), (x) => byId.get(x) || null);
         if ('error' in r) return { error: r.error, detail: r.detail };
       }
     }

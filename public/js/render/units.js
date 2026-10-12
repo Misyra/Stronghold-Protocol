@@ -676,9 +676,13 @@ export class UnitView {
     const url = this._pictureUrl();
     if (!this._pic || this._pic.state === 'none') this._loadPicture();
     else if (url && url !== this._pic.url) this._loadPicture(true);
-    const want = this._modelEntry();
-    // another model than the one shown / loading (compared by skeleton URL: the same file is the same model)
-    const moved = !!want && !!this._resolved && want.skel !== this._resolved.skel;
+    // another model than the one shown / loading (compared by skeleton URL: the same file is the same model), for the
+    // side it was resolved for (Front ⇄ Back stays _syncModel's); the optional local-client model that only arrived now
+    // (data/local-assets.json late: its `fallback` is the model shown) is no change — a view keeps its model then, as
+    // before cosmetic plugins (DESIGN §13)
+    const want = this._modelEntry(this._resolved ? !!this.entryBack : this._wantsBack());
+    const moved = !!want && !!this._resolved && want.skel !== this._resolved.skel
+      && !(want.local && want.fallback && want.fallback.skel === this._resolved.skel);
     if (this.actor) {
       if (moved) { this._retryAt = 0; this._loadSpine(true); }
       return;
@@ -716,6 +720,9 @@ export class UnitView {
       } catch (err) {
         console.warn('[render] spine build failed', id, err?.message || err);
         this._releaseEntry(entry);
+        // a cosmetic plugin's model the renderer cannot build falls back like one that did not load (assets.js `failed`:
+        // the manifest changes, retryAssets loads the installation's); the installation's own: no change
+        try { a.failed?.(entry.skel); } catch { /* ignore */ }
         return;
       }
       // a Front ⇄ Back swap (setDir, or knocked out / standing again: _syncModel) replaces the previous model in place:

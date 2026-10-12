@@ -65,7 +65,9 @@
 // - Buffers are fetched once and cached (LRU); failed fetch/decode ⇒ silent (logged once as a warning). A cosmetic
 //   plugin's sound that fails (DESIGN §32 P1a) is reported (`onFailed`, main.js: the cosmetic layers — its entry falls
 //   back to the art beneath it) and the entry the manifest names then plays instead, once: the BGM track, the voice line
-//   of the same slot, the same UI / battle / unit sound (`fellBack`).
+//   of the same slot, the same UI / battle / unit sound (`fellBack`). When the manifest changes under the music (a room's
+//   set arriving, a personal plugin switched — main.js), the screen's track plays again if its URLs changed
+//   (`refreshBgm`; the same loop keeps playing).
 //
 // `bgmKeyFor(route, pub)` picks the track for the current screen/phase (main.js calls `audio.install()`,
 // which follows the store).
@@ -546,6 +548,7 @@ export class AudioManager {
     this.startVoiceDone = false; // 行动出发 of this field (the first operator deployed says it)
     this.uiVoices = 0;
     this.wantBgm = null;      // desired key (kept while locked)
+    this.lastBgmKey = null;   // the key the screen asked for last (refreshBgm)
     this.bgm = null;          // { key, loopUrl, nodes: [{src, gain}], gain }
     this.bgmToken = 0;
     this.units = new Map();   // battle unit id → defId
@@ -801,6 +804,7 @@ export class AudioManager {
    */
   playBgm(key) {
     try {
+      this.lastBgmKey = key;
       if (!this.ctx) { this.wantBgm = key; return; }
       if (this.bgmSilent) {
         this.wantBgm = key;
@@ -819,6 +823,14 @@ export class AudioManager {
       if (!track) return;
       this._startBgm(key, track, token);
     } catch (err) { this._warn('bgm', err); }
+  }
+
+  /**
+   * The manifest changed under the music (a cosmetic plugin switched on or off, a room's set arriving, a file that fell
+   * back — main.js): the screen's track again — playBgm keeps the same loop playing and starts another one.
+   */
+  refreshBgm() {
+    if (this.lastBgmKey != null) this.playBgm(this.lastBgmKey);
   }
 
   async _startBgm(key, track, token) {

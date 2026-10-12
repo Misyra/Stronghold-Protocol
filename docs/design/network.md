@@ -101,11 +101,11 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   (not a loaded cosmetic plugin of scope `room` in this version), `PLUGIN_DEPENDENCY` (a requirement missing or out of
   range, a load-order cycle), `PLUGIN_CONFLICT`, `PLUGIN_LIMIT` (over 300 MB of art, or references copying over 4 MB of
   the art manifest) (`server/lobby.js setPlugins`, `server/plugins/visualSet.js resolve`). The host's result replay is
-  dropped only when the set changed;
+  dropped only when the set (its `vs` or its 「自动」 marks) changed;
 - S→C `m.toast { kind: 'warn', msgid: '房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', params:
   { names } }` to the host of a room whose set holds a plugin that changed on disk (the registry read the folders again:
-  `server/plugins/visualSet.js onStale`), once per set, also outside a match; the host's 「重新应用」 sends the same
-  `room.setPlugins`, which makes the set of the files as they are now (a new `vs`);
+  `server/plugins/visualSet.js onStale`), once per set — during a match, once the room is back in its lobby; the host's
+  「重新应用」 sends the same `room.setPlugins`, which makes the set of the files as they are now (a new `vs`);
 - the match receives `opts.cs` from the lobby and copies it into every BattleSpec as `cs` (§14) — so `b.start.spec.cs`;
 - C→S `b.result.cs?` — optional, its form checked (`isContentHash`); the server does not compare it with the spec yet
   (P1c refuses a missing or different one in a plugin room);

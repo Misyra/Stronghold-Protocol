@@ -189,7 +189,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const same = sameIdentity(statIdentity(st), f);
       if (!same) sets.noteChanged();
       await serveFile(req, res, f.abs, st, 'plugins', segments, query, gzipCache, log, {
-        contentHash: same ? f.sha256.slice(0, 16) : null,
+        // the ETag: the content hash of the bytes the scan hashed — of a changed file, its stat identity (size and mtime
+        // alone would revalidate a rewrite that kept them: a 304 for other bytes)
+        contentHash: same ? f.sha256.slice(0, 16) : `${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${st.ino.toString(16)}-${Math.floor(st.ctimeMs * 1000).toString(16)}`,
         cacheControl: same && f.urlHashes.has(hash) ? IMMUTABLE_CACHE : 'no-cache',
       });
       return;

@@ -248,8 +248,10 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   for (const rel of ov.files) {
     const h = hashed[rel];
     const abs = path.join(dir, ...rel.split('/'));
+    // the native realpath — the very function a request compares with (server/http/static.js fsp.realpath): the JS one
+    // keeps the typed spelling of the path (macOS / Windows file systems ignore case), the native one the disk's
     let real;
-    try { real = fs.realpathSync(abs); } catch { problems.push(`${rel}: cannot be read inside the plugin folder`); continue; }
+    try { real = fs.realpathSync.native(abs); } catch { problems.push(`${rel}: cannot be read inside the plugin folder`); continue; }
     served.set(rel, { abs, real, sha256: h.sha256, bytes: h.size, size: h.size, mtimeMs: h.mtimeMs, ino: h.ino, ctimeMs: h.ctimeMs, urlHashes: new Set([h.sha256.slice(0, FILE_URL_DIGITS)]) });
   }
   if (problems.length) return { visual: null, problems, warnings };

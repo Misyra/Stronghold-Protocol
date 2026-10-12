@@ -48,10 +48,11 @@ export function mediaUrl(url, origin = globalThis.location?.origin) {
   // Cross-origin (or absolute while the page origin is unknown) stays untouched: that host serves its own media.
   const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//');
   if (origin ? u.origin !== origin : absolute) return url;
-  // a cosmetic plugin's audio: the same URL without its extension (a stem that still ends in one stays as it is)
+  // a cosmetic plugin's audio: the same URL without its extension (a stem that still ends in one stays as it is; an
+  // upper-case extension too — the server finds `<stem>.mp3` / `.ogg` exactly, so it would only cost a 404 first)
   const pm = PLUGIN_AUDIO.exec(u.pathname);
   if (pm) {
-    const ext = PLUGIN_AUDIO_EXTS.find((e) => pm[1].toLowerCase().endsWith(e));
+    const ext = PLUGIN_AUDIO_EXTS.find((e) => pm[1].endsWith(e));
     const stem = ext ? u.pathname.slice(0, -ext.length) : '';
     if (!ext || /\.[A-Za-z0-9]+$/.test(stem) || stem.endsWith('/') || stem.split('/').some((x) => x === '.' || x === '..')) return url;
     return `${stem}${u.search}`;

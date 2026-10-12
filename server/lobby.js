@@ -105,12 +105,14 @@
 //     manifest). An empty list brings back
 //     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the
 //     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
-//     un-readies nobody and leaves the host's result replay (a settlement screen still open: dropReplay — only a set
-//     that changed is the host moving on); ▸ when only its 「自动」 marks changed (a plugin first switched on
-//     automatically is now chosen, or the other way round) the new state is broadcast without un-readying. ▸ When a
-//     plugin of the room's set changes on disk while the room holds it (the visual sets' onStale, after the registry read
-//     the folders again), the host is told once (an m.toast: apply the room's plugins again — the panel's 「重新应用」
-//     sends the same list, which resolves to the set of the files as they are now); nothing changes by itself.
+//     un-readies nobody; ▸ when only its 「自动」 marks changed (a plugin first switched on automatically is now chosen, or
+//     the other way round) the new state is broadcast without un-readying. A request that changes nothing (the same `vs`
+//     and the same marks) — or a refused one — leaves the host's result replay (a settlement screen still open:
+//     dropReplay; a change is the host moving on). ▸ When a plugin of the room's set changes on disk while the room holds
+//     it (the visual sets' onStale, after the registry read the folders again), the host is told once (an m.toast: apply
+//     the room's plugins again — the panel's 「重新应用」 sends the same list, which resolves to the set of the files as
+//     they are now) — during a match, once the room is back in its lobby (onMatchEnd), when it can be done; nothing
+//     changes by itself.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -225,6 +227,8 @@ export class Room {
      * @type {{ publicFrame: string | null, frames: Map<string, string>, pending: Set<string> } | null}
      */
     this.replay = null;
+    /** @type {string[] | null} plugins of the room's set that changed on disk — the host not told yet (Lobby.pluginsChanged) */
+    this.pluginsChanged = null;
     /** @type {string | null} per-network limit key of the creator (net.js clientAddress) */
     this.ownerKey = null;
     /** @type {string | null} per-network limit key of whoever started the running match */
@@ -323,12 +327,23 @@ export class Lobby {
    * @param {string} vs @param {string[]} ids
    */
   pluginsChanged(vs, ids) {
-    const names = ids.slice(0, 8).join('、');
     for (const room of this.rooms.values()) {
       if (room.disposed || room.content?.vs !== vs) continue;
       this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
-      this.sendToPlayer(room, room.hostId, { t: 'm.toast', kind: 'warn', ...wireMessage(msg('房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', { names })) });
+      // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
+      room.pluginsChanged = ids;
+      if (!room.match) this.tellPluginsChanged(room);
     }
+  }
+
+  /** Tell the host of `room` that its plugins changed on disk (pluginsChanged), once. @param {Room} room */
+  tellPluginsChanged(room) {
+    const ids = room.pluginsChanged;
+    room.pluginsChanged = null;
+    // the room's set changed since (re-applied, switched off): nothing to tell
+    if (!ids || !room.content?.vs) return;
+    const names = ids.slice(0, 8).join('、');
+    this.sendToPlayer(room, room.hostId, { t: 'm.toast', kind: 'warn', ...wireMessage(msg('房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', { names })) });
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -640,6 +655,8 @@ export class Lobby {
     const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto]));
     if (sameSet && marks(before) === marks(content)) return OK;
     this.dropReplay(room, session.playerId);
+    // another set: a notice still waiting for the end of a match (pluginsChanged) is moot
+    if (!sameSet) room.pluginsChanged = null;
     room.content = content;
     if (!sameSet) {
       if (content?.vs) this.plugins?.hold?.(content.vs);
@@ -906,7 +923,11 @@ export class Lobby {
     const host = room.hostId ? room.seatOf(room.hostId) : null;
     if (!host || host.isBot || host.left) this.migrateHost(room);
     if (room.activeHumans().length === 0) this.disposeRoom(room, 'empty');
-    else this.broadcastState(room);
+    else {
+      this.broadcastState(room);
+      // its plugins changed on disk during the match: the host can apply them again now
+      if (room.pluginsChanged) this.tellPluginsChanged(room);
+    }
   }
 
   /** Match unicast; m.result frames are also kept for the replay. */

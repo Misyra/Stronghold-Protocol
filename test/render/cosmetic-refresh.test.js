@@ -143,6 +143,25 @@ describe('views already drawn follow a changed manifest (render/units.js retryAs
     v.destroy();
   });
 
+  test('without plugins nothing changes for a model already shown: the local-client manifest arriving late keeps the web model (as before)', async () => {
+    const web = SP('/assets/~5555555555555555/spine/enemy/mh');
+    const M2 = { enemies: { enemy_1305_mhslim: { icon: '/assets/e/mh.png', spine: web, spineLocal: { group: 'spine/enemy/mh', skel: 'mh.skel', atlas: 'mh.atlas', textures: ['mh.png'], anims: { idle: 'Idle' } } } }, ui: {} };
+    const LOCAL = { groups: { 'spine/enemy/mh': { 'mh.skel': { path: '/l/mh.skel' }, 'mh.atlas': { path: '/l/mh.atlas' }, 'mh.png': { path: '/l/mh.png' } } } };
+    const loads = [];
+    const a = createAssets({ manifest: M2, cosmetics: createCosmeticLayers(), loadImage: async () => IMG, unloadSpine: () => {},
+      loadSpine: async (e) => { loads.push(e.skel); return { animations: [{ name: 'Idle' }] }; } });
+    const v = new UnitView(fakeViewCtx(fake.P, { assets: a, cam }), { id: 7, side: 'enemy', kind: 'enemy', defId: 'enemy_1305_mhslim', spine: 'enemy_1305_mhslim', tier: 1, x: 3, y: 4, maxHp: 500 }, {});
+    a.onChange(() => v.retryAssets());
+    await settle();
+    assert.deepEqual(loads, [web.skel]);
+    const shown = v.actor;
+    assert.equal(a.seedLocal(LOCAL), true, 'the local-client manifest, late');
+    await settle();
+    assert.deepEqual(loads, [web.skel], 'nothing loaded again');
+    assert.equal(v.actor, shown, 'the web model stays');
+    v.destroy();
+  });
+
   test('a replaced picture keeps the old one on the diamond until the new one is there', async () => {
     const layers = createCosmeticLayers();
     let done;

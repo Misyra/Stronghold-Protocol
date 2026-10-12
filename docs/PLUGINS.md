@@ -246,7 +246,8 @@ what it means; one the installation's `data/assets.json` lacks is a problem. Any
 into the manifest; never an absolute URL (no other path of the server, no other host). A field a plugin does not write
 keeps the installation's value (an `avatar` alone leaves `avatarE2`), but a track is written whole (a `loop` alone plays
 without the installation's intro), and a model written for an enemy or a token — its `spine`, a model or a reference —
-also takes away that entry's local-client model (`spineLocal`, which the client would draw first) [ASSUMED]. The split
+also takes away that entry's local-client model (`spineLocal`, which the client would draw first) [ASSUMED] — only with
+that model: a model write the browser leaves out, or whose file fails to load, leaves the local model too. The split
 battle music `audio.bgm.combatAlts` (the mode's own 开战 tracks, 骑士之日 / 无畏者, fixed per round) is not something a
 plugin changes: the client plays it instead of `combat` in the rounds it covers, so a plugin's `combat` is heard only
 where no such track plays. Writing an
@@ -281,12 +282,14 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
   `plugin.json`, lock, document or other file, no dot file, no `..`, and only the very file the scan hashed: a symbolic
   link is never served — one in the folder when it is scanned is no file of it, and one put in place of a served file
   later, or in place of a folder on its way, is refused (404) wherever it leads, another file of the folder included
-  (the request `lstat`s the path and wants the real path the scan recorded). `<hash8>` is the first 8 hex digits of the
+  (the request `lstat`s the path and wants the real path the scan recorded — both read with the native realpath, so a
+  plugins folder spelled in another case than on disk still works on macOS and Windows). `<hash8>` is the first 8 hex digits of the
   file's SHA-256 — for every file of a Spine model, of the SHA-256 of its files' SHA-256s, so the skeleton, its atlas and
   pages share one folder. At the hash of the file's bytes, while the file keeps the size, mtime, inode and ctime it was
   hashed with, the answer is `immutable` for a year; at any other hash, or for a file changed since the scan, the current
-  file with `no-cache` (as for `/assets/~<hash>/…`, ASSETS.md), and a changed file has the registry read the folders
-  again. An audio file is also served **without its extension** — `/p/<id>/<hash8>/voice/s1` for `voice/s1.mp3` —, which
+  file with `no-cache` (as for `/assets/~<hash>/…`, ASSETS.md; a changed file's ETag is its stat identity, never the
+  old content hash, and the compressed-body cache keys on the inode and ctime too), and a changed file has the registry
+  read the folders again. An audio file is also served **without its extension** — `/p/<id>/<hash8>/voice/s1` for `voice/s1.mp3` —, which
   is how the page fetches it (`public/js/media.js` mediaUrl: download managers such as IDM or 迅雷 pop up a dialog for
   every fetch that ends in `.mp3`, the reason 0.2.6's `/media/` route exists; with a `.mp3` and a `.ogg` of one name the
   one whose hash the URL names; a host without the route still works: the page falls back to the URL with the
@@ -321,12 +324,14 @@ original art there (one toast per page). Whenever the art changes under a page �
 board was drawn (a reconnect, a spectator joining a match), a personal plugin switched during a match, a set taken away —
 what is already on the board follows: a piece or unit whose picture or model the manifest no longer names loads the new
 one, which replaces the old in place (`render/units.js` retryAssets), and the backdrop mountains and the shadow sprite
-follow their `ui` entries. A plugin file that will not load — an image of the interface, a picture, a Spine model (any of
-its files; not while the tab is hidden) or the shadow sprite of the board, a sound — makes its entry fall back to the art
+follow their `ui` entries, and the music plays the screen's track again when its URLs changed. A plugin file that will
+not load — an image of the interface, a picture, a Spine model (any of its files, or one the renderer cannot build; not
+while the tab is hidden) or the shadow sprite of the board, a sound — makes its entry fall back to the art
 beneath it, the installation's (or the room's, under a personal plugin), for the rest of the page's life [ASSUMED]; a
 sound plays the installation's entry instead at once (the BGM track, the voice line of the same slot, the same sound).
 When a plugin of a room's set changes on the server while the room uses it (the registry read the folders again — a
-served file found changed, or the folders' own signature), the host is told once (a toast) to apply the plugins again:
+served file found changed, or the folders' own signature), the host is told once (a toast; during a match, once the
+room is back in its lobby) to apply the plugins again:
 the panel's 「重新应用」 sends the same choice, which makes the set of the files as they are now; until then the room
 keeps its set — its changed files go out under the old URLs with `no-cache`, and what will not load falls back. A plugin the
 server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
@@ -334,8 +339,9 @@ content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`. A server sa
 in `/healthz` (which every page reads at once: the build guard) and in `welcome`, as `content.plugins` — only when there
 are some; the title screen's 「本服务器安装了 N 个插件」 is that count, and the catalogue is fetched only then, when
 something needs it (the title's list, the 插件 panel, 设置's 外观插件, a switched-on personal plugin). So a page of a server
-without plugins makes no request more than 0.2.6's — its code only has three more modules (`public/js/content.js`,
-`public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports).
+without plugins makes no request more than 0.2.6's but for its code: four more modules at once (`public/js/content.js`,
+`public/js/ui/pluginPanel.js`, `shared/plugins/visual.js`, and `public/js/assets.js`, which 0.2.6 loads with the first
+match); the load-order function (`shared/plugins/order.js`) comes only with the catalogue.
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
 this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. The

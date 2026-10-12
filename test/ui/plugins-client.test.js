@@ -17,7 +17,8 @@ import { createCosmeticLayers, createAssets } from '../../public/js/assets.js';
 import { createDataStore } from '../../public/js/data.js';
 import { createStore } from '../../public/js/store.js';
 import {
-  fetchVisualDoc, installContent, installedCount, personal, personalSet, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins, pluginName, PERSONAL_PREF,
+  fetchVisualDoc, installContent, installedCount, loadPluginOrder, personal, personalSet, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins,
+  pluginName, PERSONAL_PREF,
 } from '../../public/js/content.js';
 import { ERR } from '../../shared/constants.js';
 import { roomPluginFacts, nextChoice, sizeText, pluginTagText, pluginMicro } from '../../public/js/ui/pluginPanel.js';
@@ -316,6 +317,8 @@ describe('content.js', () => {
   });
 
   test('personal plugins form a set like a room\'s: requirements switched on (「自动」), the load order, a conflicting switch refused', async () => {
+    // the load-order function comes with the catalogue (a page of a server without plugins never loads it)
+    assert.equal(await loadPluginOrder(), true);
     const e = (id, o = {}) => ({ id, class: 'cosmetic', status: 'loaded', scope: ['personal'], vs: sha256Hex(id), version: '1.0.0', unofficial: true, ...o });
     const entries = [e('base'), e('top', { requires: { base: '^1.0.0' } }), e('late', { loadAfter: ['zz-first'] }), e('zz-first', { priority: 5 }),
       e('rival', { conflicts: { top: '*' } }), e('needs-gone', { requires: { gone: '*' } })];

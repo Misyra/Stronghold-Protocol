@@ -156,3 +156,5 @@ html:not(.sp-in-match) .toast-host { margin-top: var(--sa-t); }
 
 .rotate-hint__pwa { pointer-events: auto; margin-top: 6px; }
 .rotate-hint__pwa[hidden] { display: none; }
+.rotate-hint__fullscreen { pointer-events: auto; margin-top: 6px; }
+.rotate-hint__fullscreen[hidden] { display: none; }

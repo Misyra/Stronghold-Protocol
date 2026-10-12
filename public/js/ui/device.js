@@ -211,6 +211,8 @@ export function PwaInstallButton({ class: cls = '', size = 'sm', square = false 
 export function updateRotateHintPwaI18n(doc = globalThis.document) {
   const btn = doc?.getElementById?.('rotate-hint-pwa');
   if (btn) btn.textContent = t('添加到桌面');
+  const fsBtn = doc?.getElementById?.('rotate-hint-fullscreen');
+  if (fsBtn) fsBtn.textContent = t('点击进入横屏');
 }
 
 // ---- boot-time installation ----------------------------------------------------------------------------------------
@@ -309,6 +311,15 @@ export function installDeviceSupport(win = globalThis) {
     updateRotateHintPwaI18n(doc);
     offs.push(pwaInstall.subscribe((available) => { pwaBtn.hidden = !available; }));
     on(pwaBtn, 'click', () => { pwaInstall.request(); });
+  }
+
+  // The rotate hint offers the one thing a portrait phone can still do: enter fullscreen, which on
+  // Android Chrome also lets the game lock the landscape orientation (ui/device.js fullscreen.enter).
+  // Browsers without element fullscreen (iPhone Safari) keep the button hidden.
+  const fsHintBtn = doc?.getElementById?.('rotate-hint-fullscreen');
+  if (fsHintBtn) {
+    fsHintBtn.hidden = !fullscreen.supported(win);
+    on(fsHintBtn, 'click', () => { fullscreen.enter(win); });
   }
 
   installed = () => { for (const off of offs.splice(0)) { try { off(); } catch { /* ignore */ } } clearTimeout(rotTimer); installed = null; };

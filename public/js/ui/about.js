@@ -5,7 +5,7 @@ import { t } from '../../../shared/i18n.js';
 const REPOSITORY = 'https://github.com/Misyra/Stronghold-Protocol';
 
 export function AboutModal({ open, onClose }) {
-  return html`<${Modal} open=${open} title=${t('关于本项目')} micro="STRONGHOLD PROTOCOL · ALLIANCE" width="8rem" class="about-panel"
+  return html`<${Modal} open=${open} title=${t('关于本项目')} micro="STRONGHOLD PROTOCOL · ALLIANCE" width="8rem" class="about-panel" utility=${true}
       onClose=${onClose} actions=${html`<${Button} variant="primary" onClick=${onClose}>${t('关闭')}<//>`}>
       <p class="about-intro">${t('卫戍协议：盟约')} <span class="num">v${APP_VERSION}</span></p>
       <dl class="about-links">

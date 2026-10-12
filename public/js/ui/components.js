@@ -396,9 +396,15 @@ const modalStack = []; // open modals, topmost last: only the topmost handles ke
 /**
  * Modal dialog (declarative). Esc / backdrop click call onClose.
  * @param {{ open: boolean, title?: any, micro?: string, tone?: string, onClose?: Function, actions?: any,
- *   width?: string, closeOnBackdrop?: boolean, class?: string, children?: any }} props
+ *   width?: string, closeOnBackdrop?: boolean, utility?: boolean, class?: string, children?: any }} props
+ *
+ * `utility`: this dialog is a management surface (settings, resources, announcements, about, resume, imports,
+ * match info …) and opts into css/utility-mobile.css. Its requested `width` moves to `--utility-width` so the mobile
+ * layer can resize it without an inline-style override, and the header gains a keyboard-accessible close button.
+ * Gameplay dialogs (reward / choice / equipment replacement / in-match confirmations) deliberately stay out: the
+ * battlefield, shop and HUD keep their own geometry.
  */
-export function Modal({ open, title, micro, tone = 'mint', onClose, actions, width, closeOnBackdrop = true, class: cls, children }) {
+export function Modal({ open, title, micro, tone = 'mint', onClose, actions, width, closeOnBackdrop = true, utility = false, class: cls, children }) {
   const boxRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -448,14 +454,17 @@ export function Modal({ open, title, micro, tone = 'mint', onClose, actions, wid
     };
   }, [open]);
   if (!open) return null;
-  return html`<div class="modal" role="presentation"
+  return html`<div class=${cx('modal', utility && 'modal--utility')} role="presentation"
       onMouseDown=${(e) => { if (closeOnBackdrop && e.target === e.currentTarget && onClose) onClose(); }}>
-    <div ref=${boxRef} class=${cx('modal__box', 'brackets', `modal__box--${tone}`, cls)} role="dialog" aria-modal="true" tabindex="-1"
-         style=${width ? `width:${width}` : undefined}>
+    <div ref=${boxRef} class=${cx('modal__box', 'brackets', `modal__box--${tone}`, utility && 'utility-modal', cls)} role="dialog" aria-modal="true" tabindex="-1"
+         style=${width ? utility ? `--utility-width:${width}` : `width:${width}` : undefined}>
       <div class="modal__stripe" aria-hidden="true"></div>
       ${title || micro ? html`<header class="modal__head">
-        ${micro ? html`<${MicroLabel}>${micro}<//>` : null}
-        ${title ? html`<h2 class="modal__title">${title}</h2>` : null}
+        <div class="modal__titles">
+          ${micro ? html`<${MicroLabel}>${micro}<//>` : null}
+          ${title ? html`<h2 class="modal__title">${title}</h2>` : null}
+        </div>
+        ${utility && onClose ? html`<button type="button" class="utility-modal__close" aria-label=${t('关闭')} onClick=${onClose}><${Icon} name="close" /></button>` : null}
       </header>` : null}
       <div class="modal__body">${children}</div>
       ${actions ? html`<footer class="modal__actions">${actions}</footer>` : null}
@@ -484,13 +493,13 @@ function closeDialog(id, result) {
 
 /**
  * Imperative confirm dialog (requires <UiHosts/> or <DialogHost/> mounted).
- * @param {{ title?: string, text?: any, okText?: string, cancelText?: string, tone?: string, danger?: boolean, micro?: string }} opts
+ * @param {{ title?: string, text?: any, okText?: string, cancelText?: string, tone?: string, danger?: boolean, micro?: string, utility?: boolean }} opts
  * @returns {Promise<boolean>}
  */
 export const confirmDialog = (opts) => openDialog(opts, 'confirm');
 /**
  * Imperative alert dialog.
- * @param {{ title?: string, text?: any, okText?: string, tone?: string, micro?: string }} opts
+ * @param {{ title?: string, text?: any, okText?: string, tone?: string, micro?: string, utility?: boolean }} opts
  * @returns {Promise<true>}
  */
 export const alertDialog = (opts) => openDialog(opts, 'alert');
@@ -516,14 +525,14 @@ export function DialogHost() {
   }, []);
   const d = dialogs[0];
   if (!d) return null;
-  const { title = t('确认'), text, okText = t('确认'), cancelText = t('取消'), tone, danger, micro = 'CONFIRMATION' } = d.opts;
+  const { title = t('确认'), text, okText = t('确认'), cancelText = t('取消'), tone, danger, micro = 'CONFIRMATION', utility = false } = d.opts;
   const isConfirm = d.kind === 'confirm';
   // Enter confirms unless a specific button has focus (then the native click decides).
   const onKey = (e) => {
     if (e.key === 'Enter' && e.target?.tagName !== 'BUTTON') { e.preventDefault(); closeDialog(d.id, true); }
   };
   return html`<div onKeyDown=${onKey}>
-    <${Modal} key=${d.id} open=${true} title=${title} micro=${micro} tone=${tone || (danger ? 'red' : 'mint')}
+    <${Modal} key=${d.id} open=${true} title=${title} micro=${micro} tone=${tone || (danger ? 'red' : 'mint')} utility=${utility}
       onClose=${() => closeDialog(d.id, isConfirm ? false : true)}
       actions=${html`
         ${isConfirm ? html`<${Button} variant="secondary" onClick=${() => closeDialog(d.id, false)}>${cancelText}<//>` : null}

@@ -301,6 +301,7 @@ function StatsScreen({ tab }) {
   };
   const doClear = async () => {
     const ok = await confirmDialog({
+      utility: true,
       title: t('清空统计数据'), micro: 'CLEAR STATISTICS', danger: true, okText: t('清空'),
       text: t('将删除本机保存的 {n} 条对局记录，无法恢复。', { n: stats.records.length }),
     });

@@ -37,6 +37,7 @@
 | [国际化](development/I18N.md) | 翻译、语言文件与覆盖范围 |
 | [性能](development/PERFORMANCE.md) | Worker 池、预载与性能优化 |
 | [难度与平衡](development/BALANCE.md) | 难度模型和测量 |
+| [管理界面移动端密度](development/MOBILE_UI.md) | 非战场管理界面的紧凑层、变量契约与真机验证边界 |
 | [本分支 API](development/CUSTOM_API.md) | 房间查询、匹配与扩展接口 |
 
 ## 设计章节、历史与调研

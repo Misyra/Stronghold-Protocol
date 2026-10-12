@@ -47,6 +47,10 @@
   <link rel="stylesheet" href="/css/screens/stats.css" />
   <link rel="stylesheet" href="/css/emotes.css" />
   <link rel="stylesheet" href="/css/devices.css" />
+  <!-- Compact density for the management surfaces only (dialogs marked `utility`, guide, title, lobby, room, loadout,
+       local statistics). Loaded after devices.css on purpose: it narrows the touch hit areas of the compact controls
+       it resizes. The battlefield, shop, HUD and chat are untouched. -->
+  <link rel="stylesheet" href="/css/utility-mobile.css" />
 
   <script type="importmap">
     { "imports": { "preact": "/vendor/preact.module.js", "preact/hooks": "/vendor/hooks.module.js", "htm": "/vendor/htm.module.js" } }
@@ -75,6 +79,7 @@
     <div class="rotate-hint__phone"></div>
     <div class="rotate-hint__title">请将设备横屏</div>
     <div>卫戍协议：盟约 需要横屏显示以获得完整体验</div>
+    <button type="button" hidden class="btn btn--primary btn--sm rotate-hint__fullscreen" id="rotate-hint-fullscreen">点击进入横屏</button>
     <button type="button" hidden class="btn btn--secondary btn--sm rotate-hint__pwa" id="rotate-hint-pwa">添加到桌面</button>
     <div class="rotate-hint__micro">ROTATE DEVICE</div>
   </div>

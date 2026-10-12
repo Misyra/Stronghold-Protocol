@@ -136,7 +136,7 @@ export function MatchInfo({ model }) {
  * @param {{ open: boolean, onClose: Function, model: MatchInfoModel|null, status?: any }} props
  */
 export function MatchInfoDialog({ open, onClose, model, status = null }) {
-  return html`<${Modal} open=${open && !!model} onClose=${onClose} title=${t('本局信息')} micro="MATCH INFO // BONDS & BANNED OPERATORS" class="minfo-dlg"
+  return html`<${Modal} open=${open && !!model} onClose=${onClose} title=${t('本局信息')} micro="MATCH INFO // BONDS & BANNED OPERATORS" class="minfo-dlg" utility=${true}
     actions=${html`${status ? html`<div class="minfo-dlg__status" data-testid="match-info-status">${status}</div>` : null}
       <${Button} variant="secondary" icon="close" data-autofocus data-testid="match-info-close" onClick=${onClose}>${t('关闭')}<//>`}>
     ${open && model ? html`<${MatchInfo} model=${model} />` : null}

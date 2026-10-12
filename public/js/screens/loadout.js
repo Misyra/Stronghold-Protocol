@@ -500,14 +500,14 @@ function LoadoutScreen({ st }) {
   const setDiySlot = (slotId, pick) => setDiyPicks(setPick(loadoutStore.get().diy, slotId, pick));
   const clearDiy = async () => {
     if (!nDiy) return;
-    const ok = await confirmDialog({ title: t('全部清空'), text: t('清空全部 {n} 个自选名额？', { n: nDiy }), okText: t('全部清空') });
+    const ok = await confirmDialog({ utility: true, title: t('全部清空'), text: t('清空全部 {n} 个自选名额？', { n: nDiy }), okText: t('全部清空') });
     if (ok) setDiyPicks({});
   };
   const setTab = (t) => loadoutStore.set({ tab: t });
   const toggleOwned = (id, owned) => setNotOwned(setOwned(loadoutStore.get().notOwned, id, owned));
   const ownAll = async () => {
     if (!nNotOwned) return;
-    const ok = await confirmDialog({ title: t('全部持有'), text: t('将 {nNotOwned} 名未持有的干员恢复为持有（由本人上场）？', { nNotOwned }), okText: t('全部持有') });
+    const ok = await confirmDialog({ utility: true, title: t('全部持有'), text: t('将 {nNotOwned} 名未持有的干员恢复为持有（由本人上场）？', { nNotOwned }), okText: t('全部持有') });
     if (ok) setNotOwned([]);
   };
   const pick = (id) => { loadoutStore.set({ sel: id }); setNarrowDetail(true); };
@@ -527,7 +527,7 @@ function LoadoutScreen({ st }) {
   };
   const resetAll = async () => {
     if (!nChanged) return;
-    const ok = await confirmDialog({ title: t('全部恢复默认'), text: t('将 {nChanged} 名干员的技能、模组、潜能与练度恢复为默认配置？', { nChanged }), okText: t('恢复默认'), danger: true });
+    const ok = await confirmDialog({ utility: true, title: t('全部恢复默认'), text: t('将 {nChanged} 名干员的技能、模组、潜能与练度恢复为默认配置？', { nChanged }), okText: t('恢复默认'), danger: true });
     if (!ok) return;
     // the roster's operators only: a 自选 pick's settings belong to the 自选编队 tab
     const rosterChars = new Set(roster.map((c) => c.charId));
@@ -710,7 +710,7 @@ function LoadoutScreen({ st }) {
       </div>
     </main>`}
   </div>
-  ${io ? html`<${Modal} open=${true} onClose=${() => setIo(null)}
+  ${io ? html`<${Modal} open=${true} onClose=${() => setIo(null)} utility=${true} class="loadout-io-modal"
       title=${ioDiy ? t(io.mode === 'export' ? '导出自选编队' : '导入自选编队')
         : io.mode === 'export' ? (ioOwn ? t('导出干员持有') : t('导出干员调配')) : (ioOwn ? t('导入干员持有') : t('导入干员调配'))}
       micro=${ioOwn ? 'OPERATOR ROSTER' : ioDiy ? 'SELF-SELECT SQUAD' : 'OPERATOR LOADOUT'}

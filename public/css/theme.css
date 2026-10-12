@@ -372,6 +372,7 @@ h1, h2, h3, h4, p { margin: 0; }
   border-radius: 2px;
 }
 .rotate-hint__title { font-size: 20px; font-weight: 700; color: var(--text-hi); }
+.rotate-hint__fullscreen { min-height: 44px; padding: 10px 22px; font-size: 15px; }
 .rotate-hint__micro { font-family: var(--font-display); font-size: 11px; letter-spacing: .3em; color: var(--mint-700); }
 @keyframes rotate-phone {
   0%, 20% { transform: rotate(0deg); }

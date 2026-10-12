@@ -241,7 +241,8 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
         problems.push(`${pathText(at)}: { "ref": "${key}" } — this installation's art manifest (data/assets.json) has no ${from.join('.')}`);
         return;
       }
-      if (vanilla) copyBytes += JSON.stringify(target).length;
+      // measured until the plugin is over the budget (then it is refused anyway: no need to measure the rest)
+      if (vanilla && copyBytes <= VISUAL_LIMITS.copyBytes) copyBytes += JSON.stringify(target).length;
       ops.push({ at, ref: key, from });
       const clear = localModelClear(loc);
       if (clear) ops.push(clear);
@@ -313,7 +314,7 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
   };
   walk(TREE, assets, []);
   if (copyBytes > VISUAL_LIMITS.copyBytes) {
-    problems.push(`its references copy ${(copyBytes / 1048576).toFixed(1)} MB of this installation's manifest, more than ${VISUAL_LIMITS.copyBytes / 1048576} MB`);
+    problems.push(`its references copy more than ${VISUAL_LIMITS.copyBytes / 1048576} MB of this installation's manifest`);
   }
 
   // what the writes need: an entry of the installation's manifest → assets.override, a new one → assets.add

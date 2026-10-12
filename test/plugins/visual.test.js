@@ -150,7 +150,7 @@ describe('reading an overlay', () => {
     assert.ok(fine.copyBytes > 400 * 1024 && fine.copyBytes < 410 * 1024, String(fine.copyBytes));
     const many = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`char_n${i}`, { ref: `char_${i % 3}` }]));
     const r = readAssetOverlay({ chars: many }, { vanilla: big, permissions: ['assets.add'] });
-    assert.match(r.problems.join(), /its references copy 2\.\d MB of this installation's manifest, more than 2 MB/);
+    assert.match(r.problems.join(), /its references copy more than 2 MB of this installation's manifest/);
     assert.equal(readAssetOverlay({ chars: many }).copyBytes, 0, 'without the manifest nothing is counted');
   });
 

@@ -18,6 +18,7 @@ import { html, Modal, Button, TierChip, MicroLabel } from './components.js';
 import { UnitThumb, RichText, GIcon } from './gameComponents.js';
 import { localAsset } from '../data.js';
 import { t, tParts } from '../../../shared/i18n.js';
+import { recoverImageError } from '../image.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 const isObj = (v) => !!v && typeof v === 'object';
@@ -117,14 +118,14 @@ export function EquipReplaceDialog({ request, getItem = () => null, busy = false
       actions=${html`
         <${Button} variant="secondary" icon="close" class="eqr__cancel" onClick=${onCancel}>${t('取消')}<//>
         <${Button} variant="danger" class="eqr__ok" disabled=${!chosen} loading=${busy} data-autofocus onClick=${() => chosen && onConfirm(chosen.uid)}>
-          ${confirmIcon ? html`<img class="eqr__ok-icon" src=${confirmIcon} alt="" draggable=${false} />` : null}${t('确认替换')}<//>`}>
+          ${confirmIcon ? html`<img crossorigin="anonymous" class="eqr__ok-icon" src=${confirmIcon} alt="" draggable=${false} onError=${recoverImageError} />` : null}${t('确认替换')}<//>`}>
       <p class="eqr__lead">${tParts('「{name}」的装备栏已满（2/2）。选择一件装备进行替换，{warn}。', { name: html`<b>${request.targetName}</b>`, warn: html`<b class="t-red">${t('被替换的装备将被销毁')}</b>` })}</p>
       <div class="eqr__top">
         <div class="eqr__op" title=${request.targetName}>
           <span class="eqr__ava"><${UnitThumb} kind="chess" id=${request.targetId} golden=${request.golden} size="md" rec=${request.targetRec || null} /></span>
           <span class="eqr__opname">${request.targetName}</span>
         </div>
-        <span class="eqr__swap" aria-hidden="true">${swapIcon ? html`<img src=${swapIcon} alt="" draggable=${false} />` : html`<${GIcon} name="refresh" />`}</span>
+        <span class="eqr__swap" aria-hidden="true">${swapIcon ? html`<img crossorigin="anonymous" src=${swapIcon} alt="" draggable=${false} onError=${recoverImageError} />` : html`<${GIcon} name="refresh" />`}</span>
         <div class="eqr__incoming">
           <${MicroLabel} tone="mint">${t('新装备')}</${MicroLabel}>
           <${ItemCard} id=${request.item.id} item=${request.item} rec=${getItem(request.item.id)} />

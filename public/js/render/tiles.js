@@ -514,6 +514,7 @@ export class TileField {
    * diagonal stripes over the fill (the official striped range tiles; drawn under the units like every highlight).
    */
   setHighlights(tiles, style = 'range', group, opts) {
+    if (this.destroyed) return;
     let st = typeof style === 'object' && style ? { ...HL_STYLES.range, ...style } : (HL_STYLES[style] || HL_STYLES.range);
     if (opts && opts.stripes) st = { ...st, stripes: true };
     const key = group || (typeof style === 'object' && style?.group) || (typeof style === 'string' ? style : 'custom');
@@ -530,11 +531,13 @@ export class TileField {
   }
 
   clearHighlights(group) {
+    if (this.destroyed) return;
     if (group) this.highlights.delete(group); else this.highlights.clear();
     this._drawHighlights();
   }
 
   _drawHighlights() {
+    if (this.destroyed) return;
     this.hlGfx.clear();
     for (const s of this.rowSurfaces.values()) if (s._hl) s._hl.clear();
     const cam = this.cam;
@@ -777,6 +780,9 @@ export class TileField {
   }
 
   destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.highlights.clear();
     for (const d of this.devices) d.gfx.destroy();
     for (const a of this.animSprites) a.sprite.destroy();
     for (const b of [...this.boxMeshes]) b.destroy();

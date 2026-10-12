@@ -140,6 +140,31 @@ Both viewport sizes were inspected with screenshots and canvas pixel checks.
 After deployment, existing tabs must load the updated client; files already
 executing in a browser are not replaced by a server restart.
 
+## Shared DOM and Canvas Image Policy
+
+R2 custom-domain responses can omit CORS headers when the request has no Origin,
+even with a valid bucket allow policy. A normal DOM image can therefore seed the
+browser HTTP cache with a response that a later anonymous Canvas/WebGL image
+cannot use. This explains a detail-card icon loading while its battlefield plate
+remains the question-mark fallback.
+
+All DOM image templates now request anonymous CORS before setting `src`. The
+shared `public/js/image.js` loader uses the same policy. On failure it refreshes
+the original URL once with a CORS `fetch` and `cache: 'reload'`, then retries the
+image. Concurrent refreshes of one URL share a request; the refresh times out
+after ten seconds. DOM recovery checks that the element is still mounted and
+still has the same URL before applying its result. Permanent failures retain the
+existing UI fallback, without an automatic retry loop.
+
+Resource hashes, downloaded packs and CacheStorage entries are unchanged. This
+is a targeted migration of old HTTP-cache entries, not a global cache purge.
+`test/render/image-cors-recovery.test.js` covers bounded recovery, concurrency
+and stale elements; `test/ui/image-policy.test.js` guards every DOM image entry.
+Browser checks against an Origin-dependent local CDN also confirmed recovery of
+the three reported icons and a valid, nonblank ItemView texture after warming a
+legacy non-CORS cache entry. Real network errors or denied CORS still require a
+fallback; this policy does not make unavailable resources downloadable.
+
 ## Vite Is Not a Resource-Lifecycle Fix
 
 The project already builds the production client with Vite. Bundling reduces

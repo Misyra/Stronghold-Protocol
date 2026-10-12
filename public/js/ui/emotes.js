@@ -26,6 +26,7 @@ import { GIcon } from './gameComponents.js';
 import { data, useData, localAsset, artUrls, nextArtUrl } from '../data.js';
 import { loadPref, savePref } from '../store.js';
 import { t } from '../../../shared/i18n.js';
+import { recoverImageError } from '../image.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -174,8 +175,8 @@ export function EmoteArt({ id, class: cls }) {
   const [bad, setBad] = useState(() => new Set()); // URLs that failed to load
   const src = nextArtUrl(emoteArtUrls(id), bad);
   if (src) {
-    return html`<img key=${src} class=${cx('eart', cls)} src=${src} alt="" draggable=${false} decoding="async"
-      onError=${() => setBad((s) => new Set(s).add(src))} />`;
+    return html`<img crossorigin="anonymous" key=${src} class=${cx('eart', cls)} src=${src} alt="" draggable=${false} decoding="async"
+      onError=${(event) => recoverImageError(event, () => setBad((s) => new Set(s).add(src)))} />`;
   }
   if (emoteInfo(id) && artManifestsPending()) return html`<span class=${cx('eart', 'eart--pending', cls)} aria-hidden="true"></span>`;
   return html`<${EmoteGlyph} class=${cls} />`;

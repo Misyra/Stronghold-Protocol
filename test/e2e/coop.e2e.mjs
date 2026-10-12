@@ -1062,10 +1062,17 @@ describe('browser E2E against the real server', { skip: !ENABLED && 'needs Chrom
           if (!shotDraft.has(c.label)) { shotDraft.add(c.label); await sleep(700); await c.shot(s.draft?.turn === s.me ? 'draft-myturn' : 'draft-waiting'); }
           if (picked.has(c.label) || s.draft?.turn !== s.me) continue;
           if (c === guest && !guestSkipped) {
-            await c.click('.draft-detail__btns .btn', '跳过');
             guestSkipped = true;
-            c.note('band draft: skipped once');
-            continue;
+            // one skip — only while someone is left to pass to: the last player still to pick sees 跳过 disabled
+            // (PR #546), which a random draft order gives the guest about one time in three
+            const canSkip = await c.page.evaluate(() => [...document.querySelectorAll('.draft-detail__btns .btn')]
+              .some((b) => b.textContent.includes('跳过') && !b.disabled));
+            if (canSkip) {
+              await c.click('.draft-detail__btns .btn', '跳过');
+              c.note('band draft: skipped once');
+              continue;
+            }
+            c.note('band draft: 跳过 disabled (the last player still to pick)');
           }
           if ((s.draft?.picks || 0) > 0) {
             // research 09 §5: a strategy a teammate (human or AI) picked is marked 队友已选 and cannot be chosen

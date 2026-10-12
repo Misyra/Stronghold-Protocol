@@ -59,11 +59,10 @@
 // animated or drawn at all (its clock catches up, ≤ 0.5 s, when it comes back); `opts.lod: 'idle'` (the enemy preview
 // pen: idle loops only) animates through the impostor atlas every 3rd frame; under the view's adaptive load level
 // (`ctx.loadLevel()` 1–3, app.js) small / far units (< ~56 px per tile) animate every 2nd frame, and from level 2 on
-// every unit does. An impostor's slot is sized from the setup pose and every clip the unit can play (`impostorBox`, GitHub
-// #542: a slot sized from the first pose drawn cut 野鬃's idle flag and 浊心斯卡蒂's S3 flight, and what crossed its edge
-// was left in the neighbouring slots); its skeleton's clips are measured once, a few frames after the model loads
-// (spine.js clipBounds) — until then the unit is drawn directly —, and a clip too large for the box is drawn directly
-// while it plays.
+// every unit does. An impostor's slot is sized from every clip the unit can play (`impostorBox`, GitHub #542: a slot sized
+// from the first pose drawn cut 野鬃's idle flag and 浊心斯卡蒂's S3 flight, and what crossed its edge was left in the
+// neighbouring slots); its skeleton's clips are measured once, a few frames after the model loads (spine.js clipBounds) —
+// until then the unit is drawn directly —, and a clip too large for the box is drawn directly while it plays.
 //
 // Picking is by tile (render/pick.js, user playtest #4 item 1): views carry no hit shapes; `bounds()` is the drawn body's
 // screen rect for tooltips and overlays (view.pieceScreenRect). A dragged (lifted) item plate is drawn centred on its
@@ -453,31 +452,32 @@ export function playedClips(anims, forms = null) {
 
 /**
  * Impostor box limits (GitHub #542, `impostorBox`): a clip enters a unit's box while the box stays within `steady` × the
- * area of its setup pose ∪ idle clip (a looping or held clip), `transient` × for a one-off clip; `pad` × the box's longer
- * side + `padMin` skeleton units is added on every side for the poses between two samples (spine.js CLIP_SAMPLE_HZ).
- * [ASSUMED] the values: on the current roster they keep every looping / held clip of 675 of the 681 skeletons in the box
- * (the 6 others hold a screen-wide skill or death effect) and leave out 319 of the 681 deploy clips (mostly the drop from
- * above, up to 1700 units tall); the boxes add up to 1.86 × the area of boxes sized from the idle's first frame (the
- * median skeleton's 1.39 ×).
+ * area of its idle clip (a looping or held clip), `transient` × for a one-off clip; `pad` × the box's longer side +
+ * `padMin` skeleton units is added on every side for the poses between two samples (spine.js CLIP_SAMPLE_HZ).
+ * [ASSUMED] the values: on the current roster they keep every looping / held clip of 668 of the 681 skeletons in the box
+ * (the 13 others hold a screen-wide skill, attack or death effect: 帕拉斯, 诗怀雅's attack …; at 4 × the attack or skill
+ * loops of 39 would be drawn directly whenever they play) and leave out 355 of the 681 deploy clips (mostly the drop from
+ * above, up to 1700 units tall); the boxes add up to 1.26 × the area of boxes sized from the idle's first frame (the
+ * median skeleton's 1.13 ×).
  */
-export const IMP_BOX = Object.freeze({ steady: 4, transient: 2, pad: 0.03, padMin: 8 });
+export const IMP_BOX = Object.freeze({ steady: 5, transient: 2, pad: 0.03, padMin: 8 });
 
 /**
- * A unit's impostor box (GitHub #542) in skeleton space, from rects [x0, y0, x1, y1] (y down; null = nothing drawn): the
- * setup pose and the idle clip always (the core — never a box smaller than the setup pose); then each other clip the unit
- * plays (`clips`: [name, rect, once], `playedClips`) in the order of the area it adds, taken while the box stays within
- * IMP_BOX.steady × the core's area (IMP_BOX.transient × for a one-off clip). A clip that does not fit and is not inside
- * the box anyway is `over`: its unit is drawn directly while it plays (units.js _updateImpostor), so a rare huge clip
- * (a deploy drop from above, a screen-wide sweep) does not grow every refresh of the unit's slot. Padded by IMP_BOX.pad.
- * Without a setup pose or idle clip that draws anything, the looping clips make the core. null when nothing is drawn.
+ * A unit's impostor box (GitHub #542) in skeleton space, from rects [x0, y0, x1, y1] (y down; null = nothing drawn): its
+ * idle clip always (the core); then each other clip the unit plays (`clips`: [name, rect, once], `playedClips`) in the
+ * order of the area it adds, taken while the box stays within IMP_BOX.steady × the core's area (IMP_BOX.transient × for a
+ * one-off clip). A clip that does not fit and is not inside the box anyway is `over`: its unit is drawn directly while it
+ * plays (units.js _updateImpostor), so a rare huge clip (a deploy drop from above, a screen-wide sweep) does not grow every
+ * refresh of the unit's slot. Padded by IMP_BOX.pad. The setup pose needs no room: no model shows it (spine.js
+ * SpineActor.update poses one frozen before its first update at its clip's first frame). Without an idle clip that draws
+ * anything, the looping clips make the core. null when nothing is drawn.
  * @returns {{ x0: number, y0: number, w: number, h: number, over: Set<string> } | null}
  */
-export function impostorBox(setup, idle, clips = []) {
+export function impostorBox(idle, clips = []) {
   const ok = (r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) && r[0] <= r[2] && r[1] <= r[3];
   const join = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
   const area = (r) => Math.max(1, r[2] - r[0]) * Math.max(1, r[3] - r[1]);
-  let core = null;
-  for (const r of [setup, idle]) if (ok(r)) core = core ? join(core, r) : r.slice();
+  let core = ok(idle) ? idle.slice() : null;
   if (!core) for (const [, r, once] of clips) if (!once && ok(r)) core = core ? join(core, r) : r.slice();
   if (!core) return null;
   const limit = area(core);
@@ -1733,37 +1733,43 @@ export class UnitView {
   // impostor atlas (render/impostor.js) every `interval` frames (staggered per unit; every frame for clipped
   // skeletons, whose stencil masks must stay out of the main pass) and shown as one sprite. Without a free atlas
   // slot the unit keeps a private RenderTexture (same visuals, one extra framebuffer switch).
-  // The slot is sized from the unit's box (GitHub #542, `impostorBox`): its setup pose and every clip it can play, as
-  // measured once per skeleton (spine.js clipBounds) — no pose it plays is cut, and the atlas clips every slot to itself.
-  // A clip too large for the box (`over`) is drawn directly while it plays; the slot stays the unit's (_impBypass).
+  // The slot is sized from the unit's box (GitHub #542, `impostorBox`): every clip it can play, as measured once per
+  // skeleton (spine.js clipBounds) — no pose it plays is cut, and the atlas clips every slot to itself. A clip too large
+  // for the box (`over`) is drawn directly while it plays; the slot stays the unit's (_impBypass).
 
   /** The impostor box ({ x0, y0, w, h, over } in skeleton units), null while the model's clips are still measured. */
   _impBox() {
     if (this._box) return this._box;
     const a = this.actor;
     const names = this._clipNames();
-    const b = typeof a.clipBounds === 'function' ? a.clipBounds([...names.keys()]) : false;
-    if (b === null) return null;
+    const rects = typeof a.clipBounds === 'function' ? a.clipBounds([...names.keys()]) : false;
+    if (rects === null) return null;
     let box = null;
-    if (b) {
+    if (rects) {
       const idle = this._idleClip();
       const rest = [];
-      for (const [name, once] of names) if (name !== idle) rest.push([name, b.clips.get(name) || null, once]);
-      box = impostorBox(b.setup, idle ? b.clips.get(idle) || null : null, rest);
+      for (const [name, once] of names) if (name !== idle) rest.push([name, rects.get(name) || null, once]);
+      box = impostorBox(idle ? rects.get(idle) || null : null, rest);
     }
     this._box = box || this._legacyBox();
     return this._box;
   }
 
-  /** The idle clip of the model's own roles (the impostor box's core with the setup pose), else null. */
+  /**
+   * The idle clip of the model's own roles (the impostor box's core), as SpineActor picks it: the role's, else 'Idle',
+   * else the skeleton's first clip; null for a skeleton without clips.
+   */
   _idleClip() {
     const a = this.actor, idle = a.entry && a.entry.anims ? a.entry.anims.idle : null;
-    return a.has(idle) ? idle : a.has('Idle') ? 'Idle' : null;
+    if (a.has(idle)) return idle;
+    if (a.has('Idle')) return 'Idle';
+    const first = a.names && a.names.values().next().value;
+    return typeof first === 'string' ? first : null;
   }
 
   /**
    * The clips this view's model can play that its skeleton has (`playedClips` of its entry and FORMS, the actor's
-   * fallbacks 'Idle' / 'Die' included), name → one-off; a pen figure (lod idle) plays its idle clip only.
+   * fallbacks — its idle clip, 'Die' — included), name → one-off; a pen figure (lod idle) plays its idle clip only.
    */
   _clipNames() {
     const a = this.actor;

@@ -6,7 +6,8 @@
 // slot stayed and what fell into another unit's slot showed on that unit until it was redrawn.
 // Now every clip a unit plays is measured once per skeleton (render/spine.js clipBounds; sampled within a frame budget by
 // stepClipBounds), the box covers them (units.js impostorBox — a clip too large for it is drawn directly while it plays),
-// and the atlas draws each slot's skeleton inside a box masked by the slot rectangle (a scissor rect).
+// and the atlas draws each slot's skeleton inside a box masked by the slot rectangle (a scissor rect). The setup pose is
+// never shown (a model frozen before its first update is posed at its clip's first frame), so the box leaves it out.
 // Synthetic Spine 3.8 skeletons (@pixi-spine/runtime-3.8) and the headless fake PIXI (test/render/fakepixi.js); the three
 // reported operators through the real runtime: test/render/impostor-bounds-models.test.js.
 
@@ -69,16 +70,16 @@ const near = (a, b, msg) => { for (let i = 0; i < 4; i++) assert.ok(Math.abs(a[i
 const drain = () => { while (spine.pendingClipBounds()) spine.stepClipBounds(Infinity); spine.stepClipBounds(Infinity); };
 
 describe('clip bounds (render/spine.js): what a skeleton draws, measured once per skeleton data', () => {
-  test('setup pose at once; a clip by every pose it samples — a short-lived attachment counts, an invisible slot does not', () => {
+  test('a clip by every pose it samples — a short-lived attachment counts, an invisible slot does not', () => {
     const data = skeleton();
     const rec = spine.requestClipBounds(data, rt.Skeleton, ['Wave', 'Flash', 'Ghost', 'Still', 'Nope']);
     assert.equal(rec.failed, false);
-    near(rec.setup, [-50, -200, 125, 25], 'setup: the body and the flag (the empty flash and the alpha-0 ghost do not count)');
+    assert.equal(rec.setup, undefined, 'no setup pose: no model shows it');
     drain();
     near(rec.rects.get('Wave'), [-50, -200, 425, 25], 'Wave: the flag 300 units out at 0.5 s');
     near(rec.rects.get('Flash'), [-50, -200, 910, 25], 'Flash: shown for 0.05 s of its 1 s, still measured (49 poses)');
     near(rec.rects.get('Ghost'), [-50, -200, 125, 25], 'Ghost: a bone moved 5000 units out with an alpha-0 slot adds nothing');
-    near(rec.rects.get('Still'), [-50, -200, 125, 25], 'Still: a 0-s clip is its single pose');
+    near(rec.rects.get('Still'), [-50, -200, 125, 25], 'Still: a 0-s clip is its single pose (the body and the flag)');
     assert.equal(rec.rects.get('Nope'), null, 'a clip the skeleton does not have');
     assert.equal(rec.skel, null, 'the scratch skeleton is dropped once its clips are sampled');
     // the same data again: nothing new to sample
@@ -103,18 +104,62 @@ describe('clip bounds (render/spine.js): what a skeleton draws, measured once pe
     assert.equal(spine.stepClipBounds(), 0, 'an empty queue costs nothing');
   });
 
-  test('SpineActor.clipBounds: null while queued, then { setup, clips }; false for a runtime that cannot be posed', () => {
+  test('SpineActor.clipBounds: null while queued, then a Map clip → rect; false for a runtime that cannot be posed', () => {
     const data = skeleton();
     const stand = { spine: { spineData: data, skeleton: new rt.Skeleton(data) } };
     const clipBounds = spine.SpineActor.prototype.clipBounds;
     assert.equal(clipBounds.call(stand, ['Wave', 'Still']), null, 'queued, not sampled yet');
     drain();
     const b = clipBounds.call(stand, ['Wave', 'Still']);
-    near(b.setup, [-50, -200, 125, 25], 'setup');
-    near(b.clips.get('Wave'), [-50, -200, 425, 25], 'Wave');
+    assert.deepEqual([...b.keys()], ['Wave', 'Still']);
+    near(b.get('Wave'), [-50, -200, 425, 25], 'Wave');
     // the fake PIXI's Spine has a plain-object skeleton: no runtime to pose
     const actor = new spine.SpineActor({ animations: [{ name: 'Idle' }] }, { anims: { idle: 'Idle' }, animations: { Idle: 1 } });
     assert.equal(actor.clipBounds(['Idle']), false);
+  });
+});
+
+describe('a model frozen before its first update shows its clip\'s first frame, never its setup pose (render/spine.js)', () => {
+  const ENTRY = { anims: { idle: 'Idle', die: 'Die', stun: null }, animations: { Idle: 1, Die: 0.8 } };
+  /** An actor on the fake PIXI whose skeleton updates are recorded (the dt of each pixi-spine update). */
+  function actor(data, entry) {
+    const a = new spine.SpineActor(data, entry);
+    const posed = [];
+    a.spine.update = (dt) => posed.push(dt);
+    return { a, posed };
+  }
+
+  test('stunned without a stun clip before any update: posed once at t = 0 of its clip, then the pose holds', () => {
+    const { a, posed } = actor({ animations: [{ name: 'Idle' }, { name: 'Die' }] }, ENTRY);
+    a.setBase('stun');
+    assert.equal(a.frozen, true);
+    a.update(0.1);
+    assert.deepEqual(posed, [0]);
+    assert.equal(a.spine.state.tracks[0].animation.name, 'Idle');
+    a.update(0.1); a.update(0.1);
+    assert.deepEqual(posed, [0], 'held');
+    assert.equal(a.poseHeld(), true);
+    a.setBase('idle');                                  // the stun ends: animated again
+    a.update(0.1);
+    assert.deepEqual(posed, [0, 0.1]);
+  });
+
+  test('stunned after it was posed: the pose it had holds (unchanged)', () => {
+    const { a, posed } = actor({ animations: [{ name: 'Idle' }, { name: 'Die' }] }, ENTRY);
+    a.update(0.2);
+    a.setBase('stun');
+    a.update(0.1); a.update(0.1);
+    assert.deepEqual(posed, [0.2]);
+  });
+
+  test('dead without a death or idle clip: frozen, and posed once at t = 0 of the clip it had (its first)', () => {
+    const { a, posed } = actor({ animations: [{ name: 'Attack' }, { name: 'Move' }] }, { anims: { attack: { begin: null, loop: 'Attack', end: null } }, animations: { Attack: 1, Move: 1 } });
+    assert.equal(a.die(), 0, 'no death clip');
+    assert.equal(a.frozen, true, 'no idle clip either: frozen');
+    a.update(0.5);
+    a.update(0.5);
+    assert.deepEqual(posed, [0]);
+    assert.equal(a.spine.state.tracks[0].animation.name, 'Attack');
   });
 });
 
@@ -142,19 +187,19 @@ describe('impostor box (render/units.js impostorBox, playedClips)', () => {
   const box = (b) => [b.x0, b.y0, b.x0 + b.w, b.y0 + b.h];
   const inside = (outer, r) => outer[0] <= r[0] && outer[1] <= r[1] && outer[2] >= r[2] && outer[3] >= r[3];
 
-  test('the setup pose and the idle clip always; then each clip while the box stays within 4× (looping) / 2× (one-off) of that core', () => {
-    const setup = [-100, -400, 100, 0], idle = [-150, -380, 120, 10];       // core −150…120 × −400…10: 270 × 410
+  test('the idle clip always; then each clip while the box stays within 5× (looping) / 2× (one-off) of that core', () => {
+    const idle = [-150, -380, 120, 10];                                     // the core: 270 × 390
     const clips = [
-      ['Attack', [-150, -420, 400, 10], false],    // 550 × 430 = 2.1 × the core: looping, taken
-      ['Skill', [-300, -500, 120, 10], false],     // with the attack 550 × 510 = 2.5 ×: taken
-      ['Start', [-100, -1800, 100, 0], true],      // a drop from above: 1810 tall, one-off, 9 ×: drawn directly
+      ['Attack', [-150, -420, 400, 10], false],    // 550 × 430 = 2.2 × the core: looping, taken
+      ['Skill', [-300, -500, 120, 10], false],     // with the attack 700 × 510 = 3.4 ×: taken
+      ['Start', [-100, -1800, 100, 0], true],      // a drop from above: 1810 tall, one-off, 12 ×: drawn directly
       ['Die', [-120, -200, 90, 5], false],         // inside the box anyway
-      ['Huge', [-3000, -400, 3000, 0], false],     // a screen-wide effect: past 4 ×, left out
+      ['Huge', [-3000, -400, 3000, 0], false],     // a screen-wide effect: past 5 ×, left out
       ['Gone', null, true],                        // draws nothing
     ];
-    const b = units.impostorBox(setup, idle, clips);
+    const b = units.impostorBox(idle, clips);
     const r = box(b);
-    assert.ok(inside(r, setup) && inside(r, idle), 'never smaller than the setup pose or the idle clip');
+    assert.ok(inside(r, idle), 'never smaller than the idle clip');
     for (const n of ['Attack', 'Skill', 'Die']) assert.ok(inside(r, clips.find((c) => c[0] === n)[1]), `${n} inside the box`);
     assert.deepEqual([...b.over].sort(), ['Huge', 'Start'], 'the clips drawn directly while they play');
     // padding: 3 % of the longer side (700) + 8 units on every side
@@ -162,25 +207,27 @@ describe('impostor box (render/units.js impostorBox, playedClips)', () => {
     near(r, [-300 - pad, -500 - pad, 400 + pad, 10 + pad], 'padded box');
   });
 
-  test('a one-off clip fits under the 2× limit, a looping one up to 4×; a clip inside the box is never left out', () => {
+  test('a one-off clip fits under the 2× limit, a looping one up to 5×; a clip inside the box is never left out', () => {
     const core = [-100, -100, 100, 100];                        // area 40000
-    const once = units.impostorBox(core, null, [['Begin', [-100, -260, 100, 100], true]]);     // 1.8 ×
+    const once = units.impostorBox(core, [['Begin', [-100, -260, 100, 100], true]]);     // 1.8 ×
     assert.equal(once.over.size, 0);
-    const tooBig = units.impostorBox(core, null, [['Begin', [-100, -340, 100, 100], true]]);   // 2.2 ×
+    const tooBig = units.impostorBox(core, [['Begin', [-100, -340, 100, 100], true]]);   // 2.2 ×
     assert.deepEqual([...tooBig.over], ['Begin']);
-    const loop = units.impostorBox(core, null, [['Loop', [-100, -660, 100, 100], false]]);     // 3.8 ×
+    const loop = units.impostorBox(core, [['Loop', [-100, -800, 100, 100], false]]);     // 4.5 ×
     assert.equal(loop.over.size, 0);
-    // ordered by the area they add: the small one first, then a big one-off that the big loop already covers
-    const both = units.impostorBox(core, null, [['Begin', [-100, -500, 100, 100], true], ['Loop', [-100, -660, 100, 100], false]]);
+    const loopTooBig = units.impostorBox(core, [['Loop', [-100, -1000, 100, 100], false]]);   // 5.5 ×
+    assert.deepEqual([...loopTooBig.over], ['Loop']);
+    // ordered by the area they add: Begin first (left out at 3 ×), then the loop, whose box covers Begin after all
+    const both = units.impostorBox(core, [['Begin', [-100, -500, 100, 100], true], ['Loop', [-100, -660, 100, 100], false]]);
     assert.equal(both.over.size, 0, 'Begin lies inside the box the loop made');
   });
 
-  test('without a measurable setup pose or idle clip the looping clips make the core; nothing drawn → null', () => {
-    const b = units.impostorBox(null, null, [['Attack', [-10, -50, 30, 0], false], ['Start', [-10, -900, 10, 0], true]]);
+  test('without an idle clip that draws anything the looping clips make the core; nothing drawn → null', () => {
+    const b = units.impostorBox(null, [['Attack', [-10, -50, 30, 0], false], ['Start', [-10, -900, 10, 0], true]]);
     assert.deepEqual([...b.over], ['Start']);
     assert.ok(b.w > 40 && b.h > 50 && b.h < 100);
-    assert.equal(units.impostorBox(null, null, [['Start', null, true]]), null);
-    assert.equal(units.impostorBox([NaN, 0, 1, 1], null, []), null);
+    assert.equal(units.impostorBox(null, [['Start', null, true]]), null);
+    assert.equal(units.impostorBox([NaN, 0, 1, 1], []), null);
   });
 });
 
@@ -237,13 +284,13 @@ describe('UnitView impostor mode (render/units.js)', () => {
   const cam = () => presetCamera('normal', { width: 1280, height: 720 });
   const ENTRY = { skel: '/s/op.skel', atlas: '/s/op.atlas', textures: ['/s/op.png'], anims: { idle: 'Idle', deploy: 'Start', die: 'Die', attack: { begin: null, loop: 'Attack', end: null } }, animations: { Idle: 1, Start: 1, Die: 0.8, Attack: 1 } };
   const DATA = { animations: [{ name: 'Idle' }, { name: 'Start' }, { name: 'Die' }, { name: 'Attack' }] };
-  const MEASURED = {
-    setup: [-60, -200, 60, 0],
-    clips: new Map([['Idle', [-70, -210, 70, 0]], ['Attack', [-70, -230, 180, 0]], ['Start', [-70, -1800, 70, 0]], ['Die', [-120, -150, 90, 0]]]),
-  };
+  const MEASURED = new Map([['Idle', [-70, -210, 70, 0]], ['Attack', [-70, -230, 180, 0]], ['Start', [-70, -1800, 70, 0]], ['Die', [-120, -150, 90, 0]]]);
 
-  /** An operator in a crowd (impostor interval 2) with a recording fake atlas; `bounds()` = what clipBounds answers. */
-  async function operator(bounds) {
+  /**
+   * An operator in a crowd (impostor interval 2) with a recording fake atlas; `bounds()` = what clipBounds answers;
+   * `flags` = its unit flags while the model loads (UF.STUNNED: the model is built for a stunned unit).
+   */
+  async function operator(bounds, flags = 0) {
     let frame = 0;
     const log = { alloc: 0, free: 0, draw: 0 };
     const atlas = {
@@ -256,11 +303,12 @@ describe('UnitView impostor mode (render/units.js)', () => {
       assets: { picture: () => null, image: async () => null, spineEntry: () => ENTRY, spine: { acquire: async () => DATA, release() {} } },
     });
     const v = new units.UnitView(ctx, { id: 1, side: 'ally', kind: 'chess', defId: 'char_x', tier: 3, x: 5, y: 10, maxHp: 1000, dir: 'RIGHT' });
+    v.flags = flags;
     await tick(); await tick();
     assert.ok(v.spineReady, 'spine ready');
     v.actor.clipBounds = (names) => {
       const b = bounds();
-      if (b) for (const n of names) assert.ok(b.clips.has(n), `${n} measured`);
+      if (b) for (const n of names) assert.ok(b.has(n), `${n} measured`);
       return b;
     };
     const step = (n = 1) => { for (let i = 0; i < n; i++) { v.update(1 / 60, cam(), frame / 60); frame++; } };
@@ -279,7 +327,7 @@ describe('UnitView impostor mode (render/units.js)', () => {
     assert.ok(v.imp && log.draw >= 1, 'an impostor once measured');
     const b = v._box, r = [b.x0, b.y0, b.x0 + b.w, b.y0 + b.h];
     for (const n of ['Idle', 'Attack', 'Die']) {
-      const c = MEASURED.clips.get(n);
+      const c = MEASURED.get(n);
       assert.ok(r[0] <= c[0] && r[1] <= c[1] && r[2] >= c[2] && r[3] >= c[3], `${n} inside the box`);
     }
     assert.deepEqual([...b.over], ['Start'], 'the deploy drop is drawn directly while it plays');
@@ -313,6 +361,33 @@ describe('UnitView impostor mode (render/units.js)', () => {
     assert.ok(v.imp, 'impostor');
     assert.deepEqual([v._box.x0, v._box.y0, v._box.w, v._box.h], [-140, -260, 280, 290], 'fake getLocalBounds (−50, −100, 100 × 100) + the old margins');
     assert.equal(v._box.over.size, 0);
+  });
+
+  test('built while stunned without a stun clip: posed once at its idle clip\'s first frame — the box\'s core —, then held', async () => {
+    const { v, step, log } = await operator(() => MEASURED, 2);   // UF.STUNNED
+    assert.equal(v.actor.frozen, true, 'no stun clip: the pose freezes');
+    const posed = [];
+    v.actor.spine.update = (dt) => posed.push(dt);
+    step(6);
+    assert.deepEqual(posed, [0], 'one pose at t = 0 of the clip on its track, never the setup pose');
+    assert.equal(v.actor.spine.state.tracks[0].animation.name, 'Idle');
+    assert.ok(v.imp && log.draw === 1, 'drawn into its slot once, then held');
+    const b = v._box, c = MEASURED.get('Idle');
+    assert.ok(b.x0 <= c[0] && b.y0 <= c[1] && b.x0 + b.w >= c[2] && b.y0 + b.h >= c[3], 'that frame lies inside the box');
+  });
+
+  test('a skeleton without an Idle clip: the clip SpineActor idles on instead (its first) is the box\'s core', async () => {
+    const entry = { ...ENTRY, anims: { attack: { begin: null, loop: 'Attack', end: null } }, animations: { Attack: 1, Move: 1 } };
+    const ctx = fakeViewCtx(fake.P, {
+      cam, frameNo: () => 0, impostors: { alloc: (w, h) => ({ w, h, tex: new fake.P.Texture(), clip: false }), free() {}, park(o) { o.visible = false; }, unpark(o) { o.visible = true; }, draw() {} },
+      renderer: { resolution: 1, render() {} },
+      assets: { picture: () => null, image: async () => null, spineEntry: () => entry, spine: { acquire: async () => ({ animations: [{ name: 'Attack' }, { name: 'Move' }] }), release() {} } },
+    });
+    const v = new units.UnitView(ctx, { id: 2, side: 'ally', kind: 'chess', defId: 'char_y', tier: 1, x: 5, y: 10, maxHp: 1000, dir: 'RIGHT' });
+    await tick(); await tick();
+    assert.equal(v.actor.spine.state.tracks[0].animation.name, 'Attack', 'SpineActor idles on the first clip');
+    assert.equal(v._idleClip(), 'Attack');
+    assert.deepEqual([...v._clipNames()], [['Attack', false]]);
   });
 
   test('a pen figure (lod idle) needs its idle clip only', async () => {

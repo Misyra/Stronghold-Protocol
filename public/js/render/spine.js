@@ -30,11 +30,14 @@
 //                                         (no attack cuts the change clip short); `end` = { clip, in, roles? }: a
 //                                         closing clip timed to end `in` s from now (a 重生's last clip ends with the
 //                                         重生), landing in `roles`
-//   update(dt)                            advances the skeleton (autoUpdate is off: one clock for everything)
+//   update(dt)                            advances the skeleton (autoUpdate is off: one clock for everything); a
+//                                         model frozen before it was ever posed (built while stunned without a stun
+//                                         clip, or dead without a death or idle clip) shows its clip's first frame,
+//                                         never its setup pose (GitHub #542: the impostor box covers the clips only)
 //   poseHeld()                            true while the pose cannot change (render/units.js then neither re-poses nor
 //                                         redraws the model, only advances `clock`)
-//   clipBounds(names)                     skeleton-space bounds of the setup pose and of those clips (sampled once per
-//                                         skeleton data, see "clip bounds" below; render/units.js sizes the impostor box)
+//   clipBounds(names)                     skeleton-space bounds of those clips (sampled once per skeleton data, see
+//                                         "clip bounds" below; render/units.js sizes the impostor box from them)
 // Each attack plays its clip once, then the end clip (if any) and base — except the attacks of a skill
 // with its own idle clip, which go straight back to that idle: the skill's end clip closes the skill, not each spell of
 // attacks while it runs.
@@ -113,8 +116,9 @@ function slotCentre(slot, att, buf, out) {
 }
 
 // ---- clip bounds (GitHub #542) ------------------------------------------------------------------------------------
-// What a skeleton can draw, in skeleton space (pixi-spine's y-down world; rects are [x0, y0, x1, y1]): its setup pose and
-// each clip, sampled once per skeleton data and shared by every actor built from it. render/units.js sizes a unit's
+// What a skeleton can draw, in skeleton space (pixi-spine's y-down world; rects are [x0, y0, x1, y1]): each clip, sampled
+// once per skeleton data and shared by every actor built from it (the setup pose is never shown: SpineActor.update poses
+// even a model frozen before its first update at its clip's first frame). render/units.js sizes a unit's
 // impostor slot from the clips the unit plays — a slot sized from the first pose drawn (plus a margin) cut 野鬃's idle
 // flag and 浊心斯卡蒂's head in her S3 flight, and 598 of the roster's 681 skeletons play a clip that leaves a slot sized
 // that way from their idle's first frame. A clip is posed on a scratch skeleton of the same runtime (never an actor's
@@ -130,7 +134,7 @@ export const CLIP_SAMPLE_HZ = 60;
 export const CLIP_SAMPLE_MAX = 48;
 export const CLIP_BOUNDS_BUDGET_MS = 2.5;
 const ATT_REGION = 0, ATT_MESH = 2;      // pixi-spine AttachmentType
-const boundsOf = new WeakMap();          // skeleton data → { data, Skeleton, skel, setup, rects: Map<clip, rect|null>, todo, job, failed }
+const boundsOf = new WeakMap();          // skeleton data → { data, Skeleton, skel, rects: Map<clip, rect|null>, todo, job, failed }
 const boundsQueue = [];                  // records with clips still to sample, oldest request first
 const nowMs = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
 const emptyRect = () => [Infinity, Infinity, -Infinity, -Infinity];
@@ -177,17 +181,15 @@ function scratchSkeleton(rec) {
   return skel;
 }
 
-/** The bounds record of skeleton data `data` (its setup pose measured at once); `failed` when it cannot be posed here. */
+/** The bounds record of skeleton data `data`; `failed` when this runtime cannot be posed here (tried at once). */
 function boundsRecord(data, Skeleton) {
   let rec = boundsOf.get(data);
   if (rec) return rec;
-  rec = { data, Skeleton, skel: null, setup: null, rects: new Map(), todo: [], job: null, failed: false, buf: { v: new Float32Array(256) } };
+  rec = { data, Skeleton, skel: null, rects: new Map(), todo: [], job: null, failed: false, buf: { v: new Float32Array(256) } };
   try {
     const skel = scratchSkeleton(rec);
     skel.setToSetupPose();
     skel.updateWorldTransform();
-    const r = poseRect(skel, emptyRect(), rec.buf);
-    rec.setup = rectOk(r) ? r : null;
   } catch {
     rec.failed = true;
     rec.skel = null;
@@ -211,7 +213,7 @@ function startClip(rec, name) {
 
 /**
  * Queue clips `names` of skeleton data `data` (pixi-spine runtime class `Skeleton`) for sampling — those neither sampled
- * nor queued yet — and return its record (`setup`, `rects`, `failed`).
+ * nor queued yet — and return its record (`rects`, `failed`).
  */
 export function requestClipBounds(data, Skeleton, names) {
   const rec = boundsRecord(data, Skeleton);
@@ -319,6 +321,7 @@ export class SpineActor {
     this.clipPerAttack = false;
     this.wound = false;           // wound up for the coming attack (windUp → attack)
     this._applied = false;        // an update has posed the skeleton since its clip last changed (poseHeld)
+    this._posed = false;          // the skeleton was ever posed (a model frozen before that shows its clip's first frame)
     this._appliedTint = undefined; // the tint that update put on the slots (pixi-spine applies `tint` in update)
     this._play(this._idleName(), true);
   }
@@ -428,6 +431,7 @@ export class SpineActor {
     }
     // Apply the new attachments even when normal updates are frozen.
     this.spine.update(0);
+    this._posed = true;
   }
 
   /** Play a form's transition clip once; attacks and the resting state wait for it (mode 'change'). */
@@ -795,8 +799,13 @@ export class SpineActor {
         break;
       default: break;
     }
-    if (!this.frozen) {
-      try { this.spine.update(dt); } catch { /* a broken skeleton must not stop the frame */ }
+    // frozen (a stun without a stun clip, a death without a death or idle clip): the pose holds — but a model frozen before
+    // it was ever posed (built while its unit is stunned or dead) is posed once at the current clip's first frame, never
+    // left in its setup pose, which no clip shows and the impostor box does not cover (GitHub #542: 隐现's Back model
+    // stands 900 units to the right of its feet in the setup pose)
+    if (!this.frozen || !this._posed) {
+      try { this.spine.update(this.frozen ? 0 : dt); } catch { /* a broken skeleton must not stop the frame */ }
+      this._posed = true;
     }
     if (this.clipped && !this.clipOn) this._eyeMaskFallback();
     this._applied = true;
@@ -853,8 +862,8 @@ export class SpineActor {
   }
 
   /**
-   * Skeleton-space bounds of the setup pose and of clips `names` ("clip bounds" above; render/units.js _impBox): `{ setup,
-   * clips: Map<name, rect | null> }` once every clip is sampled; null while some still wait — they are queued here and
+   * Skeleton-space bounds of clips `names` ("clip bounds" above; render/units.js _impBox): a Map name → rect (null: draws
+   * nothing / no such clip) once every clip is sampled; null while some still wait — they are queued here and
    * render/app.js samples them (stepClipBounds); false when this runtime cannot be posed off-screen (a test double).
    * @param {string[]} names
    */
@@ -870,7 +879,7 @@ export class SpineActor {
       if (!rec.rects.has(n)) return null;
       clips.set(n, rec.rects.get(n));
     }
-    return { setup: rec.setup, clips };
+    return clips;
   }
 
   /** Model height in skeleton units (setup-pose bounds, else a chibi default). */

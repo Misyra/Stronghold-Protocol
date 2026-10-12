@@ -4,7 +4,9 @@
 // its roles at 30 Hz, measured with Spine's own vertex math (RegionAttachment.computeWorldVertices with the region offsets
 // pixi-spine never computes, MeshAttachment.computeWorldVertices) — lies inside the impostor box UnitView._impBox builds
 // from the clip bounds of render/spine.js, except the clips the box leaves to a direct draw (`over`); the old rule (the
-// pose shown first + a margin) cut 野鬃's idle flag and 浊心斯卡蒂's S3 flight when that pose was the setup pose.
+// pose shown first + a margin) cut 野鬃's idle flag and 浊心斯卡蒂's S3 flight when that pose was the setup pose. The box
+// leaves the setup pose out: a model built while stunned (no stun clip) shows its clip's first frame instead — 隐现's
+// Back model, whose setup pose stands 900 units right of its feet.
 // The skeletons are not in the repository (public/assets: `npm run assets`): without them these tests skip.
 // Run: node --test test/render/impostor-bounds-models.test.js
 
@@ -18,8 +20,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(path.join(ROOT, 'package.json'));
 const ASSETS = JSON.parse(readFileSync(path.join(ROOT, 'data/assets.json'), 'utf8'));
-const dirOf = (id) => path.join(ROOT, 'public', 'assets', 'spine', 'op', id, 'front');
-const have = (id) => existsSync(path.join(dirOf(id), `${id}.skel`)) && existsSync(path.join(dirOf(id), `${id}.atlas`));
+const dirOf = (id, side = 'front') => path.join(ROOT, 'public', 'assets', 'spine', 'op', id, side);
+const have = (id, side = 'front') => existsSync(path.join(dirOf(id, side), `${id}.skel`)) && existsSync(path.join(dirOf(id, side), `${id}.atlas`));
 const MODELS = ['char_496_wildmn', 'char_1012_skadi2', 'char_498_inside'];
 
 let spine, units, rt, base, core;
@@ -36,25 +38,27 @@ before(async () => {
 });
 
 const cache = new Map();
-function skeletonData(id) {
-  if (!cache.has(id)) {
-    const atlas = new base.TextureAtlas(readFileSync(path.join(dirOf(id), `${id}.atlas`), 'utf8'), (line, cb) => cb(new core.BaseTexture(null, { width: 1024, height: 1024 })));
-    cache.set(id, new rt.SkeletonBinary(new rt.AtlasAttachmentLoader(atlas)).readSkeletonData(new Uint8Array(readFileSync(path.join(dirOf(id), `${id}.skel`)))));
+function skeletonData(id, side = 'front') {
+  const key = `${id}:${side}`;
+  if (!cache.has(key)) {
+    const dir = dirOf(id, side);
+    const atlas = new base.TextureAtlas(readFileSync(path.join(dir, `${id}.atlas`), 'utf8'), (line, cb) => cb(new core.BaseTexture(null, { width: 1024, height: 1024 })));
+    cache.set(key, new rt.SkeletonBinary(new rt.AtlasAttachmentLoader(atlas)).readSkeletonData(new Uint8Array(readFileSync(path.join(dir, `${id}.skel`)))));
   }
-  return cache.get(id);
+  return cache.get(key);
 }
 const measured = new Set();
 /**
  * A real actor of `id` and the impostor box its battle view builds (UnitView._impBox on a stand-in view): the first actor
  * of a skeleton waits for its clips to be sampled (stepClipBounds, once per frame); later ones share the result.
  */
-function unit(id) {
-  const a = new spine.SpineActor(skeletonData(id), ASSETS.chars[id].spine.front);
+function unit(id, side = 'front') {
+  const a = new spine.SpineActor(skeletonData(id, side), ASSETS.chars[id].spine[side]);
   const view = Object.assign(Object.create(units.UnitView.prototype), { actor: a, lodIdle: false, info: { spine: id, defId: id } });
   const t0 = performance.now();
   let box = view._impBox();
-  if (!measured.has(id)) assert.equal(box, null, 'measured over the next frames, not at once');
-  measured.add(id);
+  if (!measured.has(`${id}:${side}`)) assert.equal(box, null, 'measured over the next frames, not at once');
+  measured.add(`${id}:${side}`);
   let frames = 0;
   while (!box) { spine.stepClipBounds(); frames++; box = view._impBox(); }
   return { a, view, box, frames, ms: performance.now() - t0 };
@@ -106,7 +110,7 @@ function setupDrawn(a) {
   return drawn(sp.skeleton);
 }
 
-describe('the reported operators: every pose they play fits their impostor box', { skip: !MODELS.every(have) && 'the operator skeletons are not in public/assets (npm run assets)' }, () => {
+describe('the reported operators: every pose they play fits their impostor box', { skip: !(MODELS.every((id) => have(id)) && have('char_498_inside', 'back')) && 'the operator skeletons are not in public/assets (npm run assets)' }, () => {
   test('野鬃 idling: the flag at 0.27 s of Idle is in the box — the old box from the setup pose cut it by 103 units', (t) => {
     const { a, box, frames, ms } = unit('char_496_wildmn');
     t.diagnostic(`measured in ${frames} frames (${ms.toFixed(1)} ms with the box)`);
@@ -154,5 +158,23 @@ describe('the reported operators: every pose they play fits their impostor box',
       t.diagnostic(`${id}: ${poses} poses, closest to the edge ${(-worst).toFixed(1)} units inside (${at}); over: ${[...box.over].join(', ') || '—'}`);
       assert.ok(worst <= 0, `${id}: ${at} is ${worst.toFixed(1)} units past the box`);
     }
+  });
+
+  test('隐现\'s Back model built while stunned (no stun clip): its Idle\'s first frame, inside the box — not its setup pose', () => {
+    const { box } = unit('char_498_inside', 'back');
+    const r = rectOf(box);
+    const setup = setupDrawn(unit('char_498_inside', 'back').a);
+    assert.ok(setup[0] > 700, `the setup pose stands right of its feet (x ${setup[0].toFixed(0)}…${setup[2].toFixed(0)})`);
+    assert.ok(past(r, setup) > 500, 'and lies outside the box: no model shows it');
+    const first = drawnAt(unit('char_498_inside', 'back').a, 'Idle', 0);
+    const { a } = unit('char_498_inside', 'back');      // a model built for a stunned unit, before any update
+    a.setBase('stun');
+    assert.equal(a.frozen, true, 'no stun clip: frozen');
+    a.update(1 / 60);
+    const shown = drawn(a.spine.skeleton);
+    for (let i = 0; i < 4; i++) assert.ok(Math.abs(shown[i] - first[i]) < 0.5, `the Idle clip's first frame (${shown.map(Math.round)} vs ${first.map(Math.round)})`);
+    assert.ok(past(r, shown) <= 0, 'inside the box');
+    a.update(1 / 60);
+    assert.deepEqual(drawn(a.spine.skeleton), shown, 'and held while stunned');
   });
 });

@@ -21,7 +21,9 @@
 // next battle's units fell back to one private render target each. Clipped skeletons get slots on small separate "clip" pages: their
 // stencil clears break the page's render pass, and the cost of a break scales with the page size. The scissor of the
 // slot box also bounds those stencil clears to the slot. Cost of the clipping: one batch flush per drawn slot (each
-// skeleton is its own draw call or calls; skeletons sharing an atlas texture no longer batch across slots).
+// skeleton is its own draw call or calls; skeletons sharing an atlas texture no longer batch across slots), each with a
+// vertex buffer of its own (render/app.js turns PIXI's BatchRenderer.canUploadSameBuffer off — PIXI's own setting on iOS:
+// uploading the batch's one shared buffer again for every flush stalled Apple GPUs once the slots were clipped).
 //
 //   const imp = new ImpostorAtlas(renderer)
 //   const slot = imp.alloc(w, h)            // CSS px; null when full

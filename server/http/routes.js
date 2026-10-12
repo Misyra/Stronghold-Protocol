@@ -36,8 +36,8 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
-    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with plugins are in use —
-    // none before rooms can choose plugins (P1c)
+    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins are
+    // in use — none before rooms can choose them (P1c; a room's cosmetic plugins leave its cs the vanilla one, §32.3)
     ...(content ? { content: { vanilla: content.cs, sets: 0 } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };

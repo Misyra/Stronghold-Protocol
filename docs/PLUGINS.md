@@ -157,9 +157,10 @@ secure context). Two machines with the same `cs` run the same battles bit for bi
 one. The server computes it once at start (`[content] vanilla <16 hex>` in the log).
 
 Where it shows (DESIGN §8.4): `welcome.content` `{ vanilla }`, `room.state.content` `{ cs, vanilla: true, plugins: [] }`
-(always the vanilla set in this version), `/healthz` `content: { vanilla, sets: 0 }`, every BattleSpec's `cs` (the sim
-never reads it), an optional `b.result.cs`, and the second line of a diagnostic report (`content: vanilla cs=<64 hex>`;
-a room with plugins will read `MODDED cs=… plugins=id@version(hash)…`).
+(the vanilla set — a room's cosmetic plugins add `vs`, `plugins`, `warnings` and `bytes` beside the same `cs`, §9),
+`/healthz` `content: { vanilla, sets: 0 }`, every BattleSpec's `cs` (the sim never reads it), an optional `b.result.cs`,
+and the second line of a diagnostic report (`content: vanilla cs=<64 hex>`, with ` cosmetic vs=… plugins=…` in a room
+with cosmetic plugins; a room with gameplay plugins will read `MODDED cs=… plugins=id@version(hash)…`).
 
 `GET /cs/<first 16 hex digits>/index.json` answers the content set's manifest — every code file's hash, every data
 file's URL (`/data/<file>?v=<8 hex>`), hash and size — cached for good; any other `cs` is 404. `GET /plugins/index.json`

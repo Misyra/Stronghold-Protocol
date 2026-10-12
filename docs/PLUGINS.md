@@ -253,12 +253,16 @@ entry the installation has needs the permission `assets.override`, a new entry `
 **Spine models and `plugin.lock.json`.** A model's clip roles, durations, events, hit times and bounds come from the
 skeleton itself: `node tools/plugin.mjs pack <dir>` parses it the way `tools/fetch-assets.mjs` parses the game's
 (`tools/assets/skel.mjs`, `anim-roles.mjs`: an operator's three skill slots, an enemy's numbered skills), checks the atlas
-pages against `textures`, and writes them into `plugin.lock.json` with every file's SHA-256 and size. `"anims": "auto"` or
-nothing — never by hand; a lock made from another skeleton (its SHA-256) is a problem until it is packed again. The
-server never parses a skeleton [ASSUMED].
+pages against `textures`, and writes them into `plugin.lock.json` with every file's SHA-256 and size (a problem of the
+overlay — a reference the manifest lacks — leaves the lock unwritten). `"anims": "auto"` or nothing — never by hand; a
+lock made from another skeleton (its SHA-256) is a problem until it is packed again. The server never parses a skeleton
+[ASSUMED]: it rebuilds the lock's clip data in the shape the tool writes — the known roles, every clip they play an
+animation of the skeleton, at most 256 animations and 64 events, names of at most 64 characters, durations and hit
+times within 600 s, the four numbers of the bounds — so nothing a hand-made lock adds reaches a browser [ASSUMED limits].
 
-**Checked when scanned.** The registry reads a cosmetic plugin's overlay when it scans the folders (at start and when they
-change): its shape, files, references and permissions, the lock — a problem keeps it out like any other — and hashes the
+**Checked when scanned.** The registry reads a cosmetic plugin's overlay when it scans the folders (at start, when they
+change, and when `data/assets.json` changes): its shape, files, references — what they copy out of the installation's
+manifest at most 2 MB [ASSUMED] — and permissions, the lock — a problem keeps it out like any other — and hashes the
 files that shape it (SHA-256, kept by path + size + mtime: a rescan reads only what changed) [ASSUMED: at scan, a 200 MB
 plugin costs about a second once].
 
@@ -280,36 +284,41 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
   the same thing — and the composition in `visual: { v, vs, assets, overlays }`. `GET /vs/<vs16>/overlay.json` — the
   overlay alone: `{ visual, ops }` (the resolved writes). Both `no-cache` with the body's hash as ETag [ASSUMED: not
   immutable — the installation's URLs inside follow the asset index, not `vs`]; 404 for a set the server does not know (a
-  set is known once a room resolved it, or the catalogue named a plugin's own; the last 256 are kept [ASSUMED]).
+  set is known once a room resolved it, or the catalogue named a plugin's own; a room holds its set while it uses it, of
+  the others the last 256 are kept [ASSUMED]; a document is built once however many ask).
 
 **A room's plugins.** The room's top bar shows 「原版」 or 「插件 ×N」; it opens the 插件 panel (`public/js/ui/pluginPanel.js`):
 the server's cosmetic plugins of scope `room`, with the host's switches (read-only for the other players and the
 spectators, and during a match), versions, authors, sizes, 非官方 marks, 「自动」 on one switched on because another needs
 it, a note for one made for other game versions (a cosmetic plugin is still usable) and the override warnings. A switch
-sends `room.setPlugins { plugins: [{ id }] }` (host, before the match; like a difficulty change it un-readies the others):
-the server closes the set over the plugins' `requires`, refuses conflicts, a cycle, a plugin of another class or scope,
-and a set over 300 MB of art [ASSUMED] (`PLUGIN_UNKNOWN`, `PLUGIN_BLOCKED`, `PLUGIN_DEPENDENCY`, `PLUGIN_CONFLICT`,
-`PLUGIN_LIMIT`), sorts it (`shared/plugins/order.js`: requires / optional / loadAfter / loadBefore, then priority, then
+sends `room.setPlugins { plugins: [{ id }] }` (host, before the match; like a difficulty change it un-readies the others —
+not when only the 「自动」 marks change; the heavy rate-limit bucket): the server closes the set over the plugins'
+`requires`, refuses conflicts, a cycle, a plugin of another class or scope, and a set over 300 MB of art or whose
+references copy over 4 MB of the art manifest [ASSUMED] (`PLUGIN_UNKNOWN`, `PLUGIN_BLOCKED`, `PLUGIN_DEPENDENCY`,
+`PLUGIN_CONFLICT`, `PLUGIN_LIMIT`), sorts it (`shared/plugins/order.js`: requires / optional / loadAfter / loadBefore, then priority, then
 id) and the room's content becomes `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings,
 bytes }` — `cs` the vanilla one. Every member's page fetches `/vs/<vs16>/assets.json`, checks that its composition hashes
 to the room's `vs` (`checkVisualDoc`; the bytes carry this server's asset URLs, so they are not what is checked
 [ASSUMED]) and draws with it; leaving the room takes the art away again. A document that fails the check or will not
-download leaves the original art (a toast). Art switched on during a match shows on what is drawn afterwards; a model
-already on the board keeps its own [ASSUMED]. With no plugin the room's content is exactly the vanilla
-`{ cs, vanilla: true, plugins: [] }`, and a page requests nothing more than before but the catalogue.
+download (an attempt is given up after 30 s [ASSUMED], two retries) leaves the original art (a toast). Art switched on
+during a match shows on what is drawn afterwards; a model already on the board keeps its own [ASSUMED]. A plugin the
+server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
+content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`; the page's code has three more modules
+(`public/js/content.js`, `public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports) and it fetches
+the catalogue on the title screen, in 设置 and in the panel — nothing else more than before.
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
 this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. A
 switched-on plugin is fetched as `/vs/<vs16>/overlay.json` of its catalogue `vs`, checked the same way, and laid over
-whatever the page draws (the room's art too), in the catalogue's order [ASSUMED]; one the server no longer has is
-skipped and stays switched on for when it is back.
+whatever the page draws (the room's art too), in the catalogue's order [ASSUMED] (fetched side by side); one the server
+no longer has is skipped and stays switched on for when it is back.
 
 **Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
 the statistics overview [ASSUMED, for the owner to confirm]. The diagnostics name the art: `content: vanilla cs=… cosmetic
 vs=… plugins=id@version(hash),… personal=id,…`.
 
 **Limits** [ASSUMED]: 300 MB of art per set, 20 000 writes per plugin, 16 files per voice slot, 32 override warnings per
-set; the plugin limits of §5 apply too.
+set, 2 MB copied by references per plugin and 4 MB per set, the lock's limits above; the plugin limits of §5 apply too.
 
 **Start from** `plugins/_template/cosmetic/` — references to the installation's own art only, no file. Never put files
 of the official game in a plugin.

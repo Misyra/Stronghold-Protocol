@@ -98,9 +98,11 @@
 //     `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings, bytes }`: `cs` stays the vanilla
 //     one — art never changes a battle, so the match, its BattleSpecs and the golden results are those of the original
 //     content and ▸ such a match still counts as the original game (the statistics overview) [ASSUMED] —, `vs` names the
-//     art every member's page draws with (/vs/<vs16>/assets.json, public/js/content.js). An empty list (or one the
-//     closure leaves empty) brings back exactly the vanilla shape above. The set is the room's: kept across its matches
-//     and a host change, gone with the room.
+//     art every member's page draws with (/vs/<vs16>/assets.json, public/js/content.js). An empty list brings back
+//     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the
+//     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
+//     un-readies nobody; ▸ when only its 「自动」 marks changed (a plugin first switched on automatically is now chosen, or
+//     the other way round) the new state is broadcast without un-readying.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -274,7 +276,8 @@ export class Lobby {
    *   now?: () => number,
    *   seedFn?: () => number,
    *   content?: { cs: string } | null,
-   *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal' }) => any } | null,
+   *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal' }) => any, hold?: (vs: string) => void,
+   *     release?: (vs: string) => void } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity"); plugins: the visual
@@ -604,10 +607,17 @@ export class Lobby {
       const { vs, plugins: list, warnings, bytes } = r.set;
       content = Object.freeze({ cs: this.vanilla.cs, vanilla: true, vs, plugins: Object.freeze(list.map((p) => Object.freeze({ ...p }))), warnings: Object.freeze([...warnings]), bytes });
     }
-    if ((room.content?.vs ?? null) === (content?.vs ?? null)) return OK;
+    const before = room.content;
+    const sameSet = (before?.vs ?? null) === (content?.vs ?? null);
+    const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto]));
+    if (sameSet && marks(before) === marks(content)) return OK;
     room.content = content;
-    for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
-    this.log.info(`[lobby] ${room.code} plugins: ${content?.plugins?.length ? content.plugins.map((p) => `${p.id}@${p.version}`).join(', ') : 'none'}`);
+    if (!sameSet) {
+      if (content?.vs) this.plugins?.hold?.(content.vs);
+      if (before?.vs) this.plugins?.release?.(before.vs);
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.log.info(`[lobby] ${room.code} plugins: ${content?.plugins?.length ? content.plugins.map((p) => `${p.id}@${p.version}`).join(', ') : 'none'}`);
+    }
     this.broadcastState(room);
     return OK;
   }
@@ -1170,6 +1180,8 @@ export class Lobby {
       else session.notice = reason;
     }
     if (ctx) this.disposeMatchCtx(ctx);
+    // the room's visual set is no longer held by it (server/plugins/visualSet.js)
+    if (room.content?.vs) this.plugins?.release?.(room.content.vs);
     this.log.info(`[lobby] ${room.code} disposed (${reason})`);
   }
 

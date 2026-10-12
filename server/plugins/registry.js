@@ -60,10 +60,12 @@ const noop = () => {};
  *   a file a cosmetic overlay names: its SHA-256 and size / mtime when it was hashed, and the URL hash segments that name
  *   these bytes (the file's own first 8 hex digits, those of every Spine model it belongs to)
  * @typedef {{ ops: import('../../shared/plugins/visual.js').AssetOp[], served: Map<string, ServedFile>,
- *   composition: import('../../shared/plugins/visual.js').VisualOverlay, vs: string | null, bytes: number, hash: string, dir: string }} PluginVisual
+ *   composition: import('../../shared/plugins/visual.js').VisualOverlay, vs: string | null, bytes: number, copyBytes: number,
+ *   hash: string, dir: string }} PluginVisual
  *   a loaded cosmetic plugin: its overlay's writes (Spine models with their clip data), the files it serves, its part of
  *   a `vs` (shared/plugins/visual.js) and the `vs` of the set of it alone (null without data/assets.json), the bytes it
- *   serves, a short hash of its composition (room.state.content.plugins[].hash), its folder
+ *   serves, what its references copy out of the installation's manifest, a short hash of its composition
+ *   (room.state.content.plugins[].hash), its folder
  * @typedef {{ id: string, type: string, class: string, status: 'loaded' | 'planned' | 'unsupported', source: 'i18n' | 'packs' | 'plugins',
  *   layout: 'file' | 'folder', where: string, supported: boolean, manifest: PluginManifest, files: Record<string, PackFile>,
  *   strings?: number, bytes?: number, count?: number, visual?: PluginVisual }} Plugin
@@ -200,7 +202,8 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   let lock = null;
   if (fileSet.has(LOCK_FILE)) {
     const r = readJson(path.join(dir, LOCK_FILE));
-    if (r.error) problems.push(`${LOCK_FILE}: ${r.error}`);
+    const bad = r.error ? null : checkJsonLimits(r.json);
+    if (r.error || bad) problems.push(`${LOCK_FILE}: ${r.error || bad}`);
     else { const l = readPluginLock(r.json); problems.push(...l.problems); lock = l.lock; }
   }
   const ov = readAssetOverlay(assets, { vanilla: vanilla.manifest, permissions: manifest.permissions, has: (rel) => fileSet.has(rel) });
@@ -236,7 +239,7 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   const bytes = [...served.values()].reduce((n, f) => n + f.bytes, 0);
   return {
     visual: {
-      ops: meta.ops, served, composition, bytes, dir,
+      ops: meta.ops, served, composition, bytes, dir, copyBytes: ov.copyBytes,
       vs: vanilla.sha256 ? visualHashOf({ assets: vanilla.sha256, overlays: [composition] }) : null,
       hash: createHash('sha256').update(canonicalJson(composition)).digest('hex').slice(0, 16),
     },
@@ -504,8 +507,12 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   add(path.join(publicDir, LANG_DIR), 0, 'u:');
   add(path.join(dataDir, LANG_DIR), 0, 'd:', true); // a game-text file only counts by its presence
   add(packsDir, 3, 'p:');
-  // a cosmetic plugin's art sits deeper (spine/<model>/front/…): six levels below plugins/
-  if (pluginsDir) add(pluginsDir, 6, 'x:');
+  // a cosmetic plugin's art sits deeper (spine/<model>/front/…): six levels below plugins/; the art manifest its
+  // references name counts too (a setup run that rewrote it while the server runs)
+  if (pluginsDir) {
+    add(pluginsDir, 6, 'x:');
+    try { const st = fs.statSync(path.join(dataDir, 'assets.json')); parts.push(`a:${st.size}:${Math.floor(st.mtimeMs)}`); } catch { /* none */ }
+  }
   return parts.join('\n');
 }
 

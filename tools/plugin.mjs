@@ -85,16 +85,22 @@ export function checkPluginFolder(dir, where, { vanilla } = {}) {
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
-/** The skill indices a model's roles are resolved for, by the container of its overlay entry (as fetch-assets does). */
-const roleOptions = (container) => (container === 'enemies' ? { skillIndices: [0], numberedSkills: true } : container === 'chars' ? { skillIndices: [0, 1, 2] } : { skillIndices: [0] });
+/**
+ * The options a model's roles are resolved with, by the containers whose entries use it (as fetch-assets does): an
+ * operator's three skill slots, an enemy's numbered skill clips — a skeleton several kinds of entry use gets both.
+ * @param {Set<string>} containers
+ */
+const roleOptions = (containers) => ({ skillIndices: containers.has('chars') ? [0, 1, 2] : [0], numberedSkills: containers.has('enemies') });
 
 /**
  * The lock file of a plugin folder (see the header): every file's SHA-256 and size (not the lock's own, no dot file),
- * and — for a cosmetic plugin — the clip data of each Spine model its overlay names.
+ * and — for a cosmetic plugin — the clip data of each Spine model its overlay names. A problem of the overlay (with
+ * `vanilla`: its references and permissions too) leaves the lock unwritten.
  * @param {string} dir
+ * @param {{ vanilla?: import('../server/plugins/registry.js').VanillaAssets }} [opts] the art manifest references must name
  * @returns {{ lock: Record<string, unknown> | null, problems: string[], warnings: string[] }}
  */
-export function buildPluginLock(dir) {
+export function buildPluginLock(dir, { vanilla } = {}) {
   const problems = [];
   const warnings = [];
   let raw;
@@ -113,8 +119,11 @@ export function buildPluginLock(dir) {
     if (!assets) {
       try { assets = JSON.parse(fs.readFileSync(path.join(dir, ...part.files[0].split('/')), 'utf8')); } catch (e) { problems.push(`${part.files[0]}: ${e?.message || e}`); }
     }
-    const ov = readAssetOverlay(assets, { has: (rel) => Object.hasOwn(files, rel) });
+    const ov = readAssetOverlay(assets, { has: (rel) => Object.hasOwn(files, rel), vanilla: vanilla?.manifest ?? null, permissions: manifest.permissions });
     problems.push(...ov.problems);
+    /** @type {Map<string, Set<string>>} skeleton → the containers of the entries that use it */
+    const users = new Map();
+    for (const op of ov.ops) if (op.spine) { if (!users.has(op.spine.skel)) users.set(op.spine.skel, new Set()); users.get(op.spine.skel).add(op.at[0]); }
     for (const op of ov.ops) {
       if (!op.spine || spine[op.spine.skel]) continue;
       const s = op.spine;
@@ -129,7 +138,7 @@ export function buildPluginLock(dir) {
         if (!sk.animations.length) { problems.push(`${s.skel}: the skeleton has no animations`); continue; }
         if (sk.missingRegions.length) warnings.push(`${s.skel}: ${sk.missingRegions.length} attachment(s) not in its atlas (e.g. ${sk.missingRegions[0]})`);
         spine[s.skel] = {
-          sha256: sha256(bytes), anims: resolveRoles(sk.animations, { ...roleOptions(op.at[0]), durations: sk.durations }),
+          sha256: sha256(bytes), anims: resolveRoles(sk.animations, { ...roleOptions(users.get(s.skel)), durations: sk.durations }),
           animations: sk.durations, events: sk.events, hits: sk.hits, bounds: sk.bounds,
         };
       } catch (e) {
@@ -195,7 +204,7 @@ export async function main(argv) {
       const inPlugins = path.join(dirs.pluginsDir, t);
       const dir = fs.existsSync(path.join(asDir, PLUGIN_MANIFEST)) ? asDir : fs.existsSync(path.join(inPlugins, PLUGIN_MANIFEST)) ? inPlugins : null;
       if (!dir) { console.error(`plugin: ${t} is not a plugin folder (no ${PLUGIN_MANIFEST})`); return 2; }
-      const r = buildPluginLock(dir);
+      const r = buildPluginLock(dir, { vanilla: readVanillaAssets(dirs.dataDir) });
       for (const x of r.problems) console.log(`  problem  ${x}`);
       for (const x of r.warnings) console.log(`  warning  ${x}`);
       if (!r.lock || r.problems.length) { console.log(`${t}: ${LOCK_FILE} not written`); failed++; continue; }

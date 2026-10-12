@@ -55,6 +55,18 @@ describe('the cosmetic layers (public/js/assets.js)', () => {
     assert.equal(layers.active, false);
   });
 
+  test('the memo is per base object: data.js\'s copy and the store\'s each keep theirs', () => {
+    const layers = createCosmeticLayers();
+    layers.setPersonal([{ id: 'mine', ops: [{ at: ['chars', 'char_112_siege', 'avatar'], value: '/p/mine/89abcdef/m.png' }] }]);
+    const other = JSON.parse(JSON.stringify(BASE));
+    const a = layers.apply(BASE);
+    const b = layers.apply(other);
+    assert.notEqual(a, b);
+    assert.equal(layers.apply(BASE), a, 'alternating bases: each still memoised');
+    assert.equal(layers.apply(other), b);
+    assert.equal(layers.apply(undefined), layers.apply(undefined), 'no manifest yet: one empty base');
+  });
+
   test('the asset store reads through its layers and tells its listeners like a late manifest', () => {
     const layers = createCosmeticLayers();
     const store = createAssets({ manifest: BASE, cosmetics: layers, fetch: async () => res(404, {}) });
@@ -99,6 +111,10 @@ describe('content.js', () => {
     assert.match((await fetchVisualDoc('assets', 'cd'.repeat(32), { fetch: async () => res(200, doc) })).error, /names another set/);
     assert.match((await fetchVisualDoc('assets', vs, { fetch: async () => res(200, '{"nope') })).error, /not JSON/);
     assert.match((await fetchVisualDoc('assets', 'short')).error, /no visual hash/);
+    // an attempt that never answers is given up after the timeout (and tried again like a network error)
+    let tries = 0;
+    const stalled = await fetchVisualDoc('assets', vs, { timeoutMs: 20, retryDelays: [0], wait: async () => {}, fetch: () => { tries++; return new Promise(() => {}); } });
+    assert.deepEqual([stalled.error, tries], [`/vs/${vs.slice(0, 16)}/assets.json: unreachable`, 2]);
   });
 
   test('installContent: the room layer follows room.state.content.vs, goes with the room, ignores a late answer, says a failure once', async () => {
@@ -216,6 +232,10 @@ describe('the 插件 panel (ui/pluginPanel.js) and the room screen', () => {
     assert.deepEqual([roomPluginFacts(room({ cs: 'ee'.repeat(32), vanilla: true, plugins: [] }), 'h').count, roomPluginFacts(null, 'h').count], [0, 0]);
     assert.deepEqual(nextChoice(['a'], 'c', true), ['a', 'c']);
     assert.deepEqual(nextChoice(['a', 'c'], 'a', false), ['c']);
+    // a plugin the server no longer offers is never sent again (else every switch is refused); its own switch turns it off
+    assert.deepEqual(nextChoice(['gone', 'a'], 'c', true, new Set(['a', 'c'])), ['a', 'c']);
+    assert.deepEqual(nextChoice(['gone', 'a'], 'gone', false, new Set(['a'])), ['a']);
+    assert.deepEqual(nextChoice(['gone', 'a'], 'c', true, null), ['gone', 'a', 'c'], 'the catalogue not loaded: the choice as it is');
     assert.equal(pluginTagText(room(set)), '插件 ×2');
     assert.equal(pluginTagText(room({ plugins: [] })), '原版');
     assert.deepEqual([sizeText(2048), sizeText(3 * 1048576), sizeText(NaN)], ['2 KB', '3.0 MB', '']);

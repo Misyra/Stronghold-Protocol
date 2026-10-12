@@ -48,6 +48,8 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     writePlugin(path.join(plugins, 'texas-blue'), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'b.png' } } } }), { 'b.png': png(4, 4, [0, 0, 255, 255]) });
     writePlugin(path.join(plugins, 'mine'), cosmetic({ scope: ['personal'], assets: { chars: { char_102_texas: { avatar: 'm.png' } } } }), { 'm.png': png(2, 2) });
     writePlugin(path.join(plugins, 'rules'), { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'content', permissions: ['data.patch'], data: ['d.json'] }, { 'd.json': { patch: 1, ops: [] } });
+    writePlugin(path.join(plugins, 'base'), cosmetic({ assets: { chars: { char_112_siege: { avatar: 'b.png' } } } }), { 'b.png': png(2, 2) });
+    writePlugin(path.join(plugins, 'top'), cosmetic({ requires: { base: '*' }, assets: { chars: { char_102_texas: { avatar: 't.png' } } } }), { 't.png': png(2, 2) });
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, MatchClass: RecordingStub, assetIndex: false });
   });
   after(async () => {
@@ -112,6 +114,41 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     assert.equal((await host.request({ t: 'room.setPlugins', plugins: [] })).t, 'ok');
     const back = await guest.waitFor('room.state', (s) => !s.content?.vs);
     assert.deepEqual(back.content, { cs: srv.content.cs, vanilla: true, plugins: [] });
+  });
+
+  test('「自动」: a plugin switched on because another needs it; chosen later, the same set — broadcast, nobody un-readied', async () => {
+    const host = await player('Texas');
+    const guest = await player('Lappland');
+    const s0 = await room(host);
+    assert.equal((await guest.request({ t: 'room.join', code: s0.code })).t, 'ok');
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [{ id: 'top' }] })).t, 'ok');
+    const s1 = await host.waitFor('room.state', (s) => !!s.content?.vs);
+    assert.deepEqual(s1.content.plugins.map((p) => [p.id, !!p.auto]), [['base', true], ['top', false]]);
+    assert.equal((await guest.request({ t: 'room.ready', ready: true })).t, 'ok');
+    await host.waitFor('room.state', (s) => s.seats.some((x) => x && x.playerId === guest.id && x.ready));
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [{ id: 'top' }, { id: 'base' }] })).t, 'ok');
+    const s2 = await host.waitFor('room.state', (s) => s.content?.plugins?.some((p) => p.id === 'base' && !p.auto));
+    assert.equal(s2.content.vs, s1.content.vs, 'the same set');
+    assert.equal(s2.seats.find((x) => x && x.playerId === guest.id).ready, true, 'nobody un-readied for a mark');
+  });
+
+  test('a room holds its visual set while it uses it: released when it changes and when the room goes', () => {
+    const calls = [];
+    const plugins = {
+      resolve: (ids) => ({ ok: true, set: { vs: (ids.join('-').charCodeAt(0) % 16).toString(16).repeat(64), plugins: ids.map((id) => ({ id, version: '1.0.0', class: 'cosmetic', hash: '0'.repeat(16) })), warnings: [], bytes: 1 } }),
+      hold: (vs) => calls.push(['hold', vs.slice(0, 2)]),
+      release: (vs) => calls.push(['release', vs.slice(0, 2)]),
+    };
+    const lobby = new Lobby({ registry: new SessionRegistry(), content: { cs: 'ab'.repeat(32) }, plugins });
+    const session = { playerId: 'p1', name: 'A', connected: true, roomCode: null, ws: null };
+    assert.deepEqual(lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' }), { ok: true });
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'a' }] }), { ok: true });   // 'a' → 1…
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'b' }] }), { ok: true });   // 'b' → 2…
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [] }), { ok: true });
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'a' }] }), { ok: true });
+    lobby.leave(session);
+    assert.deepEqual(calls, [['hold', '11'], ['hold', '22'], ['release', '11'], ['release', '22'], ['hold', '11'], ['release', '11']]);
+    lobby.shutdown();
   });
 
   test('the protocol: room.setPlugins { plugins: [{ id, settings? }] } — plugin ids, ≤ 32, scalar settings', () => {

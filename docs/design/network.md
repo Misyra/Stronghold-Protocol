@@ -92,12 +92,13 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   `override { path, plugins: [earlier, later] }` (the later applies), `app { id, app }` (made for other game versions —
   a cosmetic plugin is still allowed); `bytes`: the art the set serves. An empty set is exactly the vanilla shape;
 - C→S `room.setPlugins { plugins: [{ id, settings? }] }` (≤ 32 plugin ids; `settings` scalar values, ignored by the
-  cosmetic class) — host-only (`NOT_HOST`), before the match (`ROOM_STARTED`); it un-readies the other humans; the same
-  set again changes nothing. The server closes the set over the plugins' `requires` and sorts it (requires / optional /
-  loadAfter / loadBefore, priority, id: `shared/plugins/order.js`); refused with `PLUGIN_UNKNOWN` (not installed),
-  `PLUGIN_BLOCKED` (not a loaded cosmetic plugin of scope `room` in this version), `PLUGIN_DEPENDENCY` (a requirement
-  missing or out of range, a load-order cycle), `PLUGIN_CONFLICT`, `PLUGIN_LIMIT` (over 300 MB of art) (`server/lobby.js
-  setPlugins`, `server/plugins/visualSet.js resolve`);
+  cosmetic class) — host-only (`NOT_HOST`), before the match (`ROOM_STARTED`), in the heavy rate-limit bucket (`RATE`); it
+  un-readies the other humans; the same set again changes nothing (only changed 「自动」 marks are broadcast, without
+  un-readying). The server closes the set over the plugins' `requires` and sorts it (requires / optional / loadAfter /
+  loadBefore, priority, id: `shared/plugins/order.js`); refused with `PLUGIN_UNKNOWN` (not installed), `PLUGIN_BLOCKED`
+  (not a loaded cosmetic plugin of scope `room` in this version), `PLUGIN_DEPENDENCY` (a requirement missing or out of
+  range, a load-order cycle), `PLUGIN_CONFLICT`, `PLUGIN_LIMIT` (over 300 MB of art, or references copying over 4 MB of
+  the art manifest) (`server/lobby.js setPlugins`, `server/plugins/visualSet.js resolve`);
 - the match receives `opts.cs` from the lobby and copies it into every BattleSpec as `cs` (§14) — so `b.start.spec.cs`;
 - C→S `b.result.cs?` — optional, its form checked (`isContentHash`); the server does not compare it with the spec yet
   (P1c refuses a missing or different one in a plugin room);

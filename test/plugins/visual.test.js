@@ -111,8 +111,10 @@ describe('reading an overlay', () => {
       ['enemies.enemy_1007_slime.spine', 'ref'], ['enemies.enemy_1007_slime.spineLocal', 'clear'],
       ['enemies.enemy_x', 'ref'],
     ], 'a whole-record reference takes the referenced record as it is');
-    const lock = readPluginLock({ lock: 1, spine: { 'spine/front/t.skel': { sha256: sha('spine/front/t.skel'), anims: { idle: 'Idle' }, animations: {}, events: [], hits: {}, bounds: null } } }).lock;
-    const { ops } = resolveOps(attachSpineMeta(r.ops, lock, sha).ops, { id: 'p', sha, base: vanilla });
+    const lock = readPluginLock({ lock: 1, spine: { 'spine/front/t.skel': { sha256: sha('spine/front/t.skel'), anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null } } }).lock;
+    const res = resolveOps(attachSpineMeta(r.ops, lock, sha).ops, { id: 'p', sha, base: vanilla });
+    assert.deepEqual(res.problems, []);
+    const { ops } = res;
     const out = applyOps(vanilla, ops);
     assert.deepEqual(out.audio.bgm.lobby, { loop: `/p/p/${sha('v/s1.mp3').slice(0, 8)}/v/s1.mp3` }, 'no intro left behind');
     assert.deepEqual(Object.keys(out.audio.bgm.prep), ['intro', 'loop']);
@@ -139,6 +141,17 @@ describe('reading an overlay', () => {
     ]);
     assert.match(read({ chars: { 'bad key!': { avatar: 'art/a.png' } } }).problems.join(), /is not an entry key/);
     assert.match(read([]).problems.join(), /not an object in the shape of data\/assets\.json/);
+  });
+
+  test('what references copy out of the installation\'s manifest is counted and capped (2 MB a plugin)', () => {
+    const big = { chars: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`char_${i}`, { avatar: `/assets/${'x'.repeat(400 * 1024)}.png` }])) };
+    const fine = readAssetOverlay({ chars: { char_new: { ref: 'char_0' } } }, { vanilla: big, permissions: ['assets.add'] });
+    assert.deepEqual(fine.problems, []);
+    assert.ok(fine.copyBytes > 400 * 1024 && fine.copyBytes < 410 * 1024, String(fine.copyBytes));
+    const many = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`char_n${i}`, { ref: `char_${i % 3}` }]));
+    const r = readAssetOverlay({ chars: many }, { vanilla: big, permissions: ['assets.add'] });
+    assert.match(r.problems.join(), /its references copy 2\.\d MB of this installation's manifest, more than 2 MB/);
+    assert.equal(readAssetOverlay({ chars: many }).copyBytes, 0, 'without the manifest nothing is counted');
   });
 
   test('permissions: changing an entry of the installation needs assets.override, a new one assets.add', () => {
@@ -171,6 +184,39 @@ describe('plugin.lock.json and the models\' clip data', () => {
     assert.match(attachSpineMeta(ops, null, sha).problems.join(), /plugin\.lock\.json has no clip data for spine\/front\/t\.skel — run node tools\/plugin\.mjs pack/);
     const stale = readPluginLock(lockOf('ff'.repeat(32))).lock;
     assert.match(attachSpineMeta(ops, stale, sha).problems.join(), /was made from another spine\/front\/t\.skel — run node tools\/plugin\.mjs pack again/);
+  });
+
+  test('a lock\'s clip data is rebuilt in the pack tool\'s shape: nothing a hand-made lock adds reaches a browser', () => {
+    const good = { sha256: 'ab'.repeat(32), anims: { idle: 'Idle', deploy: null, attack: { begin: null, loop: 'Attack', end: null, via: 'attack' },
+      skill: { begin: null, loop: 'Attack', end: null, index: 0, idle: null }, skills: { 1: { begin: null, loop: 'Skill', end: null, index: 1, idle: 'Idle' } } },
+    animations: { Idle: 1, Attack: 0.5, Skill: 2 }, events: ['OnAttack'], hits: { Attack: [0.25] }, bounds: { x: 1, y: 2, width: 3, height: 4, extra: '<img>' } };
+    const ok = readPluginLock({ lock: 1, spine: { 'm/t.skel': good } });
+    assert.deepEqual(ok.problems, []);
+    const meta = ok.lock.spine['m/t.skel'];
+    assert.deepEqual(meta.bounds, { x: 1, y: 2, width: 3, height: 4 }, 'only the four numbers');
+    assert.deepEqual(meta.anims.skills, { 1: { begin: null, loop: 'Skill', end: null, index: 1, idle: 'Idle' } });
+    const refused = (patch, why) => {
+      const r = readPluginLock({ lock: 1, spine: { 'm/t.skel': { ...good, ...patch } } });
+      assert.equal(r.lock, null, why);
+      assert.match(r.problems.join(), /is not the clip data of a skeleton/, why);
+    };
+    refused({ anims: { ...good.anims, '<img src=x onerror=alert(1)>': 'Idle' } }, 'an unknown role');
+    refused({ anims: { ...good.anims, idle: 'Nope' } }, 'a clip the skeleton has not');
+    refused({ anims: { ...good.anims, attack: 12345 } }, 'a role that is no clip');
+    refused({ anims: { ...good.anims, attack: { loop: 'Attack', via: 'teleport' } } }, 'an unknown via');
+    refused({ anims: { deploy: 'Idle' } }, 'no idle');
+    refused({ events: ['x'.repeat(200000)] }, 'a huge event name');
+    refused({ events: Array.from({ length: 65 }, (_, i) => `e${i}`) }, 'too many events');
+    refused({ animations: { ['A'.repeat(100000)]: 1, Idle: 1, Attack: 1, Skill: 1 } }, 'a huge animation name');
+    refused({ animations: { Idle: 1e6, Attack: 1, Skill: 1 } }, 'a duration beyond 600 s');
+    refused({ hits: { Elsewhere: [0.1] } }, 'hits of a clip the skeleton has not');
+    let deep = 'Idle';
+    for (let i = 0; i < 20000; i++) deep = { loop: deep };
+    refused({ anims: { idle: 'Idle', attack: deep } }, 'nesting');
+    const proto = readPluginLock(JSON.parse('{"lock":1,"files":{"__proto__":{"sha256":"' + 'ab'.repeat(32) + '","bytes":1}}}'));
+    assert.equal(proto.lock, null, 'a path through a name of Object.prototype');
+    assert.equal(({}).sha256, undefined);
+    assert.equal(Object.getPrototypeOf(ok.lock.spine), null, 'the maps have no prototype');
   });
 
   test('a broken lock is a problem', () => {

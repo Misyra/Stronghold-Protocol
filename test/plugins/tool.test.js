@@ -77,6 +77,26 @@ test('pack refuses an atlas page the model does not list, a skeleton the client 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('pack writes no lock while the overlay has a problem (a reference the manifest lacks); one skeleton, two kinds of entry: both role sets', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-pack-'));
+  try {
+    const bad = writePlugin(path.join(dir, 'badref'), cosmetic({ assets: { chars: { char_102_texas: { avatar: { ref: 'char_000_nobody' }, spine: { front: { skel: 's/t.skel' } } } } } }), {
+      's/t.skel': skel(), 's/t.atlas': atlas(['t.png']), 's/t.png': png(),
+    });
+    const r = await quiet(['pack', bad, '--root', ROOT]);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /has no chars\.char_000_nobody\.avatar/);
+    assert.equal(fs.existsSync(path.join(bad, 'plugin.lock.json')), false);
+    // one skeleton drawn for an operator and for an enemy: an operator's three skill slots and an enemy's numbered clips
+    const both = writePlugin(path.join(dir, 'both'), cosmetic({ permissions: ['assets.override', 'assets.add'], assets: {
+      chars: { char_102_texas: { spine: { front: { skel: 's/t.skel' } } } }, enemies: { enemy_x_new: { spine: { skel: 's/t.skel' } } },
+    } }), { 's/t.skel': skel({ animations: { Idle: [['OnStart', 1]], Attack: [['OnAttack', 0.3]], Skill_4: [['OnAttack', 0.5]] } }), 's/t.atlas': atlas(['t.png']), 's/t.png': png() });
+    assert.equal((await quiet(['pack', both, '--root', ROOT])).code, 0);
+    const roles = JSON.parse(fs.readFileSync(path.join(both, 'plugin.lock.json'), 'utf8')).spine['s/t.skel'].anims;
+    assert.deepEqual(Object.keys(roles.skills).sort(), ['0', '1', '2', '3'], 'skills 0–2 (an operator) and the numbered Skill_4 (an enemy)');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('check follows a cosmetic plugin\'s references to this checkout\'s data/assets.json', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-check-'));
   try {

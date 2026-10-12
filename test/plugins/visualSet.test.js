@@ -151,6 +151,34 @@ describe('the visual sets of a server', () => {
     for (const p of [`/vs/${'0'.repeat(16)}/assets.json`, `/vs/${set.vs}/assets.json`, `/vs/${set.vs.slice(0, 16)}/other.json`, '/vs/']) assert.equal((await get(p)).status, 404, p);
   });
 
+  test('a set a room holds is never dropped; the others beyond the limit are; a document is built once however many ask', async () => {
+    // (sets of two plugins or more: the set of one plugin alone is the catalogue's and always known)
+    const small = createVisualSets({ registry, maxSets: 1 });
+    const room = small.resolve(['red', 'blue']).set.vs;
+    small.hold(room);
+    const other = small.resolve(['needs-red']).set.vs;
+    small.resolve(['needs-red', 'blue']);
+    assert.notEqual(await small.doc(room.slice(0, 16), 'overlay'), null, 'held: still served');
+    assert.equal(await small.doc(other.slice(0, 16), 'overlay'), null, 'neither held nor recent: dropped (404)');
+    assert.deepEqual([small.stats().held, small.stats().sets], [1, 2]);
+    small.release(room);
+    small.resolve(['needs-red']);
+    small.resolve(['needs-red', 'blue']);
+    assert.equal(await small.doc(room.slice(0, 16), 'overlay'), null, 'released: dropped like any other');
+    // two requests at once: one build, the same body
+    const vs = small.resolve(['blue', 'red']).set.vs;
+    const [a, b] = await Promise.all([small.doc(vs.slice(0, 16), 'assets'), small.doc(vs.slice(0, 16), 'assets')]);
+    assert.ok(a && a === b);
+  });
+
+  test('what a set\'s references copy out of the manifest is capped (PLUGIN_LIMIT)', () => {
+    const tight = createVisualSets({ registry, limits: { ...VISUAL_LIMITS, setCopyBytes: 10 } });
+    const r = tight.resolve(['red']);
+    assert.deepEqual([r.error, /references copy/.test(r.detail)], ['PLUGIN_LIMIT', true]);
+    assert.ok(registry.plugin('red').visual.copyBytes > 10, 'red copies an entry through its references');
+    assert.equal(tight.resolve(['blue']).ok, true, 'a plugin without references copies nothing');
+  });
+
   test('a plugin\'s own set (the catalogue\'s vs) is served without anybody resolving it: a personal plugin\'s overlay', async () => {
     const cat = await json('/plugins/index.json');
     const mine = cat.plugins.find((p) => p.id === 'mine');
@@ -238,5 +266,20 @@ describe('the visual sets of a server', () => {
       });
       assert.equal(body.toString('utf8'), withPlugins.body.toString('utf8'));
     } finally { await new Promise((r) => s2.close(r)); }
+  });
+
+  test('a data/assets.json rewritten while the server runs is noticed: references are checked against the new one', () => {
+    const file = path.join(root, 'data', 'assets.json');
+    const before = registry.vanillaAssets().sha256;
+    writePlugin(path.join(root, 'plugins', 'late-ref'), cosmetic({ assets: { chars: { char_999_new: { ref: 'char_998_added' } } }, permissions: ['assets.add'] }));
+    registry.refresh(true);
+    assert.equal(registry.plugin('late-ref'), null, 'a reference to an entry the manifest does not have yet');
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    doc.chars.char_998_added = { avatar: '/assets/char/avatar/char_112_siege.png' };
+    fs.writeFileSync(file, JSON.stringify(doc));
+    fs.utimesSync(file, new Date(), new Date(Date.now() + 10000));
+    registry.refresh(true);
+    assert.notEqual(registry.vanillaAssets().sha256, before);
+    assert.equal(registry.plugin('late-ref')?.status, 'loaded', 'its reference now names an entry');
   });
 });

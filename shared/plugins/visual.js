@@ -66,9 +66,19 @@ export const LOCK_FILE = 'plugin.lock.json';
 export const LOCK_VERSION = 1;
 /**
  * [ASSUMED] limits: writes per plugin, files of one voice slot, the art a set may serve in all (the design study's 300 MB
- * per room), the override warnings one set reports.
+ * per room), the override warnings one set reports, and what references may copy out of the installation's manifest —
+ * per plugin and per set (as JSON text: a whole-record reference copies a record, so a few thousand of them would make a
+ * room's effective manifest tens of MB without a byte of art).
  */
-export const VISUAL_LIMITS = Object.freeze({ ops: 20000, listFiles: 16, setBytes: 300 * 1024 * 1024, warnings: 32 });
+export const VISUAL_LIMITS = Object.freeze({
+  ops: 20000, listFiles: 16, setBytes: 300 * 1024 * 1024, warnings: 32, copyBytes: 2 * 1024 * 1024, setCopyBytes: 4 * 1024 * 1024,
+});
+/**
+ * [ASSUMED] limits of the clip data plugin.lock.json gives a Spine model (what tools/assets/skel.mjs and anim-roles.mjs
+ * produce, with room to spare): animations per skeleton, the length of a clip or event name, a clip's duration (s),
+ * events per skeleton, hit times per clip, numbered skill clips, the size of the skeleton's bounds.
+ */
+export const LOCK_LIMITS = Object.freeze({ animations: 256, name: 64, duration: 600, events: 64, hits: 64, skills: 10, bounds: 1e6 });
 
 /** A full visual hash: 64 lowercase hex digits (the form of `cs`). */
 export const isVisualHash = isContentHash;
@@ -151,7 +161,8 @@ const cloneJson = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
  *   one write of an overlay (see the header); `clear`: the entry's value taken away (an enemy's or a token's
  *   `spineLocal` when its model is written — `implied`: a consequence of another write, never an override of its own)
  * @typedef {{ at: string[], value: any }} ResolvedOp
- * @typedef {{ ops: AssetOp[], files: string[], models: string[][], problems: string[], warnings: string[] }} AssetOverlay
+ * @typedef {{ ops: AssetOp[], files: string[], models: string[][], copyBytes: number, problems: string[], warnings: string[] }} AssetOverlay
+ *   copyBytes: what its references copy out of the installation's manifest (JSON text; 0 without the manifest)
  */
 
 const pathText = (at) => `assets.${at.join('.')}`;
@@ -176,8 +187,9 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
   /** @type {AssetOp[]} */ const ops = [];
   /** @type {string[]} */ const files = [];
   /** @type {string[][]} */ const models = [];
+  let copyBytes = 0;
   const addFile = (rel) => { if (!files.includes(rel)) files.push(rel); };
-  if (!isObj(assets)) return { ops, files, models, problems: ['"assets" is not an object in the shape of data/assets.json'], warnings };
+  if (!isObj(assets)) return { ops, files, models, copyBytes, problems: ['"assets" is not an object in the shape of data/assets.json'], warnings };
 
   /** A plugin file of an allowed extension (else a problem, false). */
   const fileOk = (rel, exts, at) => {
@@ -224,10 +236,12 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
       const key = /** @type {any} */ (v).ref;
       if (!isAssetKey(key)) { problems.push(`${pathText(at)}: { "ref": ${short(key)} } does not name an entry`); return; }
       const from = [...loc.container, key, ...loc.field];
-      if (vanilla && getPath(vanilla, from) === undefined) {
+      const target = vanilla ? getPath(vanilla, from) : undefined;
+      if (vanilla && target === undefined) {
         problems.push(`${pathText(at)}: { "ref": "${key}" } — this installation's art manifest (data/assets.json) has no ${from.join('.')}`);
         return;
       }
+      if (vanilla) copyBytes += JSON.stringify(target).length;
       ops.push({ at, ref: key, from });
       const clear = localModelClear(loc);
       if (clear) ops.push(clear);
@@ -298,6 +312,9 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
     }
   };
   walk(TREE, assets, []);
+  if (copyBytes > VISUAL_LIMITS.copyBytes) {
+    problems.push(`its references copy ${(copyBytes / 1048576).toFixed(1)} MB of this installation's manifest, more than ${VISUAL_LIMITS.copyBytes / 1048576} MB`);
+  }
 
   // what the writes need: an entry of the installation's manifest → assets.override, a new one → assets.add
   if (vanilla && Array.isArray(permissions)) {
@@ -313,13 +330,118 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
       }
     }
   }
-  return { ops, files, models, problems, warnings };
+  return { ops, files, models, copyBytes, problems, warnings };
 }
 
 // ---- plugin.lock.json -------------------------------------------------------------------------------------------------
 
 const isHex64 = (v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
-const isNumList = (v) => Array.isArray(v) && v.length <= 256 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+/** A path key of the lock: a plain path, never a name of Object.prototype in it (the maps have no prototype either). */
+const lockPath = (rel) => isPackPath(rel) && !String(rel).split('/').some((x) => FORBIDDEN.has(x));
+const clipName = (v, names) => typeof v === 'string' && v.length <= LOCK_LIMITS.name && Object.prototype.hasOwnProperty.call(names, v);
+const VIA = ['combat', 'attackAny', 'skill', 'idle', 'attack'];
+/** The roles of a model (tools/assets/anim-roles.mjs Roles): a clip name or null … */
+const NAME_ROLES = ['idle', 'deploy', 'die'];
+/** … or a clip { begin, loop, end, via? } (`skill`: a skill clip, with its index and idle) or null; `skills`: skill clips by index. */
+const CLIP_ROLES = ['attack', 'attackDown', 'move', 'run', 'stun', 'skill'];
+
+/**
+ * One clip of a lock's roles, rebuilt with exactly its fields, or undefined when it is not one. Every name it plays must be
+ * an animation of the skeleton (`names`).
+ * @param {unknown} v @param {Record<string, number>} names @param {boolean} skill a skill clip (index, idle)
+ */
+function readClip(v, names, skill) {
+  if (!isObj(v)) return undefined;
+  const c = /** @type {any} */ (v);
+  const opt = (x) => x === null || x === undefined || clipName(x, names);
+  if (!clipName(c.loop, names) || !opt(c.begin) || !opt(c.end) || (c.via !== undefined && !VIA.includes(c.via))) return undefined;
+  /** @type {Record<string, any>} */
+  const out = { begin: c.begin ?? null, loop: c.loop, end: c.end ?? null };
+  if (c.via !== undefined) out.via = c.via;
+  if (skill) {
+    if (!Number.isInteger(c.index) || c.index < 0 || c.index >= LOCK_LIMITS.skills || !opt(c.idle)) return undefined;
+    out.index = c.index;
+    out.idle = c.idle ?? null;
+  }
+  return out;
+}
+
+/**
+ * A lock's roles (`anims`) rebuilt in the shape anim-roles.mjs writes — the known roles only, each a clip name of the
+ * skeleton, a clip of them or null — or null when it is not that.
+ * @param {unknown} v @param {Record<string, number>} names
+ * @returns {Record<string, any> | null}
+ */
+function readRoles(v, names) {
+  if (!isObj(v)) return null;
+  const a = /** @type {any} */ (v);
+  for (const k of Object.keys(a)) if (!NAME_ROLES.includes(k) && !CLIP_ROLES.includes(k) && k !== 'skills') return null;
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const k of NAME_ROLES) {
+    if (a[k] === undefined) continue;
+    if (a[k] !== null && !clipName(a[k], names)) return null;
+    out[k] = a[k];
+  }
+  if (typeof out.idle !== 'string') return null; // every model idles (resolveRoles)
+  for (const k of CLIP_ROLES) {
+    if (a[k] === undefined) continue;
+    if (a[k] === null) { out[k] = null; continue; }
+    const c = readClip(a[k], names, k === 'skill');
+    if (!c) return null;
+    out[k] = c;
+  }
+  if (a.skills !== undefined) {
+    if (!isObj(a.skills)) return null;
+    const keys = Object.keys(a.skills);
+    if (keys.length > LOCK_LIMITS.skills) return null;
+    out.skills = {};
+    for (const i of keys) {
+      const c = /^\d$/.test(i) ? readClip(a.skills[i], names, true) : undefined;
+      if (!c) return null;
+      out.skills[i] = c;
+    }
+  }
+  return out;
+}
+
+/**
+ * The clip data of one skeleton in a lock, rebuilt field by field within LOCK_LIMITS (nothing of the file passes as it
+ * is), or null when it is not that.
+ * @param {unknown} v
+ * @returns {(SpineMeta & { sha256: string }) | null}
+ */
+function readLockSpine(v) {
+  if (!isObj(v)) return null;
+  const s = /** @type {any} */ (v);
+  if (!isHex64(s.sha256) || !isObj(s.animations) || !Array.isArray(s.events) || !isObj(s.hits)) return null;
+  const durations = Object.entries(s.animations);
+  if (!durations.length || durations.length > LOCK_LIMITS.animations) return null;
+  /** @type {Record<string, number>} */
+  const animations = Object.create(null);
+  for (const [name, d] of durations) {
+    if (!name || name.length > LOCK_LIMITS.name || typeof d !== 'number' || !Number.isFinite(d) || d < 0 || d > LOCK_LIMITS.duration) return null;
+    animations[name] = d;
+  }
+  if (s.events.length > LOCK_LIMITS.events || !s.events.every((e) => typeof e === 'string' && e.length <= LOCK_LIMITS.name)) return null;
+  /** @type {Record<string, number[]>} */
+  const hits = Object.create(null);
+  for (const [name, list] of Object.entries(s.hits)) {
+    if (!clipName(name, animations) || !Array.isArray(list) || list.length > LOCK_LIMITS.hits
+      || !list.every((t) => typeof t === 'number' && Number.isFinite(t) && t >= 0 && t <= LOCK_LIMITS.duration)) return null;
+    hits[name] = [...list];
+  }
+  const anims = readRoles(s.anims, animations);
+  if (!anims) return null;
+  let bounds = null;
+  if (s.bounds !== null) {
+    const b = s.bounds;
+    const num = (x) => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= LOCK_LIMITS.bounds;
+    if (!isObj(b) || !num(b.x) || !num(b.y) || !num(b.width) || !num(b.height)) return null;
+    bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+  }
+  return { sha256: s.sha256, anims, animations: { ...animations }, events: [...s.events], hits: { ...hits }, bounds };
+}
 
 /**
  * @typedef {{ files: Record<string, { sha256: string, bytes: number }>, spine: Record<string, SpineMeta & { sha256: string }> }} PluginLock
@@ -327,8 +449,11 @@ const isNumList = (v) => Array.isArray(v) && v.length <= 256 && v.every((n) => t
 
 /**
  * Read plugin.lock.json (tools/plugin.mjs pack): `{ lock: 1, id, version, generator, files: { <path>: { sha256, bytes } },
- * spine: { <skel path>: { sha256, anims, animations, events, hits, bounds } } }`. A broken lock is a problem; it is only
- * ever needed for Spine models (attachSpineMeta).
+ * spine: { <skel path>: { sha256, anims, animations, events, hits, bounds } } }`. Each skeleton's clip data is rebuilt in
+ * the shape tools/assets/anim-roles.mjs and skel.mjs write, within LOCK_LIMITS — the roles a known set, every clip they
+ * play an animation of the skeleton, names, counts, durations and bounds bounded — so nothing a hand-made lock adds
+ * reaches a browser; the maps have no prototype. A broken lock is a problem; it is only ever needed for Spine models
+ * (attachSpineMeta). The server never parses the skeleton itself: the lock is tied to it by its SHA-256 [ASSUMED].
  * @param {unknown} raw
  * @returns {{ lock: PluginLock | null, problems: string[] }}
  */
@@ -339,19 +464,15 @@ export function readPluginLock(raw) {
   const r = /** @type {any} */ (raw);
   if (r.lock !== LOCK_VERSION) return bad(`"lock": ${short(r.lock)} is not ${LOCK_VERSION}`);
   /** @type {PluginLock} */
-  const lock = { files: {}, spine: {} };
+  const lock = { files: Object.create(null), spine: Object.create(null) };
   for (const [rel, f] of Object.entries(isObj(r.files) ? r.files : {})) {
-    if (!isPackPath(rel) || !isObj(f) || !isHex64(f.sha256) || !Number.isInteger(f.bytes) || f.bytes < 0) return bad(`files.${short(rel)} is not { sha256, bytes }`);
+    if (!lockPath(rel) || !isObj(f) || !isHex64(f.sha256) || !Number.isInteger(f.bytes) || f.bytes < 0) return bad(`files.${short(rel)} is not { sha256, bytes }`);
     lock.files[rel] = { sha256: f.sha256, bytes: f.bytes };
   }
   for (const [rel, s] of Object.entries(isObj(r.spine) ? r.spine : {})) {
-    const ok = isPackPath(rel) && isObj(s) && isHex64(s.sha256) && isObj(s.anims) && isObj(s.animations)
-      && Object.values(s.animations).every((d) => typeof d === 'number' && Number.isFinite(d))
-      && Array.isArray(s.events) && s.events.every((e) => typeof e === 'string')
-      && isObj(s.hits) && Object.values(s.hits).every(isNumList)
-      && (s.bounds === null || (isObj(s.bounds) && ['x', 'y', 'width', 'height'].every((k) => typeof s.bounds[k] === 'number' && Number.isFinite(s.bounds[k]))));
-    if (!ok) return bad(`spine.${short(rel)} is not the data of a skeleton`);
-    lock.spine[rel] = { sha256: s.sha256, anims: s.anims, animations: s.animations, events: s.events, hits: s.hits, bounds: s.bounds };
+    const meta = lockPath(rel) && /\.skel$/.test(rel) ? readLockSpine(s) : null;
+    if (!meta) return bad(`spine.${short(rel)} is not the clip data of a skeleton (roles, animations, events, hits, bounds) within its limits`);
+    lock.spine[rel] = meta;
   }
   return { lock, problems };
 }

@@ -8,12 +8,13 @@
 //     (shared/plugins/visual.js checkVisualDoc — its composition hashes to the `vs` the room named; the document carries
 //     this server's asset URLs, which follow its asset index, so its bytes are not what is checked [ASSUMED]) and becomes
 //     the room layer. Leaving the room, or a room without plugins, takes the layer away again: one room's art never
-//     stays behind or piles up. A document that fails the check or will not download (two retries) leaves the original
-//     art and says so once (a toast).
+//     stays behind or piles up. A document that fails the check or will not download (two retries; an attempt is given
+//     up after VISUAL_TIMEOUT_MS) leaves the original art and says so once (a toast).
 //   * Personal plugins: the catalogue (/plugins/index.json — loadCatalog) names each loaded cosmetic plugin of scope
 //     `personal` with the `vs` of the set of it alone; every switched-on one is fetched as /vs/<vs16>/overlay.json,
-//     checked the same way and applied after the room's, in the catalogue's order (by id) [ASSUMED]. A plugin this
-//     server does not have is skipped and stays switched on here (it shows again when the server has it). The catalogue
+//     checked the same way (fetched side by side) and applied after the room's, in the catalogue's order (by id)
+//     [ASSUMED]. A plugin this server does not have is skipped and stays switched on here (it shows again when the server
+//     has it). The catalogue
 //     is fetched only when something needs it: a switched-on personal plugin, the room's 插件 panel (ui/pluginPanel.js),
 //     设置's 外观插件 (ui/settings.js) or the title screen's 「本服务器安装了 N 个插件」.
 
@@ -28,6 +29,8 @@ import { getLang, langChain, t } from '../../shared/i18n.js';
 export const PERSONAL_PREF = 'cosmetics';
 /** Waits (ms) before a visual set's document is fetched again after a transient failure (like data.js). */
 export const VISUAL_RETRY_MS = Object.freeze([600, 2000]);
+/** How long one attempt at a visual set's document may take before it counts as a transient failure [ASSUMED]. */
+export const VISUAL_TIMEOUT_MS = 30000;
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isIds = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9-]{1,31}$/.test(x));
@@ -107,22 +110,31 @@ export function setPersonalPlugin(id, on) {
 
 /**
  * Fetch a visual set's document (/vs/<vs16>/assets.json or overlay.json) as text, parse it and check it against `vs`
- * (shared/plugins/visual.js checkVisualDoc). A network error or HTTP 5xx / 408 / 429 is tried again (VISUAL_RETRY_MS).
+ * (shared/plugins/visual.js checkVisualDoc). A network error, an attempt over `timeoutMs` (VISUAL_TIMEOUT_MS) or HTTP 5xx
+ * / 408 / 429 is tried again (VISUAL_RETRY_MS).
  * @param {'assets' | 'overlay'} kind
  * @param {string} vs the full visual hash the room (or the catalogue) named
- * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void> }} [opts]
+ * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number }} [opts]
  * @returns {Promise<{ doc: any } | { error: string }>}
  */
-export async function fetchVisualDoc(kind, vs, { fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep } = {}) {
+export async function fetchVisualDoc(kind, vs, { fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep, timeoutMs = VISUAL_TIMEOUT_MS } = {}) {
   if (!isVisualHash(vs)) return { error: 'no visual hash' };
   const url = `${VISUAL_SETS_URL}${vsUrlPart(vs)}/${kind}.json`;
   for (let attempt = 0; ; attempt++) {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    let timer = null;
+    const timedOut = new Promise((resolve) => { timer = setTimeout(() => { ctrl?.abort(); resolve(null); }, timeoutMs); });
     let res;
-    try { res = await doFetch(url, { cache: 'no-cache' }); } catch { res = null; }
-    const transient = !res || res.status >= 500 || res.status === 408 || res.status === 429;
-    if (res && res.ok) {
+    let text = null;
+    try {
+      res = await Promise.race([doFetch(url, { cache: 'no-cache', signal: ctrl?.signal }), timedOut]);
+      if (res && res.ok) text = await Promise.race([res.text(), timedOut]);
+    } catch { res = null; }
+    clearTimeout(timer);
+    const transient = !res || res.status >= 500 || res.status === 408 || res.status === 429 || (res.ok && text === null);
+    if (res && res.ok && text !== null) {
       let doc;
-      try { doc = JSON.parse(await res.text()); } catch { return { error: `${url}: not JSON` }; }
+      try { doc = JSON.parse(text); } catch { return { error: `${url}: not JSON` }; }
       const bad = checkVisualDoc(doc, vs);
       return bad ? { error: `${url}: ${bad}` } : { doc };
     }
@@ -174,13 +186,15 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     const ids = personal.get().ids;
     if (!ids.length) { layers.setPersonal([]); return; }
     const entries = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal').filter((p) => ids.includes(p.id) && isVisualHash(p.vs));
+    // side by side; applied in the catalogue's order
+    for (const p of entries) if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc('overlay', p.vs, { fetch: doFetch, retryDelays }));
+    const results = await Promise.all(entries.map((p) => overlays.get(p.vs)));
     const list = [];
-    for (const p of entries) {
-      if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc('overlay', p.vs, { fetch: doFetch, retryDelays }));
-      const r = await overlays.get(p.vs);
-      if ('error' in r) { overlays.delete(p.vs); tell(r.error); continue; }
+    entries.forEach((p, i) => {
+      const r = results[i];
+      if ('error' in r) { overlays.delete(p.vs); tell(r.error); return; }
       list.push({ id: p.id, ops: Array.isArray(r.doc.ops) ? r.doc.ops : [] });
-    }
+    });
     if (req === personalReq) layers.setPersonal(list);
   };
 

@@ -255,6 +255,9 @@ export function unitSfxUrl(m, id, kind, skillIndex) {
 
 // ---- cosmetic plugins (DESIGN §32 P1a) ---------------------------------------------------------------------------
 
+/** The manifest of a store that has none yet: one object, so the layers' memo holds for it too. */
+const EMPTY_MANIFEST = Object.freeze({});
+
 /**
  * The cosmetic layers of the art a page draws with (see the header), in this order:
  *   1. the installation's manifest (/data/assets.json — the `base` apply() is given);
@@ -272,11 +275,12 @@ export function createCosmeticLayers() {
   /** @type {{ id: string, ops: any[] }[]} */
   let personal = [];
   let gen = 0;
-  let memo = null; // { base, gen, value }
+  // the manifest drawn with, per base object (data.js's copy and the asset store's may be two: each keeps its own)
+  let memo = new WeakMap(); // base → { gen, value }
   const listeners = new Set();
   const changed = () => {
     gen++;
-    memo = null;
+    memo = new WeakMap();
     for (const fn of [...listeners]) { try { fn(); } catch (err) { console.warn('[assets] cosmetic layer listener failed', err); } }
   };
   return {
@@ -300,10 +304,12 @@ export function createCosmeticLayers() {
     get active() { return !!room || personal.length > 0; },
     apply(base) {
       if (!room && !personal.length) return base;
-      if (memo && memo.base === base && memo.gen === gen) return memo.value;
+      const key = isObj(base) ? base : EMPTY_MANIFEST;
+      const hit = memo.get(key);
+      if (hit && hit.gen === gen) return hit.value;
       let m = room || base;
       for (const p of personal) m = applyOps(m, p.ops);
-      memo = { base, gen, value: m };
+      memo.set(key, { gen, value: m });
       return m;
     },
     /** `fn()` after every change; returns the unsubscribe. */
@@ -949,7 +955,7 @@ export function createAssets(options) {
     return localPromise;
   }
 
-  const m = () => (layers ? layers.apply(manifest || {}) : manifest || {});
+  const m = () => (layers ? layers.apply(manifest || EMPTY_MANIFEST) : manifest || {});
   // a layer switched on or off draws like a manifest that arrived: the views re-resolve their art (render/app.js)
   if (layers) layers.subscribe(() => notify('manifest'));
   return {

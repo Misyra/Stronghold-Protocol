@@ -49,12 +49,14 @@ export function roomPluginFacts(room, myId) {
 
 /**
  * The ids room.setPlugins sends when the host switches `id` on or off: the plugins the host chose, without the
- * automatic ones (the server adds what the chosen ones require).
- * @param {string[]} chosen @param {string} id @param {boolean} on
+ * automatic ones (the server adds what the chosen ones require) and without one the server no longer offers (`offered`:
+ * the ids of the catalogue's room plugins, once it is loaded — removed, skipped or of another scope now: sending it again
+ * would refuse every switch). null while the catalogue is not loaded: the choice is sent as it is.
+ * @param {string[]} chosen @param {string} id @param {boolean} on @param {Set<string> | null} [offered]
  * @returns {string[]}
  */
-export function nextChoice(chosen, id, on) {
-  const out = chosen.filter((x) => x !== id);
+export function nextChoice(chosen, id, on, offered = null) {
+  const out = chosen.filter((x) => x !== id && (!offered || offered.has(x)));
   if (on) out.push(id);
   return out;
 }
@@ -89,7 +91,9 @@ export function PluginPanel({ open, room, myId, onClose }) {
   useEffect(() => { alive.current = true; loadCatalog({ force: true }); return () => { alive.current = false; }; }, []);
   const f = roomPluginFacts(room, myId);
   const offered = cosmeticPlugins(cat.plugins, 'room');
-  // a plugin the room has that the catalogue no longer lists (removed meanwhile) still shows, by its id
+  const offeredIds = cat.status === 'ready' ? new Set(offered.map((p) => p.id)) : null;
+  // a plugin the room has that the catalogue no longer offers (removed, skipped, another scope now) still shows, by its
+  // id: its switch only turns it off
   const rows = [...offered, ...f.plugins.filter((p) => !offered.some((o) => o.id === p.id)).map((p) => ({ id: p.id, version: p.version, missing: true }))];
   const nameOf = (id) => { const p = cat.plugins.find((x) => x.id === id); return p ? pluginName(p) : String(id ?? ''); };
   const toggle = async (id, on) => {
@@ -97,7 +101,7 @@ export function PluginPanel({ open, room, myId, onClose }) {
     inFlight.current = true;
     setBusy(id);
     try {
-      await net.request('room.setPlugins', { plugins: nextChoice(f.chosen, id, on).map((x) => ({ id: x })) });
+      await net.request('room.setPlugins', { plugins: nextChoice(f.chosen, id, on, offeredIds).map((x) => ({ id: x })) });
     } catch (err) { toastError(err); } finally {
       inFlight.current = false;
       if (alive.current) setBusy(null);
@@ -121,7 +125,7 @@ export function PluginPanel({ open, room, myId, onClose }) {
           const auto = f.auto.has(p.id);
           return html`<li key=${p.id} class=${cx('plugrow', on && 'is-on')} data-plugin=${p.id}>
             <button type="button" role="switch" aria-checked=${on ? 'true' : 'false'} class=${cx('set-toggle plugrow__switch', on && 'is-on')}
-              disabled=${!f.editable || !!busy || p.missing || (auto && on)} aria-label=${pluginName(p)}
+              disabled=${!f.editable || !!busy || (p.missing && !on) || (auto && on && !p.missing)} aria-label=${pluginName(p)}
               onClick=${() => toggle(p.id, !on)}><i></i><span>${on ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
             <div class="plugrow__body">
               <div class="plugrow__name"><b>${pluginName(p)}</b>${p.version ? html`<span class="num t-dim">v${p.version}</span>` : null}

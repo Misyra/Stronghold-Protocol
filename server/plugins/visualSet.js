@@ -14,9 +14,11 @@
 // the asset index, not `vs` [ASSUMED: not immutable as the design study had it — 0.2.6's content-hashed asset URLs came
 // after it]. A set is known once something resolved it — a room's host chose it (resolve) or a browser asked for the
 // set of one plugin the catalogue named — and holds the plugins as they were then: a plugin changed on disk afterwards
-// is served at its new bytes under the old URL with `no-cache` (server/http/static.js), a removed one's files 404. The
-// 256 most recently used sets are kept and the documents of the last 8 built [ASSUMED]. A set holds only loaded cosmetic
-// plugins of the scope it is for (room / personal), and serves VISUAL_LIMITS.setBytes (300 MB) of art at most [ASSUMED].
+// is served at its new bytes under the old URL with `no-cache` (server/http/static.js), a removed one's files 404. A set
+// a room uses is held (hold / release: server/lobby.js) and never dropped; of the others the 256 most recently used are
+// kept, and the documents of the last 8 built, one build of a document at a time [ASSUMED]. A set holds only loaded
+// cosmetic plugins of the scope it is for (room / personal), serves VISUAL_LIMITS.setBytes (300 MB) of art at most and
+// copies VISUAL_LIMITS.setCopyBytes (4 MB) of the installation's manifest through references at most [ASSUMED].
 // Nothing here changes a battle: a room's `cs` stays the vanilla one whatever its visual set.
 
 import { createHash } from 'node:crypto';
@@ -50,23 +52,38 @@ const hash16 = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 
  * The visual sets of one server.
  * @param {{ registry: ReturnType<typeof import('./registry.js').createPluginRegistry>,
  *   views?: ReturnType<typeof import('../http/assetViews.js').createManifestViews> | null, log?: object,
- *   limits?: { setBytes: number, warnings: number } }} opts
+ *   limits?: { setBytes: number, setCopyBytes: number, warnings: number }, maxSets?: number }} opts
  *   registry: the plugin registry (its loaded cosmetic plugins, the installation's art manifest); views: the served
- *   manifests (none: the committed data/assets.json is the base)
+ *   manifests (none: the committed data/assets.json is the base); maxSets: the sets kept that no room holds (256)
  */
-export function createVisualSets({ registry, views = null, log = noopLog, limits = VISUAL_LIMITS }) {
+export function createVisualSets({ registry, views = null, log = noopLog, limits = VISUAL_LIMITS, maxSets = MAX_SETS }) {
   /** @type {Map<string, KnownSet>} */
   const sets = new Map();
+  /** @type {Map<string, number>} vs16 → how many rooms hold the set (never dropped while held) */
+  const held = new Map();
   /** @type {Map<string, { body: Buffer, hash: string }>} */
   const docs = new Map();
+  /** @type {Map<string, Promise<{ body: Buffer, hash: string } | null>>} documents being built (one build each) */
+  const building = new Map();
   /** @type {{ hash: string, doc: any } | null} the last parsed view of data/assets.json */
   let parsedView = null;
   const warned = new Set();
 
+  /**
+   * Keep a set (most recently used last); of the sets no room holds, keep the `maxSets` most recently used — never
+   * dropping the one just kept (a room's host is about to hold it: server/lobby.js setPlugins).
+   */
   const remember = (key, set) => {
     sets.delete(key);
     sets.set(key, set);
-    while (sets.size > MAX_SETS) sets.delete(sets.keys().next().value);
+    let free = 0;
+    for (const k of sets.keys()) if (!held.has(k)) free++;
+    for (const k of [...sets.keys()]) {
+      if (free <= maxSets) break;
+      if (k === key || held.has(k)) continue;
+      sets.delete(k);
+      free--;
+    }
   };
   const snapshot = (p) => ({ id: p.id, ops: p.visual.ops, shas: Object.fromEntries([...p.visual.served].map(([rel, f]) => [rel, f.sha256])) });
   /** Is `p` a loaded cosmetic plugin with an overlay (of `scope`, when given)? */
@@ -93,6 +110,8 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
     const list = r.order.map((id) => /** @type {Plugin} */ (registry.plugin(id)));
     const bytes = list.reduce((n, p) => n + p.visual.bytes, 0);
     if (bytes > limits.setBytes) return { error: ERR.PLUGIN_LIMIT, detail: `${Math.ceil(bytes / 1048576)} MB of art, more than ${Math.floor(limits.setBytes / 1048576)} MB` };
+    const copied = list.reduce((n, p) => n + (p.visual.copyBytes || 0), 0);
+    if (copied > limits.setCopyBytes) return { error: ERR.PLUGIN_LIMIT, detail: `its references copy ${(copied / 1048576).toFixed(1)} MB of the art manifest, more than ${limits.setCopyBytes / 1048576} MB` };
     const merged = mergePluginOps(list.map((p) => ({ id: p.id, ops: p.visual.ops })));
     /** @type {SetWarning[]} */
     const warnings = [
@@ -139,7 +158,7 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
   }
 
   /**
-   * A set's document (see the header), built on first request.
+   * A set's document (see the header), built on first request — once: a request while it is being built waits for it.
    * @param {string} vs16 the first 16 hex digits of its vs
    * @param {'assets' | 'overlay'} kind
    * @returns {Promise<{ body: Buffer, hash: string } | null>} null for a set this server does not know
@@ -152,6 +171,15 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
     const key = `${vs16}|${kind}|${b.hash}`;
     const hit = docs.get(key);
     if (hit) { docs.delete(key); docs.set(key, hit); return hit; }
+    const pending = building.get(key);
+    if (pending) return pending;
+    const p = Promise.resolve().then(() => build(set, vs16, kind, b, key)).finally(() => building.delete(key));
+    building.set(key, p);
+    return p;
+  }
+
+  /** Build a document (doc) and keep it. */
+  function build(set, vs16, kind, b, key) {
     const ops = [];
     for (const p of set.plugins) {
       const r = resolveOps(p.ops, { id: p.id, sha: (rel) => p.shas[rel] ?? null, base: b.doc });
@@ -173,6 +201,10 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
   return {
     resolve,
     doc,
+    /** A room uses the set of `vs` (server/lobby.js): it is never dropped until every holder released it. @param {string} vs */
+    hold(vs) { const k = vsUrlPart(vs); held.set(k, (held.get(k) || 0) + 1); },
+    /** A room no longer uses the set of `vs`. @param {string} vs */
+    release(vs) { const k = vsUrlPart(vs); const n = (held.get(k) || 0) - 1; if (n > 0) held.set(k, n); else held.delete(k); },
     /** A file a loaded cosmetic plugin serves (registry pluginFile). @param {string} id @param {string} rel */
     file: (id, rel) => registry.pluginFile(id, rel),
     /** A served file was found changed on disk: the registry reads the folders again (at most every 5 s). */
@@ -185,6 +217,6 @@ export function createVisualSets({ registry, views = null, log = noopLog, limits
         setImmediate(() => { try { registry.rescan?.(); } catch (e) { log.error?.('[plugins] rescan failed', e); } });
       };
     })(),
-    stats: () => ({ sets: sets.size, docs: docs.size }),
+    stats: () => ({ sets: sets.size, held: held.size, docs: docs.size }),
   };
 }

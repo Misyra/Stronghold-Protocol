@@ -492,7 +492,7 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
 - The server strips the segment and serves the file at the plain path. When the segment names the file's current bytes
   (its own hash, or its model's) the answer is `Cache-Control: public, max-age=31536000, immutable`; any other segment —
   a page loaded before an update, a URL derived from another file's — gets the current file with `no-cache`, so an old
-  page keeps working. The ETag of every indexed file is its content hash (`"398f32e2ff78d9e6"`, plus `-gz` when
+  page keeps working. The ETag of every indexed file is its content hash (`"398f32e2ff78d9e6"`, plus `-br` / `-gz` when
   compressed), on the plain URL too.
 - A path segment, never `?v=`: `assets.js validSpine` matches `/\.skel$/`, `audio.js SKILL_MODE_FILE` the `.mp3` ending,
   pixi-spine takes the atlas name from the skeleton's basename and resolves the pages against the atlas's folder — a

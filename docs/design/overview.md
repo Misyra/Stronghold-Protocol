@@ -47,7 +47,7 @@ server/
     static.js              mounts / → public, /data/, /shared/, /sim/ (.js only), the /data.js browser stand-in, path guards,
                            the ~<hash> segment of /assets/ /fonts/ /media/ URLs stripped (immutable when it names the file)
     media.js               /media/… extension-less audio → public/assets/audio
-    files.js               one file → response: MIME, gzip (.skel/.atlas/.json/.js/.css …), ETag (content hash when known) / 304,
+    files.js               one file → response: MIME, brotli q5 / gzip (.skel/.atlas/.json/.js/.css …), ETag (content hash when known) / 304,
                            cache policy, ranges; serveBuffer for the served manifests
     buildTag.js            build tag of the served browser runtime (/healthz build, public/js/ui/buildGuard.js)
     routes.js              request listener: 414 / 400 / 405 guards, GET /healthz (?traffic=1: the counters), then static files

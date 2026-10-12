@@ -34,7 +34,7 @@ import { MEDIA_PREFIX } from '../../shared/media.js';
 import { splitHashedPath } from '../../shared/assetPaths.js';
 import { ROOT, noopLog } from './config.js';
 import { sendError, sendJson } from './common.js';
-import { MIME, GzipCache, isNotModified, serveFile, serveBuffer } from './files.js';
+import { MIME, CompressCache, isNotModified, serveFile, serveBuffer } from './files.js';
 import { ASSET_INDEX_ROOTS, hashedFileOpts } from './assetIndex.js';
 import { serveMedia } from './media.js';
 import { createPackRegistry } from '../packs.js';
@@ -81,7 +81,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   ];
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
-  const gzipCache = new GzipCache();
+  const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
 
   return async function serveStatic(req, res, rawPath, query) {
     let decoded;

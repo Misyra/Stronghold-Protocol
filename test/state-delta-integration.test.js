@@ -23,6 +23,45 @@ async function fixture(t, opts = {}) {
   return { srv, connect };
 }
 
+test('real room broadcast burst: sliced mixed-client sends preserve state/private/result order', async (t) => {
+  const { srv, connect } = await fixture(t);
+  const modern = await connect(true), legacy = await connect(false), spectator = await connect(true);
+  await modern.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+  const state = await modern.waitFor('room.state');
+  await legacy.request({ t: 'room.join', code: state.code });
+  await spectator.request({ t: 'room.spectate', code: state.code });
+  const room = srv.lobby.rooms.get(state.code);
+  for (let n = 0; n < 160; n++) {
+    srv.lobby.broadcastRoom(room, { t: 'm.public', n, stable: 'x'.repeat(600) });
+    srv.lobby.sendToPlayer(room, modern.id, { t: 'm.private', playerId: modern.id, n });
+  }
+  srv.lobby.broadcastRoom(room, { t: 'm.result' });
+  srv.lobby.broadcastRoom(room, { t: 'm.public', n: 160 });
+  assert.ok(srv.network._outbound.size > 0, 'the production room path actually defers writes');
+  for (const c of [modern, spectator]) {
+    const receiver = new StateReceiver();
+    for (let n = 0; n < 160; n++) {
+      const wire = await c.waitFor('m.state', (m) => m.kind === 'm.public');
+      assert.equal(receiver.receive(wire).message.n, n);
+      if (n === 1) assert.ok(wire.patch);
+      if (c === modern) {
+        const privateWire = await c.waitFor('m.state', (m) => m.kind === 'm.private');
+        assert.deepEqual(receiver.receive(privateWire).message, { t: 'm.private', playerId: modern.id, n });
+      }
+    }
+    await c.waitFor('m.result');
+    assert.equal((await c.waitFor('m.state', (m) => m.kind === 'm.public')).full.n, 160);
+  }
+  for (let n = 0; n <= 160; n++) assert.equal((await legacy.waitFor('m.public')).n, n);
+  assert.ok(!spectator.log.some((m) => m.kind === 'm.private' || m.t === 'm.private'));
+  assert.ok(!legacy.log.some((m) => m.t === 'm.state' || m.t === 'm.private'));
+  for (const c of [modern, legacy, spectator]) {
+    const gameplay = c.log.filter((m) => m.t === 'm.public' || m.kind === 'm.public' || m.t === 'm.result');
+    assert.equal(gameplay.at(-2).t, 'm.result');
+    assert.equal(gameplay.length, 162);
+  }
+});
+
 test('real four-player room: mixed clients, exact public delta, private isolation, spectator, full resync/reconnect', async (t) => {
   const { srv, connect } = await fixture(t);
   const modern = await connect(true), legacy = await connect(false), p3 = await connect(true), p4 = await connect(true);

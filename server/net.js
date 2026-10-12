@@ -44,7 +44,7 @@ import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { hasSensitiveNickname } from './moderation/nickname.js';
 import { chatRetentionUntil, CHAT_MUTE_MAX_MS, CHAT_WINDOW_MS } from './moderation/chatState.js';
-import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from './stateTransport.js';
+import { negotiateStateDelta, prepareStateFrame, reserveStateFrame, resetStateDelta } from './stateTransport.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
@@ -345,6 +345,24 @@ export function encode(msg) {
 
 const onSendDone = (err) => { void err; }; // errors surface through the socket's 'error'/'close' events
 
+// Managed sockets share a server-wide send budget, including Lobby's room broadcasts and unicasts.
+// Unmanaged sockets (tools/tests) retain the immediate send helpers.
+const socketNetworks = new WeakMap();
+const capturedMessages = new WeakMap();
+
+// A mutable source object can be reused before every recipient's slice executes. Give each encoding
+// a stable identity so stateTransport's shared snapshot cache never oscillates between old/new views.
+function captureMessage(msg, data, kind) {
+  if (!msg || typeof msg !== 'object') return { t: kind };
+  let captured = capturedMessages.get(msg);
+  if (!captured || captured.data !== data || captured.kind !== kind) {
+    captured = { data, kind, msg: { t: kind } };
+    reserveStateFrame(captured.msg, data);
+    capturedMessages.set(msg, captured);
+  }
+  return captured.msg;
+}
+
 /**
  * Send an already-encoded frame. Skips when the socket is not OPEN, when `droppable` and the socket is
  * congested (> 1 MB queued), and terminates sockets whose queue exceeds 16 MB.
@@ -355,6 +373,13 @@ const onSendDone = (err) => { void err; }; // errors surface through the socket'
  */
 export function sendRaw(ws, data, { droppable = false, kind = null } = {}) {
   if (!ws || ws.readyState !== WS_OPEN || typeof data !== 'string') return false;
+  const network = socketNetworks.get(ws);
+  if (network) return network.queueFrame(ws, { data, droppable, kind, msg: null });
+  return writeRaw(ws, data, { droppable, kind });
+}
+
+/** Actually write a frame; the send pump must not re-enqueue its own writes. */
+function writeRaw(ws, data, { droppable = false, kind = null } = {}) {
   try {
     const queued = ws.bufferedAmount;
     const diagnostics = socketDiagnostics.get(ws);
@@ -383,16 +408,36 @@ export function send(ws, msg, encoded = null) {
   const data = encoded ?? encode(msg);
   if (data == null || !ws || ws.readyState !== WS_OPEN) return false;
   const kind = msg && typeof msg === 'object' && typeof msg.t === 'string' ? msg.t : null;
+  const network = socketNetworks.get(ws);
+  if (network) return network.queueFrame(ws, { data, droppable: isDroppable(msg), kind, msg: captureMessage(msg, data, kind) });
+  return writeMessage(ws, { data, droppable: isDroppable(msg), kind, msg });
+}
+
+/** Prepare deltas only when writing, after every earlier frame on this socket. */
+function writeMessage(ws, { msg, data, droppable, kind }) {
   try {
     const frame = prepareStateFrame(ws, msg, data);
     // Preserve logical message types in wireStats; count the actual full/delta frame length.
-    const queued = sendRaw(ws, frame.data, { droppable: isDroppable(msg), kind });
+    const queued = writeRaw(ws, frame.data, { droppable, kind });
     if (queued) {
       frame.commit();
       if (kind === 'm.result' || kind === 'room.closed') resetStateDelta(ws);
     }
     return queued;
   } catch { return false; }
+}
+
+/** Baseline resets must follow already queued states, so a recovery still starts with a full frame. */
+export function resetSocketState(ws) {
+  const network = socketNetworks.get(ws);
+  if (network) return network.queueFrame(ws, { data: '', droppable: false, kind: null, msg: null, reset: true });
+  resetStateDelta(ws);
+  return true;
+}
+
+function writeFrame(ws, frame) {
+  if (frame.reset) { resetStateDelta(ws); return true; }
+  return frame.msg ? writeMessage(ws, frame) : writeRaw(ws, frame.data, frame);
 }
 
 /**
@@ -624,6 +669,11 @@ export class Network {
     this._fanoutImmediate = null;
     this._fanoutRunning = false;
     this._heartbeatPending = false;
+    /** Per-socket FIFO frames; Map insertion order rotates recipients fairly between slices. */
+    this._outbound = new Map();
+    this._outboundImmediate = null;
+    this._sendVisits = 0;
+    this._sendDeadline = 0;
     this.heartbeatTimer = setInterval(() => this.heartbeat(), this.opts.heartbeatMs);
     this.heartbeatTimer.unref?.();
     const sweepMs = Math.max(20, Math.min(15_000, Math.floor(this.opts.reconnectWindowMs / 4)));
@@ -638,11 +688,83 @@ export class Network {
   bufferedBytes() {
     let total = 0, max = 0;
     for (const conn of this.conns.values()) {
-      const n = conn.ws?.bufferedAmount || 0;
+      const n = (conn.ws?.bufferedAmount || 0) + (this._outbound.get(conn.ws)?.bytes || 0);
       total += n;
       if (n > max) max = n;
     }
     return { total, max };
+  }
+
+  /**
+   * Accept one immutable encoding, preserving FIFO across broadcasts, raw room states and unicasts.
+   * The first 128 writes / 2 ms are immediate; the budget is shared across all rooms until setImmediate.
+   * Deferred bytes count toward the existing snapshot-drop and disconnect limits.
+   * @param {import('ws').WebSocket} ws
+   * @param {{ data: string, droppable: boolean, kind: string | null, msg: object | null, reset?: boolean }} frame
+   */
+  queueFrame(ws, frame) {
+    const conn = this.conns.get(ws);
+    if (this.closed || !conn || conn.closing || ws.readyState !== WS_OPEN) return false;
+    const pending = this._outbound.get(ws);
+    const buffered = (ws.bufferedAmount || 0) + (pending?.bytes || 0);
+    if (buffered > NET_DEFAULTS.hardBufferBytes) {
+      this.diagnostics.slowDisconnects++;
+      try { ws.terminate(); } catch { /* socket already closing */ }
+      return false;
+    }
+    if (frame.droppable && buffered > NET_DEFAULTS.snapDropBytes) {
+      this.diagnostics.droppedSnapshots++;
+      return false;
+    }
+    // Transport probes carry no game state and may bypass queued gameplay frames.
+    if (frame.kind === 'pong') return writeMessage(ws, frame);
+    if (!this._sendVisits) this._sendDeadline = performance.now() + 2;
+    if (!pending && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
+      this._sendVisits++;
+      this._scheduleOutbound();
+      return writeFrame(ws, frame);
+    }
+    const queue = pending || { frames: [], head: 0, bytes: 0 };
+    queue.frames.push(frame);
+    queue.bytes += Buffer.byteLength(frame.data);
+    if (!pending) this._outbound.set(ws, queue);
+    this._scheduleOutbound();
+    return true;
+  }
+
+  _scheduleOutbound() {
+    if (this._outboundImmediate !== null || this.closed) return;
+    this._outboundImmediate = setImmediate(() => {
+      this._outboundImmediate = null;
+      this._sendVisits = 0;
+      this._sendDeadline = 0;
+      this._pumpOutbound();
+    });
+    this._outboundImmediate.unref?.();
+  }
+
+  /** Drain fairly across sockets; each socket's broadcast / private / result order stays intact. */
+  _pumpOutbound() {
+    this._sendDeadline = performance.now() + 2;
+    while (!this.closed && this._outbound.size && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
+      const [ws, queue] = this._outbound.entries().next().value;
+      const frame = queue.frames[queue.head];
+      queue.frames[queue.head++] = null; // release processed messages even if a later frame is still queued
+      queue.bytes -= Buffer.byteLength(frame.data);
+      if (queue.head >= 128 && queue.head * 2 >= queue.frames.length) {
+        queue.frames = queue.frames.slice(queue.head);
+        queue.head = 0;
+      }
+      this._outbound.delete(ws);
+      if (queue.head < queue.frames.length) this._outbound.set(ws, queue);
+      this._sendVisits++;
+      const conn = this.conns.get(ws);
+      if (conn && !conn.closing && ws.readyState === WS_OPEN) {
+        writeFrame(ws, frame);
+      } else this._outbound.delete(ws);
+    }
+    // A final empty turn resets the shared budget even when small-room broadcasts drained synchronously.
+    if (this._sendVisits || this._outbound.size) this._scheduleOutbound();
   }
 
   /**
@@ -688,16 +810,15 @@ export class Network {
   }
 
   /**
-   * Reserved global-announcement entry point (no callers yet): encode once and queue the frame for every
-   * open, non-closing socket through the pumped fanout. Per-socket FIFO order and the usual send() path
-   * (stateTransport passthrough, backpressure guards) apply unchanged.
+   * Global broadcast: the same send budget also serves Lobby.broadcastRoom / broadcastState / unicasts.
+   * Capture recipients now, encode once, and defer expensive writes / state deltas through queueFrame.
    * @param {object} msg
    */
   broadcastAll(msg) {
     if (this.closed) return;
     const data = encode(msg);
     if (data == null) return;
-    this._eachConnection((conn) => { if (!conn.closing) send(conn.ws, msg, data); });
+    for (const conn of this.conns.values()) if (!conn.closing) send(conn.ws, msg, data);
   }
 
   /**
@@ -723,6 +844,7 @@ export class Network {
     if (this.closed) { try { ws.close(CLOSE.SHUTDOWN, 'server shutdown'); } catch { /* ignore */ } return; }
     const conn = new Connection(ws, clientAddress(req, this.opts.trustProxy), this.now(), this.opts);
     this.conns.set(ws, conn);
+    socketNetworks.set(ws, this);
     socketDiagnostics.set(ws, this.diagnostics);
     if (conn.key) this.connsPerKey.set(conn.key, (this.connsPerKey.get(conn.key) || 0) + 1);
     ws.on('message', (data, isBinary) => {
@@ -868,6 +990,8 @@ export class Network {
 
   /** @param {Connection} conn */
   onClose(conn) {
+    socketNetworks.delete(conn.ws);
+    this._outbound.delete(conn.ws);
     socketDiagnostics.delete(conn.ws);
     if (this.conns.delete(conn.ws) && conn.key) {
       const n = (this.connsPerKey.get(conn.key) || 1) - 1;
@@ -931,6 +1055,9 @@ export class Network {
     if (this._fanoutImmediate !== null) clearImmediate(this._fanoutImmediate);
     this._fanoutImmediate = null;
     this._fanout.length = 0;
+    if (this._outboundImmediate !== null) clearImmediate(this._outboundImmediate);
+    this._outboundImmediate = null;
+    this._outbound.clear();
     this.diagnostics.close();
     clearInterval(this.heartbeatTimer);
     clearInterval(this.sweepTimer);

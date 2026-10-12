@@ -1448,7 +1448,19 @@ export class UnitView {
     // 狼影 pips under the bars (b.snap `wolves`), then the element gauge row under them (b.snap `elem`); redeploy ring above a
     // knocked-down operator (b.snap `down`)
     let rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
-    rowsTop += this._updateAmmoText(showSp && !!ammo, x0 + bw / 2, rowsTop, s);
+    let text = this.ammoText;
+    if (showSp && ammo) {
+      if (!text) {
+        text = this.ammoText = new this.P.Text('', { fontFamily: 'Bender, Oxanium, sans-serif', fontSize: 16, fontWeight: '700', fill: COLORS.ammo, stroke: '#0b0f0e', strokeThickness: 3 });
+        text.anchor.set(0.5, 0);
+        this.hud.addChild(text);
+      }
+      text.text = `${this.ammo[0]}/${this.ammo[1]}`;
+      text.scale.set(clamp(s * 0.2, 10, 16) / 16);
+      text.position.set(x0 + bw / 2, rowsTop + 3);
+      text.visible = true;
+      rowsTop += text.height + 6;
+    } else if (text) text.visible = false;
     const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
     const coinH = this._updateCoins(showBars && !this.isEnemy && !!this.coins, x0, rowsTop + wolfH, s);
     this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + 1, spH, s, t);
@@ -1474,22 +1486,6 @@ export class UnitView {
       pip.position.set(this.screen.x - s * 0.36 + i * (ps + 1), this.screen.y - s * 0.05);
       pip.visible = this.alive;
     }
-  }
-
-  /** Exact snapshot counts, including extra rounds and refills; readable even when the cells are too narrow. */
-  _updateAmmoText(show, x, top, s) {
-    let text = this.ammoText;
-    if (!show) { if (text) text.visible = false; return 0; }
-    if (!text) {
-      text = this.ammoText = new this.P.Text('', { fontFamily: 'Bender, Oxanium, sans-serif', fontSize: 16, fontWeight: '700', fill: COLORS.ammo, stroke: '#0b0f0e', strokeThickness: 3 });
-      text.anchor.set(0.5, 0);
-      this.hud.addChild(text);
-    }
-    text.text = `${this.ammo[0]}/${this.ammo[1]}`;
-    text.scale.set(clamp(s * 0.2, 10, 16) / 16);
-    text.position.set(x, top + 3);
-    text.visible = true;
-    return text.height + 6;
   }
 
   /**

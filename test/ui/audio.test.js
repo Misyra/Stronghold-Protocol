@@ -577,6 +577,63 @@ describe('AudioManager', () => {
       globalThis.fetch = origFetch;
     }
   });
+  test('BGM is not downloaded while the music is muted or at volume 0; the wanted track starts once it is audible', async () => {
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    const urls = [];
+    globalThis.fetch = async (u) => { urls.push(u); return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }; };
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    const lobby = manifest.audio.bgm.lobby.loop;
+    const prep = manifest.audio.bgm.prep.loop;
+    assert.notEqual(lobby, prep, 'premise: two different loops');
+    try {
+      const a = new AudioManager({ win: fw.win, getManifest: () => manifest });
+      a.setVolumes({ muted: true });
+      a.install();
+      a.playBgm('lobby');
+      fw.fire('pointerdown');
+      await tick();
+      assert.equal(a.unlocked, true);
+      assert.equal(a.bgmSilent, true);
+      assert.ok(!asked(urls, lobby) && !asked(urls, manifest.audio.bgm.lobby.intro), 'muted: nothing fetched at unlock');
+      a.playBgm('prep');
+      await tick();
+      assert.ok(!asked(urls, prep), 'muted: a phase change fetches nothing');
+      assert.equal(a.wantBgm, 'prep', 'the wanted track is remembered');
+      a.setVolumes({ muted: false });
+      await tick();
+      assert.ok(asked(urls, prep), 'unmuted: the track the screen wants now is fetched');
+      assert.ok(!asked(urls, lobby), 'never the track wanted before');
+      assert.equal(a.bgm?.loopUrl, prep);
+
+      // BGM volume 0 is silent too: another track stops and is not fetched; SFX keep playing
+      a.setVolumes({ bgm: 0 });
+      a.playBgm('lobby');
+      await tick();
+      assert.ok(!asked(urls, lobby), 'BGM volume 0: no download');
+      assert.equal(a.bgm, null, 'the other track stopped');
+      a.sfx('buy');
+      await tick();
+      assert.ok(asked(urls, manifest.audio.sfx.ui.buy), 'SFX are not gated by the BGM volume');
+      a.setVolumes({ bgm: 0.5 });
+      await tick();
+      assert.ok(asked(urls, lobby), 'audible again: fetched');
+      assert.equal(a.bgm?.loopUrl, lobby);
+
+      // the loop that already plays keeps playing through a silent phase change, and is not fetched again
+      a.setVolumes({ muted: true });
+      const n = urls.length;
+      const started = fw.made.started;
+      a.playBgm('lobby');
+      a.setVolumes({ muted: false });
+      await tick();
+      assert.equal(a.bgm?.loopUrl, lobby);
+      assert.equal(urls.length, n, 'no new request');
+      assert.equal(fw.made.started, started, 'no restart');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
   test('fetch failures are swallowed', async () => {
     const fw = fakeWindow();
     const origFetch = globalThis.fetch;

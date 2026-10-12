@@ -37,7 +37,12 @@ export const LIGHTING = Object.freeze({
   key: { color: 0xfff1df, intensity: 2.6, dir: [-5.2, -3.4, 10] },
   hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.6 },
   env: 1.0,
-  emissive: 0.25,
+  // MT_autochess._EmissionColor = (1,1,1) and MT_autochess_common._EmissionColor = 0.5588, both with an
+  // _EmissionMap — the official board is emissive, not lamp-lit. boardMaterial's own default is 1 (its emissive /
+  // emissiveMap come straight from those two materials); LIGHTING.emissive used to scale it down to 0.25, which is
+  // what made our board read darker than the official render (issue #549). decalMaterial (the _common atlas) keeps
+  // the official 0.559 of its own.
+  emissive: 1,
   roughness: 0.78,
   shadow: { size: 2048, radius: 3, bias: -0.0004, normalBias: 0.025 },
   exposure: 1.0,

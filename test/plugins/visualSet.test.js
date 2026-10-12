@@ -64,7 +64,6 @@ describe('the visual sets of a server', () => {
   let visual;
   let assetIndex;
   let server;
-  let base;
   const get = (rawPath, headers = {}) => new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: rawPath, headers, agent: false }, (res) => {
       const chunks = [];
@@ -93,7 +92,6 @@ describe('the visual sets of a server', () => {
     const serveStatic = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: registry, views, assetIndex, visual });
     server = http.createServer((req, res) => { const p = splitUrl(req.url); serveStatic(req, res, p.rawPath, p.query).catch(() => res.destroy()); });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
-    base = `http://127.0.0.1:${server.address().port}`;
   });
   after(async () => {
     await new Promise((r) => server.close(r));

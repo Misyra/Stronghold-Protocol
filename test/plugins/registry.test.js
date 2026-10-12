@@ -17,6 +17,9 @@ import { scanPlugins, scanPacks, packIndexOf, createPluginRegistry, readPluginFo
 import * as compat from '../../server/packs.js';
 import { readPackIndex } from '../../shared/packs.js';
 import { selectTracked } from '../../tools/package.mjs';
+import { writePackIndex } from '../../tools/packs.mjs';
+import { serveDirs } from '../../server/http/config.js';
+import { createStaticHandler } from '../../server/http/static.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmpdir = (tag) => fs.mkdtempSync(path.join(os.tmpdir(), `sp-plugins-${tag}-`));
@@ -181,6 +184,46 @@ test('links: a symbolic link inside a plugin folder keeps it out; a plugin folde
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
   }
+});
+
+test('one unreadable entry never stops the scan, the registry or the server: JSON nested too deep to quote back', async () => {
+  const root = exampleRoot();
+  const deep = (n) => `{"manifest":${'['.repeat(n)}${']'.repeat(n)}}`;
+  put(root, 'plugins/deep-one/plugin.json', deep(20000));
+  put(root, 'packs/deep-pack/pack.json', `{"type":"lang","lang":"qaz","files":{"ui":"ui.json"},"machineTranslated":${'['.repeat(20000)}${']'.repeat(20000)}}`);
+  put(root, 'packs/deep-pack/ui.json', { 开始: 'z' });
+  try {
+    const scan = scanPlugins(dirsOf(root), { app: '0.3.0' });
+    const why = Object.fromEntries(scan.skipped.map((s) => [s.where, s.problems.join('; ')]));
+    assert.match(why['plugins/deep-one/'], /"manifest": \[…\] is not 2/);
+    assert.ok(scan.plugins.some((p) => p.id === 'deep-pack'), 'a deep but ignorable value only warns (0.2.0 stopped the whole scan here)');
+    assert.ok(scan.plugins.some((p) => p.id === 'marathon'), 'the other entries are read');
+    const { startServer } = await import('../../server/index.js');
+    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: path.join(root, 'public'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins') });
+    try {
+      assert.equal((await fetch(`${srv.url}/plugins/index.json`)).status, 200);
+      assert.equal((await fetch(`${srv.url}/packs/index.json`)).status, 200);
+    } finally { await srv.close(); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the plugins folder defaults to the one beside the packs folder; a static index lists packs only; a 0.2.0-shaped registry gets an empty catalogue', async () => {
+  assert.equal(serveDirs({ packsDir: path.join(os.tmpdir(), 'x', 'packs') }).pluginsDir, path.join(os.tmpdir(), 'x', 'plugins'), 'a test\'s own packs: never this checkout\'s plugins');
+  assert.equal(serveDirs({}).pluginsDir, path.join(ROOT, 'plugins'));
+  assert.equal(serveDirs({ pluginsDir: '/p' }).pluginsDir, '/p');
+  const root = exampleRoot();
+  try {
+    const body = writePackIndex(root);
+    assert.deepEqual(body.packs.map((p) => p.id), ['en', 'qaa', 'qab'], 'a static host could not serve a lang plugin\'s files at /packs/<id>/');
+    const old = { refresh() {}, list: () => [], index: () => ({ version: 1, app: '0.2.0', packs: [] }), report: () => ({ skipped: [], warnings: [] }), servable: () => null };
+    const serve = createStaticHandler({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(ROOT, 'shared'), packs: old, content: { cs: 'ab'.repeat(32) } });
+    const out = { status: 0, body: '' };
+    const res = { writeHead(st) { out.status = st; }, setHeader() {}, end(b) { out.body = b ? b.toString() : ''; } };
+    await serve({ method: 'GET', headers: {} }, res, '/plugins/index.json', '');
+    assert.equal(out.status, 200);
+    assert.deepEqual(JSON.parse(out.body).plugins, []);
+    assert.deepEqual(JSON.parse(out.body).content, { vanilla: 'ab'.repeat(32) });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test('the server: GET /plugins/index.json (never cached, the vanilla hash), a lang plugin through /packs/, nothing else of plugins/ served', async () => {

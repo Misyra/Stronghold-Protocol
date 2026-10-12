@@ -17,9 +17,12 @@
 //     manifest.js buildPluginIndex; the vanilla content hash beside it — server/plugins/identity.js).
 // In this version only the lang class loads. A cosmetic or content plugin is validated and listed as `planned` (P1: the
 // art and data plugins, not applied yet); a script, ui or trusted one is listed as `unsupported` and never loaded (no
-// third-party code runs — the owner's decision of 2026-10-12). Nothing of a plugin folder is served yet.
+// third-party code runs — the owner's decision of 2026-10-12). Of a plugin folder only the files a lang manifest names
+// are served (at /packs/<id>/<file>); nothing of any other class.
 // A broken manifest, a file the class may not carry, a second entry with an id (any case: one folder on Windows /
 // macOS) or a language already taken: reported (`skipped`: the start log, `node tools/plugin.mjs list`), never listed.
+// An entry that cannot even be read (an error while reading it) is skipped the same way: one bad folder never stops
+// the scan, the index or the server's start.
 // The folders are re-read when something in them changes (checked when the index or a pack file is asked for, at most
 // once a second: a few stat calls), so a language pack or a plugin dropped in shows on the next page load — no restart.
 // server/packs.js re-exports the pack API of this file for its old callers.
@@ -170,22 +173,31 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
   const skipped = [];
   const warnings = [];
   const warn = (where, list) => { for (const w of list) warnings.push({ where, warning: w }); };
+  /** Read one entry; an error while reading it skips that entry with the error as its problem (see the header). */
+  const guard = (where, read) => {
+    try { read(); } catch (e) { skipped.push({ where, problems: [`could not be read: ${String(e?.message || e).slice(0, 200)}`] }); }
+  };
 
   // single-file language packs: public/i18n/<code>.json
   const uiDir = path.join(publicDir, LANG_DIR);
   for (const name of readDirSorted(uiDir)) {
     if (!name.endsWith('.json')) continue;
-    const code = name.slice(0, -5);
     const where = `public/${LANG_DIR}/${name}`;
-    if (!isLangCode(code)) { skipped.push({ where, problems: [`"${code}" is not a language code in its usual case (en, ja, zh-TW, pt-BR …)`] }); continue; }
-    if (code === SOURCE_LANG) { skipped.push({ where, problems: ['"zh" is the source language (the msgids), never a pack'] }); continue; }
+    guard(where, () => readLangFile(name, where));
+  }
+
+  /** One single-file language pack. @param {string} name @param {string} where */
+  function readLangFile(name, where) {
+    const code = name.slice(0, -5);
+    if (!isLangCode(code)) { skipped.push({ where, problems: [`"${code}" is not a language code in its usual case (en, ja, zh-TW, pt-BR …)`] }); return; }
+    if (code === SOURCE_LANG) { skipped.push({ where, problems: ['"zh" is the source language (the msgids), never a pack'] }); return; }
     const abs = path.join(uiDir, name);
     const r = readJson(abs);
-    if (r.error) { skipped.push({ where, problems: [r.error] }); continue; }
-    if (!r.json || typeof r.json !== 'object' || Array.isArray(r.json)) { skipped.push({ where, problems: ['not a JSON object of msgid → translation'] }); continue; }
+    if (r.error) { skipped.push({ where, problems: [r.error] }); return; }
+    if (!r.json || typeof r.json !== 'object' || Array.isArray(r.json)) { skipped.push({ where, problems: ['not a JSON object of msgid → translation'] }); return; }
     const { manifest, problems, warnings: w } = normalizeManifest(r.json._meta, { id: code, type: 'lang', lang: code, app });
     warn(where, w);
-    if (!manifest) { skipped.push({ where, problems }); continue; }
+    if (!manifest) { skipped.push({ where, problems }); return; }
     /** @type {Record<string, PackFile>} */
     const files = { ui: { rel: name, abs, url: `/${LANG_DIR}/${name}` } };
     const dataAbs = path.join(dataDir, LANG_DIR, name);
@@ -200,21 +212,26 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
     try { st = fs.statSync(dir); } catch { continue; }
     if (!st.isDirectory()) continue;
     const where = `packs/${id}/`;
+    guard(where, () => readPackFolder(id, dir, where));
+  }
+
+  /** One pack folder. @param {string} id @param {string} dir @param {string} where */
+  function readPackFolder(id, dir, where) {
     const man = path.join(dir, PACK_MANIFEST);
     if (!isFile(man)) {
       const hint = isFile(path.join(dir, PLUGIN_MANIFEST)) ? ` (${PLUGIN_MANIFEST} belongs in plugins/${id}/)` : '';
       skipped.push({ where, problems: [`no ${PACK_MANIFEST}${hint}`] });
-      continue;
+      return;
     }
     const r = readJson(man);
-    if (r.error) { skipped.push({ where, problems: [`${PACK_MANIFEST}: ${r.error}`] }); continue; }
+    if (r.error) { skipped.push({ where, problems: [`${PACK_MANIFEST}: ${r.error}`] }); return; }
     const { manifest, problems, warnings: w } = normalizeManifest(r.json, { id, folder: true, app });
     warn(where, w);
-    if (!manifest) { skipped.push({ where, problems }); continue; }
+    if (!manifest) { skipped.push({ where, problems }); return; }
     const kind = PACK_TYPES[manifest.type];
     if (kind.status !== 'supported') {
       skipped.push({ where, problems: [`type "${manifest.type}" is planned (${kind.summary}), not loaded by this version — its successor is a ${kind.class} plugin (plugins/<id>/${PLUGIN_MANIFEST}, docs/PLUGINS.md)`] });
-      continue;
+      return;
     }
     /** @type {Record<string, PackFile>} */
     const files = {};
@@ -225,14 +242,14 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
       else if (!inside(dir, abs)) missing.push(`files.${role}: ${rel} leads out of the pack folder`);
       else files[role] = { rel, abs, url: fileUrl(id, rel) };
     }
-    if (missing.length) { skipped.push({ where, problems: missing }); continue; }
+    if (missing.length) { skipped.push({ where, problems: missing }); return; }
     /** @type {Plugin} */
     const pack = { id, type: manifest.type, class: manifest.class, status: 'loaded', source: 'packs', layout: 'folder', where, supported: true, manifest, files };
     if (manifest.type === 'lang') {
       const ui = readJson(files.ui.abs);
       if (ui.error || !ui.json || typeof ui.json !== 'object' || Array.isArray(ui.json)) {
         skipped.push({ where, problems: [`files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`] });
-        continue;
+        return;
       }
       pack.strings = countStrings(ui.json);
     }
@@ -248,10 +265,12 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
       try { st = fs.statSync(dir); } catch { continue; }
       if (!st.isDirectory()) continue;
       const where = `plugins/${id}/`;
-      const r = readPluginFolder(dir, { app, api, where });
-      warn(where, r.warnings);
-      if (!r.plugin) { skipped.push({ where, problems: r.problems }); continue; }
-      found.push(r.plugin);
+      guard(where, () => {
+        const r = readPluginFolder(dir, { app, api, where });
+        warn(where, r.warnings);
+        if (!r.plugin) skipped.push({ where, problems: r.problems });
+        else found.push(r.plugin);
+      });
     }
   }
 
@@ -361,8 +380,8 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     const s = signature(dirs);
     if (state && s === sig) return state;
     const first = !state;
-    sig = s;
     const scan = scanPlugins(dirs, { app });
+    sig = s; // after the scan: a scan that throws is tried again on the next look
     const packs = scan.plugins.filter((p) => p.supported);
     state = { ...scan, packs, index: packIndexOf(packs, { app }), byId: new Map(scan.plugins.map((p) => [p.id, p])) };
     const line = `[packs] ${packs.length ? packs.map((p) => `${p.type} ${p.type === 'lang' ? p.manifest.lang : p.id} (${p.manifest.name})`).join(', ') : 'none'}`;

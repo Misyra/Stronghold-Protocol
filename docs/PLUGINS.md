@@ -17,7 +17,7 @@ finds, checks and lists plugins and names its content with a hash; it applies no
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `tools/plugin.mjs` | `list`, `check` |
-| `plugins/README.md` | the folder's readme (with `plugins/_template/`, the only tracked files of the folder) |
+| `plugins/README.md` | the folder's readme — the only tracked file of the folder (templates, `plugins/_template/`, will join it with P1) |
 
 ## 1. Principles (the maintainer's decisions of 2026-10-12)
 
@@ -40,8 +40,9 @@ finds, checks and lists plugins and names its content with a hash; it applies no
 Put the folder into `plugins/` (the id is the folder name). `node tools/plugin.mjs list` shows what the registry found,
 by class, with what this version does with each, what was skipped and why; `node tools/plugin.mjs check` checks the
 folders in depth. The server prints the same at start (`[plugins] …`) and notices a new or changed plugin on the next
-page load — no restart. `plugins/` is git-ignored but for its readme and templates, never shipped in a release zip and
-never touched by an update.
+page load — no restart. A server's own plugins are git-ignored (only the folder's readme is tracked and ships in the
+release zips; templates will join it), never packed into a release and never touched by an update. One unreadable
+folder is skipped with its reason; it never stops the server.
 
 What this version does with each class:
 
@@ -161,9 +162,11 @@ public fields, size and file count — never a path on the server.
 
 A language pack is the `lang` class: `public/i18n/<code>.json` (its `_meta`), `packs/<id>/pack.json` (manifest 1) or
 `plugins/<id>/plugin.json` with `"manifest": 2, "class": "lang"` and the same language fields and `files`. All three
-are listed in `/packs/index.json` exactly as before (docs/PACKS.md, docs/I18N.md); `tools/packs.mjs` and
-`tools/i18n.mjs check --all` see them alike. A manifest 1 of the old planned types `assets` / `data` is still reported
-as not loaded: its successor is a `cosmetic` / `content` plugin.
+are listed in the live server's `/packs/index.json` exactly as before (docs/PACKS.md, docs/I18N.md). `tools/plugin.mjs`
+lists a lang plugin with the rest; `tools/packs.mjs` (also its static `index`, whose host could not serve a plugin's
+files at `/packs/<id>/`) and `tools/i18n.mjs` keep reading the language folders and `packs/` only, as in 0.2.0. A
+manifest 1 of the old planned types `assets` / `data` is still reported as not loaded: its successor is a `cosmetic` /
+`content` plugin.
 
 ## 8. Tools
 

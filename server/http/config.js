@@ -54,16 +54,18 @@ export function bindCandidates(host) {
 
 /**
  * The directories the static server reads (packsDir: the pack folders, pluginsDir: the plugin folders —
- * server/plugins/registry.js).
+ * server/plugins/registry.js; default: the plugins/ folder beside packsDir, so a server given its own packs folder —
+ * a test — never reads this checkout's plugins).
  * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string, pluginsDir?: string }} opts
  */
 export function serveDirs(opts) {
+  const packsDir = opts.packsDir || path.join(ROOT, 'packs');
   return {
     publicDir: opts.publicDir || path.join(ROOT, 'public'),
     dataDir: opts.dataDir || path.join(ROOT, 'data'),
     sharedDir: opts.sharedDir || path.join(ROOT, 'shared'),
-    packsDir: opts.packsDir || path.join(ROOT, 'packs'),
-    pluginsDir: opts.pluginsDir || path.join(ROOT, 'plugins'),
+    packsDir,
+    pluginsDir: opts.pluginsDir || path.join(path.dirname(path.resolve(packsDir)), 'plugins'),
   };
 }
 

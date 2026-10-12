@@ -642,12 +642,9 @@ async function cmdExtract(flags) {
 
 // ===== language packs: check, template ===============================================================================
 
-/**
- * The language packs of a checkout (server/packs.js scanPacks — the language folders, packs/ and the lang plugins of
- * plugins/): lang → { pack, json }, plus what was skipped.
- */
+/** The language packs of a checkout (server/packs.js scanPacks): lang → { pack, json }, plus what was skipped. */
 function langPacks(root = ROOT) {
-  const scan = scanPacks({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins') });
+  const scan = scanPacks({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs') });
   const byLang = new Map();
   for (const p of scan.packs) {
     if (p.type !== 'lang') continue;

@@ -165,7 +165,13 @@ const LANG_ONLY = ['files', 'lang', 'base', 'fallback', 'complete', 'machineTran
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : '');
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-const short = (v) => String(JSON.stringify(v)).slice(0, 40);
+/**
+ * A value quoted in a problem or warning, at most 40 characters. Never throws: JSON.parse reads nesting that
+ * JSON.stringify cannot write back (a stack overflow), so such a value is named by its kind.
+ */
+const short = (v) => {
+  try { return String(JSON.stringify(typeof v === 'string' && v.length > 40 ? v.slice(0, 40) : v)).slice(0, 40); } catch { return Array.isArray(v) ? '[…]' : v && typeof v === 'object' ? '{…}' : typeof v; }
+};
 
 /** A pack id (manifest 1): letters, digits, '.', '_', '-' (not first), at most 64. @param {unknown} v */
 export const isPackId = (v) => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v);
@@ -308,8 +314,10 @@ function readLangFields(m, fileLang, out, problems, warnings) {
  * @param {PluginManifest} out
  * @param {string[]} problems
  * @param {string[]} warnings
+ * @param {boolean} [own] warn about every role that is not an own role (manifest 2); manifest 1 keeps 0.2.0's lookup,
+ *   which also passes names of Object.prototype ("constructor", "toString") silently
  */
-function readFileRoles(m, what, folder, out, problems, warnings) {
+function readFileRoles(m, what, folder, out, problems, warnings, own = false) {
   const roles = PACK_TYPES.lang.files;
   const given = isObj(m.files) ? m.files : {};
   for (const [role, spec] of Object.entries(roles)) {
@@ -319,7 +327,7 @@ function readFileRoles(m, what, folder, out, problems, warnings) {
     else if (!spec.ext.includes(extOf(rel))) problems.push(`"files.${role}" must be a ${spec.ext.join(' / ')} file`);
     else out.files[role] = rel;
   }
-  for (const role of Object.keys(given)) if (!has(roles, role)) warnings.push(`"files.${role}" is not a role of ${what} (ignored)`);
+  for (const role of Object.keys(given)) if (own ? !has(roles, role) : !roles[role]) warnings.push(`"files.${role}" is not a role of ${what} (ignored)`);
 }
 
 /**
@@ -690,7 +698,7 @@ export function readPluginManifest(raw, ctx) {
   };
   if (isLang) {
     readLangFields(m, undefined, out, problems, warnings);
-    readFileRoles(m, 'a lang plugin', 'plugin', out, problems, warnings);
+    readFileRoles(m, 'a lang plugin', 'plugin', out, problems, warnings, true);
   }
   out.name ||= id;
   out.englishName ||= out.name;

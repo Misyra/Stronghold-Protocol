@@ -134,6 +134,16 @@ test('manifest 2: what keeps a plugin out', () => {
   assert.match(problemsOf(marathon(), 'my_plug'), /not a plugin id/, 'no underscore: it would collide in record ids');
 });
 
+test('a value JSON.parse reads but JSON.stringify cannot write back (deep nesting) is quoted by its kind, never thrown', () => {
+  const deep = (open, close, n = 20000) => JSON.parse(`${open.repeat(n)}${close.repeat(n)}`);
+  assert.match(readPluginManifest({ manifest: deep('[', ']') }, ctx('deep')).problems.join(), /"manifest": \[…\] is not 2/);
+  assert.match(readPluginManifest({ ...marathon(), api: deep('[', ']') }, ctx('marathon')).problems.join(), /"api": \[…\] is not an integer/);
+  assert.match(readPluginManifest({ ...marathon(), class: { a: deep('[', ']') } }, ctx('marathon')).problems.join(), /unknown class \{…\}/);
+  assert.match(normalizeManifest({ name: 'Q', machineTranslated: deep('[', ']') }, { id: 'qam', type: 'lang', lang: 'qam' }).warnings.join(), /"machineTranslated": \[…\] is not true or false/);
+  assert.equal(normalizeManifest({ name: 'Q', machineTranslated: { yes: 1 } }, { id: 'qam', type: 'lang', lang: 'qam' }).warnings[0],
+    '"machineTranslated": {"yes":1} is not true or false (read as false)', 'an ordinary value is quoted as 0.2.0 quoted it');
+});
+
 test('manifest 2: settings — four types, bounded, no free text', () => {
   const s = (settings) => readPluginManifest({ ...marathon(), settings }, ctx('marathon'));
   const ok = s({
@@ -226,6 +236,11 @@ test('manifest 1: shared/packs.js normalizeManifest is readPackManifest, the 0.2
   assert.match(normalizeManifest({ type: 'theme' }, { id: 'x', folder: true }).problems.join(), /unknown type "theme" \(known: lang, assets, data\)/);
   assert.equal(normalizeManifest({ type: 'lang', lang: 'qab' }, { id: 'qab', folder: true }).manifest, null, 'no files.ui');
   assert.equal(readPackManifest({ name: 'Q' }, { id: 'qaq', type: 'lang', lang: 'qaq' }).manifest.app, '', 'no range: any version');
+  // 0.2.0's role lookup: a role named like an Object.prototype member passed silently, and still does (manifest 2 warns)
+  const proto = { type: 'lang', lang: 'qab', files: { ui: 'ui.json', constructor: 'x.json', toString: 'y.json' } };
+  assert.deepEqual(normalizeManifest(proto, { id: 'qab', folder: true }).warnings, []);
+  assert.deepEqual(readPluginManifest({ manifest: 2, class: 'lang', lang: 'qab', version: '1.0.0', files: proto.files }, ctx('qab')).warnings,
+    ['"files.constructor" is not a role of a lang plugin (ignored)', '"files.toString" is not a role of a lang plugin (ignored)']);
   assert.equal(APP_VERSION.length > 0, true);
 });
 

@@ -12,8 +12,8 @@ folders (manifest, file types, sizes, paths, JSON).
 - classes `cosmetic` (art, models, audio, fonts) and `content` (data: numbers, modes, new operators and enemies) are
   checked and listed, not applied yet;
 - no plugin code runs — classes `script`, `ui` and `trusted` are listed as not supported;
-- nothing in this folder except this readme and `_template/` is committed or shipped: your plugins stay yours, and an
-  update never touches them.
+- nothing in this folder except this readme (and, from the next step, the templates in `_template/`) is committed or
+  shipped: your plugins stay yours, and an update never touches them.
 
 ```json
 {

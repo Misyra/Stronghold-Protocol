@@ -16,7 +16,8 @@
 //                folders of packs/ and the lang plugins of plugins/, re-read when they change; never cached)
 //     /packs/<id>/<file> → a file of a pack or lang plugin folder — only one its manifest names (registry servable)
 //     /plugins/index.json → the plugin catalogue: every plugin and pack found, by class and status, and the vanilla
-//                content hash (DESIGN §31; never cached). No file of a plugin folder is served in this version
+//                content hash (DESIGN §31; never cached). Of plugins/ only the files a lang manifest names are served
+//                (through /packs/<id>/<file>); nothing of another class in this version
 //     /cs/<cs16>/index.json → the manifest of the vanilla content set (server/plugins/identity.js contentIndexOf),
 //                cached for good — only for this server's vanilla `cs` (its first 16 hex digits)
 //
@@ -33,7 +34,7 @@ import { serveMedia } from './media.js';
 import { createPluginRegistry } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
-import { PLUGINS_URL, PLUGIN_INDEX_VERSION } from '../../shared/plugins/manifest.js';
+import { PLUGINS_URL, PLUGIN_INDEX_VERSION, buildPluginIndex } from '../../shared/plugins/manifest.js';
 import { csUrlPart } from '../../shared/plugins/identity.js';
 
 /** Browser stand-in of server/data.js, served at /data.js (see the header). Served byte for byte: its first line names the entry, server/index.js. */
@@ -63,12 +64,13 @@ const IMMUTABLE_JSON = 'public, max-age=31536000, immutable';
  * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, packsDir?: string, pluginsDir?: string,
  *   packs?: ReturnType<typeof createPluginRegistry>, content?: import('../plugins/identity.js').VanillaContent | null,
  *   log?: object }} dirs
- *   packs: the server's plugin registry (default: one over publicDir, dataDir, packsDir and pluginsDir — ROOT/packs,
- *   ROOT/plugins); content: the vanilla content (default: computed from simDir, sharedDir and dataDir on first use)
+ *   packs: the server's plugin registry (default: one over publicDir, dataDir, packsDir and pluginsDir — ROOT/packs, and
+ *   the plugins/ folder beside packsDir); content: the vanilla content (default: computed from simDir, sharedDir and
+ *   dataDir on first use)
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
 export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'),
-  pluginsDir = path.join(ROOT, 'plugins'), packs = null, content = null, log = noopLog }) {
+  pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, log = noopLog }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   let vanilla = content;
   const vanillaContent = () => (vanilla ||= computeVanillaContent({ simDir, sharedDir, dataDir, shim: DATA_SHIM_JS, log: /** @type {any} */ (log) }));
@@ -98,7 +100,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       return;
     }
     // The plugin catalogue (server/plugins/registry.js; never cached) and the vanilla content set's manifest
-    if (decoded === `${PLUGINS_URL}index.json`) { sendJson(req, res, 200, registry.pluginIndex({ vanilla: vanillaContent().cs })); return; }
+    if (decoded === `${PLUGINS_URL}index.json`) {
+      const vanilla = vanillaContent().cs;
+      // a registry of 0.2.0's shape (a caller's own `packs`) has no catalogue: an empty one
+      sendJson(req, res, 200, typeof registry.pluginIndex === 'function' ? registry.pluginIndex({ vanilla }) : buildPluginIndex([], { vanilla }));
+      return;
+    }
     if (decoded.startsWith('/cs/')) {
       const c = vanillaContent();
       if (decoded !== `/cs/${csUrlPart(c.cs)}/index.json`) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }

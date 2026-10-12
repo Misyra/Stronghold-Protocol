@@ -17,8 +17,9 @@ import { createCosmeticLayers, createAssets } from '../../public/js/assets.js';
 import { createDataStore } from '../../public/js/data.js';
 import { createStore } from '../../public/js/store.js';
 import {
-  fetchVisualDoc, installContent, installedCount, personal, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins, pluginName, PERSONAL_PREF,
+  fetchVisualDoc, installContent, installedCount, personal, personalSet, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins, pluginName, PERSONAL_PREF,
 } from '../../public/js/content.js';
+import { ERR } from '../../shared/constants.js';
 import { roomPluginFacts, nextChoice, sizeText, pluginTagText, pluginMicro } from '../../public/js/ui/pluginPanel.js';
 import { visualHashOf } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
@@ -312,6 +313,29 @@ describe('content.js', () => {
     assert.deepEqual(asked, ['/plugins/index.json', `/vs/${mine.visual.vs.slice(0, 16)}/overlay.json`]);
     off();
     personal.set({ ids: [] });
+  });
+
+  test('personal plugins form a set like a room\'s: requirements switched on (「自动」), the load order, a conflicting switch refused', async () => {
+    const e = (id, o = {}) => ({ id, class: 'cosmetic', status: 'loaded', scope: ['personal'], vs: sha256Hex(id), version: '1.0.0', unofficial: true, ...o });
+    const entries = [e('base'), e('top', { requires: { base: '^1.0.0' } }), e('late', { loadAfter: ['zz-first'] }), e('zz-first', { priority: 5 }),
+      e('rival', { conflicts: { top: '*' } }), e('needs-gone', { requires: { gone: '*' } })];
+    assert.deepEqual(personalSet(['top'], entries), { order: ['base', 'top'], auto: ['base'], skipped: [] }, 'its requirement on too');
+    assert.deepEqual(personalSet(['late', 'zz-first'], entries).order, ['zz-first', 'late'], 'loadAfter (and priority) as in a room\'s set');
+    assert.deepEqual(personalSet(['absent', 'base'], entries).order, ['base'], 'a plugin the server lacks: ignored (kept switched on)');
+    // a choice that turned bad since (the server's plugins changed): what still fits, by id
+    assert.deepEqual(personalSet(['rival', 'top'], entries), { order: ['rival'], auto: [], skipped: ['top'] });
+    assert.deepEqual(personalSet(['needs-gone', 'base'], entries), { order: ['base'], auto: [], skipped: ['needs-gone'] });
+    // the switches: a conflict or a missing requirement refused with the room's code; off always works
+    catalog.set({ status: 'ready', plugins: entries, app: null, at: 1 });
+    personal.set({ ids: ['top'] });
+    assert.deepEqual(setPersonalPlugin('rival', true).error, ERR.PLUGIN_CONFLICT);
+    assert.equal(setPersonalPlugin('needs-gone', true).error, ERR.PLUGIN_DEPENDENCY);
+    assert.deepEqual(personal.get().ids, ['top'], 'nothing stored');
+    assert.deepEqual(setPersonalPlugin('late', true), { ok: true });
+    assert.deepEqual(setPersonalPlugin('top', false), { ok: true });
+    assert.deepEqual(personal.get().ids, ['late']);
+    personal.set({ ids: [] });
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
   });
 
   test('loadCatalog: shared while on its way, a failure keeps what was there; the helpers pick the right entries', async () => {

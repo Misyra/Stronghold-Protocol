@@ -9,7 +9,9 @@
 // (SettingsButton, GitHub #238); the title screen and the match have their own gear.
 // 外观插件 (DESIGN §32 P1a, the design study's §7.5): a switch for each cosmetic plugin of scope `personal` the server's
 // catalogue lists (content.js) — kept in this browser (`sp.pref.cosmetics`), never sent, seen by this player alone and
-// never part of a battle; the section is left out when the server has none.
+// never part of a battle; the section is left out when the server has none. The switched-on ones form a set like a
+// room's (content.js personalSet): one another needs is on as 「自动」 and cannot be switched off alone, a switch that
+// would make a conflict is refused with the room's message, and a chosen one left out (it conflicts now) says so.
 //
 // 文字大小 (textSize, applied by applyTextSize): the interface text root `--t` of css/theme.css — a phone clamps the
 // layout root `1rem` at 40 px (theme.css), which left the .18rem body text at 7.2 CSS px while the browser's own font
@@ -29,7 +31,8 @@ import { LangToggle, machineTranslationNote } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
-import { catalog, loadCatalog, cosmeticPlugins, installedCount, personal, personalApplied, pluginName, setPersonalPlugin } from '../content.js';
+import { catalog, loadCatalog, cosmeticPlugins, installedCount, personal, personalApplied, personalSet, pluginName, setPersonalPlugin } from '../content.js';
+import { toast, describeError } from './toasts.js';
 import { pluginMicro } from './pluginPanel.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -249,17 +252,25 @@ function CosmeticSection() {
   useEffect(() => { if (installed) loadCatalog({ force: true }); }, [installed]);
   const list = installed ? cosmeticPlugins(cat.plugins, 'personal') : [];
   if (!list.length) return null;
+  const set = personalSet(ids, list.filter((p) => typeof p.vs === 'string'));
+  const applied = new Set(set.order);
+  const auto = new Set(set.auto);
+  const flip = (id, on) => { const r = setPersonalPlugin(id, on); if ('error' in r) toast(describeError(r.error), 'warn'); };
   return html`<section class="set-plugins" aria-labelledby="set-plugins-title" data-testid="personal-plugins">
     <div class="set-keys__head">
       <span class="set-row__label" id="set-plugins-title">${t('外观插件')}<${MicroLabel}>COSMETIC PLUGINS<//></span>
     </div>
     <p class="set-hint">${t('只改变你自己看到的画面和声音，不影响其他博士，也不影响战斗；插件为非官方制作。')}</p>
     ${list.map((p) => {
-      const on = ids.includes(p.id);
+      // on: applied (chosen, or 「自动」: another one needs it) — or chosen but left out now (a conflict): switch it off
+      const skipped = set.skipped.includes(p.id);
+      const on = applied.has(p.id) || skipped;
+      const isAuto = auto.has(p.id);
       return html`<div key=${p.id} class="set-row" data-plugin=${p.id}>
-        <span class="set-row__label">${pluginName(p)}<${MicroLabel}>${pluginMicro(p)}<//></span>
+        <span class="set-row__label">${pluginName(p)}${isAuto ? html` <span class="plugrow__badge">${t('自动')}</span>` : null}<${MicroLabel}>${pluginMicro(p)}<//>
+          ${skipped ? html`<span class="set-hint is-warn">${t('与其他已开启的插件冲突或缺少所需插件，没有生效')}</span>` : null}</span>
         <button type="button" class=${`set-toggle${on ? ' is-on' : ''}`} role="switch" aria-checked=${on ? 'true' : 'false'} aria-label=${pluginName(p)}
-          onClick=${() => setPersonalPlugin(p.id, !on)}><i></i><span>${on ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
+          disabled=${isAuto && !ids.includes(p.id)} onClick=${() => flip(p.id, !on)}><i></i><span>${on ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
       </div>`;
     })}
   </section>`;

@@ -307,4 +307,9 @@ test('the catalogue: entries by class then id, unofficial marks, no server paths
   assert.ok(!/data\/economy|\/Users\/|\\\\/.test(JSON.stringify(body)), 'no file path of the plugin');
   assert.equal(buildPluginIndex([]).content, undefined, 'no vanilla hash given: none listed');
   assert.deepEqual(pluginIndexEntry(plugins[1]).scope, ['personal']);
+  // what the load order reads (a browser orders a player's personal plugins with it): set fields only
+  const ordered = readPluginManifest({ ...marathon(), loadAfter: ['base'], loadBefore: ['late'], priority: 3 }, ctx('marathon')).manifest;
+  const oe = pluginIndexEntry({ ...plugins[0], manifest: ordered });
+  assert.deepEqual([oe.loadAfter, oe.loadBefore, oe.priority], [['base'], ['late'], 3]);
+  assert.deepEqual([e.loadAfter, e.loadBefore, e.priority], [undefined, undefined, undefined], 'none set: none listed');
 });

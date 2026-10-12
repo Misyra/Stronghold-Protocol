@@ -335,10 +335,15 @@ without plugins makes no request more than 0.2.6's — its code only has three m
 `public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports).
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
-this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. A
-switched-on plugin is fetched as `/vs/<vs16>/overlay.json` of its catalogue `vs`, checked and composed the same way, and
-laid over whatever the page draws (the room's art too), in the catalogue's order [ASSUMED] (fetched side by side); one
-the server no longer has is skipped and stays switched on for when it is back.
+this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. The
+switched-on ones form a set exactly like a room's (`shared/plugins/order.js`, over what the catalogue lists of each:
+`requires`, `optional`, `conflicts`, `loadAfter`, `loadBefore`, `priority` — `public/js/content.js` personalSet): a plugin
+another one needs is switched on too (「自动」, its switch locked), a switch that would make a conflict or needs a plugin
+the server lacks is refused with the room's message, and a choice that went bad since (the server's plugins changed)
+keeps what still fits, by id, the rest marked as not in effect [ASSUMED]. Each plugin of the set is fetched as
+`/vs/<vs16>/overlay.json` of its catalogue `vs`, checked and composed the same way, and laid over whatever the page draws
+(the room's art too), in the set's load order (fetched side by side); one the server no longer has is skipped and stays
+switched on for when it is back.
 
 **Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
 the statistics overview [ASSUMED, for the owner to confirm]. The diagnostics name the art: `content: vanilla cs=… cosmetic

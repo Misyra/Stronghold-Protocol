@@ -116,8 +116,10 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   { <path>: sha256 }, data: { <name>: { url, sha256, bytes } }, plugins, settings }`, data URLs `/data/<file>?v=<8 hex>`),
   `Cache-Control: immutable`; any other `cs` → 404;
 - `GET /plugins/index.json` — the plugin catalogue (`{ version, app, api, content: { vanilla }, plugins: [entry …] }`,
-  every plugin and language pack by class with its status and the `unofficial` mark; a loaded cosmetic plugin's entry
-  adds `vs`, the set of it alone, and `artBytes`), never cached;
+  every plugin and language pack by class with its status and the `unofficial` mark, and what the load order reads of
+  it when set — `requires`, `optional`, `conflicts`, `loadAfter`, `loadBefore`, `priority` (a browser orders a player's
+  personal plugins with it); a loaded cosmetic plugin's entry adds `vs`, the set of it alone, and `artBytes`), never
+  cached;
 - `GET /vs/<first 16 hex digits of vs>/overlay.json` — a visual set: `{ visual: { v, vs, assets, overlays: [{ id,
   version, files }] }, writes: [{ id, ops }] }` — its composition, which a browser hashes to check it against the room's
   `vs` (a player's personal plugin: the set of it alone, the catalogue's `vs`), and each plugin's writes (paths of its

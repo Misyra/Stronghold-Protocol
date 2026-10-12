@@ -1254,5 +1254,6 @@
   "部分外观插件素材无法使用，相应位置显示原版素材": "Some cosmetic plugin art could not be used; the original art shows there instead",
   "重新应用": "Apply again",
   "插件的文件在服务器上更新后，重新应用才会生效。": "When a plugin's files are updated on the server, apply the plugins again to use them.",
-  "房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」": "The files of the room's plugin “{names}” changed on the server — open the Plugins panel and press “Apply again”"
+  "房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」": "The files of the room's plugin “{names}” changed on the server — open the Plugins panel and press “Apply again”",
+  "与其他已开启的插件冲突或缺少所需插件，没有生效": "Conflicts with another plugin that is on, or needs a plugin that is missing: not in effect"
 }

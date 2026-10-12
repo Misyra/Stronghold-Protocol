@@ -16,10 +16,15 @@
 //     reports its own), a sound (audio.js, through main.js) — makes its entry fall back to the art beneath it: the
 //     installation's, or the room's under a personal plugin (assets.js createCosmeticLayers fail).
 //   * Personal plugins: the catalogue (/plugins/index.json — loadCatalog) names each loaded cosmetic plugin of scope
-//     `personal` with the `vs` of the set of it alone; every switched-on one is fetched as /vs/<vs16>/overlay.json,
-//     checked the same way (fetched side by side) and applied after the room's, in the catalogue's order (by id)
-//     [ASSUMED]. A plugin this server does not have is skipped and stays switched on here (it shows again when the server
-//     has it).
+//     `personal` with the `vs` of the set of it alone and what the load order reads of it (requires, conflicts,
+//     loadAfter / loadBefore, priority). The plugins the player switched on are ordered exactly like a room's set
+//     (shared/plugins/order.js: their requirements switched on too — 「自动」 —, a conflict refused) — personalSet; a
+//     switch that would make a conflict or needs a plugin the server lacks is refused with the room's message
+//     (setPersonalPlugin → PLUGIN_CONFLICT / PLUGIN_DEPENDENCY), and a choice that turned bad since (the server's
+//     plugins changed) keeps what still fits, by id [ASSUMED]. Each plugin of the set is fetched as
+//     /vs/<vs16>/overlay.json of its catalogue `vs`, checked the same way (side by side) and applied after the room's,
+//     in that order. A plugin this server does not have is skipped and stays switched on here (it shows again when the
+//     server has it).
 //   * The catalogue is fetched only on a server that has plugins — `content.plugins` > 0 in /healthz (the build guard's
 //     first check, before any hello) or welcome (main.js keeps it as the store's `installedPlugins`: installedCount; a
 //     server without any sends none, and its page never asks for /plugins/index.json) — and only when something needs
@@ -27,6 +32,7 @@
 //     the list behind the title screen's 「本服务器安装了 N 个插件」 (that count is the server's).
 
 import { createStore, loadPref, savePref, store as appStore } from './store.js';
+import { resolvePluginOrder } from '../../shared/plugins/order.js';
 import { data as dataStore } from './data.js';
 import { cosmetics } from './assets.js';
 import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
@@ -119,11 +125,62 @@ export function pluginName(p) {
 export const personal = createStore({ ids: (() => { const v = loadPref(PERSONAL_PREF, []); return isIds(v) ? v : []; })() });
 personal.subscribe((s) => savePref(PERSONAL_PREF, s.ids));
 
-/** Switch a personal cosmetic plugin on or off (this browser only). @param {string} id @param {boolean} on */
+/** What the load order reads of a catalogue entry (shared/plugins/order.js OrderEntry). @param {any} p */
+const orderEntry = (p) => ({
+  id: p.id, version: typeof p.version === 'string' ? p.version : '0.0.0',
+  requires: isObj(p.requires) ? p.requires : {}, optional: isObj(p.optional) ? p.optional : {}, conflicts: isObj(p.conflicts) ? p.conflicts : {},
+  loadAfter: Array.isArray(p.loadAfter) ? p.loadAfter : [], loadBefore: Array.isArray(p.loadBefore) ? p.loadBefore : [],
+  priority: Number.isInteger(p.priority) ? p.priority : 0,
+});
+
+/**
+ * The personal set of the plugins `ids` switched on, among the catalogue's personal cosmetic plugins `entries` (see the
+ * header): ordered like a room's set — their requirements switched on too (`auto`) — or, when the choice as a whole is
+ * refused (a conflict, a requirement gone: the server's plugins changed since), what still fits, taken by id
+ * [ASSUMED]; `skipped`: the chosen ones left out that way. Ids the catalogue does not offer are ignored (kept switched on).
+ * @param {string[]} ids @param {any[]} entries cosmeticPlugins(…, 'personal') with a `vs`
+ * @returns {{ order: string[], auto: string[], skipped: string[] }}
+ */
+export function personalSet(ids, entries) {
+  const byId = new Map((Array.isArray(entries) ? entries : []).filter((p) => p && typeof p.id === 'string').map((p) => [p.id, orderEntry(p)]));
+  const lookup = (id) => byId.get(id) || null;
+  const chosen = [...new Set(ids)].filter((id) => byId.has(id)).sort();
+  const full = resolvePluginOrder(chosen, lookup);
+  if (!('error' in full)) return { order: full.order, auto: full.auto, skipped: [] };
+  let kept = [];
+  let best = { order: [], auto: [] };
+  for (const id of chosen) {
+    const r = resolvePluginOrder([...kept, id], lookup);
+    if ('error' in r) continue;
+    kept = [...kept, id];
+    best = r;
+  }
+  return { order: best.order, auto: best.auto, skipped: chosen.filter((id) => !kept.includes(id)) };
+}
+
+/**
+ * Switch a personal cosmetic plugin on or off (this browser only). Switching one on that would conflict with the others
+ * or needs a plugin this server lacks is refused (the catalogue loaded: the room's PLUGIN_CONFLICT / PLUGIN_DEPENDENCY);
+ * off always works (a plugin another one needs stays in the set, 「自动」).
+ * @param {string} id @param {boolean} on
+ * @returns {{ ok: true } | { error: string, detail: string }}
+ */
 export function setPersonalPlugin(id, on) {
   const ids = personal.get().ids.filter((x) => x !== id);
-  if (on) ids.push(id);
+  if (on) {
+    const cat = catalog.get();
+    if (cat.status === 'ready') {
+      const entries = cosmeticPlugins(cat.plugins, 'personal').filter((p) => isVisualHash(p.vs));
+      if (entries.some((p) => p.id === id)) {
+        const byId = new Map(entries.map((p) => [p.id, orderEntry(p)]));
+        const r = resolvePluginOrder([...new Set([...ids, id])].filter((x) => byId.has(x)).sort(), (x) => byId.get(x) || null);
+        if ('error' in r) return { error: r.error, detail: r.detail };
+      }
+    }
+    ids.push(id);
+  }
   personal.set({ ids: ids.sort() });
+  return { ok: true };
 }
 
 /**
@@ -215,8 +272,12 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     const ids = personal.get().ids;
     // none switched on, or a server without plugins (never even asked for its catalogue)
     if (!ids.length || !installedCount(store.get())) { layers.setPersonal([]); return; }
-    const entries = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal').filter((p) => ids.includes(p.id) && isVisualHash(p.vs));
-    // side by side; applied in the catalogue's order
+    const offered = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal').filter((p) => isVisualHash(p.vs));
+    // the set as a room's would be (requirements switched on, a conflict refused — what still fits), in its load order
+    const set = personalSet(ids, offered);
+    if (set.skipped.length) console.warn(`[content] personal plugins left out (a conflict or a missing requirement): ${set.skipped.join(', ')}`);
+    const entries = set.order.map((id) => offered.find((p) => p.id === id));
+    // side by side; applied in that order
     for (const p of entries) if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc(p.vs, { fetch: doFetch, retryDelays }));
     const results = await Promise.all(entries.map((p) => overlays.get(p.vs)));
     const list = [];

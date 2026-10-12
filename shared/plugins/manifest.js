@@ -806,9 +806,10 @@ export function classStatus(cls) {
 
 /**
  * The catalogue entry of a plugin or pack (GET /plugins/index.json): what a client may know — never a path on the
- * server. `unofficial` marks every class but lang; a loaded cosmetic plugin adds `vs` (the visual set of that plugin
- * alone: a player's personal plugin is fetched as /vs/<vs16>/overlay.json, shared/plugins/visual.js) and `artBytes` (the
- * art it serves).
+ * server. `unofficial` marks every class but lang; requires / optional / conflicts / loadAfter / loadBefore / priority
+ * when set (what the load order reads: shared/plugins/order.js); a loaded cosmetic plugin adds `vs` (the visual set of
+ * that plugin alone: a player's personal plugin is fetched as /vs/<vs16>/overlay.json, shared/plugins/visual.js) and
+ * `artBytes` (the art it serves).
  * @param {PluginEntry} p
  * @returns {Record<string, unknown>}
  */
@@ -830,6 +831,10 @@ export function pluginIndexEntry(p) {
   if (m.homepage) e.homepage = m.homepage;
   if (p.class === 'lang' && m.lang) e.lang = m.lang;
   for (const k of ['requires', 'optional', 'conflicts']) if (Object.keys(m[k]).length) e[k] = { ...m[k] };
+  // the load order's other inputs: a browser orders a player's personal plugins with the same function as a room's set
+  // (shared/plugins/order.js — public/js/content.js)
+  for (const k of ['loadAfter', 'loadBefore']) if (m[k].length) e[k] = [...m[k]];
+  if (m.priority) e.priority = m.priority;
   if (Object.keys(m.settings).length) e.settings = JSON.parse(JSON.stringify(m.settings));
   if (m.permissions.length) e.permissions = [...m.permissions];
   if (Number.isFinite(p.bytes)) e.bytes = p.bytes;

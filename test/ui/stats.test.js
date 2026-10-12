@@ -173,6 +173,31 @@ describe('local stats: replay dedupe', () => {
   });
 });
 
+describe('local stats: the room\'s cosmetic plugins (DESIGN §32 P1a review round 2)', () => {
+  const VS = 'ab'.repeat(32);
+  test('every record names the room\'s visual set vs (null without plugins); the overview does not filter on it yet', () => {
+    const plain = buildRecord(baseResult(), { myId: 'p1', now: 1 });
+    assert.equal(plain.vs, null, 'no cosmetic plugin: null');
+    const skinned = buildRecord(baseResult({ seed: 7 }), { myId: 'p1', vs: VS, now: 2 });
+    assert.equal(skinned.vs, VS);
+    assert.equal(buildRecord(baseResult(), { myId: 'p1', vs: 'not-a-hash', now: 3 }).vs, null, 'only a visual hash');
+    assert.equal(compactRecord(skinned).vs, VS, 'kept when compacted');
+    assert.equal(normalizeRecord({ ...skinned, vs: 'XX' }).vs, null);
+    // a quit record takes the room's from the app state
+    const s = liveState({ phase: PHASE.PREP, round: 3 });
+    s.room.content = { cs: 'cd'.repeat(32), vanilla: true, vs: VS, plugins: [{ id: 'skin' }] };
+    const quit = buildQuitRecord(s, { live: watched([liveState({ phase: PHASE.INFO_CHECK, round: 0 }), s]), now: 5_000_000 });
+    assert.equal(quit.vs, VS);
+    // the overview counts both alike (the owner has yet to decide)
+    let stats = emptyStats();
+    for (const r of [plain, skinned]) stats = appendRecord(stats, r).stats;
+    assert.deepEqual([aggregateStats(stats.records).total, aggregateStats(stats.records).count], [2, 2]);
+    // an id-less (hand-made) record's content id does not depend on vs: the id of a record from before 0.3.0 stays
+    const { id: _id, vs: _vs, ...bare } = plain;
+    assert.equal(normalizeRecord({ ...bare }).id, normalizeRecord({ ...bare, vs: VS }).id);
+  });
+});
+
 describe('local stats: the counting rule (a match entered and left right away does not count)', () => {
   /** A quit record whose player left in `phase` of `round` (alive unless told otherwise). */
   const quitAt = (phase, round, o = {}) => {

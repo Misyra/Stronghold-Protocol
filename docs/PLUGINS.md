@@ -226,7 +226,7 @@ is a number of `data/enemies.json`), so a room's `cs` is the vanilla one whateve
 | `enemies[key]` | `icon` (image), `spine` (Spine) |
 | `tokens[id]` | `avatar` (image), `spine` (Spine) |
 | `bonds`, `items`, `bands`, `skills`, `modules`, `ui`, `prof.icon` / `large` / `battlecard` / `sub` `[key]` | an image |
-| `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | a track `{ loop, intro? }` (audio), written whole |
+| `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | a track `{ loop, intro? }` (audio), written whole — not `audio.bgm.combatAlts` (see below) |
 | `audio.voice[charId]`, `audio.voiceJp[charId]` | `<slot>`: an audio file or a list of 1–16 |
 | `audio.sfx.ui[key]`, `audio.sfx.battle[key]` | audio |
 | `audio.sfx.units[id]` | `attack`, `hit`, `skill`, `die`, `born` (audio), `skills` / `attacks` / `hits` `{ <index>: audio }` |
@@ -246,7 +246,10 @@ what it means; one the installation's `data/assets.json` lacks is a problem. Any
 into the manifest; never an absolute URL (no other path of the server, no other host). A field a plugin does not write
 keeps the installation's value (an `avatar` alone leaves `avatarE2`), but a track is written whole (a `loop` alone plays
 without the installation's intro), and a model written for an enemy or a token — its `spine`, a model or a reference —
-also takes away that entry's local-client model (`spineLocal`, which the client would draw first) [ASSUMED]. Writing an
+also takes away that entry's local-client model (`spineLocal`, which the client would draw first) [ASSUMED]. The split
+battle music `audio.bgm.combatAlts` (the mode's own 开战 tracks, 骑士之日 / 无畏者, fixed per round) is not something a
+plugin changes: the client plays it instead of `combat` in the rounds it covers, so a plugin's `combat` is heard only
+where no such track plays. Writing an
 entry the installation has needs the permission `assets.override`, a new entry `assets.add`. `theme` is not applied yet
 (a warning).
 
@@ -345,9 +348,12 @@ keeps what still fits, by id, the rest marked as not in effect [ASSUMED]. Each p
 (the room's art too), in the set's load order (fetched side by side); one the server no longer has is skipped and stays
 switched on for when it is back.
 
-**Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
-the statistics overview [ASSUMED, for the owner to confirm]. The diagnostics name the art: `content: vanilla cs=… cosmetic
-vs=… plugins=id@version(hash),… personal=id,…`.
+**Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it still counts as the original
+game in the statistics overview [ASSUMED, pending the owner's decision]; every stats record names the room's visual set
+(`vs`, null without cosmetic plugins — a player's personal plugins are not recorded), so leaving such matches out is a
+one-line filter (`public/js/ui/stats.js`). The diagnostics name the art: `content: vanilla cs=… cosmetic vs=…
+plugins=id@version(hash),… personal=id,…`. Replays and BattleSpecs carry `cs` only, not `vs` (P1c): a battle replayed from
+a spec, or from a bug report's JSON, shows the installation's art — the report's content line names the set it had.
 
 **Limits** [ASSUMED]: 300 MB of art per set, 20 000 writes per plugin, 16 files per voice slot, 32 override warnings per
 set, 2 MB copied by references per plugin and 4 MB per set, the lock's limits above; the plugin limits of §5 apply too.

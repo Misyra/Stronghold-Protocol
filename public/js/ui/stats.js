@@ -25,6 +25,11 @@
 // and a write the browser refuses shrinks the list further instead of failing. Teammates' display names are part of
 // the newest records and of an export file: they stay on this device unless the player exports them.
 //
+// The art (DESIGN §32 P1a): every record names the room's visual set `vs` — the cosmetic plugins its host switched on
+// (room.state.content.vs; null without any). The overview does not look at it yet: whether a match with cosmetic
+// plugins counts as the original game is the owner's decision still to come, and then the filter is one line here.
+// A player's personal plugins are not the room's and are not recorded.
+//
 // Format evolution: the envelope carries a version (`STATS_VERSION`); `migrateStats` walks records through a chain of
 // per-version steps and every loaded / imported record passes `normalizeRecord`, a strict schema: missing fields get
 // defaults, unknown fields and oversized values are dropped, a row it cannot salvage is dropped. An envelope from a
@@ -56,6 +61,8 @@ const DAMAGED_KEY = `${FULL_KEY}.damaged`;
 export const emptyStats = () => ({ v: STATS_VERSION, records: [] });
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+/** A visual hash (64 lowercase hex digits: shared/plugins/visual.js), else null. */
+const vsOf = (v) => (typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null);
 const int = (v, d) => (Number.isFinite(v) ? Math.round(v) : d);
 const num = (v) => (Number.isFinite(v) ? v : null);
 const bool = (v, d = false) => (typeof v === 'boolean' ? v : d);
@@ -200,11 +207,14 @@ export function normalizeRecord(raw) {
     teamLp: num(r.teamLp),
     roomMode: r.roomMode === 'solo' || r.roomMode === 'coop' ? r.roomMode : null,
     selfId: str(r.selfId),
+    // the room's cosmetic plugins (see the header): its visual set, null without any (or a record from before 0.3.0)
+    vs: vsOf(r.vs),
     players,
   };
   if (r.compact === true) rec.compact = true;
-  // an id-less (hand-made) record gets a content id, so both copies of it land on the same key
-  if (!rec.id) rec.id = `c.${fnv1a(JSON.stringify(rec))}`;
+  // an id-less (hand-made) record gets a content id, so both copies of it land on the same key (`vs` left out: the id
+  // of a record from before 0.3.0 stays the same)
+  if (!rec.id) rec.id = `c.${fnv1a(JSON.stringify({ ...rec, vs: undefined }))}`;
   return rec;
 }
 
@@ -282,7 +292,7 @@ export function loadStats() {
 // ---- compaction + the storage budget ---------------------------------------------------------------------------
 
 const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRound', 'hiddenReached', 'hiddenCleared', 'reason', 'modeId',
-  'difficulty', 'roomMode', 'durationMs', 'selfId'];
+  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs'];
 
 /**
  * The compact form of a record: the frame and the player's OWN row without lineup, bonds and name — everything the
@@ -362,7 +372,8 @@ export function roomModeOf(modeId, roomMode) {
  * without players (the error-path settlement) or matches the local player did not take part in (spectator
  * seats get every result pushed too — eliminated players, who ARE in players[], keep recording).
  * @param {any} res raw m.result payload
- * @param {{ myId?: string|null, roomMode?: string|null, now?: number }} ctx
+ * @param {{ myId?: string|null, roomMode?: string|null, vs?: string|null, now?: number }} ctx
+ *   vs: the room's visual set (room.state.content.vs) — see the header
  * @returns {any|null}
  */
 export function buildRecord(res, ctx = {}) {
@@ -392,6 +403,7 @@ export function buildRecord(res, ctx = {}) {
     teamLp: num(r.teamLp),
     roomMode: roomModeOf(str(r.modeId), ctx.roomMode),
     selfId: myId,
+    vs: vsOf(ctx.vs),
     players: r.players,
   });
 }
@@ -489,6 +501,7 @@ export function buildQuitRecord(state, ctx = {}) {
     teamLp: num(pub.teamLp),
     roomMode: roomModeOf(str(pub.modeId), state.room?.mode),
     selfId: myId,
+    vs: vsOf(state.room?.content?.vs),
     players: [{
       playerId: myId, seat: row.seat, name: row.name, isBot: false, left: true, alive, victory: false, roundsPassed,
       eliminatedRound: alive ? null : live.aliveRound, lp: row.lp, bandId: row.bandId,
@@ -554,7 +567,7 @@ function storeRecord(rec) {
  * Record a finished match end-to-end (load → append → save). Returns the built record, or null when
  * nothing was stored (no players / not my match / replay).
  * @param {any} res raw m.result payload
- * @param {{ myId?: string|null, roomMode?: string|null, now?: number }} [ctx]
+ * @param {{ myId?: string|null, roomMode?: string|null, vs?: string|null, now?: number }} [ctx]
  * @returns {any|null}
  */
 export function recordResult(res, ctx = {}) {

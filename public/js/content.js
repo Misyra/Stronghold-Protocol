@@ -1,4 +1,4 @@
-// content.js — what this page shows beyond the installation's own art (DESIGN §32 P1a, docs/PLUGINS.md §5): the room's
+// content.js — what this page shows beyond the installation's own art (DESIGN §32 P1a, docs/PLUGINS.md §9): the room's
 // visual set — the cosmetic plugins its host switched on, named by room.state.content.vs — and the player's personal
 // cosmetic plugins (设置 → 外观插件, kept in this browser only: `sp.pref.cosmetics`), laid over the art manifest every
 // screen reads (assets.js `cosmetics`; data.js shows `assets` through them, so `data.get('assets')` is the art the room

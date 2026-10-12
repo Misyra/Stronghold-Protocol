@@ -23,7 +23,7 @@
 // by its view (`spine.restart(entry)`, RefLru.restart); such a fresh load — and any load after a failure — drops PIXI's
 // still-pending requests of that skeleton first (forgetPendingSpine), so it does not join them.
 //
-// Cosmetic plugins (DESIGN §32 P1a, docs/PLUGINS.md §5): the manifest the helpers read is the installation's with the
+// Cosmetic plugins (DESIGN §32 P1a, docs/PLUGINS.md §9): the manifest the helpers read is the installation's with the
 // cosmetic layers laid over it — `cosmetics` (createCosmeticLayers; public/js/content.js sets them): the room's visual
 // set, then the player's personal plugins. A layer change is told like a late manifest (onChange 'manifest'): views
 // built afterwards draw the new art; a model already on the board keeps its own until it is built again [ASSUMED].

@@ -1,4 +1,4 @@
-// server/plugins/visualSet.js — the visual sets of this server (DESIGN §32 P1a, docs/PLUGINS.md §5; the format:
+// server/plugins/visualSet.js — the visual sets of this server (DESIGN §32 P1a, docs/PLUGINS.md §9; the format:
 // shared/plugins/visual.js): a set of loaded cosmetic plugins, closed over their requirements and in load order
 // (shared/plugins/order.js), named by its visual hash `vs`, and the two documents it is served as —
 //

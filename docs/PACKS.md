@@ -114,7 +114,7 @@ pack's files are the language folders' own (`/i18n/<code>.json`, `/data/i18n/<co
 | Type | Status | Where it applies | Loader |
 |---|---|---|---|
 | `lang` | supported (0.2.0) | the client: UI strings, game texts | `public/js/ui/lang.js` (the menu, the strings: `shared/i18n.js`; the game texts: `public/js/data.js`) |
-| `assets` | planned → the plugin class `cosmetic` (PLUGINS.md) | the client: art, audio, font replacements | — |
+| `assets` | planned → the plugin class `cosmetic` (PLUGINS.md §9, loaded since 0.3.0) | the client: art, audio, font replacements | — |
 | `data` | planned → the plugin class `content` (PLUGINS.md) | the server: data patches | — |
 
 A pack of a planned type is parsed and listed as not supported ("type "assets" is planned …, not loaded by this

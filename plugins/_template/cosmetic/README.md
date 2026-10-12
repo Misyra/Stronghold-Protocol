@@ -24,4 +24,4 @@ model's clips — needed for a model) and `node tools/plugin.mjs check <your-id>
 
 **Never put files of the official game in a plugin.** Draw your own, or refer to what the installation has.
 
-The format: `docs/PLUGINS.md` §5 (the asset overlay, references, files, the lock, the room's and the player's switches).
+The format: `docs/PLUGINS.md` §9 (the asset overlay, references, files, the lock, the room's and the player's switches).

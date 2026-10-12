@@ -62,7 +62,8 @@ Every frame is JSON text, `{ t, rid?, …fields }`.
 - Messages meant for people (`m.toast`, `m.ticker`) carry a message id and its parameters, so each client shows them in
   its own language (`shared/i18n.js` `wireMessage`).
 - `welcome` and `room.state` carry the content identity — the hash `cs` of the code and data the room plays, the
-  vanilla one until rooms can choose plugins — and every BattleSpec repeats it (DESIGN §8.4, PLUGINS.md).
+  vanilla one until rooms can choose gameplay plugins — and every BattleSpec repeats it; a room's cosmetic plugins
+  (`room.setPlugins`, the host's) are named by the visual hash `vs` beside it (DESIGN §8.4, PLUGINS.md §9).
 - The exact view shapes: DESIGN §8.3 and META §5.
 
 ## 3. The directory layout
@@ -83,7 +84,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | `server/net.js` | sessions and reconnect tokens, rate limits, message validation |
 | `server/lobby.js` | rooms, seats, AI seats, spectators; starts a `Match` |
 | `server/data.js` | loads `data/*.json` once (frozen) |
-| `server/plugins/` | the plugin system (PLUGINS.md, DESIGN §32): `registry.js` finds the language packs of `public/i18n/`, the pack folders of `packs/` and the plugins of `plugins/`, validates them, answers `/packs/index.json`, `/plugins/index.json` and which files may be served, re-reads the folders when they change; `identity.js` computes the vanilla content hash `cs` from the served sim, shared code and data at start (`/cs/<cs16>/index.json`, `/healthz`, `welcome`, `room.state`) |
+| `server/plugins/` | the plugin system (PLUGINS.md, DESIGN §32): `registry.js` finds the language packs of `public/i18n/`, the pack folders of `packs/` and the plugins of `plugins/`, validates them (a cosmetic plugin's asset overlay too, its files hashed), answers `/packs/index.json`, `/plugins/index.json` and which files may be served, re-reads the folders when they change; `identity.js` computes the vanilla content hash `cs` from the served sim, shared code and data at start (`/cs/<cs16>/index.json`, `/healthz`, `welcome`, `room.state`); `visualSet.js` the visual sets of cosmetic plugins — a room's or a player's, named by `vs` — served at `/vs/<vs16>/assets.json` and `overlay.json`, their files at `/p/<id>/<hash8>/<path>` |
 | `server/packs.js` | the content-pack API of 0.2.0 (PACKS.md), a compatibility export of `server/plugins/registry.js` |
 | `server/update.js` | the update package on the player's machine (DEPLOY.md §1.5): before the server starts, an extracted `UPDATE.json` is finished — the install verified against `MANIFEST.json`, the files the new version dropped deleted, or the start refused when the install is another version; doctor's `MANIFEST.json` check |
 | `server/match/Match.js` | one match: the phase machine, timers, the round loop, co-op, the views; its methods are in `server/match/match/` (`phases.js`, `prep.js`, `combat.js`, `clientCombat.js`, `reports.js`, `unitePhase.js`, `bossRounds.js`, `settle.js`, `views.js`, `intents.js` …) |
@@ -97,7 +98,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | `server/sim/content/garrisons/`, `items/`, `bands/` | 特质, equipment and strategies: `battle.js` is the battle side, `meta.js` the prep side (`registerMeta`, META §2) |
 | `server/sim/content/bonds/` | the 23 bonds: `core.js` the 8 core bonds (both sides), `server/sim/content/bonds/addon/` the 15 add-on bonds (`battle.js`, `meta.js`) |
 | `server/sim/content/` (the rest) | `tokens.js` (summons), `devices.js` (terrain and stage devices), `generic.js` (the kit built from a skill's data when a chess has none), `choices.js` (机变 cards in battle), `traitMods.js` (the module trait line the engine applies to every operator: 「攻击范围内存在N名及以上敌人时攻击速度+X」) |
-| `shared/` | imported by the server and the browser: `protocol.js`, `constants.js`, `i18n.js`, `i18nData.js` and `i18nPacks.js` (languages), `packs.js` (the language-pack index), `shared/plugins/` (`manifest.js` the plugin manifest, `identity.js` the content hash), `sha256.js` (SHA-256 in plain JavaScript), `standIn.js` (补位), `diy.js` (自选编队), `highGround.js`, `loadoutRecord.js` |
+| `shared/` | imported by the server and the browser: `protocol.js`, `constants.js`, `i18n.js`, `i18nData.js` and `i18nPacks.js` (languages), `packs.js` (the language-pack index), `shared/plugins/` (`manifest.js` the plugin manifest, `identity.js` the content hash, `visual.js` a cosmetic plugin's asset overlay and the visual hash, `order.js` a set's load order), `sha256.js` (SHA-256 in plain JavaScript), `standIn.js` (补位), `diy.js` (自选编队), `highGround.js`, `loadoutRecord.js` |
 
 ### Client (`public/`)
 
@@ -105,6 +106,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 |---|---|
 | `public/index.html`, `public/js/main.js` | the page and its entry: boot, the router (title → lobby → room → game) |
 | `public/js/net.js`, `public/js/store.js`, `public/js/data.js` | the socket client, the observable store, the data loader (`/data/*.json`, with the English overlay) |
+| `public/js/content.js` | the room's cosmetic plugins and the player's own (PLUGINS.md §9): fetched, checked against `room.state.content.vs` and laid over the art manifest (`public/js/assets.js` cosmetic layers, data.js's view of `assets`); the plugin catalogue; the room's 插件 panel is `public/js/ui/pluginPanel.js` |
 | `public/js/battle/` | `runner.js` (the local battle: loads `/sim/`, steps it, reports), `observe.js` (who may watch which field) |
 | `public/js/screens/` | `title.js`, `lobby.js`, `room.js`, `loadout.js` (干员调配), `cultivation.js` (its 潜能 / 练度 controls), `ownership.js` (干员持有), `diy.js` (自选编队), `briefing.js`, `bandDraft.js`, `game.js` with `public/js/screens/game/`, `result.js` |
 | `public/js/ui/` | the HUD components (`hud.js`, `shopBar.js`, `detailPanel.js`, `bondStrip.js`, `teamPanel.js` …); `public/js/ui/gameLogic/` the pure in-match logic, unit-tested in Node |
@@ -117,8 +119,8 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 |---|---|
 | `data/*.json` | generated by `tools/build-data.mjs` and committed — never edited by hand (DATA.md); `data/backups.json` holds the 补位 and 自选 data, `data/i18n/<code>.json` the game texts of a language pack (English), `data/assets.json` the art manifest |
 | `packs/` | content packs installed as folders, `packs/<id>/pack.json` + files (PACKS.md); empty in the repository but for its readme |
-| `plugins/` | a server's plugins, `plugins/<id>/plugin.json` + files (PLUGINS.md); git-ignored but for its readme and templates |
-| `tools/` | `build-data.mjs`, `build-i18n.mjs`, `i18n.mjs` (UI strings, language packs), `packs.mjs` (content packs), `plugin.mjs` (plugins: list, check), `setup.mjs` / `fetch-assets.mjs` / `tools/assets/` (art and audio), `tools/local-extract/` (art from a local game client), `vendor.mjs`, `golden.mjs`, `check-imports.mjs`, `package.mjs` / `package-update.mjs` (the release zips, the update package), `doctor.mjs`; sweeps: `matchrun.mjs`, `simrun.mjs`, `botbench.mjs`, `balance.mjs` |
+| `plugins/` | a server's plugins, `plugins/<id>/plugin.json` + files (PLUGINS.md); git-ignored but for its readme and the templates (`plugins/_template/cosmetic/`) |
+| `tools/` | `build-data.mjs`, `build-i18n.mjs`, `i18n.mjs` (UI strings, language packs), `packs.mjs` (content packs), `plugin.mjs` (plugins: list, check, pack), `setup.mjs` / `fetch-assets.mjs` / `tools/assets/` (art and audio), `tools/local-extract/` (art from a local game client), `vendor.mjs`, `golden.mjs`, `check-imports.mjs`, `package.mjs` / `package-update.mjs` (the release zips, the update package), `doctor.mjs`; sweeps: `matchrun.mjs`, `simrun.mjs`, `botbench.mjs`, `balance.mjs` |
 | `test/` | `node:test` suites by area: `test/content/` (kits, enemies, bonds, items), `test/sim/` (the engine), `test/match/` (match engine, bots), `test/ui/`, `test/render/`, `test/golden/` (the stored digests), `test/helpers/` (`battleHarness.js`; `designDocs.js`, the design document in § order for the doc tests), `test/e2e/` (browser and bot runs) |
 | `types/` | JSDoc typedefs of the type-checked slice (`types/README.md`) |
 | `docs/` | the documents; `docs/DESIGN.md` the index of the design document, `docs/design/` its current rules, `docs/history/` its per-release revisions; `docs/research/` the research on the official mode |

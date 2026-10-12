@@ -4,28 +4,36 @@ A **plugin** is a folder a server owner puts into `plugins/`: a manifest, `plugi
 it names. The interface calls them 「插件」, never 「模组」 (that word is the operators' modules). The design and its
 phases are DESIGN §32 (`docs/history/0.3.0.md`); this file is the reference.
 
-**Status — 0.3.0-dev, the first step (P0): content identity and the registry, no change for players.** The server
-finds, checks and lists plugins and names its content with a hash; it applies no plugin yet. Language packs
-(`docs/PACKS.md`) are the plugin class `lang` and work as before.
+**Status — 0.3.0-dev, P1a: cosmetic plugins apply.** The server finds, checks and lists plugins and names its content
+with a hash (P0); a room's host switches the server's cosmetic plugins on for the whole room, a player switches them on
+for themself (§9) — art, models and audio only: the battles stay the original ones and a room's `cs` stays the vanilla
+one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before; data plugins come next (P1b).
 
 | File | Role |
 |---|---|
 | `shared/plugins/manifest.js` | the format: manifest 2 (`plugin.json`), manifest 1 (`pack.json` / `_meta`), the classes, permissions, file rules, limits, the catalogue entries |
 | `shared/plugins/identity.js` | the content hash `cs`: canonical JSON and its composition |
+| `shared/plugins/visual.js` | a cosmetic plugin's asset overlay (§9): reading and checking it, references, resolution to served URLs, the merge with its override warnings, the visual hash `vs`, the browser's check of a visual set |
+| `shared/plugins/order.js` | which plugins a set holds and in what order: requirements, conflicts, load-order hints, priority, id |
 | `shared/sha256.js` | SHA-256 in plain JavaScript (the same digest in Node and every browser, no `crypto.subtle`) |
-| `server/plugins/registry.js` | the registry: the language folders, `packs/` and `plugins/` — discovery, validation, `/packs/index.json`, `/plugins/index.json`, what may be served |
+| `server/plugins/registry.js` | the registry: the language folders, `packs/` and `plugins/` — discovery, validation (a cosmetic plugin's overlay too, its files hashed), `/packs/index.json`, `/plugins/index.json`, what may be served |
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
+| `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/assets.json` and `/vs/<vs16>/overlay.json` |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
-| `tools/plugin.mjs` | `list`, `check` |
-| `plugins/README.md` | the folder's readme — the only tracked file of the folder (templates, `plugins/_template/`, will join it with P1) |
+| `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest (`public/js/assets.js` cosmetic layers) |
+| `public/js/ui/pluginPanel.js` | the room's 插件 tag and panel, the title screen's list of the server's plugins |
+| `tools/plugin.mjs` | `list`, `check`, `pack` |
+| `plugins/README.md`, `plugins/_template/cosmetic/` | the folder's readme and the cosmetic template — the only tracked files of the folder |
 
 ## 1. Principles (the maintainer's decisions of 2026-10-12)
 
 - **The original game is always the default.** A room plays the vanilla content unless its host chooses plugins (P1c);
   the golden results, DESIGN and the fidelity checks cover the original content only.
 - **Plugins are marked unofficial** wherever they are shown — the catalogue (`unofficial: true` on every class but
-  `lang`), the diagnostics (`content: MODDED …`), later the room, the HUD, the result and the statistics (plugin
-  matches stay out of the overview by default).
+  `lang`), the title screen (「本服务器安装了 N 个插件」), the room (「原版」 / 「插件 ×N」, the panel's 非官方 marks),
+  the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), later the HUD, the result and
+  the statistics (plugin matches stay out of the overview by default; a match with cosmetic plugins only is still the
+  original game — §9).
 - **No third-party code** in the first plugins: art and data only. Code (`script`, `ui`, `trusted`) is a later,
   separate decision (a declarative DSL first, then a sandbox; full trust only with the server owner's and every
   player's explicit consent).
@@ -49,13 +57,14 @@ What this version does with each class:
 | Class | Carries | This version |
 |---|---|---|
 | `lang` | a language: UI strings, optionally game texts | **loaded** — listed in `/packs/index.json`, files served at `/packs/<id>/<file>` |
-| `cosmetic` | art, models (Spine 3.8), audio, fonts, theme colours | planned (P1a): checked and listed, not applied |
+| `cosmetic` | art, models (Spine 3.8), audio (fonts and theme colours later) | **loaded** (P1a, §9) — a room's host switches it on for the room, a player for themself; the files its overlay names served at `/p/<id>/<hash8>/<path>` |
 | `content` | data patches and new records: numbers, economy, modes, waves, operators, enemies | planned (P1b): checked and listed, not applied |
 | `script` | code the battle or the match runs | not supported: listed, never loaded |
 | `ui` | interface widgets in a sandboxed frame | not supported |
 | `trusted` | page or server code with full trust | not supported |
 
-Nothing of a plugin folder is served in this version except the files a `lang` manifest names.
+Nothing of a plugin folder is served except the files a `lang` manifest names and the files a loaded `cosmetic`
+plugin's overlay names — never `plugin.json`, the lock file, a document or any other file of the folder.
 
 ## 3. The manifest (manifest 2)
 
@@ -100,8 +109,8 @@ Nothing of a plugin folder is served in this version except the files a `lang` m
 | `lang`, `files` … | the `lang` class only: manifest 1's language fields and `files: { ui, data }` (§7) |
 
 A **problem** keeps a plugin out (unlisted; the start log and `tools/plugin.mjs` say why); a **warning** does not.
-Unknown fields are warnings. The inner formats of the parts — data patches, compact operator records, asset entries,
-modes — arrive with the classes that apply them (P1a, P1b).
+Unknown fields are warnings. The asset overlay of a cosmetic plugin is §9; the inner formats of the data parts — data
+patches, compact operator records, modes — arrive with the class that applies them (P1b).
 
 ## 4. Permissions
 
@@ -156,7 +165,11 @@ a room with plugins will read `MODDED cs=… plugins=id@version(hash)…`).
 file's URL (`/data/<file>?v=<8 hex>`), hash and size — cached for good; any other `cs` is 404. `GET /plugins/index.json`
 (never cached) is the catalogue: `{ version, app, api, content: { vanilla }, plugins: [entry …] }`, every plugin and
 pack found by class and id, with its `status` (`loaded` / `planned` / `unsupported`), `unofficial`, its manifest's
-public fields, size and file count — never a path on the server.
+public fields, size and file count — never a path on the server; a loaded cosmetic plugin adds `vs` (the visual set of
+it alone, §9) and `artBytes` (the art it serves).
+
+Cosmetic plugins never change `cs`: art changes no battle, so a room whose plugins are all cosmetic plays the vanilla
+`cs` — the art it draws is named by the visual hash `vs` (§9).
 
 ## 7. Language packs
 
@@ -173,19 +186,135 @@ manifest 1 of the old planned types `assets` / `data` is still reported as not l
 ```
 node tools/plugin.mjs list [--json]                every plugin and language pack, by class, the skipped ones and why, the vanilla cs
 node tools/plugin.mjs check [<dir|id> …] [--strict] the folders of plugins/ (or the ones named; a folder anywhere): manifest,
-                                                   files, paths, JSON — exit 1 on a problem, with --strict on a warning too
+                                                   files, paths, JSON, a cosmetic plugin's overlay (its references against
+                                                   this checkout's data/assets.json) — exit 1 on a problem, with --strict on
+                                                   a warning too
+node tools/plugin.mjs pack <dir|id> …              write plugin.lock.json (every file's SHA-256 and size, each Spine model's
+                                                   clip data), then check the folder
 ```
 
-`--root <dir>` points it at another checkout or an unpacked release. Planned: `new`, `pack` (`plugin.lock.json`, a
-zip), `install`, `golden`, `simcheck`, and `--plugins` for the balance tools.
+`--root <dir>` points it at another checkout or an unpacked release. Planned: `new`, a zip from `pack`, `install`,
+`golden`, `simcheck`, and `--plugins` for the balance tools.
 
-## 9. Next steps
+## 9. Cosmetic plugins (P1a)
 
-P1a cosmetic plugins (room and personal; `/p/<id>/<fileHash8>/<path>`, `/vs/<vs>/assets.json`), P1b data plugins
-(patches, compact records, kitRef / SkillSpec operators, modes, i18n), P1c per-room content sets (the host's 插件 panel,
-a worker per content set, the client loading and checking `/cs/<cs>/`, the unofficial marks in the UI and the
-statistics). Later, by separate decisions: a declarative DSL, sandboxed code, trusted code. DESIGN §32 keeps the plan
-and its open questions.
+A cosmetic plugin changes what the game shows and plays — avatars, portraits, Spine models, icons, interface pictures,
+voices, sound effects, music — and nothing a battle does: the simulation reads data, never art (an enemy's attack timing
+is a number of `data/enemies.json`), so a room's `cs` is the vanilla one whatever its art.
+
+**The overlay** — the manifest's `assets` part, inline in `plugin.json` or a `.json` file of the plugin
+(`shared/plugins/visual.js`), written in the shape of `data/assets.json` (ASSETS.md "Manifest schema"):
+
+```json
+"assets": {
+  "chars": {
+    "char_102_texas": {
+      "avatar": "art/avatar.png",
+      "spine": { "front": { "skel": "spine/front/texas.skel", "atlas": "spine/front/texas.atlas", "textures": ["spine/front/texas.png"] } }
+    },
+    "char_112_siege": { "portrait": { "ref": "char_102_texas" } }
+  },
+  "ui": { "hudPanel/icon_hp": "art/hp.png" },
+  "audio": { "voice": { "char_102_texas": { "skill1": "voice/s1.mp3", "select": ["voice/a.mp3", "voice/b.mp3"] } } }
+}
+```
+
+| Container | A record |
+|---|---|
+| `chars[charId]` | `avatar`, `avatarE2`, `portrait`, `portraitE2` (image), `spine.front`, `spine.back` (Spine) |
+| `enemies[key]` | `icon` (image), `spine` (Spine) |
+| `tokens[id]` | `avatar` (image), `spine` (Spine) |
+| `bonds`, `items`, `bands`, `skills`, `modules`, `ui`, `prof.icon` / `large` / `battlecard` / `sub` `[key]` | an image |
+| `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | `intro`, `loop` (audio) |
+| `audio.voice[charId]`, `audio.voiceJp[charId]` | `<slot>`: an audio file or a list of 1–16 |
+| `audio.sfx.ui[key]`, `audio.sfx.battle[key]` | audio |
+| `audio.sfx.units[id]` | `attack`, `hit`, `skill`, `die`, `born` (audio), `skills` / `attacks` / `hits` `{ <index>: audio }` |
+
+A value is a **path** inside the plugin folder — an image `.png .jpg .webp`, audio `.mp3 .ogg` —, a **Spine model**
+`{ skel, atlas, textures, pma }` (the `.skel` and the `.atlas` side by side with one name — pixi-spine looks for the atlas
+there —, the pages inside the atlas's folder; `atlas` and `textures` default to `<name>.atlas` and `<name>.png`), or a
+**reference** `{ "ref": "<key>" }` to an entry of the same container in the installation's own manifest:
+
+- a whole record — `"char_102_texas": { "ref": "char_112_siege" }` — replaces the record as a whole; other keys beside
+  the `ref` then change fields of it (`{ "ref": "char_112_siege", "avatar": "art/a.png" }`);
+- one field — `"avatar": { "ref": "char_112_siege" }` — is that field of `char_112_siege`.
+
+A reference always names the installation's entry, never another plugin's [ASSUMED], so the plugins' order never changes
+what it means; one the installation's `data/assets.json` lacks is a problem. Anything else — another section (`fonts`,
+`skillsById` …), a field a record has not — is a warning and left out; numbers, booleans and free text are never written
+into the manifest; never an absolute URL (no other path of the server, no other host). Writing an entry the installation
+has needs the permission `assets.override`, a new entry `assets.add`. `theme` is not applied yet (a warning).
+
+**Spine models and `plugin.lock.json`.** A model's clip roles, durations, events, hit times and bounds come from the
+skeleton itself: `node tools/plugin.mjs pack <dir>` parses it the way `tools/fetch-assets.mjs` parses the game's
+(`tools/assets/skel.mjs`, `anim-roles.mjs`: an operator's three skill slots, an enemy's numbered skills), checks the atlas
+pages against `textures`, and writes them into `plugin.lock.json` with every file's SHA-256 and size. `"anims": "auto"` or
+nothing — never by hand; a lock made from another skeleton (its SHA-256) is a problem until it is packed again. The
+server never parses a skeleton [ASSUMED].
+
+**Checked when scanned.** The registry reads a cosmetic plugin's overlay when it scans the folders (at start and when they
+change): its shape, files, references and permissions, the lock — a problem keeps it out like any other — and hashes the
+files that shape it (SHA-256, kept by path + size + mtime: a rescan reads only what changed) [ASSUMED: at scan, a 200 MB
+plugin costs about a second once].
+
+**The visual hash.** A set of cosmetic plugins in load order is named by
+`vs = sha256(canonical({ v: 1, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files }] }))`, `files`
+mapping every file that shapes a plugin's overlay — `plugin.json`, `plugin.lock.json`, the `assets` file, every file the
+overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, one changed byte another.
+
+**Served:**
+
+- `GET /p/<id>/<hash8>/<path>` — a file a loaded cosmetic plugin's overlay names, and nothing else of its folder: no
+  `plugin.json`, lock, document or other file, no dot file, no `..`, no real path out of the folder (a link put in
+  later is not followed). `<hash8>` is the first 8 hex digits of the file's SHA-256 — for every file of a Spine model,
+  of the SHA-256 of its files' SHA-256s, so the skeleton, its atlas and pages share one folder. At the hash of the file's
+  bytes the answer is `immutable` for a year, at any other hash the current file with `no-cache` (as for
+  `/assets/~<hash>/…`, ASSETS.md); a file changed since the scan has the registry read the folders again.
+- `GET /vs/<vs16>/assets.json` — the effective art manifest of a set: the served `data/assets.json` (its
+  `/assets/~<hash>/…` URLs) with the set's overlays laid over it in load order — the later plugin wins where two change
+  the same thing — and the composition in `visual: { v, vs, assets, overlays }`. `GET /vs/<vs16>/overlay.json` — the
+  overlay alone: `{ visual, ops }` (the resolved writes). Both `no-cache` with the body's hash as ETag [ASSUMED: not
+  immutable — the installation's URLs inside follow the asset index, not `vs`]; 404 for a set the server does not know (a
+  set is known once a room resolved it, or the catalogue named a plugin's own; the last 256 are kept [ASSUMED]).
+
+**A room's plugins.** The room's top bar shows 「原版」 or 「插件 ×N」; it opens the 插件 panel (`public/js/ui/pluginPanel.js`):
+the server's cosmetic plugins of scope `room`, with the host's switches (read-only for the other players and the
+spectators, and during a match), versions, authors, sizes, 非官方 marks, 「自动」 on one switched on because another needs
+it, a note for one made for other game versions (a cosmetic plugin is still usable) and the override warnings. A switch
+sends `room.setPlugins { plugins: [{ id }] }` (host, before the match; like a difficulty change it un-readies the others):
+the server closes the set over the plugins' `requires`, refuses conflicts, a cycle, a plugin of another class or scope,
+and a set over 300 MB of art [ASSUMED] (`PLUGIN_UNKNOWN`, `PLUGIN_BLOCKED`, `PLUGIN_DEPENDENCY`, `PLUGIN_CONFLICT`,
+`PLUGIN_LIMIT`), sorts it (`shared/plugins/order.js`: requires / optional / loadAfter / loadBefore, then priority, then
+id) and the room's content becomes `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings,
+bytes }` — `cs` the vanilla one. Every member's page fetches `/vs/<vs16>/assets.json`, checks that its composition hashes
+to the room's `vs` (`checkVisualDoc`; the bytes carry this server's asset URLs, so they are not what is checked
+[ASSUMED]) and draws with it; leaving the room takes the art away again. A document that fails the check or will not
+download leaves the original art (a toast). Art switched on during a match shows on what is drawn afterwards; a model
+already on the board keeps its own [ASSUMED]. With no plugin the room's content is exactly the vanilla
+`{ cs, vanilla: true, plugins: [] }`, and a page requests nothing more than before but the catalogue.
+
+**A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
+this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. A
+switched-on plugin is fetched as `/vs/<vs16>/overlay.json` of its catalogue `vs`, checked the same way, and laid over
+whatever the page draws (the room's art too), in the catalogue's order [ASSUMED]; one the server no longer has is
+skipped and stays switched on for when it is back.
+
+**Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
+the statistics overview [ASSUMED, for the owner to confirm]. The diagnostics name the art: `content: vanilla cs=… cosmetic
+vs=… plugins=id@version(hash),… personal=id,…`.
+
+**Limits** [ASSUMED]: 300 MB of art per set, 20 000 writes per plugin, 16 files per voice slot, 32 override warnings per
+set; the plugin limits of §5 apply too.
+
+**Start from** `plugins/_template/cosmetic/` — references to the installation's own art only, no file. Never put files
+of the official game in a plugin.
+
+## 10. Next steps
+
+P1b data plugins (patches, compact records, kitRef / SkillSpec operators, modes, i18n), P1c per-room content sets (a
+worker per content set, the client loading and checking `/cs/<cs>/`, the unofficial marks in the HUD, the result and
+the statistics). Later, by separate decisions: themes and fonts for cosmetic plugins, a declarative DSL, sandboxed code,
+trusted code. DESIGN §32 keeps the plan and its open questions.
 
 ## Tests
 
@@ -194,4 +323,12 @@ the catalogue), `test/plugins/registry.test.js` (the scan by class, skipped fold
 links, the pack view and `/packs/index.json` unchanged, `/plugins/index.json`, a plugin dropped in, the tool, git and
 the release zips), `test/plugins/identity.test.js` (SHA-256 vectors, Node and a bare realm agreeing, the composition,
 the same input → the same `cs`, one changed byte → another, the served bytes, the wire fields), and still
-`test/i18n-packs.test.js`.
+`test/i18n-packs.test.js`. P1a: `test/plugins/visual.test.js` (the overlay, references — a missing one refused —,
+permissions, the lock, resolution, the merge order and its warnings, `vs`, the browser's check),
+`test/plugins/order.test.js`, `test/plugins/visualSet.test.js` (sets refused or resolved, `/vs/`, `/p/` — its whitelist,
+traversal, dot files, a link out, immutable or not —, one changed byte → another `vs`, `/data/assets.json` unchanged),
+`test/plugins/tool.test.js` (`pack`, `check`, the template), `test/lobby-plugins.test.js` (`room.setPlugins`: the host,
+before the match, un-readying, the vanilla `cs`, refusals), `test/ui/plugins-client.test.js` (the cosmetic layers, the
+data view, content.js, the panel), `test/diag.test.js` (the content line) and the browser test
+`test/ui/plugins.e2e.test.js` (`SP_E2E=1`: the host's plugin shows on another player's page, a personal plugin on its own
+page only).

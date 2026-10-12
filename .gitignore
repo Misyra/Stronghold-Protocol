@@ -11,11 +11,14 @@ public/build/
 public/assets/*
 # This fork tracks the v0.1.3 local-client art for Git-based deployments.
 !public/assets/local/
+# …except the extracted battlefield scenes (0.2.5): official files no repository stores, so re-ignore them here.
+# A maintainer who ran `node tools/setup.mjs --scenes` must not commit public/assets/local/scene/.
+/public/assets/local/scene/
 public/fonts/
 # tools/local-extract/extract.py → public/assets/local/** and this per-machine manifest
 # (optional: the client and the tests work without it; docs/operations/DEPLOY.md §6 lists what falls back)
-# Battlefield scenes (0.2.5): extracted files live under public/assets/local/scene/ (already ignored by
-# public/assets/ above). Downloaded bundles live in .cache/official-scenes/ (already ignored by .cache/ below).
+# Battlefield scenes (0.2.5): extracted files live under public/assets/local/scene/ (re-ignored just above).
+# Downloaded bundles live in .cache/official-scenes/ (already ignored by .cache/ below).
 # This fork tracks the extracted files and the manifest in Git (README 本分支差异): data/local-assets.json is a tracked file here, not an ignored one.
 # download caches, upstream tables, ledgers, reports, setup state
 .cache/

@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import {
   ASSET_CONTAINERS, VISUAL_HASH_VERSION, VISUAL_LIMITS, applyOps, attachSpineMeta, checkVisualDoc, getPath, isAssetKey, layVisualOps,
   locateAssetPath, mergePluginOps, modelHashOf, pluginFileUrl, prepareVisualDoc, readAssetOverlay, readPluginLock, visualHashInput,
-  visualHashOf, vsUrlPart,
+  visualHashOf, vsUrlPart, writesHashOf,
 } from '../../shared/plugins/visual.js';
 import { canonicalJson } from '../../shared/plugins/identity.js';
 import { sha256Hex } from '../../shared/sha256.js';
@@ -38,7 +38,7 @@ const sha = (rel) => sha256Hex(`bytes of ${rel}`);
 const read = (assets, ctx = {}) => readAssetOverlay(assets, { vanilla: VANILLA, permissions: ['assets.override', 'assets.add'], has, ...ctx });
 /** A set's document as server/plugins/visualSet.js serves it: the composition (file tables) and each plugin's writes. */
 const setDoc = (plugins) => {
-  const overlays = plugins.map((p) => ({ id: p.id, version: '1.0.0', files: Object.fromEntries((p.files || [...FILES, 'plugin.json']).map((rel) => [rel, sha(rel)])) }));
+  const overlays = plugins.map((p) => ({ id: p.id, version: '1.0.0', files: Object.fromEntries((p.files || [...FILES, 'plugin.json']).map((rel) => [rel, sha(rel)])), writes: writesHashOf(p.ops) }));
   const parts = { assets: 'aa'.repeat(32), overlays };
   return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: plugins.map((p) => ({ id: p.id, ops: p.ops })) };
 };
@@ -401,7 +401,8 @@ describe('resolution, merge, application', () => {
 });
 
 describe('the visual hash vs', () => {
-  const overlay = (files) => ({ id: 'texas-recolor', version: '1.0.0', files });
+  const OPS = [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'art/a.png' }];
+  const overlay = (files, writes = writesHashOf(OPS)) => ({ id: 'texas-recolor', version: '1.0.0', files, writes });
   const parts = { assets: 'aa'.repeat(32), overlays: [overlay({ 'plugin.json': 'bb'.repeat(32), 'art/a.png': 'cc'.repeat(32) })] };
 
   test('sha256 of the canonical { v, assets, overlays }; the same input → the same hash, in any key order', () => {
@@ -413,10 +414,12 @@ describe('the visual hash vs', () => {
     assert.equal(vsUrlPart(vs), vs.slice(0, 16));
   });
 
-  test('one changed byte of any part → another vs: a file, data/assets.json, a version, the load order', () => {
+  test('one changed byte of any part → another vs: a file, data/assets.json, a version, the load order, the writes', () => {
     const vs = visualHashOf(parts);
     const variants = [
       { ...parts, assets: 'ab'.repeat(32) },
+      // the same file table, another slot for the same file: the writes are part of vs
+      { ...parts, overlays: [overlay({ 'plugin.json': 'bb'.repeat(32), 'art/a.png': 'cc'.repeat(32) }, writesHashOf([{ at: ['chars', 'char_102_texas', 'portrait'], file: 'art/a.png' }]))] },
       { ...parts, overlays: [overlay({ 'plugin.json': 'bb'.repeat(32), 'art/a.png': `c${'c'.repeat(62)}d` })] },
       { ...parts, overlays: [{ ...parts.overlays[0], version: '1.0.1' }] },
       { ...parts, overlays: [...parts.overlays, overlay({})] },
@@ -426,10 +429,23 @@ describe('the visual hash vs', () => {
     for (const v of variants) assert.notEqual(visualHashOf(v), vs, JSON.stringify(v).slice(0, 120));
   });
 
-  test('checkVisualDoc: the composition of a served document hashes to the vs the room named', () => {
+  test('checkVisualDoc: the composition of a served document hashes to the vs the room named, and each plugin\'s writes to its part', () => {
     const vs = visualHashOf(parts);
-    const doc = { chars: {}, visual: { v: 1, vs, assets: parts.assets, overlays: parts.overlays } };
+    const doc = { visual: { v: VISUAL_HASH_VERSION, vs, assets: parts.assets, overlays: parts.overlays }, writes: [{ id: 'texas-recolor', ops: OPS }] };
     assert.equal(checkVisualDoc(doc, vs), null);
+    // the same file table, the same vs, other writes (another file of the table, another slot, other clip data): refused
+    const tampered = [
+      [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'plugin.json' }],
+      [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'art/a.png' }],
+      [...OPS, { at: ['ui', 'hudPanel/icon_hp'], file: 'art/a.png' }],
+      [],
+    ];
+    for (const ops of tampered) assert.match(checkVisualDoc({ ...doc, writes: [{ id: 'texas-recolor', ops }] }, vs), /writes of texas-recolor are not the ones its vs names/, JSON.stringify(ops));
+    assert.match(checkVisualDoc({ ...doc, writes: [] }, vs), /writes of texas-recolor/, 'missing writes are writes of none');
+    assert.match(checkVisualDoc({ ...doc, writes: [...doc.writes, { id: 'texas-recolor', ops: OPS }] }, vs), /one list per plugin/);
+    assert.match(checkVisualDoc({ ...doc, writes: [...doc.writes, { id: 'stranger', ops: [] }] }, vs), /a plugin its composition does not name/);
+    assert.match(checkVisualDoc({ ...doc, writes: [{ id: 'texas-recolor', ops: [{ at: ['x'], n: 1n }] }] }, vs), /not plain data/, 'never throws');
+    assert.equal(writesHashOf(JSON.parse(JSON.stringify(OPS))), writesHashOf(OPS), 'what a browser receives hashes as the server hashed it');
     assert.match(checkVisualDoc(doc, 'ee'.repeat(32)), /names another set/);
     assert.match(checkVisualDoc({ visual: { ...doc.visual, overlays: [] } }, vs), /does not hash to its vs/);
     assert.match(checkVisualDoc({ chars: {} }, vs), /not a visual set document/);

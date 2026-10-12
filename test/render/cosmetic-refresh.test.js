@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { installFakePixi, fakeViewCtx } from './fakepixi.js';
 import { presetCamera } from '../../public/js/render/projection.js';
 import { createAssets, createCosmeticLayers } from '../../public/js/assets.js';
-import { visualHashOf, modelHashOf } from '../../shared/plugins/visual.js';
+import { visualHashOf, modelHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -34,17 +34,16 @@ const M = {
 const fileSha = (rel) => sha256Hex(`skin:${rel}`);
 const FILES = ['plugin.json', 'art/a.png', 'm/t.skel', 'm/t.atlas', 'm/t.png', 'art/c.png'];
 /** A room set of one plugin (server/plugins/visualSet.js's document): Amiya's avatar and Front model. */
-const roomDoc = (() => {
-  const parts = { assets: 'aa'.repeat(32), overlays: [{ id: 'skin', version: '1.0.0', files: Object.fromEntries(FILES.map((rel) => [rel, fileSha(rel)])) }] };
-  return {
-    visual: { v: 1, vs: visualHashOf(parts), ...parts },
-    writes: [{ id: 'skin', ops: [
-      { at: ['chars', 'char_002_amiya', 'avatar'], file: 'art/a.png' },
-      { at: ['chars', 'char_002_amiya', 'spine', 'front'], spine: { skel: 'm/t.skel', atlas: 'm/t.atlas', textures: ['m/t.png'], pma: false,
-        meta: { anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null } } },
-    ] }],
-  };
-})();
+/** A set document of one plugin `id` with these ops (server/plugins/visualSet.js). */
+const docOf = (id, ops, files = FILES) => {
+  const parts = { assets: 'aa'.repeat(32), overlays: [{ id, version: '1.0.0', files: Object.fromEntries(files.map((rel) => [rel, fileSha(rel)])), writes: writesHashOf(ops) }] };
+  return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: [{ id, ops }] };
+};
+const META = { anims: { idle: 'Idle' }, animations: { Idle: 1 }, events: [], hits: {}, bounds: null };
+const roomDoc = docOf('skin', [
+  { at: ['chars', 'char_002_amiya', 'avatar'], file: 'art/a.png' },
+  { at: ['chars', 'char_002_amiya', 'spine', 'front'], spine: { skel: 'm/t.skel', atlas: 'm/t.atlas', textures: ['m/t.png'], pma: false, meta: META } },
+]);
 const MH = modelHashOf(['m/t.skel', 'm/t.atlas', 'm/t.png'].map(fileSha)).slice(0, 8);
 const PLUGIN_SKEL = `/p/skin/${MH}/m/t.skel`;
 const PLUGIN_AVATAR = `/p/skin/${fileSha('art/a.png').slice(0, 8)}/art/a.png`;

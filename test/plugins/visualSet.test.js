@@ -161,6 +161,10 @@ describe('the visual sets of a server', () => {
     assert.deepEqual([front.anims.idle, front.anims.attack.loop, front.hits, front.animations.Attack], ['Idle', 'Attack', { Attack: [0.5] }, 0.5], 'the clip data from the lock');
     // every URL it builds is one /p/ serves immutably
     for (const u of prep.urls) assert.equal((await get(u)).headers['cache-control'], 'public, max-age=31536000, immutable', u);
+    // a document whose writes were changed on the way (another file of the same table to the same slot) is refused
+    const tampered = JSON.parse(JSON.stringify(doc));
+    tampered.writes[1].ops[0] = { ...tampered.writes[1].ops[0], file: 'blue.png', at: ['chars', 'char_112_siege', 'avatar'] };
+    assert.match(String(checkVisualDoc(tampered, set.vs)), /writes of blue are not the ones its vs names/);
     // revalidated with its ETag
     assert.equal((await get(url, { 'If-None-Match': r.headers.etag })).status, 304);
     for (const p of [`/vs/${set.vs.slice(0, 16)}/assets.json`, `/vs/${'0'.repeat(16)}/overlay.json`, `/vs/${set.vs}/overlay.json`, `/vs/${set.vs.slice(0, 16)}/other.json`, '/vs/']) assert.equal((await get(p)).status, 404, p);

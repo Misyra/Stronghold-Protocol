@@ -272,9 +272,12 @@ changed, and a file rewritten with its old size and mtime put back — `rsync -t
 gives it away) [ASSUMED: at scan, a 200 MB plugin costs about a second once].
 
 **The visual hash.** A set of cosmetic plugins in load order is named by
-`vs = sha256(canonical({ v: 1, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files }] }))`, `files`
-mapping every file that shapes a plugin's overlay — `plugin.json`, `plugin.lock.json`, the `assets` file, every file the
-overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, one changed byte another.
+`vs = sha256(canonical({ v: 2, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files, writes }] }))`,
+`files` mapping every file that shapes a plugin's overlay — `plugin.json`, `plugin.lock.json`, the `assets` file, every
+file the overlay serves [ASSUMED] — to its SHA-256, and `writes` the SHA-256 of the canonical JSON of the plugin's writes
+as the server serves them (`writesHashOf`: the slots, the files of the plugin they name, its references, a Spine model's
+clip data — never a URL): the same files and writes give the same `vs`, one changed byte or one file moved to another
+slot another.
 
 **Served:**
 
@@ -294,9 +297,11 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
   every fetch that ends in `.mp3`, the reason 0.2.6's `/media/` route exists; with a `.mp3` and a `.ogg` of one name the
   one whose hash the URL names; a host without the route still works: the page falls back to the URL with the
   extension).
-- `GET /vs/<vs16>/overlay.json` — a set: `{ visual: { v, vs, assets, overlays: [{ id, version, files }] }, writes: [{ id,
-  ops }] }`, its composition (what `vs` hashes) and each plugin's writes in its own terms — paths of its folder,
-  references, a Spine model's clip data from the lock —, never a URL and never a copy of the art manifest (a few KB).
+- `GET /vs/<vs16>/overlay.json` — a set: `{ visual: { v, vs, assets, overlays: [{ id, version, files, writes }] },
+  writes: [{ id, ops }] }`, its composition (what `vs` hashes) and each plugin's writes in its own terms — paths of its
+  folder, references, a Spine model's clip data from the lock —, never a URL and never a copy of the art manifest (a few
+  KB). A browser refuses a document whose composition does not hash to the room's `vs` or whose writes do not hash to
+  their part of it (`checkVisualDoc`: the room keeps the installation's art, one toast).
   `no-cache` with the body's hash as ETag [ASSUMED: a 304 costs next to nothing]; 404 for a set the server does not know
   (a set is known once a room resolved it, or the catalogue named a plugin's own; a room holds its set while it uses it,
   of the others the last 256 are kept [ASSUMED]; a document is built once however many ask).

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { AudioManager, VoiceGate } from '../../public/js/audio.js';
 import { mediaUrl } from '../../public/js/media.js';
 import { createCosmeticLayers } from '../../public/js/assets.js';
-import { visualHashOf } from '../../shared/plugins/visual.js';
+import { visualHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
 
 function fakeWindow() {
@@ -41,12 +41,13 @@ const fileSha = (rel) => sha256Hex(`tunes:${rel}`);
 const url = (rel) => `/p/tunes/${fileSha(rel).slice(0, 8)}/${rel}`;
 const doc = (() => {
   const files = ['plugin.json', 'b/loop.mp3', 'b/buy.mp3', 'b/sel.ogg'];
-  const parts = { assets: 'aa'.repeat(32), overlays: [{ id: 'tunes', version: '1.0.0', files: Object.fromEntries(files.map((rel) => [rel, fileSha(rel)])) }] };
-  return { visual: { v: 1, vs: visualHashOf(parts), ...parts }, writes: [{ id: 'tunes', ops: [
+  const ops = [
     { at: ['audio', 'bgm', 'prep'], track: { loop: 'b/loop.mp3' } },
     { at: ['audio', 'sfx', 'ui', 'buy'], file: 'b/buy.mp3' },
     { at: ['audio', 'voice', 'char_a', 'select'], file: 'b/sel.ogg' },
-  ] }] };
+  ];
+  const parts = { assets: 'aa'.repeat(32), overlays: [{ id: 'tunes', version: '1.0.0', files: Object.fromEntries(files.map((rel) => [rel, fileSha(rel)])), writes: writesHashOf(ops) }] };
+  return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: [{ id: 'tunes', ops }] };
 })();
 const tick = () => new Promise((r) => setTimeout(r, 10));
 

@@ -88,8 +88,9 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   catalogue only then);
 - S→C `room.state.content` = `{ cs, vanilla: true, plugins: [] }` (the room's content set) — with cosmetic plugins
   `{ cs, vanilla: true, vs, plugins: [{ id, version, class: 'cosmetic', hash, auto? }], warnings: [{ code, params }],
-  bytes }`: `cs` stays the vanilla one (art never changes a battle); `vs` = sha256(canonical({ v: 1, assets: <SHA-256 of
-  data/assets.json>, overlays: [{ id, version, files }] })) names the art (`shared/plugins/visual.js`); `plugins` in load
+  bytes }`: `cs` stays the vanilla one (art never changes a battle); `vs` = sha256(canonical({ v: 2, assets: <SHA-256 of
+  data/assets.json>, overlays: [{ id, version, files, writes }] })) names the art (`shared/plugins/visual.js`; `writes`:
+  the SHA-256 of the plugin's writes as served, which a browser hashes again — `checkVisualDoc`); `plugins` in load
   order (`hash`: 16 hex of the plugin's part, `auto`: switched on because another requires it); `warnings`:
   `override { path, plugins: [earlier, later] }` (the later applies), `app { id, app }` (made for other game versions —
   a cosmetic plugin is still allowed); `bytes`: the art the set serves. An empty set is exactly the vanilla shape;
@@ -121,9 +122,10 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   personal plugins with it); a loaded cosmetic plugin's entry adds `vs`, the set of it alone, and `artBytes`), never
   cached;
 - `GET /vs/<first 16 hex digits of vs>/overlay.json` — a visual set: `{ visual: { v, vs, assets, overlays: [{ id,
-  version, files }] }, writes: [{ id, ops }] }` — its composition, which a browser hashes to check it against the room's
-  `vs` (a player's personal plugin: the set of it alone, the catalogue's `vs`), and each plugin's writes (paths of its
-  folder and references — no URL). The browser composes the art on the manifest it loaded (`/data/assets.json`): every
+  version, files, writes }] }, writes: [{ id, ops }] }` — its composition, which a browser hashes to check it against the
+  room's `vs` (a player's personal plugin: the set of it alone, the catalogue's `vs`), and each plugin's writes (paths of
+  its folder and references — no URL), which it hashes against their part of the composition (a mismatch: the document
+  is refused, the room keeps the installation's art). The browser composes the art on the manifest it loaded (`/data/assets.json`): every
   plugin URL built from the file table, every reference copied out of its own manifest, a write that does not fit left
   out (`shared/plugins/visual.js` prepareVisualDoc / layVisualOps). `no-cache` with the body's hash as ETag; 404 for a
   set the server does not know;

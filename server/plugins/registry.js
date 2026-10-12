@@ -45,7 +45,7 @@ import {
   PLUGIN_MANIFEST, PLUGIN_LIMITS, appVersionMatches, buildPluginIndex, checkJsonLimits, checkPluginFiles, classStatus, declaredPaths, readPluginManifest,
 } from '../../shared/plugins/manifest.js';
 import {
-  FILE_URL_DIGITS, LOCK_FILE, attachSpineMeta, modelHashOf, readAssetOverlay, readPluginLock, visualHashOf,
+  FILE_URL_DIGITS, LOCK_FILE, attachSpineMeta, modelHashOf, readAssetOverlay, readPluginLock, visualHashOf, writesHashOf,
 } from '../../shared/plugins/visual.js';
 import { canonicalJson } from '../../shared/plugins/identity.js';
 
@@ -259,7 +259,12 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
     const m = modelHashOf(model.map(sha)).slice(0, FILE_URL_DIGITS);
     for (const rel of model) served.get(rel)?.urlHashes.add(m);
   }
-  const composition = { id: manifest.id, version: manifest.version, files: Object.fromEntries(shaping.sort().map((rel) => [rel, hashed[rel].sha256])) };
+  // its part of a vs (shared/plugins/visual.js): the files that shape the overlay and the hash of its ops — the ops a
+  // set's document serves (server/plugins/visualSet.js), which a browser hashes again before it lays them
+  const composition = {
+    id: manifest.id, version: manifest.version, files: Object.fromEntries(shaping.sort().map((rel) => [rel, hashed[rel].sha256])),
+    writes: writesHashOf(meta.ops),
+  };
   const bytes = [...served.values()].reduce((n, f) => n + f.bytes, 0);
   return {
     visual: {

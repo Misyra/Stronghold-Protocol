@@ -36,13 +36,18 @@
 // (`ref`, `from`: the path it reads), an implied clear (`clear`: an enemy's or a token's `spineLocal`). They name paths of
 // the plugin folder, never a URL.
 //
-//   vs = sha256(canonical({ v: 1, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files }] }))
+//   vs = sha256(canonical({ v: 2, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files, writes }] }))
 //   files: { <path>: SHA-256 } — every file that shapes the plugin's overlay: plugin.json, plugin.lock.json, the
-//   `assets` file and every file the overlay serves [ASSUMED] — so a changed byte in any of them changes `vs`.
+//   `assets` file and every file the overlay serves [ASSUMED] — so a changed byte in any of them changes `vs`;
+//   writes: the SHA-256 of the canonical JSON of the plugin's ops as the server serves them (writesHashOf: the slots they
+//   write, the files of the plugin they name, its references, a Spine model's clip data — never a URL), so `vs` pins
+//   which file goes to which slot, not only which files there are.
 //
 // The document of a set (/vs/<vs16>/overlay.json, server/plugins/visualSet.js): `{ visual: { v, vs, assets, overlays },
 // writes: [{ id, ops }] }` — its composition and each plugin's ops. A browser checks that the composition hashes to the
-// `vs` it was told (checkVisualDoc) and then composes the art itself, on the manifest it already loaded (its own
+// `vs` it was told and that each plugin's ops hash to the `writes` of its composition (checkVisualDoc: a document that
+// fails is refused as a whole — the room keeps the installation's art), and then composes the art itself, on the
+// manifest it already loaded (its own
 // /data/assets.json: 0.2.6's /assets/~<hash>/ URLs) — it never adopts a manifest the server put together, so what it
 // draws is exactly what `vs` names (and the document stays small: no copy of the manifest):
 //   * prepareVisualDoc: every plugin URL is built from the composition's file table — /p/<id>/<8 hex>/<path>
@@ -60,8 +65,8 @@ import { sha256Hex } from '../sha256.js';
 import { canonicalJson, isContentHash } from './identity.js';
 import { isPackPath, extOf } from './manifest.js';
 
-/** The version of the `vs` composition above (a change of it changes every `vs`). */
-export const VISUAL_HASH_VERSION = 1;
+/** The version of the `vs` composition above (a change of it changes every `vs`; 2: the `writes` of each overlay). */
+export const VISUAL_HASH_VERSION = 2;
 /** Hex digits of `vs` in a URL (/vs/<16 hex>/assets.json). */
 export const VS_URL_DIGITS = 16;
 /** Hex digits of a file's (or a Spine model's) hash in its URL (/p/<id>/<8 hex>/<path>). */
@@ -812,9 +817,21 @@ export function mergePluginOps(plugins) {
 // ---- the visual hash and the served documents ----------------------------------------------------------------------
 
 /**
- * @typedef {{ id: string, version: string, files: Record<string, string> }} VisualOverlay
+ * @typedef {{ id: string, version: string, files: Record<string, string>, writes: string }} VisualOverlay
+ *   a plugin's part of a `vs`: its id, version, the files that shape its overlay (SHA-256 each) and the hash of its ops
+ *   (writesHashOf)
  * @typedef {{ v: number, assets: string, overlays: VisualOverlay[] }} VisualComposition
  */
+
+/**
+ * The `writes` of a plugin's part of a `vs` (see the header): the SHA-256 of the canonical JSON of its ops — exactly as
+ * the server keeps and serves them (readAssetOverlay + attachSpineMeta: slots, file names, references, clip data; no
+ * URL). The server computes it when it scans the plugin (server/plugins/registry.js), a browser over the ops a set's
+ * document carries (checkVisualDoc). Throws on what has no JSON form (a browser's check catches it).
+ * @param {unknown} ops
+ * @returns {string}
+ */
+export const writesHashOf = (ops) => sha256Hex(canonicalJson(Array.isArray(ops) ? ops : []));
 
 /**
  * The input of the visual hash (see the header), in its canonical shape.
@@ -822,17 +839,21 @@ export function mergePluginOps(plugins) {
  * @returns {VisualComposition}
  */
 export function visualHashInput({ assets, overlays = [] }) {
-  return { v: VISUAL_HASH_VERSION, assets: String(assets), overlays: overlays.map((o) => ({ id: String(o.id), version: String(o.version), files: { ...o.files } })) };
+  return {
+    v: VISUAL_HASH_VERSION, assets: String(assets),
+    overlays: overlays.map((o) => ({ id: String(o.id), version: String(o.version), files: { ...o.files }, writes: typeof o.writes === 'string' ? o.writes : '' })),
+  };
 }
 
 /** The visual hash `vs` of a set (see the header): 64 lowercase hex digits. @param {{ assets: string, overlays?: VisualOverlay[] }} parts */
 export const visualHashOf = (parts) => sha256Hex(canonicalJson(visualHashInput(parts)));
 
 /**
- * The check a browser runs on a visual set's document (/vs/<vs16>/overlay.json, its `visual` block
- * `{ v, vs, assets, overlays }`): the composition hashes to the `vs` the room (or the catalogue) named — then every plugin
- * URL the page draws is built from that composition's file table (prepareVisualDoc). null when it does, else what is
- * wrong.
+ * The check a browser runs on a visual set's document (/vs/<vs16>/overlay.json: its `visual` block
+ * `{ v, vs, assets, overlays }` and its `writes`): the composition hashes to the `vs` the room (or the catalogue) named,
+ * and every plugin's ops hash to the `writes` of its part of it (writesHashOf) — one list per plugin of the composition,
+ * none of another — so what the page lays is what `vs` names: every plugin URL is then built from that composition's
+ * file table (prepareVisualDoc). null when it holds, else what is wrong (never throws).
  * @param {any} doc the parsed document
  * @param {string} vs the expected visual hash (64 hex)
  * @returns {string | null}
@@ -847,5 +868,20 @@ export function checkVisualDoc(doc, vs) {
   } catch {
     return 'its composition is not plain data';
   }
+  /** @type {Map<string, unknown>} plugin id → its ops */
+  const writes = new Map();
+  for (const w of Array.isArray(doc.writes) ? doc.writes : []) {
+    if (!isObj(w) || typeof w.id !== 'string' || writes.has(w.id)) return 'its writes are not one list per plugin';
+    writes.set(w.id, w.ops);
+  }
+  try {
+    for (const o of v.overlays) {
+      if (writesHashOf(writes.get(o.id) ?? []) !== o.writes) return `the writes of ${String(o.id).slice(0, 32)} are not the ones its vs names`;
+      writes.delete(o.id);
+    }
+  } catch {
+    return 'its writes are not plain data';
+  }
+  if (writes.size) return 'it has writes of a plugin its composition does not name';
   return null;
 }

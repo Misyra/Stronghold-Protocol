@@ -22,7 +22,7 @@ import {
 } from '../../public/js/content.js';
 import { ERR } from '../../shared/constants.js';
 import { roomPluginFacts, nextChoice, sizeText, pluginTagText, pluginMicro } from '../../public/js/ui/pluginPanel.js';
-import { visualHashOf } from '../../shared/plugins/visual.js';
+import { visualHashOf, writesHashOf, VISUAL_HASH_VERSION } from '../../shared/plugins/visual.js';
 import { sha256Hex } from '../../shared/sha256.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -32,8 +32,8 @@ const fileSha = (id, rel) => sha256Hex(`${id}:${rel}`);
 const urlOf = (id, rel) => `/p/${id}/${fileSha(id, rel).slice(0, 8)}/${rel}`;
 /** A set's document (server/plugins/visualSet.js) of one plugin: its composition and its writes. */
 const setDocOf = (id, ops, files = ['a.png']) => {
-  const parts = { assets: 'aa'.repeat(32), overlays: [{ id, version: '1.0.0', files: Object.fromEntries(['plugin.json', ...files].map((rel) => [rel, fileSha(id, rel)])) }] };
-  return { visual: { v: 1, vs: visualHashOf(parts), ...parts }, writes: [{ id, ops }] };
+  const parts = { assets: 'aa'.repeat(32), overlays: [{ id, version: '1.0.0', files: Object.fromEntries(['plugin.json', ...files].map((rel) => [rel, fileSha(id, rel)])), writes: writesHashOf(ops) }] };
+  return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: [{ id, ops }] };
 };
 /** The room's set of one plugin that paints Texas (its a.png). */
 const roomDoc = (id = 'red') => setDocOf(id, [{ at: ['chars', 'char_102_texas', 'avatar'], file: 'a.png' }]);
@@ -214,6 +214,14 @@ describe('content.js', () => {
     await until(() => toasts.length === 1, 'the toast');
     assert.equal(layers.room, null);
     assert.equal(toasts[0][1], 'warn');
+    // a document of the room's own vs whose writes were changed (the same file table): refused the same way, never thrown
+    const forged = roomDoc('forged');
+    forged.writes[0].ops = [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'a.png' }];
+    app.set({ room: { content: { vs: forged.visual.vs } } });
+    pending.get(`/vs/${forged.visual.vs.slice(0, 16)}/overlay.json`)(res(200, forged));
+    await tick(); await tick();
+    assert.equal(layers.room, null, 'the installation\'s art');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, BASE.chars.char_112_siege.avatar);
     off();
     assert.equal(data.get('assets'), data.getRaw('assets'), 'uninstalled: the file as downloaded');
   });

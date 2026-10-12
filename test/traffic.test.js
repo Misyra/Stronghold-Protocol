@@ -103,3 +103,35 @@ test('the counter on its own: a string body in another encoding, an aborted resp
   assert.equal(ws.payloadIn, 7);
   assert.equal(tc.snapshot().seconds, 0);
 });
+
+test('/healthz?traffic=1 answers the counters to a loopback / LAN client only (maintainer, 2026-10-12)', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-traffic-lan-'));
+  fs.mkdirSync(path.join(tmp, 'public'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'shared'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'public/index.html'), '<!doctype html><p>hi</p>');
+  const dirs = { publicDir: path.join(tmp, 'public'), dataDir: path.join(tmp, 'data'), sharedDir: path.join(tmp, 'shared') };
+  const has = async (port, headers) => {
+    const r = await get(port, '/healthz?traffic=1', headers);
+    assert.equal(r.status, 200);
+    const body = JSON.parse(r.body);
+    assert.equal(body.ok, true, 'the plain report still answers');
+    return 'traffic' in body;
+  };
+  const auto = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...dirs });
+  try {
+    assert.equal(await has(auto.port), true, 'the host itself (loopback)');
+    assert.equal(await has(auto.port, { 'x-forwarded-for': '192.168.1.20' }), true, 'a LAN client behind a local proxy');
+    assert.equal(await has(auto.port, { 'x-forwarded-for': '100.101.102.103' }), true, 'a virtual-LAN (CGNAT range) address');
+    assert.equal(await has(auto.port, { 'x-forwarded-for': '203.0.113.9' }), false, 'a public visitor through a tunnel / proxy on this machine');
+    assert.equal(await has(auto.port, { 'cf-connecting-ip': '2001:db8::7' }), false, 'a public IPv6 visitor through cloudflared');
+  } finally {
+    await auto.close();
+  }
+  const ignore = await startServer({ port: 0, host: '127.0.0.1', quiet: true, trustProxy: false, ...dirs });
+  try {
+    assert.equal(await has(ignore.port, { 'x-forwarded-for': '203.0.113.9' }), true, 'TRUST_PROXY=0: the loopback peer itself counts');
+  } finally {
+    await ignore.close();
+  }
+});

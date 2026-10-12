@@ -5,7 +5,9 @@
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
 //     rooms, matches), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
-//     start, WebSocket wire and payload bytes);
+//     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
+//     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
+//     machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the WebSocket limits);
 //   * everything else → the static files (static.js).
 // Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
 // answers 500.
@@ -13,6 +15,7 @@
 import { PROTOCOL_VERSION, APP_VERSION } from '../../shared/constants.js';
 import { buildTag } from './buildTag.js';
 import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
+import { clientAddress, isLocalIp } from '../net.js';
 
 const MAX_URL_LENGTH = 4096;
 
@@ -45,10 +48,11 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  * The request listener for `http.createServer`.
  * @param {{ serveStatic: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
  *             rawPath: string, query: string) => Promise<void>,
- *           health: Parameters<typeof healthReport>[0], log: object }} deps
+ *           health: Parameters<typeof healthReport>[0], log: object, trustProxy?: 'auto' | boolean }} deps
+ *   trustProxy: whose forwarding headers name the client (net.js clientAddress; the server's TRUST_PROXY)
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto' }) {
   async function handleRequest(req, res) {
     const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
@@ -60,7 +64,8 @@ export function createRequestHandler({ serveStatic, health, log }) {
       return;
     }
     if (parts.rawPath === '/healthz') {
-      sendJson(req, res, 200, healthReport(health, wantsTraffic(parts.query)));
+      const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
+      sendJson(req, res, 200, healthReport(health, withTraffic));
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

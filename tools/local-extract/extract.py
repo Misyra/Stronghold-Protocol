@@ -191,12 +191,12 @@ WEBP_OPTIONS = {
 
 # The 19 玩法说明 pages (output subdir guide: 1024², opaque) get a WebP copy too — every page PNG of the group, each a
 # 1.2–1.5 MB download whenever a player opens the guide (public/js/ui/guide.js shows the local page first and preloads
-# the next one). Lossless by default: 25.6 MB → 17.4 MB on the CN client's pages. Lossy quality 90 would make them
-# 4.2 MB; the maintainer decides on that after a side-by-side comparison (DESIGN §31.1, docs/history/0.2.6.md),
-# and then only GUIDE_WEBP_MODE changes (`extract.py --webp` rewrites the copies). Method 4: method 6 spends about 8 s
+# the next one). Lossy quality 90, the maintainer's choice of 2026-10-12 after a side-by-side comparison at 2× (DESIGN
+# §31.1, docs/history/0.2.6.md): 25.6 MB of PNG → 4.2 MB on the CN client's pages (lossless would be 17.4 MB);
+# `extract.py --webp` rewrites the copies when GUIDE_WEBP_MODE changes. Method 4: method 6 spends about 8 s
 # a page for 0.4 % less.
 GUIDE_WEBP_SUB = 'guide'
-GUIDE_WEBP_MODE = 'lossless'
+GUIDE_WEBP_MODE = 'lossy'
 GUIDE_WEBP_OPTIONS = {
     'lossless': {'lossless': True, 'quality': 100, 'method': 4, 'exact': True},
     'lossy': {'quality': 90, 'method': 4, 'alpha_quality': 100},

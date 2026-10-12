@@ -5,6 +5,9 @@
 //   → { key, images: { D, N?, R?, E?, common?, commonE?, BG?, wind?, gate?, waterN?, caustics?, noise? },
 //       meshes: { crate?, blower?, bgPlane?, gate: { startDown?, startUp?, startBack?, endDown?, endUp? } },
 //       tiles, uv, materials: { theme?, fx? } }
+//   const scene = await loadScenePack(assets, stageId)   // the stage's official scene (tools/local-extract/scenes.py),
+//   → { key, stage, doc, chunks: [{ material, lightmap, group, bounds, position, uv, uv1, normal, color, index }],
+//       groups: { name: [x0, y0, x1, y1] }, images: { tex: { name: img }, lm: [img|null] } }     null when not extracted
 //
 // Everything is optional except the diffuse atlas: a missing map or mesh only drops that feature (e.g. no normal
 // map → flat shading of the atlas; no crate mesh → a procedural box). URLs come from data/local-assets.json only
@@ -158,5 +161,102 @@ export function loadBoardPack(assets) {
   return pending;
 }
 
+/** Manifest group of a stage's official scene, and of the textures the scenes share. */
+export const sceneGroup = (stageId) => `scene/${stageId}`;
+export const SCENE_TEX_GROUP = 'scene/tex';
+export const SCENE_VERSION = 1;
+/** Bytes per vertex of a scene chunk: position f32×3, uv f32×2, lightmap uv f32×2, normal i8×4, colour u8×4. */
+export const SCENE_VERTEX_BYTES = 36;
+
+/**
+ * Typed-array views of the chunks of a scene.bin (scenes.py pack_chunk); null when a record does not fit the buffer.
+ * @param {object} doc scene.json
+ * @param {ArrayBuffer} buf scene.bin
+ */
+export function parseSceneChunks(doc, buf) {
+  if (!isObj(doc) || !Array.isArray(doc.chunks) || !(buf instanceof ArrayBuffer)) return null;
+  const out = [];
+  for (const c of doc.chunks) {
+    const n = c?.verts | 0, m = (c?.tris | 0) * 3, o = c?.offset | 0;
+    const end = o + n * SCENE_VERTEX_BYTES + m * (c.index32 ? 4 : 2);
+    if (!(n > 0) || !(m > 0) || o < 0 || o % 4 || end > buf.byteLength || typeof c.material !== 'string') return null;
+    let p = o;
+    const position = new Float32Array(buf, p, n * 3); p += n * 12;
+    const uv = new Float32Array(buf, p, n * 2); p += n * 8;
+    const uv1 = new Float32Array(buf, p, n * 2); p += n * 8;
+    const normal = new Int8Array(buf, p, n * 4); p += n * 4;
+    const color = new Uint8Array(buf, p, n * 4); p += n * 4;
+    const index = c.index32 ? new Uint32Array(buf, p, m) : new Uint16Array(buf, p, m);
+    out.push({
+      material: c.material, lightmap: Number.isInteger(c.lightmap) ? c.lightmap : -1, group: typeof c.group === 'string' ? c.group : '',
+      bounds: Array.isArray(c.bounds) ? c.bounds : null, position, uv, uv1, normal, color, index,
+    });
+  }
+  return out;
+}
+
+/** Ground rect [x0, y0, x1, y1] (board space) of every named group of chunks (the scene's switchable parts). */
+export function sceneGroupRects(chunks) {
+  const out = {};
+  for (const c of chunks || []) {
+    if (!c.group || !c.bounds) continue;
+    const b = c.bounds, r = out[c.group];
+    out[c.group] = r ? [Math.min(r[0], b[0]), Math.min(r[1], b[1]), Math.max(r[2], b[3]), Math.max(r[3], b[4])] : [b[0], b[1], b[3], b[4]];
+  }
+  return out;
+}
+
+async function fetchBuffer(url) {
+  try { const r = await fetch(url, { cache: 'no-cache' }); return r.ok ? await r.arrayBuffer() : null; } catch { return null; }
+}
+
+const sceneCache = new Map();
+
+/** Does the local-art manifest list the official scene of `stageId`? (manifest only) */
+export async function sceneListed(assets, stageId) {
+  if (!stageId || !assets || typeof assets.local !== 'function' || typeof assets.localUrl !== 'function') return false;
+  try { await assets.local(); } catch { return false; }
+  return !!assets.localUrl(sceneGroup(stageId), 'scene') && !!assets.localUrl(sceneGroup(stageId), 'bin');
+}
+
+/**
+ * Load a stage's official scene (scene.json + scene.bin + lightmap pages + albedo textures). A missing texture or
+ * lightmap page only drops that map; a missing or malformed scene gives null (→ the procedural board).
+ * @returns {Promise<object|null>}
+ */
+export function loadScenePack(assets, stageId) {
+  if (typeof stageId !== 'string' || !stageId) return Promise.resolve(null);
+  if (sceneCache.has(stageId)) return sceneCache.get(stageId);
+  const pending = (async () => {
+    if (!(await sceneListed(assets, stageId)) || typeof assets.image !== 'function') return null;
+    const url = (g, n) => { const u = assets.localUrl(g, n); return typeof u === 'string' && u ? encodeURI(u) : null; };
+    const group = sceneGroup(stageId);
+    const [doc, buf] = await Promise.all([fetchJson(url(group, 'scene')), fetchBuffer(url(group, 'bin'))]);
+    if (!isObj(doc) || doc.version !== SCENE_VERSION || !buf) return null;
+    const chunks = parseSceneChunks(doc, buf);
+    if (!chunks || !chunks.length) return null;
+    const img = async (u) => {
+      if (!u) return null;
+      const i = await assets.image(u, { retry: true }).catch(() => null);
+      return i && (i.width || i.naturalWidth) > 0 ? i : null;
+    };
+    const mats = isObj(doc.materials) ? doc.materials : {};
+    const names = [...new Set(Object.values(mats).map((m) => (isObj(m) && typeof m.map === 'string' ? m.map : null)).filter(Boolean))];
+    const pages = Math.max(0, Math.min(16, doc.lightmaps | 0));
+    const [texList, lm] = await Promise.all([
+      Promise.all(names.map((n) => img(url(SCENE_TEX_GROUP, n)))),
+      Promise.all(Array.from({ length: pages }, (_, i) => img(url(group, `lm${i}`)))),
+    ]);
+    const tex = {};
+    names.forEach((n, i) => { if (texList[i]) tex[n] = texList[i]; });
+    return { key: `${url(group, 'scene')}#${doc.binBytes | 0}`, stage: stageId, doc, chunks, groups: sceneGroupRects(chunks), images: { tex, lm } };
+  })().catch((err) => { console.warn('[board3d] scene load failed', err); return null; }).then((pack) => {
+    if (!pack && sceneCache.get(stageId) === pending) sceneCache.delete(stageId);
+    return pack;
+  });
+  sceneCache.set(stageId, pending);
+  return pending;
+}
+
 /** Forget the cached pack and the three.js import attempt (tests / hot reload). */
-export function resetBoardPack() { cached = null; threePromise = null; threeFailures = 0; }
+export function resetBoardPack() { cached = null; threePromise = null; threeFailures = 0; sceneCache.clear(); }

@@ -5,15 +5,19 @@ The server lists what it finds at `/plugins/index.json` and notices a new or cha
 `node tools/plugin.mjs list` shows what was found, what was skipped and why; `node tools/plugin.mjs check` checks the
 folders (manifest, file types, sizes, paths, JSON).
 
-**This version (the plugin system's first step):**
+**This version (0.3.0-dev, P1a):**
 
 - the original game is always the default; a plugin is marked unofficial wherever it is shown;
 - class `lang` (a language) loads, like a language pack in `packs/`;
-- classes `cosmetic` (art, models, audio, fonts) and `content` (data: numbers, modes, new operators and enemies) are
-  checked and listed, not applied yet;
+- class `cosmetic` (art, models, audio) loads: a room's host switches it on for the whole room (the room's 插件 panel),
+  a player for themself (设置 → 外观插件) — it changes what is shown and heard, never a battle;
+- class `content` (data: numbers, modes, new operators and enemies) is checked and listed, not applied yet;
 - no plugin code runs — classes `script`, `ui` and `trusted` are listed as not supported;
-- nothing in this folder except this readme (and, from the next step, the templates in `_template/`) is committed or
-  shipped: your plugins stay yours, and an update never touches them.
+- nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
+  stay yours, and an update never touches them.
+
+Start from `_template/cosmetic/` (references to the installation's own art, no files); `node tools/plugin.mjs pack <dir>`
+writes the `plugin.lock.json` a plugin with Spine models needs.
 
 ```json
 {

@@ -642,8 +642,10 @@ export class SpineActor {
         break;
       default: break;
     }
-    if (!this.frozen) {
-      try { this.spine.update(dt); } catch { /* a broken skeleton must not stop the frame */ }
+    // Freeze animation time, not the first pose or a pending tint/clip change.
+    if (!this.frozen || !this._applied || this.spine.tint !== this._appliedTint) {
+      try { this.spine.update(this.frozen ? 0 : dt); }
+      catch { this._applied = false; return; } // A failed pose must not become a held blank image.
     }
     if (this.clipped && !this.clipOn) this._eyeMaskFallback();
     this._applied = true;

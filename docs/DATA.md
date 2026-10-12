@@ -739,7 +739,7 @@ field), 助战 borrows (`borrowCount` 20), and a player's potential / 练度 per
 `room.loadout`; the forms are built at full potential and carry the lower ranks, §2.3; 练度 = effects.json
 `aceffect_char_1…4`).
 
-### Acquisition subsets corrected in 0.2.5-dev (§30.2)
+### Acquisition subsets corrected in 0.2.5 (§30.2)
 
 `tools/build-data.mjs` owns the measured Rockrock/Flametail subset weights from
 [路标月报#2](https://www.bilibili.com/video/BV1eLXXBqEgF/). Rockrock: ordinary hammer 10; tremble, undying, haste,

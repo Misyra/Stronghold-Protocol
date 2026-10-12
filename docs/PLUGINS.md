@@ -336,7 +336,8 @@ follow their `ui` entries, and the music plays the screen's track again when its
 not load — an image of the interface, a picture, a Spine model (any of its files, or one the renderer cannot build; not
 while the tab is hidden) or the shadow sprite of the board, a sound — makes its entry fall back to the art
 beneath it, the installation's (or the room's, under a personal plugin), for the rest of the page's life [ASSUMED]; a
-sound plays the installation's entry instead at once (the BGM track, the voice line of the same slot, the same sound).
+sound plays the installation's entry instead at once (the BGM track, the voice line of the same slot, the same sound,
+the bond cue).
 When a plugin of a room's set changes on the server while the room uses it (the registry read the folders again — a
 served file found changed, or the folders' own signature), the host is told once (a toast; during a match, once the
 room is back in its lobby) to apply the plugins again:

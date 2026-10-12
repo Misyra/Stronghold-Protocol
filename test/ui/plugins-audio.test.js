@@ -2,7 +2,8 @@
 // extension first (public/js/media.js mediaUrl — the plugin route, for the download managers /media/ avoids), with the
 // URL that has it as the fallback; a sound that will not load either way is reported (AudioManager onFailed → the
 // cosmetic layers, public/js/assets.js), its entry falls back to the installation's, and the entry the manifest names
-// then plays instead, once: the BGM track, the voice line of the same slot, the same UI sound. A fake Web Audio window
+// then plays instead, once: the BGM track, the voice line of the same slot, the same UI sound, the bond cue. A fake Web
+// Audio window
 // (like test/ui/audio.test.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,17 +35,18 @@ function fakeWindow() {
 
 const BASE = { audio: {
   bgm: { prep: { intro: '/assets/audio/bgm/prep_intro.mp3', loop: '/assets/audio/bgm/prep_loop.mp3' } },
-  sfx: { ui: { buy: '/assets/audio/sfx/buy.mp3' }, battle: {}, units: {} },
+  sfx: { ui: { buy: '/assets/audio/sfx/buy.mp3', bondUp: '/assets/audio/sfx/bond.mp3' }, battle: {}, units: {} },
   voice: { char_a: { select: '/assets/audio/voice/a_select.mp3' } },
 } };
 const fileSha = (rel) => sha256Hex(`tunes:${rel}`);
 const url = (rel) => `/p/tunes/${fileSha(rel).slice(0, 8)}/${rel}`;
 const doc = (() => {
-  const files = ['plugin.json', 'b/loop.mp3', 'b/buy.mp3', 'b/sel.ogg'];
+  const files = ['plugin.json', 'b/loop.mp3', 'b/buy.mp3', 'b/sel.ogg', 'b/bond.mp3'];
   const ops = [
     { at: ['audio', 'bgm', 'prep'], track: { loop: 'b/loop.mp3' } },
     { at: ['audio', 'sfx', 'ui', 'buy'], file: 'b/buy.mp3' },
     { at: ['audio', 'voice', 'char_a', 'select'], file: 'b/sel.ogg' },
+    { at: ['audio', 'sfx', 'ui', 'bondUp'], file: 'b/bond.mp3' },
   ];
   const parts = { assets: 'aa'.repeat(32), overlays: [{ id: 'tunes', version: '1.0.0', files: Object.fromEntries(files.map((rel) => [rel, fileSha(rel)])), writes: writesHashOf(ops) }] };
   return { visual: { v: VISUAL_HASH_VERSION, vs: visualHashOf(parts), ...parts }, writes: [{ id: 'tunes', ops }] };
@@ -83,6 +85,12 @@ test('a plugin sound is fetched without its extension; one that will not load fa
     for (let i = 0; i < 3; i++) await tick();
     assert.ok(failed.includes(url('b/sel.ogg')));
     assert.equal(a.voiceNode?.url, BASE.audio.voice.char_a.select);
+    // the bond cue (its own channel: _playBondCue)
+    a.sfx('bondUp');
+    for (let i = 0; i < 3; i++) await tick();
+    assert.ok(failed.includes(url('b/bond.mp3')));
+    assert.ok(urls.includes(mediaUrl(BASE.audio.sfx.ui.bondUp)), 'then the installation\'s cue');
+    assert.ok(a.bondCueNode, 'and it plays');
     // the installation's own sound failing is no plugin file: nothing falls back, nothing plays again
     assert.equal(layers.fail(BASE.audio.sfx.ui.buy), false);
   } finally {

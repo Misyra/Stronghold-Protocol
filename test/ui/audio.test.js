@@ -655,6 +655,27 @@ describe('AudioManager', () => {
       console.warn = origWarn;
     }
   });
+  test('a served manifest\'s content-hashed audio URL is fetched as /media/~<hash>/…, falling back to the hashed .mp3 URL', async () => {
+    const H = '0123456789abcdef';
+    const raw = manifest.audio.bgm.prep.loop.replace(/^\/assets\//, `/assets/~${H}/`);
+    const served = { ...manifest, audio: { ...manifest.audio, bgm: { ...manifest.audio.bgm, prep: { loop: raw } } } };
+    const fw = fakeWindow();
+    const urls = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (u) => { urls.push(u); return u.startsWith('/media/') ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }; };
+    try {
+      const a = new AudioManager({ win: fw.win, getManifest: () => served });
+      a.install();
+      fw.fire('pointerdown');
+      a.playBgm('prep');
+      await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(urls, [raw.replace(/^\/assets\/(~[0-9a-f]{16})\/audio\/(.+)\.mp3$/, '/media/$1/$2'), raw]);
+      assert.match(urls[0], new RegExp(`^/media/~${H}/bgm/`));
+      assert.equal(a.bgm?.loopUrl, raw);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
   test('音频先走无扩展名的 /media/ 路由；只有它 404 才回退到带扩展名的原地址', async () => {
     const raw = manifest.audio.bgm.prep.loop;
     const media = mediaUrl(raw);

@@ -70,6 +70,7 @@
 import { sanitizeVoiceOverrides, voiceLangFor } from './voicePrefs.js';
 import { PHASE } from '../../shared/constants.js';
 import { mediaUrl } from './media.js';
+import { unhashedUrl } from '../../shared/assetPaths.js';
 
 const MAX_VOICES = 8;
 const UNIT_COOLDOWN_MS = 160;
@@ -193,11 +194,14 @@ export function unitSoundClass(info) {
   return 'char';
 }
 
-/** URL of the generic token death sound (b_char_tokendead): sfx.battle.tokenDie, else next to charDie. */
+/**
+ * URL of the generic token death sound (b_char_tokendead): sfx.battle.tokenDie, else next to charDie — without charDie's
+ * content-hash segment, which names charDie's bytes, not this file's (the plain URL is cached for a day).
+ */
 function tokenDieUrl(manifest) {
   const b = manifest?.audio?.sfx?.battle;
   if (typeof b?.tokenDie === 'string') return b.tokenDie;
-  return typeof b?.charDie === 'string' && /b_char_dead\.mp3$/.test(b.charDie) ? b.charDie.replace(/b_char_dead\.mp3$/, 'b_char_tokendead.mp3') : null;
+  return typeof b?.charDie === 'string' && /b_char_dead\.mp3$/.test(b.charDie) ? unhashedUrl(b.charDie).replace(/b_char_dead\.mp3$/, 'b_char_tokendead.mp3') : null;
 }
 
 /**

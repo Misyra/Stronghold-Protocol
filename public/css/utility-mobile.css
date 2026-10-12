@@ -1,0 +1,363 @@
+/* ==========================================================================================
+   utility-mobile.css — compact density for the *management* surfaces only. Loaded last, after
+   devices.css, in source mode and in the Vite CSS bundle.
+
+   Scope: dialogs marked `utility` (components.js <Modal utility>), the guide, the title screen,
+   the lobby, the room, the loadout screen and the local-statistics screen. Nothing here touches
+   the battlefield, the shop, the HUD bands, the detail card or the chat panel: those keep their
+   own geometry from game.css / game-panels.css / game-shop.css / emotes.css and keep reading the
+   plain --t, because the floor below is declared on the management roots only.
+
+   Rules for this file:
+     * html's rem, the global --t and every layout width/height stay where they were;
+     * --utility-text is read by font-size declarations ONLY (test/ui/utility-mobile.test.js);
+     * compact targets use their real box, never an oversized ::before that overlaps a neighbour;
+     * larger saved text sizes still enlarge the content — density comes from columns, gaps and
+       wrapping, never from scale()/zoom or from hiding content.
+   ========================================================================================== */
+
+/* ---- shared dialog chrome ------------------------------------------------------------------- */
+
+.modal__titles { display: flex; flex-direction: column; gap: .04rem; min-width: 0; }
+.utility-modal { width: var(--utility-width, min(6.4rem, 94vw)); max-width: 100%; min-height: 0; }
+.utility-modal .modal__head { flex: none; flex-direction: row; align-items: center; justify-content: space-between; }
+.utility-modal .modal__title { overflow-wrap: anywhere; }
+.utility-modal .modal__body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; -webkit-overflow-scrolling: touch;
+}
+.utility-modal__close {
+  display: grid; place-items: center; flex: none; width: max(.36rem, 32px); height: max(.36rem, 32px);
+  padding: 0; background: var(--bg-1); border: 1px solid var(--line-2); color: var(--text-md);
+}
+.utility-modal__close .icon { width: 50%; height: 50%; }
+.utility-modal__close:hover { color: var(--mint-400); border-color: var(--mint-700); }
+
+@media (max-width: 1000px), (max-height: 600px) {
+
+  /* A local readable floor derived from the saved text size setting. --t stays owned by theme.css
+     and is never redefined. Each management root declares the variable itself: UiHosts / GuideHost /
+     LoadoutHost / StatsHost / ResourceManagerHost are all children of .app-root, so a dialog opened
+     from the title screen or from the match never inherits it from the screen behind it. */
+  :is(.modal--utility, .guide, .lo, .st, .title-screen, .lobby-screen, .room-screen) { --utility-text: max(var(--t), 64px); }
+
+  /* device.js keeps --sp-vh at the real visible height (visualViewport), so a soft keyboard shrinks
+     these budgets instead of leaving the footer actions behind it. Only management surfaces adopt
+     it — the battlefield keeps its own viewport ownership. */
+  .modal--utility, .guide, .lo, .st {
+    bottom: auto; height: min(100dvh, calc(var(--sp-vh, 1dvh) * 100));
+  }
+  .title-screen, .lobby-screen, .room-screen {
+    bottom: auto; height: calc(min(100dvh, calc(var(--sp-vh, 1dvh) * 100)) - var(--sa-t, 0px) - var(--sa-b, 0px));
+  }
+
+  /* ---- generic utility dialog -------------------------------------------------------------- */
+
+  .modal--utility {
+    padding: calc(var(--sa-t, 0px) + 6px) calc(var(--sa-r, 0px) + 6px)
+      calc(var(--sa-b, 0px) + 6px) calc(var(--sa-l, 0px) + 6px);
+  }
+  .modal--utility .utility-modal {
+    width: min(12rem, 100%);
+    max-height: calc(100vh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px);
+    max-height: calc(min(100dvh, calc(var(--sp-vh, 1dvh) * 100)) - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px);
+    font-size: max(calc(.16 * var(--utility-text)), 11px);
+  }
+  .modal--utility .resource-modal { width: min(17rem, 100%); }
+  .modal--utility .settings-modal { width: min(14rem, 100%); }
+  .modal--utility .minfo-dlg { width: min(17rem, 100%); }
+  .modal--utility .history-panel { width: min(17rem, 100%); }
+  .modal--utility .resume-modal { width: min(10rem, 100%); }
+  .utility-modal .modal__head { padding: 6px 10px 4px; gap: 8px; }
+  .utility-modal .modal__head .micro { font-size: max(calc(.1 * var(--utility-text)), 9px); letter-spacing: .08em; white-space: normal; }
+  .utility-modal .modal__title { font-size: max(calc(.22 * var(--utility-text)), 15px); line-height: 1.25; letter-spacing: .02em; }
+  .utility-modal .modal__body { padding: 6px 10px 8px; }
+  .utility-modal .modal__actions { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
+  .utility-modal .modal__actions .btn { min-height: 30px; height: auto; font-size: max(calc(.16 * var(--utility-text)), 11px); }
+  .utility-modal .modal__text { line-height: 1.5; }
+  .utility-modal :is(.btn, .set-toggle, .set-seg button) {
+    min-height: 30px; height: auto; padding: 5px 9px; line-height: 1.25;
+    font-size: max(calc(.16 * var(--utility-text)), 11px); letter-spacing: .02em;
+  }
+  .utility-modal :is(.btn--square, .utility-modal__close) { width: 30px; height: 30px; padding: 0; }
+
+  /* devices.css expands small controls to an invisible 44 px hit area. Inside a compact management
+     surface that area would cover the neighbouring control — a tap between two 30 px buttons would
+     land on the wrong one. Clip the hit area to the real box here; the compaction itself keeps the
+     targets at 26–30 px (still above the 24 px WCAG 2.2 minimum). */
+  .sp-coarse :is(.utility-modal, .lo, .st, .lobby-screen, .room-screen, .title-screen) :is(.btn, .tabs__tab, .set-toggle, .set-seg button, .fsbtn)::before {
+    inset: 0; width: 100%; height: 100%; transform: none;
+  }
+  /* iOS zooms into a focused field below 16 px (ui/clipboard.js relies on the same floor). */
+  .utility-modal :is(input:not([type="radio"]):not([type="checkbox"]):not([type="range"]), textarea, select) {
+    font-size: max(calc(.2 * var(--utility-text)), 16px);
+  }
+  .utility-modal :is(.field__label, .field__hint) { font-size: max(calc(.13 * var(--utility-text)), 11px); }
+
+  /* ---- resource manager -------------------------------------------------------------------- */
+
+  .resource-manager { gap: 8px; font-size: max(calc(.16 * var(--utility-text)), 11px); }
+  .resource-manager p { line-height: 1.45; }
+  /* Both tiers fit side by side on a landscape phone; a genuinely narrow viewport stacks them below. */
+  .resource-manager__tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+  .resource-tier, .resource-archive { padding: 8px; min-width: 0; }
+  .resource-tier h3, .resource-archive h3 { font-size: max(calc(.19 * var(--utility-text)), 13px); }
+  .resource-tier__head { gap: 6px; flex-wrap: wrap; }
+  .resource-tier__head p, .resource-archive p, .resource-tier__summary, .resource-tier__list li,
+  .resource-manager__status, .resource-manager__maintenance, .resource-archive__help, .resource-cache p {
+    font-size: max(calc(.14 * var(--utility-text)), 11px);
+  }
+  .resource-choice { min-height: 28px; gap: 5px; white-space: normal; font-size: max(calc(.14 * var(--utility-text)), 11px); }
+  .resource-choice input { flex: none; width: 14px; height: 14px; margin: 0; }
+  .resource-tier__summary { margin: 6px 0 4px; gap: 3px; }
+  .resource-tier__list { margin-top: 4px; }
+  .resource-tier__list li { gap: 5px; padding: 4px 0; align-items: baseline; }
+  .resource-tier__list .num { white-space: nowrap; }
+  .resource-tier__list small { font-size: max(calc(.12 * var(--utility-text)), 10px); }
+  .resource-manager__status { padding: 6px; }
+  .resource-archive .res-actions, .resource-archive .pbar { margin-top: 6px; }
+  .resource-modal .res-link { min-height: 28px; font-size: max(calc(.13 * var(--utility-text)), 11px); }
+  .resource-modal .pbar__meta { flex-wrap: wrap; gap: 2px 6px; font-size: max(calc(.14 * var(--utility-text)), 11px); }
+  .resource-modal .pbar__value { font-size: max(calc(.16 * var(--utility-text)), 12px); }
+
+  /* ---- settings --------------------------------------------------------------------------- */
+
+  .set-list { gap: 6px; }
+  .set-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto; gap: 8px; min-height: 30px; }
+  .set-row__label { gap: 5px; line-height: 1.35; font-size: calc(.18 * var(--utility-text)); }
+  /* the Latin hint sits inline here (game.css .set-row__label is a wrapping flex row), so it stays —
+     it only needs the same floor as the label beside it */
+  .set-row__label .micro { font-size: max(calc(.11 * var(--utility-text)), 9px); letter-spacing: .1em; }
+  .set-row__label .icon { width: 14px; height: 14px; }
+  .set-row__val { min-width: 2.5em; font-size: calc(.18 * var(--utility-text)); }
+  .set-seg { width: 100%; }
+  .set-seg button { min-width: 0; padding: 4px 7px; }
+  .set-toggle { padding: 4px 8px; }
+  .set-toggle i { width: 28px; height: 16px; }
+  .set-toggle i::after { left: 2px; top: 2px; width: 12px; height: 12px; }
+  .set-toggle.is-on i::after { transform: translateX(12px); }
+  .set-range { min-width: 0; height: 28px; border-block: 10px solid transparent; background-clip: padding-box; }
+  .set-hint { margin: 0; font-size: max(calc(.14 * var(--utility-text)), 11px); line-height: 1.45; color: var(--text-lo); }
+  /* The 快捷键 and 问题反馈 sections live in game.css, which this port deliberately leaves alone (it also owns
+     the battle UI), so their text is restated here to pick up the same floor: at 小 on a phone .15rem is 6 px. */
+  .set-keys { gap: 6px; padding-top: 6px; }
+  .set-keys__list { gap: 4px 8px; }
+  .set-keys__row { min-height: 30px; padding: 3px 3px 3px 8px; gap: 6px; }
+  .set-keys__name, .shortcut-row, .set-res__text, .set-res__num { font-size: max(calc(.15 * var(--utility-text)), 11px); line-height: 1.3; }
+  .set-key, .shortcut-key { min-width: 34px; height: 26px; padding: 0 6px; font-size: max(calc(.15 * var(--utility-text)), 11px); }
+  .set-key.is-waiting { font-size: max(calc(.13 * var(--utility-text)), 11px); }
+  .set-key.is-fixed small { font-size: max(calc(.12 * var(--utility-text)), 10px); }
+  .set-keys__note, .shortcut-error { font-size: max(calc(.13 * var(--utility-text)), 10px); line-height: 1.4; }
+  .set-keys__more > summary { font-size: max(calc(.15 * var(--utility-text)), 11px); }
+  .set-diag__stat, .set-diag__url { font-size: max(calc(.13 * var(--utility-text)), 10px); line-height: 1.4; }
+  .set-diag__count { font-size: max(calc(.18 * var(--utility-text)), 12px); }
+  .set-diag { gap: 4px; padding-top: 6px; }
+  .set-diag__text { height: 96px; min-height: 64px; }
+  .set-lang, .lang-select select { font-size: max(calc(.2 * var(--utility-text)), 16px); }
+
+  /* ---- about / announcement / resume ------------------------------------------------------- */
+
+  .about-panel .modal__body { line-height: 1.5; overflow-wrap: anywhere; }
+  .about-links dt { font-size: max(calc(.14 * var(--utility-text)), 11px); }
+  .announcement-detail .announcement-detail__text { line-height: 1.55; }
+  .resume-modal .btn--block { margin-top: 6px; white-space: normal; overflow-wrap: anywhere; }
+
+  /* ---- title screen ------------------------------------------------------------------------ */
+
+  .title-screen { overflow-y: auto; justify-content: flex-start; }
+  .title-screen .title-main { flex: none; width: 100%; min-width: 0; margin: auto 0; padding: 10px 8px; }
+  .title-screen .title-login { width: min(7.2rem, 100%); margin-top: 12px; gap: 6px; padding: 10px; }
+  .title-screen .title-login .field__box { min-height: 34px; height: auto; }
+  .title-screen .title-login .field__input { font-size: max(calc(.2 * var(--utility-text)), 16px); }
+  .title-screen .title-login .btn--xl { height: auto; min-height: 36px; padding: 6px 10px; letter-spacing: .16em; font-size: max(calc(.24 * var(--utility-text)), 14px); }
+  .title-screen :is(.title-invite, .title-conn) { font-size: max(calc(.14 * var(--utility-text)), 11px); }
+  .title-screen .title-conn { flex-wrap: wrap; gap: 4px; }
+  .title-screen :is(.title-settings, .title-fs) { width: 28px; height: 28px; }
+  .title-screen .title-tag { font-size: max(calc(.16 * var(--utility-text)), 11px); letter-spacing: .02em; text-align: center; }
+  .title-screen .title-foot { position: relative; inset: auto; width: 100%; flex-wrap: wrap; padding: 6px 10px; gap: 4px; font-size: max(calc(.13 * var(--utility-text)), 10px); }
+  .title-screen .title-corner { position: relative; inset: auto; }
+  /* the language / statistics / about / history entries must stay reachable: they move into the flow
+     instead of the absolutely positioned desktop corners */
+  .title-screen .title-corner > * { flex-wrap: wrap; justify-content: center; }
+  .title-screen .title-corner .micro { display: none; }
+  .title-screen .lang-select button, .title-screen .title-corner .btn { height: auto; min-height: 30px; font-size: max(calc(.16 * var(--utility-text)), 11px); }
+  .title-screen .res-pill__head { min-height: 30px; flex-wrap: wrap; font-size: max(calc(.16 * var(--utility-text)), 11px); }
+  .title-screen .res-pill__state { font-size: max(calc(.14 * var(--utility-text)), 11px); }
+
+  /* ---- lobby ------------------------------------------------------------------------------- */
+
+  .lobby-screen .lobby-body { max-width: none; padding: 8px 10px; gap: 12px; }
+  .lobby-screen .mode-cards { gap: 6px; margin-bottom: 8px; }
+  .lobby-screen .mode-card { min-height: 0; gap: 6px; padding: 8px; }
+  .lobby-screen .mode-card__name { font-size: calc(.25 * var(--utility-text)); letter-spacing: .02em; }
+  .lobby-screen .mode-card__desc { line-height: 1.4; }
+  .lobby-screen .mode-card__points { display: flex; gap: 2px; font-size: max(calc(.14 * var(--utility-text)), 10px); }
+  .lobby-screen .mode-card__check { top: 4px; right: 4px; padding: 2px 4px; font-size: max(calc(.12 * var(--utility-text)), 9px); }
+  .lobby-screen .diff-list { gap: 4px; }
+  .lobby-screen .diff-card { padding-block: 5px; }
+  .lobby-screen .create-box { margin-top: 8px; gap: 4px; }
+  .lobby-screen .create-box .btn--xl { height: auto; min-height: 40px; font-size: max(calc(.24 * var(--utility-text)), 14px); letter-spacing: .16em; }
+  .lobby-screen .join-panel .panel__body { padding: 8px; gap: 6px; }
+  .lobby-screen .tips { margin-top: 8px; padding: 8px; }
+  .lobby-screen .tips__text { margin-top: 4px; line-height: 1.4; }
+
+  /* ---- room chrome ------------------------------------------------------------------------- */
+  /* Named areas at every compact width, including 761–1000 px landscape phones: the title stays
+     next to the controls and the invitation on one row, and both bars grow instead of keeping the
+     desktop fixed heights. */
+
+  .room-screen .topbar {
+    height: auto; min-height: 0; padding: 6px 8px; gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-areas: "controls title invite";
+  }
+  .room-screen .topbar__left { grid-area: controls; justify-self: start; min-width: 0; max-width: 100%; flex-wrap: wrap; gap: 4px; }
+  .room-screen .topbar__center { grid-area: title; min-width: 0; padding: 0; }
+  .room-screen .topbar__center > .micro { display: none; }
+  .room-screen .topbar__title {
+    justify-content: center; flex-wrap: nowrap; white-space: nowrap; min-width: 0; max-width: 100%; gap: 4px;
+    font-size: max(calc(.16 * var(--utility-text)), 11px); letter-spacing: 0;
+  }
+  .room-screen .topbar__right { grid-area: invite; justify-self: end; max-width: 100%; min-width: 0; gap: 0; }
+  .room-screen .room-topbar__tools { display: flex; flex: none; align-items: center; gap: 4px; }
+  .room-screen .room-tools { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; }
+  .room-screen .room-ping { align-items: flex-start; gap: 0; min-width: 0; }
+  .room-screen .room-ping > .micro { display: none; }
+  .room-screen .connection-status { flex-wrap: wrap; gap: 4px; max-width: 100%; }
+  .room-screen .invite { min-width: 0; max-width: 100%; padding: 3px 4px; gap: 2px 4px; }
+  .room-screen .invite__label { flex-wrap: nowrap; gap: 3px; }
+  .room-screen .invite__label .micro { display: none; }
+  .room-screen .invite__code { gap: 1px; }
+  /* The key glyph boxes scale with their own font size instead of being a tiny rem box around it. */
+  .room-screen .invite__code span { width: .72em; height: 1em; flex: none; font-size: max(calc(.2 * var(--utility-text)), 12px); }
+  .room-screen .invite__btns { flex-direction: row; gap: 2px; }
+  .room-screen .invite__btns .btn { min-width: 26px; width: 26px; min-height: 26px; height: 26px; padding: 3px; font-size: 0; }
+  .room-screen .invite__btns .icon { width: 16px; height: 16px; }
+  .room-screen--coop { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  .room-screen .seats { padding: 8px 10px; gap: 8px; grid-template-rows: minmax(0, 1fr); overflow-y: auto; }
+  .room-screen--coop .seats { flex: 1 0 144px; min-height: 144px; }
+  .room-screen .seat { padding: 6px; gap: 4px; }
+  .room-screen .seat__art .avatar { --av: min(1.5rem, 18vh); }
+  .room-screen .seat__name { font-size: calc(.2 * var(--utility-text)); }
+  .room-screen .seat__state { min-width: 0; max-width: 100%; overflow-wrap: anywhere; line-height: 1.25; }
+  .room-screen .seat__foot { flex-wrap: wrap; gap: 4px; }
+  .room-screen .solo-brief { padding: 10px; gap: 6px; overflow-y: auto; touch-action: pan-y; }
+  .room-screen .solo-brief h2 { font-size: calc(.26 * var(--utility-text)); }
+  .room-screen .specbar { padding: 0 10px 6px; gap: 6px; }
+  .room-screen .room-bar {
+    height: auto; min-height: 0; padding: 6px 10px; gap: 6px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "options actions" "status actions";
+  }
+  .room-screen :is(.room-bar__left, .room-bar__right) { gap: 6px; flex-wrap: wrap; }
+  .room-screen .room-bar__left { grid-area: options; min-width: 0; }
+  .room-screen .room-bar__label .micro { display: none; }
+  .room-screen .room-bar__center { grid-area: status; flex-direction: row; flex-wrap: wrap; justify-self: start; gap: 4px 8px; min-width: 0; text-align: left; }
+  .room-screen .room-bar__right { grid-area: actions; min-width: 0; align-items: flex-end; justify-content: flex-end; }
+  .room-screen .room-bar__status { overflow-wrap: anywhere; }
+  .room-screen .room-bar .btn--xl { min-width: 0; height: auto; min-height: 34px; font-size: max(calc(.2 * var(--utility-text)), 12px); letter-spacing: .1em; }
+  .room-screen .dpick { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .room-screen .dpick__opt { height: auto; min-height: 28px; padding: 4px 7px; }
+
+  /* ---- loadout / ownership / DIY ------------------------------------------------------------ */
+
+  :is(.lo-top, .st-top) { height: auto; min-height: 40px; padding: 4px 8px; gap: 6px; }
+  :is(.lo-top__left, .lo-top__right, .st-top__left, .st-top__right) { gap: 4px; min-width: 0; }
+  :is(.lo-top, .st-top) .micro { display: none; }
+  .lo .lo-back, .lo .lo-top__right .btn, .st .st-back, .st .st-top__right .btn { height: 30px; min-height: 30px; padding: 4px 7px; min-width: 30px; }
+  :is(.lo-tab, .st-tab) { min-height: 30px; font-size: max(calc(.2 * var(--utility-text)), 12px); letter-spacing: 0; padding: 4px 6px; }
+  .lo-body { padding: 6px 8px; gap: 6px; }
+  .lo-filters, .lo-frow { gap: 4px; }
+  .lo-list, .sp-coarse .lo-list {
+    --q: max(.4rem, 28px); --qg: 3px; --art: max(.48rem, 30px);
+    --cols: minmax(100px, 1fr) calc(3 * var(--q) + 2 * var(--qg)) calc(4 * var(--q) + 3 * var(--qg)) minmax(148px, .8fr);
+    padding-right: 0;
+  }
+  .lo-list__head, .lo .lo-card { column-gap: 6px; }
+  .lo-card__art { width: var(--art); height: var(--art); }
+  .lo .lo-card { padding-block: 3px; }
+  .lo-card__name { font-size: max(calc(.17 * var(--utility-text)), 11px); }
+  .lo-card__pick { gap: 5px; }
+  .lo-card__bonds { display: flex; }
+  .lo .lo-search .field__box { min-height: 30px; height: auto; }
+  .lo .lo-search .field__input, .lo-select select, .lo .lo-cult .lo-select select { font-size: max(calc(.2 * var(--utility-text)), 16px); }
+  .lo-select { height: auto; min-height: 30px; }
+  .lo .lo-chip, .lo .lo-toggle { min-height: 28px; }
+  .lo .lo-seg button { min-height: 26px; }
+  .own-card { padding: 5px 6px; }
+  .own-grid, .diy-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 6px; }
+  .diy-pick__list .diy-opt { min-height: 44px; }
+  .lo-io__text { height: 120px; min-height: 72px; }
+
+  /* ---- local statistics -------------------------------------------------------------------- */
+
+  .st-body { padding: 6px 8px 10px; }
+  .st-body > * { max-width: none; }
+  .st-cards { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 4px; }
+  .st-card { padding: 5px 6px; }
+  .st-sec__h { margin-bottom: 5px; }
+  .st-table td, .st-table th { padding: 5px 6px; }
+  .st-titles { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 4px; }
+  .st-sums { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px; }
+  .st-note { font-size: max(calc(.14 * var(--utility-text)), 11px); line-height: 1.45; }
+
+  /* ---- local match history (its own small sheet, wrapped like the others) ------------------- */
+
+  .history-panel { max-width: 100%; }
+  .history-panel .modal__body { padding: 6px 10px 8px; }
+  .history-notice, .history-import-notice, .history-meta { margin-bottom: 8px; line-height: 1.45; }
+  .history-list { overflow-x: auto; touch-action: pan-x pan-y; }
+  .history-entry { padding: 8px; gap: 6px; }
+  .history-detail__summary { gap: 8px; }
+  .history-error { line-height: 1.45; }
+
+  /* ---- guide ------------------------------------------------------------------------------- */
+
+  .guide { padding-bottom: 0; }
+  .guide__box {
+    max-width: calc(100vw - var(--sa-l, 0px) - var(--sa-r, 0px) - 12px);
+    max-height: calc(min(100dvh, calc(var(--sp-vh, 1dvh) * 100)) - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px);
+    padding: 6px; gap: 6px; min-height: 0; overflow: hidden;
+  }
+  .guide__head { min-height: 30px; gap: 6px; }
+  .guide__chapters { min-width: 0; overflow-x: auto; }
+  .guide__chapter { flex: none; min-width: 60px; height: 30px; padding: 3px 7px; }
+  .guide__chname { font-size: max(calc(.19 * var(--utility-text)), 11px); letter-spacing: .02em; }
+  .guide__chmicro { display: none; }
+  .guide__close { width: 30px; height: 30px; }
+  .guide__close .icon { width: 50%; height: 50%; }
+  /* 16:9 pages are bounded by BOTH the width and the height left under the head and the footer. */
+  .guide__page {
+    width: min(calc(100vw - var(--sa-l, 0px) - var(--sa-r, 0px) - 28px),
+      calc((min(100dvh, calc(var(--sp-vh, 1dvh) * 100)) - var(--sa-t, 0px) - var(--sa-b, 0px) - 90px) * 16 / 9));
+  }
+  .guide__stage--text { min-height: 0; width: 100%; max-height: none; overflow-y: auto; touch-action: pan-y; }
+  .guide__tips li { font-size: max(calc(.18 * var(--utility-text)), 12px); }
+  .guide__foot { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto; gap: 6px; min-height: 24px; }
+  .guide__dots { overflow-x: auto; min-width: 0; max-width: 100%; touch-action: pan-x; }
+  .guide__dot { flex: none; height: 26px; min-width: 26px; }
+  .guide__ptitle { font-size: max(calc(.18 * var(--utility-text)), 11px); }
+  .guide__count { font-size: max(calc(.22 * var(--utility-text)), 12px); }
+}
+
+/* Below a real phone width there is only one column: the resource tiers and the lobby stack, the
+   room seats fall into two columns and then into one, and the statistics tables scroll sideways. */
+@media (max-width: 560px) {
+  .resource-manager__tiers { grid-template-columns: minmax(0, 1fr); }
+  .lobby-screen .lobby-body { grid-template-columns: minmax(0, 1fr); }
+  .room-screen .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; overflow-y: auto; align-content: start; }
+  .room-screen .seat { min-height: 140px; }
+  .room-screen--coop .seats { flex-basis: 304px; grid-template-rows: none; grid-auto-rows: minmax(140px, auto); }
+  .room-screen .seats--solo { grid-template-columns: minmax(0, 1fr); }
+  .room-screen .topbar { grid-template-columns: minmax(0, .85fr) minmax(0, 1.3fr) minmax(0, .85fr); grid-template-areas: "controls title invite"; }
+  .room-screen .topbar__left { flex-direction: column; align-items: flex-start; }
+  .room-screen .topbar__right { justify-self: end; }
+  .room-screen .invite { display: flex; flex-direction: column; align-items: center; width: auto; }
+  .room-screen .invite__btns { flex-direction: row; justify-content: center; flex-wrap: nowrap; }
+  .room-screen .room-bar { grid-template-columns: minmax(0, 1fr); grid-template-areas: "options" "status" "actions"; }
+  .room-screen .room-bar__right { justify-self: stretch; }
+  .lo-top, .st-top { grid-template-columns: auto minmax(0, 1fr); }
+  .lo-top__center, .st-top__center { grid-column: 1 / -1; grid-row: 2; }
+  .lo-top__right, .st-top__right { grid-column: 2; grid-row: 1; }
+  .st-tablewrap { overflow-x: auto; touch-action: pan-x; }
+}

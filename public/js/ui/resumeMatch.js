@@ -37,7 +37,7 @@ export function ResumeMatchButton() {
     }
   };
   return html`<${Button} variant="secondary" size="sm" data-testid="resume-local-match" onClick=${() => setOpen(true)}>${t('恢复本机对局')}<//>
-    <${Modal} open=${open} onClose=${() => !busy && setOpen(false)} title=${t('恢复本机对局')}>
+    <${Modal} open=${open} onClose=${() => !busy && setOpen(false)} title=${t('恢复本机对局')} utility=${true} class="resume-modal">
       <p>${t('选择已关闭窗口的对局。服务器重启或对局过期后无法恢复。')}</p>
       ${items.map((item) => html`<${Button} key=${item.id} variant="secondary" block=${true} disabled=${busy} onClick=${() => resume(item)}>
         ${t('{name} · 同盟 {code}', { name: item.name || t('博士'), code: item.code || '—' })}<//>`)}

@@ -59,7 +59,7 @@ function HistoryContent() {
   async function erase(all) {
     if (busy || (!all && !record)) return;
     const id = record?.id;
-    const confirmed = await confirmDialog({ title: all ? t('清空对局记录？') : t('删除这局记录？'),
+    const confirmed = await confirmDialog({ utility: true, title: all ? t('清空对局记录？') : t('删除这局记录？'),
       text: t('删除后无法恢复，可以先导出数据备份。'), okText: all ? t('清空') : t('删除'), danger: true });
     if (!confirmed) return;
     setBusy(true); setError('');
@@ -79,7 +79,7 @@ function HistoryContent() {
     } catch (err) { setError(err.message ? t(err.message) : t('导入失败，请重试')); }
     finally { importInFlight.current = false; setBusy(false); setImporting(false); }
   }
-  return html`<${Modal} open=${true} title=${t('对局记录')} micro="LOCAL MATCH HISTORY" onClose=${closeHistory}
+  return html`<${Modal} open=${true} title=${t('对局记录')} micro="LOCAL MATCH HISTORY" onClose=${closeHistory} utility=${true}
     width="14rem" class="history-panel" actions=${html`
       ${record ? html`<${Button} icon="chevronLeft" onClick=${() => select(null)} disabled=${busy}>${t('返回列表')}<//>` : null}
       <${Button} class="history-import" variant="secondary" disabled=${loading || busy} loading=${importing} onClick=${() => fileInput.current?.click()}>${t('导入记录')}<//>

@@ -12,7 +12,7 @@
 //     button works with taps, two-tap buy works with taps, a long press on a shop card opens its detail (no purchase);
 //   * safe-area insets (a notch on the left) move the HUD, not the field;
 // plus graceful degradation: WebGL disabled → the DOM view with a notice, local-client art missing → CSS look-alikes,
-// portrait → the rotate hint.
+// portrait → the mandatory rotate hint on every screen (management overlays included).
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -376,12 +376,21 @@ describe('multi-device (Chrome device emulation)', { skip: !ENABLED && 'set SP_E
     }
   });
 
-  test('portrait phone: the rotate hint covers the page', async () => {
+  test('portrait phone: the mandatory rotate hint covers the page on every screen, utility overlays included', async () => {
     const page = await browser.newPage();
     await page.emulate({ viewport: { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true }, userAgent: IOS_UA });
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await sleep(400);
-    assert.equal(await page.$eval('.rotate-hint', (el) => getComputedStyle(el).display), 'grid');
+    assert.equal(await page.$eval('.rotate-hint', (el) => getComputedStyle(el).display), 'grid', 'the title screen requires landscape too');
+    // css/utility-mobile.css may not exempt any management surface from the gate: check the feature classes
+    // whose screens are management-only (the loadout, the local statistics) and the in-match state.
+    for (const cls of ['sp-in-match', 'sp-loadout-open', 'sp-stats-open']) {
+      await page.evaluate((name) => document.documentElement.classList.add(name), cls);
+      assert.equal(await page.$eval('.rotate-hint', (el) => getComputedStyle(el).display), 'grid', `${cls} cannot bypass landscape`);
+      await page.evaluate((name) => document.documentElement.classList.remove(name), cls);
+    }
+    // iPhone Safari has no element fullscreen: the hint's 点击进入横屏 button must stay hidden there
+    assert.equal(await page.$eval('#rotate-hint-fullscreen', (el) => el.hidden), true);
     await page.screenshot({ path: path.join(OUT, 'device-portrait-rotate.png') });
     await page.close();
     // review regression: a narrow desktop window (half a 1080p screen, portrait monitor) cannot be "rotated" — no hint

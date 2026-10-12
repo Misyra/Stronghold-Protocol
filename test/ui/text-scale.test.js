@@ -191,14 +191,27 @@ describe('文字大小: the CSS text root', () => {
     ];
     for (const [src, re, what] of want) assert.match(src, re, what);
     const byRel = new Map(sheets.map((s) => [s.rel, s.src]));
+    // A management surface may route its typography through `var(--utility-text, var(--t))` instead
+    // (css/utility-mobile.css): the compact density layer lowers the floor on phones only and the
+    // fallback keeps the ordinary text root everywhere else, so the reader is unchanged. Everything
+    // outside the management surfaces still reads --t directly.
+    // Reads the ordinary text root, either directly or via the management layer's fallback:
+    //   font-size: calc(.18 * var(--t))   |   font-size: calc(.18 * var(--utility-text, var(--t)))
+    const readsT = /font-size: calc\(\.\w+ \* var\(--(?:utility-text, var\(--t\)|t)\)\)/;
+    const inBlock = (selector) => (css) => {
+      const at = css.indexOf(selector);
+      if (at < 0) return false;
+      const open = css.indexOf('{', at);
+      return open >= 0 && readsT.test(css.slice(open, css.indexOf('}', open)));
+    };
     const samples = [
-      ['components.css', /\.btn \{[^}]*font-size: calc\(\.18 \* var\(--t\)\)/s],
-      ['screens/game.css', /\.set-row__label \{[^}]*font-size: calc\(\.18 \* var\(--t\)\)/s],
-      ['screens/game-panels.css', /\.dtext \{ font-size: calc\(\.15 \* var\(--t\)\); line-height: 1\.65;/],
-      ['screens/guide.css', /\.guide__tips li \{ font-size: calc\(\.18 \* var\(--t\)\)/],
-      ['screens/lobby.css', /\.mode-card__desc/, ],
+      ['components.css', inBlock('.btn'), '.btn'],
+      ['screens/game.css', inBlock('.set-row__label'), '.set-row__label'],
+      ['screens/game-panels.css', (css) => css.includes('.dtext { font-size: calc(.15 * var(--t)); line-height: 1.65;'), '.dtext'],
+      ['screens/guide.css', inBlock('.guide__tips li'), '.guide__tips li'],
+      ['screens/lobby.css', (css) => css.includes('.mode-card__desc'), '.mode-card__desc'],
     ];
-    for (const [file, re] of samples) assert.match(byRel.get(`${CSS}/${file}`), re, file);
+    for (const [file, ok, what] of samples) assert.ok(ok(byRel.get(`${CSS}/${file}`)), `${file} ${what}`);
   });
 
   test('a newer reader would be caught: every plain rem font-size is a documented exclusion', () => {

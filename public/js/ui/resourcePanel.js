@@ -149,7 +149,7 @@ export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', o
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch { /* controller displays the error */ }
   };
-  return html`<${Modal} open=${open} onClose=${closeResources} title=${t('预载资源管理')} micro="RESOURCE MANAGER" class="resource-modal"
+  return html`<${Modal} open=${open} onClose=${closeResources} title=${t('预载资源管理')} micro="RESOURCE MANAGER" class="resource-modal" utility=${true}
     actions=${html`
       ${busy(st) ? html`<${Button} variant="secondary" icon="hourglass" disabled=${st.clearing} onClick=${pauseResources}>${st.clearing ? t('正在清理') : archiveBusy ? t('取消处理') : t('暂停下载')}<//>`
         : html`<${Button} variant="primary" icon="play" disabled=${!st.supported || st.clearing}

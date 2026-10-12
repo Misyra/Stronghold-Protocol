@@ -17,26 +17,41 @@ export function negotiateStateDelta(ws, version) {
 
 export function resetStateDelta(ws) { connections.get(ws)?.clear(); }
 
-/** Return an encoded state and commit its baseline ONLY after the caller successfully queues the reliable frame. */
-export function prepareStateFrame(ws, msg, encoded) {
-  const states = connections.get(ws);
-  if (!states || !isStateKind(msg?.t)) return { data: encoded, commit() {} };
+/** Reserve a shared state's sequence in enqueue order; parse/diff work stays in the send slice. */
+export function reserveStateFrame(msg, encoded) {
+  if (isStateKind(msg?.t)) snapshotFor(msg, encoded);
+}
+
+function snapshotFor(msg, encoded) {
   let snapshot = snapshots.get(msg);
-  // The encoding, not mutable game objects, owns this immutable baseline.
   if (!snapshot || snapshot.encoded !== encoded) {
     const seq = ++sequence;
     snapshot = {
-      encoded, seq, view: JSON.parse(encoded), transitions: new WeakMap(),
+      encoded, seq, view: undefined, transitions: new WeakMap(),
       full: `{"t":"m.state","kind":${JSON.stringify(msg.t)},"seq":${seq},"full":${encoded}}`,
     };
     snapshots.set(msg, snapshot);
   }
+  return snapshot;
+}
+
+function snapshotView(snapshot) {
+  if (snapshot.view === undefined) snapshot.view = JSON.parse(snapshot.encoded);
+  return snapshot.view;
+}
+
+/** Return an encoded state and commit its baseline ONLY after the caller successfully queues the reliable frame. */
+export function prepareStateFrame(ws, msg, encoded) {
+  const states = connections.get(ws);
+  if (!states || !isStateKind(msg?.t)) return { data: encoded, commit() {} };
+  // The encoding, not mutable game objects, owns this immutable baseline.
+  const snapshot = snapshotFor(msg, encoded);
   const previous = states.get(msg.t);
   let data = snapshot.full;
-  if (previous && previous !== snapshot) {
+  if (previous && previous !== snapshot && snapshot.seq > previous.seq) {
     let transition = snapshot.transitions.get(previous);
     if (transition === undefined) {
-      const patch = diffState(previous.view, snapshot.view);
+      const patch = diffState(snapshotView(previous), snapshotView(snapshot));
       const delta = patch && JSON.stringify({ t: 'm.state', kind: msg.t, seq: snapshot.seq, base: previous.seq, patch });
       // Compare actual UTF-8 bytes, not JS string length. Large changes fall back to full.
       transition = delta && Buffer.byteLength(delta) < Buffer.byteLength(snapshot.full) ? delta : snapshot.full;

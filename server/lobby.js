@@ -104,8 +104,7 @@ import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
-import { encode, isErrCode, sendRaw, sendSession } from './net.js';
-import { resetStateDelta } from './stateTransport.js';
+import { encode, isErrCode, sendRaw, sendSession, resetSocketState } from './net.js';
 import { matchStatus, roomStatus } from './roomStatus.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
@@ -1131,7 +1130,7 @@ export class Lobby {
   /** @param {import('./net.js').Session} session */
   runResync(session) {
     if (!session.connected || this.registry.byId(session.playerId) !== session) return;
-    resetStateDelta(session.ws);
+    resetSocketState(session.ws);
     this.sendChatState(session);
     const room = this.roomOf(session);
     if (!room) return;
@@ -1419,6 +1418,7 @@ export class Lobby {
   broadcastState(room) {
     if (room.disposed) return;
     const data = encode(room.toState());
+    // Managed sockets share Network's send budget across rooms, with FIFO relative to match unicasts.
     for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { kind: 'room.state' });
   }
 
@@ -1426,7 +1426,7 @@ export class Lobby {
     sendSession(session, room.toState());
   }
 
-  /** Match broadcast: encode once, send to every connected member. @returns {string | null} the encoded frame */
+  /** Match broadcast: encode once; Network slices member sends across rooms. @returns {string | null} the encoded frame */
   broadcastRoom(room, msg) {
     if (room.disposed) return null;
     const data = encode(msg);

@@ -2,7 +2,8 @@
 // animation frames: pacing (60 ticks per real second at 2×, ≤ 8 per frame), the b.snap / b.ev feed and the field meta,
 // b.progress / b.result when authoritative (valid protocol frames, the same result as the server's simulation),
 // fast-forward to `elapsed`, b.end (forced / takeover), the hidden-tab pump, the boss pool sync, phase clearing, the live
-// leak count of normal fields (state().leaks, user playtest #3 item 2).
+// leak count of normal fields (state().leaks, user playtest #3 item 2), the local combat statistics (combatMetrics: one
+// owner's operators only, per battle or per round, kept across an evicted or dropped battle).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBattleRunner, ticksPerFrameCap } from '../../public/js/battle/runner.js';
@@ -183,6 +184,67 @@ test('b.end forced ends the local battle and reports at once; a new prep clears 
   r.store.patch('match', { public: { phase: 'PREP' } });
   assert.equal(r.runner._entries.size, 0);
   assert.equal(r.store.get().match.battle, null);
+  r.runner.dispose();
+});
+
+test('own battle statistics stay available when viewing a teammate; owner filtering excludes teammate damage', async () => {
+  const start = realStart(7311);
+  const r = rig();
+  await r.runner.onStart(start);
+  r.advance(5000, 50);
+  const ownerId = start.spec.players[0].playerId;
+  const own = r.runner.combatMetrics({ scope: 'battle', ownerId });
+  assert.ok(own.rows.length > 0);
+  const teammate = structuredClone(start);
+  teammate.battleId = 'metrics-teammate';
+  teammate.fieldId = 'n:metrics-teammate';
+  teammate.authoritative = false;
+  teammate.watch = true;
+  for (const player of teammate.spec.players) player.playerId = 'metrics-teammate';
+  await r.runner.onStart(teammate);
+  assert.deepEqual(r.runner.combatMetrics({ scope: 'battle', ownerId }), own, 'own field is selected instead of the watched field');
+  assert.ok(r.runner.combatMetrics({ scope: 'battle', ownerId }).rows.every((row) => row.ownerId === ownerId));
+  assert.deepEqual(r.runner.combatMetrics({ scope: 'match', ownerId }), own, 'match view remains restricted to self');
+  assert.equal(r.runner.combatMetrics({ scope: 'battle', ownerId: 'unavailable-player' }).rows.length, 0);
+  r.runner.dispose();
+});
+
+test('evicted observed battles keep match totals; replaying one replaces its snapshot without double counting', async () => {
+  const start = realStart(7310);
+  const r = rig();
+  const recorded = new Map();
+  for (let i = 0; i < 5; i++) {
+    const battleId = `metrics-replica-${i}`;
+    await r.runner.onStart({ ...start, battleId, authoritative: false, watch: true });
+    r.advance(10000, 50);
+    const b = r.runner._entries.get(battleId).battle;
+    recorded.set(battleId, b.allyUnits.reduce((n, u) => n + u.stats.dmg, 0));
+  }
+  assert.ok(!r.runner._entries.has('metrics-replica-0'), 'first replica was evicted');
+  const expected = [...recorded.values()].reduce((n, v) => n + v, 0);
+  assert.ok(expected > 0);
+  assert.ok(Math.abs(r.runner.combatMetrics().damage - expected) < 1e-6);
+  await r.runner.onStart({ ...start, battleId: 'metrics-replica-0', authoritative: false, watch: true });
+  assert.ok(Math.abs(r.runner.combatMetrics().damage - expected) < 1e-6, 'replay at time zero retains prior totals');
+  r.advance(12000, 50);
+  const replay = r.runner._entries.get('metrics-replica-0').battle;
+  const updated = expected - recorded.get('metrics-replica-0') + replay.allyUnits.reduce((n, u) => n + u.stats.dmg, 0);
+  assert.ok(Math.abs(r.runner.combatMetrics().damage - updated) < 1e-6, 'same battle contributes only its newer snapshot');
+  r.runner.dispose();
+});
+
+test('a round\'s combat statistics survive its prep but not the next round\'s start', async () => {
+  const start = realStart(7312);
+  const r = rig();
+  await r.runner.onStart(start);
+  r.advance(5000, 50);
+  const before = r.runner.combatMetrics();
+  assert.ok(before.rows.length > 0);
+  r.store.patch('match', { public: { phase: 'PREP' } });
+  assert.equal(r.runner._entries.size, 0, 'the prep dropped the battle');
+  assert.deepEqual(r.runner.combatMetrics(), before, 'the round keeps what it fought (the dropped battle is a snapshot)');
+  r.store.patch('match', { public: { phase: 'LOBBY' } });
+  assert.deepEqual(r.runner.combatMetrics(), { rows: [], damage: 0, healing: 0 }, 'a new match starts at zero');
   r.runner.dispose();
 });
 

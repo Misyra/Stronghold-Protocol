@@ -1461,5 +1461,21 @@
   "每条最多 30 字；包含不适宜内容的消息无法发送，多次违规将暂停聊天。": "Up to 30 characters per message; inappropriate messages cannot be sent, and repeated violations suspend chat.",
   "公告": "Announcements",
   "查看完整公告": "View full announcement",
-  "当前暂无公告": "No current announcements"
+  "当前暂无公告": "No current announcements",
+  "作战统计": "Combat statistics",
+  "关闭作战统计": "Close combat statistics",
+  "统计范围": "Statistics scope",
+  "当前战斗": "Current battle",
+  "本局累计": "Match total",
+  "总伤害": "Total damage",
+  "总治疗": "Total healing",
+  "伤害类型图例": "Damage type legend",
+  "伤害降序": "Damage, descending",
+  "干员伤害排行": "Operator damage ranking",
+  "伤害": "Damage",
+  "元素": "Elemental",
+  "暂无本地战斗记录": "No local battle records",
+  "开始战斗后实时显示干员数据": "Live operator statistics appear when battle starts",
+  "仅统计自己 · 同名干员合并 · 召唤物计入所属干员": "Your units only · Same-name operators combined · Summons count toward their operator",
+  "实际扣血 / 有效治疗，DPS / HPS 按自己的战斗秒数计算。刷新后重新累计。": "Actual HP damage and effective healing. DPS/HPS uses your simulated battle time. Reloading resets totals."
 }

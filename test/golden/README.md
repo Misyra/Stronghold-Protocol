@@ -16,10 +16,7 @@ through.
 
 ## The corpus
 
-2026-10-11 移植 xinhai `1cf48618`（干员被动/特质赠送装备不占用、不受共享装备库存限制，装备实例以可选
-`itemPoolCopies` 记录真实占用）。本地按官方语料完整重算 287 场景：零场景变化——官方基线的 20 场对局与
-267 场战斗都没有触发赠送与库存耗尽的交互路径（xinhai 分支仅 `coop4-FUNNY-6` 变化，来自其既有语料差异）。
-豁免、混合合成占用与快照恢复由 `test/match/passive-item-stock.test.js` 覆盖。
+2026-10-13 固定赠品装备库存改用主上游 0.2.5 的实现（`requirePool: false` + `isUnlimitedGiftItem`：赠品照常占 1/2 份、允许超过库存上限）。本分支 2026-10-11 移植 xinhai `1cf48618` 的「赠品占 0 份」provenance 模型整体移除，`piece.itemPoolCopies`、`pool.occupied()` 与 `test/match/passive-item-stock.test.js` 一起走；固定赠品的覆盖由上游的 `test/match/community-round30.test.js` 承担。完整重算 287 场景：与基线零变化——语料没有触发赠送与库存耗尽的交互路径。
 
 | family | what runs |
 |---|---|

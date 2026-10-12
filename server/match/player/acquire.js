@@ -197,17 +197,14 @@ export class PlayerAcquire {
     return np;
   }
 
-  /** Normal item → golden version in place (整备). Stock-backed items need a second real copy;
-   * passive gifts stay exempt. The caller keeps its charge when a real second copy is unavailable. */
+  /** Normal item → golden version in place (整备). A golden occupies two shared copies and this piece
+   * already occupies one, so the upgrade waits when no second copy is free. The caller keeps its charge. */
   upgradeItem(piece) {
     const rec = this.gd.item(piece.id);
     if (!rec || rec.isGolden) return false;
     const gid = rec.upgradeChessId || rec.goldenId;
     if (!gid || !this.gd.item(gid)) return false;
-    const reserved = this.m.itemPool.occupied(piece);
-    if (reserved > 0 && this.m.itemPool.left(piece.id) < 1) return false;
-    if (reserved === 0) piece.itemPoolCopies = 0;
-    else if (Object.hasOwn(piece, 'itemPoolCopies')) piece.itemPoolCopies = reserved + 1;
+    if (this.m.itemPool.left(piece.id) < 1) return false;
     piece.id = gid;
     this.recompute();
     return true;
@@ -290,23 +287,18 @@ export class PlayerAcquire {
    * call, even when an identical normal copy is already owned. The next prep's start runs checkItemMerges. Nothing
    * already equipped is taken off for the fight about to start. Hand and temp both full keeps the 「整备区已满，获得的装备已销毁」
    * outcome. [ASSUMED] every item granted at 休整期结束, not only 维多利亚's 战栗维式重锤 (owner's decision 2026-10-04).
-   * `fromPool: false` (an operator passive / trait gift) and `requirePool: false` (upstream 0.2.5's narrower
-   * request, honoured for the fixed operator-gift families only) both bypass shared stock and hold zero copies.
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, fromPool = true, requirePool = true } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
-    // Two ways to overdraft the shared stock. `fromPool: false` is the passive-gift path this fork ported from
-    // xinhai 1cf48618: the copy holds zero, so the stock keeps its cap (pool.js occupied / itemPoolCopies).
-    // `requirePool: false` is upstream 0.2.5's narrower request and only the fixed operator-gift families may use
-    // it (commercial packaging and other strategy grants keep their stock limit).
-    const overdraft = !fromPool || (!requirePool && this.gd.isUnlimitedGiftItem(itemId));
-    if (!overdraft && !this.m.itemPool.canGain(itemId)) {
+    // Only the fixed operator-gift families can overdraw. Several unrelated strategy grants also pass
+    // requirePool:false; they must retain their stock limit (for example commercial packaging).
+    const unlimitedGift = !requirePool && this.gd.isUnlimitedGiftItem(itemId);
+    if (!unlimitedGift && !this.m.itemPool.canGain(itemId)) {
       this.m.toast(this, 'warn', '装备库存不足，未获得该装备');
       return null;
     }
-    // Provenance is server-owned and travels with the piece, not inferred from its name or current holder.
-    let piece = this.newPiece('item', itemId, overdraft ? { itemPoolCopies: 0 } : {});
+    let piece = this.newPiece('item', itemId);
     // A prep-end grant may sit beside an identical copy until the next prep. The invariant counts only copies
     // without this mark, so the fight that is about to start is not reported as a missed merge.
     if (deferMerge) piece.deferMerge = true;
@@ -332,11 +324,7 @@ export class PlayerAcquire {
     // remember where equipped twins sat: with a full hand AND a full temp the golden item takes the first one's slot
     const slotOf = consumed.filter((l) => l.area === 'equipped').map((l) => ({ holder: l.holder, idx: l.holder.items.indexOf(l.piece) }));
     for (const l of consumed) if (l.area !== 'new') this._detach(l);
-    const goldenId = rec.upgradeChessId || rec.goldenId;
-    const reserved = Math.min(this.m.itemPool.need(goldenId),
-      consumed.reduce((n, l) => n + this.m.itemPool.occupied(l.piece), 0));
-    const golden = this.newPiece('item', goldenId,
-      reserved === this.m.itemPool.need(goldenId) ? {} : { itemPoolCopies: reserved });
+    const golden = this.newPiece('item', rec.upgradeChessId || rec.goldenId);
     if (!this.stow(golden, { allowTemp: true })) {
       const at = slotOf[0];
       if (!at || !this.find(at.holder.uid)) {

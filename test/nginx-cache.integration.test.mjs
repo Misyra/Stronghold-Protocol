@@ -9,12 +9,22 @@ import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { gzipSync } from 'node:zlib';
-import { startAgent } from '../ops/agent.mjs';
+import { pathToFileURL } from 'node:url';
 
 const binary = process.env.NGINX_PATH;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const normalized = file => file.replaceAll('\\', '/');
 const read = file => fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+
+// 探针不再随本仓库分发（2026-10-12）：它由 sp-portal 生成到自己的 ops/ 产物树，部署时整份拷到服务器。
+// 这个用例要真起一个 Agent、并用 nginx 示例片段，所以按顺序找：SP_PROBE_DIR → 同级的 sp-portal 检出 →
+// 本仓库里残留的 ops/。三个都没有就跳过 —— 关键是**不能**写成静态 import：那样整个文件会在加载时炸掉，
+// 连"跳过"都报不出来。
+const probeDirs = [process.env.SP_PROBE_DIR, path.resolve('..', 'sp-portal', 'ops'), path.resolve('ops')]
+  .filter(Boolean).map(dir => path.resolve(dir));
+const probeDir = probeDirs.find(dir => fs.existsSync(path.join(dir, 'agent.mjs')) && fs.existsSync(path.join(dir, 'deploy', 'nginx-agent.conf.example')));
+const startAgent = probeDir ? (await import(pathToFileURL(path.join(probeDir, 'agent.mjs')).href)).startAgent : null;
+const probeMissing = '需要探针：把 sp-portal 检出放在同级目录、或设置 SP_PROBE_DIR 指向它的 ops/ 产物树';
 async function listen(handler) {
   const server = http.createServer(handler);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -22,7 +32,7 @@ async function listen(handler) {
 }
 
 test('real nginx examples: manifest caching, current health, log metadata and authenticated Agent',
-  { skip: !binary && 'Set NGINX_PATH to run real nginx', timeout: 60000 }, async t => {
+  { skip: !binary ? 'Set NGINX_PATH to run real nginx' : !startAgent ? probeMissing : false, timeout: 60000 }, async t => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-nginx-cache-'));
     for (const folder of ['logs', 'cache', 'temp', 'public/icons']) fs.mkdirSync(path.join(dir, folder), { recursive: true });
     fs.writeFileSync(path.join(dir, 'public/icons/app.svg'), '<svg/>');
@@ -86,7 +96,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       .replace('listen 443 ssl;', `listen 127.0.0.1:${port};`)
       .replace(/^\s*ssl_certificate(?:_key)?\s+.*$/gm, '')
       .replaceAll('127.0.0.1:3000', `127.0.0.1:${backend.port}`)
-      .replace('server_name game.example.com;', 'server_name game.example.com;\nproxy_buffering off;\n' + read('ops/deploy/nginx-agent.conf.example').replaceAll('127.0.0.1:3900', `127.0.0.1:${agent.port}`));
+      .replace('server_name game.example.com;', 'server_name game.example.com;\nproxy_buffering off;\n' + fs.readFileSync(path.join(probeDir, 'deploy', 'nginx-agent.conf.example'), 'utf8').replaceAll('127.0.0.1:3900', `127.0.0.1:${agent.port}`));
     config = 'pid logs/nginx.pid;\nerror_log logs/error.log;\n' + config;
     fs.writeFileSync(path.join(dir, 'nginx.conf'), config);
     let child;

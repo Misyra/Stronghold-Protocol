@@ -2,6 +2,8 @@
 
 ## 探针更新状态
 
+> 2026-10-12 更正：探针已不再随本仓库分发。下面「游戏 `ops/` 与门户探针源码一致」指的是当时那份 vendored 副本，现已从本仓库移除 —— 探针只在 sp-portal 的 `ops/` 产物树里维护，部署时整份拷到服务器（见 [MONITORING.md](MONITORING.md)）。本节其余结论仍然成立：要更新就更新**完整** ops/ 而不只是 `agent.mjs`，保留运行实例自己的 env、公告目录与历史目录，中央门户也要一起更新并重启。
+
 门户 `deploy/sync-agent.mjs --check` 通过，游戏 `ops/` 与门户探针源码一致，当前内容版本 `sp-ops-8b6a48451657`。新增采集和过滤逻辑主要在 collector 与共享库，不能只覆盖 `agent.mjs`。应更新完整 ops/，保留运行实例自己的 env、公告目录和历史目录，重启 sp-collector、sp-admin；中央门户也须更新并重启，才能识别新字段。
 
 先核对 systemd 实际 WorkingDirectory/ExecStart 指向哪个检出。独立 `/opt/stronghold-ops` 部署不会因另一个游戏目录 git pull 自动更新。安装器回归验证旧配置、令牌和数据目录保留；日常源码更新无需重新安装 unit。游戏进程新增 loop/GC 区间窗口需在正常发布时重启游戏才生效。

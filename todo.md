@@ -139,7 +139,7 @@
 - 完成记录：采集 socket total/max、worker busy/queued/累计排队/累计平均计算、heap、存档累计失败/检查点/最近尝试耗时、线程 CPU/top3 名称、nvcsw、TCP/SYN/快速重传、网卡错包/丢弃及采集本地耗时。CLK_TCK 自动查询，无法确定时 CPU 为 null；PID/starttime 与计数回退均防假峰。多个游戏进程不猜测目标；线程排行不输出 tid。
 - 测试：Linux 解析/增量/进程重启/线程重建/权限失败/未知 tick 测试通过，健康字段、白名单和历史回归通过。Linux 指标用模拟 proc 数据验证，本机 Windows 不宣称完成三台主机实测。
 - 状态：**代码确认缺口**。
-- 源码位置：`../sp-portal/collector.mjs`；通过同步脚本生成本仓库 `ops/`。
+- 源码位置：`../sp-portal/collector.mjs`；`npm run sync:agent` 生成为 sp-portal 仓库的 `ops/` 产物树（2026-10-12 起不再生成到本仓库），部署时整份拷到服务器。
 - 项目：socket 背压 total/max；worker busy/queued、任务计数和耗时；heapUsed/heapTotal；存档 failures/checkpoints；主线程/worker CPU、非自愿上下文切换；TCP 重传、SYN 重传、网卡错误/丢包；探针本轮耗时与积压。
 - 做法：基础 TCP 计数从 `/proc/net/snmp`，扩展计数从 `/proc/net/netstat` 读取；线程从 `/proc/PID/task` 读取。累计量按增量计算，处理 PID/进程启动时间变化、计数回退、权限不足及不同平台。
 - 口径：`workers.queueMs` 是累计排队毫秒数，`avgComputeMs` 是累计平均值，不能伪装成本轮延迟；存档失败告警以新增失败与恢复状态为依据，避免一次失败永远报警。本轮已实现 `lastSaveMs` 并采集，表示最近一次实际存档尝试耗时。
@@ -280,8 +280,8 @@
 - [ ] 后续探针修改从门户源码同步，并建立逐站部署清单。
 - 本轮已按门户源码同步并通过 --check，探针版本会随最终文档/源码校验更新；三台主机发布核验未执行，因此不勾选整项。逐站验收表见 `docs/operations/OPTIMIZATION-ROLLOUT.md`。
 - 状态：**本地同步检查通过**，版本 `sp-ops-8b6a48451657`。
-- 做法：在 `sp-portal` 修改 collector/共享库，运行 `deploy/sync-agent.mjs` 同步到本仓库 `ops/`，再以 `--check` 验证。记录各站提交、探针版本、启用配置、验证结果及回滚文件，不盲目覆盖报告中已生效的改动。
-- 验收：两仓库无手工分叉，各站版本可追踪；历史库、密钥不随源码替换而丢失。
+- 做法：在 `sp-portal` 修改 collector/共享库，运行 `npm run sync:agent` 生成为该仓库的 `ops/` 产物树（**2026-10-12 起探针不再同步进本仓库**，本仓库那份 vendored `ops/` 已移除），`npm run check:agent` 校验（`npm test` 里也有一条用例守着），再整份拷到服务器 `/opt/stronghold-ops`。记录各站探针版本、启用配置、验证结果及回滚文件，不盲目覆盖报告中已生效的改动。
+- 验收：探针只有一处来源（sp-portal 的 `ops/` 产物树），各站版本可追踪；历史库、密钥不随源码替换而丢失。
 
 ## 本次检查记录
 

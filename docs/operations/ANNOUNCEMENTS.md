@@ -26,7 +26,7 @@
 
 ## 接入和升级
 
-1. 游戏及中央 sp-portal 更新到支持探针推送的版本；游戏仓库的 ops/ 已包含对应探针。
+1. 游戏及中央 sp-portal 更新到支持探针推送的版本。探针不再随本仓库分发（2026-10-12 起）：先在 sp-portal 目录生成 `ops/` 产物树（`npm run sync:agent`，`npm run check:agent` 校验），整份拷到本站 `/opt/stronghold-ops`，见 [MONITORING.md](MONITORING.md)。
 2. 按 [MONITORING.md](MONITORING.md) 运行安装脚本。已有 env 保留，脚本自动补充独立的 `SP_ADMIN_TOKEN_RW`、公告目录及 systemd 写权限。
 3. 在面板站点配置中填写本站探针 URL 和 `admin.env` 中的 `SP_ADMIN_TOKEN_RW`，测试连接后保存。它可读取监控并写公告；旧 `SP_ADMIN_TOKEN_RO` 仍只能读取监控。
 4. 升级已有 feed 部署时，把**游戏服务**环境设置为 `SP_ANNOUNCEMENT_SOURCE=agent` 后重启游戏。新安装不设置来源即可使用 agent。安装脚本不会擅自改动游戏服务环境。

@@ -382,7 +382,7 @@ enemy: 隐匿 kept out, 起飞 not), 【污染秽蚀】 on every ally inside (fl
 `alliesInRadius`) — through `dealDamage`, so shields absorb a damage
 tick, damage-taken modifiers scale it and it counts for 受击回复 SP and TAKE_DAMAGE skills like any hit (§4; element fills
 excepted). 【污染秽蚀】 (萨卡兹枯朽战车's 秽蚀轰击,
-萨卡兹枯朽战士's death — none when it dies silenced, its client template checks 沉默, DESIGN §25.18) is **true** damage, 50 / 25 per second on low / high ground (PRTS "每秒受到50/25点真实普通伤害 …
+萨卡兹枯朽战士 / 组长's death — none when either dies while silenced. The owner's official-play recall of 2026-10-12 is that a silenced death creates no fog, which contradicts the PRTS / in-game text 「不可沉默」; only `enemy_1267_nhpbr` and `enemy_1267_nhpbr_2` share this PollutedDie ability, DESIGN §30.20) is **true** damage, 50 / 25 per second on low / high ground (PRTS "每秒受到50/25点真实普通伤害 …
 同名效果不叠加", user playtest #6): a unit covered by several zones takes one tick per second (`unit.mem.pollutedAt`), so
 a crowd of dying 萨卡兹枯朽战士 totals 50 / s, not 50 × n. It is "可对空，无视无法选择": it also burns an airborne 起飞 ally
 (`ignoreSelect`), at the low-ground rate on a low tile. The other zones are no exception to 对地规避: a ground enemy's

@@ -45,6 +45,61 @@ held references. Their later `release(key)` calls could decrement the replacemen
 entry, allowing a live resource to be evicted. Both TTL expiry and explicit retry
 now require zero references before replacing a failure.
 
+### Held impostor images stayed blank after WebGL restoration
+
+Frozen and downed units can retain their final pose in a shared impostor atlas or
+a private render texture. WebGL context restoration invalidates those GPU image
+contents. The held-pose optimization previously skipped repainting them because
+the actor had not moved, leaving an empty cached image indefinitely.
+
+A real Chrome control lost and restored the context with `WEBGL_lose_context`:
+the held model went from 4,967 nontransparent pixels to zero. Manually marking
+the impostor dirty restored all 4,967 pixels. This confirms another independent
+failure mechanism, not that context loss occurred in the original screenshots.
+
+Impostors now track the renderer's context identity and repaint after it changes.
+Each atlas page also clears itself on its first draw in the new context. Shared
+and private targets recovered automatically in Chrome, retaining the same actor
+and render target; the held-pose optimization resumes after the redraw. No model
+redownload, simulation restart or continuous pixel scan is required.
+
+The new browser test's evaluation callback ran through Playwright at 1280x720
+and 390x844 against the local raw-object CDN. Both shared and private targets
+retained nonzero pixels after restoration (4,668 on desktop; 477/476 on mobile).
+Screenshots were inspected at both sizes. This exercised the browser regression
+body, not its Puppeteer launcher. The non-browser renderer and asset-CDN suite
+passed 582 tests with two skips; `npm run build` also passed.
+
+### A model loaded while stunned could cache an unposed skeleton
+
+The 120-unit stress scene exposed three persistent blank models: Gavial the
+Invincible, an enemy shield guard and an enemy recruit. Their textures were
+valid, but they entered stun before their first Spine update. Without a stun
+clip, `frozen` skipped that update while still marking the pose as applied.
+Repainting alone left them blank; `spine.update(0)` followed by a repaint restored
+all three without advancing their animations or reloading their assets.
+
+Frozen actors now apply their first pose and pending tint/clip changes at zero
+animation time. Unchanged poses remain cached; failed pose updates are not marked
+as applied. A fresh browser run checked all 91 living models in the stress scene
+twice with no blank models or invalid textures. All three initially stunned
+models remained visible with track time zero. Degenbrecher's Skill 3 disappearance
+is an intentional animation and is not counted as a loading failure.
+
+### WebGL restoration left Pixi extensions disabled
+
+The shipped Pixi 7 context-restored handler rebuilt GPU resources without calling
+`getExtensions()` again. WebGL disables extensions on context loss, so cached
+anisotropic-filtering enums produced `INVALID_ENUM` warnings after restoration.
+A capture-phase restoration listener now refreshes extensions before Pixi's
+resource-rebuild listener runs; it is removed when the view is destroyed.
+Two real browser restorations (shared atlas and private target) retained visible
+model pixels, reported no matching warnings and ended with `gl.getError() === 0`.
+
+The combined non-browser renderer/asset-CDN suite passed 586 tests with two skips;
+the production Vite build passed. Browser checks used Playwright because the
+standalone Puppeteer launcher timed out in this environment.
+
 ## Additional Guards
 
 - Invalid atlas pages are rejected rather than accepted as a ready model.
@@ -63,6 +118,16 @@ now require zero references before replacing a failure.
 - `test/asset-cdn.test.js`: invalid atlas/page rejection and resolver cleanup.
 - `test/asset-cdn.browser.test.js`: real textures and extracted pixels across 25
   unload/reload cycles. Opt in with `SP_E2E=1`; requires Chrome and downloaded art.
+- `test/render/held-pose.test.js`: one redraw after context restoration for both
+  shared and private targets, then held-pose update skipping resumes.
+- `test/render/impostor-context.test.js`: atlas pages clear once per context.
+- `test/render/frozen-pose.test.js`: first pose, tint/clip changes, thaw and retry
+  after a failed pose update while frozen.
+- `test/render/pixi-extensions.test.js`: extension refresh precedes resource
+  rebuilding, and the restoration listener is removable.
+- `test/render/context-recovery.browser.test.js`: real held-model pixels survive
+  context restoration in both target types at desktop and mobile viewport sizes.
+  Opt in with `RENDER_E2E=1`; requires Chrome and downloaded art.
 
 The browser evaluation callback was also executed through the Playwright browser
 tool against a local raw-object CDN. This does not exercise Puppeteer's launcher.
@@ -74,3 +139,12 @@ its existing 48 MiB budget; subsequent scene transitions still rendered correctl
 Both viewport sizes were inspected with screenshots and canvas pixel checks.
 After deployment, existing tabs must load the updated client; files already
 executing in a browser are not replaced by a server restart.
+
+## Vite Is Not a Resource-Lifecycle Fix
+
+The project already builds the production client with Vite. Bundling reduces
+JavaScript module requests and produces versioned chunks, but the model's skeleton,
+atlas and image pages are still loaded at runtime. It cannot correct stale Pixi
+resolver metadata, reference-count corruption, or blank restored render targets.
+Those require the runtime fixes and regression coverage above. Do not disable
+texture garbage collection or pin all models permanently to hide the symptoms.

@@ -133,7 +133,7 @@ import { IDENTITY, bossPrepField, tilesToDisp, leaderStand } from './prepfield.j
 import { pickOnTile, pickBattle, hitTiles } from './pick.js';
 import { promotionsOf } from './promote.js';
 import { applyFrameRate, renderFrameBudget } from '../frameRate.js';
-import { ensurePixi } from './app/pixi.js';
+import { ensurePixi, restorePixiExtensions } from './app/pixi.js';
 import { pieceDirOf, pickUnitOf } from './app/pick.js';
 import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS } from './app/tune.js';
 import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, penShown, leaderShown } from './app/view.js';
@@ -197,6 +197,8 @@ export async function createFieldView(host, options = {}) {
     width: s0.width, height: s0.height, antialias: opts.antialias ?? (settings.quality === 'high' && (globalThis.devicePixelRatio || 1) < 1.5), backgroundColor: 0x0a0e0d, backgroundAlpha: 0,
     resolution: dpr(), autoDensity: true, powerPreference: 'high-performance',
   });
+  const offContextExtensions = restorePixiExtensions(app.renderer);
+  setupCleanup.push(offContextExtensions);
   settings.fpsLimit = applyFrameRate(app.ticker, settings.fpsLimit);
   const canvas = app.view;
   setupCleanup.push(() => {
@@ -1914,6 +1916,7 @@ export async function createFieldView(host, options = {}) {
       globalThis.document?.removeEventListener?.('visibilitychange', onVisible);
       removeInput();
       offShadow?.();
+      offContextExtensions();
       signal?.removeEventListener('abort', onAbort);
       app.ticker.remove(frame);
       app.ticker.remove(preRender);

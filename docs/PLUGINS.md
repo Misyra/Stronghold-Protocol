@@ -283,7 +283,11 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
   pages share one folder. At the hash of the file's bytes, while the file keeps the size, mtime, inode and ctime it was
   hashed with, the answer is `immutable` for a year; at any other hash, or for a file changed since the scan, the current
   file with `no-cache` (as for `/assets/~<hash>/…`, ASSETS.md), and a changed file has the registry read the folders
-  again.
+  again. An audio file is also served **without its extension** — `/p/<id>/<hash8>/voice/s1` for `voice/s1.mp3` —, which
+  is how the page fetches it (`public/js/media.js` mediaUrl: download managers such as IDM or 迅雷 pop up a dialog for
+  every fetch that ends in `.mp3`, the reason 0.2.6's `/media/` route exists; with a `.mp3` and a `.ogg` of one name the
+  one whose hash the URL names; a host without the route still works: the page falls back to the URL with the
+  extension).
 - `GET /vs/<vs16>/overlay.json` — a set: `{ visual: { v, vs, assets, overlays: [{ id, version, files }] }, writes: [{ id,
   ops }] }`, its composition (what `vs` hashes) and each plugin's writes in its own terms — paths of its folder,
   references, a Spine model's clip data from the lock —, never a URL and never a copy of the art manifest (a few KB).

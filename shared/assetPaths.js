@@ -60,17 +60,18 @@ export const TRAFFIC_CATEGORIES = Object.freeze(['assets', 'audio', 'code', 'dat
 
 /**
  * The traffic category of a request path (the content-hash segment does not matter): `audio` (/media/,
- * /assets/audio/, a cosmetic plugin's .mp3 / .ogg at /p/), `assets` (/assets/, /fonts/, /icons/, the art of a content
- * pack, a cosmetic plugin's other files at /p/ — DESIGN §32), `data` (/data/*.json, the UI language packs /i18n/, the
- * pack index, a visual set /vs/…json, other JSON), `code` (the page, scripts, styles: /, *.js, *.css, *.html, /vendor/,
- * /sim/, /shared/), `other` (/healthz, error pages for anything else).
+ * /assets/audio/, a cosmetic plugin's .mp3 / .ogg at /p/ — also without the extension), `assets` (/assets/, /fonts/,
+ * /icons/, the art of a content pack, a cosmetic plugin's other files at /p/ — DESIGN §32), `data` (/data/*.json, the
+ * UI language packs /i18n/, the pack index, a visual set /vs/…json, other JSON), `code` (the page, scripts, styles: /,
+ * *.js, *.css, *.html, /vendor/, /sim/, /shared/), `other` (/healthz, error pages for anything else).
  * @param {string} path a URL path (no query)
  * @returns {'assets'|'audio'|'code'|'data'|'other'}
  */
 export function trafficCategory(path) {
   const p = splitHashedPath(path).path;
   if (p.startsWith('/media/') || p.startsWith('/assets/audio/')) return 'audio';
-  if (p.startsWith('/p/')) return /\.(?:mp3|ogg)$/i.test(p) ? 'audio' : 'assets';
+  // a plugin's audio, with its extension or without (public/js/media.js: only audio is asked for without one)
+  if (p.startsWith('/p/')) return /\.(?:mp3|ogg)$/i.test(p) || !/\.[A-Za-z0-9]+$/.test(p) ? 'audio' : 'assets';
   if (p.startsWith('/assets/') || p.startsWith('/fonts/') || p.startsWith('/icons/')) return 'assets';
   if (p.startsWith('/packs/')) return /\.json$/i.test(p) ? 'data' : 'assets';
   if (p.startsWith('/data/') || p.startsWith('/i18n/') || /\.json$/i.test(p)) return 'data';

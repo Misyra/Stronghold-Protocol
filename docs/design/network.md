@@ -117,9 +117,11 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   plugin URL built from the file table, every reference copied out of its own manifest, a write that does not fit left
   out (`shared/plugins/visual.js` prepareVisualDoc / layVisualOps). `no-cache` with the body's hash as ETag; 404 for a
   set the server does not know;
-- `GET /p/<id>/<hash8>/<path>` — a file a loaded cosmetic plugin's overlay names (nothing else of its folder); `<hash8>`
-  the first 8 hex digits of its SHA-256 (of its Spine model's files' SHA-256s for a model's skeleton, atlas and pages):
-  `immutable` at that hash, the current file with `no-cache` at another;
+- `GET /p/<id>/<hash8>/<path>` — a file a loaded cosmetic plugin's overlay names (nothing else of its folder; never
+  through a symbolic link put in later); `<hash8>` the first 8 hex digits of its SHA-256 (of its Spine model's files'
+  SHA-256s for a model's skeleton, atlas and pages): `immutable` at that hash while the file keeps the size, mtime,
+  inode and ctime it was hashed with, the current file with `no-cache` otherwise; an audio file also without its
+  extension (`/p/<id>/<hash8>/voice/s1` — how the page fetches it, for the download managers `/media/` avoids);
 - the client keeps `welcome.content` in its store; a diagnostic report's second line is `content: vanilla cs=<64 hex>`
   (`public/js/diag.js contentLine`; with cosmetic plugins `vanilla cs=… cosmetic vs=… plugins=id@version(hash),…`, the
   player's own after ` personal=`; a room with gameplay plugins: `MODDED cs=… plugins=id@version(hash)…`).

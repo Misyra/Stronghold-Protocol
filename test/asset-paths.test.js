@@ -38,6 +38,7 @@ test('traffic categories: audio, assets, code, data, other — the hash segment 
     '/sim/Battle.js': 'code', '/shared/protocol.js': 'code', '/data.js': 'code', '/healthz': 'other', '/favicon.ico': 'other',
     // a cosmetic plugin's files and a visual set (DESIGN §32 P1a)
     '/p/texas-red/0123abcd/art/a.png': 'assets', '/p/texas-red/0123abcd/spine/t/t.skel': 'assets', '/p/texas-red/0123abcd/voice/s1.mp3': 'audio',
+    '/p/texas-red/0123abcd/voice/s1': 'audio',
     [`/vs/${H}/assets.json`]: 'data', [`/vs/${H}/overlay.json`]: 'data', '/plugins/index.json': 'data',
   };
   for (const [p, cat] of Object.entries(cases)) assert.equal(trafficCategory(p), cat, p);

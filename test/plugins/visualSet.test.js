@@ -56,6 +56,10 @@ function exampleRoot() {
   writePlugin(path.join(plugins, 'mine'), cosmetic({ scope: ['personal'], app: '<0.1.0', assets: { chars: { char_112_siege: { avatar: 'm.png' } } } }), { 'm.png': png(4, 4, [9, 9, 9, 255]) });
   writePlugin(path.join(plugins, 'nope'), cosmetic({ conflicts: { blue: '*' }, assets: { chars: { char_112_siege: { avatar: 'n.png' } } } }), { 'n.png': png(4, 4) });
   writePlugin(path.join(plugins, 'gameplay'), { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'content', permissions: ['data.patch'], data: ['d.json'] }, { 'd.json': { patch: 1, ops: [] } });
+  writePlugin(path.join(plugins, 'tunes'), cosmetic({ permissions: ['assets.add'], assets: { audio: { sfx: { ui: { click: 'v/click.mp3' } },
+    voice: { char_102_texas: { select: ['v/both.mp3', 'v/both.ogg'] } } } } }), {
+    'v/click.mp3': Buffer.from('ID3 a click, not really mp3'), 'v/both.mp3': Buffer.from('ID3 the mp3 one'), 'v/both.ogg': Buffer.from('OggS the ogg one'),
+  });
   return root;
 }
 
@@ -218,6 +222,22 @@ describe('the visual sets of a server', () => {
       '/p/absent/00000000/x.png', '/p/gameplay/00000000/d.json', '/p/red/00000000/', '/p/red/', '/p/', '/p/red/00000000/art/red.png%00'];
     for (const p of refused) assert.ok([400, 403, 404].includes((await get(p)).status), `${p} must not be served`);
     assert.equal((await get('/p/red/00000000/art%5cred.png')).status, 400, 'a backslash is no path');
+  });
+
+  test('GET /p/: a plugin\'s audio without its extension too (download managers, public/js/media.js) — the listed file of that name the hash names', async () => {
+    const tunes = registry.plugin('tunes').visual;
+    const click = tunes.served.get('v/click.mp3');
+    const r = await get(`/p/tunes/${click.sha256.slice(0, 8)}/v/click`);
+    assert.deepEqual([r.status, r.headers['content-type'], r.headers['cache-control']], [200, 'audio/mpeg', 'public, max-age=31536000, immutable']);
+    assert.equal(sha(r.body), click.sha256);
+    const mp3 = tunes.served.get('v/both.mp3');
+    const ogg = tunes.served.get('v/both.ogg');
+    const o = await get(`/p/tunes/${ogg.sha256.slice(0, 8)}/v/both`);
+    assert.deepEqual([o.status, o.headers['content-type'], sha(o.body)], [200, 'audio/ogg', ogg.sha256], 'two of one name: the one the hash names');
+    assert.equal(sha((await get(`/p/tunes/${mp3.sha256.slice(0, 8)}/v/both`)).body), mp3.sha256);
+    const other = await get('/p/tunes/00000000/v/both');
+    assert.deepEqual([other.status, other.headers['cache-control']], [200, 'no-cache'], 'a hash naming neither: the current .mp3, revalidated');
+    for (const p of ['/p/tunes/00000000/v/nothing', '/p/red/00000000/art/red', '/p/tunes/00000000/v/click.png', '/p/tunes/00000000/v/']) assert.equal((await get(p)).status, 404, `${p}: only an audio file of the overlay`);
   });
 
   test('GET /p/: a link put in place of a served file after the scan, leading out of the folder, is not followed', async (t) => {

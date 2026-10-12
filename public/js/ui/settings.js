@@ -7,6 +7,9 @@
 // 问题反馈, which copies the diagnostics of this page for a bug report (diag.js: the error log, this browser, optionally
 // the battle on screen; nothing is uploaded). The lobby and the room open it from a 设置 button next to 玩法说明
 // (SettingsButton, GitHub #238); the title screen and the match have their own gear.
+// 外观插件 (DESIGN §32 P1a, the design study's §7.5): a switch for each cosmetic plugin of scope `personal` the server's
+// catalogue lists (content.js) — kept in this browser (`sp.pref.cosmetics`), never sent, seen by this player alone and
+// never part of a battle; the section is left out when the server has none.
 //
 // 文字大小 (textSize, applied by applyTextSize): the interface text root `--t` of css/theme.css — a phone clamps the
 // layout root `1rem` at 40 px (theme.css), which left the .18rem body text at 7.2 CSS px while the browser's own font
@@ -14,7 +17,7 @@
 // Only font-size declarations read `--t`, so the board, the HUD bands the prep camera keeps clear and the detail
 // card's side do not move — the field is sized from the host element's clientWidth (render/app.js).
 
-import { useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
+import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button, Icon, MicroLabel } from './components.js';
 import { GIcon } from './gameComponents.js';
 import { createStore, useStore, loadPref, savePref, store } from '../store.js';
@@ -26,6 +29,8 @@ import { LangToggle, machineTranslationNote } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
+import { catalog, loadCatalog, cosmeticPlugins, personal, personalApplied, pluginName, setPersonalPlugin } from '../content.js';
+import { pluginMicro } from './pluginPanel.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -209,7 +214,7 @@ function DiagSection() {
   const n = errorCount();
   const battle = currentBattle();
   const copy = async () => {
-    const text = diagnosticsText({ state: store.get(), settings: settingsStore.get(), attachBattle: attach && !!battle });
+    const text = diagnosticsText({ state: store.get(), settings: settingsStore.get(), attachBattle: attach && !!battle, personal: personalApplied() });
     const ok = await copyText(text);
     setManual(ok ? null : text);
     setNote(ok ? 'copied' : 'refused');
@@ -229,6 +234,32 @@ function DiagSection() {
     ${note ? html`<p class=${cx('set-keys__note', note === 'refused' && 'is-warn')} role="status" aria-live="polite">${t(DIAG_NOTES[note])}</p>` : null}
     ${manual ? html`<textarea ref=${boxRef} class="set-diag__text" data-testid="diag-text" spellcheck=${false} readOnly
       aria-label=${t('诊断信息')} value=${manual}></textarea>` : null}
+  </section>`;
+}
+
+/**
+ * 外观插件 (see the header): the server's cosmetic plugins of scope `personal`, each with its switch; nothing when there
+ * is none. The catalogue is fetched again when the section opens (a plugin dropped in meanwhile shows).
+ */
+function CosmeticSection() {
+  const cat = useStore((s) => s, Object.is, catalog);
+  const ids = useStore((s) => s.ids, Object.is, personal);
+  useEffect(() => { loadCatalog({ force: true }); }, []);
+  const list = cosmeticPlugins(cat.plugins, 'personal');
+  if (!list.length) return null;
+  return html`<section class="set-plugins" aria-labelledby="set-plugins-title" data-testid="personal-plugins">
+    <div class="set-keys__head">
+      <span class="set-row__label" id="set-plugins-title">${t('外观插件')}<${MicroLabel}>COSMETIC PLUGINS<//></span>
+    </div>
+    <p class="set-hint">${t('只改变你自己看到的画面和声音，不影响其他博士，也不影响战斗；插件为非官方制作。')}</p>
+    ${list.map((p) => {
+      const on = ids.includes(p.id);
+      return html`<div key=${p.id} class="set-row" data-plugin=${p.id}>
+        <span class="set-row__label">${pluginName(p)}<${MicroLabel}>${pluginMicro(p)}<//></span>
+        <button type="button" class=${`set-toggle${on ? ' is-on' : ''}`} role="switch" aria-checked=${on ? 'true' : 'false'} aria-label=${pluginName(p)}
+          onClick=${() => setPersonalPlugin(p.id, !on)}><i></i><span>${on ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
+      </div>`;
+    })}
   </section>`;
 }
 
@@ -281,6 +312,7 @@ export function SettingsModal({ open, onClose }) {
       </div>
       <p class="set-hint set-textsize-note">${t('调整界面文字大小，棋盘保持原比例。')}</p>
       <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
+      <${CosmeticSection} />
       <${DiagSection} />
       <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
     </div>

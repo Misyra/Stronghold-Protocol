@@ -23,6 +23,11 @@
 // by its view (`spine.restart(entry)`, RefLru.restart); such a fresh load — and any load after a failure — drops PIXI's
 // still-pending requests of that skeleton first (forgetPendingSpine), so it does not join them.
 //
+// Cosmetic plugins (DESIGN §32 P1a, docs/PLUGINS.md §5): the manifest the helpers read is the installation's with the
+// cosmetic layers laid over it — `cosmetics` (createCosmeticLayers; public/js/content.js sets them): the room's visual
+// set, then the player's personal plugins. A layer change is told like a late manifest (onChange 'manifest'): views
+// built afterwards draw the new art; a model already on the board keeps its own until it is built again [ASSUMED].
+//
 // Pure at import time: no PIXI, no DOM access until a loader actually runs (Node tests import this file).
 //
 //   import { assets } from './assets.js';          // browser singleton (manifest fetched on first use, or seeded)
@@ -41,6 +46,8 @@
 // Every URL helper is also exported as a pure function taking the manifest first (`avatarUrl(manifest, …)`),
 // so it can be unit tested without a browser. Helpers never throw on unknown ids — they return null and the
 // caller falls back (docs/ASSETS.md "Other fallbacks").
+
+import { applyOps } from '../../shared/plugins/visual.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -245,6 +252,71 @@ export function unitSfxUrl(m, id, kind, skillIndex) {
   }
   return str(u[kind]);
 }
+
+// ---- cosmetic plugins (DESIGN §32 P1a) ---------------------------------------------------------------------------
+
+/**
+ * The cosmetic layers of the art a page draws with (see the header), in this order:
+ *   1. the installation's manifest (/data/assets.json — the `base` apply() is given);
+ *   2. the room's visual set: its effective manifest (/vs/<vs16>/assets.json), which already holds the installation's
+ *      entries with the room's plugins over them — so while the page is in that room it takes the base's place (setRoom;
+ *      null again outside the room: a room's art never stays behind or piles up);
+ *   3. the player's personal cosmetic plugins: their resolved writes (/vs/<vs16>/overlay.json `ops`), one after the
+ *      other (setPersonal) — over the room's art too.
+ * `apply(base)` → the manifest to draw with: `base` itself without a layer, else the same object while neither the
+ * base nor a layer changed. `subscribe(fn)` hears every change.
+ */
+export function createCosmeticLayers() {
+  /** @type {any} */
+  let room = null;
+  /** @type {{ id: string, ops: any[] }[]} */
+  let personal = [];
+  let gen = 0;
+  let memo = null; // { base, gen, value }
+  const listeners = new Set();
+  const changed = () => {
+    gen++;
+    memo = null;
+    for (const fn of [...listeners]) { try { fn(); } catch (err) { console.warn('[assets] cosmetic layer listener failed', err); } }
+  };
+  return {
+    /** The room's effective manifest, or null (no room, or a room without plugins). */
+    setRoom(m) {
+      const next = isObj(m) ? m : null;
+      if (next === room) return;
+      room = next;
+      changed();
+    },
+    /** The player's personal plugins: `[{ id, ops }]`, in the order they apply. */
+    setPersonal(list) {
+      const next = (Array.isArray(list) ? list : []).filter((p) => isObj(p) && Array.isArray(p.ops));
+      if (next.length === personal.length && next.every((p, i) => p === personal[i])) return;
+      personal = next;
+      changed();
+    },
+    get room() { return room; },
+    get personal() { return personal; },
+    /** Is any layer on (a room set or a personal plugin)? */
+    get active() { return !!room || personal.length > 0; },
+    apply(base) {
+      if (!room && !personal.length) return base;
+      if (memo && memo.base === base && memo.gen === gen) return memo.value;
+      let m = room || base;
+      for (const p of personal) m = applyOps(m, p.ops);
+      memo = { base, gen, value: m };
+      return m;
+    },
+    /** `fn()` after every change; returns the unsubscribe. */
+    subscribe(fn) {
+      if (typeof fn !== 'function') return () => {};
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+  };
+}
+
+/** The page's cosmetic layers (public/js/content.js sets them; the browser store `assets` and data.js's view read them). */
+export const cosmetics = createCosmeticLayers();
 
 // ---- generic caches ----------------------------------------------------------------------------------------
 
@@ -714,15 +786,20 @@ const transientFetch = (err) => {
  * after MANIFEST_BACKOFF_MS (bounded; a 404 or a body that is no JSON only on the next `ready()`). `onChange(fn)` is told
  * when the manifest (`'manifest'`) or the optional local-client manifest (`'local'`) arrives, so views built without it
  * resolve their models then (render/app.js → UnitView.retryAssets).
+ * Cosmetic plugins (`opts.cosmetics`, createCosmeticLayers; the browser singleton has the page's `cosmetics`): every
+ * helper reads the manifest with the layers laid over it, `manifest` is that one, and a layer change is told as
+ * 'manifest' (the views re-resolve what they draw next).
  * @param {{ url?: string, fetch?: typeof fetch, manifest?: object, localManifest?: object, loadImage?: (url) => Promise<any>,
  *           loadSpine?: (entry) => Promise<any>, unloadSpine?: (entry, value, keepPages:Set<string>) => (Promise<void>|void),
  *           spineMax?: number, spineTimeout?: number, spineWeigh?: (key, spineData) => number, spineIdleBytes?: number,
  *           spineQuietBytes?: number, spineIdleGrace?: number, spineEvictDelay?: number, spineQuietDelay?: number,
  *           spineTimers?: { set, clear }, spineNow?: () => number, retryDelays?: number[], backoff?: number[],
- *           wait?: (ms: number) => Promise<void>, timers?: { set, clear } }} [opts]
+ *           wait?: (ms: number) => Promise<void>, timers?: { set, clear },
+ *           cosmetics?: ReturnType<typeof createCosmeticLayers> | null }} [opts]
  */
 export function createAssets(options) {
   const opts = options && typeof options === 'object' ? options : {};
+  const layers = opts.cosmetics && typeof opts.cosmetics.apply === 'function' ? opts.cosmetics : null;
   const url = opts.url || '/data/assets.json';
   const localUrl = opts.localUrl || '/data/local-assets.json';
   let localPromise = isObj(opts.localManifest) ? Promise.resolve(opts.localManifest) : null;
@@ -872,7 +949,9 @@ export function createAssets(options) {
     return localPromise;
   }
 
-  const m = () => manifest || {};
+  const m = () => (layers ? layers.apply(manifest || {}) : manifest || {});
+  // a layer switched on or off draws like a manifest that arrived: the views re-resolve their art (render/app.js)
+  if (layers) layers.subscribe(() => notify('manifest'));
   return {
     ready,
     local,
@@ -896,7 +975,8 @@ export function createAssets(options) {
       return () => listeners.delete(fn);
     },
     localUrl: (group, name) => localAssetUrl(localManifest, group, name),
-    get manifest() { return manifest; },
+    /** The manifest the helpers read (the cosmetic layers over the loaded one), null until one is loaded. */
+    get manifest() { return manifest ? m() : null; },
     get loaded() { return !!manifest; },
     avatar: (id, o) => avatarUrl(m(), id, o),
     portrait: (id, o) => portraitUrl(m(), id, o),
@@ -952,5 +1032,5 @@ export function createAssets(options) {
   };
 }
 
-/** Browser singleton. */
-export const assets = createAssets();
+/** Browser singleton (with the page's cosmetic layers). */
+export const assets = createAssets({ cosmetics });

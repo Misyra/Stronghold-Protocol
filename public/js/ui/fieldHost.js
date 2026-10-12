@@ -191,14 +191,16 @@ export function guardView(view, kind) {
  * screen waits for them, gameComponents GAME_FILES) to the asset store, now or when they land: it then never downloads
  * the manifest a second time — after a page reload (a phone browser discarding a background tab, Chrome's Memory Saver)
  * that second download was the one createFieldView waited ≤ 4 s for, and a slow or failed one left every operator the
- * image-less placeholder (public issue #8 item 5). Without a copy the store fetches and retries by itself.
+ * image-less placeholder (public issue #8 item 5). Without a copy the store fetches and retries by itself. The copy as
+ * downloaded (data.getRaw): the store lays the cosmetic plugins over it itself (assets.js `cosmetics`), data.js's view
+ * of `assets` already has them.
  * @param {{ seed?: (m: any) => boolean, seedLocal?: (m: any) => boolean }} store public/js/assets.js store
  */
 export function seedAssets(store) {
   if (!store) return;
   const give = (name, fn) => {
     if (typeof fn !== 'function') return;
-    const now = data.get(name);
+    const now = data.getRaw(name);
     if (now) { fn(now); return; }
     // still loading (or failed): adopt it if it lands; a later success of the store's own fetch makes this a no-op
     Promise.resolve(data.load(name)).then((m) => { if (m) fn(m); }, () => {});

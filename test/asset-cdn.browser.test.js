@@ -73,25 +73,28 @@ test('real browser requests independently hashed fonts, Spine pages and map tile
       const second = await loadSpineData(entry);
       const renderer = new PIXI.Renderer({ width: 160, height: 160 });
       const reloads = [];
-      let current = second;
-      for (let i = 0; i < 3; i++) {
+      const entriesToReload = [entry, entries.chars.char_102_texas.spine.front, entries.chars.char_102_texas.spine.back,
+        entries.chars.char_010_chen.spine.front, entries.chars.char_010_chen.spine.back];
+      for (let i = 0; i < 5; i++) for (const currentEntry of entriesToReload) {
+        const current = i === 0 && currentEntry === entry ? second : await loadSpineData(currentEntry);
         const model = new PIXI.spine.Spine(current);
         model.autoUpdate = false;
-        model.state.setAnimation(0, 'Idle', true);
+        model.state.setAnimation(0, currentEntry.anims.idle, true);
         model.update(0.1);
         const textures = model.skeleton.slots.map(s => (s.currentSprite || s.currentMesh)?.texture).filter(Boolean);
         const live = textures.length > 0 && textures.every(t => t.baseTexture?.valid && !t.baseTexture.destroyed);
         if (!live) {
-          reloads.push({ live, ink: 0 });
+          reloads.push({ live, ink: 0, skel: currentEntry.skel });
           model.destroy({ children: true, texture: false, baseTexture: false });
-          break;
+          await unloadSpineData(currentEntry, current);
+          continue;
         }
         const pixels = renderer.extract.pixels(model);
         let ink = 0;
         for (let p = 3; p < pixels.length; p += 4) if (pixels[p]) ink++;
         reloads.push({ live, ink });
         model.destroy({ children: true, texture: false, baseTexture: false });
-        if (i < 2) { await unloadSpineData(entry, current); current = await loadSpineData(entry); }
+        await unloadSpineData(currentEntry, current);
       }
       renderer.destroy();
       const store = createAssets();
@@ -102,6 +105,7 @@ test('real browser requests independently hashed fonts, Spine pages and map tile
     assert.deepEqual(failures, []);
     assert.ok(result.fonts.every(n => n > 0), 'all three font faces load');
     assert.ok(result.alive && result.reloaded && result.animations > 0, 'Spine loads with live page textures and survives unload/reload');
+    assert.equal(result.reloads.length, 25, 'front/back models and an enemy each survive five complete unload/reload cycles');
     assert.ok(result.reloads.every(r => r.live && r.ink > 0), `every reloaded skeleton draws real pixels: ${JSON.stringify(result.reloads)}`);
     assert.ok(result.board && result.tiles, 'map images and independently hashed tiles load');
     assert.ok(result.board2d, 'the 2D board also loads its independently hashed crop table');

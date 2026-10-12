@@ -41,8 +41,9 @@
 // One landing, one sound: a piece whose Start still plays (on its model, owed to a model still loading, or cued less than
 // a clip ago) keeps it and sounds nothing more, and only an idle prep piece is ever pulled into it — never a battle unit
 // or one in an attack, skill, death or form clip. The sound is `ctx.audio.deployCue` (public/js/audio.js: the unit's own
-// battle deploy sound, through the SFX volume, mute and the battle limiter); `onDeploy` itself — the sim's 'deploy'
-// events — stays silent: audio.handleBattleEvents sounds those.
+// battle deploy sound through the SFX volume and mute, in landing voices of its own that hand the oldest one's voice to
+// the newest instead of dropping it); `onDeploy` itself — the sim's 'deploy' events — stays silent:
+// audio.handleBattleEvents sounds those.
 // Enemy modes (the `form` of a sim fx — shared/protocol.js fxForm — → `setForm(form, fx)`): 掠海漂移体 dropping to 爬行模式
 // (user playtest #5 item 1) plays its skeleton's 'Change' clip once, then the crawl set (*_02); 暴鸰 flies on without its
 // bomb (*_2) after the drop (feedback D4); 转译基底's forms, the 逐火 embers, 再生's puppet, the leaders' 重生 and 守墓石像

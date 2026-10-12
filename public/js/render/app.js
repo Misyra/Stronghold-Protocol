@@ -336,6 +336,9 @@ export async function createFieldView(host, options = {}) {
     loadLevel: () => loadLevel,
     surfaceLayer: (row) => tiles.surfaceLayer(row),
   };
+  // the prep landings' generic sounds ahead of the first round start (audio.js warmLandings: a download would bunch the
+  // replay's first landings together); a wish kept until the first gesture / audible SFX
+  try { ctx.audio?.warmLandings?.(); } catch { /* the sound is optional */ }
   const tiles = new TileField({ ground: layers.ground, overlay: layers.overlay, props: layers.units, anim: layers.anim });
   setupCleanup.push(() => tiles.destroy());
   const fx = new FxSystem({

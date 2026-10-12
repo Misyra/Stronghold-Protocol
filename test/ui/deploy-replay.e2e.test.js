@@ -4,8 +4,9 @@
 //
 // From a settled battle to 回合开始 of the next round, the real game screen (screens/game.js) and Pixi field view
 // (render/app.js) replay the own board's pieces one after another in deployment order — operators by column from the
-// left, top to bottom within a column (sim Battle.start) — each with one landing sound (audio.deployCue, spied); the
-// same round never again (a re-pushed state, the 休整期 that follows), the next round once more. In the 休整期 a purchase
+// left, top to bottom within a column (sim Battle.start) — each with one landing sound (audio.deployCue, spied) that
+// really starts in the page's unlocked audio (audio.landStats), never more than LAND_VOICES at once; the same round never
+// again (a re-pushed state, the 休整期 that follows), the next round once more. In the 休整期 a purchase
 // lands the bought operator; a move onto the board while that Start still plays sounds nothing more; a later move to
 // another tile lands again; turning in place does not. No console / page errors.
 
@@ -47,13 +48,23 @@ describe('the round start replays the own board\'s Start clips in deployment ord
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     await page.goto(`${base}/dev/game-mock.html?shot=1&render=engine&phase=SETTLE`, { waitUntil: 'networkidle0', timeout: 60000 });
     await page.waitForFunction(() => globalThis.__SP_VIEW__?.kind === 'engine' && globalThis.__SP_VIEW__.raw.mode === 'battle', { timeout: 20000 });
-    // spy on the landing sound (the view's ctx.audio is this very manager) and stop the mock battle's stream
+    // spy on the landing sound (the view's ctx.audio is this very manager), sample how many landing voices ring, and
+    // unlock the page's audio with a key press (a user gesture; Shift is no shortcut) so the landings really start
     await page.evaluate(async () => {
       const { audio } = await import('/js/audio.js');
+      globalThis.__audio = audio;
       const cues = globalThis.__cues = [];
       const real = audio.deployCue.bind(audio);
       audio.deployCue = (info, key) => { cues.push({ key, at: performance.now() }); return real(info, key); };
+      globalThis.__mostVoices = 0;
+      setInterval(() => { globalThis.__mostVoices = Math.max(globalThis.__mostVoices, audio.landVoices.length); }, 4);
     });
+    await page.keyboard.press('Shift');
+    await page.waitForFunction(() => globalThis.__audio.unlocked, { timeout: 5000 });
+    // the field view asked for the generic landing sounds ahead (audio.warmLandings); the gesture fetched them
+    await page.waitForFunction(() => [...globalThis.__audio.buffers.keys()].some((u) => /b_char_set/.test(u)), { timeout: 5000 });
+    await sleep(300);
+    const stats0 = await page.evaluate(() => ({ ...globalThis.__audio.landStats }));
     const landings = (why) => page.evaluate((w) => globalThis.__SP_VIEW__.raw.debug.landings.filter((l) => !w || l.why === w).map((l) => ({ ...l })), why);
     const toPhase = (phase, round) => page.evaluate((ph, r) => globalThis.__MOCK__.mutate((S) => {
       if (S.battle?.timer) clearInterval(S.battle.timer);
@@ -82,6 +93,16 @@ describe('the round start replays the own board\'s Start clips in deployment ord
     assert.equal(lastPlaying, true, 'the piece is in its Start clip when it lands');
     const cues7 = await page.evaluate(() => globalThis.__cues.map((c) => c.key));
     assert.deepEqual(cues7, order.map((uid) => `p:${uid}`), 'one landing sound per piece, in the same order');
+    // every landing's sound really started — most of them share b_char_set — and never more than LAND_VOICES at once
+    await sleep(200);
+    const voices = await page.evaluate(async () => {
+      const { LAND_VOICES } = await import('/js/audio.js');
+      const st = globalThis.__audio.landStats;
+      return { started: st.started, stolen: st.stolen, most: globalThis.__mostVoices, cap: LAND_VOICES };
+    });
+    assert.equal(voices.started - stats0.started, order.length, `all ${order.length} landing sounds started (${JSON.stringify(voices)})`);
+    assert.ok(voices.most <= voices.cap, `at most ${voices.cap} landing voices at once (${voices.most})`);
+    assert.equal(voices.stolen - stats0.stolen, Math.max(0, order.length - voices.cap), 'the oldest gave its voice to each landing over the cap');
 
     // ---- the same round again: a re-pushed state (a reconnect's resync, a re-render) and the 休整期 that follows replay nothing
     await page.evaluate(() => { globalThis.__MOCK__.pushPublic(); globalThis.__MOCK__.mutate(() => {}); });

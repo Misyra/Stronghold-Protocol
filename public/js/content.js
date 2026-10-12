@@ -11,8 +11,10 @@
 //     createCosmeticLayers) —, never a manifest the server put together. Leaving the room, or a room without plugins,
 //     takes the layer away again: one room's art never stays behind or piles up. A document that fails the check or
 //     will not download (two retries; an attempt is given up after VISUAL_TIMEOUT_MS) leaves the original art; that, a
-//     write left out or a plugin file that will not load (its entry falls back to the art beneath it) is said once (a
-//     toast).
+//     write left out or a plugin file that will not load is said once (a toast). A plugin file that will not load — an
+//     `<img>` of the interface (caught here, for every image of the page), an image or a model of the board (assets.js
+//     reports its own), a sound (audio.js, through main.js) — makes its entry fall back to the art beneath it: the
+//     installation's, or the room's under a personal plugin (assets.js createCosmeticLayers fail).
 //   * Personal plugins: the catalogue (/plugins/index.json — loadCatalog) names each loaded cosmetic plugin of scope
 //     `personal` with the `vs` of the set of it alone; every switched-on one is fetched as /vs/<vs16>/overlay.json,
 //     checked the same way (fetched side by side) and applied after the room's, in the catalogue's order (by id)
@@ -172,6 +174,11 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     const now = layers.failed?.length || 0;
     if (now > failedTold) { failedTold = now; tell(`a plugin file did not load: ${layers.failed[now - 1]}`, PARTLY); }
   });
+  // an <img> of the interface (a card, a portrait, an icon) whose plugin file will not load: its entry falls back (error
+  // events do not bubble — caught on the way down)
+  const doc = globalThis.document;
+  const onImgError = (e) => { const el = e?.target; if (el && el.tagName === 'IMG') layers.fail?.(el.currentSrc || el.src); };
+  doc?.addEventListener?.('error', onImgError, true);
 
   // the room's visual set
   let roomVs = null;
@@ -217,7 +224,11 @@ export function installContent({ store = appStore, data = dataStore, layers = co
   let catalogAt = catalog.get().at;
   const offCatalog = catalog.subscribe((c) => { if (c.at !== catalogAt) { catalogAt = c.at; if (personal.get().ids.length) syncPersonal(); } });
   if (personal.get().ids.length) syncPersonal();
-  return () => { offStore(); offPersonal(); offCatalog(); offLayers(); offFailed(); layers.onDrop(null); data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]); };
+  return () => {
+    offStore(); offPersonal(); offCatalog(); offLayers(); offFailed(); layers.onDrop(null);
+    doc?.removeEventListener?.('error', onImgError, true);
+    data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]);
+  };
 }
 
 /**

@@ -14,7 +14,10 @@
 // for one vs, but a 304 costs next to nothing]. A set is known once something resolved it — a room's host chose it
 // (resolve) or a browser asked for the set of one plugin the catalogue named — and holds the plugins as they were then:
 // a plugin changed on disk afterwards is served at its new bytes under the old URL with `no-cache`
-// (server/http/static.js), a removed one's files 404. A set a room uses is held (hold / release:
+// (server/http/static.js), a removed one's files 404 — and once the registry reads the folders again (a served file
+// found changed, or the folders' own signature) the rooms holding the set are told, once (onStale: server/lobby.js tells
+// each host to apply the room's plugins again, which makes the set of the files as they are now; a page meanwhile falls
+// back to the installation's art for what will not load). A set a room uses is held (hold / release:
 // server/lobby.js) and never dropped; of the others the 256 most recently used are kept, and the documents of the last
 // 8 built, one build of a document at a time [ASSUMED]. A set holds only loaded cosmetic plugins of the scope it is for
 // (room / personal), serves VISUAL_LIMITS.setBytes (300 MB) of art at most and copies VISUAL_LIMITS.setCopyBytes (4 MB)
@@ -64,6 +67,10 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
   const docs = new Map();
   /** @type {Map<string, Promise<{ body: Buffer, hash: string } | null>>} documents being built (one build each) */
   const building = new Map();
+  /** @type {Set<(vs: string, ids: string[]) => void>} told when a held set's plugins changed on disk (onStale) */
+  const staleListeners = new Set();
+  /** @type {Set<string>} held sets (vs16) already told stale */
+  const staleTold = new Set();
 
   /**
    * Keep a set (most recently used last); of the sets no room holds, keep the `maxSets` most recently used — never
@@ -169,13 +176,49 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
     return built;
   }
 
+  /**
+   * The held sets whose plugins are no longer what the registry has (a file changed, the plugin gone or not loaded any
+   * more): each told once to the onStale listeners with the ids that changed. Run after every rescan of the registry.
+   */
+  function checkStale() {
+    for (const k of held.keys()) {
+      const set = sets.get(k);
+      if (!set || staleTold.has(k)) continue;
+      const changed = set.plugins.filter((p) => { const now = registry.plugin(p.id); return !usable(now) || now.visual.hash !== p.hash; }).map((p) => p.id);
+      if (!changed.length) continue;
+      staleTold.add(k);
+      log.info?.(`[plugins] set ${k} in use: ${changed.join(', ')} changed on disk — its rooms are asked to apply their plugins again`);
+      for (const fn of [...staleListeners]) { try { fn(set.vs, changed); } catch (e) { log.error?.('[plugins] stale listener failed', e); } }
+    }
+  }
+  const offScan = typeof registry.onScan === 'function' ? registry.onScan(checkStale) : null;
+
   return {
     resolve,
     doc,
     /** A room uses the set of `vs` (server/lobby.js): it is never dropped until every holder released it. @param {string} vs */
     hold(vs) { const k = vsUrlPart(vs); held.set(k, (held.get(k) || 0) + 1); },
     /** A room no longer uses the set of `vs`. @param {string} vs */
-    release(vs) { const k = vsUrlPart(vs); const n = (held.get(k) || 0) - 1; if (n > 0) held.set(k, n); else held.delete(k); },
+    release(vs) {
+      const k = vsUrlPart(vs);
+      const n = (held.get(k) || 0) - 1;
+      if (n > 0) held.set(k, n);
+      else { held.delete(k); staleTold.delete(k); }
+    },
+    /**
+     * `fn(vs, ids)` when a set a room holds turns out to have changed on disk (the plugins `ids`), once per set (see the
+     * header; server/lobby.js tells the hosts). Returns the unsubscribe.
+     * @param {(vs: string, ids: string[]) => void} fn
+     */
+    onStale(fn) {
+      if (typeof fn !== 'function') return () => {};
+      staleListeners.add(fn);
+      return () => staleListeners.delete(fn);
+    },
+    /** Look for held sets that changed now (normally after each rescan; tests). */
+    checkStale,
+    /** Stop listening to the registry. */
+    close() { offScan?.(); staleListeners.clear(); },
     /** A file a loaded cosmetic plugin serves (registry pluginFile). @param {string} id @param {string} rel */
     file: (id, rel) => registry.pluginFile(id, rel),
     /** A served file was found changed on disk: the registry reads the folders again (at most every 5 s). */

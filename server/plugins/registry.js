@@ -31,7 +31,8 @@
 // An entry that cannot even be read (an error while reading it) is skipped the same way: one bad folder never stops
 // the scan, the index or the server's start.
 // The folders are re-read when something in them changes (checked when the index or a pack file is asked for, at most
-// once a second: a few stat calls), so a language pack or a plugin dropped in shows on the next page load — no restart.
+// once a second: a few stat calls), so a language pack or a plugin dropped in shows on the next page load — no restart;
+// every such rescan is told to its listeners (onScan: the visual sets look for the sets in use whose plugins changed).
 // server/packs.js re-exports the pack API of this file for its old callers.
 
 import fs from 'node:fs';
@@ -554,6 +555,8 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
   const told = new Set();
   const tell = (fn, line) => { if (!told.has(line)) { told.add(line); fn(line); } };
   const tag = (where) => (where.startsWith('plugins/') ? '[plugins]' : '[packs]');
+  /** @type {Set<() => void>} told after every scan that read the folders (onScan) */
+  const scanListeners = new Set();
 
   function refresh(force = false) {
     const now = Date.now();
@@ -575,6 +578,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     if (plugins.length) tell((m) => log.info(m), `[plugins] ${plugins.map((p) => `${p.id} ${p.manifest.version} (${p.class}, ${p.status})`).join(', ')}`);
     for (const k of scan.skipped) tell((m) => log.warn(m), `${tag(k.where)} ${k.where} skipped: ${k.problems.join('; ')}`);
     for (const w of scan.warnings) tell((m) => log.warn(m), `${tag(w.where)} ${w.where}: ${w.warning}`);
+    if (!first) for (const fn of [...scanListeners]) { try { fn(); } catch (e) { log.warn?.(`[plugins] a scan listener failed: ${e?.message || e}`); } }
     return state;
   }
 
@@ -586,6 +590,16 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
      * (server/http/static.js /p/), deeper than the signature looks or within a second of the last look.
      */
     rescan: () => { sig = null; refresh(true); },
+    /**
+     * `fn()` after every scan that read the folders again (not the first): the visual sets look for the sets in use
+     * whose plugins changed (server/plugins/visualSet.js onStale). Returns the unsubscribe.
+     * @param {() => void} fn
+     */
+    onScan(fn) {
+      if (typeof fn !== 'function') return () => {};
+      scanListeners.add(fn);
+      return () => scanListeners.delete(fn);
+    },
     /** The entry of an id (any class, any status), or null. @param {string} id @returns {Plugin | null} */
     plugin: (id) => refresh().byId.get(id) || null,
     /** The installation's art manifest (VanillaAssets): the one the last scan read, else read now (kept by size + mtime). */

@@ -216,6 +216,35 @@ describe('content.js', () => {
     assert.equal(data.get('assets'), data.getRaw('assets'), 'uninstalled: the file as downloaded');
   });
 
+  test('installContent: an <img> of the interface whose plugin file will not load makes its entry fall back (one toast)', async () => {
+    const listeners = {};
+    const had = 'document' in globalThis;
+    const prev = globalThis.document;
+    globalThis.document = { addEventListener: (type, fn, capture) => { listeners[type] = [fn, capture]; }, removeEventListener: (type, fn) => { if (listeners[type]?.[0] === fn) delete listeners[type]; } };
+    try {
+      const app = createStore({ room: null });
+      const data = createDataStore({ fetch: async () => res(200, BASE), retryDelays: [], timeoutMs: 0 });
+      await data.load('assets');
+      const layers = createCosmeticLayers();
+      const doc = roomDoc('red');
+      const toasts = [];
+      const off = installContent({ store: app, data, layers, fetch: async () => res(200, doc), toast: (text, kind) => toasts.push([text, kind]), retryDelays: [] });
+      assert.equal(listeners.error?.[1], true, 'caught on the way down (error events do not bubble)');
+      app.set({ room: { code: 'ABCD', content: { vs: doc.visual.vs } } });
+      await until(() => data.get('assets').chars.char_102_texas.avatar === urlOf('red', 'a.png'), 'the room\'s art');
+      listeners.error[0]({ target: { tagName: 'DIV' } });
+      listeners.error[0]({ target: { tagName: 'IMG', src: 'http://localhost/assets/siege.png' } });
+      assert.equal(toasts.length, 0, 'not a plugin file: nothing to do');
+      listeners.error[0]({ target: { tagName: 'IMG', currentSrc: `http://localhost${urlOf('red', 'a.png')}`, src: `http://localhost${urlOf('red', 'a.png')}` } });
+      assert.equal(data.get('assets').chars.char_102_texas.avatar, BASE.chars.char_102_texas.avatar, 'the installation\'s art again');
+      assert.deepEqual(toasts.map((x) => x[1]), ['warn'], 'said once');
+      off();
+      assert.equal(listeners.error, undefined, 'uninstalled: the listener goes too');
+    } finally {
+      if (had) globalThis.document = prev; else delete globalThis.document;
+    }
+  });
+
   test('installContent: the personal plugins come from the catalogue\'s vs of each, in its order; a missing one is skipped', async () => {
     const mine = personalDoc('mine', 'm.png');
     const zed = personalDoc('zed', 'z.png');

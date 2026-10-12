@@ -474,10 +474,13 @@ export async function createFieldView(host, options = {}) {
     try {
       const t = P.Texture.from(url);
       const use = () => { if (!destroyed && shadowUrl === url) setShadow(t); };
+      // a cosmetic plugin's sprite that will not load falls back (the manifest changes: loadShadow again)
+      const failed = () => { if (!destroyed) assets.failed?.(url); };
       if (t.baseTexture.valid) use();
       else {
         t.baseTexture.once('loaded', use);
-        offShadow = () => t.baseTexture.off('loaded', use);
+        t.baseTexture.once('error', failed);
+        offShadow = () => { t.baseTexture.off('loaded', use); t.baseTexture.off('error', failed); };
       }
     } catch { /* optional */ }
   }

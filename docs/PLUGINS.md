@@ -318,7 +318,14 @@ original art there (one toast per page). Whenever the art changes under a page �
 board was drawn (a reconnect, a spectator joining a match), a personal plugin switched during a match, a set taken away —
 what is already on the board follows: a piece or unit whose picture or model the manifest no longer names loads the new
 one, which replaces the old in place (`render/units.js` retryAssets), and the backdrop mountains and the shadow sprite
-follow their `ui` entries. A plugin the
+follow their `ui` entries. A plugin file that will not load — an image of the interface, a picture, a Spine model (any of
+its files; not while the tab is hidden) or the shadow sprite of the board, a sound — makes its entry fall back to the art
+beneath it, the installation's (or the room's, under a personal plugin), for the rest of the page's life [ASSUMED]; a
+sound plays the installation's entry instead at once (the BGM track, the voice line of the same slot, the same sound).
+When a plugin of a room's set changes on the server while the room uses it (the registry read the folders again — a
+served file found changed, or the folders' own signature), the host is told once (a toast) to apply the plugins again:
+the panel's 「重新应用」 sends the same choice, which makes the set of the files as they are now; until then the room
+keeps its set — its changed files go out under the old URLs with `no-cache`, and what will not load falls back. A plugin the
 server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
 content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`; the page's code has three more modules
 (`public/js/content.js`, `public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports) and it fetches

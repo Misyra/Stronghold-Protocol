@@ -3,8 +3,9 @@
 // plugins, their warnings and size) while `cs` stays the vanilla one (art never changes a battle: the match and its
 // BattleSpecs get the vanilla cs), the other humans are un-readied, the same set again changes nothing, an empty list
 // brings back exactly the vanilla shape; refused: a player who is not the host, a running match, an unknown plugin, a
-// plugin of another class or scope, a malformed message, a lobby given no visual sets. A real server in-process with a
-// plugins folder of its own (art generated on the spot).
+// plugin of another class or scope, a malformed message, a lobby given no visual sets. A plugin of the room's set that
+// changes on disk: the host (only) is told once to apply the plugins again, and the same list then makes the set of the
+// files as they are now. A real server in-process with a plugins folder of its own (art generated on the spot).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -51,6 +52,7 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     writePlugin(path.join(plugins, 'rules'), { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'content', permissions: ['data.patch'], data: ['d.json'] }, { 'd.json': { patch: 1, ops: [] } });
     writePlugin(path.join(plugins, 'base'), cosmetic({ assets: { chars: { char_112_siege: { avatar: 'b.png' } } } }), { 'b.png': png(2, 2) });
     writePlugin(path.join(plugins, 'top'), cosmetic({ requires: { base: '*' }, assets: { chars: { char_102_texas: { avatar: 't.png' } } } }), { 't.png': png(2, 2) });
+    writePlugin(path.join(plugins, 'fresh'), cosmetic({ assets: { chars: { char_112_siege: { avatar: 'f.png' } } } }), { 'f.png': png(2, 2, [1, 1, 1, 255]) });
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, MatchClass: RecordingStub, assetIndex: false });
   });
   after(async () => {
@@ -132,6 +134,29 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     const s2 = await host.waitFor('room.state', (s) => s.content?.plugins?.some((p) => p.id === 'base' && !p.auto));
     assert.equal(s2.content.vs, s1.content.vs, 'the same set');
     assert.equal(s2.seats.find((x) => x && x.playerId === guest.id).ready, true, 'nobody un-readied for a mark');
+  });
+
+  test('a plugin of the room\'s set changes on disk: the host is told once to apply again; the same list then makes the new set', async () => {
+    const host = await player('Ifrit');
+    const guest = await player('Saria');
+    const s0 = await room(host);
+    assert.equal((await guest.request({ t: 'room.join', code: s0.code })).t, 'ok');
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [{ id: 'fresh' }] })).t, 'ok');
+    const s1 = await guest.waitFor('room.state', (s) => !!s.content?.vs);
+    host.clearInbox();
+    guest.clearInbox();
+    fs.writeFileSync(path.join(tmp, 'plugins', 'fresh', 'f.png'), png(2, 2, [2, 2, 2, 255]));
+    srv.packs.rescan();
+    const toast = await host.waitFor('m.toast', (m) => m.msgid === '房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」');
+    assert.deepEqual([toast.kind, toast.params?.names], ['warn', 'fresh']);
+    await guest.expectNone('m.toast', () => true, 150);
+    srv.packs.rescan();
+    await host.expectNone('m.toast', () => true, 150);
+    // 「重新应用」: the same list → the set of the files as they are now
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [{ id: 'fresh' }] })).t, 'ok');
+    const s2 = await guest.waitFor('room.state', (s) => !!s.content?.vs && s.content.vs !== s1.content.vs);
+    assert.deepEqual(s2.content.plugins.map((p) => p.id), ['fresh']);
+    assert.notEqual(s2.content.plugins[0].hash, s1.content.plugins[0].hash);
   });
 
   test('a room holds its visual set while it uses it: released when it changes and when the room goes', () => {

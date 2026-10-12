@@ -1251,5 +1251,8 @@
   "缺少该插件需要的其他插件": "A plugin it requires is missing",
   "所选插件互相冲突": "The chosen plugins conflict with each other",
   "所选插件的素材总量超出本服务器的上限": "The chosen plugins' art exceeds this server's limit",
-  "部分外观插件素材无法使用，相应位置显示原版素材": "Some cosmetic plugin art could not be used; the original art shows there instead"
+  "部分外观插件素材无法使用，相应位置显示原版素材": "Some cosmetic plugin art could not be used; the original art shows there instead",
+  "重新应用": "Apply again",
+  "插件的文件在服务器上更新后，重新应用才会生效。": "When a plugin's files are updated on the server, apply the plugins again to use them.",
+  "房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」": "The files of the room's plugin “{names}” changed on the server — open the Plugins panel and press “Apply again”"
 }

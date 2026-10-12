@@ -7,7 +7,9 @@
 //     authors, size and a 非官方 mark; 「自动」 on one switched on because another needs it; the warnings of the room's set
 //     (two plugins change the same art — the later one applies; a plugin made for other game versions, still usable:
 //     art never changes a battle). The host's switch sends room.setPlugins with the plugins it wants (the server adds
-//     what they require); during a match it is read-only. Art only in this version: the battles stay the original ones.
+//     what they require); during a match it is read-only. 「重新应用」 (the host, a room with plugins) sends the same
+//     choice again: when a plugin's files changed on the server since (the lobby tells the host: an m.toast), that
+//     makes the set of the files as they are now. Art only in this version: the battles stay the original ones.
 //   * InstalledPlugins — the title screen's 「本服务器安装了 N 个插件」 (screens/title.js; §7.4): every unofficial plugin
 //     the catalogue lists — any class, with what this version does with it.
 // Texts go through t() (docs/I18N.md).
@@ -96,17 +98,21 @@ export function PluginPanel({ open, room, myId, onClose }) {
   // id: its switch only turns it off
   const rows = [...offered, ...f.plugins.filter((p) => !offered.some((o) => o.id === p.id)).map((p) => ({ id: p.id, version: p.version, missing: true }))];
   const nameOf = (id) => { const p = cat.plugins.find((x) => x.id === id); return p ? pluginName(p) : String(id ?? ''); };
-  const toggle = async (id, on) => {
+  /** room.setPlugins with these ids (one request at a time; `what`: the row — or 'reapply' — that shows it busy). */
+  const send = async (ids, what) => {
     if (inFlight.current || !f.editable) return;
     inFlight.current = true;
-    setBusy(id);
+    setBusy(what);
     try {
-      await net.request('room.setPlugins', { plugins: nextChoice(f.chosen, id, on, offeredIds).map((x) => ({ id: x })) });
+      await net.request('room.setPlugins', { plugins: ids.map((x) => ({ id: x })) });
     } catch (err) { toastError(err); } finally {
       inFlight.current = false;
       if (alive.current) setBusy(null);
     }
   };
+  const toggle = (id, on) => send(nextChoice(f.chosen, id, on, offeredIds), id);
+  // the same choice again (without a plugin the server no longer offers): the set of the files as they are now
+  const reapply = () => send(f.chosen.filter((x) => !offeredIds || offeredIds.has(x)), 'reapply');
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('插件')} micro="PLUGINS" width="7.4rem"
       actions=${html`<${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
     <div class="plugpanel" data-testid="plugin-panel">
@@ -141,6 +147,10 @@ export function PluginPanel({ open, room, myId, onClose }) {
           </li>`;
         })}
       </ul>` : null}
+      ${f.editable && f.count ? html`<div class="plugpanel__reapply">
+        <${Button} variant="secondary" size="sm" icon="refresh" data-testid="plugin-reapply" disabled=${!!busy} onClick=${reapply}>${t('重新应用')}<//>
+        <span class="set-hint">${t('插件的文件在服务器上更新后，重新应用才会生效。')}</span>
+      </div>` : null}
       ${f.warnings.filter((w) => w.code !== 'app').length ? html`<ul class="plugpanel__warnings" aria-label=${t('插件提示')}>
         ${f.warnings.filter((w) => w.code !== 'app').map((w, i) => html`<li key=${i}><${Icon} name="warn" />${warningText(w, nameOf)}</li>`)}
       </ul>` : null}

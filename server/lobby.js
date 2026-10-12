@@ -104,7 +104,10 @@
 //     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
 //     un-readies nobody and leaves the host's result replay (a settlement screen still open: dropReplay — only a set
 //     that changed is the host moving on); ▸ when only its 「自动」 marks changed (a plugin first switched on
-//     automatically is now chosen, or the other way round) the new state is broadcast without un-readying.
+//     automatically is now chosen, or the other way round) the new state is broadcast without un-readying. ▸ When a
+//     plugin of the room's set changes on disk while the room holds it (the visual sets' onStale, after the registry read
+//     the folders again), the host is told once (an m.toast: apply the room's plugins again — the panel's 「重新应用」
+//     sends the same list, which resolves to the set of the files as they are now); nothing changes by itself.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -126,6 +129,7 @@ import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { isContentHash } from '../shared/plugins/identity.js';
+import { msg, wireMessage } from '../shared/i18n.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -279,7 +283,7 @@ export class Lobby {
    *   seedFn?: () => number,
    *   content?: { cs: string } | null,
    *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal' }) => any, hold?: (vs: string) => void,
-   *     release?: (vs: string) => void } | null,
+   *     release?: (vs: string) => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity"); plugins: the visual
@@ -305,6 +309,22 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
+    /** a held visual set whose plugins changed on disk: its rooms' hosts are told (header "The room's plugins") */
+    this.offStale = typeof plugins?.onStale === 'function' ? plugins.onStale((vs, ids) => this.pluginsChanged(vs, ids)) : null;
+  }
+
+  /**
+   * The plugins `ids` of the visual set `vs` changed on disk: the host of every room using it is told to apply the room's
+   * plugins again (header "The room's plugins") — a host offline now misses it; the panel's 「重新应用」 is always there.
+   * @param {string} vs @param {string[]} ids
+   */
+  pluginsChanged(vs, ids) {
+    const names = ids.slice(0, 8).join('、');
+    for (const room of this.rooms.values()) {
+      if (room.disposed || room.content?.vs !== vs) continue;
+      this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
+      this.sendToPlayer(room, room.hostId, { t: 'm.toast', kind: 'warn', ...wireMessage(msg('房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', { names })) });
+    }
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -426,6 +446,8 @@ export class Lobby {
    * @param {string} [reason]
    */
   shutdown(reason = 'shutdown') {
+    this.offStale?.();
+    this.offStale = null;
     for (const room of [...this.rooms.values()]) this.disposeRoom(room, reason);
     for (const t of this.graceTimers.values()) clearTimeout(t);
     this.graceTimers.clear();

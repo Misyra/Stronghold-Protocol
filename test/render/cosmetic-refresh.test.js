@@ -4,8 +4,9 @@
 // which render/app.js calls on every assets.onChange — loads a picture or a Spine model the manifest names now when it
 // is not the one shown or loading (the new model replaces the old in place and the old one is released; a load in
 // flight of the old model is superseded), and nothing for a unit whose art did not change; render/app.js's backdrop
-// mountains and shadow sprite follow the manifest's URL instead of being asked once. The fake PIXI of
-// test/render/fakepixi.js; the asset store and the cosmetic layers of public/js/assets.js.
+// mountains and shadow sprite follow the manifest's URL instead of being asked once. A plugin model or picture that fails
+// to load falls back: the asset store reports it to the layers, which leave that write out, and the view loads the
+// installation's. The fake PIXI of test/render/fakepixi.js; the asset store and the cosmetic layers of public/js/assets.js.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -120,6 +121,25 @@ describe('views already drawn follow a changed manifest (render/units.js retryAs
     await settle();
     assert.equal(v._actorEntry.skel, PLUGIN_SKEL, 'the late installation model never shows');
     assert.equal(a.spine.stats().refs, 1, 'and is released');
+    v.destroy();
+  });
+
+  test('a plugin model that fails to load falls back: the view loads the installation\'s; a failed plugin picture too', async () => {
+    const layers = createCosmeticLayers();
+    const loads = [];
+    const vanilla = M.chars.char_002_amiya.spine.front.skel;
+    const a = createAssets({ manifest: M, cosmetics: layers, unloadSpine: () => {},
+      loadImage: async (u) => { if (u === PLUGIN_AVATAR) throw new Error('image failed'); return IMG; },
+      loadSpine: async (e) => { loads.push(e.skel); if (e.skel === PLUGIN_SKEL) throw new Error('HTTP 404'); return { animations: [{ name: 'Idle' }] }; } });
+    layers.setRoom(roomDoc);
+    const v = unit(a);
+    a.onChange(() => v.retryAssets());
+    await settle();
+    assert.deepEqual(loads, [PLUGIN_SKEL, vanilla], 'the plugin model first, then the installation\'s');
+    assert.equal(v._actorEntry?.skel, vanilla);
+    assert.deepEqual(layers.failed.sort(), [PLUGIN_AVATAR, PLUGIN_SKEL].sort(), 'both reported by the store');
+    assert.equal(a.avatar('char_002_amiya'), M.chars.char_002_amiya.avatar, 'the picture fell back too');
+    assert.equal(v._pic.url, M.chars.char_002_amiya.avatar);
     v.destroy();
   });
 

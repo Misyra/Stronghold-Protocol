@@ -8,10 +8,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { artPlan, formatSummary, isPlayerFile, isRefused } from '../tools/package.mjs';
 import { localGaps, sceneInstallPlan } from '../tools/setup.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath, not new URL(...).pathname: on Windows the latter yields "/E:/…" and resolving it doubles the drive.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('sceneInstallPlan: fetch only with a client and extractor deps; otherwise the metal board', () => {
   const present = sceneInstallPlan({ hasScenes: true, client: false });
@@ -72,8 +74,12 @@ test('an older extraction is told it lacks the battlefield scenes', () => {
 
 test('official scene bundles and extracted scenes are not git files; the extractor scripts are', () => {
   const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
-  assert.match(gi, /^public\/assets\/$/m);
-  assert.match(gi, /^data\/local-assets\.json$/m);
+  // This fork tracks public/assets/local/ (the v0.1.3 board art, data/local-assets.json among it), so the two
+  // assertions upstream makes about a wholly ignored public/assets/ and manifest are the fork's own shape here:
+  // the extracted scenes stay out of the repository, re-ignored under the tracked local art.
+  assert.match(gi, /^public\/assets\/\*$/m);
+  assert.match(gi, /^!public\/assets\/local\/$/m);
+  assert.match(gi, /^\/public\/assets\/local\/scene\/$/m);
   assert.match(gi, /^\.cache\/$/m);
   assert.match(gi, /official-scenes/);
   assert.equal(isRefused('.cache/official-scenes/26-04-13-12-31-42_e9b560/scenes/a.ab'), true);

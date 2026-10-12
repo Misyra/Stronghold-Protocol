@@ -2,6 +2,8 @@
 
 游戏部署从 [DEPLOY.md](DEPLOY.md) 开始；公告接入统一看 [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md)。
 
+房间动作审计、按网络限流、无人暂停、计算降级和私有房间查询见 [ROOM_PROTECTION.md](ROOM_PROTECTION.md)。
+
 ## 三个服务的分工
 
 | 服务 | 位置 | 作用 |

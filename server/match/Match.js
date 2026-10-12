@@ -38,6 +38,7 @@
 //                                              makes this match's battleIds unique within the room (DESIGN §14)
 //   opts.data        frozen game data (server/data.js getData()); may lack keys while data is generated
 //   opts.log         { info, warn, error, debug }
+//   opts.onAudit(action, fields) (optional)     structured lifecycle / computation diagnostics for the lobby
 //   opts.now         () => ms epoch             injectable clock (Date.now in production)
 //   opts.send(playerId, msg) → boolean          unicast; never throws; silently drops for bots, disconnected
 //                                              or departed players (they get a full resync on reconnect).
@@ -177,7 +178,7 @@ import { Battle } from '../sim/Battle.js';
 import { DataSource } from '../sim/simdata.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
 import { GameData } from './gamedata.js';
-import { RealScheduler } from './scheduler.js';
+import { RealScheduler, SuspendableScheduler } from './scheduler.js';
 import { SharedPool, SharedItemPool, drawDisabledBonds } from './pool.js';
 import { PlayerState } from './PlayerState.js';
 import { EffectDispatcher, getDefaultRegistry } from './effectsMeta.js';
@@ -256,7 +257,12 @@ export class Match {
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     this.ownsScheduler = !opts.scheduler;
-    this.sched = opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) });
+    this.sched = new SuspendableScheduler(opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) }), { ownsBase: this.ownsScheduler });
+    this.onAudit = opts.onAudit || null;
+    this.workerStats = { submitted: 0, completed: 0, failed: 0, rejected: 0, cancelled: 0 };
+    this._workerAuditAt = -Infinity;
+    this.offlinePaused = false;
+    this.rehearsalPressure = opts.rehearsalPressure || null;
     this.registry = opts.registry || getDefaultRegistry();
     this.dispatcher = new EffectDispatcher(this, this.registry);
     this.BattleClass = typeof opts.BattleClass === 'function' ? opts.BattleClass : Battle;
@@ -268,6 +274,8 @@ export class Match {
     this.gameSpeed = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : parseBotRehearsal(env('SP_BOT_REHEARSAL'));
+    this.botRehearsalLimit = parseBotRehearsal(env('SP_BOT_REHEARSAL'), 8);
+    this.botRehearsal = Math.min(this.botRehearsal, this.botRehearsalLimit);
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */
     this.botSliceMs = Number.isFinite(opts.botSliceMs) && opts.botSliceMs > 0 ? opts.botSliceMs : this.sched.virtual ? Infinity : BOT_SLICE_MS;
     this.ds = dataSourceFor(this.data);

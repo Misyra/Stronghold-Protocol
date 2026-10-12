@@ -19,6 +19,12 @@ export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'abuseDropsPerSec',
   'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
 const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs'];
+const ROOM_LIMIT_OPTIONS = {
+  roomCreateBurst: ['SP_ROOM_CREATE_BURST', 4, 1, 100],
+  roomCreateRefillMs: ['SP_ROOM_CREATE_REFILL_MS', 15000, 100, 3600000],
+  matchStartBurst: ['SP_MATCH_START_BURST', 4, 1, 100],
+  matchStartRefillMs: ['SP_MATCH_START_REFILL_MS', 30000, 100, 3600000],
+};
 
 /**
  * Bind address used when neither the `host` option nor `HOST` says otherwise: one dual-stack socket, so the server
@@ -111,12 +117,27 @@ export function netOptionsFrom(opts) {
 }
 
 /** lobby.js Lobby options out of the startServer() options. */
-export function lobbyOptionsFrom(opts) {
+export function lobbyOptionsFrom(opts, env = process.env) {
   const lobbyOptions = {};
   for (const k of LOBBY_OPTION_KEYS) {
     if (opts[k] != null) lobbyOptions[k] = opts[k];
   }
+  for (const [key, [name, fallback, min, max]] of Object.entries(ROOM_LIMIT_OPTIONS)) {
+    const value = Number(opts[key] ?? env[name] ?? fallback);
+    if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${name} must be ${min}..${max}`);
+    lobbyOptions[key] = value;
+  }
   return lobbyOptions;
+}
+
+/** An absent secret disables private enumeration; reject weak/malformed configuration before startup. */
+export function roomAdminTokenFrom(opts = {}, env = process.env) {
+  const token = opts.roomAdminToken ?? env.SP_ROOM_ADMIN_TOKEN;
+  if (token == null || token === '') return null;
+  if (typeof token !== 'string' || !/^[!-~]{32,256}$/.test(token)) {
+    throw new RangeError('SP_ROOM_ADMIN_TOKEN must contain 32..256 non-space ASCII characters');
+  }
+  return token;
 }
 
 /** TRUST_PROXY env → net.js trustProxy ('auto' unless explicitly on/off). @param {string | undefined} v */

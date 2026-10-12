@@ -84,9 +84,11 @@ export class MatchPlatform {
       ps.connected = false;
       // A disconnected human's silence is never consent to a new setup.
       this.cancelSetupVote();
-      // a paused solo battle resumes (the server takes the field over; nobody is left to resume it)
-      this._resume();
-      if (this.clientCombat) this._authorityLost(ps, 'disconnect');
+      this.syncOfflinePause();
+      if (!this.offlinePaused) {
+        this._resume();
+        if (this.clientCombat) this._authorityLost(ps, 'disconnect');
+      }
       this.markPublic();
     });
   }
@@ -97,6 +99,7 @@ export class MatchPlatform {
     this.guard(() => {
       const was = ps.connected;
       ps.connected = true;
+      this.syncOfflinePause();
       this._resync(ps);
       if (!was) this.markPublic();
     });
@@ -135,6 +138,7 @@ export class MatchPlatform {
       this.cancelSetupVote();
       ps.connected = false;
       ps.autoplay = false;
+      this.syncOfflinePause();
       this.watchers.delete(playerId);
       if (this.ended) return;
       this._resume();
@@ -211,6 +215,6 @@ export class MatchPlatform {
     for (const h of this._timers) { try { this.sched.clearTimeout(h); } catch { /* ignore */ } }
     this._timers.clear();
     if (this._pubTimer) { try { this.sched.clearTimeout(this._pubTimer); } catch { /* ignore */ } this._pubTimer = null; }
-    if (this.ownsScheduler) this.sched.dispose();
+    this.sched.dispose();
   }
 }

@@ -19,6 +19,7 @@
 | [Windows 与家用开服](operations/HOME_SERVER.md) | Windows 自启、整合包更新与家用网络 |
 | [游戏内公告](operations/ANNOUNCEMENTS.md) | 默认中央源、站点 ID、显式本地模式与排错 |
 | [监控接入](operations/MONITORING.md) | 游戏、探针、中央面板的分工与接入 |
+| [房间审计与保护](operations/ROOM_PROTECTION.md) | 网络额度、无人暂停、计算降级和私有查询 |
 | [发行包制作](operations/PACKAGING.md) | 维护者制作完整、精简与更新包 |
 | [Windows 便携包](operations/WINDOWS.md) | 制作与使用便携包 |
 | [CDN 与资源更新](operations/CDN.md) | 静态资源分发、预载与缓存 |

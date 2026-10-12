@@ -23,19 +23,51 @@ export class MatchInfra {
 
   /** Track asynchronous CPU work; callbacks may mutate state only while their captured owner is still live. */
   _submitWorker(type, payload, { valid, complete, failed, progress, priority = 0, fallback = 'using bounded local slices' }) {
-    const task = this.workerPool.submit(type, payload, { priority,
-      onProgress: progress ? (out) => { if (!this.disposed && !this.ended && valid()) this.guard(() => progress(out)); } : null });
-    this._workerTasks.add(task);
-    task.promise.then((out) => {
-      this._workerTasks.delete(task);
-      if (!this.disposed && !this.ended && valid()) this.guard(() => complete(out));
-    }, (err) => {
-      this._workerTasks.delete(task);
-      if (err.code === 'TASK_CANCELLED' || this.disposed || this.ended || !valid()) return;
-      this.log.warn?.(`[match ${this.roomCode}] worker ${type}: ${err.message}; ${fallback}`);
-      this.guard(() => failed(err));
-    });
-    return task;
+    let input = payload, inner = null, generation = 0, settled = false;
+    const release = () => { settled = true; input = null; inner = null; this._workerTasks.delete(handle); };
+    const stop = () => {
+      generation++;
+      if (inner) { this.workerStats.cancelled++; inner.cancel(); inner = null; }
+    };
+    const handle = {
+      type,
+      cancel: () => { stop(); release(); },
+      suspend: stop,
+      resume: () => {
+        if (settled || inner || this.offlinePaused || this.disposed || this.ended) return;
+        // Initial callers attach the returned handle before their ownership predicate is usable.
+        if (generation > 0 && !valid()) { release(); return; }
+        const id = ++generation;
+        this.workerStats.submitted++;
+        inner = this.workerPool.submit(type, input, { priority,
+          onProgress: progress ? (out) => {
+            if (id === generation && !this.offlinePaused && !this.disposed && !this.ended && valid()) this.guard(() => progress(out));
+          } : null });
+        inner.promise.then((out) => {
+          if (id !== generation) return;
+          this.workerStats.completed++;
+          release();
+          if (!this.disposed && !this.ended && valid()) this.guard(() => complete(out));
+        }, (err) => {
+          if (id !== generation) return;
+          release();
+          if (err.code === 'TASK_CANCELLED' || this.disposed || this.ended || !valid()) return;
+          const rejected = ['POOL_CLOSED', 'POOL_FULL', 'REHEARSAL_BUSY'].includes(err.code);
+          this.workerStats[rejected ? 'rejected' : 'failed']++;
+          const now = this.sched.now();
+          if (now - this._workerAuditAt >= 10000) {
+            this._workerAuditAt = now;
+            this.onAudit?.(rejected ? 'worker.rejected' : 'worker.failed', { type, code: err.code || 'UNKNOWN',
+              round: this.round, phase: this.phase, load: this.workerPool.load?.() || null, ...this.workerStats });
+            this.log.warn?.(`[match ${this.roomCode}] worker ${type}: ${err.message}; ${fallback}`);
+          }
+          this.guard(() => failed(err));
+        });
+      },
+    };
+    this._workerTasks.add(handle);
+    handle.resume();
+    return handle;
   }
 
   _cancelWorkerTasks() {

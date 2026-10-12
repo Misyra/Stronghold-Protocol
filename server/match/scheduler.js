@@ -26,6 +26,73 @@ const clampDelay = (ms) => {
   return Math.min(MAX_DELAY, n);
 };
 
+/** Per-match timer suspension; the underlying scheduler may be shared by tests. */
+export class SuspendableScheduler {
+  constructor(base, { ownsBase = false } = {}) {
+    this.base = base;
+    this.ownsBase = ownsBase;
+    this.virtual = base.virtual;
+    this.instant = base.instant;
+    this.suspended = false;
+    this.entries = new Set();
+    this.disposed = false;
+    // Keep virtual tools' clock-control API available through the match's facade.
+    for (const key of ['advance', 'runNext', 'runUntil', 'runAll', 'pending', 'nextAt']) {
+      if (typeof base[key] === 'function') this[key] = base[key].bind(base);
+    }
+  }
+  now() { return this.base.now(); }
+  _arm(e) {
+    if (this.suspended || this.disposed) return;
+    e.due = this.now() + e.remaining;
+    const run = () => {
+      e.handle = null;
+      if (!this.entries.has(e) || this.suspended) return;
+      if (!e.every) this.entries.delete(e);
+      else { e.remaining = e.every; this._arm(e); }
+      e.fn();
+    };
+    e.handle = e.work && this.base.setWork ? this.base.setWork(run) : this.base.setTimeout(run, e.remaining);
+  }
+  _add(fn, ms, every = 0, work = false) {
+    if (this.disposed) return null;
+    const e = { fn, remaining: clampDelay(ms), every, work, handle: null, due: 0 };
+    this.entries.add(e);
+    this._arm(e);
+    return e;
+  }
+  setTimeout(fn, ms) { return this._add(fn, ms); }
+  get setWork() { return this.base.setWork ? this._setWork : undefined; }
+  _setWork(fn) { return this._add(fn, 0, 0, true); }
+  setInterval(fn, ms) { return this._add(fn, ms, Math.max(1, clampDelay(ms))); }
+  clearTimeout(e) {
+    if (!e) return;
+    this.base.clearTimeout(e.handle);
+    this.entries.delete(e);
+  }
+  clearInterval(e) { this.clearTimeout(e); }
+  suspend() {
+    if (this.suspended) return;
+    this.suspended = true;
+    for (const e of this.entries) {
+      e.remaining = Math.max(0, e.due - this.now());
+      this.base.clearTimeout(e.handle);
+      e.handle = null;
+    }
+  }
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    for (const e of this.entries) this._arm(e);
+  }
+  dispose() {
+    this.disposed = true;
+    for (const e of this.entries) this.base.clearTimeout(e.handle);
+    this.entries.clear();
+    if (this.ownsBase) this.base.dispose();
+  }
+}
+
 export class RealScheduler {
   /** @param {{ now?: () => number, onError?: (e: unknown) => void }} [opts] */
   constructor({ now = Date.now, onError = null } = {}) {

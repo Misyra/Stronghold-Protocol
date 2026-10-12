@@ -13,7 +13,7 @@
 //   chars[charId]            { avatar, avatarE2, portrait, portraitE2: image, spine: { front, back: Spine } }
 //   enemies[key]             { icon: image, spine: Spine }          tokens[id]  { avatar: image, spine: Spine }
 //   bonds / items / bands / skills / modules / ui[key], prof.icon / large / battlecard / sub[key]     image
-//   audio.bgm[lobby|prep|combat|unite|boss], audio.bossBgm[bossId]                                    { intro, loop: audio }
+//   audio.bgm[lobby|prep|combat|unite|boss], audio.bossBgm[bossId]     a track { loop, intro? }: replaced as a whole
 //   audio.voice / voiceJp[charId]  { <slot>: audio or a list of 1–16 }      audio.sfx.ui / battle[key]  audio
 //   audio.sfx.units[id]      { attack, hit, skill, die, born: audio, skills / attacks / hits: { <index>: audio } }
 // A value is a path inside the plugin folder (an image .png .jpg .webp, audio .mp3 .ogg), a Spine object
@@ -26,7 +26,10 @@
 // char_112_siege). A reference always names the installation's own entry, never another plugin's: the order of the
 // plugins never changes what it means [ASSUMED]. A missing entry is a problem. Anything else — another top-level
 // section (fonts, skillsById …), a field the record has not — is a warning and is left out; numbers, booleans and free
-// text are never written into the manifest.
+// text are never written into the manifest. A field a plugin does not write keeps the installation's value (an `avatar`
+// alone leaves `avatarE2`), but a track is written whole (a `loop` alone plays without the installation's intro), and a
+// model written for an enemy or a token (its `spine`, a model or a reference) also takes away the entry's local-client
+// model `spineLocal` — the client would draw that one first (public/js/assets.js spineEntry) [ASSUMED].
 //
 // The ops: the overlay as a list of writes `{ at: [path…], … }` in the order the plugin wrote them — a plugin file
 // (`file` / `files`), a Spine model (`spine`), a reference (`ref`, `from`: the path it reads). Resolved (resolveOps),
@@ -80,9 +83,10 @@ const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const short = (v) => { try { return String(JSON.stringify(v)).slice(0, 40); } catch { return typeof v; } };
 
 /**
- * A field's kind: 'image' | 'audio' | 'audioList' (one audio file or a list) | 'spine' — or an object of named fields
- * `{ fields }`, or one whose keys are free `{ each, key }` (a voice slot, a skill index).
- * @typedef {'image' | 'audio' | 'audioList' | 'spine' | { fields: Record<string, any> } | { each: any, key: RegExp }} AssetKind
+ * A field's kind: 'image' | 'audio' | 'audioList' (one audio file or a list) | 'track' (a BGM `{ loop, intro? }`, written
+ * whole) | 'spine' — or an object of named fields `{ fields }`, or one whose keys are free `{ each, key }` (a voice slot,
+ * a skill index).
+ * @typedef {'image' | 'audio' | 'audioList' | 'track' | 'spine' | { fields: Record<string, any> } | { each: any, key: RegExp }} AssetKind
  * @typedef {{ path: string[], record: AssetKind, keys?: string[] }} AssetContainer
  */
 
@@ -90,7 +94,6 @@ const SLOT = /^[A-Za-z][A-Za-z0-9]{0,31}$/;
 const INDEX = /^\d{1,2}$/;
 const SFX_UNIT = { fields: { attack: 'audio', hit: 'audio', skill: 'audio', die: 'audio', born: 'audio',
   skills: { each: 'audio', key: INDEX }, attacks: { each: 'audio', key: INDEX }, hits: { each: 'audio', key: INDEX } } };
-const BGM = { fields: { intro: 'audio', loop: 'audio' } };
 
 /** @type {readonly AssetContainer[]} the record containers a cosmetic plugin writes (see the header) */
 export const ASSET_CONTAINERS = Object.freeze(/** @type {AssetContainer[]} */ ([
@@ -100,14 +103,17 @@ export const ASSET_CONTAINERS = Object.freeze(/** @type {AssetContainer[]} */ ([
   ...['bonds', 'items', 'bands', 'skills', 'modules', 'ui'].map((k) => ({ path: [k], record: 'image' })),
   ...['icon', 'large', 'battlecard', 'sub'].map((k) => ({ path: ['prof', k], record: 'image' })),
   // audio.bgm: the tracks by name — not combatAlts, a list of tracks the client reads by round
-  { path: ['audio', 'bgm'], record: BGM, keys: ['lobby', 'prep', 'combat', 'unite', 'boss'] },
-  { path: ['audio', 'bossBgm'], record: BGM },
+  { path: ['audio', 'bgm'], record: 'track', keys: ['lobby', 'prep', 'combat', 'unite', 'boss'] },
+  { path: ['audio', 'bossBgm'], record: 'track' },
   { path: ['audio', 'voice'], record: { each: 'audioList', key: SLOT } },
   { path: ['audio', 'voiceJp'], record: { each: 'audioList', key: SLOT } },
   { path: ['audio', 'sfx', 'ui'], record: 'audio' },
   { path: ['audio', 'sfx', 'battle'], record: 'audio' },
   { path: ['audio', 'sfx', 'units'], record: SFX_UNIT },
 ]).map((c) => Object.freeze(c)));
+
+/** The containers whose records may carry a local-client model (`spineLocal`) a written `spine` takes away. */
+const LOCAL_MODELS = new Set(['enemies', 'tokens']);
 
 /** The containers as a tree: section → (sub-section →)… → the container. */
 const TREE = (() => {
@@ -140,14 +146,19 @@ const cloneJson = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
  *   hits: Record<string, number[]>, bounds: { x: number, y: number, width: number, height: number } | null }} SpineMeta
  *   what plugin.lock.json holds of a skeleton (tools/assets/skel.mjs, anim-roles.mjs — the fields of a manifest Spine)
  * @typedef {{ skel: string, atlas: string, textures: string[], pma: boolean, meta?: SpineMeta }} SpineOp
- * @typedef {{ at: string[], file?: string, files?: string[], spine?: SpineOp, ref?: string, from?: string[] }} AssetOp
- *   one write of an overlay (see the header)
+ * @typedef {{ at: string[], file?: string, files?: string[], track?: { loop: string, intro?: string }, spine?: SpineOp,
+ *   ref?: string, from?: string[], clear?: true, implied?: true }} AssetOp
+ *   one write of an overlay (see the header); `clear`: the entry's value taken away (an enemy's or a token's
+ *   `spineLocal` when its model is written — `implied`: a consequence of another write, never an override of its own)
  * @typedef {{ at: string[], value: any }} ResolvedOp
  * @typedef {{ ops: AssetOp[], files: string[], models: string[][], problems: string[], warnings: string[] }} AssetOverlay
  */
 
 const pathText = (at) => `assets.${at.join('.')}`;
 const kindName = (kind) => (typeof kind === 'string' ? (kind === 'audioList' ? 'audio' : kind === 'spine' ? 'Spine model' : kind) : 'record');
+/** The write that takes away an enemy's or a token's local-client model when its `spine` is written (see the header). */
+const localModelClear = (loc) => (LOCAL_MODELS.has(loc.container[0]) && loc.field.length === 1 && loc.field[0] === 'spine'
+  ? { at: [...loc.container, loc.key, 'spineLocal'], clear: /** @type {true} */ (true), implied: /** @type {true} */ (true) } : null);
 
 /**
  * Read a cosmetic plugin's `assets` part (see the header): its shape, the files it names, its references and the
@@ -218,6 +229,8 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
         return;
       }
       ops.push({ at, ref: key, from });
+      const clear = localModelClear(loc);
+      if (clear) ops.push(clear);
       const rest = Object.keys(v).filter((k) => k !== 'ref');
       if (!rest.length) return;
       if (typeof kind === 'string') { problems.push(`${pathText(at)}: a reference to a ${kindName(kind)} takes no other key (${rest.join(', ')})`); return; }
@@ -234,10 +247,24 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
       if (v.every((rel, i) => fileOk(rel, AUDIO, [...at, String(i)]))) { ops.push({ at, files: [...v] }); for (const rel of v) addFile(rel); }
       return;
     }
+    if (kind === 'track') {
+      const tr = /** @type {any} */ (v);
+      if (!isObj(tr) || tr.loop === undefined) { problems.push(`${pathText(at)}: not a track { "loop", "intro"? } or a reference`); return; }
+      for (const k of Object.keys(tr)) if (k !== 'loop' && k !== 'intro') warnings.push(`${pathText(at)}.${k} is not a field of a track (ignored)`);
+      if (!fileOk(tr.loop, AUDIO, [...at, 'loop']) || (tr.intro !== undefined && !fileOk(tr.intro, AUDIO, [...at, 'intro']))) return;
+      ops.push({ at, track: { loop: tr.loop, ...(tr.intro !== undefined ? { intro: tr.intro } : {}) } });
+      addFile(tr.loop);
+      if (tr.intro !== undefined) addFile(tr.intro);
+      return;
+    }
     if (kind === 'spine') {
       if (!isObj(v) || typeof /** @type {any} */ (v).skel !== 'string') { problems.push(`${pathText(at)}: not a Spine model { "skel", "atlas", "textures" } or a reference`); return; }
       const spine = readSpine(v, at);
-      if (spine) ops.push({ at, spine });
+      if (spine) {
+        ops.push({ at, spine });
+        const clear = localModelClear(loc);
+        if (clear) ops.push(clear);
+      }
       return;
     }
     if (!isObj(v)) { problems.push(`${pathText(at)}: ${short(v)} is not an object of fields (${'fields' in kind ? Object.keys(kind.fields).join(', ') : 'keyed entries'})`); return; }
@@ -276,6 +303,7 @@ export function readAssetOverlay(assets, { vanilla = null, permissions = null, h
   if (vanilla && Array.isArray(permissions)) {
     const told = new Set();
     for (const op of ops) {
+      if (op.implied) continue;
       const depth = ASSET_CONTAINERS.find((c) => c.path.every((k, i) => op.at[i] === k))?.path.length ?? 1;
       const exists = getPath(vanilla, op.at.slice(0, depth + 1)) !== undefined;
       const need = exists ? 'assets.override' : 'assets.add';
@@ -381,6 +409,12 @@ export function resolveOps(ops, { id, sha, base }) {
     } else if (op.files) {
       const list = op.files.map(fileUrl);
       if (list.every(Boolean)) out.push({ at: op.at, value: list });
+    } else if (op.track) {
+      const loop = fileUrl(op.track.loop);
+      const intro = op.track.intro !== undefined ? fileUrl(op.track.intro) : null;
+      if (loop && (op.track.intro === undefined || intro)) out.push({ at: op.at, value: intro ? { intro, loop } : { loop } });
+    } else if (op.clear) {
+      out.push({ at: op.at, value: undefined });
     } else if (op.spine) {
       const s = op.spine;
       const shas = [s.skel, s.atlas, ...s.textures].map((rel) => sha(rel));
@@ -400,7 +434,7 @@ export function resolveOps(ops, { id, sha, base }) {
 /**
  * Lay resolved ops over a manifest: each value written whole at its path, the objects on the way copied — neither the
  * manifest nor an op's value is ever changed in place (a later op inside an earlier one's value copies it first). A path
- * through a name of Object.prototype is skipped.
+ * through a name of Object.prototype is skipped. An undefined value takes the entry away (as JSON writes it: absent).
  * @param {any} manifest
  * @param {ResolvedOp[]} ops
  * @returns {any} the new manifest
@@ -419,7 +453,8 @@ export function applyOps(manifest, ops) {
       node[at[i]] = next;
       node = next;
     }
-    node[at[at.length - 1]] = op.value;
+    if (op.value === undefined) delete node[at[at.length - 1]];
+    else node[at[at.length - 1]] = op.value;
   }
   return root;
 }
@@ -452,8 +487,10 @@ export function mergePluginOps(plugins) {
     warnings.push({ code: 'override', params: { path: at.join('.'), plugins: [earlier, later] } });
   };
   for (const { id, ops: list } of plugins) {
-    // checked against the earlier plugins only: a plugin never conflicts with itself
+    // checked against the earlier plugins only: a plugin never conflicts with itself; an implied write is the
+    // consequence of one that is checked
     for (const op of list) {
+      if (/** @type {any} */ (op).implied) { ops.push(op); continue; }
       const at = op.at;
       for (let n = 1; n <= at.length; n++) {
         const o = owner.get(key(at.slice(0, n)));
@@ -463,6 +500,7 @@ export function mergePluginOps(plugins) {
       ops.push(op);
     }
     for (const op of list) {
+      if (/** @type {any} */ (op).implied) continue;
       const k0 = key(op.at);
       owner.set(k0, id);
       for (let n = 1; n < op.at.length; n++) {

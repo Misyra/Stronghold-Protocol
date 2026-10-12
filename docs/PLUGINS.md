@@ -225,7 +225,7 @@ is a number of `data/enemies.json`), so a room's `cs` is the vanilla one whateve
 | `enemies[key]` | `icon` (image), `spine` (Spine) |
 | `tokens[id]` | `avatar` (image), `spine` (Spine) |
 | `bonds`, `items`, `bands`, `skills`, `modules`, `ui`, `prof.icon` / `large` / `battlecard` / `sub` `[key]` | an image |
-| `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | `intro`, `loop` (audio) |
+| `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | a track `{ loop, intro? }` (audio), written whole |
 | `audio.voice[charId]`, `audio.voiceJp[charId]` | `<slot>`: an audio file or a list of 1–16 |
 | `audio.sfx.ui[key]`, `audio.sfx.battle[key]` | audio |
 | `audio.sfx.units[id]` | `attack`, `hit`, `skill`, `die`, `born` (audio), `skills` / `attacks` / `hits` `{ <index>: audio }` |
@@ -242,8 +242,12 @@ there —, the pages inside the atlas's folder; `atlas` and `textures` default t
 A reference always names the installation's entry, never another plugin's [ASSUMED], so the plugins' order never changes
 what it means; one the installation's `data/assets.json` lacks is a problem. Anything else — another section (`fonts`,
 `skillsById` …), a field a record has not — is a warning and left out; numbers, booleans and free text are never written
-into the manifest; never an absolute URL (no other path of the server, no other host). Writing an entry the installation
-has needs the permission `assets.override`, a new entry `assets.add`. `theme` is not applied yet (a warning).
+into the manifest; never an absolute URL (no other path of the server, no other host). A field a plugin does not write
+keeps the installation's value (an `avatar` alone leaves `avatarE2`), but a track is written whole (a `loop` alone plays
+without the installation's intro), and a model written for an enemy or a token — its `spine`, a model or a reference —
+also takes away that entry's local-client model (`spineLocal`, which the client would draw first) [ASSUMED]. Writing an
+entry the installation has needs the permission `assets.override`, a new entry `assets.add`. `theme` is not applied yet
+(a warning).
 
 **Spine models and `plugin.lock.json`.** A model's clip roles, durations, events, hit times and bounds come from the
 skeleton itself: `node tools/plugin.mjs pack <dir>` parses it the way `tools/fetch-assets.mjs` parses the game's

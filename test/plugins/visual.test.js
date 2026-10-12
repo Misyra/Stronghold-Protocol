@@ -43,8 +43,9 @@ describe('reading an overlay', () => {
     assert.deepEqual([r.problems, r.warnings], [[], []]);
     assert.deepEqual(r.ops.map((o) => o.at.join('.')), [
       'chars.char_102_texas.avatar', 'chars.char_102_texas.spine.front', 'ui.hudPanel/icon_hp', 'audio.voice.char_102_texas.skill1',
-      'audio.voice.char_102_texas.select', 'audio.bgm.lobby.loop', 'prof.icon.sniper',
+      'audio.voice.char_102_texas.select', 'audio.bgm.lobby', 'prof.icon.sniper',
     ]);
+    assert.deepEqual(r.ops[5].track, { loop: 'v/s2.ogg' }, 'a track is written whole');
     assert.deepEqual(r.ops[1].spine, { skel: 'spine/front/t.skel', atlas: 'spine/front/t.atlas', textures: ['spine/front/t.png'], pma: false }, 'the atlas and page by the skeleton\'s name');
     assert.deepEqual(r.ops[4].files, ['v/s1.mp3', 'v/s2.ogg']);
     assert.deepEqual(r.files, ['art/a.png', 'spine/front/t.skel', 'spine/front/t.atlas', 'spine/front/t.png', 'art/b.webp', 'v/s1.mp3', 'v/s2.ogg', 'other/x.png']);
@@ -93,6 +94,37 @@ describe('reading an overlay', () => {
     const ok = read({ chars: { char_102_texas: { spine: { front: { skel: 'spine/front/t.skel', textures: ['spine/front/t.png', 'spine/front/t2.png'], pma: true } } } } });
     assert.deepEqual([ok.problems, ok.ops[0].spine.textures, ok.ops[0].spine.pma], [[], ['spine/front/t.png', 'spine/front/t2.png'], true]);
     assert.match(bad({ audio: { voice: { char_102_texas: { select: Array.from({ length: VISUAL_LIMITS.listFiles + 1 }, () => 'v/s1.mp3') } } } }), /a list of 1–16/);
+  });
+
+  test('a track is written whole (a loop alone plays without the installation\'s intro); an enemy\'s or a token\'s model takes its local-client model away', () => {
+    const vanilla = { ...VANILLA, enemies: { enemy_1305_mhslim: { icon: '/assets/e.png', spine: { skel: '/assets/e.skel' }, spineLocal: { group: 'spine/enemy/enemy_1305_mhslim' } },
+      enemy_1007_slime: { icon: '/assets/s.png', spine: { skel: '/assets/s.skel' } } }, audio: { ...VANILLA.audio, bgm: { lobby: { intro: '/assets/i.mp3', loop: '/assets/l.mp3' } } } };
+    const r = readAssetOverlay({
+      audio: { bgm: { lobby: { loop: 'v/s1.mp3' }, prep: { intro: 'v/s1.mp3', loop: 'v/s2.ogg', extra: 'x' } } },
+      enemies: { enemy_1305_mhslim: { spine: { skel: 'spine/front/t.skel' } }, enemy_1007_slime: { spine: { ref: 'enemy_1305_mhslim' } }, enemy_x: { ref: 'enemy_1305_mhslim' } },
+    }, { vanilla, permissions: ['assets.override', 'assets.add'], has });
+    assert.deepEqual(r.problems, []);
+    assert.deepEqual(r.warnings, ['assets.audio.bgm.prep.extra is not a field of a track (ignored)']);
+    assert.deepEqual(r.ops.map((o) => [o.at.join('.'), o.track ? 'track' : o.spine ? 'spine' : o.ref ? 'ref' : o.clear ? 'clear' : '?']), [
+      ['audio.bgm.lobby', 'track'], ['audio.bgm.prep', 'track'],
+      ['enemies.enemy_1305_mhslim.spine', 'spine'], ['enemies.enemy_1305_mhslim.spineLocal', 'clear'],
+      ['enemies.enemy_1007_slime.spine', 'ref'], ['enemies.enemy_1007_slime.spineLocal', 'clear'],
+      ['enemies.enemy_x', 'ref'],
+    ], 'a whole-record reference takes the referenced record as it is');
+    const lock = readPluginLock({ lock: 1, spine: { 'spine/front/t.skel': { sha256: sha('spine/front/t.skel'), anims: { idle: 'Idle' }, animations: {}, events: [], hits: {}, bounds: null } } }).lock;
+    const { ops } = resolveOps(attachSpineMeta(r.ops, lock, sha).ops, { id: 'p', sha, base: vanilla });
+    const out = applyOps(vanilla, ops);
+    assert.deepEqual(out.audio.bgm.lobby, { loop: `/p/p/${sha('v/s1.mp3').slice(0, 8)}/v/s1.mp3` }, 'no intro left behind');
+    assert.deepEqual(Object.keys(out.audio.bgm.prep), ['intro', 'loop']);
+    assert.equal('spineLocal' in out.enemies.enemy_1305_mhslim, false, 'the plugin\'s model is drawn, not the local one');
+    assert.equal(JSON.parse(JSON.stringify(out)).enemies.enemy_1305_mhslim.spineLocal, undefined);
+    assert.deepEqual(out.enemies.enemy_x.spineLocal, vanilla.enemies.enemy_1305_mhslim.spineLocal);
+    assert.equal(vanilla.enemies.enemy_1305_mhslim.spineLocal.group, 'spine/enemy/enemy_1305_mhslim', 'the base untouched');
+    assert.match(readAssetOverlay({ audio: { bgm: { lobby: { intro: 'v/s1.mp3' } } } }).problems.join(), /not a track \{ "loop", "intro"\? \}/);
+    // two plugins writing one model: one warning (the implied clear is no override of its own)
+    const twice = mergePluginOps([{ id: 'a', ops: r.ops.slice(2, 4) }, { id: 'b', ops: r.ops.slice(2, 4) }]);
+    assert.deepEqual(twice.warnings, [{ code: 'override', params: { path: 'enemies.enemy_1305_mhslim.spine', plugins: ['a', 'b'] } }]);
+    assert.equal(twice.ops.length, 4);
   });
 
   test('what a cosmetic plugin does not change is a warning and left out', () => {

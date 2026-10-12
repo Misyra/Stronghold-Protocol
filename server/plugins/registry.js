@@ -249,9 +249,11 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
  * Read one plugin folder: its manifest, its files, the paths the manifest names — and, for a cosmetic plugin, its asset
  * overlay (readVisual). With `problems` it stays out (`plugin` null); otherwise `plugin` is its entry.
  * @param {string} dir the folder (its name is the id)
- * @param {{ app?: string, api?: { current: number, min: number }, where?: string, vanilla?: VanillaAssets, hashCache?: HashCache }} [opts]
- *   vanilla: the installation's art manifest (default: none — a cosmetic plugin's references are not checked and it has
- *   no `vs`); hashCache: kept file hashes (default: a new one)
+ * @param {{ app?: string, api?: { current: number, min: number }, where?: string, vanilla?: VanillaAssets | (() => VanillaAssets),
+ *   hashCache?: HashCache }} [opts]
+ *   vanilla: the installation's art manifest, or a function that reads it (called for a cosmetic plugin only; default:
+ *   none — a cosmetic plugin's references are not checked and it has no `vs`); hashCache: kept file hashes (default: a
+ *   new one)
  * @returns {{ plugin: Plugin | null, problems: string[], warnings: string[] }}
  */
 export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, where, vanilla = { manifest: null, sha256: null }, hashCache = new Map() } = {}) {
@@ -287,7 +289,7 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
     supported: status === 'loaded' && manifest.class === 'lang', manifest, files: served, bytes: check.bytes, count: check.count,
   };
   if (manifest.class === 'cosmetic' && status === 'loaded') {
-    const v = readVisual(dir, manifest, files, { vanilla, hashCache });
+    const v = readVisual(dir, manifest, files, { vanilla: typeof vanilla === 'function' ? vanilla() : vanilla, hashCache });
     warnings.push(...v.warnings);
     if (!v.visual) return { plugin: null, problems: v.problems, warnings };
     plugin.visual = v.visual;
@@ -305,13 +307,16 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
 /**
  * Scan the folders once.
  * @param {PluginDirs} dirs
- * @param {{ app?: string, api?: { current: number, min: number }, hashCache?: HashCache, vanilla?: VanillaAssets }} [opts]
+ * @param {{ app?: string, api?: { current: number, min: number }, hashCache?: HashCache, vanilla?: VanillaAssets | null,
+ *   artCache?: Map<string, any> }} [opts]
  *   hashCache: file hashes kept from earlier scans (a registry's); vanilla: the installation's art manifest (default: read
- *   from dataDir)
- * @returns {{ plugins: Plugin[], skipped: Skipped[], warnings: { where: string, warning: string }[], vanilla: VanillaAssets }}
+ *   from dataDir — only when a cosmetic plugin is found, through `artCache`)
+ * @returns {{ plugins: Plugin[], skipped: Skipped[], warnings: { where: string, warning: string }[], vanilla: VanillaAssets | null }}
+ *   vanilla: the art manifest read for this scan (null when no cosmetic plugin needed it)
  */
-export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app = APP_VERSION, api = PLUGIN_API, hashCache = new Map(), vanilla = null } = {}) {
-  const art = vanilla || (pluginsDir ? readVanillaAssets(dataDir) : { manifest: null, sha256: null });
+export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app = APP_VERSION, api = PLUGIN_API, hashCache = new Map(), vanilla = null, artCache = new Map() } = {}) {
+  let art = vanilla;
+  const getArt = () => (art ||= readVanillaAssets(dataDir, artCache));
   /** @type {Plugin[]} */
   const found = [];
   /** @type {Skipped[]} */
@@ -411,7 +416,7 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
       if (!st.isDirectory()) continue;
       const where = `plugins/${id}/`;
       guard(where, () => {
-        const r = readPluginFolder(dir, { app, api, where, vanilla: art, hashCache });
+        const r = readPluginFolder(dir, { app, api, where, vanilla: getArt, hashCache });
         warn(where, r.warnings);
         if (!r.plugin) skipped.push({ where, problems: r.problems });
         else found.push(r.plugin);
@@ -529,7 +534,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     const s = signature(dirs);
     if (state && s === sig) return state;
     const first = !state;
-    const scan = scanPlugins(dirs, { app, hashCache, vanilla: dirs.pluginsDir ? readVanillaAssets(dirs.dataDir, artCache) : null });
+    const scan = scanPlugins(dirs, { app, hashCache, artCache });
     // the hashes of a plugin that is gone (removed, or now skipped) are forgotten
     const kept = scan.plugins.filter((p) => p.visual).map((p) => p.visual.dir + path.sep);
     for (const abs of [...hashCache.keys()]) if (!kept.some((d) => abs.startsWith(d))) hashCache.delete(abs);
@@ -555,8 +560,8 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     rescan: () => { sig = null; refresh(true); },
     /** The entry of an id (any class, any status), or null. @param {string} id @returns {Plugin | null} */
     plugin: (id) => refresh().byId.get(id) || null,
-    /** The installation's art manifest the last scan read (VanillaAssets). */
-    vanillaAssets: () => refresh().vanilla,
+    /** The installation's art manifest (VanillaAssets): the one the last scan read, else read now (kept by size + mtime). */
+    vanillaAssets: () => refresh().vanilla || readVanillaAssets(dirs.dataDir, artCache),
     /** The loaded language entries, optionally of one manifest 1 type. @param {string} [type] @returns {Plugin[]} */
     list: (type) => refresh().packs.filter((p) => !type || p.type === type),
     /** Every plugin and pack found, optionally of one class. @param {string} [cls] @returns {Plugin[]} */

@@ -13,7 +13,7 @@ export class BattleDeploy {
    * operator that left the field comes back on its body tile, restTile). `keepSp` = { sp, charges }
    * restored right after the skill reset, before the `deploy` hook fires.
    */
-  _deploy(u, { initial = false, carry = null, tile = null, keepSp = null } = {}) {
+  _deploy(u, { initial = false, carry = null, tile = null, keepSp = null, preBattleAggroSeq = null } = {}) {
     if ((u.alive && u.deployed) || u._removing) return false;
     const R0 = tile ? tile[0] : u.homeR, C0 = tile ? tile[1] : u.homeC;
     if (!this.grid.inRect(R0, C0)) {
@@ -37,7 +37,9 @@ export class BattleDeploy {
     u.x = C0; u.y = R0; u.tileR = R0; u.tileC = C0;
     u.blocking = [];
     u.deploySeq = ++this._deploySeq;
-    u.aggroSeq = u.deploySeq;
+    // A prepared map character is instantiated after the board deployment but keeps an earlier target order.
+    // Its deploySeq remains the identity of this actual deployment for scheduled effects and redeploy checks.
+    u.aggroSeq = preBattleAggroSeq ?? u.deploySeq;
     u.deployedAt = this.time;
     u.atkCd = 0;
     u.lastAttackAt = -Infinity;

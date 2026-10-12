@@ -361,7 +361,9 @@ export function createFallbackView(host, opts = {}) {
         const pos = tilePos(L, u.y, u.x);
         const src = tokenAvatarUrl(m(), u.defId);
         pieces.push(html`<div key=${`map:${u.uid}`} class="ff-piece ff-piece--token ff-piece--map-char"
-            style=${`transform:translate(${pos.x}px,${pos.y}px);width:${L.tile}px;height:${L.tile}px;pointer-events:none`}
+            style=${`transform:translate(${pos.x}px,${pos.y}px);width:${L.tile}px;height:${L.tile}px`}
+            onPointerDown=${(e) => { if (e.button === 0) emit('pieceClick', { unit: u, unitId: null, uid: u.uid, prepMapChar: true, button: 0, clientX: e.clientX, clientY: e.clientY }); }}
+            onContextMenu=${(e) => { e.preventDefault(); emit('pieceClick', { unit: u, unitId: null, uid: u.uid, prepMapChar: true, button: 2, detail: true, clientX: e.clientX, clientY: e.clientY }); }}
             title=${u.name || u.defId}>
           <div class="ff-piece__art">${src ? html`<img src=${src} alt="" draggable=${false} />` : html`<span>${[...(u.name || '?')][0]}</span>`}</div>
         </div>`);

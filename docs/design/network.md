@@ -140,8 +140,9 @@ codes are UI metadata only, never authentication. No new network message or nick
 
 Optional `coins: [[id, balance, cap]]` is an integer skill-currency readout (§29.6), separate from ammo. It includes zero, is stepped between snapshots and clears when omitted. Result-validation names for board operators are resolved from the server's DIY/stand-in selections, never a supplied display name.
 
-Preparation state carries read-only `prepMapChars` for 外勤医疗. Boss-mate and scouting metadata include them in
-displayed field coordinates. Draft cards expose optional `soldOut` when equipment stock is unavailable; the client
+Preparation state carries read-only `prepMapChars` for 外勤医疗. The owner's entries can be clicked for a detail card
+and board-space range preview without adding a placement intent or a combat entity. Boss-mate and scouting metadata
+include them in displayed field coordinates. Draft cards expose optional `soldOut` when equipment stock is unavailable; the client
 disables picking and the server checks again before consumption.
 
 `m.public.bossPairs: [[playerId, playerId?], …] | null` publishes the preparation pairing, first member left and

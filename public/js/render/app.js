@@ -265,6 +265,7 @@ export async function createFieldView(host, options = {}) {
   let pendingView = null;     // tile band/focus to apply when the camera transition ends
   const views = new Map();    // key → view (prep: 'p:'+uid; battle: unit id)
   let prepPieces = [];        // { uid, piece, area, idx, row, col, key }
+  let prepMapChars = [];      // { unit (board space), display } — read-only, but inspectable
   // the last prep pieces before a battle / scouting board emptied prepPieces: a merge completed between two preps (a band
   // or 机变 grant at ROUND_START, a SETTLE merge) is still recognised by the next setPrep (QA 6b)
   let promoBase = [];
@@ -812,16 +813,17 @@ export async function createFieldView(host, options = {}) {
       if (e.area === 'board' && info.dir && !held.has(e.uid) && typeof v.setDir === 'function') v.setDir(info.dir);
     }
     for (const k of [...views.keys()]) if (String(k).startsWith('p:') && !seen.has(Number(String(k).slice(2)))) dropView(k);
-    // The 外勤医疗 reserve medic is visible before battle but not a movable board piece. Map its board-space slot to
-    // the displayed boss half exactly as for the player's own pieces; the partner's units already use field coordinates.
-    const mapChars = Array.isArray(src.prepMapChars) ? src.prepMapChars.map((u) => {
-      if (!u || !Number.isInteger(u.x) || !Number.isInteger(u.y)) return null;
+    // The 外勤医疗 reserve medic is visible before battle and can be inspected, but is not a movable board piece.
+    // Keep its original board-space record for the detail card/range; only the rendered view is transformed to the
+    // displayed boss half. The partner's units already use field coordinates and are not own prep map characters.
+    prepMapChars = Array.isArray(src.prepMapChars) ? src.prepMapChars.map((u) => {
+      if (!u || !Number.isInteger(u.uid) || !Number.isInteger(u.x) || !Number.isInteger(u.y)) return null;
       const p = prepXf.toDisp(u.y, u.x);
       const dir = prepXf.dirToDisp(u.dir);
-      return { ...u, x: p.col, y: p.row, dir, facing: dir === 'LEFT' ? -1 : 1 };
+      return { unit: u, display: { ...u, x: p.col, y: p.row, dir, facing: dir === 'LEFT' ? -1 : 1 } };
     }).filter(Boolean) : [];
     const mate = prepXf.kind === 'bossPrep' && src.bossMate && Array.isArray(src.bossMate.units) ? src.bossMate.units : [];
-    syncReadOnlyPrepUnits([...mapChars, ...mate]);
+    syncReadOnlyPrepUnits([...prepMapChars.map((e) => e.display), ...mate]);
     prepPieces = list.filter((e) => e.key && views.has(e.key));
     if (dragState && !views.has(dragState.key)) { drag.reset(); endDragVisual(false); }
     holdScene(false); // the prep pieces reference their models now (a battle's hold ends here)
@@ -829,8 +831,8 @@ export async function createFieldView(host, options = {}) {
   }
 
   /**
-   * The reserve medic and a boss pair's partner pieces: read-only 'm:<uid>' views. These are not prep pieces, so they
-   * are never picked, dragged or swept with the own board; a view is rebuilt when its body, tile or facing changes.
+   * The reserve medic and a boss pair's partner pieces: read-only 'm:<uid>' views. These are not movable prep pieces;
+   * only the owner's prepMapChars may be picked for inspection. Rebuild when body, tile or facing changes.
    */
   function syncReadOnlyPrepUnits(units) {
     const keep = new Set();
@@ -1022,6 +1024,17 @@ export async function createFieldView(host, options = {}) {
     const best = pickOnTile(units, groundTile(x, y))?.entry;
     if (!best) return null;
     return { uid: best.uid, kind: best.piece.kind, id: best.piece.id, area: best.area, idx: best.idx, row: best.row, col: best.col, piece: best.piece, draggable: true };
+  }
+
+  /** The owner's read-only preparation map character under a canvas point (never a drag target). */
+  function mapCharAt(x, y) {
+    if (mode !== 'prep') return null;
+    const units = [];
+    for (const e of prepMapChars) {
+      const u = pickUnitOf(views.get(`m:${e.unit.uid}`));
+      if (u) { u.unit = e.unit; units.push(u); }
+    }
+    return pickOnTile(units, groundTile(x, y))?.unit || null;
   }
 
   const drag = createDragController({
@@ -1226,6 +1239,12 @@ export async function createFieldView(host, options = {}) {
       return;
     }
     if (drag.pointerDown(ev)) { try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ } return; }
+    const mapChar = mapCharAt(ev.x, ev.y);
+    if (mapChar) {
+      emit('pieceClick', { unit: mapChar, unitId: null, uid: mapChar.uid, prepMapChar: true,
+        button: e.button, detail: e.button === 2, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
     if (mode === 'prep') { const lv = leaderAt(ev.x, ev.y); if (lv) { emitPenClick(lv, e); return; } }
     if (penViews.size && mode === 'prep') {
       const pv = penUnitAt(ev.x, ev.y);
@@ -1307,6 +1326,7 @@ export async function createFieldView(host, options = {}) {
     clearViews();
     if (prepPieces.length) promoBase = prepPieces;
     prepPieces = [];
+    prepMapChars = [];
     infos.clear();
     gone.clear();
     interp.reset();
@@ -1946,7 +1966,7 @@ export async function createFieldView(host, options = {}) {
       app, get cam() { return cam; }, get board3d() { return board3d; }, tiles, views, penViews, get leader() { return leader; }, interp, fx, ctx, drag, get camKind() { return viewKind(camKind, camOpts); },
       promotions,
       // picking (render/pick.js) at canvas px: the prep piece / battle view / pen view there, the ground tile under it
-      pick: { pieceAt, battleUnitAt, penUnitAt, groundTile },
+      pick: { pieceAt, mapCharAt, battleUnitAt, penUnitAt, groundTile },
     },
   };
   // All teardown dependencies now exist. Aborting during either asset wait immediately releases

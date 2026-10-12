@@ -1004,7 +1004,7 @@ function MatchScreen() {
         // an enemy of the preview pen (research 09 §2.2 "Intel": tap it for its detail card)
         const penKey = previewEnemyKey(e);
         if (penKey) { setDetail({ kind: 'enemy', id: penKey }); return; }
-        if (e.unitId != null || e.unit) { setDetail({ kind: 'unit', unit: e.unit || null, unitId: e.unitId, uid: e.uid }); return; }
+        if (e.unitId != null || e.unit) { setDetail({ kind: 'unit', unit: e.unit || null, unitId: e.unitId, uid: e.uid, prepMapChar: e.prepMapChar === true }); return; }
         if (!Number.isInteger(e.uid)) return;
         setDetail({ kind: 'piece', uid: e.uid });
         // a tap selects an own piece (underframe + range); right-click / long-press only opens its detail card. A tap on
@@ -1404,7 +1404,7 @@ function MatchScreen() {
     return priv?.loadout ?? null; // own pieces, shop / reward / bond-member cards
   })();
   // the open detail card's unit draws its attack range on the field (screens/game/range.js inspectRange, GitHub PR #281):
-  // an own board piece in prep (its loadout / stand-in record, its facing); in battle or on a scouted board an ally
+  // an own board piece or read-only prepared map character in prep; in battle or on a scouted board an ally
   // operator / summon on the field — the range it fights with now (the live stats' `range` and `dir`, the snapshot's
   // tile) — never an enemy, a dead unit or a bench unit (UnitInfo `area` hand / temp); drag, the wheel and the pen
   // draw their own

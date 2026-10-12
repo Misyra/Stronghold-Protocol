@@ -62,6 +62,9 @@
 // - Deaths/deployments follow the official per-class defaults (unitSoundClass): only operators play the
 //   operator-knocked-down sound; summons use the token sounds; a summon used up by its own effect (fx `consumed`,
 //   香槟炸弹) plays its impact sound instead of a death sound.
+// - A prep piece that plays its Start clip again (render/units.js land(), PR #416: the round start's replay of the own
+//   board, a purchase, a move onto or across the board) makes its battle deploy sound once (`deployCue`): the same file
+//   and gain, the battle limiter and the SFX channel's volume and mute.
 // - Buffers are fetched once and cached (LRU); failed fetch/decode ⇒ silent (logged once as a warning).
 //
 // `bgmKeyFor(route, pub)` picks the track for the current screen/phase (main.js calls `audio.install()`,
@@ -1125,6 +1128,29 @@ export class AudioManager {
   /** Play a resolved battle sound for a unit event, limited like unit sounds. */
   _playUnitUrl(url, unitKey, volume = 0.8) {
     if (typeof url === 'string') this._play(url, { volume, limited: true, unitKey });
+  }
+
+  /**
+   * The landing sound of a prep piece that plays its Start clip again (render/units.js land(), PR #416: the round start's
+   * replay of the own board, a purchase, a move onto or across the board): the sound its battle deployment makes
+   * (deploySfxUrl — its own ON_UNIT_BORN sound with the bank's mix, else b_char_set / b_char_tokenset) at the same gains,
+   * through the SFX channel (volume, mute) and the battle limiter (≤ 2 copies of one sound, a cooldown per piece).
+   * @param {{ def?: string|null, defId?: string|null, kind?: string|null }} info the piece: its model id (the sfx.units
+   *   key), its chess / token id and its kind ('op' | 'token' — the official sound class, unitSoundClass)
+   * @param {string|number} key the piece (its cooldown key)
+   * @returns {boolean} whether the piece has a landing sound (a silent roll of its bank still counts)
+   */
+  deployCue(info, key) {
+    try {
+      const m = this.getManifest();
+      const u = { def: info?.def ?? null, defId: info?.defId ?? null, kind: info?.kind ?? null, side: 'ally' };
+      const url = deploySfxUrl(m, u);
+      if (!url) return false;
+      const own = url === m?.audio?.sfx?.units?.[u.def]?.born;
+      const mix = own ? m.audio.sfx.units[u.def].mix?.born : null;
+      if (unitSoundPlays(mix, this.random())) this._playUnitUrl(url, `land:${key}`, own ? unitGain(0.8, mix) : 0.5);
+      return true;
+    } catch { return false; }
   }
 
   /**

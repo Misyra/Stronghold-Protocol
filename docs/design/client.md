@@ -19,7 +19,9 @@ view.setCamera(kind /* 'prep'|'normal'|'unite'|'boss' */, { rect, side, shop }) 
                                              //   folded shop's prep camera (official shop-collapsed framing, §21.27)
 view.setPrep(privateState, { editable })     // render hand/temp/board pieces as chibis (spine or fallback); editable enables drag;
                                              //   a merge's new elite on the board plays fx.promote instead of fx.deploy (render/promote.js, §20.11),
-                                             //   also after a battle (a merge between two preps: the last prep state is kept, §20.14)
+                                             //   also after a battle (a merge between two preps: the last prep state is kept, §20.14);
+                                             //   an operator new on the bench, a merge's elite and a piece put on another board tile land (§31.8)
+view.replayDeploys(uids)                     // the round start: the own board's pieces land one after another, 50 ms apart (§31.8)
 view.enterBattle(fieldMeta)                  // switch to battle rendering for m.field
 view.pushSnapshot(snap) ; view.pushEvents(ev)   // interpolated rendering (100 ms buffer)
 view.highlightTiles(tiles, style)            // legal/illegal placement, range preview
@@ -67,7 +69,7 @@ its board-space position and facing, including on a mirrored boss half. They can
 from this preview. The inspection affordance does not make the preview a combat unit; the battle sim still creates
 the selected variant at battle start (§30.22).
 
-Audio: autochess BGM per phase, UI SFX (buy/sell/refresh/level/merge/ready/timer), per-unit attack/hit SFX (throttled; an impact plays for a hostile attack's phys / arts / true damage only, never an operator's skill-mode file for a normal attack, ≤ 2 copies of one battle sound — §18.4; a skill cue that reaches the client before its unit — the sim emits a deploy-tick cast ahead of the unit's `['spawn']` — is held and sounds once when the unit is tracked, `AudioManager.pendingSkill`, GitHub PR #292 by @LimitlessHPPK; entering a field late hands the sound the buffered `spawn` tuples only, `screens/game/early.js audioEarly`, so no old death, deploy or cast replays), boss music in R14/15. While the music is silent — muted, or the BGM volume at 0 — no BGM is downloaded: the track the screen wants is remembered, a different one still playing stops, and the wanted track is fetched once the music is audible again (`AudioManager.bgmSilent`; about 14 MB a match for a player who turned the music off).
+Audio: autochess BGM per phase, UI SFX (buy/sell/refresh/level/merge/ready/timer), a prep piece's landing sound (its battle deploy sound, once per landing, §31.8), per-unit attack/hit SFX (throttled; an impact plays for a hostile attack's phys / arts / true damage only, never an operator's skill-mode file for a normal attack, ≤ 2 copies of one battle sound — §18.4; a skill cue that reaches the client before its unit — the sim emits a deploy-tick cast ahead of the unit's `['spawn']` — is held and sounds once when the unit is tracked, `AudioManager.pendingSkill`, GitHub PR #292 by @LimitlessHPPK; entering a field late hands the sound the buffered `spawn` tuples only, `screens/game/early.js audioEarly`, so no old death, deploy or cast replays), boss music in R14/15. While the music is silent — muted, or the BGM volume at 0 — no BGM is downloaded: the track the screen wants is remembered, a different one still playing stops, and the wanted track is fetched once the music is audible again (`AudioManager.bgmSilent`; about 14 MB a match for a player who turned the music off).
 
 ---
 
@@ -159,8 +161,8 @@ an unknown unit, and a late-join snapshot restores the current mode. A mode with
 sound. A selected mode with no mix uses its own default volume/probability, not the ordinary bank's mix.
 
 A model that arrives after an actual deployment continues Start at the elapsed game time; after the clip's duration it
-shows the current base pose. A subsequent attack/death supersedes that pending entrance. No extra deployment sound
-or per-phase animation schedule is added by this change.
+shows the current base pose. A subsequent attack/death supersedes that pending entrance. That change (0.2.3) added no
+deployment sound or per-phase animation schedule; the prep landings of §31.8 below add both for prep pieces.
 
 The simplified-view notice describes a renderer load failure, rather than declaring the device incapable of 3D.
 On same-battle metadata refresh, remembered once-spawned device records also seed the renderer's new entry (§29.14).
@@ -192,3 +194,24 @@ while 「显示伤害数字」 is also on, the field draws a red integer for a `
 for a dodge fx whose payload is `num: 'm'` (PRTS 作战机制 「伤害红字（暴击）」). Ordinary hits and heals draw no
 digits in that mode. The mark is computed in the sim; the random offset above the model is client-side. The
 simplified board uses the same mark with a fixed slot. The title footer links the project repository in a new tab.
+
+### Deploy animation replays (§31.8)
+
+PR #416 by @Cromemadnd. A prep piece that lands plays its Start clip again with its landing sound, once per landing
+(`render/units.js UnitView.land`): the sound its battle deployment makes (`audio.js deployCue` → `deploySfxUrl`, its own
+ON_UNIT_BORN file else b_char_set / b_char_tokenset) through the SFX volume, mute and the battle limiter. A piece whose
+Start still plays (on its model, owed to a model still loading, or cued less than a clip ago) keeps it and sounds nothing
+more. Only an idle prep piece lands, never a battle unit or one attacking, dying, dragged or in another clip, and nothing
+lands in a hidden tab. Battle deploys keep the silent `onDeploy`; audio.handleBattleEvents sounds them.
+
+- Round start (the maintainer's confirmation from official play, 2026-10-13): during 回合开始 the own board's pieces land
+  one after another in deployment order — operators by column from the left, top to bottom within a column, then the
+  summons (`ui/gameLogic deployOrder`, the order of Battle.start) — `DEPLOY_REPLAY_MS` 50 ms apart [ASSUMED], chained
+  timeouts (`render/app.js replayDeploys`). `screens/game.js` asks once its field-view wiring has run and marks the round
+  only when the view has taken the sequence (`roundStartReplay`): a view or board not built yet is asked again during
+  回合开始, a resync or re-render of the same round replays nothing. Own board only: never a scouted or watched
+  teammate's board, a spectator seat, an eliminated player or the boss partner's half. The timers end with prep mode, a
+  fresh prep scene and `destroy()`.
+- [ASSUMED] (the PR author's account): an operator that arrives on the bench (a purchase, a reward, a grant) and a merge's
+  elite land; so does a piece that a new state puts on a board tile it was not on (from the bench, another tile, a swap),
+  when that state arrives. Turning in place, a retreat and bench moves do not.

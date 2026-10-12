@@ -632,11 +632,18 @@ export class UnitView {
     this._spineBusy = true;
     this._spineHidden = !!globalThis.document?.hidden;
     this._stuckAt = 0;
+    const failed = () => {
+      if (req === this._spineReq) { this._spineBusy = false; this._stuckAt = 0; }
+      this._releaseEntry(entry);
+      if (this.destroyed || req !== this._spineReq) return;
+      if (entry.fallback) { this._acquireSpine(entry.fallback, id, retry); return; }
+      if (this._spineTries < SPINE_RETRY_MS.length) this._retryAt = nowMs() + SPINE_RETRY_MS[this._spineTries++];
+    };
     a.spine.acquire(entry, retry ? { retry: true } : undefined).then((data) => {
       if (req === this._spineReq) { this._spineBusy = false; this._stuckAt = 0; }
       if (this.destroyed || req !== this._spineReq) { this._releaseEntry(entry); return; }
-      this._spineTries = 0;
-      this._retryAt = 0;
+      const swap = !!this.actor;
+      const deployed = swap && this.alive ? this.actor.deployElapsed() : this._pendingDeployElapsed;
       let actor = null;
       try {
         actor = new SpineActor(data, entry);
@@ -644,50 +651,40 @@ export class UnitView {
         actor.setRunMode(this.moveFast);
         // enemies play their attack clip once per attack, then walk on (GitHub #58: the sim stands them for that clip)
         actor.clipPerAttack = this.isEnemy;
+        // Finish the replacement's pose before retiring the working actor.
+        const f = this._formSpec() || (this.alive ? null : this._dieForm);
+        if (f) actor.setForm(f.roles);
+        if (!this.alive) {
+          const d = actor.die();
+          const at = Math.min(d, this.dieT * (this.ctx.animRate?.() || 1));
+          if (at > 0) actor.update(at);
+        } else {
+          if (this.flags & UF.SKILL) actor.setSkill(true);
+          actor.setBase(this._baseFromAnim());
+          if (deployed != null) { actor.deploy(); if (deployed > 0) actor.update(deployed); }
+          if (STEALTH_FORMS[id]) actor.syncFormPose();
+        }
+        this.body.addChild(actor.spine);
       } catch (err) {
+        actor?.destroy();
         console.warn('[render] spine build failed', id, err?.message || err);
-        this._releaseEntry(entry);
+        failed();
         return;
       }
       // a Front ⇄ Back swap (setDir, or knocked out / standing again: _syncModel) replaces the previous model in place:
       // no fallback diamond in between; a deploy clip it was playing goes on on the new model (an operator facing UP
       // redeployed: its Back model takes over from the Front model it lay down with)
-      const swap = !!this.actor;
-      const deployed = swap && this.alive ? this.actor.deployElapsed() : this._pendingDeployElapsed;
       this._pendingDeployElapsed = null;
       if (swap) this._dropActor();
       this.actor = actor;
       this._actorEntry = entry;
       this.baseTint = (!entry.local && ALIAS_TINT[id]) || 0xffffff;   // the web alias of a local-only model
-      this.body.addChild(this.actor.spine);
+      this._spineTries = 0;
+      this._retryAt = 0;
       this.spineReady = true;
       this.swapT = swap ? 1 : 0;
       this.actor.spine.alpha = swap ? 1 : 0;
-      // a mode the unit is already in (a model built or rebuilt after the change): its clip set, no change clip — a dead
-      // one lies in the form it died in (a 替身 knocked out: the sim resets the form at once, but the Front model it lies
-      // down with facing UP, §22.1, is built a frame later; a model rebuilt while it is down)
-      const f = this._formSpec() || (this.alive ? null : this._dieForm);
-      if (f) this.actor.setForm(f.roles);
-      // replay current state (a dead model resumes its Die clip where it would be — a knocked-down one holds its end)
-      if (!this.alive) {
-        const d = this.actor.die();
-        const at = Math.min(d, this.dieT * (this.ctx.animRate?.() || 1));
-        if (at > 0) this.actor.update(at);
-      } else {
-        if (this.flags & UF.SKILL) this.actor.setSkill(true);
-        this.actor.setBase(this._baseFromAnim());
-        if (deployed != null) { this.actor.deploy(); if (deployed > 0) this.actor.update(deployed); }
-        // a stealth-driven form (STEALTH_FORMS): the pose of the clip set in force now, even under a frozen stun
-        if (STEALTH_FORMS[id]) this.actor.syncFormPose();
-      }
-    }, () => {
-      if (req === this._spineReq) { this._spineBusy = false; this._stuckAt = 0; }
-      this._releaseEntry(entry);
-      if (this.destroyed || req !== this._spineReq) return;
-      if (entry.fallback) { this._acquireSpine(entry.fallback, id, retry); return; }
-      // keep the fallback diamond (or the model already shown: a failed Front ⇄ Back swap) — and try again later
-      if (!this.actor && this._spineTries < SPINE_RETRY_MS.length) this._retryAt = nowMs() + SPINE_RETRY_MS[this._spineTries++];
-    });
+    }, failed);
   }
 
   _formSpec() {
@@ -1144,7 +1141,7 @@ export class UnitView {
     // the model for the state the frame's events and snapshot left (Front ⇄ Back when it went down / stood up: die, revive)
     if (this._modelDirty) { this._modelDirty = false; this._syncModel(); }
     // a failed / timed-out model load is tried again once its wait is over (SPINE_RETRY_MS; frames only: never hidden)
-    if (this._retryAt && nowMs() >= this._retryAt) { this._retryAt = 0; if (!this.actor && !this._spineBusy) this._loadSpine(true); }
+    if (this._retryAt && nowMs() >= this._retryAt) { this._retryAt = 0; if (!this._spineBusy) this._loadSpine(true); }
     // a load begun in a hidden tab and still in flight SPINE_STUCK_MS after it came back: started again (GitHub #68)
     if (this._stuckAt && nowMs() >= this._stuckAt) {
       this._stuckAt = 0;

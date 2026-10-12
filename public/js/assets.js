@@ -340,7 +340,7 @@ export class RefLru {
   acquire(key, arg, opts) {
     let e = this.map.get(key);
     let fresh = false;
-    if (e && e.state === 'failed' && (this.now() - e.failedAt > this.failTtl || (opts && opts.retry && e.refs === 0))) { this.map.delete(key); e = null; fresh = true; }
+    if (e && e.state === 'failed' && e.refs === 0 && (this.now() - e.failedAt > this.failTtl || opts?.retry)) { this.map.delete(key); e = null; fresh = true; }
     if (!e) {
       e = { key, promise: null, value: null, state: 'loading', refs: 0, used: ++this._tick, weight: 0, idleSince: null, attempt: 0, abort: null, settle: null };
       this.map.set(key, e);
@@ -589,7 +589,11 @@ export async function loadSpineData(entry, opts) {
     const spineAtlas = await new Promise((resolve, reject) => {
       new PIXI.spine.TextureAtlas(text, (name, done) => {
         const page = resourceUrl(new URL(name, new URL(atlas, 'http://localhost')).href);
-        PIXI.Assets.loader.load(page).then((texture) => done(texture.baseTexture), () => done(null));
+        PIXI.Assets.loader.load(page).then((texture) => {
+          const base = texture?.baseTexture;
+          if (!base || base.destroyed || base.valid === false) { reject(new Error(`invalid atlas texture: ${page}`)); return; }
+          try { done(base); } catch (err) { reject(err); }
+        }, reject);
       }, (parsed) => parsed ? resolve(parsed) : reject(new Error(`atlas texture failed: ${atlas}`)));
     });
     source = { src: resourceUrl(entry.skel), data: { spineAtlas } };
@@ -603,6 +607,10 @@ export async function loadSpineData(entry, opts) {
   const res = await PIXI.Assets.load(source);
   const data = res && (res.spineData || res);
   if (!data || !Array.isArray(data.animations)) throw new Error(`bad spine data: ${entry.skel}`);
+  if (res.spineAtlas?.pages?.some((p) => !p.baseTexture || p.baseTexture.destroyed || p.baseTexture.valid === false)) {
+    await unloadSpineData(entry, data, opts?.keep);
+    throw new Error(`invalid spine atlas: ${entry.skel}`);
+  }
   return data;
 }
 
@@ -698,6 +706,8 @@ export function unloadSpineData(entry, _value, keep) {
   if (!skel || !PIXI?.Assets?.unload) return undefined;
   const atlas = resourceUrl((typeof entry.atlas === 'string' && entry.atlas) || bareAssetUrl(skel).replace(/\.skel$/, '.atlas'));
   const loader = PIXI.Assets.loader;
+  const resolved = PIXI.Assets.resolver?.hasKey(skel) ? PIXI.Assets.resolver.resolve(skel) : null;
+  const oldAtlas = resolved?.data?.spineAtlas;
   const pending = [];
   const unload = (url, direct) => {
     try {
@@ -710,7 +720,13 @@ export function unloadSpineData(entry, _value, keep) {
   if (!globalThis.__spAssetCdn?.manifest) unload(atlas, false);
   // pages were loaded by the atlas parser straight through the loader (never through Assets.load / the resolver)
   for (const url of spinePages(entry)) if (!(keep && keep.has(url))) unload(url, true);
-  return Promise.all(pending).then(() => {});
+  return Promise.all(pending).then(() => {
+    // The resolver outlives the asset cache; do not pin a disposed atlas (or erase a newer load's metadata).
+    if (oldAtlas && resolved.data?.spineAtlas === oldAtlas) {
+      const { spineAtlas, ...data } = resolved.data;
+      resolved.data = data;
+    }
+  });
 }
 
 // ---- store ---------------------------------------------------------------------------------------------------

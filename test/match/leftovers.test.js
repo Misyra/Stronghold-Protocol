@@ -198,17 +198,21 @@ test('solo pause: the field clock, the result deadline and the HUD countdown sta
   m.dispose();
 });
 
-test('solo pause: a disconnect resumes (the server takes the field over); the battle phase ending clears the pause', () => {
+test('solo pause: disconnect suspends the match; reconnect preserves a manual pause; phase end clears it', () => {
   const h = makeMatch({ mode: 'solo', difficulty: 'FUNNY', humans: 1, seed: 5153, fake: true, clientCombat: true, clients: false, instant: false }).start();
   const m = h.m;
   assert.ok(h.drive(() => m.phase === PHASE.COMBAT));
   assert.deepEqual(m.handle('p_0', { t: 'g.pause', on: true }), { ok: true });
   h.sched.advance(5000);
   m.onDisconnect('p_0');
-  assert.equal(m.paused, false);
-  assert.equal(m.fields[0].mode, 'server');
-  assert.equal(pub(h).paused, false);
+  assert.equal(m.paused, true);
+  assert.equal(m.offlinePaused, true);
+  assert.equal(m.fields[0].mode, 'client');
+  assert.equal(pub(h).paused, true);
   m.onReconnect('p_0');
+  assert.equal(m.offlinePaused, false);
+  assert.equal(m.paused, true);
+  m.setPause(m.order[0], false);
   h.run(() => m.phase === PHASE.PREP);
   assert.equal(m.errorCount, 0);
   m.dispose();

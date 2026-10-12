@@ -96,7 +96,9 @@ export class MatchPrep {
               if (this.sched.setWork) this.laterWork(() => { if (valid()) end(job); });
               else end(job);
             },
-            failed: () => { ps._botWorker = null; this.laterWork(slice); },
+            // Optional optimization must not spill rejected CPU work onto the main thread.
+            failed: () => { ps._botWorker = null; this.laterWork(() => { if (valid()) end(null); }); },
+            fallback: 'using base layout',
           });
           return;
         }

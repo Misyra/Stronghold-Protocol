@@ -7,6 +7,7 @@
 | 安装与检查 | `npm run setup`、`npm run doctor` | 素材准备、依赖和运行环境诊断 |
 | 客户端依赖与素材 | `vendor.mjs`、`fetch-assets.mjs`、`assets/`、`local-extract/` | 下载、清单与本地客户端提取；见[素材说明](../docs/development/ASSETS.md) |
 | 数据与翻译 | `build-data.mjs`、`build-emotes.mjs`、`build-i18n.mjs`、`i18n.mjs` | 从数据表生成游戏数据、表情和多语言内容 |
+| 构建体积 | `build-size.mjs` | 只读 Vite 构建模块体积报告：首屏、懒加载与合计（原始/gzip）；需先 `npm run build` |
 | 内容包 | `packs.mjs` | 内容包校验与索引；见[内容包指南](../docs/guides/PACKS.md) |
 | 代码检查与回归 | `check-imports.mjs`、`kit-coverage.mjs`、`golden.mjs` | 导入边界、技能覆盖和黄金结果 |
 | 对局与性能分析 | `simrun.mjs`、`matchrun.mjs`、`record-battle.mjs`、`balance.mjs`、`botbench.mjs`、`workerbench.mjs`、`memorybench.mjs` | 模拟、录像、平衡与性能测量；见[难度说明](../docs/development/BALANCE.md)和[性能说明](../docs/development/PERFORMANCE.md) |

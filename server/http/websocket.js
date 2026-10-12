@@ -56,6 +56,7 @@ export function createSessionStack(opts, { data, log, chatLog }) {
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
+  lobby.rehearsalPressure = network.diagnostics.rehearsalPressure;
   return { registry, lobby, network };
 }
 

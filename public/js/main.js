@@ -208,7 +208,7 @@ const CLOSE_REASON = {
   // 'timeout' = this player was removed after staying disconnected past the lobby grace (server/lobby.js)
   host_left: N_('创建者已离开，同盟已解散'), timeout: N_('由于长时间断开连接，你已离开同盟'), empty: N_('同盟已解散'),
   kicked: N_('你已被移出同盟'), ended: N_('模拟已结束'), expired: N_('同盟已过期'), shutdown: N_('服务器维护中，同盟已关闭'),
-  matchmaking_failed: N_('匹配未能启动，已返回大厅'),
+  admin: N_('管理员已关闭该同盟'), matchmaking_failed: N_('匹配未能启动，已返回大厅'),
 };
 
 function wireNet() {

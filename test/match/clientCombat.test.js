@@ -313,7 +313,7 @@ test('Final Assault: leaks and leader LP effects from b.progress drain the team 
   m.dispose();
 });
 
-test('Final Assault: the authority leaves → its partner\'s replica takes over; nobody left → the server paces the field (credits only new damage)', () => {
+test('Final Assault: a disconnected authority hands over to its partner; partner timeout uses the server (credits only new damage)', () => {
   const h = makeMatch({ mode: 'coop', difficulty: 'FUNNY', humans: 2, seed: 9110, fake: true, clientCombat: true, instant: false,
     script: (b) => (b.kind === 'boss' ? { bossDps: 2000 } : { duration: 2 }) }).start();
   const m = h.m;
@@ -329,7 +329,7 @@ test('Final Assault: the authority leaves → its partner\'s replica takes over;
   h.sched.advance(2000);
   assert.ok(f.bossAcked > acked, 'the new authority keeps reporting cumulative damage');
   const before = m.bossPool.hp;
-  m.onDisconnect('p_1');
+  m._authorityLost(m.players.get('p_1'), 'timeout');
   assert.equal(f.mode, 'server');
   const afterHp = m.bossPool.hp;
   assert.ok(Math.abs(afterHp - before) < 1e-6, 'the re-simulation does not double count reported damage');
@@ -697,15 +697,14 @@ test('Final Assault: a \'cleared\' b.result whose report does NOT cover the pool
   m.dispose();
 });
 
-test('Final Assault run on the server (nobody connected at its start): a human who reconnects gets b.pool with the field\'s own damage acknowledged', () => {
+test('Final Assault run on the server after authority timeouts: a resync gets b.pool with the field\'s own damage acknowledged', () => {
   const h = makeMatch({ mode: 'coop', difficulty: 'FUNNY', humans: 2, seed: 9110, fake: true, clientCombat: true, instant: false,
     script: (b) => (b.kind === 'boss' ? { bossDps: 3000 } : { duration: 2 }) }).start();
   const m = h.m;
   h.autoHumans();
   h.drive(() => m.phase === PHASE.PREP && m.round === m.gd.bossRound);
-  m.onDisconnect('p_0');
-  m.onDisconnect('p_1');
   h.run(() => m.phase === PHASE.FINAL_ASSAULT);
+  m._runOnServer(fields(h)[0], 'timeout');
   h.sched.advance(2000);
   const f = fields(h)[0];
   assert.equal(f.mode, 'server');

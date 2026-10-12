@@ -44,7 +44,13 @@ export class SimulationPool {
       queued: this.queue.length, maxQueue: this.maxQueue, timeoutMs: this.timeoutMs,
       avgComputeMs: this.counters.completed > 0 ? this.counters.computeMs / this.counters.completed : 0,
       ...this.counters,
+      queuedByType: this.queue.reduce((counts, task) => { counts[task.type] = (counts[task.type] || 0) + 1; return counts; }, {}),
+      oldestQueuedMs: this.queue.length ? Math.max(0, performance.now() - Math.min(...this.queue.map((t) => t.enqueuedAt))) : 0,
       memory: [...this.slots].map((s) => ({ threadId: s.worker.threadId, busy: !!s.task, sample: s.memory || null })) };
+  }
+
+  load() {
+    return { size: this.size, busy: [...this.slots].filter((s) => s.task).length, queued: this.queue.length };
   }
 
   submit(type, payload, { priority = 0, onProgress = null } = {}) {
@@ -53,10 +59,11 @@ export class SimulationPool {
     const task = { id: ++this.nextId, type, payload, priority, onProgress, resolve, reject, settled: false,
       enqueuedAt: performance.now(), flag: new Int32Array(new SharedArrayBuffer(4)), slot: null, timer: null };
     const handle = { promise, cancel: () => this._cancel(task) };
-    if (this.closed || (this.queue.length >= this.maxQueue &&
+    const rehearsalBusy = type === 'rehearsal' && this.queue.length >= Math.min(this.maxQueue, this.size * 2);
+    if (this.closed || rehearsalBusy || (this.queue.length >= this.maxQueue &&
         this.slots.size >= this.size && ![...this.slots].some((s) => !s.retired && !s.task))) {
       this.counters.rejected++;
-      this._settle(task, failure(this.closed ? 'POOL_CLOSED' : 'POOL_FULL', 'simulation pool unavailable'));
+      this._settle(task, failure(this.closed ? 'POOL_CLOSED' : rehearsalBusy ? 'REHEARSAL_BUSY' : 'POOL_FULL', 'simulation pool unavailable'));
       return handle;
     }
     this.counters.submitted++;

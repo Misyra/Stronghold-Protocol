@@ -1007,6 +1007,9 @@ export class Network {
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
+    if (!repeat) this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(),
+      action: resumed ? 'session.resumed' : 'session.connected', ip: conn.ip,
+      network: conn.key, playerId: session.playerId, name: session.name, roomCode: session.roomCode || null }));
     negotiateStateDelta(conn.ws, msg.stateDelta);
 
     let extra = null;

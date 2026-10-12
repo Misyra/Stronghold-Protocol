@@ -1096,10 +1096,14 @@ export function createRehearsal(m, ps, chosen, plans) {
  * two steps (the prep ended) never leaves a rehearsal layout on the board.
  */
 export function* createRehearsalSteps(m, ps, chosen, plans) {
+  const budget = m.rehearsalPressure?.cap(m.botRehearsal) ?? m.botRehearsal;
+  if (!(budget > 0)) return null;
   const wave = m.wave;
   const distinct = distinctPlans(plans);
   if (!wave || distinct.length < 2 || !(m.botRehearsal > 0)) return null;
-  const cands = distinct.slice(0, m.botRehearsal);
+  const load = m.workerPool?.load?.();
+  const busy = load && (load.queued > 0 || load.busy >= load.size);
+  const cands = distinct.slice(0, busy ? Math.min(1, budget) : budget);
   const byUid = new Map(chosen.map((p) => [p.uid, p]));
   const battles = [];
   const options = [];

@@ -1741,7 +1741,8 @@ describe('per-network limits', () => {
   test('creating a room from your only room does not count the room being left', async () => {
     const B = '203.0.113.99';
     const c = await netPlayer('hopper', B);
-    for (let i = 0; i < 6; i++) await expectOk(c, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+    for (let i = 0; i < 4; i++) await expectOk(c, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+    await expectError(c, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' }, ERR.RATE);
   });
 
   test('per-network socket cap is enforced at upgrade (429); other networks and local peers are unaffected', async () => {

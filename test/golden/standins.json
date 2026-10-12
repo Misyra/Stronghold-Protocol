@@ -238,10 +238,10 @@
         "enemy_1071_dftman": [63,63,0,455,243855],
         "enemy_1072_dlancer": [60,55,5,22144,476588]
       },
-      "hooks": [1,178,6234,1000,1000,2074,2072,74,158,168,32,32,0,36983,4066,67,158,10,1,160,2,0,11],
+      "hooks": [1,178,6234,1000,1000,2074,2072,74,158,168,32,32,0,36983,4064,67,158,10,1,160,2,0,11],
       "events": {"atk":1142,"bounty":4,"deploy":18,"die":158,"dmg":2072,"engage":11,"fx":161,"heal":53,"layer":2,"leak":10,"skill":64,"spawn":172,"status":472},
       "fx": {"aoe":11,"dodge":14,"dp":38,"garrison":2,"revive":1,"slash":77,"sp":13,"spGain":3,"telegraph":2},
-      "snaps": "484fd662 19a9b252 827467e6 d8836b51 4e1a5c20 f5f33eaf 009d313f 487fac84 6e33c253 481fa961 eee28282 47fecc48 ec2c4a14 046a7402 d017b22b a2a8910b b53ce9db 2504d954 222d228d 78e5e524 2b44a10f"
+      "snaps": "484fd662 19a9b252 827467e6 5c638330 c6d0b532 c1538ba9 691c2e95 65eab1de e256c73c 337bd270 302985e3 18a84929 737e1169 1cc75867 71696cfe c0e56f12 25c880fa 10b7e655 a65f5fd8 02e1a041 602de50a"
     },
     "standin-05": {
       "about": "normal band 6 as stand-ins: chess_char_6_17_a→char_608_acpion chess_char_6_13_a→char_615_acspec chess_char_6_19_a→char_615_acspec chess_char_6_12_a→char_612_accast chess_char_6_15_a→char_614_acsupo chess_char_6_18_a→char_612_accast chess_char_6_20_a→char_613_acmedc",

@@ -186,6 +186,33 @@ Profession traits (default behaviours implemented once in the engine, keyed by `
 
 ---
 
+Unreleased funnel drones deal additional arts damage alongside the ordinary attack (PRTS 分支特性信息 驭械术师, §30.17).
+The engine keeps a 100 % ATK body instance and a separate drone instance, each through mitigation and shields.
+`funnelMul` holds only the drone ramp; the attack's `dmgMul` (至简's talent) is shared once. Extra attached drones
+raise `hits`, not the body count; 至简's charged S2 sets `funnelBodyHits` to two. Both share one `attackId`, attack
+hook and SP / charge use; additions have `addition` and `funnel` tags and do not count as `isAttack`. [ASSUMED] Body
+instances precede additions at the existing projectile impact; consecutive hits keep one ramp per volley. A skill
+that only buffs or retargets the normal attack keeps the body; `isSkill` is not the switch. `funnelBodyHits === 0`
+is drone-only (荒芜拉普兰德 S2): the ramp stays inside those hits. 耶拉 S2 detaches `funnelMul` the way 洛洛 S2 does:
+one 100 % body inside her range, the unreleased addition off, and the released drones as separate skill hits that
+keep the lock until the enemy dies or the skill ends (§30.17). 澄闪's skills stay on their own `dealDamage` paths.
+
+Funnel ramps return to the initial scale on a normal deployment, including automatic revival against the same living
+target (§30.18). The reset clears the current target, the scale and any per-target ramp map, and leaves other trait
+state alone. A free move (`moveRedeploy`, the same carry as a 秘术师's stored energy and 乌尔比安 S3) keeps the ramp.
+An in-flight shot recomputes the ramp when it lands, so a projectile launched before the reset can still step the new
+ramp.
+
+洛洛 S2 releases its trait drone into an independent skill tick (§30.19). Acquisition uses the body's normal target
+selection; a living selectable lock stays valid outside the body's range and returns only when that enemy dies or the
+skill ends. The body retains its own ranged ordinary attacks. The released ramp inherits the trait state but is
+isolated from older projectiles, and while it is out the unreleased addition is off. Ending the skill returns that
+ramp to the trait and restores the normal multiplier and the overload cap. S1 and other operators' funnel attacks keep
+their existing paths. [ASSUMED] There is no flight delay; an untargetable lock is dropped and retargeted; body control
+does not pause the released drone.
+
+---
+
 ## 7. Content modules (server/sim/content + match/effectsMeta handlers)
 
 Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies,bosses,devices,choices}.js` exports `install(battle)` (battle side; called once per Battle by `content/index.js → installContent`) and `registerMeta(registry)` (prep side; called once at server boot by `match/effectsMeta.js`, API documented in `docs/META.md`). Kits live one per file in `content/kits/ops/` (`export default { [baseChessId]: (bb, chess, def) => Kit }`), listed in `content/kits/index.js` (guide: `content/kits/README.md`). Content must be **data-driven from blackboards** (numbers never hard-coded when a blackboard key exists). Every effect gets at least one unit test in `test/content/*.test.js` using the `test/helpers/battleHarness.js` harness (provided by sim-core).

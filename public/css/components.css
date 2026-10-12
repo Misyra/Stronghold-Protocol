@@ -1091,7 +1091,7 @@
 }
 .crash__box h2 { font-size: calc(.3 * var(--t)); }
 
-/* ---- plugins (DESIGN §32 P1a, ui/pluginPanel.js): the room's tag 原版 / 插件 ×N, its 插件 panel, the title's list ---- */
+/* ---- plugins (DESIGN §32 P1a): the room's tag 原版 / 插件 ×N (ui/pluginTag.js), its 插件 panel and the title's list (ui/pluginPanel.js) ---- */
 .plugtag {
   display: inline-flex; align-items: center; gap: .06rem; height: .3rem; padding: 0 .12rem;
   border: 1px solid var(--line-2); background: rgba(0, 0, 0, .3); color: var(--text-lo);

@@ -45,6 +45,18 @@ scripts/service.env.cmd
 # --- local dev notes (session-local remediation plans etc., not for the repo) -----------------------
 docs/dev/
 
+# Local development suite artifacts and drafts --------------------------------------------------
+/.playwright-mcp/
+/docs/operations/NGINX-RELIEF.md
+/sp-nginx-optimization-plan.md
+/stronghold-resources-9fea2761d427.zip
+/test/build-size.test.js
+/test/render/context-recovery.browser.test.js
+/test/render/impostor-context.test.js
+/test/tmp-churn.test.js
+/test/ui/announcement.render.test.js
+/tools/build-size.mjs
+
 # --- OS / editor clutter ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db

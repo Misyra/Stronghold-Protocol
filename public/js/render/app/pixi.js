@@ -31,3 +31,12 @@ export function ensurePixi() {
   }
   return pixiPromise;
 }
+
+/** Pixi 7 retains extension objects across loss, but WebGL disables the extensions. */
+export function restorePixiExtensions(renderer) {
+  const canvas = renderer.view;
+  const restore = () => renderer.context.getExtensions();
+  // Run before Pixi's bubble listener rebuilds GPU resources using extension enums.
+  canvas.addEventListener('webglcontextrestored', restore, true);
+  return () => canvas.removeEventListener('webglcontextrestored', restore, true);
+}

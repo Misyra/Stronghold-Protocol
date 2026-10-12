@@ -1639,6 +1639,11 @@ export class UnitView {
       this.imp = { sprite, slot: null, rt: null, sc: 0, acc: 0, phase: (Math.random() * 64) | 0, dirty: true, last: 0 };
     }
     const imp = this.imp;
+    const contextUid = this.ctx.renderer?.CONTEXT_UID;
+    if (imp.contextUid !== contextUid) {
+      imp.contextUid = contextUid;
+      imp.dirty = true; // restored WebGL targets have no pixels, even when the pose is unchanged
+    }
     imp.acc += animDt;
     const frame = this.ctx.frameNo ? this.ctx.frameNo() : 0;
     // the view's slot in this frame's update order (app.js impostorSlot) spreads the refreshes evenly over the interval;

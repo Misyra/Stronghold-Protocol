@@ -96,7 +96,7 @@ describe('SpineActor.poseHeld', () => {
 
 describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
   /** An operator with a Spine model in a context with an impostor atlas (interval `iv`) and counters. */
-  async function operator(iv) {
+  async function operator(iv, shared = true) {
     let frame = 0;
     let draws = 0;
     let clip = true;
@@ -105,8 +105,8 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
       free() {}, park(o) { o.visible = false; }, unpark(o) { o.visible = true; }, draw() { draws++; },
     };
     const ctx = fakeViewCtx(fake.P, {
-      cam, frameNo: () => frame, impostors: atlas, impostorInterval: () => iv, clipAllowed: () => clip,
-      renderer: { resolution: 1, render() {} },
+      cam, frameNo: () => frame, impostors: shared ? atlas : null, impostorInterval: () => iv, clipAllowed: () => clip,
+      renderer: { resolution: 1, CONTEXT_UID: 1, render() { draws++; } },
       assets: { picture: () => null, image: async () => null, spineEntry: () => ENTRY, spine: { acquire: async () => DATA, release() {} } },
     });
     const v = new UnitView(ctx, { id: 1, side: 'ally', kind: 'chess', defId: 'char_x', tier: 3, x: 5, y: 10, maxHp: 1000, dir: 'RIGHT' });
@@ -120,6 +120,30 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     return { v, step, counts, setClip: (on) => { clip = on; } };
   }
   const knockOut = (v) => { v.setDown([1, 60, 60, DOWN_STATE.COUNTING], 1); };
+
+  for (const shared of [true, false]) test(`context restoration redraws a held pose once (${shared ? 'shared atlas' : 'private target'})`, async () => {
+    const { v, step, counts } = await operator(3, shared);
+    try {
+      step(4);
+      knockOut(v);
+      step(3);
+      finish(v.actor);
+      step(4);
+      assert.equal(v.actor.poseHeld(), true);
+      const actor = v.actor, target = shared ? v.imp.slot : v.imp.rt;
+      const before = counts();
+      step(10);
+      assert.deepEqual(counts(), before, 'the unchanged pose is cached');
+      v.ctx.renderer.CONTEXT_UID++;
+      step(1);
+      assert.equal(counts().draws, before.draws + 1, 'the old GPU image is invalid after restoration');
+      assert.equal(v.actor, actor, 'no model reload or simulation restart');
+      assert.equal(shared ? v.imp.slot : v.imp.rt, target, 'the render target is reused');
+      const restored = counts();
+      step(10);
+      assert.deepEqual(counts(), restored, 'the optimization resumes after one redraw');
+    } finally { v.destroy(); }
+  });
 
   test('impostor mode: lying in the held Die pose, no re-pose and no atlas redraw; the clock still runs', async () => {
     const { v, step, counts } = await operator(2);

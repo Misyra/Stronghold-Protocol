@@ -144,6 +144,10 @@ export class ImpostorAtlas {
     let drawn = 0;
     for (const page of this.pages) {
       if (!page.queued) continue;
+      if (page.contextUid !== this.R.CONTEXT_UID) {
+        page.contextUid = this.R.CONTEXT_UID;
+        page.cleared = false;
+      }
       try {
         this.R.render(page.batch, { renderTexture: page.rt, clear: !page.cleared, skipUpdateTransform: false });
         page.cleared = true;

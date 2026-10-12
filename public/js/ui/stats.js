@@ -19,7 +19,8 @@
 // round k runs has passed k − 1 rounds, leaving in its settlement k) or already eliminated. A match left earlier is
 // history only.
 //
-// Bounded storage: at most MAX_RECORDS matches and MAX_CHARS characters of JSON. Only the newest FULL_KEEP records
+// Bounded storage: at most MAX_RECORDS matches and MAX_CHARS characters of JSON. The newest FULL_KEEP records and
+// the highest settlement bond-layer record
 // keep their full rows (lineups, bonds, teammates' names — what the settlement replay needs); older ones are compacted
 // to the player's own summary row, which is all the aggregates read. The oldest records go first when a budget is hit,
 // and a write the browser refuses shrinks the list further instead of failing. Teammates' display names are part of
@@ -315,7 +316,7 @@ export function compactRecord(rec) {
 }
 
 /**
- * What goes to storage: the newest FULL_KEEP records as they are, older ones compacted, then the oldest dropped until
+ * What goes to storage: the newest FULL_KEEP and highest bond-layer record as they are, other older ones compacted, then dropped until
  * the JSON fits `maxChars` (the newest record is always kept).
  * @param {any[]} records newest first
  * @param {number} [maxChars]
@@ -324,14 +325,29 @@ export function compactRecord(rec) {
 export function fitToBudget(records, maxChars = MAX_CHARS) {
   const kept = [];
   let used = 40; // the envelope itself
+	const peakId = highestBondRecord(records.slice(0, MAX_RECORDS))?.record.id;
   records.slice(0, MAX_RECORDS).forEach((r, i) => {
-    const rec = i < FULL_KEEP ? r : compactRecord(r);
+    const rec = i < FULL_KEEP || r.id === peakId ? r : compactRecord(r);
     const n = JSON.stringify(rec).length + 1;
     if (kept.length && used + n > maxChars) return;
     used += n;
     kept.push(rec);
   });
   return kept;
+}
+
+/** [ASSUMED] Official peak layers are approximated by the self player's active bonds at settlement. */
+export function highestBondRecord(records) {
+	let best = null;
+	for (const record of records) {
+		if (record.end === 'quit' || record.compact) continue;
+		const player = selfRowOf(record);
+		for (const bond of player?.bonds || []) {
+			if (!bond.active || !Number.isFinite(bond.layers) || bond.layers <= 0) continue;
+			if (!best || bond.layers > best.bond.layers) best = { record, player, bond };
+		}
+	}
+	return best;
 }
 
 /**

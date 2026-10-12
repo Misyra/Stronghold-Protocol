@@ -20,9 +20,9 @@ import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS } from '../../../shar
 import { html, Icon, MicroLabel, Spinner, Button, confirmDialog } from '../ui/components.js';
 import { useGameData, makeLookups, BandIcon, BondGlyph, Img } from '../ui/gameComponents.js';
 import { data, useData } from '../data.js';
-import { fmtNum } from '../ui/gameLogic.js';
+import { fmtNum, diyRecordFor, cardStandIn } from '../ui/gameLogic.js';
 import { useDocClass } from '../ui/device.js';
-import { uiUrl, chessAvatarUrl } from '../ui/assetUrls.js';
+import { uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl } from '../ui/assetUrls.js';
 import { identity } from '../net.js';
 import { TITLE_HEX_SECTORS, titleSectorClip } from '../ui/titleHexagon.js';
 import { store, createStore, useStore, selectRoute } from '../store.js';
@@ -31,7 +31,7 @@ import { toast, toastError } from '../ui/toasts.js';
 import {
   loadStats, saveStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
   recordToResult, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
-	trophyMedalOf, strategyBadgeIds, bondMemberChess,
+	trophyMedalOf, strategyBadgeIds, bondMemberChess, highestBondRecord,
 } from '../ui/stats.js';
 import { t, N_ } from '../../../shared/i18n.js';
 
@@ -120,7 +120,8 @@ function Section({ children, class: cls }) {
 }
 
 /** 总览: cards, the per-difficulty table, the six titles, and the line about what counts. */
-function Overview({ agg, gd, nickname }) {
+function Overview({ agg, gd, nickname, records }) {
+	useData('chess', 'items', 'backups');
   const rows = DIFFICULTIES.filter((d) => agg.byDifficulty[d]).concat(Object.keys(agg.byDifficulty).filter((d) => !DIFFICULTIES.includes(d)));
 	const fonts = uiUrl(gd.m, 'statistics/fontStyles');
   const titles = (Array.isArray(gd.config?.titles) ? gd.config.titles : []).map((x) => ({ ...x, count: agg.titles[x.id]?.count || 0 }));
@@ -168,6 +169,8 @@ function Overview({ agg, gd, nickname }) {
       <${StatCard} micro="HIDDEN CLEAR" value=${fmtNum(agg.hidden.cleared)} label=${t('通关隐秘核心')} />
       <${StatCard} micro="BEST ROUND" value=${fmtNum(agg.rounds.max)} label=${t('最远回合')} />
     </div>
+		<${RecordHeading} title=${t('卫戍成就')} manifest=${gd.m} class="st-record-heading--achievement" />
+		<${BondAchievement} peak=${highestBondRecord(records)} gd=${gd} />
     <${MatchRecords} maxima=${agg.maxima} manifest=${gd.m} />
 		<p class="st-rule">${t('单局纪录按已结算对局统计；击败数包含联防实际击杀，旧战绩无法补算。')}</p>
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table">
@@ -188,6 +191,59 @@ function Overview({ agg, gd, nickname }) {
     <p class="st-rule"><${Icon} name="info" />${t('计入统计：打到结算的对局，以及中途退出前至少清完 1 个回合的对局；更早退出的对局只留在对局记录里。')}${agg.excluded
       ? html` <b>${t('另有 {n} 局未计入统计', { n: agg.excluded })}</b>` : null}</p>
   <//>`;
+}
+
+function RecordHeading({ title, manifest, class: cls }) {
+	return html`<h3 class=${cx('st-record-heading', cls)} style=${`background-image:url(${uiUrl(manifest, 'statistics/headingBar')})`}>
+		<span class="st-record-heading__icon" aria-hidden="true">
+			<${Img} src=${uiUrl(manifest, 'statistics/headingIconFrame')} class="st-record-heading__frame" />
+			<${Img} src=${uiUrl(manifest, 'statistics/headingIcon')} class="st-record-heading__glyph" />
+		</span><span>${title}</span>
+	</h3>`;
+}
+
+function AchievementOperator({ unit, gd }) {
+	const base = gd.chess(unit.id);
+	const backups = data.get('backups');
+	const chess = unit.diy && base ? diyRecordFor(base, unit.diy, { chess: data.get('chess'), backups })
+		: base ? cardStandIn(base, { unit, backups }) || base : null;
+	const portrait = chess ? chessPortraitUrl(gd.m, { ...chess, assets: { ...chess.assets,
+		portrait: `${chess.charId}_${chess.status?.phase === 2 ? 2 : 1}` } }) : null;
+	return html`<li class="st-achievement-unit" title=${chess?.name || unit.id}>
+		<${Img} src=${portrait} class="st-achievement-unit__portrait" fallback=${html`<span>${chess?.name || unit.id}</span>`} />
+		<${Img} src=${uiUrl(gd.m, `statistics/achievementTier${unit.tier || chess?.tier}`)} class="st-achievement-unit__tier" />
+		${chess?.status ? html`<div class="st-achievement-unit__level">
+			<${Img} src=${uiUrl(gd.m, `statistics/achievementElite${chess.status.phase}`)} />
+			<span>${fmtNum(chess.status.level)}</span>
+		</div>` : null}
+		<div class="st-achievement-unit__items">${Array.from({ length: 2 }, (_, i) => html`<div key=${i} class="st-achievement-unit__slot"
+			style=${`background-image:url(${uiUrl(gd.m, 'statistics/achievementItemSlot')})`}>
+			${unit.items?.[i] ? html`<${Img} src=${itemIconUrl(gd.m, gd.item(unit.items[i]))} class="st-achievement-unit__item" />` : html`<i aria-hidden="true"></i>`}
+		</div>`)}</div>
+	</li>`;
+}
+
+function BondAchievement({ peak, gd }) {
+	if (!peak) return html`<p class="st-hint">${t('暂无可用的盟约最高叠加战绩')}</p>`;
+	const bonds = (peak.player.bonds || []).filter((b) => b.active).sort((a, b) => b.layers - a.layers);
+	return html`<div class="st-achievement">
+		<div class="st-achievement__peak">
+			<span class="st-achievement__caption">${t('战果纪录')}</span>
+			<div class="st-achievement__bond" style=${`background-image:url(${uiUrl(gd.m, 'statistics/achievementBondFrame')})`}><${BondGlyph} bondId=${peak.bond.bondId} /></div>
+			<span>${t('盟约最高叠加')}</span><b class="num">${fmtNum(peak.bond.layers)}</b>
+		</div>
+		<div class="st-achievement__detail" style=${`background-image:url(${uiUrl(gd.m, 'statistics/achievementBg')})`}>
+			<ul class="st-achievement__lineup">${Array.from({ length: 10 }, (_, i) => peak.player.lineup?.[i]
+				? html`<${AchievementOperator} key=${i} unit=${peak.player.lineup[i]} gd=${gd} />`
+				: html`<li key=${i} class="st-achievement-unit is-empty" aria-hidden="true"><i></i><span>${t('NO INFO')}</span>
+					<div class="st-achievement-unit__items"><div class="st-achievement-unit__slot"><i></i></div><div class="st-achievement-unit__slot"><i></i></div></div>
+				</li>`)}</ul>
+			<ul class="st-achievement__bonds">${bonds.map((bond) => html`<li key=${bond.bondId} title=${gd.bond(bond.bondId)?.name || bond.bondId}
+				style=${`background-image:url(${uiUrl(gd.m, 'statistics/achievementBondTile')})`}>
+				<${BondGlyph} bondId=${bond.bondId} />${gd.bond(bond.bondId)?.noStack ? null : html`<b class="num">${fmtNum(bond.layers)}</b>`}
+			</li>`)}</ul>
+		</div>
+	</div>`;
 }
 
 /** The official statistics view fills and highlights counts at 20 awards. */
@@ -259,12 +315,7 @@ function Bands({ agg, gd, records }) {
 	const members = bondMemberChess(gd.list('chess'), bonds[0]?.[0]);
 	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
 		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
-		<h3 class="st-record-heading" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
-			<span class="st-record-heading__icon" aria-hidden="true">
-				<${Img} src=${uiUrl(gd.m, 'statistics/headingIconFrame')} class="st-record-heading__frame" />
-				<${Img} src=${uiUrl(gd.m, 'statistics/headingIcon')} class="st-record-heading__glyph" />
-			</span><span>${t('盟约记录')}</span>
-		</h3>
+		<${RecordHeading} title=${t('盟约记录')} manifest=${gd.m} />
 		<h4 class="st-sub st-favorites__heading">${t('最常使用的盟约')}</h4>
 		${bonds.length ? html`<div class="st-top-bonds">
 			${bonds.slice(0, 3).map(([bondId], index) => {
@@ -289,12 +340,7 @@ function Bands({ agg, gd, records }) {
 					<${Img} src=${uiUrl(gd.m, `statistics/memberTier${chess.tier}`)} class="st-bond-member__tier" />
 				</li>`)}
 			</ul>` : null}
-		<h3 class="st-record-heading st-record-heading--strategy" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
-			<span class="st-record-heading__icon" aria-hidden="true">
-				<${Img} src=${uiUrl(gd.m, 'statistics/headingIconFrame')} class="st-record-heading__frame" />
-				<${Img} src=${uiUrl(gd.m, 'statistics/headingIcon')} class="st-record-heading__glyph" />
-			</span><span>${t('策略记录')}</span>
-		</h3>
+		<${RecordHeading} title=${t('策略记录')} manifest=${gd.m} class="st-record-heading--strategy" />
 		${rows.length ? html`<h4 class="st-sub st-strategies__heading">${t('最常使用的策略')}</h4>
 			<div class="st-top-strategies">
 				${rows.slice(0, 3).map(([bandId, v], index) => {
@@ -397,7 +443,7 @@ function History({ records, gd, onOpen }) {
       <tbody>${rows.map((r) => html`<${HistoryRow} key=${r.id} rec=${r} gd=${gd} onOpen=${onOpen} />`)}</tbody>
     </table></div>
     ${records.length > shown ? html`<div class="st-more"><${Button} size="sm" variant="secondary" onClick=${() => setShown(shown + HISTORY_PAGE)}>${t('显示更多（还有 {n} 局）', { n: records.length - shown })}<//></div>` : null}
-    <p class="st-hint">${t('点击一行，回看该局结算；中途退出的对局只留记录。')} ${t('最多保留最近 {max} 局，只有最新的 {full} 局能回看结算。', { max: MAX_RECORDS, full: FULL_KEEP })}</p>`
+    <p class="st-hint">${t('点击一行，回看该局结算；中途退出的对局只留记录。')} ${t('最多保留最近 {max} 局，最新的 {full} 局及盟约最高叠加战绩能回看结算。', { max: MAX_RECORDS, full: FULL_KEEP })}</p>`
       : html`<p class="st-empty">${t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`}
   <//>`;
 }
@@ -516,7 +562,7 @@ function StatsScreen({ tab }) {
             : tab === 'bands' ? html`<${Bands} agg=${agg} gd=${gd} records=${stats.records} />`
               : tab === 'totals' ? html`<${CombatSums} agg=${agg} />`
                 : tab === 'history' ? html`<${History} records=${stats.records} gd=${gd} onOpen=${setReplay} />`
-                  : html`<${Overview} agg=${agg} gd=${gd} nickname=${nickname} />`}
+                  : html`<${Overview} agg=${agg} gd=${gd} nickname=${nickname} records=${stats.records} />`}
     </main>
   </div>`;
 }

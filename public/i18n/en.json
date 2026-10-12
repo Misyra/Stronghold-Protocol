@@ -1231,5 +1231,11 @@
 	"暂无获得特殊标识的策略": "No strategies have earned a special badge yet",
 	"盟约记录": "Alliance Records",
 	"策略记录": "Strategy Records",
-	"盟约下干员为：": "Alliance members:"
+	"盟约下干员为：": "Alliance members:",
+	"卫戍成就": "Stronghold Achievements",
+	"战果纪录": "Battle Record",
+	"盟约最高叠加": "Highest Alliance Stacks",
+	"暂无可用的盟约最高叠加战绩": "No available highest alliance stack record",
+	"最多保留最近 {max} 局，最新的 {full} 局及盟约最高叠加战绩能回看结算。": "Keeps up to {max} matches; the latest {full} and the highest alliance stack match can be replayed.",
+	"NO INFO": "NO INFO"
 }

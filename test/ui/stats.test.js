@@ -346,7 +346,7 @@ describe('local stats: bounded storage', () => {
     assert.equal(stats.records.at(-1).t, 30); // oldest 30 dropped
   });
 
-  test(`only the newest ${FULL_KEEP} records keep their rows: the older ones are compacted to the player's own summary`, () => {
+  test(`the newest ${FULL_KEEP} records keep their rows; older non-peak records compact without losing aggregates`, () => {
     withStorage((ls) => {
       assert.equal(saveStats(manyRecords(FULL_KEEP + 20)), true);
       const stored = JSON.parse(ls.raw).records;

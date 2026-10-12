@@ -121,6 +121,58 @@ test('Spine parses independently hashed atlas/pages and unloads those same keys'
   assert.deepEqual(new Set(unloaded), new Set([entry.skel, ...calls.slice(1, 3)]));
 });
 
+test('Spine refuses a parsed skeleton with destroyed atlas pages and clears the poisoned cache', async (t) => {
+  const previous = { pixi: globalThis.PIXI, cdn: globalThis.__spAssetCdn };
+  t.after(() => { globalThis.PIXI = previous.pixi; globalThis.__spAssetCdn = previous.cdn; });
+  globalThis.__spAssetCdn = undefined;
+  const unloaded = [];
+  globalThis.PIXI = { spine: {}, Assets: {
+    load: async () => ({ spineData: { animations: [] }, spineAtlas: { pages: [{ baseTexture: { destroyed: true } }] } }),
+    unload: async (u) => unloaded.push(u), loader: { unload: async (u) => unloaded.push(u) },
+  } };
+  await assert.rejects(loadSpineData({ skel: '/assets/bad.skel' }), /invalid spine atlas/);
+  assert.deepEqual(unloaded, ['/assets/bad.skel', '/assets/bad.atlas', '/assets/bad.png']);
+});
+
+test('Spine page loading rejects invalid textures and callback errors instead of leaving an unresolved atlas', async (t) => {
+  const previous = { pixi: globalThis.PIXI, cdn: globalThis.__spAssetCdn, fetch: globalThis.fetch };
+  t.after(() => { globalThis.PIXI = previous.pixi; globalThis.__spAssetCdn = previous.cdn; globalThis.fetch = previous.fetch; });
+  globalThis.__spAssetCdn = { base: 'https://cdn.example', manifest: '/manifest.json', hashes: {} };
+  globalThis.fetch = async () => ({ ok: true, text: async () => 'atlas' });
+  let valid = false;
+  globalThis.PIXI = { spine: { TextureAtlas: class {
+    constructor(text, loadPage) { loadPage('bad.png', () => { throw new Error('bad atlas region'); }); }
+  } }, Assets: {
+    load: async () => { throw new Error('must not parse an invalid atlas'); },
+    loader: { load: async () => ({ baseTexture: { valid, destroyed: !valid } }) },
+  } };
+  await assert.rejects(loadSpineData({ skel: '/assets/bad.skel' }), /invalid atlas texture/);
+  valid = true;
+  await assert.rejects(loadSpineData({ skel: '/assets/bad.skel' }), /bad atlas region/);
+});
+
+test('unload releases resolver atlas metadata without erasing a replacement atlas', async (t) => {
+  const previous = { pixi: globalThis.PIXI, cdn: globalThis.__spAssetCdn };
+  t.after(() => { globalThis.PIXI = previous.pixi; globalThis.__spAssetCdn = previous.cdn; });
+  globalThis.__spAssetCdn = { manifest: '/manifest.json' };
+  const oldAtlas = {}, replacement = {};
+  const resolved = { data: { spineAtlas: oldAtlas, spineSkeletonScale: 2 } };
+  let finish;
+  globalThis.PIXI = { Assets: {
+    resolver: { hasKey: () => true, resolve: () => resolved },
+    unload: () => new Promise((resolve) => { finish = resolve; }),
+    loader: { unload: async () => {} },
+  } };
+  let pending = unloadSpineData({ skel: '/assets/a.skel' });
+  finish(); await pending;
+  assert.deepEqual(resolved.data, { spineSkeletonScale: 2 });
+  resolved.data.spineAtlas = oldAtlas;
+  pending = unloadSpineData({ skel: '/assets/a.skel' });
+  resolved.data.spineAtlas = replacement;
+  finish(); await pending;
+  assert.equal(resolved.data.spineAtlas, replacement);
+});
+
 test('browser helpers honor CDN configuration and preserve remote audio URLs', (t) => {
   const previous = globalThis.__spAssetCdn;
   t.after(() => { if (previous === undefined) delete globalThis.__spAssetCdn; else globalThis.__spAssetCdn = previous; });

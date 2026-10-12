@@ -164,7 +164,8 @@ export class SpineActor {
     this.wound = false;           // clipPerAttack: wound up for the coming attack (windUp → attack)
     this._applied = false;        // an update has posed the skeleton since its clip last changed (poseHeld)
     this._appliedTint = undefined; // the tint that update put on the slots (pixi-spine applies `tint` in update)
-    this._play(this._idleName(), true);
+    try { this._play(this._idleName(), true); }
+    catch (err) { this.destroy(); throw err; }
   }
 
   /** Enable / disable the skeleton's clipping masks. */

@@ -207,10 +207,33 @@ describe('RefLru', () => {
     await assert.rejects(lru.acquire('x'), /404/);
     await assert.rejects(lru.acquire('x'), /404/);
     assert.equal(calls, 1);
+    lru.release('x'); lru.release('x');
     now = 5000;
     await assert.rejects(lru.acquire('x'), /404/);
     assert.equal(calls, 2);
     assert.equal(lru.stats().failed, 1);
+  });
+
+  test('an expired failure with holders is never replaced: old releases cannot evict a new model', async () => {
+    let now = 0, calls = 0;
+    const unloaded = [];
+    const lru = new RefLru({ max: 1, failTtl: 10, now: () => now,
+      load: async (key) => { if (++calls === 1) throw new Error('offline'); return key; },
+      unload: (key) => unloaded.push(key) });
+    await assert.rejects(lru.acquire('a'), /offline/);
+    now = 20;
+    await assert.rejects(lru.acquire('a', null, { retry: true }), /offline/);
+    assert.equal(calls, 1, 'the old holders still own the failed entry, even past its TTL');
+    assert.equal(lru.stats().refs, 2);
+    lru.release('a'); lru.release('a');
+    assert.equal(await lru.acquire('a', null, { retry: true }), 'a');
+    await lru.acquire('b');
+    lru.release('b');
+    assert.equal(lru.peek('a'), 'a', 'a live model cannot be evicted by a stale failure holder');
+    assert.deepEqual(unloaded, ['b']);
+    lru.release('a');
+    assert.equal(lru.stats().refs, 0);
+    lru.clear();
   });
 
   test('timeout rejects slow loads', async () => {

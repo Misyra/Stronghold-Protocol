@@ -577,8 +577,16 @@ describe('websocket lobby', () => {
 
   test('flooding far beyond the limit closes the socket (1008)', async () => {
     const c = await pool.player('Flood');
-    for (let i = 0; i < 600; i++) c.send({ t: 'ping', c: i, rid: null });
-    const info = await c.closed;
+    // bursts until the server closes it: the close needs more than abuseDropsPerSec drops inside one 1 s window, and on
+    // a heavily loaded machine a single burst of 600 can be read over more than a second — the old single burst then
+    // never closed the socket and `await c.closed` (no timeout) hung the whole file
+    const t0 = Date.now();
+    while (c.isOpen && Date.now() - t0 < 20000) {
+      for (let i = 0; i < 600 && c.isOpen; i++) c.send({ t: 'ping', c: i, rid: null });
+      await delay(50);
+    }
+    const info = await Promise.race([c.closed, delay(10000).then(() => null)]);
+    assert.ok(info, 'the server closed the flooding socket');
     assert.equal(info.code, 1008);
   });
 

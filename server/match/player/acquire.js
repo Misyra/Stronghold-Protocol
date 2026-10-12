@@ -218,8 +218,11 @@ export class PlayerAcquire {
    * copy-weighted roll from the shared pool excluding the ones already drawn; a tier left without another chess tops
    * up from the tier below (user playtest #6 item 19: the official promotion reward never offers one operator twice —
    * the user's first-hand report; the normal shop's slots may repeat). The offer reserves no copies (the pick takes one).
-   * The player's slotted 自选 pieces join the draw like in its shop (player/diy.js diyRollEntries: once the 调度中心 is at
-   * the slot's level) — the reward is a temporary refresh of the shop ("临时刷新3名…干员") [ASSUMED].
+   * The player's slotted 自选 pieces of the reward tier join the draw (player/diy.js diyStockEntries: copies left, then
+   * the roll's tier — not the ordinary shop's shopLevel gate). 卫戍协议/帮助 干员晋升 names one temporary refresh one tier
+   * above the 调度中心 and no separate pool; the owner decided on 2026-10-12 that the refresh includes 自选 of the newly
+   * reached tier. 0.2.0 had [ASSUMED] the shop-level gate on this refresh too (DESIGN §25); §30.23 reverses that.
+   * An offer built from explicit `ids` does not roll.
    */
   pushRewardOffer(source = 'merge', { tier = null, ids = null, label = null } = {}) {
     const ro = this.gd.rewardOffer();
@@ -231,7 +234,7 @@ export class PlayerAcquire {
       const fresh = (id) => !list.includes(id);
       for (let i = 0; i < ro.count; i++) {
         let id = null;
-        for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh, extra: this.diyRollEntries() });
+        for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh, extra: this.diyStockEntries() });
         if (id) list.push(id);
       }
     }
@@ -287,17 +290,23 @@ export class PlayerAcquire {
    * call, even when an identical normal copy is already owned. The next prep's start runs checkItemMerges. Nothing
    * already equipped is taken off for the fight about to start. Hand and temp both full keeps the 「整备区已满，获得的装备已销毁」
    * outcome. [ASSUMED] every item granted at 休整期结束, not only 维多利亚's 战栗维式重锤 (owner's decision 2026-10-04).
-   * `fromPool: false` is only issued by server-side operator passive effects; bypasses shared stock and holds zero.
+   * `fromPool: false` (an operator passive / trait gift) and `requirePool: false` (upstream 0.2.5's narrower
+   * request, honoured for the fixed operator-gift families only) both bypass shared stock and hold zero copies.
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, fromPool = true } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, fromPool = true, requirePool = true } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
-    if (fromPool && !this.m.itemPool.canGain(itemId)) {
+    // Two ways to overdraft the shared stock. `fromPool: false` is the passive-gift path this fork ported from
+    // xinhai 1cf48618: the copy holds zero, so the stock keeps its cap (pool.js occupied / itemPoolCopies).
+    // `requirePool: false` is upstream 0.2.5's narrower request and only the fixed operator-gift families may use
+    // it (commercial packaging and other strategy grants keep their stock limit).
+    const overdraft = !fromPool || (!requirePool && this.gd.isUnlimitedGiftItem(itemId));
+    if (!overdraft && !this.m.itemPool.canGain(itemId)) {
       this.m.toast(this, 'warn', '装备库存不足，未获得该装备');
       return null;
     }
     // Provenance is server-owned and travels with the piece, not inferred from its name or current holder.
-    let piece = this.newPiece('item', itemId, fromPool ? {} : { itemPoolCopies: 0 });
+    let piece = this.newPiece('item', itemId, overdraft ? { itemPoolCopies: 0 } : {});
     // A prep-end grant may sit beside an identical copy until the next prep. The invariant counts only copies
     // without this mark, so the fight that is about to start is not reported as a missed merge.
     if (deferMerge) piece.deferMerge = true;

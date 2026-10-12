@@ -424,6 +424,14 @@ HEAD /data/resource-manifest.json
 
 这些字段用于浏览器本地战绩；当前没有服务端历史列表、战绩查询、上传、删除或完整录像 API。服务器检查点持久化也没有公开保存 / 恢复 HTTP API。战绩范围见 [MATCH_HISTORY.md](../guides/MATCH_HISTORY.md)。
 
+### 私有房间管理
+
+配置 `SP_ROOM_ADMIN_TOKEN` 后，游戏在独立回环端口（默认 `127.0.0.1:3001`）开放 `GET /api/rooms`、`GET/PUT /api/room-config` 和 `POST /api/rooms/:code/close`，必须携带 Bearer 密钥。不能公开转发此端口；探针与面板接入见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md)。
+
+配置读接口及列表的 `config` 返回 `maxRooms` 和 `allowBots`。写接口支持部分更新 `{"maxRooms":1000}` / `{"allowBots":false}`，也可同时提交；上限为 1–10000 整数，AI 开关为布尔值，空对象及未知字段拒绝。保存成功后实时生效并持久化，保存失败返回 503 且不改变运行时设置。
+
+`room.state.allowBots` 表示是否允许新增 AI（旧服务器未提供时客户端按允许处理）。禁用时 `room.addBot` 返回 `BOTS_DISABLED`；已有 AI、进行中对局和断线自动接管不受影响。
+
 ## 9. 实现出处与验证
 
 | 契约 | 实现 / 已有测试 |

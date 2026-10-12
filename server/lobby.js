@@ -119,6 +119,7 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 /** Tunables. */
 export const LOBBY_DEFAULTS = Object.freeze({
   chatEnabled: false,
+  allowBots: true,
   lobbyGraceMs: 60_000,   // disconnected humans keep their lobby seat this long
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
@@ -235,7 +236,7 @@ export class Room {
   activeHumans() { return this.seats.filter((s) => s && !s.isBot && !s.left); }
 
   /** `room.state` frame (DESIGN §8.1) plus `inMatch`. */
-  toState() {
+  toState(allowBots = true) {
     return {
       t: 'room.state',
       code: this.code,
@@ -243,6 +244,7 @@ export class Room {
       mode: this.mode,
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
+      allowBots,
       inMatch: !!this.match,
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
@@ -728,6 +730,7 @@ export class Lobby {
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
+    if (!this.opts.allowBots) return fail(ERR.BOTS_DISABLED);
     this.dropReplay(room, session.playerId);
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo rooms cannot have AI teammates');
     const idx = room.freeSeat();
@@ -1468,13 +1471,13 @@ export class Lobby {
 
   broadcastState(room) {
     if (room.disposed) return;
-    const data = encode(room.toState());
+    const data = encode(room.toState(this.opts.allowBots));
     // Managed sockets share Network's send budget across rooms, with FIFO relative to match unicasts.
     for (const session of this.memberSessions(room)) sendRaw(session.ws, data, { kind: 'room.state' });
   }
 
   sendState(room, session) {
-    sendSession(session, room.toState());
+    sendSession(session, room.toState(this.opts.allowBots));
   }
 
   /** Match broadcast: encode once; Network slices member sends across rooms. @returns {string | null} the encoded frame */

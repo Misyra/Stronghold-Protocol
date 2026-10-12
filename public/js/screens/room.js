@@ -131,7 +131,8 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       </div>
       <footer class="seat__foot">
         ${canAdd
-          ? html`<${Button} variant="secondary" size="sm" icon="robot" block=${true} disabled=${facts.searching} loading=${busy === `add`} onClick=${onAddBot}>${t('添加 AI 队友')}<//>`
+          ? html`<${Button} variant="secondary" size="sm" icon="robot" block=${true} disabled=${facts.searching || room.allowBots === false} loading=${busy === `add`} onClick=${onAddBot}
+              title=${room.allowBots === false ? t('当前服务器禁止添加 AI 队友') : undefined}>${room.allowBots === false ? t('AI 队友已禁用') : t('添加 AI 队友')}<//>`
           : html`<span class="seat__state t-dim">${t('空位')}</span>`}
       </footer>
     </article>`;

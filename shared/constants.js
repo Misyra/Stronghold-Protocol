@@ -5,7 +5,7 @@ import { N_ } from './i18n.js';
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '0.2.4';
+export const APP_VERSION = '0.2.5';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
@@ -139,6 +139,7 @@ export const ERR = Object.freeze({
   ROOM_STARTED: 'ROOM_STARTED',
   NOT_HOST: 'NOT_HOST',
   NOT_READY: 'NOT_READY',
+  BOTS_DISABLED: 'BOTS_DISABLED',
   WRONG_PHASE: 'WRONG_PHASE',
   NO_FUNDS: 'NO_FUNDS',
   HAND_FULL: 'HAND_FULL',
@@ -156,6 +157,7 @@ export const ERR = Object.freeze({
 });
 
 export const ERR_TEXT = {
+  BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
   CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
   CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),

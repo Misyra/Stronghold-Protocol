@@ -127,6 +127,9 @@ export function lobbyOptionsFrom(opts, env = process.env) {
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${name} must be ${min}..${max}`);
     lobbyOptions[key] = value;
   }
+  const allowBots = String(opts.allowBots ?? env.SP_ALLOW_BOTS ?? 'on').trim().toLowerCase();
+  if (!['1', 'true', 'on', '0', 'false', 'off'].includes(allowBots)) throw new RangeError('SP_ALLOW_BOTS must be on or off');
+  lobbyOptions.allowBots = ['1', 'true', 'on'].includes(allowBots);
   return lobbyOptions;
 }
 

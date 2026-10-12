@@ -61,7 +61,7 @@ import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
-import { listenRoomAdmin, loadRoomLimit } from './roomAdmin.js';
+import { listenRoomAdmin, loadRoomConfig } from './roomAdmin.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
 export {
@@ -84,7 +84,7 @@ export {
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   workers?: number, roomWorkers?: number, workerQueue?: number, workerTimeoutMs?: number,
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
- *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, roomCreateBurst?: number, roomCreateRefillMs?: number,
+ *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
@@ -108,12 +108,13 @@ export async function startServer(opts = {}) {
     if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))
       throw new Error('SP_ROOM_ADMIN_STATE_FILE 不能位于公开静态目录');
   }
-  let savedRoomLimit = null;
+  let savedRoomConfig = null;
   if (roomAdminToken) {
-    try { savedRoomLimit = await loadRoomLimit(roomAdminStateFile); }
+    try { savedRoomConfig = await loadRoomConfig(roomAdminStateFile); }
     catch (error) { log.error('[room-admin] saved room limit unavailable; using startup configuration', error); }
   }
-  lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomLimit ?? lobbyOptions.maxRooms ?? 1000;
+  lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
+  if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,

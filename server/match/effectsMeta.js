@@ -481,6 +481,7 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     lp: () => ps.lp,
     alive: () => ps.alive,
     bandId: () => ps.bandId,
+    teamMedicGranted: () => m.teamMedicGranted(),
     shopLevel: () => ps.shop.level,
     bond: (id) => (ps.bonds[id] ? { ...ps.bonds[id] } : null),
     bonds: () => Object.fromEntries(Object.entries(ps.bonds).map(([k, v]) => [k, { ...v }])),
@@ -572,6 +573,8 @@ export function makeCtx(m, ps, source, hook, ev = null) {
         deferMerge: ps._deferItemMerge > 0,
         // Includes copied/triggered traits and prep-end gifts. Other effects retain ordinary shared stock.
         fromPool: source.kind !== 'garrison',
+        // Upstream 0.2.5's narrower request: a fixed operator-gift family may overdraft when its caller asks for it.
+        requirePool: opts.requirePool !== false,
       });
       return p ? view(p) : null;
     },

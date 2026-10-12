@@ -202,7 +202,10 @@ export function collectViolations(m, { limit = 25 } = {}) {
   }
   for (const [base, n] of held) if (!m.pool.has(base) && n !== 0) fail(`non-pool chess ${base} holds ${n} copies`);
 
-  // Shared shop equipment. The chess pool above may go negative (Mimic). Item stock may not: held ≤ cap.
+  // Shared shop equipment. The chess pool above may go negative (Mimic); item stock may not: held ≤ cap here.
+  // A gift copy holds zero (piece.itemPoolCopies, the provenance model this fork ported from xinhai 1cf48618), and
+  // an explicit `requirePool: false` overdraft is a gift copy too, so `held` counts only stock-backed copies and
+  // no grant may push the shared stock past its cap.
   if (m.itemPool && gd.raw.items) {
     for (const [id, rec] of Object.entries(gd.raw.items)) {
       if (!rec || rec.isGolden) continue;

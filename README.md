@@ -2,7 +2,7 @@
 
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.2.4-2ea44f)
+![version](https://img.shields.io/badge/version-0.2.5-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -37,15 +37,16 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前版本 0.2.4：按官方补齐共享卡池与装备库存，修正突袭复活选敌、克莱门莎、浊心斯卡蒂与坚守等规则，联机首领战突袭可以跳到空半场，并修复了 0.2.3 发布后玩家和 GitHub 上反馈的问题，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
+- 当前版本 0.2.5：3D 棋盘按战场显示官方场景，新增「官方伤害数字」选项，首领每局随机配对，固定赠品和已展示的干员牌不再被库存阻断，并修复了 0.2.4 发布后玩家和 GitHub 上反馈的问题，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
 
 ## 本分支差异
 
-本分支基于主上游 [sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol)，已同步至 **v0.2.2**，在其之上独立维护，差异集中在服务端运维与客户端体验：
+本分支基于主上游 [sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol)，已同步至 **v0.2.5**，在其之上独立维护，差异集中在服务端运维与客户端体验：
 
 | 方面 | 本分支的做法 |
 |---|---|
 | 服务端断点恢复 | 默认把身份、房间与安全阶段的对局写入 `.state/` 文件快照，零外部依赖，重启后玩家凭原身份回到对局；见 [docs/operations/PERSISTENCE.md](docs/operations/PERSISTENCE.md) |
+| 房间审计与计算保护 | 按网络（IPv4、IPv6 `/64`）限制建房与开局额度，审计日志按 `[audit] ` 记录连接、房间、对局与 Worker 事件；真人全部断连时暂停该局计算，重连后按剩余时间恢复；单机 CPU 负载高时只保留必要的 AI 预演。可选本机管理 API（`SP_ROOM_ADMIN_TOKEN`）查看房间、调整房间上限、关闭指定房间；见 [docs/operations/ROOM_PROTECTION.md](docs/operations/ROOM_PROTECTION.md) |
 | 本地对局记录 | 结算时在浏览器保存最近 100 局，可查看阵容统计、导入与导出 JSON；见 [docs/guides/MATCH_HISTORY.md](docs/guides/MATCH_HISTORY.md) |
 | 资源预载 | 按保存的开关设置在后台预载，关闭后刷新仍保持关闭，复用已缓存资源；支持必备／可选分类、ZIP 导入导出、旧包完整性校验及增量补齐、跨版本缓存别名复用、会话内断点续传、流式大小上限、hash 不符一律拒收；已在 Cloudflare CDN 实测，见 [docs/operations/CDN.md](docs/operations/CDN.md) |
 | 匹配 | 「同站四人」纯真人匹配：支持同盟先组队再匹配补齐，整队入队且不拆散；凑满 4 名真人才开局，不补 AI，队员断线整队出队，取消后保留同盟 |
@@ -80,8 +81,8 @@ English summary: [below](#english).
 - **本地对局记录**：结算时自动保存最近 100 局，在首页、大厅或结算页点击「对局记录」查看阵容与统计，支持 JSON 导入、导出、删除和清空。导入备份与现有记录合并，自动跳过重复记录。记录保存在当前浏览器和当前站点；清除网站数据会删除记录。详见 [本地记录说明](docs/guides/MATCH_HISTORY.md)。
 - **服务端断点恢复**：正常启动默认把身份、房间和安全阶段的对局状态保存到 `.state/`。保留此目录并使用兼容版本升级，重启后玩家可凭原身份回到对局；战斗中断时恢复到最近的检查点，重打该回合。详见 [持久化部署说明](docs/operations/PERSISTENCE.md)。
 - **断线重连**：同盟模拟断线后 10 分钟内重新打开页面即可回到原座位，掉线期间按原阵容自动作战，也可以「暂离」交给 AI 托管；独立模拟 24 小时内可以回来继续（同一个浏览器）。
-- **交互细节**：漏怪时顶栏的目标生命值实时减少（结算时确定）；点选、拖放和配发装备都按地上的方格；购买、升级和机变选卡都需要点两次确认；只有一名玩家时除作战外不计时。
-- **画面与声音**：真实 Spine 小人、官方 BGM 与音效、表情（6 套 × 6 个）、作战特效；官方 3D 棋盘（本分支已附带贴图，需浏览器支持 WebGL2）。
+- **交互细节**：漏怪时顶栏用红字 + 「−N」标记待扣的目标生命值（结算时才扣除）；点选、拖放和配发装备都按地上的方格；购买、升级和机变选卡都需要点两次确认；只有一名玩家时除作战外不计时。
+- **画面与声音**：真实 Spine 小人、官方 BGM 与音效、表情（6 套 × 6 个）、作战特效；官方 3D 棋盘（本分支已附带贴图，需浏览器支持 WebGL2）与 11 个战场的官方场景（场景需本机提取或从同版本完整包复制，见[部署说明](docs/operations/DEPLOY.md) 第 6 节）。
 - **手机与电脑**：触摸拖拽、长按查看详情，推荐横屏；设置里可以调低画质。
 
 ## 快速开始
@@ -92,8 +93,8 @@ English summary: [below](#english).
 
 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest) 里有两种整合包，代码和运行依赖完全相同，二选一；已经装好 0.2.x 的，升级时只下载更新包即可：
 
-- **完整包** `Stronghold-Protocol-v<版本>.zip`（约 505 MB，解压后约 710 MB）：附带全部美术 / 音频（含中文、日文两套干员语音和官方 3D 棋盘贴图），解压就能玩，不需要再下载任何东西。**推荐。**
-- **精简包** `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）：不带素材，第一次启动时自动从公开镜像下载美术、Spine 模型、音频、字体、表情和「玩法说明」教程图（约 550 MB，可中断，再次启动会续传）；官方 3D 棋盘等本地客户端素材不在其中（见下面的「本地客户端素材」）。适合下载大文件不方便的情况。
+- **完整包** `Stronghold-Protocol-v<版本>.zip`（约 550 MB，解压后约 780 MB）：附带全部美术 / 音频（含中文、日文两套干员语音、官方 3D 棋盘贴图和各战场的官方场景），解压就能玩，不需要再下载任何东西。**推荐。**
+- **精简包** `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）：不带素材，第一次启动时自动从公开镜像下载美术、Spine 模型、音频、字体、表情和「玩法说明」教程图（约 550 MB，可中断，再次启动会续传）；官方 3D 棋盘等本地客户端素材不在其中（见下面的「本地客户端素材」；各战场的官方场景可以用 `node tools/setup.mjs --scenes` 在本机下载并提取）。适合下载大文件不方便的情况。
 - **更新包** `Stronghold-Protocol-v<版本>-update.zip`（0.2.1 起提供，大小看改动多少，通常只有几 MB）：只含比之前的 0.2.x 版本改动过的文件，用来把已经装好的 0.2.x（完整包或精简包装的都行）升级到新版本，不用重新下载整个包。用法：先停止服务器（关掉窗口；装了开机自启的运行 `scripts\install-service-windows.ps1 -Stop`），把 zip 里 `Stronghold-Protocol` 文件夹的全部内容合并到安装文件夹、覆盖同名文件（Windows 资源管理器里复制粘贴即可；macOS 不要用访达拖放，它会整个替换文件夹，请用 `unzip -o`，见 [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) 第 1.5 节），再照常启动。启动时会先核对全部程序文件、删除新版本不再用的旧文件，然后正常运行；如果这个文件夹不是更新包对应的版本（例如 0.1.x，或者程序文件被改过），会提示下载完整包，服务器不启动。全新安装请用完整包或精简包。
 
 两种包都只含运行和部署需要的文件（服务器、客户端、数据、启动脚本、setup / doctor / 素材下载工具、许可证与说明、[docs/guides/PLAYING.md](docs/guides/PLAYING.md) 和 [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md)）；测试、开发工具和设计文档只在源码仓库里。
@@ -302,7 +303,7 @@ node tools/perfbench.mjs --cpu 1,4,6 --profile             # 真实战斗的帧�
 
 An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess tower-defense mode *Stronghold Protocol: Alliance*, played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host.
 
-- **Run:** download the all-in-one bundle from [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From 0.2.1 on, `…-update.zip` contains only changes since earlier 0.2.x bundles: stop the server, extract it over a matching install and start again; the first start verifies the files and removes obsolete unmodified files. From source: `npm install && npm run setup && npm start` (setup downloads the art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction — the 39 summon models 0.2.0 added need one `npm run setup -- --local` or a copy from the same-version full bundle; WebGL2 is required for the 3D board).
+- **Run:** download the all-in-one bundle from [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From 0.2.1 on, `…-update.zip` contains only changes since earlier 0.2.x bundles: stop the server, extract it over a matching install and start again; the first start verifies the files and removes obsolete unmodified files. From source: `npm install && npm run setup && npm start` (setup downloads the art from public mirrors, the emotes and the how-to-play pages included; this fork includes the v0.1.3 local-client art and manifest in Git, providing the official 3D board, some HUD icons and two enemy models without local extraction — the 39 summon models 0.2.0 added need one `npm run setup -- --local` or a copy from the same-version full bundle, and the official battlefield scenes (0.2.5) need one `node tools/setup.mjs --scenes` or a copy of `public/assets/local/` and `data/local-assets.json` from the same-version full bundle; WebGL2 is required for the 3D board).
 - **Languages:** Chinese (the default), English, 日本語, 한국어 and 繁體中文 — switch on the title screen or in Settings. Game texts come from the official clients; the Japanese, Korean and Traditional Chinese interface strings are machine translations (corrections welcome: [docs/development/I18N.md](docs/development/I18N.md)).
 - **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md).
 - **Disclaimer:** not affiliated with or endorsed by Hypergryph or Yostar. All Arknights names, art, audio, text and data are © their respective owners and are **not** covered by this project's GPL licence. For study and personal non-commercial use only — no selling, paid distribution, paid servers or monetisation of any kind. Rights holders may request removal via an [Issue](https://github.com/Misyra/Stronghold-Protocol/issues) or email **misyra@163.com**; content will be removed immediately. Provided "as is", without warranty.

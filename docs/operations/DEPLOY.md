@@ -276,7 +276,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 <a id="2-让不在同一网络的朋友加入"></a>
 家用网络接入移至 [HOME_SERVER.md](HOME_SERVER.md#2-家用网络接入)。
 <a id="6-本地客户端素材可选"></a>
-本地客户端素材见 [ASSETS.md](../development/ASSETS.md)。
+本地客户端素材见 [ASSETS.md](../development/ASSETS.md)。0.2.5 的官方战场场景同样不随 Git 仓库提供（提取结果是官方文件，`public/assets/local/scene/` 不提交）：需要时在有客户端的机器上运行 `node tools/setup.mjs --scenes`（或先 `python3 tools/local-extract/fetch_scenes.py` 再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`）；没有场景时 3D 棋盘用程序生成的金属地块。
 <a id="7-打包发布维护者"></a>
 发行包制作移至 [PACKAGING.md](PACKAGING.md)。
 

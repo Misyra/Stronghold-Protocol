@@ -151,19 +151,14 @@ It does not diagnose a particular user's GPU or persist a disabled renderer pref
 
 The statistics page is being progressively aligned with the [official statistics template](https://ak-webview.hypergryph.com/autoChess/act1autochess).
 
-Accumulated play time appears first in the 战斗累计 tab, alongside the combat sums, rather than in 总览. It uses
-the same `duration.totalMs` aggregation and existing minute / hour formatting; the move changes no counting rule.
+Accumulated play time appears first in the 战斗累计 tab, alongside the combat sums. It uses the same `duration.totalMs` aggregation and existing minute / hour formatting; the move changes no counting rule.
 
 The overview displays `Dr. <nickname>` from the active session's `me.name` only. A successful history import
 restores the newest usable self nickname from that file only when the current name is empty; an existing name wins.
 Validate restored names with the title entry's sanitizer, update `me.name` and saved `sp.name`, and fill an empty
 entry field without entering the lobby. Entering a nickname and server welcome already update both name locations.
-Display 未知 while no current or usable imported name is available. Also display the sum of the local
-player's settled co-op trophy awards in the retained records. Defeats can award
-trophies; solo and partial quit records never add to this total. The official `config.trophies.medals` chooses the
-icon at thresholds 0 / 10 / 30 / 60 / 100 (five tiers, PRTS 下半 §同盟成就奖杯). The icon uses the existing asset
-manifest. Compaction and export/import retain trophy awards; older already-compacted rows whose awards were
-discarded cannot be restored by this display. This is local recorded data, not an official account trophy balance.
+Display 未知 while no current or usable imported name is available. 
+The trophies icon uses the existing asset manifest. Compaction and export/import retain trophy awards; older already-compacted rows whose awards were discarded cannot be restored by this display. This is local recorded data, not an official account trophy balance.
 
 A strategy earns its corner badge after 3 successful defenses (`bands.victorCount`; [research 01](../research/01-core-rules.md)).
 

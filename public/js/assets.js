@@ -43,6 +43,8 @@
 // caller falls back (docs/development/ASSETS.md "Other fallbacks").
 
 import { resourceUrl, resourceCache, resourceReady } from './resourceUrl.js';
+import { loadImageElement } from './image.js';
+export { loadImageElement } from './image.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -557,19 +559,6 @@ export class RefLru {
 export function localAssetUrl(m, group, name) {
   const e = get(get(get(m, 'groups'), str(group) || ''), str(name) || '');
   return isObj(e) ? str(e.path) : null;
-}
-
-/** Default browser image loader. */
-export function loadImageElement(url) {
-  return new Promise((resolve, reject) => {
-    if (typeof Image === 'undefined') { reject(new Error('no Image in this environment')); return; }
-    const img = new Image();
-    img.decoding = 'async';
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`image failed: ${url}`));
-    img.src = url;
-  });
 }
 
 /** Default Spine loader: PIXI.Assets.load(skel) → spineData (needs globalThis.PIXI + PIXI.spine). */

@@ -19,6 +19,7 @@ import { t } from '../../../shared/i18n.js';
 import { serverNow } from '../store.js';
 import { data, useData, localAsset } from '../data.js';
 import { uiUrl } from './assetUrls.js';
+import { recoverImageError } from '../image.js';
 
 /**
  * h() for htm with its static-subtree cache switched off. htm keeps the vnode it built for a fully static subtree in
@@ -204,7 +205,7 @@ export function TierChip({ tier, golden = false, size = 'md', class: cls }) {
   const [bad, setBad] = useState(null);
   const img = !!src && bad !== src;
   return html`<span class=${cx('tier', `tier--${n}`, `tier--${size}`, golden && 'tier--golden', img && 'tier--img', cls)} aria-label=${t('{tier}阶', { tier: n })}>
-    ${img ? html`<img src=${src} alt="" draggable=${false} onError=${() => setBad(src)} />` : roman(n)}
+    ${img ? html`<img crossorigin="anonymous" src=${src} alt="" draggable=${false} onError=${(event) => recoverImageError(event, () => setBad(src))} />` : roman(n)}
   </span>`;
 }
 
@@ -241,7 +242,7 @@ export function BondDisc({
       </svg>
       <span class="bond__core">
         ${imgOk
-          ? html`<img class="bond__icon" src=${icon} alt="" draggable=${false} onError=${() => setBadSrc(icon)} />`
+          ? html`<img crossorigin="anonymous" class="bond__icon" src=${icon} alt="" draggable=${false} onError=${(event) => recoverImageError(event, () => setBadSrc(icon))} />`
           : html`<span class="bond__glyph">${glyph}</span>`}
       </span>
       ${stack != null ? html`<span class="bond__count">${stack}</span>` : null}
@@ -727,7 +728,7 @@ export function AvatarFrame({ name = '', src, size = 'md', seat = 0, host, bot, 
       ready && 'is-ready', offline && 'is-offline', dead && 'is-dead', empty && 'is-empty', cls)} style=${`--seat-hue:${hue}`}>
     <div class="avatar__img">
       ${empty ? html`<${Icon} name="plus" class="avatar__empty" />`
-        : imgOk ? html`<img src=${src} alt="" draggable=${false} onError=${() => setBadSrc(src)} />`
+        : imgOk ? html`<img crossorigin="anonymous" src=${src} alt="" draggable=${false} onError=${(event) => recoverImageError(event, () => setBadSrc(src))} />`
         : bot ? html`<${Icon} name="robot" class="avatar__bot" />`
         : html`<span class="avatar__glyph">${glyph}</span>`}
     </div>
@@ -842,7 +843,7 @@ export function DifficultyIcon({ difficulty, class: cls }) {
   const ui = DIFFICULTY_NAMES[difficulty] ? data.get('assets')?.ui : null;
   const src = ui && typeof ui === 'object' ? ui[`modeIcon/mode_${String(difficulty).toLowerCase()}_icon`] : null;
   if (typeof src === 'string' && src && badSrc !== src) {
-    return html`<img class=${cx('icon', 'dicon', cls)} src=${src} alt="" draggable=${false} onError=${() => setBadSrc(src)} />`;
+    return html`<img crossorigin="anonymous" class=${cx('icon', 'dicon', cls)} src=${src} alt="" draggable=${false} onError=${(event) => recoverImageError(event, () => setBadSrc(src))} />`;
   }
   return html`<${Icon} name="rook" class=${cls} />`;
 }

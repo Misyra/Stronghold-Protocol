@@ -6,6 +6,7 @@ import { html, Icon, TierChip, Tooltip } from './components.js';
 import { data, useData, localAsset } from '../data.js';
 import { parseRichText, rtClassName } from './richText.js';
 import { t as tr } from '../../../shared/i18n.js';
+import { recoverImageError } from '../image.js';
 import {
   uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
 } from './assetUrls.js';
@@ -65,7 +66,8 @@ export function makeLookups(ready = true) {
 export function Img({ src, class: cls, alt = '', fallback = null, style }) {
   const [bad, setBad] = useState(null);
   if (!src || bad === src) return fallback;
-  return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style} onError=${() => setBad(src)} />`;
+  return html`<img crossorigin="anonymous" class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style}
+    onError=${(event) => recoverImageError(event, () => setBad(src))} />`;
 }
 
 /** Official UI sprite by 'group/key' with a fallback. */

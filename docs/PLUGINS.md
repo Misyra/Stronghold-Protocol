@@ -354,10 +354,11 @@ keeps what still fits, by id, the rest marked as not in effect [ASSUMED]. Each p
 (the room's art too), in the set's load order (fetched side by side); one the server no longer has is skipped and stays
 switched on for when it is back.
 
-**Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it still counts as the original
-game in the statistics overview [ASSUMED, pending the owner's decision]; every stats record names the room's visual set
-(`vs`, null without cosmetic plugins — a player's personal plugins are not recorded), so leaving such matches out is a
-one-line filter (`public/js/ui/stats.js`). The diagnostics name the art: `content: vanilla cs=… cosmetic vs=…
+**Statistics.** A match with cosmetic plugins only plays the vanilla content (`cs`), so it counts as the original game in
+the statistics overview — the owner's decision of 2026-10-13: its gameplay and numbers are unchanged, and a player's
+personal cosmetics never matter; only matches with plugins that change gameplay will be left out (P1b / P1c). Every stats
+record names the room's visual set (`vs`, null without cosmetic plugins — a player's personal plugins are not recorded:
+`public/js/ui/stats.js`). The diagnostics name the art: `content: vanilla cs=… cosmetic vs=…
 plugins=id@version(hash),… personal=id,…`. Replays and BattleSpecs carry `cs` only, not `vs` (P1c): a battle replayed from
 a spec, or from a bug report's JSON, shows the installation's art — the report's content line names the set it had.
 

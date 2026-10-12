@@ -100,7 +100,8 @@
 //     PLUGIN_CONFLICT / PLUGIN_LIMIT otherwise; none given to the Lobby → PLUGIN_UNKNOWN) and the room's content becomes
 //     `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings, bytes }`: `cs` stays the vanilla
 //     one — art never changes a battle, so the match, its BattleSpecs and the golden results are those of the original
-//     content and ▸ such a match still counts as the original game (the statistics overview) [ASSUMED] —, `vs` names the
+//     content and ▸ such a match counts as the original game in the statistics overview (the owner's decision of
+//     2026-10-13: gameplay and numbers unchanged) —, `vs` names the
 //     art every member's page draws with (/vs/<vs16>/overlay.json, composed by public/js/content.js on the page's own
 //     manifest). An empty list brings back
 //     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the

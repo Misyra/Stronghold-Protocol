@@ -26,9 +26,10 @@
 // the newest records and of an export file: they stay on this device unless the player exports them.
 //
 // The art (DESIGN §32 P1a): every record names the room's visual set `vs` — the cosmetic plugins its host switched on
-// (room.state.content.vs; null without any). The overview does not look at it yet: whether a match with cosmetic
-// plugins counts as the original game is the owner's decision still to come, and then the filter is one line here.
-// A player's personal plugins are not the room's and are not recorded.
+// (room.state.content.vs; null without any). The overview does not filter on it: a match with only cosmetic plugins
+// counts as the original game (the owner's decision of 2026-10-13: its gameplay and numbers are unchanged); only matches
+// with plugins that change gameplay will be left out (P1b / P1c). A player's personal plugins never matter and are not
+// recorded.
 //
 // Format evolution: the envelope carries a version (`STATS_VERSION`); `migrateStats` walks records through a chain of
 // per-version steps and every loaded / imported record passes `normalizeRecord`, a strict schema: missing fields get

@@ -175,7 +175,7 @@ describe('local stats: replay dedupe', () => {
 
 describe('local stats: the room\'s cosmetic plugins (DESIGN §32 P1a review round 2)', () => {
   const VS = 'ab'.repeat(32);
-  test('every record names the room\'s visual set vs (null without plugins); the overview does not filter on it yet', () => {
+  test('every record names the room\'s visual set vs (null without plugins); a cosmetic-only match counts like any (the owner\'s decision of 2026-10-13)', () => {
     const plain = buildRecord(baseResult(), { myId: 'p1', now: 1 });
     assert.equal(plain.vs, null, 'no cosmetic plugin: null');
     const skinned = buildRecord(baseResult({ seed: 7 }), { myId: 'p1', vs: VS, now: 2 });
@@ -188,7 +188,7 @@ describe('local stats: the room\'s cosmetic plugins (DESIGN §32 P1a review roun
     s.room.content = { cs: 'cd'.repeat(32), vanilla: true, vs: VS, plugins: [{ id: 'skin' }] };
     const quit = buildQuitRecord(s, { live: watched([liveState({ phase: PHASE.INFO_CHECK, round: 0 }), s]), now: 5_000_000 });
     assert.equal(quit.vs, VS);
-    // the overview counts both alike (the owner has yet to decide)
+    // the overview counts both alike: cosmetic plugins change neither gameplay nor numbers (the owner's decision of 2026-10-13)
     let stats = emptyStats();
     for (const r of [plain, skinned]) stats = appendRecord(stats, r).stats;
     assert.deepEqual([aggregateStats(stats.records).total, aggregateStats(stats.records).count], [2, 2]);

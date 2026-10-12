@@ -136,12 +136,6 @@ before any member is deployed (§30.28). The reservation ends when that teammate
 a strategy, reserve stock, or stop an immediate merge. A reserved strategy keeps a quarter of its unreserved draw
 weight (`SOFT_BAND_RESERVE` = 0.25), so it can still be chosen. Mode-inactive bonds stay weight 0 (DESIGN §21.26).
 
-Branch exception (2026-10-11): equipment gifted by an operator passive/trait is outside shared equipment stock,
-including random, copied and prep-end traits. Ordinary purchase/reward/strategy/item-effect/console routes keep their
-stock limits. Per-instance provenance preserves zero gifted copies and the real one-copy contribution of a mixed
-gift/purchase elite through equipment, returns, destruction and checkpoint restore; legacy records without
-provenance retain ordinary 1/2-copy occupancy. See [META.md](../development/META.md#shared-inventory-after-023-design-298).
-
 [ASSUMED] AI reactions are cosmetic social choices, enabled by default and disabled with `SP_BOT_EMOTES=0`. Only
 mixed human/AI matches emit them, through the existing whitelist and cooldown. A human emote gets at most one eligible
 bot reply. Settlement uses that round's results (kills then damage, stable seat tie-break), once per round; the third

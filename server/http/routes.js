@@ -3,7 +3,8 @@
 //
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
-//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
+//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, the vanilla content
+//     hash `content.vanilla` and the modded content sets in use `content.sets` — DESIGN §32 —, sockets, sessions,
 //     rooms, matches), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
 //     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
 //     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
@@ -22,17 +23,22 @@ const MAX_URL_LENGTH = 4096;
 /**
  * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
+ *           lobby: import('../lobby.js').Lobby, content?: { cs: string } | null,
+ *           traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
  *           assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null,
  *           views?: ReturnType<typeof import('./assetViews.js').createManifestViews> | null }} health
+ *   content: the server's vanilla content (server/plugins/identity.js)
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, traffic, assetIndex, views }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
+    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with plugins are in use —
+    // none before rooms can choose plugins (P1c)
+    ...(content ? { content: { vanilla: content.cs, sets: 0 } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
   if (withTraffic && traffic) report.traffic = traffic.snapshot();

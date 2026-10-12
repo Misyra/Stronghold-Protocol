@@ -5,10 +5,16 @@ import { N_ } from './i18n.js';
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '0.2.6-dev';
+export const APP_VERSION = '0.3.0-dev';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
+/**
+ * The plugin API levels this build supports (DESIGN §32, shared/plugins/manifest.js): a manifest 2 states the level it
+ * is written for (`api`); a level outside min…current keeps the plugin out. The level rises when the data shapes, the
+ * DSL vocabulary or the SDK a plugin relies on change incompatibly (CHANGELOG says how to migrate). [ASSUMED]
+ */
+export const PLUGIN_API = Object.freeze({ current: 1, min: 1 });
 
 export const MAX_SEATS = 4;
 /**

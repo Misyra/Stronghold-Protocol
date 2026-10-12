@@ -1,3 +1,8 @@
+## 0.3.0-dev — 未发布
+
+### 插件系统（开发中）
+- 第一步：内容标识（服务器实际下发的模拟代码和游戏数据的哈希，出现在 `/healthz`、诊断信息和每场战斗的数据里）和插件注册表（`plugins/` 文件夹、`/plugins/index.json`、`node tools/plugin.mjs list | check`）。只加载语言包，不执行任何第三方代码，玩家可见行为不变。说明见 [docs/PLUGINS.md](docs/PLUGINS.md)。
+
 ## 0.2.6-dev — 未发布
 
 ### 开服流量

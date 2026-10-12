@@ -19,6 +19,8 @@
 //   diagnosticsText({ state, settings, attachBattle })  the report of this page (this browser, the battle on screen)
 //
 // Report keys are English on purpose: the text is read by developers and searched in issues, whatever the UI language.
+// The second line names the content the page plays (contentLine, DESIGN §32): `vanilla cs=<64 hex>` — the original
+// content of that exact code and data — or, in a room with plugins (P1c), `MODDED cs=… plugins=…`.
 
 import { APP_VERSION } from '../../shared/constants.js';
 import { TRAFFIC_CATEGORIES, trafficCategory } from '../../shared/assetPaths.js';
@@ -248,10 +250,32 @@ const spanOf = (ms) => {
 };
 const join = (...parts) => parts.filter((p) => p != null && p !== '' && p !== false).join(' | ');
 
+const isCs = (v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+const PLUGINS_SHOWN = 32;
+
 /**
- * The report text: a ```text block (version, time, browser, screen, connection, where the player is, settings, the
- * error log newest first) and, with `battle`, a ```json block of its spec. Secrets of `state` are whole tokens in the
- * prose and exact string values in the JSON.
+ * What the report says the page plays (DESIGN §32): the room's content set (room.state.content), else the server's
+ * vanilla content (welcome.content, the store's `content`) — `vanilla cs=<64 hex>`, `MODDED cs=<64 hex>
+ * plugins=<id>@<version>(<first 8 digits of its hash>),…` (a room with plugins), or `unknown` before the first welcome.
+ * @param {any} state the store state
+ */
+export function contentLine(state) {
+  const room = state?.room?.content;
+  if (room && isCs(room.cs)) {
+    const plugins = Array.isArray(room.plugins) ? room.plugins : [];
+    if (room.vanilla === true && !plugins.length) return `vanilla cs=${room.cs}`;
+    const list = plugins.slice(0, PLUGINS_SHOWN).map((p) => `${String(p?.id ?? '?').slice(0, 32)}@${String(p?.version ?? '?').slice(0, 32)}`
+      + (typeof p?.hash === 'string' && /^[0-9a-f]{8,}$/.test(p.hash) ? `(${p.hash.slice(0, 8)})` : ''));
+    const more = plugins.length > PLUGINS_SHOWN ? ` +${plugins.length - PLUGINS_SHOWN}` : '';
+    return `MODDED cs=${room.cs}${list.length ? ` plugins=${list.join(',')}${more}` : ''}`;
+  }
+  return isCs(state?.content?.vanilla) ? `vanilla cs=${state.content.vanilla}` : 'unknown';
+}
+
+/**
+ * The report text: a ```text block (version, content, time, browser, screen, connection, where the player is,
+ * settings, the error log newest first) and, with `battle`, a ```json block of its spec (its `cs` included). Secrets of
+ * `state` are whole tokens in the prose and exact string values in the JSON.
  * @param {{ state: any, env?: any, settings?: any, battle?: any, entries?: any[], dropped?: number, total?: number,
  *   now?: number, pageStart?: number, version?: string, traffic?: ReturnType<typeof trafficSummary> | null }} input
  */
@@ -262,6 +286,7 @@ export function buildDiagnostics(input) {
   const lines = [];
   lines.push('Stronghold-Protocol diagnostics');
   lines.push(`version: ${input.version ?? APP_VERSION}`);
+  lines.push(`content: ${contentLine(state)}`);
   lines.push(`time: ${new Date(now).toISOString()} | page open ${spanOf(now - (input.pageStart ?? pageStart))}`);
   if (env.ua) lines.push(`browser: ${env.ua}`);
   if (env.gpu) lines.push(`gpu: ${env.gpu}`);

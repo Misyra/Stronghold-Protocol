@@ -31,6 +31,8 @@ export function embeddedStatsAssets(css) {
 		recordDefeats: extract('.D_liCN .C8cb_l:nth-child(3) .QjacBn', 'image/png'),
 		strategyTopFrame: extract('.MjyVeP .oetJsV', 'image/png'),
 		bondTopFrame: extract('.zJvtrR', 'image/png'),
+		headingIconFrame: extract('.d55Z07 .YhjRsw', 'image/png'),
+		headingIcon: extract('.d55Z07 .YhjRsw:after', 'image/png'),
 		strategyBadgeFrame: extract('.jDhW1o', 'image/png'),
 		strategyBadge: extract('.jDhW1o.GajVs2:after', 'image/png'),
 	};
@@ -74,6 +76,9 @@ export async function statsTemplateJobs(root, { offline = false, fetchImpl = glo
 		['recordDefeats', 'record-defeats.png', embedded.recordDefeats],
 		['strategyTopFrame', 'strategy-top-frame.png', embedded.strategyTopFrame],
 		['bondTopFrame', 'bond-top-frame.png', embedded.bondTopFrame],
+		['headingBar', 'heading-bar.png', `${CDN}/img/title-bg.26ebe7.png`],
+		['headingIconFrame', 'heading-icon-frame.png', embedded.headingIconFrame],
+		['headingIcon', 'heading-icon.png', embedded.headingIcon],
 		['strategyBadgeFrame', 'strategy-badge-frame.png', embedded.strategyBadgeFrame],
 		['strategyBadge', 'strategy-badge.png', embedded.strategyBadge],
 	];

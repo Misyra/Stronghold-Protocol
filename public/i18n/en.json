@@ -1228,5 +1228,7 @@
   "库存不足": "Out of stock",
 	"TOP{n}": "TOP{n}",
 	"已获得特殊标识的策略": "Strategies with special badges",
-	"暂无获得特殊标识的策略": "No strategies have earned a special badge yet"
+	"暂无获得特殊标识的策略": "No strategies have earned a special badge yet",
+	"盟约记录": "Alliance Records",
+	"策略记录": "Strategy Records"
 }

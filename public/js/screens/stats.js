@@ -257,6 +257,12 @@ function Bands({ agg, gd, records }) {
 	const bonds = Object.entries(agg.bonds).sort((a, b) => (b[1].games - a[1].games) || a[0].localeCompare(b[0]));
 	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
 		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
+		<h3 class="st-record-heading" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
+			<span class="st-record-heading__icon" aria-hidden="true">
+				<${Img} src=${uiUrl(gd.m, 'statistics/headingIconFrame')} class="st-record-heading__frame" />
+				<${Img} src=${uiUrl(gd.m, 'statistics/headingIcon')} class="st-record-heading__glyph" />
+			</span><span>${t('盟约记录')}</span>
+		</h3>
 		<h4 class="st-sub st-favorites__heading">${t('最常使用的盟约')}</h4>
 		${bonds.length ? html`<div class="st-top-bonds">
 			${bonds.slice(0, 3).map(([bondId], index) => {
@@ -273,6 +279,12 @@ function Bands({ agg, gd, records }) {
 				</div>`;
 			})}
 		</div>` : html`<p class="st-hint">${t('暂无盟约使用记录')}</p>`}
+		<h3 class="st-record-heading st-record-heading--strategy" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
+			<span class="st-record-heading__icon" aria-hidden="true">
+				<${Img} src=${uiUrl(gd.m, 'statistics/headingIconFrame')} class="st-record-heading__frame" />
+				<${Img} src=${uiUrl(gd.m, 'statistics/headingIcon')} class="st-record-heading__glyph" />
+			</span><span>${t('策略记录')}</span>
+		</h3>
 		${rows.length ? html`<h4 class="st-sub st-strategies__heading">${t('最常使用的策略')}</h4>
 			<div class="st-top-strategies">
 				${rows.slice(0, 3).map(([bandId, v], index) => {

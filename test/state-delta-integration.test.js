@@ -6,6 +6,7 @@ import { TestClient } from './helpers/wsClient.js';
 import { StateReceiver } from '../shared/stateDelta.js';
 import { PROTOCOL_VERSION } from '../shared/constants.js';
 import { StubMatch } from '../server/match/StubMatch.js';
+import { STATE_COALESCE, NET_DEFAULTS } from '../server/net.js';
 
 async function fixture(t, opts = {}) {
   const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, store: null,
@@ -22,6 +23,53 @@ async function fixture(t, opts = {}) {
   };
   return { srv, connect };
 }
+
+test('real WebSockets recover coalesced slow states across delta/legacy clients and critical barriers', async t => {
+  const { srv, connect } = await fixture(t);
+  const modern = await connect(true), legacy = await connect(false), spectator = await connect(true);
+  await modern.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+  const roomState = await modern.waitFor('room.state');
+  await legacy.request({ t: 'room.join', code: roomState.code });
+  await spectator.request({ t: 'room.spectate', code: roomState.code });
+  const room = srv.lobby.rooms.get(roomState.code), scope = {};
+  const view = n => ({ t: 'm.public', phase: 'PREP', round: 1, n, stable: 'x'.repeat(600), [STATE_COALESCE]: scope });
+  srv.lobby.broadcastRoom(room, view(-1));
+  for (const c of [modern, spectator]) await c.waitFor('m.state', m => m.kind === 'm.public' && m.full?.n === -1);
+  await legacy.waitFor('m.public', m => m.n === -1);
+  const sockets = [modern, legacy, spectator].map(c => srv.registry.byId(c.id).ws);
+  // Force the pressure signal, not TCP delivery: all recovered frames still traverse actual sockets.
+  for (const ws of sockets) Object.defineProperty(ws, 'bufferedAmount', { configurable: true, value: NET_DEFAULTS.snapDropBytes + 1 });
+  try {
+    for (let n = 0; n < 200; n++) {
+      srv.lobby.broadcastRoom(room, view(n));
+      srv.lobby.sendToPlayer(room, modern.id, { t: 'm.private', playerId: modern.id, n, [STATE_COALESCE]: scope });
+    }
+    assert.deepEqual(sockets.map(ws => srv.network._blockedOutbound.get(ws).size), [2, 1, 1]);
+    srv.lobby.broadcastRoom(room, { t: 'b.start', battleId: 'barrier' });
+    srv.lobby.broadcastRoom(room, view(200));
+    srv.lobby.broadcastRoom(room, { t: 'm.result' });
+    srv.lobby.broadcastRoom(room, view(201));
+  } finally { for (const ws of sockets) delete ws.bufferedAmount; }
+  for (const c of [modern, spectator]) {
+    const rx = new StateReceiver();
+    const baseline = c.log.find(m => m.t === 'm.state' && m.full?.n === -1);
+    rx.receive(baseline);
+    const latest = await c.waitFor('m.state', m => m.kind === 'm.public' && !!m.patch);
+    assert.equal(rx.receive(latest).message.n, 199);
+    if (c === modern) {
+      const privateState = await c.waitFor('m.state', m => m.kind === 'm.private');
+      assert.deepEqual(rx.receive(privateState).message, { t: 'm.private', playerId: modern.id, n: 199 });
+    }
+    await c.waitFor('b.start', m => m.battleId === 'barrier');
+    assert.equal(rx.receive(await c.waitFor('m.state', m => m.kind === 'm.public')).message.n, 200);
+    await c.waitFor('m.result');
+    const recovered = await c.waitFor('m.state', m => m.kind === 'm.public');
+    assert.equal(recovered.full.n, 201);
+  }
+  for (const n of [199, 200, 201]) assert.equal((await legacy.waitFor('m.public')).n, n);
+  assert.ok(!spectator.log.some(m => m.kind === 'm.private'));
+  assert.ok(!legacy.log.some(m => m.t === 'm.state' || m.t === 'm.private'));
+});
 
 test('real room broadcast burst: sliced mixed-client sends preserve state/private/result order', async (t) => {
   const { srv, connect } = await fixture(t);

@@ -134,7 +134,7 @@ test('soft backpressure drops snapshots only; hard backpressure disconnects are 
   const ws=socket(network);ws.bufferedAmount=NET_DEFAULTS.snapDropBytes+1;
   assert.equal(send(ws,{t:'b.snap'}),false);assert.equal(send(ws,{t:'ok'}),true);
   ws.bufferedAmount=NET_DEFAULTS.hardBufferBytes+1;assert.equal(send(ws,{t:'ok'}),false);
-  const s=network.diagnostics.stats();assert.equal(s.droppedSnapshots,1);assert.equal(s.slowDisconnects,1);assert.equal(s.sentFrames,1);
+  const s=network.diagnostics.stats();assert.equal(s.droppedSnapshots,1);assert.equal(s.slowDisconnects,1);assert.equal(s.sentFrames,0, 'reliable replies wait instead of growing the congested socket buffer');
   assert.equal(socketDiagnostics.has(ws),false);
 });
 

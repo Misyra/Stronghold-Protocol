@@ -177,6 +177,14 @@ describe('content.js', () => {
     assert.match((await fetchVisualDoc('cd'.repeat(32), { fetch: async () => res(200, doc) })).error, /names another set/);
     assert.match((await fetchVisualDoc(vs, { fetch: async () => res(200, '{"nope') })).error, /not JSON/);
     assert.match((await fetchVisualDoc('short')).error, /no visual hash/);
+    // the composition untouched, the writes not the ones its vs names (another file of the table into another slot, a
+    // plugin's list twice, a list of a plugin it does not name): refused, nothing thrown
+    const other = [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'a.png' }];
+    const served = async (writes) => (await fetchVisualDoc(vs, { fetch: async () => res(200, { ...doc, writes }) })).error;
+    assert.match(await served([{ id: 'red', ops: other }]), /the writes of red are not the ones its vs names/);
+    assert.match(await served([...doc.writes, ...doc.writes]), /not one list per plugin/);
+    assert.match(await served([...doc.writes, { id: 'blue', ops: [] }]), /writes of a plugin its composition does not name/);
+    assert.match(await served([]), /the writes of red are not the ones its vs names/);
     // an attempt that never answers is given up after the timeout (and tried again like a network error)
     let tries = 0;
     const stalled = await fetchVisualDoc(vs, { timeoutMs: 20, retryDelays: [0], wait: async () => {}, fetch: () => { tries++; return new Promise(() => {}); } });
@@ -217,16 +225,27 @@ describe('content.js', () => {
     await until(() => toasts.length === 1, 'the toast');
     assert.equal(layers.room, null);
     assert.equal(toasts[0][1], 'warn');
-    // a document of the room's own vs whose writes were changed (the same file table): refused the same way, never thrown
-    const forged = roomDoc('forged');
-    forged.writes[0].ops = [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'a.png' }];
-    app.set({ room: { content: { vs: forged.visual.vs } } });
-    pending.get(`/vs/${forged.visual.vs.slice(0, 16)}/overlay.json`)(res(200, forged));
-    await tick(); await tick();
-    assert.equal(layers.room, null, 'the installation\'s art');
-    assert.equal(data.get('assets').chars.char_112_siege.avatar, BASE.chars.char_112_siege.avatar);
     off();
     assert.equal(data.get('assets'), data.getRaw('assets'), 'uninstalled: the file as downloaded');
+  });
+
+  test('installContent: a document of the room\'s vs whose writes were changed (the same file table) → the installation\'s art, one toast, nothing thrown', async () => {
+    const app = createStore({ room: null });
+    const data = createDataStore({ fetch: async () => res(200, BASE), retryDelays: [], timeoutMs: 0 });
+    await data.load('assets');
+    const layers = createCosmeticLayers();
+    const forged = roomDoc('forged');
+    forged.writes[0].ops = [{ at: ['chars', 'char_112_siege', 'avatar'], file: 'a.png' }];
+    const toasts = [];
+    const off = installContent({ store: app, data, layers, fetch: async () => res(200, forged), toast: (text, kind) => toasts.push([text, kind]), retryDelays: [] });
+    app.set({ room: { code: 'ABCD', content: { cs: 'ee'.repeat(32), vanilla: true, vs: forged.visual.vs, plugins: [{ id: 'forged' }] } } });
+    await until(() => toasts.length === 1, 'the toast');
+    await tick();
+    assert.equal(layers.room, null, 'no room layer');
+    assert.deepEqual(toasts.map(([, kind]) => kind), ['warn'], 'one toast');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, BASE.chars.char_112_siege.avatar, 'the installation\'s art, not the forged slot');
+    assert.equal(data.get('assets').chars.char_102_texas.avatar, BASE.chars.char_102_texas.avatar, 'nor the slot the vs names');
+    off();
   });
 
   test('installContent: an <img> of the interface whose plugin file will not load makes its entry fall back (one toast)', async () => {

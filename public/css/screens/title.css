@@ -197,7 +197,7 @@
 .title-cn em { font-style: normal; color: var(--mint-500); text-shadow: 0 0 .26rem rgba(23, 249, 183, .45); }
 .title-tag {
   margin-top: .12rem;
-  font-size: calc(.19 * var(--t));
+  font-size: calc(.19 * var(--utility-text, var(--t)));
   color: var(--text-lo);
   letter-spacing: .1em;
   animation: rise-in 600ms 200ms var(--ease-out) backwards;
@@ -230,7 +230,7 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
-.title-name-feedback { margin: -.04rem 0 0; font-size: calc(.13 * var(--t)); line-height: 1.6; color: var(--text-dim); }
+.title-name-feedback { margin: -.04rem 0 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-dim); }
 .title-name-feedback a { color: var(--mint-500); text-decoration: underline; text-underline-offset: .02rem; }
 .title-invite {
   display: flex;
@@ -240,11 +240,11 @@
   background: rgba(246, 163, 41, .08);
   border: 1px solid rgba(246, 163, 41, .35);
   color: var(--amber);
-  font-size: calc(.16 * var(--t));
+  font-size: calc(.16 * var(--utility-text, var(--t)));
 }
 .title-invite .icon { width: .2rem; height: .2rem; }
-.title-invite b { font-size: calc(.2 * var(--t)); letter-spacing: .2em; color: #ffd08a; }
-.title-conn { display: flex; align-items: center; justify-content: center; gap: .1rem; min-height: .32rem; font-size: calc(.14 * var(--t)); color: var(--text-lo); }
+.title-invite b { font-size: calc(.2 * var(--utility-text, var(--t))); letter-spacing: .2em; color: #ffd08a; }
+.title-conn { display: flex; align-items: center; justify-content: center; gap: .1rem; min-height: .32rem; font-size: calc(.14 * var(--utility-text, var(--t))); color: var(--text-lo); }
 /* 统计 (the local stats page) beside the language menu in the top-right corner */
 .title-corner__tools { display: flex; align-items: center; justify-content: flex-end; gap: .1rem; margin-bottom: .1rem; }
 .title-corner__tools .title-lang { margin-bottom: 0; }
@@ -253,7 +253,7 @@
 .title-tools { display: flex; align-items: center; flex: none; gap: .08rem; }
 .title-tools > .fsbtn { width: max(.38rem, 28px); height: max(.38rem, 28px); margin: 0; }
 .title-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .12rem; max-width: 4.9rem; margin-top: .12rem; }
-.title-actions > .btn, .title-tools > .btn { min-width: 0; min-height: max(.38rem, 28px); height: auto; padding: .06rem .08rem; gap: .05rem; font-size: calc(.14 * var(--t)); letter-spacing: 0; white-space: normal; text-align: center; }
+.title-actions > .btn, .title-tools > .btn { min-width: 0; min-height: max(.38rem, 28px); height: auto; padding: .06rem .08rem; gap: .05rem; font-size: calc(.14 * var(--utility-text, var(--t))); letter-spacing: 0; white-space: normal; text-align: center; }
 .title-actions > .btn .icon, .title-tools > .btn .icon { width: .16rem; height: .16rem; }
 @media (max-width: 767px), (pointer: coarse) {
   .title-actions > .btn { min-height: 36px; }
@@ -261,18 +261,18 @@
   .title-meta { gap: .1rem; flex-wrap: wrap; }
 }
 .about-panel { max-width: calc(100vw - .4rem); }
-.about-panel .modal__body { font-size: calc(.17 * var(--t)); line-height: 1.8; color: var(--text-md); }
+.about-panel .modal__body { font-size: calc(.17 * var(--utility-text, var(--t))); line-height: 1.8; color: var(--text-md); }
 .about-panel p { margin: 0 0 .16rem; }
-.about-intro { color: var(--text-hi); font-size: calc(.22 * var(--t)); font-weight: 700; }
-.about-intro .num { margin-left: .08rem; color: var(--mint-400); font-size: calc(.17 * var(--t)); }
+.about-intro { color: var(--text-hi); font-size: calc(.22 * var(--utility-text, var(--t))); font-weight: 700; }
+.about-intro .num { margin-left: .08rem; color: var(--mint-400); font-size: calc(.17 * var(--utility-text, var(--t))); }
 .about-links { display: grid; grid-template-columns: 1fr 1fr; gap: .2rem .28rem; margin: .2rem 0 .24rem; }
 .about-links div { min-width: 0; }
-.about-links dt { color: var(--text-lo); font-size: calc(.15 * var(--t)); }
+.about-links dt { color: var(--text-lo); font-size: calc(.15 * var(--utility-text, var(--t))); }
 .about-links dd { margin: .04rem 0 0; }
 .about-panel a { color: var(--mint-400); text-decoration: underline; overflow-wrap: anywhere; }
 .about-panel a:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 3px; }
 .about-section { margin-top: .22rem; padding-top: .18rem; border-top: 1px solid var(--line-2); }
-.about-section h3 { margin: 0 0 .12rem; color: var(--text-hi); font-size: calc(.18 * var(--t)); }
+.about-section h3 { margin: 0 0 .12rem; color: var(--text-hi); font-size: calc(.18 * var(--utility-text, var(--t))); }
 .about-credits { display: flex; flex-direction: column; gap: .05rem; }
 .about-credits h3 { margin-bottom: .04rem; }
 @media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }
@@ -280,11 +280,11 @@
    The height is max(design, 1.4em) so the buttons still hold their text at 设置 →「文字大小」 大 / 特大 (on a phone
    1rem is clamped at 40 px and .3rem is only 12 px, less than the enlarged label). */
 .title-lang { display: inline-flex; margin-bottom: .1rem; }
-.title-lang button { min-width: .74rem; height: max(.3rem, 1.4em); font-size: calc(.14 * var(--t)); cursor: pointer; }
-.lang-select select { height: max(.38rem, 1.4em); min-width: 1.6rem; padding: 0 .12rem; background: #0a0d0c; border: 0; color: var(--text-hi); font-size: calc(.16 * var(--t)); cursor: pointer; }
-.title-lang.lang-select select { height: max(.3rem, 1.4em); font-size: calc(.14 * var(--t)); }
+.title-lang button { min-width: .74rem; height: max(.3rem, 1.4em); font-size: calc(.14 * var(--utility-text, var(--t))); cursor: pointer; }
+.lang-select select { height: max(.38rem, 1.4em); min-width: 1.6rem; padding: 0 .12rem; background: #0a0d0c; border: 0; color: var(--text-hi); font-size: calc(.16 * var(--utility-text, var(--t))); cursor: pointer; }
+.title-lang.lang-select select { height: max(.3rem, 1.4em); font-size: calc(.14 * var(--utility-text, var(--t))); }
 html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
-.title-conn .ping { height: max(.26rem, 1.6em); font-size: calc(.15 * var(--t)); }
+.title-conn .ping { height: max(.26rem, 1.6em); font-size: calc(.15 * var(--utility-text, var(--t))); }
 
 .title-foot {
   position: absolute;
@@ -295,7 +295,7 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  font-size: calc(.13 * var(--t));
+  font-size: calc(.13 * var(--utility-text, var(--t)));
   color: var(--text-dim);
 }
 .title-foot__actions { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; }
@@ -316,17 +316,17 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .res-pill.is-on { border-color: var(--mint-800); background: rgba(13, 20, 17, .86); }
 .res-pill__head {
   display: flex; align-items: baseline; justify-content: space-between; gap: .12rem; width: 100%;
-  padding: 0; background: none; border: 0; color: var(--text-hi); font-size: calc(.15 * var(--t)); text-align: left; cursor: pointer;
+  padding: 0; background: none; border: 0; color: var(--text-hi); font-size: calc(.15 * var(--utility-text, var(--t))); text-align: left; cursor: pointer;
 }
 .res-pill__head:disabled { cursor: default; }
 .res-pill__label { display: flex; align-items: baseline; gap: .06rem; }
 .res-pill.is-on .res-pill__label { color: var(--mint-400); }
 .res-pill__label .micro { color: var(--text-dim); }
-.res-pill__state { font-size: calc(.14 * var(--t)); color: var(--mint-400); white-space: nowrap; }
+.res-pill__state { font-size: calc(.14 * var(--utility-text, var(--t))); color: var(--mint-400); white-space: nowrap; }
 .res-pill__body { display: flex; flex-direction: column; gap: .07rem; margin-top: .09rem; }
 .res-pill__body .pbar { min-width: 0; }
-.res-pill__text { margin: 0; font-size: calc(.13 * var(--t)); line-height: 1.6; color: var(--text-md); }
+.res-pill__text { margin: 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-md); }
 .res-pill__text.is-dim { color: var(--text-dim); }
 .res-pill__text.is-warn { color: var(--amber); }
-.res-pill__hint { margin: .06rem 0 0; font-size: calc(.13 * var(--t)); line-height: 1.6; color: var(--text-dim); }
+.res-pill__hint { margin: .06rem 0 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-dim); }
 .res-pill:hover .res-pill__hint { color: var(--text-md); }

@@ -43,6 +43,28 @@ after(async () => {
   if (temp) await fs.rm(temp, { recursive: true, force: true });
 });
 
+test('the production bundle carries the management density layer after the touch/game styles', async () => {
+  const cssFiles = [...new Set((manifest['index.html']?.css || []).concat(
+    Object.values(manifest).filter((e) => e.isEntry && e.css).flatMap((e) => e.css)))];
+  assert.ok(cssFiles.length, 'the entry exposes a stylesheet');
+  const css = (await Promise.all(cssFiles.map((file) => fs.readFile(path.join(outDir, file), 'utf8')))).join('\n');
+  assert.match(css, /\.modal--utility/);
+  assert.match(css, /--utility-text:\s*max\(var\(--t\),\s*64px\)/);
+  assert.match(css, /\.room-screen--coop/);
+  assert.match(css, /\.room-topbar__tools/);
+  assert.match(css, /\.rotate-hint__fullscreen/);
+  assert.match(css, /grid-template-areas:[^;}]*controls title invite/);
+  // The compact overrides must land after the rules they override, and the landscape gate must survive
+  // the concatenation: theme.css (base + gate) → … → devices.css → utility-mobile.css.
+  assert.ok(css.indexOf('.modal--utility') > css.indexOf('.modal__box'), 'the density layer follows components.css');
+  assert.ok(css.lastIndexOf('.room-screen .room-bar') > css.indexOf('.room-bar::before'), 'and room.css');
+  assert.match(css, /\.sp-rotatable \.rotate-hint\s*\{\s*display:\s*grid/);
+  // theme.css stays the only place that defines the text root: the new layer declares --utility-text and nothing else
+  const themeSource = await fs.readFile(path.join(root, 'public/css/theme.css'), 'utf8');
+  const count = (text, re) => (text.match(re) || []).length;
+  assert.equal(count(css, /--t\s*:/g), count(themeSource, /--t\s*:/g), 'no stylesheet may add a --t definition');
+});
+
 test('built pages preserve runtime CDN/version injection and serve immutable compressed artifacts', async () => {
   for (const route of ['/', '/index.html', '/build/index.html']) {
     const response = await fetch(origin + route);

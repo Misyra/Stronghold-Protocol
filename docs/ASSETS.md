@@ -110,16 +110,23 @@ including across source revisions, and the ledger is updated even on a skip. Led
 branch for cache grouping and Spine page lookup, rather than the mirror or pinned transport URL.
 
 JSON indexes are verified before parsing or planning. Missing snapshot entries, unsupported source URLs, malformed
-API responses and API failures fail closed; they do not allow stale cache reuse. A confirmed missing source may remove
-its obsolete output, but a source API outage, network failure, or content mismatch preserves the last verified file and
-its provenance for a later retry; that retained file remains eligible for the rebuilt manifest. Unattempted cached alternatives cannot enter the rebuilt manifest. A verified run exits 1 on
+API responses and API failures fail closed; they do not allow stale indexes to drive the plan. Failed asset replacements,
+including confirmed source absence and HTTP 404/410, preserve existing bytes and ledger records. `--prune` protects
+these paths across all consumers, even when an older ledger has no blob record. Preservation alone does not authorize
+publication: only files matching the current source blob or revalidated against a previous ledger blob can enter the
+rebuilt manifest. Legacy files without that proof remain on disk for retry, excluded from the manifest and post-processing.
+Unattempted cached alternatives cannot enter the rebuilt manifest. A verified run exits 1 on
 download errors or font-generation errors; missing optional sources still follow the existing fallback/drop rules,
 and `--strict` rejects dropped leaves. The manifest shrink guard remains in effect.
 
 Mutable atlases are downloaded and verified in raw form on each verified run, then normalized by the existing Spine
-pipeline. Font originals use the same verifier; the small generated WOFF2 files and `fonts.css` are cleared before
-generation so unavailable originals cannot leave old generated outputs. Local-client extraction overlays are not
-upstream downloads and are outside this check.
+pipeline. Atlas page discovery, normalization and skeleton parsing (including parse-cache reuse) require accepted inputs;
+every texture page must also be accepted. A previously normalized atlas that no longer matches its raw blob is preserved
+on failure but cannot be used until a verified raw replacement arrives. Pruning defers deletion within a failed model's
+directory, preserving old extra pages without using a rejected atlas for page discovery.
+Font originals use the same verifier and accepted file set. Accepted originals reuse matching WOFF2 outputs;
+rejected originals lose their generated WOFF2 output and CSS references. CSS replacement is atomic.
+Local-client extraction overlays are not upstream downloads and are outside this check.
 
 `--offline`, `--add-only` and `--local-spines` are incompatible with verification. `--dry-run` still verifies the indexes
 needed to produce the plan, but does not verify asset payloads. `GH_TOKEN`, when set, authenticates only requests to

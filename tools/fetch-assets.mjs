@@ -446,14 +446,19 @@ async function main() {
 
   // Fonts (--add-only: not rebuilt — public/fonts may be another checkout's; the manifest keeps its current entry)
   let fontErrors = [];
+  let acceptedFonts;
   if (!opts.offline && !opts.addOnly) {
     const fdl = new Downloader({ root: FONTS, ledgerPath: join(CACHE, 'fonts-ledger.json'), concurrency: 4, force: opts.force, log, ...network });
     await fdl.loadLedger();
     await fdl.run(fontJobs(), 'fonts');
+    acceptedFonts = fdl.accepted;
     dl.totals.bytesDownloaded += fdl.totals.bytesDownloaded;
     for (const k of ['ok', 'skip', 'miss', 'error']) dl.totals[k] += fdl.totals[k];
   }
-  const fonts = opts.addOnly ? { files: {}, errors: [] } : await buildFonts(FONTS, log, { verified: !!verifier });
+  const fonts = opts.addOnly ? { files: {}, errors: [] } : await buildFonts(FONTS, log, {
+    verified: !!verifier,
+    ...(verifier ? { available: (rel) => acceptedFonts.has(rel) } : null),
+  });
   fontErrors = fonts.errors;
 
   // Spine
@@ -485,7 +490,7 @@ async function main() {
   if (guard.write) await writeJsonAtomic(MANIFEST, manifest);
 
   // Orphans: files on disk that the manifest does not reference (e.g. after a mapping change).
-  const orphans = orphanFiles(await listFiles(ASSETS), resolved.files);
+  const orphans = orphanFiles(await listFiles(ASSETS), new Set([...resolved.files, ...dl.preserved]));
   if (opts.prune) for (const r of orphans) { try { await unlink(join(ASSETS, r)); } catch { /* ignore */ } }
 
   const charIds = Object.keys(assets07.operators || {});

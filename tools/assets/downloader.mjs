@@ -67,7 +67,9 @@ export class Downloader {
     this.keepExisting = !!keepExisting;
     /** @type {Set<string>} the files (paths under root) this run wrote */
     this.written = new Set();
-    /** @type {Set<string>} previously verified files retained after a transient failure */
+    /** @type {Set<string>} failed replacements protected from pruning, even without blob provenance */
+    this.preserved = new Set();
+    /** @type {Set<string>} previously verified files retained after a failed replacement */
     this.retained = new Set();
     this.accepted = new Set();
     this.log = log;
@@ -204,10 +206,6 @@ export class Downloader {
         return { status: 'ok', bytes: r.buf.length, url: src, sizeChanged };
       }
     }
-    // A failed fetch is not proof that the current file is obsolete. Keep a
-    // previously verified file until the source is confirmed missing.
-    if (this.verifier && lastError) await this.retainExisting(job);
-    else if (this.verifier) await this.rejectExisting(job);
     if (lastError) this.network.directFailureHint();
     return lastError ? { status: 'error', bytes: 0, error: lastError } : { status: 'miss', bytes: 0, error: 'not found (404) on all sources' };
   }
@@ -217,7 +215,6 @@ export class Downloader {
     let source;
     try { source = await this.verifier.resolve(url); }
     catch (e) {
-      await this.retainExisting(job);
       return { result: { status: 'error', bytes: 0, error: e.message } };
     }
     if (!source) return {};
@@ -236,7 +233,8 @@ export class Downloader {
   }
 
   async retainExisting(job) {
-    if (this.retained.has(job.rel)) return;
+    this.preserved.add(job.rel);
+    this.retained.delete(job.rel);
     const led = this.ledger.files[job.rel];
     if (!led?.blob) return;
     try {
@@ -244,13 +242,6 @@ export class Downloader {
       this.verifier.verify(buf, { blob: led.blob, url: led.url || job.rel });
       if (validate(job.kind, buf)) this.retained.add(job.rel);
     } catch { /* No verified fallback is available. */ }
-  }
-
-  async rejectExisting(job) {
-    try { await unlink(join(this.root, job.rel)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    this.accepted.delete(job.rel);
-    delete this.ledger.files[job.rel];
-    this.dirty++;
   }
 
   /**
@@ -282,6 +273,10 @@ export class Downloader {
         let r;
         try { r = await this.runJob(job); } catch (e) { r = { status: 'error', bytes: 0, error: e?.message || String(e) }; }
         results.set(job.rel, r);
+        // Source absence does not invalidate local bytes. Keep them on disk even
+        // without provenance, but publish only a revalidated fallback.
+        if (this.verifier && (r.status === 'error' || r.status === 'miss')) await this.retainExisting(job);
+        else { this.preserved.delete(job.rel); this.retained.delete(job.rel); }
         if (r.status === 'ok' || r.status === 'skip' || this.retained.has(job.rel)) this.accepted.add(job.rel);
         else this.accepted.delete(job.rel);
         counts[r.status]++;

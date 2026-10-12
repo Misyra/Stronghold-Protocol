@@ -12,7 +12,7 @@ import { normalizeAtlas } from '../tools/assets/atlas.mjs';
 import { processModels } from '../tools/assets/spine.mjs';
 import { buildFonts, FONTS } from '../tools/assets/fonts.mjs';
 import { decodeWoff2Tables } from '../tools/assets/woff2.mjs';
-import { parseArgs } from '../tools/fetch-assets.mjs';
+import { orphanFiles, parseArgs } from '../tools/fetch-assets.mjs';
 
 const quiet = () => {};
 const commit = '1'.repeat(40);
@@ -21,7 +21,7 @@ const raw = 'https://raw.githubusercontent.com/o/r/main/';
 // Independent fixture Git-object digest, not the implementation under test.
 const digest = (buf) => createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${buf.length}\0`), buf])).digest('hex');
 
-async function fixture(t, files, { revision = commit, payload = (url) => files[url.split('/').at(-1)], apiStatus = 200 } = {}) {
+async function fixture(t, files, { revision = commit, payload = (url) => files[url.split('/').at(-1)], apiStatus = 200, missingStatus = 404 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sp-source-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const calls = [];
@@ -34,7 +34,7 @@ async function fixture(t, files, { revision = commit, payload = (url) => files[u
     }
     assert.equal(new Headers(options?.headers).has('authorization'), false, 'payloads never receive the API token');
     const bytes = payload(url);
-    return new Response(bytes ?? null, { status: bytes ? 200 : 404 });
+    return new Response(bytes ?? null, { status: bytes ? 200 : missingStatus });
   };
   const verifier = new SourceVerifier({ 'o/r@main': { commit: revision, tree } }, { fetchImpl, token: 'test-api-token' });
   const dl = new Downloader({ root, ledgerPath: join(root, 'ledger.json'), verifier, fetchImpl, retries: 1, backoffMs: 0, log: quiet });
@@ -79,11 +79,37 @@ test('user failed replacement preserves the last verified output and cannot reso
     { rel: 'a.bin', urls: [raw + 'a.bin'], kind: 'bin' },
     { rel: 'fallback.bin', urls: [raw + 'fallback.bin'], kind: 'bin' },
   ] } };
-  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), []);
+  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), ['item']);
   assert.equal((await readFile(join(f.root, 'a.bin'))).toString(), 'old!');
   assert.equal(f.dl.ledger.files['a.bin'], undefined);
   const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => f.dl.accepted.has(rel) });
   assert.deepEqual(resolved.droppedLeaves, ['item']);
+});
+
+test('user missing sources preserve legacy and verified caches through shared fallback pruning', async (t) => {
+  // Given two consumers of a cached fallback, with and without blob provenance.
+  for (const missing of ['tree', 404, 410, 503]) for (const verified of [false, true]) {
+    const good = Buffer.from('{"cached":true}');
+    const f = await fixture(t, missing === 'tree' ? {} : { 'shared.json': Buffer.from('{"new":true}') }, {
+      payload: () => null, missingStatus: missing === 'tree' ? 404 : missing,
+    });
+    await writeFile(join(f.root, 'shared.json'), good);
+    const ledger = { url: raw + 'shared.json', bytes: good.length, ...(verified ? { blob: digest(good), commit } : {}) };
+    f.dl.ledger.files['shared.json'] = ledger;
+    const shared = { rel: 'shared.json', urls: [raw + 'shared.json'], kind: 'json' };
+    const template = { first: { alts: [shared] }, second: { alts: [
+      { rel: 'missing.json', urls: [raw + 'missing.json'], kind: 'json' }, shared,
+    ] } };
+    // When both sources disappear and the caller computes the prune set.
+    await downloadLeaves(collectLeaves(template), f.dl, f.root);
+    assert.deepEqual(await readFile(join(f.root, 'shared.json')), good);
+    const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => f.dl.accepted.has(rel) });
+    const orphans = orphanFiles(['shared.json', 'unrelated.json'], new Set([...resolved.files, ...f.dl.preserved]));
+    // Then deletion requires an orphan, not a failed fetch; only proven bytes are published.
+    assert.deepEqual(JSON.parse(await readFile(join(f.root, 'ledger.json'))).files['shared.json'], ledger);
+    assert.deepEqual(orphans, ['unrelated.json']);
+    assert.deepEqual(resolved.value, verified ? { first: '/assets/shared.json', second: '/assets/shared.json' } : {});
+  }
 });
 
 test('user source revisions reuse unchanged raw bytes but replace same-size changed bytes and refresh the ledger', async (t) => {
@@ -199,20 +225,62 @@ test('user changed font originals are verified before WOFF2 generation and faile
   await writeFile(join(f.root, name + '.woff2'), 'stale generated');
   await writeFile(join(f.root, 'fonts.css'), 'stale css');
   await f.dl.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
-  const built = await buildFonts(f.root, quiet, { verified: true });
+  const built = await buildFonts(f.root, quiet, { verified: true, available: (rel) => f.dl.accepted.has(rel) });
   assert.ok(built.files[name].woff2);
   const tables = decodeWoff2Tables(await readFile(join(f.root, name + '.woff2')));
   assert.equal(tables.tables[0].data.toString(), 'new!');
   available = false;
   const forceDl = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier: f.verifier,
     fetchImpl: f.fetchImpl, force: true, retries: 1, backoffMs: 0, log: quiet });
+  await forceDl.loadLedger();
   const result = await forceDl.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
   assert.equal(result.get(name + '.otf').status, 'error');
   assert.deepEqual(await readFile(join(f.root, name + '.otf')), good);
-  const failed = await buildFonts(f.root, quiet, { verified: true });
+  const failed = await buildFonts(f.root, quiet, { verified: true, available: (rel) => forceDl.accepted.has(rel) });
   assert.ok(failed.files[name].woff2, 'the preserved original can still regenerate the derived font');
   await access(join(f.root, name + '.woff2'));
   await access(join(f.root, 'fonts.css'));
+  // Given an unverified original still on disk, a failed download must not publish it.
+  await writeFile(join(f.root, name + '.otf'), stale);
+  const rejected = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier: f.verifier,
+    fetchImpl: f.fetchImpl, retries: 1, backoffMs: 0, log: quiet });
+  await rejected.loadLedger();
+  await rejected.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
+  const excluded = await buildFonts(f.root, quiet, { verified: true, available: (rel) => rejected.accepted.has(rel) });
+  assert.deepEqual(excluded.files, {});
+  assert.equal(excluded.css, null);
+  await assert.rejects(access(join(f.root, name + '.woff2')));
+  await assert.rejects(access(join(f.root, 'fonts.css')));
+  assert.deepEqual(await readFile(join(f.root, name + '.otf')), stale);
+});
+
+test('user Spine post-processing does not read or normalize rejected atlas, skeleton or pages', async (t) => {
+  // Given otherwise usable atlas/page bytes and a corrupt skeleton on disk.
+  const atlas = Buffer.from('page.png\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\n');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
+  const skel = Buffer.alloc(64, 255);
+  for (const rejected of ['model.atlas', 'model.skel', 'page.png']) {
+    const files = { 'model.atlas': atlas, 'model.skel': skel, 'page.png': png };
+    const f = await fixture(t, { ...files, [rejected]: Buffer.from('different upstream bytes') }, { payload: () => null });
+    for (const [rel, buf] of Object.entries(files)) {
+      await writeFile(join(f.root, rel), buf);
+    }
+    // A previous atlas used an extra page absent from the current download plan.
+    await writeFile(join(f.root, 'extra.png'), png);
+    const model = { key: 'model', dir: '', baseUrl: raw, pngs: [],
+      skel: { rel: 'model.skel', urls: [raw + 'model.skel'], kind: 'skel' },
+      atlas: { rel: 'model.atlas', urls: [raw + 'model.atlas'], kind: 'atlas', mutable: true } };
+    await f.dl.run([model.skel, { ...model.atlas, mutable: false }, { rel: 'page.png', urls: [raw + 'page.png'], kind: 'png' }]);
+    // When processing a model with one rejected input, no derived output may consume it.
+    const result = await processModels(new Map([['model', model]]), { root: f.root, dl: f.dl,
+      cachePath: join(f.root, 'spine.json'), download: false, log: quiet });
+    assert.equal(result.entries.size, 0);
+    assert.match(result.problems.join('\n'), /unverified/);
+    assert.deepEqual(await readFile(join(f.root, 'model.atlas')), atlas);
+    assert.deepEqual(await readFile(join(f.root, 'model.skel')), skel);
+    assert.deepEqual(orphanFiles([...Object.keys(files), 'extra.png'], f.dl.preserved), [],
+      'a failed model keeps its full directory for retry without publishing rejected inputs');
+  }
 });
 
 test('user truncated or unavailable recursive Git tree uses complete bounded subtrees', async () => {

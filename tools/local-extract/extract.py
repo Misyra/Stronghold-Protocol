@@ -28,9 +28,10 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     [opt]end_box / [opt]start_fly meshes, their merged additive textures, materials and prefab), the blower's texture
     (arts/maps/common/res.ab → map/common: TX_wind_device of the s_wind_device mesh) and the shared water / noise
     textures (arts/maps/effect.ab → map/water) used for deep-sea / mire / smog tiles
-  - derived PBR maps for three.js (DERIVED): Unity stores the theme's normal map as two channels (BC5: RG = XY, B = 0)
-    and metallic/gloss with the smoothness in A; the board renderer needs an RGB normal map (Z rebuilt) and a
-    roughness map in G (1 − smoothness; metalness B = 0), written next to the source as <name>_rgb.png / _rough.png
+  - derived PBR maps for three.js (DERIVED): Unity stores the theme's normal map as two channels (BC5: RG = XY, B = 0;
+    DXT5nm in an older bundle: AG = XY, R = 1) and metallic/gloss with the smoothness in A; the board renderer needs
+    an RGB normal map (Z rebuilt) and a roughness map in G (1 − smoothness; metalness B = 0), written next to the
+    source as <name>_rgb.png / _rough.png
   - WebP copies of the board textures every player downloads with the 3D board (WEBP), written next to their PNGs;
     the manifest lists the copy
 
@@ -148,8 +149,8 @@ TOKEN_PACKS = 'pkgrps/btl_pfb_tokens_*.ab'
 TOKEN_SPINE_SUB = 'spine/token'
 
 # Derived three.js maps: (output subdir, source texture, kind, output name). 'normal_rg' rebuilds Z of a two-channel
-# (BC5) normal map into an RGB tangent-space map; 'rough_from_gloss' turns Unity's metallic/gloss map (smoothness in
-# A) into a roughness (G) / metalness (B) map. Written after the job that exported the source texture.
+# (BC5 or DXT5nm) normal map into an RGB tangent-space map; 'rough_from_gloss' turns Unity's metallic/gloss map
+# (smoothness in A) into a roughness (G) / metalness (B) map. Written after the job that exported the source texture.
 DERIVED = [
     ('map/autochess', 'TX_autochessi_N', 'normal_rg', 'TX_autochessi_N_rgb'),
     ('map/autochess', 'TX_autochessi_M', 'rough_from_gloss', 'TX_autochessi_M_rough'),
@@ -400,13 +401,16 @@ def _normal_z_table():
 
 
 def derive_normal_rg(img):
-    """RGB tangent-space normal map from a two-channel (BC5: R = X, G = Y, B unused) one: Z rebuilt per pixel."""
-    from PIL import Image
-    rgb = img.convert('RGB')
-    r, g, _ = rgb.split()
+    """RGB tangent-space normal map from Unity's two-channel one: Z rebuilt per pixel. X and Y are read the way Unity's
+    shaders unpack them (UnityCG.cginc UnpackNormalmapRGorAG: x = R · A, y = G), which covers both layouts a client
+    build holds: BC5 (R = X, G = Y, B unused, no alpha → A = 1) and DXT5nm (R = 1, G = Y, A = X — the map_autochess
+    bundle before the client update of 2026-10)."""
+    from PIL import Image, ImageChops
+    r, g, _, a = img.convert('RGBA').split()
+    x = ImageChops.multiply(r, a)  # exact when either factor is 255
     table = _normal_z_table()
-    z = bytes(table[(x << 8) | y] for x, y in zip(r.tobytes(), g.tobytes()))
-    return Image.merge('RGB', (r, g, Image.frombytes('L', rgb.size, z)))
+    z = bytes(table[(xb << 8) | yb] for xb, yb in zip(x.tobytes(), g.tobytes()))
+    return Image.merge('RGB', (x, g, Image.frombytes('L', img.size, z)))
 
 
 def derive_rough_from_gloss(img):

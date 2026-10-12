@@ -147,6 +147,7 @@
 .st-record-heading__icon { position: relative; width: max(.7rem, 44px); height: max(.74375rem, 47px); flex: none; margin-right: .175rem; }
 .st-record-heading__frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .st-record-heading__glyph { position: absolute; top: 50%; left: 50%; width: 63.4%; height: 71.4%; transform: translate(-50%, -50%); object-fit: contain; }
+.st-favorites__heading, .st-strategies__heading { font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-weight: 500; color: #898989; }
 .st-favorites__heading { margin-top: 0; }
 .st-top-bonds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.18rem, 10px); max-width: 9rem; margin: .18rem auto .3rem; }
 .st-top-bond { display: flex; flex-direction: column; align-items: center; min-width: 0; }
@@ -159,7 +160,7 @@
 .st-top-bond__name { display: block; font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-size: max(.20625rem, 11px); line-height: 1.3; color: #e9e9e9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Strategy records follow the official statistics template. */
-.st-strategies__heading { margin-top: .3rem; font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-weight: 500; color: #898989; }
+.st-strategies__heading { margin-top: .3rem; }
 .st-top-strategies { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.125rem, 6px); margin: .2rem 0 .3rem; }
 .st-top-strategy { display: flex; align-items: center; gap: max(.125rem, 5px); min-width: 0; }
 .st-top-strategy__art { position: relative; width: min(44%, 1.35rem); aspect-ratio: 216 / 218; flex: none; }

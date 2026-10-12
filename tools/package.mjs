@@ -20,7 +20,9 @@
 // THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/PLAYING.md and docs/DEPLOY.md. `npm ci --omit=dev` in the
 // stage adds the production node_modules and (postinstall) public/vendor. The full zip adds the git-ignored art: the
 // files data/assets.json lists, public/fonts, and the local-client extraction (public/assets/local/,
-// data/local-assets.json) when present — nothing else on disk, so art the data no longer lists (焰狐龙梓兰, left out of
+// data/local-assets.json) when present, including the 0.2.5 battlefield scenes under public/assets/local/scene/
+// when this machine extracted them. Missing scenes are not an error: the board keeps the metal tiles, and the
+// summary says so. Nothing else on disk ships, so art the data no longer lists (焰狐龙梓兰, left out of
 // 自选 in 0.2.0, or files of an old mapping) never ships even when this machine still has it. FULL_ZIP_JP_VOICE (below)
 // decides whether the full zip carries the Japanese voice dub too (default: yes).
 // Left out: test/, the maintainer tools (build-data, golden, botbench, i18n, check-imports, this file …),
@@ -117,6 +119,8 @@ export const GITHUB_REPO = 'https://github.com/sganggs/Stronghold-Protocol';
 export const FULL_ZIP_JP_VOICE = true;
 /** Where the JP dub lies (plan.mjs voiceAlt: audio/voice/<lang>/<charId>/<file>). */
 export const JP_VOICE_DIR = 'public/assets/audio/voice/jp/';
+/** Extracted official battlefield scenes (0.2.5 asset pack). Already ignored with public/assets/. */
+const SCENE_ART_PREFIX = 'public/assets/local/scene/';
 
 /**
  * Refused in a plan and in a stage: 0.1.x's list (owner-only notes, the promo project, caches, per-machine config) and
@@ -232,9 +236,11 @@ export const manifestFiles = listedArtFiles;
  * data/local-assets.json (when present). `missing`: listed files not on disk; `orphans`: files under public/assets
  * that nothing lists (left out); `held`: listed files the zip holds back on purpose — the JP voice dub when `jpVoice`
  * (FULL_ZIP_JP_VOICE) is off: neither shipped nor missing, and never deleted by an update.
+ * `scenes`: the files under public/assets/local/scene/ (the 0.2.5 battlefield scenes). They are also in `files`.
+ * A lite plan and a machine that has not extracted them return `scenes: []`; packaging still succeeds.
  */
 export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE } = {}) {
-  if (lite) return { files: [], missing: [], orphans: [], held: [], local: false };
+  if (lite) return { files: [], missing: [], orphans: [], held: [], local: false, scenes: [] };
   const listed = manifestFiles(readJson(path.join(root, 'data', 'assets.json')) ?? {});
   const local = isFile(path.join(root, 'data', 'local-assets.json'));
   if (local) for (const f of manifestFiles(readJson(path.join(root, 'data', 'local-assets.json')) ?? {})) listed.add(f);
@@ -254,7 +260,11 @@ export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE } = {}
   // without case: on Windows / macOS a file whose name differs only in case is the listed one (fetch-assets orphanFiles)
   const lower = new Set([...files, ...held].map((f) => f.toLowerCase()));
   const orphans = listTree(root, 'public/assets').filter((f) => !lower.has(f.toLowerCase()));
-  return { files: [...files].sort(), missing: missing.sort(), orphans, held: held.sort(), local };
+  const sorted = [...files].sort();
+  return {
+    files: sorted, missing: missing.sort(), orphans, held: held.sort(), local,
+    scenes: sorted.filter((f) => f.startsWith(SCENE_ART_PREFIX)),
+  };
 }
 
 const URL_MOUNTS = [['/data/', 'data/'], ['/shared/', 'shared/'], ['/sim/', 'server/sim/']];
@@ -524,6 +534,7 @@ export function plan(root, opts = {}) {
   return {
     version: pkg.version || '0.0.0', lite, tracked: keep, art: art.files, generated, files, dropped, orphans: art.orphans,
     held: art.held, localArt: art.local, problems, names: names.length, scanned,
+    scenes: { files: art.scenes || [], bytes: sumBytes(root, art.scenes || []) },
     bytes: {
       tracked: trackedBytes, art: artBytes, modules: modulesBytes, vendor: vendorBytes,
       total: trackedBytes + artBytes + modulesBytes + vendorBytes,
@@ -542,6 +553,12 @@ export function formatSummary(p) {
   ];
   if (!p.lite) {
     lines.push(`art: ${p.art.length} files, ${MB(p.bytes.art)} (data/assets.json, public/fonts${p.localArt ? ', public/assets/local + data/local-assets.json' : '; no local-client art here'})`);
+    const sceneFiles = p.scenes?.files;
+    if (sceneFiles?.length) {
+      lines.push(`battlefield scenes: ${sceneFiles.length} files, ${MB(p.scenes.bytes || 0)} (0.2.5 asset pack, public/assets/local/scene; the metal board is the fallback when a stage has none)`);
+    } else if (p.scenes) {
+      lines.push('battlefield scenes: none on this machine (the full bundle ships the metal board; fetch_scenes.py then extract.py --only scene before packaging to include the 11 official scenes)');
+    }
   }
   if (p.generated?.length) lines.push(`generated: ${p.generated.join(', ')} (the pack index of the shipped packs, for a static host)`);
   lines.push(`production node_modules: ${MB(p.bytes.modules)} · public/vendor: ${MB(p.bytes.vendor)} (npm ci --omit=dev and its postinstall)`);

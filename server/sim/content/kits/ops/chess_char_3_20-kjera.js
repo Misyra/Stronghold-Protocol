@@ -13,7 +13,7 @@ export default {
     const extra = Math.floor(num(bb['attack@cnt'], 0));
     const prob = num(bb['attack@prob'], 0), cold = num(bb['attack@cold'], 0);
     const kit = {
-      trait: { dmgMul: funnelMap },
+      trait: { funnelMul: funnelMap },
       skill: {
         kind: 'duration',
         mods: { atkPct: num(bb.atk) },

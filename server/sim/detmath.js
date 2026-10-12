@@ -10,6 +10,7 @@
 // test/sim/detmath.test.js scans server/sim/).
 //
 //   hypot(x, y)         √(x² + y²) as Math.sqrt(x*x + y*y), rescaled by exact powers of two outside 2^±500
+//   roundHalfEven(x)    nearest integer, ties to even (四舍六入五成双); Math.round and Math.floor, never −0
 //   powi(x, n)          xⁿ for an integer n: square-and-multiply in double-double, one final rounding
 //   sin(x), cos(x)      fdlibm 5.3 (__kernel_sin / __kernel_cos / __ieee754_rem_pio2)
 //   atan2(y, x)         fdlibm (FreeBSD msun e_atan2.c / s_atan.c)
@@ -44,6 +45,17 @@ export function hypot(x, y) {
   if (m > P500) { const a = x * PM600, b = y * PM600; return Math.sqrt(a * a + b * b) * P600; }
   if (m < PM500 && m !== 0) { const a = x * P600, b = y * P600; return Math.sqrt(a * a + b * b) * PM600; }
   return Math.sqrt(x * x + y * y);
+}
+
+/**
+ * x rounded to an integer, ties to even (2.5 → 2, 3.5 → 4, −2.5 → −2): the rule PRTS 作战机制 gives for the tile of a
+ * target — 受击方坐标经round函数取整(四舍六入五成双)得到其所属格坐标. Math.round rounds ties up (2.5 → 3). Exact; never −0.
+ * @param {number} x
+ */
+export function roundHalfEven(x) {
+  const f = Math.floor(x);
+  if (x - f !== 0.5) return Math.round(x) + 0;
+  return (f % 2 === 0 ? f : f + 1) + 0;
 }
 
 // ---- integer powers ----------------------------------------------------------------------------------------------

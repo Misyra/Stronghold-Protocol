@@ -488,13 +488,13 @@ test('3_13 至简: 神工意匠 charges: ATK% arts ×2 per cast; 忽有所悟 cr
   const u = h.unit(id);
   assert.equal(u.skill.maxCharges, bb.ct);
   h.run(60);
-  const normal = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.isAttack && !c.dmg.isSkill).map((c) => c.amount / u.s.atk);
+  const normal = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.tags.includes('funnel') && !c.dmg.isSkill).map((c) => c.amount / u.s.atk);
   const ramp = (v) => [tb.max_atk_scale, tb.max_atk_scale * t0.atk_scale].some((x) => Math.abs(v - x) < 1e-6);
   assert.ok(normal.slice(10).every(ramp), 'ramped drone hits: max or max × crit');
   assert.ok(normal.some((v) => Math.abs(v - tb.max_atk_scale * t0.atk_scale) < 1e-6), 'some crits');
   assert.ok(normal.some((v) => Math.abs(v - tb.max_atk_scale) < 1e-6), 'some plain hits');
   const skillAtks = h.hooksOf('attack').filter((c) => c.attacker === u && c.isSkill).length;
-  const sk = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.isSkill).map((c) => c.amount / u.s.atk);
+  const sk = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.isSkill && c.dmg.isAttack).map((c) => c.amount / u.s.atk);
   assert.ok(skillAtks >= 2);
   assert.equal(sk.length, skillAtks * 2, 'two hits per cast');
   for (const v of sk) assert.ok([bb.atk_scale, bb.atk_scale * t0.atk_scale].some((x) => Math.abs(v - x) < 1e-6), `skill hit ${v}`);
@@ -790,7 +790,7 @@ test('3_20 耶拉: 低眉 ATK (ground tiles in range); 心随意动 +1 drone, AT
   h.step();
   approx(u.s.atk, u.base.atk * (1 + t0['kjera_t_1[high].atk']));
   h.run(4);
-  const first = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.isAttack).map((c) => c.amount / u.s.atk);
+  const first = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.tags.includes('funnel')).map((c) => c.amount / u.s.atk);
   assert.ok(first[1] > first[0], 'drone ramps on the same target');
   fill(u);
   assert.ok(h.runUntil(() => u.skill.active, 5));
@@ -1083,7 +1083,7 @@ test('3_20 耶拉: 心随意动 with a single enemy — both drones lock it and 
   });
   const u = h.unit(id);
   h.run(12);
-  const plain = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.isAttack).map((c) => c.amount / u.s.atk);
+  const plain = h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.tags.includes('funnel')).map((c) => c.amount / u.s.atk);
   approx(plain[plain.length - 1], tb.max_atk_scale, 1e-6, 'module ramp cap');
   fill(u);
   assert.ok(h.runUntil(() => u.skill.active, 5));
@@ -1159,7 +1159,7 @@ test('精锐 numbers from the golden blackboards (module traits handled by the p
   const ml = m.unit(e13);
   assert.equal(ml.skill.maxCharges, BB(e13).ct);
   m.run(25);
-  const ramps = m.hooksOf('damaged').filter((c) => c.source === ml && c.dmg?.isAttack && !c.dmg.isSkill).map((c) => c.amount / ml.s.atk);
+  const ramps = m.hooksOf('damaged').filter((c) => c.source === ml && c.dmg?.tags.includes('funnel') && !c.dmg.isSkill).map((c) => c.amount / ml.s.atk);
   assert.ok(ramps.some((v) => Math.abs(v - TR(e13).max_atk_scale) < 1e-6), 'module cap 120 %');
   assert.ok(ramps.every((v) => v <= TR(e13).max_atk_scale * TB(e13, 0).atk_scale + 1e-6));
   done(m);

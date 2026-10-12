@@ -545,7 +545,7 @@ returns their current `weight` (including modifiers). The same tick's count and 
 list and budget (DESIGN §28.27); this is local to the kit, not a change to general displacement.
 
 **Hit areas (`body.js`, user playtest #5 item 10).** A regular enemy is a point: in a grid range when the tile of its
-position (`round(y)`, `round(x)`) is a range tile, in a radius when its position is (DESIGN §3). A huge enemy (巨型单位:
+position (`roundHalfEven(y)`, `roundHalfEven(x)` — PRTS 作战机制 "四舍六入五成双"; `Math.round` would take 2.5 to 3) is a range tile, in a radius when its position is (DESIGN §3). An enemy held on the field edge is inset by `FIELD_EDGE_INSET` (1/1048576) [ASSUMED] so that rounding keeps it on the edge tile; movement, knockback and a unit's standing tile for range keys still use `Math.round` (§30.20). A huge enemy (巨型单位:
 `enemy.hitArea` from data/enemies.json `hitArea` — 假想敌：胄 / 管 / 盐风主教昆图斯 / 阿利斯泰尔 / “萨米的意志”, PRTS
 "受击判定区域为长4.95、宽2.95的长方形，向上偏移1.0") is hit anywhere on a rectangle `w` × `h` tiles centred on its position
 moved `dx` columns right / `dy` rows up: it occupies every tile the rectangle overlaps (`bodyKeys` — 5 × 3 tiles; PRTS
@@ -1123,7 +1123,7 @@ Element conventions of the kits (user playtest #5 #3; official term dictionary: 
   targeting: { maxTargets, rangeGrid, rangeExtend, priority, allInRange, canHitFly,
                noRangeExtend /* the skill's range ignores the unit's 攻击距离 (rangeExtend): 信仰搅拌机 S3, PRTS 备注 */,
                showOwnRange /* rangeGrid only selects targets, no official range change: the card keeps the unit's own range */ },
-  attack: { dmgType, atkScale, healScale, splashRadius, splashScale, hits, projectile, maxTargets, dmgMul,
+  attack: { dmgType, atkScale, healScale, splashRadius, splashScale, hits, funnelMul, funnelBodyHits, projectile, maxTargets, dmgMul,
             chain: {count, falloff, radius, sluggish}, heal: {mode, count, falloff, hpAtMost /* targets at or below this HP ratio only */}, onHitStatus: {key, duration, value},
             onHit(ctx),                           // once per attack (main target; target may be null for a splash landing)
             onEachHit(ctx) },                     // per victim: main, every splash / chain victim — ctx += { dealt, kind:'main'|'splash'|'chain', isSplash, isChain, main, attackId }
@@ -1208,10 +1208,11 @@ chess_char_2_07_a: (bb) => ({
 ```
 
 **3. Instant burst caster — 至简 `chess_char_3_13_a` 神工意匠** (bb `atk_scale 1.3, ct 2`; next attack 130 % arts, hits
-twice; 2 charges; the funnel profile already ramps damage on the same target):
+twice; 2 charges; the funnel profile's unreleased drones are additional damage that ramps on the same target, and this
+charged attack sets two body hits):
 ```js
 chess_char_3_13_a: (bb) => ({
-  skill: { kind: 'charges', attack: { atkScale: bb.atk_scale, hits: 2, dmgType: 'arts' } },
+  skill: { kind: 'charges', attack: { atkScale: bb.atk_scale, hits: 2, funnelBodyHits: 2, dmgType: 'arts' } },
 }),
 ```
 An AoE instant (德克萨斯 剑雨, bb `stun 2`: two hits of 120 % arts around her + stun) uses `onStart` instead:
@@ -1350,7 +1351,7 @@ header of professions.js).
 | loopshooter | 回环射手 (user playtest #3): every attack throws a boomerang (`ai.js throwBoomerang`, projectile `'boomerang'`) out to the target at 15 tiles/s — it hits on arrival — and back to the thrower's current position at 3.75 tiles/s without damage (PRTS 跃跃 "投射物飞行速度15，返回时飞行速度3.75"); attacks only while holding it (every boomerang thrown caught — "必须回收全部回旋投掷物才可以进行下一次攻击", `unit.trait.boomerangsOut`) and with the attack cooldown ready, so the real interval is the longer of the two; a target dead mid-flight is not hit (it still flies to the last position and back); knocked out / withdrawn ⇒ lost, a redeployed thrower holds a fresh one; 跃跃 S2's extra boomerangs share the one flight (cnt hits); each catch fires `boomerangCaught`, and an attack profile's `boomerangOnward(ctx)` flies it on after the first hit before it turns back — ctx `hit` (a hit of the same attack), `comeBack(x, y)` once (a content error sends it back from the hit point): 娜仁图亚 S1 bounces, S2 dashes on and hits on its way back (kits/ops/op-narant.js) |
 | reaperrange | hits every enemy in range; ×1.5 (bb atk_scale) on the trait front grid (or its own line ahead) — both along its direction |
 | chain | chain N (trait text/bb max_target) with −15 % per jump (bb chain.atk_scale), 1.7-tile jumps (constants.js CHAIN_RADIUS, PRTS 溅射半径一览: 链术师 1.7; 1.8 until 0.1.1), sluggish on each hit |
-| funnel | drone damage 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max) |
+| funnel | normal attack: one 100 % ATK body hit plus separate drone additional damage, 20 % → +15 %/hit on the same target → 110 % (bb init/delta/max; modules can change init/cap). `funnelMul` holds the drone ramp; `dmgMul` applies to both. Extra drones (`hits`) do not duplicate the body; an unreleased skill attack can set `funnelBodyHits` (至简 S2: two body hits and two additions). Body and additions share an `attackId`, but only the body is `isAttack`; additions carry `addition, funnel`. [ASSUMED] body instances first at the existing impact, one ramp per volley. Released-skill profiles keep their existing paths; this normal-attack correction does not settle their body behaviour. A normal deployment resets target, scale and any per-target ramp map to init, including revival against the same living target. A free move (`moveRedeploy`, the same carry as a 秘术师's stored energy and 乌尔比安 S3) keeps the ramp. An in-flight drone recomputes the ramp on impact. 洛洛 S2 detaches this multiplier from new body shots and inherits the trait ramp in an independent skill tick: `rockr:drone`, arts, `isSkill:true`, `isAttack:false`. Older projectiles cannot change its local ramp. A living selectable lock need not remain in body range; the drone returns on a kill or when the skill ends, and ending hands the ramp back and restores the normal multiplier (§30.19) |
 | mystic | 秘术师 (PRTS 分支特性信息 秘术师, GitHub #181): at its attack check (the attack ready, able to act, not disarmed) with no valid target — no target, or its kit's `canAttack` false (深靛 never picks a bound enemy) — it stores one energy (`storeEnergy`, up to bb times: 3, 深靛's MSC-X 4), an attack action: the attack interval restarts; a full store idles with the attack ready. The energies leave with its next attack that happens (`releaseEnergy` in `performAttack`, after `beforeAttack`: an attack cancelled before its shot keeps them) and land with the main hit, one arts attack hit each (`hitsFn` reads the hit's `info.energy`); a redeployment holds none [ASSUMED]. 维伊 / 黑键 plug their own `storeEnergy` (转置能量, elite energies) into the same check |
 | phalanx | no attack & DEF +200 %, RES +20 (bb) while the skill is off; while on, `rangeAoe`: each attack strikes every selectable enemy on its range at once (blocked enemies included; a stealthed one only when revealed or blocked), the same damage near and far, instant (`'beam'`) — "群体法术伤害" (secondary: Terra Wiki, Phalanx Caster: "attacks hit all enemies within their range"; supporting: PRTS 林 S3 备注 "单次普攻最多触发1次效果" — one normal attack can kill several — the same 锁定攻击范围 shape as the 轰击术师, and PRTS 溅射半径一览 documents no splash radius for it (it omits the 撼地者 too, so this is not proof); no primary source states a target cap; community report E3: it used to be one bolt + a 1.1 splash). 卡涅利安's charged S1 keeps the skill-off trait, 不攻击 included (kit `canAttack`, PRTS 备注) |
 | physician | heal the lowest HP% injured ally in range (a skill `targeting.maxTargets` widens any heal profile) |

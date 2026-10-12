@@ -143,7 +143,7 @@ function whitw2(bb, chess, def) {
       ...(skillGridW ? { targeting: { rangeGrid: skillGridW } } : {}),
       attack: {
         hits: 1,
-        dmgMul(battle, unit, target) {
+        funnelMul(battle, unit, target) {
           const f = unit.profile?.funnel || { init: 0.2, delta: 0.15, max: 1.1 };
           const m = unit.mem.hunt;
           if (!m) return f.init;

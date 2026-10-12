@@ -12,24 +12,15 @@ function emptyPrep() {
   return { h, m: h.m, p };
 }
 
-// The fork accounts a fixed gift as a copy that holds zero shared stock (piece.itemPoolCopies, the provenance model
-// ported from xinhai 1cf48618) where upstream 0.2.5 lets the same gift overdraft the stock past its cap. Both models
-// grant every copy a trait produces and refuse ordinary stock-backed grants once the stock is gone, so these tests
-// assert the fork's accounting: `held` never passes the cap and the copies owned are the stock plus the gifts.
-const giftPieces = (p, base) => [...p.hand, ...p.temp, ...p.allChess().flatMap((x) => x.items || [])]
-  .filter((x) => x?.kind === 'item' && p.gd.baseIdOf(x.id) === base);
-const copiesOf = (p, base) => giftPieces(p, base).reduce((n, x) => n + p.m.itemPool.need(x.id), 0);
-
 for (const g of Object.values(DATA.garrisons).filter(g => g.effectKey === 'SERVER_GAIN_EQUIP')) {
-  for (const owner of g.owners) test(`fixed gift ${g.garrisonId}/${owner} is produced past stock and holds zero`, () => {
+  for (const owner of g.owners) test(`fixed gift ${g.garrisonId}/${owner} is produced past stock and still occupies it`, () => {
     const { m, p } = emptyPrep(), id = g.bbStr.chess, cap = m.itemPool.cap(id);
     assert.ok(Number.isInteger(cap));
     for (let i = 0; i < cap; i++) assert.ok(p.acquireItem(id));
     assert.equal(m.itemPool.left(id), 0);
     assert.ok(p.acquireChess(owner, { fromPool: false }));
-    assert.equal(copiesOf(p, id), cap + g.bb.count, 'the trait must finish all grants, including merges');
-    assert.equal(m.itemPool.held(id), cap, 'a gift copy holds zero: the shared stock keeps its cap');
-    assert.equal(m.itemPool.left(id), 0, 'the stock stays empty while the stock-backed copies are owned');
+    assert.equal(m.itemPool.held(id), cap + g.bb.count, 'the trait must finish all grants, including merges');
+    assert.equal(m.itemPool.left(id), 0, 'overstock prevents new shop draws');
     assert.equal(p.acquireItem(id), null, 'an ordinary stock-backed grant is still refused');
     checkInvariants(m); m.dispose();
   });
@@ -52,8 +43,7 @@ for (const invest of [false, true]) test(`repeated Muelsyse acquisition and elit
   const expected = invest ? [2, 4, 8, 10, 12] : [1, 2, 4, 5, 6];
   for (const n of expected) {
     assert.ok(p.acquireChess('chess_char_6_11_a'));
-    assert.equal(copiesOf(p, id), n, 'every repeated gift copy arrives'); checkInvariants(m);
-    assert.equal(m.itemPool.held(id), 0, 'each copy is a gift: none of them occupies shared stock');
+    assert.equal(m.itemPool.held(id), n); checkInvariants(m);
     // Stow the non-merging isomorphs on holders so this stock test does not exhaust the player's inventory.
     for (const item of [...p.hand, ...p.temp].filter(x => x?.kind === 'item')) {
       const holder = p.allChess().find(c => c.items.length < m.gd.equipPerChess);
@@ -63,22 +53,17 @@ for (const invest of [false, true]) test(`repeated Muelsyse acquisition and elit
   m.dispose();
 });
 
-test('Damazti strategy grants its fixed item at rounds 5/10/15; releasing a gift does not free stock early', () => {
+test('Damazti strategy grants its fixed item at rounds 5/10/15 past cap; releasing overflow does not free stock early', () => {
   const { m, p } = emptyPrep(), id = 'chess_item_6_09_e_a';
   for (let i = 0; i < 3; i++) assert.ok(p.acquireItem(id));
   p.bandId = 'band_damaztic'; p.recompute();
   for (const [i, round] of [5, 10, 15].entries()) {
     m.round = round; m.dispatch(p, 'onRoundStart', { round });
-    assert.equal(copiesOf(p, id), 4 + i, 'the strategy keeps granting past an exhausted stock');
-    assert.equal(m.itemPool.held(id), 3);
-    checkInvariants(m);
+    assert.equal(m.itemPool.held(id), 4 + i); checkInvariants(m);
   }
-  // The three stock-backed copies hold the shared stock; a gift copy holds zero, so destroying one frees nothing.
-  const gift = () => [...p.hand, ...p.temp].find(x => x?.kind === 'item' && p.gd.baseIdOf(x.id) === id && x.itemPoolCopies === 0);
-  for (let i = 0; i < 3; i++) { assert.ok(p.destroy(gift().uid).ok); assert.equal(m.itemPool.left(id), 0); }
-  assert.equal(m.itemPool.held(id), 3); assert.equal(copiesOf(p, id), 3);
-  const real = [...p.hand, ...p.temp].find(x => x?.kind === 'item' && p.gd.baseIdOf(x.id) === id);
-  assert.ok(p.destroy(real.uid).ok);
+  const copy = () => [...p.hand, ...p.temp].find(x => x?.kind === 'item' && x.id === id);
+  for (let i = 0; i < 3; i++) { assert.ok(p.destroy(copy().uid).ok); assert.equal(m.itemPool.left(id), 0); }
+  assert.ok(p.destroy(copy().uid).ok);
   assert.equal(m.itemPool.held(id), 2); assert.equal(m.itemPool.left(id), 1);
   checkInvariants(m); m.dispose();
 });

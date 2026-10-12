@@ -8,7 +8,25 @@
 
 import { DELAYS } from './common.js';
 import { wireMessage } from '../../../shared/i18n.js';
-import { ENCODED } from '../../net.js';
+import { ENCODED, STATE_COALESCE } from '../../net.js';
+
+const stateScopes = new WeakMap();
+function stateScope(match) {
+  let scope = stateScopes.get(match);
+  if (!scope || scope.phase !== match.phase || scope.round !== match.round || scope.setupRevision !== match.setupRevision) {
+    scope = { phase: match.phase, round: match.round, setupRevision: match.setupRevision };
+    stateScopes.set(match, scope);
+  }
+  return scope;
+}
+
+/** Omit only the root clock without copying the entire caller-owned public view. */
+export function publicStateJson(view) {
+  const serverNow = view.serverNow;
+  view.serverNow = undefined;
+  try { return JSON.stringify(view); }
+  finally { view.serverNow = serverNow; }
+}
 
 /**
  * Wire form of the m.public dedup string with `serverNow` spliced back in: `_maybeSendPublic` stringifies
@@ -102,6 +120,7 @@ export class MatchMessaging {
     ps._lastPriv = json;
     // the dedup string IS the wire form: hand it to encode (net.js ENCODED) instead of re-stringifying
     view[ENCODED] = json;
+    if (!force) view[STATE_COALESCE] = stateScope(this);
     this.sendTo(ps.playerId, view);
   }
 
@@ -121,8 +140,8 @@ export class MatchMessaging {
     this._pubDirty = false;
     let view;
     try { view = this.publicView(); } catch (e) { this.reportError('publicView', e); return; }
-    const { serverNow, ...rest } = view;
-    const json = JSON.stringify(rest);
+    const serverNow = view.serverNow;
+    const json = publicStateJson(view);
     if (!force && json === this._lastPubJson) return;
     this._lastPubJson = json;
     this._lastPubAt = now;
@@ -130,6 +149,7 @@ export class MatchMessaging {
     // (publicWireFrame); null (layout drift) falls back to a full stringify inside encode
     const wire = publicWireFrame(json, serverNow);
     if (wire != null) view[ENCODED] = wire;
+    if (!force) view[STATE_COALESCE] = stateScope(this);
     this.broadcast(view);
   }
 }

@@ -228,7 +228,7 @@ test('application queued bytes participate in snapshot drops, hard disconnects a
   assert.equal(send(ws, { t: 'b.snap' }), false);
   assert.equal(send(ws, { t: 'm.result' }), true, 'reliable state is retained under soft backpressure');
   assert.ok(network.bufferedBytes().max > NET_DEFAULTS.snapDropBytes);
-  assert.equal(sendRaw(ws, 'x'.repeat(NET_DEFAULTS.hardBufferBytes)), true);
+  assert.equal(sendRaw(ws, 'x'.repeat(NET_DEFAULTS.hardBufferBytes)), false, 'reject the frame before it exceeds the hard queue budget');
   assert.equal(send(ws, { t: 'ok' }), false);
   assert.equal(ws.readyState, 3);
   assert.equal(network._outbound.has(ws), false);

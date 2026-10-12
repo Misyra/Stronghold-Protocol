@@ -18,8 +18,8 @@
 //     have no key and are never limited per address.
 //   * Heartbeat (ws ping/pong every `heartbeatMs`, dead sockets terminated), hello timeout.
 //   * Send helpers that never throw, with a backpressure guard: non-critical `b.snap` frames are skipped
-//     while the socket has more than 1 MB queued; a socket with more than 16 MB queued is terminated
-//     (the client reconnects and receives a full state resync).
+//     above 1 MiB queued; congested sockets pause gameplay writes and merge eligible pending states.
+//     Reliable barriers retain FIFO order, with byte/frame limits triggering reconnect and full resync.
 //
 // Close codes used by the server (clients should NOT auto-reconnect on 4001):
 //   4001 session replaced (the same token connected from another socket/tab)
@@ -40,6 +40,7 @@
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
+import { OutboundQueue } from './outboundQueue.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { hasSensitiveNickname } from './moderation/nickname.js';
@@ -57,6 +58,8 @@ export const NET_DEFAULTS = Object.freeze({
   reconnectWindowMs: 10 * 60_000, // disconnected sessions stay resumable this long
   snapDropBytes: 1 << 20,       // skip b.snap while bufferedAmount exceeds this
   hardBufferBytes: 16 << 20,    // terminate a socket whose send queue exceeds this
+  maxQueuedFrames: 1024,       // also bound tiny reliable frames while a peer cannot drain
+  backpressurePollMs: 25,      // blocked peers do not spin the setImmediate send pump
   maxConnections: 2000,         // concurrent sockets (enforced by index.js at upgrade time)
   maxConnectionsPerAddr: 64,    // concurrent sockets per client network key (0 = unlimited); see clientAddress
   maxSessions: 20_000,          // registry cap; oldest idle sessions are evicted first
@@ -302,6 +305,8 @@ export class TokenBucket {
  * invisible to JSON.stringify, so attaching it never changes a re-serialization.
  */
 export const ENCODED = Symbol('sp.encoded');
+// Match-owned identity: only replaceable snapshots in the same phase/round may share it.
+export const STATE_COALESCE = Symbol('sp.stateCoalesce');
 
 /** Monotonic outbound frame counters since process start (per-socket sends; /healthz `wire`). */
 export const wireStats = { frames: 0, bytes: 0, byType: new Map() };
@@ -352,15 +357,17 @@ const capturedMessages = new WeakMap();
 
 // A mutable source object can be reused before every recipient's slice executes. Give each encoding
 // a stable identity so stateTransport's shared snapshot cache never oscillates between old/new views.
-function captureMessage(msg, data, kind) {
-  if (!msg || typeof msg !== 'object') return { t: kind };
+function captureFrame(msg, data, kind) {
+  if (!msg || typeof msg !== 'object') return { data, bytes: Buffer.byteLength(data), kind, msg: null, droppable: false, scope: null };
   let captured = capturedMessages.get(msg);
-  if (!captured || captured.data !== data || captured.kind !== kind) {
-    captured = { data, kind, msg: { t: kind } };
+  const scope = (kind === 'm.public' || kind === 'm.private') ? msg[STATE_COALESCE] || null : null;
+  if (!captured || captured.data !== data || captured.kind !== kind || captured.scope !== scope) {
+    captured = { data, bytes: Buffer.byteLength(data), kind, msg: { t: kind }, droppable: isDroppable(msg), scope,
+      owner: kind === 'm.private' ? msg.playerId : null };
     reserveStateFrame(captured.msg, data);
     capturedMessages.set(msg, captured);
   }
-  return captured.msg;
+  return captured;
 }
 
 /**
@@ -374,19 +381,19 @@ function captureMessage(msg, data, kind) {
 export function sendRaw(ws, data, { droppable = false, kind = null } = {}) {
   if (!ws || ws.readyState !== WS_OPEN || typeof data !== 'string') return false;
   const network = socketNetworks.get(ws);
-  if (network) return network.queueFrame(ws, { data, droppable, kind, msg: null });
+  if (network) return network.queueFrame(ws, { data, bytes: Buffer.byteLength(data), droppable, kind, msg: null, scope: null });
   return writeRaw(ws, data, { droppable, kind });
 }
 
 /** Actually write a frame; the send pump must not re-enqueue its own writes. */
-function writeRaw(ws, data, { droppable = false, kind = null } = {}) {
+function writeRaw(ws, data, { droppable = false, kind = null, bytes } = {}) {
   try {
     const queued = ws.bufferedAmount;
     const diagnostics = socketDiagnostics.get(ws);
     if (queued > NET_DEFAULTS.hardBufferBytes) { if (diagnostics) diagnostics.slowDisconnects++; ws.terminate(); return false; }
     if (droppable && queued > NET_DEFAULTS.snapDropBytes) { if (diagnostics) diagnostics.droppedSnapshots++; return false; }
     ws.send(data, diagnostics?.sendCallback() || onSendDone);
-    diagnostics?.sent(data);
+    diagnostics?.sent(data, bytes);
     noteWireFrame(kind, data.length);
     return true;
   } catch {
@@ -409,16 +416,16 @@ export function send(ws, msg, encoded = null) {
   if (data == null || !ws || ws.readyState !== WS_OPEN) return false;
   const kind = msg && typeof msg === 'object' && typeof msg.t === 'string' ? msg.t : null;
   const network = socketNetworks.get(ws);
-  if (network) return network.queueFrame(ws, { data, droppable: isDroppable(msg), kind, msg: captureMessage(msg, data, kind) });
+  if (network) return network.queueFrame(ws, captureFrame(msg, data, kind));
   return writeMessage(ws, { data, droppable: isDroppable(msg), kind, msg });
 }
 
 /** Prepare deltas only when writing, after every earlier frame on this socket. */
-function writeMessage(ws, { msg, data, droppable, kind }) {
+function writeMessage(ws, { msg, data, droppable, kind, bytes }) {
   try {
-    const frame = prepareStateFrame(ws, msg, data);
+    const frame = prepareStateFrame(ws, msg, data, bytes);
     // Preserve logical message types in wireStats; count the actual full/delta frame length.
-    const queued = writeRaw(ws, frame.data, { droppable, kind });
+    const queued = writeRaw(ws, frame.data, { droppable, kind, bytes: frame.bytes });
     if (queued) {
       frame.commit();
       if (kind === 'm.result' || kind === 'room.closed') resetStateDelta(ws);
@@ -430,7 +437,7 @@ function writeMessage(ws, { msg, data, droppable, kind }) {
 /** Baseline resets must follow already queued states, so a recovery still starts with a full frame. */
 export function resetSocketState(ws) {
   const network = socketNetworks.get(ws);
-  if (network) return network.queueFrame(ws, { data: '', droppable: false, kind: null, msg: null, reset: true });
+  if (network) return network.queueFrame(ws, { data: '', bytes: 0, droppable: false, kind: null, msg: null, scope: null, reset: true });
   resetStateDelta(ws);
   return true;
 }
@@ -671,6 +678,8 @@ export class Network {
     this._heartbeatPending = false;
     /** Per-socket FIFO frames; Map insertion order rotates recipients fairly between slices. */
     this._outbound = new Map();
+    this._blockedOutbound = new Map();
+    this._backpressureTimer = null;
     this._outboundImmediate = null;
     this._sendVisits = 0;
     this._sendDeadline = 0;
@@ -688,7 +697,7 @@ export class Network {
   bufferedBytes() {
     let total = 0, max = 0;
     for (const conn of this.conns.values()) {
-      const n = (conn.ws?.bufferedAmount || 0) + (this._outbound.get(conn.ws)?.bytes || 0);
+      const n = (conn.ws?.bufferedAmount || 0) + (this._outbound.get(conn.ws)?.bytes || this._blockedOutbound.get(conn.ws)?.bytes || 0);
       total += n;
       if (n > max) max = n;
     }
@@ -700,12 +709,12 @@ export class Network {
    * The first 128 writes / 2 ms are immediate; the budget is shared across all rooms until setImmediate.
    * Deferred bytes count toward the existing snapshot-drop and disconnect limits.
    * @param {import('ws').WebSocket} ws
-   * @param {{ data: string, droppable: boolean, kind: string | null, msg: object | null, reset?: boolean }} frame
+   * @param {{ data: string, bytes: number, droppable: boolean, kind: string | null, msg: object | null, scope?: object | null, reset?: boolean }} frame
    */
   queueFrame(ws, frame) {
     const conn = this.conns.get(ws);
     if (this.closed || !conn || conn.closing || ws.readyState !== WS_OPEN) return false;
-    const pending = this._outbound.get(ws);
+    const pending = this._outbound.get(ws) || this._blockedOutbound.get(ws);
     const buffered = (ws.bufferedAmount || 0) + (pending?.bytes || 0);
     if (buffered > NET_DEFAULTS.hardBufferBytes) {
       this.diagnostics.slowDisconnects++;
@@ -718,18 +727,54 @@ export class Network {
     }
     // Transport probes carry no game state and may bypass queued gameplay frames.
     if (frame.kind === 'pong') return writeMessage(ws, frame);
+    const blocked = (ws.bufferedAmount || 0) > NET_DEFAULTS.snapDropBytes;
     if (!this._sendVisits) this._sendDeadline = performance.now() + 2;
-    if (!pending && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
+    if (!blocked && !pending && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
       this._sendVisits++;
       this._scheduleOutbound();
       return writeFrame(ws, frame);
     }
-    const queue = pending || { frames: [], head: 0, bytes: 0 };
-    queue.frames.push(frame);
-    queue.bytes += Buffer.byteLength(frame.data);
-    if (!pending) this._outbound.set(ws, queue);
-    this._scheduleOutbound();
+    const queue = pending || new OutboundQueue();
+    if (queue.push(frame, buffered > NET_DEFAULTS.snapDropBytes)) this.diagnostics.coalescedStates++;
+    if (queue.size > this.opts.maxQueuedFrames || (ws.bufferedAmount || 0) + queue.bytes > NET_DEFAULTS.hardBufferBytes) {
+      this.diagnostics.slowDisconnects++;
+      this._outbound.delete(ws);
+      this._blockedOutbound.delete(ws);
+      try { ws.terminate(); } catch { /* socket already closing */ }
+      return false;
+    }
+    if (blocked) {
+      this._outbound.delete(ws);
+      this._blockedOutbound.set(ws, queue);
+      this._scheduleBackpressure();
+    } else {
+      this._blockedOutbound.delete(ws);
+      this._outbound.set(ws, queue);
+      this._scheduleOutbound();
+    }
     return true;
+  }
+
+  _scheduleBackpressure() {
+    if (this._backpressureTimer !== null || this.closed || !this._blockedOutbound.size) return;
+    this._backpressureTimer = setTimeout(() => {
+      this._backpressureTimer = null;
+      for (const [ws, queue] of this._blockedOutbound) {
+        const conn = this.conns.get(ws);
+        if (!conn || conn.closing || ws.readyState !== WS_OPEN) this._blockedOutbound.delete(ws);
+        else if ((ws.bufferedAmount || 0) + queue.bytes > NET_DEFAULTS.hardBufferBytes) {
+          this.diagnostics.slowDisconnects++;
+          this._blockedOutbound.delete(ws);
+          try { ws.terminate(); } catch { /* socket already closing */ }
+        } else if ((ws.bufferedAmount || 0) <= NET_DEFAULTS.snapDropBytes) {
+          this._blockedOutbound.delete(ws);
+          this._outbound.set(ws, queue);
+        }
+      }
+      if (this._outbound.size) this._scheduleOutbound();
+      this._scheduleBackpressure();
+    }, this.opts.backpressurePollMs);
+    this._backpressureTimer.unref?.();
   }
 
   _scheduleOutbound() {
@@ -748,18 +793,17 @@ export class Network {
     this._sendDeadline = performance.now() + 2;
     while (!this.closed && this._outbound.size && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
       const [ws, queue] = this._outbound.entries().next().value;
-      const frame = queue.frames[queue.head];
-      queue.frames[queue.head++] = null; // release processed messages even if a later frame is still queued
-      queue.bytes -= Buffer.byteLength(frame.data);
-      if (queue.head >= 128 && queue.head * 2 >= queue.frames.length) {
-        queue.frames = queue.frames.slice(queue.head);
-        queue.head = 0;
-      }
       this._outbound.delete(ws);
-      if (queue.head < queue.frames.length) this._outbound.set(ws, queue);
       this._sendVisits++;
       const conn = this.conns.get(ws);
       if (conn && !conn.closing && ws.readyState === WS_OPEN) {
+        if ((ws.bufferedAmount || 0) > NET_DEFAULTS.snapDropBytes) {
+          this._blockedOutbound.set(ws, queue);
+          this._scheduleBackpressure();
+          continue;
+        }
+        const frame = queue.shift();
+        if (queue.size) this._outbound.set(ws, queue);
         writeFrame(ws, frame);
       } else this._outbound.delete(ws);
     }
@@ -992,6 +1036,11 @@ export class Network {
   onClose(conn) {
     socketNetworks.delete(conn.ws);
     this._outbound.delete(conn.ws);
+    this._blockedOutbound.delete(conn.ws);
+    if (!this._blockedOutbound.size && this._backpressureTimer !== null) {
+      clearTimeout(this._backpressureTimer);
+      this._backpressureTimer = null;
+    }
     socketDiagnostics.delete(conn.ws);
     if (this.conns.delete(conn.ws) && conn.key) {
       const n = (this.connsPerKey.get(conn.key) || 1) - 1;
@@ -1058,6 +1107,9 @@ export class Network {
     if (this._outboundImmediate !== null) clearImmediate(this._outboundImmediate);
     this._outboundImmediate = null;
     this._outbound.clear();
+    if (this._backpressureTimer !== null) clearTimeout(this._backpressureTimer);
+    this._backpressureTimer = null;
+    this._blockedOutbound.clear();
     this.diagnostics.close();
     clearInterval(this.heartbeatTimer);
     clearInterval(this.sweepTimer);

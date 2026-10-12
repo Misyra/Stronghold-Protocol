@@ -27,7 +27,7 @@ function snapshotFor(msg, encoded) {
   if (!snapshot || snapshot.encoded !== encoded) {
     const seq = ++sequence;
     snapshot = {
-      encoded, seq, view: undefined, transitions: new WeakMap(),
+      encoded, seq, view: undefined, transitions: new WeakMap(), fullBytes: undefined,
       full: `{"t":"m.state","kind":${JSON.stringify(msg.t)},"seq":${seq},"full":${encoded}}`,
     };
     snapshots.set(msg, snapshot);
@@ -41,23 +41,26 @@ function snapshotView(snapshot) {
 }
 
 /** Return an encoded state and commit its baseline ONLY after the caller successfully queues the reliable frame. */
-export function prepareStateFrame(ws, msg, encoded) {
+export function prepareStateFrame(ws, msg, encoded, bytes = Buffer.byteLength(encoded)) {
   const states = connections.get(ws);
-  if (!states || !isStateKind(msg?.t)) return { data: encoded, commit() {} };
+  if (!states || !isStateKind(msg?.t)) return { data: encoded, bytes, commit() {} };
   // The encoding, not mutable game objects, owns this immutable baseline.
   const snapshot = snapshotFor(msg, encoded);
+  snapshot.fullBytes ??= Buffer.byteLength(snapshot.full);
   const previous = states.get(msg.t);
-  let data = snapshot.full;
+  let data = snapshot.full, wireBytes = snapshot.fullBytes;
   if (previous && previous !== snapshot && snapshot.seq > previous.seq) {
     let transition = snapshot.transitions.get(previous);
     if (transition === undefined) {
       const patch = diffState(snapshotView(previous), snapshotView(snapshot));
       const delta = patch && JSON.stringify({ t: 'm.state', kind: msg.t, seq: snapshot.seq, base: previous.seq, patch });
       // Compare actual UTF-8 bytes, not JS string length. Large changes fall back to full.
-      transition = delta && Buffer.byteLength(delta) < Buffer.byteLength(snapshot.full) ? delta : snapshot.full;
+      const deltaBytes = delta && Buffer.byteLength(delta);
+      transition = delta && deltaBytes < snapshot.fullBytes ? { data: delta, bytes: deltaBytes } : { data: snapshot.full, bytes: snapshot.fullBytes };
       snapshot.transitions.set(previous, transition);
     }
-    data = transition;
+    data = transition.data;
+    wireBytes = transition.bytes;
   }
-  return { data, commit() { states.set(msg.t, snapshot); } };
+  return { data, bytes: wireBytes, commit() { states.set(msg.t, snapshot); } };
 }

@@ -195,6 +195,74 @@ export function parseSceneChunks(doc, buf) {
   return out;
 }
 
+/**
+ * Mesh bucket of a scene chunk. One material and one lightmap page are one draw. Water ignores the page: that shader
+ * has no lightmap (`scene.js` `sceneWaterMaterial`).
+ * @param {{ material?: string, lightmap?: number }} chunk
+ * @param {{ kind?: string }|null} info scene.json materials[name]
+ */
+export function sceneMaterialKey(chunk, info) {
+  return `${chunk?.material}|${info?.kind === 'water' ? '' : chunk?.lightmap}`;
+}
+
+/**
+ * One scene chunk from several that share a material bucket (`sceneMaterialKey`). Vertex attributes stay in the
+ * scene.bin layout (position f32×3, uv f32×2, lightmap uv f32×2, normal i8×4, colour u8×4) and indices are rewritten
+ * with the vertex offset; past 65535 vertices the index is 32-bit (WebGL2). A single chunk is returned as-is, so the
+ * pack's views of scene.bin stay shared. The caller passes chunks of one bucket that are on screen together: a
+ * file-level merge would bake a switched-off HIDDEN part into the base mesh.
+ * @param {object[]|null} chunks
+ * @returns {object|null}
+ */
+export function mergeSceneChunks(chunks) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return null;
+  if (chunks.length === 1) return chunks[0];
+  const first = chunks[0];
+  let nv = 0, ni = 0, index32 = false;
+  for (const c of chunks) {
+    const n = c?.position?.length / 3;
+    if (!Number.isInteger(n) || n <= 0) throw new Error(`scene chunk ${c?.material}: ${c?.position?.length ?? 0} position components`);
+    if (c.material !== first.material) throw new Error(`scene merge mixes ${first.material} and ${c.material}`);
+    if (c.uv?.length !== n * 2 || c.uv1?.length !== n * 2 || c.normal?.length !== n * 4 || c.color?.length !== n * 4) {
+      throw new Error(`scene chunk ${c.material}: attributes do not match ${n} vertices`);
+    }
+    if (!c.index || c.index.length === 0) throw new Error(`scene chunk ${c.material}: no indices`);
+    nv += n;
+    ni += c.index.length;
+    if (c.index instanceof Uint32Array) index32 = true;
+  }
+  if (nv > 65535) index32 = true;
+  const position = new Float32Array(nv * 3);
+  const uv = new Float32Array(nv * 2);
+  const uv1 = new Float32Array(nv * 2);
+  const normal = new Int8Array(nv * 4);
+  const color = new Uint8Array(nv * 4);
+  const index = index32 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let vo = 0, io = 0, bounds = null;
+  for (const c of chunks) {
+    const n = c.position.length / 3;
+    position.set(c.position, vo * 3);
+    uv.set(c.uv, vo * 2);
+    uv1.set(c.uv1, vo * 2);
+    normal.set(c.normal, vo * 4);
+    color.set(c.color, vo * 4);
+    for (let i = 0; i < c.index.length; i++) {
+      const v = c.index[i];
+      if (v < 0 || v >= n) throw new Error(`scene chunk ${c.material}: index ${v} out of ${n}`);
+      index[io + i] = v + vo;
+    }
+    vo += n;
+    io += c.index.length;
+    if (Array.isArray(c.bounds) && c.bounds.length >= 6) {
+      const b = c.bounds;
+      bounds = bounds
+        ? [Math.min(bounds[0], b[0]), Math.min(bounds[1], b[1]), Math.min(bounds[2], b[2]), Math.max(bounds[3], b[3]), Math.max(bounds[4], b[4]), Math.max(bounds[5], b[5])]
+        : b.slice();
+    }
+  }
+  return { material: first.material, lightmap: first.lightmap, group: '', bounds, position, uv, uv1, normal, color, index };
+}
+
 /** Ground rect [x0, y0, x1, y1] (board space) of every named group of chunks (the scene's switchable parts). */
 export function sceneGroupRects(chunks) {
   const out = {};

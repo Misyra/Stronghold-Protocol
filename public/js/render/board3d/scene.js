@@ -19,6 +19,8 @@
 // static crates (merged, same material),
 // decals (MT_autochess_common), fence pipes, blowers (merged, unlit), gate boxes (additive + alpha, merged per
 // material), cyan field edges, terrain overlays (≤ 4), background plane + its shadow catcher — ~12–16 in total.
+// An official scene replaces the tiles, glass, decals, pipes and background with one mesh per material and lightmap
+// page of the parts the built areas show (load.js mergeSceneChunks). Devices, gates, edges and terrain stay.
 // The key light's shadow map is rendered only when the geometry changes (autoUpdate off).
 
 import { buildBoard, objToBoard, boxProjectUV, ROWS, COLS, DEVICE_H, AREAS } from './layout.js';
@@ -28,6 +30,7 @@ import {
   waterMaterial, mireMaterial, infectionMaterial, smogMaterial, dashTexture, environmentMap, sceneMaterial, sceneWaterMaterial,
 } from './materials.js';
 import { syncThreeCamera } from '../projection.js';
+import { mergeSceneChunks, sceneMaterialKey } from './load.js';
 
 /** Lighting rig (tuned against the official screenshots: bright even tops, darker sides, soft shadows). */
 export const LIGHTING = Object.freeze({
@@ -343,18 +346,29 @@ export class BoardScene {
     this.sceneRes.delete(pack.key);
   }
 
-  /** The official scene's meshes: one per chunk of a shown part (the base + the fields of the built areas). */
+  /**
+   * The official scene's meshes: the base plus the fields of the built areas, one mesh per material and lightmap
+   * page (`mergeSceneChunks`). A switched-off HIDDEN part is left out before the merge.
+   */
   _buildScene(pack) {
     const T = this.THREE;
     const res = this._sceneResources(pack);
     const infos = pack.doc?.materials || {};
     this.sceneWater = [];
-    let n = 0;
+    const buckets = new Map();
     for (const c of pack.chunks || []) {
       if (c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
       const info = infos[c.material] || null;
+      const mk = sceneMaterialKey(c, info);
+      let bucket = buckets.get(mk);
+      if (!bucket) { bucket = { info, chunks: [] }; buckets.set(mk, bucket); }
+      bucket.chunks.push(c);
+    }
+    let n = 0;
+    for (const [mk, bucket] of buckets) {
+      const c = mergeSceneChunks(bucket.chunks);
+      const info = bucket.info;
       const water = info?.kind === 'water';
-      const mk = `${c.material}|${water ? '' : c.lightmap}`;
       let mat = res.mats.get(mk);
       if (!mat) {
         mat = water

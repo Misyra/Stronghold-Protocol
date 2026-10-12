@@ -18,7 +18,8 @@ import { resolveUvTable } from '../../public/js/render/board3d/atlas.js';
 import { presetCamera } from '../../public/js/render/projection.js';
 import { sceneMaterial, sceneWaterMaterial, sceneBlend, focusUniforms, SCENE_LIGHT } from '../../public/js/render/board3d/materials.js';
 import {
-  parseSceneChunks, sceneGroupRects, loadScenePack, sceneListed, resetBoardPack, sceneGroup, SCENE_TEX_GROUP, SCENE_VERSION, SCENE_VERTEX_BYTES,
+  parseSceneChunks, sceneGroupRects, loadScenePack, sceneListed, resetBoardPack, sceneGroup, sceneMaterialKey, mergeSceneChunks,
+  SCENE_TEX_GROUP, SCENE_VERSION, SCENE_VERTEX_BYTES,
 } from '../../public/js/render/board3d/load.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -211,6 +212,45 @@ describe('scene chunks (load.js)', () => {
     assert.equal(parseSceneChunks(doc, null), null);
   });
 
+  test('sceneMaterialKey / mergeSceneChunks: one mesh per material and lightmap page; indices keep each quad', () => {
+    assert.equal(sceneMaterialKey({ material: 'M', lightmap: 3 }, { kind: 'lit' }), 'M|3');
+    assert.equal(sceneMaterialKey({ material: 'M', lightmap: 0 }, null), 'M|0');
+    assert.equal(sceneMaterialKey({ material: 'W', lightmap: -1 }, { kind: 'water' }), 'W|');
+    assert.equal(sceneMaterialKey({ material: 'W', lightmap: 2 }, { kind: 'water' }), 'W|', 'water has no lightmap page');
+    const { doc, bin } = fakeScene([{ material: 'M', x0: 0, y0: 0 }, { material: 'M', x0: 3, y0: 1, group: 'HIDDEN@1' }]);
+    const chunks = parseSceneChunks(doc, bin);
+    assert.equal(mergeSceneChunks([chunks[0]]), chunks[0], 'a single chunk stays the scene.bin view');
+    assert.equal(mergeSceneChunks([]), null);
+    assert.equal(mergeSceneChunks(null), null);
+    const merged = mergeSceneChunks(chunks);
+    assert.equal(merged.position.length / 3, 8);
+    assert.ok(merged.index instanceof Uint16Array);
+    assert.deepEqual([...merged.index], [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+    assert.equal(merged.position[12], 3, 'the second quad keeps its board position');
+    assert.equal(merged.normal[18], 127);
+    assert.deepEqual([...merged.color.slice(16, 20)], [255, 255, 255, 255]);
+    assert.deepEqual([...merged.uv1.slice(8, 12)], [0, 0, 0.5, 0]);
+    assert.deepEqual([...chunks[1].index], [0, 1, 2, 0, 2, 3], 'the source chunk is not rewritten');
+    assert.deepEqual(merged.bounds, [0, 0, 0, 4, 2, 0]);
+    const big = new Float32Array(65535 * 3);
+    const one = {
+      material: 'M', lightmap: 0, group: '', bounds: null,
+      position: big, uv: new Float32Array(65535 * 2), uv1: new Float32Array(65535 * 2),
+      normal: new Int8Array(65535 * 4), color: new Uint8Array(65535 * 4), index: new Uint16Array([0, 0, 0]),
+    };
+    const extra = {
+      material: 'M', lightmap: 0, group: 'HIDDEN@1', bounds: null,
+      position: new Float32Array([9, 8, 7]), uv: new Float32Array(2), uv1: new Float32Array(2),
+      normal: new Int8Array(4), color: new Uint8Array(4), index: new Uint16Array([0, 0, 0]),
+    };
+    const wide = mergeSceneChunks([one, extra]);
+    assert.ok(wide.index instanceof Uint32Array, 'past 65535 vertices the index is 32-bit');
+    assert.equal(wide.position.length / 3, 65536);
+    assert.equal(wide.index[3], 65535);
+    assert.equal(wide.position[65535 * 3], 9);
+    assert.throws(() => mergeSceneChunks([{ ...chunks[0], material: 'Other' }, chunks[1]]), /mixes/);
+  });
+
   test('sceneGroupRects / sceneGroupVisible: the official sub-graphics are the fields of the built areas', () => {
     const { doc, bin } = fakeScene(PARTS);
     const rects = sceneGroupRects(parseSceneChunks(doc, bin));
@@ -305,9 +345,17 @@ describe('BoardScene with an official scene (stub renderer)', () => {
     assert.ok(!board.meshes.board && !board.meshes.glass && !board.meshes.decal && !board.meshes.pipe && !board.meshes.bg && !board.meshes.bgShadow);
     assert.ok(board.meshes.crates && board.meshes.edges && board.meshes.mire, Object.keys(board.meshes).join());
     const meshes = sceneMeshes(board);
-    assert.equal(meshes.length, 4, 'base ×2 + the left normal field ×2 (AREAS.normal)');
+    assert.equal(meshes.length, 3, 'base + the left field: the two M quads share one mesh');
+    assert.deepEqual(meshes.map((m) => m.geometry.getAttribute('position').count).sort((a, b) => a - b), [4, 4, 8]);
+    const xs = meshes.flatMap((m) => {
+      const a = m.geometry.getAttribute('position').array;
+      const out = [];
+      for (let i = 0; i < a.length; i += 3) out.push(a[i]);
+      return out;
+    });
+    assert.ok(xs.includes(9) && xs.includes(4), 'base and the left field');
+    assert.ok(!xs.includes(16) && !xs.includes(11), 'the right field and the boss field stay out');
     for (const m of meshes) {
-      assert.equal(m.geometry.getAttribute('position').count, 4);
       assert.ok(m.geometry.getAttribute('aLm') && m.geometry.getAttribute('aColor').normalized && m.geometry.getAttribute('normal').normalized);
       assert.equal(m.castShadow, false);
     }
@@ -328,9 +376,9 @@ describe('BoardScene with an official scene (stub renderer)', () => {
     assert.equal(lit.uniforms.uMap.value.colorSpace, THREE.SRGBColorSpace);
     assert.equal(lit.uniforms.uLm.value.colorSpace, THREE.NoColorSpace);
     board.setArea(AREAS.boss);
-    assert.equal(sceneMeshes(board).length, 3, 'base ×2 + the boss field');
+    assert.equal(sceneMeshes(board).length, 2, 'base + the boss field, the two M quads merged');
     board.setArea(AREAS.unite);
-    assert.equal(sceneMeshes(board).length, 5, 'base ×2 + both normal fields (2 + 1)');
+    assert.equal(sceneMeshes(board).length, 3, 'base + both normal fields: M merged, water, cutout');
     assert.equal(sceneMeshes(board).find((m) => m.material.uniforms.uMap).material, lit, 'same material object');
     assert.equal(board.sceneRes.size, 1);
     board.destroy();
@@ -350,6 +398,27 @@ describe('BoardScene with an official scene (stub renderer)', () => {
     assert.ok(board.meshes.board && board.meshes.bg && !sceneMeshes(board).length);
     assert.equal(board.setScenePack(stage.id, null), false, 'nothing to drop');
     assert.equal(board.setScenePack('', fakeScenePack()), false);
+    board.destroy();
+  });
+
+  test('a different lightmap page stays its own mesh; water pages share one', () => {
+    const board = new BoardScene(THREE, fakePack(), { renderer: stubRenderer() });
+    const parts = [
+      { material: 'M', x0: 4, y0: 9, lightmap: 0, group: 'HIDDEN@1' },
+      { material: 'M', x0: 9, y0: 15, lightmap: 1 },
+      { material: 'W', x0: 5, y0: 9, lightmap: 0, group: 'HIDDEN@1' },
+      { material: 'W', x0: 6, y0: 9, lightmap: 1, group: 'HIDDEN@1' },
+    ];
+    const { doc, bin } = fakeScene(parts);
+    const chunks = parseSceneChunks(doc, bin);
+    board.setScenePack(stage.id, { key: 'split', stage: stage.id, doc, chunks, groups: sceneGroupRects(chunks), images: { tex: {}, lm: [] } });
+    board.setStage(stage);
+    const meshes = sceneMeshes(board);
+    assert.equal(meshes.length, 3, 'M|0, M|1, and one water mesh');
+    const water = meshes.filter((m) => m.material.uniforms.uDeep);
+    assert.equal(water.length, 1);
+    assert.equal(water[0].geometry.getAttribute('position').count, 8, 'both water quads');
+    assert.equal(board.sceneWater.length, 1);
     board.destroy();
   });
 
@@ -391,4 +460,35 @@ describe('extracted scenes (when scene bundles were extracted here)', { skip: !O
       assert.ok(L && Math.abs(Math.hypot(...L.dir) - 1) < 1e-3 && L.dir[2] > 0, 'the key light shines down on the board');
     });
   }
+
+  test('each built area is one mesh per material and lightmap, with every shown vertex and no switched-off part', () => {
+    const views = [['normal', AREAS.normal], ['boss', AREAS.boss], ['unite', AREAS.unite]];
+    for (const g of Object.keys(groups).filter((k) => k.startsWith('scene/act'))) {
+      if (!existsSync(file(groups[g].scene?.path || '/x'))) continue;
+      const doc = JSON.parse(readFileSync(file(groups[g].scene.path), 'utf8'));
+      const bin = readFileSync(file(groups[g].bin.path));
+      const chunks = parseSceneChunks(doc, bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.length));
+      const rects = sceneGroupRects(chunks);
+      const stage = stages[doc.stage];
+      const board = new BoardScene(THREE, fakePack(), { renderer: stubRenderer() });
+      board.setScenePack(doc.stage, { key: g, stage: doc.stage, doc, chunks, groups: rects, images: { tex: {}, lm: [] } });
+      board.setStage(stage);
+      for (const [name, area] of views) {
+        board.setArea(area);
+        const shown = chunks.filter((c) => !c.group || sceneGroupVisible(rects[c.group], area));
+        const keys = new Set(shown.map((c) => sceneMaterialKey(c, doc.materials[c.material])));
+        const meshes = sceneMeshes(board);
+        assert.equal(meshes.length, keys.size, `${doc.stage} ${name}: ${shown.length} chunks → ${keys.size} meshes`);
+        assert.ok(meshes.length > 0 && meshes.length <= 16, `${doc.stage} ${name}: ${meshes.length} scene draw calls`);
+        let verts = 0;
+        for (const m of meshes) verts += m.geometry.getAttribute('position').count;
+        assert.equal(verts, shown.reduce((a, c) => a + c.position.length / 3, 0), `${doc.stage} ${name} vertices`);
+        if (name !== 'unite') assert.ok(board.root.children.length <= 19, `${doc.stage} ${name}: ${board.root.children.length} meshes beside one battle device still fit 20 draws`);
+      }
+      assert.equal(board.meshes.board, undefined, `${doc.stage}: the scene replaces the metal tiles`);
+      board.setScenePack(doc.stage, null);
+      assert.ok(board.meshes.board && board.meshes.bg, `${doc.stage}: dropping the scene restores the metal board`);
+      board.destroy();
+    }
+  });
 });

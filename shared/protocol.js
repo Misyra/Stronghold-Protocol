@@ -5,6 +5,7 @@ import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } fro
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from './potential.js';
+import { isContentHash } from './plugins/identity.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -464,7 +465,9 @@ export const C2S = {
     leaksBy: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, 1e6)),
     $optional: ['resolved', 'leaks', 'bossDmg', 'by', 'done', 'left', 'leaksBy'],
   },
-  'b.result': { battleId: isId, result: isBattleResult },
+  // `cs` (DESIGN §31, optional): the content hash the reporting browser ran the battle on — its spec's `cs`. Checked for
+  // its form only; the server compares it with the spec once rooms can choose plugins (P1c)
+  'b.result': { battleId: isId, result: isBattleResult, cs: isContentHash, $optional: ['cs'] },
 };
 
 // Server → client message types (documentation + client dispatch table keys).

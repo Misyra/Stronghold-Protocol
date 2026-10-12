@@ -3,7 +3,7 @@
 // DESIGN §14. Pure ESM (served at /sim/spec.js): no Node API.
 //
 //   const spec = buildBattleSpec({ battleId, fieldId, kind, seed, modeId, round, stageId, rect, timeLimit, players,
-//                                  spawns, routes, flags, enemyOverrides, waveId, bossId, content, boss })
+//                                  spawns, routes, flags, enemyOverrides, waveId, bossId, content, boss, cs })
 //   const battle = createBattleFromSpec(spec, dataSource, { sharedBoss?, BattleClass?, logger?, recordEvents?, quiet? })
 //
 // A spec is JSON-safe by construction (it IS the JSON round trip of its inputs: `undefined` / functions vanish,
@@ -30,10 +30,14 @@
 // `cultivate` (练度 0–3: the effects.json CHAR_MAP aceffect_char_1…4 — a ×ATK / ×DEF / ×max HP of the unit, its own
 // multiplier); each kept only when well-formed and never on a stand-in. Absent: full potential and no 练度 (a raw
 // unit — the match always states both for an owned operator: PlayerState.battleInput).
+// Content identity (DESIGN §31): `cs`, the content hash of the room's content set (shared/plugins/identity.js; 64 hex
+// digits), is kept when well-formed and left out otherwise — a spec built without one is what it always was. The sim
+// never reads it: it names what the battle runs on, for the checks of a later step, the diagnostics and replays.
 
 import { Battle } from './Battle.js';
 import { toDataSource, withUnitLoadouts } from './simdata.js';
 import { isPotential, isCultivate } from '../../shared/potential.js';
+import { isContentHash } from '../../shared/plugins/identity.js';
 import { BOSS_POOL_MIN_HP } from './constants.js';
 
 export const SPEC_VERSION = 1;
@@ -79,6 +83,8 @@ export function buildBattleSpec(o = {}) {
     bossId: o.bossId ?? null,
     content: o.content ?? 'full',
     boss: bossLike && o.boss ? { poolHp: Number(o.boss.poolHp) || 0, poolMax: Number(o.boss.poolMax) || 1 } : null,
+    // the content set the battle runs on (header): not read by the sim
+    ...(isContentHash(o.cs) ? { cs: o.cs } : {}),
   };
   const out = JSON.parse(JSON.stringify(spec, specReplacer));
   for (const p of out.players) for (const u of (p && Array.isArray(p.units) ? p.units : [])) if (u && typeof u === 'object') sanitizeUnitLoadout(u);

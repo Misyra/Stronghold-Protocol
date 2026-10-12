@@ -36,6 +36,9 @@
 //   opts.seed        uint32                     master seed for all match randomness
 //   opts.matchNo     integer ≥ 1 (optional)     the room's match number (lobby: room.matchCount + 1); with the seed it
 //                                              makes this match's battleIds unique within the room (DESIGN §14)
+//   opts.cs          string (optional)          the content hash of the room's content set (DESIGN §31,
+//                                              server/plugins/identity.js; 64 hex digits): copied into every BattleSpec
+//                                              as `cs` — the sim never reads it; absent (or malformed) ⇒ specs carry none
 //   opts.data        frozen game data (server/data.js getData()); may lack keys while data is generated
 //   opts.log         { info, warn, error, debug }
 //   opts.now         () => ms epoch             injectable clock (Date.now in production)
@@ -173,6 +176,7 @@
 //                    fail, BOSS_CLOCK_MS)
 
 import { PHASE, modeIdFor } from '../../shared/constants.js';
+import { isContentHash } from '../../shared/plugins/identity.js';
 import { Battle } from '../sim/Battle.js';
 import { DataSource } from '../sim/simdata.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
@@ -242,6 +246,8 @@ export class Match {
     this.broadcastFn = opts.broadcast;
     this.onEndFn = opts.onEnd;
     this.data = opts.data && typeof opts.data === 'object' ? opts.data : {};
+    /** the room's content hash (opts.cs, DESIGN §31): every BattleSpec carries it */
+    this.cs = isContentHash(opts.cs) ? opts.cs : null;
     this.gd = new GameData(this.data, this.modeId);
     if (!this.difficulty) this.difficulty = this.gd.difficulty;
     this.isSolo = this.mode === 'solo' || this.gd.isSolo;

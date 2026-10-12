@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // tools/packs.mjs — the content packs of a checkout (docs/PACKS.md; server/packs.js is the registry the server runs,
-// shared/packs.js the format):
+// shared/packs.js the format). The plugins have their own tool, tools/plugin.mjs (docs/PLUGINS.md); a lang plugin of
+// plugins/ counts as a pack here, as it does in the server's /packs/index.json:
 //
 //   node tools/packs.mjs list [--json]          the packs by type (folder packs in packs/, the language packs of
-//                                                public/i18n/), what was skipped and why, the warnings
+//                                                public/i18n/, lang plugins), what was skipped and why, the warnings
 //   node tools/packs.mjs index [--out <file>]   write the pack index — what GET /packs/index.json answers — to
 //                                                packs/index.json (git-ignored), for a static host that cannot run the
 //                                                server's live list; tools/package.mjs writes it into the release zips
@@ -21,8 +22,8 @@ import { PACK_TYPES, PACK_INDEX_FILE } from '../shared/packs.js';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const USAGE = 'usage: node tools/packs.mjs list [--json] | index [--out <file>] | check [--strict]   [--root <dir>]';
 
-/** The pack folders of a checkout. @param {string} root */
-export const packDirs = (root) => ({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs') });
+/** The pack folders of a checkout (and plugins/, for its lang plugins). @param {string} root */
+export const packDirs = (root) => ({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins') });
 
 /**
  * Write the pack index of a checkout (default <root>/packs/index.json); returns its body.

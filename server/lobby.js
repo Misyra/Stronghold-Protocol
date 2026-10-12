@@ -85,6 +85,11 @@
 //     and a change while it runs is stored for the next match (ROOM_STARTED 'stored for the next match'). Every
 //     `welcome` carries `diyKitted` (welcomeInfo): the operators a DIY slot may field, so the client's picker offers
 //     exactly what the server accepts.
+//   * Content identity (DESIGN §31, the plugin system's first step): the lobby is given the server's vanilla content
+//     (server/plugins/identity.js; none in unit tests that build a Lobby without it). Every `welcome` carries
+//     `content: { vanilla: <cs> }`, every room's `room.state.content` is `{ cs, vanilla: true, plugins: [] }` — always
+//     the vanilla set until rooms can choose plugins (P1c) — and the match receives `cs`, which it copies into every
+//     BattleSpec (the sim never reads it; diagnostics and replays name the content with it).
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -105,6 +110,7 @@ import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
+import { isContentHash } from '../shared/plugins/identity.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -203,6 +209,12 @@ export class Room {
     this.matchKey = null;
     this.createdAt = now;
     this.disposed = false;
+    /**
+     * The content set the room plays (DESIGN §31): `{ cs, vanilla, plugins }` — the server's vanilla set until rooms can
+     * choose plugins (P1c); null when the lobby has no content identity (room.state then carries none).
+     * @type {Readonly<{ cs: string, vanilla: boolean, plugins: readonly object[] }> | null}
+     */
+    this.content = null;
   }
 
   /** @param {string} playerId @returns {Seat | null} */
@@ -234,6 +246,7 @@ export class Room {
         ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left }
         : null)),
       spectators: this.spectators.map((s) => ({ playerId: s.playerId, name: s.name, connected: s.connected })),
+      ...(this.content ? { content: this.content } : {}),
     };
   }
 }
@@ -248,11 +261,15 @@ export class Lobby {
    *   getData?: () => object,
    *   now?: () => number,
    *   seedFn?: () => number,
+   *   content?: { cs: string } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
+   *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity")
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, options = {} }) {
     this.registry = registry;
+    /** the vanilla content set every room plays (header "Content identity"), or null */
+    this.vanilla = content && isContentHash(content.cs) ? Object.freeze({ cs: content.cs, vanilla: true, plugins: Object.freeze([]) }) : null;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
@@ -415,6 +432,7 @@ export class Lobby {
     if (!code) return fail(ERR.INTERNAL, 'no room code available');
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now());
+    room.content = this.vanilla;
     room.ownerKey = key;
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
@@ -703,9 +721,12 @@ export class Lobby {
     return OK;
   }
 
-  /** Extra fields of every `welcome` (net.js): the operators a 自选 slot may field (shared/diy.js `kitted`). */
+  /**
+   * Extra fields of every `welcome` (net.js): the operators a 自选 slot may field (shared/diy.js `kitted`) and the
+   * server's content identity (header "Content identity").
+   */
   welcomeInfo() {
-    return { diyKitted: KITTED_CHARS };
+    return this.vanilla ? { diyKitted: KITTED_CHARS, content: { vanilla: this.vanilla.cs } } : { diyKitted: KITTED_CHARS };
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -744,6 +765,8 @@ export class Lobby {
         seed,
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
         matchNo: room.matchCount + 1,
+        // the room's content hash (header "Content identity"): copied into every BattleSpec
+        ...(room.content ? { cs: room.content.cs } : {}),
         data: this.safeData(),
         log: this.log,
         now: this.now,

@@ -30,7 +30,8 @@
 // The handler object (implemented by server/lobby.js) receives:
 //   onHello(session, { resumed, repeat })  after `welcome` was sent
 //   welcomeInfo() → object (optional)      extra fields of every `welcome` (never one of its own keys): the lobby's
-//                                          `diyKitted` (0.2.0 自选编队 — which operators a DIY slot may field)
+//                                          `diyKitted` (0.2.0 自选编队 — which operators a DIY slot may field) and
+//                                          `content` ({ vanilla: <cs> }, the server's content hash — DESIGN §31)
 //   onMessage(session, msg) → { ok: true } | { error: ERR code, detail?: string } | undefined
 //   routeGame(session, msg) → same (optional): client-side combat reports `b.progress` / `b.result` (DESIGN §14) go
 //                                          straight to the running match through it; without it they reach onMessage

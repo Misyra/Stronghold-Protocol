@@ -3,7 +3,8 @@
 //
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
-//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
+//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, the vanilla content
+//     hash `content.vanilla` and the modded content sets in use `content.sets` — DESIGN §31 —, sockets, sessions,
 //     rooms, matches), never cached;
 //   * everything else → the static files (static.js).
 // A route that throws is logged and answers 500.
@@ -17,14 +18,18 @@ const MAX_URL_LENGTH = 4096;
 /**
  * The GET /healthz body.
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby }} health
+ *           lobby: import('../lobby.js').Lobby, content?: { cs: string } | null }} health
+ *   content: the server's vanilla content (server/plugins/identity.js)
  */
-export function healthReport({ startedAt, network, registry, lobby }) {
+export function healthReport({ startedAt, network, registry, lobby, content = null }) {
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
+    // what its rooms play (DESIGN §31): the vanilla content hash, and how many content sets with plugins are in use —
+    // none before rooms can choose plugins (P1c)
+    ...(content ? { content: { vanilla: content.cs, sets: 0 } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
 }

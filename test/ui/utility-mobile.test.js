@@ -57,9 +57,15 @@ test('--utility-text is a typography-only token: theme.css still owns --t and th
   });
 });
 
-test('every management root declares the floor itself, because the hosts are siblings of the screens', () => {
-  const roots = declaration(':is(.modal--utility, .guide, .lo, .st, .title-screen, .lobby-screen, .room-screen)', '--utility-text', MOBILE);
+test('every management root declares its own text scale, because the hosts are siblings of the screens', () => {
+  const roots = declaration(':is(.modal--utility, .guide, .lo, .st)', '--utility-text', MOBILE);
   assert.equal(roots, 'max(var(--t), 64px)');
+  // The title, the lobby, the room and the resource / settings / about dialogs are game-scale surfaces:
+  // they follow the saved text size exactly (xinhai ba744327) — the floor would pin 小 and 中 together
+  // on a phone and make the setting do nothing on any of them.
+  assert.equal(declaration(':is(.title-screen, .lobby-screen, .room-screen)', '--utility-text', MOBILE), 'var(--t)');
+  assert.equal(declaration(':is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel)',
+    '--utility-text', MOBILE), 'var(--t)');
   assert.equal(hasRule(':is(.utility-modal, .lobby-screen, .room-screen)', MOBILE), false,
     'the modal host, not the box, must carry the variable: UiHosts is a child of .app-root');
 });
@@ -123,16 +129,31 @@ test('source pages and the bundle load the density layer right after devices.css
 // 4. the battlefield keeps its own geometry
 // ---------------------------------------------------------------------------------------------
 
-test('no rule in this layer touches the HUD, the board, the shop, the detail card, the chat or the in-match stats', () => {
+test('no rule in this layer touches the HUD, the board, the shop, the detail card or the chat', () => {
+  // The 作战统计 panel is the one battle-side exception (next test): it is docked *by* the layer, not restyled around.
   const battle = /\.gm__hud|\.gm__field|\.gm\b|\.shopbar|\.scard|\.ewheel|\.readybtn|\.uframe|\.bstrip|\.dpanel|\.dhead|\.chud|\.gtop|\.team\b|\.capsule|\.tooltip/;
   sheet.walkRules((rule) => assert.doesNotMatch(rule.selector, battle, `battle selector ${rule.selector}`));
 });
 
-test('the in-match statistics window this layer was adapted from does not exist here, so nothing battle-side is targeted', () => {
-  // xinhai's combat-metrics panel has no counterpart in this fork: the layer must never grow a rule for it.
-  assert.doesNotMatch(source, /combat-metrics/);
+test('the combat statistics panel is the single battle-side surface this layer carries, and keeps its own type floor', () => {
+  // Ported from xinhai's combat-metrics panel (the owner's decision): it docks over the corner, so the layer carries its
+  // compact chrome and the position it floats to when the corner no longer fits the visible viewport
+  // (ui/combatMetricsLayout.js publishes the measured heights, ui/combatMetrics.js the data-viewport-docked flag).
+  assert.match(source, /\.combat-metrics \{/);
+  assert.match(source, /\.combat-metrics\[data-viewport-docked="true"\]/);
+  assert.match(source, /--combat-available-height/);
+  assert.match(source, /--combat-viewport-height/);
+  // nothing else of the battlefield came in with it
   assert.equal(hasRule('.gm__hud'), false);
   assert.equal(hasRule('.shopbar'), false);
+  assert.equal(hasRule('.gm__corner'), false, 'the panel is positioned; the corner itself keeps its geometry');
+  // It reads --t with game.css's explicit px floors, NOT the management floor: --utility-text is declared on the
+  // management roots only, so a declaration here reading it would silently fall back to --t and drop those floors.
+  sheet.walkRules((rule) => {
+    if (!/combat-metrics/.test(rule.selector)) return;
+    rule.walkDecls((decl) => assert.doesNotMatch(decl.value, /var\(--utility-text/,
+      `${rule.selector} ${decl.prop} must not read the management floor`));
+  });
   // and the battle stylesheets must not have taken the management token either
   for (const file of ['public/css/screens/game.css', 'public/css/screens/game-shop.css', 'public/css/screens/game-panels.css', 'public/css/emotes.css']) {
     assert.doesNotMatch(read(file), /--utility-text/, file);
@@ -149,10 +170,10 @@ test('compact controls use their actual box: the 44 px invisible hit area is cli
   assert.equal(declaration(selector, 'width', MOBILE), '100%');
   assert.equal(declaration(selector, 'height', MOBILE), '100%');
   assert.equal(declaration(selector, 'transform', MOBILE), 'none');
-  // and the compact boxes stay above the 24 px WCAG 2.2 minimum
-  assert.equal(declaration('.resource-choice', 'min-height', MOBILE), '28px');
+  // and the compact boxes stay above the 24 px WCAG 2.2 minimum (24 px = .6 rem at the 40 px root floor)
+  assert.equal(declaration('.resource-choice', 'min-height', MOBILE), '.7rem');
   assert.equal(declaration('.guide__dot', 'min-width', MOBILE), '26px');
-  assert.equal(declaration('.room-screen .invite__btns .btn', 'min-width', MOBILE), '26px');
+  assert.equal(declaration('.room-screen .invite__btns .btn', 'min-width', MOBILE), '.65rem');
   assert.equal(declaration('.utility-modal :is(.btn--square, .utility-modal__close)', 'width', MOBILE), '30px');
 });
 
@@ -172,7 +193,7 @@ test('the lobby keeps its mode points, difficulty effects and tips instead of hi
   assert.equal(declaration('.lobby-screen .mode-card__points', 'display', MOBILE), 'flex');
   assert.equal(hasRule('.lobby-screen .diff-card__effects'), false,
     'the difficulty effects must not be hidden: they were never display:none to begin with');
-  assert.equal(declaration('.lobby-screen .tips', 'margin-top', MOBILE), '8px');
+  assert.equal(declaration('.lobby-screen .tips', 'margin-top', MOBILE), '.2rem');
   assert.equal(hasRule('.title-screen .title-corner--tl', MOBILE), false, 'the corner tools stay reachable');
   assert.equal(declaration('.title-screen .title-corner', 'position', MOBILE), 'relative');
   assert.match(read('public/js/screens/lobby.js'), /diff-card__effects|mode-card__points/, 'both still render');
@@ -181,8 +202,8 @@ test('the lobby keeps its mode points, difficulty effects and tips instead of hi
 test('the resource manager keeps both tiers, the voice choice and every count', () => {
   assert.equal(declaration('.resource-manager__tiers', 'grid-template-columns', MOBILE), 'repeat(2, minmax(0, 1fr))');
   assert.equal(declaration('.resource-manager__tiers', 'grid-template-columns', NARROW), 'minmax(0, 1fr)');
-  assert.equal(declaration('.resource-tier__list li', 'padding', MOBILE), '4px 0');
-  assert.equal(declaration('.resource-manager__status', 'padding', MOBILE), '6px');
+  assert.equal(declaration('.resource-tier__list li', 'padding', MOBILE), '.1rem 0');
+  assert.equal(declaration('.resource-manager__status', 'padding', MOBILE), '.15rem');
   const panel = read('public/js/ui/resourcePanel.js');
   assert.match(panel, /archiveGroup === group\.id|group\.id/, 'the active import category stays visible');
   assert.match(panel, /pauseResources/, 'pause stays available');
@@ -197,8 +218,8 @@ test('the room keeps its title on one row and every seat visible', () => {
   assert.equal(declaration('.room-screen .room-bar', 'height', MOBILE), 'auto');
   assert.equal(declaration('.room-screen .room-bar', 'grid-template-areas', MOBILE), '"options actions" "status actions"');
   assert.equal(declaration('.room-screen .room-bar', 'grid-template-areas', NARROW), '"options" "status" "actions"');
-  assert.equal(declaration('.room-screen .seat', 'min-height', NARROW), '140px');
-  assert.equal(declaration('.room-screen--coop .seats', 'grid-auto-rows', NARROW), 'minmax(140px, auto)');
+  assert.equal(declaration('.room-screen .seat', 'min-height', NARROW), '3.5rem');
+  assert.equal(declaration('.room-screen--coop .seats', 'grid-auto-rows', NARROW), 'minmax(3.5rem, auto)');
   assert.equal(declaration('.room-screen .invite__code span', 'width', MOBILE), '.72em');
 });
 

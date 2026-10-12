@@ -60,15 +60,17 @@ const both = (selector) => [selector, `.room-screen ${selector}`];
 // components
 // ---------------------------------------------------------------------------------------------
 
-test('a co-op room shows four icon-only square buttons with the original actions and accessible names', () => {
-  const tools = RoomTools({ coop: true });
+test('the room shows four icon-only square buttons with the original actions and accessible names', () => {
+  // The same shape in a co-op room and in a solo simulation: the component takes no room kind at all
+  // (xinhai ba744327 — the compact layer scales one control, not two).
+  const tools = RoomTools();
   assert.equal(tools.props.class, 'room-topbar__tools');
   const buttons = tools.props.children.filter((node) => node && typeof node === 'object');
   assert.equal(buttons.length, 4);
   const [stats, settings, announcement, guide] = buttons;
   assert.equal(stats.props.square, true);
   assert.equal(stats.props.icon, 'chart');
-  assert.equal(stats.props.children, null, 'there is no visible label left to hide with CSS');
+  assert.ok(!stats.props.children, 'there is no visible label left to hide with CSS');
   assert.equal(typeof stats.props.onClick, 'function', 'the statistics action is unchanged');
   assert.ok(stats.props.title && stats.props['aria-label']);
   for (const node of [settings, announcement, guide]) assert.equal(node.props.square, true);
@@ -81,15 +83,15 @@ test('a co-op room shows four icon-only square buttons with the original actions
   assert.match(read('public/js/ui/announcement.js'), /\$\{square \? null : t\('公告'\)\}/);
 });
 
-test('a solo simulation keeps its labels, and the order statistics → settings → announcement → guide', () => {
-  const buttons = RoomTools({ coop: false }).props.children.filter((node) => node && typeof node === 'object');
+test('the room tools are mounted without a room kind, and the order statistics → settings → announcement → guide', () => {
+  assert.match(read('public/js/screens/room.js'), /<\$\{RoomTools\} \/>/);
+  const buttons = RoomTools().props.children.filter((node) => node && typeof node === 'object');
   assert.equal(buttons.length, 4);
-  assert.equal(buttons[0].props.square, false);
-  assert.equal(typeof buttons[0].props.children, 'string');
-  for (const node of buttons.slice(1)) assert.equal(node.props.square, false);
+  assert.equal(buttons[0].props.square, true);
+  assert.ok(!buttons[0].props.children);
+  for (const node of buttons.slice(1)) assert.equal(node.props.square, true);
   assert.equal(buttons[1].type, SettingsButton);
   assert.equal(buttons[3].type, GuideButton);
-  assert.match(read('public/js/screens/room.js'), /<\$\{RoomTools\} coop=\$\{coop\}/);
 });
 
 test('the room says which mode it is in with a class, not with a different component tree', () => {
@@ -114,6 +116,11 @@ for (const [width, height] of [[320, 568], [390, 844], [560, 320], [640, 360], [
     // the title never wraps onto a line of its own
     assert.equal(property(both('.topbar__title'), 'white-space', width, height), 'nowrap');
     assert.equal(property(both('.topbar__title'), 'flex-wrap', width, height), 'nowrap');
+    // ...and the controls stay on one row with it: the ping shrinks instead of pushing the title out
+    // of its grid track (xinhai ba744327)
+    assert.equal(property(both('.topbar__left'), 'flex-wrap', width, height), 'nowrap');
+    assert.equal(property(['.room-screen .room-ping', '.room-screen .room-ping'], 'flex', width, height), '1 1 auto');
+    assert.equal(property(['.room-screen .connection-status', '.room-screen .connection-status'], 'flex-wrap', width, height), 'nowrap');
     // the footer grows instead of keeping the desktop height
     assert.equal(property(both('.room-bar'), 'height', width, height), 'auto', 'a growing footer must not spill over the seats');
     assert.equal(property(both('.room-bar'), 'grid-template-areas', width, height),
@@ -121,10 +128,10 @@ for (const [width, height] of [[320, 568], [390, 844], [560, 320], [640, 360], [
     assert.equal(property(['.room-screen .room-bar__left', '.room-screen .room-bar__left'], 'grid-area', width, height), 'options');
     assert.equal(property(['.room-screen .room-bar__center', '.room-screen .room-bar__center'], 'grid-area', width, height), 'status');
     assert.equal(property(['.room-screen .room-bar__right', '.room-screen .room-bar__right'], 'grid-area', width, height), 'actions');
-    // the four room tools are square at every compact width
+    // the four room tools are square at every compact width, and scale with the rem root
     assert.equal(property(['.room-screen .room-topbar__tools'], 'display', width, height), 'flex');
-    assert.equal(property(['.room-screen .room-tools'], 'min-width', width, height), '30px');
-    assert.equal(property(['.room-screen .room-tools'], 'height', width, height), '30px');
+    assert.equal(property(['.room-screen .room-tools'], 'min-width', width, height), '.75rem');
+    assert.equal(property(['.room-screen .room-tools'], 'height', width, height), '.75rem');
   });
 }
 
@@ -141,7 +148,7 @@ test('normal desktop room chrome keeps its three-column layout and its fixed bar
   assert.equal(property(['.room-topbar__tools'], 'display', 1920, 1080), 'contents');
   assert.equal(property(['.room-screen .room-topbar__tools'], 'display', 844, 390), 'flex');
   assert.equal(propertyMissing(both('.room-tools'), 'min-width', 1920, 1080), true);
-  assert.equal(property(both('.room-tools'), 'min-width', 844, 390), '30px');
+  assert.equal(property(both('.room-tools'), 'min-width', 844, 390), '.75rem');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -163,10 +170,10 @@ test('invite key boxes scale with their own glyphs instead of a tiny rem box aro
 
 test('a short co-op room still shows a seat region and scrolls as a whole', () => {
   assert.equal(property(['.room-screen--coop'], 'overflow-y', 640, 270), 'auto');
-  assert.equal(property(['.room-screen--coop .seats'], 'min-height', 640, 270), '144px');
-  assert.equal(property(['.room-screen--coop .seats'], 'flex', 640, 270), '1 0 144px');
-  // portrait: the explicit first row is released so 140 px cards cannot overrun it
+  assert.equal(property(['.room-screen--coop .seats'], 'min-height', 640, 270), '3.6rem');
+  assert.equal(property(['.room-screen--coop .seats'], 'flex', 640, 270), '1 0 3.6rem');
+  // portrait: the explicit first row is released so 3.5 rem cards cannot overrun it
   assert.equal(property(['.room-screen .seats', '.room-screen .seats'], 'grid-template-rows', 390, 844), 'none');
-  assert.equal(property(['.room-screen--coop .seats'], 'grid-auto-rows', 390, 844), 'minmax(140px, auto)');
-  assert.equal(property(['.room-screen .seat'], 'min-height', 390, 844), '140px');
+  assert.equal(property(['.room-screen--coop .seats'], 'grid-auto-rows', 390, 844), 'minmax(3.5rem, auto)');
+  assert.equal(property(['.room-screen .seat'], 'min-height', 390, 844), '3.5rem');
 });

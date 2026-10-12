@@ -3,10 +3,14 @@
    devices.css, in source mode and in the Vite CSS bundle.
 
    Scope: dialogs marked `utility` (components.js <Modal utility>), the guide, the title screen,
-   the lobby, the room, the loadout screen and the local-statistics screen. Nothing here touches
-   the battlefield, the shop, the HUD bands, the detail card or the chat panel: those keep their
-   own geometry from game.css / game-panels.css / game-shop.css / emotes.css and keep reading the
-   plain --t, because the floor below is declared on the management roots only.
+   the lobby, the room, the loadout screen, the local-statistics screen — and the single
+   battle-side surface the owner chose to carry here, the 作战统计 panel (`.combat-metrics`: its
+   compact height, its pinned title/scope/close chrome and the position it floats to when the
+   corner no longer fits the visible viewport). Nothing else of the battlefield is touched: the
+   shop, the HUD bands, the detail card and the chat panel keep their own geometry from game.css /
+   game-panels.css / game-shop.css / emotes.css and keep reading the plain --t, because the floor
+   below is declared on the management roots only — the combat panel is not one of them and keeps
+   the explicit px floors of its own rules (see its block).
 
    Rules for this file:
      * html's rem, the global --t and every layout width/height stay where they were;
@@ -39,7 +43,13 @@
      and is never redefined. Each management root declares the variable itself: UiHosts / GuideHost /
      LoadoutHost / StatsHost / ResourceManagerHost are all children of .app-root, so a dialog opened
      from the title screen or from the match never inherits it from the screen behind it. */
-  :is(.modal--utility, .guide, .lo, .st, .title-screen, .lobby-screen, .room-screen) { --utility-text: max(var(--t), 64px); }
+  :is(.modal--utility, .guide, .lo, .st) { --utility-text: max(var(--t), 64px); }
+  /* The title, the lobby, the room and the resource / settings / about dialogs are game-scale surfaces:
+     they follow the saved text size exactly as the battlefield does and take no readability floor
+     (ported from xinhai ba744327). The floor is off on purpose — on a phone it pins 小 and 中 to the same
+     64 px, so choosing 小 would change nothing at all on any of these screens. */
+  :is(.title-screen, .lobby-screen, .room-screen) { --utility-text: var(--t); }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) { --utility-text: var(--t); }
 
   /* device.js keeps --sp-vh at the real visible height (visualViewport), so a soft keyboard shrinks
      these budgets instead of leaving the footer actions behind it. Only management surfaces adopt
@@ -165,41 +175,46 @@
   /* ---- title screen ------------------------------------------------------------------------ */
 
   .title-screen { overflow-y: auto; justify-content: flex-start; }
-  .title-screen .title-main { flex: none; width: 100%; min-width: 0; margin: auto 0; padding: 10px 8px; }
-  .title-screen .title-login { width: min(7.2rem, 100%); margin-top: 12px; gap: 6px; padding: 10px; }
-  .title-screen .title-login .field__box { min-height: 34px; height: auto; }
+  .title-screen .title-main { flex: none; width: 100%; min-width: 0; margin: auto 0; padding: .25rem .2rem; }
+  /* The emblem and the name scale with the text root like the rest of the game (xinhai ba744327), so the
+     title screen keeps its proportion on a phone instead of a fixed emblem over shrunken type. */
+  .title-screen .title-cn { font-size: calc(.72 * var(--t)); line-height: 1.1; letter-spacing: .04em; }
+  .title-screen .title-cn--latin { font-size: calc(.44 * var(--t)); }
+  .title-screen .title-login { width: min(7.2rem, 100%); margin-top: .3rem; gap: .15rem; padding: .25rem; }
+  .title-screen .title-login .field__box { min-height: .85rem; height: auto; }
+  /* 16 px stays: below it iOS zooms the page in when the field takes focus (test/ui/utility-mobile.test.js). */
   .title-screen .title-login .field__input { font-size: max(calc(.2 * var(--utility-text)), 16px); }
-  .title-screen .title-login .btn--xl { height: auto; min-height: 36px; padding: 6px 10px; letter-spacing: .16em; font-size: max(calc(.24 * var(--utility-text)), 14px); }
-  .title-screen :is(.title-invite, .title-conn) { font-size: max(calc(.14 * var(--utility-text)), 11px); }
-  .title-screen .title-conn { flex-wrap: wrap; gap: 4px; }
-  .title-screen :is(.title-settings, .title-fs) { width: 28px; height: 28px; }
-  .title-screen .title-tag { font-size: max(calc(.16 * var(--utility-text)), 11px); letter-spacing: .02em; text-align: center; }
-  .title-screen .title-foot { position: relative; inset: auto; width: 100%; flex-wrap: wrap; padding: 6px 10px; gap: 4px; font-size: max(calc(.13 * var(--utility-text)), 10px); }
+  .title-screen .title-login .btn--xl { height: auto; min-height: .9rem; padding: .15rem .25rem; letter-spacing: .16em; font-size: calc(.24 * var(--utility-text)); }
+  .title-screen :is(.title-invite, .title-conn) { font-size: calc(.14 * var(--utility-text)); }
+  .title-screen .title-conn { flex-wrap: wrap; gap: .1rem; }
+  .title-screen :is(.title-settings, .title-fs) { width: .7rem; height: .7rem; }
+  .title-screen .title-tag { max-width: 7rem; font-size: calc(.16 * var(--utility-text)); letter-spacing: .02em; text-align: center; }
+  .title-screen .title-foot { position: relative; inset: auto; width: 100%; flex-wrap: wrap; padding: .15rem .25rem; gap: .1rem; font-size: calc(.13 * var(--utility-text)); }
   .title-screen .title-corner { position: relative; inset: auto; }
   /* the language / statistics / about / history entries must stay reachable: they move into the flow
      instead of the absolutely positioned desktop corners */
   .title-screen .title-corner > * { flex-wrap: wrap; justify-content: center; }
   .title-screen .title-corner .micro { display: none; }
-  .title-screen .lang-select button, .title-screen .title-corner .btn { height: auto; min-height: 30px; font-size: max(calc(.16 * var(--utility-text)), 11px); }
-  .title-screen .res-pill__head { min-height: 30px; flex-wrap: wrap; font-size: max(calc(.16 * var(--utility-text)), 11px); }
-  .title-screen .res-pill__state { font-size: max(calc(.14 * var(--utility-text)), 11px); }
+  .title-screen .lang-select button, .title-screen .title-corner .btn { height: auto; min-height: .75rem; font-size: calc(.16 * var(--utility-text)); }
+  .title-screen .res-pill__head { min-height: .75rem; flex-wrap: wrap; font-size: calc(.16 * var(--utility-text)); }
+  .title-screen .res-pill__state { font-size: calc(.14 * var(--utility-text)); }
 
   /* ---- lobby ------------------------------------------------------------------------------- */
 
-  .lobby-screen .lobby-body { max-width: none; padding: 8px 10px; gap: 12px; }
-  .lobby-screen .mode-cards { gap: 6px; margin-bottom: 8px; }
-  .lobby-screen .mode-card { min-height: 0; gap: 6px; padding: 8px; }
+  .lobby-screen .lobby-body { max-width: none; padding: .2rem .25rem; gap: .3rem; }
+  .lobby-screen .mode-cards { gap: .15rem; margin-bottom: .2rem; }
+  .lobby-screen .mode-card { min-height: 0; gap: .15rem; padding: .2rem; }
   .lobby-screen .mode-card__name { font-size: calc(.25 * var(--utility-text)); letter-spacing: .02em; }
   .lobby-screen .mode-card__desc { line-height: 1.4; }
-  .lobby-screen .mode-card__points { display: flex; gap: 2px; font-size: max(calc(.14 * var(--utility-text)), 10px); }
-  .lobby-screen .mode-card__check { top: 4px; right: 4px; padding: 2px 4px; font-size: max(calc(.12 * var(--utility-text)), 9px); }
-  .lobby-screen .diff-list { gap: 4px; }
-  .lobby-screen .diff-card { padding-block: 5px; }
-  .lobby-screen .create-box { margin-top: 8px; gap: 4px; }
-  .lobby-screen .create-box .btn--xl { height: auto; min-height: 40px; font-size: max(calc(.24 * var(--utility-text)), 14px); letter-spacing: .16em; }
-  .lobby-screen .join-panel .panel__body { padding: 8px; gap: 6px; }
-  .lobby-screen .tips { margin-top: 8px; padding: 8px; }
-  .lobby-screen .tips__text { margin-top: 4px; line-height: 1.4; }
+  .lobby-screen .mode-card__points { display: flex; gap: .05rem; font-size: calc(.14 * var(--utility-text)); }
+  .lobby-screen .mode-card__check { top: .1rem; right: .1rem; padding: .05rem .1rem; font-size: calc(.12 * var(--utility-text)); }
+  .lobby-screen .diff-list { gap: .1rem; }
+  .lobby-screen .diff-card { padding-block: .125rem; }
+  .lobby-screen .create-box { margin-top: .2rem; gap: .1rem; }
+  .lobby-screen .create-box .btn--xl { height: auto; min-height: 1rem; font-size: calc(.24 * var(--utility-text)); letter-spacing: .16em; }
+  .lobby-screen .join-panel .panel__body { padding: .2rem; gap: .15rem; }
+  .lobby-screen .tips { margin-top: .2rem; padding: .2rem; }
+  .lobby-screen .tips__text { margin-top: .1rem; line-height: 1.4; }
 
   /* ---- room chrome ------------------------------------------------------------------------- */
   /* Named areas at every compact width, including 761–1000 px landscape phones: the title stays
@@ -207,57 +222,62 @@
      desktop fixed heights. */
 
   .room-screen .topbar {
-    height: auto; min-height: 0; padding: 6px 8px; gap: 6px;
+    height: auto; min-height: 0; padding: .15rem .2rem; gap: .15rem;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
     grid-template-areas: "controls title invite";
   }
-  .room-screen .topbar__left { grid-area: controls; justify-self: start; min-width: 0; max-width: 100%; flex-wrap: wrap; gap: 4px; }
+  .room-screen .topbar__left {
+    grid-area: controls; justify-self: start; min-width: 0; max-width: 100%;
+    flex-wrap: nowrap; gap: .1rem; overflow: hidden;
+  }
   .room-screen .topbar__center { grid-area: title; min-width: 0; padding: 0; }
   .room-screen .topbar__center > .micro { display: none; }
   .room-screen .topbar__title {
-    justify-content: center; flex-wrap: nowrap; white-space: nowrap; min-width: 0; max-width: 100%; gap: 4px;
-    font-size: max(calc(.16 * var(--utility-text)), 11px); letter-spacing: 0;
+    justify-content: center; flex-wrap: nowrap; white-space: nowrap; min-width: 0; max-width: 100%; gap: .1rem;
+    font-size: calc(.16 * var(--utility-text)); letter-spacing: 0;
   }
   .room-screen .topbar__right { grid-area: invite; justify-self: end; max-width: 100%; min-width: 0; gap: 0; }
-  .room-screen .room-topbar__tools { display: flex; flex: none; align-items: center; gap: 4px; }
-  .room-screen .room-tools { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; }
-  .room-screen .room-ping { align-items: flex-start; gap: 0; min-width: 0; }
+  .room-screen .room-topbar__tools { display: flex; flex: none; align-items: center; gap: .1rem; }
+  .room-screen .room-tools { width: .75rem; min-width: .75rem; height: .75rem; min-height: .75rem; padding: 0; }
+  /* A single row: the controls hold their size and the ping gives way (xinhai ba744327) — wrapping here
+     pushed the title out of its own grid track instead. */
+  .room-screen .room-ping { align-items: flex-start; gap: 0; min-width: 0; flex: 1 1 auto; overflow: hidden; }
   .room-screen .room-ping > .micro { display: none; }
-  .room-screen .connection-status { flex-wrap: wrap; gap: 4px; max-width: 100%; }
-  .room-screen .invite { min-width: 0; max-width: 100%; padding: 3px 4px; gap: 2px 4px; }
-  .room-screen .invite__label { flex-wrap: nowrap; gap: 3px; }
+  .room-screen .connection-status { flex-wrap: nowrap; gap: .1rem; max-width: 100%; overflow: hidden; }
+  .room-screen .invite { min-width: 0; max-width: 100%; padding: .075rem .1rem; gap: .05rem .1rem; }
+  .room-screen .invite__label { flex-wrap: nowrap; gap: .075rem; }
   .room-screen .invite__label .micro { display: none; }
-  .room-screen .invite__code { gap: 1px; }
+  .room-screen .invite__code { gap: .025rem; }
   /* The key glyph boxes scale with their own font size instead of being a tiny rem box around it. */
-  .room-screen .invite__code span { width: .72em; height: 1em; flex: none; font-size: max(calc(.2 * var(--utility-text)), 12px); }
-  .room-screen .invite__btns { flex-direction: row; gap: 2px; }
-  .room-screen .invite__btns .btn { min-width: 26px; width: 26px; min-height: 26px; height: 26px; padding: 3px; font-size: 0; }
-  .room-screen .invite__btns .icon { width: 16px; height: 16px; }
+  .room-screen .invite__code span { width: .72em; height: 1em; flex: none; font-size: calc(.2 * var(--utility-text)); }
+  .room-screen .invite__btns { flex-direction: row; gap: .05rem; }
+  .room-screen .invite__btns .btn { min-width: .65rem; width: .65rem; min-height: .65rem; height: .65rem; padding: .075rem; font-size: 0; }
+  .room-screen .invite__btns .icon { width: .4rem; height: .4rem; }
   .room-screen--coop { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
-  .room-screen .seats { padding: 8px 10px; gap: 8px; grid-template-rows: minmax(0, 1fr); overflow-y: auto; }
-  .room-screen--coop .seats { flex: 1 0 144px; min-height: 144px; }
-  .room-screen .seat { padding: 6px; gap: 4px; }
+  .room-screen .seats { padding: .2rem .25rem; gap: .2rem; grid-template-rows: minmax(0, 1fr); overflow-y: auto; }
+  .room-screen--coop .seats { flex: 1 0 3.6rem; min-height: 3.6rem; }
+  .room-screen .seat { padding: .15rem; gap: .1rem; }
   .room-screen .seat__art .avatar { --av: min(1.5rem, 18vh); }
   .room-screen .seat__name { font-size: calc(.2 * var(--utility-text)); }
   .room-screen .seat__state { min-width: 0; max-width: 100%; overflow-wrap: anywhere; line-height: 1.25; }
-  .room-screen .seat__foot { flex-wrap: wrap; gap: 4px; }
-  .room-screen .solo-brief { padding: 10px; gap: 6px; overflow-y: auto; touch-action: pan-y; }
+  .room-screen .seat__foot { flex-wrap: wrap; gap: .1rem; }
+  .room-screen .solo-brief { padding: .25rem; gap: .15rem; overflow-y: auto; touch-action: pan-y; }
   .room-screen .solo-brief h2 { font-size: calc(.26 * var(--utility-text)); }
-  .room-screen .specbar { padding: 0 10px 6px; gap: 6px; }
+  .room-screen .specbar { padding: 0 .25rem .15rem; gap: .15rem; }
   .room-screen .room-bar {
-    height: auto; min-height: 0; padding: 6px 10px; gap: 6px 10px;
+    height: auto; min-height: 0; padding: .15rem .25rem; gap: .15rem .25rem;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "options actions" "status actions";
   }
   .room-screen :is(.room-bar__left, .room-bar__right) { gap: 6px; flex-wrap: wrap; }
   .room-screen .room-bar__left { grid-area: options; min-width: 0; }
   .room-screen .room-bar__label .micro { display: none; }
-  .room-screen .room-bar__center { grid-area: status; flex-direction: row; flex-wrap: wrap; justify-self: start; gap: 4px 8px; min-width: 0; text-align: left; }
+  .room-screen .room-bar__center { grid-area: status; flex-direction: row; flex-wrap: wrap; justify-self: start; gap: .1rem .2rem; min-width: 0; text-align: left; }
   .room-screen .room-bar__right { grid-area: actions; min-width: 0; align-items: flex-end; justify-content: flex-end; }
   .room-screen .room-bar__status { overflow-wrap: anywhere; }
   .room-screen .room-bar .btn--xl { min-width: 0; height: auto; min-height: 34px; font-size: max(calc(.2 * var(--utility-text)), 12px); letter-spacing: .1em; }
   .room-screen .dpick { min-width: 0; max-width: 100%; flex-wrap: wrap; }
-  .room-screen .dpick__opt { height: auto; min-height: 28px; padding: 4px 7px; }
+  .room-screen .dpick__opt { height: auto; min-height: .7rem; padding: .1rem .175rem; }
 
   /* ---- loadout / ownership / DIY ------------------------------------------------------------ */
 
@@ -301,6 +321,50 @@
   .st-sums { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px; }
   .st-note { font-size: max(calc(.14 * var(--utility-text)), 11px); line-height: 1.45; }
 
+  /* ---- combat statistics (the one battle-side surface this layer carries) ------------------ */
+  /* The 作战统计 panel docks over the corner; on a short or partly occluded viewport the ranking
+     must not be squeezed out. It gets a definite height (the layout module measures how much room
+     is really left and publishes it), only title / scope / close stay pinned, and the whole body
+     scrolls with the ranking first. Floats inside the visible viewport when the corner no longer
+     fits above it (data-viewport-docked, ui/combatMetrics.js).
+
+     These rules read --t with the same explicit px floors as the panel's own rules in game.css,
+     and deliberately NOT the management floor: --utility-text is declared on the management roots
+     only, this panel is not one of them, so the token would fall back to --t and the base floors
+     would be lost — 9 px body text on a phone. This layer re-lays-out, it never shrinks type
+     below the surface's own floor. */
+  .combat-metrics {
+    width: min(max(7.2rem, 360px), calc(100vw - var(--sa-l, 0px) - var(--sa-r, 0px) - .48rem));
+    height: min(10rem, var(--combat-available-height, 240px));
+    max-height: min(10rem, var(--combat-available-height, 240px));
+  }
+  .combat-metrics[data-viewport-docked="true"] {
+    position: fixed; left: calc(var(--sa-l, 0px) + .24rem);
+    top: var(--combat-viewport-top, calc(var(--sa-t, 0px) + 6px)); bottom: auto;
+    height: min(10rem, var(--combat-viewport-height, calc(100dvh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px)));
+    max-height: min(10rem, var(--combat-viewport-height, calc(100dvh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px)));
+  }
+  .combat-metrics__head { flex-wrap: nowrap; padding: .1rem .2rem; gap: .15rem; }
+  .combat-metrics__head > div:first-child { min-width: 0; }
+  .combat-metrics__head h2 { font-size: max(calc(.2 * var(--t)), 16px); overflow-wrap: anywhere; }
+  .combat-metrics__micro { display: none; }
+  .combat-metrics__close { order: 1; width: .7rem; min-width: .7rem; height: .7rem; min-height: .7rem; }
+  .combat-metrics__body { display: flex; flex-direction: column; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+  .combat-metrics__head > .combat-metrics__tools { flex: 1 1 0; min-width: 0; padding: 0; }
+  .combat-metrics__scopes button { min-height: .7rem; padding: .075rem .15rem; white-space: normal; overflow-wrap: anywhere; }
+  .combat-metrics__totals { padding: 0 .2rem .1rem; gap: .15rem; }
+  .combat-metrics__totals b { font-size: max(calc(.18 * var(--t)), 14px); }
+  .combat-metrics__legend { gap: .075rem .2rem; padding: 0 .2rem .1rem; }
+  .combat-metrics__list { order: -1; flex: none; min-height: 0; padding: 0 .2rem; overflow: visible; }
+  .combat-metrics__row { grid-template-columns: .4rem .65rem minmax(0, 1fr); padding: .1rem 0; gap: .125rem; }
+  .combat-metrics__row > .uthumb { width: .65rem; height: .65rem; }
+  .combat-metrics__bar { margin: .075rem 0; height: .1rem; }
+  .combat-metrics__values { gap: .1rem; }
+  .combat-metrics__values span { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: .05rem .1rem; }
+  .combat-metrics__values b { font-size: max(calc(.14 * var(--t)), 12px); }
+  .combat-metrics__note { padding: .1rem .2rem; font-size: max(calc(.1 * var(--t)), 10px); line-height: 1.3; }
+  .combat-metrics__note br { display: none; }
+
   /* ---- local match history (its own small sheet, wrapped like the others) ------------------- */
 
   .history-panel { max-width: 100%; }
@@ -338,6 +402,93 @@
   .guide__dot { flex: none; height: 26px; min-width: 26px; }
   .guide__ptitle { font-size: max(calc(.18 * var(--utility-text)), 11px); }
   .guide__count { font-size: max(calc(.22 * var(--utility-text)), 12px); }
+
+  /* ---- resource preload / settings / about: game-scale dialogs ------------------------------ */
+  /* These three are reachable from the title screen and from a match and read like the game, not
+     like a management sheet, so their type and chrome follow --t directly instead of the readable
+     floor (xinhai ba744327). They are restated here rather than rewritten in place because the
+     rules above are shared with the guide / loadout / stats surfaces, which keep the floor. */
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) {
+    --utility-text: var(--t);
+    font-size: calc(.16 * var(--t));
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) .modal__head {
+    padding: .12rem .2rem .08rem; gap: .15rem;
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) .modal__title {
+    font-size: calc(.22 * var(--t)); line-height: 1.25;
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) .modal__body {
+    padding: .1rem .2rem .15rem;
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel) .modal__actions {
+    gap: .1rem; padding: .1rem .2rem; font-size: calc(.16 * var(--t));
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel)
+    :is(.btn, .set-toggle, .set-seg button, .set-key, .shortcut-key) {
+    min-height: .75rem; height: auto; padding: .125rem .225rem;
+    font-size: calc(.16 * var(--t)); line-height: 1.25;
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel)
+    :is(.btn--square, .utility-modal__close) {
+    width: .75rem; height: .75rem; min-width: .75rem; min-height: .75rem; padding: 0;
+  }
+  :is(.utility-modal.resource-modal, .utility-modal.settings-modal, .utility-modal.about-panel)
+    :is(input:not([type="radio"]):not([type="checkbox"]):not([type="range"]), textarea, select) {
+    font-size: max(calc(.2 * var(--t)), 16px); /* the iOS focus-zoom floor stays a floor */
+  }
+
+  .resource-manager { gap: .2rem; font-size: calc(.16 * var(--t)); }
+  .resource-manager__tiers { gap: .2rem; }
+  .resource-tier, .resource-archive { padding: .2rem; }
+  .resource-tier h3, .resource-archive h3 { font-size: calc(.19 * var(--t)); }
+  .resource-tier__head { gap: .15rem; }
+  .resource-tier__head p, .resource-archive p,
+  .resource-tier__summary, .resource-tier__list li, .resource-manager__maintenance { font-size: calc(.14 * var(--t)); }
+  .resource-choice { min-height: .7rem; gap: .125rem; font-size: calc(.14 * var(--t)); }
+  .resource-choice input { width: .35rem; height: .35rem; }
+  .resource-tier__summary { margin: .15rem 0 .1rem; gap: .075rem; }
+  .resource-tier__list { margin-top: .1rem; }
+  .resource-tier__list li { gap: .125rem; padding: .1rem 0; }
+  .resource-tier__list small { font-size: calc(.12 * var(--t)); }
+  .resource-manager__status { padding: .15rem; }
+  .resource-archive .res-actions, .resource-archive .pbar { margin-top: .15rem; }
+  .resource-modal .res-link { min-height: .7rem; font-size: calc(.13 * var(--t)); }
+  .resource-modal .pbar__meta { gap: .05rem .15rem; font-size: calc(.14 * var(--t)); }
+  .resource-modal .pbar__value { font-size: calc(.16 * var(--t)); }
+
+  .settings-modal .set-list { gap: .15rem; }
+  .settings-modal .set-row { gap: .2rem; min-height: .75rem; }
+  .settings-modal .set-row__label { gap: .125rem; line-height: 1.35; font-size: calc(.18 * var(--t)); }
+  .settings-modal .set-row__label .micro { font-size: calc(.11 * var(--t)); }
+  .settings-modal .set-row__label .icon { width: .35rem; height: .35rem; }
+  .settings-modal .set-row__val { font-size: calc(.18 * var(--t)); }
+  .settings-modal :is(.set-seg button, .set-toggle, .set-key, .shortcut-key) {
+    min-height: .75rem; height: auto; padding: .1rem .175rem;
+    font-size: calc(.16 * var(--t)); line-height: 1.25;
+  }
+  .settings-modal .set-seg button { min-width: 0; }
+  .settings-modal .set-toggle { padding: .1rem .2rem; }
+  .settings-modal .modal__actions .btn { min-height: .75rem; font-size: calc(.16 * var(--t)); }
+  .settings-modal .set-toggle i { width: .7rem; height: .4rem; }
+  .settings-modal .set-toggle i::after { left: .05rem; top: .05rem; width: .3rem; height: .3rem; }
+  .settings-modal .set-toggle.is-on i::after { transform: translateX(.3rem); }
+  .settings-modal .set-range { height: .7rem; border-block: .25rem solid transparent; }
+  .settings-modal .set-range::-webkit-slider-thumb { width: .35rem; height: .5rem; }
+  .settings-modal .set-range::-moz-range-thumb { width: .35rem; height: .5rem; }
+  .settings-modal .set-hint { font-size: calc(.14 * var(--t)); }
+  .settings-modal .set-res, .settings-modal .set-res__body { gap: .1rem; }
+  .settings-modal .set-keys, .settings-modal .set-keys__row, .settings-modal .set-diag { gap: .1rem; }
+  .settings-modal .set-diag { padding-top: .15rem; }
+  .settings-modal .set-diag__text { height: 2.4rem; min-height: 1.6rem; }
+
+  .utility-modal.about-panel .about-links { gap: .2rem; }
+  .utility-modal.about-panel .about-links dt { margin-bottom: .075rem; font-size: calc(.16 * var(--t)); }
+  .utility-modal.about-panel .about-links dd { font-size: calc(.2 * var(--t)); line-height: 1.7; }
+  .utility-modal.about-panel .about-section { margin-top: .25rem; padding-top: .15rem; }
+  .utility-modal.about-panel .about-section h3,
+  .utility-modal.about-panel .about-section p { font-size: calc(.16 * var(--t)); }
+  .utility-modal.about-panel .about-section p + p { margin-top: .125rem; }
 }
 
 /* Below a real phone width there is only one column: the resource tiers and the lobby stack, the
@@ -346,8 +497,8 @@
   .resource-manager__tiers { grid-template-columns: minmax(0, 1fr); }
   .lobby-screen .lobby-body { grid-template-columns: minmax(0, 1fr); }
   .room-screen .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; overflow-y: auto; align-content: start; }
-  .room-screen .seat { min-height: 140px; }
-  .room-screen--coop .seats { flex-basis: 304px; grid-template-rows: none; grid-auto-rows: minmax(140px, auto); }
+  .room-screen .seat { min-height: 3.5rem; }
+  .room-screen--coop .seats { flex-basis: 7.6rem; grid-template-rows: none; grid-auto-rows: minmax(3.5rem, auto); }
   .room-screen .seats--solo { grid-template-columns: minmax(0, 1fr); }
   .room-screen .topbar { grid-template-columns: minmax(0, .85fr) minmax(0, 1.3fr) minmax(0, .85fr); grid-template-areas: "controls title invite"; }
   .room-screen .topbar__left { flex-direction: column; align-items: flex-start; }

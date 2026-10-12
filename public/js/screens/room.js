@@ -29,17 +29,17 @@ import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 /**
- * The room's 统计 / 设置 / 公告 / 玩法说明 entries. In a co-op room they are icon-only squares on every
- * device (title / aria-label carry the name, the action is unchanged); a solo simulation keeps its labels.
- * @param {{ coop: boolean }} props
+ * The room's 统计 / 设置 / 公告 / 玩法说明 entries. Icon-only squares on every device, in a co-op room and in
+ * a solo simulation alike (xinhai ba744327: the compact layer scales one shape, not two), so the component no
+ * longer branches on the room kind — title / aria-label carry the name and the action is unchanged.
  */
-export function RoomTools({ coop }) {
+export function RoomTools() {
   return html`<div class="room-topbar__tools">
-    <${Button} variant="secondary" size="sm" square=${coop} icon="chart" class="stats-entry room-tools" onClick=${openStats}
-      title=${t('统计数据')} aria-label=${t('统计数据')}>${coop ? null : t('统计')}<//>
-    <${SettingsButton} class="room-settings room-tools" variant="secondary" square=${coop} label=${t('设置')} />
-    <${AnnouncementButton} variant="secondary" square=${coop} class="room-tools" />
-    <${GuideButton} class="room-guide room-tools" variant="secondary" square=${coop} label=${t('玩法说明')} />
+    <${Button} variant="secondary" size="sm" square=${true} icon="chart" class="stats-entry room-tools" onClick=${openStats}
+      title=${t('统计数据')} aria-label=${t('统计数据')} />
+    <${SettingsButton} class="room-settings room-tools" variant="secondary" square=${true} label=${t('设置')} />
+    <${AnnouncementButton} variant="secondary" square=${true} class="room-tools" />
+    <${GuideButton} class="room-guide room-tools" variant="secondary" square=${true} label=${t('玩法说明')} />
   </div>`;
 }
 
@@ -342,7 +342,7 @@ export function RoomScreen() {
           <${PingPill} ms=${conn.ping} online=${online} />
           <${MicroLabel}>${t('当前延迟')}<//>
         </div>
-        <${RoomTools} coop=${coop} />
+        <${RoomTools} />
       </div>
       <div class="topbar__center">
         <${MicroLabel} tone="mint">${coop ? 'ALLIANCE LOBBY' : 'SOLO SIMULATION'}<//>

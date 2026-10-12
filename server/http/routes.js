@@ -4,9 +4,11 @@
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
-//     rooms, matches), never cached;
+//     rooms, matches), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
+//     start, WebSocket wire and payload bytes);
 //   * everything else → the static files (static.js).
-// A route that throws is logged and answers 500.
+// Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
+// answers 500.
 
 import { PROTOCOL_VERSION, APP_VERSION } from '../../shared/constants.js';
 import { buildTag } from './buildTag.js';
@@ -15,19 +17,25 @@ import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 const MAX_URL_LENGTH = 4096;
 
 /**
- * The GET /healthz body.
+ * The GET /healthz body (`withTraffic`: plus the traffic counters, `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby }} health
+ *           lobby: import('../lobby.js').Lobby, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} health
+ * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby }) {
-  return {
+export function healthReport({ startedAt, network, registry, lobby, traffic }, withTraffic = false) {
+  const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
+  if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  return report;
 }
+
+/** Does the query ask for the traffic counters (`traffic`, `traffic=1`, `traffic=true`)? */
+const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.test(query || '');
 
 /**
  * The request listener for `http.createServer`.
@@ -48,7 +56,7 @@ export function createRequestHandler({ serveStatic, health, log }) {
       return;
     }
     if (parts.rawPath === '/healthz') {
-      sendJson(req, res, 200, healthReport(health));
+      sendJson(req, res, 200, healthReport(health, wantsTraffic(parts.query)));
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);
@@ -56,6 +64,7 @@ export function createRequestHandler({ serveStatic, health, log }) {
 
   return (req, res) => {
     setSecurityHeaders(res);
+    if (health.traffic) health.traffic.meter(res, splitUrl(req.url || '/')?.rawPath || '/');
     handleRequest(req, res).catch((e) => {
       log.error('[http] request failed', e);
       sendError(req, res, 500, '服务器内部错误 · Internal error');

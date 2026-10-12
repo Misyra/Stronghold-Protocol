@@ -17,12 +17,14 @@ import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 const MAX_URL_LENGTH = 4096;
 
 /**
- * The GET /healthz body (`withTraffic`: plus the traffic counters, `?traffic=1`).
+ * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} health
+ *           lobby: import('../lobby.js').Lobby, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
+ *           assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null,
+ *           views?: ReturnType<typeof import('./assetViews.js').createManifestViews> | null }} health
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, traffic }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, traffic, assetIndex, views }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -31,6 +33,8 @@ export function healthReport({ startedAt, network, registry, lobby, traffic }, w
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  // content-hashed asset URLs (assetIndex.js / assetViews.js): off, building, or ready with how many files and URLs
+  if (withTraffic) report.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
   return report;
 }
 

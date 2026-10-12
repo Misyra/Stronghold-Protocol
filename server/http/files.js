@@ -64,8 +64,8 @@ const GZIP_CACHE_MAX_FILE = 8 << 20;      // larger files are gzip-streamed on t
 const GZIP_CACHE_MAX_TOTAL = 96 << 20;
 // Asset URLs carry no content hash yet, and tools/fetch-assets.mjs / tools/vendor.mjs can rewrite files in
 // place (atlas + png + skel must stay consistent), so "long" is one day; revalidation after that is a cheap 304.
-const LONG_CACHE = 'public, max-age=86400';          // 1 day
-const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+export const LONG_CACHE = 'public, max-age=86400';          // 1 day
+export const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const LONG_CACHE_DIRS = ['assets', 'fonts', 'vendor']; // first path segment under public/
 
 const gzipAsync = promisify(zlib.gzip);

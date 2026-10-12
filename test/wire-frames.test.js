@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { startServer } from '../server/index.js';
 import { wireStats, wireStatsSnapshot } from '../server/net.js';
 import { publicWireFrame } from '../server/match/Match.js';
+import { publicStateJson } from '../server/match/match/messaging.js';
 import { TestClient } from './helpers/wsClient.js';
 
 function httpReq(port, rawPath) {
@@ -24,6 +25,18 @@ function httpReq(port, rawPath) {
 }
 
 const healthz = async (port) => JSON.parse((await httpReq(port, '/healthz')).body.toString());
+
+test('public dedup JSON omits only the root clock and always restores the original view', () => {
+  const view = { t: 'm.public', serverNow: 123, nested: { serverNow: 456 }, players: [] };
+  const keys = Object.keys(view), players = view.players;
+  assert.equal(publicStateJson(view), '{"t":"m.public","nested":{"serverNow":456},"players":[]}');
+  assert.equal(view.serverNow, 123);
+  assert.equal(view.players, players);
+  assert.deepEqual(Object.keys(view), keys);
+  view.circular = view;
+  assert.throws(() => publicStateJson(view));
+  assert.equal(view.serverNow, 123, 'even failed serialization must restore the clock');
+});
 
 async function connect(t, serverOptions = {}) {
   const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...serverOptions });

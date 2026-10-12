@@ -47,6 +47,7 @@ export class NetDiagnostics {
     this.sentFrames = 0;
     this.sentBytes = 0;
     this.droppedSnapshots = 0;
+    this.coalescedStates = 0;
     this.slowDisconnects = 0;
   }
   received(type, bytes, elapsedMs) {
@@ -57,9 +58,9 @@ export class NetDiagnostics {
     if (!this.handlers.has(type)) this.handlers.set(type, new TimingHistogram());
     this.handlers.get(type).record(elapsedMs);
   }
-  sent(data) {
+  sent(data, bytes = Buffer.byteLength(data)) {
     this.sentFrames++;
-    this.sentBytes += Buffer.byteLength(data);
+    this.sentBytes += bytes;
   }
   sendCallback() {
     // Sample callbacks to keep the hot send path cheap. This is local completion,
@@ -79,7 +80,7 @@ export class NetDiagnostics {
         p95Ms: this.loop.count ? ms(this.loop.percentile(95)) : 0, p99Ms: this.loop.count ? ms(this.loop.percentile(99)) : 0 },
       receivedFrames: this.receivedFrames, receivedBytes: this.receivedBytes,
       sentFrames: this.sentFrames, sentBytes: this.sentBytes,
-      droppedSnapshots: this.droppedSnapshots, slowDisconnects: this.slowDisconnects,
+      droppedSnapshots: this.droppedSnapshots, coalescedStates: this.coalescedStates, slowDisconnects: this.slowDisconnects,
       handlerMs: Object.fromEntries([...this.handlers].map(([type, timing]) => [type, timing.stats()])),
       sendCompletionMs: { sampleEvery: 64, ...this.sendCompletion.stats() } };
   }

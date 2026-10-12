@@ -87,7 +87,10 @@
 //     exactly what the server accepts.
 //   * Content identity (DESIGN §32, the plugin system's first step): the lobby is given the server's vanilla content
 //     (server/plugins/identity.js; none in unit tests that build a Lobby without it). Every `welcome` carries
-//     `content: { vanilla: <cs> }`, every room's `room.state.content` is `{ cs, vanilla: true, plugins: [] }` while it has
+//     `content: { vanilla: <cs> }` — and `plugins: <n>` when this server has n > 0 unofficial plugins (every class but a
+//     language: the title screen's 「本服务器安装了 N 个插件」; a page fetches the catalogue only when n > 0 and something
+//     needs it, so a server without plugins sends exactly what it sent before) —, every room's `room.state.content` is
+//     `{ cs, vanilla: true, plugins: [] }` while it has
 //     no plugin, and the match receives `cs`, which it copies into every BattleSpec (the sim never reads it;
 //     diagnostics and replays name the content with it).
 //   * The room's plugins (DESIGN §32 P1a — cosmetic plugins only): room.setPlugins { plugins: [{ id }] } — host-only,
@@ -283,7 +286,8 @@ export class Lobby {
    *   seedFn?: () => number,
    *   content?: { cs: string } | null,
    *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal' }) => any, hold?: (vs: string) => void,
-   *     release?: (vs: string) => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void } | null,
+   *     release?: (vs: string) => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void,
+   *     unofficial?: () => number } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity"); plugins: the visual
@@ -810,7 +814,10 @@ export class Lobby {
    * server's content identity (header "Content identity").
    */
   welcomeInfo() {
-    return this.vanilla ? { diyKitted: KITTED_CHARS, content: { vanilla: this.vanilla.cs } } : { diyKitted: KITTED_CHARS };
+    if (!this.vanilla) return { diyKitted: KITTED_CHARS };
+    let n;
+    try { n = Number(this.plugins?.unofficial?.()) || 0; } catch { n = 0; }
+    return { diyKitted: KITTED_CHARS, content: n > 0 ? { vanilla: this.vanilla.cs, plugins: n } : { vanilla: this.vanilla.cs } };
   }
 
   // ---------------------------------------------------------------------------------------------------

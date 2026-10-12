@@ -327,9 +327,12 @@ served file found changed, or the folders' own signature), the host is told once
 the panel's 「重新应用」 sends the same choice, which makes the set of the files as they are now; until then the room
 keeps its set — its changed files go out under the old URLs with `no-cache`, and what will not load falls back. A plugin the
 server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
-content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`; the page's code has three more modules
-(`public/js/content.js`, `public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports) and it fetches
-the catalogue on the title screen, in 设置 and in the panel — nothing else more than before.
+content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`. A server says how many unofficial plugins it has
+in `/healthz` (which every page reads at once: the build guard) and in `welcome`, as `content.plugins` — only when there
+are some; the title screen's 「本服务器安装了 N 个插件」 is that count, and the catalogue is fetched only then, when
+something needs it (the title's list, the 插件 panel, 设置's 外观插件, a switched-on personal plugin). So a page of a server
+without plugins makes no request more than 0.2.6's — its code only has three more modules (`public/js/content.js`,
+`public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports).
 
 **A player's plugins.** 设置 → 外观插件 lists the server's cosmetic plugins of scope `personal`, each with a switch, kept in
 this browser only (`localStorage` `sp.pref.cosmetics`), never sent, never part of a battle and seen by nobody else. A

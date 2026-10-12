@@ -148,6 +148,9 @@ function backToLobby() {
   store.patch('ui', { restoring: false });
 }
 
+/** The unofficial plugins a server counts in welcome / /healthz `content.plugins` (absent: none — DESIGN §32 P1a). */
+const pluginCount = (content) => (content && Number.isInteger(content.plugins) && content.plugins > 0 ? content.plugins : 0);
+
 function onWelcome(msg) {
   identity.saveToken(msg.token);
   identity.rememberMatch(null);
@@ -159,6 +162,8 @@ function onWelcome(msg) {
     me: { playerId: msg.playerId ?? null, name, token: typeof msg.token === 'string' ? msg.token : null },
     // the server's content identity (DESIGN §32): the diagnostics name it (diag.js contentLine)
     content: msg.content && typeof msg.content.vanilla === 'string' ? { vanilla: msg.content.vanilla } : null,
+    // how many unofficial plugins it has (P1a — absent: none; content.js fetches the catalogue only when there are some)
+    installedPlugins: pluginCount(msg.content),
   });
   welcomeAt = Date.now();
 
@@ -414,6 +419,8 @@ async function boot() {
     startBuildGuard({
       inMatch: () => selectRoute(store.get()) === 'game',
       onStale: ({ waiting }) => { if (waiting) store.patch('ui', { buildStale: true }); },
+      // the same /healthz names how many plugins the server has: the title screen shows it before any hello
+      onHealth: (h) => { const n = pluginCount(h.content); if (n !== store.get().installedPlugins) store.set({ installedPlugins: n }); },
     });
   } catch (err) {
     console.warn('[app] build guard failed to start', err);

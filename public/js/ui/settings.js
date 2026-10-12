@@ -29,7 +29,7 @@ import { LangToggle, machineTranslationNote } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
-import { catalog, loadCatalog, cosmeticPlugins, personal, personalApplied, pluginName, setPersonalPlugin } from '../content.js';
+import { catalog, loadCatalog, cosmeticPlugins, installedCount, personal, personalApplied, pluginName, setPersonalPlugin } from '../content.js';
 import { pluginMicro } from './pluginPanel.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -239,13 +239,15 @@ function DiagSection() {
 
 /**
  * 外观插件 (see the header): the server's cosmetic plugins of scope `personal`, each with its switch; nothing when there
- * is none. The catalogue is fetched again when the section opens (a plugin dropped in meanwhile shows).
+ * is none. The catalogue is fetched again when the section opens (a plugin dropped in meanwhile shows) — on a server that
+ * has plugins only (content.js installedCount: a server without any is never asked for it).
  */
 function CosmeticSection() {
   const cat = useStore((s) => s, Object.is, catalog);
   const ids = useStore((s) => s.ids, Object.is, personal);
-  useEffect(() => { loadCatalog({ force: true }); }, []);
-  const list = cosmeticPlugins(cat.plugins, 'personal');
+  const installed = useStore(installedCount);
+  useEffect(() => { if (installed) loadCatalog({ force: true }); }, [installed]);
+  const list = installed ? cosmeticPlugins(cat.plugins, 'personal') : [];
   if (!list.length) return null;
   return html`<section class="set-plugins" aria-labelledby="set-plugins-title" data-testid="personal-plugins">
     <div class="set-keys__head">

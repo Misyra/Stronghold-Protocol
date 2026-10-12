@@ -10,12 +10,13 @@
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 //
-// Plugins (DESIGN §32 P1a, the design study's §7.4): when the server's catalogue (content.js loadCatalog) lists
-// unofficial plugins, the footer says 「本服务器安装了 N 个插件」 — a button that lists them (ui/pluginPanel.js
-// InstalledPlugins); nothing on a server without any.
+// Plugins (DESIGN §32 P1a, the design study's §7.4): when the server has unofficial plugins (welcome.content.plugins —
+// content.js installedCount), the footer says 「本服务器安装了 N 个插件」 — a button that lists them (ui/pluginPanel.js
+// InstalledPlugins, which fetches the catalogue when it opens); nothing on a server without any, which the page never
+// asks for its catalogue.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
-import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
+import { useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
@@ -30,7 +31,7 @@ import { t, N_ } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
-import { catalog, loadCatalog, unofficialPlugins } from '../content.js';
+import { installedCount } from '../content.js';
 import { InstalledPlugins } from '../ui/pluginPanel.js';
 
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
@@ -201,8 +202,7 @@ export function TitleScreen() {
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
-  const installed = unofficialPlugins(useStore((s) => s.plugins, Object.is, catalog));
-  useEffect(() => { loadCatalog(); }, []);
+  const installed = useStore(installedCount);
   const assetsSettled = useData('assets');
   const assets = data.get('assets');
   const backdrop = findUiAsset(assets, BACKDROP_KEYS);
@@ -295,13 +295,13 @@ export function TitleScreen() {
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
-    ${pluginsOpen ? html`<${InstalledPlugins} open=${true} plugins=${installed} onClose=${() => setPluginsOpen(false)} />` : null}
+    ${pluginsOpen ? html`<${InstalledPlugins} open=${true} onClose=${() => setPluginsOpen(false)} />` : null}
 
     <footer class="title-foot">
       <${ResumeMatchButton} />
       <${PwaInstallButton} />
-      ${installed.length ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${() => setPluginsOpen(true)}>
-        <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed.length })}</button>` : null}
+      ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${() => setPluginsOpen(true)}>
+        <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed })}</button>` : null}
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <span class="title-foot__meta">
         <a class="title-repo" href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a>

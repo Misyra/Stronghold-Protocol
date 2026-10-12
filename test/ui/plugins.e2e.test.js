@@ -12,6 +12,8 @@
 // A match already drawn (the fast server's starter kit placed on the board): a personal plugin switched on during the
 // match changes the picture the piece already on the board draws (render/units.js retryAssets — the field view's
 // pieceArt introspection), and switched off brings the installation's back (DESIGN §32 P1a review round 2).
+// A server without plugins: its page never asks for the catalogue, a visual set or a plugin file — the title shows no
+// count, the room's 插件 panel says there is none, 设置 has no 外观插件 (/healthz and welcome send no count).
 //
 // Screenshots: test/e2e/out/plugins-*.png, plugins-board-*.png.
 import { test, describe } from 'node:test';
@@ -138,6 +140,44 @@ describe('cosmetic plugins in the browser (P1a)', { skip: !ENABLED && 'set SP_E2
     } finally {
       await host.close();
       await guest.close();
+      await srv.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('a server without plugins: its page never asks for the catalogue (title, the room\'s 插件 panel, 设置)', { timeout: 2 * 60 * 1000 }, async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-plugins-none-'));
+    const { startServer } = await import('../../server/index.js');
+    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: tmp });
+    const seen = [];
+    srv.server.on('request', (req) => seen.push(req.url));
+    const P = (await import('puppeteer-core')).default;
+    const c = new Client(P, srv.url, 'vanilla', { prefix: 'plugins-none', w: 1600, h: 900 });
+    try {
+      await c.open();
+      // the build guard's first /healthz (before any hello) says how many plugins the server has — none here
+      for (const t0 = Date.now(); !seen.some((u) => u.startsWith('/healthz')) && Date.now() - t0 < 15000;) await sleep(100);
+      await sleep(300);
+      assert.equal(await c.page.evaluate(() => globalThis.__SP__.store.get().installedPlugins), 0, '/healthz sent no count');
+      assert.equal(await c.page.$('[data-testid="title-plugins"]'), null, 'no count on the title');
+      await c.enter('凯尔希');
+      await c.click('.mode-card', '同盟模拟');
+      await c.click('.diff-card', '标准模拟');
+      await c.click('.create-box button', '创建同盟');
+      await c.waitFor((st) => !!st.room?.code, 'room created');
+      await c.click('[data-testid="plugin-tag"]');
+      await c.page.waitForSelector('[data-testid="plugin-panel"]', { timeout: 10000 });
+      assert.match(await c.page.$eval('[data-testid="plugin-panel"]', (e) => e.textContent), /本服务器没有可在房间中使用的外观插件/);
+      await c.click('.modal__actions button', '完成');
+      await c.click('.room-screen [data-testid="settings-btn"]');
+      await c.page.waitForSelector('.set-list', { timeout: 10000 });
+      assert.equal(await c.page.$('[data-testid="personal-plugins"]'), null, 'no 外观插件 section');
+      await sleep(500);
+      assert.deepEqual(seen.filter((u) => /^\/(plugins|vs|p)\//.test(u)), [], 'no catalogue, no visual set, no plugin file');
+      const art = fs.existsSync(path.join(ROOT, 'public/assets'));
+      assert.deepEqual(problemsOf([c]).filter((p) => art || !/\/assets\//.test(p)), []);
+    } finally {
+      await c.close();
       await srv.close();
       fs.rmSync(tmp, { recursive: true, force: true });
     }

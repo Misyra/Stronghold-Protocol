@@ -19,9 +19,12 @@
 //     `personal` with the `vs` of the set of it alone; every switched-on one is fetched as /vs/<vs16>/overlay.json,
 //     checked the same way (fetched side by side) and applied after the room's, in the catalogue's order (by id)
 //     [ASSUMED]. A plugin this server does not have is skipped and stays switched on here (it shows again when the server
-//     has it). The catalogue
-//     is fetched only when something needs it: a switched-on personal plugin, the room's 插件 panel (ui/pluginPanel.js),
-//     设置's 外观插件 (ui/settings.js) or the title screen's 「本服务器安装了 N 个插件」.
+//     has it).
+//   * The catalogue is fetched only on a server that has plugins — `content.plugins` > 0 in /healthz (the build guard's
+//     first check, before any hello) or welcome (main.js keeps it as the store's `installedPlugins`: installedCount; a
+//     server without any sends none, and its page never asks for /plugins/index.json) — and only when something needs
+//     it: a switched-on personal plugin, the room's 插件 panel (ui/pluginPanel.js), 设置's 外观插件 (ui/settings.js) or
+//     the list behind the title screen's 「本服务器安装了 N 个插件」 (that count is the server's).
 
 import { createStore, loadPref, savePref, store as appStore } from './store.js';
 import { data as dataStore } from './data.js';
@@ -81,6 +84,13 @@ export function loadCatalog({ force = false, fetch: doFetch = defaultFetch } = {
   })();
   return catalogLoad;
 }
+
+/**
+ * How many unofficial plugins the server has (/healthz or welcome `content.plugins`, kept by main.js as the store's
+ * `installedPlugins`; 0 when it sent none): the title screen's count, and whether the catalogue is ever worth fetching.
+ * @param {any} s the app store's state
+ */
+export const installedCount = (s) => (Number.isInteger(s?.installedPlugins) && s.installedPlugins > 0 ? s.installedPlugins : 0);
 
 /** The catalogue's unofficial entries — every plugin but a language (the title screen's count, §7.4). @param {any[]} plugins */
 export const unofficialPlugins = (plugins) => (Array.isArray(plugins) ? plugins.filter((p) => p && p.unofficial) : []);
@@ -203,7 +213,8 @@ export function installContent({ store = appStore, data = dataStore, layers = co
   const syncPersonal = async () => {
     const req = ++personalReq;
     const ids = personal.get().ids;
-    if (!ids.length) { layers.setPersonal([]); return; }
+    // none switched on, or a server without plugins (never even asked for its catalogue)
+    if (!ids.length || !installedCount(store.get())) { layers.setPersonal([]); return; }
     const entries = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal').filter((p) => ids.includes(p.id) && isVisualHash(p.vs));
     // side by side; applied in the catalogue's order
     for (const p of entries) if (!overlays.has(p.vs)) overlays.set(p.vs, fetchVisualDoc(p.vs, { fetch: doFetch, retryDelays }));
@@ -217,7 +228,13 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     if (req === personalReq) layers.setPersonal(list);
   };
 
-  const offStore = store.subscribe((s) => syncRoom(s));
+  // the server's plugin count arrives with welcome (or changes on a reconnect): the personal plugins follow it
+  let installed = installedCount(store.get());
+  const offStore = store.subscribe((s) => {
+    syncRoom(s);
+    const n = installedCount(s);
+    if (n !== installed) { installed = n; if (personal.get().ids.length) syncPersonal(); }
+  });
   syncRoom(store.get());
   const offPersonal = personal.subscribe(() => { syncPersonal(); });
   // a catalogue fetched again may name a plugin's new `vs` (its files changed): the switched-on ones follow

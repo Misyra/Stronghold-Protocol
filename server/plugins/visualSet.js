@@ -27,6 +27,7 @@
 import { createHash } from 'node:crypto';
 import { ERR } from '../../shared/constants.js';
 import { resolvePluginOrder } from '../../shared/plugins/order.js';
+import { PLUGIN_CLASSES } from '../../shared/plugins/manifest.js';
 import { VISUAL_HASH_VERSION, VISUAL_LIMITS, mergePluginOps, visualHashOf, vsUrlPart } from '../../shared/plugins/visual.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
@@ -217,6 +218,11 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
     },
     /** Look for held sets that changed now (normally after each rescan; tests). */
     checkStale,
+    /**
+     * How many unofficial plugins this server has — every class but a language, whatever its status: what the
+     * catalogue marks `unofficial` and the title screen counts (server/lobby.js welcomeInfo).
+     */
+    unofficial: () => registry.plugins().filter((p) => PLUGIN_CLASSES[p.class]?.unofficial).length,
     /** Stop listening to the registry. */
     close() { offScan?.(); staleListeners.clear(); },
     /** A file a loaded cosmetic plugin serves (registry pluginFile). @param {string} id @param {string} rel */

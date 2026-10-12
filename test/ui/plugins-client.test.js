@@ -17,7 +17,7 @@ import { createCosmeticLayers, createAssets } from '../../public/js/assets.js';
 import { createDataStore } from '../../public/js/data.js';
 import { createStore } from '../../public/js/store.js';
 import {
-  fetchVisualDoc, installContent, personal, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins, pluginName, PERSONAL_PREF,
+  fetchVisualDoc, installContent, installedCount, personal, setPersonalPlugin, catalog, loadCatalog, cosmeticPlugins, unofficialPlugins, pluginName, PERSONAL_PREF,
 } from '../../public/js/content.js';
 import { roomPluginFacts, nextChoice, sizeText, pluginTagText, pluginMicro } from '../../public/js/ui/pluginPanel.js';
 import { visualHashOf } from '../../shared/plugins/visual.js';
@@ -266,7 +266,7 @@ describe('content.js', () => {
     const layers = createCosmeticLayers();
     const data = createDataStore({ fetch: async () => res(200, BASE), retryDelays: [], timeoutMs: 0 });
     await data.load('assets');
-    const off = installContent({ store: createStore({ room: null }), data, layers, fetch, retryDelays: [] });
+    const off = installContent({ store: createStore({ room: null, installedPlugins: 3 }), data, layers, fetch, retryDelays: [] });
     await tick();
     assert.deepEqual(asked, [], 'no personal plugin switched on: not even the catalogue');
     setPersonalPlugin('zed', true);
@@ -285,6 +285,33 @@ describe('content.js', () => {
     await until(() => layers.personal.length === 0, 'none');
     off();
     assert.equal(PERSONAL_PREF, 'cosmetics');
+  });
+
+  test('a server without plugins (no content.plugins in /healthz or welcome) is never asked for its catalogue, even with personal plugins kept here', async () => {
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+    personal.set({ ids: ['mine'] });
+    const asked = [];
+    const mine = personalDoc('mine', 'm.png');
+    const fetch = async (u) => {
+      asked.push(u);
+      if (u === '/plugins/index.json') return res(200, { plugins: [{ id: 'mine', class: 'cosmetic', status: 'loaded', scope: ['personal'], vs: mine.visual.vs, unofficial: true }] });
+      return u.startsWith('/vs/') ? res(200, mine) : res(404, '');
+    };
+    const app = createStore({ room: null, installedPlugins: 0 });
+    const layers = createCosmeticLayers();
+    const data = createDataStore({ fetch: async () => res(200, BASE), retryDelays: [], timeoutMs: 0 });
+    await data.load('assets');
+    const off = installContent({ store: app, data, layers, fetch, retryDelays: [] });
+    for (let i = 0; i < 5; i++) await tick();
+    assert.deepEqual(asked, [], 'nothing fetched: the server has no plugin');
+    assert.equal(installedCount(app.get()), 0);
+    assert.equal(installedCount({}), 0, 'nothing said: none');
+    // a server that has some (/healthz, or welcome after a reconnect): the switched-on one is fetched and applied
+    app.set({ installedPlugins: 1 });
+    await until(() => layers.personal.length === 1, 'the personal plugin');
+    assert.deepEqual(asked, ['/plugins/index.json', `/vs/${mine.visual.vs.slice(0, 16)}/overlay.json`]);
+    off();
+    personal.set({ ids: [] });
   });
 
   test('loadCatalog: shared while on its way, a failure keeps what was there; the helpers pick the right entries', async () => {

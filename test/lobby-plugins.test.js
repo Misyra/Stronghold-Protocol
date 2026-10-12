@@ -61,6 +61,16 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  test('/healthz and welcome count the server\'s unofficial plugins (the title screen\'s N; a server without any sends no count)', async () => {
+    const c = await player('Closure');
+    // texas-red, texas-blue, mine, base, top, fresh (cosmetic) and rules (content, planned): every class but a language
+    assert.deepEqual(c.welcome.content, { vanilla: srv.content.cs, plugins: 7 });
+    assert.deepEqual((await (await fetch(`${srv.url}/healthz`)).json()).content, { vanilla: srv.content.cs, sets: 0, plugins: 7 }, 'before any hello: the title screen');
+    const lobby = new Lobby({ registry: new SessionRegistry(), content: { cs: 'ab'.repeat(32) }, plugins: { resolve: () => null, unofficial: () => 0 } });
+    assert.deepEqual(lobby.welcomeInfo().content, { vanilla: 'ab'.repeat(32) }, 'none: exactly the welcome of a server without plugins');
+    lobby.shutdown();
+  });
+
   test('the host switches plugins on: room.state.content names the set, cs stays the vanilla one, the others are un-readied', async () => {
     const host = await player('Kal\'tsit');
     const guest = await player('Amiya');

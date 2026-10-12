@@ -83,7 +83,9 @@ at start from the bytes it serves: `/sim/**.js` but `nodeData.js`, `/shared/**.j
 gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`). Until rooms can choose gameplay plugins
 (P1c) every room plays the vanilla set; cosmetic plugins (P1a) change its art only, named by the visual hash **`vs`**:
 
-- S→C `welcome.content` = `{ vanilla: <cs> }` (the lobby's `welcomeInfo`, beside `diyKitted`);
+- S→C `welcome.content` = `{ vanilla: <cs> }` (the lobby's `welcomeInfo`, beside `diyKitted`) — `{ vanilla, plugins: <n> }`
+  when the server has n > 0 unofficial plugins (every class but a language: the title screen's count; a page fetches the
+  catalogue only then);
 - S→C `room.state.content` = `{ cs, vanilla: true, plugins: [] }` (the room's content set) — with cosmetic plugins
   `{ cs, vanilla: true, vs, plugins: [{ id, version, class: 'cosmetic', hash, auto? }], warnings: [{ code, params }],
   bytes }`: `cs` stays the vanilla one (art never changes a battle); `vs` = sha256(canonical({ v: 1, assets: <SHA-256 of
@@ -108,7 +110,8 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
 - C→S `b.result.cs?` — optional, its form checked (`isContentHash`); the server does not compare it with the spec yet
   (P1c refuses a missing or different one in a plugin room);
 - `GET /healthz` adds `content: { vanilla: <cs>, sets: 0 }` (`sets`: the content sets with plugins in use — none before
-  P1c);
+  P1c), and `plugins: <n>` when the server has n > 0 unofficial plugins (a page reads it before any hello: its build
+  guard's first check, `public/js/ui/buildGuard.js` onHealth);
 - `GET /cs/<first 16 hex digits>/index.json` — the content set's manifest (`{ v, cs, app, vanilla, sim, simFiles:
   { <path>: sha256 }, data: { <name>: { url, sha256, bytes } }, plugins, settings }`, data URLs `/data/<file>?v=<8 hex>`),
   `Cache-Control: immutable`; any other `cs` → 404;

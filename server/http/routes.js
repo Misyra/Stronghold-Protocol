@@ -4,7 +4,9 @@
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, the vanilla content
-//     hash `content.vanilla` and the modded content sets in use `content.sets` — DESIGN §32 —, sockets, sessions,
+//     hash `content.vanilla`, the modded content sets in use `content.sets` and — only when there are some — how many
+//     unofficial plugins the server has, `content.plugins` (the title screen's count before any hello) — DESIGN §32 —,
+//     sockets, sessions,
 //     rooms, matches), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
 //     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
 //     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
@@ -19,6 +21,13 @@ import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 import { clientAddress, isLocalIp } from '../net.js';
 
 const MAX_URL_LENGTH = 4096;
+
+/** `{ plugins: n }` when the server has n > 0 unofficial plugins (the lobby's visual sets count them), else nothing. */
+function pluginCount(lobby) {
+  let n;
+  try { n = Number(lobby?.plugins?.unofficial?.()) || 0; } catch { n = 0; }
+  return n > 0 ? { plugins: n } : {};
+}
 
 /**
  * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
@@ -37,8 +46,9 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
     // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins are
-    // in use — none before rooms can choose them (P1c; a room's cosmetic plugins leave its cs the vanilla one, §32.3)
-    ...(content ? { content: { vanilla: content.cs, sets: 0 } } : {}),
+    // in use — none before rooms can choose them (P1c; a room's cosmetic plugins leave its cs the vanilla one, §32.3);
+    // how many unofficial plugins it has, when it has some (a page's title screen says so; P1a)
+    ...(content ? { content: { vanilla: content.cs, sets: 0, ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
   if (withTraffic && traffic) report.traffic = traffic.snapshot();

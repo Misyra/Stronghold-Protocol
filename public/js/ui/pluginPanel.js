@@ -2,7 +2,8 @@
 //
 //   * PluginTag — the tag at the top of the room (screens/room.js): 「原版」, or 「插件 ×N」 once its host switched plugins
 //     on; it opens the panel.
-//   * PluginPanel — the cosmetic plugins this server has for rooms (the catalogue: content.js loadCatalog), each with its
+//   * PluginPanel — the cosmetic plugins this server has for rooms (the catalogue: content.js loadCatalog — fetched when
+//     the panel opens, and only on a server that has plugins: welcome.content.plugins > 0), each with its
 //     switch for the host and its state for everybody else (the other players and the spectators read it), its version,
 //     authors, size and a 非官方 mark; 「自动」 on one switched on because another needs it; the warnings of the room's set
 //     (two plugins change the same art — the later one applies; a plugin made for other game versions, still usable:
@@ -11,7 +12,7 @@
 //     choice again: when a plugin's files changed on the server since (the lobby tells the host: an m.toast), that
 //     makes the set of the files as they are now. Art only in this version: the battles stay the original ones.
 //   * InstalledPlugins — the title screen's 「本服务器安装了 N 个插件」 (screens/title.js; §7.4): every unofficial plugin
-//     the catalogue lists — any class, with what this version does with it.
+//     the catalogue lists — any class, with what this version does with it (the catalogue fetched when it opens).
 // Texts go through t() (docs/I18N.md).
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
@@ -20,7 +21,7 @@ import { html, Modal, Button, Icon } from './components.js';
 import { toastError } from './toasts.js';
 import { net } from '../net.js';
 import { useStore } from '../store.js';
-import { catalog, loadCatalog, cosmeticPlugins, pluginName } from '../content.js';
+import { catalog, loadCatalog, cosmeticPlugins, installedCount, pluginName, unofficialPlugins } from '../content.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -87,12 +88,14 @@ export function PluginTag({ room, myId }) {
 /** The room's 插件 panel (see the header). */
 export function PluginPanel({ open, room, myId, onClose }) {
   const cat = useStore((s) => s, Object.is, catalog);
+  const installed = useStore(installedCount);
   const [busy, setBusy] = useState(null);
   const inFlight = useRef(false);
   const alive = useRef(true);
-  useEffect(() => { alive.current = true; loadCatalog({ force: true }); return () => { alive.current = false; }; }, []);
+  // the catalogue — again each time the panel opens (a plugin dropped in meanwhile shows), never on a server without any
+  useEffect(() => { alive.current = true; if (installed) loadCatalog({ force: true }); return () => { alive.current = false; }; }, [installed]);
   const f = roomPluginFacts(room, myId);
-  const offered = cosmeticPlugins(cat.plugins, 'room');
+  const offered = installed ? cosmeticPlugins(cat.plugins, 'room') : [];
   const offeredIds = cat.status === 'ready' ? new Set(offered.map((p) => p.id)) : null;
   // a plugin the room has that the catalogue no longer offers (removed, skipped, another scope now) still shows, by its
   // id: its switch only turns it off
@@ -122,9 +125,9 @@ export function PluginPanel({ open, room, myId, onClose }) {
       </p>
       ${f.inMatch ? html`<p class="set-hint">${t('模拟进行中，插件不能更改')}</p>`
         : f.editable ? null : html`<p class="set-hint">${t('由创建者设置')}</p>`}
-      ${cat.status === 'loading' && !rows.length ? html`<p class="set-hint">${t('正在读取插件列表…')}</p>` : null}
-      ${cat.status === 'failed' && !rows.length ? html`<p class="set-hint is-warn">${t('无法读取插件列表')}</p>` : null}
-      ${cat.status === 'ready' && !rows.length ? html`<p class="set-hint">${t('本服务器没有可在房间中使用的外观插件')}</p>` : null}
+      ${installed && cat.status === 'loading' && !rows.length ? html`<p class="set-hint">${t('正在读取插件列表…')}</p>` : null}
+      ${installed && cat.status === 'failed' && !rows.length ? html`<p class="set-hint is-warn">${t('无法读取插件列表')}</p>` : null}
+      ${(!installed || cat.status === 'ready') && !rows.length ? html`<p class="set-hint">${t('本服务器没有可在房间中使用的外观插件')}</p>` : null}
       ${rows.length ? html`<ul class="plugpanel__list">
         ${rows.map((p) => {
           const on = f.on.has(p.id);
@@ -162,14 +165,19 @@ export function PluginPanel({ open, room, myId, onClose }) {
 /** What a class is called in the list (msgids). */
 const CLASS_NAMES = { cosmetic: N_('外观'), content: N_('改变玩法'), script: N_('代码'), trusted: N_('代码'), ui: N_('界面'), lang: N_('语言') };
 
-/** The title screen's list of a server's unofficial plugins (see the header). */
-export function InstalledPlugins({ open, plugins, onClose }) {
+/** The title screen's list of a server's unofficial plugins (see the header): the catalogue, fetched when it opens. */
+export function InstalledPlugins({ open, onClose }) {
+  const cat = useStore((s) => s, Object.is, catalog);
+  useEffect(() => { loadCatalog({ force: true }); }, []);
+  const plugins = unofficialPlugins(cat.plugins);
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('本服务器的插件')} micro="PLUGINS" width="6.8rem"
       actions=${html`<${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
     <div class="plugpanel" data-testid="installed-plugins">
       <p class="plugpanel__lead">${t('插件为非官方制作，不属于原版游戏；原版内容始终是默认。')}</p>
+      ${cat.status === 'loading' && !plugins.length ? html`<p class="set-hint">${t('正在读取插件列表…')}</p>` : null}
+      ${cat.status === 'failed' && !plugins.length ? html`<p class="set-hint is-warn">${t('无法读取插件列表')}</p>` : null}
       <ul class="plugpanel__list">
-        ${(plugins || []).map((p) => html`<li key=${p.id} class="plugrow" data-plugin=${p.id}>
+        ${plugins.map((p) => html`<li key=${p.id} class="plugrow" data-plugin=${p.id}>
           <div class="plugrow__body">
             <div class="plugrow__name"><b>${pluginName(p)}</b>${p.version ? html`<span class="num t-dim">v${p.version}</span>` : null}
               <span class="plugrow__badge">${t(CLASS_NAMES[p.class] || '插件')}</span><span class="plugrow__badge is-unofficial">${t('非官方')}</span></div>

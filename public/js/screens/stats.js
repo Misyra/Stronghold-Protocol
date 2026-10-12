@@ -258,13 +258,18 @@ function Bands({ agg, gd, records }) {
 	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
 		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
 		<h4 class="st-sub st-favorites__heading">${t('最常使用的盟约')}</h4>
-		${bonds.length ? html`<div class="st-favorites">
-			${bonds.slice(0, 3).map(([bondId, v]) => {
+		${bonds.length ? html`<div class="st-top-bonds">
+			${bonds.slice(0, 3).map(([bondId], index) => {
 				const name = gd.bond(bondId)?.name || bondId;
-				return html`<div key=${bondId} class="st-favorite">
-					<${BondGlyph} bondId=${bondId} />
-					<div class="st-favorite__text"><span class="st-favorite__name" title=${name}>${name}</span>
-						<span class="st-favorite__count num" title=${t('使用局数')}>×${fmtNum(v.games)}</span></div>
+				return html`<div key=${bondId} class="st-top-bond">
+					<div class="st-top-bond__art">
+						<${Img} src=${uiUrl(gd.m, 'statistics/bondTopFrame')} class="st-bond-frame" />
+						<${BondGlyph} bondId=${bondId} />
+						<span class="st-top-bond__rank">${t('TOP{n}', { n: index + 1 })}</span>
+					</div>
+					<div class="st-top-bond__text">
+						<span class="st-top-bond__name" title=${name}>${name}</span>
+					</div>
 				</div>`;
 			})}
 		</div>` : html`<p class="st-hint">${t('暂无盟约使用记录')}</p>`}

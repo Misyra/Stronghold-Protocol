@@ -82,6 +82,7 @@ import { Ticker } from '../ui/ticker.js';
 import { Communication } from '../ui/chat.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
+import { CombatMetricsPanel } from '../ui/combatMetrics.js';
 import { SettingsModal, settingsStore } from '../ui/settings.js';
 import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { openGuide } from '../ui/guide.js';
@@ -187,6 +188,7 @@ function MatchScreen() {
   const [rewardMin, setRewardMin] = useState(false);
   const [emoteOpen, setEmoteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false); // the 作战统计 panel (local damage / healing accounting)
   const [exitOpen, setExitOpen] = useState(false);
   const [drag, setDrag] = useState(null);                // { uid, kind, id } while dragging a piece
   const [facing, setFacing] = useState(null);            // direction step: { uid, piece, row, col, grid, name }
@@ -1492,7 +1494,17 @@ function MatchScreen() {
       <${Ticker} />
 
       <div class="gm__corner">
+        ${metricsOpen && !spectator ? html`<${CombatMetricsPanel} myId=${myId} onClose=${() => setMetricsOpen(false)} />` : null}
         ${spectator ? null : html`<${Communication} open=${emoteOpen} onToggle=${setEmoteOpen} />`}
+        ${spectator ? null : html`<button type="button" class="gm__gear gm__metrics" aria-label=${t('作战统计')} title=${t('作战统计')}
+          aria-expanded=${metricsOpen} aria-controls="combat-metrics-panel"
+          onKeyDown=${(e) => { if (e.key === ' ') e.stopPropagation(); }} onClick=${() => {
+            setMetricsOpen(!metricsOpen);
+            setEmoteOpen(false);
+            setDetail(null);
+            setSel(null);
+            setBondOpen(null);
+          }}><${Icon} name="signal" /></button>`}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${AnnouncementButton} class="gm__gear gm__announcement" square=${true} />

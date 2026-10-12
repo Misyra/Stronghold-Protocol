@@ -8,10 +8,14 @@
 // (the plain 源石虫) is drawn tinted toward the slug's own colours (ALIAS_TINT). A model that failed or timed out is
 // loaded again after SPINE_RETRY_MS (bounded), and `retryAssets()` re-resolves a view's picture and model when the
 // asset manifest arrives after the view was built or the tab is shown again (render/app.js; public issue #8 item 5:
-// after a reload whose manifest was slow or failed, every operator stayed the image-less placeholder for good); a load
-// begun while the tab was hidden and still in flight SPINE_STUCK_MS after it is shown again is started again
-// (assets.js spine.restart: GitHub #68, such a load may never settle — its view stayed the placeholder). Every
-// bar is a tinted Texture.WHITE sprite, so HUDs batch into few draw calls.
+// after a reload whose manifest was slow or failed, every operator stayed the image-less placeholder for good) — and
+// whenever the manifest changes under a view that is already drawn (a room's cosmetic plugins arriving after the board
+// was built — a reconnect, a spectator joining a match —, a personal plugin switched during a match, a plugin file that
+// failed and fell back: DESIGN §32 P1a): a picture or model other than the one the manifest names now is loaded again
+// (the new model replaces the old in place, like a Front ⇄ Back swap); a load begun while the tab was hidden and still
+// in flight SPINE_STUCK_MS after it is shown again is started again (assets.js spine.restart: GitHub #68, such a load
+// may never settle — its view stayed the placeholder). Every bar is a tinted Texture.WHITE sprite, so HUDs batch into
+// few draw calls.
 //
 // Placement: feet anchored at world (x, y, z); scale = camera px-per-tile at the feet × UNIT.modelScale, so
 // chibis shrink with distance like the original. An enemy's model is also scaled by its official prefab factor
@@ -594,11 +598,19 @@ export class UnitView {
   // the first frame it is actually visible: never for a unit whose Spine model is ready before that, and never as
   // an image-less placeholder that the avatar replaces a moment later (the placeholder only shows when the avatar
   // is missing or still loading after PIC_WAIT_MS).
-  _loadPicture() {
+  /** The picture the manifest names for this unit now (an ICE_TOKENS unit takes none: the token fallback would be its
+   *  owner's face — assets.js tokenAvatarUrl). */
+  _pictureUrl() {
     const a = this.ctx.assets;
-    // (an ICE_TOKENS unit takes no picture: the token fallback would be its owner's face — assets.js tokenAvatarUrl)
-    const url = ICE_TOKENS.has(this.info.defId) ? null : a && (a.picture ? a.picture(this.info.avatar) || a.picture(this.info.defId) || a.picture(this.info.spine) : null);
-    this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown'), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs() };
+    return ICE_TOKENS.has(this.info.defId) ? null : a && (a.picture ? a.picture(this.info.avatar) || a.picture(this.info.defId) || a.picture(this.info.spine) : null) || null;
+  }
+
+  /** @param {boolean} [replace] another picture replaces a shown one: the old one stays on the diamond until it is there */
+  _loadPicture(replace = false) {
+    const a = this.ctx.assets;
+    const url = this._pictureUrl();
+    const old = replace && this._pic && this._pic.state === 'img' ? this._pic : null;
+    this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown'), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs(), url, prev: !!old };
     if (!url || !a.image) return;
     const cached = typeof a.imageNow === 'function' ? a.imageNow(url) : null;
     if (cached) { this._pic.img = cached; this._pic.state = 'img'; return; }
@@ -614,10 +626,25 @@ export class UnitView {
     const pic = this._pic;
     if (!pic || this.destroyed) return;
     let want = pic.state === 'img' ? 'img' : 'placeholder';
-    if (pic.state === 'wait' && nowMs() - pic.t0 < PIC_WAIT_MS) want = null;
+    // still loading: nothing new yet (a replaced picture keeps the old one meanwhile; else the placeholder after a while)
+    if (pic.state === 'wait' && (pic.prev || nowMs() - pic.t0 < PIC_WAIT_MS)) want = null;
     if (!want || pic.shown === want) return;
-    this.fallback.texture = diamondTexture(pic.key, want === 'img' ? pic.img : null, pic.color, { enemy: this.isEnemy, golden: this.golden, ice: ICE_TOKENS.has(this.info.defId) });
+    // a drawn picture is cached by its URL too: another picture of the same unit (a cosmetic plugin's) is another diamond
+    const key = want === 'img' && pic.url ? `${pic.key}|${pic.url}` : pic.key;
+    this.fallback.texture = diamondTexture(key, want === 'img' ? pic.img : null, pic.color, { enemy: this.isEnemy, golden: this.golden, ice: ICE_TOKENS.has(this.info.defId) });
     pic.shown = want;
+  }
+
+  /**
+   * The Spine entry the manifest names for this unit now — Front/Back rule (research 07 §5.5 / 09 §1.2): Front facing
+   * right/down (mirrored for left), Back facing up — while standing (a knocked-out operator lies with the model that has
+   * a fall: _wantsBack) —, or null.
+   * @param {boolean} [back]
+   */
+  _modelEntry(back = this._wantsBack()) {
+    const a = this.ctx.assets;
+    const id = this.info.spine || this.info.defId;
+    return a && a.spineEntry && id ? a.spineEntry(id, { back }) || null : null;
   }
 
   /** @param {boolean} [retry] load again even after a remembered failure (assets.js acquire `{ retry }`) */
@@ -625,28 +652,38 @@ export class UnitView {
     const a = this.ctx.assets;
     if (!a || !a.spineEntry || !a.spine) return;
     const id = this.info.spine || this.info.defId;
-    // Front/Back rule (research 07 §5.5 / 09 §1.2): Front facing right/down (mirrored for left), Back facing up — while
-    // standing (a knocked-out operator lies with the model that has a fall: _wantsBack).
     const back = this._wantsBack();
-    const entry = id ? a.spineEntry(id, { back }) : null;
+    const entry = this._modelEntry(back);
     if (!entry || this.ctx.settings?.quality === 'low' && this.isEnemy && !this.isBoss && this.ctx.crowded?.()) return;
     this.entryBack = back;
+    this._resolved = entry; // what the manifest named (the model drawn may be its `fallback`)
     this._acquireSpine(entry, id, retry);
   }
 
   /**
-   * Re-resolve what this view could not draw yet (public issue #8 item 5): the picture when it has none (no avatar URL —
-   * the asset manifest arrived after the view was built — or the image failed) and, at once, the Spine model when none
-   * is shown and none is loading (no manifest entry then, or a load that failed / timed out). render/app.js calls it for
-   * every view when a manifest arrives (assets.js onChange) and when the tab is shown again. A load still in flight that
-   * began while the tab was hidden gets SPINE_STUCK_MS from now (the tab visible) to finish, then `update` starts it again
-   * (GitHub #68). Nothing to do otherwise.
+   * Re-resolve what this view draws (public issue #8 item 5; DESIGN §32 P1a): the picture when it has none (no avatar URL —
+   * the asset manifest arrived after the view was built — or the image failed) or when the manifest names another one now,
+   * and, at once, the Spine model when none is shown and none is loading (no manifest entry then, or a load that failed /
+   * timed out) or when the manifest names another model than the one shown or loading — a room's cosmetic plugins that
+   * arrived after the board was built, a personal plugin switched during a match, a plugin file that failed and fell back
+   * (the new model replaces the old in place, no fallback diamond in between). render/app.js calls it for every view when
+   * the manifest changes (assets.js onChange) and when the tab is shown again. A load still in flight that began while the
+   * tab was hidden gets SPINE_STUCK_MS from now (the tab visible) to finish, then `update` starts it again (GitHub #68).
+   * Nothing to do otherwise.
    */
   retryAssets() {
     if (this.destroyed) return;
+    const url = this._pictureUrl();
     if (!this._pic || this._pic.state === 'none') this._loadPicture();
-    if (this.actor) return;
-    if (!this._spineBusy) { this._retryAt = 0; this._loadSpine(true); return; }
+    else if (url && url !== this._pic.url) this._loadPicture(true);
+    const want = this._modelEntry();
+    // another model than the one shown / loading (compared by skeleton URL: the same file is the same model)
+    const moved = !!want && !!this._resolved && want.skel !== this._resolved.skel;
+    if (this.actor) {
+      if (moved) { this._retryAt = 0; this._loadSpine(true); }
+      return;
+    }
+    if (!this._spineBusy || moved) { this._retryAt = 0; this._loadSpine(true); return; }
     if (this._spineHidden && !this._stuckAt && !globalThis.document?.hidden) this._stuckAt = nowMs() + SPINE_STUCK_MS;
   }
 

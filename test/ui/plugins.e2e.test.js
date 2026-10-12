@@ -9,14 +9,17 @@
 // (kept in that browser, never the host's), on top of the room's art. The host switches the room plugin off: its art
 // leaves the guest's page (the personal one stays). No console / page errors, no failed request but the game's own art
 // when this checkout has none.
+// A match already drawn (the fast server's starter kit placed on the board): a personal plugin switched on during the
+// match changes the picture the piece already on the board draws (render/units.js retryAssets — the field view's
+// pieceArt introspection), and switched off brings the installation's back (DESIGN §32 P1a review round 2).
 //
-// Screenshots: test/e2e/out/plugins-*.png.
+// Screenshots: test/e2e/out/plugins-*.png, plugins-board-*.png.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Client, ROOT, hasChrome, sleep, problemsOf } from '../e2e/client.mjs';
+import { Client, ROOT, hasChrome, sleep, problemsOf, startRealServer } from '../e2e/client.mjs';
 import { png, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const ENABLED = process.env.SP_E2E === '1' && hasChrome();
@@ -136,6 +139,52 @@ describe('cosmetic plugins in the browser (P1a)', { skip: !ENABLED && 'set SP_E2
       await host.close();
       await guest.close();
       await srv.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('a match already drawn: a personal plugin switched on → the piece on the board draws its picture; off → the installation\'s again', { timeout: 4 * 60 * 1000 }, async () => {
+    const [[chess, avatarId]] = twoOperators();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-plugins-board-'));
+    writePlugin(path.join(tmp, 'board-skin'), cosmetic({ name: { zh: '棋盘头像', en: 'Board avatar' }, scope: ['personal'],
+      assets: { chars: { [avatarId]: { avatar: 'art/blue.png' } } } }), { 'art/blue.png': png(8, 8, [0, 0, 255, 255]) });
+    const srv = await startRealServer({ fast: { timerScale: 1, combatSpeed: 2, startRound: 1, chess: [chess.chessId], autoPlace: true }, pluginsDir: tmp });
+    const P = (await import('puppeteer-core')).default;
+    const c = new Client(P, srv.base, 'solo', { prefix: 'plugins-board', w: 1600, h: 900 });
+    const art = (uid) => c.page.evaluate((u) => globalThis.__SP_VIEW__?.raw?.pieceArt?.(u) ?? null, uid);
+    try {
+      await c.open();
+      await c.enter('凯尔希');
+      await c.click('.mode-card', '独立模拟');
+      await c.click('.diff-card', '标准模拟');
+      await c.click('.create-box button', '开始独立模拟');
+      await c.waitFor((s) => !!s.room, 'solo room');
+      if (!(await c.st()).phase) await c.click('.room-bar__right button', '开始模拟', { timeout: 20000 });
+      await c.waitFor((s) => s.phase === 'INFO_CHECK', 'briefing', 30000);
+      await c.click('.brief__foot .btn--primary', '准备就绪');
+      await c.waitFor((s) => s.phase === 'BAND_DRAFT', 'band draft', 30000);
+      await c.click('.dband', null, { nth: 1 });
+      await c.click('.draft-detail__btns .btn--primary', '确认选择');
+      await c.waitFor((s) => s.phase === 'PREP' && s.board > 0, 'prep with the starter kit on the board', 60000);
+      const piece = (await c.boardPieces()).find((p) => p.id === chess.chessId);
+      assert.ok(piece, 'the kit operator stands on the board');
+      // the board drew the installation's picture for it
+      await c.page.waitForFunction((u) => !!globalThis.__SP_VIEW__?.raw?.pieceArt?.(u)?.picture, { timeout: 20000 }, piece.uid);
+      const before = await art(piece.uid);
+      assert.doesNotMatch(before.picture, /^\/p\//);
+      // switched on during the match (设置 → 外观插件 — that switch is the first test's): the view already drawn follows
+      await c.page.evaluate(() => import('/js/content.js').then((m) => m.setPersonalPlugin('board-skin', true)));
+      await c.page.waitForFunction((u) => { const a = globalThis.__SP_VIEW__.raw.pieceArt(u); return /^\/p\/board-skin\/[0-9a-f]{8}\/art\/blue\.png$/.test(a?.picture || '') && a.pictureState === 'img'; },
+        { timeout: 20000 }, piece.uid);
+      await c.shot('personal-on');
+      // switched off: the installation's picture again
+      await c.page.evaluate(() => import('/js/content.js').then((m) => m.setPersonalPlugin('board-skin', false)));
+      await c.page.waitForFunction((u, v) => globalThis.__SP_VIEW__.raw.pieceArt(u)?.picture === v, { timeout: 20000 }, piece.uid, before.picture);
+      const assetsHere = fs.existsSync(path.join(ROOT, 'public/assets'));
+      assert.deepEqual(problemsOf([c]).filter((p) => assetsHere || !/\/assets\//.test(p)), []);
+    } finally {
+      await c.close();
+      await srv.stop();
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });

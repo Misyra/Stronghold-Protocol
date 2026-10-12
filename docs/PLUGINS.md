@@ -310,8 +310,11 @@ exactly what `vs` names; a write that does not fit (a file the table lacks, of a
 outside the containers, a model out of its folder or of the lock's shape, a reference the page's manifest lacks) is left
 out and its entry keeps the installation's art. Leaving the room takes the art away again. A document that fails the
 check or will not download (an attempt is given up after 30 s [ASSUMED], two retries), or a write left out, leaves the
-original art there (one toast per page). Art switched on
-during a match shows on what is drawn afterwards; a model already on the board keeps its own [ASSUMED]. A plugin the
+original art there (one toast per page). Whenever the art changes under a page — the room's set arriving after its
+board was drawn (a reconnect, a spectator joining a match), a personal plugin switched during a match, a set taken away —
+what is already on the board follows: a piece or unit whose picture or model the manifest no longer names loads the new
+one, which replaces the old in place (`render/units.js` retryAssets), and the backdrop mountains and the shadow sprite
+follow their `ui` entries. A plugin the
 server no longer offers stays in the panel by its id, and its switch only turns it off. With no plugin the room's
 content is exactly the vanilla `{ cs, vanilla: true, plugins: [] }`; the page's code has three more modules
 (`public/js/content.js`, `public/js/ui/pluginPanel.js`, `shared/plugins/visual.js` with what it imports) and it fetches

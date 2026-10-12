@@ -59,13 +59,13 @@ export function freePort() {
 /**
  * Start the real server (`node server/index.js`, or test/e2e/fastServer.mjs with `fast` speed-ups) on a free port (or
  * `port`: e.g. the port of a server just stopped — a server restart the open clients reconnect to).
- * @param {{ port?: number, fast?: { timerScale?: number, combatSpeed?: number, startRound?: 'boss'|'hidden'|number, kit?: number, chess?: string[],
+ * @param {{ port?: number, pluginsDir?: string, fast?: { timerScale?: number, combatSpeed?: number, startRound?: 'boss'|'hidden'|number, kit?: number, chess?: string[],
  *   items?: string[], idleBots?: boolean, kits?: string[][], botChess?: string[], autoPlace?: boolean, eliminate?: number[], stage?: string,
  *   finishAfter?: number, slowSpawns?: string } }} [opts]
  *   kits: per-human starter kits (seat order); botChess: the AI seats' kit; autoPlace: the kits go onto the board at the
  *   first prep; eliminate: humans (seat order) eliminated at the jump; stage: the stage of every match; finishAfter: the
  *   match ends (RESULT) once that round has settled; slowSpawns: '<humanIdx>:<factor>' — that human's normal battles
- *   spawn at factor × the scheduled times — fastServer.mjs hooks
+ *   spawn at factor × the scheduled times — fastServer.mjs hooks; pluginsDir (with `fast`): the server's plugin folders
  * @returns {Promise<{ base: string, port: number, logs: string[], stop: (o?: { hard?: boolean }) => Promise<void> }>}
  */
 export async function startRealServer(opts = {}) {
@@ -92,6 +92,7 @@ export async function startRealServer(opts = {}) {
     if (opts.fast.level) env.SP_START_LEVEL = String(opts.fast.level);
     if (opts.fast.finishAfter) env.SP_FINISH_AFTER = String(opts.fast.finishAfter);
     if (opts.fast.slowSpawns) env.SP_SLOW_SPAWNS = String(opts.fast.slowSpawns);
+    if (opts.pluginsDir) env.SP_PLUGINS_DIR = opts.pluginsDir;
   }
   const child = spawn(process.execPath, [entry], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const logs = [];

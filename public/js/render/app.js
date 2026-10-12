@@ -39,6 +39,8 @@
 //        a special terrain tile's own tip; the screen resolves it with gameLogic.terrainInfo)
 //        tileHover { row, col, area, idx } | null (while dragging: the drop target — the tile under the pointer)
 //   view.pieceScreenRect(uid) → { left, top, right, bottom, width, height, x, y } (client px: the drawn body) | null
+//   view.pieceArt(uid) → { picture, pictureState, model, shown } | null (dev / E2E: the picture URL a piece's view draws
+//                        and its state, the model the manifest named and the one shown — test/ui/plugins.e2e.test.js)
 // Picking (user playtest #4 item 1: the ground is drawn as tiles — a press on a tile is a press on the unit standing
 // there): every "which unit is under the pointer" — prep press / click / detail / drag start / hover (pieceAt), battle
 // clicks and hover (battleUnitAt), the pen (penUnitAt) — is render/pick.js over the tile under the pointer (groundTile:
@@ -237,14 +239,18 @@ export async function createFieldView(host, options = {}) {
   bgMountains2.alpha = 1;
   const bgVignette = new P.Sprite(bg.vignette);
   backdrop.addChild(bgGrad, bgMountains, bgMountains2, bgGrid, bgVignette);
-  let mountainsAsked = false;
-  /** The backdrop's mountain silhouette (optional art; asked again when the manifest arrives late). */
+  let mountainsUrl = null;
+  /**
+   * The backdrop's mountain silhouette (optional art): asked again whenever the manifest names another one — it arrived
+   * late, or a cosmetic plugin changed it (DESIGN §32 P1a); none named any more: none drawn.
+   */
   function loadMountains() {
-    const mountainUrl = !mountainsAsked && assets.ui ? assets.ui('entry/bg_mountains_tiled') : null;
-    if (!mountainUrl || !assets.image) return;
-    mountainsAsked = true;
-    assets.image(mountainUrl).then((img) => {
-      if (!img || destroyed) return;
+    const url = assets.ui ? assets.ui('entry/bg_mountains_tiled') : null;
+    if (url === mountainsUrl || !assets.image) return;
+    mountainsUrl = url;
+    if (!url) { bgMountains.texture = P.Texture.EMPTY; bgMountains2.texture = P.Texture.EMPTY; return; }
+    assets.image(url).then((img) => {
+      if (!img || destroyed || mountainsUrl !== url) return;
       try { const mt = silhouetteTexture(img); bgMountains.texture = mt; bgMountains2.texture = mt; } catch { /* optional art */ }
     }, () => {});
   }
@@ -448,23 +454,26 @@ export async function createFieldView(host, options = {}) {
       .then(([THREE, pack]) => enable3d(THREE, pack), () => false)
       .finally(() => { boardRetry = null; });
   }
-  // the official soft shadow sprite replaces the procedural one once loaded (may already be cached; asked again when the
-  // manifest arrives late)
-  let shadowAsked = false;
+  // the official soft shadow sprite replaces the procedural one once loaded (may already be cached); asked again whenever
+  // the manifest names another one (it arrived late, a cosmetic plugin changed it); none named any more: the procedural one
+  let shadowUrl = null;
   let offShadow = null;
   setupCleanup.push(() => offShadow?.());
+  const setShadow = (t) => {
+    ctx.shadowTex = t;
+    for (const v of views.values()) if (v.shadow && !v.destroyed) v.shadow.texture = t;
+    for (const v of penViews.values()) if (v.shadow && !v.destroyed) v.shadow.texture = t;
+  };
   function loadShadow() {
-    const shadowUrl = !shadowAsked && assets.ui ? assets.ui('battle/sprite_shadow') : null;
-    if (!shadowUrl) return;
-    shadowAsked = true;
+    const url = assets.ui ? assets.ui('battle/sprite_shadow') : null;
+    if (url === shadowUrl) return;
+    shadowUrl = url;
+    offShadow?.();
+    offShadow = null;
+    if (!url) { setShadow(shadowTexture()); return; }
     try {
-      const t = P.Texture.from(shadowUrl);
-      const use = () => {
-        if (destroyed) return;
-        ctx.shadowTex = t;
-        for (const v of views.values()) if (v.shadow && !v.destroyed) v.shadow.texture = t;
-        for (const v of penViews.values()) if (v.shadow && !v.destroyed) v.shadow.texture = t;
-      };
+      const t = P.Texture.from(url);
+      const use = () => { if (!destroyed && shadowUrl === url) setShadow(t); };
       if (t.baseTexture.valid) use();
       else {
         t.baseTexture.once('loaded', use);
@@ -1784,9 +1793,11 @@ export async function createFieldView(host, options = {}) {
 
   // ---- late assets, hidden tabs (public issue #8 item 5: operators drawn as image-less placeholders) ----------------------
   // The asset manifest (or the local-client one) arrived after views were built — a reload whose manifest fetch was slow or
-  // failed (assets.js onChange): every view re-resolves what it could not draw (UnitView.retryAssets) and the prep pieces
-  // re-read their item icons. The tab shown again: a manifest still missing is asked for again and views without a model
-  // load it again at once (their bounded retries never run while hidden: no frames).
+  // failed — or changed under them — a room's cosmetic plugins, a personal one switched during a match, a plugin file that
+  // fell back (DESIGN §32 P1a) — (assets.js onChange): every view re-resolves what it draws (UnitView.retryAssets: what it
+  // could not draw, and a picture or model the manifest no longer names), the backdrop and the shadow follow the manifest
+  // and the prep pieces re-read their item icons. The tab shown again: a manifest still missing is asked for again and
+  // views without a model load it again at once (their bounded retries never run while hidden: no frames).
   function onAssets() {
     if (destroyed) return;
     retryBoard();
@@ -1858,6 +1869,12 @@ export async function createFieldView(host, options = {}) {
       const r = canvas.getBoundingClientRect();
       const left = r.left + b.x, top = r.top + b.y;
       return { left, top, right: left + b.width, bottom: top + b.height, width: b.width, height: b.height, x: left, y: top };
+    },
+    pieceArt(uid) {
+      let v = views.get('p:' + uid);
+      if (!v) for (const x of views.values()) if (x.uid === uid || x.info?.uid === uid || x.id === uid) { v = x; break; }
+      if (!v || v.destroyed) return null;
+      return { picture: v._pic?.url ?? null, pictureState: v._pic?.state ?? null, model: v._resolved?.skel ?? null, shown: v._actorEntry?.skel ?? null };
     },
     /**
      * Screen geometry of a BOARD-space tile (in the Final Assault prep: where that board tile is drawn on the boss

@@ -263,8 +263,9 @@ times within 600 s, the four numbers of the bounds — so nothing a hand-made lo
 **Checked when scanned.** The registry reads a cosmetic plugin's overlay when it scans the folders (at start, when they
 change, and when `data/assets.json` changes): its shape, files, references — what they copy out of the installation's
 manifest at most 2 MB [ASSUMED] — and permissions, the lock — a problem keeps it out like any other — and hashes the
-files that shape it (SHA-256, kept by path + size + mtime: a rescan reads only what changed) [ASSUMED: at scan, a 200 MB
-plugin costs about a second once].
+files that shape it (SHA-256, kept by path while a file keeps its size, mtime, inode and ctime: a rescan reads only what
+changed, and a file rewritten with its old size and mtime put back — `rsync -t`, `touch -r` — is read again, its ctime
+gives it away) [ASSUMED: at scan, a 200 MB plugin costs about a second once].
 
 **The visual hash.** A set of cosmetic plugins in load order is named by
 `vs = sha256(canonical({ v: 1, assets: <SHA-256 of data/assets.json>, overlays: [{ id, version, files }] }))`, `files`
@@ -274,11 +275,15 @@ overlay serves [ASSUMED] — to its SHA-256: the same files give the same `vs`, 
 **Served:**
 
 - `GET /p/<id>/<hash8>/<path>` — a file a loaded cosmetic plugin's overlay names, and nothing else of its folder: no
-  `plugin.json`, lock, document or other file, no dot file, no `..`, no real path out of the folder (a link put in
-  later is not followed). `<hash8>` is the first 8 hex digits of the file's SHA-256 — for every file of a Spine model,
-  of the SHA-256 of its files' SHA-256s, so the skeleton, its atlas and pages share one folder. At the hash of the file's
-  bytes the answer is `immutable` for a year, at any other hash the current file with `no-cache` (as for
-  `/assets/~<hash>/…`, ASSETS.md); a file changed since the scan has the registry read the folders again.
+  `plugin.json`, lock, document or other file, no dot file, no `..`, and only the very file the scan hashed: a symbolic
+  link is never served — one in the folder when it is scanned is no file of it, and one put in place of a served file
+  later, or in place of a folder on its way, is refused (404) wherever it leads, another file of the folder included
+  (the request `lstat`s the path and wants the real path the scan recorded). `<hash8>` is the first 8 hex digits of the
+  file's SHA-256 — for every file of a Spine model, of the SHA-256 of its files' SHA-256s, so the skeleton, its atlas and
+  pages share one folder. At the hash of the file's bytes, while the file keeps the size, mtime, inode and ctime it was
+  hashed with, the answer is `immutable` for a year; at any other hash, or for a file changed since the scan, the current
+  file with `no-cache` (as for `/assets/~<hash>/…`, ASSETS.md), and a changed file has the registry read the folders
+  again.
 - `GET /vs/<vs16>/assets.json` — the effective art manifest of a set: the served `data/assets.json` (its
   `/assets/~<hash>/…` URLs) with the set's overlays laid over it in load order — the later plugin wins where two change
   the same thing — and the composition in `visual: { v, vs, assets, overlays }`. `GET /vs/<vs16>/overlay.json` — the

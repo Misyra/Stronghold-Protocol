@@ -19,9 +19,10 @@
 //     visual sets that use them: server/plugins/visualSet.js).
 // The classes lang and cosmetic load (P1a). A cosmetic plugin's asset overlay is read when it is scanned
 // (shared/plugins/visual.js readAssetOverlay: its shape, files, references to data/assets.json, permissions; plugin.lock.json
-// for its Spine models) and the files that shape it are hashed — SHA-256, kept by path + size + mtime, so a rescan reads
-// only what changed [ASSUMED: at scan, synchronously — a 200 MB plugin costs about a second once]; a problem keeps it out
-// like any other. A content plugin is validated and listed as `planned` (P1b); a script, ui or trusted one is listed as
+// for its Spine models) and the files that shape it are hashed — SHA-256, kept by path while the file keeps its size,
+// mtime, inode and ctime (statIdentity: a file rewritten with its old size and mtime put back — rsync -t, touch -r — still
+// changes its ctime), so a rescan reads only what changed [ASSUMED: at scan, synchronously — a 200 MB plugin costs about a
+// second once]; a problem keeps it out like any other. A content plugin is validated and listed as `planned` (P1b); a script, ui or trusted one is listed as
 // `unsupported` and never loaded (no third-party code runs — the owner's decision of 2026-10-12). Of a plugin folder only
 // the files a lang manifest names (at /packs/<id>/<file>) and the files a cosmetic overlay names (at /p/…) are served;
 // nothing else — not plugin.json, the lock, documents or a file the overlay does not name.
@@ -56,9 +57,12 @@ const noop = () => {};
 /**
  * @typedef {{ rel: string, abs: string, url: string }} PackFile
  * @typedef {import('../../shared/plugins/manifest.js').PluginManifest} PluginManifest
- * @typedef {{ abs: string, sha256: string, bytes: number, mtimeMs: number, urlHashes: Set<string> }} ServedFile
- *   a file a cosmetic overlay names: its SHA-256 and size / mtime when it was hashed, and the URL hash segments that name
- *   these bytes (the file's own first 8 hex digits, those of every Spine model it belongs to)
+ * @typedef {{ size: number, mtimeMs: number, ino: number, ctimeMs: number }} StatIdentity
+ *   what says a file is still the one that was hashed (statIdentity)
+ * @typedef {StatIdentity & { abs: string, real: string, sha256: string, bytes: number, urlHashes: Set<string> }} ServedFile
+ *   a file a cosmetic overlay names: its SHA-256 and its stat identity when it was hashed, its real path then (a link put
+ *   in its place later, or in place of a folder on its way, is never followed: server/http/static.js), and the URL hash
+ *   segments that name these bytes (the file's own first 8 hex digits, those of every Spine model it belongs to)
  * @typedef {{ ops: import('../../shared/plugins/visual.js').AssetOp[], served: Map<string, ServedFile>,
  *   composition: import('../../shared/plugins/visual.js').VisualOverlay, vs: string | null, bytes: number, copyBytes: number,
  *   hash: string, dir: string }} PluginVisual
@@ -76,8 +80,8 @@ const noop = () => {};
  * @typedef {{ where: string, problems: string[] }} Skipped
  * @typedef {{ publicDir: string, dataDir: string, packsDir: string, pluginsDir?: string }} PluginDirs
  *   pluginsDir: the plugin folders (none: plugins/ is not read — the pack view of 0.2.0's callers)
- * @typedef {Map<string, { size: number, mtimeMs: number, sha256: string }>} HashCache
- *   SHA-256 of files by absolute path, while they keep the size and mtime they were hashed with
+ * @typedef {Map<string, StatIdentity & { sha256: string }>} HashCache
+ *   SHA-256 of files by absolute path, while they keep the stat identity they were hashed with
  * @typedef {{ manifest: any, sha256: string | null }} VanillaAssets
  *   the installation's art manifest (data/assets.json, parsed: what a reference names) and the SHA-256 of its bytes
  *   (the `assets` of a `vs`); both null without the file
@@ -99,38 +103,51 @@ function readJson(abs) {
 }
 
 /**
- * The SHA-256 of a file (hex), from `cache` while it keeps the size and mtime it was hashed with; null when it cannot be
+ * What says a file is still the one that was read: its size, mtime, inode and ctime. The size and mtime alone are not
+ * enough — a file rewritten with the same size and its old mtime put back (rsync -t, touch -r, an unpacker restoring
+ * times) keeps both, but a new inode or ctime gives it away (any write or utimes call sets the ctime).
+ * @param {import('node:fs').Stats} st
+ * @returns {StatIdentity}
+ */
+export const statIdentity = (st) => ({ size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, ctimeMs: st.ctimeMs });
+
+/** Whether two stat identities are the same file as it was. @param {StatIdentity} a @param {StatIdentity} b */
+export const sameIdentity = (a, b) => !!a && !!b && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino && a.ctimeMs === b.ctimeMs;
+
+/**
+ * The SHA-256 of a file (hex), from `cache` while it keeps the stat identity it was hashed with; null when it cannot be
  * read.
  * @param {string} abs
  * @param {HashCache} cache
- * @returns {{ sha256: string, size: number, mtimeMs: number } | null}
+ * @returns {(StatIdentity & { sha256: string }) | null}
  */
 export function hashFile(abs, cache) {
   let st;
   try { st = fs.statSync(abs); } catch { return null; }
   if (!st.isFile()) return null;
+  const id = statIdentity(st);
   const hit = cache.get(abs);
-  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit;
+  if (hit && sameIdentity(hit, id)) return hit;
   try {
-    const rec = { size: st.size, mtimeMs: st.mtimeMs, sha256: createHash('sha256').update(fs.readFileSync(abs)).digest('hex') };
+    const rec = { ...id, sha256: createHash('sha256').update(fs.readFileSync(abs)).digest('hex') };
     cache.set(abs, rec);
     return rec;
   } catch { return null; }
 }
 
-/** The art manifest data/assets.json of `dataDir` (VanillaAssets), from `cache` while its size and mtime stay. */
+/** The art manifest data/assets.json of `dataDir` (VanillaAssets), from `cache` while its stat identity stays. */
 export function readVanillaAssets(dataDir, cache = new Map()) {
   const abs = path.join(dataDir, 'assets.json');
   let st;
   try { st = fs.statSync(abs); } catch { return { manifest: null, sha256: null }; }
   const hit = cache.get(abs);
-  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.value;
+  if (hit && sameIdentity(hit, statIdentity(st))) return hit.value;
   let value = { manifest: null, sha256: null };
   try {
     const buf = fs.readFileSync(abs);
     value = { manifest: JSON.parse(buf.toString('utf8')), sha256: createHash('sha256').update(buf).digest('hex') };
   } catch { /* unreadable: no references can be checked, no vs */ }
-  cache.set(abs, { size: st.size, mtimeMs: st.mtimeMs, value });
+  cache.set(abs, { ...statIdentity(st), value });
   return value;
 }
 
@@ -212,7 +229,7 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   if (problems.length) return { visual: null, problems, warnings };
   // the files that shape the overlay (shared/plugins/visual.js: the `files` of its part of a vs)
   const shaping = [...new Set([PLUGIN_MANIFEST, ...(lock ? [LOCK_FILE] : []), ...(assetsFile ? [assetsFile] : []), ...ov.files])];
-  /** @type {Record<string, { sha256: string, size: number, mtimeMs: number }>} */
+  /** @type {Record<string, StatIdentity & { sha256: string }>} */
   const hashed = {};
   for (const rel of shaping) {
     const abs = path.join(dir, ...rel.split('/'));
@@ -229,8 +246,12 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   const served = new Map();
   for (const rel of ov.files) {
     const h = hashed[rel];
-    served.set(rel, { abs: path.join(dir, ...rel.split('/')), sha256: h.sha256, bytes: h.size, mtimeMs: h.mtimeMs, urlHashes: new Set([h.sha256.slice(0, FILE_URL_DIGITS)]) });
+    const abs = path.join(dir, ...rel.split('/'));
+    let real;
+    try { real = fs.realpathSync(abs); } catch { problems.push(`${rel}: cannot be read inside the plugin folder`); continue; }
+    served.set(rel, { abs, real, sha256: h.sha256, bytes: h.size, size: h.size, mtimeMs: h.mtimeMs, ino: h.ino, ctimeMs: h.ctimeMs, urlHashes: new Set([h.sha256.slice(0, FILE_URL_DIGITS)]) });
   }
+  if (problems.length) return { visual: null, problems, warnings };
   for (const model of ov.models) {
     const m = modelHashOf(model.map(sha)).slice(0, FILE_URL_DIGITS);
     for (const rel of model) served.get(rel)?.urlHashes.add(m);

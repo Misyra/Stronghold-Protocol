@@ -25,10 +25,12 @@
 //                the body's hash as ETag; 404 for a set this server does not know
 //     /p/<id>/<hash8>/<path> → a file of a loaded cosmetic plugin — only one its overlay names (registry pluginFile:
 //                the whitelist, so only the art extensions of shared/plugins/visual.js, within the plugin size limit;
-//                no dot file, no `..`, nothing whose real path leaves the plugin folder). A hash naming its current bytes
-//                (its own first 8 hex digits, or its Spine model's) answers `immutable` for a year, any other the current
-//                file with `no-cache` — as for /assets/~<hash>/ below; a file changed since the scan has the registry
-//                read the folders again
+//                no dot file, no `..`; only the very file the scan hashed — a symbolic link put in its place, or in place
+//                of a folder on its way, is never followed, wherever it leads). A hash naming its current bytes (its own
+//                first 8 hex digits, or its Spine model's) answers `immutable` for a year while the file keeps the size,
+//                mtime, inode and ctime it was hashed with; any other hash, or a file changed since the scan, the current
+//                file with `no-cache` — as for /assets/~<hash>/ below — and a changed file has the registry read the
+//                folders again
 //     /assets/~<hash>/…, /fonts/~<hash>/…, /media/~<hash>/… → the same files: the content-hash segment
 //                (shared/assetPaths.js) is stripped. A hash that names the file's current bytes (assetIndex.js
 //                urlHashOk: its own hash, or its Spine model's) answers `immutable` for a year; any other hash —
@@ -51,7 +53,7 @@ import { sendError, sendJson } from './common.js';
 import { MIME, CompressCache, IMMUTABLE_CACHE, isNotModified, serveFile, serveBuffer } from './files.js';
 import { ASSET_INDEX_ROOTS, hashedFileOpts } from './assetIndex.js';
 import { serveMedia } from './media.js';
-import { createPluginRegistry, inside } from '../plugins/registry.js';
+import { createPluginRegistry, sameIdentity, statIdentity } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
 import { createVisualSets } from '../plugins/visualSet.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
@@ -169,9 +171,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const ok = isPluginId(id) && FILE_HASH.test(hash || '') && segments.length > 0 && isPackPath(rel)
         && !segments.some((x) => x === '' || x === '.' || x === '..' || x.startsWith('.'));
       const f = ok && sets ? sets.file(id, rel) : null;
-      const st = f ? await fsp.stat(f.abs).catch(() => null) : null;
-      if (!st || !st.isFile() || !inside(f.dir, f.abs)) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
-      const same = st.size === f.bytes && st.mtimeMs === f.mtimeMs;
+      // the very file the scan hashed: a symbolic link put in its place is never followed (wherever it leads — another
+      // file of the folder, a dot file, outside), nor is one put in place of a folder on its way (its real path changed)
+      const st = f ? await fsp.lstat(f.abs).catch(() => null) : null;
+      const real = st && st.isFile() ? await fsp.realpath(f.abs).catch(() => null) : null;
+      if (!st || !st.isFile() || !real || real !== f.real) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
+      // still the bytes that were hashed: the same size, mtime, inode and ctime (registry.js statIdentity) — else the
+      // current file goes out with no-cache and the folders are read again
+      const same = sameIdentity(statIdentity(st), f);
       if (!same) sets.noteChanged();
       await serveFile(req, res, f.abs, st, 'plugins', segments, query, gzipCache, log, {
         contentHash: same ? f.sha256.slice(0, 16) : null,

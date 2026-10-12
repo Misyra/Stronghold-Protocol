@@ -151,6 +151,28 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     lobby.shutdown();
   });
 
+  test('the host\'s result replay is dropped only when the set changes: the same set again, or a refused one, keeps it', () => {
+    const plugins = {
+      resolve: (ids) => (ids.includes('absent') ? { error: ERR.PLUGIN_UNKNOWN, detail: 'absent is not installed' }
+        : { ok: true, set: { vs: (ids.join('-').charCodeAt(0) % 16).toString(16).repeat(64), plugins: ids.map((id) => ({ id, version: '1.0.0', class: 'cosmetic', hash: '0'.repeat(16) })), warnings: [], bytes: 1 } }),
+      hold() {}, release() {},
+    };
+    const lobby = new Lobby({ registry: new SessionRegistry(), content: { cs: 'ab'.repeat(32) }, plugins });
+    const session = { playerId: 'p1', name: 'A', connected: true, roomCode: null, ws: null };
+    assert.deepEqual(lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' }), { ok: true });
+    const r = lobby.getRoom(session.roomCode);
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'a' }] }), { ok: true });
+    // a settlement screen still open: the lobby replays its result until the player acts (dropReplay)
+    r.replay = { pending: new Set(['p1']), frames: new Map([['p1', { t: 'm.result' }]]), publicFrame: { t: 'm.public' } };
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'a' }] }), { ok: true });
+    assert.ok(r.replay?.pending.has('p1'), 'the same set again: kept');
+    assert.equal(lobby.setPlugins(session, { plugins: [{ id: 'absent' }] }).error, ERR.PLUGIN_UNKNOWN);
+    assert.ok(r.replay?.pending.has('p1'), 'a refused set: kept');
+    assert.deepEqual(lobby.setPlugins(session, { plugins: [{ id: 'b' }] }), { ok: true });
+    assert.equal(r.replay, null, 'another set: the host moved on');
+    lobby.shutdown();
+  });
+
   test('the protocol: room.setPlugins { plugins: [{ id, settings? }] } — plugin ids, ≤ 32, scalar settings', () => {
     assert.equal(validateC2S({ t: 'room.setPlugins', plugins: [] }), null);
     assert.equal(validateC2S({ t: 'room.setPlugins', plugins: [{ id: 'texas-red', settings: { a: 1, b: 'x', c: true } }] }), null);

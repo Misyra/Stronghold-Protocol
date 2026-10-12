@@ -101,8 +101,9 @@
 //     art every member's page draws with (/vs/<vs16>/assets.json, public/js/content.js). An empty list brings back
 //     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the
 //     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
-//     un-readies nobody; ▸ when only its 「自动」 marks changed (a plugin first switched on automatically is now chosen, or
-//     the other way round) the new state is broadcast without un-readying.
+//     un-readies nobody and leaves the host's result replay (a settlement screen still open: dropReplay — only a set
+//     that changed is the host moving on); ▸ when only its 「自动」 marks changed (a plugin first switched on
+//     automatically is now chosen, or the other way round) the new state is broadcast without un-readying.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -586,14 +587,14 @@ export class Lobby {
   /**
    * room.setPlugins (header "The room's plugins"): host-only, before the match; the visual set of the plugins asked for
    * becomes the room's content and the other humans are un-readied — nothing changes (and nobody is un-readied) when it
-   * is the set the room already has.
+   * is the set the room already has. The host's result replay (a settlement screen still open) is dropped only when the
+   * set did change: re-applying the same plugins, or a refused set, leaves it.
    */
   setPlugins(session, { plugins }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    this.dropReplay(room, session.playerId);
     const ids = [...new Set(plugins.map((p) => p.id))];
     let content = this.vanilla;
     if (ids.length) {
@@ -611,6 +612,7 @@ export class Lobby {
     const sameSet = (before?.vs ?? null) === (content?.vs ?? null);
     const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto]));
     if (sameSet && marks(before) === marks(content)) return OK;
+    this.dropReplay(room, session.playerId);
     room.content = content;
     if (!sameSet) {
       if (content?.vs) this.plugins?.hold?.(content.vs);

@@ -233,6 +233,49 @@ describe('the visual sets of a server', () => {
     }
   });
 
+  test('GET /p/: a link put in place of a served file after the scan is never followed, even one to a file of the folder; nor one in place of a folder on its way', async (t) => {
+    const red = registry.plugin('red').visual;
+    const own = red.served.get('art/red.png').sha256.slice(0, 8);
+    const dir = path.join(root, 'plugins', 'red');
+    const target = path.join(dir, 'art', 'red.png');
+    const saved = fs.readFileSync(target);
+    fs.writeFileSync(path.join(dir, '.secret'), 'SECRET-DOTFILE-BYTES');
+    fs.rmSync(target);
+    try {
+      fs.symlinkSync(path.join(dir, '.secret'), target);
+    } catch {
+      fs.writeFileSync(target, saved);
+      fs.rmSync(path.join(dir, '.secret'), { force: true });
+      t.skip('no symbolic links on this file system');
+      return;
+    }
+    try {
+      const r = await get(`/p/red/${own}/art/red.png`);
+      assert.equal(r.status, 404, 'a link to a dot file of the folder');
+      assert.doesNotMatch(r.body.toString('utf8'), /SECRET/);
+      fs.rmSync(target);
+      fs.symlinkSync(path.join(dir, 'art', 'unused.png'), target);
+      assert.equal((await get(`/p/red/${own}/art/red.png`)).status, 404, 'a link to another file of the folder');
+    } finally {
+      fs.rmSync(target, { force: true });
+      fs.writeFileSync(target, saved);
+      fs.rmSync(path.join(dir, '.secret'), { force: true });
+    }
+    // a folder on the way: spine/t moved aside and a link to it put in its place — the files are the same bytes, but
+    // their real path is not the one the scan hashed
+    const mh = modelHashOf(['spine/t/t.skel', 'spine/t/t.atlas', 'spine/t/t.png'].map((rel) => red.served.get(rel).sha256)).slice(0, 8);
+    fs.renameSync(path.join(dir, 'spine', 't'), path.join(dir, 'spine', 't-moved'));
+    try {
+      fs.symlinkSync(path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'));
+      assert.equal((await get(`/p/red/${mh}/spine/t/t.png`)).status, 404);
+    } finally {
+      fs.rmSync(path.join(dir, 'spine', 't'), { force: true });
+      fs.renameSync(path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'));
+    }
+    registry.rescan();
+    assert.equal((await get(`/p/red/${mh}/spine/t/t.png`)).status, 200, 'the real folder back: served again');
+  });
+
   test('a changed byte: the old hash serves the new file with no-cache; once the folders are read again, a new vs and an immutable URL', async () => {
     const before = registry.plugin('blue').visual;
     const old = before.served.get('blue.png');
@@ -250,6 +293,38 @@ describe('the visual sets of a server', () => {
     assert.notEqual(set1.vs, set0.vs, 'one changed byte → another vs');
     assert.equal(set1.vs, visualHashOf({ assets: registry.vanillaAssets().sha256, overlays: [now.composition] }));
     assert.equal((await get(`/p/blue/${now.served.get('blue.png').sha256.slice(0, 8)}/blue.png`)).headers['cache-control'], 'public, max-age=31536000, immutable');
+  });
+
+  test('a file rewritten with its old size and mtime put back (rsync -t, touch -r) is no longer the hashed one: no-cache, a rescan, then a new vs', async () => {
+    const file = path.join(root, 'plugins', 'blue', 'blue.png');
+    const T = new Date(Math.floor(Date.now() / 1000) * 1000 - 60000);
+    fs.utimesSync(file, T, T);
+    registry.rescan();
+    const scanned = registry.plugin('blue').visual.served.get('blue.png');
+    assert.equal(scanned.mtimeMs, T.getTime(), 'the scan recorded that mtime');
+    const set0 = visual.resolve(['blue']).set;
+    // other pixels of the same size (a deflated PNG's length depends on its pixels)
+    let bytes = null;
+    for (let c = 1; c < 255 && !bytes; c++) { const b = png(4, 4, [0, 0, c, 255]); if (b.length === scanned.bytes && sha(b) !== scanned.sha256) bytes = b; }
+    assert.ok(bytes, 'a PNG of the same size');
+    fs.writeFileSync(file, bytes);
+    fs.utimesSync(file, T, T);
+    assert.deepEqual([fs.statSync(file).size, fs.statSync(file).mtimeMs], [scanned.bytes, scanned.mtimeMs], 'size and mtime as scanned');
+    assert.notEqual(sha(bytes), scanned.sha256);
+    let noted = 0;
+    const note = visual.noteChanged;
+    visual.noteChanged = () => { noted++; };
+    let r;
+    try { r = await get(`/p/blue/${scanned.sha256.slice(0, 8)}/blue.png`); } finally { visual.noteChanged = note; }
+    assert.deepEqual([r.status, r.headers['cache-control']], [200, 'no-cache'], 'never immutable: its ctime (and maybe inode) changed');
+    assert.notEqual(r.headers.etag, `"${scanned.sha256.slice(0, 16)}"`, 'never the old content hash as its ETag');
+    assert.equal(sha(r.body), sha(bytes), 'the current bytes');
+    assert.equal(noted, 1, 'the registry is asked to read the folders again');
+    registry.rescan();
+    const now = registry.plugin('blue').visual.served.get('blue.png');
+    assert.equal(now.sha256, sha(bytes), 'hashed again, though its size and mtime look unchanged');
+    assert.notEqual(visual.resolve(['blue']).set.vs, set0.vs, 'another vs');
+    assert.equal((await get(`/p/blue/${now.sha256.slice(0, 8)}/blue.png`)).headers['cache-control'], 'public, max-age=31536000, immutable');
   });
 
   test('no plugin changes the vanilla manifest a page loads (/data/assets.json is the served view as without plugins)', async () => {

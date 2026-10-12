@@ -19,9 +19,10 @@ export const WS_MAX_PAYLOAD = 64 * 1024;
  * permessage-deflate (RFC 7692) for the JSON text frames. A message from 1 KB up (m.public, m.private, b.start, welcome
  * …) is compressed on its own — no context is kept from one message to the next (`serverNoContextTakeover`) — with a
  * 2 KB window and zlib memLevel 7, so a connection holds about 72 KB of zlib state; smaller frames (pong, ok) go out
- * as they are. Measured on a solo session (rounds 3–5, 216 server frames): 169 KB of payload → 63 KB on the wire; a
- * larger window gains nothing on these messages. Browsers negotiate it by themselves; a client that offers none gets
- * plain frames. The inflated size of a client frame still counts against WS_MAX_PAYLOAD.
+ * as they are. Measured on a solo session (rounds 3–5, the server's own counters, traffic.js): 173 KB of payload →
+ * 60 KB on the wire; replaying a session's frames with larger windows gained nothing on these messages. Browsers
+ * negotiate it by themselves; a client that offers none gets plain frames. The inflated size of a client frame still
+ * counts against WS_MAX_PAYLOAD.
  */
 export const WS_DEFLATE = Object.freeze({
   threshold: 1024,

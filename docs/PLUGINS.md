@@ -328,7 +328,9 @@ check or will not download (an attempt is given up after 30 s [ASSUMED], two ret
 original art there (one toast per page). Whenever the art changes under a page — the room's set arriving after its
 board was drawn (a reconnect, a spectator joining a match), a personal plugin switched during a match, a set taken away —
 what is already on the board follows: a piece or unit whose picture or model the manifest no longer names loads the new
-one, which replaces the old in place (`render/units.js` retryAssets), and the backdrop mountains and the shadow sprite
+one, which replaces the old in place (`render/units.js` retryAssets) — and one whose picture or model came from a plugin
+alone (the installation's slot is empty: a summon, an enemy without a web model) loses it with its layer, a load still in
+flight dropped —, and the backdrop mountains and the shadow sprite
 follow their `ui` entries, and the music plays the screen's track again when its URLs changed. A plugin file that will
 not load — an image of the interface, a picture, a Spine model (any of its files, or one the renderer cannot build; not
 while the tab is hidden) or the shadow sprite of the board, a sound — makes its entry fall back to the art

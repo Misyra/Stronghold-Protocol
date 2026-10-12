@@ -161,6 +161,73 @@ describe('views already drawn follow a changed manifest (render/units.js retryAs
     v.destroy();
   });
 
+  // a token the installation draws as a plain diamond (no picture, no model) — a plugin gives it both
+  const BLANK = { ...M, tokens: { token_blank: {} } };
+  const blankDoc = docOf('skin', [
+    { at: ['tokens', 'token_blank', 'avatar'], file: 'art/a.png' },
+    { at: ['tokens', 'token_blank', 'spine'], spine: { skel: 'm/t.skel', atlas: 'm/t.atlas', textures: ['m/t.png'], pma: false, meta: META } },
+  ]);
+  const TOKEN_AVATAR = `/p/skin/${fileSha('art/a.png').slice(0, 8)}/art/a.png`;
+  const tokenView = (a) => new UnitView(fakeViewCtx(fake.P, { assets: a, cam }), { id: 9, side: 'ally', kind: 'token', defId: 'token_blank', spine: 'token_blank', avatar: 'token_blank', tier: 1, x: 4, y: 6, maxHp: 100 }, { prep: true });
+
+  test('art only a plugin gives (the installation\'s slot is empty) leaves the board with its layer: no model, no picture, the references back', async () => {
+    const layers = createCosmeticLayers();
+    const loads = [];
+    const a = createAssets({ manifest: BLANK, cosmetics: layers, loadImage: async () => IMG, unloadSpine: () => {},
+      loadSpine: async (e) => { loads.push(e.skel); return { animations: [{ name: 'Idle' }] }; } });
+    const v = tokenView(a);
+    const chen = unit(a, 'char_010_chen');
+    a.onChange(() => { v.retryAssets(); chen.retryAssets(); });
+    await settle();
+    assert.equal(v.actor, null, 'the installation draws it as a diamond');
+    const chenActor = chen.actor;
+    layers.setRoom(blankDoc);
+    await settle();
+    assert.equal(v._actorEntry?.skel, PLUGIN_SKEL, 'the plugin\'s model');
+    assert.equal(v._pic.url, TOKEN_AVATAR);
+    assert.equal(a.spine.stats().refs, 2, 'its model and Chen\'s');
+    layers.setRoom(null);
+    await settle();
+    assert.equal(v.actor, null, 'the model is gone with its layer');
+    assert.equal(v._pic.url, null, 'and the picture');
+    assert.equal(v._pic.state, 'none');
+    assert.equal(v.fallback.visible, true, 'the diamond again');
+    assert.equal(a.spine.stats().refs, 1, 'its model released: only Chen\'s left');
+    assert.equal(chen.actor, chenActor, 'Chen keeps his');
+    for (let i = 0; i < 3; i++) v.update(1 / 60, cam(), i / 60);
+    assert.equal(v._pic.shown, 'placeholder', 'the image-less diamond, as without the plugin');
+    v.destroy();
+    chen.destroy();
+    assert.equal(a.spine.stats().refs, 0);
+  });
+
+  test('the layer taken away while its model and picture still load: the late ones are never drawn and are released', async () => {
+    const layers = createCosmeticLayers();
+    let releaseModel;
+    let releaseImage;
+    const a = createAssets({ manifest: BLANK, cosmetics: layers, unloadSpine: () => {},
+      loadImage: (u) => (u === TOKEN_AVATAR ? new Promise((r) => { releaseImage = () => r(IMG); }) : Promise.resolve(IMG)),
+      loadSpine: (e) => (e.skel === PLUGIN_SKEL ? new Promise((r) => { releaseModel = () => r({ animations: [{ name: 'Idle' }] }); }) : Promise.resolve({ animations: [{ name: 'Idle' }] })) });
+    const v = tokenView(a);
+    a.onChange(() => v.retryAssets());
+    await settle();
+    layers.setRoom(blankDoc);
+    await settle();
+    assert.equal(typeof releaseModel, 'function', 'the plugin model is loading');
+    assert.equal(typeof releaseImage, 'function', 'its picture too');
+    assert.equal(v._spineBusy, true);
+    layers.setRoom(null);
+    await settle();
+    assert.equal(v._spineBusy, false, 'the load is no longer this view\'s');
+    releaseModel();
+    releaseImage();
+    await settle();
+    assert.equal(v.actor, null, 'the late model is never shown');
+    assert.equal(v._pic.state, 'none', 'nor the late picture');
+    assert.equal(a.spine.stats().refs, 0, 'and the late model is released');
+    v.destroy();
+  });
+
   test('a replaced picture keeps the old one on the diamond until the new one is there', async () => {
     const layers = createCosmeticLayers();
     let done;

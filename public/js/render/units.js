@@ -621,6 +621,35 @@ export class UnitView {
     }, () => { pic.state = 'none'; });
   }
 
+  /**
+   * No picture any more (the manifest names none: its layer went away): a fresh record — a load still in flight resolves
+   * into the old one and is never drawn — and nothing of the old picture on the diamond (the placeholder comes back with
+   * _ensurePicture while no model shows).
+   */
+  _clearPicture() {
+    this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown'), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs(), url: null, prev: false };
+    try { this.fallback.texture = this.P.Texture.EMPTY; } catch { /* ignore */ }
+  }
+
+  /**
+   * No model any more (the manifest names none: a plugin's model for a slot the installation leaves empty, its layer gone):
+   * the model shown is dropped and released, a load in flight superseded (`_spineReq`: it releases its entry when it
+   * lands, never shown), the retries stopped — and the diamond shows again.
+   */
+  _dropModel() {
+    this._spineReq = (this._spineReq || 0) + 1;
+    if (this.actor) this._dropActor();
+    this._spineBusy = false;
+    this._spineHidden = false;
+    this._resolved = null;
+    this.entry = null;
+    this._retryAt = 0;
+    this._stuckAt = 0;
+    this.swapT = 0;
+    this.fallback.visible = true;
+    this.fallback.alpha = 1;
+  }
+
   /** Put the right diamond on the fallback sprite (called while the fallback is visible). */
   _ensurePicture() {
     const pic = this._pic;
@@ -676,11 +705,16 @@ export class UnitView {
     const url = this._pictureUrl();
     if (!this._pic || this._pic.state === 'none') this._loadPicture();
     else if (url && url !== this._pic.url) this._loadPicture(true);
+    // the picture came from a layer that is gone — the manifest names none now (a plugin's art for a slot the installation
+    // leaves empty): off the diamond, and a load still in flight lands in the old record, never this view's
+    else if (!url && this._pic.url) this._clearPicture();
     // another model than the one shown / loading (compared by skeleton URL: the same file is the same model), for the
     // side it was resolved for (Front ⇄ Back stays _syncModel's); the optional local-client model that only arrived now
     // (data/local-assets.json late: its `fallback` is the model shown) is no change — a view keeps its model then, as
     // before cosmetic plugins (DESIGN §13)
     const want = this._modelEntry(this._resolved ? !!this.entryBack : this._wantsBack());
+    // the model likewise: none named now → none drawn, a load in flight dropped (it releases its entry when it lands)
+    if (!want && this._resolved) { this._dropModel(); return; }
     const moved = !!want && !!this._resolved && want.skel !== this._resolved.skel
       && !(want.local && want.fallback && want.fallback.skel === this._resolved.skel);
     if (this.actor) {

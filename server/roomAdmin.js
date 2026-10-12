@@ -7,23 +7,24 @@ import { sendJson } from './http/common.js';
 
 const hashSecret = (value) => createHash('sha256').update(value).digest();
 
-export async function loadRoomLimit(file) {
+export async function loadRoomConfig(file) {
   try {
     const state = JSON.parse(await readFile(file, 'utf8'));
     if (state?.schemaVersion !== 1 || !Number.isSafeInteger(state.maxRooms) || state.maxRooms < 1 || state.maxRooms > 10000)
       throw new Error('invalid room admin state');
-    return state.maxRooms;
+    if (Object.hasOwn(state, 'allowBots') && typeof state.allowBots !== 'boolean') throw new Error('invalid bot policy');
+    return { maxRooms: state.maxRooms, ...(typeof state.allowBots === 'boolean' ? { allowBots: state.allowBots } : {}) };
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw new Error(`cannot read room admin state at ${file}: ${error.message}`);
   }
 }
 
-async function saveRoomLimit(file, maxRooms) {
+async function saveRoomConfig(file, config) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomBytes(6).toString('hex')}.tmp`;
   try {
-    await writeFile(temporary, JSON.stringify({ schemaVersion: 1, maxRooms }) + '\n', { flag: 'wx', mode: 0o600 });
+    await writeFile(temporary, JSON.stringify({ schemaVersion: 1, ...config }) + '\n', { flag: 'wx', mode: 0o600 });
     await rename(temporary, file);
   } catch (error) { await rm(temporary, { force: true }); throw error; }
 }
@@ -88,24 +89,35 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         return sendJson(req, res, 400, { error: 'INVALID_PAGINATION' });
       const rooms = [...lobby.rooms.values()].filter((room) => !room.disposed);
       return sendJson(req, res, 200, { total: rooms.length, offset, limit, serverNow: Date.now(),
-        config: { maxRooms: lobby.opts.maxRooms }, rooms: rooms.slice(offset, offset + limit).map((room) => roomView(room, lobby, registry)) });
+        config: { maxRooms: lobby.opts.maxRooms, allowBots: lobby.opts.allowBots }, rooms: rooms.slice(offset, offset + limit).map((room) => roomView(room, lobby, registry)) });
     }
 
     if (url.pathname === '/api/room-config') {
       if (req.method === 'GET' || req.method === 'HEAD') return sendJson(req, res, 200, {
-        maxRooms: lobby.opts.maxRooms, roomCount: lobby.rooms.size, maxAllowed: 10000,
+        maxRooms: lobby.opts.maxRooms, allowBots: lobby.opts.allowBots, roomCount: lobby.rooms.size, maxAllowed: 10000,
       });
       if (req.method === 'PUT') {
         let body;
         try { body = await readJson(req); } catch (error) { return sendJson(req, res, error.status || 400, { error: error.message }); }
-        if (!body || !Number.isSafeInteger(body.maxRooms) || body.maxRooms < 1 || body.maxRooms > 10000)
+        if (!body || Array.isArray(body) || typeof body !== 'object' || !Object.keys(body).length ||
+          Object.keys(body).some((key) => !['maxRooms', 'allowBots'].includes(key)))
+          return sendJson(req, res, 400, { error: 'INVALID_ROOM_CONFIG' });
+        if (Object.hasOwn(body, 'maxRooms') && (!Number.isSafeInteger(body.maxRooms) || body.maxRooms < 1 || body.maxRooms > 10000))
           return sendJson(req, res, 400, { error: 'INVALID_MAX_ROOMS', maxAllowed: 10000 });
+        if (Object.hasOwn(body, 'allowBots') && typeof body.allowBots !== 'boolean')
+          return sendJson(req, res, 400, { error: 'INVALID_ALLOW_BOTS' });
         const update = limitWrites.then(async () => {
-          const previous = lobby.opts.maxRooms;
-          await saveRoomLimit(stateFile, body.maxRooms);
-          lobby.opts.maxRooms = body.maxRooms;
-          log.info('[audit] ' + JSON.stringify({ at: new Date().toISOString(), action: 'room.limit.changed', previous, maxRooms: body.maxRooms }));
-          return { maxRooms: lobby.opts.maxRooms, roomCount: lobby.rooms.size, persisted: true };
+          const previous = { maxRooms: lobby.opts.maxRooms, allowBots: lobby.opts.allowBots };
+          const next = { ...previous, ...body };
+          await saveRoomConfig(stateFile, next);
+          Object.assign(lobby.opts, next);
+          if (previous.maxRooms !== next.maxRooms)
+            log.info('[audit] ' + JSON.stringify({ at: new Date().toISOString(), action: 'room.limit.changed', previous: previous.maxRooms, maxRooms: next.maxRooms }));
+          if (previous.allowBots !== next.allowBots) {
+            log.info('[audit] ' + JSON.stringify({ at: new Date().toISOString(), action: 'room.botPolicy.changed', previous: previous.allowBots, allowBots: next.allowBots }));
+            for (const room of lobby.rooms.values()) if (!room.match) lobby.broadcastState(room);
+          }
+          return { ...next, roomCount: lobby.rooms.size, persisted: true };
         });
         limitWrites = update.catch(() => {});
         try { return sendJson(req, res, 200, await update); }

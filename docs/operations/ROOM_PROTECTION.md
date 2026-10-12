@@ -50,6 +50,10 @@ curl -H "Authorization: Bearer $SP_ROOM_ADMIN_TOKEN" \
 
 Agent 可在同机通过 `MON_GAME_ADMIN_URL=http://127.0.0.1:3001/` 和 `SP_GAME_ADMIN_TOKEN` 代理访问；后者与游戏的 `SP_ROOM_ADMIN_TOKEN` 相同。Portal 站点需配置 Agent 的 `SP_ADMIN_TOKEN_RW`，房间清单含玩家 IP，因此只读令牌不能访问。Agent 不会把游戏密钥转发给浏览器。
 
-本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`（`PUT {"maxRooms":1..10000}`）；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。当前默认上限是 `1000`，面板修改会原子保存到 `.state/room-admin.json`，或由 `SP_ROOM_ADMIN_STATE_FILE` 指定私有路径。降低上限不会关闭已有房间，只会暂时阻止创建新房间。关闭操作会断开成员并终止该房间对局，使用创建时间校验防止误关复用房间号的新房间。
+本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。配置支持部分更新，例如 `PUT {"maxRooms":1000}` 或 `PUT {"allowBots":false}`，也可同时提交两项；未提交的值保持不变。`maxRooms` 为 1–10000 的整数，`allowBots` 必须为布尔值，空对象和未知字段拒绝。列表的 `config` 及配置读取接口都返回这两项。
+
+当前默认上限是 `1000`，默认允许添加 AI 队友；启动时可用 `SP_ALLOW_BOTS=off` 禁止（默认 `on`）。面板的「允许添加 AI 队友」可实时切换，无需重启；服务端同时检查 `room.addBot`，不能通过绕过按钮添加 AI。关闭只禁止新增，不移除已有 AI、不阻止其所在房间开局、不终止已有对局，也不改变真人断线后的自动接管。等待房间收到实时状态更新，重新允许后即可继续添加。
+
+两项配置会原子保存到 `.state/room-admin.json`，或由 `SP_ROOM_ADMIN_STATE_FILE` 指定私有路径；保存失败不应用运行时改动。重启优先读取已保存配置（高于环境变量默认值，显式程序启动参数仍优先），旧的仅含 `maxRooms` 的文件兼容。策略变更记录 `room.botPolicy.changed` 审计（`previous`、`allowBots`）。降低上限不会关闭已有房间，只会暂时阻止创建新房间。关闭操作会断开成员并终止该房间对局，使用创建时间校验防止误关复用房间号的新房间。
 
 `/healthz` / `/metrics` 新增 `roomProtection`（允许/拒绝计数及已跟踪网络数）、`offlinePausedMatches`；`rehearsalPressure` 提供指标来源、负载百分比、采样时间、当前档位、候选上限（`null` 表示沿用配置）及阈值。计算池提供 `queuedByType`、`oldestQueuedMs`。这些是进程内累计/当前值，重启归零。判断攻击应结合实际动作、频率和计算消耗，不仅凭 ASN 或昵称封禁。

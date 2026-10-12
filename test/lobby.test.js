@@ -138,7 +138,10 @@ describe('static http server', () => {
     srv = await startServer({
       port: 0, host: '127.0.0.1', quiet: true,
       publicDir: path.join(tmp, 'public'), dataDir: path.join(tmp, 'data'), sharedDir: path.join(tmp, 'shared'),
+      assetIndex: { delayMs: 0 },
     });
+    // the content hashes of public/assets + public/fonts (the ETags of those files): ready before the first request
+    await srv.assetIndex.whenReady();
   });
 
   after(async () => {
@@ -226,9 +229,11 @@ describe('static http server', () => {
     const gzEtag = (await httpReq(srv.port, '/js/app.js', { headers: { 'accept-encoding': 'gzip' } })).headers.etag;
     assert.notEqual(gzEtag, etag, 'gzip variant has its own ETag');
 
-    // unversioned art/fonts/vendor: cached for a day (files can be rewritten in place by the asset tools)
+    // unversioned art/fonts/vendor: cached for a day (files can be rewritten in place by the asset tools); the art and
+    // fonts carry their content hash as ETag (server/http/assetIndex.js), so a rewrite with the same bytes is a 304
     const asset = await httpReq(srv.port, '/assets/img/a.png');
     assert.equal(asset.headers['cache-control'], 'public, max-age=86400');
+    assert.match(asset.headers.etag, /^"[0-9a-f]{16}"$/);
     const font = await httpReq(srv.port, '/fonts/f.woff2');
     assert.equal(font.headers['cache-control'], 'public, max-age=86400');
     const assetV = await httpReq(srv.port, '/assets/img/a.png?v=abc');

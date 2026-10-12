@@ -1,9 +1,11 @@
-// server/http/files.js — one file on disk → an HTTP response (static.js and media.js decide which file):
+// server/http/files.js — one file on disk (serveFile) or one body in memory (serveBuffer, the served manifests of
+// assetViews.js) → an HTTP response (static.js and media.js decide which file):
 //     MIME types incl. .mjs/.js text/javascript, .skel application/octet-stream, .atlas text/plain;
 //     gzip for text-like types, .skel and uncompressed fonts when the client accepts it (small files are
-//     compressed once and cached in memory); strong ETag + Last-Modified with 304s; Cache-Control
-//     (html & code/data: no-cache + revalidate; public/assets|fonts|vendor: 1 day; any `?v=` URL: immutable);
-//     single byte-range requests (206/416, used by <audio>).
+//     compressed once and cached in memory); strong ETag + Last-Modified with 304s — the ETag is the content hash
+//     when the caller has one (assetIndex.js), else size + mtime; Cache-Control (html & code/data: no-cache +
+//     revalidate; public/assets|fonts|vendor: 1 day; a URL whose content-hash segment matches the file (static.js,
+//     media.js): immutable for a year; any `?v=` URL: immutable); single byte-range requests (206/416, used by <audio>).
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -84,13 +86,17 @@ export class GzipCache {
 
   /** @returns {Promise<Buffer>} gzip of the file identified by (path, size, mtime) */
   get(absPath, stat) {
-    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}`;
+    return this.compressed(`${absPath}\0${stat.size}\0${stat.mtimeMs}`, () => fsp.readFile(absPath));
+  }
+
+  /** @returns {Promise<Buffer>} gzip of the body `read()` returns, cached under `key` (one compression per key at a time) */
+  compressed(key, read) {
     const hit = this.map.get(key);
     if (hit) { this.map.delete(key); this.map.set(key, hit); return Promise.resolve(hit); }
     const pending = this.inflight.get(key);
     if (pending) return pending;
     const p = (async () => {
-      const raw = await fsp.readFile(absPath);
+      const raw = await read();
       const gz = await gzipAsync(raw, { level: 6 });
       this.store(key, gz);
       return gz;
@@ -190,20 +196,25 @@ function cacheControlFor(ext, mountName, segments, query) {
   return 'no-cache';
 }
 
-export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log) {
+/**
+ * One file → the response.
+ * @param {{ contentHash?: string | null, cacheControl?: string | null }} [opts] contentHash: the file's content hash
+ *   (assetIndex.js) — the ETag then; cacheControl: overrides the policy of its path (a content-hashed URL)
+ */
+export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, opts = {}) {
   const ext = path.extname(absPath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
   const compressible = COMPRESSIBLE.has(ext);
   const rangeHeader = req.headers.range;
   const useGzip = compressible && stat.size >= GZIP_MIN_BYTES && !rangeHeader && acceptsGzip(req.headers['accept-encoding']);
-  const baseTag = `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`;
+  const baseTag = opts.contentHash || `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`;
   const etag = `"${baseTag}${useGzip ? '-gz' : ''}"`;
   const lastModified = stat.mtime.toUTCString();
   const isHead = req.method === 'HEAD';
 
   const headers = {
     'Content-Type': type,
-    'Cache-Control': cacheControlFor(ext, mountName, segments, query),
+    'Cache-Control': opts.cacheControl || cacheControlFor(ext, mountName, segments, query),
     ETag: etag,
     'Last-Modified': lastModified,
   };
@@ -251,6 +262,31 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
   res.writeHead(status, headers);
   if (isHead || stat.size === 0) { res.end(); return; }
   await streamTo(fs.createReadStream(absPath, { start, end }), res, log);
+}
+
+/**
+ * One body in memory → the response (the served manifests): its ETag from `hash`, gzip when accepted (cached under
+ * `key`), 304 on a matching If-None-Match, no ranges.
+ * @param {{ body: Buffer, hash: string, type: string, cacheControl: string, key: string, cache: GzipCache }} o
+ */
+export async function serveBuffer(req, res, { body, hash, type, cacheControl, key, cache }) {
+  const useGzip = body.length >= GZIP_MIN_BYTES && acceptsGzip(req.headers['accept-encoding']);
+  const etag = `"${hash}${useGzip ? '-gz' : ''}"`;
+  const headers = { 'Content-Type': type, 'Cache-Control': cacheControl, ETag: etag, Vary: 'Accept-Encoding' };
+  const inm = req.headers['if-none-match'];
+  if (typeof inm === 'string' && (inm.trim() === '*' || inm.split(',').some((t) => stripWeak(t) === etag))) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+  let out = body;
+  if (useGzip) {
+    out = await cache.compressed(`${key}\0${hash}`, async () => body);
+    headers['Content-Encoding'] = 'gzip';
+  }
+  headers['Content-Length'] = out.length;
+  res.writeHead(200, headers);
+  res.end(req.method === 'HEAD' ? undefined : out);
 }
 
 async function streamTo(src, res, log, transform) {

@@ -559,9 +559,10 @@ Any `choice:` handler whose EffectRef reuses its own key must guard like this (o
   stock (`ps.diyStock`: `poolCopies` of the slot's tier, 8 / 5 [ASSUMED]; none — `diyBanned` — when every bond of it is
   off this match; `initDiyStock` once the bans are drawn); `poolOf(baseId)` routes its copy accounting (buy, reward
   picks, merges, promotions, sells, temp, elimination; `invariants.js` checks `left + held = cap` per player). The
-  shop's chess slots and the reward offers' temporary refreshes roll it with the shared pool (`pool.roll({ extra })`,
-  copy-weighted like any chess of its tier) once the 调度中心 reaches the slot's `shopLevel` (5 / 6) [ASSUMED for the
-  reward offers]; an effect, reward pool or 机变 card that grants the player a random operator draws its stock too
+  shop's chess slots roll it with the shared pool (`pool.roll({ extra })`, copy-weighted like any chess of its tier)
+  once the 调度中心 reaches the slot's `shopLevel` (5 / 6); promotion reward offers include the player's unbanned,
+  stocked 自选 at the reward tier regardless of that shop-level gate (#515), and only the selected operator takes one
+  copy; an effect, reward pool or 机变 card that grants the player a random operator draws its stock too
   (effectsMeta `rollChess` / `rollPool`, the 驰援 fallback in choices.js: `ps.diyStockEntries()` — the roll's own tier
   rules, no 调度中心 gate, bonds through the player's view; 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」, 0.2.0), and
   信标 never sends one to a teammate [ASSUMED]. `battleInput` carries `diy` (the pick); `m.private.diy` / `diyBanned`; `prepFieldMeta` and

@@ -215,8 +215,8 @@ export class PlayerAcquire {
    * copy-weighted roll from the shared pool excluding the ones already drawn; a tier left without another chess tops
    * up from the tier below (user playtest #6 item 19: the official promotion reward never offers one operator twice —
    * the user's first-hand report; the normal shop's slots may repeat). The offer reserves no copies (the pick takes one).
-   * The player's slotted 自选 pieces join the draw like in its shop (player/diy.js diyRollEntries: once the 调度中心 is at
-   * the slot's level) — the reward is a temporary refresh of the shop ("临时刷新3名…干员") [ASSUMED].
+   * Slotted 自选 pieces with stock join the draw regardless of the shop's slot-level gate: players confirm they can
+   * appear in a three-in-a-row promotion reward. The reward tier still filters them like every other candidate.
    */
   pushRewardOffer(source = 'merge', { tier = null, ids = null, label = null } = {}) {
     const ro = this.gd.rewardOffer();
@@ -228,7 +228,7 @@ export class PlayerAcquire {
       const fresh = (id) => !list.includes(id);
       for (let i = 0; i < ro.count; i++) {
         let id = null;
-        for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh, extra: this.diyRollEntries() });
+		    for (let tt = t; tt >= 1 && !id; tt--) id = this.m.pool.roll(this.m.rngShop, { tier: tt, filter: fresh, extra: this.diyStockEntries() });
         if (id) list.push(id);
       }
     }

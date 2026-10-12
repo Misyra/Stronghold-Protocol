@@ -175,16 +175,26 @@ test('buy → 3 copies merge into the elite (the stock pays the copies); sell / 
   p0.shop.slots[0] = { kind: 'chess', id: T5A, basePrice: 4, frozen: false, sold: false };
   assert.equal(m.handle('p_0', { t: 'g.buy', slot: 0 }).error, 'SOLD_OUT');
   h.invariants();
-  // reward offers (the temporary refresh) draw it once the 调度中心 is at the slot's level
+  // promotion rewards include stocked 自选 pieces at the reward tier, before the shop unlocks that slot
   clear(p0);
   p0.offers = [];
-  let hit = 0;
-  p0.shop.level = 4;
-  for (let i = 0; i < 200; i++) { const o = p0.pushRewardOffer('merge'); if (o && o.slots.some((s) => /_diy/.test(s.id))) hit++; p0.offers = []; }
-  assert.equal(hit, 0, 'a level-4 promotion reward (tier 5) never holds a tier-5 自选 piece');
-  p0.shop.level = 6;
-  for (let i = 0; i < 300; i++) { const o = p0.pushRewardOffer('merge'); if (o && o.slots.some((s) => s.id === T6A)) hit++; p0.offers = []; }
-  assert.ok(hit > 0, 'a level-6 reward can hold the tier-6 piece');
+	const drained = [];
+	for (const [id, e] of m.pool.entries) if (e.tier === 5 || e.tier === 6) drained.push([id, m.pool.take(id, e.left)]);
+	p0.shop.level = 4;
+	const level4Offer = p0.pushRewardOffer('merge');
+	assert.ok(level4Offer.slots.some((s) => s.id === T5A), 'a level-4 reward can offer the stocked tier-5 自选');
+	assert.ok(level4Offer.slots.some((s) => s.id === T5B), 'both distinct stocked tier-5 自选 pieces are candidates');
+	assert.equal(p0.diyStock.left(T5A), 8, 'showing an offer does not reserve personal stock');
+	const t5Idx = level4Offer.slots.findIndex((s) => s.id === T5A);
+	assert.deepEqual(m.handle('p_0', { t: 'g.reward', idx: t5Idx }), { ok: true });
+	assert.equal(p0.diyStock.left(T5A), 7, 'choosing the reward takes exactly one personal copy');
+	p0.offers = [];
+	p0.shop.level = 5;
+	const level5Offer = p0.pushRewardOffer('merge');
+	assert.ok(level5Offer.slots.some((s) => s.id === T6A), 'a level-5 reward can offer the stocked tier-6 自选');
+	assert.equal(p0.diyStock.left(T6A), 5, 'showing a tier-6 offer does not reserve stock');
+	p0.offers = [];
+	for (const [id, n] of drained) m.pool.give(id, n);
   // elimination returns everything
   gain(p0, T6A);
   p0.eliminate(m.round);

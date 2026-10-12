@@ -1090,3 +1090,29 @@
   --bk-c: var(--red-premium);
 }
 .crash__box h2 { font-size: calc(.3 * var(--t)); }
+
+/* ---- plugins (DESIGN §32 P1a): the room's tag 原版 / 插件 ×N (ui/pluginTag.js), its 插件 panel and the title's list (ui/pluginPanel.js) ---- */
+.plugtag {
+  display: inline-flex; align-items: center; gap: .06rem; height: .3rem; padding: 0 .12rem;
+  border: 1px solid var(--line-2); background: rgba(0, 0, 0, .3); color: var(--text-lo);
+  font-size: calc(.13 * var(--t)); letter-spacing: .06em;
+}
+.plugtag .icon { width: .16rem; height: .16rem; }
+.plugtag.is-modded { color: #ffb066; border-color: rgba(255, 159, 67, .6); background: rgba(255, 159, 67, .1); }
+.plugtag--static { cursor: default; }
+.plugpanel { display: flex; flex-direction: column; gap: .12rem; }
+.plugpanel__lead { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; color: var(--text-md); font-size: calc(.15 * var(--t)); line-height: 1.7; }
+.plugpanel__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .08rem; max-height: 4.6rem; overflow: auto; }
+.plugrow { display: flex; align-items: flex-start; gap: .14rem; padding: .1rem .12rem; border: 1px solid var(--line); background: rgba(0, 0, 0, .25); }
+.plugrow.is-on { border-color: var(--mint-700); }
+.plugrow__switch { flex: none; }
+.plugrow__body { min-width: 0; display: flex; flex-direction: column; gap: .04rem; }
+.plugrow__name { display: flex; align-items: baseline; flex-wrap: wrap; gap: .08rem; font-size: calc(.16 * var(--t)); overflow-wrap: anywhere; }
+.plugrow__badge { padding: 0 .06rem; border: 1px solid var(--line-2); color: var(--text-lo); font-size: calc(.12 * var(--t)); }
+.plugrow__badge.is-unofficial { color: #ffb066; border-color: rgba(255, 159, 67, .5); }
+.plugrow__meta { display: flex; flex-wrap: wrap; gap: .12rem; font-size: calc(.13 * var(--t)); }
+.plugrow__warn, .plugpanel__warnings li { color: #ffb066; font-size: calc(.13 * var(--t)); line-height: 1.6; }
+.plugpanel__warnings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .04rem; }
+.plugpanel__warnings .icon { width: .15rem; height: .15rem; margin-right: .06rem; vertical-align: -.02rem; }
+.plugpanel__reapply { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem .12rem; }
+.plugpanel__reapply .set-hint { margin: 0; }

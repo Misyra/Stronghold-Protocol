@@ -502,6 +502,18 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
 - Until the index is ready, with `SP_ASSET_INDEX=0`, or on a static host without this server, the manifests go out as
   committed. The views are rebuilt in memory when a manifest or the hashes change; neither file is ever written by the
   server, and the `hash` field is the committed one. The index lives in `.cache/` only and is never packaged.
+- **Cosmetic plugins** (0.3.0, docs/PLUGINS.md §9, DESIGN §32): a room whose host switched cosmetic plugins on draws with
+  the served `data/assets.json` above and the room's visual set over it, composed by the page itself
+  (`public/js/assets.js` cosmetic layers, `public/js/content.js`): `GET /vs/<vs16>/overlay.json`
+  (`server/plugins/visualSet.js`) carries only the set's composition — each plugin's id, version and file table, what
+  `vs` hashes — and each plugin's writes (paths of its folder and references, no URL, no copy of this manifest). Every
+  entry no plugin changes keeps its `/assets/~<hash>/…` URL; a whole-record or field reference (`{ "ref": "<key>" }`)
+  copies the page's own entry; a plugin's own files are `/p/<id>/<hash8>/<path>`, built by the page from the file table:
+  the first 8 hex digits of the file's SHA-256 — for a Spine model's skeleton, atlas and pages one hash, of the model's
+  files' SHA-256s, for the same reason as above —, `immutable` at that hash, the current file with `no-cache` at another;
+  nothing of a plugin folder but the files its overlay names is served. A player's personal plugins come the same way
+  and are laid over whatever the page draws. Neither committed manifest, nor the views above, ever change with a plugin:
+  without one a page loads exactly what it loaded before.
 
 ## Verification
 

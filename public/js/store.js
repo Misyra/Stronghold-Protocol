@@ -79,6 +79,8 @@ export const initialState = Object.freeze({
   connection: { status: 'idle', ping: null, attempt: 0, retryAt: 0, lastError: null, everOnline: false },
   me: { playerId: null, name: '', token: null },
   content: null,
+  // how many unofficial plugins the server has (DESIGN §32 P1a: /healthz or welcome `content.plugins`; content.js)
+  installedPlugins: 0,
   session: { entered: false },
   room: null,
   match: emptyMatch(),

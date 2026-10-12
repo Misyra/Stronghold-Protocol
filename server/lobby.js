@@ -87,9 +87,33 @@
 //     exactly what the server accepts.
 //   * Content identity (DESIGN §32, the plugin system's first step): the lobby is given the server's vanilla content
 //     (server/plugins/identity.js; none in unit tests that build a Lobby without it). Every `welcome` carries
-//     `content: { vanilla: <cs> }`, every room's `room.state.content` is `{ cs, vanilla: true, plugins: [] }` — always
-//     the vanilla set until rooms can choose plugins (P1c) — and the match receives `cs`, which it copies into every
-//     BattleSpec (the sim never reads it; diagnostics and replays name the content with it).
+//     `content: { vanilla: <cs> }` — and `plugins: <n>` when this server has n > 0 unofficial plugins (every class but a
+//     language: the title screen's 「本服务器安装了 N 个插件」; a page fetches the catalogue only when n > 0 and something
+//     needs it, so a server without plugins sends exactly what it sent before) —, every room's `room.state.content` is
+//     `{ cs, vanilla: true, plugins: [] }` while it has
+//     no plugin, and the match receives `cs`, which it copies into every BattleSpec (the sim never reads it;
+//     diagnostics and replays name the content with it).
+//   * The room's plugins (DESIGN §32 P1a — cosmetic plugins only): room.setPlugins { plugins: [{ id }] } — host-only,
+//     before the match, and ▸ like a difficulty change it un-readies the other humans. The lobby asks the server's
+//     visual sets (server/plugins/visualSet.js resolve: loaded cosmetic plugins of scope `room`, their requirements
+//     switched on, in load order, within the size limit — PLUGIN_UNKNOWN / PLUGIN_BLOCKED / PLUGIN_DEPENDENCY /
+//     PLUGIN_CONFLICT / PLUGIN_LIMIT otherwise; none given to the Lobby → PLUGIN_UNKNOWN) and the room's content becomes
+//     `{ cs, vanilla: true, vs, plugins: [{ id, version, class, hash, auto? }], warnings, bytes }`: `cs` stays the vanilla
+//     one — art never changes a battle, so the match, its BattleSpecs and the golden results are those of the original
+//     content and ▸ such a match counts as the original game in the statistics overview (the owner's decision of
+//     2026-10-13: gameplay and numbers unchanged) —, `vs` names the
+//     art every member's page draws with (/vs/<vs16>/overlay.json, composed by public/js/content.js on the page's own
+//     manifest). An empty list brings back
+//     exactly the vanilla shape above. The set is the room's: kept across its matches and a host change, held in the
+//     visual sets while the room uses it (hold / release) and gone with the room. The same set again (the same `vs`)
+//     un-readies nobody; ▸ when only its 「自动」 marks changed (a plugin first switched on automatically is now chosen, or
+//     the other way round) the new state is broadcast without un-readying. A request that changes nothing (the same `vs`
+//     and the same marks) — or a refused one — leaves the host's result replay (a settlement screen still open:
+//     dropReplay; a change is the host moving on). ▸ When a plugin of the room's set changes on disk while the room holds
+//     it (the visual sets' onStale, after the registry read the folders again), the host is told once (an m.toast: apply
+//     the room's plugins again — the panel's 「重新应用」 sends the same list, which resolves to the set of the files as
+//     they are now) — during a match, once the room is back in its lobby (onMatchEnd), when it can be done; nothing
+//     changes by itself.
 //   * Spectator seats (community report #26, owner's decision 2026-10-04 — a remake feature, the official room has none):
 //     room.spectate { code } takes one of a co-op room's MAX_SPECTATORS (2) spectator seats, in its lobby or while its
 //     match runs (▸ solo rooms: ROOM_FULL). A spectator is not a player: never in `seats`, never counted for the 1–4 players
@@ -111,6 +135,7 @@ import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { isContentHash } from '../shared/plugins/identity.js';
+import { msg, wireMessage } from '../shared/i18n.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -203,6 +228,8 @@ export class Room {
      * @type {{ publicFrame: string | null, frames: Map<string, string>, pending: Set<string> } | null}
      */
     this.replay = null;
+    /** @type {string[] | null} plugins of the room's set that changed on disk — the host not told yet (Lobby.pluginsChanged) */
+    this.pluginsChanged = null;
     /** @type {string | null} per-network limit key of the creator (net.js clientAddress) */
     this.ownerKey = null;
     /** @type {string | null} per-network limit key of whoever started the running match */
@@ -210,9 +237,10 @@ export class Room {
     this.createdAt = now;
     this.disposed = false;
     /**
-     * The content set the room plays (DESIGN §32): `{ cs, vanilla, plugins }` — the server's vanilla set until rooms can
-     * choose plugins (P1c); null when the lobby has no content identity (room.state then carries none).
-     * @type {Readonly<{ cs: string, vanilla: boolean, plugins: readonly object[] }> | null}
+     * The content set the room plays (DESIGN §32): `{ cs, vanilla, plugins }` — the server's vanilla set, or with the
+     * cosmetic plugins its host switched on (header "The room's plugins": `vs`, `warnings`, `bytes` beside them); null
+     * when the lobby has no content identity (room.state then carries none).
+     * @type {Readonly<{ cs: string, vanilla: boolean, plugins: readonly object[], vs?: string, warnings?: readonly object[], bytes?: number }> | null}
      */
     this.content = null;
   }
@@ -262,14 +290,20 @@ export class Lobby {
    *   now?: () => number,
    *   seedFn?: () => number,
    *   content?: { cs: string } | null,
+   *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal' }) => any, hold?: (vs: string) => void,
+   *     release?: (vs: string) => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void,
+   *     unofficial?: () => number } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
-   *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity")
+   *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity"); plugins: the visual
+   *   sets a host chooses from (server/plugins/visualSet.js; header "The room's plugins")
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, options = {} }) {
     this.registry = registry;
     /** the vanilla content set every room plays (header "Content identity"), or null */
     this.vanilla = content && isContentHash(content.cs) ? Object.freeze({ cs: content.cs, vanilla: true, plugins: Object.freeze([]) }) : null;
+    /** the server's visual sets (header "The room's plugins"), or null */
+    this.plugins = plugins;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
@@ -284,6 +318,33 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
+    /** a held visual set whose plugins changed on disk: its rooms' hosts are told (header "The room's plugins") */
+    this.offStale = typeof plugins?.onStale === 'function' ? plugins.onStale((vs, ids) => this.pluginsChanged(vs, ids)) : null;
+  }
+
+  /**
+   * The plugins `ids` of the visual set `vs` changed on disk: the host of every room using it is told to apply the room's
+   * plugins again (header "The room's plugins") — a host offline now misses it; the panel's 「重新应用」 is always there.
+   * @param {string} vs @param {string[]} ids
+   */
+  pluginsChanged(vs, ids) {
+    for (const room of this.rooms.values()) {
+      if (room.disposed || room.content?.vs !== vs) continue;
+      this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
+      // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
+      room.pluginsChanged = ids;
+      if (!room.match) this.tellPluginsChanged(room);
+    }
+  }
+
+  /** Tell the host of `room` that its plugins changed on disk (pluginsChanged), once. @param {Room} room */
+  tellPluginsChanged(room) {
+    const ids = room.pluginsChanged;
+    room.pluginsChanged = null;
+    // the room's set changed since (re-applied, switched off): nothing to tell
+    if (!ids || !room.content?.vs) return;
+    const names = ids.slice(0, 8).join('、');
+    this.sendToPlayer(room, room.hostId, { t: 'm.toast', kind: 'warn', ...wireMessage(msg('房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', { names })) });
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -367,6 +428,7 @@ export class Lobby {
       case 'room.diy': return this.diy(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
       case 'room.removeSpectator': return this.removeSpectator(session, msg);
+      case 'room.setPlugins': return this.setPlugins(session, msg);
       default:
         if (typeof msg.t === 'string' && msg.t.startsWith('g.')) return this.routeGame(session, msg);
         return fail(ERR.BAD_MSG, `unhandled type ${String(msg.t).slice(0, 32)}`);
@@ -404,6 +466,8 @@ export class Lobby {
    * @param {string} [reason]
    */
   shutdown(reason = 'shutdown') {
+    this.offStale?.();
+    this.offStale = null;
     for (const room of [...this.rooms.values()]) this.disposeRoom(room, reason);
     for (const t of this.graceTimers.values()) clearTimeout(t);
     this.graceTimers.clear();
@@ -560,6 +624,48 @@ export class Lobby {
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
     }
+    return OK;
+  }
+
+  /**
+   * room.setPlugins (header "The room's plugins"): host-only, before the match; the visual set of the plugins asked for
+   * becomes the room's content and the other humans are un-readied — nothing changes (and nobody is un-readied) when it
+   * is the set the room already has. The host's result replay (a settlement screen still open) is dropped only when the
+   * set did change: re-applying the same plugins, or a refused set, leaves it.
+   */
+  setPlugins(session, { plugins }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    const ids = [...new Set(plugins.map((p) => p.id))];
+    let content = this.vanilla;
+    if (ids.length) {
+      if (!this.vanilla || !this.plugins) return fail(ERR.PLUGIN_UNKNOWN, 'this server applies no plugins');
+      let r;
+      try { r = this.plugins.resolve(ids, { scope: 'room' }); } catch (e) {
+        this.log.error(`[lobby] ${room.code} plugin set failed`, e);
+        return fail(ERR.INTERNAL);
+      }
+      if (!r || !r.ok) return fail(r && isErrCode(r.error) ? r.error : ERR.INTERNAL, r && typeof r.detail === 'string' ? r.detail.slice(0, 200) : undefined);
+      const { vs, plugins: list, warnings, bytes } = r.set;
+      content = Object.freeze({ cs: this.vanilla.cs, vanilla: true, vs, plugins: Object.freeze(list.map((p) => Object.freeze({ ...p }))), warnings: Object.freeze([...warnings]), bytes });
+    }
+    const before = room.content;
+    const sameSet = (before?.vs ?? null) === (content?.vs ?? null);
+    const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto]));
+    if (sameSet && marks(before) === marks(content)) return OK;
+    this.dropReplay(room, session.playerId);
+    // another set: a notice still waiting for the end of a match (pluginsChanged) is moot
+    if (!sameSet) room.pluginsChanged = null;
+    room.content = content;
+    if (!sameSet) {
+      if (content?.vs) this.plugins?.hold?.(content.vs);
+      if (before?.vs) this.plugins?.release?.(before.vs);
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.log.info(`[lobby] ${room.code} plugins: ${content?.plugins?.length ? content.plugins.map((p) => `${p.id}@${p.version}`).join(', ') : 'none'}`);
+    }
+    this.broadcastState(room);
     return OK;
   }
 
@@ -726,7 +832,10 @@ export class Lobby {
    * server's content identity (header "Content identity").
    */
   welcomeInfo() {
-    return this.vanilla ? { diyKitted: KITTED_CHARS, content: { vanilla: this.vanilla.cs } } : { diyKitted: KITTED_CHARS };
+    if (!this.vanilla) return { diyKitted: KITTED_CHARS };
+    let n;
+    try { n = Number(this.plugins?.unofficial?.()) || 0; } catch { n = 0; }
+    return { diyKitted: KITTED_CHARS, content: n > 0 ? { vanilla: this.vanilla.cs, plugins: n } : { vanilla: this.vanilla.cs } };
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -815,7 +924,11 @@ export class Lobby {
     const host = room.hostId ? room.seatOf(room.hostId) : null;
     if (!host || host.isBot || host.left) this.migrateHost(room);
     if (room.activeHumans().length === 0) this.disposeRoom(room, 'empty');
-    else this.broadcastState(room);
+    else {
+      this.broadcastState(room);
+      // its plugins changed on disk during the match: the host can apply them again now
+      if (room.pluginsChanged) this.tellPluginsChanged(room);
+    }
   }
 
   /** Match unicast; m.result frames are also kept for the replay. */
@@ -1121,6 +1234,8 @@ export class Lobby {
       else session.notice = reason;
     }
     if (ctx) this.disposeMatchCtx(ctx);
+    // the room's visual set is no longer held by it (server/plugins/visualSet.js)
+    if (room.content?.vs) this.plugins?.release?.(room.content.vs);
     this.log.info(`[lobby] ${room.code} disposed (${reason})`);
   }
 

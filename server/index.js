@@ -7,8 +7,9 @@
 //                      permessage-deflate from 1 KB; refused at upgrade with 404 / 429 per network / 503)
 //   http/static.js     the static mounts (/ → public/, /data/, /shared/, /sim/ `.js` only), the /data.js browser stand-in,
 //                      the language packs (/packs/index.json, /packs/<id>/<file>), the plugin catalogue
-//                      (/plugins/index.json — the registry is plugins/registry.js) and the vanilla content set's manifest
-//                      (/cs/<cs16>/index.json — plugins/identity.js: the content hash `cs`, DESIGN §32)
+//                      (/plugins/index.json — the registry is plugins/registry.js), the vanilla content set's manifest
+//                      (/cs/<cs16>/index.json — plugins/identity.js: the content hash `cs`, DESIGN §32), the visual sets
+//                      of cosmetic plugins (/vs/<vs16>/…, plugins/visualSet.js) and their files (/p/<id>/<hash8>/…)
 //   http/media.js      /media/bgm/act1 → public/assets/audio/bgm/act1.mp3 (audio addressed without its extension)
 //   http/files.js      one file → response: MIME, brotli / gzip + memory cache, ETag / Last-Modified / 304, Cache-Control, ranges
 //   http/assetIndex.js the content hashes of public/assets and public/fonts (built in the background, cached in
@@ -38,6 +39,7 @@ import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/webs
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPluginRegistry } from './plugins/registry.js';
 import { computeVanillaContent } from './plugins/identity.js';
+import { createVisualSets } from './plugins/visualSet.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
@@ -69,7 +71,7 @@ export {
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPluginRegistry>,
- *                     content: import('./plugins/identity.js').VanillaContent,
+ *                     content: import('./plugins/identity.js').VanillaContent, visual: ReturnType<typeof createVisualSets>,
  *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
  *                     views: ReturnType<typeof createManifestViews> | null, close: () => Promise<void> }>}
  */
@@ -85,7 +87,6 @@ export async function startServer(opts = {}) {
   // like the data the matches use and the build tag below
   const content = computeVanillaContent({ simDir, sharedDir, dataDir, shim: DATA_SHIM_JS, log });
   log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
-  const { registry, lobby, network } = createSessionStack(opts, { data, log, content });
   // language packs and plugins (docs/PACKS.md, docs/PLUGINS.md): scanned now — the start log names them — and again
   // whenever their folders change
   const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log });
@@ -94,7 +95,10 @@ export async function startServer(opts = {}) {
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
   const assetIndex = indexOptions ? createAssetIndex({ publicDir, log, ...indexOptions }) : null;
   const views = assetIndex ? createManifestViews({ dataDir, index: assetIndex, log }) : null;
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views });
+  // the visual sets of the cosmetic plugins (DESIGN §32 P1a): what a room's host switches on, served at /vs/ and /p/
+  const visual = createVisualSets({ registry: packs, log });
+  const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: visual });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual });
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
@@ -163,7 +167,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, traffic, assetIndex, views, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, traffic, assetIndex, views, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

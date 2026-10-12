@@ -183,6 +183,19 @@ describe('the report', () => {
     assert.equal(text.split('\n')[3], `content: vanilla cs=${cs}`, 'the line under the version');
   });
 
+  test('the content line with cosmetic plugins (P1a): still vanilla — the cs and the art\'s vs and plugins; the player\'s own after them', () => {
+    const cs = 'ab'.repeat(32);
+    const vs = 'ef'.repeat(32);
+    const cosmetic = { cs, vanilla: true, vs, plugins: [{ id: 'texas-red', version: '1.0.0', class: 'cosmetic', hash: '0123456789abcdef' }], warnings: [], bytes: 10 };
+    assert.equal(contentLine({ room: { content: cosmetic } }), `vanilla cs=${cs} cosmetic vs=${vs} plugins=texas-red@1.0.0(01234567)`,
+      'art never changes a battle: the battles are the vanilla ones');
+    assert.equal(contentLine({ content: { vanilla: cs } }, [{ id: 'mine' }, { id: 'zed' }]), `vanilla cs=${cs} personal=mine,zed`);
+    assert.equal(contentLine({ room: { content: cosmetic } }, [{ id: 'mine' }]), `vanilla cs=${cs} cosmetic vs=${vs} plugins=texas-red@1.0.0(01234567) personal=mine`);
+    assert.equal(contentLine({ room: { content: { cs, vanilla: true, plugins: [] } } }, []), `vanilla cs=${cs}`, 'nothing: the line of P0');
+    const text = buildDiagnostics({ state: { room: { content: cosmetic } }, personal: [{ id: 'mine' }], now: 0, pageStart: 0 });
+    assert.equal(text.split('\n')[3], `content: vanilla cs=${cs} cosmetic vs=${vs} plugins=texas-red@1.0.0(01234567) personal=mine`);
+  });
+
   test('an empty page: the title screen, nothing recorded, unknown fields left out', () => {
     const text = buildDiagnostics({ state: {}, now: 0, pageStart: 0 });
     assert.match(text, /\ncontent: unknown\n/);

@@ -26,6 +26,11 @@
 // each text from the first overlay of the chain that has it, else the Chinese one. `setLocale('zh')` goes back. Each
 // switch notifies the subscribers of every loaded file, so `useData` components re-render. `localeName(zh)` maps a
 // Chinese game-data name to the current language (server messages name operators / items in Chinese).
+//
+// Views (DESIGN §32 P1a): `setView(name, fn)` shows a file through `fn` from then on — `get(name)` returns fn(the file);
+// `getRaw`, `lookup` and `list` do not — and tells the file's subscribers. public/js/content.js shows the art manifest
+// (`assets`) this way: with the room's cosmetic plugins and the player's own laid over it (public/js/assets.js
+// cosmetics.apply), so every `data.get('assets')` of the interface draws what the room draws.
 
 import { useEffect, useReducer } from '../vendor/hooks.module.js';
 import { applyFileOverlay } from '../../shared/i18nData.js';
@@ -147,6 +152,8 @@ export function createDataStore(opts = {}) {
   const overlays = new Map();
   /** name → { lang, value, index } localized copy of a ready file (dropped on every switch / reload of the file) */
   const localized = new Map();
+  /** name → the view `get` shows the file through (setView; the art manifest with the cosmetic plugins) */
+  const views = new Map();
 
   const notify = (name) => {
     for (const fn of [...listeners]) {
@@ -310,8 +317,12 @@ export function createDataStore(opts = {}) {
     load,
     /** Load several files; resolves when all settled. */
     loadAll: (...names) => Promise.all(names.flat().map(load)),
-    /** JSON of a loaded file in the current locale (null when missing / not loaded yet). */
-    get: (name) => localizedEntry(name)?.value ?? entries.get(name)?.value ?? null,
+    /** JSON of a loaded file in the current locale, through its view (setView); null when missing / not loaded yet. */
+    get: (name) => {
+      const v = localizedEntry(name)?.value ?? entries.get(name)?.value ?? null;
+      const view = views.get(name);
+      return view && v != null ? view(v) : v;
+    },
     /** The file exactly as downloaded (Chinese texts), whatever the locale. */
     getRaw: (name) => entries.get(name)?.value ?? null,
     /** 'idle' | 'loading' | 'ready' | 'missing' */
@@ -343,6 +354,18 @@ export function createDataStore(opts = {}) {
       const p = load(name);
       notify(name); // status is 'loading' again, never a stuck 'idle'
       return p;
+    },
+    /**
+     * Show a file through `fn` from now on (`get` returns fn(file); `fn` should return the same object while its inputs
+     * stay — content.js's does), or as downloaded again (null). The file's subscribers are notified: call it again after
+     * the view's own inputs changed (see the header).
+     * @param {string} name
+     * @param {((value: any) => any) | null} fn
+     */
+    setView(name, fn) {
+      if (typeof fn === 'function') views.set(name, fn);
+      else views.delete(name);
+      notify(name);
     },
     /** Called with the file name whenever a file finishes loading (or is invalidated, or the locale changes). */
     subscribe(fn) {

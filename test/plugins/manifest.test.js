@@ -204,9 +204,9 @@ test('manifest 2: inline assets name art, models, audio or fonts; a theme never 
   assert.deepEqual([trusted.problems, trusted.manifest.scope], [[], ['server']]);
 });
 
-test('the classes: lang loads, cosmetic and content are planned, code is never loaded; manifest 1 types map onto them', () => {
+test('the classes: lang and cosmetic load (P1a), content is planned, code is never loaded; manifest 1 types map onto them', () => {
   assert.deepEqual(Object.keys(PLUGIN_CLASSES), ['lang', 'cosmetic', 'content', 'script', 'ui', 'trusted']);
-  assert.deepEqual(Object.keys(PLUGIN_CLASSES).map(classStatus), ['loaded', 'planned', 'planned', 'unsupported', 'unsupported', 'unsupported']);
+  assert.deepEqual(Object.keys(PLUGIN_CLASSES).map(classStatus), ['loaded', 'loaded', 'planned', 'unsupported', 'unsupported', 'unsupported']);
   assert.deepEqual(Object.entries(PLUGIN_CLASSES).filter(([, c]) => !c.unofficial).map(([k]) => k), ['lang'], 'everything but a language is unofficial');
   assert.equal(PACK_TYPES_COMPAT, PACK_TYPES, 'shared/packs.js forwards the type table');
   assert.deepEqual(Object.entries(PACK_TYPES).map(([k, v]) => [k, v.status, v.class]), [['lang', 'supported', 'lang'], ['assets', 'planned', 'cosmetic'], ['data', 'planned', 'content']]);
@@ -307,4 +307,9 @@ test('the catalogue: entries by class then id, unofficial marks, no server paths
   assert.ok(!/data\/economy|\/Users\/|\\\\/.test(JSON.stringify(body)), 'no file path of the plugin');
   assert.equal(buildPluginIndex([]).content, undefined, 'no vanilla hash given: none listed');
   assert.deepEqual(pluginIndexEntry(plugins[1]).scope, ['personal']);
+  // what the load order reads (a browser orders a player's personal plugins with it): set fields only
+  const ordered = readPluginManifest({ ...marathon(), loadAfter: ['base'], loadBefore: ['late'], priority: 3 }, ctx('marathon')).manifest;
+  const oe = pluginIndexEntry({ ...plugins[0], manifest: ordered });
+  assert.deepEqual([oe.loadAfter, oe.loadBefore, oe.priority], [['base'], ['late'], 3]);
+  assert.deepEqual([e.loadAfter, e.loadBefore, e.priority], [undefined, undefined, undefined], 'none set: none listed');
 });

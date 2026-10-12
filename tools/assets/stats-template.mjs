@@ -33,6 +33,7 @@ export function embeddedStatsAssets(css) {
 		bondTopFrame: extract('.zJvtrR', 'image/png'),
 		headingIconFrame: extract('.d55Z07 .YhjRsw', 'image/png'),
 		headingIcon: extract('.d55Z07 .YhjRsw:after', 'image/png'),
+		...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`memberTier${i + 1}`, extract(`.X3pmNU .V1837J[data-value="${i + 1}"]`, 'image/png')])),
 		strategyBadgeFrame: extract('.jDhW1o', 'image/png'),
 		strategyBadge: extract('.jDhW1o.GajVs2:after', 'image/png'),
 	};
@@ -79,6 +80,8 @@ export async function statsTemplateJobs(root, { offline = false, fetchImpl = glo
 		['headingBar', 'heading-bar.png', `${CDN}/img/title-bg.26ebe7.png`],
 		['headingIconFrame', 'heading-icon-frame.png', embedded.headingIconFrame],
 		['headingIcon', 'heading-icon.png', embedded.headingIcon],
+		['memberFrame', 'member-frame.png', `${CDN}/img/bg-circle.cd5774.png`],
+		...Array.from({ length: 6 }, (_, i) => [`memberTier${i + 1}`, `member-tier-${i + 1}.png`, embedded[`memberTier${i + 1}`]]),
 		['strategyBadgeFrame', 'strategy-badge-frame.png', embedded.strategyBadgeFrame],
 		['strategyBadge', 'strategy-badge.png', embedded.strategyBadge],
 	];

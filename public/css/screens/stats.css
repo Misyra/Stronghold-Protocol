@@ -147,7 +147,7 @@
 .st-record-heading__icon { position: relative; width: max(.7rem, 44px); height: max(.74375rem, 47px); flex: none; margin-right: .175rem; }
 .st-record-heading__frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .st-record-heading__glyph { position: absolute; top: 50%; left: 50%; width: 63.4%; height: 71.4%; transform: translate(-50%, -50%); object-fit: contain; }
-.st-favorites__heading, .st-strategies__heading { font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-weight: 500; color: #898989; }
+.st-favorites__heading, .st-strategies__heading, .st-bond-members__heading { font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-weight: 500; color: #898989; }
 .st-favorites__heading { margin-top: 0; }
 .st-top-bonds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: max(.18rem, 10px); max-width: 9rem; margin: .18rem auto .3rem; }
 .st-top-bond { display: flex; flex-direction: column; align-items: center; min-width: 0; }
@@ -158,6 +158,10 @@
 .st-top-bond__rank { position: absolute; top: 7.8%; left: 7.8%; font-family: var(--font-num); font-size: max(.225rem, 9px); line-height: 1; color: rgba(233, 233, 233, .3); }
 .st-top-bond__text { width: 100%; min-width: 0; text-align: center; }
 .st-top-bond__name { display: block; font-family: 'Official Stats Labels', var(--font-ui, sans-serif); font-size: max(.20625rem, 11px); line-height: 1.3; color: #e9e9e9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-bond-members { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(1.3375rem, 100%), 1fr)); max-width: 8.025rem; margin: .1rem auto 0; padding: 0; list-style: none; }
+.st-bond-member { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; max-width: 1.3375rem; aspect-ratio: 1; justify-self: center; background-position: center; background-size: contain; background-repeat: no-repeat; }
+.st-bond-member__avatar { width: 77.1%; height: 77.1%; object-fit: contain; border-radius: 50%; mask: radial-gradient(circle, #fff 50%, transparent 67%); }
+.st-bond-member__tier { position: absolute; width: 24.8%; height: 24.8%; bottom: 7.5%; left: 7.5%; object-fit: contain; }
 
 /* Strategy records follow the official statistics template. */
 .st-strategies__heading { margin-top: .3rem; }

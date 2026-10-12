@@ -22,7 +22,7 @@ import { useGameData, makeLookups, BandIcon, BondGlyph, Img } from '../ui/gameCo
 import { data, useData } from '../data.js';
 import { fmtNum } from '../ui/gameLogic.js';
 import { useDocClass } from '../ui/device.js';
-import { uiUrl } from '../ui/assetUrls.js';
+import { uiUrl, chessAvatarUrl } from '../ui/assetUrls.js';
 import { identity } from '../net.js';
 import { TITLE_HEX_SECTORS, titleSectorClip } from '../ui/titleHexagon.js';
 import { store, createStore, useStore, selectRoute } from '../store.js';
@@ -31,7 +31,7 @@ import { toast, toastError } from '../ui/toasts.js';
 import {
   loadStats, saveStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
   recordToResult, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
-	trophyMedalOf, strategyBadgeIds,
+	trophyMedalOf, strategyBadgeIds, bondMemberChess,
 } from '../ui/stats.js';
 import { t, N_ } from '../../../shared/i18n.js';
 
@@ -251,10 +251,12 @@ function MatchRecords({ maxima, manifest }) {
 
 /** 盟约&策略: top-three active settlement alliances and strategies, followed by the existing strategy table. */
 function Bands({ agg, gd, records }) {
+	useData('chess');
 	const fonts = uiUrl(gd.m, 'statistics/fontStyles');
 	const badges = strategyBadgeIds(records, data.get('bands'));
   const rows = Object.entries(agg.bands).sort((a, b) => (b[1].games - a[1].games) || (b[1].wins - a[1].wins));
 	const bonds = Object.entries(agg.bonds).sort((a, b) => (b[1].games - a[1].games) || a[0].localeCompare(b[0]));
+	const members = bondMemberChess(gd.list('chess'), bonds[0]?.[0]);
 	return html`<${Section} title=${t('盟约&策略')} micro="ALLIANCES / STRATEGIES">
 		${fonts ? html`<link rel="stylesheet" href=${fonts} />` : null}
 		<h3 class="st-record-heading" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
@@ -279,6 +281,14 @@ function Bands({ agg, gd, records }) {
 				</div>`;
 			})}
 		</div>` : html`<p class="st-hint">${t('暂无盟约使用记录')}</p>`}
+		${bonds.length ? html`<h4 class="st-sub st-bond-members__heading">${t('盟约下干员为：')}</h4>
+			<ul class="st-bond-members">
+				${members.map((chess) => html`<li key=${`${chess.charId}#${chess.tier}`} class="st-bond-member" title=${chess.name}
+					style=${`background-image:url(${uiUrl(gd.m, 'statistics/memberFrame')})`}>
+					<${Img} src=${chessAvatarUrl(gd.m, chess)} class="st-bond-member__avatar" fallback=${html`<span>${chess.name}</span>`} />
+					<${Img} src=${uiUrl(gd.m, `statistics/memberTier${chess.tier}`)} class="st-bond-member__tier" />
+				</li>`)}
+			</ul>` : null}
 		<h3 class="st-record-heading st-record-heading--strategy" style=${`background-image:url(${uiUrl(gd.m, 'statistics/headingBar')})`}>
 			<span class="st-record-heading__icon" aria-hidden="true">
 				<${Img} src=${uiUrl(gd.m, 'statistics/headingIconFrame')} class="st-record-heading__frame" />

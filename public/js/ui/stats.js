@@ -811,3 +811,16 @@ export function trophyMedalOf(total, medals) {
 	return (Array.isArray(medals) ? medals : []).reduce((best, medal) =>
 		Number.isFinite(medal?.count) && medal.count >= 0 && medal.count <= count && (!best || medal.count > best.count) ? medal : best, null);
 }
+
+/** All season members of TOP1, independent of the player's recruitment history. */
+export function bondMemberChess(chess, bondId) {
+	if (!bondId) return [];
+	const seen = new Set();
+	return (Array.isArray(chess) ? chess : []).filter((c) => {
+		if (!c || c.isGolden || c.isHidden || c.isDiy || c.visible === false || !c.bonds?.includes(bondId)) return false;
+		const key = `${c.charId}#${c.tier}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	}).sort((a, b) => a.tier - b.tier || (a.shopSortId || 0) - (b.shopSortId || 0) || a.chessId.localeCompare(b.chessId));
+}

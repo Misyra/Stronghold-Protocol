@@ -109,6 +109,13 @@ export async function startRealServer(opts = {}) {
     if (Date.now() - t0 > 20000) { child.kill('SIGKILL'); throw new Error(`server did not start:\n${logs.join('\n')}`); }
     await sleep(150);
   }
+  // the content-hash index (server/http/assetIndex.js, built ~1 s after the start): wait for it, so a page loads the
+  // served manifest's /assets/~<hash>/… URLs like a player's would (none: SP_ASSET_INDEX=0); bounded, never fatal
+  for (const t1 = Date.now(); Date.now() - t1 < 20000;) {
+    const h = await fetch(`${base}/healthz?traffic=1`).then((r) => r.json(), () => null);
+    if (!h || !h.assetHashes || h.assetHashes.ready) break;
+    await sleep(150);
+  }
   return {
     base, port, logs,
     // `{ hard: true }`: SIGKILL at once — a crash: no room.closed 'shutdown' reaches the clients

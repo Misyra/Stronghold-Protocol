@@ -38,7 +38,7 @@ const CHROME_ARGS = ['--no-sandbox', '--no-first-run', '--autoplay-policy=no-use
  */
 class Client {
   constructor(puppeteer, base, label, { w = 1920, h = 1080 } = {}) {
-    Object.assign(this, { puppeteer, base, label, w, h, problems: [], log: [], shots: 0 });
+    Object.assign(this, { puppeteer, base, label, w, h, problems: [], log: [], shots: 0, hashed: { spine: 0, media: 0, other: 0 } });
   }
 
   async open(query = '') {
@@ -50,7 +50,14 @@ class Client {
     page.on('console', (m) => { if (m.type() === 'error') this.problems.push(`console: ${m.text()}`); });
     page.on('pageerror', (e) => this.problems.push(`pageerror: ${e.message}`));
     page.on('requestfailed', (r) => this.problems.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`));
-    page.on('response', (r) => { if (r.status() >= 400) this.problems.push(`http ${r.status()}: ${r.url()}`); });
+    page.on('response', (r) => {
+      if (r.status() >= 400) this.problems.push(`http ${r.status()}: ${r.url()}`);
+      // the served manifest's content-hashed URLs (docs/ASSETS.md): Spine files, audio through /media/~<hash>/, the rest
+      const p = new URL(r.url()).pathname;
+      if (r.status() === 200 && /^\/(?:assets|media)\/~[0-9a-f]{16}\//.test(p)) {
+        this.hashed[/\.(?:skel|atlas)$|\/spine\//.test(p) ? 'spine' : p.startsWith('/media/') ? 'media' : 'other']++;
+      }
+    });
     page.on('dialog', (d) => d.dismiss().catch(() => {}));
     await page.goto(`${this.base}/${query}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!globalThis.__SP__ && !!document.querySelector('.screen'), { timeout: 30000 });
@@ -443,6 +450,8 @@ describe('real server + real browsers', { skip: !ENABLED && 'set SP_REAL_E2E=1 (
     const { startServer } = await import('../../server/index.js');
     puppeteer = (await import('puppeteer-core')).default;
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
+    // the content-hash index first, so the pages load the served manifests' /assets/~<hash>/… URLs like a player's
+    await srv.assetIndex?.whenReady();
     base = `http://127.0.0.1:${srv.port}`;
     mkdirSync(OUT, { recursive: true });
   });
@@ -628,6 +637,10 @@ describe('real server + real browsers', { skip: !ENABLED && 'set SP_REAL_E2E=1 (
       assert.ok(did.inspected && did.bond, 'detail panel + bond popup');
       assert.ok(did.emote, 'emote bubble reached the teammate');
       assert.ok(did.enemies >= 0, 'enemy drawer opened');
+      if (srv.assetIndex) {
+        host.note(`content-hashed responses: ${JSON.stringify(host.hashed)}`);
+        assert.ok(host.hashed.spine > 0 && host.hashed.media > 0 && host.hashed.other > 0, `Spine, audio and art through hashed URLs: ${JSON.stringify(host.hashed)}`);
+      }
       await assertClean(both);
     } finally {
       console.log([...host.log, ...guest.log].join('\n'));

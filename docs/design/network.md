@@ -7,7 +7,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 Transport: one WebSocket per tab at `/ws`, JSON text frames `{ t: '<type>', ...payload }`. Client requests may carry `rid` (request id); the server's direct reply echoes `rid` (`ok` or `error`). Server pushes have no `rid`. Max frame 64 KB inbound (a compressed frame counts its inflated size); rate limit 40 msgs/s per connection (excess dropped with `error RATE`). Frames from 1 KB up are compressed with permessage-deflate (RFC 7692; `server/http/websocket.js WS_DEFLATE`: no server context takeover, a 2 KB server window, zlib memLevel 7 — about 72 KB of zlib state per connection); smaller frames go out plain, and a client that offers no compression, or caps the server window below 2 KB, gets plain frames. A measured solo session (rounds 3–5, `/healthz?traffic=1`): 173 KB of server frames → 60 KB on the wire.
 
 ### 8.1 Session & lobby
-C→S: `hello {name, token?, version}` · `room.create {mode:'solo'|'coop', difficulty}` · `room.join {code}` · `room.leave` · `room.ready {ready}` · `room.setDifficulty {difficulty}` (host) · `room.setPlugins {plugins:[{id, settings?}]}` (host, before the match — the room's cosmetic plugins, §8.4; un-readies the other humans like a difficulty change) · `room.setAiPicksLast {on}` (host, co-op, before the match — `ROOM_STARTED` during it, `BAD_TARGET` in a solo room; un-readies the other humans like a difficulty change; the match takes it as `opts.aiPicksLast`: humans draft before AI seats, off by default, no extra random draw) · `room.addBot` / `room.removeBot {seat}` (host) · `room.kick {seat, playerId}` (host, before the match: another human leaves the room and gets `room.closed {reason:'kicked'}`; may join again; `playerId` = the player the host confirmed, a seat that changed hands meanwhile → `BAD_TARGET`) · `room.start` (host) · `room.loadout {entries, ops?}` (§16: any time in the lobby / room and during INFO_CHECK, then `WRONG_PHASE`; heavy rate-limit bucket; the match exposes it as `m.private.loadout`; `ops` — 0.2.2 — the per-operator 潜能 / 练度 `{ [charId]: { potential?: 1–6, cultivate?: 0–3 } }` of the 干员调配 roster and the 自选 owned pool, ≤ 256, checked strictly with the entries, `m.private.ops`; absent = none set: every operator 潜能 6, 精英2 Lv.60) · `room.ownership {notOwned}` (0.2.0 补位, the 干员持有 tab: the base chess ids marked as not owned — ≤ 160 ids, kept leniently: anything but a droppable NORMAL chess is dropped; stored on the session and the seat, a match takes the seat's list when it starts and never changes it — during a match `ROOM_STARTED` 'stored for the next match'; heavy bucket; the match exposes it as `m.private.standIns`) · `room.diy {picks}` (0.2.0 自选编队: `{ [slotBaseId]: { charId, skillIndex?, uniEquipId? } | null }` for the four DIY slots — ≤ 8 entries, kept leniently: shared/protocol.js `checkDiyPicks` drops an illegal pick (an operator without a kit, another tier's prototype, a prototype off its locked skill, a module of another game mode (集成战略 / 生息演算), an owned operator's second slot, the same operator twice in a tier, an unknown slot), only malformed picks are `BAD_MSG`; stored on the session and the seat like the not-owned list, a match takes the seat's picks when it starts — during a match `ROOM_STARTED` 'stored for the next match'; heavy bucket; the match exposes them as `m.private.diy`) · `ping {c}`
+C→S: `hello {name, token?, version}` · `room.create {mode:'solo'|'coop', difficulty}` · `room.join {code}` · `room.leave` · `room.ready {ready}` · `room.setDifficulty {difficulty}` (host) · `room.setPlugins {plugins:[{id, settings?}]}` (host, before the match — the room's cosmetic and gameplay plugins, §8.4; un-readies the other humans like a difficulty change) · `room.setMode {modeId}` (host, before the match: an official mode of the room's type sets the difficulty, a mode the room's content set adds becomes its mode, §8.4) · `room.contentReady {cs, ok?}` (a member's page loaded and checked the room's content set — or not, `ok: false`; §8.4) · `room.setAiPicksLast {on}` (host, co-op, before the match — `ROOM_STARTED` during it, `BAD_TARGET` in a solo room; un-readies the other humans like a difficulty change; the match takes it as `opts.aiPicksLast`: humans draft before AI seats, off by default, no extra random draw) · `room.addBot` / `room.removeBot {seat}` (host) · `room.kick {seat, playerId}` (host, before the match: another human leaves the room and gets `room.closed {reason:'kicked'}`; may join again; `playerId` = the player the host confirmed, a seat that changed hands meanwhile → `BAD_TARGET`) · `room.start` (host) · `room.loadout {entries, ops?}` (§16: any time in the lobby / room and during INFO_CHECK, then `WRONG_PHASE`; heavy rate-limit bucket; the match exposes it as `m.private.loadout`; `ops` — 0.2.2 — the per-operator 潜能 / 练度 `{ [charId]: { potential?: 1–6, cultivate?: 0–3 } }` of the 干员调配 roster and the 自选 owned pool, ≤ 256, checked strictly with the entries, `m.private.ops`; absent = none set: every operator 潜能 6, 精英2 Lv.60) · `room.ownership {notOwned}` (0.2.0 补位, the 干员持有 tab: the base chess ids marked as not owned — ≤ 160 ids, kept leniently: anything but a droppable NORMAL chess is dropped; stored on the session and the seat, a match takes the seat's list when it starts and never changes it — during a match `ROOM_STARTED` 'stored for the next match'; heavy bucket; the match exposes it as `m.private.standIns`) · `room.diy {picks}` (0.2.0 自选编队: `{ [slotBaseId]: { charId, skillIndex?, uniEquipId? } | null }` for the four DIY slots — ≤ 8 entries, kept leniently: shared/protocol.js `checkDiyPicks` drops an illegal pick (an operator without a kit, another tier's prototype, a prototype off its locked skill, a module of another game mode (集成战略 / 生息演算), an owned operator's second slot, the same operator twice in a tier, an unknown slot), only malformed picks are `BAD_MSG`; stored on the session and the seat like the not-owned list, a match takes the seat's picks when it starts — during a match `ROOM_STARTED` 'stored for the next match'; heavy bucket; the match exposes them as `m.private.diy`) · `ping {c}`
 S→C: `welcome {playerId, token, name, serverNow}` · `room.state {code, hostId, mode, difficulty, aiPicksLast, seats:[{seat, playerId, name, isBot, ready, connected}|null ×4]}` · `room.closed {reason}` · `pong {c, s}` · `error {rid?, code, msg}` · `ok {rid}`
 
 Platform additions (implemented): `welcome.{resumed, version}`, `welcome.diyKitted` (0.2.0: the operators a 自选 slot may field — server/sim/content/kits/index.js `KITTED_CHARS`, the picker's list), `welcome.content` and `room.state.content` (0.3.0: the content identity, §8.4), `room.state.inMatch`, `error.detail`; `room.closed.reason ∈ 'timeout'|'kicked'|'empty'|'shutdown'` (`kicked`: room.kick / room.removeSpectator; `empty`: a spectator whose room lost its last player); WebSocket close codes 4001 (session taken over by another socket — client must not auto-reconnect), 4002 (no hello in time), 1008 (flooding), 1001 (shutdown). The host's `room.start` counts as the host being ready. After any (re)`hello` the server pushes `room.state` and, if a match runs, the match resends `m.public`/`m.private` (+`m.field`, or the field's `b.start` under client-side combat). **Reconnect window:** a dropped session stays resumable for 10 min (`net.js NET_DEFAULTS.reconnectWindowMs`; co-op seats keep playing their last lineup meanwhile, §6.6); a session that drops while its **solo** room's match runs stays resumable for the official `config.constants.singleReconnectTime` (86 400 s = 24 h; lobby option `soloReconnectWindowMs`; research 01 §1 "24小时内随时返回") — the untimed solo run simply waits. Only when the window expires does the drop become `match.onLeave` (co-op: 中途退出 = elimination; solo: the run ends `'abandoned'`). The client keeps its token in sessionStorage plus a recent-token list in localStorage, so reopening the tab resumes. Everything lives in server memory: a server restart ends every room and run. The lobby⇄match interface (constructor opts, `start/handle/onDisconnect/onReconnect/onLeave/dispose`) is documented verbatim at the top of `server/match/Match.js` and is normative. `server/data.js` provides `getData()` + index getters (`getChess`, `getBond`, `getGarrison`, `getItem`, `getBand`, `getEffect`, `getEnemy`, `getWave`, `getStage`, `getBoss`, `getToken`, `getConfig`, `getMode`). Note: the skill trigger rule lives at `chess.skill.trigger.rule` in data.
@@ -80,8 +80,9 @@ Piece = { uid, kind: 'chess'|'item'|'token', id, golden: bool, tier, items: [ { 
 Every server names the content its rooms play with the content hash **`cs`** (64 lowercase hex digits;
 `shared/plugins/identity.js` the composition, `server/plugins/identity.js` this server's vanilla content, computed once
 at start from the bytes it serves: `/sim/**.js` but `nodeData.js`, `/shared/**.js`, the `/data.js` stand-in and every
-gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`). Until rooms can choose gameplay plugins
-(P1c) every room plays the vanilla set; cosmetic plugins (P1a) change its art only, named by the visual hash **`vs`**:
+gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`). A room plays the vanilla set unless its
+host switches gameplay plugins on (P1c, the block "Gameplay plugins" below: a content set of its own, its own `cs`);
+cosmetic plugins (P1a) change its art only, named by the visual hash **`vs`**:
 
 - S→C `welcome.content` = `{ vanilla: <cs> }` (the lobby's `welcomeInfo`, beside `diyKitted`) — `{ vanilla, plugins: <n> }`
   when the server has n > 0 unofficial plugins (every class but a language: the title screen's count; a page fetches the
@@ -108,14 +109,14 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
   `server/plugins/visualSet.js onStale`), once per set — during a match, once the room is back in its lobby; the host's
   「重新应用」 sends the same `room.setPlugins`, which makes the set of the files as they are now (a new `vs`);
 - the match receives `opts.cs` from the lobby and copies it into every BattleSpec as `cs` (§14) — so `b.start.spec.cs`;
-- C→S `b.result.cs?` — optional, its form checked (`isContentHash`); the server does not compare it with the spec yet
-  (P1c refuses a missing or different one in a plugin room);
-- `GET /healthz` adds `content: { vanilla: <cs>, sets: 0 }` (`sets`: the content sets with plugins in use — none before
-  P1c), and `plugins: <n>` when the server has n > 0 unofficial plugins (a page reads it before any hello: its build
+- C→S `b.result.cs?` — optional, its form checked (`isContentHash`); a vanilla room's match does not compare it, a
+  room with gameplay plugins refuses a missing or different one (below);
+- `GET /healthz` adds `content: { vanilla: <cs>, sets: <n> }` (`sets`: the content sets with gameplay plugins rooms hold
+  now), and `plugins: <n>` when the server has n > 0 unofficial plugins (a page reads it before any hello: its build
   guard's first check, `public/js/ui/buildGuard.js` onHealth);
 - `GET /cs/<first 16 hex digits>/index.json` — the content set's manifest (`{ v, cs, app, vanilla, sim, simFiles:
   { <path>: sha256 }, data: { <name>: { url, sha256, bytes } }, plugins, settings }`, data URLs `/data/<file>?v=<8 hex>`),
-  `Cache-Control: immutable`; any other `cs` → 404;
+  `Cache-Control: immutable`; a content set with gameplay plugins below; any other `cs` → 404;
 - `GET /plugins/index.json` — the plugin catalogue (`{ version, app, api, content: { vanilla }, plugins: [entry …] }`,
   every plugin and language pack by class with its status and the `unofficial` mark, and what the load order reads of
   it when set — `requires`, `optional`, `conflicts`, `loadAfter`, `loadBefore`, `priority` (a browser orders a player's
@@ -137,6 +138,53 @@ gameplay `data/*.json` — not `assets`, `local-assets`, `emotes`, `data/i18n/`)
 - the client keeps `welcome.content` in its store; a diagnostic report's second line is `content: vanilla cs=<64 hex>`
   (`public/js/diag.js contentLine`; with cosmetic plugins `vanilla cs=… cosmetic vs=… plugins=id@version(hash),…`, the
   player's own after ` personal=`; a room with gameplay plugins: `MODDED cs=… plugins=id@version(hash)…`).
+
+**Gameplay plugins** (P1c, DESIGN §32.6, PLUGINS.md §11). A vanilla room's messages and the vanilla manifest are byte
+for byte what they were; everything below appears only in a room whose host switched content plugins on:
+
+- C→S `room.setPlugins` takes content plugins (class `content`, scope `room`) beside the cosmetic ones; `settings` are
+  normalised by the plugin's declared settings and part of the content set. Refused as above, and with
+  `PLUGIN_INCOMPATIBLE` (a gameplay plugin made for other game versions or another plugin API, unless the server owner
+  allows it), `PLUGIN_BUSY` (one content set more than the server runs at once — `plugins/config.json` `limits.maxSets`,
+  default 4), `PLUGIN_BLOCKED` also for the server owner's policy (rooms `off` or `fixed`, not in `allow`, the class
+  switched off) and for a set whose merged data does not validate (`detail`: the builder's first problems). Every such
+  request of a room — and every other request of a room whose match runs in a match host — is answered in order, on the
+  room's own queue (`server/lobby.js` serial; `server/net.js` answers a Promise when it settles);
+- S→C `room.state.content` = `{ cs, vanilla: false, plugins: [{ id, version, class: 'content' | 'cosmetic', hash, auto?
+  }], warnings, bytes, dataBytes, vs?, modes?, modeId?, kittedExtra? }`: `cs` the content set's own (its manifest
+  below); `vs` when cosmetic plugins, or a content plugin's own art, are on too; `dataBytes` the bytes a member downloads
+  beyond the vanilla files; `modes: [{ id, name, roomMode: 'solo' | 'coop', difficulty }]` the modes its plugins add;
+  `modeId` the one the host chose (the match's mode); `kittedExtra` the operators it adds to a 自选 slot's list (beside
+  `welcome.diyKitted`); `warnings` add `{ code: 'app', params: { id, app } }` for a gameplay plugin the server owner lets
+  through and the content set's own (`override { path: 'data:…', plugins }`);
+- S→C `room.state.seats[].content` and `spectators[].content` = `'loading' | 'ready' | 'failed'` (human seats only):
+  `'loading'` when the set changes and when the member's socket drops;
+- C→S `room.contentReady { cs, ok? }` — the member's page downloaded and checked the room's set (`ok: false`: its check
+  failed); a `cs` other than the room's is accepted and ignored (an older set). `room.ready { ready: true }` waits for
+  the player's own `'ready'` and `room.start` for every player's (the host's too): `CONTENT_NOT_READY`;
+- C→S `room.setMode { modeId }` — host-only (`NOT_HOST`), before the match (`ROOM_STARTED`), any room: an official mode
+  of the room's type sets the difficulty (and leaves a plugin mode); a mode of `content.modes` of the room's type becomes
+  `content.modeId` and its difficulty the room's (until the host picks a difficulty or the set loses it); any other id →
+  `BAD_TARGET`; un-readies the other humans like a difficulty change (nothing when nothing changes);
+- the match runs in the content set's match host (a worker thread, or a child process with `SP_MATCH_HOST=process`)
+  with `opts.cs` = the set's `cs`, `opts.requireCs` and `opts.vs`: every BattleSpec carries that `cs` and, optionally, the
+  room's `vs` (the sim reads neither); C→S `b.result` must name the spec's `cs` — a missing or different one is refused
+  like an implausible result and the server simulates the battle (`verifyStats.rejected`). A page that does not hold the
+  set a spec names is never the authority of that battle (no `b.progress`, no `b.result`: the server takes the field over
+  at its deadline);
+- when the match host stops (no heartbeat for 10 s, a crash, out of memory, a set that does not boot): S→C `m.toast {
+  kind: 'error', msgid }` — `房间的插件内容长时间无响应，本局模拟已结束` · `房间的插件内容出错，本局模拟已结束` ·
+  `房间的插件内容无法启动模拟` — and the room is back in its lobby (`summary.reason` 'plugin-hang' / 'plugin-crash' /
+  'plugin-start'); a request the host leaves unanswered for 15 s → `INTERNAL`;
+- `GET /cs/<cs16>/index.json` of such a set — `{ …the vanilla shape…, cs, vanilla: false, plugins: [{ id, version,
+  files: { <path>: sha256 } }], settings, data: { <name>: { url, sha256, bytes } }, i18n: { <lang>: { url, sha256, bytes
+  } } }`: a data file the set did not change at its plain `/data/<file>?v=<8 hex>` URL, a changed one (and a changed
+  translation) at `/cs/<cs16>/data/<name>.json` / `/cs/<cs16>/i18n/<lang>.json`, served from memory with `Cache-Control:
+  immutable` while a room holds the set (and for the last 8 sets nobody holds); `cs` = sha256(canonical({ v, app, sim,
+  data: { <name>: sha256 }, plugins, settings, i18n: { <lang>: sha256 } })) — the page checks every body's bytes against
+  its entry before decoding and the composition against the room's `cs`, and follows no URL but `/data/` and
+  `/cs/<cs16>/`;
+- errors (`shared/constants.js` ERR, text in ERR_TEXT): `PLUGIN_INCOMPATIBLE`, `PLUGIN_BUSY`, `CONTENT_NOT_READY`.
 
 ---
 

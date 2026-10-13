@@ -1,6 +1,6 @@
 # 房间审计与计算保护
 
-保护由游戏进程执行，修改环境变量后需要重启。IP 来源沿用 `TRUST_PROXY`，只能信任自己的反向代理；Nginx 必须正确还原客户端地址，不能采信公网客户端伪造的转发头。
+保护由游戏进程执行，修改环境变量后需要重启；本文标注的管理接口设置可实时修改。IP 来源沿用 `TRUST_PROXY`，只能信任自己的反向代理；Nginx 必须正确还原客户端地址，不能采信公网客户端伪造的转发头。
 
 ## 建房与开局额度
 
@@ -14,6 +14,35 @@
 | `SP_MATCH_START_REFILL_MS` | `30000` | 每补充一次开局额度的毫秒数，100–3600000 |
 
 保留既有同时持有房间、进行中对局和连接数限制。额度不落盘，重启会重置。同一校园/公司出口共享额度，应结合正常玩家使用情况调整。分布式攻击仍可能绕过单网络额度。
+
+注意 `4` 是建房令牌桶的**突发容量**，不是同时房间上限，也不是累计总数。默认消耗后每 15 秒恢复 1 个；持续建房仍可累计超过 4 个。既有 `maxRoomsPerAddr` 默认 **16**（同时存在、按创建网络归属的房间），`maxMatchesPerAddr` 默认 **8**（同时进行的对局）。这两个旧参数通过程序启动选项设置，不要误以为设置一个未被读取的同名环境变量会生效。
+
+## 海外连接准入
+
+`SP_ALLOW_FOREIGN_CONNECTIONS=on/off` 控制启动默认值，默认 `on`（允许）。监控面板「允许海外 IP 连接」实时写入布尔字段 `allowForeignConnections`，复用 RW Agent 和回环 `PUT /api/room-config`，持久化及优先级与其他房间设置一致。
+
+关闭后，识别为非 `CN` 的公开 IP（含港澳台）请求游戏 HTML 入口时直接收到 HTTP `403` 和 JSON `{"code":"FOREIGN_CONNECTIONS_DISABLED","msg":"本服务器暂时仅对中国大陆服务"}`，不会加载游戏页面。WebSocket 在 HTTP 升级前同样返回 `403` 和该消息，不建立连接、不分配游戏 session。旧缓存即使保留页面，也不能绕过服务端握手拦截。
+
+已有已登录连接继续游玩，不踢人；素材、管理接口和探针不拦截。断线后的 token 重连属于新连接，同样拒绝。开关切换前建立但尚未登录的连接，在首次 hello 时再次检查，发送协议拒绝后以 `4003` 关闭，浏览器显示提示并停止自动重连；这是切换时已存在连接的兜底，不是新连接准入方式。拒绝审计 `connection.foreignPolicy.denied` 全局每 10 秒采样一次并记录省略次数，防止刷日志；切换审计为 `connection.foreignPolicy.changed`。
+
+必须正确配置可信代理和有效 `SP_GEOLITE_COUNTRY_DB`。内网、国家未知、查询错误或缺库时放行，不猜测归属；面板缺库警告、只读 `foreignSessionGeoipAvailable` 与健康信息 `foreignSessions.foreignConnectionsBlocked` 指示配置是否具备生效条件，`connectionDenied` 为拒绝次数。单会话开关、AI 开关和房间上限独立，均不被覆盖。
+
+## 海外 IP 单身份
+
+配置 `SP_GEOLITE_COUNTRY_DB` 后，对识别为非 `CN` 的公开 IP（含港澳台）最多保留一个有效游戏 session。使用现有可信代理地址解析结果；此规则按单个 IP，而不是建房频率规则的 IPv6 `/64`。`SP_FOREIGN_SESSION_LIMIT=on/off` 设置启动默认值，默认 `on`；程序选项名为 `limitForeignSessions`。
+
+监控面板可以通过现有 RW Agent 实时更新 `PUT /api/room-config` 的布尔字段 `limitForeignSessions`，无需重启。保存的面板配置优先于环境默认值，显式程序选项优先级最高，与 `allowBots` 一致。开关与房间上限、AI 添加开关独立，不修改后两者。
+
+关闭后允许海外同 IP 多身份，但仍保留来源配额键，供再次开启时识别。开启不立即踢掉已有在线身份，已有身份的同 IP token 重连仍可用；之后拒绝新身份，待旧身份均断线后才在新建时回收。接口中的只读 `foreignSessionGeoipAvailable` 指示国家库是否可用；即使开关保存为 `true`，缺少国家库时保护仍不生效。旧版游戏没有 `limitForeignSessions` 字段时管理面板隐藏此开关。
+
+- 该 IP 有另一个在线 session 时，拒绝新身份以及其他 token 向此 IP 的迁入，返回 `FOREIGN_SESSION_LIMIT`；不踢原玩家。携带当前身份的有效 token 重连仍沿用现有同身份窗口接管规则。
+- 同 IP 的旧 session 已断线时，新身份会先按大厅的退出逻辑清理旧席位、匹配队列和回放，再撤销旧 token。无人房间销毁并释放 AI；仍有其他真人的房间保留。不会继承旧玩家的配置、房间访问权或战斗结果。
+- 仍有效的聊天处罚转入新身份，不能靠换 token 清空处罚。旧 token 再次连接时不能踢掉新的在线身份。
+- 国内、内网和未知地区不应用这条限制；未配置 GeoLite 时整条规则关闭。查询异常不会误判国内为海外，异常计数可在健康接口查看。因此上线必须同时配置有效国家库，不能只部署代码。
+- 海外 session 的私有 SHA-256 IP 配额键随存档保存，重启恢复时重建索引，不增加原始 `session.addr` 的持久化。该键是可关联的配额标识，**不是匿名化保证**；不出现在客户端消息、公开健康信息或审计中。旧存档缺少此键时不猜测来源，首次重连后才纳入规则。
+- 平时检查同 IP 索引，不逐次遍历全体房间或 session；恢复后首次海外握手初始化索引，过期扫描清理索引引用。`foreignSessions` 健康指标包括启用状态、每 IP 上限、回收/拒绝和查询异常计数；审计使用 `session.foreignLimit.denied`（每 IP 10 秒采样）和 `session.foreignLimit.reclaimed`，不记录 token。
+
+单身份不能替代建房频率、房间并发和 AI 总量限制；同一 IP 仍可退出后顺序建房，多 IP 也仍可并行。新身份会放弃旧的断线对局，需要恢复时应使用原 token。海外共享代理下的不同玩家不能同时进入，应提示关闭代理或更换出口。
 
 ## 房间高水位回收
 
@@ -92,10 +121,10 @@ curl -H "Authorization: Bearer $SP_ROOM_ADMIN_TOKEN" \
 
 Agent 可在同机通过 `MON_GAME_ADMIN_URL=http://127.0.0.1:3001/` 和 `SP_GAME_ADMIN_TOKEN` 代理访问；后者与游戏的 `SP_ROOM_ADMIN_TOKEN` 相同。Portal 站点需配置 Agent 的 `SP_ADMIN_TOKEN_RW`，房间清单含玩家 IP，因此只读令牌不能访问。Agent 不会把游戏密钥转发给浏览器。
 
-本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。配置支持部分更新，例如 `PUT {"maxRooms":1000}` 或 `PUT {"allowBots":false}`，也可同时提交两项；未提交的值保持不变。`maxRooms` 为 1–10000 的整数，`allowBots` 必须为布尔值，空对象和未知字段拒绝。列表的 `config` 及配置读取接口都返回这两项。
+本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。配置支持部分更新，例如 `PUT {"maxRooms":1000}`、`PUT {"allowBots":false}`、`PUT {"limitForeignSessions":false}` 或 `PUT {"allowForeignConnections":false}`，也可同时提交；未提交的值保持不变。`maxRooms` 为 1–10000 的整数，其他三项必须为布尔值，空对象和未知字段拒绝。列表的 `config` 及配置读取接口返回四项设置和只读 `foreignSessionGeoipAvailable`。
 
 当前默认上限是 `1000`，默认允许添加 AI 队友；启动时可用 `SP_ALLOW_BOTS=off` 禁止（默认 `on`）。面板的「允许添加 AI 队友」可实时切换，无需重启；服务端同时检查 `room.addBot`，不能通过绕过按钮添加 AI。关闭只禁止新增，不移除已有 AI、不阻止其所在房间开局、不终止已有对局，也不改变真人断线后的自动接管。等待房间收到实时状态更新，重新允许后即可继续添加。
 
-两项配置会原子保存到 `.state/room-admin.json`，或由 `SP_ROOM_ADMIN_STATE_FILE` 指定私有路径；保存失败不应用运行时改动。重启优先读取已保存配置（高于环境变量默认值，显式程序启动参数仍优先），旧的仅含 `maxRooms` 的文件兼容。策略变更记录 `room.botPolicy.changed` 审计（`previous`、`allowBots`）。降低上限不会关闭已有房间，只会暂时阻止创建新房间。关闭操作会断开成员并终止该房间对局，使用创建时间校验防止误关复用房间号的新房间。
+三项配置会原子保存到 `.state/room-admin.json`，或由 `SP_ROOM_ADMIN_STATE_FILE` 指定私有路径；保存失败不应用运行时改动。重启优先读取已保存配置（高于环境变量默认值，显式程序启动参数仍优先），旧配置缺少的开关沿用环境默认值。策略变更记录 `room.botPolicy.changed` 或 `session.foreignLimit.changed` 审计。降低上限会按前述高水位规则回收无人房间，不影响在线房间。关闭操作会断开成员并终止该房间对局，使用创建时间校验防止误关复用房间号的新房间。
 
 `/healthz` / `/metrics` 新增 `roomProtection`（允许/拒绝计数及已跟踪网络数）、`offlinePausedMatches`；`rehearsalPressure` 提供指标来源、负载百分比、采样时间、当前档位、候选上限（`null` 表示沿用配置）及阈值。计算池提供 `queuedByType`、`oldestQueuedMs`。这些是进程内累计/当前值，重启归零。判断攻击应结合实际动作、频率和计算消耗，不仅凭 ASN 或昵称封禁。

@@ -11,6 +11,7 @@
 | `server/roomReclamation.js` | 90% 触发、回收到低于 80% 的离线房间策略与定时检查 |
 | `server/botPopulation.js` | AI 席位的全服与海外计数、添加许可及监控计数 |
 | `server/geoip.js` | 启动时加载 GeoLite 国家库；游戏请求路径不访问网络或磁盘 |
+| `server/foreignSessions.js` | 海外单 IP 身份索引、在线准入、断线回收计划与处罚转移；不直接操作房间或 socket |
 | `server/wireHints.js` | 本分支的预编码与状态合并标记；不持有连接 |
 | `public/js/cdnSpine.js` | 本分支 CDN 的独立哈希图集、纹理页和 PIXI resolver 元数据适配 |
 | `public/js/image.js` | 本分支 CORS 图片修复、并发请求共享和总时限 |

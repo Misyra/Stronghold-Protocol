@@ -5,7 +5,7 @@ import { N_ } from './i18n.js';
 export const PROTOCOL_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
-export const APP_VERSION = '0.2.5';
+export const APP_VERSION = '0.2.6';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);
@@ -142,6 +142,8 @@ export const ERR = Object.freeze({
   BOTS_DISABLED: 'BOTS_DISABLED',
   AI_POPULATION_LIMIT: 'AI_POPULATION_LIMIT',
   FOREIGN_AI_POPULATION_LIMIT: 'FOREIGN_AI_POPULATION_LIMIT',
+  FOREIGN_SESSION_LIMIT: 'FOREIGN_SESSION_LIMIT',
+  FOREIGN_CONNECTIONS_DISABLED: 'FOREIGN_CONNECTIONS_DISABLED',
   WRONG_PHASE: 'WRONG_PHASE',
   NO_FUNDS: 'NO_FUNDS',
   HAND_FULL: 'HAND_FULL',
@@ -162,6 +164,8 @@ export const ERR_TEXT = {
   BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
   AI_POPULATION_LIMIT: N_('当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。'),
   FOREIGN_AI_POPULATION_LIMIT: N_('由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友'),
+  FOREIGN_SESSION_LIMIT: N_('当前海外 IP 已有在线玩家，请关闭原窗口或关闭代理后重试'),
+  FOREIGN_CONNECTIONS_DISABLED: N_('本服务器暂时仅对中国大陆服务'),
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
   CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
   CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),

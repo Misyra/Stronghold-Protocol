@@ -169,6 +169,61 @@ function withProps(value, extra) {
 // ---------------------------------------------------------------------------------------------------
 
 /**
+ * The clock envelope of a checkpoint. Clocks tick in real time, so they travel outside the encoded body; the Persister
+ * reads them through this function both when it encodes a fresh capture and when it skips one (perf/state-sync
+ * priority 3), so the document's clocks are never stale.
+ * @param {import('./Match.js').Match} m
+ */
+export function matchClocks(m) {
+  const now = m.sched.now();
+  return {
+    // the phase clock travels as *remaining* time: the match is frozen while the server is down
+    deadlineRemainingMs: m.deadline > 0 ? Math.max(0, Math.round(m.deadline - (m.offlinePaused ? m._offlineAt : now))) : 0,
+    startedAtAgoMs: Math.max(0, Math.round(now - (Number(m.startedAt) || now))),
+  };
+}
+
+/**
+ * Cheap, deliberately over-approximating persistence version (perf/state-sync priority 3). The Persister stores the
+ * checkpoint body together with the version it was encoded at; when the version is unchanged it refreshes only the
+ * clock envelope — no capture, no structured clone across the Worker boundary, no codec, no JSON round trip.
+ *
+ * Reliable rather than trusting, in two parts:
+ *   * the mutation counters — every match- and player-level change reaches `MatchMessaging.markPublic` /
+ *     `markPrivate` (every PlayerState mutator reports through `dirty()`), so *nested* state (a Map gaining a piece,
+ *     a shop slot selling out, a draft pick) moves the version;
+ *   * the persisted scalar surface, read directly here — a write that bypassed those counters (`_battleSeq`, an error
+ *     pushed onto `m.errors`, a content handler touching a field) still moves it. That is what makes the version
+ *     dependable rather than a promise that every mutator stays disciplined;
+ * plus the RNG positions (they advance with no state mutation at all: a shop roll, a bot rehearsal) and the shared
+ * pool's own revision (its `left` counts are persisted).
+ *
+ * `SP_PERSIST_VERIFY=1` on the Persister proves the direction that matters on live traffic: when the version says
+ * "unchanged" it encodes anyway and compares the body — a difference is counted and logged, never silently kept.
+ * @param {import('./Match.js').Match} m
+ * @returns {string}
+ */
+export function persistVersion(m) {
+  const filled = (arr) => { let n = 0; for (const x of arr) if (x) n++; return n; };
+  const parts = [m._persistRev | 0, m.pool?.revision | 0, m.round | 0, m.uidSeq | 0, m._battleSeq | 0, m.pausedMs | 0,
+    m.setupRevision | 0, m._setupVoteSeq | 0, m._lastSetupVoteAt | 0, m._botEmotesSettledRound | 0, m._botEmotesMerges | 0,
+    m.hiddenLayerSum | 0, m.hiddenReached ? 1 : 0, m.errorCount | 0, m.errors?.length | 0, m.simErrors?.length | 0,
+    m.simErrorLog?.length | 0, m.phase];
+  for (const name of RNG_NAMES) {
+    const rng = m[name];
+    parts.push(rng && typeof rng.state === 'function' ? rng.state() >>> 0 : 0);
+  }
+  for (const ps of m.order) {
+    parts.push(ps.playerId, ps.funds | 0, ps.pendingFunds | 0, ps.lp, ps.alive ? 1 : 0, ps.ready ? 1 : 0,
+      ps.infoReady ? 1 : 0, ps.autoplay ? 1 : 0, ps.connected ? 1 : 0, ps.left ? 1 : 0, ps.prepsEnded ? 1 : 0,
+      ps.shop.level | 0, ps.shop.freeRefreshes | 0, ps.shop.frozen ? 1 : 0, ps.personalChoice ? 1 : 0,
+      ps.deployCount, ps.board.size, filled(ps.hand), filled(ps.temp), ps.bandId, ps.round | 0,
+      ps.bondCountBonus | 0, ps.deployCapBonus | 0, ps.deployCapMin | 0, ps.eliminatedRound | 0, ps.lastEmoteAt | 0);
+  }
+  return parts.join(',');
+}
+
+/**
  * Match scalars of a checkpoint. Everything else is either rebuilt by the constructor (gd, ds, stage, players,
  * order, pool, schedulers) or transient (clocks, view plumbing, timers, battle objects).
  */
@@ -200,6 +255,8 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
   '_privDirty', '_prepEndQueued', 'bossPairs', 'fields', 'runner', 'watchers', 'watchPref', 'lastResults', 'unitePlan',
   'uniteResultView', '_uniteLeftKey', '_uniteBounds', 'teamLp', 'bossPool', 'outcome', '_turnToken',
+  // the persistence version (persistVersion): a derived counter, never part of the document
+  '_persistRev',
 ]);
 export const TRANSIENT_PLAYER_FIELDS = Object.freeze([
   'm', 'gd', 'standIns', '_standInSet', '_diyRecords', 'bonds', '_deployMap', '_deployField', '_legalityStale', '_botPrepToken',
@@ -242,7 +299,6 @@ export function snapshotMatch(m) {
  */
 export function captureMatch(m) {
   if (!canSnapshot(m)) return null;
-  const now = m.sched.now();
   const doc = { v: SNAPSHOT_VERSION, phase: m.phase, round: m.round };
   for (const k of MATCH_FIELDS) {
     if (k === 'round') continue;
@@ -253,10 +309,7 @@ export function captureMatch(m) {
   if (doc.draft && typeof doc.draft === 'object' && 'turnDeadline' in doc.draft) doc.draft = { ...doc.draft, turnDeadline: 0 };
   if (doc.sp && typeof doc.sp === 'object' && 'turnDeadline' in doc.sp) doc.sp = { ...doc.sp, turnDeadline: 0 };
   // the phase clock travels as *remaining* time: the match is frozen while the server is down
-  const clocks = {
-    deadlineRemainingMs: m.deadline > 0 ? Math.max(0, Math.round(m.deadline - (m.offlinePaused ? m._offlineAt : now))) : 0,
-    startedAtAgoMs: Math.max(0, Math.round(now - (Number(m.startedAt) || now))),
-  };
+  const clocks = matchClocks(m);
   // the shared pool: only the remaining copies live in the checkpoint (cap/tier are data-derived)
   doc.poolLeft = {};
   for (const [id, e] of m.pool.entries) doc.poolLeft[id] = e.left;

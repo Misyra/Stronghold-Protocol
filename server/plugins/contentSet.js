@@ -15,6 +15,7 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
+import { validateDsl } from '../sim/content/dsl/validate.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -87,6 +88,42 @@ function translations(data, initial, plugins) {
   return { out, problems };
 }
 
+/** Records whose dsl field this plugin just wrote. A patch and a compact operator both count. */
+function dslTouched(before, after) {
+  const hits = [];
+  const scan = (file, prev, next) => {
+    for (const [id, rec] of Object.entries(next ?? {})) {
+      const old = prev?.[id]?.dsl;
+      if (rec && rec.dsl != null && (old === undefined || canonicalJson(rec.dsl) !== canonicalJson(old))) hits.push(`${file}.${id}`);
+    }
+  };
+  scan('chess', before.chess, after.chess);
+  scan('units', before.backups?.units, after.backups?.units);
+  return hits;
+}
+
+/** Prep specs from the manifest dsl part. A bad spec refuses the whole set. */
+function prepSpecs(plugin) {
+  const problems = [], specs = [];
+  for (const rel of plugin.manifest.parts.dsl?.files ?? []) {
+    if (!plugin.manifest.permissions.includes('dsl')) {
+      problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'dsl files require the dsl permission'));
+      continue;
+    }
+    const doc = plugin.content.documents[rel];
+    const checked = validateDsl(doc);
+    if (!checked.ok) {
+      for (const p of checked.problems) problems.push(problem(p.code, p.path ? `${rel}.${p.path}` : rel, p.zh));
+      continue;
+    }
+    // [ASSUMED] A manifest dsl file is prep-only and must include meta (DESIGN §32.7).
+    if (doc.meta == null) { problems.push(problem('PLUGIN_DSL_META', rel, 'prep DSL file needs a meta block')); continue; }
+    if (doc.pluginId != null && doc.pluginId !== plugin.id) { problems.push(problem('PLUGIN_DSL_PLUGIN_ID', rel, 'spec pluginId must match the host plugin')); continue; }
+    specs.push(doc);
+  }
+  return { problems, specs };
+}
+
 function routesChanged(before, after) {
   if (!before || !after) return true;
   return canonicalJson(before.routes ?? []) !== canonicalJson(after.routes ?? [])
@@ -144,10 +181,19 @@ function composeContentSet({ registry, ids = [] }) {
       data = r.data;
     }
     problems.push(...writesAllowed(before, data, p, owners));
+    if (!p.manifest.permissions.includes('dsl')) for (const at of dslTouched(before, data)) problems.push(problem('PLUGIN_CONTENT_PERMISSION', at, 'DSL requires the dsl permission'));
+    const prep = prepSpecs(p);
+    problems.push(...prep.problems.map(e => ({ ...e, plugin: p.id })));
+    if (prep.specs.length) {
+      // A dsl-only plugin never clones. base.data is frozen; do not attach the table there.
+      if (data === base.data || Object.isFrozen(data)) data = clone(data);
+      if (!object(data.dsl)) data.dsl = {};
+      data.dsl[p.id] = prep.specs;
+    }
   }
   if (problems.length) return { problems };
   if (plugins.length) {
-    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data }));
+    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners }));
     if (problems.length) return { problems };
     data = { ...data, stages: { ...data.stages } };
     const routes = Object.values(data.waves).flatMap(w => [...(w.routes ?? []), ...(w.extraRoutes ?? [])]);
@@ -169,7 +215,8 @@ function composeContentSet({ registry, ids = [] }) {
   const bodies = new Map(base.files), files = {}, hashes = {};
   for (const [name, rec] of Object.entries(data)) {
     const rel = `data/${name}.json`;
-    if (canonicalJson(rec) !== canonicalJson(base.data[name])) bodies.set(rel, Buffer.from(JSON.stringify(rec)));
+    // A new table (data/dsl.json) has no base bytes. canonicalJson(undefined) throws, so a missing key is always written.
+    if (!Object.hasOwn(base.data, name) || canonicalJson(rec) !== canonicalJson(base.data[name])) bodies.set(rel, Buffer.from(JSON.stringify(rec)));
     const body = bodies.get(rel); hashes[name] = nodeSha256(body);
   }
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));

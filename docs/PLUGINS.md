@@ -231,7 +231,7 @@ node tools/plugin.mjs check [<dir|id> …] [--strict] the folders of plugins/ (o
 node tools/plugin.mjs pack <dir|id> … [--zip]      write plugin.lock.json (every file's SHA-256 and size, each Spine model's
           [--out <file|dir>]                       clip data), then check the folder; --zip writes the folder as a zip
                                                    (default plugins/_dist/<id>-<version>.zip)
-node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio) for a target
+node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio, dsl) for a target
           [--target <名字|id>] [--name …] [--dir …] found by its official name
 node tools/plugin.mjs errors [--markdown] [--write] the error catalogue; --write keeps the symptom tables of the documents
 ```
@@ -459,19 +459,21 @@ values and merge counts come from that tier's economy, and statuses from `econom
 `backups.units`, every existing DIY slot status, `diy.ownedPool` and `diy.operators`; `"both"` does both. The expander
 adds shop chess to their bonds' member lists. An existing record must be changed with patches.
 
-Behavior is `kit: "generic"`, `{ "ref": "<official kit key or file stem>" }`, or
-`{ "spec": <JSON SkillSpec or JSON file path> }`. Files are JSON, including transitive spec files. `art: { ref: charId }`
+Behavior is `kit: "generic"`, `{ "ref": "<official kit key or file stem>" }`,
+`{ "spec": <JSON SkillSpec or JSON file path> }`, or `{ "dsl": <DSL spec> }`. Files are JSON, including transitive spec files. `art: { ref: charId }`
 references asset ids already installed; it carries no art file. `talentMods` supplies permanent numeric mods with a
 JSON SkillSpec. Per-skill `skillSpec` overrides the operator's spec for that selection.
 
-`kitOf` resolves extensions → `raw.dsl` → `raw.skillSpec` → `raw.kitRef` → official kit → generic. Explicit test kits
-still take precedence. `talentMods` are installed only on the JSON SkillSpec branch. A record that carries both
+`kitOf` resolves extensions → `raw.dsl` → `raw.skillSpec` → `raw.kitRef` → official kit → generic. When the record
+carries `dsl`, `kitOf` calls `compileDsl`. The builder stamps `pluginId` on that record; the author's spec is not
+rewritten, and a written `pluginId` must match the host (`PLUGIN_DSL_PLUGIN_ID`). Using DSL needs the `dsl`
+permission. A bad spec refuses the whole content set. Explicit test kits still take precedence. `talentMods` go with
+a JSON SkillSpec or with `kit.dsl`. A record that carries both
 `kit.ref` / `kitRef` and `talentMods` is `PLUGIN_SKILL_SPEC` at expansion and again in `validateData`; the schema file
 still allows the pair, and the runtime rejects it. File stems resolve only against the official registry, never an
 import path. A referenced kit's numbers come from the new record. Keep official skill ids to use its named alternate
 skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` is empty until P3
-supplies it; `dsl/compile.js` is P2's compiler (§12), but the records and the validator still refuse `dsl`
-(`PLUGIN_DSL_UNAVAILABLE`) until the data-plugin work accepts it. A plugin operator whose id
+supplies it; `dsl/compile.js` is P2's compiler (§12) and data plugins use it (§12, PLUGIN-DSL.md §9). A plugin operator whose id
 starts with `char_x_` and whose chess and backup records have neither `potDown` nor a talent `potBelow` accepts only
 the default potential 6. Official operators, including `char_616_pithst`, are unchanged. The loadout screen can still
 show the control; the sync step drops a non-default value and the server rejects a raw client message. No new
@@ -684,19 +686,23 @@ are served from memory with `Cache-Control: immutable` while a room holds the se
 (`content.sets`).
 
 **Not yet** (DESIGN §32.6): a form for plugin settings in the panel (the protocol takes them), a notice when a content
-plugin changes on disk while a room holds its set (the cosmetic notice exists), `allowIncompatible` reaching past the
-builder (it refuses a plugin it marks incompatible), and the DSL (§12) in data plugins (the builder still refuses
-`dsl`).
+plugin changes on disk while a room holds its set (the cosmetic notice exists), and `allowIncompatible` reaching past
+the builder (it refuses a plugin it marks incompatible). DSL in data plugins is §12.
 
 ## 12. DSL
 
 A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
 per-battle action budget and the worked examples are [PLUGIN-DSL.md](PLUGIN-DSL.md). `compileDsl` in
-`server/sim/content/dsl/compile.js` turns a spec into a Kit; `server/match/dslMeta.js` turns the prep half into
-MetaRegistry hooks. The schema is `schemas/dsl.schema.json`. DESIGN §32.7. A vanilla battle does not load the compiler.
-Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section. The host supplies the plugin id
-(an author id cannot take another plugin's budget). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7 records
-the open points, including the generic-kit fallback until the data-plugin work records a compile error itself.
+`server/sim/content/dsl/compile.js` turns a spec into a Kit; `kitOf` calls it when the chess record carries `dsl`.
+`server/match/dslMeta.js` turns the prep half into MetaRegistry hooks. The schema is `schemas/dsl.schema.json`.
+A content plugin puts the battle spec on `kit.dsl` (permission `dsl`, and `data.add` for the operator) and prep
+specs in the manifest `dsl` part. The builder validates them, writes the battle spec onto the record, stamps the
+host `pluginId`, and stores prep specs as `data.dsl[<plugin id>]` (part of `cs`). A vanilla set has no `data.dsl`.
+The match host registers each prep spec after `setData` and before importing Match, then grants every player an
+EffectRef for that key. A bad spec is `PLUGIN_DSL_*` and the content set is refused. [ASSUMED] `setupUnitKit` does
+not substitute the generic kit when a kit throws `PLUGIN_DSL_*`. The host supplies the plugin id (an author id
+cannot take another plugin's budget; omitting the author's id is allowed). Prep keys are `effect:<that id>:<local>`.
+DESIGN §32.7. A vanilla battle does not load the compiler.
 
 ## 14. Interface plugins (P4)
 
@@ -979,7 +985,6 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SKILL_SPEC` | A JSON SkillSpec is not right ({where}): {detail} | Follow the SkillSpec of docs/PLUGINS.md §10: kind and the known fields of mods; talentMods go with a JSON SkillSpec, never with kit.ref. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_EFFECT_REF` | An effect reference is not right ({where}): {detail} | effectRef names an official item or tactic record; garrison effects and buff keys must be ones the game has. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_I18N` | A translation file of the plugin is not right ({where}): {detail} | A translation file is { "version": 1, "lang": "en", "files": { … } } with lang matching its name; it replaces existing text only, never adds a field. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_UNAVAILABLE` | A DSL spec sits where this version does not read one ({where}): {detail} | An operator's DSL goes in its compact record as "kit": { "dsl": { … } }, prep effects in the files the manifest's "dsl" lists (permission "dsl"); see docs/PLUGIN-DSL.md. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_UI_SLOTS` | The "slots" of a ui plugin are not right: {detail} | "slots" is a list of hud.right, result.tab, stats.tab and room.panel, each at most once. |
 | The plugin works, with a note in the check | `PLUGIN_UI_NO_SLOT` | The ui plugin asks for no slot, so its page is never shown | List where it goes in "slots", for example ["hud.right"]. |
 | The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_SLOT` | The slot a ui plugin asked for was not granted: its manifest's "slots" does not list it, or another plugin holds it | List the slot in "slots" of plugin.json (hud.right, result.tab, stats.tab, room.panel). One plugin per slot: the first switched on gets it. |
@@ -1018,7 +1023,8 @@ another type (`englishName`, `credits`, `license`, `authors`).
 
 **Templates are modules**: a template is one file of `server/studio/templates/` (its class, its target kinds, its
 slots for a target, the overlay of a new plugin) beside one of `public/studio/js/editors/` (its previews and what its
-slots take); the data, DSL, script and interface templates of later steps are added the same way.
+slots take). The `dsl` template is a content plugin (one operator and one prep spec) and has no slot editor of its
+own. The script and interface templates of later steps are added the same way.
 
 ## 18. Later
 

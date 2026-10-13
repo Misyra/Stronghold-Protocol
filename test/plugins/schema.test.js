@@ -34,6 +34,10 @@ const MANIFESTS = [
   ['both asset permissions', C({ permissions: ['assets.override', 'assets.add'] })],
   ['a theme with its permission', C({ permissions: ['assets.override', 'theme'], theme: { '--mint-500': '#f00' } })],
   ['a content plugin', { manifest: 2, version: '0.1.0', app: '*', api: 1, class: 'content', permissions: ['data.patch', 'data.add'], data: ['data/a.json'], operators: 'ops.json', i18n: { en: 'i18n/en.json' } }],
+  ['a content plugin with a DSL operator and a prep file', { manifest: 2, version: '0.1.0', app: '*', api: 1, class: 'content', permissions: ['data.add', 'dsl'], operators: ['operators/a.json'], dsl: ['dsl/income.json'] }],
+  ['a prep-only DSL plugin', { manifest: 2, version: '0.1.0', app: '*', api: 1, class: 'content', permissions: ['dsl'], dsl: ['dsl/income.json'] }],
+  ['a dsl part without the dsl permission', { manifest: 2, version: '0.1.0', app: '*', api: 1, class: 'content', permissions: ['data.add'], operators: ['ops.json'], dsl: ['dsl/a.json'] }],
+  ['a dsl permission with no dsl part', { manifest: 2, version: '0.1.0', app: '*', api: 1, class: 'content', permissions: ['data.add', 'dsl'], operators: ['ops.json'] }],
   ['a lang plugin', { manifest: 2, version: '1.0.0', class: 'lang', lang: 'en', files: { ui: 'ui.json' } }],
   ['a ui plugin', { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'ui', scope: ['personal'], permissions: ['ui.frame'], entry: { client: 'ui/index.html' }, slots: ['hud.right', 'stats.tab'] }],
   ['a script plugin', { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'script', permissions: ['sim.code', 'mode.code'], entry: { sim: 'sim/index.js' } }],
@@ -162,7 +166,7 @@ test('the studio\'s templates and plugins/_template/cosmetic/ and ui/ are accept
       assert.deepEqual(v.validate('plugin.schema.json', manifest), [], `${tpl.id} ${tg ? tg.kind : 'no target'}`);
     }
   }
-  for (const dir of ['cosmetic', 'ui']) {
+  for (const dir of ['cosmetic', 'ui', 'content']) {
     const m = JSON.parse(fs.readFileSync(path.join(ROOT, `plugins/_template/${dir}/plugin.json`), 'utf8'));
     assert.deepEqual(v.validate('plugin.schema.json', m), [], dir);
   }

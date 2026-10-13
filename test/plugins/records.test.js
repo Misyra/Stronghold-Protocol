@@ -60,7 +60,7 @@ test('merged data validation: required fields, pairs, references, skills, kitRef
     [d => { d.chess.chess_char_1_02_a.kitRef = 'missing'; }, 'PLUGIN_KIT_REF'],
     [d => { d.items.chess_item_1_01_e_a.effectRef = 'missing'; }, 'PLUGIN_EFFECT_REF'],
     [d => { d.config.economy.refreshPrice = NaN; }, 'PLUGIN_DATA_NUMBER'],
-    [d => { d.chess.chess_char_1_02_a.dsl = {}; }, 'PLUGIN_DSL_UNAVAILABLE'],
+    [d => { d.chess.chess_char_1_02_a.dsl = {}; }, 'PLUGIN_DSL_VERSION'],
   ]) { const d = structuredClone(base); change(d); assert.ok(validateData(d, { kitExists: () => false }).some(p => p.code === want), want); }
 });
 test('SkillSpec exposes only the JSON subset, including nested attack fields and typed mods', () => {

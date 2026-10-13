@@ -560,12 +560,6 @@ export const PLUGIN_ERRORS = Object.freeze({
     zh: '插件的翻译文件不对（{where}）：{detail}', en: 'A translation file of the plugin is not right ({where}): {detail}',
     fix: { zh: '翻译文件写 { "version": 1, "lang": "en", "files": { … } }，lang 和文件名一致；只能替换已有的文字，不能新增字段。', en: 'A translation file is { "version": 1, "lang": "en", "files": { … } } with lang matching its name; it replaces existing text only, never adds a field.' },
   },
-  PLUGIN_DSL_UNAVAILABLE: {
-    level: 'problem', doc: D.dsl,
-    zh: 'DSL 规格放在了这个版本不读的位置（{where}）：{detail}', en: 'A DSL spec sits where this version does not read one ({where}): {detail}',
-    fix: { zh: '干员的 DSL 写在紧凑记录的 "kit": { "dsl": { … } } 里，备战效果写在清单 "dsl" 列出的文件里（权限 "dsl"），见 docs/PLUGIN-DSL.md。', en: 'An operator\'s DSL goes in its compact record as "kit": { "dsl": { … } }, prep effects in the files the manifest\'s "dsl" lists (permission "dsl"); see docs/PLUGIN-DSL.md.' },
-  },
-
   // ---- an interface plugin's manifest (class ui, DESIGN §32.8) -------------------------------------------------------
   PLUGIN_UI_SLOTS: {
     level: 'problem', doc: D.ui,

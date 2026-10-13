@@ -38,8 +38,7 @@ const TIMES_MAX = 8;
 // [ASSUMED] The design study caps plugin JSON nesting at 64. Each top-level value expression gets its own
 // budget of 64 nodes and 64 levels. Past that, validateDsl returns PLUGIN_DSL_LOOP / PLUGIN_DSL_VALUE instead
 // of walking until the stack overflows. The schema does not count this (a workbench that trusts only the schema
-// can still accept a deeper expression). WP-A's setupUnitKit catches a thrown kit function and substitutes the
-// generic kit; this package does not change kitOf. 需要别的 WP 配合.
+// can still accept a deeper expression). setupUnitKit does not substitute the generic kit for a PLUGIN_DSL_* throw.
 const VALUE_CAP = 64;
 const PREP_CONDITIONS = new Set(['round', 'chance', 'bondActive']);
 const RADIUS_AT = new Set(['self', 'target', 'source', 'lastSpawn']);

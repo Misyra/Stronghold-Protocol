@@ -222,7 +222,6 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SKILL_SPEC` | JSON 技能规格写得不对（{where}）：{detail} | 按 docs/PLUGINS.md §10 的 SkillSpec 写：kind 和 mods 里的已知字段；talentMods 只能和 JSON 技能规格一起用，不能和 kit.ref 一起。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_EFFECT_REF` | 效果引用不对（{where}）：{detail} | effectRef 要指向一个官方的道具或策略记录；驻守效果和 buff 的键要用游戏里已有的。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_I18N` | 插件的翻译文件不对（{where}）：{detail} | 翻译文件写 { "version": 1, "lang": "en", "files": { … } }，lang 和文件名一致；只能替换已有的文字，不能新增字段。 |
-| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_UNAVAILABLE` | DSL 规格放在了这个版本不读的位置（{where}）：{detail} | 干员的 DSL 写在紧凑记录的 "kit": { "dsl": { … } } 里，备战效果写在清单 "dsl" 列出的文件里（权限 "dsl"），见 docs/PLUGIN-DSL.md。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_UI_SLOTS` | 界面插件的 "slots" 写得不对：{detail} | "slots" 是列表，从 hud.right、result.tab、stats.tab、room.panel 里选，每个最多写一次。 |
 | 插件能用，但检查时有提示 | `PLUGIN_UI_NO_SLOT` | 界面插件没有要任何位置，页面不会显示出来 | 在 "slots" 里写上它要放的位置，例如 ["hud.right"]。 |
 | 界面插件的页面收到拒绝（ok: false、rejected 或 limit 消息） | `PLUGIN_SLOT` | 界面插件要的位置没有给它：清单的 "slots" 里没有这个位置，或者别的插件已经占了 | 在 plugin.json 的 "slots" 里写上这个位置（hud.right、result.tab、stats.tab、room.panel）。一个位置只放一个插件，先开的先得。 |

@@ -31,8 +31,9 @@
 //                                                        skeleton: the server refuses a lock made from another one
 //   node tools/plugin.mjs new [<template> <id>] [--name <名字>] [--target <官方名字|id>] [--author <名字>] [--license <x>]
 //                             [--dir <folder>]           a new plugin folder plugins/<id>/ (or <folder>/<id>/) from a template
-//                                                        (art, spine, voice, audio — server/studio/templates/): plugin.json
-//                                                        and a README, nothing else (it passes check and pack as it is);
+//                                                        (art, spine, voice, audio, dsl — server/studio/templates/): plugin.json
+//                                                        and a README; dsl also writes one operator and one prep spec
+//                                                        (it passes check and pack as it is);
 //                                                        without arguments the templates are listed
 //   node tools/plugin.mjs errors [--markdown] [--lang zh|en] [--write]
 //                                                        the error catalogue (every code, its plain words, what to do);
@@ -273,7 +274,11 @@ export async function main(argv) {
     const made = createPlugin(tpl, { id, name: values.name, target, authors: values.author ? [values.author] : [], license: values.license, credits: values.credits, lang });
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, PLUGIN_MANIFEST), manifestText(made.manifest));
-    for (const [rel, text] of Object.entries(made.files)) fs.writeFileSync(path.join(dir, rel), text);
+    for (const [rel, text] of Object.entries(made.files)) {
+      const out = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      fs.writeFileSync(out, text);
+    }
     if (target) fs.writeFileSync(path.join(dir, '.studio.json'), `${JSON.stringify({ v: 1, sections: [{ template: tpl.id, target: targetSpec(target) }] }, null, 2)}\n`);
     const shown = path.relative(process.cwd(), dir) || dir;
     console.log(`${shown}: a ${tpl.class} plugin from the template ${tpl.id}${target ? ` for ${target.name} (${target.key})` : ''}`);

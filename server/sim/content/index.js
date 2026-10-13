@@ -166,6 +166,10 @@ export function setupUnitKit(battle, unit, mode = 'full') {
         if (k) return selectSkillSpec(k, bb, raw, def);
       } catch (e) {
         battle._handlerError(`kit:${isOtherBody(def) ? def.charId : def.baseId}`, unit, e);
+        // [ASSUMED] A throw whose code is a DSL problem is a bad spec. Do not substitute the generic kit
+        // (DESIGN §32.7). Any other throw still falls back, so an ordinary kit error keeps the previous behavior.
+        // Matched as a pattern, not a quoted PLUGIN_* name: the error catalogue scans those strings.
+        if (typeof e?.code === 'string' && /^PLUGIN_DSL_[A-Z0-9_]+$/.test(e.code)) return { skill: null, talents: [] };
       }
     }
   }

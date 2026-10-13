@@ -19,6 +19,7 @@ them (with `node_modules/`, which keeps each package's own licence file).
 | [three.js](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | official 3D board — `public/vendor/three.core.js`, `three.module.js` | no (npm) | yes |
 | [zip.js](https://github.com/gildas-lormeau/zip.js) | 2.23.0 | BSD-3-Clause | validated resource ZIP import/export — `public/vendor/zip.module.js` | no (npm) | yes |
 | [ws](https://github.com/websockets/ws) | 8.22.0 | MIT | WebSocket server (`server/`) | no (npm) | yes (`node_modules/`) |
+| [maxmind](https://github.com/runk/node-maxmind), [mmdb-lib](https://github.com/runk/mmdb-lib), [tiny-lru](https://github.com/avoidwork/tiny-lru) | 5.0.7 / 3.0.3 / 13.0.0 | MIT / MIT / BSD-3-Clause | optional local country lookup for server AI quotas; licences retained in npm packages | no (npm) | yes (`node_modules/`) |
 | [Node.js](https://nodejs.org/) | v22.23.3 (pinned in `scripts/make-windows-bundle.mjs`) | MIT | the portable `node\node.exe` (**Windows portable package only** — the integration bundle in [Releases](../../releases/latest) ships no `node.exe`) | no (downloaded from nodejs.org at package time, sha256 verified) | **Windows portable package only** (`node\node.exe`, with `node\LICENSE-node.txt`) |
 | [puppeteer-core](https://github.com/puppeteer/puppeteer) | 25.12.0 | Apache-2.0 | optional browser tests (dev dependency) | no (npm) | no |
 | [Vite](https://github.com/vitejs/vite) | 6.4.4 | MIT | production client build (dev dependency); its dependency licences remain in npm packages | no (npm) | no (build tool only) |

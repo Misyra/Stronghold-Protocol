@@ -33,6 +33,7 @@ import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
 import { chatRetentionUntil } from './moderation/chatState.js';
 import { performance } from 'node:perf_hooks';
+import { botCountry } from './botPopulation.js';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -79,6 +80,7 @@ function seatDoc(seat) {
   return {
     seat: seat.seat, playerId: seat.playerId, name: seat.name, isBot: !!seat.isBot,
     ready: !!seat.ready, left: !!seat.left, connected: !!seat.connected && !seat.left,
+    ...(seat.isBot && botCountry(seat.botCountry) ? { botCountry: seat.botCountry } : {}),
     loadout: seat.loadout || null,
     ops: seat.ops || null,
     notOwned: seat.notOwned || null,
@@ -90,6 +92,7 @@ function seatDoc(seat) {
 export function roomDoc(room) {
   return {
     code: room.code,
+    createdAt: room.createdAt,
     mode: room.mode,
     difficulty: room.difficulty,
     aiPicksLast: room.aiPicksLast === true,
@@ -172,7 +175,10 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       chatLastHitAt: s.chatLastHitAt,
       chatMutedUntil: s.chatMutedUntil,
     });
-    if (session) stats.sessions++;
+    if (session) {
+      if (registry.roomExpired(session, now)) { session.roomCode = null; session.notice = 'timeout'; session.pendingResult = null; }
+      stats.sessions++;
+    }
   }
 
   const result = lobby.restoreRooms(Array.isArray(doc.rooms) ? doc.rooms : [], { now });
@@ -398,6 +404,14 @@ export class Persister {
     this.running = false;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this._cooldownTimer) { clearTimeout(this._cooldownTimer); this._cooldownTimer = null; }
+  }
+
+  /** Release the encoder without saving, including after a failed startup. */
+  async dispose() {
+    this.stop();
+    this._again = false;
+    await this.encoder.close();
+    await this._pending;
   }
 
   /** Stop and write the final document. */

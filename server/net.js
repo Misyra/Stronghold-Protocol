@@ -41,6 +41,8 @@ import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
 import { OutboundQueue } from './outboundQueue.js';
+import { ENCODED, STATE_COALESCE } from './wireHints.js';
+export { ENCODED, STATE_COALESCE } from './wireHints.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { hasSensitiveNickname } from './moderation/nickname.js';
@@ -242,6 +244,11 @@ export class SessionRegistry {
   }
 
   /** @param {Session} s @param {number} now */
+  roomExpired(s, now) {
+    return !s.connected && s.disconnectedAt != null && now - s.disconnectedAt > this.windowOf(s);
+  }
+
+  /** @param {Session} s @param {number} now */
   isExpired(s, now) {
     return !s.connected && s.disconnectedAt != null && now >= chatRetentionUntil(s, now) && now - s.disconnectedAt > this.windowOf(s);
   }
@@ -297,16 +304,6 @@ export class TokenBucket {
 // ---------------------------------------------------------------------------------------------------
 // Send helpers (never throw)
 // ---------------------------------------------------------------------------------------------------
-
-/**
- * Symbol key for a frame's pre-encoded wire form: hot paths that already hold the JSON string
- * (m.public / m.private dedup, the per-field snapshot emit) attach it to the message object so
- * `encode` reuses that string instead of stringifying the same content again. Symbol keys are
- * invisible to JSON.stringify, so attaching it never changes a re-serialization.
- */
-export const ENCODED = Symbol('sp.encoded');
-// Match-owned identity: only replaceable snapshots in the same phase/round may share it.
-export const STATE_COALESCE = Symbol('sp.stateCoalesce');
 
 /** Monotonic outbound frame counters since process start (per-socket sends; /healthz `wire`). */
 export const wireStats = { frames: 0, bytes: 0, byType: new Map() };
@@ -671,6 +668,7 @@ export class Network {
     this.connsPerKey = new Map();
     this.closed = false;
     this.diagnostics = new NetDiagnostics();
+    this.draining = false;
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
     this._fanoutImmediate = null;
@@ -871,7 +869,7 @@ export class Network {
    * @returns {null | 'shutdown' | 'full' | 'per-address'}
    */
   admission(req) {
-    if (this.closed) return 'shutdown';
+    if (this.closed || this.draining) return 'shutdown';
     if (this.conns.size >= this.opts.maxConnections) return 'full';
     const { key } = clientAddress(req, this.opts.trustProxy);
     const cap = this.opts.maxConnectionsPerAddr;
@@ -885,7 +883,7 @@ export class Network {
    * @param {import('node:http').IncomingMessage} [req]
    */
   handleConnection(ws, req) {
-    if (this.closed) { try { ws.close(CLOSE.SHUTDOWN, 'server shutdown'); } catch { /* ignore */ } return; }
+    if (this.closed || this.draining) { try { ws.close(CLOSE.SHUTDOWN, 'server shutdown'); } catch { /* ignore */ } return; }
     const conn = new Connection(ws, clientAddress(req, this.opts.trustProxy), this.now(), this.opts);
     this.conns.set(ws, conn);
     socketNetworks.set(ws, this);
@@ -910,6 +908,7 @@ export class Network {
     // A socket we are closing (replaced by another tab, hello timeout, flooding, shutdown) may still have
     // frames in flight; acting on them could e.g. mint an orphan session from a late `hello`.
     if (conn.closing || this.closed) return;
+    if (this.draining) { this.reply(conn, errorMsg(ERR.INTERNAL, peekRid(data, isBinary), 'server shutting down')); return; }
     const now = this.now();
     conn.alive = true;
     if (conn.session && conn.session.ws === conn.ws) conn.session.lastSeen = now;
@@ -1056,7 +1055,7 @@ export class Network {
     s.ws = null;
     s.connected = false;
     s.disconnectedAt = this.now();
-    if (this.closed) return;
+    if (this.closed || this.draining) return;
     try { this.handler.onDisconnect?.(s); } catch (e) { this.log.error('[net] onDisconnect crashed', e); }
   }
 
@@ -1090,11 +1089,22 @@ export class Network {
 
   /** Purge expired sessions and tell the handler. */
   sweep() {
+    // Moderation may retain an identity, but it must not extend that identity's room lease.
+    for (const session of this.registry.all()) if (session.roomCode && this.registry.roomExpired(session, this.now())) {
+      try { this.handler.onRoomExpire?.(session); } catch (error) { this.log.error('[net] onRoomExpire crashed', error); }
+    }
     let expired;
     try { expired = this.registry.sweep(this.now()); } catch (e) { this.log.error('[net] sweep crashed', e); return; }
     for (const s of expired) {
       try { this.handler.onExpire?.(s); } catch (e) { this.log.error('[net] onExpire crashed', e); }
     }
+  }
+
+  /** Stop input and expiry before the final snapshot; outbound shutdown notices still work. */
+  beginDrain() {
+    this.draining = true;
+    clearInterval(this.heartbeatTimer);
+    clearInterval(this.sweepTimer);
   }
 
   /**

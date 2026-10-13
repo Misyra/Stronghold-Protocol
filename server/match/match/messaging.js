@@ -8,7 +8,7 @@
 
 import { DELAYS } from './common.js';
 import { wireMessage } from '../../../shared/i18n.js';
-import { ENCODED, STATE_COALESCE } from '../../net.js';
+import { ENCODED, STATE_COALESCE } from '../../wireHints.js';
 
 const stateScopes = new WeakMap();
 function stateScope(match) {

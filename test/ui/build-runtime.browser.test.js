@@ -72,7 +72,7 @@ function fixture() {
   fs.writeFileSync(path.join(root, 'public/dev/build-runtime.html'), PAGE);
   fs.writeFileSync(path.join(root, 'start.mjs'), `
 import { startServer } from './server/index.js';
-const srv = await startServer({ port: Number(process.env.PORT), host: '127.0.0.1', quiet: true });
+const srv = await startServer({ port: Number(process.env.PORT), host: '127.0.0.1', quiet: true, clientBuild: false });
 process.send({ port: srv.port });
 process.on('SIGTERM', async () => { await srv.close(); process.exit(0); });
 `);
@@ -81,7 +81,8 @@ process.on('SIGTERM', async () => { await srv.close(); process.exit(0); });
 
 async function start(root, port = 0) {
   const child = fork(path.join(root, 'start.mjs'), [], {
-    cwd: root, env: { ...process.env, PORT: String(port) }, silent: true,
+    // This copied install has no test/helpers: keep the parent's relative --import out of it.
+    cwd: root, execArgv: [], env: { ...process.env, PORT: String(port) }, silent: true,
   });
   let stderr = '';
   child.stderr.on('data', (buf) => { stderr += buf; });

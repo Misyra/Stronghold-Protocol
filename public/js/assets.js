@@ -44,6 +44,7 @@
 
 import { resourceUrl, resourceCache, resourceReady } from './resourceUrl.js';
 import { loadImageElement } from './image.js';
+import { cdnSpineSource } from './cdnSpine.js';
 export { loadImageElement } from './image.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -567,32 +568,7 @@ export async function loadSpineData(entry, opts) {
   if (!PIXI || !PIXI.Assets || !PIXI.spine) throw new Error('PIXI / pixi-spine not loaded');
   await resourceReady();
   if (opts && opts.fresh) forgetPendingSpine(entry, opts.keep);
-  let source = entry.skel;
-  if (globalThis.__spAssetCdn?.manifest) {
-    const atlas = resourceUrl(str(entry.atlas) || bareAssetUrl(entry.skel).replace(/\.skel$/, '.atlas'));
-    const response = await fetch(atlas, { cache: resourceCache(atlas) });
-    if (!response.ok) throw new Error(`atlas failed (${response.status}): ${atlas}`);
-    const text = await response.text();
-    // The default loader drops page queries, and its preloaded-images path resolves
-    // before the atlas is assigned. Parse explicitly and resolve each actual page's hash.
-    const spineAtlas = await new Promise((resolve, reject) => {
-      new PIXI.spine.TextureAtlas(text, (name, done) => {
-        const page = resourceUrl(new URL(name, new URL(atlas, 'http://localhost')).href);
-        PIXI.Assets.loader.load(page).then((texture) => {
-          const base = texture?.baseTexture;
-          if (!base || base.destroyed || base.valid === false) { reject(new Error(`invalid atlas texture: ${page}`)); return; }
-          try { done(base); } catch (err) { reject(err); }
-        }, reject);
-      }, (parsed) => parsed ? resolve(parsed) : reject(new Error(`atlas texture failed: ${atlas}`)));
-    });
-    source = { src: resourceUrl(entry.skel), data: { spineAtlas } };
-    // Assets.load keeps resolver metadata after unload and ignores new metadata for a known URL.
-    // Replace the old atlas before parsing again: its page textures may already have been destroyed.
-    if (PIXI.Assets.resolver?.hasKey(source.src)) {
-      const resolved = PIXI.Assets.resolver.resolve(source.src);
-      resolved.data = { ...resolved.data, spineAtlas };
-    }
-  }
+  const source = globalThis.__spAssetCdn?.manifest ? await cdnSpineSource(entry, PIXI) : entry.skel;
   const res = await PIXI.Assets.load(source);
   const data = res && (res.spineData || res);
   if (!data || !Array.isArray(data.animations)) throw new Error(`bad spine data: ${entry.skel}`);

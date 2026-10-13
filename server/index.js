@@ -62,6 +62,8 @@ import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { listenRoomAdmin, loadRoomConfig } from './roomAdmin.js';
+import { openCountryLookup } from './geoip.js';
+import { cleanupRuntime } from './runtimeCleanup.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
 export {
@@ -86,6 +88,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
+ *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -102,6 +105,21 @@ export async function startServer(opts = {}) {
   const roomAdminToken = roomAdminTokenFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
   const lobbyOptions = lobbyOptionsFrom(opts);
+  const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
+  let countryLookup = opts.countryLookup ?? null;
+  if (countryLookup !== null && typeof countryLookup !== 'function') throw new TypeError('countryLookup must be a function');
+  if (!countryLookup && geoLiteFile) {
+    const file = path.resolve(geoLiteFile);
+    for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
+      const relative = path.relative(path.resolve(root), file);
+      if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))
+        throw new Error('SP_GEOLITE_COUNTRY_DB cannot be in a public static directory');
+    }
+    countryLookup = await openCountryLookup(file);
+  }
+  log.info(`[bots] total AI population limit: ${lobbyOptions.maxBots}`);
+  if (countryLookup) log.info(`[geoip] foreign AI population limit enabled: ${lobbyOptions.maxForeignBots}`);
+  else log.warn('[geoip] no country database configured; foreign AI limit is disabled, total AI limit remains active');
   const roomAdminStateFile = path.resolve(opts.roomAdminStateFile ?? process.env.SP_ROOM_ADMIN_STATE_FILE ?? path.join(ROOT, '.state', 'room-admin.json'));
   for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
     const relative = path.relative(path.resolve(root), roomAdminStateFile);
@@ -142,7 +160,8 @@ export async function startServer(opts = {}) {
         maxQueue: workerConfig.maxQueue, timeoutMs: workerConfig.timeoutMs })
       : new SimulationPool({ data, ...workerConfig }))
     : null) : opts.workerPool;
-  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, workerPool }, { data, log, chatLog });
+  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, countryLookup, workerPool }, { data, log, chatLog });
+  const release = (extra = {}) => cleanupRuntime({ lobby, network, chatLog, workerPool, ownsWorkerPool, log, ...extra });
   // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
@@ -180,7 +199,7 @@ export async function startServer(opts = {}) {
     for (const root of [publicDir, dataDir, sharedDir]) {
       const relative = path.relative(path.resolve(root), absoluteState);
       if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
-        if (ownsWorkerPool) await workerPool?.close();
+        await release();
         throw new Error('SP_STATE_FILE 不能位于公开静态目录，建议使用 .state/ 或私有数据目录');
       }
     }
@@ -198,10 +217,7 @@ export async function startServer(opts = {}) {
       }
     }
   } catch (err) {
-    persister?.stop();
-    lobby.shutdown('shutdown');
-    await store?.close();
-    if (ownsWorkerPool) await workerPool?.close();
+    await release({ persister, store });
     throw err;
   }
 
@@ -256,13 +272,7 @@ export async function startServer(opts = {}) {
         stateFile: roomAdminStateFile, log });
     } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }
   } catch (e) {
-    await roomAdmin?.close().catch(() => {});
-    if (server.listening) await new Promise((resolve) => server.close(resolve));
-    network.close(); // stop heartbeat/sweep timers of the half-built server
-    persister?.stop();
-    lobby.shutdown('shutdown');
-    await store?.close();
-    if (ownsWorkerPool) await workerPool?.close();
+    await release({ persister, store, server, wss, roomAdmin });
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -283,22 +293,15 @@ export async function startServer(opts = {}) {
   async function close() {
     if (closing) return closing;
     closing = (async () => {
-      if (persister) {
-        const saved = await persister.shutdown('shutdown');
-        if (!saved) log.error('[persist] final state was NOT saved; check the state directory permissions and disk space');
-      }
-      try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
-      network.close();
-      await chatLog.close();
-      if (ownsWorkerPool) await workerPool?.close();
-      await new Promise((resolve) => {
-        server.close(() => resolve());
-        server.closeIdleConnections?.();
-        setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
-      });
-      await roomAdmin?.close();
-      try { wss.close(); } catch { /* ignore */ }
-      await store?.close();
+      try {
+        network.beginDrain();
+        lobby.beginDrain();
+        await roomAdmin?.drain();
+        if (persister) {
+          const saved = await persister.shutdown('shutdown');
+          if (!saved) log.error('[persist] final state was NOT saved; check the state directory permissions and disk space');
+        }
+      } finally { await release({ persister, store, server, wss, roomAdmin }); }
     })();
     return closing;
   }

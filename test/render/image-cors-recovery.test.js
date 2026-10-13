@@ -77,6 +77,24 @@ function domImage(src) {
 }
 const drain = () => new Promise(resolve => setImmediate(resolve));
 
+test('a stalled image has a deadline and late callbacks cannot complete it', async t => {
+  environment(t, 0);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let image;
+  globalThis.Image = class {
+    constructor() { image = this; }
+    set src(value) { this.url = value; }
+  };
+  const pending = loadImageElement('/stalled.png', { timeoutMs: 50 });
+  const lateLoad = image.onload;
+  const rejected = assert.rejects(pending, { name: 'TimeoutError' });
+  t.mock.timers.tick(50);
+  await rejected;
+  assert.equal(image.url, '');
+  assert.equal(image.onload, null);
+  lateLoad();
+});
+
 test('DOM recovery retries the original element once before invoking its fallback', async t => {
   const env = environment(t, 0);
   const img = domImage('https://assets.example/item.png?v=123');

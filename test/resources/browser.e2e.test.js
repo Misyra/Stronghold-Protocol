@@ -97,7 +97,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
       log: { info() {}, warn() {}, error() {}, debug() {} },
     });
     browser = await puppeteer.launch({ browser: process.env.RESOURCE_BROWSER === 'firefox' ? 'firefox' : 'chrome',
-      executablePath: CHROME, headless: true, args: process.env.RESOURCE_BROWSER === 'firefox' ? [] : ['--no-first-run'] });
+      executablePath: CHROME, headless: true, args: process.env.RESOURCE_BROWSER === 'firefox' ? [] : ['--no-first-run', '--no-sandbox'] });
   });
 
   after(async () => {

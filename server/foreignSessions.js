@@ -6,10 +6,11 @@ export const foreignSessionKey = (value) => typeof value === 'string' && /^[a-f0
 
 /** One gameplay identity per foreign IP; the registry and Lobby retain ownership of cleanup. */
 export class ForeignSessions {
-  constructor({ registry, countryLookup = null, now = Date.now }) {
+  constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true }) {
     this.registry = registry;
     this.countryLookup = countryLookup;
     this.now = now;
+    this.isEnabled = isEnabled;
     this.byIp = new Map();
     this.initialized = false;
     this.counts = { denied: 0, reclaimed: 0, lookupMisses: 0, lookupErrors: 0 };
@@ -49,6 +50,9 @@ export class ForeignSessions {
     const address = isIP(ip) === 6 ? new URL(`http://[${ip}]/`).hostname : ip;
     plan.key = createHash('sha256').update(address).digest('hex');
     plan.country = country;
+    // Keep quota keys while disabled, so switching on can see identities created during that period.
+    // Existing same-IP token resumes remain valid; enabling never forcibly evicts legacy players.
+    if (!this.isEnabled() || current?.foreignSessionKey === plan.key) return plan;
     if (!this.initialized) {
       for (const session of this.registry.all()) {
         const key = foreignSessionKey(session.foreignSessionKey);
@@ -100,5 +104,8 @@ export class ForeignSessions {
     }
   }
 
-  stats() { return { enabled: !!this.countryLookup, maxPerIp: 1, ...this.counts }; }
+  stats() {
+    const configured = this.isEnabled();
+    return { configured, geoipAvailable: !!this.countryLookup, enabled: configured && !!this.countryLookup, maxPerIp: 1, ...this.counts };
+  }
 }

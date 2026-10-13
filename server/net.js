@@ -657,9 +657,10 @@ export class Network {
    *   now?: () => number,
    *   options?: Partial<typeof NET_DEFAULTS>,
    *   countryLookup?: ((ip: string) => string | null) | null,
+   *   foreignSessionsEnabled?: () => boolean,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null }) {
+  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null, foreignSessionsEnabled = () => true }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -672,7 +673,7 @@ export class Network {
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
-    this.foreignSessions = new ForeignSessions({ registry, countryLookup, now });
+    this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled });
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
     this._fanoutImmediate = null;

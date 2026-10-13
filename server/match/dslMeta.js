@@ -12,6 +12,9 @@
 
 import { validateDsl, formatProblems } from '../sim/content/dsl/validate.js';
 import { evalCond, resolveValue } from '../sim/content/dsl/vocab.js';
+import { hostPluginId } from '../sim/content/dsl/compile.js';
+
+const EFFECT_KEY_RE = /^effect:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_\-.:#]+$/;
 
 const HOOK = Object.freeze({
   roundStart: 'onRoundStart',
@@ -30,14 +33,44 @@ function fail(code, path, zh) {
   return err;
 }
 
+function asNum(v, d = 0) {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : d;
+}
+
+/**
+ * [ASSUMED] Prep `bondActive` reads the prep ctx, not the battle bond table (there is no unit here).
+ * Prefer `ctx.bond(id)` when it returns a record; otherwise `ctx.bonds[id]`. `active` comes from that
+ * record, or from `ctx.bondActive(id)` when the record has no `active` field. `tier` is the record's tier.
+ * Unit conditions are rejected by validateDsl; they are not a silent false.
+ */
+function prepBondActive(value, ctx, env) {
+  const id = typeof value === 'string' ? value : value && value.id;
+  if (typeof id !== 'string' || !id || !ctx) return false;
+  const tier = value && typeof value === 'object' && value.tier != null ? resolveValue(value.tier, env, null) : null;
+  let rec = null;
+  if (typeof ctx.bond === 'function') rec = ctx.bond(id);
+  if ((!rec || typeof rec !== 'object') && ctx.bonds && typeof ctx.bonds === 'object') rec = ctx.bonds[id] || null;
+  let active = false;
+  if (rec && typeof rec === 'object' && Object.prototype.hasOwnProperty.call(rec, 'active')) active = !!rec.active;
+  else if (typeof ctx.bondActive === 'function') active = !!ctx.bondActive(id);
+  if (!active) return false;
+  if (tier == null) return true;
+  return asNum(rec && rec.tier, 0) >= tier;
+}
+
 function prepCond(cond, ctx, env) {
   if (cond == null) return true;
   if (typeof cond !== 'object') return false;
   if (Object.prototype.hasOwnProperty.call(cond, 'round') && ctx.round !== cond.round) return false;
   const rest = { ...cond };
   delete rest.round;
+  if (Object.prototype.hasOwnProperty.call(rest, 'bondActive')) {
+    if (!prepBondActive(rest.bondActive, ctx, env)) return false;
+    delete rest.bondActive;
+  }
   if (!Object.keys(rest).length) return true;
-  // Battle conditions (chance last). Without a unit, a unit condition is false and does not draw rng.
+  // `chance` is last inside evalCond. A unit condition that slipped past validation is false and does not draw rng.
   const rt = { battle: { rng: ctx.rng || null }, unit: null, env, target: null, source: null, pluginId: env.pluginId };
   return evalCond(rest, rt);
 }
@@ -72,18 +105,21 @@ function runPrep(node, ctx, ev, env) {
  * Compile `spec.meta` into a MetaRegistry handler object. Throws when the spec is not valid; the message
  * contains the PLUGIN_DSL_* code. Does not register anything.
  * @param {object} spec
+ * @param {{ pluginId?: string, def?: { raw?: { pluginId?: string } } }} [opts]
  * @returns {object}
  */
-export function compileDslMeta(spec) {
+export function compileDslMeta(spec, opts = {}) {
   const checked = validateDsl(spec);
   if (!checked.ok) throw fail(checked.problems[0].code, checked.problems[0].path, formatProblems(checked.problems));
+  const host = hostPluginId(spec, opts);
+  if (!host.ok) throw fail('PLUGIN_DSL_PLUGIN_ID', 'pluginId', host.zh);
   const meta = spec && spec.meta;
   if (!meta || !Array.isArray(meta.on)) throw fail('PLUGIN_DSL_META', 'meta', '备战规格需要 meta.on');
   const env = {
     bb: {},
     chess: null,
     def: null,
-    pluginId: (spec && spec.pluginId) || 'dsl',
+    pluginId: host.pluginId,
     budget: spec.budget != null ? spec.budget : 0,
     spec,
   };
@@ -108,15 +144,25 @@ export function compileDslMeta(spec) {
 }
 
 /**
- * Validate, compile and register under `spec.meta.key` (a later register of the same key replaces this one,
- * which is MetaRegistry's own rule).
- * @param {{ register: Function }} registry
+ * Validate, compile and register. [ASSUMED] A plugin key is only `effect:<this host plugin id>:<local>`.
+ * `band:` / `global:` and any other plugin's `effect:` key are PLUGIN_DSL_META and are not registered, so a
+ * later register cannot replace an official handler. The schema accepts any `effect:<id>:` shape; this
+ * function is what checks the id against the host.
+ * @param {{ register: Function, get?: Function }} registry
  * @param {object} spec
+ * @param {{ pluginId?: string, def?: { raw?: { pluginId?: string } } }} [opts]
  */
-export function registerDslMeta(registry, spec) {
+export function registerDslMeta(registry, spec, opts = {}) {
+  const checked = validateDsl(spec);
+  if (!checked.ok) throw fail(checked.problems[0].code, checked.problems[0].path, formatProblems(checked.problems));
+  const host = hostPluginId(spec, opts);
+  if (!host.ok) throw fail('PLUGIN_DSL_PLUGIN_ID', 'pluginId', host.zh);
   const key = spec && spec.meta && spec.meta.key;
-  if (typeof key !== 'string' || !key) throw fail('PLUGIN_DSL_META', 'meta.key', '注册需要 meta.key');
-  const handler = compileDslMeta(spec);
+  const prefix = `effect:${host.pluginId}:`;
+  if (typeof key !== 'string' || !key.startsWith(prefix) || !EFFECT_KEY_RE.test(key)) {
+    throw fail('PLUGIN_DSL_META', 'meta.key', '插件键只接受 effect:<本插件 id>:');
+  }
+  const handler = compileDslMeta(spec, { ...opts, pluginId: host.pluginId });
   registry.register(key, handler);
   return handler;
 }

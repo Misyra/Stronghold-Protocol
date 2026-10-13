@@ -8,7 +8,9 @@
 import { TICK } from '../../constants.js';
 import {
   num, talentBb, traitBb, batMod, enemiesInGrid, byEnemyAttack, giveSp, freeTileAround,
+  summonTileFree, cheb,
 } from '../kits/shared/tier1.js';
+import { enemyStealthed } from '../../targeting.js';
 import { charge, trackTimer, DEFAULT_BUDGET } from './budget.js';
 
 export { TICK, DEFAULT_BUDGET };
@@ -225,10 +227,15 @@ function bondOf(rt, id) {
 
 /**
  * [ASSUMED] `enemiesInRange` is enemiesInGrid on the unit's current range (the engine has already switched a skill
- * range in before onStart when the spec sets targeting.rangeGrid). `enemiesInRadius` is foesInRadius (skill-selectable:
- * no untargetable, no unrevealed stealth). `lowestHpAlly` is lowestHpAllyInRange (injured allies only).
- * `allAllies` is alliesFor. `target` is the hook target, or the victim of a kill. `source` is the hook source,
- * the killer, or the attacker.
+ * range in before onStart when the spec sets targeting.rangeGrid). `enemiesInRadius` defaults to foesInRadius from
+ * the operator (skill-selectable: no untargetable, no unrevealed stealth), so a circle that omits `at` / `shape` /
+ * `includeStealth` stays the old hit. `at` moves the centre (`self` / `target` / `source` / `lastSpawn`); a missing
+ * `lastSpawn` selects nobody, it does not fall back to the operator. `shape: "chebyshev"` or `includeStealth: true`
+ * scans `battle.enemies` in that order and skips `!alive`, `hidden` and `untargetable`. Stealth is skipped via
+ * enemyStealthed unless `includeStealth`. Chebyshev uses `cheb` (≤ r). The other shape is euclidean on the centre.
+ * [ASSUMED] `allAllies` is alliesFor(unit, unit.ownerId): the same owner only, including on a unite field.
+ * `lowestHpAlly` is lowestHpAllyInRange (injured allies only). `target` is the hook target, or the victim of a kill.
+ * `source` is the hook source, the killer, or the attacker.
  */
 export function resolveTargets(spec, rt) {
   const unit = rt.unit;
@@ -242,10 +249,32 @@ export function resolveTargets(spec, rt) {
     const a = battle.lowestHpAllyInRange(unit);
     return a ? [a] : [];
   }
-  if (spec === 'allAllies') return battle.alliesFor(unit);
+  if (spec === 'allAllies') return battle.alliesFor(unit, unit && unit.ownerId);
   if (spec && typeof spec === 'object' && Object.prototype.hasOwnProperty.call(spec, 'enemiesInRadius')) {
     const r = resolveValue(spec.enemiesInRadius, rt.env, rt);
-    return battle.foesInRadius(unit.x, unit.y, r);
+    const at = spec.at || 'self';
+    const anchor = at === 'self' ? unit : anchorOf(at, rt);
+    if (!anchor || !finite(anchor.x) || !finite(anchor.y)) return [];
+    const chebyshev = spec.shape === 'chebyshev';
+    const stealth = spec.includeStealth === true;
+    if (!chebyshev && !stealth) return battle.foesInRadius(anchor.x, anchor.y, r);
+    const out = [];
+    const r2 = r * r + 1e-9;
+    for (const e of battle.enemies) {
+      if (!e.alive || e.hidden) continue;
+      const f = (e.s && e.s.flags) || {};
+      if (f.untargetable) continue;
+      if (!stealth && f.stealth && enemyStealthed(e)) continue;
+      if (chebyshev) {
+        if (cheb(anchor, e) > r) continue;
+      } else {
+        const dx = e.x - anchor.x;
+        const dy = e.y - anchor.y;
+        if (dx * dx + dy * dy > r2) continue;
+      }
+      out.push(e);
+    }
+    return out;
   }
   return [];
 }
@@ -290,7 +319,13 @@ function tileOf(body, rt) {
   const unit = rt.unit;
   const tile = body.tile;
   if (tile === 'around') return freeTileAround(battle, unit, (r, c) => battle.grid.canStand(r, c));
-  if (tile && typeof tile === 'object' && Number.isInteger(tile.r) && Number.isInteger(tile.c)) return [tile.r, tile.c];
+  // [ASSUMED] An absolute {r,c} must be inside the rect, not reserved, and standable (summonTileFree + canStand).
+  // A failure returns null; spawnToken then halts the rest of the list only when stop is true. The coordinate is
+  // not limited to the owner's half: a standable road on the other half of a unite field is still accepted.
+  if (tile && typeof tile === 'object' && Number.isInteger(tile.r) && Number.isInteger(tile.c)) {
+    if (!summonTileFree(battle, tile.r, tile.c) || !battle.grid.canStand(tile.r, tile.c)) return null;
+    return [tile.r, tile.c];
+  }
   return null;
 }
 
@@ -487,7 +522,10 @@ function tryFire(talent, battle, unit, env, ctx, state) {
 }
 
 /**
- * Install one talent trigger. `always` runs once at install (a permanent effect, not a poll).
+ * Install one talent trigger. [ASSUMED] `always` runs once. A unit is not alive while Battle constructs it
+ * (`_setupUnit` runs before deploy), and addBuff drops a buff on a dead unit while spawnToken would already take
+ * a tile. If the unit is not alive yet, `always` waits for that unit's first `deploy` and does not run again on
+ * a later redeploy. An install on a unit that is already alive still runs immediately.
  * [ASSUMED] `hpBelow` is an edge: it fires when hpRatio crosses below `below` and stays latched until the ratio
  * recovers. [ASSUMED] `cooldown` is seconds kept on the closure and reset when deploySeq changes.
  * [ASSUMED] `allyDeath` is another living ally of the same owner dying. `hitTaken` uses byEnemyAttack and also
@@ -503,7 +541,16 @@ export function installTrigger(talent, battle, unit, env) {
     cd: talent.cooldown != null ? resolveValue(talent.cooldown, env, null) : 0,
   };
   const fire = (ctx) => tryFire(talent, battle, unit, env, ctx || {}, state);
-  if (when === 'always') { fire({ hook: 'always' }); return; }
+  if (when === 'always') {
+    if (unit.alive) { fire({ hook: 'always' }); return; }
+    let done = false;
+    battle.on('deploy', (ctx) => {
+      if (done || !ctx || ctx.unit !== unit || !unit.alive) return;
+      done = true;
+      fire({ ...ctx, hook: 'always' });
+    }, { owner: unit });
+    return;
+  }
   if (when === 'every') {
     const sec = resolveValue(talent.seconds, env, null);
     const sched = battle.every(sec, () => fire({ hook: 'every' }), { owner: unit });

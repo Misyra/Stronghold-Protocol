@@ -21,7 +21,7 @@ function leeSpec() {
     dsl: 1,
     pluginId: 'rewrite-lmlee',
     meta: {
-      key: 'band:' + id,
+      key: 'effect:rewrite-lmlee:income',
       on: rows.map((b) => ({
         when: 'income',
         if: { round: Math.trunc(Number(b.p.round)) },
@@ -42,7 +42,7 @@ test('老鲤 income matches bandMetaHandler, including a round that writes 0', (
   const { spec, official } = leeSpec();
   const checked = validateDsl(spec);
   assert.equal(checked.ok, true, JSON.stringify(checked.problems));
-  const dsl = compileDslMeta(spec);
+  const dsl = compileDslMeta(spec, { pluginId: 'rewrite-lmlee' });
   for (const round of [1, 2, 3, 4]) {
     assert.equal(incomeOf(dsl, round, 7), incomeOf(official, round, 7), 'round ' + round);
   }
@@ -57,7 +57,7 @@ test('funds, layers and gainItem map onto the ctx helpers', () => {
     dsl: 1,
     pluginId: 'prepdemo',
     meta: {
-      key: 'effect:dsl-prepdemo',
+      key: 'effect:prepdemo:demo',
       on: [
         { when: 'roundStart', do: [{ funds: { amount: 4 } }] },
         { when: 'buy', do: [{ layers: { bond: 'lateranoShip', amount: 2 } }] },
@@ -67,8 +67,8 @@ test('funds, layers and gainItem map onto the ctx helpers', () => {
     },
   };
   const reg = new MetaRegistry();
-  const handler = registerDslMeta(reg, spec);
-  assert.equal(reg.get('effect:dsl-prepdemo'), handler);
+  const handler = registerDslMeta(reg, spec, { pluginId: 'prepdemo' });
+  assert.equal(reg.get('effect:prepdemo:demo'), handler);
   const funds = [];
   const layers = [];
   const items = [];
@@ -90,4 +90,80 @@ test('funds, layers and gainItem map onto the ctx helpers', () => {
   const ev9 = { income: 1 };
   handler.onIncome({ ...ctx, round: 9 }, ev9);
   assert.equal(ev9.income, 3);
+});
+
+test('registerDslMeta does not replace an official band or global handler', () => {
+  const reg = new MetaRegistry();
+  const official = { onIncome() { return 'official'; } };
+  reg.register('band:band_lmlee', official);
+  reg.register('global:everyone', official);
+  const spec = {
+    dsl: 1,
+    pluginId: 'mine',
+    meta: {
+      key: 'band:band_lmlee',
+      on: [{ when: 'income', if: { round: -1 }, do: [{ funds: { amount: 1, setIncome: true } }] }],
+    },
+  };
+  assert.throws(() => registerDslMeta(reg, spec, { pluginId: 'mine' }), (e) => e.code === 'PLUGIN_DSL_META');
+  assert.equal(reg.get('band:band_lmlee'), official);
+  const globalSpec = {
+    ...spec,
+    meta: { ...spec.meta, key: 'global:everyone' },
+  };
+  assert.throws(() => registerDslMeta(reg, globalSpec, { pluginId: 'mine' }), (e) => e.code === 'PLUGIN_DSL_META');
+  assert.equal(reg.get('global:everyone'), official);
+  const other = {
+    dsl: 1,
+    meta: {
+      key: 'effect:officialplug:income',
+      on: [{ when: 'income', do: [{ funds: { amount: 9 } }] }],
+    },
+  };
+  assert.throws(() => registerDslMeta(reg, other, { pluginId: 'mine' }), (e) => e.code === 'PLUGIN_DSL_META');
+  assert.equal(reg.get('effect:officialplug:income'), null);
+  assert.equal(reg.get('band:band_lmlee'), official);
+});
+
+test('prep bondActive reads the ctx, and unit conditions are rejected', () => {
+  const spec = {
+    dsl: 1,
+    pluginId: 'bondprep',
+    meta: {
+      key: 'effect:bondprep:income',
+      on: [{
+        when: 'income',
+        if: { bondActive: { id: 'laterano', tier: 1 } },
+        do: [{ funds: { amount: 9 } }],
+      }],
+    },
+  };
+  const checked = validateDsl(spec);
+  assert.equal(checked.ok, true, JSON.stringify(checked.problems));
+  const handler = compileDslMeta(spec, { pluginId: 'bondprep' });
+  const funds = [];
+  handler.onIncome({
+    round: 1,
+    bonds: { laterano: { active: true, tier: 2 } },
+    addFunds: (n) => funds.push(n),
+  }, {});
+  assert.deepEqual(funds, [9]);
+  handler.onIncome({
+    round: 1,
+    bonds: { laterano: { active: false, tier: 2 } },
+    addFunds: (n) => funds.push(n),
+  }, {});
+  assert.deepEqual(funds, [9], 'an inactive bond does not call addFunds');
+  for (const cond of ['selfHpBelow', 'enemiesInRange', 'skillActive', 'targetHas']) {
+    const value = cond === 'targetHas' ? 'stun' : (cond === 'skillActive' ? true : 1);
+    const bad = {
+      dsl: 1,
+      pluginId: 'bondprep',
+      meta: { on: [{ when: 'income', if: { [cond]: value }, do: [{ funds: { amount: 1 } }] }] },
+    };
+    const problems = validateDsl(bad);
+    assert.equal(problems.ok, false, cond);
+    assert.equal(problems.problems[0].code, 'PLUGIN_DSL_CONDITION', cond);
+    assert.ok(problems.problems.some((p) => p.zh.includes('备战条件不能用这一条')), cond + ' ' + JSON.stringify(problems.problems));
+  }
 });

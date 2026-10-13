@@ -36,8 +36,8 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), later the HUD, the result and
   the statistics (plugin matches stay out of the overview by default; a match with cosmetic plugins only is still the
   original game — §9).
-- **No third-party code** in the first plugins: art and data only. Code (`script`, `ui`, `trusted`) is a later,
-  separate decision (a declarative DSL first, then a sandbox; full trust only with the server owner's and every
+- **No third-party code** in the first plugins: art and data only. The declarative DSL (§12) is data, not code.
+  `script` and `trusted` stay a later decision (a sandbox, then full trust only with the server owner's and every
   player's explicit consent).
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
@@ -381,20 +381,21 @@ set, 2 MB copied by references per plugin and 4 MB per set, the lock's limits ab
 **Start from** `plugins/_template/cosmetic/` — references to the installation's own art only, no file. Never put files
 of the official game in a plugin.
 
-## 10. Next steps
-
-P1b data plugins (patches, compact records, kitRef / SkillSpec operators, modes, i18n), P1c per-room content sets (a
-worker per content set, the client loading and checking `/cs/<cs>/`, the unofficial marks in the HUD, the result and
-the statistics). Later, by separate decisions: themes and fonts for cosmetic plugins, a declarative DSL, sandboxed code,
-trusted code. DESIGN §32 keeps the plan and its open questions.
-
 ## 12. DSL
 
 A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
 per-battle action budget and the worked examples are [PLUGIN-DSL.md](PLUGIN-DSL.md). `compileDsl` in
 `server/sim/content/dsl/compile.js` turns a spec into a Kit; `server/match/dslMeta.js` turns the prep half into
 MetaRegistry hooks. The schema is `schemas/dsl.schema.json`. DESIGN §32.7. A vanilla battle does not load the compiler.
-Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section.
+Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section. The host supplies the plugin id
+(an author id cannot take another plugin's budget). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7 records
+the open points, including the generic-kit fallback until the data-plugin work records a compile error itself.
+
+## 18. Later
+
+The old next-steps list lives here. Data plugins are §10 (that work package), per-room content sets are §11, and the
+declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins, sandboxed code,
+trusted code. DESIGN §32 keeps the plan and its open questions.
 
 ## Tests
 

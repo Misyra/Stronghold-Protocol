@@ -35,6 +35,15 @@ const VALUE_EXTRA = new Set(['default', 'of']);
 // [ASSUMED] a declared budget is a positive integer and at most 1e7.
 const BUDGET_MAX = 1e7;
 const TIMES_MAX = 8;
+// [ASSUMED] The design study caps plugin JSON nesting at 64. Each top-level value expression gets its own
+// budget of 64 nodes and 64 levels. Past that, validateDsl returns PLUGIN_DSL_LOOP / PLUGIN_DSL_VALUE instead
+// of walking until the stack overflows. The schema does not count this (a workbench that trusts only the schema
+// can still accept a deeper expression). WP-A's setupUnitKit catches a thrown kit function and substitutes the
+// generic kit; this package does not change kitOf. 需要别的 WP 配合.
+const VALUE_CAP = 64;
+const PREP_CONDITIONS = new Set(['round', 'chance', 'bondActive']);
+const RADIUS_AT = new Set(['self', 'target', 'source', 'lastSpawn']);
+const META_KEY_RE = /^effect:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_\-.:#]+$/;
 
 function isObj(v) {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -222,7 +231,19 @@ function walkTarget(spec, path, fail) {
     return;
   }
   if (isObj(spec) && Object.prototype.hasOwnProperty.call(spec, 'enemiesInRadius')) {
+    const allowed = new Set(['enemiesInRadius', 'at', 'shape', 'includeStealth']);
+    const extra = Object.keys(spec).filter((k) => !allowed.has(k));
+    if (extra.length) fail('PLUGIN_DSL_TARGET', path, `未知目标字段 ${extra.join(', ')}`);
     walkValue(spec.enemiesInRadius, path, fail);
+    if (spec.at != null && !RADIUS_AT.has(spec.at)) {
+      fail('PLUGIN_DSL_TARGET', `${path}.at`, 'enemiesInRadius.at 只能是 self / target / source / lastSpawn');
+    }
+    if (spec.shape != null && spec.shape !== 'radius' && spec.shape !== 'chebyshev') {
+      fail('PLUGIN_DSL_TARGET', `${path}.shape`, 'enemiesInRadius.shape 只能是 radius 或 chebyshev');
+    }
+    if (spec.includeStealth != null && typeof spec.includeStealth !== 'boolean') {
+      fail('PLUGIN_DSL_TARGET', `${path}.includeStealth`, 'includeStealth 必须是布尔值');
+    }
     return;
   }
   fail('PLUGIN_DSL_TARGET', path, '目标必须是目标名或 {enemiesInRadius}');
@@ -233,7 +254,11 @@ function walkMods(mods, path, fail) {
   for (const [k, v] of Object.entries(mods)) walkValue(v, `${path}.${k}`, fail);
 }
 
-function walkValue(expr, path, fail) {
+function walkValue(expr, path, fail, depth = 1, budget = null) {
+  const b = budget || { n: 0 };
+  b.n += 1;
+  if (depth > VALUE_CAP) { fail('PLUGIN_DSL_LOOP', path, '取值嵌套超过 64 层'); return; }
+  if (b.n > VALUE_CAP) { fail('PLUGIN_DSL_VALUE', path, '取值节点超过 64 个'); return; }
   if (typeof expr === 'number') {
     if (!Number.isFinite(expr)) fail('PLUGIN_DSL_NUMBER', path, '数值必须是有限数');
     return;
@@ -244,30 +269,45 @@ function walkValue(expr, path, fail) {
   const keys = Object.keys(expr).filter((k) => !VALUE_EXTRA.has(k));
   if (!keys.length) { fail('PLUGIN_DSL_VALUE', path, '数值表达式是空的'); return; }
   for (const k of keys) {
-    if (FORBIDDEN.has(k)) { fail('PLUGIN_DSL_LOOP', `${path}.${k}`, 'DSL 不接受循环或外部代码'); continue; }
-    if (!VALUE_OPS.includes(k)) { fail('PLUGIN_DSL_VALUE', `${path}.${k}`, `未知取值运算 ${k}`); continue; }
-    if (k === 'bb' && typeof expr.bb !== 'string') fail('PLUGIN_DSL_VALUE', `${path}.bb`, 'bb 必须是黑板键名');
-    if (k === 'talent') {
-      const p = expr.talent;
-      if (!Array.isArray(p) || p.length < 2 || !Number.isInteger(p[0]) || p[0] < 0 || typeof p[1] !== 'string') {
-        fail('PLUGIN_DSL_VALUE', `${path}.talent`, 'talent 必须是 [序号, 键名]');
-      }
+    if (FORBIDDEN.has(k)) fail('PLUGIN_DSL_LOOP', `${path}.${k}`, 'DSL 不接受循环或外部代码');
+  }
+  const ops = keys.filter((k) => VALUE_OPS.includes(k));
+  const unknown = keys.filter((k) => !VALUE_OPS.includes(k) && !FORBIDDEN.has(k));
+  for (const k of unknown) fail('PLUGIN_DSL_VALUE', `${path}.${k}`, `未知取值运算 ${k}`);
+  // [ASSUMED] One value object is exactly one operation. Runtime still reads the first key; validate rejects
+  // `{ bb, mul }` so that reading is not a silent choice. Do not walk both sides.
+  if (ops.length !== 1 || unknown.length || keys.length !== 1) {
+    if (ops.length !== 1) fail('PLUGIN_DSL_VALUE', path, '取值对象恰好一个运算');
+    return;
+  }
+  const k = ops[0];
+  if (k === 'bb' && typeof expr.bb !== 'string') fail('PLUGIN_DSL_VALUE', `${path}.bb`, 'bb 必须是黑板键名');
+  if (k === 'talent') {
+    const p = expr.talent;
+    if (!Array.isArray(p) || p.length < 2 || !Number.isInteger(p[0]) || p[0] < 0 || typeof p[1] !== 'string') {
+      fail('PLUGIN_DSL_VALUE', `${path}.talent`, 'talent 必须是 [序号, 键名]');
     }
-    if (k === 'trait' && typeof expr.trait !== 'string') fail('PLUGIN_DSL_VALUE', `${path}.trait`, 'trait 必须是键名');
-    if (k === 'stat') {
-      if (!STAT_NAMES.includes(expr.stat)) fail('PLUGIN_DSL_VALUE', `${path}.stat`, `未知属性 ${String(expr.stat)}`);
-      if (expr.of != null && !['self', 'target', 'source', 'lastSpawn'].includes(expr.of)) {
-        fail('PLUGIN_DSL_VALUE', `${path}.of`, 'stat.of 只能是 self / target / source / lastSpawn');
-      }
+  }
+  if (k === 'trait' && typeof expr.trait !== 'string') fail('PLUGIN_DSL_VALUE', `${path}.trait`, 'trait 必须是键名');
+  if (k === 'stat') {
+    if (!STAT_NAMES.includes(expr.stat)) fail('PLUGIN_DSL_VALUE', `${path}.stat`, `未知属性 ${String(expr.stat)}`);
+    if (expr.of != null && !RADIUS_AT.has(expr.of)) {
+      fail('PLUGIN_DSL_VALUE', `${path}.of`, 'stat.of 只能是 self / target / source / lastSpawn');
     }
-    if (k === 'batMod') walkValue(expr.batMod, `${path}.batMod`, fail);
-    if (k === 'mul' || k === 'add' || k === 'sub' || k === 'div' || k === 'min' || k === 'max') {
-      const xs = expr[k];
-      if (!Array.isArray(xs) || !xs.length) fail('PLUGIN_DSL_VALUE', `${path}.${k}`, `${k} 必须是非空数组`);
-      else {
-        xs.forEach((x, i) => walkValue(x, `${path}.${k}[${i}]`, fail));
-        if (k === 'div') literalDiv0(xs, `${path}.div`, fail);
+  }
+  if (k === 'batMod') {
+    walkValue(expr.batMod, `${path}.batMod`, fail, depth + 1, b);
+    return;
+  }
+  if (k === 'mul' || k === 'add' || k === 'sub' || k === 'div' || k === 'min' || k === 'max') {
+    const xs = expr[k];
+    if (!Array.isArray(xs) || !xs.length) fail('PLUGIN_DSL_VALUE', `${path}.${k}`, `${k} 必须是非空数组`);
+    else {
+      for (let i = 0; i < xs.length; i++) {
+        walkValue(xs[i], `${path}.${k}[${i}]`, fail, depth + 1, b);
+        if (b.n > VALUE_CAP || depth + 1 > VALUE_CAP) return;
       }
+      if (k === 'div') literalDiv0(xs, `${path}.div`, fail);
     }
   }
 }
@@ -281,8 +321,10 @@ function literalDiv0(xs, path, fail) {
 
 function walkMeta(meta, path, fail) {
   if (!isObj(meta)) { fail('PLUGIN_DSL_META', path, 'meta 必须是对象'); return; }
-  if (meta.key != null && (typeof meta.key !== 'string' || !/^(garrison|band|bond|item|choice|effect|global):[A-Za-z0-9_\-.:#]+$/.test(meta.key))) {
-    fail('PLUGIN_DSL_META', `${path}.key`, 'meta.key 必须是 MetaRegistry 的注册键');
+  // Shape only. Whether the id segment is this plugin's host id is registerDslMeta's check: the schema cannot
+  // compare it to spec.pluginId, and validateDsl stays on the same pattern so the two agree.
+  if (meta.key != null && (typeof meta.key !== 'string' || !META_KEY_RE.test(meta.key))) {
+    fail('PLUGIN_DSL_META', `${path}.key`, '插件键只接受 effect:<插件 id>:<本地名>');
   }
   if (meta.on != null && !Array.isArray(meta.on)) { fail('PLUGIN_DSL_META', `${path}.on`, 'meta.on 必须是数组'); return; }
   (meta.on || []).forEach((e, i) => {
@@ -300,13 +342,28 @@ function walkMeta(meta, path, fail) {
 function walkPrepCond(cond, path, fail) {
   if (!isObj(cond)) { fail('PLUGIN_DSL_CONDITION', path, '备战条件必须是对象'); return; }
   for (const k of Object.keys(cond)) {
-    // [ASSUMED] prep conditions add `round` (an integer the official income / round-start handlers compare).
-    if (k !== 'round' && !CONDITIONS.includes(k)) fail('PLUGIN_DSL_CONDITION', `${path}.${k}`, `未知备战条件 ${k}`);
+    // [ASSUMED] Prep may use round, chance and bondActive. A condition that needs a unit is an error here,
+    // not a silent false (selfHpBelow / enemiesInRange / skillActive / targetHas, and anything else unknown).
+    if (!PREP_CONDITIONS.has(k)) {
+      const zh = CONDITIONS.includes(k)
+        ? `备战条件不能用这一条（${k}）`
+        : `未知备战条件 ${k}`;
+      fail('PLUGIN_DSL_CONDITION', `${path}.${k}`, zh);
+    }
   }
   if (cond.round != null && !(typeof cond.round === 'number' && Number.isInteger(cond.round))) {
     fail('PLUGIN_DSL_NUMBER', `${path}.round`, 'round 必须是整数');
   }
   if (cond.chance != null) walkValue(cond.chance, `${path}.chance`, fail);
+  if (cond.bondActive != null) {
+    const v = cond.bondActive;
+    if (typeof v === 'string') {
+      if (!v) fail('PLUGIN_DSL_CONDITION', `${path}.bondActive`, 'bondActive 需要盟约 id');
+    } else if (isObj(v)) {
+      if (v.tier != null) walkValue(v.tier, `${path}.bondActive.tier`, fail);
+      if (typeof v.id !== 'string' || !v.id) fail('PLUGIN_DSL_CONDITION', `${path}.bondActive.id`, 'bondActive 需要盟约 id');
+    } else fail('PLUGIN_DSL_CONDITION', `${path}.bondActive`, 'bondActive 需要盟约 id');
+  }
 }
 
 function walkPrepAction(node, path, fail) {

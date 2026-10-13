@@ -12,13 +12,40 @@
 import { num } from '../kits/shared/tier1.js';
 import { validateDsl, formatProblems } from './validate.js';
 import {
-  resolveValue, resolveMods, skillCallback, installTrigger, DEFAULT_BUDGET,
+  resolveValue, resolveMods, skillCallback, installTrigger, DEFAULT_BUDGET, PLUGIN_ID_RE,
 } from './vocab.js';
 
 export { DEFAULT_BUDGET };
 
-function pluginIdOf(spec, opts) {
-  return (spec && spec.pluginId) || (opts && opts.pluginId) || (opts && opts.def && opts.def.raw && opts.def.raw.pluginId) || 'dsl';
+/**
+ * The host's plugin id wins. [ASSUMED] `opts.pluginId` and `opts.def.raw.pluginId` are the trusted sources
+ * (the content set writes the second). The author's `spec.pluginId` cannot override either. If both trusted
+ * sources are set and differ, or the author id differs from the host, or no host id was given, compilation
+ * stops with PLUGIN_DSL_PLUGIN_ID. There is no shared `"dsl"` bucket: omitting the id must not put every
+ * spec on one budget slot.
+ * @param {object} spec
+ * @param {{ pluginId?: string, def?: { raw?: { pluginId?: string } } }} [opts]
+ * @returns {{ ok: true, pluginId: string } | { ok: false, zh: string }}
+ */
+export function hostPluginId(spec, opts) {
+  const optId = opts && typeof opts.pluginId === 'string' ? opts.pluginId : '';
+  const raw = opts && opts.def && opts.def.raw;
+  const defId = raw && typeof raw.pluginId === 'string' ? raw.pluginId : '';
+  if (optId && defId && optId !== defId) return { ok: false, zh: '宿主 pluginId 与内容组合写入的 pluginId 不一致' };
+  const host = optId || defId;
+  if (!host || !PLUGIN_ID_RE.test(host)) {
+    return { ok: false, zh: '编译需要宿主给出的插件 id，不能省略，也不能默认合成共用的 dsl' };
+  }
+  if (spec && spec.pluginId != null && spec.pluginId !== host) {
+    return { ok: false, zh: '规格里的 pluginId 与宿主不一致，不能用来占用别的插件的预算' };
+  }
+  return { ok: true, pluginId: host };
+}
+
+function throwHost(host) {
+  const err = new Error('PLUGIN_DSL_PLUGIN_ID pluginId: ' + host.zh);
+  err.code = 'PLUGIN_DSL_PLUGIN_ID';
+  throw err;
 }
 
 function rangeGridOf(v, env) {
@@ -116,11 +143,14 @@ export function compileDsl(spec, opts = {}) {
     err.code = checked.problems[0] && checked.problems[0].code;
     throw err;
   }
+  // Structural codes win over a missing host id, so compileDsl(badSpec, {}) still throws the shape error.
+  const host = hostPluginId(spec, opts);
+  if (!host.ok) throwHost(host);
   const env = {
     bb: opts.bb || {},
     chess: opts.chess || null,
     def: opts.def || null,
-    pluginId: pluginIdOf(spec, opts),
+    pluginId: host.pluginId,
     // [ASSUMED] default 8000, overridable by spec.budget.
     budget: spec.budget != null ? spec.budget : DEFAULT_BUDGET,
     spec,

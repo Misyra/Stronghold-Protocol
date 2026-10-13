@@ -43,6 +43,12 @@ test('health: 10000 stable reads reuse one full collection and encoding; detaile
   assert.equal(report.botPopulation.maxForeign, 50);
   assert.deepEqual(report.socketBuffers,{total:12,max:8});
   assert.equal(report.persist.backend,'file'); assert.equal(report.persist.workerMemory.heapUsed,42);
+  // the state-sync sampling hook: frames, full/delta split, baseline parses, verification mismatches
+  assert.equal(report.stateDelta.frames, 0);
+  assert.equal(report.stateDelta.deltaFrames, 0);
+  // checkpoint bookkeeping of the persistence version (a stub persister exposes none: null, never undefined)
+  assert.equal(report.persist.checkpointsSkipped, null);
+  assert.equal(report.persist.versionHoles, null);
   assert.equal(report.staticCache.gzipBytes,9); assert.equal(report.workers.size,2);
   f.counts.matches=1; f.health.persister.writes=8;
   now=999; assert.equal(read(),first);

@@ -278,8 +278,9 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     c.token = w.token;
     return c;
   };
-  const ok = async (c, msg) => { const r = await c.request(msg); assert.equal(r.t, 'ok', `${msg.t}: ${JSON.stringify(r)}`); return r; };
-  const refuse = async (c, msg, code) => { const r = await c.request(msg); assert.deepEqual([r.t, r.code], ['error', code], `${msg.t}: ${JSON.stringify(r)}`); return r; };
+  // (15 s per answer: a content set's first build and a match host's first worker take a while on a loaded machine)
+  const ok = async (c, msg) => { const r = await c.request(msg, 15000); assert.equal(r.t, 'ok', `${msg.t}: ${JSON.stringify(r)}`); return r; };
+  const refuse = async (c, msg, code) => { const r = await c.request(msg, 15000); assert.deepEqual([r.t, r.code], ['error', code], `${msg.t}: ${JSON.stringify(r)}`); return r; };
   const seatOf = (s, id) => s.seats.find((x) => x && x.playerId === id) || null;
   const room = async (host, mode = 'coop') => {
     await ok(host, { t: 'room.create', mode, difficulty: 'NORMAL' });

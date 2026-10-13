@@ -4,7 +4,8 @@
 // (shared/plugins/identity.js) — what a room with gameplay plugins plays, what every member's page downloads and checks
 // and what the room's match host worker runs (server/match/host/).
 //
-//   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16): refused
+//   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16 — the same
+//                                          plugins in the same state with the same settings are not built again): refused
 //                                          with PLUGIN_BUSY when it would be one set more than `limits.maxSets` rooms
 //                                          hold at once (a set a room already holds is free; `replacing`: the set the
 //                                          asking room holds now, freed by the change) [ASSUMED default 4]
@@ -31,6 +32,8 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 export const MAX_KEPT = 8;
 /** Concurrent content sets with gameplay plugins rooms may hold (plugins/config.json limits.maxSets). [ASSUMED] */
 export const DEFAULT_MAX_SETS = 4;
+/** Builds remembered by what they were built from (resolve). */
+const MEMO_MAX = 32;
 
 /**
  * @typedef {{ cs: string, plugins: { id: string, version: string, hash: string }[], modes: object[], data: Record<string, any>,
@@ -72,6 +75,24 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
   const sets = new Map();
   /** @type {Map<string, number>} cs16 → rooms holding it */
   const held = new Map();
+
+  /** cs16 by what a set was built from (memoKey), most recent last — only while that set is kept */
+  const memo = new Map();
+  /**
+   * What decides a build besides the server's vanilla data (fixed while it runs): each plugin's manifest and the hash of
+   * its content files (server/plugins/contentData.js: a changed file is a new hash), in order, with its settings; null
+   * when a plugin has no content snapshot (the builder decides then).
+   * @param {string[]} ids @param {Record<string, Record<string, unknown>>} settings
+   */
+  const memoKey = (ids, settings) => {
+    const parts = [];
+    for (const id of ids) {
+      const p = registry.plugin(id);
+      if (!p || !p.content || typeof p.content.hash !== 'string') return null;
+      parts.push([id, p.content.hash, p.manifest ?? null, settings[id] ?? null]);
+    }
+    try { return JSON.stringify(parts); } catch { return null; }
+  };
 
   const keep = (key, set) => {
     sets.delete(key);
@@ -125,29 +146,41 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
    * @returns {{ ok: true, set: ContentSet } | { error: string, detail: string }}
    */
   function resolve(ids, { settings = {}, replacing = null } = {}) {
-    let built;
-    try {
-      built = build({ registry, ids: ids.map((id) => (settings[id] ? { id, settings: settings[id] } : id)) });
-    } catch (e) {
-      log.error?.('[plugins] content set failed to build', e);
-      return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
-    }
-    if (!built || !isContentHash(built.cs) || (Array.isArray(built.problems) && built.problems.length)) {
-      const list = Array.isArray(built?.problems) ? built.problems : [];
-      const why = list.length ? list.slice(0, 4).map(problemText).join('; ') : 'no content set';
-      log.warn?.(`[plugins] content set of ${ids.join(', ')} refused: ${why}`);
-      // a load-order problem keeps its own code (PLUGIN_DEPENDENCY / PLUGIN_CONFLICT); any other problem of the data is
-      // a set this server cannot make
-      const code = list.find((p) => p && Object.hasOwn(ERR, p.code))?.code;
-      return { error: code || ERR.PLUGIN_BLOCKED, detail: why.slice(0, 200) };
-    }
-    const key = csUrlPart(built.cs);
-    let set = sets.get(key);
-    if (!set || set.cs !== built.cs) set = adopt(built);
+    // the same plugins, in the same state, with the same settings: the set built before (a build takes a few hundred ms
+    // of this process — every rooms: fixed room, every 「重新应用」 and every cosmetic switch beside them asks again)
+    const mk = memoKey(ids, settings);
+    let set = mk && memo.has(mk) ? sets.get(memo.get(mk)) || null : null;
     if (!set) {
-      log.error?.(`[plugins] content set ${built.cs.slice(0, 8)}: its manifest does not hash to its cs`);
-      return { error: ERR.INTERNAL, detail: 'the content set\'s manifest does not hash to its cs' };
+      let built;
+      try {
+        built = build({ registry, ids: ids.map((id) => (settings[id] ? { id, settings: settings[id] } : id)) });
+      } catch (e) {
+        log.error?.('[plugins] content set failed to build', e);
+        return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
+      }
+      if (!built || !isContentHash(built.cs) || (Array.isArray(built.problems) && built.problems.length)) {
+        const list = Array.isArray(built?.problems) ? built.problems : [];
+        const why = list.length ? list.slice(0, 4).map(problemText).join('; ') : 'no content set';
+        log.warn?.(`[plugins] content set of ${ids.join(', ')} refused: ${why}`);
+        // a load-order problem keeps its own code (PLUGIN_DEPENDENCY / PLUGIN_CONFLICT); any other problem of the data is
+        // a set this server cannot make
+        const code = list.find((p) => p && Object.hasOwn(ERR, p.code))?.code;
+        return { error: code || ERR.PLUGIN_BLOCKED, detail: why.slice(0, 200) };
+      }
+      const k = csUrlPart(built.cs);
+      set = sets.get(k) || null;
+      if (!set || set.cs !== built.cs) set = adopt(built);
+      if (!set) {
+        log.error?.(`[plugins] content set ${built.cs.slice(0, 8)}: its manifest does not hash to its cs`);
+        return { error: ERR.INTERNAL, detail: 'the content set\'s manifest does not hash to its cs' };
+      }
+      if (mk) {
+        memo.delete(mk);
+        memo.set(mk, k);
+        if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+      }
     }
+    const key = csUrlPart(set.cs);
     // the limit: one set more than the rooms hold now (a set already held, or the one the asking room gives up, is free)
     if (!held.has(key)) {
       const freed = replacing && isContentHash(replacing) && held.get(csUrlPart(replacing)) === 1 ? 1 : 0;

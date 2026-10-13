@@ -632,6 +632,7 @@ export class UnitView {
     this.lastAtk = -1; this.atkInterval = defaultInterval(ctx, info);
     this.shake = 0;
     this.screen = { x: 0, y: 0, s: 1, top: 0 };
+    this.placed = false;          // set by the first update's projection: until then `screen` is not on screen (bounds)
     this.destroyed = false;
     this.form = typeof info.form === 'string' ? info.form : null;   // the unit's model form: an enemy's mode, a 傀儡师's 替身 (setForm, FORMS)
     this._dieForm = null;         // the form it died in (die): a model built while it lies down shows that form's death
@@ -1337,6 +1338,7 @@ export class UnitView {
     const hoverTo = this.flying && (this.alive || (this.dying > DIE_FADE_TAIL && !this.down)) ? FLY_HOVER : 0;
     if (this.hover !== hoverTo) this.hover = Math.abs(hoverTo - this.hover) < 1e-3 ? hoverTo : this.hover + (hoverTo - this.hover) * Math.min(1, dt * 6);
     const p = cam.project(this.x, this.y, this.z + this.hover + this.lift, this.screen);
+    this.placed = true;
     const s = p.s;
     // fades
     if (this.fadeIn < 1) this.fadeIn = Math.min(1, this.fadeIn + dt * 4);
@@ -2143,6 +2145,7 @@ export class ItemView {
     this.alive = true; this.remove = false; this.lift = 0; this.dimmed = false;
     this.bob = Math.random() * 6;
     this.screen = { x: 0, y: 0, s: 1, top: 0 };
+    this.placed = false;
     this.shadow = new P.Sprite(ctx.shadowTex || shadowTexture());
     this.shadow.anchor.set(0.5);
     ctx.layers.shadow.addChild(this.shadow);
@@ -2169,6 +2172,7 @@ export class ItemView {
   update(dt, cam, t) {
     const lifted = this.lift > 0;
     const p = cam.project(this.x, this.y, lifted ? this.z : this.z + this.lift + 0.12 + Math.sin(t * 2 + this.bob) * 0.03, this.screen);
+    this.placed = true;
     this.root.position.set(p.x, p.y);
     this.root.zIndex = unitDepthKey(cam, this.x, this.y, this.lift);
     const size = p.s * 0.62;
@@ -2214,6 +2218,7 @@ export class DeviceView {
     this.facing = info.facing === -1 ? -1 : 1;
     this.aim = this.facing > 0 ? 0 : Math.PI; this.aimTo = this.aim; this.fire = 0;
     this.screen = { x: 0, y: 0, s: 1, top: 0 };
+    this.placed = false;
     this._headTiles = this.spec.height + 0.2;
     this.box = ctx.createBox ? ctx.createBox() : null;
     this.gfx = new P.Graphics();       // fallback body (no tile field) and the turret head
@@ -2270,6 +2275,7 @@ export class DeviceView {
     g.zIndex = zKey + 0.001;
     g.alpha = k;
     const p = cam.project(this.x, this.y, this.z + this.spec.height + 0.35, this.screen);
+    this.placed = true;
     const show = this.alive && this.hp < this.maxHp - 0.5;
     this.hud.visible = show;
     if (show) {

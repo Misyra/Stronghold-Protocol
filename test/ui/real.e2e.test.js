@@ -145,12 +145,22 @@ class Client {
   viewKind() { return this.page.evaluate(() => globalThis.__SP_VIEW__?.kind ?? null); }
   viewStats() { return this.page.evaluate(() => { try { return globalThis.__SP_VIEW__?.raw?.stats?.() ?? null; } catch { return null; } }); }
 
-  /** Client point to grab a prep piece. */
-  piecePoint(uid) {
-    return this.page.evaluate((uid) => {
+  /** Client point to grab a prep piece. Waits (up to 2.5 s) until the piece is drawn and holds still: a piece bought
+   *  this frame has no rect yet, and one still sliding to its tile would be grabbed over a neighbouring tile. */
+  async piecePoint(uid) {
+    const read = () => this.page.evaluate((uid) => {
       const r = globalThis.__SP_VIEW__?.pieceScreenRect(uid);
-      return r && r.width > 0 ? { x: r.left + r.width / 2, y: r.top + r.height * 0.72 } : null;
+      if (!r || !(r.width >= 4)) return null;
+      const x = r.left + r.width / 2, y = r.top + r.height * 0.72;
+      return x >= 0 && y >= 0 && x <= innerWidth && y <= innerHeight ? { x, y } : null;
     }, uid);
+    let last = null;
+    for (const end = Date.now() + 2500; Date.now() < end; await sleep(80)) {
+      const p = await read();
+      if (p && last && Math.abs(p.x - last.x) < 1.5 && Math.abs(p.y - last.y) < 1.5) return p;
+      last = p;
+    }
+    return last;
   }
 
   /** Client point of a board tile centre (top face). */

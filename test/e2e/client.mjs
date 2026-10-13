@@ -286,12 +286,23 @@ export class Client {
   viewKind() { return this.page.evaluate(() => globalThis.__SP_VIEW__?.kind ?? null); }
   viewStats() { return this.page.evaluate(() => { try { return globalThis.__SP_VIEW__?.raw?.stats?.() ?? null; } catch { return null; } }); }
 
-  /** Client point to grab a prep piece (`at` = fraction of the piece rect's height, from the top). */
-  piecePoint(uid, at = 0.72) {
-    return this.page.evaluate((uid, at) => {
+  /** Client point to grab a prep piece (`at` = fraction of the piece rect's height, from the top). Waits (up to 2.5 s)
+   *  until the piece is drawn and holds still: a piece bought this frame has no rect yet, and one still sliding to its
+   *  tile (0.22 s) would be grabbed over a neighbouring tile — picking is by the tile under the pointer. */
+  async piecePoint(uid, at = 0.72) {
+    const read = () => this.page.evaluate((uid, at) => {
       const r = globalThis.__SP_VIEW__?.pieceScreenRect(uid);
-      return r && r.width > 0 ? { x: r.left + r.width / 2, y: r.top + r.height * at } : null;
+      if (!r || !(r.width >= 4)) return null;
+      const x = r.left + r.width / 2, y = r.top + r.height * at;
+      return x >= 0 && y >= 0 && x <= innerWidth && y <= innerHeight ? { x, y } : null;
     }, uid, at);
+    let last = null;
+    for (const end = Date.now() + 2500; Date.now() < end; await sleep(80)) {
+      const p = await read();
+      if (p && last && Math.abs(p.x - last.x) < 1.5 && Math.abs(p.y - last.y) < 1.5) return p;
+      last = p;
+    }
+    return last;
   }
 
   /** Record the view's pieceDrop events (for diagnostics) and return + clear them. */

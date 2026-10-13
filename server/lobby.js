@@ -113,7 +113,10 @@
 //     it (the visual sets' onStale, after the registry read the folders again), the host is told once (an m.toast: apply
 //     the room's plugins again — the panel's 「重新应用」 sends the same list, which resolves to the set of the files as
 //     they are now) — during a match, once the room is back in its lobby (onMatchEnd), when it can be done; nothing
-//     changes by itself.
+//     changes by itself — ▸ but in a room the plugin studio names (DESIGN §32.9: `autoApplyPlugins`, set by
+//     server/studio/index.js — a room whose host is the plugin's author or whose host is its only player) the same choice
+//     is applied again at once, during a match too (refreshPlugins: art never changes a battle, the `cs` stays the vanilla
+//     one; nobody is un-readied), and the host is told only when that fails.
 //   * Gameplay plugins (DESIGN §32.6, P1c): room.setPlugins also takes the server's content plugins (data: numbers,
 //     records, modes). The lobby's `plugins` (server/plugins/roomSets.js) closes the list over its requirements, refuses
 //     conflicts, other classes and scopes, what the server owner's plugins/config.json does not allow and — unless it
@@ -373,6 +376,12 @@ export class Lobby {
     this.told = new Set();
     /** a held visual set whose plugins changed on disk: its rooms' hosts are told (header "The room's plugins") */
     this.offStale = typeof plugins?.onStale === 'function' ? plugins.onStale((vs, ids) => this.pluginsChanged(vs, ids)) : null;
+    /**
+     * Whether a room applies a change of its plugins on disk by itself (header "The room's plugins"): `({ code, hostId,
+     * humans, inMatch }) => boolean`, set by the plugin studio (server/studio/index.js); null — every host is told.
+     * @type {((room: { code: string, hostId: string, humans: number, inMatch: boolean }) => boolean) | null}
+     */
+    this.autoApplyPlugins = null;
   }
 
   /**
@@ -383,11 +392,43 @@ export class Lobby {
   pluginsChanged(vs, ids) {
     for (const room of this.rooms.values()) {
       if (room.disposed || room.content?.vs !== vs) continue;
+      // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins)
+      let auto;
+      try { auto = !!this.autoApplyPlugins?.({ code: room.code, hostId: room.hostId, humans: room.activeHumans().length, inMatch: !!room.match }); } catch { auto = false; }
+      if (auto && this.refreshPlugins(room)) continue;
       this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
       // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
       room.pluginsChanged = ids;
       if (!room.match) this.tellPluginsChanged(room);
     }
+  }
+
+  /**
+   * Apply a room's plugins again as they are on disk now (header "The room's plugins": the plugin studio's rooms) — the
+   * plugins its host chose (not the 「自动」 ones), resolved again (resolveContent); the room's content becomes the new set,
+   * held in its place, and every member hears it. Allowed during a match: a cosmetic set never changes a battle (the `cs`
+   * stays the vanilla one) and nobody is un-readied. Only a room of cosmetic plugins: one with gameplay plugins (DESIGN
+   * §32.6) would get another `cs` — every page loads and checks it again, the players are un-readied, a match keeps its
+   * set — so its host is told instead, as is the host of a room whose plugins would now make one. Whether it worked
+   * (false: the host is told).
+   * @param {Room} room
+   */
+  refreshPlugins(room) {
+    const before = room.content;
+    if (!before?.vs || before.vanilla === false || !this.vanilla || !this.plugins) return false;
+    const ids = before.plugins.filter((p) => !p.auto).map((p) => p.id);
+    const r = this.resolveContent(room, ids);
+    if (!('content' in r) || !r.content) { this.log.info(`[lobby] ${room.code} plugins changed on disk and no longer apply: ${'detail' in r && r.detail ? r.detail : ('error' in r ? r.error : '?')}`); return false; }
+    const next = r.content;
+    if (next.vanilla === false || !next.vs) return false;
+    room.pluginsChanged = null;
+    if (next.vs === before.vs) return true;
+    room.content = next;
+    this.holdContent(next);
+    this.releaseContent(before);
+    this.log.info(`[lobby] ${room.code} plugins applied again: ${next.plugins.map((p) => `${p.id}@${p.version}`).join(', ')}`);
+    this.broadcastState(room);
+    return true;
   }
 
   /** Tell the host of `room` that its plugins changed on disk (pluginsChanged), once. @param {Room} room */

@@ -20,7 +20,8 @@
 //   http/assetViews.js the served /data/assets.json and /data/local-assets.json: every art URL with its hash segment
 //                      (/assets/~<hash>/…, immutable when the hash matches); the committed files stay unchanged
 //   http/buildTag.js   the build tag of the served browser runtime (/healthz `build`, public/js/ui/buildGuard.js)
-//   http/routes.js     the request listener: security headers, 414 / 400 / 405, GET /healthz → JSON status, else static
+//   http/routes.js     the request listener: security headers, 414 / 400, the plugin studio (/studio/, studio/index.js —
+//                      this machine and the local network only), 405, GET /healthz → JSON status, else static
 //   http/traffic.js    the traffic counters: bytes sent per category (assets / audio / code / data) and on the
 //                      WebSocket, since the start (GET /healthz?traffic=1)
 //   http/common.js     what every answer shares: security headers, URL split, error page, JSON replies, bare 400
@@ -47,6 +48,7 @@ import { createContentSets } from './plugins/contentSets.js';
 import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
 import { createMatchHosts } from './match/host/index.js';
+import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
@@ -72,10 +74,12 @@ export {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
- *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number },
+ *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number }, studio?: boolean,
  *   matchHost?: object,
  * }} [opts]
  *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom);
+ *   studio: the plugin studio at /studio/ (default on for this machine and the local network — SP_STUDIO=local|off;
+ *   false: none);
  *   matchHost: options of the match hosts (server/match/host/index.js — watchdogMs, matchOptions …; tests)
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
@@ -83,7 +87,8 @@ export {
  *                     content: import('./plugins/identity.js').VanillaContent, visual: ReturnType<typeof createVisualSets>,
  *                     contents: ReturnType<typeof createContentSets>, hosts: ReturnType<typeof createMatchHosts>,
  *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
- *                     views: ReturnType<typeof createManifestViews> | null, close: () => Promise<void> }>}
+ *                     views: ReturnType<typeof createManifestViews> | null, studio: ReturnType<typeof createStudio> | null,
+ *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
   const { port, host } = listenAddress(opts);
@@ -118,13 +123,16 @@ export async function startServer(opts = {}) {
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
   const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents });
+  // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
+  // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
+  const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log });
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
   buildTag();
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views }, log, trustProxy: network.opts.trustProxy }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views }, log, trustProxy: network.opts.trustProxy, studio }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
 
@@ -160,6 +168,7 @@ export async function startServer(opts = {}) {
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
     assetIndex?.close();
+    studio?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -177,6 +186,7 @@ export async function startServer(opts = {}) {
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       network.close();
       assetIndex?.close();
+      studio?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();
@@ -187,7 +197,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, traffic, assetIndex, views, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, traffic, assetIndex, views, studio, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

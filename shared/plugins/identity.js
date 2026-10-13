@@ -93,7 +93,7 @@ function hashRef(v) {
  * passes at least one language hash. Vanilla `computeVanillaContent` does not, so P0 stays unchanged.
  * @param {ContentParts} parts
  */
-export function contentHashInput({ app, sim, data, plugins = [], settings = {}, i18n } = {}) {
+export function contentHashInput({ app, sim, data, plugins = [], settings = {}, i18n } = /** @type {ContentParts} */ ({})) {
   const input = { v: CONTENT_HASH_VERSION, app: String(app), sim: String(sim), data: { ...data }, plugins: [...plugins], settings: { ...settings } };
   if (i18n && typeof i18n === 'object' && !Array.isArray(i18n)) {
     const langs = {};

@@ -53,6 +53,7 @@ import {
   FILE_URL_DIGITS, LOCK_FILE, attachSpineMeta, modelHashOf, readAssetOverlay, readPluginLock, visualHashOf, writesHashOf,
 } from '../../shared/plugins/visual.js';
 import { canonicalJson } from '../../shared/plugins/identity.js';
+import { issueList, issueLine, makeIssue } from '../../shared/plugins/errors.js';
 
 /** The language folders' subdirectory (public/i18n/, data/i18n/). */
 export const LANG_DIR = 'i18n';
@@ -92,7 +93,9 @@ const noop = () => {};
  *   none); files: a lang entry's files with their URLs; visual: a loaded cosmetic plugin's overlay; ui: a loaded
  *   interface plugin's frame.
  * @typedef {Plugin} Pack an entry of the language-pack view (scanPacks)
- * @typedef {{ where: string, problems: string[] }} Skipped
+ * @typedef {import('../../shared/plugins/errors.js').PluginIssue} PluginIssue
+ * @typedef {{ where: string, problems: string[], issues?: PluginIssue[] }} Skipped
+ *   issues: the problems with their codes (shared/plugins/errors.js; the plugin folders')
  * @typedef {{ publicDir: string, dataDir: string, packsDir: string, pluginsDir?: string }} PluginDirs
  *   pluginsDir: the plugin folders (none: plugins/ is not read — the pack view of 0.2.0's callers)
  * @typedef {Map<string, StatIdentity & { sha256: string }>} HashCache
@@ -105,15 +108,45 @@ const noop = () => {};
 const isFile = (abs) => { try { return fs.statSync(abs).isFile(); } catch { return false; } };
 const readDirSorted = (dir) => { try { return fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort(); } catch { return []; } };
 
-/** A JSON file of at most MAX_JSON_BYTES, or { error }. */
+/**
+ * How far a walk of one plugin folder goes (listPluginFiles, the folders' signature): at most this many folders, this
+ * deep, this many entries read in all — a folder that is a link to a huge tree (an archive unpacked into plugins/ can
+ * bring one), or an archive of countless empty folders, never holds the server up; a plugin over them is refused
+ * (PLUGIN_FILE_SIZE) [ASSUMED: the numbers].
+ */
+export const WALK_LIMITS = Object.freeze({ dirs: 2000, depth: 12, entries: 50000 });
+
+/**
+ * The entries of a folder, sorted by name, while `budget.left` lasts (each entry read costs one; null when the folder
+ * cannot be read) — never more of a huge folder than the budget.
+ * @param {string} dir @param {{ left: number }} budget
+ * @returns {import('node:fs').Dirent[] | null}
+ */
+function readEntries(dir, budget) {
+  let handle;
+  try { handle = fs.opendirSync(dir); } catch { return null; }
+  const out = [];
+  try {
+    for (let d = handle.readSync(); d; d = handle.readSync()) {
+      if (budget.left-- <= 0) { budget.over = true; break; }
+      out.push(d);
+    }
+  } catch { /* what could be read */ } finally { try { handle.closeSync(); } catch { /* closed */ } }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * A JSON file of at most MAX_JSON_BYTES, or { error, code } — code: the catalogue's (shared/plugins/errors.js):
+ * PLUGIN_JSON for a file that is no JSON or too large, PLUGIN_UNREADABLE for one that cannot be read.
+ */
 function readJson(abs) {
   try {
     const st = fs.statSync(abs);
-    if (!st.isFile()) return { error: 'not a file' };
-    if (st.size > MAX_JSON_BYTES) return { error: `larger than ${MAX_JSON_BYTES >> 20} MB` };
+    if (!st.isFile()) return { error: 'not a file', code: 'PLUGIN_UNREADABLE' };
+    if (st.size > MAX_JSON_BYTES) return { error: `larger than ${MAX_JSON_BYTES >> 20} MB`, code: 'PLUGIN_JSON' };
     return { json: JSON.parse(fs.readFileSync(abs, 'utf8')) };
   } catch (e) {
-    return { error: e instanceof SyntaxError ? `not valid JSON (${e.message})` : String(e?.code || e?.message || e) };
+    return e instanceof SyntaxError ? { error: `not valid JSON (${e.message})`, code: 'PLUGIN_JSON' } : { error: String(e?.code || e?.message || e), code: 'PLUGIN_UNREADABLE' };
   }
 }
 
@@ -179,31 +212,57 @@ const fileUrl = (id, rel) => `${PACKS_URL}${encodeURIComponent(id)}/${rel.split(
 
 /**
  * Every file of a plugin folder, `rel` relative to it: dot files and folders left out (never served), a symbolic link
- * listed as one (not followed). Stops after the plugin file limit + 1, so a huge folder costs little.
+ * listed as one (not followed). Stops after the plugin file limit + 1, so a huge folder costs little — and at the walk
+ * limits (WALK_LIMITS: folders, depth, entries read), when the list carries `truncated` ('dirs' | 'depth' | 'entries',
+ * not enumerable; walkProblem says it in words).
  * @param {string} dir
- * @returns {{ rel: string, bytes: number, link?: boolean }[]}
+ * @param {{ maxDirs?: number, maxDepth?: number, maxEntries?: number }} [limits] tests
+ * @returns {{ rel: string, bytes: number, link?: boolean }[] & { truncated?: 'dirs' | 'depth' | 'entries' }}
  */
-export function listPluginFiles(dir) {
+export function listPluginFiles(dir, { maxDirs = WALK_LIMITS.dirs, maxDepth = WALK_LIMITS.depth, maxEntries = WALK_LIMITS.entries } = {}) {
+  /** @type {{ rel: string, bytes: number, link?: boolean }[] & { truncated?: 'dirs' | 'depth' | 'entries' }} */
   const out = [];
-  const walk = (abs, rel) => {
-    let names;
-    try { names = fs.readdirSync(abs, { withFileTypes: true }); } catch { return; }
-    names.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const budget = { left: maxEntries, over: false };
+  let dirs = 0;
+  /** @type {'dirs' | 'depth' | 'entries' | null} */
+  let truncated = null;
+  const walk = (abs, rel, depth) => {
+    const names = readEntries(abs, budget);
+    if (budget.over) truncated ||= 'entries';
+    if (!names) return;
     for (const d of names) {
-      if (out.length > PLUGIN_LIMITS.files) return;
+      if (out.length > PLUGIN_LIMITS.files || truncated) return;
       if (d.name.startsWith('.')) continue;
       const childRel = rel ? `${rel}/${d.name}` : d.name;
       const child = path.join(abs, d.name);
       if (d.isSymbolicLink()) { out.push({ rel: childRel, bytes: 0, link: true }); continue; }
-      if (d.isDirectory()) { walk(child, childRel); continue; }
+      if (d.isDirectory()) {
+        if (depth >= maxDepth) { truncated = 'depth'; return; }
+        if (++dirs > maxDirs) { truncated = 'dirs'; return; }
+        walk(child, childRel, depth + 1);
+        continue;
+      }
       if (!d.isFile()) continue;
       let bytes;
       try { bytes = fs.statSync(child).size; } catch { continue; }
       out.push({ rel: childRel, bytes });
     }
   };
-  walk(dir, '');
+  walk(dir, '', 0);
+  if (truncated) Object.defineProperty(out, 'truncated', { value: truncated, enumerable: false });
   return out;
+}
+
+/**
+ * The problem of a walk that stopped at its limits (listPluginFiles `truncated`), or null.
+ * @param {{ truncated?: string }} listed
+ * @returns {{ text: string, where: string } | null}
+ */
+export function walkProblem(listed) {
+  const t = listed?.truncated;
+  if (!t) return null;
+  const where = t === 'dirs' ? `more than ${WALK_LIMITS.dirs} folders` : t === 'depth' ? `folders deeper than ${WALK_LIMITS.depth} levels` : `more than ${WALK_LIMITS.entries} entries in its folders`;
+  return { text: `${where} (the folder is not read further)`, where };
 }
 
 /**
@@ -213,35 +272,36 @@ export function listPluginFiles(dir) {
  * @param {PluginManifest} manifest
  * @param {{ rel: string, bytes: number, link?: boolean }[]} listed the folder's files (listPluginFiles)
  * @param {{ vanilla: VanillaAssets, hashCache: HashCache }} ctx
- * @returns {{ visual: PluginVisual | null, problems: string[], warnings: string[] }}
+ * @returns {{ visual: PluginVisual | null, problems: string[], warnings: string[], issues: PluginIssue[] }}
  */
 function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
-  const problems = [];
-  const warnings = [];
-  if (manifest.parts.theme) warnings.push('"theme" is not applied by this version (it applies the art of "assets")');
+  const list = issueList();
+  const { problems, warnings, issues } = list;
+  const out = (visual) => ({ visual, problems, warnings, issues });
+  if (manifest.parts.theme) list.warning('PLUGIN_THEME_UNUSED', '"theme" is not applied by this version (it applies the art of "assets")', { at: ['theme'] });
   const part = manifest.parts.assets;
   let assets = {};
   let assetsFile = null;
   if (part?.inline) assets = part.inline;
   else if (part) {
     assetsFile = part.files[0];
-    if (part.files.length > 1) problems.push('"assets" names more than one file (one overlay per plugin)');
+    if (part.files.length > 1) list.problem('PLUGIN_PART_SHAPE', '"assets" names more than one file (one overlay per plugin)', { at: ['assets'] });
     const r = readJson(path.join(dir, ...assetsFile.split('/')));
-    if (r.error) problems.push(`${assetsFile}: ${r.error}`);
-    else { const bad = checkJsonLimits(r.json); if (bad) problems.push(`${assetsFile}: ${bad}`); else assets = r.json; }
+    if (r.error) list.problem(r.code, `${assetsFile}: ${r.error}`, { file: assetsFile, detail: r.error });
+    else { const bad = checkJsonLimits(r.json); if (bad) list.problem('PLUGIN_JSON_LIMIT', `${assetsFile}: ${bad}`, { file: assetsFile }); else assets = r.json; }
   }
   const fileSet = new Set(listed.filter((f) => !f.link).map((f) => f.rel));
   let lock = null;
   if (fileSet.has(LOCK_FILE)) {
     const r = readJson(path.join(dir, LOCK_FILE));
     const bad = r.error ? null : checkJsonLimits(r.json);
-    if (r.error || bad) problems.push(`${LOCK_FILE}: ${r.error || bad}`);
-    else { const l = readPluginLock(r.json); problems.push(...l.problems); lock = l.lock; }
+    if (r.error) list.problem(r.code === 'PLUGIN_JSON' ? 'PLUGIN_LOCK' : r.code, `${LOCK_FILE}: ${r.error}`, { file: LOCK_FILE, detail: r.error });
+    else if (bad) list.problem('PLUGIN_LOCK', `${LOCK_FILE}: ${bad}`, { file: LOCK_FILE });
+    else { const l = readPluginLock(r.json); list.take(l); lock = l.lock; }
   }
   const ov = readAssetOverlay(assets, { vanilla: vanilla.manifest, permissions: manifest.permissions, has: (rel) => fileSet.has(rel) });
-  problems.push(...ov.problems);
-  warnings.push(...ov.warnings);
-  if (problems.length) return { visual: null, problems, warnings };
+  list.take(ov);
+  if (problems.length) return out(null);
   // the files that shape the overlay (shared/plugins/visual.js: the `files` of its part of a vs)
   const shaping = [...new Set([PLUGIN_MANIFEST, ...(lock ? [LOCK_FILE] : []), ...(assetsFile ? [assetsFile] : []), ...ov.files])];
   /** @type {Record<string, StatIdentity & { sha256: string }>} */
@@ -249,14 +309,14 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   for (const rel of shaping) {
     const abs = path.join(dir, ...rel.split('/'));
     const h = inside(dir, abs) ? hashFile(abs, hashCache) : null;
-    if (!h) problems.push(`${rel}: cannot be read inside the plugin folder`);
+    if (!h) list.problem('PLUGIN_FILE_OUTSIDE', `${rel}: cannot be read inside the plugin folder`, { file: rel });
     else hashed[rel] = h;
   }
-  if (problems.length) return { visual: null, problems, warnings };
+  if (problems.length) return out(null);
   const sha = (rel) => hashed[rel]?.sha256 ?? null;
   const meta = attachSpineMeta(ov.ops, lock, sha);
-  problems.push(...meta.problems);
-  if (problems.length) return { visual: null, problems, warnings };
+  list.take(meta);
+  if (problems.length) return out(null);
   /** @type {Map<string, ServedFile>} */
   const served = new Map();
   for (const rel of ov.files) {
@@ -265,10 +325,10 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
     // the native realpath — the very function a request compares with (server/http/static.js fsp.realpath): the JS one
     // keeps the typed spelling of the path (macOS / Windows file systems ignore case), the native one the disk's
     let real;
-    try { real = fs.realpathSync.native(abs); } catch { problems.push(`${rel}: cannot be read inside the plugin folder`); continue; }
+    try { real = fs.realpathSync.native(abs); } catch { list.problem('PLUGIN_FILE_OUTSIDE', `${rel}: cannot be read inside the plugin folder`, { file: rel }); continue; }
     served.set(rel, { abs, real, sha256: h.sha256, bytes: h.size, size: h.size, mtimeMs: h.mtimeMs, ino: h.ino, ctimeMs: h.ctimeMs, urlHashes: new Set([h.sha256.slice(0, FILE_URL_DIGITS)]) });
   }
-  if (problems.length) return { visual: null, problems, warnings };
+  if (problems.length) return out(null);
   for (const model of ov.models) {
     const m = modelHashOf(model.map(sha)).slice(0, FILE_URL_DIGITS);
     for (const rel of model) served.get(rel)?.urlHashes.add(m);
@@ -280,15 +340,11 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
     writes: writesHashOf(meta.ops),
   };
   const bytes = [...served.values()].reduce((n, f) => n + f.bytes, 0);
-  return {
-    visual: {
-      ops: meta.ops, served, composition, bytes, dir, copyBytes: ov.copyBytes,
-      vs: vanilla.sha256 ? visualHashOf({ assets: vanilla.sha256, overlays: [composition] }) : null,
-      hash: createHash('sha256').update(canonicalJson(composition)).digest('hex').slice(0, 16),
-    },
-    problems,
-    warnings,
-  };
+  return out({
+    ops: meta.ops, served, composition, bytes, dir, copyBytes: ov.copyBytes,
+    vs: vanilla.sha256 ? visualHashOf({ assets: vanilla.sha256, overlays: [composition] }) : null,
+    hash: createHash('sha256').update(canonicalJson(composition)).digest('hex').slice(0, 16),
+  });
 }
 
 const FRAME_EXT = new Set(['.html', '.js', '.css', '.png']);
@@ -367,31 +423,39 @@ function readUiFrame(dir, manifest, listed, { vanilla, hashCache }) {
  *   vanilla: the installation's art manifest, or a function that reads it (called for a cosmetic or ui plugin only;
  *   default: none — a cosmetic plugin's references are not checked and neither has a `vs`); hashCache: kept file hashes
  *   (default: a new one)
- * @returns {{ plugin: Plugin | null, problems: string[], warnings: string[] }}
+ * @returns {{ plugin: Plugin | null, problems: string[], warnings: string[], issues: PluginIssue[] }}
+ *   issues: the problems and warnings with their codes (shared/plugins/errors.js)
  */
 export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, where, vanilla = { manifest: null, sha256: null }, hashCache = new Map() } = {}) {
   const id = path.basename(dir);
   const at = where ?? `plugins/${id}/`;
+  const list = issueList();
+  const { problems, warnings, issues } = list;
+  const out = (plugin) => ({ plugin, problems, warnings, issues });
   const man = path.join(dir, PLUGIN_MANIFEST);
   if (!isFile(man)) {
     const hint = isFile(path.join(dir, PACK_MANIFEST)) ? ` (${PACK_MANIFEST} is the manifest 1 of a pack folder in packs/; a plugin has ${PLUGIN_MANIFEST}, "manifest": 2)` : '';
-    return { plugin: null, problems: [`no ${PLUGIN_MANIFEST}${hint}`], warnings: [] };
+    list.problem('PLUGIN_NO_MANIFEST', `no ${PLUGIN_MANIFEST}${hint}`, { file: PLUGIN_MANIFEST });
+    return out(null);
   }
   const r = readJson(man);
-  if (r.error) return { plugin: null, problems: [`${PLUGIN_MANIFEST}: ${r.error}`], warnings: [] };
-  const { manifest, problems, warnings, draft } = readPluginManifest(r.json, { id, app, api });
+  if (r.error) { list.problem(r.code, `${PLUGIN_MANIFEST}: ${r.error}`, { file: PLUGIN_MANIFEST, detail: r.error }); return out(null); }
+  const read0 = readPluginManifest(r.json, { id, app, api });
+  list.take(read0);
+  const { manifest, draft } = read0;
   // the files are checked against what could be read even when the manifest has problems: one pass reports all
   const read = manifest || draft;
-  if (!read) return { plugin: null, problems, warnings };
+  if (!read) return out(null);
   const files = listPluginFiles(dir);
   const check = checkPluginFiles(read, files);
-  problems.push(...check.problems);
-  warnings.push(...check.warnings);
+  list.take(check);
+  const walked = walkProblem(files);
+  if (walked) list.problem('PLUGIN_FILE_SIZE', walked.text, { where: walked.where });
   for (const d of declaredPaths(read)) {
     const abs = path.join(dir, ...d.rel.split('/'));
-    if (isFile(abs) && !inside(dir, abs)) problems.push(`"${d.at}": ${d.rel} leads out of the plugin folder`);
+    if (isFile(abs) && !inside(dir, abs)) list.problem('PLUGIN_FILE_OUTSIDE', `"${d.at}": ${d.rel} leads out of the plugin folder`, { at: d.at.split('.'), file: d.rel });
   }
-  if (!manifest || problems.length) return { plugin: null, problems, warnings };
+  if (!manifest || problems.length) return out(null);
   const status = classStatus(manifest.class);
   /** @type {Record<string, PackFile>} */
   const served = {};
@@ -405,30 +469,35 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
     const art = typeof vanilla === 'function' ? vanilla() : vanilla;
     if (manifest.class === 'ui') {
       const u = readUiFrame(dir, manifest, files, { vanilla: art, hashCache });
-      warnings.push(...u.warnings);
-      if (!u.ui) return { plugin: null, problems: u.problems, warnings };
+      list.take(u);
+      if (!u.ui) return out(null);
       plugin.ui = u.ui;
     } else {
       // a cosmetic plugin's art, or a content plugin's own (its operators' art: a visual snapshot like a cosmetic one's)
       const v = readVisual(dir, manifest, files, { vanilla: art, hashCache });
-      warnings.push(...v.warnings);
-      if (!v.visual) return { plugin: null, problems: v.problems, warnings };
+      list.take(v);
+      if (!v.visual) return out(null);
       plugin.visual = v.visual;
     }
   }
   if (manifest.class === 'content' && status === 'loaded') {
     const c = readContentData(dir, manifest);
-    if (!c.content) return { plugin: null, problems: c.problems.map(p => `${p.code} ${p.path}: ${p.message}`), warnings };
+    if (!c.content) {
+      // (the data checks' codes — PLUGIN_PATCH_* / PLUGIN_RECORD_* / PLUGIN_DATA_* … — are in the catalogue; the line as before)
+      for (const p of c.problems) list.problem(p.code, `${p.code} ${p.path}: ${p.message}`, { where: p.path, detail: p.message });
+      return out(null);
+    }
     plugin.content = c.content;
   }
   if (manifest.class === 'lang') {
     const ui = readJson(served.ui.abs);
     if (ui.error || !ui.json || typeof ui.json !== 'object' || Array.isArray(ui.json)) {
-      return { plugin: null, problems: [`files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`], warnings };
+      list.problem(ui.code || 'PLUGIN_LANG_FILES', `files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`, { at: ['files', 'ui'], file: served.ui.rel, detail: ui.error || 'not a JSON object' });
+      return out(null);
     }
     plugin.strings = countStrings(ui.json);
   }
-  return { plugin, problems, warnings };
+  return out(plugin);
 }
 
 /**
@@ -438,8 +507,9 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
  *   artCache?: Map<string, any> }} [opts]
  *   hashCache: file hashes kept from earlier scans (a registry's); vanilla: the installation's art manifest (default: read
  *   from dataDir — only when a cosmetic or ui plugin is found, through `artCache`)
- * @returns {{ plugins: Plugin[], skipped: Skipped[], warnings: { where: string, warning: string }[], vanilla: VanillaAssets | null }}
- *   vanilla: the art manifest read for this scan (null when no cosmetic or ui plugin needed it)
+ * @returns {{ plugins: Plugin[], skipped: Skipped[], warnings: { where: string, warning: string, issue?: PluginIssue }[], vanilla: VanillaAssets | null }}
+ *   vanilla: the art manifest read for this scan (null when no cosmetic or ui plugin needed it); a warning's `issue`: it with
+ *   its code (shared/plugins/errors.js)
  */
 export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app = APP_VERSION, api = PLUGIN_API, hashCache = new Map(), vanilla = null, artCache = new Map() } = {}) {
   let art = vanilla;
@@ -449,10 +519,13 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
   /** @type {Skipped[]} */
   const skipped = [];
   const warnings = [];
-  const warn = (where, list) => { for (const w of list) warnings.push({ where, warning: w }); };
+  /** The warnings of a check with their codes. @param {string} where @param {PluginIssue[]} list */
+  const warnIssues = (where, list) => { for (const i of list) if (i.level === 'warning') warnings.push({ where, warning: i.text, issue: i }); };
+  /** A skipped entry with one coded problem. */
+  const skip = (where, code, text, extra) => skipped.push({ where, problems: [text], issues: [makeIssue('problem', code, text, extra)] });
   /** Read one entry; an error while reading it skips that entry with the error as its problem (see the header). */
   const guard = (where, read) => {
-    try { read(); } catch (e) { skipped.push({ where, problems: [`could not be read: ${String(e?.message || e).slice(0, 200)}`] }); }
+    try { read(); } catch (e) { const why = String(e?.message || e).slice(0, 200); skip(where, 'PLUGIN_UNREADABLE', `could not be read: ${why}`, { detail: why }); }
   };
 
   // single-file language packs: public/i18n/<code>.json
@@ -466,15 +539,16 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
   /** One single-file language pack. @param {string} name @param {string} where */
   function readLangFile(name, where) {
     const code = name.slice(0, -5);
-    if (!isLangCode(code)) { skipped.push({ where, problems: [`"${code}" is not a language code in its usual case (en, ja, zh-TW, pt-BR …)`] }); return; }
-    if (code === SOURCE_LANG) { skipped.push({ where, problems: ['"zh" is the source language (the msgids), never a pack'] }); return; }
+    if (!isLangCode(code)) { skip(where, 'PLUGIN_LANG', `"${code}" is not a language code in its usual case (en, ja, zh-TW, pt-BR …)`, { where: code }); return; }
+    if (code === SOURCE_LANG) { skip(where, 'PLUGIN_LANG', '"zh" is the source language (the msgids), never a pack', { where: code }); return; }
     const abs = path.join(uiDir, name);
     const r = readJson(abs);
-    if (r.error) { skipped.push({ where, problems: [r.error] }); return; }
-    if (!r.json || typeof r.json !== 'object' || Array.isArray(r.json)) { skipped.push({ where, problems: ['not a JSON object of msgid → translation'] }); return; }
-    const { manifest, problems, warnings: w } = normalizeManifest(r.json._meta, { id: code, type: 'lang', lang: code, app });
-    warn(where, w);
-    if (!manifest) { skipped.push({ where, problems }); return; }
+    if (r.error) { skip(where, r.code, r.error, { file: name, detail: r.error }); return; }
+    if (!r.json || typeof r.json !== 'object' || Array.isArray(r.json)) { skip(where, 'PLUGIN_JSON', 'not a JSON object of msgid → translation', { file: name }); return; }
+    const res = normalizeManifest(r.json._meta, { id: code, type: 'lang', lang: code, app });
+    warnIssues(where, res.issues);
+    if (!res.manifest) { skipped.push({ where, problems: res.problems, issues: res.issues.filter((i) => i.level === 'problem') }); return; }
+    const manifest = res.manifest;
     /** @type {Record<string, PackFile>} */
     const files = { ui: { rel: name, abs, url: `/${LANG_DIR}/${name}` } };
     const dataAbs = path.join(dataDir, LANG_DIR, name);
@@ -497,35 +571,36 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
     const man = path.join(dir, PACK_MANIFEST);
     if (!isFile(man)) {
       const hint = isFile(path.join(dir, PLUGIN_MANIFEST)) ? ` (${PLUGIN_MANIFEST} belongs in plugins/${id}/)` : '';
-      skipped.push({ where, problems: [`no ${PACK_MANIFEST}${hint}`] });
+      skip(where, 'PLUGIN_PACK', `no ${PACK_MANIFEST}${hint}`, { file: PACK_MANIFEST });
       return;
     }
     const r = readJson(man);
-    if (r.error) { skipped.push({ where, problems: [`${PACK_MANIFEST}: ${r.error}`] }); return; }
-    const { manifest, problems, warnings: w } = normalizeManifest(r.json, { id, folder: true, app });
-    warn(where, w);
-    if (!manifest) { skipped.push({ where, problems }); return; }
+    if (r.error) { skip(where, r.code, `${PACK_MANIFEST}: ${r.error}`, { file: PACK_MANIFEST, detail: r.error }); return; }
+    const res = normalizeManifest(r.json, { id, folder: true, app });
+    warnIssues(where, res.issues);
+    if (!res.manifest) { skipped.push({ where, problems: res.problems, issues: res.issues.filter((i) => i.level === 'problem') }); return; }
+    const manifest = res.manifest;
     const kind = PACK_TYPES[manifest.type];
     if (kind.status !== 'supported') {
-      skipped.push({ where, problems: [`type "${manifest.type}" is planned (${kind.summary}), not loaded by this version — its successor is a ${kind.class} plugin (plugins/<id>/${PLUGIN_MANIFEST}, docs/PLUGINS.md)`] });
+      skip(where, 'PLUGIN_PACK', `type "${manifest.type}" is planned (${kind.summary}), not loaded by this version — its successor is a ${kind.class} plugin (plugins/<id>/${PLUGIN_MANIFEST}, docs/PLUGINS.md)`, { at: ['type'] });
       return;
     }
     /** @type {Record<string, PackFile>} */
     const files = {};
-    const missing = [];
+    const missing = issueList();
     for (const [role, rel] of Object.entries(manifest.files)) {
       const abs = path.join(dir, ...rel.split('/'));
-      if (!isFile(abs)) missing.push(`files.${role}: ${rel} is missing`);
-      else if (!inside(dir, abs)) missing.push(`files.${role}: ${rel} leads out of the pack folder`);
+      if (!isFile(abs)) missing.problem('PLUGIN_FILE_MISSING', `files.${role}: ${rel} is missing`, { at: ['files', role], file: rel });
+      else if (!inside(dir, abs)) missing.problem('PLUGIN_FILE_OUTSIDE', `files.${role}: ${rel} leads out of the pack folder`, { at: ['files', role], file: rel });
       else files[role] = { rel, abs, url: fileUrl(id, rel) };
     }
-    if (missing.length) { skipped.push({ where, problems: missing }); return; }
+    if (missing.problems.length) { skipped.push({ where, problems: missing.problems, issues: missing.issues }); return; }
     /** @type {Plugin} */
     const pack = { id, type: manifest.type, class: manifest.class, status: 'loaded', source: 'packs', layout: 'folder', where, supported: true, manifest, files };
     if (manifest.type === 'lang') {
       const ui = readJson(files.ui.abs);
       if (ui.error || !ui.json || typeof ui.json !== 'object' || Array.isArray(ui.json)) {
-        skipped.push({ where, problems: [`files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`] });
+        skip(where, ui.code || 'PLUGIN_LANG_FILES', `files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`, { at: ['files', 'ui'], file: files.ui.rel, detail: ui.error || 'not a JSON object' });
         return;
       }
       pack.strings = countStrings(ui.json);
@@ -544,8 +619,8 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
       const where = `plugins/${id}/`;
       guard(where, () => {
         const r = readPluginFolder(dir, { app, api, where, vanilla: getArt, hashCache });
-        warn(where, r.warnings);
-        if (!r.plugin) skipped.push({ where, problems: r.problems });
+        warnIssues(where, r.issues);
+        if (!r.plugin) skipped.push({ where, problems: r.problems, issues: r.issues.filter((i) => i.level === 'problem') });
         else found.push(r.plugin);
       });
     }
@@ -558,9 +633,9 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
   const langs = new Map();
   for (const p of found) {
     const idKey = p.id.toLowerCase();
-    if (ids.has(idKey)) { skipped.push({ where: p.where, problems: [`the id "${p.id}" is taken by ${ids.get(idKey)}`] }); continue; }
+    if (ids.has(idKey)) { skip(p.where, 'PLUGIN_DUPLICATE', `the id "${p.id}" is taken by ${ids.get(idKey)}`, { id: p.id, where: `${p.id} (${ids.get(idKey)})` }); continue; }
     if (p.class === 'lang' && langs.has(p.manifest.lang)) {
-      skipped.push({ where: p.where, problems: [`the language ${p.manifest.lang} is already provided by ${langs.get(p.manifest.lang)}`] });
+      skip(p.where, 'PLUGIN_DUPLICATE', `the language ${p.manifest.lang} is already provided by ${langs.get(p.manifest.lang)}`, { where: `${p.manifest.lang} (${langs.get(p.manifest.lang)})` });
       continue;
     }
     ids.set(idKey, p.where);
@@ -572,8 +647,9 @@ export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app 
   for (const p of plugins) {
     for (const [dep, range] of Object.entries(p.manifest.requires)) {
       const d = byId.get(dep);
-      if (!d) warn(p.where, [`requires "${dep}" ${range}, which is not installed`]);
-      else if (!appVersionMatches(range, d.manifest.version)) warn(p.where, [`requires "${dep}" ${range}; the installed one is ${d.manifest.version || 'unversioned'}`]);
+      const text = !d ? `requires "${dep}" ${range}, which is not installed`
+        : !appVersionMatches(range, d.manifest.version) ? `requires "${dep}" ${range}; the installed one is ${d.manifest.version || 'unversioned'}` : null;
+      if (text) warnings.push({ where: p.where, warning: text, issue: makeIssue('warning', 'PLUGIN_REQUIRES_MISSING', text, { at: ['requires', dep], dep, range }) });
     }
   }
   return { plugins, skipped, warnings, vanilla: art };
@@ -620,13 +696,16 @@ export function pluginIndexOf(plugins, { app = APP_VERSION, vanilla = null } = {
  */
 function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   const parts = [];
-  const add = (dir, depth, tag, namesOnly = false, identity = false) => {
-    for (const n of readDirSorted(dir)) {
+  /** @param {{ left: number, over?: boolean }} [budget] a plugin folder's: its walk reads at most WALK_LIMITS.entries */
+  const add = (dir, depth, tag, namesOnly = false, identity = false, budget = undefined) => {
+    const names = budget ? (readEntries(dir, budget) || []).map((d) => d.name).filter((n) => !n.startsWith('.')) : readDirSorted(dir);
+    if (budget?.over) { parts.push(`${tag}…`); return; }
+    for (const n of names) {
       const abs = path.join(dir, n);
       let st;
       try { st = fs.statSync(abs); } catch { continue; }
       if (st.isDirectory()) {
-        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`, namesOnly, identity); }
+        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`, namesOnly, identity, budget); }
         continue;
       }
       parts.push(namesOnly ? `${tag}${n}` : identity ? `${tag}${n}:${st.size}:${st.mtimeMs}:${st.ino}:${st.ctimeMs}` : `${tag}${n}:${st.size}:${Math.floor(st.mtimeMs)}`);
@@ -638,7 +717,15 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   // a cosmetic plugin's art sits deeper (spine/<model>/front/…): six levels below plugins/; the art manifest its
   // references name counts too (a setup run that rewrote it while the server runs)
   if (pluginsDir) {
-    add(pluginsDir, 6, 'x:', false, true);
+    // each plugin folder (a link the owner made too) read for at most WALK_LIMITS.entries entries
+    for (const n of readDirSorted(pluginsDir)) {
+      const abs = path.join(pluginsDir, n);
+      let st;
+      try { st = fs.statSync(abs); } catch { continue; }
+      if (!st.isDirectory()) { parts.push(`x:${n}:${st.size}:${st.mtimeMs}:${st.ino}:${st.ctimeMs}`); continue; }
+      parts.push(`x:${n}/`);
+      add(abs, 5, `x:${n}/`, false, true, { left: WALK_LIMITS.entries });
+    }
     try { const st = fs.statSync(path.join(dataDir, 'assets.json')); parts.push(`a:${st.size}:${Math.floor(st.mtimeMs)}`); } catch { /* none */ }
   }
   return parts.join('\n');
@@ -682,7 +769,11 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     if (first || packs.length) tell((m) => log.info(m), line);
     const plugins = scan.plugins.filter((p) => p.source === 'plugins');
     if (plugins.length) tell((m) => log.info(m), `[plugins] ${plugins.map((p) => `${p.id} ${p.manifest.version} (${p.class}, ${p.status})`).join(', ')}`);
-    for (const k of scan.skipped) tell((m) => log.warn(m), `${tag(k.where)} ${k.where} skipped: ${k.problems.join('; ')}`);
+    // the plain words of the first coded problem (shared/plugins/errors.js) after the technical lines
+    for (const k of scan.skipped) {
+      const first = k.issues?.[0];
+      tell((m) => log.warn(m), `${tag(k.where)} ${k.where} skipped: ${k.problems.join('; ')}${first ? ` — ${issueLine(first, 'zh')}` : ''}`);
+    }
     for (const w of scan.warnings) tell((m) => log.warn(m), `${tag(w.where)} ${w.where}: ${w.warning}`);
     if (!first) for (const fn of [...scanListeners]) { try { fn(); } catch (e) { log.warn?.(`[plugins] a scan listener failed: ${e?.message || e}`); } }
     return state;

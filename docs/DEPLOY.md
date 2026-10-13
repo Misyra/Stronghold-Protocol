@@ -386,7 +386,7 @@ npm run package -- --update --from <旧版本的完整包>[,<…>] --out <目录
 
 `SP_PLUGIN_SCRIPTS=sandbox` 开启 script 类的 SES 沙箱执行，默认关闭；trusted 类遵循独立的 P3a 门槛，永远
 不进入此沙箱。此开关允许公网部署，要求有效 lock 和全部文件字节一致，但不要求 trusted pin，也不要求逐人同意
-[ASSUMED，待维护者确认]。房间标「脚本（沙箱）」；同一 SDK、描述符与预算已接通，不降级执行。所有玩法插件的浏览器战斗都在专用 Worker 中，卡死看门狗默认 2 秒。
+（维护者 2026-10-14 确认）。房间标「脚本（沙箱）」；同一 SDK、描述符与预算已接通，不降级执行。所有玩法插件的浏览器战斗都在专用 Worker 中，卡死看门狗默认 2 秒。
 脚本服务器宿主强制子进程，忽略 `SP_MATCH_HOST=worker`；Node 22 `--permission` 只开放安装目录读取，没有写文件、
 起子进程、起线程或原生扩展权限，通过 JSON IPC 收取内容，保留现有内存上限和心跳看门狗。
 
@@ -403,8 +403,8 @@ Worker 响应单独允许 unsafe-eval 供 SES evaluate 使用，并设 `connect-
 受信任页面脚本从同源 `/cs/<cs16>/scripts/<id>/<entry>` 下发，先校验描述符与响应字节，再原生 import；
 无需给页面 script-src 加 data:、blob: 或 unsafe-eval。script 与 trusted 混合组合整体按受信任处理，逐人同意。
 
-本工作环境禁止监听 localhost，Chrome 的 CSP 继承/渲染验收未运行；Firefox/Safari 也待测。部署前由协调者运行
-`SP_E2E=1 node --test test/ui/sandbox.e2e.test.js` 及 DESIGN §32.11 列出的现有浏览器套件。
+CSP 和沙箱在 Chrome 里有浏览器测试（`SP_E2E=1 node --test test/ui/sandbox.e2e.test.js` 及 DESIGN §32.11 列出的套件）；
+Firefox 和 Safari 还没有专门测过，遇到问题请附浏览器版本反馈。
 
 ## Trusted script plugins (P3a, experimental)
 

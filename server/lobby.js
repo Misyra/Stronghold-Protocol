@@ -195,9 +195,11 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
  *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null,
  *             ops?: Readonly<Record<string, { potential: number, cultivate: number }>> | null,
  *             notOwned?: readonly string[] | null, diy?: Readonly<Record<string, DiyLoadout>> | null,
- *             content?: 'ready' | 'failed' | null, loadoutCs?: string | null, notOwnedCs?: string | null, diyCs?: string | null }} Seat
+ *             content?: 'ready' | 'failed' | null, contentGen?: number, loadoutCs?: string | null, notOwnedCs?: string | null,
+ *             diyCs?: string | null }} Seat
  *   content: a room with gameplay plugins — whether the player's page loaded and checked its content (header "Gameplay
- *   plugins"; null = still loading); loadoutCs / notOwnedCs / diyCs: the content its settings were checked for
+ *   plugins"; null = still loading); contentGen: counts the seat's disconnects (a queued room.contentReady of an earlier
+ *   page no longer counts); loadoutCs / notOwnedCs / diyCs: the content its settings were checked for
  * @typedef {{ charId: string, skillIndex: number, uniEquipId: string|null }} DiyLoadout
  */
 
@@ -464,7 +466,17 @@ export class Lobby {
    */
   onMessage(session, msg) {
     const room = this.queuedRoom(session);
-    return room ? this.serial(room, () => this.handleMessage(session, msg)) : this.handleMessage(session, msg);
+    if (!room) return this.handleMessage(session, msg);
+    // a queued room.contentReady speaks for the page that sent it: the seat and its generation now — a disconnect in
+    // between bumps it, and the page that comes back checks the set again (contentReady)
+    const ctx = msg && msg.t === 'room.contentReady' ? { from: this.seatGen(room, session.playerId) } : null;
+    return this.serial(room, () => this.handleMessage(session, msg, ctx));
+  }
+
+  /** A seat (or spectator seat) of `room` and its content generation (header "Gameplay plugins"), or null. */
+  seatGen(room, playerId) {
+    const seat = room.seatOf(playerId) || room.spectatorOf(playerId);
+    return seat ? { seat, gen: seat.contentGen || 0 } : null;
   }
 
   /**
@@ -509,11 +521,13 @@ export class Lobby {
   }
 
   /**
-   * One message (onMessage), now.
+   * One message (onMessage), now. `ctx`: what onMessage noted when it queued the message (a contentReady's seat
+   * generation), else null.
    * @param {import('./net.js').Session} session
    * @param {any} msg
+   * @param {{ from?: { seat: Seat, gen: number } | null } | null} [ctx]
    */
-  handleMessage(session, msg) {
+  handleMessage(session, msg, ctx = null) {
     switch (msg.t) {
       case 'room.create': return this.create(session, msg);
       case 'room.join': return this.join(session, msg);
@@ -534,7 +548,7 @@ export class Lobby {
       case 'room.removeSpectator': return this.removeSpectator(session, msg);
       case 'room.setPlugins': return this.setPlugins(session, msg);
       case 'room.setMode': return this.setMode(session, msg);
-      case 'room.contentReady': return this.contentReady(session, msg);
+      case 'room.contentReady': return this.contentReady(session, msg, ctx);
       default:
         if (typeof msg.t === 'string' && msg.t.startsWith('g.')) return this.routeGameNow(session, msg);
         return fail(ERR.BAD_MSG, `unhandled type ${String(msg.t).slice(0, 32)}`);
@@ -551,8 +565,10 @@ export class Lobby {
     const player = room.seatOf(session.playerId);
     const seat = player || room.spectatorOf(session.playerId);
     seat.connected = false;
-    // the page may come back as a new one (a reload): it loads and checks the room's content again (header "Gameplay plugins")
+    // the page may come back as a new one (a reload): it loads and checks the room's content again (header "Gameplay
+    // plugins") — and a room.contentReady of the page that went, still on the room's queue, no longer counts (seatGen)
     if (room.modded) seat.content = null;
+    seat.contentGen = (seat.contentGen || 0) + 1;
     // a spectator's seat is kept like a player's (nothing to tell the match: it plays no field)
     if (room.match) {
       if (player) {
@@ -884,13 +900,20 @@ export class Lobby {
   /**
    * room.contentReady { cs, ok? } (header "Gameplay plugins"): the member's page has loaded and checked the room's content
    * set (`ok: false`: it could not). Recorded for the room's current set only — a page that checked an older one is
-   * answered OK and changes nothing.
+   * answered OK and changes nothing — and only for the page that is there: a session whose socket is gone, or a message
+   * that waited on the room's queue across a disconnect of its seat (`ctx.from`: the seat's generation when it was
+   * queued), is answered OK and writes nothing (the page that comes back checks the set again).
+   * @param {import('./net.js').Session} session @param {{ cs: string, ok?: boolean }} msg
+   * @param {{ from?: { seat: Seat, gen: number } | null } | null} [ctx]
    */
-  contentReady(session, { cs, ok }) {
+  contentReady(session, { cs, ok }, ctx = null) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (!room.modded || room.content.cs !== cs) return OK;
+    if (!session.connected) return OK;
     const seat = room.seatOf(session.playerId) || room.spectatorOf(session.playerId);
+    if (!seat) return OK;
+    if (ctx && ctx.from && (ctx.from.seat !== seat || ctx.from.gen !== (seat.contentGen || 0))) return OK;
     const state = ok === false ? 'failed' : 'ready';
     if (seat.content === state) return OK;
     seat.content = state;

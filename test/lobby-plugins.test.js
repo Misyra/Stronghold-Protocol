@@ -477,6 +477,56 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     assert.equal((await fetch(`${srv.url}/vs/${m.content.vs.slice(0, 16)}/overlay.json`)).status, 200);
   });
 
+  test('a room.contentReady queued before its page disconnected marks nothing; the page that comes back checks the set again', async () => {
+    // the review's sequence (MED-3): a guest's g.* waits on the match host, its contentReady queues behind it, the guest's
+    // socket closes, the queue drains — once with the guest still away, once with it back before the queue drained
+    const CS = 'cd'.repeat(32);
+    const plugins = {
+      resolve: () => ({ ok: true, set: { cs: CS, plugins: [{ id: 'rules', version: '1.0.0', class: 'content', hash: '0'.repeat(16) }], warnings: [], bytes: 0, dataBytes: 1, modes: [] } }),
+      hold() {}, release() {}, holdContent() {}, releaseContent() {},
+    };
+    for (const backBeforeDrain of [false, true]) {
+      const lobby = new Lobby({ registry: new SessionRegistry(), content: { cs: 'ab'.repeat(32) }, plugins });
+      const host = { playerId: 'p_host', name: 'H', connected: true, roomCode: null, ws: null };
+      const guest = { playerId: 'p_guest', name: 'G', connected: true, roomCode: null, ws: null };
+      assert.deepEqual(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+      assert.deepEqual(lobby.join(guest, { code: host.roomCode }), { ok: true });
+      assert.deepEqual(lobby.setPlugins(host, { plugins: [{ id: 'rules' }] }), { ok: true });
+      const room = lobby.getRoom(host.roomCode);
+      assert.equal(room.modded, true);
+      const seat = room.seatOf(guest.playerId);
+      let release = () => {};
+      const gate = new Promise((r) => { release = r; });
+      room.match = { hosted: true, handle: () => gate.then(() => ({ ok: true })), onDisconnect() {}, onReconnect() {}, onLeave() {}, dispose() {} };
+      const g = lobby.onMessage(guest, { t: 'g.emote', id: EMOTES[0] });
+      const told = lobby.onMessage(guest, { t: 'room.contentReady', cs: CS });       // 1. queued behind the match
+      assert.equal(seat.content, null);
+      guest.connected = false;
+      lobby.onDisconnect(guest);                                                       // 2. the page goes
+      assert.deepEqual([seat.content, seat.connected], [null, false]);
+      const back = () => { guest.connected = true; lobby.onHello(guest, { resumed: true, repeat: false }); };
+      if (backBeforeDrain) back();
+      release();                                                                       // 3. the queue drains
+      assert.deepEqual(await g, { ok: true });
+      assert.deepEqual(await told, { ok: true });
+      assert.equal(seat.content, null, `the queued contentReady wrote nothing (${backBeforeDrain ? 'back before' : 'away when'} it ran)`);
+      if (!backBeforeDrain) back();                                                    // 4. the page comes back
+      assert.deepEqual([seat.content, seat.connected], [null, true], 'the new page has checked nothing yet');
+      // 5. / 6. back in the lobby: no ready and no start until that page checks the set
+      room.match = null;
+      assert.deepEqual(lobby.contentReady(host, { cs: CS }), { ok: true });
+      assert.equal(lobby.ready(guest, { ready: true }).error, ERR.CONTENT_NOT_READY);
+      seat.ready = true; // (a ready flag that survived would not help either)
+      assert.equal(lobby.start(host).error, ERR.CONTENT_NOT_READY);
+      seat.ready = false;
+      // the page checks it: now it counts (on the room's queue, if anything of it is still settling)
+      assert.deepEqual(await lobby.onMessage(guest, { t: 'room.contentReady', cs: CS }), { ok: true });
+      assert.equal(seat.content, 'ready');
+      assert.deepEqual(lobby.ready(guest, { ready: true }), { ok: true });
+      lobby.shutdown();
+    }
+  });
+
   test('a burst of room.setPlugins with junk settings builds the set once (settings as the builder reads them)', async () => {
     const host = await player('Ifrit');
     await room(host, 'solo');

@@ -37,6 +37,7 @@
 | [素材](development/ASSETS.md) | 素材来源、清单与目录 |
 | [国际化](development/I18N.md) | 翻译、语言文件与覆盖范围 |
 | [性能](development/PERFORMANCE.md) | Worker 池、预载与性能优化 |
+| [状态同步链路基线](development/STATE_SYNC_BENCHMARK.md) | 视图构建/差分/检查点的分段成本与端到端对照,以及计划三条优先级的实测判定(配套[增量传输](development/STATE_DELTA.md)、[增量压测](development/STATE_DELTA_BENCHMARK.md)) |
 | [难度与平衡](development/BALANCE.md) | 难度模型和测量 |
 | [管理界面移动端密度](development/MOBILE_UI.md) | 非战场管理界面的紧凑层、变量契约与真机验证边界 |
 | [本分支 API](development/CUSTOM_API.md) | 房间查询、匹配与扩展接口 |

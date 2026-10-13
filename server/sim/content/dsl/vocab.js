@@ -12,6 +12,7 @@ import {
 } from '../kits/shared/tier1.js';
 import { enemyStealthed } from '../../targeting.js';
 import { charge, trackTimer, DEFAULT_BUDGET } from './budget.js';
+import { clampDsl } from './bounds.js';
 
 export { TICK, DEFAULT_BUDGET };
 
@@ -150,13 +151,14 @@ function readStat(expr, rt) {
   }
 }
 
-/** Resolve a plain mod / flag map. Objects are value expressions; numbers pass through. */
+/** Resolve a plain mod / flag map. Objects are value expressions; numbers pass through, then the DSL cap. */
 export function resolveMods(mods, env, rt = null) {
   const out = {};
   if (!mods || typeof mods !== 'object') return out;
   for (const [k, v] of Object.entries(mods)) {
     const n = typeof v === 'number' ? v : resolveValue(v, env, rt);
-    if (finite(n)) out[k] = n;
+    // Action-time buffs resolve here, after compile. The same clamp as compile.js (DESIGN §32.7).
+    if (finite(n)) out[k] = clampDsl(`mods.${k}`, n);
   }
   return out;
 }

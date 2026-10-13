@@ -102,6 +102,17 @@ export function officialKit(ref) {
   return Object.entries(KITS).find(([k]) => k.startsWith('char_') && k.endsWith('_' + code))?.[1];
 }
 
+/**
+ * [ASSUMED] A one-skill DIY or stand-in uses that kit's default skill (DESIGN §32.5). Multi-skill clones keep
+ * explicit `skills[id]` so selectSkillSpec does not treat the default spec as every selected skill.
+ */
+function bindDefaultSkill(k, chess, d) {
+  if (k?.skill && isOtherBody(d) && chess?.skills?.length === 1 && d?.skill?.id && !k.skills?.[d.skill.id]) {
+    return { ...k, skills: { ...(k.skills || {}), [d.skill.id]: k.skill } };
+  }
+  return k;
+}
+
 /** C2 order: extension → DSL → JSON SkillSpec → kitRef → official → generic. */
 export function kitOf(def, reg = KITS) {
   if (!def) return undefined;
@@ -110,7 +121,7 @@ export function kitOf(def, reg = KITS) {
   const ext = registeredKit(def, EXTENSIONS);
   if (ext) return ext;
   const raw = def.raw || {};
-  if (raw.dsl != null) return (bb, chess, d) => compileDsl(raw.dsl, { bb, chess, def: d });
+  if (raw.dsl != null) return (bb, chess, d) => bindDefaultSkill(compileDsl(raw.dsl, { bb, chess, def: d }), chess, d);
   if (raw.skillSpec != null) return (bb, chess, d) => {
     const spec = chess.skill?.skillSpec ?? raw.skillSpec;
     const errors = validateSkillSpec(spec);
@@ -124,11 +135,7 @@ export function kitOf(def, reg = KITS) {
     const f = officialKit(raw.kitRef);
     if (!f) return undefined;
     return (bb, chess, d) => {
-      const k = f(bb, chess, d);
-      // [ASSUMED] A one-skill DIY clone of a chess kit uses that kit's default skill (DESIGN §32.5).
-      // Multi-skill clones retain official skill ids so the existing selectSkillSpec rules remain exact.
-      if (k?.skill && isOtherBody(d) && chess.skills?.length === 1 && !k.skills?.[d.skill?.id]) return { ...k, skills: { ...k.skills, [d.skill.id]: k.skill } };
-      return k;
+      return bindDefaultSkill(f(bb, chess, d), chess, d);
     };
   }
   return registeredKit(def, KITS);
@@ -165,11 +172,23 @@ export function setupUnitKit(battle, unit, mode = 'full') {
         const k = f(bb, raw, def);
         if (k) return selectSkillSpec(k, bb, raw, def);
       } catch (e) {
-        battle._handlerError(`kit:${isOtherBody(def) ? def.charId : def.baseId}`, unit, e);
-        // [ASSUMED] A throw whose code is a DSL problem is a bad spec. Do not substitute the generic kit
-        // (DESIGN §32.7). Any other throw still falls back, so an ordinary kit error keeps the previous behavior.
+        const dslCode = typeof e?.code === 'string' && /^PLUGIN_DSL_[A-Z0-9_]+$/.test(e.code);
+        // A record that carries DSL, or a throw whose code is a DSL problem, is a corrupt content set.
+        // Do not substitute the generic kit or an empty kit (DESIGN §32.7). Any other throw still falls back.
         // Matched as a pattern, not a quoted PLUGIN_* name: the error catalogue scans those strings.
-        if (typeof e?.code === 'string' && /^PLUGIN_DSL_[A-Z0-9_]+$/.test(e.code)) return { skill: null, talents: [] };
+        if (dslCode || raw.dsl != null) {
+          if (e && typeof e === 'object') {
+            e.contentFault = true;
+            if (typeof e.code === 'string' && !String(e.message || '').includes(e.code)) e.message = `${e.code} ${e.message || ''}`.trim();
+          }
+          battle.contentFault = {
+            layer: 'setupUnitKit',
+            code: typeof e?.code === 'string' ? e.code : 'PLUGIN_DSL_SHAPE',
+            message: String(e?.message || e),
+          };
+          throw e;
+        }
+        battle._handlerError(`kit:${isOtherBody(def) ? def.charId : def.baseId}`, unit, e);
       }
     }
   }
@@ -305,7 +324,13 @@ export function installContent(battle, { mode = 'full', extra = null } = {}) {
   } catch (e) { battle._handlerError?.('loadoutView', null, e); }
   for (const u of battle.allyUnits) {
     if (u.kit) continue;
-    try { battle._setupUnit(u); } catch (e) { battle._handlerError('setupUnit', u, e); }
+    try { battle._setupUnit(u); } catch (e) {
+      if (e?.contentFault || battle.contentFault) {
+        battle._handlerError('content:dsl', u, e);
+        throw e;
+      }
+      battle._handlerError('setupUnit', u, e);
+    }
   }
   if (mode === 'full') {
     for (const [name, mod] of MODULES) {

@@ -15,7 +15,7 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
-import { validateDsl } from '../sim/content/dsl/validate.js';
+import { validatePrepSpec } from '../sim/content/dsl/validate.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -88,21 +88,79 @@ function translations(data, initial, plugins) {
   return { out, problems };
 }
 
-/** Records whose dsl field this plugin just wrote. A patch and a compact operator both count. */
-function dslTouched(before, after) {
-  const hits = [];
-  const scan = (file, prev, next) => {
-    for (const [id, rec] of Object.entries(next ?? {})) {
-      const old = prev?.[id]?.dsl;
-      if (rec && rec.dsl != null && (old === undefined || canonicalJson(rec.dsl) !== canonicalJson(old))) hits.push(`${file}.${id}`);
+/** Explicit DSL values on chess records, backup units, and backup forms. The owner key is the record, not the form. */
+function dslSites(data) {
+  const out = new Map();
+  const put = (path, owner, value) => { if (value !== undefined) out.set(path, { owner, json: canonicalJson(value) }); };
+  for (const [id, rec] of Object.entries(data?.chess ?? {})) {
+    if (rec && rec.dsl != null) put(`chess.${id}.dsl`, `chess.${id}`, rec.dsl);
+  }
+  for (const [id, rec] of Object.entries(data?.backups?.units ?? {})) {
+    if (!rec || typeof rec !== 'object') continue;
+    if (rec.dsl != null) put(`units.${id}.dsl`, `units.${id}`, rec.dsl);
+    if (rec.forms && typeof rec.forms === 'object') {
+      for (const [status, form] of Object.entries(rec.forms)) {
+        if (form && form.dsl != null) put(`units.${id}.forms.${status}.dsl`, `units.${id}`, form.dsl);
+      }
     }
-  };
-  scan('chess', before.chess, after.chess);
-  scan('units', before.backups?.units, after.backups?.units);
-  return hits;
+  }
+  return out;
 }
 
-/** Prep specs from the manifest dsl part. A bad spec refuses the whole set. */
+/**
+ * A changed DSL value needs the dsl permission and must be written by the record's owner.
+ * Another plugin cannot rewrite it, even with requires. An official record has no owner.
+ */
+function dslWriterProblems(before, after, plugin, owners) {
+  const problems = [];
+  const prev = dslSites(before), next = dslSites(after);
+  const has = plugin.manifest.permissions.includes('dsl');
+  for (const path of new Set([...prev.keys(), ...next.keys()])) {
+    const a = prev.get(path), b = next.get(path);
+    if (a && b && a.json === b.json) continue;
+    const ownerKey = (b ?? a).owner;
+    if (!has) problems.push({ ...problem('PLUGIN_CONTENT_PERMISSION', path, 'DSL requires the dsl permission'), plugin: plugin.id });
+    if (owners.get(ownerKey) !== plugin.id) problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', path, 'only the record owner may write its DSL'), plugin: plugin.id });
+  }
+  return problems;
+}
+
+/** potDown leaves whose path writes dsl or pluginId. Unchanged official leaves are not reported. */
+function potDownSites(data) {
+  const out = new Map();
+  const walk = (node, path) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) walk(node[i], `${path}[${i}]`);
+      return;
+    }
+    if (object(node.potDown)) {
+      for (const [rank, step] of Object.entries(node.potDown)) {
+        if (!object(step)) continue;
+        for (const [leaf, value] of Object.entries(step)) {
+          if (String(leaf).split('.').some((seg) => seg === 'dsl' || seg === 'pluginId')) out.set(`${path}.potDown.${rank}.${leaf}`, canonicalJson(value));
+        }
+      }
+    }
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'potDown' || !v || typeof v !== 'object') continue;
+      walk(v, path ? `${path}.${k}` : k);
+    }
+  };
+  walk(data, '');
+  return out;
+}
+
+function potDownProblems(before, after, plugin) {
+  const problems = [];
+  const prev = potDownSites(before), next = potDownSites(after);
+  const bad = (path) => problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', path, 'potDown cannot write dsl or pluginId'), plugin: plugin.id });
+  for (const [path, json] of next) if (prev.get(path) !== json) bad(path);
+  for (const path of prev.keys()) if (!next.has(path)) bad(path);
+  return problems;
+}
+
+/** Prep specs from the manifest dsl part. A bad spec, a foreign key, or an empty meta.on refuses the whole set. */
 function prepSpecs(plugin) {
   const problems = [], specs = [];
   for (const rel of plugin.manifest.parts.dsl?.files ?? []) {
@@ -111,14 +169,11 @@ function prepSpecs(plugin) {
       continue;
     }
     const doc = plugin.content.documents[rel];
-    const checked = validateDsl(doc);
+    const checked = validatePrepSpec(doc, plugin.id);
     if (!checked.ok) {
       for (const p of checked.problems) problems.push(problem(p.code, p.path ? `${rel}.${p.path}` : rel, p.zh));
       continue;
     }
-    // [ASSUMED] A manifest dsl file is prep-only and must include meta (DESIGN §32.7).
-    if (doc.meta == null) { problems.push(problem('PLUGIN_DSL_META', rel, 'prep DSL file needs a meta block')); continue; }
-    if (doc.pluginId != null && doc.pluginId !== plugin.id) { problems.push(problem('PLUGIN_DSL_PLUGIN_ID', rel, 'spec pluginId must match the host plugin')); continue; }
     specs.push(doc);
   }
   return { problems, specs };
@@ -157,7 +212,9 @@ function composeContentSet({ registry, ids = [] }) {
   if (collisions.length) return { problems: collisions };
   const plugins = resolved.order.map(usable).filter(p => p.class === 'content'), settings = {}, owners = new Map();
   let data = base.data;
-  const problems = [], warnings = [], writes = new Map();
+  // Install the vanilla snapshot before expand/validate so a DSL literal uses the real cap, not the floor.
+  rememberOfficialBounds(base.data);
+  const problems = [], warnings = [], writes = new Map(), prepById = new Map();
   for (const p of plugins) {
     settings[p.id] = normalizeSettings(p.manifest.settings, selected.find(v => v.id === p.id)?.settings);
     const before = data;
@@ -165,6 +222,11 @@ function composeContentSet({ registry, ids = [] }) {
       const doc = p.content.documents[rel];
       let r;
       if (part === 'data' && doc.patch === 1) {
+        // data.dsl is attached only after every ordinary patch. A patch must not write that reserved table.
+        if (Array.isArray(doc.ops) && doc.ops.some((op) => op && op.file === 'dsl')) {
+          problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', rel, 'data patches cannot write the reserved dsl table'), plugin: p.id });
+          continue;
+        }
         if (doc.ops.some(op => !p.manifest.permissions.includes(op.op === 'add' ? 'data.add' : 'data.patch'))) { problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'patch operation lacks permission')); continue; }
         for (const op of doc.ops) {
           const at = [op.file, op.id, ...(op.path ?? [])].filter(x => x !== undefined).join('.');
@@ -181,17 +243,28 @@ function composeContentSet({ registry, ids = [] }) {
       data = r.data;
     }
     problems.push(...writesAllowed(before, data, p, owners));
-    if (!p.manifest.permissions.includes('dsl')) for (const at of dslTouched(before, data)) problems.push(problem('PLUGIN_CONTENT_PERMISSION', at, 'DSL requires the dsl permission'));
+    problems.push(...dslWriterProblems(before, data, p, owners));
+    problems.push(...potDownProblems(before, data, p));
     const prep = prepSpecs(p);
     problems.push(...prep.problems.map(e => ({ ...e, plugin: p.id })));
-    if (prep.specs.length) {
-      // A dsl-only plugin never clones. base.data is frozen; do not attach the table there.
-      if (data === base.data || Object.isFrozen(data)) data = clone(data);
-      if (!object(data.dsl)) data.dsl = {};
-      data.dsl[p.id] = prep.specs;
-    }
+    if (prep.specs.length) prepById.set(p.id, prep.specs);
   }
   if (problems.length) return { problems };
+  if (prepById.size) {
+    const table = {};
+    for (const [id, specs] of prepById) {
+      if (!Array.isArray(specs)) { problems.push(problem('PLUGIN_DSL_SHAPE', `dsl.${id}`, 'prep specs must be an array')); continue; }
+      for (const spec of specs) {
+        const checked = validatePrepSpec(spec, id);
+        if (!checked.ok) for (const item of checked.problems) problems.push(problem(item.code, item.path ? `dsl.${id}.${item.path}` : `dsl.${id}`, item.zh));
+      }
+      table[id] = specs;
+    }
+    if (problems.length) return { problems };
+    // A dsl-only plugin never clones. base.data is frozen; attach the private table only after ordinary patches.
+    if (data === base.data || Object.isFrozen(data)) data = clone(data);
+    data.dsl = table;
+  }
   if (plugins.length) {
     problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners }));
     if (problems.length) return { problems };

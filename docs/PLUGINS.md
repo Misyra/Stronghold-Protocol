@@ -472,7 +472,9 @@ a JSON SkillSpec or with `kit.dsl`. A record that carries both
 `kit.ref` / `kitRef` and `talentMods` is `PLUGIN_SKILL_SPEC` at expansion and again in `validateData`; the schema file
 still allows the pair, and the runtime rejects it. File stems resolve only against the official registry, never an
 import path. A referenced kit's numbers come from the new record. Keep official skill ids to use its named alternate
-skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` is empty until P3
+skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. A one-skill DSL kit uses the same
+`bindDefaultSkill` helper, so a 自选 piece and a 补位 stand-in take that default spec as `skills[id]`
+(`skillSource: 'skills'`). A shop chess keeps `kit.skill`. Multi-skill clones are not auto-bound. `extensions.js` is empty until P3
 supplies it; `dsl/compile.js` is P2's compiler (§12) and data plugins use it (§12, PLUGIN-DSL.md §9). A plugin operator whose id
 starts with `char_x_` and whose chess and backup records have neither `potDown` nor a talent `potBelow` accepts only
 the default potential 6. Official operators, including `char_616_pithst`, are unchanged. The loadout screen can still
@@ -699,10 +701,18 @@ A content plugin puts the battle spec on `kit.dsl` (permission `dsl`, and `data.
 specs in the manifest `dsl` part. The builder validates them, writes the battle spec onto the record, stamps the
 host `pluginId`, and stores prep specs as `data.dsl[<plugin id>]` (part of `cs`). A vanilla set has no `data.dsl`.
 The match host registers each prep spec after `setData` and before importing Match, then grants every player an
-EffectRef for that key. A bad spec is `PLUGIN_DSL_*` and the content set is refused. [ASSUMED] `setupUnitKit` does
-not substitute the generic kit when a kit throws `PLUGIN_DSL_*`. The host supplies the plugin id (an author id
-cannot take another plugin's budget; omitting the author's id is allowed). Prep keys are `effect:<that id>:<local>`.
-DESIGN §32.7. A vanilla battle does not load the compiler.
+EffectRef for that key. A bad spec refuses the whole set (`PLUGIN_DSL_*`, or `PLUGIN_DATA_BOUND` for a literal past
+the official cap). [ASSUMED] `data.dsl` is reserved: a data patch cannot write it (`PLUGIN_DSL_PLUGIN_ID`), and the
+builder attaches it only from its private prep list. Only the record owner may write that record's DSL; `potDown`
+cannot write `dsl` or `pluginId`. The runtime validator rejects unknown fields the schema already rejects
+(`additionalProperties: false`). `plugin check` is shape-only for the host id inside a prep key and for numeric caps;
+`buildContentSet` is the gate. [ASSUMED] If compilation still throws, the battle ends immediately as `forced`
+(`content:dsl` in `battle.errors`, `result.errors > 0`). It does not continue with an empty kit or the generic kit.
+The player sees the ordinary 战斗结束 box. A hashed set that skipped the builder still fails host boot (`boot-error`,
+room `plugin-start`, `PLUGIN_DSL_META`). The host supplies the plugin id (an author id cannot take another plugin's
+budget; omitting the author's id is allowed). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7. A vanilla
+battle does not load the compiler. Direct literals use the WP-A cap (`max(10 × official max, 64)`); an expression
+result is clamped to that cap. `duration`, action amounts and `rangeExtend` are not in that table [ASSUMED].
 
 ## 14. Interface plugins (P4)
 

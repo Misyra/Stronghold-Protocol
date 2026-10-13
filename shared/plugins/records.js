@@ -35,7 +35,7 @@ function behavior(kit, talentMods, pluginId) {
   } else if (kit.dsl != null) {
     // [ASSUMED] Omitting spec.pluginId is allowed. A written one must be this host: it cannot spend another
     // plugin's budget. The builder stamps the host id on the record and does not rewrite the author's spec (DESIGN §32.7).
-    const checked = validateDsl(kit.dsl);
+    const checked = validateDsl(kit.dsl, { bounds: true });
     if (!checked.ok) {
       const p = checked.problems[0];
       fail(p.code, p.path ? `kit.dsl.${p.path}` : 'kit.dsl', p.zh);

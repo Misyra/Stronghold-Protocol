@@ -11,6 +11,9 @@ import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createContentSets } from '../../server/plugins/contentSets.js';
 import { createMatchHosts } from '../../server/match/host/index.js';
 import { writePlugin } from '../helpers/pluginFixtures.js';
+import { fork } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { contentHashOf } from '../../shared/plugins/identity.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
@@ -106,24 +109,49 @@ test('a prep DSL spec rewrites round-1 income inside the match host; a set with 
   } finally { hosts.close(); }
 });
 
-test('a prep key that is not this plugin id fails the match host boot', { timeout: 30_000 }, async () => {
+test('a prep key that is not this plugin id is refused before a match host boots', () => {
   const dir = pluginsDir({
     badkey: [{ permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeSpec('badkey', 'effect:other:income') }],
   });
   const contents = setsOf(dir);
   const r = contents.resolve(['badkey']);
+  assert.notEqual(r.ok, true);
+  assert.equal(r.set, undefined);
+  assert.equal(r.error, 'PLUGIN_BLOCKED');
+  assert.match(r.detail, /PLUGIN_DSL_META/);
+});
+
+test('a hashed prep spec that skipped the builder fails host boot', { timeout: 30_000 }, async () => {
+  const dir = pluginsDir({
+    badkey: [{ permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeSpec('badkey') }],
+  });
+  const contents = setsOf(dir);
+  const r = contents.resolve(['badkey']);
   assert.ok(r.ok, JSON.stringify(r));
   contents.hold(r.set.cs);
-  const hosts = createMatchHosts({ contents, log: quiet });
-  const out = frames();
+  const files = contents.dataBytes(r.set.cs);
+  const table = JSON.parse(Buffer.from(files.dsl).toString('utf8'));
+  table.badkey[0].meta.key = 'effect:other:income';
+  files.dsl = Buffer.from(JSON.stringify(table));
+  const hashInput = JSON.parse(JSON.stringify(r.set.hashInput));
+  hashInput.data.dsl = createHash('sha256').update(files.dsl).digest('hex');
+  const cs = contentHashOf(hashInput);
+  const child = fork(path.join(ROOT, 'server/match/host/entry.js'), [], {
+    execArgv: ['--max-old-space-size=256'], serialization: 'advanced', stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+  });
   try {
-    const m = hosts.create(r.set.cs, matchOpts(r.set.cs, human, out, { mode: 'solo', modeId: 'mode_single_normal' }));
-    m.start();
-    const summary = await Promise.race([out.end, delay(15_000).then(() => null)]);
-    assert.ok(summary, 'the match ended');
-    assert.equal(summary.reason, 'plugin-start');
-    assert.match(summary.detail, /PLUGIN_DSL_META/);
-    m.dispose();
-  } finally { hosts.close(); }
+    const msg = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('host boot timed out')), 15_000);
+      child.on('message', (m) => {
+        if (m && (m.type === 'boot-error' || m.type === 'ready')) { clearTimeout(timer); resolve(m); }
+      });
+      child.on('error', (e) => { clearTimeout(timer); reject(e); });
+      child.send({ type: 'init', cs, hashInput, files, bounds: r.set.bounds, options: { heartbeatMs: 60_000 } });
+    });
+    assert.equal(msg.type, 'boot-error');
+    assert.match(msg.error, /PLUGIN_DSL_META/);
+  } finally {
+    child.kill('SIGKILL');
+  }
 });
 

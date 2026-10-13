@@ -174,6 +174,11 @@ export function forgetOfficialBounds() {
   cached = null;
 }
 
+/** True after rememberOfficialBounds or installOfficialBounds. An empty cache is not installed. */
+export function officialBoundsReady() {
+  return cached != null;
+}
+
 /**
  * Plain snapshot of a bounds cache. Sorted keys, so the served file is stable.
  * @param {{ bb: Map<string, number>, fields: Map<string, number>, bbMin: Map<string, number>,

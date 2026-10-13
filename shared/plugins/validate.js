@@ -225,7 +225,7 @@ function checkData(data, { kitExists = null, vanilla = null, owners = null } = {
     if (rec.talentMods != null && !matchesSchema(rec.talentMods, MODS_SCHEMA)) bad(at, 'invalid talentMods', 'PLUGIN_SKILL_SPEC');
     if (rec.kitRef != null && rec.talentMods != null) bad(at, 'talentMods belong with a JSON SkillSpec, not kitRef', 'PLUGIN_SKILL_SPEC');
     if (rec.dsl != null) {
-      const checked = validateDsl(rec.dsl);
+      const checked = validateDsl(rec.dsl, { bounds: true });
       if (!checked.ok) for (const p of checked.problems) bad(p.path ? `${at}.${p.path}` : at, p.zh, p.code);
       else if (typeof rec.pluginId !== 'string' || !rec.pluginId) bad(`${at}.pluginId`, 'DSL record needs the contributing plugin id', 'PLUGIN_DSL_PLUGIN_ID');
       else if (rec.dsl.pluginId != null && rec.dsl.pluginId !== rec.pluginId) bad(`${at}.pluginId`, 'spec pluginId differs from the record pluginId', 'PLUGIN_DSL_PLUGIN_ID');

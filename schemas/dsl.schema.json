@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsl.schema.json",
+  "title": "P2 DSL-lite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dsl"],
+  "properties": {
+    "dsl": { "const": 1 },
+    "pluginId": { "$ref": "#/$defs/pluginId" },
+    "budget": { "type": "integer", "exclusiveMinimum": 0, "maximum": 10000000 },
+    "skill": { "$ref": "#/$defs/skill" },
+    "skills": { "type": "object", "additionalProperties": { "$ref": "#/$defs/skill" } },
+    "talents": { "type": "array", "items": { "$ref": "#/$defs/talent" } },
+    "trait": { "type": "object" },
+    "meta": { "$ref": "#/$defs/meta" }
+  },
+  "$defs": {
+    "pluginId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "trigger": {
+      "enum": ["always", "deploy", "battleStart", "attack", "hitDealt", "hitTaken", "kill", "allyDeath", "skillStart", "skillEnd", "every", "hpBelow"]
+    },
+    "condition": {
+      "enum": ["chance", "targetHas", "selfHpBelow", "enemiesInRange", "bondActive", "skillActive"]
+    },
+    "action": {
+      "enum": ["buff", "status", "damage", "heal", "sp", "dp", "push", "pull", "spawnToken", "layers", "shield", "fx"]
+    },
+    "target": {
+      "enum": ["self", "target", "source", "alliesInRange", "enemiesInRange", "enemiesInRadius", "lowestHpAlly", "allAllies"]
+    },
+    "metaTrigger": {
+      "enum": ["roundStart", "income", "buy", "sell", "refresh", "merge", "levelUp", "battleResult"]
+    },
+    "metaAction": { "enum": ["funds", "layers", "gainItem"] },
+    "valueOp": {
+      "enum": ["bb", "talent", "trait", "stat", "batMod", "mul", "add", "sub", "div", "min", "max"]
+    },
+    "skillKind": { "enum": ["instant", "duration", "ammo", "charges", "toggle", "passive"] },
+    "stat": { "enum": ["atk", "maxHp", "hp", "def", "res"] },
+    "forbidden": {
+      "enum": ["loop", "while", "for", "code", "js", "eval", "external", "script", "import"]
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "budgetMax": { "const": 10000000 },
+        "timesMax": { "const": 8 },
+        "thenMaxDepth": { "const": 4 },
+        "tickDenominator": { "const": 30 }
+      }
+    },
+    "skill": { "type": "object" },
+    "talent": {
+      "type": "object",
+      "required": ["when"],
+      "properties": {
+        "when": { "$ref": "#/$defs/trigger" },
+        "seconds": { "type": "number" },
+        "below": { "type": "number" },
+        "if": { "type": "object" },
+        "do": { "type": "array" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "on": { "type": "array" }
+      }
+    }
+  }
+}

@@ -388,6 +388,14 @@ worker per content set, the client loading and checking `/cs/<cs>/`, the unoffic
 the statistics). Later, by separate decisions: themes and fonts for cosmetic plugins, a declarative DSL, sandboxed code,
 trusted code. DESIGN §32 keeps the plan and its open questions.
 
+## 12. DSL
+
+A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
+per-battle action budget and the worked examples are [PLUGIN-DSL.md](PLUGIN-DSL.md). `compileDsl` in
+`server/sim/content/dsl/compile.js` turns a spec into a Kit; `server/match/dslMeta.js` turns the prep half into
+MetaRegistry hooks. The schema is `schemas/dsl.schema.json`. DESIGN §32.7. A vanilla battle does not load the compiler.
+Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section.
+
 ## Tests
 
 `test/plugins/manifest.test.js` (manifest 2 and 1, the problems and warnings, settings, permissions, files and limits,

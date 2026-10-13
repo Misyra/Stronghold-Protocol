@@ -298,7 +298,7 @@ const authorsOf = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : [
  * @param {any} m the raw manifest
  * @param {string | undefined} fileLang a single-file pack's language code (its file name decides)
  * @param {PluginManifest} out
- * @param {ReturnType<typeof issueList>} list the findings (shared/plugins/errors.js)
+ * @param {import('./errors.js').IssueList} list the findings (shared/plugins/errors.js)
  */
 function readLangFields(m, fileLang, out, list) {
   const code = fileLang || canonicalLang(m.lang);
@@ -322,7 +322,7 @@ function readLangFields(m, fileLang, out, list) {
  * @param {string} what 'a lang pack' / 'a lang plugin' (for the warnings)
  * @param {string} folder 'pack' / 'plugin' (for the problems)
  * @param {PluginManifest} out
- * @param {ReturnType<typeof issueList>} list the findings
+ * @param {import('./errors.js').IssueList} list the findings
  * @param {boolean} [own] warn about every role that is not an own role (manifest 2); manifest 1 keeps 0.2.0's lookup,
  *   which also passes names of Object.prototype ("constructor", "toString") silently
  */
@@ -385,7 +385,7 @@ export function readPackManifest(raw, ctx) {
  * @param {string} sourceLang
  * @param {number} max characters per text
  * @param {string} field for the warnings (a dotted path of the manifest)
- * @param {ReturnType<typeof issueList>} list the findings
+ * @param {import('./errors.js').IssueList} list the findings
  * @returns {Record<string, string>}
  */
 function localized(v, sourceLang, max, field, list) {
@@ -405,7 +405,7 @@ function localized(v, sourceLang, max, field, list) {
 
 /**
  * A { <plugin id>: <version range> } map (requires / optional / conflicts).
- * @param {unknown} v @param {string} field @param {string} self the plugin's own id @param {ReturnType<typeof issueList>} list
+ * @param {unknown} v @param {string} field @param {string} self the plugin's own id @param {import('./errors.js').IssueList} list
  * @returns {Record<string, string>}
  */
 function depMap(v, field, self, list) {
@@ -425,7 +425,7 @@ function depMap(v, field, self, list) {
   return out;
 }
 
-/** A list of plugin ids (loadAfter / loadBefore). @param {unknown} v @param {string} field @param {string} self @param {ReturnType<typeof issueList>} list */
+/** A list of plugin ids (loadAfter / loadBefore). @param {unknown} v @param {string} field @param {string} self @param {import('./errors.js').IssueList} list */
 function idList(v, field, self, list) {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.length > PLUGIN_LIMITS.deps) { list.problem('PLUGIN_ORDER_HINTS', `"${field}" is not a list of at most ${PLUGIN_LIMITS.deps} plugin ids`, { at: [field] }); return []; }
@@ -443,7 +443,7 @@ const onGrid = (v, min, step) => step === undefined || Math.abs((v - min) / step
 
 /**
  * One setting definition (see the header), or null with a problem.
- * @param {string} key @param {unknown} def @param {string} sourceLang @param {ReturnType<typeof issueList>} list
+ * @param {string} key @param {unknown} def @param {string} sourceLang @param {import('./errors.js').IssueList} list
  * @returns {PluginSetting | null}
  */
 function readSetting(key, def, sourceLang, list) {
@@ -512,7 +512,7 @@ function themeHasUrl(v) {
 
 /**
  * One part of manifest 2 (see PARTS), or null with a problem.
- * @param {string} name @param {unknown} v @param {ReturnType<typeof issueList>} list
+ * @param {string} name @param {unknown} v @param {import('./errors.js').IssueList} list
  * @returns {PluginPart | null}
  */
 function readPart(name, v, list) {

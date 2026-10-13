@@ -41,6 +41,11 @@ const D = Object.freeze({
  *   symptom?: Bilingual, autofix?: string }} PluginErrorEntry
  * @typedef {{ level: 'problem' | 'warning', code: string, text: string, at?: string[], file?: string,
  *   params: Record<string, unknown> }} PluginIssue
+ * @typedef {{ problems: string[], warnings: string[], issues: PluginIssue[],
+ *   problem: (code: string, text: string, extra?: Record<string, unknown>) => void,
+ *   warning: (code: string, text: string, extra?: Record<string, unknown>) => void,
+ *   take: (r: { problems?: string[], warnings?: string[], issues?: PluginIssue[] } | null | undefined, opts?: { warningsToo?: boolean }) => void }} IssueList
+ *   what issueList() returns
  */
 
 /** @type {Readonly<Record<string, Readonly<PluginErrorEntry>>>} the catalogue, by code (see the header) */
@@ -443,7 +448,8 @@ export function makeIssue(level, code, text, extra = {}) {
 /**
  * A check's findings: its `problems` and `warnings` (the plain strings every caller has read since P0) and the same as
  * `issues` with their codes. `problem(code, text, extra)` / `warning(…)` add one; `take(result)` adds another check's
- * findings (its issues when it has them, else its strings as PLUGIN_INVALID); `result()` is the plain data.
+ * findings (its issues when it has them, else its strings as PLUGIN_INVALID).
+ * @returns {IssueList}
  */
 export function issueList() {
   /** @type {string[]} */ const problems = [];

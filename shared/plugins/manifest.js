@@ -13,7 +13,7 @@
 //   lang       a language: UI strings and, optionally, game texts             loaded (as the language packs always were)
 //   cosmetic   art, models, audio (the asset overlay: shared/plugins/visual.js) loaded (P1a): the room's host switches
 //                                                                            it on for the room, a player for themself
-//   content    data patches and new records: operators, enemies, waves …    planned (P1b): validated, listed, not applied
+//   content    data patches and new records: operators, enemies, waves …    loaded (P1b): combined and validated on request
 //   script     code the battle or the match runs                             unsupported: listed, never loaded
 //   ui         interface widgets in a sandboxed frame                        unsupported
 //   trusted    page or server code with full trust                           unsupported
@@ -97,7 +97,7 @@ const MEDIA = ['.json', ...ASSET_EXT];
 export const PLUGIN_CLASSES = Object.freeze({
   lang: Object.freeze({ status: 'supported', summary: 'a language: UI strings and, optionally, game texts', scopes: ['personal'], defaultScope: ['personal'], unofficial: false, packType: 'lang', ext: ['.json'] }),
   cosmetic: Object.freeze({ status: 'supported', summary: 'art, models and audio: the room\'s host switches it on for the room, a player for themself (P1a)', scopes: ['room', 'personal'], defaultScope: ['room', 'personal'], unofficial: true, packType: 'assets', ext: MEDIA }),
-  content: Object.freeze({ status: 'planned', summary: 'data patches and new records: operators, enemies, waves, modes (P1b)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'data', ext: MEDIA }),
+  content: Object.freeze({ status: 'supported', summary: 'data patches and new records: operators, enemies, waves, modes (P1b)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'data', ext: MEDIA }),
   script: Object.freeze({ status: 'unsupported', summary: 'code the battle or the match runs (never loaded by this version)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'script', ext: [...MEDIA, '.js'] }),
   ui: Object.freeze({ status: 'unsupported', summary: 'interface widgets in a sandboxed frame (never loaded by this version)', scopes: ['personal'], defaultScope: ['personal'], unofficial: true, packType: 'ui', ext: ['.json', '.html', '.js', '.css', '.png'] }),
   trusted: Object.freeze({ status: 'unsupported', summary: 'page or server code with full trust (never loaded by this version)', scopes: ['server', 'room'], defaultScope: ['server'], unofficial: true, packType: 'trusted', ext: [...MEDIA, '.js', '.html', '.css'] }),

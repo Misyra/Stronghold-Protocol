@@ -393,8 +393,8 @@ const DUCK_KINDS = new Set(['normal', 'boss', 'hidden']);
 /** Boss-field column between the left ('L') and the right ('R') player's half (the goals are at cols 2–3 / 17). */
 const BOSS_MID_COL = (GEO.BOSS_RECT.c0 + GEO.BOSS_RECT.c1) / 2;
 
-function duckParams() {
-  for (const b of buffsOf(bandRecord(DUCK_BAND))) if (b.key === 'round_start_all_player_change_enemy_2') return b.p;
+function duckParams(bandId = DUCK_BAND) {
+  for (const b of buffsOf(bandRecord(bandId))) if (b.key === 'round_start_all_player_change_enemy_2') return b.p;
   return null;
 }
 
@@ -471,10 +471,10 @@ export function duckReplace(ctx, spawns, p, ownerPlayerId, { routes = null, side
 const duckGlobal = {
   onBattleStart(ctx, ev) {
     if (!ev || !DUCK_KINDS.has(ev.kind) || !Array.isArray(ev.spawns)) return;
-    const p = duckParams();
+    const holder = [ctx, ...ctx.teammates()].find(t => (t.gd.band(t.bandId())?.effectRef ?? t.bandId()) === DUCK_BAND);
+    if (!holder) return;
+    const p = duckParams(holder.bandId());
     if (!p || ctx.round < int(p.round, 1)) return;
-    const held = ctx.bandId() === DUCK_BAND || ctx.teammates().some((t) => t.bandId() === DUCK_BAND);
-    if (!held) return;
     duckReplace(ctx, ev.spawns, p, ctx.playerId, { routes: ev.routes, side: ev.side });
   },
 };

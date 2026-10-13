@@ -49,10 +49,12 @@ export const bondRecord = (id) => own(gameData().bonds, id);
 export const itemRecord = (id) => own(gameData().items, id);
 export const garrisonRecord = (id) => own(gameData().garrisons, id);
 export const bandRecord = (id) => own(gameData().bands, id);
+/** Behaviour identity, while the concrete record still supplies all numbers. */
+export const bandEffectId = id => bandRecord(id)?.effectRef ?? id;
 export const effectRecord = (id) => own(gameData().effects, id);
 export const chessRecord = (id) => own(gameData().chess, id);
 /** Registry key of an item: id without the `_a` / `_b` suffix (Arts have none). */
-export const itemKeyOf = (id) => String(id ?? '').replace(/_[ab]$/, '');
+export const itemKeyOf = (id) => String(itemRecord(id)?.effectRef ?? id ?? '').replace(/_[ab]$/, '');
 /** True for golden (进阶) items / elite chess ids. */
 export const isGoldenId = (id) => /_b$/.test(String(id ?? ''));
 
@@ -132,8 +134,8 @@ export function contentInfo(battle, pid) {
 /** Alive players' bands (own first), plus a retained Touch team grant; falls back to this battle's players. */
 export function matchBands(battle, pid) {
   const mb = contentInfo(battle, pid).matchBands;
-  if (Array.isArray(mb) && mb.length) return mb;
-  return (battle.players || []).map((p) => p.bandId).filter(Boolean);
+  if (Array.isArray(mb) && mb.length) return mb.map(bandEffectId);
+  return (battle.players || []).map((p) => bandEffectId(p.bandId)).filter(Boolean);
 }
 
 // =====================================================================================================================

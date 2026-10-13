@@ -22,7 +22,7 @@
 // for its Spine models) and the files that shape it are hashed — SHA-256, kept by path while the file keeps its size,
 // mtime, inode and ctime (statIdentity: a file rewritten with its old size and mtime put back — rsync -t, touch -r — still
 // changes its ctime), so a rescan reads only what changed [ASSUMED: at scan, synchronously — a 200 MB plugin costs about a
-// second once]; a problem keeps it out like any other. A content plugin is validated and listed as `planned` (P1b); a script, ui or trusted one is listed as
+// second once]; a problem keeps it out like any other. A content plugin is read as a JSON snapshot (P1b); a script, ui or trusted one is listed as
 // `unsupported` and never loaded (no third-party code runs — the owner's decision of 2026-10-12). Of a plugin folder only
 // the files a lang manifest names (at /packs/<id>/<file>) and the files a cosmetic overlay names (at /p/…) are served;
 // nothing else — not plugin.json, the lock, documents or a file the overlay does not name.
@@ -35,6 +35,7 @@
 // every such rescan is told to its listeners (onScan: the visual sets look for the sets in use whose plugins changed).
 // server/packs.js re-exports the pack API of this file for its old callers.
 
+import { readContentData } from './contentData.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -73,7 +74,7 @@ const noop = () => {};
  *   (room.state.content.plugins[].hash), its folder
  * @typedef {{ id: string, type: string, class: string, status: 'loaded' | 'planned' | 'unsupported', source: 'i18n' | 'packs' | 'plugins',
  *   layout: 'file' | 'folder', where: string, supported: boolean, manifest: PluginManifest, files: Record<string, PackFile>,
- *   strings?: number, bytes?: number, count?: number, visual?: PluginVisual }} Plugin
+ *   strings?: number, bytes?: number, count?: number, visual?: PluginVisual, content?: ReturnType<typeof readContentData>['content'] }} Plugin
  *   One entry of the registry. type: the manifest 1 type (lang, assets, data …); status: what this version does with
  *   it; supported: a language entry of 0.2.0's pack registry (the lang class, loaded — a loaded cosmetic plugin is none);
  *   files: a lang entry's files with their URLs; visual: a loaded cosmetic plugin's overlay.
@@ -320,11 +321,16 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
     id, type: manifest.type, class: manifest.class, status, source: 'plugins', layout: 'folder', where: at,
     supported: status === 'loaded' && manifest.class === 'lang', manifest, files: served, bytes: check.bytes, count: check.count,
   };
-  if (manifest.class === 'cosmetic' && status === 'loaded') {
+  if ((manifest.class === 'cosmetic' || manifest.class === 'content' && manifest.parts.assets) && status === 'loaded') {
     const v = readVisual(dir, manifest, files, { vanilla: typeof vanilla === 'function' ? vanilla() : vanilla, hashCache });
     warnings.push(...v.warnings);
     if (!v.visual) return { plugin: null, problems: v.problems, warnings };
     plugin.visual = v.visual;
+  }
+  if (manifest.class === 'content' && status === 'loaded') {
+    const c = readContentData(dir, manifest);
+    if (!c.content) return { plugin: null, problems: c.problems.map(p => `${p.code} ${p.path}: ${p.message}`), warnings };
+    plugin.content = c.content;
   }
   if (manifest.class === 'lang') {
     const ui = readJson(served.ui.abs);
@@ -594,6 +600,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
   }
 
   return {
+    contentDirs: { ...dirs },
     /** Re-read the folders now if they changed (force: even within recheckMs). */
     refresh: (force = false) => { refresh(force); },
     /**

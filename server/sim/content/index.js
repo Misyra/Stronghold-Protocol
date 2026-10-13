@@ -27,6 +27,9 @@
 // registerAllMeta(registry) — calls each domain module's registerMeta(registry) (prep side, server boot).
 
 import { genericKit, genericTalents } from './generic.js';
+import { EXTENSIONS } from './extensions.js';
+import { compileDsl } from './dsl/compile.js';
+import { validateSkillSpec, matchesSchema, MODS_SCHEMA } from '../../../shared/plugins/skillSpec.js';
 import { withUnitLoadouts } from '../simdata.js';
 import { isPotential } from '../../../shared/potential.js';
 
@@ -80,11 +83,55 @@ const isOtherBody = (def) => isStandInDef(def) || isDiyDef(def);
  * names the replaced operator's kit (a DIY slot has none). Any other def: baseId (`…_a`, data/SIM.md), the exact id, or
  * the suffix-less id of DESIGN §5.6's example.
  */
-export function kitOf(def, reg) {
+function registeredKit(def, reg) {
   if (!def || !reg) return undefined;
   if (isOtherBody(def)) return Object.prototype.hasOwnProperty.call(reg, def.charId) ? reg[def.charId] : undefined;
   const bare = String(def.baseId ?? def.id ?? '').replace(/_[ab]$/, '');
-  return reg[def.baseId] ?? reg[def.id] ?? reg[bare];
+  return [def.baseId, def.id, bare].map(k => Object.hasOwn(reg, k) ? reg[k] : undefined).find(Boolean);
+}
+
+/** Official kit key or file stem; no path supplied by a plugin is ever imported. */
+export function officialKit(ref) {
+  if (Object.hasOwn(KITS, ref)) return KITS[ref];
+  const file = Object.values(KIT_REGISTRY.KIT_FILES || {}).flat().concat(KIT_REGISTRY.STANDIN_KIT_FILES || [], KIT_REGISTRY.OPERATOR_KIT_FILES || [])
+    .find(f => f.replace(/\.js$/, '') === ref);
+  if (!file) return undefined;
+  const stem = file.replace(/\.js$/, '');
+  if (stem.startsWith('chess_')) return KITS[stem.split('-')[0] + '_a'];
+  const code = stem.replace(/^(op|standin)-/, '');
+  return Object.entries(KITS).find(([k]) => k.startsWith('char_') && k.endsWith('_' + code))?.[1];
+}
+
+/** C2 order: extension → DSL → JSON SkillSpec → kitRef → official → generic. */
+export function kitOf(def, reg = KITS) {
+  if (!def) return undefined;
+  // Explicit Battle opts.kits retain their existing precedence and lookup-only semantics.
+  if (reg !== KITS) return registeredKit(def, reg);
+  const ext = registeredKit(def, EXTENSIONS);
+  if (ext) return ext;
+  const raw = def.raw || {};
+  if (raw.dsl != null) return (bb, chess, d) => compileDsl(raw.dsl, { bb, chess, def: d });
+  if (raw.skillSpec != null) return (bb, chess, d) => {
+    const spec = chess.skill?.skillSpec ?? raw.skillSpec;
+    const errors = validateSkillSpec(spec);
+    const mods = chess.talentMods ?? {};
+    if (errors.length || !matchesSchema(mods, MODS_SCHEMA)) throw Object.assign(new Error('Invalid JSON SkillSpec'), { code: 'PLUGIN_SKILL_SPEC' });
+    return { skills: { [d.skill?.id]: spec }, talents: Object.keys(mods).length ? [{ install(b, u) {
+      b.addBuff(u, { key: 'talent:plugin', mods, persist: true, allowDead: true });
+    } }] : [] };
+  };
+  if (raw.kitRef != null) {
+    const f = officialKit(raw.kitRef);
+    if (!f) return undefined;
+    return (bb, chess, d) => {
+      const k = f(bb, chess, d);
+      // [ASSUMED] A one-skill DIY clone of a chess kit uses that kit's default skill (DESIGN §32.5).
+      // Multi-skill clones retain official skill ids so the existing selectSkillSpec rules remain exact.
+      if (k?.skill && isOtherBody(d) && chess.skills?.length === 1 && !k.skills?.[d.skill?.id]) return { ...k, skills: { ...k.skills, [d.skill.id]: k.skill } };
+      return k;
+    };
+  }
+  return registeredKit(def, KITS);
 }
 
 /** The generic kit of an operator def; a stand-in's / 自选 piece's also carries the talents generic.js can apply exactly. */

@@ -32,7 +32,8 @@ Unknown options or a missing option value are errors (exit code 2); `--refresh` 
   warnings never do. Each output file is written atomically (temp file + rename).
 - **Determinism.** Same inputs ⇒ byte-identical outputs (stable key order, no timestamps, no randomness).
 - **Size.** ≈3.7 MB total (limit 6 MB; `chess.json` ≈1.69 MB with the loadout choices, `backups.json` ≈0.17 MB), compact JSON (no indentation).
-- **Derived paths.** `stages.json groundPaths*` come from the sim's own `server/sim/grid.js` pathing: a change there
+- **Plugin compositions (0.3.0-dev).** Generated files stay official and unchanged. P1b applies patches and compact records to immutable in-memory copies (PLUGINS.md §10); `shared/plugins/validate.js` checks their references without the official quantity assertions. New modes inherit an official base; mode-level economy, DP, timers and other global keys override those defaults. Plugin translations retain the existing i18n overlay format and receive source hashes from the final merged records.
+- **Derived paths.** `stages.json groundPaths*` come from `server/sim/groundPaths.js`, using the sim's own `server/sim/grid.js` pathing: a change there
   needs a rebuild (the offline-rebuild test catches a stale `data/`).
 
 ## 0. Conventions used by every file
@@ -606,6 +607,8 @@ Glyph legend (`rows`):
 `bounty cards 129`, `tactic cards 43`, `backups: 89 units (17 stand-ins, 72 owned-6★ picks; 259 forms), 38 自选 summons, 4 DIY slots, 15 / 9 prototype picks (tier 5 / 6), 72 owned-6★ picks (7 collab operators excluded)`, potential (§2.3): `256 chess records, 219 forms / variants with potDown; 442 + 401 + 19 chained talent entries (chess, backups, tokens)`.
 
 ## 17. Integrity guarantees (checked by the builder and `test/data.test.js`)
+
+The reusable reference pass is `shared/plugins/validate.js validateReferences`; official counts and source-specific assertions remain in `tools/build-data.mjs validateAll`. P1b `validateData` additionally checks the shape and behavior references of merged plugin data.
 
 Every PRESET chess is its own backup and the stand-in builder gives it back field for field (§18); every NORMAL chess
 (both forms) composes into its stand-in with an unlocked backup skill and, on the elite form, its module at that level;

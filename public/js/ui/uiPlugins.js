@@ -1,8 +1,8 @@
 // ui/uiPlugins.js — this browser's interface plugins (DESIGN §32.8). Kept in localStorage, never sent:
 //   sp.pref.ui-plugins     the ids the player turned on (设置 → 界面插件)
 //   sp.pref.ui-recommend   the ids the host marked 推荐 on this browser
-// A recommendation does not turn a plugin on. Another player's page cannot see this browser's mark until a later
-// work package puts the list on the existing room.state (read here if it is already an array: room.uiRecommend,
+// A recommendation does not turn a plugin on. Another player's page cannot see this browser's mark until the protocol
+// supplies the list on the existing room.state (read here if it is already an array: room.uiRecommend,
 // room.content.uiRecommend, room.state.uiRecommend, room.state.content.uiRecommend). No new protocol message.
 // This module does not load the frame, the panel or the art compositor.
 

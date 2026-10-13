@@ -314,7 +314,7 @@ export function appendOfficialBounds(data, vanilla, bad) {
 }
 
 /**
- * The numbers of `config` the game reads as counts (the WP-A round-3 review): the pick-one offer's count — at most the slots
+ * The numbers of `config` the game reads as counts (DESIGN §32.5): the pick-one offer's count — at most the slots
  * an offer shows (PLUGIN_OFFER_SLOTS, the game data's own cap), a positive whole number.
  * @param {object} data @param {(path: string, message: string, code?: string) => void} bad
  */

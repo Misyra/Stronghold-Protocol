@@ -31,10 +31,11 @@
 //                                                        skeleton: the server refuses a lock made from another one
 //   node tools/plugin.mjs new [<template> <id>] [--name <名字>] [--target <官方名字|id>] [--author <名字>] [--license <x>]
 //                             [--dir <folder>]           a new plugin folder plugins/<id>/ (or <folder>/<id>/) from a template
-//                                                        (art, spine, voice, audio, dsl — server/studio/templates/): plugin.json
+//                                                        (all templates in server/studio/templates/): plugin.json
 //                                                        and a README; dsl also writes one operator and one prep spec
 //                                                        (it passes check and pack as it is);
 //                                                        without arguments the templates are listed
+//   node tools/plugin.mjs test <id>                     run the installed plugin's author tests (executes local code)
 //   node tools/plugin.mjs errors [--markdown] [--lang zh|en] [--write]
 //                                                        the error catalogue (every code, its plain words, what to do);
 //                                                        --markdown its symptom table, --write puts the tables into
@@ -91,7 +92,7 @@ import { importForge } from '../server/plugins/forgeImport.js';
 export { checkPluginFolder, buildPluginLock };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] | errors [--markdown] [--lang zh|en] [--write] | install <zip|https> [--sha256 <hex>] [--force] | catalog <file|https> [--json] | surface [--write]   [--root <dir>]';
+const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir … --options <json-file>] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] | test <id> | errors [--markdown] [--lang zh|en] [--write] | install <zip|https> [--sha256 <hex>] [--force] | catalog <file|https> [--json] | surface [--write]   [--root <dir>]';
 /** The documents whose symptom table `errors --write` keeps: path, language. */
 export const TABLE_DOCS = Object.freeze([['docs/PLUGINS.md', 'en'], ['docs/PLUGIN-GUIDE.md', 'zh']]);
 

@@ -1,6 +1,6 @@
 # plugins/AGENTS.md — making a plugin with an AI agent
 
-For AI coding assistants (Claude Code, Codex, Cursor, Copilot …) asked to make or fix a plugin of 卫戍协议：盟约. Do not
+For AI coding assistants asked to make or fix a plugin of 卫戍协议：盟约. Do not
 learn the rules from long prose: let the schema and the checker tell you, and loop until they are quiet. The reference is
 [docs/PLUGINS.md](../docs/PLUGINS.md) (§3 manifest, §4 permissions, §5 files, §9 cosmetic plugins, §15 studio and tools);
 people read [docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md).
@@ -52,17 +52,16 @@ plugin's state with `check.issues` (the same coded issues as `check --json`).
   templates).
 
 
-## Script plugins (P3a)
+## Script plugins
 
 Start from `plugins/_template/script/`, copied to `plugins/script-demo/`. Rename every script_demo record namespace
-with the folder id. Entry modules export synchronous `setup(sp)` and may import only `sp:sdk@1`; use the stable helpers
+with the folder id. Entry modules export synchronous `setup(sp)` and may import only `sp:sdk@1`; use the documented helpers (the SDK is experimental)
 listed in [PLUGINS §13](../docs/PLUGINS.md#13-scripts-p3a), SIM §5–7 for hooks/kits and META §2 for prep handlers.
 Declare sim.code/meta.code for the APIs used, and overrides for any official kit replaced. Keep state per battle;
 use seeded battle.rng, deterministic sp.math and battle timers. Do not claim portability scanning is a sandbox.
 
 Run `check <id> --strict`, `pack <id>` and `test <id>` (the last command executes the author's tests locally with its
-composed data). Never hand-edit the lock. Native production execution additionally needs the owner mode, exact lock pin and all players' consent; public listeners refuse it by default. Sandbox mode uses verified locks and SES without native fallback (PLUGINS §13). A true infinite loop is outside the P3a budget's ability
-to interrupt. Explain that limitation when handing a script to its author. No official game art belongs in the template.
+composed data). Never hand-edit the lock. Native production execution additionally needs the owner mode, exact lock pin and all players' consent; public listeners refuse it by default. Sandbox mode uses verified locks and SES without native fallback (PLUGINS §13). Callback budgets cannot interrupt an infinite loop; the browser Worker and server child watchdogs terminate stalled gameplay simulations. Native trusted page code can still block its page. No official game art belongs in the template.
 
 
 ## Gameplay authoring self-check
@@ -82,4 +81,18 @@ bench does not dispatch match prep hooks. Script tests run local author code; pr
 DSL records use `kit: { dsl: … }` and permission `dsl`; prep specs are files in manifest `dsl`. Both compose through C1; rejected specs must not be replaced with a generic kit.
 The studio refuses saves over an external edit (`PLUGIN_STUDIO_CHANGED`); reload instead of overwriting the editor's work.
 
-After the WP-J2 merge, DSL and prep templates must pass the entire strict-check → pack → content-set path; no pre-A2 skip remains. A trial is a single battle, so verify prep effects through a match round. Invalid generated DSL is refused before files are written. Numeric patches are checked against the shared official bounds. Script source reads need the studio key; trial execution follows the owner's sandbox/trusted mode and locked bytes without elevation.
+DSL and prep templates must pass the entire strict-check → pack → content-set path. A trial is a single battle, so verify prep effects through a match round. Invalid generated DSL is refused before files are written. Numeric patches are checked against the shared official bounds. Script source reads need the studio key; trial execution follows the owner's sandbox/trusted mode and locked bytes without elevation.
+
+## Import, install and API reference
+
+Use `import-forge <dir|zip> --dry-run --json` to inspect a Forge conversion before writing it. The importer never runs
+or copies pack scripts; inspect `IMPORT-REPORT.md` and implement unsupported effects with the documented DSL/SDK.
+`install <zip|https URL>` checks an archive before installing; HTTPS needs `--sha256`. `--force` moves the old plugin
+to `_replaced/`. `catalog <file|https URL> --json` inspects a community list; the studio has the same catalogue install.
+Neither importing nor installing authorizes script execution.
+
+Use [PLUGIN-API.md](../docs/PLUGIN-API.md) for stable/experimental names and `surface` to inspect the generated table.
+Use `errors` for the coded explanations. Release bundles include the CLI, schemas and `test/helpers/battleHarness.js`;
+the full development test suite stays in source. Production sandbox mode (`SP_PLUGIN_SCRIPTS=sandbox`) requires
+valid locked bytes, no trusted pin or per-player consent, and allows public listeners. Native trusted modes require
+review/pinning/consent; public or wildcard listeners and public reverse proxies require `trusted-force`.

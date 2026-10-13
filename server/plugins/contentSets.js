@@ -4,7 +4,7 @@
 // (shared/plugins/identity.js) — what a room with gameplay plugins plays, what every member's page downloads and checks
 // and what the room's match host runs (server/match/host/).
 //
-//   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16 — the same
+//   resolve(ids, { settings, replacing })  the set of these content plugins (built by C1, kept by cs16 — the same
 //                                          plugins in the same state with the same settings, as the builder reads them
 //                                          (normalizeSettings: undeclared keys dropped), are not built again): refused
 //                                          with PLUGIN_BUSY — before anything is built — when it would be one set more
@@ -19,11 +19,11 @@
 //   dataBytes(cs)                          the served bytes of every data file of the set — exactly the bytes the
 //                                          builder hashed — which a match host checks against the set's hash
 //                                          input and parses (server/match/host/entry.js)
-// The builder is WP-A's C1 (server/plugins/contentSet.js buildContentSet / contentSetFiles, DESIGN §32.5); this file
+// The builder is C1 (server/plugins/contentSet.js buildContentSet / contentSetFiles, DESIGN §32.5); this file
 // adapts its set to what P1c reads: `hashInput` (the contentHashOf input a browser and a worker recompute `cs` from — out
 // of the set's index: its data files', and its translation files', hashes; checked to be the builder's cs), `modes` (only the config.modes entries the vanilla data lacks, as { id, name, roomMode,
 // difficulty }), `warnings` in room.state's `{ code, params }` shape, `dataBytes` (what the members download beyond the
-// vanilla files). Until WP-A merged, a stub stood in (P1c's first commits).
+// vanilla files).
 
 import { ERR, DIFFICULTIES } from '../../shared/constants.js';
 import { contentHashOf, csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
@@ -162,7 +162,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       data[name] = f.sha256;
       if (typeof f.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
     }
-    // a content set's cs covers its translation files too (every language its manifest lists — WP-A's review round)
+    // a content set's cs covers its translation files too (every language its manifest lists)
     const i18n = {};
     for (const [lang, f] of Object.entries(index.i18n || {})) {
       if (typeof f?.sha256 === 'string') i18n[lang] = f.sha256;
@@ -181,7 +181,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
         : { code: String(w?.code || 'warning'), params: { ...(w || {}) } })),
       served, dataBytes,
       ...(built.scripts?.length ? {execution:built.execution, scripts:built.scripts} : {}),
-      // the official-bounds snapshot (WP-A, DESIGN §32.5) its match host installs — the one its pages install too
+      // the official-bounds snapshot (DESIGN §32.5) its match host installs — the one its pages install too
       bounds: built.bounds && built.bounds.v === 1 ? built.bounds : null,
     };
   }

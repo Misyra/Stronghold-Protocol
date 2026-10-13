@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  FOLDER, REFUSE, RUNTIME_RESEARCH, entryProblems, isRefused, packageOutIsUnsafe, plan, playerPackageJson,
+  AUTHOR_TEST_FILES, FOLDER, REFUSE, RUNTIME_RESEARCH, entryProblems, isRefused, packageOutIsUnsafe, plan, playerPackageJson,
   rewritePlayerDoc, resolveSpecifier, scanFiles, selectTracked,
 } from '../tools/package.mjs';
 
@@ -85,7 +85,7 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
     assert.ok(!got.has(f), f);
   }
   // the design document (the index docs/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
-  for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
+  for (const f of got) if (!AUTHOR_TEST_FILES.includes(f)) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
   const code = [...got].filter((f) => /\.(?:m?js|py)$/.test(f));
   for (const f of code) {
     const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

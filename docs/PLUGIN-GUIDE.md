@@ -1,7 +1,7 @@
-# 插件新手指南：从零做一个换立绘插件
+# 插件新手指南：从换立绘到玩法插件
 
 这份指南写给**不会写代码、也不想碰命令行**的玩家：用浏览器里的「插件工作台」，几分钟就能把某个干员的立绘换成你自己画的，
-和原版并排预览，打包成 zip 发给朋友。会用命令行的朋友，第二部分有同样事情的命令行做法。格式的完整说明在
+和原版并排预览，打包成 zip 发给朋友。后面还有新干员、DSL、试一场、脚本和安装的步骤。会用命令行的朋友，第二部分有同样事情的命令行做法。格式的完整说明在
 [PLUGINS.md](PLUGINS.md)（英文，§9 外观插件、§15 工作台与工具）；让 AI 帮你做插件，请它先读 `plugins/AGENTS.md`。
 
 > 外观插件只改画面和声音（头像、立绘、模型、图标、语音、音效、音乐），**不改任何数值和对局**：开了外观插件的对局仍然是原版对局。
@@ -33,9 +33,9 @@
 
 ### 2. 新建插件，选模板
 
-点左上角的 **「新建插件」**，选模板 **「换头像 / 立绘 / 图标」**。另外三个模板分别是换 Spine 模型、换语音、换音乐 / 音效。
+点左上角的 **「新建插件」**，选模板 **「换头像 / 立绘 / 图标」**。其他外观模板分别是换 Spine 模型、换语音、换音乐 / 音效；玩法与界面模板见后面的章节。
 
-（截图位置：新建插件的第 1 步，四张模板卡片。`studio-templates.png`）
+（截图位置：新建插件的模板列表。`studio-templates.png`）
 
 ### 3. 按官方名字找到要换的干员
 
@@ -84,7 +84,7 @@
 - **只给自己开**：设置 → 外观插件，打开开关（只影响你自己的浏览器）。
 
 **热重载**：工作台打开期间，插件文件一改（工作台里拖了新图，或者你用画图软件直接保存到插件文件夹里），**几秒内游戏里就跟着变**——
-如果你是房间的房主（同一个浏览器里玩），或者房间里只有你一个人，会自动重新应用；别人当房主的房间会收到「请点重新应用」的提示。
+仅含外观插件的房间里，如果你是房主（同一个浏览器里玩），或者房间里只有你一个人，会自动重新应用；其他房间提示房主「请点重新应用」。有玩法插件的房间始终由房主手动重新应用，对局中保持原来的内容。个人插件在下次重新获取插件列表后跟随。
 
 ## 做法二：用命令行
 
@@ -366,10 +366,46 @@ node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>]
 鸣谢写进清单的说明。对不上的部分留在 `IMPORT-REPORT.md` 里，中文和英文各一行。完整对照表在
 [PLUGINS.md](PLUGINS.md) §16。
 
+## 开启脚本插件
+
+「脚本插件」模板会生成示例技能和作者测试。用编辑器修改后运行：
+
+```bash
+node tools/plugin.mjs check my-script --strict
+node tools/plugin.mjs pack my-script
+node tools/plugin.mjs test my-script
+```
+
+`test` 会在本机执行作者的测试代码，不受服务器沙箱开关和受信任哈希许可限制；它不是生产环境的安全检查。
+正式房间默认不开脚本。服主设置 `SP_PLUGIN_SCRIPTS=sandbox` 后，`script` 类在 SES 沙箱中运行，浏览器用 Worker，
+服务器用受限子进程；要求锁文件与全部文件一致，不要求每位玩家逐个同意，也允许公网监听。修改文件后需重新打包。
+
+`trusted` / `trusted-force` 是原生受信任执行：服主审查文件后，在 `plugins/config.json` 的 `trusted` 中填写锁文件
+SHA-256，每位在座玩家也要同意。公网、`0.0.0.0` / `::` 通配监听或公网反代需 `trusted-force`。
+第一次应用未缓存的脚本时，每个插件最多探测 5 秒，可能让大厅短暂停顿；`SP_SCRIPT_PROBE_MS` 可调整。
+详细限制见 [PLUGINS.md](PLUGINS.md) §13 和[部署指南](DEPLOY.md)。数据插件里的 DSL 不需要开启这个开关。
+
+## 按地址或社区目录安装
+
+工作台点 **「从目录安装」**，填社区提供的目录 HTTPS 地址，或选择本机的目录 JSON 文件，查看版本和兼容性再安装。
+目录里的每个下载都带 zip 的 SHA-256，由服务器下载并校验。项目不托管这些插件。
+
+命令行也能安装本地 zip、按地址下载或查看目录：
+
+```bash
+node tools/plugin.mjs install ./my-skin-1.0.0.zip
+node tools/plugin.mjs install https://example.invalid/my-skin.zip --sha256 <发布者提供的64位哈希>
+node tools/plugin.mjs catalog ./catalog.json
+```
+
+示例域名不可下载，请换成发布者给的地址。远程下载默认只接受公网 HTTPS 的 443 端口。
+同名插件默认不覆盖；需要替换时加 `--force`，旧目录会移到 `plugins/_replaced/`，不会删除。
+安装检查不执行包里的代码；安装脚本插件也不代表它已经获准运行。完整规则见 [PLUGINS.md](PLUGINS.md) §17。
+
 ## 进阶
 
 - 字段的完整说明：[PLUGINS.md](PLUGINS.md) §3（清单）、§4（权限）、§5（文件和上限）、§9（外观插件）、§15（工作台与工具，包括工作台的 API）。
-- JSON Schema：`schemas/plugin.schema.json`、`schemas/overlay.schema.json`。
+- JSON Schema：`schemas/plugin.schema.json`、`schemas/overlay.schema.json`、`schemas/records.schema.json`、`schemas/dsl.schema.json`、`schemas/ui.schema.json`；稳定与实验接口见 [PLUGIN-API.md](PLUGIN-API.md)。
 - 让 AI 帮你做插件：请它先读 `plugins/AGENTS.md`，用 `node tools/plugin.mjs check --json` 自己检查。
 
 ## 截图从哪里来

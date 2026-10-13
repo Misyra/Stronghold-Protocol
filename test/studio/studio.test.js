@@ -211,6 +211,7 @@ describe('the studio over HTTP', () => {
     assert.equal((await call('GET', pv.body.ops[0].value)).status, 200);
     // meta: the basic fields
     r = await call('POST', '/studio/api/plugins/red-texas/meta', { fields: { version: '1.0.1', credits: '我自己画的', scope: ['personal'] }, lang: 'zh' });
+    assert.equal(r.body.version, '1.0.1');
     const m1 = JSON.parse(fs.readFileSync(path.join(plugins, 'red-texas', 'plugin.json'), 'utf8'));
     assert.deepEqual([m1.version, m1.credits, m1.scope], ['1.0.1', '我自己画的', ['personal']]);
     assert.equal((await call('POST', '/studio/api/plugins/red-texas/meta', { fields: { version: '1.0' } })).body.error, 'PLUGIN_VERSION');

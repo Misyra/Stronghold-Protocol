@@ -110,7 +110,7 @@ export async function startServer(opts = {}) {
   // the server owner's policy (plugins/config.json), the content sets of the gameplay plugins (served at /cs/<cs16>/…),
   // what a room's plugins make of both, and the match hosts a room with gameplay plugins plays in (DESIGN §32.6)
   const policy = createPluginPolicy({ pluginsDir, log });
-  const contents = createContentSets({ registry: packs, vanilla: content, vanillaData: data, dataDir, pluginsDir, log, maxSets: () => policy.get().maxSets });
+  const contents = createContentSets({ registry: packs, vanillaData: data, log, maxSets: () => policy.get().maxSets });
   const roomSets = createRoomSets({ registry: packs, visual, contents, policy });
   const hosts = createMatchHosts({ contents, log, options: { maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
   const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts });

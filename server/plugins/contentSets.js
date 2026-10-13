@@ -4,27 +4,27 @@
 // (shared/plugins/identity.js) — what a room with gameplay plugins plays, what every member's page downloads and checks
 // and what the room's match host worker runs (server/match/host/).
 //
-//   resolve(ids, { settings, replacing })  the set of these content plugins (built once per `cs`, then kept): refused
+//   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16): refused
 //                                          with PLUGIN_BUSY when it would be one set more than `limits.maxSets` rooms
 //                                          hold at once (a set a room already holds is free; `replacing`: the set the
 //                                          asking room holds now, freed by the change) [ASSUMED default 4]
 //   hold(cs) / release(cs)                 a room uses the set (never dropped while held)
-//   file(cs16, rel)                        what /cs/<cs16>/… serves: index.json (the set's manifest) and its patched
-//                                          files — a held set's, or one of the last MAX_KEPT built [ASSUMED 8]
+//   file(cs16, rel)                        what /cs/<cs16>/… serves: index.json (the set's manifest) and its data and
+//                                          translation files — a held set's, or one of the last MAX_KEPT [ASSUMED 8]
 //   dataOf(cs) / kittedOf(cs) / modesOf(cs) the merged data (the lobby checks a member's loadout and 自选 picks against
-//                                          it), the operators a 自选 slot may field, the modes it provides
-//   dataBytes(cs)                          the served bytes of every gameplay data file of the set (the patched ones from
-//                                          memory, the others read from disk now) — what a match host worker checks
-//                                          against the set's hash input and parses (server/match/host/entry.js)
-// The builder is WP-A's C1 interface (buildContentSet / contentSetFiles); until it merges, ./contentSetStub.js stands
-// in (the vanilla data plus the plugin list) — the one import to change below.
+//                                          it), the operators a 自选 slot may field, the modes its plugins add
+//   dataBytes(cs)                          the served bytes of every data file of the set — exactly the bytes the
+//                                          builder hashed — which a match host worker checks against the set's hash
+//                                          input and parses (server/match/host/entry.js)
+// The builder is WP-A's C1 (server/plugins/contentSet.js buildContentSet / contentSetFiles, DESIGN §32.5); this file
+// adapts its set to what P1c reads: `hashInput` (the contentHashOf input a browser and a worker recompute `cs` from — out
+// of the set's index), `modes` (only the config.modes entries the vanilla data lacks, as { id, name, roomMode,
+// difficulty }), `warnings` in room.state's `{ code, params }` shape, `dataBytes` (what the members download beyond the
+// vanilla files). Until WP-A merged, a stub stood in (P1c's first commits).
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { ERR } from '../../shared/constants.js';
+import { ERR, DIFFICULTIES } from '../../shared/constants.js';
 import { csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
-// REPLACE WHEN WP-A MERGES: import { buildContentSet, contentSetFiles } from './contentSet.js';
-import { buildContentSet, contentSetFiles } from './contentSetStub.js';
+import { buildContentSet, contentSetFiles } from './contentSet.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** Content sets kept that no room holds (their /cs/ files stay servable a while). [ASSUMED] */
@@ -34,19 +34,38 @@ export const DEFAULT_MAX_SETS = 4;
 
 /**
  * @typedef {{ cs: string, plugins: { id: string, version: string, hash: string }[], modes: object[], data: Record<string, any>,
- *   files: Record<string, { sha256: string, bytes: number }>, hashInput: any, kitted: string[] | null,
- *   served: { index: Record<string, unknown>, indexBody: Buffer, files: Map<string, { body: Buffer, sha256: string, bytes: number }> },
- *   dataBytes: number }} ContentSet
+ *   hashInput: { app: string, sim: string, data: Record<string, string>, plugins: object[], settings: object },
+ *   kitted: string[] | null, warnings: { code: string, params: object }[],
+ *   served: Map<string, { body: Buffer, sha256: string, bytes: number }>, dataBytes: number }} ContentSet
  */
+
+/** A C1 problem ({ code, path, message } or a string) as one line. */
+const problemText = (p) => (p && typeof p === 'object' ? `${p.code || 'PLUGIN'}${p.plugin ? ` ${p.plugin}` : ''} ${p.path ?? ''}: ${p.message ?? ''}`.trim() : String(p));
+
+/**
+ * The modes a set's plugins add: its config.modes entries the vanilla data lacks — what room.setMode may choose
+ * (room.state.content.modes): `{ id, name, roomMode: 'solo' | 'coop', difficulty }`.
+ * @param {any[]} modes the set's config.modes records @param {Readonly<Record<string, any>>} vanillaData
+ */
+export function pluginModes(modes, vanillaData) {
+  const official = vanillaData?.config?.modes && typeof vanillaData.config.modes === 'object' ? vanillaData.config.modes : {};
+  return (Array.isArray(modes) ? modes : [])
+    .filter((m) => m && typeof m.modeId === 'string' && !Object.hasOwn(official, m.modeId))
+    .map((m) => ({
+      id: m.modeId,
+      name: typeof m.name === 'string' ? m.name.slice(0, 40) : m.modeId,
+      roomMode: m.type === 'SINGLE' ? 'solo' : 'coop',
+      difficulty: DIFFICULTIES.includes(m.difficulty) ? m.difficulty : null,
+    }));
+}
 
 /**
  * The content sets of one server.
- * @param {{ registry: { plugin: (id: string) => any }, vanilla: import('./identity.js').VanillaContent,
- *   vanillaData: Readonly<Record<string, any>>, dataDir: string, pluginsDir: string, log?: object,
+ * @param {{ registry: { plugin: (id: string) => any }, vanillaData: Readonly<Record<string, any>>, log?: object,
  *   maxSets?: () => number, build?: typeof buildContentSet, filesOf?: typeof contentSetFiles, maxKept?: number }} opts
  *   maxSets: the limit now (the server owner's policy may change it); build / filesOf: the C1 builder (tests inject one)
  */
-export function createContentSets({ registry, vanilla, vanillaData, dataDir, pluginsDir, log = noopLog, maxSets = () => DEFAULT_MAX_SETS,
+export function createContentSets({ registry, vanillaData, log = noopLog, maxSets = () => DEFAULT_MAX_SETS,
   build = buildContentSet, filesOf = contentSetFiles, maxKept = MAX_KEPT }) {
   /** @type {Map<string, ContentSet>} by cs16, most recently used last */
   const sets = new Map();
@@ -66,6 +85,29 @@ export function createContentSets({ registry, vanilla, vanillaData, dataDir, plu
     }
   };
 
+  /** A built C1 set → a ContentSet (see the header). */
+  function adopt(built) {
+    const index = built.index || {};
+    const served = filesOf(built);
+    const data = {};
+    let dataBytes = 0;
+    for (const [name, f] of Object.entries(index.data || {})) {
+      data[name] = f.sha256;
+      if (typeof f.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
+    }
+    for (const f of Object.values(index.i18n || {})) if (typeof f?.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
+    return {
+      cs: built.cs, plugins: built.plugins || [], data: built.data,
+      hashInput: { app: index.app, sim: index.sim, data, plugins: index.plugins || [], settings: index.settings || {} },
+      modes: pluginModes(built.modes, vanillaData),
+      kitted: Array.isArray(built.kitted) ? built.kitted : null,
+      warnings: (Array.isArray(built.warnings) ? built.warnings : []).map((w) => (w && w.code === 'PLUGIN_PATCH_OVERRIDE'
+        ? { code: 'override', params: { path: `data:${w.path}`, plugins: Array.isArray(w.plugins) ? w.plugins : [] } }
+        : { code: String(w?.code || 'warning'), params: { ...(w || {}) } })),
+      served, dataBytes,
+    };
+  }
+
   /**
    * The content set of the content plugins `ids` (closed and in load order — server/plugins/roomSets.js), built or
    * remembered (see the header).
@@ -76,27 +118,23 @@ export function createContentSets({ registry, vanilla, vanillaData, dataDir, plu
   function resolve(ids, { settings = {}, replacing = null } = {}) {
     let built;
     try {
-      built = build({ registry, ids, settings, vanilla, vanillaData, pluginsDir, dataDir });
+      built = build({ registry, ids: ids.map((id) => (settings[id] ? { id, settings: settings[id] } : id)) });
     } catch (e) {
       log.error?.('[plugins] content set failed to build', e);
       return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
     }
     if (!built || !isContentHash(built.cs) || (Array.isArray(built.problems) && built.problems.length)) {
-      const why = Array.isArray(built?.problems) && built.problems.length ? built.problems.join('; ') : 'no content set';
+      const list = Array.isArray(built?.problems) ? built.problems : [];
+      const why = list.length ? list.slice(0, 4).map(problemText).join('; ') : 'no content set';
       log.warn?.(`[plugins] content set of ${ids.join(', ')} refused: ${why}`);
-      return { error: ERR.PLUGIN_BLOCKED, detail: why.slice(0, 200) };
+      // a load-order problem keeps its own code (PLUGIN_DEPENDENCY / PLUGIN_CONFLICT); any other problem of the data is
+      // a set this server cannot make
+      const code = list.find((p) => p && Object.hasOwn(ERR, p.code))?.code;
+      return { error: code || ERR.PLUGIN_BLOCKED, detail: why.slice(0, 200) };
     }
     const key = csUrlPart(built.cs);
     let set = sets.get(key);
-    if (!set || set.cs !== built.cs) {
-      const served = filesOf(built, vanilla);
-      set = {
-        cs: built.cs, plugins: built.plugins, modes: Array.isArray(built.modes) ? built.modes : [], data: built.data, files: built.files || {},
-        hashInput: built.hashInput, kitted: Array.isArray(built.kitted) ? built.kitted : null,
-        served: { index: served.index, indexBody: Buffer.from(JSON.stringify(served.index)), files: served.files },
-        dataBytes: Object.values(built.files || {}).reduce((n, f) => n + (Number(f.bytes) || 0), 0),
-      };
-    }
+    if (!set || set.cs !== built.cs) set = adopt(built);
     // the limit: one set more than the rooms hold now (a set already held, or the one the asking room gives up, is free)
     if (!held.has(key)) {
       const freed = replacing && isContentHash(replacing) && held.get(csUrlPart(replacing)) === 1 ? 1 : 0;
@@ -127,23 +165,21 @@ export function createContentSets({ registry, vanilla, vanillaData, dataDir, plu
     dataOf: (cs) => byCs(cs)?.data || null,
     /** The operators a 自选 slot may field in it (null = the vanilla list). @param {string} cs */
     kittedOf: (cs) => byCs(cs)?.kitted || null,
-    /** The modes its plugins provide. @param {string} cs */
+    /** The modes its plugins add. @param {string} cs */
     modesOf: (cs) => byCs(cs)?.modes || [],
     /**
-     * A file of a kept set as /cs/<cs16>/<rel> serves it: its manifest (index.json) or a patched file; null otherwise.
+     * A file of a kept set as /cs/<cs16>/<rel> serves it (index.json, data/<table>.json, i18n/<lang>.json), or null.
      * @param {string} cs16 @param {string} rel
      * @returns {{ body: Buffer, sha256: string | null, type: string } | null}
      */
     file(cs16, rel) {
       const set = sets.get(cs16);
-      if (!set) return null;
-      if (rel === 'index.json') return { body: set.served.indexBody, sha256: null, type: 'application/json; charset=utf-8' };
-      const f = set.served.files.get(rel);
-      return f ? { body: f.body, sha256: f.sha256, type: 'application/json; charset=utf-8' } : null;
+      const f = set ? set.served.get(rel) : null;
+      return f ? { body: f.body, sha256: rel === 'index.json' ? null : f.sha256, type: 'application/json; charset=utf-8' } : null;
     },
     /**
-     * The served bytes of every gameplay data file of the set of `cs`, by data name (see the header) — null for a set
-     * not kept; a vanilla file that cannot be read is left out (the worker then refuses the set: its hash input names it).
+     * The served bytes of every data file of the set of `cs`, by table name (the names of its hash input) — null for a set
+     * not kept; a table the builder served no body for is left out (the worker then refuses the set).
      * @param {string} cs
      * @returns {Record<string, Buffer> | null}
      */
@@ -151,10 +187,10 @@ export function createContentSets({ registry, vanilla, vanillaData, dataDir, plu
       const set = byCs(cs);
       if (!set) return null;
       const out = {};
-      for (const [name, f] of Object.entries(vanilla.data)) {
-        const patched = set.served.files.get(`data/${f.file}`);
-        if (patched) { out[name] = patched.body; continue; }
-        try { out[name] = fs.readFileSync(path.join(dataDir, f.file)); } catch (e) { log.warn?.(`[plugins] data/${f.file} cannot be read: ${e?.code || e?.message || e}`); }
+      for (const name of Object.keys(set.hashInput.data)) {
+        const f = set.served.get(`data/${name}.json`);
+        if (f) out[name] = f.body;
+        else log.warn?.(`[plugins] content set ${cs.slice(0, 8)} serves no data/${name}.json`);
       }
       return out;
     },

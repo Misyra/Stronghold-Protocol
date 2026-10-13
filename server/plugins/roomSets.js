@@ -18,7 +18,8 @@
 //   hold / release (vs), holdContent / releaseContent (cs), onStale, unofficial — the visual and content sets'.
 //   defaults() → the ids a new room starts with (the policy's `default`; [] for the original game).
 // A cosmetic plugin's requirements are cosmetic plugins (the visual set closes over them again) [ASSUMED]; a content
-// plugin may require a cosmetic one (its operators' art).
+// plugin may require a cosmetic one (its operators' art) and may carry art itself (its `assets`: part of the room's
+// visual set, so the room's `vs` names it too).
 
 import { ERR } from '../../shared/constants.js';
 import { resolvePluginOrder } from '../../shared/plugins/order.js';
@@ -29,8 +30,8 @@ import { resolvePluginOrder } from '../../shared/plugins/order.js';
  *   policy: ReturnType<typeof import('./policy.js').createPluginPolicy> | null }} opts
  */
 export function createRoomSets({ registry, visual, contents, policy }) {
-  /** A content plugin a room may switch on (the registry of this branch lists the class `planned` until WP-A, P1b). */
-  const contentUsable = (p, scope) => !!contents && !!p && p.class === 'content' && (p.status === 'loaded' || p.status === 'planned')
+  /** A content plugin a room may switch on: loaded, its data read (server/plugins/contentData.js — WP-A, P1b), of the scope. */
+  const contentUsable = (p, scope) => !!contents && !!p && p.class === 'content' && p.status === 'loaded' && !!p.content
     && Array.isArray(p.manifest?.scope) && p.manifest.scope.includes(scope);
   const cosmeticUsable = (p, scope) => !!visual && !!p && p.class === 'cosmetic' && p.status === 'loaded' && !!p.visual
     && Array.isArray(p.manifest?.scope) && p.manifest.scope.includes(scope);
@@ -60,7 +61,9 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     const r = resolvePluginOrder(ids, lookup);
     if ('error' in r) return { error: ERR[r.error] || ERR.BAD_MSG, detail: r.detail };
     const entries = r.order.map((id) => registry.plugin(id));
-    const cosmeticIds = entries.filter((p) => p.class === 'cosmetic').map((p) => p.id);
+    // the art: every cosmetic plugin, and a content plugin's own `assets` (its operators' art: the registry reads it as a
+    // visual snapshot like a cosmetic plugin's — WP-A, P1b) — one visual set
+    const cosmeticIds = entries.filter((p) => p.class === 'cosmetic' || (p.class === 'content' && p.visual)).map((p) => p.id);
     const contentIds = entries.filter((p) => p.class === 'content').map((p) => p.id);
     const warnings = [];
     for (const p of entries) {
@@ -84,8 +87,10 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     const vById = new Map((vset?.plugins || []).map((p) => [p.id, p]));
     const cById = new Map((cset?.plugins || []).map((p) => [p.id, p]));
     const plugins = entries.map((p) => {
-      const src = p.class === 'cosmetic' ? vById.get(p.id) : cById.get(p.id);
-      return { id: p.id, version: p.manifest.version, class: p.class, hash: src?.hash || '', ...(auto.has(p.id) ? { auto: true } : {}) };
+      // a content plugin is named by its gameplay part (the content set's hash) even when it brings art too
+      const src = p.class === 'content' ? cById.get(p.id) : vById.get(p.id);
+      // (16 hex digits, as a cosmetic plugin's: the content set's plugin hash is a full SHA-256)
+      return { id: p.id, version: p.manifest.version, class: p.class, hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
     });
     return {
       ok: true,

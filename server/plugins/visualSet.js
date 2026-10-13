@@ -90,8 +90,13 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
     }
   };
   const snapshot = (p) => ({ id: p.id, hash: p.visual.hash, ops: p.visual.ops });
-  /** Is `p` a loaded cosmetic plugin with an overlay (of `scope`, when given)? */
-  const usable = (p, scope) => !!p && p.class === 'cosmetic' && p.status === 'loaded' && !!p.visual && (!scope || p.manifest.scope.includes(scope));
+  /**
+   * Is `p` a loaded cosmetic plugin with an overlay (of `scope`, when given)? A room's set also takes a content plugin's
+   * own art (its `assets`, read like a cosmetic overlay — DESIGN §32.5 / §32.6: server/plugins/roomSets.js); never a
+   * player's personal set (a content plugin is a room's only).
+   */
+  const usable = (p, scope) => !!p && (p.class === 'cosmetic' || (p.class === 'content' && scope !== 'personal')) && p.status === 'loaded'
+    && !!p.visual && (!scope || p.manifest.scope.includes(scope));
 
   /**
    * The set of the plugins `ids` asks for, as a room (or a player) would use it: each a loaded cosmetic plugin of
@@ -106,7 +111,7 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
     for (const id of ids) {
       const p = registry.plugin(id);
       if (!p) return { error: ERR.PLUGIN_UNKNOWN, detail: `${String(id).slice(0, 40)} is not installed` };
-      if (!usable(p, scope)) return { error: ERR.PLUGIN_BLOCKED, detail: `${id} is not a cosmetic plugin of scope ${scope} this version loads` };
+      if (!usable(p, scope)) return { error: ERR.PLUGIN_BLOCKED, detail: `${id} is not a cosmetic plugin of scope ${scope} this version loads${p.class === 'content' ? ' (a content plugin\'s art is a room\'s only)' : ''}` };
     }
     const lookup = (id) => { const p = registry.plugin(id); return usable(p, scope) ? { id: p.id, ...p.manifest } : null; };
     const r = resolvePluginOrder(ids, lookup);
@@ -129,7 +134,7 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
       ok: true,
       set: {
         vs,
-        plugins: list.map((p) => ({ id: p.id, version: p.manifest.version, class: 'cosmetic', hash: p.visual.hash, ...(r.auto.includes(p.id) ? { auto: true } : {}) })),
+        plugins: list.map((p) => ({ id: p.id, version: p.manifest.version, class: p.class, hash: p.visual.hash, ...(r.auto.includes(p.id) ? { auto: true } : {}) })),
         warnings,
         bytes,
       },

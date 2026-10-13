@@ -62,6 +62,17 @@ const D = Object.freeze({
 /** @type {Readonly<Record<string, Readonly<PluginErrorEntry>>>} the catalogue, by code (see the header) */
 export const PLUGIN_ERRORS = Object.freeze({
   // ---- a room's refusals (room.setPlugins; ERR codes of shared/constants.js) ----------------------------------------
+  PLUGIN_WORKER_TIMEOUT: { level: 'problem', zh: "插件模拟长时间无响应", en: "Plugin simulation did not respond", fix: { zh: "检查插件循环并降低每批模拟的负载", en: "Check plugin loops and reduce simulation work" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_WORKER_FAILED: { level: 'problem', zh: "插件模拟进程出错", en: "Plugin simulation failed", fix: { zh: "查看日志并修复插件", en: "Inspect the log and fix the plugin" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_WORKER_STOPPED: { level: 'problem', zh: "插件模拟已停止", en: "Plugin simulation stopped", fix: { zh: "重新开始本场模拟", en: "Start a new simulation" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_UNAVAILABLE: { level: 'problem', zh: "脚本沙箱未就绪", en: "Script sandbox is unavailable", fix: { zh: "安装依赖并检查 SDK 接口", en: "Install dependencies and check the SDK adapter" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_DISABLED: { level: 'problem', zh: "服务器未开启脚本沙箱", en: "Script sandbox is disabled", fix: { zh: "由服主设置 SP_PLUGIN_SCRIPTS=sandbox", en: "Ask the owner to set SP_PLUGIN_SCRIPTS=sandbox" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_CLASS: { level: 'problem', zh: "此插件类别不能进入脚本沙箱", en: "This plugin class cannot enter the sandbox", fix: { zh: "仅将 script 类插件交给沙箱", en: "Pass only script plugins to SES" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_HASH: { level: 'problem', zh: "脚本文件与内容哈希不符", en: "Script bytes do not match the content hash", fix: { zh: "重新应用插件并校验文件", en: "Reapply the plugin and verify the files" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_IMPORT: { level: 'problem', zh: "脚本导入超出沙箱范围", en: "Script import is outside the sandbox", fix: { zh: "只导入 sp:sdk@1 和插件内相对路径，避免循环导入", en: "Import only sp:sdk@1 and own relative files; avoid cycles" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_SYNTAX: { level: 'problem', zh: "脚本使用了不支持的模块语法", en: "Script uses unsupported module syntax", fix: { zh: "使用同步 setup 和静态导入，参见脚本文档", en: "Use synchronous setup and static imports; see the script reference" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_LIMIT: { level: 'problem', zh: "脚本文件超过沙箱上限", en: "Script source exceeds sandbox limits", fix: { zh: "缩减文件数量和代码体积", en: "Reduce source size and file count" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_MATH: { level: 'problem', zh: "脚本数学运算超出确定性范围", en: "Script math is outside the deterministic domain", fix: { zh: "只用有限数字，幂指数必须是整数", en: "Use finite numbers and integer exponents" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
   PLUGIN_UNKNOWN: {
     level: 'refusal', doc: D.cosmetic,
     zh: '本服务器没有安装这个插件', en: 'This server has not installed that plugin',

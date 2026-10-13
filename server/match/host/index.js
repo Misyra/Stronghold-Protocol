@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { ERR } from '../../../shared/constants.js';
 import { csUrlPart } from '../../../shared/plugins/identity.js';
 import { MatchProxy } from './proxy.js';
+import { forkSandbox, sandboxInit, scriptMode } from './childHost.js';
 
 const ENTRY = fileURLToPath(new URL('./entry.js', import.meta.url));
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
@@ -63,7 +64,7 @@ export class HostError extends Error {
 /**
  * The match hosts of one server.
  * @param {{ contents: { get: (cs: string) => any, dataBytes: (cs: string) => Record<string, Buffer> | null },
- *   log?: object, options?: Partial<typeof HOST_DEFAULTS> & { matchOptions?: object, matchModule?: string, virtualTime?: boolean } }} deps
+ *   log?: object, options?: Partial<typeof HOST_DEFAULTS> & { matchOptions?: object, matchModule?: string, virtualTime?: boolean, scriptSdkModule?: string } }} deps
  */
 export function createMatchHosts({ contents, log = noopLog, options = {} }) {
   const o = { ...HOST_DEFAULTS, ...options };
@@ -80,6 +81,10 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       const set = contents.get(cs);
       const files = set ? contents.dataBytes(cs) : null;
       if (!set || !files) throw new HostError(ERR.INTERNAL, `the content set ${csUrlPart(cs)} is not kept by this server`);
+      const scripts = set.scripts || [];
+      const sandbox = scripts.length > 0;
+      if (sandbox && scriptMode() !== 'sandbox') throw new HostError('PLUGIN_SANDBOX_DISABLED', 'SP_PLUGIN_SCRIPTS=sandbox required');
+      if (sandbox && scripts.some(p => p.class !== 'script')) throw new HostError('PLUGIN_SANDBOX_CLASS', 'trusted plugins must never enter SES');
       this.plugins = (set.plugins || []).map((p) => `${p.id}@${p.version}`).join(', ');
       /** @type {Map<string, MatchProxy>} */
       this.matches = new Map();
@@ -88,8 +93,8 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       this.dead = null;
       this.idleTimer = null;
       const init = {
-        cs, hashInput: set.hashInput, files, bounds: set.bounds ?? null,
-        options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime },
+        cs, hashInput: set.hashInput, files, bounds: set.bounds ?? null, scripts, sandbox,
+        options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime, scriptSdkModule: o.scriptSdkModule || null },
       };
       const failed = (e) => {
         log.error?.(`[plugins] match host ${this.tag} (${this.plugins}) failed: ${e?.code || ''} ${e?.message || e}`);
@@ -103,11 +108,11 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
         if (hosts.get(this.cs) === this) hosts.delete(this.cs);
       };
       // a worker thread only when asked for by name (anything else: a child process — the header's measurement)
-      this.transport = o.transport === 'worker' ? 'worker' : 'process';
+      this.transport = !sandbox && o.transport === 'worker' ? 'worker' : 'process';
       if (this.transport === 'process') {
         // a child process: its memory limit is its own (an out-of-memory abort ends it alone — see the header)
         const mb = Math.max(64, Number(o.resourceLimits?.maxOldGenerationSizeMb) || HOST_DEFAULTS.resourceLimits.maxOldGenerationSizeMb);
-        this.child = fork(ENTRY, [], { execArgv: [`--max-old-space-size=${mb}`], serialization: 'advanced', stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+        this.child = sandbox ? forkSandbox(ENTRY, { memoryMb: mb }) : fork(ENTRY, [], { execArgv: [`--max-old-space-size=${mb}`], serialization: 'advanced', stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
         // the last lines it printed (an abort's "FATAL ERROR …") go into the log when it dies
         this.stderr = '';
         this.child.stderr?.on('data', (d) => { this.stderr = (this.stderr + String(d)).slice(-2000); });
@@ -121,7 +126,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
         this.child.channel?.unref?.();
         this.send = (m) => { if (this.child.connected) this.child.send(m); };
         this.kill = () => { try { this.child.kill('SIGKILL'); } catch { /* gone */ } };
-        this.send({ type: 'init', ...init });
+        this.send({ type: 'init', ...(sandbox ? sandboxInit(init) : init) });
       } else {
         this.worker = new Worker(ENTRY, { workerData: init, resourceLimits: { ...o.resourceLimits }, stdout: false, stderr: false });
         this.worker.unref?.();

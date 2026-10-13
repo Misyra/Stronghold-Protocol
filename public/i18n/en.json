@@ -1467,5 +1467,6 @@
   "使用": "Use",
   "钥匙不对：请重新复制服务器窗口里的地址。": "That is not the key: copy the address from the server's window again.",
   "符号链接，工作台不打开": "a symbolic link: the studio does not open it",
-  "这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。": "This plugin folder is a symbolic link: the game reads it as usual, the studio opens real folders only."
+  "这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。": "This plugin folder is a symbolic link: the game reads it as usual, the studio opens real folders only.",
+  "插件卡死，本场由服务器接管": "A plugin stopped responding. The server will take over this battle."
 }

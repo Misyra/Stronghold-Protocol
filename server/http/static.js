@@ -72,6 +72,7 @@ import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
 import { PLUGINS_URL, PLUGIN_INDEX_VERSION, buildPluginIndex, extOf, isPackPath, isPluginId } from '../../shared/plugins/manifest.js';
 import { csUrlPart } from '../../shared/plugins/identity.js';
 import { FILE_URL_DIGITS, PLUGIN_AUDIO_EXTS, PLUGIN_FILES_URL, VISUAL_DOC_FILE, VISUAL_SETS_URL, VS_URL_DIGITS } from '../../shared/plugins/visual.js';
+import { SIM_WORKER_CSP } from './csp.js';
 import { UI_FRAME_CSP } from '../../shared/plugins/ui.js';
 
 /** Browser stand-in of server/data.js, served at /data.js (see the header). Served byte for byte: its first line names the entry, server/index.js. */
@@ -317,6 +318,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const studio = await studioRealPath();
       const real = studio ? await fsp.realpath(absPath).catch(() => null) : null;
       if (studio && (!real || real === studio || real.startsWith(studio + path.sep))) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
+    }
+    // Compare the actual file, including case-insensitive / encoded aliases, before every 200/206/304.
+    if (mount.name === 'public' && path.basename(absPath).toLowerCase() === 'simworker.js') {
+      const real = await fsp.realpath(absPath);
+      const worker = await fsp.realpath(path.join(publicDir, 'js/battle/simWorker.js')).catch(() => null);
+      if (real === worker) res.setHeader('Content-Security-Policy', SIM_WORKER_CSP);
     }
     const indexed = mount.name === 'public' && segments.length > 1 && ASSET_INDEX_ROOTS.includes(segments[0]);
     const opts = indexed ? hashedFileOpts(assetIndex, segments.join('/'), stat, urlHash) : (urlHash ? { cacheControl: 'no-cache' } : {});

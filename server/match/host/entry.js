@@ -42,8 +42,10 @@ let cs = null;
 let hashInput = null;
 let files = null;
 let bounds = null;
+let scripts = [];
+let sandbox = false;
 let options = {};
-const adopt = (init) => { ({ cs, hashInput, files, bounds = null } = init || {}); options = (init && init.options) || {}; };
+const adopt = (init) => { ({ cs, hashInput, files, bounds = null, scripts = [], sandbox = false } = init || {}); options = (init && init.options) || {}; };
 if (viaWorker) adopt(workerData);
 // a child process whose parent is gone has nothing left to do
 if (!viaWorker) process.on('disconnect', () => process.exit(0));
@@ -82,6 +84,7 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function boot() {
   if (!hashInput || typeof hashInput !== 'object' || !hashInput.data || !files) throw new Error('no content set was given');
+  if (sandbox) for (const name of Object.keys(files)) files[name] = Uint8Array.from(files[name]);
   for (const [name, h] of Object.entries(hashInput.data)) {
     // (a child process receives the bytes as a Uint8Array: the IPC channel's structured clone)
     const b = files[name];
@@ -95,6 +98,25 @@ async function boot() {
   for (const name of Object.keys(hashInput.data)) data[name] = JSON.parse(decoder.decode(files[name]));
   setData(data);
   installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
+  let sandboxModule;
+  if (sandbox) {
+    if (viaWorker || !process.permission || process.env.SP_PLUGIN_SCRIPTS !== 'sandbox') throw new Error('PLUGIN_SANDBOX_DISABLED');
+    sandboxModule = await import('../../../shared/plugins/sandbox.js');
+    await sandboxModule.initializeSandbox({ loadSES: () => import('ses') });
+    // Every executable byte must be bound to the composition already checked against cs.
+    for (const script of scripts) {
+      const part = hashInput.plugins?.find(p => p.id === script.id);
+      if (!part || script.class !== 'script') throw new Error('PLUGIN_SANDBOX_CLASS');
+      for (const [path, file] of Object.entries(script.files || {})) {
+        if (part.files?.[path] !== file.sha256) throw new Error('PLUGIN_SANDBOX_HASH');
+      }
+    }
+  }
+  if (sandboxModule) {
+    await import('../../sim/spec.js'); // original engine first, then SDK registration, then the match/meta registries
+    const [{ parse }, sdk] = await Promise.all([import('acorn'), import(options.scriptSdkModule ? pathToFileURL(options.scriptSdkModule).href : '../../../shared/plugins/sdk.js')]);
+    await sandboxModule.installSandboxPlugins({ plugins: scripts, parse, createSDK: sdk.createPluginSDK });
+  }
   const mod = await import(typeof options.matchModule === 'string' && options.matchModule ? pathToFileURL(options.matchModule).href : '../Match.js');
   MatchClass = mod.Match || mod.default;
   if (typeof MatchClass !== 'function') throw new Error('the match module exports no Match');

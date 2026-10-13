@@ -95,7 +95,7 @@ export function createSessionStack(opts, { data, log, chatLog }) {
   const diagnostics = new NetDiagnostics();
   try {
     const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
-    const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics });
+    const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup });
     return { registry, lobby, network };
   } catch (error) {
     diagnostics.close();

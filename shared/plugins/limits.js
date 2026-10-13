@@ -15,6 +15,12 @@ export const PLUGIN_SPAWN_TOTAL = 600;
  * plays. Official values: 1 and 5.
  */
 export const PLUGIN_ACTION_UNITS = 50;
+/**
+ * The most slots a pick-one offer shows: server/match/player/common.js MAX_OFFER_SLOTS (a test locks the two). The
+ * offer's count (config economy.rewardOffer.count, official 3) is capped at it by the game data and by the check of a data
+ * plugin — a larger count only rolled the pool for slots nobody sees.
+ */
+export const PLUGIN_OFFER_SLOTS = 6;
 /** Enemy blackboard `times` / keys ending in `times`. Official values stay at or below 8. JSON SkillSpec hits stay at 100. */
 export const PLUGIN_TIMES_MAX = 100;
 /** Per-count card grants. Official `global_special_choice_gain_equip` and bond-chess counts stay at or below 2. */

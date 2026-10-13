@@ -444,3 +444,73 @@ test('factions: the numbers the wave generator reads as counts and weights are b
   assert.equal(boundProblems(op('generation', ['maxReplacedEnemyCount'], 51)).length, 1);
   assert.deepEqual(boundProblems(op('generation', ['maxReplacedEnemyCount'], 50)), []);
 });
+
+test('the wolf pack: its text counts are capped, and an attack on a target that takes no damage still returns (WP-A round-3 review HIGH-A)', async () => {
+  // the review's repro: 至多 1e16 只 on the pack's texts, 初始 1e16 只 on its owner's talents, every attack 0 — all of it passes
+  // the data check; the pack used to read both with a raw regex and resolveHit looped 1e16 times on a target that never fell
+  const { makeBattle } = await import('../helpers/battleHarness.js');
+  const { resolveHit: hit } = await import('../../server/sim/ai.js');
+  const { PLUGIN_TIMES_MAX } = await import('../../shared/plugins/limits.js');
+  const base = getData();
+  const tid = 'token_10028_vigil_wolf';
+  const owner = Object.keys(base.chess).find((id) => id.includes('3_19') && id.endsWith('_a'));
+  assert.ok(owner && base.tokens[tid], 'the pack and its owner exist');
+  const paths = (node, re, at = [], out = []) => {
+    if (typeof node === 'string') { if (re.test(node)) out.push({ at, text: node }); return out; }
+    if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) paths(v, re, at.concat(Array.isArray(node) ? Number(k) : k), out);
+    return out;
+  };
+  const atks = (node, at = [], out = []) => {
+    if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) {
+      if (k === 'atk' && typeof v === 'number') out.push(at.concat(k));
+      else atks(v, at.concat(Array.isArray(node) ? Number(k) : k), out);
+    }
+    return out;
+  };
+  const ops = [
+    ...paths(base.tokens[tid], /至多\d+只/).map((h) => ({ op: 'set', file: 'tokens', id: tid, path: h.at, value: h.text.replace(/至多\d+只/, `至多${BOMB}只`) })),
+    ...paths(base.chess[owner], /初始(两|二|\d+)只/).map((h) => ({ op: 'set', file: 'chess', id: owner, path: h.at, value: h.text.replace(/初始(两|二|\d+)只/, `初始${BOMB}只`) })),
+    ...atks(base.tokens[tid]).map((p) => ({ op: 'set', file: 'tokens', id: tid, path: p, value: 0 })),
+  ];
+  assert.ok(ops.length >= 3, `${ops.length} writes`);
+  const patched = applyPatches(base, ops);
+  assert.deepEqual(patched.problems, []);
+  assert.deepEqual(validateData(patched.data, { vanilla: base }).filter((p) => p.code === 'PLUGIN_DATA_BOUND'), [], 'text is not a number the check bounds: the engine caps it');
+  const h = makeBattle({
+    content: 'full', timeLimit: 5, autoFinish: false, enemies: [],
+    logger: { error() {}, warn() {}, info() {}, log() {}, debug() {} },
+    defs: { tokens: { [tid]: patched.data.tokens[tid] }, chess: { [owner]: patched.data.chess[owner] } },
+    units: [{ chessId: owner, row: 10, col: 4, uid: 1 }, { kind: 'token', tokenId: tid, ownerUid: 1, row: 10, col: 5, uid: 2 }],
+  });
+  h.battle.start();
+  const wolf = h.battle.allyUnits.find((u) => u.defId === tid);
+  assert.ok(wolf && typeof wolf.profile?.hitsFn === 'function', 'the pack is on the field');
+  const cap = dataBound(officialTextMax('at-most-pack'));
+  assert.ok(wolf.mem.wolfCapacity <= cap && wolf.mem.shadows <= cap, `capacity ${wolf.mem.wolfCapacity}, shadows ${wolf.mem.shadows} ≤ ${cap}`);
+  const foe = h.spawn('enemy_1000_gopro_2', { pos: [wolf.y, wolf.x] });
+  const t0 = Date.now();
+  hit(h.battle, wolf, wolf.profile, foe, { index: 0, attackId: 1 }, wolf.x, wolf.y);
+  assert.ok(Date.now() - t0 < 1000, 'the attack returned');
+  assert.ok(foe.alive, 'nothing hurt it (atk 0): only the cap ended the loop');
+  assert.ok(PLUGIN_TIMES_MAX >= 64, 'the hit cap sits above the pack\'s');
+});
+
+test('the pick-one offer: its count stays within the slots an offer shows, in the game data and in the check (WP-A round-3 review HIGH-B)', async () => {
+  const { GameData } = await import('../../server/match/gamedata.js');
+  const { MAX_OFFER_SLOTS } = await import('../../server/match/player/common.js');
+  const { PLUGIN_OFFER_SLOTS } = await import('../../shared/plugins/limits.js');
+  assert.equal(PLUGIN_OFFER_SLOTS, MAX_OFFER_SLOTS, 'the check\'s cap is the game\'s');
+  assert.equal(getData().config.economy.rewardOffer.count, 3, 'the official count');
+  const op = (value) => ({ op: 'set', file: 'config', id: 'economy', path: ['rewardOffer', 'count'], value });
+  assert.deepEqual(boundProblems(op(MAX_OFFER_SLOTS)), []);
+  for (const bad of [1e9, MAX_OFFER_SLOTS + 1, 0, 2.5]) {
+    const problems = boundProblems(op(bad));
+    assert.equal(problems.length, 1, `${bad}: ${JSON.stringify(problems)}`);
+    assert.equal(problems[0].path, 'config.economy.rewardOffer.count');
+  }
+  // a game data that was never checked (a direct GameData): the count is capped all the same — the 松果 and promotion loops
+  // roll at most a few times the slots
+  const data = applyPatches(getData(), [op(1e9)]).data;
+  assert.equal(new GameData(data, 'mode_single_normal').rewardOffer().count, MAX_OFFER_SLOTS);
+  assert.equal(new GameData(getData(), 'mode_single_normal').rewardOffer().count, 3);
+});

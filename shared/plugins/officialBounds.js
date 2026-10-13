@@ -6,7 +6,7 @@
 // Minima of step keys and maxima of description-text counts live in the same cache. A content set ships the
 // snapshot (`bounds`) so a worker or a page that never calls getData() installs the same numbers.
 
-import { PLUGIN_ACTION_UNITS, dataBound, isStepKey } from './limits.js';
+import { PLUGIN_ACTION_UNITS, PLUGIN_OFFER_SLOTS, dataBound, isStepKey } from './limits.js';
 import { TEXT_COUNT_PATTERNS } from './textPatterns.js';
 import { textFinite } from './textNumber.js';
 
@@ -297,6 +297,21 @@ export function appendOfficialBounds(data, vanilla, bad) {
     });
   }
   appendFactionBounds(data, vanilla, bad);
+  appendConfigBounds(data, bad);
+}
+
+/**
+ * The numbers of `config` the game reads as counts (the WP-A round-3 review): the pick-one offer's count — at most the slots
+ * an offer shows (PLUGIN_OFFER_SLOTS, the game data's own cap), a positive whole number.
+ * @param {object} data @param {(path: string, message: string, code?: string) => void} bad
+ */
+function appendConfigBounds(data, bad) {
+  const offer = data?.config?.economy?.rewardOffer;
+  if (!isPlain(offer) || offer.count === undefined) return;
+  const v = offer.count;
+  if (!Number.isInteger(v) || v < 1 || v > PLUGIN_OFFER_SLOTS) {
+    bad('config.economy.rewardOffer.count', `字段 config.economy.rewardOffer.count 的值 ${v} 不是 1 到 ${PLUGIN_OFFER_SLOTS} 的整数（一次招募最多显示 ${PLUGIN_OFFER_SLOTS} 个）`, 'PLUGIN_DATA_BOUND');
+  }
 }
 
 /**

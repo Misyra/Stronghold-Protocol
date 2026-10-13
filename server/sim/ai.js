@@ -40,6 +40,7 @@ import { reduceElement } from './damage.js';
 import { straightClear } from './grid.js';
 import { moveFeared, endFear } from './fear.js';
 import { hypot, powi } from './detmath.js';
+import { PLUGIN_TIMES_MAX } from '../../shared/plugins/limits.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // profiles
@@ -326,19 +327,21 @@ export function resolveHit(b, u, prof, target, info, x, y) {
     // [ASSUMED] Body instances precede additions at the existing projectile impact; a multi-hit volley keeps one ramp.
     const attachedFunnel = !!prof.funnelMul && prof.funnelBodyHits !== 0;
     if (!attachedFunnel) mulT *= funnelMul;
-    const hits = prof.hitsFn ? prof.hitsFn(b, u, info) : Math.max(1, prof.hits || 1);
+    // (a count from a kit, a trait or text is capped here too: an attack of a target that takes no damage would otherwise
+    // loop as often as it says — DESIGN §32.5; official counts stay far below PLUGIN_TIMES_MAX)
+    const hits = Math.min(PLUGIN_TIMES_MAX, prof.hitsFn ? prof.hitsFn(b, u, info) : Math.max(1, prof.hits || 1));
     // `hitDmgMul` (professions.js header): each instance's 伤害倍率 — the DamageInfo `mul`, after DEF / RES — and only the
     // first instance may give 受击回复 (砾's two 50 % hits, PRTS 砾 特性备注)
     const split = Number.isFinite(prof.hitDmgMul) && prof.hitDmgMul > 0 ? prof.hitDmgMul : null;
     let dealtMain = 0;
     if (attachedFunnel && info.index === 0) {
-      const bodyHits = Math.max(1, prof.funnelBodyHits > 0 ? prof.funnelBodyHits : 1);
-      for (let h = 0; h < bodyHits && target.alive; h++) { // loop-cap: funnelBodyHits (textCount upstream)
+      const bodyHits = Math.min(PLUGIN_TIMES_MAX, Math.max(1, prof.funnelBodyHits > 0 ? prof.funnelBodyHits : 1));
+      for (let h = 0; h < bodyHits && target.alive; h++) { // loop-cap: funnelBodyHits ≤ PLUGIN_TIMES_MAX
         dealtMain += b.dealDamage(u, target, { amount: atk * scale * mulT, type: baseType,
           isAttack: true, isSkill: info.isSkill, tags: prof.tags || [], attackId });
       }
     }
-    for (let h = 0; h < hits && target.alive; h++) { // loop-cap: hits (textCount or a kit count)
+    for (let h = 0; h < hits && target.alive; h++) { // loop-cap: hits ≤ PLUGIN_TIMES_MAX
       const d = { amount: atk * scale * mulT * (attachedFunnel ? funnelMul : 1), type: baseType,
         isAttack: !attachedFunnel, isSkill: info.isSkill, tags: attachedFunnel ? [...(prof.tags || []), 'addition', 'funnel'] : (prof.tags || []), attackId };
       if (split != null) { d.mul = split; if (h > 0) d.noSp = true; }

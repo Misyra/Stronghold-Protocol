@@ -15,6 +15,7 @@ import { getConfig, getMode } from '../data.js';
 import { isShopItem } from '../sim/simdata.js';
 import { mergeData } from '../../shared/plugins/dataUtils.js';
 import { standInRecord } from '../../shared/standIn.js';
+import { MAX_OFFER_SLOTS } from './player/common.js';
 
 const own = (map, id) => (map && typeof map === 'object' && typeof id === 'string' && Object.hasOwn(map, id) && map[id] && typeof map[id] === 'object' ? map[id] : null);
 const numOr = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -301,7 +302,8 @@ export class GameData {
   rewardOffer() {
     const r = this.economy.rewardOffer && typeof this.economy.rewardOffer === 'object' ? this.economy.rewardOffer : {};
     return {
-      count: posIntOr(r.count, DEFAULTS.rewardOffer.count),
+      // (an offer shows at most MAX_OFFER_SLOTS: a larger count — a data plugin's — only rolled for slots nobody sees)
+      count: Math.min(MAX_OFFER_SLOTS, posIntOr(r.count, DEFAULTS.rewardOffer.count)),
       tierOffset: Number.isInteger(r.tierOffset) ? r.tierOffset : DEFAULTS.rewardOffer.tierOffset,
       maxTier: posIntOr(r.maxTier, DEFAULTS.rewardOffer.maxTier),
       price: Math.max(0, numOr(r.price, 0)),

@@ -27,9 +27,13 @@
 //
 // The art (DESIGN §32 P1a): every record names the room's visual set `vs` — the cosmetic plugins its host switched on
 // (room.state.content.vs; null without any). The overview does not filter on it: a match with only cosmetic plugins
-// counts as the original game (the owner's decision of 2026-10-13: its gameplay and numbers are unchanged); only matches
-// with plugins that change gameplay will be left out (P1b / P1c). A player's personal plugins never matter and are not
-// recorded.
+// counts as the original game (the owner's decision of 2026-10-13: its gameplay and numbers are unchanged). A player's
+// personal plugins never matter and are not recorded.
+// Gameplay plugins (DESIGN §32.6, P1c): every record names the room's content set when it played one — `content`
+// `{ cs, plugins: ['<id>@<version>' …] }` (room.state.content with `vanilla: false`), null for the original game
+// (cosmetic plugins only included; a record from before 0.3.0: null — format v2, MIGRATIONS[1]). Such a match is
+// unofficial: the aggregates leave it out unless asked to take it in (aggregateStats `modded` — the overview's
+// 「含插件对局」 switch); the history lists it with its mark.
 //
 // Format evolution: the envelope carries a version (`STATS_VERSION`); `migrateStats` walks records through a chain of
 // per-version steps and every loaded / imported record passes `normalizeRecord`, a strict schema: missing fields get
@@ -43,7 +47,7 @@
 import { PHASE } from '../../../shared/constants.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 /** localStorage key under the app's `sp.pref.` prefix (store.js loadPref). */
 export const STATS_PREF_KEY = 'stats';
 /** Oldest records are dropped beyond this many matches. */
@@ -64,6 +68,20 @@ export const emptyStats = () => ({ v: STATS_VERSION, records: [] });
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 /** A visual hash (64 lowercase hex digits: shared/plugins/visual.js), else null. */
 const vsOf = (v) => (typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : null);
+/**
+ * The content set a record names (see the header): `{ cs, plugins: ['<id>@<version>' …] }` of a room with gameplay
+ * plugins — room.state.content with `vanilla: false`, or a record's own — else null (the original game).
+ * @param {any} c
+ */
+export function contentOf(c) {
+  if (!isObj(c) || c.vanilla === true || !vsOf(c.cs)) return null;
+  const list = (Array.isArray(c.plugins) ? c.plugins : [])
+    .map((p) => (typeof p === 'string' ? p : isObj(p) && typeof p.id === 'string' ? `${p.id}@${typeof p.version === 'string' ? p.version : '?'}` : null))
+    .filter((x) => typeof x === 'string' && x.length <= 80).slice(0, 32);
+  return { cs: c.cs, plugins: list };
+}
+/** Did the record's match play gameplay plugins (unofficial)? @param {any} rec */
+export const isModdedRecord = (rec) => !!(isObj(rec) && rec.content);
 const int = (v, d) => (Number.isFinite(v) ? Math.round(v) : d);
 const num = (v) => (Number.isFinite(v) ? v : null);
 const bool = (v, d = false) => (typeof v === 'boolean' ? v : d);
@@ -210,22 +228,27 @@ export function normalizeRecord(raw) {
     selfId: str(r.selfId),
     // the room's cosmetic plugins (see the header): its visual set, null without any (or a record from before 0.3.0)
     vs: vsOf(r.vs),
+    // the room's gameplay plugins (see the header): its content set, null for the original game
+    content: contentOf(r.content),
     players,
   };
   if (r.compact === true) rec.compact = true;
-  // an id-less (hand-made) record gets a content id, so both copies of it land on the same key (`vs` left out: the id
-  // of a record from before 0.3.0 stays the same)
-  if (!rec.id) rec.id = `c.${fnv1a(JSON.stringify({ ...rec, vs: undefined }))}`;
+  // an id-less (hand-made) record gets a content id, so both copies of it land on the same key (`vs` and `content` left
+  // out: the id of a record from before 0.3.0 stays the same)
+  if (!rec.id) rec.id = `c.${fnv1a(JSON.stringify({ ...rec, vs: undefined, content: undefined }))}`;
   return rec;
 }
 
 /**
- * The MIGRATIONS chain: `MIGRATIONS[v]` upgrades a v-envelope to v+1, for v = STATS_VERSION and down.
- * Empty at v1 — the steps exist so the next format change lands as one function here and every stored /
+ * The MIGRATIONS chain: `MIGRATIONS[v]` upgrades a v-envelope to v+1, for v = STATS_VERSION and down — every stored /
  * imported envelope walks the whole chain.
+ *   1 → 2 (0.3.0, DESIGN §32.6): records name the room's content set (`content`); a record from before played the
+ *         original game (null).
  * @type {Record<number, (stats: any) => any>}
  */
-export const MIGRATIONS = {};
+export const MIGRATIONS = {
+  1: (stats) => ({ v: 2, records: (Array.isArray(stats.records) ? stats.records : []).map((r) => (isObj(r) ? { ...r, content: null } : r)) }),
+};
 
 /** Newest first (the stored order): by time, then id. */
 const newestFirst = (a, b) => (b.t - a.t) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -293,7 +316,7 @@ export function loadStats() {
 // ---- compaction + the storage budget ---------------------------------------------------------------------------
 
 const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRound', 'hiddenReached', 'hiddenCleared', 'reason', 'modeId',
-  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs'];
+  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs', 'content'];
 
 /**
  * The compact form of a record: the frame and the player's OWN row without lineup, bonds and name — everything the
@@ -373,8 +396,9 @@ export function roomModeOf(modeId, roomMode) {
  * without players (the error-path settlement) or matches the local player did not take part in (spectator
  * seats get every result pushed too — eliminated players, who ARE in players[], keep recording).
  * @param {any} res raw m.result payload
- * @param {{ myId?: string|null, roomMode?: string|null, vs?: string|null, now?: number }} ctx
- *   vs: the room's visual set (room.state.content.vs) — see the header
+ * @param {{ myId?: string|null, roomMode?: string|null, vs?: string|null, content?: any, now?: number }} ctx
+ *   vs: the room's visual set (room.state.content.vs); content: room.state.content (its content set when it played
+ *   gameplay plugins) — see the header
  * @returns {any|null}
  */
 export function buildRecord(res, ctx = {}) {
@@ -405,6 +429,7 @@ export function buildRecord(res, ctx = {}) {
     roomMode: roomModeOf(str(r.modeId), ctx.roomMode),
     selfId: myId,
     vs: vsOf(ctx.vs),
+    content: contentOf(ctx.content),
     players: r.players,
   });
 }
@@ -503,6 +528,7 @@ export function buildQuitRecord(state, ctx = {}) {
     roomMode: roomModeOf(str(pub.modeId), state.room?.mode),
     selfId: myId,
     vs: vsOf(state.room?.content?.vs),
+    content: contentOf(state.room?.content),
     players: [{
       playerId: myId, seat: row.seat, name: row.name, isBot: false, left: true, alive, victory: false, roundsPassed,
       eliminatedRound: alive ? null : live.aliveRound, lp: row.lp, bandId: row.bandId,
@@ -700,15 +726,18 @@ export function countsTowardStats(rec) {
 /**
  * Aggregate records for the stats page — over the records that count; `total` / `excluded` say how many did not.
  * Everything is keyed by ids (bandId / titleId / difficulty); the page maps them to names and icons through the game
- * data. The combat totals read the settled records' stat blocks (a quit record has none).
+ * data. The combat totals read the settled records' stat blocks (a quit record has none). A match with gameplay plugins
+ * is left out (`modded`: how many) unless `opts.modded` takes it in (see the header).
  * @param {any[]} records
+ * @param {{ modded?: boolean }} [opts]
  * @returns {any}
  */
-export function aggregateStats(records) {
+export function aggregateStats(records, { modded: withModded = false } = {}) {
   const all = Array.isArray(records) ? records : [];
-  const rs = all.filter(countsTowardStats);
+  const official = withModded ? all : all.filter((r) => !isModdedRecord(r));
+  const rs = official.filter(countsTowardStats);
   const out = {
-    total: all.length, count: rs.length, excluded: all.length - rs.length, wins: 0,
+    total: all.length, count: rs.length, excluded: official.length - rs.length, modded: all.length - official.length, wins: 0,
     rounds: { total: 0, max: 0 },
     duration: { totalMs: 0 },
     hidden: { reached: 0, cleared: 0 },

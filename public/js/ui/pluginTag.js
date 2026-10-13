@@ -2,8 +2,11 @@
 // from the 插件 panel (ui/pluginPanel.js), which loads only when it opens, so the title page and the room carry just this.
 //
 //   * PluginTag — the tag at the top of the room (screens/room.js): 「原版」, or 「插件 ×N」 once its host switched plugins
-//     on; a tap loads the panel (ui/pluginPanel.js PluginPanel) and opens it.
+//     on — marked unofficial (「非官方」) when they change gameplay (a content set of its own, DESIGN §32.6); a tap loads
+//     the panel (ui/pluginPanel.js PluginPanel) and opens it.
 //   * roomPluginFacts — what the room's plugins are for this player; pluginTagText, sizeText, pluginMicro — their words.
+//   * UnofficialMark — the small 「非官方」 / MOD mark of a match with gameplay plugins (the briefing, the HUD corner, the
+//     result; DESIGN §32.6, the design study's §7.4); nothing for the original game (cosmetic plugins only included).
 // Texts go through t() (docs/I18N.md).
 
 import { useState } from '../../vendor/hooks.module.js';
@@ -23,6 +26,7 @@ export const sizeText = (n) => (!Number.isFinite(n) ? '' : n >= 1048576 ? `${(n 
  */
 export function roomPluginFacts(room, myId) {
   const list = Array.isArray(room?.content?.plugins) ? room.content.plugins.filter((p) => p && typeof p.id === 'string') : [];
+  const c = room?.content;
   return {
     count: list.length,
     plugins: list,
@@ -31,9 +35,31 @@ export function roomPluginFacts(room, myId) {
     chosen: list.filter((p) => !p.auto).map((p) => p.id),
     editable: room?.hostId != null && room.hostId === myId && !room.inMatch,
     inMatch: !!room?.inMatch,
-    warnings: Array.isArray(room?.content?.warnings) ? room.content.warnings.filter((w) => w && typeof w.code === 'string') : [],
-    vs: typeof room?.content?.vs === 'string' ? room.content.vs : null,
+    warnings: Array.isArray(c?.warnings) ? c.warnings.filter((w) => w && typeof w.code === 'string') : [],
+    vs: typeof c?.vs === 'string' ? c.vs : null,
+    // gameplay plugins (DESIGN §32.6): the room plays a content set of its own — unofficial
+    modded: !!c && c.vanilla === false,
+    cs: typeof c?.cs === 'string' ? c.cs : null,
+    modes: Array.isArray(c?.modes) ? c.modes.filter((m) => m && typeof m.id === 'string') : [],
+    modeId: typeof c?.modeId === 'string' ? c.modeId : null,
+    dataBytes: Number.isFinite(c?.dataBytes) ? c.dataBytes : 0,
   };
+}
+
+/** Does the room play gameplay plugins (a content set of its own: unofficial — DESIGN §32.6)? @param {any} room */
+export const isModdedRoom = (room) => !!room?.content && room.content.vanilla === false;
+
+/**
+ * The small unofficial mark of a match with gameplay plugins (see the header): 「非官方」 (or the HUD's MOD), nothing for
+ * the original game. @param {{ room: any, compact?: boolean, class?: string }} props
+ */
+export function UnofficialMark({ room, compact = false, class: cls = '' }) {
+  if (!isModdedRoom(room)) return null;
+  const n = roomPluginFacts(room, null).count;
+  const tip = t('非官方：本局使用了改变玩法的插件（{n} 个），不计入统计总览', { n });
+  return html`<span class=${cx('modmark', compact && 'modmark--compact', cls)} title=${tip} aria-label=${tip} data-testid="unofficial-mark">
+    ${compact ? 'MOD' : t('非官方')}
+  </span>`;
 }
 
 /** What the tag says: 「插件 ×N」 or 「原版」. @param {any} room */
@@ -50,9 +76,9 @@ export function PluginTag({ room, myId }) {
   const open = () => {
     import('./pluginPanel.js').then((m) => setPanel(() => m.PluginPanel), (err) => console.warn('[plugins] the panel did not load', err));
   };
-  return html`<button type="button" class=${cx('plugtag', f.count && 'is-modded')} data-testid="plugin-tag" onClick=${open}
-      title=${t('插件')} aria-label=${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}>
-    <${Icon} name=${f.count ? 'edit' : 'check'} />${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}
+  return html`<button type="button" class=${cx('plugtag', f.count && 'is-modded', f.modded && 'is-unofficial')} data-testid="plugin-tag" onClick=${open}
+      title=${f.modded ? t('本房间使用了改变玩法的插件（非官方）') : t('插件')} aria-label=${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}>
+    <${Icon} name=${f.count ? 'edit' : 'check'} />${f.count ? t('插件 ×{n}', { n: f.count }) : t('原版')}${f.modded ? html`<b class="plugtag__mod">${t('非官方')}</b>` : null}
   </button>
   ${Panel ? html`<${Panel} open=${true} room=${room} myId=${myId} onClose=${() => setPanel(null)} />` : null}`;
 }

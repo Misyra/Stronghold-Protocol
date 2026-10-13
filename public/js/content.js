@@ -27,6 +27,16 @@
 //     /vs/<vs16>/overlay.json of its catalogue `vs`, checked the same way (side by side) and applied after the room's,
 //     in that order. A plugin this server does not have is skipped and stays switched on here (it shows again when the
 //     server has it).
+//   * The room's content set (DESIGN §32.6, P1c): when room.state.content names a content set with gameplay plugins
+//     (`vanilla: false`, its own cs), the page downloads /cs/<cs16>/index.json and every data file it lists — a file the
+//     set did not change at its plain /data/<file>?v=<8 hex> URL (cached for good), a patched one at /cs/<cs16>/… — and
+//     checks them: every file's BYTES hash to its entry (shared/sha256.js, before decoding: `res.text()` would drop a
+//     BOM), the manifest's composition hashes to the room's cs (shared/plugins/identity.js contentHashOf). Then data.js
+//     shows those files (setContent: every screen reads the room's data — its operators, its modes), the battle runner
+//     simulates on them (simContent / contentFor) and the page tells the room (room.contentReady { cs }; again whenever
+//     its seat shows it not ready — a reconnect); a check that fails is said once (a toast) and told too ({ ok: false }).
+//     Leaving the room, or a room back on the original content, gives data.js the server's files again. One content set
+//     at a time (contentSet: its state for the screens — loading with its progress, ready, failed).
 //   * The catalogue is fetched only on a server that has plugins — `content.plugins` > 0 in /healthz (the build guard's
 //     first check, before any hello) or welcome (main.js keeps it as the store's `installedPlugins`: installedCount; a
 //     server without any sends none, and its page never asks for /plugins/index.json) — and only when something needs
@@ -35,9 +45,11 @@
 
 import { createStore, loadPref, savePref, store as appStore } from './store.js';
 import { data as dataStore } from './data.js';
+import { net as appNet } from './net.js';
 import { cosmetics, loadVisual, visualNow } from './cosmetics.js';
 import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
-import { isContentHash as isVisualHash } from '../../shared/plugins/identity.js';
+import { contentHashOf, csUrlPart, isContentHash, isContentHash as isVisualHash } from '../../shared/plugins/identity.js';
+import { sha256Hex } from '../../shared/sha256.js';
 import { getLang, langChain, t, N_ } from '../../shared/i18n.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of the personal cosmetic plugins: their ids. */
@@ -329,3 +341,198 @@ export function installContent({ store = appStore, data = dataStore, layers = co
  * switched-on ones the page applies now.
  */
 export const personalApplied = () => cosmetics.personal.map((p) => ({ id: p.id }));
+
+// ---- the room's content set (P1c) -----------------------------------------------------------------------------------
+
+/** Waits (ms) before a content file is fetched again after a transient failure. */
+export const CONTENT_RETRY_MS = Object.freeze([600, 2000]);
+/** How long one attempt at one content file may take before it counts as a transient failure [ASSUMED]. */
+export const CONTENT_TIMEOUT_MS = 60000;
+/** Files of a content set fetched at once. [ASSUMED] */
+const CONTENT_PARALLEL = 4;
+/** What the page says (once) when the room's content set will not load or check. */
+const CONTENT_FAILED = N_('房间的插件内容未能通过校验，请刷新页面重试');
+
+/**
+ * The room's content set as this page has it (header "The room's content set"): `cs` (null: the original content),
+ * `status` 'idle' | 'loading' | 'ready' | 'failed', `loaded` / `total` bytes of its files, `error` (why it failed),
+ * `kitted` (the operators a 自选 slot may field in it; null: the server's list).
+ */
+export const contentSet = createStore({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
+/** The checked set the page holds: { cs, index, values: Map<name, JSON> } (the runner's data), or null. */
+let held = null;
+/** Pages waiting for a content set (contentFor): cs → resolvers. */
+const waiting = new Map();
+
+/**
+ * One file of a content set as bytes, checked against its manifest entry (size and SHA-256 of the bytes), then decoded
+ * and parsed. Transient failures (network, a timeout, HTTP 5xx / 408 / 429) are tried again.
+ * @param {string} url @param {{ sha256?: string, bytes?: number } | null} want null: the manifest itself (checked later)
+ * @param {{ fetch: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number,
+ *   onBytes?: (n: number) => void }} opts
+ * @returns {Promise<any>} the parsed JSON (rejects with the reason)
+ */
+export async function fetchChecked(url, want, { fetch: doFetch, retryDelays = CONTENT_RETRY_MS, wait = sleep, timeoutMs = CONTENT_TIMEOUT_MS, onBytes = null }) {
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    let timer = null;
+    const timedOut = new Promise((resolve) => { timer = setTimeout(() => { ctrl?.abort(); resolve(null); }, timeoutMs); });
+    let res;
+    let buf = null;
+    try {
+      res = await Promise.race([doFetch(url, { cache: 'default', signal: ctrl?.signal }), timedOut]);
+      if (res && res.ok) buf = await Promise.race([res.arrayBuffer(), timedOut]);
+    } catch { res = null; }
+    clearTimeout(timer);
+    if (res && res.ok && buf) {
+      const bytes = new Uint8Array(buf);
+      if (want) {
+        if (Number.isFinite(want.bytes) && bytes.length !== want.bytes) throw new Error(`${url}: ${bytes.length} bytes, not ${want.bytes}`);
+        if (sha256Hex(bytes) !== want.sha256) throw new Error(`${url}: its bytes do not hash to the content set's entry`);
+      }
+      onBytes?.(bytes.length);
+      // decoded after the check (a BOM is part of the bytes, not of the JSON)
+      try { return JSON.parse(new TextDecoder('utf-8').decode(bytes)); } catch { throw new Error(`${url}: not JSON`); }
+    }
+    const transient = !res || res.status >= 500 || res.status === 408 || res.status === 429 || (res.ok && !buf);
+    if (transient && attempt < retryDelays.length) { await wait(retryDelays[attempt]); continue; }
+    throw new Error(`${url}: ${res ? `HTTP ${res.status}` : 'unreachable'}`);
+  }
+}
+
+/**
+ * Download and check a content set (header "The room's content set"): its manifest (its composition must hash to `cs`)
+ * and every data file it lists (each one's bytes to its entry).
+ * @param {string} cs
+ * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number,
+ *   onProgress?: (loaded: number, total: number) => void }} [opts]
+ * @returns {Promise<{ cs: string, index: any, values: Map<string, any> }>} (rejects with the reason)
+ */
+export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryDelays = CONTENT_RETRY_MS, wait = sleep, timeoutMs = CONTENT_TIMEOUT_MS, onProgress = null } = {}) {
+  if (!isContentHash(cs)) throw new Error('no content hash');
+  const index = await fetchChecked(`/cs/${csUrlPart(cs)}/index.json`, null, { fetch: doFetch, retryDelays, wait, timeoutMs });
+  if (!isObj(index) || index.cs !== cs || index.vanilla !== false || !isObj(index.data)) throw new Error('the manifest is not the room\'s content set');
+  const entries = Object.entries(index.data).filter(([, f]) => isObj(f) && typeof f.url === 'string' && isContentHash(f.sha256));
+  const hashes = Object.fromEntries(entries.map(([name, f]) => [name, f.sha256]));
+  let again;
+  try { again = contentHashOf({ app: index.app, sim: index.sim, data: hashes, plugins: index.plugins, settings: index.settings }); } catch { again = null; }
+  if (again !== cs) throw new Error('the manifest does not hash to the room\'s cs');
+  // the URLs a manifest may name: this server's data files and this set's own files
+  const own = `/cs/${csUrlPart(cs)}/`;
+  for (const [name, f] of entries) if (!(f.url.startsWith('/data/') || f.url.startsWith(own)) || f.url.includes('..')) throw new Error(`${name}: an address outside this server's data`);
+  const total = entries.reduce((n, [, f]) => n + (Number(f.bytes) || 0), 0);
+  let loaded = 0;
+  onProgress?.(0, total);
+  const values = new Map();
+  let next = 0;
+  const worker = async () => {
+    while (next < entries.length) {
+      const [name, f] = entries[next++];
+      values.set(name, await fetchChecked(f.url, f, { fetch: doFetch, retryDelays, wait, timeoutMs, onBytes: (n) => { loaded += n; onProgress?.(loaded, total); } }));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONTENT_PARALLEL, entries.length) }, worker));
+  return { cs, index, values };
+}
+
+/**
+ * The content set the battle runner simulates on now (public/js/battle/runner.js): `{ cs, data }` of the checked set the
+ * page holds, or null (the original content: the runner loads /data/ itself).
+ */
+export const simContent = () => (held ? { cs: held.cs, data: Object.fromEntries(held.values) } : null);
+
+/**
+ * The content set `cs` once this page holds it — at once when it does, when its download is done when it is the one
+ * loading; null when it failed, or when the room plays another (or none).
+ * @param {string} cs
+ * @returns {Promise<{ cs: string, data: Record<string, any> } | null>}
+ */
+export function contentFor(cs) {
+  if (held && held.cs === cs) return Promise.resolve(simContent());
+  const s = contentSet.get();
+  if (s.cs !== cs || s.status !== 'loading') return Promise.resolve(null);
+  return new Promise((resolve) => { const list = waiting.get(cs) || []; list.push(resolve); waiting.set(cs, list); });
+}
+
+/** Settle the pages waiting for `cs` (contentFor). */
+function settleWaiting(cs) {
+  for (const [key, list] of [...waiting]) {
+    if (cs && key !== cs) continue;
+    waiting.delete(key);
+    const v = held && held.cs === key ? simContent() : null;
+    for (const r of list) r(v);
+  }
+}
+
+/**
+ * Keep the page's data in step with the room's content set (header "The room's content set"). Returns the uninstall.
+ * @param {{ store?: typeof appStore, data?: typeof dataStore, net?: { request: Function } | null, fetch?: typeof fetch,
+ *   toast?: ((text: string, kind?: string) => void) | null, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void> }} [opts]
+ */
+export function installContentSet({ store = appStore, data = dataStore, net = appNet, fetch: doFetch = defaultFetch, toast = null,
+  retryDelays = CONTENT_RETRY_MS, wait = sleep } = {}) {
+  let req = 0;
+  let told = false;
+  /** room.contentReady on its way (one at a time) and the cs it named */
+  let telling = null;
+  const roomCs = (s) => (s?.room?.content && s.room.content.vanilla === false && isContentHash(s.room.content.cs) ? s.room.content.cs : null);
+  const mySeat = (s) => {
+    const id = s?.me?.playerId;
+    const room = s?.room;
+    if (id == null || !room) return null;
+    return (Array.isArray(room.seats) ? room.seats : []).find((x) => x && x.playerId === id)
+      || (Array.isArray(room.spectators) ? room.spectators : []).find((x) => x && x.playerId === id) || null;
+  };
+  /** Tell the room what this page made of its content set — again when its seat does not show it (a reconnect). */
+  const tell = (cs, ok) => {
+    if (!net || telling === cs) return;
+    telling = cs;
+    Promise.resolve().then(() => net.request('room.contentReady', ok ? { cs } : { cs, ok: false }))
+      .catch((err) => console.warn('[content] room.contentReady', err?.code || err))
+      .finally(() => { if (telling === cs) telling = null; });
+  };
+  const drop = () => {
+    req++;
+    if (held) { held = null; data.setContent(null); }
+    settleWaiting(null);
+    if (contentSet.get().cs !== null || contentSet.get().status !== 'idle') contentSet.set({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
+  };
+  const load = (cs) => {
+    const mine = ++req;
+    if (held) { held = null; data.setContent(null); }
+    settleWaiting(null);
+    contentSet.set({ cs, status: 'loading', loaded: 0, total: 0, error: null, kitted: null });
+    loadContentSet(cs, { fetch: doFetch, retryDelays, wait, onProgress: (loaded, total) => { if (mine === req) contentSet.set({ loaded, total }); } })
+      .then((set) => {
+        if (mine !== req) return;
+        held = set;
+        const i18n = isObj(set.index.i18n) ? set.index.i18n : {};
+        // the set's own game texts per language (a plugin's operators named in it): checked like the data files
+        const overlay = (lang) => (isObj(i18n[lang]) ? fetchChecked(i18n[lang].url, i18n[lang], { fetch: doFetch, retryDelays, wait }) : Promise.resolve(null));
+        data.setContent({ id: cs, values: set.values, overlay, langs: Object.keys(i18n) });
+        contentSet.set({ status: 'ready', error: null, kitted: Array.isArray(set.index.kitted) ? set.index.kitted.filter((x) => typeof x === 'string') : null });
+        settleWaiting(cs);
+        tell(cs, true);
+      }, (err) => {
+        if (mine !== req) return;
+        console.warn(`[content] the room's content set ${cs.slice(0, 8)} did not load or check: ${err?.message || err}`);
+        contentSet.set({ status: 'failed', error: String(err?.message || err).slice(0, 200) });
+        settleWaiting(cs);
+        if (!told && toast) { told = true; toast(t(CONTENT_FAILED), 'error'); }
+        tell(cs, false);
+      });
+  };
+  const sync = (s) => {
+    const cs = roomCs(s);
+    const cur = contentSet.get();
+    if (!cs) { if (cur.cs || held) drop(); return; }
+    if (cur.cs !== cs) { load(cs); return; }
+    // the page holds the room's set, its seat does not show it (the room changed its set and back, a reconnect): again
+    const seat = mySeat(s);
+    if (seat && cur.status === 'ready' && seat.content !== 'ready') tell(cs, true);
+    else if (seat && cur.status === 'failed' && seat.content !== 'failed') tell(cs, false);
+  };
+  const off = store.subscribe((s) => sync(s));
+  sync(store.get());
+  return () => { off(); drop(); };
+}

@@ -1116,3 +1116,21 @@
 .plugpanel__warnings .icon { width: .15rem; height: .15rem; margin-right: .06rem; vertical-align: -.02rem; }
 .plugpanel__reapply { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem .12rem; }
 .plugpanel__reapply .set-hint { margin: 0; }
+/* gameplay plugins (DESIGN §32.6 P1c): the unofficial marks (tag, panel rows, UnofficialMark of the briefing / HUD / result),
+   the room's plugin modes and this page's check of the room's content set */
+.plugtag.is-unofficial { color: #ff8a5c; border-color: rgba(255, 106, 61, .7); background: rgba(255, 106, 61, .12); }
+.plugtag__mod { margin-left: .04rem; padding: 0 .05rem; font-weight: 800; color: #1a0d08; background: #ff8a5c; letter-spacing: .04em; }
+.plugrow.is-content.is-on { border-color: rgba(255, 106, 61, .7); }
+.plugrow__badge.is-gameplay { color: #ff8a5c; border-color: rgba(255, 106, 61, .55); }
+.plugpanel__modes { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem; }
+.plugpanel__modes-label { color: var(--text-md); font-size: calc(.14 * var(--t)); }
+.plugpanel__modes .set-hint { margin: 0; }
+.plugpanel__content { margin: 0; }
+.plugpanel__content.is-ready { color: var(--mint-400); }
+.plugpanel__content.is-warn { color: #ffb066; }
+.modmark {
+  display: inline-flex; align-items: center; height: .26rem; padding: 0 .1rem; border: 1px solid rgba(255, 106, 61, .75);
+  background: rgba(255, 106, 61, .14); color: #ff8a5c; font-size: calc(.13 * var(--t)); font-weight: 800; letter-spacing: .08em;
+  white-space: nowrap;
+}
+.modmark--compact { height: .2rem; padding: 0 .06rem; font-size: calc(.11 * var(--t)); }

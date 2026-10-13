@@ -259,8 +259,9 @@ const PLUGINS_SHOWN = 32;
  * What the report says the page plays (DESIGN §32): the room's content set (room.state.content), else the server's
  * vanilla content (welcome.content, the store's `content`) — `vanilla cs=<64 hex>`; in a room whose plugins are all
  * cosmetic (its `cs` still the vanilla one) `vanilla cs=<64 hex> cosmetic vs=<64 hex> plugins=<id>@<version>(<first 8
- * digits of its hash>),…`; `MODDED cs=<64 hex> plugins=…` (a room with gameplay plugins); `unknown` before the first
- * welcome. ` personal=<id>,…` follows for the player's own cosmetic plugins.
+ * digits of its hash>),…`; `MODDED cs=<64 hex> plugins=…` (a room with gameplay plugins — its own content set, DESIGN
+ * §32.6; ` vs=<64 hex>` too when it has art plugins as well, ` mode=<id>` for a plugin mode); `unknown` before the
+ * first welcome. ` personal=<id>,…` follows for the player's own cosmetic plugins.
  * @param {any} state the store state
  * @param {{ id: string }[]} [personal] the personal cosmetic plugins this page applies (content.js personalApplied)
  */
@@ -276,7 +277,8 @@ export function contentLine(state, personal = []) {
     const more = plugins.length > PLUGINS_SHOWN ? ` +${plugins.length - PLUGINS_SHOWN}` : '';
     const named = list.length ? ` plugins=${list.join(',')}${more}` : '';
     if (room.vanilla === true) return `vanilla cs=${room.cs}${isCs(room.vs) ? ` cosmetic vs=${room.vs}` : ''}${named}${mine}`;
-    return `MODDED cs=${room.cs}${named}${mine}`;
+    const mode = typeof room.modeId === 'string' && room.modeId.length <= 64 ? ` mode=${room.modeId}` : '';
+    return `MODDED cs=${room.cs}${isCs(room.vs) ? ` vs=${room.vs}` : ''}${mode}${named}${mine}`;
   }
   return isCs(state?.content?.vanilla) ? `vanilla cs=${state.content.vanilla}${mine}` : 'unknown';
 }

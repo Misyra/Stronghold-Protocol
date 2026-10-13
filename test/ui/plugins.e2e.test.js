@@ -172,7 +172,7 @@ describe('cosmetic plugins in the browser (P1a)', { skip: !ENABLED && 'set SP_E2
       await c.waitFor((st) => !!st.room?.code, 'room created');
       await c.click('[data-testid="plugin-tag"]');
       await c.page.waitForSelector('[data-testid="plugin-panel"]', { timeout: 10000 });
-      assert.match(await c.page.$eval('[data-testid="plugin-panel"]', (e) => e.textContent), /本服务器没有可在房间中使用的外观插件/);
+      assert.match(await c.page.$eval('[data-testid="plugin-panel"]', (e) => e.textContent), /本服务器没有可在房间中使用的插件/);
       await c.click('.modal__actions button', '完成');
       await c.click('.room-screen [data-testid="settings-btn"]');
       await c.page.waitForSelector('.set-list', { timeout: 10000 });

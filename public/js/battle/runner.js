@@ -66,11 +66,20 @@
 //                           play, DESIGN §20.15, 变形同构体 wearers included; a 补位 stand-in names the replaced charId,
 //                           a 自选 operator carries its pick like UnitInfo) | []
 //
+// Content sets (DESIGN §32.6, P1c — the cs check only; how battles run is unchanged): a b.start whose spec names a
+// content set (`spec.cs`) other than the one this page holds — the original content's (welcome.content.vanilla) or the
+// room's content set the page downloaded and checked (public/js/content.js) — is simulated by this page as a display
+// replica only, never as the battle's authority: no b.progress, no b.result; the server's deadline gives the field to
+// the server. For a room's content set the simulation is loaded on that set's data (content.js contentFor; the next
+// spec of another content loads it again — one at a time), and a b.result names it (`cs`; a vanilla room's sends none,
+// as before).
+//
 // createBattleRunner(deps) builds an instance with injectable net / store / clock / frame scheduler / sim loader
 // (test/match/runner.test.js and test/match/runner-pending.test.js drive it under Node).
 
 import { net as appNet } from '../net.js';
 import { store as appStore } from '../store.js';
+import { contentFor as appContentFor, simContent as appSimContent, contentSet as appContentSet } from '../content.js';
 import { unitStatsEntry, fxForm } from '../../../shared/protocol.js';
 import { spectateEffects } from './observe.js';
 import { recordError, setBattleSource } from '../diag.js';
@@ -142,9 +151,10 @@ function deepFreeze(root) {
 
 /**
  * Browser sim loader: the /sim/ modules + the data files (own frozen copies — the server's data is frozen too, so a
- * content bug that writes into a record fails identically on both sides).
+ * content bug that writes into a record fails identically on both sides). `data` (DESIGN §32.6): the files of a room's
+ * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded.
  */
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a) } = {}) {
+export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null } = {}) {
   const [spec, simdata, support] = await Promise.all([
     import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
   ]);
@@ -154,7 +164,9 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
       return res && res.ok ? await res.json() : null;
     } catch { return null; }
   };
-  const files = await Promise.all(SIM_DATA_FILES.map(async (n) => (await fetchOnce(n)) ?? fetchOnce(n)));
+  // (a content set's data: structured copies, frozen below like downloaded files)
+  const files = data ? SIM_DATA_FILES.map((n) => (data[n] && typeof data[n] === 'object' ? structuredClone(data[n]) : null))
+    : await Promise.all(SIM_DATA_FILES.map(async (n) => (await fetchOnce(n)) ?? fetchOnce(n)));
   // a battle simulated without part of the data would still produce a plausible result the server accepts: never run
   // one — the loader fails (the next b.start retries it; meanwhile the server's deadline takes the field over)
   const missing = SIM_DATA_FILES.filter((n, i) => !files[i] || typeof files[i] !== 'object');
@@ -163,7 +175,7 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   SIM_DATA_FILES.forEach((n, i) => { raw[n] = deepFreeze(files[i]); });
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
-  return { spec, ds: new simdata.DataSource(raw, null) };
+  return { spec, ds: new simdata.DataSource(raw, null), cs };
 }
 
 /**
@@ -191,8 +203,15 @@ export function createBattleRunner(deps) {
   const setIv = deps.setInterval || ((fn, ms) => globalThis.setInterval(fn, ms));
   const clearIv = deps.clearInterval || ((h) => globalThis.clearInterval(h));
   const doc = deps.doc !== undefined ? deps.doc : (typeof document !== 'undefined' ? document : null);
-  const loadSim = deps.loadSim || (() => loadBrowserSim());
+  // `content` (DESIGN §32.6): `{ cs, data }` of a room's content set → the sim on it; null → the original content
+  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs }) : loadBrowserSim()));
   const logger = deps.logger || SIM_LOGGER;
+  // the content sets (DESIGN §32.6): the room's set the page holds (content.js) and the server's original one
+  const contentFor = deps.contentFor || appContentFor;
+  const heldContent = deps.simContent || appSimContent;
+  /** the content set the page is downloading now (content.js contentSet: its cs while loading), else null */
+  const loadingContent = deps.loadingContent || (() => { const c = appContentSet.get(); return c.status === 'loading' ? c.cs : null; });
+  const vanillaCs = deps.vanillaCs || (() => { try { return store?.get?.()?.content?.vanilla ?? null; } catch { return null; } });
 
   const listeners = new Map();
   const emit = (type, payload) => {
@@ -209,6 +228,8 @@ export function createBattleRunner(deps) {
   const pending = new Map();
   let cur = null;              // entry on screen
   let simP = null;
+  /** the content set simP was loaded for (null: the original content) */
+  let simCs = null;
   let startSeq = 0;            // counts the b.starts: the latest one is the view asked for
   let loading = null;          // the pending entry of the latest b.start (shown when prepared)
   let rafH = null;
@@ -227,11 +248,36 @@ export function createBattleRunner(deps) {
   const clock = () => (pausedAt != null ? pausedAt : now());
   const bossLike = (e) => e.kind === 'boss' || e.kind === 'hidden';
 
-  function ensureSim() {
-    if (!simP) {
-      simP = loadSim().catch((err) => { simP = null; throw err; });
-    }
-    return simP;
+  /**
+   * Is `cs` (a spec's) content this page can be the authority of (see the header): a spec without one, the original
+   * content's, or the room's content set the page holds — or is downloading (`loading`: a b.start that came while the
+   * page loads it, a reconnect; checked again once the simulation is built) — never another (a stale page, a tampered
+   * content set).
+   * @param {unknown} cs @param {{ loading?: boolean }} [opts]
+   */
+  function csAccepted(cs, { loading = false } = {}) {
+    if (typeof cs !== 'string') return true;
+    const vanilla = vanillaCs();
+    if (vanilla == null || cs === vanilla) return true;
+    const held = heldContent();
+    return (!!held && held.cs === cs) || (loading && loadingContent() === cs);
+  }
+
+  /**
+   * The simulation for a spec's content `cs` (see the header): the original content's (loaded from /data/) or a room's
+   * content set (its checked data, content.js contentFor); one at a time — another content loads it again.
+   */
+  function ensureSim(cs = null) {
+    const vanilla = vanillaCs();
+    const want = typeof cs === 'string' && vanilla != null && cs !== vanilla ? cs : null;
+    if (simP && simCs === want) return simP;
+    simCs = want;
+    const p = (want ? contentFor(want).then((content) => {
+      if (!content || content.cs !== want) throw new Error(`the content set ${want.slice(0, 8)} is not loaded on this page`);
+      return loadSim(content);
+    }) : loadSim(null)).catch((err) => { if (simP === p) { simP = null; simCs = null; } throw err; });
+    simP = p;
+    return p;
   }
 
   /** Counted leaks so far of every normal field simulated here: { [fieldId]: n } (user playtest #3 item 2). */
@@ -499,7 +545,10 @@ export function createBattleRunner(deps) {
   function deliver(e) {
     if (!net || !e.result || e.delivery === 'pending') return;
     e.delivery = 'pending';
-    const msg = { battleId: e.battleId, result: e.result };
+    // a room's content set names itself in the result (DESIGN §32.6: the server refuses one without it); the original
+    // content's result is what it always was
+    const cs = e.spec && typeof e.spec.cs === 'string' && e.spec.cs !== vanillaCs() ? e.spec.cs : null;
+    const msg = cs ? { battleId: e.battleId, result: e.result, cs } : { battleId: e.battleId, result: e.result };
     const send = (tries) => {
       let req;
       try { req = net.request('b.result', msg, { timeout: 15000 }); } catch (err) { req = Promise.reject(err); }
@@ -629,7 +678,7 @@ export function createBattleRunner(deps) {
     if (existing) {
       existing.seq = seq;
       const was = existing.authoritative;
-      existing.authoritative = !!msg.authoritative && !existing.resultSent;
+      existing.authoritative = !!msg.authoritative && !existing.resultSent && csAccepted(existing.spec.cs, { loading: !existing.battle });
       existing.watch = !!msg.watch;
       // the server still waits for this finished battle's result (lost with the socket, or its answer was): again
       if (msg.authoritative && existing.resultSent) deliver(existing);
@@ -659,7 +708,8 @@ export function createBattleRunner(deps) {
       // built by prepare(); `seq` = its latest b.start, `elapsed` = the field clock to start from, `endReason` = the first
       // forced / timeout b.end (applied once the Battle exists), `ready` = the preparation (a promise)
       sim: null, battle: null, meter: null, seq, elapsed: Number(msg.elapsed) || 0, endReason: null, ready: null,
-      authoritative: !!msg.authoritative, watch: !!msg.watch, own: !msg.watch, speed,
+      // (a spec of another content than the page's: a display replica only — see the header)
+      authoritative: !!msg.authoritative && csAccepted(msg.spec.cs, { loading: true }), watch: !!msg.watch, own: !msg.watch, speed,
       members: (msg.spec.players || []).map((p) => p && p.playerId).filter(Boolean),
       t0: null, lastProgressAt: -Infinity, done: false, resultSent: false,
       result: null, delivery: null,
@@ -690,12 +740,14 @@ export function createBattleRunner(deps) {
     const wanted = () => pending.get(e.battleId) === e && (e.seq === startSeq || e.authoritative || !!e.endReason);
     try {
       let sim;
-      try { sim = await ensureSim(); } catch (err) {
+      try { sim = await ensureSim(e.spec.cs); } catch (err) {
         console.warn('[runner] simulation unavailable', err);
         recordError('runner', err, 'simulation unavailable');
         return;
       }
       if (!wanted()) return;
+      // the content the simulation holds must still be the spec's (the room could have changed it meanwhile)
+      if (!csAccepted(e.spec.cs)) e.authoritative = false;
       let battle;
       try {
         battle = sim.spec.createBattleFromSpec(e.spec, sim.ds, { logger });
@@ -814,8 +866,10 @@ export function createBattleRunner(deps) {
       if (!phase || ['PREP', 'ROUND_START', 'SP_DRAFT', 'RESULT', 'LOBBY', 'INFO_CHECK', 'BAND_DRAFT', 'BATTLE_CHECK'].includes(phase)) {
         if (entries.size || pending.size) clear();
       }
-      // warm the simulation up as soon as a match runs (the first b.start then starts at once)
-      if (phase && phase !== 'LOBBY' && !simP) ensureSim().catch(() => {});
+      // warm the simulation up as soon as a match runs (the first b.start then starts at once) — on the room's content set
+      // when it plays one (DESIGN §32.6)
+      const roomCs = s && s.room && s.room.content && s.room.content.vanilla === false ? s.room.content.cs : null;
+      if (phase && phase !== 'LOBBY' && (!simP || simCs !== (roomCs || null))) ensureSim(roomCs).catch(() => {});
     }));
   }
   if (doc && typeof doc.addEventListener === 'function') {

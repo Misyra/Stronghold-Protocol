@@ -267,7 +267,7 @@ describe('the runner\'s cs check (public/js/battle/runner.js)', () => {
     h.m.dispose();
     return JSON.parse(JSON.stringify(start));
   };
-  function rig({ held = null, loading = null, state = null, contentFor = null } = {}) {
+  function rig({ held = null, loading = null, state = null, contentFor = null, vanilla = 'ee'.repeat(32), simCs = null } = {}) {
     const st = state || { held, loading };
     let t = 1000;
     const frames = [];
@@ -279,12 +279,13 @@ describe('the runner\'s cs check (public/js/battle/runner.js)', () => {
       send(ty, fields) { sent.push({ t: ty, ...fields }); return true; },
       request(ty, fields) { const msg = { t: ty, ...fields }; assert.equal(validateC2S(msg), null, `invalid ${ty}`); sent.push(msg); return Promise.resolve({ t: 'ok' }); },
     };
-    const store = createStore({ ...initialState, content: { vanilla: 'ee'.repeat(32) } });
+    const store = createStore({ ...initialState, ...(vanilla ? { content: { vanilla } } : {}) });
     const loads = [];
     const runner = createBattleRunner({
       net, store, doc: { hidden: false, addEventListener() {} }, now: () => t,
       raf: (fn) => { frames.push(fn); return frames.length; }, caf: () => {}, setInterval: () => 1, clearInterval: () => {},
-      loadSim: async (content) => { loads.push(content ? content.cs : null); return { spec: specMod, ds: DS }; },
+      // (as loadBrowserSim: the simulation names the content it was loaded with — `simCs` makes it name another)
+      loadSim: async (content) => { loads.push(content ? content.cs : null); return { spec: specMod, ds: DS, cs: simCs ?? (content ? content.cs : null) }; },
       logger: quiet,
       simContent: () => st.held,
       loadingContent: () => st.loading,
@@ -330,6 +331,25 @@ describe('the runner\'s cs check (public/js/battle/runner.js)', () => {
     assert.ok(res2);
     assert.equal('cs' in res2, false);
     assert.deepEqual(r2.loads, [null]);
+  });
+
+  test('a page that does not know the original content\'s cs is no authority of a spec naming one; a result names the content simulated', async () => {
+    const s = realStart();
+    s.spec.cs = 'ee'.repeat(32);
+    const r = rig({ held: null, vanilla: null });
+    r.net.emit('b.start', s);
+    await r.run(200);
+    const e = r.runner._entries.get(s.battleId);
+    assert.ok(!e || e.authoritative === false, 'not the authority without welcome.content.vanilla');
+    assert.equal(r.sent.filter((m) => m.t === 'b.result' || m.t === 'b.progress').length, 0);
+    // b.result names the content its simulation was loaded with, not what the spec says
+    const c = realStart();
+    c.spec.cs = 'cd'.repeat(32);
+    c.battleId = `${c.battleId}y`;
+    const r2 = rig({ held: { cs: 'cd'.repeat(32), data: DATA }, simCs: 'ab'.repeat(32) });
+    r2.net.emit('b.start', c);
+    await r2.run(60_000);
+    assert.equal(r2.sent.find((m) => m.t === 'b.result')?.cs, 'ab'.repeat(32));
   });
 
   test('a content set still loading when the b.start comes (a reconnect): the authority once it is there', async () => {

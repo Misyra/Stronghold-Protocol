@@ -70,9 +70,10 @@
 // content set (`spec.cs`) other than the one this page holds — the original content's (welcome.content.vanilla) or the
 // room's content set the page downloaded and checked (public/js/content.js) — is simulated by this page as a display
 // replica only, never as the battle's authority: no b.progress, no b.result; the server's deadline gives the field to
-// the server. For a room's content set the simulation is loaded on that set's data (content.js contentFor; the next
-// spec of another content loads it again — one at a time), and a b.result names it (`cs`; a vanilla room's sends none,
-// as before).
+// the server — and so is every spec naming a content while the page does not know the original one's cs. For a room's
+// content set the simulation is loaded on that set's data (content.js contentFor; the next spec of another content
+// loads it again — one at a time), and a b.result names the content the battle was simulated on (`cs`, its
+// simulation's; a vanilla room's sends none, as before).
 //
 // createBattleRunner(deps) builds an instance with injectable net / store / clock / frame scheduler / sim loader
 // (test/match/runner.test.js and test/match/runner-pending.test.js drive it under Node).
@@ -252,13 +253,15 @@ export function createBattleRunner(deps) {
    * Is `cs` (a spec's) content this page can be the authority of (see the header): a spec without one, the original
    * content's, or the room's content set the page holds — or is downloading (`loading`: a b.start that came while the
    * page loads it, a reconnect; checked again once the simulation is built) — never another (a stale page, a tampered
-   * content set).
+   * content set), and none at all while the page does not know the original content's cs (it could not tell which data
+   * to simulate on).
    * @param {unknown} cs @param {{ loading?: boolean }} [opts]
    */
   function csAccepted(cs, { loading = false } = {}) {
-    if (typeof cs !== 'string') return true;
+    if (typeof cs !== 'string' || cs === '') return true;
     const vanilla = vanillaCs();
-    if (vanilla == null || cs === vanilla) return true;
+    if (vanilla == null) return false;
+    if (cs === vanilla) return true;
     const held = heldContent();
     return (!!held && held.cs === cs) || (loading && loadingContent() === cs);
   }
@@ -545,9 +548,10 @@ export function createBattleRunner(deps) {
   function deliver(e) {
     if (!net || !e.result || e.delivery === 'pending') return;
     e.delivery = 'pending';
-    // a room's content set names itself in the result (DESIGN §32.6: the server refuses one without it); the original
-    // content's result is what it always was
-    const cs = e.spec && typeof e.spec.cs === 'string' && e.spec.cs !== vanillaCs() ? e.spec.cs : null;
+    // a room's content set names itself in the result (DESIGN §32.6: the server refuses one without it) — the set the
+    // battle was actually simulated on (its simulation's `cs`: loadBrowserSim's), never only what the spec claims; the
+    // original content's result is what it always was
+    const cs = e.sim && typeof e.sim.cs === 'string' && e.sim.cs ? e.sim.cs : null;
     const msg = cs ? { battleId: e.battleId, result: e.result, cs } : { battleId: e.battleId, result: e.result };
     const send = (tries) => {
       let req;

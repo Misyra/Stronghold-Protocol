@@ -299,3 +299,6 @@ Presence-only and SP-only skill triggers are not suppressed merely because their
 P3a script registrations (DESIGN §32.10; PLUGINS §13) fill C2's first kit-dispatch branch only for script compositions.
 The ordered extension registry also installs enemy/battle modules and prep handlers. Script hooks/actions share the
 DSL plugin budget and attribution. Vanilla registrations remain empty; no official kit or golden behavior changes.
+
+The same SDK and scriptGuard apply inside SES in sandbox mode (DESIGN §32.11); the evaluator consumes verified
+script descriptors. SDK-owned results are frozen copies; live Battle/Unit objects are not hardened.

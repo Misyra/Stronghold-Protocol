@@ -15,6 +15,7 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
+import { browserScriptSources } from '../../shared/plugins/scriptLoad.js';
 import { preflightScripts } from './scriptPreflight.js';
 import { validateDsl, validatePrepSpec } from '../sim/content/dsl/validate.js';
 
@@ -297,8 +298,12 @@ function composeContentSet({ registry, ids = [] }) {
   const boundsSnap = exportOfficialBounds(rememberOfficialBounds(base.data));
   if (plugins.length) bodies.set('bounds/official.json', Buffer.from(canonicalJson(boundsSnap)));
   const scripts = plugins.filter(p => p.script).map(p => ({ id:p.id, version:p.manifest.version, class:p.class,
-    hash:p.script.lockHash, permissions:p.manifest.permissions, authors:p.manifest.authors,
+    execution:p.script.execution || 'trusted', hash:p.script.lockHash, permissions:p.manifest.permissions, authors:p.manifest.authors,
     manifestSource:p.script.manifestSource, sources:p.script.sources }));
+  // [ASSUMED] Any trusted member makes the whole composition native; sandbox mode cannot enable trusted classes.
+  if (scripts.some(p => p.class === 'trusted')) for (const p of scripts) p.execution = 'trusted';
+  for (const p of scripts) if (p.execution === 'trusted') p.browserSources = browserScriptSources(p);
+  const execution = scripts[0]?.execution;
   const scriptHashes = {};
   for (const p of scripts) {
     const body = Buffer.from(JSON.stringify(p));
@@ -321,15 +326,21 @@ function composeContentSet({ registry, ids = [] }) {
   }
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
-  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {}, ...(scripts.length ? {scripts:{}} : {}) };
+  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {}, ...(scripts.length ? {scripts:{}, execution} : {}) };
   if (!vanilla) for (const [rel, f] of Object.entries(files)) {
     const url = base.files.get(rel)?.equals(bodies.get(rel)) ? `/data/${rel.replace(/^(data\/)/, '')}?v=${f.sha256.slice(0, 8)}` : `/cs/${csUrlPart(cs)}/${rel}`;
     const [section, name] = rel.split('/');
     index[section][name.slice(0, -5)] = { url, ...f };
   }
   const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
-    data, files, ...(scripts.length ? {scripts} : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
+    data, files, ...(scripts.length ? {scripts, execution} : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
     kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id))] });
+  // Executable routes use the descriptor's already hashed browser bytes; keep the JSON index table unchanged.
+  if (execution === 'trusted') for (const p of scripts) {
+    const m = JSON.parse(p.manifestSource);
+    for (const rel of new Set([m.entry?.sim, m.entry?.meta, m.entry?.client].filter(Boolean)))
+      bodies.set(`scripts/${p.id}/${rel}`, Buffer.from(p.browserSources[rel]));
+  }
   bodies.set('index.json', Buffer.from(JSON.stringify(index)));
   buffers.set(set, bodies); cache.set(cs, set);
   // [ASSUMED] Keep 32 recently constructed sets per registry. Callers may retain a set and its files indefinitely.

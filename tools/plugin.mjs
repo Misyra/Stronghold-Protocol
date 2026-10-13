@@ -184,7 +184,8 @@ export async function main(argv) {
     const registry = createPluginRegistry(dirs);
     // Explicit author test is authorization to execute locally; production owner gates still apply to servers.
     const lookup = registry.plugin;
-    const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded'} : null; }};
+    const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded',
+      ...(p.script ? {script:{...p.script,execution:'trusted'}} : {})} : null; }};
     const set = buildContentSet({registry:testing,ids:[id]});
     if (!set.cs) { console.error(JSON.stringify(set.problems)); return 1; }
     const testDir = path.join(dirs.pluginsDir,id,'test');

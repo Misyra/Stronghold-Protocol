@@ -842,7 +842,7 @@ export function classStatus(cls) {
 /**
  * @typedef {{ id: string, class: string, status: string, source: string, manifest: PluginManifest, bytes?: number,
  *   count?: number, visual?: { vs: string | null, bytes: number },
- *   script?: { sandboxable: boolean, lockHash: string | null }, disabled?: { code: string },
+ *   script?: { sandboxable: boolean, lockHash: string | null, execution?: string }, disabled?: { code: string },
  *   ui?: { vs: string | null, bytes: number, slots: string[], entry: string, frameFiles: Record<string, string> } }} PluginEntry
  *   what the registry knows of one plugin or pack (server/plugins/registry.js; `visual`: a loaded cosmetic plugin's own
  *   visual set and the bytes of art it serves; `ui`: a loaded interface plugin's frame — its own `vs`, the bytes it
@@ -888,7 +888,7 @@ export function pluginIndexEntry(p) {
   if (Number.isFinite(p.count)) e.files = p.count;
   if (p.visual && typeof p.visual.vs === 'string') e.vs = p.visual.vs;
   if (p.visual && Number.isFinite(p.visual.bytes)) e.artBytes = p.visual.bytes;
-  if (p.script) { e.sandboxable = p.script.sandboxable; e.hash = p.script.lockHash; }
+  if (p.script) { e.sandboxable = p.script.sandboxable; e.execution = p.script.execution; e.hash = p.script.lockHash; }
   if (p.disabled) e.disabled = p.disabled;
   if (p.ui) {
     e.slots = [...(p.ui.slots || [])];

@@ -128,11 +128,22 @@ node tools/plugin.mjs pack my-texas --zip
 |---|---|---|---|
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_CONSENT` | 还有玩家未同意运行受信任插件 | 每个在座玩家须亲自确认当前内容组合的风险提示。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PUBLIC` | 公网监听默认禁止受信任插件 | 改为监听本机或局域网；确认风险后可显式使用 trusted-force。 |
-| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PIN` | 插件的锁文件或文件内容与服主钉住的哈希不符 | 重新审核并打包，在 plugins/config.json 的 trusted 中填写锁文件的 SHA-256。 |
-| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPTS_DISABLED` | 服主没有启用脚本插件 | 审核插件后设置 SP_PLUGIN_SCRIPTS=trusted，并在 config.json 钉住 lock 哈希。 |
+| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PIN` | 插件锁文件无效、文件已改变或受信任哈希不符 | 重新打包以校验文件；受信任模式还需审核并在 plugins/config.json 的 trusted 中钉住锁文件 SHA-256。 |
+| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPTS_DISABLED` | 服主没有启用脚本插件 | 脚本隔离执行可设置 SP_PLUGIN_SCRIPTS=sandbox；受信任代码需设置 trusted 并审核、钉住 lock 哈希。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_CHECK` | 脚本未通过兼容性检查：{detail} | 入口只导入 sp:sdk@1；导出同步 setup(sp)，使用 SDK 和确定性助手。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_OVERRIDE` | 插件未声明要替换的官方技能 | 在清单 overrides 中列出要替换的官方 kit id。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_CONFLICT` | 两个插件注册了同一个效果 | 关闭其中一个插件，或让作者改用不同的 id。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_TIMEOUT` | 插件模拟长时间无响应 | 检查插件循环并降低每批模拟的负载 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_FAILED` | 插件模拟进程出错 | 查看日志并修复插件 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_STOPPED` | 插件模拟已停止 | 重新开始本场模拟 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_UNAVAILABLE` | 脚本沙箱未就绪 | 安装依赖并检查 SDK 接口 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_DISABLED` | 服务器未开启脚本沙箱 | 由服主设置 SP_PLUGIN_SCRIPTS=sandbox |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_CLASS` | 此插件类别不能进入脚本沙箱 | 仅将 script 类插件交给沙箱 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_HASH` | 脚本文件与内容哈希不符 | 重新应用插件并校验文件 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_IMPORT` | 脚本导入超出沙箱范围 | 只导入 sp:sdk@1 和插件内相对路径，避免循环导入 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_SYNTAX` | 脚本使用了不支持的模块语法 | 使用同步 setup 和静态导入，参见脚本文档 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_LIMIT` | 脚本文件超过沙箱上限 | 缩减文件数量和代码体积 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_MATH` | 脚本数学运算超出确定性范围 | 只用有限数字，幂指数必须是整数 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_UNKNOWN` | 本服务器没有安装这个插件 | 把插件文件夹放进服务器的 plugins/ 文件夹（文件夹名就是插件 id）；它不在了的话，在插件面板里把它关掉。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_BLOCKED` | 这个插件不能在这里启用：这个版本不应用它的类别，或者它的作用范围不包括这里 | 外观插件的 class 写 "cosmetic"；scope 写 ["room"]（房主给整个房间开）或 ["personal"]（玩家只给自己开），两样都要就都写上。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_DEPENDENCY` | 缺少这个插件需要的其他插件（或者版本不对），或者几个插件的加载顺序互相指向、成了一个圈 | 安装 requires 里写的插件（版本要在写的范围内）；或者删掉 loadAfter / loadBefore 里互相指向的那几条。 |

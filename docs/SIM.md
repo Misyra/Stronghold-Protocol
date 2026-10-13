@@ -1623,3 +1623,16 @@ general hook guard. The queue is emptied in `finally`; it introduces no timer or
 维什戴尔's `shadowTile` requires `Battle.onFieldBoard` before ranking summon candidates: a board of this field (a
 teammate's half), never a boss field's hand / 临时整备区 rows or an empty half (§31.10). `grid.inRect` alone also admits
 those bench rows. See [DESIGN §3](design/geometry-time.md#3-coordinates-fields-and-geometry) for the deployment boundary.
+
+
+### Browser simulation hosts (DESIGN §32.11)
+
+`public/js/battle/simHost.js` is C4: `load(cs, content?)`, `start(spec, opts)`,
+`step(n, opts?) → { snap, ev, state }`, `unitStats(id)`, `ownerOps(pid)`, `stop()`.
+Worker methods return Promises; the runner preserves a synchronous cached stats/read API for UI consumers.
+The original content runs in-page. Every gameplay content set runs in a dedicated Worker with its checked data and
+`bounds` snapshot. Worker steps are capped at 600 ticks per RPC; only the main-thread runner controls pacing.
+A 2 s configurable watchdog [ASSUMED] covers blocked hooks and construction; no watchdog clock enters sim state.
+Only sandbox script Workers/children run SES lockdown, before engine import. Both native and sandbox paths verify
+`@script` descriptors and use `createSDK(plugin, { settings, log })` plus the production extension registry/budget.
+SDK-owned return records are immutable copies; live Battle/Unit callback objects remain mutable.

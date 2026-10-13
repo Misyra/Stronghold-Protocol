@@ -3,9 +3,14 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { canonicalJson } from '../../shared/plugins/identity.js';
 import { nodeSha256 } from './identity.js';
+import { sandboxProcessOptions } from '../match/host/childHost.js';
 
-// [ASSUMED] C1 stays synchronous: at most 1 s per uncached plugin; retain 256 results per registry.
-export const SCRIPT_PROBE_TIMEOUT_MS = 1000;
+// [ASSUMED] C1 stays synchronous: one uncached probe — the child's start (the engine, and SES for a sandboxed script) and
+// the plugin's setup — may take SCRIPT_PROBE_TIMEOUT_MS before SIGKILL; results (failures too) are kept, 256 per registry,
+// so the lobby pauses once per plugin version and settings. 1 s killed honest sandboxed plugins under load (the child
+// alone needed more), so the default is 5 s; SP_SCRIPT_PROBE_MS (500–60000) sets it for a slow or a busy server.
+const probeEnv = Number.parseInt(process.env.SP_SCRIPT_PROBE_MS ?? '', 10);
+export const SCRIPT_PROBE_TIMEOUT_MS = Number.isInteger(probeEnv) && probeEnv >= 500 && probeEnv <= 60000 ? probeEnv : 5000;
 const caches = new WeakMap();
 const failure = message => ({code:'PLUGIN_SCRIPT_CHECK',message});
 
@@ -21,7 +26,9 @@ export function preflightScripts(registry, scripts, hashInput) {
     const key = canonicalJson([script.id,script.hash,part.files['@script'],nodeSha256(canonicalJson(settings))]);
     let report = cache.get(key);
     if (!report) {
-      const probe = spawnSync(process.execPath,[fileURLToPath(new URL('./scriptProbe.js',import.meta.url))],{
+      const { execArgv = [], ...processOptions } = script.execution === 'sandbox' ? sandboxProcessOptions(128) : {};
+      const probe = spawnSync(process.execPath,[...execArgv,fileURLToPath(new URL('./scriptProbe.js',import.meta.url))],{
+        ...processOptions,
         input:JSON.stringify({scripts:[script],hashInput:{plugins:[part],settings:{[script.id]:settings}}}),
         encoding:'utf8',timeout:SCRIPT_PROBE_TIMEOUT_MS,killSignal:'SIGKILL',
         maxBuffer:8*1024*1024,stdio:['pipe','ignore','pipe','pipe'],

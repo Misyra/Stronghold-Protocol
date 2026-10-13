@@ -1008,6 +1008,50 @@
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
   {
+    "name": "error.PLUGIN_WORKER_TIMEOUT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_WORKER_FAILED",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_WORKER_STOPPED",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_UNAVAILABLE",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_DISABLED",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_CLASS",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_HASH",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_IMPORT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_SYNTAX",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_LIMIT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_SANDBOX_MATH",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
     "name": "error.PLUGIN_UNKNOWN",
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },

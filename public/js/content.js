@@ -450,18 +450,27 @@ export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryD
   const scripts = [];
   const scriptEntries = (index.plugins || []).filter(p => p.files?.['@script']).map(p => [p.id,index.scripts?.[p.id]]);
   if (scriptEntries.some(([,f]) => !isObj(f)) || scriptEntries.length !== listed(index.scripts).length) throw new Error('script list does not match cs');
-  if (consent) for (const [id,f] of scriptEntries) {
+  const sandbox = index.execution === 'sandbox';
+  if (consent || sandbox) for (const [id,f] of scriptEntries) {
     if (f.url !== `${own}scripts/${id}.json` || index.plugins.find(p => p.id === id)?.files?.['@script'] !== f.sha256) throw new Error('script descriptor not pinned by cs');
     scripts.push(await fetchChecked(f.url,f,{fetch:doFetch,retryDelays,wait,timeoutMs}));
   }
-  return { cs, index, values, bounds, scripts, canSim: !listed(index.scripts).length || consent };
+  let nativeVerified = false;
+  if (scripts.length) {
+    const {verifyScripts,scriptExecution,checkBrowserScripts} = await import('../../shared/plugins/scriptLoad.js');
+    verifyScripts(scripts,index);
+    if (scriptExecution(scripts) !== (sandbox ? 'sandbox' : 'trusted')) throw new Error('script execution mode mismatch');
+    if (!sandbox) { await checkBrowserScripts(scripts,cs,doFetch); nativeVerified = true; }
+  }
+  return { cs, index, values, bounds, scripts, nativeVerified, canSim: !listed(index.scripts).length || consent || sandbox };
 }
 
 /**
  * The content set the battle runner simulates on now (public/js/battle/runner.js): `{ cs, data, bounds }` of the checked
  * set the page holds, or null (the original content: the runner loads /data/ itself).
  */
-export const simContent = () => (held && held.canSim !== false ? { scripts:held.scripts || [], hashInput:held.index, cs: held.cs, data: Object.fromEntries(held.values), bounds: held.bounds ?? null } : null);
+export const simContent = () => (held && held.canSim !== false ? { scripts:held.scripts || [], hashInput:held.index, nativeVerified:held.nativeVerified,
+  cs: held.cs, data: Object.fromEntries(held.values), bounds: held.bounds ?? null } : null);
 
 /**
  * The content set `cs` once this page holds it — at once when it does, when its download is done when it is the one
@@ -528,12 +537,13 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
       .then(async (set) => {
         if (mine !== req) return;
         if (consent && set.scripts.length) {
-          const {verifyScripts,importScript} = await import('../../shared/plugins/scriptLoad.js');
+          const {verifyScripts,scriptUrl} = await import('../../shared/plugins/scriptLoad.js');
           verifyScripts(set.scripts,set.index);
           for (const p of set.scripts) {
             const m = JSON.parse(p.manifestSource);
             if (m.entry?.client && !pageScripts.has(cs+':'+p.id)) {
-              await importScript(p.sources[m.entry.client],{checked:false,nonce:p.id+'-'+cs});
+              if (!set.nativeVerified) throw new Error('page script bytes not checked');
+              await import(scriptUrl(cs,p.id,m.entry.client));
               pageScripts.add(cs+':'+p.id);
             }
           }

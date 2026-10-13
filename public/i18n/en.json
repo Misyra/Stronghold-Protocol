@@ -1508,5 +1508,7 @@
   "这个包没有可以写入的插件。": "This pack has no plugin to write.",
   "包太大，超过 {max}。": "The pack is larger than {max}.",
   "正在读取 Forge 包…": "Reading the Forge pack…",
-  "已写入 {n} 个插件": "Wrote {n} plugins"
+  "已写入 {n} 个插件": "Wrote {n} plugins",
+  "插件卡死，本场由服务器接管": "A plugin stopped responding. The server will take over this battle.",
+  "脚本（沙箱）": "Script (sandbox)"
 }

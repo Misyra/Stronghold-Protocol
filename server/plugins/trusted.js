@@ -49,6 +49,8 @@ export const trustedHostAllowed = (host, mode) => mode === 'trusted-force'
 
 /** [ASSUMED] trusted-force explicitly permits a public listening address (not the HTTP peer). */
 export function trustDecision(plugin, { mode = process.env.SP_PLUGIN_SCRIPTS, host = '0.0.0.0', pins = {} } = {}) {
+  // [ASSUMED] Sandbox needs a valid lock for byte identity, but no owner pin or public-bind gate.
+  if (mode === 'sandbox' && plugin.class === 'script') return plugin.script?.lockValid ? null : { code:'PLUGIN_TRUST_PIN' };
   if (!['trusted','trusted-force'].includes(mode)) return { code:'PLUGIN_SCRIPTS_DISABLED' };
   if (!trustedHostAllowed(host, mode)) return { code:'PLUGIN_TRUST_PUBLIC' };
   if (!plugin.script?.lockValid || pins[plugin.id] !== plugin.script.lockHash) return { code:'PLUGIN_TRUST_PIN' };
@@ -61,6 +63,7 @@ export function applyTrust(plugins, { pluginsDir, host, mode, log } = {}) {
   for (const p of plugins.filter(p => isScriptClass(p.class))) {
     const refusal = trustDecision(p,{host, mode, pins});
     p.status = refusal ? 'disabled' : 'loaded'; p.disabled = refusal;
+    if (p.script) p.script.execution = mode === 'sandbox' && p.class === 'script' ? 'sandbox' : 'trusted';
     lines.push(`${p.id}: ${refusal ? describeIssue(refusal,'zh').message : 'loaded'}`);
   }
   if (lines.length) log?.info?.(`[plugins] scripts: ${lines.join('; ')}`);

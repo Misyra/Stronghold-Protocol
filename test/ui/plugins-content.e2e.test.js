@@ -104,6 +104,9 @@ describe('a room\'s content set in the browser (P1c)', { skip: !ENABLED && 'set 
         last = d;
         for (const f of d?.fields || []) if (f.done && !finished.has(f.battleId)) finished.set(f.battleId, f);
       }
+      // P3b: all gameplay sets use a real Worker; the page holds only cached wire state.
+      assert.equal(await host.page.evaluate(() => [...globalThis.__SP_RUNNER__._entries.values()].some(e =>
+        e.host?.remote && e.host.worker instanceof Worker && !e.battle.step && !e.battle.data)), true);
       const mine = firstDone(hostId);
       const theirs = firstDone(guestId);
       assert.ok(mine && theirs, `both battles settled: ${JSON.stringify([...finished.values()])} (the match's diag: ${JSON.stringify(last)?.slice(0, 600)})`);

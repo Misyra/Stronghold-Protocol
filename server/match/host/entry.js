@@ -46,8 +46,9 @@ let hashInput = null;
 let files = null;
 let bounds = null;
 let scripts = [];
+let sandbox = false;
 let options = {};
-const adopt = (init) => { ({ cs, hashInput, files, bounds = null, scripts = [] } = init || {}); options = (init && init.options) || {}; };
+const adopt = (init) => { ({ cs, hashInput, files, bounds = null, scripts = [], sandbox = false } = init || {}); options = (init && init.options) || {}; };
 if (viaWorker) adopt(workerData);
 // a child process whose parent is gone has nothing left to do
 if (!viaWorker) process.on('disconnect', () => process.exit(0));
@@ -130,6 +131,7 @@ function grantPrepDsl(match, grants) {
 
 async function boot() {
   if (!hashInput || typeof hashInput !== 'object' || !hashInput.data || !files) throw new Error('no content set was given');
+  if (sandbox) for (const name of Object.keys(files)) files[name] = Uint8Array.from(files[name]);
   for (const [name, h] of Object.entries(hashInput.data)) {
     // (a child process receives the bytes as a Uint8Array: the IPC channel's structured clone)
     const b = files[name];
@@ -144,8 +146,17 @@ async function boot() {
   setData(data);
   installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
   if (scripts.length) {
-    const {loadScripts} = await import('../../../shared/plugins/scriptLoad.js');
-    await loadScripts(scripts,{hashInput,log:log.info});
+    const { verifyScripts, scriptExecution, loadScripts } = await import('../../../shared/plugins/scriptLoad.js');
+    verifyScripts(scripts, hashInput);
+    if (sandbox !== (scriptExecution(scripts) === 'sandbox')) throw new Error('script execution mode mismatch');
+    if (sandbox) {
+      if (viaWorker || !process.permission || process.env.SP_PLUGIN_SCRIPTS !== 'sandbox') throw new Error('PLUGIN_SANDBOX_DISABLED');
+      const sandboxModule = await import('../../../shared/plugins/sandbox.js');
+      await sandboxModule.initializeSandbox({ loadSES: () => import('ses') });
+      await import('../../sim/spec.js');
+      const { parse } = await import('acorn');
+      await sandboxModule.installSandboxScripts(scripts, { hashInput, parse, log: log.info });
+    } else await loadScripts(scripts, { hashInput, log: log.info });
   }
   // After setData, before Match: Match reads opts.registry || getDefaultRegistry(), the same singleton.
   dslGrants = await installPrepDsl(data);

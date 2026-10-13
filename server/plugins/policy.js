@@ -49,7 +49,7 @@ export function readPolicy(json, { env = process.env } = {}) {
   const problems = [];
   const o = json && typeof json === 'object' && !Array.isArray(json) ? /** @type {Record<string, any>} */ (json) : {};
   if (json != null && o !== json) problems.push('not a JSON object');
-  const p = { ...DEFAULT_POLICY, classes: { ...DEFAULT_POLICY.classes, ...(['trusted','trusted-force'].includes(env.SP_PLUGIN_SCRIPTS) ? {script:true,trusted:true} : {}) } };
+  const p = { ...DEFAULT_POLICY, classes: { ...DEFAULT_POLICY.classes, ...(['trusted','trusted-force'].includes(env.SP_PLUGIN_SCRIPTS) ? {script:true,trusted:true} : env.SP_PLUGIN_SCRIPTS === 'sandbox' ? {script:true} : {}) } };
   if (o.rooms !== undefined) { if (ROOMS.includes(o.rooms)) p.rooms = o.rooms; else problems.push(`"rooms" must be one of ${ROOMS.join(', ')}`); }
   if (o.default !== undefined) {
     if (Array.isArray(o.default) && o.default.length <= 32 && o.default.every(isPluginId)) p.default = [...new Set(o.default)];

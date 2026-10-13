@@ -1218,8 +1218,13 @@ describe('multi-device & browser compatibility (static)', () => {
     for (const k of ['width=device-width', 'initial-scale=1', 'maximum-scale=1', 'user-scalable=no', 'viewport-fit=cover']) assert.ok(vp.includes(k), `viewport has ${k}`);
     const sheets = [...index.matchAll(/<link rel="stylesheet" href="(\/css\/[^"]+)"/g)].map((x) => x[1]);
     assert.equal(sheets[sheets.length - 1], '/css/devices.css', 'devices.css is the last stylesheet');
-    assert.match(index, /<script nomodule>/, 'a browser without ES modules gets a message');
-    assert.match(index, /onerror="window\.__spBootFail/, 'a module graph that cannot load gets a message');
+    assert.match(index, /<script nomodule src="\/js\/bootLegacy\.js">/, 'a browser without ES modules gets the external fallback');
+    const boot = readFileSync(path.join(PUBLIC, 'js/boot.js'), 'utf8');
+    const legacy = readFileSync(path.join(PUBLIC, 'js/bootLegacy.js'), 'utf8');
+    assert.match(legacy, /__spBootFail\('old'\)/);
+    assert.match(boot, /addEventListener\('error'/, 'module loading errors are caught under CSP');
+    assert.match(boot, /__spBootFail\('load'\)/);
+    assert.ok(!/\sonerror=/.test(index), 'no inline event handler under CSP');
     assert.match(index, /apple-mobile-web-app-capable/);
     assert.match(index, /class="rotate-hint"/);
   });

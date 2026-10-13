@@ -382,6 +382,30 @@ npm run package -- --update --from <旧版本的完整包>[,<…>] --out <目录
 - 有人反馈问题时，诊断信息里的 `content:` 一行写着房间用的内容（`MODDED cs=… plugins=…` 表示开了改变玩法的插件），问题模板也会问「是否开了插件」。插件房间的问题请先找插件作者，并尽量在原版里复现。
 
 
+## 脚本沙箱与 CSP（0.3.0，P3b）
+
+`SP_PLUGIN_SCRIPTS=sandbox` 开启 script 类的 SES 沙箱执行，默认关闭；trusted 类遵循独立的 P3a 门槛，永远
+不进入此沙箱。此开关允许公网部署，要求有效 lock 和全部文件字节一致，但不要求 trusted pin，也不要求逐人同意
+[ASSUMED，待维护者确认]。房间标「脚本（沙箱）」；同一 SDK、描述符与预算已接通，不降级执行。所有玩法插件的浏览器战斗都在专用 Worker 中，卡死看门狗默认 2 秒。
+脚本服务器宿主强制子进程，忽略 `SP_MATCH_HOST=worker`；Node 22 `--permission` 只开放安装目录读取，没有写文件、
+起子进程、起线程或原生扩展权限，通过 JSON IPC 收取内容，保留现有内存上限和心跳看门狗。
+
+Node 22 权限模型不是恶意代码安全边界，且不限制网络。SES/V8 逃逸后仍可能访问内网、安装目录和已打开的文件描述符；
+安装目录内的符号链接也会扩大读取范围。建议用低权限用户，最好部署在限制出站/内网访问、内存与 CPU 的容器中
+[ASSUMED]。不要把启用沙箱等同于可以安全运行任何来源的插件。官方说明见
+[Node 22 permissions](https://nodejs.org/docs/latest-v22.x/api/permissions.html)。
+
+整站默认发送 CSP，覆盖主页、开发页面和 `/studio/`；importmap 用精确内容的 SHA-256 放行，页面没有 unsafe-eval。
+字体保留 Google Fonts 域名，样式允许 unsafe-inline，图片允许 data/blob，WebSocket 与同源连接以及 blob Worker
+保留。Pixi 使用无动态求值的 uniform 适配器。服主可设 `SP_CSP=off` 关闭整站策略 [ASSUMED]；界面插件 `/p/` 和
+模拟 Worker 自己的 CSP 不随此开关关闭。整站 connect-src 仅保留 'self'，现有同源 WebSocket 仍可连接。反向代理应保留 CSP 响应头，不要额外叠加会阻断 importmap 或 Worker 的策略。
+Worker 响应单独允许 unsafe-eval 供 SES evaluate 使用，并设 `connect-src 'none'`。
+受信任页面脚本从同源 `/cs/<cs16>/scripts/<id>/<entry>` 下发，先校验描述符与响应字节，再原生 import；
+无需给页面 script-src 加 data:、blob: 或 unsafe-eval。script 与 trusted 混合组合整体按受信任处理，逐人同意。
+
+本工作环境禁止监听 localhost，Chrome 的 CSP 继承/渲染验收未运行；Firefox/Safari 也待测。部署前由协调者运行
+`SP_E2E=1 node --test test/ui/sandbox.e2e.test.js` 及 DESIGN §32.11 列出的现有浏览器套件。
+
 ## Trusted script plugins (P3a, experimental)
 
 Scripts are off by default. After reviewing every file, pack the plugin and set `SP_PLUGIN_SCRIPTS=trusted`.
@@ -392,7 +416,7 @@ Bind to an explicit loopback or private LAN IP. Public addresses and wildcard li
 trusted code; `SP_PLUGIN_SCRIPTS=trusted-force` explicitly overrides this [ASSUMED name]. The check uses the listening
 address, never a request's address. If a public reverse proxy fronts the server, make the same public-deployment
 `trusted-force` decision even when the listener is on a loopback address. Existing room class/allow policy still applies.
-P3b's `sandbox` mode is reserved. All numeric spellings of IPv6 zero, IPv4 0/8 and IPv4-mapped equivalents are refused;
+All numeric spellings of IPv6 zero, IPv4 0/8 and IPv4-mapped equivalents are refused;
 the actual address returned after binding is checked again, and any refused trusted service is killed and reaped.
 
 This executes native third-party code: it can control a player's whole game page, and server code can access the
@@ -406,9 +430,15 @@ entries; end an active match to revoke its already pinned snapshot. Activation/r
 and shutdown use SIGKILL and wait for that child to exit. Its 128 MB old-space heap limit is not a total memory or
 subprocess sandbox. Health extensions are limited to 16 KiB of UTF-8 JSON per plugin.
 
-Composition keeps the synchronous C1 interface: an uncached registration probe pauses the lobby for up to 1 s per
-plugin, including vanilla rooms. Probes use SIGKILL and cache successes/failures by plugin, lock, source descriptor and
+Composition keeps the synchronous C1 interface: an uncached registration probe pauses the lobby for up to 5 s per
+plugin (`SP_SCRIPT_PROBE_MS`, 500–60000: raise it on a slow machine, where starting the engine and SES takes longer),
+including vanilla rooms — once per plugin version and settings, since results are cached. Probes use SIGKILL and cache successes/failures by plugin, lock, source descriptor and
 settings (256 recent results). The explicit local `node tools/plugin.mjs test <id>` command authorizes execution
 without server mode or trusted-pin checks; it is not evidence that those files match the production pin.
 Full SDK, pinning, consent and limitations:
 [PLUGINS §13](PLUGINS.md#13-scripts-p3a).
+
+Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可用）。安装根内指向外部的符号链接也会
+扩大可读范围：不要在安装根中放此类链接，包括外链 node_modules、npm link 和配置/存储链接。建议使用容器或
+网络命名空间限制出站与内网访问，并设置 OS 内存/CPU 限额。父进程已对日志、启动错误、发送帧、RPC 回复等 IPC
+做形态和长度复核（DESIGN §32.11），但 Node 在复核前已解码 IPC，不能据此声称免疫内存炸弹或消息洪泛。

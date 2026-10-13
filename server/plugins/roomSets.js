@@ -93,7 +93,7 @@ export function createRoomSets({ registry, visual, contents, policy }) {
       // a content plugin is named by its gameplay part (the content set's hash) even when it brings art too
       const src = ['content','script','trusted'].includes(p.class) ? cById.get(p.id) : vById.get(p.id);
       // (16 hex digits, as a cosmetic plugin's: the content set's plugin hash is a full SHA-256)
-      return { id: p.id, version: p.manifest.version, class: p.class, hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
+      return { id: p.id, version: p.manifest.version, class: p.class, ...(p.script ? {execution:cset?.execution} : {}), hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
     });
     return {
       ok: true,
@@ -101,7 +101,8 @@ export function createRoomSets({ registry, visual, contents, policy }) {
         ...(cset ? { cs: cset.cs } : {}),
         ...(vset ? { vs: vset.vs } : {}),
         plugins,
-        ...(cset?.scripts?.length ? {trusted:{plugins:cset.scripts.map(({id,version,hash,permissions,authors}) => ({id,version,hash,permissions,authors}))}} : {}),
+        ...(cset?.execution ? { execution: cset.execution } : {}),
+        ...(cset?.scripts?.length && cset.execution !== 'sandbox' ? {trusted:{plugins:cset.scripts.map(({id,version,hash,permissions,authors}) => ({id,version,hash,permissions,authors}))}} : {}),
         warnings: [...(vset?.warnings || []), ...warnings],
         bytes: vset ? vset.bytes : 0,
         ...(cset ? { dataBytes: cset.dataBytes, modes: cset.modes, kitted: cset.kitted } : {}),

@@ -78,7 +78,7 @@ export class PlayerItems {
    */
   _attach(target, item, replaceUid = null) {
     target.items = target.items || [];
-    while (target.items.length >= this.gd.equipPerChess) {
+    while (target.items.length >= this.gd.equipPerChess) { // loop-cap: splices one item each pass
       const i = replaceUid != null ? target.items.findIndex((x) => x.uid === replaceUid) : -1;
       const [old] = target.items.splice(i >= 0 ? i : 0, 1);
       replaceUid = null;

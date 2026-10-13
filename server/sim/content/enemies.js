@@ -256,7 +256,7 @@ function onTick(b, dt) {
           else {
             a._acc = (a._acc ?? 0) + dt;
             let k = 0;
-            while (a._acc >= a.iv - 1e-9 && k++ < 4 && e.alive) { a._acc -= a.iv; safe(b, e, () => a.tick(b, e, a, a.iv)); }
+            while (a._acc >= a.iv - 1e-9 && k++ < 4 && e.alive) { a._acc -= a.iv; safe(b, e, () => a.tick(b, e, a, a.iv)); } // loop-cap: at most 4 ability ticks
           }
         }
       }

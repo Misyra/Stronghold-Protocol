@@ -45,6 +45,7 @@ import { isHpLoss } from './damage.js';
 import { absoluteRangeKeys } from './targeting.js';
 import { bodyInKeys, bodyKeys, bodyOnTile } from './body.js';
 import { COLS, CHAIN_RADIUS } from './constants.js';
+import { textCount, textFinite } from '../../shared/plugins/textNumber.js';
 
 const P = (o) => Object.freeze(o);
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -619,10 +620,10 @@ const TUNE = {
   incantationmedic: (tb) => ({ healRatio: num(tb.scale, 0.5) }),
   chainhealer: (tb, def, p) => {
     const o = { ...p.heal };
-    const m = String(def.trait || '').match(/在(\d+)个友方单位间跳跃/);
-    if (m) o.count = +m[1];
-    const f = String(def.trait || '').match(/治疗量降低(\d+)%/);
-    if (f) o.falloff = +f[1] / 100;
+    const jumped = textCount(String(def.trait || ''), /在(\d+)个友方单位间跳跃/, NaN, 'jump-ally');
+    if (Number.isFinite(jumped) && jumped > 0) o.count = jumped; // loop-cap: textCount jump-ally
+    const pct = textFinite(String(def.trait || ''), /治疗量降低(\d+)%/, NaN);
+    if (Number.isFinite(pct)) o.falloff = pct / 100;
     if (tb['attack@chain.max_target'] != null) o.count = num(tb['attack@chain.max_target'], o.count);
     if (tb['attack@chain.atk_scale'] != null) o.falloff = 1 - num(tb['attack@chain.atk_scale'], 1 - o.falloff);
     return { heal: o };
@@ -630,10 +631,10 @@ const TUNE = {
   ringhealer: (tb, def, p) => ({ heal: { ...p.heal, count: /同时恢复三个|同时恢复3个/.test(String(def.trait || '')) ? 3 : (p.heal.count ?? 3) } }),
   chain: (tb, def, p) => {
     const o = { ...p.chain };
-    const m = String(def.trait || '').match(/在(\d+)个敌人间跳跃/);
-    if (m) o.count = +m[1];
-    const f = String(def.trait || '').match(/伤害降低(\d+)%/);
-    if (f) o.falloff = +f[1] / 100;
+    const jumped = textCount(String(def.trait || ''), /在(\d+)个敌人间跳跃/, NaN, 'jump-enemy');
+    if (Number.isFinite(jumped) && jumped > 0) o.count = jumped; // loop-cap: textCount jump-enemy
+    const pct = textFinite(String(def.trait || ''), /伤害降低(\d+)%/, NaN);
+    if (Number.isFinite(pct)) o.falloff = pct / 100;
     if (tb['attack@max_target'] != null) o.count = num(tb['attack@max_target'], o.count);
     if (tb['attack@sluggish'] != null) o.sluggish = num(tb['attack@sluggish'], o.sluggish);
     if (tb['attack@chain.atk_scale'] != null) o.falloff = 1 - num(tb['attack@chain.atk_scale'], 1 - o.falloff);

@@ -108,7 +108,7 @@ function glueTiles(battle, unit, count) {
   } else {
     for (const d of [LEFT, RIGHT]) spray(...near([0, 0], d));
   }
-  while (list.length < count) {
+  while (list.length < count) { // loop-cap: spray stops when every tile is spread
     let at = null;
     for (let i = list.length - 1; i >= 0; i--) if (!list[i].spread) { at = list[i]; break; }
     if (!at) break;
@@ -196,7 +196,7 @@ export default {
             if (!g) return;
             const iv = Math.max(0.05, num(b2.interval, 0.7));
             g.acc += dt;
-            while (g.acc + 1e-9 >= iv && unit.alive) { g.acc -= iv; gluePulse(battle, unit, g.keys); }
+            while (g.acc + 1e-9 >= iv && unit.alive) { g.acc -= iv; gluePulse(battle, unit, g.keys); } // loop-cap: interval floored before the loop
           },
           onEnd({ unit }) { unit.mem.thumpyGlue = null; },
         },
@@ -228,7 +228,7 @@ export default {
             carry(battle, unit, belt, dt);
             const iv = Math.max(0.05, num(b3.interval, 1));
             belt.acc += dt;
-            while (belt.acc + 1e-9 >= iv && unit.alive) {
+            while (belt.acc + 1e-9 >= iv && unit.alive) { // loop-cap: interval floored before the loop
               belt.acc -= iv;
               for (const e of beltVictims(battle, unit, belt)) battle.dealDamage(unit, e, { amount: unit.s.atk * num(b3.atk_scale), type: 'phys', isSkill: true, tags: ['skill', 'thumpy:belt'] });
             }

@@ -47,3 +47,16 @@ export function boundedCount(value, max, fallback) {
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(0, n));
 }
+
+/**
+ * A blackboard key used as an interval, a period, or a per-step cost.
+ * [ASSUMED] `coin_cnt` is a spend step and does not match the name pattern, so it is listed.
+ * @param {unknown} key
+ */
+export function isStepKey(key) {
+  return typeof key === 'string' && (
+    /(?:^|[.@])(?:interval|period)$/.test(key)
+    || /(?:^|\.)cost$/.test(key)
+    || key === 'coin_cnt'
+  );
+}

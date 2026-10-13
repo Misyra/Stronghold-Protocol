@@ -75,7 +75,9 @@ test('merged data reaches every support lookup and a real battle, through Node a
   fs.writeFileSync(path.join(runtime,'server/data.js'), DATA_SHIM_JS);
   const table = contentSetFiles(set), base = pathToFileURL(path.join(runtime,'server/sim')).href + '/';
   const loaded = await loadBrowserSim({ base, dataBase: '/cs/test/data/', fetchFn: async url => {
-    const rel = 'data/' + url.split('/').at(-1), f = table.get(rel);
+    const name = url.split('/').at(-1);
+    const rel = String(url).includes('/bounds/') ? `bounds/${name}` : `data/${name}`;
+    const f = table.get(rel);
     return { ok: !!f, json: async () => JSON.parse(f.body.toString('utf8')) };
   } });
   const support = await import(base + 'content/support/index.js');

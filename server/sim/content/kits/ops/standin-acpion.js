@@ -75,7 +75,7 @@ export default {
           const m = unit.mem.acpionDp;
           if (!m) return;
           m.acc += dt;
-          while (m.acc + 1e-9 >= iv && m.n < total) { m.acc -= iv; m.n++; dp(battle, unit, per); }
+          while (m.acc + 1e-9 >= iv && m.n < total) { m.acc -= iv; m.n++; dp(battle, unit, per); } // loop-cap: interval floored at 0.1 and trig_cnt
         },
         onEnd({ unit }) { unit.mem.acpionDp = null; },
       };

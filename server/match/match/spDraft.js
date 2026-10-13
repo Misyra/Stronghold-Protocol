@@ -44,7 +44,7 @@ export class MatchSpDraft {
     const s = this.sp;
     this.cancel(this._turnTimer);
     this._turnTimer = null;
-    while (s.idx < s.order.length) {
+    while (s.idx < s.order.length) { // loop-cap: draft order
       const ps = this.players.get(s.order[s.idx]);
       if (ps && ps.alive && s.picks[ps.playerId] == null) break;
       s.idx++;

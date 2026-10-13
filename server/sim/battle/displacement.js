@@ -194,7 +194,7 @@ export class BattleDisplacement {
     const ux = dxv / len, uy = dyv / len;
     let moved = 0;
     const stepLen = 0.1;
-    while (moved + 1e-9 < eff) {
+    while (moved + 1e-9 < eff) { // loop-cap: distance capped at 2*COLS, step 0.1
       const s = Math.min(stepLen, eff - moved); // (the last step is a partial one: 0.12 tiles moves 0.12, not 0.2)
       const nx = e.x + ux * s, ny = e.y + uy * s;
       const r = Math.round(ny), c = Math.round(nx);

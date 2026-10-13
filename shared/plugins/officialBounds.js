@@ -1,9 +1,16 @@
+// (i18n-ignore-file: author-facing PLUGIN_DATA_BOUND text stays Chinese until the integrator merges the code; not player UI)
 // Official absolute maxima for plugin blackboard values and the few non-blackboard fields that drive loops
 // (DESIGN §32.5). Official data is immutable, so the table is cached by object identity. The battle reads the
 // same cache; a direct kit built before getData() falls back to PLUGIN_BOUND_FLOOR, which still sits at or
 // above every official input of the clamped loops. [ASSUMED] factor 10 and floor 64.
+// Minima of step keys and maxima of description-text counts live in the same cache. A content set ships the
+// snapshot (`bounds`) so a worker or a page that never calls getData() installs the same numbers.
 
-import { dataBound } from './limits.js';
+import { dataBound, isStepKey } from './limits.js';
+import { TEXT_COUNT_PATTERNS } from './textPatterns.js';
+import { textFinite } from './textNumber.js';
+
+const STEP_TICK = 1 / 30;
 
 /**
  * Tables walked for both the maximum and the check. choices, garrisons and tokens are included so a higher
@@ -14,19 +21,28 @@ export const BOUND_TABLES = Object.freeze([
 ]);
 
 /** Skill fields that schedule charges or repeats. Durations and cooldowns are not in this list. */
-const SKILL_FIELDS = Object.freeze(['spCost', 'initSp', 'maxChargeTime', 'increment']);
+const SKILL_FIELDS = Object.freeze(['spCost', 'initSp', 'maxChargeTime', 'increment', 'charges', 'maxCharges']);
 const ENEMY_SP_FIELDS = Object.freeze(['maxSp', 'initSp', 'increment']);
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** @type {object|null} */
 let cachedSource = null;
-/** @type {{ bb: Map<string, number>, fields: Map<string, number> }|null} */
+/**
+ * @type {{ bb: Map<string, number>, fields: Map<string, number>, bbMin: Map<string, number>,
+ *   fieldMin: Map<string, number>, text: Map<string, number> }|null}
+ */
 let cached = null;
 
 function bump(map, key, abs) {
   const prev = map.get(key);
   if (prev == null || abs > prev) map.set(key, abs);
+}
+
+function bumpMin(map, key, value) {
+  if (!(value > 0)) return;
+  const prev = map.get(key);
+  if (prev == null || value < prev) map.set(key, value);
 }
 
 function emitBb(bb, path, fn) {
@@ -79,16 +95,61 @@ function visit(node, table, path, fn) {
   }
 }
 
+function scanText(data) {
+  const text = new Map();
+  const walk = (node) => {
+    if (typeof node === 'string') {
+      for (const p of TEXT_COUNT_PATTERNS) {
+        const n = textFinite(node, p.re, NaN);
+        if (Number.isFinite(n) && n >= 0) bump(text, p.id, n);
+      }
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const v of node) walk(v);
+      return;
+    }
+    for (const v of Object.values(node)) walk(v);
+  };
+  for (const table of BOUND_TABLES) walk(data?.[table]);
+  return text;
+}
+
 function scan(data) {
   const bb = new Map();
   const fields = new Map();
+  const bbMin = new Map();
+  const fieldMin = new Map();
   for (const table of BOUND_TABLES) {
     visit(data?.[table], table, table, (ev) => {
-      if (ev.kind === 'bb') bump(bb, ev.key, Math.abs(ev.value));
-      else bump(fields, ev.field, Math.abs(ev.value));
+      if (ev.kind === 'bb') {
+        bump(bb, ev.key, Math.abs(ev.value));
+        bumpMin(bbMin, ev.key, ev.value);
+      } else {
+        bump(fields, ev.field, Math.abs(ev.value));
+        bumpMin(fieldMin, ev.field, ev.value);
+      }
     });
   }
-  return { bb, fields };
+  return { bb, fields, bbMin, fieldMin, text: scanText(data) };
+}
+
+function emptyBounds() {
+  return { bb: new Map(), fields: new Map(), bbMin: new Map(), fieldMin: new Map(), text: new Map() };
+}
+
+function mapOf(obj) {
+  const out = new Map();
+  if (!obj || typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out.set(k, v);
+  }
+  return out;
+}
+
+function objOf(map) {
+  return Object.fromEntries([...map.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 /**
@@ -98,7 +159,7 @@ function scan(data) {
 export function rememberOfficialBounds(data) {
   if (!data || typeof data !== 'object') {
     cachedSource = null;
-    cached = { bb: new Map(), fields: new Map() };
+    cached = emptyBounds();
     return cached;
   }
   if (cachedSource === data && cached) return cached;
@@ -107,10 +168,54 @@ export function rememberOfficialBounds(data) {
   return cached;
 }
 
-/** Drop the cache (server/data.js resetData). The next read uses the floor until remember runs again. */
+/** Drop the cache (server/data.js resetData). The next read uses the floor until remember or install runs again. */
 export function forgetOfficialBounds() {
   cachedSource = null;
   cached = null;
+}
+
+/**
+ * Plain snapshot of a bounds cache. Sorted keys, so the served file is stable.
+ * @param {{ bb: Map<string, number>, fields: Map<string, number>, bbMin: Map<string, number>,
+ *   fieldMin: Map<string, number>, text: Map<string, number> }} bounds
+ */
+export function exportOfficialBounds(bounds) {
+  const src = bounds && bounds.bb ? bounds : emptyBounds();
+  return {
+    v: 1,
+    bb: objOf(src.bb),
+    fields: objOf(src.fields),
+    bbMin: objOf(src.bbMin),
+    fieldMin: objOf(src.fieldMin),
+    text: objOf(src.text),
+  };
+}
+
+/**
+ * Install a snapshot computed from vanilla data. Does not scan `data` (a plugin must not raise its own cap).
+ * @param {object} snapshot exportOfficialBounds result
+ */
+export function installOfficialBounds(snapshot) {
+  if (!snapshot || snapshot.v !== 1) {
+    cachedSource = null;
+    cached = emptyBounds();
+    return cached;
+  }
+  cached = {
+    bb: mapOf(snapshot.bb),
+    fields: mapOf(snapshot.fields),
+    bbMin: mapOf(snapshot.bbMin),
+    fieldMin: mapOf(snapshot.fieldMin),
+    text: mapOf(snapshot.text),
+  };
+  cachedSource = null;
+  return cached;
+}
+
+/** Install `set.bounds` when a content set is in hand. A set without the snapshot leaves the cache alone. */
+export function applyContentBounds(set) {
+  if (set && set.bounds && set.bounds.v === 1) return installOfficialBounds(set.bounds);
+  return current();
 }
 
 function current() {
@@ -139,16 +244,41 @@ export function fieldCap(name) {
   return dataBound(officialFieldMax(name));
 }
 
+/** Official maximum of a description-text count pattern, or null when vanilla text never matches it. */
+export function officialTextMax(patternId) {
+  const map = current()?.text;
+  return map && map.has(patternId) ? map.get(patternId) : null;
+}
+
+/**
+ * Smallest positive official value of a blackboard key, else of a loop field, else 0.
+ * Step floors use this so an official interval below one tick is not raised.
+ */
+export function officialPositiveMin(key) {
+  const c = current();
+  if (!c || typeof key !== 'string') return 0;
+  if (c.bbMin && c.bbMin.has(key)) return c.bbMin.get(key);
+  if (c.fieldMin && c.fieldMin.has(key)) return c.fieldMin.get(key);
+  return 0;
+}
+
 function boundMessage(label, key, value, cap, known, officialMax) {
   const tail = known ? `原版最大 ${officialMax}` : '原版没有这个键';
   return `${label} ${key} 的值 ${value} 超过上限 ${cap}（${tail}）`;
 }
 
-function exceed(bad, ev, map, label, key) {
+function exceed(bad, ev, map, minMap, label, key) {
   const known = map.has(key);
   const officialMax = known ? map.get(key) : null;
   const cap = dataBound(known ? officialMax : null);
   if (Math.abs(ev.value) > cap) bad(ev.path, boundMessage(label, key, ev.value, cap, known, officialMax), 'PLUGIN_DATA_BOUND');
+  if (!(ev.value > 0) || !isStepKey(key)) return;
+  const officialMin = minMap && minMap.has(key) ? minMap.get(key) : 0;
+  const tenth = officialMin > 0 ? officialMin / 10 : STEP_TICK / 10;
+  if (ev.value < tenth) {
+    const tail = officialMin > 0 ? `原版最小正值 ${officialMin}` : '原版没有这个键的正值';
+    bad(ev.path, `${label} ${key} 的值 ${ev.value} 低于最小步长 ${tenth}（${tail}）`, 'PLUGIN_DATA_BOUND');
+  }
 }
 
 /**
@@ -162,8 +292,8 @@ export function appendOfficialBounds(data, vanilla, bad) {
   const bounds = rememberOfficialBounds(vanilla);
   for (const table of BOUND_TABLES) {
     visit(data?.[table], table, table, (ev) => {
-      if (ev.kind === 'bb') exceed(bad, ev, bounds.bb, '黑板', ev.key);
-      else exceed(bad, ev, bounds.fields, '字段', ev.field);
+      if (ev.kind === 'bb') exceed(bad, ev, bounds.bb, bounds.bbMin, '黑板', ev.key);
+      else exceed(bad, ev, bounds.fields, bounds.fieldMin, '字段', ev.field);
     });
   }
 }

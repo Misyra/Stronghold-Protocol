@@ -46,6 +46,7 @@ import { hasHp } from '../../../damage.js';
 import { canTargetEnemy, enemyStealthed } from '../../../targeting.js';
 import { bodyInKeys } from '../../../body.js';
 import { COLS, PALSY_MAX } from '../../../constants.js';
+import { burstLimit } from '../../../../../shared/plugins/steps.js';
 import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_mantra_1';
@@ -157,7 +158,10 @@ export default {
     }
     /** `e` leaves the overflow (range, fall, skill end): every 溢出麻痹 left bounces at once. */
     function flush(battle, unit, e, rec) {
-      while (rec.over > 0) { rec.over--; bounce(battle, unit, e); }
+      let guard = 0;
+      const limit = burstLimit(PALSY_MAX);
+      while (rec.over > 0 && guard++ < limit) { rec.over--; bounce(battle, unit, e); } // loop-cap: burstLimit palsy
+      if (rec.over > 0) rec.over = 0;
     }
     /** 真言's own 麻痹 (S3 grants, 全局洞悉): a 麻痹免疫 enemy keeps them (ineffective) for the overflow count. */
     function givePalsy(battle, unit, e, n) {

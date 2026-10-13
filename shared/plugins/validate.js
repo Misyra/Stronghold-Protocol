@@ -114,7 +114,7 @@ export function validateReferences(f, { officialOwnedSkills = true } = {}) {
   }
   // the escaped level of 1 / 2 helpers (config.unite.templates) has its map record (kind 'unite'; no field uses it)
   for (const [n, id] of Object.entries(config.unite.templates)) {
-    if (stages[id]?.kind !== 'unite' || stages[id].helpers !== Number(n) || stages[id].active) err(`unite template ${id}: no inactive 联防 stage for ${n} helper(s)`);
+    if (stages[id]?.kind !== 'unite' || stages[id].helpers !== Number(n) || stages[id].active) err(`unite template ${id}: no inactive 联防 stage for ${n} helper(s)`); // i18n-ignore
   }
   for (const m of Object.values(config.modes)) {
     for (const [r, rd] of Object.entries(m.rounds)) {

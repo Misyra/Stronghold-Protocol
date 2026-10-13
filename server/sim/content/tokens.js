@@ -98,6 +98,7 @@ import { normDir, localOrder } from '../dir.js';
 import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
 import { hypot } from '../detmath.js';
 import { atPotential } from '../../../shared/potential.js';
+import { textFinite } from '../../../shared/plugins/textNumber.js';
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : d));
 const GRID_3X3 = Object.freeze([[1, -1], [1, 0], [1, 1], [0, -1], [0, 0], [0, 1], [-1, -1], [-1, 0], [-1, 1]]);
@@ -497,7 +498,10 @@ function healDrone() {
       const v = variantOf(unit);
       const sk = v?.skill ?? unit.def?.raw?.skill ?? null;
       let life = /^skcom_withdraw/.test(String(sk?.skillId ?? sk?.id ?? '')) ? num(sk.duration, 0) : 0;
-      if (!(life > 0)) { const m = String(sk?.desc ?? sk?.description ?? '').match(/(\d+(?:\.\d+)?)秒后自动销毁/); if (m) life = +m[1]; }
+      if (!(life > 0)) {
+        const secs = textFinite(String(sk?.desc ?? sk?.description ?? ''), /(\d+(?:\.\d+)?)秒后自动销毁/, NaN);
+        if (Number.isFinite(secs)) life = secs;
+      }
       onDeploy(battle, unit, () => scheduleLifetime(battle, unit, life));
     },
   };

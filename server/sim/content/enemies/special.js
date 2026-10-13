@@ -14,6 +14,8 @@ import {
 } from './archetypes.js';
 import { hypot } from '../../detmath.js';
 import { boundedCount, PLUGIN_TIMES_MAX } from '../../../../shared/plugins/limits.js';
+import { bbCap } from '../../../../shared/plugins/officialBounds.js';
+import { stepOf, STEP_PER_TICK } from '../../../../shared/plugins/steps.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -143,8 +145,10 @@ function kitParrot(ab) {
 const RUSH_LISTEN = 0.1;
 
 function kitRush(ab) {
-  const ms = T(ab, 'rush.dlancer_t[trigger].move_speed') ?? 0, iv = T(ab, 'rush.dlancer_t[trigger].interval') ?? 0.5;
-  const max = T(ab, 'rush.dlancer_t[trigger].trig_cnt') ?? 0, scale = T(ab, 'firstattack.atk_scale') ?? 0;
+  const ms = T(ab, 'rush.dlancer_t[trigger].move_speed') ?? 0;
+  const iv = stepOf('rush.dlancer_t[trigger].interval', T(ab, 'rush.dlancer_t[trigger].interval') ?? 0.5, 0.5);
+  const max = boundedCount(T(ab, 'rush.dlancer_t[trigger].trig_cnt') ?? 0, bbCap('rush.dlancer_t[trigger].trig_cnt'), 0);
+  const scale = T(ab, 'firstattack.atk_scale') ?? 0;
   // 晕眩 / 束缚 only (the client's STUNNED / UNMOVABLE flags: not 冻结, 沉睡 or 浮空, which hold flags.stun here too)
   const held = (e) => e.buffs.some((x) => x.status === 'stun' || x.status === 'bind');
   const stop = (b, e, a) => { a.on = false; a.n = 0; b.removeBuff(e, 'ab:rush'); };
@@ -161,7 +165,8 @@ function kitRush(ab) {
       if (a.tries >= max || !(iv > 0)) return;
       a.acc += dt;
       let grew = false;
-      while (a.acc >= iv - 1e-9 && a.tries < max) { a.acc -= iv; a.tries++; a.n++; grew = true; }
+      let guard = 0;
+      while (a.acc >= iv - 1e-9 && a.tries < max && guard++ < STEP_PER_TICK) { a.acc -= iv; a.tries++; a.n++; grew = true; } // loop-cap: stepOf interval
       if (grew) b.addBuff(e, { key: 'ab:rush', mods: { moveMul: 1 + ms * a.n }, persist: true });
     },
     dealt(c, b, e, a) {

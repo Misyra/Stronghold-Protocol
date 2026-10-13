@@ -109,6 +109,7 @@
 // `skill.addTriggerRange`; element-type damage skips the `hit` hook, so element (损伤) amplification uses the
 // `elementHit` hook (`onElementHit`: × dmg.mul before the gauge fill).
 
+import { textCount, textFinite } from '../../../../../shared/plugins/textNumber.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
 import { COLS, ROWS, PULL_STOP_RADIUS } from '../../../constants.js';
 import { hasHp } from '../../../damage.js';
@@ -143,7 +144,8 @@ function moduleBb(chess) {
   }
   return out;
 }
-const parseN = (text, re, d) => { const m = String(text ?? '').match(re); return m ? +m[1] : d; };
+/** Finite capture. Counts go through textCount; a percent or a duration stays uncapped. */
+const parseN = (text, re, d) => textFinite(text, re, d);
 const live = (u) => !!u && u.alive && u.deployed && !u.removed && !u.hidden;
 const isElite = (e) => !!e && (e.isBoss || e.def?.rank === 'ELITE' || e.def?.rank === 'BOSS');
 const hasBond = (u, id) => !!(u && u.def && Array.isArray(u.def.bonds) && u.def.bonds.includes(id));
@@ -278,7 +280,7 @@ function aura(battle, unit, period, fn) {
 }
 
 export {
-  num, bv, tbb, tdesc, moduleBb, parseN, live, isElite, hasBond, keyOf, opsOf, ANY, enemiesIn, isTok, onDefaultSkill,
+  num, bv, tbb, tdesc, moduleBb, parseN, textCount, live, isElite, hasBond, keyOf, opsOf, ANY, enemiesIn, isTok, onDefaultSkill,
   selectedSkill, batOf, instantKind, skillGridOf, ABNORMAL, hasAbnormal, cleanseAbnormal, AROUND8, N4, WHOLE_FIELD,
   bstate, freeTiles, bestTile, onElementHit, elementDmg, pullToward, aura,
 };

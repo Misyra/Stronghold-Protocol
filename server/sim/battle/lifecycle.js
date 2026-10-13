@@ -137,7 +137,7 @@ export class BattleLifecycle {
   /** Run until finished or `maxSeconds` of game time elapsed. Returns the result when finished. */
   runToEnd(maxSeconds = MAX_BATTLE_TIME) {
     const limit = this.time + maxSeconds;
-    while (!this.finished && this.time < limit) this.step();
+    while (!this.finished && this.time < limit) this.step(); // loop-cap: battle time limit
     return this.finished ? this.result() : null;
   }
 

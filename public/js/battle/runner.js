@@ -163,7 +163,32 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   SIM_DATA_FILES.forEach((n, i) => { raw[n] = deepFreeze(files[i]); });
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
+  await installSimBounds(base, dataBase, fetchFn, raw);
   return { spec, ds: new simdata.DataSource(raw, null) };
+}
+
+/**
+ * The same official-bounds snapshot the server validated against. A plugin set must not scan its own tables
+ * (a bomb would raise its cap). Vanilla pages scan the data they loaded. [ASSUMED] DESIGN §32.5.
+ */
+async function installSimBounds(base, dataBase, fetchFn, raw) {
+  let boundsMod;
+  try {
+    const spec = /^https?:|^file:/i.test(String(base))
+      ? new URL('../../shared/plugins/officialBounds.js', base).href
+      : '/shared/plugins/officialBounds.js';
+    boundsMod = await import(spec);
+  } catch { return; }
+  const pluginSet = /\/cs\//.test(String(dataBase));
+  try {
+    const boundsUrl = String(dataBase).replace(/data\/?$/, 'bounds/official.json');
+    const res = await fetchFn(boundsUrl, { cache: 'no-cache' });
+    if (res && res.ok && typeof res.json === 'function') {
+      const snap = await res.json();
+      if (snap && snap.v === 1) { boundsMod.installOfficialBounds(snap); return; }
+    }
+  } catch { /* fall through */ }
+  if (!pluginSet) boundsMod.rememberOfficialBounds(raw);
 }
 
 /**

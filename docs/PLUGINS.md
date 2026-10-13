@@ -493,6 +493,34 @@ Official counts, official trigger deviations and source-specific rules stay in
 build-data; its original data is unchanged. `node tools/records-schema.mjs` rewrites `schemas/records.schema.json`
 from the runtime schema (an optional output path overrides that file).
 
+Counts read from skill, talent or trait text go through `textCount` (`shared/plugins/textNumber.js`). The result is
+finite and at most `max(10 × the official maximum of that phrase, 64)`, or 64 when vanilla text never matches it.
+A matched run that is not finite clamps to the cap. Official phrases do not change: every scanned maximum is at most
+15, so the cold floor of 64 does not move them either. Percents and durations use `textFinite` and are not forced
+down to a count cap (`持续120秒` stays 120). `parseN` and `textNum` are `textFinite`. The phrase table is DESIGN §32.5.
+
+A subtract loop whose interval, period or per-step cost comes from plugin data uses `stepOf`. A positive value at or
+above the official minimum of that key is unchanged, including official `interval` 0.03 and `atk_interval` 0.025,
+both shorter than one tick. [ASSUMED] Raising those to one tick would change vanilla combat. `battle.every` already
+clamps its scheduler to one tick. A smaller positive step is raised to `max(one tick, official minimum / 10)`.
+Without the table, only a step below a tenth of a tick is raised. The same loop also stops after 8 iterations in
+one call. A burst that is not one tick of time uses `burstLimit` (the systematic cap of the official iteration
+count), not 8. 娜斯提's skill-end catch-up stops at 80 even when `duration` is 1e9. `duration` is not a skill field
+cap. Validation rejects a positive step key below the official minimum / 10 with `PLUGIN_DATA_BOUND` (`低于最小步长`).
+[ASSUMED] The step keys are names ending in `interval` or `period`, names ending in `cost`, and `coin_cnt`.
+
+Every content set carries `bounds` (`v: 1`) computed from the vanilla tables. A selection with plugins also serves
+`bounds/official.json`. That file is not part of `cs`. The browser loader installs it. A plugin set whose fetch fails
+stays at the floor of 64 and does not scan composed data. The worker is not in this package. It must call
+`installOfficialBounds(set.bounds)`. Before the snapshot is installed, engine caps use 64, which is below a validated
+value such as 80. [ASSUMED] Direct `new Battle` still skips validation. `factions.generation` counts are not in the
+blackboard scan. The round-type schedule stops at 256. The full loop list, the floors that were left as they were,
+and the other residuals are DESIGN §32.5.
+
+Author-facing `PLUGIN_DATA_BOUND` text stays Chinese and is not a player string. `officialBounds.js` is marked
+`i18n-ignore-file`. The `联防` diagnostic in `validate.js` keeps its line ignore. The shared error catalogue is a
+later step and is not added here.
+
 **Languages.** Manifest `sourceLang` describes the record texts (default `zh`). `i18n: { "en": "i18n/en.json" }` uses
 the existing `{ version: 1, lang, files: { table: { id: overlay } } }` format. String leaves must target existing strings.
 The builder computes `_h` against the final source text and retains valid unrelated base translations. Output lives in

@@ -153,7 +153,7 @@ export function pickRoundEntry(gd, rng, type, round) {
 /** Round type schedule: each chosen type × its slot count, filled with SPECIAL to maxLevelCnt, shuffled. */
 export function makeTypeSchedule(gd, rng, factions) {
   const g = gen(gd);
-  const max = intOr(g.maxLevelCnt, 15);
+  const max = Math.min(256, Math.max(0, intOr(g.maxLevelCnt, 15))); // loop-cap: schedule length [ASSUMED] DESIGN §32.5
   const fill = typeof g.fillType === 'string' ? g.fillType : (typeof g.alwaysIncludedType === 'string' ? g.alwaysIncludedType : 'SPECIAL');
   const types = gd.factions.types && typeof gd.factions.types === 'object' ? gd.factions.types : {};
   const slots = [];
@@ -161,7 +161,7 @@ export function makeTypeSchedule(gd, rng, factions) {
     const n = intOr(types[t]?.count, 3);
     for (let i = 0; i < n && slots.length < max; i++) slots.push(t);
   }
-  while (slots.length < max) slots.push(fill);
+  while (slots.length < max) slots.push(fill); // loop-cap: schedule length
   rng.shuffle(slots);
   return slots;
 }

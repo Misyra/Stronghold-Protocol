@@ -134,7 +134,7 @@ export function enforceBlockCapacity(b, u) {
   const cap = u.alive && u.deployed ? u.s.blockCnt : 0;
   let used = 0;
   for (const e of u.blocking) used += e.blockWeight ?? 1;
-  while (used > cap && u.blocking.length) {
+  while (used > cap && u.blocking.length) { // loop-cap: block cap and the blocking list
     const e = u.blocking.pop();
     if (e.blockedBy === u) { e.blockedBy = null; b._stealthSwitch(e); }   // a released 隐匿 enemy hides again later
     used -= e.blockWeight ?? 1;
@@ -333,12 +333,12 @@ export function resolveHit(b, u, prof, target, info, x, y) {
     let dealtMain = 0;
     if (attachedFunnel && info.index === 0) {
       const bodyHits = Math.max(1, prof.funnelBodyHits > 0 ? prof.funnelBodyHits : 1);
-      for (let h = 0; h < bodyHits && target.alive; h++) {
+      for (let h = 0; h < bodyHits && target.alive; h++) { // loop-cap: funnelBodyHits (textCount upstream)
         dealtMain += b.dealDamage(u, target, { amount: atk * scale * mulT, type: baseType,
           isAttack: true, isSkill: info.isSkill, tags: prof.tags || [], attackId });
       }
     }
-    for (let h = 0; h < hits && target.alive; h++) {
+    for (let h = 0; h < hits && target.alive; h++) { // loop-cap: hits (textCount or a kit count)
       const d = { amount: atk * scale * mulT * (attachedFunnel ? funnelMul : 1), type: baseType,
         isAttack: !attachedFunnel, isSkill: info.isSkill, tags: attachedFunnel ? [...(prof.tags || []), 'addition', 'funnel'] : (prof.tags || []), attackId };
       if (split != null) { d.mul = split; if (h > 0) d.noSp = true; }
@@ -502,7 +502,7 @@ function planLeg(b, e, leg) {
     if (f) {
       let x = k;
       let guard = COLS * 32;
-      while (x !== f.dest && guard-- > 0) {
+      while (x !== f.dest && guard-- > 0) { // loop-cap: flow-field guard
         x = f.next[x];
         if (x < 0) break;
         pts.push({ x: x % COLS, y: (x / COLS) | 0 });
@@ -665,7 +665,7 @@ function moveAttracted(b, e, dt) {
   }
   let dist = e.s.moveSpeed * MOVE_SCALE * dt;
   let moved = false;
-  while (dist > 1e-9 && A.i < A.pts.length) {
+  while (dist > 1e-9 && A.i < A.pts.length) { // loop-cap: path points
     const p = A.pts[A.i];
     const dx = p.x - e.x, dy = p.y - e.y, d = hypot(dx, dy);
     if (d <= dist) { e.x = p.x; e.y = p.y; dist -= d; A.i++; } else { e.x += (dx / d) * dist; e.y += (dy / d) * dist; dist = 0; }
@@ -683,7 +683,7 @@ function moveAttracted(b, e, dt) {
 function advanceRoute(b, e, dt, R, standing = false) {
   let budget = dt;
   let guard = 16;
-  while (budget > 1e-9 && guard-- > 0 && e.alive) {
+  while (budget > 1e-9 && guard-- > 0 && e.alive) { // loop-cap: route guard
     const leg = R.legs[R.legIdx];
     if (!leg) {
       if (!portalPickup(b, e)) { b.leak(e); return; }
@@ -721,7 +721,7 @@ function advanceRoute(b, e, dt, R, standing = false) {
     let dist = speed * budget;
     e.moving = true;
     let steps = 64;
-    while (dist > 1e-9 && steps-- > 0) {
+    while (dist > 1e-9 && steps-- > 0) { // loop-cap: step budget
       if (!R.pts || R.version !== b.grid.version) planLeg(b, e, leg);
       if (R.ptIdx >= R.pts.length) break;
       const p = R.pts[R.ptIdx];

@@ -10,8 +10,9 @@
 // pace 'instant' simulates normal / 联防 fields to the end in one timer callback (boss fields are always paced: they
 // share the pool with other fields); 'paced' steps every field at `speed` game-s per real second in 250 ms slices.
 // Test knobs: `tamper(result, spec) → result` edits the outgoing result, `mute: true` never reports, `stall: true`
-// reports progress but no result, `delayMs` delays the first slice. `log` keeps every sent frame; `battles` every
-// local battle by battleId.
+// reports progress but no result, `delayMs` delays the first slice, `withCs` names the content in b.result like the
+// browser does in a room with gameplay plugins (true: the spec's `cs`; a function (spec) → cs: another one — DESIGN §32.6).
+// `log` keeps every sent frame; `battles` every local battle by battleId.
 
 import assert from 'node:assert/strict';
 import { createBattleFromSpec, compactResult, battleProgress, attachLpMeter } from '../../server/sim/spec.js';
@@ -120,7 +121,8 @@ export class SimClient {
       let result = compactResult(b.result());
       if (this.o.tamper) result = this.o.tamper(result, e.spec);
       e.sentResult = true;
-      this.send({ t: 'b.result', battleId: e.battleId, result });
+      const cs = typeof this.o.withCs === 'function' ? this.o.withCs(e.spec) : this.o.withCs ? e.spec.cs : undefined;
+      this.send({ t: 'b.result', battleId: e.battleId, result, ...(cs ? { cs } : {}) });
       return;
     }
     this._schedule(e, SLICE_MS);

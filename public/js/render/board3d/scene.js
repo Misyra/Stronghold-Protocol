@@ -507,7 +507,9 @@ export class BoardScene {
     const opt = { cast: false, receive: false, order: 2 };
     if (T.water.length) this.meshes.water = this._mesh(quads(T.water, -0.035), this.mat.water, opt);
     if (T.mire.length) this.meshes.mire = this._mesh(quads(T.mire, 0.006, 0.02), this.mat.mire, opt);
-    if (T.infection.length) this.meshes.infection = this._mesh(quads(T.infection, 0.007, 0.02), this.mat.infection, opt);
+    // The infection (活性源石) glow is our own flat patch; an official scene already carries that floor in its own
+    // geometry and textures, so drawing ours on top just overlaps it (#549).
+    if (T.infection.length && !this.official) this.meshes.infection = this._mesh(quads(T.infection, 0.007, 0.02), this.mat.infection, opt);
     if (T.smog.length) {
       // two crossed haze cards per grille tile, standing up
       const pos = [], uv = [], idx = [];

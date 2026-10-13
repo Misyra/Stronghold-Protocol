@@ -156,7 +156,8 @@ function deepFreeze(root) {
  * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded; `bounds`
  * its official-bounds snapshot (installSimBounds).
  */
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null } = {}) {
+let loadedScripts = false;
+export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null, scripts = [], hashInput = null } = {}) {
   const [spec, simdata, support] = await Promise.all([
     import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
   ]);
@@ -178,6 +179,14 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
   await installSimBounds(base, raw, data ? bounds : undefined);
+  if (scripts.length) {
+    const sdkUrl = /^file:/i.test(base) ? new URL('../../shared/plugins/sdk.js',base).href : new URL('/shared/plugins/sdk.js',location.href).href;
+    const {loadScripts} = await import(new URL('scriptLoad.js',sdkUrl).href);
+    await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:base+'content/extensions.js'});
+  } else if (loadedScripts) {
+    (await import(base+'content/extensions.js')).resetExtensions();
+  }
+  loadedScripts = scripts.length > 0;
   return { spec, ds: new simdata.DataSource(raw, null), cs };
 }
 
@@ -227,7 +236,7 @@ export function createBattleRunner(deps) {
   const clearIv = deps.clearInterval || ((h) => globalThis.clearInterval(h));
   const doc = deps.doc !== undefined ? deps.doc : (typeof document !== 'undefined' ? document : null);
   // `content` (DESIGN §32.6): `{ cs, data }` of a room's content set → the sim on it; null → the original content
-  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs, bounds: content.bounds ?? null }) : loadBrowserSim()));
+  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs, bounds: content.bounds ?? null, scripts:content.scripts || [], hashInput:content.hashInput }) : loadBrowserSim()));
   const logger = deps.logger || SIM_LOGGER;
   // the content sets (DESIGN §32.6): the room's set the page holds (content.js) and the server's original one
   const contentFor = deps.contentFor || appContentFor;

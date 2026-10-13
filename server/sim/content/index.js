@@ -27,7 +27,7 @@
 // registerAllMeta(registry) — calls each domain module's registerMeta(registry) (prep side, server boot).
 
 import { genericKit, genericTalents } from './generic.js';
-import { EXTENSIONS } from './extensions.js';
+import { EXTENSIONS, installExtensions } from './extensions.js';
 import { compileDsl } from './dsl/compile.js';
 import { validateSkillSpec, matchesSchema, MODS_SCHEMA } from '../../../shared/plugins/skillSpec.js';
 import { withUnitLoadouts } from '../simdata.js';
@@ -107,7 +107,7 @@ export function kitOf(def, reg = KITS) {
   if (!def) return undefined;
   // Explicit Battle opts.kits retain their existing precedence and lookup-only semantics.
   if (reg !== KITS) return registeredKit(def, reg);
-  const ext = registeredKit(def, EXTENSIONS);
+  const ext = registeredKit(def, EXTENSIONS) ?? (def.charId?.startsWith('char_x_') ? EXTENSIONS[def.charId] : undefined);
   if (ext) return ext;
   const raw = def.raw || {};
   if (raw.dsl != null) return (bb, chess, d) => compileDsl(raw.dsl, { bb, chess, def: d });
@@ -304,6 +304,7 @@ export function installContent(battle, { mode = 'full', extra = null } = {}) {
     try { battle._setupUnit(u); } catch (e) { battle._handlerError('setupUnit', u, e); }
   }
   if (mode === 'full') {
+    installExtensions(battle);
     for (const [name, mod] of MODULES) {
       if (typeof mod.install !== 'function') continue;
       try { mod.install(battle); } catch (e) { battle._handlerError(`content:${name}`, null, e); }

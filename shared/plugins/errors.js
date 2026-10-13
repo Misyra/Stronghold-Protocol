@@ -61,6 +61,13 @@ const D = Object.freeze({
 
 /** @type {Readonly<Record<string, Readonly<PluginErrorEntry>>>} the catalogue, by code (see the header) */
 export const PLUGIN_ERRORS = Object.freeze({
+  PLUGIN_CONSENT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "还有玩家未同意运行受信任插件", "en": "A player has not consented to trusted plugins", "fix": {"zh": "每个在座玩家须亲自确认当前内容组合的风险提示。", "en": "Every seated player must personally accept the risk for this content set."}},
+  PLUGIN_TRUST_PUBLIC: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "公网监听默认禁止受信任插件", "en": "Trusted plugins are refused on a public listening address", "fix": {"zh": "改为监听本机或局域网；确认风险后可显式使用 trusted-force。", "en": "Bind to a local address, or explicitly opt into trusted-force after reviewing the risk."}},
+  PLUGIN_TRUST_PIN: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "插件的锁文件或文件内容与服主钉住的哈希不符", "en": "The lock or plugin files do not match the owner’s pinned hash", "fix": {"zh": "重新审核并打包，在 plugins/config.json 的 trusted 中填写锁文件的 SHA-256。", "en": "Review and pack again; put the lock file SHA-256 in plugins/config.json trusted."}},
+  PLUGIN_SCRIPTS_DISABLED: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "服主没有启用脚本插件", "en": "The server owner has not enabled script plugins", "fix": {"zh": "审核插件后设置 SP_PLUGIN_SCRIPTS=trusted，并在 config.json 钉住 lock 哈希。", "en": "After reviewing the code set SP_PLUGIN_SCRIPTS=trusted and pin the lock hash in config.json."}},
+  PLUGIN_SCRIPT_CHECK: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "脚本未通过兼容性检查：{detail}", "en": "The script failed its portability check: {detail}", "fix": {"zh": "入口只导入 sp:sdk@1；导出同步 setup(sp)，使用 SDK 和确定性助手。", "en": "Import only sp:sdk@1; export synchronous setup(sp) and use deterministic helpers."}},
+  PLUGIN_SCRIPT_OVERRIDE: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "插件未声明要替换的官方技能", "en": "The plugin did not declare the official kit it replaces", "fix": {"zh": "在清单 overrides 中列出要替换的官方 kit id。", "en": "List the official kit id in manifest overrides."}},
+  PLUGIN_SCRIPT_CONFLICT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "两个插件注册了同一个效果", "en": "Two plugins register the same effect", "fix": {"zh": "关闭其中一个插件，或让作者改用不同的 id。", "en": "Disable one plugin or use distinct registration ids."}},
   // ---- a room's refusals (room.setPlugins; ERR codes of shared/constants.js) ----------------------------------------
   PLUGIN_UNKNOWN: {
     level: 'refusal', doc: D.cosmetic,

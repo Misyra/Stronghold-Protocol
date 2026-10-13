@@ -46,7 +46,7 @@ function contentSets(lobby) {
  *   content: the server's vanilla content (server/plugins/identity.js)
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -58,6 +58,7 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     ...(content ? { content: { vanilla: content.cs, sets: contentSets(lobby), ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
+  if (trusted && Object.keys(trusted).length) report.plugins = trusted;
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
   // content-hashed asset URLs (assetIndex.js / assetViews.js): off, building, or ready with how many files and URLs
   if (withTraffic) report.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
@@ -77,12 +78,13 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *   plugin studio (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, trustedRuntime = null }) {
   async function handleRequest(req, res) {
     const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    if (trustedRuntime && parts.rawPath.startsWith('/x/') && await trustedRuntime.route(req,res)) return;
     if (studio && studio.handles(parts.rawPath)) { await studio.handle(req, res, parts.rawPath, parts.query); return; }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.setHeader('Allow', 'GET, HEAD');

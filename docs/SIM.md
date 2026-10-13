@@ -1056,7 +1056,7 @@ Kit = {
 ```
 Keys: the data `baseId` (`chess_char_1_01_a`, also used for the elite `_b`), the exact chess id, or the suffix-less id of the
 DESIGN §5.6 example (`chess_char_1_01`) — all three are looked up.
-Plugin dispatch (DESIGN §32.5, C2): extension registry → `def.raw.dsl` → `def.raw.skillSpec` → `def.raw.kitRef` → official registry → generic; explicit Battle test kits still take precedence. P1b has an empty extension registry and a DSL stub that throws `PLUGIN_DSL_UNAVAILABLE`. The JSON SkillSpec allowlist is §7.3 without functions (validated by `shared/plugins/skillSpec.js`); `talentMods` adds permanent numeric mods. `kitRef` accepts an official key or file stem, never an import path.
+Plugin dispatch (DESIGN §32.5, C2): extension registry → `def.raw.dsl` → `def.raw.skillSpec` → `def.raw.kitRef` → official registry → generic; explicit Battle test kits still take precedence. The extension registry stays empty for vanilla; P3a script compositions register SDK kits, enemy installs and battle modules (PLUGINS §13). The JSON SkillSpec allowlist is §7.3 without functions (validated by `shared/plugins/skillSpec.js`); `talentMods` adds permanent numeric mods. `kitRef` accepts an official key or file stem, never an import path.
 
 Missing kit ⇒ `content/generic.js` builds one from the blackboard (§7.4), so every chess always fights.
 补位 stand-ins (DATA.md §18; a PlayerBattleInput entry with `standIn: true` ⇒ the def of `getChess(chessId, { standIn:

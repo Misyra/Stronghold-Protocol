@@ -48,6 +48,7 @@ import { createContentSets } from './plugins/contentSets.js';
 import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
 import { createMatchHosts } from './match/host/index.js';
+import { createTrustedRuntime } from './plugins/trustedRuntime.js';
 import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
@@ -104,7 +105,7 @@ export async function startServer(opts = {}) {
   log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
   // language packs and plugins (docs/PACKS.md, docs/PLUGINS.md): scanned now — the start log names them — and again
   // whenever their folders change
-  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log });
+  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host });
   packs.refresh(true);
   // the content hashes of the art (built in the background once listening) and the manifests served with them
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
@@ -126,13 +127,15 @@ export async function startServer(opts = {}) {
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log });
+  const trustedRuntime = await createTrustedRuntime({registry:packs,log});
+  lobby.trustedRuntime = trustedRuntime;
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
   buildTag();
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views }, log, trustProxy: network.opts.trustProxy, studio }));
+  const server = http.createServer(createRequestHandler({ serveStatic, health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
 
@@ -169,6 +172,7 @@ export async function startServer(opts = {}) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
     assetIndex?.close();
     studio?.close();
+    trustedRuntime?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -187,6 +191,7 @@ export async function startServer(opts = {}) {
       network.close();
       assetIndex?.close();
       studio?.close();
+      trustedRuntime?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();

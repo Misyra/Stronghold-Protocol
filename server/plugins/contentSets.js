@@ -165,6 +165,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
         ? { code: 'override', params: { path: `data:${w.path}`, plugins: Array.isArray(w.plugins) ? w.plugins : [] } }
         : { code: String(w?.code || 'warning'), params: { ...(w || {}) } })),
       served, dataBytes,
+      ...(built.scripts?.length ? {scripts:built.scripts} : {}),
       // the official-bounds snapshot (WP-A, DESIGN §32.5) its match host installs — the one its pages install too
       bounds: built.bounds && built.bounds.v === 1 ? built.bounds : null,
     };

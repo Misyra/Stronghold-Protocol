@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { diffState, applyStatePatch, StateReceiver } from '../shared/stateDelta.js';
-import { negotiateStateDelta, prepareStateFrame, resetStateDelta } from '../server/stateTransport.js';
+import { negotiateStateDelta, prepareStateFrame, resetStateDelta, stateDeltaStats } from '../server/stateTransport.js';
 import { send, NET_DEFAULTS, ENCODED, wireStatsSnapshot } from '../server/net.js';
 import { Net } from '../public/js/net.js';
 import { validateC2S } from '../shared/protocol.js';
@@ -179,6 +179,11 @@ test('client retries rate-limited state recovery quietly, stops on full delivery
 });
 
 test('complete scripted match: every reconstructed state equals the original across purchases, movement and phases', () => {
+  // SP_STATE_DELTA_VERIFY replays every emitted delta through the client decoder and compares it with the server's own
+  // state (stateTransport.verifyTransition): this test is the full-match proof for the invariant
+  // "差分基线必须跟实际发送一致" — the deltas are checked, not assumed.
+  const before = { ...stateDeltaStats };
+  process.env.SP_STATE_DELTA_VERIFY = '1';
   const h = makeMatch({ humans: 4, seed: 7, fake: true, captureFrames: false,
     script: () => ({ duration: 2, leaks: {}, bossDps: 1e9 }) });
   const peers = new Map(h.m.order.map((ps) => {
@@ -221,7 +226,13 @@ test('complete scripted match: every reconstructed state equals the original acr
     assert.ok(checked > 100 && patches > 50);
     assert.ok(phases.has('PREP') && phases.has('INFO_CHECK') && phases.has('RESULT'));
     assert.equal(h.m.errorCount, 0);
-  } finally { h.m.dispose(); }
+    // the verification replays ran, and every one of them agreed with the server's own state
+    assert.ok(stateDeltaStats.verifyChecked - before.verifyChecked > 50, 'every transition was replayed');
+    assert.equal(stateDeltaStats.verifyMismatches - before.verifyMismatches, 0, 'no delta disagreed with the state it describes');
+  } finally {
+    h.m.dispose();
+    delete process.env.SP_STATE_DELTA_VERIFY;
+  }
 });
 
 

@@ -91,7 +91,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
- *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number,
+ *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -135,6 +135,9 @@ export async function startServer(opts = {}) {
   }
   lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
   if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
+  if (opts.limitForeignSessions == null && typeof savedRoomConfig?.limitForeignSessions === 'boolean')
+    lobbyOptions.limitForeignSessions = savedRoomConfig.limitForeignSessions;
+  log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? 'on' : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,

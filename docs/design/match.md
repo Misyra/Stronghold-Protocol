@@ -97,6 +97,27 @@ ground route. Different routes may have different supporting allies. The exposur
 regardless of seat count. Supported guards and guards without such an alternative keep their positions.
 These placement assumptions are tracked in [issue #315](https://github.com/sganggs/Stronghold-Protocol/issues/315).
 
+[ASSUMED] Blocking medics prefer legal tiles outside the enemy road, then road tiles supported by allied damage,
+then any legal fallback when neither exists (#577). The supported-road test is the same as the guard repair above:
+every incoming ground route needs an ally covering both the medic's tile and its preceding contact tile; different
+routes may use different allies, and healing never counts as fire support. Within each preference group the existing
+exposure score chooses the tile. On boss rounds (no rehearsal), wider healing ranges are placed first; equal exposure
+scores prefer estimated allied DPS **not already covered by a previously placed medic**, before the tile-noise tie-break.
+
+[ASSUMED] Purchase scores within `1e-9` tie in favour of the cheaper offer; genuine score advantages still win.
+Pre-emptive hand shedding only sells when the owned operator count exceeds the deploy cap. Lineup evaluation counts
+BOARD_AND_DECK members withdrawn from the board only while hand slots remain, in the same order as arrangement
+(withdrawals before deployments). A purchase reserves its own hand slot first; members forced to be sold do not count.
+
+[ASSUMED] Layout rehearsals use normal battle inputs and the normal field seed, including battle-start effects,
+enemy replacements, teammate effects and in-battle layer gains. Each candidate uses an independent copy of the current
+meta RNG. Candidate boards and events are detached; preview contexts expose copied reads and no-op state writers,
+including contexts reached through teammates/player. A separate dispatcher owns the preview script budget and drops
+preview errors; no live script quota, diagnostics or settlement is affected. Actual starts retain the original RNG
+and dispatch. Rehearsals estimate current prep state, not later prep actions or other players' random choices.
+These three bot policies are tracked in [issue #315](https://github.com/sganggs/Stronghold-Protocol/issues/315);
+combat blocking, healing and damage rules are unchanged.
+
 Pending Pointing Stick offers use the existing bounty scorer at bot prep entry, immediately after a successful cast,
 and before Ready. The prep's deadline — and the scheduler's fallback when a step of a bot's prep fails — randomly resolves any remaining offer before temp and Ready; a seat that left is eliminated and its offer dropped.
 

@@ -256,7 +256,10 @@ freezes the shop for the next round (freeze is free). Purchase scores: merge pro
 share of a dealer's damage that gets through the round's DEF / RES — `mitigate` of the sim per hit, HP-weighted over
 the wave; an attack on every enemy in range counts ×2 — 阵法术师 / 轰击术师, `rangeAoe` since 0.1.1 —, a splash ×1.3, a
 chain ×1.4 [ASSUMED], `CROWD`). The deployed set maximizes unit value + activated bond tiers (exact counting via `computeBonds`; every
-deployed focus member counts toward the next threshold). Items by what they do: equipment on the strongest deployed
+deployed focus member counts toward the next threshold). `lineupScore` projects unchosen board members into the actual
+free hand slots in withdrawal order, before deployment, and excludes those the arrangement must sell. Purchase
+probes reserve the bought operator's slot first. [ASSUMED] Scores within `1e-9` tie in favour of the cheaper offer;
+pre-emptive hand shedding requires more owned operators than the deploy cap (#315). Items by what they do: equipment on the strongest deployed
 damage dealers (survival items on blockers first, bond signature items on a member), 信标 on a bench single (never the
 lineup when a bench single exists), 拟态物质 on a pair (never on 2 copies whose pool is out), 博士投影 (both qualities — neither takes an elite) on the strongest
 normal operator, 突变细胞 on the least valuable normal operator below 6阶 (deployed or benched — never an elite, never one
@@ -291,9 +294,19 @@ rounds: the player's boss-field template (`Match.bossWaves`) is mapped onto the 
 of a pair mirrored, only the routes that end on its half) and the leader counts as 10 tough enemies with a 30 s dwell
 on its first tiles, so the damage dealers reach stationary leaders.
 After placing the whole formation, the planner checks isolated self-range guards as specified in DESIGN §6.6.
+[ASSUMED] A blocking medic prefers an off-road tile, then a supported road tile, then a legal fallback (#577/#315).
+`supportedContact` is shared with the guard repair: each incoming ground route needs one damage
+dealer covering both the tile and the preceding contact, with different allies allowed per route. Within each group,
+the exposure model ranks positions. Boss rounds place wider healing ranges first; on equal exposure scores, medics
+prefer allied estimated DPS not already covered by another placed medic, then tile noise (#315).
 **Rehearsal:** with `opts.botRehearsal = N` (default 3) the bot simulates the N best
-distinct layout variants once each with the real `Battle` (a rehearsal seed, no meta dispatch, board restored exactly)
-and keeps the one with the fewest leaks; a candidate whose counted leaks already exceed the best finished one's stops
+distinct layout variants once each with the real `Battle` and `Match._normalOpts`, including `onBattleStart`, enemy
+replacements, teammate effects and in-battle layer gains. [ASSUMED] Every candidate uses the normal field seed (#315)
+and its own clone of the current meta RNG. `previewPlayer` builds a detached candidate board/hand/bonds view without
+calling live `recompute`; the original pieces, directions, hand/temp and dirty flags never change, even at a yield.
+The preview dispatcher supplies copied read results, no-op state writers, isolated teammate/player contexts and a
+local script budget; errors stay out of match diagnostics, and preview results never reach settlement. Actual starts
+use the original dispatcher and RNG. Estimates reflect current preparation only. The bot keeps the fewest leaks; a candidate whose counted leaks already exceed the best finished one's stops
 early. A candidate is a whole battle — ≈ 20–300 ms of CPU (late rounds, 4 bots: 0.2–1 s per bot prep, about twice the
 CPU of the real battles), so it never runs in one go on a real server: `Match.scheduleBotPrep` runs `botPrepBegin`
 (economy + the default layout on the board), then steps the rehearsal in slices of ≤ `opts.botSliceMs` (default 8 ms of
@@ -354,7 +367,7 @@ Every handler method is `(ctx, ev)`; `ev` is shared by all handlers of one dispa
 | `onMerge` | chess or item merge | `{ kind, piece, baseId|itemId, consumed:[uid], area? }` — a chess merge's `area` is where its elite went: 'board' (a consumed copy's tile) \| 'hand' \| 'temp' |
 | `onLevelUp` | shop level up | `{ level, price }` |
 | `onSpend` | a payment's action is complete (buy / refresh / levelUp / reward / effect) | `{ amount, reason, total }` (`total` = funds spent this match) |
-| `onBattleStart` | a battle input is built (normal / unite / boss / hidden); also for the stats preview (`g.unitStats`, DESIGN §18.5) | `{ input: PlayerBattleInput, kind, round, spawns?, routes?, side?, preview? }` — mutate/replace `ev.input`; `ev.spawns` (the field's spawn list, shared by a boss field's players) may be edited in place. Boss / hidden fields also carry the wave's `routes` and the player's `side` ('L' / 'R' on a pair field — its half is the routes ending left / right of the middle column — null on a one-player field), so a handler can edit only the player's own enemies (鸭爵's swap). With `ev.preview` true (no `ev.spawns`) a handler must NOT change match state or draw match rng: the preview only reads the input |
+| `onBattleStart` | a battle input is built (normal / unite / boss / hidden); also for the stats preview (`g.unitStats`, DESIGN §18.5) and bot rehearsals | `{ input: PlayerBattleInput, kind, round, spawns?, routes?, side?, preview? }` — mutate/replace `ev.input`; `ev.spawns` (the field's spawn list, shared by a boss field's players) may be edited in place. Boss / hidden fields also carry the wave's `routes` and the player's `side` ('L' / 'R' on a pair field — its half is the routes ending left / right of the middle column — null on a one-player field), so a handler can edit only the player's own enemies (鸭爵's swap). With `ev.preview` true the dispatcher isolates the event and context: copied reads, no-op state writers (also on teammates/player), an independent RNG and script budget, no match error logging. Handlers may edit the detached input and spawns; stats previews omit spawns. Normal starts retain their live context and RNG |
 | `onBattleResult` | SETTLE (normal rounds) and after boss fields | `{ result, lpLoss, perfect, unite?|boss? }` |
 | `onChoicePick` | a 机变 card was applied (the card's own `choice:` handler runs first, then every source observes) | `{ card, family, picker, forTeammate }` |
 | `onEquip` | `g.equip` (item handler only) | `{ item, target, golden, consumed, keep, error }` — see §2.5 |

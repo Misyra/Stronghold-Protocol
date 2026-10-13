@@ -26,7 +26,9 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js --source-client",
     "build": "npm run vendor && vite build",
-    "test": "node --test",
+    "test": "node --import ./test/helpers/test-setup.js --test --test-concurrency=4",
+    "test:browser": "node --import ./tools/browser-test-setup.mjs --test --test-concurrency=1 test/asset-cdn.browser.test.js test/resources/browser.e2e.test.js",
+    "test:client": "node --import ./tools/browser-test-setup.mjs --test --test-concurrency=1 test/ui/production-client.browser.test.js",
     "golden": "node tools/golden.mjs",
     "golden:update": "node tools/golden.mjs --update",
     "vendor": "node tools/vendor.mjs",
@@ -38,7 +40,7 @@
     "launch": "node scripts/launch.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --checkJs -p jsconfig.json",
-    "check:imports": "node tools/check-imports.mjs",
+    "check:imports": "node tools/check-fork-boundaries.mjs",
     "ci": "node tools/ci.mjs",
     "package": "node tools/package.mjs",
     "package:lite": "node tools/package.mjs --lite"
@@ -49,6 +51,7 @@
   "dependencies": {
     "@zip.js/zip.js": "^2.23.0",
     "htm": "^3.1.1",
+    "maxmind": "^5.0.7",
     "pixi-spine": "^4.0.6",
     "pixi.js": "^7.4.2",
     "preact": "^10.29.8",

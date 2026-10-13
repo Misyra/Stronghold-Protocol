@@ -112,6 +112,9 @@ import { Matchmaking } from './matchmaking.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { N_ } from '../shared/i18n.js';
 import { RoomActionLimiter } from './roomProtection.js';
+import { BotPopulation, botCountry } from './botPopulation.js';
+import { RoomReclamation } from './roomReclamation.js';
+import { ROOM_PROTECTION_DEFAULTS, validateRoomConfig } from './roomConfig.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -124,10 +127,7 @@ export const LOBBY_DEFAULTS = Object.freeze({
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
   maxMatchesPerAddr: 8,   // matches started from one client network that may run at once (0 = unlimited)
-  roomCreateBurst: 4,
-  roomCreateRefillMs: 15000,
-  matchStartBurst: 4,
-  matchStartRefillMs: 30000,
+  ...ROOM_PROTECTION_DEFAULTS,
   resyncMinGapMs: 1000,   // heavy resyncs (match state / result replay) per session at most this often on repeated hellos
   soloReconnectWindowMs: null, // a dropped solo run stays resumable this long (null = data singleReconnectTime, 24 h)
 });
@@ -146,7 +146,8 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
  * @typedef {{ seat: number, playerId: string, name: string, isBot: boolean, ready: boolean,
  *             connected: boolean, left: boolean, loadout?: Record<string, { skill: number, module: string|null }> | null,
  *             ops?: Readonly<Record<string, { potential: number, cultivate: number }>> | null,
- *             notOwned?: readonly string[] | null, diy?: Readonly<Record<string, DiyLoadout>> | null }} Seat
+ *             notOwned?: readonly string[] | null, diy?: Readonly<Record<string, DiyLoadout>> | null,
+ *             botCountry?: string | null }} Seat
  * @typedef {{ charId: string, skillIndex: number, uniEquipId: string|null }} DiyLoadout
  */
 
@@ -268,9 +269,10 @@ export class Lobby {
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    *   workerPool?: object | null,
    *   chatLog?: import('./chatLog.js').ChatLog | null,
+   *   countryLookup?: ((ip: string) => string | null) | null,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null, chatLog = null }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null, chatLog = null, countryLookup = null }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
@@ -284,6 +286,7 @@ export class Lobby {
     this.roomActions = new RoomActionLimiter({ now, createBurst: this.opts.roomCreateBurst,
       createRefillMs: this.opts.roomCreateRefillMs, startBurst: this.opts.matchStartBurst,
       startRefillMs: this.opts.matchStartRefillMs });
+    this.botPopulation = new BotPopulation({ countryLookup, maxTotal: this.opts.maxBots, maxForeign: this.opts.maxForeignBots });
     /** @type {Map<string, Room>} */
     this.rooms = new Map();
     /** @type {Map<string, NodeJS.Timeout>} lobby grace timers by playerId */
@@ -294,6 +297,8 @@ export class Lobby {
     this.limitLog = { at: -Infinity, suppressed: 0 };
     this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s),
       partyChanged: (room) => this.broadcastState(room), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
+    this.draining = false;
+    this.roomReclamation = new RoomReclamation(this);
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -326,6 +331,30 @@ export class Lobby {
     return false;
   }
 
+  /** Pressure overrides reconnect grace, but never removes a room with an online player or spectator. */
+  reclaimOfflineRooms(options) { return this.roomReclamation.reclaim(options); }
+
+  get roomPressure() { return this.roomReclamation.state; }
+
+  getRoomConfig() { return { maxRooms: this.opts.maxRooms, allowBots: this.opts.allowBots }; }
+
+  /** The admin transport persists accepted changes first, then applies all side effects here. */
+  applyRoomConfig(patch) {
+    const error = validateRoomConfig(patch, { partial: true });
+    if (error) throw new Error(error);
+    const previous = this.getRoomConfig(), next = { ...previous, ...patch };
+    Object.assign(this.opts, next);
+    if (previous.maxRooms !== next.maxRooms) {
+      this.audit('room.limit.changed', null, null, { previous: previous.maxRooms, maxRooms: next.maxRooms });
+      this.reclaimOfflineRooms({ force: true });
+    }
+    if (previous.allowBots !== next.allowBots) {
+      this.audit('room.botPolicy.changed', null, null, { previous: previous.allowBots, allowBots: next.allowBots });
+      for (const room of this.rooms.values()) if (!room.match) this.broadcastState(room);
+    }
+    return { ...next, roomCount: this.rooms.size };
+  }
+
   /** Counters for /healthz. */
   stats() {
     let matches = 0, offlinePausedMatches = 0;
@@ -338,7 +367,8 @@ export class Lobby {
       for (const s of r.seats) if (s && !s.left) (s.isBot ? bots++ : humans++);
       spectators += r.spectators.length;
     }
-    return { rooms: this.rooms.size, matches, humans, bots, spectators, offlinePausedMatches };
+    return { rooms: this.rooms.size, matches, humans, bots, spectators, offlinePausedMatches,
+      roomPressure: this.roomReclamation.stats() };
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -450,17 +480,42 @@ export class Lobby {
     if (room) this.removeMember(room, session.playerId);
   }
 
+  /** Expire membership independently of an identity retained for chat moderation. */
+  onRoomExpire(session) {
+    const room = this.roomOf(session);
+    if (room) this.removeMember(room, session.playerId);
+    session.roomCode = null;
+    session.notice = 'timeout';
+    session.pendingResult = null;
+  }
+
   /**
    * Dispose every room (notifying members with room.closed) — used on server shutdown.
    * @param {string} [reason]
    */
   shutdown(reason = 'shutdown') {
+    this.roomReclamation.stop();
     this.matchmaking.shutdown();
     for (const room of [...this.rooms.values()]) this.disposeRoom(room, reason);
     for (const t of this.graceTimers.values()) clearTimeout(t);
     this.graceTimers.clear();
     for (const t of this.resyncTimers.values()) clearTimeout(t);
     this.resyncTimers.clear();
+  }
+
+  /** Freeze work without removing the rooms that the final save must preserve. */
+  beginDrain() {
+    this.draining = true;
+    this.roomReclamation.stop();
+    this.matchmaking.shutdown();
+    for (const timer of this.graceTimers.values()) clearTimeout(timer);
+    this.graceTimers.clear();
+    for (const timer of this.resyncTimers.values()) clearTimeout(timer);
+    this.resyncTimers.clear();
+    for (const room of this.rooms.values()) {
+      room.match?.sched?.suspend?.();
+      for (const task of room.match?._workerTasks || []) task.suspend();
+    }
   }
 
   // ---------------------------------------------------------------------------------------------------
@@ -470,6 +525,7 @@ export class Lobby {
   create(session, { mode, difficulty }) {
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
+    this.reclaimOfflineRooms();
     if (this.rooms.size >= this.opts.maxRooms) return fail(ERR.INTERNAL, 'too many rooms');
     const key = session.limitKey || null;
     if (key && this.opts.maxRoomsPerAddr > 0) {
@@ -496,6 +552,7 @@ export class Lobby {
     this.log.info(`[lobby] ${code} created (${mode}/${difficulty}) by ${session.name}`);
     this.audit('room.created', session, room, { mode, difficulty });
     this.broadcastState(room);
+    this.reclaimOfflineRooms();
     return OK;
   }
 
@@ -735,12 +792,23 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo rooms cannot have AI teammates');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
+    const admission = this.botPopulation.canAdd(session.addr);
+    if (!admission.ok) {
+      const suppressed = this.roomActions.denied(session.limitKey, 'bot');
+      if (suppressed !== null) this.audit('room.botAdd.denied', session, room, {
+        reason: admission.code, country: admission.country, suppressed, population: this.botPopulation.stats(),
+      });
+      return fail(admission.code);
+    }
     if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     const used = new Set(room.seats.filter((s) => s && s.isBot).map((s) => s.name));
     const name = BOT_NAMES.find((n) => !used.has(n)) || `AI·${idx + 1}`;
     let playerId;
     do playerId = 'ai_' + randomBytes(4).toString('hex'); while (room.seatOf(playerId));
     room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false };
+    // Keep only the origin country across restarts, never the source IP or a client-controlled value.
+    room.seats[idx].botCountry = admission.country;
+    this.botPopulation.track(room.seats[idx]);
     this.audit('room.botAdded', session, room, { botPlayerId: playerId, seat: idx });
     this.broadcastState(room);
     return OK;
@@ -754,6 +822,7 @@ export class Lobby {
     this.dropReplay(room, session.playerId);
     const target = room.seats[seat];
     if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
+    this.botPopulation.release(target);
     room.seats[seat] = null;
     this.audit('room.botRemoved', session, room, { botPlayerId: target.playerId, seat });
     this.broadcastState(room);
@@ -918,6 +987,7 @@ export class Lobby {
       const mode = d.mode === 'solo' ? 'solo' : 'coop';
       const difficulty = typeof d.difficulty === 'string' && d.difficulty ? d.difficulty : 'NORMAL';
       const room = new Room(d.code, mode, difficulty, now);
+      if (Number.isSafeInteger(d.createdAt) && d.createdAt >= 0 && d.createdAt <= now) room.createdAt = d.createdAt;
       room.aiPicksLast = mode !== 'solo' && d.aiPicksLast === true;
       room.ownerKey = typeof d.ownerKey === 'string' ? d.ownerKey : null;
       room.matchKey = typeof d.matchKey === 'string' ? d.matchKey : null;
@@ -927,7 +997,7 @@ export class Lobby {
         const isBot = !!s.isBot;
         const left = !!s.left;
         const session = isBot ? null : this.registry.byId(s.playerId);
-        if (!isBot && !left && !session) { stats.droppedSeats++; continue; }
+        if (!isBot && !left && (!session || this.registry.roomExpired(session, now))) { stats.droppedSeats++; continue; }
         room.seats[s.seat] = {
           seat: s.seat,
           playerId: s.playerId,
@@ -940,13 +1010,14 @@ export class Lobby {
           ops: isBot ? null : (session?.ops || s.ops || null),
           notOwned: isBot ? null : (session?.notOwned || s.notOwned || null),
           diy: isBot ? null : (session?.diy || s.diy || null),
+          ...(isBot ? { botCountry: botCountry(s.botCountry) } : {}),
         };
         stats.seats++;
       }
       if (room.activeHumans().length === 0) { stats.droppedSeats += room.seats.filter(Boolean).length; continue; }
       for (const s of Array.isArray(d.spectators) ? d.spectators.slice(0, MAX_SPECTATORS) : []) {
         const session = this.registry.byId(s?.playerId);
-        if (session && !room.seatOf(session.playerId) && !room.spectatorOf(session.playerId)) {
+        if (session && !this.registry.roomExpired(session, now) && !room.seatOf(session.playerId) && !room.spectatorOf(session.playerId)) {
           room.spectators.push({ playerId: session.playerId, name: session.name, connected: false });
         }
       }
@@ -957,6 +1028,7 @@ export class Lobby {
       room.hostId = room.seatOf(d.hostId) ? d.hostId : null;
       if (!room.hostId) this.migrateHost(room);
       this.rooms.set(room.code, room);
+      for (const seat of room.seats) this.botPopulation.track(seat);
       stats.rooms++;
       for (const s of room.seats) if (s && !s.isBot && !s.left && !s.connected) this.startGrace(room, s);
       for (const s of room.spectators) this.startGrace(room, s);
@@ -1418,6 +1490,7 @@ export class Lobby {
     const queued = room.activeHumans().map((s) => this.registry.byId(s.playerId)).find((s) => s && this.matchmaking.has(s));
     if (queued) this.matchmaking.cancel(queued);
     room.disposed = true;
+    for (const seat of room.seats) this.botPopulation.release(seat);
     if (this.rooms.get(room.code) === room) this.rooms.delete(room.code);
     const ctx = room.matchCtx;
     room.match = null;

@@ -9,6 +9,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOM_LIMIT_OPTIONS } from '../roomConfig.js';
 
 /** Repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -19,12 +20,6 @@ export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'abuseDropsPerSec',
   'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
 const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs'];
-const ROOM_LIMIT_OPTIONS = {
-  roomCreateBurst: ['SP_ROOM_CREATE_BURST', 4, 1, 100],
-  roomCreateRefillMs: ['SP_ROOM_CREATE_REFILL_MS', 15000, 100, 3600000],
-  matchStartBurst: ['SP_MATCH_START_BURST', 4, 1, 100],
-  matchStartRefillMs: ['SP_MATCH_START_REFILL_MS', 30000, 100, 3600000],
-};
 
 /**
  * Bind address used when neither the `host` option nor `HOST` says otherwise: one dual-stack socket, so the server

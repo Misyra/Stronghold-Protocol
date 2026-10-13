@@ -1,9 +1,10 @@
 import { TokenBucket } from './net.js';
+import { ROOM_PROTECTION_DEFAULTS as defaults } from './roomConfig.js';
 
 /** Bounded budgets shared by sessions on the same IPv4 / IPv6 /64. */
 export class RoomActionLimiter {
-  constructor({ now = Date.now, maxKeys = 4096, createBurst = 4, startBurst = 4,
-    createRefillMs = 15000, startRefillMs = 30000 } = {}) {
+  constructor({ now = Date.now, maxKeys = 4096, createBurst = defaults.roomCreateBurst, startBurst = defaults.matchStartBurst,
+    createRefillMs = defaults.roomCreateRefillMs, startRefillMs = defaults.matchStartRefillMs } = {}) {
     for (const value of [maxKeys, createBurst, startBurst, createRefillMs, startRefillMs]) {
       if (!Number.isSafeInteger(value) || value < 1) throw new RangeError('room action limits must be positive integers');
     }
@@ -16,7 +17,7 @@ export class RoomActionLimiter {
     this.idleMs = Math.max(300000, createBurst * createRefillMs, startBurst * startRefillMs);
     this.buckets = new Map();
     this.nextPruneAt = -Infinity;
-    this.counts = { createAllowed: 0, createDenied: 0, startAllowed: 0, startDenied: 0 };
+    this.counts = { createAllowed: 0, createDenied: 0, startAllowed: 0, startDenied: 0, botDenied: 0 };
     this.overflowLog = { at: -Infinity, suppressed: 0 };
   }
   take(key, action) {

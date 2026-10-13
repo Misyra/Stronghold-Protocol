@@ -1373,12 +1373,17 @@ describe('lobby timers and match interface', () => {
     assert.ok(cap.errors.some((e) => e.includes('intentional handler crash')));
   });
 
-  test('repeated hellos during a match coalesce into at most one match resync per window', async () => {
+  test('user Given a running match When sending repeated hellos Then resyncs coalesce within the time window', { timeout: 10000 }, async (t) => {
     const host = await pool.player('Host');
     await createRoom(host, 'solo', 'NORMAL');
     RecordingMatch.instances.length = 0;
     await expectOk(host, { t: 'room.start' });
     await host.waitFor('m.private');
+    // Real socket processing may cross the resync window on a busy runner.
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+    const clock = srv.lobby.now;
+    srv.lobby.now = () => Date.now();
+    t.after(() => { srv.lobby.now = clock; });
     const m = RecordingMatch.instances[0];
     const resyncs = () => m.calls.filter((c) => c[0] === 'onReconnect').length;
     host.clearInbox();
@@ -1386,9 +1391,12 @@ describe('lobby timers and match interface', () => {
     for (let i = 0; i < 12; i++) await host.waitFor('room.state'); // the cheap part answers every hello
     assert.equal(resyncs(), 1, 'first repeated hello resyncs at once, the rest wait for the window');
     await host.waitFor('m.private');
+    t.mock.timers.tick(999);
+    assert.equal(resyncs(), 1, 'no deferred resync before the window ends');
+    t.mock.timers.tick(1);
     await host.waitFor('m.private', () => true, 1500); // one coalesced resync answers the other 11
     assert.equal(resyncs(), 2);
-    await delay(1100);
+    t.mock.timers.tick(1100);
     assert.equal(resyncs(), 2, 'nothing else was queued');
     // a (re)connect is never delayed
     await host.terminate();

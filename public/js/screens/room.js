@@ -23,7 +23,7 @@ import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { SettingsButton } from '../ui/settings.js';
 import { LoadoutButton } from './loadout.js';
-import { net } from '../net.js';
+import { net, identity } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
@@ -248,6 +248,20 @@ export function RoomScreen() {
   const [busy, setBusy] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [fillTeam, setFillTeam] = useState(false);
+  const [portalEnabled, setPortalEnabled] = useState(false);
+  const [portalSubmitted, setPortalSubmitted] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/portal-room', { signal: controller.signal }).then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (!controller.signal.aborted) setPortalEnabled(data?.enabled === true); }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  useEffect(() => { setPortalSubmitted(false); }, [room?.code]);
+  useEffect(() => {
+    if (!portalSubmitted) return;
+    const timer = setTimeout(() => setPortalSubmitted(false), 60000);
+    return () => clearTimeout(timer);
+  }, [portalSubmitted]);
   const fillAvailable = room?.mode === 'coop' && (room.seats || []).filter(Boolean).length < MAX_SEATS &&
     !(room.seats || []).some((s) => s?.isBot);
   useEffect(() => { setFillTeam(false); }, [room?.code, room?.hostId, fillAvailable]);
@@ -279,6 +293,15 @@ export function RoomScreen() {
   };
 
   const toggleReady = () => run('ready', () => net.request('room.ready', { ready: !myReady }));
+  const submitPortal = () => run('portal', async () => {
+    const response = await fetch('/api/portal-room', { method: 'POST', signal: AbortSignal.timeout(10000),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.getToken()}` },
+      body: JSON.stringify({ code: room.code }) });
+    const data = await response.json();
+    if (!response.ok) { toast(data.error ? t(data.error) : t('提交失败，请稍后重试'), 'warn'); return; }
+    if (alive.current) setPortalSubmitted(true);
+    toast(t('本房间已收录到联机站，登记最长保留十分钟'), 'success');
+  });
   const start = () => run('start', () => net.request('room.start', {}));
   const search = () => run('search', () => net.request('room.matchmaking', {}));
   const cancel = () => run('cancel', () => net.request('matchmaking.cancel', {}));
@@ -370,7 +393,14 @@ export function RoomScreen() {
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
 
-    ${facts.searching && elapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
+    ${coop && facts.isHost && portalEnabled ? html`<div class="room-portal-entry">
+      <${Button} size="sm" variant="secondary" icon="link" loading=${busy === 'portal'}
+        disabled=${!!busy || !online || facts.searching || facts.emptySeats < 1 || portalSubmitted}
+        title=${t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期')}
+        onClick=${submitPortal}>${portalSubmitted ? t('已提交到联机站') : t('提交本房间到联机站')}<//>
+      <span>${t('公开同盟密钥，方便组队 · 十分钟后自动过期')}</span>
+    </div>` : null}
+    ${!portalEnabled && facts.searching && elapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
       ${t('迟迟匹配不到人？可前往')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a>
       ${t('发布当前同盟的房间号，来人更快。')}
     </p>` : null}

@@ -5,7 +5,7 @@ The server lists what it finds at `/plugins/index.json` and notices a new or cha
 `node tools/plugin.mjs list` shows what was found, what was skipped and why; `node tools/plugin.mjs check` checks the
 folders (manifest, file types, sizes, paths, JSON).
 
-**This version (0.3.0-dev, P1a):**
+**This version (0.3.0-dev, P1a and the studio):**
 
 - the original game is always the default; a plugin is marked unofficial wherever it is shown;
 - class `lang` (a language) loads, like a language pack in `packs/`;
@@ -18,8 +18,15 @@ folders (manifest, file types, sizes, paths, JSON).
 - nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
   stay yours, and an update never touches them.
 
-Start from `_template/cosmetic/` (references to the installation's own art, no files) or `_template/ui/` (a sandboxed
-damage tally). `node tools/plugin.mjs pack <dir>` writes the `plugin.lock.json` a plugin with Spine models needs.
+**Make one in the browser:** open `/studio/` of the running server — the plugin studio 插件工作台 (this machine and the local
+network only): pick a template, find what to change by its official name, drop your files on their places, compare with
+the original in the game's own preview, press 打包并下载 for the zip. The beginner's guide (Chinese):
+[docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md); for AI agents: [AGENTS.md](AGENTS.md).
+
+On the command line: `node tools/plugin.mjs new art my-skin --target 德克萨斯` makes a folder from a template, `check` explains
+every finding in plain words, `pack <dir> --zip` writes the `plugin.lock.json` a plugin with Spine models needs and the zip.
+`_template/cosmetic/` is an example made of references to the installation's own art, no files.
+`_template/ui/` is an interface plugin: a damage tally in a sandboxed frame (DESIGN §32.8).
 
 ```json
 {

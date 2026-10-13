@@ -6,6 +6,8 @@
 //     /shared/ → shared/      (ESM shared with the browser)
 //     /sim/    → server/sim/  (the battle simulation, read-only, `.js` only — client-side
 //                              combat, DESIGN §14; the Node-only loader nodeData.js is not served)
+//     /studio/… → never: the plugin studio's page (public/studio/) is served by server/studio/index.js behind its gate (this
+//                machine and the local network only) — a path here that is the studio's, in any spelling, is a 404
 //     /data.js → a generated browser stand-in of server/data.js (the sim's content modules
 //                import `../../../data.js`; in the browser it serves the data injected with
 //                /sim/simdata.js setSimData). No other server file is ever served.
@@ -60,6 +62,7 @@ import { serveMedia } from './media.js';
 import { createPluginRegistry, sameIdentity, statIdentity } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
 import { createVisualSets } from '../plugins/visualSet.js';
+import { isStudioPath } from '../studio/paths.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
 import { PLUGINS_URL, PLUGIN_INDEX_VERSION, buildPluginIndex, extOf, isPackPath, isPluginId } from '../../shared/plugins/manifest.js';
 import { csUrlPart } from '../../shared/plugins/identity.js';
@@ -121,6 +124,13 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     { prefix: '/sim/', name: 'sim', dir: path.resolve(simDir), only: new Set(['.js']), deny: SIM_PRIVATE },
     { prefix: '/', name: 'public', dir: path.resolve(publicDir) },
   ];
+  // the real path of public/studio/ (the plugin studio's page — never a static file, in whatever spelling the disk folds:
+  // /ſtudio/ on a case-insensitive macOS disk, /studio./ on Windows)
+  let studioReal;
+  const studioRealPath = async () => {
+    if (studioReal === undefined) studioReal = await fsp.realpath(path.join(path.resolve(publicDir), 'studio')).catch(() => null);
+    return studioReal;
+  };
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
@@ -132,6 +142,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
     }
+    // the plugin studio's page is never a static file (server/studio/index.js isStudioPath: any spelling of /studio/)
+    if (isStudioPath(decoded)) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
     // /assets/~<hash>/x → /assets/x (the hash decides the cache policy below)
     const hashed = splitHashedPath(decoded);
     const urlHash = hashed.hash;
@@ -282,6 +294,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         sendError(req, res, 500, '服务器内部错误 · Internal error');
       }
       return;
+    }
+    const first = segments[0] || '';
+    if (mount.name === 'public' && (first.toLowerCase().startsWith('studio') || /[^\x00-\x7f]/.test(first))) {
+      const studio = await studioRealPath();
+      const real = studio ? await fsp.realpath(absPath).catch(() => null) : null;
+      if (studio && (!real || real === studio || real.startsWith(studio + path.sep))) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
     }
     const indexed = mount.name === 'public' && segments.length > 1 && ASSET_INDEX_ROOTS.includes(segments[0]);
     const opts = indexed ? hashedFileOpts(assetIndex, segments.join('/'), stat, urlHash) : (urlHash ? { cacheControl: 'no-cache' } : {});

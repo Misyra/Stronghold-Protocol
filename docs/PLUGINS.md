@@ -10,6 +10,10 @@ for themself (§9) — art, models and audio only: the battles stay the original
 one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before; data plugins come next (P1b).
 P4 adds interface plugins (§14): a page in a sandboxed frame, switched on in this browser, read-only, never a match
 intent, and not an input of `cs`.
+Authors make, preview and pack a cosmetic plugin in the browser at `/studio/` — the plugin studio 插件工作台 — or with
+`node tools/plugin.mjs new / check / pack`; findings come in plain words (the error catalogue), and the JSON Schemas
+`schemas/plugin.schema.json` and `schemas/overlay.schema.json` help editors and AI agents (§15; a beginner's guide in
+Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`).
 
 | File | Role |
 |---|---|
@@ -22,17 +26,22 @@ intent, and not an input of `cs`.
 | `public/js/ui/pluginFrame.js` | the sandboxed iframes, the slots, the read-only feed |
 | `plugins/_template/ui/` | the interface-plugin template: a damage tally |
 | `schemas/ui.schema.json` | the plugin→host messages (C7) |
+| `shared/plugins/errors.js` | the error catalogue (§15): every `PLUGIN_*` code with its plain words in Chinese and English, what to do, its document; the coded `issues` every check returns beside its text; the symptom table |
 | `shared/sha256.js` | SHA-256 in plain JavaScript (the same digest in Node and every browser, no `crypto.subtle`) |
 | `server/plugins/registry.js` | the registry: the language folders, `packs/` and `plugins/` — discovery, validation (a cosmetic plugin's overlay too, its files hashed), `/packs/index.json`, `/plugins/index.json`, what may be served |
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
 | `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
+| `server/plugins/pack.js`, `server/plugins/zip.js` | checking and packing a plugin folder: the folder's check, `plugin.lock.json` (Spine clip data parsed from the skeleton), a deterministic zip — for `tools/plugin.mjs` and the studio |
+| `server/studio/` | the plugin studio (§15): `index.js` the page and its API at `/studio/` (this machine and the local network only: `gate.js`), `files.js` (only inside `plugins/<id>/`), `templates/` (one module per template), `targets.js` (by official name), `edit.js` (fields, slots, one-click fixes), `preview.js` (the temporary composition), `watch.js` (hot reload) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest |
 | `public/js/cosmetics.js` | the cosmetic layers every screen draws through (small: the title page carries it; `shared/plugins/visual.js` loads with the first set) |
 | `public/js/ui/pluginTag.js` | the room's 插件 tag and the small facts the screens show (the panel loads when the tag is tapped) |
 | `public/js/ui/pluginPanel.js` | the room's 插件 panel and the title screen's list of the server's plugins — loaded when one opens |
-| `tools/plugin.mjs` | `list`, `check`, `pack` |
-| `plugins/README.md`, `plugins/_template/` | the folder's readme and the templates (`cosmetic/`, `ui/`) — the only tracked files of the folder |
+| `public/studio/` | the studio's page (§15): `index.html`, `studio.css`, `js/` (the shell, `editors/` one module per template, `preview/` — the game's own renderer and components) |
+| `schemas/plugin.schema.json`, `schemas/overlay.schema.json` | JSON Schema (2020-12) of `plugin.json` and of the asset overlay, for editors and AI agents (§15) |
+| `tools/plugin.mjs` | `list`, `check` (in plain words, `--json`), `pack` (`--zip`), `new`, `errors` |
+| `plugins/README.md`, `plugins/AGENTS.md`, `plugins/_template/` | the folder's readme, the guide for AI agents, the templates (`cosmetic/`, `ui/`) — the only tracked files of the folder |
 
 ## 1. Principles (the maintainer's decisions of 2026-10-12)
 
@@ -143,9 +152,11 @@ A permission nothing in the manifest uses is a warning.
 By class: images `.png .jpg .webp` (no SVG), Spine `.skel .atlas`, audio `.mp3 .ogg`, fonts `.woff2`, data `.json`;
 code `.js` only in `script` / `trusted`; frames `.html .js .css .png` only in `ui`, under its client's folder; `lang`
 carries `.json` only. Documents (`.md`, `.txt`, `README`, `LICENSE`, `NOTICE` …) may sit beside them and are never
-served. Nothing else; no symbolic link inside the folder (a plugin folder that is itself a link is fine); file names
-are plain (letters, digits, `. _ -`, spaces; no hidden or `..` part). Every path the manifest names must exist inside
-the folder.
+served. Nothing else; no symbolic link inside the folder (a plugin folder that is itself a link is loaded — the owner's
+choice — but the studio never opens it, §15); file names are plain (letters, digits, `. _ -`, spaces; no hidden or `..`
+part). Every path the manifest names must exist inside the folder. A folder is read for at most 2000 folders, 12 levels
+deep and 50 000 entries (`server/plugins/registry.js WALK_LIMITS`): a folder past them is refused (`PLUGIN_FILE_SIZE`),
+also when it is a link to a large tree.
 
 Limits [ASSUMED, all of them]: 8 MB per JSON file, nesting ≤ 64 levels, numbers finite within ±1e9; 200 MB and 5000
 files per plugin. The registry checks the manifest, the files and the paths whenever it scans; `tools/plugin.mjs check`
@@ -202,15 +213,20 @@ manifest 1 of the old planned types `assets` / `data` is still reported as not l
 ```
 node tools/plugin.mjs list [--json]                every plugin and language pack, by class, the skipped ones and why, the vanilla cs
 node tools/plugin.mjs check [<dir|id> …] [--strict] the folders of plugins/ (or the ones named; a folder anywhere): manifest,
-                                                   files, paths, JSON, a cosmetic plugin's overlay (its references against
-                                                   this checkout's data/assets.json) — exit 1 on a problem, with --strict on
-                                                   a warning too
-node tools/plugin.mjs pack <dir|id> …              write plugin.lock.json (every file's SHA-256 and size, each Spine model's
-                                                   clip data), then check the folder
+          [--json] [--lang zh|en]                  files, paths, JSON, a cosmetic plugin's overlay (its references against
+                                                   this checkout's data/assets.json) — each finding with its plain words
+                                                   (§15); --json for editors and agents — exit 1 on a problem, with
+                                                   --strict on a warning too
+node tools/plugin.mjs pack <dir|id> … [--zip]      write plugin.lock.json (every file's SHA-256 and size, each Spine model's
+          [--out <file|dir>]                       clip data), then check the folder; --zip writes the folder as a zip
+                                                   (default plugins/_dist/<id>-<version>.zip)
+node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio) for a target
+          [--target <名字|id>] [--name …] [--dir …] found by its official name
+node tools/plugin.mjs errors [--markdown] [--write] the error catalogue; --write keeps the symptom tables of the documents
 ```
 
-`--root <dir>` points it at another checkout or an unpacked release. Planned: `new`, a zip from `pack`, `install`,
-`golden`, `simcheck`, and `--plugins` for the balance tools.
+`--root <dir>` points it at another checkout or an unpacked release. Planned: `install`, `golden`, `simcheck`, and
+`--plugins` for the balance tools.
 
 ## 9. Cosmetic plugins (P1a)
 
@@ -455,6 +471,249 @@ message. The host may toggle it during a match because it changes no match.
 **Errors.** `PLUGIN_SLOT`, `PLUGIN_RATE`, `PLUGIN_STORAGE`, `PLUGIN_INTENT`, `PLUGIN_SHAPE`, `PLUGIN_LIMIT` live in
 `shared/plugins/ui.js` and are merged into the shared error catalogue at integration (C6).
 
+## 15. The studio and the tools
+
+Someone who does not write code makes, previews and packs a cosmetic plugin in the browser; someone who does gets a
+schema, findings in plain words and hot reload. The design is DESIGN §32.9; the beginner's guide (Chinese) is
+[PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), the guide for AI agents `plugins/AGENTS.md`.
+
+**The studio 插件工作台** — `http://<server>/studio/` of a running server (`server/studio/`, its page `public/studio/`):
+
+- **Who may open it**: this machine and the local network only (`server/studio/gate.js`). The socket's peer **and**
+  every address a forwarding header names (X-Forwarded-For — every hop —, X-Real-IP, CF-Connecting-IP, True-Client-IP,
+  X-Client-IP, X-Cluster-Client-IP, Fastly-Client-IP, Forwarded's `for=`) must be loopback or private-network addresses
+  (`server/net.js isLocalIp`); an address that cannot be read refuses too. That is stricter than `clientAddress`, which
+  picks one header for the limits: a proxy that sets one header passes the others a visitor sent, so a header can refuse
+  a request but never admit one, whatever `TRUST_PROXY` says. Anyone else — also a public visitor a tunnel or proxy on
+  this machine names — gets the 404 page of a page that does not exist, at the page and at every API route. The Host the
+  browser asked for must be a local address or a local name (a loopback or private IP, localhost, `*.localhost`, a
+  machine name without a dot, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, or a name `SP_STUDIO_HOSTS` lists), so a
+  web page whose own name was made to point at the machine (DNS rebinding) cannot reach it, nor a browser that reaches it
+  at a public address; a change (POST, PUT, DELETE) carries the header `X-SP-Studio: 1` and, when the browser names one,
+  the studio's own origin — the studio never answers a cross-origin preflight. `SP_STUDIO=local` allows this machine only
+  (the peer and every forwarded address loopback), `SP_STUDIO=off` switches the studio off [ASSUMED: on for the local
+  network by default]. What no address check can see — a **raw TCP tunnel** on this machine (frp `tcp`, `ssh -R`, ngrok
+  `tcp` …) hands a visitor's bytes over from this machine itself with no forwarding header, and a client that is not a
+  browser writes any Host — is what **the studio's key** is for (`server/studio/key.js`): every change carries it in the
+  header `X-SP-Studio`, a wrong or missing one is refused (`PLUGIN_STUDIO_KEY`), whatever the address. The server prints
+  the studio's address with the key when it starts (the banner's `Studio:` line, `http://localhost:3000/studio/#key=…`);
+  the page keeps it in its browser (localStorage, taken out of the address bar) and asks for it when it has none (paste
+  the printed address into the bar at the top). The key is kept in `plugins/.studio-key` (128 random bits, the owner's
+  only; the same across restarts — delete the file for a new one). Reads — the page, the list, a plugin's files — need no
+  key, so a visitor through such a tunnel can see the plugins but change nothing; `SP_STUDIO=off` hides them too
+  [ASSUMED: the key file, reads without the key]. The watch and the rooms' rule (below) start with the first request
+  that carries the key, never with a mere visit.
+- **新建插件**: a template — 换头像 / 立绘 / 图标 (`art`: an operator's avatar, E2 avatar, portrait, E2 portrait; a summon's
+  avatar, an enemy's icon, an item's, a bond's, a strategy's icon, an interface picture), 换 Spine 模型 (`spine`: an
+  operator's front and back model, a summon's or an enemy's), 换语音 (`voice`: every battle line of an operator, Chinese and
+  Japanese dub), 换音乐 / 音效 (`audio`: a music track with its intro, a leader's music, an interface or battle sound, a
+  unit's own sounds) —, what it changes found by its **official name** (`server/studio/targets.js`: operators, summons,
+  enemies, items, bonds, strategies, interface pictures, music, sounds, each with its picture), a name; the id is made
+  from it (a legal one nobody has, editable). The folder gets `plugin.json` and a README — no file of the game, no
+  picture: an empty entry is a valid plugin that changes nothing yet. More templates and targets join a plugin with
+  「添加替换内容」 (an operator's avatar, model and voice in one plugin); the page keeps what it shows in the dot file
+  `.studio.json` of the folder (never listed, served, checked or packed; a plugin made by hand gets its sections read
+  off its overlay).
+- **Slots**: every place a template fills, the installation's art beside the plugin's. Files dropped on a slot (or
+  picked) go into the plugin folder under the slot's name — `art/<key>/avatar.png`, `spine/<key>/front/<key>.skel` and
+  `.atlas` under one name with the atlas's pages by their own names and `textures` read from the atlas,
+  `voice/<key>/cn/<line>.mp3` (several: `_1`, `_2` …, played in turn), `music/<key>/loop.ogg` and `intro.ogg` — and the
+  overlay names them; a file the slot named before and nothing names now is removed (also when a reference takes its
+  place). A track keeps the part not sent (「放入前奏」 adds the intro to its loop; a new loop keeps the intro; two files at
+  once: the one named `intro…` is the intro). A model's new skeleton comes with its atlas, unless the model already sits
+  under the slot's own name; the atlas's page names must be plain names (they are the files' names). 「用已有的素材」
+  borrows the installation's own art instead (`{ "ref": "<key>" }`, found by name); 「恢复原版」 empties the slot.
+- **Findings**: the server's own checks (`server/plugins/pack.js checkPluginFolder` — exactly what the registry and
+  `tools/plugin.mjs check` run), each in plain words beside the slot or field it is about (its `at` path), with what to
+  do, the technical line folded under it and — where the error catalogue has one — 「一键修复」: the missing permission
+  added, an unused one removed, `manifest` / `version` / `app` / `api` / `scope` set, an unknown field removed, a write
+  the installation cannot resolve removed, the model's pages put into `textures`, the lock packed, a file of a type the
+  plugin may not carry moved out to `plugins/_moved/<id>/` (never deleted).
+- **Preview**, with the original beside the plugin, drawn by the game itself (`public/studio/js/preview/`): the
+  battlefield view (`render/app.js`, the official board when installed) with the operator, summon or enemy on the board of
+  the preparation phase or in a battle, playing the role picked — 待机, 移动, 攻击, 技能 (S1–S3), 眩晕, 倒下, 部署 — fed as a
+  real battle feeds it (b.snap tuples and b.ev events), front or back model; the card picture of the shop and the bench
+  (`ui/gameComponents.js UnitThumb`, also the E2 one) and the portrait in the detail card (`ui/detailPanel.js
+  ChessDetail`); every voice line, track and sound with its play buttons. The plugin's art is the temporary composition
+  of the plugin as it is now (`GET /studio/api/plugins/<id>/preview`, `server/studio/preview.js`) — also while it has
+  problems and before it is packed (a model's clips are then read from the skeleton itself) — laid over the page's own
+  manifest under keys of their own (`<key>~plugin`), so one renderer draws both; a new preview redraws in place.
+- **信息 / 文件 / 清单**: the basic fields (name, description, version, authors, licence, credits — where the art comes
+  from —, homepage, who may switch it on), every file of the folder (the ones nothing uses marked, each removable),
+  `plugin.json` itself for those who prefer to write it.
+- **打包并下载**: `plugin.lock.json` written (the packer of `tools/plugin.mjs pack`), the folder checked, and the zip
+  downloaded — `<id>-<version>.zip` holding `<id>/…`, every file but dot files, deterministic (the same files give the
+  same bytes: a zip can be pinned by its SHA-256). The packer does not screen for official game files (the owner's
+  decision of 2026-10-13): what a plugin carries is its author's responsibility — and §1 still asks never to put them in.
+
+**Hot reload** (`server/studio/watch.js`): from the studio's first request on, `plugins/` is watched (fs.watch over the
+tree, the events of 300 ms gathered into one [ASSUMED]); then the registry reads the folders again
+(`registry.rescan()`), the visual sets look at the sets rooms hold, and a room whose set changed — every studio write
+rescans at once — applies the same plugins again by itself when its host is the author (a game session the studio's page
+named: `POST /studio/api/authors` with the tokens of this browser's `sp.tokens`, kept 10 minutes after the page last named
+them [ASSUMED]) or its host is its only player (a single-player room, or a room the host is alone in): a new `vs` in
+`room.state`, during a match too (art never changes a battle; nobody is un-readied: `server/lobby.js refreshPlugins`); any
+other room's host is told as before (§9). Such a room follows every rescan that changes one of its plugins, also after a
+plugin was broken for a moment while its author saved it (the visual sets tell a held set once; the studio looks again
+after each rescan). A server whose owner never opens the studio watches nothing and keeps §9's behaviour exactly. The studio's page hears the plugins whose state changed (`GET /studio/api/events`, server-sent events;
+at most three streams from one address, and a page the browser keeps in its back / forward cache closes its own — a
+browser keeps only about six connections to a server) and reloads its view — an author saving from Spine or an image
+editor sees the preview follow. A player's personal
+plugins follow on the next catalogue fetch (not pushed).
+
+**The API** (for experienced authors and agents; the page uses nothing else; a change carries `X-SP-Studio: <the key in
+plugins/.studio-key>` and answers with the plugin's state, an error `{ error: <code>, params, detail }`; HEAD answers as
+GET without the body):
+
+| Route | What |
+|---|---|
+| `GET /studio/api/info` · `targets?q=&kinds=` · `slots?template=&target=` · `suggest-id?name=&target=&template=` | the templates and limits; targets by official name; a template's slots for a target; a free id |
+| `GET /studio/api/plugins` · `POST /studio/api/plugins` | every plugin folder (loaded or skipped, its codes); a new plugin `{ template, id, name, target, authors, license, credits }` |
+| `GET /studio/api/plugins/<id>` | its manifest and text, overlay, files, sections, findings (`check.issues`: coded), registry view (`loaded`, `vs`), lock |
+| `PUT …/manifest` · `POST …/meta` · `POST …/sections` | plugin.json as a whole; the basic fields `{ fields, lang }`; the sections the page shows |
+| `POST …/slot` · `…/ref` · `…/clear` · `…/fix` | files for a slot `{ at, files: [{ name, data (base64), role? }] }`; a reference `{ at, ref }`; a slot emptied `{ at }`; a one-click fix `{ code, at?, file?, params? }` |
+| `POST …/pack` · `GET …/zip` · `GET …/preview` | the lock and the check; the zip (a download, packs nothing); the temporary composition |
+| `GET …/f/<hash8>/<path>`, `…/files/<path>` · `PUT` / `DELETE …/files/<path>` | a file of the folder (a draft's too) — of the types the studio writes only, sandboxed (`Content-Security-Policy: default-src 'none'; sandbox`); write or remove one |
+| `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
+
+**The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
+(never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
+characters) of a type a plugin carries (art, models, audio, fonts, JSON, documents; never the lock by hand); a plugin
+folder that is itself a symbolic link is never opened (403 `PLUGIN_STUDIO_PATH` for every read and change, with the key or
+without; the list shows it apart — an archive unpacked into `plugins/` can bring a link to anywhere; the game's registry
+may still load it, and serves only the files its overlay names, at `/p/`); no link inside the folder is followed (every
+folder on the way and the file are lstat'ed) — neither for the studio's reads (plugin.json, an overlay file, the lock, its own note
+`.studio.json`; a folder holding links is checked for its links alone) nor for its writes (the lock and the note are
+renamed over a link put in their place, `plugins/_moved/` must be a plain folder), and the packer reads no file through
+a link either (`server/plugins/pack.js plainPath`); every walk of a folder is bounded (§5: the zip and the lock refuse a
+folder past the limits, and `plugins/` is watched as a tree only while it holds at most 100 000 entries); a write goes to a
+dot-named temporary file renamed over the target; a body over the limit is refused before it is read and its connection
+closed; a file system error answers with its code only (its message, with the absolute path, stays in the log); a file at most
+64 MB, plugin.json at most 1 MB, a request at most 160 MB (a model's files in one go, base64), a plugin at most 200 MB
+and 5000 files [ASSUMED: the studio's limits].
+
+**The error catalogue** (`shared/plugins/errors.js`, the 0.3.0 plan's interface C6): every `PLUGIN_*` code — the
+manifest and file rules, a cosmetic plugin's overlay and lock, the registry's scan, the packer, a room's refusals (the
+ERR codes) and the studio's API — with `{ zh, en, fix: { zh, en }, doc }` (and the studio's one-click fix where there is
+one). The checks return `issues` beside their unchanged `problems` / `warnings` text: `{ level, code, text, at?, file?,
+params }`. The studio shows them beside their field, `tools/plugin.mjs check` prints the plain words under each technical
+line (`--lang zh|en`, `--json` for editors and agents), the server's start log adds the plain words of a skipped plugin's
+first problem. The interface shows the Chinese text in a Chinese interface (中文, 繁體中文) and the English text in the
+others [ASSUMED]. A new code goes into the catalogue (`test/plugins/errors.test.js` fails on a code the code names that it
+lacks). The table below is generated from it (`node tools/plugin.mjs errors --write`):
+
+<!-- plugin-errors:start (generated by node tools/plugin.mjs errors --write) -->
+| Symptom | Code | Cause | Fix |
+|---|---|---|---|
+| The room will not switch it on; the panel says why | `PLUGIN_UNKNOWN` | This server has not installed that plugin | Put the plugin folder into the server's plugins/ folder (the folder name is the plugin id); if it is gone, switch it off in the 插件 panel. |
+| The room will not switch it on; the panel says why | `PLUGIN_BLOCKED` | That plugin cannot be switched on here: this version does not apply its class, or its scope does not include this place | A cosmetic plugin has "class": "cosmetic"; its scope is ["room"] (the host switches it on for the room), ["personal"] (a player for themself) or both. |
+| The room will not switch it on; the panel says why | `PLUGIN_DEPENDENCY` | A plugin it requires is missing or out of its version range, or the load-order hints of some plugins form a cycle | Install the plugins its "requires" names (within their ranges), or remove the loadAfter / loadBefore entries that point at each other. |
+| The room will not switch it on; the panel says why | `PLUGIN_CONFLICT` | The chosen plugins conflict with each other | Switch one of them off; a plugin's "conflicts" says which ones it cannot be used with. |
+| The room will not switch it on; the panel says why | `PLUGIN_LIMIT` | Over this server's limit: {detail} | Switch on fewer plugins, or make them smaller (compress pictures and sounds, remove unused files, fewer whole-record references). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_NO_MANIFEST` | The plugin folder has no plugin.json | Every plugin folder needs a plugin.json (its manifest). The studio's 新建插件 or node tools/plugin.mjs new writes one. The older pack.json belongs to a language pack in packs/. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_JSON` | {where} cannot be read: it is not valid JSON, or too large | Look for a missing or extra comma, quote or bracket (no comma after the last item); a JSON file may be 8 MB at most. Editing in the studio avoids typing mistakes. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_JSON_LIMIT` | {where} is beyond the JSON limits (nested too deep, or a number too large) | Nest at most 64 levels; numbers must be finite and within ±1,000,000,000. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_MANIFEST_SHAPE` | plugin.json is not a JSON object at the top | The whole file is one { } object of "name": value pairs. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_MANIFEST_VERSION` | "manifest": 2 is missing or another number | Write "manifest": 2 in plugin.json (the version of the manifest format; 2 is the only one). (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ID` | The folder name “{id}” is not a plugin id | The plugin id is the folder name: 2–32 lower-case letters, digits and -, not starting with - (e.g. texas-red). Rename the folder. |
+| The plugin works, with a note in the check | `PLUGIN_ID_MISMATCH` | The "id" in the manifest is not the folder name “{id}”; the folder name decides | Remove "id" from the manifest (the folder name is the id) or make it the folder name. (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_FIELD_UNKNOWN` | “{where}” is not a field of the manifest and is ignored | Check its spelling (case matters) or remove it. (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CLASS` | "class" is missing or not a plugin class | A cosmetic plugin has "class": "cosmetic". The classes: lang, cosmetic, content, script, ui, trusted. |
+| The plugin works, with a note in the check | `PLUGIN_TEXT` | “{where}” should be a text or { "<lang>": "text" }; it is ignored | Write "Name" or { "zh": "名字", "en": "Name" }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LANG_CODE` | “{where}” is not a language code | Use a language code such as zh, en, ja, ko or zh-TW. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_VERSION` | The plugin's "version" is missing or not a version number | Write three numbers such as "1.0.0"; raise it whenever the plugin changes (1.0.1, 1.1.0 …). (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_APP` | The game versions the plugin is made for, "app", are missing or not a range | Write a range such as ">=0.3.0 <0.4.0" (this game is {app}). (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_APP_MISMATCH` | The plugin is made for the game {range}; this server is {app} | A cosmetic plugin still works (a reminder only). Once it is checked with this version, widen "app" to include {app}. (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_API` | The plugin API level "api" is missing, not an integer, or not supported | Write "api": {current} (this game supports {min}–{current}). (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SCOPE` | "scope" is not one this class allows | A cosmetic plugin has ["room", "personal"]: room — the host switches it on for the whole room; personal — a player for themself in 设置. (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_HOMEPAGE` | "homepage" is not an http(s) address and is ignored | Write a full address such as https://example.com/my-plugin, or remove it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DEPS` | A dependency (requires / optional / conflicts) is not right: {where} | Write { "<plugin id>": "<version range>" }, e.g. { "base-skin": ">=1.0.0" }; never the plugin itself, never one both required and in conflict, at most 32. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ORDER_HINTS` | A load-order hint (loadAfter / loadBefore / priority) is not right: {where} | loadAfter and loadBefore are lists of plugin ids (never one in both, never the plugin itself); priority is an integer within ±1000, default 0. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SETTING` | A setting is not right: {where} | Each setting is { "type": … }: boolean, integer / number (with min and max), enum (with options); its default within them; at most 32, no free text. |
+| The plugin works, with a note in the check | `PLUGIN_SETTING_FIELD` | A setting has a field it does not know, “{where}”; it is ignored | A setting knows type, default, min, max, step, options and label only. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PART_CLASS` | “{where}” is not something a {class} plugin carries | A cosmetic plugin carries "assets" and "theme" only, a ui plugin "entry.client" and "slots"; numbers and new operators belong to a content plugin. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PART_SHAPE` | “{where}” is not written the right way | Write the path of a .json file of the plugin folder (or a list of them); "assets" and "theme" may also be the { … } object itself. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ASSET_FILE` | The file of “{where}” is not right: not a path inside the plugin folder, or not the kind of file this place takes | Write a path inside the plugin folder such as art/avatar.png. Pictures are .png .jpg .webp, sounds .mp3 .ogg, models .skel with .atlas (pages .png). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_THEME_URL` | "theme" names a URL | A theme sets colours, lengths and the plugin's own font names only — never a URL (it could leak data). |
+| The plugin works, with a note in the check | `PLUGIN_THEME_UNUSED` | This version does not apply "theme" yet (only the art of "assets") | Keep it for a later version, or remove it to silence the note. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ENTRY` | An entry point is not right, or this class has none: {where} | A cosmetic plugin needs no "entry": remove it. A ui plugin has "entry": { "client": "ui/index.html" } (an .html file of the plugin folder). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LANG_ONLY` | “{where}” belongs to a language pack (class lang), not a {class} plugin | Remove it; for a language pack, make "class": "lang". (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PERMISSION` | A permission is not right: “{where}” is unknown or not one a {class} plugin may have | A cosmetic plugin's permissions: assets.override (replace art the installation has), assets.add (a new entry), theme; a ui plugin's: ui.frame. "permissions" is a list. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PERMISSION_MISSING` | “{where}” needs the permission {need}, which the manifest does not declare | Add "{need}" to "permissions". (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_PERMISSION_UNUSED` | The permission {permission} is declared but nothing in the plugin uses it | Remove "{permission}" from "permissions" (the fewer, the more trust). (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_EMPTY` | The plugin carries nothing | A cosmetic plugin lists the art it replaces in "assets". The studio's templates are the easiest start. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_LINK` | {where} is a symbolic link; a plugin holds plain files only | Copy the real file into the plugin folder and remove the link. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_NAME` | The file name “{where}” cannot be used | Names of files and folders use letters, digits, . _ - and spaces; none starts with . or is "..". |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_TYPE` | {where}: a {class} plugin may not carry this kind of file | Pictures are .png .jpg .webp (no SVG), sounds .mp3 .ogg, models .skel .atlas; documents (.md, .txt, README, LICENSE) may sit beside them. Move the file out of the plugin folder (the one-click fix moves it to plugins/_moved/, never deletes it) or convert it. (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_FRAME` | {where} is a frame file outside the folder of entry.client | Put a ui plugin's .html .js .css into the folder of entry.client. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_SIZE` | The plugin is too large: {where} | A plugin holds at most 200 MB in 5000 files (2000 folders, 12 levels deep), a JSON file at most 8 MB. Compress pictures and sounds, remove unused files, or split it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_MISSING` | The manifest names {file}, which the plugin folder does not hold | Put the file there (folders and case must match) or correct the path in the manifest. Dropping the file on its slot in the studio puts it in the right place. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_OUTSIDE` | {where} leads out of the plugin folder or cannot be read inside it | A plugin uses plain files of its own folder only: copy the file in (no link) and check that it opens. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LANG` | A language pack's language is not right: {where} | "lang" is a language code (en, ja, zh-TW …); zh is the source language and never a pack; machineTranslated is true or false. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LANG_FILES` | A language pack's "files" are not right: {where} | "files" is { "ui": "ui.json" } (required) and optionally "data", both .json files of the pack. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PACK` | An older content pack (pack.json) is not right, or this version does not load its type: {where} | packs/ loads language packs ("type": "lang") only. Art and data are plugins of plugins/ (plugin.json, "manifest": 2). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ASSETS_SHAPE` | The asset overlay is not written the right way: {where} | Follow data/assets.json: chars → operator id → avatar / portrait / spine …, sounds under audio. The studio's templates write it for you. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ASSET_KEY` | “{where}” is not the name of an asset entry | An entry is named by an internal id such as char_102_texas (letters, digits, _ . / -). The studio finds it by its official name. |
+| The plugin works, with a note in the check | `PLUGIN_ASSET_IGNORED` | “{where}” is not something a cosmetic plugin changes; it is ignored | Check the spelling; PLUGINS.md §9 lists what a cosmetic plugin changes (avatars, portraits, models, icons, interface pictures, voices, sounds, music). (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_REF` | The reference at “{where}” is not right: not written as one, or the installation has no such art | { "ref": "char_112_siege" } borrows an entry of the same kind the installation has. Pick it from the list with the studio's 用已有的素材, or remove the write. (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SPINE` | The Spine model at “{where}” is not right | The .skel and the .atlas sit side by side with one name (t.skel + t.atlas), the .png pages beside the atlas and in "textures"; clip data is never written by hand — 打包 makes it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SPINE_PAGES` | {file} uses a page that "textures" does not list | List every page of the atlas in "textures" (the one-click fix fills it from the atlas). (the studio fixes it in one click) |
+| The plugin works, with a note in the check | `PLUGIN_SPINE_NOTE` | The model {file} has a small issue: {detail} | Usually "textures" names a picture the atlas does not use, or a part is missing from the atlas. The model usually still shows: look at it in the preview. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SPINE_PARSE` | The model {file} cannot be read: not a Spine 3.8 binary skeleton the game reads, or it has no animations | Export a binary .skel with Spine 3.8 (not a .json skeleton), with its animations (Idle, Attack, Die …). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LOCK` | plugin.lock.json is broken or of another format | Make it again with the studio's 打包 or node tools/plugin.mjs pack; never edit it by hand. (the studio fixes it in one click) |
+| The plugin is skipped: its model is not packed yet | `PLUGIN_LOCK_MISSING` | The model {file} has no clip data yet (plugin.lock.json lacks it) | Press 打包 (or run node tools/plugin.mjs pack <plugin>): it reads the model's clips into plugin.lock.json. (the studio fixes it in one click) |
+| The plugin disappeared after a model file was replaced | `PLUGIN_LOCK_STALE` | The model {file} changed; plugin.lock.json still holds the old one's data | Press 打包 again (or run node tools/plugin.mjs pack): the lock follows the new model. (the studio fixes it in one click) |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DUPLICATE` | A plugin id or a language is taken twice: {where} | Rename the folder (the plugin id; on Windows and macOS another case is the same name) or remove the duplicate. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_UNREADABLE` | Reading the plugin failed: {detail} | Check the files' permissions; if a program is writing the folder, wait until it is done. |
+| The plugin works, with a note in the check | `PLUGIN_REQUIRES_MISSING` | The plugin it requires, {dep}, is not installed or not within {range} | Install the required plugin within its range; otherwise a host switching it on is refused. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_PATH` | This path cannot be used: {detail} | Files stay inside the plugin's own folder: no .., no part starting with ., no special characters, no link leading out. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_SIZE` | The file is too large (at most {max}) | Compress the picture or sound first (a portrait within 1024 px as PNG / WebP is plenty). |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_EXISTS` | There is a plugin “{id}” already | Choose another id, or open that plugin from the list. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TEMPLATE` | No such template: {template} | Pick one of the studio's templates (node tools/plugin.mjs new without arguments lists them). |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TARGET` | No target “{target}” to replace | Search by its official name (e.g. 德克萨斯) and pick one of the results. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_FILE_KIND` | This place takes {kind}; the dropped file is {ext} | A picture place takes .png .jpg .webp, a sound place .mp3 .ogg, a model place its .skel, .atlas and .png together. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_REQUEST` | The studio's request is not right: {detail} | Reload the studio and try again; if it stays, ask on GitHub with this text. |
+| The studio only shows plugins; it cannot make or change one | `PLUGIN_STUDIO_KEY` | Changing a plugin needs the studio's key, which this browser does not have (or it is not the right one) | Open the address on the "Studio" line of the server's window (it carries the key, which is also in plugins/.studio-key), or paste it into the box at the top of the studio. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_UI_SLOTS` | The "slots" of a ui plugin are not right: {detail} | "slots" is a list of hud.right, result.tab, stats.tab and room.panel, each at most once. |
+| The plugin works, with a note in the check | `PLUGIN_UI_NO_SLOT` | The ui plugin asks for no slot, so its page is never shown | List where it goes in "slots", for example ["hud.right"]. |
+| The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_SLOT` | The slot a ui plugin asked for was not granted: its manifest's "slots" does not list it, or another plugin holds it | List the slot in "slots" of plugin.json (hud.right, result.tab, stats.tab, room.panel). One plugin per slot: the first switched on gets it. |
+| The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_RATE` | The ui plugin sends messages too fast and was throttled | A plugin sends at most 20 messages a second (bursts of 40). Batch them, or send only when something changed. |
+| The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_STORAGE` | The ui plugin's storage request was refused: the key is not allowed or the space is used up | A key is 1–64 characters of letters, digits and . _ -; a value's JSON is at most 4096 bytes; a plugin keeps at most 32 keys and 32 KB. |
+| The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_INTENT` | The ui plugin tried to send a match action, which is refused | A ui plugin watches and never plays (it cannot become a bot or a cheat): do not send hello, ping, room.*, g.* or b.* messages, nor carry one inside another message. |
+| The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_SHAPE` | A message from the ui plugin is not shaped right and was dropped | Every message is { "v": 1, "t": <type>, … } with a type of ready, slot, resize, storage, notice or stats, at most 8 KB; schemas/ui.schema.json has the shapes. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_SHAPE` | The DSL spec is not shaped right: {detail} | The whole spec is one object: { "dsl": 1, "pluginId": "<plugin id>", then "skill", "skills", "talents" or "meta" }. |
+| The plugin is not listed (skipped); check names the DSL version | `PLUGIN_DSL_VERSION` | This version reads "dsl": 1 only | Put "dsl": 1 at the top of the spec. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_PLUGIN_ID` | The plugin id the DSL spec names is not the plugin that carries it: {detail} | Write the id of the plugin that carries the spec (its folder name) as "pluginId", or leave it out and the server fills it in. A plugin cannot spend another plugin's action budget. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_BUDGET` | "budget" is a whole number from 1 to 10,000,000 | Write a whole number, or remove "budget" for the default of 8000. A plugin whose actions run more often than that in one battle stops for that battle. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_LOOP` | The DSL names a loop or outside code, or nests too deep: {detail} | The DSL has no loops or code (loop, while, script …); "then" nests at most 4 deep and one value at most 64 levels and 64 nodes. Complex logic belongs to a script plugin. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TRIGGER` | An unknown trigger ({where}): {detail} | In battle: always, deploy, battleStart, attack, hitDealt, hitTaken, kill, allyDeath, skillStart, skillEnd, every, hpBelow; in prep: roundStart, income, buy, sell, refresh, merge, levelUp, battleResult. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_CONDITION` | A condition is not right ({where}): {detail} | A condition is { "<name>": value } with chance, targetHas, selfHpBelow, enemiesInRange, bondActive or skillActive; prep takes round, chance and bondActive only. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_ACTION` | An action is not right ({where}): {detail} | "do" is a list of actions, each one of buff, status, damage, heal, sp, dp, push, pull, spawnToken, layers, shield, fx (prep: funds, layers, gainItem); docs/PLUGIN-DSL.md §4 has their fields. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TARGET` | A target is not right ({where}): {detail} | A target is self, target, source, alliesInRange, enemiesInRange, enemiesInRadius, lowestHpAlly or allAllies; the "tile" of spawnToken is "around" or { "r": row, "c": column }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_EVERY` | The interval of "every" is too short ({where}): {detail} | "seconds" is at least one tick (1/30 s). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_NUMBER` | A number is out of range ({where}): {detail} | Write finite numbers: the threshold of hpBelow is above 0 and at most 1, "times" a whole number from 1 to 8. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_DIV0` | A division by 0 ({where}) | The second term of "div" cannot be 0; to keep a value as it is, multiply it by 1. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_VALUE` | A value is not right ({where}): {detail} | A value is a number, { "bb": "<key>" }, { "talent": [index, "<key>"] }, or mul, add, sub, div, min, max of them; a list appears only inside those. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_SKILL` | A skill spec is not right ({where}): {detail} | "skill" is an object whose "kind" is instant, duration, ammo, charges, toggle or passive; several skills are "skills": { "<skill id>": { … } }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_META` | The prep spec is not right ({where}): {detail} | Write "meta": { "on": [ { "when": <trigger>, "do": [ <actions> ] } ] }; "meta.key" is effect:<plugin id>:<name> with this plugin's own id. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TALENT` | A talent is not right ({where}): {detail} | "talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
+<!-- plugin-errors:end -->
+
+**Schemas** (the plan's interface C7): `schemas/plugin.schema.json` (manifest 2) and `schemas/overlay.schema.json` (the
+asset overlay), JSON Schema 2020-12 — write `"$schema": "../../schemas/plugin.schema.json"` in a plugin.json (the studio
+and `new` do) and an editor completes and checks it. A manifest or overlay is accepted exactly when the checks find
+neither a problem nor a warning in it, on one shared set of fixtures (`test/plugins/schema.test.js`); what only the checks
+see is named in the schemas' descriptions: the folder (the id is its name; the files exist, of the class's types), the
+running game's version against `app`, a plugin both required and in conflict or both after and before, a setting's min ≤
+max and default within them, a theme naming a URL, an atlas beside its skeleton with its name, references the
+installation lacks, the limits. The schema is a little stricter than the checks where they silently ignore a value of
+another type (`englishName`, `credits`, `license`, `authors`).
+
+**Templates are modules**: a template is one file of `server/studio/templates/` (its class, its target kinds, its
+slots for a target, the overlay of a new plugin) beside one of `public/studio/js/editors/` (its previews and what its
+slots take); the data, DSL, script and interface templates of later steps are added the same way.
+
 ## 18. Later
 
 The old next-steps list lives here. Data plugins are §10 (that work package), per-room content sets are §11, and the
@@ -490,4 +749,13 @@ shows on another player's page, a personal plugin on its own page only; a server
 catalogue; a personal plugin switched during a match changes the piece already on the board). P4:
 `test/plugins/ui.test.js` (message shape and rate, storage quota, slots, a ui manifest accepted or refused, the `/p/`
 CSP, a ui plugin leaving `cs` alone) and `test/ui/ui-plugins.e2e.test.js` (`SP_E2E=1`: the example widget in its slot,
-a battle event, a match intent rejected).
+a battle event, a match intent rejected). The studio and the tools
+(§15): `test/plugins/errors.test.js` (every code in the catalogue, both languages, the documents' anchors, the one-click
+fixes, every finding of a set of broken plugins coded with its placeholders filled, the generated tables),
+`test/plugins/schema.test.js` (the schemas and the checks agree on one fixture set; the templates are accepted),
+`test/plugins/tool.test.js` (`new` for every template passes `check --strict` and `pack`, the plain words, `--json`,
+`pack --zip`, `errors`), `test/studio/studio.test.js` (the gate, the confined files and limits, the API, the zip),
+`test/studio/hotreload.test.js` (the watch; a single-player room and an author's room apply a change by themselves, during
+a match too, any other host is told, the studio not opened keeps §9; the events) and the browser test
+`test/ui/studio.e2e.test.js` (`SP_E2E=1`: a new plugin, an operator by its name, a PNG dropped and previewed in the game's
+card, packed into a zip; a public address refused).

@@ -1266,5 +1266,6 @@
   "界面插件由每位博士在「设置」中自己开关。": "Each Doctor turns interface plugins on or off in Settings.",
   "推荐显示在房间里，是否开启由你自己决定。": "A recommendation shows in the room. You decide whether to turn it on.",
   "最多同时开启 {n} 个界面插件": "At most {n} interface plugins can be on at once",
-  "界面插件发送得太快，请稍后再试": "That interface plugin is sending too fast. Try again in a moment."
+  "界面插件发送得太快，请稍后再试": "That interface plugin is sending too fast. Try again in a moment.",
+  "界面插件离开了自己的页面，本页已停用它（刷新后恢复）": "An interface plugin left its own page and was stopped for this page (reload to restore it)."
 }

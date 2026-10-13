@@ -251,8 +251,8 @@ describe('the postMessage contract', () => {
     assert.equal(stamped.snap.t, undefined);
     assert.deepEqual(stamped.snap.units, [[1, 0, 0]]);
     assert.equal(stamped.truncated, false);
-    assert.equal(frameLoadDecision(1), 'bootstrap');
-    assert.equal(frameLoadDecision(2), 'entry');
+    assert.equal(frameLoadDecision(1), 'entry');
+    assert.equal(frameLoadDecision(2), 'destroy');
     assert.equal(frameLoadDecision(3), 'destroy');
     assert.equal(frameLoadDecision(0), 'destroy');
     assert.match(UI_FRAME_CSP, /(^|; )sandbox allow-scripts(;|$)/);
@@ -269,7 +269,7 @@ describe('the postMessage contract', () => {
     assert.equal(huge.snap, null);
     assert.equal(huge.truncated, true);
     const url = framePageUrl('damage-meter', 'ui/index.html', 'ab'.repeat(32));
-    assert.equal(url, '/plugin-frame.html?id=damage-meter&entry=' + encodeURIComponent('/p/damage-meter/abababab/ui/index.html'));
+    assert.equal(url, '/p/damage-meter/abababab/ui/index.html');
     assert.equal(frameEntryAllowed('damage-meter', '/p/damage-meter/abababab/ui/index.html'), true);
     assert.equal(frameEntryAllowed('damage-meter', '/p/other-plug/abababab/ui/index.html'), false);
     assert.equal(frameEntryAllowed('damage-meter', '/p/damage-meter/abababab/../plugin.json'), false);

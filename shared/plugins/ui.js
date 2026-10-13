@@ -490,35 +490,35 @@ export function battlePayload({ fieldId, gt, events, snap }) {
 }
 
 /**
- * `/plugin-frame.html?id=&entry=` for one plugin file. `sha256` is the file's hash (the URL carries the first 8 hex digits).
+ * The iframe's `src` for one plugin file: its own `/p/<id>/<hash8>/<entry>` (the response carries the frame CSP,
+ * `sandbox allow-scripts` included). `sha256` is the file's hash (the URL carries the first 8 hex digits). No redirect
+ * page: a page that navigates away from inside its own load handler gets no iframe `load` event in Chrome, which
+ * made a redirect step uncountable.
  * @param {string} id @param {string} entry a path inside the plugin (`ui/index.html`) @param {string} sha256
  * @returns {string | null}
  */
 export function framePageUrl(id, entry, sha256) {
   if (!isPluginId(id) || !isPackPath(entry) || typeof sha256 !== 'string' || !/^[0-9a-f]{8}/.test(sha256)) return null;
   const path = `/p/${id}/${sha256.slice(0, 8)}/${entry}`;
-  return `/plugin-frame.html?id=${encodeURIComponent(id)}&entry=${encodeURIComponent(path)}`;
+  return frameEntryAllowed(id, path) ? path : null;
 }
 
 /**
  * What the host does with the iframe's Nth `load` (1-based).
- * 1 — `plugin-frame.html` (the redirect). No private post.
- * 2 — the entry HTML. `welcome` may be posted, and `ready` may be accepted.
+ * 1 — the entry HTML. `welcome` may be posted, and `ready` may be accepted.
  * anything else — the frame navigated away from the entry. Destroy it, clear `ready`, post nothing.
  * `postMessage(..., 'null')` cannot tell the entry document from a later opaque one, so the count is the check.
  * @param {number} loadCount
- * @returns {'bootstrap' | 'entry' | 'destroy'}
+ * @returns {'entry' | 'destroy'}
  */
 export function frameLoadDecision(loadCount) {
-  if (loadCount === 1) return 'bootstrap';
-  if (loadCount === 2) return 'entry';
-  return 'destroy';
+  return loadCount === 1 ? 'entry' : 'destroy';
 }
 
 /**
- * The redirect target plugin-frame.html may navigate to: a same-document path under `/p/<same id>/<hash8>/….html`,
- * no scheme, no `..`, no second host.
- * @param {string} id @param {string} entry the decoded `entry` query
+ * A frame entry the host may load: a same-site path under `/p/<same id>/<hash8>/….html`, no scheme, no `..`, no
+ * second host.
+ * @param {string} id @param {string} entry
  */
 export function frameEntryAllowed(id, entry) {
   if (!isPluginId(id) || typeof entry !== 'string') return false;

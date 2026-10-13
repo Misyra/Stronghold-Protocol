@@ -7,7 +7,7 @@
 // no site storage and no credentials). The same `sandbox allow-scripts` is on the /p/ response (UI_FRAME_CSP), because
 // the attribute is not there when the URL is opened at the top level. The parent posts with targetOrigin '*' because
 // that origin is the string "null" — 'null' does not tell the entry document from a later opaque one.
-// Loads: 1 is plugin-frame.html, 2 is the entry, 3+ destroys the frame and stops the feed. A message is applied on
+// Loads: 1 is the entry (the iframe points straight at it), 2+ destroys the frame and stops the feed. A message is applied on
 // the next turn so a load event already queued runs first. A message is accepted only from that iframe's window,
 // and only when event.origin is "null".
 // The iframe is parked on #sp-ui-park until its slot element exists, then moved into [data-ui-slot]. The slot div
@@ -36,12 +36,15 @@ const LIMIT_MS = 2000;
 
 /** @type {Map<string, FrameRec>} */
 const frames = new Map();
+/** Plugins stopped for leaving their entry page: not mounted again until this page reloads (no re-mount loop). */
+const blocked = new Set();
 const slots = createSlotTable();
 const limiter = createRateLimiter();
 const noticeLimiter = createNoticeLimiter();
 const rejected = [];
 /** @type {{ last: object | null, rejected: string[], debugBattle: (events: unknown) => void, frames: () => string[] }} */
 const api = {
+  blocked: () => [...blocked],
   rejected,
   last: null,
   frames: () => [...frames.keys()],
@@ -107,6 +110,14 @@ function destroy(id) {
   rec.iframe.remove();
 }
 
+/** A frame left its entry document: destroy it and keep the plugin off for the rest of this page. @param {string} id */
+function stopForLeaving(id) {
+  if (!frames.has(id)) return;
+  blocked.add(id);
+  destroy(id);
+  try { toast(t('界面插件离开了自己的页面，本页已停用它（刷新后恢复）'), 'warn'); } catch { /* the toast host may be absent */ }
+}
+
 function destroyAll() {
   for (const id of [...frames.keys()]) destroy(id);
 }
@@ -123,8 +134,24 @@ function rescue(node) {
   if (el.isConnected) return false;
   const frame = el.classList && el.classList.contains('ui-slot__frame') ? el : (el.querySelector ? el.querySelector('.ui-slot__frame') : null);
   if (!frame || frame.isConnected) return false;
-  parkEl().appendChild(frame);
+  // only a live frame is re-parked: a destroyed one (no record any more) stays removed instead of coming back as an
+  // orphan that reloads the plugin's page
+  const rec = frames.get(/** @type {HTMLElement} */ (frame).dataset.plugin || '');
+  if (!rec || rec.iframe !== frame || rec.closed) return false;
+  moveFrame(rec, parkEl());
   return true;
+}
+
+/**
+ * The host moves a frame. A browser reloads an iframe that changes parent, from its `src` — the entry — so the load
+ * count and the handshake start over (the plugin answers the new `welcome` with a new `ready`). A navigation the
+ * plugin starts itself still counts past the entry and destroys the frame.
+ * @param {FrameRec} rec @param {Element} home
+ */
+function moveFrame(rec, home) {
+  rec.loads = 0;
+  rec.ready = false;
+  home.appendChild(rec.iframe);
 }
 
 /** @param {FrameRec} rec */
@@ -132,7 +159,7 @@ function place(rec) {
   const slot = slots.slotOf(rec.id);
   const el = slot ? document.querySelector(`[data-ui-slot="${slot}"]`) : null;
   const home = el || parkEl();
-  if (rec.iframe.parentElement !== home) home.appendChild(rec.iframe);
+  if (rec.iframe.parentElement !== home) moveFrame(rec, home);
 }
 
 function placeAll() {
@@ -176,7 +203,7 @@ function mount(entry) {
     if (frames.get(id) !== rec || rec.closed) return;
     rec.loads += 1;
     const decision = frameLoadDecision(rec.loads);
-    if (decision === 'destroy') { destroy(id); return; }
+    if (decision === 'destroy') { stopForLeaving(id); return; }
     // The entry document. welcome does not include the private view; ready (accepted only at this count) does.
     if (decision === 'entry') post(rec, hostWelcome(id, declared));
   });
@@ -357,7 +384,7 @@ function onWindowMessage(ev) {
   // (DESIGN §32.8 [ASSUMED]).
   setTimeout(() => {
     if (frames.get(rec.id) !== rec || rec.closed) return;
-    if (frameLoadDecision(rec.loads) === 'destroy') { destroy(rec.id); return; }
+    if (frameLoadDecision(rec.loads) === 'destroy') { stopForLeaving(rec.id); return; }
     handle(rec, msg);
   }, 0);
 }
@@ -375,6 +402,7 @@ function sync() {
   const want = [];
   for (const id of ids) {
     if (want.length >= UI_LIMITS.maxPlugins) break;
+    if (blocked.has(id)) continue;
     if (entries.some((p) => p.id === id)) want.push(id);
   }
   const keep = new Set(want);

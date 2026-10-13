@@ -20,7 +20,6 @@ intent, and not an input of `cs`.
 | `shared/plugins/ui.js` | the interface-plugin bridge (§14): the postMessage shapes, the rate and storage limits, the public and private subsets, the frame URL |
 | `public/js/ui/uiPlugins.js` | this browser's interface-plugin switches and the host's recommendations (localStorage) |
 | `public/js/ui/pluginFrame.js` | the sandboxed iframes, the slots, the read-only feed |
-| `public/plugin-frame.html` | the redirect into a ui plugin's page (the frame CSP of that page is the `/p/` header) |
 | `plugins/_template/ui/` | the interface-plugin template: a damage tally |
 | `schemas/ui.schema.json` | the plugin→host messages (C7) |
 | `shared/sha256.js` | SHA-256 in plain JavaScript (the same digest in Node and every browser, no `crypto.subtle`) |
@@ -418,10 +417,9 @@ Start from `plugins/_template/ui/` (a damage tally). A folder whose name starts 
 never loads it.
 
 **The frame.** The page runs in `<iframe sandbox="allow-scripts">` — no `allow-same-origin`, so its origin is the
-opaque string `"null"` and it cannot read this site's storage or credentials. The host loads it through
-`public/plugin-frame.html`, which redirects (from its own load handler) only to that plugin's own
-`/p/<id>/<hash8>/<entry>`. The first load is that redirect, the second is the entry, and a third load destroys the
-frame: the host then clears `ready` and posts nothing more. `postMessage` to `"null"` cannot tell those documents
+opaque string `"null"` and it cannot read this site's storage or credentials. The iframe points straight at that plugin's own
+`/p/<id>/<hash8>/<entry>`. Its first load is the entry, and any later load destroys the frame: the host then clears
+`ready` and posts nothing more. `postMessage` to `"null"` cannot tell those documents
 apart. Files at `/p/` for a ui plugin, and not cosmetic art, are sent with
 `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; sandbox allow-scripts; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`
 (`UI_FRAME_CSP`), on 200, 206 and 304. The `sandbox` directive is what still applies when that URL is opened at the

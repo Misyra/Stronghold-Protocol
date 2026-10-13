@@ -272,6 +272,8 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `studio.route.POST /studio/api/plugins/:id/pack` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.POST /studio/api/catalog` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.POST /studio/api/catalog/install` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/forge/preview` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/forge/import` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `error.PLUGIN_CONSENT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_TRUST_PUBLIC` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_TRUST_PIN` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
@@ -415,6 +417,12 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `error.PLUGIN_INSTALL_ZIP` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_INSTALL_CHECK` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_INSTALL_EXISTS` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_INPUT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_ZIP` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_JSON` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_ID` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_EXISTS` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_FORGE_SCRIPT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_INVALID` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `catalog.field.$schema` | stable | 0.3.0 | `shared/plugins/catalog.js#CATALOG_FIELDS` |
 | `catalog.field.catalog` | stable | 0.3.0 | `shared/plugins/catalog.js#CATALOG_FIELDS` |

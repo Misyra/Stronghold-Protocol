@@ -972,6 +972,14 @@
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
   },
   {
+    "name": "studio.route.POST /studio/api/forge/preview",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.POST /studio/api/forge/import",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
     "name": "error.PLUGIN_CONSENT",
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
@@ -1541,6 +1549,30 @@
   },
   {
     "name": "error.PLUGIN_INSTALL_EXISTS",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_INPUT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_ZIP",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_JSON",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_ID",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_EXISTS",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_FORGE_SCRIPT",
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
   {

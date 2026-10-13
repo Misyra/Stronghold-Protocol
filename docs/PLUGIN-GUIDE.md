@@ -269,8 +269,33 @@ node tools/plugin.mjs pack my-texas --zip
 | 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_ZIP` | 这个 zip 不能安装：{detail} | zip 里要有 plugin.json（可以包在一层以插件 id 命名的文件夹里）。不能有路径穿越、符号链接、加密或超量的文件。 |
 | 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_CHECK` | 插件没通过检查，没有装进 plugins/：{detail} | 按 node tools/plugin.mjs check 的提示改插件，再安装。失败时只删掉临时文件，不会动已经装好的插件。 |
 | 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_EXISTS` | plugins/ 里已经有这个 id：{detail} | 不加 --force 就不会覆盖。--force 会把旧文件夹挪到 plugins/_replaced/，不会删除。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_INPUT` | 这不是一份能读的 Forge 包：{detail} | 选一个含 pack.json 的工坊包目录，或那个目录打出来的 zip。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_ZIP` | 这个包的文件不安全，没有解压：{detail} | 路径不能跳出包目录，不能有符号链接，单个包最多 5000 个文件、一共 200 MB。换一份包再导入。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_JSON` | 包里的 JSON 读不了：{detail} | JSON 要能解析，不超过 8 MB，嵌套不超过 64 层，数字在 ±1e9 以内。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_ID` | 这个包的 id 变不成插件 id：{detail} | 用 --id 指定一个插件 id：2–32 位小写字母、数字和 -，例如 rose-skin。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_EXISTS` | 目标文件夹已经存在，没有写入：{detail} | 换一个 --out 或 --id，或者把已有的插件文件夹挪走后再导入。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_SCRIPT` | 包里的脚本没有导入，也没有执行：{detail} | 技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_INVALID` | 插件有问题：{detail} | 看后面的英文原文；看不懂的话，可以到 GitHub 提问并附上这段文字。 |
 <!-- plugin-errors:end -->
+
+## 从 Forge 包导入
+
+如果你有一份 Forge 工坊包（一个带 `pack.json` 的文件夹，或它打出来的 zip），可以把对得上的部分导成我们的插件。
+
+在工作台里点 **「从 Forge 包导入」**。选一个 zip，或选整个文件夹。先看导入报告，确认之后才会写入 `plugins/`。
+报告里写着导入了什么、改成了什么、没导入的和原因。常见的没导入原因：这是服务端逻辑、会改协议、是一段脚本（导入器
+**不运行**包里的任何代码），或者挂载点对不上我们的界面插槽。
+
+命令行做同一件事：
+
+```bash
+node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+```
+
+`--dry-run` 只打印报告，不写文件。皮肤、立绘、头像、图标、Spine、语音、对得上的音乐和音效会变成外观插件；数值改动、
+新干员和新敌人会变成数据插件（技能脚本改成通用 kit，要自己再写成 JSON 技能规格或 DSL）；界面词条会变成语言包；公告和
+鸣谢写进清单的说明。对不上的部分留在 `IMPORT-REPORT.md` 里，中文和英文各一行。完整对照表在
+[PLUGINS.md](PLUGINS.md) §16。
 
 ## 进阶
 

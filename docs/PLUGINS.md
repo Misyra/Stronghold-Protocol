@@ -15,7 +15,8 @@ browser, read-only, never a match intent, and not an input of `cs`.
 Authors make, preview and pack a cosmetic plugin in the browser at `/studio/` — the plugin studio 插件工作台 — or with
 `node tools/plugin.mjs new / check / pack`; findings come in plain words (the error catalogue), and the JSON Schemas
 `schemas/plugin.schema.json` and `schemas/overlay.schema.json` help editors and AI agents (§15; a beginner's guide in
-Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`).
+Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`). A Forge workshop pack, a folder or a
+zip, can be imported as the plugins it can become (§16).
 
 | File | Role |
 |---|---|
@@ -36,6 +37,7 @@ Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`)
 | `server/plugins/contentSet.js` | C1 content compositions, immutable byte files, modes and the gameplay hash (§10) |
 | `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
 | `server/plugins/pack.js`, `server/plugins/zip.js` | checking and packing a plugin folder: the folder's check, `plugin.lock.json` (Spine clip data parsed from the skeleton), a deterministic zip — for `tools/plugin.mjs` and the studio |
+| `server/plugins/forgeImport.js` | Forge workshop packs (§16): read a folder or a zip and write the plugins it can become. It never runs a script from the pack |
 | `server/studio/` | the plugin studio (§15): `index.js` the page and its API at `/studio/` (this machine and the local network only: `gate.js`), `files.js` (only inside `plugins/<id>/`), `templates/` (one module per template), `targets.js` (by official name), `edit.js` (fields, slots, one-click fixes), `preview.js` (the temporary composition), `watch.js` (hot reload) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest |
@@ -235,6 +237,9 @@ node tools/plugin.mjs pack <dir|id> … [--zip]      write plugin.lock.json (eve
 node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio) for a target
           [--target <名字|id>] [--name …] [--dir …] found by its official name
 node tools/plugin.mjs errors [--markdown] [--write] the error catalogue; --write keeps the symptom tables of the documents
+node tools/plugin.mjs import-forge <dir|zip>       a Forge workshop pack → the plugins it can become (§16);
+          [--out <dir>] [--id <id>] [--dry-run]     --dry-run writes nothing; --json prints the report only
+          [--json]
 ```
 
 `--root <dir>` points it at another checkout or an unpacked release. Planned: `install`, `golden`, `simcheck`, and
@@ -981,6 +986,7 @@ GET without the body):
 | `POST …/pack` · `GET …/zip` · `GET …/preview` | the lock and the check; the zip (a download, packs nothing); the temporary composition |
 | `GET …/f/<hash8>/<path>`, `…/files/<path>` · `PUT` / `DELETE …/files/<path>` | a file of the folder (a draft's too) — of the types the studio writes only, sandboxed (`Content-Security-Policy: default-src 'none'; sandbox`); write or remove one |
 | `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
+| `POST /studio/api/forge/preview` · `POST /studio/api/forge/import` | a Forge pack as `{ zip?: base64, files?: [{ name, data: base64 }], id? }` — never a path on the server. Preview is a dry run. §16 |
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
 (never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
@@ -1154,6 +1160,12 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The studio refuses the action and says why | `PLUGIN_INSTALL_ZIP` | This zip cannot be installed: {detail} | The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_CHECK` | The plugin failed its check and was not placed in plugins/: {detail} | Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_EXISTS` | plugins/ already has this id: {detail} | Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_INPUT` | This is not a Forge pack that can be read: {detail} | Choose a workshop folder that contains pack.json, or a zip of that folder. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_ZIP` | This pack's files are not safe to unpack: {detail} | Paths must stay inside the pack, with no symbolic links, at most 5000 files and 200 MB. Import another pack. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_JSON` | JSON in the pack cannot be read: {detail} | JSON must parse, stay within 8 MB and 64 levels of nesting, and keep numbers within ±1e9. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_ID` | This pack's id cannot become a plugin id: {detail} | Pass --id with a plugin id: 2–32 lower-case letters, digits and -, for example rose-skin. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_EXISTS` | The destination folder already exists, so nothing was written: {detail} | Choose another --out or --id, or move the existing plugin folder aside and import again. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_SCRIPT` | A script in the pack was not imported and was not run: {detail} | Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
 <!-- plugin-errors:end -->
 
@@ -1170,6 +1182,113 @@ another type (`englishName`, `credits`, `license`, `authors`).
 **Templates are modules**: a template is one file of `server/studio/templates/` (its class, its target kinds, its
 slots for a target, the overlay of a new plugin) beside one of `public/studio/js/editors/` (its previews and what its
 slots take); the data, DSL, script and interface templates of later steps are added the same way.
+
+## 16. Forge import
+
+A Forge workshop pack — a folder or a zip with `pack.json` at its root, one wrapping folder stripped — can be read
+into one or more of our plugins. The importer (`server/plugins/forgeImport.js`) is original code. It does not copy
+Forge's source, and it does not screen for official art, the same rule as the packer: what a plugin carries is its
+author's responsibility. A pack is untrusted. The importer reads bytes only. It never `import()`s, `eval()`s or
+`require()`s a file from the pack, and it never copies a script into the plugin it writes.
+
+```
+node tools/plugin.mjs import-forge <dir or zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+```
+
+`--out` names the primary product's folder; its basename becomes that product's id. `--id` overrides the pack id
+before the suffixes below. `--dry-run` writes nothing, including `IMPORT-REPORT.md`. `--json` prints the report
+object only, keys sorted. Exit 0 when the pack was read, including when nothing could be imported; exit 1 when the
+pack could not be read or a product failed `check`, `pack`, the visual set or the content set; exit 2 on a bad
+command. A product that fails is not left in `plugins/`.
+
+The studio does the same thing. On `/studio/` the button 「从 Forge 包导入」 takes a zip or a folder. The browser
+sends the bytes. While that read is in progress the preview and confirm buttons stay disabled, and the previous
+report is cleared so a late read cannot confirm the pack that was on screen before. The server is never given a
+path on its disk. `POST /studio/api/forge/preview` and
+`POST /studio/api/forge/import` take `{ zip?: base64, files?: [{ name, data: base64 }], id? }` and use the same gate
+as every other change (`X-SP-Studio`, this machine or the local network). A pack that is unsafe to unpack is 400
+with a `PLUGIN_FORGE_*` code. A pack that was read answers 200 `{ report, plugins: [{ id, class }] }`. `report.ok`
+is false when a product failed the checks, and nothing was written. Preview is a dry run. Confirming writes
+`plugins/<id>/` and rescans.
+
+Each product is checked with `checkPluginFolder` and `packPlugin`. A cosmetic product is then resolved with
+`createVisualSets({ registry }).resolve` (there is no `buildVisualSet`). A content product is built with
+`buildContentSet`. A problem or a warning fails the import. After a successful write the primary folder holds
+`IMPORT-REPORT.md`: what was imported, what was rewritten, what was not and why, and the [ASSUMED] lines. The lock
+`pack` wrote does not list that file; a later `pack` rewrites the lock.
+
+**Ids.** Content keeps the pack id, or `--out`'s basename when that product is primary. Beside it, cosmetic is
+`<id>-look`, each ui slot is `<id>-<slot>` with the dots written as hyphens, and each language is `<id>-<lang>`.
+A name that is not a plugin id, or that collides, is fitted to 2–32 characters (`a-z`, `0-9`, `-`). A second import
+into a folder that already exists is `PLUGIN_FORGE_EXISTS` and writes nothing.
+
+**Safety.** The zip reader is this module's own (`readUntrustedZip`). It uses `crc32` from `server/plugins/zip.js`
+and does not call `unzipFiles`. It rejects `..`, an absolute path, a backslash, NUL, a symbolic link (unix mode
+`0120000`), ZIP64 (the EOCD sentinel, a ZIP64 extra field, or a ZIP64 locator in the 20 bytes immediately before a
+real EOCD — not a `PK\\x06\\x06` that happens to sit inside an entry), encryption, a data descriptor, more than
+`PLUGIN_LIMITS.files` entries (5000), and a declared or inflated size over `PLUGIN_LIMITS.pluginBytes` (200 MB). A
+raw zip larger than that unpacked cap plus 64 KiB is refused before it is read [ASSUMED: the 64 KiB is header
+room, so a zip only slightly over 200 MB is refused too]. JSON follows `checkJsonLimits` (8 MB, depth 64, numbers
+within ±1e9) and refuses `__proto__`, `constructor` and `prototype` before mapping. Asset trees use a
+null-prototype object. A directory read uses `lstat`, does not follow a link, refuses a regular file with
+`nlink > 1`, and reads through `O_NOFOLLOW` only after `fstat` matches. Empty directories count toward the 5000
+cap. A dry run stages under the temporary directory and removes the stage. A real write stages in a dot directory
+beside `plugins/` — the registry skips dot directories — and commits by rename. `EXDEV` fails the import; it is
+not copied [ASSUMED]. A failed commit removes only the destinations that attempt created. The visual set and the
+content set see plugins already installed, through a temporary symlink view. The source pack is not part of that
+view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_INPUT` and write nothing.
+
+### Mapping
+
+| Forge piece | Becomes | When it does not |
+|---|---|---|
+| `art.chars` avatar, avatarE2, portrait, portraitE2 | cosmetic `assets.chars` | any other portrait field has no overlay key |
+| Spine on a character (`front` / `back`), an enemy or a token | the overlay's spine. The atlas sits next to the skel, same name; pages in that folder. `anims` is not copied: the lock reads clips from the skeleton [ASSUMED] | skel or atlas missing, or a page outside that folder |
+| `art` of bonds, items, bands, skills, modules, ui, prof.sub; enemy `icon`; token `avatar` | the matching overlay container | `art.tokens.*.owner` is not an asset |
+| `bondIcons`, `itemIcons` | `assets.bonds`, `assets.items` | a bond already named by `art.bonds` is not imported again from `bondIcons` |
+| `voices` | `audio.voiceJp` [ASSUMED: Forge documents that table as the Japanese dub] | a slot outside `^[A-Za-z][A-Za-z0-9]{0,31}$`, or a file that is not `.mp3` / `.ogg` |
+| `voiceLangs.cn` (and `zh`) | `audio.voice` | `en`, `kr` and any other dub: only those two tables exist |
+| `skins[]` | collapsed onto that operator's one overlay [ASSUMED: no wardrobe] | a skin without `charId` |
+| `art.audio.bgm` of lobby, prep, combat, unite, boss; an unreferenced file whose basename is one of those | `audio.bgm` `{ loop }` | any other music key. `art.audio` is not a documented Forge table [ASSUMED] |
+| `art.audio.bossBgm` | `audio.bossBgm` `{ loop, intro? }` | an id that is not an asset key, or a file that is not audio |
+| `art.audio.sfx.ui`, `sfx.battle` | one audio file each | |
+| `art.audio.sfx.units` | attack, hit, skill, die, born, and skills / attacks / hits by an index 0–99 | any other field or bucket (`ui`, `battle`, `units` only) |
+| `overrides` of `"file:id"` plus a partial of an existing record | a content `data` patch. An array whose type already matches is one `set` of the whole array. `talents` and `talentsBase` are not replaced: Forge merges those by index, and this version says so | not listed in `overrides` (a silent replace is refused); a field whose type or path does not match |
+| `units.json`, a new operator | a compact record `char_x_<namespace>_…`, namespace taken from the content plugin id (`--out`'s basename when that product is primary). Skills come from the selected form when that form has a list, otherwise from the record. One default skill | no name, profession, branch, forms or skill; rarity outside 1–6; no bond that exists here. A 6★ declared in `operators` is `as: "diy"` (no shop piece; `chess.tier` is still the rarity, because the compact schema requires it). Below 6★ in that list, and a unit that is not declared there, is chess [ASSUMED] |
+| `enemies.json` with an official `base` or `special` that exists here | `enemy_x_<namespace>_…`, stats over that base | no such base: a kit is not invented |
+| a skill `.js` | kit `"generic"`. The file is named in the report and is not run | a JSON object that passes `validateSkillSpec` is kept as `kit.spec`. No DSL part is written: declaring one makes this version skip the plugin |
+| new chess, items, stages, waves, tokens, bosses, modes | — | no safe compact mapping. `variants` and `behaviour` are engine switches, not modes |
+| a flat `{ msgid: string }` translation | a `lang` plugin, `files.ui` | `zh` is the source language and is not a language pack |
+| `{ version: 1, lang, files }` | content i18n, only when every leaf replaces an existing string | a missing leaf would refuse the whole content set, so the file is skipped |
+| notices, credits, description | `description` (at most 500 characters) and `credits` on every product that is not a language pack | unreadable |
+| `license`, `authors` | copied when they are short strings | |
+| `dependencies`, `conflicts` | `requires`, `conflicts` when the id is a plugin id. An omitted range is `*` [ASSUMED] | an id that cannot become a plugin id. A product does not require itself |
+| `client.panels` `screen.game.hud` and `screen.game.aside` | a ui plugin, slot `hud.right`, one HTML stub | a second panel for the same slot |
+| `client.panels` `screen.result.footer` | a ui plugin, slot `result.tab` | |
+| any other panel mount | — | not `hud.right`, `result.tab`, `stats.tab` or `room.panel`. Those last two have no Forge mount yet |
+| a panel with `wraps`, or `readonly` / `readOnly: false` | — | it rewrites a component, so it is not read-only |
+| the panel's script | not copied. The stub answers welcome with ready, then slot and resize, and says the author must rewrite it to postMessage API v1 | `PLUGIN_FORGE_SCRIPT` |
+| `server`, `routes`, `assets` (`.spresources`), `forms`, `fx`, `variants`, `behaviour`, `playtest`, `support`, `combat: true`, `layer` | — | engine replacement, protocol, server logic, or a switch this manifest has no field for. One reason each, in Chinese and in English |
+| `.js` `.mjs` `.cjs` `.ts` `.jsx` `.tsx` | not imported and not executed | `PLUGIN_FORGE_SCRIPT` |
+| a file `pack.json` does not reference | — | named in the report, except a loose music file whose basename is a bgm track |
+
+**Profession aliases** [ASSUMED]: DEFENDER, HEAVY and GUARDIAN become TANK; VANGUARD becomes PIONEER; GUARD becomes
+WARRIOR. A missing position is MELEE for tank, warrior and pioneer, and RANGED otherwise. A Forge form rank is
+`phase/level/skillLevel/equipLevel`, compared as integers, or a single integer. The lowest becomes normal and the
+highest becomes elite, and a single rank is copied into both. `"2/60/…"` is a higher rank than `"2/9/…"`. A
+missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when the operator is emitted as chess. Skill fields
+that do not fit the compact record (`rangeId` and anything outside name, duration, spCost, initSp, bb, desc,
+default, skillId, id) are named in the report and dropped. Voice containers and skill icons are renamed with the
+new char id and skill id. An imported file always gains one `files/` prefix, so `a.png` and `files/a.png` do not
+collapse. A case-only name clash, or a file path that is a directory prefix of another, is `PLUGIN_FORGE_ZIP`.
+
+**Errors** (`PLUGIN_FORGE_*`, this section's anchor): `PLUGIN_FORGE_INPUT` (not a pack), `PLUGIN_FORGE_ZIP` (unsafe
+to unpack), `PLUGIN_FORGE_JSON` (parse, size, depth, numbers), `PLUGIN_FORGE_ID` (the id cannot become a plugin id),
+`PLUGIN_FORGE_EXISTS` (the destination exists), `PLUGIN_FORGE_SCRIPT` (a script was not imported and was not run).
+
+The version written into a product is the pack's version when it is a restricted semver with no build metadata,
+otherwise `0.1.0` [ASSUMED]. `app` is `>=0.3.0 <0.4.0` and `api` is 1. A language-pack manifest omits `$schema`,
+`app`, `api` and `permissions`.
 
 ## 17. The catalogue and installing by address (目录与安装)
 
@@ -1273,4 +1392,14 @@ card, packed into a zip; a public address refused). The catalogue and install-by
 not a version range, are check-only), `test/plugins/install.test.js` (a local zip, a hash, a download cap, traversal, a
 symbolic link, a file-count bomb, no overwrite, `--force` moves the old folder, a decoy script is not run),
 `test/studio/catalog.test.js` (the studio gate, the list, the install) and `test/ui/studio-catalog.e2e.test.js`
-(`SP_E2E=1`). The frozen API v1 table: `docs/PLUGIN-API.md`, `shared/plugins/surface.js`, `test/plugins/surface.test.js`.
+(`SP_E2E=1`). The frozen API v1 table: `docs/PLUGIN-API.md`, `shared/plugins/surface.js`, `test/plugins/surface.test.js`. card, packed into a zip; a public address refused). Forge import (§16): `test/plugins/forgeImport.test.js` (the
+fixtures under `test/fixtures/forge/` — a skin, a numbers pack, a mixed pack — plus boss music and a ui sound:
+`check --strict`, `pack`, a cosmetic resolve with no warnings, a content set with no problems, refused pieces named,
+`--dry-run`, stable `--json`, a second import, a zip that slips, a symlink, an oversized entry, JSON nested past the
+limit, a script that is not run, `Object.prototype` unchanged on the preview route and on `--dry-run`, a language
+alias, a failed rename, form skills, `--out` as the record namespace, distinct `files/` paths, an array `set`,
+renamed voices and skill icons, an installed dependency, a 6★ 自选 operator, a hard link, a raw zip over the cap,
+and a stored entry that contains the ZIP64 bytes), `test/studio/forge.test.js` (the gate, a server path refused,
+preview writes nothing, import writes, a file list, a path-escape name) and the browser test
+`test/ui/forge-import.e2e.test.js` (`SP_E2E=1`, including a read that starts while a report is on screen; a sandbox
+that cannot open a browser leaves that file unrun).

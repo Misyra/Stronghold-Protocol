@@ -1499,5 +1499,14 @@
   "公网监听默认禁止受信任插件": "Trusted plugins are refused on a public listening address",
   "两个插件注册了同一个效果": "Two plugins register the same effect",
   "插件未声明要替换的官方技能": "The plugin did not declare the official kit it replaces",
-  "脚本未通过兼容性检查": "The script failed its portability check"
+  "脚本未通过兼容性检查": "The script failed its portability check",
+  "从 Forge 包导入": "Import from a Forge pack",
+  "选择一个 Forge 工坊包（zip 或文件夹）。先预览报告，确认后才写入 plugins/。": "Choose a Forge workshop pack (a zip or a folder). Preview the report first; plugins/ is written only after you confirm.",
+  "预览导入报告": "Preview the import report",
+  "确认写入插件": "Write the plugins",
+  "导入报告": "Import report",
+  "这个包没有可以写入的插件。": "This pack has no plugin to write.",
+  "包太大，超过 {max}。": "The pack is larger than {max}.",
+  "正在读取 Forge 包…": "Reading the Forge pack…",
+  "已写入 {n} 个插件": "Wrote {n} plugins"
 }

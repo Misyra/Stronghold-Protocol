@@ -48,8 +48,8 @@ jobs:
         run: npm run build
 
       - name: Unit & integration tests
-        # Production keys stay off public CI; this explicit preload provides independent test data when needed.
-        run: node --import ./test/helpers/moderation-fixture.js --test
+        # Test-only preload selects source mode and an independent moderation dictionary.
+        run: npm run test
 
       - name: Server smoke test (boot, /healthz, index.html, doctor)
         shell: bash

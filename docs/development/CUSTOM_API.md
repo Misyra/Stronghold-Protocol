@@ -432,6 +432,8 @@ HEAD /data/resource-manifest.json
 
 `room.state.allowBots` 表示是否允许新增 AI（旧服务器未提供时客户端按允许处理）。禁用时 `room.addBot` 返回 `BOTS_DISABLED`；已有 AI、进行中对局和断线自动接管不受影响。
 
+`room.addBot` 检查实时 AI 席位存量：全服合计达到 300 个返回 `AI_POPULATION_LIMIT`；配置私有 GeoLite Country 数据库后，海外来源（非 `CN`，含港澳台）共用 50 个名额，达到后新的海外请求返回 `FOREIGN_AI_POPULATION_LIMIT`。全服限制优先且不依赖 GeoLite。两种拒绝都不关闭房间或删除已有 AI；备战和运行中都计数，移除、销毁释放名额，存档恢复重建计数。健康接口 `botPopulation` 提供当前存量与上限，详细配置见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md)。
+
 ## 9. 实现出处与验证
 
 | 契约 | 实现 / 已有测试 |

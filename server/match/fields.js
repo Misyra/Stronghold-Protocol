@@ -33,7 +33,7 @@
 //   syntheticResult(players, progress)     stand-in when a boss field's client never reported
 import { TICK, SNAPSHOT_EVERY } from '../sim/constants.js';
 import { layerGainRoom } from '../../shared/constants.js';
-import { ENCODED, encode } from '../net.js';
+import { preencode } from '../wireHints.js';
 import { uniteLeft } from '../sim/spec.js';
 import { diyTokenOwner, diyRecordOf } from '../../shared/diy.js';
 
@@ -213,8 +213,8 @@ export class FieldRunner {
     const gt = snapMsg ? snapMsg.gt : Number.isFinite(time) ? time : 0;
     const evMsg = ev.length ? { t: 'b.ev', fieldId: f.fieldId, gt, ev } : null;
     // the same frame goes to every watcher of the field: encode once (net.js ENCODED) instead of per watcher
-    if (snapMsg) snapMsg[ENCODED] = encode(snapMsg);
-    if (evMsg) evMsg[ENCODED] = encode(evMsg);
+    if (snapMsg) preencode(snapMsg);
+    if (evMsg) preencode(evMsg);
     for (const pid of watchers) {
       if (evMsg) this.m.sendTo(pid, evMsg);
       if (snapMsg) this.m.sendTo(pid, snapMsg);

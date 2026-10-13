@@ -140,6 +140,8 @@ export const ERR = Object.freeze({
   NOT_HOST: 'NOT_HOST',
   NOT_READY: 'NOT_READY',
   BOTS_DISABLED: 'BOTS_DISABLED',
+  AI_POPULATION_LIMIT: 'AI_POPULATION_LIMIT',
+  FOREIGN_AI_POPULATION_LIMIT: 'FOREIGN_AI_POPULATION_LIMIT',
   WRONG_PHASE: 'WRONG_PHASE',
   NO_FUNDS: 'NO_FUNDS',
   HAND_FULL: 'HAND_FULL',
@@ -158,6 +160,8 @@ export const ERR = Object.freeze({
 
 export const ERR_TEXT = {
   BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
+  AI_POPULATION_LIMIT: N_('当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。'),
+  FOREIGN_AI_POPULATION_LIMIT: N_('由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友'),
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
   CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
   CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),

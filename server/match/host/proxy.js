@@ -77,9 +77,13 @@ export class MatchProxy {
     try { this.host.post({ ...m, matchId: this.matchId }); } catch (e) { this.log.error?.(`[match ${this.roomCode}] host post failed`, e); }
   }
 
-  /** A request: the match's answer, or INTERNAL when the worker is gone or silent. @returns {Promise<any>} */
-  _request(method, args) {
-    if (this.disposed || this.ended) return Promise.resolve({ error: ERR.WRONG_PHASE, detail: 'no running match' });
+  /**
+   * A request: the match's answer, or INTERNAL when the worker is gone or silent. `afterEnd`: also once the match ended
+   * (diag — the match stays in the worker until the lobby disposes it).
+   * @returns {Promise<any>}
+   */
+  _request(method, args, afterEnd = false) {
+    if (this.disposed || (this.ended && !afterEnd) || this.forgotten) return Promise.resolve({ error: ERR.WRONG_PHASE, detail: 'no running match' });
     const id = ++this.seq;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -115,7 +119,7 @@ export class MatchProxy {
   addSpectator(playerId) { this._notify('addSpectator', [playerId]); }
   removeSpectator(playerId) { this._notify('removeSpectator', [playerId]); }
   /** The match's diagnostics in the worker (tests). @returns {Promise<any>} */
-  diag() { return this.disposed ? Promise.resolve(null) : this._request('diag', []); }
+  diag() { return this.disposed ? Promise.resolve(null) : this._request('diag', [], true); }
 
   /**
    * The lobby is done with the match. The worker still answers what was asked before (its port keeps the order: those

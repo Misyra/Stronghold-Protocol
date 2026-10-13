@@ -17,14 +17,23 @@
 //     ends them with 'plugin-crash'; one whose content set does not boot, with 'plugin-start'. The log names the set and
 //     its plugins.
 //   resourceLimits [ASSUMED]: 768 MB old generation, 64 MB young generation, 4 MB stack per worker (options.resourceLimits).
+//   Transport (options.transport, env SP_MATCH_HOST): 'worker' — a worker thread (the design study's choice, the
+//   default) — or 'process' — a child process (child_process.fork, the old-generation limit as --max-old-space-size).
+//   Measured on Node 22.22 (DESIGN §32.6): a worker that runs out of its memory limit through one large allocation (an
+//   array or a Map grown to hundreds of MB — what a data plugin's extreme number can make the match do) is NOT stopped
+//   with ERR_WORKER_OUT_OF_MEMORY but aborts the WHOLE server process ("FATAL ERROR: Reached heap limit"); only an
+//   allocation of many small objects ends the worker alone. A child process that runs out of memory aborts alone and its
+//   matches end with 'plugin-crash'. [ASSUMED: 'worker' stays the default as specified; a public server should run
+//   'process'.]
 //   stats() → { workers, matches } (/healthz); close() terminates every worker (server shutdown).
 //
-// Options (startServer `matchHost`): maxWorkers (default: the content-set limit, 4), heartbeatMs, watchdogMs, idleMs,
-// resourceLimits, matchOptions (JSON-safe Match options every hosted match gets — the e2e and host tests scale the timers
-// with it), and for tests only: matchModule (a module whose `Match` replaces server/match/Match.js in the workers),
-// virtualTime (the matches run on a virtual clock).
+// Options (startServer `matchHost`): transport, maxWorkers (default: the content-set limit, 4), heartbeatMs, watchdogMs,
+// idleMs, resourceLimits, matchOptions (JSON-safe Match options every hosted match gets — the e2e and host tests scale
+// the timers with it), and for tests only: matchModule (a module whose `Match` replaces server/match/Match.js in the
+// workers), virtualTime (the matches run on a virtual clock).
 
 import { Worker } from 'node:worker_threads';
+import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ERR } from '../../../shared/constants.js';
 import { csUrlPart } from '../../../shared/plugins/identity.js';
@@ -35,6 +44,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /** Defaults [ASSUMED] (see the header). */
 export const HOST_DEFAULTS = Object.freeze({
+  transport: 'worker',
   maxWorkers: 4,
   heartbeatMs: 1000,
   watchdogMs: 10_000,
@@ -60,7 +70,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
   let seq = 0;
   let closed = false;
 
-  /** One worker and the matches of its content set. */
+  /** One worker (or child process) and the matches of its content set. */
   class WorkerHost {
     constructor(cs) {
       this.cs = cs;
@@ -75,29 +85,50 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       this.ready = false;
       this.dead = null;
       this.idleTimer = null;
-      this.worker = new Worker(ENTRY, {
-        workerData: {
-          cs, hashInput: set.hashInput, files,
-          options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime },
-        },
-        resourceLimits: { ...o.resourceLimits },
-        stdout: false,
-        stderr: false,
-      });
-      this.worker.unref?.();
-      this.worker.on('message', (m) => this.onMessage(m));
-      this.worker.on('error', (e) => {
+      const init = {
+        cs, hashInput: set.hashInput, files,
+        options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime },
+      };
+      const failed = (e) => {
         log.error?.(`[plugins] match host ${this.tag} (${this.plugins}) failed: ${e?.code || ''} ${e?.message || e}`);
         this.stop(this.ready ? 'plugin-crash' : 'plugin-start', `${e?.code || ''} ${e?.message || e}`.trim());
-      });
-      this.worker.on('exit', (code) => {
+      };
+      const exited = (code, signal) => {
         if (!this.dead) {
-          log.warn?.(`[plugins] match host ${this.tag} (${this.plugins}) exited (code ${code})`);
-          this.stop(this.ready ? 'plugin-crash' : 'plugin-start', `the worker exited (code ${code})`);
+          log.warn?.(`[plugins] match host ${this.tag} (${this.plugins}) exited (${signal ? `signal ${signal}` : `code ${code}`})`);
+          this.stop(this.ready ? 'plugin-crash' : 'plugin-start', `the match host exited (${signal ? `signal ${signal}` : `code ${code}`})`);
         }
         if (hosts.get(this.cs) === this) hosts.delete(this.cs);
-      });
-      log.info?.(`[plugins] match host ${this.tag} started for ${this.plugins}`);
+      };
+      this.transport = o.transport === 'process' ? 'process' : 'worker';
+      if (this.transport === 'process') {
+        // a child process: its memory limit is its own (an out-of-memory abort ends it alone — see the header)
+        const mb = Math.max(64, Number(o.resourceLimits?.maxOldGenerationSizeMb) || HOST_DEFAULTS.resourceLimits.maxOldGenerationSizeMb);
+        this.child = fork(ENTRY, [], { execArgv: [`--max-old-space-size=${mb}`], serialization: 'advanced', stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+        // the last lines it printed (an abort's "FATAL ERROR …") go into the log when it dies
+        this.stderr = '';
+        this.child.stderr?.on('data', (d) => { this.stderr = (this.stderr + String(d)).slice(-2000); });
+        this.child.on('message', (m) => this.onMessage(m));
+        this.child.on('error', failed);
+        this.child.on('exit', (code, signal) => {
+          if (!this.dead && this.stderr.trim()) log.warn?.(`[plugins] match host ${this.tag} printed: ${this.stderr.trim().split('\n').slice(0, 3).join(' | ')}`);
+          exited(code, signal);
+        });
+        this.child.unref?.();
+        this.child.channel?.unref?.();
+        this.send = (m) => { if (this.child.connected) this.child.send(m); };
+        this.kill = () => { try { this.child.kill('SIGKILL'); } catch { /* gone */ } };
+        this.send({ type: 'init', ...init });
+      } else {
+        this.worker = new Worker(ENTRY, { workerData: init, resourceLimits: { ...o.resourceLimits }, stdout: false, stderr: false });
+        this.worker.unref?.();
+        this.worker.on('message', (m) => this.onMessage(m));
+        this.worker.on('error', failed);
+        this.worker.on('exit', (code) => exited(code, null));
+        this.send = (m) => this.worker.postMessage(m);
+        this.kill = () => { try { this.worker.terminate(); } catch { /* gone */ } };
+      }
+      log.info?.(`[plugins] match host ${this.tag} started for ${this.plugins} (${this.transport})`);
     }
 
     post(m) {
@@ -107,7 +138,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
         if (p) queueMicrotask(() => p.crash(this.dead.reason, this.dead.detail));
         return;
       }
-      this.worker.postMessage(m);
+      try { this.send(m); } catch (e) { log.warn?.(`[plugins] match host ${this.tag} cannot take a message: ${e?.message || e}`); }
     }
 
     forget(matchId) {
@@ -148,7 +179,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       this.dead = { reason: reason || 'plugin-crash', detail };
       if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
       if (hosts.get(this.cs) === this) hosts.delete(this.cs);
-      try { this.worker.terminate(); } catch { /* gone */ }
+      this.kill();
       const list = [...this.matches.values()];
       this.matches.clear();
       if (reason && list.length) log.warn?.(`[plugins] match host ${this.tag} (${this.plugins}) stopped (${reason}${detail ? `: ${detail}` : ''}) — ${list.length} match(es) ended`);

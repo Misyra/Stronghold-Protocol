@@ -1,10 +1,10 @@
-// server/match/host/entry.js — a match host worker (DESIGN §32.6, P1c; the design study's §6.4 方案 B): one worker thread
-// per content set with gameplay plugins, running every match of that set. A worker has its own module table, so the
-// process-wide singletons of the server's code — server/data.js getData(), the content modules' gameData(), the kit
-// registries, the meta effect registry — are this content set's: not one line of the sim, the match or the content code
-// changes for it.
+// server/match/host/entry.js — a match host (DESIGN §32.6, P1c; the design study's §6.4 方案 B): one worker thread — or,
+// with the `process` transport, one child process (server/match/host/index.js) — per content set with gameplay plugins,
+// running every match of that set. A worker has its own module table, so the process-wide singletons of the server's
+// code — server/data.js getData(), the content modules' gameData(), the kit registries, the meta effect registry — are
+// this content set's: not one line of the sim, the match or the content code changes for it.
 //
-// Boot (workerData: { cs, hashInput, files, options }):
+// Boot (a worker's workerData — a child process's first message, { type: 'init', … } — is { cs, hashInput, files, options }):
 //   1. heartbeats start (every options.heartbeatMs, default 1 s: server/match/host/index.js terminates a worker whose
 //      heartbeats stop — its matches end with 'plugin-hang');
 //   2. the content set is checked: every data file's bytes (`files`, as served) hash to its entry of `hashInput.data`,
@@ -28,8 +28,19 @@ import { pathToFileURL } from 'node:url';
 import { getData, setData } from '../../data.js';
 import { contentHashOf } from '../../../shared/plugins/identity.js';
 
-const { cs, hashInput, files, options = {} } = workerData || {};
-const post = (m) => { try { parentPort.postMessage(m); } catch (e) { try { parentPort.postMessage({ type: 'log', level: 'error', text: `[host] a message could not be posted: ${e?.message || e}` }); } catch { /* gone */ } } };
+/** A worker thread (parentPort), else a child process (its IPC channel). */
+const viaWorker = !!parentPort;
+const rawPost = viaWorker ? (m) => parentPort.postMessage(m) : (m) => { if (process.connected) process.send(m); };
+const post = (m) => { try { rawPost(m); } catch (e) { try { rawPost({ type: 'log', level: 'error', text: `[host] a message could not be posted: ${e?.message || e}` }); } catch { /* gone */ } } };
+/** The content set and the options: a worker's workerData now, a child process's first message (init). */
+let cs = null;
+let hashInput = null;
+let files = null;
+let options = {};
+const adopt = (init) => { ({ cs, hashInput, files } = init || {}); options = (init && init.options) || {}; };
+if (viaWorker) adopt(workerData);
+// a child process whose parent is gone has nothing left to do
+if (!viaWorker) process.on('disconnect', () => process.exit(0));
 const text = (a) => a.map((x) => (x instanceof Error ? (x.stack || x.message) : typeof x === 'string' ? x : (() => { try { return JSON.stringify(x); } catch { return String(x); } })())).join(' ').slice(0, 4000);
 const log = {
   info: (...a) => post({ type: 'log', level: 'info', text: text(a) }),
@@ -37,8 +48,9 @@ const log = {
   error: (...a) => post({ type: 'log', level: 'error', text: text(a) }),
   debug: () => {},
 };
-const beat = setInterval(() => post({ type: 'hb' }), Math.max(50, Number(options.heartbeatMs) || 1000));
-void beat;
+let beat = null;
+const startBeat = () => { if (!beat) beat = setInterval(() => post({ type: 'hb' }), Math.max(50, Number(options.heartbeatMs) || 1000)); };
+if (viaWorker) startBeat();
 
 /** @type {any[]} messages that came before the boot finished */
 const queue = [];
@@ -49,13 +61,23 @@ let VirtualScheduler = null;
 const matches = new Map();
 const ERR_INTERNAL = 'INTERNAL';
 
-parentPort.on('message', (m) => { if (!booted) queue.push(m); else handle(m); });
+let started = viaWorker;
+const onMessage = (m) => {
+  if (!started) {
+    // a child process: the first message is the content set (init); the boot starts then
+    if (m && m.type === 'init') { started = true; adopt(m); startBeat(); run(); }
+    return;
+  }
+  if (!booted) queue.push(m); else handle(m);
+};
+if (viaWorker) parentPort.on('message', onMessage); else process.on('message', onMessage);
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function boot() {
   if (!hashInput || typeof hashInput !== 'object' || !hashInput.data || !files) throw new Error('no content set was given');
   for (const [name, h] of Object.entries(hashInput.data)) {
+    // (a child process receives the bytes as a Uint8Array: the IPC channel's structured clone)
     const b = files[name];
     if (!b) throw new Error(`data/${name}.json is missing`);
     if (sha256(b) !== h) throw new Error(`data/${name}.json does not match its hash in the content set (changed on disk since the server started?)`);
@@ -173,13 +195,16 @@ function handle(m) {
   }
 }
 
-boot().then(async () => {
-  installed = getData();
-  booted = true;
-  post({ type: 'ready' });
-  for (const m of queue.splice(0)) handle(m);
-}, (e) => {
-  post({ type: 'boot-error', error: String(e?.message || e).slice(0, 300) });
-  log.error('[host] the content set did not boot', e);
-  setTimeout(() => process.exit(1), 50);
-});
+function run() {
+  boot().then(async () => {
+    installed = getData();
+    booted = true;
+    post({ type: 'ready' });
+    for (const m of queue.splice(0)) handle(m);
+  }, (e) => {
+    post({ type: 'boot-error', error: String(e?.message || e).slice(0, 300) });
+    log.error('[host] the content set did not boot', e);
+    setTimeout(() => process.exit(1), 50);
+  });
+}
+if (viaWorker) run();

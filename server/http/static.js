@@ -23,8 +23,9 @@
 //                cached for good — for this server's vanilla `cs` (its first 16 hex digits) and, from P1c (DESIGN §32.6),
 //                a content set with gameplay plugins a room uses or used lately (server/plugins/contentSets.js: the same
 //                shape with `vanilla: false`, its plugins, settings and modes)
-//     /cs/<cs16>/data/<file>.json → a data file that content set patched, its served bytes from memory (cached for good;
-//                every other data file of the set is named by its plain /data/<file>?v=<8 hex> URL in the manifest)
+//     /cs/<cs16>/data/<file>.json, /cs/<cs16>/i18n/<lang>.json → a data or translation file that content set changed,
+//                its served bytes from memory (cached for good; every other file of the set is named by its plain
+//                /data/…?v=<8 hex> URL in the manifest)
 //     /vs/<vs16>/overlay.json → a visual set of cosmetic plugins (server/plugins/visualSet.js): its composition and
 //                its plugins' writes, which a page lays over the manifest it loaded itself (a room's set, a player's
 //                personal plugin) — no-cache, the body's hash as ETag; 404 for a set this server does not know

@@ -128,12 +128,8 @@ function create(matchId, opts) {
       ...opts,
       // the content set installed at boot (server/data.js getData)
       data: installed,
-      log: {
-        info: (...a) => log.info(`[match ${opts.roomCode ?? '----'}]`, ...a),
-        warn: (...a) => log.warn(`[match ${opts.roomCode ?? '----'}]`, ...a),
-        error: (...a) => log.error(`[match ${opts.roomCode ?? '----'}]`, ...a),
-        debug: () => {},
-      },
+      // the match names itself in its lines ([match <code>] …), as in the server process (the host adds [cs:<8 hex>])
+      log,
       now: Date.now,
       send: (playerId, msg) => { post({ type: 'send', matchId, playerId, msg }); return true; },
       broadcast: (msg) => post({ type: 'broadcast', matchId, msg }),

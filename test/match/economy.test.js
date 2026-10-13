@@ -153,14 +153,28 @@ test('refresh: 1 fund, free refreshes first, rerolls every slot; freeze: one tog
   assert.deepEqual(ps.shop.slots.slice(1, keep.length + 1).map((s) => s && s.id), keep);
   assert.equal(ps.shop.frozen, false, 'the freeze is consumed at the round start');
   assert.ok(ps.shop.slots.every((s) => !s || !s.frozen));
-  // refresh while frozen rerolls everything; the new slots stay frozen until the next round
+  // a refresh that fails (no funds, no free refresh) leaves the freeze on (GitHub #584)
   m.handle('p_0', { t: 'g.freeze' });
+  ps.funds = 0; ps.shop.freeRefreshes = 0;
+  assert.deepEqual(m.handle('p_0', { t: 'g.refresh' }), { error: ERR.NO_FUNDS });
+  assert.equal(ps.shop.frozen, true, 'a failed refresh keeps the freeze');
+  assert.ok(ps.shop.slots.every((s) => !s || s.sold || s.frozen));
+  // a manual refresh while frozen rerolls everything and cancels the freeze: the new cards are not frozen (official)
   ps.funds = 50;
   const before = ps.shop.slots.map((s) => s && s.id).join();
-  let changed = false;
+  assert.deepEqual(m.handle('p_0', { t: 'g.refresh' }), { ok: true });
+  assert.equal(ps.shop.frozen, false, 'the refresh cancels the freeze');
+  assert.ok(ps.shop.slots.every((s) => !s || !s.frozen), 'the new cards are not frozen');
+  assert.equal(ps.funds, 50 - h.m.gd.refreshPrice);
+  let changed = ps.shop.slots.map((s) => s && s.id).join() !== before;
   for (let i = 0; i < 5 && !changed; i++) { m.handle('p_0', { t: 'g.refresh' }); changed = ps.shop.slots.map((s) => s && s.id).join() !== before; }
-  assert.ok(changed, 'refresh rerolls frozen slots');
-  assert.ok(ps.shop.slots.every((s) => !s || s.frozen));
+  assert.ok(changed, 'refresh rerolls the frozen slots');
+  // a free refresh cancels it too
+  m.handle('p_0', { t: 'g.freeze' });
+  ps.shop.freeRefreshes = 1;
+  assert.deepEqual(m.handle('p_0', { t: 'g.refresh' }), { ok: true });
+  assert.equal(ps.shop.frozen, false, 'a free refresh cancels the freeze as well');
+  assert.ok(ps.shop.slots.every((s) => !s || !s.frozen));
   m.dispose();
 });
 

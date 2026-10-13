@@ -26,15 +26,23 @@ export function CreateDialog({ open, templates, onClose, onCreated }) {
   const [tpl, setTpl] = useState(null);
   const [target, setTarget] = useState(null);
   const [name, setName] = useState('');
+  const [nameAuto, setNameAuto] = useState(true);
   const [id, setId] = useState('');
   const [idTouched, setIdTouched] = useState(false);
   const [author, setAuthor] = useState('');
   const [license, setLicense] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { if (open) { setStep(0); setTpl(null); setTarget(null); setName(''); setId(''); setIdTouched(false); setError(''); } }, [open]);
-  // the default name: what it changes and how
-  useEffect(() => { if (tpl && step === 2 && !name) setName(target ? `${targetName(target)} · ${templateTitle(tpl.id)}` : templateTitle(tpl.id)); }, [step]);
+  useEffect(() => {
+    if (!open) return;
+    setStep(0); setTpl(null); setTarget(null); setName(''); setNameAuto(true); setId(''); setIdTouched(false); setAuthor(''); setLicense(''); setError('');
+  }, [open]);
+  // the default name: what it changes and how — it follows another target or template until the author types one
+  useEffect(() => {
+    if (!tpl || step !== 2 || (name && !nameAuto)) return;
+    setName(target ? `${targetName(target)} · ${templateTitle(tpl.id)}` : templateTitle(tpl.id));
+    setNameAuto(true);
+  }, [step, target, tpl]);
   // the id follows the name until the author edits it
   useEffect(() => {
     if (!open || step !== 2 || idTouched) return undefined;
@@ -74,7 +82,7 @@ export function CreateDialog({ open, templates, onClose, onCreated }) {
     ${step === 2 && tpl ? html`<div class="st-form">
       ${target ? html`<p class="st-note">${t('替换：{name}（{kind}）', { name: targetName(target), kind: kindLabel(target.kind) })}</p>` : null}
       <label class="st-field-row"><span>${t('插件名字')}</span>
-        <input class="st-input" value=${name} maxLength="60" onInput=${(e) => setName(e.currentTarget.value)} data-testid="create-name" /></label>
+        <input class="st-input" value=${name} maxLength="60" onInput=${(e) => { setName(e.currentTarget.value); setNameAuto(false); }} data-testid="create-name" /></label>
       <label class="st-field-row"><span>${t('插件 id（文件夹名）')}</span>
         <input class=${cx('st-input', !idOk && id && 'is-bad')} value=${id} maxLength="32" onInput=${(e) => { setIdTouched(true); setId(e.currentTarget.value.toLowerCase()); }} data-testid="create-id" />
         <small>${t('自动生成；2–32 个小写英文字母、数字或 -')}</small></label>

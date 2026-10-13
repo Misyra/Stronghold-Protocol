@@ -68,7 +68,9 @@ export function entryOverlay(target, value = {}) {
  */
 export function createPlugin(template, { id, name = '', target = null, authors = [], license = '', credits = '', lang = 'zh' }) {
   if (!isPluginId(id)) throw Object.assign(new Error(`${id} is not a plugin id`), { code: 'PLUGIN_ID' });
-  const text = String(name || id).trim().slice(0, 60) || id;
+  /** A text the author gave (a string; anything else is none). @param {unknown} v @param {number} max */
+  const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const text = str(name, 60) || id;
   /** @type {Record<string, any>} */
   const manifest = {
     $schema: '../../schemas/plugin.schema.json',
@@ -80,10 +82,10 @@ export function createPlugin(template, { id, name = '', target = null, authors =
     class: template.class,
     scope: ['room', 'personal'],
   };
-  const who = (Array.isArray(authors) ? authors : [authors]).map((a) => String(a || '').trim().slice(0, 200)).filter(Boolean).slice(0, 32);
+  const who = (Array.isArray(authors) ? authors : [authors]).map((a) => str(a, 200)).filter(Boolean).slice(0, 32);
   if (who.length) manifest.authors = who;
-  if (license) manifest.license = String(license).trim().slice(0, 100);
-  if (credits) manifest.credits = String(credits).trim().slice(0, 500);
+  if (str(license, 100)) manifest.license = str(license, 100);
+  if (str(credits, 500)) manifest.credits = str(credits, 500);
   manifest.permissions = ['assets.override'];
   manifest.assets = template.overlay(target);
   return { manifest, files: { 'README.md': readmeOf({ id, name: text, template: template.id, target }) } };

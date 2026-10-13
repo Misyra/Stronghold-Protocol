@@ -27,12 +27,20 @@ export function InfoForm({ state, busy, onSave, onFix }) {
     room: Array.isArray(m.scope) ? m.scope.includes('room') : true, personal: Array.isArray(m.scope) ? m.scope.includes('personal') : true,
   });
   const [f, setF] = useState(init);
-  useEffect(() => setF(init()), [state.text]);
+  const [was, setWas] = useState(init);
+  useEffect(() => { const v = init(); setF(v); setWas(v); }, [state.text]);
   const set = (k) => (e) => setF({ ...f, [k]: e.currentTarget.type === 'checkbox' ? e.currentTarget.checked : e.currentTarget.value });
-  const save = () => onSave({
-    name: f.name, description: f.description, version: f.version, authors: f.authors, license: f.license, credits: f.credits, homepage: f.homepage,
-    scope: [...(f.room ? ['room'] : []), ...(f.personal ? ['personal'] : [])],
-  }, lang);
+  const fieldsOf = (v) => ({
+    name: v.name, description: v.description, version: v.version, authors: v.authors, license: v.license, credits: v.credits, homepage: v.homepage,
+    scope: [...(v.room ? ['room'] : []), ...(v.personal ? ['personal'] : [])],
+  });
+  // only the fields the author changed: a name shown from another language is not written into this one, and a version
+  // that is not right yet does not hold back the other fields
+  const save = () => {
+    const now = fieldsOf(f);
+    const before = fieldsOf(was);
+    onSave(Object.fromEntries(Object.entries(now).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(before[k]))), lang);
+  };
   const at = (k) => issuesAt(state.check.issues, { at: [k] });
   const row = (k, label, input, hint = '') => html`<div class="st-field-row">
     <span>${label}</span>${input}${hint ? html`<small>${hint}</small>` : null}

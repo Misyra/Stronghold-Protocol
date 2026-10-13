@@ -206,7 +206,7 @@ test('manifest 2: inline assets name art, models, audio or fonts; a theme never 
 
 test('the classes: lang and cosmetic load (P1a), content is planned, code is never loaded; manifest 1 types map onto them', () => {
   assert.deepEqual(Object.keys(PLUGIN_CLASSES), ['lang', 'cosmetic', 'content', 'script', 'ui', 'trusted']);
-  assert.deepEqual(Object.keys(PLUGIN_CLASSES).map(classStatus), ['loaded', 'loaded', 'planned', 'unsupported', 'unsupported', 'unsupported']);
+  assert.deepEqual(Object.keys(PLUGIN_CLASSES).map(classStatus), ['loaded', 'loaded', 'planned', 'unsupported', 'loaded', 'unsupported']);
   assert.deepEqual(Object.entries(PLUGIN_CLASSES).filter(([, c]) => !c.unofficial).map(([k]) => k), ['lang'], 'everything but a language is unofficial');
   assert.equal(PACK_TYPES_COMPAT, PACK_TYPES, 'shared/packs.js forwards the type table');
   assert.deepEqual(Object.entries(PACK_TYPES).map(([k, v]) => [k, v.status, v.class]), [['lang', 'supported', 'lang'], ['assets', 'planned', 'cosmetic'], ['data', 'planned', 'content']]);

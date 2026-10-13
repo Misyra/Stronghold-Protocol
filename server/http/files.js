@@ -274,8 +274,9 @@ function cacheControlFor(ext, mountName, segments, query) {
 
 /**
  * One file → the response.
- * @param {{ contentHash?: string | null, cacheControl?: string | null }} [opts] contentHash: the file's content hash
- *   (assetIndex.js) — the ETag then; cacheControl: overrides the policy of its path (a content-hashed URL)
+ * @param {{ contentHash?: string | null, cacheControl?: string | null, headers?: Record<string, string> | null }} [opts]
+ *   contentHash: the file's content hash (assetIndex.js) — the ETag then; cacheControl: overrides the policy of its
+ *   path (a content-hashed URL); headers: extra response headers (a ui plugin's Content-Security-Policy), on 200 and 304
  */
 export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, opts = {}) {
   const ext = path.extname(absPath).toLowerCase();
@@ -295,6 +296,7 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
     'Last-Modified': lastModified,
   };
   if (compressible) headers.Vary = 'Accept-Encoding';
+  if (opts.headers) for (const [k, v] of Object.entries(opts.headers)) if (v != null && v !== '') headers[k] = v;
 
   if (isNotModified(req, etag, stat.mtime)) {
     res.writeHead(304, headers);

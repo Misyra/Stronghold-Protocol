@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<!-- Served from /public, so the /p/ CSP header is not on this page. The iframe is sandboxed (allow-scripts only).
+     The check below is the same rule as shared/plugins/ui.js frameEntryAllowed — keep them together. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
+<title></title>
+</head>
+<body>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var id = q.get('id') || '';
+  var entry = q.get('entry') || '';
+  function packPath(rel) {
+    if (typeof rel !== 'string' || rel.length > 200 || rel.length === 0) return false;
+    if (!/^[A-Za-z0-9._ -]+(?:\/[A-Za-z0-9._ -]+)*$/.test(rel)) return false;
+    var parts = rel.split('/');
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i] || parts[i] !== parts[i].trim() || parts[i].charAt(0) === '.') return false;
+    }
+    return true;
+  }
+  function allowed(pluginId, target) {
+    if (!/^[a-z0-9][a-z0-9-]{1,31}$/.test(pluginId)) return false;
+    if (typeof target !== 'string') return false;
+    if (/[\\\s?#]/.test(target) || target.indexOf('..') !== -1 || target.indexOf('//') !== -1) return false;
+    var m = /^\/p\/([a-z0-9][a-z0-9-]{1,31})\/([0-9a-f]{8})\/(.+\.html)$/.exec(target);
+    return !!m && m[1] === pluginId && packPath(m[3]);
+  }
+  if (allowed(id, entry)) location.replace(entry);
+})();
+</script>
+</body>
+</html>

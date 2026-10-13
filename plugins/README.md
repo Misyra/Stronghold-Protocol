@@ -12,12 +12,14 @@ folders (manifest, file types, sizes, paths, JSON).
 - class `cosmetic` (art, models, audio) loads: a room's host switches it on for the whole room (the room's 插件 panel),
   a player for themself (设置 → 外观插件) — it changes what is shown and heard, never a battle;
 - class `content` (data: numbers, modes, new operators and enemies) is checked and listed, not applied yet;
-- no plugin code runs — classes `script`, `ui` and `trusted` are listed as not supported;
+- class `ui` (an interface widget) loads in a sandboxed frame: each player switches it on for this browser (设置 →
+  界面插件). It can read a little of the match on screen and cannot play it. It does not change `cs`;
+- classes `script` and `trusted` are listed as not supported — no plugin code runs inside a battle;
 - nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
   stay yours, and an update never touches them.
 
-Start from `_template/cosmetic/` (references to the installation's own art, no files); `node tools/plugin.mjs pack <dir>`
-writes the `plugin.lock.json` a plugin with Spine models needs.
+Start from `_template/cosmetic/` (references to the installation's own art, no files) or `_template/ui/` (a sandboxed
+damage tally). `node tools/plugin.mjs pack <dir>` writes the `plugin.lock.json` a plugin with Spine models needs.
 
 ```json
 {

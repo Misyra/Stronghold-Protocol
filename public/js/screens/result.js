@@ -169,6 +169,7 @@ export function ResultView({ res, pub = null, myId = null, backLabel, onBack, qu
         ${r.players.length ? r.players.map((p) => html`<${PlayerCard} key=${p.playerId} p=${p} myId=${myId} titles=${titles} best=${best} solo=${r.players.length < 2} />`)
           : html`<p class="t-dim">${t('暂无结算数据')}</p>`}
       </section>
+      <div class="ui-slot" data-ui-slot="result.tab" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>
     </main>
   </div>`;
 }

@@ -8,6 +8,8 @@ phases are DESIGN §32 (`docs/history/0.3.0.md`); this file is the reference.
 with a hash (P0); a room's host switches the server's cosmetic plugins on for the whole room, a player switches them on
 for themself (§9) — art, models and audio only: the battles stay the original ones and a room's `cs` stays the vanilla
 one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before; data plugins come next (P1b).
+P4 adds interface plugins (§14): a page in a sandboxed frame, switched on in this browser, read-only, never a match
+intent, and not an input of `cs`.
 
 | File | Role |
 |---|---|
@@ -15,6 +17,12 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
 | `shared/plugins/identity.js` | the content hash `cs`: canonical JSON and its composition |
 | `shared/plugins/visual.js` | a cosmetic plugin's asset overlay (§9): reading and checking it, references, resolution to served URLs, the merge with its override warnings, the visual hash `vs`, the browser's check of a visual set |
 | `shared/plugins/order.js` | which plugins a set holds and in what order: requirements, conflicts, load-order hints, priority, id |
+| `shared/plugins/ui.js` | the interface-plugin bridge (§14): the postMessage shapes, the rate and storage limits, the public and private subsets, the frame URL |
+| `public/js/ui/uiPlugins.js` | this browser's interface-plugin switches and the host's recommendations (localStorage) |
+| `public/js/ui/pluginFrame.js` | the sandboxed iframes, the slots, the read-only feed |
+| `public/plugin-frame.html` | the redirect into a ui plugin's page (the frame CSP of that page is the `/p/` header) |
+| `plugins/_template/ui/` | the interface-plugin template: a damage tally |
+| `schemas/ui.schema.json` | the plugin→host messages (C7) |
 | `shared/sha256.js` | SHA-256 in plain JavaScript (the same digest in Node and every browser, no `crypto.subtle`) |
 | `server/plugins/registry.js` | the registry: the language folders, `packs/` and `plugins/` — discovery, validation (a cosmetic plugin's overlay too, its files hashed), `/packs/index.json`, `/plugins/index.json`, what may be served |
 | `server/plugins/identity.js` | this server's vanilla content and its `cs`, the manifest at `/cs/<cs16>/index.json` |
@@ -25,7 +33,7 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
 | `public/js/ui/pluginTag.js` | the room's 插件 tag and the small facts the screens show (the panel loads when the tag is tapped) |
 | `public/js/ui/pluginPanel.js` | the room's 插件 panel and the title screen's list of the server's plugins — loaded when one opens |
 | `tools/plugin.mjs` | `list`, `check`, `pack` |
-| `plugins/README.md`, `plugins/_template/cosmetic/` | the folder's readme and the cosmetic template — the only tracked files of the folder |
+| `plugins/README.md`, `plugins/_template/` | the folder's readme and the templates (`cosmetic/`, `ui/`) — the only tracked files of the folder |
 
 ## 1. Principles (the maintainer's decisions of 2026-10-12)
 
@@ -36,9 +44,10 @@ one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as be
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), later the HUD, the result and
   the statistics (plugin matches stay out of the overview by default; a match with cosmetic plugins only is still the
   original game — §9).
-- **No third-party code** in the first plugins: art and data only. Code (`script`, `ui`, `trusted`) is a later,
-  separate decision (a declarative DSL first, then a sandbox; full trust only with the server owner's and every
-  player's explicit consent).
+- **No third-party code in a battle.** Art and data plugins carry no code. An interface plugin (P4, §14) is the one
+  page that runs, and only inside a sandboxed iframe: it sees a read-only feed and cannot send a match intent.
+  Classes `script` and `trusted` stay unsupported (a declarative DSL first, then any further sandbox; full trust only
+  with the server owner's and every player's explicit consent).
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
   still check a battle). Players never install gameplay content of their own.
@@ -62,11 +71,13 @@ What this version does with each class:
 | `cosmetic` | art, models (Spine 3.8), audio (fonts and theme colours later) | **loaded** (P1a, §9) — a room's host switches it on for the room, a player for themself; the files its overlay names served at `/p/<id>/<hash8>/<path>` |
 | `content` | data patches and new records: numbers, economy, modes, waves, operators, enemies | planned (P1b): checked and listed, not applied |
 | `script` | code the battle or the match runs | not supported: listed, never loaded |
-| `ui` | interface widgets in a sandboxed frame | not supported |
+| `ui` | an interface widget: an html page in a sandboxed frame | **loaded** (P4, §14) — a player switches it on for this browser; its frame files served at `/p/<id>/<hash8>/<path>` with a frame CSP |
 | `trusted` | page or server code with full trust | not supported |
 
-Nothing of a plugin folder is served except the files a `lang` manifest names and the files a loaded `cosmetic`
-plugin's overlay names — never `plugin.json`, the lock file, a document or any other file of the folder.
+Nothing of a plugin folder is served except the files a `lang` manifest names, the files a loaded `cosmetic`
+plugin's overlay names, and the frame files of a loaded `ui` plugin (`.html`, `.js`, `.css`, `.png` under its
+`entry.client`, §14) — never `plugin.json`, the lock file, a document or any other file of the folder. A ui plugin's
+`/p/` responses carry a frame Content-Security-Policy; cosmetic art does not.
 
 ## 3. The manifest (manifest 2)
 
@@ -169,10 +180,13 @@ file's URL (`/data/<file>?v=<8 hex>`), hash and size — cached for good; any ot
 (never cached) is the catalogue: `{ version, app, api, content: { vanilla }, plugins: [entry …] }`, every plugin and
 pack found by class and id, with its `status` (`loaded` / `planned` / `unsupported`), `unofficial`, its manifest's
 public fields, size and file count — never a path on the server; a loaded cosmetic plugin adds `vs` (the visual set of
-it alone, §9) and `artBytes` (the art it serves).
+it alone, §9) and `artBytes` (the art it serves). A loaded interface plugin adds `slots`, `entry` (a path inside the
+plugin), `vs`, `frameBytes` and `frameFiles` (`{ path: sha256 }`, §14) — not `artBytes`.
 
-Cosmetic plugins never change `cs`: art changes no battle, so a room whose plugins are all cosmetic plays the vanilla
-`cs` — the art it draws is named by the visual hash `vs` (§9).
+Cosmetic plugins and interface plugins never change `cs`: neither changes a battle, so a room whose plugins are only
+of those classes plays the vanilla `cs`. Installing a ui plugin, or editing its page, does not change `cs`. Editing a
+served `/shared/**.js` does, because `cs` hashes every one of them — including `shared/plugins/ui.js`. The art a
+cosmetic plugin draws, and the frame an interface plugin draws, are named by the visual hash `vs` (§9, §14).
 
 ## 7. Language packs
 
@@ -388,6 +402,51 @@ worker per content set, the client loading and checking `/cs/<cs>/`, the unoffic
 the statistics). Later, by separate decisions: themes and fonts for cosmetic plugins, a declarative DSL, sandboxed code,
 trusted code. DESIGN §32 keeps the plan and its open questions.
 
+§11 (data plugins, P1b), §12 (per-room content sets, P1c) and §13 (the script classes, P2) are reserved. Interface
+plugins are §14 so those numbers stay free.
+
+## 14. Interface plugins (P4)
+
+A ui plugin is a page. The server lists it and serves its frame files; each player decides, in this browser, whether
+to show it. It is unofficial. It is not a member of a room's `plugins[]` and a room cannot switch it on
+(`PLUGIN_BLOCKED`). It adds nothing to `cs` and it does add its own `vs` (§6).
+
+**Manifest.** `class: "ui"`, `scope` including `personal` (that is the only scope this class has), permission
+`ui.frame`, `entry.client` an `.html` path, `slots` any of `hud.right`, `result.tab`, `stats.tab`, `room.panel`.
+`description` is the 简介. The `.html`, `.js`, `.css` and `.png` files must sit in the directory of `entry.client`.
+Start from `plugins/_template/ui/` (a damage tally). A folder whose name starts with `_` is a template: the registry
+never loads it.
+
+**The frame.** The page runs in `<iframe sandbox="allow-scripts">` — no `allow-same-origin`, so its origin is the
+opaque string `"null"` and it cannot read this site's storage or credentials. The host loads it through
+`public/plugin-frame.html`, which redirects only to that plugin's own `/p/<id>/<hash8>/<entry>`. Files at `/p/` for a
+ui plugin, and not cosmetic art, are sent with
+`Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'`
+(`UI_FRAME_CSP`). [ASSUMED] `'self'` may not match the opaque origin, so an inline script runs and a separate script
+file may not; that is not repaired by granting the iframe the page's origin. There is no CSP on the rest of the site.
+
+**The feed** is postMessage API v1 (`shared/plugins/ui.js`, `schemas/ui.schema.json`). The host sends the player's
+visible `m.public` (a subset), the player's own `m.private` (a subset), throttled events and snapshots of the battle
+on screen, and unit stats when the plugin asks. The plugin may ask for a slot, a height, a short notice, and a few
+namespaced storage keys (`sp.plugin.<id>.`, proxied by the host page). It cannot send a match intent: a message whose
+type is `hello`, `ping`, `room.*`, `g.*` or `b.*`, or that carries one, is rejected. The host never turns a plugin
+message into a client→server message.
+
+**Limits [ASSUMED]:** 20 messages a second per plugin, burst 40; battle pushes at 4 Hz, ≤ 40 events a batch, a
+snapshot over 48 KB dropped; a plugin message over 8 KB refused; storage keys of 1–64 characters from
+`A–Z a–z 0–9 . _ -`, not `__proto__`, `prototype`, `constructor` or `..`, a JSON value ≤ 4096 bytes, ≤ 32 keys and
+≤ 32 KB per plugin; height 48–480 px; a notice ≤ 80 characters; one slot per plugin, one plugin per slot, at most 8
+mounted. The private subset drops loadout, ops, diy, effects, nextEnemies, personalChoice, rewardOffer and tokens.
+The exact allowlists are `subsetPublic` and `subsetPrivate`.
+
+**Switches.** 设置 → 「界面插件」 is `localStorage` (`sp.pref.ui-plugins`). It does not affect other players. The host
+may 「推荐」 (`sp.pref.ui-recommend`); the room shows 「房主推荐」 and each player still decides. [ASSUMED] the
+recommendation is this browser's until a later phase copies it onto the existing `room.state` — no new protocol
+message. The host may toggle it during a match because it changes no match.
+
+**Errors.** `PLUGIN_SLOT`, `PLUGIN_RATE`, `PLUGIN_STORAGE`, `PLUGIN_INTENT`, `PLUGIN_SHAPE`, `PLUGIN_LIMIT` live in
+`shared/plugins/ui.js` and are merged into the shared error catalogue at integration (C6).
+
 ## Tests
 
 `test/plugins/manifest.test.js` (manifest 2 and 1, the problems and warnings, settings, permissions, files and limits,
@@ -410,4 +469,7 @@ the panel), `test/ui/plugins-audio.test.js` (a plugin sound without its extensio
 `test/ui/stats.test.js` (the records' `vs`), `test/media-url.test.js`, `test/ui/buildGuard.test.js` (onHealth),
 `test/diag.test.js` (the content line) and the browser test `test/ui/plugins.e2e.test.js` (`SP_E2E=1`: the host's plugin
 shows on another player's page, a personal plugin on its own page only; a server without plugins is never asked for its
-catalogue; a personal plugin switched during a match changes the piece already on the board).
+catalogue; a personal plugin switched during a match changes the piece already on the board). P4:
+`test/plugins/ui.test.js` (message shape and rate, storage quota, slots, a ui manifest accepted or refused, the `/p/`
+CSP, a ui plugin leaving `cs` alone) and `test/ui/ui-plugins.e2e.test.js` (`SP_E2E=1`: the example widget in its slot,
+a battle event, a match intent rejected).

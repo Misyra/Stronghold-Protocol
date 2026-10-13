@@ -108,8 +108,8 @@ export function resetData() {
  * P1c) calls it with its content set's merged data before it imports the match: every module of that worker that reads
  * getData() (the content modules' gameData(), builtinMeta, the sim's default DataSource) then sees the content set,
  * never the vanilla files. The main process never calls it. The official-bounds cache (shared/plugins/officialBounds.js,
- * filled by getData() from the vanilla files) stays empty in such a worker, as in a browser: a modded battle's runtime
- * caps are PLUGIN_BOUND_FLOOR on both sides (the page that runs it and the worker that checks or takes it over).
+ * filled by getData() from the vanilla files in the main process) is never filled from `data` (a plugin must not raise its
+ * own caps): the match host installs the content set's snapshot after this (entry.js), as its pages do (runner.js).
  * @param {Record<string, any>} data
  * @returns {Readonly<Record<string, any>>}
  */

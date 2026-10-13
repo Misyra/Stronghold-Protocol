@@ -151,6 +151,29 @@ describe('match hosts (P1c): a content set\'s matches in a match host of its own
       other.dispose();
     } finally { hosts.close(); }
   });
+  test('the official-bounds snapshot: a match host installs the one the server validated the set against (the caps its pages install), never a scan of the set', { timeout: 60_000 }, async () => {
+    // a plugin whose own numbers are far above the official maximum: a scan of the set would raise the cap with them
+    const dir = pluginsDir({ caps: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.34) }] });
+    const contents = setsOf(dir);
+    const r = contents.resolve(['caps']);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.set.bounds?.v, 1, 'the set carries the snapshot');
+    assert.equal(r.set.bounds.bb.times, 12);
+    const hosts = createMatchHosts({ contents, log: quiet, options: { matchModule: FIXTURE } });
+    const human = [{ seat: 0, playerId: 'p_1', name: 'P1', isBot: false, connected: true }];
+    const out = frames();
+    try {
+      const m = hosts.create(r.set.cs, matchOpts(r.set.cs, human, out));
+      m.start();
+      assert.deepEqual(await m.handle('p_1', { t: 'g.emote', id: EMOTES[0] }), { ok: true });
+      let probe = null;
+      for (let i = 0; i < 100 && !probe; i++) { probe = out.sent.map(([, x]) => x).find((x) => x.t === 'm.toast' && /^probe;/.test(x.text || '')); if (!probe) await delay(50); }
+      assert.ok(probe, 'the probe answered');
+      assert.match(probe.text, /;bond=0\.34;/);
+      assert.match(probe.text, /;times-cap=120$/, '10 × the official 12 — the page\'s cap; the floor 64 without the snapshot');
+      m.dispose();
+    } finally { hosts.close(); }
+  });
 });
 
 describe('match hosts in rooms (P1c): verification, the watchdog, crashes', () => {
@@ -216,18 +239,20 @@ describe('match hosts in rooms (P1c): verification, the watchdog, crashes', () =
   // ERR_WORKER_OUT_OF_MEMORY (the worker alone); what aborts a worker thread's WHOLE process is one large allocation —
   // `new Array(n).fill(…)`, which the bounty plan did for a plugin's minReplacedEnemyCount (now clamped: waves.js,
   // test/match/waves-plugin-bounds.test.js). The default child process aborts alone in either case.
-  test('test data with extreme numbers (maxLevelCnt 1e9): its match host (a child process) runs out of memory or stops beating — the room is back in its lobby', { timeout: 90_000 }, async () => {
-    const dir = pluginsDir({ endless: [{ data: ['p.json'] }, { 'p.json': { patch: 1, ops: [{ op: 'set', file: 'factions', path: ['generation', 'maxLevelCnt'], value: 1e9 }] } }] });
+  test('a match host that runs out of memory (a child process): the room is back in its lobby, the server lives', { timeout: 90_000 }, async () => {
+    // (the data that once did it — factions.generation.maxLevelCnt 1e9 — is refused by the data check now, PLUGIN_DATA_BOUND,
+    // and the type schedule stops at 256 besides: the fixture allocates without end instead, as a bomb past every check would)
+    const dir = pluginsDir({ endless: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.36) }] });
     const errors = [];
     const log = { ...quiet, warn: (...a) => errors.push(a.join(' ')), error: (...a) => errors.push(a.map(String).join(' ')) };
     const srv = await startServer({ port: 0, host: '127.0.0.1', log, pluginsDir: dir, assetIndex: false,
-      matchHost: { transport: 'process', watchdogMs: 4000, resourceLimits: { maxOldGenerationSizeMb: 160, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 } } });
+      matchHost: { transport: 'process', matchModule: FIXTURE, watchdogMs: 4000, resourceLimits: { maxOldGenerationSizeMb: 160, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 } } });
     servers.push(srv);
     const host = await player(srv, 'Doctor');
-    const st = await moddedRoom(srv, host, 'endless');
-    assert.equal(srv.contents.dataOf(st.content.cs).factions.generation.maxLevelCnt, 1e9);
+    await moddedRoom(srv, host, 'endless');
     await ok(host, { t: 'room.start' });
     await host.waitFor('room.state', (s) => s.inMatch === true);
+    await host.request({ t: 'g.emote', id: EMOTES[3] }).catch(() => null);
     const toast = await host.waitFor('m.toast', (m) => [HANG, CRASH, START].includes(m.msgid), 60_000);
     assert.equal(toast.kind, 'error');
     await host.waitFor('room.state', (s) => s.inMatch === false, 10_000);

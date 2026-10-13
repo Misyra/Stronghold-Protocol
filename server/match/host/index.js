@@ -88,7 +88,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       this.dead = null;
       this.idleTimer = null;
       const init = {
-        cs, hashInput: set.hashInput, files,
+        cs, hashInput: set.hashInput, files, bounds: set.bounds ?? null,
         options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime },
       };
       const failed = (e) => {

@@ -35,6 +35,7 @@
 
 import { GEO } from '../../../../shared/constants.js';
 import { bbCap } from '../../../../shared/plugins/officialBounds.js';
+import { burstLimit } from '../../../../shared/plugins/steps.js';
 import { buffsOf, num, bandRecord, gameData } from '../support/index.js';
 import { metaBonds } from '../support/meta.js';
 import * as garrisons from '../garrisons.js';
@@ -179,7 +180,9 @@ K.band_coin_cost_gain_random_char_by_shop_level = (ps) => ({
     const step = int(p.coin_cnt, 0);
     if (step <= 0 || !(ev.amount > 0)) return;
     let acc = ctx.incCounter('band:kirara:acc', ev.amount);
-    while (acc >= step) {
+    let guard = 0;
+    const limit = burstLimit(10000); // [ASSUMED] one spend cannot grant more than this many shop rolls
+    while (acc >= step && guard++ < limit) { // loop-cap: coin_cnt
       acc = ctx.incCounter('band:kirara:acc', -step);
       for (let k = 0; k < timesOf(p.count, 1); k++) {
         const id = ctx.rollChess({ maxTier: Math.max(1, ctx.shopLevel()) });

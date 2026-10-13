@@ -95,7 +95,7 @@ import { attackRangeGrid, loadoutRecord, resolveRecordLoadout } from '../../shar
  */
 export function runSteps(gen) {
   let r;
-  do r = gen.next(); while (!r.done);
+  do r = gen.next(); while (!r.done); // loop-cap: generator
   return r.value;
 }
 
@@ -1137,14 +1137,14 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
       const timed = Number.isFinite(budgetMs);
       const t0 = timed ? performance.now() : 0;
       let n = 0;
-      while (i < battles.length) {
+      while (i < battles.length) { // loop-cap: battle list
         // a candidate that ended mid-slice (finished, cap, or beaten at a 64-tick check that skipped the budget test):
         // check the budget before stepping the next one, so a slice never exceeds 4 ticks past its budget
         if (timed && n > 0 && performance.now() - t0 >= budgetMs) return false;
         const battle = battles[i];
         try {
           let beaten = false;
-          while (t < cap && !battle.finished) {
+          while (t < cap && !battle.finished) { // loop-cap: time cap
             battle.step();
             t++;
             n++;

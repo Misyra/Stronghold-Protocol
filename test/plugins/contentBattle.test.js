@@ -75,10 +75,18 @@ test('merged data reaches every support lookup and a real battle, through Node a
   fs.writeFileSync(path.join(runtime,'package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(runtime,'server/data.js'), DATA_SHIM_JS);
   const table = contentSetFiles(set), base = pathToFileURL(path.join(runtime,'server/sim')).href + '/';
-  const loaded = await loadBrowserSim({ base, dataBase: '/cs/test/data/', fetchFn: async url => {
-    const rel = 'data/' + url.split('/').at(-1), f = table.get(rel);
-    return { ok: !!f, json: async () => JSON.parse(f.body.toString('utf8')) };
-  } });
+  // as the page does (public/js/content.js loadContentSet → simContent): the set's checked files and its official-bounds
+  // snapshot, never a fetch of /data/
+  const files = Object.fromEntries([...table].filter(([rel]) => /^data\/[^/]+\.json$/.test(rel)).map(([rel, f]) => [rel.slice(5, -5), JSON.parse(f.body.toString('utf8'))]));
+  const bounds = JSON.parse(table.get('bounds/official.json').body.toString('utf8'));
+  const caps = await import(new URL('../../shared/plugins/officialBounds.js', base).href);
+  const noFetch = async (url) => assert.fail(`no fetch for a content set (${url})`);
+  // without its snapshot the set runs on the floor — never on a scan of its own tables (a scan would give 10 × 12)
+  await loadBrowserSim({ base, data: files, cs: set.cs, fetchFn: noFetch });
+  assert.equal(caps.bbCap('times'), 64);
+  const loaded = await loadBrowserSim({ base, data: files, cs: set.cs, bounds, fetchFn: noFetch });
+  assert.equal(loaded.cs, set.cs);
+  assert.equal(caps.bbCap('times'), 120, 'the snapshot the server validated against (and its match host installs)');
   const support = await import(base + 'content/support/index.js');
   for (const file of ['bonds','items','bands','garrisons','effects','chess']) assert.deepEqual(support.gameData()[file], set.data[file]);
   const h = makeBattle({ data: new DataSource(set.data), stageId: 'act1autochess_m01', timeLimit: 2, units: [{ chessId: 'chess_x_data_demo_guard_a', row: 9, col: 5 }], bonds: { deputShip: { active: true, tier: 1, layers: 0 } } });

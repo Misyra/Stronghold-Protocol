@@ -153,9 +153,10 @@ function deepFreeze(root) {
 /**
  * Browser sim loader: the /sim/ modules + the data files (own frozen copies — the server's data is frozen too, so a
  * content bug that writes into a record fails identically on both sides). `data` (DESIGN §32.6): the files of a room's
- * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded.
+ * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded; `bounds`
+ * its official-bounds snapshot (installSimBounds).
  */
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null } = {}) {
+export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null } = {}) {
   const [spec, simdata, support] = await Promise.all([
     import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
   ]);
@@ -176,7 +177,28 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   SIM_DATA_FILES.forEach((n, i) => { raw[n] = deepFreeze(files[i]); });
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
+  await installSimBounds(base, raw, data ? bounds : undefined);
   return { spec, ds: new simdata.DataSource(raw, null), cs };
+}
+
+/**
+ * The official-bounds table of the engine's plugin caps (shared/plugins/officialBounds.js, DESIGN §32.5): the original
+ * content's page scans the data it loaded (no request); a room's content set installs the snapshot its index lists
+ * (public/js/content.js loads and checks it beside the data files) — the one the server validated against and its match
+ * host installs too, so both simulate a modded battle with the same caps. A content set without one runs on the floor,
+ * never on a scan of its own tables (a bomb would raise its own cap). `bounds` undefined: the original content.
+ * @param {string} base @param {Record<string, any>} raw @param {any} [bounds]
+ */
+async function installSimBounds(base, raw, bounds) {
+  let boundsMod;
+  try {
+    const spec = /^https?:|^file:/i.test(String(base))
+      ? new URL('../../shared/plugins/officialBounds.js', base).href
+      : '/shared/plugins/officialBounds.js';
+    boundsMod = await import(spec);
+  } catch { return; }
+  if (bounds === undefined) boundsMod.rememberOfficialBounds(raw);
+  else boundsMod.installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
 }
 
 /**
@@ -205,7 +227,7 @@ export function createBattleRunner(deps) {
   const clearIv = deps.clearInterval || ((h) => globalThis.clearInterval(h));
   const doc = deps.doc !== undefined ? deps.doc : (typeof document !== 'undefined' ? document : null);
   // `content` (DESIGN §32.6): `{ cs, data }` of a room's content set → the sim on it; null → the original content
-  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs }) : loadBrowserSim()));
+  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs, bounds: content.bounds ?? null }) : loadBrowserSim()));
   const logger = deps.logger || SIM_LOGGER;
   // the content sets (DESIGN §32.6): the room's set the page holds (content.js) and the server's original one
   const contentFor = deps.contentFor || appContentFor;

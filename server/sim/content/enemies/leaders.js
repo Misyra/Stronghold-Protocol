@@ -14,6 +14,7 @@ import {
 } from './archetypes.js';
 import { hypot, powi } from '../../detmath.js';
 import { bbCap } from '../../../../shared/plugins/officialBounds.js';
+import { burstLimit, stepOf, STEP_PER_TICK } from '../../../../shared/plugins/steps.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -326,7 +327,7 @@ function kitLeaderMisc(key, ab, e) {
           .sort((p, q) => hypot(p.x - x, p.y - y) - hypot(q.x - x, q.y - y) || p.spawnSeq - q.spawnSeq)[0];
         const seen = new Set();
         let prev = e2, cur = near(e2.x, e2.y, e2.base.rangeRadius || 3.5, seen);
-        while (cur && seen.size < max) {
+        while (cur && seen.size < max) { // loop-cap: units
           seen.add(cur);
           b.fx('beam', { x: prev.x, y: prev.y, from: prev.id, to: cur.id, kind: 'chainBuff' });
           b.addBuff(cur, { key: 'ab:chainBuff', duration: bb.duration ?? 0, refresh: 'replace', visible: true, mods: { moveMul: 1 + (bb.move_speed ?? 0), aspd: bb.attack_speed ?? 0 } });
@@ -527,8 +528,12 @@ function kitMace(ab) {
     hitOut(c, b, e) { const p = penOn(c, e); if (c.dmg.isAttack && p > 0) c.dmg.defIgnorePct = Math.min(1, (c.dmg.defIgnorePct || 0) + p); },
     taken(c, b, e) {                                             // 【瞬息杀机】 every hp_ratio of max HP lost (second form)
       if (!P.form2 || !(cs.ratio > 0)) return;
-      while (e.alive && e.hpRatio <= P.next - cs.ratio + 1e-9 && P.next - cs.ratio > 1e-9) {
+      let guard = 0;
+      const ratioCap = burstLimit(1); // official crossings of one hit stay under this (hp_ratio is a fraction of max HP)
+      while (e.alive && e.hpRatio <= P.next - cs.ratio + 1e-9 && P.next - cs.ratio > 1e-9 && guard++ < ratioCap) { // loop-cap: burstLimit hp_ratio
+        const prev = P.next;
         P.next -= cs.ratio;
+        if (P.next === prev) break;
         b.fx('explode', { x: e.x, y: e.y, r: cs.r, kind: 'clearSp', id: e.id });
         for (const u of areaAllies(b, e, e.x, e.y, cs.r)) {
           const sk = u.skill;
@@ -782,12 +787,14 @@ export const LEADER_KITS = Object.freeze({
     // .interval; 伤害分类: 弧光锋卫失衡状态下的自残伤害 is BUFF damage): damage, not a 流失 (player report D1 audit) — every `interval`
     // s for as long as the state lasts (battle/displacement.js _unbalance: a push's 位移时间, a pull's force window even
     // after the 急停 or with no movement). Until 0.2.2 one hit in proportion to the tiles moved [ASSUMED], from the position jump.
-    const v = T(ab, 'unbalanced_bleed.damage') ?? 0, iv = T(ab, 'unbalanced_bleed.interval') ?? 0;
+    const v = T(ab, 'unbalanced_bleed.damage') ?? 0;
+    const iv = stepOf('unbalanced_bleed.interval', T(ab, 'unbalanced_bleed.interval') ?? 0, 0.066);
     return [{
       tick(b, e, a, dt) {
         if (!(v > 0 && iv > 0) || !unbalancedNow(b, e)) { a.bleed = 0; return; }
         a.bleed = (a.bleed ?? 0) + dt;
-        while (a.bleed >= iv - 1e-9 && e.alive) {
+        let guard = 0;
+        while (a.bleed >= iv - 1e-9 && e.alive && guard++ < STEP_PER_TICK) { // loop-cap: stepOf unbalanced_bleed.interval
           a.bleed -= iv;
           b.dealDamage(null, e, { ...periodicDamage(v), tags: ['dot', 'periodic', 'unbalanced'] });
         }

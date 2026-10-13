@@ -8,6 +8,13 @@ export const PLUGIN_SPAWN_ENTRIES = 64;
  * server/sim/constants.js MAX_ALIVE_ENEMIES. Shared code does not import the server; the regression test locks the two.
  */
 export const PLUGIN_SPAWN_TOTAL = 600;
+/**
+ * The most units one wave action fields: server/match/waves.js clamps templateSpawns' count, the faction generator's
+ * replaced counts (factions.generation.minReplacedEnemyCount / maxReplacedEnemyCount) and a bounty plan's share to it,
+ * and the check of a data plugin caps those two fields at it (officialBounds.js) — what passes is what the generator
+ * plays. Official values: 1 and 5.
+ */
+export const PLUGIN_ACTION_UNITS = 50;
 /** Enemy blackboard `times` / keys ending in `times`. Official values stay at or below 8. JSON SkillSpec hits stay at 100. */
 export const PLUGIN_TIMES_MAX = 100;
 /** Per-count card grants. Official `global_special_choice_gain_equip` and bond-chess counts stay at or below 2. */
@@ -46,4 +53,17 @@ export function boundedCount(value, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(0, n));
+}
+
+/**
+ * A blackboard key used as an interval, a period, or a per-step cost.
+ * [ASSUMED] `coin_cnt` is a spend step and does not match the name pattern, so it is listed.
+ * @param {unknown} key
+ */
+export function isStepKey(key) {
+  return typeof key === 'string' && (
+    /(?:^|[.@])(?:interval|period)$/.test(key)
+    || /(?:^|\.)cost$/.test(key)
+    || key === 'coin_cnt'
+  );
 }

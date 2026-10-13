@@ -5,13 +5,16 @@
 // kit registries, the meta effect registry — are this content set's: not one line of the sim, the match or the content
 // code changes for it.
 //
-// Boot (a worker's workerData — a child process's first message, { type: 'init', … } — is { cs, hashInput, files, options }):
+// Boot (a worker's workerData — a child process's first message, { type: 'init', … } — is { cs, hashInput, files, bounds,
+// options }):
 //   1. heartbeats start (every options.heartbeatMs, default 1 s: server/match/host/index.js terminates a worker whose
 //      heartbeats stop — its matches end with 'plugin-hang');
 //   2. the content set is checked: every data file's bytes (`files`, as served) hash to its entry of `hashInput.data`,
 //      and `hashInput` hashes to `cs` (shared/plugins/identity.js contentHashOf) — the same composition a browser checks;
 //      anything else: 'boot-error' and the worker exits (the room's match ends with 'plugin-start');
-//   3. the files are parsed and installed with server/data.js setData — before anything that reads the data is imported;
+//   3. the files are parsed and installed with server/data.js setData — before anything that reads the data is imported —
+//      and `bounds`, the official-bounds snapshot the main process validated the set against (shared/plugins/officialBounds.js,
+//      DESIGN §32.5), with installOfficialBounds: the engine's plugin caps are the ones the set's pages install (none: the floor);
 //   4. server/match/Match.js is imported (options.matchModule instead: tests only, like the lobby's MatchClass), 'ready'.
 // Messages (from index.js / proxy.js; queued until booted, then handled in order):
 //   { type: 'create', matchId, opts }       new Match({ ...options.matchOptions, ...opts, data, log, now, send, broadcast,
@@ -27,6 +30,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { getData, setData } from '../../data.js';
+import { installOfficialBounds } from '../../../shared/plugins/officialBounds.js';
 import { contentHashOf } from '../../../shared/plugins/identity.js';
 
 /** A worker thread (parentPort), else a child process (its IPC channel). */
@@ -37,8 +41,9 @@ const post = (m) => { try { rawPost(m); } catch (e) { try { rawPost({ type: 'log
 let cs = null;
 let hashInput = null;
 let files = null;
+let bounds = null;
 let options = {};
-const adopt = (init) => { ({ cs, hashInput, files } = init || {}); options = (init && init.options) || {}; };
+const adopt = (init) => { ({ cs, hashInput, files, bounds = null } = init || {}); options = (init && init.options) || {}; };
 if (viaWorker) adopt(workerData);
 // a child process whose parent is gone has nothing left to do
 if (!viaWorker) process.on('disconnect', () => process.exit(0));
@@ -89,6 +94,7 @@ async function boot() {
   const data = {};
   for (const name of Object.keys(hashInput.data)) data[name] = JSON.parse(decoder.decode(files[name]));
   setData(data);
+  installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
   const mod = await import(typeof options.matchModule === 'string' && options.matchModule ? pathToFileURL(options.matchModule).href : '../Match.js');
   MatchClass = mod.Match || mod.default;
   if (typeof MatchClass !== 'function') throw new Error('the match module exports no Match');
@@ -161,7 +167,7 @@ function pump(match, sched) {
   const slice = () => {
     if (match.disposed || !matches.has(findId(match))) return;
     const t0 = Date.now();
-    while (sched.pending() > 0 && Date.now() - t0 < 20) sched.runNext();
+    while (sched.pending() > 0 && Date.now() - t0 < 20) sched.runNext(); // loop-cap: 20 ms of wall time a slice (virtual time, tests only)
     if (sched.pending() > 0) setImmediate(slice);
   };
   setImmediate(slice);

@@ -124,6 +124,22 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
     await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, i18n: { ...i.i18n, [lang]: { ...i.i18n[lang], url: 'https://elsewhere.example/en.json' } } })) }).fetchFn, wait: noWait }), /outside this server/);
   });
 
+  test('loadContentSet: the official-bounds snapshot the manifest lists comes with the set, checked by its bytes — the table the server\'s match host installs (DESIGN §32.5)', async () => {
+    const { fetchFn, seen } = serverFetch();
+    const set = await loadContentSet(CS, { fetch: fetchFn, wait: noWait });
+    assert.equal(set.bounds?.v, 1);
+    assert.equal(set.bounds.bb.times, 12, 'the official maximum of a blackboard key, not a value of the plugin');
+    assert.deepEqual(set.bounds, JSON.parse(JSON.stringify(built.set.bounds)), 'the snapshot the server built and hands its match host');
+    assert.ok(seen.includes(`/cs/${CS16}/bounds/official.json`));
+    const flip = (target) => (p, b) => { if (p === target) b[b.length - 3] ^= 1; return b; };
+    await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: flip(`/cs/${CS16}/bounds/official.json`) }).fetchFn, wait: noWait }), /do not hash/);
+    const rewrite = (fn) => (p, b) => (p === `/cs/${CS16}/index.json` ? Buffer.from(JSON.stringify(fn(JSON.parse(b.toString('utf8'))))) : b);
+    await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, bounds: { official: { ...i.bounds.official, url: '/data/bonds.json' } } })) }).fetchFn, wait: noWait }), /outside this content set/);
+    // a manifest that lists none: no snapshot (the battle runner then runs the set on the floor, never on a scan of it)
+    const none = await loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, bounds: {} })) }).fetchFn, wait: noWait });
+    assert.equal(none.bounds, null);
+  });
+
   test('installContentSet: follows the room — loads, shows it through data.js, tells the room (again when its seat does not show it); back to the original content', async () => {
     const store = createStore(initialState);
     const data = createDataStore({ fetch: async () => ({ ok: true, json: async () => ({ vanilla: true }) }), retryDelays: [] });
@@ -149,6 +165,7 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
       assert.deepEqual(requests, [{ t: 'room.contentReady', cs: CS }]);
       assert.equal((await pending).cs, CS, 'the runner\'s wait');
       assert.equal(simContent().data.bonds.deputShip.bb.base_def, 0.3);
+      assert.equal(simContent().bounds?.bb?.times, 12, 'the runner gets the set\'s official-bounds snapshot with its data');
       // a later state whose seat does not show it (a reconnect): told again
       await until(() => requests.length === 1, 'settled');
       store.set({ room: { ...room, seats: [{ seat: 0, playerId: 'p1', connected: true, content: 'loading' }] } });

@@ -39,6 +39,8 @@
 //   Auto-cast: the data's DEFAULT (the whole-field range exists only in PRTS's note; the mark is picked from her own range).
 
 import { num, talentBb, moduleOn, traitBb, skillRec, batMod, onHitBy, skillBusy, up } from '../shared/tier1.js';
+import { boundedCount } from '../../../../../shared/plugins/limits.js';
+import { bbCap } from '../../../../../shared/plugins/officialBounds.js';
 import { canTargetEnemy, sortEnemyTargets } from '../../../targeting.js';
 import { ROWS, COLS } from '../../../constants.js';
 import { hypot } from '../../../detmath.js';
@@ -89,7 +91,8 @@ export default {
         if (dealt > 0 && e.alive && stun > 0) battle.applyStatus(e, 'stun', { duration: stun, source: unit });
       };
       arrow();
-      for (let k = 1; k < count(b3['attack@s3_max_hit_num'], 4); k++) battle.after(RAIN_GAP * k, arrow, { owner: unit });
+      const rainHits = Math.max(1, Math.floor(boundedCount(num(b3['attack@s3_max_hit_num'], 4), bbCap('attack@s3_max_hit_num'), 4)));
+      for (let k = 1; k < rainHits; k++) battle.after(RAIN_GAP * k, arrow, { owner: unit }); // loop-cap: bbCap attack@s3_max_hit_num
     };
 
     return {

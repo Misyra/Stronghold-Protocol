@@ -615,7 +615,7 @@ export function blinkForward(b, e, dist) {
   let left = dist;
   if (R && R.pts && R.ptIdx < R.pts.length) {
     let i = R.ptIdx;
-    while (left > 1e-9 && i < R.pts.length) {
+    while (left > 1e-9 && i < R.pts.length) { // loop-cap: path points
       const p = R.pts[i];
       const d = hypot(p.x - e.x, p.y - e.y);
       if (d <= left) { e.x = p.x; e.y = p.y; left -= d; i++; } else { stepToward(e, p.x, p.y, left); left = 0; }

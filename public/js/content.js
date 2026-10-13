@@ -362,7 +362,7 @@ const CONTENT_FAILED = N_('房间的插件内容未能通过校验，请刷新�
  * list alone).
  */
 export const contentSet = createStore({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
-/** The checked set the page holds: { cs, index, values: Map<name, JSON> } (the runner's data), or null. */
+/** The checked set the page holds: { cs, index, values: Map<name, JSON>, bounds } (the runner's data), or null. */
 let held = null;
 /** Pages waiting for a content set (contentFor): cs → resolvers. */
 const waiting = new Map();
@@ -405,11 +405,13 @@ export async function fetchChecked(url, want, { fetch: doFetch, retryDelays = CO
 
 /**
  * Download and check a content set (header "The room's content set"): its manifest (its composition must hash to `cs`)
- * and every data file it lists (each one's bytes to its entry).
+ * and every data file it lists (each one's bytes to its entry), and the official-bounds snapshot it lists (bounds.official:
+ * the table the server validated the set against and its match host installs — the battle runner installs the same one,
+ * public/js/battle/runner.js loadBrowserSim; checked by its bytes like a data file; null when the manifest lists none).
  * @param {string} cs
  * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number,
  *   onProgress?: (loaded: number, total: number) => void }} [opts]
- * @returns {Promise<{ cs: string, index: any, values: Map<string, any> }>} (rejects with the reason)
+ * @returns {Promise<{ cs: string, index: any, values: Map<string, any>, bounds: any }>} (rejects with the reason)
  */
 export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryDelays = CONTENT_RETRY_MS, wait = sleep, timeoutMs = CONTENT_TIMEOUT_MS, onProgress = null } = {}) {
   if (!isContentHash(cs)) throw new Error('no content hash');
@@ -429,6 +431,8 @@ export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryD
   // the URLs a manifest may name: this server's data files and this set's own files
   const own = `/cs/${csUrlPart(cs)}/`;
   for (const [name, f] of [...entries, ...langs]) if (!(f.url.startsWith('/data/') || f.url.startsWith(own)) || f.url.includes('..')) throw new Error(`${name}: an address outside this server's data`);
+  const official = listed(index.bounds).find(([name]) => name === 'official')?.[1] ?? null;
+  if (official && (!official.url.startsWith(own) || official.url.includes('..'))) throw new Error('bounds: an address outside this content set');
   const total = entries.reduce((n, [, f]) => n + (Number(f.bytes) || 0), 0);
   let loaded = 0;
   onProgress?.(0, total);
@@ -441,20 +445,22 @@ export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryD
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONTENT_PARALLEL, entries.length) }, worker));
-  return { cs, index, values };
+  const bounds = official ? await fetchChecked(official.url, official, { fetch: doFetch, retryDelays, wait, timeoutMs }) : null;
+  if (official && (!isObj(bounds) || bounds.v !== 1)) throw new Error('bounds: not an official-bounds snapshot');
+  return { cs, index, values, bounds };
 }
 
 /**
- * The content set the battle runner simulates on now (public/js/battle/runner.js): `{ cs, data }` of the checked set the
- * page holds, or null (the original content: the runner loads /data/ itself).
+ * The content set the battle runner simulates on now (public/js/battle/runner.js): `{ cs, data, bounds }` of the checked
+ * set the page holds, or null (the original content: the runner loads /data/ itself).
  */
-export const simContent = () => (held ? { cs: held.cs, data: Object.fromEntries(held.values) } : null);
+export const simContent = () => (held ? { cs: held.cs, data: Object.fromEntries(held.values), bounds: held.bounds ?? null } : null);
 
 /**
  * The content set `cs` once this page holds it — at once when it does, when its download is done when it is the one
  * loading; null when it failed, or when the room plays another (or none).
  * @param {string} cs
- * @returns {Promise<{ cs: string, data: Record<string, any> } | null>}
+ * @returns {Promise<{ cs: string, data: Record<string, any>, bounds: any } | null>}
  */
 export function contentFor(cs) {
   if (held && held.cs === cs) return Promise.resolve(simContent());

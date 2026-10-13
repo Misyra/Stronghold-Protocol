@@ -45,6 +45,7 @@ import * as items from '../items.js';
 import { FORCED_EXIT } from '../../constants.js';
 import { msg } from '../../../../shared/i18n.js';
 import { bbCap } from '../../../../shared/plugins/officialBounds.js';
+import { textFinite } from '../../../../shared/plugins/textNumber.js';
 
 const num = S.num;
 
@@ -82,11 +83,11 @@ export function reached(battle, pid, bondId, cnt) {
   return idx >= 0 && S.bondTier(battle, pid, bondId) >= idx + 1;
 }
 
-/** "总和的30%" → 0.3 (炎佑 stat share, text only). */
+/** "总和的30%" → 0.3 (炎佑 stat share, text only). A percent, not a count: finite, not forced to 64. */
 export function yanyouShare() {
   const text = String(S.bondRecord('yanShip')?.effectDesc ?? S.bondRecord('yanShip')?.desc ?? '');
-  const m = /总和的\s*(\d+(?:\.\d+)?)\s*%/.exec(text);
-  const v = m ? +m[1] / 100 : NaN;
+  const raw = textFinite(text, /总和的\s*(\d+(?:\.\d+)?)\s*%/, NaN);
+  const v = Number(raw) / 100;
   return v > 0 && v <= 10 ? v : 0.3;
 }
 

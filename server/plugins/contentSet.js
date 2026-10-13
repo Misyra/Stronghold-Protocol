@@ -14,6 +14,7 @@ import { buildRecordOverlay, walkOverlay, getPath, applyRecordOverlay } from '..
 import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
+import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -172,6 +173,8 @@ function composeContentSet({ registry, ids = [] }) {
     const body = bodies.get(rel); hashes[name] = nodeSha256(body);
   }
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));
+  const boundsSnap = exportOfficialBounds(rememberOfficialBounds(base.data));
+  if (plugins.length) bodies.set('bounds/official.json', Buffer.from(canonicalJson(boundsSnap)));
   if ([...bodies.values()].reduce((n, b) => n + b.length, 0) > 300 * 1024 * 1024) return { problems: [problem('PLUGIN_DATA_LIMIT', 'content', 'set exceeds 300 MB')] };
   const parts = plugins.map(p => ({ id: p.id, version: p.manifest.version, files: p.content.files }));
   const i18n = {};
@@ -184,14 +187,14 @@ function composeContentSet({ registry, ids = [] }) {
   if (cache.has(cs)) return cache.get(cs);
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
-  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {} };
+  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {} };
   if (!vanilla) for (const [rel, f] of Object.entries(files)) {
     const url = base.files.get(rel)?.equals(bodies.get(rel)) ? `/data/${rel.replace(/^(data\/)/, '')}?v=${f.sha256.slice(0, 8)}` : `/cs/${csUrlPart(cs)}/${rel}`;
     const [section, name] = rel.split('/');
     index[section][name.slice(0, -5)] = { url, ...f };
   }
   const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
-    data, files, modes: Object.values(data.config.modes), problems: [], warnings, index, settings,
+    data, files, modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
     kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id))] });
   bodies.set('index.json', Buffer.from(JSON.stringify(index)));
   buffers.set(set, bodies); cache.set(cs, set);

@@ -218,7 +218,7 @@ function drawDistinct(rng, list, k, taken) {
 function drawWeighted(rng, list, weights, k) {
   const pool = list.map((c, i) => [c, Math.max(0, Number(weights && weights[i]) || 1)]);
   const out = [];
-  while (out.length < k && pool.length) {
+  while (out.length < k && pool.length) { // loop-cap: pool length and k
     const c = weightedPick(rng, pool);
     out.push(c);
     pool.splice(pool.findIndex(([x]) => x === c), 1);

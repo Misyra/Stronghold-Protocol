@@ -13,12 +13,12 @@
 // The zips hold one folder, Stronghold-Protocol/, with only what a player runs — an allowlist over `git ls-files`, so
 // untracked work, caches, logs and per-machine config never get in: server/, shared/, data/, public/ (not public/dev/),
 // packs/ (the content packs that ship with the repository, docs/PACKS.md; a pack installed on this machine and not
-// committed stays out), plugins/ (its readme and templates — docs/PLUGINS.md; a server's own plugins are git-ignored and
-// never ship),
-// the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, and
+// committed stays out), plugins/ (only its readme, author guide and templates — docs/PLUGINS.md; a server's own plugins are git-ignored and
+// never ship), schemas/, the plugin author harness,
+// the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, plugin, and
 // what setup starts: tools/local-extract, crop-board-atlas), the research tables the Node server (server/sim/
 // nodeData.js fallback) and fetch-assets read, package.json / package-lock.json, LICENSE / NOTICE.md /
-// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/PLAYING.md and docs/DEPLOY.md. `npm ci --omit=dev` in the
+// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, the player and plugin author docs. `npm ci --omit=dev` in the
 // stage adds the production node_modules and (postinstall) public/vendor. The full zip adds the git-ignored art: the
 // files data/assets.json lists, public/fonts, and the local-client extraction (public/assets/local/,
 // data/local-assets.json) when present, including the 0.2.5 battlefield scenes under public/assets/local/scene/
@@ -26,7 +26,7 @@
 // summary says so. Nothing else on disk ships, so art the data no longer lists (焰狐龙梓兰, left out of
 // 自选 in 0.2.0, or files of an old mapping) never ships even when this machine still has it. FULL_ZIP_JP_VOICE (below)
 // decides whether the full zip carries the Japanese voice dub too (default: yes).
-// Left out: test/, the maintainer tools (build-data, golden, botbench, i18n, check-imports, this file …),
+// Left out: test/ except test/helpers/battleHarness.js, the maintainer tools (build-data, golden, botbench, i18n, check-imports, this file …),
 // scripts/make-windows-bundle.mjs, the other docs (DESIGN, SIM, the research notes, docs/img …), public/dev/, handoff/,
 // .github/, types/, lint / editor / Docker files (Docker builds from a git clone).
 //
@@ -84,18 +84,23 @@ export const FOLDER = 'Stronghold-Protocol';
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md'];
+export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md', 'docs/PLUGINS.md', 'docs/PLUGIN-GUIDE.md',
+  'docs/PLUGIN-DSL.md', 'docs/PLUGIN-API.md', 'docs/plugin-catalog.example.json'];
+/** The author harness has no test-only dependencies; the rest of test/ stays out. */
+export const AUTHOR_TEST_FILES = ['test/helpers/battleHarness.js'];
+/** Only these repository-owned plugin resources ship, even if an owner's plugin was accidentally tracked. */
+export const isPluginResource = (rel) => rel === 'plugins/README.md' || rel === 'plugins/AGENTS.md' || rel.startsWith('plugins/_template/');
 /** Research tables read at run time: server/sim/nodeData.js (the Node sim's fallback) and tools/fetch-assets.mjs. */
 export const RUNTIME_RESEARCH = ['docs/research/03-operators.json', 'docs/research/05-enemies.json', 'docs/research/05-maps.json', 'docs/research/07-assets.json'];
 /** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/WINDOWS.md). */
 export const PLAYER_SCRIPTS = ['scripts/install-service-windows.ps1', 'scripts/launch.mjs', 'scripts/open-browser.mjs',
   'scripts/run-server.cmd', 'scripts/start-windows.bat', 'scripts/start-windows.ps1', 'scripts/start.sh'];
 /** The tools a player runs (npm run setup / doctor / assets, the postinstall) and the ones setup starts. */
-export const PLAYER_TOOLS = ['tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/setup.mjs', 'tools/vendor.mjs'];
+export const PLAYER_TOOLS = ['tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/setup.mjs', 'tools/vendor.mjs', 'tools/plugin.mjs'];
 /** Whole tool directories: fetch-assets' modules, the local-client extraction setup runs. */
 export const PLAYER_TOOL_DIRS = ['tools/assets/', 'tools/local-extract/'];
 /** Whole runtime directories (their tracked files). */
-export const RUNTIME_DIRS = ['server/', 'shared/', 'data/', 'public/', 'packs/', 'plugins/'];
+export const RUNTIME_DIRS = ['server/', 'shared/', 'data/', 'public/', 'packs/', 'schemas/'];
 /** Written into the stage, never taken from the checkout: the pack index of the shipped packs. */
 export const GENERATED_PACK_INDEX = 'packs/index.json';
 /** Whether shipped files include a content pack (then the stage gets GENERATED_PACK_INDEX). @param {string[]} files */
@@ -105,7 +110,7 @@ const NOT_TRACKED_SHIP = ['public/dev/', 'public/assets/', 'public/fonts/', 'pub
 /** The npm scripts a player runs: each `node <file>` of them must ship. */
 export const PLAYER_NPM_SCRIPTS = ['start', 'setup', 'doctor', 'launch', 'postinstall', 'vendor', 'assets'];
 /** Markdown copied into the zip. Relative links to anything else are rewritten at stage time. */
-export const PLAYER_MARKDOWN = [...ROOT_FILES, ...PLAYER_DOCS].filter((f) => f.endsWith('.md'));
+export const PLAYER_MARKDOWN = [...ROOT_FILES, ...PLAYER_DOCS, 'plugins/README.md', 'plugins/AGENTS.md'].filter((f) => f.endsWith('.md'));
 /** Where a packaged doc link points when the file itself is not in the zip. */
 export const GITHUB_REPO = 'https://github.com/sganggs/Stronghold-Protocol';
 
@@ -146,6 +151,8 @@ export function isRefused(rel) {
   const base = parts[parts.length - 1];
   if (base === '.env' || base.startsWith('.env.')) return true;
   if (parts.some((s) => s.startsWith('.venv'))) return true;
+  if (p.startsWith('plugins/') && !isPluginResource(p)) return true;
+  if (AUTHOR_TEST_FILES.includes(p)) return false;
   return REFUSE.some((r) => p === r || p.startsWith(`${r}/`));
 }
 
@@ -163,6 +170,7 @@ export function isPlayerFile(rel) {
   const p = posixRel(rel);
   if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === GENERATED_PACK_INDEX) return false;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
+  if (isPluginResource(p) || AUTHOR_TEST_FILES.includes(p)) return true;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;
   return ROOT_FILES.includes(p) || PLAYER_DOCS.includes(p) || RUNTIME_RESEARCH.includes(p) || PLAYER_SCRIPTS.includes(p) || PLAYER_TOOLS.includes(p);
 }
@@ -269,6 +277,8 @@ export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE } = {}
 }
 
 const URL_MOUNTS = [['/data/', 'data/'], ['/shared/', 'shared/'], ['/sim/', 'server/sim/']];
+/** Source-only trial scenarios: trialOptions omits them and trialScenario refuses them when absent in a release. */
+const OPTIONAL_IMPORTS = new Map([['server/studio/trialScenario.js', new Set(['../../tools/golden.mjs'])]]);
 
 /** The repository path an import specifier of `fromRel` names, or null (an npm package or a Node builtin). */
 export function resolveSpecifier(fromRel, spec) {
@@ -292,6 +302,7 @@ export function importProblems(root, files) {
     let src;
     try { src = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     for (const { spec, line } of findSpecifiers(src)) {
+      if (OPTIONAL_IMPORTS.get(rel)?.has(spec)) continue;
       const target = resolveSpecifier(rel, spec);
       if (!target || shipped.has(target) || target.startsWith('public/vendor/') || !isFile(path.join(root, target))) continue;
       out.push(`${rel}:${line} imports ${spec} (not shipped)`);
@@ -325,7 +336,7 @@ export function playerScriptTargets(cmd) {
 
 /**
  * Honest in a player zip: every `node <file>` it names is shipped, and it names at least one. `eslint`, `tsc` and
- * `node --test` (no file, and test/ is not shipped) are not.
+ * `node --test` (no named file; only the author harness ships) are not.
  * @param {string} cmd
  * @param {Set<string> | string[]} shipped
  */
@@ -614,7 +625,9 @@ export function stageProblems(stage, planned, { env = process.env, libsPlanned =
   for (const f of held) if (!planned.has(f)) problems.push(`in the stage but not planned: ${f}`);
   const have = new Set(held);
   for (const f of planned) if (!have.has(f)) problems.push(`planned but not staged: ${f}`);
-  for (const r of REFUSE) if (fs.existsSync(path.join(stage, r))) problems.push(`refused: ${r} is in the stage`);
+  // test/ is present for the one author helper; check its leaves, and every plugin leaf, against the same allowlist.
+  for (const r of REFUSE) if (r !== 'test' && fs.existsSync(path.join(stage, r))) problems.push(`refused: ${r} is in the stage`);
+  for (const f of staged) if ((f.startsWith('test/') || f.startsWith('plugins/')) && isRefused(f)) problems.push(`refused: ${f} is in the stage`);
   const names = scanNames(env);
   const rest = staged.filter((f) => !isLib(f));
   for (const h of scanFiles(stage, rest.filter((f) => !META_FILES.has(f)), { home: true, names })) problems.push(`personal info: ${h}`);
@@ -682,7 +695,9 @@ function makeStage(root, p, stage, { install, env, log }) {
     const r = spawnSync(npm, ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: stage, stdio: 'inherit', shell: process.platform === 'win32' });
     if (r.error || r.status !== 0) throw new Error('npm ci --omit=dev failed in the stage');
     fs.rmSync(path.join(stage, 'node_modules', '.cache'), { recursive: true, force: true });
-    if (!isFile(path.join(stage, 'public', 'vendor', 'pixi.min.js'))) throw new Error('public/vendor/pixi.min.js missing after npm ci (postinstall tools/vendor.mjs)');
+    for (const file of ['pixi.min.js', 'ses.umd.js', 'acorn.mjs']) {
+      if (!isFile(path.join(stage, 'public', 'vendor', file))) throw new Error(`public/vendor/${file} missing after npm ci (postinstall tools/vendor.mjs)`);
+    }
   }
   const files = new Map();
   for (const f of listTree(stage, '', { junk: true })) if (inManifest(f)) files.set(f, digestOf(stage, f));

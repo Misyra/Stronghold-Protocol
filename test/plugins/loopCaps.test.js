@@ -445,7 +445,7 @@ test('factions: the numbers the wave generator reads as counts and weights are b
   assert.deepEqual(boundProblems(op('generation', ['maxReplacedEnemyCount'], 50)), []);
 });
 
-test('the wolf pack: its text counts are capped, and an attack on a target that takes no damage still returns (WP-A round-3 review HIGH-A)', async () => {
+test('the wolf pack: its text counts are capped, and an attack on a target that takes no damage still returns (count-limit regression)', async () => {
   // the review's repro: 至多 1e16 只 on the pack's texts, 初始 1e16 只 on its owner's talents, every attack 0 — all of it passes
   // the data check; the pack used to read both with a raw regex and resolveHit looped 1e16 times on a target that never fell
   const { makeBattle } = await import('../helpers/battleHarness.js');
@@ -495,7 +495,7 @@ test('the wolf pack: its text counts are capped, and an attack on a target that 
   assert.ok(PLUGIN_TIMES_MAX >= 64, 'the hit cap sits above the pack\'s');
 });
 
-test('the pick-one offer: its count stays within the slots an offer shows, in the game data and in the check (WP-A round-3 review HIGH-B)', async () => {
+test('the pick-one offer: its count stays within the slots an offer shows, in the game data and in the check (offer-limit regression)', async () => {
   const { GameData } = await import('../../server/match/gamedata.js');
   const { MAX_OFFER_SLOTS } = await import('../../server/match/player/common.js');
   const { PLUGIN_OFFER_SLOTS } = await import('../../shared/plugins/limits.js');

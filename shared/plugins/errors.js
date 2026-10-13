@@ -22,8 +22,8 @@
 // An entry of the catalogue: { level, zh, en, fix: { zh, en }, doc, symptom?, autofix? } — zh / en the explanation with
 // {param} placeholders ({where} is `at` or `file`), fix what to do, doc the section that explains it, symptom what an
 // author sees (the tables' first column; by level when absent), autofix the name of the studio's one-click fix
-// (server/studio/fixes.js) where one exists.
-// Every other work package adds its codes here (PLUGIN_ prefix, unique names; test/plugins/errors.test.js fails on a code
+// (server/studio/edit.js) where one exists.
+// Each plugin subsystem adds its codes here (PLUGIN_ prefix, unique names; test/plugins/errors.test.js fails on a code
 // the code names that the catalogue lacks).
 
 /** The documents the entries point to. */
@@ -900,7 +900,7 @@ export function issueList() {
 
 /**
  * The issues of a check's result: its own `issues` when it has them (one per problem and warning), else its plain strings
- * as PLUGIN_INVALID (a check that predates the catalogue, or another work package's before its codes join it).
+ * as PLUGIN_INVALID (a legacy check that has not adopted coded issues).
  * @param {{ problems?: string[], warnings?: string[], issues?: PluginIssue[] } | null | undefined} r
  * @returns {PluginIssue[]}
  */

@@ -1,7 +1,7 @@
 // server/sim/content/dsl/compile.js — compile a P2 DSL spec into a Kit (DESIGN §32.7).
 //
-// C2: compileDsl(spec, { bb, chess, def }) → Kit, the same shape a kit function returns. WP-A dispatches
-// def.raw.dsl from kitOf and may leave a stub at this path; this module is the real compiler. Tests call
+// C2: compileDsl(spec, { bb, chess, def }) → Kit, the same shape a kit function returns. kitOf dispatches
+// def.raw.dsl to this compiler. Tests call
 // compileDsl directly and inject the kit with makeBattle({ kits }). This file does not edit kitOf.
 //
 // Values inside SkillSpec fields (mods, ammo, attack, targeting) are resolved when the kit is built, because the

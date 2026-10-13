@@ -1,7 +1,7 @@
 // server/sim/content/dsl/validate.js — structural check of a P2 DSL spec (DESIGN §32.7).
 //
 // Returns problems; it does not throw. compileDsl / compileDslMeta throw an Error whose message contains the
-// PLUGIN_DSL_* code. Codes stay in this module until WP-D folds them into shared/plugins/errors.js.
+// PLUGIN_DSL_* code. The shared catalogue in shared/plugins/errors.js explains every code.
 // Explanations are Chinese because the author-facing reference (docs/PLUGIN-DSL.md) is Chinese. They are not
 // player-interface strings.
 

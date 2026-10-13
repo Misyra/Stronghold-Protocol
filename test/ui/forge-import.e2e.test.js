@@ -1,6 +1,5 @@
 // Browser check for 从 Forge 包导入 (DESIGN §32.12). Opt-in:
 //   SP_E2E=1 node --test test/ui/forge-import.e2e.test.js
-// The sandbox this work package ran in could not open a browser, so this file was not executed (未运行).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,7 +13,7 @@ const ENABLED = process.env.SP_E2E === '1' && hasChrome();
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SKIN = path.join(ROOT, 'test', 'fixtures', 'forge', 'skin-pack');
 
-describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (and have Chrome); 未运行 in the WP-H sandbox' }, () => {
+describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (and have Chrome)' }, () => {
   test('open the dialog, preview a zip, confirm, and see the plugin in the list', { timeout: 120000 }, async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-forge-e2e-'));
     const plugins = path.join(tmp, 'plugins');

@@ -16,14 +16,17 @@ folders (manifest, file types, sizes, paths, JSON).
   content set, and its matches are unofficial (left out of the statistics overview unless a player counts them);
 - class `ui` (an interface widget) loads in a sandboxed frame: each player switches it on for this browser (设置 →
   界面插件). It can read a little of the match on screen and cannot play it. It does not change `cs`;
-- classes `script` and `trusted` (code) are off by default: the server owner switches trusted execution on, pins each
-  plugin's lock in `config.json` here, and every player of the room consents first (PLUGINS.md §13);
-- nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
+- `content` plugins can also hold JSON DSL skills/talents (`kit.dsl`) and prep effects (manifest `dsl`), without enabling scripts;
+- classes `script` and `trusted` (code) are off by default. `SP_PLUGIN_SCRIPTS=sandbox` runs locked script plugins in
+  SES inside browser Workers and restricted server children, without a trusted pin or per-player consent; public
+  listeners are allowed. Native `trusted` execution needs review, a lock pin in `config.json` and each player's consent;
+  public/wildcard listeners or a public reverse proxy require `trusted-force` (PLUGINS.md §13);
+- nothing in this folder except this readme, AGENTS.md and the templates in `_template/` is committed or shipped: your plugins
   stay yours, and an update never touches them.
 
 **Make one in the browser:** open `/studio/` of the running server — the plugin studio 插件工作台 (this machine and the local
 network only): pick a template, find what to change by its official name, drop your files on their places, compare with
-the original in the game's own preview, press 打包并下载 for the zip. The beginner's guide (Chinese):
+the original in the game's own preview, try gameplay changes with the battle comparison and replay, then press 打包并下载 for the zip. Templates include numbers, operators, DSL/prep effects, modes, UI and scripts; the script source is edited in an external editor. The beginner's guide (Chinese):
 [docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md); for AI agents: [AGENTS.md](AGENTS.md).
 
 On the command line: `node tools/plugin.mjs new art my-skin --target 德克萨斯` makes a folder from a template, `check` explains
@@ -55,4 +58,14 @@ is the operator's https download allowlist (PLUGINS.md §17); it is not a room-p
 The id is the folder name: 2–32 lower-case letters, digits and `-`. A folder whose name starts with `_` (the templates)
 is never loaded. Never put files of the official game in a plugin: refer to the art the installation already has.
 
-The format, the rules and the plan: [docs/PLUGINS.md](../docs/PLUGINS.md).
+Install a local zip with `node tools/plugin.mjs install <zip>`; an HTTPS URL also needs `--sha256 <hash>`.
+`catalog <file|https URL>` inspects a community catalogue; `/studio/` offers 从目录安装. `--force` preserves the old
+folder under `_replaced/`. Forge packs use `import-forge <dir|zip> --dry-run` first, or 从 Forge 包导入 in the studio;
+unsupported scripts are reported and never copied or executed. Installation does not enable script execution.
+`test <id>` runs local author code with the shipped battle harness. `surface` and [PLUGIN-API.md](../docs/PLUGIN-API.md)
+list stable and experimental interfaces, and `errors` explains the checks.
+
+In Docker, the writable plugins volume is `/app/plugins`; the bundled templates and this guide live separately at
+`/app/plugin-resources` (`SP_PLUGIN_RESOURCES`), so mounting an empty plugins directory does not hide them.
+
+The format and the rules: [docs/PLUGINS.md](../docs/PLUGINS.md).

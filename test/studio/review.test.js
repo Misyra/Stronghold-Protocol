@@ -1,4 +1,4 @@
-// WP-J2 review regressions; no listening socket required.
+// Studio review regressions; no listening socket required.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -546,7 +546,7 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'data-demo' }] });
     const s1 = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
     assert.deepEqual(s1.content.kittedExtra, ['char_x_data_demo_guard'], 'the operator a 自选 slot may field here, beside welcome\'s');
-    // the plugin's operator is an operator of this room: its 练度 is accepted here (a 潜能 is not: it has no curve — WP-A) …
+    // the plugin's operator is an operator of this room: its 练度 is accepted here (a 潜能 is not: it has no curve) …
     await refuse(host, { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { potential: 3 } } }, ERR.BAD_TARGET);
     const loadout = { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { cultivate: 2 }, char_102_texas: { potential: 2 } } };
     await ok(host, loadout);

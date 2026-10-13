@@ -1,10 +1,8 @@
 # 卫戍协议：盟约 · Stronghold Protocol: Alliance
 
-> **开发版（dev 分支）：不稳定，请勿用于公开服务器**。当前为 0.3.0-dev，尚未发布；稳定版请使用 Releases 中的 0.2.6。
-
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.3.0--dev-2ea44f)
+![version](https://img.shields.io/badge/version-0.3.0-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -39,7 +37,7 @@ English summary: [below](#english).
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- 当前开发版 0.3.0-dev（未发布）：已加入外观、数据、DSL、脚本与界面插件，以及插件工作台和安装工具。最近发布版 0.2.6：减轻开服电脑的流量（静音时不下载背景音乐、WebSocket 消息压缩、素材地址带内容哈希长期缓存、brotli 压缩、教程图改用 WebP），官方场景光照改回官方值，每回合开始重播干员入场动画，新增「弹药数量」选项，并修复了单位多时模型被裁切、留下残影等 0.2.5 发布后反馈的问题，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
+- 当前版本 0.3.0：加入插件系统——外观、数据、DSL、脚本与界面插件，浏览器插件工作台和安装工具；官方场景按客户端着色器重新打光并补上水面，伊利昂的木驮兽和「越长尘」会载客，冻结后手动刷新会取消冻结，机器人的布阵、采购和演习也有改进，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
 
 ## 功能一览
 

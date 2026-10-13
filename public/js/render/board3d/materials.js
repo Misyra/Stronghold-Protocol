@@ -345,15 +345,63 @@ export function smogMaterial(THREE, tex, focus) {
 }
 
 /**
- * Tuning of the official scene materials (sceneMaterial). The official shader (Torappu/Scene/StandardRealtimeShadow) is
- * not reproduced: the albedo is lit by the baked indirect light of the scene's lightmap plus the scene's key light
- * masked by its baked shadow, in linear light (Unity's Shadowmask lighting mode). `range` — the linear light a lightmap
- * texel of 1.0 stands for when scene.json has no lightRange; [ASSUMED] `ambient` — the light of a mesh without a
- * lightmap page; `direct` / `indirect` — gains of the two terms, both 1: the scene's own values (the key light's
- * `light.intensity`, and the lightmap's baked linear light, whose texel is (L / lightRange)^(1/2.2)). Anything below 1
- * darkens the board against the official render — 0.2.5 had 0.8 / 0.4 tuned by eye (GitHub #549, PR #554 by @xcdoge).
+ * Lighting of the official scene materials (sceneMaterial), after the official GLES program of
+ * Torappu/Scene/StandardRealtimeShadow (shaders/standardrealtimeshadow.ab): Unity's mobile Standard BRDF in gamma
+ * colour space (PlayerSettings m_ActiveColorSpace 0, LDR camera), all in display values —
+ *   diffuse  = albedo × 0.779 · (1 − metallic)          specular = mix(0.221, albedo, metallic)
+ *   colour   = (diffuse + specular · highlight) × key light × N·L × baked shadow
+ *            + diffuse × lightmap (RGBM: 5 · A · RGB)
+ *            + reflection cubemap (mip by roughness) × (1 − 0.28 · (1 − smoothness)³) × Fresnel(specular)
+ * with N bent by the normal map. `direct` / `indirect` — gains of the key light and of the lightmap (1 = the scene's
+ * own values). `range` — the display-space light a lightmap texel of 1.0 stands for when scene.json has no
+ * lightRange. Not drawn: the realtime shadow map of the units (_ShadowStrength scales only that one), emission, the
+ * vertex-colour blend.
+ * [ASSUMED] (inferred, not read from the client):
+ *   - `ambient` — the light of a mesh without a lightmap page;
+ *   - SCENE_LM_V1 — a scene extracted before scene.json `lightEncoding` stores (L_linear / 8)^(1/2.2) per channel; the
+ *     shader rebuilds the display value by un-gamma-ing each channel's ratio to the brightest one, an approximation
+ *     (a few percent bright), exact only after the scene is extracted again;
+ *   - the tangent frame of the normal map — built from screen-space derivatives with t along +u and b along +v
+ *     (scene.bin has no tangents); the sign of the bump was not checked against the client surface by surface;
+ *   - reflection probes — one cubemap per scene, chosen at the board's anchor: the baked cubemap of the
+ *     ReflectionProbe whose box holds the board (act2autochess_m01 / m03, at the probe's intensity), else the
+ *     scene's default reflection; a renderer outside that box and the blend at its edge are not reproduced;
+ *   - the vertex-colour blend is left out on the reading that it is a tile buried in sand
+ *     (mix(albedo, _BlendColor, smoothstep(colour.r) · _BlendStrength) in the program) which the client uncovers at
+ *     run time by a rule not found yet; drawn as written it covers every patterned tile of the field.
  */
-export const SCENE_LIGHT = Object.freeze({ range: 8.0, ambient: 0.2, direct: 1, indirect: 1 });
+export const SCENE_LIGHT = Object.freeze({ range: 3.0, ambient: 0.5, direct: 1, indirect: 1 });
+
+/**
+ * Cube texture of a scene's decoded reflection atlas (scenes.py env_atlas: mip m in the row at y = Σ sizes of the
+ * mips before it, face f at x = f · (size >> m); texels in display values / env.range). The faces keep the client's
+ * layout, so the shader looks it up with the Unity-space direction (board z negated). Null without a DOM canvas.
+ * @param {{ size: number, mips: number }} env  scene.json `env`
+ */
+export function sceneEnvTexture(THREE, image, env) {
+  const size = env && env.size | 0, mips = env && env.mips | 0;
+  if (!image || !(size > 0) || !(mips > 0) || typeof document === 'undefined') return null;
+  const levels = [];
+  for (let m = 0, y = 0; m < mips; m++) {
+    const s = Math.max(1, size >> m), faces = [];
+    for (let f = 0; f < 6; f++) {
+      const cv = document.createElement('canvas');
+      cv.width = s; cv.height = s;
+      cv.getContext('2d').drawImage(image, f * s, y, s, s, 0, 0, s, s);
+      faces.push(cv);
+    }
+    levels.push(faces);
+    y += s;
+  }
+  const t = new THREE.CubeTexture(levels[0]);
+  t.mipmaps = levels.slice(1).map((faces) => ({ image: faces }));   // the client's pre-filtered mips, not generated ones
+  t.colorSpace = THREE.NoColorSpace;
+  t.generateMipmaps = false;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
 
 const colorOf = (info, key, fallback = [1, 1, 1, 1]) => {
   const c = info && info.colors && Array.isArray(info.colors[key]) ? info.colors[key] : fallback;
@@ -369,33 +417,47 @@ export function sceneBlend(info) {
 }
 
 /**
- * A lit material of an official scene: albedo (`map`, × _Color) × (the lightmap's baked light + key light · N·L ·
- * baked shadow (lightmap A, by _ShadowStrength)), alpha test / blend by the material's keywords, the focus falloff of
- * the other board materials. `map` is an sRGB texture; `lightMap` holds (light / lightRange)^(1/2.2) in RGB (no colour
- * space). Geometry attributes: position, normal, uv, aLm (lightmap uv), aColor.
- * @param {{ map?: any, lightMap?: any, info?: object, lightRange?: number, light?: { dir: number[], color: number[], intensity: number } }} o
+ * A lit material of an official scene, lit in display (gamma) space like the client (SCENE_LIGHT has the formula):
+ * albedo `map` × _Color, the lightmap's baked light, the key light masked by the baked shadow (lightmap A), the
+ * reflection of `env`, the normal and metallic-gloss maps; alpha test / blend by the material's keywords; the focus
+ * falloff of the other board materials. Without `env` (a scene extracted before the reflection atlas) the material
+ * is the plain sum albedo × (lightmap + key light · N·L · shadow), which lands within about 10 % of the full formula.
+ * `map` is an sRGB texture; `normalMap` (RGB = xyz · 0.5 + 0.5), `glossMap` (R = metallic, A = smoothness) and `env`
+ * (sceneEnvTexture, texels / `envRange`) carry no colour space. `lightMap` holds Unity's gamma-space RGBM value
+ * (5 · A · RGB) / lightRange in RGB when `lightEncoding` is 'gamma'; a page of an older extraction holds
+ * (5^2.2 · A^2.2 · RGB / lightRange)^(1/2.2), from which the same value is read back to within a few percent (the
+ * brightest channel of RGB is taken as 1). Geometry attributes: position, normal, uv, aLm (lightmap uv), aColor.
+ * @param {{ map?: any, lightMap?: any, normalMap?: any, glossMap?: any, env?: any, envRange?: number, info?: object, lightRange?: number, lightEncoding?: string, light?: { dir: number[], color: number[], intensity: number } }} o
  */
 export function sceneMaterial(THREE, o, focus) {
   const info = o.info || null;
   const blend = sceneBlend(info);
   const L = o.light || { dir: [0.36, 0.45, 0.82], color: [1, 1, 1], intensity: 1 };
   const k = (Number.isFinite(L.intensity) ? L.intensity : 1) * SCENE_LIGHT.direct;
-  const lin = (v) => Math.pow(Math.max(0, v), 2.2);   // the scene's colours are authored in gamma space
   const col = colorOf(info, '_Color');
+  const gamma = o.lightEncoding === 'gamma';
+  const range = o.lightRange > 0 ? o.lightRange : (gamma ? SCENE_LIGHT.range : 8);
+  const pbs = !!o.env;
   const uniforms = {
     uMap: { value: o.map || null }, uLm: { value: o.lightMap || null },
-    uColor: { value: new THREE.Vector4(lin(col[0]), lin(col[1]), lin(col[2]), col[3]) },
+    uColor: { value: new THREE.Vector4(col[0], col[1], col[2], col[3]) },   // display values, like the texture's stored ones
     uCutoff: { value: blend === 'cutout' ? floatOf(info, '_Cutoff', 0.5) : 0 },
-    uLmScale: { value: o.lightMap ? (o.lightRange > 0 ? o.lightRange : SCENE_LIGHT.range) * SCENE_LIGHT.indirect : 0 },
+    uLmScale: { value: o.lightMap ? (gamma ? range : Math.pow(range, 1 / 2.2)) * SCENE_LIGHT.indirect : 0 },
     uAmbient: { value: o.lightMap ? 0 : SCENE_LIGHT.ambient },
-    uShadow: { value: floatOf(info, '_ShadowStrength', 1) },
     uLightDir: { value: new THREE.Vector3(...L.dir).normalize() },
-    uLightColor: { value: new THREE.Vector3(lin(L.color[0]) * k, lin(L.color[1]) * k, lin(L.color[2]) * k) },
+    uLightColor: { value: new THREE.Vector3(L.color[0] * k, L.color[1] * k, L.color[2] * k) },
+    uEnv: { value: o.env || null }, uEnvScale: { value: pbs ? (o.envRange > 0 ? o.envRange : 1) : 0 },
+    uNormal: { value: pbs ? o.normalMap || null : null }, uGlossMap: { value: pbs ? o.glossMap || null : null },
+    // _BumpScale, metallic, smoothness (the gloss map's scale with a map, else the material's own two values)
+    uSurface: { value: new THREE.Vector3(floatOf(info, '_BumpScale', 1), floatOf(info, '_Metallic', 0), floatOf(info, o.glossMap ? '_GlossMapScale' : '_Glossiness', o.glossMap ? 1 : 0)) },
     ...focus,
   };
   const m = new THREE.ShaderMaterial({
     uniforms,
-    defines: { ...(o.map ? { SCENE_MAP: 1 } : {}), ...(o.lightMap ? { SCENE_LM: 1 } : {}) },
+    defines: {
+      ...(o.map ? { SCENE_MAP: 1 } : {}), ...(o.lightMap ? { SCENE_LM: 1 } : {}), ...(o.lightMap && !gamma ? { SCENE_LM_V1: 1 } : {}),
+      ...(pbs ? { SCENE_PBS: 1 } : {}), ...(pbs && o.normalMap ? { SCENE_NORMAL: 1 } : {}), ...(pbs && o.glossMap ? { SCENE_GLOSS: 1 } : {}),
+    },
     vertexShader: [
       'attribute vec2 aLm;',
       'varying vec2 vUv; varying vec2 vLm; varying vec3 vN; varying vec3 vWorld;',
@@ -409,23 +471,68 @@ export function sceneMaterial(THREE, o, focus) {
     ].join('\n'),
     fragmentShader: [
       'uniform sampler2D uMap; uniform sampler2D uLm; uniform vec4 uColor; uniform float uCutoff;',
-      'uniform float uLmScale; uniform float uAmbient; uniform float uShadow; uniform vec3 uLightDir; uniform vec3 uLightColor;',
+      'uniform float uLmScale; uniform float uAmbient; uniform vec3 uLightDir; uniform vec3 uLightColor;',
+      'uniform samplerCube uEnv; uniform float uEnvScale; uniform sampler2D uNormal; uniform sampler2D uGlossMap; uniform vec3 uSurface;',
       FOCUS_GLSL,
       'varying vec2 vUv; varying vec2 vLm; varying vec3 vN; varying vec3 vWorld;',
+      // linear light ↔ display values (sRGB): the inverses of the texture decode and of <colorspace_fragment>
+      'vec3 toDisplay(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }',
+      'vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }',
       'void main() {',
       '  vec4 a = uColor;',
       '  #ifdef SCENE_MAP',
-      '    a *= texture2D(uMap, vUv);',
+      '    vec4 t = texture2D(uMap, vUv);',
+      '    a *= vec4(toDisplay(t.rgb), t.a);',
       '  #endif',
       '  if (a.a < uCutoff) discard;',
       '  vec3 light = vec3(uAmbient); float shade = 1.0;',
       '  #ifdef SCENE_LM',
       '    vec4 lm = texture2D(uLm, vLm);',
-      '    light += pow(lm.rgb, vec3(2.2)) * uLmScale; shade = mix(1.0, lm.a, uShadow);',
+      // [ASSUMED] pages of an earlier extraction (linear reading, range 8): an approximate read-back, see SCENE_LIGHT
+      '    #ifdef SCENE_LM_V1',
+      '      float mx = max(max(lm.r, lm.g), max(lm.b, 1e-4));',
+      '      lm.rgb = mx * pow(lm.rgb / mx, vec3(2.2));',
+      '    #endif',
+      '    light += lm.rgb * uLmScale; shade = lm.a;',
       '  #endif',
       '  vec3 n = normalize(gl_FrontFacing ? vN : -vN);',
-      '  light += uLightColor * max(dot(n, uLightDir), 0.0) * shade;',
-      '  gl_FragColor = vec4(a.rgb * light * focusMask(vWorld.xy), a.a);',
+      '  #ifdef SCENE_PBS',
+      '    float metallic = uSurface.y, smoothness = uSurface.z;',
+      '    #ifdef SCENE_GLOSS',
+      '      vec4 mg = texture2D(uGlossMap, vUv);',
+      '      metallic = mg.r; smoothness = mg.a * uSurface.z;',
+      '    #endif',
+      '    #ifdef SCENE_NORMAL',
+      // [ASSUMED] tangent frame from the screen-space derivatives (scene.bin has no tangents): t along +u, b along +v
+      '      vec3 q0 = dFdx(vWorld), q1 = dFdy(vWorld); vec2 s0 = dFdx(vUv), s1 = dFdy(vUv);',
+      '      float det = s0.x * s1.y - s1.x * s0.y;',
+      '      vec3 tu = (q0 * s1.y - q1 * s0.y) * sign(det), bv = (q1 * s0.x - q0 * s1.x) * sign(det);',
+      '      tu -= n * dot(n, tu); bv -= n * dot(n, bv);',
+      '      if (dot(tu, tu) > 0.0 && dot(bv, bv) > 0.0) {',
+      '        vec3 nt = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;',
+      '        nt.xy *= uSurface.x;',
+      '        n = normalize(normalize(tu) * nt.x + normalize(bv) * nt.y + n * nt.z);',
+      '      }',
+      '    #endif',
+      '    float omr = 0.779083729 * (1.0 - metallic);',
+      '    vec3 diff = a.rgb * omr, spec = mix(vec3(0.220916301), a.rgb, metallic);',
+      '    vec3 view = normalize(vWorld - cameraPosition);',
+      '    float rough = 1.0 - smoothness, r2 = rough * rough;',
+      '    vec3 hv = normalize(uLightDir - view);',
+      '    float nl = clamp(dot(n, uLightDir), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0);',
+      '    float nv = clamp(dot(n, -view), 0.0, 1.0), lh = clamp(dot(uLightDir, hv), 0.0, 1.0);',
+      '    float d = nh * nh * (r2 * r2 - 1.0) + 1.00001;',
+      '    float highlight = clamp(r2 / (d * max(lh, 0.32) * (r2 + 1.5)) - 1e-4, 0.0, 100.0);',
+      '    vec3 rd = reflect(view, n);',
+      '    vec3 env = textureLod(uEnv, vec3(rd.x, rd.y, -rd.z), rough * (1.7 - 0.7 * rough) * 6.0).rgb * uEnvScale;',
+      '    float fres = 1.0 - nv; fres *= fres; fres *= fres;',
+      '    vec3 lit = (diff + spec * highlight) * uLightColor * (shade * nl) + diff * light',
+      '      + env * (1.0 - 0.28 * r2 * rough) * mix(spec, vec3(clamp(smoothness + 1.0 - omr, 0.0, 1.0)), fres);',
+      '  #else',
+      '    vec3 lit = a.rgb * (light + uLightColor * max(dot(n, uLightDir), 0.0) * shade);',
+      '  #endif',
+      '  vec3 c = toLinear(clamp(lit, 0.0, 1.0));',
+      '  gl_FragColor = vec4(c * focusMask(vWorld.xy), a.a);',
       '  #include <colorspace_fragment>',
       '}',
     ].join('\n'),

@@ -16,7 +16,7 @@ import { BoardScene, sceneGroupVisible } from '../../public/js/render/board3d/sc
 import { AREAS } from '../../public/js/render/board3d/layout.js';
 import { resolveUvTable } from '../../public/js/render/board3d/atlas.js';
 import { presetCamera } from '../../public/js/render/projection.js';
-import { sceneMaterial, sceneWaterMaterial, sceneBlend, focusUniforms, SCENE_LIGHT } from '../../public/js/render/board3d/materials.js';
+import { sceneMaterial, sceneWaterMaterial, sceneBlend, sceneEnvTexture, focusUniforms, SCENE_LIGHT } from '../../public/js/render/board3d/materials.js';
 import {
   parseSceneChunks, sceneGroupRects, loadScenePack, sceneListed, resetBoardPack, sceneGroup, sceneMaterialKey, mergeSceneChunks,
   SCENE_TEX_GROUP, SCENE_VERSION, SCENE_VERTEX_BYTES,
@@ -171,17 +171,18 @@ print(json.dumps({str(k): v for k, v in s.hidden_groups(raw, objs).items()}))`);
     assert.deepEqual(out, { 11: 'HIDDEN@1', 12: 'HIDDEN@1', 21: 'HIDDEN@1', 13: 'HIDDEN@2' }, 'pointers to objects of the file; an unknown id is no pointer');
   });
 
-  test('decode_rgbm: the RGBM light as (L / LIGHT_RANGE)^(1/2.2); a page without alpha is kept', { skip: !HAS_PIL && 'no Pillow' }, () => {
+  test('decode_rgbm: the RGBM light in display space as 5 · A · RGB / LIGHT_RANGE; a page without alpha is kept', { skip: !HAS_PIL && 'no Pillow' }, () => {
     const out = py(`from PIL import Image
-img = Image.new('RGBA', (2, 1)); img.putdata([(255, 128, 0, 51), (255, 255, 255, 255)])
+img = Image.new('RGBA', (3, 1)); img.putdata([(255, 128, 0, 51), (255, 255, 255, 255), (40, 20, 10, 255)])
 d = s.decode_rgbm(img)
-print(json.dumps({'mode': d.mode, 'px': list(d.getdata()), 'range': s.LIGHT_RANGE, 'plain': s.decode_rgbm(Image.new('RGB', (1, 1), (9, 8, 7))).getpixel((0, 0))}))`);
+print(json.dumps({'mode': d.mode, 'px': list(d.getdata()), 'range': s.LIGHT_RANGE, 'encoding': s.LIGHT_ENCODING, 'plain': s.decode_rgbm(Image.new('RGB', (1, 1), (9, 8, 7))).getpixel((0, 0))}))`);
     assert.equal(out.mode, 'RGB');
-    // texel (1, 0.5, 0, A = 0.2): L = 5^2.2 · 0.2^2.2 · rgb → stored (L / range)^(1/2.2) = (5^2.2 / range)^(1/2.2) · 0.2 · rgb^(1/2.2)
-    const k = (5 ** 2.2 / out.range) ** (1 / 2.2);
-    const want = [1, 128 / 255, 0].map((c) => Math.round(255 * Math.min(1, k * 0.2) * c ** (1 / 2.2)));
-    for (let i = 0; i < 3; i++) assert.ok(Math.abs(out.px[0][i] - want[i]) <= 2, `channel ${i}: ${out.px[0][i]} vs ${want[i]}`);
+    assert.equal(out.encoding, 'gamma');
+    // texel (1, 0.5, 0, A = 0.2): Unity's gamma-space RGBM value 5 · 0.2 · rgb, stored / range
+    const want = (px, a) => px.map((c) => Math.min(255, Math.round(255 * 5 * a * (c / 255) / out.range)));
+    assert.deepEqual(out.px[0], want([255, 128, 0], 0.2));
     assert.deepEqual(out.px[1], [255, 255, 255], 'clamped at the range');
+    assert.deepEqual(out.px[2], want([40, 20, 10], 1), 'a bright multiplier does not clamp a dark colour');
     assert.deepEqual(out.plain, [9, 8, 7]);
   });
 
@@ -284,6 +285,15 @@ describe('scene chunks (load.js)', () => {
       assert.ok(pack.images.tex.TX_A && pack.images.lm[0]);
       assert.deepEqual(Object.keys(pack.groups).sort(), ['HIDDEN@1', 'HIDDEN@2', 'HIDDEN@3']);
       assert.equal(await loadScenePack(store, 'act2autochess_m02'), pack, 'cached');
+      assert.deepEqual(pack.images.data, {});
+      assert.equal(pack.images.env, null, 'a scene extracted before the reflection atlas');
+      resetBoardPack();
+      Object.assign(urls, { [`${group}|env`]: '/s/env.png', [`${SCENE_TEX_GROUP}|TX_N`]: '/t/TX_N.webp', [`${SCENE_TEX_GROUP}|TX_M`]: '/t/TX_M.webp' });
+      const first = Object.keys(doc.materials || {})[0] || 'M';
+      json = { ...doc, env: { size: 128, mips: 8, range: 1.5 }, materials: { ...doc.materials, [first]: { ...(doc.materials || {})[first], normalMap: 'TX_N', glossMap: 'TX_M' } } };
+      const lit = await loadScenePack(store, 'act2autochess_m02');
+      assert.ok(lit.images.data.TX_N && lit.images.data.TX_M && lit.images.env, 'the normal / gloss maps and the reflection atlas');
+      assert.ok(!lit.images.tex.TX_N && !lit.images.tex.TX_M, 'data maps stay out of the sRGB textures');
       resetBoardPack();
       json = { ...doc, version: SCENE_VERSION + 1 };
       assert.equal(await loadScenePack(store, 'act2autochess_m02'), null, 'unknown version → the procedural board');
@@ -302,22 +312,47 @@ describe('scene materials', () => {
     assert.equal(sceneBlend(null), 'opaque');
   });
 
-  test('sceneMaterial: linear albedo tint, lightmap range, key light, cutoff; unlit fallback without a lightmap page', () => {
+  test('sceneMaterial: display-space tint, lightmap range by encoding, key light, cutoff; unlit fallback without a lightmap page', () => {
     const focus = focusUniforms(THREE);
     const map = new THREE.Texture(), lm = new THREE.Texture();
     const info = { keywords: ['_ALPHATEST_ON'], colors: { _Color: [0.5, 1, 1, 1] }, floats: { _Cutoff: 0.4, _ShadowStrength: 0.9 } };
-    const m = sceneMaterial(THREE, { map, lightMap: lm, info, lightRange: 8, light: { dir: [0, 0, 2], color: [1, 1, 1], intensity: 1.1 } }, focus);
+    const light = { dir: [0, 0, 2], color: [1, 0.5, 1], intensity: 1.1 };
+    const m = sceneMaterial(THREE, { map, lightMap: lm, info, lightRange: 3, lightEncoding: 'gamma', light }, focus);
     assert.equal(m.uniforms.uMap.value, map);
     assert.equal(m.uniforms.uLm.value, lm);
-    assert.ok(Math.abs(m.uniforms.uColor.value.x - 0.5 ** 2.2) < 1e-6, 'authored in gamma space');
+    assert.equal(m.uniforms.uColor.value.x, 0.5, 'the tint multiplies display values, as in the gamma-space client');
     assert.equal(m.uniforms.uCutoff.value, 0.4);
-    assert.equal(m.uniforms.uShadow.value, 0.9);
-    assert.equal(m.uniforms.uLmScale.value, 8 * SCENE_LIGHT.indirect);
+    assert.equal(m.uniforms.uShadow, undefined, '_ShadowStrength scales the realtime shadow map only: the baked shadow is used whole');
+    assert.ok(/shade = lm\.a;/.test(m.fragmentShader));
+    assert.equal(m.uniforms.uLmScale.value, 3 * SCENE_LIGHT.indirect);
     assert.deepEqual(m.uniforms.uLightDir.value.toArray(), [0, 0, 1], 'normalised');
     assert.ok(Math.abs(m.uniforms.uLightColor.value.x - 1.1 * SCENE_LIGHT.direct) < 1e-6);
+    assert.ok(Math.abs(m.uniforms.uLightColor.value.y - 0.55 * SCENE_LIGHT.direct) < 1e-6, 'the light colour is not linearised');
     assert.equal(m.uniforms.uFocus, focus.uFocus, 'the shared focus falloff');
+    assert.equal(m.uniforms.uFocusDim, focus.uFocusDim);
     assert.equal(m.transparent, false);
-    assert.ok(m.defines.SCENE_MAP && m.defines.SCENE_LM);
+    assert.ok(m.defines.SCENE_MAP && m.defines.SCENE_LM && !m.defines.SCENE_LM_V1);
+    assert.ok(!m.defines.SCENE_PBS && !m.defines.SCENE_NORMAL && !m.defines.SCENE_GLOSS, 'no reflection atlas → the plain sum');
+    assert.equal(m.uniforms.uEnvScale.value, 0);
+    // with the scene's reflection: the client's BRDF, its maps and the material's surface values
+    const env = new THREE.CubeTexture(), nrm = new THREE.Texture(), gloss = new THREE.Texture();
+    const surf = { ...info, floats: { ...info.floats, _BumpScale: 0.5, _Metallic: 0.25, _Glossiness: 0.3, _GlossMapScale: 0.8 } };
+    const full = sceneMaterial(THREE, { map, lightMap: lm, info: surf, lightRange: 3, lightEncoding: 'gamma', light, env, envRange: 1.5, normalMap: nrm, glossMap: gloss }, focus);
+    assert.ok(full.defines.SCENE_PBS && full.defines.SCENE_NORMAL && full.defines.SCENE_GLOSS);
+    assert.equal(full.uniforms.uEnv.value, env);
+    assert.equal(full.uniforms.uEnvScale.value, 1.5);
+    assert.equal(full.uniforms.uNormal.value, nrm);
+    assert.equal(full.uniforms.uGlossMap.value, gloss);
+    assert.deepEqual(full.uniforms.uSurface.value.toArray(), [0.5, 0.25, 0.8], 'bump scale, metallic, the gloss map\'s scale');
+    const flat = sceneMaterial(THREE, { map, info: surf, env, light }, focus);
+    assert.ok(flat.defines.SCENE_PBS && !flat.defines.SCENE_NORMAL && !flat.defines.SCENE_GLOSS);
+    assert.deepEqual(flat.uniforms.uSurface.value.toArray(), [0.5, 0.25, 0.3], 'without a gloss map: _Metallic / _Glossiness');
+    for (const term of ['0.779083729', '0.220916301', 'textureLod(uEnv', '0.28 * r2 * rough']) assert.ok(full.fragmentShader.includes(term), term);
+    assert.equal(sceneEnvTexture(THREE, {}, { size: 128, mips: 8 }), null, 'no DOM canvas (Node) → no reflection');
+    // a scene extracted before lightEncoding: the page holds (L / 8)^(1/2.2), read back in the shader
+    const old = sceneMaterial(THREE, { map, lightMap: lm, info, lightRange: 8, light }, focus);
+    assert.ok(old.defines.SCENE_LM_V1);
+    assert.ok(Math.abs(old.uniforms.uLmScale.value - 8 ** (1 / 2.2) * SCENE_LIGHT.indirect) < 1e-9);
     const bare = sceneMaterial(THREE, { info: { keywords: ['_ALPHABLEND_ON'] } }, focus);
     assert.equal(bare.uniforms.uLmScale.value, 0);
     assert.equal(bare.uniforms.uAmbient.value, SCENE_LIGHT.ambient);
@@ -472,7 +507,16 @@ describe('extracted scenes (when scene bundles were extracted here)', { skip: !O
         assert.ok(doc.materials[c.material], `material ${c.material}`);
         if (c.lightmap >= 0) assert.ok(c.lightmap < doc.lightmaps && groups[g][`lm${c.lightmap}`], `lightmap page ${c.lightmap}`);
       }
-      for (const m of Object.values(doc.materials)) if (m.map) assert.ok(groups[SCENE_TEX_GROUP]?.[m.map], `texture ${m.map}`);
+      for (const m of Object.values(doc.materials)) {
+        for (const k of ['map', 'normalMap', 'glossMap']) if (m[k]) assert.ok(groups[SCENE_TEX_GROUP]?.[m[k]], `texture ${m[k]}`);
+      }
+      if (doc.env) {   // a scene extracted with its reflection: the atlas holds 6 faces × the mip chain
+        const e = groups[g].env;
+        assert.ok(e && existsSync(file(e.path)), 'the reflection atlas');
+        assert.ok(doc.env.size > 0 && doc.env.mips > 0 && doc.env.range > 0);
+        assert.equal(e.w, 6 * doc.env.size);
+        assert.equal(e.h, Array.from({ length: doc.env.mips }, (_, i) => Math.max(1, doc.env.size >> i)).reduce((a, b) => a + b, 0));
+      }
       const L = doc.light;
       assert.ok(L && Math.abs(Math.hypot(...L.dir) - 1) < 1e-3 && L.dir[2] > 0, 'the key light shines down on the board');
     });

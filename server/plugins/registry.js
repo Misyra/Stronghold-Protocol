@@ -25,7 +25,7 @@
 // changes its ctime), so a rescan reads only what changed [ASSUMED: at scan, synchronously — a 200 MB plugin costs about a
 // second once]; a problem keeps it out like any other. A ui plugin's frame files (html, js, css, png under entry.client)
 // are hashed the same way and count toward a catalogue `vs` of that plugin alone; they never count toward `cs`.
-// A content plugin is read as a JSON snapshot (P1b); a script or trusted one is listed as `unsupported` and never loaded
+// A content plugin is read as a JSON snapshot (P1b); script/trusted entries add checked source snapshots (P3a owner gates)
 // (no sim or server plugin code runs — the owner's decision of 2026-10-12). A ui page runs only inside the sandboxed
 // frame and cannot send a match intent. Of a plugin folder only the files a lang manifest names (at /packs/<id>/<file>),
 // the files a cosmetic overlay names and the frame files of a ui plugin (both at /p/…) are served; nothing else — not
@@ -39,6 +39,8 @@
 // every such rescan is told to its listeners (onScan: the visual sets look for the sets in use whose plugins changed).
 // server/packs.js re-exports the pack API of this file for its old callers.
 
+import { nodeSha256 } from './identity.js';
+import { readScripts, applyTrust, isScriptClass } from './trusted.js';
 import { readContentData } from './contentData.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -465,7 +467,7 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
     id, type: manifest.type, class: manifest.class, status, source: 'plugins', layout: 'folder', where: at,
     supported: status === 'loaded' && manifest.class === 'lang', manifest, files: served, bytes: check.bytes, count: check.count,
   };
-  if ((manifest.class === 'cosmetic' || manifest.class === 'ui' || (manifest.class === 'content' && manifest.parts.assets)) && status === 'loaded') {
+  if ((manifest.class === 'cosmetic' || manifest.class === 'ui' || (['content','script','trusted'].includes(manifest.class) && manifest.parts.assets)) && status === 'loaded') {
     const art = typeof vanilla === 'function' ? vanilla() : vanilla;
     if (manifest.class === 'ui') {
       const u = readUiFrame(dir, manifest, files, { vanilla: art, hashCache });
@@ -480,7 +482,7 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
       plugin.visual = v.visual;
     }
   }
-  if (manifest.class === 'content' && status === 'loaded') {
+  if (['content','script','trusted'].includes(manifest.class) && status === 'loaded') {
     const c = readContentData(dir, manifest);
     if (!c.content) {
       // (the data checks' codes — PLUGIN_PATCH_* / PLUGIN_RECORD_* / PLUGIN_DATA_* … — are in the catalogue; the line as before)
@@ -488,6 +490,17 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
       return out(null);
     }
     plugin.content = c.content;
+    if (isScriptClass(manifest.class)) {
+      plugin.script = readScripts(dir,manifest,files);
+      for (const p of plugin.script.problems) list.problem(p.code,p.message,{where:p.path,detail:p.message});
+      if (problems.length) return out(null);
+      plugin.content = { ...c.content, files: {...c.content.files,...plugin.script.files}, hash: nodeSha256(Buffer.from(JSON.stringify({...c.content.files,...plugin.script.files}))) };
+      plugin.script.manifestSource = fs.readFileSync(man,'utf8');
+      // Every snapshot byte must be from the pinned lock too, even if an author saves midway through the scan.
+      plugin.script.lockValid &&= Object.entries(plugin.content.files).every(([rel,hash]) => plugin.script.lockedFiles[rel]?.sha256 === hash)
+        && nodeSha256(Buffer.from(plugin.script.manifestSource)) === plugin.content.files['plugin.json'];
+      plugin.status = 'disabled';
+    }
   }
   if (manifest.class === 'lang') {
     const ui = readJson(served.ui.abs);
@@ -737,7 +750,7 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
  * @param {{ log?: { info: Function, warn: Function }, app?: string, recheckMs?: number }} [opts]
  *   recheckMs: how long a scan stays trusted before the folders are looked at again (default 1000; 0 = every call)
  */
-export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, app = APP_VERSION, recheckMs = 1000 } = {}) {
+export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, app = APP_VERSION, recheckMs = 1000, scriptHost = '0.0.0.0', scriptMode = process.env.SP_PLUGIN_SCRIPTS } = {}) {
   let sig = null;
   let checkedAt = -Infinity;
   /** @type {ReturnType<typeof scanPlugins> & { packs: Plugin[], index: ReturnType<typeof packIndexOf>, byId: Map<string, Plugin> }} */
@@ -759,6 +772,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     if (state && s === sig) return state;
     const first = !state;
     const scan = scanPlugins(dirs, { app, hashCache, artCache });
+    applyTrust(scan.plugins,{ pluginsDir:dirs.pluginsDir, host:scriptHost, mode:scriptMode, log });
     // the hashes of a plugin that is gone (removed, or now skipped) are forgotten
     const kept = scan.plugins.flatMap((p) => [p.visual && p.visual.dir + path.sep, p.ui && p.ui.dir + path.sep].filter(Boolean));
     for (const abs of [...hashCache.keys()]) if (!kept.some((d) => abs.startsWith(d))) hashCache.delete(abs);
@@ -781,6 +795,11 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
 
   return {
     contentDirs: { ...dirs },
+    /** Recheck the actual listening address, and retain it across every subsequent rescan. */
+    setScriptHost(host) {
+      scriptHost = host;
+      if (state) applyTrust(state.plugins, { pluginsDir:dirs.pluginsDir, host:scriptHost, mode:scriptMode, log });
+    },
     /** Re-read the folders now if they changed (force: even within recheckMs). */
     refresh: (force = false) => { refresh(force); },
     /**

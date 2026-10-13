@@ -9,7 +9,7 @@ import { forkSandbox } from '../../server/match/host/childHost.js';
 import { createBattleRunner } from '../../public/js/battle/runner.js';
 import { createStore, initialState } from '../../public/js/store.js';
 import { validateC2S } from '../../shared/protocol.js';
-import { fixtureSet, fixtureSpec, scriptPlugin, operatorScript } from '../helpers/simHostFixture.js';
+import { fixtureSet, fixtureSpec, scriptSet as makeScriptSet, operatorScript } from '../helpers/simHostFixture.js';
 
 export function nodePort(child = false) {
   const worker = child ? forkSandbox(fileURLToPath(new URL('../helpers/simChildNode.mjs', import.meta.url)))
@@ -85,26 +85,30 @@ test('data set: Worker and in-page snapshots/events/results match every batch; b
 });
 
 test('script operator: permission child and Worker have byte-identical ev/results', async t => {
-  const a = new WorkerSimHost({ workerFactory: () => nodePort(true) }), b = remote();
-  t.after(() => { a.stop(); b.stop(); });
-  const set = { ...fixtureSet(), scripts: [scriptPlugin(operatorScript)] }, spec = fixtureSpec();
+  const a = new WorkerSimHost({ workerFactory: () => nodePort(true) }), b = remote(), native = remote();
+  t.after(() => { a.stop(); b.stop(); native.stop(); });
+  const set = makeScriptSet(operatorScript), spec = fixtureSpec();
+  const nativeSet = makeScriptSet(operatorScript,'trusted');
+  await native.load(nativeSet.cs,nativeSet);await native.start(spec);
   await a.load(set.cs, set); await b.load(set.cs, set); await a.start(spec); await b.start(spec);
-  await a.step(1); await b.step(1);
+  await a.step(1); await b.step(1);await native.step(1);
   const stats = await b.rpc('unitStats', [b.battle.allyUnits[0].id]);
   assert.ok(stats, 'script operator is in the battle');
   const vanilla = local(); await vanilla.load(set.cs, { ...set, scripts: [] }); vanilla.start(spec); vanilla.step(1);
   assert.notDeepEqual(stats, vanilla.unitStats(vanilla.battle.allyUnits[0].id), 'the sandbox kit really changes the operator');
   vanilla.stop();
   while (!a.battle.finished) {
-    const x = await a.step(8), y = await b.step(8);
+    const x = await a.step(8), y = await b.step(8), z = await native.step(8);
     assert.equal(JSON.stringify(y.ev), JSON.stringify(x.ev)); assert.equal(JSON.stringify(y.snap), JSON.stringify(x.snap));
+    assert.equal(JSON.stringify(z.ev),JSON.stringify(x.ev));assert.equal(JSON.stringify(z.snap),JSON.stringify(x.snap));
   }
   assert.equal(JSON.stringify(b.compactResult()), JSON.stringify(a.compactResult()));
+  assert.equal(JSON.stringify(native.compactResult()),JSON.stringify(a.compactResult()));
 });
 
 test('runner: true infinite script and slow data step terminate, stop reports and request server takeover', { timeout: 15000 }, async t => {
   for (const scripts of [true, false]) {
-    const set = { ...fixtureSet(), ...(scripts ? { scripts: [scriptPlugin('export default function(){while(true){}}')] } : { data: { ...fixtureSet().data, __slow: true } }) };
+    const set = { ...fixtureSet(), ...(scripts ? makeScriptSet('export default function(){while(true){}}') : { data: { ...fixtureSet().data, __slow: true } }) };
     const sent = [], toasts = [];
     const runner = createBattleRunner({ net: { on: () => () => {}, request: (kind, fields) => {
       assert.equal(validateC2S({ t: kind, rid: 1, ...fields }), null); sent.push({ kind, ...fields }); return Promise.resolve();

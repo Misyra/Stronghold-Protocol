@@ -45,6 +45,10 @@
 // this in the browser.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { buildContentSet } from '../server/plugins/contentSet.js';
+import { createPluginRegistry } from '../server/plugins/registry.js';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scanPlugins, pluginIndexOf, readVanillaAssets } from '../server/plugins/registry.js';
@@ -147,6 +151,30 @@ export async function main(argv) {
   if (values.root) root = path.resolve(values.root);
   const lang = errorLang(values.lang || process.env.SP_LANG || 'zh');
   const dirs = pluginDirs(root);
+
+  if (cmd === 'test') {
+    if (targets.length !== 1 || !isPluginId(targets[0])) { console.error('plugin test needs one installed plugin id'); return 2; }
+    const id = targets[0];
+    const registry = createPluginRegistry(dirs);
+    // Explicit author test is authorization to execute locally; production owner gates still apply to servers.
+    const lookup = registry.plugin;
+    const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded',
+      ...(p.script ? {script:{...p.script,execution:'trusted'}} : {})} : null; }};
+    const set = buildContentSet({registry:testing,ids:[id]});
+    if (!set.cs) { console.error(JSON.stringify(set.problems)); return 1; }
+    const testDir = path.join(dirs.pluginsDir,id,'test');
+    const tests = fs.existsSync(testDir) ? fs.readdirSync(testDir).filter(f => f.endsWith('.test.js')).sort().map(f => path.join(testDir,f)) : [];
+    if (!tests.length) { console.error('no test/*.test.js files'); return 1; }
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(),'sp-plugin-test-'));
+    try {
+      const file = path.join(tmp,'set.json'); fs.writeFileSync(file,JSON.stringify(set));
+      const env = {...process.env,SP_PLUGIN_TEST_SET:file}; delete env.NODE_TEST_CONTEXT;
+      const r = spawnSync(process.execPath,['--import',path.join(REPO,'server/plugins/scriptTestSetup.js'),'--test',...tests],{
+        stdio:'inherit',env,timeout:120000,
+      });
+      return r.status ?? 1;
+    } finally { fs.rmSync(tmp,{recursive:true,force:true}); }
+  }
 
   if (cmd === 'list') {
     if (targets.length) { console.error(`plugin: list takes no folder\n${USAGE}`); return 2; }

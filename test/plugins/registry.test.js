@@ -1,6 +1,6 @@
 // test/plugins/registry.test.js — the plugin registry (DESIGN §32, server/plugins/registry.js): one scan over the
 // language folders, packs/ and plugins/ — manifest 1 read as before, manifest 2 by class (lang and cosmetic loaded —
-// P1a —, content loaded, code unsupported), broken manifests, stray files and links, duplicate ids (across packs/ and
+// P1a —, content loaded, code disabled by default), broken manifests, stray files and links, duplicate ids (across packs/ and
 // plugins/, any case) and languages skipped with a reason, `_` templates and top-level files never read; the
 // language-pack view and /packs/index.json unchanged (server/packs.js is a compatibility export), a lang plugin served
 // like a pack folder and nothing else of plugins/ served; GET /plugins/index.json with the vanilla content hash; a
@@ -76,13 +76,13 @@ function exampleRoot() {
   return dir;
 }
 
-test('one scan: the language packs, packs/ and plugins/ by class — lang and cosmetic loaded, content loaded, code unsupported', () => {
+test('one scan: the language packs, packs/ and plugins/ by class — lang and cosmetic loaded, content loaded, code disabled by default', () => {
   const root = exampleRoot();
   try {
     const scan = scanPlugins(dirsOf(root), { app: '0.3.0' });
     assert.deepEqual(scan.plugins.map((p) => [p.id, p.class, p.status, p.source]), [
       ['en', 'lang', 'loaded', 'i18n'], ['qaa', 'lang', 'loaded', 'i18n'], ['qab', 'lang', 'loaded', 'packs'],
-      ['kit', 'script', 'unsupported', 'plugins'], ['marathon', 'content', 'loaded', 'plugins'], ['needs', 'content', 'loaded', 'plugins'],
+      ['kit', 'script', 'disabled', 'plugins'], ['marathon', 'content', 'loaded', 'plugins'], ['needs', 'content', 'loaded', 'plugins'],
       ['qac', 'lang', 'loaded', 'plugins'], ['skin', 'cosmetic', 'loaded', 'plugins'],
     ]);
     // a loaded cosmetic plugin is no language entry; its overlay was read (no data/assets.json here: no vs)
@@ -155,7 +155,7 @@ test('the registry: only a lang folder\'s named files are servable; the catalogu
     assert.deepEqual(body.content, { vanilla: 'cd'.repeat(32) });
     assert.deepEqual(body.plugins.map((e) => [e.id, e.class, e.status]), [
       ['en', 'lang', 'loaded'], ['qaa', 'lang', 'loaded'], ['qab', 'lang', 'loaded'], ['qac', 'lang', 'loaded'],
-      ['skin', 'cosmetic', 'loaded'], ['marathon', 'content', 'loaded'], ['needs', 'content', 'loaded'], ['kit', 'script', 'unsupported'],
+      ['skin', 'cosmetic', 'loaded'], ['marathon', 'content', 'loaded'], ['needs', 'content', 'loaded'], ['kit', 'script', 'disabled'],
     ]);
     assert.ok(body.plugins.filter((e) => e.class !== 'lang').every((e) => e.unofficial === true), 'every non-language plugin is marked unofficial');
     assert.ok(!JSON.stringify(body).includes(root), 'no server path in the catalogue');

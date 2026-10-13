@@ -413,7 +413,7 @@ export async function fetchChecked(url, want, { fetch: doFetch, retryDelays = CO
  *   onProgress?: (loaded: number, total: number) => void }} [opts]
  * @returns {Promise<{ cs: string, index: any, values: Map<string, any>, bounds: any }>} (rejects with the reason)
  */
-export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryDelays = CONTENT_RETRY_MS, wait = sleep, timeoutMs = CONTENT_TIMEOUT_MS, onProgress = null } = {}) {
+export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryDelays = CONTENT_RETRY_MS, wait = sleep, timeoutMs = CONTENT_TIMEOUT_MS, onProgress = null, consent = false } = {}) {
   if (!isContentHash(cs)) throw new Error('no content hash');
   const index = await fetchChecked(`/cs/${csUrlPart(cs)}/index.json`, null, { fetch: doFetch, retryDelays, wait, timeoutMs });
   if (!isObj(index) || index.cs !== cs || index.vanilla !== false || !isObj(index.data)) throw new Error('the manifest is not the room\'s content set');
@@ -447,14 +447,30 @@ export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryD
   await Promise.all(Array.from({ length: Math.min(CONTENT_PARALLEL, entries.length) }, worker));
   const bounds = official ? await fetchChecked(official.url, official, { fetch: doFetch, retryDelays, wait, timeoutMs }) : null;
   if (official && (!isObj(bounds) || bounds.v !== 1)) throw new Error('bounds: not an official-bounds snapshot');
-  return { cs, index, values, bounds };
+  const scripts = [];
+  const scriptEntries = (index.plugins || []).filter(p => p.files?.['@script']).map(p => [p.id,index.scripts?.[p.id]]);
+  if (scriptEntries.some(([,f]) => !isObj(f)) || scriptEntries.length !== listed(index.scripts).length) throw new Error('script list does not match cs');
+  const sandbox = index.execution === 'sandbox';
+  if (consent || sandbox) for (const [id,f] of scriptEntries) {
+    if (f.url !== `${own}scripts/${id}.json` || index.plugins.find(p => p.id === id)?.files?.['@script'] !== f.sha256) throw new Error('script descriptor not pinned by cs');
+    scripts.push(await fetchChecked(f.url,f,{fetch:doFetch,retryDelays,wait,timeoutMs}));
+  }
+  let nativeVerified = false;
+  if (scripts.length) {
+    const {verifyScripts,scriptExecution,checkBrowserScripts} = await import('../../shared/plugins/scriptLoad.js');
+    verifyScripts(scripts,index);
+    if (scriptExecution(scripts) !== (sandbox ? 'sandbox' : 'trusted')) throw new Error('script execution mode mismatch');
+    if (!sandbox) { await checkBrowserScripts(scripts,cs,doFetch); nativeVerified = true; }
+  }
+  return { cs, index, values, bounds, scripts, nativeVerified, canSim: !listed(index.scripts).length || consent || sandbox };
 }
 
 /**
  * The content set the battle runner simulates on now (public/js/battle/runner.js): `{ cs, data, bounds }` of the checked
  * set the page holds, or null (the original content: the runner loads /data/ itself).
  */
-export const simContent = () => (held ? { cs: held.cs, data: Object.fromEntries(held.values), bounds: held.bounds ?? null } : null);
+export const simContent = () => (held && held.canSim !== false ? { scripts:held.scripts || [], hashInput:held.index, nativeVerified:held.nativeVerified,
+  cs: held.cs, data: Object.fromEntries(held.values), bounds: held.bounds ?? null } : null);
 
 /**
  * The content set `cs` once this page holds it — at once when it does, when its download is done when it is the one
@@ -512,13 +528,26 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
     settleWaiting(null);
     if (contentSet.get().cs !== null || contentSet.get().status !== 'idle') contentSet.set({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
   };
-  const load = (cs) => {
+  const load = (cs, consent = false) => {
     const mine = ++req;
     if (held) { held = null; data.setContent(null); }
     settleWaiting(null);
     contentSet.set({ cs, status: 'loading', loaded: 0, total: 0, error: null, kitted: null });
-    loadContentSet(cs, { fetch: doFetch, retryDelays, wait, onProgress: (loaded, total) => { if (mine === req) contentSet.set({ loaded, total }); } })
-      .then((set) => {
+    loadContentSet(cs, { consent, fetch: doFetch, retryDelays, wait, onProgress: (loaded, total) => { if (mine === req) contentSet.set({ loaded, total }); } })
+      .then(async (set) => {
+        if (mine !== req) return;
+        if (consent && set.scripts.length) {
+          const {verifyScripts,scriptUrl} = await import('../../shared/plugins/scriptLoad.js');
+          verifyScripts(set.scripts,set.index);
+          for (const p of set.scripts) {
+            const m = JSON.parse(p.manifestSource);
+            if (m.entry?.client && !pageScripts.has(cs+':'+p.id)) {
+              if (!set.nativeVerified) throw new Error('page script bytes not checked');
+              await import(scriptUrl(cs,p.id,m.entry.client));
+              pageScripts.add(cs+':'+p.id);
+            }
+          }
+        }
         if (mine !== req) return;
         held = set;
         const i18n = isObj(set.index.i18n) ? set.index.i18n : {};
@@ -528,8 +557,8 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
         const extra = store.get()?.room?.content?.kittedExtra;
         contentSet.set({ status: 'ready', error: null, kitted: Array.isArray(extra) ? extra.filter((x) => typeof x === 'string').slice(0, 200) : null });
         settleWaiting(cs);
-        tell(cs, true);
-      }, (err) => {
+        if (set.canSim || !store.get()?.room?.seats?.some(s => s?.playerId === store.get()?.me?.playerId)) tell(cs, true);
+      }).catch((err) => {
         if (mine !== req) return;
         console.warn(`[content] the room's content set ${cs.slice(0, 8)} did not load or check: ${err?.message || err}`);
         contentSet.set({ status: 'failed', error: String(err?.message || err).slice(0, 200) });
@@ -542,10 +571,11 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
     const cs = roomCs(s);
     const cur = contentSet.get();
     if (!cs) { if (cur.cs || held) drop(); return; }
-    if (cur.cs !== cs) { load(cs); return; }
+    const consent = !!s.room.content.trusted && hasScriptConsent(cs);
+    if (cur.cs !== cs || (held?.cs === cs && held.canSim === false && consent)) { load(cs,consent); return; }
     // the page holds the room's set, its seat does not show it (the room changed its set and back, a reconnect): again
     const seat = mySeat(s);
-    if (seat && cur.status === 'ready' && seat.content !== 'ready') tell(cs, true);
+    if (seat && cur.status === 'ready' && seat.content !== 'ready' && (!s.room.content.trusted || consent || !s.room.seats?.includes(seat))) tell(cs, true);
     else if (seat && cur.status === 'failed' && seat.content !== 'failed') tell(cs, false);
   };
   const off = store.subscribe((s) => sync(s));
@@ -566,4 +596,14 @@ export function contentHooks({ dev = DEV_BUILD, nav = globalThis.navigator ?? nu
   const hooks = { state: () => ({ ...contentSet.get(), held: held ? held.cs : null }) };
   if (dev || nav?.webdriver === true) hooks.forgeHeldCs = (cs) => { if (held && isContentHash(cs)) held = { ...held, cs }; };
   return hooks;
+}
+
+// Consent is this browser's explicit choice, independent of other seats and of server assertions.
+const pageScripts = new Set(), pageConsent = new Set();
+export function hasScriptConsent(cs, storage) {
+  try { return pageConsent.has(cs) || (storage ?? globalThis.localStorage)?.getItem('sp.plugin.consent.'+cs) === 'yes'; } catch { return pageConsent.has(cs); }
+}
+export function rememberScriptConsent(cs, accept, storage) {
+  if (accept) pageConsent.add(cs); else pageConsent.delete(cs);
+  try { storage ??= globalThis.localStorage; if (accept) storage?.setItem('sp.plugin.consent.'+cs,'yes'); else storage?.removeItem('sp.plugin.consent.'+cs); } catch { /* storage unavailable */ }
 }

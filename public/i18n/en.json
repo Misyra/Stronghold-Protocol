@@ -1468,5 +1468,21 @@
   "钥匙不对：请重新复制服务器窗口里的地址。": "That is not the key: copy the address from the server's window again.",
   "符号链接，工作台不打开": "a symbolic link: the studio does not open it",
   "这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。": "This plugin folder is a symbolic link: the game reads it as usual, the studio opens real folders only.",
-  "插件卡死，本场由服务器接管": "A plugin stopped responding. The server will take over this battle."
+  "插件卡死，本场由服务器接管": "A plugin stopped responding. The server will take over this battle.",
+  "受信任插件": "Trusted plugins",
+  "查看风险与同意状态": "Review risks and consent",
+  "同意运行": "Allow execution",
+  "拒绝": "Decline",
+  "它可以完全控制你的游戏页面": "It can fully control your game page",
+  "仅在你信任所有作者及以下代码时同意。换了内容组合需要重新同意。": "Accept only if you trust every author and the code below. A changed content set requires new consent.",
+  "作者：{authors}": "Authors: {authors}",
+  "权限：{permissions}": "Permissions: {permissions}",
+  "还有玩家未同意运行受信任插件": "A player has not consented to trusted plugins",
+  "服主没有启用脚本插件": "The server owner has not enabled script plugins",
+  "插件的锁文件或文件内容与服主钉住的哈希不符": "The plugin lock or files do not match the pinned hash",
+  "公网监听默认禁止受信任插件": "Trusted plugins are refused on a public listening address",
+  "两个插件注册了同一个效果": "Two plugins register the same effect",
+  "插件未声明要替换的官方技能": "The plugin did not declare the official kit it replaces",
+  "脚本未通过兼容性检查": "The script failed its portability check",
+  "脚本（沙箱）": "Script (sandbox)"
 }

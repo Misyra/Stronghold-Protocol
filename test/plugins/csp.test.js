@@ -12,6 +12,9 @@ import { createStaticHandler } from '../../server/http/static.js';
 import { installPixiNoEval } from '../../public/js/render/app/pixiNoEval.js';
 import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { UI_FRAME_CSP } from '../../shared/plugins/ui.js';
+import {scriptFixture} from '../helpers/scriptFixtures.js';
+import {createContentSets} from '../../server/plugins/contentSets.js';
+import {getData} from '../../server/data.js';
 
 const publicDir = path.resolve('public');
 function request(handler, url, headers = {}) {
@@ -31,6 +34,7 @@ function handler(csp = siteCsp(publicDir)) {
 test('page import maps hash exact bytes; no inline executable script/events; page forbids eval', () => {
   const csp = siteCsp(publicDir);
   assert.ok(!csp.includes('unsafe-eval')); assert.match(csp, /worker-src 'self' blob:/);
+  assert.match(csp,/connect-src 'self';/);assert.ok(!/script-src[^;]*(?:data:|blob:)/.test(csp));
   for (const file of ['index.html', 'studio/index.html', 'dev/game-mock.html', 'dev/render-demo.html', 'dev/battle-perf.html', 'dev/uikit.html']) {
     const html = fs.readFileSync(path.join(publicDir, file), 'utf8');
     assert.ok(!/<[^>]+\son(?:load|error|click)=/i.test(html), file);
@@ -39,6 +43,27 @@ test('page import maps hash exact bytes; no inline executable script/events; pag
       else assert.ok(!m[2].trim(), file);
     }
   }
+});
+
+test('native script HTTP routes serve exact descriptor bytes and JavaScript MIME under site CSP',async t=>{
+  const f=scriptFixture(t);
+  f.put('native',"import {kit} from 'sp:sdk@1'; export default sp => {};",
+    {class:'trusted',permissions:['sim.code','trusted.page'],entry:{sim:'index.js',client:'page.js'}},{'page.js':'globalThis.nativeTest = true;'});
+  const contents=createContentSets({registry:f.registry,vanillaData:getData()});
+  const r=contents.resolve(['native']);assert.ok(r.ok,JSON.stringify(r));
+  const set=r.set,cs16=set.cs.slice(0,16);
+  const serveStatic=createStaticHandler({publicDir,dataDir:path.resolve('data'),sharedDir:path.resolve('shared'),contents});
+  const serve=createRequestHandler({serveStatic,csp:siteCsp(publicDir),health:{},log:console});
+  for(const rel of ['index.js','page.js']) {
+    const url=`/cs/${cs16}/scripts/native/${rel}`,a=await request(serve,url);
+    assert.equal(a.status,200);assert.match(a.headers['content-type'],/^text\/javascript/);
+    assert.equal(a.body,set.scripts[0].browserSources[rel]);assert.equal(a.headers['content-security-policy'],siteCsp(publicDir));
+    assert.equal((await request(serve,url,{'if-none-match':a.headers.etag})).status,304);
+  }
+  assert.match(set.scripts[0].browserSources['index.js'],/\/shared\/plugins\/sdk.js/);
+  assert.equal((await request(serve,`/cs/${cs16}/scripts/native/not-listed.js`)).status,404);
+  fs.writeFileSync(f.pluginsDir+'/native/page.js','globalThis.nativeTest = false;');
+  assert.equal((await request(serve,`/cs/${cs16}/scripts/native/page.js`)).body,'globalThis.nativeTest = true;','immutable held bytes');
 });
 test('actual static responses: Worker CSP on 200/206/304 and encoded aliases, independent of site switch', async () => {
   for (const csp of [siteCsp(publicDir), null]) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { forkSandbox } from '../../server/match/host/childHost.js';
 import { escapeCases } from '../helpers/sandboxCases.js';
 import { sha256Hex, utf8 } from '../../shared/sha256.js';
+import {spawnSync} from 'node:child_process';
 
 const entry = fileURLToPath(new URL('../helpers/sandboxProbe.mjs', import.meta.url));
 async function child(t) {
@@ -20,6 +21,18 @@ const plugin = files => ({ id: 'probe', class: 'script', entry: 'main.js', files
   const bytes = utf8(s); return [p, { sha256: sha256Hex(bytes), bytes: [...bytes] }];
 })) });
 
+test('eval control requires successful evaluation, not just Compartment construction',()=>{
+  const source=`import {initializeSandbox,createPluginCompartment} from './shared/plugins/sandbox.js';
+    await initializeSandbox({loadSES:()=>import('ses')});
+    const c=createPluginCompartment({});
+    try {console.log(JSON.stringify({value:c.evaluate('1+1')}));}catch(e){console.log(JSON.stringify({error:e.name}));}`;
+  for(const flags of [[],['--disallow-code-generation-from-strings']]) {
+    const r=spawnSync(process.execPath,[...flags,'--input-type=module','-e',source],{encoding:'utf8',timeout:5000});
+    assert.equal(r.status,0,r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout),flags.length?{error:'EvalError'}:{value:2});
+  }
+});
+
 test('SES escape corpus inside Node 22 --permission child; IPC and denied OS operations', { timeout: 15000 }, async t => {
   const { ask } = await child(t);
   for (const [label, source, expected] of escapeCases) {
@@ -27,6 +40,8 @@ test('SES escape corpus inside Node 22 --permission child; IPC and denied OS ope
     if (expected === 'throws') assert.equal(r.ok, false, label); else assert.deepEqual(r, { ok: true, value: expected }, label);
   }
   assert.deepEqual((await ask({ probePermissions: true })).value, { write: true, read: true, spawn: true, ipc: true });
+  assert.deepEqual((await ask({ probeSdk:true })).value, {refused:true,frozen:true,listFrozen:true,live:true,originalUntouched:true});
+  assert.equal((await ask({probeLength:true})).error.code,'PLUGIN_SANDBOX_LIMIT','reject length before reading/copying bytes');
 });
 
 test('hashed module graph, own relative imports and SDK only; isolated compartments and detmath', { timeout: 15000 }, async t => {

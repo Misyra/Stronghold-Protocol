@@ -33,7 +33,7 @@ import { resolvePluginOrder } from '../../shared/plugins/order.js';
  */
 export function createRoomSets({ registry, visual, contents, policy }) {
   /** A content plugin a room may switch on: loaded, its data read (server/plugins/contentData.js — WP-A, P1b), of the scope. */
-  const contentUsable = (p, scope) => !!contents && !!p && p.class === 'content' && p.status === 'loaded' && !!p.content
+  const contentUsable = (p, scope) => !!contents && !!p && ['content','script','trusted'].includes(p.class) && p.status === 'loaded' && !!p.content
     && Array.isArray(p.manifest?.scope) && p.manifest.scope.includes(scope);
   const cosmeticUsable = (p, scope) => !!visual && !!p && p.class === 'cosmetic' && p.status === 'loaded' && !!p.visual
     && Array.isArray(p.manifest?.scope) && p.manifest.scope.includes(scope);
@@ -53,6 +53,7 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     for (const id of ids) {
       const p = registry.plugin(id);
       if (!p) return { error: ERR.PLUGIN_UNKNOWN, detail: `${String(id).slice(0, 40)} is not installed` };
+      if (p.disabled) return {error:p.disabled.code,detail:`${id}: ${p.disabled.code}`};
       if (!cosmeticUsable(p, scope) && !contentUsable(p, scope)) return { error: ERR.PLUGIN_BLOCKED, detail: `${id} is not a cosmetic or content plugin of scope ${scope} this version loads` };
       if (!allowed(p)) return { error: ERR.PLUGIN_BLOCKED, detail: `${id} is not allowed on this server (plugins/config.json)` };
     }
@@ -65,11 +66,11 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     const entries = r.order.map((id) => registry.plugin(id));
     // the art: every cosmetic plugin, and a content plugin's own `assets` (its operators' art: the registry reads it as a
     // visual snapshot like a cosmetic plugin's — WP-A, P1b) — one visual set
-    const cosmeticIds = entries.filter((p) => p.class === 'cosmetic' || (p.class === 'content' && p.visual)).map((p) => p.id);
-    const contentIds = entries.filter((p) => p.class === 'content').map((p) => p.id);
+    const cosmeticIds = entries.filter((p) => p.class === 'cosmetic' || (['content','script','trusted'].includes(p.class) && p.visual)).map((p) => p.id);
+    const contentIds = entries.filter((p) => ['content','script','trusted'].includes(p.class)).map((p) => p.id);
     const warnings = [];
     for (const p of entries) {
-      if (p.class !== 'content' || p.manifest.compatible !== false) continue;
+      if (!['content','script','trusted'].includes(p.class) || p.manifest.compatible !== false) continue;
       if (!pol?.allowIncompatible) return { error: ERR.PLUGIN_INCOMPATIBLE, detail: `${p.id} is made for ${p.manifest.app || 'other versions'} (api ${p.manifest.api ?? '?'})` };
       warnings.push({ code: 'app', params: { id: p.id, app: p.manifest.app } });
     }
@@ -90,9 +91,9 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     const cById = new Map((cset?.plugins || []).map((p) => [p.id, p]));
     const plugins = entries.map((p) => {
       // a content plugin is named by its gameplay part (the content set's hash) even when it brings art too
-      const src = p.class === 'content' ? cById.get(p.id) : vById.get(p.id);
+      const src = ['content','script','trusted'].includes(p.class) ? cById.get(p.id) : vById.get(p.id);
       // (16 hex digits, as a cosmetic plugin's: the content set's plugin hash is a full SHA-256)
-      return { id: p.id, version: p.manifest.version, class: p.class, hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
+      return { id: p.id, version: p.manifest.version, class: p.class, ...(p.script ? {execution:cset?.execution} : {}), hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
     });
     return {
       ok: true,
@@ -100,6 +101,8 @@ export function createRoomSets({ registry, visual, contents, policy }) {
         ...(cset ? { cs: cset.cs } : {}),
         ...(vset ? { vs: vset.vs } : {}),
         plugins,
+        ...(cset?.execution ? { execution: cset.execution } : {}),
+        ...(cset?.scripts?.length && cset.execution !== 'sandbox' ? {trusted:{plugins:cset.scripts.map(({id,version,hash,permissions,authors}) => ({id,version,hash,permissions,authors}))}} : {}),
         warnings: [...(vset?.warnings || []), ...warnings],
         bytes: vset ? vset.bytes : 0,
         ...(cset ? { dataBytes: cset.dataBytes, modes: cset.modes, kitted: cset.kitted } : {}),

@@ -14,11 +14,11 @@
 //   cosmetic   art, models, audio (the asset overlay: shared/plugins/visual.js) loaded (P1a): the room's host switches
 //                                                                            it on for the room, a player for themself
 //   content    data patches and new records: operators, enemies, waves …    loaded (P1b): combined and validated on request
-//   script     code the battle or the match runs                             unsupported: listed, never loaded
+//   script     code the battle or the match runs                             trusted execution, owner gated (P3a)
 //   ui         interface widgets in a sandboxed frame                        loaded (P4): personal, read-only postMessage,
 //                                                                            never a match intent (shared/plugins/ui.js)
-//   trusted    page or server code with full trust                           unsupported
-// No sim or server code from a plugin runs (the owner's decision of 2026-10-12). A ui plugin's page (P4, DESIGN §32.8)
+//   trusted    page or server code with full trust                           experimental, owner gated (P3a)
+// Script/server code requires the P3a owner gates (DESIGN §32.10). A ui plugin's page (P4, DESIGN §32.8)
 // runs only inside the sandboxed frame and cannot send a match intent. Everything but `lang` is marked unofficial
 // wherever it is shown: the original content stays the default.
 //
@@ -40,7 +40,7 @@
 //                a list of paths or (assets, theme) the object inline · i18n { <lang>: path } (content+) — paths are
 //                inside the folder (isPackPath) and .json, the files an inline `assets` names are art, models, audio
 //                or fonts
-//   entry        { sim, meta } (script, .js) · { client } (ui: .html, required) · { server } (trusted, .js)
+//   entry        { sim, meta } (script, .js) · { client } (ui: .html, required; trusted: .js) · { server } (trusted, .js)
 //   slots        ui only: hud.right, result.tab, stats.tab, room.panel (UI_SLOT_IDS). Absent or []: a warning, the
 //                plugin still loads but the host grants no slot. A bad list, or slots on another class: a problem.
 //   lang class   the language fields of manifest 1 (lang, base, fallback, complete, machineTranslated, numberUnits —
@@ -103,9 +103,9 @@ export const PLUGIN_CLASSES = Object.freeze({
   lang: Object.freeze({ status: 'supported', summary: 'a language: UI strings and, optionally, game texts', scopes: ['personal'], defaultScope: ['personal'], unofficial: false, packType: 'lang', ext: ['.json'] }),
   cosmetic: Object.freeze({ status: 'supported', summary: 'art, models and audio: the room\'s host switches it on for the room, a player for themself (P1a)', scopes: ['room', 'personal'], defaultScope: ['room', 'personal'], unofficial: true, packType: 'assets', ext: MEDIA }),
   content: Object.freeze({ status: 'supported', summary: 'data patches and new records: operators, enemies, waves, modes (P1b)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'data', ext: MEDIA }),
-  script: Object.freeze({ status: 'unsupported', summary: 'code the battle or the match runs (never loaded by this version)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'script', ext: [...MEDIA, '.js'] }),
+  script: Object.freeze({ status: 'supported', summary: 'battle or match code, disabled unless the owner enables and pins it (P3a)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'script', ext: [...MEDIA, '.js'] }),
   ui: Object.freeze({ status: 'supported', summary: 'interface widgets in a sandboxed frame (P4): read-only, personal, cannot send a match intent', scopes: ['personal'], defaultScope: ['personal'], unofficial: true, packType: 'ui', ext: ['.json', '.html', '.js', '.css', '.png'] }),
-  trusted: Object.freeze({ status: 'unsupported', summary: 'page or server code with full trust (never loaded by this version)', scopes: ['server', 'room'], defaultScope: ['server'], unofficial: true, packType: 'trusted', ext: [...MEDIA, '.js', '.html', '.css'] }),
+  trusted: Object.freeze({ status: 'supported', summary: 'native page/server code, disabled unless the owner enables and pins it (P3a)', scopes: ['server', 'room'], defaultScope: ['server'], unofficial: true, packType: 'trusted', ext: [...MEDIA, '.js', '.html', '.css'] }),
 });
 
 /**
@@ -171,7 +171,7 @@ const SETTING_TYPES = ['boolean', 'integer', 'number', 'enum'];
 /** Top-level fields of manifest 2 (anything else is warned about and ignored). */
 const V2_FIELDS = new Set(['$schema', 'manifest', 'id', 'name', 'englishName', 'description', 'version', 'app', 'api', 'class', 'scope',
   'authors', 'credits', 'license', 'homepage', 'sourceLang', 'requires', 'optional', 'conflicts', 'loadAfter', 'loadBefore', 'priority',
-  'settings', 'permissions', 'entry', 'slots', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
+  'settings', 'permissions', 'overrides', 'entry', 'slots', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
 /** Fields only a lang plugin has. */
 const LANG_ONLY = ['files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits'];
 
@@ -279,7 +279,7 @@ export function appVersionMatches(range, version = APP_VERSION) {
  *   homepage: string, sourceLang: string, requires: Record<string, string>, optional: Record<string, string>,
  *   conflicts: Record<string, string>, loadAfter: string[], loadBefore: string[], priority: number,
  *   settings: Record<string, PluginSetting>, permissions: string[], parts: Record<string, PluginPart>,
- *   entry: Record<string, string>, slots: string[], files: Record<string, string>,
+ *   entry: Record<string, string>, slots: string[], files: Record<string, string>, overrides?: string[],
  *   lang?: string, base?: string | null, fallback?: string[], complete?: boolean, machineTranslated?: boolean,
  *   numberUnits?: string[] | null }} PluginManifest
  *   One shape for both versions. type: the manifest 1 type (lang, assets, data; the class name for the classes that
@@ -679,7 +679,8 @@ export function readPluginManifest(raw, ctx) {
         const e = has(ENTRIES, k) ? ENTRIES[k] : null;
         if (!e) { list.warning('PLUGIN_ENTRY', `"entry.${k}" is not an entry point (ignored)`, { at: ['entry', k] }); continue; }
         if (!e.classes.includes(cls)) { list.problem('PLUGIN_ENTRY', `"entry.${k}" is not something a ${cls} plugin has (${e.classes.join(', ')})`, { at: ['entry', k] }); continue; }
-        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== e.ext) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${e.ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
+        const ext = cls === 'trusted' && k === 'client' ? '.js' : e.ext;
+        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== ext) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
         entry[k] = /** @type {string} */ (rel);
       }
     }
@@ -727,11 +728,15 @@ export function readPluginManifest(raw, ctx) {
   for (const p of permissions) if (!used.has(p)) list.warning('PLUGIN_PERMISSION_UNUSED', `the permission "${p}" is declared but nothing in the manifest uses it`, { at: ['permissions'], permission: p });
   if (!isLang && !Object.keys(parts).length && !Object.keys(entry).length) list.warning('PLUGIN_EMPTY', `carries nothing a ${cls} plugin is made of`, { class: cls });
 
+  const overrides = m.overrides ?? [];
+  if (m.overrides !== undefined && (!['script','trusted'].includes(cls) || !Array.isArray(overrides) || overrides.length > 200 || new Set(overrides).size !== overrides.length || overrides.some(x => typeof x !== 'string' || !/^[A-Za-z0-9_:-]{1,128}$/.test(x)))) list.problem('PLUGIN_SCRIPT_OVERRIDE', 'overrides must list official kit ids', {at:['overrides']});
+
   /** @type {PluginManifest} */
   const out = {
     manifest: 2, id, class: cls, type: kind.packType, name, englishName, names, description, version, app: range, compatible, api, scope,
     authors: authorsOf(m.authors), credits: str(m.credits, 500), license: str(m.license, 100), homepage, sourceLang: sourceLang || SOURCE_LANG,
     requires, optional, conflicts, loadAfter, loadBefore, priority, settings, permissions, parts, entry, slots, files: {},
+    ...(m.overrides !== undefined ? { overrides } : {}),
   };
   if (isLang) {
     readLangFields(m, undefined, out, list);
@@ -835,6 +840,7 @@ export function classStatus(cls) {
 /**
  * @typedef {{ id: string, class: string, status: string, source: string, manifest: PluginManifest, bytes?: number,
  *   count?: number, visual?: { vs: string | null, bytes: number },
+ *   script?: { sandboxable: boolean, lockHash: string | null, execution?: string }, disabled?: { code: string },
  *   ui?: { vs: string | null, bytes: number, slots: string[], entry: string, frameFiles: Record<string, string> } }} PluginEntry
  *   what the registry knows of one plugin or pack (server/plugins/registry.js; `visual`: a loaded cosmetic plugin's own
  *   visual set and the bytes of art it serves; `ui`: a loaded interface plugin's frame — its own `vs`, the bytes it
@@ -880,6 +886,8 @@ export function pluginIndexEntry(p) {
   if (Number.isFinite(p.count)) e.files = p.count;
   if (p.visual && typeof p.visual.vs === 'string') e.vs = p.visual.vs;
   if (p.visual && Number.isFinite(p.visual.bytes)) e.artBytes = p.visual.bytes;
+  if (p.script) { e.sandboxable = p.script.sandboxable; e.execution = p.script.execution; e.hash = p.script.lockHash; }
+  if (p.disabled) e.disabled = p.disabled;
   if (p.ui) {
     e.slots = [...(p.ui.slots || [])];
     if (typeof p.ui.entry === 'string') e.entry = p.ui.entry;

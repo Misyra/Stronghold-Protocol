@@ -98,24 +98,18 @@ async function boot() {
   for (const name of Object.keys(hashInput.data)) data[name] = JSON.parse(decoder.decode(files[name]));
   setData(data);
   installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
-  let sandboxModule;
-  if (sandbox) {
-    if (viaWorker || !process.permission || process.env.SP_PLUGIN_SCRIPTS !== 'sandbox') throw new Error('PLUGIN_SANDBOX_DISABLED');
-    sandboxModule = await import('../../../shared/plugins/sandbox.js');
-    await sandboxModule.initializeSandbox({ loadSES: () => import('ses') });
-    // Every executable byte must be bound to the composition already checked against cs.
-    for (const script of scripts) {
-      const part = hashInput.plugins?.find(p => p.id === script.id);
-      if (!part || script.class !== 'script') throw new Error('PLUGIN_SANDBOX_CLASS');
-      for (const [path, file] of Object.entries(script.files || {})) {
-        if (part.files?.[path] !== file.sha256) throw new Error('PLUGIN_SANDBOX_HASH');
-      }
-    }
-  }
-  if (sandboxModule) {
-    await import('../../sim/spec.js'); // original engine first, then SDK registration, then the match/meta registries
-    const [{ parse }, sdk] = await Promise.all([import('acorn'), import(options.scriptSdkModule ? pathToFileURL(options.scriptSdkModule).href : '../../../shared/plugins/sdk.js')]);
-    await sandboxModule.installSandboxPlugins({ plugins: scripts, parse, createSDK: sdk.createPluginSDK });
+  if (scripts.length) {
+    const { verifyScripts, scriptExecution, loadScripts } = await import('../../../shared/plugins/scriptLoad.js');
+    verifyScripts(scripts, hashInput);
+    if (sandbox !== (scriptExecution(scripts) === 'sandbox')) throw new Error('script execution mode mismatch');
+    if (sandbox) {
+      if (viaWorker || !process.permission || process.env.SP_PLUGIN_SCRIPTS !== 'sandbox') throw new Error('PLUGIN_SANDBOX_DISABLED');
+      const sandboxModule = await import('../../../shared/plugins/sandbox.js');
+      await sandboxModule.initializeSandbox({ loadSES: () => import('ses') });
+      await import('../../sim/spec.js');
+      const { parse } = await import('acorn');
+      await sandboxModule.installSandboxScripts(scripts, { hashInput, parse, log: log.info });
+    } else await loadScripts(scripts, { hashInput, log: log.info });
   }
   const mod = await import(typeof options.matchModule === 'string' && options.matchModule ? pathToFileURL(options.matchModule).href : '../Match.js');
   MatchClass = mod.Match || mod.default;

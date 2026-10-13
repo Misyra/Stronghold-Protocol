@@ -31,7 +31,7 @@ export function createSimWorker({ loadSim, prepareScripts = browserScripts } = {
       if (!content?.data || !content.cs) throw new Error('missing content data');
       // Lock down before importing any engine module. Data/DSL sets never load SES.
       const install = content.scripts?.length ? await prepareScripts(content) : null;
-      await host.load(content.cs, content);
+      await host.load(content.cs, { ...content, deferScripts: true });
       installScripts = install;
       loaded = !install;
       return { install: !!install };
@@ -61,11 +61,18 @@ export function createSimWorker({ loadSim, prepareScripts = browserScripts } = {
 }
 
 async function browserScripts(content) {
+  return prepareScriptRuntime(content);
+}
+
+/** Same production adapter in both browser Workers and the Node determinism harness. */
+export async function prepareScriptRuntime(content, { loadSES = () => import('/vendor/ses.umd.js'),
+  loadMath = () => import('/sim/detmath.js'), loadParser = () => import('/vendor/acorn.mjs'), sdkUrl, extensionsUrl } = {}) {
+  const { verifyScripts, scriptExecution, loadScripts } = await import('../../../shared/plugins/scriptLoad.js');
+  verifyScripts(content.scripts, content.hashInput);
+  const opts = { hashInput: content.hashInput, cs: content.cs, nativeVerified: content.nativeVerified, sdkUrl, extensionsUrl };
+  if (scriptExecution(content.scripts) !== 'sandbox') return () => loadScripts(content.scripts, opts);
   const sandbox = await import('../../../shared/plugins/sandbox.js');
-  await sandbox.initializeSandbox({ loadSES: () => import('/vendor/ses.umd.js'), loadMath: () => import('/sim/detmath.js') });
-  return async () => {
-    const [{ parse }, sdk] = await Promise.all([import('/vendor/acorn.mjs'), import('../../../shared/plugins/sdk.js')]);
-    // WP-F adapter: only the SDK's narrowed capabilities, never Battle / Match / globals.
-    await sandbox.installSandboxPlugins({ plugins: content.scripts, parse, createSDK: sdk.createPluginSDK });
-  };
+  await sandbox.initializeSandbox({ loadSES, loadMath });
+  const { parse } = await loadParser();
+  return () => sandbox.installSandboxScripts(content.scripts, { ...opts, parse });
 }

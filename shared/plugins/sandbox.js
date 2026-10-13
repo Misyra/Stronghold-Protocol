@@ -1,7 +1,9 @@
 // SES isolation shared by a browser module Worker and the permission-limited match child (DESIGN §32.11).
-// Never import this from the vanilla boot path. SDK creation is the WP-F integration seam; no raw engine capability
-// belongs in sp. Files are a snapshot, { path: { sha256, bytes: Uint8Array | number[] } }, never URLs to import/fetch.
+// Never import this from the vanilla boot path. The real SDK owns registration and callback budgets; live engine
+// arguments belong to kit callbacks, not SDK data. Files are checked snapshots, never URLs to import/fetch.
 import { sha256Hex } from '../sha256.js';
+const { URL, TextEncoder, TextDecoder } = /** @type {any} */ (globalThis);
+const moduleUrl = /** @type {any} */ (import.meta).url;
 
 export const SANDBOX_LIMITS = Object.freeze({ files: 64, bytes: 1024 * 1024 }); // [ASSUMED] per plugin
 const denied = (code, detail) => Object.assign(new Error(`${code}: ${detail}`), { code });
@@ -14,8 +16,8 @@ export async function initializeSandbox({ loadSES, loadMath = () => import('../.
   if (typeof loadSES !== 'function') throw denied('PLUGIN_SANDBOX_UNAVAILABLE', 'SES loader missing');
   await loadSES();
   if (typeof globalThis.lockdown !== 'function') throw denied('PLUGIN_SANDBOX_UNAVAILABLE', 'SES unavailable');
-  // safe stacks remain useful to the host while compartments cannot observe host stack paths.
-  globalThis.lockdown({ mathTaming: 'safe', dateTaming: 'safe', errorTaming: 'safe', stackFiltering: 'concise' });
+  // SES safe error taming clears host stacks too. Math/Date restrictions are explicit endowments below.
+  globalThis.lockdown({ errorTaming: 'safe', stackFiltering: 'concise' });
   const dm = await loadMath(); // engine imported only AFTER lockdown
   safeMath = Object.create(null);
   for (const k of ['E', 'LN10', 'LN2', 'LOG10E', 'LOG2E', 'PI', 'SQRT1_2', 'SQRT2', 'abs', 'ceil', 'floor', 'round',
@@ -41,7 +43,7 @@ export function createPluginCompartment(sp) {
   // [ASSUMED] No eval/Function/Promise: runtime source must not bypass the parsed synchronous module surface.
   // SES already omits host powers; explicitly shadow even its tamed Date and the child-Compartment constructor.
   for (const name of ['Date', 'performance', 'Intl', 'WeakRef', 'FinalizationRegistry', 'SharedArrayBuffer', 'Atomics',
-    'fetch', 'setTimeout', 'setInterval', 'queueMicrotask', 'process', 'require', 'Compartment', 'eval', 'Function', 'Promise']) {
+    'fetch', 'setTimeout', 'setInterval', 'queueMicrotask', 'process', 'require', 'Compartment', 'eval', 'Function', 'Promise', 'harden', 'lockdown']) {
     Object.defineProperty(c.globalThis, name, { value: undefined, writable: false, configurable: false });
   }
   return c;
@@ -123,15 +125,18 @@ function compileModule(source, parse) {
 
 export function loadSandboxPlugin({ plugin, sp, parse }) {
   if (plugin?.class !== 'script') throw denied('PLUGIN_SANDBOX_CLASS', 'only script plugins enter SES');
-  if (!localPath(plugin.entry)) throw denied('PLUGIN_SANDBOX_IMPORT', 'invalid entry');
+  const entryPoints = plugin.entries || [plugin.entry];
+  if (!entryPoints.length || entryPoints.some(p => !localPath(p))) throw denied('PLUGIN_SANDBOX_IMPORT', 'invalid entry');
   const entries = Object.entries(plugin.files || {});
   if (!entries.length || entries.length > SANDBOX_LIMITS.files) throw denied('PLUGIN_SANDBOX_LIMIT', 'file count');
   const compiled = new Map();
   let total = 0;
   for (const [path, f] of entries) {
     if (!localPath(path)) throw denied('PLUGIN_SANDBOX_IMPORT', path);
-    const bytes = f?.bytes instanceof Uint8Array ? f.bytes : Array.isArray(f?.bytes) ? Uint8Array.from(f.bytes) : null;
-    if (!bytes || (total += bytes.length) > SANDBOX_LIMITS.bytes) throw denied('PLUGIN_SANDBOX_LIMIT', 'source bytes');
+    const source = f?.bytes;
+    if (!(source instanceof Uint8Array || Array.isArray(source)) || (total += source.length) > SANDBOX_LIMITS.bytes)
+      throw denied('PLUGIN_SANDBOX_LIMIT', 'source bytes');
+    const bytes = source instanceof Uint8Array ? source : Uint8Array.from(source);
     if (sha256Hex(bytes) !== f.sha256) throw denied('PLUGIN_SANDBOX_HASH', path);
     compiled.set(path, compileModule(new TextDecoder('utf-8', { fatal: true }).decode(bytes), parse));
   }
@@ -147,19 +152,54 @@ export function loadSandboxPlugin({ plugin, sp, parse }) {
     m.paths.forEach(visit);
     visiting.delete(path); seen.add(path); order.push(path);
   };
-  visit(plugin.entry);
+  entryPoints.forEach(visit);
   const compartment = createPluginCompartment(sp);
-  const modules = new Map([['sp:sdk@1', globalThis.harden({ default: sp, sp })]]);
+  const modules = new Map([['sp:sdk@1', globalThis.harden({ ...sp, default: sp, sp })]]);
   for (const path of order) modules.set(path, compartment.evaluate(compiled.get(path).code)(
     globalThis.harden(compiled.get(path).paths.map(p => modules.get(p)))));
-  const setup = modules.get(plugin.entry)?.default;
-  if (typeof setup !== 'function') throw denied('PLUGIN_SANDBOX_SYNTAX', 'export default function setup(sp) required');
-  setup(sp);
+  for (const entry of entryPoints) {
+    const setup = modules.get(entry)?.default;
+    if (typeof setup !== 'function') throw denied('PLUGIN_SANDBOX_SYNTAX', 'export default function setup(sp) required');
+    if (setup(sp)?.then) throw denied('PLUGIN_SANDBOX_SYNTAX', 'setup must be synchronous');
+  }
   return compartment;
 }
 
-/** WP-F calls/adapts this after engine import; createPluginSDK(plugin) must return ONLY its narrowed sp capability. */
+/** Low-level loader; the production descriptor adapter below supplies the SDK. */
 export async function installSandboxPlugins({ plugins, parse, createSDK }) {
-  if (typeof createSDK !== 'function') throw denied('PLUGIN_SANDBOX_UNAVAILABLE', 'createPluginSDK adapter missing');
+  if (typeof createSDK !== 'function') throw denied('PLUGIN_SANDBOX_UNAVAILABLE', 'createSDK adapter missing');
   for (const plugin of plugins) loadSandboxPlugin({ plugin, parse, sp: await createSDK(plugin) });
+}
+
+/** Install verified P3 descriptors, transactionally, using the same SDK/registry as native execution. */
+export async function installSandboxScripts(scripts, { hashInput = null, parse = null, sdkUrl = new URL('./sdk.js', moduleUrl).href,
+  extensionsUrl = null, log = (..._args) => {} } = {}) {
+  const { verifyScripts, scriptExecution } = await import('./scriptLoad.js');
+  verifyScripts(scripts, hashInput);
+  if (scriptExecution(scripts) !== 'sandbox') throw denied('PLUGIN_SANDBOX_CLASS', 'sandbox descriptors required');
+  const sdk = await import(sdkUrl);
+  const root = new URL('../../', sdkUrl);
+  const ext = await import(extensionsUrl || new URL(root.protocol === 'file:' ? 'server/sim/content/extensions.js' : 'sim/content/extensions.js', root).href);
+  ext.resetExtensions();
+  try {
+    const plugins = scripts.map(p => {
+      const m = JSON.parse(p.manifestSource);
+      const entries = [...new Set([m.entry?.sim, m.entry?.meta].filter(Boolean))];
+      // Check lengths before allocating UTF-8 copies (TextEncoder may allocate up to three bytes per code unit).
+      let total = 0;
+      for (const rel of entries) {
+        for (const ch of p.sources[rel]) {
+          const n = ch.codePointAt(0);
+          total += n < 128 ? 1 : n < 2048 ? 2 : n < 65536 ? 3 : 4;
+          if (total > SANDBOX_LIMITS.bytes) throw denied('PLUGIN_SANDBOX_LIMIT', 'source bytes');
+        }
+      }
+      const part = hashInput.plugins.find(x => x.id === p.id);
+      return { id: p.id, class: m.class, entries, overrides: m.overrides || [], permissions: m.permissions || [],
+        files: Object.fromEntries(entries.map(rel => [rel, { sha256: part.files[rel], bytes: new TextEncoder().encode(p.sources[rel]) }])) };
+    });
+    await installSandboxPlugins({ plugins, parse, createSDK: p => sdk.createSDK(p, { settings: hashInput.settings[p.id] || {}, log }) });
+    ext.sealExtensions();
+    return ext.extensionRegistrations();
+  } catch (e) { ext.resetExtensions(); throw e; }
 }

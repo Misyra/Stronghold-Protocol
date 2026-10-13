@@ -4,14 +4,16 @@ A **plugin** is a folder a server owner puts into `plugins/`: a manifest, `plugi
 it names. The interface calls them 「插件」, never 「模组」 (that word is the operators' modules). The design and its
 phases are DESIGN §32 (`docs/history/0.3.0.md`); this file is the reference.
 
-**Status — 0.3.0-dev, P1c: rooms play content sets.** The server finds, checks and lists plugins and names its content
+**Status — 0.3.0-dev: content sets, scripts and sandbox execution.** The server finds, checks and lists plugins and names its content
 with a hash (P0); a room's host switches the server's cosmetic plugins on for the whole room, a player switches them on
 for themself (§9) — art, models and audio only: the battles stay the original ones and a room's `cs` stays the vanilla
 one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before. Data plugins (§10) build
 validated content sets, and a room's host switches them on for the room (§11, P1c): the room plays a content set of its
 own, named by its own `cs`, which every member's page downloads and checks and whose matches run in a match host of
 their own — unofficial matches. P4 adds interface plugins (§14): a page in a sandboxed frame, switched on in this
-browser, read-only, never a match intent, and not an input of `cs`.
+browser, read-only, never a match intent, and not an input of `cs`. Script plugins (§13) share one SDK: sandbox
+execution needs valid locked files, while native trusted execution also needs owner pins and individual consent.
+Both modes are off by default; all gameplay plugin simulations run in browser Workers.
 Authors make, preview and pack a cosmetic plugin in the browser at `/studio/` — the plugin studio 插件工作台 — or with
 `node tools/plugin.mjs new / check / pack`; findings come in plain words (the error catalogue), and the JSON Schemas
 `schemas/plugin.schema.json` and `schemas/overlay.schema.json` help editors and AI agents (§15; a beginner's guide in
@@ -57,10 +59,9 @@ Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`)
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), and with gameplay plugins
   the briefing, the HUD corner, the result and the statistics (such matches stay out of the overview by default; a match
   with cosmetic plugins only is still the original game — §9, §11).
-- **No third-party code in a battle.** Art and data plugins carry no code, and the declarative DSL (§12) is data, not
-  code. An interface plugin (P4, §14) is the one page that runs, and only inside a sandboxed iframe: it sees a
-  read-only feed and cannot send a match intent. Classes `script` and `trusted` stay unsupported until P3 (trusted
-  code only with the server owner's and every player's explicit consent, then a sandbox).
+- **Code execution is off by default.** Art/data/DSL plugins carry no executable code. Interface plugins (§14) run
+  inside sandboxed iframes with a read-only feed. Script code (§13) runs in SES when sandbox mode is enabled; native
+  trusted code needs owner authorization and each player's explicit consent. Trusted-class code never enters SES.
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
   still check a battle). Players never install gameplay content of their own.
@@ -83,14 +84,16 @@ What this version does with each class:
 | `lang` | a language: UI strings, optionally game texts | **loaded** — listed in `/packs/index.json`, files served at `/packs/<id>/<file>` |
 | `cosmetic` | art, models (Spine 3.8), audio (fonts and theme colours later) | **loaded** (P1a, §9) — a room's host switches it on for the room, a player for themself; the files its overlay names served at `/p/<id>/<hash8>/<path>` |
 | `content` | data patches and new records: numbers, economy, modes, waves, operators, enemies | **loaded** (P1b, §10; P1c, §11) — a room's host switches it on for the room: a content set of its own, unofficial matches; the set's files served at `/cs/<cs16>/…` |
-| `script` | code the battle or the match runs | not supported: listed, never loaded |
+| `script` | code the battle or the match runs | **off by default** — valid lock in sandbox mode; owner pin and player consent in trusted modes (§13) |
 | `ui` | an interface widget: an html page in a sandboxed frame | **loaded** (P4, §14) — a player switches it on for this browser; its frame files served at `/p/<id>/<hash8>/<path>` with a frame CSP |
-| `trusted` | page or server code with full trust | not supported |
+| `trusted` | page or server code with full trust | **off by default** — trusted/trusted-force only; pinning, address gates and room consent (§13) |
 
 Nothing of a plugin folder is served except the files a `lang` manifest names, the files a loaded `cosmetic`
 plugin's overlay names, and the frame files of a loaded `ui` plugin (`.html`, `.js`, `.css`, `.png` under its
 `entry.client`, §14) — never `plugin.json`, the lock file, a document or any other file of the folder. A ui plugin's
-`/p/` responses carry a frame Content-Security-Policy; cosmetic art does not.
+`/p/` responses carry a frame Content-Security-Policy; cosmetic art does not. Content-set snapshots are separate:
+`/cs/<cs16>/` serves checked data/descriptors and, for native trusted sets, only the retained sim/meta/client script
+entry bytes (§13). It never serves arbitrary files from plugin folders.
 
 What rooms may use is the server owner's choice: `plugins/config.json` (optional, git-ignored) lets every room's host
 choose (the default), fixes one set for every room, or keeps rooms on the original game, and limits the plugins, the
@@ -469,8 +472,7 @@ still take precedence. `talentMods` are installed only on the JSON SkillSpec bra
 `kit.ref` / `kitRef` and `talentMods` is `PLUGIN_SKILL_SPEC` at expansion and again in `validateData`; the schema file
 still allows the pair, and the runtime rejects it. File stems resolve only against the official registry, never an
 import path. A referenced kit's numbers come from the new record. Keep official skill ids to use its named alternate
-skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` is empty until P3
-supplies it; `dsl/compile.js` is P2's compiler (§12), but the records and the validator still refuse `dsl`
+skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` stays empty for vanilla; P3a registers scripts through §13; `dsl/compile.js` is P2's compiler (§12), but the records and the validator still refuse `dsl`
 (`PLUGIN_DSL_UNAVAILABLE`) until the data-plugin work accepts it. A plugin operator whose id
 starts with `char_x_` and whose chess and backup records have neither `potDown` nor a talent `potBelow` accepts only
 the default potential 6. Official operators, including `char_616_pithst`, are unchanged. The loadout screen can still
@@ -698,19 +700,158 @@ Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section
 (an author id cannot take another plugin's budget). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7 records
 the open points, including the generic-kit fallback until the data-plugin work records a compile error itself.
 
+<a id="13-scripts-p3a"></a>
+
 ## 13. Scripts (P3)
+
+P3a is **trusted execution**, disabled by default; P3b sandbox mode is described below. The static `sandboxable: true` label says that a script uses the
+portable API; it does not make that script safe. Native imports can fully control the page or execute server code.
+Only enable code the server owner and every player trust. The adopted sources are the owner's 0.3.0 plan C2/C3 and
+the plugin design §3.4, §3.6, §5 and §7.6; DESIGN §32.10 records the implementation choices.
+
+A `script` manifest has `entry.sim` and/or `entry.meta` (one self-contained `.js` module each), their `sim.code` and
+`meta.code` permissions, and optionally the same data and art parts as a content plugin. A shared entry runs once.
+Copy `plugins/_template/script/` to `plugins/script-demo/`; its original training guard has a deployment ATK talent,
+a duration skill and a harness test. Its art references the installed game; it contains no game files.
+
+```js
+import { kit } from 'sp:sdk@1'; // optional; sp.kit supplies the same helpers
+export default function setup(sp) {
+  sp.kits.register('char_x_example_guard', bb => ({
+    skill: { kind: 'duration', duration: 10, mods: { atkPct: kit.num(bb.atk) } },
+    talents: [{ install(battle, unit) {
+      battle.on('deploy', ctx => {
+        if (ctx.unit === unit) sp.kit.statBuff(battle, unit, 'example:atk', { atkFlat: 25 });
+      }, { owner: unit });
+    } }],
+  }));
+}
+```
+
+`setup(sp)` is synchronous, registrations close afterwards. Per-battle state belongs in `unit.mem` or a WeakMap keyed
+by battle, never in a module variable. Child hosts and browsers run setup in the composition's
+resolved load order. While composing a set, a disposable child probes each plugin's registrations (1 s ceiling per
+uncached plugin [ASSUMED]). The parent combines the registration reports in load order and rejects conflicts.
+The probe uses SIGKILL on timeout; spawnSync waits for the child to exit before composition returns a failure.
+Results, including failures, are cached per registry by plugin id + lock hash + actual descriptor hash + normalized
+settings (256 recent results [ASSUMED]); changing settings or executable bytes requires another probe. This also
+prevents a stale or missing lock in an explicit CLI test from reusing another source's result.
+C1 remains synchronous: **the lobby pauses during each uncached probe**, including rooms without plugins. Several
+uncached plugins add their pauses together. Moving to async spawn requires coordinating the C1 builder, content/room
+set resolvers, lobby and studio/CLI callers; this step preserves their synchronous contracts. The HTTP/lobby process
+never imports author modules. Actual duplicate registrations, including computed ids and
+normal/elite chess aliases, fail composition with `PLUGIN_SCRIPT_CONFLICT`. [ASSUMED] `overrides: [<official kit id>]`
+allows replacing an official kit; it never allows overwriting another plugin's registration. Vanilla registries stay
+empty. Only plugin `char_x_…` ids add a shop charId lookup; official dispatch stays the same.
+
+| API | Contract |
+|---|---|
+| `sp.kits.register(id, builder)` | `(bb, chess, def) => Kit`, SIM §7; `sim.code` |
+| `sp.enemies.register(id, builder)` | `(def) => { install(battle, enemy) }`; install on enemySpawn before ordinary enemy handlers; `sim.code` |
+| `sp.content.register({ id?, install?, registerMeta? })` | One module id (defaults to plugin id); install per battle; registerMeta receives `{ register(key, handler) }` during setup; permissions for each half |
+| `sp.meta.register(key, handler)` | META §2 keys and hook contracts; `meta.code` |
+| `sp.kit` / imported `kit` | `num`, `talentBb`, `talentGrid`, `moduleBb`, `traitBb`, `moduleOn`, `up`, `cheb`, `isMainHit`, `byEnemyAttack`, `skillBusy`, `giveSp`, `onHitBy`, `onHitOn`, `onDamagedOn`, `enemiesInGrid`, `alliesInGridOf`, `enemyInRange`, `statBuff`, `toggleBuff`, `instantKind`, `skillRec`, `skillBbOf`, `batMod` — tier1 signatures |
+| `sp.math` / imported `math` | The exports of `server/sim/detmath.js` |
+| `sp.constants` / imported `constants` | Frozen simulation constants |
+| `sp.settings` | A frozen copy of the manifest's normalized settings, included in cs |
+| `sp.log(...values)` | At most 20 lines per setup, each value truncated to 500 characters [ASSUMED] |
+
+The facade supplies no fetch, dynamic import, storage, clock or unseeded randomness. Hooks and engine helpers follow
+SIM §5–7. Use `battle.rng`, `after` and `every`. `tools/plugin.mjs check` and the registry use the same lexical scan
+(`shared/plugins/scriptCheck.js`): only `sp:sdk@1` imports, no dynamic import/re-export, eval, Function, require,
+process/globalThis, fetch/XHR/WebSocket, Date, Math.random or localeCompare; common ambient browser APIs and
+implementation-approximated Math functions are also refused. This is deliberately not a complete parser or a sandbox;
+obfuscation can evade it, and conservative scans can refuse inert template/regex text. `trusted` page/server entries
+are unrestricted and never labelled sandboxable; their sim/meta entries still use the SDK checks.
+
+**Budget.** Script callbacks and engine actions use the same per-battle/per-plugin counter as DSL (default 8000).
+Setup installs, hooks, timer callbacks and skill callbacks count. Engine actions (damage, buffs, spawning, DP, etc.)
+count too; exhaustion unwinds that callback, cancels the plugin's timers and removes its tagged buffs, records one
+`plugin:<id>` error and leaves other plugins running. Existing skill mods remain until their skill ends, and existing
+statuses/summons are not recalled, as in DSL. [ASSUMED] Prep hooks share a separate 8000-call counter per match round
+across seats; prep effects are server authoritative. Direct engine mutations remain part of kit duties in both modes. Worker/child watchdogs interrupt nonreturning
+simulation code; native trusted page code can still block the page.
+
+**Owner gates.** `SP_PLUGIN_SCRIPTS=trusted` plus `plugins/config.json`:
+
+```json
+{ "trusted": { "script-demo": "<SHA-256 of the exact plugin.lock.json bytes>" } }
+```
+
+Pack and review again after changing any plugin file. Every lock entry's SHA-256 and byte count must match; extra or
+missing files refuse execution (`PLUGIN_TRUST_PIN`). Unset/unknown mode leaves
+script/trusted plugins listed as `disabled` (`PLUGIN_SCRIPTS_DISABLED`). Public and wildcard listening addresses refuse
+execution (`PLUGIN_TRUST_PUBLIC`), regardless of the request's address; `trusted-force` explicitly overrides this
+[ASSUMED name]. `net.isIP` validates listening literals before numeric checks of IPv4 `0.0.0.0/8`, every all-zero IPv6 spelling
+and IPv4-mapped IPv6; local mapped addresses use their IPv4 classification. `isLocalIp` supplies local-network
+classification. After listen succeeds the server rechecks `server.address().address`, disables refused scripts across
+future registry scans and waits for any started trusted service child to exit.
+Script room classes default on in sandbox/trusted modes; trusted classes default on only in trusted modes; policy `classes`, `allow`, and `rooms` still apply.
+Startup logs list accepted and refused plugins with plain-language reasons. The snapshot remains fixed for a running
+set; stop a running match/server to revoke already executing code.
+
+**Consent and bytes.** A script room adds `content.trusted = { plugins: [{ id, version, hash, permissions, authors }],
+consent: { <seat>: boolean } }`. `hash` is the full lock SHA-256. `room.consent { cs, accept }` affects only the sender's
+seat; every active human must accept before `room.start` (`PLUGIN_CONSENT`). Bots need no page consent. Disconnects
+keep the seat's consent, a new cs clears it. The browser remembers its own decision in `sp.plugin.consent.<cs>`;
+server state alone never authorizes page execution. The risk dialog names authors, hashes and permissions and says
+「它可以完全控制你的游戏页面」; seats show 「已同意」 and a red 「受信任插件」 banner stays through the match.
+
+Scripts are immutable `scripts/<id>.json` descriptors containing the original manifest and entry source texts.
+Their hashes enter each plugin's `files['@script']` in cs; `/cs/<cs16>/index.json` lists their routes. Each actual
+manifest and source is checked against that hashed composition before native import. SDK imports are linked to the
+runtime SDK, then Node imports the verified source natively. Browsers use the descriptor's `browserSources` snapshot (sim/meta
+SDK alias linked to `/shared/plugins/sdk.js`; trusted page source unchanged), served verbatim at
+`/cs/<cs16>/scripts/<id>/<entry>` with JavaScript MIME. The page verifies these exact response bytes before native
+import at that same address; simulation Workers receive the checked snapshot and only perform module imports.
+Execution mode and browser source bytes are covered by `@script`. Site CSP keeps script-src self plus importmap
+hashes, without data:, blob: or unsafe-eval; only the simulation Worker permits SES eval. The browser fetches these descriptors only after
+its own consent. An unconsenting spectator still loads data and reads server results/snapshots, but never receives a
+script execution payload or becomes battle authority [ASSUMED]. Server bot fights, takeovers and SP_VERIFY use the
+same registered extensions in the set's child; script sets always use a process even with SP_MATCH_HOST=worker.
+
+**Experimental trusted class.** `entry.server` exports `activate(api)` (or a default function); enabled/pinned server
+entries run at startup in one separate child, never the HTTP process. `api.http.route('/x/<id>/…', fn)` registers an
+exact path whose handler receives a frozen `{ method, path, url }` and returns a JSON value. No live request/socket is
+passed. `api.lobby.on(name, fn)` receives frozen copies for `roomCreated`, `playerJoined`, `playerLeft`, `matchStarted`,
+`roomClosed`. `api.health.extend(value)` replaces that plugin's JSON under `/healthz.plugins[id]`. Routes never leave
+`/x/<id>/`: both the child API and parent IPC receiver check the loaded plugin id, reject `..`, `%2e` in any
+letter case and backslashes, and dispatch by the same raw path used by the HTTP handler (query excluded). A nonmatch
+continues to the original health/static handler. `health.extend` accepts at most 16 KiB of serialized UTF-8 JSON per
+plugin [ASSUMED]; the parent rechecks the limit and ignores invalid/unknown-id health updates. Activation and requests
+time out after 5 s [ASSUMED]. Either timeout, startup failure or `close()` sends SIGKILL and waits for the process to
+exit; pending requests fail and registered routes/health are cleared. All trusted server entries share this child,
+so stopping it stops them all. The 128 MB limit is V8's old-space heap, not an RSS limit or a restriction on native
+code spawning further processes. These restrictions describe the API, not the native
+code's privileges. Standalone server entries need no browser consent; room/page entries must include room scope to
+be selected. `entry.client` is a self-contained `.js` ES module with `trusted.page`; explicit acceptance reloads the
+page with `?cs=<cs>&room=<room>` and the restored, consenting page imports the checked module. Reload to unload page
+code; native imports cannot revoke side effects. Server entry changes take effect on restart.
+
+**Author tests.** `node tools/plugin.mjs test <id>` explicitly executes that installed plugin's `test/*.test.js` with
+its composition preloaded, SDK registrations installed and the official bounds set. Tests may import
+`../../../test/helpers/battleHarness.js`; they are test code, not portability-scanned entry modules. Production trust
+gates remain unchanged. This command is explicit authorization to execute local code: it does not require
+`SP_PLUGIN_SCRIPTS` or a matching `plugins/config.json` trusted pin (a missing/stale pin does not stop it). Review the
+files being tested; this is not validation that they are the production-pinned version. Test execution has a 120 s CLI timeout [ASSUMED].
 
 ### P3b sandbox execution
 
-The server owner enables sandbox scripts with `SP_PLUGIN_SCRIPTS=sandbox`; the default is off. Sandbox mode does
-not itself forbid a public server [ASSUMED]. `trusted` plugins never enter SES; their gate/consent and the SDK
-registration API belong to P3a. The production catalogue/SDK integration is still WP-F's work: P3b expects the
-checked content's `scripts` snapshot and `createPluginSDK(plugin)` adapter described in DESIGN §32.11. Missing
-adapters fail boot; there is no automatic fallback to trusted execution.
+`SP_PLUGIN_SCRIPTS=sandbox` enables script-class plugins with a valid lock and matching bytes, without an owner
+pin or per-player consent; public listeners are allowed [ASSUMED, pending maintainer confirmation]. The room labels
+these `脚本（沙箱）`; matches remain unofficial. Trusted-class plugins stay disabled in this mode. In trusted modes a
+mixed script/trusted composition runs entirely natively and requires consent for every member [ASSUMED]. Execution
+mode is pinned inside the hashed descriptors, so a mode change creates a new cs.
+
+Both modes consume the same `scripts/<id>.json` descriptors and real `createSDK(plugin, { settings, log })` API below.
+The sandbox validates descriptors, initializes SES before importing the engine, runs setup in one Compartment per
+plugin, then seals the real extension registry. Preflight also uses a permission-limited SES child, with the same
+1 s SIGKILL/cache and synchronous lobby-pause limitation described below. There is no native fallback.
 
 Each script exports `default function setup(sp)`. A separate SES Compartment per plugin receives only the hardened
-SDK capability and deterministic Math. Static imports can name `sp:sdk@1` (`sp` / default) or an own relative JS file.
-Exact source bytes are hashed before use. [ASSUMED] at most 64 files / 1 MiB per plugin. The initial module adapter
+SDK capability and deterministic Math. Static imports can name `sp:sdk@1` (`sp` / default / `kit` / `math` / `constants`) or an own relative JS file.
+Production manifests still allow only self-contained entries; relative imports here describe the low-level loader.
+Exact source bytes are hashed before use; source length is checked before copying bytes. [ASSUMED] at most 64 files / 1 MiB per plugin. The initial module adapter
 rejects cycles, export-star, mutable/destructuring export declarations, dynamic import, import.meta, async/generator
 code and `**`; imported values are initialization-time bindings and module exports are hardened. Keep state inside
 callbacks. `Math.pow` accepts integer exponents only, |base| ≤ 2^500; `Math.hypot` takes two finite numbers. No clocks,
@@ -719,14 +860,18 @@ random, fetch, timers, DOM, filesystem, worker creation, weak references or shar
 All gameplay rooms, including data and DSL, simulate in a browser Worker. A plugin installation, construction or step reply delayed beyond 2 seconds
 [ASSUMED, host-configurable; trusted engine/data cold loading has a separate 15 s deadline] terminates it and requests server takeover, with a translated player notice. Script
 server hosts are separate permission-limited Node processes with heap limits and a heartbeat watchdog; their rooms
-return to the lobby when the host dies. Neither original nor data/DSL-only rooms call lockdown.
+return to the lobby when the host dies. Neither original nor data/DSL-only nor native trusted rooms call lockdown.
+Guest globals shadow harden/lockdown; SDK-owned record results are frozen copies, target arrays are shallow-frozen,
+and Battle/Unit/hook handles stay mutable. errorTaming=safe clears host stacks too.
 
 Residual risks: SES/V8 bugs, deliberate desync, browser-process memory exhaustion, and same-origin IndexedDB after
 a Worker escape. Node 22 permissions do not restrict network and are not a malicious-code security boundary; an
-escape can probe the server's network or read its allowed install tree. Prefer a low-privilege account/container
+escape can probe the server's network or read its allowed install tree and targets of links inside it.
+Do not put links pointing outside inside the installation root; use a network namespace/container to restrict network. Prefer a low-privilege account/container
 with outbound-network and OS resource limits. Browser CSP/inheritance and cross-browser verification remain pending
 on this branch (test environment cannot open localhost). See [DESIGN §32.11](history/0.3.0.md#3211-p3b--worker-simulation-ses-and-csp)
 and [deployment](DEPLOY.md).
+
 
 ## 14. Interface plugins (P4)
 
@@ -913,6 +1058,13 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 <!-- plugin-errors:start (generated by node tools/plugin.mjs errors --write) -->
 | Symptom | Code | Cause | Fix |
 |---|---|---|---|
+| The room will not switch it on; the panel says why | `PLUGIN_CONSENT` | A player has not consented to trusted plugins | Every seated player must personally accept the risk for this content set. |
+| The room will not switch it on; the panel says why | `PLUGIN_TRUST_PUBLIC` | Trusted plugins are refused on a public listening address | Bind to a local address, or explicitly opt into trusted-force after reviewing the risk. |
+| The room will not switch it on; the panel says why | `PLUGIN_TRUST_PIN` | The lock is invalid, files changed, or the trusted pin does not match | Repack to verify files; in trusted mode also review and pin the lock SHA-256 in plugins/config.json trusted. |
+| The room will not switch it on; the panel says why | `PLUGIN_SCRIPTS_DISABLED` | The server owner has not enabled script plugins | Set SP_PLUGIN_SCRIPTS=sandbox for isolated scripts; native trusted code requires trusted mode, review and a lock pin. |
+| The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_CHECK` | The script failed its portability check: {detail} | Import only sp:sdk@1; export synchronous setup(sp) and use deterministic helpers. |
+| The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_OVERRIDE` | The plugin did not declare the official kit it replaces | List the official kit id in manifest overrides. |
+| The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_CONFLICT` | Two plugins register the same effect | Disable one plugin or use distinct registration ids. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_TIMEOUT` | Plugin simulation did not respond | Check plugin loops and reduce simulation work |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_FAILED` | Plugin simulation failed | Inspect the log and fix the plugin |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_STOPPED` | Plugin simulation stopped | Start a new simulation |
@@ -1064,8 +1216,8 @@ slots take); the data, DSL, script and interface templates of later steps are ad
 ## 18. Later
 
 The old next-steps list lives here. Data plugins are §10 (that work package), per-room content sets are §11, and the
-declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins, sandboxed code,
-trusted code. DESIGN §32 keeps the plan and its open questions.
+declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins,
+further mode-code hooks. Trusted P3a code is §13. DESIGN §32 keeps the plan and its open questions.
 
 The numbers are fixed by the 0.3.0 plan: §10 data plugins, §11 per-room content sets, §12 the DSL, §13 the script
 classes, §14 interface plugins, §15 the studio and tools, §16 the Forge importer, §17 the catalogue and installing by

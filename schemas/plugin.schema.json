@@ -683,7 +683,7 @@
               "$ref": "overlay.schema.json#/$defs/path"
             },
             {
-              "pattern": "\\.html$"
+              "pattern": "\\.(?:html|js)$"
             }
           ]
         },
@@ -723,7 +723,16 @@
     "machineTranslated": {
       "type": "boolean"
     },
-    "numberUnits": {}
+    "numberUnits": {},
+    "overrides": {
+      "type": "array",
+      "maxItems": 200,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_:-]{1,128}$"
+      }
+    }
   },
   "additionalProperties": false,
   "allOf": [
@@ -815,7 +824,8 @@
               "pattern": "^\\s*[zZ][hH]\\s*$"
             }
           },
-          "slots": false
+          "slots": false,
+          "overrides": false
         },
         "required": [
           "lang",
@@ -886,7 +896,8 @@
           "complete": false,
           "machineTranslated": false,
           "numberUnits": false,
-          "slots": false
+          "slots": false,
+          "overrides": false
         },
         "required": [
           "app",
@@ -963,7 +974,8 @@
           "complete": false,
           "machineTranslated": false,
           "numberUnits": false,
-          "slots": false
+          "slots": false,
+          "overrides": false
         },
         "required": [
           "app",
@@ -1186,7 +1198,9 @@
             "properties": {
               "sim": false,
               "meta": false,
-              "client": true,
+              "client": {
+                "pattern": "\\.html$"
+              },
               "server": false
             }
           },
@@ -1196,7 +1210,8 @@
           "fallback": false,
           "complete": false,
           "machineTranslated": false,
-          "numberUnits": false
+          "numberUnits": false,
+          "overrides": false
         },
         "required": [
           "app",
@@ -1271,7 +1286,9 @@
             "properties": {
               "sim": true,
               "meta": true,
-              "client": true,
+              "client": {
+                "pattern": "\\.js$"
+              },
               "server": true
             }
           },

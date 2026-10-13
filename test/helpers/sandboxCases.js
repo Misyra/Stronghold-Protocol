@@ -1,6 +1,7 @@
 // Same expressions run by the Node child suite and browser Worker E2E.
 export const escapeCases = Object.freeze([
   ['eval', 'typeof eval', 'undefined'], ['Function global', 'typeof Function', 'undefined'], ['Promise', 'typeof Promise', 'undefined'],
+  ['harden', 'typeof harden', 'undefined'], ['lockdown', 'typeof lockdown', 'undefined'],
   ['process', 'typeof process', 'undefined'], ['require', 'typeof require', 'undefined'],
   ['fetch', 'typeof fetch', 'undefined'], ['host global', 'typeof globalThis.process', 'undefined'],
   ['self', 'typeof self', 'undefined'], ['window', 'typeof window', 'undefined'],

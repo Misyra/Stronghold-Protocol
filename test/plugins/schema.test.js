@@ -38,6 +38,10 @@ const MANIFESTS = [
   ['a ui plugin', { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'ui', scope: ['personal'], permissions: ['ui.frame'], entry: { client: 'ui/index.html' }, slots: ['hud.right', 'stats.tab'] }],
   ['a script plugin', { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'script', permissions: ['sim.code', 'mode.code'], entry: { sim: 'sim/index.js' } }],
   ['a trusted plugin', { manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'trusted', scope: ['server'], permissions: ['trusted.server'], entry: { server: 'server/index.js' } }],
+  ['trusted page is an ES module', {manifest:2,version:'1.0.0',app:'*',api:1,class:'trusted',permissions:['trusted.page'],entry:{client:'page.js'}}],
+  ['trusted page rejects HTML', {manifest:2,version:'1.0.0',app:'*',api:1,class:'trusted',permissions:['trusted.page'],entry:{client:'page.html'}}],
+  ['script override', {manifest:2,version:'1.0.0',app:'*',api:1,class:'script',permissions:['sim.code'],entry:{sim:'sim.js'},overrides:['chess_char_1_02_a']}],
+  ['invalid overrides', C({overrides:['chess_char_1_02_a']})],
   // broken — a problem
   ['no manifest', without(C(), 'manifest')],
   ['manifest 1', C({ manifest: 1 })],

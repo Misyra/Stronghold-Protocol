@@ -18,7 +18,9 @@ function deepFreeze(root) {
  * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded; `bounds`
  * its official-bounds snapshot (installSimBounds).
  */
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null } = {}) {
+let loadedScripts = false;
+export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
+  scripts = [], hashInput = null, nativeVerified = false, deferScripts = false } = {}) {
   const [spec, simdata, support] = await Promise.all([
     import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
   ]);
@@ -40,6 +42,12 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
   await installSimBounds(base, raw, data ? bounds : undefined);
+  if (!deferScripts && scripts.length) {
+    const sdkUrl = /^file:/i.test(base) ? new URL('../../shared/plugins/sdk.js',base).href : new URL('/shared/plugins/sdk.js',globalThis.location.href).href;
+    const {loadScripts} = await import(new URL('scriptLoad.js',sdkUrl).href);
+    await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:base+'content/extensions.js',cs,nativeVerified});
+  } else if (loadedScripts) (await import(base+'content/extensions.js')).resetExtensions();
+  loadedScripts = !deferScripts && scripts.length > 0;
   return { spec, ds: new simdata.DataSource(raw, null), cs };
 }
 

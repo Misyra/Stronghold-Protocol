@@ -1,5 +1,5 @@
 // SP_E2E=1 node --test test/ui/sandbox.e2e.test.js
-// Real Chrome Workers, Node permission child, same fixture SDK until WP-F is merged. No official art fixture.
+// Real Chrome Workers, Node permission child, production SDK and descriptors. No official art fixture.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -12,17 +12,23 @@ import { createStaticHandler } from '../../server/http/static.js';
 import { createRequestHandler } from '../../server/http/routes.js';
 import { siteCsp, SIM_WORKER_CSP } from '../../server/http/csp.js';
 import { forkSandbox } from '../../server/match/host/childHost.js';
-import { fixtureSet, fixtureSpec, scriptPlugin, operatorScript } from '../helpers/simHostFixture.js';
+import { fixtureSet, fixtureSpec, scriptSet as makeScriptSet, operatorScript } from '../helpers/simHostFixture.js';
+import {scriptUrl} from '../../shared/plugins/scriptLoad.js';
 
 const enabled = process.env.SP_E2E === '1' && hasChrome();
 test('Chrome: CSP, escape corpus, real Worker data/script determinism, 2 s takeover, no page freeze', { skip: !enabled, timeout: 120000 }, async t => {
   let networkHits = 0;
+  const nativeScriptSet = makeScriptSet(operatorScript,'trusted');
+  const nativePlugin = nativeScriptSet.scripts[0];
   const root = path.resolve('.');
   const staticFiles = createStaticHandler({ publicDir: path.join(root, 'public'), sharedDir: path.join(root, 'shared'), dataDir: path.join(root, 'data') });
   const handler = createRequestHandler({ csp: siteCsp(path.join(root, 'public')), health: {}, log: console,
     serveStatic: async (req, res, url, query) => {
       if (url === '/') { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>Sandbox tests</title>'); return; }
       if (url === '/probe-network') { networkHits++; res.end('unexpected'); return; }
+      if (url === scriptUrl(nativeScriptSet.cs,nativePlugin.id,'main.js')) {
+        res.writeHead(200,{'Content-Type':'text/javascript'});res.end(nativePlugin.browserSources['main.js']);return;
+      }
       // Test-only endpoints; the production static server never serves test/ or this adapter.
       const fixtures = ['simWorkerBrowser.js', 'simSandboxFixture.js', 'sandboxCases.js'];
       const rel = url.replace('/test/helpers/', '');
@@ -53,9 +59,10 @@ test('Chrome: CSP, escape corpus, real Worker data/script determinism, 2 s takeo
   for (const x of escape) assert.equal(x.value, x.expected, x.label);
   assert.equal(await page.evaluate(async () => { const h = window.makeHost(true); try { return await h.rpc('network'); } finally { h.stop(); } }), 'blocked');
   assert.equal(networkHits, 0, 'Worker response CSP blocks even same-origin fetch');
+  assert.equal(await page.evaluate(async () => { const h = window.makeHost(true); try { return await h.rpc('evaluate',['1+1']); } finally { h.stop(); } }), 2);
   assert.equal(await page.evaluate(async () => {
-    const h = window.makeHost(true, '?no-eval'); try { await h.rpc('escapes'); return 'allowed'; } catch { return 'blocked'; } finally { h.stop(); }
-  }), 'blocked', 'SES needs unsafe-eval on Worker response');
+    const h = window.makeHost(true, '?no-eval'); try { return await h.rpc('evaluate',['1+1']); } catch { return 'blocked'; } finally { h.stop(); }
+  }), 'blocked', 'SES evaluation needs unsafe-eval on Worker response');
 
   const set = fixtureSet(), spec = fixtureSpec();
   const dataComparison = await page.evaluate(async ({ set, spec }) => {
@@ -74,7 +81,7 @@ test('Chrome: CSP, escape corpus, real Worker data/script determinism, 2 s takeo
   }, { set, spec });
   assert.deepEqual(dataComparison, { identical: true, result: true, noEngine: true, noLockdown: true });
 
-  const scriptSet = { ...set, scripts: [scriptPlugin(operatorScript)] };
+  const scriptSet = makeScriptSet(operatorScript);
   const child = forkSandbox(fileURLToPath(new URL('../helpers/simChildNode.mjs', import.meta.url)));
   t.after(() => child.kill('SIGKILL'));
   let seq = 0;
@@ -83,14 +90,25 @@ test('Chrome: CSP, escape corpus, real Worker data/script determinism, 2 s takeo
   const trace = [];
   for (;;) { const p = await ask('step', [8, {}]); trace.push({ ev: p.ev, snap: p.snap, result: p.result }); if (p.state.finished) break; }
   const browserTrace = await page.evaluate(async ({ set, spec }) => {
-    const h = window.makeHost(true), trace = [];
+    const h = window.makeHost(), trace = [];
     try { await h.load(set.cs, set); await h.start(spec); do { const p = await h.step(8); trace.push({ ev: p.ev, snap: p.snap, result: p.result }); } while (!h.battle.finished); return trace; }
     finally { h.stop(); }
   }, { set: scriptSet, spec });
   assert.equal(JSON.stringify(browserTrace), JSON.stringify(trace), 'Node child / Chrome Worker bit-identical events and result');
+  const nativeTrace = await page.evaluate(async ({set,spec})=>{
+    const {checkBrowserScripts} = await import('/shared/plugins/scriptLoad.js');
+    await checkBrowserScripts(set.scripts,set.cs);
+    const h = new window.hostTypes.InPageSimHost(),trace=[];
+    try {
+      await h.load(set.cs,{...set,nativeVerified:true});h.start(spec);h.battle.drainEvents();
+      do {const p=h.step(8);trace.push({ev:p.ev,snap:p.snap,result:h.battle.finished?h.compactResult({battleId:spec.battleId,bossLike:false}):null});}while(!h.battle.finished);
+      return trace;
+    }finally{h.stop();}
+  },{set:nativeScriptSet,spec});
+  assert.equal(JSON.stringify(nativeTrace),JSON.stringify(trace),'trusted native / sandbox child / Chrome Worker have identical events and results');
 
   for (const dataLoop of [false, true]) {
-    const bad = { ...set, ...(dataLoop ? { data: { ...set.data, __slow: true } } : { scripts: [scriptPlugin('export default function(){while(true){}}')] }) };
+    const bad = { ...set, ...(dataLoop ? { data: { ...set.data, __slow: true } } : makeScriptSet('export default function(){while(true){}}')) };
     const result = await page.evaluate(async ({ set, spec, dataLoop }) => {
       const [{ createBattleRunner }, { createStore, initialState }] = await Promise.all([import('/js/battle/runner.js'), import('/js/store.js')]);
       const sent = [], toasts = [];

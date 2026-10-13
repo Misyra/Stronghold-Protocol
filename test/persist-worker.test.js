@@ -113,13 +113,13 @@ test('an encode that outlives its match is never committed', () => {
   room.match = matchA;
   const persister = new Persister({ store: null, registry, lobby, log: quietLog });
 
-  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 1, startedAtAgoMs: 2 }, '{"v":1}'), true);
+  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 1, startedAtAgoMs: 2 }, '{"v":1}', 'v1'), true);
   assert.equal(persister.matchDocs.get(code), '{"v":1}');
   room.match = stubMatch({ now: () => 2_000 });      // the room started a different match
-  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 3, startedAtAgoMs: 4 }, '{"v":2}'), false);
+  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 3, startedAtAgoMs: 4 }, '{"v":2}', 'v2'), false);
   assert.equal(persister.matchDocs.get(code), '{"v":1}', 'the stale encode was dropped');
   room.match = null;                                  // the match ended
-  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 5, startedAtAgoMs: 6 }, '{"v":3}'), false);
+  assert.equal(persister.commit(code, matchA, { deadlineRemainingMs: 5, startedAtAgoMs: 6 }, '{"v":3}', 'v3'), false);
   assert.equal(persister.matchDocs.get(code), '{"v":1}');
   lobby.shutdown();
 });

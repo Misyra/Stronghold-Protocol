@@ -50,6 +50,7 @@
 
 import { APP_VERSION, PLUGIN_API } from '../constants.js';
 import { SOURCE_LANG, canonicalLang, isLangCode, languageName, langFields } from '../i18nPacks.js';
+import { issueList } from './errors.js';
 
 /** A plugin folder's manifest file (manifest 2). */
 export const PLUGIN_MANIFEST = 'plugin.json';
@@ -274,9 +275,11 @@ export function appVersionMatches(range, version = APP_VERSION) {
  *   One shape for both versions. type: the manifest 1 type (lang, assets, data; the class name for the classes that
  *   have none). files: the lang class's role → path. parts / entry: manifest 2 (empty for manifest 1).
  * @typedef {PluginManifest} PackManifest
- * @typedef {{ manifest: PluginManifest | null, problems: string[], warnings: string[], draft?: PluginManifest }} ManifestResult
- *   draft (manifest 2): what could be read even with problems — tools/plugin.mjs checks its files too, so one run reports
- *   everything; never loaded
+ * @typedef {{ manifest: PluginManifest | null, problems: string[], warnings: string[],
+ *   issues: import('./errors.js').PluginIssue[], draft?: PluginManifest }} ManifestResult
+ *   issues: the same problems and warnings with their codes (shared/plugins/errors.js — the studio shows them beside the
+ *   field, tools/plugin.mjs in plain words); draft (manifest 2): what could be read even with problems —
+ *   tools/plugin.mjs checks its files too, so one run reports everything; never loaded
  */
 
 /** The fields of manifest 2 that manifest 1 lacks, at their defaults. */
@@ -295,20 +298,19 @@ const authorsOf = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : [
  * @param {any} m the raw manifest
  * @param {string | undefined} fileLang a single-file pack's language code (its file name decides)
  * @param {PluginManifest} out
- * @param {string[]} problems
- * @param {string[]} warnings
+ * @param {ReturnType<typeof issueList>} list the findings (shared/plugins/errors.js)
  */
-function readLangFields(m, fileLang, out, problems, warnings) {
+function readLangFields(m, fileLang, out, list) {
   const code = fileLang || canonicalLang(m.lang);
-  if (fileLang && m.lang !== undefined && canonicalLang(m.lang) !== fileLang) warnings.push(`"lang": "${m.lang}" is not its file's code ${fileLang}`);
-  if (!code) problems.push(m.lang === undefined ? 'no "lang" (the language code)' : `"lang": "${m.lang}" is not a language code`);
-  else if (code === SOURCE_LANG) problems.push('"zh" is the source language (the msgids), never a pack');
+  if (fileLang && m.lang !== undefined && canonicalLang(m.lang) !== fileLang) list.warning('PLUGIN_LANG', `"lang": "${m.lang}" is not its file's code ${fileLang}`, { at: ['lang'] });
+  if (!code) list.problem('PLUGIN_LANG', m.lang === undefined ? 'no "lang" (the language code)' : `"lang": "${m.lang}" is not a language code`, { at: ['lang'] });
+  else if (code === SOURCE_LANG) list.problem('PLUGIN_LANG', '"zh" is the source language (the msgids), never a pack', { at: ['lang'] });
   else {
-    if (m.lang !== undefined && !isLangCode(m.lang) && !fileLang) warnings.push(`"lang": "${m.lang}" read as ${code}`);
+    if (m.lang !== undefined && !isLangCode(m.lang) && !fileLang) list.warning('PLUGIN_LANG', `"lang": "${m.lang}" read as ${code}`, { at: ['lang'] });
     Object.assign(out, langFields(code, m));
     // anything but true reads as false: say so when another value was meant
     const mt = m.machineTranslated;
-    if (mt !== undefined && typeof mt !== 'boolean') warnings.push(`"machineTranslated": ${short(mt)} is not true or false (read as false)`);
+    if (mt !== undefined && typeof mt !== 'boolean') list.warning('PLUGIN_LANG', `"machineTranslated": ${short(mt)} is not true or false (read as false)`, { at: ['machineTranslated'] });
     out.name ||= languageName(code);
     out.englishName ||= languageName(code, 'en');
   }
@@ -320,22 +322,22 @@ function readLangFields(m, fileLang, out, problems, warnings) {
  * @param {string} what 'a lang pack' / 'a lang plugin' (for the warnings)
  * @param {string} folder 'pack' / 'plugin' (for the problems)
  * @param {PluginManifest} out
- * @param {string[]} problems
- * @param {string[]} warnings
+ * @param {ReturnType<typeof issueList>} list the findings
  * @param {boolean} [own] warn about every role that is not an own role (manifest 2); manifest 1 keeps 0.2.0's lookup,
  *   which also passes names of Object.prototype ("constructor", "toString") silently
  */
-function readFileRoles(m, what, folder, out, problems, warnings, own = false) {
+function readFileRoles(m, what, folder, out, list, own = false) {
   const roles = PACK_TYPES.lang.files;
   const given = isObj(m.files) ? m.files : {};
   for (const [role, spec] of Object.entries(roles)) {
     const rel = given[role];
-    if (rel === undefined || rel === null || rel === '') { if (spec.required) problems.push(`no "files.${role}"`); continue; }
-    if (!isPackPath(rel)) problems.push(`"files.${role}": "${rel}" is not a path inside the ${folder} folder`);
-    else if (!spec.ext.includes(extOf(rel))) problems.push(`"files.${role}" must be a ${spec.ext.join(' / ')} file`);
+    const at = ['files', role];
+    if (rel === undefined || rel === null || rel === '') { if (spec.required) list.problem('PLUGIN_LANG_FILES', `no "files.${role}"`, { at }); continue; }
+    if (!isPackPath(rel)) list.problem('PLUGIN_LANG_FILES', `"files.${role}": "${rel}" is not a path inside the ${folder} folder`, { at });
+    else if (!spec.ext.includes(extOf(rel))) list.problem('PLUGIN_LANG_FILES', `"files.${role}" must be a ${spec.ext.join(' / ')} file`, { at });
     else out.files[role] = rel;
   }
-  for (const role of Object.keys(given)) if (own ? !has(roles, role) : !roles[role]) warnings.push(`"files.${role}" is not a role of ${what} (ignored)`);
+  for (const role of Object.keys(given)) if (own ? !has(roles, role) : !roles[role]) list.warning('PLUGIN_LANG_FILES', `"files.${role}" is not a role of ${what} (ignored)`, { at: ['files', role] });
 }
 
 /**
@@ -348,34 +350,33 @@ function readFileRoles(m, what, folder, out, problems, warnings, own = false) {
  * @returns {ManifestResult}
  */
 export function readPackManifest(raw, ctx) {
-  const problems = [];
-  const warnings = [];
-  if (raw !== undefined && !isObj(raw)) problems.push('the manifest is not a JSON object');
+  const list = issueList();
+  if (raw !== undefined && !isObj(raw)) list.problem('PLUGIN_MANIFEST_SHAPE', 'the manifest is not a JSON object');
   const m = isObj(raw) ? /** @type {any} */ (raw) : {};
   const type = str(m.type, 20) || ctx.type || '';
   const kind = has(PACK_TYPES, type) ? PACK_TYPES[type] : null;
-  if (!type) problems.push('no "type"');
-  else if (!kind) problems.push(`unknown type "${type}" (known: ${Object.keys(PACK_TYPES).join(', ')})`);
-  if (ctx.type && type !== ctx.type) problems.push(`"type": "${type}" where a ${ctx.type} pack belongs`);
+  if (!type) list.problem('PLUGIN_PACK', 'no "type"', { at: ['type'] });
+  else if (!kind) list.problem('PLUGIN_PACK', `unknown type "${type}" (known: ${Object.keys(PACK_TYPES).join(', ')})`, { at: ['type'] });
+  if (ctx.type && type !== ctx.type) list.problem('PLUGIN_PACK', `"type": "${type}" where a ${ctx.type} pack belongs`, { at: ['type'] });
   const id = ctx.id;
-  if (!isPackId(id)) problems.push(`"${id}" is not a pack id (letters, digits, . _ -)`);
-  if (m.id !== undefined && m.id !== id) warnings.push(`"id": "${m.id}" is not "${id}" (the folder or file name decides)`);
+  if (!isPackId(id)) list.problem('PLUGIN_PACK', `"${id}" is not a pack id (letters, digits, . _ -)`, { id });
+  if (m.id !== undefined && m.id !== id) list.warning('PLUGIN_ID_MISMATCH', `"id": "${m.id}" is not "${id}" (the folder or file name decides)`, { at: ['id'], id });
   const range = str(m.app, 60);
-  if (range && !isVersionRange(range)) warnings.push(`"app": "${range}" is not a version range (">=0.2.0", "0.2.x" …)`);
   const app = ctx.app ?? APP_VERSION;
+  if (range && !isVersionRange(range)) list.warning('PLUGIN_APP', `"app": "${range}" is not a version range (">=0.2.0", "0.2.x" …)`, { at: ['app'], app });
   const compatible = appVersionMatches(range, app);
-  if (!compatible) warnings.push(`made for app ${range}; this is ${app}`);
+  if (!compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const cls = kind ? kind.class : 'lang';
   /** @type {PluginManifest} */
   const out = {
     manifest: 1, id, class: cls, type, name: str(m.name, 60), englishName: str(m.englishName, 60), version: str(m.version, 40), app: range, compatible,
     authors: authorsOf(m.authors), credits: str(m.credits, 500), license: str(m.license, 100), files: {}, ...v2Defaults(cls),
   };
-  if (type === 'lang') readLangFields(m, ctx.lang, out, problems, warnings);
+  if (type === 'lang') readLangFields(m, ctx.lang, out, list);
   out.name ||= id;
   out.englishName ||= out.name;
-  if (ctx.folder && kind && kind.files) readFileRoles(m, `a ${type} pack`, 'pack', out, problems, warnings);
-  return { manifest: problems.length ? null : out, problems, warnings };
+  if (ctx.folder && kind && kind.files) readFileRoles(m, `a ${type} pack`, 'pack', out, list);
+  return { manifest: list.problems.length ? null : out, problems: list.problems, warnings: list.warnings, issues: list.issues };
 }
 
 /**
@@ -383,20 +384,20 @@ export function readPackManifest(raw, ctx) {
  * @param {unknown} v
  * @param {string} sourceLang
  * @param {number} max characters per text
- * @param {string} field for the warnings
- * @param {string[]} warnings
+ * @param {string} field for the warnings (a dotted path of the manifest)
+ * @param {ReturnType<typeof issueList>} list the findings
  * @returns {Record<string, string>}
  */
-function localized(v, sourceLang, max, field, warnings) {
+function localized(v, sourceLang, max, field, list) {
   /** @type {Record<string, string>} */
   const out = {};
   if (v === undefined || v === null) return out;
   if (typeof v === 'string') { const s = str(v, max); if (s) out[sourceLang] = s; return out; }
-  if (!isObj(v)) { warnings.push(`"${field}" is neither a text nor { <lang>: text } (ignored)`); return out; }
+  if (!isObj(v)) { list.warning('PLUGIN_TEXT', `"${field}" is neither a text nor { <lang>: text } (ignored)`, { at: field.split('.') }); return out; }
   for (const [k, t] of Object.entries(v)) {
     const code = canonicalLang(k);
     const s = str(t, max);
-    if (!code || !s) { warnings.push(`"${field}.${k}" is not a language code with a text (ignored)`); continue; }
+    if (!code || !s) { list.warning('PLUGIN_TEXT', `"${field}.${k}" is not a language code with a text (ignored)`, { at: [...field.split('.'), k] }); continue; }
     out[code] = s;
   }
   return out;
@@ -404,34 +405,34 @@ function localized(v, sourceLang, max, field, warnings) {
 
 /**
  * A { <plugin id>: <version range> } map (requires / optional / conflicts).
- * @param {unknown} v @param {string} field @param {string} self the plugin's own id @param {string[]} problems
+ * @param {unknown} v @param {string} field @param {string} self the plugin's own id @param {ReturnType<typeof issueList>} list
  * @returns {Record<string, string>}
  */
-function depMap(v, field, self, problems) {
+function depMap(v, field, self, list) {
   /** @type {Record<string, string>} */
   const out = {};
   if (v === undefined) return out;
-  if (!isObj(v)) { problems.push(`"${field}" is not { "<plugin id>": "<version range>" }`); return out; }
+  if (!isObj(v)) { list.problem('PLUGIN_DEPS', `"${field}" is not { "<plugin id>": "<version range>" }`, { at: [field] }); return out; }
   const entries = Object.entries(v);
-  if (entries.length > PLUGIN_LIMITS.deps) problems.push(`"${field}" names more than ${PLUGIN_LIMITS.deps} plugins`);
+  if (entries.length > PLUGIN_LIMITS.deps) list.problem('PLUGIN_DEPS', `"${field}" names more than ${PLUGIN_LIMITS.deps} plugins`, { at: [field] });
   for (const [id, range] of entries.slice(0, PLUGIN_LIMITS.deps)) {
-    if (!isPluginId(id)) { problems.push(`"${field}": "${id}" is not a plugin id`); continue; }
-    if (id === self) { problems.push(`"${field}" names the plugin itself`); continue; }
+    if (!isPluginId(id)) { list.problem('PLUGIN_DEPS', `"${field}": "${id}" is not a plugin id`, { at: [field, id] }); continue; }
+    if (id === self) { list.problem('PLUGIN_DEPS', `"${field}" names the plugin itself`, { at: [field, id] }); continue; }
     const r = typeof range === 'string' ? range.trim() : null;
-    if (r === null || r.length > 60 || !isVersionRange(r)) { problems.push(`"${field}.${id}": ${short(range)} is not a version range`); continue; }
+    if (r === null || r.length > 60 || !isVersionRange(r)) { list.problem('PLUGIN_DEPS', `"${field}.${id}": ${short(range)} is not a version range`, { at: [field, id] }); continue; }
     out[id] = r || '*';
   }
   return out;
 }
 
-/** A list of plugin ids (loadAfter / loadBefore). @param {unknown} v @param {string} field @param {string} self @param {string[]} problems */
-function idList(v, field, self, problems) {
+/** A list of plugin ids (loadAfter / loadBefore). @param {unknown} v @param {string} field @param {string} self @param {ReturnType<typeof issueList>} list */
+function idList(v, field, self, list) {
   if (v === undefined) return [];
-  if (!Array.isArray(v) || v.length > PLUGIN_LIMITS.deps) { problems.push(`"${field}" is not a list of at most ${PLUGIN_LIMITS.deps} plugin ids`); return []; }
+  if (!Array.isArray(v) || v.length > PLUGIN_LIMITS.deps) { list.problem('PLUGIN_ORDER_HINTS', `"${field}" is not a list of at most ${PLUGIN_LIMITS.deps} plugin ids`, { at: [field] }); return []; }
   const out = [];
   for (const id of v) {
-    if (!isPluginId(id)) problems.push(`"${field}": ${short(id)} is not a plugin id`);
-    else if (id === self) problems.push(`"${field}" names the plugin itself`);
+    if (!isPluginId(id)) list.problem('PLUGIN_ORDER_HINTS', `"${field}": ${short(id)} is not a plugin id`, { at: [field] });
+    else if (id === self) list.problem('PLUGIN_ORDER_HINTS', `"${field}" names the plugin itself`, { at: [field] });
     else if (!out.includes(id)) out.push(id);
   }
   return out;
@@ -442,35 +443,36 @@ const onGrid = (v, min, step) => step === undefined || Math.abs((v - min) / step
 
 /**
  * One setting definition (see the header), or null with a problem.
- * @param {string} key @param {unknown} def @param {string} sourceLang @param {string[]} problems @param {string[]} warnings
+ * @param {string} key @param {unknown} def @param {string} sourceLang @param {ReturnType<typeof issueList>} list
  * @returns {PluginSetting | null}
  */
-function readSetting(key, def, sourceLang, problems, warnings) {
+function readSetting(key, def, sourceLang, list) {
   const at = `"settings.${key}"`;
-  if (!isObj(def)) { problems.push(`${at} is not a setting definition`); return null; }
+  const path = ['settings', key];
+  const bad = (text, field) => { list.problem('PLUGIN_SETTING', text, { at: field ? [...path, field] : path }); return null; };
+  if (!isObj(def)) return bad(`${at} is not a setting definition`);
   const d = /** @type {any} */ (def);
-  if (!SETTING_TYPES.includes(d.type)) { problems.push(`${at}: "type" ${short(d.type)} is not one of ${SETTING_TYPES.join(', ')}`); return null; }
-  for (const k of Object.keys(d)) if (!['type', 'default', 'min', 'max', 'step', 'options', 'label'].includes(k)) warnings.push(`${at}.${k} is not a setting field (ignored)`);
-  const label = localized(d.label, sourceLang, 80, `settings.${key}.label`, warnings);
+  if (!SETTING_TYPES.includes(d.type)) return bad(`${at}: "type" ${short(d.type)} is not one of ${SETTING_TYPES.join(', ')}`, 'type');
+  for (const k of Object.keys(d)) if (!['type', 'default', 'min', 'max', 'step', 'options', 'label'].includes(k)) list.warning('PLUGIN_SETTING_FIELD', `${at}.${k} is not a setting field (ignored)`, { at: [...path, k] });
+  const label = localized(d.label, sourceLang, 80, `settings.${key}.label`, list);
   if (d.type === 'boolean') {
-    if (d.default !== undefined && typeof d.default !== 'boolean') { problems.push(`${at}: the default of a boolean is true or false`); return null; }
+    if (d.default !== undefined && typeof d.default !== 'boolean') return bad(`${at}: the default of a boolean is true or false`, 'default');
     return { type: 'boolean', default: d.default === true, label };
   }
   if (d.type === 'enum') {
     const opts = d.options;
     if (!Array.isArray(opts) || !opts.length || opts.length > PLUGIN_LIMITS.options || !opts.every(isScalar) || new Set(opts).size !== opts.length) {
-      problems.push(`${at}: "options" is not a list of 1–${PLUGIN_LIMITS.options} different texts (≤ 64 characters), numbers or booleans`);
-      return null;
+      return bad(`${at}: "options" is not a list of 1–${PLUGIN_LIMITS.options} different texts (≤ 64 characters), numbers or booleans`, 'options');
     }
-    if (d.default !== undefined && !opts.includes(d.default)) { problems.push(`${at}: the default is not one of its options`); return null; }
+    if (d.default !== undefined && !opts.includes(d.default)) return bad(`${at}: the default is not one of its options`, 'default');
     return { type: 'enum', default: d.default === undefined ? opts[0] : d.default, options: [...opts], label };
   }
   const int = d.type === 'integer';
   const num = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= PLUGIN_LIMITS.number && (!int || Number.isInteger(v));
-  if (!num(d.min) || !num(d.max) || d.min > d.max) { problems.push(`${at}: an ${d.type} needs "min" ≤ "max" (${int ? 'integers' : 'finite numbers'} within ±${PLUGIN_LIMITS.number})`); return null; }
-  if (d.step !== undefined && !(num(d.step) && d.step > 0)) { problems.push(`${at}: "step" must be a positive ${int ? 'integer' : 'number'}`); return null; }
+  if (!num(d.min) || !num(d.max) || d.min > d.max) return bad(`${at}: an ${d.type} needs "min" ≤ "max" (${int ? 'integers' : 'finite numbers'} within ±${PLUGIN_LIMITS.number})`, 'min');
+  if (d.step !== undefined && !(num(d.step) && d.step > 0)) return bad(`${at}: "step" must be a positive ${int ? 'integer' : 'number'}`, 'step');
   const dflt = d.default === undefined ? d.min : d.default;
-  if (!num(dflt) || dflt < d.min || dflt > d.max || !onGrid(dflt, d.min, d.step)) { problems.push(`${at}: the default is not a value between min and max${d.step !== undefined ? ' on its step' : ''}`); return null; }
+  if (!num(dflt) || dflt < d.min || dflt > d.max || !onGrid(dflt, d.min, d.step)) return bad(`${at}: the default is not a value between min and max${d.step !== undefined ? ' on its step' : ''}`, 'default');
   /** @type {PluginSetting} */
   const out = { type: d.type, default: dflt, min: d.min, max: d.max, label };
   if (d.step !== undefined) out.step = d.step;
@@ -483,16 +485,16 @@ function readSetting(key, def, sourceLang, problems, warnings) {
  * the paths; the shape of the asset entries, the files of an `assets` .json file and the references are checked by
  * shared/plugins/visual.js readAssetOverlay (the registry, for a cosmetic plugin).
  * @param {unknown} v
- * @returns {{ path: string, value: string }[]}
+ * @returns {{ path: string, at: string[], value: string }[]} path: as the problems name it; at: the same as a path
  */
 function inlineAssetFiles(v) {
   const out = [];
-  const stack = [{ v, path: 'assets' }];
+  const stack = [{ v, path: 'assets', at: ['assets'] }];
   while (stack.length) {
-    const { v: x, path } = /** @type {{ v: any, path: string }} */ (stack.pop());
-    if (typeof x === 'string') { if (/\.[A-Za-z][A-Za-z0-9]{0,7}$/.test(x)) out.push({ path, value: x }); continue; }
-    if (Array.isArray(x)) { x.forEach((y, i) => stack.push({ v: y, path: `${path}[${i}]` })); continue; }
-    if (isObj(x)) for (const [k, y] of Object.entries(x)) if (k !== 'ref') stack.push({ v: y, path: `${path}.${k}` });
+    const { v: x, path, at } = /** @type {{ v: any, path: string, at: string[] }} */ (stack.pop());
+    if (typeof x === 'string') { if (/\.[A-Za-z][A-Za-z0-9]{0,7}$/.test(x)) out.push({ path, at, value: x }); continue; }
+    if (Array.isArray(x)) { x.forEach((y, i) => stack.push({ v: y, path: `${path}[${i}]`, at: [...at, String(i)] })); continue; }
+    if (isObj(x)) for (const [k, y] of Object.entries(x)) if (k !== 'ref') stack.push({ v: y, path: `${path}.${k}`, at: [...at, k] });
   }
   return out.reverse();
 }
@@ -510,45 +512,45 @@ function themeHasUrl(v) {
 
 /**
  * One part of manifest 2 (see PARTS), or null with a problem.
- * @param {string} name @param {unknown} v @param {string[]} problems
+ * @param {string} name @param {unknown} v @param {ReturnType<typeof issueList>} list
  * @returns {PluginPart | null}
  */
-function readPart(name, v, problems) {
+function readPart(name, v, list) {
   const spec = PARTS[name];
-  const json = (rel, at) => {
-    if (!isPackPath(rel)) { problems.push(`${at}: ${short(rel)} is not a path inside the plugin folder`); return false; }
-    if (extOf(rel) !== '.json') { problems.push(`${at}: ${rel} is not a .json file`); return false; }
+  const json = (rel, at, path) => {
+    if (!isPackPath(rel)) { list.problem('PLUGIN_PART_SHAPE', `${at}: ${short(rel)} is not a path inside the plugin folder`, { at: path }); return false; }
+    if (extOf(rel) !== '.json') { list.problem('PLUGIN_PART_SHAPE', `${at}: ${rel} is not a .json file`, { at: path }); return false; }
     return true;
   };
   if (spec.shape === 'inline' && isObj(v)) {
     const part = { files: [], inline: /** @type {Record<string, any>} */ (v) };
     if (name === 'assets') {
       for (const f of inlineAssetFiles(v)) {
-        if (!isPackPath(f.value)) problems.push(`${f.path}: ${short(f.value)} is not a path inside the plugin folder`);
-        else if (!ASSET_EXT.includes(extOf(f.value))) problems.push(`${f.path}: ${f.value} is not an image, a Spine file, audio or a font (${ASSET_EXT.join(' ')})`);
+        if (!isPackPath(f.value)) list.problem('PLUGIN_ASSET_FILE', `${f.path}: ${short(f.value)} is not a path inside the plugin folder`, { at: f.at });
+        else if (!ASSET_EXT.includes(extOf(f.value))) list.problem('PLUGIN_ASSET_FILE', `${f.path}: ${f.value} is not an image, a Spine file, audio or a font (${ASSET_EXT.join(' ')})`, { at: f.at, file: f.value });
         else if (!part.files.includes(f.value)) part.files.push(f.value);
       }
-    } else if (name === 'theme' && themeHasUrl(v)) problems.push('"theme" names a URL (a theme sets colours, lengths and the plugin\'s own fonts)');
+    } else if (name === 'theme' && themeHasUrl(v)) list.problem('PLUGIN_THEME_URL', '"theme" names a URL (a theme sets colours, lengths and the plugin\'s own fonts)', { at: ['theme'] });
     return part;
   }
   if (spec.shape === 'langs') {
-    if (!isObj(v)) { problems.push(`"${name}" is not { "<lang>": "<file>.json" }`); return null; }
+    if (!isObj(v)) { list.problem('PLUGIN_PART_SHAPE', `"${name}" is not { "<lang>": "<file>.json" }`, { at: [name] }); return null; }
     /** @type {PluginPart} */
     const part = { files: [], langs: {} };
     for (const [k, rel] of Object.entries(/** @type {Record<string, unknown>} */ (v))) {
       const code = canonicalLang(k);
-      if (!code) { problems.push(`"${name}.${k}" is not a language code`); continue; }
-      if (json(rel, `"${name}.${k}"`)) { part.langs[code] = /** @type {string} */ (rel); if (!part.files.includes(/** @type {string} */ (rel))) part.files.push(/** @type {string} */ (rel)); }
+      if (!code) { list.problem('PLUGIN_LANG_CODE', `"${name}.${k}" is not a language code`, { at: [name, k] }); continue; }
+      if (json(rel, `"${name}.${k}"`, [name, k])) { part.langs[code] = /** @type {string} */ (rel); if (!part.files.includes(/** @type {string} */ (rel))) part.files.push(/** @type {string} */ (rel)); }
     }
     return part;
   }
-  const list = typeof v === 'string' ? [v] : v;
-  if (!Array.isArray(list) || !list.length || list.length > 256) {
-    problems.push(`"${name}" is not ${spec.shape === 'inline' ? 'an object, ' : ''}a .json path or a list of 1–256 of them`);
+  const paths = typeof v === 'string' ? [v] : v;
+  if (!Array.isArray(paths) || !paths.length || paths.length > 256) {
+    list.problem('PLUGIN_PART_SHAPE', `"${name}" is not ${spec.shape === 'inline' ? 'an object, ' : ''}a .json path or a list of 1–256 of them`, { at: [name] });
     return null;
   }
   const files = [];
-  list.forEach((rel, i) => { if (json(rel, `"${name}"${Array.isArray(v) ? `[${i}]` : ''}`) && !files.includes(rel)) files.push(rel); });
+  paths.forEach((rel, i) => { if (json(rel, `"${name}"${Array.isArray(v) ? `[${i}]` : ''}`, Array.isArray(v) ? [name, String(i)] : [name]) && !files.includes(rel)) files.push(rel); });
   return { files };
 }
 
@@ -561,87 +563,88 @@ function readPart(name, v, problems) {
  * @returns {ManifestResult}
  */
 export function readPluginManifest(raw, ctx) {
-  const problems = [];
-  const warnings = [];
-  if (!isObj(raw)) return { manifest: null, problems: ['the manifest is not a JSON object'], warnings };
+  const list = issueList();
+  const done = (manifest, draft) => ({ manifest, problems: list.problems, warnings: list.warnings, issues: list.issues, ...(draft ? { draft } : {}) });
+  if (!isObj(raw)) { list.problem('PLUGIN_MANIFEST_SHAPE', 'the manifest is not a JSON object'); return done(null); }
   const m = /** @type {any} */ (raw);
   const id = ctx.id;
   if (m.manifest !== 2) {
-    problems.push(m.manifest === undefined ? 'no "manifest": 2 (plugin.json is manifest 2; pack.json in packs/ is the older manifest 1)' : `"manifest": ${short(m.manifest)} is not 2, the version this game reads`);
-    return { manifest: null, problems, warnings };
+    list.problem('PLUGIN_MANIFEST_VERSION', m.manifest === undefined ? 'no "manifest": 2 (plugin.json is manifest 2; pack.json in packs/ is the older manifest 1)' : `"manifest": ${short(m.manifest)} is not 2, the version this game reads`, { at: ['manifest'] });
+    return done(null);
   }
-  if (!isPluginId(id)) problems.push(`"${id}" is not a plugin id (2–32 lower-case letters, digits and -, the folder name decides)`);
-  if (m.id !== undefined && m.id !== id) warnings.push(`"id": ${short(m.id)} is not "${id}" (the folder name decides)`);
-  for (const k of Object.keys(m)) if (!V2_FIELDS.has(k)) warnings.push(`"${k}" is not a field of manifest 2 (ignored)`);
+  if (!isPluginId(id)) list.problem('PLUGIN_ID', `"${id}" is not a plugin id (2–32 lower-case letters, digits and -, the folder name decides)`, { id });
+  if (m.id !== undefined && m.id !== id) list.warning('PLUGIN_ID_MISMATCH', `"id": ${short(m.id)} is not "${id}" (the folder name decides)`, { at: ['id'], id });
+  for (const k of Object.keys(m)) if (!V2_FIELDS.has(k)) list.warning('PLUGIN_FIELD_UNKNOWN', `"${k}" is not a field of manifest 2 (ignored)`, { at: [k] });
 
   const cls = typeof m.class === 'string' ? m.class : '';
   const kind = has(PLUGIN_CLASSES, cls) ? PLUGIN_CLASSES[cls] : null;
   if (!kind) {
-    problems.push(m.class === undefined ? `no "class" (${Object.keys(PLUGIN_CLASSES).join(', ')})` : `unknown class ${short(m.class)} (known: ${Object.keys(PLUGIN_CLASSES).join(', ')})`);
-    return { manifest: null, problems, warnings };
+    list.problem('PLUGIN_CLASS', m.class === undefined ? `no "class" (${Object.keys(PLUGIN_CLASSES).join(', ')})` : `unknown class ${short(m.class)} (known: ${Object.keys(PLUGIN_CLASSES).join(', ')})`, { at: ['class'] });
+    return done(null);
   }
   const isLang = cls === 'lang';
   const sourceLang = m.sourceLang === undefined ? SOURCE_LANG : canonicalLang(m.sourceLang) || '';
-  if (!sourceLang) problems.push(`"sourceLang": ${short(m.sourceLang)} is not a language code`);
+  if (!sourceLang) list.problem('PLUGIN_LANG_CODE', `"sourceLang": ${short(m.sourceLang)} is not a language code`, { at: ['sourceLang'] });
   // a lang plugin's plain-text name is the language's own name (日本語), as in manifest 1 — not a text in sourceLang
   const ownName = isLang && typeof m.name === 'string';
-  const names = ownName ? {} : localized(m.name, sourceLang || SOURCE_LANG, 60, 'name', warnings);
-  const description = localized(m.description, sourceLang || SOURCE_LANG, 500, 'description', warnings);
+  const names = ownName ? {} : localized(m.name, sourceLang || SOURCE_LANG, 60, 'name', list);
+  const description = localized(m.description, sourceLang || SOURCE_LANG, 500, 'description', list);
   const langName = isLang ? canonicalLang(m.lang) : null;
   const name = ownName ? str(m.name, 60) : names[langName || sourceLang] || names[sourceLang] || Object.values(names)[0] || '';
   const englishName = str(m.englishName, 60) || names.en || '';
 
   const version = typeof m.version === 'string' ? m.version.trim() : '';
-  if (!isSemver(version)) problems.push(m.version === undefined ? 'no "version" (semver, e.g. "1.0.0")' : `"version": ${short(m.version)} is not a semantic version (1.0.0, 0.2.1-beta.1 …)`);
+  if (!isSemver(version)) list.problem('PLUGIN_VERSION', m.version === undefined ? 'no "version" (semver, e.g. "1.0.0")' : `"version": ${short(m.version)} is not a semantic version (1.0.0, 0.2.1-beta.1 …)`, { at: ['version'] });
   const range = typeof m.app === 'string' ? m.app.trim() : '';
-  if (m.app !== undefined && (typeof m.app !== 'string' || range.length > 60 || !isVersionRange(range))) problems.push(`"app": ${short(m.app)} is not a version range (">=0.3.0 <0.4.0", "0.3.x" …)`);
-  else if (!range && !isLang) problems.push('no "app" (the game versions it is made for, e.g. ">=0.3.0 <0.4.0")');
   const app = ctx.app ?? APP_VERSION;
+  if (m.app !== undefined && (typeof m.app !== 'string' || range.length > 60 || !isVersionRange(range))) list.problem('PLUGIN_APP', `"app": ${short(m.app)} is not a version range (">=0.3.0 <0.4.0", "0.3.x" …)`, { at: ['app'], app });
+  else if (!range && !isLang) list.problem('PLUGIN_APP', 'no "app" (the game versions it is made for, e.g. ">=0.3.0 <0.4.0")', { at: ['app'], app });
   const compatible = appVersionMatches(range, app);
-  if (range && !compatible) warnings.push(`made for app ${range}; this is ${app}`);
+  if (range && !compatible) list.warning('PLUGIN_APP_MISMATCH', `made for app ${range}; this is ${app}`, { at: ['app'], range, app });
   const supported = ctx.api ?? PLUGIN_API;
+  const apiAt = { at: ['api'], min: supported.min, current: supported.current };
   let api = null;
-  if (m.api === undefined) { if (!isLang) problems.push(`no "api" (the plugin API level it is written for; this game supports ${supported.min}–${supported.current})`); }
-  else if (!Number.isInteger(m.api)) problems.push(`"api": ${short(m.api)} is not an integer`);
-  else if (m.api < supported.min || m.api > supported.current) problems.push(`"api": ${m.api} is not supported (this game: ${supported.min}–${supported.current})`);
+  if (m.api === undefined) { if (!isLang) list.problem('PLUGIN_API', `no "api" (the plugin API level it is written for; this game supports ${supported.min}–${supported.current})`, apiAt); }
+  else if (!Number.isInteger(m.api)) list.problem('PLUGIN_API', `"api": ${short(m.api)} is not an integer`, apiAt);
+  else if (m.api < supported.min || m.api > supported.current) list.problem('PLUGIN_API', `"api": ${m.api} is not supported (this game: ${supported.min}–${supported.current})`, apiAt);
   else api = m.api;
 
   let scope = [...kind.defaultScope];
   if (m.scope !== undefined) {
     const s = Array.isArray(m.scope) ? m.scope : [m.scope];
     const bad = s.filter((x) => !kind.scopes.includes(x));
-    if (!s.length || bad.length || new Set(s).size !== s.length) problems.push(`"scope": ${short(m.scope)} — a ${cls} plugin's scope is ${kind.scopes.map((x) => `"${x}"`).join(' and/or ')}`);
+    if (!s.length || bad.length || new Set(s).size !== s.length) list.problem('PLUGIN_SCOPE', `"scope": ${short(m.scope)} — a ${cls} plugin's scope is ${kind.scopes.map((x) => `"${x}"`).join(' and/or ')}`, { at: ['scope'] });
     else scope = kind.scopes.filter((x) => s.includes(x));
   }
   let homepage = '';
   if (m.homepage !== undefined) {
     const h = str(m.homepage, 300);
     if (/^https?:\/\/[^\s]+$/i.test(h)) homepage = h;
-    else warnings.push(`"homepage": ${short(m.homepage)} is not an http(s) address (ignored)`);
+    else list.warning('PLUGIN_HOMEPAGE', `"homepage": ${short(m.homepage)} is not an http(s) address (ignored)`, { at: ['homepage'] });
   }
-  const requires = depMap(m.requires, 'requires', id, problems);
-  const optional = depMap(m.optional, 'optional', id, problems);
-  const conflicts = depMap(m.conflicts, 'conflicts', id, problems);
-  for (const dep of Object.keys(conflicts)) if (has(requires, dep)) problems.push(`"${dep}" is both required and a conflict`);
-  const loadAfter = idList(m.loadAfter, 'loadAfter', id, problems);
-  const loadBefore = idList(m.loadBefore, 'loadBefore', id, problems);
-  for (const dep of loadAfter) if (loadBefore.includes(dep)) problems.push(`"${dep}" is in loadAfter and in loadBefore`);
+  const requires = depMap(m.requires, 'requires', id, list);
+  const optional = depMap(m.optional, 'optional', id, list);
+  const conflicts = depMap(m.conflicts, 'conflicts', id, list);
+  for (const dep of Object.keys(conflicts)) if (has(requires, dep)) list.problem('PLUGIN_DEPS', `"${dep}" is both required and a conflict`, { at: ['conflicts', dep] });
+  const loadAfter = idList(m.loadAfter, 'loadAfter', id, list);
+  const loadBefore = idList(m.loadBefore, 'loadBefore', id, list);
+  for (const dep of loadAfter) if (loadBefore.includes(dep)) list.problem('PLUGIN_ORDER_HINTS', `"${dep}" is in loadAfter and in loadBefore`, { at: ['loadBefore'] });
   let priority = 0;
   if (m.priority !== undefined) {
     if (Number.isInteger(m.priority) && Math.abs(m.priority) <= 1000) priority = m.priority;
-    else problems.push(`"priority": ${short(m.priority)} is not an integer within ±1000`);
+    else list.problem('PLUGIN_ORDER_HINTS', `"priority": ${short(m.priority)} is not an integer within ±1000`, { at: ['priority'] });
   }
 
   /** @type {Record<string, PluginSetting>} */
   const settings = {};
   if (m.settings !== undefined) {
-    if (!isObj(m.settings)) problems.push('"settings" is not { "<key>": { "type": … } }');
+    if (!isObj(m.settings)) list.problem('PLUGIN_SETTING', '"settings" is not { "<key>": { "type": … } }', { at: ['settings'] });
     else {
       const keys = Object.keys(m.settings);
-      if (keys.length > PLUGIN_LIMITS.settings) problems.push(`more than ${PLUGIN_LIMITS.settings} settings`);
+      if (keys.length > PLUGIN_LIMITS.settings) list.problem('PLUGIN_SETTING', `more than ${PLUGIN_LIMITS.settings} settings`, { at: ['settings'] });
       for (const key of keys.slice(0, PLUGIN_LIMITS.settings)) {
-        if (!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(key)) { problems.push(`"settings.${key}": a key is a letter, then letters, digits or _ (≤ 32)`); continue; }
-        const s = readSetting(key, m.settings[key], sourceLang || SOURCE_LANG, problems, warnings);
+        if (!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(key)) { list.problem('PLUGIN_SETTING', `"settings.${key}": a key is a letter, then letters, digits or _ (≤ 32)`, { at: ['settings', key] }); continue; }
+        const s = readSetting(key, m.settings[key], sourceLang || SOURCE_LANG, list);
         if (s) settings[key] = s;
       }
     }
@@ -652,33 +655,33 @@ export function readPluginManifest(raw, ctx) {
   const parts = {};
   for (const name of Object.keys(PARTS)) {
     if (m[name] === undefined) continue;
-    if (!PARTS[name].classes.includes(cls)) { problems.push(`"${name}" is not something a ${cls} plugin carries (${PARTS[name].classes.join(', ')})`); continue; }
-    const p = readPart(name, m[name], problems);
+    if (!PARTS[name].classes.includes(cls)) { list.problem('PLUGIN_PART_CLASS', `"${name}" is not something a ${cls} plugin carries (${PARTS[name].classes.join(', ')})`, { at: [name], class: cls }); continue; }
+    const p = readPart(name, m[name], list);
     if (p) parts[name] = p;
   }
   /** @type {Record<string, string>} */
   const entry = {};
   if (m.entry !== undefined) {
-    if (!isObj(m.entry)) problems.push('"entry" is not { "sim" | "meta" | "client" | "server": "<path>" }');
+    if (!isObj(m.entry)) list.problem('PLUGIN_ENTRY', '"entry" is not { "sim" | "meta" | "client" | "server": "<path>" }', { at: ['entry'] });
     else {
       for (const [k, rel] of Object.entries(m.entry)) {
         const e = has(ENTRIES, k) ? ENTRIES[k] : null;
-        if (!e) { warnings.push(`"entry.${k}" is not an entry point (ignored)`); continue; }
-        if (!e.classes.includes(cls)) { problems.push(`"entry.${k}" is not something a ${cls} plugin has (${e.classes.join(', ')})`); continue; }
-        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== e.ext) { problems.push(`"entry.${k}": ${short(rel)} is not a ${e.ext} file inside the plugin folder`); continue; }
+        if (!e) { list.warning('PLUGIN_ENTRY', `"entry.${k}" is not an entry point (ignored)`, { at: ['entry', k] }); continue; }
+        if (!e.classes.includes(cls)) { list.problem('PLUGIN_ENTRY', `"entry.${k}" is not something a ${cls} plugin has (${e.classes.join(', ')})`, { at: ['entry', k] }); continue; }
+        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== e.ext) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${e.ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
         entry[k] = /** @type {string} */ (rel);
       }
     }
   }
-  if (!isLang) for (const k of LANG_ONLY) if (m[k] !== undefined) problems.push(`"${k}" belongs to a lang plugin, not a ${cls} one`);
+  if (!isLang) for (const k of LANG_ONLY) if (m[k] !== undefined) list.problem('PLUGIN_LANG_ONLY', `"${k}" belongs to a lang plugin, not a ${cls} one`, { at: [k], class: cls });
 
   // permissions: known, allowed for the class, one for every part and entry point
   const permissions = [];
   if (m.permissions !== undefined) {
-    if (!Array.isArray(m.permissions)) problems.push('"permissions" is not a list');
+    if (!Array.isArray(m.permissions)) list.problem('PLUGIN_PERMISSION', '"permissions" is not a list', { at: ['permissions'], class: cls });
     else for (const p of m.permissions) {
-      if (typeof p !== 'string' || !has(PERMISSIONS, p)) problems.push(`unknown permission ${short(p)} (known: ${Object.keys(PERMISSIONS).join(', ')})`);
-      else if (!PERMISSIONS[p].includes(cls)) problems.push(`the permission "${p}" is not one a ${cls} plugin may have`);
+      if (typeof p !== 'string' || !has(PERMISSIONS, p)) list.problem('PLUGIN_PERMISSION', `unknown permission ${short(p)} (known: ${Object.keys(PERMISSIONS).join(', ')})`, { at: ['permissions'], where: String(p), class: cls, permission: String(p) });
+      else if (!PERMISSIONS[p].includes(cls)) list.problem('PLUGIN_PERMISSION', `the permission "${p}" is not one a ${cls} plugin may have`, { at: ['permissions'], where: p, class: cls, permission: p });
       else if (!permissions.includes(p)) permissions.push(p);
     }
   }
@@ -687,17 +690,17 @@ export function readPluginManifest(raw, ctx) {
     const needs = PARTS[name].needs;
     if (!needs.length) continue;
     const got = needs.filter((p) => permissions.includes(p));
-    if (!got.length) problems.push(`"${name}" needs the permission ${needs.map((p) => `"${p}"`).join(' or ')}`);
+    if (!got.length) list.problem('PLUGIN_PERMISSION_MISSING', `"${name}" needs the permission ${needs.map((p) => `"${p}"`).join(' or ')}`, { at: [name], need: needs[0], needs });
     for (const p of got) used.add(p);
   }
   for (const k of Object.keys(entry)) {
     const need = ENTRIES[k].needs[cls];
-    if (!permissions.includes(need)) problems.push(`"entry.${k}" needs the permission "${need}"`);
+    if (!permissions.includes(need)) list.problem('PLUGIN_PERMISSION_MISSING', `"entry.${k}" needs the permission "${need}"`, { at: ['entry', k], need, needs: [need] });
     used.add(need);
     if (k === 'sim' || k === 'meta') used.add('mode.code');
   }
-  for (const p of permissions) if (!used.has(p)) warnings.push(`the permission "${p}" is declared but nothing in the manifest uses it`);
-  if (!isLang && !Object.keys(parts).length && !Object.keys(entry).length) warnings.push(`carries nothing a ${cls} plugin is made of`);
+  for (const p of permissions) if (!used.has(p)) list.warning('PLUGIN_PERMISSION_UNUSED', `the permission "${p}" is declared but nothing in the manifest uses it`, { at: ['permissions'], permission: p });
+  if (!isLang && !Object.keys(parts).length && !Object.keys(entry).length) list.warning('PLUGIN_EMPTY', `carries nothing a ${cls} plugin is made of`, { class: cls });
 
   /** @type {PluginManifest} */
   const out = {
@@ -706,12 +709,12 @@ export function readPluginManifest(raw, ctx) {
     requires, optional, conflicts, loadAfter, loadBefore, priority, settings, permissions, parts, entry, files: {},
   };
   if (isLang) {
-    readLangFields(m, undefined, out, problems, warnings);
-    readFileRoles(m, 'a lang plugin', 'plugin', out, problems, warnings, true);
+    readLangFields(m, undefined, out, list);
+    readFileRoles(m, 'a lang plugin', 'plugin', out, list, true);
   }
   out.name ||= id;
   out.englishName ||= out.name;
-  return { manifest: problems.length ? null : out, problems, warnings, draft: out };
+  return done(list.problems.length ? null : out, out);
 }
 
 // ---- files ------------------------------------------------------------------------------------------------------------
@@ -740,11 +743,10 @@ export function declaredPaths(manifest) {
  * names is there. Pure: the caller lists the folder (dot files left out — they are never served).
  * @param {PluginManifest} manifest
  * @param {{ rel: string, bytes: number, link?: boolean }[]} files every file of the folder, `rel` relative to it
- * @returns {{ problems: string[], warnings: string[], bytes: number, count: number }}
+ * @returns {{ problems: string[], warnings: string[], issues: import('./errors.js').PluginIssue[], bytes: number, count: number }}
  */
 export function checkPluginFiles(manifest, files) {
-  const problems = [];
-  const warnings = [];
+  const list = issueList();
   const kind = PLUGIN_CLASSES[manifest.class] || PLUGIN_CLASSES.content;
   const clientDir = manifest.class === 'ui' && manifest.entry?.client ? manifest.entry.client.replace(/[^/]*$/, '') : null;
   let bytes = 0;
@@ -754,19 +756,19 @@ export function checkPluginFiles(manifest, files) {
     const rel = String(f.rel);
     seen.add(rel);
     bytes += Number(f.bytes) || 0;
-    if (f.link) { problems.push(`${rel}: a symbolic link (a plugin's files are plain files inside its folder)`); continue; }
-    if (!isPackPath(rel)) { problems.push(`${rel}: not a plain file name (letters, digits, . _ - and spaces; no hidden or ".." part)`); continue; }
+    if (f.link) { list.problem('PLUGIN_FILE_LINK', `${rel}: a symbolic link (a plugin's files are plain files inside its folder)`, { file: rel }); continue; }
+    if (!isPackPath(rel)) { list.problem('PLUGIN_FILE_NAME', `${rel}: not a plain file name (letters, digits, . _ - and spaces; no hidden or ".." part)`, { file: rel }); continue; }
     if (isOwnFile(rel) || isDocument(rel)) continue;
     count++;
     const ext = extOf(rel);
-    if (!kind.ext.includes(ext)) { problems.push(`${rel}: ${ext || 'a file without an extension'} is not a file a ${manifest.class} plugin may carry (${kind.ext.join(' ')}, documents)`); continue; }
-    if (clientDir !== null && ['.html', '.js', '.css'].includes(ext) && !rel.startsWith(clientDir)) problems.push(`${rel}: a frame file outside the folder of entry.client (${clientDir || 'the plugin folder'})`);
-    if (ext === '.json' && f.bytes > PLUGIN_LIMITS.jsonBytes) problems.push(`${rel}: ${(f.bytes / 1048576).toFixed(1)} MB, larger than the ${PLUGIN_LIMITS.jsonBytes / 1048576} MB a JSON file may be`);
+    if (!kind.ext.includes(ext)) { list.problem('PLUGIN_FILE_TYPE', `${rel}: ${ext || 'a file without an extension'} is not a file a ${manifest.class} plugin may carry (${kind.ext.join(' ')}, documents)`, { file: rel, ext, class: manifest.class }); continue; }
+    if (clientDir !== null && ['.html', '.js', '.css'].includes(ext) && !rel.startsWith(clientDir)) list.problem('PLUGIN_FILE_FRAME', `${rel}: a frame file outside the folder of entry.client (${clientDir || 'the plugin folder'})`, { file: rel });
+    if (ext === '.json' && f.bytes > PLUGIN_LIMITS.jsonBytes) list.problem('PLUGIN_FILE_SIZE', `${rel}: ${(f.bytes / 1048576).toFixed(1)} MB, larger than the ${PLUGIN_LIMITS.jsonBytes / 1048576} MB a JSON file may be`, { file: rel });
   }
-  if (files.length > PLUGIN_LIMITS.files) problems.push(`${files.length} files, more than ${PLUGIN_LIMITS.files}`);
-  if (bytes > PLUGIN_LIMITS.pluginBytes) problems.push(`${(bytes / 1048576).toFixed(1)} MB in all, more than ${PLUGIN_LIMITS.pluginBytes / 1048576} MB`);
-  for (const d of declaredPaths(manifest)) if (!seen.has(d.rel)) problems.push(`"${d.at}": ${d.rel} is missing`);
-  return { problems, warnings, bytes, count };
+  if (files.length > PLUGIN_LIMITS.files) list.problem('PLUGIN_FILE_SIZE', `${files.length} files, more than ${PLUGIN_LIMITS.files}`, { where: `${files.length} files` });
+  if (bytes > PLUGIN_LIMITS.pluginBytes) list.problem('PLUGIN_FILE_SIZE', `${(bytes / 1048576).toFixed(1)} MB in all, more than ${PLUGIN_LIMITS.pluginBytes / 1048576} MB`, { where: `${(bytes / 1048576).toFixed(1)} MB` });
+  for (const d of declaredPaths(manifest)) if (!seen.has(d.rel)) list.problem('PLUGIN_FILE_MISSING', `"${d.at}": ${d.rel} is missing`, { at: d.at.split('.'), file: d.rel });
+  return { problems: list.problems, warnings: list.warnings, issues: list.issues, bytes, count };
 }
 
 /**

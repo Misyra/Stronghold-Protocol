@@ -280,6 +280,13 @@ Raid alone may land on an empty deployment half in multiplayer (`mode_multi_*`) 
 tile and attack-reach checks. Hand/temp rows, empty halves in single-player mode or lone-helper 联防 stay excluded.
 The general `onOwnBoard`/`onFieldBoard` contracts, other movement, summons and preparation placement remain unchanged.
 
+Raid's landing search window is measured to the tiles the enemy occupies (`body.js`; a huge unit's `hitArea`), not to the
+tile the enemy's position rounds to: a leader's `hitArea` offset and its route anchor may split one and the same body
+differently (假想敌：管 stands at `dx` 0 in the Final Assault and one column left at `dx` 1 in the Hidden Core — the same
+rectangle either way), and an anchor-relative window lost the landings on the far side of that body, which stopped the
+Hidden Core's 管 from being jumped to at all (community report of 2026-10-13). The landing preference, the block
+preference and their tie-breaks stay relative to the position's tile.
+
 香槟炸弹 also rejects ordinary allied auras and inspiration as a device, through its shared internal selection barrier (§29.11). This does not isolate other unhealable summons or alter its detonation.
 
 §30.3 corrections: fortress targeting is blocked → ordinary range → own tile (selectable ground targets only).

@@ -32,14 +32,15 @@ people read [docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md).
   `pack` reads them. Never hand-edit `plugin.lock.json`.
 - Never put files of the official game into a plugin (the tools do not screen for them; it is the author's
   responsibility). Use references to borrow the installation's art.
-- Keys you do not know are found by name: `GET /studio/api/targets?q=德克萨斯` on a running server (local network only),
-  or the template's `--target`.
+- Keys you do not know are found by name: `GET /studio/api/targets?q=德克萨斯` on a running server (local network only;
+  a read needs no key), or the template's `--target`.
 
 ## The studio's API (when a server runs)
 
 The browser studio at `/studio/` uses an HTTP API you can use too (this machine and the local network only; every change
-needs the header `X-SP-Studio: 1`): create a plugin, put files on a slot (base64), set references, apply one-click fixes,
-pack, download the zip, read the preview composition — the table is in docs/PLUGINS.md §15. Every answer of a change is the
+needs the header `X-SP-Studio: <key>`, the key being the content of `plugins/.studio-key` — a wrong or missing one answers
+403 `PLUGIN_STUDIO_KEY`): create a plugin, put files on a slot (base64), set references, apply one-click fixes, pack,
+download the zip, read the preview composition — the table is in docs/PLUGINS.md §15. Every answer of a change is the
 plugin's state with `check.issues` (the same coded issues as `check --json`).
 
 ## Do not

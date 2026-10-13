@@ -1428,5 +1428,10 @@
   "音乐（循环 + 可选前奏）": "음악(반복 + 선택 인트로)",
   "预览": "미리보기",
   "首领音乐 {key}": "보스 음악 {key}",
-  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "고급: plugin.json을 직접 편집합니다. 항목 설명은 docs/PLUGINS.md §3, §9. 편집기는 schemas/plugin.schema.json으로 자동 완성합니다."
+  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "고급: plugin.json을 직접 편집합니다. 항목 설명은 docs/PLUGINS.md §3, §9. 편집기는 schemas/plugin.schema.json으로 자동 완성합니다.",
+  "只能查看": "보기 전용",
+  "要新建或修改插件，请打开服务器窗口里「Studio」那一行的地址（它带着工作台钥匙），或把那个地址粘贴到这里：": "플러그인을 만들거나 바꾸려면 서버 창의 「Studio」 줄에 있는 주소(작업실 키가 들어 있음)를 열거나, 그 주소를 여기에 붙여 넣으세요:",
+  "粘贴工作台地址或钥匙": "작업실 주소나 키를 붙여 넣기",
+  "使用": "사용",
+  "钥匙不对：请重新复制服务器窗口里的地址。": "키가 맞지 않습니다: 서버 창의 주소를 다시 복사하세요."
 }

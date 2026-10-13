@@ -18,6 +18,7 @@ import { startServer } from '../../server/index.js';
 import { studioAllowed, isStudioChange, isLocalHost, hostName, studioMode } from '../../server/studio/gate.js';
 import { createPluginFiles, StudioError } from '../../server/studio/files.js';
 import { suggestId, isStudioPath } from '../../server/studio/index.js';
+import { printBanner } from '../../server/http/boot.js';
 import { unzipFiles, zipFiles } from '../../server/plugins/zip.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
@@ -32,6 +33,22 @@ test('gate: loopback and private networks with a local Host name; a public clien
   assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '203.0.113.9' }), { mode: 'lan', hosts: [] }).ok, false);
   assert.equal(studioAllowed(req('127.0.0.1', { 'cf-connecting-ip': '198.51.100.4' }), { mode: 'lan', hosts: [] }).ok, false);
   assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '192.168.1.7' }), { mode: 'lan', hosts: [] }).ok, true);
+  // every forwarding header counts: a proxy that sets one passes the others a visitor sent — a header can refuse, never admit
+  assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '127.0.0.1' }), { mode: 'lan', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '203.0.113.9', 'cf-connecting-ip': '10.0.0.1' }), { mode: 'lan', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '203.0.113.9, 192.168.1.7' }), { mode: 'lan', hosts: [] }).ok, false, 'every hop');
+  assert.equal(studioAllowed(req('127.0.0.1', { 'true-client-ip': '198.51.100.1' }), { mode: 'lan', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { forwarded: 'for=198.51.100.1;proto=https' }), { mode: 'lan', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { forwarded: 'for=unknown' }), { mode: 'lan', hosts: [] }).ok, false, 'an address that cannot be read');
+  assert.equal(studioAllowed(req('127.0.0.1', { forwarded: 'for="[::1]:4711", proto=http' }), { mode: 'lan', hosts: [] }).ok, true);
+  assert.equal(studioAllowed(req('8.8.8.8', { 'x-forwarded-for': '127.0.0.1' }), { mode: 'lan', hosts: [] }).ok, false, 'a public peer, whatever it claims');
+  // SP_STUDIO=local: this machine only — the peer and every forwarded address (a LAN peer claiming 127.0.0.1 is refused)
+  assert.equal(studioAllowed(req('192.168.1.20', { 'x-forwarded-for': '127.0.0.1' }), { mode: 'local', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('192.168.1.20', { 'x-real-ip': '::1' }), { mode: 'local', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { 'x-forwarded-for': '192.168.1.20' }), { mode: 'local', hosts: [] }).ok, false);
+  // a Host that is a public address (a port forward, a tunnel's public IP) is no local name
+  assert.equal(studioAllowed(req('127.0.0.1', { host: '203.0.113.5:7000' }), { mode: 'lan', hosts: [] }).ok, false);
+  assert.equal(studioAllowed(req('127.0.0.1', { host: '[2001:db8::1]:3000' }), { mode: 'lan', hosts: [] }).ok, false);
   // SP_STUDIO=local: this machine only; off: nobody
   assert.equal(studioAllowed(req('192.168.1.20'), { mode: 'local', hosts: [] }).ok, false);
   assert.equal(studioAllowed(req('127.0.0.1'), { mode: 'local', hosts: [] }).ok, true);
@@ -39,7 +56,7 @@ test('gate: loopback and private networks with a local Host name; a public clien
   assert.deepEqual([studioMode({}), studioMode({ SP_STUDIO: 'off' }), studioMode({ SP_STUDIO: 'local' }), studioMode({ SP_STUDIO: '0' })], ['lan', 'off', 'local', 'off']);
   // Host names: addresses and local names only (a public name pointed at this machine — DNS rebinding — is refused)
   for (const h of ['localhost:3000', '127.0.0.1:3000', '[::1]:3000', '192.168.1.5', 'mypc:3000', 'nas.local', 'game.lan', 'x.home.arpa', 'a.localhost']) assert.equal(isLocalHost(h), true, h);
-  for (const h of ['evil.example.com', 'example.com:3000', '', 'a b', 'localhost.evil.com']) assert.equal(isLocalHost(h), false, h);
+  for (const h of ['evil.example.com', 'example.com:3000', '', 'a b', 'localhost.evil.com', '8.8.8.8:3000', '[2606:4700::1111]']) assert.equal(isLocalHost(h), false, h);
   assert.equal(isLocalHost('play.example.org', ['play.example.org']), true, 'SP_STUDIO_HOSTS adds a name');
   assert.equal(studioAllowed(req('127.0.0.1', { host: 'evil.example.com' }), { mode: 'lan', hosts: [] }).ok, false);
   assert.equal(hostName('[::1]:80'), '::1');
@@ -99,7 +116,7 @@ test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a wr
 });
 
 test('isStudioPath: every spelling a static server would map to public/studio/', () => {
-  for (const p of ['/studio', '/studio/', '/Studio/x', '//studio/', '/%73tudio/', '/STUDIO', '/studio%2Fapi']) assert.equal(isStudioPath(p), true, p);
+  for (const p of ['/studio', '/studio/', '/Studio/x', '//studio/', '/%73tudio/', '/STUDIO', '/studio%2Fapi', '/%C5%BFtudio/', '/ｓｔｕｄｉｏ/']) assert.equal(isStudioPath(p), true, p);
   for (const p of ['/', '/studios/', '/js/studio.js', '/studio.html', '/%E0%A4%A']) assert.equal(isStudioPath(p), false, p);
 });
 
@@ -127,7 +144,9 @@ describe('the studio over HTTP', () => {
   let srv;
   let tmp;
   let plugins;
-  const H = { 'x-sp-studio': '1', 'content-type': 'application/json' };
+  /** The headers of a change: the studio's key (server/studio/key.js), JSON. */
+  let H;
+  let KEY;
   const call = async (method, url, body, headers = H) => {
     const r = await fetch(srv.url + url, { method, headers, body: body === undefined ? undefined : typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body) });
     const type = r.headers.get('content-type') || '';
@@ -152,6 +171,8 @@ describe('the studio over HTTP', () => {
     plugins = path.join(tmp, 'plugins');
     writePlugin(path.join(plugins, 'handmade'), cosmetic({ colour: 'red', assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(), 'notes.psd': 'x' });
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false });
+    KEY = srv.studio.key;
+    H = { 'x-sp-studio': KEY, 'content-type': 'application/json' };
   });
   after(async () => { await srv?.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
@@ -277,13 +298,187 @@ describe('the studio over HTTP', () => {
     assert.deepEqual([fixed.body.check.ok, fixed.body.loaded], [true, true]);
   });
 
+  test('a music track: the loop, then its intro added to it; a new loop keeps the intro; an intro before any loop is refused', async () => {
+    let r = await call('POST', '/studio/api/plugins', { template: 'audio', id: 'music-x', name: 'm', target: 'music:lobby' });
+    assert.equal(r.status, 201);
+    const at = ['audio', 'bgm', 'lobby'];
+    const slot = (files) => call('POST', '/studio/api/plugins/music-x/slot', { at, files });
+    r = await slot([{ name: 'i.mp3', data: b64('ID3a'), role: 'intro' }]);
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_STUDIO_REQUEST']);
+    r = await slot([{ name: 'l.ogg', data: b64('OggS') }]);
+    assert.deepEqual(r.body.overlay.audio.bgm.lobby, { loop: 'music/lobby/loop.ogg' });
+    r = await slot([{ name: 'i.mp3', data: b64('ID3a'), role: 'intro' }]);
+    assert.deepEqual(r.body.overlay.audio.bgm.lobby, { loop: 'music/lobby/loop.ogg', intro: 'music/lobby/intro.mp3' }, 'the intro added to the loop');
+    r = await slot([{ name: 'l2.mp3', data: b64('ID3b') }]);
+    assert.deepEqual(r.body.overlay.audio.bgm.lobby, { loop: 'music/lobby/loop.mp3', intro: 'music/lobby/intro.mp3' }, 'a new loop keeps the intro');
+    assert.deepEqual(r.body.files.filter((f) => f.rel.startsWith('music/')).map((f) => f.rel), ['music/lobby/intro.mp3', 'music/lobby/loop.mp3'], 'the old loop removed');
+    assert.equal(r.body.check.ok, true);
+  });
+
   test('limits: a body over the limit is refused before it is read; a file the studio does not write; a path out of the folder', async () => {
-    const big = await raw('POST', '/studio/api/plugins/model/slot', { 'x-sp-studio': '1', 'content-type': 'application/json', 'content-length': String(400 * 1024 * 1024) });
+    const big = await raw('POST', '/studio/api/plugins/model/slot', { 'x-sp-studio': KEY, 'content-type': 'application/json', 'content-length': String(400 * 1024 * 1024) });
     assert.equal(big.status, 413);
     assert.equal(JSON.parse(big.text).error, 'PLUGIN_STUDIO_SIZE');
-    assert.equal((await call('PUT', '/studio/api/plugins/model/files/run.exe', 'x', { 'x-sp-studio': '1' })).body.error, 'PLUGIN_FILE_TYPE');
-    assert.equal((await call('PUT', '/studio/api/plugins/model/files/..%2F..%2Fx.png', 'x', { 'x-sp-studio': '1' })).body.error, 'PLUGIN_STUDIO_PATH');
+    assert.equal((await call('PUT', '/studio/api/plugins/model/files/run.exe', 'x', { 'x-sp-studio': KEY })).body.error, 'PLUGIN_FILE_TYPE');
+    assert.equal((await call('PUT', '/studio/api/plugins/model/files/..%2F..%2Fx.png', 'x', { 'x-sp-studio': KEY })).body.error, 'PLUGIN_STUDIO_PATH');
     assert.equal((await call('GET', '/studio/api/plugins/..%2Fx')).status, 400);
     assert.equal(fs.existsSync(path.join(tmp, 'x.png')), false);
+  });
+
+  test('links put into a plugin folder by hand: nothing is read or written through them (plugin.json, an overlay file, the lock, the studio\'s note, plugins/_moved)', async () => {
+    const outside = path.join(tmp, 'outside');
+    fs.mkdirSync(outside, { recursive: true });
+    const SECRET = '{"name":"SECRET-NAME","chars":"SECRET-VALUE"}';
+    const secret = path.join(outside, 'secret.json');
+    fs.writeFileSync(secret, SECRET);
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'keep me');
+    const leaks = (body) => /SECRET/.test(JSON.stringify(body));
+    // plugin.json itself a link: its text is never sent; the check names the link; an edit is refused; the zip leaves it out
+    fs.mkdirSync(path.join(plugins, 'lnk-manifest'));
+    fs.symlinkSync(secret, path.join(plugins, 'lnk-manifest', 'plugin.json'));
+    let r = await call('GET', '/studio/api/plugins/lnk-manifest');
+    assert.equal(r.status, 200);
+    assert.equal(leaks(r.body), false, 'the state');
+    assert.deepEqual([r.body.text, r.body.check.issues.map((i) => [i.code, i.file])], [null, [['PLUGIN_FILE_LINK', 'plugin.json']]]);
+    for (const u of ['/studio/api/plugins', '/studio/api/plugins/lnk-manifest/preview']) assert.equal(leaks((await call('GET', u)).body), false, u);
+    r = await call('POST', '/studio/api/plugins/lnk-manifest/meta', { fields: { version: '1.0.1' } });
+    assert.deepEqual([r.status, r.body.error], [403, 'PLUGIN_STUDIO_PATH']);
+    const z = await call('GET', '/studio/api/plugins/lnk-manifest/zip');
+    assert.deepEqual(unzipFiles(z.body).map((e) => e.name), []);
+    assert.equal(fs.readFileSync(secret, 'utf8'), SECRET);
+    // an overlay file that is a link: never read through — the state, the preview and a pack say nothing of the file outside
+    r = await call('POST', '/studio/api/plugins', { template: 'art', id: 'lnk-files', name: 'x', target: 'operator:char_102_texas' });
+    assert.equal(r.status, 201);
+    const dir = path.join(plugins, 'lnk-files');
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(cosmetic({ assets: 'overlay.json' })));
+    fs.symlinkSync(secret, path.join(dir, 'overlay.json'));
+    r = await call('GET', '/studio/api/plugins/lnk-files');
+    assert.equal(leaks(r.body), false, 'the state');
+    assert.deepEqual(r.body.check.issues.map((i) => [i.code, i.file]), [['PLUGIN_FILE_LINK', 'overlay.json']]);
+    assert.equal(leaks((await call('GET', '/studio/api/plugins/lnk-files/preview')).body), false, 'the preview');
+    assert.equal(leaks((await call('POST', '/studio/api/plugins/lnk-files/pack', {})).body), false, 'a pack');
+    fs.rmSync(path.join(dir, 'overlay.json'));
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(cosmetic({ assets: { chars: { char_102_texas: {} } } })));
+    // the studio's note and the lock as links to a file outside: saving and packing replace the link, never write through it
+    fs.rmSync(path.join(dir, '.studio.json'));
+    fs.symlinkSync(victim, path.join(dir, '.studio.json'));
+    fs.rmSync(path.join(dir, 'plugin.lock.json'), { force: true });
+    fs.symlinkSync(victim, path.join(dir, 'plugin.lock.json'));
+    r = await call('POST', '/studio/api/plugins/lnk-files/sections', { sections: [{ template: 'art', target: 'operator:char_102_texas' }] });
+    assert.equal(r.status, 200);
+    r = await call('POST', '/studio/api/plugins/lnk-files/pack', {});
+    assert.equal(r.body.pack.wrote, true);
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'keep me', 'nothing written through a link');
+    assert.deepEqual([fs.lstatSync(path.join(dir, '.studio.json')).isFile(), fs.lstatSync(path.join(dir, 'plugin.lock.json')).isFile()], [true, true]);
+    assert.equal(r.body.check.ok, true, 'the folder holds plain files again');
+    // plugins/_moved a link to a folder outside: a file is never moved through it
+    fs.writeFileSync(path.join(dir, 'notes.psd'), 'x');
+    fs.rmSync(path.join(plugins, '_moved'), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(plugins, '_moved'));
+    r = await call('POST', '/studio/api/plugins/lnk-files/fix', { code: 'PLUGIN_FILE_TYPE', file: 'notes.psd' });
+    assert.deepEqual([r.status, r.body.error], [403, 'PLUGIN_STUDIO_PATH']);
+    assert.ok(fs.existsSync(path.join(dir, 'notes.psd')), 'the file stays where it was');
+    assert.deepEqual(fs.readdirSync(outside).sort(), ['secret.json', 'victim.txt']);
+  });
+
+  test('files a plugin folder holds are served sandboxed and only of the types the studio writes (no page or script put there by hand); HEAD answers like GET', async () => {
+    const dir = path.join(plugins, 'lnk-files');
+    fs.writeFileSync(path.join(dir, 'page.html'), '<script>alert(1)</script>');
+    fs.writeFileSync(path.join(dir, 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    fs.writeFileSync(path.join(dir, 'x.js'), 'alert(1)');
+    fs.writeFileSync(path.join(dir, 'a.png'), png());
+    for (const f of ['page.html', 'pic.svg', 'x.js']) assert.equal((await raw('GET', `/studio/api/plugins/lnk-files/files/${f}`)).status, 404, f);
+    const ok = await call('GET', '/studio/api/plugins/lnk-files/files/a.png');
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('content-security-policy'), "default-src 'none'; sandbox; frame-ancestors 'none'");
+    assert.equal(ok.headers.get('x-content-type-options'), 'nosniff');
+    for (const f of ['page.html', 'pic.svg', 'x.js']) fs.rmSync(path.join(dir, f));
+    // HEAD: the read routes answer as GET does, without a body; the events stream is not opened
+    for (const u of ['/studio/api/info', '/studio/api/plugins', '/studio/api/plugins/lnk-files', '/studio/api/events']) {
+      const h = await raw('HEAD', u);
+      assert.deepEqual([h.status, h.text], [200, ''], u);
+    }
+    const hz = await raw('HEAD', '/studio/api/plugins/lnk-files/zip');
+    assert.deepEqual([hz.status, hz.text], [200, ''], 'HEAD of the zip builds none');
+  });
+
+  test('the key (server/studio/key.js): a change without it is refused whatever the address; reads need none; info tells the page; the same key after a restart, printed with the studio\'s address', async () => {
+    assert.match(KEY, /^[A-Za-z0-9_-]{22}$/);
+    const file = path.join(plugins, '.studio-key');
+    assert.equal(fs.readFileSync(file, 'utf8').trim(), KEY, 'kept in plugins/.studio-key');
+    if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'the owner\'s only');
+    // a change: no header → the 404 page; another value → PLUGIN_STUDIO_KEY (the page asks for the key); nothing changed
+    assert.equal((await raw('POST', '/studio/api/plugins', { 'content-type': 'application/json' }, '{}')).status, 404);
+    const NOKEY = { 'x-sp-studio': '-', 'content-type': 'application/json' };
+    const wrong = await call('POST', '/studio/api/plugins', { template: 'art', id: 'no-key', name: 'x' }, { ...NOKEY, 'x-sp-studio': 'A'.repeat(22) });
+    assert.deepEqual([wrong.status, wrong.body.error], [403, 'PLUGIN_STUDIO_KEY']);
+    assert.equal(fs.existsSync(path.join(plugins, 'no-key')), false);
+    for (const [m, u] of [['PUT', '/studio/api/plugins/lnk-files/files/x.png'], ['DELETE', '/studio/api/plugins/lnk-files/files/README.md'], ['POST', '/studio/api/authors'], ['POST', '/studio/api/plugins/lnk-files/pack']]) {
+      assert.equal((await call(m, u, '{}', NOKEY)).status, 403, `${m} ${u}`);
+    }
+    assert.ok(fs.existsSync(path.join(plugins, 'lnk-files', 'README.md')));
+    // reads need none; info says whether the request carried it
+    assert.equal((await raw('GET', '/studio/api/plugins')).status, 200);
+    assert.equal((await call('GET', '/studio/api/info', undefined, {})).body.key, 'missing');
+    assert.equal((await call('GET', '/studio/api/info', undefined, NOKEY)).body.key, 'wrong');
+    assert.equal((await call('GET', '/studio/api/info')).body.key, 'ok');
+    // the studio's page is never framed by another page
+    const page = await call('GET', '/studio/', undefined, {});
+    assert.deepEqual([page.headers.get('x-frame-options'), page.headers.get('content-security-policy')], ['DENY', "frame-ancestors 'none'"]);
+    // the same key after a restart; the boot banner prints the studio's address with it
+    const again = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false });
+    try {
+      assert.equal(again.studio.key, KEY);
+      const lines = [];
+      const log = console.log;
+      console.log = (...a) => lines.push(a.join(' '));
+      try { printBanner(again); } finally { console.log = log; }
+      assert.ok(lines.some((l) => l.includes(`${again.url}/studio/#key=${KEY}`)), lines.join('\n'));
+    } finally { await again.close(); }
+  });
+
+  test('corner cases: two track files at once (by name); a lone .skel only under the slot\'s own name; page names the atlas finds; a reference removes the slot\'s old files; a file moved out only when the plugin may not carry it; odd values; a body over the limit without a length; /ſtudio/', async () => {
+    const at = ['audio', 'bgm', 'lobby'];
+    let r = await call('POST', '/studio/api/plugins/music-x/slot', { at, files: [{ name: 'Main Loop.ogg', data: b64('OggS1') }, { name: 'intro part.ogg', data: b64('OggS2') }] });
+    assert.deepEqual(r.body.overlay.audio.bgm.lobby, { loop: 'music/lobby/loop.ogg', intro: 'music/lobby/intro.ogg' }, 'the one named intro');
+    r = await call('POST', '/studio/api/plugins/music-x/slot', { at, files: [{ name: 'a.ogg', data: b64('x') }, { name: 'b.ogg', data: b64('y') }] });
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_STUDIO_REQUEST'], 'never one silently dropped');
+    // a model under the slot's own name: a new .skel alone keeps its atlas and pages
+    const front = ['chars', 'char_102_texas', 'spine', 'front'];
+    r = await call('POST', '/studio/api/plugins/model/slot', { at: front, files: [{ name: 'new.skel', data: b64(skel()) }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.overlay.chars.char_102_texas.spine.front.textures, ['spine/char_102_texas/front/page one.png']);
+    // a hand-made model elsewhere: a lone .skel is refused and nothing of the model goes
+    writePlugin(path.join(plugins, 'hand-model'), cosmetic({ assets: { chars: { char_102_texas: { spine: { front: { skel: 'm/t.skel', atlas: 'm/t.atlas', textures: ['m/t.png'] } } } } } }),
+      { 'm/t.skel': skel(), 'm/t.atlas': atlas(['t.png']), 'm/t.png': png() });
+    r = await call('POST', '/studio/api/plugins/hand-model/slot', { at: front, files: [{ name: 'x.skel', data: b64(skel()) }] });
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_STUDIO_REQUEST']);
+    assert.deepEqual(fs.readdirSync(path.join(plugins, 'hand-model', 'm')).sort(), ['t.atlas', 't.png', 't.skel']);
+    // a page name the atlas could not find on disk: refused before anything is written
+    r = await call('POST', '/studio/api/plugins/hand-model/slot', { at: front, files: [{ name: 'x.skel', data: b64(skel()) }, { name: 'x.atlas', data: b64(atlas(['page(1).png'])) }, { name: 'page(1).png', data: b64(png()) }] });
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_FILE_NAME']);
+    assert.equal(fs.existsSync(path.join(plugins, 'hand-model', 'spine')), false);
+    // a reference in place of a file: the file goes
+    r = await call('POST', '/studio/api/plugins/music-x/ref', { at, ref: 'lobby' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(fs.readdirSync(path.join(plugins, 'music-x')).filter((n) => !n.startsWith('.')).sort(), ['README.md', 'plugin.json']);
+    // moveOut: only a file the check finds of a type the plugin may not carry (never plugin.json)
+    r = await call('POST', '/studio/api/plugins/music-x/fix', { code: 'PLUGIN_FILE_TYPE', file: 'plugin.json' });
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_STUDIO_REQUEST']);
+    assert.ok(fs.existsSync(path.join(plugins, 'music-x', 'plugin.json')));
+    // values that are not texts count as none
+    r = await call('POST', '/studio/api/plugins', { template: 'art', id: 'odd-target', name: 'x', target: { toString: 1 } });
+    assert.deepEqual([r.status, r.body.error], [404, 'PLUGIN_STUDIO_TARGET']);
+    r = await call('POST', '/studio/api/plugins', { template: 'art', id: 'odd-values', name: { toString: 'x' }, authors: [{ toString: 1 }, 'me'], license: ['x'] });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.deepEqual([r.body.manifest.name, r.body.manifest.authors, r.body.manifest.license], [{ zh: 'odd-values' }, ['me'], undefined]);
+    r = await call('POST', '/studio/api/plugins/odd-values/meta', { fields: { name: ['x'], authors: [{ a: 1 }, 'you'] } });
+    assert.deepEqual([r.status, r.body.manifest.authors], [200, ['you']]);
+    // a body over the limit without a Content-Length (chunked): the 413 answer, not a reset
+    const big = await raw('POST', '/studio/api/authors', { 'x-sp-studio': KEY, 'content-type': 'application/json' }, `{"tokens":"${'x'.repeat(40 * 1024)}"}`);
+    assert.deepEqual([big.status, JSON.parse(big.text).error], [413, 'PLUGIN_STUDIO_SIZE']);
+    // another spelling a disk may fold into public/studio/ (the long s on macOS, a trailing dot on Windows) is no static file
+    for (const u of ['/%C5%BFtudio/index.html', '/studio./index.html', '/%EF%BD%93tudio/index.html']) assert.equal((await raw('GET', u)).status, 404, u);
   });
 });

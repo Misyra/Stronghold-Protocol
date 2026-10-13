@@ -20,7 +20,7 @@ import { initLang, useLang, LangToggle } from '../../js/ui/lang.js';
 import { data } from '../../js/data.js';
 import { createAssets } from '../../js/assets.js';
 import { t } from '../../../shared/i18n.js';
-import { API, get, post, put, call, pluginPath, nameAuthor } from './api.js';
+import { API, get, post, put, call, pluginPath, nameAuthor, keepStudioKey, takeKeyFromAddress } from './api.js';
 import { kindLabel, templateTitle, targetName, sizeText } from './labels.js';
 import { IssueList, errorText } from './issues.js';
 import { CreateDialog } from './create.js';
@@ -198,9 +198,47 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
   </div>`;
 }
 
+/**
+ * The studio without its key (server/studio/key.js): it shows the plugins, a change is refused — the address with the key
+ * is in the server's window (the boot banner's "Studio" line); pasting it here keeps it in this browser.
+ */
+function KeyBar({ state, onKey }) {
+  const [text, setText] = useState('');
+  const [bad, setBad] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBad(!(await onKey(text)));
+  };
+  return html`<form class="st-keybar" data-testid="key-bar" onSubmit=${submit}>
+    <strong>${t('只能查看')}</strong>
+    <span>${t('要新建或修改插件，请打开服务器窗口里「Studio」那一行的地址（它带着工作台钥匙），或把那个地址粘贴到这里：')}</span>
+    <input class=${cx('st-input', (bad || state === 'wrong') && 'is-bad')} value=${text} onInput=${(e) => setText(e.currentTarget.value)}
+      placeholder=${t('粘贴工作台地址或钥匙')} data-testid="key-input" />
+    <${Button} type="submit" variant="primary" size="sm">${t('使用')}<//>
+    ${bad || state === 'wrong' ? html`<span class="st-keybar__bad">${t('钥匙不对：请重新复制服务器窗口里的地址。')}</span>` : null}
+  </form>`;
+}
+
 /** The page. */
 function App({ info }) {
   useLang();
+  const [keyState, setKeyState] = useState(info.key || 'missing');
+  // a change refused for the key (api.js): ask for it again
+  useEffect(() => {
+    const onKey = (e) => setKeyState(e.detail || 'wrong');
+    globalThis.addEventListener('studio-key', onKey);
+    return () => globalThis.removeEventListener('studio-key', onKey);
+  }, []);
+  const useKey = async (text) => {
+    if (!keepStudioKey(text)) return false;
+    const r = await get('info').catch(() => null);
+    setKeyState(r?.key || 'wrong');
+    if (r?.key !== 'ok') return false;
+    if (r.watching) setEvents((e) => ({ ...e, on: true }));
+    refresh();
+    nameAuthor();
+    return true;
+  };
   const [plugins, setPlugins] = useState([]);
   const [selected, setSelected] = useState(() => new URLSearchParams(location.search).get('plugin') || null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -212,7 +250,12 @@ function App({ info }) {
     let es = null;
     try {
       es = new EventSource(`${API}events`);
-      es.addEventListener('hello', () => setEvents((e) => ({ ...e, on: true })));
+      // on: the server watches plugins/ (it starts with the first call that carries the key)
+      es.addEventListener('hello', (ev) => {
+        let watching = true;
+        try { watching = JSON.parse(ev.data).watching !== false; } catch { /* an older server */ }
+        setEvents((e) => ({ ...e, on: watching }));
+      });
       es.addEventListener('change', (ev) => {
         let ids;
         try { ids = JSON.parse(ev.data).ids || []; } catch { ids = []; }
@@ -245,6 +288,7 @@ function App({ info }) {
       <a class="st-top__link" href="https://github.com/sganggs/Stronghold-Protocol/blob/master/docs/PLUGIN-GUIDE.md" target="_blank" rel="noopener">${t('新手指南')}</a>
       <${LangToggle} class="st-top__lang" />
     </header>
+    ${keyState !== 'ok' ? html`<${KeyBar} state=${keyState} onKey=${useKey} />` : null}
     <div class="st-body">
       <aside class="st-side">
         <${Button} variant="primary" block=${true} onClick=${() => setCreateOpen(true)} data-testid="new-plugin">${t('新建插件')}<//>
@@ -281,6 +325,8 @@ async function boot() {
   const root = document.getElementById('app');
   try {
     await initLang().catch(() => {});
+    // the address the server printed brings the key (…/studio/#key=…): kept in this browser, taken out of the address bar
+    takeKeyFromAddress();
     const [info] = await Promise.all([get('info'), data.loadAll('assets', 'chess', 'tokens', 'enemies', 'items', 'bonds', 'bands', 'backups', 'config', 'stages')]);
     previewAssets.seed(data.getRaw('assets'));
     showLayers();

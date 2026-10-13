@@ -405,6 +405,12 @@ export const PLUGIN_ERRORS = Object.freeze({
     zh: '工作台的请求不对：{detail}', en: 'The studio\'s request is not right: {detail}',
     fix: { zh: '刷新工作台页面再试；还不行的话，到 GitHub 提问并附上这段文字。', en: 'Reload the studio and try again; if it stays, ask on GitHub with this text.' },
   },
+  PLUGIN_STUDIO_KEY: {
+    level: 'studio', doc: D.studio,
+    symptom: { zh: '工作台只能查看，不能新建或修改插件', en: 'The studio only shows plugins; it cannot make or change one' },
+    zh: '改动插件需要工作台钥匙，这个浏览器还没有（或者钥匙不对）', en: 'Changing a plugin needs the studio\'s key, which this browser does not have (or it is not the right one)',
+    fix: { zh: '打开服务器窗口里「Studio」那一行的地址（它带着钥匙，钥匙也在 plugins/.studio-key 文件里），或把它粘贴到工作台顶部的输入框。', en: 'Open the address on the "Studio" line of the server\'s window (it carries the key, which is also in plugins/.studio-key), or paste it into the box at the top of the studio.' },
+  },
 
   // ---- anything a check reported without a code of its own ----------------------------------------------------------
   PLUGIN_INVALID: {

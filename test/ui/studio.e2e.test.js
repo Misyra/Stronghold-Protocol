@@ -1,13 +1,15 @@
 // Real-server browser E2E — the plugin studio (DESIGN §32.9; opt-in, ~30 s):
 //   SP_E2E=1 node --test test/ui/studio.e2e.test.js
 //
-// A server with a plugins folder of its own: the studio's page at /studio/ (headless Chrome) → 新建插件 → the template
+// A server with a plugins folder of its own: the studio's page at the address the server prints (/studio/#key=…: the key
+// every change carries, server/studio/key.js — kept by the page, taken out of the address bar) → 新建插件 → the template
 // 换头像 / 立绘 / 图标 → the operator found by its official name (德克萨斯) → its plugin is made (loaded at once) → a PNG made
 // on the spot (180 × 180, no file of the game) is dropped on the avatar slot → the preview draws it in the game's own card
 // component (ui/gameComponents.js UnitThumb, the plugin side; the original beside it) → 打包并下载 writes the lock and
-// downloads the zip, which holds the manifest, the lock and the picture. The same page through a public address — a
-// tunnel or proxy on this machine forwarding a visitor — and through a foreign Host name is the 404 page. No console or
-// page error.
+// downloads the zip, which holds the manifest, the lock and the picture. A browser without the key (another profile)
+// sees the plugins with the bar that asks for it; pasting the printed address there makes the page whole. The same page
+// through a public address — a tunnel or proxy on this machine forwarding a visitor — and through a foreign Host name is
+// the 404 page. No console or page error.
 //
 // Screenshots: test/e2e/out/studio-*.png (and SP_STUDIO_SHOTS=<dir> copies them there for a report).
 import { test, describe } from 'node:test';
@@ -54,8 +56,10 @@ describe('the plugin studio in the browser', { skip: !ENABLED && 'set SP_E2E=1 (
       const cdp = await page.createCDPSession();
       await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
 
-      await page.goto(`${srv.url}/studio/`, { waitUntil: 'domcontentloaded' });
+      await page.goto(srv.studio.pageUrl(srv.url), { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => globalThis.__studio?.ready === true, { timeout: 30000 });
+      assert.equal(await page.evaluate(() => location.hash), '', 'the key is taken out of the address bar');
+      assert.equal(await page.$('[data-testid="key-bar"]'), null, 'the page has its key');
       await shot(page, 'start');
       // 新建插件 → the template → the operator by its official name → name and id → create
       await page.click('[data-testid="new-plugin"]');
@@ -104,6 +108,20 @@ describe('the plugin studio in the browser', { skip: !ENABLED && 'set SP_E2E=1 (
       const names = unzipFiles(fs.readFileSync(zipFile)).map((e) => e.name);
       assert.deepEqual(names, [`${id}/README.md`, `${id}/art/char_102_texas/avatar.png`, `${id}/plugin.json`, `${id}/plugin.lock.json`]);
       await shot(page, 'packed');
+      // another browser profile without the key: the plugins show, the bar asks for the key; the printed address pasted
+      const other = await browser.createBrowserContext();
+      const p2 = await other.newPage();
+      await p2.setViewport({ width: 1600, height: 1000 });
+      p2.on('pageerror', (e) => problems.push(`pageerror (no key): ${e.message}`));
+      await p2.goto(`${srv.url}/studio/`, { waitUntil: 'domcontentloaded' });
+      await p2.waitForFunction(() => globalThis.__studio?.ready === true, { timeout: 30000 });
+      await p2.waitForSelector('[data-testid="key-bar"]');
+      await p2.waitForSelector(`.st-list__item[data-plugin="${id}"]`);
+      await shot(p2, 'no-key');
+      await p2.type('[data-testid="key-input"]', srv.studio.pageUrl(srv.url));
+      await p2.click('[data-testid="key-bar"] button[type="submit"]');
+      await p2.waitForFunction(() => !document.querySelector('[data-testid="key-bar"]'), { timeout: 10000 });
+      await other.close();
       assert.deepEqual(problems, []);
       if (process.env.SP_STUDIO_SHOTS) {
         fs.mkdirSync(process.env.SP_STUDIO_SHOTS, { recursive: true });

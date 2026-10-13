@@ -1430,5 +1430,10 @@
   "音乐（循环 + 可选前奏）": "音樂（循環 + 可選前奏）",
   "预览": "預覽",
   "首领音乐 {key}": "首領音樂 {key}",
-  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "進階：直接編輯 plugin.json。欄位說明見 docs/PLUGINS.md §3 和 §9；編輯器支援 schemas/plugin.schema.json 自動補全。"
+  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "進階：直接編輯 plugin.json。欄位說明見 docs/PLUGINS.md §3 和 §9；編輯器支援 schemas/plugin.schema.json 自動補全。",
+  "只能查看": "只能檢視",
+  "要新建或修改插件，请打开服务器窗口里「Studio」那一行的地址（它带着工作台钥匙），或把那个地址粘贴到这里：": "要新建或修改插件，請打開伺服器視窗裡「Studio」那一行的網址（它帶著工作台鑰匙），或把那個網址貼到這裡：",
+  "粘贴工作台地址或钥匙": "貼上工作台網址或鑰匙",
+  "使用": "使用",
+  "钥匙不对：请重新复制服务器窗口里的地址。": "鑰匙不對：請重新複製伺服器視窗裡的網址。"
 }

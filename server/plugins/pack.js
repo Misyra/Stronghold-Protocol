@@ -13,13 +13,16 @@
 //   packPlugin(dir, { vanilla })                 write the lock (when it has no problem), then check the folder
 //   zipPlugin(dir)                               the folder as a deterministic zip (server/plugins/zip.js): `<id>/…`,
 //                                                every file but dot files and links — the lock and the documents too
+// Nothing here reads or writes through a symbolic link inside the folder (plainPath: the registry keeps a folder with a
+// link out — PLUGIN_FILE_LINK —, and a link put in a plugin folder never makes the packer or the studio read a file
+// elsewhere or write over one); the lock is written to a temporary file renamed over it.
 // Every result carries `issues` beside its plain `problems` / `warnings` (shared/plugins/errors.js). The packer does not
 // look for official game files (the owner's decision of 2026-10-13): a plugin's author answers for what it carries
 // (docs/PLUGINS.md §1 still asks never to put them in one).
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readPluginFolder, listPluginFiles } from './registry.js';
 import { PLUGIN_LIMITS, PLUGIN_MANIFEST, checkJsonLimits, extOf, readPluginManifest } from '../../shared/plugins/manifest.js';
 import { LOCK_FILE, LOCK_VERSION, readAssetOverlay } from '../../shared/plugins/visual.js';
@@ -33,7 +36,25 @@ import { zipFiles } from './zip.js';
 export const LOCK_GENERATOR = 'tools/plugin.mjs pack';
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
-const abs = (dir, rel) => path.join(dir, ...rel.split('/'));
+
+/**
+ * The path of `rel` (a plain relative path) inside the folder `dir`, never through a symbolic link: every part that exists
+ * is lstat'ed, and a link throws an error with code 'ELINK' (a missing part is left to the read that follows: ENOENT).
+ * @param {string} dir @param {string} rel
+ */
+export function plainPath(dir, rel) {
+  const parts = String(rel).split('/');
+  if (parts.some((p) => !p || p === '.' || p === '..')) throw Object.assign(new Error(`${String(rel).slice(0, 80)}: not a plain path`), { code: 'EPATH' });
+  let cur = dir;
+  for (const part of parts) {
+    cur = path.join(cur, part);
+    const st = fs.lstatSync(cur, { throwIfNoEntry: false });
+    if (!st) break;
+    if (st.isSymbolicLink()) throw Object.assign(new Error(`${String(rel).slice(0, 80)}: a symbolic link (a plugin's files are plain files inside its folder)`), { code: 'ELINK' });
+  }
+  return path.join(dir, ...parts);
+}
+const abs = plainPath;
 
 /**
  * @typedef {import('./registry.js').VanillaAssets} VanillaAssets
@@ -127,10 +148,10 @@ export function readOverlayOf(dir, manifest, { vanilla, has } = {}) {
   if (!assets) {
     try { assets = JSON.parse(fs.readFileSync(abs(dir, part.files[0]), 'utf8')); } catch (e) {
       pre.problem('PLUGIN_JSON', `${part.files[0]}: ${e?.message || e}`, { file: part.files[0], detail: String(e?.message || e) });
-      assets = {};
+      assets = undefined; // read as nothing (the overlay's own problem follows, as the packer of 0.2 reported it)
     }
   }
-  const ov = readAssetOverlay(assets, { has: has || ((rel) => fs.existsSync(abs(dir, rel))), vanilla: vanilla?.manifest ?? null, permissions: manifest.permissions });
+  const ov = readAssetOverlay(assets, { has: has || ((rel) => { try { return fs.statSync(abs(dir, rel)).isFile(); } catch { return false; } }), vanilla: vanilla?.manifest ?? null, permissions: manifest.permissions });
   if (!pre.issues.length) return ov;
   const list = issueList();
   list.take(pre);
@@ -150,7 +171,8 @@ export function buildPluginLock(dir, { vanilla } = {}) {
   const list = issueList();
   const done = (lock) => ({ lock, problems: list.problems, warnings: list.warnings, issues: list.issues });
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(path.join(dir, PLUGIN_MANIFEST), 'utf8')); } catch (e) {
+  try { raw = JSON.parse(fs.readFileSync(abs(dir, PLUGIN_MANIFEST), 'utf8')); } catch (e) {
+    if (e?.code === 'ELINK') { list.problem('PLUGIN_FILE_LINK', e.message, { file: PLUGIN_MANIFEST }); return done(null); }
     const why = e instanceof SyntaxError ? `not valid JSON (${e.message})` : String(e?.code || e);
     list.problem(e instanceof SyntaxError ? 'PLUGIN_JSON' : 'PLUGIN_NO_MANIFEST', `${PLUGIN_MANIFEST}: ${why}`, { file: PLUGIN_MANIFEST, detail: why });
     return done(null);
@@ -191,7 +213,11 @@ export function packPlugin(dir, { vanilla, where = `plugins/${path.basename(dir)
   const r = buildPluginLock(dir, { vanilla });
   const build = { problems: r.problems, warnings: r.warnings, issues: r.issues };
   if (!r.lock || r.problems.length) return { wrote: false, lock: r.lock, build, check: null };
-  fs.writeFileSync(path.join(dir, LOCK_FILE), `${JSON.stringify(r.lock, null, 2)}\n`);
+  // a temporary file renamed over the lock: a link put in its place is replaced, never written through; a reader sees
+  // the old lock or the new one
+  const tmp = path.join(dir, `.lock-${randomBytes(6).toString('hex')}.tmp`);
+  fs.writeFileSync(tmp, `${JSON.stringify(r.lock, null, 2)}\n`, { flag: 'wx' });
+  try { fs.renameSync(tmp, path.join(dir, LOCK_FILE)); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
   return { wrote: true, lock: r.lock, build, check: checkPluginFolder(dir, where, { vanilla }) };
 }
 
@@ -205,7 +231,7 @@ export function zipPlugin(dir) {
   const id = path.basename(dir);
   let version = '0.0.0';
   try {
-    const m = JSON.parse(fs.readFileSync(path.join(dir, PLUGIN_MANIFEST), 'utf8'));
+    const m = JSON.parse(fs.readFileSync(abs(dir, PLUGIN_MANIFEST), 'utf8'));
     if (typeof m?.version === 'string' && /^[0-9A-Za-z.+-]{1,64}$/.test(m.version)) version = m.version;
   } catch { /* the folder's own check says why */ }
   const files = listPluginFiles(dir).filter((f) => !f.link).map((f) => f.rel);

@@ -106,7 +106,7 @@ export async function startServer(opts = {}) {
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual });
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
-  const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, trustProxy: network.opts.trustProxy });
+  const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log });
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();

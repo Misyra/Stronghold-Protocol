@@ -15,6 +15,12 @@ body.studio { overflow: auto; height: auto; min-height: 100%; -webkit-user-selec
 .st-top__link { color: var(--mint-500); text-decoration: none; font-size: calc(.13 * var(--t)); }
 .st-top__link:hover { text-decoration: underline; }
 .st-live { font-size: calc(.12 * var(--t)); color: var(--text-dim); padding: .02rem .08rem; border: 1px solid var(--line-2); }
+/* the studio without its key: it shows, it does not change (server/studio/key.js) */
+.st-keybar { display: flex; flex-wrap: wrap; align-items: center; gap: .06rem .12rem; padding: .08rem .24rem; font-size: calc(.13 * var(--t));
+  color: var(--text-hi); background: var(--amber-a20); border-bottom: 1px solid rgba(246, 163, 41, .5); }
+.st-keybar strong { color: var(--amber); }
+.st-keybar .st-input { flex: 1 1 3rem; width: auto; min-width: 2rem; }
+.st-keybar__bad { flex-basis: 100%; color: var(--amber); }
 .st-live.is-on { color: var(--mint-500); border-color: var(--mint-800); }
 
 /* ---- the two columns -------------------------------------------------------------------------------------------- */

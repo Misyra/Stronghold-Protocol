@@ -67,12 +67,13 @@ describe('rooms follow a plugin changed on disk', () => {
     return (await host.waitFor('room.state', (s) => !!s.content?.vs)).content.vs;
   };
   const touch = (id, n) => fs.writeFileSync(path.join(plugins, id, 'a.png'), png(n, n, [n * 10, 0, 0, 255]));
-  const studio = (url, body) => fetch(srv.url + url, body === undefined ? undefined : { method: 'POST', headers: { 'x-sp-studio': '1', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  // the studio's calls carry its key (server/studio/key.js) — the first one turns the studio on (activate)
+  const studio = (url, body) => fetch(srv.url + url, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-sp-studio': srv.studio.key, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }).then((r) => r.json());
 
   before(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-hotreload-'));
     plugins = path.join(tmp, 'plugins');
-    for (const id of ['solo-skin', 'coop-skin', 'match-skin', 'quiet-skin']) writePlugin(path.join(plugins, id), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(2, 2) });
+    for (const id of ['solo-skin', 'coop-skin', 'match-skin', 'quiet-skin', 'mend-skin']) writePlugin(path.join(plugins, id), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(2, 2) });
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false, MatchClass: StubMatch });
   });
   after(async () => {
@@ -92,6 +93,9 @@ describe('rooms follow a plugin changed on disk', () => {
     assert.equal(toast.params?.names, 'quiet-skin');
     assert.equal(srv.lobby.rooms.values().next().value.content.vs, vs, 'the set stays until the host applies it again');
     assert.equal(srv.studio.active, false);
+    // a visit without the studio's key (the page itself, a read, a picture of another site) turns nothing on
+    for (const u of ['/studio/', '/studio/api/plugins', '/studio/api/info']) assert.equal((await fetch(srv.url + u)).status, 200, u);
+    assert.equal(srv.studio.active, false, 'only a request with the key starts the watch');
   });
 
   test('a single-player room applies a change by itself: a new vs, no toast', async () => {
@@ -141,6 +145,21 @@ describe('rooms follow a plugin changed on disk', () => {
     touch('match-skin', 7);
     const next = await host.waitFor('room.state', (s) => s.content?.vs && s.content.vs !== vs, 5000);
     assert.equal(next.inMatch, true);
+  });
+
+  test('a plugin broken for a moment while its author saves it, then mended: the single-player room follows the mended one', async () => {
+    const host = await player('Kroos');
+    await room(host, 'solo');
+    const vs = await withSet(host, 'mend-skin');
+    host.clearInbox();
+    // broken: the set no longer resolves — the host is told (once: the visual sets tell a held set once)
+    fs.writeFileSync(path.join(plugins, 'mend-skin', 'plugin.json'), '{ broken');
+    await host.waitFor('m.toast', (m) => m.msgid === TOAST, 5000);
+    // mended (and a new picture): the room applies it by itself all the same
+    fs.writeFileSync(path.join(plugins, 'mend-skin', 'plugin.json'), JSON.stringify(cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } })));
+    touch('mend-skin', 9);
+    const next = await host.waitFor('room.state', (s) => s.content?.vs && s.content.vs !== vs, 5000);
+    assert.deepEqual(next.content.plugins.map((p) => p.id), ['mend-skin']);
   });
 
   test('the studio\'s page hears which plugins changed (server-sent events)', async () => {

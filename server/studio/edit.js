@@ -8,7 +8,6 @@
 // hand meanwhile keeps their file as long as the studio is not asked to change it.
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { PLUGIN_API } from '../../shared/constants.js';
 import { PLUGIN_CLASSES, PLUGIN_MANIFEST, isPackPath, isSemver } from '../../shared/plugins/manifest.js';
 import { atlasInfo } from '../../tools/assets/atlas.mjs';
@@ -60,7 +59,9 @@ export function deleteIn(obj, p, keep = 1) {
 export function openPlugin(files, id) {
   const dir = files.root(id);
   let manifest;
-  try { manifest = JSON.parse(fs.readFileSync(path.join(dir, PLUGIN_MANIFEST), 'utf8')); } catch (e) {
+  // a plain file of the folder only (files.stat: never through a link put in its place)
+  const file = files.stat(id, PLUGIN_MANIFEST);
+  try { manifest = JSON.parse(fs.readFileSync(file.abs, 'utf8')); } catch (e) {
     throw new StudioError('PLUGIN_JSON', 409, { file: PLUGIN_MANIFEST, detail: String(e?.message || e) }, `${PLUGIN_MANIFEST} cannot be read`);
   }
   if (!isObj(manifest)) throw new StudioError('PLUGIN_MANIFEST_SHAPE', 409, {}, 'plugin.json is not an object');
@@ -101,20 +102,22 @@ export function editMeta(p, fields, lang = 'zh') {
   for (const [k, v] of Object.entries(isObj(fields) ? fields : {})) {
     const kind = META_FIELDS[k];
     if (!kind) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: `${k} is not a field the studio edits` });
+    // a value that is not a text (a list, an object) counts as none
+    const str = typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
     if (kind === 'text' || kind === 'longtext') {
-      const text = String(v ?? '').trim().slice(0, kind === 'text' ? 60 : 500);
+      const text = str.trim().slice(0, kind === 'text' ? 60 : 500);
       const cur = isObj(m[k]) ? { ...m[k] } : typeof m[k] === 'string' && m[k] ? { [m.sourceLang || 'zh']: m[k] } : {};
       if (text) cur[code] = text; else delete cur[code];
       if (Object.keys(cur).length) m[k] = cur; else delete m[k];
     } else if (kind === 'version') {
-      const s = String(v ?? '').trim();
+      const s = str.trim();
       if (!isSemver(s)) throw new StudioError('PLUGIN_VERSION', 400, {}, `${s.slice(0, 40)} is not a version`);
       m.version = s;
     } else if (kind === 'list') {
-      const list = (Array.isArray(v) ? v : String(v ?? '').split(/[,，、\n]/)).map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 32);
+      const list = (Array.isArray(v) ? v : str.split(/[,，、\n]/)).map((x) => (typeof x === 'string' ? x : '').trim().slice(0, 200)).filter(Boolean).slice(0, 32);
       if (list.length) m[k] = list; else delete m[k];
     } else if (kind === 'line') {
-      const s = String(v ?? '').trim().slice(0, k === 'homepage' ? 300 : k === 'credits' ? 500 : 100);
+      const s = str.trim().slice(0, k === 'homepage' ? 300 : k === 'credits' ? 500 : 100);
       if (s) m[k] = s; else delete m[k];
     } else if (kind === 'scope') {
       const allowed = PLUGIN_CLASSES[m.class]?.scopes || [];

@@ -1426,5 +1426,10 @@
   "音乐（循环 + 可选前奏）": "Music (loop + optional intro)",
   "预览": "Preview",
   "首领音乐 {key}": "Leader music {key}",
-  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "Advanced: edit plugin.json itself. The fields: docs/PLUGINS.md §3 and §9; editors complete them with schemas/plugin.schema.json."
+  "高级：直接编辑 plugin.json。字段说明见 docs/PLUGINS.md §3 和 §9；编辑器支持 schemas/plugin.schema.json 自动补全。": "Advanced: edit plugin.json itself. The fields: docs/PLUGINS.md §3 and §9; editors complete them with schemas/plugin.schema.json.",
+  "只能查看": "View only",
+  "要新建或修改插件，请打开服务器窗口里「Studio」那一行的地址（它带着工作台钥匙），或把那个地址粘贴到这里：": "To make or change a plugin, open the address on the \"Studio\" line of the server's window (it carries the studio's key), or paste that address here:",
+  "粘贴工作台地址或钥匙": "Paste the studio's address or key",
+  "使用": "Use",
+  "钥匙不对：请重新复制服务器窗口里的地址。": "That is not the key: copy the address from the server's window again."
 }

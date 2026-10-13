@@ -12,7 +12,11 @@
 //   * sizes: a file at most STUDIO_LIMITS.fileBytes (64 MB), a plugin.json at most 1 MB, a plugin in all at most
 //     PLUGIN_LIMITS.pluginBytes (200 MB) and PLUGIN_LIMITS.files files [ASSUMED: 64 MB and 1 MB];
 //   * a write goes to a dot-named temporary file in the target's folder, then is renamed over it (a reader — the registry,
-//     a page — sees the old file or the new one, never half of one; dot files are never listed or served).
+//     a page — sees the old file or the new one, never half of one; dot files are never listed or served);
+//   * the studio's own dot file of a folder (SIDECARS: `.studio.json`, server/studio/index.js) is read only when it is a
+//     plain file and written the same way (renamed over: a link in its place is replaced, never written through);
+//   * a file moved out of a plugin (moveOut, the one-click fix of a file type the plugin may not carry) goes to
+//     plugins/_moved/<id>/<path> — every folder on the way a plain folder, never a link — and is never deleted.
 // Errors are thrown as `StudioError { code, status, params }` (code: shared/plugins/errors.js).
 
 import fs from 'node:fs';
@@ -24,6 +28,9 @@ import { listPluginFiles } from '../plugins/registry.js';
 
 /** [ASSUMED] the studio's own limits: one file, a manifest, a request body (a model's files in one go, base64). */
 export const STUDIO_LIMITS = Object.freeze({ fileBytes: 64 * 1024 * 1024, manifestBytes: 1024 * 1024, bodyBytes: 160 * 1024 * 1024 });
+
+/** The studio's own dot files of a plugin folder (never listed, served, checked or packed). */
+export const SIDECARS = Object.freeze(['.studio.json']);
 
 /** File types the studio writes into a plugin folder: art, models, audio, fonts, data, documents. */
 export const WRITABLE = Object.freeze([...ASSET_EXT, '.json', '.md', '.txt']);
@@ -159,6 +166,65 @@ export function createPluginFiles(pluginsDir) {
   }
 
   /**
+   * The text of one of the studio's own dot files (SIDECARS) of a plugin, or null when it is missing or not a plain file.
+   * @param {string} id @param {string} name
+   */
+  function readSidecar(id, name) {
+    if (!SIDECARS.includes(name)) throw bad(`${String(name).slice(0, 40)} is not a file of the studio`);
+    const abs = path.join(root(id), name);
+    const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+    if (!st || !st.isFile() || st.size > PLUGIN_LIMITS.jsonBytes) return null;
+    return fs.readFileSync(abs, 'utf8');
+  }
+
+  /**
+   * Write one of the studio's own dot files (SIDECARS) of a plugin: a temporary file renamed over it (a link in its place
+   * is replaced, never followed).
+   * @param {string} id @param {string} name @param {Buffer} data
+   */
+  function writeSidecar(id, name, data) {
+    if (!SIDECARS.includes(name)) throw bad(`${String(name).slice(0, 40)} is not a file of the studio`);
+    if (data.length > PLUGIN_LIMITS.jsonBytes) throw new StudioError('PLUGIN_STUDIO_SIZE', 413, { max: `${Math.round(PLUGIN_LIMITS.jsonBytes / 1048576)} MB`, file: name });
+    const top = root(id);
+    const abs = path.join(top, name);
+    const tmp = path.join(top, `.studio-${randomBytes(6).toString('hex')}.tmp`);
+    fs.writeFileSync(tmp, data, { flag: 'wx' });
+    try {
+      const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+      if (st && !st.isFile() && !st.isSymbolicLink()) throw bad(`${name} is not a file`);
+      fs.renameSync(tmp, abs);
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* gone */ }
+      throw e;
+    }
+  }
+
+  /**
+   * Move a file out of a plugin (see the header) → its path relative to the plugins folder (`_moved/<id>/<path>`, a
+   * number added when that name is taken).
+   * @param {string} id @param {string} rel
+   */
+  function moveOut(id, rel) {
+    const { abs } = stat(id, rel);
+    const top = realBase();
+    let cur = top;
+    for (const part of ['_moved', id, ...rel.split('/').slice(0, -1)]) {
+      cur = path.join(cur, part);
+      let st = fs.lstatSync(cur, { throwIfNoEntry: false });
+      if (!st) { fs.mkdirSync(cur); st = fs.lstatSync(cur); }
+      if (st.isSymbolicLink() || !st.isDirectory()) throw bad(`${path.relative(top, cur).split(path.sep).join('/')} is not a plain folder`, 403);
+    }
+    const name = rel.split('/').pop();
+    let dest = path.join(cur, name);
+    for (let n = 2; fs.lstatSync(dest, { throwIfNoEntry: false }); n++) {
+      if (n > 999) throw bad(`${rel}: too many moved copies`, 409);
+      dest = path.join(cur, `${name}.${n}`);
+    }
+    fs.renameSync(abs, dest);
+    return path.relative(top, dest).split(path.sep).join('/');
+  }
+
+  /**
    * Remove a file of a plugin (a regular file; never plugin.json), and the folders it leaves empty.
    * @param {string} id @param {string} rel
    */
@@ -179,5 +245,5 @@ export function createPluginFiles(pluginsDir) {
     return names.filter((n) => isPluginId(n)).filter((n) => { try { return fs.statSync(path.join(base, n)).isDirectory(); } catch { return false; } }).sort();
   }
 
-  return { base, root, resolve, stat, write, remove, ids, writable, list: (id) => listPluginFiles(root(id)) };
+  return { base, root, resolve, stat, write, remove, ids, writable, readSidecar, writeSidecar, moveOut, list: (id) => listPluginFiles(root(id)) };
 }

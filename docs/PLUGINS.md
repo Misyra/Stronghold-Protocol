@@ -410,16 +410,30 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
 
 **The studio 插件工作台** — `http://<server>/studio/` of a running server (`server/studio/`, its page `public/studio/`):
 
-- **Who may open it**: this machine and the local network only (`server/studio/gate.js`). The client address is the
-  socket's peer, or the address a local proxy forwards (`server/net.js clientAddress`, honouring `TRUST_PROXY` like the
-  WebSocket limits): a loopback or private-network address passes, any other — also a public visitor a tunnel on this
-  machine forwards — gets the 404 page of a page that does not exist, at the page and at every API route. The Host the
-  browser asked for must be an address or a local name (localhost, `*.localhost`, a machine name without a dot,
-  `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, or a name `SP_STUDIO_HOSTS` lists), so a web page whose own name was
-  made to point at the machine (DNS rebinding) cannot reach it; a change (POST, PUT, DELETE) carries the header
-  `X-SP-Studio: 1` and, when the browser names one, the studio's own origin — the studio never answers a cross-origin
-  preflight. `SP_STUDIO=local` allows this machine only, `SP_STUDIO=off` switches the studio off [ASSUMED: on for the
-  local network by default].
+- **Who may open it**: this machine and the local network only (`server/studio/gate.js`). The socket's peer **and**
+  every address a forwarding header names (X-Forwarded-For — every hop —, X-Real-IP, CF-Connecting-IP, True-Client-IP,
+  X-Client-IP, X-Cluster-Client-IP, Fastly-Client-IP, Forwarded's `for=`) must be loopback or private-network addresses
+  (`server/net.js isLocalIp`); an address that cannot be read refuses too. That is stricter than `clientAddress`, which
+  picks one header for the limits: a proxy that sets one header passes the others a visitor sent, so a header can refuse
+  a request but never admit one, whatever `TRUST_PROXY` says. Anyone else — also a public visitor a tunnel or proxy on
+  this machine names — gets the 404 page of a page that does not exist, at the page and at every API route. The Host the
+  browser asked for must be a local address or a local name (a loopback or private IP, localhost, `*.localhost`, a
+  machine name without a dot, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, or a name `SP_STUDIO_HOSTS` lists), so a
+  web page whose own name was made to point at the machine (DNS rebinding) cannot reach it, nor a browser that reaches it
+  at a public address; a change (POST, PUT, DELETE) carries the header `X-SP-Studio: 1` and, when the browser names one,
+  the studio's own origin — the studio never answers a cross-origin preflight. `SP_STUDIO=local` allows this machine only
+  (the peer and every forwarded address loopback), `SP_STUDIO=off` switches the studio off [ASSUMED: on for the local
+  network by default]. What no address check can see — a **raw TCP tunnel** on this machine (frp `tcp`, `ssh -R`, ngrok
+  `tcp` …) hands a visitor's bytes over from this machine itself with no forwarding header, and a client that is not a
+  browser writes any Host — is what **the studio's key** is for (`server/studio/key.js`): every change carries it in the
+  header `X-SP-Studio`, a wrong or missing one is refused (`PLUGIN_STUDIO_KEY`), whatever the address. The server prints
+  the studio's address with the key when it starts (the banner's `Studio:` line, `http://localhost:3000/studio/#key=…`);
+  the page keeps it in its browser (localStorage, taken out of the address bar) and asks for it when it has none (paste
+  the printed address into the bar at the top). The key is kept in `plugins/.studio-key` (128 random bits, the owner's
+  only; the same across restarts — delete the file for a new one). Reads — the page, the list, a plugin's files — need no
+  key, so a visitor through such a tunnel can see the plugins but change nothing; `SP_STUDIO=off` hides them too
+  [ASSUMED: the key file, reads without the key]. The watch and the rooms' rule (below) start with the first request
+  that carries the key, never with a mere visit.
 - **新建插件**: a template — 换头像 / 立绘 / 图标 (`art`: an operator's avatar, E2 avatar, portrait, E2 portrait; a summon's
   avatar, an enemy's icon, an item's, a bond's, a strategy's icon, an interface picture), 换 Spine 模型 (`spine`: an
   operator's front and back model, a summon's or an enemy's), 换语音 (`voice`: every battle line of an operator, Chinese and
@@ -435,8 +449,11 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
   picked) go into the plugin folder under the slot's name — `art/<key>/avatar.png`, `spine/<key>/front/<key>.skel` and
   `.atlas` under one name with the atlas's pages by their own names and `textures` read from the atlas,
   `voice/<key>/cn/<line>.mp3` (several: `_1`, `_2` …, played in turn), `music/<key>/loop.ogg` and `intro.ogg` — and the
-  overlay names them; a file the slot named before and nothing names now is removed. 「用已有的素材」 borrows the
-  installation's own art instead (`{ "ref": "<key>" }`, found by name); 「恢复原版」 empties the slot.
+  overlay names them; a file the slot named before and nothing names now is removed (also when a reference takes its
+  place). A track keeps the part not sent (「放入前奏」 adds the intro to its loop; a new loop keeps the intro; two files at
+  once: the one named `intro…` is the intro). A model's new skeleton comes with its atlas, unless the model already sits
+  under the slot's own name; the atlas's page names must be plain names (they are the files' names). 「用已有的素材」
+  borrows the installation's own art instead (`{ "ref": "<key>" }`, found by name); 「恢复原版」 empties the slot.
 - **Findings**: the server's own checks (`server/plugins/pack.js checkPluginFolder` — exactly what the registry and
   `tools/plugin.mjs check` run), each in plain words beside the slot or field it is about (its `at` path), with what to
   do, the technical line folded under it and — where the error catalogue has one — 「一键修复」: the missing permission
@@ -467,13 +484,15 @@ rescans at once — applies the same plugins again by itself when its host is th
 named: `POST /studio/api/authors` with the tokens of this browser's `sp.tokens`, kept 10 minutes after the page last named
 them [ASSUMED]) or its host is its only player (a single-player room, or a room the host is alone in): a new `vs` in
 `room.state`, during a match too (art never changes a battle; nobody is un-readied: `server/lobby.js refreshPlugins`); any
-other room's host is told as before (§9). A server whose owner never opens the studio watches nothing and keeps §9's
-behaviour exactly. The studio's page hears the plugins whose state changed (`GET /studio/api/events`, server-sent events)
+other room's host is told as before (§9). Such a room follows every rescan that changes one of its plugins, also after a
+plugin was broken for a moment while its author saved it (the visual sets tell a held set once; the studio looks again
+after each rescan). A server whose owner never opens the studio watches nothing and keeps §9's behaviour exactly. The studio's page hears the plugins whose state changed (`GET /studio/api/events`, server-sent events)
 and reloads its view — an author saving from Spine or an image editor sees the preview follow. A player's personal
 plugins follow on the next catalogue fetch (not pushed).
 
-**The API** (for experienced authors and agents; the page uses nothing else; a change answers with the plugin's state,
-an error `{ error: <code>, params, detail }`):
+**The API** (for experienced authors and agents; the page uses nothing else; a change carries `X-SP-Studio: <the key in
+plugins/.studio-key>` and answers with the plugin's state, an error `{ error: <code>, params, detail }`; HEAD answers as
+GET without the body):
 
 | Route | What |
 |---|---|
@@ -483,14 +502,18 @@ an error `{ error: <code>, params, detail }`):
 | `PUT …/manifest` · `POST …/meta` · `POST …/sections` | plugin.json as a whole; the basic fields `{ fields, lang }`; the sections the page shows |
 | `POST …/slot` · `…/ref` · `…/clear` · `…/fix` | files for a slot `{ at, files: [{ name, data (base64), role? }] }`; a reference `{ at, ref }`; a slot emptied `{ at }`; a one-click fix `{ code, at?, file?, params? }` |
 | `POST …/pack` · `GET …/zip` · `GET …/preview` | the lock and the check; the zip (a download, packs nothing); the temporary composition |
-| `GET …/f/<hash8>/<path>`, `…/files/<path>` · `PUT` / `DELETE …/files/<path>` | a file of the folder (a draft's too); write or remove one |
+| `GET …/f/<hash8>/<path>`, `…/files/<path>` · `PUT` / `DELETE …/files/<path>` | a file of the folder (a draft's too) — of the types the studio writes only, sandboxed (`Content-Security-Policy: default-src 'none'; sandbox`); write or remove one |
 | `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
 (never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
 characters) of a type a plugin carries (art, models, audio, fonts, JSON, documents; never the lock by hand); no link inside
 the folder is followed (every folder on the way and the file are lstat'ed; a plugin folder that is itself a link, the
-owner's choice, is followed once); a write goes to a dot-named temporary file renamed over the target; a file at most
+owner's choice, is followed once) — neither for the studio's reads (plugin.json, an overlay file, the lock, its own note
+`.studio.json`; a folder holding links is checked for its links alone) nor for its writes (the lock and the note are
+renamed over a link put in their place, `plugins/_moved/` must be a plain folder), and the packer reads no file through
+a link either (`server/plugins/pack.js plainPath`); a write goes to a dot-named temporary file renamed over the target;
+a body over the limit is refused before it is read and its connection closed; a file at most
 64 MB, plugin.json at most 1 MB, a request at most 160 MB (a model's files in one go, base64), a plugin at most 200 MB
 and 5000 files [ASSUMED: the studio's limits].
 
@@ -575,6 +598,7 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The studio refuses the action and says why | `PLUGIN_STUDIO_TARGET` | No target “{target}” to replace | Search by its official name (e.g. 德克萨斯) and pick one of the results. |
 | The studio refuses the action and says why | `PLUGIN_STUDIO_FILE_KIND` | This place takes {kind}; the dropped file is {ext} | A picture place takes .png .jpg .webp, a sound place .mp3 .ogg, a model place its .skel, .atlas and .png together. |
 | The studio refuses the action and says why | `PLUGIN_STUDIO_REQUEST` | The studio's request is not right: {detail} | Reload the studio and try again; if it stays, ask on GitHub with this text. |
+| The studio only shows plugins; it cannot make or change one | `PLUGIN_STUDIO_KEY` | Changing a plugin needs the studio's key, which this browser does not have (or it is not the right one) | Open the address on the "Studio" line of the server's window (it carries the key, which is also in plugins/.studio-key), or paste it into the box at the top of the studio. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
 <!-- plugin-errors:end -->
 

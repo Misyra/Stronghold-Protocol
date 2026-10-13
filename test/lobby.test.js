@@ -557,8 +557,12 @@ describe('websocket lobby', () => {
     assert.equal(pong.t, 'pong');
   });
 
-  test('rate limit: bursts beyond 40 msg/s get RATE, connection survives, bucket refills', async () => {
-    const c = await pool.player('Spammer');
+  test('rate limit: bursts beyond 40 msg/s get RATE, connection survives, bucket refills', async (t) => {
+    // Transport/compression scheduling must not refill a supposedly instantaneous burst.
+    let now = Date.now();
+    t.mock.method(srv.network, 'now', () => now);
+    const c = await pool.connect({ wsOptions: { perMessageDeflate: false } });
+    await c.hello('Spammer');
     const N = 100;
     const rids = [];
     for (let i = 0; i < N; i++) rids.push(c.send({ t: 'ping', c: i }));
@@ -567,27 +571,41 @@ describe('websocket lobby', () => {
     const pongs = replies.filter((m) => m.t === 'pong').length;
     const limited = replies.filter((m) => m.t === 'error' && m.code === ERR.RATE).length;
     assert.equal(pongs + limited, N);
-    assert.ok(pongs >= 39 && pongs <= 45, `pongs ${pongs}`); // hello used one token
-    assert.ok(limited >= 55, `limited ${limited}`);
+    assert.equal(pongs, 39); // hello used one of the 40 tokens
+    assert.equal(limited, 61);
     assert.ok(c.isOpen);
-    await delay(1100);
+    now += 24; // 40/s: less than one token
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    now += 1;
     const ok = await c.request({ t: 'ping', c: 0 });
     assert.equal(ok.t, 'pong');
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    now += 1100; // refill, capped at 40 tokens
+    for (let i = 0; i < 40; i++) assert.equal((await c.request({ t: 'ping', c: i })).t, 'pong');
+    await expectError(c, { t: 'ping', c: 0 }, ERR.RATE);
+    assert.ok(c.isOpen);
   });
 
-  test('flooding far beyond the limit closes the socket (1008)', async () => {
-    const c = await pool.player('Flood');
-    // bursts until the server closes it: the close needs more than abuseDropsPerSec drops inside one 1 s window, and on
-    // a heavily loaded machine a single burst of 600 can be read over more than a second — the old single burst then
-    // never closed the socket and `await c.closed` (no timeout) hung the whole file
-    const t0 = Date.now();
-    while (c.isOpen && Date.now() - t0 < 20000) {
-      for (let i = 0; i < 600 && c.isOpen; i++) c.send({ t: 'ping', c: i, rid: null });
-      await delay(50);
+  test('flooding far beyond the limit closes the socket (1008)', async (t) => {
+    const now = Date.now();
+    t.mock.method(srv.network, 'now', () => now);
+    const c = await pool.connect({ wsOptions: { perMessageDeflate: false } });
+    await c.hello('Flood');
+    // Keep one rate window and await replies instead of building a compressed send queue ahead of the close frame.
+    for (let i = 0; i < 39; i++) assert.equal((await c.request({ t: 'ping', c: i })).t, 'pong');
+    for (let i = 0; i < 400; i++) await expectError(c, { t: 'ping', c: i }, ERR.RATE);
+    assert.ok(c.isOpen, '400 drops do not close the socket');
+    c.send({ t: 'ping', c: 400, rid: null });
+    const timeout = new AbortController();
+    let info;
+    try {
+      info = await Promise.race([c.closed, delay(10000, null, { signal: timeout.signal })]);
+    } finally {
+      timeout.abort();
     }
-    const info = await Promise.race([c.closed, delay(10000).then(() => null)]);
     assert.ok(info, 'the server closed the flooding socket');
     assert.equal(info.code, 1008);
+    assert.equal(info.reason, 'rate limit');
   });
 
   test('create / join / leave', async () => {

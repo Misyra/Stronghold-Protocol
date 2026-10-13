@@ -165,6 +165,32 @@ try {
   after.players[0].lp -= 1;
   after.players[1].shopLevel += 1;
 
+  // 1a) 传输段:第二次发送同一频道的状态(基线命中、差分、补丁、整帧回退的构建)。每次用新的 stub 对象,
+  // 快照与转换缓存才不会把成本吃掉;基线只提交一次,所以每轮都是一次真实转换。
+  const transport = {};
+  {
+    const { negotiateStateDelta, prepareStateFrame } = await import('../server/stateTransport.js');
+    const ws = {};
+    negotiateStateDelta(ws, 1);
+    const mk = (kind, view) => {
+      const encoded = kind === 'm.public' ? publicStateJson(view) : JSON.stringify(view);
+      const frame = prepareStateFrame(ws, { t: kind }, encoded);
+      return { encoded, frame };
+    };
+    for (const [kind, makeView] of [
+      ['m.public', () => { const v = m.publicView(); v.serverNow = (v.serverNow || 0) + 0; v.players[0].lp -= 1; return v; }],
+      ['m.private', () => { const v = ps0.privateView(); v.funds -= 1; return v; }],
+    ]) {
+      const base = mk(kind, makeView());
+      base.frame.commit();                                         // one committed baseline for this channel
+      transport[kind === 'm.public' ? 'transportPublicTransition' : 'transportPrivateTransition'] =
+        timeSegment(() => { const { frame } = mk(kind, makeView()); if (!frame.data) throw new Error('no frame'); }, { iterations: 500, warmup: 100 });
+      transport[kind === 'm.public' ? 'transportPublicFull' : 'transportPrivateFull'] =
+        timeSegment(() => { const view = makeView(); const encoded = kind === 'm.public' ? publicStateJson(view) : JSON.stringify(view);
+          const fresh = {}; negotiateStateDelta(fresh, 1); prepareStateFrame(fresh, { t: kind }, encoded); }, { iterations: 500, warmup: 100 });
+    }
+  }
+
   const segments = {
     publicView: timeSegment(() => m.publicView(), { iterations: count }),
     publicViewWarm: timeSegment(() => m.publicView(), { iterations: count, warmup: 0 }),
@@ -178,6 +204,7 @@ try {
     diffState: timeSegment(() => diffState(before, after), { iterations: count }),
     applyStatePatch: timeSegment(() => applyStatePatch(pubParsed, diffState(before, after)), { iterations: count }),
     patchStringify: timeSegment(() => JSON.stringify(diffState(before, after)), { iterations: count }),
+    ...transport,
     checkpointCapture: timeSegment(() => captureMatch(m), { iterations: 500, warmup: 100 }),
     checkpointClone: timeSegment(() => structuredClone(captureMatch(m)), { iterations: 300, warmup: 60 }),
     checkpointEncodeSync: timeSegment(() => encodeMatchCapture(captureMatch(m)), { iterations: 200, warmup: 50 }),

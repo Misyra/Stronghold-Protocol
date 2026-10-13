@@ -9,7 +9,7 @@
 
 import { PHASE } from '../../../shared/constants.js';
 import { msg, dn } from '../../../shared/i18n.js';
-import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, resolveLoadout } from '../../../shared/protocol.js';
+import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, resolveLoadout, charPotentialChanges } from '../../../shared/protocol.js';
 import { cultivationOf } from '../../../shared/potential.js';
 import { tileKey, boardOrder } from '../board.js';
 
@@ -79,7 +79,7 @@ export class PlayerBasics {
         }
       }
       const ids = opsCharIds(this.gd.raw);
-      opsRes = checkLoadoutOps(raw, (id) => ids.has(id));
+      opsRes = checkLoadoutOps(raw, (id) => ids.has(id), (id) => charPotentialChanges(this.gd.raw, id));
       if (!opsRes || !opsRes.ok) {
         this.m.log?.warn?.(`[match ${this.m.roomCode}] operator settings of ${this.playerId} ignored: ${opsRes && opsRes.detail}`);
         return false;

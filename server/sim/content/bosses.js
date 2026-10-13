@@ -67,7 +67,7 @@
 // fx kinds: 'beam' 'shell' 'explode' 'telegraph' 'charge' 'link' 'dash' 'column' 'tide' 'rockfall' 'tentacle' 'equip'
 //   'sword' 'vest' 'blink' 'summon' 'grow' 'phase' 'lpLoss' (x, y + extra {id, r, tiles, kind, tx, ty …}).
 
-import { MOVE_SCALE } from '../constants.js';
+import { MOVE_SCALE, MAX_ALIVE_ENEMIES } from '../constants.js';
 import { aggroCmp, areaSelectable } from '../targeting.js';
 import { compileRoute } from '../ai.js';
 import { normalizeRoute } from '../simdata.js';
@@ -221,8 +221,8 @@ function branchRoute(tpl, name) {
   return (s && tpl.extraRoutes && tpl.extraRoutes[s.routeIndex]) || null;
 }
 
-/** Spawn one phase of a template branch. Returns the spawned enemies. */
-function branchSpawn(b, tpl, name, phaseIdx, { fallback = null, mods = null, at = null } = {}) {
+/** Spawn one phase of a template branch. Returns the spawned enemies. The loop stops at MAX_ALIVE_ENEMIES and does not allocate a refusal per extra count. */
+export function branchSpawn(b, tpl, name, phaseIdx, { fallback = null, mods = null, at = null } = {}) {
   const br = tpl && tpl.branches && tpl.branches[name];
   if (!Array.isArray(br) || !br.length) return fallback ? fallback() : [];
   const phase = br[Math.max(0, Math.min(phaseIdx, br.length - 1))] || [];
@@ -233,9 +233,14 @@ function branchSpawn(b, tpl, name, phaseIdx, { fallback = null, mods = null, at 
     const key = (s.slot && b.opts && b.opts.slotKeys && b.opts.slotKeys[s.slot]) || s.key || s.enemyKey;
     if (!key || !String(key).startsWith('enemy_')) continue;
     const route = tpl.extraRoutes && tpl.extraRoutes[s.routeIndex];
-    for (let i = 0; i < Math.max(1, s.count ?? 1); i++) {
+    const raw = s.count ?? 1;
+    const want = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(1, raw) : 1;
+    const cap = Math.min(MAX_ALIVE_ENEMIES, want);
+    for (let i = 0; i < cap; i++) {
+      if (b.enemies.length >= MAX_ALIVE_ENEMIES && b.aliveEnemies().length >= MAX_ALIVE_ENEMIES) break;
       const u = b.spawnEnemy(key, { route: route || (at ? toGoal(b, at.x, at.y) : undefined), pos: route ? undefined : at ? [at.y, at.x] : undefined, tag: s.tag ?? null, countInTotal: s.unharmful ? false : undefined, mods });
-      if (u) out.push(u);
+      if (!u) break;
+      out.push(u);
     }
   }
   return out;

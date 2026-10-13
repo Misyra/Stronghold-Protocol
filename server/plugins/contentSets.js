@@ -18,12 +18,12 @@
 //                                          input and parses (server/match/host/entry.js)
 // The builder is WP-A's C1 (server/plugins/contentSet.js buildContentSet / contentSetFiles, DESIGN §32.5); this file
 // adapts its set to what P1c reads: `hashInput` (the contentHashOf input a browser and a worker recompute `cs` from — out
-// of the set's index), `modes` (only the config.modes entries the vanilla data lacks, as { id, name, roomMode,
+// of the set's index: its data files', and its translation files', hashes; checked to be the builder's cs), `modes` (only the config.modes entries the vanilla data lacks, as { id, name, roomMode,
 // difficulty }), `warnings` in room.state's `{ code, params }` shape, `dataBytes` (what the members download beyond the
 // vanilla files). Until WP-A merged, a stub stood in (P1c's first commits).
 
 import { ERR, DIFFICULTIES } from '../../shared/constants.js';
-import { csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
+import { contentHashOf, csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
 import { buildContentSet, contentSetFiles } from './contentSet.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
@@ -34,7 +34,8 @@ export const DEFAULT_MAX_SETS = 4;
 
 /**
  * @typedef {{ cs: string, plugins: { id: string, version: string, hash: string }[], modes: object[], data: Record<string, any>,
- *   hashInput: { app: string, sim: string, data: Record<string, string>, plugins: object[], settings: object },
+ *   hashInput: { app: string, sim: string, data: Record<string, string>, plugins: object[], settings: object,
+ *     i18n?: Record<string, string> },
  *   kitted: string[] | null, warnings: { code: string, params: object }[],
  *   served: Map<string, { body: Buffer, sha256: string, bytes: number }>, dataBytes: number }} ContentSet
  */
@@ -85,7 +86,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
     }
   };
 
-  /** A built C1 set → a ContentSet (see the header). */
+  /** A built C1 set → a ContentSet (see the header); null when its manifest does not hash to its cs. */
   function adopt(built) {
     const index = built.index || {};
     const served = filesOf(built);
@@ -95,10 +96,18 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       data[name] = f.sha256;
       if (typeof f.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
     }
-    for (const f of Object.values(index.i18n || {})) if (typeof f?.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
+    // a content set's cs covers its translation files too (every language its manifest lists — WP-A's review round)
+    const i18n = {};
+    for (const [lang, f] of Object.entries(index.i18n || {})) {
+      if (typeof f?.sha256 === 'string') i18n[lang] = f.sha256;
+      if (typeof f?.url === 'string' && f.url.startsWith('/cs/')) dataBytes += Number(f.bytes) || 0;
+    }
+    const hashInput = { app: index.app, sim: index.sim, data, plugins: index.plugins || [], settings: index.settings || {}, ...(Object.keys(i18n).length ? { i18n } : {}) };
+    // what a browser and a match host recompute from the manifest must be the builder's cs (else no page could check it)
+    if (contentHashOf(hashInput) !== built.cs) return null;
     return {
       cs: built.cs, plugins: built.plugins || [], data: built.data,
-      hashInput: { app: index.app, sim: index.sim, data, plugins: index.plugins || [], settings: index.settings || {} },
+      hashInput,
       modes: pluginModes(built.modes, vanillaData),
       kitted: Array.isArray(built.kitted) ? built.kitted : null,
       warnings: (Array.isArray(built.warnings) ? built.warnings : []).map((w) => (w && w.code === 'PLUGIN_PATCH_OVERRIDE'
@@ -135,6 +144,10 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
     const key = csUrlPart(built.cs);
     let set = sets.get(key);
     if (!set || set.cs !== built.cs) set = adopt(built);
+    if (!set) {
+      log.error?.(`[plugins] content set ${built.cs.slice(0, 8)}: its manifest does not hash to its cs`);
+      return { error: ERR.INTERNAL, detail: 'the content set\'s manifest does not hash to its cs' };
+    }
     // the limit: one set more than the rooms hold now (a set already held, or the one the asking room gives up, is free)
     if (!held.has(key)) {
       const freed = replacing && isContentHash(replacing) && held.get(csUrlPart(replacing)) === 1 ? 1 : 0;

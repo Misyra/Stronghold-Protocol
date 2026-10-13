@@ -32,6 +32,21 @@ test('existing namespaced record rejected; failure rolls back preceding valid op
   code([set(), set({ path: ['constructor'] })], 'PLUGIN_PATCH_PATH');
 });
 test('64-level JSON bound', () => { let v = {}; for (let i = 0; i < 66; i++) v = { v }; code([set({ value: v })], 'PLUGIN_DATA_LIMIT'); });
+test('null cannot wash a field into another type', () => {
+  const ops = [
+    { op: 'set', file: 'config', path: ['economy', 'value'], value: null },
+    { op: 'set', file: 'config', path: ['economy', 'value'], value: { hijack: true } },
+  ];
+  const r = applyPatches(data, ops);
+  assert.equal(r.data, data);
+  assert.equal(r.problems[0].code, 'PLUGIN_PATCH_TYPE');
+  assert.equal(data.config.economy.value, 1);
+  const nullable = { ...data, config: { ...data.config, economy: { value: null } } };
+  const ok = applyPatches(nullable, [{ op: 'set', file: 'config', path: ['economy', 'value'], value: null }]);
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.data.config.economy.value, null);
+  assert.notEqual(ok.data, nullable);
+});
 test('settings use defaults for invalid/unknown values and preserve valid zero', () => {
   const d = { n: { type: 'integer', min: 0, max: 6, step: 2, default: 2 }, b: { type: 'boolean', default: true }, e: { type: 'enum', options: ['a', 'b'], default: 'a' } };
   assert.deepEqual(normalizeSettings(d, { n: 0, b: false, e: 'b', ignored: 3 }), { n: 0, b: false, e: 'b' });

@@ -34,6 +34,7 @@ function behavior(kit, talentMods) {
   } else if (kit.dsl != null) fail('PLUGIN_DSL_UNAVAILABLE', 'kit.dsl', 'DSL is supplied by P2');
   else fail('PLUGIN_RECORD_TYPE', 'kit', 'kit must be generic, ref, or a JSON spec');
   if (talentMods != null) {
+    if (out.kitRef) fail('PLUGIN_SKILL_SPEC', 'talentMods', 'talentMods belong with a JSON SkillSpec, not kit.ref');
     if (!matchesSchema(talentMods, MODS_SCHEMA)) fail('PLUGIN_SKILL_SPEC', 'talentMods', 'unknown or ill-typed permanent mod');
     out.talentMods = talentMods;
   }

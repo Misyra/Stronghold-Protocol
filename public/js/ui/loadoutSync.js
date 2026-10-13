@@ -24,7 +24,7 @@ import { createStore, loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
 import { contentSet as appContentSet } from '../content.js';
 import { LOADOUT_PREF, parseStored, parseStoredOps, toStored, sanitizeEntries, sanitizeOps } from './loadoutModel.js';
-import { cultivationCharIds } from '../../../shared/protocol.js';
+import { cultivationCharIds, charPotentialChanges } from '../../../shared/protocol.js';
 import { OWNERSHIP_PREF, parseStoredOwnership, toStoredOwnership, cleanIds, sanitizeNotOwned } from './ownershipModel.js';
 import { DIY_PREF, parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks } from './diyModel.js';
 import { toast } from './toasts.js';
@@ -297,7 +297,7 @@ export function installLoadoutSync({ net, getChessReady, getBackupsReady, lookup
       if (!hasOps) return { entries, ops: {} };
       if ((await readyBackups()) == null) return null;
       const ids = opIds();
-      return { entries, ops: sanitizeOps(target.get().ops, (id) => ids.has(id)) };
+      return { entries, ops: sanitizeOps(target.get().ops, (id) => ids.has(id), (id) => charPotentialChanges({ chess: data.get('chess'), backups: data.get('backups') }, id)) };
     },
   });
 }
@@ -326,9 +326,15 @@ export function installOwnershipSync({ net, timers, target = loadoutStore, notif
  *   notify?: (text: string) => void }} deps
  */
 export function installDiySync({ net, timers, target = loadoutStore, notify, content = appContentSet } = {}) {
-  // the picker's list: the room's content set's own while it plays one (DESIGN §32.6), else welcome's
+  // the picker's list: welcome's, and the operators the room's content set adds while it plays one (DESIGN §32.6)
   let welcomeList = null;
-  const pickList = () => { const k = content?.get().status === 'ready' ? content.get().kitted : null; return Array.isArray(k) ? k : welcomeList; };
+  let joined = { base: null, extra: null, list: null };
+  const pickList = () => {
+    const extra = content?.get().status === 'ready' ? content.get().kitted : null;
+    if (!welcomeList || !Array.isArray(extra) || !extra.length) return welcomeList;
+    if (joined.base !== welcomeList || joined.extra !== extra) joined = { base: welcomeList, extra, list: [...new Set([...welcomeList, ...extra])] };
+    return joined.list;
+  };
   const offKit = net.on('welcome', (msg) => {
     welcomeList = msg && Array.isArray(msg.diyKitted) ? msg.diyKitted.filter((x) => typeof x === 'string') : null;
     target.set({ diyKitted: pickList() });

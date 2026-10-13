@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { getData } from '../../server/data.js';
 import { expandRecords } from '../../shared/plugins/records.js';
 import { validateData, validateReferences } from '../../shared/plugins/validate.js';
@@ -62,6 +65,11 @@ test('SkillSpec exposes only the JSON subset, including nested attack fields and
   for (const s of [{ kind: 'passive', onStart: 'evil()' }, { kind: 'ammo', ammo: 1e9 }, { kind: 'passive', attack: { onHit: () => 1 } }, { kind: 'passive', mods: { unknown: 1 } }]) assert.ok(validateSkillSpec(s).some(p => p.code === 'PLUGIN_SKILL_SPEC'));
 });
 test('checked-in schema equals the runtime schema and accepts/rejects the same structural fixtures', () => {
+  const dest = path.join(os.tmpdir(), `records-schema-${process.pid}.json`);
+  const run = spawnSync(process.execPath, ['tools/records-schema.mjs', dest], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(dest, 'utf8')), RECORDS_SCHEMA);
+  fs.unlinkSync(dest);
   assert.deepEqual(JSON.parse(fs.readFileSync('schemas/records.schema.json')), RECORDS_SCHEMA);
   for (const r of [guard(), { ...guard(), as: 'bad' }, { ...guard(), forms: {} }, { file: 'modes', id: 'mode_x_data_demo_one', base: 'mode_single_normal' }]) {
     const valid = matchesSchema(r, RECORDS_SCHEMA);
@@ -79,4 +87,53 @@ test('malformed nested arrays return diagnostics without throwing', () => {
   for (const edit of [d => { d.waves[Object.keys(d.waves)[0]].spawns = {}; }, d => { d.bonds.deputShip = null; }]) {
     const d = structuredClone(base); edit(d); assert.ok(validateData(d).length);
   }
+});
+test('spawn budgets, enemy times and per-count card grants stay inside the official tables and reject bombs', () => {
+  assert.equal(validateData(base).some(p => p.code === 'PLUGIN_DATA_LIMIT'), false);
+  const waveId = Object.keys(base.waves)[0];
+  const sample = base.waves[waveId].spawns.find(s => s && !s.action);
+  const row = (count) => ({ key: sample.key, time: 0, count, interval: 0, routeIndex: sample.routeIndex });
+  const limited = (edit) => { const d = structuredClone(base); edit(d); return validateData(d).some(p => p.code === 'PLUGIN_DATA_LIMIT'); };
+  assert.equal(limited(d => { d.waves[waveId].spawns = Array.from({ length: 65 }, () => row(1)); }), true);
+  assert.equal(limited(d => { d.waves[waveId].spawns = [row(601)]; }), true);
+  assert.equal(limited(d => { d.waves[waveId].spawns = [row(200), row(200), row(201)]; }), true);
+  const branchWave = Object.values(base.waves).find(w => Object.values(w.branches).some(p => Array.isArray(p) && Array.isArray(p[0]) && p[0][0]));
+  assert.ok(branchWave);
+  assert.equal(limited(d => {
+    const w = d.waves[branchWave.id];
+    const [name, phases] = Object.entries(w.branches).find(([, p]) => Array.isArray(p) && Array.isArray(p[0]) && p[0][0]);
+    const seed = phases[0][0];
+    w.branches[name][0] = Array.from({ length: 65 }, () => ({ ...seed, count: 1 }));
+  }), true);
+  assert.equal(limited(d => { d.enemies.enemy_10162_mnctpt.talents.bb['Attack.attack@times'] = 1e6; }), true);
+  assert.equal(limited(d => {
+    const skill = d.enemies.enemy_10027_vtsk.skills.find(s => s?.bb && Object.hasOwn(s.bb, 'times'));
+    assert.ok(skill);
+    skill.bb.times = 1e6;
+  }), true);
+  assert.equal(limited(d => {
+    const buff = d.effects.allybuff_select_1.buffs.find(b => b.key === 'global_special_choice_gain_equip');
+    buff.bb.count = 1e9;
+  }), true);
+  assert.equal(limited(d => {
+    const w = d.waves[waveId];
+    w.overrides = { ...w.overrides, [sample.key]: { talents: { bb: { 'Attack.attack@times': 1e6 } } } };
+  }), true);
+});
+test('enemy skills and talents keep their shape', () => {
+  const d = structuredClone(base);
+  d.enemies.enemy_10027_vtsk.skills = { hijack: true };
+  d.enemies.enemy_10027_vtsk.talents = [];
+  const codes = validateData(d).filter(p => p.code === 'PLUGIN_DATA_TYPE').map(p => p.path);
+  assert.ok(codes.some(p => p.endsWith('.skills')));
+  assert.ok(codes.some(p => p.endsWith('.talents')));
+});
+test('kit.ref together with talentMods is refused at expand and at validation', () => {
+  const v = expandRecords(base, [{ ...guard(), talentMods: { atkPct: 0.1 } }], context);
+  assert.equal(v.data, base);
+  assert.equal(v.problems[0].code, 'PLUGIN_SKILL_SPEC');
+  const d = structuredClone(base);
+  d.chess.chess_char_1_02_a.kitRef = 'chess_char_1_02_a';
+  d.chess.chess_char_1_02_a.talentMods = { atkPct: 0.1 };
+  assert.ok(validateData(d, { kitExists: () => true }).some(p => p.code === 'PLUGIN_SKILL_SPEC'));
 });

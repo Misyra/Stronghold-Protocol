@@ -53,6 +53,8 @@ test('helpers: opsOf / setOps / resetOps keep only non-default values; sanitizeO
   assert.deepEqual(resetOps({ [V]: { potential: 2 }, [KALTS]: { cultivate: 1 } }, V), { [KALTS]: { cultivate: 1 } });
   assert.deepEqual(sanitizeOps({ [V]: { potential: 2 }, [KALTS]: { cultivate: 1 }, char_609_acguad: { potential: 1 }, char_999_x: { potential: 1 }, [CHESS.chess_char_1_01_a.charId]: { potential: 6 } }, isOp),
     { [V]: { potential: 2 }, [KALTS]: { cultivate: 1 } }, 'a prototype / unknown operator / defaults dropped');
+  assert.deepEqual(sanitizeOps({ [V]: { potential: 2 }, char_x_flat: { potential: 1, cultivate: 0 } }, () => true, (id) => id !== 'char_x_flat'),
+    { [V]: { potential: 2 }, char_x_flat: { cultivate: 0 } }, 'a plugin operator with no curve drops the non-default potential and keeps the rest');
 });
 
 test('导出 / 导入: the envelope carries ops; an older export keeps the current settings; settings alone import', () => {

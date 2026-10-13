@@ -13,6 +13,7 @@ import {
   reborn, frontGuard, faceMove, unbalanced, skill, kitEp, kitPrisoner, kitStun3,
 } from './archetypes.js';
 import { hypot } from '../../detmath.js';
+import { boundedCount, PLUGIN_TIMES_MAX } from '../../../../shared/plugins/limits.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -309,7 +310,7 @@ export const SPECIAL_KITS = Object.freeze({
     const ap = ab.sk.Appear, mc = ab.sk.MultiCombat;
     return [{
       spawn(b, e) {
-        const n = ap ? ap.bb.times ?? 0 : 0;
+        const n = boundedCount(ap ? ap.bb.times ?? 0 : 0, PLUGIN_TIMES_MAX, 0);
         b.after(0.5, () => {
           if (!e.alive || !n) return;
           const lock = allTargets(b, e).sort((p, q) => q.hp - p.hp)[0];
@@ -325,7 +326,7 @@ export const SPECIAL_KITS = Object.freeze({
       },
       hitOut(c, b, e) { if (c.dmg.isAttack && c.target !== e.blockedBy) c.dmg.amount *= T(ab, 'range.attack@atk_scale_range') ?? 1; },
     }, mc ? {
-      cd: mc.cd, icd: mc.icd, fire(b, e) { e.mem.ab.multi = mc.bb.times ?? 1; },
+      cd: mc.cd, icd: mc.icd, fire(b, e) { e.mem.ab.multi = boundedCount(mc.bb.times ?? 1, PLUGIN_TIMES_MAX, 1); },
       dealt(c, b, e) {
         const m = e.mem.ab.multi;
         if (!(m > 1)) return;
@@ -414,7 +415,7 @@ export const SPECIAL_KITS = Object.freeze({
     dealt(c, b, e) {
       // PRTS 自制投石机: normal stones splash in radius 1.5. The talent's projectile_range (0.5) belongs to
       // the separate 入戏 random-offset attack, not its ordinary volley in this mode.
-      const n = T(ab, 'Attack.attack@times') ?? 1, r = 1.5;
+      const n = boundedCount(T(ab, 'Attack.attack@times') ?? 1, PLUGIN_TIMES_MAX, 1), r = 1.5;
       const t = c.target;
       for (let i = 1; i < n; i++) hurt(b, e, t, e.s.atk, 'phys');
       // the stone's splash ("碰撞无视迷彩"): an area selection — no unblocking 隐匿 ally

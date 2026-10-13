@@ -31,7 +31,8 @@
 //     (`vanilla: false`, its own cs), the page downloads /cs/<cs16>/index.json and every data file it lists — a file the
 //     set did not change at its plain /data/<file>?v=<8 hex> URL (cached for good), a patched one at /cs/<cs16>/… — and
 //     checks them: every file's BYTES hash to its entry (shared/sha256.js, before decoding: `res.text()` would drop a
-//     BOM), the manifest's composition hashes to the room's cs (shared/plugins/identity.js contentHashOf). Then data.js
+//     BOM), the manifest's composition — its data and translation files' hashes, its plugins and their settings — hashes
+//     to the room's cs (shared/plugins/identity.js contentHashOf), and it names no address but those two. Then data.js
 //     shows those files (setContent: every screen reads the room's data — its operators, its modes), the battle runner
 //     simulates on them (simContent / contentFor) and the page tells the room (room.contentReady { cs }; again whenever
 //     its seat shows it not ready — a reconnect); a check that fails is said once (a toast) and told too ({ ok: false }).
@@ -356,7 +357,8 @@ const CONTENT_FAILED = N_('房间的插件内容未能通过校验，请刷新�
 /**
  * The room's content set as this page has it (header "The room's content set"): `cs` (null: the original content),
  * `status` 'idle' | 'loading' | 'ready' | 'failed', `loaded` / `total` bytes of its files, `error` (why it failed),
- * `kitted` (the operators a 自选 slot may field in it; null: the server's list).
+ * `kitted` (the operators its plugins add to a 自选 slot's list — room.state.content.kittedExtra; null: none, the server's
+ * list alone).
  */
 export const contentSet = createStore({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
 /** The checked set the page holds: { cs, index, values: Map<name, JSON> } (the runner's data), or null. */
@@ -412,14 +414,20 @@ export async function loadContentSet(cs, { fetch: doFetch = defaultFetch, retryD
   if (!isContentHash(cs)) throw new Error('no content hash');
   const index = await fetchChecked(`/cs/${csUrlPart(cs)}/index.json`, null, { fetch: doFetch, retryDelays, wait, timeoutMs });
   if (!isObj(index) || index.cs !== cs || index.vanilla !== false || !isObj(index.data)) throw new Error('the manifest is not the room\'s content set');
-  const entries = Object.entries(index.data).filter(([, f]) => isObj(f) && typeof f.url === 'string' && isContentHash(f.sha256));
+  const listed = (files) => (isObj(files) ? Object.entries(files).filter(([, f]) => isObj(f) && typeof f.url === 'string' && isContentHash(f.sha256)) : []);
+  const entries = listed(index.data);
   const hashes = Object.fromEntries(entries.map(([name, f]) => [name, f.sha256]));
+  // its translation files (a plugin's operators named per language): the cs covers their hashes too
+  const langs = listed(index.i18n);
+  const i18n = Object.fromEntries(langs.map(([lang, f]) => [lang, f.sha256]));
   let again;
-  try { again = contentHashOf({ app: index.app, sim: index.sim, data: hashes, plugins: index.plugins, settings: index.settings }); } catch { again = null; }
+  try {
+    again = contentHashOf({ app: index.app, sim: index.sim, data: hashes, plugins: index.plugins, settings: index.settings, ...(langs.length ? { i18n } : {}) });
+  } catch { again = null; }
   if (again !== cs) throw new Error('the manifest does not hash to the room\'s cs');
   // the URLs a manifest may name: this server's data files and this set's own files
   const own = `/cs/${csUrlPart(cs)}/`;
-  for (const [name, f] of entries) if (!(f.url.startsWith('/data/') || f.url.startsWith(own)) || f.url.includes('..')) throw new Error(`${name}: an address outside this server's data`);
+  for (const [name, f] of [...entries, ...langs]) if (!(f.url.startsWith('/data/') || f.url.startsWith(own)) || f.url.includes('..')) throw new Error(`${name}: an address outside this server's data`);
   const total = entries.reduce((n, [, f]) => n + (Number(f.bytes) || 0), 0);
   let loaded = 0;
   onProgress?.(0, total);
@@ -510,7 +518,8 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
         // the set's own game texts per language (a plugin's operators named in it): checked like the data files
         const overlay = (lang) => (isObj(i18n[lang]) ? fetchChecked(i18n[lang].url, i18n[lang], { fetch: doFetch, retryDelays, wait }) : Promise.resolve(null));
         data.setContent({ id: cs, values: set.values, overlay, langs: Object.keys(i18n) });
-        contentSet.set({ status: 'ready', error: null, kitted: Array.isArray(set.index.kitted) ? set.index.kitted.filter((x) => typeof x === 'string') : null });
+        const extra = store.get()?.room?.content?.kittedExtra;
+        contentSet.set({ status: 'ready', error: null, kitted: Array.isArray(extra) ? extra.filter((x) => typeof x === 'string').slice(0, 200) : null });
         settleWaiting(cs);
         tell(cs, true);
       }, (err) => {

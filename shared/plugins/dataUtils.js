@@ -8,6 +8,24 @@ export const namespace = id => String(id).replace(/-/g, '_');
 export const recordId = (id, pluginId, prefix) => typeof id === 'string' && id.length <= 64 && /^[A-Za-z0-9_-]+$/.test(id)
   && (pluginId ? id.startsWith(`${prefix}_${namespace(pluginId)}_`) : new RegExp(`^${prefix}_[a-z0-9_]+_[A-Za-z0-9_-]+$`).test(id));
 
+/** True when two plugin ids claim the same record namespace after `-` becomes `_` (`ab` owns `ab-cd`; `ab` does not own `abc`). */
+export function namespaceCollides(a, b) {
+  const na = namespace(a), nb = namespace(b);
+  if (na === nb) return true;
+  const [short, long] = na.length <= nb.length ? [na, nb] : [nb, na];
+  return long.startsWith(`${short}_`);
+}
+
+/** Pairwise collisions among a selected plugin list. A plugin alone is valid; the clash is only at composition. */
+export function namespaceCollisions(ids) {
+  const list = [...ids];
+  const out = [];
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    if (namespaceCollides(list[i], list[j])) out.push(problem('PLUGIN_RECORD_ID', String(list[j]), `plugin id namespace collides with ${list[i]}`));
+  }
+  return out;
+}
+
 /** Check before cloning: functions, prototype keys, excessive nesting and non-finite numbers are never data. */
 export function jsonProblems(value, path = '', { bounded = true } = {}) {
   const out = [], stack = [[value, path, 0]], seen = new Set();

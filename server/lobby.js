@@ -153,11 +153,13 @@
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { DIFFICULTIES, ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
-import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
+import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges } from '../shared/protocol.js';
 import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
+
+const VANILLA_KITTED = new Set(KITTED_CHARS);
 import { isContentHash } from '../shared/plugins/identity.js';
 import { msg, wireMessage } from '../shared/i18n.js';
 
@@ -817,9 +819,11 @@ export class Lobby {
       return fail(ERR.INTERNAL);
     }
     if (!r || !r.ok) return fail(r && isErrCode(r.error) ? r.error : ERR.INTERNAL, r && typeof r.detail === 'string' ? r.detail.slice(0, 200) : undefined);
-    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes } = r.set;
+    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes, kitted } = r.set;
     const modded = isContentHash(cs) && cs !== this.vanilla.cs;
     const frozen = (a) => Object.freeze((Array.isArray(a) ? a : []).map((p) => Object.freeze({ ...p })));
+    // the operators its plugins add to a 自选 slot's list (welcome.diyKitted holds the server's own): the pages' pickers
+    const extra = modded && Array.isArray(kitted) ? kitted.filter((id) => typeof id === 'string' && !VANILLA_KITTED.has(id)).slice(0, 200) : [];
     return {
       content: Object.freeze({
         cs: modded ? cs : this.vanilla.cs,
@@ -828,7 +832,7 @@ export class Lobby {
         plugins: frozen(list),
         warnings: Object.freeze([...(warnings || [])]),
         bytes: Number(bytes) || 0,
-        ...(modded ? { dataBytes: Number(dataBytes) || 0, modes: frozen(modes) } : {}),
+        ...(modded ? { dataBytes: Number(dataBytes) || 0, modes: frozen(modes), ...(extra.length ? { kittedExtra: Object.freeze(extra) } : {}) } : {}),
       }),
     };
   }
@@ -996,7 +1000,7 @@ export class Lobby {
     const res = checkLoadout(entries, (id) => lookup('chess', id, data));
     if (!res || res.error) return fail(res && isErrCode(res.error) ? res.error : ERR.BAD_MSG, res && res.detail);
     const ids = opsCharIds(data);
-    const resOps = checkLoadoutOps(ops, (id) => ids.has(id));
+    const resOps = checkLoadoutOps(ops, (id) => ids.has(id), (id) => charPotentialChanges(data, id));
     if (!resOps || resOps.error) return fail(resOps && isErrCode(resOps.error) ? resOps.error : ERR.BAD_MSG, resOps && resOps.detail);
     const loadout = freezeLoadout(res.loadout);
     const opsSet = freezeOps(resOps.ops);
@@ -1108,9 +1112,13 @@ export class Lobby {
       }
       loadout = freezeLoadout(keep);
       const ids = opsCharIds(data);
+      const changes = (x) => charPotentialChanges(data, x);
       const keepOps = {};
       for (const [id, e] of Object.entries(ops || {})) {
-        const r = checkLoadoutOps({ [id]: { potential: e.potential, cultivate: e.cultivate } }, (x) => ids.has(x));
+        // a 潜能 that changes nothing on this content's operator (a plugin's char_x_ without a curve) is dropped, its 练度
+        // kept — as the page's sanitizeOps does (public/js/ui/loadoutModel.js)
+        const one = changes(id) === false ? { cultivate: e.cultivate } : { potential: e.potential, cultivate: e.cultivate };
+        const r = checkLoadoutOps({ [id]: one }, (x) => ids.has(x), changes);
         if (r && !r.error && r.ops[id]) keepOps[id] = r.ops[id];
       }
       ops = freezeOps(keepOps);

@@ -1,11 +1,12 @@
 // test/ui/plugins-content.test.js — the browser side of a room's content set (DESIGN §32.6, P1c):
 //   * content.js fetchChecked / loadContentSet: a real content set (WP-A's builder over a data plugin) fetched as bytes —
 //     every file checked against its manifest entry before it is decoded (a BOM stays part of the bytes), the manifest's
-//     composition against cs; refused: a byte changed, a wrong size, a manifest that names another cs or does not hash to
-//     it, an address outside this server's data; transient failures tried again;
+//     composition (its translation files' hashes too) against cs; refused: a byte changed, a wrong size, a manifest that
+//     names another cs or does not hash to it, an address outside this server's data; transient failures tried again;
 //   * content.js installContentSet: the room's content set followed (loaded, shown through data.js, room.contentReady
 //     told — again when the seat does not show it), a failure told once ({ ok: false }, a toast), the room back on the
-//     original content gives the server's files back; contentFor / simContent for the runner;
+//     original content gives the server's files back; contentFor / simContent for the runner; the operators the set
+//     adds to the 自选 picker (room.state.content.kittedExtra → ui/loadoutSync.js installDiySync);
 //   * data.js setContent: the set's files are the store's, the server's come back without a download, the set's own
 //     game texts per language;
 //   * runner.js: a spec of another content than the page holds is no authority (no b.result); the room's content set the
@@ -25,6 +26,7 @@ import { createBattleRunner } from '../../public/js/battle/runner.js';
 import { buildRecord, aggregateStats, migrateStats, STATS_VERSION, contentOf, isModdedRecord } from '../../public/js/ui/stats.js';
 import { roomFacts } from '../../public/js/screens/room.js';
 import { roomPluginFacts, isModdedRoom } from '../../public/js/ui/pluginTag.js';
+import { installDiySync } from '../../public/js/ui/loadoutSync.js';
 import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createContentSets } from '../../server/plugins/contentSets.js';
 import { getData } from '../../server/data.js';
@@ -114,6 +116,12 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
     // a manifest that names a file another hash: the composition no longer hashes to cs
     await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, data: { ...i.data, bonds: { ...i.data.bonds, sha256: 'cd'.repeat(32) } } })) }).fetchFn, wait: noWait }), /does not hash/);
     await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, data: { ...i.data, bonds: { ...i.data.bonds, url: 'https://elsewhere.example/bonds.json' } } })) }).fetchFn, wait: noWait }), /outside this server/);
+    // its translation files: the cs covers their hashes (WP-A's review round), their addresses are this server's too
+    const lang = Object.keys((await loadContentSet(CS, { fetch: serverFetch().fetchFn, wait: noWait })).index.i18n || {})[0];
+    assert.ok(lang, 'the set lists the server\'s translation files');
+    await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, i18n: { ...i.i18n, [lang]: { ...i.i18n[lang], sha256: 'cd'.repeat(32) } } })) }).fetchFn, wait: noWait }), /does not hash/);
+    await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => { const rest = { ...i.i18n }; delete rest[lang]; return { ...i, i18n: rest }; }) }).fetchFn, wait: noWait }), /does not hash/);
+    await assert.rejects(loadContentSet(CS, { fetch: serverFetch({ edit: rewrite((i) => ({ ...i, i18n: { ...i.i18n, [lang]: { ...i.i18n[lang], url: 'https://elsewhere.example/en.json' } } })) }).fetchFn, wait: noWait }), /outside this server/);
   });
 
   test('installContentSet: follows the room — loads, shows it through data.js, tells the room (again when its seat does not show it); back to the original content', async () => {
@@ -130,13 +138,14 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
       assert.equal(contentSet.get().status, 'idle');
       assert.equal(await data.load('bonds').then((b) => b?.vanilla), true, 'the server\'s file');
       // the host switches the content plugin on
-      const room = { code: 'ABCD', seats: [{ seat: 0, playerId: 'p1', content: 'loading' }], content: { cs: CS, vanilla: false, plugins: [{ id: 'bond-def', version: '1.0.0', class: 'content' }] } };
+      const room = { code: 'ABCD', seats: [{ seat: 0, playerId: 'p1', content: 'loading' }], content: { cs: CS, vanilla: false, plugins: [{ id: 'bond-def', version: '1.0.0', class: 'content' }], kittedExtra: ['char_x_demo', 7] } };
       store.set({ room });
       assert.equal(contentSet.get().status, 'loading');
       const pending = contentFor(CS);
       await until(() => contentSet.get().status === 'ready', 'the set loaded');
       assert.equal(data.get('bonds').deputShip.bb.base_def, 0.3, 'every screen reads the room\'s data');
       assert.equal(data.contentId(), CS);
+      assert.deepEqual(contentSet.get().kitted, ['char_x_demo'], 'the operators the set adds to a 自选 slot\'s list');
       assert.deepEqual(requests, [{ t: 'room.contentReady', cs: CS }]);
       assert.equal((await pending).cs, CS, 'the runner\'s wait');
       assert.equal(simContent().data.bonds.deputShip.bb.base_def, 0.3);
@@ -151,6 +160,7 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
       store.set({ room: { ...room, content: { cs: 'ab'.repeat(32), vanilla: true, plugins: [] } } });
       await tick();
       assert.equal(contentSet.get().status, 'idle');
+      assert.equal(contentSet.get().kitted, null);
       assert.equal(data.contentId(), null);
       assert.equal(data.get('bonds').vanilla, true);
       assert.equal(simContent(), null);
@@ -178,6 +188,30 @@ describe('loading and checking a room\'s content set (public/js/content.js)', ()
       assert.equal(data.contentId(), null, 'the page keeps the server\'s files');
     } finally { stop(); }
   });
+});
+
+test('自选: the picker lists welcome\'s operators, and the ones the room\'s content set adds while it is ready (installDiySync)', () => {
+  const listeners = new Map();
+  const net = { status: 'offline', on(t, fn) { if (!listeners.has(t)) listeners.set(t, new Set()); listeners.get(t).add(fn); return () => listeners.get(t).delete(fn); },
+    request: async () => ({ t: 'ok' }) };
+  const emit = (t, msg) => { for (const fn of listeners.get(t) || []) fn(msg); };
+  const content = createStore({ cs: null, status: 'idle', loaded: 0, total: 0, error: null, kitted: null });
+  const target = createStore({ diy: {}, diyKitted: null, diySync: 'idle' });
+  const s = installDiySync({ net, timers: { setTimeout: () => 0, clearTimeout() {} }, target, content });
+  try {
+    emit('welcome', { diyKitted: ['char_a', 'char_b'] });
+    const vanilla = target.get().diyKitted;
+    assert.deepEqual(vanilla, ['char_a', 'char_b']);
+    content.set({ cs: CS, status: 'loading' });
+    assert.equal(target.get().diyKitted, vanilla, 'not while it loads');
+    content.set({ status: 'ready', kitted: ['char_x_demo', 'char_a'] });
+    const joined = target.get().diyKitted;
+    assert.deepEqual(joined, ['char_a', 'char_b', 'char_x_demo']);
+    content.set({ loaded: 1 });
+    assert.equal(target.get().diyKitted, joined, 'the same list (no new array per store change)');
+    content.set({ cs: null, status: 'idle', kitted: null });
+    assert.deepEqual(target.get().diyKitted, ['char_a', 'char_b']);
+  } finally { s.dispose(); }
 });
 
 describe('data.js setContent', () => {

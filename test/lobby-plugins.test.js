@@ -285,7 +285,9 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     await ok(host, { t: 'room.create', mode, difficulty: 'NORMAL' });
     return host.waitFor('room.state', (s) => s.hostId === host.id);
   };
-  const csOf = (index) => contentHashOf({ app: index.app, sim: index.sim, data: Object.fromEntries(Object.entries(index.data).map(([k, v]) => [k, v.sha256])), plugins: index.plugins, settings: index.settings });
+  // (a content set's cs covers its translation files' hashes too: index.i18n, by language)
+  const csOf = (index) => contentHashOf({ app: index.app, sim: index.sim, data: Object.fromEntries(Object.entries(index.data).map(([k, v]) => [k, v.sha256])), plugins: index.plugins, settings: index.settings,
+    ...(index.i18n && Object.keys(index.i18n).length ? { i18n: index.i18n } : {}) });
 
   before(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-lobby-content-'));
@@ -479,15 +481,17 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     await room(host, 'solo');
     await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'data-demo' }] });
     const s1 = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
-    // the plugin's operator is an operator of this room: its 潜能 is accepted here …
-    const loadout = { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { potential: 3 }, char_102_texas: { potential: 2 } } };
+    assert.deepEqual(s1.content.kittedExtra, ['char_x_data_demo_guard'], 'the operator a 自选 slot may field here, beside welcome\'s');
+    // the plugin's operator is an operator of this room: its 练度 is accepted here (a 潜能 is not: it has no curve — WP-A) …
+    await refuse(host, { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { potential: 3 } } }, ERR.BAD_TARGET);
+    const loadout = { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { cultivate: 2 }, char_102_texas: { potential: 2 } } };
     await ok(host, loadout);
     await ok(host, { t: 'room.contentReady', cs: s1.content.cs });
     await ok(host, { t: 'room.start' });
     await host.waitFor('room.state', (s) => s.inMatch === true);
     await ok(host, { t: 'g.emote', id: EMOTES[0] });
     const probe = await host.waitFor('m.toast', (m) => /^probe;/.test(m.text || ''), 5000);
-    assert.match(probe.text, /"char_x_data_demo_guard":\{"potential":3/, 'the room\'s match takes it');
+    assert.match(probe.text, /"char_x_data_demo_guard":\{"potential":6,"cultivate":2\}/, 'the room\'s match takes it');
     await ok(host, { t: 'room.leave' });
     // … refused in a vanilla room (strict, nothing stored) — and the one stored loses its unknown operator at the start
     await room(host, 'solo');

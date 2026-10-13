@@ -5,11 +5,12 @@
 // answers:
 //
 //   resolve(ids, { scope, settings, replacing }) → { ok: true, set: { cs, vs?, plugins: [{ id, version, class, hash,
-//     auto? }], warnings, bytes, dataBytes?, modes? } } | { error, detail }
+//     auto? }], warnings, bytes, dataBytes?, modes?, kitted? } } | { error, detail }
 //     `cs` the content set's (a room with content plugins) or none (cosmetic plugins only: the room's cs stays the vanilla
 //     one); `plugins` in load order; `warnings` the visual set's (override, app) plus `app` for a gameplay plugin made
 //     for other game versions that the server owner lets through; `bytes` the art the set serves, `dataBytes` the patched
-//     data files its members download beside the vanilla ones; `modes` the modes its content plugins provide.
+//     data files its members download beside the vanilla ones; `modes` the modes its content plugins provide; `kitted`
+//     the operators a 自选 slot may field in the content set (the vanilla ones and its plugins' own).
 //     Refused: PLUGIN_UNKNOWN (not installed), PLUGIN_BLOCKED (a class or scope a room cannot take in this version, or the
 //     server owner's policy: rooms off / fixed, not in `allow`, the class off), PLUGIN_DEPENDENCY / PLUGIN_CONFLICT (the
 //     load order), PLUGIN_INCOMPATIBLE (a gameplay plugin made for other game versions or another plugin API — unless
@@ -101,7 +102,7 @@ export function createRoomSets({ registry, visual, contents, policy }) {
         plugins,
         warnings: [...(vset?.warnings || []), ...warnings],
         bytes: vset ? vset.bytes : 0,
-        ...(cset ? { dataBytes: cset.dataBytes, modes: cset.modes } : {}),
+        ...(cset ? { dataBytes: cset.dataBytes, modes: cset.modes, kitted: cset.kitted } : {}),
       },
     };
   }

@@ -83,7 +83,9 @@ test('CLI test runs the template harness with composed data',t=>{
  source=source.replace('../../../test/helpers/battleHarness.js',pathToFileURL(path.join(ROOT,'test/helpers/battleHarness.js')).href);
  fs.writeFileSync(path.join(dir,'test/guard.test.js'),source);
  fs.symlinkSync(path.join(ROOT,'data'),path.join(f.root,'data'));fs.symlinkSync(path.join(ROOT,'server'),path.join(f.root,'server'));fs.symlinkSync(path.join(ROOT,'shared'),path.join(f.root,'shared'));
- const env={...process.env};delete env.NODE_TEST_CONTEXT;
+ // This explicit local command ignores both server mode and the pin (even after test files changed).
+ fs.writeFileSync(path.join(f.pluginsDir,'config.json'),JSON.stringify({trusted:{'script-demo':'wrong-pin'}}));
+ const env={...process.env,SP_PLUGIN_SCRIPTS:'sandbox'};delete env.NODE_TEST_CONTEXT;
  const r=spawnSync(process.execPath,['tools/plugin.mjs','test','script-demo','--root',f.root],{encoding:'utf8',timeout:20000,env});
  assert.equal(r.status,0,r.stdout+r.stderr);assert.match(r.stdout,/# pass 1/);
 });

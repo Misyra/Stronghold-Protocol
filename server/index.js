@@ -49,6 +49,7 @@ import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
 import { createMatchHosts } from './match/host/index.js';
 import { createTrustedRuntime } from './plugins/trustedRuntime.js';
+import { trustedHostAllowed } from './plugins/trusted.js';
 import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
@@ -105,7 +106,8 @@ export async function startServer(opts = {}) {
   log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
   // language packs and plugins (docs/PACKS.md, docs/PLUGINS.md): scanned now — the start log names them — and again
   // whenever their folders change
-  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host });
+  const scriptMode = process.env.SP_PLUGIN_SCRIPTS;
+  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode });
   packs.refresh(true);
   // the content hashes of the art (built in the background once listening) and the manifests served with them
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
@@ -168,11 +170,19 @@ export async function startServer(opts = {}) {
     }
     if (bound === null) throw lastError;
     boundHost = bound;
+    // Check the kernel's address too: aliases/DNS and bind fallback cannot weaken the owner gate.
+    const actual = server.address();
+    const scriptHost = actual && typeof actual === 'object' ? actual.address : '';
+    packs.setScriptHost(scriptHost);
+    if (!trustedHostAllowed(scriptHost, scriptMode)) {
+      lobby.trustedRuntime = null;
+      await trustedRuntime?.close();
+    }
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
     assetIndex?.close();
     studio?.close();
-    trustedRuntime?.close();
+    await trustedRuntime?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
@@ -191,7 +201,7 @@ export async function startServer(opts = {}) {
       network.close();
       assetIndex?.close();
       studio?.close();
-      trustedRuntime?.close();
+      await trustedRuntime?.close();
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();

@@ -679,7 +679,8 @@ export function readPluginManifest(raw, ctx) {
         const e = has(ENTRIES, k) ? ENTRIES[k] : null;
         if (!e) { list.warning('PLUGIN_ENTRY', `"entry.${k}" is not an entry point (ignored)`, { at: ['entry', k] }); continue; }
         if (!e.classes.includes(cls)) { list.problem('PLUGIN_ENTRY', `"entry.${k}" is not something a ${cls} plugin has (${e.classes.join(', ')})`, { at: ['entry', k] }); continue; }
-        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== (cls === 'trusted' && k === 'client' ? '.js' : e.ext)) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${e.ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
+        const ext = cls === 'trusted' && k === 'client' ? '.js' : e.ext;
+        if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== ext) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
         entry[k] = /** @type {string} */ (rel);
       }
     }

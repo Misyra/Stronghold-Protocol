@@ -1,7 +1,5 @@
 // C1 immutable content compositions (DESIGN §32.5). HTTP and room ownership belong to WP-B.
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ROOT, DATA_DIR, deepFreeze } from '../data.js';
 import { DATA_SHIM_JS } from '../http/static.js';
@@ -17,6 +15,7 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
+import { preflightScripts } from './scriptPreflight.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -197,14 +196,8 @@ function composeContentSet({ registry, ids = [] }) {
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
   if (scripts.length) {
-    // A disposable child validates actual registrations; the main process never imports author code.
-    const probe = spawnSync(process.execPath,[fileURLToPath(new URL('./scriptProbe.js',import.meta.url))],{
-      input:JSON.stringify({scripts,hashInput:{plugins:parts,settings}}), encoding:'utf8', timeout:10000,
-      maxBuffer:8*1024*1024, stdio:['pipe','ignore','pipe','pipe'],
-    });
-    let report;
-    try { report = JSON.parse(probe.output[3]); } catch { report = {code:'PLUGIN_SCRIPT_CHECK',message:'script setup failed or exceeded 10 seconds'}; }
-    if (probe.status !== 0 || report.code) return {problems:[problem(report.code || 'PLUGIN_SCRIPT_CHECK','scripts',report.message || 'setup failed')]};
+    const report = preflightScripts(registry,scripts,{plugins:parts,settings});
+    if (report) return {problems:[problem(report.code,'scripts',report.message)]};
   }
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;

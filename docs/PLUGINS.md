@@ -724,9 +724,17 @@ export default function setup(sp) {
 ```
 
 `setup(sp)` is synchronous, registrations close afterwards. Per-battle state belongs in `unit.mem` or a WeakMap keyed
-by battle, never in a module variable. Every composition, child host and browser runs setup in the composition's
-resolved load order. A disposable child runs a registration preflight while composing a set (10 s ceiling [ASSUMED]);
-the HTTP/lobby process never imports author modules. Actual duplicate registrations, including computed ids and
+by battle, never in a module variable. Child hosts and browsers run setup in the composition's
+resolved load order. While composing a set, a disposable child probes each plugin's registrations (1 s ceiling per
+uncached plugin [ASSUMED]). The parent combines the registration reports in load order and rejects conflicts.
+The probe uses SIGKILL on timeout; spawnSync waits for the child to exit before composition returns a failure.
+Results, including failures, are cached per registry by plugin id + lock hash + actual descriptor hash + normalized
+settings (256 recent results [ASSUMED]); changing settings or executable bytes requires another probe. This also
+prevents a stale or missing lock in an explicit CLI test from reusing another source's result.
+C1 remains synchronous: **the lobby pauses during each uncached probe**, including rooms without plugins. Several
+uncached plugins add their pauses together. Moving to async spawn requires coordinating the C1 builder, content/room
+set resolvers, lobby and studio/CLI callers; this step preserves their synchronous contracts. The HTTP/lobby process
+never imports author modules. Actual duplicate registrations, including computed ids and
 normal/elite chess aliases, fail composition with `PLUGIN_SCRIPT_CONFLICT`. [ASSUMED] `overrides: [<official kit id>]`
 allows replacing an official kit; it never allows overwriting another plugin's registration. Vanilla registries stay
 empty. Only plugin `char_x_…` ids add a shop charId lookup; official dispatch stays the same.
@@ -769,7 +777,10 @@ Pack and review again after changing any plugin file. Every lock entry's SHA-256
 missing files refuse execution (`PLUGIN_TRUST_PIN`). Unset/unknown mode, including P3b's reserved `sandbox`, leaves
 script/trusted plugins listed as `disabled` (`PLUGIN_SCRIPTS_DISABLED`). Public and wildcard listening addresses refuse
 execution (`PLUGIN_TRUST_PUBLIC`), regardless of the request's address; `trusted-force` explicitly overrides this
-[ASSUMED name]. `isLocalIp` supplies local-network classification, with wildcard `0.*` / `::` refused additionally.
+[ASSUMED name]. `net.isIP` validates listening literals before numeric checks of IPv4 `0.0.0.0/8`, every all-zero IPv6 spelling
+and IPv4-mapped IPv6; local mapped addresses use their IPv4 classification. `isLocalIp` supplies local-network
+classification. After listen succeeds the server rechecks `server.address().address`, disables refused scripts across
+future registry scans and waits for any started trusted service child to exit.
 Script/trusted room classes default on only in trusted modes; policy `classes`, `allow`, and `rooms` still apply.
 Startup logs list accepted and refused plugins with plain-language reasons. The snapshot remains fixed for a running
 set; stop a running match/server to revoke already executing code.
@@ -794,7 +805,14 @@ entries run at startup in one separate child, never the HTTP process. `api.http.
 exact path whose handler receives a frozen `{ method, path, url }` and returns a JSON value. No live request/socket is
 passed. `api.lobby.on(name, fn)` receives frozen copies for `roomCreated`, `playerJoined`, `playerLeft`, `matchStarted`,
 `roomClosed`. `api.health.extend(value)` replaces that plugin's JSON under `/healthz.plugins[id]`. Routes never leave
-`/x/<id>/`; activation and requests time out after 5 s [ASSUMED]. These restrictions describe the API, not the native
+`/x/<id>/`: both the child API and parent IPC receiver check the loaded plugin id, reject `..`, `%2e` in any
+letter case and backslashes, and dispatch by the same raw path used by the HTTP handler (query excluded). A nonmatch
+continues to the original health/static handler. `health.extend` accepts at most 16 KiB of serialized UTF-8 JSON per
+plugin [ASSUMED]; the parent rechecks the limit and ignores invalid/unknown-id health updates. Activation and requests
+time out after 5 s [ASSUMED]. Either timeout, startup failure or `close()` sends SIGKILL and waits for the process to
+exit; pending requests fail and registered routes/health are cleared. All trusted server entries share this child,
+so stopping it stops them all. The 128 MB limit is V8's old-space heap, not an RSS limit or a restriction on native
+code spawning further processes. These restrictions describe the API, not the native
 code's privileges. Standalone server entries need no browser consent; room/page entries must include room scope to
 be selected. `entry.client` is a self-contained `.js` ES module with `trusted.page`; explicit acceptance reloads the
 page with `?cs=<cs>&room=<room>` and the restored, consenting page imports the checked module. Reload to unload page
@@ -803,7 +821,9 @@ code; native imports cannot revoke side effects. Server entry changes take effec
 **Author tests.** `node tools/plugin.mjs test <id>` explicitly executes that installed plugin's `test/*.test.js` with
 its composition preloaded, SDK registrations installed and the official bounds set. Tests may import
 `../../../test/helpers/battleHarness.js`; they are test code, not portability-scanned entry modules. Production trust
-gates remain unchanged; author tests are a local execution command. Test execution has a 120 s CLI timeout [ASSUMED].
+gates remain unchanged. This command is explicit authorization to execute local code: it does not require
+`SP_PLUGIN_SCRIPTS` or a matching `plugins/config.json` trusted pin (a missing/stale pin does not stop it). Review the
+files being tested; this is not validation that they are the production-pinned version. Test execution has a 120 s CLI timeout [ASSUMED].
 
 ## 14. Interface plugins (P4)
 

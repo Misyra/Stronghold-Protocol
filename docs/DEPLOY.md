@@ -388,7 +388,10 @@ file must match; repack and repin after edits. The catalogue still lists disable
 
 Bind to an explicit loopback or private LAN IP. Public addresses and wildcard listeners (`0.0.0.0`, `::`) refuse
 trusted code; `SP_PLUGIN_SCRIPTS=trusted-force` explicitly overrides this [ASSUMED name]. The check uses the listening
-address, never a request's address. Existing room class/allow policy still applies. P3b's `sandbox` mode is reserved.
+address, never a request's address. If a public reverse proxy fronts the server, make the same public-deployment
+`trusted-force` decision even when the listener is on a loopback address. Existing room class/allow policy still applies.
+P3b's `sandbox` mode is reserved. All numeric spellings of IPv6 zero, IPv4 0/8 and IPv4-mapped equivalents are refused;
+the actual address returned after binding is checked again, and any refused trusted service is killed and reaped.
 
 This executes native third-party code: it can control a player's whole game page, and server code can access the
 server account's files and network. The lexical “sandboxable” label is not isolation. Every seated player must accept
@@ -397,5 +400,13 @@ only. Infinite loops in the page are not stopped by P3a's action budget. Use onl
 
 Gameplay code always runs in a match child, including bots and SP_VERIFY; it never runs in the main server.
 Experimental trusted server entries use a separate child and become active at startup. Restart to change/revoke those
-entries; end an active match to revoke its already pinned snapshot. Full SDK, pinning, consent and limitations:
+entries; end an active match to revoke its already pinned snapshot. Activation/request timeouts (5 s), startup failures
+and shutdown use SIGKILL and wait for that child to exit. Its 128 MB old-space heap limit is not a total memory or
+subprocess sandbox. Health extensions are limited to 16 KiB of UTF-8 JSON per plugin.
+
+Composition keeps the synchronous C1 interface: an uncached registration probe pauses the lobby for up to 1 s per
+plugin, including vanilla rooms. Probes use SIGKILL and cache successes/failures by plugin, lock, source descriptor and
+settings (256 recent results). The explicit local `node tools/plugin.mjs test <id>` command authorizes execution
+without server mode or trusted-pin checks; it is not evidence that those files match the production pin.
+Full SDK, pinning, consent and limitations:
 [PLUGINS §13](PLUGINS.md#13-scripts-p3a).

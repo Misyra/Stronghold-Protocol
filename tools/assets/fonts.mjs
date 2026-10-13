@@ -4,7 +4,7 @@
 // woff2.mjs) and exposed through public/fonts/fonts.css. Noto Sans/Serif SC are
 // NOT self-hosted (Google Fonts with system fallback, see DESIGN §10).
 
-import { readFile, writeFile, mkdir, rename, stat, unlink } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RAW, joinUrl } from './sources.mjs';
 import { encodeWoff2, decodeWoff2Tables, readSfnt } from './woff2.mjs';
@@ -42,7 +42,6 @@ export async function buildFonts(fontsDir, log = console.log, { verified = false
     const orig = join(fontsDir, `${f.name}.${f.ext}`);
     const woff2 = join(fontsDir, `${f.name}.woff2`);
     if (!available(`${f.name}.${f.ext}`)) {
-      try { await unlink(woff2); } catch (e) { if (e.code !== 'ENOENT') throw e; }
       errors.push(`unverified font ${f.name}.${f.ext}`);
       continue;
     }
@@ -88,8 +87,6 @@ export async function buildFonts(fontsDir, log = console.log, { verified = false
       faces.join('\n\n') + '\n';
     await writeFile(join(fontsDir, 'fonts.css.tmp'), css);
     await rename(join(fontsDir, 'fonts.css.tmp'), join(fontsDir, 'fonts.css'));
-  } else if (verified) {
-    try { await unlink(join(fontsDir, 'fonts.css')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
   return { files, css, errors };
 }

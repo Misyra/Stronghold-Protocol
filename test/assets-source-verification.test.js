@@ -70,20 +70,45 @@ test('user same-path remapping replaces equal-size bytes despite an old ledger U
   assert.equal(f.dl.ledger.files['asset.bin'].url, raw + 'new.bin');
 });
 
-test('user failed replacement preserves the last verified output and cannot resolve an unverified cached alternative', async (t) => {
-  const good = Buffer.from('new!');
-  const f = await fixture(t, { 'a.bin': good, 'fallback.bin': good }, { payload: () => Buffer.from('old!') });
-  await writeFile(join(f.root, 'a.bin'), 'old!');
-  await writeFile(join(f.root, 'fallback.bin'), good);
-  const template = { item: { alts: [
-    { rel: 'a.bin', urls: [raw + 'a.bin'], kind: 'bin' },
-    { rel: 'fallback.bin', urls: [raw + 'fallback.bin'], kind: 'bin' },
-  ] } };
-  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), ['item']);
-  assert.equal((await readFile(join(f.root, 'a.bin'))).toString(), 'old!');
-  assert.equal(f.dl.ledger.files['a.bin'], undefined);
-  const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => f.dl.accepted.has(rel) });
-  assert.deepEqual(resolved.droppedLeaves, ['item']);
+test('user transient primary failures preserve untried cached alternatives through pruning without publishing them', async (t) => {
+  for (const failure of ['api', 'payload', 'invalid']) {
+    // Given a previous run that downloaded a fallback after a primary 404.
+    const good = Buffer.from('new!');
+    const f = await fixture(t, { 'a.bin': good, 'fallback.bin': good }, {
+      payload: (url) => url.endsWith('a.bin') ? null : good,
+    });
+    const template = { item: { alts: ['a.bin', 'fallback.bin', 'older.bin'].map((rel) =>
+      ({ rel, urls: [raw + rel], kind: 'bin' })) } };
+    await downloadLeaves(collectLeaves(template), f.dl, f.root);
+    assert.deepEqual(resolveTemplate(template, { root: f.root, spine: new Map(),
+      available: (rel) => f.dl.accepted.has(rel) }).value, { item: '/assets/fallback.bin' });
+    await writeFile(join(f.root, 'a.bin'), 'old!');
+    await writeFile(join(f.root, 'older.bin'), 'older fallback');
+    await writeFile(join(f.root, 'unrelated.bin'), 'orphan');
+    const fetchImpl = async (url, options) => {
+      if (failure === 'api' || url.endsWith('a.bin')) {
+        return failure === 'invalid' ? new Response('old!') : new Response(null, { status: 503 });
+      }
+      return f.fetchImpl(url, options);
+    };
+    const verifier = new SourceVerifier({ 'o/r@main': { commit, tree } }, { fetchImpl, token: 'test-api-token' });
+    const dl = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier,
+      fetchImpl, retries: 1, backoffMs: 0, log: quiet });
+    await dl.loadLedger();
+    // When a new run fails on the primary and prunes unreferenced files.
+    assert.deepEqual(await downloadLeaves(collectLeaves(template), dl, f.root), ['item']);
+    const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => dl.accepted.has(rel) });
+    const orphans = orphanFiles(['a.bin', 'fallback.bin', 'older.bin', 'unrelated.bin'],
+      new Set([...resolved.files, ...dl.preserved]));
+    for (const rel of orphans) await rm(join(f.root, rel));
+    // Then cached alternatives survive, but only independently accepted files can be published.
+    assert.deepEqual(await readFile(join(f.root, 'fallback.bin')), good);
+    assert.equal(await readFile(join(f.root, 'older.bin'), 'utf8'), 'older fallback');
+    assert.equal(await readFile(join(f.root, 'a.bin'), 'utf8'), 'old!');
+    assert.deepEqual(orphans, ['unrelated.bin']);
+    assert.deepEqual(resolved.value, {});
+    assert.deepEqual(resolved.droppedLeaves, ['item']);
+  }
 });
 
 test('user missing sources preserve legacy and verified caches through shared fallback pruning', async (t) => {
@@ -215,7 +240,7 @@ function font(value) {
   return buf;
 }
 
-test('user changed font originals are verified before WOFF2 generation and failed fonts lose generated outputs', async (t) => {
+test('user changed font originals are verified before WOFF2 generation and failed fonts keep generated outputs', async (t) => {
   const good = font('new!');
   const stale = font('old!');
   let available = true;
@@ -224,9 +249,15 @@ test('user changed font originals are verified before WOFF2 generation and faile
   await writeFile(join(f.root, name + '.otf'), stale);
   await writeFile(join(f.root, name + '.woff2'), 'stale generated');
   await writeFile(join(f.root, 'fonts.css'), 'stale css');
+  const rejectedName = FONTS[1].name;
+  await writeFile(join(f.root, rejectedName + '.ttf'), stale);
+  await writeFile(join(f.root, rejectedName + '.woff2'), 'previous light font');
   await f.dl.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
   const built = await buildFonts(f.root, quiet, { verified: true, available: (rel) => f.dl.accepted.has(rel) });
   assert.ok(built.files[name].woff2);
+  assert.equal(built.files[rejectedName], undefined);
+  assert.ok(!built.css.includes(rejectedName));
+  assert.equal(await readFile(join(f.root, rejectedName + '.woff2'), 'utf8'), 'previous light font');
   const tables = decodeWoff2Tables(await readFile(join(f.root, name + '.woff2')));
   assert.equal(tables.tables[0].data.toString(), 'new!');
   available = false;
@@ -240,7 +271,9 @@ test('user changed font originals are verified before WOFF2 generation and faile
   assert.ok(failed.files[name].woff2, 'the preserved original can still regenerate the derived font');
   await access(join(f.root, name + '.woff2'));
   await access(join(f.root, 'fonts.css'));
-  // Given an unverified original still on disk, a failed download must not publish it.
+  const previousWoff = await readFile(join(f.root, name + '.woff2'));
+  const previousCss = await readFile(join(f.root, 'fonts.css'));
+  // Given an unverified original still on disk, a failed download must preserve derivatives without publishing it.
   await writeFile(join(f.root, name + '.otf'), stale);
   const rejected = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier: f.verifier,
     fetchImpl: f.fetchImpl, retries: 1, backoffMs: 0, log: quiet });
@@ -249,8 +282,8 @@ test('user changed font originals are verified before WOFF2 generation and faile
   const excluded = await buildFonts(f.root, quiet, { verified: true, available: (rel) => rejected.accepted.has(rel) });
   assert.deepEqual(excluded.files, {});
   assert.equal(excluded.css, null);
-  await assert.rejects(access(join(f.root, name + '.woff2')));
-  await assert.rejects(access(join(f.root, 'fonts.css')));
+  assert.deepEqual(await readFile(join(f.root, name + '.woff2')), previousWoff);
+  assert.deepEqual(await readFile(join(f.root, 'fonts.css')), previousCss);
   assert.deepEqual(await readFile(join(f.root, name + '.otf')), stale);
 });
 

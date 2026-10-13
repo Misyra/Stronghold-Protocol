@@ -68,7 +68,12 @@ export async function downloadLeaves(leaves, dl, root, label = 'files') {
     for (const l of leaves) {
       const t = tried.get(l);
       if (blocked.has(l)) continue;
-      if (t > 0 && last.get(l.leaf.alts[t - 1].rel)?.status === 'error') { blocked.add(l); continue; }
+      if (t > 0 && last.get(l.leaf.alts[t - 1].rel)?.status === 'error') {
+        blocked.add(l);
+        // A failed primary cannot establish that untried cached alternatives are orphans.
+        if (dl.verifier) for (const a of l.leaf.alts.slice(t)) dl.preserved.add(a.rel);
+        continue;
+      }
       if (t > 0 && satisfied(l)) continue;
       if (t >= l.leaf.alts.length) continue;
       jobs.push(l.leaf.alts[t]);

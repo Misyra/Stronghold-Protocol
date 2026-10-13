@@ -57,6 +57,19 @@ export const STUDIO_URL = '/studio/';
 export const STUDIO_API = '/studio/api/';
 /** The studio's own notes of a plugin folder (a dot file: never listed, served, checked or packed). */
 export const SIDECAR = '.studio.json';
+/**
+ * Whether a raw request path is the studio's, in any spelling a static file server would map to public/studio/ — another
+ * case (/Studio/), doubled slashes (//studio/), percent-encoding (/%73tudio/): the studio answers them all (its gate first;
+ * any spelling but the exact one is a 404), so its page never reaches anyone through the static mounts.
+ * @param {string} rawPath
+ */
+export function isStudioPath(rawPath) {
+  let p;
+  try { p = decodeURIComponent(String(rawPath)); } catch { return false; }
+  p = p.replace(/\\/g, '/').replace(/\/{2,}/g, '/').toLowerCase();
+  return p === '/studio' || p.startsWith('/studio/');
+}
+
 /** How long a game session the page named counts as the author's after the page last named it (ms) [ASSUMED]. */
 export const AUTHOR_TTL_MS = 10 * 60 * 1000;
 /** Types of the page's own files under public/studio/. */
@@ -592,6 +605,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     const notFound = () => sendError(req, res, 404, '页面不存在 · Not found', rawPath.length <= 200 ? rawPath : '');
     const gate = studioAllowed(req, { trustProxy, mode });
     if (!gate.ok) { notFound(); return; }
+    // only the exact spelling (another case, doubled slashes or percent-encoding of the prefix: a 404, see isStudioPath)
+    if (rawPath !== '/studio' && !rawPath.startsWith(STUDIO_URL)) { notFound(); return; }
     activate();
     if (rawPath === '/studio') { res.writeHead(301, { Location: `/studio/${query ? `?${query}` : ''}`, 'Cache-Control': 'no-cache', 'Content-Length': 0 }); res.end(); return; }
     try {
@@ -618,8 +633,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   }
 
   return {
-    /** Is this path the studio's? @param {string} rawPath */
-    handles: (rawPath) => rawPath === '/studio' || rawPath.startsWith(STUDIO_URL),
+    /** Is this path the studio's (any spelling: isStudioPath)? @param {string} rawPath */
+    handles: isStudioPath,
     handle,
     autoApply,
     watcher,

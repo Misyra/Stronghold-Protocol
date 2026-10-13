@@ -17,7 +17,7 @@ import http from 'node:http';
 import { startServer } from '../../server/index.js';
 import { studioAllowed, isStudioChange, isLocalHost, hostName, studioMode } from '../../server/studio/gate.js';
 import { createPluginFiles, StudioError } from '../../server/studio/files.js';
-import { suggestId } from '../../server/studio/index.js';
+import { suggestId, isStudioPath } from '../../server/studio/index.js';
 import { unzipFiles, zipFiles } from '../../server/plugins/zip.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
@@ -98,6 +98,11 @@ test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a wr
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('isStudioPath: every spelling a static server would map to public/studio/', () => {
+  for (const p of ['/studio', '/studio/', '/Studio/x', '//studio/', '/%73tudio/', '/STUDIO', '/studio%2Fapi']) assert.equal(isStudioPath(p), true, p);
+  for (const p of ['/', '/studios/', '/js/studio.js', '/studio.html', '/%E0%A4%A']) assert.equal(isStudioPath(p), false, p);
+});
+
 test('suggestId: from Latin letters of the name, else from the target and the template; free and legal', () => {
   const taken = new Set(['texas-art']);
   assert.equal(suggestId({ name: 'Red Texas!' }, taken), 'red-texas');
@@ -166,9 +171,21 @@ describe('the studio over HTTP', () => {
     assert.ok(pre.status === 404 || pre.status === 405, `preflight ${pre.status}`);
     assert.equal((await raw('DELETE', '/studio/api/plugins/handmade/files/a.png', { 'x-forwarded-for': '203.0.113.9', 'x-sp-studio': '1' })).status, 404);
     assert.ok(fs.existsSync(path.join(plugins, 'handmade', 'a.png')), 'nothing was removed');
+    // another spelling of the prefix never reaches the page — neither through the studio nor through the static mounts
+    for (const url of ['/Studio/', '/STUDIO/api/info', '//studio/', '/%73tudio/', '/studio%2Fapi/info', '//studio/js/main.js']) {
+      assert.equal((await raw('GET', url)).status, 404, url);
+    }
     // the game's pages are untouched by the studio's routes
     assert.equal((await raw('GET', '/')).status, 200);
     assert.equal((await raw('POST', '/')).status, 405);
+  });
+
+  test('a server without a studio (startServer studio: false) never serves its page as a static file', async () => {
+    const other = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false, studio: false });
+    try {
+      for (const u of ['/studio/', '/studio/index.html', '/studio/js/main.js', '/Studio/', '/studio']) assert.equal((await fetch(other.url + u)).status, 404, u);
+      assert.equal(other.studio, null);
+    } finally { await other.close(); }
   });
 
   test('a new plugin from a template; files on a slot; a reference; a slot emptied; the preview; pack and zip; the list', async () => {

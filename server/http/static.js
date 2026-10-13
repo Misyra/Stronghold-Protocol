@@ -6,6 +6,8 @@
 //     /shared/ → shared/      (ESM shared with the browser)
 //     /sim/    → server/sim/  (the battle simulation, read-only, `.js` only — client-side
 //                              combat, DESIGN §14; the Node-only loader nodeData.js is not served)
+//     /studio/… → never: the plugin studio's page (public/studio/) is served by server/studio/index.js behind its gate (this
+//                machine and the local network only) — a path here that is the studio's, in any spelling, is a 404
 //     /data.js → a generated browser stand-in of server/data.js (the sim's content modules
 //                import `../../../data.js`; in the browser it serves the data injected with
 //                /sim/simdata.js setSimData). No other server file is ever served.
@@ -58,6 +60,7 @@ import { serveMedia } from './media.js';
 import { createPluginRegistry, sameIdentity, statIdentity } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
 import { createVisualSets } from '../plugins/visualSet.js';
+import { isStudioPath } from '../studio/index.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
 import { PLUGINS_URL, PLUGIN_INDEX_VERSION, buildPluginIndex, extOf, isPackPath, isPluginId } from '../../shared/plugins/manifest.js';
 import { csUrlPart } from '../../shared/plugins/identity.js';
@@ -129,6 +132,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
     }
+    // the plugin studio's page is never a static file (server/studio/index.js isStudioPath: any spelling of /studio/)
+    if (isStudioPath(decoded)) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
     // /assets/~<hash>/x → /assets/x (the hash decides the cache policy below)
     const hashed = splitHashedPath(decoded);
     const urlHash = hashed.hash;

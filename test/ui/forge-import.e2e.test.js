@@ -37,7 +37,8 @@ describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (a
       const zipPath = path.join(tmp, 'rose-skin.zip');
       fs.writeFileSync(zipPath, zipFiles(files));
       const page = await browser.newPage();
-      await page.goto(`${srv.url}/studio/#key=${srv.studio.key}`, { waitUntil: 'networkidle0' });
+      // (domcontentloaded: the studio keeps its event stream open, so the network never idles)
+      await page.goto(srv.studio.pageUrl(srv.url), { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('[data-testid="forge-import"]');
       await page.click('[data-testid="forge-import"]');
       await page.waitForSelector('[data-testid="forge-zip"]');

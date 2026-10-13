@@ -19,7 +19,6 @@ import { PlayerState } from '../server/match/PlayerState.js';
 import { publicStateJson } from '../server/match/match/messaging.js';
 import { captureMatch, encodeMatchCapture } from '../server/match/snapshot.js';
 import { diffState, applyStatePatch } from '../shared/stateDelta.js';
-import { stateDeltaStats } from '../server/stateTransport.js';
 import { bondList, offBondCounts } from '../server/match/bondsMeta.js';
 import { boardOrder } from '../server/match/board.js';
 
@@ -169,8 +168,12 @@ try {
   // 1a) 传输段:第二次发送同一频道的状态(基线命中、差分、补丁、整帧回退的构建)。每次用新的 stub 对象,
   // 快照与转换缓存才不会把成本吃掉;基线只提交一次,所以每轮都是一次真实转换。
   const transport = {};
+  let deltaLedger = null;
   {
-    const { negotiateStateDelta, prepareStateFrame } = await import('../server/stateTransport.js');
+    // Dynamic import: a revision that does not export the delta ledger (the pre-optimization baseline) simply omits it
+    // instead of failing to load — the same tool file must run on both sides of an A/B.
+    const { negotiateStateDelta, prepareStateFrame, stateDeltaStats } = await import('../server/stateTransport.js');
+    if (stateDeltaStats) deltaLedger = { ...stateDeltaStats };
     const ws = {};
     negotiateStateDelta(ws, 1);
     const mk = (kind, view) => {
@@ -267,7 +270,7 @@ try {
     node: process.version, platform: process.platform, seed, round, steps,
     phase: m.phase, publicBytes, privateBytes, players: boards,
     // 差分账本:每个状态帧被解析了几次(parsedBaselines / frames)、整帧与增量各多少
-    stateDelta: { ...stateDeltaStats },
+    stateDelta: deltaLedger,
     segments: Object.fromEntries(Object.entries(segments).map(([k, v]) => [k, v.msPerCall])),
     breakdown: Object.fromEntries(Object.entries(breakdown).map(([k, v]) => [k, v.msPerCall])),
     patchOps: diffState(before, after).length,

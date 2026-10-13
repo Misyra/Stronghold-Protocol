@@ -55,7 +55,8 @@ export const isModdedRoom = (room) => !!room?.content && room.content.vanilla ==
  */
 export function UnofficialMark({ room, compact = false, class: cls = '' }) {
   if (!isModdedRoom(room)) return null;
-  const n = roomPluginFacts(room, null).count;
+  // the gameplay plugins only (a cosmetic one beside them changes no battle)
+  const n = roomPluginFacts(room, null).plugins.filter((p) => p.class === 'content').length;
   const tip = t('非官方：本局使用了改变玩法的插件（{n} 个），不计入统计总览', { n });
   return html`<span class=${cx('modmark', compact && 'modmark--compact', cls)} title=${tip} aria-label=${tip} data-testid="unofficial-mark">
     ${compact ? 'MOD' : t('非官方')}

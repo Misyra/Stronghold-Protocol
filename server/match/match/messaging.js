@@ -85,7 +85,10 @@ export class MatchMessaging {
     this.broadcast({ t: 'm.ticker', ...w, text: w.text.slice(0, 200), id: null, type: 'CUSTOM', priority: Number(priority) || 0, playerId: null });
   }
 
-  markPublic() { this._pubDirty = true; }
+  // Both marks also move the persistence version (snapshot.js persistVersion): every match- and player-level state
+  // change reaches one of them — a PlayerState mutator reports through dirty() → markPrivate — so the Persister can
+  // tell an unchanged checkpoint from a changed one without capturing, cloning and encoding it again.
+  markPublic() { this._pubDirty = true; this._persistRev = (this._persistRev | 0) + 1; }
   /**
    * A player's state changed: its m.private and (throttled, deduplicated) m.public (level, board, bonds…) — in a boss
    * round's prep also its pair partner's m.private, which shows this board on its other half (bossMate, item 51).
@@ -94,6 +97,7 @@ export class MatchMessaging {
     if (!ps) return;
     this._privDirty.add(ps);
     this._pubDirty = true;
+    this._persistRev = (this._persistRev | 0) + 1;
     const m = this._bossMateOf(ps);
     if (m) this._privDirty.add(m.mate);
   }

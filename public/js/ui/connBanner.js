@@ -10,6 +10,7 @@ import { net, CLIENT_ERR_TEXT } from '../net.js';
 import { useStore, shallowEqual } from '../store.js';
 import { useDocClass } from './device.js';
 import { t } from '../../../shared/i18n.js';
+import { ERR } from '../../../shared/constants.js';
 
 /** Whether the banner shows for this connection state (mirrors the early returns below). */
 export function bannerVisible(conn, entered, restoring, buildStale = false) {
@@ -43,6 +44,7 @@ export function ConnectionBanner() {
   if (!conn.everOnline && (conn.status === 'connecting' || conn.status === 'handshaking' || conn.status === 'idle')) return null;
   const secs = conn.retryAt ? Math.max(0, Math.ceil((conn.retryAt - Date.now()) / 1000)) : 0;
   const replaced = conn.status === 'closed' && conn.lastError?.code === 'REPLACED';
+  const foreignBlocked = conn.status === 'closed' && conn.lastError?.code === ERR.FOREIGN_CONNECTIONS_DISABLED;
   const rejected = conn.status === 'connected' && !!conn.lastError; // hello refused (version, server full…)
   const versionMismatch = rejected && conn.lastError.text === CLIENT_ERR_TEXT.VERSION;
   // Short transitional states (a rename re-sends hello on the live socket) only show if they linger.
@@ -50,7 +52,7 @@ export function ConnectionBanner() {
   const text = conn.status === 'reconnecting'
     ? t('与服务器的连接已中断，正在重连')
     : replaced ? t('该身份已在其他页面登录')
-      : conn.status === 'closed' ? t('连接已关闭')
+      : foreignBlocked ? t(conn.lastError.text) : conn.status === 'closed' ? t('连接已关闭')
         : rejected ? t(conn.lastError.text) : t('正在连接服务器');
   const action = conn.status === 'reconnecting' ? { label: t('立即重连'), run: () => net.retryNow() }
     : conn.status === 'closed' ? { label: replaced ? t('在此页面继续') : t('重新连接'), run: () => net.connect() }

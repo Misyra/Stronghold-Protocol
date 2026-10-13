@@ -42,14 +42,22 @@ server/
   index.js                 process entry: startServer() wires server/http/ (plain node:http + ws); boots when run directly
   http/
     config.js              ROOT, served dirs, env (PORT, HOST, TRUST_PROXY, DEBUG), options handed to net.js / lobby.js
-    websocket.js           session wiring (SessionRegistry → Lobby → Network), WebSocket upgrade at /ws (64 KB frames)
-    static.js              mounts / → public, /data/, /shared/, /sim/ (.js only), the /data.js browser stand-in, path guards
+    websocket.js           session wiring (SessionRegistry → Lobby → Network), WebSocket upgrade at /ws (64 KB frames,
+                           permessage-deflate from 1 KB)
+    static.js              mounts / → public, /data/, /shared/, /sim/ (.js only), the /data.js browser stand-in, path guards,
+                           the /_v/<tag>/ release prefix of asset/code URLs stripped and validated (immutable; a changed byte behind it answers 503)
     media.js               /media/… extension-less audio → public/assets/audio
-    files.js               one file → response: MIME, gzip (.skel/.atlas/.json/.js/.css …), ETag / 304, cache policy, ranges
-    buildTag.js            build tag of the served browser runtime (/healthz build, public/js/ui/buildGuard.js)
-    routes.js              request listener: 414 / 400 / 405 guards, GET /healthz, then static files
+    files.js               one file → response: MIME, brotli q5 / gzip (.skel/.atlas/.json/.js/.css …), ETag (size + mtime, and the release tag of a transformed body) / 304,
+                           cache policy, ranges; serveBuffer for the served manifests
+    buildTag.js            the legacy build-tag helper (the served build is the release tag, static.jsersion)
+    routes.js              request listener: 414 / 400 / 405 guards, GET /healthz (?traffic=1: the counters), then static files
+    traffic.js             traffic counters: HTTP body bytes by category (assets / audio / code / data), WebSocket wire / payload
     common.js              security headers, URL split, error page, JSON replies, bare 400 for unparseable requests
     boot.js                boot banner (Local / LAN / tunnel URLs), port-in-use hint, graceful SIGINT / SIGTERM
+  assetVersion.js          the release namespace: /_v/<artTag|runtimeTag>/… (SHA-256 over the art / code trees), validated per request (a
+                           changed byte behind a validated path answers 503); the served manifests and HTML/CSS/JSON carry its URLs
+  ../shared/assetCdn.js     when SP_ASSETS_CDN is set: art/model/audio URLs become <base>/assets/…?v=<file hash> (per-file cache busting;
+                           the API and /ws never leave the game host) — docs/operations/CDN.md
   net.js                   session registry, send helpers, per-connection rate limit, message validation (uses shared/protocol.js)
   lobby.js                 rooms (4-letter codes), seats, host, AI seats, ready/start, reconnect tokens, room→Match wiring
   data.js                  loads data/*.json once, builds indexes (getChess, getBond, …); frozen objects

@@ -432,6 +432,10 @@ HEAD /data/resource-manifest.json
 
 `room.state.allowBots` 表示是否允许新增 AI（旧服务器未提供时客户端按允许处理）。禁用时 `room.addBot` 返回 `BOTS_DISABLED`；已有 AI、进行中对局和断线自动接管不受影响。
 
+配置 GeoLite 后，海外同 IP 已有其他在线身份时 `hello` 返回 `FOREIGN_SESSION_LIMIT`，不创建新身份、不踢原玩家。有效 token 的本身份重连保持原规则；旧身份断线时允许新建，并清理旧席位和撤销旧 token。`/healthz` 的 `foreignSessions` 提供启用状态及拒绝/回收计数，不提供 IP 配额键。详见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md)。
+
+`SP_FOREIGN_SESSION_LIMIT=on/off` 设置默认开关；本机管理接口 `PUT /api/room-config` 支持 `{ "limitForeignSessions": false }`，实时生效并持久化。读取配置另含只读 `foreignSessionGeoipAvailable`，不能通过 PUT 修改。健康指标区分 `configured`（开关）、`geoipAvailable`（国家库）和 `enabled`（实际生效）。
+
 `room.addBot` 检查实时 AI 席位存量：全服合计达到 300 个返回 `AI_POPULATION_LIMIT`；配置私有 GeoLite Country 数据库后，海外来源（非 `CN`，含港澳台）共用 50 个名额，达到后新的海外请求返回 `FOREIGN_AI_POPULATION_LIMIT`。全服限制优先且不依赖 GeoLite。两种拒绝都不关闭房间或删除已有 AI；备战和运行中都计数，移除、销毁释放名额，存档恢复重建计数。健康接口 `botPopulation` 提供当前存量与上限，详细配置见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md)。
 
 ## 9. 实现出处与验证

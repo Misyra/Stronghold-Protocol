@@ -54,6 +54,7 @@ export const CLIENT_ERR_TEXT = Object.freeze({
 export const CLOSE_REPLACED = 4001;
 /** Server close code: the socket never sent `hello` (server/net.js CLOSE.HELLO_TIMEOUT, ~30–60 s). */
 export const CLOSE_HELLO_TIMEOUT = 4002;
+export const CLOSE_FOREIGN_BLOCKED = 4003;
 /** A pre-hello socket must have lived this long before a 4002 close is swapped quietly (no loop). */
 const QUIET_SWAP_MIN_AGE_MS = 5000;
 
@@ -312,6 +313,15 @@ export class Net {
     this._teardownSocket();
     this._failPending('DISCONNECTED', false);
     if (this._manualClose) { this._setStatus('closed'); return; }
+    if (ev?.code === CLOSE_FOREIGN_BLOCKED) {
+      this._manualClose = true;
+      this.retryAt = 0;
+      this.lastError = new NetError(ERR.FOREIGN_CONNECTIONS_DISABLED);
+      this._failPending(ERR.FOREIGN_CONNECTIONS_DISABLED, true);
+      this._setStatus('closed');
+      this._emit('helloError', this.lastError);
+      return;
+    }
     if (ev && ev.code === CLOSE_REPLACED) {
       // Another tab/socket took this session over: don't fight it; the user may reconnect manually.
       this._manualClose = true;
@@ -555,6 +565,12 @@ export class Net {
       this._clearTimer('_stateResyncTimer', 'clearTimeout');
     }
     const { t } = msg;
+    if (t === 'error' && msg.code === ERR.FOREIGN_CONNECTIONS_DISABLED) {
+      this.lastError = new NetError(msg.code, msg.msg);
+      this.close();
+      this._emit('helloError', this.lastError);
+      return;
+    }
     const rid = msg.rid;
     const isHelloError = t === 'error' && rid != null && rid === this._helloRid;
 

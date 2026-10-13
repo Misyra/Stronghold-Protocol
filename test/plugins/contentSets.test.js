@@ -1,9 +1,11 @@
 // test/plugins/contentSets.test.js — server/plugins/contentSets.js, the content sets rooms hold (DESIGN §32.6, P1c), over
 // an injected builder (the real C1 builder: test/plugins/contentSet.test.js, test/lobby-plugins.test.js):
 //   * the same plugins in the same state with the same settings are not built again; a changed plugin file (a new
-//     content hash), another manifest or other settings are;
+//     content hash), another manifest or other settings are — settings as the builder reads them (normalizeSettings: a
+//     key the plugin does not declare never costs a build: the P1c review's HIGH-2);
 //   * a set whose manifest does not hash to its cs is never used (INTERNAL);
-//   * the concurrent limit (PLUGIN_BUSY), the set the asking room gives up counted free;
+//   * the concurrent limit (PLUGIN_BUSY) is checked before anything is built, the set the asking room gives up counted
+//     free; a refused set is not remembered;
 //   * what /cs/<cs16>/… serves and the bytes a match host checks.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,14 +30,17 @@ function fakeBuilt(id, tag, { broken = false } = {}) {
   return { built: { cs, vanilla: false, plugins: [{ id, version: '1.0.0', hash: sha(Buffer.from(id)) }], data: { bonds: { tag } }, modes: [], index, warnings: [], kitted: null, problems: [] }, files };
 }
 
+const DEF = { x: { type: 'integer', min: 0, max: 9, default: 0 } };
+
 function harness({ maxSets = 4 } = {}) {
-  const plugins = { a: { id: 'a', content: { hash: 'h1' }, manifest: { id: 'a', version: '1.0.0' } }, b: { id: 'b', content: { hash: 'h2' }, manifest: { id: 'b', version: '1.0.0' } } };
+  const plugins = { a: { id: 'a', content: { hash: 'h1' }, manifest: { id: 'a', version: '1.0.0' } }, b: { id: 'b', content: { hash: 'h2' }, manifest: { id: 'b', version: '1.0.0' } },
+    t: { id: 't', content: { hash: 'h3' }, manifest: { id: 't', version: '1.0.0', settings: DEF } } };
   const calls = [];
   const filesBy = new WeakMap();
-  const made = { a: () => fakeBuilt('a', `a:${plugins.a.content.hash}`), b: () => fakeBuilt('b', 'b'), bad: () => fakeBuilt('a', 'x', { broken: true }) };
+  const made = { a: () => fakeBuilt('a', `a:${plugins.a.content.hash}`), b: () => fakeBuilt('b', 'b'), t: () => fakeBuilt('t', 't'), bad: () => fakeBuilt('a', 'x', { broken: true }) };
   let next = null;
   const build = ({ ids }) => {
-    calls.push(ids.map((x) => (typeof x === 'string' ? x : `${x.id}+settings`)).join(','));
+    calls.push(ids.map((x) => (typeof x === 'string' ? x : `${x.id}+${JSON.stringify(x.settings)}`)).join(','));
     const key = next || (typeof ids[0] === 'string' ? ids[0] : ids[0].id);
     const { built, files } = made[key]();
     filesBy.set(built, files);
@@ -58,8 +63,30 @@ test('the same plugins, in the same state, with the same settings, are not built
   assert.notEqual(changed.set.cs, one.set.cs);
   plugins.a = { ...plugins.a, manifest: { ...plugins.a.manifest, version: '1.0.1' } };
   sets.resolve(['a']);
+  assert.deepEqual(calls, ['a', 'a', 'a'], 'another manifest: built again');
+  // settings as the builder reads them: undeclared keys are nothing; a declared one is
   sets.resolve(['a'], { settings: { a: { x: 1 } } });
-  assert.deepEqual(calls, ['a', 'a', 'a', 'a+settings'], 'another manifest, other settings: built again');
+  assert.equal(calls.length, 3, 'a key plugin a does not declare');
+  sets.resolve(['t']);
+  sets.resolve(['t'], { settings: { t: { x: 0, junk: 'a' } } });
+  sets.resolve(['t'], { settings: { t: { x: 12 } } });
+  assert.deepEqual(calls.slice(3), ['t+{"x":0}'], 'the default, junk beside it, an out-of-range value: the same set');
+  sets.resolve(['t'], { settings: { t: { x: 3 } } });
+  assert.deepEqual(calls.slice(3), ['t+{"x":0}', 't+{"x":3}'], 'another declared value: built (normalized)');
+});
+
+test('a burst of requests with junk settings builds once; at the limit nothing is built; a refused set is not remembered', () => {
+  const { sets, calls } = harness({ maxSets: 1 });
+  for (let i = 0; i < 6; i++) assert.ok(sets.resolve(['a'], { settings: { a: { junk: `j${i}` } } }).ok);
+  assert.equal(calls.length, 1, 'six requests, one build');
+  const a = sets.resolve(['a']).set;
+  sets.hold(a.cs);
+  for (const junk of ['x', 'y']) assert.equal(sets.resolve(['b'], { settings: { b: { junk } } }).error, ERR.PLUGIN_BUSY);
+  assert.equal(calls.length, 1, 'refused before a build');
+  assert.equal(sets.stats().builds, 1);
+  sets.release(a.cs);
+  assert.ok(sets.resolve(['b']).ok, 'room again: built now');
+  assert.deepEqual(calls, ['a', 'b']);
 });
 
 test('a set whose manifest does not hash to its cs is never used; the limit; what is served', () => {

@@ -5,10 +5,12 @@
 // and what the room's match host runs (server/match/host/).
 //
 //   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16 — the same
-//                                          plugins in the same state with the same settings are not built again): refused
-//                                          with PLUGIN_BUSY when it would be one set more than `limits.maxSets` rooms
-//                                          hold at once (a set a room already holds is free; `replacing`: the set the
-//                                          asking room holds now, freed by the change) [ASSUMED default 4]
+//                                          plugins in the same state with the same settings, as the builder reads them
+//                                          (normalizeSettings: undeclared keys dropped), are not built again): refused
+//                                          with PLUGIN_BUSY — before anything is built — when it would be one set more
+//                                          than `limits.maxSets` rooms hold at once (a set a room already holds is free;
+//                                          `replacing`: the set the asking room holds now, freed by the change)
+//                                          [ASSUMED default 4]
 //   hold(cs) / release(cs)                 a room uses the set (never dropped while held)
 //   file(cs16, rel)                        what /cs/<cs16>/… serves: index.json (the set's manifest) and its data and
 //                                          translation files — a held set's, or one of the last MAX_KEPT [ASSUMED 8]
@@ -25,6 +27,7 @@
 
 import { ERR, DIFFICULTIES } from '../../shared/constants.js';
 import { contentHashOf, csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
+import { normalizeSettings } from '../../shared/plugins/patch.js';
 import { buildContentSet, contentSetFiles } from './contentSet.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
@@ -76,22 +79,49 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
   /** @type {Map<string, number>} cs16 → rooms holding it */
   const held = new Map();
 
-  /** cs16 by what a set was built from (memoKey), most recent last — only while that set is kept */
+  /** cs16 by what a set was built from (memoKey), most recent last — written once the set is kept */
   const memo = new Map();
+  /** build() calls so far (stats: a burst of requests for one set builds it once) */
+  let builds = 0;
+  /**
+   * Each plugin's settings as the builder reads them (shared/plugins/patch.js normalizeSettings over its manifest's
+   * declared settings — an undeclared key dropped, a bad value its default): what a set is made of, so what the memo
+   * keys on and what the builder is given. A key a plugin does not declare never costs a build.
+   * @param {string[]} ids @param {Record<string, Record<string, unknown>>} settings
+   * @returns {Record<string, Record<string, unknown>>}
+   */
+  const normalized = (ids, settings) => {
+    const out = {};
+    for (const id of ids) {
+      const defs = registry.plugin(id)?.manifest?.settings;
+      const s = normalizeSettings(defs && typeof defs === 'object' ? defs : {}, settings && typeof settings === 'object' ? settings[id] : undefined);
+      if (Object.keys(s).length) out[id] = s;
+    }
+    return out;
+  };
   /**
    * What decides a build besides the server's vanilla data (fixed while it runs): each plugin's manifest and the hash of
-   * its content files (server/plugins/contentData.js: a changed file is a new hash), in order, with its settings; null
-   * when a plugin has no content snapshot (the builder decides then).
-   * @param {string[]} ids @param {Record<string, Record<string, unknown>>} settings
+   * its content files (server/plugins/contentData.js: a changed file is a new hash), in order, with its normalized
+   * settings; null when a plugin has no content snapshot (the builder decides then).
+   * @param {string[]} ids @param {Record<string, Record<string, unknown>>} norm (normalized)
    */
-  const memoKey = (ids, settings) => {
+  const memoKey = (ids, norm) => {
     const parts = [];
     for (const id of ids) {
       const p = registry.plugin(id);
       if (!p || !p.content || typeof p.content.hash !== 'string') return null;
-      parts.push([id, p.content.hash, p.manifest ?? null, settings[id] ?? null]);
+      parts.push([id, p.content.hash, p.manifest ?? null, norm[id] ?? null]);
     }
     try { return JSON.stringify(parts); } catch { return null; }
+  };
+  /** Remember a kept set by what it was built from; the oldest entries of sets no room holds go first. */
+  const remember = (mk, key) => {
+    memo.delete(mk);
+    memo.set(mk, key);
+    for (const [k, v] of memo) {
+      if (memo.size <= MEMO_MAX) break;
+      if (!held.has(v) || !sets.has(v)) memo.delete(k);
+    }
   };
 
   const keep = (key, set) => {
@@ -146,14 +176,26 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
    * @returns {{ ok: true, set: ContentSet } | { error: string, detail: string }}
    */
   function resolve(ids, { settings = {}, replacing = null } = {}) {
-    // the same plugins, in the same state, with the same settings: the set built before (a build takes a few hundred ms
-    // of this process — every rooms: fixed room, every 「重新应用」 and every cosmetic switch beside them asks again)
-    const mk = memoKey(ids, settings);
-    let set = mk && memo.has(mk) ? sets.get(memo.get(mk)) || null : null;
+    // the same plugins, in the same state, with the same (normalized) settings: the set built before (a build takes a few
+    // hundred ms of this process — every rooms: fixed room, every 「重新应用」 and every cosmetic switch beside them asks again)
+    const norm = normalized(ids, settings);
+    const mk = memoKey(ids, norm);
+    const remembered = mk && memo.has(mk) ? sets.get(memo.get(mk)) || null : null;
+    // the limit: one set more than the rooms hold now (a set already held, or the one the asking room gives up, is free)
+    const limit = Math.max(0, Number(maxSets()) || 0);
+    const freed = replacing && isContentHash(replacing) && held.get(csUrlPart(replacing)) === 1 ? 1 : 0;
+    const full = held.size - freed >= limit;
+    const busy = () => ({ error: ERR.PLUGIN_BUSY, detail: `${held.size} content sets in use (limit ${limit})` });
+    let set = remembered;
     if (!set) {
+      // refused before anything is built while the limit is reached: a set some room holds is remembered (its entry is
+      // never the one dropped), so what is not remembered would be one set more [ASSUMED: a held set whose plugin's
+      // manifest changed on disk since — same files, same cs — is refused here rather than built to find out]
+      if (full) return busy();
       let built;
       try {
-        built = build({ registry, ids: ids.map((id) => (settings[id] ? { id, settings: settings[id] } : id)) });
+        builds++;
+        built = build({ registry, ids: ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id)) });
       } catch (e) {
         log.error?.('[plugins] content set failed to build', e);
         return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
@@ -174,20 +216,12 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
         log.error?.(`[plugins] content set ${built.cs.slice(0, 8)}: its manifest does not hash to its cs`);
         return { error: ERR.INTERNAL, detail: 'the content set\'s manifest does not hash to its cs' };
       }
-      if (mk) {
-        memo.delete(mk);
-        memo.set(mk, k);
-        if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
-      }
     }
     const key = csUrlPart(set.cs);
-    // the limit: one set more than the rooms hold now (a set already held, or the one the asking room gives up, is free)
-    if (!held.has(key)) {
-      const freed = replacing && isContentHash(replacing) && held.get(csUrlPart(replacing)) === 1 ? 1 : 0;
-      const limit = Math.max(0, Number(maxSets()) || 0);
-      if (held.size - freed >= limit) return { error: ERR.PLUGIN_BUSY, detail: `${held.size} content sets in use (limit ${limit})` };
-    }
+    if (!held.has(key) && full) return busy();
     keep(key, set);
+    // remembered only once kept (a refused set is not)
+    if (mk && !remembered) remember(mk, key);
     return { ok: true, set };
   }
 
@@ -242,6 +276,6 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
     },
     /** Content sets rooms hold now (/healthz content.sets). */
     inUse: () => held.size,
-    stats: () => ({ sets: sets.size, held: held.size }),
+    stats: () => ({ sets: sets.size, held: held.size, builds }),
   };
 }

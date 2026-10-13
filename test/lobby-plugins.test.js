@@ -477,6 +477,19 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     assert.equal((await fetch(`${srv.url}/vs/${m.content.vs.slice(0, 16)}/overlay.json`)).status, 200);
   });
 
+  test('a burst of room.setPlugins with junk settings builds the set once (settings as the builder reads them)', async () => {
+    const host = await player('Ifrit');
+    await room(host, 'solo');
+    const before = srv.contents.stats().builds;
+    // the heavy bucket's burst (6): every request a new junk key beside the same declared value
+    for (let i = 0; i < 6; i++) await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'tuned', settings: { def: 0.25, junk: `j${i}` } }] });
+    assert.equal(srv.contents.stats().builds - before, 1, 'one build for six requests');
+    const st = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
+    const index = await (await fetch(`${srv.url}/cs/${st.content.cs.slice(0, 16)}/index.json`)).json();
+    assert.deepEqual(index.settings.tuned, { def: 0.25 }, 'the junk key is no part of the set');
+    await ok(host, { t: 'room.leave' });
+  });
+
   test('loadouts are checked against the room\'s data; a stored one of another content is filtered when a match starts', async () => {
     const host = await player('Ptilopsis');
     await room(host, 'solo');
@@ -588,8 +601,10 @@ describe('the server owner\'s policy and the content-set limit (P1c)', () => {
     const b = await player(s, 'B');
     for (const c of [a, b]) { assert.equal((await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok'); await c.waitFor('room.state'); }
     assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok');
+    const builds = s.contents.stats().builds;
     const busy = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] });
     assert.deepEqual([busy.t, busy.code], ['error', ERR.PLUGIN_BUSY]);
+    assert.equal(s.contents.stats().builds, builds, 'refused before it was built');
     assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok', 'the set already held');
     // A gives it up; B (its only holder now) switches to another one: freed by the change
     assert.equal((await a.request({ t: 'room.setPlugins', plugins: [] })).t, 'ok');

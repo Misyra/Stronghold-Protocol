@@ -98,7 +98,7 @@ const readDirSorted = (dir) => { try { return fs.readdirSync(dir).filter((n) => 
  * How far a walk of one plugin folder goes (listPluginFiles, the folders' signature): at most this many folders, this
  * deep, this many entries read in all — a folder that is a link to a huge tree (an archive unpacked into plugins/ can
  * bring one), or an archive of countless empty folders, never holds the server up; a plugin over them is refused
- * (PLUGIN_FILE_SIZE).
+ * (PLUGIN_FILE_SIZE) [ASSUMED: the numbers].
  */
 export const WALK_LIMITS = Object.freeze({ dirs: 2000, depth: 12, entries: 50000 });
 

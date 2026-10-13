@@ -13,6 +13,7 @@ export const ROOM_LIMIT_OPTIONS = Object.freeze({
 });
 export const ROOM_PROTECTION_DEFAULTS = Object.freeze({
   limitForeignSessions: true,
+  allowForeignConnections: true,
   roomCreateBurst: ROOM_LIMIT_OPTIONS.roomCreateBurst[1],
   roomCreateRefillMs: ROOM_LIMIT_OPTIONS.roomCreateRefillMs[1],
   matchStartBurst: ROOM_LIMIT_OPTIONS.matchStartBurst[1],
@@ -23,11 +24,12 @@ export const ROOM_PROTECTION_DEFAULTS = Object.freeze({
 
 export function validateRoomConfig(config, { partial = false } = {}) {
   if (!config || Array.isArray(config) || typeof config !== 'object' || !Object.keys(config).length ||
-    Object.keys(config).some((key) => !['maxRooms', 'allowBots', 'limitForeignSessions'].includes(key))) return 'INVALID_ROOM_CONFIG';
+    Object.keys(config).some((key) => !['maxRooms', 'allowBots', 'limitForeignSessions', 'allowForeignConnections'].includes(key))) return 'INVALID_ROOM_CONFIG';
   if ((!partial || Object.hasOwn(config, 'maxRooms')) &&
     (!Number.isSafeInteger(config.maxRooms) || config.maxRooms < 1 || config.maxRooms > 10000)) return 'INVALID_MAX_ROOMS';
   if (Object.hasOwn(config, 'allowBots') && typeof config.allowBots !== 'boolean') return 'INVALID_ALLOW_BOTS';
   if (Object.hasOwn(config, 'limitForeignSessions') && typeof config.limitForeignSessions !== 'boolean') return 'INVALID_FOREIGN_SESSION_LIMIT';
+  if (Object.hasOwn(config, 'allowForeignConnections') && typeof config.allowForeignConnections !== 'boolean') return 'INVALID_ALLOW_FOREIGN_CONNECTIONS';
   return null;
 }
 

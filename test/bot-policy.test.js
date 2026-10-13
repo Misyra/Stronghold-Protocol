@@ -77,7 +77,7 @@ test('partial bot configuration persists across restart and concurrent room-limi
   assert.ok(results.every((r) => r.status === 200));
   assert.equal(srv.lobby.opts.maxRooms, 700);
   assert.equal(srv.lobby.opts.allowBots, false);
-  assert.deepEqual(JSON.parse(await readFile(f.state, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: true });
+  assert.deepEqual(JSON.parse(await readFile(f.state, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: true, allowForeignConnections: true });
   await srv.close();
   const restored = await f.start();
   assert.equal(restored.lobby.opts.maxRooms, 700);

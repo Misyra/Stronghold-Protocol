@@ -253,10 +253,13 @@ export function TitleScreen() {
   // CSS ridgelines only when there is no ridge art (avoids a swap flash when the art arrives).
   const cssRidges = assetsSettled && (!ridges || ridgesFailed);
 
-  const error = serverError || nameError(name);
+  const foreignBlocked = conn.lastError?.code === ERR.FOREIGN_CONNECTIONS_DISABLED;
+  const error = foreignBlocked
+    ? ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED : serverError || nameError(name);
   const valid = isValidName(name);
   const start = async () => {
     if (attempt.current) return;
+    if (foreignBlocked) { toast(t(error), 'warn'); return; }
     if (!valid) { toast(t(error), 'warn'); return; }
     const request = new AbortController();
     attempt.current = request; setChecking(true); setServerError(null);
@@ -327,14 +330,14 @@ export function TitleScreen() {
         </div>` : null}
         <${TextField} label=${t('博士代号')} micro="CALLSIGN" size="lg" icon="user" value=${name} maxLength=${NAME_MAX_LEN}
           placeholder=${t('输入你的代号（最多 {NAME_MAX_LEN} 字）', { NAME_MAX_LEN })} autoFocus=${!touchUi}
-          onInput=${editName} onEnter=${start} invalid=${!!name && !!error} hint=${name && error ? t(error) : null} />
+          onInput=${editName} onEnter=${start} invalid=${foreignBlocked || (!!name && !!error)} hint=${(foreignBlocked || name) && error ? t(error) : null} />
         ${serverError === ERR_TEXT.NICKNAME_SENSITIVE ? html`<p class="title-name-feedback" role="status">
           ${tParts('如果你认为昵称没有问题，可以{feedback}。', {
             feedback: html`<a href=${`${REPOSITORY_URL}/issues/new?template=BugReport.yml`}
               target="_blank" rel="noopener noreferrer">${t('前往 GitHub 反馈')}</a>`,
           })}
         </p>` : null}
-        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid || checking} onClick=${start}>${checking ? t('正在校验昵称') : t('开始')}<//>
+        <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${foreignBlocked || !valid || checking} onClick=${start}>${checking ? t('正在校验昵称') : t('开始')}<//>
         <div class="title-meta">
           <div class="title-conn">
             <span class=${`status-dot ${dotClass}`}></span>

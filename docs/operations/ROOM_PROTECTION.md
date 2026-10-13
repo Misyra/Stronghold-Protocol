@@ -1,6 +1,6 @@
 # 房间审计与计算保护
 
-保护由游戏进程执行，修改环境变量后需要重启。IP 来源沿用 `TRUST_PROXY`，只能信任自己的反向代理；Nginx 必须正确还原客户端地址，不能采信公网客户端伪造的转发头。
+保护由游戏进程执行，修改环境变量后需要重启；本文标注的管理接口设置可实时修改。IP 来源沿用 `TRUST_PROXY`，只能信任自己的反向代理；Nginx 必须正确还原客户端地址，不能采信公网客户端伪造的转发头。
 
 ## 建房与开局额度
 
@@ -16,6 +16,16 @@
 保留既有同时持有房间、进行中对局和连接数限制。额度不落盘，重启会重置。同一校园/公司出口共享额度，应结合正常玩家使用情况调整。分布式攻击仍可能绕过单网络额度。
 
 注意 `4` 是建房令牌桶的**突发容量**，不是同时房间上限，也不是累计总数。默认消耗后每 15 秒恢复 1 个；持续建房仍可累计超过 4 个。既有 `maxRoomsPerAddr` 默认 **16**（同时存在、按创建网络归属的房间），`maxMatchesPerAddr` 默认 **8**（同时进行的对局）。这两个旧参数通过程序启动选项设置，不要误以为设置一个未被读取的同名环境变量会生效。
+
+## 海外连接准入
+
+`SP_ALLOW_FOREIGN_CONNECTIONS=on/off` 控制启动默认值，默认 `on`（允许）。监控面板「允许海外 IP 连接」实时写入布尔字段 `allowForeignConnections`，复用 RW Agent 和回环 `PUT /api/room-config`，持久化及优先级与其他房间设置一致。
+
+关闭后，识别为非 `CN` 的公开 IP（含港澳台）请求游戏 HTML 入口时直接收到 HTTP `403` 和 JSON `{"code":"FOREIGN_CONNECTIONS_DISABLED","msg":"本服务器暂时仅对中国大陆服务"}`，不会加载游戏页面。WebSocket 在 HTTP 升级前同样返回 `403` 和该消息，不建立连接、不分配游戏 session。旧缓存即使保留页面，也不能绕过服务端握手拦截。
+
+已有已登录连接继续游玩，不踢人；素材、管理接口和探针不拦截。断线后的 token 重连属于新连接，同样拒绝。开关切换前建立但尚未登录的连接，在首次 hello 时再次检查，发送协议拒绝后以 `4003` 关闭，浏览器显示提示并停止自动重连；这是切换时已存在连接的兜底，不是新连接准入方式。拒绝审计 `connection.foreignPolicy.denied` 全局每 10 秒采样一次并记录省略次数，防止刷日志；切换审计为 `connection.foreignPolicy.changed`。
+
+必须正确配置可信代理和有效 `SP_GEOLITE_COUNTRY_DB`。内网、国家未知、查询错误或缺库时放行，不猜测归属；面板缺库警告、只读 `foreignSessionGeoipAvailable` 与健康信息 `foreignSessions.foreignConnectionsBlocked` 指示配置是否具备生效条件，`connectionDenied` 为拒绝次数。单会话开关、AI 开关和房间上限独立，均不被覆盖。
 
 ## 海外 IP 单身份
 
@@ -111,7 +121,7 @@ curl -H "Authorization: Bearer $SP_ROOM_ADMIN_TOKEN" \
 
 Agent 可在同机通过 `MON_GAME_ADMIN_URL=http://127.0.0.1:3001/` 和 `SP_GAME_ADMIN_TOKEN` 代理访问；后者与游戏的 `SP_ROOM_ADMIN_TOKEN` 相同。Portal 站点需配置 Agent 的 `SP_ADMIN_TOKEN_RW`，房间清单含玩家 IP，因此只读令牌不能访问。Agent 不会把游戏密钥转发给浏览器。
 
-本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。配置支持部分更新，例如 `PUT {"maxRooms":1000}`、`PUT {"allowBots":false}` 或 `PUT {"limitForeignSessions":false}`，也可同时提交；未提交的值保持不变。`maxRooms` 为 1–10000 的整数，另两项必须为布尔值，空对象和未知字段拒绝。列表的 `config` 及配置读取接口返回三项设置和只读 `foreignSessionGeoipAvailable`。
+本机管理端点：`GET /api/rooms?limit=100&offset=0`；`GET/PUT /api/room-config`；`POST /api/rooms/:code/close`（请求体带列表返回的 `createdAt`）。配置支持部分更新，例如 `PUT {"maxRooms":1000}`、`PUT {"allowBots":false}`、`PUT {"limitForeignSessions":false}` 或 `PUT {"allowForeignConnections":false}`，也可同时提交；未提交的值保持不变。`maxRooms` 为 1–10000 的整数，其他三项必须为布尔值，空对象和未知字段拒绝。列表的 `config` 及配置读取接口返回四项设置和只读 `foreignSessionGeoipAvailable`。
 
 当前默认上限是 `1000`，默认允许添加 AI 队友；启动时可用 `SP_ALLOW_BOTS=off` 禁止（默认 `on`）。面板的「允许添加 AI 队友」可实时切换，无需重启；服务端同时检查 `room.addBot`，不能通过绕过按钮添加 AI。关闭只禁止新增，不移除已有 AI、不阻止其所在房间开局、不终止已有对局，也不改变真人断线后的自动接管。等待房间收到实时状态更新，重新允许后即可继续添加。
 

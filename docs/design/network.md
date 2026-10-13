@@ -166,7 +166,7 @@ for byte what they were; everything below appears only in a room whose host swit
   of the room's type sets the difficulty (and leaves a plugin mode); a mode of `content.modes` of the room's type becomes
   `content.modeId` and its difficulty the room's (until the host picks a difficulty or the set loses it); any other id →
   `BAD_TARGET`; un-readies the other humans like a difficulty change (nothing when nothing changes);
-- the match runs in the content set's match host (a worker thread, or a child process with `SP_MATCH_HOST=process`)
+- the match runs in the content set's match host (a child process; a worker thread with `SP_MATCH_HOST=worker`)
   with `opts.cs` = the set's `cs`, `opts.requireCs` and `opts.vs`: every BattleSpec carries that `cs` and, optionally, the
   room's `vs` (the sim reads neither); C→S `b.result` must name the spec's `cs` — a missing or different one is refused
   like an implausible result and the server simulates the battle (`verifyStats.rejected`). A page that does not hold the

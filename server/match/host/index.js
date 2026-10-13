@@ -2,10 +2,11 @@
 //
 //   * the vanilla content set — and a room whose plugins are all cosmetic (its cs is the vanilla one) — runs its match in
 //     this process exactly as before: server/lobby.js does `new MatchClass(opts)` itself and never asks the hosts;
-//   * a content set with gameplay plugins runs its matches in a worker thread of its own (server/match/host/entry.js),
-//     shared by every room that plays that set (one worker per `cs`, any number of matches in it): its module table holds
-//     that set's data and registries, so a plugin's data can never leak into another room, and a plugin that hangs or
-//     crashes a worker ends that set's matches only.
+//   * a content set with gameplay plugins runs its matches in a match host of its own — a child process by default, a
+//     worker thread when asked (server/match/host/entry.js runs in either) — shared by every room that plays that set (one
+//     host per `cs`, any number of matches in it; "worker" below means either): its module table holds that set's data
+//     and registries, so a plugin's data can never leak into another room, and a plugin that hangs or crashes its host
+//     ends that set's matches only.
 //
 //   create(cs, opts) → a MatchProxy (server/match/host/proxy.js) — the lobby's room.match. The worker is started on the
 //     first match of a set (the set's data bytes and hash input from server/plugins/contentSets.js: the worker checks them
@@ -16,16 +17,17 @@
 //     proxy.js crash). A worker that exits on its own (an uncaught error, ERR_WORKER_OUT_OF_MEMORY past `resourceLimits`)
 //     ends them with 'plugin-crash'; one whose content set does not boot, with 'plugin-start'. The log names the set and
 //     its plugins.
-//   resourceLimits [ASSUMED]: 768 MB old generation, 64 MB young generation, 4 MB stack per worker (options.resourceLimits).
-//   Transport (options.transport, env SP_MATCH_HOST): 'worker' — a worker thread (the design study's choice, the
-//   default) — or 'process' — a child process (child_process.fork, the old-generation limit as --max-old-space-size).
-//   Measured on Node 22.22 (DESIGN §32.6): a worker that runs out of its memory limit through one large allocation (an
+//   resourceLimits [ASSUMED]: 768 MB old generation, 64 MB young generation, 4 MB stack per worker (options.resourceLimits;
+//   a child process gets the old-generation limit as --max-old-space-size).
+//   Transport (options.transport, env SP_MATCH_HOST): 'process' — a child process (child_process.fork), the DEFAULT — or
+//   'worker' — a worker thread (the design study's first choice), only when asked for. Measured on Node 22.22 (DESIGN
+//   §32.6): a worker thread that runs out of its memory limit through one large allocation (`new Array(n).fill(…)`, an
 //   array or a Map grown to hundreds of MB — what a data plugin's extreme number can make the match do) is NOT stopped
-//   with ERR_WORKER_OUT_OF_MEMORY but aborts the WHOLE server process ("FATAL ERROR: Reached heap limit"); only an
-//   allocation of many small objects ends the worker alone. A child process that runs out of memory aborts alone and its
-//   matches end with 'plugin-crash'. [ASSUMED: 'worker' stays the default as specified; a public server should run
-//   'process'.]
-//   stats() → { workers, matches } (/healthz); close() terminates every worker (server shutdown).
+//   with ERR_WORKER_OUT_OF_MEMORY but aborts the WHOLE server process (exit 134, "FATAL ERROR: … Allocation failed"),
+//   vanilla rooms included; only an allocation of many small objects ends the worker alone. A child process that runs out
+//   of memory aborts alone (SIGABRT) and its matches end with 'plugin-crash' — hence the default (the coordinator's
+//   decision of 2026-10-14, after the review).
+//   stats() → { workers, matches, transport } (/healthz); close() terminates every worker (server shutdown).
 //
 // Options (startServer `matchHost`): transport, maxWorkers (default: the content-set limit, 4), heartbeatMs, watchdogMs,
 // idleMs, resourceLimits, matchOptions (JSON-safe Match options every hosted match gets — the e2e and host tests scale
@@ -44,7 +46,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /** Defaults [ASSUMED] (see the header). */
 export const HOST_DEFAULTS = Object.freeze({
-  transport: 'worker',
+  transport: 'process',
   maxWorkers: 4,
   heartbeatMs: 1000,
   watchdogMs: 10_000,
@@ -100,7 +102,8 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
         }
         if (hosts.get(this.cs) === this) hosts.delete(this.cs);
       };
-      this.transport = o.transport === 'process' ? 'process' : 'worker';
+      // a worker thread only when asked for by name (anything else: a child process — the header's measurement)
+      this.transport = o.transport === 'worker' ? 'worker' : 'process';
       if (this.transport === 'process') {
         // a child process: its memory limit is its own (an out-of-memory abort ends it alone — see the header)
         const mb = Math.max(64, Number(o.resourceLimits?.maxOldGenerationSizeMb) || HOST_DEFAULTS.resourceLimits.maxOldGenerationSizeMb);
@@ -227,7 +230,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
     stats() {
       let matches = 0;
       for (const h of hosts.values()) matches += h.matches.size;
-      return { workers: hosts.size, matches };
+      return { workers: hosts.size, matches, transport: o.transport === 'worker' ? 'worker' : 'process' };
     },
     /** Stop every worker (the server stops; the lobby has disposed its rooms first). */
     close() {

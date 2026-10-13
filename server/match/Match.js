@@ -42,7 +42,7 @@
 //   opts.vs          string (optional)          the room's visual set of cosmetic plugins (DESIGN §32.6; 64 hex digits):
 //                                              copied into every BattleSpec as `vs` (replays name the art) — never read
 //   opts.requireCs   boolean (optional)         a room with gameplay plugins (DESIGN §32.6; the lobby sets it, the match
-//                                              then runs in a match host worker, server/match/host/): a b.result whose
+//                                              then runs in a match host, server/match/host/): a b.result whose
 //                                              `cs` is missing or not opts.cs is refused like an implausible one — the
 //                                              server simulates that battle itself
 //   opts.data        frozen game data (server/data.js getData()); may lack keys while data is generated

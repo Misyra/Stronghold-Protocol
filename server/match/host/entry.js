@@ -1,8 +1,9 @@
-// server/match/host/entry.js — a match host (DESIGN §32.6, P1c; the design study's §6.4 方案 B): one worker thread — or,
-// with the `process` transport, one child process (server/match/host/index.js) — per content set with gameplay plugins,
-// running every match of that set. A worker has its own module table, so the process-wide singletons of the server's
-// code — server/data.js getData(), the content modules' gameData(), the kit registries, the meta effect registry — are
-// this content set's: not one line of the sim, the match or the content code changes for it.
+// server/match/host/entry.js — a match host (DESIGN §32.6, P1c; the design study's §6.4 方案 B): one child process — or,
+// with the `worker` transport (SP_MATCH_HOST=worker), one worker thread (server/match/host/index.js) — per content set
+// with gameplay plugins, running every match of that set. Either has its own module table ("worker" below means either),
+// so the process-wide singletons of the server's code — server/data.js getData(), the content modules' gameData(), the
+// kit registries, the meta effect registry — are this content set's: not one line of the sim, the match or the content
+// code changes for it.
 //
 // Boot (a worker's workerData — a child process's first message, { type: 'init', … } — is { cs, hashInput, files, options }):
 //   1. heartbeats start (every options.heartbeatMs, default 1 s: server/match/host/index.js terminates a worker whose

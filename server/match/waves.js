@@ -43,6 +43,8 @@ const DEFAULT_PLACEHOLDERS = Object.freeze({
   NF: { cls: 'normal', fly: true }, EF: { cls: 'elite', fly: true }, SF: { cls: 'special', fly: true },
 });
 const MIN_ACTION_INTERVAL_RATIO = 0.05;
+/** The most units one wave action fields (templateSpawns' count clamp; replacedCount and bountyPlan stay within it). */
+const MAX_ACTION_UNITS = 50;
 /** 联防 timing (client `_CalculateActionPredelayConsiderUid`): owner offset ACTION_INTERVAL_FOR_UID, unit step cap
  * MAX_ACTION_INTERVAL_FOR_UID. */
 const UNITE_OWNER_STEP = 0.5;
@@ -102,8 +104,10 @@ const beFactor = (gd, key) => {
  */
 export function replacedCount(gd, tplKey, n, newKey) {
   const g = gen(gd);
-  const min = Number.isInteger(g.minReplacedEnemyCount) ? g.minReplacedEnemyCount : 1;
-  const max = Number.isInteger(g.maxReplacedEnemyCount) ? g.maxReplacedEnemyCount : 5;
+  // (bounded like a template action's own count — templateSpawns' 1–50: a data plugin's 4e7 would be one action's units,
+  // and an array of them in bountyPlan; the official 1 / 5 are unchanged)
+  const min = Math.max(1, Math.min(MAX_ACTION_UNITS, Number.isInteger(g.minReplacedEnemyCount) ? g.minReplacedEnemyCount : 1));
+  const max = Math.max(1, Math.min(MAX_ACTION_UNITS, Number.isInteger(g.maxReplacedEnemyCount) ? g.maxReplacedEnemyCount : 5));
   const f = Math.fround;
   const origin = f(f(n * attrPower(gd, tplKey)) / beFactor(gd, tplKey));
   const unit = f(attrPower(gd, newKey) / beFactor(gd, newKey));
@@ -508,7 +512,7 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
     const act = host ? acts.find((a) => a.index === host.index) : null;
     // the host's own units: only a server-sent action has any (a leader / random-group / invalid host spawns the
     // bounty list alone over its window — client _InsertSpActionToNormal finds no normal list for it)
-    const own = act && act.valid && act.server !== false ? act.count : 0;
+    const own = act && act.valid && act.server !== false ? Math.min(MAX_ACTION_UNITS, act.count) : 0;
     const sp = [];
     for (const it of items) for (let k = 0; k < it.count; k++) sp.push(it);
     // _InsertSpActionToNormal: insert the bounty units among the action's own units (list.Insert(FloorToInt(...)))

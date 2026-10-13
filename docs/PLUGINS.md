@@ -551,7 +551,7 @@ and the actual browser loader with a patched bond; the match host's worker entry
 A room's host switches the server's `content` plugins on for the room in its 插件 panel, beside the cosmetic ones (§9).
 The room then plays a **content set** of its own: the vanilla data with those plugins applied by §10's builder, named by
 its own `cs`. Every member's page downloads that set and checks it byte by byte, and the room's matches run in a match
-host of that set, a worker thread (or a child process) of its own. Such a match is **unofficial**: marked in the room,
+host of that set, a child process (or, when the server owner asks for it, a worker thread) of its own. Such a match is **unofficial**: marked in the room,
 the briefing, the result and the HUD, and left out of the statistics overview unless a player counts it. A room with
 cosmetic plugins only still plays the vanilla `cs` and counts as the original game (§9). DESIGN §32.6 keeps the
 decisions, the measurements and the open points.
@@ -606,14 +606,15 @@ mode a plugin adds (`content.modes`, of the room's type) becomes `content.modeId
 a difficulty or the set no longer has that mode.
 
 **The match host** (`server/match/host/`). A vanilla room's match runs in the server process exactly as before, and so
-does a room with cosmetic plugins only. A content set's matches run in one worker per `cs`, shared by every room that
-plays that set. The worker receives the set's data bytes and its hash input, checks them against `cs`, installs the data
-(`server/data.js` `setData`) and only then imports the match code, so a plugin's data never reaches another room. The
-lobby talks to it through a proxy whose answers are Promises; each such room handles its messages one at a time on a
-queue of its own, and a vanilla room never queues. A worker that stops answering (no heartbeat for 10 s), crashes or runs
-out of memory ends that set's matches only: each room goes back to its lobby and its members read why. Each worker has a
+does a room with cosmetic plugins only. A content set's matches run in one match host per `cs` — a child process —,
+shared by every room that plays that set. The host receives the set's data bytes and its hash input, checks them
+against `cs`, installs the data (`server/data.js` `setData`) and only then imports the match code, so a plugin's data
+never reaches another room. The lobby talks to it through a proxy whose answers are Promises; each such room handles
+its messages one at a time on a queue of its own, and a vanilla room never queues. A host that stops answering (no heartbeat for 10 s), crashes or runs
+out of memory ends that set's matches only: each room goes back to its lobby and its members read why. Each host has a
 768 MB heap; at most `maxWorkers` (4) run at once, and an idle one stops after 10 minutes [ASSUMED, all three].
-`SP_MATCH_HOST=process` runs a child process instead of a worker thread; read the memory note in `docs/DEPLOY.md` first.
+`SP_MATCH_HOST=worker` runs a worker thread instead of a child process — not on a public server: one large allocation
+in a worker thread aborts the whole server process (measured, DESIGN §32.6; `docs/DEPLOY.md`).
 
 **The battle's authority.** A page simulates its battle on the set it checked, and its `b.result` names that `cs`. A page
 that holds another content set, or none, for a battle of the room's set is never the authority: it sends no result and

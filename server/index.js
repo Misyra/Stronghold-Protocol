@@ -112,8 +112,9 @@ export async function startServer(opts = {}) {
   const policy = createPluginPolicy({ pluginsDir, log });
   const contents = createContentSets({ registry: packs, vanillaData: data, log, maxSets: () => policy.get().maxSets });
   const roomSets = createRoomSets({ registry: packs, visual, contents, policy });
-  // (SP_MATCH_HOST=process: a child process per content set instead of a worker thread — match/host/index.js header)
-  const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'process' ? 'process' : 'worker';
+  // a child process per content set; SP_MATCH_HOST=worker asks for a worker thread instead (match/host/index.js header:
+  // an out-of-memory abort in a worker thread ends the whole server)
+  const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
   const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents });

@@ -2,7 +2,7 @@
 // set of content plugins (gameplay: data patches, new records, modes), closed over their requirements and in load order,
 // merged with the vanilla data into one immutable content set named by its own content hash `cs`
 // (shared/plugins/identity.js) — what a room with gameplay plugins plays, what every member's page downloads and checks
-// and what the room's match host worker runs (server/match/host/).
+// and what the room's match host runs (server/match/host/).
 //
 //   resolve(ids, { settings, replacing })  the set of these content plugins (built by WP-A's C1, kept by cs16 — the same
 //                                          plugins in the same state with the same settings are not built again): refused
@@ -15,7 +15,7 @@
 //   dataOf(cs) / kittedOf(cs) / modesOf(cs) the merged data (the lobby checks a member's loadout and 自选 picks against
 //                                          it), the operators a 自选 slot may field, the modes its plugins add
 //   dataBytes(cs)                          the served bytes of every data file of the set — exactly the bytes the
-//                                          builder hashed — which a match host worker checks against the set's hash
+//                                          builder hashed — which a match host checks against the set's hash
 //                                          input and parses (server/match/host/entry.js)
 // The builder is WP-A's C1 (server/plugins/contentSet.js buildContentSet / contentSetFiles, DESIGN §32.5); this file
 // adapts its set to what P1c reads: `hashInput` (the contentHashOf input a browser and a worker recompute `cs` from — out

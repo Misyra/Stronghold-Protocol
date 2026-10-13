@@ -1,4 +1,4 @@
-// server/match/host/proxy.js — the lobby's side of a match that runs in a match host worker (DESIGN §32.6, P1c; the
+// server/match/host/proxy.js — the lobby's side of a match that runs in a match host (DESIGN §32.6, P1c; the
 // design study's §6.4 方案 B): a MatchProxy is what server/lobby.js holds as `room.match` for a room with gameplay plugins.
 // It implements the MATCH INTERFACE of server/match/Match.js towards the lobby and forwards everything to the worker
 // (server/match/host/entry.js), which runs the real Match on the room's content set:
@@ -54,7 +54,7 @@ export class MatchProxy {
    *   host: the worker host (index.js) it posts through; opts: the lobby's Match options (send / broadcast / onEnd used here)
    */
   constructor({ host, matchId, opts, log = noopLog, requestTimeoutMs = REQUEST_TIMEOUT_MS }) {
-    /** a match in a match host worker: its answers are Promises, its room's messages go through the room's queue (lobby.js) */
+    /** a match in a match host: its answers are Promises, its room's messages go through the room's queue (lobby.js) */
     this.hosted = true;
     this.host = host;
     this.matchId = matchId;

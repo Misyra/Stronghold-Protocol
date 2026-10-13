@@ -1,7 +1,9 @@
 // test/match/plugin-host.test.js — the match hosts of rooms with gameplay plugins (DESIGN §32.6, P1c;
-// server/match/host/): a content set's matches run in a worker thread of their own.
+// server/match/host/): a content set's matches run in a match host of their own — a child process by default, a worker
+// thread with SP_MATCH_HOST=worker (or the `transport: 'worker'` option).
 //
-//   * a whole match of AI seats in a worker (the real Match on a content set — a data plugin's bond value and its own
+//   * the transport: a child process unless a worker thread is asked for by name;
+//   * a whole match of AI seats in its host (the real Match on a content set — a data plugin's bond value and its own
 //     mode — virtual time): it ends with its result, no engine error, the plugin mode played;
 //   * a real-time co-op room over websockets with SP_VERIFY=all (matchOptions.verify): two scripted humans simulate
 //     their battles on the set's data (test/match/simClient.js) — one names the room's content in b.result, the other
@@ -11,10 +13,10 @@
 //     request answered INTERNAL, the room back in its lobby and told (a message id); the next match of the set starts a
 //     new worker; a worker that throws (an uncaught error) ends its match the same way;
 //   * test data with extreme numbers — a data plugin that sets factions.generation.maxLevelCnt to 1e9 (the round-type
-//     schedule is that long): the worker runs out of its memory limit (or stops beating while it tries) and the room is
-//     back in its lobby;
-//   * the concurrency limit: one worker more than maxWorkers is PLUGIN_BUSY while every worker has a match; an idle worker
-//     is stopped to make room.
+//     schedule is that long): its child process runs out of its memory limit (or stops beating while it tries) and the
+//     room is back in its lobby;
+//   * the concurrency limit (worker threads, the opt-in): one worker more than maxWorkers is PLUGIN_BUSY while every
+//     worker has a match; an idle worker is stopped to make room.
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -75,8 +77,20 @@ function matchOpts(cs, seats, out, extra = {}) {
 const frames = () => { const out = { sent: [], broadcast: [], ended: [] }; out.end = new Promise((r) => { out.resolveEnd = r; }); return out; };
 const bots = (n) => Array.from({ length: n }, (_, i) => ({ seat: i, playerId: `ai_${i}`, name: `AI ${i}`, isBot: true, connected: true }));
 
-describe('match hosts (P1c): a content set\'s matches in a worker of its own', () => {
-  test('a whole match of AI seats in a worker: the content set\'s data and mode, its result, no engine error', { timeout: 120_000 }, async () => {
+describe('match hosts (P1c): a content set\'s matches in a match host of its own', () => {
+  test('the transport: a child process by default; a worker thread only with SP_MATCH_HOST=worker', { timeout: 60_000 }, async () => {
+    const was = process.env.SP_MATCH_HOST;
+    try {
+      for (const [env, want] of [[undefined, 'process'], ['worker', 'worker'], ['WORKER ', 'worker'], ['process', 'process'], ['threads', 'process']]) {
+        if (env === undefined) delete process.env.SP_MATCH_HOST; else process.env.SP_MATCH_HOST = env;
+        const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: pluginsDir({}), assetIndex: false });
+        try { assert.equal(srv.hosts.stats().transport, want, `SP_MATCH_HOST=${env}`); } finally { await srv.close(); }
+      }
+    } finally { if (was === undefined) delete process.env.SP_MATCH_HOST; else process.env.SP_MATCH_HOST = was; }
+    assert.equal(createMatchHosts({ contents: { get: () => null, dataBytes: () => null }, log: quiet }).stats().transport, 'process');
+  });
+
+  test('a whole match of AI seats in its match host (a child process): the content set\'s data and mode, its result, no engine error', { timeout: 120_000 }, async () => {
     const dir = pluginsDir({
       marathon: [{ data: ['patch.json'], modes: ['modes/long.json'] }, {
         'patch.json': bondPatch(0.35),
@@ -90,6 +104,7 @@ describe('match hosts (P1c): a content set\'s matches in a worker of its own', (
     contents.hold(r.set.cs);
     const hosts = createMatchHosts({ contents, log: quiet, options: { virtualTime: true, matchOptions: { botRehearsal: 0 } } });
     try {
+      assert.equal(hosts.stats().transport, 'process');
       const out = frames();
       const m = hosts.create(r.set.cs, matchOpts(r.set.cs, bots(4), out, { modeId: 'mode_x_marathon_long' }));
       assert.equal(m.hosted, true);
@@ -110,12 +125,12 @@ describe('match hosts (P1c): a content set\'s matches in a worker of its own', (
     } finally { hosts.close(); }
   });
 
-  test('the concurrency limit: one worker more than maxWorkers is PLUGIN_BUSY while each has a match; an idle one makes room', { timeout: 60_000 }, async () => {
+  test('the concurrency limit (worker threads, the opt-in): one worker more than maxWorkers is PLUGIN_BUSY while each has a match; an idle one makes room', { timeout: 60_000 }, async () => {
     const dir = pluginsDir({ one: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.31) }], two: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.32) }] });
     const contents = setsOf(dir);
     const a = contents.resolve(['one']).set;
     const b = contents.resolve(['two']).set;
-    const hosts = createMatchHosts({ contents, log: quiet, options: { maxWorkers: 1, matchModule: FIXTURE } });
+    const hosts = createMatchHosts({ contents, log: quiet, options: { transport: 'worker', maxWorkers: 1, matchModule: FIXTURE } });
     const human = [{ seat: 0, playerId: 'p_1', name: 'P1', isBot: false, connected: true }];
     try {
       const first = hosts.create(a.cs, matchOpts(a.cs, human, frames()));
@@ -124,7 +139,7 @@ describe('match hosts (P1c): a content set\'s matches in a worker of its own', (
       // a second match of the same set shares its worker
       const twin = hosts.create(a.cs, matchOpts(a.cs, human, frames()));
       twin.start();
-      assert.deepEqual(hosts.stats(), { workers: 1, matches: 2 });
+      assert.deepEqual(hosts.stats(), { workers: 1, matches: 2, transport: 'worker' });
       assert.deepEqual(await twin.handle('p_1', { t: 'g.emote', id: EMOTES[0] }), { ok: true });
       first.dispose();
       twin.dispose();
@@ -132,7 +147,7 @@ describe('match hosts (P1c): a content set\'s matches in a worker of its own', (
       const other = hosts.create(b.cs, matchOpts(b.cs, human, frames()));
       other.start();
       assert.deepEqual(await other.handle('p_1', { t: 'g.emote', id: EMOTES[0] }), { ok: true });
-      assert.deepEqual(hosts.stats(), { workers: 1, matches: 1 });
+      assert.deepEqual(hosts.stats(), { workers: 1, matches: 1, transport: 'worker' });
       other.dispose();
     } finally { hosts.close(); }
   });
@@ -197,9 +212,10 @@ describe('match hosts in rooms (P1c): verification, the watchdog, crashes', () =
     await host.waitFor('room.state', (s) => s.inMatch === false, 5000);
   });
 
-  // With a worker thread, this very test data aborts the whole process on Node 22 (a fatal out-of-memory of the worker's
-  // array growth — server/match/host/index.js header, measured): the room's match runs in a child process here, which
-  // aborts alone.
+  // maxLevelCnt 1e9 has makeTypeSchedule push a billion round slots. In a worker thread that growth ends at
+  // ERR_WORKER_OUT_OF_MEMORY (the worker alone); what aborts a worker thread's WHOLE process is one large allocation —
+  // `new Array(n).fill(…)`, which the bounty plan did for a plugin's minReplacedEnemyCount (now clamped: waves.js,
+  // test/match/waves-plugin-bounds.test.js). The default child process aborts alone in either case.
   test('test data with extreme numbers (maxLevelCnt 1e9): its match host (a child process) runs out of memory or stops beating — the room is back in its lobby', { timeout: 90_000 }, async () => {
     const dir = pluginsDir({ endless: [{ data: ['p.json'] }, { 'p.json': { patch: 1, ops: [{ op: 'set', file: 'factions', path: ['generation', 'maxLevelCnt'], value: 1e9 }] } }] });
     const errors = [];
@@ -219,7 +235,7 @@ describe('match hosts in rooms (P1c): verification, the watchdog, crashes', () =
     assert.equal(srv.hosts.stats().workers, 0);
   });
 
-  test('SP_VERIFY=all in a worker: a result naming the room\'s content is verified and accepted; one naming none is refused and run by the server', { timeout: 150_000 }, async () => {
+  test('SP_VERIFY=all in its match host: a result naming the room\'s content is verified and accepted; one naming none is refused and run by the server', { timeout: 150_000 }, async () => {
     const dir = pluginsDir({ rules: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.36) }] });
     const errors = [];
     const log = { ...quiet, error: (...a) => errors.push(a.map(String).join(' ')) };

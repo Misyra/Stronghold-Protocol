@@ -129,8 +129,8 @@
 //     room.setMode { modeId } (host, before the match): an official mode of the room's type sets the difficulty; a mode
 //     of the room's content set (content.modes, same room type) becomes content.modeId — the match's modeId — until the
 //     host picks a difficulty or the set no longer has it; ▸ like a difficulty change it un-readies the other humans.
-//     The match of such a room runs in that set's match host worker (server/match/host/: hosts.create — the match is a
-//     MatchProxy whose answers are Promises), with opts.cs = the set's cs, opts.requireCs (a b.result naming another
+//     The match of such a room runs in that set's match host (server/match/host/ — a child process, a worker thread with
+//     SP_MATCH_HOST=worker: hosts.create — the match is a MatchProxy whose answers are Promises), with opts.cs = the set's cs, opts.requireCs (a b.result naming another
 //     content is refused) and opts.vs; ▸ every message and event of such a room is handled in order, one at a time, on
 //     the room's own queue (serial): a request waits for the previous one's answer. A vanilla room never queues — its
 //     match is in this process and answers at once, exactly as before. A loadout, 干员持有 list or 自选 roster stored while
@@ -455,7 +455,7 @@ export class Lobby {
   }
 
   /**
-   * Validated client message from an identified session. A room whose match runs in a match host worker handles its
+   * Validated client message from an identified session. A room whose match runs in a match host handles its
    * messages one at a time, in order (serial; header "Gameplay plugins"): the answer is then a Promise (server/net.js
    * replies when it settles).
    * @param {import('./net.js').Session} session
@@ -468,7 +468,7 @@ export class Lobby {
   }
 
   /**
-   * The room of `session` when its messages go through the room's queue: its match runs in a match host worker
+   * The room of `session` when its messages go through the room's queue: its match runs in a match host
    * (MatchProxy `hosted`), or something of the room is still pending. Null for every vanilla room.
    * @param {import('./net.js').Session} session
    */
@@ -556,7 +556,7 @@ export class Lobby {
     // a spectator's seat is kept like a player's (nothing to tell the match: it plays no field)
     if (room.match) {
       if (player) {
-        // a match in a match host worker hears it in order with the room's messages (header "Gameplay plugins") — not at
+        // a match in a match host hears it in order with the room's messages (header "Gameplay plugins") — not at
         // all when the player is back by then (the resync after the reconnect tells it onReconnect)
         if (this.queuedRoom(session)) this.queueEvent(room, () => { if (!session.connected) this.callMatch(room, 'onDisconnect', session.playerId); });
         else this.callMatch(room, 'onDisconnect', session.playerId);
@@ -572,7 +572,7 @@ export class Lobby {
     this.clearResync(session.playerId);
     const code = session.roomCode;
     const room = code ? this.rooms.get(code) : null;
-    // in order with the room's messages when its match runs in a match host worker (header "Gameplay plugins")
+    // in order with the room's messages when its match runs in a match host (header "Gameplay plugins")
     if (room && this.queuedRoom(session)) {
       this.queueEvent(room, () => { if (session.roomCode === code) session.roomCode = null; this.removeMember(room, session.playerId); });
       return;
@@ -1020,7 +1020,7 @@ export class Lobby {
       this.log.error(`[lobby] ${room.code} match.setLoadout threw`, e);
       return fail(ERR.INTERNAL);
     }
-    // a match in a match host worker answers later (header "Gameplay plugins")
+    // a match in a match host answers later (header "Gameplay plugins")
     if (r && typeof r.then === 'function') return Promise.resolve(r).then(matchAnswer, () => fail(ERR.INTERNAL));
     return matchAnswer(r);
   }
@@ -1201,7 +1201,7 @@ export class Lobby {
         broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
       };
-      // a room with gameplay plugins plays in its content set's match host worker; every other room here, as always
+      // a room with gameplay plugins plays in its content set's match host; every other room here, as always
       const match = modded && this.hosts ? this.hosts.create(room.content.cs, opts) : new this.MatchClass(opts);
       ctx.match = match;
       room.match = match;
@@ -1330,7 +1330,7 @@ export class Lobby {
     if (!session.connected || this.registry.byId(session.playerId) !== session) return;
     const room = this.roomOf(session);
     if (!room) return;
-    // in order with the room's messages when its match runs in a match host worker (header "Gameplay plugins")
+    // in order with the room's messages when its match runs in a match host (header "Gameplay plugins")
     if (this.queuedRoom(session)) { this.queueEvent(room, () => this.resyncNow(session)); return; }
     this.resyncNow(session);
   }
@@ -1380,7 +1380,7 @@ export class Lobby {
 
   /**
    * Route a 'g.*' intent or a 'b.*' report (server/net.js) to the running match — on the room's queue when its match runs
-   * in a match host worker (header "Gameplay plugins").
+   * in a match host (header "Gameplay plugins").
    */
   routeGame(session, msg) {
     const room = this.queuedRoom(session);
@@ -1406,7 +1406,7 @@ export class Lobby {
       return fail(ERR.INTERNAL);
     }
     if (res && typeof res.then === 'function') {
-      // a match in a match host worker answers later (header "Gameplay plugins"): the reply waits for it
+      // a match in a match host answers later (header "Gameplay plugins"): the reply waits for it
       if (room.match?.hosted === true) {
         return Promise.resolve(res).then((r) => matchAnswer(r), (e) => {
           this.log.error(`[lobby] ${room.code} match.handle(${msg.t}) rejected`, e);

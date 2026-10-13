@@ -54,6 +54,7 @@ const APP_RANGE_CMP = '(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(
 const APP_RANGE_ALT = `(?:\\*|x|${APP_RANGE_CMP}(?:\\s+${APP_RANGE_CMP})*)`;
 export const APP_RANGE_PATTERN = `^\\s*${APP_RANGE_ALT}(?:\\s*\\|\\|\\s*${APP_RANGE_ALT})*\\s*$`;
 
+/** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const chars = (s) => [...s].length;
 

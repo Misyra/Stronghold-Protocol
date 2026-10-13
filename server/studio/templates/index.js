@@ -5,7 +5,7 @@
 // (public/studio/js/editors/).
 //
 // A template (StudioTemplate):
-//   id        its name on the command line and in the API ('art', 'spine', 'voice', 'audio')
+//   id        its name on the command line and in the API ('art', 'spine', 'voice', 'audio', 'dsl')
 //   class     the plugin class it makes ('cosmetic')
 //   kinds     the target kinds it changes (server/studio/targets.js TARGET_KINDS), in the picker's order
 //   slots(target, manifest)   the places of a target it fills: `{ at, kind, field, dir, base }` — at the path in the asset
@@ -13,8 +13,9 @@
 //             track: shared/plugins/visual.js), field the name the page labels it by, dir + base where its files go
 //             (art/char_102_texas/avatar.png …); manifest: the installation's art manifest (a voice's slots are its lines)
 //   overlay(target)           the `assets` part of a new plugin for that target: its entry, empty (nothing replaced yet)
-// createPlugin() puts a manifest, a README and nothing else (no file of the game, no picture) into a new folder: an empty
-// entry is a valid plugin that changes nothing until the author fills a slot (check and pack pass on it).
+// createPlugin() puts a manifest and a README into a new folder. A cosmetic template adds nothing else (no file of the
+// game, no picture): an empty entry is a valid plugin until the author fills a slot. A template with assemble() also
+// writes its own files (the dsl template: one operator and one prep spec). check and pack pass on either as it is.
 
 import { APP_VERSION, PLUGIN_API } from '../../../shared/constants.js';
 import { isPluginId } from '../../../shared/plugins/manifest.js';
@@ -22,17 +23,20 @@ import art from './art.js';
 import spine from './spine.js';
 import voice from './voice.js';
 import audio from './audio.js';
+import dsl from './dsl.js';
 import { readmeOf } from './readme.js';
 
 /**
  * @typedef {import('../targets.js').Target} Target
  * @typedef {{ at: string[], kind: 'image' | 'spine' | 'audio' | 'audioList' | 'track', field: string, dir: string, base: string }} Slot
  * @typedef {{ id: string, class: string, kinds: string[], slots: (target: Target, manifest: any) => Slot[],
- *   overlay: (target: Target | null) => Record<string, any> }} StudioTemplate
+ *   overlay: (target: Target | null) => Record<string, any>,
+ *   assemble?: (opts: { id: string, manifest: Record<string, any>, name: string, lang: string }) =>
+ *     { manifest: Record<string, any>, files?: Record<string, string> } }} StudioTemplate
  */
 
 /** @type {readonly StudioTemplate[]} every template, in the studio's order */
-export const TEMPLATES = Object.freeze([art, spine, voice, audio]);
+export const TEMPLATES = Object.freeze([art, spine, voice, audio, dsl]);
 
 /** The template of an id, or null. @param {unknown} id */
 export const templateById = (id) => TEMPLATES.find((t) => t.id === id) || null;
@@ -71,6 +75,28 @@ export function createPlugin(template, { id, name = '', target = null, authors =
   /** A text the author gave (a string; anything else is none). @param {unknown} v @param {number} max */
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   const text = str(name, 60) || id;
+  const who = (Array.isArray(authors) ? authors : [authors]).map((a) => str(a, 200)).filter(Boolean).slice(0, 32);
+  const langCode = lang === 'en' ? 'en' : 'zh';
+  if (typeof template.assemble === 'function') {
+    /** @type {Record<string, any>} */
+    const manifest = {
+      $schema: '../../schemas/plugin.schema.json',
+      manifest: 2,
+      name: { [langCode]: text },
+      version: '1.0.0',
+      app: appRangeNow(),
+      api: PLUGIN_API.current,
+      class: template.class,
+    };
+    if (who.length) manifest.authors = who;
+    if (str(license, 100)) manifest.license = str(license, 100);
+    if (str(credits, 500)) manifest.credits = str(credits, 500);
+    const made = template.assemble({ id, manifest, name: text, lang: langCode });
+    return {
+      manifest: made.manifest,
+      files: { 'README.md': readmeOf({ id, name: text, template: template.id, target: null }), ...(made.files || {}) },
+    };
+  }
   /** @type {Record<string, any>} */
   const manifest = {
     $schema: '../../schemas/plugin.schema.json',
@@ -82,7 +108,6 @@ export function createPlugin(template, { id, name = '', target = null, authors =
     class: template.class,
     scope: ['room', 'personal'],
   };
-  const who = (Array.isArray(authors) ? authors : [authors]).map((a) => str(a, 200)).filter(Boolean).slice(0, 32);
   if (who.length) manifest.authors = who;
   if (str(license, 100)) manifest.license = str(license, 100);
   if (str(credits, 500)) manifest.credits = str(credits, 500);

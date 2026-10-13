@@ -15,7 +15,10 @@
 //   3. the files are parsed and installed with server/data.js setData — before anything that reads the data is imported —
 //      and `bounds`, the official-bounds snapshot the main process validated the set against (shared/plugins/officialBounds.js,
 //      DESIGN §32.5), with installOfficialBounds: the engine's plugin caps are the ones the set's pages install (none: the floor);
-//   4. server/match/Match.js is imported (options.matchModule instead: tests only, like the lobby's MatchClass), 'ready'.
+//   4. when the set carries data.dsl, each prep spec is registered on this process's MetaRegistry
+//      (getDefaultRegistry + registerDslMeta) and remembered as a prep-only grant;
+//   5. server/match/Match.js is imported (options.matchModule instead: tests only, like the lobby's MatchClass) and
+//      wrapped so each player receives those grants, 'ready'.
 // Messages (from index.js / proxy.js; queued until booted, then handled in order):
 //   { type: 'create', matchId, opts }       new Match({ ...options.matchOptions, ...opts, data, log, now, send, broadcast,
 //                                           onEnd }) and start() — send / broadcast / onEnd post 'send' / 'broadcast' /
@@ -64,6 +67,8 @@ const queue = [];
 let booted = false;
 let MatchClass = null;
 let VirtualScheduler = null;
+/** Prep EffectRefs this content set grants to every player. Empty when the set has no data.dsl. */
+let dslGrants = [];
 /** @type {Map<string, any>} */
 const matches = new Map();
 const ERR_INTERNAL = 'INTERNAL';
@@ -80,6 +85,48 @@ const onMessage = (m) => {
 if (viaWorker) parentPort.on('message', onMessage); else process.on('message', onMessage);
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Register every prep spec on this process's MetaRegistry and return the keys to grant.
+ * A throw fails the boot: a match must not start with a dropped prep effect.
+ * [ASSUMED] A content-set DSL meta spec is on for every player of that set. Authors cannot register global:
+ * (DESIGN §32.7). The grant itself is applied when the match constructs its players.
+ */
+async function installPrepDsl(data) {
+  const table = data && data.dsl;
+  if (!table || typeof table !== 'object' || Array.isArray(table) || !Object.keys(table).length) return [];
+  const { getDefaultRegistry } = await import('../effectsMeta.js');
+  const { registerDslMeta } = await import('../dslMeta.js');
+  const registry = getDefaultRegistry();
+  const grants = [];
+  const seen = new Set();
+  for (const [pluginId, specs] of Object.entries(table)) {
+    if (!Array.isArray(specs)) {
+      const err = new Error('PLUGIN_DSL_SHAPE data.dsl: entries must be arrays');
+      err.code = 'PLUGIN_DSL_SHAPE';
+      throw err;
+    }
+    for (const spec of specs) {
+      registerDslMeta(registry, spec, { pluginId });
+      const key = spec && spec.meta && spec.meta.key;
+      if (typeof key === 'string' && !seen.has(key)) { seen.add(key); grants.push({ key }); }
+    }
+  }
+  return grants;
+}
+
+/** Push the set's prep grants onto each player. A probe match with no effects array is left alone. */
+function grantPrepDsl(match, grants) {
+  if (!grants.length || !match || !match.players || typeof match.players.values !== 'function') return;
+  for (const ps of match.players.values()) {
+    if (!ps || !Array.isArray(ps.effects)) continue;
+    for (const g of grants) {
+      if (ps.effects.some((e) => e && e.key === g.key)) continue;
+      // battle: false keeps the grant out of the battle's playerEffects (player/round.js).
+      ps.effects.push({ id: `dsl:${g.key}`, key: g.key, battle: false, hidden: true });
+    }
+  }
+}
 
 async function boot() {
   if (!hashInput || typeof hashInput !== 'object' || !hashInput.data || !files) throw new Error('no content set was given');
@@ -100,9 +147,15 @@ async function boot() {
     const {loadScripts} = await import('../../../shared/plugins/scriptLoad.js');
     await loadScripts(scripts,{hashInput,log:log.info});
   }
+  // After setData, before Match: Match reads opts.registry || getDefaultRegistry(), the same singleton.
+  dslGrants = await installPrepDsl(data);
   const mod = await import(typeof options.matchModule === 'string' && options.matchModule ? pathToFileURL(options.matchModule).href : '../Match.js');
-  MatchClass = mod.Match || mod.default;
-  if (typeof MatchClass !== 'function') throw new Error('the match module exports no Match');
+  const Inner = mod.Match || mod.default;
+  if (typeof Inner !== 'function') throw new Error('the match module exports no Match');
+  // [ASSUMED] Grant the prep EffectRefs after super(), once players exist (DESIGN §32.7).
+  MatchClass = class ContentMatch extends Inner {
+    constructor(opts) { super(opts); grantPrepDsl(this, dslGrants); }
+  };
   if (options.virtualTime) ({ VirtualScheduler } = await import('../scheduler.js'));
 }
 

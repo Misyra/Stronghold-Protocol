@@ -84,7 +84,7 @@ test('invalid documents, JSON and DSL are skipped without loading code', t => {
   for (const [manifest, doc, want] of [
     [{ data: ['p.json'] }, {}, 'PLUGIN_CONTENT_FORMAT'],
     [{ data: ['p.json'] }, '{', 'PLUGIN_CONTENT_FILE'],
-    [{ dsl: ['p.json'], permissions: ['dsl'] }, {}, 'PLUGIN_DSL_UNAVAILABLE'],
+    [{ dsl: ['p.json'], permissions: ['dsl'] }, {}, 'PLUGIN_DSL_VERSION'],
   ]) { f.put('data-demo', manifest, { 'p.json': doc }); assert.equal(f.registry.plugin('data-demo'), null); assert.ok(f.registry.report().skipped.some(p => p.problems.some(s => s.includes(want)))); }
   assert.equal(buildContentSet({ registry: f.registry, ids: {} }).problems[0].code, 'PLUGIN_CONTENT_FORMAT');
 });

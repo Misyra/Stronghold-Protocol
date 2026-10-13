@@ -2,7 +2,7 @@
 
 给插件作者。这里只描述数据，不执行任何插件代码。编译器是 `server/sim/content/dsl/compile.js` 的 `compileDsl(spec, { bb, chess, def })`，返回的东西和官方 kit 函数返回的 Kit 相同。备战效果走 `server/match/dslMeta.js`。词表的机器可读副本是 `schemas/dsl.schema.json`。设计记录在 DESIGN §32.7。
 
-原版对局不读这些文件。`kitOf` 何时根据干员数据里的 `dsl` 字段调用编译器，由数据插件那一部分接入；在那之前，测试把编译结果放进 `makeBattle({ kits })`。
+原版对局不读这些文件。数据插件把战斗规格放在干员记录的 `dsl` 上，`kitOf` 用同一个 `compileDsl` 编译；备战规格在清单的 `dsl` 部件里，由 match 宿主登记。见第 9 节。测试仍可以把编译结果放进 `makeBattle({ kits })`。
 
 ## 1. 一份规格长什么样
 
@@ -18,7 +18,7 @@
 - `dsl` 只能是 `1`。
 - `pluginId` 是 1–64 位字母、数字、下划线或连字符。编译必须由宿主给出这个 id（`opts.pluginId`，或内容组合写在 `def.raw.pluginId` 上、且与前者相同的 id）。作者写在规格里的 `pluginId` 不能覆盖宿主。两边不一致、两个可信来源互相不一致，或宿主没给 id，都是 `PLUGIN_DSL_PLUGIN_ID`。没有「省略就按 `dsl` 计预算」：那样所有没写 id 的规格会挤在同一个槽里，截断时互相卸 buff。
 - [ASSUMED] 表达式嵌套和节点数各封顶 64。再深是 `PLUGIN_DSL_LOOP`（超过 64 层）或 `PLUGIN_DSL_VALUE`（超过 64 个节点），校验器返回错误，不会把调用栈打爆。`schemas/dsl.schema.json` 不数这个深度，也不数 `then` 的 4 层。只信 schema 的工作台仍可能放行，`compileDsl` / `validateDsl` 会拒绝。
-- [ASSUMED] `setupUnitKit` 会接住 kit 函数抛出的异常，记一条日志，然后换成通用 kit。本包不改 `kitOf`。若数据插件那一包把 `compileDsl` 直接放进这条路径，坏规格会变成通用技能，对局继续。需要别的 WP 配合：编译失败要单独记下 `PLUGIN_DSL_*`，并让该干员明确失败。
+- [ASSUMED] 内容组合在构建时已经拒绝坏规格。若编译仍抛错（码是 `PLUGIN_DSL_*`，或这条记录带了 `dsl`，包括 `PLUGIN_DATA_BOUND`），这场战斗立刻以 `forced` 结束：日志标签 `content:dsl`，`result.errors > 0`。不会换成空 kit，也不会换成通用 kit，干员不会上场打。玩家看到的是原来的战斗结束框，没有单独的 DSL 文案。这不是房间的 `plugin-start`。其它与 DSL 无关的异常仍走原来的通用 kit。
 - `budget` 可省略。[ASSUMED] 省略时每场战斗、每个插件 8000 次动作。写了就必须是 1 到 10000000 的整数。
 - `skill` 是当前选中的默认技能。`skills` 按技能 id 再给别的技能。持续、技力、初始技力省略时沿用干员数据；弹药省略会被引擎当成 0，所以弹药技能必须写 `ammo`。`kind` 不要省，省了引擎会当成瞬发。
 - 技能回调写在 `on` 里：`start` / `end` / `hit` / `attack` / `tick`。`on.start` 在引擎发出 `skillStart` 之前运行，不要再写一条 `skillStart` 天赋去做同一件事。
@@ -141,8 +141,22 @@
 
 ## 8. 错误码
 
-校验器返回 `{ ok, problems: [{ code, path, zh }] }`，不抛错。编译时才抛，信息里带有这些码。它们先留在 DSL 自己的代码里，之后并进统一的错误目录。
+校验器返回 `{ ok, problems: [{ code, path, zh }] }`，不抛错。编译时才抛，信息里带有这些码。这些码在 `shared/plugins/errors.js` 的目录里（`node tools/plugin.mjs errors`）。
 
 `PLUGIN_DSL_SHAPE`、`PLUGIN_DSL_VERSION`、`PLUGIN_DSL_PLUGIN_ID`、`PLUGIN_DSL_BUDGET`、`PLUGIN_DSL_LOOP`、`PLUGIN_DSL_TRIGGER`、`PLUGIN_DSL_CONDITION`、`PLUGIN_DSL_ACTION`、`PLUGIN_DSL_TARGET`、`PLUGIN_DSL_EVERY`、`PLUGIN_DSL_NUMBER`、`PLUGIN_DSL_DIV0`、`PLUGIN_DSL_VALUE`、`PLUGIN_DSL_SKILL`、`PLUGIN_DSL_META`、`PLUGIN_DSL_TALENT`。
 
 说明文字是给作者看的中文，不是对局里的界面文案。
+
+## 9. 放进数据插件
+
+战斗规格写在紧凑干员的 `kit` 里：`{ "dsl": { "dsl": 1, "skill": { … } } }`。备战规格写在清单部件 `"dsl": ["dsl/income.json", …]`，每个文件一份带 `meta` 的规格。权限是 `"dsl"`（干员记录还要 `"data.add"`）。
+
+构建内容组合时用 `validateDsl` 校验。坏规格整套拒绝，码是 `PLUGIN_DSL_*`。通过后，战斗规格写进棋子记录的 `dsl`（`def.raw.dsl`）。构建器另外写入 `pluginId`，不改作者写在规格里的 `pluginId`。作者写了就必须和宿主插件一致，否则 `PLUGIN_DSL_PLUGIN_ID`。省略规格里的 `pluginId` 是允许的 [ASSUMED]。
+
+备战文件必须带 `meta` [ASSUMED]。它们进内容组合的 `data.dsl[<插件 id>]`，因此进 `cs`。原版组合没有这个表。match 宿主在 `setData` 之后、导入 Match 之前，对每份规格调用 `registerDslMeta`。键必须是 `effect:<本插件 id>:<本地名>`。
+
+[ASSUMED] 一份内容组合里的备战规格对该组合的每个玩家都生效：宿主在 Match 构造完玩家之后，给每人挂一条 `{ key, battle: false }` 的 EffectRef。作者不能登记 `global:`。只登记、不挂这条引用，收入钩子不会跑。
+
+[ASSUMED] 构建已经拒绝坏规格。编译仍抛错时，战斗在 `setupUnitKit` 记 `contentFault`（`content:dsl`）并以 `forced` 结束，不部署、不换成空 kit 或通用 kit。玩家看到原来的战斗结束框。绕过构建器、但哈希仍对得上的备战规格，在宿主 `boot` 失败（`boot-error` / 房间 `plugin-start`，`PLUGIN_DSL_META`）。`plugin check` 只查形状，不查键里的插件 id，也不查数值上限；这两项由 `buildContentSet` 拒绝。直接字面量超过官方上限是 `PLUGIN_DATA_BOUND`（`max(10 × 原版最大, 64)`）。`{mul}` 里的因子不逐个拒绝，结果钳到同一上限。`duration`、动作数值、`rangeExtend` 不在这张表里。`potDown` 不能写 `dsl` / `pluginId`。别的插件不能改这条记录的 DSL。`data.dsl` 是保留表，数据包补丁不能写它。
+
+`plugins/_template/content/` 里有一个 DSL 干员（被动攻击力 +50%）和一份把第 1 回合收入写成 15 的备战文件。`node tools/plugin.mjs new dsl <id>` 生成同样的例子，并且 `check --strict` 能过。把模板目录复制到 `plugins/data-demo/` 时，文件夹名要和清单里的 id 一致。

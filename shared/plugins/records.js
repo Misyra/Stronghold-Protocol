@@ -22,7 +22,7 @@ function text(x = {}) {
 }
 const fail = (code, at, msg) => { throw problem(code, at, msg); };
 
-function behavior(kit, talentMods) {
+function behavior(kit, talentMods, pluginId, validateDsl) {
   const out = {};
   if (kit === 'generic' || kit == null) { /* generic fallback */ }
   else if (!object(kit) || Object.keys(kit).length !== 1) fail('PLUGIN_RECORD_TYPE', 'kit', 'choose one kit source');
@@ -31,8 +31,21 @@ function behavior(kit, talentMods) {
     const errors = validateSkillSpec(kit.spec);
     if (errors.length) throw errors[0];
     out.skillSpec = kit.spec;
-  } else if (kit.dsl != null) fail('PLUGIN_DSL_UNAVAILABLE', 'kit.dsl', 'DSL is supplied by P2');
-  else fail('PLUGIN_RECORD_TYPE', 'kit', 'kit must be generic, ref, or a JSON spec');
+  } else if (kit.dsl != null) {
+    // [ASSUMED] Omitting spec.pluginId is allowed. A written one must be this host: it cannot spend another
+    // plugin's budget. The builder stamps the host id on the record and does not rewrite the author's spec (DESIGN §32.7).
+    // (the DSL validator is the sim's — server/sim/content/dsl/validate.js — handed in by the content-set builder:
+    // shared code does not import the engine)
+    if (typeof validateDsl !== 'function') fail('PLUGIN_RECORD_TYPE', 'kit.dsl', 'a DSL kit needs the content-set builder (no validator given)');
+    const checked = validateDsl(kit.dsl, { bounds: true });
+    if (!checked.ok) {
+      const p = checked.problems[0];
+      fail(p.code, p.path ? `kit.dsl.${p.path}` : 'kit.dsl', p.zh);
+    }
+    if (kit.dsl.pluginId != null && kit.dsl.pluginId !== pluginId) fail('PLUGIN_DSL_PLUGIN_ID', 'kit.dsl.pluginId', 'spec pluginId must match the host plugin');
+    out.dsl = kit.dsl;
+    out.pluginId = pluginId;
+  } else fail('PLUGIN_RECORD_TYPE', 'kit', 'kit must be generic, ref, a JSON spec, or dsl');
   if (talentMods != null) {
     if (out.kitRef) fail('PLUGIN_SKILL_SPEC', 'talentMods', 'talentMods belong with a JSON SkillSpec, not kit.ref');
     if (!matchesSchema(talentMods, MODS_SCHEMA)) fail('PLUGIN_SKILL_SPEC', 'talentMods', 'unknown or ill-typed permanent mod');
@@ -41,14 +54,14 @@ function behavior(kit, talentMods) {
   return out;
 }
 
-function operator(data, r, pluginId) {
+function operator(data, r, pluginId, validateDsl) {
   if (r.op !== 1 || !recordId(r.charId, pluginId, 'char_x')) fail('PLUGIN_RECORD_ID', 'charId', 'namespaced charId required');
   if (!['chess', 'diy', 'both'].includes(r.as) || typeof r.name !== 'string' || !r.name
     || !['PIONEER', 'WARRIOR', 'TANK', 'SNIPER', 'CASTER', 'MEDIC', 'SUPPORT', 'SPECIAL'].includes(r.profession)
     || !['MELEE', 'RANGED'].includes(r.position) || typeof r.subProfessionId !== 'string'
     || !Number.isInteger(r.rarity) || r.rarity < 1 || r.rarity > 6) fail('PLUGIN_RECORD_TYPE', r.charId, 'operator identity, profession, position, rarity and as are required');
   if (!object(r.forms?.normal) || !object(r.forms?.elite)) fail('PLUGIN_RECORD_TYPE', r.charId, 'normal and elite forms required');
-  const b = behavior(r.kit, r.talentMods);
+  const b = behavior(r.kit, r.talentMods, pluginId, validateDsl);
   const art = r.art?.ref ?? r.charId;
   const unit = { charId: r.charId, name: r.name, appellation: r.appellation ?? r.name, rarity: r.rarity,
     profession: r.profession, subProfessionId: r.subProfessionId, subProfessionName: r.subProfessionName ?? '',
@@ -170,15 +183,19 @@ function record(data, r, pluginId) {
   map[r.id] = rec;
 }
 
-/** Pure and atomic; compact operators or generic records, in declared order. */
-export function expandRecords(data, records, { pluginId = null } = {}) {
+/**
+ * Pure and atomic; compact operators or generic records, in declared order. `validateDsl`: the sim's DSL validator
+ * (server/sim/content/dsl/validate.js), needed only by an operator whose kit is `{ dsl }`.
+ * @param {any} data @param {any} records @param {{ pluginId?: string | null, validateDsl?: Function | null }} [opts]
+ */
+export function expandRecords(data, records, { pluginId = null, validateDsl = null } = {}) {
   const problems = jsonProblems(records, 'records');
   if (!Array.isArray(records)) problems.push(problem('PLUGIN_RECORD_TYPE', 'records', 'records must be an array'));
   if (!pluginId || !/^[a-z0-9][a-z0-9-]{1,31}$/.test(pluginId)) problems.push(problem('PLUGIN_RECORD_ID', 'pluginId', 'plugin id required'));
   if (problems.length) return { data, problems };
   const out = clone(data);
   for (const [i, r] of records.entries()) {
-    try { if (!matchesSchema(r, RECORD_SCHEMA)) fail('PLUGIN_RECORD_TYPE', `records[${i}]`, 'object required'); if (r.op === 1) operator(out, r, pluginId); else record(out, r, pluginId); }
+    try { if (!matchesSchema(r, RECORD_SCHEMA)) fail('PLUGIN_RECORD_TYPE', `records[${i}]`, 'object required'); if (r.op === 1) operator(out, r, pluginId, validateDsl); else record(out, r, pluginId); }
     catch (e) { problems.push(e?.code ? e : problem('PLUGIN_RECORD_TYPE', `records[${i}]`, e.message)); }
   }
   return { data: problems.length ? data : out, problems };

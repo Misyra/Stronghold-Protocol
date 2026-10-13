@@ -9,6 +9,7 @@ people read [docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md).
 
 1. **Start from a template** — never from a blank file:
    `node tools/plugin.mjs new <art|spine|voice|audio> <id> --target <official name or id> --name "<name>"`
+   or `node tools/plugin.mjs new dsl <id> --name "<name>"` (a content plugin: one DSL operator and one prep spec).
    (`node tools/plugin.mjs new` lists the templates). The id is the folder name: `^[a-z0-9][a-z0-9-]{1,31}$`.
 2. **Write against the schema.** `plugins/<id>/plugin.json` starts with `"$schema": "../../schemas/plugin.schema.json"`;
    the asset overlay (`"assets"`) is `schemas/overlay.schema.json`. A manifest the schema accepts is one the checker finds

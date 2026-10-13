@@ -172,9 +172,24 @@ export class Battle {
 
     // ---- content
     this.contentMode = opts.content ?? 'full';
-    this._safe(() => installContent(this, { mode: this.contentMode, extra: opts.extraContent }), 'installContent');
-    for (const u of this.allyUnits) if (!u.kit) this._setupUnit(u);
-    if (typeof opts.setup === 'function') this._safe(() => opts.setup(this), 'opts.setup');
+    try {
+      installContent(this, { mode: this.contentMode, extra: opts.extraContent });
+    } catch (e) {
+      if (!this.contentFault) this._handlerError('installContent', null, e);
+    }
+    if (this.contentFault) {
+      // [ASSUMED] A DSL kit that still throws after the set was built means the content set is corrupt.
+      // Do not call forceEnd: that would start() and deploy. The player sees the ordinary forced result;
+      // battle.errors carries content:dsl and the code (DESIGN §32.7). Host and page share this constructor.
+      this.finished = true;
+      this.started = true;
+      this.reason = 'forced';
+      try { this._result = this._buildResult(); }
+      catch { this._result = { time: this.time, reason: 'forced', perPlayer: {}, killed: this.killed, total: this.total, resolved: this.resolved, errors: this.errorCount }; }
+    } else {
+      for (const u of this.allyUnits) if (!u.kit) this._setupUnit(u);
+      if (typeof opts.setup === 'function') this._safe(() => opts.setup(this), 'opts.setup');
+    }
   }
 
   /**

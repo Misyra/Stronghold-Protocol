@@ -1392,10 +1392,6 @@
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
   {
-    "name": "error.PLUGIN_DSL_UNAVAILABLE",
-    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
-  },
-  {
     "name": "error.PLUGIN_UI_SLOTS",
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },

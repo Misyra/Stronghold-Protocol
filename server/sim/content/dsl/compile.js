@@ -11,6 +11,7 @@
 
 import { num } from '../kits/shared/tier1.js';
 import { validateDsl, formatProblems } from './validate.js';
+import { clampDsl } from './bounds.js';
 import {
   resolveValue, resolveMods, skillCallback, installTrigger, DEFAULT_BUDGET, PLUGIN_ID_RE,
 } from './vocab.js';
@@ -55,6 +56,11 @@ function rangeGridOf(v, env) {
   return null;
 }
 
+function baked(path, value, env) {
+  const n = typeof value === 'number' ? value : resolveValue(value, env, null);
+  return clampDsl(path, n);
+}
+
 function compileTargeting(tg, env) {
   if (!tg || typeof tg !== 'object') return null;
   const out = {};
@@ -63,7 +69,7 @@ function compileTargeting(tg, env) {
     if (g) out.rangeGrid = g;
   }
   if (typeof tg.priority === 'string') out.priority = tg.priority;
-  if (tg.maxTargets != null) out.maxTargets = resolveValue(tg.maxTargets, env, null);
+  if (tg.maxTargets != null) out.maxTargets = baked('skill.targeting.maxTargets', tg.maxTargets, env);
   if (tg.rangeExtend != null) out.rangeExtend = resolveValue(tg.rangeExtend, env, null);
   if (tg.noRangeExtend) out.noRangeExtend = true;
   if (tg.showOwnRange) out.showOwnRange = true;
@@ -75,7 +81,7 @@ function compileAttack(atk, env) {
   if (!atk || typeof atk !== 'object') return null;
   const out = {};
   for (const k of ['atkScale', 'splashRadius', 'maxTargets']) {
-    if (atk[k] != null) out[k] = typeof atk[k] === 'number' ? atk[k] : resolveValue(atk[k], env, null);
+    if (atk[k] != null) out[k] = baked(`skill.attack.${k}`, atk[k], env);
   }
   if (typeof atk.dmgType === 'string') out.dmgType = atk.dmgType;
   if (atk.onHitStatus && typeof atk.onHitStatus === 'object') {
@@ -92,9 +98,10 @@ function compileSkill(sk, env) {
   if (sk.kind) spec.kind = sk.kind;
   if (typeof sk.id === 'string') spec.id = sk.id;
   for (const k of ['duration', 'ammo', 'spCost', 'initSp']) {
-    if (sk[k] != null) spec[k] = typeof sk[k] === 'number' ? sk[k] : resolveValue(sk[k], env, null);
+    if (sk[k] != null) spec[k] = baked(`skill.${k}`, sk[k], env);
   }
-  if (sk.charges != null) spec.charges = typeof sk.charges === 'number' ? sk.charges : resolveValue(sk.charges, env, null);
+  if (sk.charges != null) spec.charges = baked('skill.charges', sk.charges, env);
+  if (sk.maxCharges != null) spec.maxCharges = baked('skill.maxCharges', sk.maxCharges, env);
   if (typeof sk.spType === 'string') spec.spType = sk.spType;
   if (sk.trigger != null) spec.trigger = sk.trigger;
   if (sk.heal != null) spec.heal = !!sk.heal;
@@ -137,7 +144,7 @@ function compileTrait(tr, env) {
  * @returns {object} Kit
  */
 export function compileDsl(spec, opts = {}) {
-  const checked = validateDsl(spec);
+  const checked = validateDsl(spec, { bounds: true });
   if (!checked.ok) {
     const err = new Error(formatProblems(checked.problems));
     err.code = checked.problems[0] && checked.problems[0].code;

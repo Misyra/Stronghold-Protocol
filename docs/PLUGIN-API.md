@@ -377,7 +377,6 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `error.PLUGIN_SKILL_SPEC` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_EFFECT_REF` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_I18N` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
-| `error.PLUGIN_DSL_UNAVAILABLE` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_UI_SLOTS` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_UI_NO_SLOT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_SLOT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |

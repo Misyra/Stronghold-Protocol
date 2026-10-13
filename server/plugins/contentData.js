@@ -5,6 +5,7 @@ import { nodeSha256 } from './identity.js';
 import { jsonProblems, object, problem } from '../../shared/plugins/dataUtils.js';
 import { isPackPath, PLUGIN_LIMITS } from '../../shared/plugins/manifest.js';
 import { deepFreeze } from '../data.js';
+import { validateDsl } from '../sim/content/dsl/validate.js';
 
 export function readContentData(dir, manifest) {
   const documents = {}, files = {}, problems = [];
@@ -28,7 +29,16 @@ export function readContentData(dir, manifest) {
     read('plugin.json');
     for (const part of ['data', 'operators', 'enemies', 'modes', 'stages', 'dsl']) for (const rel of manifest.parts[part]?.files ?? []) {
       const doc = read(rel);
-      if (part === 'dsl') throw problem('PLUGIN_DSL_UNAVAILABLE', rel, 'DSL is supplied by P2');
+      if (part === 'dsl') {
+        const checked = validateDsl(doc);
+        if (!checked.ok) {
+          const p = checked.problems[0];
+          throw problem(p.code, p.path ? `${rel}.${p.path}` : rel, p.zh);
+        }
+        // [ASSUMED] A manifest dsl file is a prep spec and must carry meta. A battle kit lives on the operator record (DESIGN §32.7).
+        if (doc.meta == null) throw problem('PLUGIN_DSL_META', rel, 'prep DSL file needs a meta block');
+        if (doc.pluginId != null && doc.pluginId !== manifest.id) throw problem('PLUGIN_DSL_PLUGIN_ID', rel, 'spec pluginId must match the host plugin');
+      }
       if (part === 'data' && !(object(doc) && (doc.patch === 1 && Array.isArray(doc.ops) || doc.records === 1 && Array.isArray(doc.entries)))) throw problem('PLUGIN_CONTENT_FORMAT', rel, 'expected patch:1/ops or records:1/entries');
     }
     for (const rel of Object.values(manifest.parts.i18n?.langs ?? {})) read(rel);

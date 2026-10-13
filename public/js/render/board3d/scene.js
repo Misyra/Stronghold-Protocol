@@ -29,6 +29,7 @@ import { surfaceUV } from './atlas.js';
 import {
   focusUniforms, makeTexture, boardMaterial, glassMaterial, decalMaterial, pipeMaterial, unlitMaterial, gateMaterial, glowMaterial,
   waterMaterial, mireMaterial, infectionMaterial, smogMaterial, dashTexture, environmentMap, sceneMaterial, sceneWaterMaterial,
+  sceneEnvTexture,
 } from './materials.js';
 import { syncThreeCamera } from '../projection.js';
 import { mergeSceneChunks, sceneMaterialKey } from './load.js';
@@ -336,10 +337,11 @@ export class BoardScene {
     if (res) return res;
     const T = this.THREE;
     const aniso = Math.min(8, this.renderer.capabilities?.getMaxAnisotropy?.() || 1);
-    const tex = {}, lm = [];
+    const tex = {}, data = {}, lm = [];
     for (const [name, img] of Object.entries(pack.images?.tex || {})) tex[name] = makeTexture(T, img, { aniso, repeat: true });
+    for (const [name, img] of Object.entries(pack.images?.data || {})) data[name] = makeTexture(T, img, { srgb: false, aniso, repeat: true });
     for (const img of pack.images?.lm || []) lm.push(img ? makeTexture(T, img, { srgb: false }) : null);
-    res = { tex, lm, mats: new Map() };
+    res = { tex, data, lm, env: sceneEnvTexture(T, pack.images?.env, pack.doc?.env), mats: new Map() };
     this.sceneRes.set(pack.key, res);
     return res;
   }
@@ -348,7 +350,7 @@ export class BoardScene {
     const res = this.sceneRes.get(pack.key);
     if (!res) return;
     for (const m of res.mats.values()) m.dispose();
-    for (const t of [...Object.values(res.tex), ...res.lm]) t?.dispose?.();
+    for (const t of [...Object.values(res.tex), ...Object.values(res.data), ...res.lm, res.env]) t?.dispose?.();
     this.sceneRes.delete(pack.key);
   }
 
@@ -381,7 +383,9 @@ export class BoardScene {
           ? sceneWaterMaterial(T, this.tex, this.focus, info)
           : sceneMaterial(T, {
             map: res.tex[info?.map] || null, lightMap: c.lightmap >= 0 ? (res.lm[c.lightmap] || null) : null, info,
-            light: pack.doc?.light || null, lightRange: pack.doc?.lightRange,
+            light: pack.doc?.light || null, lightRange: pack.doc?.lightRange, lightEncoding: pack.doc?.lightEncoding,
+            normalMap: res.data[info?.normalMap] || null, glossMap: res.data[info?.glossMap] || null,
+            env: res.env, envRange: pack.doc?.env?.range,
           }, this.focus);
         res.mats.set(mk, mat);
       }

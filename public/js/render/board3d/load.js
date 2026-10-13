@@ -288,8 +288,9 @@ export async function sceneListed(assets, stageId) {
 }
 
 /**
- * Load a stage's official scene (scene.json + scene.bin + lightmap pages + albedo textures). A missing texture or
- * lightmap page only drops that map; a missing or malformed scene gives null (→ the procedural board).
+ * Load a stage's official scene (scene.json + scene.bin + lightmap pages + the materials' albedo (`images.tex`) and
+ * normal / metallic-gloss (`images.data`) textures + the reflection atlas `images.env`). A missing texture, lightmap
+ * page or atlas only drops that map; a missing or malformed scene gives null (→ the procedural board).
  * @returns {Promise<object|null>}
  */
 export function loadScenePack(assets, stageId) {
@@ -309,15 +310,19 @@ export function loadScenePack(assets, stageId) {
       return i && (i.width || i.naturalWidth) > 0 ? i : null;
     };
     const mats = isObj(doc.materials) ? doc.materials : {};
-    const names = [...new Set(Object.values(mats).map((m) => (isObj(m) && typeof m.map === 'string' ? m.map : null)).filter(Boolean))];
+    const namesOf = (...keys) => [...new Set(Object.values(mats).flatMap((m) => keys.map((k) => (isObj(m) && typeof m[k] === 'string' ? m[k] : null))).filter(Boolean))];
+    const names = namesOf('map'), dataNames = namesOf('normalMap', 'glossMap');
     const pages = Math.max(0, Math.min(16, doc.lightmaps | 0));
-    const [texList, lm] = await Promise.all([
+    const [texList, dataList, lm, env] = await Promise.all([
       Promise.all(names.map((n) => img(url(SCENE_TEX_GROUP, n)))),
+      Promise.all(dataNames.map((n) => img(url(SCENE_TEX_GROUP, n)))),
       Promise.all(Array.from({ length: pages }, (_, i) => img(url(group, `lm${i}`)))),
+      isObj(doc.env) ? img(url(group, 'env')) : null,
     ]);
-    const tex = {};
+    const tex = {}, data = {};
     names.forEach((n, i) => { if (texList[i]) tex[n] = texList[i]; });
-    return { key: `${url(group, 'scene')}#${doc.binBytes | 0}`, stage: stageId, doc, chunks, groups: sceneGroupRects(chunks), images: { tex, lm } };
+    dataNames.forEach((n, i) => { if (dataList[i]) data[n] = dataList[i]; });
+    return { key: `${url(group, 'scene')}#${doc.binBytes | 0}`, stage: stageId, doc, chunks, groups: sceneGroupRects(chunks), images: { tex, data, lm, env } };
   })().catch((err) => { console.warn('[board3d] scene load failed', err); return null; }).then((pack) => {
     if (!pack && sceneCache.get(stageId) === pending) sceneCache.delete(stageId);
     return pack;

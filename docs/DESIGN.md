@@ -38,3 +38,4 @@ normative lines it rewrote).
 | §29 | [history/0.2.4.md](history/0.2.4.md) | 0.2.4 — after the 0.2.3 release (2026-10-11) |
 | §30 | [history/0.2.5.md](history/0.2.5.md) | 0.2.5 — after the 0.2.4 release (2026-10-12) |
 | §31 | [history/0.2.6.md](history/0.2.6.md) | 0.2.6 — after the 0.2.5 release (2026-10-13) |
+| §32 | [history/0.2.7.md](history/0.2.7.md) | 0.2.7 — after the 0.2.6 release (in development) |

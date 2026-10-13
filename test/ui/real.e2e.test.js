@@ -49,7 +49,7 @@ class Client {
     await page.setViewport({ width: this.w, height: this.h });
     page.on('console', (m) => { if (m.type() === 'error') this.problems.push(`console: ${m.text()}`); });
     page.on('pageerror', (e) => this.problems.push(`pageerror: ${e.message}`));
-    page.on('requestfailed', (r) => this.problems.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`));
+    page.on('requestfailed', (r) => { if (!/fonts\.(googleapis|gstatic)/.test(r.url())) this.problems.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`); });
     page.on('response', (r) => {
       if (r.status() >= 400) this.problems.push(`http ${r.status()}: ${r.url()}`);
       // the served manifest's content-hashed URLs (docs/ASSETS.md): Spine files, audio through /media/~<hash>/, the rest

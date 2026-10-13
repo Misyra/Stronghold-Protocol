@@ -172,7 +172,7 @@ export function registerMeta() {}
 // global dispatchers
 
 function onSpawn(b, e) {
-  const kit = KITS[e.defId];
+  const kit = KITS[e.def.raw?.effectRef ?? e.defId];
   if (typeof kit !== 'function') return;
   const ab = abOf(b, e);
   const list = safe(b, e, () => kit(ab, e, b)) || [];

@@ -682,8 +682,7 @@ are served from memory with `Cache-Control: immutable` while a room holds the se
 [ASSUMED]; the vanilla `/cs/<vanilla cs16>/index.json` is unchanged. `/healthz` counts the content sets in use
 (`content.sets`).
 
-**Not yet** (DESIGN §32.6): a form for plugin settings in the panel (the protocol takes them), a notice when a content
-plugin changes on disk while a room holds its set (the cosmetic notice exists), `allowIncompatible` reaching past the
+**Not yet** (DESIGN §32.6): `allowIncompatible` reaching past the
 builder (it refuses a plugin it marks incompatible), and the DSL (§12) in data plugins (the builder still refuses
 `dsl`).
 
@@ -858,7 +857,7 @@ message. The host may toggle it during a match because it changes no match.
 
 ## 15. The studio and the tools
 
-Someone who does not write code makes, previews and packs a cosmetic plugin in the browser; someone who does gets a
+Someone who does not write code makes, previews and packs cosmetic and gameplay plugins in the browser; someone who does gets a
 schema, findings in plain words and hot reload. The design is DESIGN §32.9; the beginner's guide (Chinese) is
 [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), the guide for AI agents `plugins/AGENTS.md`.
 
@@ -931,6 +930,60 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
   same bytes: a zip can be pinned by its SHA-256). The packer does not screen for official game files (the owner's
   decision of 2026-10-13): what a plugin carries is its author's responsibility — and §1 still asks never to put them in.
 
+**Second-part templates (WP-J).** `new <template> <id>` and the browser share one server module per template;
+`--options <json-file>` supplies the same options as the wizard. `numbers` exposes existing numeric stats/blackboards
+by official target name (operators, enemies, bonds and items), with original values and the C6 10×/64 cap on blackboards.
+Default skill copies are patched together. `operator` generates a compact normal/elite pair with namespaced IDs;
+name, profession/branch, rarity/tier and both forms' stats are editable. Its kit source is an official kit picked by
+name (the server resolves the actual registry key), JSON SkillSpec or DSL. `art.ref` borrows installed art.
+`dsl` offers the five PLUGIN-DSL §7 starting points and structured skill/talent/condition/action/target/value controls;
+`meta` offers prep triggers and funds/layers/items. The page calls the real `validateDsl` and explains its codes.
+`mode` inherits an official mode with economy, DP and timers/round preparation overrides. `ui` wraps `_template/ui`
+with title/slot fields and the game's **same pluginFrame host**, opaque iframe origin, fake data and volatile storage.
+`script` copies `_template/script`, rewrites namespaces, and includes the harness test; the page displays source read-only
+and directs the author to an editor. The generated folder carries no official art.
+
+Wizard state lives in `.studio.json` under `authoring`, independent of cosmetic sections. `GET …/plugins/<id>` adds
+`authoring` (including a revision hash), a UI catalogue `frame` or a script's text `source` when applicable.
+`POST …/plugins/<id>/authoring` saves `{template, target, options, revision}`; external changes invalidate the revision
+(`PLUGIN_STUDIO_CHANGED`). Only generated templates may write `.html/.js/.css`; generic file PUT and studio file GET
+still refuse executable sources. A UI preview loads the registry's sandboxed `/p/` route.
+`GET /studio/api/authoring?template=&target=` returns official numeric fields/reference records/modes;
+`GET …/dsl-example?name=&id=` returns a starting point; `POST …/validate-dsl {spec}` returns the real validator's result.
+The battle compiler/data integration belongs to WP-A2: this base still rejects DSL records/parts at composition; the
+wizard preserves those errors instead of quietly replacing the kit. Strict template/composition coverage resumes after
+that integration. DSL structural validation alone is not permission to execute.
+
+**Try a battle.** `GET /studio/api/trial-options` lists official operators/waves and, in source checkouts, golden battle
+scenarios (not whole-match cases). `POST /studio/api/trial` takes `{id, scenario, operator?, opponent?, wave?, seconds?,
+seed?, settings?, draft?}`. `draft` is the current wizard `{template,target,options}`; an isolated temporary copy leaves
+the installed folder untouched. All writes and runs require the existing LAN/Host/origin checks and studio key.
+The response is `{ok:true, vanilla, plugin, comparison}` or `{ok:false, issues}`. A disposable child validates the folder,
+builds its dependency-complete content set with C1, then simulates the original and plugin with the same scene/seed.
+Scripts require the parent's actual enabled/pinned snapshot and a still-valid lock; neither the HTTP process nor the
+studio page executes author code. A bad plugin produces C6 findings with no replay. The parent kills stalled/crashed
+children; close also kills active jobs. [ASSUMED] 2 comparisons concurrently, 20 seconds including checks/composition,
+512 MB child heap, 16 MB IPC response and 6 MB recorded frames per side; ordinary preset durations 1–120 game seconds,
+golden exercises capped at 240 seconds. API request payloads are at most 256 KB.
+
+Presets are a stationary non-attacking dummy, a selected enemy wave, and a stationary two-operator attack exercise.
+[ASSUMED] The latter uses engine `forceAttack` and ally targets, ends at the first knock-out and does not change official
+allegiances; enemy-only skill selectors therefore do not hit that opponent. It is labelled accordingly, not a PvP mode.
+New operators compare against their official reference (fallback Texas if no official reference resolves), named in the
+comparison table. Replays carry BattleSpec, field metadata, actual snapshots/events at the game's 3-tick cadence,
+results, event counts and per-unit damage/healing/taken stats. The studio feeds these to `render/app.js`, with pause,
+replay and speed controls. It does not simulate in the page. The bench is a single battle; prep/mode economy still needs
+an actual room or author harness test. See the three step-by-step sections in PLUGIN-GUIDE.md.
+
+**Room panel completion.** Declared settings now show boolean, integer, number and typed-enum controls with min/max/step.
+The host applies the form via the existing `room.setPlugins`; values are normalized before composition and the resolved
+`plugins[].settings` is broadcast only when nonempty. Other players and running matches are read-only. Switches and
+reapply preserve current settings. Changing an automatic dependency's settings makes it an explicit choice.
+Content sets listen to registry rescans and notify `onStale(cs, ids)` once while a changed set is held; the lobby tells
+only its host (after the match if necessary). Visual/content notices for the same room composition are coalesced.
+Gameplay sets never automatically change; reapply causes the existing content-ready and consent flow. The studio watch
+includes content, script and UI hashes, including equal-size file edits. Empty selections keep the vanilla wire shape.
+
 **Hot reload** (`server/studio/watch.js`): from the studio's first request on, `plugins/` is watched (fs.watch over the
 tree, the events of 300 ms gathered into one [ASSUMED]); then the registry reads the folders again
 (`registry.rescan()`), the visual sets look at the sets rooms hold, and a room whose set changed — every studio write
@@ -959,6 +1012,8 @@ GET without the body):
 | `POST …/slot` · `…/ref` · `…/clear` · `…/fix` | files for a slot `{ at, files: [{ name, data (base64), role? }] }`; a reference `{ at, ref }`; a slot emptied `{ at }`; a one-click fix `{ code, at?, file?, params? }` |
 | `POST …/pack` · `GET …/zip` · `GET …/preview` | the lock and the check; the zip (a download, packs nothing); the temporary composition |
 | `GET …/f/<hash8>/<path>`, `…/files/<path>` · `PUT` / `DELETE …/files/<path>` | a file of the folder (a draft's too) — of the types the studio writes only, sandboxed (`Content-Security-Policy: default-src 'none'; sandbox`); write or remove one |
+| `GET /studio/api/trial-options` · `POST /studio/api/trial` | scenarios; a checked child-process battle comparison (key required) |
+| `POST …/authoring` · `POST /studio/api/validate-dsl` | wizard save with revision; structural DSL validation |
 | `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
@@ -990,6 +1045,12 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 <!-- plugin-errors:start (generated by node tools/plugin.mjs errors --write) -->
 | Symptom | Code | Cause | Fix |
 |---|---|---|---|
+| The studio refuses the action and says why | `PLUGIN_STUDIO_CHANGED` | The plugin changed in another editor | Reload the plugin before saving your changes. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_BUSY` | The trial bench is busy | Wait for a running trial to finish. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_TIMEOUT` | The trial exceeded its time limit | Shorten the scenario, reduce units or check the plugin effects. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_FAILED` | The trial process could not finish | Check the plugin again; consult the server log if it still fails. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_LIMIT` | The trial replay exceeded its size limit | Shorten the trial or reduce units and effects. |
+| The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_SCENARIO` | This trial scenario cannot run | Select valid operators, a wave and 1–120 seconds; use the sandbox preview for UI plugins. |
 | The room will not switch it on; the panel says why | `PLUGIN_CONSENT` | A player has not consented to trusted plugins | Every seated player must personally accept the risk for this content set. |
 | The room will not switch it on; the panel says why | `PLUGIN_TRUST_PUBLIC` | Trusted plugins are refused on a public listening address | Bind to a local address, or explicitly opt into trusted-force after reviewing the risk. |
 | The room will not switch it on; the panel says why | `PLUGIN_TRUST_PIN` | The lock or plugin files do not match the owner’s pinned hash | Review and pack again; put the lock file SHA-256 in plugins/config.json trusted. |

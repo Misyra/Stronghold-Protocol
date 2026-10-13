@@ -54,7 +54,7 @@ export function pluginStates(registry) {
   const out = new Map();
   for (const p of registry.plugins()) {
     if (p.source !== 'plugins') continue;
-    out.set(p.id, `ok|${p.manifest.version}|${p.status}|${p.visual?.hash ?? ''}|${p.bytes ?? ''}|${p.count ?? ''}`);
+    out.set(p.id, `ok|${p.manifest.version}|${p.status}|${p.visual?.hash ?? ''}|${p.ui?.vs ?? ''}|${p.content?.hash ?? ''}|${p.script?.lockHash ?? ''}|${p.bytes ?? ''}|${p.count ?? ''}`);
   }
   for (const k of registry.report().skipped) {
     const m = /^plugins\/([^/]+)\/$/.exec(k.where);

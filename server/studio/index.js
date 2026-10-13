@@ -55,6 +55,10 @@ import { createPreviews } from './preview.js';
 import { atlasInfo } from '../../tools/assets/atlas.mjs';
 import { STUDIO_URL, STUDIO_API, isStudioPath } from './paths.js';
 import { loadStudioKey, sameKey } from './key.js';
+import { createTrialBench, TRIAL_LIMITS } from './trial.js';
+import { trialOptions } from './trialOptions.js';
+import { readStudioData } from './gameData.js';
+import { createAuthoring } from './authoring.js';
 import { createPluginWatcher } from './watch.js';
 
 /** The page's URL prefix and its API's. */
@@ -187,6 +191,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   };
   const files = createPluginFiles(pluginsDir);
   const targets = createTargetIndex(dataDir);
+  const authoring = createAuthoring({ files, dataDir });
+  const trials = createTrialBench({ registry, files });
   const previews = createPreviews({ vanilla: () => registry.vanillaAssets() });
   const compress = new CompressCache();
   /** @type {Map<string, number>} playerId → when the page last named the session */
@@ -344,10 +350,12 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       try { if (!readPluginLock(JSON.parse(fs.readFileSync(files.stat(id, LOCK_FILE).abs, 'utf8'))).lock) lock.fresh = false; } catch { lock.fresh = false; }
     }
     return {
-      id, manifest, text, overlay, class: draft?.class || manifest?.class || null,
+      id, manifest, text, overlay, authoring: authoring.read(id),
+      ...(draft?.class === 'script' ? { source: authoring.source(id) } : {}),
+      ...(draft?.class === 'ui' ? { frame: registry.pluginIndex().plugins.find(p => p.id === id) || null } : {}), class: draft?.class || manifest?.class || null,
       names: draft?.names || {}, version: draft?.version || null, files: list, sections: sectionsOf(id, overlay),
       check: { ok: !check.problems.length, problems: check.problems.length, warnings: check.warnings.length, issues: check.issues },
-      loaded: !!(entry && entry.source === 'plugins' && entry.status === 'loaded'), vs: entry?.visual?.vs ?? null, lock,
+      loaded: !!(entry && entry.source === 'plugins' && entry.status === 'loaded'), vs: entry?.visual?.vs ?? entry?.ui?.vs ?? null, lock,
       bytes: list.reduce((n, f) => n + f.bytes, 0),
     };
   }
@@ -560,9 +568,21 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       return json(200, {
         // key: whether this request carried the studio's key ('ok'), another value ('wrong') or none ('missing')
         key: keyed(req) ? 'ok' : req.headers['x-sp-studio'] ? 'wrong' : 'missing',
-        app: APP_VERSION, api: PLUGIN_API, mode, watching: watcher.active, limits: { ...STUDIO_LIMITS, pluginBytes: PLUGIN_LIMITS.pluginBytes },
+        app: APP_VERSION, api: PLUGIN_API, mode, watching: watcher.active, limits: { ...STUDIO_LIMITS, pluginBytes: PLUGIN_LIMITS.pluginBytes, trial: TRIAL_LIMITS },
         templates: TEMPLATES.map((t) => ({ id: t.id, class: t.class, kinds: t.kinds })), kinds: Object.keys(TARGET_KINDS),
       });
+    }
+    if (route === 'trial-options' && read) return json(200, trialOptions(dataDir));
+    if (route === 'trial' && method === 'POST') {
+      if (!mayChange(req)) return false;
+      return json(200, await trials.run(await readJson(req, 256 * 1024)));
+    }
+    if (route === 'authoring' && read) return json(200, authoring.details(q.get('template'), q.get('target')));
+    if (route === 'dsl-example' && read) return json(200, authoring.example(q.get('name'), q.get('id') || 'draft-plugin'));
+    if (route === 'validate-dsl' && method === 'POST') {
+      if (!mayChange(req)) return false;
+      const body = await readJson(req, 256 * 1024);
+      return json(200, authoring.validate(body.spec));
     }
     if (route === 'targets' && read) {
       const kinds = (q.get('kinds') || '').split(',').filter((k) => Object.hasOwn(TARGET_KINDS, k));
@@ -620,11 +640,12 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       const t = body.target ? targetOf(targets().targets, text(body.target, 200)) : null;
       if (body.target && !t) throw new StudioError('PLUGIN_STUDIO_TARGET', 404, { target: text(body.target, 80) });
       if (t && !tpl.kinds.includes(t.kind)) throw new StudioError('PLUGIN_STUDIO_TARGET', 400, { target: targetSpec(t) });
-      const made = createPlugin(tpl, { id, name: body.name, target: t, authors: body.authors, license: body.license, credits: body.credits, lang: body.lang === 'en' ? 'en' : 'zh' });
+      const made = createPlugin(tpl, { id, name: body.name, target: t, authors: body.authors, license: body.license, credits: body.credits, options: body.options || {}, data: tpl.build ? readStudioData(dataDir) : null, lang: body.lang === 'en' ? 'en' : 'zh' });
       files.root(id, { create: true });
       files.write(id, PLUGIN_MANIFEST, Buffer.from(manifestText(made.manifest)));
-      for (const [rel, text] of Object.entries(made.files)) files.write(id, rel, Buffer.from(text));
-      if (t) saveSections(id, [{ template: tpl.id, target: targetSpec(t) }]);
+      for (const [rel, text] of Object.entries(made.files)) files.write(id, rel, Buffer.from(text), { generated: true });
+      if (made.authoring) files.writeSidecar(id, SIDECAR, Buffer.from(manifestText({ v: 1, authoring: made.authoring })));
+      else if (t) saveSections(id, [{ template: tpl.id, target: targetSpec(t) }]);
       log.info?.(`[studio] new plugin ${id} (${tpl.id}${t ? `, ${targetSpec(t)}` : ''})`);
       return json(201, changed(id));
     }
@@ -672,6 +693,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (method !== 'POST') return false;
     if (sub === 'slot') return json(200, putSlot(id, await readJson(req, STUDIO_LIMITS.bodyBytes)));
     const body = await readJson(req, 256 * 1024);
+    if (sub === 'authoring') { authoring.save(id, body); return json(200, changed(id)); }
     if (sub === 'meta') { const p = openPlugin(files, id); editMeta(p, body.fields, typeof body.lang === 'string' ? body.lang : 'zh'); p.save(); return json(200, changed(id)); }
     if (sub === 'sections') { files.root(id); saveSections(id, body.sections); return json(200, stateOf(id)); }
     if (sub === 'ref') {
@@ -773,6 +795,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     close() {
       active = false;
       watcher.stop();
+      trials.close();
       clearInterval(heartbeat);
       for (const res of streams) { try { res.end(); } catch { /* gone */ } }
       streams.clear();

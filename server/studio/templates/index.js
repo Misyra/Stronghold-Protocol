@@ -22,17 +22,26 @@ import art from './art.js';
 import spine from './spine.js';
 import voice from './voice.js';
 import audio from './audio.js';
+import numbers from './numbers.js';
+import operator from './operator.js';
+import dsl from './dsl.js';
+import meta from './meta.js';
+import mode from './mode.js';
+import ui from './ui.js';
+import script from './script.js';
+import { readStudioData } from '../gameData.js';
+import { DATA_DIR } from '../../data.js';
 import { readmeOf } from './readme.js';
 
 /**
  * @typedef {import('../targets.js').Target} Target
  * @typedef {{ at: string[], kind: 'image' | 'spine' | 'audio' | 'audioList' | 'track', field: string, dir: string, base: string }} Slot
  * @typedef {{ id: string, class: string, kinds: string[], slots: (target: Target, manifest: any) => Slot[],
- *   overlay: (target: Target | null) => Record<string, any> }} StudioTemplate
+ *   overlay: (target: Target | null) => Record<string, any>, build?: (args: any) => any }} StudioTemplate
  */
 
 /** @type {readonly StudioTemplate[]} every template, in the studio's order */
-export const TEMPLATES = Object.freeze([art, spine, voice, audio]);
+export const TEMPLATES = Object.freeze([art, spine, voice, audio, numbers, operator, dsl, meta, mode, ui, script]);
 
 /** The template of an id, or null. @param {unknown} id */
 export const templateById = (id) => TEMPLATES.find((t) => t.id === id) || null;
@@ -63,10 +72,10 @@ export function entryOverlay(target, value = {}) {
  * / `credits` as the author gave them.
  * @param {StudioTemplate} template
  * @param {{ id: string, name?: string, target?: Target | null, authors?: string[], license?: string, credits?: string,
- *   lang?: string }} opts
- * @returns {{ manifest: Record<string, any>, files: Record<string, string> }}
+ *   lang?: string, options?: any, data?: any }} opts
+ * @returns {{ manifest: Record<string, any>, files: Record<string, string>, authoring?: any }}
  */
-export function createPlugin(template, { id, name = '', target = null, authors = [], license = '', credits = '', lang = 'zh' }) {
+export function createPlugin(template, { id, name = '', target = null, authors = [], license = '', credits = '', lang = 'zh', options = {}, data = null }) {
   if (!isPluginId(id)) throw Object.assign(new Error(`${id} is not a plugin id`), { code: 'PLUGIN_ID' });
   /** A text the author gave (a string; anything else is none). @param {unknown} v @param {number} max */
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -86,6 +95,12 @@ export function createPlugin(template, { id, name = '', target = null, authors =
   if (who.length) manifest.authors = who;
   if (str(license, 100)) manifest.license = str(license, 100);
   if (str(credits, 500)) manifest.credits = str(credits, 500);
+  if (template.build) {
+    const made = template.build({ id, name: text, target, options, data: data || readStudioData(DATA_DIR) });
+    Object.assign(manifest, made.manifest);
+    const authoring = { template: template.id, target: target ? `${target.kind}:${target.key}` : '', options };
+    return { manifest, files: { ...made.files, 'README.md': `# ${text}\n\nPlugin: ${id} (${template.id}).\n\nOpen /studio/ to edit and try a battle.\n\nSelf-check: schema → node tools/plugin.mjs check ${id} --strict → trial / node tools/plugin.mjs test ${id} → node tools/plugin.mjs pack ${id} --zip.\n\nSee docs/PLUGIN-GUIDE.md and docs/PLUGINS.md. Official kit references follow future official kit fixes. No game art is included.\n` }, authoring };
+  }
   manifest.permissions = ['assets.override'];
   manifest.assets = template.overlay(target);
   return { manifest, files: { 'README.md': readmeOf({ id, name: text, template: template.id, target }) } };

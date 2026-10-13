@@ -8,7 +8,7 @@ people read [docs/PLUGIN-GUIDE.md](../docs/PLUGIN-GUIDE.md).
 ## The loop
 
 1. **Start from a template** — never from a blank file:
-   `node tools/plugin.mjs new <art|spine|voice|audio> <id> --target <official name or id> --name "<name>"`
+   `node tools/plugin.mjs new <art|spine|voice|audio|numbers|operator|dsl|meta|mode|ui|script> <id> --target <official name or id> --name "<name>"`
    (`node tools/plugin.mjs new` lists the templates). The id is the folder name: `^[a-z0-9][a-z0-9-]{1,31}$`.
 2. **Write against the schema.** `plugins/<id>/plugin.json` starts with `"$schema": "../../schemas/plugin.schema.json"`;
    the asset overlay (`"assets"`) is `schemas/overlay.schema.json`. A manifest the schema accepts is one the checker finds
@@ -64,3 +64,23 @@ Run `check <id> --strict`, `pack <id>` and `test <id>` (the last command execute
 composed data). Never hand-edit the lock. Production execution additionally needs the owner mode, exact lock pin and
 all players' consent; public listeners refuse it by default. A true infinite loop is outside the P3a budget's ability
 to interrupt. Explain that limitation when handing a script to its author. No official game art belongs in the template.
+
+
+## Gameplay authoring self-check
+
+Use `new numbers`, `new operator --target <official name>`, `new dsl`, `new meta`, or `new mode`. These are the same
+modules as the browser wizard. `new ui` wraps the UI template; `new script` wraps the SDK template including its
+harness test. `--options <json-file>` supplies wizard options. Do not copy official game art; operator `art.ref`
+borrows an installed entry, and compact operator expansion creates both normal/elite IDs in the plugin namespace.
+
+The loop is **schema → check --strict → trial / tools/plugin.mjs test → pack**. Validate manifest and records with
+`schemas/plugin.schema.json`, `records.schema.json`, and DSL with `dsl.schema.json` plus the actual `validateDsl`.
+The studio's `POST /studio/api/trial` (key required) returns `{ok, vanilla, plugin, comparison}` or `{ok:false, issues}`.
+Its checker and content builder are the real ones; never suppress a PLUGIN_* error to make a preview work. Compare
+identical seeds twice; inspect actual damage, events and content errors. Test prep effects in a room too: the battle
+bench does not dispatch match prep hooks. Script tests run local author code; production trust gates still apply.
+
+DSL records use `kit: { dsl: … }` and permission `dsl`; prep specs are files in manifest `dsl`. Until WP-A2 is merged,
+this development checkout refuses those at composition. The wizard must show that refusal; do not substitute a generic
+kit. The direct compiler/harness tests cover editor output meanwhile; repeat the full strict/composition tests after merge.
+The studio refuses saves over an external edit (`PLUGIN_STUDIO_CHANGED`); reload instead of overwriting the editor's work.

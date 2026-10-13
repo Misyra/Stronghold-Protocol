@@ -57,7 +57,7 @@ const api = {
 
 /**
  * @typedef {{ id: string, iframe: HTMLIFrameElement, declared: string[], entry: any, ready: boolean,
- *   entries: Record<string, string>, limitAt: number, loads: number, closed: boolean }} FrameRec
+ *   preview?: any, entries: Record<string, string>, limitAt: number, loads: number, closed: boolean }} FrameRec
  */
 
 let park = null;
@@ -158,7 +158,7 @@ function moveFrame(rec, home) {
 function place(rec) {
   const slot = slots.slotOf(rec.id);
   const el = slot ? document.querySelector(`[data-ui-slot="${slot}"]`) : null;
-  const home = el || parkEl();
+  const home = rec.preview?.host || el || parkEl();
   if (rec.iframe.parentElement !== home) moveFrame(rec, home);
 }
 
@@ -179,7 +179,7 @@ function autoGrant(id, declared) {
 }
 
 /** @param {any} entry */
-function mount(entry) {
+function mount(entry, preview = null) {
   const id = entry.id;
   if (frames.has(id) || frames.size >= UI_LIMITS.maxPlugins) return;
   const rel = typeof entry.entry === 'string' ? entry.entry : null;
@@ -196,7 +196,7 @@ function mount(entry) {
   iframe.title = pluginName(entry) || id;
   iframe.dataset.plugin = id;
   /** @type {FrameRec} */
-  const rec = { id, iframe, declared, entry, ready: false, entries: loadEntries(id), limitAt: 0, loads: 0, closed: false };
+  const rec = { id, iframe, declared, entry, ready: false, preview, entries: preview ? Object.create(null) : loadEntries(id), limitAt: 0, loads: 0, closed: false };
   frames.set(id, rec);
   autoGrant(id, declared);
   iframe.addEventListener('load', () => {
@@ -296,7 +296,7 @@ function onStorage(rec, msg) {
   }
   if (op === 'delete') {
     delete rec.entries[key];
-    try { globalThis.localStorage?.removeItem(full); } catch { /* ignore */ }
+    try { if (!rec.preview) globalThis.localStorage?.removeItem(full); } catch { /* ignore */ }
     post(rec, { v: 1, t: 'storage', op: 'delete', key, ok: true });
     return;
   }
@@ -306,7 +306,7 @@ function onStorage(rec, msg) {
     return;
   }
   rec.entries[key] = checked.text;
-  try { globalThis.localStorage?.setItem(full, checked.text); } catch {
+  try { if (!rec.preview) globalThis.localStorage?.setItem(full, checked.text); } catch {
     delete rec.entries[key];
     post(rec, { v: 1, t: 'storage', op: 'set', key, ok: false, error: UI_ERRORS.PLUGIN_STORAGE });
     return;
@@ -321,7 +321,7 @@ function handle(rec, msg) {
     // welcome is posted from the load handler, not from here, so a plugin that answers welcome cannot loop.
     if (frameLoadDecision(rec.loads) !== 'entry') return;
     rec.ready = true;
-    const m = store.get().match;
+    const m = rec.preview?.state || store.get().match;
     post(rec, hostState(m && m.public, m && m.private));
     return;
   }
@@ -351,7 +351,7 @@ function handle(rec, msg) {
     const fieldId = typeof msg.fieldId === 'string' ? msg.fieldId : null;
     let stats = null;
     try {
-      stats = battleRunner && typeof battleRunner.unitStats === 'function' ? battleRunner.unitStats(unitId, fieldId) : null;
+      stats = rec.preview ? { dmg: 120, heal: 0, taken: 0 } : battleRunner && typeof battleRunner.unitStats === 'function' ? battleRunner.unitStats(unitId, fieldId) : null;
     } catch { stats = null; }
     post(rec, { v: 1, t: 'stats', unitId, fieldId, stats: stats && typeof stats === 'object' ? stats : null });
     return;
@@ -460,6 +460,23 @@ function boot() {
       scheduleBattle();
     });
   }
+}
+
+/** Studio preview through the exact game host. [ASSUMED] Only fake state and volatile storage; never gameplay data. */
+export function mountPluginPreview(entry, host) {
+  if (!host || !entry || entry.class !== 'ui') return null;
+  destroy(entry.id);
+  const preview = { host, state: { public: { phase: 'COMBAT', round: 1, players: [] }, private: { playerId: 'preview', funds: 10 } } };
+  mount(entry, preview);
+  const rec = frames.get(entry.id);
+  if (!rec) return null;
+  let gt = 0;
+  const timer = setInterval(() => {
+    if (!feeding(rec)) return;
+    gt += 1;
+    post(rec, battlePayload({ fieldId: 'preview', gt, events: [['dmg', 1, 120, 'phys']], snap: null }));
+  }, 1000);
+  return { close() { clearInterval(timer); if (frames.get(entry.id) === rec) destroy(entry.id); } };
 }
 
 boot();

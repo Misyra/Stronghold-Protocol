@@ -339,7 +339,7 @@ export class Lobby {
    *   content?: { cs: string } | null,
    *   plugins?: { resolve: (ids: string[], opts?: { scope?: 'room' | 'personal', settings?: object, replacing?: object | null }) => any,
    *     hold?: (vs: string) => void, release?: (vs: string) => void, holdContent?: (cs: string) => void,
-   *     releaseContent?: (cs: string) => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void,
+   *     releaseContent?: (cs: string) => void, onContentStale?: (fn: (cs: string, ids: string[]) => void) => () => void, onStale?: (fn: (vs: string, ids: string[]) => void) => () => void,
    *     unofficial?: () => number, defaults?: () => string[], dataOf?: (cs: string) => any, kittedOf?: (cs: string) => any,
    *     contentInUse?: () => number } | null,
    *   hosts?: { create: (cs: string, opts: object) => any, stats?: () => object } | null,
@@ -382,6 +382,7 @@ export class Lobby {
      * @type {((room: { code: string, hostId: string, humans: number, inMatch: boolean }) => boolean) | null}
      */
     this.autoApplyPlugins = null;
+    this.offContentStale = plugins?.onContentStale?.((cs, ids) => this.pluginsChanged(cs, ids, 'content')) || null;
   }
 
   /**
@@ -389,13 +390,16 @@ export class Lobby {
    * plugins again (header "The room's plugins") — a host offline now misses it; the panel's 「重新应用」 is always there.
    * @param {string} vs @param {string[]} ids
    */
-  pluginsChanged(vs, ids) {
+  pluginsChanged(vs, ids, kind = 'visual') {
     for (const room of this.rooms.values()) {
-      if (room.disposed || room.content?.vs !== vs) continue;
+      if (room.disposed || (kind === 'content' ? room.content?.cs : room.content?.vs) !== vs) continue;
+      const noticeKey = `${room.content?.cs}|${room.content?.vs || ''}`;
+      if (room.pluginNoticeKey === noticeKey) continue;
       // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins)
       let auto;
       try { auto = !!this.autoApplyPlugins?.({ code: room.code, hostId: room.hostId, humans: room.activeHumans().length, inMatch: !!room.match }); } catch { auto = false; }
-      if (auto && this.refreshPlugins(room)) continue;
+      if (kind === 'visual' && auto && this.refreshPlugins(room)) continue;
+      room.pluginNoticeKey = noticeKey;
       this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
       // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
       room.pluginsChanged = ids;
@@ -436,7 +440,7 @@ export class Lobby {
     const ids = room.pluginsChanged;
     room.pluginsChanged = null;
     // the room's set changed since (re-applied, switched off): nothing to tell
-    if (!ids || !room.content?.vs) return;
+    if (!ids || !room.content?.plugins?.length) return;
     const names = ids.slice(0, 8).join('、');
     this.sendToPlayer(room, room.hostId, { t: 'm.toast', kind: 'warn', ...wireMessage(msg('房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」', { names })) });
   }
@@ -645,7 +649,9 @@ export class Lobby {
    */
   shutdown(reason = 'shutdown') {
     this.offStale?.();
+    this.offContentStale?.();
     this.offStale = null;
+    this.offContentStale = null;
     for (const room of [...this.rooms.values()]) this.disposeRoom(room, reason);
     for (const t of this.graceTimers.values()) clearTimeout(t);
     this.graceTimers.clear();
@@ -836,11 +842,11 @@ export class Lobby {
     let content = r.content;
     const before = room.content;
     const sameSet = (before?.vs ?? null) === (content?.vs ?? null) && (before?.cs ?? null) === (content?.cs ?? null);
-    const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto]));
+    const marks = (c) => JSON.stringify((c?.plugins || []).map((p) => [p.id, !!p.auto, p.settings || null]));
     if (sameSet && marks(before) === marks(content)) return OK;
     this.dropReplay(room, session.playerId);
     // another set: a notice still waiting for the end of a match (pluginsChanged) is moot
-    if (!sameSet) room.pluginsChanged = null;
+    if (!sameSet) { room.pluginsChanged = null; room.pluginNoticeKey = null; }
     // the plugin mode chosen stays while the set still provides it (header "Gameplay plugins")
     if (before?.modeId && content?.modes?.some((m) => m.id === before.modeId)) content = Object.freeze({ ...content, modeId: before.modeId });
     room.content = content;

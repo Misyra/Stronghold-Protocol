@@ -183,3 +183,26 @@ body.studio { overflow: auto; height: auto; min-height: 100%; -webkit-user-selec
 .st-target__text { display: flex; flex-direction: column; min-width: 0; }
 .st-target__name { color: var(--text-hi); font-size: calc(.13 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-target__meta { color: var(--text-dim); font-size: calc(.1 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Gameplay authoring and deterministic trials. */
+.st-authoring { border: 1px solid var(--line); padding: .16rem; }
+.st-authoring > .btn { margin-top: .14rem; }
+.st-stat-grid, .st-trial-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .1rem; }
+.st-number-list { max-height: 6rem; overflow: auto; display: grid; gap: .1rem; }
+.st-number-field small { font-size: calc(.11 * var(--t)); color: var(--text-lo); }
+.st-dsl { width: 100%; }
+.st-dsl fieldset { min-width: 0; border: 1px solid var(--line-2); padding: .1rem; margin: .08rem 0; display: grid; gap: .07rem; }
+.st-dsl legend { color: var(--mint-500); }
+.st-value { display: flex; flex-wrap: wrap; gap: .06rem; padding: .05rem 0; }
+.st-value > label { flex: 1 1 1.1rem; }
+.st-value__operands { width: 100%; border-left: 2px solid var(--line-2); padding-left: .12rem; }
+.st-dsl-condition, .st-dsl-mods > div { padding: .08rem; background: var(--bg-2); margin: .04rem 0; }
+.st-ui-preview { min-height: 120px; border: 1px solid var(--line-2); }
+.st-ui-preview iframe { width: 100%; border: 0; }
+.st-source { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-0); padding: .12rem; }
+.st-trial { display: grid; gap: .12rem; }
+.st-trial-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .15rem; }
+.st-trial-canvas { height: 3.8rem; min-height: 280px; position: relative; }
+.st-trial pre { max-height: 3rem; overflow: auto; }
+.plugin-settings { display: grid; gap: .06rem; border-top: 1px solid var(--line); padding-top: .08rem; }
+@media (max-width: 900px) { .st-trial-pair, .st-stat-grid, .st-trial-options { grid-template-columns: 1fr; } }

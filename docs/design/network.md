@@ -273,3 +273,14 @@ P3a trusted script consent (DESIGN §32.10): `room.consent { cs, accept }` recor
 content hash; a reconnect keeps it, a cs change clears it. `room.state.content.trusted` carries full lock hashes,
 permissions/authors and a seat-number-to-boolean consent map. `room.start` refuses PLUGIN_CONSENT until every active
 human accepts; bots and spectators do not gate starting. Client execution also needs that browser's own local consent.
+
+
+### Plugin authoring follow-up (§32.9.1)
+
+`room.setPlugins` continues to accept `{id, settings?}`. Resolved `room.state.content.plugins[]` includes `settings`
+only when declared settings normalize to a nonempty object. All members see the normalized values; the host's panel
+edits them only before a match. Selecting/toggling/reapplying another plugin preserves the current settings. Editing
+an automatically enabled dependency makes it an explicit selection. Invalid raw values still fall back to defaults.
+Content-set disk changes use the same host-only reapply toast as cosmetics, once per held composition, deferred while
+a match runs. Pure content sets do not need `vs` to receive it. Reapply follows the existing cs/readiness/consent rules.
+No message or field is added to a room with no plugins.

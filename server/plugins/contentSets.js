@@ -68,7 +68,7 @@ export function pluginModes(modes, vanillaData) {
 
 /**
  * The content sets of one server.
- * @param {{ registry: { plugin: (id: string) => any }, vanillaData: Readonly<Record<string, any>>, log?: object,
+ * @param {{ registry: { plugin: (id: string) => any, onScan?: (fn: () => void) => (() => void) }, vanillaData: Readonly<Record<string, any>>, log?: object,
  *   maxSets?: () => number, build?: typeof buildContentSet, filesOf?: typeof contentSetFiles, maxKept?: number }} opts
  *   maxSets: the limit now (the server owner's policy may change it); build / filesOf: the C1 builder (tests inject one)
  */
@@ -78,6 +78,20 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
   const sets = new Map();
   /** @type {Map<string, number>} cs16 → rooms holding it */
   const held = new Map();
+  const stale = new Set();
+  const staleListeners = new Set();
+  const offScan = registry.onScan?.(() => {
+    for (const [key, set] of sets) {
+      if (!held.has(key) || stale.has(key)) continue;
+      const changed = set.plugins.filter(p => {
+        const now = registry.plugin(p.id);
+        return !now || now.status !== 'loaded' || now.content?.hash !== p.hash;
+      }).map(p => p.id);
+      if (!changed.length) continue;
+      stale.add(key);
+      for (const fn of [...staleListeners]) { try { fn(set.cs, changed); } catch (e) { log.error?.('[plugins] content stale listener failed', e); } }
+    }
+  });
 
   /** cs16 by what a set was built from (memoKey), most recent last — written once the set is kept */
   const memo = new Map();
@@ -133,6 +147,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       if (free <= maxKept) break;
       if (k === key || held.has(k)) continue;
       sets.delete(k);
+      stale.delete(k);
       free--;
     }
   };
@@ -232,6 +247,8 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
 
   return {
     resolve,
+    onStale(fn) { staleListeners.add(fn); return () => staleListeners.delete(fn); },
+    close() { offScan?.(); staleListeners.clear(); },
     /** A room uses the set of `cs`: never dropped until every holder released it. @param {string} cs */
     hold(cs) { if (!isContentHash(cs)) return; const k = csUrlPart(cs); held.set(k, (held.get(k) || 0) + 1); },
     /** A room no longer uses the set of `cs`. @param {string} cs */
@@ -240,7 +257,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       const k = csUrlPart(cs);
       const n = (held.get(k) || 0) - 1;
       if (n > 0) held.set(k, n);
-      else held.delete(k);
+      else { held.delete(k); stale.delete(k); }
     },
     /** The set of `cs`, while it is kept. @param {string} cs @returns {ContentSet | null} */
     get: byCs,

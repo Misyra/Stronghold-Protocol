@@ -23,6 +23,8 @@ import { t } from '../../../shared/i18n.js';
 import { API, get, post, put, call, pluginPath, nameAuthor, keepStudioKey, takeKeyFromAddress } from './api.js';
 import { kindLabel, templateTitle, targetName, sizeText } from './labels.js';
 import { IssueList, errorText } from './issues.js';
+import { Authoring } from './authoring.js';
+import { TrialBench } from './trial.js';
 import { CreateDialog } from './create.js';
 import { TargetPicker } from './picker.js';
 import { SlotCard } from './slots.js';
@@ -55,7 +57,7 @@ async function sectionOf(section) {
 function Section({ section, state, busy, version, onFiles, onRef, onClear, onFix, onRemove }) {
   const editor = editorOf(section.template);
   const target = section.targetInfo;
-  const previews = target ? editor.previews(target) : [];
+  const previews = target ? editor.previews?.(target) || [] : [];
   return html`<section class="st-section" data-section=${`${section.template}|${section.target}`}>
     <header class="st-section__head">
       <span class="st-section__icon">${target?.icon ? html`<img src=${target.icon} alt="" />` : null}</span>
@@ -100,6 +102,7 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
   const [version, setVersion] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [packed, setPacked] = useState(null);
+  const [draft, setDraft] = useState(null);
   const [previewIssues, setPreviewIssues] = useState([]);
   const req = useRef(0);
 
@@ -160,7 +163,7 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
   const name = state.names?.zh || state.names?.en || Object.values(state.names || {})[0] || id;
   const problems = state.check.problems;
   const generalIssues = state.check.issues.filter((i) => !(Array.isArray(i.at) && i.at[0] === 'assets' && sections.some((s) => s.slots.some((sl) => sl.at.every((k, n) => i.at[n + 1] === k)))));
-  const tabs = [['content', t('内容')], ['info', t('信息')], ['files', t('文件')], ['manifest', t('清单')]];
+  const tabs = [['content', t('内容')], ['info', t('信息')], ['files', t('文件')], ['manifest', t('清单')], ...(state.class !== 'ui' ? [['trial', t('试一场')]] : [])];
   return html`<div class="st-plugin" data-plugin=${id}>
     <header class="st-plugin__head">
       <div class="st-plugin__titles">
@@ -183,13 +186,15 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
     ${tab === 'content' ? html`<div class="st-content">
       ${generalIssues.length ? html`<div class="st-banner is-bad"><strong>${t('整体检查')}</strong><${IssueList} issues=${generalIssues} onFix=${onFix} busy=${busy} /></div>` : null}
       ${previewIssues.length ? html`<div class="st-banner is-warn"><strong>${t('预览')}</strong><${IssueList} issues=${previewIssues} onFix=${onFix} busy=${busy} compact=${true} /></div>` : null}
+      ${state.authoring ? html`<${Authoring} key=${id} state=${state} busy=${busy} initialDraft=${draft} onDraft=${setDraft} onSave=${draft => run(() => post(pluginPath(id, 'authoring'), draft), { list: true })} />` : null}
       ${sections.map((s, n) => html`<${Section} key=${`${s.template}|${s.target}`} section=${s} state=${state} busy=${busy} version=${version}
         onFiles=${onFiles} onRef=${onRef} onClear=${onClear} onFix=${onFix} onRemove=${() => saveSections(sections.filter((_, k) => k !== n))} />`)}
-      ${!(state.sections || []).length ? html`<p class="st-note">${t('这个插件还没有要替换的内容。')}</p>` : null}
-      <${Button} icon="plus" onClick=${() => setAddOpen(true)} disabled=${busy} data-testid="add-section">${t('添加替换内容')}<//>
-      <${AddSection} open=${addOpen} templates=${info.templates} onClose=${() => setAddOpen(false)}
+      ${state.class === 'cosmetic' && !(state.sections || []).length ? html`<p class="st-note">${t('这个插件还没有要替换的内容。')}</p>` : null}
+      ${state.class === 'cosmetic' ? html`<${Button} icon="plus" onClick=${() => setAddOpen(true)} disabled=${busy} data-testid="add-section">${t('添加替换内容')}<//>` : null}
+      <${AddSection} open=${addOpen} templates=${info.templates.filter(x => x.class === 'cosmetic')} onClose=${() => setAddOpen(false)}
         onAdd=${(s) => { setAddOpen(false); if (!sections.some((x) => x.template === s.template && x.target === s.target)) saveSections([...sections, s]); }} />
     </div>` : null}
+    ${tab === 'trial' ? html`<${TrialBench} state=${state} draft=${draft} />` : null}
     ${tab === 'info' ? html`<${InfoForm} state=${state} busy=${busy} onFix=${onFix} onSave=${(fields, lang) => run(() => post(pluginPath(id, 'meta'), { fields, lang }), { list: true })} />` : null}
     ${tab === 'files' ? html`<${FileList} state=${state} busy=${busy} onFix=${onFix} onRemove=${async (rel) => {
       if (await confirmDialog({ title: t('删除文件'), text: t('从插件文件夹里删除 {file}？', { file: rel }), okText: t('删除'), danger: true })) run(() => call('DELETE', pluginPath(id, `files/${rel.split('/').map(encodeURIComponent).join('/')}`)), { list: true });
@@ -316,9 +321,9 @@ function App({ info }) {
       <main class="st-main">
         ${selected ? html`<${PluginView} key=${selected} id=${selected} info=${info} onListChanged=${refresh} eventsAt=${events.at} />`
         : html`<div class="st-main__empty">
-            <h2>${t('做一个外观插件')}</h2>
+            <h2>${t('做一个插件')}</h2>
             <ol class="st-steps">
-              <li>${t('点「新建插件」，选一个模板（换头像 / 立绘、换模型、换语音、换音乐 / 音效）。')}</li>
+              <li>${t('点「新建插件」，选择外观、玩法、DSL、界面或脚本模板。')}</li>
               <li>${t('按官方名字搜索要替换的干员、敌人、道具 ……')}</li>
               <li>${t('把自己的图片、模型或声音拖到格子上，右边和原版并排预览。')}</li>
               <li>${t('点「打包并下载」，得到可以分享的 zip。')}</li>

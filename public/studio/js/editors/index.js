@@ -7,15 +7,22 @@ import art from './art.js';
 import spine from './spine.js';
 import voice from './voice.js';
 import audio from './audio.js';
+import numbers from './numbers.js';
+import operator from './operator.js';
+import dsl from './dsl.js';
+import meta from './meta.js';
+import mode from './mode.js';
+import ui from './ui.js';
+import script from './script.js';
 
 /**
- * @typedef {{ id: string, previews: (target: any) => string[], accept: (slot: any) => string, multiple: (slot: any) => boolean,
- *   hint: (slot: any) => string }} StudioEditor
+ * @typedef {{ id: string, Component?: Function, previews?: (target: any) => string[], accept?: (slot: any) => string, multiple?: (slot: any) => boolean,
+ *   hint?: (slot: any) => string }} StudioEditor
  *   previews: 'cards' (pictures in the game's interface), 'field' (the battlefield view), 'sound' (players)
  */
 
 /** @type {Record<string, StudioEditor>} */
-export const EDITORS = Object.freeze({ art, spine, voice, audio });
+export const EDITORS = Object.freeze({ art, spine, voice, audio, numbers, operator, dsl, meta, mode, ui, script });
 
 /** The editor of a template (a generic one for a template the page does not know). @param {string} id */
 export function editorOf(id) {

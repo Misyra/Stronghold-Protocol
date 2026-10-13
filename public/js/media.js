@@ -11,6 +11,13 @@
 //
 // `server/http/media.js` resolves /media/… back to the real file under public/assets/audio and still answers with
 // `Content-Type: audio/mpeg` + range support; Web Audio sniffs the container, so the URL is all the same to it.
+// This fork's release namespace stays in front of the rewritten path (server/assetVersion.js), so a versioned URL
+// keeps its `/_v/<tag>/` prefix and the server checks the file's bytes behind it:
+//
+//     /_v/<tag>/assets/audio/bgm/act1.mp3   →   /_v/<tag>/media/bgm/act1
+//
+// (A CDN install keeps its per-file `?v=<hash>` query on the audio URL — shared/assetCdn.js — and rewrites only
+// its path; the hash is not part of the path, so nothing else changes here.)
 // A host that does not implement /media/ keeps working: `audio.js` falls back to the original URL whenever the
 // /media/ response is unusable (a 404, or a 200 that is not audio at all — some static hosts answer a missing
 // path with the SPA's index.html).

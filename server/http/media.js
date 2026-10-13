@@ -15,6 +15,11 @@ import { serveFile } from './files.js';
  * Requests for the direct `/assets/audio/…` URLs keep working (they are the fallback for plain static hosts).
  * `MEDIA_PREFIX` / `AUDIO_EXTS` live in `shared/media.js`: the browser decides which URLs to rewrite with the
  * same two values, and they must not drift apart.
+ * This fork serves the audio under its release namespace (`/_v/<tag>/media/…`, server/assetVersion.js) and keeps
+ * the per-file cache busting on the CDN (`?v=<file hash>`, shared/assetCdn.js); the upstream 0.2.6 path-segment
+ * hash form (`/media/~<hash>/…`) is deliberately not served here.
+ * @param {object | null} [release] the release versioning (server/assetVersion.js); a versioned request whose bytes changed answers 503
+ * @param {boolean} [versioned] the request came in through the validated `/_v/<tag>/` namespace
  */
 export async function serveMedia(req, res, rest, publicDir, gzipCache, log, release = null, versioned = false) {
   const root = path.join(path.resolve(publicDir), 'assets', 'audio');
@@ -39,7 +44,6 @@ export async function serveMedia(req, res, rest, publicDir, gzipCache, log, rele
     if (!absPath.startsWith(root + path.sep)) continue;
     let stat;
     try {
-      // eslint-disable-next-line no-await-in-loop
       stat = await fsp.stat(absPath);
     } catch { continue; }
     if (!stat.isFile()) continue;
@@ -48,8 +52,8 @@ export async function serveMedia(req, res, rest, publicDir, gzipCache, log, rele
       return;
     }
     // serveFile decides Content-Type from the resolved name (`.mp3` → audio/mpeg) — Range/ETag handling is shared.
-    // Cache policy is that of the public path the client would otherwise have asked for (`/assets/audio/…`, 1 day).
-    // eslint-disable-next-line no-await-in-loop
+    // Cache policy is that of the public path the client would otherwise have asked for (`/assets/audio/…`, 1 day),
+    // or immutable for a validated release path.
     await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], gzipCache, log, { variant: versioned ? release.tag : '', versioned });
     return;
   }

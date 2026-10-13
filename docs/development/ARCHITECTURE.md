@@ -77,7 +77,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | path | what |
 |---|---|
 | `server/index.js` | the process entry (`npm start`); `startServer()` wires `server/http/` |
-| `server/http/` | `config.js` (environment), `websocket.js` (sessions, `/ws`), `static.js` (the mounts), `media.js`, `files.js` (MIME, gzip, ETag, ranges), `buildTag.js`, `routes.js` (`/healthz`), `common.js`, `boot.js` (a pending update package first, banner, shutdown) |
+| `server/http/` | `config.js` (environment), `websocket.js` (sessions, `/ws`, permessage-deflate), `static.js` (the mounts, the `/_v/<tag>/` release routes, the served manifests), `media.js`, `files.js` (MIME, brotli / gzip, ETag, ranges), `buildTag.js`, `routes.js` (`/healthz`, the loopback-only `?traffic=1`), `traffic.js` (bytes sent by category and on the WebSocket), `common.js`, `boot.js` (a pending update package first, banner, shutdown) |
 | `server/net.js` | sessions and reconnect tokens, rate limits, message validation |
 | `server/lobby.js` | rooms, seats, AI seats, spectators; starts a `Match` |
 | `server/data.js` | loads `data/*.json` once (frozen) |
@@ -131,7 +131,8 @@ data/*.json ──────────┬─▶ server/data.js ────�
                       ├─▶ public/js/data.js ──────────▶ the UI
                       └─▶ public/js/battle/runner.js ─▶ the browser's battles (setSimData)
 data/i18n/en.json ──────▶ public/js/data.js ──────────▶ the English game texts
-public/assets/ ─────────▶ public/js/render/, public/js/audio.js (URLs listed in data/assets.json)
+public/assets/ ─────────▶ public/js/render/, public/js/audio.js (URLs listed in data/assets.json,
+                           served under the /_v/<tag>/ release prefix — server/assetVersion.js)
 ```
 
 - **Game data.** `tools/build-data.mjs` downloads the official zh_CN tables into `.cache/gamedata/` (or reads them

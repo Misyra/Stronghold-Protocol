@@ -96,6 +96,20 @@ export function getData({ dir = DATA_DIR, log = console } = {}) {
 /** Drop the singleton so the next getData() reloads (tests / hot reload). */
 export function resetData() { singleton = null; }
 
+/**
+ * Make `data` the process-wide singleton (deep-frozen) — a match host worker (server/match/host/entry.js, DESIGN §32
+ * P1c) calls it with its content set's merged data before it imports the match: every module of that worker that reads
+ * getData() (the content modules' gameData(), builtinMeta, the sim's default DataSource) then sees the content set,
+ * never the vanilla files. The main process never calls it.
+ * @param {Record<string, any>} data
+ * @returns {Readonly<Record<string, any>>}
+ */
+export function setData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('setData: a data object { <file>: record map } is required');
+  singleton = deepFreeze(data);
+  return singleton;
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Index getters
 // ---------------------------------------------------------------------------------------------------

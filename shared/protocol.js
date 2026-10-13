@@ -416,10 +416,19 @@ export const C2S = {
   'room.removeSpectator': { playerId: isId },
   // the room's plugins (DESIGN §32, P1a; host, before the match — like a difficulty change it un-readies the others):
   // the plugins of this server the room switches on, in any order (the server closes the set over their requirements
-  // and sorts it: shared/plugins/order.js); [] = the original content. Only cosmetic plugins in this version; `settings`
+  // and sorts it: shared/plugins/order.js); [] = the original content. Cosmetic plugins (art: the room's visual set,
+  // `vs`) and, from P1c (DESIGN §32.6), content plugins (gameplay: the room's content set, a `cs` of its own); `settings`
   // is for the classes that have settings (a cosmetic plugin has none, so it is ignored). room.state.content names the set
   'room.setPlugins': { plugins: (v) => isList(v, 32, (p) => isPlain(p) && isPluginId(p.id)
     && (p.settings === undefined || isMap(p.settings, 32, (k) => isStr(k, 32), isScalar))) },
+  // the room's mode (DESIGN §32.6, P1c; host, before the match — like a difficulty change it un-readies the others): an
+  // official mode of the room's type (the one of a difficulty: it sets the difficulty) or a mode a plugin of the room's
+  // content set provides (room.state.content.modes; room.state.content.modeId while it is chosen)
+  'room.setMode': { modeId: isId },
+  // the page has loaded and checked the room's content set (DESIGN §32.6): `cs` = the room.state.content.cs it checked —
+  // every data file's bytes against /cs/<cs16>/index.json, that manifest's composition against `cs`; `ok: false` = it
+  // could not (the seat shows it). A room with gameplay plugins starts only once every player's page sent it for its cs
+  'room.contentReady': { cs: isContentHash, ok: isBool, $optional: ['ok'] },
 
   // match
   'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },
@@ -473,8 +482,9 @@ export const C2S = {
     leaksBy: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, 1e6)),
     $optional: ['resolved', 'leaks', 'bossDmg', 'by', 'done', 'left', 'leaksBy'],
   },
-  // `cs` (DESIGN §32, optional): the content hash the reporting browser ran the battle on — its spec's `cs`. Checked for
-  // its form only; the server compares it with the spec once rooms can choose plugins (P1c)
+  // `cs` (DESIGN §32, optional): the content hash the reporting browser ran the battle on — its spec's `cs`. In a room
+  // with gameplay plugins (P1c, DESIGN §32.6) the match refuses a result without it or with another one (and runs the
+  // battle itself); a vanilla room's browser sends none
   'b.result': { battleId: isId, result: isBattleResult, cs: isContentHash, $optional: ['cs'] },
 };
 

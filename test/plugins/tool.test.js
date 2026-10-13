@@ -119,3 +119,80 @@ test('the cosmetic template: references only, no file of the game; valid against
   assert.equal(m.id, undefined, 'the folder name decides the id: a copy needs no edit of it');
   assert.equal((await quiet(['check', tpl])).code, 0);
 });
+
+test('new: every template makes a folder that passes check and pack as it is (manifest, README, no file of the game)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-new-'));
+  try {
+    const list = await quiet(['new']);
+    assert.equal(list.code, 0);
+    for (const id of ['art', 'spine', 'voice', 'audio']) assert.match(list.out, new RegExp(`^ {2}${id} +cosmetic`, 'm'));
+    const cases = [['art', 'red-texas', '德克萨斯'], ['spine', 'texas-model', 'char_102_texas'], ['voice', 'texas-voice', '德克萨斯'], ['audio', 'lobby-music', '大厅音乐'], ['art', 'no-target', null]];
+    for (const [tpl, id, target] of cases) {
+      const r = await quiet(['new', tpl, id, '--dir', dir, '--name', `${tpl} 名字`, '--author', 'me', ...(target ? ['--target', target] : []), '--root', ROOT]);
+      assert.equal(r.code, 0, r.out);
+      const folder = path.join(dir, id);
+      assert.deepEqual(listPluginFiles(folder).map((f) => f.rel).sort(), ['README.md', 'plugin.json'], `${id}: a manifest and a README only`);
+      const m = JSON.parse(fs.readFileSync(path.join(folder, 'plugin.json'), 'utf8'));
+      assert.deepEqual([m.manifest, m.class, m.version, m.authors, m.name], [2, 'cosmetic', '1.0.0', ['me'], { zh: `${tpl} 名字` }]);
+      const c = await quiet(['check', folder, '--strict', '--root', ROOT]);
+      assert.equal(c.code, 0, `${id}: ${c.out}`);
+      const p = await quiet(['pack', folder, '--root', ROOT]);
+      assert.equal(p.code, 0, `${id}: ${p.out}`);
+    }
+    assert.match(fs.readFileSync(path.join(dir, 'red-texas', 'README.md'), 'utf8'), /德克萨斯（char_102_texas）/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'lobby-music', 'plugin.json'), 'utf8')).assets, { audio: { bgm: {} } });
+    assert.equal((await quiet(['new', 'art', 'red-texas', '--dir', dir])).code, 2, 'an existing folder');
+    assert.equal((await quiet(['new', 'nope', 'zz-zz', '--dir', dir])).code, 2, 'no such template');
+    assert.equal((await quiet(['new', 'art', 'Bad_Id', '--dir', dir])).code, 2, 'no plugin id');
+    assert.equal((await quiet(['new', 'voice', 'zz-zz', '--dir', dir, '--target', '大厅音乐', '--root', ROOT])).code, 2, 'a target the template does not change');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('check in plain words: under each technical line its code, the explanation and what to do (--lang zh|en); --json for editors and AI agents', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-plain-'));
+  try {
+    const p = writePlugin(path.join(dir, 'plain'), cosmetic({ version: '1', colour: 'x', assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png() });
+    const zh = await quiet(['check', p, '--root', ROOT]);
+    assert.equal(zh.code, 1);
+    assert.match(zh.out, /^ {2}problem {2}"version": "1" is not a semantic version/m);
+    assert.match(zh.out, /^ {11}↳ PLUGIN_VERSION 插件的版本号 "version" 没写，或者写法不对。改法：写成三段数字，例如 "1\.0\.0"/m);
+    assert.match(zh.out, /^ {11}↳ PLUGIN_FIELD_UNKNOWN 「colour」不是清单里的字段，被忽略了/m);
+    const en = await quiet(['check', p, '--lang', 'en', '--root', ROOT]);
+    assert.match(en.out, /↳ PLUGIN_VERSION The plugin's "version" is missing or not a version number\. Fix: Write three numbers/);
+    const json = await quiet(['check', p, '--json', '--root', ROOT]);
+    const body = JSON.parse(json.out);
+    assert.deepEqual([body.problems, body.warnings, body.folders[0].loadable], [1, 1, false]);
+    const v = body.folders[0].issues.find((i) => i.code === 'PLUGIN_VERSION');
+    assert.deepEqual([v.level, v.at, v.autofix, v.doc], ['problem', ['version'], 'setVersion', 'docs/PLUGINS.md#3-the-manifest-manifest-2']);
+    assert.match(v.message, /版本号/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('pack --zip: the lock, then the folder as a zip (deterministic) — by default into plugins/_dist/, never read as a plugin', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-zip-'));
+  try {
+    const p = writePlugin(path.join(dir, 'zipped'), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'art/a.png' } } } }), { 'art/a.png': png(), 'LICENSE': 'CC0' });
+    const out = path.join(dir, 'out');
+    const r = await quiet(['pack', p, '--zip', '--out', `${out}/`, '--root', ROOT]);
+    assert.equal(r.code, 0, r.out);
+    const zip = fs.readFileSync(path.join(out, 'zipped-1.0.0.zip'));
+    const { unzipFiles } = await import('../../server/plugins/zip.js');
+    assert.deepEqual(unzipFiles(zip).map((e) => e.name), ['zipped/LICENSE', 'zipped/art/a.png', 'zipped/plugin.json', 'zipped/plugin.lock.json']);
+    await quiet(['pack', p, '--zip', '--out', path.join(out, 'again.zip'), '--root', ROOT]);
+    assert.ok(fs.readFileSync(path.join(out, 'again.zip')).equals(zip), 'the same files, the same bytes');
+    // the default place: <root>/plugins/_dist/ (a '_' folder the registry never reads)
+    const root2 = path.join(dir, 'root');
+    fs.mkdirSync(path.join(root2, 'plugins'), { recursive: true });
+    fs.mkdirSync(path.join(root2, 'data'), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, 'data', 'assets.json'), path.join(root2, 'data', 'assets.json'));
+    assert.equal((await quiet(['pack', p, '--zip', '--root', root2])).code, 0);
+    assert.ok(fs.existsSync(path.join(root2, 'plugins', '_dist', 'zipped-1.0.0.zip')));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('errors: the catalogue in plain words; --markdown its symptom table', async () => {
+  const r = await quiet(['errors']);
+  assert.match(r.out, /^PLUGIN_LOCK_MISSING +problem +模型 \{file\} 还没有动画数据.+\[pack\]$/m);
+  const md = await quiet(['errors', '--markdown', '--lang', 'en']);
+  assert.match(md.out, /^\| Symptom \| Code \| Cause \| Fix \|$/m);
+});

@@ -87,7 +87,7 @@ export function openPlugin(files, id) {
 
 /** The basic fields the studio's form edits, with what each accepts (an empty value removes the field). */
 const META_FIELDS = Object.freeze({
-  name: 'text', description: 'longtext', version: 'version', authors: 'list', license: 'line', credits: 'longtext', homepage: 'line', scope: 'scope',
+  name: 'text', description: 'longtext', version: 'version', authors: 'list', license: 'line', credits: 'line', homepage: 'line', scope: 'scope',
 });
 
 /**
@@ -114,7 +114,7 @@ export function editMeta(p, fields, lang = 'zh') {
       const list = (Array.isArray(v) ? v : String(v ?? '').split(/[,，、\n]/)).map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 32);
       if (list.length) m[k] = list; else delete m[k];
     } else if (kind === 'line') {
-      const s = String(v ?? '').trim().slice(0, k === 'homepage' ? 300 : 100);
+      const s = String(v ?? '').trim().slice(0, k === 'homepage' ? 300 : k === 'credits' ? 500 : 100);
       if (s) m[k] = s; else delete m[k];
     } else if (kind === 'scope') {
       const allowed = PLUGIN_CLASSES[m.class]?.scopes || [];

@@ -30,10 +30,10 @@
 //                                                        files give the same bytes). Run it again after a change to a
 //                                                        skeleton: the server refuses a lock made from another one
 //   node tools/plugin.mjs new [<template> <id>] [--name <名字>] [--target <官方名字|id>] [--author <名字>] [--license <x>]
-//                                                        a new plugin folder plugins/<id>/ from a template (art, spine,
-//                                                        voice, audio — server/studio/templates/): plugin.json and a
-//                                                        README, nothing else (it passes check and pack as it is); without
-//                                                        arguments the templates are listed
+//                             [--dir <folder>]           a new plugin folder plugins/<id>/ (or <folder>/<id>/) from a template
+//                                                        (art, spine, voice, audio — server/studio/templates/): plugin.json
+//                                                        and a README, nothing else (it passes check and pack as it is);
+//                                                        without arguments the templates are listed
 //   node tools/plugin.mjs errors [--markdown] [--lang zh|en] [--write]
 //                                                        the error catalogue (every code, its plain words, what to do);
 //                                                        --markdown its symptom table, --write puts the tables into
@@ -60,7 +60,7 @@ import { createTargetIndex, searchTargets, targetSpec } from '../server/studio/t
 export { checkPluginFolder, buildPluginLock };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license …] | errors [--markdown] [--lang zh|en] [--write]   [--root <dir>]';
+const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | errors [--markdown] [--lang zh|en] [--write]   [--root <dir>]';
 /** The documents whose symptom table `errors --write` keeps: path, language. */
 export const TABLE_DOCS = Object.freeze([['docs/PLUGINS.md', 'en'], ['docs/PLUGIN-GUIDE.md', 'zh']]);
 
@@ -134,7 +134,7 @@ export async function main(argv) {
   try {
     for (let i = 0; i < rest.length; i++) {
       const a = rest[i];
-      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits'].includes(a)) {
+      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir'].includes(a)) {
         values[a.slice(2)] = takeValue(rest, i, a.slice(2));
         i++;
       } else if (a.startsWith('--')) flags.add(a.slice(2));
@@ -261,7 +261,7 @@ export async function main(argv) {
     const tpl = templateById(tid);
     if (!tpl) { console.error(`plugin: no template "${tid}" (${TEMPLATES.map((t) => t.id).join(', ')})`); return 2; }
     if (!isPluginId(id)) { console.error(`plugin: "${id ?? ''}" is not a plugin id (2–32 lower-case letters, digits and -, e.g. texas-red)`); return 2; }
-    const dir = path.join(dirs.pluginsDir, id);
+    const dir = path.join(values.dir ? path.resolve(values.dir) : dirs.pluginsDir, id);
     if (fs.existsSync(dir)) { console.error(`plugin: ${path.relative(process.cwd(), dir) || dir} exists already`); return 2; }
     let target = null;
     if (values.target) {

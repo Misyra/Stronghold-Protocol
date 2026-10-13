@@ -183,6 +183,19 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (lobby && 'autoApplyPlugins' in lobby) lobby.autoApplyPlugins = autoApply;
   }
 
+  /**
+   * The rooms the players `ids` host apply their plugins as they are on disk now (server/lobby.js refreshPlugins: a new
+   * set only when the files changed) — a change their host was told about before the studio's page named the session.
+   * @param {Set<string>} ids
+   */
+  function refreshRoomsOf(ids) {
+    if (!lobby || typeof lobby.refreshPlugins !== 'function' || !(lobby.rooms instanceof Map)) return;
+    for (const room of lobby.rooms.values()) {
+      if (room.disposed || !room.content?.vs || !ids.has(room.hostId)) continue;
+      try { lobby.refreshPlugins(room); } catch (e) { log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`); }
+    }
+  }
+
   /** The sections a plugin's page edits: its sidecar's, else read off its overlay (a plugin made by hand). */
   function sectionsOf(id, overlay) {
     try {
@@ -470,6 +483,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
         if (s?.playerId) { authors.set(s.playerId, Date.now()); ids.push(s.playerId); }
       }
       for (const [pid, at] of authors) if (Date.now() - at > AUTHOR_TTL_MS) authors.delete(pid);
+      // a room such a player hosts applies its plugins as they are now (a change it was told about meanwhile)
+      if (ids.length) refreshRoomsOf(new Set(ids));
       return json(200, { players: ids.length });
     }
     if (route === 'events' && method === 'GET') {

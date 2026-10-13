@@ -806,8 +806,7 @@ export class Lobby {
   resolveContent(room, ids, settings = {}) {
     if (!ids.length) {
       // the server owner may fix every room's plugins (plugins/config.json rooms: fixed): the original game is not one
-      let fixed = null;
-      try { fixed = this.plugins?.fixed?.() || null; } catch { fixed = null; }
+      const fixed = (() => { try { return this.plugins?.fixed?.() || null; } catch { return null; } })();
       if (fixed && fixed.length) return fail(ERR.PLUGIN_BLOCKED, 'this server fixes every room\'s plugins (plugins/config.json rooms: fixed)');
       return { content: this.vanilla };
     }

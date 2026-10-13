@@ -5,14 +5,20 @@
 //   * POST /api/nickname/validate → server-only nickname preflight, bounded and rate-limited;
 //   * other routes reject methods but GET / HEAD with 405;
 //   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
-//     rooms, matches), HTTP no-store with a one-second internal snapshot; this fork adds worker/memory/static-cache/socket-buffer/wire/persist diagnostics;
+//     rooms, matches), HTTP no-store with a one-second internal snapshot; this fork adds worker/memory/static-cache/
+//     socket-buffer/wire/persist diagnostics, and `?traffic=1` adds the traffic counters (traffic.js: bytes by
+//     category since the start, WebSocket wire and payload bytes) for a loopback or private-network client only —
+//     the maintainer's decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or
+//     proxy on this machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the
+//     WebSocket limits);
 //   * GET /metrics → fresh detailed health plus bounded WebSocket latency diagnostics;
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);
 //   * GET /api/announcement → the hot-loaded maintenance notice and the server time (no write API);
 //   * everything else → the static files (static.js).
-// A route that throws is logged and answers 500.
+// Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
+// answers 500.
 
 // Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
 import { validateNickname } from './nickname.js';
@@ -20,20 +26,22 @@ import { createPortalRoomHandler } from './portalRoom.js';
 import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
-import { wireStatsSnapshot } from '../net.js';
+import { clientAddress, isLocalIp, wireStatsSnapshot } from '../net.js';
 import { setSecurityHeaders, sendError, sendJson, sendJsonBody, splitUrl } from './common.js';
 
 const MAX_URL_LENGTH = 4096;
 
 /**
- * The GET /healthz body.
+ * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, workerPool: object | null, persister: object | null, store: object | null,
  *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null,
+ *           traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
  *           chatLog?: import('../chatLog.js').ChatLog }} health
+ * @param {boolean} [withTraffic] plus the traffic counters (the loopback/private-network-only `?traffic=1`)
  */
-export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, chatLog = null }) {
-  return {
+export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
+  const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
@@ -60,6 +68,10 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
       lastSaveMs: persister.lastSaveMs ?? null,
       workerMemory: persister.encoder?.memory || null } : null,
   };
+  // The traffic counters are the host's own figures (upstream 0.2.6): the caller gates them on isLocalIp, and they
+  // never come from the one-second snapshot createHealthBody caches.
+  if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  return report;
 }
 
 /** Cache expensive collection and encoded JSON for at most one second per server.
@@ -89,6 +101,9 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
   };
 }
 
+/** Does the query ask for the traffic counters (`traffic`, `traffic=1`, `traffic=true`)? */
+const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.test(query || '');
+
 /**
  * The request listener for `http.createServer`.
  * @param {{ serveStatic: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse,
@@ -96,10 +111,13 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
  *           health: Parameters<typeof healthReport>[0], log: object,
  *           allowNickname?: (req: import('node:http').IncomingMessage) => boolean,
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
- *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null } }} deps
+ *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null },
+ *           trustProxy?: 'auto' | boolean }} deps
+ *   trustProxy: whose forwarding headers name the client (net.js clientAddress; the server's TRUST_PROXY) — the gate
+ *   on the `?traffic=1` figures
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null }) {
+export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, trustProxy = 'auto' }) {
   const healthBody = createHealthBody(health);
   const portalRoom = createPortalRoomHandler({ registry: health.registry, lobby: health.lobby,
     trustProxy: health.network?.opts?.trustProxy ?? 'auto' });
@@ -111,8 +129,15 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
   };
   const serveHealth = (req, res) => {
     if (!methodAllowed(req, res)) return;
+    const query = splitUrl(req.url)?.query;
+    // The host's own bandwidth figures: a loopback/private client only (net.js clientAddress, honouring TRUST_PROXY
+    // like the WebSocket limits), straight from the counters — never from the one-second snapshot below.
+    if (wantsTraffic(query) && isLocalIp(clientAddress(req, trustProxy).ip)) {
+      sendJson(req, res, 200, healthReport(health, true));
+      return;
+    }
     // Players only need the release tag; keep full diagnostics for collectors.
-    if (new URLSearchParams(splitUrl(req.url)?.query).get('build') === '1') {
+    if (new URLSearchParams(query).get('build') === '1') {
       sendJson(req, res, 200, { build: health.serveStatic ? health.serveStatic.version : null });
     } else sendJsonBody(req, res, 200, healthBody());
   };
@@ -191,6 +216,8 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
 
   return (req, res) => {
     setSecurityHeaders(res);
+    // Every response's body bytes count in the traffic counters, the synchronous /healthz fast path included.
+    if (health.traffic) health.traffic.meter(res, splitUrl(req.url || '/')?.rawPath || '/');
     const url = req.url || '/';
     if (url.length <= MAX_URL_LENGTH && (url === '/healthz' || url.startsWith('/healthz?') || url.startsWith('/healthz#'))) {
       try { serveHealth(req, res); } catch (e) { failed(req, res, e); }

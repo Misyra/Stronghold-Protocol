@@ -23,6 +23,21 @@ describe('mediaUrl: 音频地址去掉扩展名（躲开下载器嗅探）', () 
     assert.equal(mediaUrl('/assets/audio/x/A.MP3', ORIGIN), '/media/x/A', '大小写不敏感');
   });
 
+  test('/_v/<tag>/ 版本化地址（服务器下发的清单形态）：改写后保留发布前缀', () => {
+    const V = '0123456789abcdef';
+    assert.equal(mediaUrl(`/_v/${V}/assets/audio/bgm/m_sys_act1autochess_loop.mp3`, ORIGIN), `/_v/${V}/media/bgm/m_sys_act1autochess_loop`);
+    assert.equal(mediaUrl(`${ORIGIN}/_v/${V}/assets/audio/sfx/a.mp3`, ORIGIN), `/_v/${V}/media/sfx/a`);
+    assert.doesNotMatch(mediaUrl(`/_v/${V}/assets/audio/bgm/a.mp3`, ORIGIN), /\.(mp3|m4a|aac|ogg|oga|opus|wav)(\?|$)/i);
+    // 查询串（CDN 装机的 ?v=<文件哈希>）跟在后头，原样保留
+    assert.equal(mediaUrl(`/_v/${V}/assets/audio/bgm/a.mp3?x=1`, ORIGIN), `/_v/${V}/media/bgm/a?x=1`);
+    // 前缀匹配与既有的 AUDIO_PATH 一样大小写不敏感：改写照做，服务器那边仍按小写十六进制校验（大写前缀只会 404）
+    assert.equal(mediaUrl(`/_v/${V.toUpperCase()}/assets/audio/a.mp3`, ORIGIN), `/_v/${V.toUpperCase()}/media/a`);
+    // 长度不对 / 另一条路由：不是我们的音频地址，原样返回
+    assert.equal(mediaUrl('/_v/abc/assets/audio/a.mp3', ORIGIN), '/_v/abc/assets/audio/a.mp3');
+    assert.equal(mediaUrl(`/api/_v/${V}/assets/audio/a.mp3`, ORIGIN), `/api/_v/${V}/assets/audio/a.mp3`);
+    assert.equal(mediaUrl(`/_v/${V}/assets/char/a.png`, ORIGIN), `/_v/${V}/assets/char/a.png`, '图片不改写');
+  });
+
   test('改写后的地址里不再有任何媒体扩展名（下载器就是按这个嗅探的）', () => {
     const out = mediaUrl('/assets/audio/bgm/m_bat_vtlionk_loop.mp3', ORIGIN);
     assert.equal(out.startsWith(MEDIA_PREFIX), true);

@@ -19,7 +19,8 @@ import { UI_HOST_MESSAGES, UI_PLUGIN_MESSAGES } from '../../shared/plugins/ui.js
 import { PLUGIN_ERRORS } from '../../shared/plugins/errors.js';
 import { CATALOG_ENTRY_FIELDS, CATALOG_FIELDS } from '../../shared/plugins/catalog.js';
 import { SDK_ID, SDK_MEMBERS } from '../../shared/plugins/sdk.js';
-import { SURFACE_MARKERS, SURFACE_SINCE, buildSurface } from '../../shared/plugins/surface.js';
+import * as sdk from '../../shared/plugins/sdk.js';
+import { SURFACE_MARKERS, SURFACE_SINCE, buildSurface, uncoveredSdkExports } from '../../shared/plugins/surface.js';
 import { STUDIO_ROUTES } from '../../server/studio/index.js';
 import * as vocab from '../../server/sim/content/dsl/vocab.js';
 
@@ -77,6 +78,7 @@ function expectedNames() {
   for (const name of CATALOG_FIELDS) names.push(`catalog.field.${name}`);
   for (const name of CATALOG_ENTRY_FIELDS) names.push(`catalog.entry.${name}`);
   names.push(`sdk.${SDK_ID}`);
+  names.push('sdk.SDK_MEMBERS');
   for (const name of SDK_MEMBERS) names.push(`sdk.${SDK_ID}.${name}`);
   names.push('api.PLUGIN_API.min', 'api.PLUGIN_API.current');
   return names;
@@ -120,17 +122,126 @@ test('surface.js does not import Node builtins or server modules', () => {
   assert.doesNotMatch(src, /(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"][^'"]*server\//);
 });
 
-test('STUDIO_ROUTES names every route literal the studio dispatches', () => {
+/**
+ * Method and path of every route `api()` can answer, from the function source (not from STUDIO_ROUTES).
+ * Top-level `route ===` conditions carry the method (`read` is GET; HEAD is the same row). Inside the plugin-id
+ * matcher, `sub ===` maps onto the templates STUDIO_ROUTES already uses.
+ * @param {string} src
+ * @returns {string[]}
+ */
+function studioRoutesFromApi(src) {
+  const start = src.indexOf('async function api(');
+  const end = src.indexOf('async function handle(', start);
+  if (start < 0 || end < start) throw new Error('api() slice not found');
+  const body = src.slice(start, end);
+  /** @type {string[]} */
+  const found = [];
+  const add = (method, route) => {
+    const row = `${method} /studio/api/${route}`;
+    if (!found.includes(row)) found.push(row);
+  };
+  const conditions = [];
+  const re = /\bif\s*\(/g;
+  let m;
+  while ((m = re.exec(body))) {
+    let i = m.index + m[0].length;
+    let depth = 1;
+    const from = i;
+    while (i < body.length && depth > 0) {
+      const c = body[i];
+      if (c === "'" || c === '"' || c === '`') {
+        const q = c;
+        i += 1;
+        while (i < body.length && body[i] !== q) {
+          if (body[i] === '\\') i += 1;
+          i += 1;
+        }
+      } else if (c === '(') depth += 1;
+      else if (c === ')') depth -= 1;
+      i += 1;
+    }
+    conditions.push(body.slice(from, i - 1));
+  }
+  for (const cond of conditions) {
+    const names = [...cond.matchAll(/route === '([^']+)'/g)].map((x) => x[1]);
+    if (!names.length) continue;
+    /** @type {string[]} */
+    const methods = [];
+    if (/\bread\b/.test(cond)) methods.push('GET');
+    if (/method === 'POST'/.test(cond)) methods.push('POST');
+    if (/method === 'PUT'/.test(cond)) methods.push('PUT');
+    if (/method === 'DELETE'/.test(cond)) methods.push('DELETE');
+    if (/method === 'GET'/.test(cond) && !methods.includes('GET')) methods.push('GET');
+    for (const name of names) for (const method of methods) add(method, name);
+  }
+  const marker = body.indexOf('const m = /^plugins\\/');
+  if (marker < 0) throw new Error('plugin id matcher not found');
+  const tail = body.slice(marker);
+  const getAt = tail.indexOf("if (method === 'GET' || method === 'HEAD')");
+  const getBlock = braceBlock(tail, getAt);
+  if (getBlock.includes("sub === ''")) add('GET', 'plugins/:id');
+  if (getBlock.includes("sub === 'preview'")) add('GET', 'plugins/:id/preview');
+  if (getBlock.includes("sub === 'zip'")) add('GET', 'plugins/:id/zip');
+  if (getBlock.includes('[0-9a-f]{8}') && getBlock.includes('files')) {
+    add('GET', 'plugins/:id/f/:hash8/*');
+    add('GET', 'plugins/:id/files/*');
+  }
+  if (/method === 'PUT' && sub === 'manifest'/.test(tail)) add('PUT', 'plugins/:id/manifest');
+  if (/fileRoute && \(method === 'PUT' \|\| method === 'DELETE'\)/.test(tail)) {
+    add('PUT', 'plugins/:id/files/*');
+    add('DELETE', 'plugins/:id/files/*');
+  }
+  const postAt = tail.indexOf("if (method !== 'POST') return false;");
+  const postTail = postAt < 0 ? '' : tail.slice(postAt);
+  for (const sub of ['slot', 'meta', 'sections', 'ref', 'clear', 'fix', 'pack']) {
+    if (postTail.includes(`sub === '${sub}'`)) add('POST', `plugins/:id/${sub}`);
+  }
+  return found;
+}
+
+/** The brace block that starts at or after `from`. @param {string} src @param {number} from */
+function braceBlock(src, from) {
+  const brace = src.indexOf('{', from);
+  if (brace < 0) return '';
+  let depth = 0;
+  for (let i = brace; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      i += 1;
+      while (i < src.length && src[i] !== q) {
+        if (src[i] === '\\') i += 1;
+        i += 1;
+      }
+      continue;
+    }
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(brace + 1, i);
+    }
+  }
+  return '';
+}
+
+test('every sdk.js export is a row anchored at that export', () => {
+  assert.deepEqual(uncoveredSdkExports(sdk, rows), []);
+  const extra = { ...sdk, registerKit() {} };
+  assert.deepEqual(uncoveredSdkExports(extra, rows), ['registerKit']);
+});
+
+test('STUDIO_ROUTES and the routes api() dispatches are the same set', () => {
   const src = fs.readFileSync(path.join(ROOT, 'server/studio/index.js'), 'utf8');
-  const literals = [...src.matchAll(/route === '([^']+)'/g)].map((m) => m[1]);
-  assert.ok(literals.includes('catalog') && literals.includes('catalog/install'));
-  for (const route of literals) {
-    assert.ok(STUDIO_ROUTES.some((row) => row.endsWith(`/${route}`) || row.includes(`/${route}/`) || row.endsWith(`/${route}/*`)), route);
-  }
-  for (const sub of [...src.matchAll(/sub === '([^']*)'/g)].map((m) => m[1]).filter(Boolean)) {
-    assert.ok(STUDIO_ROUTES.some((row) => row.includes(`/${sub}`)), sub);
-  }
-  assert.ok(STUDIO_ROUTES.includes('POST /studio/api/catalog'));
-  assert.ok(STUDIO_ROUTES.includes('POST /studio/api/catalog/install'));
+  const discovered = studioRoutesFromApi(src).sort();
+  assert.deepEqual(discovered, [...STUDIO_ROUTES].sort());
+  assert.ok(discovered.includes('POST /studio/api/catalog'));
+  assert.ok(discovered.includes('POST /studio/api/catalog/install'));
   assert.equal(PLUGIN_API.current, 1);
+  const disabled = src.replace("route === 'targets'", 'false');
+  assert.equal(studioRoutesFromApi(disabled).includes('GET /studio/api/targets'), false);
+  const method = src.replace("route === 'authors' && method === 'POST'", "route === 'authors' && method === 'GET'");
+  const changed = studioRoutesFromApi(method);
+  assert.equal(changed.includes('POST /studio/api/authors'), false);
+  assert.equal(changed.includes('GET /studio/api/authors'), true);
+  assert.notDeepEqual(changed.sort(), [...STUDIO_ROUTES].sort());
 });

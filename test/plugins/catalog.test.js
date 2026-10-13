@@ -1,11 +1,8 @@
 // test/plugins/catalog.test.js — a community catalogue (DESIGN §32.13, docs/PLUGINS.md §17).
 // schemas/catalog.schema.json and shared/plugins/catalog.js readCatalog agree on one fixture set: a document is
-// accepted exactly when the check finds neither a problem nor a warning. Left OUT of that set, and asserted on their
-// own, because the schema cannot see them:
-//   - the same id on two entries that are not the same object (uniqueItems compares the whole entry)
-//   - an `app` string that is not a version range (the schema only requires a string of 1–80 characters)
-//   - a `$schema` longer than 200 characters (the schema caps it; the check accepts any string)
-// Identical duplicate entries are IN the set: uniqueItems rejects them and so does the check.
+// accepted exactly when the check finds neither a problem nor a warning. That set includes duplicate ids (the
+// repository validator's uniqueItemProperties), an app string that is not a version range, an empty app, and a
+// $schema that is not a string or is longer than 200 characters. Identical duplicate entries are in it too.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,7 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { schemaValidator } from '../helpers/jsonSchema.js';
 import { APP_VERSION } from '../../shared/constants.js';
-import { annotateCatalog, compareSemver, entryStatus, isCatalogUrl, readCatalog } from '../../shared/plugins/catalog.js';
+import { APP_RANGE_PATTERN, annotateCatalog, compareSemver, entryStatus, isCatalogUrl, readCatalog } from '../../shared/plugins/catalog.js';
+import { isVersionRange } from '../../shared/plugins/manifest.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const v = schemaValidator(path.join(ROOT, 'schemas'));
@@ -66,6 +64,13 @@ const FIXTURES = [
   ['bytes that are not a whole number', doc([entry({ bytes: 1.5 })])],
   ['seventeen authors', doc([entry({ authors: Array.from({ length: 17 }, (_, i) => `a${i}`) })])],
   ['the same entry twice', doc([entry(), copy(entry())])],
+  ['the same id on two different entries', doc([entry(), entry({ name: 'Other name' })])],
+  ['an app that is not a version range', doc([entry({ app: 'latest' })])],
+  ['an empty app', doc([entry({ app: '' })])],
+  ['an app that is only whitespace', doc([entry({ app: '   ' })])],
+  ['a $schema that is not a string', doc([entry()], { $schema: 5 })],
+  ['a $schema of 201 characters', doc([entry()], { $schema: 's'.repeat(201) })],
+  ['an empty $schema string', doc([entry()], { $schema: '' })],
 ];
 
 test('the schema and readCatalog agree on the fixture set', () => {
@@ -86,20 +91,16 @@ test('the documentation example is accepted, and its addresses are not real host
   for (const e of example.plugins) assert.match(e.url, /^https:\/\/example\.invalid\//);
 });
 
-test('the same id on two different entries, and an app that is not a version range, are check-only', () => {
-  const dup = doc([entry(), entry({ name: 'Other name' })]);
-  assert.equal(v.validate('catalog.schema.json', dup).length, 0, 'uniqueItems does not see the id');
-  const read = readCatalog(dup);
-  assert.equal(read.ok, false);
-  assert.equal(read.problems[0].code, 'PLUGIN_CATALOG_ID');
-  const range = doc([entry({ app: 'latest' })]);
-  assert.equal(v.validate('catalog.schema.json', range).length, 0);
-  const bad = readCatalog(range);
-  assert.equal(bad.ok, false);
-  assert.equal(bad.problems[0].code, 'PLUGIN_CATALOG_FIELD');
-  const schemaOnly = doc([entry()], { $schema: 's'.repeat(201) });
-  assert.ok(v.validate('catalog.schema.json', schemaOnly).length > 0);
-  assert.equal(readCatalog(schemaOnly).ok, true);
+test('the app pattern matches isVersionRange, except a present empty range', () => {
+  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'schemas/catalog.schema.json'), 'utf8'));
+  assert.equal(schema.$defs.entry.properties.app.pattern, APP_RANGE_PATTERN);
+  assert.deepEqual(schema.properties.plugins.uniqueItemProperties, ['id']);
+  const re = new RegExp(APP_RANGE_PATTERN, 'u');
+  for (const s of ['*', 'x', '>=0.3.0', '1.2', '1.2.3', '^0.2.0', '~0.2.1', '>=0.2.0 <0.4.0', '* || >=1', 'v1.2.3', ' >=0.3.0 ', 'latest', '1.2.3.4', '', '   ']) {
+    const schemaOk = re.test(s);
+    const rangeOk = s.trim() !== '' && isVersionRange(s);
+    assert.equal(schemaOk, rangeOk, JSON.stringify(s));
+  }
 });
 
 test('compareSemver uses the core only; an unreadable version compares equal', () => {
@@ -118,13 +119,17 @@ test('entry status: incompatible wins, then updatable, installed, available; a m
   const old = entry({ id: 'demo-old', app: '>=9.0.0' });
   assert.equal(entryStatus(old, '1.0.0', APP_VERSION).status, 'incompatible');
   assert.equal(entryStatus(old, '1.0.0', APP_VERSION).installedVersion, '1.0.0');
-  assert.equal(entryStatus(entry({ app: '' }), undefined).status, 'available');
+  assert.equal(entryStatus(entry({ app: '' }), undefined).status, 'incompatible');
+  assert.equal(entryStatus(entry({ app: '   ' }), undefined).status, 'incompatible');
+  assert.equal(entryStatus(entry({ app: 'latest' }), undefined).status, 'incompatible');
+  assert.equal(entryStatus(entry(), undefined).status, 'available');
   const rows = annotateCatalog(readCatalog(doc([e, old])).catalog, (id) => (id === 'demo-skin' ? '1.0.0' : undefined));
   assert.deepEqual(rows.map((r) => r.status), ['updatable', 'incompatible']);
 });
 
 test('isCatalogUrl refuses http, a userinfo, and a single-label host', () => {
   assert.equal(isCatalogUrl('https://example.invalid/a.zip'), true);
+  // Syntax only. server/plugins/install.js refuses this address before any download.
   assert.equal(isCatalogUrl('https://127.0.0.1/a.zip'), true);
   assert.equal(isCatalogUrl('http://example.invalid/a.zip'), false);
   assert.equal(isCatalogUrl('https://user:pass@example.invalid/a.zip'), false);

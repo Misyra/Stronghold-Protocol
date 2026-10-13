@@ -606,7 +606,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
         text = body.text;
       } else if (isObj(body.catalog)) text = JSON.stringify(body.catalog);
       else if (typeof body.url === 'string' && body.url) {
-        const buf = await fetchHttps(body.url, { fetch: fetchImpl, maxBytes: CATALOG_FETCH_MAX_BYTES, timeoutMs: CATALOG_FETCH_TIMEOUT_MS, kind: 'catalog' });
+        const buf = await fetchHttps(body.url, { fetch: fetchImpl, maxBytes: CATALOG_FETCH_MAX_BYTES, timeoutMs: CATALOG_FETCH_TIMEOUT_MS, kind: 'catalog', pluginsDir });
         text = buf.toString('utf8');
       } else throw new InstallError('PLUGIN_CATALOG_SHAPE', 'send a catalogue url or the catalogue text', {});
       let json;

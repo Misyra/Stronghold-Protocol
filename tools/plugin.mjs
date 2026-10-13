@@ -327,7 +327,7 @@ export async function main(argv) {
   if (cmd === 'catalog') {
     if (targets.length !== 1) { console.error(`plugin: catalog needs one catalogue file or one https URL\n${USAGE}`); return 2; }
     try {
-      const text = await loadCatalogText(targets[0]);
+      const text = await loadCatalogText(targets[0], { pluginsDir: dirs.pluginsDir });
       let json;
       try { json = JSON.parse(text); } catch (e) { console.error(`plugin: PLUGIN_CATALOG_SHAPE ${e.message}`); return 1; }
       const read = readCatalog(json);

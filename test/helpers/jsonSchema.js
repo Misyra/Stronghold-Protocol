@@ -1,5 +1,6 @@
 // test/helpers/jsonSchema.js — a small JSON Schema validator for the tests (draft 2020-12, the keywords schemas/*.json use):
-// type, enum, const, pattern, minLength / maxLength, minimum / maximum, minItems / maxItems, uniqueItems, items,
+// type, enum, const, pattern, minLength / maxLength, minimum / maximum, minItems / maxItems, uniqueItems,
+// uniqueItemProperties (not a stock draft-2020-12 keyword: each named property is unique across the items), items,
 // contains, properties, required, additionalProperties, patternProperties, propertyNames, minProperties /
 // maxProperties, allOf / anyOf / oneOf / not, if / then / else, $ref (within a schema: #/$defs/…; to another file of the
 // same folder: other.schema.json or other.schema.json#/$defs/…), boolean schemas. Annotations ($schema, $id, title,
@@ -70,6 +71,17 @@ export function schemaValidator(dir) {
       if (schema.minItems !== undefined && value.length < schema.minItems) errs.push(`${at}: fewer than ${schema.minItems} items`);
       if (schema.maxItems !== undefined && value.length > schema.maxItems) errs.push(`${at}: more than ${schema.maxItems} items`);
       if (schema.uniqueItems && new Set(value.map((v) => JSON.stringify(v))).size !== value.length) errs.push(`${at}: items not unique`);
+      if (Array.isArray(schema.uniqueItemProperties)) {
+        for (const prop of schema.uniqueItemProperties) {
+          const seen = new Set();
+          for (const item of value) {
+            if (!isObj(item) || !Object.hasOwn(item, prop)) continue;
+            const key = JSON.stringify(item[prop]);
+            if (seen.has(key)) errs.push(`${at}: duplicate ${prop}`);
+            seen.add(key);
+          }
+        }
+      }
       if (schema.items !== undefined) value.forEach((v, i) => errs.push(...sub(schema.items, v, `${at}[${i}]`)));
       if (schema.contains !== undefined && !value.some((v, i) => !sub(schema.contains, v, `${at}[${i}]`).length)) errs.push(`${at}: contains no matching item`);
     }

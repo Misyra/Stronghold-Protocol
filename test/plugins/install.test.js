@@ -10,9 +10,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { PLUGIN_LIMITS } from '../../shared/plugins/manifest.js';
-import { zipFiles } from '../../server/plugins/zip.js';
+import { crc32, readPluginZip, zipFiles } from '../../server/plugins/zip.js';
 import {
-  INSTALL_MAX_BYTES, installFromFile, installFromUrl, installPluginBytes, installedPluginVersion, loadCatalogText,
+  INSTALL_MAX_BYTES, fetchHttps, hostAllowed, installFromFile, installFromUrl, installPluginBytes,
+  installedPluginVersion, isNonPublicAddress, isRemoteAddress, loadCatalogText, pinningLookup, readDownloadAllow,
 } from '../../server/plugins/install.js';
 import { main } from '../../tools/plugin.mjs';
 
@@ -267,4 +268,255 @@ test('CLI catalogue of the example file exits 0 and does not mark the documentat
   const body = JSON.parse(r.out);
   assert.equal(body.plugins.length, 2);
   assert.ok(body.plugins.every((e) => e.status === 'available' || e.status === 'incompatible'));
+});
+
+const PRIVATE_URLS = [
+  'https://127.0.0.1/admin',
+  'https://127.1/admin',
+  'https://10.0.0.1/admin',
+  'https://169.254.169.254/metadata',
+  'https://0177.0.0.1/admin',
+  'https://0x7f.0.0.1/admin',
+  'https://2130706433/admin',
+  'https://printer.local/admin',
+  'https://[::1]/admin',
+  'https://example.invalid:8443/admin',
+];
+
+test('a non-public or non-443 address is refused before fetch, including a redirect', async () => {
+  for (const ip of ['0.0.0.0', '10.1.2.3', '100.64.0.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '192.0.0.1', '192.0.2.1', '192.168.1.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '240.0.0.1', '255.255.255.255', '::', '::1', 'fd00::1', 'fe80::1', 'ff02::1', '2001:db8::1', '100::1', '2001::1', '2002::1', '::ffff:1.1.1.1', '::ffff:127.0.0.1']) {
+    assert.equal(isNonPublicAddress(ip), true, ip);
+  }
+  assert.equal(isNonPublicAddress('1.1.1.1'), false);
+  assert.equal(isNonPublicAddress('8.8.8.8'), false);
+  assert.equal(isNonPublicAddress('2606:4700:4700::1111'), false);
+  for (const url of PRIVATE_URLS) {
+    let calls = 0;
+    await rejects(() => fetchHttps(url, {
+      fetch: () => { calls += 1; return new Response('no'); },
+      allowDownloadHosts: [],
+      timeoutMs: 1000,
+    }), 'PLUGIN_INSTALL_URL', 400);
+    assert.equal(calls, 0, url);
+  }
+  let catalogCalls = 0;
+  await rejects(() => fetchHttps('https://127.0.0.1/catalog.json', {
+    fetch: () => { catalogCalls += 1; return new Response('{}'); },
+    allowDownloadHosts: [], kind: 'catalog', timeoutMs: 1000,
+  }), 'PLUGIN_CATALOG_URL', 400);
+  assert.equal(catalogCalls, 0);
+  let calls = [];
+  const fetch = async (url) => {
+    calls.push(url);
+    if (calls.length > 1) throw new Error('second request');
+    return new Response(null, { status: 302, headers: { location: 'https://192.168.1.1/admin' } });
+  };
+  await rejects(() => fetchHttps('https://public.example/start', { fetch, allowDownloadHosts: [], timeoutMs: 1000 }), 'PLUGIN_INSTALL_REDIRECT', 502);
+  assert.deepEqual(calls, ['https://public.example/start']);
+});
+
+test('a lookup that returns a private address is not connected, unless that host is allowlisted', async () => {
+  let handed;
+  pinningLookup('443', [], (hostname, options, cb) => cb(null, [{ address: '10.0.0.1', family: 4 }]))('evil.example', {}, (err, address) => {
+    assert.equal(err.code, 'ENONPUBLIC');
+    handed = address;
+  });
+  assert.equal(handed, undefined);
+  pinningLookup('443', ['evil.example'], (hostname, options, cb) => cb(null, [{ address: '10.0.0.1', family: 4 }]))('evil.example', {}, (err, address) => {
+    assert.equal(err, null);
+    assert.equal(address, '10.0.0.1');
+  });
+  let fetches = 0;
+  const lookup = (hostname, options, cb) => cb(null, [{ address: '10.0.0.1', family: 4 }]);
+  await rejects(() => fetchHttps('https://evil.example/a.zip', {
+    fetch: () => { fetches += 1; return new Response('x'); },
+    lookup, allowDownloadHosts: [], timeoutMs: 1000,
+  }), 'PLUGIN_INSTALL_URL', 400);
+  assert.equal(fetches, 0);
+  const ok = await fetchHttps('https://evil.example/a.zip', {
+    fetch: () => { fetches += 1; return new Response('x'); },
+    lookup, allowDownloadHosts: ['evil.example'], timeoutMs: 1000,
+  });
+  assert.equal(ok.toString(), 'x');
+  assert.equal(fetches, 1);
+  assert.equal(hostAllowed('evil.example', '8443', ['evil.example:443']), false);
+  assert.equal(hostAllowed('evil.example', '8443', ['evil.example']), true);
+  assert.equal(hostAllowed('evil.example', '8443', ['evil.example:8443']), true);
+  let connected = false;
+  const request = (options) => {
+    const handlers = {};
+    const req = {
+      on(ev, fn) { (handlers[ev] ||= []).push(fn); return req; },
+      end() {
+        options.lookup(options.hostname, {}, (err, address) => {
+          if (address !== undefined) connected = true;
+          for (const fn of handlers.error || []) fn(err || new Error('refusing non-public address'));
+        });
+      },
+    };
+    return req;
+  };
+  await rejects(() => fetchHttps('https://evil.example/a.zip', {
+    lookup, request, allowDownloadHosts: [], timeoutMs: 1000,
+  }), 'PLUGIN_INSTALL_URL', 400);
+  assert.equal(connected, false);
+});
+
+test('the operator allowlist is the env and plugins/config.json, and a broken file does not block a public download', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-install-allow-'));
+  const plugins = path.join(tmp, 'plugins');
+  fs.mkdirSync(plugins);
+  const prev = process.env.SP_PLUGIN_DOWNLOAD_ALLOW;
+  delete process.env.SP_PLUGIN_DOWNLOAD_ALLOW;
+  let calls = 0;
+  const fetch = async () => { calls += 1; return new Response('{}', { status: 200 }); };
+  try {
+    fs.writeFileSync(path.join(plugins, 'config.json'), JSON.stringify({ rooms: 'host', allowDownloadHosts: ['10.0.0.1'] }));
+    assert.deepEqual(readDownloadAllow(plugins), ['10.0.0.1']);
+    const buf = await fetchHttps('https://10.0.0.1/a.zip', { fetch, pluginsDir: plugins, timeoutMs: 1000 });
+    assert.equal(buf.toString(), '{}');
+    assert.equal(calls, 1);
+    fs.writeFileSync(path.join(plugins, 'config.json'), '{');
+    calls = 0;
+    await rejects(() => fetchHttps('https://10.0.0.1/a.zip', { fetch, pluginsDir: plugins, timeoutMs: 1000 }), 'PLUGIN_INSTALL_URL', 400);
+    assert.equal(calls, 0);
+    const pub = await fetchHttps('https://example.invalid/c.json', { fetch, pluginsDir: plugins, timeoutMs: 1000, kind: 'catalog' });
+    assert.equal(pub.toString(), '{}');
+    process.env.SP_PLUGIN_DOWNLOAD_ALLOW = '192.168.1.1';
+    calls = 0;
+    await fetchHttps('https://192.168.1.1/admin', { fetch, pluginsDir: plugins, timeoutMs: 1000 });
+    assert.equal(calls, 1);
+    calls = 0;
+    await rejects(() => fetchHttps('https://10.0.0.1/a.zip', { fetch, pluginsDir: plugins, allowDownloadHosts: [], timeoutMs: 1000 }), 'PLUGIN_INSTALL_URL');
+    assert.equal(calls, 0, 'an explicit empty list replaces the operator list');
+  } finally {
+    if (prev === undefined) delete process.env.SP_PLUGIN_DOWNLOAD_ALLOW;
+    else process.env.SP_PLUGIN_DOWNLOAD_ALLOW = prev;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('one deadline covers a stalled body and is not reset on each redirect', async () => {
+  let signal;
+  const stalled = async (url, init) => {
+    signal = init.signal;
+    const stream = new ReadableStream({
+      start(controller) {
+        setTimeout(() => { try { controller.enqueue(new Uint8Array([1])); controller.close(); } catch { /* aborted */ } }, 400);
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+  const t0 = Date.now();
+  await rejects(() => fetchHttps('https://example.invalid/a.zip', { fetch: stalled, timeoutMs: 40, allowDownloadHosts: [] }), 'PLUGIN_INSTALL_TIMEOUT', 502);
+  assert.ok(Date.now() - t0 < 250, `body wait was ${Date.now() - t0} ms`);
+  assert.equal(signal.aborted, true);
+  const hops = async (url, init) => {
+    signal = init.signal;
+    if (url.endsWith('/start')) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (init.signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      return new Response(null, { status: 302, headers: { location: 'https://example.invalid/body' } });
+    }
+    const stream = new ReadableStream({
+      start(controller) {
+        setTimeout(() => { try { controller.enqueue(new Uint8Array([1])); controller.close(); } catch { /* aborted */ } }, 400);
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+  const t1 = Date.now();
+  await rejects(() => fetchHttps('https://example.invalid/start', { fetch: hops, timeoutMs: 120, allowDownloadHosts: [] }), 'PLUGIN_INSTALL_TIMEOUT', 502);
+  const elapsed = Date.now() - t1;
+  assert.ok(elapsed < 180, `redirect budget was ${elapsed} ms`);
+  assert.equal(signal.aborted, true);
+});
+
+test('names that differ only by case are refused before _incoming', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-install-case-'));
+  const plugins = path.join(tmp, 'plugins');
+  fs.mkdirSync(plugins);
+  try {
+    for (const entries of [
+      [{ name: 'A.txt', data: Buffer.from('1') }, { name: 'a.txt', data: Buffer.from('2') }],
+      [{ name: 'A/first.txt', data: Buffer.from('1') }, { name: 'a/second.txt', data: Buffer.from('2') }],
+    ]) {
+      assert.throws(() => installPluginBytes(zipFiles(entries), { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP' && /case/.test(e.message));
+      assert.equal(fs.existsSync(path.join(plugins, '_incoming')), false);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+/** A stored one-file zip. Central version stays 20 unless asked. Local extra is not copied into the central header. */
+function storedZip({ name, data, localExtra = Buffer.alloc(0), localVersion = 20 }) {
+  const nameBuf = Buffer.from(name);
+  const crc = crc32(data);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(localVersion, 4);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(nameBuf.length, 26);
+  local.writeUInt16LE(localExtra.length, 28);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(nameBuf.length, 28);
+  central.writeUInt32LE(0, 42);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(46 + nameBuf.length, 12);
+  end.writeUInt32LE(30 + nameBuf.length + localExtra.length + data.length, 16);
+  return Buffer.concat([local, nameBuf, localExtra, data, central, nameBuf, end]);
+}
+
+test('a ZIP64 extra on the local header, or version 45, is refused before inflate and before _incoming', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-install-zip64-'));
+  const plugins = path.join(tmp, 'plugins');
+  fs.mkdirSync(plugins);
+  const extra = Buffer.alloc(24);
+  extra.writeUInt16LE(1, 0);
+  extra.writeUInt16LE(20, 2);
+  const data = Buffer.from('hello');
+  try {
+    const localOnly = storedZip({ name: 'a.txt', data, localExtra: extra, localVersion: 20 });
+    assert.throws(() => readPluginZip(localOnly), (e) => e.code === 'PLUGIN_INSTALL_ZIP' && /ZIP64/.test(e.message));
+    assert.throws(() => installPluginBytes(localOnly, { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP');
+    assert.equal(fs.existsSync(path.join(plugins, '_incoming')), false);
+    const version45 = storedZip({ name: 'a.txt', data, localVersion: 45 });
+    assert.throws(() => readPluginZip(version45), (e) => e.code === 'PLUGIN_INSTALL_ZIP' && /ZIP64/.test(e.message));
+    const plain = storedZip({ name: 'a.txt', data });
+    assert.equal(readPluginZip(plain)[0].data.toString(), 'hello');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('a Windows drive or UNC path is a file, and http and ftp stay remote', async () => {
+  assert.equal(isRemoteAddress('C:/Downloads/demo.zip'), false);
+  assert.equal(isRemoteAddress('C:\\Downloads\\demo.zip'), false);
+  assert.equal(isRemoteAddress('\\\\server\\share\\demo.zip'), false);
+  assert.equal(isRemoteAddress('//server/share/demo.zip'), false);
+  assert.equal(isRemoteAddress('http://example.invalid/a.zip'), true);
+  assert.equal(isRemoteAddress('ftp://example.invalid/a.zip'), true);
+  assert.equal(isRemoteAddress('https://example.invalid/a.zip'), true);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-install-win-'));
+  fs.mkdirSync(path.join(tmp, 'plugins'));
+  try {
+    const zip = await quiet(['install', 'C:/Downloads/demo.zip', '--root', tmp]);
+    assert.equal(zip.code, 1, zip.out);
+    assert.doesNotMatch(zip.out, /PLUGIN_INSTALL_URL/);
+    assert.match(zip.out, /PLUGIN_INSTALL_ZIP/);
+    const catalog = await quiet(['catalog', 'C:/Downloads/catalog.json', '--root', tmp]);
+    assert.equal(catalog.code, 1, catalog.out);
+    assert.doesNotMatch(catalog.out, /PLUGIN_CATALOG_URL/);
+    assert.match(catalog.out, /PLUGIN_CATALOG_FETCH/);
+    const ftp = await quiet(['install', 'ftp://example.invalid/a.zip', '--sha256', HASH, '--root', tmp]);
+    assert.match(ftp.out, /PLUGIN_INSTALL_URL/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

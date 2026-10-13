@@ -113,6 +113,7 @@ export function buildSurface(extra = {}) {
   for (const name of CATALOG_FIELDS) add(`catalog.field.${name}`, 'catalog', 'stable', 'shared/plugins/catalog.js#CATALOG_FIELDS');
   for (const name of CATALOG_ENTRY_FIELDS) add(`catalog.entry.${name}`, 'catalog', 'stable', 'shared/plugins/catalog.js#CATALOG_ENTRY_FIELDS');
   add(`sdk.${SDK_ID}`, 'sdk', 'experimental', 'shared/plugins/sdk.js#SDK_ID');
+  add('sdk.SDK_MEMBERS', 'sdk', 'internal', 'shared/plugins/sdk.js#SDK_MEMBERS');
   for (const name of SDK_MEMBERS) add(`sdk.${SDK_ID}.${name}`, 'sdk', 'experimental', 'shared/plugins/sdk.js#SDK_MEMBERS');
   add('api.PLUGIN_API.min', 'api', 'stable', 'shared/constants.js#PLUGIN_API');
   add('api.PLUGIN_API.current', 'api', 'stable', 'shared/constants.js#PLUGIN_API');
@@ -127,6 +128,19 @@ export function surfaceMarkdown(rows) {
   const head = '| name | stability | since | anchor |\n| --- | --- | --- | --- |';
   const body = rows.map((r) => `| \`${r.name}\` | ${r.stability} | ${r.since} | \`${r.anchor}\` |`).join('\n');
   return `${head}\n${body}`;
+}
+
+/**
+ * Export names of `namespace` (the module object of shared/plugins/sdk.js, or a stand-in) that have no row anchored
+ * at `shared/plugins/sdk.js#<export>`. A new export fails until a row names it. Members listed inside SDK_MEMBERS are
+ * not exports of the module; the export `SDK_MEMBERS` itself is.
+ * @param {Record<string, unknown>} namespace
+ * @param {{ anchor: string }[]} rows
+ * @returns {string[]}
+ */
+export function uncoveredSdkExports(namespace, rows) {
+  const anchors = new Set(rows.map((r) => r.anchor));
+  return Object.keys(namespace).filter((name) => !anchors.has(`shared/plugins/sdk.js#${name}`)).sort();
 }
 
 /** PLUGIN_API, re-exported so a reader of this module sees the version policy's bounds. */

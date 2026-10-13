@@ -696,8 +696,8 @@ export const PLUGIN_ERRORS = Object.freeze({
   },
   PLUGIN_CATALOG_URL: {
     level: 'problem', doc: D.catalog,
-    zh: '目录或插件地址不是 https：{detail}', en: 'A catalogue or plugin address is not https: {detail}',
-    fix: { zh: '地址以 https:// 开头，不能是 http，也不能在地址里写账号密码。', en: 'The address starts with https://. It is not http, and it has no user or password in it.' },
+    zh: '目录或插件地址不是可以下载的 https：{detail}', en: 'A catalogue or plugin address is not an https address this installer will fetch: {detail}',
+    fix: { zh: '地址以 https:// 开头，主机名要有点，不能写账号密码。下载时只访问公网地址的 443 端口；内网、本机、链路本地和 .local 会被拒绝，除非服主在 allowDownloadHosts 里点名。', en: 'The address starts with https://, the host has a dot, and it has no user or password. A download uses a public address on port 443 only. Loopback, private, link-local and .local are refused unless the operator names the host in allowDownloadHosts.' },
   },
   PLUGIN_CATALOG_HASH: {
     level: 'problem', doc: D.catalog,
@@ -722,12 +722,12 @@ export const PLUGIN_ERRORS = Object.freeze({
   PLUGIN_CATALOG_FETCH: {
     level: 'studio', doc: D.catalog,
     zh: '读不到这份目录：{detail}', en: 'The catalogue could not be fetched: {detail}',
-    fix: { zh: '确认地址是 https、服务器能访问它，并且没有被重定向到非 https。也可以改用本机的目录文件。', en: 'Check that the address is https, that the server can reach it, and that it is not redirected off https. A local catalogue file works too.' },
+    fix: { zh: '确认地址是公网 https 的 443 端口、服务器能访问它，并且没有被重定向到内网或非 https。这一次等待包含正文，不是每一跳重新计时。也可以改用本机的目录文件。', en: 'Check that the address is public https on port 443, that the server can reach it, and that it is not redirected to a non-public address or off https. The one deadline covers the body, not each redirect on its own. A local catalogue file works too.' },
   },
   PLUGIN_INSTALL_URL: {
     level: 'studio', doc: D.catalog,
-    zh: '安装地址不是 https：{detail}', en: 'The install address is not https: {detail}',
-    fix: { zh: '只安装 https 的 zip。本机文件可以直接给出路径。', en: 'Install an https zip only. A file on this machine can be given as a path.' },
+    zh: '安装地址不是公网 https：{detail}', en: 'The install address is not a public https address: {detail}',
+    fix: { zh: '只安装公网 https、443 端口的 zip。内网和本机地址默认拒绝。本机文件可以直接给出路径，包括 Windows 盘符和 UNC。', en: 'Install a public https zip on port 443 only. A private or loopback address is refused unless the operator allowlist names it. A file on this machine can be given as a path, including a Windows drive or a UNC path.' },
   },
   PLUGIN_INSTALL_HASH: {
     level: 'studio', doc: D.catalog,
@@ -742,7 +742,7 @@ export const PLUGIN_ERRORS = Object.freeze({
   PLUGIN_INSTALL_TIMEOUT: {
     level: 'studio', doc: D.catalog,
     zh: '下载超时：{detail}', en: 'The download timed out: {detail}',
-    fix: { zh: '检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。', en: 'Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20.' },
+    fix: { zh: '检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。这一次等待包含连接、重定向和正文，不是每一跳重新计时。', en: 'Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. That one deadline covers the connection, the redirects and the body.' },
   },
   PLUGIN_INSTALL_FETCH: {
     level: 'studio', doc: D.catalog,
@@ -751,8 +751,8 @@ export const PLUGIN_ERRORS = Object.freeze({
   },
   PLUGIN_INSTALL_REDIRECT: {
     level: 'studio', doc: D.catalog,
-    zh: '下载被重定向到了不安全的地址，或重定向次数太多：{detail}', en: 'The download was redirected to an unsafe address, or too many times: {detail}',
-    fix: { zh: '只跟随 https 重定向，最多 5 次。请换一个直接的 https 地址。', en: 'Only https redirects are followed, at most 5. Use a direct https address.' },
+    zh: '下载被重定向到了非公网地址、非 443 端口，或重定向次数太多：{detail}', en: 'The download was redirected to a non-public address, off port 443, or too many times: {detail}',
+    fix: { zh: '只跟随公网 https、443 端口的重定向，最多 5 次。请换一个直接的 https 地址。', en: 'Only a public https redirect on port 443 is followed, at most 5. Use a direct https address.' },
   },
   PLUGIN_INSTALL_ZIP: {
     level: 'studio', doc: D.catalog,

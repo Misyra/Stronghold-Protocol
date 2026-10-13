@@ -8,13 +8,13 @@ The frozen surface of plugin API v1. A plugin names the level it was written for
 
 **experimental** — the name may change or disappear in a later release of the same major. The table says which names those are. `script` and `trusted` (and the permissions only they use) are experimental because this build does not load them. `sp:sdk@1` is an experimental placeholder: P3a fills `SDK_MEMBERS` in `shared/plugins/sdk.js`. Nothing in that module is loaded into a battle or a match.
 
-**internal** — not for plugin authors. This table has none today.
+**internal** — not for plugin authors. `sdk.SDK_MEMBERS` is internal: it is the placeholder list in `shared/plugins/sdk.js`, not a function a plugin calls.
 
 Deprecation is this prose, not a fourth stability. A stable name that has to go is named here, kept in the table for one minor release, and removed only when `PLUGIN_API.min` moves past the release that published it.
 
 Studio routes are stable and **local-only**: this machine and the LAN, and the studio key (`X-SP-Studio`). Local-only is this paragraph, not a column of the table.
 
-This project does not host plugins and does not run a market. A catalogue (`schemas/catalog.schema.json`, docs/PLUGINS.md §17) is a document someone else publishes. Installing still means this server downloads one https zip and checks its SHA-256. The rows of the table are produced from the closed sets in the code (`node tools/plugin.mjs surface --write`). A new member of one of those sets (a manifest field, a permission, a class, a patch operation, a compact-record field, an overlay leaf, a DSL word, a postMessage name, a slot, a studio route, an error code, a catalogue field, an SDK member) belongs in the table. A new function export that is not one of those members does not.
+This project does not host plugins and does not run a market. A catalogue (`schemas/catalog.schema.json`, docs/PLUGINS.md §17) is a document someone else publishes. Installing still means this server downloads one https zip and checks its SHA-256. The rows of the table are produced from the closed sets in the code (`node tools/plugin.mjs surface --write`). A new member of one of those sets (a manifest field, a permission, a class, a patch operation, a compact-record field, an overlay leaf, a DSL word, a postMessage name, a slot, a studio route, an error code, a catalogue field, an SDK member) belongs in the table. Every export of `shared/plugins/sdk.js` belongs in the table too, anchored at that export (`uncoveredSdkExports`). A new function in another module that is not a new member of one of those sets is not a new row. `test/plugins/surface.test.js` reads the `api()` function and requires its method and path to equal `STUDIO_ROUTES` in both directions.
 
 ## The table
 
@@ -425,6 +425,7 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `catalog.entry.authors` | stable | 0.3.0 | `shared/plugins/catalog.js#CATALOG_ENTRY_FIELDS` |
 | `catalog.entry.app` | stable | 0.3.0 | `shared/plugins/catalog.js#CATALOG_ENTRY_FIELDS` |
 | `sdk.sp:sdk@1` | experimental | 0.3.0 | `shared/plugins/sdk.js#SDK_ID` |
+| `sdk.SDK_MEMBERS` | internal | 0.3.0 | `shared/plugins/sdk.js#SDK_MEMBERS` |
 | `api.PLUGIN_API.min` | stable | 0.3.0 | `shared/constants.js#PLUGIN_API` |
 | `api.PLUGIN_API.current` | stable | 0.3.0 | `shared/constants.js#PLUGIN_API` |
 <!-- plugin-surface:end -->

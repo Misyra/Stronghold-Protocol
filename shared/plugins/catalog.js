@@ -5,10 +5,10 @@
 //
 // [ASSUMED] field limits (CATALOG_LIMITS): name 80, description 400, url / homepage 500, license 80, one author 80,
 // at most 16 authors, app range 80, at most 500 entries. A catalogue document fetched over https is at most 1 MB
-// (CATALOG_FETCH_MAX_BYTES). Unknown fields are problems, so the JSON Schema and this check agree. Duplicate ids, and
-// an `app` string that is not a version range this game understands, are problems only this check can see (the schema
-// says so). An empty or missing `app` is allowed and counts as compatible. `bytes`, when present, is a whole number
-// from 0 through PLUGIN_LIMITS.pluginBytes; install refuses a download whose length differs.
+// (CATALOG_FETCH_MAX_BYTES). Unknown fields are problems, so the JSON Schema and this check agree, including duplicate
+// ids (`uniqueItemProperties`, a keyword only this repository's validator reads) and an `app` that is not a version
+// range. A missing `app` is compatible. An empty or whitespace-only `app` is not. `bytes`, when present, is a whole
+// number from 0 through PLUGIN_LIMITS.pluginBytes; install refuses a download whose length differs.
 
 import { APP_VERSION } from '../constants.js';
 import { PLUGIN_CLASSES, PLUGIN_LIMITS, appVersionMatches, isPluginId, isSemver, isVersionRange } from './manifest.js';
@@ -37,11 +37,22 @@ export const CATALOG_ENTRY_REQUIRED = Object.freeze(['id', 'name', 'version', 'c
 
 /**
  * https URL this catalogue accepts: a dotted hostname, no user or password, optional port and path.
- * [ASSUMED] a single-label host such as `localhost` is refused; `example.invalid` and dotted IPs are accepted.
+ * [ASSUMED] a single-label host such as `localhost` is refused; `example.invalid` and dotted IPs pass this syntax.
+ * The download (server/plugins/install.js) then refuses a non-public address, a non-443 port, and `.local`.
  * The schema's `pattern` is this source.
  */
 export const HTTPS_URL_SOURCE = '^https:\\/\\/(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:\\/[A-Za-z0-9._~:/?#\\[\\]@!$&\'()*+,;=%-]*)?$';
 export const HTTPS_URL_RE = new RegExp(HTTPS_URL_SOURCE);
+
+/**
+ * An `app` range, the same language as isVersionRange, anchored, with optional surrounding whitespace.
+ * An empty string is not a range here (isVersionRange treats empty as "any"; a present empty `app` is invalid).
+ * [ASSUMED] the schema pattern is this source. A stock editor that does not know `uniqueItemProperties` still
+ * enforces this pattern.
+ */
+const APP_RANGE_CMP = '(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(?:\\d+|[xX*]))?';
+const APP_RANGE_ALT = `(?:\\*|x|${APP_RANGE_CMP}(?:\\s+${APP_RANGE_CMP})*)`;
+export const APP_RANGE_PATTERN = `^\\s*${APP_RANGE_ALT}(?:\\s*\\|\\|\\s*${APP_RANGE_ALT})*\\s*$`;
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const chars = (s) => [...s].length;
@@ -74,8 +85,7 @@ export const isCatalogUrl = (value) => typeof value === 'string' && chars(value)
 
 /**
  * Read a catalogue value (already parsed). `ok` is true only when there is neither a problem nor a warning, which is
- * also when schemas/catalog.schema.json accepts it — except duplicate ids and an `app` that is not a version range,
- * which only this function rejects.
+ * also when schemas/catalog.schema.json accepts it (the repository validator understands `uniqueItemProperties`).
  * @param {unknown} raw
  * @returns {CatalogRead}
  */
@@ -91,6 +101,7 @@ export function readCatalog(raw) {
     return done(null);
   }
   for (const k of Object.keys(raw)) if (!CATALOG_FIELDS.includes(k)) bad('PLUGIN_CATALOG_SHAPE', `unknown field ${k}`, k);
+  if (Object.hasOwn(raw, '$schema') && (typeof raw.$schema !== 'string' || chars(raw.$schema) > 200)) bad('PLUGIN_CATALOG_FIELD', '"$schema" must be a string of at most 200 characters', '$schema');
   if (raw.catalog !== 1) bad('PLUGIN_CATALOG_SHAPE', '"catalog" must be 1', 'catalog');
   if (typeof raw.name !== 'string' || chars(raw.name) < 1 || chars(raw.name) > CATALOG_LIMITS.name) bad('PLUGIN_CATALOG_FIELD', `"name" must be 1–${CATALOG_LIMITS.name} characters`, 'name');
   if (!Array.isArray(raw.plugins)) bad('PLUGIN_CATALOG_SHAPE', '"plugins" must be an array', 'plugins');
@@ -131,7 +142,8 @@ export function readCatalog(raw) {
         else if (!list.length || list.length > CATALOG_LIMITS.authors || list.some((a) => typeof a !== 'string' || chars(a) < 1 || chars(a) > CATALOG_LIMITS.author)) bad('PLUGIN_CATALOG_FIELD', `${at}.authors must be 1–${CATALOG_LIMITS.authors} names of 1–${CATALOG_LIMITS.author} characters`, `${at}.authors`);
       }
       if (Object.hasOwn(entry, 'app')) {
-        if (typeof entry.app !== 'string' || chars(entry.app) < 1 || chars(entry.app) > CATALOG_LIMITS.app || !isVersionRange(entry.app)) bad('PLUGIN_CATALOG_FIELD', `${at}.app is not a version range`, `${at}.app`);
+        const app = entry.app;
+        if (typeof app !== 'string' || chars(app) < 1 || chars(app) > CATALOG_LIMITS.app || app.trim() === '' || !isVersionRange(app)) bad('PLUGIN_CATALOG_FIELD', `${at}.app is not a version range`, `${at}.app`);
       }
       if (!problems.some((p) => p.path === at || p.path.startsWith(`${at}.`))) plugins.push(entry);
     });
@@ -144,14 +156,17 @@ export function readCatalog(raw) {
  * One entry's install status against this build.
  * `installed` is the version string in plugins/<id>/, null when the folder is there but the version cannot be read,
  * and undefined when it is not installed. Incompatible wins over installed / updatable, and the installed version is
- * still reported. [ASSUMED] every class, including cosmetic, uses appVersionMatches; a missing `app` is compatible.
+ * still reported. [ASSUMED] every class, including cosmetic, uses appVersionMatches. A missing `app` is compatible.
+ * A present `app` that is empty, whitespace, or not a range (including one appVersionMatches would treat as a match
+ * because it cannot read it) is incompatible.
  * @param {Record<string, unknown>} entry
  * @param {string | null | undefined} installed
  * @param {string} [appVersion]
  * @returns {{ status: 'installed' | 'updatable' | 'incompatible' | 'available', installedVersion: string | null }}
  */
 export function entryStatus(entry, installed, appVersion = APP_VERSION) {
-  const incompatible = typeof entry.app === 'string' && entry.app !== '' && !appVersionMatches(entry.app, appVersion);
+  const app = entry.app;
+  const incompatible = Object.hasOwn(entry, 'app') && (typeof app !== 'string' || app.trim() === '' || !isVersionRange(app) || !appVersionMatches(app, appVersion));
   const installedVersion = installed === undefined ? null : installed;
   if (incompatible) return { status: 'incompatible', installedVersion };
   if (installed === undefined) return { status: 'available', installedVersion: null };

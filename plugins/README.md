@@ -31,7 +31,8 @@ every finding in plain words, `pack <dir> --zip` writes the `plugin.lock.json` a
 `_template/ui/` is an interface plugin: a damage tally in a sandboxed frame (DESIGN §32.8).
 
 For data, copy `_template/content/` to `data-demo/` (PLUGINS.md §10: a bond patch and a kitRef operator); a server owner
-may limit what rooms take in `config.json` here (PLUGINS.md §11, DEPLOY.md).
+may limit what rooms take in `config.json` here (PLUGINS.md §11, DEPLOY.md). The same file's `allowDownloadHosts`
+is the operator's https download allowlist (PLUGINS.md §17); it is not a room-policy field.
 
 ```json
 {

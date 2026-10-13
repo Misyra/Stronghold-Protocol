@@ -1004,18 +1004,18 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_META` | The prep spec is not right ({where}): {detail} | Write "meta": { "on": [ { "when": <trigger>, "do": [ <actions> ] } ] }; "meta.key" is effect:<plugin id>:<name> with this plugin's own id. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TALENT` | A talent is not right ({where}): {detail} | "talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_SHAPE` | The catalogue file is not in the right shape: {detail} | A catalogue is a JSON object with "catalog": 1, a "name" and a "plugins" list. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_URL` | A catalogue or plugin address is not https: {detail} | The address starts with https://. It is not http, and it has no user or password in it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_URL` | A catalogue or plugin address is not an https address this installer will fetch: {detail} | The address starts with https://, the host has a dot, and it has no user or password. A download uses a public address on port 443 only. Loopback, private, link-local and .local are refused unless the operator names the host in allowDownloadHosts. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_HASH` | A catalogue entry has no sha256, or it is not 64 lowercase hex digits: {detail} | Each plugin names the SHA-256 of its zip (64 lowercase hex digits). |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_ID` | A plugin id is not valid, or it is repeated: {detail} | An id is 2 to 32 lowercase letters, digits and hyphens, and it appears once in the catalogue. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_FIELD` | A catalogue field is not valid: {detail} | Follow docs/plugin-catalog.example.json: version is semver, class is a known class, and long text is shortened. |
 | The studio refuses the action and says why | `PLUGIN_CATALOG_SIZE` | The catalogue file is too large: {detail} | The catalogue document itself is at most 1 MB. A plugin zip has its own 200 MB cap. |
-| The studio refuses the action and says why | `PLUGIN_CATALOG_FETCH` | The catalogue could not be fetched: {detail} | Check that the address is https, that the server can reach it, and that it is not redirected off https. A local catalogue file works too. |
-| The studio refuses the action and says why | `PLUGIN_INSTALL_URL` | The install address is not https: {detail} | Install an https zip only. A file on this machine can be given as a path. |
+| The studio refuses the action and says why | `PLUGIN_CATALOG_FETCH` | The catalogue could not be fetched: {detail} | Check that the address is public https on port 443, that the server can reach it, and that it is not redirected to a non-public address or off https. The one deadline covers the body, not each redirect on its own. A local catalogue file works too. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_URL` | The install address is not a public https address: {detail} | Install a public https zip on port 443 only. A private or loopback address is refused unless the operator allowlist names it. A file on this machine can be given as a path, including a Windows drive or a UNC path. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_HASH` | The zip SHA-256 does not match, or none was given: {detail} | An https install needs --sha256 (or the sha256 of a catalogue entry). Do not install when the hash differs. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_SIZE` | The zip is over the size cap, or it is not the byte length the catalogue names: {detail} | A plugin is at most 200 MB. When the catalogue gives bytes, it has to be the zip size. |
-| The studio refuses the action and says why | `PLUGIN_INSTALL_TIMEOUT` | The download timed out: {detail} | Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_TIMEOUT` | The download timed out: {detail} | Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. That one deadline covers the connection, the redirects and the body. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_FETCH` | The download failed: {detail} | Check that the address opens and answers with the zip (HTTP 200). |
-| The studio refuses the action and says why | `PLUGIN_INSTALL_REDIRECT` | The download was redirected to an unsafe address, or too many times: {detail} | Only https redirects are followed, at most 5. Use a direct https address. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_REDIRECT` | The download was redirected to a non-public address, off port 443, or too many times: {detail} | Only a public https redirect on port 443 is followed, at most 5. Use a direct https address. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_ZIP` | This zip cannot be installed: {detail} | The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_CHECK` | The plugin failed its check and was not placed in plugins/: {detail} | Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files. |
 | The studio refuses the action and says why | `PLUGIN_INSTALL_EXISTS` | plugins/ already has this id: {detail} | Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it. |
@@ -1045,25 +1045,41 @@ format is `schemas/catalog.schema.json` and `shared/plugins/catalog.js`: `{ "cat
 example whose addresses do not exist.
 
 `node tools/plugin.mjs install <zip path | https URL> [--sha256 <hex>] [--force]` installs into `plugins/<id>/`. A file
-on this machine installs as it is. An https address is accepted only with `--sha256`. The hash is checked on the bytes.
-The download stops at 200 MB (`PLUGIN_LIMITS.pluginBytes`), times out, and does not follow a redirect that leaves https.
-The zip is extracted with the same protections as any plugin zip (no path traversal, no symbolic link, no file-count or
-size bomb) into a temporary folder. `check` must pass (a warning does not stop it) before the folder is renamed into
-`plugins/<id>/`. The same id is left untouched unless `--force`, which moves the old folder to
-`plugins/_replaced/<id>-<time>/` and does not delete it. No file in the package is imported or run.
+on this machine installs as it is, including a Windows drive (`C:/…`, `C:\…`) and a UNC path (`\\server\…`, `//server/…`).
+An https address is accepted only with `--sha256`. The hash is checked on the bytes. The download stops at 200 MB
+(`PLUGIN_LIMITS.pluginBytes`). One deadline covers the connection, every redirect and the body. A redirect is followed
+only when the next address is still public https on port 443. A literal private, loopback, link-local or `.local`
+address is refused before the request, and so is an address that resolves to one of those. The zip is extracted with
+the same protections as any plugin zip (no path traversal, no symbolic link, no file-count or size bomb, no two paths
+that differ only by case, no ZIP64 extra on the local header) into a temporary folder. `check` must pass (a warning
+does not stop it) before the folder is renamed into `plugins/<id>/`. The same id is left untouched unless `--force`,
+which moves the old folder to `plugins/_replaced/<id>-<time>/` and does not delete it. No file in the package is
+imported or run.
 
 `node tools/plugin.mjs catalog <file | https URL> [--json]` lists the entries and marks each one installed, updatable
-or incompatible with this build (`app`, every class). Fetching the catalogue document does not require a hash of the
-document. It is still https only, capped, and it does not follow a redirect off https.
+or incompatible with this build (`app`, every class). A missing `app` is compatible. An empty `app` is not a valid
+catalogue, and a present `app` this build cannot read is incompatible. Fetching the catalogue document does not
+require a hash of the document. It is still public https on port 443 only, capped, and it does not follow a redirect
+to a non-public address or off https. The same id twice is refused by `readCatalog` and by this repository's schema
+validator (`uniqueItemProperties`). A stock JSON Schema editor that ignores that keyword will not see the duplicate.
 
 The studio page 「从目录安装」 (`/studio/`) takes a catalogue address or a catalogue file the browser already has. The
 browser posts the text. It does not download the zip and upload it. The server downloads, on this machine and the LAN,
 with the studio key. The browser cannot name a path on the server's disk.
 
-[ASSUMED] a zip download waits 60 seconds and a catalogue document 20 seconds, with at most 5 redirects. A catalogue
-document is at most 1 MB. Field limits are in `CATALOG_LIMITS`. A missing `app` is compatible. Whether an installed
-copy is older ignores a pre-release suffix. A class this build does not load may still be stored when the check passes;
-it is not executed.
+An operator may name extra download hosts in `plugins/config.json` `allowDownloadHosts` (a string array in the same
+file as the room policy; `policy.js` ignores the key) or in `SP_PLUGIN_DOWNLOAD_ALLOW` (comma-separated). An entry is
+an exact host, `host:port`, or `[ipv6]` / `[ipv6]:port`. There are no wildcards. The default is empty. A catalogue
+document cannot add a host. A missing or broken list does not block a public download.
+
+[ASSUMED] a zip download waits 60 seconds and a catalogue document 20 seconds. That one deadline covers the body, and
+there are at most 5 redirects. Only port 443 unless the allowlist names the host. The allowlist names above are the
+operator's. A leading `//` is a file path, not a protocol-relative URL. `2001::/32` and the whole `2002::/16` are
+refused, as is every IPv4-mapped IPv6 address. The download does not pin a certificate beyond Node's default TLS
+check. A catalogue document is at most 1 MB. Field limits are in `CATALOG_LIMITS`. A missing `app` is compatible; an
+empty one is not. Whether an installed copy is older ignores a pre-release suffix. Case folding of a zip path is
+Unicode `toLowerCase` of each segment. A class this build does not load may still be stored when the check passes;
+it is not executed. `uniqueItemProperties` is a keyword of this repository's validator, not of stock JSON Schema.
 
 ## 18. Later
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "catalog.schema.json",
   "title": "A community plugin catalogue",
-  "description": "A list of plugins someone else publishes (docs/PLUGINS.md §17, docs/plugin-catalog.example.json). This project does not host the files. Accepted here means shared/plugins/catalog.js readCatalog finds neither a problem nor a warning, except two things only the check sees: the same id twice (uniqueItems compares the whole entry, not the id) and an app string that is not a version range. Addresses are https with a dotted host and no user or password. bytes, when present, is at most 200 MB (209715200).",
+  "description": "A list of plugins someone else publishes (docs/PLUGINS.md §17, docs/plugin-catalog.example.json). This project does not host the files. Accepted here means shared/plugins/catalog.js readCatalog finds neither a problem nor a warning. uniqueItemProperties is not a stock JSON Schema keyword: this repository's test/helpers/jsonSchema.js enforces it (the same id twice). A stock editor that ignores it will not see a duplicate id; the normative check is that validator plus readCatalog. app is a version range (the same language as isVersionRange). A missing app is compatible; an empty app is not. Addresses are https with a dotted host and no user or password. The download layer, not this schema, refuses a non-public address and a port other than 443. bytes, when present, is at most 200 MB (209715200).",
   "type": "object",
   "additionalProperties": false,
   "required": ["catalog", "name", "plugins"],
@@ -14,6 +14,7 @@
       "type": "array",
       "maxItems": 500,
       "uniqueItems": true,
+      "uniqueItemProperties": ["id"],
       "items": { "$ref": "#/$defs/entry" }
     }
   },
@@ -54,7 +55,12 @@
             }
           ]
         },
-        "app": { "type": "string", "minLength": 1, "maxLength": 80 }
+        "app": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^\\s*(?:\\*|x|(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(?:\\d+|[xX*]))?(?:\\s+(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(?:\\d+|[xX*]))?)*)(?:\\s*\\|\\|\\s*(?:\\*|x|(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(?:\\d+|[xX*]))?(?:\\s+(?:\\^|~|>=|<=|>|<|=)?v?\\d+(?:\\.(?:\\d+|[xX*]))?(?:\\.(?:\\d+|[xX*]))?)*))*\\s*$"
+        }
       }
     }
   }

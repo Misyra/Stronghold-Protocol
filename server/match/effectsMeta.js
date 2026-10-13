@@ -47,6 +47,7 @@ import { registerAllMeta } from '../sim/content/index.js';
 import { registerBuiltins } from './builtinMeta.js';
 import { msg, dn } from '../../shared/i18n.js';
 import { onGiftTicker } from './botEmotes.js';
+import { previewContext } from './preview.js';
 
 export const HOOKS = Object.freeze([
   'onRoundStart', 'onIncome', 'onPrepStart', 'onPrepEnd', 'onGain', 'onSold', 'onRefresh', 'onPrice', 'onBuy',
@@ -160,6 +161,7 @@ export class EffectDispatcher {
   }
 
   _report(key, hook, e) {
+    if (this.preview) return;
     this.errors++;
     const msg = `${key}.${hook}: ${e && e.message ? e.message : e}`;
     const rec = this.errorsByKey.get(msg);
@@ -184,7 +186,11 @@ export class EffectDispatcher {
   _call(ps, key, handler, hook, source, ev, repeat = 1) {
     const fn = typeof handler[hook] === 'function' ? handler[hook] : source.kind === 'garrison' && typeof handler.run === 'function' ? handler.run : null;
     if (!fn) return;
-    const ctx = makeCtx(this.m, ps, source, hook, ev);
+    let ctx;
+    if (this.preview) {
+      try { ctx = makeCtx(this.m, ps, source, hook, ev, this.preview); }
+      catch (e) { this._report(key, hook, e); return; }
+    } else ctx = makeCtx(this.m, ps, source, hook, ev);
     for (let i = 0; i < repeat; i++) {
       if (!this._allowScript(handler,hook)) break;
       try { fn.call(handler, ctx, ev); } catch (e) { this._report(key, hook, e); }
@@ -209,6 +215,15 @@ export class EffectDispatcher {
    * ev.gain, onBattleStart ev.input, …) and returned.
    */
   dispatch(ps, hook, ev = {}, { quiet = false, skipKey = null } = {}) {
+    if (ev.preview && !this.preview) {
+      // Fresh dispatcher per preview: scripts share a local budget, and errors never enter the match diagnostics.
+      // Clone the entire event, including nested effect data and spawn mods, before giving it to any handler.
+      const isolated = new EffectDispatcher(this.m, this.registry);
+      isolated.preview = { rng: this.m.rngMeta.clone(), data: new Map(), players: new Map([[ps.playerId, ps]]) };
+      const result = isolated.dispatch(ps, hook, structuredClone(ev), { quiet: true, skipKey });
+      Object.assign(ev, result);
+      return ev;
+    }
     if (!ps || this.depth >= MAX_DEPTH) {
       if (ps && !quiet) this.m.log.warn?.(`[match ${this.m.roomCode}] meta dispatch depth limit (${hook})`);
       return ev;
@@ -467,10 +482,13 @@ function grantSpeaker(gd, source) {
  * @param {string} hook
  * @param {object|null} [ev] the event being dispatched (onPrice: ctx.modifyPrice / ctx.setPrice edit ev.price)
  */
-export function makeCtx(m, ps, source, hook, ev = null) {
+export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
   // the player's view of the data: its slotted 自选 slots are its operators (0.2.0, player/diy.js) — chessRecord,
   // pieceBonds, a strategy's / 特质's bond and tier reads see the operator; the match's GameData for everyone else
   const gd = ps.gd || m.gd;
+  const rng = preview?.rng ?? m.rngMeta;
+  // The roll helpers only read pools/data; shadow their RNG receiver without replacing the live match stream.
+  const rolls = preview ? Object.assign(Object.create(m), { rngMeta: rng }) : m;
   const view = (p) => (p ? ps.pieceView(p) : null);
   const ctx = {
     hook,
@@ -486,7 +504,7 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     isCoop: !m.isSolo,
     data: gd.raw,
     gd,
-    rng: m.rngMeta,
+    rng,
     log: (msg) => m.log.info?.(`[meta ${m.roomCode}] ${ps.playerId}: ${msg}`),
 
     // ---- reads
@@ -599,14 +617,14 @@ export function makeCtx(m, ps, source, hook, ev = null) {
         return typeof opts.filter === 'function' ? !!opts.filter(id) : true;
       };
       const extra = typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null;
-      return m.pool.roll(m.rngMeta, { maxTier: Number.isInteger(opts.maxTier) ? opts.maxTier : 6, tier: Number.isInteger(opts.tier) ? opts.tier : null, filter: f, extra, ignoreCounts: opts.ignoreCounts === true });
+      return m.pool.roll(rng, { maxTier: Number.isInteger(opts.maxTier) ? opts.maxTier : 6, tier: Number.isInteger(opts.tier) ? opts.tier : null, filter: f, extra, ignoreCounts: opts.ignoreCounts === true });
     },
-    rollItem: (opts = {}) => m.rollItemId(opts),
+    rollItem: (opts = {}) => rolls.rollItemId(opts),
     /**
      * Roll a choices.json pool: equip pools → { kind: 'item', id }; chess pools (items / weighted / shopEligible with
      * tier, minTier, bond, golden) → { kind: 'chess', id, golden } (a pool chess needs a free copy). null when empty.
      */
-    rollPool: (poolId, opts = {}) => m.rollPool(poolId, {
+    rollPool: (poolId, opts = {}) => rolls.rollPool(poolId, {
       shopLevel: ps.shop.level,
       // a shared-pool draw also takes the player's 自选 stock, its bonds read through the player's view (rollChess)
       extra: typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null, chessOf: (id) => gd.chess(id),
@@ -714,5 +732,10 @@ export function makeCtx(m, ps, source, hook, ev = null) {
     teammates: () => m.alivePlayers().filter((p) => p !== ps).map((p) => makeCtx(m, p, source, hook, null)),
     player: (playerId) => { const p = m.players.get(playerId); return p && p.alive ? makeCtx(m, p, source, hook, null) : null; },
   };
-  return ctx;
+  if (!preview) return ctx;
+  const forPlayer = (p) => makeCtx(m, preview.players.get(p.playerId) || p, source, hook, null, preview);
+  return previewContext(ctx, preview, {
+    teammates: () => m.alivePlayers().filter((p) => p.playerId !== ps.playerId).map(forPlayer),
+    player: (id) => { const p = m.players.get(id); return p?.alive ? forPlayer(p) : null; },
+  });
 }

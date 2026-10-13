@@ -142,6 +142,8 @@ test('manifest reader ignores unlisted and malformed preload rows while retainin
 test('metadata-only publishing is offline, preserves all CDN keys, and refuses unpublished bytes', async (t) => {
   const inst = install(t);
   const tools = path.join(inst.root, 'tools'); fs.mkdirSync(tools);
+  fs.mkdirSync(path.join(inst.root, 'server'));
+  fs.copyFileSync(new URL('../../server/fileHash.js', import.meta.url), path.join(inst.root, 'server', 'fileHash.js'));
   for (const name of ['r2-sync.mjs', 'published-assets.mjs']) fs.copyFileSync(new URL('../../tools/' + name, import.meta.url), path.join(tools, name));
   const networkGuard = path.join(inst.root, 'network-guard.mjs');
   fs.writeFileSync(networkGuard, "globalThis.fetch = () => { throw Error('network forbidden'); };\n");

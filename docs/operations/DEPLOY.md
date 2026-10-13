@@ -313,7 +313,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 | 环境变量 | 默认值 | 行为 |
 | --- | --- | --- |
 | `SP_CHAT_LOG_COMPRESS_AFTER_DAYS` | `1` | 保留最近 N 个 UTC 日期的原文件，更早的日志压缩；`0` 关闭压缩 |
-| `SP_CHAT_LOG_RETENTION_DAYS` | `0` | `0` 永久保留；正整数 N 仅保留今天及此前 N−1 个 UTC 日期，超过范围的 JSONL 和 gzip 归档会删除 |
+| `SP_CHAT_LOG_RETENTION_DAYS` | `30` | `0` 永久保留；正整数 N 仅保留今天及此前 N−1 个 UTC 日期，超过范围的 JSONL 和 gzip 归档会删除 |
 
 例如 `SP_CHAT_LOG_RETENTION_DAYS=30` 保留最近 30 个 UTC 日期，修改后重启。清理只处理目录内日期有效的标准日志文件，不递归遍历目录、不跟随文件链接，也不删除其他文件；一天前遗留的本程序临时归档文件会回收。
 

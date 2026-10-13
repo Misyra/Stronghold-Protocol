@@ -38,7 +38,8 @@ export function trackCombat(battle) {
     const row = rowOf(src);
     if (!row || !delta) return;
     row.damage += delta;
-    row.types[DAMAGE_TYPES.includes(type) ? type : 'true'] += delta;
+    const bucket = type === 'element' ? 'elemental' : DAMAGE_TYPES.includes(type) ? type : 'unknown';
+    row.types[bucket] = (row.types[bucket] || 0) + delta;
   }, { priority: Number.MAX_VALUE });
   // The heal hook is before mitigation/overheal. The return value is the actual restored HP, including silent regen.
   const heal = battle.heal;
@@ -79,6 +80,7 @@ export function combineCombat(records, ownerId = null) {
       row.damage += r.damage;
       row.healing += r.healing;
       for (const t of DAMAGE_TYPES) row.types[t] += r.types[t] || 0;
+      if (r.types.unknown) row.types.unknown = (row.types.unknown || 0) + r.types.unknown;
     }
     for (const owner of owners) elapsed.set(owner, (elapsed.get(owner) || 0) + positive(record.seconds));
   }

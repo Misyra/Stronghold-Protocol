@@ -272,7 +272,7 @@ export function RoomScreen() {
     if (!matching || !room?.matchmaking) { setElapsed(0); return; }
     const update = () => setElapsed(Math.max(0, Math.floor((Date.now() + (store.get().clock.offset || 0) - matching.joinedAt) / 1000)));
     update(); const timer = setInterval(update, 1000); return () => clearInterval(timer);
-  }, [matching?.joinedAt, room?.matchmaking]);
+  }, [matching?.joinedAt, !!room?.matchmaking]);
 
   if (!room) return null;
   const online = conn.status === 'online';

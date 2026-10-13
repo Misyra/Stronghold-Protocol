@@ -214,12 +214,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const abs = parts.length >= 2 && !parts.some((s) => s === '' || s === '.' || s === '..') ? registry.servable(parts[0], parts.slice(1).join('/')) : null;
       const st = abs ? await fsp.stat(abs).catch(() => null) : null;
       if (!st || !st.isFile()) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
-      await serveFile(req, res, abs, st, 'packs', parts, query, gzipCache, log);
+      await serveFile(req, res, abs, st, 'packs', parts, gzipCache, log);
       return;
     }
     // Extension-less audio (download-manager avoidance): /media/bgm/act1 → /assets/audio/bgm/act1.mp3
     if (decoded.startsWith(MEDIA_PREFIX)) {
-      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), query, publicDir, gzipCache, log, release, versioned);
+      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), publicDir, gzipCache, log, release, versioned);
       return;
     }
     // Bare mount paths (e.g. "/data") → treat as the mount directory.
@@ -290,7 +290,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       && !isBoardResourceJson(decoded) && (mount.name === 'data' || segments[0] === 'assets'))));
     const body = rewrite ? await bodyFor(absPath, stat, ext) : null;
     const builtAsset = /^\/build\/assets\/[\w.-]+-[\w-]{8,}\.[a-z0-9]+$/.test(decoded);
-    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, body, rewrite ? release.tag : '', versioned || builtAsset);
+    await serveFile(req, res, absPath, stat, mount.name, segments, gzipCache, log, { body, variant: rewrite ? release.tag : '', versioned: versioned || builtAsset });
   };
   handler.version = release.tag;
   handler.runtimeVersion = release.runtimeTag;

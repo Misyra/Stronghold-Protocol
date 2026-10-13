@@ -77,16 +77,14 @@ const isIndex = (k, v) => Array.isArray(v) && String(Number(k)) === k && Number(
 function extraProps(v) {
   const names = Object.getOwnPropertyNames(v);
   const out = {};
-  let n = 0;
   for (const k of names) {
     if (k === 'length' || isIndex(k, v)) continue;
     const d = Object.getOwnPropertyDescriptor(v, k);
     if (!d || !('value' in d)) continue;                 // accessors are skipped (never invoked)
     if (!Array.isArray(v) && d.enumerable) continue;     // plain objects: enumerable keys are copied below
     out[k] = encodeState(d.value);
-    n++;
   }
-  return n > 0 ? out : null;
+  return Object.keys(out).length ? out : null;
 }
 
 /** JSON-safe encoding of a state value (Maps, Sets, ±Infinity/NaN, non-enumerable properties). */
@@ -109,14 +107,11 @@ export function encodeState(v) {
   }
   if (v instanceof Set) return { [SET_TAG]: [...v].map(encodeState) };
   const out = {};
-  let n = 0;
   for (const k of Object.getOwnPropertyNames(v)) {
     const d = Object.getOwnPropertyDescriptor(v, k);
     if (!d || !('value' in d) || !d.enumerable) continue;
     out[k] = encodeState(d.value);
-    n++;
   }
-  void n;
   const extra = extraProps(v);
   // the marker form only ever holds marker keys, so a plain object never collides with it (see decodeState)
   if (extra) return { [PROPS_TAG]: { ...extra, ...out } };
@@ -177,7 +172,7 @@ function withProps(value, extra) {
  * Match scalars of a checkpoint. Everything else is either rebuilt by the constructor (gd, ds, stage, players,
  * order, pool, schedulers) or transient (clocks, view plumbing, timers, battle objects).
  */
-const MATCH_FIELDS = Object.freeze([
+export const MATCH_FIELDS = Object.freeze([
   'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
@@ -186,12 +181,28 @@ const MATCH_FIELDS = Object.freeze([
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
-const PLAYER_FIELDS = Object.freeze([
+export const PLAYER_FIELDS = Object.freeze([
   'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'alive', 'lp', 'bandId', 'funds',
   'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult', 'diy', 'diyStock', 'diyBanned',
+]);
+
+// Explicitly rebuilt or phase-local state. A new own property must be classified here or persisted above.
+export const TRANSIENT_MATCH_FIELDS = Object.freeze([
+  'opts', 'log', 'sendFn', 'broadcastFn', 'onEndFn', 'data', 'gd', 'ownsScheduler', 'sched', 'onAudit',
+  'workerStats', '_workerAuditAt', 'offlinePaused', 'rehearsalPressure', 'registry', 'dispatcher', 'BattleClass',
+  'workerPool', '_workerTasks', 'battleContent', 'botRehearsalLimit', 'botSliceMs', 'ds', 'paused', '_pausedAt',
+  '_bossPubTimer', '_bossPubAt', '_bossClockOn', '_progressTimer', '_bossClock', '_lastPoolAt', '_poolTimer',
+  '_lastPoolKey', 'pacer', 'rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 'rngBots', 'rngMeta', 'players', 'order',
+  'spectators', 'stage', 'pool', 'itemPool', 'phase', 'deadline', 'overtimeAt', 'ended', 'disposed', 'startedAt',
+  '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
+  '_privDirty', '_prepEndQueued', 'bossPairs', 'fields', 'runner', 'watchers', 'watchPref', 'lastResults', 'unitePlan',
+  'uniteResultView', '_uniteLeftKey', '_uniteBounds', 'teamLp', 'bossPool', 'outcome', '_turnToken',
+]);
+export const TRANSIENT_PLAYER_FIELDS = Object.freeze([
+  'm', 'gd', 'standIns', '_standInSet', '_diyRecords', 'bonds', '_deployMap', '_deployField', '_legalityStale', '_botPrepToken',
 ]);
 
 /** The RNG streams the match owns (server/sim/rng.js createRng, state()/setState). */
@@ -395,12 +406,12 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
     ps._lastPriv = null;
     ps.recompute();
   }
-  enterPhase(m, doc, now);
+  enterPhase(m, doc);
   return true;
 }
 
 /** Re-enter the checkpointed phase (see the header for the clock rules). */
-function enterPhase(m, doc, now) {
+function enterPhase(m, doc) {
   const remaining = Math.max(0, Number(doc.deadlineRemainingMs) || 0);
   switch (doc.phase) {
     case PHASE.INFO_CHECK: {
@@ -441,7 +452,6 @@ function enterPhase(m, doc, now) {
     default:
       break;
   }
-  void now;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -471,9 +481,4 @@ export function matchState(m) {
     players[ps.playerId] = p;
   }
   return { match, pool, rng, players };
-}
-
-/** JSON digest of matchState (tests / tools). */
-export function matchDigest(m) {
-  return JSON.stringify(matchState(m));
 }

@@ -71,7 +71,7 @@
 - `test/ui/room-mobile.test.js` 检查四个房间工具的成分与可访问名(协力与独立模拟同一形状),并在 `components.css → room.css → utility-mobile.css` 三层真实层叠上验证命名网格区、顶栏单行(`.topbar__left` / `.connection-status` 不换行、`.room-ping` 让位)、包含 760/761 两侧、竖屏自动行和桌面固定高度不被改动。
 - `test/ui/text-scale.test.js`、`test/ui/devices.test.js`、资源/语音、本机历史与既有 UI 测试保护设置、数据/聚合行为与不变的战场几何。
 - `test/vite.test.js` 验证生产 CSS 的包含与顺序;`test/client-static.test.js` 验证 `devices.css` 之后只允许这一个作用域层。
-- `test/ui/utility-mobile.e2e.test.js`(**opt-in,需要 Chrome**:`SP_E2E=1 CHROME_PATH=… node --test test/ui/utility-mobile.e2e.test.js`)在真实 Chrome 上跑源码客户端,覆盖 844×390、568×320 小横屏、以及 `中`/`特大` 两档字号:设置弹窗必须落在可视视口内、正文可滚动、28 个控件**逐个滚动到位后**中心点真的能点到(44px 隐形热区不得压住邻居)、按钮 ≥24px、正文 ≥11px、输入框 ≥16px;大厅/本机历史统计不横向溢出;协力房四个工具 `.75rem` 可点、保留可访问名、标题与控件和邀请同一行;竖屏旋转门槛覆盖所有管理界面。它不需要构建(直接服务源码),打包后的那份由 `test/vite.test.js` 负责。
+- `test/ui/utility-mobile.e2e.test.js`(**opt-in,需要 Chrome**:`SP_E2E=1 CHROME_PATH=… node --test test/ui/utility-mobile.e2e.test.js`)在真实 Chrome 上跑源码客户端,覆盖 844×390、568×320 小横屏、以及 `中`/`特大` 两档字号:设置弹窗必须落在可视视口内、正文可滚动、28 个控件**逐个滚动到位后**中心点真的能点到(44px 隐形热区不得压住邻居)、按钮 ≥24px、设置正文随局部文字基准缩放（包括用户选择的小字号）、输入框 ≥16px;大厅/本机历史统计不横向溢出;协力房四个工具 `.75rem` 可点、保留可访问名、标题与控件和邀请同一行;竖屏旋转门槛覆盖所有管理界面。它不需要构建(直接服务源码),打包后的那份由 `test/vite.test.js` 负责。
 - opt-in 的设备浏览器测试保留横屏检查。
 
 静态数值预算**不模拟**字体固有宽度、CSS 布局、虚拟键盘、真机刘海或触摸命中。构建/Node 通过**不等于**浏览器或真机验证。上一层列出的 opt-in 浏览器测试已经在本机 Chrome 上跑通(844×390 / 568×320 / 四档字号,截图在 `test/e2e/out/`),但它只覆盖 Chrome 的模拟视口;**虚拟键盘、真机刘海、惯性滚动和 iOS Safari 仍需手动确认**。需要真机结论时,请同时检查源码与生产两种模式、中英两种语言、四档字号、横竖屏、长列表/长名字/大数字、安全区与嵌套弹窗,看截图并确认每个操作都真的能点到。

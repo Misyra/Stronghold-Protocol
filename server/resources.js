@@ -17,9 +17,9 @@
 //   { format: 1, version: '<digest of every url|hash>', count, tier1, sized, totalBytes,
 //     files: [ { url, tier, size?, hash } … ] }   // sorted: essential tier first, then by URL
 
+import { hashFile } from './fileHash.js';
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
-import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
@@ -324,9 +324,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
             const signature = abs + ':' + stat.size + ':' + stat.mtimeMs;
             let hash = contentHashes.get(signature);
             if (!hash) {
-              const digest = crypto.createHash('sha1');
-              for await (const chunk of fs.createReadStream(abs)) digest.update(chunk);
-              hash = digest.digest('hex').slice(0, 12);
+              hash = (await hashFile(abs)).hash;
               contentHashes.set(signature, hash);
             }
             real.set(canonical, hash);
@@ -390,7 +388,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       }
     }
     for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES && !publishedSizes.has(tile.url)) {
-      real.set(pathKey(tile.url, cdnBase), crypto.createHash('sha1').update(await readFile(tile.abs)).digest('hex').slice(0, 12));
+      real.set(pathKey(tile.url, cdnBase), (await hashFile(tile.abs)).hash);
     }
     const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url, cdnBase)));
     const stamps = {

@@ -37,6 +37,7 @@
 //   onDisconnect(session)                  the session's socket closed (session kept for the reconnect window)
 //   onExpire(session)                      the session was purged (disconnected longer than the window)
 
+import { STRIP_RE, LONE_SURROGATE_RE } from './moderation/characters.js';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
@@ -51,6 +52,9 @@ import { negotiateStateDelta, prepareStateFrame, reserveStateFrame, resetStateDe
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
+const PUMP_VISITS = 128;
+const PUMP_MS = 2;
+
 export const NET_DEFAULTS = Object.freeze({
   ratePerSec: 40,               // token bucket refill rate
   rateBurst: 40,                // token bucket capacity
@@ -483,12 +487,6 @@ export function errorMsg(code, rid, detail) {
 // Names
 // ---------------------------------------------------------------------------------------------------
 
-// Control chars, zero-width & bidi controls, BOM.
-const STRIP_RANGES = [[0x00, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x200b, 0x200f], [0x2028, 0x202e], [0x2060, 0x206f], [0xfeff, 0xfeff]];
-const hexEscape = (n) => '\\u' + n.toString(16).padStart(4, '0');
-const STRIP_RE = new RegExp('[' + STRIP_RANGES.map(([a, b]) => (a === b ? hexEscape(a) : `${hexEscape(a)}-${hexEscape(b)}`)).join('') + ']', 'g');
-const LONE_SURROGATE_RE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
-
 /**
  * Normalize a nickname: strip control/invisible characters and lone surrogates, collapse whitespace,
  * trim, cap at NAME_MAX_LEN code points. Returns null when nothing printable remains.
@@ -656,7 +654,7 @@ export class Network {
    *   options?: Partial<typeof NET_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {} }) {
+  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics() }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -667,7 +665,7 @@ export class Network {
     /** @type {Map<string, number>} open sockets per client network key */
     this.connsPerKey = new Map();
     this.closed = false;
-    this.diagnostics = new NetDiagnostics();
+    this.diagnostics = diagnostics;
     this.draining = false;
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
@@ -726,8 +724,8 @@ export class Network {
     // Transport probes carry no game state and may bypass queued gameplay frames.
     if (frame.kind === 'pong') return writeMessage(ws, frame);
     const blocked = (ws.bufferedAmount || 0) > NET_DEFAULTS.snapDropBytes;
-    if (!this._sendVisits) this._sendDeadline = performance.now() + 2;
-    if (!blocked && !pending && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
+    if (!this._sendVisits) this._sendDeadline = performance.now() + PUMP_MS;
+    if (!blocked && !pending && this._sendVisits < PUMP_VISITS && performance.now() < this._sendDeadline) {
       this._sendVisits++;
       this._scheduleOutbound();
       return writeFrame(ws, frame);
@@ -788,8 +786,8 @@ export class Network {
 
   /** Drain fairly across sockets; each socket's broadcast / private / result order stays intact. */
   _pumpOutbound() {
-    this._sendDeadline = performance.now() + 2;
-    while (!this.closed && this._outbound.size && this._sendVisits < 128 && performance.now() < this._sendDeadline) {
+    this._sendDeadline = performance.now() + PUMP_MS;
+    while (!this.closed && this._outbound.size && this._sendVisits < PUMP_VISITS && performance.now() < this._sendDeadline) {
       const [ws, queue] = this._outbound.entries().next().value;
       this._outbound.delete(ws);
       this._sendVisits++;
@@ -817,7 +815,7 @@ export class Network {
    * @param {(conn: Connection) => void} fn
    * @param {'broadcast' | 'heartbeat'} [kind]
    */
-  _eachConnection(fn, kind = 'broadcast') {
+  _eachConnection(fn, kind) {
     if (this.closed) return;
     this._fanout.push({ connections: [...this.conns.values()], index: 0, fn, kind });
     if (!this._fanoutRunning && this._fanoutImmediate === null) this._pumpFanout();
@@ -827,10 +825,10 @@ export class Network {
   _pumpFanout() {
     this._fanoutImmediate = null;
     this._fanoutRunning = true;
-    const deadline = performance.now() + 2;
+    const deadline = performance.now() + PUMP_MS;
     let visited = 0;
     try {
-      while (!this.closed && this._fanout.length && visited < 128) {
+      while (!this.closed && this._fanout.length && visited < PUMP_VISITS) {
         const job = this._fanout[0];
         if (job.index === job.connections.length) {
           this._fanout.shift();
@@ -1113,6 +1111,11 @@ export class Network {
    */
   close(code = CLOSE.SHUTDOWN, reason = 'server shutdown') {
     if (this.closed) return;
+    for (const [ws, queue] of [...this._outbound, ...this._blockedOutbound]) {
+      const conn = this.conns.get(ws);
+      if (!conn || conn.closing || ws.readyState !== WS_OPEN) continue;
+      while (queue.size) writeFrame(ws, queue.shift());
+    }
     this.closed = true;
     if (this._fanoutImmediate !== null) clearImmediate(this._fanoutImmediate);
     this._fanoutImmediate = null;

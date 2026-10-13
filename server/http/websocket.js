@@ -11,6 +11,7 @@
 import { chatEnabled } from '../moderation/chat.js';
 import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from '../net.js';
+import { NetDiagnostics } from '../netDiagnostics.js';
 import { Lobby } from '../lobby.js';
 import { splitUrl } from './common.js';
 import { netOptionsFrom, lobbyOptionsFrom } from './config.js';
@@ -54,10 +55,15 @@ export function createSessionStack(opts, { data, log, chatLog }) {
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup });
-  const network = new Network({ registry, handler: lobby, log, options: netOptions });
-  lobby.rehearsalPressure = network.diagnostics.rehearsalPressure;
-  return { registry, lobby, network };
+  const diagnostics = new NetDiagnostics();
+  try {
+    const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
+    const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics });
+    return { registry, lobby, network };
+  } catch (error) {
+    diagnostics.close();
+    throw error;
+  }
 }
 
 /**

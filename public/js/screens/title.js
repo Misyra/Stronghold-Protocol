@@ -10,6 +10,7 @@
 // entry/loading illustration names) it is layered under the CSS art; otherwise the screen is
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 
+import { REPOSITORY_URL } from '../../../shared/constants.js';
 import { AnnouncementButton } from '../ui/announcement.js';
 import { recoverImageError } from '../image.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
@@ -17,7 +18,6 @@ import { useMemo, useState, useRef, useEffect } from '../../vendor/hooks.module.
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD, ERR_TEXT, ERR } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
-import { HistoryButton } from '../ui/historyPanel.js';
 import { openStats } from './stats.js';
 import { AboutModal } from '../ui/about.js';
 import { toast } from '../ui/toasts.js';
@@ -330,7 +330,7 @@ export function TitleScreen() {
           onInput=${editName} onEnter=${start} invalid=${!!name && !!error} hint=${name && error ? t(error) : null} />
         ${serverError === ERR_TEXT.NICKNAME_SENSITIVE ? html`<p class="title-name-feedback" role="status">
           ${tParts('如果你认为昵称没有问题，可以{feedback}。', {
-            feedback: html`<a href="https://github.com/Misyra/Stronghold-Protocol/issues/new?template=BugReport.yml"
+            feedback: html`<a href=${`${REPOSITORY_URL}/issues/new?template=BugReport.yml`}
               target="_blank" rel="noopener noreferrer">${t('前往 GitHub 反馈')}</a>`,
           })}
         </p>` : null}
@@ -351,7 +351,6 @@ export function TitleScreen() {
       </div>
       <div class="title-actions">
         <${AnnouncementButton} />
-        <${HistoryButton} />
         <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
       </div>
     </main>
@@ -367,7 +366,7 @@ export function TitleScreen() {
       </div>
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <span class="title-foot__meta">
-        <a class="title-repo" href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a>
+        <a class="title-repo" href=${REPOSITORY_URL} target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a>
         <${MicroLabel}>v${APP_VERSION} · WEB SIMULATION<//>
         ${DEV_BUILD ? html`<span class="title-dev" role="note">${t('开发版 · 不稳定，请勿用于公开服务器')}</span>` : null}
       </span>

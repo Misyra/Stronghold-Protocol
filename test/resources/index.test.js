@@ -454,12 +454,15 @@ test('pause and clear during a delayed manifest cannot start downloads later', a
   const env = stubEnv();
   t.after(env.restore);
   let release;
+  let entered;
+  const requested = new Promise((resolve) => { entered = resolve; });
   const original = globalThis.fetch;
   globalThis.fetch = (url, opts) => url === MANIFEST_URL
-    ? new Promise((resolve) => { env.calls.fetch.push(url); release = () => resolve(new Response(JSON.stringify(MANIFEST))); })
+    ? new Promise((resolve) => { env.calls.fetch.push(url); release = () => resolve(new Response(JSON.stringify(MANIFEST))); entered(); })
     : original(url, opts);
   const mod = await import('../../public/js/resources/index.js?clear-checking');
   const started = mod.syncResources(true);
+  await requested;
   mod.pauseResources();
   assert.equal(mod.resourceState().phase, 'paused');
   const cleared = mod.clearResources();
@@ -476,12 +479,15 @@ test('rapid off/on during a delayed manifest starts one complete download', asyn
   const env = stubEnv();
   t.after(env.restore);
   let release;
+  let entered;
+  const requested = new Promise((resolve) => { entered = resolve; });
   const original = globalThis.fetch;
   globalThis.fetch = (url, opts) => url === MANIFEST_URL
-    ? new Promise((resolve) => { env.calls.fetch.push(url); release = () => resolve(new Response(JSON.stringify(MANIFEST))); })
+    ? new Promise((resolve) => { env.calls.fetch.push(url); release = () => resolve(new Response(JSON.stringify(MANIFEST))); entered(); })
     : original(url, opts);
   const mod = await import('../../public/js/resources/index.js?toggle-checking');
   const first = mod.syncResources(true, true);
+  await requested;
   await mod.syncResources(false);
   const second = mod.syncResources(true, true);
   release();

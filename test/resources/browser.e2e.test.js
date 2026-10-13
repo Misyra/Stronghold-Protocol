@@ -573,4 +573,48 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
   });
 
+  test('a cache inspection completed after cleanup cannot restore stale counters or errors', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(srv.url);
+      await page.waitForFunction('window.__ready');
+      const result = await page.evaluate(async () => {
+        const api = await import('/js/resources/index.js');
+        const { store } = await api.resourceContext();
+        const status = store.status.bind(store);
+        const old = await status();
+        let release, entered;
+        const ready = new Promise((resolve) => { entered = resolve; });
+        store.status = () => new Promise((resolve) => { release = resolve; entered(); });
+        const inspection = api.inspectResources();
+        await ready;
+        store.status = status;
+        await api.clearResources();
+        const clean = api.resourceState();
+        release({ ...old, count: 999, bytes: 999999 });
+        await inspection;
+        return { clean, after: api.resourceState() };
+      });
+      assert.deepEqual(result.after, result.clean);
+      assert.equal(result.after.done, 0);
+    } finally { await page.close(); }
+  });
+
+  test('rapid enable, disable, enable drains the cancelled run and reaches ready', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(srv.url);
+      await page.waitForFunction('window.__ready');
+      await page.evaluate(async () => {
+        const api = await import('/js/resources/index.js');
+        await api.clearResources();
+        const first = api.syncResources(true);
+        await api.syncResources(false);
+        await api.syncResources(true);
+        await first;
+      });
+      await page.waitForFunction('window.__res.resourceState().phase === "ready"');
+      assert.equal(await page.evaluate(() => window.__res.resourceState().selectionComplete), true);
+    } finally { await page.close(); }
+  });
 });

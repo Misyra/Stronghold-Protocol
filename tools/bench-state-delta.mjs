@@ -65,17 +65,13 @@ const digest = (value) => createHash('sha256').update(JSON.stringify(canonical(v
 if (samples.public?.t !== 'm.public' || samples.private?.t !== 'm.private') throw new Error('samples must contain public/private views');
 // All benchmark processes run on the same host. Shared monotonic clock avoids cross-process Date.now quantization.
 const monotonicMs = () => Number(process.hrtime.bigint()) / 1e6;
-const distribution = (values) => {
-  values.sort((a, b) => a - b);
-  const pct = (p) => values.length ? +values[Math.ceil(values.length * p) - 1].toFixed(2) : null;
-  return { count: values.length, p50: pct(.5), p95: pct(.95), p99: pct(.99), max: values.length ? +values.at(-1).toFixed(2) : null };
-};
+import { distribution } from './lib/bench.mjs';
 
 if (serverProcess) {
   const { startServer } = await import('../server/index.js');
   const { sendSession } = await import('../server/net.js');
   const srv = await startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 0, store: null,
-    announcementsFile: null, maxRooms: sockets / 4, maxConnections: sockets + 5, wsCompression: true });
+    announcementSource: 'file', announcementFile: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.cache', 'benchmark-announcements.json'), maxRooms: sockets / 4, maxConnections: sockets + 5, wsCompression: true });
   // Test-only override, before any connection negotiates; all other production compression options are unchanged.
   srv.wss.options.perMessageDeflate.threshold = deflateThreshold;
   const views = new Map(), publicViews = new Map(), timers = [], connections = new Set();

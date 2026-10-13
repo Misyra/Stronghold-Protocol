@@ -230,6 +230,9 @@ export class Room {
   /** @param {string} playerId @returns {{ playerId: string, name: string, connected: boolean } | null} */
   spectatorOf(playerId) { return this.spectators.find((s) => s.playerId === playerId) || null; }
 
+  /** Public projection of live match state for status consumers. */
+  matchView() { return this.match ? this.matchCtx?.status ?? null : null; }
+
   /** Lowest free seat index, or -1. */
   freeSeat() { return this.seats.indexOf(null); }
 
@@ -269,15 +272,17 @@ export class Lobby {
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    *   workerPool?: object | null,
    *   chatLog?: import('./chatLog.js').ChatLog | null,
+   *   rehearsalPressure?: import('./rehearsalPressure.js').RehearsalPressure | null,
    *   countryLookup?: ((ip: string) => string | null) | null,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null, chatLog = null, countryLookup = null }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, workerPool = null, chatLog = null, countryLookup = null, rehearsalPressure = null }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
     this.workerPool = workerPool;
+    this.rehearsalPressure = rehearsalPressure;
     this.chatLog = chatLog;
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
@@ -297,8 +302,19 @@ export class Lobby {
     this.limitLog = { at: -Infinity, suppressed: 0 };
     this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s),
       partyChanged: (room) => this.broadcastState(room), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
+    this.checkpointListeners = new Set();
     this.draining = false;
     this.roomReclamation = new RoomReclamation(this);
+  }
+
+  subscribeCheckpoint(listener) {
+    this.checkpointListeners.add(listener);
+    return () => this.checkpointListeners.delete(listener);
+  }
+
+  checkpoint(code, match) {
+    this.onCheckpoint?.(code, match);
+    for (const listener of this.checkpointListeners) listener(code, match);
   }
 
   /** @param {string} code @returns {Room | null} */
@@ -514,7 +530,7 @@ export class Lobby {
     this.resyncTimers.clear();
     for (const room of this.rooms.values()) {
       room.match?.sched?.suspend?.();
-      for (const task of room.match?._workerTasks || []) task.suspend();
+      for (const task of room.match?.workerTasks || []) task.suspend();
     }
   }
 
@@ -1109,7 +1125,7 @@ export class Lobby {
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),
         broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
-        onCheckpoint: (m) => this.onCheckpoint?.(room.code, m),
+        onCheckpoint: (m) => this.checkpoint(room.code, m),
         onAudit: (action, extra) => this.audit(action, this.registry.byId(room.hostId), room, extra),
       });
       ctx.match = match;
@@ -1128,7 +1144,7 @@ export class Lobby {
         this.audit('match.restored', starter, room, { round: match.round, phase: match.phase });
         this.log.info(`[lobby] ${room.code} match #${room.matchCount} restored (${room.mode}/${room.difficulty}, round ${match.round}, ${match.phase})`);
         this.broadcastState(room);
-        this.onCheckpoint?.(room.code, match);
+        this.checkpoint(room.code, match);
         return OK;
       }
       room.match = match;
@@ -1142,7 +1158,7 @@ export class Lobby {
         mode: room.mode, difficulty: room.difficulty, bots: seats.filter((s) => s.isBot).length });
       this.broadcastState(room);
       match.start();
-      this.onCheckpoint?.(room.code, match);
+      this.checkpoint(room.code, match);
     } catch (e) {
       this.log.error(`[lobby] ${room.code} match failed to start`, e);
       if (room.matchCtx === ctx) { room.match = null; room.matchCtx = null; room.matchKey = null; }
@@ -1177,7 +1193,7 @@ export class Lobby {
     if (!host || host.isBot || host.left) this.migrateHost(room);
     if (room.activeHumans().length === 0) this.disposeRoom(room, 'empty');
     else this.broadcastState(room);
-    this.onCheckpoint?.(room.code, null);
+    this.checkpoint(room.code, null);
   }
 
   /** Match unicast; m.result frames are also kept for the replay. */

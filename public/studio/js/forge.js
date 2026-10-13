@@ -3,7 +3,7 @@
 // receives a path on its disk, and it never runs a script from the pack. The same studio key as every other change.
 // A read clears the previous payload and report immediately. A late FileReader or a late preview cannot confirm.
 
-import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
+import { useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button } from '../../js/ui/components.js';
 import { t } from '../../../shared/i18n.js';
 import { post, fileBase64 } from './api.js';
@@ -29,7 +29,9 @@ export function ForgeDialog({ open, onClose, onImported }) {
   const payloadGen = useRef(0);
   const reportGen = useRef(0);
   const ticket = useRef(0);
-  useEffect(() => {
+  // a layout effect: the reset on open runs in the same task as the render, so a file chosen right after the dialog
+  // appears is never invalidated by it (an effect ran later, bumped `gen` past that read and left Preview disabled)
+  useLayoutEffect(() => {
     const mine = ++gen.current;
     payloadGen.current = 0;
     reportGen.current = 0;

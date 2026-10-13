@@ -44,6 +44,8 @@ describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (a
       await page.waitForSelector('[data-testid="forge-zip"]');
       const input = await page.$('[data-testid="forge-zip"]');
       await input.uploadFile(zipPath);
+      // Preview waits for the file to be read (the button is disabled while reading)
+      await page.waitForFunction(() => { const el = document.querySelector('[data-testid="forge-preview"]'); return el && !el.disabled; });
       await page.click('[data-testid="forge-preview"]');
       await page.waitForSelector('[data-testid="forge-report"]');
       const report = await page.$eval('[data-testid="forge-report"]', (el) => el.textContent);

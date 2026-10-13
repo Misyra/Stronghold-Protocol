@@ -112,6 +112,21 @@ test('describeIssue / issueLine: the explanation in plain words with its placeho
   assert.match(issueLine(i, 'zh'), /^PLUGIN_PERMISSION_MISSING 「assets」需要权限 .+。改法：.+ \(docs\/PLUGINS\.md#4-permissions\)$/);
 });
 
+test('a value whose text cannot be made (an object with a "toString" key, a list of them) never breaks a check or an explanation', () => {
+  // JSON.parse gives such objects; String() of one throws — the checks name them as short JSON, as the text always did
+  for (const bad of [{ toString: '' }, [{ toString: 'x' }], { valueOf: 1, toString: 2 }]) {
+    const r = readPluginManifest({ manifest: 2, class: 'cosmetic', version: '1.0.0', app: '*', api: 1, permissions: [bad], assets: {} }, { id: 'me', api: PLUGIN_API });
+    assert.equal(r.manifest, null);
+    const p = r.issues.find((i) => i.code === 'PLUGIN_PERMISSION');
+    assert.ok(p, JSON.stringify(r.problems));
+    assert.ok(r.problems.some((t) => t.startsWith(`unknown permission ${JSON.stringify(bad).slice(0, 40)}`)), 'the text as before');
+    assert.match(describeIssue(p, 'zh').message, /权限/);
+  }
+  // an issue whose params hold such a value (an issue a page sends back for a fix) is still explained
+  const odd = makeIssue('problem', 'PLUGIN_PERMISSION', 'x', { where: { toString: '' }, class: [{ toString: 1 }] });
+  assert.match(describeIssue(odd, 'en').message, /toString/);
+});
+
 /** The issues of many broken plugins (each check of the plugin system). */
 function brokenIssues() {
   const issues = [];

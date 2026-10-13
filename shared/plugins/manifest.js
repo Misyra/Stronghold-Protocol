@@ -680,7 +680,7 @@ export function readPluginManifest(raw, ctx) {
   if (m.permissions !== undefined) {
     if (!Array.isArray(m.permissions)) list.problem('PLUGIN_PERMISSION', '"permissions" is not a list', { at: ['permissions'], class: cls });
     else for (const p of m.permissions) {
-      if (typeof p !== 'string' || !has(PERMISSIONS, p)) list.problem('PLUGIN_PERMISSION', `unknown permission ${short(p)} (known: ${Object.keys(PERMISSIONS).join(', ')})`, { at: ['permissions'], where: String(p), class: cls, permission: String(p) });
+      if (typeof p !== 'string' || !has(PERMISSIONS, p)) list.problem('PLUGIN_PERMISSION', `unknown permission ${short(p)} (known: ${Object.keys(PERMISSIONS).join(', ')})`, { at: ['permissions'], where: typeof p === 'string' ? p.slice(0, 64) : short(p), class: cls, permission: typeof p === 'string' ? p.slice(0, 64) : short(p) });
       else if (!PERMISSIONS[p].includes(cls)) list.problem('PLUGIN_PERMISSION', `the permission "${p}" is not one a ${cls} plugin may have`, { at: ['permissions'], where: p, class: cls, permission: p });
       else if (!permissions.includes(p)) permissions.push(p);
     }

@@ -498,12 +498,18 @@ export function issuesOf(r) {
 /** The language of the catalogue's texts for an interface language: Chinese for zh and zh-TW, else English [ASSUMED]. */
 export const errorLang = (lang) => (/^zh/i.test(String(lang || 'zh')) ? 'zh' : 'en');
 
+/** A param as text: a string, a number, a list of them — anything else (a value of a broken manifest) as short JSON. @param {unknown} v */
+const paramText = (v) => {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return v.map(paramText).join(', ');
+  try { return String(JSON.stringify(v)).slice(0, 80); } catch { return '?'; }
+};
+
 /** `{name}` placeholders filled from `params` (a missing one: ''). @param {string} text @param {Record<string, unknown>} params */
 export function fillText(text, params) {
-  return String(text).replace(/\{(\w+)\}/g, (_, k) => {
-    const v = params && Object.hasOwn(params, k) ? params[k] : '';
-    return v === undefined || v === null ? '' : String(Array.isArray(v) ? v.join(', ') : v);
-  });
+  return String(text).replace(/\{(\w+)\}/g, (_, k) => paramText(params && Object.hasOwn(params, k) ? params[k] : ''));
 }
 
 /**

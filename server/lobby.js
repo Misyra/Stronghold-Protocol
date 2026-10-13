@@ -321,7 +321,7 @@ export class Room {
           ...(this.modded && !s.isBot ? { content: s.content || 'loading' } : {}) }
         : null)),
       spectators: this.spectators.map((s) => ({ playerId: s.playerId, name: s.name, connected: s.connected, ...(this.modded ? { content: s.content || 'loading' } : {}) })),
-      ...(this.content ? { content: this.content } : {}),
+      ...(this.content ? { content: this.content.trusted ? {...this.content, trusted:{...this.content.trusted, consent:Object.fromEntries(this.seats.filter(x => x && !x.isBot).map(x => [x.seat,x.consentCs === this.content.cs]))}} : this.content } : {}),
     };
   }
 }
@@ -590,6 +590,7 @@ export class Lobby {
       case 'room.setPlugins': return this.setPlugins(session, msg);
       case 'room.setMode': return this.setMode(session, msg);
       case 'room.contentReady': return this.contentReady(session, msg, ctx);
+      case 'room.consent': return this.consent(session,msg);
       default:
         if (typeof msg.t === 'string' && msg.t.startsWith('g.')) return this.routeGameNow(session, msg);
         return fail(ERR.BAD_MSG, `unhandled type ${String(msg.t).slice(0, 32)}`);
@@ -848,7 +849,7 @@ export class Lobby {
       this.releaseContent(before);
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       // another content set: every page loads and checks it again (room.contentReady)
-      if ((before?.cs ?? null) !== (content?.cs ?? null)) for (const s of [...room.seats, ...room.spectators]) if (s && !s.isBot) s.content = null;
+      if ((before?.cs ?? null) !== (content?.cs ?? null)) for (const s of [...room.seats, ...room.spectators]) if (s && !s.isBot)  { s.content = null; s.consentCs = null; }
       this.log.info(`[lobby] ${room.code} plugins: ${content?.plugins?.length ? content.plugins.map((p) => `${p.id}@${p.version}`).join(', ') : 'none'}${room.modded ? ` (content ${content.cs.slice(0, 8)})` : ''}`);
     }
     this.broadcastState(room);
@@ -876,7 +877,7 @@ export class Lobby {
       return fail(ERR.INTERNAL);
     }
     if (!r || !r.ok) return fail(r && isErrCode(r.error) ? r.error : ERR.INTERNAL, r && typeof r.detail === 'string' ? r.detail.slice(0, 200) : undefined);
-    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes, kitted } = r.set;
+    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes, kitted, trusted } = r.set;
     const modded = isContentHash(cs) && cs !== this.vanilla.cs;
     const frozen = (a) => Object.freeze((Array.isArray(a) ? a : []).map((p) => Object.freeze({ ...p })));
     // the operators its plugins add to a 自选 slot's list (welcome.diyKitted holds the server's own): the pages' pickers
@@ -887,6 +888,7 @@ export class Lobby {
         vanilla: !modded,
         ...(vs ? { vs } : {}),
         plugins: frozen(list),
+        ...(trusted ? {trusted} : {}),
         warnings: Object.freeze([...(warnings || [])]),
         bytes: Number(bytes) || 0,
         ...(modded ? { dataBytes: Number(dataBytes) || 0, modes: frozen(modes), ...(extra.length ? { kittedExtra: Object.freeze(extra) } : {}) } : {}),
@@ -955,10 +957,27 @@ export class Lobby {
     const seat = room.seatOf(session.playerId) || room.spectatorOf(session.playerId);
     if (!seat) return OK;
     if (ctx && ctx.from && (ctx.from.seat !== seat || ctx.from.gen !== (seat.contentGen || 0))) return OK;
+    if (ok !== false && room.content?.trusted && room.seatOf(session.playerId) && seat.consentCs !== cs) return fail(ERR.PLUGIN_CONSENT);
     const state = ok === false ? 'failed' : 'ready';
     if (seat.content === state) return OK;
     seat.content = state;
     if (state === 'failed') this.log.warn(`[lobby] ${room.code} ${session.name}: the room's content ${cs.slice(0, 8)} did not load or check on that page`);
+    this.broadcastState(room);
+    return OK;
+  }
+
+  /** Each live session consents only for its own seat and the current cs. Reconnect keeps the seat. */
+  consent(session, {cs,accept}) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    const seat = room.seatOf(session.playerId);
+    if (!seat || seat.isBot) return fail(ERR.SPECTATOR);
+    if (!session.connected || !room.content?.trusted || room.content.cs !== cs) return fail(ERR.PLUGIN_CONSENT);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    const changed = (seat.consentCs === cs) !== accept;
+    seat.consentCs = accept ? cs : null;
+    if (changed) seat.content = null;
+    if (!accept) { seat.ready = false; seat.content = null; }
     this.broadcastState(room);
     return OK;
   }
@@ -1024,6 +1043,7 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     const humans = room.activeHumans();
+    if (room.content?.trusted && humans.some(s => s.consentCs !== room.content.cs)) return fail(ERR.PLUGIN_CONSENT);
     for (const s of humans) {
       if (s.playerId !== room.hostId && (!s.connected || !s.ready)) return fail(ERR.NOT_READY);
     }
@@ -1629,7 +1649,7 @@ export class Lobby {
   disposeRoom(room, reason) {
     if (room.disposed) return;
     room.disposed = true;
-    if (this.rooms.get(room.code) === room) this.rooms.delete(room.code);
+    if (this.rooms.get(room.code) === room) { this.trustedRuntime?.event('roomClosed',{room:room.toState()}); this.rooms.delete(room.code); }
     const ctx = room.matchCtx;
     room.match = null;
     room.matchCtx = null;
@@ -1684,6 +1704,17 @@ export class Lobby {
 
   broadcastState(room) {
     if (room.disposed) return;
+    if (this.trustedRuntime) {
+      const state = room.toState(), prev = room.trustedPrevious;
+      const event = (name,extra={}) => this.trustedRuntime.event(name,{room:state,...extra});
+      if (!prev) event('roomCreated');
+      const before = new Set((prev?.seats || []).filter(Boolean).map(s => s.playerId));
+      const after = new Set(state.seats.filter(Boolean).map(s => s.playerId));
+      for (const id of after) if (!before.has(id)) event('playerJoined',{playerId:id});
+      for (const id of before) if (!after.has(id)) event('playerLeft',{playerId:id});
+      if (state.inMatch && !prev?.inMatch) event('matchStarted');
+      room.trustedPrevious = state;
+    }
     const data = encode(room.toState());
     for (const session of this.memberSessions(room)) sendRaw(session.ws, data);
   }

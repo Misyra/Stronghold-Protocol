@@ -158,6 +158,13 @@ export const ERR = Object.freeze({
   // (not a cosmetic or content plugin it loads, not of the room's scope, or not allowed by the server owner's
   // plugins/config.json); a requirement missing or out of range, or a load-order cycle; two plugins in conflict; a set
   // over the art size limit
+  PLUGIN_SCRIPT_CONFLICT: 'PLUGIN_SCRIPT_CONFLICT',
+  PLUGIN_SCRIPT_OVERRIDE: 'PLUGIN_SCRIPT_OVERRIDE',
+  PLUGIN_SCRIPT_CHECK: 'PLUGIN_SCRIPT_CHECK',
+  PLUGIN_SCRIPTS_DISABLED: 'PLUGIN_SCRIPTS_DISABLED',
+  PLUGIN_TRUST_PIN: 'PLUGIN_TRUST_PIN',
+  PLUGIN_TRUST_PUBLIC: 'PLUGIN_TRUST_PUBLIC',
+  PLUGIN_CONSENT: 'PLUGIN_CONSENT',
   PLUGIN_UNKNOWN: 'PLUGIN_UNKNOWN',
   PLUGIN_BLOCKED: 'PLUGIN_BLOCKED',
   PLUGIN_DEPENDENCY: 'PLUGIN_DEPENDENCY',
@@ -184,6 +191,13 @@ export const ERR_TEXT = {
   PLUGIN_UNKNOWN: N_('本服务器没有安装该插件'), PLUGIN_BLOCKED: N_('该插件不能在房间中启用'), PLUGIN_DEPENDENCY: N_('缺少该插件需要的其他插件'),
   PLUGIN_CONFLICT: N_('所选插件互相冲突'), PLUGIN_LIMIT: N_('所选插件的素材总量超出本服务器的上限'),
   PLUGIN_INCOMPATIBLE: N_('该插件不适配本服务器的游戏版本'), PLUGIN_BUSY: N_('本服务器同时运行的插件组合已达上限，请稍后再试'),
+  PLUGIN_CONSENT: N_('还有玩家未同意运行受信任插件'),
+  PLUGIN_SCRIPTS_DISABLED: N_('服主没有启用脚本插件'),
+  PLUGIN_TRUST_PIN: N_('插件的锁文件或文件内容与服主钉住的哈希不符'),
+  PLUGIN_TRUST_PUBLIC: N_('公网监听默认禁止受信任插件'),
+  PLUGIN_SCRIPT_CONFLICT: N_('两个插件注册了同一个效果'),
+  PLUGIN_SCRIPT_OVERRIDE: N_('插件未声明要替换的官方技能'),
+  PLUGIN_SCRIPT_CHECK: N_('脚本未通过兼容性检查'),
   CONTENT_NOT_READY: N_('仍有博士未载入房间的插件内容'),
 };
 

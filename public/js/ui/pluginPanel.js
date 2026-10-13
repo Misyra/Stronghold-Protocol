@@ -55,7 +55,7 @@ export function nextChoice(chosen, id, on, offered = null) {
 /** The plugins a room may switch on: the loaded cosmetic and content plugins of scope `room` (the catalogue's order). */
 export const roomPlugins = (plugins) => [
   ...cosmeticPlugins(plugins, 'room'),
-  ...(Array.isArray(plugins) ? plugins : []).filter((p) => p && p.class === 'content' && p.status === 'loaded' && Array.isArray(p.scope) && p.scope.includes('room')),
+  ...(Array.isArray(plugins) ? plugins : []).filter((p) => p && ['content','script','trusted'].includes(p.class) && p.status === 'loaded' && Array.isArray(p.scope) && p.scope.includes('room')),
 ].sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
 
 /** One warning of the room's set as a sentence (room.state.content.warnings, server/plugins/visualSet.js / roomSets.js). */
@@ -116,7 +116,7 @@ export function PluginPanel({ open, room, myId, onClose }) {
   const rows = [...offered, ...f.plugins.filter((p) => !offered.some((o) => o.id === p.id)).map((p) => ({ id: p.id, version: p.version, missing: true }))];
   const nameOf = (id) => { const p = cat.plugins.find((x) => x.id === id); return p ? pluginName(p) : String(id ?? ''); };
   const classOf = (id) => cat.plugins.find((x) => x.id === id)?.class || f.plugins.find((x) => x.id === id)?.class || 'cosmetic';
-  const anyContent = f.modded || offered.some((p) => p.class === 'content');
+  const anyContent = f.modded || offered.some((p) => ['content','script','trusted'].includes(p.class));
   /** room.setPlugins with these ids (one request at a time; `what`: the row — or 'reapply' — that shows it busy). */
   const send = async (ids, what) => {
     if (inFlight.current || !f.editable) return;
@@ -161,7 +161,7 @@ export function PluginPanel({ open, room, myId, onClose }) {
         ${rows.map((p) => {
           const on = f.on.has(p.id);
           const auto = f.auto.has(p.id);
-          const content = (p.class || classOf(p.id)) === 'content';
+          const content = ['content','script','trusted'].includes(p.class || classOf(p.id));
           // a gameplay plugin made for other game versions is refused (PLUGIN_INCOMPATIBLE): its switch only turns it off
           const blocked = content && p.compatible === false && !on;
           return html`<li key=${p.id} class=${cx('plugrow', on && 'is-on', content && 'is-content')} data-plugin=${p.id}>

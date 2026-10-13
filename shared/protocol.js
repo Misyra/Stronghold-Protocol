@@ -455,6 +455,7 @@ export const C2S = {
   // the page has loaded and checked the room's content set (DESIGN §32.6): `cs` = the room.state.content.cs it checked —
   // every data file's bytes against /cs/<cs16>/index.json, that manifest's composition against `cs`; `ok: false` = it
   // could not (the seat shows it). A room with gameplay plugins starts only once every player's page sent it for its cs
+  'room.consent': { cs: isContentHash, accept: isBool },
   'room.contentReady': { cs: isContentHash, ok: isBool, $optional: ['ok'] },
 
   // match

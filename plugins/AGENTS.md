@@ -50,3 +50,17 @@ plugin's state with `check.issues` (the same coded issues as `check --json`).
   itself a link is never opened by the studio).
 - Do not commit a server's plugins to this repository (`plugins/*` is git-ignored but for this file, the readme and the
   templates).
+
+
+## Script plugins (P3a)
+
+Start from `plugins/_template/script/`, copied to `plugins/script-demo/`. Rename every script_demo record namespace
+with the folder id. Entry modules export synchronous `setup(sp)` and may import only `sp:sdk@1`; use the stable helpers
+listed in [PLUGINS §13](../docs/PLUGINS.md#13-scripts-p3a), SIM §5–7 for hooks/kits and META §2 for prep handlers.
+Declare sim.code/meta.code for the APIs used, and overrides for any official kit replaced. Keep state per battle;
+use seeded battle.rng, deterministic sp.math and battle timers. Do not claim portability scanning is a sandbox.
+
+Run `check <id> --strict`, `pack <id>` and `test <id>` (the last command executes the author's tests locally with its
+composed data). Never hand-edit the lock. Production execution additionally needs the owner mode, exact lock pin and
+all players' consent; public listeners refuse it by default. A true infinite loop is outside the P3a budget's ability
+to interrupt. Explain that limitation when handing a script to its author. No official game art belongs in the template.

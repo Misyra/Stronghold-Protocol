@@ -41,6 +41,8 @@
 import { itemKey } from './gamedata.js';
 import { boardOrder, parseKey, tileKey } from './board.js';
 import { pieceBonds as bondsOfPiece } from './bondsMeta.js';
+import { charge } from '../sim/content/dsl/budget.js';
+import { registerExtensionMeta, extensionMetaOwner } from '../sim/content/extensions.js';
 import { registerAllMeta } from '../sim/content/index.js';
 import { registerBuiltins } from './builtinMeta.js';
 import { msg, dn } from '../../shared/i18n.js';
@@ -125,6 +127,7 @@ export function createRegistry({ builtins = true, content = true, log = console 
   if (content) {
     try { registerAllMeta(reg); } catch (e) { log.error?.('[meta] registerAllMeta failed', e); }
   }
+  if (content) registerExtensionMeta(reg);
   if (reg.warnings.length) log.warn?.(`[meta] ${reg.warnings.length} handler method(s) are not hooks and will never run, e.g. ${reg.warnings.slice(0, 3).join('; ')}`);
   return reg;
 }
@@ -168,11 +171,22 @@ export class EffectDispatcher {
     this.m.log.error?.(`[match ${this.m.roomCode}] meta handler error ${msg}`, e && e.stack ? e.stack.split('\n').slice(0, 4).join(' | ') : '');
   }
 
+  _allowScript(handler, hook) {
+    const pluginId = extensionMetaOwner(handler);
+    if (pluginId && this.scriptRound !== this.m.round) {
+      this.scriptRound = this.m.round;
+      // [ASSUMED] Prep shares one deterministic per-plugin counter per round across all seats.
+      this.scriptBudget = {units:[], _handlerError:(label,unit,e) => this._report(label,hook,e)};
+    }
+    return !pluginId || charge(this.scriptBudget,null,pluginId);
+  }
+
   _call(ps, key, handler, hook, source, ev, repeat = 1) {
     const fn = typeof handler[hook] === 'function' ? handler[hook] : source.kind === 'garrison' && typeof handler.run === 'function' ? handler.run : null;
     if (!fn) return;
     const ctx = makeCtx(this.m, ps, source, hook, ev);
     for (let i = 0; i < repeat; i++) {
+      if (!this._allowScript(handler,hook)) break;
       try { fn.call(handler, ctx, ev); } catch (e) { this._report(key, hook, e); }
     }
   }
@@ -389,7 +403,7 @@ export class EffectDispatcher {
     this.depth++;
     try {
       const ctx = makeCtx(this.m, ps, { ...source, key }, hook, ev);
-      try { fn.call(h, ctx, ev); } catch (e) { this._report(key, hook, e); }
+      try { if (this._allowScript(h,hook)) fn.call(h, ctx, ev); } catch (e) { this._report(key, hook, e); }
     } finally {
       this.depth--;
     }

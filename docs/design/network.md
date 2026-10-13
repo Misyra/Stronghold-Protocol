@@ -267,3 +267,9 @@ The preparation medic and future battle's medic/Touch use the same entitlement; 
 alive. A mere draft focus grants nothing; another match starts without it. Only `band_amedic` is retained in
 `contentInfo.matchBands`; `teammates` and other team strategies still filter eliminated players. The official text
 and initial/unlimited-round data do not explicitly settle the holder-elimination case (§30.14).
+
+
+P3a trusted script consent (DESIGN §32.10): `room.consent { cs, accept }` records only the sender's seat for the current
+content hash; a reconnect keeps it, a cs change clears it. `room.state.content.trusted` carries full lock hashes,
+permissions/authors and a seat-number-to-boolean consent map. `room.start` refuses PLUGIN_CONSENT until every active
+human accepts; bots and spectators do not gate starting. Client execution also needs that browser's own local consent.

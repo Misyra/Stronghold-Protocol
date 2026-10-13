@@ -45,7 +45,7 @@ import { data } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
 import { TitleScreen, sanitizeName } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
-import { RoomScreen } from './screens/room.js';
+import { RoomScreen, TrustedNotice } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
 import { audio, installAudio } from './audio.js';
 import { settingsStore } from './ui/settings.js';
@@ -320,6 +320,7 @@ function App() {
   return html`<div class="app-root">
     <div class="app-bg" aria-hidden="true"></div>
     ${error ? html`<${ScreenCrashed} error=${error} reset=${resetError} />` : html`<${Screen} key=${route} />`}
+    <${TrustedNotice} />
     <${ConnectionBanner} />
     <${ToastHost} />
     <${UiHosts} />

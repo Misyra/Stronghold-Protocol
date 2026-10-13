@@ -95,7 +95,7 @@ export function createVisualSets({ registry, log = noopLog, limits = VISUAL_LIMI
    * own art (its `assets`, read like a cosmetic overlay — DESIGN §32.5 / §32.6: server/plugins/roomSets.js); never a
    * player's personal set (a content plugin is a room's only).
    */
-  const usable = (p, scope) => !!p && (p.class === 'cosmetic' || (p.class === 'content' && scope !== 'personal')) && p.status === 'loaded'
+  const usable = (p, scope) => !!p && (p.class === 'cosmetic' || (['content','script','trusted'].includes(p.class) && scope !== 'personal')) && p.status === 'loaded'
     && !!p.visual && (!scope || p.manifest.scope.includes(scope));
 
   /**

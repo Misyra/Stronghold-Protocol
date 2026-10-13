@@ -42,8 +42,9 @@ let cs = null;
 let hashInput = null;
 let files = null;
 let bounds = null;
+let scripts = [];
 let options = {};
-const adopt = (init) => { ({ cs, hashInput, files, bounds = null } = init || {}); options = (init && init.options) || {}; };
+const adopt = (init) => { ({ cs, hashInput, files, bounds = null, scripts = [] } = init || {}); options = (init && init.options) || {}; };
 if (viaWorker) adopt(workerData);
 // a child process whose parent is gone has nothing left to do
 if (!viaWorker) process.on('disconnect', () => process.exit(0));
@@ -95,6 +96,10 @@ async function boot() {
   for (const name of Object.keys(hashInput.data)) data[name] = JSON.parse(decoder.decode(files[name]));
   setData(data);
   installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
+  if (scripts.length) {
+    const {loadScripts} = await import('../../../shared/plugins/scriptLoad.js');
+    await loadScripts(scripts,{hashInput,log:log.info});
+  }
   const mod = await import(typeof options.matchModule === 'string' && options.matchModule ? pathToFileURL(options.matchModule).href : '../Match.js');
   MatchClass = mod.Match || mod.default;
   if (typeof MatchClass !== 'function') throw new Error('the match module exports no Match');

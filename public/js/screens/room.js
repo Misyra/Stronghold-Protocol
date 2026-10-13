@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
 import {
-  html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyTag, DifficultyIcon, Tooltip, confirmDialog, doctorNo,
+  html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyTag, DifficultyIcon, Tooltip, confirmDialog, doctorNo, Modal,
 } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
 import { copyText } from '../ui/clipboard.js';
@@ -28,6 +28,7 @@ import { openStats } from './stats.js';
 import { SettingsButton } from '../ui/settings.js';
 import { LoadoutButton } from './loadout.js';
 import { PluginTag, isModdedRoom } from '../ui/pluginTag.js';
+import { hasScriptConsent, rememberScriptConsent } from '../content.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { difficultyInfo } from './lobby.js';
@@ -72,7 +73,7 @@ export function roomFacts(room, myId) {
   return {
     seats, occupied, humans, mine, isHost, readyHumans, isReady,
     emptySeats: seats.filter((s) => !s).length,
-    canStart: isHost && othersReady && !!mine && contentReady,
+    canStart: isHost && othersReady && !!mine && contentReady && (!room?.content?.trusted || humans.every(s => room.content.trusted.consent[s.seat])),
     othersReady,
     modded,
     contentReady,
@@ -129,6 +130,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       </footer>
     </article>`;
   }
+  const consent = room.content?.trusted?.consent?.[seat.seat];
   const isMe = seat.playerId === myId;
   const isHostSeat = seat.playerId === room.hostId;
   const offline = seat.connected === false && !seat.isBot;
@@ -136,6 +138,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
   const state = offline ? 'offline' : seat.ready || seat.isBot ? 'ready' : isHostSeat ? 'host' : 'waiting';
   return html`<article class=${`seat brackets${isMe ? ' is-me' : ''}${isHostSeat ? ' is-host' : ''}${seat.isBot ? ' is-bot' : ''} is-${state}`}
       style=${`--seat-i:${index}`}>
+    ${consent ? html`<span data-testid="script-consented">${t('已同意')}</span>` : null}
     <header class="seat__head">
       <span class="seat__no num">P${index + 1}</span>
       <${MicroLabel}>SEAT ${String(index + 1).padStart(2, '0')}<//>
@@ -389,4 +392,47 @@ export function RoomScreen() {
       </div>
     </footer>
   </div>`;
+}
+
+/** Persistent across room/game routes, including spectators who never consent. */
+export function TrustedNotice() {
+  const state = useStore(s => s);
+  const room = state.room, cs = room?.content?.cs, trusted = room?.content?.trusted;
+  const seat = room?.seats?.find(s => s && s.playerId === state.me?.playerId);
+  const [dismissed,setDismissed] = useState(null);
+  const [busy,setBusy] = useState(false);
+  const [review,setReview] = useState(false);
+  const choose = async accept => {
+    setBusy(true);
+    try {
+      if (seat) await net.request('room.consent',{cs,accept});
+      rememberScriptConsent(cs,accept);
+      setDismissed(cs); setReview(false);
+      if (accept && trusted.plugins.some(p => p.permissions.includes('trusted.page'))) {
+        const url = new URL(location.href); url.searchParams.set('cs',cs); url.searchParams.set('room',room.code);
+        location.assign(url.href); return;
+      }
+      store.set({room:{...store.get().room}}); // wake the content loader after local persistence
+    } catch (e) { toastError(e); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => {
+    if (trusted && seat && hasScriptConsent(cs) && !trusted.consent?.[seat.seat] && !room.inMatch) {
+      net.request('room.consent',{cs,accept:true}).catch(toastError);
+    }
+  },[cs,seat?.seat,!!trusted?.consent?.[seat?.seat]]);
+  if (!trusted) return null;
+  return html`<aside class="trusted-banner" data-testid="trusted-banner">
+    <strong>${t('受信任插件')}</strong>
+    <button onClick=${() => setReview(true)}>${t('查看风险与同意状态')}</button>
+    <${Modal} open=${review || (dismissed !== cs && !hasScriptConsent(cs))} title=${t('受信任插件')} tone="red" closeOnBackdrop=${false}
+      onClose=${() => room.inMatch ? setReview(false) : choose(false)} actions=${html`<${Button} disabled=${busy} onClick=${() => choose(false)} data-testid="script-decline">${t('拒绝')}<//>
+        <${Button} disabled=${busy} onClick=${() => choose(true)} data-testid="script-accept">${t('同意运行')}<//>`}>
+      <p>${t('它可以完全控制你的游戏页面')}</p>
+      <p>${t('仅在你信任所有作者及以下代码时同意。换了内容组合需要重新同意。')}</p>
+      <ul>${trusted.plugins.map(p => html`<li key=${p.id}><strong>${p.id} ${p.version}</strong>
+        <p>${t('作者：{authors}',{authors:(p.authors || []).join(', ') || '—'})}</p>
+        <p class="trusted-hash">SHA-256: ${p.hash}</p><p>${t('权限：{permissions}',{permissions:p.permissions.join(', ')})}</p></li>`)}</ul>
+    <//>
+  </aside>`;
 }

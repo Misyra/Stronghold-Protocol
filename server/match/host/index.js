@@ -88,7 +88,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
       this.dead = null;
       this.idleTimer = null;
       const init = {
-        cs, hashInput: set.hashInput, files, bounds: set.bounds ?? null,
+        cs, hashInput: set.hashInput, files, bounds: set.bounds ?? null, scripts:set.scripts || [],
         options: { heartbeatMs: o.heartbeatMs, matchOptions: o.matchOptions || {}, matchModule: o.matchModule || null, virtualTime: !!o.virtualTime },
       };
       const failed = (e) => {
@@ -103,7 +103,7 @@ export function createMatchHosts({ contents, log = noopLog, options = {} }) {
         if (hosts.get(this.cs) === this) hosts.delete(this.cs);
       };
       // a worker thread only when asked for by name (anything else: a child process — the header's measurement)
-      this.transport = o.transport === 'worker' ? 'worker' : 'process';
+      this.transport = !set.scripts?.length && o.transport === 'worker' ? 'worker' : 'process';
       if (this.transport === 'process') {
         // a child process: its memory limit is its own (an out-of-memory abort ends it alone — see the header)
         const mb = Math.max(64, Number(o.resourceLimits?.maxOldGenerationSizeMb) || HOST_DEFAULTS.resourceLimits.maxOldGenerationSizeMb);

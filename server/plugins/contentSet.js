@@ -15,6 +15,7 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
+import { preflightScripts } from './scriptPreflight.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -112,13 +113,13 @@ function composeContentSet({ registry, ids = [] }) {
   const usable = id => {
     const p = registry.plugin(id);
     return p?.status === 'loaded' && p.manifest.scope.includes('room')
-      && (p.class === 'content' && p.manifest.compatible !== false && p.content || p.class === 'cosmetic' && p.visual) ? p : null;
+      && (['content','script','trusted'].includes(p.class) && p.manifest.compatible !== false && p.content || p.class === 'cosmetic' && p.visual) ? p : null;
   };
   const resolved = resolvePluginOrder(selected.map(v => v?.id), id => usable(id)?.manifest ?? null);
   if ('error' in resolved) return { problems: [problem(resolved.error, 'ids', resolved.detail)] };
   const collisions = namespaceCollisions(resolved.order);
   if (collisions.length) return { problems: collisions };
-  const plugins = resolved.order.map(usable).filter(p => p.class === 'content'), settings = {}, owners = new Map();
+  const plugins = resolved.order.map(usable).filter(p => ['content','script','trusted'].includes(p.class)), settings = {}, owners = new Map();
   let data = base.data;
   const problems = [], warnings = [], writes = new Map();
   for (const p of plugins) {
@@ -175,8 +176,17 @@ function composeContentSet({ registry, ids = [] }) {
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));
   const boundsSnap = exportOfficialBounds(rememberOfficialBounds(base.data));
   if (plugins.length) bodies.set('bounds/official.json', Buffer.from(canonicalJson(boundsSnap)));
+  const scripts = plugins.filter(p => p.script).map(p => ({ id:p.id, version:p.manifest.version, class:p.class,
+    hash:p.script.lockHash, permissions:p.manifest.permissions, authors:p.manifest.authors,
+    manifestSource:p.script.manifestSource, sources:p.script.sources }));
+  const scriptHashes = {};
+  for (const p of scripts) {
+    const body = Buffer.from(JSON.stringify(p));
+    bodies.set(`scripts/${p.id}.json`,body); scriptHashes[p.id] = nodeSha256(body);
+  }
   if ([...bodies.values()].reduce((n, b) => n + b.length, 0) > 300 * 1024 * 1024) return { problems: [problem('PLUGIN_DATA_LIMIT', 'content', 'set exceeds 300 MB')] };
-  const parts = plugins.map(p => ({ id: p.id, version: p.manifest.version, files: p.content.files }));
+  const parts = plugins.map(p => ({ id: p.id, version: p.manifest.version,
+    files: {...p.content.files, ...(scriptHashes[p.id] ? {'@script':scriptHashes[p.id]} : {})} }));
   const i18n = {};
   if (plugins.length) for (const [rel, body] of bodies) {
     const m = /^i18n\/([A-Za-z0-9-]+)\.json$/.exec(rel);
@@ -185,16 +195,20 @@ function composeContentSet({ registry, ids = [] }) {
   const cs = contentHashOf({ app: base.identity.app, sim: base.identity.sim, data: hashes, plugins: parts, settings, ...(Object.keys(i18n).length ? { i18n } : {}) });
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
+  if (scripts.length) {
+    const report = preflightScripts(registry,scripts,{plugins:parts,settings});
+    if (report) return {problems:[problem(report.code,'scripts',report.message)]};
+  }
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
-  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {} };
+  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {}, ...(scripts.length ? {scripts:{}} : {}) };
   if (!vanilla) for (const [rel, f] of Object.entries(files)) {
     const url = base.files.get(rel)?.equals(bodies.get(rel)) ? `/data/${rel.replace(/^(data\/)/, '')}?v=${f.sha256.slice(0, 8)}` : `/cs/${csUrlPart(cs)}/${rel}`;
     const [section, name] = rel.split('/');
     index[section][name.slice(0, -5)] = { url, ...f };
   }
   const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
-    data, files, modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
+    data, files, ...(scripts.length ? {scripts} : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
     kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id))] });
   bodies.set('index.json', Buffer.from(JSON.stringify(index)));
   buffers.set(set, bodies); cache.set(cs, set);

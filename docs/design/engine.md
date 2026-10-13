@@ -294,3 +294,8 @@ HP loss, bare attack events and zero damage do not qualify. These changes do not
 Xi alone opts into hostile selection immunity during its ten-second post-rebirth invincibility (§30.8).
 The generic `invulnerable` flag remains damage protection only; other rebirth kits retain their existing choices.
 Presence-only and SP-only skill triggers are not suppressed merely because their enemies are unselectable.
+
+
+P3a script registrations (DESIGN §32.10; PLUGINS §13) fill C2's first kit-dispatch branch only for script compositions.
+The ordered extension registry also installs enemy/battle modules and prep handlers. Script hooks/actions share the
+DSL plugin budget and attribution. Vanilla registrations remain empty; no official kit or golden behavior changes.

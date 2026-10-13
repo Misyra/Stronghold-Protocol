@@ -363,7 +363,7 @@ describe('the registry and /p/', () => {
     assert.match(skipped.get('plugins/cosmetic-slots/'), /not something a cosmetic plugin carries/);
     if (skipped.has('plugins/linked/')) assert.match(skipped.get('plugins/linked/'), /symbolic link/);
     assert.equal(classStatus('ui'), 'loaded');
-    assert.equal(classStatus('script'), 'unsupported');
+    assert.equal(classStatus('script'), 'loaded');
   });
 
   test('the template folder itself is a valid ui plugin and is not scanned from plugins/_template', () => {

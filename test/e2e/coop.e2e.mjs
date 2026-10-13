@@ -798,7 +798,9 @@ async function facingTour(c, did) {
   if (!did.item && !(await c.handPieces('item')).length) did.itemBought = await buyOne(c, '.shopbar__item .scard:not(.scard--sold):not(.is-disabled)').catch(() => false);
   const units = () => c.handPieces().then((h) => h.filter((p) => p.kind === 'chess'));
   let hand = await units();
-  assert.ok(hand.length >= 1, 'bought operators');
+  // a bought operator can merge into an elite at once (two copies already fielded) and leave the bench empty: the
+  // placement steps then wait for a later round (`did` carries them over)
+  if (!hand.length) { c.note('facing: no operator on the bench this round (the bought ones merged)'); return; }
   // place + choose a direction (UP: striped rotated range + 拖回中心区域取消 while held) — the unit with the widest range
   // grid shows it best (a defender's grid is its own tile only)
   if (!did.place) {

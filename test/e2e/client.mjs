@@ -342,25 +342,48 @@ export class Client {
     await m.up();
   }
 
-  /** An empty legal tile for a piece (mirrors the deploy rules: melee on melee tiles, ranged anywhere). */
+  /**
+   * An empty legal tile for a piece: the client's own legality (gameLogic/placement.js boardTargets over the screen's
+   * placement context — the stage's deploy tiles under the player's terrain 机变 cards and devices, the boss field's
+   * half in a boss round), so a tile a round's 机变 card took away is never chosen; the data's plain deploy tiles
+   * (melee on melee tiles, ranged anywhere) when that module cannot be read.
+   */
   freeTileFor(uid, { prefer = 'gate' } = {}) {
-    return this.page.evaluate((uid, prefer) => {
+    return this.page.evaluate(async (uid, prefer) => {
       const { store, data } = globalThis.__SP__;
       const s = store.get();
       const priv = s.match.private;
-      const st = data.lookup('stages', s.match.public.stageId);
+      const pub = s.match.public;
+      const st = data.lookup('stages', pub.stageId);
       const piece = [...priv.hand, ...priv.temp, ...priv.board].find((p) => p && p.uid === uid);
       if (!piece || !st?.deployTiles?.normal) return null;
+      const order = (list) => {
+        const a = list.slice();
+        if (prefer === 'gate') a.sort((x, y) => (y[1] - x[1]) || (x[0] - y[0]));
+        else a.sort((x, y) => (x[1] - y[1]) || (y[0] - x[0]));
+        return a;
+      };
+      const used = new Set(priv.board.map((p) => `${p.row},${p.col}`));
+      try {
+        const P = await import('/js/ui/gameLogic/placement.js');
+        const C = await import('/js/ui/gameLogic/camera.js');
+        const ctx = P.placementContext({
+          priv, stage: st, editable: true, field: C.deployFieldOf(pub, s.me?.playerId ?? s.me),
+          getChess: (id) => data.lookup('chess', id), getToken: (id) => data.lookup('tokens', id),
+          getItem: (id) => data.lookup('items', id), getEffect: (id) => data.lookup('effects', id), backups: data.get('backups'),
+        });
+        const legal = P.boardTargets(ctx, uid).legal.filter(([r, c]) => !used.has(`${r},${c}`));
+        if (legal.length) { const [r, c] = order(legal)[0]; return { row: r, col: c }; }
+        return null;
+      } catch { /* the plain deploy tiles below */ }
       const rec = piece.kind === 'token' ? data.lookup('tokens', piece.id) : data.lookup('chess', piece.id);
       const melee = rec?.position === 'MELEE';
       const dt = st.deployTiles.normal;
       const tiles = melee ? dt.melee : [...dt.rangedOnly, ...dt.melee];
-      const used = new Set(priv.board.map((p) => `${p.row},${p.col}`));
       const free = tiles.filter(([r, c]) => !used.has(`${r},${c}`));
       if (!free.length) return null;
-      if (prefer === 'gate') free.sort((a, b) => (b[1] - a[1]) || (a[0] - b[0]));
-      else free.sort((a, b) => (a[1] - b[1]) || (b[0] - a[0]));
-      return { row: free[0][0], col: free[0][1] };
+      const [r, c] = order(free)[0];
+      return { row: r, col: c };
     }, uid, prefer);
   }
 

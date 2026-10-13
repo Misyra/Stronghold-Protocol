@@ -500,10 +500,16 @@ describe('real server + real browsers', { skip: !ENABLED && 'set SP_REAL_E2E=1 (
           if (s.phase !== 'BAND_DRAFT' || picked.has(c.label) || s.draft?.turn !== s.me) continue;
           if (!shotDraft) { await sleep(600); await c.shot('draft'); shotDraft = true; }
           if (c === guest && !guestSkipped) {
-            await c.click('.draft-detail__btns .btn', '跳过');
             guestSkipped = true;
-            c.note('skipped once');
-            continue;
+            // one skip — only while someone is left to pass to: the last player still to pick sees 跳过 disabled (PR #546)
+            const canSkip = await c.page.evaluate(() => [...document.querySelectorAll('.draft-detail__btns .btn')]
+              .some((b) => b.textContent.includes('跳过') && !b.disabled));
+            if (canSkip) {
+              await c.click('.draft-detail__btns .btn', '跳过');
+              c.note('skipped once');
+              continue;
+            }
+            c.note('跳过 disabled (the last player still to pick)');
           }
           await c.click('.dband:not(.is-taken)', null, { nth: c === host ? 3 : 7 });
           await c.click('.draft-detail__btns .btn--primary', '确认选择');

@@ -534,5 +534,14 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
   };
   const off = store.subscribe((s) => sync(s));
   sync(store.get());
+  // dev / E2E introspection (like __SP_RUNNER__): the state, and a forged content id — a page that claims to hold another
+  // set than the one it checked, so the runner's cs check can be watched refusing the authority (test/ui/
+  // plugins-content.e2e.test.js); the server checks every result anyway
+  if (typeof window !== 'undefined') {
+    globalThis.__SP_CONTENT__ = {
+      state: () => ({ ...contentSet.get(), held: held ? held.cs : null }),
+      forgeHeldCs: (cs) => { if (held && isContentHash(cs)) held = { ...held, cs }; },
+    };
+  }
   return () => { off(); drop(); };
 }

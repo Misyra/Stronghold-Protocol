@@ -114,7 +114,8 @@ function diag(match) {
     phase: match.phase ?? null, round: match.round ?? null, ended: !!match.ended, cs: match.cs ?? null, modeId: match.modeId ?? null,
     errorCount: match.errorCount ?? 0, errors: (match.errors || []).slice(0, 3).map((e) => String(e?.label || e?.message || e).slice(0, 200)),
     verifyStats: match.verifyStats ? { ...match.verifyStats } : null, simErrors: match.simErrors ?? 0,
-    fields: Array.isArray(match.fields) ? match.fields.map((f) => ({ fieldId: f.fieldId, kind: f.kind, mode: f.mode ?? null, authority: f.authority ?? null, done: !!f.done, resultSource: f.resultSource ?? null })) : [],
+    fields: Array.isArray(match.fields) ? match.fields.map((f) => ({ fieldId: f.fieldId, kind: f.kind, players: Array.isArray(f.players) ? [...f.players] : [], mode: f.mode ?? null,
+      authority: f.authority ?? null, done: !!f.done, resultSource: f.resultSource ?? null, battleId: f.battleId ?? null })) : [],
   };
 }
 

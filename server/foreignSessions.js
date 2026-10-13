@@ -6,14 +6,39 @@ export const foreignSessionKey = (value) => typeof value === 'string' && /^[a-f0
 
 /** One gameplay identity per foreign IP; the registry and Lobby retain ownership of cleanup. */
 export class ForeignSessions {
-  constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true }) {
+  constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true, allowConnections = () => true }) {
     this.registry = registry;
     this.countryLookup = countryLookup;
     this.now = now;
     this.isEnabled = isEnabled;
+    this.allowConnections = allowConnections;
+    this.connectionLog = { at: -Infinity, suppressed: 0 };
     this.byIp = new Map();
     this.initialized = false;
-    this.counts = { denied: 0, reclaimed: 0, lookupMisses: 0, lookupErrors: 0 };
+    this.counts = { denied: 0, reclaimed: 0, connectionDenied: 0, lookupMisses: 0, lookupErrors: 0 };
+  }
+
+  countryOf(ip) {
+    if (!this.countryLookup || !isIP(ip)) return null;
+    let country;
+    try { country = this.countryLookup(ip); }
+    catch { this.counts.lookupErrors++; return null; }
+    if (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country)) { this.counts.lookupMisses++; return null; }
+    return country;
+  }
+
+  connectionAdmission(ip) {
+    const result = { ok: true, country: null, suppressed: null };
+    if (this.allowConnections()) return result;
+    const country = this.countryOf(ip);
+    if (!country || country === 'CN') return result;
+    this.counts.connectionDenied++;
+    result.ok = false; result.country = country;
+    if (this.now() - this.connectionLog.at >= 10000) {
+      result.suppressed = this.connectionLog.suppressed;
+      this.connectionLog = { at: this.now(), suppressed: 0 };
+    } else this.connectionLog.suppressed++;
+    return result;
   }
 
   entry(key) {
@@ -40,12 +65,8 @@ export class ForeignSessions {
   /** `ip` is normalized by the existing trusted-proxy resolver; private addresses are passed as empty. */
   prepare(ip, current = null) {
     const plan = { ok: true, key: null, country: null, stale: [], penalties: [], suppressed: null };
-    if (!this.countryLookup || !isIP(ip)) return plan;
-    let country;
-    try { country = this.countryLookup(ip); }
-    catch { this.counts.lookupErrors++; return plan; }
-    if (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country)) { this.counts.lookupMisses++; return plan; }
-    if (country === 'CN') return plan;
+    const country = this.countryOf(ip);
+    if (!country || country === 'CN') return plan;
     // Canonicalize equivalent IPv6 spellings, but do not merge distinct IPs into a /64 here.
     const address = isIP(ip) === 6 ? new URL(`http://[${ip}]/`).hostname : ip;
     plan.key = createHash('sha256').update(address).digest('hex');
@@ -105,7 +126,9 @@ export class ForeignSessions {
   }
 
   stats() {
-    const configured = this.isEnabled();
-    return { configured, geoipAvailable: !!this.countryLookup, enabled: configured && !!this.countryLookup, maxPerIp: 1, ...this.counts };
+    const configured = this.isEnabled(), allowForeignConnections = this.allowConnections();
+    return { configured, geoipAvailable: !!this.countryLookup, enabled: configured && !!this.countryLookup,
+      allowForeignConnections, foreignConnectionsBlocked: !allowForeignConnections && !!this.countryLookup,
+      maxPerIp: 1, ...this.counts };
   }
 }

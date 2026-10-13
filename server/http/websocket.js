@@ -4,14 +4,16 @@
 //     protocol, server/net.js), built from the startServer() options (config.js decides which go where);
 //   * WebSocket (ws) at /ws, maxPayload 64 KB, permessage-deflate (WS_DEFLATE / perMessageDeflateFor)
 //     → Network.handleConnection. Refused at
-//     the upgrade: any other path 404; per-network socket limit for internet clients (maxConnectionsPerAddr, see net.js
+//     the upgrade: any other path 404; disabled overseas access 403 with a JSON message;
+//     per-network socket limit for internet clients (maxConnectionsPerAddr, see net.js
 //     clientAddress; local/LAN peers are exempt) 429; server full (maxConnections) or shutting down 503.
 //     SP_WS_COMPRESSION ('on' default; 'off' disables): small frames bypass zlib, dictionaries reset between
 //     messages and each connection's deflate window is capped (this fork's bounded permessage-deflate).
 
 import { chatEnabled } from '../moderation/chat.js';
 import { WebSocketServer } from 'ws';
-import { Network, SessionRegistry, NET_DEFAULTS } from '../net.js';
+import { Network, SessionRegistry, NET_DEFAULTS, clientAddress } from '../net.js';
+import { ERR, ERR_TEXT } from '../../shared/constants.js';
 import { NetDiagnostics } from '../netDiagnostics.js';
 import { Lobby } from '../lobby.js';
 import { splitUrl } from './common.js';
@@ -96,7 +98,8 @@ export function createSessionStack(opts, { data, log, chatLog }) {
   try {
     const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
-      foreignSessionsEnabled: () => lobby.opts.limitForeignSessions });
+      foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,
+      allowForeignConnections: () => lobby.opts.allowForeignConnections });
     return { registry, lobby, network };
   } catch (error) {
     diagnostics.close();
@@ -146,6 +149,11 @@ export function attachWebSocket(server, { network, log, wsCompression, traffic =
       try { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { socket.destroy(); }
     };
     if (!parts || parts.rawPath !== '/ws') { reject(404, 'Not Found'); return; }
+    if (network.foreignConnectionDenied(clientAddress(req, network.opts.trustProxy))) {
+      const body = JSON.stringify({ code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
+      socket.end(`HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      return;
+    }
     const refused = network.admission(req);
     if (refused === 'per-address') { reject(429, 'Too Many Requests'); return; }
     if (refused) { reject(503, 'Service Unavailable'); return; }

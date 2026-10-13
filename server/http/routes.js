@@ -24,7 +24,7 @@
 import { validateNickname } from './nickname.js';
 import { createPortalRoomHandler } from './portalRoom.js';
 import { performance } from 'node:perf_hooks';
-import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
+import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN, ERR, ERR_TEXT } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
 import { clientAddress, isLocalIp, wireStatsSnapshot } from '../net.js';
 import { stateDeltaStats } from '../stateTransport.js';
@@ -221,6 +221,14 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.setHeader('Allow', 'GET, HEAD');
       sendError(req, res, 405, '不支持的请求方法 · Method not allowed');
+      return;
+    }
+    // Refuse the game document itself: overseas visitors see only the message, not the game UI.
+    let entryPath = parts.rawPath;
+    try { entryPath = decodeURIComponent(entryPath); } catch { /* static handler validates malformed paths */ }
+    if ((entryPath.endsWith('/') || /\.html$/i.test(entryPath)) &&
+      health.network.foreignConnectionDenied(clientAddress(req, trustProxy))) {
+      sendJson(req, res, 403, { code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

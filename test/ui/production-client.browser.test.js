@@ -12,7 +12,7 @@ const chrome = process.env.CHROME_PATH || (process.platform === 'win32'
   ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const enabled = process.env.SP_E2E === '1' && existsSync(chrome);
 
-test('the production bundle boots and joins the lobby without importing a second source graph', {
+test('the production bundle boots, joins the lobby and displays a foreign-connection refusal', {
   skip: enabled ? false : 'run npm run test:client (needs Chrome)', timeout: 120000,
 }, async () => {
   const temp = await mkdtemp(path.join(tmpdir(), 'sp-production-client-'));
@@ -27,7 +27,7 @@ test('the production bundle boots and joins the lobby without importing a second
     const manifest = JSON.parse(await readFile(path.join(outDir, '.vite/manifest.json'), 'utf8'));
     const expectedEntry = '/build/' + manifest['index.html'].file;
     srv = await startServer({ port: 0, host: '127.0.0.1', workers: 0, stateFile: 'off', publicDir,
-      clientBuild: true, quiet: true });
+      clientBuild: true, quiet: true, countryLookup: () => 'HK' });
     const puppeteer = (await import('puppeteer-core')).default;
     browser = await puppeteer.launch({ executablePath: chrome, headless: true,
       args: ['--no-first-run', '--no-sandbox'], protocolTimeout: 30000 });
@@ -59,6 +59,19 @@ test('the production bundle boots and joins the lobby without importing a second
     assert.deepEqual(modules.filter((url) => !new URL(url).pathname.startsWith('/build/assets/')), [],
       'all client scripts must come from the same build, never /js, /sim or source vendors');
     assert.deepEqual(failedModules, []);
+    assert.deepEqual(errors, []);
+    srv.lobby.applyRoomConfig({ allowForeignConnections: false });
+    const blocked = await browser.newPage();
+    blocked.on('pageerror', (error) => errors.push(error.message));
+    await blocked.setExtraHTTPHeaders({ 'X-Real-IP': '203.0.113.1' });
+    const refusal = await blocked.goto(srv.url, { waitUntil: 'domcontentloaded' });
+    assert.equal(refusal.status(), 403);
+    assert.deepEqual(await refusal.json(), { code: 'FOREIGN_CONNECTIONS_DISABLED', msg: '本服务器暂时仅对中国大陆服务' });
+    assert.equal(await blocked.$('.title-screen'), null);
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    assert.equal(srv.network.foreignSessions.stats().connectionDenied, 1);
+    assert.equal(srv.network.connectionCount, 1, 'existing authenticated connection stays online');
+    assert.equal(srv.registry.size, 1, 'refusal allocates no new identity');
     assert.deepEqual(errors, []);
   } finally {
     try { await browser?.close(); }

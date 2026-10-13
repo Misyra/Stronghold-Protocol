@@ -86,7 +86,7 @@ export const NET_DEFAULTS = Object.freeze({
 export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.matchmaking', 'room.spectate', 'state.resync']);
 
 /** Close codes (see header). */
-export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, POLICY: 1008, SHUTDOWN: 1001 });
+export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, FOREIGN_BLOCKED: 4003, POLICY: 1008, SHUTDOWN: 1001 });
 
 const WS_OPEN = 1;
 const MAX_RID = 2 ** 31;
@@ -658,9 +658,11 @@ export class Network {
    *   options?: Partial<typeof NET_DEFAULTS>,
    *   countryLookup?: ((ip: string) => string | null) | null,
    *   foreignSessionsEnabled?: () => boolean,
+   *   allowForeignConnections?: () => boolean,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null, foreignSessionsEnabled = () => true }) {
+  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null,
+    foreignSessionsEnabled = () => true, allowForeignConnections = () => true }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -673,7 +675,8 @@ export class Network {
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
-    this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled });
+    this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
+      allowConnections: allowForeignConnections });
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
     this._fanoutImmediate = null;
@@ -889,7 +892,8 @@ export class Network {
    */
   handleConnection(ws, req) {
     if (this.closed || this.draining) { try { ws.close(CLOSE.SHUTDOWN, 'server shutdown'); } catch { /* ignore */ } return; }
-    const conn = new Connection(ws, clientAddress(req, this.opts.trustProxy), this.now(), this.opts);
+    const address = clientAddress(req, this.opts.trustProxy);
+    const conn = new Connection(ws, address, this.now(), this.opts);
     this.conns.set(ws, conn);
     socketNetworks.set(ws, this);
     socketDiagnostics.set(ws, this.diagnostics);
@@ -907,6 +911,27 @@ export class Network {
 
   /** @param {Connection} conn @param {object} msg */
   reply(conn, msg) { return send(conn.ws, msg); }
+
+  /** Shared by HTTP entry and pre-upgrade admission; never allocates a gameplay connection. */
+  foreignConnectionDenied(address) {
+    const ip = normalizeIp(address.ip);
+    const admission = this.foreignSessions.connectionAdmission(ip && !isLocalIp(ip) ? ip : '');
+    if (admission.ok) return false;
+    if (admission.suppressed !== null) this.log.info('[audit] ' + JSON.stringify({ at: new Date(this.now()).toISOString(),
+      action: 'connection.foreignPolicy.denied', ip: address.ip, network: address.key, country: admission.country, suppressed: admission.suppressed }));
+    return true;
+  }
+
+  /** Only for a socket admitted before a live policy change, but still awaiting its first hello. */
+  refuseForeignConnection(ws, address, rid = undefined) {
+    if (!this.foreignConnectionDenied(address)) return false;
+    ws.on('error', () => {});
+    send(ws, errorMsg(ERR.FOREIGN_CONNECTIONS_DISABLED, rid));
+    try { ws.close(CLOSE.FOREIGN_BLOCKED, ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED); } catch { ws.terminate(); }
+    const timer = setTimeout(() => { try { ws.terminate(); } catch { /* already closed */ } }, 1000);
+    timer.unref(); ws.once('close', () => clearTimeout(timer));
+    return true;
+  }
 
   /** @param {Connection} conn */
   onFrame(conn, data, isBinary) {
@@ -983,6 +1008,7 @@ export class Network {
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
     // Check before creating, renaming or taking over a session, including token-based reconnects.
     if (hasSensitiveNickname(name)) { this.reply(conn, errorMsg(ERR.NICKNAME_SENSITIVE, rid)); return; }
+    if (!conn.session && this.refuseForeignConnection(conn.ws, conn, rid)) { conn.closing = true; return; }
 
     let session = conn.session;
     let resumed = false;

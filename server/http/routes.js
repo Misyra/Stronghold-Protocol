@@ -27,6 +27,7 @@ import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
 import { clientAddress, isLocalIp, wireStatsSnapshot } from '../net.js';
+import { stateDeltaStats } from '../stateTransport.js';
 import { setSecurityHeaders, sendError, sendJson, sendJsonBody, splitUrl } from './common.js';
 
 const MAX_URL_LENGTH = 4096;
@@ -64,9 +65,19 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
     // outbound frames since process start, per socket send (`byType` only knows the frame's type; poll twice
     // for rates — which types dominate the broadcast/serialization cost)
     wire: wireStatsSnapshot(),
+    // state-delta accounting (server/stateTransport.js): how many state frames were sent whole / as a patch, how often
+    // a baseline had to be parsed, and (with SP_STATE_DELTA_VERIFY=1) how many replayed deltas disagreed with the
+    // state they describe. Poll twice for rates — this is the sampling hook for the state-sync chain.
+    stateDelta: { ...stateDeltaStats },
     persist: persister ? { enabled: true, backend: store?.kind || 'custom', mode: store?.mode || null, writes: persister.writes,
       failures: persister.failures, checkpoints: persister.matchDocs.size,
       lastSaveMs: persister.lastSaveMs ?? null,
+      // checkpoint encode bookkeeping (snapshot.js persistVersion): encodes committed, checkpoints skipped because the
+      // match did not change, verification comparisons, and versions that missed a change (must stay 0).
+      checkpointsEncoded: persister.versionStats?.encodes ?? null,
+      checkpointsSkipped: persister.versionStats?.skipped ?? null,
+      versionChecks: persister.versionStats?.verified ?? null,
+      versionHoles: persister.versionStats?.holes ?? null,
       workerMemory: persister.encoder?.memory || null } : null,
   };
   // The traffic counters are the host's own figures (upstream 0.2.6): the caller gates them on isLocalIp, and they

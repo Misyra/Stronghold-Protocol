@@ -70,6 +70,11 @@ export class SharedPool {
       this.entries.set(id, { cap, left: cap, tier: gd.tierOf(id) });
     }
     this.banned = [...ban].sort();
+    /**
+     * Moves whenever a `left` count moves. The counts are persisted (snapshot.js `doc.poolLeft`), so the persistence
+     * version reads this instead of walking the entries (perf/state-sync priority 3).
+     */
+    this.revision = 0;
   }
 
   /** Whether a base chess is part of this match's pool (visible, not banned). */
@@ -82,7 +87,7 @@ export class SharedPool {
     const e = this.entries.get(baseId);
     if (!e || !(n > 0)) return 0;
     const k = overdraw ? Math.floor(n) : Math.min(Math.max(0, e.left), Math.floor(n));
-    e.left -= k;
+    if (k > 0) { e.left -= k; this.revision++; }
     return k;
   }
 
@@ -91,7 +96,7 @@ export class SharedPool {
     const e = this.entries.get(baseId);
     if (!e || !(n > 0)) return 0;
     const k = Math.min(e.cap - e.left, Math.floor(n));
-    e.left += k;
+    if (k > 0) { e.left += k; this.revision++; }
     return k;
   }
 

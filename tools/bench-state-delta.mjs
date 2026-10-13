@@ -35,6 +35,19 @@ if (affinity) {
     execFileSync('python', ['-c', 'import psutil; psutil.Process(' + process.pid + ').cpu_affinity([' + affinity + '])']);
   }
 }
+/**
+ * `load` + letters-only bijective base-26 index (loada, loadb … loadz, loadaa …): the nickname lexicon flags bare digit
+ * runs, so an index-based name is rejected from a certain fleet size on (NICKNAME_SENSITIVE at --sockets 2000).
+ */
+function lettersOf(index) {
+  let i = Math.max(0, Math.trunc(Number(index) || 0));
+  let out = '';
+  do {
+    out = String.fromCharCode(97 + (i % 26)) + out;
+    i = Math.floor(i / 26) - 1 < 0 ? -1 : Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return out;
+}
 const samplesPath = arg('samples', '.cache/ws-real-samples.json');
 if (args.includes('--generate-samples') && !serverProcess) {
   const { makeMatch } = await import('../test/match/harness.js');
@@ -287,7 +300,7 @@ if (serverProcess) {
         pending.clear();
       });
       await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-      await client.request({ t: 'hello', name: 'load' + i, version: PROTOCOL_VERSION, ...(variant === 'delta' ? { stateDelta: 1 } : {}) });
+      await client.request({ t: 'hello', name: 'load' + lettersOf(i), version: PROTOCOL_VERSION, ...(variant === 'delta' ? { stateDelta: 1 } : {}) });
     };
     for (let i = 0; i < sockets; i += 64) await Promise.all(Array.from({ length: Math.min(64, sockets - i) }, (_, j) => connect(i + j)));
     for (let i = 0; i < sockets; i += 128) {

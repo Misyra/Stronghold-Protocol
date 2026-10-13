@@ -20,6 +20,13 @@
 - test/state-delta-integration.test.js：真实 WebSocket 四人房间、新旧客户端混用、纯真人匹配、观战、全量恢复、重连、结果回放及重型限流／恢复请求合并。
 - test/ui/state-delta.e2e.test.js：真实 Chrome 网络层与应用状态，丢失基线后的自动恢复及重连；通过 SP_E2E=1、CHROME_PATH 启用。
 
+## perf/state-sync 增补（2026-10-13）
+
+- 整帧文本改为按需构建：原先每个状态帧都先拼出一份完整帧文本（增量帧也一样），现在只在确实要发整帧时构建，字节数由头部长度加编码长度算术得出（头部是纯 ASCII）。增量帧因此不再各自产生一份 4–5 KiB 的短命字符串。
+- `SP_STATE_DELTA_VERIFY=1`（每次转换读取环境变量，可在进程内打开）：把每条线上增量按客户端路径回放（`JSON.parse` 文本 → `applyStatePatch`），与服务端当前状态做键序无关的比对；不符则计入 `stateDeltaStats.verifyMismatches` 并退回整帧，不会发出错误的补丁。
+- `/healthz` 新增 `stateDelta`：`frames` / `fullFrames` / `deltaFrames` / `parsedBaselines` / `verifyChecked` / `verifyMismatches`。两次采样相减即为速率；`parsedBaselines` 用来复核“每个快照到底被解析了几次”。
+- 差分基线仍然只从编码文本解析（快照内缓存 `snapshot.parsed`，一个状态帧全进程只解析一次）。**没有**改成复用活的视图对象：那会拿掉本文件上一段承诺的“避免引用游戏内可变对象”，而收益只有每帧一次解析（约 13–14 µs，占单次动作链路约 8%，见 [同步链路基线](STATE_SYNC_BENCHMARK.md) §四）。
+
 部署时同步服务器和前端代码并重启服务器；保留现有状态目录及环境配置。此次没有新增或更改素材，无需发布 CDN 资源。
 
 本次验证：576 项定向 Node 检查、9 项真实 Chrome 测试通过；其中 10 项发行清单检查使用独立临时索引纳入已有未跟踪的 about.js，实际暂存区不受验证影响。静态检查通过，导入边界保留现有 5 处已知跨层导入。本地 400／2000 连接、1／4Hz 全量与增量对照结果见 [本地传输压测](STATE_DELTA_BENCHMARK.md)。未做线上完整对局容量压测。

@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { forgetOfficialBounds, rememberOfficialBounds } from '../shared/plugins/officialBounds.js';
 
 /** Repository root (…/Stronghold-Protocol). */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -89,18 +90,26 @@ let singleton = null;
  * @returns {Readonly<Record<string, any>>}
  */
 export function getData({ dir = DATA_DIR, log = console } = {}) {
-  if (!singleton) singleton = loadData(dir, { log });
+  if (!singleton) {
+    singleton = loadData(dir, { log });
+    rememberOfficialBounds(singleton);
+  }
   return singleton;
 }
 
 /** Drop the singleton so the next getData() reloads (tests / hot reload). */
-export function resetData() { singleton = null; }
+export function resetData() {
+  singleton = null;
+  forgetOfficialBounds();
+}
 
 /**
  * Make `data` the process-wide singleton (deep-frozen) — a match host worker (server/match/host/entry.js, DESIGN §32
  * P1c) calls it with its content set's merged data before it imports the match: every module of that worker that reads
  * getData() (the content modules' gameData(), builtinMeta, the sim's default DataSource) then sees the content set,
- * never the vanilla files. The main process never calls it.
+ * never the vanilla files. The main process never calls it. The official-bounds cache (shared/plugins/officialBounds.js,
+ * filled by getData() from the vanilla files) stays empty in such a worker, as in a browser: a modded battle's runtime
+ * caps are PLUGIN_BOUND_FLOOR on both sides (the page that runs it and the worker that checks or takes it over).
  * @param {Record<string, any>} data
  * @returns {Readonly<Record<string, any>>}
  */

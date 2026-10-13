@@ -44,6 +44,7 @@ import { kjeragColdWind } from '../devices.js';
 import * as items from '../items.js';
 import { FORCED_EXIT } from '../../constants.js';
 import { msg } from '../../../../shared/i18n.js';
+import { bbCap } from '../../../../shared/plugins/officialBounds.js';
 
 const num = S.num;
 
@@ -695,7 +696,8 @@ export function payHammers(ctx) {
   const step = Math.floor(num(p?.layer, 0));
   if (!p || !(step > 0)) return 0;
   const due = Math.floor(ctx.layers('victoriaShip') / step);
-  const count = Math.max(0, Math.floor(num(p.count, 1)));
+  // [ASSUMED] DESIGN §32.5: each milestone pays at most the official `count` cap. Official count is 1.
+  const count = Math.min(bbCap('count'), Math.max(0, Math.floor(num(p.count, 1))));
   let granted = 0;
   // re-read the counter every milestone: grantItem dispatches onGain, which re-enters this function (nested payments
   // must not be paid twice by the outer loop)

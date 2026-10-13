@@ -16,6 +16,25 @@ export const PLUGIN_GAIN_COUNT_KEYS = Object.freeze([
   'global_special_choice_gain_equip',
   'single_special_choice_gain_bond_chess',
 ]);
+/**
+ * Systematic cap for every other numeric blackboard key and the loop fields in officialBounds.js.
+ * [ASSUMED] DESIGN §32.5: `|v| ≤ max(10 × official absolute max, 64)`. A key the official tables never
+ * have uses the floor. Official inputs of the clamped loops are at or below 55, so the floor alone does
+ * not change a vanilla fight.
+ */
+export const PLUGIN_BOUND_FACTOR = 10;
+export const PLUGIN_BOUND_FLOOR = 64;
+
+/**
+ * Cap for one official absolute maximum. A missing or negative maximum uses the floor.
+ * @param {unknown} officialMax
+ * @returns {number}
+ */
+export function dataBound(officialMax) {
+  const m = Number(officialMax);
+  if (!Number.isFinite(m) || m < 0) return PLUGIN_BOUND_FLOOR;
+  return Math.max(PLUGIN_BOUND_FACTOR * m, PLUGIN_BOUND_FLOOR);
+}
 
 /**
  * A finite count capped to [0, max] without flooring: a 2.5 loop still runs three times. Non-finite values use fallback.

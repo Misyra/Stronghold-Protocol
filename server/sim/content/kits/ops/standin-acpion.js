@@ -3,6 +3,7 @@
 
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { num, talentBb, traitBb, skillRec, statBuff, toggleBuff, up } from '../shared/tier1.js';
+import { bbCap } from '../../../../../shared/plugins/officialBounds.js';
 
 const S1 = 'skchr_acpion_1', S2 = 'skchr_acpion_2', S3 = 'skchr_acpion_3';
 /**
@@ -81,7 +82,8 @@ export default {
     }
     if (r3) {
       const b3 = r3.bb ?? {};
-      const times = Math.max(1, Math.floor(num(b3.times, 8))), scale = num(b3.atk_scale, 1), pen = num(b3.def_penetrate, 0);
+      // [ASSUMED] DESIGN §32.5: cap before the timer loop and lastAt, so 1e9 does not schedule 1e9 slashes. Official is 8.
+      const times = Math.min(bbCap('times'), Math.max(1, Math.floor(num(b3.times, 8)))), scale = num(b3.atk_scale, 1), pen = num(b3.def_penetrate, 0);
       const grid = r3.rangeGrid?.length ? r3.rangeGrid : null;
       const lastAt = SLASH_FIRST + (times - 1) * SLASH_GAP;
       const slash = (battle, unit) => {

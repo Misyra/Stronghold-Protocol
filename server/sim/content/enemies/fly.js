@@ -8,6 +8,7 @@ import {
 } from './helpers.js';
 import { enemyAura, allyAura, selfFear, skill, kitSelfFear } from './archetypes.js';
 import { hypot } from '../../detmath.js';
+import { bbCap, fieldCap } from '../../../../shared/plugins/officialBounds.js';
 
 // ---------------------------------------------------------------------------------------------------------------
 // constants (numbers that exist nowhere in the data)
@@ -61,7 +62,8 @@ function kitExposeOnDeath(ab) {
  */
 function kitBlackCloud(ab, e) {
   const k = ab.sk.KillOthers, f = ab.sk.FireWeapon;
-  const maxAmmo = Math.max(1, num(e.def.raw && e.def.raw.sp && e.def.raw.sp.maxSp, 3));
+  // [ASSUMED] DESIGN §32.5: salvo length is sp.maxSp. Official 黑云 maxSp is 3.
+  const maxAmmo = Math.min(fieldCap('enemy.sp.maxSp'), Math.max(1, num(e.def.raw && e.def.raw.sp && e.def.raw.sp.maxSp, 3)));
   const grabR = (k ? num(k.bb.range_radius, 1.5) : 1.5) * GRAB_RADIUS_SCALE;
   const dur = k ? num(k.bb.duration, 4) : 4;
   const isPrey = (b, e2, o) => o !== e2 && o.alive && !o.hidden && o.isFlying && o.def.rank === 'NORMAL' && !o.isBoss && !o.findBuff('ab:devoured');
@@ -79,14 +81,16 @@ function kitBlackCloud(ab, e) {
           b.addBuff(o, { key: 'ab:devoured', duration: dur, visible: true, flags: { bind: true, noMove: true, disarm: true } });
           b.after(dur, () => {
             if (!o.alive || !e2.alive) return;
-            e2.mem.ab.ammo = Math.min(maxAmmo, (e2.mem.ab.ammo ?? 0) + num(k.bb.sp, 1));
+            const gain = num(k.bb.sp, 1);
+            const step = gain > bbCap('sp') ? bbCap('sp') : gain;
+            e2.mem.ab.ammo = Math.min(maxAmmo, (e2.mem.ab.ammo ?? 0) + step);
             b.kill(o, null);
           }, { owner: e2 });
         }
       }, { owner: e2 });
     }, { sil: true, cond: (b, e2) => prey(b, e2).length > 0 }),
     skill(f, (b, e2) => {
-      const hits = Math.floor(e2.mem.ab.ammo ?? 0);
+      const hits = Math.min(maxAmmo, Math.floor(e2.mem.ab.ammo ?? 0));
       if (!(hits > 0)) return;
       e2.mem.ab.ammo = 0;
       for (let i = 0; i < hits; i++) {

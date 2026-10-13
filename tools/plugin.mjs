@@ -38,6 +38,11 @@
 //                                                        the error catalogue (every code, its plain words, what to do);
 //                                                        --markdown its symptom table, --write puts the tables into
 //                                                        docs/PLUGINS.md (English) and docs/PLUGIN-GUIDE.md (Chinese)
+//   node tools/plugin.mjs import-forge <dir|zip>         read a Forge workshop pack (pack.json and the files it names)
+//          [--out plugins/<id>] [--id <id>]             and write one or more plugin folders (cosmetic, content, ui, lang).
+//          [--dry-run] [--json]                         Scripts in the pack are never run. --dry-run writes nothing.
+//                                                        --json prints one stable report. IMPORT-REPORT.md lands in the
+//                                                        primary folder. See docs/PLUGINS.md §16.
 //   --root <dir>   another checkout or an unpacked release (default: this checkout)
 //
 // A language pack's strings are checked by node tools/i18n.mjs check <code> (docs/I18N.md); tools/packs.mjs keeps the
@@ -56,11 +61,12 @@ import { LOCK_FILE } from '../shared/plugins/visual.js';
 import { PLUGIN_ERRORS, TABLE_MARKERS, describeIssue, errorLang, issueLine, symptomTable } from '../shared/plugins/errors.js';
 import { TEMPLATES, templateById, createPlugin, manifestText } from '../server/studio/templates/index.js';
 import { createTargetIndex, searchTargets, targetSpec } from '../server/studio/targets.js';
+import { importForge } from '../server/plugins/forgeImport.js';
 
 export { checkPluginFolder, buildPluginLock };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | errors [--markdown] [--lang zh|en] [--write]   [--root <dir>]';
+const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] | errors [--markdown] [--lang zh|en] [--write]   [--root <dir>]';
 /** The documents whose symptom table `errors --write` keeps: path, language. */
 export const TABLE_DOCS = Object.freeze([['docs/PLUGINS.md', 'en'], ['docs/PLUGIN-GUIDE.md', 'zh']]);
 
@@ -134,7 +140,7 @@ export async function main(argv) {
   try {
     for (let i = 0; i < rest.length; i++) {
       const a = rest[i];
-      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir'].includes(a)) {
+      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir', '--id'].includes(a)) {
         values[a.slice(2)] = takeValue(rest, i, a.slice(2));
         i++;
       } else if (a.startsWith('--')) flags.add(a.slice(2));
@@ -281,6 +287,18 @@ export async function main(argv) {
       ? `下一步：在工作台（服务器的 /studio/）里把文件拖到格子上，或者按 ${shown}/README.md 手动放文件；然后 node tools/plugin.mjs check ${id}`
       : `next: drop files on its places in the studio (/studio/ of the server), or follow ${shown}/README.md; then node tools/plugin.mjs check ${id}`);
     return 0;
+  }
+
+  if (cmd === 'import-forge') {
+    if (targets.length !== 1) { console.error(`plugin: import-forge needs one Forge pack (a folder or a zip)\n${USAGE}`); return 2; }
+    const result = await importForge(path.resolve(targets[0]), {
+      out: values.out ? path.resolve(values.out) : undefined,
+      id: values.id, dryRun: flags.has('dry-run'), root, pluginsDir: dirs.pluginsDir, dataDir: dirs.dataDir,
+      vanilla: readVanillaAssets(dirs.dataDir),
+    });
+    if (flags.has('json')) console.log(JSON.stringify(result.report));
+    else console.log(result.markdown);
+    return result.ok ? 0 : 1;
   }
 
   if (cmd === 'errors') {

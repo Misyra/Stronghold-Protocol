@@ -11,6 +11,9 @@
 //   GET  /studio/api/suggest-id?name=&target=&template=   a free plugin id
 //   GET  /studio/api/plugins            every plugin folder: name, version, class, loaded or skipped, its findings
 //   POST /studio/api/plugins            a new plugin from a template { template, id, name, target, authors, license, credits }
+//   POST /studio/api/forge/preview      a Forge pack as { zip: base64 } or { files: [{ name, data: base64 }] } — the report,
+//                                       nothing written (server/plugins/forgeImport.js). No path on this machine.
+//   POST /studio/api/forge/import       the same body; writes plugins/<id>/ after the report's products pass check and pack
 //   GET  /studio/api/plugins/<id>       its manifest, files, sections, findings (coded: shared/plugins/errors.js), lock
 //   PUT  /studio/api/plugins/<id>/manifest     plugin.json as a whole (the advanced editor)
 //   POST /studio/api/plugins/<id>/meta         basic fields { fields, lang }
@@ -56,6 +59,41 @@ import { atlasInfo } from '../../tools/assets/atlas.mjs';
 import { STUDIO_URL, STUDIO_API, isStudioPath } from './paths.js';
 import { loadStudioKey, sameKey } from './key.js';
 import { createPluginWatcher } from './watch.js';
+import { importForge } from '../plugins/forgeImport.js';
+
+/** Safety failures of a Forge import (the page shows the catalogue). A check failure stays in the report, HTTP 200. */
+const FORGE_SAFETY = new Set(['PLUGIN_FORGE_INPUT', 'PLUGIN_FORGE_ZIP', 'PLUGIN_FORGE_JSON', 'PLUGIN_FORGE_ID', 'PLUGIN_FORGE_EXISTS']);
+
+/**
+ * A Forge pack uploaded by the page. A path on the server is never accepted.
+ * @param {any} body
+ * @returns {{ zip: Buffer } | { files: Map<string, Buffer> }}
+ */
+function forgeUpload(body) {
+  if (typeof body.zip === 'string' && body.zip) {
+    const buf = Buffer.from(body.zip, 'base64');
+    if (!buf.length) throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'empty zip' }, 'empty zip');
+    if (buf.length > PLUGIN_LIMITS.pluginBytes) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: 'zip is larger than 200 MB' }, 'zip is larger than 200 MB');
+    return { zip: buf };
+  }
+  if (Array.isArray(body.files)) {
+    if (!body.files.length) throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'no files' }, 'no files');
+    if (body.files.length > PLUGIN_LIMITS.files) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: `more than ${PLUGIN_LIMITS.files} files` }, `more than ${PLUGIN_LIMITS.files} files`);
+    const map = new Map();
+    let total = 0;
+    for (const f of body.files) {
+      const name = typeof f?.name === 'string' ? f.name.replace(/\\/g, '/') : '';
+      if (!name || typeof f?.data !== 'string') throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'each file needs a name and base64 data' }, 'each file needs a name and base64 data');
+      const data = Buffer.from(f.data, 'base64');
+      total += data.length;
+      if (data.length > PLUGIN_LIMITS.pluginBytes || total > PLUGIN_LIMITS.pluginBytes) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: 'files are larger than 200 MB' }, 'files are larger than 200 MB');
+      if (map.has(name)) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: `${name.slice(0, 80)}: duplicate name` }, `${name.slice(0, 80)}: duplicate name`);
+      map.set(name, data);
+    }
+    return { files: map };
+  }
+  throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'send a zip or a file list, not a path on the server' }, 'send a zip or a file list, not a path on the server');
+}
 
 /** The page's URL prefix and its API's. */
 /** The studio's own notes of a plugin folder (a dot file: never listed, served, checked or packed). */
@@ -627,6 +665,20 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       if (t) saveSections(id, [{ template: tpl.id, target: targetSpec(t) }]);
       log.info?.(`[studio] new plugin ${id} (${tpl.id}${t ? `, ${targetSpec(t)}` : ''})`);
       return json(201, changed(id));
+    }
+    if ((route === 'forge/preview' || route === 'forge/import') && method === 'POST') {
+      if (!mayChange(req)) return false;
+      const body = await readJson(req, STUDIO_LIMITS.bodyBytes);
+      const result = await importForge(forgeUpload(body), {
+        id: typeof body.id === 'string' && body.id ? body.id.slice(0, 64) : undefined,
+        dryRun: route === 'forge/preview', pluginsDir, dataDir, root: path.dirname(path.resolve(publicDir)),
+        vanilla: registry.vanillaAssets(),
+      });
+      const safety = result.issues.find((i) => FORGE_SAFETY.has(i.code));
+      if (safety) throw new StudioError(safety.code, 400, { detail: safety.detail }, safety.detail);
+      if (route === 'forge/import' && result.wrote) watcher.rescan();
+      const products = Array.isArray(result.report?.products) ? result.report.products : [];
+      return json(200, { report: result.report, plugins: products.map((p) => ({ id: p.id, class: p.class })) });
     }
     const m = /^plugins\/([^/]+)(?:\/(.*))?$/.exec(route);
     if (!m) return false;

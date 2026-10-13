@@ -183,3 +183,9 @@ body.studio { overflow: auto; height: auto; min-height: 100%; -webkit-user-selec
 .st-target__text { display: flex; flex-direction: column; min-width: 0; }
 .st-target__name { color: var(--text-hi); font-size: calc(.13 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-target__meta { color: var(--text-dim); font-size: calc(.1 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Forge import ------------------------------------------------------------------------------------------------ */
+.st-forge-open { margin-top: .06rem; }
+.st-forge-file { display: flex; flex-direction: column; gap: .04rem; font-size: calc(.12 * var(--t)); color: var(--text-md); }
+.st-forge-file input { font: inherit; color: inherit; }
+.st-forge-report { max-height: 3.2rem; overflow: auto; white-space: pre-wrap; font-size: calc(.11 * var(--t)); background: var(--bg-2); border: 1px solid var(--line); padding: .08rem; margin: 0; }

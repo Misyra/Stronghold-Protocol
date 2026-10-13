@@ -43,6 +43,7 @@ const D = Object.freeze({
   dslBudget: 'docs/PLUGIN-DSL.md#5-预算和重入',
   dslMeta: 'docs/PLUGIN-DSL.md#6-备战',
   studio: 'docs/PLUGINS.md#15-the-studio-and-the-tools',
+  forge: 'docs/PLUGINS.md#16-forge-import',
   guide: 'docs/PLUGIN-GUIDE.md',
 });
 
@@ -685,6 +686,38 @@ export const PLUGIN_ERRORS = Object.freeze({
     level: 'problem', doc: D.dslTriggers,
     zh: '天赋写得不对（{where}）：{detail}', en: 'A talent is not right ({where}): {detail}',
     fix: { zh: '"talents" 是列表，每一项是 { "when": 触发器, "if": 条件, "do": [ 动作 ] } 这样的对象。', en: '"talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }.' },
+  },
+
+  // ---- Forge workshop packs (tools/plugin.mjs import-forge, server/plugins/forgeImport.js) --------------------------
+  PLUGIN_FORGE_INPUT: {
+    level: 'problem', doc: D.forge,
+    zh: '这不是一份能读的 Forge 包：{detail}', en: 'This is not a Forge pack that can be read: {detail}',
+    fix: { zh: '选一个含 pack.json 的工坊包目录，或那个目录打出来的 zip。', en: 'Choose a workshop folder that contains pack.json, or a zip of that folder.' },
+  },
+  PLUGIN_FORGE_ZIP: {
+    level: 'problem', doc: D.forge,
+    zh: '这个包的文件不安全，没有解压：{detail}', en: 'This pack\'s files are not safe to unpack: {detail}',
+    fix: { zh: '路径不能跳出包目录，不能有符号链接，单个包最多 5000 个文件、一共 200 MB。换一份包再导入。', en: 'Paths must stay inside the pack, with no symbolic links, at most 5000 files and 200 MB. Import another pack.' },
+  },
+  PLUGIN_FORGE_JSON: {
+    level: 'problem', doc: D.forge,
+    zh: '包里的 JSON 读不了：{detail}', en: 'JSON in the pack cannot be read: {detail}',
+    fix: { zh: 'JSON 要能解析，不超过 8 MB，嵌套不超过 64 层，数字在 ±1e9 以内。', en: 'JSON must parse, stay within 8 MB and 64 levels of nesting, and keep numbers within ±1e9.' },
+  },
+  PLUGIN_FORGE_ID: {
+    level: 'problem', doc: D.forge,
+    zh: '这个包的 id 变不成插件 id：{detail}', en: 'This pack\'s id cannot become a plugin id: {detail}',
+    fix: { zh: '用 --id 指定一个插件 id：2–32 位小写字母、数字和 -，例如 rose-skin。', en: 'Pass --id with a plugin id: 2–32 lower-case letters, digits and -, for example rose-skin.' },
+  },
+  PLUGIN_FORGE_EXISTS: {
+    level: 'problem', doc: D.forge,
+    zh: '目标文件夹已经存在，没有写入：{detail}', en: 'The destination folder already exists, so nothing was written: {detail}',
+    fix: { zh: '换一个 --out 或 --id，或者把已有的插件文件夹挪走后再导入。', en: 'Choose another --out or --id, or move the existing plugin folder aside and import again.' },
+  },
+  PLUGIN_FORGE_SCRIPT: {
+    level: 'problem', doc: D.forge,
+    zh: '包里的脚本没有导入，也没有执行：{detail}', en: 'A script in the pack was not imported and was not run: {detail}',
+    fix: { zh: '技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。', en: 'Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack.' },
   },
 
   // ---- anything a check reported without a code of its own ----------------------------------------------------------

@@ -24,6 +24,7 @@ import { API, get, post, put, call, pluginPath, nameAuthor, keepStudioKey, takeK
 import { kindLabel, templateTitle, targetName, sizeText } from './labels.js';
 import { IssueList, errorText } from './issues.js';
 import { CreateDialog } from './create.js';
+import { ForgeDialog } from './forge.js';
 import { TargetPicker } from './picker.js';
 import { SlotCard } from './slots.js';
 import { InfoForm, FileList, ManifestEditor } from './info.js';
@@ -242,6 +243,7 @@ function App({ info }) {
   const [plugins, setPlugins] = useState([]);
   const [selected, setSelected] = useState(() => new URLSearchParams(location.search).get('plugin') || null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [forgeOpen, setForgeOpen] = useState(false);
   const [events, setEvents] = useState({ on: false, at: null });
   const refresh = () => get('plugins').then((r) => setPlugins(r.plugins || [])).catch(() => {});
   useEffect(() => { refresh(); }, []);
@@ -302,6 +304,7 @@ function App({ info }) {
     <div class="st-body">
       <aside class="st-side">
         <${Button} variant="primary" block=${true} onClick=${() => setCreateOpen(true)} data-testid="new-plugin">${t('新建插件')}<//>
+        <${Button} block=${true} class="st-forge-open" onClick=${() => setForgeOpen(true)} data-testid="forge-import">${t('从 Forge 包导入')}<//>
         <ul class="st-list" data-testid="plugin-list">
           ${list.map((p) => html`<li key=${p.id}><button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', (p.status === 'skipped' || p.linked) && 'is-bad')}
               onClick=${() => setSelected(p.id)} data-plugin=${p.id} disabled=${!!p.linked}
@@ -328,6 +331,8 @@ function App({ info }) {
     </div>
     <${CreateDialog} open=${createOpen} templates=${info.templates} onClose=${() => setCreateOpen(false)}
       onCreated=${(st) => { setCreateOpen(false); refresh(); setSelected(st.id); }} />
+    <${ForgeDialog} open=${forgeOpen} onClose=${() => setForgeOpen(false)}
+      onImported=${(plugins) => { setForgeOpen(false); refresh(); if (plugins[0]?.id) setSelected(plugins[0].id); }} />
     <${UiHosts} />
   </div>`;
 }

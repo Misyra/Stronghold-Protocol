@@ -8,6 +8,7 @@ import { contentHashOf, canonicalJson, csUrlPart } from '../../shared/plugins/id
 import { resolvePluginOrder } from '../../shared/plugins/order.js';
 import { applyPatches, normalizeSettings } from '../../shared/plugins/patch.js';
 import { expandRecords } from '../../shared/plugins/records.js';
+import { validateDsl } from '../sim/content/dsl/validate.js';
 import { validateData } from '../../shared/plugins/validate.js';
 import { object, own, clone, problem, RECORD_MAPS, recordId, namespaceCollisions } from '../../shared/plugins/dataUtils.js';
 import { buildRecordOverlay, walkOverlay, getPath, applyRecordOverlay } from '../../shared/i18nData.js';
@@ -237,7 +238,7 @@ function composeContentSet({ registry, ids = [] }) {
       } else {
         if (!p.manifest.permissions.includes('data.add')) { problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'records require data.add')); continue; }
         const entries = part === 'data' ? doc.entries : (Array.isArray(doc) ? doc : [doc]).map(v => part === 'operators' ? v : { ...v, file: part });
-        r = expandRecords(data, entries, { pluginId: p.id });
+        r = expandRecords(data, entries, { pluginId: p.id, validateDsl });
       }
       problems.push(...r.problems.map(e => ({ ...e, plugin: p.id, file: rel })));
       data = r.data;
@@ -266,7 +267,7 @@ function composeContentSet({ registry, ids = [] }) {
     data.dsl = table;
   }
   if (plugins.length) {
-    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners }));
+    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners, validateDsl }));
     if (problems.length) return { problems };
     data = { ...data, stages: { ...data.stages } };
     const routes = Object.values(data.waves).flatMap(w => [...(w.routes ?? []), ...(w.extraRoutes ?? [])]);

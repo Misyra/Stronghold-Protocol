@@ -30,6 +30,7 @@ const MOD_BB = Object.freeze({
 });
 
 /** Skill scalars that are not mods. duration is intentionally absent. */
+/** @type {Readonly<Record<string, { kind: 'bb'|'field', key: string }>>} */
 const SKILL_FIELD = Object.freeze({
   ammo: { kind: 'bb', key: 'ammo' },
   spCost: { kind: 'field', key: 'skill.spCost' },
@@ -38,6 +39,7 @@ const SKILL_FIELD = Object.freeze({
   maxCharges: { kind: 'field', key: 'skill.maxCharges' },
 });
 
+/** @type {Readonly<Record<string, { kind: 'bb'|'field', key: string }>>} */
 const ATTACK_FIELD = Object.freeze({
   atkScale: { kind: 'bb', key: 'atk_scale' },
   splashRadius: { kind: 'bb', key: 'radius' },

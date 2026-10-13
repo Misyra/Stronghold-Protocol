@@ -1,6 +1,5 @@
 // Shared DATA.md reference checks, extracted verbatim from build-data (DESIGN §32.5).
 import { statusKey, standInRecord, unitForm } from '../standIn.js';
-import { validateDsl } from '../../server/sim/content/dsl/validate.js';
 /** Recursively find non-finite numbers (NaN/Infinity would silently become null in JSON). */
 function findNonFinite(obj, path, out) {
   if (typeof obj === 'number') { if (!Number.isFinite(obj)) out.push(path); return; }
@@ -187,7 +186,7 @@ function checkBlackboards(rec, path, bad) {
   if (Array.isArray(rec.abilities)) rec.abilities.forEach((a, i) => checkTimesMap(a?.bb, `${path}.abilities[${i}].bb`, bad));
 }
 
-function checkData(data, { kitExists = null, vanilla = null, owners = null } = {}) {
+function checkData(data, { kitExists = null, vanilla = null, owners = null, validateDsl = null } = {}) {
   const problems = jsonProblems(data, 'data', { bounded: false });
   const bad = (path, message, code = 'PLUGIN_DATA_REQUIRED') => problems.push(problem(code, path, message));
   const array = (v, path) => { if (!Array.isArray(v)) bad(path, 'array required'); };
@@ -225,7 +224,10 @@ function checkData(data, { kitExists = null, vanilla = null, owners = null } = {
     if (rec.talentMods != null && !matchesSchema(rec.talentMods, MODS_SCHEMA)) bad(at, 'invalid talentMods', 'PLUGIN_SKILL_SPEC');
     if (rec.kitRef != null && rec.talentMods != null) bad(at, 'talentMods belong with a JSON SkillSpec, not kitRef', 'PLUGIN_SKILL_SPEC');
     if (rec.dsl != null) {
-      const checked = validateDsl(rec.dsl, { bounds: true });
+      // (the sim's DSL validator, handed in by the content-set builder — shared code does not import the engine; a record
+      // with DSL checked without one is refused)
+      const checked = typeof validateDsl === 'function' ? validateDsl(rec.dsl, { bounds: true })
+        : { ok: false, problems: [{ code: 'PLUGIN_DSL_SHAPE', path: '', zh: 'a DSL record needs the content-set builder to check it (no validator given)' }] };
       if (!checked.ok) for (const p of checked.problems) bad(p.path ? `${at}.${p.path}` : at, p.zh, p.code);
       else if (typeof rec.pluginId !== 'string' || !rec.pluginId) bad(`${at}.pluginId`, 'DSL record needs the contributing plugin id', 'PLUGIN_DSL_PLUGIN_ID');
       else if (rec.dsl.pluginId != null && rec.dsl.pluginId !== rec.pluginId) bad(`${at}.pluginId`, 'spec pluginId differs from the record pluginId', 'PLUGIN_DSL_PLUGIN_ID');

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { getData } from '../../server/data.js';
 import { expandRecords } from '../../shared/plugins/records.js';
 import { validateData, validateReferences } from '../../shared/plugins/validate.js';
+import { validateDsl } from '../../server/sim/content/dsl/validate.js';
 import { applyPatches } from '../../shared/plugins/patch.js';
 import { dataBound } from '../../shared/plugins/limits.js';
 import { officialBbMax, officialFieldMax } from '../../shared/plugins/officialBounds.js';
@@ -61,7 +62,11 @@ test('merged data validation: required fields, pairs, references, skills, kitRef
     [d => { d.items.chess_item_1_01_e_a.effectRef = 'missing'; }, 'PLUGIN_EFFECT_REF'],
     [d => { d.config.economy.refreshPrice = NaN; }, 'PLUGIN_DATA_NUMBER'],
     [d => { d.chess.chess_char_1_02_a.dsl = {}; }, 'PLUGIN_DSL_VERSION'],
-  ]) { const d = structuredClone(base); change(d); assert.ok(validateData(d, { kitExists: () => false }).some(p => p.code === want), want); }
+  ]) { const d = structuredClone(base); change(d); assert.ok(validateData(d, { kitExists: () => false, validateDsl }).some(p => p.code === want), want); }
+  // the DSL validator is the sim's, handed in by the content-set builder (shared code does not import the engine): without
+  // it a record that carries DSL is refused, never passed unchecked
+  const d = structuredClone(base); d.chess.chess_char_1_02_a.dsl = { dsl: 1, pluginId: 'x', skill: { kind: 'passive', mods: { atkPct: 0.1 } } };
+  assert.ok(validateData(d, { kitExists: () => false }).some(p => p.code === 'PLUGIN_DSL_SHAPE'));
 });
 test('SkillSpec exposes only the JSON subset, including nested attack fields and typed mods', () => {
   assert.deepEqual(validateSkillSpec({ kind: 'passive', mods: { atkPct: 0.5 }, attack: { hits: 2, onHitStatus: { key: 'stun', duration: 1 } } }), []);

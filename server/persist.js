@@ -29,7 +29,7 @@
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
 
 import { splitClocks, mergeClocks } from './stateClocks.js';
-import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
+import { captureMatch, canSnapshot, matchClocks, persistVersion, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
 import { chatRetentionUntil } from './moderation/chatState.js';
@@ -230,10 +230,10 @@ export class Persister {
    *   store: { save?: (doc: object) => Promise<boolean>, saveSharded?: (payload: object) => Promise<boolean>, log?: object },
    *   registry: import('./net.js').SessionRegistry,
    *   lobby: import('./lobby.js').Lobby,
-   *   log?: object, now?: () => number, saveMs?: number, minFlushMs?: number,
+   *   log?: object, now?: () => number, saveMs?: number, minFlushMs?: number, verifyVersion?: boolean,
    * }} opts
    */
-  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs }) {
+  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs, verifyVersion }) {
     this.store = store;
     this.registry = registry;
     this.lobby = lobby;
@@ -250,6 +250,20 @@ export class Persister {
     this.metadataSignature = null;
     /** Fresh phase clocks per room code (deadlineRemainingMs / startedAtAgoMs; written into the document envelope). */
     this.matchClocks = new Map();
+    /**
+     * The persistence version each stored checkpoint body was encoded at, per room code, together with the match it
+     * belongs to (snapshot.js persistVersion). An unchanged version means capture, cross-thread clone and codec are
+     * all skipped and only the clock envelope is refreshed.
+     */
+    this.matchVersions = new Map();
+    /**
+     * True (or SP_PERSIST_VERIFY=1) to prove the version on live traffic: a room whose version says "unchanged" is
+     * encoded anyway and the body compared with the stored one. A difference is counted in `versionHoles` and logged,
+     * and the fresh body is committed, so verification never persists a stale checkpoint.
+     */
+    this.verifyVersion = verifyVersion ?? process.env.SP_PERSIST_VERIFY === '1';
+    /** Checkpoint bookkeeping: encodes, skips (nothing changed), verified comparisons, and version misses. */
+    this.versionStats = { encodes: 0, skipped: 0, verified: 0, holes: 0 };
     this.encoder = new PersistenceWorker();
     this.checkpointPending = new Set();
     /** False while the Worker is failing and checkpoints encode inline (warned once per streak). */
@@ -271,6 +285,7 @@ export class Persister {
       if (!match) {
         this.matchDocs.delete(code);
         this.matchClocks.delete(code);
+        this.matchVersions.delete(code);
         if (this.running) this.scheduleFlush('checkpoint');
         return;
       }
@@ -308,7 +323,11 @@ export class Persister {
   /** Refresh every checkpointable match (Worker-encoded, one room at a time); drop checkpoints of gone rooms. */
   async checkpointMatches() {
     for (const code of [...this.matchDocs.keys()]) {
-      if (!this.lobby.rooms.has(code)) { this.matchDocs.delete(code); this.matchClocks.delete(code); }
+      if (!this.lobby.rooms.has(code)) {
+        this.matchDocs.delete(code);
+        this.matchClocks.delete(code);
+        this.matchVersions.delete(code);
+      }
     }
     for (const [code, room] of this.lobby.rooms) {
       if (room.disposed || !room.match) continue;
@@ -318,14 +337,26 @@ export class Persister {
 
   /**
    * Capture one room's match and encode it — Worker first, a fresh synchronous capture as the fallback. Never throws.
+   *
+   * A room whose persistence version (snapshot.js persistVersion) is unchanged since its stored body was written
+   * skips all of it: no capture, no structured clone across the Worker boundary, no codec, no JSON round trip — the
+   * clock envelope is refreshed and the body on disk stays byte-identical. With `verifyVersion` the encode still runs
+   * and the body is compared instead of trusted (see the constructor).
    * @returns {Promise<boolean>} true when a checkpoint of the room's current match was committed
    */
   async encodeRoom(code, match) {
     if (!canSnapshot(match)) return false;           // unsafe phase: keep the last checkpoint
+    const version = persistVersion(match);
+    const stored = this.matchVersions.get(code);
+    const unchanged = !!(stored && stored.match === match && stored.version === version);
+    if (unchanged && !this.verifyVersion) {
+      this.matchClocks.set(code, matchClocks(match));
+      this.versionStats.skipped++;
+      return false;
+    }
     const capture = captureMatch(match);
     if (!capture) return false;
-    let clocks = null;
-    let body = null;
+    let clocks, body;
     try {
       ({ clocks, body } = await this.encoder.request('encode', { capture }));
       this._workerHealthy = true;
@@ -341,15 +372,28 @@ export class Persister {
         this.log.warn?.(`[persist] persistence worker unavailable, encoding inline (${err?.message}); will retry the Worker every save`);
       }
     }
-    return this.commit(code, match, clocks, body);
+    if (unchanged) {
+      // Verification round: the body must be the one already stored, or the version missed a change.
+      this.versionStats.verified++;
+      if (this.matchDocs.get(code) === body) {
+        this.matchClocks.set(code, clocks);
+        this.versionStats.skipped++;
+        return false;
+      }
+      this.versionStats.holes++;
+      this.log.warn?.(`[persist] ${code}: the persistence version missed a change — the checkpoint was re-encoded (report this with the match phase and round)`);
+    }
+    this.versionStats.encodes++;
+    return this.commit(code, match, clocks, body, version);
   }
 
   /** A room's encode may outlive its match: only a checkpoint of the room's *current* match is committed. */
-  commit(code, match, clocks, body) {
+  commit(code, match, clocks, body, version) {
     const room = this.lobby.rooms.get(code);
     if (!room || room.disposed || room.match !== match) return false;
     this.matchDocs.set(code, body);
     this.matchClocks.set(code, clocks);
+    this.matchVersions.set(code, { match, version });
     return true;
   }
 

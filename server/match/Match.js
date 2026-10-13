@@ -382,6 +382,11 @@ export class Match {
     this._pubTimer = null;
     this._lastPubAt = -Infinity;
     this._lastPubJson = '';
+    /**
+     * Persistence version counter (snapshot.js persistVersion): moved by markPublic / markPrivate, read by the
+     * Persister to skip a checkpoint whose persisted surface did not change.
+     */
+    this._persistRev = 0;
     /** @type {Set<PlayerState>} */
     this._privDirty = new Set();
     this.errors = [];

@@ -795,6 +795,11 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
 
   return {
     contentDirs: { ...dirs },
+    /** Recheck the actual listening address, and retain it across every subsequent rescan. */
+    setScriptHost(host) {
+      scriptHost = host;
+      if (state) applyTrust(state.plugins, { pluginsDir:dirs.pluginsDir, host:scriptHost, mode:scriptMode, log });
+    },
     /** Re-read the folders now if they changed (force: even within recheckMs). */
     refresh: (force = false) => { refresh(force); },
     /**

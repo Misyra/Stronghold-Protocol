@@ -1,8 +1,7 @@
 // Authoring reads the installation's official tables, never the process's active simulation singleton.
 import fs from 'node:fs';
 import { gameplayDataFiles } from '../plugins/identity.js';
-import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
-import { dataBound } from '../../shared/plugins/limits.js';
+import { officialBbRange, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
 import { StudioError } from './files.js';
 
 export function readStudioData(dataDir) {
@@ -23,7 +22,7 @@ export function officialOperator(data, key = 'char_102_texas') {
 
 /** Only numeric attributes/blackboards are offered. Default skill copies are edited together. */
 export function numericFields(data, target) {
-  const bounds = exportOfficialBounds(rememberOfficialBounds(data));
+  rememberOfficialBounds(data);
   const records = target?.kind === 'operator'
     ? Object.entries(data.chess).filter(([, c]) => c.charId === target.key && !c.isDiy)
     : Object.entries(data[{ enemy: 'enemies', bond: 'bonds', item: 'items' }[target?.kind]] || {})
@@ -43,8 +42,7 @@ export function numericFields(data, target) {
           const mirrors = [];
           if (at[0] === 'skills' && rec.skills[at[1]]?.skillId === rec.skill?.skillId) mirrors.push(['skill', ...p.slice(2)]);
           out.push({ key: JSON.stringify([file, id, p]), file, id, path: p, mirrors,
-            name: rec.name, original: value, max: bb ? dataBound(bounds.bb[bbKey] || 0) : 1e9,
-            min: bb ? -dataBound(bounds.bb[bbKey] || 0) : -1e9, bounded: bb, officialMax: bb ? bounds.bb[bbKey] || 0 : null });
+            name: rec.name, original: value, ...(bb ? officialBbRange(bbKey) : { max: 1e9, min: -1e9, positiveMin: 0, officialMax: null }), bounded: bb });
         } else if (value && typeof value === 'object') walk(value, p, enabled);
       }
     };

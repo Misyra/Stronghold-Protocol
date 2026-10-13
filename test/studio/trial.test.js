@@ -103,7 +103,7 @@ test('wizard API creates each class, saves with revision, validates DSL, and kee
   const studio = createStudio({ registry: f.registry, pluginsDir: path.join(f.dir, 'plugins'), dataDir: path.resolve('data'), publicDir: path.resolve('public'),
     watch: () => ({ on() {}, close() {} }) });
   t.after(() => studio.close());
-  for (const template of ['numbers','operator','mode','ui','script']) {
+  for (const template of ['numbers','operator','dsl','meta','mode','ui','script']) {
     const id = `api-${template}`;
     const made = await request(studio, 'plugins', { key: studio.key, body: { id, template, name: id } });
     assert.equal(made.status, 201, made.body);
@@ -121,6 +121,11 @@ test('wizard API creates each class, saves with revision, validates DSL, and kee
     }
     if (template === 'script') {
       assert.match(state.source.text, /sp.kits.register/);
+      const noKey = await request(studio, `plugins/${id}`, { method: 'GET', ip: '192.168.1.20' });
+      assert.equal(noKey.status, 200); assert.equal(JSON.parse(noKey.body).source, undefined);
+      assert.doesNotMatch(noKey.body, /sp\.kits\.register/);
+      const keyed = await request(studio, `plugins/${id}`, { method: 'GET', key: studio.key, ip: '192.168.1.20' });
+      assert.match(JSON.parse(keyed.body).source.text, /sp.kits.register/);
       assert.equal((await request(studio, `plugins/${id}/authoring`, { key: studio.key, body: state.authoring })).status, 409);
     }
   }

@@ -4,18 +4,21 @@ A **plugin** is a folder a server owner puts into `plugins/`: a manifest, `plugi
 it names. The interface calls them 「插件」, never 「模组」 (that word is the operators' modules). The design and its
 phases are DESIGN §32 (`docs/history/0.3.0.md`); this file is the reference.
 
-**Status — 0.3.0-dev, P1c: rooms play content sets.** The server finds, checks and lists plugins and names its content
+**Status — 0.3.0-dev: content sets, scripts and sandbox execution.** The server finds, checks and lists plugins and names its content
 with a hash (P0); a room's host switches the server's cosmetic plugins on for the whole room, a player switches them on
 for themself (§9) — art, models and audio only: the battles stay the original ones and a room's `cs` stays the vanilla
 one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before. Data plugins (§10) build
 validated content sets, and a room's host switches them on for the room (§11, P1c): the room plays a content set of its
 own, named by its own `cs`, which every member's page downloads and checks and whose matches run in a match host of
 their own — unofficial matches. P4 adds interface plugins (§14): a page in a sandboxed frame, switched on in this
-browser, read-only, never a match intent, and not an input of `cs`.
+browser, read-only, never a match intent, and not an input of `cs`. Script plugins (§13) share one SDK: sandbox
+execution needs valid locked files, while native trusted execution also needs owner pins and individual consent.
+Both modes are off by default; all gameplay plugin simulations run in browser Workers.
 Authors make, preview and pack a cosmetic plugin in the browser at `/studio/` — the plugin studio 插件工作台 — or with
 `node tools/plugin.mjs new / check / pack`; findings come in plain words (the error catalogue), and the JSON Schemas
 `schemas/plugin.schema.json` and `schemas/overlay.schema.json` help editors and AI agents (§15; a beginner's guide in
-Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`).
+Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`). A Forge workshop pack, a folder or a
+zip, can be imported as the plugins it can become (§16).
 
 | File | Role |
 |---|---|
@@ -36,6 +39,7 @@ Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`)
 | `server/plugins/contentSet.js` | C1 content compositions, immutable byte files, modes and the gameplay hash (§10) |
 | `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
 | `server/plugins/pack.js`, `server/plugins/zip.js` | checking and packing a plugin folder: the folder's check, `plugin.lock.json` (Spine clip data parsed from the skeleton), a deterministic zip — for `tools/plugin.mjs` and the studio |
+| `server/plugins/forgeImport.js` | Forge workshop packs (§16): read a folder or a zip and write the plugins it can become. It never runs a script from the pack |
 | `server/studio/` | the plugin studio (§15): `index.js` the page and its API at `/studio/` (this machine and the local network only: `gate.js`), `files.js` (only inside `plugins/<id>/`), `templates/` (one module per template), `targets.js` (by official name), `edit.js` (fields, slots, one-click fixes), `preview.js` (the temporary composition), `watch.js` (hot reload) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest |
@@ -57,10 +61,12 @@ Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`)
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), and with gameplay plugins
   the briefing, the HUD corner, the result and the statistics (such matches stay out of the overview by default; a match
   with cosmetic plugins only is still the original game — §9, §11).
-- **No third-party code in a battle.** Art and data plugins carry no code, and the declarative DSL (§12) is data, not
-  code. An interface plugin (P4, §14) is the one page that runs, and only inside a sandboxed iframe: it sees a
-  read-only feed and cannot send a match intent. Classes `script` and `trusted` stay unsupported until P3 (trusted
-  code only with the server owner's and every player's explicit consent, then a sandbox).
+- **No third-party code in a battle unless the server owner switches it on.** Art and data plugins carry no code, and
+  the declarative DSL (§12) is data, not code. An interface plugin (P4, §14) runs only inside a sandboxed iframe: it sees
+  a read-only feed and cannot send a match intent. Code plugins (`script`, `trusted`, §13) are off by default: trusted
+  execution needs the owner's switch, a pinned lock and every player's consent (P3a); sandbox mode
+  (`SP_PLUGIN_SCRIPTS=sandbox`) runs script code in SES compartments — a Worker in the page, a restricted child process
+  on the server (P3b). Trusted-class code never enters the sandbox.
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
   still check a battle). Players never install gameplay content of their own.
@@ -83,14 +89,16 @@ What this version does with each class:
 | `lang` | a language: UI strings, optionally game texts | **loaded** — listed in `/packs/index.json`, files served at `/packs/<id>/<file>` |
 | `cosmetic` | art, models (Spine 3.8), audio (fonts and theme colours later) | **loaded** (P1a, §9) — a room's host switches it on for the room, a player for themself; the files its overlay names served at `/p/<id>/<hash8>/<path>` |
 | `content` | data patches and new records: numbers, economy, modes, waves, operators, enemies | **loaded** (P1b, §10; P1c, §11) — a room's host switches it on for the room: a content set of its own, unofficial matches; the set's files served at `/cs/<cs16>/…` |
-| `script` | code the battle or the match runs | not supported: listed, never loaded |
+| `script` | code the battle or the match runs | **off by default** — valid lock in sandbox mode; owner pin and player consent in trusted modes (§13) |
 | `ui` | an interface widget: an html page in a sandboxed frame | **loaded** (P4, §14) — a player switches it on for this browser; its frame files served at `/p/<id>/<hash8>/<path>` with a frame CSP |
-| `trusted` | page or server code with full trust | not supported |
+| `trusted` | page or server code with full trust | **off by default** — trusted/trusted-force only; pinning, address gates and room consent (§13) |
 
 Nothing of a plugin folder is served except the files a `lang` manifest names, the files a loaded `cosmetic`
 plugin's overlay names, and the frame files of a loaded `ui` plugin (`.html`, `.js`, `.css`, `.png` under its
 `entry.client`, §14) — never `plugin.json`, the lock file, a document or any other file of the folder. A ui plugin's
-`/p/` responses carry a frame Content-Security-Policy; cosmetic art does not.
+`/p/` responses carry a frame Content-Security-Policy; cosmetic art does not. Content-set snapshots are separate:
+`/cs/<cs16>/` serves checked data/descriptors and, for native trusted sets, only the retained sim/meta/client script
+entry bytes (§13). It never serves arbitrary files from plugin folders.
 
 What rooms may use is the server owner's choice: `plugins/config.json` (optional, git-ignored) lets every room's host
 choose (the default), fixes one set for every room, or keeps rooms on the original game, and limits the plugins, the
@@ -231,9 +239,12 @@ node tools/plugin.mjs check [<dir|id> …] [--strict] the folders of plugins/ (o
 node tools/plugin.mjs pack <dir|id> … [--zip]      write plugin.lock.json (every file's SHA-256 and size, each Spine model's
           [--out <file|dir>]                       clip data), then check the folder; --zip writes the folder as a zip
                                                    (default plugins/_dist/<id>-<version>.zip)
-node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio) for a target
+node tools/plugin.mjs new <template> <id>          a new plugin folder from a template (art, spine, voice, audio, dsl) for a target
           [--target <名字|id>] [--name …] [--dir …] found by its official name
 node tools/plugin.mjs errors [--markdown] [--write] the error catalogue; --write keeps the symptom tables of the documents
+node tools/plugin.mjs import-forge <dir|zip>       a Forge workshop pack → the plugins it can become (§16);
+          [--out <dir>] [--id <id>] [--dry-run]     --dry-run writes nothing; --json prints the report only
+          [--json]
 ```
 
 `--root <dir>` points it at another checkout or an unpacked release. Planned: `install`, `golden`, `simcheck`, and
@@ -459,18 +470,23 @@ values and merge counts come from that tier's economy, and statuses from `econom
 `backups.units`, every existing DIY slot status, `diy.ownedPool` and `diy.operators`; `"both"` does both. The expander
 adds shop chess to their bonds' member lists. An existing record must be changed with patches.
 
-Behavior is `kit: "generic"`, `{ "ref": "<official kit key or file stem>" }`, or
-`{ "spec": <JSON SkillSpec or JSON file path> }`. Files are JSON, including transitive spec files. `art: { ref: charId }`
+Behavior is `kit: "generic"`, `{ "ref": "<official kit key or file stem>" }`,
+`{ "spec": <JSON SkillSpec or JSON file path> }`, or `{ "dsl": <DSL spec> }`. Files are JSON, including transitive spec files. `art: { ref: charId }`
 references asset ids already installed; it carries no art file. `talentMods` supplies permanent numeric mods with a
 JSON SkillSpec. Per-skill `skillSpec` overrides the operator's spec for that selection.
 
-`kitOf` resolves extensions → `raw.dsl` → `raw.skillSpec` → `raw.kitRef` → official kit → generic. Explicit test kits
-still take precedence. `talentMods` are installed only on the JSON SkillSpec branch. A record that carries both
+`kitOf` resolves extensions → `raw.dsl` → `raw.skillSpec` → `raw.kitRef` → official kit → generic. When the record
+carries `dsl`, `kitOf` calls `compileDsl`. The builder stamps `pluginId` on that record; the author's spec is not
+rewritten, and a written `pluginId` must match the host (`PLUGIN_DSL_PLUGIN_ID`). Using DSL needs the `dsl`
+permission. A bad spec refuses the whole content set. Explicit test kits still take precedence. `talentMods` go with
+a JSON SkillSpec or with `kit.dsl`. A record that carries both
 `kit.ref` / `kitRef` and `talentMods` is `PLUGIN_SKILL_SPEC` at expansion and again in `validateData`; the schema file
 still allows the pair, and the runtime rejects it. File stems resolve only against the official registry, never an
 import path. A referenced kit's numbers come from the new record. Keep official skill ids to use its named alternate
-skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` stays empty for vanilla; P3a registers scripts through §13; `dsl/compile.js` is P2's compiler (§12), but the records and the validator still refuse `dsl`
-(`PLUGIN_DSL_UNAVAILABLE`) until the data-plugin work accepts it. A plugin operator whose id
+skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. A one-skill DSL kit uses the same
+`bindDefaultSkill` helper, so a 自选 piece and a 补位 stand-in take that default spec as `skills[id]`
+(`skillSource: 'skills'`). A shop chess keeps `kit.skill`. Multi-skill clones are not auto-bound. `extensions.js` stays empty for vanilla; P3a registers
+scripts through it (§13); `dsl/compile.js` is P2's compiler (§12) and data plugins use it (§12, PLUGIN-DSL.md §9). A plugin operator whose id
 starts with `char_x_` and whose chess and backup records have neither `potDown` nor a talent `potBelow` accepts only
 the default potential 6. Official operators, including `char_616_pithst`, are unchanged. The loadout screen can still
 show the control; the sync step drops a non-default value and the server rejects a raw client message. No new
@@ -682,23 +698,36 @@ are served from memory with `Cache-Control: immutable` while a room holds the se
 [ASSUMED]; the vanilla `/cs/<vanilla cs16>/index.json` is unchanged. `/healthz` counts the content sets in use
 (`content.sets`).
 
-**Not yet** (DESIGN §32.6): `allowIncompatible` reaching past the
-builder (it refuses a plugin it marks incompatible), and the DSL (§12) in data plugins (the builder still refuses
-`dsl`).
+**Not yet** (DESIGN §32.6): `allowIncompatible` reaching past the builder (it refuses a plugin it marks incompatible). DSL in data plugins is §12.
 
 ## 12. DSL
 
 A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
 per-battle action budget and the worked examples are [PLUGIN-DSL.md](PLUGIN-DSL.md). `compileDsl` in
-`server/sim/content/dsl/compile.js` turns a spec into a Kit; `server/match/dslMeta.js` turns the prep half into
-MetaRegistry hooks. The schema is `schemas/dsl.schema.json`. DESIGN §32.7. A vanilla battle does not load the compiler.
-Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section. The host supplies the plugin id
-(an author id cannot take another plugin's budget). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7 records
-the open points, including the generic-kit fallback until the data-plugin work records a compile error itself.
+`server/sim/content/dsl/compile.js` turns a spec into a Kit; `kitOf` calls it when the chess record carries `dsl`.
+`server/match/dslMeta.js` turns the prep half into MetaRegistry hooks. The schema is `schemas/dsl.schema.json`.
+A content plugin puts the battle spec on `kit.dsl` (permission `dsl`, and `data.add` for the operator) and prep
+specs in the manifest `dsl` part. The builder validates them, writes the battle spec onto the record, stamps the
+host `pluginId`, and stores prep specs as `data.dsl[<plugin id>]` (part of `cs`). A vanilla set has no `data.dsl`.
+The match host registers each prep spec after `setData` and before importing Match, then grants every player an
+EffectRef for that key. A bad spec refuses the whole set (`PLUGIN_DSL_*`, or `PLUGIN_DATA_BOUND` for a literal past
+the official cap). [ASSUMED] `data.dsl` is reserved: a data patch cannot write it (`PLUGIN_DSL_PLUGIN_ID`), and the
+builder attaches it only from its private prep list. Only the record owner may write that record's DSL; `potDown`
+cannot write `dsl` or `pluginId`. The runtime validator rejects unknown fields the schema already rejects
+(`additionalProperties: false`). `plugin check` is shape-only for the host id inside a prep key and for numeric caps;
+`buildContentSet` is the gate. [ASSUMED] If compilation still throws, the battle ends immediately as `forced`
+(`content:dsl` in `battle.errors`, `result.errors > 0`). It does not continue with an empty kit or the generic kit.
+The player sees the ordinary 战斗结束 box. A hashed set that skipped the builder still fails host boot (`boot-error`,
+room `plugin-start`, `PLUGIN_DSL_META`). The host supplies the plugin id (an author id cannot take another plugin's
+budget; omitting the author's id is allowed). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7. A vanilla
+battle does not load the compiler. Direct literals use the official-bounds cap (`max(10 × official max, 64)`); an expression
+result is clamped to that cap. `duration`, action amounts and `rangeExtend` are not in that table [ASSUMED].
 
-## 13. Scripts (P3a)
+<a id="13-scripts-p3a"></a>
 
-P3a is **trusted execution**, disabled by default. The static `sandboxable: true` label says that a script uses the
+## 13. Scripts (P3)
+
+P3a is **trusted execution**, disabled by default; P3b sandbox mode is described below. The static `sandboxable: true` label says that a script uses the
 portable API; it does not make that script safe. Native imports can fully control the page or execute server code.
 Only enable code the server owner and every player trust. The adopted sources are the owner's 0.3.0 plan C2/C3 and
 the plugin design §3.4, §3.6, §5 and §7.6; DESIGN §32.10 records the implementation choices.
@@ -723,9 +752,17 @@ export default function setup(sp) {
 ```
 
 `setup(sp)` is synchronous, registrations close afterwards. Per-battle state belongs in `unit.mem` or a WeakMap keyed
-by battle, never in a module variable. Every composition, child host and browser runs setup in the composition's
-resolved load order. A disposable child runs a registration preflight while composing a set (10 s ceiling [ASSUMED]);
-the HTTP/lobby process never imports author modules. Actual duplicate registrations, including computed ids and
+by battle, never in a module variable. Child hosts and browsers run setup in the composition's
+resolved load order. While composing a set, a disposable child probes each plugin's registrations (5 s default ceiling per
+uncached plugin (`SP_SCRIPT_PROBE_MS`) [ASSUMED]). The parent combines the registration reports in load order and rejects conflicts.
+The probe uses SIGKILL on timeout; spawnSync waits for the child to exit before composition returns a failure.
+Results, including failures, are cached per registry by plugin id + lock hash + actual descriptor hash + normalized
+settings (256 recent results [ASSUMED]); changing settings or executable bytes requires another probe. This also
+prevents a stale or missing lock in an explicit CLI test from reusing another source's result.
+C1 remains synchronous: **the lobby pauses during each uncached probe**, including rooms without plugins. Several
+uncached plugins add their pauses together. Moving to async spawn requires coordinating the C1 builder, content/room
+set resolvers, lobby and studio/CLI callers; this step preserves their synchronous contracts. The HTTP/lobby process
+never imports author modules. Actual duplicate registrations, including computed ids and
 normal/elite chess aliases, fail composition with `PLUGIN_SCRIPT_CONFLICT`. [ASSUMED] `overrides: [<official kit id>]`
 allows replacing an official kit; it never allows overwriting another plugin's registration. Vanilla registries stay
 empty. Only plugin `char_x_…` ids add a shop charId lookup; official dispatch stays the same.
@@ -755,8 +792,8 @@ Setup installs, hooks, timer callbacks and skill callbacks count. Engine actions
 count too; exhaustion unwinds that callback, cancels the plugin's timers and removes its tagged buffs, records one
 `plugin:<id>` error and leaves other plugins running. Existing skill mods remain until their skill ends, and existing
 statuses/summons are not recalled, as in DSL. [ASSUMED] Prep hooks share a separate 8000-call counter per match round
-across seats; prep effects are server authoritative. Direct mutations are trusted, not isolated. A genuine infinite
-loop such as `while (true) {}` cannot be interrupted inside a P3a page: P3b owns that isolation and watchdog work.
+across seats; prep effects are server authoritative. Direct engine mutations remain part of kit duties in both modes. Worker/child watchdogs interrupt nonreturning
+simulation code; native trusted page code can still block the page.
 
 **Owner gates.** `SP_PLUGIN_SCRIPTS=trusted` plus `plugins/config.json`:
 
@@ -765,11 +802,14 @@ loop such as `while (true) {}` cannot be interrupted inside a P3a page: P3b owns
 ```
 
 Pack and review again after changing any plugin file. Every lock entry's SHA-256 and byte count must match; extra or
-missing files refuse execution (`PLUGIN_TRUST_PIN`). Unset/unknown mode, including P3b's reserved `sandbox`, leaves
+missing files refuse execution (`PLUGIN_TRUST_PIN`). Unset/unknown mode leaves
 script/trusted plugins listed as `disabled` (`PLUGIN_SCRIPTS_DISABLED`). Public and wildcard listening addresses refuse
 execution (`PLUGIN_TRUST_PUBLIC`), regardless of the request's address; `trusted-force` explicitly overrides this
-[ASSUMED name]. `isLocalIp` supplies local-network classification, with wildcard `0.*` / `::` refused additionally.
-Script/trusted room classes default on only in trusted modes; policy `classes`, `allow`, and `rooms` still apply.
+[ASSUMED name]. `net.isIP` validates listening literals before numeric checks of IPv4 `0.0.0.0/8`, every all-zero IPv6 spelling
+and IPv4-mapped IPv6; local mapped addresses use their IPv4 classification. `isLocalIp` supplies local-network
+classification. After listen succeeds the server rechecks `server.address().address`, disables refused scripts across
+future registry scans and waits for any started trusted service child to exit.
+Script room classes default on in sandbox/trusted modes; trusted classes default on only in trusted modes; policy `classes`, `allow`, and `rooms` still apply.
 Startup logs list accepted and refused plugins with plain-language reasons. The snapshot remains fixed for a running
 set; stop a running match/server to revoke already executing code.
 
@@ -783,7 +823,12 @@ server state alone never authorizes page execution. The risk dialog names author
 Scripts are immutable `scripts/<id>.json` descriptors containing the original manifest and entry source texts.
 Their hashes enter each plugin's `files['@script']` in cs; `/cs/<cs16>/index.json` lists their routes. Each actual
 manifest and source is checked against that hashed composition before native import. SDK imports are linked to the
-runtime SDK, then the verified source runs as a data-URL ES module. The browser fetches these descriptors only after
+runtime SDK, then Node imports the verified source natively. Browsers use the descriptor's `browserSources` snapshot (sim/meta
+SDK alias linked to `/shared/plugins/sdk.js`; trusted page source unchanged), served verbatim at
+`/cs/<cs16>/scripts/<id>/<entry>` with JavaScript MIME. The page verifies these exact response bytes before native
+import at that same address; simulation Workers receive the checked snapshot and only perform module imports.
+Execution mode and browser source bytes are covered by `@script`. Site CSP keeps script-src self plus importmap
+hashes, without data:, blob: or unsafe-eval; only the simulation Worker permits SES eval. The browser fetches these descriptors only after
 its own consent. An unconsenting spectator still loads data and reads server results/snapshots, but never receives a
 script execution payload or becomes battle authority [ASSUMED]. Server bot fights, takeovers and SP_VERIFY use the
 same registered extensions in the set's child; script sets always use a process even with SP_MATCH_HOST=worker.
@@ -793,7 +838,14 @@ entries run at startup in one separate child, never the HTTP process. `api.http.
 exact path whose handler receives a frozen `{ method, path, url }` and returns a JSON value. No live request/socket is
 passed. `api.lobby.on(name, fn)` receives frozen copies for `roomCreated`, `playerJoined`, `playerLeft`, `matchStarted`,
 `roomClosed`. `api.health.extend(value)` replaces that plugin's JSON under `/healthz.plugins[id]`. Routes never leave
-`/x/<id>/`; activation and requests time out after 5 s [ASSUMED]. These restrictions describe the API, not the native
+`/x/<id>/`: both the child API and parent IPC receiver check the loaded plugin id, reject `..`, `%2e` in any
+letter case and backslashes, and dispatch by the same raw path used by the HTTP handler (query excluded). A nonmatch
+continues to the original health/static handler. `health.extend` accepts at most 16 KiB of serialized UTF-8 JSON per
+plugin [ASSUMED]; the parent rechecks the limit and ignores invalid/unknown-id health updates. Activation and requests
+time out after 5 s [ASSUMED]. Either timeout, startup failure or `close()` sends SIGKILL and waits for the process to
+exit; pending requests fail and registered routes/health are cleared. All trusted server entries share this child,
+so stopping it stops them all. The 128 MB limit is V8's old-space heap, not an RSS limit or a restriction on native
+code spawning further processes. These restrictions describe the API, not the native
 code's privileges. Standalone server entries need no browser consent; room/page entries must include room scope to
 be selected. `entry.client` is a self-contained `.js` ES module with `trusted.page`; explicit acceptance reloads the
 page with `?cs=<cs>&room=<room>` and the restored, consenting page imports the checked module. Reload to unload page
@@ -802,7 +854,47 @@ code; native imports cannot revoke side effects. Server entry changes take effec
 **Author tests.** `node tools/plugin.mjs test <id>` explicitly executes that installed plugin's `test/*.test.js` with
 its composition preloaded, SDK registrations installed and the official bounds set. Tests may import
 `../../../test/helpers/battleHarness.js`; they are test code, not portability-scanned entry modules. Production trust
-gates remain unchanged; author tests are a local execution command. Test execution has a 120 s CLI timeout [ASSUMED].
+gates remain unchanged. This command is explicit authorization to execute local code: it does not require
+`SP_PLUGIN_SCRIPTS` or a matching `plugins/config.json` trusted pin (a missing/stale pin does not stop it). Review the
+files being tested; this is not validation that they are the production-pinned version. Test execution has a 120 s CLI timeout [ASSUMED].
+
+### P3b sandbox execution
+
+`SP_PLUGIN_SCRIPTS=sandbox` enables script-class plugins with a valid lock and matching bytes, without an owner
+pin or per-player consent; public listeners are allowed [ASSUMED, pending maintainer confirmation]. The room labels
+these `脚本（沙箱）`; matches remain unofficial. Trusted-class plugins stay disabled in this mode. In trusted modes a
+mixed script/trusted composition runs entirely natively and requires consent for every member [ASSUMED]. Execution
+mode is pinned inside the hashed descriptors, so a mode change creates a new cs.
+
+Both modes consume the same `scripts/<id>.json` descriptors and real `createSDK(plugin, { settings, log })` API below.
+The sandbox validates descriptors, initializes SES before importing the engine, runs setup in one Compartment per
+plugin, then seals the real extension registry. Preflight also uses a permission-limited SES child, with the same
+5 s SIGKILL/cache and synchronous lobby-pause limitation described below. There is no native fallback.
+
+Each script exports `default function setup(sp)`. A separate SES Compartment per plugin receives only the hardened
+SDK capability and deterministic Math. Static imports can name `sp:sdk@1` (`sp` / default / `kit` / `math` / `constants`) or an own relative JS file.
+Production manifests still allow only self-contained entries; relative imports here describe the low-level loader.
+Exact source bytes are hashed before use; source length is checked before copying bytes. [ASSUMED] at most 64 files / 1 MiB per plugin. The initial module adapter
+rejects cycles, export-star, mutable/destructuring export declarations, dynamic import, import.meta, async/generator
+code and `**`; imported values are initialization-time bindings and module exports are hardened. Keep state inside
+callbacks. `Math.pow` accepts integer exponents only, |base| ≤ 2^500; `Math.hypot` takes two finite numbers. No clocks,
+random, fetch, timers, DOM, filesystem, worker creation, weak references or shared memory are exposed.
+
+All gameplay rooms, including data and DSL, simulate in a browser Worker. A plugin installation, construction or step reply delayed beyond 2 seconds
+[ASSUMED, host-configurable; trusted engine/data cold loading has a separate 15 s deadline] terminates it and requests server takeover, with a translated player notice. Script
+server hosts are separate permission-limited Node processes with heap limits and a heartbeat watchdog; their rooms
+return to the lobby when the host dies. Neither original nor data/DSL-only nor native trusted rooms call lockdown.
+Guest globals shadow harden/lockdown; SDK-owned record results are frozen copies, target arrays are shallow-frozen,
+and Battle/Unit/hook handles stay mutable. errorTaming=safe clears host stacks too.
+
+Residual risks: SES/V8 bugs, deliberate desync, browser-process memory exhaustion, and same-origin IndexedDB after
+a Worker escape. Node 22 permissions do not restrict network and are not a malicious-code security boundary; an
+escape can probe the server's network or read its allowed install tree and targets of links inside it.
+Do not put links pointing outside inside the installation root; use a network namespace/container to restrict network. Prefer a low-privilege account/container
+with outbound-network and OS resource limits. Browser CSP/inheritance and cross-browser verification remain pending
+on this branch (test environment cannot open localhost). See [DESIGN §32.11](history/0.3.0.md#3211-p3b--worker-simulation-ses-and-csp)
+and [deployment](DEPLOY.md).
+
 
 ## 14. Interface plugins (P4)
 
@@ -827,7 +919,7 @@ top level; a `<meta>` sandbox does nothing. The header has no `allow-same-origin
 the opaque origin, so an inline script runs and a separate script file may not; that is not repaired by granting the
 iframe the page's origin. [ASSUMED] A snapshot or a private view already posted can leave in the URL of the
 navigation that exits the entry. Later posts stop; that does not recall the copy. `navigate-to` was not measured and
-is not the fix. There is no CSP on the rest of the site.
+is not the fix. The rest of the site uses the separate P3b policy (§13).
 
 **The feed** is postMessage API v1 (`shared/plugins/ui.js`, `schemas/ui.schema.json`). The host sends the player's
 visible `m.public` (a subset), the player's own `m.private` (a subset), throttled events and snapshots of the battle
@@ -883,8 +975,8 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
   the studio's address with the key when it starts (the banner's `Studio:` line, `http://localhost:3000/studio/#key=…`);
   the page keeps it in its browser (localStorage, taken out of the address bar) and asks for it when it has none (paste
   the printed address into the bar at the top). The key is kept in `plugins/.studio-key` (128 random bits, the owner's
-  only; the same across restarts — delete the file for a new one). Reads — the page, the list, a plugin's files — need no
-  key, so a visitor through such a tunnel can see the plugins but change nothing; `SP_STUDIO=off` hides them too
+  only; the same across restarts — delete the file for a new one). Reads — the page, the list, a plugin's allowed data/art files — need no
+  key (script source in the plugin state does require it), so a visitor through such a tunnel can see the plugins but change nothing; `SP_STUDIO=off` hides them too
   [ASSUMED: the key file, reads without the key]. The watch and the rooms' rule (below) start with the first request
   that carries the key, never with a mere visit.
 - **新建插件**: a template — 换头像 / 立绘 / 图标 (`art`: an operator's avatar, E2 avatar, portrait, E2 portrait; a summon's
@@ -930,13 +1022,13 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
   same bytes: a zip can be pinned by its SHA-256). The packer does not screen for official game files (the owner's
   decision of 2026-10-13): what a plugin carries is its author's responsibility — and §1 still asks never to put them in.
 
-**Second-part templates (WP-J).** `new <template> <id>` and the browser share one server module per template;
+**Gameplay templates.** `new <template> <id>` and the browser share one server module per template;
 `--options <json-file>` supplies the same options as the wizard. `numbers` exposes existing numeric stats/blackboards
 by official target name (operators, enemies, bonds and items), with original values and the C6 10×/64 cap on blackboards.
-Default skill copies are patched together. `operator` generates a compact normal/elite pair with namespaced IDs;
+Default skill copies are patched together. The editor reads `officialBbRange` from the shared official bounds; saves reject values outside that range or below its positive step floor. Folder checks apply patches to available official records and run the same `appendOfficialBounds`; dependency-only paths still need the full C1 composition check. `operator` generates a compact normal/elite pair with namespaced IDs;
 name, profession/branch, rarity/tier and both forms' stats are editable. Its kit source is an official kit picked by
 name (the server resolves the actual registry key), JSON SkillSpec or DSL. `art.ref` borrows installed art.
-`dsl` offers the five PLUGIN-DSL §7 starting points and structured skill/talent/condition/action/target/value controls;
+`dsl` defaults to the A2 compact caster (`kit.dsl`) and `dsl/income.json` prep example; it also offers the five PLUGIN-DSL §7 starting points and structured skill/talent/condition/action/target/value controls;
 `meta` offers prep triggers and funds/layers/items. The page calls the real `validateDsl` and explains its codes.
 `mode` inherits an official mode with economy, DP and timers/round preparation overrides. `ui` wraps `_template/ui`
 with title/slot fields and the game's **same pluginFrame host**, opaque iframe origin, fake data and volatile storage.
@@ -944,15 +1036,13 @@ with title/slot fields and the game's **same pluginFrame host**, opaque iframe o
 and directs the author to an editor. The generated folder carries no official art.
 
 Wizard state lives in `.studio.json` under `authoring`, independent of cosmetic sections. `GET …/plugins/<id>` adds
-`authoring` (including a revision hash), a UI catalogue `frame` or a script's text `source` when applicable.
+`authoring` (including a revision hash), a UI catalogue `frame`, and a script's text `source` only when the request carries the studio key. Unkeyed reads contain metadata only.
 `POST …/plugins/<id>/authoring` saves `{template, target, options, revision}`; external changes invalidate the revision
 (`PLUGIN_STUDIO_CHANGED`). Only generated templates may write `.html/.js/.css`; generic file PUT and studio file GET
 still refuse executable sources. A UI preview loads the registry's sandboxed `/p/` route.
 `GET /studio/api/authoring?template=&target=` returns official numeric fields/reference records/modes;
 `GET …/dsl-example?name=&id=` returns a starting point; `POST …/validate-dsl {spec}` returns the real validator's result.
-The battle compiler/data integration belongs to WP-A2: this base still rejects DSL records/parts at composition; the
-wizard preserves those errors instead of quietly replacing the kit. Strict template/composition coverage resumes after
-that integration. DSL structural validation alone is not permission to execute.
+Generated DSL is checked again before new/save writes (including `kit.dsl` and prep host keys); rejected specs leave the saved files unchanged. The form reports failed validation requests, and save revalidates its current spec and checks `ok` before writing. All templates pass strict check/pack and data templates compose through C1; the DSL caster is tested in battle, and generated prep effects in a real match-host round. A single-battle trial does not dispatch prep events.
 
 **Try a battle.** `GET /studio/api/trial-options` lists official operators/waves and, in source checkouts, golden battle
 scenarios (not whole-match cases). `POST /studio/api/trial` takes `{id, scenario, operator?, opponent?, wave?, seconds?,
@@ -960,9 +1050,7 @@ seed?, settings?, draft?}`. `draft` is the current wizard `{template,target,opti
 the installed folder untouched. All writes and runs require the existing LAN/Host/origin checks and studio key.
 The response is `{ok:true, vanilla, plugin, comparison}` or `{ok:false, issues}`. A disposable child validates the folder,
 builds its dependency-complete content set with C1, then simulates the original and plugin with the same scene/seed.
-Scripts require the parent's actual enabled/pinned snapshot and a still-valid lock; neither the HTTP process nor the
-studio page executes author code. A bad plugin produces C6 findings with no replay. The parent kills stalled/crashed
-children; close also kills active jobs. [ASSUMED] 2 comparisons concurrently, 20 seconds including checks/composition,
+Scripts require the parent's enabled snapshot, its execution mode, and the same still-valid lock; native trusted scripts also retain the owner's pin gate. Sandbox scripts use the same permission-limited child options, SES initialization and `installSandboxScripts` adapter as formal match hosts. There is no fallback to native execution. Neither the HTTP process nor the studio page executes author code. A bad plugin produces C6 findings with no replay. The parent creates every draft temporary directory. Success, refusal, timeout, crash, IPC failure, shutdown and client disconnect all kill the detached process group (Windows: `taskkill /T /F`) and reap the writer before removing its directory. The child also removes it before sending any result. Probe and simulation children inherit the group. Probes retain the shared 5 s SIGKILL deadline (`SP_SCRIPT_PROBE_MS`). [ASSUMED] 2 comparisons concurrently, 20 seconds including checks/composition,
 512 MB child heap, 16 MB IPC response and 6 MB recorded frames per side; ordinary preset durations 1–120 game seconds,
 golden exercises capped at 240 seconds. API request payloads are at most 256 KB.
 
@@ -980,7 +1068,7 @@ The host applies the form via the existing `room.setPlugins`; values are normali
 `plugins[].settings` is broadcast only when nonempty. Other players and running matches are read-only. Switches and
 reapply preserve current settings. Changing an automatic dependency's settings makes it an explicit choice.
 Content sets listen to registry rescans and notify `onStale(cs, ids)` once while a changed set is held; the lobby tells
-only its host (after the match if necessary). Visual/content notices for the same room composition are coalesced.
+only its host (after the match if necessary). Visual and content notices have separate keys per held composition; while a match runs their plugin names are merged into the deferred host notice.
 Gameplay sets never automatically change; reapply causes the existing content-ready and consent flow. The studio watch
 includes content, script and UI hashes, including equal-size file edits. Empty selections keep the vanilla wire shape.
 
@@ -1015,6 +1103,7 @@ GET without the body):
 | `GET /studio/api/trial-options` · `POST /studio/api/trial` | scenarios; a checked child-process battle comparison (key required) |
 | `POST …/authoring` · `POST /studio/api/validate-dsl` | wizard save with revision; structural DSL validation |
 | `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
+| `POST /studio/api/forge/preview` · `POST /studio/api/forge/import` | a Forge pack as `{ zip?: base64, files?: [{ name, data: base64 }], id? }` — never a path on the server. Preview is a dry run. §16 |
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
 (never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
@@ -1053,11 +1142,22 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The studio refuses the action and says why | `PLUGIN_STUDIO_TRIAL_SCENARIO` | This trial scenario cannot run | Select valid operators, a wave and 1–120 seconds; use the sandbox preview for UI plugins. |
 | The room will not switch it on; the panel says why | `PLUGIN_CONSENT` | A player has not consented to trusted plugins | Every seated player must personally accept the risk for this content set. |
 | The room will not switch it on; the panel says why | `PLUGIN_TRUST_PUBLIC` | Trusted plugins are refused on a public listening address | Bind to a local address, or explicitly opt into trusted-force after reviewing the risk. |
-| The room will not switch it on; the panel says why | `PLUGIN_TRUST_PIN` | The lock or plugin files do not match the owner’s pinned hash | Review and pack again; put the lock file SHA-256 in plugins/config.json trusted. |
-| The room will not switch it on; the panel says why | `PLUGIN_SCRIPTS_DISABLED` | The server owner has not enabled script plugins | After reviewing the code set SP_PLUGIN_SCRIPTS=trusted and pin the lock hash in config.json. |
+| The room will not switch it on; the panel says why | `PLUGIN_TRUST_PIN` | The lock is invalid, files changed, or the trusted pin does not match | Repack to verify files; in trusted mode also review and pin the lock SHA-256 in plugins/config.json trusted. |
+| The room will not switch it on; the panel says why | `PLUGIN_SCRIPTS_DISABLED` | The server owner has not enabled script plugins | Set SP_PLUGIN_SCRIPTS=sandbox for isolated scripts; native trusted code requires trusted mode, review and a lock pin. |
 | The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_CHECK` | The script failed its portability check: {detail} | Import only sp:sdk@1; export synchronous setup(sp) and use deterministic helpers. |
 | The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_OVERRIDE` | The plugin did not declare the official kit it replaces | List the official kit id in manifest overrides. |
 | The room will not switch it on; the panel says why | `PLUGIN_SCRIPT_CONFLICT` | Two plugins register the same effect | Disable one plugin or use distinct registration ids. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_TIMEOUT` | Plugin simulation did not respond | Check plugin loops and reduce simulation work |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_FAILED` | Plugin simulation failed | Inspect the log and fix the plugin |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_WORKER_STOPPED` | Plugin simulation stopped | Start a new simulation |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_UNAVAILABLE` | Script sandbox is unavailable | Install dependencies and check the SDK adapter |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_DISABLED` | Script sandbox is disabled | Ask the owner to set SP_PLUGIN_SCRIPTS=sandbox |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_CLASS` | This plugin class cannot enter the sandbox | Pass only script plugins to SES |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_HASH` | Script bytes do not match the content hash | Reapply the plugin and verify the files |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_IMPORT` | Script import is outside the sandbox | Import only sp:sdk@1 and own relative files; avoid cycles |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_SYNTAX` | Script uses unsupported module syntax | Use synchronous setup and static imports; see the script reference |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_LIMIT` | Script source exceeds sandbox limits | Reduce source size and file count |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SANDBOX_MATH` | Script math is outside the deterministic domain | Use finite numbers and integer exponents |
 | The room will not switch it on; the panel says why | `PLUGIN_UNKNOWN` | This server has not installed that plugin | Put the plugin folder into the server's plugins/ folder (the folder name is the plugin id); if it is gone, switch it off in the 插件 panel. |
 | The room will not switch it on; the panel says why | `PLUGIN_BLOCKED` | That plugin cannot be switched on here: this version does not apply its class, or its scope does not include this place | A cosmetic plugin has "class": "cosmetic"; its scope is ["room"] (the host switches it on for the room), ["personal"] (a player for themself) or both. |
 | The room will not switch it on; the panel says why | `PLUGIN_DEPENDENCY` | A plugin it requires is missing or out of its version range, or the load-order hints of some plugins form a cycle | Install the plugins its "requires" names (within their ranges), or remove the loadAfter / loadBefore entries that point at each other. |
@@ -1154,7 +1254,6 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SKILL_SPEC` | A JSON SkillSpec is not right ({where}): {detail} | Follow the SkillSpec of docs/PLUGINS.md §10: kind and the known fields of mods; talentMods go with a JSON SkillSpec, never with kit.ref. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_EFFECT_REF` | An effect reference is not right ({where}): {detail} | effectRef names an official item or tactic record; garrison effects and buff keys must be ones the game has. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_I18N` | A translation file of the plugin is not right ({where}): {detail} | A translation file is { "version": 1, "lang": "en", "files": { … } } with lang matching its name; it replaces existing text only, never adds a field. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_UNAVAILABLE` | A DSL spec sits where this version does not read one ({where}): {detail} | An operator's DSL goes in its compact record as "kit": { "dsl": { … } }, prep effects in the files the manifest's "dsl" lists (permission "dsl"); see docs/PLUGIN-DSL.md. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_UI_SLOTS` | The "slots" of a ui plugin are not right: {detail} | "slots" is a list of hud.right, result.tab, stats.tab and room.panel, each at most once. |
 | The plugin works, with a note in the check | `PLUGIN_UI_NO_SLOT` | The ui plugin asks for no slot, so its page is never shown | List where it goes in "slots", for example ["hud.right"]. |
 | The ui plugin's page gets a refusal (ok: false, a rejected or a limit message) | `PLUGIN_SLOT` | The slot a ui plugin asked for was not granted: its manifest's "slots" does not list it, or another plugin holds it | List the slot in "slots" of plugin.json (hud.right, result.tab, stats.tab, room.panel). One plugin per slot: the first switched on gets it. |
@@ -1178,6 +1277,28 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_SKILL` | A skill spec is not right ({where}): {detail} | "skill" is an object whose "kind" is instant, duration, ammo, charges, toggle or passive; several skills are "skills": { "<skill id>": { … } }. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_META` | The prep spec is not right ({where}): {detail} | Write "meta": { "on": [ { "when": <trigger>, "do": [ <actions> ] } ] }; "meta.key" is effect:<plugin id>:<name> with this plugin's own id. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TALENT` | A talent is not right ({where}): {detail} | "talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_SHAPE` | The catalogue file is not in the right shape: {detail} | A catalogue is a JSON object with "catalog": 1, a "name" and a "plugins" list. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_URL` | A catalogue or plugin address is not an https address this installer will fetch: {detail} | The address starts with https://, the host has a dot, and it has no user or password. A download uses a public address on port 443 only. Loopback, private, link-local and .local are refused unless the operator names the host in allowDownloadHosts. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_HASH` | A catalogue entry has no sha256, or it is not 64 lowercase hex digits: {detail} | Each plugin names the SHA-256 of its zip (64 lowercase hex digits). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_ID` | A plugin id is not valid, or it is repeated: {detail} | An id is 2 to 32 lowercase letters, digits and hyphens, and it appears once in the catalogue. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_FIELD` | A catalogue field is not valid: {detail} | Follow docs/plugin-catalog.example.json: version is semver, class is a known class, and long text is shortened. |
+| The studio refuses the action and says why | `PLUGIN_CATALOG_SIZE` | The catalogue file is too large: {detail} | The catalogue document itself is at most 1 MB. A plugin zip has its own 200 MB cap. |
+| The studio refuses the action and says why | `PLUGIN_CATALOG_FETCH` | The catalogue could not be fetched: {detail} | Check that the address is public https on port 443, that the server can reach it, and that it is not redirected to a non-public address or off https. The one deadline covers the body, not each redirect on its own. A local catalogue file works too. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_URL` | The install address is not a public https address: {detail} | Install a public https zip on port 443 only. A private or loopback address is refused unless the operator allowlist names it. A file on this machine can be given as a path, including a Windows drive or a UNC path. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_HASH` | The zip SHA-256 does not match, or none was given: {detail} | An https install needs --sha256 (or the sha256 of a catalogue entry). Do not install when the hash differs. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_SIZE` | The zip is over the size cap, or it is not the byte length the catalogue names: {detail} | A plugin is at most 200 MB. When the catalogue gives bytes, it has to be the zip size. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_TIMEOUT` | The download timed out: {detail} | Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. That one deadline covers the connection, the redirects and the body. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_FETCH` | The download failed: {detail} | Check that the address opens and answers with the zip (HTTP 200). |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_REDIRECT` | The download was redirected to a non-public address, off port 443, or too many times: {detail} | Only a public https redirect on port 443 is followed, at most 5. Use a direct https address. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_ZIP` | This zip cannot be installed: {detail} | The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_CHECK` | The plugin failed its check and was not placed in plugins/: {detail} | Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_EXISTS` | plugins/ already has this id: {detail} | Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_INPUT` | This is not a Forge pack that can be read: {detail} | Choose a workshop folder that contains pack.json, or a zip of that folder. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_ZIP` | This pack's files are not safe to unpack: {detail} | Paths must stay inside the pack, with no symbolic links, at most 5000 files and 200 MB. Import another pack. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_JSON` | JSON in the pack cannot be read: {detail} | JSON must parse, stay within 8 MB and 64 levels of nesting, and keep numbers within ±1e9. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_ID` | This pack's id cannot become a plugin id: {detail} | Pass --id with a plugin id: 2–32 lower-case letters, digits and -, for example rose-skin. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_EXISTS` | The destination folder already exists, so nothing was written: {detail} | Choose another --out or --id, or move the existing plugin folder aside and import again. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_SCRIPT` | A script in the pack was not imported and was not run: {detail} | Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
 <!-- plugin-errors:end -->
 
@@ -1193,12 +1314,164 @@ another type (`englishName`, `credits`, `license`, `authors`).
 
 **Templates are modules**: a template is one file of `server/studio/templates/` (its class, its target kinds, its
 slots for a target, the overlay of a new plugin) beside one of `public/studio/js/editors/` (its previews and what its
-slots take); the data, DSL, script and interface templates of later steps are added the same way.
+slots take). The `dsl` template is a content plugin (one operator and one prep spec) with a structured gameplay editor. All gameplay templates use the same `build` contract; cosmetic templates retain their slot editors.
+
+## 16. Forge import
+
+A Forge workshop pack — a folder or a zip with `pack.json` at its root, one wrapping folder stripped — can be read
+into one or more of our plugins. The importer (`server/plugins/forgeImport.js`) is original code. It does not copy
+Forge's source, and it does not screen for official art, the same rule as the packer: what a plugin carries is its
+author's responsibility. A pack is untrusted. The importer reads bytes only. It never `import()`s, `eval()`s or
+`require()`s a file from the pack, and it never copies a script into the plugin it writes.
+
+```
+node tools/plugin.mjs import-forge <dir or zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+```
+
+`--out` names the primary product's folder; its basename becomes that product's id. `--id` overrides the pack id
+before the suffixes below. `--dry-run` writes nothing, including `IMPORT-REPORT.md`. `--json` prints the report
+object only, keys sorted. Exit 0 when the pack was read, including when nothing could be imported; exit 1 when the
+pack could not be read or a product failed `check`, `pack`, the visual set or the content set; exit 2 on a bad
+command. A product that fails is not left in `plugins/`.
+
+The studio does the same thing. On `/studio/` the button 「从 Forge 包导入」 takes a zip or a folder. The browser
+sends the bytes. While that read is in progress the preview and confirm buttons stay disabled, and the previous
+report is cleared so a late read cannot confirm the pack that was on screen before. The server is never given a
+path on its disk. `POST /studio/api/forge/preview` and
+`POST /studio/api/forge/import` take `{ zip?: base64, files?: [{ name, data: base64 }], id? }` and use the same gate
+as every other change (`X-SP-Studio`, this machine or the local network). A pack that is unsafe to unpack is 400
+with a `PLUGIN_FORGE_*` code. A pack that was read answers 200 `{ report, plugins: [{ id, class }] }`. `report.ok`
+is false when a product failed the checks, and nothing was written. Preview is a dry run. Confirming writes
+`plugins/<id>/` and rescans.
+
+Each product is checked with `checkPluginFolder` and `packPlugin`. A cosmetic product is then resolved with
+`createVisualSets({ registry }).resolve` (there is no `buildVisualSet`). A content product is built with
+`buildContentSet`. A problem or a warning fails the import. After a successful write the primary folder holds
+`IMPORT-REPORT.md`: what was imported, what was rewritten, what was not and why, and the [ASSUMED] lines. The lock
+`pack` wrote does not list that file; a later `pack` rewrites the lock.
+
+**Ids.** Content keeps the pack id, or `--out`'s basename when that product is primary. Beside it, cosmetic is
+`<id>-look`, each ui slot is `<id>-<slot>` with the dots written as hyphens, and each language is `<id>-<lang>`.
+A name that is not a plugin id, or that collides, is fitted to 2–32 characters (`a-z`, `0-9`, `-`). A second import
+into a folder that already exists is `PLUGIN_FORGE_EXISTS` and writes nothing.
+
+**Safety.** The zip reader is this module's own (`readUntrustedZip`). It uses `crc32` from `server/plugins/zip.js`
+and does not call `unzipFiles`. It rejects `..`, an absolute path, a backslash, NUL, a symbolic link (unix mode
+`0120000`), ZIP64 (the EOCD sentinel, a ZIP64 extra field, or a ZIP64 locator in the 20 bytes immediately before a
+real EOCD — not a `PK\\x06\\x06` that happens to sit inside an entry), encryption, a data descriptor, more than
+`PLUGIN_LIMITS.files` entries (5000), and a declared or inflated size over `PLUGIN_LIMITS.pluginBytes` (200 MB). A
+raw zip larger than that unpacked cap plus 64 KiB is refused before it is read [ASSUMED: the 64 KiB is header
+room, so a zip only slightly over 200 MB is refused too]. JSON follows `checkJsonLimits` (8 MB, depth 64, numbers
+within ±1e9) and refuses `__proto__`, `constructor` and `prototype` before mapping. Asset trees use a
+null-prototype object. A directory read uses `lstat`, does not follow a link, refuses a regular file with
+`nlink > 1`, and reads through `O_NOFOLLOW` only after `fstat` matches. Empty directories count toward the 5000
+cap. A dry run stages under the temporary directory and removes the stage. A real write stages in a dot directory
+beside `plugins/` — the registry skips dot directories — and commits by rename. `EXDEV` fails the import; it is
+not copied [ASSUMED]. A failed commit removes only the destinations that attempt created. The visual set and the
+content set see plugins already installed, through a temporary symlink view. The source pack is not part of that
+view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_INPUT` and write nothing.
+
+### Mapping
+
+| Forge piece | Becomes | When it does not |
+|---|---|---|
+| `art.chars` avatar, avatarE2, portrait, portraitE2 | cosmetic `assets.chars` | any other portrait field has no overlay key |
+| Spine on a character (`front` / `back`), an enemy or a token | the overlay's spine. The atlas sits next to the skel, same name; pages in that folder. `anims` is not copied: the lock reads clips from the skeleton [ASSUMED] | skel or atlas missing, or a page outside that folder |
+| `art` of bonds, items, bands, skills, modules, ui, prof.sub; enemy `icon`; token `avatar` | the matching overlay container | `art.tokens.*.owner` is not an asset |
+| `bondIcons`, `itemIcons` | `assets.bonds`, `assets.items` | a bond already named by `art.bonds` is not imported again from `bondIcons` |
+| `voices` | `audio.voiceJp` [ASSUMED: Forge documents that table as the Japanese dub] | a slot outside `^[A-Za-z][A-Za-z0-9]{0,31}$`, or a file that is not `.mp3` / `.ogg` |
+| `voiceLangs.cn` (and `zh`) | `audio.voice` | `en`, `kr` and any other dub: only those two tables exist |
+| `skins[]` | collapsed onto that operator's one overlay [ASSUMED: no wardrobe] | a skin without `charId` |
+| `art.audio.bgm` of lobby, prep, combat, unite, boss; an unreferenced file whose basename is one of those | `audio.bgm` `{ loop }` | any other music key. `art.audio` is not a documented Forge table [ASSUMED] |
+| `art.audio.bossBgm` | `audio.bossBgm` `{ loop, intro? }` | an id that is not an asset key, or a file that is not audio |
+| `art.audio.sfx.ui`, `sfx.battle` | one audio file each | |
+| `art.audio.sfx.units` | attack, hit, skill, die, born, and skills / attacks / hits by an index 0–99 | any other field or bucket (`ui`, `battle`, `units` only) |
+| `overrides` of `"file:id"` plus a partial of an existing record | a content `data` patch. An array whose type already matches is one `set` of the whole array. `talents` and `talentsBase` are not replaced: Forge merges those by index, and this version says so | not listed in `overrides` (a silent replace is refused); a field whose type or path does not match |
+| `units.json`, a new operator | a compact record `char_x_<namespace>_…`, namespace taken from the content plugin id (`--out`'s basename when that product is primary). Skills come from the selected form when that form has a list, otherwise from the record. One default skill | no name, profession, branch, forms or skill; rarity outside 1–6; no bond that exists here. A 6★ declared in `operators` is `as: "diy"` (no shop piece; `chess.tier` is still the rarity, because the compact schema requires it). Below 6★ in that list, and a unit that is not declared there, is chess [ASSUMED] |
+| `enemies.json` with an official `base` or `special` that exists here | `enemy_x_<namespace>_…`, stats over that base | no such base: a kit is not invented |
+| a skill `.js` | kit `"generic"`. The file is named in the report and is not run | a JSON object that passes `validateSkillSpec` is kept as `kit.spec`. No DSL part is written: declaring one makes this version skip the plugin |
+| new chess, items, stages, waves, tokens, bosses, modes | — | no safe compact mapping. `variants` and `behaviour` are engine switches, not modes |
+| a flat `{ msgid: string }` translation | a `lang` plugin, `files.ui` | `zh` is the source language and is not a language pack |
+| `{ version: 1, lang, files }` | content i18n, only when every leaf replaces an existing string | a missing leaf would refuse the whole content set, so the file is skipped |
+| notices, credits, description | `description` (at most 500 characters) and `credits` on every product that is not a language pack | unreadable |
+| `license`, `authors` | copied when they are short strings | |
+| `dependencies`, `conflicts` | `requires`, `conflicts` when the id is a plugin id. An omitted range is `*` [ASSUMED] | an id that cannot become a plugin id. A product does not require itself |
+| `client.panels` `screen.game.hud` and `screen.game.aside` | a ui plugin, slot `hud.right`, one HTML stub | a second panel for the same slot |
+| `client.panels` `screen.result.footer` | a ui plugin, slot `result.tab` | |
+| any other panel mount | — | not `hud.right`, `result.tab`, `stats.tab` or `room.panel`. Those last two have no Forge mount yet |
+| a panel with `wraps`, or `readonly` / `readOnly: false` | — | it rewrites a component, so it is not read-only |
+| the panel's script | not copied. The stub answers welcome with ready, then slot and resize, and says the author must rewrite it to postMessage API v1 | `PLUGIN_FORGE_SCRIPT` |
+| `server`, `routes`, `assets` (`.spresources`), `forms`, `fx`, `variants`, `behaviour`, `playtest`, `support`, `combat: true`, `layer` | — | engine replacement, protocol, server logic, or a switch this manifest has no field for. One reason each, in Chinese and in English |
+| `.js` `.mjs` `.cjs` `.ts` `.jsx` `.tsx` | not imported and not executed | `PLUGIN_FORGE_SCRIPT` |
+| a file `pack.json` does not reference | — | named in the report, except a loose music file whose basename is a bgm track |
+
+**Profession aliases** [ASSUMED]: DEFENDER, HEAVY and GUARDIAN become TANK; VANGUARD becomes PIONEER; GUARD becomes
+WARRIOR. A missing position is MELEE for tank, warrior and pioneer, and RANGED otherwise. A Forge form rank is
+`phase/level/skillLevel/equipLevel`, compared as integers, or a single integer. The lowest becomes normal and the
+highest becomes elite, and a single rank is copied into both. `"2/60/…"` is a higher rank than `"2/9/…"`. A
+missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when the operator is emitted as chess. Skill fields
+that do not fit the compact record (`rangeId` and anything outside name, duration, spCost, initSp, bb, desc,
+default, skillId, id) are named in the report and dropped. Voice containers and skill icons are renamed with the
+new char id and skill id. An imported file always gains one `files/` prefix, so `a.png` and `files/a.png` do not
+collapse. A case-only name clash, or a file path that is a directory prefix of another, is `PLUGIN_FORGE_ZIP`.
+
+**Errors** (`PLUGIN_FORGE_*`, this section's anchor): `PLUGIN_FORGE_INPUT` (not a pack), `PLUGIN_FORGE_ZIP` (unsafe
+to unpack), `PLUGIN_FORGE_JSON` (parse, size, depth, numbers), `PLUGIN_FORGE_ID` (the id cannot become a plugin id),
+`PLUGIN_FORGE_EXISTS` (the destination exists), `PLUGIN_FORGE_SCRIPT` (a script was not imported and was not run).
+
+The version written into a product is the pack's version when it is a restricted semver with no build metadata,
+otherwise `0.1.0` [ASSUMED]. `app` is `>=0.3.0 <0.4.0` and `api` is 1. A language-pack manifest omits `$schema`,
+`app`, `api` and `permissions`.
+
+## 17. The catalogue and installing by address (目录与安装)
+
+A catalogue is a document someone else publishes. This project does not host the zips and does not run a market. The
+format is `schemas/catalog.schema.json` and `shared/plugins/catalog.js`: `{ "catalog": 1, "name", "plugins": [ { "id",
+"name", "version", "class", "description", "url", "sha256", "bytes", "homepage", "license", "authors", "app" } ] }`.
+`url` is an https address of a zip. `sha256` is the SHA-256 of that zip. `docs/plugin-catalog.example.json` is an
+example whose addresses do not exist.
+
+`node tools/plugin.mjs install <zip path | https URL> [--sha256 <hex>] [--force]` installs into `plugins/<id>/`. A file
+on this machine installs as it is, including a Windows drive (`C:/…`, `C:\…`) and a UNC path (`\\server\…`, `//server/…`).
+An https address is accepted only with `--sha256`. The hash is checked on the bytes. The download stops at 200 MB
+(`PLUGIN_LIMITS.pluginBytes`). One deadline covers the connection, every redirect and the body. A redirect is followed
+only when the next address is still public https on port 443. A literal private, loopback, link-local or `.local`
+address is refused before the request, and so is an address that resolves to one of those. The zip is extracted with
+the same protections as any plugin zip (no path traversal, no symbolic link, no file-count or size bomb, no two paths
+that differ only by case, no ZIP64 extra on the local header) into a temporary folder. `check` must pass (a warning
+does not stop it) before the folder is renamed into `plugins/<id>/`. The same id is left untouched unless `--force`,
+which moves the old folder to `plugins/_replaced/<id>-<time>/` and does not delete it. No file in the package is
+imported or run.
+
+`node tools/plugin.mjs catalog <file | https URL> [--json]` lists the entries and marks each one installed, updatable
+or incompatible with this build (`app`, every class). A missing `app` is compatible. An empty `app` is not a valid
+catalogue, and a present `app` this build cannot read is incompatible. Fetching the catalogue document does not
+require a hash of the document. It is still public https on port 443 only, capped, and it does not follow a redirect
+to a non-public address or off https. The same id twice is refused by `readCatalog` and by this repository's schema
+validator (`uniqueItemProperties`). A stock JSON Schema editor that ignores that keyword will not see the duplicate.
+
+The studio page 「从目录安装」 (`/studio/`) takes a catalogue address or a catalogue file the browser already has. The
+browser posts the text. It does not download the zip and upload it. The server downloads, on this machine and the LAN,
+with the studio key. The browser cannot name a path on the server's disk.
+
+An operator may name extra download hosts in `plugins/config.json` `allowDownloadHosts` (a string array in the same
+file as the room policy; `policy.js` ignores the key) or in `SP_PLUGIN_DOWNLOAD_ALLOW` (comma-separated). An entry is
+an exact host, `host:port`, or `[ipv6]` / `[ipv6]:port`. There are no wildcards. The default is empty. A catalogue
+document cannot add a host. A missing or broken list does not block a public download.
+
+[ASSUMED] a zip download waits 60 seconds and a catalogue document 20 seconds. That one deadline covers the body, and
+there are at most 5 redirects. Only port 443 unless the allowlist names the host. The allowlist names above are the
+operator's. A leading `//` is a file path, not a protocol-relative URL. `2001::/32` and the whole `2002::/16` are
+refused, as is every IPv4-mapped IPv6 address. The download does not pin a certificate beyond Node's default TLS
+check. A catalogue document is at most 1 MB. Field limits are in `CATALOG_LIMITS`. A missing `app` is compatible; an
+empty one is not. Whether an installed copy is older ignores a pre-release suffix. Case folding of a zip path is
+Unicode `toLowerCase` of each segment. A class this build does not load may still be stored when the check passes;
+it is not executed. `uniqueItemProperties` is a keyword of this repository's validator, not of stock JSON Schema.
 
 ## 18. Later
 
 The old next-steps list lives here. Data plugins are §10 (that work package), per-room content sets are §11, and the
-declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins, sandboxed code,
+declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins,
 further mode-code hooks. Trusted P3a code is §13. DESIGN §32 keeps the plan and its open questions.
 
 The numbers are fixed by the 0.3.0 plan: §10 data plugins, §11 per-room content sets, §12 the DSL, §13 the script
@@ -1247,4 +1520,19 @@ fixes, every finding of a set of broken plugins coded with its placeholders fill
 `test/studio/hotreload.test.js` (the watch; a single-player room and an author's room apply a change by themselves, during
 a match too, any other host is told, the studio not opened keeps §9; the events) and the browser test
 `test/ui/studio.e2e.test.js` (`SP_E2E=1`: a new plugin, an operator by its name, a PNG dropped and previewed in the game's
-card, packed into a zip; a public address refused).
+card, packed into a zip; a public address refused). The catalogue and install-by-address (§17): `test/plugins/catalog.test.js`
+(the schema and `readCatalog` agree on one fixture set; duplicate ids that are not the same object, and an `app` that is
+not a version range, are check-only), `test/plugins/install.test.js` (a local zip, a hash, a download cap, traversal, a
+symbolic link, a file-count bomb, no overwrite, `--force` moves the old folder, a decoy script is not run),
+`test/studio/catalog.test.js` (the studio gate, the list, the install) and `test/ui/studio-catalog.e2e.test.js`
+(`SP_E2E=1`). The frozen API v1 table: `docs/PLUGIN-API.md`, `shared/plugins/surface.js`, `test/plugins/surface.test.js`. card, packed into a zip; a public address refused). Forge import (§16): `test/plugins/forgeImport.test.js` (the
+fixtures under `test/fixtures/forge/` — a skin, a numbers pack, a mixed pack — plus boss music and a ui sound:
+`check --strict`, `pack`, a cosmetic resolve with no warnings, a content set with no problems, refused pieces named,
+`--dry-run`, stable `--json`, a second import, a zip that slips, a symlink, an oversized entry, JSON nested past the
+limit, a script that is not run, `Object.prototype` unchanged on the preview route and on `--dry-run`, a language
+alias, a failed rename, form skills, `--out` as the record namespace, distinct `files/` paths, an array `set`,
+renamed voices and skill icons, an installed dependency, a 6★ 自选 operator, a hard link, a raw zip over the cap,
+and a stored entry that contains the ZIP64 bytes), `test/studio/forge.test.js` (the gate, a server path refused,
+preview writes nothing, import writes, a file list, a path-escape name) and the browser test
+`test/ui/forge-import.e2e.test.js` (`SP_E2E=1`, including a read that starts while a report is on screen; a sandbox
+that cannot open a browser leaves that file unrun).

@@ -268,6 +268,7 @@ export class Room {
     this.replay = null;
     /** @type {string[] | null} plugins of the room's set that changed on disk — the host not told yet (Lobby.pluginsChanged) */
     this.pluginsChanged = null;
+    this.pluginNoticeKeys = {};
     /** @type {string | null} per-network limit key of the creator (net.js clientAddress) */
     this.ownerKey = null;
     /** @type {string | null} per-network limit key of whoever started the running match */
@@ -394,15 +395,15 @@ export class Lobby {
     for (const room of this.rooms.values()) {
       if (room.disposed || (kind === 'content' ? room.content?.cs : room.content?.vs) !== vs) continue;
       const noticeKey = `${room.content?.cs}|${room.content?.vs || ''}`;
-      if (room.pluginNoticeKey === noticeKey) continue;
+      if (room.pluginNoticeKeys[kind] === noticeKey) continue;
       // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins)
       let auto;
       try { auto = !!this.autoApplyPlugins?.({ code: room.code, hostId: room.hostId, humans: room.activeHumans().length, inMatch: !!room.match }); } catch { auto = false; }
       if (kind === 'visual' && auto && this.refreshPlugins(room)) continue;
-      room.pluginNoticeKey = noticeKey;
+      room.pluginNoticeKeys[kind] = noticeKey;
       this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
       // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
-      room.pluginsChanged = ids;
+      room.pluginsChanged = [...new Set([...(room.pluginsChanged || []), ...ids])];
       if (!room.match) this.tellPluginsChanged(room);
     }
   }
@@ -846,7 +847,7 @@ export class Lobby {
     if (sameSet && marks(before) === marks(content)) return OK;
     this.dropReplay(room, session.playerId);
     // another set: a notice still waiting for the end of a match (pluginsChanged) is moot
-    if (!sameSet) { room.pluginsChanged = null; room.pluginNoticeKey = null; }
+    if (!sameSet) { room.pluginsChanged = null; room.pluginNoticeKeys = {}; }
     // the plugin mode chosen stays while the set still provides it (header "Gameplay plugins")
     if (before?.modeId && content?.modes?.some((m) => m.id === before.modeId)) content = Object.freeze({ ...content, modeId: before.modeId });
     room.content = content;
@@ -883,7 +884,7 @@ export class Lobby {
       return fail(ERR.INTERNAL);
     }
     if (!r || !r.ok) return fail(r && isErrCode(r.error) ? r.error : ERR.INTERNAL, r && typeof r.detail === 'string' ? r.detail.slice(0, 200) : undefined);
-    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes, kitted, trusted } = r.set;
+    const { cs, vs, plugins: list, warnings, bytes, dataBytes, modes, kitted, trusted, execution } = r.set;
     const modded = isContentHash(cs) && cs !== this.vanilla.cs;
     const frozen = (a) => Object.freeze((Array.isArray(a) ? a : []).map((p) => Object.freeze({ ...p })));
     // the operators its plugins add to a 自选 slot's list (welcome.diyKitted holds the server's own): the pages' pickers
@@ -895,6 +896,7 @@ export class Lobby {
         ...(vs ? { vs } : {}),
         plugins: frozen(list),
         ...(trusted ? {trusted} : {}),
+        ...(execution ? {execution} : {}),
         warnings: Object.freeze([...(warnings || [])]),
         bytes: Number(bytes) || 0,
         ...(modded ? { dataBytes: Number(dataBytes) || 0, modes: frozen(modes), ...(extra.length ? { kittedExtra: Object.freeze(extra) } : {}) } : {}),

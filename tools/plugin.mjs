@@ -31,13 +31,34 @@
 //                                                        skeleton: the server refuses a lock made from another one
 //   node tools/plugin.mjs new [<template> <id>] [--name <名字>] [--target <官方名字|id>] [--author <名字>] [--license <x>]
 //                             [--dir <folder>]           a new plugin folder plugins/<id>/ (or <folder>/<id>/) from a template
-//                                                        (art, spine, voice, audio — server/studio/templates/): plugin.json
-//                                                        and a README, nothing else (it passes check and pack as it is);
+//                                                        (art, spine, voice, audio, dsl — server/studio/templates/): plugin.json
+//                                                        and a README; dsl also writes one operator and one prep spec
+//                                                        (it passes check and pack as it is);
 //                                                        without arguments the templates are listed
 //   node tools/plugin.mjs errors [--markdown] [--lang zh|en] [--write]
 //                                                        the error catalogue (every code, its plain words, what to do);
 //                                                        --markdown its symptom table, --write puts the tables into
 //                                                        docs/PLUGINS.md (English) and docs/PLUGIN-GUIDE.md (Chinese)
+//   node tools/plugin.mjs install <zip path | https URL> [--sha256 <hex>] [--force]
+//                                                        install into plugins/<id>/. A local zip installs as it is. An
+//                                                        https URL must carry --sha256 (the hash of the zip bytes). The
+//                                                        hash is checked, the zip is extracted with the same protections
+//                                                        as a plugin zip, check must pass, then the folder is renamed
+//                                                        into place. The same id is not overwritten unless --force, which
+//                                                        moves the old folder to plugins/_replaced/ and does not delete
+//                                                        it. Nothing in the package is executed
+//   node tools/plugin.mjs catalog <file | https URL> [--json]
+//                                                        list a community catalogue and mark each entry installed,
+//                                                        updatable or incompatible with this build. The URL must be https.
+//                                                        The catalogue document itself is not pinned by a hash
+//   node tools/plugin.mjs surface [--write]
+//                                                        the frozen plugin API table (docs/PLUGIN-API.md). --write puts
+//                                                        it between the markers in that file
+//   node tools/plugin.mjs import-forge <dir|zip>         read a Forge workshop pack (pack.json and the files it names)
+//          [--out plugins/<id>] [--id <id>]             and write one or more plugin folders (cosmetic, content, ui, lang).
+//          [--dry-run] [--json]                         Scripts in the pack are never run. --dry-run writes nothing.
+//                                                        --json prints one stable report. IMPORT-REPORT.md lands in the
+//                                                        primary folder. See docs/PLUGINS.md §16.
 //   --root <dir>   another checkout or an unpacked release (default: this checkout)
 //
 // A language pack's strings are checked by node tools/i18n.mjs check <code> (docs/I18N.md); tools/packs.mjs keeps the
@@ -61,11 +82,16 @@ import { PLUGIN_ERRORS, TABLE_MARKERS, describeIssue, errorLang, issueLine, symp
 import { TEMPLATES, templateById, createPlugin, manifestText } from '../server/studio/templates/index.js';
 import { readStudioData } from '../server/studio/gameData.js';
 import { createTargetIndex, searchTargets, targetSpec } from '../server/studio/targets.js';
+import { STUDIO_ROUTES } from '../server/studio/index.js';
+import { annotateCatalog, readCatalog } from '../shared/plugins/catalog.js';
+import { installFromFile, installFromUrl, installedPluginVersion, isRemoteAddress, loadCatalogText } from '../server/plugins/install.js';
+import { buildSurface, surfaceMarkdown, SURFACE_MARKERS } from '../shared/plugins/surface.js';
+import { importForge } from '../server/plugins/forgeImport.js';
 
 export { checkPluginFolder, buildPluginLock };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | errors [--markdown] [--lang zh|en] [--write]   [--root <dir>]';
+const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir …] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] | errors [--markdown] [--lang zh|en] [--write] | install <zip|https> [--sha256 <hex>] [--force] | catalog <file|https> [--json] | surface [--write]   [--root <dir>]';
 /** The documents whose symptom table `errors --write` keeps: path, language. */
 export const TABLE_DOCS = Object.freeze([['docs/PLUGINS.md', 'en'], ['docs/PLUGIN-GUIDE.md', 'zh']]);
 
@@ -139,7 +165,7 @@ export async function main(argv) {
   try {
     for (let i = 0; i < rest.length; i++) {
       const a = rest[i];
-      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir', '--options'].includes(a)) {
+      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir', '--options', '--sha256', '--id'].includes(a)) {
         values[a.slice(2)] = takeValue(rest, i, a.slice(2));
         i++;
       } else if (a.startsWith('--')) flags.add(a.slice(2));
@@ -159,7 +185,8 @@ export async function main(argv) {
     const registry = createPluginRegistry(dirs);
     // Explicit author test is authorization to execute locally; production owner gates still apply to servers.
     const lookup = registry.plugin;
-    const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded'} : null; }};
+    const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded',
+      ...(p.script ? {script:{...p.script,execution:'trusted'}} : {})} : null; }};
     const set = buildContentSet({registry:testing,ids:[id]});
     if (!set.cs) { console.error(JSON.stringify(set.problems)); return 1; }
     const testDir = path.join(dirs.pluginsDir,id,'test');
@@ -211,7 +238,7 @@ export async function main(argv) {
       const inPlugins = path.join(dirs.pluginsDir, t);
       const dir = fs.existsSync(path.join(asDir, PLUGIN_MANIFEST)) ? asDir : fs.existsSync(path.join(inPlugins, PLUGIN_MANIFEST)) ? inPlugins : null;
       if (!dir) { console.error(`plugin: ${t} is not a plugin folder (no ${PLUGIN_MANIFEST})`); return 2; }
-      const r = packPlugin(dir, { vanilla, where: `${t}/` });
+      const r = packPlugin(dir, { vanilla, dataDir: dirs.dataDir, where: `${t}/` });
       for (const line of findingLines(r.build, lang)) console.log(line);
       if (!r.wrote) { console.log(`${t}: ${LOCK_FILE} not written`); failed++; continue; }
       const nFiles = Object.keys(/** @type {any} */ (r.lock).files).length;
@@ -260,7 +287,7 @@ export async function main(argv) {
     const vanilla = readVanillaAssets(dirs.dataDir);
     const report = [];
     for (const { dir, where } of folders) {
-      const r = checkPluginFolder(dir, where, { vanilla });
+      const r = checkPluginFolder(dir, where, { vanilla, dataDir: dirs.dataDir });
       const p = r.plugin;
       problems += r.problems.length;
       warnings += r.warnings.length;
@@ -310,6 +337,84 @@ export async function main(argv) {
       ? `下一步：在工作台（服务器的 /studio/）里把文件拖到格子上，或者按 ${shown}/README.md 手动放文件；然后 node tools/plugin.mjs check ${id}`
       : `next: drop files on its places in the studio (/studio/ of the server), or follow ${shown}/README.md; then node tools/plugin.mjs check ${id}`);
     return 0;
+  }
+
+  const STATUS_WORD = {
+    zh: { installed: '已安装', updatable: '可更新', incompatible: '不适配', available: '可安装' },
+    en: { installed: 'installed', updatable: 'updatable', incompatible: 'incompatible', available: 'available' },
+  };
+
+  if (cmd === 'install') {
+    if (targets.length !== 1) { console.error(`plugin: install needs one zip path or one https URL\n${USAGE}`); return 2; }
+    const target = targets[0];
+    try {
+      const opts = { pluginsDir: dirs.pluginsDir, force: flags.has('force'), sha256: values.sha256 || '' };
+      const r = isRemoteAddress(target) ? await installFromUrl(target, opts) : installFromFile(path.resolve(target), opts);
+      const moved = r.replaced ? path.relative(dirs.pluginsDir, r.replaced).split(path.sep).join('/') : '';
+      console.log(lang === 'zh'
+        ? `已安装 plugins/${r.id}/${moved ? `（旧文件夹挪到 ${moved}，没有删除）` : ''}`
+        : `installed plugins/${r.id}/${moved ? ` (old folder moved to ${moved}, not deleted)` : ''}`);
+      return 0;
+    } catch (e) {
+      console.error(`plugin: ${e.code || 'PLUGIN_INSTALL_ZIP'} ${e.message}`);
+      return 1;
+    }
+  }
+
+  if (cmd === 'catalog') {
+    if (targets.length !== 1) { console.error(`plugin: catalog needs one catalogue file or one https URL\n${USAGE}`); return 2; }
+    try {
+      const text = await loadCatalogText(targets[0], { pluginsDir: dirs.pluginsDir });
+      let json;
+      try { json = JSON.parse(text); } catch (e) { console.error(`plugin: PLUGIN_CATALOG_SHAPE ${e.message}`); return 1; }
+      const read = readCatalog(json);
+      if (!read.ok || !read.catalog) {
+        const p = read.problems[0] || read.warnings[0];
+        console.error(`plugin: ${p.code} ${p.detail}`);
+        return 1;
+      }
+      const rows = annotateCatalog(read.catalog, (id) => installedPluginVersion(dirs.pluginsDir, id));
+      if (flags.has('json')) { console.log(JSON.stringify({ name: read.catalog.name, catalog: read.catalog.catalog, plugins: rows }, null, 2)); return 0; }
+      console.log(`${read.catalog.name} (${rows.length})`);
+      const words = STATUS_WORD[lang] || STATUS_WORD.zh;
+      for (const e of rows) {
+        const have = e.installedVersion ? ` (${e.installedVersion})` : '';
+        console.log(`  ${String(e.id).padEnd(16)} ${String(e.version).padEnd(10)} ${String(e.class).padEnd(10)} ${words[e.status] || e.status}${have}  ${e.name}`);
+      }
+      return 0;
+    } catch (e) {
+      console.error(`plugin: ${e.code || 'PLUGIN_CATALOG_SHAPE'} ${e.message}`);
+      return 1;
+    }
+  }
+
+  if (cmd === 'surface') {
+    const vocab = await import('../server/sim/content/dsl/vocab.js');
+    const rows = buildSurface({ dsl: vocab, studioRoutes: STUDIO_ROUTES });
+    const table = surfaceMarkdown(rows);
+    if (!flags.has('write')) { console.log(table); return 0; }
+    const abs = path.join(root, 'docs/PLUGIN-API.md');
+    let text;
+    try { text = fs.readFileSync(abs, 'utf8'); } catch { console.error('plugin: docs/PLUGIN-API.md is missing'); return 2; }
+    const a = text.indexOf(SURFACE_MARKERS.start);
+    const b = text.indexOf(SURFACE_MARKERS.end);
+    if (a < 0 || b < a) { console.error('plugin: docs/PLUGIN-API.md has no surface markers'); return 2; }
+    const next = `${text.slice(0, a + SURFACE_MARKERS.start.length)}\n${table}\n${text.slice(b)}`;
+    if (next !== text) fs.writeFileSync(abs, next);
+    console.log(next === text ? 'the API table is up to date' : 'wrote docs/PLUGIN-API.md');
+    return 0;
+  }
+
+  if (cmd === 'import-forge') {
+    if (targets.length !== 1) { console.error(`plugin: import-forge needs one Forge pack (a folder or a zip)\n${USAGE}`); return 2; }
+    const result = await importForge(path.resolve(targets[0]), {
+      out: values.out ? path.resolve(values.out) : undefined,
+      id: values.id, dryRun: flags.has('dry-run'), root, pluginsDir: dirs.pluginsDir, dataDir: dirs.dataDir,
+      vanilla: readVanillaAssets(dirs.dataDir),
+    });
+    if (flags.has('json')) console.log(JSON.stringify(result.report));
+    else console.log(result.markdown);
+    return result.ok ? 0 : 1;
   }
 
   if (cmd === 'errors') {

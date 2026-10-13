@@ -236,3 +236,5 @@ structured controls with server validation; script source is read-only. Trial re
 UI-widget previews use the same `pluginFrame` host as the game, with fake data and memory-only preview storage; all
 frame sandbox, navigation and message limits remain in force. The room's settings form is manifest-driven and shows
 normalized values from the room, read-only for non-hosts and during a match. Vanilla pages load no extra studio code.
+
+Authoring checks (DESIGN §32.9.1): numeric fields display the shared official bounds and positive step floor; invalid saves are refused. DSL validation network failures are explicit, and saving revalidates the current spec before writing. Unkeyed studio state reads omit script source. Trial replay remains a data-only renderer feed; sandbox simulation runs in the same SES executor as a formal match. Forge and catalogue entry points remain available beside the authoring templates.

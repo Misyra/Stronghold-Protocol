@@ -23,6 +23,7 @@
 
 import { ERR } from '../../../shared/constants.js';
 import { msg, wireMessage } from '../../../shared/i18n.js';
+import { validHostMessage } from './ipc.js';
 
 /** A request the worker has not answered after this long is answered INTERNAL. [ASSUMED] */
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -148,6 +149,7 @@ export class MatchProxy {
    * @param {any} m
    */
   deliver(m) {
+    if (!validHostMessage(m) || m.matchId !== this.matchId) return;
     if (m.type === 'reply') {
       // answered after the end, even after the dispose: the request was asked while the match ran (see dispose)
       const p = this.pending.get(m.id);

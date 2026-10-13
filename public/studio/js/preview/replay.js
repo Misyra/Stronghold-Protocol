@@ -14,6 +14,7 @@ export function TrialReplay({ replay, playing, speed, reset }) {
   useEffect(() => {
     let alive = true, view = null, raf = 0;
     setFailed(false);
+    host.current.dataset.ready = 'false';
     (async () => {
       const assets = createAssets();
       assets.seed(data.getRaw('assets'));

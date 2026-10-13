@@ -16,7 +16,8 @@ folders (manifest, file types, sizes, paths, JSON).
   content set, and its matches are unofficial (left out of the statistics overview unless a player counts them);
 - class `ui` (an interface widget) loads in a sandboxed frame: each player switches it on for this browser (设置 →
   界面插件). It can read a little of the match on screen and cannot play it. It does not change `cs`;
-- classes `script` and `trusted` are listed as not supported — no plugin code runs inside a battle;
+- classes `script` and `trusted` (code) are off by default: the server owner switches trusted execution on, pins each
+  plugin's lock in `config.json` here, and every player of the room consents first (PLUGINS.md §13);
 - nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
   stay yours, and an update never touches them.
 
@@ -31,7 +32,8 @@ every finding in plain words, `pack <dir> --zip` writes the `plugin.lock.json` a
 `_template/ui/` is an interface plugin: a damage tally in a sandboxed frame (DESIGN §32.8).
 
 For data, copy `_template/content/` to `data-demo/` (PLUGINS.md §10: a bond patch and a kitRef operator); a server owner
-may limit what rooms take in `config.json` here (PLUGINS.md §11, DEPLOY.md).
+may limit what rooms take in `config.json` here (PLUGINS.md §11, DEPLOY.md). The same file's `allowDownloadHosts`
+is the operator's https download allowlist (PLUGINS.md §17); it is not a room-policy field.
 
 ```json
 {

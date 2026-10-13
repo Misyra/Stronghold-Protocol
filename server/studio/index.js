@@ -11,6 +11,9 @@
 //   GET  /studio/api/suggest-id?name=&target=&template=   a free plugin id
 //   GET  /studio/api/plugins            every plugin folder: name, version, class, loaded or skipped, its findings
 //   POST /studio/api/plugins            a new plugin from a template { template, id, name, target, authors, license, credits }
+//   POST /studio/api/forge/preview      a Forge pack as { zip: base64 } or { files: [{ name, data: base64 }] } — the report,
+//                                       nothing written (server/plugins/forgeImport.js). No path on this machine.
+//   POST /studio/api/forge/import       the same body; writes plugins/<id>/ after the report's products pass check and pack
 //   GET  /studio/api/plugins/<id>       its manifest, files, sections, findings (coded: shared/plugins/errors.js), lock
 //   PUT  /studio/api/plugins/<id>/manifest     plugin.json as a whole (the advanced editor)
 //   POST /studio/api/plugins/<id>/meta         basic fields { fields, lang }
@@ -27,6 +30,10 @@
 //   POST /studio/api/authors            the page names its game sessions { tokens } — rooms they host apply plugin changes
 //                                       by themselves
 //   GET  /studio/api/events             server-sent events: { ids } of plugins whose state changed (hot reload)
+//   POST /studio/api/catalog            list a community catalogue { url } or { text } / { catalog } (the server fetches
+//                                       an https URL; the browser does not download a zip)
+//   POST /studio/api/catalog/install    install one https zip { url, sha256, id?, bytes?, force? } — hash checked, no
+//                                       code from the package is run (server/plugins/install.js)
 // A change (POST, PUT, DELETE) carries the studio's key in the header X-SP-Studio (server/studio/key.js: printed with the
 // studio's address when the server starts, kept in plugins/.studio-key; a wrong one → 403 PLUGIN_STUDIO_KEY) and answers
 // with the plugin's state as GET /studio/api/plugins/<id> does. Errors: `{ error: <code>, params, detail }` with an HTTP
@@ -42,6 +49,8 @@ import { APP_VERSION, PLUGIN_API } from '../../shared/constants.js';
 import { PLUGIN_MANIFEST, PLUGIN_LIMITS, PLUGIN_IMAGE_EXTS, PLUGIN_AUDIO_EXTS, extOf, isPackPath, isPluginId, readPluginManifest } from '../../shared/plugins/manifest.js';
 import { LOCK_FILE, locateAssetPath, readPluginLock } from '../../shared/plugins/visual.js';
 import { PLUGIN_ERRORS, isPluginErrorCode, issueList } from '../../shared/plugins/errors.js';
+import { CATALOG_FETCH_MAX_BYTES, annotateCatalog, readCatalog } from '../../shared/plugins/catalog.js';
+import { CATALOG_FETCH_TIMEOUT_MS, InstallError, fetchHttps, installFromUrl, installedPluginVersion } from '../plugins/install.js';
 import { sendError, sendJson } from '../http/common.js';
 import { MIME, serveFile, CompressCache } from '../http/files.js';
 import { checkPluginFolder, packPlugin, zipPlugin } from '../plugins/pack.js';
@@ -60,6 +69,41 @@ import { trialOptions } from './trialOptions.js';
 import { readStudioData } from './gameData.js';
 import { createAuthoring } from './authoring.js';
 import { createPluginWatcher } from './watch.js';
+import { importForge } from '../plugins/forgeImport.js';
+
+/** Safety failures of a Forge import (the page shows the catalogue). A check failure stays in the report, HTTP 200. */
+const FORGE_SAFETY = new Set(['PLUGIN_FORGE_INPUT', 'PLUGIN_FORGE_ZIP', 'PLUGIN_FORGE_JSON', 'PLUGIN_FORGE_ID', 'PLUGIN_FORGE_EXISTS']);
+
+/**
+ * A Forge pack uploaded by the page. A path on the server is never accepted.
+ * @param {any} body
+ * @returns {{ zip: Buffer } | { files: Map<string, Buffer> }}
+ */
+function forgeUpload(body) {
+  if (typeof body.zip === 'string' && body.zip) {
+    const buf = Buffer.from(body.zip, 'base64');
+    if (!buf.length) throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'empty zip' }, 'empty zip');
+    if (buf.length > PLUGIN_LIMITS.pluginBytes) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: 'zip is larger than 200 MB' }, 'zip is larger than 200 MB');
+    return { zip: buf };
+  }
+  if (Array.isArray(body.files)) {
+    if (!body.files.length) throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'no files' }, 'no files');
+    if (body.files.length > PLUGIN_LIMITS.files) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: `more than ${PLUGIN_LIMITS.files} files` }, `more than ${PLUGIN_LIMITS.files} files`);
+    const map = new Map();
+    let total = 0;
+    for (const f of body.files) {
+      const name = typeof f?.name === 'string' ? f.name.replace(/\\/g, '/') : '';
+      if (!name || typeof f?.data !== 'string') throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'each file needs a name and base64 data' }, 'each file needs a name and base64 data');
+      const data = Buffer.from(f.data, 'base64');
+      total += data.length;
+      if (data.length > PLUGIN_LIMITS.pluginBytes || total > PLUGIN_LIMITS.pluginBytes) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: 'files are larger than 200 MB' }, 'files are larger than 200 MB');
+      if (map.has(name)) throw new StudioError('PLUGIN_FORGE_ZIP', 400, { detail: `${name.slice(0, 80)}: duplicate name` }, `${name.slice(0, 80)}: duplicate name`);
+      map.set(name, data);
+    }
+    return { files: map };
+  }
+  throw new StudioError('PLUGIN_FORGE_INPUT', 400, { detail: 'send a zip or a file list, not a path on the server' }, 'send a zip or a file list, not a path on the server');
+}
 
 /** The page's URL prefix and its API's. */
 /** The studio's own notes of a plugin folder (a dot file: never listed, served, checked or packed). */
@@ -72,6 +116,46 @@ export const AUTHOR_TTL_MS = 10 * 60 * 1000;
 const PAGE_TYPES = new Set(['.html', '.js', '.css', '.png', '.svg', '.json']);
 /** One-click fixes the API runs itself (they move files or pack), beside the manifest edits of edit.js FIXES. */
 export const API_FIXES = Object.freeze(['pack', 'moveOut']);
+
+/**
+ * Studio API routes (method and path). Frozen in docs/PLUGIN-API.md. Local and LAN only. HEAD answers as GET.
+ * A new route literal in api() belongs in this list (test/plugins/surface.test.js).
+ */
+export const STUDIO_ROUTES = Object.freeze([
+  'GET /studio/api/info',
+  'GET /studio/api/trial-options',
+  'POST /studio/api/trial',
+  'GET /studio/api/authoring',
+  'GET /studio/api/dsl-example',
+  'POST /studio/api/validate-dsl',
+  'POST /studio/api/plugins/:id/authoring',
+  'GET /studio/api/targets',
+  'GET /studio/api/slots',
+  'GET /studio/api/suggest-id',
+  'POST /studio/api/authors',
+  'GET /studio/api/events',
+  'GET /studio/api/plugins',
+  'POST /studio/api/plugins',
+  'GET /studio/api/plugins/:id',
+  'GET /studio/api/plugins/:id/preview',
+  'GET /studio/api/plugins/:id/zip',
+  'GET /studio/api/plugins/:id/f/:hash8/*',
+  'GET /studio/api/plugins/:id/files/*',
+  'PUT /studio/api/plugins/:id/manifest',
+  'PUT /studio/api/plugins/:id/files/*',
+  'DELETE /studio/api/plugins/:id/files/*',
+  'POST /studio/api/plugins/:id/slot',
+  'POST /studio/api/plugins/:id/meta',
+  'POST /studio/api/plugins/:id/sections',
+  'POST /studio/api/plugins/:id/ref',
+  'POST /studio/api/plugins/:id/clear',
+  'POST /studio/api/plugins/:id/fix',
+  'POST /studio/api/plugins/:id/pack',
+  'POST /studio/api/catalog',
+  'POST /studio/api/catalog/install',
+  'POST /studio/api/forge/preview',
+  'POST /studio/api/forge/import',
+]);
 
 const noopLog = { info() {}, warn() {}, error() {} };
 /**
@@ -167,7 +251,7 @@ export function suggestId({ name = '', target = null, template = '' }, taken) {
  *   lobby: the rooms (its autoApplyPlugins is set to the studio's rule); sessions: the session registry (a token the page
  *   names → its player)
  */
-export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby = null, sessions = null, log = noopLog, mode = studioMode(), watch }) {
+export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby = null, sessions = null, log = noopLog, mode = studioMode(), watch, trialSpawn, fetch: fetchImpl = globalThis.fetch }) {
   const pageDir = path.join(path.resolve(publicDir), 'studio');
   // the key every change carries (key.js; X-SP-Studio) — read or made when first needed (the boot banner, a studio
   // request: a server that only runs tests or never shows its banner writes no key file); none when the studio is off
@@ -192,7 +276,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   const files = createPluginFiles(pluginsDir);
   const targets = createTargetIndex(dataDir);
   const authoring = createAuthoring({ files, dataDir });
-  const trials = createTrialBench({ registry, files });
+  const trials = createTrialBench({ registry, files, spawn: trialSpawn });
   const previews = createPreviews({ vanilla: () => registry.vanillaAssets() });
   const compress = new CompressCache();
   /** @type {Map<string, number>} playerId → when the page last named the session */
@@ -325,7 +409,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
    * the folder's check with coded issues, the registry's view (loaded, vs), the lock.
    * @param {string} id
    */
-  function stateOf(id) {
+  function stateOf(id, includeSource = false) {
     const dir = files.root(id);
     let text = null;
     let manifest;
@@ -334,7 +418,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     try { text = fs.readFileSync(files.stat(id, PLUGIN_MANIFEST).abs, 'utf8'); manifest = JSON.parse(text); } catch { manifest = null; }
     const vanilla = registry.vanillaAssets();
     const links = files.list(id).filter((f) => f.link).map((f) => f.rel);
-    const check = links.length ? linkedCheck(links) : checkPluginFolder(dir, `plugins/${id}/`, { vanilla });
+    const check = links.length ? linkedCheck(links) : checkPluginFolder(dir, `plugins/${id}/`, { vanilla, dataDir });
     const read = isObj(manifest) ? readPluginManifest(manifest, { id }) : null;
     const draft = read?.manifest || read?.draft || null;
     let overlay = isObj(manifest?.assets) ? manifest.assets : {};
@@ -351,7 +435,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     }
     return {
       id, manifest, text, overlay, authoring: authoring.read(id),
-      ...(draft?.class === 'script' ? { source: authoring.source(id) } : {}),
+      ...(includeSource && draft?.class === 'script' ? { source: authoring.source(id) } : {}),
       ...(draft?.class === 'ui' ? { frame: registry.pluginIndex().plugins.find(p => p.id === id) || null } : {}), class: draft?.class || manifest?.class || null,
       names: draft?.names || {}, version: draft?.version || null, files: list, sections: sectionsOf(id, overlay),
       check: { ok: !check.problems.length, problems: check.problems.length, warnings: check.warnings.length, issues: check.issues },
@@ -394,7 +478,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   }
 
   /** After a change: read the folders now (hot reload) and answer with the plugin's state. */
-  const changed = (id) => { watcher.rescan(); return stateOf(id); };
+  const changed = (id) => { watcher.rescan(); return stateOf(id, true); };
 
   /** A slot of the plugin's sections at `at` (its dir and base), else one made from the path. */
   function slotAt(id, overlay, at) {
@@ -517,11 +601,11 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     const issue = { at: Array.isArray(body.at) ? keyList(body.at) : undefined, file: typeof body.file === 'string' ? body.file : undefined, params: isObj(body.params) ? body.params : {} };
     let did;
     if (name === 'pack') {
-      const r = packPlugin(files.root(id), { vanilla: registry.vanillaAssets() });
+      const r = packPlugin(files.root(id), { vanilla: registry.vanillaAssets(), dataDir });
       did = r.wrote ? 'packed' : 'not packed';
     } else if (name === 'moveOut') {
       if (!issue.file || !isPackPath(issue.file)) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: 'no file' });
-      const flagged = checkPluginFolder(files.root(id), `plugins/${id}/`, { vanilla: registry.vanillaAssets() }).issues.some((i) => i.code === 'PLUGIN_FILE_TYPE' && i.file === issue.file);
+      const flagged = checkPluginFolder(files.root(id), `plugins/${id}/`, { vanilla: registry.vanillaAssets(), dataDir }).issues.some((i) => i.code === 'PLUGIN_FILE_TYPE' && i.file === issue.file);
       if (!flagged) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: `${issue.file.slice(0, 80)} is a file the plugin may carry` });
       did = `moved to plugins/${files.moveOut(id, issue.file)}`;
     } else {
@@ -557,6 +641,63 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     await serveFile(req, res, abs, st, 'studio', rel.split('/'), query, compress, log, { cacheControl: 'no-cache' });
   }
 
+  /** An InstallError as the studio's error shape. @param {unknown} e */
+  function asStudio(e) {
+    if (e instanceof InstallError) throw new StudioError(e.code, e.status, { ...e.params, detail: e.message }, e.message);
+    throw e;
+  }
+
+  /**
+   * POST /studio/api/catalog — a community list. The zip is not downloaded here. An https URL is fetched by this
+   * process; `{ text }` or `{ catalog }` is the owner's local file (the browser read it). No filesystem path is accepted.
+   */
+  async function catalogList(req) {
+    try {
+      const body = await readJson(req, CATALOG_FETCH_MAX_BYTES);
+      let text;
+      if (typeof body.text === 'string') {
+        if (Buffer.byteLength(body.text) > CATALOG_FETCH_MAX_BYTES) throw new InstallError('PLUGIN_CATALOG_SIZE', 'the catalogue is over 1 MB', {});
+        text = body.text;
+      } else if (isObj(body.catalog)) text = JSON.stringify(body.catalog);
+      else if (typeof body.url === 'string' && body.url) {
+        const buf = await fetchHttps(body.url, { fetch: fetchImpl, maxBytes: CATALOG_FETCH_MAX_BYTES, timeoutMs: CATALOG_FETCH_TIMEOUT_MS, kind: 'catalog', pluginsDir });
+        text = buf.toString('utf8');
+      } else throw new InstallError('PLUGIN_CATALOG_SHAPE', 'send a catalogue url or the catalogue text', {});
+      let json;
+      try { json = JSON.parse(text); } catch {
+        throw new InstallError('PLUGIN_CATALOG_SHAPE', 'the catalogue is not JSON', {});
+      }
+      const read = readCatalog(json);
+      if (!read.ok || !read.catalog) {
+        const p = read.problems[0] || read.warnings[0] || { code: 'PLUGIN_CATALOG_SHAPE', detail: 'the catalogue was refused' };
+        throw new InstallError(p.code, p.detail, {});
+      }
+      const plugins = annotateCatalog(read.catalog, (id) => installedPluginVersion(pluginsDir, id));
+      return { name: read.catalog.name, catalog: read.catalog.catalog, plugins };
+    } catch (e) { asStudio(e); }
+  }
+
+  /**
+   * POST /studio/api/catalog/install — the server downloads the https zip, checks sha256, and installs it.
+   * The browser does not upload the zip. `id`, when sent, must be the id inside the zip.
+   */
+  async function catalogInstall(req) {
+    try {
+      const body = await readJson(req, 64 * 1024);
+      const url = typeof body.url === 'string' ? body.url : '';
+      const sha256 = typeof body.sha256 === 'string' ? body.sha256 : '';
+      const expectedId = typeof body.id === 'string' ? body.id : '';
+      const expectedBytes = Number.isInteger(body.bytes) ? body.bytes : undefined;
+      const installed = await installFromUrl(url, {
+        pluginsDir, sha256, force: body.force === true, expectedId, expectedBytes, fetch: fetchImpl,
+      });
+      watcher.rescan();
+      let plugin = null;
+      try { plugin = stateOf(installed.id); } catch { plugin = null; }
+      return { id: installed.id, replaced: installed.replaced ? path.basename(installed.replaced) : null, plugin };
+    } catch (e) { asStudio(e); }
+  }
+
   /** The API (see the header). @returns {Promise<boolean>} whether it answered */
   async function api(req, res, route, query) {
     const q = new URLSearchParams(query);
@@ -575,7 +716,21 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (route === 'trial-options' && read) return json(200, trialOptions(dataDir));
     if (route === 'trial' && method === 'POST') {
       if (!mayChange(req)) return false;
-      return json(200, await trials.run(await readJson(req, 256 * 1024)));
+      const abort = new AbortController();
+      // IncomingMessage closes normally once the body has been read. Only an incomplete body is a disconnect;
+      // the response close covers a client that leaves while a fully-read trial is running.
+      const requestClosed = () => { if (req.complete === false) abort.abort(); };
+      const responseClosed = () => { if (!res.writableEnded) abort.abort(); };
+      req.on('close', requestClosed);
+      res.on?.('close', responseClosed);
+      try {
+        const body = await readJson(req, 256 * 1024);
+        if (req.aborted || res.destroyed) abort.abort();
+        return json(200, await trials.run(body, { signal: abort.signal }));
+      } finally {
+        req.off('close', requestClosed);
+        res.off?.('close', responseClosed);
+      }
     }
     if (route === 'authoring' && read) return json(200, authoring.details(q.get('template'), q.get('target')));
     if (route === 'dsl-example' && read) return json(200, authoring.example(q.get('name'), q.get('id') || 'draft-plugin'));
@@ -629,6 +784,11 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       req.on('close', () => streams.delete(res));
       return true;
     }
+    if ((route === 'catalog' || route === 'catalog/install') && method === 'POST') {
+      if (!mayChange(req)) return false;
+      const body = route === 'catalog' ? await catalogList(req) : await catalogInstall(req);
+      return json(route === 'catalog' ? 200 : 201, body);
+    }
     if (route === 'plugins' && read) return json(200, { plugins: listPlugins() });
     if (route === 'plugins' && method === 'POST') {
       if (!mayChange(req)) return false;
@@ -649,13 +809,27 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       log.info?.(`[studio] new plugin ${id} (${tpl.id}${t ? `, ${targetSpec(t)}` : ''})`);
       return json(201, changed(id));
     }
+    if ((route === 'forge/preview' || route === 'forge/import') && method === 'POST') {
+      if (!mayChange(req)) return false;
+      const body = await readJson(req, STUDIO_LIMITS.bodyBytes);
+      const result = await importForge(forgeUpload(body), {
+        id: typeof body.id === 'string' && body.id ? body.id.slice(0, 64) : undefined,
+        dryRun: route === 'forge/preview', pluginsDir, dataDir, root: path.dirname(path.resolve(publicDir)),
+        vanilla: registry.vanillaAssets(),
+      });
+      const safety = result.issues.find((i) => FORGE_SAFETY.has(i.code));
+      if (safety) throw new StudioError(safety.code, 400, { detail: safety.detail }, safety.detail);
+      if (route === 'forge/import' && result.wrote) watcher.rescan();
+      const products = Array.isArray(result.report?.products) ? result.report.products : [];
+      return json(200, { report: result.report, plugins: products.map((p) => ({ id: p.id, class: p.class })) });
+    }
     const m = /^plugins\/([^/]+)(?:\/(.*))?$/.exec(route);
     if (!m) return false;
     const id = decodeURIComponent(m[1]);
     const sub = m[2] ?? '';
     if (!isPluginId(id)) throw new StudioError('PLUGIN_ID', 400, { id: id.slice(0, 40) });
     if (method === 'GET' || method === 'HEAD') {
-      if (sub === '') return json(200, stateOf(id));
+      if (sub === '') return json(200, stateOf(id, keyed(req)));
       if (sub === 'preview') return json(200, previews.preview(id, files.root(id)));
       if (sub === 'zip') {
         if (method === 'HEAD') { files.root(id); res.writeHead(200, { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store' }); res.end(); return true; }
@@ -720,7 +894,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     }
     if (sub === 'fix') return json(200, fix(id, body));
     if (sub === 'pack') {
-      const r = packPlugin(files.root(id), { vanilla: registry.vanillaAssets() });
+      const r = packPlugin(files.root(id), { vanilla: registry.vanillaAssets(), dataDir });
       const list = issueList();
       list.take(r.build);
       log.info?.(`[studio] ${id}: pack — ${r.wrote ? 'plugin.lock.json written' : 'not written'}`);

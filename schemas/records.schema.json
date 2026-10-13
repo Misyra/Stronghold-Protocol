@@ -1661,6 +1661,18 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "dsl"
+                  ],
+                  "properties": {
+                    "dsl": {
+                      "$ref": "dsl.schema.json"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ]
             },
@@ -3675,6 +3687,18 @@
                             "additionalProperties": false
                           }
                         ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "dsl"
+                    ],
+                    "properties": {
+                      "dsl": {
+                        "$ref": "dsl.schema.json"
                       }
                     },
                     "additionalProperties": false
@@ -5706,6 +5730,18 @@
                                 "additionalProperties": false
                               }
                             ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "dsl"
+                        ],
+                        "properties": {
+                          "dsl": {
+                            "$ref": "dsl.schema.json"
                           }
                         },
                         "additionalProperties": false

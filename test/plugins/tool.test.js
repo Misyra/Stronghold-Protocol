@@ -148,6 +148,30 @@ test('new: every template makes a folder that passes check and pack as it is (ma
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('new dsl: a content plugin with an operator and a prep spec, and it passes check --strict and pack', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-new-dsl-'));
+  try {
+    const list = await quiet(['new']);
+    assert.match(list.out, /^ {2}dsl +content/m);
+    const r = await quiet(['new', 'dsl', 'demo-dsl', '--dir', dir, '--name', 'DSL demo', '--author', 'me', '--root', ROOT]);
+    assert.equal(r.code, 0, r.out);
+    const folder = path.join(dir, 'demo-dsl');
+    assert.deepEqual(listPluginFiles(folder).map((f) => f.rel).sort(), ['README.md', 'dsl/income.json', 'operators/demo_dsl.json', 'plugin.json']);
+    const m = JSON.parse(fs.readFileSync(path.join(folder, 'plugin.json'), 'utf8'));
+    assert.deepEqual([m.class, m.scope, m.permissions, m.operators, m.dsl], ['content', ['room'], ['data.add', 'dsl'], ['operators/demo_dsl.json'], ['dsl/income.json']]);
+    assert.equal(m.id, undefined);
+    const op = JSON.parse(fs.readFileSync(path.join(folder, 'operators/demo_dsl.json'), 'utf8'));
+    assert.equal(op.kit.dsl.skill.mods.atkPct, 0.5);
+    assert.equal(op.charId, 'char_x_demo_dsl_caster');
+    const prep = JSON.parse(fs.readFileSync(path.join(folder, 'dsl/income.json'), 'utf8'));
+    assert.equal(prep.meta.key, 'effect:demo-dsl:income');
+    const c = await quiet(['check', folder, '--strict', '--root', ROOT]);
+    assert.equal(c.code, 0, c.out);
+    const p = await quiet(['pack', folder, '--root', ROOT]);
+    assert.equal(p.code, 0, p.out);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('check in plain words: under each technical line its code, the explanation and what to do (--lang zh|en); --json for editors and AI agents', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-plain-'));
   try {

@@ -371,14 +371,40 @@ npm run package -- --update --from <旧版本的完整包>[,<…>] --out <目录
 | `classes` | 关掉某一类：例如 `{ "content": false }` 只允许外观插件；没有列出的类（`script`、`ui`、`trusted` 等）一律不给房间用 |
 | `limits.maxSets` | 同时运行的「改变玩法」内容组合上限（0–64，默认 4）；超过时房主会看到「本服务器同时运行的插件组合已达上限，请稍后再试」 |
 | `allowIncompatible` | 为其他游戏版本制作的改变玩法插件默认不能启用；设成 `true` 时大厅放行（房间里会提示）——但目前内容组合的构建本身仍会拒绝这类插件，所以暂时还开不了（DESIGN §32.6 待办）。外观插件只提示，不拦 |
+| `allowDownloadHosts` | 按地址安装时额外允许的主机（字符串数组，默认没有）。一项是主机名（任意端口），或 `主机:端口`，IPv6 写成 `[地址]` 或 `[地址]:端口`。没有通配符。点名的主机才可以不是公网地址、才可以用 443 以外的端口。目录文件自己不能往这份名单里加。这个字段不参与房间策略；写错或文件坏了就当作没有额外主机，公网 https 下载不受影响。也可以用环境变量 `SP_PLUGIN_DOWNLOAD_ALLOW`（逗号分隔），和文件里的名单一起生效 |
 
 - 环境变量 `SP_PLUGINS=off|host|fixed` 优先于文件里的 `rooms`，例如 `SP_PLUGINS=off npm start` 临时让所有房间只玩原版。
 - 文件改了不用重启：房主下一次操作时（最多每秒检查一次）按新内容生效。写错的字段保持默认值，并在服务器日志里提示一次（`[plugins] …`）。
 - 用了改变玩法插件的房间，对局在单独的子进程里运行（每套内容组合一个，同一组合的房间共用）：开发机实测子进程启动约 0.2 秒，载入数据和对局代码后约占 117 MB 内存（RSS），每个的堆上限 768 MB，最多同时 4 个，空闲 10 分钟后自动结束。子进程卡死（10 秒没有心跳）、崩溃或内存用尽时，只结束这套组合的对局，房间回到大厅并提示原因，服务器和其他房间不受影响。
 - `SP_MATCH_HOST=worker` 改用 worker 线程（在服务器进程里运行，不另起 Node 进程）。**公网服务器不要用**：在 Node 22 上实测，worker 线程里一次性的超大分配用尽内存时，会让**整个服务器进程**退出（`FATAL ERROR: … Allocation failed`，退出码 134），原版房间也一起断开；子进程同样的情况只结束子进程。默认就是子进程（DESIGN §32.6）。
 - `http://localhost:3000/healthz` 的 `content.sets` 是当前在用的改变玩法内容组合数。
+- 按地址安装（[PLUGINS.md](PLUGINS.md) §17）只接受公网 https 的 443 端口，并且必须校验 zip 的 SHA-256；服务器下载后先检查再放入 `plugins/`，不执行包里的任何代码。内网、本机、链路本地和 `.local` 默认拒绝，重定向到这些地址或离开 https 也会拒绝。一次等待包含正文，不是每一跳重新计时。服主要放行某个主机，写在上面的 `allowDownloadHosts` 或 `SP_PLUGIN_DOWNLOAD_ALLOW` 里。
 - 有人反馈问题时，诊断信息里的 `content:` 一行写着房间用的内容（`MODDED cs=… plugins=…` 表示开了改变玩法的插件），问题模板也会问「是否开了插件」。插件房间的问题请先找插件作者，并尽量在原版里复现。
 
+
+## 脚本沙箱与 CSP（0.3.0，P3b）
+
+`SP_PLUGIN_SCRIPTS=sandbox` 开启 script 类的 SES 沙箱执行，默认关闭；trusted 类遵循独立的 P3a 门槛，永远
+不进入此沙箱。此开关允许公网部署，要求有效 lock 和全部文件字节一致，但不要求 trusted pin，也不要求逐人同意
+[ASSUMED，待维护者确认]。房间标「脚本（沙箱）」；同一 SDK、描述符与预算已接通，不降级执行。所有玩法插件的浏览器战斗都在专用 Worker 中，卡死看门狗默认 2 秒。
+脚本服务器宿主强制子进程，忽略 `SP_MATCH_HOST=worker`；Node 22 `--permission` 只开放安装目录读取，没有写文件、
+起子进程、起线程或原生扩展权限，通过 JSON IPC 收取内容，保留现有内存上限和心跳看门狗。
+
+Node 22 权限模型不是恶意代码安全边界，且不限制网络。SES/V8 逃逸后仍可能访问内网、安装目录和已打开的文件描述符；
+安装目录内的符号链接也会扩大读取范围。建议用低权限用户，最好部署在限制出站/内网访问、内存与 CPU 的容器中
+[ASSUMED]。不要把启用沙箱等同于可以安全运行任何来源的插件。官方说明见
+[Node 22 permissions](https://nodejs.org/docs/latest-v22.x/api/permissions.html)。
+
+整站默认发送 CSP，覆盖主页、开发页面和 `/studio/`；importmap 用精确内容的 SHA-256 放行，页面没有 unsafe-eval。
+字体保留 Google Fonts 域名，样式允许 unsafe-inline，图片允许 data/blob，WebSocket 与同源连接以及 blob Worker
+保留。Pixi 使用无动态求值的 uniform 适配器。服主可设 `SP_CSP=off` 关闭整站策略 [ASSUMED]；界面插件 `/p/` 和
+模拟 Worker 自己的 CSP 不随此开关关闭。整站 connect-src 仅保留 'self'，现有同源 WebSocket 仍可连接。反向代理应保留 CSP 响应头，不要额外叠加会阻断 importmap 或 Worker 的策略。
+Worker 响应单独允许 unsafe-eval 供 SES evaluate 使用，并设 `connect-src 'none'`。
+受信任页面脚本从同源 `/cs/<cs16>/scripts/<id>/<entry>` 下发，先校验描述符与响应字节，再原生 import；
+无需给页面 script-src 加 data:、blob: 或 unsafe-eval。script 与 trusted 混合组合整体按受信任处理，逐人同意。
+
+本工作环境禁止监听 localhost，Chrome 的 CSP 继承/渲染验收未运行；Firefox/Safari 也待测。部署前由协调者运行
+`SP_E2E=1 node --test test/ui/sandbox.e2e.test.js` 及 DESIGN §32.11 列出的现有浏览器套件。
 
 ## Trusted script plugins (P3a, experimental)
 
@@ -388,7 +414,10 @@ file must match; repack and repin after edits. The catalogue still lists disable
 
 Bind to an explicit loopback or private LAN IP. Public addresses and wildcard listeners (`0.0.0.0`, `::`) refuse
 trusted code; `SP_PLUGIN_SCRIPTS=trusted-force` explicitly overrides this [ASSUMED name]. The check uses the listening
-address, never a request's address. Existing room class/allow policy still applies. P3b's `sandbox` mode is reserved.
+address, never a request's address. If a public reverse proxy fronts the server, make the same public-deployment
+`trusted-force` decision even when the listener is on a loopback address. Existing room class/allow policy still applies.
+All numeric spellings of IPv6 zero, IPv4 0/8 and IPv4-mapped equivalents are refused;
+the actual address returned after binding is checked again, and any refused trusted service is killed and reaped.
 
 This executes native third-party code: it can control a player's whole game page, and server code can access the
 server account's files and network. The lexical “sandboxable” label is not isolation. Every seated player must accept
@@ -397,5 +426,19 @@ only. Infinite loops in the page are not stopped by P3a's action budget. Use onl
 
 Gameplay code always runs in a match child, including bots and SP_VERIFY; it never runs in the main server.
 Experimental trusted server entries use a separate child and become active at startup. Restart to change/revoke those
-entries; end an active match to revoke its already pinned snapshot. Full SDK, pinning, consent and limitations:
+entries; end an active match to revoke its already pinned snapshot. Activation/request timeouts (5 s), startup failures
+and shutdown use SIGKILL and wait for that child to exit. Its 128 MB old-space heap limit is not a total memory or
+subprocess sandbox. Health extensions are limited to 16 KiB of UTF-8 JSON per plugin.
+
+Composition keeps the synchronous C1 interface: an uncached registration probe pauses the lobby for up to 5 s per
+plugin (`SP_SCRIPT_PROBE_MS`, 500–60000: raise it on a slow machine, where starting the engine and SES takes longer),
+including vanilla rooms — once per plugin version and settings, since results are cached. Probes use SIGKILL and cache successes/failures by plugin, lock, source descriptor and
+settings (256 recent results). The explicit local `node tools/plugin.mjs test <id>` command authorizes execution
+without server mode or trusted-pin checks; it is not evidence that those files match the production pin.
+Full SDK, pinning, consent and limitations:
 [PLUGINS §13](PLUGINS.md#13-scripts-p3a).
+
+Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可用）。安装根内指向外部的符号链接也会
+扩大可读范围：不要在安装根中放此类链接，包括外链 node_modules、npm link 和配置/存储链接。建议使用容器或
+网络命名空间限制出站与内网访问，并设置 OS 内存/CPU 限额。父进程已对日志、启动错误、发送帧、RPC 回复等 IPC
+做形态和长度复核（DESIGN §32.11），但 Node 在复核前已解码 IPC，不能据此声称免疫内存炸弹或消息洪泛。

@@ -28,7 +28,7 @@ test('room settings form changes both clients content compositions', { skip: !en
     await host.page.click('[data-plugin="settings-test"] [role="switch"]');
     await host.page.waitForSelector('[data-plugin="settings-test"] [data-setting="defense"]');
     const selector = '[data-plugin="settings-test"] [data-setting="defense"]';
-    await host.page.click(selector, { clickCount:3 }); await host.page.type(selector, '0.4');
+    await host.page.click(selector, { count: 3 }); await host.page.type(selector, '0.4');
     await host.page.click('[data-plugin="settings-test"] [data-testid="plugin-settings"] button[type="submit"]');
     await guest.page.waitForFunction(() => globalThis.__SP__?.data.get('bonds')?.deputShip?.bb?.base_def === 0.4, { timeout:30000 });
     assert.equal(await host.page.evaluate(() => globalThis.__SP__.data.get('bonds').deputShip.bb.base_def), 0.4);

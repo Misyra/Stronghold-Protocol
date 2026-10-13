@@ -136,7 +136,7 @@ node tools/plugin.mjs pack my-texas --zip
 
 ## 写一段 DSL 天赋
 
-1. 新建「DSL 技能 / 天赋」。从地灵、隐现、德克萨斯、风丸、老鲤五个例子中选起点。老鲤是备战效果，其他四个生成可上场的新干员。
+1. 新建「DSL 技能 / 天赋」。默认是一个被动攻击力提升 50% 的术师，附第 1 回合收入为 15 的备战文件；也可从地灵、隐现、德克萨斯、风丸、老鲤五个例子中选起点。老鲤是备战效果，其他四个生成可上场的新干员。
 2. 在「天赋」点「添加触发规则」，选择「部署时」。在「条件」里按需选触发概率、生命比例或盟约条件。
 3. 点「添加动作」，选「增加属性」→「攻击力比例」，把取值选为数字并填 `0.5`。也可以选择技能黑板、天赋黑板、单位实时属性，
    或用加减乘除组合取值。目标可以选自身、当前目标、范围内友方/敌人等。
@@ -145,7 +145,7 @@ node tools/plugin.mjs pack my-texas --zip
 
 风丸例子没有「技能结束时收回替身」这个 DSL 动作，适合 20 秒以内对照；完整限制见 [PLUGIN-DSL.md](PLUGIN-DSL.md) §7。
 工作台生成 `kit: { dsl: … }`（战斗）或清单 `dsl: ["dsl/meta.json"]`（备战）以及 `dsl` 权限。
-如果所用开发版本尚未合入数据 DSL 接线（WP-A2），整体检查仍会拒绝这些插件；编辑器的「DSL 校验通过」只代表规格本身正确。
+保存会重新校验当前规格，规格被拒绝时不会写入文件。校验请求失败时会明确提示，可以重试。整体检查与试跑还会核对内容组合的权限、引用和数值上限。
 
 （截图位置：新干员向导中选择 DSL，展开触发器、条件和动作；浏览器验收后可保存为 `test/e2e/out/studio-gameplay-dsl.png`。）
 
@@ -165,8 +165,8 @@ node tools/plugin.mjs pack my-texas --zip
 
 （截图位置：`test/e2e/out/studio-gameplay-trial.png`，并排比较表与两侧回放。）
 
-其他玩法模板：「改数值」展示原版属性/黑板字段和上限（黑板同键原版最大值的 10 倍，至少 64）；「新模式」继承官方模式并改经济和时长；
-「界面小组件」选插槽、改标题，保存后用真实 `pluginFrame` 宿主播放假数据；「脚本插件」生成 SDK 骨架及 `test/` 测试，浏览器只读，
+其他玩法模板：「改数值」展示原版属性/黑板字段和上限（黑板同键原版最大值的 10 倍，至少 64，正数步长下限显示在字段旁，非法值不能保存）；「新模式」继承官方模式并改经济和时长；
+「界面小组件」选插槽、改标题，保存后用真实 `pluginFrame` 宿主播放假数据；「脚本插件」生成 SDK 骨架及 `test/` 测试，浏览器带钥匙时可只读查看，试跑沿用服主选择的沙箱或受信任模式。
 请用编辑器打开插件文件夹，运行 `node tools/plugin.mjs test <id>`。
 
 房间的插件面板现在会按清单显示布尔/整数/小数/枚举设置。房主点「应用设置」后，所有玩家会重新加载同一个内容组合。
@@ -187,11 +187,22 @@ node tools/plugin.mjs pack my-texas --zip
 | 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_STUDIO_TRIAL_SCENARIO` | 这个试验场景不能运行 | 选择有效的干员、波次和 1–120 秒时长；界面插件用沙箱预览。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_CONSENT` | 还有玩家未同意运行受信任插件 | 每个在座玩家须亲自确认当前内容组合的风险提示。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PUBLIC` | 公网监听默认禁止受信任插件 | 改为监听本机或局域网；确认风险后可显式使用 trusted-force。 |
-| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PIN` | 插件的锁文件或文件内容与服主钉住的哈希不符 | 重新审核并打包，在 plugins/config.json 的 trusted 中填写锁文件的 SHA-256。 |
-| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPTS_DISABLED` | 服主没有启用脚本插件 | 审核插件后设置 SP_PLUGIN_SCRIPTS=trusted，并在 config.json 钉住 lock 哈希。 |
+| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_TRUST_PIN` | 插件锁文件无效、文件已改变或受信任哈希不符 | 重新打包以校验文件；受信任模式还需审核并在 plugins/config.json 的 trusted 中钉住锁文件 SHA-256。 |
+| 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPTS_DISABLED` | 服主没有启用脚本插件 | 脚本隔离执行可设置 SP_PLUGIN_SCRIPTS=sandbox；受信任代码需设置 trusted 并审核、钉住 lock 哈希。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_CHECK` | 脚本未通过兼容性检查：{detail} | 入口只导入 sp:sdk@1；导出同步 setup(sp)，使用 SDK 和确定性助手。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_OVERRIDE` | 插件未声明要替换的官方技能 | 在清单 overrides 中列出要替换的官方 kit id。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_SCRIPT_CONFLICT` | 两个插件注册了同一个效果 | 关闭其中一个插件，或让作者改用不同的 id。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_TIMEOUT` | 插件模拟长时间无响应 | 检查插件循环并降低每批模拟的负载 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_FAILED` | 插件模拟进程出错 | 查看日志并修复插件 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_WORKER_STOPPED` | 插件模拟已停止 | 重新开始本场模拟 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_UNAVAILABLE` | 脚本沙箱未就绪 | 安装依赖并检查 SDK 接口 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_DISABLED` | 服务器未开启脚本沙箱 | 由服主设置 SP_PLUGIN_SCRIPTS=sandbox |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_CLASS` | 此插件类别不能进入脚本沙箱 | 仅将 script 类插件交给沙箱 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_HASH` | 脚本文件与内容哈希不符 | 重新应用插件并校验文件 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_IMPORT` | 脚本导入超出沙箱范围 | 只导入 sp:sdk@1 和插件内相对路径，避免循环导入 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_SYNTAX` | 脚本使用了不支持的模块语法 | 使用同步 setup 和静态导入，参见脚本文档 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_LIMIT` | 脚本文件超过沙箱上限 | 缩减文件数量和代码体积 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SANDBOX_MATH` | 脚本数学运算超出确定性范围 | 只用有限数字，幂指数必须是整数 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_UNKNOWN` | 本服务器没有安装这个插件 | 把插件文件夹放进服务器的 plugins/ 文件夹（文件夹名就是插件 id）；它不在了的话，在插件面板里把它关掉。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_BLOCKED` | 这个插件不能在这里启用：这个版本不应用它的类别，或者它的作用范围不包括这里 | 外观插件的 class 写 "cosmetic"；scope 写 ["room"]（房主给整个房间开）或 ["personal"]（玩家只给自己开），两样都要就都写上。 |
 | 房间里开不了这个插件，面板弹出提示 | `PLUGIN_DEPENDENCY` | 缺少这个插件需要的其他插件（或者版本不对），或者几个插件的加载顺序互相指向、成了一个圈 | 安装 requires 里写的插件（版本要在写的范围内）；或者删掉 loadAfter / loadBefore 里互相指向的那几条。 |
@@ -288,7 +299,6 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SKILL_SPEC` | JSON 技能规格写得不对（{where}）：{detail} | 按 docs/PLUGINS.md §10 的 SkillSpec 写：kind 和 mods 里的已知字段；talentMods 只能和 JSON 技能规格一起用，不能和 kit.ref 一起。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_EFFECT_REF` | 效果引用不对（{where}）：{detail} | effectRef 要指向一个官方的道具或策略记录；驻守效果和 buff 的键要用游戏里已有的。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_I18N` | 插件的翻译文件不对（{where}）：{detail} | 翻译文件写 { "version": 1, "lang": "en", "files": { … } }，lang 和文件名一致；只能替换已有的文字，不能新增字段。 |
-| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_UNAVAILABLE` | DSL 规格放在了这个版本不读的位置（{where}）：{detail} | 干员的 DSL 写在紧凑记录的 "kit": { "dsl": { … } } 里，备战效果写在清单 "dsl" 列出的文件里（权限 "dsl"），见 docs/PLUGIN-DSL.md。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_UI_SLOTS` | 界面插件的 "slots" 写得不对：{detail} | "slots" 是列表，从 hud.right、result.tab、stats.tab、room.panel 里选，每个最多写一次。 |
 | 插件能用，但检查时有提示 | `PLUGIN_UI_NO_SLOT` | 界面插件没有要任何位置，页面不会显示出来 | 在 "slots" 里写上它要放的位置，例如 ["hud.right"]。 |
 | 界面插件的页面收到拒绝（ok: false、rejected 或 limit 消息） | `PLUGIN_SLOT` | 界面插件要的位置没有给它：清单的 "slots" 里没有这个位置，或者别的插件已经占了 | 在 plugin.json 的 "slots" 里写上这个位置（hud.right、result.tab、stats.tab、room.panel）。一个位置只放一个插件，先开的先得。 |
@@ -312,8 +322,49 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_SKILL` | 技能规格写得不对（{where}）：{detail} | "skill" 是一个对象，"kind" 用 instant、duration、ammo、charges、toggle、passive；几个技能就写 "skills": { "技能 id": { … } }。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_META` | 备战规格写得不对（{where}）：{detail} | 写成 "meta": { "on": [ { "when": 触发器, "do": [ 动作 ] } ] }；"meta.key" 写成 effect:<插件 id>:<名字>，插件 id 是这个插件自己的。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_TALENT` | 天赋写得不对（{where}）：{detail} | "talents" 是列表，每一项是 { "when": 触发器, "if": 条件, "do": [ 动作 ] } 这样的对象。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_SHAPE` | 目录文件的结构不对：{detail} | 目录是一个 JSON 对象，"catalog" 为 1，"name" 是名字，"plugins" 是插件列表。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_URL` | 目录或插件地址不是可以下载的 https：{detail} | 地址以 https:// 开头，主机名要有点，不能写账号密码。下载时只访问公网地址的 443 端口；内网、本机、链路本地和 .local 会被拒绝，除非服主在 allowDownloadHosts 里点名。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_HASH` | 目录条目缺少 sha256，或者不是 64 位小写十六进制：{detail} | 每个插件都写上它的 zip 的 SHA-256（64 位小写十六进制）。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_ID` | 插件 id 不合法或重复：{detail} | id 是 2 到 32 位小写字母、数字和连字符，并且在这份目录里只出现一次。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_FIELD` | 目录字段不合法：{detail} | 按 docs/plugin-catalog.example.json 写：版本是 semver，class 是已知类别，过长的文字要缩短。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_CATALOG_SIZE` | 目录文件太大：{detail} | 目录本身不超过 1 MB。插件 zip 另有 200 MB 的上限。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_CATALOG_FETCH` | 读不到这份目录：{detail} | 确认地址是公网 https 的 443 端口、服务器能访问它，并且没有被重定向到内网或非 https。这一次等待包含正文，不是每一跳重新计时。也可以改用本机的目录文件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_URL` | 安装地址不是公网 https：{detail} | 只安装公网 https、443 端口的 zip。内网和本机地址默认拒绝。本机文件可以直接给出路径，包括 Windows 盘符和 UNC。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_HASH` | zip 的 SHA-256 对不上，或者没有给出：{detail} | https 安装必须带 --sha256（或目录条目里的 sha256）。哈希不对就不要安装。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_SIZE` | zip 超过大小上限，或和目录里写的字节数不一致：{detail} | 一个插件不超过 200 MB。目录里的 bytes 要和 zip 的实际大小一致。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_TIMEOUT` | 下载超时：{detail} | 检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。这一次等待包含连接、重定向和正文，不是每一跳重新计时。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_FETCH` | 下载失败：{detail} | 确认地址能打开，并且返回的是 zip（HTTP 200）。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_REDIRECT` | 下载被重定向到了非公网地址、非 443 端口，或重定向次数太多：{detail} | 只跟随公网 https、443 端口的重定向，最多 5 次。请换一个直接的 https 地址。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_ZIP` | 这个 zip 不能安装：{detail} | zip 里要有 plugin.json（可以包在一层以插件 id 命名的文件夹里）。不能有路径穿越、符号链接、加密或超量的文件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_CHECK` | 插件没通过检查，没有装进 plugins/：{detail} | 按 node tools/plugin.mjs check 的提示改插件，再安装。失败时只删掉临时文件，不会动已经装好的插件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_EXISTS` | plugins/ 里已经有这个 id：{detail} | 不加 --force 就不会覆盖。--force 会把旧文件夹挪到 plugins/_replaced/，不会删除。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_INPUT` | 这不是一份能读的 Forge 包：{detail} | 选一个含 pack.json 的工坊包目录，或那个目录打出来的 zip。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_ZIP` | 这个包的文件不安全，没有解压：{detail} | 路径不能跳出包目录，不能有符号链接，单个包最多 5000 个文件、一共 200 MB。换一份包再导入。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_JSON` | 包里的 JSON 读不了：{detail} | JSON 要能解析，不超过 8 MB，嵌套不超过 64 层，数字在 ±1e9 以内。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_ID` | 这个包的 id 变不成插件 id：{detail} | 用 --id 指定一个插件 id：2–32 位小写字母、数字和 -，例如 rose-skin。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_EXISTS` | 目标文件夹已经存在，没有写入：{detail} | 换一个 --out 或 --id，或者把已有的插件文件夹挪走后再导入。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_SCRIPT` | 包里的脚本没有导入，也没有执行：{detail} | 技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_INVALID` | 插件有问题：{detail} | 看后面的英文原文；看不懂的话，可以到 GitHub 提问并附上这段文字。 |
 <!-- plugin-errors:end -->
+
+## 从 Forge 包导入
+
+如果你有一份 Forge 工坊包（一个带 `pack.json` 的文件夹，或它打出来的 zip），可以把对得上的部分导成我们的插件。
+
+在工作台里点 **「从 Forge 包导入」**。选一个 zip，或选整个文件夹。先看导入报告，确认之后才会写入 `plugins/`。
+报告里写着导入了什么、改成了什么、没导入的和原因。常见的没导入原因：这是服务端逻辑、会改协议、是一段脚本（导入器
+**不运行**包里的任何代码），或者挂载点对不上我们的界面插槽。
+
+命令行做同一件事：
+
+```bash
+node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+```
+
+`--dry-run` 只打印报告，不写文件。皮肤、立绘、头像、图标、Spine、语音、对得上的音乐和音效会变成外观插件；数值改动、
+新干员和新敌人会变成数据插件（技能脚本改成通用 kit，要自己再写成 JSON 技能规格或 DSL）；界面词条会变成语言包；公告和
+鸣谢写进清单的说明。对不上的部分留在 `IMPORT-REPORT.md` 里，中文和英文各一行。完整对照表在
+[PLUGINS.md](PLUGINS.md) §16。
 
 ## 进阶
 

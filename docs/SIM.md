@@ -1056,7 +1056,7 @@ Kit = {
 ```
 Keys: the data `baseId` (`chess_char_1_01_a`, also used for the elite `_b`), the exact chess id, or the suffix-less id of the
 DESIGN §5.6 example (`chess_char_1_01`) — all three are looked up.
-Plugin dispatch (DESIGN §32.5, C2): extension registry → `def.raw.dsl` → `def.raw.skillSpec` → `def.raw.kitRef` → official registry → generic; explicit Battle test kits still take precedence. The extension registry stays empty for vanilla; P3a script compositions register SDK kits, enemy installs and battle modules (PLUGINS §13). The JSON SkillSpec allowlist is §7.3 without functions (validated by `shared/plugins/skillSpec.js`); `talentMods` adds permanent numeric mods. `kitRef` accepts an official key or file stem, never an import path.
+Plugin dispatch (DESIGN §32.5, C2): extension registry → `def.raw.dsl` → `def.raw.skillSpec` → `def.raw.kitRef` → official registry → generic; explicit Battle test kits still take precedence. The extension registry stays empty for vanilla; P3a script compositions register SDK kits, enemy installs and battle modules (PLUGINS §13). `kitOf` calls `compileDsl` when the record carries `dsl`. The content-set builder stamps `pluginId`. A bad spec is refused at build. If compilation still throws (`PLUGIN_DSL_*`, or any throw while `raw.dsl` is set), the battle ends `forced` with `content:dsl` and does not field an empty or generic kit (DESIGN §32.7). Any other kit throw still falls back to generic. A one-skill DSL kit binds that default spec for a 自选 piece and a 补位 stand-in. The JSON SkillSpec allowlist is §7.3 without functions (validated by `shared/plugins/skillSpec.js`); `talentMods` adds permanent numeric mods. `kitRef` accepts an official key or file stem, never an import path.
 
 Missing kit ⇒ `content/generic.js` builds one from the blackboard (§7.4), so every chess always fights.
 补位 stand-ins (DATA.md §18; a PlayerBattleInput entry with `standIn: true` ⇒ the def of `getChess(chessId, { standIn:
@@ -1623,3 +1623,16 @@ general hook guard. The queue is emptied in `finally`; it introduces no timer or
 维什戴尔's `shadowTile` requires `Battle.onFieldBoard` before ranking summon candidates: a board of this field (a
 teammate's half), never a boss field's hand / 临时整备区 rows or an empty half (§31.10). `grid.inRect` alone also admits
 those bench rows. See [DESIGN §3](design/geometry-time.md#3-coordinates-fields-and-geometry) for the deployment boundary.
+
+
+### Browser simulation hosts (DESIGN §32.11)
+
+`public/js/battle/simHost.js` is C4: `load(cs, content?)`, `start(spec, opts)`,
+`step(n, opts?) → { snap, ev, state }`, `unitStats(id)`, `ownerOps(pid)`, `stop()`.
+Worker methods return Promises; the runner preserves a synchronous cached stats/read API for UI consumers.
+The original content runs in-page. Every gameplay content set runs in a dedicated Worker with its checked data and
+`bounds` snapshot. Worker steps are capped at 600 ticks per RPC; only the main-thread runner controls pacing.
+A 2 s configurable watchdog [ASSUMED] covers blocked hooks and construction; no watchdog clock enters sim state.
+Only sandbox script Workers/children run SES lockdown, before engine import. Both native and sandbox paths verify
+`@script` descriptors and use `createSDK(plugin, { settings, log })` plus the production extension registry/budget.
+SDK-owned return records are immutable copies; live Battle/Unit callback objects remain mutable.

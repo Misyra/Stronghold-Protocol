@@ -22,7 +22,7 @@ export function operatorRecord({ id, name, target, options = {}, data }) {
     forms: { normal: form(normal, 'normal'), elite: form(elite, 'elite') },
     skills: skills(normal), kit: kind === 'ref' ? { ref: officialKit(source) ? source : normal.baseId || normal.chessId } : kind === 'spec'
       ? { spec: options.spec !== undefined ? options.spec : { kind: 'duration', duration: 10, mods: { atkPct: 0.5 } } }
-      : { dsl: options.dsl || { dsl: 1, pluginId: id, talents: [{ when: 'deploy', do: [{ buff: { mods: { atkPct: 0.5 } } }] }] } },
+      : { dsl: options.dsl !== undefined ? options.dsl : { dsl: 1, pluginId: id, talents: [{ when: 'deploy', do: [{ buff: { mods: { atkPct: 0.5 } } }] }] } },
     art: { ref: options.artRef || source },
   };
 }

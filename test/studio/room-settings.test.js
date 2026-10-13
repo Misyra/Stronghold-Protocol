@@ -95,3 +95,24 @@ test('content hot reload debounces source events, ignores sidecars, and notices 
   event('change','watched-data/p.json'); event('change','watched-data/p.json');
   await new Promise(r => setTimeout(r, 40)); assert.deepEqual(seen, [['watched-data']]);
 });
+
+test('visual and content notices use independent keys, and deferred names are merged', t => {
+  const { lobby, host, guest, room } = setup(t);
+  lobby.setPlugins(host, { plugins: [{ id: 'settings-test' }] });
+  room.content = { ...room.content, vs: 'v'.repeat(64) };
+  host.messages.length = 0; guest.messages.length = 0;
+  for (const kind of ['visual', 'content']) {
+    const hash = kind === 'visual' ? room.content.vs : room.content.cs;
+    lobby.pluginsChanged(hash, [kind], kind); lobby.pluginsChanged(hash, [kind], kind);
+  }
+  assert.equal(host.messages.filter(m => m.t === 'm.toast').length, 2);
+  assert.equal(guest.messages.filter(m => m.t === 'm.toast').length, 0);
+  room.pluginNoticeKeys = {}; room.match = { dispose() {} }; host.messages.length = 0;
+  lobby.pluginsChanged(room.content.vs, ['skin'], 'visual');
+  lobby.pluginsChanged(room.content.cs, ['rules'], 'content');
+  assert.deepEqual(room.pluginsChanged, ['skin', 'rules']);
+  assert.equal(host.messages.length, 0);
+  room.match = null; lobby.tellPluginsChanged(room);
+  assert.equal(host.messages.length, 1);
+  assert.match(JSON.stringify(host.messages[0]), /skin、rules/);
+});

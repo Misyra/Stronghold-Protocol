@@ -6,6 +6,7 @@
 // player-interface strings.
 
 import { TICK } from '../../constants.js';
+import { dslLiteralProblem } from './bounds.js';
 import {
   TRIGGERS, CONDITIONS, ACTIONS, TARGETS, META_TRIGGERS, META_ACTIONS, VALUE_OPS, SKILL_KINDS, STAT_NAMES,
   PLUGIN_ID_RE,
@@ -38,55 +39,129 @@ const TIMES_MAX = 8;
 // [ASSUMED] The design study caps plugin JSON nesting at 64. Each top-level value expression gets its own
 // budget of 64 nodes and 64 levels. Past that, validateDsl returns PLUGIN_DSL_LOOP / PLUGIN_DSL_VALUE instead
 // of walking until the stack overflows. The schema does not count this (a workbench that trusts only the schema
-// can still accept a deeper expression). WP-A's setupUnitKit catches a thrown kit function and substitutes the
-// generic kit; this package does not change kitOf. 需要别的 WP 配合.
+// can still accept a deeper expression). A PLUGIN_DSL_* throw at kit setup is a content fault, not a generic kit.
 const VALUE_CAP = 64;
 const PREP_CONDITIONS = new Set(['round', 'chance', 'bondActive']);
 const RADIUS_AT = new Set(['self', 'target', 'source', 'lastSpawn']);
 const META_KEY_RE = /^effect:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_\-.:#]+$/;
+const LOCAL_KEY_RE = /^[A-Za-z0-9_\-.:#]+$/;
+// Closed like schemas/dsl.schema.json. The runtime validator is the data-plugin admission gate.
+const TOP_KEYS = new Set(['dsl', 'pluginId', 'budget', 'skill', 'skills', 'talents', 'trait', 'meta']);
+const SKILL_KEYS = new Set(['kind', 'id', 'duration', 'ammo', 'spCost', 'initSp', 'charges', 'maxCharges', 'spType', 'trigger', 'heal', 'activateOnDeploy', 'mods', 'flags', 'targeting', 'attack', 'on']);
+const TARGET_KEYS = new Set(['rangeGrid', 'priority', 'maxTargets', 'rangeExtend', 'noRangeExtend', 'showOwnRange', 'allInRange']);
+const ATTACK_KEYS = new Set(['atkScale', 'splashRadius', 'maxTargets', 'dmgType', 'onHitStatus']);
+const TRAIT_KEYS = new Set(['onHitStatus', 'mods']);
+const TALENT_KEYS = new Set(['when', 'seconds', 'below', 'cooldown', 'if', 'do']);
+const ON_KEYS = new Set(['start', 'end', 'hit', 'attack', 'tick']);
+const META_KEYS = new Set(['key', 'on']);
+const PREP_ENTRY_KEYS = new Set(['when', 'if', 'do']);
+const PREP_BODY_KEYS = Object.freeze({
+  funds: new Set(['amount', 'setIncome']),
+  layers: new Set(['amount', 'bond']),
+  gainItem: new Set(['item']),
+});
+const ACTION_BODY_KEYS = Object.freeze({
+  damage: new Set(['target', 'amount', 'times', 'type', 'isSkill', 'isAttack', 'canDodge', 'tags', 'lose', 'minRemain', 'from', 'then']),
+  heal: new Set(['target', 'amount', 'then']),
+  sp: new Set(['target', 'amount', 'then']),
+  dp: new Set(['target', 'amount', 'fx', 'then']),
+  push: new Set(['target', 'force', 'effect', 'then']),
+  pull: new Set(['target', 'force', 'then']),
+  status: new Set(['target', 'key', 'duration', 'value', 'then']),
+  buff: new Set(['target', 'key', 'mods', 'duration', 'persist', 'tags', 'then']),
+  fx: new Set(['target', 'kind', 'at', 'radius', 'skill', 'token', 'n', 'dur', 'id', 'then']),
+  spawnToken: new Set(['target', 'token', 'tile', 'mem', 'fx', 'stop', 'duration', 'then']),
+  layers: new Set(['target', 'amount', 'bond', 'then']),
+  shield: new Set(['target', 'key', 'amount', 'hits', 'duration', 'visible', 'then']),
+});
+// Direct literals are checked against the official snapshot only when the caller asks (the builder and the
+// compiler). A scan that has not installed the snapshot stays shape-only, so the floor of 64 is not an admission cap.
+let admitBounds = false;
 
 function isObj(v) {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
+function rejectUnknown(obj, allowed, path, code, fail, label) {
+  const extra = Object.keys(obj).filter((k) => !allowed.has(k) && !FORBIDDEN.has(k));
+  if (!extra.length) return;
+  const at = path ? `${path}.${extra[0]}` : extra[0];
+  fail(code, at, `${label} ${extra.join(', ')}`);
+}
+
 /**
  * @param {object} spec
+ * @param {{ bounds?: boolean }} [opts] `bounds: true` admits direct literals against the installed official snapshot.
  * @returns {{ ok: boolean, problems: { code: string, path: string, zh: string }[] }}
  */
-export function validateDsl(spec) {
+export function validateDsl(spec, opts = {}) {
   const problems = [];
   const fail = (code, path, zh) => {
     if (problems.length < 40) problems.push({ code, path, zh });
   };
-  if (!isObj(spec)) {
-    fail('PLUGIN_DSL_SHAPE', '', 'DSL 规格必须是对象');
-    return { ok: false, problems };
+  const prevBounds = admitBounds;
+  admitBounds = opts.bounds === true;
+  try {
+    if (!isObj(spec)) {
+      fail('PLUGIN_DSL_SHAPE', '', 'DSL 规格必须是对象');
+      return { ok: false, problems };
+    }
+    if (spec.dsl !== 1) fail('PLUGIN_DSL_VERSION', 'dsl', '只接受 dsl 版本 1');
+    if (spec.pluginId != null && (typeof spec.pluginId !== 'string' || !PLUGIN_ID_RE.test(spec.pluginId))) {
+      fail('PLUGIN_DSL_PLUGIN_ID', 'pluginId', '插件 id 只能是 1–64 位字母、数字、下划线或连字符');
+    }
+    if (spec.budget != null && !(Number.isInteger(spec.budget) && spec.budget > 0 && spec.budget <= BUDGET_MAX)) {
+      fail('PLUGIN_DSL_BUDGET', 'budget', '动作预算必须是 1 到 10000000 的整数');
+    }
+    for (const k of Object.keys(spec)) if (FORBIDDEN.has(k)) fail('PLUGIN_DSL_LOOP', k, 'DSL 不接受循环或外部代码');
+    rejectUnknown(spec, TOP_KEYS, '', 'PLUGIN_DSL_SHAPE', fail, '未知字段');
+    if (spec.skill != null) walkSkill(spec.skill, 'skill', fail);
+    if (spec.skills != null) {
+      if (!isObj(spec.skills)) fail('PLUGIN_DSL_SKILL', 'skills', 'skills 必须是技能 id 到规格的对象');
+      else for (const [id, sk] of Object.entries(spec.skills)) walkSkill(sk, `skills.${id}`, fail);
+    }
+    if (spec.talents != null) {
+      if (!Array.isArray(spec.talents)) fail('PLUGIN_DSL_TALENT', 'talents', 'talents 必须是数组');
+      else spec.talents.forEach((t, i) => walkTalent(t, `talents[${i}]`, fail));
+    }
+    if (spec.trait != null) walkTrait(spec.trait, 'trait', fail);
+    if (spec.meta != null) walkMeta(spec.meta, 'meta', fail);
+    return { ok: problems.length === 0, problems };
+  } finally {
+    admitBounds = prevBounds;
   }
-  if (spec.dsl !== 1) fail('PLUGIN_DSL_VERSION', 'dsl', '只接受 dsl 版本 1');
-  if (spec.pluginId != null && (typeof spec.pluginId !== 'string' || !PLUGIN_ID_RE.test(spec.pluginId))) {
-    fail('PLUGIN_DSL_PLUGIN_ID', 'pluginId', '插件 id 只能是 1–64 位字母、数字、下划线或连字符');
+}
+
+/**
+ * Prep spec for one host plugin. Shape comes from validateDsl; the key must be `effect:<pluginId>:<local>`
+ * and meta.on must be a non-empty array. The host repeats this check when it registers the spec.
+ * @param {object} spec
+ * @param {string} pluginId
+ */
+export function validatePrepSpec(spec, pluginId) {
+  const checked = validateDsl(spec, { bounds: true });
+  if (!checked.ok) return checked;
+  const problems = [];
+  const fail = (code, path, zh) => problems.push({ code, path, zh });
+  if (spec.pluginId != null && spec.pluginId !== pluginId) {
+    fail('PLUGIN_DSL_PLUGIN_ID', 'pluginId', '规格里的 pluginId 与宿主不一致');
   }
-  if (spec.budget != null && !(Number.isInteger(spec.budget) && spec.budget > 0 && spec.budget <= BUDGET_MAX)) {
-    fail('PLUGIN_DSL_BUDGET', 'budget', '动作预算必须是 1 到 10000000 的整数');
+  const key = spec.meta && spec.meta.key;
+  const prefix = `effect:${pluginId}:`;
+  const local = typeof key === 'string' && key.startsWith(prefix) ? key.slice(prefix.length) : '';
+  if (typeof key !== 'string' || !local || !LOCAL_KEY_RE.test(local) || !META_KEY_RE.test(key)) {
+    fail('PLUGIN_DSL_META', 'meta.key', `插件键必须是 effect:${pluginId}:<本地名>`);
   }
-  for (const k of Object.keys(spec)) if (FORBIDDEN.has(k)) fail('PLUGIN_DSL_LOOP', k, 'DSL 不接受循环或外部代码');
-  if (spec.skill != null) walkSkill(spec.skill, 'skill', fail);
-  if (spec.skills != null) {
-    if (!isObj(spec.skills)) fail('PLUGIN_DSL_SKILL', 'skills', 'skills 必须是技能 id 到规格的对象');
-    else for (const [id, sk] of Object.entries(spec.skills)) walkSkill(sk, `skills.${id}`, fail);
+  if (!Array.isArray(spec.meta?.on) || spec.meta.on.length < 1) {
+    fail('PLUGIN_DSL_META', 'meta.on', '备战 DSL 需要至少一条 meta.on');
   }
-  if (spec.talents != null) {
-    if (!Array.isArray(spec.talents)) fail('PLUGIN_DSL_TALENT', 'talents', 'talents 必须是数组');
-    else spec.talents.forEach((t, i) => walkTalent(t, `talents[${i}]`, fail));
-  }
-  if (spec.trait != null) walkTrait(spec.trait, 'trait', fail);
-  if (spec.meta != null) walkMeta(spec.meta, 'meta', fail);
   return { ok: problems.length === 0, problems };
 }
 
 function walkSkill(sk, path, fail) {
   if (!isObj(sk)) { fail('PLUGIN_DSL_SKILL', path, '技能规格必须是对象'); return; }
   rejectForbidden(sk, path, fail);
+  rejectUnknown(sk, SKILL_KEYS, path, 'PLUGIN_DSL_SKILL', fail, '未知技能字段');
   if (sk.kind != null && !SKILL_KINDS.includes(sk.kind)) fail('PLUGIN_DSL_SKILL', `${path}.kind`, `未知技能类型 ${sk.kind}`);
   for (const k of ['duration', 'ammo', 'spCost', 'initSp', 'charges', 'maxCharges']) {
     if (sk[k] != null) walkValue(sk[k], `${path}.${k}`, fail);
@@ -98,6 +173,7 @@ function walkSkill(sk, path, fail) {
   if (sk.on != null) {
     if (!isObj(sk.on)) fail('PLUGIN_DSL_SKILL', `${path}.on`, 'on 必须是对象');
     else {
+      rejectUnknown(sk.on, ON_KEYS, `${path}.on`, 'PLUGIN_DSL_SKILL', fail, '未知 on 槽');
       for (const slot of ['start', 'end', 'hit', 'attack', 'tick']) {
         if (sk.on[slot] != null) walkActions(sk.on[slot], `${path}.on.${slot}`, fail, 0);
       }
@@ -107,6 +183,7 @@ function walkSkill(sk, path, fail) {
 
 function walkTargeting(tg, path, fail) {
   if (!isObj(tg)) { fail('PLUGIN_DSL_SKILL', path, 'targeting 必须是对象'); return; }
+  rejectUnknown(tg, TARGET_KEYS, path, 'PLUGIN_DSL_SKILL', fail, '未知 targeting 字段');
   if (tg.rangeGrid != null && tg.rangeGrid !== 'skill' && tg.rangeGrid !== 'own' && !Array.isArray(tg.rangeGrid)) {
     fail('PLUGIN_DSL_SKILL', `${path}.rangeGrid`, 'rangeGrid 只能是 "skill"、"own" 或偏移数组');
   }
@@ -116,6 +193,7 @@ function walkTargeting(tg, path, fail) {
 
 function walkAttack(atk, path, fail) {
   if (!isObj(atk)) { fail('PLUGIN_DSL_SKILL', path, 'attack 必须是对象'); return; }
+  rejectUnknown(atk, ATTACK_KEYS, path, 'PLUGIN_DSL_SKILL', fail, '未知 attack 字段');
   for (const k of ['atkScale', 'splashRadius', 'maxTargets']) if (atk[k] != null) walkValue(atk[k], `${path}.${k}`, fail);
   if (atk.onHitStatus != null) {
     if (!isObj(atk.onHitStatus) || typeof atk.onHitStatus.key !== 'string') fail('PLUGIN_DSL_SKILL', `${path}.onHitStatus`, 'onHitStatus 需要 key');
@@ -125,6 +203,7 @@ function walkAttack(atk, path, fail) {
 
 function walkTrait(tr, path, fail) {
   if (!isObj(tr)) { fail('PLUGIN_DSL_SKILL', path, 'trait 必须是对象'); return; }
+  rejectUnknown(tr, TRAIT_KEYS, path, 'PLUGIN_DSL_SKILL', fail, '未知 trait 字段');
   if (tr.onHitStatus != null) {
     if (!isObj(tr.onHitStatus) || typeof tr.onHitStatus.key !== 'string') fail('PLUGIN_DSL_SKILL', `${path}.onHitStatus`, '特性 onHitStatus 需要 key');
     else if (tr.onHitStatus.duration != null) walkValue(tr.onHitStatus.duration, `${path}.onHitStatus.duration`, fail);
@@ -135,6 +214,7 @@ function walkTrait(tr, path, fail) {
 function walkTalent(t, path, fail) {
   if (!isObj(t)) { fail('PLUGIN_DSL_TALENT', path, '天赋必须是对象'); return; }
   rejectForbidden(t, path, fail);
+  rejectUnknown(t, TALENT_KEYS, path, 'PLUGIN_DSL_TALENT', fail, '未知天赋字段');
   if (!TRIGGERS.includes(t.when)) fail('PLUGIN_DSL_TRIGGER', `${path}.when`, `未知触发器 ${String(t.when)}`);
   if (t.when === 'every') {
     if (typeof t.seconds !== 'number' || !Number.isFinite(t.seconds) || t.seconds < TICK - 1e-12) {
@@ -157,8 +237,21 @@ function walkCond(cond, path, fail) {
     if (!CONDITIONS.includes(k)) { fail('PLUGIN_DSL_CONDITION', `${path}.${k}`, `未知条件 ${k}`); continue; }
     if (k === 'chance' || k === 'selfHpBelow' || k === 'enemiesInRange') walkValue(v, `${path}.${k}`, fail);
     if (k === 'bondActive' && isObj(v)) {
+      const extra = Object.keys(v).filter((x) => x !== 'id' && x !== 'tier');
+      if (extra.length) fail('PLUGIN_DSL_CONDITION', `${path}.bondActive.${extra[0]}`, `未知条件字段 ${extra.join(', ')}`);
       if (v.tier != null) walkValue(v.tier, `${path}.bondActive.tier`, fail);
       if (typeof v.id !== 'string' || !v.id) fail('PLUGIN_DSL_CONDITION', `${path}.bondActive.id`, 'bondActive 需要盟约 id');
+    }
+    if (k === 'targetHas') {
+      if (typeof v === 'string') {
+        if (!v) fail('PLUGIN_DSL_CONDITION', `${path}.targetHas`, 'targetHas 需要状态名');
+      } else if (isObj(v)) {
+        const extra = Object.keys(v).filter((x) => x !== 'key');
+        if (extra.length || typeof v.key !== 'string' || !v.key) fail('PLUGIN_DSL_CONDITION', `${path}.targetHas`, 'targetHas 只能是状态名或 {key}');
+      } else fail('PLUGIN_DSL_CONDITION', `${path}.targetHas`, 'targetHas 只能是状态名或 {key}');
+    }
+    if (k === 'skillActive' && v != null && typeof v !== 'boolean' && typeof v !== 'string') {
+      fail('PLUGIN_DSL_CONDITION', `${path}.skillActive`, 'skillActive 必须是布尔值或技能 id');
     }
   }
 }
@@ -187,6 +280,8 @@ function walkActions(list, path, fail, depth) {
 
 function walkActionBody(verb, body, path, fail) {
   if (!isObj(body)) { fail('PLUGIN_DSL_ACTION', path, '动作参数必须是对象'); return; }
+  const allowed = ACTION_BODY_KEYS[verb];
+  if (allowed) rejectUnknown(body, allowed, path, 'PLUGIN_DSL_ACTION', fail, '未知动作参数');
   if (body.target != null) walkTarget(body.target, `${path}.target`, fail);
   if (verb === 'damage') {
     if (body.amount != null) walkValue(body.amount, `${path}.amount`, fail);
@@ -261,6 +356,10 @@ function walkValue(expr, path, fail, depth = 1, budget = null) {
   if (b.n > VALUE_CAP) { fail('PLUGIN_DSL_VALUE', path, '取值节点超过 64 个'); return; }
   if (typeof expr === 'number') {
     if (!Number.isFinite(expr)) fail('PLUGIN_DSL_NUMBER', path, '数值必须是有限数');
+    else if (admitBounds) {
+      const zh = dslLiteralProblem(path, expr);
+      if (zh) fail('PLUGIN_DATA_BOUND', path, zh);
+    }
     return;
   }
   if (typeof expr === 'string' || typeof expr === 'boolean' || expr == null) return;
@@ -321,8 +420,8 @@ function literalDiv0(xs, path, fail) {
 
 function walkMeta(meta, path, fail) {
   if (!isObj(meta)) { fail('PLUGIN_DSL_META', path, 'meta 必须是对象'); return; }
-  // Shape only. Whether the id segment is this plugin's host id is registerDslMeta's check: the schema cannot
-  // compare it to spec.pluginId, and validateDsl stays on the same pattern so the two agree.
+  rejectUnknown(meta, META_KEYS, path, 'PLUGIN_DSL_META', fail, '未知 meta 字段');
+  // Shape only. Whether the id segment is this plugin's host id is validatePrepSpec / registerDslMeta.
   if (meta.key != null && (typeof meta.key !== 'string' || !META_KEY_RE.test(meta.key))) {
     fail('PLUGIN_DSL_META', `${path}.key`, '插件键只接受 effect:<插件 id>:<本地名>');
   }
@@ -330,6 +429,7 @@ function walkMeta(meta, path, fail) {
   (meta.on || []).forEach((e, i) => {
     const at = `${path}.on[${i}]`;
     if (!isObj(e)) { fail('PLUGIN_DSL_META', at, '备战条目必须是对象'); return; }
+    rejectUnknown(e, PREP_ENTRY_KEYS, at, 'PLUGIN_DSL_META', fail, '未知备战字段');
     if (!META_TRIGGERS.includes(e.when)) fail('PLUGIN_DSL_TRIGGER', `${at}.when`, `未知备战触发器 ${String(e.when)}`);
     if (e.if != null) walkPrepCond(e.if, `${at}.if`, fail);
     if (e.do != null) {
@@ -368,11 +468,15 @@ function walkPrepCond(cond, path, fail) {
 
 function walkPrepAction(node, path, fail) {
   if (!isObj(node)) { fail('PLUGIN_DSL_ACTION', path, '备战动作必须是对象'); return; }
+  const extra = Object.keys(node).filter((k) => !META_ACTIONS.includes(k));
+  if (extra.length) fail('PLUGIN_DSL_ACTION', path, `未知备战字段 ${extra.join(', ')}`);
   const verbs = META_ACTIONS.filter((k) => Object.prototype.hasOwnProperty.call(node, k));
   if (verbs.length !== 1) fail('PLUGIN_DSL_ACTION', path, '备战动作只能是 funds、layers 或 gainItem');
   const verb = verbs[0];
   const body = verb ? node[verb] : null;
-  if (!isObj(body)) return;
+  if (!verb) return;
+  if (!isObj(body)) { fail('PLUGIN_DSL_ACTION', `${path}.${verb}`, '备战动作的参数必须是对象'); return; }
+  rejectUnknown(body, PREP_BODY_KEYS[verb], `${path}.${verb}`, 'PLUGIN_DSL_ACTION', fail, '未知备战参数');
   if (verb === 'funds' || verb === 'layers') {
     if (body.amount != null) walkValue(body.amount, `${path}.amount`, fail);
   }

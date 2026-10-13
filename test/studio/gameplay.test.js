@@ -16,6 +16,7 @@ import { dslExample } from '../../server/studio/dslExamples.js';
 import { makeBattle, enemyRec } from '../helpers/battleHarness.js';
 import { DataSource } from '../../server/sim/simdata.js';
 import { setGameData } from '../../server/sim/content/support/index.js';
+import { forgetOfficialBounds } from '../../shared/plugins/officialBounds.js';
 
 export function makePlugin(f, template, id, options = {}) {
   const made = createPlugin(templateById(template), { id, options });
@@ -31,24 +32,19 @@ for (const template of TEMPLATES.filter(t => t.build)) test(`new ${template.id} 
   const check = checkPluginFolder(dir);
   f.registry.rescan();
   const set = template.class === 'content' ? buildContentSet({ registry: f.registry, ids: [id] }) : null;
-  if (['dsl', 'meta'].includes(template.id) && (check.problems.length || check.warnings.length || set.problems.length)) {
-    // WP-A2 is not in this task's base. Fail for unexpected diagnostics; re-enable full assertions after its merge.
-    const codes = [...check.issues, ...set.problems].map(p => p.code);
-    assert.ok(codes.every(c => ['PLUGIN_DSL_UNAVAILABLE','PLUGIN_PERMISSION_UNUSED','PLUGIN_RECORD_TYPE','PLUGIN_UNKNOWN'].includes(c)), JSON.stringify(codes));
-    t.skip('WP-A2 DSL data integration is absent; template format and direct battle are covered separately'); return;
-  }
   const cliCheck = spawnSync(process.execPath, ['tools/plugin.mjs', 'check', dir, '--strict'], { encoding: 'utf8' });
   assert.equal(cliCheck.status, 0, cliCheck.stdout + cliCheck.stderr);
   assert.deepEqual(check.problems, []); assert.deepEqual(check.warnings, []);
   assert.equal(packPlugin(dir).wrote, true);
   assert.ok(zipPlugin(dir).body.length > 100);
   if (set) assert.deepEqual(set.problems, []);
-  if (template.id === 'operator') {
-    const id0 = `chess_x_studio_operator_one_a`;
+  if (['operator', 'dsl'].includes(template.id)) {
+    const id0 = template.id === 'dsl' ? 'chess_x_studio_dsl_caster_a' : 'chess_x_studio_operator_one_a';
     assert.ok(set.data.chess[id0.replace(/_a$/, '_b')]);
     setGameData(set.data); t.after(() => setGameData(null));
     const h = makeBattle({ data: new DataSource(set.data), units: [{ chessId: id0, row: 10, col: 5 }], timeLimit: 1 });
     h.step(); assert.equal(h.allies().length, 1); assert.ok(!h.allies()[0].kit.generic);
+    if (template.id === 'dsl') assert.equal(h.allies()[0].s.atk, 300, 'the composed DSL kit applies +50% ATK');
   }
 });
 
@@ -104,4 +100,14 @@ test('mode wizard economy, DP and round timers reach GameData while the base mod
   assert.equal(changed.income(1), 20); assert.equal(changed.income(10), 20);
   assert.equal(changed.refreshPrice, 2); assert.equal(changed.prepTime(1), 45); assert.equal(changed.timer('infoCheck'), 8);
   assert.equal(changed.dp.dpInit, 20); assert.notEqual(original.income(1), 20);
+});
+
+test('the editor\'s DSL check applies the official caps the build applies: a literal over them is refused before saving', t => {
+  forgetOfficialBounds();   // a fresh studio process: nothing has read the vanilla tables yet
+  const f = fixture(t);
+  const author = createAuthoring({ files: createPluginFiles(path.join(f.dir, 'plugins')), dataDir: path.resolve('data') });
+  const over = author.validate({ dsl: 1, skill: { kind: 'passive', mods: { atkPct: 750 } } });
+  assert.equal(over.ok, false);
+  assert.match(JSON.stringify(over.problems), /skill\.mods\.atkPct/);
+  assert.equal(author.validate({ dsl: 1, skill: { kind: 'passive', mods: { atkPct: 0.75 } } }).ok, true);
 });

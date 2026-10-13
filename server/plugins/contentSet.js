@@ -1,7 +1,5 @@
 // C1 immutable content compositions (DESIGN §32.5). HTTP and room ownership belong to WP-B.
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ROOT, DATA_DIR, deepFreeze } from '../data.js';
 import { DATA_SHIM_JS } from '../http/static.js';
@@ -17,6 +15,9 @@ import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
 import { KITTED_CHARS } from '../sim/content/kits/index.js';
 import { exportOfficialBounds, rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
+import { browserScriptSources } from '../../shared/plugins/scriptLoad.js';
+import { preflightScripts } from './scriptPreflight.js';
+import { validateDsl, validatePrepSpec } from '../sim/content/dsl/validate.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 function baseFor(registry) {
@@ -89,6 +90,97 @@ function translations(data, initial, plugins) {
   return { out, problems };
 }
 
+/** Explicit DSL values on chess records, backup units, and backup forms. The owner key is the record, not the form. */
+function dslSites(data) {
+  const out = new Map();
+  const put = (path, owner, value) => { if (value !== undefined) out.set(path, { owner, json: canonicalJson(value) }); };
+  for (const [id, rec] of Object.entries(data?.chess ?? {})) {
+    if (rec && rec.dsl != null) put(`chess.${id}.dsl`, `chess.${id}`, rec.dsl);
+  }
+  for (const [id, rec] of Object.entries(data?.backups?.units ?? {})) {
+    if (!rec || typeof rec !== 'object') continue;
+    if (rec.dsl != null) put(`units.${id}.dsl`, `units.${id}`, rec.dsl);
+    if (rec.forms && typeof rec.forms === 'object') {
+      for (const [status, form] of Object.entries(rec.forms)) {
+        if (form && form.dsl != null) put(`units.${id}.forms.${status}.dsl`, `units.${id}`, form.dsl);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * A changed DSL value needs the dsl permission and must be written by the record's owner.
+ * Another plugin cannot rewrite it, even with requires. An official record has no owner.
+ */
+function dslWriterProblems(before, after, plugin, owners) {
+  const problems = [];
+  const prev = dslSites(before), next = dslSites(after);
+  const has = plugin.manifest.permissions.includes('dsl');
+  for (const path of new Set([...prev.keys(), ...next.keys()])) {
+    const a = prev.get(path), b = next.get(path);
+    if (a && b && a.json === b.json) continue;
+    const ownerKey = (b ?? a).owner;
+    if (!has) problems.push({ ...problem('PLUGIN_CONTENT_PERMISSION', path, 'DSL requires the dsl permission'), plugin: plugin.id });
+    if (owners.get(ownerKey) !== plugin.id) problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', path, 'only the record owner may write its DSL'), plugin: plugin.id });
+  }
+  return problems;
+}
+
+/** potDown leaves whose path writes dsl or pluginId. Unchanged official leaves are not reported. */
+function potDownSites(data) {
+  const out = new Map();
+  const walk = (node, path) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) walk(node[i], `${path}[${i}]`);
+      return;
+    }
+    if (object(node.potDown)) {
+      for (const [rank, step] of Object.entries(node.potDown)) {
+        if (!object(step)) continue;
+        for (const [leaf, value] of Object.entries(step)) {
+          if (String(leaf).split('.').some((seg) => seg === 'dsl' || seg === 'pluginId')) out.set(`${path}.potDown.${rank}.${leaf}`, canonicalJson(value));
+        }
+      }
+    }
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'potDown' || !v || typeof v !== 'object') continue;
+      walk(v, path ? `${path}.${k}` : k);
+    }
+  };
+  walk(data, '');
+  return out;
+}
+
+function potDownProblems(before, after, plugin) {
+  const problems = [];
+  const prev = potDownSites(before), next = potDownSites(after);
+  const bad = (path) => problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', path, 'potDown cannot write dsl or pluginId'), plugin: plugin.id });
+  for (const [path, json] of next) if (prev.get(path) !== json) bad(path);
+  for (const path of prev.keys()) if (!next.has(path)) bad(path);
+  return problems;
+}
+
+/** Prep specs from the manifest dsl part. A bad spec, a foreign key, or an empty meta.on refuses the whole set. */
+function prepSpecs(plugin) {
+  const problems = [], specs = [];
+  for (const rel of plugin.manifest.parts.dsl?.files ?? []) {
+    if (!plugin.manifest.permissions.includes('dsl')) {
+      problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'dsl files require the dsl permission'));
+      continue;
+    }
+    const doc = plugin.content.documents[rel];
+    const checked = validatePrepSpec(doc, plugin.id);
+    if (!checked.ok) {
+      for (const p of checked.problems) problems.push(problem(p.code, p.path ? `${rel}.${p.path}` : rel, p.zh));
+      continue;
+    }
+    specs.push(doc);
+  }
+  return { problems, specs };
+}
+
 function routesChanged(before, after) {
   if (!before || !after) return true;
   return canonicalJson(before.routes ?? []) !== canonicalJson(after.routes ?? [])
@@ -122,7 +214,9 @@ function composeContentSet({ registry, ids = [] }) {
   if (collisions.length) return { problems: collisions };
   const plugins = resolved.order.map(usable).filter(p => ['content','script','trusted'].includes(p.class)), settings = {}, owners = new Map();
   let data = base.data;
-  const problems = [], warnings = [], writes = new Map();
+  // Install the vanilla snapshot before expand/validate so a DSL literal uses the real cap, not the floor.
+  rememberOfficialBounds(base.data);
+  const problems = [], warnings = [], writes = new Map(), prepById = new Map();
   for (const p of plugins) {
     settings[p.id] = normalizeSettings(p.manifest.settings, selected.find(v => v.id === p.id)?.settings);
     const before = data;
@@ -130,6 +224,11 @@ function composeContentSet({ registry, ids = [] }) {
       const doc = p.content.documents[rel];
       let r;
       if (part === 'data' && doc.patch === 1) {
+        // data.dsl is attached only after every ordinary patch. A patch must not write that reserved table.
+        if (Array.isArray(doc.ops) && doc.ops.some((op) => op && op.file === 'dsl')) {
+          problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', rel, 'data patches cannot write the reserved dsl table'), plugin: p.id });
+          continue;
+        }
         if (doc.ops.some(op => !p.manifest.permissions.includes(op.op === 'add' ? 'data.add' : 'data.patch'))) { problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'patch operation lacks permission')); continue; }
         for (const op of doc.ops) {
           const at = [op.file, op.id, ...(op.path ?? [])].filter(x => x !== undefined).join('.');
@@ -140,16 +239,36 @@ function composeContentSet({ registry, ids = [] }) {
       } else {
         if (!p.manifest.permissions.includes('data.add')) { problems.push(problem('PLUGIN_CONTENT_PERMISSION', rel, 'records require data.add')); continue; }
         const entries = part === 'data' ? doc.entries : (Array.isArray(doc) ? doc : [doc]).map(v => part === 'operators' ? v : { ...v, file: part });
-        r = expandRecords(data, entries, { pluginId: p.id });
+        r = expandRecords(data, entries, { pluginId: p.id, validateDsl });
       }
       problems.push(...r.problems.map(e => ({ ...e, plugin: p.id, file: rel })));
       data = r.data;
     }
     problems.push(...writesAllowed(before, data, p, owners));
+    problems.push(...dslWriterProblems(before, data, p, owners));
+    problems.push(...potDownProblems(before, data, p));
+    const prep = prepSpecs(p);
+    problems.push(...prep.problems.map(e => ({ ...e, plugin: p.id })));
+    if (prep.specs.length) prepById.set(p.id, prep.specs);
   }
   if (problems.length) return { problems };
+  if (prepById.size) {
+    const table = {};
+    for (const [id, specs] of prepById) {
+      if (!Array.isArray(specs)) { problems.push(problem('PLUGIN_DSL_SHAPE', `dsl.${id}`, 'prep specs must be an array')); continue; }
+      for (const spec of specs) {
+        const checked = validatePrepSpec(spec, id);
+        if (!checked.ok) for (const item of checked.problems) problems.push(problem(item.code, item.path ? `dsl.${id}.${item.path}` : `dsl.${id}`, item.zh));
+      }
+      table[id] = specs;
+    }
+    if (problems.length) return { problems };
+    // A dsl-only plugin never clones. base.data is frozen; attach the private table only after ordinary patches.
+    if (data === base.data || Object.isFrozen(data)) data = clone(data);
+    data.dsl = table;
+  }
   if (plugins.length) {
-    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data }));
+    problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners, validateDsl }));
     if (problems.length) return { problems };
     data = { ...data, stages: { ...data.stages } };
     const routes = Object.values(data.waves).flatMap(w => [...(w.routes ?? []), ...(w.extraRoutes ?? [])]);
@@ -171,15 +290,20 @@ function composeContentSet({ registry, ids = [] }) {
   const bodies = new Map(base.files), files = {}, hashes = {};
   for (const [name, rec] of Object.entries(data)) {
     const rel = `data/${name}.json`;
-    if (canonicalJson(rec) !== canonicalJson(base.data[name])) bodies.set(rel, Buffer.from(JSON.stringify(rec)));
+    // A new table (data/dsl.json) has no base bytes. canonicalJson(undefined) throws, so a missing key is always written.
+    if (!Object.hasOwn(base.data, name) || canonicalJson(rec) !== canonicalJson(base.data[name])) bodies.set(rel, Buffer.from(JSON.stringify(rec)));
     const body = bodies.get(rel); hashes[name] = nodeSha256(body);
   }
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));
   const boundsSnap = exportOfficialBounds(rememberOfficialBounds(base.data));
   if (plugins.length) bodies.set('bounds/official.json', Buffer.from(canonicalJson(boundsSnap)));
   const scripts = plugins.filter(p => p.script).map(p => ({ id:p.id, version:p.manifest.version, class:p.class,
-    hash:p.script.lockHash, permissions:p.manifest.permissions, authors:p.manifest.authors,
+    execution:p.script.execution || 'trusted', hash:p.script.lockHash, permissions:p.manifest.permissions, authors:p.manifest.authors,
     manifestSource:p.script.manifestSource, sources:p.script.sources }));
+  // [ASSUMED] Any trusted member makes the whole composition native; sandbox mode cannot enable trusted classes.
+  if (scripts.some(p => p.class === 'trusted')) for (const p of scripts) p.execution = 'trusted';
+  for (const p of scripts) if (p.execution === 'trusted') p.browserSources = browserScriptSources(p);
+  const execution = scripts[0]?.execution;
   const scriptHashes = {};
   for (const p of scripts) {
     const body = Buffer.from(JSON.stringify(p));
@@ -197,26 +321,26 @@ function composeContentSet({ registry, ids = [] }) {
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
   if (scripts.length) {
-    // A disposable child validates actual registrations; the main process never imports author code.
-    const probe = spawnSync(process.execPath,[fileURLToPath(new URL('./scriptProbe.js',import.meta.url))],{
-      input:JSON.stringify({scripts,hashInput:{plugins:parts,settings}}), encoding:'utf8', timeout:10000,
-      maxBuffer:8*1024*1024, stdio:['pipe','ignore','pipe','pipe'],
-    });
-    let report;
-    try { report = JSON.parse(probe.output[3]); } catch { report = {code:'PLUGIN_SCRIPT_CHECK',message:'script setup failed or exceeded 10 seconds'}; }
-    if (probe.status !== 0 || report.code) return {problems:[problem(report.code || 'PLUGIN_SCRIPT_CHECK','scripts',report.message || 'setup failed')]};
+    const report = preflightScripts(registry,scripts,{plugins:parts,settings});
+    if (report) return {problems:[problem(report.code,'scripts',report.message)]};
   }
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
-  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {}, ...(scripts.length ? {scripts:{}} : {}) };
+  const index = vanilla ? base.identity.index : { ...base.identity.index, cs, vanilla: false, plugins: parts, settings, data: {}, i18n: {}, bounds: {}, ...(scripts.length ? {scripts:{}, execution} : {}) };
   if (!vanilla) for (const [rel, f] of Object.entries(files)) {
     const url = base.files.get(rel)?.equals(bodies.get(rel)) ? `/data/${rel.replace(/^(data\/)/, '')}?v=${f.sha256.slice(0, 8)}` : `/cs/${csUrlPart(cs)}/${rel}`;
     const [section, name] = rel.split('/');
     index[section][name.slice(0, -5)] = { url, ...f };
   }
   const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
-    data, files, ...(scripts.length ? {scripts} : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
+    data, files, ...(scripts.length ? {scripts, execution} : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
     kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id))] });
+  // Executable routes use the descriptor's already hashed browser bytes; keep the JSON index table unchanged.
+  if (execution === 'trusted') for (const p of scripts) {
+    const m = JSON.parse(p.manifestSource);
+    for (const rel of new Set([m.entry?.sim, m.entry?.meta, m.entry?.client].filter(Boolean)))
+      bodies.set(`scripts/${p.id}/${rel}`, Buffer.from(p.browserSources[rel]));
+  }
   bodies.set('index.json', Buffer.from(JSON.stringify(index)));
   buffers.set(set, bodies); cache.set(cs, set);
   // [ASSUMED] Keep 32 recently constructed sets per registry. Callers may retain a set and its files indefinitely.

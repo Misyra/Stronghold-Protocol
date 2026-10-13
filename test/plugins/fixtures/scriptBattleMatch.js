@@ -6,7 +6,7 @@ export class Match {
   start(){
     const b=createBattleFromSpec(this.opts.scriptSpec,new DataSource(this.opts.data));
     b.start();for(let i=0;i<90;i++) b.step();
-    this.opts.broadcast({t:'probe',snapshot:b.snapshot(),digest:resultDigest(b.result()),errors:b.errors});
+    this.opts.broadcast({t:'m.result',snapshot:b.snapshot(),digest:resultDigest(b.result()),errors:b.errors});
   }
   dispose(){}
 }

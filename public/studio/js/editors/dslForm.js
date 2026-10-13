@@ -37,7 +37,7 @@ function Value({ value = 0, onChange, source, depth = 0 }) {
   const kinds = ['number','bb','talent','trait','stat', ...(depth < 6 ? ['batMod','mul','add','sub','div','min','max'] : [])];
   return html`<div class="st-value">
     <${Select} label=${t('取值')} value=${kind} options=${kinds} onChange=${select} />
-    ${kind === 'number' ? html`<${NumberField} label=${t('数值')} value=${typeof value === 'number' ? value : 0} onChange=${onChange} />` : null}
+    ${kind === 'number' ? html`<${NumberField} label=${t('数值')} value=${typeof value === 'number' ? value : null} onChange=${onChange} />` : null}
     ${kind === 'bb' || kind === 'trait' ? html`<${Select} label=${t('黑板字段')} value=${value[kind]} options=${[...new Set([value[kind], ...(kind === 'bb' ? bb : trait)])]} onChange=${k => onChange({ ...value, [kind]: k })} />` : null}
     ${kind === 'talent' ? html`<${NumberField} label=${t('天赋序号')} min=${0} max=${20} step=${1} value=${value.talent[0]} onChange=${n => onChange({ talent: [n, value.talent[1]] })} />
       <${Select} label=${t('黑板字段')} value=${value.talent[1]} options=${[...new Set([value.talent[1], ...Object.keys(source?.talents?.[value.talent[0]]?.bb || {})])]} onChange=${key => onChange({ talent: [value.talent[0], key] })} />` : null}
@@ -139,9 +139,11 @@ export function DslForm({ id, spec, onChange, source, meta = false }) {
   const signature = JSON.stringify(spec);
   useEffect(() => {
     let alive = true;
-    const timer = setTimeout(() => post('validate-dsl', { spec }).then(r => { if (alive) setValidation(r); }).catch(() => { if (alive) setValidation(null); }), 200);
+    setValidation(null);
+    const timer = setTimeout(() => post('validate-dsl', { spec }).then(r => { if (alive) setValidation({ ...r, signature }); }).catch(() => { if (alive) setValidation({ failed: true, signature }); }), 200);
     return () => { alive = false; clearTimeout(timer); };
   }, [signature]);
+  const current = validation?.signature === signature ? validation : null;
   const change = patch => onChange({ ...spec, dsl: 1, ...patch });
   const skill = spec.skill;
   return html`<div class="st-dsl" data-testid="dsl-form">
@@ -156,8 +158,8 @@ export function DslForm({ id, spec, onChange, source, meta = false }) {
           </details>`)}
         </fieldset>` : null}
         <h4>${t('天赋')}</h4><${Rules} value=${spec.talents} source=${source} onChange=${talents => change({ talents })} />`}
-    <div class=${`st-banner ${validation?.ok ? 'is-ok' : 'is-warn'}`} data-testid="dsl-validation">
-      ${validation ? validation.ok ? t('DSL 校验通过') : html`<${IssueList} issues=${validation.problems.map(p => ({ code: p.code, level: 'problem', text: p.zh, params: { where: p.path, detail: p.zh } }))} />` : t('正在校验 DSL…')}
+    <div class=${`st-banner ${current?.ok ? 'is-ok' : 'is-warn'}`} data-testid="dsl-validation">
+      ${current?.failed ? t('DSL 校验未完成，规格尚未确认可保存，请重试。') : current ? current.ok ? t('DSL 校验通过') : html`<${IssueList} issues=${current.problems.map(p => ({ code: p.code, level: 'problem', text: p.zh, params: { where: p.path, detail: p.zh } }))} />` : t('正在校验 DSL…')}
     </div>
   </div>`;
 }

@@ -23,6 +23,7 @@ export function NumbersEditor({ draft, onChange }) {
     ${failure ? html`<p class="st-error">${failure}</p>` : null}
     <div class="st-number-list">${fields.filter(f => `${f.name} ${f.path.join('.')} ${fieldLabel(f.path.at(-1))}`.includes(filter)).map(f => html`<div key=${f.key} class="st-number-field">
       <${NumberField} label=${`${f.name} · ${fieldLabel(f.path.at(-1))} (${f.id.endsWith('_b') ? t('精锐（精英二）') : t('普通')})`} value=${edits.find(e => e.key === f.key)?.value ?? f.original} min=${f.min} max=${f.max} onChange=${v => set(f, v)} />
+      ${f.positiveMin ? html`<small>${t('正数不能小于 {min}；0 表示关闭。', { min: f.positiveMin })}</small>` : null}
       <small>${t('原版值：{value}；上限：{max}', { value: f.original, max: f.max })} · ${f.path.join('.')}</small>
     </div>`)}</div>
   </div>`;

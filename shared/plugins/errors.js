@@ -43,6 +43,8 @@ const D = Object.freeze({
   dslBudget: 'docs/PLUGIN-DSL.md#5-预算和重入',
   dslMeta: 'docs/PLUGIN-DSL.md#6-备战',
   studio: 'docs/PLUGINS.md#15-the-studio-and-the-tools',
+  catalog: 'docs/PLUGINS.md#17-the-catalogue-and-installing-by-address-目录与安装',
+  forge: 'docs/PLUGINS.md#16-forge-import',
   guide: 'docs/PLUGIN-GUIDE.md',
 });
 
@@ -68,14 +70,25 @@ export const PLUGIN_ERRORS = Object.freeze({
   PLUGIN_STUDIO_TRIAL_LIMIT: {"level": "studio", "doc": "docs/PLUGINS.md#15-the-studio-and-the-tools", "zh": "这次对战的回放超过了大小上限", "en": "The trial replay exceeded its size limit", "fix": {"zh": "缩短对战时长或减少单位和特效。", "en": "Shorten the trial or reduce units and effects."}},
   PLUGIN_STUDIO_TRIAL_SCENARIO: {"level": "studio", "doc": "docs/PLUGINS.md#15-the-studio-and-the-tools", "zh": "这个试验场景不能运行", "en": "This trial scenario cannot run", "fix": {"zh": "选择有效的干员、波次和 1–120 秒时长；界面插件用沙箱预览。", "en": "Select valid operators, a wave and 1–120 seconds; use the sandbox preview for UI plugins."}},
 
-  PLUGIN_CONSENT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "还有玩家未同意运行受信任插件", "en": "A player has not consented to trusted plugins", "fix": {"zh": "每个在座玩家须亲自确认当前内容组合的风险提示。", "en": "Every seated player must personally accept the risk for this content set."}},
-  PLUGIN_TRUST_PUBLIC: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "公网监听默认禁止受信任插件", "en": "Trusted plugins are refused on a public listening address", "fix": {"zh": "改为监听本机或局域网；确认风险后可显式使用 trusted-force。", "en": "Bind to a local address, or explicitly opt into trusted-force after reviewing the risk."}},
-  PLUGIN_TRUST_PIN: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "插件的锁文件或文件内容与服主钉住的哈希不符", "en": "The lock or plugin files do not match the owner’s pinned hash", "fix": {"zh": "重新审核并打包，在 plugins/config.json 的 trusted 中填写锁文件的 SHA-256。", "en": "Review and pack again; put the lock file SHA-256 in plugins/config.json trusted."}},
-  PLUGIN_SCRIPTS_DISABLED: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "服主没有启用脚本插件", "en": "The server owner has not enabled script plugins", "fix": {"zh": "审核插件后设置 SP_PLUGIN_SCRIPTS=trusted，并在 config.json 钉住 lock 哈希。", "en": "After reviewing the code set SP_PLUGIN_SCRIPTS=trusted and pin the lock hash in config.json."}},
-  PLUGIN_SCRIPT_CHECK: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "脚本未通过兼容性检查：{detail}", "en": "The script failed its portability check: {detail}", "fix": {"zh": "入口只导入 sp:sdk@1；导出同步 setup(sp)，使用 SDK 和确定性助手。", "en": "Import only sp:sdk@1; export synchronous setup(sp) and use deterministic helpers."}},
-  PLUGIN_SCRIPT_OVERRIDE: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "插件未声明要替换的官方技能", "en": "The plugin did not declare the official kit it replaces", "fix": {"zh": "在清单 overrides 中列出要替换的官方 kit id。", "en": "List the official kit id in manifest overrides."}},
-  PLUGIN_SCRIPT_CONFLICT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3a", "zh": "两个插件注册了同一个效果", "en": "Two plugins register the same effect", "fix": {"zh": "关闭其中一个插件，或让作者改用不同的 id。", "en": "Disable one plugin or use distinct registration ids."}},
+  PLUGIN_CONSENT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "还有玩家未同意运行受信任插件", "en": "A player has not consented to trusted plugins", "fix": {"zh": "每个在座玩家须亲自确认当前内容组合的风险提示。", "en": "Every seated player must personally accept the risk for this content set."}},
+  PLUGIN_TRUST_PUBLIC: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "公网监听默认禁止受信任插件", "en": "Trusted plugins are refused on a public listening address", "fix": {"zh": "改为监听本机或局域网；确认风险后可显式使用 trusted-force。", "en": "Bind to a local address, or explicitly opt into trusted-force after reviewing the risk."}},
+  PLUGIN_TRUST_PIN: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "插件锁文件无效、文件已改变或受信任哈希不符", "en": "The lock is invalid, files changed, or the trusted pin does not match", "fix": {"zh": "重新打包以校验文件；受信任模式还需审核并在 plugins/config.json 的 trusted 中钉住锁文件 SHA-256。", "en": "Repack to verify files; in trusted mode also review and pin the lock SHA-256 in plugins/config.json trusted."}},
+  PLUGIN_SCRIPTS_DISABLED: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "服主没有启用脚本插件", "en": "The server owner has not enabled script plugins", "fix": {"zh": "脚本隔离执行可设置 SP_PLUGIN_SCRIPTS=sandbox；受信任代码需设置 trusted 并审核、钉住 lock 哈希。", "en": "Set SP_PLUGIN_SCRIPTS=sandbox for isolated scripts; native trusted code requires trusted mode, review and a lock pin."}},
+  PLUGIN_SCRIPT_CHECK: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "脚本未通过兼容性检查：{detail}", "en": "The script failed its portability check: {detail}", "fix": {"zh": "入口只导入 sp:sdk@1；导出同步 setup(sp)，使用 SDK 和确定性助手。", "en": "Import only sp:sdk@1; export synchronous setup(sp) and use deterministic helpers."}},
+  PLUGIN_SCRIPT_OVERRIDE: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "插件未声明要替换的官方技能", "en": "The plugin did not declare the official kit it replaces", "fix": {"zh": "在清单 overrides 中列出要替换的官方 kit id。", "en": "List the official kit id in manifest overrides."}},
+  PLUGIN_SCRIPT_CONFLICT: {"level": "refusal", "doc": "docs/PLUGINS.md#13-scripts-p3", "zh": "两个插件注册了同一个效果", "en": "Two plugins register the same effect", "fix": {"zh": "关闭其中一个插件，或让作者改用不同的 id。", "en": "Disable one plugin or use distinct registration ids."}},
   // ---- a room's refusals (room.setPlugins; ERR codes of shared/constants.js) ----------------------------------------
+  PLUGIN_WORKER_TIMEOUT: { level: 'problem', zh: "插件模拟长时间无响应", en: "Plugin simulation did not respond", fix: { zh: "检查插件循环并降低每批模拟的负载", en: "Check plugin loops and reduce simulation work" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_WORKER_FAILED: { level: 'problem', zh: "插件模拟进程出错", en: "Plugin simulation failed", fix: { zh: "查看日志并修复插件", en: "Inspect the log and fix the plugin" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_WORKER_STOPPED: { level: 'problem', zh: "插件模拟已停止", en: "Plugin simulation stopped", fix: { zh: "重新开始本场模拟", en: "Start a new simulation" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_UNAVAILABLE: { level: 'problem', zh: "脚本沙箱未就绪", en: "Script sandbox is unavailable", fix: { zh: "安装依赖并检查 SDK 接口", en: "Install dependencies and check the SDK adapter" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_DISABLED: { level: 'problem', zh: "服务器未开启脚本沙箱", en: "Script sandbox is disabled", fix: { zh: "由服主设置 SP_PLUGIN_SCRIPTS=sandbox", en: "Ask the owner to set SP_PLUGIN_SCRIPTS=sandbox" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_CLASS: { level: 'problem', zh: "此插件类别不能进入脚本沙箱", en: "This plugin class cannot enter the sandbox", fix: { zh: "仅将 script 类插件交给沙箱", en: "Pass only script plugins to SES" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_HASH: { level: 'problem', zh: "脚本文件与内容哈希不符", en: "Script bytes do not match the content hash", fix: { zh: "重新应用插件并校验文件", en: "Reapply the plugin and verify the files" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_IMPORT: { level: 'problem', zh: "脚本导入超出沙箱范围", en: "Script import is outside the sandbox", fix: { zh: "只导入 sp:sdk@1 和插件内相对路径，避免循环导入", en: "Import only sp:sdk@1 and own relative files; avoid cycles" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_SYNTAX: { level: 'problem', zh: "脚本使用了不支持的模块语法", en: "Script uses unsupported module syntax", fix: { zh: "使用同步 setup 和静态导入，参见脚本文档", en: "Use synchronous setup and static imports; see the script reference" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_LIMIT: { level: 'problem', zh: "脚本文件超过沙箱上限", en: "Script source exceeds sandbox limits", fix: { zh: "缩减文件数量和代码体积", en: "Reduce source size and file count" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
+  PLUGIN_SANDBOX_MATH: { level: 'problem', zh: "脚本数学运算超出确定性范围", en: "Script math is outside the deterministic domain", fix: { zh: "只用有限数字，幂指数必须是整数", en: "Use finite numbers and integer exponents" }, doc: 'docs/PLUGINS.md#13-scripts-p3' },
   PLUGIN_UNKNOWN: {
     level: 'refusal', doc: D.cosmetic,
     zh: '本服务器没有安装这个插件', en: 'This server has not installed that plugin',
@@ -574,12 +587,6 @@ export const PLUGIN_ERRORS = Object.freeze({
     zh: '插件的翻译文件不对（{where}）：{detail}', en: 'A translation file of the plugin is not right ({where}): {detail}',
     fix: { zh: '翻译文件写 { "version": 1, "lang": "en", "files": { … } }，lang 和文件名一致；只能替换已有的文字，不能新增字段。', en: 'A translation file is { "version": 1, "lang": "en", "files": { … } } with lang matching its name; it replaces existing text only, never adds a field.' },
   },
-  PLUGIN_DSL_UNAVAILABLE: {
-    level: 'problem', doc: D.dsl,
-    zh: 'DSL 规格放在了这个版本不读的位置（{where}）：{detail}', en: 'A DSL spec sits where this version does not read one ({where}): {detail}',
-    fix: { zh: '干员的 DSL 写在紧凑记录的 "kit": { "dsl": { … } } 里，备战效果写在清单 "dsl" 列出的文件里（权限 "dsl"），见 docs/PLUGIN-DSL.md。', en: 'An operator\'s DSL goes in its compact record as "kit": { "dsl": { … } }, prep effects in the files the manifest\'s "dsl" lists (permission "dsl"); see docs/PLUGIN-DSL.md.' },
-  },
-
   // ---- an interface plugin's manifest (class ui, DESIGN §32.8) -------------------------------------------------------
   PLUGIN_UI_SLOTS: {
     level: 'problem', doc: D.ui,
@@ -699,6 +706,120 @@ export const PLUGIN_ERRORS = Object.freeze({
     level: 'problem', doc: D.dslTriggers,
     zh: '天赋写得不对（{where}）：{detail}', en: 'A talent is not right ({where}): {detail}',
     fix: { zh: '"talents" 是列表，每一项是 { "when": 触发器, "if": 条件, "do": [ 动作 ] } 这样的对象。', en: '"talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }.' },
+  },
+
+  // ---- a community catalogue and installing by address (docs/PLUGINS.md §17) ------------------------------------
+  PLUGIN_CATALOG_SHAPE: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录文件的结构不对：{detail}', en: 'The catalogue file is not in the right shape: {detail}',
+    fix: { zh: '目录是一个 JSON 对象，"catalog" 为 1，"name" 是名字，"plugins" 是插件列表。', en: 'A catalogue is a JSON object with "catalog": 1, a "name" and a "plugins" list.' },
+  },
+  PLUGIN_CATALOG_URL: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录或插件地址不是可以下载的 https：{detail}', en: 'A catalogue or plugin address is not an https address this installer will fetch: {detail}',
+    fix: { zh: '地址以 https:// 开头，主机名要有点，不能写账号密码。下载时只访问公网地址的 443 端口；内网、本机、链路本地和 .local 会被拒绝，除非服主在 allowDownloadHosts 里点名。', en: 'The address starts with https://, the host has a dot, and it has no user or password. A download uses a public address on port 443 only. Loopback, private, link-local and .local are refused unless the operator names the host in allowDownloadHosts.' },
+  },
+  PLUGIN_CATALOG_HASH: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录条目缺少 sha256，或者不是 64 位小写十六进制：{detail}', en: 'A catalogue entry has no sha256, or it is not 64 lowercase hex digits: {detail}',
+    fix: { zh: '每个插件都写上它的 zip 的 SHA-256（64 位小写十六进制）。', en: 'Each plugin names the SHA-256 of its zip (64 lowercase hex digits).' },
+  },
+  PLUGIN_CATALOG_ID: {
+    level: 'problem', doc: D.catalog,
+    zh: '插件 id 不合法或重复：{detail}', en: 'A plugin id is not valid, or it is repeated: {detail}',
+    fix: { zh: 'id 是 2 到 32 位小写字母、数字和连字符，并且在这份目录里只出现一次。', en: 'An id is 2 to 32 lowercase letters, digits and hyphens, and it appears once in the catalogue.' },
+  },
+  PLUGIN_CATALOG_FIELD: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录字段不合法：{detail}', en: 'A catalogue field is not valid: {detail}',
+    fix: { zh: '按 docs/plugin-catalog.example.json 写：版本是 semver，class 是已知类别，过长的文字要缩短。', en: 'Follow docs/plugin-catalog.example.json: version is semver, class is a known class, and long text is shortened.' },
+  },
+  PLUGIN_CATALOG_SIZE: {
+    level: 'studio', doc: D.catalog,
+    zh: '目录文件太大：{detail}', en: 'The catalogue file is too large: {detail}',
+    fix: { zh: '目录本身不超过 1 MB。插件 zip 另有 200 MB 的上限。', en: 'The catalogue document itself is at most 1 MB. A plugin zip has its own 200 MB cap.' },
+  },
+  PLUGIN_CATALOG_FETCH: {
+    level: 'studio', doc: D.catalog,
+    zh: '读不到这份目录：{detail}', en: 'The catalogue could not be fetched: {detail}',
+    fix: { zh: '确认地址是公网 https 的 443 端口、服务器能访问它，并且没有被重定向到内网或非 https。这一次等待包含正文，不是每一跳重新计时。也可以改用本机的目录文件。', en: 'Check that the address is public https on port 443, that the server can reach it, and that it is not redirected to a non-public address or off https. The one deadline covers the body, not each redirect on its own. A local catalogue file works too.' },
+  },
+  PLUGIN_INSTALL_URL: {
+    level: 'studio', doc: D.catalog,
+    zh: '安装地址不是公网 https：{detail}', en: 'The install address is not a public https address: {detail}',
+    fix: { zh: '只安装公网 https、443 端口的 zip。内网和本机地址默认拒绝。本机文件可以直接给出路径，包括 Windows 盘符和 UNC。', en: 'Install a public https zip on port 443 only. A private or loopback address is refused unless the operator allowlist names it. A file on this machine can be given as a path, including a Windows drive or a UNC path.' },
+  },
+  PLUGIN_INSTALL_HASH: {
+    level: 'studio', doc: D.catalog,
+    zh: 'zip 的 SHA-256 对不上，或者没有给出：{detail}', en: 'The zip SHA-256 does not match, or none was given: {detail}',
+    fix: { zh: 'https 安装必须带 --sha256（或目录条目里的 sha256）。哈希不对就不要安装。', en: 'An https install needs --sha256 (or the sha256 of a catalogue entry). Do not install when the hash differs.' },
+  },
+  PLUGIN_INSTALL_SIZE: {
+    level: 'studio', doc: D.catalog,
+    zh: 'zip 超过大小上限，或和目录里写的字节数不一致：{detail}', en: 'The zip is over the size cap, or it is not the byte length the catalogue names: {detail}',
+    fix: { zh: '一个插件不超过 200 MB。目录里的 bytes 要和 zip 的实际大小一致。', en: 'A plugin is at most 200 MB. When the catalogue gives bytes, it has to be the zip size.' },
+  },
+  PLUGIN_INSTALL_TIMEOUT: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载超时：{detail}', en: 'The download timed out: {detail}',
+    fix: { zh: '检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。这一次等待包含连接、重定向和正文，不是每一跳重新计时。', en: 'Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. That one deadline covers the connection, the redirects and the body.' },
+  },
+  PLUGIN_INSTALL_FETCH: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载失败：{detail}', en: 'The download failed: {detail}',
+    fix: { zh: '确认地址能打开，并且返回的是 zip（HTTP 200）。', en: 'Check that the address opens and answers with the zip (HTTP 200).' },
+  },
+  PLUGIN_INSTALL_REDIRECT: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载被重定向到了非公网地址、非 443 端口，或重定向次数太多：{detail}', en: 'The download was redirected to a non-public address, off port 443, or too many times: {detail}',
+    fix: { zh: '只跟随公网 https、443 端口的重定向，最多 5 次。请换一个直接的 https 地址。', en: 'Only a public https redirect on port 443 is followed, at most 5. Use a direct https address.' },
+  },
+  PLUGIN_INSTALL_ZIP: {
+    level: 'studio', doc: D.catalog,
+    zh: '这个 zip 不能安装：{detail}', en: 'This zip cannot be installed: {detail}',
+    fix: { zh: 'zip 里要有 plugin.json（可以包在一层以插件 id 命名的文件夹里）。不能有路径穿越、符号链接、加密或超量的文件。', en: 'The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files.' },
+  },
+  PLUGIN_INSTALL_CHECK: {
+    level: 'studio', doc: D.catalog,
+    zh: '插件没通过检查，没有装进 plugins/：{detail}', en: 'The plugin failed its check and was not placed in plugins/: {detail}',
+    fix: { zh: '按 node tools/plugin.mjs check 的提示改插件，再安装。失败时只删掉临时文件，不会动已经装好的插件。', en: 'Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files.' },
+  },
+  PLUGIN_INSTALL_EXISTS: {
+    level: 'studio', doc: D.catalog,
+    zh: 'plugins/ 里已经有这个 id：{detail}', en: 'plugins/ already has this id: {detail}',
+    fix: { zh: '不加 --force 就不会覆盖。--force 会把旧文件夹挪到 plugins/_replaced/，不会删除。', en: 'Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it.' },
+  },
+
+  // ---- Forge workshop packs (tools/plugin.mjs import-forge, server/plugins/forgeImport.js) --------------------------
+  PLUGIN_FORGE_INPUT: {
+    level: 'problem', doc: D.forge,
+    zh: '这不是一份能读的 Forge 包：{detail}', en: 'This is not a Forge pack that can be read: {detail}',
+    fix: { zh: '选一个含 pack.json 的工坊包目录，或那个目录打出来的 zip。', en: 'Choose a workshop folder that contains pack.json, or a zip of that folder.' },
+  },
+  PLUGIN_FORGE_ZIP: {
+    level: 'problem', doc: D.forge,
+    zh: '这个包的文件不安全，没有解压：{detail}', en: 'This pack\'s files are not safe to unpack: {detail}',
+    fix: { zh: '路径不能跳出包目录，不能有符号链接，单个包最多 5000 个文件、一共 200 MB。换一份包再导入。', en: 'Paths must stay inside the pack, with no symbolic links, at most 5000 files and 200 MB. Import another pack.' },
+  },
+  PLUGIN_FORGE_JSON: {
+    level: 'problem', doc: D.forge,
+    zh: '包里的 JSON 读不了：{detail}', en: 'JSON in the pack cannot be read: {detail}',
+    fix: { zh: 'JSON 要能解析，不超过 8 MB，嵌套不超过 64 层，数字在 ±1e9 以内。', en: 'JSON must parse, stay within 8 MB and 64 levels of nesting, and keep numbers within ±1e9.' },
+  },
+  PLUGIN_FORGE_ID: {
+    level: 'problem', doc: D.forge,
+    zh: '这个包的 id 变不成插件 id：{detail}', en: 'This pack\'s id cannot become a plugin id: {detail}',
+    fix: { zh: '用 --id 指定一个插件 id：2–32 位小写字母、数字和 -，例如 rose-skin。', en: 'Pass --id with a plugin id: 2–32 lower-case letters, digits and -, for example rose-skin.' },
+  },
+  PLUGIN_FORGE_EXISTS: {
+    level: 'problem', doc: D.forge,
+    zh: '目标文件夹已经存在，没有写入：{detail}', en: 'The destination folder already exists, so nothing was written: {detail}',
+    fix: { zh: '换一个 --out 或 --id，或者把已有的插件文件夹挪走后再导入。', en: 'Choose another --out or --id, or move the existing plugin folder aside and import again.' },
+  },
+  PLUGIN_FORGE_SCRIPT: {
+    level: 'problem', doc: D.forge,
+    zh: '包里的脚本没有导入，也没有执行：{detail}', en: 'A script in the pack was not imported and was not run: {detail}',
+    fix: { zh: '技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。', en: 'Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack.' },
   },
 
   // ---- anything a check reported without a code of its own ----------------------------------------------------------

@@ -51,7 +51,7 @@ const KAZEMA = {
 };
 
 const LMLEE = { dsl: 1, meta: { on: [1, 2, 3].map(round => ({ when: 'income', if: { round }, do: [{ funds: { amount: round === 3 ? 15 : 0, setIncome: true } }] })) } };
-const EXAMPLES = { skgoat: ['char_183_skgoat', SKGOAT], inside: ['char_498_inside', INSIDE], texas: ['char_102_texas', TEXAS], kazema: ['char_4016_kazema', KAZEMA], lmlee: [null, LMLEE] };
+const EXAMPLES = { demo: ['char_199_yak', { dsl: 1, skill: { kind: 'passive', mods: { atkPct: 0.5 } } }], skgoat: ['char_183_skgoat', SKGOAT], inside: ['char_498_inside', INSIDE], texas: ['char_102_texas', TEXAS], kazema: ['char_4016_kazema', KAZEMA], lmlee: [null, LMLEE] };
 export function dslExample(name, id) {
   if (!Object.hasOwn(EXAMPLES, name)) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: 'unknown DSL example' });
   const [charId, base] = EXAMPLES[name];

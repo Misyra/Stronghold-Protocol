@@ -632,6 +632,8 @@ describe('the server owner\'s policy and the content-set limit (P1c)', () => {
     servers.push(s);
     return s;
   }
+  /** A request or a wait that builds a content set: the 15 s the other P1c tests give one (about 1 s alone, more under a full run). */
+  const BUILD_MS = 15000;
   const player = async (s, name) => {
     const c = await TestClient.connect(s.url.replace('http', 'ws') + '/ws');
     open.push(c);
@@ -649,37 +651,37 @@ describe('the server owner\'s policy and the content-set limit (P1c)', () => {
     const s = await serverWith({ limits: { maxSets: 1 } });
     const a = await player(s, 'A');
     const b = await player(s, 'B');
-    for (const c of [a, b]) { assert.equal((await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok'); await c.waitFor('room.state'); }
-    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok');
+    for (const c of [a, b]) { assert.equal((await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' }, BUILD_MS)).t, 'ok'); await c.waitFor('room.state', undefined, BUILD_MS); }
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] }, BUILD_MS)).t, 'ok');
     const builds = s.contents.stats().builds;
-    const busy = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] });
+    const busy = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] }, BUILD_MS);
     assert.deepEqual([busy.t, busy.code], ['error', ERR.PLUGIN_BUSY]);
     assert.equal(s.contents.stats().builds, builds, 'refused before it was built');
-    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok', 'the set already held');
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] }, BUILD_MS)).t, 'ok', 'the set already held');
     // A gives it up; B (its only holder now) switches to another one: freed by the change
-    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [] })).t, 'ok');
-    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] })).t, 'ok');
-    const st = await b.waitFor('room.state', (x) => x.content?.plugins?.[0]?.id === 'two');
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [] }, BUILD_MS)).t, 'ok');
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] }, BUILD_MS)).t, 'ok');
+    const st = await b.waitFor('room.state', (x) => x.content?.plugins?.[0]?.id === 'two', BUILD_MS);
     assert.equal(st.content.vanilla, false);
   });
 
   test('rooms: fixed — every room starts with the default set and its host cannot change it; allow — only the listed plugins', async () => {
     const s = await serverWith({ rooms: 'fixed', default: ['one'] });
     const a = await player(s, 'A');
-    assert.equal((await a.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
-    const st = await a.waitFor('room.state', (x) => x.content?.vanilla === false);
+    assert.equal((await a.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' }, BUILD_MS)).t, 'ok');
+    const st = await a.waitFor('room.state', (x) => x.content?.vanilla === false, BUILD_MS);
     assert.deepEqual(st.content.plugins.map((p) => p.id), ['one']);
-    const r = await a.request({ t: 'room.setPlugins', plugins: [] });
+    const r = await a.request({ t: 'room.setPlugins', plugins: [] }, BUILD_MS);
     assert.deepEqual([r.t, r.code], ['error', ERR.PLUGIN_BLOCKED]);
-    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok', 'the fixed set itself');
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] }, BUILD_MS)).t, 'ok', 'the fixed set itself');
     const s2 = await serverWith({ allow: ['one'] });
     const b = await player(s2, 'B');
-    assert.equal((await b.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
-    const st2 = await b.waitFor('room.state');
+    assert.equal((await b.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' }, BUILD_MS)).t, 'ok');
+    const st2 = await b.waitFor('room.state', undefined, BUILD_MS);
     assert.equal(st2.content.vanilla, true, 'no default: the original game');
-    const no = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] });
+    const no = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] }, BUILD_MS);
     assert.deepEqual([no.t, no.code], ['error', ERR.PLUGIN_BLOCKED]);
-    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok');
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] }, BUILD_MS)).t, 'ok');
   });
 
   test('readPolicy: defaults, every field checked, SP_PLUGINS wins over the file', () => {

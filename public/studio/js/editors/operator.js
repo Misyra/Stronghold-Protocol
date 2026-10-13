@@ -39,7 +39,7 @@ export function OperatorEditor({ draft, onChange }) {
       setSpecText(e.currentTarget.value);
       try { const spec = JSON.parse(e.currentTarget.value); setBadJson(false); change({ spec }); } catch { setBadJson(true); change({ spec: null }); }
     }} /><//>${badJson ? html`<p class="st-error">${t('不是有效的 JSON：{why}', { why: t('请检查格式') })}</p>` : null}` : null}
-    ${kind === 'dsl' ? html`<${DslForm} id=${draft.id} spec=${o.dsl || { dsl: 1, talents: [{ when: 'deploy', do: [{ buff: { mods: { atkPct: 0.5 } } }] }] }} source=${rec} onChange=${dsl => change({ dsl })} />` : null}
+    ${kind === 'dsl' ? html`<${DslForm} key=${draft.revision} id=${draft.id} spec=${o.dsl || { dsl: 1, talents: [{ when: 'deploy', do: [{ buff: { mods: { atkPct: 0.5 } } }] }] }} source=${rec} onChange=${dsl => change({ dsl })} />` : null}
     <details><summary>${t('借用本安装已有的素材')}</summary><p>${o.artRef || o.kitRef || rec?.charId || ''}</p>
       <${TargetPicker} kinds=${['operator']} onPick=${tg => change({ artRef: tg.key })} />
     </details>

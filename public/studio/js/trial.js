@@ -52,7 +52,7 @@ export function TrialBench({ state, draft }) {
         <tr><th>${t('时长（秒）')}</th><td>${result.vanilla.result.time}</td><td>${result.plugin.result.time}</td><td>${result.comparison.duration.toFixed(3)}</td></tr>
         <tr><th>${t('结果')}</th><td>${outcome(result.vanilla.outcome)}</td><td>${outcome(result.plugin.outcome)}</td><td></td></tr></tbody></table>
       <div class="st-inline"><${Button} size="sm" onClick=${() => setPlaying(!playing)}>${playing ? t('暂停') : t('播放')}<//>
-        <${Button} size="sm" onClick=${() => { setReset(n => n + 1); setPlaying(true); }}>${t('重新播放')}<//>
+        <${Button} size="sm" data-testid="replay-trial" onClick=${() => { setReset(n => n + 1); setPlaying(true); }}>${t('重新播放')}<//>
         <${Select} label=${t('播放速度')} value=${String(speed)} options=${['0.5','1','2','4']} onChange=${v => setSpeed(Number(v))} /></div>
       <div class="st-trial-pair">${['vanilla','plugin'].map(side => html`<div><h4>${side === 'vanilla' ? t('原版') : t('插件')}</h4>
         <${TrialReplay} replay=${result[side]} playing=${playing} speed=${speed} reset=${reset} />

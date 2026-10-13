@@ -240,7 +240,7 @@ describe('the studio over HTTP', () => {
 
   test('a new plugin from a template; files on a slot; a reference; a slot emptied; the preview; pack and zip; the list', async () => {
     const info = await call('GET', '/studio/api/info');
-    assert.deepEqual(info.body.templates.map((t) => t.id), ['art', 'spine', 'voice', 'audio']);
+    assert.deepEqual(info.body.templates.map((t) => t.id), ['art', 'spine', 'voice', 'audio', 'numbers', 'operator', 'dsl', 'meta', 'mode', 'ui', 'script']);
     const found = await call('GET', `/studio/api/targets?q=${encodeURIComponent('德克萨斯')}&kinds=operator`);
     assert.equal(found.body.targets[0].key, 'char_102_texas');
     const slots = await call('GET', '/studio/api/slots?template=art&target=operator:char_102_texas');
@@ -576,5 +576,18 @@ describe('the studio over HTTP', () => {
     assert.deepEqual([big.status, JSON.parse(big.text).error], [413, 'PLUGIN_STUDIO_SIZE']);
     // another spelling a disk may fold into public/studio/ (the long s on macOS, a trailing dot on Windows) is no static file
     for (const u of ['/%C5%BFtudio/index.html', '/studio./index.html', '/%EF%BD%93tudio/index.html']) assert.equal((await raw('GET', u)).status, 404, u);
+  });
+
+  test('the dsl template: a content plugin with an operator and a prep spec, no cosmetic target', async () => {
+    let r = await call('POST', '/studio/api/plugins', { template: 'dsl', id: 'demo-dsl', name: 'DSL demo', authors: ['me'] });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.check.ok, true, JSON.stringify(r.body.check));
+    const dir = path.join(plugins, 'demo-dsl');
+    assert.deepEqual(fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort(), ['README.md', 'dsl', 'operators', 'plugin.json']);
+    const m = JSON.parse(fs.readFileSync(path.join(dir, 'plugin.json'), 'utf8'));
+    assert.deepEqual([m.class, m.permissions, m.operators, m.dsl], ['content', ['data.add', 'dsl'], ['operators/demo_dsl.json'], ['dsl/income.json']]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'dsl/income.json'), 'utf8')).meta.key, 'effect:demo-dsl:income');
+    r = await call('POST', '/studio/api/plugins', { template: 'dsl', id: 'demo-dsl-2', name: 'x', target: 'operator:char_102_texas' });
+    assert.deepEqual([r.status, r.body.error], [400, 'PLUGIN_STUDIO_TARGET']);
   });
 });

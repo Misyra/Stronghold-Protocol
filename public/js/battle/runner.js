@@ -45,8 +45,9 @@
 // { [playerId]: { [bondId]: n } } (every battle of the round: the own one, the teammates' replicas) whenever one grows;
 // the bond strip of the player on screen — the own one, or a watched teammate's — shows them live (ui/watchBonds.js).
 //
-// The sim (≈ 0.2–1 ms per tick) runs on the main thread: one battle at a time is stepped for display (plus an
-// authoritative one if it is not the one on screen). stats() exposes the measured cost.
+// The vanilla sim (≈ 0.2–1 ms per tick) runs on the main thread: one battle at a time is stepped for display (plus an
+// authoritative one if it is not the one on screen). Gameplay sets use WorkerSimHost (DESIGN §32.11).
+// stats() exposes the measured cost (Worker cost includes the message round trip).
 //
 //   import { battleRunner } from './battle/runner.js'     (browser singleton wired to net.js + store.js; null in Node)
 //   battleRunner.on('snap' | 'ev' | 'field' | 'state', fn) → off
@@ -66,7 +67,7 @@
 //                           play, DESIGN §20.15, 变形同构体 wearers included; a 补位 stand-in names the replaced charId,
 //                           a 自选 operator carries its pick like UnitInfo) | []
 //
-// Content sets (DESIGN §32.6, P1c — the cs check only; how battles run is unchanged): a b.start whose spec names a
+// Content sets (DESIGN §32.6 and §32.11 — cs checks preserved across both hosts): a b.start whose spec names a
 // content set (`spec.cs`) other than the one this page holds — the original content's (welcome.content.vanilla) or the
 // room's content set the page downloaded and checked (public/js/content.js) — is simulated by this page as a display
 // replica only, never as the battle's authority: no b.progress, no b.result; the server's deadline gives the field to
@@ -81,9 +82,13 @@
 import { net as appNet } from '../net.js';
 import { store as appStore } from '../store.js';
 import { contentFor as appContentFor, simContent as appSimContent, contentSet as appContentSet } from '../content.js';
-import { unitStatsEntry, fxForm } from '../../../shared/protocol.js';
+import { fxForm } from '../../../shared/protocol.js';
 import { spectateEffects } from './observe.js';
 import { recordError, setBattleSource } from '../diag.js';
+import { loadBrowserSim } from './simLoader.js';
+import { InPageSimHost, WorkerSimHost } from './simHost.js';
+import { t } from '../../../shared/i18n.js';
+export { loadBrowserSim, SIM_DATA_FILES } from './simLoader.js';
 
 const TICK = 1 / 30;
 /** Fast-forward budget per frame (ticks) when far behind. */
@@ -122,9 +127,6 @@ export function compactHeld(list) {
   });
   return list.filter((x, i) => (x[0] === 'status' ? last.get(`s:${x[1]}:${x[2]}`) === i : x[0] === 'skill' ? last.get(`k:${x[1]}`) === i : true));
 }
-/** Data files the simulation reads (DataSource + content/support gameData()). */
-export const SIM_DATA_FILES = Object.freeze(['chess', 'enemies', 'tokens', 'stages', 'waves', 'bonds', 'items', 'garrisons', 'bands', 'effects', 'backups']);
-
 /** Request failures after which a b.result counts as never delivered (re-sent on resume / b.start). */
 export const LOST_RESULT_CODES = Object.freeze(['DISCONNECTED', 'OFFLINE', 'TIMEOUT']);
 
@@ -138,77 +140,6 @@ export const ticksPerFrameCap = (speed) => Math.max(8, Math.ceil((Number(speed) 
  * @param {any} b the battle
  */
 export const uniteLeftMark = (b) => `${Number(b.killed) || 0}:${Number(b.leakedCount) || 0}:${Number(b.total) || 0}:${Array.isArray(b.enemies) ? b.enemies.length : 0}:${b.finished ? 1 : 0}`;
-
-function deepFreeze(root) {
-  const stack = [root];
-  while (stack.length) {
-    const o = stack.pop();
-    if (o === null || typeof o !== 'object' || Object.isFrozen(o)) continue;
-    Object.freeze(o);
-    for (const v of Object.values(o)) if (v !== null && typeof v === 'object') stack.push(v);
-  }
-  return root;
-}
-
-/**
- * Browser sim loader: the /sim/ modules + the data files (own frozen copies — the server's data is frozen too, so a
- * content bug that writes into a record fails identically on both sides). `data` (DESIGN §32.6): the files of a room's
- * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded; `bounds`
- * its official-bounds snapshot (installSimBounds).
- */
-let loadedScripts = false;
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null, scripts = [], hashInput = null } = {}) {
-  const [spec, simdata, support] = await Promise.all([
-    import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
-  ]);
-  const fetchOnce = async (n) => {
-    try {
-      const res = await fetchFn(`${dataBase}${n}.json`, { cache: 'no-cache' });
-      return res && res.ok ? await res.json() : null;
-    } catch { return null; }
-  };
-  // (a content set's data: structured copies, frozen below like downloaded files)
-  const files = data ? SIM_DATA_FILES.map((n) => (data[n] && typeof data[n] === 'object' ? structuredClone(data[n]) : null))
-    : await Promise.all(SIM_DATA_FILES.map(async (n) => (await fetchOnce(n)) ?? fetchOnce(n)));
-  // a battle simulated without part of the data would still produce a plausible result the server accepts: never run
-  // one — the loader fails (the next b.start retries it; meanwhile the server's deadline takes the field over)
-  const missing = SIM_DATA_FILES.filter((n, i) => !files[i] || typeof files[i] !== 'object');
-  if (missing.length) throw new Error(`simulation data unavailable: ${missing.join(', ')}`);
-  const raw = {};
-  SIM_DATA_FILES.forEach((n, i) => { raw[n] = deepFreeze(files[i]); });
-  simdata.setSimData(raw);
-  if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
-  await installSimBounds(base, raw, data ? bounds : undefined);
-  if (scripts.length) {
-    const sdkUrl = /^file:/i.test(base) ? new URL('../../shared/plugins/sdk.js',base).href : new URL('/shared/plugins/sdk.js',location.href).href;
-    const {loadScripts} = await import(new URL('scriptLoad.js',sdkUrl).href);
-    await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:base+'content/extensions.js'});
-  } else if (loadedScripts) {
-    (await import(base+'content/extensions.js')).resetExtensions();
-  }
-  loadedScripts = scripts.length > 0;
-  return { spec, ds: new simdata.DataSource(raw, null), cs };
-}
-
-/**
- * The official-bounds table of the engine's plugin caps (shared/plugins/officialBounds.js, DESIGN §32.5): the original
- * content's page scans the data it loaded (no request); a room's content set installs the snapshot its index lists
- * (public/js/content.js loads and checks it beside the data files) — the one the server validated against and its match
- * host installs too, so both simulate a modded battle with the same caps. A content set without one runs on the floor,
- * never on a scan of its own tables (a bomb would raise its own cap). `bounds` undefined: the original content.
- * @param {string} base @param {Record<string, any>} raw @param {any} [bounds]
- */
-async function installSimBounds(base, raw, bounds) {
-  let boundsMod;
-  try {
-    const spec = /^https?:|^file:/i.test(String(base))
-      ? new URL('../../shared/plugins/officialBounds.js', base).href
-      : '/shared/plugins/officialBounds.js';
-    boundsMod = await import(spec);
-  } catch { return; }
-  if (bounds === undefined) boundsMod.rememberOfficialBounds(raw);
-  else boundsMod.installOfficialBounds(bounds && bounds.v === 1 ? bounds : null);
-}
 
 /**
  * Battle logger: content errors are isolated by the sim; report them as warnings (the server logs its own) and keep
@@ -236,7 +167,7 @@ export function createBattleRunner(deps) {
   const clearIv = deps.clearInterval || ((h) => globalThis.clearInterval(h));
   const doc = deps.doc !== undefined ? deps.doc : (typeof document !== 'undefined' ? document : null);
   // `content` (DESIGN §32.6): `{ cs, data }` of a room's content set → the sim on it; null → the original content
-  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs, bounds: content.bounds ?? null, scripts:content.scripts || [], hashInput:content.hashInput }) : loadBrowserSim()));
+  const loadSim = deps.loadSim || ((content) => (content ? loadBrowserSim({ data: content.data, cs: content.cs, bounds: content.bounds ?? null, scripts:content.scripts || [], hashInput:content.hashInput, nativeVerified:content.nativeVerified }) : loadBrowserSim()));
   const logger = deps.logger || SIM_LOGGER;
   // the content sets (DESIGN §32.6): the room's set the page holds (content.js) and the server's original one
   const contentFor = deps.contentFor || appContentFor;
@@ -308,7 +239,7 @@ export function createBattleRunner(deps) {
     simCs = want;
     const p = (want ? contentFor(want).then((content) => {
       if (!content || content.cs !== want) throw new Error(`the content set ${want.slice(0, 8)} is not loaded on this page`);
-      return loadSim(content);
+      return deps.loadSim ? loadSim(content) : { content, cs: want, remote: true };
     }) : loadSim(null)).catch((err) => { if (simP === p) { simP = null; simCs = null; } throw err; });
     simP = p;
     return p;
@@ -375,7 +306,7 @@ export function createBattleRunner(deps) {
     if (mark === e.leakMark) return;
     e.leakMark = mark;
     let n = e.leaks;
-    try { n = Math.max(0, Math.trunc(Number(e.sim.spec.battleProgress(b).leaks) || 0)); } catch { /* keep the last count */ }
+    try { n = Math.max(0, Math.trunc(Number(e.host.progress().leaks) || 0)); } catch { /* keep the last count */ }
     if (n !== e.leaks) { e.leaks = n; leaksDirty = true; }
   }
 
@@ -385,7 +316,7 @@ export function createBattleRunner(deps) {
     if (mark === e.leakMark) return;
     e.leakMark = mark;
     let left = e.left;
-    try { left = e.sim.spec.uniteLeft(b) || left; } catch { /* keep the last count */ }
+    try { left = e.host.uniteLeft() || left; } catch { /* keep the last count */ }
     if (JSON.stringify(left) !== JSON.stringify(e.left)) { e.left = left; leaksDirty = true; }
   }
 
@@ -433,14 +364,17 @@ export function createBattleRunner(deps) {
     const b = e.battle;
     const t = now();
     let k = 0;
+    const accept = (out) => { k = out.ticks; e.slices.push(...out.slices); };
     try {
-      for (; k < n && !b.finished; k++) {
-        b.step();
-        if (sliced && (k + 1) % EV_SLICE === 0 && k + 1 < n) {
-          const ev = b.drainEvents() || [];
-          if (ev.length) e.slices.push({ gt: Number(b.time) || 0, ev });
-        }
-      }
+      const out = e.host.step(n, { slice: sliced ? EV_SLICE : 0 });
+      if (e.host.remote) return out.then((value) => {
+        if (e.failed) return 0;
+        accept(value);
+        const dt = now() - t;
+        stats.ticks += k; stats.stepMs += dt;
+        return dt;
+      });
+      accept(out);
     } catch (err) {
       stats.errors++;
       console.warn('[runner] battle step failed', err);
@@ -461,7 +395,7 @@ export function createBattleRunner(deps) {
 
   /** The steps' events, each batch with its own game time: the sliced ones (stepEntry), then the rest at `gt`. */
   function drainSlices(e, gt) {
-    let ev = [];
+    let ev;
     try { ev = e.battle.drainEvents() || []; } catch { ev = []; }
     const out = e.slices;
     e.slices = [];
@@ -520,7 +454,8 @@ export function createBattleRunner(deps) {
     const every = bossLike(e) ? 250 : 1000;
     if (!force && t - e.lastProgressAt < every) return;
     e.lastProgressAt = t;
-    const p = e.sim.spec.battleProgress(e.battle);
+    e.meter = e.host.meter;
+    const p = e.host.progress();
     const msg = { battleId: e.battleId, gt: Math.min(1e5, p.gt), killed: Math.min(p.killed, p.total), total: Math.min(1e5, p.total), done: !!p.done };
     // the HUD capsule's numerator of this field (shared/protocol.js b.progress `resolved`): the field's own scheduled
     // enemies knocked out or leaked. Sent only when the battle reports one (Battle.resolved) — an absent field leaves
@@ -555,9 +490,7 @@ export function createBattleRunner(deps) {
       e.resultSent = true;
       let result = null;
       try {
-        result = e.sim.spec.compactResult(e.battle.result());
-        // an oversized frame would close the socket at the very end of the battle (64 KB inbound limit)
-        if (typeof e.sim.spec.fitResult === 'function') result = e.sim.spec.fitResult(result, { bossLike: bossLike(e), battleId: e.battleId });
+        result = e.host.compactResult({ bossLike: bossLike(e), battleId: e.battleId });
       } catch (err) { console.warn('[runner] result failed', err); recordError('runner', err, 'result failed'); }
       if (result) {
         e.result = result;
@@ -633,16 +566,48 @@ export function createBattleRunner(deps) {
     const catchingUp = behind > cap * 4;
     if (catchingUp) stats.catchups++;
     const n = Math.min(behind, catchingUp ? CATCHUP_TICKS : cap);
-    const dt = stepEntry(e, n, catchingUp || !render);
-    if (dt > stats.maxFrameMs) stats.maxFrameMs = dt;
-    if (render) emitFrame(e, catchingUp);
-    else hold(e);
-    noteLeaks(e);
-    progress(e);
-    if (e.battle.finished) finished(e);
+    if (e.stepping || e.failed) return;
+    const finishStep = (dt) => {
+      if (e.failed || entries.get(e.battleId) !== e) return;
+      if (dt > stats.maxFrameMs) stats.maxFrameMs = dt;
+      if (render && e === cur) emitFrame(e, catchingUp);
+      else hold(e);
+      noteLeaks(e);
+      progress(e);
+      if (e.battle.finished) finished(e);
+      flushLeaks();
+    };
+    const step = stepEntry(e, n, catchingUp || !render);
+    if (e.host.remote) {
+      e.stepping = true;
+      step.then(finishStep, err => failWorker(e, err)).finally(() => { e.stepping = false; schedule(); });
+    } else finishStep(step);
   }
 
-  function running(e) { return !e.battle.finished && (e === cur || (e.authoritative && !e.resultSent)); }
+  /** Stop reports immediately. Existing server deadline/takeover is the fallback; b.result's cs refusal asks for it now. */
+  function failWorker(e, err) {
+    if (e.failed || (pending.get(e.battleId) !== e && entries.get(e.battleId) !== e)) return;
+    const authority = e.authoritative;
+    e.failed = true; e.authoritative = false; e.done = true;
+    e.host?.stop();
+    stats.errors++;
+    recordError('runner', err, 'plugin worker stopped');
+    const text = t('插件卡死，本场由服务器接管');
+    if (deps.toast) deps.toast(text, 'error');
+    else if (typeof document !== 'undefined') import('../ui/toasts.js').then(m => m.toast(text, 'error')).catch(() => {});
+    emit('takeover', { battleId: e.battleId, fieldId: e.fieldId, text });
+    // A structurally valid result with no cs is always refused for gameplay sets (requireCs), invoking _runOnServer.
+    // It is a failure signal only, never a claimed battle outcome. Vanilla never reaches this path.
+    if (authority) {
+      const perPlayer = Object.fromEntries(e.members.map(id => [id, { killed: 0, total: 0, leaked: [], perfect: false, layerGains: {}, unitsEnd: [] }]));
+      try { Promise.resolve(net.request('b.result', { battleId: e.battleId, result: { reason: 'forced', time: 0, perPlayer } })).catch(() => {}); } catch { /* deadline takes over offline */ }
+    }
+    if (cur === e) cur = null;
+    if (loading === e) loading = null;
+    publishState(); schedule();
+  }
+
+  function running(e) { return !e.failed && !e.battle.finished && (e === cur || (e.authoritative && !e.resultSent)); }
 
   function frame() {
     rafH = null;
@@ -675,7 +640,7 @@ export function createBattleRunner(deps) {
     e.held = [];
     e.slices = [];
     e.stale = false;
-    let meta = null;
+    let meta;
     try { meta = e.battle.fieldMeta(); } catch { meta = { units: [] }; }
     const field = {
       t: 'm.field', ...meta, fieldId: e.fieldId, kind: e.kind, rect: meta.rect ?? e.spec.rect, stageId: meta.stageId ?? e.spec.stageId,
@@ -698,6 +663,7 @@ export function createBattleRunner(deps) {
     for (const [id, e] of entries) {
       if (entries.size <= MAX_ENTRIES) break;
       if (e === cur || (e.authoritative && !e.resultSent) || e.own || e.delivery === 'pending' || e.delivery === 'undelivered') continue;
+      e.host?.stop();
       entries.delete(id);
     }
   }
@@ -713,7 +679,7 @@ export function createBattleRunner(deps) {
     if (existing) {
       existing.seq = seq;
       const was = existing.authoritative;
-      existing.authoritative = !!msg.authoritative && !existing.resultSent && csAccepted(existing.spec.cs, { loading: !existing.battle });
+      existing.authoritative = !!msg.authoritative && !existing.failed && !existing.resultSent && csAccepted(existing.spec.cs, { loading: !existing.battle });
       existing.watch = !!msg.watch;
       // the server still waits for this finished battle's result (lost with the socket, or its answer was): again
       if (msg.authoritative && existing.resultSent) deliver(existing);
@@ -734,6 +700,7 @@ export function createBattleRunner(deps) {
       }
       loading = null;
       // a resend of what is already on screen (reconnect / resync) only updates the state; switching back shows it
+      if (existing.failed) return;
       if (cur !== existing) show(existing);
       else { publishState(); schedule(); }
       return;
@@ -785,31 +752,38 @@ export function createBattleRunner(deps) {
       if (!csAccepted(e.spec.cs)) e.authoritative = false;
       let battle;
       try {
-        battle = sim.spec.createBattleFromSpec(e.spec, sim.ds, { logger });
+        e.host = deps.createHost ? deps.createHost(sim, err => failWorker(e, err)) : sim.remote
+          ? new WorkerSimHost({ onFailure: err => failWorker(e, err), timeoutMs: deps.workerTimeoutMs })
+          : new InPageSimHost();
+        if (e.host.remote) {
+          await e.host.load(sim.cs, sim.content);
+          if (!wanted()) return;
+          await e.host.start(e.spec);
+        } else { e.host.sim = sim; e.host.start(e.spec, { logger }); }
+        battle = e.host.battle;
       } catch (err) {
-        console.warn('[runner] battle construction failed', err);
-        recordError('runner', err, 'battle construction failed');
+        if (e.host?.remote) failWorker(e, err);
+        else { console.warn('[runner] battle construction failed', err); recordError('runner', err, 'battle construction failed'); }
         return;
       }
+      if (!wanted() || e.failed) return;
       stats.battles++;
       e.sim = sim;
       e.battle = battle;
-      e.meter = sim.spec.attachLpMeter(battle);
+      e.meter = e.host.meter;
       e.t0 = clock() - (e.elapsed / e.speed) * 1000;
-      if (lastPool && battle.sharedBoss && typeof battle.sharedBoss.sync === 'function') {
-        battle.sharedBoss.sync(lastPool.hp, lastPool.acked ? lastPool.acked[e.fieldId] : undefined);
-      }
-      if (e.endReason) endBattle(e);
+      if (lastPool) await e.host.syncPool(lastPool.hp, lastPool.acked ? lastPool.acked[e.fieldId] : undefined);
+      if (e.endReason) await endBattle(e);
       // silent catch-up to the field's clock before it is shown (a reconnect / observing a running field) — for the view
       // asked for; a superseded authority catches up in the background (advance)
       while (!battle.finished && e.seq === startSeq && targetTick(e, clock()) - battle.tickCount > ticksPerFrameCap(e.speed)) {
         const n = Math.min(PREPARE_SLICE, targetTick(e, clock()) - battle.tickCount);
-        stepEntry(e, n);
+        await stepEntry(e, n);
         try { battle.drainEvents(); } catch { /* ignore */ }
         noteLeaks(e);
         progress(e);
         await yieldFrame();
-        if (!wanted()) return;
+        if (!wanted() || e.failed) return;
       }
       pending.delete(e.battleId);
       entries.set(e.battleId, e);
@@ -820,7 +794,10 @@ export function createBattleRunner(deps) {
       if (battle.finished) finished(e);
       flushLeaks();
       schedule();
+    } catch (err) {
+      if (e.host?.remote) failWorker(e, err); else throw err;
     } finally {
+      if (entries.get(e.battleId) !== e) e.host?.stop();
       if (pending.get(e.battleId) === e) pending.delete(e.battleId);
       if (loading === e) { loading = null; publishState(); }
     }
@@ -831,15 +808,14 @@ export function createBattleRunner(deps) {
     lastPool = msg;
     // a pending battle not built yet takes lastPool when it is built
     for (const e of [...entries.values(), ...pending.values()]) {
-      const pool = e.battle ? e.battle.sharedBoss : null;
-      if (pool && typeof pool.sync === 'function') pool.sync(msg.hp, msg.acked ? msg.acked[e.fieldId] : undefined);
+      if (e.battle && !e.failed) e.host.syncPool(msg.hp, msg.acked ? msg.acked[e.fieldId] : undefined);
     }
     emit('pool', msg);
   }
 
   function onEnd(msg) {
     const e = msg && (entries.get(msg.battleId) || pending.get(msg.battleId));
-    if (!e) return;
+    if (!e || e.failed) return;
     if (msg.reason === 'takeover') {
       e.authoritative = false;
       if (e === cur) publishState();
@@ -853,8 +829,14 @@ export function createBattleRunner(deps) {
 
   /** End an entry's battle with its b.end reason; an authority reports it at once. */
   function endBattle(e) {
+    if (e.host.remote) return e.host.forceEnd(e.endReason).then(() => {
+      if (e.failed || (!entries.has(e.battleId) && !pending.has(e.battleId))) return;
+      e.meter = e.host.meter;
+      if (e === cur) emitFrame(e, false);
+      finished(e); flushLeaks(); schedule();
+    }, err => failWorker(e, err));
     if (!e.battle.finished) {
-      try { e.battle.forceEnd(e.endReason); } catch { /* ignore */ }
+      try { e.host.forceEnd(e.endReason); } catch { /* ignore */ }
     }
     if (e === cur) emitFrame(e, false);
     finished(e);
@@ -868,9 +850,10 @@ export function createBattleRunner(deps) {
     loading = null;
     for (const e of entries.values()) {
       // never drop an unreported authoritative result (the round already moved on: the server has its own)
-      if (e.authoritative && !e.resultSent && !e.battle.finished) { try { e.battle.forceEnd('forced'); } catch { /* ignore */ } }
+      if (!e.host.remote && e.authoritative && !e.resultSent && !e.battle.finished) { try { e.battle.forceEnd('forced'); } catch { /* ignore */ } }
     }
     // a battle still being prepared too: its preparation finds itself gone and stops (prepare)
+    for (const e of [...entries.values(), ...pending.values()]) e.host?.stop();
     pending.clear();
     entries.clear();
     cur = null;
@@ -941,10 +924,7 @@ export function createBattleRunner(deps) {
     unitStats(unitId, fieldId = null) {
       const e = cur;
       if (!e || !Number.isInteger(unitId) || (fieldId != null && e.fieldId !== fieldId)) return null;
-      let u = null;
-      try { u = typeof e.battle.unitById === 'function' ? e.battle.unitById(unitId) : null; } catch { u = null; }
-      if (!u) return null;
-      try { return unitStatsEntry(u, u._s || null); } catch { return null; }
+      try { return e.host.unitStats(unitId); } catch { return null; }
     },
     /**
      * The unit id of the board piece `uid` owned by `ownerId` in the battle on screen (an own operator's card opened in
@@ -968,14 +948,7 @@ export function createBattleRunner(deps) {
     ownerOps(ownerId, fieldId = null) {
       const e = cur;
       if (!e || typeof ownerId !== 'string' || !ownerId || (fieldId != null && e.fieldId !== fieldId)) return [];
-      const list = Array.isArray(e.battle.allyUnits) ? e.battle.allyUnits : [];
-      return list.filter((u) => u && u.kind === 'op' && u.ownerId === ownerId && typeof u.defId === 'string')
-        .map((u) => {
-          const o = Array.isArray(u.items) && u.items.length ? { kind: 'op', ownerId, defId: u.defId, items: [...u.items] } : { kind: 'op', ownerId, defId: u.defId };
-          const si = u.def && typeof u.def.standInFor === 'string' ? u.def.standInFor : null;
-          const diy = u.def?.diyFor ? u.def.loadout?.diy : null;
-          return { ...o, ...(si ? { standInFor: si } : {}), ...(diy ? { diy: { ...diy } } : {}) };
-        });
+      return e.host.ownerOps(ownerId);
     },
     /** Re-show the current battle (the game screen remounted). */
     reshow() { if (cur) show(cur); },

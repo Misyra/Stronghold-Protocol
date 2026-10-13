@@ -124,7 +124,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
     for (const id of ids) {
       const p = registry.plugin(id);
       if (!p || !p.content || typeof p.content.hash !== 'string') return null;
-      parts.push([id, p.content.hash, p.manifest ?? null, norm[id] ?? null]);
+      parts.push([id, p.content.hash, p.script?.execution ?? null, p.status, p.manifest ?? null, norm[id] ?? null]);
     }
     try { return JSON.stringify(parts); } catch { return null; }
   };
@@ -180,7 +180,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
         ? { code: 'override', params: { path: `data:${w.path}`, plugins: Array.isArray(w.plugins) ? w.plugins : [] } }
         : { code: String(w?.code || 'warning'), params: { ...(w || {}) } })),
       served, dataBytes,
-      ...(built.scripts?.length ? {scripts:built.scripts} : {}),
+      ...(built.scripts?.length ? {execution:built.execution, scripts:built.scripts} : {}),
       // the official-bounds snapshot (WP-A, DESIGN §32.5) its match host installs — the one its pages install too
       bounds: built.bounds && built.bounds.v === 1 ? built.bounds : null,
     };
@@ -274,8 +274,10 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
      */
     file(cs16, rel) {
       const set = sets.get(cs16);
+      // C1 puts only verified sim/meta/client entry bytes in this exact-path table; never reopen files on disk.
       const f = set ? set.served.get(rel) : null;
-      return f ? { body: f.body, sha256: rel === 'index.json' ? null : f.sha256, type: 'application/json; charset=utf-8' } : null;
+      const type = /^scripts\/[^/]+\//.test(rel) ? 'text/javascript; charset=utf-8' : 'application/json; charset=utf-8';
+      return f ? { body: f.body, sha256: rel === 'index.json' ? null : f.sha256, type } : null;
     },
     /**
      * The served bytes of every data file of the set of `cs`, by table name (the names of its hash input) — null for a set

@@ -6,6 +6,7 @@ import { createTargetIndex, targetOf } from './targets.js';
 import { numericFields, officialOperator, readStudioData } from './gameData.js';
 import { dslExample } from './dslExamples.js';
 import { validateDsl } from '../sim/content/dsl/validate.js';
+import { rememberOfficialBounds } from '../../shared/plugins/officialBounds.js';
 import { jsonProblems } from '../../shared/plugins/dataUtils.js';
 import { StudioError } from './files.js';
 
@@ -62,7 +63,8 @@ export function createAuthoring({ files, dataDir }) {
   };
   return { read, save, generate, details,
     example: dslExample,
-    validate: spec => validateDsl(spec),
+    // the official caps the build applies (contentSet.js), or a literal over them would pass here and fail on save
+    validate: spec => { rememberOfficialBounds(official()); return validateDsl(spec, { bounds: true }); },
     source(id) {
       const manifest = JSON.parse(fs.readFileSync(files.stat(id, 'plugin.json').abs, 'utf8'));
       const rel = manifest.entry?.sim;

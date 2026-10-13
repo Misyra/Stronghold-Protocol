@@ -7,7 +7,7 @@
 // events, server/studio/watch.js), and so do the rooms of the game the author hosts or plays alone (hot reload).
 //
 // Structure: this module (the shell: plugin list, the selected plugin, its tabs and sections), ./api.js (the API),
-// ./create.js (新建插件), ./picker.js (targets), ./slots.js (a slot), ./issues.js (findings), ./info.js (信息 / 文件 /
+// ./create.js (新建插件), ./catalog.js (从目录安装), ./picker.js (targets), ./slots.js (a slot), ./issues.js (findings), ./info.js (信息 / 文件 /
 // 清单), ./editors/ (one module per template — what a section shows), ./preview/ (layers.js: the art the preview
 // draws; field.js: the battlefield; cards.js: the interface; sound.js: the sounds). Strings go through t() (the
 // language packs); the findings' explanations come from the error catalogue (shared/plugins/errors.js) in Chinese or
@@ -26,6 +26,8 @@ import { IssueList, errorText } from './issues.js';
 import { Authoring } from './authoring.js';
 import { TrialBench } from './trial.js';
 import { CreateDialog } from './create.js';
+import { CatalogPage } from './catalog.js';
+import { ForgeDialog } from './forge.js';
 import { TargetPicker } from './picker.js';
 import { SlotCard } from './slots.js';
 import { InfoForm, FileList, ManifestEditor } from './info.js';
@@ -247,6 +249,8 @@ function App({ info }) {
   const [plugins, setPlugins] = useState([]);
   const [selected, setSelected] = useState(() => new URLSearchParams(location.search).get('plugin') || null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [pane, setPane] = useState('plugins');
+  const [forgeOpen, setForgeOpen] = useState(false);
   const [events, setEvents] = useState({ on: false, at: null });
   const refresh = () => get('plugins').then((r) => setPlugins(r.plugins || [])).catch(() => {});
   useEffect(() => { refresh(); }, []);
@@ -307,9 +311,11 @@ function App({ info }) {
     <div class="st-body">
       <aside class="st-side">
         <${Button} variant="primary" block=${true} onClick=${() => setCreateOpen(true)} data-testid="new-plugin">${t('新建插件')}<//>
+        <${Button} block=${true} active=${pane === 'catalog'} onClick=${() => setPane('catalog')} data-testid="catalog-open">${t('从目录安装')}<//>
+        <${Button} block=${true} class="st-forge-open" onClick=${() => setForgeOpen(true)} data-testid="forge-import">${t('从 Forge 包导入')}<//>
         <ul class="st-list" data-testid="plugin-list">
           ${list.map((p) => html`<li key=${p.id}><button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', (p.status === 'skipped' || p.linked) && 'is-bad')}
-              onClick=${() => setSelected(p.id)} data-plugin=${p.id} disabled=${!!p.linked}
+              onClick=${() => { setPane('plugins'); setSelected(p.id); }} data-plugin=${p.id} disabled=${!!p.linked}
               title=${p.linked ? t('这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。') : undefined}>
             <span class="st-list__name">${p.name || p.id}</span>
             <span class="st-list__meta"><code>${p.id}</code>${p.linked ? ` · ${t('符号链接，工作台不打开')}` : ''}${p.version ? ` · v${p.version}` : ''}${p.status === 'skipped' && !p.linked ? ` · ${t('{n} 个问题', { n: p.problems })}` : p.class !== 'cosmetic' && p.class ? ` · ${p.class}` : ''}</span>
@@ -319,7 +325,8 @@ function App({ info }) {
         <p class="st-side__foot">${t('插件放在服务器的 plugins/ 文件夹里；这个页面只有本机和局域网能打开。')}</p>
       </aside>
       <main class="st-main">
-        ${selected ? html`<${PluginView} key=${selected} id=${selected} info=${info} onListChanged=${refresh} eventsAt=${events.at} />`
+        ${pane === 'catalog' ? html`<${CatalogPage} canChange=${keyState === 'ok'} />`
+        : selected ? html`<${PluginView} key=${selected} id=${selected} info=${info} onListChanged=${refresh} eventsAt=${events.at} />`
         : html`<div class="st-main__empty">
             <h2>${t('做一个插件')}</h2>
             <ol class="st-steps">
@@ -332,7 +339,9 @@ function App({ info }) {
       </main>
     </div>
     <${CreateDialog} open=${createOpen} templates=${info.templates} onClose=${() => setCreateOpen(false)}
-      onCreated=${(st) => { setCreateOpen(false); refresh(); setSelected(st.id); }} />
+      onCreated=${(st) => { setCreateOpen(false); setPane('plugins'); refresh(); setSelected(st.id); }} />
+    <${ForgeDialog} open=${forgeOpen} onClose=${() => setForgeOpen(false)}
+      onImported=${(plugins) => { setForgeOpen(false); refresh(); if (plugins[0]?.id) setSelected(plugins[0].id); }} />
     <${UiHosts} />
   </div>`;
 }

@@ -20,6 +20,8 @@
 // The environment wins over the file for `rooms`: SP_PLUGINS=off | host | fixed. A missing file is the defaults above; a
 // broken one is reported once in the log and its readable fields used (a field of the wrong type keeps the default).
 // The file is read again when its size or mtime changes (looked at, at most once a second, when a room asks).
+// `allowDownloadHosts` is not a policy field. server/plugins/install.js reads it from this same file (the https
+// download allowlist). An unknown key is ignored here on purpose.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,7 +49,7 @@ export function readPolicy(json, { env = process.env } = {}) {
   const problems = [];
   const o = json && typeof json === 'object' && !Array.isArray(json) ? /** @type {Record<string, any>} */ (json) : {};
   if (json != null && o !== json) problems.push('not a JSON object');
-  const p = { ...DEFAULT_POLICY, classes: { ...DEFAULT_POLICY.classes, ...(['trusted','trusted-force'].includes(env.SP_PLUGIN_SCRIPTS) ? {script:true,trusted:true} : {}) } };
+  const p = { ...DEFAULT_POLICY, classes: { ...DEFAULT_POLICY.classes, ...(['trusted','trusted-force'].includes(env.SP_PLUGIN_SCRIPTS) ? {script:true,trusted:true} : env.SP_PLUGIN_SCRIPTS === 'sandbox' ? {script:true} : {}) } };
   if (o.rooms !== undefined) { if (ROOMS.includes(o.rooms)) p.rooms = o.rooms; else problems.push(`"rooms" must be one of ${ROOMS.join(', ')}`); }
   if (o.default !== undefined) {
     if (Array.isArray(o.default) && o.default.length <= 32 && o.default.every(isPluginId)) p.default = [...new Set(o.default)];

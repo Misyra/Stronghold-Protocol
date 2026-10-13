@@ -539,6 +539,102 @@ data and reset `content/support`'s cached data too. The browser uses its `data.j
 same. Passing only `opts.data` to a Battle does not change content/support's singleton. P1b tests both the Node setup
 and the actual browser loader with a patched bond; the match host's worker entry does the same (§11).
 
+## 11. Room content sets (房间内容组合, P1c)
+
+A room's host switches the server's `content` plugins on for the room in its 插件 panel, beside the cosmetic ones (§9).
+The room then plays a **content set** of its own: the vanilla data with those plugins applied by §10's builder, named by
+its own `cs`. Every member's page downloads that set and checks it byte by byte, and the room's matches run in a match
+host of that set, a worker thread (or a child process) of its own. Such a match is **unofficial**: marked in the room,
+the briefing, the result and the HUD, and left out of the statistics overview unless a player counts it. A room with
+cosmetic plugins only still plays the vanilla `cs` and counts as the original game (§9). DESIGN §32.6 keeps the
+decisions, the measurements and the open points.
+
+| File | Role |
+|---|---|
+| `server/plugins/roomSets.js` | what a room's plugin list makes: closed over requirements, ordered, split into the visual set and the content set, the policy's refusals |
+| `server/plugins/contentSets.js` | the content sets rooms hold: built through C1 (§10), kept by `cs`, the concurrent limit, the files `/cs/<cs16>/…` serves, the bytes a match host checks |
+| `server/plugins/policy.js` | the server owner's `plugins/config.json` |
+| `server/match/host/` | the match hosts: `index.js` (one worker or child process per `cs`, the watchdog, the limits), `entry.js` (inside the worker: the bytes checked against `cs`, the data installed before the match code is imported), `proxy.js` (the lobby's room.match for a hosted match: Promise answers) |
+| `public/js/content.js` | the page's copy of the room's content set: downloaded, checked, handed to `data.js` and the battle runner, `room.contentReady` |
+
+**Switching** (`room.setPlugins { plugins: [{ id, settings? }] }`). The host chooses plugins by id. The server adds what
+they require (shown as 「自动」), orders them (`shared/plugins/order.js`) and splits them by class: the cosmetic ones, and
+a content plugin's own `assets`, form the room's visual set `vs`; the content ones form its content set. `settings` are
+normalised by the manifest's declared settings (§3) and are part of `cs`. Refused, with the room unchanged:
+
+| Code | When |
+|---|---|
+| `NOT_HOST` / `ROOM_STARTED` | another player asks, or a match is running |
+| `PLUGIN_UNKNOWN` | the plugin is not installed |
+| `PLUGIN_BLOCKED` | a class or scope rooms cannot take, the server owner's policy (rooms off or fixed, not in `allow`, the class off), or a set whose merged data does not validate (the builder's first problems are the detail) |
+| `PLUGIN_DEPENDENCY` / `PLUGIN_CONFLICT` | a requirement is missing, or two plugins conflict |
+| `PLUGIN_INCOMPATIBLE` | a gameplay plugin made for other game versions or another plugin API (a cosmetic one is only a warning, §9) |
+| `PLUGIN_BUSY` | one content set more than the server runs at once (`limits.maxSets`, default 4 [ASSUMED]) |
+
+A change of the content set (or of the mode) un-readies the other players, like a difficulty change. Switching
+everything off brings back the vanilla shape of `room.state.content` exactly.
+
+**The room's state.** With gameplay plugins `room.state.content` is `{ cs, vanilla: false, plugins: [{ id, version,
+class, hash, auto? }], warnings, bytes, dataBytes, vs?, modes?, modeId?, kittedExtra? }`: `dataBytes` is what a member
+downloads beyond the vanilla files, `modes` the modes its plugins add (`{ id, name, roomMode, difficulty }`), `modeId`
+the one the host chose, `kittedExtra` the operators the set adds to a 自选 slot's list (`welcome.diyKitted` has the
+server's own). Each human seat and spectator carries `content: 'loading' | 'ready' | 'failed'`, only in such a room. The
+protocol increments are listed in `docs/design/network.md` §8.
+
+**Download and check** (`public/js/content.js`). `/cs/<cs16>/index.json` is the set's manifest (§10): enough to
+recompute `cs`. The page fetches it and every file it lists: an unchanged one at its plain `/data/<file>?v=<8 hex>` URL
+(cached for good), a patched one at `/cs/<cs16>/data/<table>.json`, the set's translations at their URLs. Every body is
+read as bytes and checked before it is decoded: its size and SHA-256 against its manifest entry (a BOM is part of the
+bytes). The manifest's composition (the data and translation hashes, the plugins and their settings) must hash to the
+room's `cs`, and the manifest may name no address but this server's `/data/` and the set's own `/cs/<cs16>/`. Then
+`data.js` shows the set (every screen reads its operators, modes and texts), the battle runner simulates on it, and the
+page tells the room `room.contentReady { cs }`. A failed check is told too (`{ cs, ok: false }`), and a toast asks the
+player to reload. `room.ready` waits for the player's own page and `room.start` for every player's (`CONTENT_NOT_READY`).
+Leaving the room, or the room going back to the original content, gives `data.js` the server's files again without a
+download. The panel shows the download's progress and the check's result.
+
+**Modes** (`room.setMode { modeId }`). With gameplay plugins the panel shows the room's mode, chosen by the host before
+the match and read-only for everyone else. An official mode of the room's type (solo or co-op) sets the difficulty; a
+mode a plugin adds (`content.modes`, of the room's type) becomes `content.modeId`, the match's mode, until the host picks
+a difficulty or the set no longer has that mode.
+
+**The match host** (`server/match/host/`). A vanilla room's match runs in the server process exactly as before, and so
+does a room with cosmetic plugins only. A content set's matches run in one worker per `cs`, shared by every room that
+plays that set. The worker receives the set's data bytes and its hash input, checks them against `cs`, installs the data
+(`server/data.js` `setData`) and only then imports the match code, so a plugin's data never reaches another room. The
+lobby talks to it through a proxy whose answers are Promises; each such room handles its messages one at a time on a
+queue of its own, and a vanilla room never queues. A worker that stops answering (no heartbeat for 10 s), crashes or runs
+out of memory ends that set's matches only: each room goes back to its lobby and its members read why. Each worker has a
+768 MB heap; at most `maxWorkers` (4) run at once, and an idle one stops after 10 minutes [ASSUMED, all three].
+`SP_MATCH_HOST=process` runs a child process instead of a worker thread; read the memory note in `docs/DEPLOY.md` first.
+
+**The battle's authority.** A page simulates its battle on the set it checked, and its `b.result` names that `cs`. A page
+that holds another content set, or none, for a battle of the room's set is never the authority: it sends no result and
+the server takes the field over at the deadline. The server refuses a result that names another `cs` and simulates that
+battle itself. A BattleSpec may carry the room's `vs` as well (for the diagnostics; the sim never reads it).
+
+**Unofficial marks.** The room's 插件 tag reads 非官方 with gameplay plugins; the briefing and the result say 非官方 with
+the number of gameplay plugins; the HUD shows a small corner mark. Statistics records carry `content: { cs, plugins }`
+(null for the original game) and the overview leaves such matches out by default (「含插件对局」 counts them). The
+diagnostics line reads `MODDED cs=… plugins=…` and the bug template asks whether plugins were on.
+
+**Server owner's policy** (`plugins/config.json`, git-ignored like the plugins): whether a room's host chooses its
+plugins (`rooms: "host"`, the default), every room plays a fixed set (`"fixed"`) or rooms play the original game
+(`"off"`); the plugins a new room starts with (`default`); the plugins rooms may use (`allow`); classes switched off
+(`classes`); the concurrent content sets (`limits.maxSets`); whether gameplay plugins made for other versions may be
+used (`allowIncompatible`). `SP_PLUGINS=off|host|fixed` overrides `rooms`. The file is read again when it changes;
+a bad field keeps its default and is reported in the log. `docs/DEPLOY.md` has an example.
+
+**HTTP.** `/cs/<cs16>/index.json`, `/cs/<cs16>/data/<table>.json` and `/cs/<cs16>/i18n/<lang>.json` of a gameplay set
+are served from memory with `Cache-Control: immutable` while a room holds the set, and for the last 8 sets nobody holds
+[ASSUMED]; the vanilla `/cs/<vanilla cs16>/index.json` is unchanged. `/healthz` counts the content sets in use
+(`content.sets`).
+
+**Not yet** (DESIGN §32.6): a form for plugin settings in the panel (the protocol takes them), a notice when a content
+plugin changes on disk while a room holds its set (the cosmetic notice exists), `allowIncompatible` reaching past the
+builder (it refuses a plugin it marks incompatible), and the DSL (§12) in data plugins (the builder still refuses
+`dsl`).
+
 ## 12. DSL
 
 A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
@@ -638,8 +734,9 @@ CSP, a ui plugin leaving `cs` alone) and `test/ui/ui-plugins.e2e.test.js` (`SP_E
 a battle event, a match intent rejected). P1c: `test/lobby-plugins.test.js` (a content plugin's set: served, checked,
 played in its match host; requirements switched on, conflicts, incompatible plugins, another player, a running match,
 un-readying, `room.setMode`, the `room.contentReady` gate, loadouts checked against the room's data, the policy file,
-the concurrent limit), `test/match/plugin-host.test.js` (a full match with bots in a worker under `SP_VERIFY=all`, the
-watchdog, a crash, extreme test data in a child process, the worker limit), `test/ui/plugins-content.test.js` (the
+the concurrent limit), `test/match/plugin-host.test.js` (a whole match of AI seats in a worker, `SP_VERIFY=all` in a
+worker, the watchdog, extreme test data in a child process, the worker limit), `test/ui/plugins-content.test.js` (the
 bytes checked before decoding, a manifest refused, `data.js` switching, the runner's `cs` check, the 自选 list, the
-statistics) and the browser test `test/ui/plugins-content.e2e.test.js` (`SP_E2E=1`: two pages load and check a data
+statistics), `test/plugins/contentSets.test.js` (a set not built twice, the limit, what `/cs/` serves) and the browser
+test `test/ui/plugins-content.e2e.test.js` (`SP_E2E=1`: two pages load and check a data
 plugin's set, a battle on it, the result accepted; a page claiming another `cs` is no authority).

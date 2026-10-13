@@ -8,6 +8,8 @@ export { loadRoomConfig } from './roomConfig.js';
 
 const hashSecret = (value) => createHash('sha256').update(value).digest();
 
+const configView = (lobby) => ({ ...lobby.getRoomConfig(), foreignSessionGeoipAvailable: !!lobby.botPopulation.countryLookup });
+
 function authorized(req, expected) {
   const value = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
     ? req.headers.authorization.slice(7) : '';
@@ -56,12 +58,12 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         return sendJson(req, res, 400, { error: 'INVALID_PAGINATION' });
       const rooms = [...lobby.rooms.values()].filter((room) => !room.disposed);
       return sendJson(req, res, 200, { total: rooms.length, offset, limit, serverNow: Date.now(),
-        config: lobby.getRoomConfig(), rooms: rooms.slice(offset, offset + limit).map((room) => roomView(room, lobby, registry)) });
+        config: configView(lobby), rooms: rooms.slice(offset, offset + limit).map((room) => roomView(room, lobby, registry)) });
     }
 
     if (url.pathname === '/api/room-config') {
       if (req.method === 'GET' || req.method === 'HEAD') return sendJson(req, res, 200, {
-        ...lobby.getRoomConfig(), roomCount: lobby.rooms.size, maxAllowed: 10000,
+        ...configView(lobby), roomCount: lobby.rooms.size, maxAllowed: 10000,
       });
       if (req.method === 'PUT') {
         let body;
@@ -76,7 +78,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         const update = limitWrites.then(async () => {
           const next = { ...lobby.getRoomConfig(), ...body };
           await saveRoomConfig(stateFile, next);
-          return { ...lobby.applyRoomConfig(next), persisted: true };
+          return { ...lobby.applyRoomConfig(next), foreignSessionGeoipAvailable: !!lobby.botPopulation.countryLookup, persisted: true };
         });
         limitWrites = update.catch(() => {});
         try { return sendJson(req, res, 200, await update); }

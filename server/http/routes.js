@@ -16,6 +16,7 @@
 
 // Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
 import { validateNickname } from './nickname.js';
+import { createPortalRoomHandler } from './portalRoom.js';
 import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
@@ -100,6 +101,8 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
  */
 export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null }) {
   const healthBody = createHealthBody(health);
+  const portalRoom = createPortalRoomHandler({ registry: health.registry, lobby: health.lobby,
+    trustProxy: health.network?.opts?.trustProxy ?? 'auto' });
   const methodAllowed = (req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') return true;
     res.setHeader('Allow', 'GET, HEAD');
@@ -123,6 +126,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    if (parts.rawPath === '/api/portal-room') { await portalRoom(req, res); return; }
     if (parts.rawPath === '/api/nickname/validate') {
       await validateNickname(req, res, allowNickname);
       return;

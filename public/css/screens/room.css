@@ -355,3 +355,14 @@
   text-align: center;
 }
 .room-recruit-hint a { color: var(--mint-400); text-decoration: underline; }
+.room-portal-entry {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: .08rem .16rem;
+  padding: .1rem .25rem;
+  font-size: calc(.14 * var(--utility-text, var(--t)));
+  color: var(--text-lo);
+}

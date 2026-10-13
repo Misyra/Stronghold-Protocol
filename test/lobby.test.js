@@ -561,8 +561,7 @@ describe('websocket lobby', () => {
     // Transport/compression scheduling must not refill a supposedly instantaneous burst.
     let now = Date.now();
     t.mock.method(srv.network, 'now', () => now);
-    const c = await pool.connect({ wsOptions: { perMessageDeflate: false } });
-    await c.hello('Spammer');
+    const c = await pool.player('Spammer');
     const N = 100;
     const rids = [];
     for (let i = 0; i < N; i++) rids.push(c.send({ t: 'ping', c: i }));
@@ -586,24 +585,16 @@ describe('websocket lobby', () => {
     assert.ok(c.isOpen);
   });
 
-  test('flooding far beyond the limit closes the socket (1008)', async (t) => {
+  test('flooding far beyond the limit closes the socket (1008)', { timeout: 10000 }, async (t) => {
     const now = Date.now();
     t.mock.method(srv.network, 'now', () => now);
-    const c = await pool.connect({ wsOptions: { perMessageDeflate: false } });
-    await c.hello('Flood');
+    const c = await pool.player('Flood');
     // Keep one rate window and await replies instead of building a compressed send queue ahead of the close frame.
     for (let i = 0; i < 39; i++) assert.equal((await c.request({ t: 'ping', c: i })).t, 'pong');
     for (let i = 0; i < 400; i++) await expectError(c, { t: 'ping', c: i }, ERR.RATE);
     assert.ok(c.isOpen, '400 drops do not close the socket');
     c.send({ t: 'ping', c: 400, rid: null });
-    const timeout = new AbortController();
-    let info;
-    try {
-      info = await Promise.race([c.closed, delay(10000, null, { signal: timeout.signal })]);
-    } finally {
-      timeout.abort();
-    }
-    assert.ok(info, 'the server closed the flooding socket');
+    const info = await c.closed;
     assert.equal(info.code, 1008);
     assert.equal(info.reason, 'rate limit');
   });

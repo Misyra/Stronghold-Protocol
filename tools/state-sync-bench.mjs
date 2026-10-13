@@ -22,10 +22,14 @@
 //     rooms (clock-only progress ticks, as COMBAT / BATTLE_CHECK produce them);
 //   * every room shares one seed, so the rooms are content-identical by construction;
 //   * the persisted document is captured in PREP, so it never covers a battle-interrupted round.
+//   * --idle-rooms mixes in socketless match-bearing rooms (nobody acting, nobody watching). They are the only rooms a
+//     checkpoint flush can find unchanged round after round, which is what the persistence-version skip removes; with
+//     --idle-rooms 0 every room is marked dirty on every tick and the skip has nothing to skip.
 //
 // Usage:
 //   node tools/state-sync-bench.mjs --rooms 4 --sockets 16 --seconds 12 --round 3 --save-ms 2000 --out .cache/x.json
-// Options: --rooms --sockets(=rooms*4) --seconds --round --public-hz --action-hz --seed --save-ms --label --out --profile
+//   node tools/state-sync-bench.mjs --rooms 32 --sockets 128 --idle-rooms 200 --seconds 40 --save-ms 10000
+// Options: --rooms --sockets(=rooms*4) --idle-rooms --seconds --round --public-hz --action-hz --seed --save-ms --label --out --profile
 // Exit code 1 when any verification counter is non-zero (or a room left PREP during the window).
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +56,11 @@ const int = (key, fallback, min, max) => {
   return n;
 };
 const rooms = int('rooms', 4, 1, 64);
+// Rooms that hold a running match and no socket at all: nobody acts, nobody watches. Created server-side inside the
+// child (the tools/persist-sim.mjs Phase B recipe) and never ticked, marked or sent to. A checkpoint flush walks every
+// room that has a match, so these are exactly the rooms the persistence-version skip exists for — and the reason the
+// all-busy synthetic load cannot show it: there, every room is marked dirty on every tick by construction.
+const idleRooms = int('idle-rooms', 0, 0, 600);
 const sockets = int('sockets', rooms * 4, 4, 256);
 const seconds = int('seconds', 12, 4, 600);
 const round = int('round', 5, 1, 20);
@@ -132,7 +141,10 @@ async function runServer() {
   const srv = await startServer({
     host: '127.0.0.1', port: 0, quiet: true, log: quiet, workers: 0,
     MatchClass: BenchMatch, stateFile: stateDir,
-    maxRooms: rooms, maxConnections: sockets + 8,
+    // RoomReclamation disposes every offline room once the lobby passes ceil(maxRooms * 4/5) - 1 rooms, and idle
+    // rooms have no sockets: the limit has to stay well clear of the fleet, or the server (correctly) reclaims the
+    // very rooms this mode measures. Capacity is not part of what is measured here.
+    maxRooms: Math.ceil((rooms + idleRooms) * 4 / 3) + 4, maxConnections: sockets + 8,
     // the bench measures the state chain, not the abuse buckets (production values would throttle the fleet itself)
     ratePerSec: 4000, rateBurst: 4000, heavyPerSec: 4000, heavyBurst: 4000, abuseDropsPerSec: 1e9,
     seedFn: () => seed,
@@ -155,6 +167,7 @@ async function runServer() {
   const persist = { flushes: 0, flushCalls: 0, flushMs: [], checkpointEncodes: 0, checkpointMs: 0,
     shardWrites: 0, indexWrites: 0, runtimeWrites: 0, writtenBytes: 0 };
   const persistSnap = () => ({ flushes: persist.flushes, flushCalls: persist.flushCalls, flushAt: persist.flushMs.length,
+    version: srv.persister && srv.persister.versionStats ? { ...srv.persister.versionStats } : null,
     checkpointEncodes: persist.checkpointEncodes, checkpointMs: persist.checkpointMs, shardWrites: persist.shardWrites,
     indexWrites: persist.indexWrites, runtimeWrites: persist.runtimeWrites, writtenBytes: persist.writtenBytes });
   if (srv.persister) {
@@ -184,6 +197,21 @@ async function runServer() {
       return writeAtomic(file, content);
     };
   }
+
+  // Socketless match-bearing rooms. After the first flush writes their checkpoint nothing about them changes, so every
+  // later flush is pure re-work in a build without the version skip. They stay in INFO_CHECK — checkpointable and
+  // restorable (tools/persist-sim.mjs proves the restart) — and are excluded from every tick, mark, advance and freeze.
+  const idleCodes = new Set();
+  for (let i = 0; i < idleRooms; i++) {
+    const name = `idle${lettersOf(i)}`;
+    const session = srv.registry.create(name);
+    if (!srv.lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' }).ok) throw new Error(`idle room ${i} failed`);
+    const room = srv.lobby.getRoom(session.roomCode);
+    const res = srv.lobby.startMatchWith(room, name, null);
+    if (res && res.error) throw new Error(`idle match ${i} failed: ${JSON.stringify(res)}`);
+    idleCodes.add(room.code);
+  }
+  const isIdle = (room) => idleCodes.has(room.code);
   // Full / patch classification of the frames that actually reach a socket (the state transport keeps the logical
   // m.public / m.private type in wireStats, which cannot tell them apart). A delta frame carries `base` between its
   // seq and its patch, the full frame does not.
@@ -245,6 +273,7 @@ async function runServer() {
     const publicFrames = byType['m.public'] ? byType['m.public'].frames : 0;
     const privateFrames = byType['m.private'] ? byType['m.private'].frames : 0;
     windowStats = {
+      idleRooms,
       wallMs: round3(wallMs),
       mainThreadCpuMs: round3(threadMs),
       mainThreadCpuSource: typeof process.threadCpuUsage === 'function' ? 'process.threadCpuUsage' : 'unavailable',
@@ -264,6 +293,11 @@ async function runServer() {
         flushMs: { ...pick(distribution(persist.flushMs.slice(persistBefore.flushAt, persistAfter.flushAt)), ['p50', 'max']) },
         checkpointEncodes: persist.checkpointEncodes - persistBefore.checkpointEncodes,
         checkpointMs: round3(persist.checkpointMs - persistBefore.checkpointMs),
+        // The persistence version ledger, when the build has one (perf/state-sync): encodes vs skips per window.
+        versionSkips: persistBefore.version && persistAfter.version ? {
+          encodes: persistAfter.version.encodes - persistBefore.version.encodes,
+          skipped: persistAfter.version.skipped - persistBefore.version.skipped,
+          holes: persistAfter.version.holes - persistBefore.version.holes } : null,
         shardWrites: persist.shardWrites - persistBefore.shardWrites,
         indexWrites: persist.indexWrites - persistBefore.indexWrites,
         runtimeWrites: persist.runtimeWrites - persistBefore.runtimeWrites,
@@ -288,7 +322,7 @@ async function runServer() {
     const t0 = performance.now();
     for (const room of srv.lobby.rooms.values()) {
       const m = matchOf(room);
-      if (!m) continue;
+      if (!m || isIdle(room)) continue;
       if (m.phase !== PHASE.PREP) drifted.add(room.code);
       try { m.guard(() => m.markPublic()); } catch (e) { m.reportError('benchTick', e); }
     }
@@ -303,6 +337,7 @@ async function runServer() {
         // round's PREP, which is what makes a repeated advance safe).
         const out = [];
         for (const room of srv.lobby.rooms.values()) {
+          if (isIdle(room)) continue; // nobody is there to ready up: the round predicate could only spin
           const m = matchOf(room);
           if (!m) { out.push({ code: room.code, missing: true }); continue; }
           if (typeof m.sched.runUntil !== 'function') { out.push({ code: room.code, error: 'not a virtual clock' }); continue; }
@@ -323,6 +358,7 @@ async function runServer() {
         // (a ranged operator needs 高台), which is what left the boards empty on some stages.
         const out = {};
         for (const room of srv.lobby.rooms.values()) {
+          if (isIdle(room)) continue;
           const m = matchOf(room);
           if (!m) continue;
           const seats = {};
@@ -351,6 +387,7 @@ async function runServer() {
       if (msg.measure) {
         const report = [];
         for (const room of srv.lobby.rooms.values()) {
+          if (isIdle(room)) continue;
           const m = matchOf(room);
           if (!m) { report.push({ code: room.code, missing: true }); continue; }
           // Freeze the setup into the measurement shape: drop the virtual clock's pending work (the phase deadline
@@ -373,7 +410,8 @@ async function runServer() {
             board: m.order.map((ps) => ({ playerId: ps.playerId, board: ps.board.size, hand: ps.hand.filter(Boolean).length, funds: ps.funds })) });
         }
         const rooms_ = [...srv.lobby.rooms.values()];
-        if (rooms_.length !== rooms) throw new Error(`expected ${rooms} rooms, the lobby holds ${rooms_.length}`);
+        if (rooms_.length !== rooms + idleRooms) throw new Error(`expected ${rooms + idleRooms} rooms, the lobby holds ${rooms_.length}`
+          + ` (idle tracked ${idleCodes.size}, codes ${JSON.stringify(rooms_.map((r) => `${isIdle(r) ? 'idle:' : 'live:'}${r.code}`))})`);
         const missing = report.filter((r) => r.missing || r.phase !== PHASE.PREP);
         if (missing.length) throw new Error(`rooms not frozen in PREP: ${JSON.stringify(missing)}`);
         windowStartAt = Date.now() + 250;
@@ -418,6 +456,7 @@ async function runServer() {
         // The final quiet flush: through the guarded production entry point, and with the public frame forced so the
         // dedup baseline and the last frame every client received are the same string by construction.
         for (const room of srv.lobby.rooms.values()) {
+          if (isIdle(room)) continue;
           const m = matchOf(room);
           if (!m) continue;
           if (m.phase !== PHASE.PREP) drifted.add(room.code);
@@ -437,6 +476,7 @@ async function runServer() {
         const baselines = [];
         let matchErrors = 0;
         for (const room of srv.lobby.rooms.values()) {
+          if (isIdle(room)) continue; // no socket ever held one of their frames: nothing to compare them against
           const m = matchOf(room);
           if (!m) { baselines.push({ code: room.code, missing: true }); continue; }
           matchErrors += m.errorCount;
@@ -864,7 +904,7 @@ async function runParent() {
     const failed = Object.entries(verification).filter(([, v]) => v !== 0);
     const report = {
       label, node: process.version, platform: `${process.platform}-${process.arch}`,
-      scale: { rooms, sockets, seconds, publicHz, actionHz, round, saveMs: measured.saveMs },
+      scale: { rooms, sockets, idleRooms, seconds, publicHz, actionHz, round, saveMs: measured.saveMs },
       setupMs: +setupMs.toFixed(1),
       passed: failed.length === 0,
       window: { ...result.window, actions },
@@ -910,7 +950,9 @@ function printSummary(report, failed) {
   const pct = (v) => (v == null ? 'n/a' : v.toFixed(2));
   console.log('');
   console.log(`状态同步链路基准 · ${report.label}`);
-  console.log(`  规模: ${report.scale.rooms} 个四人房间 / ${report.scale.sockets} 个真实连接 / ${report.scale.seconds} 秒`
+  console.log(`  规模: ${report.scale.rooms} 个四人房间 / ${report.scale.sockets} 个真实连接`
+    + (report.scale.idleRooms ? ` / 另有 ${report.scale.idleRooms} 个无连接的对局房间` : '')
+    + ` / ${report.scale.seconds} 秒`
     + ` / 公共 ${report.scale.publicHz} Hz / 每客户端操作 ${report.scale.actionHz} Hz / 第 ${report.scale.round} 回合 PREP / 存档间隔 ${report.scale.saveMs} ms`);
   console.log(`  准备: ${report.setupMs} ms(虚拟时钟推进,真实 WebSocket 建连与操作)`);
   console.log(`  窗口: ${w.wallMs} ms 墙钟 · 主线程 CPU ${w.mainThreadCpuMs} ms(${pct(w.averageCorePercent)}% 单核)· 进程 CPU ${w.processCpuMs} ms`);
@@ -934,6 +976,14 @@ function printSummary(report, failed) {
   }
   if (process.platform === 'win32') {
     console.log('  注意: Windows 定时器粒度约 15.6 ms,monitorEventLoopDelay({resolution:10}) 的均值/中位数含这一底噪,看 P99/最大值与波动。');
+  }
+  if (w.persist.versionSkips) {
+    const total = w.persist.versionSkips.encodes + w.persist.versionSkips.skipped;
+    console.log(`  检查点版本: 真编码 ${w.persist.versionSkips.encodes} 次 · 跳过 ${w.persist.versionSkips.skipped} 次`
+      + `(${total ? (100 * w.persist.versionSkips.skipped / total).toFixed(1) : '0.0'}% 的检查点没有重新编码)`
+      + ` · 版本漏洞 ${w.persist.versionSkips.holes}`);
+  } else if (w.idleRooms) {
+    console.log(`  检查点版本: 这个构建没有版本账本,${w.idleRooms} 个无连接房间每轮都被重新捕获 + 跨线程克隆 + 编码。`);
   }
   if (!w.persist.flushes || !w.persist.checkpointEncodes) {
     console.log('  注意: 本次窗口没有完整走完一次存档;默认存档间隔 10 秒时请延长 --seconds,或用 --save-ms 缩短。');

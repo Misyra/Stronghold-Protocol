@@ -2,6 +2,9 @@
 import { clone, object, own, forbidden, problem, jsonProblems, mergeData, recordId, RECORD_MAPS } from './dataUtils.js';
 import { canonicalJson } from './identity.js';
 
+/** Data-patch operations (DESIGN §32.5). Closed: a new op belongs in the frozen API table. */
+export const PATCH_OPS = Object.freeze(['set', 'merge', 'add', 'append', 'remove']);
+
 const kind = v => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
 // null is its own type: it may be written back onto a field that is already null, and nowhere else.
 const compatible = (a, b) => kind(a) === kind(b);
@@ -39,7 +42,7 @@ export function applyPatches(data, ops, { pluginId = null, settings = {} } = {})
   for (const [i, op] of ops.entries()) {
     const at = `ops[${i}]`;
     try {
-      if (!object(op) || !['set', 'merge', 'add', 'append', 'remove'].includes(op.op)) throw problem('PLUGIN_PATCH_OP', at, 'unknown patch operation');
+      if (!object(op) || !PATCH_OPS.includes(op.op)) throw problem('PLUGIN_PATCH_OP', at, 'unknown patch operation');
       if (!own(out, op.file) || !object(out[op.file])) throw problem('PLUGIN_PATCH_PATH', at, 'unknown data file');
       if (!Array.isArray(op.path ?? []) || (op.path ?? []).some(k => !(typeof k === 'string' || Number.isInteger(k)) || forbidden(k))) throw problem('PLUGIN_PATCH_PATH', at, 'path must contain safe keys or array indexes');
       if (op.id !== undefined && (typeof op.id !== 'string' || forbidden(op.id))) throw problem('PLUGIN_PATCH_PATH', at, 'invalid record id');

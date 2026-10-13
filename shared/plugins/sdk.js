@@ -36,3 +36,8 @@ export function createSDK(plugin, { settings = {}, log = (..._args) => {} } = {}
     log: (...args) => { if (lines++ < 20) log(`[plugin:${plugin.id}]`, ...args.map(x => String(x).slice(0,500))); },
   });
 }
+
+/** The module id a plugin's code imports (the frozen API table, docs/PLUGIN-API.md). */
+export const SDK_ID = 'sp:sdk@1';
+/** What createSDK(plugin) hands a plugin's setup as `sp` — each one is a row of the frozen API table. */
+export const SDK_MEMBERS = Object.freeze(['constants', 'content.register', 'enemies.register', 'kit', 'kits.register', 'log', 'math', 'meta.register', 'settings']);

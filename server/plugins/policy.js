@@ -20,6 +20,8 @@
 // The environment wins over the file for `rooms`: SP_PLUGINS=off | host | fixed. A missing file is the defaults above; a
 // broken one is reported once in the log and its readable fields used (a field of the wrong type keeps the default).
 // The file is read again when its size or mtime changes (looked at, at most once a second, when a room asks).
+// `allowDownloadHosts` is not a policy field. server/plugins/install.js reads it from this same file (the https
+// download allowlist). An unknown key is ignored here on purpose.
 
 import fs from 'node:fs';
 import path from 'node:path';

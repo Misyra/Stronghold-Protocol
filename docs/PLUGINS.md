@@ -57,10 +57,11 @@ Chinese: [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md), an AI agent's: `plugins/AGENTS.md`)
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), and with gameplay plugins
   the briefing, the HUD corner, the result and the statistics (such matches stay out of the overview by default; a match
   with cosmetic plugins only is still the original game — §9, §11).
-- **No third-party code in a battle.** Art and data plugins carry no code, and the declarative DSL (§12) is data, not
-  code. An interface plugin (P4, §14) is the one page that runs, and only inside a sandboxed iframe: it sees a
-  read-only feed and cannot send a match intent. Classes `script` and `trusted` stay unsupported until P3 (trusted
-  code only with the server owner's and every player's explicit consent, then a sandbox).
+- **No third-party code in a battle unless the server owner switches it on.** Art and data plugins carry no code, and
+  the declarative DSL (§12) is data, not code. An interface plugin (P4, §14) runs only inside a sandboxed iframe: it sees
+  a read-only feed and cannot send a match intent. Code plugins (`script`, `trusted`, §13) are off by default: trusted
+  execution needs the owner's switch, a pinned lock and every player's consent (P3a); sandboxed execution runs the
+  same code in isolated compartments (P3b).
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
   still check a battle). Players never install gameplay content of their own.
@@ -1137,6 +1138,22 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_SKILL` | A skill spec is not right ({where}): {detail} | "skill" is an object whose "kind" is instant, duration, ammo, charges, toggle or passive; several skills are "skills": { "<skill id>": { … } }. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_META` | The prep spec is not right ({where}): {detail} | Write "meta": { "on": [ { "when": <trigger>, "do": [ <actions> ] } ] }; "meta.key" is effect:<plugin id>:<name> with this plugin's own id. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_DSL_TALENT` | A talent is not right ({where}): {detail} | "talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_SHAPE` | The catalogue file is not in the right shape: {detail} | A catalogue is a JSON object with "catalog": 1, a "name" and a "plugins" list. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_URL` | A catalogue or plugin address is not an https address this installer will fetch: {detail} | The address starts with https://, the host has a dot, and it has no user or password. A download uses a public address on port 443 only. Loopback, private, link-local and .local are refused unless the operator names the host in allowDownloadHosts. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_HASH` | A catalogue entry has no sha256, or it is not 64 lowercase hex digits: {detail} | Each plugin names the SHA-256 of its zip (64 lowercase hex digits). |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_ID` | A plugin id is not valid, or it is repeated: {detail} | An id is 2 to 32 lowercase letters, digits and hyphens, and it appears once in the catalogue. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CATALOG_FIELD` | A catalogue field is not valid: {detail} | Follow docs/plugin-catalog.example.json: version is semver, class is a known class, and long text is shortened. |
+| The studio refuses the action and says why | `PLUGIN_CATALOG_SIZE` | The catalogue file is too large: {detail} | The catalogue document itself is at most 1 MB. A plugin zip has its own 200 MB cap. |
+| The studio refuses the action and says why | `PLUGIN_CATALOG_FETCH` | The catalogue could not be fetched: {detail} | Check that the address is public https on port 443, that the server can reach it, and that it is not redirected to a non-public address or off https. The one deadline covers the body, not each redirect on its own. A local catalogue file works too. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_URL` | The install address is not a public https address: {detail} | Install a public https zip on port 443 only. A private or loopback address is refused unless the operator allowlist names it. A file on this machine can be given as a path, including a Windows drive or a UNC path. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_HASH` | The zip SHA-256 does not match, or none was given: {detail} | An https install needs --sha256 (or the sha256 of a catalogue entry). Do not install when the hash differs. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_SIZE` | The zip is over the size cap, or it is not the byte length the catalogue names: {detail} | A plugin is at most 200 MB. When the catalogue gives bytes, it has to be the zip size. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_TIMEOUT` | The download timed out: {detail} | Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20. That one deadline covers the connection, the redirects and the body. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_FETCH` | The download failed: {detail} | Check that the address opens and answers with the zip (HTTP 200). |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_REDIRECT` | The download was redirected to a non-public address, off port 443, or too many times: {detail} | Only a public https redirect on port 443 is followed, at most 5. Use a direct https address. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_ZIP` | This zip cannot be installed: {detail} | The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_CHECK` | The plugin failed its check and was not placed in plugins/: {detail} | Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files. |
+| The studio refuses the action and says why | `PLUGIN_INSTALL_EXISTS` | plugins/ already has this id: {detail} | Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
 <!-- plugin-errors:end -->
 
@@ -1153,6 +1170,51 @@ another type (`englishName`, `credits`, `license`, `authors`).
 **Templates are modules**: a template is one file of `server/studio/templates/` (its class, its target kinds, its
 slots for a target, the overlay of a new plugin) beside one of `public/studio/js/editors/` (its previews and what its
 slots take); the data, DSL, script and interface templates of later steps are added the same way.
+
+## 17. The catalogue and installing by address (目录与安装)
+
+A catalogue is a document someone else publishes. This project does not host the zips and does not run a market. The
+format is `schemas/catalog.schema.json` and `shared/plugins/catalog.js`: `{ "catalog": 1, "name", "plugins": [ { "id",
+"name", "version", "class", "description", "url", "sha256", "bytes", "homepage", "license", "authors", "app" } ] }`.
+`url` is an https address of a zip. `sha256` is the SHA-256 of that zip. `docs/plugin-catalog.example.json` is an
+example whose addresses do not exist.
+
+`node tools/plugin.mjs install <zip path | https URL> [--sha256 <hex>] [--force]` installs into `plugins/<id>/`. A file
+on this machine installs as it is, including a Windows drive (`C:/…`, `C:\…`) and a UNC path (`\\server\…`, `//server/…`).
+An https address is accepted only with `--sha256`. The hash is checked on the bytes. The download stops at 200 MB
+(`PLUGIN_LIMITS.pluginBytes`). One deadline covers the connection, every redirect and the body. A redirect is followed
+only when the next address is still public https on port 443. A literal private, loopback, link-local or `.local`
+address is refused before the request, and so is an address that resolves to one of those. The zip is extracted with
+the same protections as any plugin zip (no path traversal, no symbolic link, no file-count or size bomb, no two paths
+that differ only by case, no ZIP64 extra on the local header) into a temporary folder. `check` must pass (a warning
+does not stop it) before the folder is renamed into `plugins/<id>/`. The same id is left untouched unless `--force`,
+which moves the old folder to `plugins/_replaced/<id>-<time>/` and does not delete it. No file in the package is
+imported or run.
+
+`node tools/plugin.mjs catalog <file | https URL> [--json]` lists the entries and marks each one installed, updatable
+or incompatible with this build (`app`, every class). A missing `app` is compatible. An empty `app` is not a valid
+catalogue, and a present `app` this build cannot read is incompatible. Fetching the catalogue document does not
+require a hash of the document. It is still public https on port 443 only, capped, and it does not follow a redirect
+to a non-public address or off https. The same id twice is refused by `readCatalog` and by this repository's schema
+validator (`uniqueItemProperties`). A stock JSON Schema editor that ignores that keyword will not see the duplicate.
+
+The studio page 「从目录安装」 (`/studio/`) takes a catalogue address or a catalogue file the browser already has. The
+browser posts the text. It does not download the zip and upload it. The server downloads, on this machine and the LAN,
+with the studio key. The browser cannot name a path on the server's disk.
+
+An operator may name extra download hosts in `plugins/config.json` `allowDownloadHosts` (a string array in the same
+file as the room policy; `policy.js` ignores the key) or in `SP_PLUGIN_DOWNLOAD_ALLOW` (comma-separated). An entry is
+an exact host, `host:port`, or `[ipv6]` / `[ipv6]:port`. There are no wildcards. The default is empty. A catalogue
+document cannot add a host. A missing or broken list does not block a public download.
+
+[ASSUMED] a zip download waits 60 seconds and a catalogue document 20 seconds. That one deadline covers the body, and
+there are at most 5 redirects. Only port 443 unless the allowlist names the host. The allowlist names above are the
+operator's. A leading `//` is a file path, not a protocol-relative URL. `2001::/32` and the whole `2002::/16` are
+refused, as is every IPv4-mapped IPv6 address. The download does not pin a certificate beyond Node's default TLS
+check. A catalogue document is at most 1 MB. Field limits are in `CATALOG_LIMITS`. A missing `app` is compatible; an
+empty one is not. Whether an installed copy is older ignores a pre-release suffix. Case folding of a zip path is
+Unicode `toLowerCase` of each segment. A class this build does not load may still be stored when the check passes;
+it is not executed. `uniqueItemProperties` is a keyword of this repository's validator, not of stock JSON Schema.
 
 ## 18. Later
 
@@ -1206,4 +1268,9 @@ fixes, every finding of a set of broken plugins coded with its placeholders fill
 `test/studio/hotreload.test.js` (the watch; a single-player room and an author's room apply a change by themselves, during
 a match too, any other host is told, the studio not opened keeps §9; the events) and the browser test
 `test/ui/studio.e2e.test.js` (`SP_E2E=1`: a new plugin, an operator by its name, a PNG dropped and previewed in the game's
-card, packed into a zip; a public address refused).
+card, packed into a zip; a public address refused). The catalogue and install-by-address (§17): `test/plugins/catalog.test.js`
+(the schema and `readCatalog` agree on one fixture set; duplicate ids that are not the same object, and an `app` that is
+not a version range, are check-only), `test/plugins/install.test.js` (a local zip, a hash, a download cap, traversal, a
+symbolic link, a file-count bomb, no overwrite, `--force` moves the old folder, a decoy script is not run),
+`test/studio/catalog.test.js` (the studio gate, the list, the install) and `test/ui/studio-catalog.e2e.test.js`
+(`SP_E2E=1`). The frozen API v1 table: `docs/PLUGIN-API.md`, `shared/plugins/surface.js`, `test/plugins/surface.test.js`.

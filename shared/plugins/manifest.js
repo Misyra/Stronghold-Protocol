@@ -172,6 +172,8 @@ const SETTING_TYPES = ['boolean', 'integer', 'number', 'enum'];
 const V2_FIELDS = new Set(['$schema', 'manifest', 'id', 'name', 'englishName', 'description', 'version', 'app', 'api', 'class', 'scope',
   'authors', 'credits', 'license', 'homepage', 'sourceLang', 'requires', 'optional', 'conflicts', 'loadAfter', 'loadBefore', 'priority',
   'settings', 'permissions', 'overrides', 'entry', 'slots', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
+/** Those fields, sorted, for the frozen API table (docs/PLUGIN-API.md). */
+export const MANIFEST_FIELDS = Object.freeze([...V2_FIELDS].sort());
 /** Fields only a lang plugin has. */
 const LANG_ONLY = ['files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits'];
 

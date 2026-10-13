@@ -21,18 +21,23 @@
     var el = document.getElementById('n');
     if (el) el.textContent = String(total);
   }
-  function isDamage(ev) {
-    if (!ev) return false;
-    var tag = ev.t || ev.type || ev.kind;
-    return tag === 'damage' || tag === 'hit' || tag === 'hpDamage' || tag === 'dmg';
-  }
+  // The host maps engine tuples by position: ['dmg', unitId, amount, kind] arrives as
+  // { t:'dmg', unitId, amount }. The HP number is `amount`, never the first number in the tuple.
+  // `damage` is the object form a debug feed may still send. hit / hpDamage are not engine tags.
   function amountOf(ev) {
-    var n = ev.amount != null ? ev.amount : (ev.dmg != null ? ev.dmg : ev.damage);
+    if (!ev) return 0;
+    var tag = ev.t || ev.type || ev.kind;
+    if (tag !== 'dmg' && tag !== 'damage') return 0;
+    var n = ev.amount;
     return typeof n === 'number' && isFinite(n) ? n : 0;
   }
   window.addEventListener('message', function (ev) {
     var m = ev.data;
     if (!m || m.v !== 1 || typeof m.t !== 'string') return;
+    if (m.t === 'welcome') {
+      parent.postMessage({ v: 1, t: 'ready' }, '*');
+      return;
+    }
     if (m.t === 'rejected' && m.reason === 'intent') {
       document.documentElement.setAttribute('data-rejected', 'intent');
       return;
@@ -45,9 +50,7 @@
     }
     if (m.t !== 'battle' || !Array.isArray(m.events)) return;
     var added = 0;
-    for (var i = 0; i < m.events.length; i++) {
-      if (isDamage(m.events[i])) added += amountOf(m.events[i]);
-    }
+    for (var i = 0; i < m.events.length; i++) added += amountOf(m.events[i]);
     if (!added) return;
     total += added;
     shown = true;

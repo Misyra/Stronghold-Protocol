@@ -3,8 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="referrer" content="no-referrer">
-<!-- Served from /public, so the /p/ CSP header is not on this page. The iframe is sandboxed (allow-scripts only).
-     The check below is the same rule as shared/plugins/ui.js frameEntryAllowed — keep them together. -->
+<!-- Served from /public, so the /p/ CSP header is not on this page. The iframe element is sandboxed
+     (allow-scripts only). A <meta> sandbox is ignored, so it is not here: the entry's response header
+     (UI_FRAME_CSP, sandbox allow-scripts, no allow-same-origin) is what covers a top-level open.
+     The check below is the same rule as shared/plugins/ui.js frameEntryAllowed — keep them together.
+     Redirect from the load handler, not during parse, so the host's first load event is this page
+     and the second is the entry. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
 <title></title>
 </head>
@@ -30,7 +34,9 @@
     var m = /^\/p\/([a-z0-9][a-z0-9-]{1,31})\/([0-9a-f]{8})\/(.+\.html)$/.exec(target);
     return !!m && m[1] === pluginId && packPath(m[3]);
   }
-  if (allowed(id, entry)) location.replace(entry);
+  window.addEventListener('load', function () {
+    if (allowed(id, entry)) location.replace(entry);
+  });
 })();
 </script>
 </body>

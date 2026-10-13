@@ -276,7 +276,8 @@ function cacheControlFor(ext, mountName, segments, query) {
  * One file → the response.
  * @param {{ contentHash?: string | null, cacheControl?: string | null, headers?: Record<string, string> | null }} [opts]
  *   contentHash: the file's content hash (assetIndex.js) — the ETag then; cacheControl: overrides the policy of its
- *   path (a content-hashed URL); headers: extra response headers (a ui plugin's Content-Security-Policy), on 200 and 304
+ *   path (a content-hashed URL); headers: extra response headers (a ui plugin's Content-Security-Policy), on 200,
+ *   206 and 304 (they share this header object). 416 is an empty body and does not carry them.
  */
 export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, opts = {}) {
   const ext = path.extname(absPath).toLowerCase();

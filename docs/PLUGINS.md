@@ -419,11 +419,17 @@ never loads it.
 
 **The frame.** The page runs in `<iframe sandbox="allow-scripts">` — no `allow-same-origin`, so its origin is the
 opaque string `"null"` and it cannot read this site's storage or credentials. The host loads it through
-`public/plugin-frame.html`, which redirects only to that plugin's own `/p/<id>/<hash8>/<entry>`. Files at `/p/` for a
-ui plugin, and not cosmetic art, are sent with
-`Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'`
-(`UI_FRAME_CSP`). [ASSUMED] `'self'` may not match the opaque origin, so an inline script runs and a separate script
-file may not; that is not repaired by granting the iframe the page's origin. There is no CSP on the rest of the site.
+`public/plugin-frame.html`, which redirects (from its own load handler) only to that plugin's own
+`/p/<id>/<hash8>/<entry>`. The first load is that redirect, the second is the entry, and a third load destroys the
+frame: the host then clears `ready` and posts nothing more. `postMessage` to `"null"` cannot tell those documents
+apart. Files at `/p/` for a ui plugin, and not cosmetic art, are sent with
+`Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; sandbox allow-scripts; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`
+(`UI_FRAME_CSP`), on 200, 206 and 304. The `sandbox` directive is what still applies when that URL is opened at the
+top level; a `<meta>` sandbox does nothing. The header has no `allow-same-origin`. [ASSUMED] `'self'` may not match
+the opaque origin, so an inline script runs and a separate script file may not; that is not repaired by granting the
+iframe the page's origin. [ASSUMED] A snapshot or a private view already posted can leave in the URL of the
+navigation that exits the entry. Later posts stop; that does not recall the copy. `navigate-to` was not measured and
+is not the fix. There is no CSP on the rest of the site.
 
 **The feed** is postMessage API v1 (`shared/plugins/ui.js`, `schemas/ui.schema.json`). The host sends the player's
 visible `m.public` (a subset), the player's own `m.private` (a subset), throttled events and snapshots of the battle
@@ -432,12 +438,16 @@ namespaced storage keys (`sp.plugin.<id>.`, proxied by the host page). It cannot
 type is `hello`, `ping`, `room.*`, `g.*` or `b.*`, or that carries one, is rejected. The host never turns a plugin
 message into a client→server message.
 
-**Limits [ASSUMED]:** 20 messages a second per plugin, burst 40; battle pushes at 4 Hz, ≤ 40 events a batch, a
-snapshot over 48 KB dropped; a plugin message over 8 KB refused; storage keys of 1–64 characters from
-`A–Z a–z 0–9 . _ -`, not `__proto__`, `prototype`, `constructor` or `..`, a JSON value ≤ 4096 bytes, ≤ 32 keys and
-≤ 32 KB per plugin; height 48–480 px; a notice ≤ 80 characters; one slot per plugin, one plugin per slot, at most 8
-mounted. The private subset drops loadout, ops, diy, effects, nextEnemies, personalChoice, rewardOffer and tokens.
-The exact allowlists are `subsetPublic` and `subsetPrivate`.
+**Limits [ASSUMED]:** 20 messages a second per plugin, burst 40; battle pushes at 4 Hz, ≤ 40 events a batch; a
+snapshot whose JSON is over 48 KB is dropped with `truncated`, and `truncated` is also set when a string, array, object
+or nesting depth was cut (the partial snapshot is kept when it still fits); a plugin message over 8 KB refused;
+storage keys of 1–64 characters from `A–Z a–z 0–9 . _ -`, not `__proto__`, `prototype`, `constructor` or `..`, a JSON
+value ≤ 4096 UTF-8 bytes, ≤ 32 keys and ≤ 32 KB UTF-8 per plugin; height 48–480 px; a notice ≤ 80 characters, and a
+distinct notice at most once per 2 seconds (the same text is still delivered so toasts can merge); one slot per
+plugin, one plugin per slot, at most 8 mounted. Engine `dmg` / `heal` tuples expose the HP at `amount` (the unit id
+is `unitId`). The private subset drops loadout, ops, diy, effects, nextEnemies, personalChoice, rewardOffer and
+tokens. The exact allowlists are `subsetPublic` and `subsetPrivate`. Storing a snapshot does not trip
+`PLUGIN_INTENT` just because the host had labelled it `b.snap`.
 
 **Switches.** 设置 → 「界面插件」 is `localStorage` (`sp.pref.ui-plugins`). It does not affect other players. The host
 may 「推荐」 (`sp.pref.ui-recommend`); the room shows 「房主推荐」 and each player still decides. [ASSUMED] the

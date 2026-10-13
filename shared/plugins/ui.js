@@ -5,16 +5,25 @@
 //
 // [ASSUMED] limits, marked here and in DESIGN §32.8:
 //   * 20 messages a second per plugin, a burst of 40
-//   * battle pushes at 4 Hz, at most 40 events a batch; a snapshot over 48 KB is dropped (truncated)
-//   * a plugin→host message over 8 KB is refused
-//   * storage: key ^[A-Za-z0-9._-]{1,64}$, not __proto__ / prototype / constructor / ".."; JSON value ≤ 4096 bytes;
-//     ≤ 32 keys and ≤ 32 KB per plugin, namespaced sp.plugin.<id>.<key> in the host page's localStorage
-//   * iframe height clamped to 48–480 px; a notice ≤ 80 characters
+//   * battle pushes at 4 Hz, at most 40 events a batch. A snapshot whose JSON text is over 48 KB is omitted
+//     (`truncated`). plainClone also sets `truncated` when it cuts a string (120), an array (32), an object's keys
+//     (24) or a value past depth 4 — the partial snapshot is still sent when it fits. `truncated: false` means those
+//     caps did not fire, not "every unit on the field".
+//   * a plugin→host message over 8 KB is refused (JavaScript string length of the JSON, same as before)
+//   * storage: key ^[A-Za-z0-9._-]{1,64}$, not __proto__ / prototype / constructor / ".."; the JSON text is counted in
+//     UTF-8 bytes (TextEncoder), ≤ 4096 per value, ≤ 32 keys and ≤ 32 KB per plugin; namespaced
+//     sp.plugin.<id>.<key> in the host page's localStorage
+//   * iframe height clamped to 48–480 px; a notice ≤ 80 characters; a distinct notice at most once per 2 seconds
+//     (the same text is still delivered, so the toast host can merge it)
 //   * one slot per plugin, one plugin per slot, at most 8 plugins mounted; slots are the four UI_SLOT_IDS
 //   * the private subset is the allowlist in subsetPrivate (never loadout, ops, diy, effects, tokens, other hands)
 //   * the public subset is the allowlist in subsetPublic
-//   * CSP UI_FRAME_CSP is sent on /p/ responses of a ui plugin only. 'self' may not match a sandboxed opaque origin
-//     (no allow-same-origin, so the origin is the string "null"); inline scripts still run. Not measured in a browser.
+//   * CSP UI_FRAME_CSP is on every ui /p/ response that carries the file headers (200, 206, 304), not on cosmetic
+//     art, not site-wide. It includes `sandbox allow-scripts` (never `allow-same-origin`) so a top-level open of the
+//     same URL is still an opaque origin. A <meta> sandbox is ignored by browsers; the response header is the one
+//     that counts. 'self' may not match that opaque origin; inline scripts still run. Not measured in a browser.
+//   * [ASSUMED] once a snapshot or a private view has been posted, the plugin can put it in the URL of the navigation
+//     that leaves the entry. Nothing after that load gets another post. navigate-to was not measured and is not the fix.
 //
 // Error codes (PLUGIN_*) stay in this file. Claude merges them into shared/plugins/errors.js (C6) at integration.
 
@@ -27,9 +36,12 @@ export const UI_API = 1;
 
 /**
  * Content-Security-Policy on a ui plugin's files at /p/ (not on cosmetic art, not site-wide).
+ * `sandbox allow-scripts` is a response directive: the document is opaque even when opened at the top level.
+ * Do not add `allow-same-origin` — that would hand the plugin the game origin (and the reconnect tokens).
  * [ASSUMED] see the header — inline scripts run; a separate script file may not, under an opaque origin.
+ * `navigate-to` is intentionally absent: it was not measured here, and it is not the navigation fix.
  */
-export const UI_FRAME_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'";
+export const UI_FRAME_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; sandbox allow-scripts; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 
 /** [ASSUMED] see the header. */
 export const UI_LIMITS = Object.freeze({
@@ -45,6 +57,8 @@ export const UI_LIMITS = Object.freeze({
   heightMin: 48,
   heightMax: 480,
   noticeChars: 80,
+  /** Distinct notices, per plugin. The same text is not delayed (the toast host merges it). */
+  noticeIntervalMs: 2000,
   maxPlugins: 8,
   api: UI_API,
 });
@@ -83,7 +97,10 @@ export function isMatchIntent(value, depth = 0) {
   for (const k of Object.keys(value)) {
     if (k === '__proto__' || k === 'constructor' || k === 'prototype') return true;
     if (isIntentType(k)) return true;
-    if (k === 't' && isIntentType(value[k])) return true;
+    // `b.snap` is the host's own label on a battle snapshot (runner frameOf), not a client→server intent
+    // (it is S2C). Storing the snapshot the host just sent must not come back as PLUGIN_INTENT.
+    // Any other field, including a nested g.* / room.* / b.progress, is still an intent.
+    if (k === 't' && value[k] !== 'b.snap' && isIntentType(value[k])) return true;
     if (isMatchIntent(value[k], depth + 1)) return true;
   }
   return false;
@@ -165,6 +182,37 @@ export function createRateLimiter({ rate = UI_LIMITS.rate, burst = UI_LIMITS.bur
   };
 }
 
+const utf8 = new TextEncoder();
+/** UTF-8 bytes of a JavaScript string. Storage quotas use this, not `s.length` (UTF-16 code units). */
+const utf8Bytes = (s) => utf8.encode(s).length;
+
+/**
+ * Distinct notices, one per `noticeIntervalMs`. The same text is allowed again so the toast host can merge it,
+ * and repeating it does not move the window (a plugin cannot rotate a new line by echoing the previous one).
+ * [ASSUMED] 2 seconds. This does not replace the token bucket.
+ * @param {{ intervalMs?: number, now?: () => number }} [opts]
+ */
+export function createNoticeLimiter({ intervalMs = UI_LIMITS.noticeIntervalMs, now = Date.now } = {}) {
+  /** @type {Map<string, { t: number, text: string }>} */
+  const last = new Map();
+  return {
+    /**
+     * @param {string} id
+     * @param {string} text already clamped
+     * @param {number} [at]
+     * @returns {boolean}
+     */
+    allow(id, text, at = now()) {
+      const prev = last.get(id);
+      if (prev && text !== prev.text && at - prev.t < intervalMs) return false;
+      if (!prev || text !== prev.text) last.set(id, { t: at, text });
+      return true;
+    },
+    /** @param {string} id */
+    reset(id) { last.delete(id); },
+  };
+}
+
 /** @param {unknown} key */
 export function storageKeyOk(key) {
   return typeof key === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(key)
@@ -193,11 +241,11 @@ export function checkStorageWrite(entries, key, value) {
   if (isMatchIntent(value)) return { ok: false, error: UI_ERRORS.PLUGIN_INTENT };
   let text;
   try { text = JSON.stringify(value); } catch { return { ok: false, error: UI_ERRORS.PLUGIN_STORAGE }; }
-  if (typeof text !== 'string' || text.length > UI_LIMITS.storageValueBytes) return { ok: false, error: UI_ERRORS.PLUGIN_STORAGE };
+  if (typeof text !== 'string' || utf8Bytes(text) > UI_LIMITS.storageValueBytes) return { ok: false, error: UI_ERRORS.PLUGIN_STORAGE };
   const keys = new Set(Object.keys(entries).filter((k) => storageKeyOk(k) && k !== key));
   keys.add(key);
   let bytes = 0;
-  for (const k of keys) bytes += k.length + (k === key ? text.length : String(entries[k]).length);
+  for (const k of keys) bytes += utf8Bytes(k) + utf8Bytes(k === key ? text : String(entries[k]));
   if (keys.size > UI_LIMITS.storageKeys || bytes > UI_LIMITS.storageBytes) return { ok: false, error: UI_ERRORS.PLUGIN_STORAGE };
   return { ok: true, text };
 }
@@ -315,13 +363,49 @@ export function subsetPrivate(priv) {
 
 const EVENT_KEYS = ['t', 'type', 'kind', 'amount', 'dmg', 'damage', 'sourceId', 'targetId', 'unitId', 'defId', 'id'];
 
-/** A battle event reduced to plain fields. Arrays (the sim's compact tuples) keep a string tag and one number. */
+/**
+ * Numeric slots of a sim tuple. damage.js writes `['dmg', target.id, amount, kind]` and
+ * `['heal', target.id, amount]` — the first number is the unit id, not the HP. `atk` has no amount
+ * (source id, target id, kind). Anything not listed keeps the tag only: a `spawn` payload is a
+ * unitInfo object and can carry loadout / diy, so it is never copied.
+ * @type {Record<string, Record<number, string>>}
+ */
+const TUPLE_FIELDS = {
+  dmg: { 1: 'unitId', 2: 'amount' },
+  heal: { 1: 'unitId', 2: 'amount' },
+  atk: { 1: 'sourceId', 2: 'targetId' },
+  skill: { 1: 'unitId' },
+  deploy: { 1: 'unitId' },
+  die: { 1: 'unitId' },
+  leak: { 1: 'unitId' },
+  engage: { 1: 'unitId' },
+  cast: { 1: 'unitId', 2: 'slot' },
+  status: { 1: 'unitId' },
+};
+
+const finiteAt = (ev, i) => (typeof ev[i] === 'number' && Number.isFinite(ev[i]) ? ev[i] : null);
+
+/**
+ * A battle event reduced to plain fields. Tuples are mapped by position (never "the first number").
+ * Object messages keep the allowlisted keys. Object payloads inside a tuple are dropped.
+ */
 export function sanitizeEvent(ev) {
   if (Array.isArray(ev)) {
-    const tag = ev.find((x) => typeof x === 'string');
-    const amount = ev.find((x) => typeof x === 'number' && Number.isFinite(x));
-    if (typeof tag !== 'string') return null;
-    return { t: tag.slice(0, 32), ...(typeof amount === 'number' ? { amount } : {}) };
+    const tag = ev[0];
+    if (typeof tag !== 'string' || tag.length === 0) return null;
+    const t = tag.slice(0, 32);
+    /** @type {Record<string, string | number | boolean>} */
+    const o = { t };
+    const spec = TUPLE_FIELDS[t];
+    if (spec) {
+      for (const idx of Object.keys(spec)) {
+        const n = finiteAt(ev, Number(idx));
+        if (n != null) o[spec[idx]] = n;
+      }
+    }
+    if ((t === 'dmg' || t === 'atk') && typeof ev[3] === 'string') o.kind = ev[3].slice(0, 32);
+    if (t === 'dmg' && ev[4] === 'r') o.crit = true;
+    return o;
   }
   if (!isObj(ev)) return null;
   /** @type {Record<string, string | number | boolean>} */
@@ -335,35 +419,52 @@ export function sanitizeEvent(ev) {
   return Object.keys(o).length ? o : null;
 }
 
-function plainClone(v, depth, seen) {
-  if (v == null || depth > 4) return undefined;
+/**
+ * @param {unknown} v
+ * @param {number} depth
+ * @param {WeakSet<object>} seen
+ * @param {{ truncated: boolean }} flag set when a cap drops or cuts something the plugin would otherwise see
+ */
+function plainClone(v, depth, seen, flag) {
+  if (v == null) return undefined;
+  if (depth > 4) { flag.truncated = true; return undefined; }
   const kind = typeof v;
-  if (kind === 'string') return v.length > 120 ? v.slice(0, 120) : v;
+  if (kind === 'string') {
+    if (v.length > 120) { flag.truncated = true; return v.slice(0, 120); }
+    return v;
+  }
   if (kind === 'number') return Number.isFinite(v) ? v : undefined;
   if (kind === 'boolean') return v;
   if (kind !== 'object') return undefined;
   if (seen.has(v)) return undefined;
   seen.add(v);
   if (Array.isArray(v)) {
+    if (v.length > 32) flag.truncated = true;
     const a = [];
     for (const x of v.slice(0, 32)) {
-      const c = plainClone(x, depth + 1, seen);
+      const c = plainClone(x, depth + 1, seen, flag);
       if (c !== undefined) a.push(c);
     }
     return a;
   }
   /** @type {Record<string, unknown>} */
   const o = {};
-  for (const k of Object.keys(v).slice(0, 24)) {
+  let kept = 0;
+  for (const k of Object.keys(v)) {
     if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-    const c = plainClone(v[k], depth + 1, seen);
+    kept += 1;
+    if (kept > 24) { flag.truncated = true; break; }
+    const c = plainClone(v[k], depth + 1, seen, flag);
     if (c !== undefined) o[k] = c;
   }
   return o;
 }
 
 /**
- * The battle push. [ASSUMED] a snapshot that will not fit in snapshotBytes is omitted (`truncated`).
+ * The battle push.
+ * [ASSUMED] a snapshot whose JSON text is longer than snapshotBytes (JavaScript string length) is omitted
+ * (`truncated`). A clone that hit a plainClone cap is still sent when it fits, with `truncated` true.
+ * The host's `t: 'b.snap'` label is removed: the message's own `t` is already `battle`.
  * @param {{ fieldId?: unknown, gt?: unknown, events?: unknown, snap?: unknown }} part
  */
 export function battlePayload({ fieldId, gt, events, snap }) {
@@ -371,11 +472,14 @@ export function battlePayload({ fieldId, gt, events, snap }) {
   let snapOut = null;
   let truncated = false;
   if (snap && typeof snap === 'object') {
-    const cloned = plainClone(snap, 0, new WeakSet());
+    const flag = { truncated: false };
+    const cloned = plainClone(snap, 0, new WeakSet(), flag);
+    if (cloned && typeof cloned === 'object' && !Array.isArray(cloned) && cloned.t === 'b.snap') delete cloned.t;
     let text = '';
     try { text = JSON.stringify(cloned); } catch { text = ''; }
     if (text && text.length <= UI_LIMITS.snapshotBytes) snapOut = cloned;
     else truncated = true;
+    if (flag.truncated) truncated = true;
   }
   return {
     v: UI_API, t: 'battle',
@@ -394,6 +498,21 @@ export function framePageUrl(id, entry, sha256) {
   if (!isPluginId(id) || !isPackPath(entry) || typeof sha256 !== 'string' || !/^[0-9a-f]{8}/.test(sha256)) return null;
   const path = `/p/${id}/${sha256.slice(0, 8)}/${entry}`;
   return `/plugin-frame.html?id=${encodeURIComponent(id)}&entry=${encodeURIComponent(path)}`;
+}
+
+/**
+ * What the host does with the iframe's Nth `load` (1-based).
+ * 1 — `plugin-frame.html` (the redirect). No private post.
+ * 2 — the entry HTML. `welcome` may be posted, and `ready` may be accepted.
+ * anything else — the frame navigated away from the entry. Destroy it, clear `ready`, post nothing.
+ * `postMessage(..., 'null')` cannot tell the entry document from a later opaque one, so the count is the check.
+ * @param {number} loadCount
+ * @returns {'bootstrap' | 'entry' | 'destroy'}
+ */
+export function frameLoadDecision(loadCount) {
+  if (loadCount === 1) return 'bootstrap';
+  if (loadCount === 2) return 'entry';
+  return 'destroy';
 }
 
 /**

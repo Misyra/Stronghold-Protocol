@@ -196,7 +196,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         // alone would revalidate a rewrite that kept them: a 304 for other bytes)
         contentHash: same ? f.sha256.slice(0, 16) : `${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${st.ino.toString(16)}-${Math.floor(st.ctimeMs * 1000).toString(16)}`,
         cacheControl: same && f.urlHashes.has(hash) ? IMMUTABLE_CACHE : 'no-cache',
-        // [ASSUMED] the frame CSP is only on a ui plugin's /p/ files (f.frame). 'self' may not match the opaque origin.
+        // [ASSUMED] the frame CSP is only on a ui plugin's /p/ files (f.frame), including its sandbox
+        // allow-scripts (no allow-same-origin). serveFile puts it on 200, 206 and 304. 'self' may not match
+        // the opaque origin.
         headers: f.frame ? { 'Content-Security-Policy': UI_FRAME_CSP } : null,
       });
       return;

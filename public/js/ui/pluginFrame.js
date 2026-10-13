@@ -4,8 +4,12 @@
 // reports none, it does not ask for the catalogue.
 //
 // Each switched-on plugin is one <iframe sandbox="allow-scripts"> (no allow-same-origin: an opaque origin, so it has
-// no site storage and no credentials). The parent posts with targetOrigin '*' because that origin is the string
-// "null". A message is accepted only from that iframe's window, and only when event.origin is "null".
+// no site storage and no credentials). The same `sandbox allow-scripts` is on the /p/ response (UI_FRAME_CSP), because
+// the attribute is not there when the URL is opened at the top level. The parent posts with targetOrigin '*' because
+// that origin is the string "null" — 'null' does not tell the entry document from a later opaque one.
+// Loads: 1 is plugin-frame.html, 2 is the entry, 3+ destroys the frame and stops the feed. A message is applied on
+// the next turn so a load event already queued runs first. A message is accepted only from that iframe's window,
+// and only when event.origin is "null".
 // The iframe is parked on #sp-ui-park until its slot element exists, then moved into [data-ui-slot]. The slot div
 // opts out of Preact's children (dangerouslySetInnerHTML) so a re-render does not drop the frame; if a screen
 // unmounts the slot, the frame is moved back to the park in the same mutation.
@@ -21,9 +25,9 @@ import { toast } from './toasts.js';
 import { t } from '../../../shared/i18n.js';
 import { uiPlugins, uiPluginEntries } from './uiPlugins.js';
 import {
-  UI_ERRORS, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice, createRateLimiter,
-  createSlotTable, framePageUrl, hostLimit, hostRejected, hostState, hostWelcome, namespacedStorageKey,
-  validatePluginMessage,
+  UI_ERRORS, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice, createNoticeLimiter,
+  createRateLimiter, createSlotTable, frameLoadDecision, framePageUrl, hostLimit, hostRejected, hostState, hostWelcome,
+  namespacedStorageKey, validatePluginMessage,
 } from '../../../shared/plugins/ui.js';
 
 const SLOT_MS = Math.round(1000 / UI_LIMITS.battleHz);
@@ -34,6 +38,7 @@ const LIMIT_MS = 2000;
 const frames = new Map();
 const slots = createSlotTable();
 const limiter = createRateLimiter();
+const noticeLimiter = createNoticeLimiter();
 const rejected = [];
 /** @type {{ last: object | null, rejected: string[], debugBattle: (events: unknown) => void, frames: () => string[] }} */
 const api = {
@@ -49,7 +54,7 @@ const api = {
 
 /**
  * @typedef {{ id: string, iframe: HTMLIFrameElement, declared: string[], entry: any, ready: boolean,
- *   entries: Record<string, string>, limitAt: number }} FrameRec
+ *   entries: Record<string, string>, limitAt: number, loads: number, closed: boolean }} FrameRec
  */
 
 let park = null;
@@ -74,7 +79,13 @@ function parkEl() {
 }
 
 /** @param {FrameRec} rec @param {object} msg */
+/** Private feed only while the entry document is the one that finished loading. */
+function feeding(rec) {
+  return !rec.closed && frames.get(rec.id) === rec && rec.ready && frameLoadDecision(rec.loads) === 'entry';
+}
+
 function post(rec, msg) {
+  if (rec.closed || frames.get(rec.id) !== rec) return;
   const w = rec.iframe.contentWindow;
   if (!w) return;
   try {
@@ -87,9 +98,12 @@ function post(rec, msg) {
 function destroy(id) {
   const rec = frames.get(id);
   if (!rec) return;
+  rec.closed = true;
+  rec.ready = false;
   frames.delete(id);
   slots.release(id);
   limiter.reset(id);
+  noticeLimiter.reset(id);
   rec.iframe.remove();
 }
 
@@ -155,12 +169,16 @@ function mount(entry) {
   iframe.title = pluginName(entry) || id;
   iframe.dataset.plugin = id;
   /** @type {FrameRec} */
-  const rec = { id, iframe, declared, entry, ready: false, entries: loadEntries(id), limitAt: 0 };
+  const rec = { id, iframe, declared, entry, ready: false, entries: loadEntries(id), limitAt: 0, loads: 0, closed: false };
   frames.set(id, rec);
   autoGrant(id, declared);
   iframe.addEventListener('load', () => {
-    if (frames.get(id) !== rec) return;
-    post(rec, hostWelcome(id, declared));
+    if (frames.get(id) !== rec || rec.closed) return;
+    rec.loads += 1;
+    const decision = frameLoadDecision(rec.loads);
+    if (decision === 'destroy') { destroy(id); return; }
+    // The entry document. welcome does not include the private view; ready (accepted only at this count) does.
+    if (decision === 'entry') post(rec, hostWelcome(id, declared));
   });
   iframe.src = src;
   place(rec);
@@ -197,7 +215,7 @@ function scheduleState() {
     try { text = JSON.stringify(msg); } catch { return; }
     if (text === lastState) return;
     lastState = text;
-    for (const rec of frames.values()) if (rec.ready) post(rec, msg);
+    for (const rec of frames.values()) if (feeding(rec)) post(rec, msg);
   }, STATE_MS);
 }
 
@@ -206,7 +224,7 @@ function flushBattle() {
   const events = battleQueue;
   battleQueue = [];
   const msg = battlePayload({ fieldId: battleField, gt: battleGt, events, snap: lastSnap });
-  for (const rec of frames.values()) if (rec.ready) post(rec, msg);
+  for (const rec of frames.values()) if (feeding(rec)) post(rec, msg);
 }
 
 function scheduleBattle() {
@@ -272,8 +290,10 @@ function onStorage(rec, msg) {
 /** @param {FrameRec} rec @param {Record<string, unknown>} msg */
 function handle(rec, msg) {
   if (msg.t === 'ready') {
+    // Load 1 is the redirect. Load 2 is the entry. A later document must not receive the private view.
+    // welcome is posted from the load handler, not from here, so a plugin that answers welcome cannot loop.
+    if (frameLoadDecision(rec.loads) !== 'entry') return;
     rec.ready = true;
-    post(rec, hostWelcome(rec.id, rec.declared));
     const m = store.get().match;
     post(rec, hostState(m && m.public, m && m.private));
     return;
@@ -293,6 +313,9 @@ function handle(rec, msg) {
   if (msg.t === 'notice') {
     const text = clampNotice(msg.text);
     if (!text) { post(rec, hostRejected('shape')); return; }
+    // A different line waits 2s. The same line still reaches the toast host, which merges it. No toast on the limit
+    // itself (the token-bucket warning already has its own 2s debounce).
+    if (!noticeLimiter.allow(rec.id, text)) { post(rec, hostLimit('notice')); return; }
     try { toast(text, 'info'); } catch { /* ignore */ }
     return;
   }
@@ -327,7 +350,16 @@ function onWindowMessage(ev) {
     if (verdict.reason !== 'intent') post(rec, hostRejected(verdict.reason));
     return;
   }
-  handle(rec, verdict.msg);
+  const msg = verdict.msg;
+  // The child's script runs before the parent's load event, and postMessage is queued before that load.
+  // Applying the message on the next turn lets a navigation that already queued its load destroy the frame first,
+  // so ready on the new document does not pull state. A task that was queued even earlier can still post once
+  // (DESIGN §32.8 [ASSUMED]).
+  setTimeout(() => {
+    if (frames.get(rec.id) !== rec || rec.closed) return;
+    if (frameLoadDecision(rec.loads) === 'destroy') { destroy(rec.id); return; }
+    handle(rec, msg);
+  }, 0);
 }
 
 function sync() {

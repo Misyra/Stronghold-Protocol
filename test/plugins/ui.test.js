@@ -12,8 +12,8 @@ import { C2S } from '../../shared/protocol.js';
 import { UI_SLOT_IDS, readPluginManifest, classStatus } from '../../shared/plugins/manifest.js';
 import {
   UI_ERRORS, UI_FRAME_CSP, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice,
-  createRateLimiter, createSlotTable, frameEntryAllowed, framePageUrl, isIntentType, namespacedStorageKey,
-  subsetPrivate, subsetPublic, validatePluginMessage,
+  createNoticeLimiter, createRateLimiter, createSlotTable, frameEntryAllowed, frameLoadDecision, framePageUrl,
+  isIntentType, isMatchIntent, namespacedStorageKey, sanitizeEvent, subsetPrivate, subsetPublic, validatePluginMessage,
 } from '../../shared/plugins/ui.js';
 import { createPluginRegistry, readPluginFolder, scanPlugins } from '../../server/plugins/registry.js';
 import { createVisualSets } from '../../server/plugins/visualSet.js';
@@ -148,7 +148,13 @@ describe('the postMessage contract', () => {
     assert.equal(namespacedStorageKey('damage-meter', '../x'), null);
     assert.equal(checkStorageWrite(entries, '__proto__', 1).error, UI_ERRORS.PLUGIN_STORAGE);
     assert.equal(checkStorageWrite(entries, 'n', { t: 'g.buy' }).error, UI_ERRORS.PLUGIN_INTENT);
+    assert.equal(isMatchIntent({ t: 'b.snap', units: [] }), false, 'the host snapshot label is not a client intent');
+    assert.equal(isMatchIntent({ t: 'b.snap', nested: { t: 'g.buy' } }), true, 'a real intent nested under b.snap is still refused');
+    assert.equal(checkStorageWrite(Object.create(null), 'snap', { t: 'b.snap', units: [] }).ok, true);
     assert.equal(checkStorageWrite(entries, 's', 'hello').ok, true, 'a plain string is not an intent');
+    const cjk = checkStorageWrite(Object.create(null), 'cjk', '测'.repeat(1365));
+    assert.equal(cjk.ok, false, 'UTF-8 bytes of the JSON, not UTF-16 code units');
+    assert.equal(checkStorageWrite(Object.create(null), 'edge', 'x'.repeat(4094)).ok, true, '4096 UTF-8 bytes with the quotes is allowed');
     const big = checkStorageWrite(entries, 'big', 'x'.repeat(UI_LIMITS.storageValueBytes));
     assert.equal(big.ok, false);
     for (let i = 0; i < UI_LIMITS.storageKeys - 1; i++) entries['k' + i] = '1';
@@ -170,6 +176,17 @@ describe('the postMessage contract', () => {
     assert.equal(clampHeight(Number.NaN), null);
     assert.equal(clampNotice('  too   wide  '), 'too wide');
     assert.equal(clampNotice('x'.repeat(81)), null);
+
+    let noticeAt = 0;
+    const notices = createNoticeLimiter({ now: () => noticeAt });
+    assert.equal(notices.allow('p', '同一句'), true);
+    assert.equal(notices.allow('p', '同一句'), true, 'the same text is not delayed, so toasts can merge it');
+    assert.equal(notices.allow('p', '另一句'), false);
+    noticeAt += UI_LIMITS.noticeIntervalMs - 1;
+    assert.equal(notices.allow('p', '另一句'), false);
+    assert.equal(notices.allow('p', '同一句'), true, 'repeating the same text does not move the window');
+    noticeAt += 1;
+    assert.equal(notices.allow('p', '另一句'), true);
   });
 
   test('the private view is an allowlist', () => {
@@ -200,6 +217,49 @@ describe('the postMessage contract', () => {
     assert.equal(small.events[0].secret, undefined);
     assert.equal(small.events[0].amount, 4);
     assert.equal(small.truncated, false);
+    const dmg = sanitizeEvent(['dmg', 12, 480, 'phys']);
+    assert.deepEqual(dmg, { t: 'dmg', unitId: 12, amount: 480, kind: 'phys' });
+    const crit = sanitizeEvent(['dmg', 12, 480, 'phys', 'r']);
+    assert.equal(crit.amount, 480);
+    assert.equal(crit.unitId, 12);
+    assert.equal(crit.crit, true);
+    assert.deepEqual(sanitizeEvent(['heal', 7, 30]), { t: 'heal', unitId: 7, amount: 30 });
+    const atk = sanitizeEvent(['atk', 3, 9, 'phys']);
+    assert.equal(atk.amount, undefined);
+    assert.equal(atk.sourceId, 3);
+    assert.equal(atk.targetId, 9);
+    const spawn = sanitizeEvent(['spawn', { id: 1, defId: 'a', loadout: { secret: 1 }, diy: { a: 1 } }]);
+    assert.deepEqual(spawn, { t: 'spawn' });
+    assert.equal(JSON.stringify(spawn).includes('loadout'), false);
+    const units = battlePayload({ fieldId: 'f', gt: 1, events: [], snap: { units: Array.from({ length: 40 }, (_, i) => ['u', i, 1]) } });
+    assert.equal(units.snap.units.length, 32);
+    assert.equal(units.truncated, true, 'a 32-item cut is truncated even when the JSON is far under 48 KB');
+    const cut = battlePayload({ fieldId: 'f', gt: 1, events: [], snap: { name: 'x'.repeat(121) } });
+    assert.equal(cut.snap.name.length, 120);
+    assert.equal(cut.truncated, true);
+    const wideKeys = {};
+    for (let i = 0; i < 25; i++) wideKeys['k' + i] = i;
+    const keysCut = battlePayload({ fieldId: 'f', gt: 1, events: [], snap: wideKeys });
+    assert.equal(Object.keys(keysCut.snap).length, 24);
+    assert.equal(keysCut.truncated, true);
+    let deep = { v: 1 };
+    for (let i = 0; i < 5; i++) deep = { n: deep };
+    const deepCut = battlePayload({ fieldId: 'f', gt: 1, events: [], snap: deep });
+    assert.equal(deepCut.truncated, true);
+    assert.ok(deepCut.snap);
+    const stamped = battlePayload({ fieldId: 'f', gt: 2, events: [], snap: { t: 'b.snap', units: [[1, 0, 0]], fieldId: 'f', gt: 2 } });
+    assert.equal(stamped.snap.t, undefined);
+    assert.deepEqual(stamped.snap.units, [[1, 0, 0]]);
+    assert.equal(stamped.truncated, false);
+    assert.equal(frameLoadDecision(1), 'bootstrap');
+    assert.equal(frameLoadDecision(2), 'entry');
+    assert.equal(frameLoadDecision(3), 'destroy');
+    assert.equal(frameLoadDecision(0), 'destroy');
+    assert.match(UI_FRAME_CSP, /(^|; )sandbox allow-scripts(;|$)/);
+    assert.doesNotMatch(UI_FRAME_CSP, /allow-same-origin/);
+    assert.match(UI_FRAME_CSP, /frame-ancestors 'self'/);
+    assert.match(UI_FRAME_CSP, /base-uri 'none'/);
+    assert.match(UI_FRAME_CSP, /form-action 'none'/);
     // plainClone caps each string at 120 characters, so one long string still fits; a wide tree does not.
     const row = {};
     for (let i = 0; i < 24; i++) row['k' + i] = 'x'.repeat(200);
@@ -343,6 +403,11 @@ describe('the registry and /p/', () => {
     assert.equal(wrong.status, 200);
     assert.equal(wrong.headers['cache-control'], 'no-cache');
     assert.equal(wrong.headers['content-security-policy'], UI_FRAME_CSP);
+    const partial = await get(url, { Range: 'bytes=0-3' });
+    assert.equal(partial.status, 206);
+    assert.match(partial.headers['content-security-policy'], /(^|; )sandbox allow-scripts(;|$)/);
+    assert.doesNotMatch(partial.headers['content-security-policy'], /allow-same-origin/);
+    assert.equal(partial.headers['content-security-policy'], UI_FRAME_CSP);
     assert.equal(registry.pluginFile('damage-meter', 'ui/index.html').frame, true);
     assert.equal(registry.pluginFile('skin', 'art/a.png').frame, false);
   });

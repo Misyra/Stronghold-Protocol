@@ -52,6 +52,7 @@ import { PLUGINS_URL } from '../../shared/plugins/manifest.js';
 import { contentHashOf, csUrlPart, isContentHash, isContentHash as isVisualHash } from '../../shared/plugins/identity.js';
 import { sha256Hex } from '../../shared/sha256.js';
 import { getLang, langChain, t, N_ } from '../../shared/i18n.js';
+import { DEV_BUILD } from '../../shared/constants.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of the personal cosmetic plugins: their ids. */
 export const PERSONAL_PREF = 'cosmetics';
@@ -543,14 +544,20 @@ export function installContentSet({ store = appStore, data = dataStore, net = ap
   };
   const off = store.subscribe((s) => sync(s));
   sync(store.get());
-  // dev / E2E introspection (like __SP_RUNNER__): the state, and a forged content id — a page that claims to hold another
-  // set than the one it checked, so the runner's cs check can be watched refusing the authority (test/ui/
-  // plugins-content.e2e.test.js); the server checks every result anyway
-  if (typeof window !== 'undefined') {
-    globalThis.__SP_CONTENT__ = {
-      state: () => ({ ...contentSet.get(), held: held ? held.cs : null }),
-      forgeHeldCs: (cs) => { if (held && isContentHash(cs)) held = { ...held, cs }; },
-    };
-  }
+  if (typeof window !== 'undefined') globalThis.__SP_CONTENT__ = contentHooks();
   return () => { off(); drop(); };
+}
+
+/**
+ * The page's introspection hooks (window.__SP_CONTENT__, like __SP_RUNNER__): `state()` — the content set as this page
+ * has it — always; `forgeHeldCs(cs)` — a page that claims to hold another set than the one it checked, so the runner's
+ * cs check can be watched refusing the authority (test/ui/plugins-content.e2e.test.js) — only in a dev build or a
+ * browser under automation (navigator.webdriver: the browser tests' Chrome), never on a release page.
+ * @param {{ dev?: boolean, nav?: { webdriver?: boolean } | null }} [opts]
+ */
+export function contentHooks({ dev = DEV_BUILD, nav = globalThis.navigator ?? null } = {}) {
+  /** @type {{ state: () => object, forgeHeldCs?: (cs: string) => void }} */
+  const hooks = { state: () => ({ ...contentSet.get(), held: held ? held.cs : null }) };
+  if (dev || nav?.webdriver === true) hooks.forgeHeldCs = (cs) => { if (held && isContentHash(cs)) held = { ...held, cs }; };
+  return hooks;
 }

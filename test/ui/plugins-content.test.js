@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fetchChecked, loadContentSet, installContentSet, contentSet, contentFor, simContent } from '../../public/js/content.js';
+import { fetchChecked, loadContentSet, installContentSet, contentSet, contentFor, simContent, contentHooks } from '../../public/js/content.js';
 import { createDataStore } from '../../public/js/data.js';
 import { createStore, initialState } from '../../public/js/store.js';
 import { createBattleRunner } from '../../public/js/battle/runner.js';
@@ -212,6 +212,14 @@ test('自选: the picker lists welcome\'s operators, and the ones the room\'s co
     content.set({ cs: null, status: 'idle', kitted: null });
     assert.deepEqual(target.get().diyKitted, ['char_a', 'char_b']);
   } finally { s.dispose(); }
+});
+
+test('__SP_CONTENT__: state() always; forgeHeldCs only in a dev build or a browser under automation (the browser tests)', () => {
+  assert.equal(typeof contentHooks({ dev: false, nav: { webdriver: false } }).state, 'function');
+  assert.equal(contentHooks({ dev: false, nav: { webdriver: false } }).forgeHeldCs, undefined, 'a release page');
+  assert.equal(contentHooks({ dev: false, nav: null }).forgeHeldCs, undefined);
+  assert.equal(typeof contentHooks({ dev: false, nav: { webdriver: true } }).forgeHeldCs, 'function', 'the browser tests');
+  assert.equal(typeof contentHooks({ dev: true, nav: null }).forgeHeldCs, 'function', 'a dev build');
 });
 
 describe('data.js setContent', () => {

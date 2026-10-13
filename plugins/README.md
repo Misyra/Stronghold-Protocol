@@ -5,21 +5,26 @@ The server lists what it finds at `/plugins/index.json` and notices a new or cha
 `node tools/plugin.mjs list` shows what was found, what was skipped and why; `node tools/plugin.mjs check` checks the
 folders (manifest, file types, sizes, paths, JSON).
 
-**This version (0.3.0-dev, P1b):**
+**This version (0.3.0-dev):**
 
 - the original game is always the default; a plugin is marked unofficial wherever it is shown;
 - class `lang` (a language) loads, like a language pack in `packs/`;
 - class `cosmetic` (art, models, audio) loads: a room's host switches it on for the whole room (the room's 插件 panel),
   a player for themself (设置 → 外观插件) — it changes what is shown and heard, never a battle;
-- class `content` (data: numbers, modes, new operators and enemies) loads as a JSON snapshot and builds validated content sets; room switching is P1c;
-- no plugin code runs — classes `script`, `ui` and `trusted` are listed as not supported;
+- class `content` (data: numbers, modes, new operators and enemies) loads as a JSON snapshot and builds validated content
+  sets: a room's host switches it on for the room (the room's 插件 panel) — every page downloads and checks the room's
+  content set, and its matches are unofficial (left out of the statistics overview unless a player counts them);
+- class `ui` (an interface widget) loads in a sandboxed frame: each player switches it on for this browser (设置 →
+  界面插件). It can read a little of the match on screen and cannot play it. It does not change `cs`;
+- classes `script` and `trusted` are listed as not supported — no plugin code runs inside a battle;
 - nothing in this folder except this readme and the templates in `_template/` is committed or shipped: your plugins
   stay yours, and an update never touches them.
 
-For data, copy `_template/content/` to `data-demo/` (PLUGINS.md §10: a bond patch and a kitRef operator).
+For data, copy `_template/content/` to `data-demo/` (PLUGINS.md §10: a bond patch and a kitRef operator); a server owner
+may limit what rooms take in `config.json` here (PLUGINS.md §11, DEPLOY.md).
 
-Start from `_template/cosmetic/` (references to the installation's own art, no files); `node tools/plugin.mjs pack <dir>`
-writes the `plugin.lock.json` a plugin with Spine models needs.
+Start from `_template/cosmetic/` (references to the installation's own art, no files) or `_template/ui/` (a sandboxed
+damage tally). `node tools/plugin.mjs pack <dir>` writes the `plugin.lock.json` a plugin with Spine models needs.
 
 ```json
 {

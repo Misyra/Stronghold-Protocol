@@ -1115,6 +1115,10 @@
 .plugpanel__warnings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .04rem; }
 .plugpanel__warnings .icon { width: .15rem; height: .15rem; margin-right: .06rem; vertical-align: -.02rem; }
 .plugpanel__reapply { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem .12rem; }
+.ui-slot { display: flex; flex-direction: column; gap: .04rem; min-width: 0; }
+.ui-slot:empty { display: none; }
+.ui-slot__frame { width: 100%; border: 0; background: transparent; color-scheme: normal; }
+.gm__ui-slot { position: absolute; z-index: 6; right: .16rem; bottom: .7rem; width: 2.6rem; pointer-events: auto; }
 .plugpanel__reapply .set-hint { margin: 0; }
 /* gameplay plugins (DESIGN §32.6 P1c): the unofficial marks (tag, panel rows, UnofficialMark of the briefing / HUD / result),
    the room's plugin modes and this page's check of the room's content set */

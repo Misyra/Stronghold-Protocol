@@ -15,7 +15,9 @@
 //     match stays out of the statistics overview); one made for other game versions cannot be switched on. With gameplay
 //     plugins the panel also shows the room's mode — the official one of the difficulty or a mode a plugin adds
 //     (room.setMode; the host picks, the others read it) — and this page's download and check of the room's content set
-//     (content.js contentSet: its progress, ready, or failed — 「请刷新页面」).
+//     (content.js contentSet: its progress, ready, or failed — 「请刷新页面」). Below them (P4, DESIGN §32.8) the
+//     interface plugins of the server — each player switches them in 设置; the host may mark one 推荐 — and the
+//     room.panel slot.
 //   * InstalledPlugins — the title screen's 「本服务器安装了 N 个插件」 (screens/title.js; §7.4): every unofficial plugin
 //     the catalogue lists — any class, with what this version does with it (the catalogue fetched when it opens).
 // The tag and the small facts (roomPluginFacts, sizeText, pluginTagText, pluginMicro) are ui/pluginTag.js's, re-exported
@@ -28,6 +30,7 @@ import { toastError } from './toasts.js';
 import { net } from '../net.js';
 import { useStore } from '../store.js';
 import { catalog, contentSet, loadCatalog, cosmeticPlugins, installedCount, pluginName, unofficialPlugins } from '../content.js';
+import { toggleRecommend, uiPluginEntries, uiRecommend, visibleRecommend } from './uiPlugins.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { sizeText, roomPluginFacts, pluginTagText, pluginMicro } from './pluginTag.js';
 
@@ -102,6 +105,10 @@ export function PluginPanel({ open, room, myId, onClose }) {
   // the catalogue — again each time the panel opens (a plugin dropped in meanwhile shows), never on a server without any
   useEffect(() => { alive.current = true; if (installed) loadCatalog({ force: true }); return () => { alive.current = false; }; }, [installed]);
   const f = roomPluginFacts(room, myId);
+  const recIds = useStore((s) => s.ids, Object.is, uiRecommend);
+  const isHost = !!(room && room.hostId != null && room.hostId === myId);
+  const recommended = visibleRecommend(room, isHost, recIds);
+  const uiList = installed ? uiPluginEntries(cat.plugins) : [];
   const offered = installed ? roomPlugins(cat.plugins) : [];
   const offeredIds = cat.status === 'ready' ? new Set(offered.map((p) => p.id)) : null;
   // a plugin the room has that the catalogue no longer offers (removed, skipped, another scope now) still shows, by its
@@ -185,6 +192,25 @@ export function PluginPanel({ open, room, myId, onClose }) {
         ${f.warnings.filter((w) => w.code !== 'app' || classOf(w.params?.id) === 'content').map((w, i) => html`<li key=${i}><${Icon} name="warn" />${warningText(w, nameOf, classOf)}</li>`)}
       </ul>` : null}
       <p class="set-hint">${t('只影响自己的外观插件在「设置」中开关。')}</p>
+      ${uiList.length ? html`<section class="plugpanel__ui" data-testid="ui-recommend">
+        <p class="set-hint">${t('界面插件由每位博士在「设置」中自己开关。')}</p>
+        <p class="set-hint">${t('推荐显示在房间里，是否开启由你自己决定。')}</p>
+        <ul class="plugpanel__list">
+          ${uiList.map((p) => {
+            const marked = recIds.includes(p.id);
+            return html`<li key=${p.id} class="plugrow" data-plugin=${p.id}>
+              <div class="plugrow__body">
+                <div class="plugrow__name"><b>${pluginName(p)}</b>
+                  <span class="plugrow__badge">${t('界面')}</span><span class="plugrow__badge is-unofficial">${t('非官方')}</span>
+                  ${recommended.includes(p.id) ? html`<span class="plugrow__badge">${t('房主推荐')}</span>` : null}</div>
+                ${isHost ? html`<button type="button" class=${cx('set-toggle', marked && 'is-on')} data-testid="ui-recommend-toggle" aria-pressed=${marked ? 'true' : 'false'}
+                  onClick=${() => toggleRecommend(p.id, !marked)}>${t('推荐')}</button>` : null}
+              </div>
+            </li>`;
+          })}
+        </ul>
+      </section>` : null}
+      <div class="ui-slot" data-ui-slot="room.panel" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>
     </div>
   <//>`;
 }

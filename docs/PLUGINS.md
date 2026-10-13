@@ -1051,7 +1051,9 @@ pack could not be read or a product failed `check`, `pack`, the visual set or th
 command. A product that fails is not left in `plugins/`.
 
 The studio does the same thing. On `/studio/` the button 「从 Forge 包导入」 takes a zip or a folder. The browser
-sends the bytes. The server is never given a path on its disk. `POST /studio/api/forge/preview` and
+sends the bytes. While that read is in progress the preview and confirm buttons stay disabled, and the previous
+report is cleared so a late read cannot confirm the pack that was on screen before. The server is never given a
+path on its disk. `POST /studio/api/forge/preview` and
 `POST /studio/api/forge/import` take `{ zip?: base64, files?: [{ name, data: base64 }], id? }` and use the same gate
 as every other change (`X-SP-Studio`, this machine or the local network). A pack that is unsafe to unpack is 400
 with a `PLUGIN_FORGE_*` code. A pack that was read answers 200 `{ report, plugins: [{ id, class }] }`. `report.ok`
@@ -1071,11 +1073,19 @@ into a folder that already exists is `PLUGIN_FORGE_EXISTS` and writes nothing.
 
 **Safety.** The zip reader is this module's own (`readUntrustedZip`). It uses `crc32` from `server/plugins/zip.js`
 and does not call `unzipFiles`. It rejects `..`, an absolute path, a backslash, NUL, a symbolic link (unix mode
-`0120000`), ZIP64, encryption, a data descriptor, more than `PLUGIN_LIMITS.files` entries (5000), and a declared or
-inflated size over `PLUGIN_LIMITS.pluginBytes` (200 MB). JSON follows `checkJsonLimits` (8 MB, depth 64, numbers
-within ±1e9). A directory read uses `lstat` and does not follow a link. A dry run stages under the temporary
-directory and removes the stage. A real write stages in a dot directory beside `plugins/` — the registry skips dot
-directories, and the rename stays on one filesystem — and the stage is always removed.
+`0120000`), ZIP64 (the EOCD sentinel, a ZIP64 extra field, or a ZIP64 locator in the 20 bytes immediately before a
+real EOCD — not a `PK\\x06\\x06` that happens to sit inside an entry), encryption, a data descriptor, more than
+`PLUGIN_LIMITS.files` entries (5000), and a declared or inflated size over `PLUGIN_LIMITS.pluginBytes` (200 MB). A
+raw zip larger than that unpacked cap plus 64 KiB is refused before it is read [ASSUMED: the 64 KiB is header
+room, so a zip only slightly over 200 MB is refused too]. JSON follows `checkJsonLimits` (8 MB, depth 64, numbers
+within ±1e9) and refuses `__proto__`, `constructor` and `prototype` before mapping. Asset trees use a
+null-prototype object. A directory read uses `lstat`, does not follow a link, refuses a regular file with
+`nlink > 1`, and reads through `O_NOFOLLOW` only after `fstat` matches. Empty directories count toward the 5000
+cap. A dry run stages under the temporary directory and removes the stage. A real write stages in a dot directory
+beside `plugins/` — the registry skips dot directories — and commits by rename. `EXDEV` fails the import; it is
+not copied [ASSUMED]. A failed commit removes only the destinations that attempt created. The visual set and the
+content set see plugins already installed, through a temporary symlink view. The source pack is not part of that
+view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_INPUT` and write nothing.
 
 ### Mapping
 
@@ -1092,8 +1102,8 @@ directories, and the rename stays on one filesystem — and the stage is always 
 | `art.audio.bossBgm` | `audio.bossBgm` `{ loop, intro? }` | an id that is not an asset key, or a file that is not audio |
 | `art.audio.sfx.ui`, `sfx.battle` | one audio file each | |
 | `art.audio.sfx.units` | attack, hit, skill, die, born, and skills / attacks / hits by an index 0–99 | any other field or bucket (`ui`, `battle`, `units` only) |
-| `overrides` of `"file:id"` plus a partial of an existing record | a content `data` patch: primitive fields whose type and path already exist | not listed in `overrides` (a silent replace is refused); a field whose type or path does not match |
-| `units.json`, a new operator | a compact record `char_x_<namespace>_…`. Profession aliases below. One default skill | no name, profession, branch, forms or skill; rarity outside 1–6; a chess piece without a bond that exists here |
+| `overrides` of `"file:id"` plus a partial of an existing record | a content `data` patch. An array whose type already matches is one `set` of the whole array. `talents` and `talentsBase` are not replaced: Forge merges those by index, and this version says so | not listed in `overrides` (a silent replace is refused); a field whose type or path does not match |
+| `units.json`, a new operator | a compact record `char_x_<namespace>_…`, namespace taken from the content plugin id (`--out`'s basename when that product is primary). Skills come from the selected form when that form has a list, otherwise from the record. One default skill | no name, profession, branch, forms or skill; rarity outside 1–6; no bond that exists here. A 6★ declared in `operators` is `as: "diy"` (no shop piece; `chess.tier` is still the rarity, because the compact schema requires it). Below 6★ in that list, and a unit that is not declared there, is chess [ASSUMED] |
 | `enemies.json` with an official `base` or `special` that exists here | `enemy_x_<namespace>_…`, stats over that base | no such base: a kit is not invented |
 | a skill `.js` | kit `"generic"`. The file is named in the report and is not run | a JSON object that passes `validateSkillSpec` is kept as `kit.spec`. No DSL part is written: declaring one makes this version skip the plugin |
 | new chess, items, stages, waves, tokens, bosses, modes | — | no safe compact mapping. `variants` and `behaviour` are engine switches, not modes |
@@ -1112,10 +1122,14 @@ directories, and the rename stays on one filesystem — and the stage is always 
 | a file `pack.json` does not reference | — | named in the report, except a loose music file whose basename is a bgm track |
 
 **Profession aliases** [ASSUMED]: DEFENDER, HEAVY and GUARDIAN become TANK; VANGUARD becomes PIONEER; GUARD becomes
-WARRIOR. A missing position is MELEE for tank, warrior and pioneer, and RANGED otherwise. Forge form ranks are not
-our normal/elite pair: the lowest rank becomes normal and the highest becomes elite, and a single rank is copied
-into both. A missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when it is 1–6. Rarity below 6 cannot
-enter the 自选 pool, so the operator is emitted as chess and the report says so.
+WARRIOR. A missing position is MELEE for tank, warrior and pioneer, and RANGED otherwise. A Forge form rank is
+`phase/level/skillLevel/equipLevel`, compared as integers, or a single integer. The lowest becomes normal and the
+highest becomes elite, and a single rank is copied into both. `"2/60/…"` is a higher rank than `"2/9/…"`. A
+missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when the operator is emitted as chess. Skill fields
+that do not fit the compact record (`rangeId` and anything outside name, duration, spCost, initSp, bb, desc,
+default, skillId, id) are named in the report and dropped. Voice containers and skill icons are renamed with the
+new char id and skill id. An imported file always gains one `files/` prefix, so `a.png` and `files/a.png` do not
+collapse. A case-only name clash, or a file path that is a directory prefix of another, is `PLUGIN_FORGE_ZIP`.
 
 **Errors** (`PLUGIN_FORGE_*`, this section's anchor): `PLUGIN_FORGE_INPUT` (not a pack), `PLUGIN_FORGE_ZIP` (unsafe
 to unpack), `PLUGIN_FORGE_JSON` (parse, size, depth, numbers), `PLUGIN_FORGE_ID` (the id cannot become a plugin id),
@@ -1181,6 +1195,10 @@ card, packed into a zip; a public address refused). Forge import (§16): `test/p
 fixtures under `test/fixtures/forge/` — a skin, a numbers pack, a mixed pack — plus boss music and a ui sound:
 `check --strict`, `pack`, a cosmetic resolve with no warnings, a content set with no problems, refused pieces named,
 `--dry-run`, stable `--json`, a second import, a zip that slips, a symlink, an oversized entry, JSON nested past the
-limit, a script that is not run), `test/studio/forge.test.js` (the gate, a server path refused, preview writes
-nothing, import writes, a file list, a path-escape name) and the browser test `test/ui/forge-import.e2e.test.js`
-(`SP_E2E=1`).
+limit, a script that is not run, `Object.prototype` unchanged on the preview route and on `--dry-run`, a language
+alias, a failed rename, form skills, `--out` as the record namespace, distinct `files/` paths, an array `set`,
+renamed voices and skill icons, an installed dependency, a 6★ 自选 operator, a hard link, a raw zip over the cap,
+and a stored entry that contains the ZIP64 bytes), `test/studio/forge.test.js` (the gate, a server path refused,
+preview writes nothing, import writes, a file list, a path-escape name) and the browser test
+`test/ui/forge-import.e2e.test.js` (`SP_E2E=1`, including a read that starts while a report is on screen; a sandbox
+that cannot open a browser leaves that file unrun).

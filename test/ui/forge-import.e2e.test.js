@@ -57,4 +57,61 @@ describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (a
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  test('a second file chosen while the first report is open clears it and keeps confirm disabled', { timeout: 120000 }, async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-forge-e2e-race-'));
+    const plugins = path.join(tmp, 'plugins');
+    fs.mkdirSync(plugins);
+    const { startServer } = await import('../../server/index.js');
+    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false });
+    const P = (await import('puppeteer-core')).default;
+    const browser = await P.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--no-first-run'] });
+    try {
+      const files = [];
+      const walk = (abs, rel) => {
+        for (const name of fs.readdirSync(abs)) {
+          const p = path.join(abs, name);
+          const next = rel ? `${rel}/${name}` : name;
+          if (fs.statSync(p).isDirectory()) walk(p, next);
+          else files.push({ name: next, data: fs.readFileSync(p) });
+        }
+      };
+      walk(SKIN, '');
+      const zipA = path.join(tmp, 'a.zip');
+      const zipB = path.join(tmp, 'b.zip');
+      fs.writeFileSync(zipA, zipFiles(files));
+      fs.writeFileSync(zipB, zipFiles(files));
+      const page = await browser.newPage();
+      await page.evaluateOnNewDocument(() => {
+        const orig = FileReader.prototype.readAsDataURL;
+        FileReader.prototype.readAsDataURL = function (blob) {
+          const reader = this;
+          setTimeout(() => orig.call(reader, blob), 1500);
+        };
+      });
+      await page.goto(srv.studio.pageUrl(srv.url), { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('[data-testid="forge-import"]');
+      await page.click('[data-testid="forge-import"]');
+      await page.waitForSelector('[data-testid="forge-zip"]');
+      const input = await page.$('[data-testid="forge-zip"]');
+      await input.uploadFile(zipA);
+      await page.waitForFunction(() => {
+        const el = document.querySelector('[data-testid="forge-preview"]');
+        return el && !el.disabled;
+      });
+      await page.click('[data-testid="forge-preview"]');
+      await page.waitForSelector('[data-testid="forge-report"]');
+      await input.uploadFile(zipB);
+      await page.waitForSelector('.st-step[data-reading="1"]');
+      assert.equal(await page.$('[data-testid="forge-report"]'), null);
+      assert.equal(await page.$eval('[data-testid="forge-confirm"]', (el) => el.disabled), true);
+      await page.waitForFunction(() => !document.querySelector('.st-step[data-reading="1"]'), { timeout: 8000 });
+      assert.equal(await page.$('[data-testid="forge-report"]'), null);
+      assert.equal(await page.$eval('[data-testid="forge-confirm"]', (el) => el.disabled), true);
+    } finally {
+      await browser.close();
+      await srv.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

@@ -12,11 +12,25 @@
 //   * skins[] collapse onto one overlay of that operator. Our cosmetic plugin has no wardrobe.
 //   * DEFENDER / HEAVY / GUARDIAN → TANK, VANGUARD → PIONEER, GUARD → WARRIOR.
 //   * A missing position is MELEE for tank/warrior/pioneer and RANGED otherwise.
-//   * Forge form ranks are not our normal/elite pair: the lowest rank becomes normal, the highest elite (one rank
-//     is copied into both).
+//   * Forge form ranks are phase/level/skillLevel/equipLevel, compared as integers (a plain integer is a rank too).
+//     The lowest becomes normal, the highest elite (one rank is copied into both). [ASSUMED]
+//   * Skills are taken from the selected form (forms[rank].skills). A form with none uses the record's skills.
+//     Fields that do not fit the compact record are named and dropped. They are not executed.
 //   * A missing range grid becomes [[0, 0]].
 //   * Shop tier follows rarity when it is 1–6.
-//   * Rarity below 6 cannot enter the 自选 pool; the operator is emitted as chess and the report says so.
+//   * A 6★ operator declared in operators is 自选 only (as "diy"): records.js writes no shop chess. The compact
+//     schema still requires chess.tier, so the file carries the rarity there. Below 6★ in that list is chess.
+//     A unit that is not in operators is still emitted as chess, because new chess.json records are not mapped. [ASSUMED]
+//   * An override array replaces the official array in one set. talents and talentsBase are merged by index in Forge;
+//     this version names them and does not replace them.
+//   * Record ids use the content plugin id (--out's basename when that product is primary, otherwise the pack id).
+//   * Two i18n entries that canonicalise to one language are refused (PLUGIN_FORGE_INPUT). They are not merged.
+//   * JSON keys __proto__, constructor and prototype are refused before any mapping. Asset trees use Object.create(null).
+//   * Every imported file is stored under one extra files/ prefix, so a.png and files/a.png stay distinct.
+//   * A cross-device rename (EXDEV) is refused. The import does not copy across devices. [ASSUMED]
+//   * A zip larger than pluginBytes + 64 KiB is refused before it is read. [ASSUMED] The 64 KiB is header room.
+//   * A directory file with nlink > 1 is refused. The read uses O_NOFOLLOW and checks fstat against lstat. Empty
+//     directories count toward the file cap. [ASSUMED] That does not see a file the process is not allowed to stat.
 //   * A skill script (.js) is never read as code. The operator gets kit "generic" and the report names the file.
 //     A JSON object that passes validateSkillSpec is kept as kit.spec. No DSL part is written: declaring one makes
 //     this version skip the plugin (PLUGIN_DSL_UNAVAILABLE).
@@ -49,6 +63,12 @@ import { validateSkillSpec } from '../../shared/plugins/skillSpec.js';
 import { canonicalLang, languageName, SOURCE_LANG } from '../../shared/i18nPacks.js';
 
 const APP_RANGE = '>=0.3.0 <0.4.0';
+const DANGER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+/** Raw zip bytes, headers included, before any entry is inflated. [ASSUMED] 64 KiB of central-directory room on top of the unpacked cap. */
+const ZIP_RAW_MAX = PLUGIN_LIMITS.pluginBytes + 64 * 1024;
+const OPEN_NOFOLLOW = fs.constants.O_NOFOLLOW || 0;
+const INDEX_MERGE_ARRAYS = new Set(['talents', 'talentsBase']);
+const SKILL_KEEP = new Set(['name', 'duration', 'spCost', 'initSp', 'bb', 'desc', 'default', 'skillId', 'id']);
 const SCRIPT_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx']);
 const IMAGE_EXT = new Set(['.png', '.jpg', '.webp']);
 const AUDIO_EXT = new Set(['.mp3', '.ogg']);
@@ -174,21 +194,102 @@ function assertSafeNames(files) {
   if (!(files instanceof Map)) fail('PLUGIN_FORGE_INPUT', 'files are not a map');
   if (files.size > PLUGIN_LIMITS.files) fail('PLUGIN_FORGE_ZIP', `more than ${PLUGIN_LIMITS.files} files`);
   let total = 0;
+  /** @type {string[]} */
+  const names = [];
+  const seen = new Map();
   for (const [name, data] of files) {
     const why = unsafeZipName(name);
     if (why) fail('PLUGIN_FORGE_ZIP', `${String(name).slice(0, 80)}: ${why}`);
     if (!Buffer.isBuffer(data)) fail('PLUGIN_FORGE_INPUT', `${String(name).slice(0, 80)}: not bytes`);
+    noteCase(seen, name);
+    names.push(name);
     total += data.length;
     if (data.length > PLUGIN_LIMITS.pluginBytes || total > PLUGIN_LIMITS.pluginBytes) fail('PLUGIN_FORGE_ZIP', `${String(name).slice(0, 80)}: larger than ${PLUGIN_LIMITS.pluginBytes} bytes`);
   }
+  assertNoPrefixClash(names);
 }
 
-function moveDir(from, dest) {
-  try { fs.renameSync(from, dest); }
-  catch (e) {
-    if (e?.code !== 'EXDEV') throw e;
-    fs.cpSync(from, dest, { recursive: true });
-    fs.rmSync(from, { recursive: true, force: true });
+/** Case-folded archive names. `art/` and `art/x.png` are different; `Art.png` and `art.png` are not. */
+function noteCase(seen, name) {
+  const bare = String(name).replace(/\/+$/, '');
+  const key = bare.toLowerCase();
+  if (!key) return;
+  const prev = seen.get(key);
+  if (prev != null && prev !== bare) fail('PLUGIN_FORGE_ZIP', `${String(name).slice(0, 80)}: another entry differs only by case`);
+  seen.set(key, bare);
+}
+
+/** A file path must not be a directory prefix of another file path. Directory entries are not in `names`. */
+function assertNoPrefixClash(names) {
+  const list = [...names].map((n) => String(n).replace(/\/+$/, '')).filter(Boolean).sort();
+  for (let i = 1; i < list.length; i++) {
+    if (list[i].startsWith(`${list[i - 1]}/`)) fail('PLUGIN_FORGE_ZIP', `${list[i - 1]}: a file path is a prefix of ${list[i]}`);
+  }
+}
+
+function assertNameSet(fileNames, dirNames = []) {
+  const seen = new Map();
+  for (const name of [...dirNames, ...fileNames]) noteCase(seen, name);
+  assertNoPrefixClash(fileNames);
+}
+
+/**
+ * Move every product, then the report is already inside the primary folder. On any failure, remove only the
+ * destinations this attempt created. A folder that was already there is left in place. EXDEV is a failure: a copy
+ * would not be one atomic commit. [ASSUMED]
+ * @returns {{ code: string, detail: string } | null}
+ */
+function commitProducts(stage, parent, products, primaryId, markdown) {
+  /** @type {string[]} */
+  const created = [];
+  try {
+    fs.writeFileSync(path.join(stage, primaryId, 'IMPORT-REPORT.md'), markdown);
+    for (const p of products) {
+      const dest = path.join(parent, p.id);
+      if (fs.existsSync(dest)) {
+        const err = new Error('exists');
+        err.code = 'EEXIST';
+        throw err;
+      }
+      fs.renameSync(path.join(stage, p.id), dest);
+      created.push(dest);
+    }
+    return null;
+  } catch (e) {
+    for (const dest of [...created].reverse()) {
+      try { fs.rmSync(dest, { recursive: true, force: true }); } catch { /* the caller reports the write error */ }
+    }
+    if (e instanceof ForgeImportError) return { code: e.code, detail: e.detail };
+    const fsCode = typeof e?.code === 'string' && /^E[A-Z0-9]+$/.test(e.code) ? e.code : 'error';
+    return { code: 'PLUGIN_FORGE_ZIP', detail: `the import could not be written (${fsCode})` };
+  }
+}
+
+/** Installed plugins and the staged products, as a registry can see both. The source pack is not linked in. */
+function openValidationView({ root, dataDir, pluginsDir, stage }) {
+  const view = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-view-'));
+  try {
+    const take = (name, abs) => {
+      if (!name || name.startsWith('.') || name.startsWith('_')) return;
+      const dest = path.join(view, name);
+      if (fs.existsSync(dest)) return;
+      let st;
+      try { st = fs.statSync(abs); } catch { return; }
+      if (!st.isDirectory()) return;
+      if (!fs.existsSync(path.join(abs, PLUGIN_MANIFEST))) return;
+      fs.symlinkSync(abs, dest);
+    };
+    if (pluginsDir && fs.existsSync(pluginsDir)) {
+      for (const name of fs.readdirSync(pluginsDir)) take(name, path.join(pluginsDir, name));
+    }
+    for (const name of fs.readdirSync(stage)) take(name, path.join(stage, name));
+    const registry = createPluginRegistry({
+      publicDir: path.join(root, 'public'), packsDir: path.join(root, 'packs'), pluginsDir: view, dataDir,
+    }, { recheckMs: 0, log: { info() {}, warn() {} } });
+    return { registry, view };
+  } catch (e) {
+    fs.rmSync(view, { recursive: true, force: true });
+    throw e;
   }
 }
 
@@ -217,23 +318,39 @@ function inflateCapped(raw, cap) {
  * @param {Buffer} zip
  * @returns {Promise<Map<string, Buffer>>}
  */
-export async function readUntrustedZip(zip) {
+/** EOCD whose comment length lands on the end of the buffer. A PK\\x05\\x06 inside an entry is not an EOCD. */
+function findEocd(zip) {
+  const maxBack = Math.min(zip.length, 22 + 0xffff);
+  const start = zip.length - maxBack;
+  for (let i = zip.length - 22; i >= start; i--) {
+    if (zip.readUInt32LE(i) !== 0x06054b50) continue;
+    const commentLen = zip.readUInt16LE(i + 20);
+    if (i + 22 + commentLen === zip.length) return i;
+  }
+  return -1;
+}
+
+async function readZipEntries(zip) {
   if (!Buffer.isBuffer(zip) || zip.length < 22) fail('PLUGIN_FORGE_ZIP', 'not a zip archive');
-  if (zip.includes(Buffer.from([0x50, 0x4b, 0x06, 0x06])) || zip.includes(Buffer.from([0x50, 0x4b, 0x06, 0x07]))) fail('PLUGIN_FORGE_ZIP', 'ZIP64 is not accepted');
-  const endAt = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-  if (endAt < 0 || endAt + 22 > zip.length) fail('PLUGIN_FORGE_ZIP', 'not a zip archive');
+  if (zip.length > ZIP_RAW_MAX) fail('PLUGIN_FORGE_ZIP', `larger than ${ZIP_RAW_MAX} bytes`);
+  const endAt = findEocd(zip);
+  if (endAt < 0) fail('PLUGIN_FORGE_ZIP', 'not a zip archive');
+  // The ZIP64 locator is the 20 bytes immediately before a real EOCD, not a magic number somewhere in an entry.
+  if (endAt >= 20 && zip.readUInt32LE(endAt - 20) === 0x07064b50) fail('PLUGIN_FORGE_ZIP', 'ZIP64 is not accepted');
   const count = zip.readUInt16LE(endAt + 10);
   const cdSize = zip.readUInt32LE(endAt + 12);
   const cdOff = zip.readUInt32LE(endAt + 16);
   if (count === 0xffff || cdOff === 0xffffffff || cdSize === 0xffffffff) fail('PLUGIN_FORGE_ZIP', 'ZIP64 is not accepted');
   if (count > PLUGIN_LIMITS.files) fail('PLUGIN_FORGE_ZIP', `more than ${PLUGIN_LIMITS.files} files`);
-  if (cdOff + cdSize > zip.length) fail('PLUGIN_FORGE_ZIP', 'central directory is outside the file');
+  if (cdOff > zip.length || cdSize > zip.length - cdOff) fail('PLUGIN_FORGE_ZIP', 'central directory is outside the file');
   /** @type {Map<string, Buffer>} */
   const files = new Map();
+  /** @type {string[]} */
+  const dirNames = [];
   let p = cdOff;
   let total = 0;
   for (let i = 0; i < count; i++) {
-    if (p + 46 > zip.length || zip.readUInt32LE(p) !== 0x02014b50) fail('PLUGIN_FORGE_ZIP', 'broken central directory');
+    if (p + 46 > cdOff + cdSize || zip.readUInt32LE(p) !== 0x02014b50) fail('PLUGIN_FORGE_ZIP', 'broken central directory');
     const flags = zip.readUInt16LE(p + 8);
     const method = zip.readUInt16LE(p + 10);
     const crc = zip.readUInt32LE(p + 16);
@@ -244,21 +361,23 @@ export async function readUntrustedZip(zip) {
     const commentLen = zip.readUInt16LE(p + 32);
     const external = zip.readUInt32LE(p + 38);
     const local = zip.readUInt32LE(p + 42);
-    if (p + 46 + nameLen + extraLen + commentLen > zip.length) fail('PLUGIN_FORGE_ZIP', 'broken central directory');
+    if (p + 46 + nameLen + extraLen + commentLen > cdOff + cdSize) fail('PLUGIN_FORGE_ZIP', 'broken central directory');
     const name = zip.toString('utf8', p + 46, p + 46 + nameLen);
+    const extraAt = p + 46 + nameLen;
     p += 46 + nameLen + extraLen + commentLen;
-    if (extraLen >= 4) {
-      const extra = zip.subarray(p - commentLen - extraLen, p - commentLen);
+    if (extraLen > 0) {
+      const extra = zip.subarray(extraAt, extraAt + extraLen);
       for (let e = 0; e + 4 <= extra.length;) {
         const id = extra.readUInt16LE(e);
         const sz = extra.readUInt16LE(e + 2);
+        if (e + 4 + sz > extra.length) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: broken extra field`);
         if (id === 0x0001) fail('PLUGIN_FORGE_ZIP', 'ZIP64 is not accepted');
         e += 4 + sz;
       }
     }
-    if (name.endsWith('/')) continue;
     const why = unsafeZipName(name);
     if (why) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: ${why}`);
+    if (name.endsWith('/')) { dirNames.push(name); continue; }
     const mode = (external >>> 16) & 0o170000;
     if (mode === 0o120000) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: symbolic link`);
     if (flags & 0x1) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: encrypted`);
@@ -266,10 +385,19 @@ export async function readUntrustedZip(zip) {
     if (rawSize > PLUGIN_LIMITS.pluginBytes || compSize > PLUGIN_LIMITS.pluginBytes) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: larger than ${PLUGIN_LIMITS.pluginBytes} bytes`);
     if (total + rawSize > PLUGIN_LIMITS.pluginBytes) fail('PLUGIN_FORGE_ZIP', `more than ${PLUGIN_LIMITS.pluginBytes} bytes uncompressed`);
     if (local + 30 > zip.length || zip.readUInt32LE(local) !== 0x04034b50) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: broken local header`);
+    const lMethod = zip.readUInt16LE(local + 8);
+    const lCrc = zip.readUInt32LE(local + 14);
+    const lComp = zip.readUInt32LE(local + 18);
+    const lRaw = zip.readUInt32LE(local + 22);
     const lName = zip.readUInt16LE(local + 26);
     const lExtra = zip.readUInt16LE(local + 28);
     const start = local + 30 + lName + lExtra;
     if (start + compSize > zip.length) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: truncated`);
+    if (local + 30 + lName > zip.length) fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: broken local header`);
+    const lNameStr = zip.toString('utf8', local + 30, local + 30 + lName);
+    if (lNameStr !== name || lMethod !== method || lCrc !== crc || lComp !== compSize || lRaw !== rawSize) {
+      fail('PLUGIN_FORGE_ZIP', `${name.slice(0, 80)}: local header does not match the central directory`);
+    }
     const stored = zip.subarray(start, start + compSize);
     let data;
     if (method === 0) {
@@ -284,7 +412,18 @@ export async function readUntrustedZip(zip) {
     files.set(name, data);
     total += data.length;
   }
+  if (p !== cdOff + cdSize) fail('PLUGIN_FORGE_ZIP', 'central directory size does not match');
+  assertNameSet([...files.keys()], dirNames);
   return stripWrapper(files);
+}
+
+export async function readUntrustedZip(zip) {
+  try {
+    return await readZipEntries(zip);
+  } catch (e) {
+    if (e instanceof ForgeImportError) throw e;
+    fail('PLUGIN_FORGE_ZIP', 'the pack could not be read');
+  }
 }
 
 /** @param {Map<string, Buffer>} files */
@@ -296,6 +435,7 @@ function stripWrapper(files) {
   if (!files.has(`${top}/pack.json`)) return files;
   const out = new Map();
   for (const [n, d] of files) if (n.length > top.length + 1) out.set(n.slice(top.length + 1), d);
+  assertNoPrefixClash(out.keys());
   return out;
 }
 
@@ -312,13 +452,19 @@ export function readUntrustedDir(dir) {
   if (!st.isDirectory()) fail('PLUGIN_FORGE_INPUT', 'not a directory');
   /** @type {Map<string, Buffer>} */
   const files = new Map();
+  const caseNames = new Map();
   let count = 0;
   let total = 0;
   const walk = (abs, rel) => {
     const cur = fs.lstatSync(abs);
     if (cur.isSymbolicLink()) fail('PLUGIN_FORGE_ZIP', `${rel || '.'}: symbolic link`);
     if (cur.isDirectory()) {
-      if (rel && rel.split('/').length > 32) fail('PLUGIN_FORGE_ZIP', `${rel}: nested too deep`);
+      if (rel) {
+        noteCase(caseNames, rel);
+        count += 1;
+        if (count > PLUGIN_LIMITS.files) fail('PLUGIN_FORGE_ZIP', `more than ${PLUGIN_LIMITS.files} files`);
+        if (rel.split('/').length > 32) fail('PLUGIN_FORGE_ZIP', `${rel}: nested too deep`);
+      }
       for (const name of fs.readdirSync(abs)) {
         if (name === '.' || name === '..') continue;
         walk(path.join(abs, name), rel ? `${rel}/${name}` : name);
@@ -326,16 +472,43 @@ export function readUntrustedDir(dir) {
       return;
     }
     if (!cur.isFile()) fail('PLUGIN_FORGE_ZIP', `${rel}: not a regular file`);
+    if (cur.nlink > 1) fail('PLUGIN_FORGE_ZIP', `${rel}: hard link`);
+    noteCase(caseNames, rel);
     count += 1;
     if (count > PLUGIN_LIMITS.files) fail('PLUGIN_FORGE_ZIP', `more than ${PLUGIN_LIMITS.files} files`);
     if (cur.size > PLUGIN_LIMITS.pluginBytes || total + cur.size > PLUGIN_LIMITS.pluginBytes) fail('PLUGIN_FORGE_ZIP', `${rel}: larger than ${PLUGIN_LIMITS.pluginBytes} bytes`);
     const why = unsafeZipName(rel);
     if (why) fail('PLUGIN_FORGE_ZIP', `${rel}: ${why}`);
-    files.set(rel, fs.readFileSync(abs));
-    total += cur.size;
+    let fd;
+    try { fd = fs.openSync(abs, fs.constants.O_RDONLY | OPEN_NOFOLLOW); }
+    catch { fail('PLUGIN_FORGE_ZIP', `${rel}: not a regular file`); }
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || st.ino !== cur.ino || st.size !== cur.size || st.nlink !== cur.nlink || st.nlink > 1) {
+        fail('PLUGIN_FORGE_ZIP', `${rel}: the file changed while it was read`);
+      }
+      const data = fs.readFileSync(fd);
+      if (data.length !== st.size) fail('PLUGIN_FORGE_ZIP', `${rel}: the file changed while it was read`);
+      files.set(rel, data);
+      total += data.length;
+    } finally { fs.closeSync(fd); }
   };
   walk(root, '');
+  assertNoPrefixClash(files.keys());
   return stripWrapper(files);
+}
+
+function assertSafeKeys(value, label, depth = 0) {
+  if (depth > PLUGIN_LIMITS.jsonDepth || !value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) if (item && typeof item === 'object') assertSafeKeys(item, label, depth + 1);
+    return;
+  }
+  for (const k of Object.keys(value)) {
+    if (DANGER_KEYS.has(k)) fail('PLUGIN_FORGE_JSON', `${label}: key "${k}" is not allowed`);
+    const child = value[k];
+    if (child && typeof child === 'object') assertSafeKeys(child, label, depth + 1);
+  }
 }
 
 function readJsonBuf(buf, label) {
@@ -344,6 +517,7 @@ function readJsonBuf(buf, label) {
   try { value = JSON.parse(buf.toString('utf8')); } catch (e) { fail('PLUGIN_FORGE_JSON', `${label}: ${e instanceof SyntaxError ? e.message : e.code || 'unreadable'}`); }
   const bad = checkJsonLimits(value);
   if (bad) fail('PLUGIN_FORGE_JSON', `${label}: ${bad}`);
+  assertSafeKeys(value, label);
   return value;
 }
 
@@ -357,7 +531,9 @@ function lookup(files, rel) {
 
 function destOf(rel) {
   const clean = String(rel).split('/').filter((s) => s && s !== '.' && s !== '..').join('/');
-  const under = clean.startsWith('files/') ? clean : `files/${clean}`;
+  if (!clean) return null;
+  // Always one more files/ prefix, including when the source is already under files/, so a.png and files/a.png differ.
+  const under = `files/${clean}`;
   return isPackPath(under) ? under : null;
 }
 
@@ -376,10 +552,12 @@ function takeMedia(files, used, rel, kind) {
 }
 
 function setAt(root, keys, value) {
+  if (!keys.length || keys.some((k) => typeof k !== 'string' || DANGER_KEYS.has(k))) fail('PLUGIN_FORGE_INPUT', 'a key is not an own property name');
   let n = root;
   for (let i = 0; i < keys.length - 1; i++) {
-    if (!isObj(n[keys[i]])) n[keys[i]] = {};
-    n = n[keys[i]];
+    const k = keys[i];
+    if (!has(n, k) || !isObj(n[k])) n[k] = Object.create(null);
+    n = n[k];
   }
   n[keys[keys.length - 1]] = value;
 }
@@ -449,14 +627,17 @@ function asMap(doc, idField) {
   return isObj(doc) ? doc : {};
 }
 
-function leafOps(vanilla, partial, path, out, notes) {
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function leafOps(vanilla, partial, path, out, notes, unsupported) {
   if (out.length > 2000) return;
   if (Array.isArray(partial)) {
-    if (!Array.isArray(vanilla)) { notes.push(path.join('.')); return; }
-    for (let i = 0; i < partial.length; i++) {
-      if (i >= vanilla.length) { notes.push(`${path.join('.')}[${i}]`); continue; }
-      leafOps(vanilla[i], partial[i], [...path, i], out, notes);
-    }
+    if (!Array.isArray(vanilla)) { notes.push(path.join('.') || '(root)'); return; }
+    const key = path.length ? String(path[path.length - 1]) : '';
+    if (INDEX_MERGE_ARRAYS.has(key)) { unsupported.push(path.join('.') || key); return; }
+    if (path.length && !sameJson(partial, vanilla)) out.push({ path, value: partial });
     return;
   }
   if (isObj(partial)) {
@@ -464,7 +645,7 @@ function leafOps(vanilla, partial, path, out, notes) {
     for (const k of Object.keys(partial)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
       if (!has(vanilla, k)) { notes.push([...path, k].join('.')); continue; }
-      leafOps(vanilla[k], partial[k], [...path, k], out, notes);
+      leafOps(vanilla[k], partial[k], [...path, k], out, notes, unsupported);
     }
     return;
   }
@@ -497,22 +678,42 @@ function gridOf(v) {
   return out;
 }
 
+/** phase/level/skillLevel/equipLevel, or one integer. Null when the key is neither. */
+function formRank(key) {
+  const parts = String(key).split('/');
+  if (parts.length === 4 && parts.every((p) => /^-?\d+$/.test(p))) return parts.map(Number);
+  if (parts.length === 1 && /^-?\d+$/.test(parts[0])) return [Number(parts[0]), 0, 0, 0];
+  return null;
+}
+
 function formOrder(keys) {
-  const nums = keys.every((k) => /^-?\d+$/.test(k));
-  return [...keys].sort((a, b) => (nums ? Number(a) - Number(b) : a < b ? -1 : a > b ? 1 : 0));
+  const ranks = keys.map((k) => formRank(k));
+  const cmp = (a, b) => {
+    const ra = formRank(a);
+    const rb = formRank(b);
+    if (ra && rb) {
+      for (let i = 0; i < 4; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+      return 0;
+    }
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
+  if (ranks.every(Boolean)) return [...keys].sort(cmp);
+  return [...keys].sort(cmp);
 }
 
 /**
  * Read a pack already in memory and describe the plugins it would become. Does not write.
  * @param {Map<string, Buffer>} files
- * @param {{ id?: string, dataDir?: string, vanilla?: { manifest?: any } | null }} [opts]
+ * @param {{ id?: string, contentId?: string, dataDir?: string, vanilla?: { manifest?: any } | null }} [opts]
+ *   contentId: the primary content plugin id when it is already known (--out's basename). Record namespaces use it.
  */
-export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}) {
+export function planForgeImport(files, { id: idOverride, contentId, dataDir, vanilla } = {}) {
   if (!files.has('pack.json')) fail('PLUGIN_FORGE_INPUT', 'no pack.json');
   const pack = readJsonBuf(files.get('pack.json'), 'pack.json');
   if (!isObj(pack)) fail('PLUGIN_FORGE_INPUT', 'pack.json is not an object');
   const base = forgeIdToPluginId(idOverride || pack.id);
   if (!base) fail('PLUGIN_FORGE_ID', `pack id "${String(pack.id ?? '').slice(0, 40)}"`);
+  const recordNs = contentId && isPluginId(contentId) ? contentId : base;
   /** @type {Set<string>} */
   const used = new Set(['pack.json']);
   /** @type {{ path: string, zh: string, en: string, code?: string }[]} */
@@ -574,16 +775,24 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
 
   const manifestArt = vanilla?.manifest ?? null;
   /** @type {Record<string, any>} */
-  const assets = {};
+  const assets = Object.create(null);
   /** @type {Map<string, Buffer>} */
   const media = new Map();
   /** @type {string[]} */
   const importedAssets = [];
   /** @type {string[]} */
   const rewrittenAssets = [];
-  const remember = (src, dest) => { if (!media.has(dest)) media.set(dest, files.get(src)); };
+  const remember = (src, dest) => {
+    const buf = files.get(src);
+    if (media.has(dest)) {
+      if (!media.get(dest).equals(buf)) fail('PLUGIN_FORGE_ZIP', `${dest}: two pack files map to one path`);
+      return;
+    }
+    media.set(dest, buf);
+  };
 
   const putImage = (container, key, field, rel) => {
+    if (!isAssetKey(key)) { skip(`${container.join('.')}.${String(key).slice(0, 40)}`, '素材 id 不合规，没有导入。', 'The asset id is not a valid key, so it was not imported.'); return; }
     const got = takeMedia(files, used, rel, 'image');
     if (!got) { skip(String(rel), '声明了图片，但包里没有这个文件，没有导入。', 'An image was declared, but that file is not in the pack, so it was not imported.'); return; }
     if (got.error) { skip(String(rel), `图片扩展名 ${got.error} 不能放进外观插件，没有导入。`, `Image extension ${got.error} cannot go in a cosmetic plugin, so it was not imported.`); return; }
@@ -593,6 +802,7 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
     importedAssets.push(`${at.join('.')} ← ${got.src}`);
   };
   const putAudio = (container, key, slot, rels) => {
+    if (!isAssetKey(key)) { skip(`${container.join('.')}.${String(key).slice(0, 40)}`, '素材 id 不合规，没有导入。', 'The asset id is not a valid key, so it was not imported.'); return; }
     const list = (Array.isArray(rels) ? rels : [rels]).filter((r) => typeof r === 'string');
     const dests = [];
     for (const rel of list.slice(0, 16)) {
@@ -844,17 +1054,26 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
     const vanillaRec = file === 'units' ? table('units')?.[id] : table(file)?.[id];
     if (!vanillaRec) { skip(`${file}:${id}`, '覆盖声明指向的官方记录不存在，没有改。', 'The override names an official record that does not exist, so nothing was changed.'); return; }
     const notes = [];
+    const unsupported = [];
     const leaves = [];
-    leafOps(vanillaRec, partial, prefix, leaves, notes);
+    leafOps(vanillaRec, partial, prefix, leaves, notes, unsupported);
     const dataFile = file === 'units' ? 'backups' : file;
     for (const leaf of leaves) {
       if (file === 'units') patches.push({ op: 'set', file: 'backups', path: leaf.path, value: leaf.value });
       else patches.push({ op: 'set', file: dataFile, id, path: leaf.path, value: leaf.value });
     }
     if (leaves.length) importedData.push(`${file}:${id} → ${leaves.length} set`);
-    else skip(`${file}:${id}`, '没有类型对得上的字段，没有改这条官方记录。', 'No field kept its type, so this official record was not changed.');
+    else if (!unsupported.length) skip(`${file}:${id}`, '没有类型对得上的字段，没有改这条官方记录。', 'No field kept its type, so this official record was not changed.');
+    if (unsupported.length) skip(`${file}:${id}#${unsupported[0]}`, `数组「${unsupported[0]}」要按 index 合并（talents / talentsBase）。这一版不整块替换，也没有逐项改。`, `The array "${unsupported[0]}" is merged by index (talents / talentsBase). This version neither replaces it wholesale nor edits its items.`);
     if (notes.length) skip(`${file}:${id}#${notes.slice(0, 3).join(',')}`, '有些字段对不上官方记录的类型或路径，那些字段没有改。', 'Some fields did not match the official type or path, so those fields were not changed.');
   };
+
+  /** @type {Map<string, string>} */
+  const charIds = new Map();
+  /** @type {Map<string, string>} */
+  const enemyIds = new Map();
+  /** @type {Map<string, string>} */
+  const skillIds = new Map();
 
   const mapOperator = (rawId, rec) => {
     if (!isObj(rec)) { skip(`units:${rawId}`, '干员记录不是对象，没有导入。', 'The operator record is not an object, so it was not imported.'); return; }
@@ -874,50 +1093,78 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
     const keys = formOrder(Object.keys(formsIn));
     const picked = keys.map((k) => formsIn[k]).filter((f) => isObj(f) && finiteStats(f.stats || f));
     if (!picked.length) { skip(`units:${rawId}`, '形态里没有能用的数值，没有导入。', 'No form has usable stats, so it was not imported.'); return; }
-    const low = picked[0];
-    const high = picked[picked.length - 1];
-    assume('forms', 'Forge 的形态阶写成我们的 normal / elite：最低一阶是 normal，最高一阶是 elite。', 'Forge form ranks were written as normal / elite: the lowest rank is normal, the highest is elite.');
-    const oneForm = (f) => {
-      const stats = finiteStats(f.stats || f);
-      const grid = gridOf(f.rangeGrid || rec.rangeGrid);
-      if (!grid) assume('range', '缺攻击范围，写成 [[0, 0]]。请作者改成真实范围。', 'No attack range was found, so it was written as [[0, 0]]. The author should replace it.');
-      return { stats, rangeGrid: grid || [[0, 0]] };
-    };
+    assume('forms', 'Forge 的形态阶（phase/level/skillLevel/equipLevel，或一个整数）按数字比较：最低一阶是 normal，最高一阶是 elite。', 'Forge form ranks (phase/level/skillLevel/equipLevel, or one integer) are compared as numbers: the lowest is normal, the highest is elite.');
     let position = rec.position === 'MELEE' || rec.position === 'RANGED' ? rec.position : '';
     if (!position) {
       position = MELEE.has(profession) ? 'MELEE' : 'RANGED';
       assume('position', `没有 position，按职业写成 ${position}。`, `No position was set, so it was written as ${position} from the profession.`);
     }
     const pool = isObj(pack.operators) ? pack.operators : {};
-    const declared = has(pool, rawId) || has(pool, rec.charId);
-    const poolRec = pool[rawId] || pool[rec.charId] || {};
+    const declared = has(pool, rawId) || (typeof rec.charId === 'string' && has(pool, rec.charId));
+    const poolRec = (has(pool, rawId) ? pool[rawId] : null) || (typeof rec.charId === 'string' && has(pool, rec.charId) ? pool[rec.charId] : null) || {};
     let as = 'chess';
-    if (declared && rec.rarity === 6) as = 'both';
-    else if (declared && rec.rarity !== 6) {
+    if (declared && rec.rarity === 6) {
+      as = 'diy';
+      assume('diy-only', `「${name}」只在 operators 里声明为六星，写成自选（diy），不放进商店。`, `"${name}" is a 6★ declared only in operators, so it was written as a recruit-pool operator (diy), not as a shop piece.`);
+    } else if (declared && rec.rarity !== 6) {
       as = 'chess';
       assume('diy-rarity', `「${name}」进了自选声明但不是六星。自选池只要六星，所以写成棋子（chess）。`, `"${name}" is declared for the recruit pool but is not 6★. The pool is 6★ only, so it was written as chess.`);
     }
-    const bonds = [...(Array.isArray(poolRec.bonds) ? poolRec.bonds : []), ...(Array.isArray(rec.bonds) ? rec.bonds : [])].filter((b) => typeof b === 'string');
+    const bonds = [...new Set([...(Array.isArray(poolRec.bonds) ? poolRec.bonds : []), ...(Array.isArray(rec.bonds) ? rec.bonds : [])].filter((b) => typeof b === 'string'))];
     const bondTable = table('bonds');
-    const knownBonds = [...new Set(bonds)].filter((b) => bondTable && has(bondTable, b));
+    const knownBonds = bonds.filter((b) => bondTable && has(bondTable, b));
     if (bonds.length && knownBonds.length !== bonds.length) skip(`units:${rawId}#bonds`, '有的盟约在本安装里不存在，那些盟约没有写上。', 'Some bonds do not exist in this installation, so those bonds were not written.');
-    if (as !== 'diy' && !knownBonds.length) { skip(`units:${rawId}`, '棋子需要至少一个本安装里存在的盟约，没有导入这个干员。', 'A chess operator needs a bond that exists in this installation, so this operator was not imported.'); return; }
-    const charId = namespaced('char_x', base, rawId, seenIds);
-    const skillSrc = Array.isArray(rec.skills) ? rec.skills.filter(isObj) : [];
-    if (!skillSrc.length) { skip(`units:${rawId}`, '没有技能，不能做成干员，没有导入。', 'There is no skill, so this cannot become an operator and was not imported.'); return; }
-    let defaultAt = skillSrc.findIndex((s) => s.default === true);
-    if (defaultAt < 0) { defaultAt = 0; assume('skill-default', `「${name}」没有标默认技能，把第一条当成默认。`, `"${name}" marks no default skill, so the first one was used.`); }
-    const skills = skillSrc.map((s, i) => {
-      const skill = { skillId: namespaced('skx', base, `${rawId}_${i + 1}`, seenIds), name: typeof s.name === 'string' ? s.name.slice(0, 40) : '技能', default: i === defaultAt };
-      for (const k of ['duration', 'spCost', 'initSp']) if (typeof s[k] === 'number' && Number.isFinite(s[k])) skill[k] = s[k];
-      if (typeof s.desc === 'string') skill.desc = s.desc.slice(0, 200);
-      if (isObj(s.bb)) {
-        const bb = {};
-        for (const [k, v] of Object.entries(s.bb)) if (typeof v === 'number' && Number.isFinite(v)) bb[k] = v;
-        if (Object.keys(bb).length) skill.bb = bb;
-      }
-      return skill;
-    });
+    if (!knownBonds.length) {
+      skip(`units:${rawId}`, as === 'diy' ? '自选干员也要至少一个本安装里存在的盟约，没有导入这个干员。' : '棋子需要至少一个本安装里存在的盟约，没有导入这个干员。', as === 'diy' ? 'A recruit-pool operator still needs a bond that exists in this installation, so this operator was not imported.' : 'A chess operator needs a bond that exists in this installation, so this operator was not imported.');
+      return;
+    }
+    const charId = namespaced('char_x', recordNs, rawId, seenIds);
+    charIds.set(String(rawId), charId);
+    if (typeof rec.charId === 'string' && rec.charId !== rawId) charIds.set(rec.charId, charId);
+    const formSkills = (f) => (Array.isArray(f.skills) ? f.skills.filter(isObj) : []);
+    const topSkills = Array.isArray(rec.skills) ? rec.skills.filter(isObj) : [];
+    /** @type {Set<string>} */
+    const dropped = new Set();
+    const compileSkills = (list, tag) => {
+      if (!list.length) return null;
+      let defaultAt = list.findIndex((s) => s.default === true);
+      if (defaultAt < 0) { defaultAt = 0; assume('skill-default', `「${name}」没有标默认技能，把第一条当成默认。`, `"${name}" marks no default skill, so the first one was used.`); }
+      return list.map((s, i) => {
+        for (const k of Object.keys(s)) if (!SKILL_KEEP.has(k)) dropped.add(k);
+        const explicit = (typeof s.skillId === 'string' && s.skillId) || (typeof s.id === 'string' && s.id) || '';
+        const old = explicit || (tag ? `${rawId}_${tag}_${i + 1}` : `${rawId}_${i + 1}`);
+        let skillId = skillIds.get(old);
+        if (!skillId) {
+          skillId = namespaced('skx', recordNs, old, seenIds);
+          skillIds.set(old, skillId);
+        }
+        const skill = { skillId, name: typeof s.name === 'string' ? s.name.slice(0, 40) : '技能', default: i === defaultAt };
+        for (const k of ['duration', 'spCost', 'initSp']) if (typeof s[k] === 'number' && Number.isFinite(s[k])) skill[k] = s[k];
+        if (typeof s.desc === 'string') skill.desc = s.desc.slice(0, 200);
+        if (isObj(s.bb)) {
+          const bb = {};
+          for (const [k, v] of Object.entries(s.bb)) {
+            if (DANGER_KEYS.has(k)) continue;
+            if (typeof v === 'number' && Number.isFinite(v)) bb[k] = v;
+            else dropped.add(`bb.${k}`);
+          }
+          if (Object.keys(bb).length) skill.bb = bb;
+        }
+        return skill;
+      });
+    };
+    const compiledForms = picked.map((f, idx) => compileSkills(formSkills(f), `f${idx}`));
+    const compiledTop = compileSkills(topSkills, '');
+    const fallback = compiledForms.find(Boolean) || compiledTop;
+    if (!fallback) { skip(`units:${rawId}`, '没有技能，不能做成干员，没有导入。', 'There is no skill, so this cannot become an operator and was not imported.'); return; }
+    if (dropped.size) skip(`units:${rawId}#skill-fields`, `技能字段 ${[...dropped].slice(0, 8).join('、')} 写不进紧凑记录，没有照抄。`, `Skill fields ${[...dropped].slice(0, 8).join(', ')} do not fit the compact record, so they were not copied.`);
+    const oneForm = (f, idx) => {
+      const stats = finiteStats(f.stats || f);
+      const grid = gridOf(f.rangeGrid || rec.rangeGrid);
+      if (!grid) assume('range', '缺攻击范围，写成 [[0, 0]]。请作者改成真实范围。', 'No attack range was found, so it was written as [[0, 0]]. The author should replace it.');
+      return { stats, rangeGrid: grid || [[0, 0]], skills: compiledForms[idx] || compiledTop || fallback };
+    };
+    const skills = compiledTop || fallback;
     let kit = 'generic';
     const spec = isObj(rec.skillSpec) ? rec.skillSpec : isObj(rec.kit?.spec) ? rec.kit.spec : isObj(rec.spec) ? rec.spec : null;
     if (spec && !validateSkillSpec(spec).length) kit = { spec };
@@ -934,10 +1181,11 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
     }
     const op = {
       op: 1, charId, name, profession, subProfessionId: rec.subProfessionId.trim().slice(0, 40), position, rarity: rec.rarity, as,
-      forms: { normal: oneForm(low), elite: oneForm(high) }, skills, kit,
+      forms: { normal: oneForm(picked[0], 0), elite: oneForm(picked[picked.length - 1], picked.length - 1) }, skills, kit,
     };
-    if (as !== 'diy') op.chess = { tier: rec.rarity, bonds: knownBonds.length ? knownBonds : bonds };
-    else if (knownBonds.length) op.chess = { bonds: knownBonds };
+    // The compact schema requires chess.tier whenever chess is present. as "diy" is what keeps the piece out of the
+    // shop (records.js writes a shop chess only when as !== "diy"). The tier is the rarity and is not a shop listing.
+    if (knownBonds.length) op.chess = { tier: rec.rarity, bonds: knownBonds };
     if (typeof rec.trait === 'string') op.trait = { desc: rec.trait.slice(0, 120) };
     else if (isObj(rec.trait) && typeof rec.trait.desc === 'string') op.trait = { desc: rec.trait.desc.slice(0, 120) };
     const artRef = typeof rec.artRef === 'string' ? rec.artRef : typeof rec.art === 'string' ? rec.art : null;
@@ -980,7 +1228,8 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
           skip(`enemies:${id}`, '新敌人没有写一个本安装里存在的官方 base（或 special），不能凭空造一套技能，没有导入。', 'A new enemy has no official base (or special) that exists in this installation. A kit was not invented, so it was not imported.');
           continue;
         }
-        const eid = namespaced('enemy_x', base, id, seenIds);
+        const eid = namespaced('enemy_x', recordNs, id, seenIds);
+        enemyIds.set(id, eid);
         const set = {};
         if (typeof rec.name === 'string' && rec.name.trim()) set.name = rec.name.trim().slice(0, 60);
         const stats = finiteStats(rec.stats || rec, enemies[baseId]?.stats);
@@ -996,9 +1245,15 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
 
   /** @type {{ lang: string, strings: Record<string, string>, kind: 'ui' | 'content', doc?: any }[]} */
   const translations = [];
+  /** @type {Map<string, string>} */
+  const seenLang = new Map();
   if (isObj(pack.i18n)) {
     for (const [lang, rel] of Object.entries(pack.i18n)) {
       if (typeof rel !== 'string') { skip(`i18n.${lang}`, '翻译不是一个文件路径，没有导入。', 'The translation is not a file path, so it was not imported.'); continue; }
+      const code = canonicalLang(lang);
+      if (!code) { skip(`i18n.${lang}`, '不是语言代码，没有导入。', 'Not a language code, so it was not imported.'); continue; }
+      if (seenLang.has(code)) fail('PLUGIN_FORGE_INPUT', `i18n "${seenLang.get(code)}" and "${lang}" are the same language`);
+      seenLang.set(code, lang);
       const found = lookup(files, rel);
       if (!found) { skip(`i18n.${lang}`, '翻译文件不在包里，没有导入。', 'The translation file is not in the pack, so it was not imported.'); continue; }
       used.add(found);
@@ -1008,8 +1263,6 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
         skip(found, '翻译文件读不了，没有导入。', 'The translation file could not be read, so it was not imported.');
         continue;
       }
-      const code = canonicalLang(lang);
-      if (!code) { skip(`i18n.${lang}`, '不是语言代码，没有导入。', 'Not a language code, so it was not imported.'); continue; }
       if (isObj(doc) && doc.version === 1 && canonicalLang(doc.lang) === code && isObj(doc.files)) {
         const badLeaf = contentLeavesBad(doc.files, table);
         if (badLeaf) { skip(found, `翻译要改的词「${badLeaf}」在本安装里不是现成的字符串，整份没有导入（放进内容翻译会让整套数据被拒）。`, `The translation touches "${badLeaf}", which is not an existing string in this installation, so the file was not imported (a bad content translation refuses the whole set).`); continue; }
@@ -1071,7 +1324,7 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
       if (dest) {
         assume('loose-bgm', `没有被 pack.json 引用、但文件名是音轨的 ${rel} 写入了 audio.bgm.${baseName}。`, `${rel} is not referenced by pack.json, but its name is a music track, so it was written to audio.bgm.${baseName}.`);
         setAt(assets, ['audio', 'bgm', baseName], { loop: dest });
-        media.set(dest, buf);
+        remember(rel, dest);
         used.add(rel);
         importedAssets.push(`audio.bgm.${baseName} ← ${rel}`);
         continue;
@@ -1080,21 +1333,31 @@ export function planForgeImport(files, { id: idOverride, dataDir, vanilla } = {}
     skip(rel, '文件在包里，但 pack.json 没有引用它，没有导入。', 'The file is in the pack, but pack.json does not reference it, so it was not imported.');
   }
 
-  // point new-operator art at the namespaced id when the pack used the old id
-  for (const line of rewrittenData) {
-    const m = /^(\S+) → (char_x_\S+|enemy_x_\S+)$/.exec(line);
-    if (!m) continue;
-    const [from, to] = [m[1], m[2]];
-    if (to.startsWith('char_x_') && isObj(assets.chars) && has(assets.chars, from) && !has(assets.chars, to)) {
-      assets.chars[to] = assets.chars[from];
-      delete assets.chars[from];
-      rewrittenAssets.push(`art.chars.${from} → ${to}`);
+  assertNoPrefixClash(media.keys());
+  const destCase = new Map();
+  for (const dest of media.keys()) noteCase(destCase, dest);
+  const rewriteKey = (table, map, label) => {
+    if (!table || typeof table !== 'object' || Array.isArray(table)) return;
+    for (const [from, to] of map) {
+      if (typeof from !== 'string' || typeof to !== 'string' || !from || from === to || DANGER_KEYS.has(from) || DANGER_KEYS.has(to)) continue;
+      if (!has(table, from)) continue;
+      if (!isAssetKey(to)) continue;
+      if (has(table, to)) {
+        skip(`${label}:${from}`, `改名后的键 ${to} 已经有素材，${from} 没有并进去。`, `The renamed key ${to} already has assets, so ${from} was not merged into it.`);
+        continue;
+      }
+      table[to] = table[from];
+      delete table[from];
+      rewrittenAssets.push(`${label}.${from} → ${to}`);
     }
-    if (to.startsWith('enemy_x_') && isObj(assets.enemies) && has(assets.enemies, from) && !has(assets.enemies, to)) {
-      assets.enemies[to] = assets.enemies[from];
-      delete assets.enemies[from];
-      rewrittenAssets.push(`art.enemies.${from} → ${to}`);
-    }
+  };
+  rewriteKey(assets.chars, charIds, 'art.chars');
+  rewriteKey(assets.enemies, enemyIds, 'art.enemies');
+  rewriteKey(assets.skills, skillIds, 'art.skills');
+  if (assets.audio && typeof assets.audio === 'object') {
+    rewriteKey(assets.audio.voiceJp, charIds, 'audio.voiceJp');
+    rewriteKey(assets.audio.voice, charIds, 'audio.voice');
+    if (assets.audio.sfx && typeof assets.audio.sfx === 'object') rewriteKey(assets.audio.sfx.units, charIds, 'audio.sfx.units');
   }
 
   let assetNeed = [];
@@ -1285,6 +1548,11 @@ function buildProducts(meta, ids, primaryRole) {
     files.set('README.md', readme(id, 'lang', [`- 语言 ${t.lang}。`, '- 这是界面词条，不是内容翻译。']));
     products.push({ id, class: 'lang', role, files, imported: [`i18n/${t.lang} → files.ui`], rewritten: [], manifest: man });
   }
+  const seen = new Set();
+  for (const p of products) {
+    if (seen.has(p.id)) fail('PLUGIN_FORGE_ID', `two products share the id ${p.id}`);
+    seen.add(p.id);
+  }
   return { products, primaryRole };
 }
 
@@ -1374,16 +1642,20 @@ export async function importForge(source, opts = {}) {
       try { st = fs.lstatSync(abs); } catch { fail('PLUGIN_FORGE_INPUT', 'path does not exist'); }
       if (st.isSymbolicLink()) fail('PLUGIN_FORGE_ZIP', 'the pack path is a symbolic link');
       if (st.isDirectory()) files = readUntrustedDir(abs);
-      else if (st.isFile()) files = await readUntrustedZip(fs.readFileSync(abs));
+      else if (st.isFile()) {
+        if (st.size > ZIP_RAW_MAX) fail('PLUGIN_FORGE_ZIP', `larger than ${ZIP_RAW_MAX} bytes`);
+        files = await readUntrustedZip(fs.readFileSync(abs));
+      }
       else fail('PLUGIN_FORGE_INPUT', 'not a directory or a zip');
     } else fail('PLUGIN_FORGE_INPUT', 'no pack');
     const vanilla = opts.vanilla || null;
-    const planned = planForgeImport(files, { id: opts.id, dataDir, vanilla });
+    const primaryName = opts.out ? path.basename(path.resolve(opts.out)) : null;
+    if (primaryName && !isPluginId(primaryName)) fail('PLUGIN_FORGE_ID', `"${primaryName}" is not a plugin id`);
+    const planned = planForgeImport(files, { id: opts.id, contentId: primaryName || undefined, dataDir, vanilla });
     if (!planned.roles.length) {
       const report = publicReport({ meta: planned.meta, products: [], primaryId: null, wrote: false, dryRun, check: '没有可导入的内容。', issues: [] });
       return { ok: true, wrote: false, dryRun, issues: [], report: stableJson(report), markdown: report.markdown };
     }
-    const primaryName = opts.out ? path.basename(path.resolve(opts.out)) : null;
     const alloc = allocateIds(planned.meta.base, planned.roles, primaryName);
     if (alloc.error || !alloc.ids) fail('PLUGIN_FORGE_ID', alloc.error || 'no id');
     const built = buildProducts(planned.meta, alloc.ids, alloc.primary);
@@ -1396,6 +1668,8 @@ export async function importForge(source, opts = {}) {
     // destination's parent (the registry skips dot folders; rename stays on the same filesystem).
     if (!dryRun) fs.mkdirSync(parent, { recursive: true });
     const stage = fs.mkdtempSync(dryRun ? path.join(os.tmpdir(), 'forge-import-') : path.join(parent, '.forge-import-'));
+    /** @type {string | null} */
+    let view = null;
     /** @type {string[]} */
     const checkLines = [];
     try {
@@ -1419,9 +1693,9 @@ export async function importForge(source, opts = {}) {
         }
       }
       if (!issues.length) {
-        const registry = createPluginRegistry({
-          publicDir: path.join(root, 'public'), packsDir: path.join(root, 'packs'), pluginsDir: stage, dataDir,
-        }, { recheckMs: 0, log: { info() {}, warn() {} } });
+        const opened = openValidationView({ root, dataDir, pluginsDir, stage });
+        view = opened.view;
+        const registry = opened.registry;
         const visual = createVisualSets({ registry });
         for (const p of built.products) {
           if (p.class === 'cosmetic') {
@@ -1445,17 +1719,30 @@ export async function importForge(source, opts = {}) {
       const report = publicReport({ meta: planned.meta, products: built.products, primaryId: primary.id, wrote: !dryRun, dryRun, check: 'check --strict 与 pack 通过；外观走 visual set，数据走 content set。', issues: [] });
       const md = report.markdown;
       if (!dryRun) {
-        fs.writeFileSync(path.join(stage, primary.id, 'IMPORT-REPORT.md'), md);
-        for (const p of built.products) moveDir(path.join(stage, p.id), path.join(parent, p.id));
+        const committed = commitProducts(stage, parent, built.products, primary.id, md);
+        if (committed) {
+          issues.push(committed);
+          const failed = publicReport({
+            meta: planned.meta, products: built.products, primaryId: primary.id, wrote: false, dryRun,
+            check: `${committed.code}: ${committed.detail}`, issues,
+          });
+          return { ok: false, wrote: false, dryRun, issues, report: stableJson(failed), markdown: failed.markdown };
+        }
       }
       return { ok: true, wrote: !dryRun, dryRun, issues: [], report: stableJson(report), markdown: md };
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });
+      if (view) fs.rmSync(view, { recursive: true, force: true });
     }
   } catch (e) {
     if (e instanceof ForgeImportError) {
       issues.push({ code: e.code, detail: e.detail });
       return empty({ check: `${e.code}: ${e.detail}`, markdown: `# 导入报告 IMPORT-REPORT\n\n没有写入。\n\n- ${e.code}：${e.detail}\n` });
+    }
+    if (typeof e?.code === 'string' && /^E[A-Z0-9]+$/.test(e.code)) {
+      const detail = `the import could not be written (${e.code})`;
+      issues.push({ code: 'PLUGIN_FORGE_ZIP', detail });
+      return empty({ check: `PLUGIN_FORGE_ZIP: ${detail}`, markdown: `# 导入报告 IMPORT-REPORT\n\n没有写入。\n\n- PLUGIN_FORGE_ZIP：${detail}\n` });
     }
     throw e;
   }

@@ -1,6 +1,7 @@
 // public/studio/js/forge.js — 从 Forge 包导入 (DESIGN §32.12). A zip or a folder becomes a preview of the import report
 // (POST /studio/api/forge/preview); confirming writes plugins/<id>/ (POST /studio/api/forge/import). The server never
 // receives a path on its disk, and it never runs a script from the pack. The same studio key as every other change.
+// A read clears the previous payload and report immediately. A late FileReader or a late preview cannot confirm.
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button } from '../../js/ui/components.js';
@@ -17,79 +18,151 @@ const MAX_BYTES = 64 * 1024 * 1024;
  */
 export function ForgeDialog({ open, onClose, onImported }) {
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [report, setReport] = useState(null);
   const [payload, setPayload] = useState(null);
   const zipRef = useRef(null);
   const dirRef = useRef(null);
+  const gen = useRef(0);
+  const payloadGen = useRef(0);
+  const reportGen = useRef(0);
+  const ticket = useRef(0);
   useEffect(() => {
-    if (!open) return;
-    setBusy(false); setError(''); setNote(''); setReport(null); setPayload(null);
+    const mine = ++gen.current;
+    payloadGen.current = 0;
+    reportGen.current = 0;
+    ticket.current += 1;
+    if (!open) {
+      setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null);
+      return () => { gen.current += 1; };
+    }
+    setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null);
     if (zipRef.current) zipRef.current.value = '';
     if (dirRef.current) dirRef.current.value = '';
+    return () => { if (gen.current === mine) gen.current += 1; };
   }, [open]);
   const tooBig = () => { setError(t('包太大，超过 {max}。', { max: '64 MB' })); setPayload(null); setReport(null); setNote(''); };
+  const beginRead = () => {
+    const mine = ++gen.current;
+    payloadGen.current = 0;
+    reportGen.current = 0;
+    ticket.current += 1;
+    setReading(true);
+    setBusy(false);
+    setPayload(null);
+    setReport(null);
+    setError('');
+    setNote(t('正在读取 Forge 包…'));
+    return mine;
+  };
   const takeZip = async (file) => {
     if (!file) return;
-    if (file.size > MAX_BYTES) { tooBig(); return; }
-    setNote(t('正在读取 Forge 包…')); setError(''); setReport(null);
-    try { setPayload({ zip: await fileBase64(file) }); }
-    catch (e) { setError(errorText(e)); setPayload(null); }
-    finally { setNote(''); }
+    const mine = beginRead();
+    if (file.size > MAX_BYTES) {
+      if (gen.current === mine) { tooBig(); setReading(false); }
+      return;
+    }
+    try {
+      const zip = await fileBase64(file);
+      if (gen.current !== mine) return;
+      payloadGen.current = mine;
+      setPayload({ zip });
+    } catch (e) {
+      if (gen.current !== mine) return;
+      setError(errorText(e));
+      setPayload(null);
+    } finally {
+      if (gen.current === mine) { setReading(false); setNote(''); }
+    }
   };
   const takeDir = async (list) => {
     const files = [...list];
     if (!files.length) return;
+    const mine = beginRead();
     let total = 0;
     for (const f of files) total += f.size;
-    if (total > MAX_BYTES) { tooBig(); return; }
-    setNote(t('正在读取 Forge 包…')); setError(''); setReport(null);
+    if (total > MAX_BYTES) {
+      if (gen.current === mine) { tooBig(); setReading(false); }
+      return;
+    }
     try {
       const out = [];
       for (const f of files) {
+        if (gen.current !== mine) return;
         const rel = String(f.webkitRelativePath || f.name).replace(/\\/g, '/');
         const parts = rel.split('/').filter(Boolean);
         const name = parts.length > 1 ? parts.slice(1).join('/') : rel;
         out.push({ name, data: await fileBase64(f) });
       }
+      if (gen.current !== mine) return;
+      payloadGen.current = mine;
       setPayload({ files: out });
-    } catch (e) { setError(errorText(e)); setPayload(null); }
-    finally { setNote(''); }
+    } catch (e) {
+      if (gen.current !== mine) return;
+      setError(errorText(e));
+      setPayload(null);
+    } finally {
+      if (gen.current === mine) { setReading(false); setNote(''); }
+    }
   };
   const preview = async () => {
-    if (!payload) return;
+    if (!payload || reading) return;
+    const mine = gen.current;
+    const minePayload = payloadGen.current;
+    const mineTicket = ++ticket.current;
     setBusy(true); setError('');
-    try { setReport((await post('forge/preview', payload)).report); }
-    catch (e) { setReport(null); setError(errorText(e)); }
-    finally { setBusy(false); }
+    try {
+      const r = await post('forge/preview', payload);
+      if (gen.current !== mine || payloadGen.current !== minePayload || ticket.current !== mineTicket) return;
+      reportGen.current = minePayload;
+      setReport(r.report);
+    } catch (e) {
+      if (gen.current !== mine || payloadGen.current !== minePayload || ticket.current !== mineTicket) return;
+      reportGen.current = 0;
+      setReport(null);
+      setError(errorText(e));
+    } finally {
+      if (ticket.current === mineTicket) setBusy(false);
+    }
   };
   const confirm = async () => {
-    if (!payload || !report?.products?.length) return;
+    if (!payload || reading || reportGen.current !== payloadGen.current || !report?.products?.length) return;
+    const mine = gen.current;
+    const minePayload = payloadGen.current;
+    const mineTicket = ++ticket.current;
     setBusy(true); setError('');
     try {
       const r = await post('forge/import', payload);
+      if (gen.current !== mine || payloadGen.current !== minePayload || ticket.current !== mineTicket) return;
       setReport(r.report);
+      reportGen.current = minePayload;
       if (!r.report?.ok || !r.report.products?.length) { setError(r.report?.check || t('这个包没有可以写入的插件。')); return; }
       setNote(t('已写入 {n} 个插件', { n: String((r.plugins || r.report.products).length) }));
       onImported(r.plugins || []);
-    } catch (e) { setError(errorText(e)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      if (gen.current !== mine || ticket.current !== mineTicket) return;
+      setError(errorText(e));
+    } finally {
+      if (ticket.current === mineTicket) setBusy(false);
+    }
   };
-  const canWrite = !!(report?.ok && report.products?.length);
+  const locked = busy || reading;
+  const canWrite = !!(report?.ok && report.products?.length && reportGen.current === payloadGen.current && !reading);
   const actions = html`
-    <${Button} onClick=${onClose} disabled=${busy}>${t('取消')}<//>
-    <${Button} onClick=${preview} loading=${busy} disabled=${!payload || busy} data-testid="forge-preview">${t('预览导入报告')}<//>
-    <${Button} variant="primary" onClick=${confirm} loading=${busy} disabled=${!canWrite || busy} data-testid="forge-confirm">${t('确认写入插件')}<//>`;
-  return html`<${Modal} open=${open} title=${t('从 Forge 包导入')} onClose=${busy ? undefined : onClose} width="9.4rem" actions=${actions}>
-    <div class="st-step">
+    <${Button} onClick=${onClose} disabled=${locked}>${t('取消')}<//>
+    <${Button} onClick=${preview} loading=${busy} disabled=${!payload || locked} data-testid="forge-preview">${t('预览导入报告')}<//>
+    <${Button} variant="primary" onClick=${confirm} loading=${busy} disabled=${!canWrite || locked} data-testid="forge-confirm">${t('确认写入插件')}<//>`;
+  return html`<${Modal} open=${open} title=${t('从 Forge 包导入')} onClose=${locked ? undefined : onClose} width="9.4rem" actions=${actions}>
+    <div class="st-step" data-reading=${reading ? '1' : undefined}>
       <p class="st-note">${t('选择一个 Forge 工坊包（zip 或文件夹）。先预览报告，确认后才写入 plugins/。')}</p>
       <label class="st-forge-file">${t('从 Forge 包导入')} zip
-        <input ref=${zipRef} type="file" accept=".zip,application/zip" data-testid="forge-zip" disabled=${busy}
+        <input ref=${zipRef} type="file" accept=".zip,application/zip" data-testid="forge-zip" disabled=${locked}
           onChange=${(e) => { const f = e.currentTarget.files?.[0]; if (dirRef.current) dirRef.current.value = ''; takeZip(f); }} />
       </label>
       <label class="st-forge-file">${t('从 Forge 包导入')}
-        <input ref=${dirRef} type="file" webkitdirectory=${true} directory=${true} multiple=${true} data-testid="forge-folder" disabled=${busy}
+        <input ref=${dirRef} type="file" webkitdirectory=${true} directory=${true} multiple=${true} data-testid="forge-folder" disabled=${locked}
           onChange=${(e) => { if (zipRef.current) zipRef.current.value = ''; takeDir(e.currentTarget.files || []); }} />
       </label>
       ${note ? html`<p class="st-note">${note}</p>` : null}

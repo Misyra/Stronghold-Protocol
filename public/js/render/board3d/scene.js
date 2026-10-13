@@ -28,11 +28,11 @@ import { buildBoard, objToBoard, boxProjectUV, ROWS, COLS, DEVICE_H, AREAS } fro
 import { surfaceUV } from './atlas.js';
 import {
   focusUniforms, makeTexture, boardMaterial, glassMaterial, decalMaterial, pipeMaterial, unlitMaterial, gateMaterial, glowMaterial,
-  waterMaterial, mireMaterial, infectionMaterial, smogMaterial, dashTexture, environmentMap, sceneMaterial, sceneWaterMaterial,
-  sceneEnvTexture,
+  waterMaterial, mireMaterial, infectionMaterial, smogMaterial, dashTexture, environmentMap, sceneMaterial, sceneWaterDecalMaterial,
+  sceneEnvTexture, applyWaterMaterial,
 } from './materials.js';
 import { syncThreeCamera } from '../projection.js';
-import { mergeSceneChunks, sceneMaterialKey } from './load.js';
+import { mergeSceneChunks, sceneMaterialKey, sceneWaterInfo, isSceneWater } from './load.js';
 
 /** Lighting rig (tuned against the official screenshots: bright even tops, darker sides, soft shadows). */
 export const LIGHTING = Object.freeze({
@@ -295,11 +295,19 @@ export class BoardScene {
     this.stageKey = key;
     this.stage = stage || null;
     this._clear();
-    if (!stage) return;
+    this.sceneWater = [];
+    this.official = null;
+    if (!stage) { applyWaterMaterial(this.mat.water, null); return; }
     const board = buildBoard(stage, { uv: this.pack?.uv || null, area: this.area });
     this.board = board;
     const M = this.meshes = {};
     this.official = official && this._buildScene(official) ? official : null;
+    // Apply only the active, successfully built pack: preloading another stage must not recolour this board.
+    // setScenePack rebuilds the current stage, so replacement/removal also restores parameters and cube defines.
+    const waterPack = this.official;
+    applyWaterMaterial(this.mat.water, sceneWaterInfo(waterPack?.doc), waterPack ? {
+      env: this._sceneResources(waterPack).env, envRange: waterPack.doc?.env?.range, envMips: waterPack.doc?.env?.mips,
+    } : {});
     if (!this.official) {
       M.board = this._mesh(board.buckets.board, this.mat.board);
       M.glass = this._mesh(board.buckets.glass, this.mat.glass);
@@ -376,11 +384,13 @@ export class BoardScene {
     for (const [mk, bucket] of buckets) {
       const c = mergeSceneChunks(bucket.chunks);
       const info = bucket.info;
-      const water = info?.kind === 'water';
+      const surface = isSceneWater(info, c.material);
+      const water = surface || info?.kind === 'water';
       let mat = res.mats.get(mk);
       if (!mat) {
-        mat = water
-          ? sceneWaterMaterial(T, this.tex, this.focus, info)
+        mat = surface
+          ? waterMaterial(T, this.tex, this.focus, info, { env: res.env, envRange: pack.doc?.env?.range, envMips: pack.doc?.env?.mips })
+          : water ? sceneWaterDecalMaterial(T, this.tex, this.focus, info)
           : sceneMaterial(T, {
             map: res.tex[info?.map] || null, lightMap: c.lightmap >= 0 ? (res.lm[c.lightmap] || null) : null, info,
             light: pack.doc?.light || null, lightRange: pack.doc?.lightRange, lightEncoding: pack.doc?.lightEncoding,

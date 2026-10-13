@@ -202,7 +202,28 @@ export function parseSceneChunks(doc, buf) {
  * @param {{ kind?: string }|null} info scene.json materials[name]
  */
 export function sceneMaterialKey(chunk, info) {
-  return `${chunk?.material}|${info?.kind === 'water' ? '' : chunk?.lightmap}`;
+  return `${chunk?.material}|${info?.kind === 'water' || isSceneWater(info, chunk?.material) ? '' : chunk?.lightmap}`;
+}
+
+/** Surface water, not the DynamicWaterTile platform decal (both were extracted as kind: water). */
+export function isSceneWater(info, name = '') {
+  if (!isObj(info)) return false;
+  const shader = typeof info.shader === 'string' ? info.shader : '';
+  if (shader.endsWith('/DynamicWaterTile')) return false;
+  return shader.endsWith('/StylizedWater') || /_water\d*$/i.test(name);
+}
+
+/**
+ * Pick this map's water record by shader, then by name, never by a theme-specific name. An explicit surface pick
+ * wins. [ASSUMED] With several surfaces the board takes the first StylizedWater; each scene mesh keeps its own
+ * record (including water2). No surface record → null, so the caller restores the procedural water defaults.
+ */
+export function sceneWaterInfo(doc) {
+  const mats = isObj(doc?.materials) ? doc.materials : {};
+  const name = doc?.waterMaterial;
+  if (typeof name === 'string' && isSceneWater(mats[name], name)) return mats[name];
+  const entries = Object.entries(mats).filter(([n, info]) => isSceneWater(info, n));
+  return entries.find(([, info]) => typeof info.shader === 'string' && info.shader.endsWith('/StylizedWater'))?.[1] || entries[0]?.[1] || null;
 }
 
 /**

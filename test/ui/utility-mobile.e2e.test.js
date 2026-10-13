@@ -82,7 +82,12 @@ describe('management density on a real phone viewport', { skip: !ENABLED && 'set
     const host = document.querySelector(sel);
     if (!host) return { missing: sel };
     const rect = (el) => el.getBoundingClientRect();
-    const out = { box: null, viewport: [window.innerWidth, window.innerHeight], overflowX: host.scrollWidth - host.clientWidth, controls: [] };
+    const probe = document.createElement('span');
+    probe.style.fontSize = 'var(--utility-text)';
+    host.append(probe);
+    const textBase = parseFloat(getComputedStyle(probe).fontSize);
+    probe.remove();
+    const out = { textBase, box: null, viewport: [window.innerWidth, window.innerHeight], overflowX: host.scrollWidth - host.clientWidth, controls: [] };
     const hb = rect(host);
     out.box = [Math.round(hb.x), Math.round(hb.y), Math.round(hb.width), Math.round(hb.height)];
     for (const el of host.querySelectorAll('button, input, select, textarea')) {
@@ -146,7 +151,8 @@ describe('management density on a real phone viewport', { skip: !ENABLED && 'set
     for (const c of a.controls) {
       assert.ok(c.hitsSelf, `${label}: a tap at the centre reaches it → ${JSON.stringify(c)}`);
       if (c.tag === 'button') assert.ok(c.h >= 24, `${label}: button at least 24 px high → ${JSON.stringify(c)}`);
-      if (!['input', 'select', 'textarea'].includes(c.tag)) assert.ok(c.font >= 11, `${label}: text at least 11 px → ${JSON.stringify(c)}`);
+      // Resource/settings/about deliberately follow --t, including the user's 小 setting (AGENTS.md).
+      if (!['input', 'select', 'textarea'].includes(c.tag)) assert.ok(c.font >= Math.min(11, a.textBase * .1), `${label}: text follows the local scale → ${JSON.stringify(c)}`);
       if ((c.tag === 'input' && c.type !== 'range') || c.tag === 'select') {
         assert.ok(c.font >= 16, `${label}: input keeps the 16 px iOS focus-zoom floor → ${JSON.stringify(c)}`);
       }
@@ -191,9 +197,12 @@ describe('management density on a real phone viewport', { skip: !ENABLED && 'set
         const budgets = await page.evaluate(() => {
           const box = document.querySelector('.utility-modal');
           const cfg = getComputedStyle(box);
-          return { maxHeight: cfg.maxHeight, font: parseFloat(getComputedStyle(box).fontSize) };
+          const probe = document.createElement('span');
+          probe.style.fontSize = 'calc(.16 * var(--t))'; box.append(probe);
+          const expectedFont = parseFloat(getComputedStyle(probe).fontSize); probe.remove();
+          return { maxHeight: cfg.maxHeight, font: parseFloat(cfg.fontSize), expectedFont };
         });
-        assert.ok(budgets.font >= 11, `${label}: the dialog body text is at least 11 px (${budgets.font})`);
+        assert.ok(Math.abs(budgets.font - budgets.expectedFont) < .1, `${label}: the dialog body follows the selected text scale (${budgets.font})`);
         assert.match(budgets.maxHeight, /px$/, `${label}: a definite height budget (${budgets.maxHeight})`);
         assert.deepEqual(problems, [], `${label}: no console or page errors`);
         await page.screenshot({ path: path.join(OUT, `utility-mobile-${label.replace(/[^\w]+/g, '-')}.png`) });

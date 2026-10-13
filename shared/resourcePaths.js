@@ -17,3 +17,15 @@ export function canonicalResourceUrl(url) {
     return value.startsWith('/') && !value.startsWith('//') ? parsed.pathname + parsed.search + parsed.hash : parsed.href;
   } catch { return value; }
 }
+
+/** Origin/query-independent identity for manifest resources; null for invalid paths. */
+export function resourceIdentity(value) {
+  try {
+    const pathname = new URL(String(value), 'https://resources.invalid').pathname;
+    if (/%2f|%5c/i.test(pathname)) return null;
+    const decoded = decodeURIComponent(pathname).replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');
+    if (/[\\\u0000-\u001f?#]/.test(decoded) || decoded.split('/').some((s) => s === '.' || s === '..')) return null;
+    const match = /\/(?:assets|fonts|media)\//.exec(decoded);
+    return match ? decoded.slice(match.index) : decoded;
+  } catch { return null; }
+}

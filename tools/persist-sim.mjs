@@ -374,9 +374,9 @@ async function phaseScale(rooms) {
 // ---------------------------------------------------------------------------------------------------
 
 const only = [];
-if (!SKIP_MULTI) only.push(phaseMultiUser());
-if (!SKIP_SCALE) only.push(phaseScale(ROOMS === true ? 250 : ROOMS));
-Promise.all(only).then(
+if (!SKIP_MULTI) only.push(() => phaseMultiUser());
+if (!SKIP_SCALE) only.push(() => phaseScale(ROOMS === true ? 250 : ROOMS));
+(async () => { for (const phase of only) await phase(); })().then(
   () => { console.log('\n全部通过。'); process.exit(0); },
   (e) => { console.error('\n失败:', e); process.exit(1); },
 );

@@ -13,10 +13,12 @@
 // purpose: they are stored in Cache Storage, and letting the HTTP cache keep a second copy would double the disk the
 // browser needs (~250 MiB of art). Everything is injected (`caches`, `fetcher`) so this module is unit-testable.
 
+import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
+import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import {
   CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isQuotaError,
 } from './common.js';
-import { verifiedResourceBytes } from './integrity.js';
+import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource } from './network.js';
 
 /** Files above this are downloaded one at a time (a 20 MiB Spine texture should not race three others). */
@@ -40,8 +42,7 @@ async function digestOf(response, { consume = false } = {}) {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) throw new Error('当前浏览器无法计算资源指纹');
   try {
-    const bits = await subtle.digest('SHA-1', await (consume ? response : response.clone()).arrayBuffer());
-    return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+    return (await resourceDigests(await (consume ? response : response.clone()).arrayBuffer())).hash;
   } catch (cause) {
     throw new Error('无法校验资源内容，请重试', { cause });
   }
@@ -180,8 +181,7 @@ export class ResourceStore {
             || (file.size != null && bytes.byteLength !== file.size)
             || (entry.size != null && bytes.byteLength !== entry.size)) throw new Error(`资源大小无效：${file.url}`);
           if (!verifiedBytes) {
-            const bits = await globalThis.crypto.subtle.digest('SHA-1', bytes);
-            const hash = [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+            const { hash } = await resourceDigests(bytes);
             if (hash !== file.hash) throw new Error(`资源校验失败：${file.url}`);
           }
           check();
@@ -246,13 +246,12 @@ export class ResourceStore {
       const res = await cache.match(indexUrl(this.origin));
       if (res) doc = await res.json();
     } catch { doc = null; }
-    const files = doc && typeof doc === 'object' && doc.files && typeof doc.files === 'object' ? doc.files : null;
-    return { manifest: typeof doc?.manifest === 'string' ? doc.manifest : '', files: files ? { ...files } : {} };
+    return readCacheIndex(doc);
   }
 
   /** Write the index entry (the only synthetic entry of the cache; the worker never answers it: not /assets|/fonts). */
   async #writeIndex(cache, files, manifest) {
-    const body = JSON.stringify({ version: 1, manifest: String(manifest || ''), files });
+    const body = JSON.stringify(cacheIndex(files, manifest));
     await cache.put(indexUrl(this.origin), new Response(body, { headers: { 'Content-Type': 'application/json' } }));
     this.statusPromise = null;
   }
@@ -276,9 +275,7 @@ export class ResourceStore {
       const len = raw == null ? NaN : Number(raw);
       if (Number.isSafeInteger(len) && len >= 0) headers.set('Content-Length', String(len));
     }
-    headers.set('Accept-Ranges', 'bytes');
-    headers.set('X-SP-Resource', '1');
-    if (CONTENT_HASH_RE.test(verifiedHash)) headers.set('X-SP-Resource-Hash', verifiedHash);
+    markResourceHeaders(headers, verifiedHash);
     return new Response(response.body, { status: 200, statusText: 'OK', headers });
   }
 
@@ -349,7 +346,7 @@ export class ResourceStore {
    */
   async #adopt(file, cache, older, aliases, signal) {
     const key = this.keyOf(file.url);
-    const alias = aliases.get(key.replace(/\/_v\/[a-f0-9]{16}(?=\/)/, ''));
+    const alias = aliases.get(resourceIdentity(key));
     if (file.hash && CONTENT_HASH_RE.test(file.hash) && alias?.hash === file.hash && alias.key !== key) {
       const hit = await cache.match(alias.key);
       if (hit) { await cache.put(key, hit); return true; }
@@ -493,7 +490,7 @@ export class ResourceStore {
       for (const f of work) (Number.isSafeInteger(f.size) && f.size > BIG_FILE_BYTES ? big : small).push(f);
       // Caches of the pre-hash layout: their entries are verified (and moved) before anything is fetched.
       const older = await this.#olderCaches();
-      const aliases = new Map(Object.entries(index.files).map(([key, hash]) => [key.replace(/\/_v\/[a-f0-9]{16}(?=\/)/, ''), { key, hash }]));
+      const aliases = new Map(Object.entries(index.files).map(([key, hash]) => [resourceIdentity(key), { key, hash }]));
       const one = async (file) => {
         checkAbort(signal);
         const key = this.keyOf(file.url);

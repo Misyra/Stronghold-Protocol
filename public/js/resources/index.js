@@ -16,6 +16,7 @@ import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
 import { missingStorage, storageEstimate } from './storage.js';
 import { createResourceState } from './state.js';
+import { ResourceTasks } from './tasks.js';
 import { t } from '../../../shared/i18n.js';
 
 /** @type {any} */
@@ -60,18 +61,13 @@ const stateStore = createResourceState({
 const state = stateStore.state;
 const set = stateStore.set;
 let current = false;
-const tasks = {
-  download: { promise: null, controller: null },
-  archive: { promise: null, controller: null },
-  clear: null,
-};
+const tasks = new ResourceTasks();
 let contextPromise = null;
 let optional = true;
 let wantRun = false;
 let workerPromise = null;
 let voiceLang = 'cn';
 let allVoices = false;
-let intentRevision = 0;
 
 const schedule = new ResourceSchedule();
 
@@ -105,10 +101,10 @@ async function withWorkerWritesPaused(job) {
   finally { await workerWrites(true).catch(() => {}); }
 }
 
-async function updateStorage(store, status, plan) {
-  const revision = intentRevision;
+async function updateStorage(store, status, plan, write = set) {
+  const revision = tasks.revision;
   const storage = await storageEstimate(plan || missingStorage(store, status, optional));
-  if (revision === intentRevision) set({ storage });
+  if (revision === tasks.revision) write({ storage });
 }
 
 /** Subscribe to preload state changes (returns the unsubscribe function). */
@@ -222,7 +218,7 @@ export async function syncResources(enabled, includeOptional = optional, languag
   language = language === 'jp' ? 'jp' : 'cn';
   const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices;
   if (enabled === current && !changed) { set({ enabled }); return; }
-  intentRevision++;
+  tasks.invalidate();
   current = enabled;
   wantRun = enabled;
   optional = !!includeOptional;
@@ -230,8 +226,7 @@ export async function syncResources(enabled, includeOptional = optional, languag
   allVoices = !!includeAllVoices;
   set({ enabled, optional, voiceLang, allVoices, error: false, message: '' });
   if (!enabled) {
-    tasks.download.controller?.abort();
-    tasks.archive.controller?.abort();
+    tasks.cancel('download', 'archive');
     set({ phase: state.complete ? 'ready' : 'paused', message: state.complete ? t('预载已停止；已保存的资源保留，可继续下载或清理缓存。') : t('已停止预载。') });
     return;
   }
@@ -265,38 +260,39 @@ async function withDownloadLock(job) {
 }
 
 /** Another tab owns the download: show what is cached and look again when this tab becomes visible. */
-function watchOtherTab(store) {
-  if (globalThis.document?.addEventListener) {
+function watchOtherTab(store, task) {
+  if (globalThis.document?.addEventListener && task.current() && !task.signal.aborted) {
     const recheck = () => {
-      if (document.visibilityState !== 'visible' || !current) return;
-      document.removeEventListener('visibilitychange', recheck);
+      if (document.visibilityState !== 'visible' || !current || !wantRun) return;
+      tasks.unwatch();
       void startResources();
     };
-    document.addEventListener('visibilitychange', recheck);
+    tasks.watch(document, recheck);
   }
-  return store.status().then((st) => set({
-    ...counters(st), phase: 'foreign', error: false,
-    message: st.complete ? t('资源已全部预载完成。') : t('另一个标签页正在预载⋯回到这个标签页时会自动继续。'),
-  }));
+  return store.status().then((st) => {
+    if (!task.signal.aborted) task.publish(set)({
+      ...counters(st), phase: 'foreign', error: false,
+      message: st.complete ? t('资源已全部预载完成。') : t('另一个标签页正在预载⋯回到这个标签页时会自动继续。'),
+    });
+  });
 }
 
 function start() {
   if (tasks.clear) return tasks.clear;
   if (tasks.archive.promise) return tasks.archive.promise.catch(() => {});
-  if (tasks.download.promise) return tasks.download.promise;
-  tasks.download.controller = new AbortController();
-  const signal = tasks.download.controller.signal;
-  tasks.download.promise = startDownload(signal).catch((err) => {
-    set({ phase: 'error', error: true, message: t('无法访问资源缓存：{0}', { 0: err?.message || err }) });
-  }).finally(() => {
-    tasks.download.promise = null;
-    tasks.download.controller = null;
-    if (current && wantRun && signal.aborted && !tasks.archive.promise) return start();
+  return tasks.run('download', async (task) => {
+    try { await startDownload(task); }
+    catch (err) {
+      if (!task.signal.aborted) task.publish(set)({ phase: 'error', error: true, message: t('无法访问资源缓存：{0}', { 0: err?.message || err }) });
+    }
+  }, ({ signal }) => {
+    if (current && wantRun && signal.aborted && !tasks.archive.promise && !tasks.clear) return start();
   });
-  return tasks.download.promise;
 }
 
-async function startDownload(signal) {
+async function startDownload(task) {
+  const { signal } = task;
+  const set = task.publish(stateStore.set);
   set({ phase: 'checking', message: t('正在检查已保存的资源…'), error: false });
   const checkStart = performance.now();
   const ctx = await resourceContext();
@@ -319,7 +315,7 @@ async function startDownload(signal) {
     set({ worker: t('预载服务未启用（{0}），资源仍会下载，但不会从本机缓存读取。', { 0: err?.message || err }) });
   });
   const before = await store.status();
-  await updateStorage(store, before);
+  await updateStorage(store, before, undefined, set);
   console.info('[resources] preload check timings', { manifestMs: manifestReady - checkStart,
     ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
@@ -327,6 +323,7 @@ async function startDownload(signal) {
   set({ ...counters(before), phase: ready ? 'ready' : 'download', message: ready ? optional ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
   if (ready) { if (before.complete) await withDownloadLock(() => store.prune()); return; }
   const onProgress = (p) => {
+    if (signal.aborted) return;
     // "整理" instead of "下载" when the files came out of an older cache: nothing is being fetched (store.js 的迁移).
     const message = p.adopted > 0 && p.downloaded === 0 ? t('正在整理已保存的资源（无需重新下载）…') : '';
     set({ ...counters(p), phase: 'download', failed: p.failed, failures: p.failures || [], error: false, message });
@@ -340,9 +337,11 @@ async function startDownload(signal) {
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
       return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10) };
     });
-    if (outcome.busy) { await watchOtherTab(store); return; }
+    if (outcome.busy) { await watchOtherTab(store, task); return; }
     const after = await store.status();
-    await updateStorage(store, after);
+    checkAbort(signal);
+    await updateStorage(store, after, undefined, set);
+    checkAbort(signal);
     set({
       ...counters(after),
       phase: 'ready',
@@ -369,7 +368,7 @@ async function startDownload(signal) {
 
 /** Stop downloading (keeps what is cached). */
 export function pauseResources() {
-  intentRevision++;
+  tasks.invalidate();
   wantRun = false;
   tasks.archive.controller?.abort();
   if (tasks.download.controller) {
@@ -380,7 +379,9 @@ export function pauseResources() {
 
 /** ZIP support stays out of the initial module graph. An import can be started before enabling network preloading. */
 export async function importResources(file, { onImported } = {}) {
+  const revision = tasks.revision;
   const outcome = await transferArchive('import', file);
+  if (revision !== tasks.revision) return outcome;
   // Persist the UI setting after a successful import, then enable/resume the selected incremental downloads.
   onImported?.();
   const run = current ? startResources() : syncResources(true);
@@ -390,86 +391,81 @@ export async function importResources(file, { onImported } = {}) {
 
 export async function exportResources() {
   const resume = current && wantRun && !!tasks.download.promise;
-  const revision = intentRevision;
+  const revision = tasks.revision;
   try { return await transferArchive('export'); }
   finally {
-    if (resume && current && revision === intentRevision) void startResources();
+    if (resume && current && revision === tasks.revision) void startResources();
   }
 }
 
 function transferArchive(kind, file) {
   if (tasks.archive.promise || tasks.clear) return Promise.reject(new Error('资源包正在处理中'));
   wantRun = false;
-  // Stop the whole two-tier run, not just the currently active store.download() call.
-  tasks.download.controller?.abort();
-  tasks.archive.controller = new AbortController();
-  const signal = tasks.archive.controller.signal;
   set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '',
     message: kind === 'import' ? t('正在准备导入资源包…') : t('正在准备导出资源包…'), error: false });
-  tasks.archive.promise = (async () => {
-    if (tasks.download.promise) await tasks.download.promise;
-    const ctx = await resourceContext();
-    if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
-    checkAbort(signal);
-    ctx.store.setVoiceScope(voiceLang, allVoices);
-    const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
-      set(counters(await ctx.store.status()));
-      const archive = await import('./archive.js');
+  return tasks.run('archive', async (task) => {
+    const { signal } = task;
+    const set = task.publish(stateStore.set);
+    try {
+      const ctx = await resourceContext();
+      if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
       checkAbort(signal);
-      let lastTime = -Infinity;
-      let lastPhase = '';
-      const onProgress = (p) => {
-        const now = performance.now();
-        // Keep hashing/cache writes running at full speed. UI and category aggregation run at most twice a second;
-        // phase boundaries and completion always publish immediately, without timers that could outlive the job.
-        if (p.phase === lastPhase && p.done < p.total && now - lastTime < 500) return;
-        lastTime = now;
-        lastPhase = p.phase;
-        const percent = p.total > 0 ? Math.min(100, Math.floor(p.done * 100 / p.total)) : 100;
-        const status = p.getStatus?.();
-        set({ ...(status ? counters(status) : {}), archivePhase: p.phase, archivePercent: percent,
-          archiveGroup: p.file ? resourceGroup(p.file) : '',
-          message: t('{0}资源包：{percent}%', { 0: p.phase === 'export' ? t('正在导出') : p.phase === 'verify' ? t('正在校验') : t('正在导入'), percent }) });
-      };
-      return kind === 'import'
-        ? archive.importResourceZip(ctx.store, file, { signal, onProgress,
-          onPlan: (plan) => updateStorage(ctx.store, null, plan),
-          onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
-        : archive.exportResourceZip(ctx.store, { signal, onProgress });
-    }));
-    if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
-    checkAbort(signal);
-    set({ archivePhase: '', archiveGroup: '' });
-    const status = await ctx.store.status();
-    await updateStorage(ctx.store, status);
-    const missing = status.tier1Wanted - status.tier1Present + (optional ? status.tier2Wanted - status.tier2Present : 0);
-    set({ ...counters(status), failed: 0, phase: selectionComplete(status) ? 'ready' : 'paused',
-      message: kind === 'export'
-        ? t('已导出 {count} 个资源文件。', { count: outcome.count })
-        : t('已导入 {imported} 个资源文件，已有 {already} 个，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, already: outcome.already || 0, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
-    set({ archiveResult: { kind, status: 'success', imported: outcome.imported || 0, already: outcome.already || 0,
-      count: outcome.count, skippedPackage: outcome.skippedPackage || 0, skipReasons: outcome.skipReasons || {}, message: state.message } });
-    if (kind === 'import') {
-      await ensureWorker().catch((err) => set({ worker: t('预载服务未启用（{0}）', { 0: err?.message || err }) }));
+      ctx.store.setVoiceScope(voiceLang, allVoices);
+      const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
+        set(counters(await ctx.store.status()));
+        const archive = await import('./archive.js');
+        checkAbort(signal);
+        let lastTime = -Infinity;
+        let lastPhase = '';
+        const onProgress = (p) => {
+          if (signal.aborted) return;
+          const now = performance.now();
+          // Keep hashing/cache writes running at full speed. UI and category aggregation run at most twice a second;
+          // phase boundaries and completion always publish immediately, without timers that could outlive the job.
+          if (p.phase === lastPhase && p.done < p.total && now - lastTime < 500) return;
+          lastTime = now;
+          lastPhase = p.phase;
+          const percent = p.total > 0 ? Math.min(100, Math.floor(p.done * 100 / p.total)) : 100;
+          const status = p.getStatus?.();
+          set({ ...(status ? counters(status) : {}), archivePhase: p.phase, archivePercent: percent,
+            archiveGroup: p.file ? resourceGroup(p.file) : '',
+            message: t('{0}资源包：{percent}%', { 0: p.phase === 'export' ? t('正在导出') : p.phase === 'verify' ? t('正在校验') : t('正在导入'), percent }) });
+        };
+        return kind === 'import'
+          ? archive.importResourceZip(ctx.store, file, { signal, onProgress,
+            onPlan: (plan) => updateStorage(ctx.store, null, plan, set),
+            onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
+          : archive.exportResourceZip(ctx.store, { signal, onProgress });
+      }));
+      if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
+      checkAbort(signal);
+      set({ archivePhase: '', archiveGroup: '' });
+      const status = await ctx.store.status();
+      await updateStorage(ctx.store, status, undefined, set);
+      const missing = status.tier1Wanted - status.tier1Present + (optional ? status.tier2Wanted - status.tier2Present : 0);
+      set({ ...counters(status), failed: 0, phase: selectionComplete(status) ? 'ready' : 'paused',
+        message: kind === 'export'
+          ? t('已导出 {count} 个资源文件。', { count: outcome.count })
+          : t('已导入 {imported} 个资源文件，已有 {already} 个，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, already: outcome.already || 0, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
+      set({ archiveResult: { kind, status: 'success', imported: outcome.imported || 0, already: outcome.already || 0,
+        count: outcome.count, skippedPackage: outcome.skippedPackage || 0, skipReasons: outcome.skipReasons || {}, message: state.message } });
+      if (kind === 'import') {
+        await ensureWorker().catch((err) => set({ worker: t('预载服务未启用（{0}）', { 0: err?.message || err }) }));
+      }
+      checkAbort(signal);
+      return outcome;
+    } catch (err) {
+      const ctx = await resourceContext();
+      const status = await ctx.store?.status().catch(() => null);
+      const aborted = err?.name === 'AbortError';
+      set({ ...(status ? counters(status) : {}), phase: aborted ? 'paused' : 'error', error: !aborted,
+        message: aborted ? t('资源包处理已取消，已保存的资源保留。')
+          : isQuotaError(err) || /空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')
+            : t('资源包{0}失败：{1}', { 0: kind === 'import' ? t('导入') : t('导出'), 1: err?.message || err }) });
+      set({ archiveResult: { kind, status: aborted ? 'cancelled' : 'error', message: state.message } });
+      throw err;
     }
-    checkAbort(signal);
-    return outcome;
-  })().catch(async (err) => {
-    const ctx = await resourceContext();
-    const status = await ctx.store?.status().catch(() => null);
-    const aborted = err?.name === 'AbortError';
-    set({ ...(status ? counters(status) : {}), phase: aborted ? 'paused' : 'error', error: !aborted,
-      message: aborted ? t('资源包处理已取消，已保存的资源保留。')
-        : isQuotaError(err) || /空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')
-          : t('资源包{0}失败：{1}', { 0: kind === 'import' ? t('导入') : t('导出'), 1: err?.message || err }) });
-    set({ archiveResult: { kind, status: aborted ? 'cancelled' : 'error', message: state.message } });
-    throw err;
-  }).finally(() => {
-    tasks.archive.controller = null;
-    tasks.archive.promise = null;
-    set({ archive: '', archivePhase: '', archiveGroup: '' });
-  });
-  return tasks.archive.promise;
+  }, () => { set({ archive: '', archivePhase: '', archiveGroup: '' }); });
 }
 
 /**
@@ -477,51 +473,52 @@ function transferArchive(kind, file) {
  */
 export function clearResources({ optionalOnly = false } = {}) {
   if (tasks.clear) return tasks.clear;
-  intentRevision++;
+  tasks.invalidate();
   wantRun = false;
-  tasks.download.controller?.abort();
-  tasks.archive.controller?.abort();
   set({ clearing: true });
-  tasks.clear = (async () => {
-    if (tasks.download.promise) await tasks.download.promise;
-    if (tasks.archive.promise) { try { await tasks.archive.promise; } catch { /* cancelled */ } }
-    const ctx = await resourceContext();
-    if (ctx.store?.running) { try { await ctx.store.running; } catch { /* aborted */ } }
-    const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
-      let status;
-      if (ctx.store) status = await ctx.store.clear({ optionalOnly });
-      else if (optionalOnly) throw new Error('无法读取资源清单，请重试或清理全部资源');
-      else if (globalThis.caches) {
-        const names = await caches.keys();
-        await Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX)).map((name) => caches.delete(name)));
+  return tasks.run('clearing', async (task) => {
+    const set = task.publish(stateStore.set);
+    try {
+      const ctx = await resourceContext();
+      if (ctx.store?.running) { try { await ctx.store.running; } catch { /* aborted */ } }
+      const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
+        let status;
+        if (ctx.store) status = await ctx.store.clear({ optionalOnly });
+        else if (optionalOnly) throw new Error('无法读取资源清单，请重试或清理全部资源');
+        else if (globalThis.caches) {
+          const names = await caches.keys();
+          await Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX)).map((name) => caches.delete(name)));
+        }
+        if (!current) { await workerPromise; await dropWorker(); }
+        return { busy: false, status };
+      }));
+      if (outcome.busy) {
+        set({ error: true, message: t('另一个标签页正在预载，请先暂停该标签页再清理缓存。') });
+        return outcome;
       }
-      if (!current) { await workerPromise; await dropWorker(); }
-      return { busy: false, status };
-    }));
-    if (outcome.busy) {
-      set({ error: true, message: t('另一个标签页正在预载，请先暂停该标签页再清理缓存。') });
+      const status = outcome.status;
+      if (status) { set(counters(status)); await updateStorage(ctx.store, status, undefined, set); }
+      set({ failed: 0, failures: [], error: false, archiveResult: null,
+        phase: current ? 'paused' : 'off',
+        message: optionalOnly ? t('已清理可选资源缓存，必备资源和个人设置保留。') : t('已清理预载资源缓存。'),
+      });
       return outcome;
+    } catch (err) {
+      set({ error: true, message: t('清理缓存失败：{0}', { 0: err?.message || err }) });
+      return { busy: false, error: true };
     }
-    const status = outcome.status;
-    if (status) { set(counters(status)); await updateStorage(ctx.store, status); }
-    set({ failed: 0, failures: [], error: false, archiveResult: null,
-      phase: current ? 'paused' : 'off',
-      message: optionalOnly ? t('已清理可选资源缓存，必备资源和个人设置保留。') : t('已清理预载资源缓存。'),
-    });
-    return outcome;
-  })().catch((err) => {
-    set({ error: true, message: t('清理缓存失败：{0}', { 0: err?.message || err }) });
-    return { busy: false, error: true };
-  }).finally(() => { tasks.clear = null; set({ clearing: false }); });
-  return tasks.clear;
+  }, () => { set({ clearing: false }); });
 }
 
 /** Opening the manager checks the cache without starting network asset downloads. */
 export async function inspectResources() {
   // An active run already publishes authoritative counters; opening the panel must not enqueue another cache scan.
-  if (tasks.download.promise || tasks.archive.promise || tasks.clear) return;
+  if (tasks.busy) return;
+  const isCurrent = tasks.inspection();
+  const set = (patch) => { if (isCurrent()) stateStore.set(patch); };
   if (!tasks.download.promise && !tasks.archive.promise) set({ phase: 'checking', error: false, message: t('正在检查已保存的资源…') });
   const ctx = await resourceContext();
+  if (!isCurrent()) return;
   if (!ctx.store) {
     set({ phase: 'error', supported: !ctx.unsupported, error: true, message: ctx.error || ctx.unsupported || t('服务器没有可预载的资源') });
     // A later open can retry a temporarily unavailable manifest.
@@ -530,11 +527,11 @@ export async function inspectResources() {
   }
   try {
     if (tasks.download.promise || tasks.archive.promise || tasks.clear) return;
-    const revision = intentRevision;
+    const revision = tasks.revision;
     ctx.store.setVoiceScope(voiceLang, allVoices);
     const status = await ctx.store.status();
-    await updateStorage(ctx.store, status);
-    if (tasks.download.promise || tasks.archive.promise || tasks.clear || revision !== intentRevision) return;
+    await updateStorage(ctx.store, status, undefined, set);
+    if (tasks.download.promise || tasks.archive.promise || tasks.clear || revision !== tasks.revision) return;
     set({ ...counters(status), version: ctx.manifest.version, supported: true,
       ...(!tasks.download.promise && !tasks.archive.promise ? { phase: selectionComplete(status) ? 'ready' : 'paused', message: '', error: false } : {}) });
   } catch (err) {

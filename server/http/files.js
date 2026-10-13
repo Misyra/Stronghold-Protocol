@@ -188,8 +188,7 @@ function ifRangeMatches(req, etag, lastModified) {
   return s === lastModified;
 }
 
-function cacheControlFor(ext, mountName, segments, query, versioned = false) {
-  void query;
+function cacheControlFor(ext, mountName, segments, versioned = false) {
   if (ext === '.html' || ext === '.htm') return 'no-cache';
   // Only validated release paths (/_v/<tag>/) are immutable. An arbitrary `?v=` query pins nothing:
   // it cannot be checked against the bytes on disk (upstream 0.2.0's own test asserts this; this fork
@@ -201,7 +200,7 @@ function cacheControlFor(ext, mountName, segments, query, versioned = false) {
   return 'no-cache';
 }
 
-export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, body = null, variant = '', versioned = false) {
+export async function serveFile(req, res, absPath, stat, mountName, segments, gzipCache, log, { body = null, variant = '', versioned = false } = {}) {
   if (body) stat = { size: body.length, mtime: stat.mtime, mtimeMs: stat.mtimeMs };
   const ext = path.extname(absPath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
@@ -215,7 +214,7 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
 
   const headers = {
     'Content-Type': type,
-    'Cache-Control': cacheControlFor(ext, mountName, segments, query, versioned),
+    'Cache-Control': cacheControlFor(ext, mountName, segments, versioned),
     ETag: etag,
     'Last-Modified': lastModified,
   };

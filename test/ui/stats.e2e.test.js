@@ -84,6 +84,8 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     }, stored, entered, lang);
     await c.page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
     await c.page.waitForFunction((needOnline) => (!needOnline || globalThis.__SP__?.store.get().connection.status === 'online') && !!document.querySelector('.screen'), { timeout: 30000 }, entered);
+    // This fork offers fullscreen at every page visit, including desktop. Dismiss it before hit tests.
+    await c.page.evaluate(() => [...document.querySelectorAll('.fullscreen-prompt button')].find((b) => /暂不|Not now|window/i.test(b.textContent))?.click());
     return c;
   }
   const texts = (c, sel) => c.page.$$eval(sel, (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
@@ -91,6 +93,7 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
   const openStats = async (c, from = '.lobby-screen .stats-entry') => {
     await c.click(from, from.includes('stats-entry') ? null : '统计');
     await c.page.waitForSelector('.st .st-tab', { visible: true, timeout: 15000 });
+    await c.page.waitForFunction(() => !!document.querySelector('.st-body') && !document.querySelector('.st-loading'));
   };
   const toast = (c) => c.page.waitForFunction(() => document.querySelector('.toast')?.textContent || false, { timeout: 8000 }).then((h) => h.jsonValue());
   const noProblems = (c) => assert.deepEqual(c.problems, [], 'no console errors / failed requests');
@@ -286,6 +289,7 @@ describe('统计数据: the real flows (a fast real server, headless Chrome)', {
     const c = new Client(puppeteer, srv.base, 'stats', { prefix: 'stats', w: 1600, h: 900 });
     try {
       await c.open();
+      await c.page.evaluate(() => [...document.querySelectorAll('.fullscreen-prompt button')].find((b) => /暂不/.test(b.textContent))?.click());
       await c.enter('Doc');
       // entered and left right away
       await toSoloMatch(c);
@@ -326,6 +330,7 @@ describe('统计数据: the real flows (a fast real server, headless Chrome)', {
     const c = new Client(puppeteer, srv.base, 'stats', { prefix: 'stats', w: 1600, h: 900 });
     try {
       await c.open();
+      await c.page.evaluate(() => [...document.querySelectorAll('.fullscreen-prompt button')].find((b) => /暂不/.test(b.textContent))?.click());
       await c.enter('Doc');
       await toSoloMatch(c);
       await toPrep(c);

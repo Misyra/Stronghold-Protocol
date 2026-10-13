@@ -76,3 +76,8 @@ test('a rejected token-based hello cannot take over or rename a live session', a
   const restored = await other.hello('新博士', good.token);
   assert.equal(restored.resumed, true); assert.equal(restored.playerId, good.playerId);
 });
+
+test('bounded insertion matching catches one inserted letter, number or ideograph without unbounded subsequences', () => {
+  for (const value of ['操a你妈', '操1你妈', '操字你妈', '操Ａ你妈', 'fuckz']) assert.equal(hasSensitiveNickname(value), true, value);
+  for (const value of ['Bushido', 'Assassin', '操控干员你来打妈咪']) assert.equal(hasSensitiveNickname(value), false, value);
+});

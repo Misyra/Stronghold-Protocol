@@ -72,13 +72,13 @@ test('batched heartbeat checks each socket once, retains pong liveness, and stop
   assert.equal(sockets[0].pings, 2);
 });
 
-test('closing cancels deferred fanout without retaining its recipients', async () => {
+test('closing flushes reliable queued frames and releases deferred recipients', async () => {
   const network = new Network({ registry: new SessionRegistry(), handler: { onMessage() {} } });
   const sockets = Array.from({ length: 300 }, () => socket(network));
   network.broadcastAll({ t: 'notice' });
   network.close();
   await nextTurn();
-  assert.equal(sockets.at(-1).frames.length, 0);
+  assert.deepEqual(sockets.at(-1).frames, [{ t: 'notice' }]);
   assert.equal(network._fanout.length, 0);
   assert.equal(network._fanoutImmediate, null);
   assert.equal(network._outbound.size, 0);

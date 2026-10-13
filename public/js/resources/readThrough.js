@@ -1,3 +1,5 @@
+import { cachedResourceHash, markResourceHeaders } from './cacheMetadata.js';
+import { resourceIdentity } from '../../../shared/resourcePaths.js';
 // Manifest-whitelisted read-through cache. The worker owns in-flight sharing; the page remains the sole index writer.
 import { CACHE_NAME, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, mediaCandidates, rangeResponse } from './common.js';
 import { resourceDigests } from './integrity.js';
@@ -27,7 +29,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
       for (const file of manifest?.files || []) {
         if (!CONTENT_HASH_RE.test(file.hash || '') || file.size > MAX_FILE_BYTES) continue;
         const key = absoluteUrl(file.url, origin);
-        byUrl.set(key, file); byPath.set(new URL(key).pathname, file);
+        byUrl.set(key, file); byPath.set(resourceIdentity(key), file);
       }
     }
     const exact = byUrl.get(absoluteUrl(url.href, origin));
@@ -35,7 +37,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     // A versioned or otherwise queried request must never be silently served another revision.
     if (url.search) return null;
     for (const path of mediaCandidates(url.pathname).length ? mediaCandidates(url.pathname) : [url.pathname]) {
-      const candidate = byPath.get(path);
+      const candidate = byPath.get(resourceIdentity(path));
       if (candidate && (url.origin === origin || new URL(candidate.url, origin).origin === url.origin)) return candidate;
     }
     return null;
@@ -54,12 +56,12 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     let openError;
     const cache = await caches.open(CACHE_NAME).catch((error) => { openError = error; return null; });
     const cached = await cache?.match(key).catch(() => null);
-    if (cached?.headers.get('X-SP-Resource-Hash') === file.hash) return { response: cached, stored: true, downloaded: false };
+    if (cachedResourceHash(cached) === file.hash) return { response: cached, stored: true, downloaded: false };
     if (cached) {
       try {
         const bytes = await cached.clone().arrayBuffer();
         if (bytes.byteLength <= MAX_FILE_BYTES && (await resourceDigests(bytes)).hash === file.hash) {
-          const headers = new Headers(cached.headers); headers.set('X-SP-Resource-Hash', file.hash);
+          const headers = new Headers(cached.headers); markResourceHeaders(headers, file.hash);
           const marked = new Response(bytes, { headers });
           return { response: marked, ...await persist(cache, key, marked, generation), downloaded: false };
         }
@@ -73,7 +75,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     // Return playable bytes even if a broken CDN serves the wrong revision, but never mark/cache them as current.
     if (digest.hash !== file.hash || (file.size != null && bytes.byteLength !== file.size)) return { response: new Response(bytes, { headers: response.headers }), stored: false };
     const headers = new Headers(response.headers);
-    headers.set('X-SP-Resource', '1'); headers.set('X-SP-Resource-Hash', file.hash); headers.set('Accept-Ranges', 'bytes');
+    markResourceHeaders(headers, file.hash);
     const stored = new Response(bytes, { headers });
     return { response: stored, error: openError, ...await persist(cache, key, stored, generation), downloaded: true };
   }
@@ -101,7 +103,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(url);
       // Only local writers issue this marker after verification. Raw network headers cannot reach this branch.
-      if (cached?.headers.get('X-SP-Resource-Hash') !== hash) return null;
+      if (cachedResourceHash(cached) !== hash) return null;
       result = { stored: true, downloaded: false };
     } else result = await sharedLoad(file, url);
     if (!enabled || generation !== epoch) return null;

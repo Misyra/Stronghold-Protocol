@@ -19,7 +19,7 @@ export function matchStatus(msg) {
 
 /** A fresh status snapshot, without session/player IDs, loadouts or private match data. */
 export function roomStatus(room, now = Date.now()) {
-  const match = room.match ? room.matchCtx?.status : null;
+  const match = room.matchView();
   // Lobby internally pads solo rooms to four slots too; their actual playable capacity is one.
   const seats = room.seats.slice(0, room.mode === 'solo' ? 1 : room.seats.length).map((s) => {
     if (!s) return null;

@@ -22,8 +22,6 @@
 // data/local-assets.json. Files are read as streams with a few lanes in flight: hashing ~250 MiB stays at a couple of
 // hundred MiB of RSS, never a copy of the asset tree.
 
-import crypto from 'node:crypto';
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,15 +54,8 @@ export async function listResourceFiles(dir, { root = ROOT } = {}) {
 }
 
 /** SHA-1 of a file's bytes, first 12 hex characters. Streams: the file never enters memory as a whole. */
-export async function hashFile(abs) {
-  const hash = crypto.createHash('sha1');
-  let bytes = 0;
-  for await (const chunk of fs.createReadStream(abs, { highWaterMark: 1 << 20 })) {
-    bytes += chunk.length;
-    hash.update(chunk);
-  }
-  return { hash: hash.digest('hex').slice(0, 12), bytes };
-}
+export { hashFile } from '../server/fileHash.js';
+import { hashFile } from '../server/fileHash.js';
 
 /**
  * Hash every resource file of the asset trees.
@@ -111,8 +102,15 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--check') o.check = true;
-    else if (a === '--out') o.out = path.resolve(argv[++i] || '');
-    else if (a.startsWith('--out=')) o.out = path.resolve(a.slice(6));
+    else if (a === '--out') {
+      const value = argv[++i];
+      if (!value || value.startsWith('--')) throw new Error('--out requires a file path');
+      o.out = path.resolve(value);
+    }
+    else if (a.startsWith('--out=')) {
+      if (!a.slice(6)) throw new Error('--out requires a file path');
+      o.out = path.resolve(a.slice(6));
+    }
     else if (a === '--concurrency') o.concurrency = Math.max(1, Number(argv[++i]) || 4);
     else if (a.startsWith('--concurrency=')) o.concurrency = Math.max(1, Number(a.slice(14)) || 4);
     else if (a === '--help' || a === '-h') { console.log('usage: node tools/asset-hashes.mjs [--out data/asset-hashes.json] [--check] [--concurrency 4]'); process.exit(0); }

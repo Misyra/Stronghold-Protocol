@@ -223,3 +223,10 @@ test('disabled server rejects a custom client chat intent', async t => {
   assert.equal((await a.request({ t: 'g.chat', text: '队友好' })).code, ERR.CHAT_DISABLED);
   await b.expectNone('m.chat');
 });
+
+test('chat rejects invisible direction controls while preserving emoji joiners', () => {
+  for (const c of ['\u202e', '\u2028', '\u2066', '\u200b', '\u200f', '\ufeff']) {
+    assert.deepEqual(moderateChat(newSession(), `队友${c}好`, 1000), { error: ERR.BAD_MSG });
+  }
+  assert.deepEqual(moderateChat(newSession(), '队友👩‍💻好', 1000), { text: '队友👩‍💻好' });
+});

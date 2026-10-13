@@ -27,6 +27,7 @@
 // No network, no automatic update: the update zip is a manual download from GitHub Releases, the same trust as the
 // full zip (whose code runs anyway).
 
+import { within } from './pathSafety.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -182,7 +183,7 @@ export function verifyFiles(root, files) {
   return { checked: files.size, missing, mismatched };
 }
 
-const inside = (root, p) => { const r = path.relative(root, p); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
+const inside = (root, p) => within(root, p, { allowRoot: false });
 
 /**
  * Delete the `removed` files that still hold bytes a base shipped, then the folders that leaves empty. `keep`: the

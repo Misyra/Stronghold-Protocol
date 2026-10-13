@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REPOSITORY_URL } from '../../shared/constants.js';
 import { sanitizeSettings } from '../../public/js/ui/gameLogic/settings.js';
 import { fallbackFloat } from '../../public/js/ui/fallbackField.js';
 
@@ -52,7 +53,8 @@ test('every interface pack translates the new settings and title strings', () =>
 test('the title page links the project repository in a new tab', () => {
   const src = read('public/js/screens/title.js');
   assert.match(src, /class="title-repo"/);
-  assert.match(src, /href="https:\/\/github\.com\/sganggs\/Stronghold-Protocol"/);
+  assert.match(src, /href=\$\{REPOSITORY_URL\}/);
+  assert.equal(REPOSITORY_URL, 'https://github.com/Misyra/Stronghold-Protocol');
   assert.match(src, /target="_blank"/);
   assert.match(src, /rel="noopener noreferrer"/);
   assert.match(src, /t\('项目仓库'\)/);

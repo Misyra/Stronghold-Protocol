@@ -120,8 +120,7 @@ test('single merged dictionary retains pinned provenance, checksum, license and 
   assert.equal(existsSync(new URL('words.b64', root)), false, 'no retired reversible dictionary');
   assert.equal(bytes.subarray(0, 8).toString(), 'SPLEX001');
   const decoded = loadLexicon();
-  if (!process.env.SP_MODERATION_LEXICON_FILE)
-    assert.equal(createHash('sha256').update(decoded).digest('hex'), source.merge.decodedSha256);
+  assert.equal(source.merge.decodedSha256, undefined, 'plaintext fingerprints are private deployment metadata');
   const words = decoded.toString('utf8').split(/\r?\n/).filter(line => line && !line.startsWith('#'));
   if (!process.env.SP_MODERATION_LEXICON_FILE) assert.equal(words.length, source.merge.terms);
   else assert.ok(words.length > 0, 'independent CI dictionary');

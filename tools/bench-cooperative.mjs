@@ -20,10 +20,7 @@ const arg=(key,fallback)=>{const i=args.indexOf('--'+key);return i<0?fallback:ar
 const variant=arg('variant','cooperative'),matches=Number(arg('matches',32)),rehearsal=Number(arg('rehearsal',3)),clients=Number(arg('clients',16));
 if(!['legacy','cooperative'].includes(variant)||![matches,clients].every(n=>Number.isInteger(n)&&n>0&&n<=256)
   ||!Number.isInteger(rehearsal)||rehearsal<1||rehearsal>8)throw Error('invalid benchmark options');
-const distribution=values=>{
-  values.sort((a,b)=>a-b);const p=q=>values.length?+values[Math.ceil(values.length*q)-1].toFixed(2):null;
-  return {count:values.length,p50:p(.5),p95:p(.95),p99:p(.99),max:values.length?+values.at(-1).toFixed(2):null};
-};
+import { distribution } from './lib/bench.mjs';
 if(args.includes('--server')) {
   const srv=await startServer({host:'127.0.0.1',port:0,quiet:true,workers:0,store:null,announcementFile:null,
     ratePerSec:2000,rateBurst:2000,wsCompression:true});

@@ -1,10 +1,7 @@
 import { checkAbort, abortError, TIER_REST } from './common.js';
 
 // Match state only changes queued work; an already-running download is allowed to finish.
-const identity = (url) => {
-  try { return decodeURI(new URL(url, 'https://resources.invalid').pathname).replace(/^\/_v\/[a-f0-9]{16}/, ''); }
-  catch { return ''; }
-};
+import { resourceIdentity as identity } from '../../../shared/resourcePaths.js';
 
 export class ResourceSchedule {
   revision = 0;

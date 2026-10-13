@@ -43,7 +43,7 @@ export function createWorkerCache(getWorker, { origin = globalThis.location?.ori
     let supported = capabilities.get(worker);
     if (!supported) {
       supported = request(worker, { hello: true }, { timeoutMs: helloTimeoutMs })
-        .then((reply) => reply?.protocol === 1).catch(() => false);
+        .then((reply) => reply?.protocol === 1).catch(() => { capabilities.delete(worker); return false; });
       capabilities.set(worker, supported);
     }
     if (!await capability(supported, signal)) { checkAbort(signal); return null; }
@@ -55,7 +55,7 @@ export function createWorkerCache(getWorker, { origin = globalThis.location?.ori
       try { reply = await request(worker, { url, hash: file.hash, size: file.size ?? null, cachedOnly }, { signal, timeoutMs }); }
       catch {
         checkAbort(signal);
-        capabilities.set(worker, Promise.resolve(false));
+        capabilities.delete(worker);
         return null; // worker replacement/crash: retain the independently verified page path
       }
       checkAbort(signal);

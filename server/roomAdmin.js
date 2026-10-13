@@ -2,6 +2,7 @@ import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ROOM_CODE_LEN } from '../shared/constants.js';
 import { sendJson } from './http/common.js';
+import { readJsonBody } from './http/readJson.js';
 import { saveRoomConfig, validateRoomConfig } from './roomConfig.js';
 export { loadRoomConfig } from './roomConfig.js';
 
@@ -14,27 +15,11 @@ function authorized(req, expected) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-function readJson(req, limit = 2048) {
-  return new Promise((resolve, reject) => {
-    const chunks = []; let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > limit) { reject(Object.assign(new Error('PAYLOAD_TOO_LARGE'), { status: 413 })); req.destroy(); return; }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-      catch { reject(Object.assign(new Error('INVALID_JSON'), { status: 400 })); }
-    });
-    req.on('error', () => reject(Object.assign(new Error('REQUEST_ABORTED'), { status: 400 })));
-  });
-}
-
 function roomView(room, lobby, registry) {
   return {
     ...lobby.getRoomStatus(room.code), createdAt: room.createdAt, matchCount: room.matchCount,
     offlinePaused: !!room.match?.offlinePaused, botRehearsal: room.match?.botRehearsal ?? null,
-    computation: room.match ? { pending: room.match._workerTasks?.size || 0, ...room.match.workerStats } : null,
+    computation: room.match ? { pending: room.match.pendingWorkerTasks || 0, ...room.match.workerStats } : null,
     players: room.seats.filter((seat) => seat && !seat.isBot).map((seat) => {
       const session = registry.byId(seat.playerId);
       return { playerId: seat.playerId, name: seat.name, ip: session?.addr || null,
@@ -80,7 +65,11 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
       });
       if (req.method === 'PUT') {
         let body;
-        try { body = await readJson(req); } catch (error) { return sendJson(req, res, error.status || 400, { error: error.message }); }
+        try { body = await readJsonBody(req, { maxBytes: 2048 }); } catch (error) {
+          if (res.destroyed) return;
+          if (!req.complete) res.setHeader('Connection', 'close');
+          return sendJson(req, res, error.status || 400, { error: error.code });
+        }
         if (draining || lobby.draining) return sendJson(req, res, 503, { error: 'SERVER_DRAINING' });
         const error = validateRoomConfig(body, { partial: true });
         if (error) return sendJson(req, res, 400, { error, ...(error === 'INVALID_MAX_ROOMS' ? { maxAllowed: 10000 } : {}) });
@@ -98,7 +87,11 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
     const closeMatch = new RegExp(`^/api/rooms/([A-Z]{${ROOM_CODE_LEN}})/close$`, 'i').exec(url.pathname);
     if (closeMatch && req.method === 'POST') {
       let body;
-      try { body = await readJson(req); } catch (error) { return sendJson(req, res, error.status || 400, { error: error.message }); }
+      try { body = await readJsonBody(req, { maxBytes: 2048 }); } catch (error) {
+        if (res.destroyed) return;
+        if (!req.complete) res.setHeader('Connection', 'close');
+        return sendJson(req, res, error.status || 400, { error: error.code });
+      }
       if (draining || lobby.draining) return sendJson(req, res, 503, { error: 'SERVER_DRAINING' });
       const room = lobby.getRoom(closeMatch[1]);
       if (!room || room.disposed) return sendJson(req, res, 404, { error: 'ROOM_NOT_FOUND' });
@@ -106,7 +99,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         return sendJson(req, res, 409, { error: 'ROOM_CHANGED' });
       const roomCode = room.code, createdAt = room.createdAt;
       lobby.disposeRoom(room, 'admin');
-      lobby.onCheckpoint?.(roomCode, null);
+      lobby.checkpoint(roomCode, null);
       lobby.audit('room.adminClosed', null, room);
       return sendJson(req, res, 200, { ok: true, roomCode, createdAt });
     }

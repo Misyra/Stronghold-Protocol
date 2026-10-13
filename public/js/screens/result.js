@@ -23,7 +23,7 @@ import { data } from '../data.js';
 import { enemyIconUrl, titleIconUrl, uiUrl } from '../ui/assetUrls.js';
 import { store, useStore, emptyMatch } from '../store.js';
 import { audio } from '../audio.js';
-import { HistoryButton, HistorySaveStatus } from '../ui/historyPanel.js';
+import { openStats } from './stats.js';
 import { sentText } from '../ui/lang.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 
@@ -160,11 +160,10 @@ export function ResultView({ res, pub = null, myId = null, backLabel, onBack, qu
             <span class="medal__label">${t('隐秘核心')}</span></div>` : null}
         </div>
         ${mins ? html`<p class="result__time t-lo">${tParts('本局耗时 {n} 分钟', { n: html`<b class="num">${mins}</b>`, mins })}</p>` : null}
-        <${HistorySaveStatus} />
         </div>
         <footer class="result__foot">
           <${Button} variant="primary" size="xl" icon="chevronLeft" onClick=${onBack}>${backLabel}<//>
-          <${HistoryButton} variant="secondary" size="xl" />
+          <${Button} variant="secondary" size="xl" icon="book" onClick=${() => openStats('history')}>${t('对局记录')}<//>
         </footer>
       </section>
       <section class="result__players">

@@ -139,7 +139,7 @@ test('a match end drops the room checkpoint; the Worker path commits a live one'
   assert.ok(persister.matchDocs.get(code));
   assert.ok(persister.matchClocks.get(code));
 
-  lobby.onCheckpoint(code, null);
+  lobby.checkpoint(code, null);
   assert.equal(persister.matchDocs.has(code), false, 'the checkpoint is gone');
   assert.equal(persister.matchClocks.has(code), false);
   lobby.shutdown();
@@ -161,4 +161,22 @@ test('a broken persistence Worker degrades to a synchronous encode', async () =>
   assert.equal(doc.phase, PHASE.INFO_CHECK);
   assert.equal(persister.matchClocks.get(code).deadlineRemainingMs, 8_000);
   lobby.shutdown();
+});
+
+test('dispose unsubscribes and waits for checkpoint callbacks before closing the encoder', async () => {
+  const lobby = new Lobby({ registry: new SessionRegistry(), log: quietLog });
+  const persister = new Persister({ store: null, registry: lobby.registry, lobby, log: quietLog });
+  const calls = [];
+  let finish;
+  persister.encodeRoom = () => new Promise((resolve) => { finish = () => { calls.push('encoded'); resolve(true); }; });
+  persister.encoder.close = async () => { calls.push('closed'); };
+  const external = () => calls.push('external');
+  const off = lobby.subscribeCheckpoint(external);
+  lobby.checkpoint('ABCD', {});
+  const disposing = persister.dispose();
+  assert.equal(lobby.checkpointListeners.size, 1, 'only the independent subscriber remains');
+  assert.deepEqual(calls, ['external']);
+  finish(); await disposing;
+  assert.deepEqual(calls, ['external', 'encoded', 'closed']);
+  off(); lobby.shutdown();
 });

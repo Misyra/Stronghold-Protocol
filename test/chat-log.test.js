@@ -153,7 +153,7 @@ test('archive streams ended UTC days losslessly, retains today/future days, and 
   assert.equal(stats.files, 4); assert.equal(stats.plainFiles, 2); assert.equal(stats.archiveFiles, 2);
   assert.equal(stats.plainBytes, Buffer.byteLength(body) * 2); assert.ok(stats.archiveBytes < stats.plainBytes / 5);
   assert.equal(stats.totalBytes, readdirSync(dir).reduce((sum, name) => sum + statSync(path.join(dir, name)).size, 0));
-  assert.equal(stats.retentionDays, 0); assert.equal(stats.maintenanceFailures, 0);
+  assert.equal(stats.retentionDays, 30); assert.equal(stats.maintenanceFailures, 0);
   assert.ok(!JSON.stringify(stats).includes('203.0.113.1')); assert.ok(!JSON.stringify(stats).includes(dir));
   assert.deepEqual(await logger.maintain(), stats, 'a second sweep does not duplicate or recompress archives');
 });

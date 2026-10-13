@@ -53,6 +53,7 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
     roomProtection: lobby.roomActions.stats(),
     botPopulation: lobby.botPopulation.stats(),
+    foreignSessions: network.foreignSessions?.stats() || null,
     rehearsalPressure: network.diagnostics?.rehearsalPressure?.stats() || null,
     workers: workerPool?.stats() || null,
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.

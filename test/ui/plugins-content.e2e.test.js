@@ -1,5 +1,5 @@
 // Real-server browser E2E — a room's content set (DESIGN §32.6 P1c; opt-in, ~1 min):
-//   SP_E2E=1 node --test test/ui/plugins-content.e2e.test.js
+//   SP_E2E=1 node --test test/ui/plugins-content.e2e.test.js   (SP_E2E_VERBOSE=1: the server's log too)
 //
 // A server with a data plugin of its own (bond-def: a bond value patched — no file of the game) and two browsers: the
 // host switches it on in the room's 插件 panel → both pages download the room's content set, check every file's bytes and
@@ -29,7 +29,7 @@ describe('a room\'s content set in the browser (P1c)', { skip: !ENABLED && 'set 
     writePlugin(path.join(tmp, 'bond-def'), { manifest: 2, name: { zh: '盟约数值', en: 'Bond numbers' }, version: '1.0.0', app: '*', api: 1, class: 'content', scope: ['room'],
       authors: ['e2e'], permissions: ['data.patch'], data: ['p.json'] }, { 'p.json': bondPatch(0.3) });
     const { startServer } = await import('../../server/index.js');
-    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: tmp,
+    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: process.env.SP_E2E_VERBOSE !== '1', pluginsDir: tmp,
       matchHost: { matchOptions: { timerScale: 0.1, combatSpeed: 16, botRehearsal: 0 } } });
     for (const t0 = Date.now(); Date.now() - t0 < 20000;) {
       const h = await fetch(`${srv.url}/healthz?traffic=1`).then((r) => r.json(), () => null);
@@ -94,17 +94,19 @@ describe('a room\'s content set in the browser (P1c)', { skip: !ENABLED && 'set 
       await host.waitFor((s) => s.phase === 'COMBAT', 'the first battle', 120000);
       await host.page.waitForSelector('.gtop [data-testid="unofficial-mark"]', { timeout: 15000 });
       await host.shot('hud');
-      let fields = null;
-      for (const t0 = Date.now(); Date.now() - t0 < 90000; await sleep(500)) {
+      // every finished field seen, by battle: the match clears its fields at the settlement, COMBAT_END (1.5 s, here
+      // scaled to 0.15 s) after the last one finished — a poll may well miss the moment both are done
+      const finished = new Map();
+      let last = null;
+      const firstDone = (id) => [...finished.values()].find((f) => f.kind === 'normal' && f.players.includes(id));
+      for (const t0 = Date.now(); Date.now() - t0 < 90000 && !(firstDone(hostId) && firstDone(guestId)); await sleep(100)) {
         const d = await match.diag();
-        fields = d?.fields || [];
-        const mine = fields.find((f) => f.kind === 'normal' && f.players.includes(hostId));
-        const theirs = fields.find((f) => f.kind === 'normal' && f.players.includes(guestId));
-        if (mine?.done && theirs?.done) break;
+        last = d;
+        for (const f of d?.fields || []) if (f.done && !finished.has(f.battleId)) finished.set(f.battleId, f);
       }
-      const mine = fields.find((f) => f.kind === 'normal' && f.players.includes(hostId));
-      const theirs = fields.find((f) => f.kind === 'normal' && f.players.includes(guestId));
-      assert.ok(mine?.done && theirs?.done, `both battles settled: ${JSON.stringify(fields)}`);
+      const mine = firstDone(hostId);
+      const theirs = firstDone(guestId);
+      assert.ok(mine && theirs, `both battles settled: ${JSON.stringify([...finished.values()])} (the match's diag: ${JSON.stringify(last)?.slice(0, 600)})`);
       assert.equal(mine.resultSource, 'client', 'the host\'s result was accepted');
       assert.equal(theirs.resultSource, 'server', 'the guest\'s field was taken over by the server');
       const d = await match.diag();

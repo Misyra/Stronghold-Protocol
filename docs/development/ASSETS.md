@@ -235,11 +235,11 @@ The `stem` of a Spine model is the upstream file name. Two examples: `char_107_l
 - **Fonts:** OTF/TTF files are converted to WOFF2 by a built-in encoder (`tools/assets/woff2.mjs`: Brotli with null transforms).
   - Its output was verified lossless against Google's reference `woff2` decoder.
   - `fonts.css` lists WOFF2 first and falls back to the original file.
-- Images stay PNG. WebP conversion is not done: it would need a native dependency. The local-client board textures are the exception: `tools/local-extract/extract.py` (Python, where Pillow is already a dependency) writes WebP copies of the 12 textures the 3D board downloads (`WEBP`: colour maps lossy at quality 95 with the alpha and the RGB under transparent texels kept, normal and data maps lossless) and `data/local-assets.json` lists the copies; the PNGs stay beside them for `tools/crop-board-atlas.mjs`. `extract.py --webp` adds the copies to an existing extraction without the client.
+- Images stay PNG. WebP conversion is not done: it would need a native dependency. The local-client board textures are the exception: `tools/local-extract/extract.py` (Python, where Pillow is already a dependency) writes WebP copies of the 12 textures the 3D board downloads (`WEBP`: colour maps lossy at quality 95 with the alpha and the RGB under transparent texels kept, normal and data maps lossless) and `data/local-assets.json` lists the copies; the PNGs stay beside them for `tools/crop-board-atlas.mjs`. The 19 local 玩法说明 pages get a WebP copy too (`GUIDE_WEBP_MODE`, lossy quality 90 since the maintainer's side-by-side look of 2026-10-12: 25.6 MB → 4.2 MB on the CN client's pages; lossless would be 17.4 MB), listed in place of the PNG, which stays beside it; the mirror copies under `ui/guide/` stay PNG. `extract.py --webp` adds the copies to an existing extraction without the client.
 
 ## Manifest schema (`data/assets.json`)
 
-All paths are URL paths relative to the site root, for example `/assets/char/avatar/char_002_amiya.png`. **Only entries whose files exist on disk are emitted.** When a key is missing, the client should use its fallback (research 07 §5.6).
+All paths are URL paths relative to the site root, for example `/assets/char/avatar/char_002_amiya.png` — in the committed file; a server hands them out with a content-hash segment ("The committed manifest and the served manifests" below). **Only entries whose files exist on disk are emitted.** When a key is missing, the client should use its fallback (research 07 §5.6).
 
 ```js
 {
@@ -577,6 +577,30 @@ The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-lat
 `234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
 versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.
 See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
+## Manifest URLs and cache busting (this fork)
+
+`data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it) and `data/local-assets.json` (as
+`tools/local-extract` writes it) hold plain URLs. How they reach the browser depends on the install:
+
+- **Local install (no CDN).** The server rewrites the served manifests' art URLs with its release prefix
+  (`server/assetVersion.js`): every `/assets/…`, `/fonts/…`, `/media/…` and `/js|css|vendor|shared|sim/…` URL comes out
+  as `/_v/<tag>/…`, where the art tag is a SHA-256 over every art file's path and bytes (16 hex, computed once at the
+  start over the same trees the asset tools rewrite in place). A restart, a re-extraction or a Docker rebuild with
+  unchanged bytes keeps the tag, so the browser reuses its year-long cache; changing any art file moves the tag and the
+  art is fetched again. The two manifests themselves are served `no-cache`.
+- **CDN install** (`SP_ASSETS_CDN`, [CDN.md](../operations/CDN.md)). The client takes each file's own hash from
+  `/assets-manifest.json?v=<tag>` (the committed `.assets-manifest.json`, written by `tools/r2-sync.mjs`) and asks the
+  CDN for `<base>/assets/…?v=<file hash>` (`shared/assetCdn.js`), so a release re-busts only the files it changed.
+- A Spine model keeps its `{ skel, atlas, textures }` folder together (hash of the model's files, `tools/r2-sync.mjs`
+  and `tools/published-assets.mjs`): pixi-spine finds the atlas by the skeleton's name and the pages beside it, so a
+  page's URL must stay in its atlas's folder.
+- Upstream 0.2.6's **content-hash path segment** (`/assets/~<hash>/…`, a background index in `server/http/assetIndex.js`
+  and `assetViews.js`) is deliberately **not** served here: `?v=<file hash>` (CDN) and `/_v/<tag>/` (local) are this
+  fork's two forms. See [MERGE_0.2.6.md](MERGE_0.2.6.md) for the reason and for what a future per-file improvement for
+  local installs would have to do (strip `/_v/` first, then the segment; gate the manifest views on `!cdn.base`).
+- The 19 extracted guide pages get a WebP copy beside each PNG (`tools/local-extract/extract.py --webp`,
+  `GUIDE_WEBP_MODE`; lossy quality 90 by default, 25.6 MB → 4.2 MB), the manifest lists the copy, and the viewer
+  preloads only the next page (`ui/guide.js guidePreloadUrl`).
 
 ## Verification
 

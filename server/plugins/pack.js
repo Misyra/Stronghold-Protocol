@@ -23,7 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import { readPluginFolder, listPluginFiles } from './registry.js';
+import { readPluginFolder, listPluginFiles, walkProblem } from './registry.js';
 import { PLUGIN_LIMITS, PLUGIN_MANIFEST, checkJsonLimits, extOf, readPluginManifest } from '../../shared/plugins/manifest.js';
 import { LOCK_FILE, LOCK_VERSION, readAssetOverlay } from '../../shared/plugins/visual.js';
 import { issueList } from '../../shared/plugins/errors.js';
@@ -55,6 +55,13 @@ export function plainPath(dir, rel) {
   return path.join(dir, ...parts);
 }
 const abs = plainPath;
+
+/**
+ * An error in words for a finding: a parse error's own message, a file system error's code only (its message names the
+ * absolute path — the account's name in it — and a finding may reach a page of the studio).
+ * @param {any} e
+ */
+export const errorWords = (e) => (e instanceof SyntaxError ? e.message : e?.code ? String(e.code) : String(e?.message || e));
 
 /**
  * @typedef {import('./registry.js').VanillaAssets} VanillaAssets
@@ -128,7 +135,8 @@ export function skeletonClipData(dir, spine, containers) {
     };
     return { entry, problems: list.problems, warnings: list.warnings, issues: list.issues };
   } catch (e) {
-    list.problem('PLUGIN_SPINE_PARSE', `${s.skel}: not a Spine 3.8 skeleton the client can read (${String(e?.message || e).slice(0, 120)})`, { file: s.skel, detail: String(e?.message || e).slice(0, 120) });
+    const why = errorWords(e).slice(0, 120);
+    list.problem('PLUGIN_SPINE_PARSE', `${s.skel}: not a Spine 3.8 skeleton the client can read (${why})`, { file: s.skel, detail: why });
     return { entry: null, problems: list.problems, warnings: list.warnings, issues: list.issues };
   }
 }
@@ -147,7 +155,7 @@ export function readOverlayOf(dir, manifest, { vanilla, has } = {}) {
   const pre = issueList();
   if (!assets) {
     try { assets = JSON.parse(fs.readFileSync(abs(dir, part.files[0]), 'utf8')); } catch (e) {
-      pre.problem('PLUGIN_JSON', `${part.files[0]}: ${e?.message || e}`, { file: part.files[0], detail: String(e?.message || e) });
+      pre.problem('PLUGIN_JSON', `${part.files[0]}: ${errorWords(e)}`, { file: part.files[0], detail: errorWords(e) });
       assets = undefined; // read as nothing (the overlay's own problem follows, as the packer of 0.2 reported it)
     }
   }
@@ -180,7 +188,10 @@ export function buildPluginLock(dir, { vanilla } = {}) {
   const read = readPluginManifest(raw, { id: path.basename(dir) });
   if (!read.manifest) { list.take(read, { warningsToo: false }); return done(null); }
   const manifest = read.manifest;
-  const listed = listPluginFiles(dir).filter((f) => !f.link && f.rel !== LOCK_FILE);
+  const all = listPluginFiles(dir);
+  const walked = walkProblem(all);
+  if (walked) { list.problem('PLUGIN_FILE_SIZE', walked.text, { where: walked.where }); return done(null); }
+  const listed = all.filter((f) => !f.link && f.rel !== LOCK_FILE);
   /** @type {Record<string, { sha256: string, bytes: number }>} */
   const files = {};
   for (const f of listed) files[f.rel] = { sha256: sha256(fs.readFileSync(abs(dir, f.rel))), bytes: f.bytes };
@@ -234,7 +245,14 @@ export function zipPlugin(dir) {
     const m = JSON.parse(fs.readFileSync(abs(dir, PLUGIN_MANIFEST), 'utf8'));
     if (typeof m?.version === 'string' && /^[0-9A-Za-z.+-]{1,64}$/.test(m.version)) version = m.version;
   } catch { /* the folder's own check says why */ }
-  const files = listPluginFiles(dir).filter((f) => !f.link).map((f) => f.rel);
+  // a folder within the walk and plugin limits only (its files are read into memory)
+  const all = listPluginFiles(dir);
+  const walked = walkProblem(all);
+  const listed = all.filter((f) => !f.link);
+  const bytes = listed.reduce((n, f) => n + f.bytes, 0);
+  const over = walked ? walked.where : listed.length > PLUGIN_LIMITS.files ? `more than ${PLUGIN_LIMITS.files} files` : bytes > PLUGIN_LIMITS.pluginBytes ? `more than ${PLUGIN_LIMITS.pluginBytes / 1048576} MB` : null;
+  if (over) throw Object.assign(new Error(`${id}: ${over} — not zipped`), { code: 'PLUGIN_FILE_SIZE', where: over });
+  const files = listed.map((f) => f.rel);
   const body = zipFiles(files.map((rel) => ({ name: `${id}/${rel}`, data: fs.readFileSync(abs(dir, rel)) })));
   return { name: `${id}-${version}.zip`, body, files };
 }

@@ -20,6 +20,8 @@ import { createPluginFiles, StudioError } from '../../server/studio/files.js';
 import { suggestId, isStudioPath } from '../../server/studio/index.js';
 import { printBanner } from '../../server/http/boot.js';
 import { unzipFiles, zipFiles } from '../../server/plugins/zip.js';
+import { listPluginFiles, readPluginFolder, WALK_LIMITS } from '../../server/plugins/registry.js';
+import { buildPluginLock, zipPlugin } from '../../server/plugins/pack.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const req = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers: { host: 'localhost:3000', ...headers } });
@@ -100,18 +102,45 @@ test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a wr
     assert.equal(code(() => f.remove('ab', 'out/secret.png')), 'PLUGIN_STUDIO_PATH:403');
     assert.equal(fs.readFileSync(path.join(outside, 'secret.png'), 'utf8'), 'secret', 'nothing outside was touched');
     assert.deepEqual(fs.readdirSync(outside), ['secret.png']);
-    // a plugin folder that is itself a link (the owner's choice, as the registry allows) is followed once
+    // a plugin folder that is itself a link (an archive unpacked into plugins/ can bring one, to anywhere) is never a root
+    // of the studio: every read and write refused, nothing of the target read or written; listed apart (links)
     const real = path.join(dir, 'elsewhere');
     fs.mkdirSync(real);
+    fs.writeFileSync(path.join(real, 'secret.json'), '{"s":"SECRET"}');
     fs.symlinkSync(real, path.join(plugins, 'linked'));
-    f.write('linked', 'a.png', png());
-    assert.ok(fs.existsSync(path.join(real, 'a.png')));
+    for (const fn of [() => f.root('linked'), () => f.stat('linked', 'secret.json'), () => f.resolve('linked', 'secret.json'), () => f.write('linked', 'a.png', png()),
+      () => f.remove('linked', 'secret.json'), () => f.list('linked'), () => f.readSidecar('linked', '.studio.json'), () => f.writeSidecar('linked', '.studio.json', Buffer.from('{}')),
+      () => f.moveOut('linked', 'secret.json')]) {
+      assert.equal(code(fn), 'PLUGIN_STUDIO_PATH:403', String(fn));
+    }
+    assert.deepEqual(fs.readdirSync(real), ['secret.json'], 'nothing written into the target, nothing removed from it');
+    assert.deepEqual([f.ids().includes('linked'), f.links()], [false, ['linked']]);
     // remove: plain files, empty folders go with them, never plugin.json
     f.write('ab', 'plugin.json', Buffer.from('{}'));
     assert.equal(code(() => f.remove('ab', 'plugin.json')), 'PLUGIN_STUDIO_PATH:400');
     f.remove('ab', 'art/x.png');
     assert.equal(fs.existsSync(path.join(plugins, 'ab', 'art')), false);
-    assert.deepEqual(f.ids(), ['ab', 'linked']);
+    assert.deepEqual([f.ids(), f.links()], [['ab'], ['linked']], 'the folders the studio opens; the links apart');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the walk of a plugin folder is bounded (folders, depth, entries read): a folder over a limit is refused — the registry, the lock, the zip', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-walk-'));
+  try {
+    const p = path.join(dir, 'deep');
+    writePlugin(p, cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(), 'a/b/c/x.txt': 'x' });
+    assert.equal(listPluginFiles(p).truncated, undefined, 'within the limits: no flag');
+    assert.equal(listPluginFiles(p, { maxDepth: 2 }).truncated, 'depth');
+    assert.equal(listPluginFiles(p, { maxDirs: 2 }).truncated, 'dirs');
+    assert.equal(listPluginFiles(p, { maxEntries: 3 }).truncated, 'entries');
+    assert.deepEqual(Object.keys(listPluginFiles(p, { maxDepth: 2 })).length, listPluginFiles(p, { maxDepth: 2 }).length, 'the flag is no entry of the list');
+    // the real limits: folders one level deeper than WALK_LIMITS.depth
+    fs.mkdirSync(path.join(p, ...Array.from({ length: WALK_LIMITS.depth + 1 }, (_, i) => `d${i}`)), { recursive: true });
+    const r = readPluginFolder(p, { where: 'plugins/deep/' });
+    assert.equal(r.plugin, null);
+    assert.ok(r.issues.some((i) => i.code === 'PLUGIN_FILE_SIZE' && i.text.includes(`deeper than ${WALK_LIMITS.depth} levels`)), JSON.stringify(r.problems));
+    assert.equal(buildPluginLock(p).lock, null, 'no lock');
+    assert.throws(() => zipPlugin(p), (e) => e.code === 'PLUGIN_FILE_SIZE', 'no zip');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -401,6 +430,48 @@ describe('the studio over HTTP', () => {
     }
     const hz = await raw('HEAD', '/studio/api/plugins/lnk-files/zip');
     assert.deepEqual([hz.status, hz.text], [200, ''], 'HEAD of the zip builds none');
+  });
+
+  test('a plugin folder that is itself a link: the studio never opens it (403 for every read and change, with the key or without; listed apart, nothing of the target sent); the game may still load it and serves only the files its overlay names', async () => {
+    const target = path.join(tmp, 'linked-target');
+    writePlugin(target, cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(4, 4, [9, 9, 9, 255]), 'secret.json': '{"s":"LEAK-JSON"}', 'notes.txt': 'LEAK-TXT' });
+    const before = fs.readdirSync(target).sort();
+    fs.symlinkSync(target, path.join(plugins, 'linked-skin'));
+    srv.packs.rescan();
+    const leaks = (b) => /LEAK/.test(Buffer.isBuffer(b) ? b.toString('latin1') : JSON.stringify(b));
+    const NO = {};
+    for (const [m, u, h] of [['GET', 'linked-skin', NO], ['GET', 'linked-skin/files/secret.json', NO], ['GET', 'linked-skin/files/notes.txt', NO], ['GET', 'linked-skin/zip', NO],
+      ['GET', 'linked-skin/preview', NO], ['GET', 'linked-skin', H], ['GET', 'linked-skin/zip', H], ['POST', 'linked-skin/pack', H], ['POST', 'linked-skin/sections', H],
+      ['PUT', 'linked-skin/files/x.png', H], ['DELETE', 'linked-skin/files/notes.txt', H], ['POST', 'linked-skin/fix', H]]) {
+      const r = await call(m, `/studio/api/plugins/${u}`, m === 'GET' ? undefined : '{"code":"PLUGIN_LOCK_MISSING"}', h);
+      assert.deepEqual([r.status, r.body?.error], [403, 'PLUGIN_STUDIO_PATH'], `${m} ${u}`);
+      assert.equal(leaks(r.body), false, `${m} ${u}`);
+    }
+    assert.deepEqual(fs.readdirSync(target).sort(), before, 'nothing written into the target, nothing removed');
+    const list = await call('GET', '/studio/api/plugins');
+    const item = list.body.plugins.find((x) => x.id === 'linked-skin');
+    assert.deepEqual([item.linked, item.name], [true, 'linked-skin']);
+    assert.equal(leaks(list.body), false);
+    // the game's registry follows the owner's link (P1a) and serves only the files the overlay names
+    const entry = srv.packs.plugin('linked-skin');
+    assert.equal(entry?.status, 'loaded');
+    const h8 = entry.visual.served.get('a.png').sha256.slice(0, 8);
+    assert.equal((await raw('GET', `/p/linked-skin/${h8}/a.png`)).status, 200);
+    for (const f of ['secret.json', 'notes.txt', 'plugin.json']) assert.equal((await raw('GET', `/p/linked-skin/${h8}/${f}`)).status, 404, f);
+    fs.rmSync(path.join(plugins, 'linked-skin'));
+    srv.packs.rescan();
+  });
+
+  test('a file system error answers with its code only — never the message, which names the absolute path', { skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'needs a folder the server cannot write' }, async () => {
+    let r = await call('POST', '/studio/api/plugins', { template: 'art', id: 'locked', name: 'x' });
+    assert.equal(r.status, 201);
+    const dir = path.join(plugins, 'locked');
+    fs.chmodSync(dir, 0o500);
+    try {
+      r = await call('PUT', '/studio/api/plugins/locked/files/new.txt', 'x', { 'x-sp-studio': KEY });
+      assert.deepEqual([r.status, r.body.error, r.body.params.detail, r.body.detail], [500, 'PLUGIN_UNREADABLE', 'EACCES', 'EACCES']);
+      assert.doesNotMatch(JSON.stringify(r.body), /\//, 'no path in the answer');
+    } finally { fs.chmodSync(dir, 0o755); }
   });
 
   test('event streams: at most three from one address — a fourth ends the oldest (a browser keeps about six connections to a server)', async () => {

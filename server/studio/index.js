@@ -355,7 +355,16 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   /** Every plugin folder for the list (GET /studio/api/plugins). */
   function listPlugins() {
     const report = registry.report();
-    return files.ids().map((id) => {
+    // a plugin folder that is a symbolic link: listed by its id with the registry's word on it, never opened (files.js)
+    const linked = files.links().map((id) => {
+      const entry = registry.plugin(id);
+      const skipped = report.skipped.find((k) => k.where === `plugins/${id}/`);
+      return {
+        id, name: id, version: null, class: null, linked: true, status: entry && entry.source === 'plugins' ? entry.status : 'skipped',
+        problems: skipped ? skipped.problems.length : 0, warnings: 0, codes: skipped ? [...new Set((skipped.issues || []).map((i) => i.code))] : [],
+      };
+    });
+    return [...files.ids().map((id) => {
       let name = id;
       let version = null;
       let cls = null;
@@ -373,7 +382,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
         problems: skipped ? skipped.problems.length : 0, warnings: report.warnings.filter((w) => w.where === `plugins/${id}/`).length,
         codes: skipped ? [...new Set((skipped.issues || []).map((i) => i.code))] : [],
       };
-    });
+    }), ...linked].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
 
   /** After a change: read the folders now (hot reload) and answer with the plugin's state. */
@@ -629,7 +638,11 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       if (sub === 'preview') return json(200, previews.preview(id, files.root(id)));
       if (sub === 'zip') {
         if (method === 'HEAD') { files.root(id); res.writeHead(200, { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store' }); res.end(); return true; }
-        const z = zipPlugin(files.root(id));
+        let z;
+        try { z = zipPlugin(files.root(id)); } catch (e) {
+          if (e?.code === 'PLUGIN_FILE_SIZE') throw new StudioError('PLUGIN_FILE_SIZE', 413, { where: e.where || '' }, e.message);
+          throw e;
+        }
         res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': z.body.length, 'Cache-Control': 'no-store',
           'Content-Disposition': `attachment; filename="${z.name}"` });
         res.end(method === 'HEAD' ? undefined : z.body);
@@ -733,7 +746,9 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
         return;
       }
       if (e?.code === 'ENOSPC' || e?.code === 'EACCES' || e?.code === 'EPERM' || e?.code === 'EROFS') {
-        sendJson(req, res, 500, { error: 'PLUGIN_UNREADABLE', params: { detail: e.code }, detail: String(e.message || e).slice(0, 200) });
+        // the code only: a file system's message names the absolute path (the account's name in it) — that stays in the log
+        log.warn?.(`[studio] ${req.method} ${rawPath.slice(0, 120)}: ${e.message}`);
+        sendJson(req, res, 500, { error: 'PLUGIN_UNREADABLE', params: { detail: e.code }, detail: e.code });
         return;
       }
       log.error?.('[studio] request failed', e);

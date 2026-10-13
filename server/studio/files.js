@@ -2,8 +2,10 @@
 // API makes stays inside one plugin folder, plugins/<id>/.
 //
 //   * the id is a plugin id (shared/plugins/manifest.js isPluginId: lower case, digits, '-'; never '_' templates, never
-//     '.', never a path) and the folder plugins/<id>/ itself — a plugin folder that is itself a link (the owner's choice,
-//     as the registry allows) is followed once: its real path is the plugin's root;
+//     '.', never a path) and the folder plugins/<id>/ a real folder — one that is itself a symbolic link is never a root
+//     of the studio (PLUGIN_STUDIO_PATH, 403, for every read and write: an archive unpacked into plugins/ can bring a
+//     link to anywhere; the game's registry may still load it — it serves only the files its overlay names); the
+//     plugins folder itself may be a link (the owner's choice: plugins kept on another disk);
 //   * a path inside it is a plain relative path (isPackPath: letters, digits, '. _ -', spaces; no '..', no '.' part, no
 //     hidden part, at most 200 characters) of a file type a plugin may carry (WRITABLE: art, models, audio, fonts, .json,
 //     documents) — never plugin.lock.json (only the packer writes it) by hand;
@@ -80,8 +82,12 @@ export function createPluginFiles(pluginsDir) {
       return fs.realpathSync.native(dir);
     }
     if (!st) throw new StudioError('PLUGIN_UNKNOWN', 404, { id }, `${id} is not a plugin folder`);
+    // never through a link: neither read nor written, listed, previewed, zipped or packed (see the header)
+    if (st.isSymbolicLink()) throw new StudioError('PLUGIN_STUDIO_PATH', 403, { detail: `plugins/${id} is a symbolic link` }, `plugins/${id} is a symbolic link`);
+    if (!st.isDirectory()) throw new StudioError('PLUGIN_UNKNOWN', 404, { id }, `${id} is not a plugin folder`);
+    // its real path (the disk's spelling of the name) — still a folder right inside the plugins folder
     const real = fs.realpathSync.native(dir);
-    if (!fs.statSync(real).isDirectory()) throw new StudioError('PLUGIN_UNKNOWN', 404, { id }, `${id} is not a plugin folder`);
+    if (path.dirname(real) !== top) throw new StudioError('PLUGIN_STUDIO_PATH', 403, { detail: `plugins/${id} is a symbolic link` }, `plugins/${id} leads out of the plugins folder`);
     return real;
   }
 
@@ -137,6 +143,7 @@ export function createPluginFiles(pluginsDir) {
     const abs = resolve(id, rel, { forWrite: true });
     // the folder's totals with this file in place of its old self
     const files = listPluginFiles(top);
+    if (files.truncated) throw new StudioError('PLUGIN_FILE_SIZE', 413, { where: 'a folder over the walk limits' }, 'the plugin folder is over its walk limits');
     const old = files.find((f) => f.rel === rel);
     const bytes = files.reduce((n, f) => n + f.bytes, 0) - (old ? old.bytes : 0) + data.length;
     if (bytes > PLUGIN_LIMITS.pluginBytes) throw new StudioError('PLUGIN_STUDIO_SIZE', 413, { max: `${PLUGIN_LIMITS.pluginBytes / 1048576} MB` }, 'the plugin would be over its size limit');
@@ -238,12 +245,25 @@ export function createPluginFiles(pluginsDir) {
     }
   }
 
-  /** The plugin ids of the folder (its plugin folders: not '_' templates, not dot folders), sorted. */
-  function ids() {
+  /** The ids of the plugins folder's entries with a plugin id (not '_' templates, not dot folders), sorted, by kind. */
+  function entries() {
     let names;
-    try { names = fs.readdirSync(realBase()); } catch { return []; }
-    return names.filter((n) => isPluginId(n)).filter((n) => { try { return fs.statSync(path.join(base, n)).isDirectory(); } catch { return false; } }).sort();
+    let top;
+    try { top = realBase(); names = fs.readdirSync(top); } catch { return { dirs: [], links: [] }; }
+    const dirs = [];
+    const links = [];
+    for (const n of names.filter((x) => isPluginId(x)).sort()) {
+      let st;
+      try { st = fs.lstatSync(path.join(top, n)); } catch { continue; }
+      if (st.isSymbolicLink()) links.push(n);
+      else if (st.isDirectory()) dirs.push(n);
+    }
+    return { dirs, links };
   }
+  /** The plugin folders the studio opens (real folders), sorted. */
+  const ids = () => entries().dirs;
+  /** The plugin folders that are symbolic links (listed, never opened: root), sorted. */
+  const links = () => entries().links;
 
-  return { base, root, resolve, stat, write, remove, ids, writable, readSidecar, writeSidecar, moveOut, list: (id) => listPluginFiles(root(id)) };
+  return { base, root, resolve, stat, write, remove, ids, links, writable, readSidecar, writeSidecar, moveOut, list: (id) => listPluginFiles(root(id)) };
 }

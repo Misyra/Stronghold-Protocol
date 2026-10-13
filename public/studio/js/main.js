@@ -303,10 +303,11 @@ function App({ info }) {
       <aside class="st-side">
         <${Button} variant="primary" block=${true} onClick=${() => setCreateOpen(true)} data-testid="new-plugin">${t('新建插件')}<//>
         <ul class="st-list" data-testid="plugin-list">
-          ${list.map((p) => html`<li key=${p.id}><button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', p.status === 'skipped' && 'is-bad')}
-              onClick=${() => setSelected(p.id)} data-plugin=${p.id}>
+          ${list.map((p) => html`<li key=${p.id}><button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', (p.status === 'skipped' || p.linked) && 'is-bad')}
+              onClick=${() => setSelected(p.id)} data-plugin=${p.id} disabled=${!!p.linked}
+              title=${p.linked ? t('这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。') : undefined}>
             <span class="st-list__name">${p.name || p.id}</span>
-            <span class="st-list__meta"><code>${p.id}</code>${p.version ? ` · v${p.version}` : ''}${p.status === 'skipped' ? ` · ${t('{n} 个问题', { n: p.problems })}` : p.class !== 'cosmetic' && p.class ? ` · ${p.class}` : ''}</span>
+            <span class="st-list__meta"><code>${p.id}</code>${p.linked ? ` · ${t('符号链接，工作台不打开')}` : ''}${p.version ? ` · v${p.version}` : ''}${p.status === 'skipped' && !p.linked ? ` · ${t('{n} 个问题', { n: p.problems })}` : p.class !== 'cosmetic' && p.class ? ` · ${p.class}` : ''}</span>
           </button></li>`)}
           ${!list.length ? html`<li class="st-note">${t('还没有插件。点「新建插件」开始。')}</li>` : null}
         </ul>

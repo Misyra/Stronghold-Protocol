@@ -263,7 +263,7 @@ export const PLUGIN_ERRORS = Object.freeze({
   PLUGIN_FILE_SIZE: {
     level: 'problem', doc: D.files,
     zh: '插件太大了：{where}', en: 'The plugin is too large: {where}',
-    fix: { zh: '一个插件最多 200 MB、5000 个文件，单个 JSON 最多 8 MB。压缩图片和声音，删掉没用到的文件，或者拆成几个插件。', en: 'A plugin holds at most 200 MB in 5000 files, a JSON file at most 8 MB. Compress pictures and sounds, remove unused files, or split it.' },
+    fix: { zh: '一个插件最多 200 MB、5000 个文件（文件夹最多 2000 个、12 层），单个 JSON 最多 8 MB。压缩图片和声音，删掉没用到的文件，或者拆成几个插件。', en: 'A plugin holds at most 200 MB in 5000 files (2000 folders, 12 levels deep), a JSON file at most 8 MB. Compress pictures and sounds, remove unused files, or split it.' },
   },
   PLUGIN_FILE_MISSING: {
     level: 'problem', doc: D.files,

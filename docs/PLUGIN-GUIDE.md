@@ -167,7 +167,7 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_NAME` | 文件名「{where}」不能用 | 文件名和文件夹名只用英文字母、数字、. _ - 和空格；不要以 . 开头，也不要有 ".." 这样的部分。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_TYPE` | {where}：这种文件不能放进 {class} 插件 | 图片用 .png .jpg .webp（不收 SVG），声音用 .mp3 .ogg，模型用 .skel .atlas，说明文档 .md .txt 和 README / LICENSE 可以放。把这个文件移出插件文件夹（一键修复会把它移到 plugins/_moved/ 里，不会删掉），或转换成能用的格式。（工作台可一键修复） |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_FRAME` | {where} 是界面文件，但不在 entry.client 所在的文件夹里 | 把界面插件的 .html .js .css 都放进 entry.client 那个文件夹。 |
-| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_SIZE` | 插件太大了：{where} | 一个插件最多 200 MB、5000 个文件，单个 JSON 最多 8 MB。压缩图片和声音，删掉没用到的文件，或者拆成几个插件。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_SIZE` | 插件太大了：{where} | 一个插件最多 200 MB、5000 个文件（文件夹最多 2000 个、12 层），单个 JSON 最多 8 MB。压缩图片和声音，删掉没用到的文件，或者拆成几个插件。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_MISSING` | 清单里写了 {file}，但插件文件夹里没有这个文件 | 把文件放到这个位置（注意文件夹和大小写都要一样），或者改正清单里的路径。在工作台把文件拖到对应的格子里就会放对。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FILE_OUTSIDE` | {where} 指到了插件文件夹外面，或者在插件文件夹里读不出来 | 插件只能用自己文件夹里的普通文件：把文件复制进来，别用链接，并检查文件能不能打开。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_LANG` | 语言包的语言写得不对：{where} | "lang" 写语言代码（en、ja、zh-TW …）；zh 是源语言，不能做成语言包；machineTranslated 写 true 或 false。 |

@@ -46,6 +46,7 @@ plugin's state with `check.issues` (the same coded issues as `check --json`).
 ## Do not
 
 - Do not invent fields or permissions (unknown fields are warnings; unknown permissions are problems).
-- Do not copy plugin folders across with links (a link inside a plugin folder keeps it out).
+- Do not copy plugin folders across with links (a link inside a plugin folder keeps it out; a plugin folder that is
+  itself a link is never opened by the studio).
 - Do not commit a server's plugins to this repository (`plugins/*` is git-ignored but for this file, the readme and the
   templates).

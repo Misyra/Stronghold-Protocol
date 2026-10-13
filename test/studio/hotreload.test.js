@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../../server/index.js';
 import { createPluginRegistry } from '../../server/plugins/registry.js';
-import { createPluginWatcher } from '../../server/studio/watch.js';
+import { createPluginWatcher, treeWithin } from '../../server/studio/watch.js';
 import { StubMatch } from '../../server/match/StubMatch.js';
 import { TestClient } from '../helpers/wsClient.js';
 import { png, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
@@ -42,6 +42,22 @@ test('the watch: a change in a plugin folder → one rescan after the quiet time
     for (let i = 0; i < 40 && seen.length < 2; i++) await sleep(100);
     assert.deepEqual(seen[1], ['other']);
     assert.ok(registry.report().skipped.some((k) => k.where === 'plugins/other/'));
+  } finally { w.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the watch: a plugins folder over the entry limit is not watched as a tree (links not followed in the count)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-watch-big-'));
+  const plugins = path.join(dir, 'plugins');
+  writePlugin(path.join(plugins, 'skin'), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(2, 2) });
+  fs.symlinkSync(dir, path.join(plugins, 'loop')); // a link back up: never followed by the count
+  const registry = createPluginRegistry({ publicDir: path.join(dir, 'public'), dataDir: path.join(dir, 'data'), packsDir: path.join(dir, 'packs'), pluginsDir: plugins }, { recheckMs: 60000 });
+  const warns = [];
+  const w = createPluginWatcher({ pluginsDir: plugins, registry, log: { warn: (m) => warns.push(m) }, maxEntries: 2 });
+  try {
+    assert.deepEqual([treeWithin(plugins, 100), treeWithin(plugins, 2)], [true, false]);
+    assert.equal(w.start(), false);
+    assert.equal(w.active, false);
+    assert.match(warns.join('\n'), /more than 2 entries: not watched/);
   } finally { w.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -142,9 +142,11 @@ A permission nothing in the manifest uses is a warning.
 By class: images `.png .jpg .webp` (no SVG), Spine `.skel .atlas`, audio `.mp3 .ogg`, fonts `.woff2`, data `.json`;
 code `.js` only in `script` / `trusted`; frames `.html .js .css .png` only in `ui`, under its client's folder; `lang`
 carries `.json` only. Documents (`.md`, `.txt`, `README`, `LICENSE`, `NOTICE` …) may sit beside them and are never
-served. Nothing else; no symbolic link inside the folder (a plugin folder that is itself a link is fine); file names
-are plain (letters, digits, `. _ -`, spaces; no hidden or `..` part). Every path the manifest names must exist inside
-the folder.
+served. Nothing else; no symbolic link inside the folder (a plugin folder that is itself a link is loaded — the owner's
+choice — but the studio never opens it, §15); file names are plain (letters, digits, `. _ -`, spaces; no hidden or `..`
+part). Every path the manifest names must exist inside the folder. A folder is read for at most 2000 folders, 12 levels
+deep and 50 000 entries (`server/plugins/registry.js WALK_LIMITS`): a folder past them is refused (`PLUGIN_FILE_SIZE`),
+also when it is a link to a large tree.
 
 Limits [ASSUMED, all of them]: 8 MB per JSON file, nesting ≤ 64 levels, numbers finite within ±1e9; 200 MB and 5000
 files per plugin. The registry checks the manifest, the files and the paths whenever it scans; `tools/plugin.mjs check`
@@ -509,13 +511,17 @@ GET without the body):
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
 (never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
-characters) of a type a plugin carries (art, models, audio, fonts, JSON, documents; never the lock by hand); no link inside
-the folder is followed (every folder on the way and the file are lstat'ed; a plugin folder that is itself a link, the
-owner's choice, is followed once) — neither for the studio's reads (plugin.json, an overlay file, the lock, its own note
+characters) of a type a plugin carries (art, models, audio, fonts, JSON, documents; never the lock by hand); a plugin
+folder that is itself a symbolic link is never opened (403 `PLUGIN_STUDIO_PATH` for every read and change, with the key or
+without; the list shows it apart — an archive unpacked into `plugins/` can bring a link to anywhere; the game's registry
+may still load it, and serves only the files its overlay names, at `/p/`); no link inside the folder is followed (every
+folder on the way and the file are lstat'ed) — neither for the studio's reads (plugin.json, an overlay file, the lock, its own note
 `.studio.json`; a folder holding links is checked for its links alone) nor for its writes (the lock and the note are
 renamed over a link put in their place, `plugins/_moved/` must be a plain folder), and the packer reads no file through
-a link either (`server/plugins/pack.js plainPath`); a write goes to a dot-named temporary file renamed over the target;
-a body over the limit is refused before it is read and its connection closed; a file at most
+a link either (`server/plugins/pack.js plainPath`); every walk of a folder is bounded (§5: the zip and the lock refuse a
+folder past the limits, and `plugins/` is watched as a tree only while it holds at most 100 000 entries); a write goes to a
+dot-named temporary file renamed over the target; a body over the limit is refused before it is read and its connection
+closed; a file system error answers with its code only (its message, with the absolute path, stays in the log); a file at most
 64 MB, plugin.json at most 1 MB, a request at most 160 MB (a model's files in one go, base64), a plugin at most 200 MB
 and 5000 files [ASSUMED: the studio's limits].
 
@@ -573,7 +579,7 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_NAME` | The file name “{where}” cannot be used | Names of files and folders use letters, digits, . _ - and spaces; none starts with . or is "..". |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_TYPE` | {where}: a {class} plugin may not carry this kind of file | Pictures are .png .jpg .webp (no SVG), sounds .mp3 .ogg, models .skel .atlas; documents (.md, .txt, README, LICENSE) may sit beside them. Move the file out of the plugin folder (the one-click fix moves it to plugins/_moved/, never deletes it) or convert it. (the studio fixes it in one click) |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_FRAME` | {where} is a frame file outside the folder of entry.client | Put a ui plugin's .html .js .css into the folder of entry.client. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_SIZE` | The plugin is too large: {where} | A plugin holds at most 200 MB in 5000 files, a JSON file at most 8 MB. Compress pictures and sounds, remove unused files, or split it. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_SIZE` | The plugin is too large: {where} | A plugin holds at most 200 MB in 5000 files (2000 folders, 12 levels deep), a JSON file at most 8 MB. Compress pictures and sounds, remove unused files, or split it. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_MISSING` | The manifest names {file}, which the plugin folder does not hold | Put the file there (folders and case must match) or correct the path in the manifest. Dropping the file on its slot in the studio puts it in the right place. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FILE_OUTSIDE` | {where} leads out of the plugin folder or cannot be read inside it | A plugin uses plain files of its own folder only: copy the file in (no link) and check that it opens. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_LANG` | A language pack's language is not right: {where} | "lang" is a language code (en, ja, zh-TW …); zh is the source language and never a pack; machineTranslated is true or false. |

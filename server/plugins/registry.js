@@ -95,6 +95,33 @@ const isFile = (abs) => { try { return fs.statSync(abs).isFile(); } catch { retu
 const readDirSorted = (dir) => { try { return fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort(); } catch { return []; } };
 
 /**
+ * How far a walk of one plugin folder goes (listPluginFiles, the folders' signature): at most this many folders, this
+ * deep, this many entries read in all — a folder that is a link to a huge tree (an archive unpacked into plugins/ can
+ * bring one), or an archive of countless empty folders, never holds the server up; a plugin over them is refused
+ * (PLUGIN_FILE_SIZE).
+ */
+export const WALK_LIMITS = Object.freeze({ dirs: 2000, depth: 12, entries: 50000 });
+
+/**
+ * The entries of a folder, sorted by name, while `budget.left` lasts (each entry read costs one; null when the folder
+ * cannot be read) — never more of a huge folder than the budget.
+ * @param {string} dir @param {{ left: number }} budget
+ * @returns {import('node:fs').Dirent[] | null}
+ */
+function readEntries(dir, budget) {
+  let handle;
+  try { handle = fs.opendirSync(dir); } catch { return null; }
+  const out = [];
+  try {
+    for (let d = handle.readSync(); d; d = handle.readSync()) {
+      if (budget.left-- <= 0) { budget.over = true; break; }
+      out.push(d);
+    }
+  } catch { /* what could be read */ } finally { try { handle.closeSync(); } catch { /* closed */ } }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
  * A JSON file of at most MAX_JSON_BYTES, or { error, code } — code: the catalogue's (shared/plugins/errors.js):
  * PLUGIN_JSON for a file that is no JSON or too large, PLUGIN_UNREADABLE for one that cannot be read.
  */
@@ -171,31 +198,57 @@ const fileUrl = (id, rel) => `${PACKS_URL}${encodeURIComponent(id)}/${rel.split(
 
 /**
  * Every file of a plugin folder, `rel` relative to it: dot files and folders left out (never served), a symbolic link
- * listed as one (not followed). Stops after the plugin file limit + 1, so a huge folder costs little.
+ * listed as one (not followed). Stops after the plugin file limit + 1, so a huge folder costs little — and at the walk
+ * limits (WALK_LIMITS: folders, depth, entries read), when the list carries `truncated` ('dirs' | 'depth' | 'entries',
+ * not enumerable; walkProblem says it in words).
  * @param {string} dir
- * @returns {{ rel: string, bytes: number, link?: boolean }[]}
+ * @param {{ maxDirs?: number, maxDepth?: number, maxEntries?: number }} [limits] tests
+ * @returns {{ rel: string, bytes: number, link?: boolean }[] & { truncated?: 'dirs' | 'depth' | 'entries' }}
  */
-export function listPluginFiles(dir) {
+export function listPluginFiles(dir, { maxDirs = WALK_LIMITS.dirs, maxDepth = WALK_LIMITS.depth, maxEntries = WALK_LIMITS.entries } = {}) {
+  /** @type {{ rel: string, bytes: number, link?: boolean }[] & { truncated?: 'dirs' | 'depth' | 'entries' }} */
   const out = [];
-  const walk = (abs, rel) => {
-    let names;
-    try { names = fs.readdirSync(abs, { withFileTypes: true }); } catch { return; }
-    names.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const budget = { left: maxEntries, over: false };
+  let dirs = 0;
+  /** @type {'dirs' | 'depth' | 'entries' | null} */
+  let truncated = null;
+  const walk = (abs, rel, depth) => {
+    const names = readEntries(abs, budget);
+    if (budget.over) truncated ||= 'entries';
+    if (!names) return;
     for (const d of names) {
-      if (out.length > PLUGIN_LIMITS.files) return;
+      if (out.length > PLUGIN_LIMITS.files || truncated) return;
       if (d.name.startsWith('.')) continue;
       const childRel = rel ? `${rel}/${d.name}` : d.name;
       const child = path.join(abs, d.name);
       if (d.isSymbolicLink()) { out.push({ rel: childRel, bytes: 0, link: true }); continue; }
-      if (d.isDirectory()) { walk(child, childRel); continue; }
+      if (d.isDirectory()) {
+        if (depth >= maxDepth) { truncated = 'depth'; return; }
+        if (++dirs > maxDirs) { truncated = 'dirs'; return; }
+        walk(child, childRel, depth + 1);
+        continue;
+      }
       if (!d.isFile()) continue;
       let bytes;
       try { bytes = fs.statSync(child).size; } catch { continue; }
       out.push({ rel: childRel, bytes });
     }
   };
-  walk(dir, '');
+  walk(dir, '', 0);
+  if (truncated) Object.defineProperty(out, 'truncated', { value: truncated, enumerable: false });
   return out;
+}
+
+/**
+ * The problem of a walk that stopped at its limits (listPluginFiles `truncated`), or null.
+ * @param {{ truncated?: string }} listed
+ * @returns {{ text: string, where: string } | null}
+ */
+export function walkProblem(listed) {
+  const t = listed?.truncated;
+  if (!t) return null;
+  const where = t === 'dirs' ? `more than ${WALK_LIMITS.dirs} folders` : t === 'depth' ? `folders deeper than ${WALK_LIMITS.depth} levels` : `more than ${WALK_LIMITS.entries} entries in its folders`;
+  return { text: `${where} (the folder is not read further)`, where };
 }
 
 /**
@@ -315,6 +368,8 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
   const files = listPluginFiles(dir);
   const check = checkPluginFiles(read, files);
   list.take(check);
+  const walked = walkProblem(files);
+  if (walked) list.problem('PLUGIN_FILE_SIZE', walked.text, { where: walked.where });
   for (const d of declaredPaths(read)) {
     const abs = path.join(dir, ...d.rel.split('/'));
     if (isFile(abs) && !inside(dir, abs)) list.problem('PLUGIN_FILE_OUTSIDE', `"${d.at}": ${d.rel} leads out of the plugin folder`, { at: d.at.split('.'), file: d.rel });
@@ -542,13 +597,16 @@ export function pluginIndexOf(plugins, { app = APP_VERSION, vanilla = null } = {
  */
 function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   const parts = [];
-  const add = (dir, depth, tag, namesOnly = false, identity = false) => {
-    for (const n of readDirSorted(dir)) {
+  /** @param {{ left: number, over?: boolean }} [budget] a plugin folder's: its walk reads at most WALK_LIMITS.entries */
+  const add = (dir, depth, tag, namesOnly = false, identity = false, budget = undefined) => {
+    const names = budget ? (readEntries(dir, budget) || []).map((d) => d.name).filter((n) => !n.startsWith('.')) : readDirSorted(dir);
+    if (budget?.over) { parts.push(`${tag}…`); return; }
+    for (const n of names) {
       const abs = path.join(dir, n);
       let st;
       try { st = fs.statSync(abs); } catch { continue; }
       if (st.isDirectory()) {
-        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`, namesOnly, identity); }
+        if (depth > 0) { parts.push(`${tag}${n}/`); add(abs, depth - 1, `${tag}${n}/`, namesOnly, identity, budget); }
         continue;
       }
       parts.push(namesOnly ? `${tag}${n}` : identity ? `${tag}${n}:${st.size}:${st.mtimeMs}:${st.ino}:${st.ctimeMs}` : `${tag}${n}:${st.size}:${Math.floor(st.mtimeMs)}`);
@@ -560,7 +618,15 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
   // a cosmetic plugin's art sits deeper (spine/<model>/front/…): six levels below plugins/; the art manifest its
   // references name counts too (a setup run that rewrote it while the server runs)
   if (pluginsDir) {
-    add(pluginsDir, 6, 'x:', false, true);
+    // each plugin folder (a link the owner made too) read for at most WALK_LIMITS.entries entries
+    for (const n of readDirSorted(pluginsDir)) {
+      const abs = path.join(pluginsDir, n);
+      let st;
+      try { st = fs.statSync(abs); } catch { continue; }
+      if (!st.isDirectory()) { parts.push(`x:${n}:${st.size}:${st.mtimeMs}:${st.ino}:${st.ctimeMs}`); continue; }
+      parts.push(`x:${n}/`);
+      add(abs, 5, `x:${n}/`, false, true, { left: WALK_LIMITS.entries });
+    }
     try { const st = fs.statSync(path.join(dataDir, 'assets.json')); parts.push(`a:${st.size}:${Math.floor(st.mtimeMs)}`); } catch { /* none */ }
   }
   return parts.join('\n');

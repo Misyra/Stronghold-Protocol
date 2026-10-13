@@ -15,6 +15,36 @@ import fs from 'node:fs';
 export const DEBOUNCE_MS = 300;
 
 /**
+ * The most entries plugins/ may hold (links not followed) for fs.watch to watch it as a tree: Node walks the tree itself
+ * on Linux and watches every file of it — a tree larger than this (an archive of countless folders unpacked into
+ * plugins/) would take the server's time and the system's watches, so the studio then follows its own writes and the
+ * registry's checks only [ASSUMED].
+ */
+export const WATCH_MAX_ENTRIES = 100000;
+
+/**
+ * Whether the tree at `dir` holds at most `max` entries (links not followed; read only until the count is passed).
+ * @param {string} dir @param {number} max
+ */
+export function treeWithin(dir, max) {
+  let left = max;
+  const walk = (abs) => {
+    let handle;
+    try { handle = fs.opendirSync(abs); } catch { return true; }
+    const folders = [];
+    try {
+      for (let d = handle.readSync(); d; d = handle.readSync()) {
+        if (--left < 0) return false;
+        if (d.isDirectory()) folders.push(d.name);
+      }
+    } catch { /* what could be read */ } finally { try { handle.closeSync(); } catch { /* closed */ } }
+    for (const name of folders) if (!walk(`${abs}/${name}`)) return false;
+    return true;
+  };
+  return walk(dir);
+}
+
+/**
  * What says a plugin's state: its version, status and composition (a cosmetic plugin's overlay hash), or why it was
  * skipped — a change of it is a change the page shows.
  * @param {ReturnType<typeof import('../plugins/registry.js').createPluginRegistry>} registry
@@ -41,9 +71,9 @@ export function pluginStates(registry) {
  * The watcher of a plugins folder (see the header).
  * @param {{ pluginsDir: string, registry: ReturnType<typeof import('../plugins/registry.js').createPluginRegistry>,
  *   log?: { info?: Function, warn?: Function }, debounceMs?: number, onChange?: (ids: string[]) => void,
- *   watch?: typeof fs.watch }} opts watch: fs.watch (tests)
+ *   watch?: typeof fs.watch, maxEntries?: number }} opts watch: fs.watch (tests); maxEntries: WATCH_MAX_ENTRIES (tests)
  */
-export function createPluginWatcher({ pluginsDir, registry, log = {}, debounceMs = DEBOUNCE_MS, onChange = () => {}, watch = fs.watch }) {
+export function createPluginWatcher({ pluginsDir, registry, log = {}, debounceMs = DEBOUNCE_MS, onChange = () => {}, watch = fs.watch, maxEntries = WATCH_MAX_ENTRIES }) {
   /** @type {import('node:fs').FSWatcher | null} */
   let watcher = null;
   let timer = null;
@@ -76,6 +106,10 @@ export function createPluginWatcher({ pluginsDir, registry, log = {}, debounceMs
       states = pluginStates(registry);
       try {
         fs.mkdirSync(pluginsDir, { recursive: true });
+        if (!treeWithin(pluginsDir, maxEntries)) {
+          log.warn?.(`[studio] ${pluginsDir} holds more than ${maxEntries} entries: not watched (the studio's own changes still show at once)`);
+          return false;
+        }
         watcher = watch(pluginsDir, { recursive: true, persistent: false }, (_event, name) => {
           const rel = typeof name === 'string' ? name : name ? String(name) : '';
           // dot files (temporary files, swap files) never count; a folder starting with '_' (templates, moved files) neither

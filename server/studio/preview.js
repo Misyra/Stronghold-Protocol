@@ -20,7 +20,7 @@ import { readPluginManifest, PLUGIN_MANIFEST } from '../../shared/plugins/manife
 import { LOCK_FILE, readPluginLock, modelHashOf, FILE_URL_DIGITS } from '../../shared/plugins/visual.js';
 import { issueList } from '../../shared/plugins/errors.js';
 import { hashFile, listPluginFiles } from '../plugins/registry.js';
-import { plainPath, readOverlayOf, skeletonClipData } from '../plugins/pack.js';
+import { errorWords, plainPath, readOverlayOf, skeletonClipData } from '../plugins/pack.js';
 
 /** The URL prefix of a plugin's files in the studio. */
 export const STUDIO_FILES = '/studio/api/plugins/';
@@ -48,7 +48,7 @@ export function createPreviews({ vanilla }) {
     // never through a link put in the folder (plainPath): what the page gets is the plugin's own
     try { raw = JSON.parse(fs.readFileSync(plainPath(dir, PLUGIN_MANIFEST), 'utf8')); } catch (e) {
       if (e?.code === 'ELINK') list.problem('PLUGIN_FILE_LINK', e.message, { file: PLUGIN_MANIFEST });
-      else list.problem('PLUGIN_JSON', `${PLUGIN_MANIFEST}: ${e?.message || e}`, { file: PLUGIN_MANIFEST, detail: String(e?.message || e) });
+      else list.problem('PLUGIN_JSON', `${PLUGIN_MANIFEST}: ${errorWords(e)}`, { file: PLUGIN_MANIFEST, detail: errorWords(e) });
       return { ops: [], issues: list.issues };
     }
     const read = readPluginManifest(raw, { id });

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import { PLUGIN_API } from '../../shared/constants.js';
 import { PLUGIN_CLASSES, PLUGIN_MANIFEST, isPackPath, isSemver } from '../../shared/plugins/manifest.js';
 import { atlasInfo } from '../../tools/assets/atlas.mjs';
+import { errorWords } from '../plugins/pack.js';
 import { appRangeNow, manifestText } from './templates/index.js';
 import { StudioError } from './files.js';
 
@@ -62,7 +63,7 @@ export function openPlugin(files, id) {
   // a plain file of the folder only (files.stat: never through a link put in its place)
   const file = files.stat(id, PLUGIN_MANIFEST);
   try { manifest = JSON.parse(fs.readFileSync(file.abs, 'utf8')); } catch (e) {
-    throw new StudioError('PLUGIN_JSON', 409, { file: PLUGIN_MANIFEST, detail: String(e?.message || e) }, `${PLUGIN_MANIFEST} cannot be read`);
+    throw new StudioError('PLUGIN_JSON', 409, { file: PLUGIN_MANIFEST, detail: errorWords(e) }, `${PLUGIN_MANIFEST} cannot be read`);
   }
   if (!isObj(manifest)) throw new StudioError('PLUGIN_MANIFEST_SHAPE', 409, {}, 'plugin.json is not an object');
   let overlayFile = null;

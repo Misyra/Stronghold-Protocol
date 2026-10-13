@@ -1431,5 +1431,7 @@
   "要新建或修改插件，请打开服务器窗口里「Studio」那一行的地址（它带着工作台钥匙），或把那个地址粘贴到这里：": "To make or change a plugin, open the address on the \"Studio\" line of the server's window (it carries the studio's key), or paste that address here:",
   "粘贴工作台地址或钥匙": "Paste the studio's address or key",
   "使用": "Use",
-  "钥匙不对：请重新复制服务器窗口里的地址。": "That is not the key: copy the address from the server's window again."
+  "钥匙不对：请重新复制服务器窗口里的地址。": "That is not the key: copy the address from the server's window again.",
+  "符号链接，工作台不打开": "a symbolic link: the studio does not open it",
+  "这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。": "This plugin folder is a symbolic link: the game reads it as usual, the studio opens real folders only."
 }

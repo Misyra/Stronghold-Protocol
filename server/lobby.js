@@ -352,7 +352,7 @@ export class Lobby {
 
   get roomPressure() { return this.roomReclamation.state; }
 
-  getRoomConfig() { return { maxRooms: this.opts.maxRooms, allowBots: this.opts.allowBots }; }
+  getRoomConfig() { return { maxRooms: this.opts.maxRooms, allowBots: this.opts.allowBots, limitForeignSessions: this.opts.limitForeignSessions }; }
 
   /** The admin transport persists accepted changes first, then applies all side effects here. */
   applyRoomConfig(patch) {
@@ -368,6 +368,8 @@ export class Lobby {
       this.audit('room.botPolicy.changed', null, null, { previous: previous.allowBots, allowBots: next.allowBots });
       for (const room of this.rooms.values()) if (!room.match) this.broadcastState(room);
     }
+    if (previous.limitForeignSessions !== next.limitForeignSessions)
+      this.audit('session.foreignLimit.changed', null, null, { previous: previous.limitForeignSessions, limitForeignSessions: next.limitForeignSessions });
     return { ...next, roomCount: this.rooms.size };
   }
 

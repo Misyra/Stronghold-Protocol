@@ -152,6 +152,7 @@ export function validateReferences(f, { officialOwnedSkills = true } = {}) {
 import { object, problem, jsonProblems, RECORD_MAPS, own } from './dataUtils.js';
 import { validateSkillSpec, matchesSchema, MODS_SCHEMA, GRID_SCHEMA } from './skillSpec.js';
 import { PLUGIN_SPAWN_ENTRIES, PLUGIN_SPAWN_TOTAL, PLUGIN_TIMES_MAX, PLUGIN_GAIN_COUNT_MAX, PLUGIN_GAIN_COUNT_KEYS } from './limits.js';
+import { appendOfficialBounds } from './officialBounds.js';
 
 const GAIN_COUNT_KEYS = new Set(PLUGIN_GAIN_COUNT_KEYS);
 
@@ -275,6 +276,9 @@ function checkData(data, { kitExists = null, vanilla = null } = {}) {
       bad(`${e.effectId}.${b.key}`, `gain count exceeds ${PLUGIN_GAIN_COUNT_MAX}`, 'PLUGIN_DATA_LIMIT');
     }
   }
+  // Systematic cap against the official tables. Runs even when an earlier limit already fired, so a 1e9
+  // enemy `times` reports PLUGIN_DATA_BOUND as well as PLUGIN_DATA_LIMIT. [ASSUMED] DESIGN §32.5.
+  if (vanilla) appendOfficialBounds(data, vanilla, bad);
   if (problems.length) return problems;
   try { for (const message of validateReferences(data, { officialOwnedSkills: false })) bad('data', message, 'PLUGIN_DATA_REFERENCE'); }
   catch (e) { bad('data', `malformed nested data: ${e.message}`, 'PLUGIN_DATA_REQUIRED'); }

@@ -479,10 +479,17 @@ shapes, finite numbers, references, paired forms, the default skill, official ki
 references. One wave, and each phase of a branch, may have at most 64 spawn rows, each an integer count from 1 to 600,
 summing to at most 600. Enemy `times` keys (and keys ending in `times`, including wave overrides) stay at or below 100.
 `bb.count` of 列装 (`global_special_choice_gain_equip`) and bond-chess (`single_special_choice_gain_bond_chess`) stays
-at or below 32. The battle clamps the same loops, so a later writer cannot bypass validation. [ASSUMED] these caps sit
-above the official maxima and far below ±1e9. Durations are not capped. Other `bb.count` keys are single additions
-under caps that already exist (bond layers stop at 999) and are not limited to 32. `jsonProblems` still allows a
-number whose absolute value is 1e9. Official counts, official trigger deviations and source-specific rules stay in
+at or below 32. With the official tables as `vanilla`, every numeric blackboard value, and the loop fields enemy
+`sp.maxSp` / `sp.initSp` / `sp.increment` and skill `spCost` / `initSp` / `maxChargeTime` / `increment`, must also
+satisfy `|v| ≤ max(10 × official absolute maximum of that key, 64)` (`PLUGIN_DATA_BOUND`). A key official data never
+has uses 64. Blackboard `ammo` and `charge` use that blackboard rule. The battle clamps the same spawn, enemy-times
+and card-grant loops, and the loops fed by the systematic cap (operator `times` / `attack@times`, band and 维多利亚
+`count`, 黑云 ammo, 狱警 pierce). [ASSUMED] the factor 10 and the floor 64 sit above the measured official maxima
+(`times` 12, `attack@times` 5, `count` 20, enemy `sp.maxSp` 55) and far below ±1e9. Durations are not given an engine
+loop cap; a blackboard `duration` is still subject to `PLUGIN_DATA_BOUND`. Some `count` reads are one addition
+(`addLayers`, a single coin multiply) and bond layers still stop at 999; band grants and 维多利亚 hammers do iterate
+`count` and use the systematic cap, not 32. `jsonProblems` still allows a number whose absolute value is 1e9.
+Official counts, official trigger deviations and source-specific rules stay in
 build-data; its original data is unchanged. `node tools/records-schema.mjs` rewrites `schemas/records.schema.json`
 from the runtime schema (an optional output path overrides that file).
 

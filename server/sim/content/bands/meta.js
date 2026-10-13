@@ -34,11 +34,14 @@
 // "进入休整期时" / "回合开始时" = onRoundStart (research 01 §5 step 6).
 
 import { GEO } from '../../../../shared/constants.js';
+import { bbCap } from '../../../../shared/plugins/officialBounds.js';
 import { buffsOf, num, bandRecord, gameData } from '../support/index.js';
 import { metaBonds } from '../support/meta.js';
 import * as garrisons from '../garrisons.js';
 
 const int = (v, d = 0) => Math.trunc(num(v, d));
+// [ASSUMED] DESIGN §32.5: bb.count grant and slot loops share the official `count` cap. Read at call time.
+const timesOf = (v, d = 1) => Math.min(bbCap('count'), Math.max(1, int(v, d)));
 const list = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
 const hasBond = (ctx, id, bond) => { const c = ctx.gd.chess(id); return !!(c && Array.isArray(c.bonds) && c.bonds.includes(bond)); };
 const isNormalChess = (ctx, id) => { const c = ctx.gd.chess(id); return !!(c && !c.isGolden); };
@@ -103,7 +106,7 @@ K.band_first_self_refresh_present_char = (ps) => ({
   onRefresh(ctx) {
     const p = ps[0];
     if ((ctx.roundStats().refreshes || 0) > 2) return;
-    const need = Math.max(1, int(p.count, 1));
+    const need = timesOf(p.count, 1);
     const idx = chessSlots(ctx);
     const slots = ctx.shopSlots();
     let have = idx.filter((i) => hasBond(ctx, slots[i].id, p.bond)).length;
@@ -136,7 +139,7 @@ K.preparation_start_gain_chess_from_round = (ps) => ({
     for (const p of ps) {
       const id = p.chess ?? p.chess_id;
       if (ctx.round !== int(p.round, -1) || !id) continue;
-      for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) grant(ctx, id, { requirePool: false, source: 'band' });
+      for (let k = 0; k < timesOf(p.count, 1); k++) grant(ctx, id, { requirePool: false, source: 'band' });
     }
   },
 });
@@ -147,7 +150,7 @@ K.preparation_start_gain_chess_every_n_round = (ps) => ({
       const n = int(p.round, 0);
       const id = p.chess ?? p.chess_id;
       if (n <= 0 || ctx.round % n !== 0 || !id) continue;
-      for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) grant(ctx, id, { source: 'band' });
+      for (let k = 0; k < timesOf(p.count, 1); k++) grant(ctx, id, { source: 'band' });
     }
   },
 });
@@ -162,7 +165,7 @@ K.prep_start_gain_chess_from_pool_in_round = (ps) => ({
   onRoundStart(ctx) {
     for (const p of ps) {
       if (ctx.round !== int(p.round, -1)) continue;
-      for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) {
+      for (let k = 0; k < timesOf(p.count, 1); k++) {
         const r = ctx.rollPool(p.pool);
         if (r) grant(ctx, r.id, { source: 'band' });
       }
@@ -178,7 +181,7 @@ K.band_coin_cost_gain_random_char_by_shop_level = (ps) => ({
     let acc = ctx.incCounter('band:kirara:acc', ev.amount);
     while (acc >= step) {
       acc = ctx.incCounter('band:kirara:acc', -step);
-      for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) {
+      for (let k = 0; k < timesOf(p.count, 1); k++) {
         const id = ctx.rollChess({ maxTier: Math.max(1, ctx.shopLevel()) });
         if (id) ctx.grantChess(id, { source: 'band' });
       }
@@ -215,7 +218,7 @@ K.gain_bond_char_per_round = (ps) => ({
     const p = ps[0];
     const r0 = int(p.round, 1), every = Math.max(1, int(p.preround, 1));
     if (ctx.round < r0 || (ctx.round - r0) % every !== 0) return;
-    for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) {
+    for (let k = 0; k < timesOf(p.count, 1); k++) {
       const id = rollBond(ctx, p.bond, { anyTier: true });
       if (id) ctx.grantChess(id, { source: 'band' });
     }
@@ -268,7 +271,7 @@ K.round_start_bond_check_gain_layer = (ps) => ({
 K.up_shop_add_special_goods = (ps) => ({
   onLevelUp(ctx) {
     const p = ps[0];
-    const ids = rollItems(ctx, p.pool, Math.max(1, int(p.count, 3)));
+    const ids = rollItems(ctx, p.pool, timesOf(p.count, 3));
     if (ids.length) ctx.offerItems(ids, { source: 'band' });
   },
 });
@@ -290,7 +293,7 @@ K.round_start_activate_char_chess_effect_in_board = (ps) => ({
     const cands = ctx.board().filter((v) => v && v.kind === 'chess' && ctx.garrisonsOf(v.uid).some((g) => g.eventType === event));
     if (!cands.length) return;
     cands.sort((a, b) => (b.col - a.col) || (a.row - b.row));
-    for (const v of cands.slice(0, Math.max(1, int(p.count, 1)))) {
+    for (const v of cands.slice(0, timesOf(p.count, 1))) {
       if (event === 'SERVER_GAIN' && typeof garrisons.triggerGainEffects === 'function') garrisons.triggerGainEffects(ctx, v);
       else ctx.triggerGarrisons(v.uid, event);
     }
@@ -319,7 +322,7 @@ K.round_start_gain_char_chess_in_shop_every_n_round = (ps) => ({
     const p = ps[0];
     const n = int(p.round, 0);
     if (n <= 0 || ctx.round % n !== 0) return;
-    for (let k = 0; k < Math.max(1, int(p.count, 1)); k++) {
+    for (let k = 0; k < timesOf(p.count, 1); k++) {
       const idx = chessSlots(ctx);
       if (!idx.length) return;
       const i = ctx.rng.pick(idx);
@@ -358,8 +361,9 @@ K.preparation_start_add_special_goods_every_n_round = (ps) => ({
     const p = ps[0];
     const n = int(p.round, 0);
     if (n <= 0 || ctx.round % n !== 0) return;
-    const ids = rollItems(ctx, p.pool, Math.max(1, int(p.refresh_cnt, 2)));
-    for (let k = 0; k < Math.max(1, int(p.choice_cnt, 1)) && ids.length; k++) ctx.offerItems(ids, { source: 'band' });
+    const ids = rollItems(ctx, p.pool, Math.min(bbCap('refresh_cnt'), Math.max(1, int(p.refresh_cnt, 2))));
+    const choices = Math.min(bbCap('choice_cnt'), Math.max(1, int(p.choice_cnt, 1)));
+    for (let k = 0; k < choices && ids.length; k++) ctx.offerItems(ids, { source: 'band' });
   },
 });
 

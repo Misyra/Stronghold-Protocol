@@ -7,6 +7,9 @@ import { spawnSync } from 'node:child_process';
 import { getData } from '../../server/data.js';
 import { expandRecords } from '../../shared/plugins/records.js';
 import { validateData, validateReferences } from '../../shared/plugins/validate.js';
+import { applyPatches } from '../../shared/plugins/patch.js';
+import { dataBound } from '../../shared/plugins/limits.js';
+import { officialBbMax, officialFieldMax } from '../../shared/plugins/officialBounds.js';
 import { validateSkillSpec, matchesSchema } from '../../shared/plugins/skillSpec.js';
 import { RECORDS_SCHEMA } from '../../shared/plugins/recordsSchema.js';
 import { guard } from '../helpers/contentFixtures.js';
@@ -136,4 +139,50 @@ test('kit.ref together with talentMods is refused at expand and at validation', 
   d.chess.chess_char_1_02_a.kitRef = 'chess_char_1_02_a';
   d.chess.chess_char_1_02_a.talentMods = { atkPct: 0.1 };
   assert.ok(validateData(d, { kitExists: () => true }).some(p => p.code === 'PLUGIN_SKILL_SPEC'));
+});
+
+test('official tables pass the systematic bound; a 1e9 blackboard or loop field is PLUGIN_DATA_BOUND', () => {
+  assert.equal(officialBbMax('times'), 12);
+  assert.equal(officialBbMax('attack@times'), 5);
+  assert.equal(officialBbMax('count'), 20);
+  assert.equal(officialFieldMax('enemy.sp.maxSp'), 55);
+  assert.equal(dataBound(12), 120);
+  assert.equal(dataBound(null), 64);
+  const plain = validateData(base);
+  const official = validateData(base, { vanilla: base });
+  assert.deepEqual(official.filter(p => p.code === 'PLUGIN_DATA_BOUND'), []);
+  assert.deepEqual(official, plain);
+  const bound = (op) => {
+    const patched = applyPatches(base, [op]);
+    assert.deepEqual(patched.problems, [], JSON.stringify(patched.problems));
+    return validateData(patched.data, { vanilla: base });
+  };
+  const hits = (op) => bound(op).filter(p => p.code === 'PLUGIN_DATA_BOUND');
+  const zuole = { op: 'set', file: 'backups', id: 'units', path: ['char_4121_zuole', 'forms', '2/1/4/0', 'skills', 2, 'bb', 'times'], value: 1e9 };
+  const acpion = { op: 'set', file: 'backups', id: 'units', path: ['char_608_acpion', 'forms', '2/1/4/0', 'skills', 2, 'bb', 'times'], value: 1e9 };
+  const wisdel = { op: 'set', file: 'chess', id: 'chess_char_6_12_a', path: ['trait', 'bb', 'attack@times'], value: 1e9 };
+  const orchidAt = base.bands.band_orchid.buffs.findIndex(b => b.key === 'preparation_start_gain_chess_from_round');
+  const victoriaAt = base.bonds.victoriaShip.buffs.findIndex(b => b.key === 'bond_layer_added_reward_equip');
+  assert.ok(orchidAt >= 0 && victoriaAt >= 0);
+  const orchid = { op: 'set', file: 'bands', id: 'band_orchid', path: ['buffs', orchidAt, 'bb', 'count'], value: 1e9 };
+  const victoria = { op: 'set', file: 'bonds', id: 'victoriaShip', path: ['buffs', victoriaAt, 'bb', 'count'], value: 1e9 };
+  const cloudSp = { op: 'set', file: 'enemies', id: 'enemy_9009_acfort', path: ['sp', 'maxSp'], value: 1e9 };
+  const cloudBb = { op: 'set', file: 'enemies', id: 'enemy_9009_acfort', path: ['skills', 0, 'bb', 'sp'], value: 1e9 };
+  for (const op of [zuole, acpion, wisdel, orchid, victoria, cloudSp, cloudBb]) {
+    const found = hits(op);
+    assert.equal(found.length, 1, JSON.stringify(found));
+    assert.match(found[0].message, /超过上限/);
+    assert.ok(found[0].message.includes(String(op.path.at(-1))), found[0].message);
+  }
+  assert.equal(hits({ ...zuole, value: dataBound(officialBbMax('times')) }).length, 0);
+  assert.equal(hits({ ...zuole, value: dataBound(officialBbMax('times')) + 1 }).length, 1);
+  assert.equal(hits({ ...zuole, value: -1e9 }).length, 1);
+  assert.equal(hits({ ...cloudSp, value: dataBound(officialFieldMax('enemy.sp.maxSp')) }).length, 0);
+  assert.equal(hits({ ...cloudSp, value: dataBound(officialFieldMax('enemy.sp.maxSp')) + 1 }).length, 1);
+  const invented = (n) => hits({ op: 'merge', file: 'chess', id: 'chess_char_6_12_a', path: ['trait', 'bb'], value: { made_up_loop: n } });
+  assert.equal(invented(64).length, 0);
+  const unknown = invented(65);
+  assert.equal(unknown.length, 1);
+  assert.match(unknown[0].message, /原版没有这个键/);
+  assert.match(unknown[0].message, /上限 64/);
 });

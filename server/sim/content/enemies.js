@@ -105,6 +105,7 @@
 //                   several keys (kitEp, kitStealth, kitTimes, kitRefraction, kitPrisoner, kitDeathSpawn, kitStun3 …)
 //   invisible.js, times.js, element.js, dot.js, reflection.js, fly.js, special.js — one file per special type
 //                   (factions.json): its kits, its kit-only constants and its part of KITS
+//   passengers.js   shared 载客 for the two carriers in special.js (伊利昂的木驮兽, “越长尘”)
 //   leaders.js      bounty (悬赏) leaders: kitLeaderMisc (single form) and the multi-form kits
 // Every name this file exported before the split is still exported from here.
 
@@ -245,7 +246,7 @@ function onTick(b, dt) {
   const n = list.length;
   for (let i = 0; i < n; i++) {
     const e = list[i];
-    if (!e || !e.alive || !e.mem.ab) continue;
+    if (!e || !e.alive || e.mem.carrier || !e.mem.ab) continue;
     const ab = e.mem.ab;
     for (let j = 0; j < ab.list.length; j++) {
       const a = ab.list[j];

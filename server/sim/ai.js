@@ -582,6 +582,9 @@ export function remainingDistance(b, e) {
 export function updateEnemy(b, e, dt) {
   const R = e.route;
   if (!e.alive) return;
+  // Carried (§32.14.4): pinned by the carrier, route and attacks frozen. A hidden teleport still advances its
+  // wait legs below; a passenger must not, including a wait or a disappear/appear leg.
+  if (e.mem.carrier) { e.moving = false; return; }
   // hidden (teleporting) enemies only advance wait legs
   const stunned = e.s.flags.stun;
   if (stunned || e.hidden || e.s.flags.fear) b._cutAttackStand(e);

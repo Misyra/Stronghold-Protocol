@@ -297,3 +297,55 @@ node tools/r2-sync.mjs                          # 重写 .assets-manifest.json �
 - 冲突裁决（22 个文本冲突文件逐个说明取谁、为什么）；
 - 四组验收的测试结果；
 - **未执行**的浏览器检查（哪些 opt-in 套件没跑、为什么，比如机器上没有 Chrome）。
+
+---
+
+## 12. 执行记录（2026-10-13）
+
+已按本文档执行完毕，合并提交 `7768704a`（双亲 `d24c167b` + `488db49f`），分支 `codex/merge-0.2.6`，备份分支 `backup/pre-0.2.6`。
+
+**范围**：上游碰了 93 个文件（不含官方素材），其中 43 个是双方都改过的重点复核文件，22 个出现文本冲突。提交里相对上游的差异是 89 个文件。
+
+**拒收 / 不接入**
+
+| 项 | 处理 |
+|---|---|
+| `server/http/assetIndex.js`、`assetViews.js`、`test/asset-index.test.js` | 新文件删除，不进仓库 |
+| `assetIndexOptionsFrom`、`createManifestViews`、`assetIndex`/`views` 接线、`hashedFileOpts`、`splitHashedPath` 的 HTTP 挂点 | 未接入（`config.js`、`static.js`、`media.js`、`routes.js`、`index.js` 均解回本仓库原样） |
+| 上游的 `/(^&)v=/ → immutable` 规则 | 删除，保留本仓库的 `versioned` 政策（`test/lobby.test.js` 的断言保持不变） |
+| 上游的 `package-lock.json` | 只取两处版本字段，依赖树保留本仓库的 |
+| `~<hash>` 音频方言 | 不收；`public/js/media.js` 继续用 `/_v/<tag>/` 形式，`test/media-url.test.js`、`test/ui/audio.test.js` 改成验证本仓库的行为 |
+| `test/asset-index.test.js` 的全部用例 | 不适用（依赖拒收的层），已删除 |
+
+**净无差异（解回本仓库原样，因此不在提交里）**：`server/http/static.js`、`server/http/config.js`、`test/scene-assets.test.js`。
+
+**冲突裁决要点**（详见提交信息与 §2）：`files.js` 收上游压缩栈 + 本仓库缓存政策；`websocket.js` 收 `narrowDeflateOffer` + `meterSocket`，window 12 → 11，保留开关与并发上限；`routes.js` 的 `?traffic=1` 闸门放进 `serveHealth`（同步快路径会绕过 `handleRequest`），`meter` 装在快路径之前；`spine.js` 收整块 clip-bounds，冻结门用本仓库更严的条件；`units.js` 收上游 impostor/弹药/入场动画，保留 `_loadSpine` 重建与 `contextUid` 修复；`audio.js` 两边都要，`tokenDieUrl` 改为按目标文件解析；`diag.js` 的 `trafficCategory` 只认 `/_v/` 与 CDN 源。
+
+**验收结果**（`codex/merge-0.2.6`）
+
+| 检查 | 结果 |
+|---|---|
+| `npm run lint` | 0 error，143 个既有 warning（与合并前同源，未新增） |
+| `npm run typecheck` | 干净 |
+| `npm run check:imports` | 无越界 |
+| `npm test` | 7096 项，**0 失败**，41 项 opt-in 跳过 |
+| `npm run golden` | **287 场景零变化**（roster 49 / bonds 46 / fields 22 / matches 20 / standins 10 / diy 140） |
+| `npm run build` | 通过 |
+| `npm run test:browser` | 16/16（首次全量运行时 `asset-cdn.browser` 抖动失败一次，单独与重跑均通过） |
+| `npm run test:client` | 1/1 |
+| 本机模式教程页 | `/_v/<ca3c34666c5d4012>/assets/local/guide/autochess_home_1.webp` → 200 `image/webp` immutable，240 KB |
+| **未执行** | `RENDER_E2E` / `SP_E2E` 浏览器套件（本机无 Chrome）、CDN 模式验证、真机移动端 e2e |
+
+**教程图 WebP（§10）**
+
+- 已收：`tools/local-extract/extract.py` 的 `jobs.guideWebp` / `GUIDE_WEBP_MODE`、`test/local-extract.test.js`、`ui/guide.js` 的单页预载、文档（`docs/development/ASSETS.md`、`docs/design/client.md`）。
+- 已生成：`tools/local-extract/extract.py --webp`（需要 Pillow；本机在 `.venv-extract` 里装了 Pillow 12.3.0）产出 31 个 WebP 副本 —— 19 页教程图 **24.5 MB → 4.0 MB**，另有 12 张棋盘贴图。质量核对：19 页与 PNG 的平均像素差 MAE 1.29–1.74 / 255、p99 ≤ 10 / 255，肉眼无差。
+- 已更新：`data/local-assets.json`（guide 各页指向 `.webp` 并带 `webp: "lossy"`），`data/asset-hashes.json` 已重建（该文件在 `.gitignore` 里，不入库）。
+- **未完成（待执行）**：R2 发布与 CDN 验证。`public/assets/local/**` 不入库，CDN 装机要靠 bucket 里有这些文件；本机没有 Wrangler 凭据，且发布是外部写操作，需要确认后执行：
+
+  ```bash
+  node tools/r2-sync.mjs --bucket <bucket> --push     # 写 .assets-manifest.json 并上传 31 个 WebP
+  ```
+
+  顺序要求：**先发布，再让这版到达玩家**。在发布前，CDN 装机的教程页会请求 bucket 里还没有的 `.webp`（清单里没有它的哈希 → 退化成裸地址 → 404）；本机装机不受影响。
+- 待发布完成后提交 `data/local-assets.json`（现在它是未提交状态，等 CDN 验证通过再提交，符合 §10 的步骤 5）。

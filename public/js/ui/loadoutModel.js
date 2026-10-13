@@ -130,17 +130,21 @@ export function resetOps(ops, charId) {
  * of the 干员调配 roster or the 自选 owned pool, `isOperator` — shared/protocol.js cultivationCharIds), the rest dropped one
  * by one; defaults dropped.
  * @param {Record<string, any>} ops @param {(charId: string) => boolean} isOperator
+ * @param {(charId: string) => boolean} [changesWithPotential] shared/protocol.js charPotentialChanges. A non-default
+ * potential that does not change the operator is omitted; a non-default 练度 on that same entry is kept. The server
+ * still rejects a raw message that contains the illegal potential.
  * @returns {Record<string, { potential?: number, cultivate?: number }>}
  */
-export function sanitizeOps(ops, isOperator) {
+export function sanitizeOps(ops, isOperator, changesWithPotential = null) {
   const out = {};
   for (const [id, e] of Object.entries(ops || {})) {
     if (Object.keys(out).length >= LOADOUT_LIMITS.ops) break;
     const one = {};
     if (isPotential(e?.potential)) one.potential = e.potential;
     if (isCultivate(e?.cultivate)) one.cultivate = e.cultivate;
+    if (one.potential != null && one.potential !== POTENTIAL_DEFAULT && typeof changesWithPotential === 'function' && changesWithPotential(id) === false) delete one.potential;
     if (!Object.keys(one).length) continue;
-    const res = checkLoadoutOps({ [id]: one }, isOperator);
+    const res = checkLoadoutOps({ [id]: one }, isOperator, changesWithPotential);
     if (res.ok && res.ops[id]) {
       const x = {};
       if (res.ops[id].potential !== POTENTIAL_DEFAULT) x.potential = res.ops[id].potential;

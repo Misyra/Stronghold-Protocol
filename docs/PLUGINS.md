@@ -148,11 +148,13 @@ also parses every JSON file against the limits.
 Every server names the content its rooms play with a hash, **`cs`** (`shared/plugins/identity.js`):
 
 ```
-cs = sha256(canonical({ v: 1, app, sim, data, plugins, settings }))
+cs = sha256(canonical({ v: 1, app, sim, data, plugins, settings, i18n? }))
   sim       sha256(canonical([[path, sha256], …])) of every served /sim/**.js (not nodeData.js), /shared/**.js and /data.js
   data      { <name>: sha256 } of every data/<name>.json the match or the sim reads (not assets, local-assets, emotes, i18n/)
   plugins   [{ id, version, files }] in load order — [] for the vanilla content
   settings  { <id>: { <key>: value } } — {} for the vanilla content
+  i18n      omitted for vanilla and cosmetic-only selections, so this P0 formula stays bit-identical. A content
+            selection (§10) passes { <lang>: sha256 of the served i18n/<lang>.json }. index.json is not an input.
 ```
 
 `canonical` is JSON with sorted keys and no white space; the bytes are the bytes served, so a browser hashes exactly
@@ -395,7 +397,7 @@ Each operation names `file` (without `.json`), optional record `id`, and `path` 
 
 | op | meaning |
 |---|---|
-| `set` | replace an existing field with `value` of the same type (nullable fields may change to/from null) |
+| `set` | replace an existing field with `value` of the same type. `null` is its own type: it may be written only onto a field that is already `null`. Washing a number through `null` into an object is `PLUGIN_PATCH_TYPE` and returns the original data |
 | `merge` | recursively merge an object into an existing object; arrays replace whole arrays |
 | `add` | add a new namespaced record with `id` and object `value`; `config` uses `path: ["modes"]` |
 | `append` | append the elements of array `value` to an existing array |
@@ -427,10 +429,16 @@ references asset ids already installed; it carries no art file. `talentMods` sup
 JSON SkillSpec. Per-skill `skillSpec` overrides the operator's spec for that selection.
 
 `kitOf` resolves extensions → `raw.dsl` → `raw.skillSpec` → `raw.kitRef` → official kit → generic. Explicit test kits
-still take precedence. File stems resolve only against the official registry, never an import path. A referenced kit's
-numbers come from the new record. Keep official skill ids to use its named alternate skills; a one-skill DIY clone can
-reuse a chess kit's default skill [ASSUMED]. `extensions.js` is empty and `dsl/compile.js` throws
-`PLUGIN_DSL_UNAVAILABLE` until P3/P2 supply those C2 interfaces.
+still take precedence. `talentMods` are installed only on the JSON SkillSpec branch. A record that carries both
+`kit.ref` / `kitRef` and `talentMods` is `PLUGIN_SKILL_SPEC` at expansion and again in `validateData`; the schema file
+still allows the pair, and the runtime rejects it. File stems resolve only against the official registry, never an
+import path. A referenced kit's numbers come from the new record. Keep official skill ids to use its named alternate
+skills; a one-skill DIY clone can reuse a chess kit's default skill [ASSUMED]. `extensions.js` is empty and
+`dsl/compile.js` throws `PLUGIN_DSL_UNAVAILABLE` until P3/P2 supply those C2 interfaces. A plugin operator whose id
+starts with `char_x_` and whose chess and backup records have neither `potDown` nor a talent `potBelow` accepts only
+the default potential 6. Official operators, including `char_616_pithst`, are unchanged. The loadout screen can still
+show the control; the sync step drops a non-default value and the server rejects a raw client message. No new
+interface string.
 
 The JSON SkillSpec allowlist is SIM §7.3 without callbacks: kind, deployment activation, duration/ammo/SP/charges,
 trigger, heal, mods, flags, targeting and attack (including chain/heal/onHitStatus). Unknown fields, functions, wrong
@@ -455,21 +463,37 @@ Supported files: enemies, waves, stages, modes, items, bands, garrisons, effects
   The base's choice schedule is copied. Changes to that schedule can then be patched explicitly. `GameData` overlays
   mode-level economy, DP, timers and other global configuration keys; omitted values retain the official defaults.
   Explicit mode chess purchase/sale prices override record prices. `setMode` belongs to P1c.
-- New/changed stages get ground paths from the same `Grid` helper as build-data (`server/sim/groundPaths.js`), with and
+- New or changed stages get ground paths from the same `Grid` helper as build-data (`server/sim/groundPaths.js`), with and
   without active devices; deployment lists are derived too. The board stays 19×21. A base stage is the easiest start.
+  A plugin that changes only a wave's `routes` or `extraRoutes` recomputes `groundPaths` for stages listed on modes
+  whose round `template` or `bossTemplates` name those waves, from every current route, and keeps that stage's
+  `deployTiles`. [ASSUMED] bots then read the new paths; deployment lists stay the stage's own.
 
 New record ids are ≤64 ASCII letters/digits/`_`/`-`. The plugin id replaces `-` with `_` inside records. Prefixes:
 `chess_x_<plugin>_<name>_a/_b`, `char_x_…`, `skx_…`, `enemy_x_…`, `mode_x_…`, `stage_x_…`, `wave_x_…`,
-`item_x_…`, `band_x_…`, `garrison_x_…`, `effect_x_…`, `token_x_…` [ASSUMED prefix choices]. Whole-map writes cannot
-bypass record namespaces or remove existing records. The shared validator checks shapes, finite numbers, references,
-paired forms, the default skill, official kit/effect refs, wave routes and mode references. Official counts, official
-trigger deviations and source-specific rules stay in build-data; its original data is unchanged.
+`item_x_…`, `band_x_…`, `garrison_x_…`, `effect_x_…`, `token_x_…` [ASSUMED prefix choices]. Two selected plugins whose
+namespaces collide are refused at composition with `PLUGIN_RECORD_ID`: `data` cannot sit beside `data-demo` (both
+prefix `data_`), and `ab-cd` collides with `ab_cd`. `ab` does not collide with `abc`. A plugin folder scanned alone is
+not refused. Whole-map writes cannot bypass record namespaces or remove existing records. The shared validator checks
+shapes, finite numbers, references, paired forms, the default skill, official kit/effect refs, wave routes and mode
+references. One wave, and each phase of a branch, may have at most 64 spawn rows, each an integer count from 1 to 600,
+summing to at most 600. Enemy `times` keys (and keys ending in `times`, including wave overrides) stay at or below 100.
+`bb.count` of 列装 (`global_special_choice_gain_equip`) and bond-chess (`single_special_choice_gain_bond_chess`) stays
+at or below 32. The battle clamps the same loops, so a later writer cannot bypass validation. [ASSUMED] these caps sit
+above the official maxima and far below ±1e9. Durations are not capped. Other `bb.count` keys are single additions
+under caps that already exist (bond layers stop at 999) and are not limited to 32. `jsonProblems` still allows a
+number whose absolute value is 1e9. Official counts, official trigger deviations and source-specific rules stay in
+build-data; its original data is unchanged. `node tools/records-schema.mjs` rewrites `schemas/records.schema.json`
+from the runtime schema (an optional output path overrides that file).
 
 **Languages.** Manifest `sourceLang` describes the record texts (default `zh`). `i18n: { "en": "i18n/en.json" }` uses
 the existing `{ version: 1, lang, files: { table: { id: overlay } } }` format. String leaves must target existing strings.
 The builder computes `_h` against the final source text and retains valid unrelated base translations. Output lives in
-`i18n/<code>.json` in the composition, separate from simulation data. Translations and manifest text are included among
-the plugin's declared file hashes [ASSUMED: one immutable `cs` must not serve two translation snapshots].
+`i18n/<code>.json` in the composition, separate from simulation data. A content selection's `cs` includes the sha256 of
+each served `i18n/<lang>.json` body. Vanilla and cosmetic-only selections omit that field, so the P0 hash still
+excludes `data/i18n/`. Declared plugin-file hashes alone do not name the served translation snapshot. `index.json` is
+not a hash input. [ASSUMED] it cannot diverge while the hashed i18n bytes, data hashes, plugins and settings stay the
+same.
 
 **C1 for integrators** (`server/plugins/contentSet.js`):
 

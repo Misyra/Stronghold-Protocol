@@ -3,7 +3,8 @@ import { clone, object, own, forbidden, problem, jsonProblems, mergeData, record
 import { canonicalJson } from './identity.js';
 
 const kind = v => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
-const compatible = (a, b) => a === null || b === null || kind(a) === kind(b);
+// null is its own type: it may be written back onto a field that is already null, and nowhere else.
+const compatible = (a, b) => kind(a) === kind(b);
 const addPrefix = (file, path) => RECORD_MAPS[file]?.[0] ?? (file === 'config' && path.join('.') === 'modes' ? 'mode_x' : null);
 
 /** Resolve typed manifest settings; unknown values never enter the hash. Invalid values use their defaults. */

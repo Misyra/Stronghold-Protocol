@@ -126,7 +126,8 @@ export function computeVanillaContent({ simDir, sharedDir, dataDir, shim, app = 
 
 /**
  * The manifest of a content set (GET /cs/<cs16>/index.json): enough to recompute `cs` (shared/plugins/identity.js
- * contentHashOf over app, sim, data's hashes, plugins, settings) and to check every data file a browser downloads.
+ * contentHashOf over app, sim, data's hashes, plugins, settings, and, for a content selection, the sha256 fields of
+ * index.i18n) and to check every data file a browser downloads. Vanilla omits i18n. index.json itself is not an input.
  * A file the set does not change points at its plain URL with `?v=` (the first 8 digits of its hash: immutable there).
  * @param {VanillaContent} content
  */

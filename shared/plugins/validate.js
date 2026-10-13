@@ -151,6 +151,39 @@ export function validateReferences(f, { officialOwnedSkills = true } = {}) {
 // Runtime validation adds structural diagnostics before the legacy reference pass (which expects well-shaped tables).
 import { object, problem, jsonProblems, RECORD_MAPS, own } from './dataUtils.js';
 import { validateSkillSpec, matchesSchema, MODS_SCHEMA, GRID_SCHEMA } from './skillSpec.js';
+import { PLUGIN_SPAWN_ENTRIES, PLUGIN_SPAWN_TOTAL, PLUGIN_TIMES_MAX, PLUGIN_GAIN_COUNT_MAX, PLUGIN_GAIN_COUNT_KEYS } from './limits.js';
+
+const GAIN_COUNT_KEYS = new Set(PLUGIN_GAIN_COUNT_KEYS);
+
+function checkSpawnBudget(list, path, bad) {
+  const rows = list.filter(s => s && (!s.action || String(s.action).toUpperCase() === 'SPAWN'));
+  if (rows.length > PLUGIN_SPAWN_ENTRIES) bad(path, `spawn entries exceed ${PLUGIN_SPAWN_ENTRIES}`, 'PLUGIN_DATA_LIMIT');
+  let sum = 0;
+  for (const s of rows) {
+    if (!Number.isInteger(s.count) || s.count < 1) bad(path, 'invalid spawn count, timing or route');
+    else if (s.count > PLUGIN_SPAWN_TOTAL) bad(path, `spawn count exceeds ${PLUGIN_SPAWN_TOTAL}`, 'PLUGIN_DATA_LIMIT');
+    else sum += s.count;
+    if (!Number.isInteger(s.routeIndex) || s.routeIndex < 0 || !(s.time >= 0) || !(s.interval >= 0)) bad(path, 'invalid spawn count, timing or route');
+  }
+  if (sum > PLUGIN_SPAWN_TOTAL) bad(path, `spawn count sum exceeds ${PLUGIN_SPAWN_TOTAL}`, 'PLUGIN_DATA_LIMIT');
+}
+
+function checkTimesMap(bb, path, bad) {
+  if (!bb || typeof bb !== 'object' || Array.isArray(bb)) return;
+  for (const [k, v] of Object.entries(bb)) {
+    if (typeof v === 'number' && Number.isFinite(v) && (k === 'times' || k.endsWith('times')) && v > PLUGIN_TIMES_MAX) {
+      bad(`${path}.${k}`, `times exceeds ${PLUGIN_TIMES_MAX}`, 'PLUGIN_DATA_LIMIT');
+    }
+  }
+}
+
+function checkBlackboards(rec, path, bad) {
+  if (!rec || typeof rec !== 'object') return;
+  if (Array.isArray(rec.skills)) rec.skills.forEach((s, i) => checkTimesMap(s?.bb, `${path}.skills[${i}].bb`, bad));
+  checkTimesMap(rec.talents?.bb, `${path}.talents.bb`, bad);
+  if (rec.talent && typeof rec.talent === 'object' && !Array.isArray(rec.talent)) checkTimesMap(rec.talent, `${path}.talent`, bad);
+  if (Array.isArray(rec.abilities)) rec.abilities.forEach((a, i) => checkTimesMap(a?.bb, `${path}.abilities[${i}].bb`, bad));
+}
 
 function checkData(data, { kitExists = null, vanilla = null } = {}) {
   const problems = jsonProblems(data, 'data', { bounded: false });
@@ -188,6 +221,7 @@ function checkData(data, { kitExists = null, vanilla = null } = {}) {
     }
     if (rec.skillSpec != null) problems.push(...validateSkillSpec(rec.skillSpec, at + '.skillSpec'));
     if (rec.talentMods != null && !matchesSchema(rec.talentMods, MODS_SCHEMA)) bad(at, 'invalid talentMods', 'PLUGIN_SKILL_SPEC');
+    if (rec.kitRef != null && rec.talentMods != null) bad(at, 'talentMods belong with a JSON SkillSpec, not kitRef', 'PLUGIN_SKILL_SPEC');
     if (rec.dsl != null) bad(at, 'DSL is unavailable in P1b', 'PLUGIN_DSL_UNAVAILABLE');
     if (rec.kitRef != null && (typeof rec.kitRef !== 'string' || kitExists && !kitExists(rec.kitRef))) bad(at, 'unknown official kitRef', 'PLUGIN_KIT_REF');
   };
@@ -206,7 +240,14 @@ function checkData(data, { kitExists = null, vanilla = null } = {}) {
   for (const w of Object.values(data.waves)) {
     for (const k of ['routes', 'spawns', 'extraRoutes']) array(w[k], `waves.${w.id}.${k}`);
     for (const k of ['branches', 'overrides']) if (!object(w[k])) bad(w.id + '.' + k, 'object required');
-    for (const s of w.spawns ?? []) if (!s.action && (!Number.isInteger(s.count) || s.count < 1 || !Number.isInteger(s.routeIndex) || s.routeIndex < 0 || !(s.time >= 0) || !(s.interval >= 0))) bad(w.id, 'invalid spawn count, timing or route');
+    if (Array.isArray(w.spawns)) checkSpawnBudget(w.spawns, `waves.${w.id}.spawns`, bad);
+    for (const [bn, phases] of Object.entries(w.branches ?? {})) {
+      if (!Array.isArray(phases)) { bad(`${w.id}.branches.${bn}`, 'array required'); continue; }
+      phases.forEach((phase, i) => {
+        if (!Array.isArray(phase)) bad(`${w.id}.branches.${bn}[${i}]`, 'array required');
+        else checkSpawnBudget(phase, `waves.${w.id}.branches.${bn}[${i}]`, bad);
+      });
+    }
     for (const r of [...(w.routes ?? []), ...(w.extraRoutes ?? [])]) for (const k of ['start', 'end']) {
       if (!Array.isArray(r[k]) || r[k].length !== 2 || !r[k].every(Number.isInteger)) bad(w.id, 'route start/end must be tile coordinates');
     }
@@ -222,7 +263,18 @@ function checkData(data, { kitExists = null, vanilla = null } = {}) {
     if (!object(m.rounds)) bad(m.modeId, 'rounds required');
     for (const k of ['stages', 'activeBondIds', 'inactiveBondIds']) array(m[k], `modes.${m.modeId}.${k}`);
   }
-  for (const e of Object.values(data.enemies)) if (!object(e.stats)) bad(e.key, 'enemy stats required');
+  for (const e of Object.values(data.enemies)) {
+    if (!object(e.stats)) bad(e.key, 'enemy stats required');
+    if (e.skills != null && !Array.isArray(e.skills)) bad(`${e.key}.skills`, 'skills must be an array', 'PLUGIN_DATA_TYPE');
+    if (e.talents != null && !object(e.talents)) bad(`${e.key}.talents`, 'talents must be an object', 'PLUGIN_DATA_TYPE');
+    checkBlackboards(e, e.key, bad);
+  }
+  for (const w of Object.values(data.waves)) for (const [key, ov] of Object.entries(w.overrides ?? {})) checkBlackboards(ov, `waves.${w.id}.overrides.${key}`, bad);
+  for (const e of Object.values(data.effects ?? {})) for (const b of e.buffs ?? []) {
+    if (GAIN_COUNT_KEYS.has(b.key) && typeof b.bb?.count === 'number' && Number.isFinite(b.bb.count) && b.bb.count > PLUGIN_GAIN_COUNT_MAX) {
+      bad(`${e.effectId}.${b.key}`, `gain count exceeds ${PLUGIN_GAIN_COUNT_MAX}`, 'PLUGIN_DATA_LIMIT');
+    }
+  }
   if (problems.length) return problems;
   try { for (const message of validateReferences(data, { officialOwnedSkills: false })) bad('data', message, 'PLUGIN_DATA_REFERENCE'); }
   catch (e) { bad('data', `malformed nested data: ${e.message}`, 'PLUGIN_DATA_REQUIRED'); }

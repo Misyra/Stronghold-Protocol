@@ -9,7 +9,7 @@ import { resolvePluginOrder } from '../../shared/plugins/order.js';
 import { applyPatches, normalizeSettings } from '../../shared/plugins/patch.js';
 import { expandRecords } from '../../shared/plugins/records.js';
 import { validateData } from '../../shared/plugins/validate.js';
-import { object, own, clone, problem, RECORD_MAPS, recordId } from '../../shared/plugins/dataUtils.js';
+import { object, own, clone, problem, RECORD_MAPS, recordId, namespaceCollisions } from '../../shared/plugins/dataUtils.js';
 import { buildRecordOverlay, walkOverlay, getPath, applyRecordOverlay } from '../../shared/i18nData.js';
 import { computeGroundPaths, computeDeployTiles } from '../sim/groundPaths.js';
 import { officialKit } from '../sim/content/index.js';
@@ -86,6 +86,22 @@ function translations(data, initial, plugins) {
   return { out, problems };
 }
 
+function routesChanged(before, after) {
+  if (!before || !after) return true;
+  return canonicalJson(before.routes ?? []) !== canonicalJson(after.routes ?? [])
+    || canonicalJson(before.extraRoutes ?? []) !== canonicalJson(after.extraRoutes ?? []);
+}
+
+/** Wave ids a mode can field: each round's template, plus any bossTemplates. */
+function wavesUsedByMode(mode) {
+  const ids = [];
+  for (const rd of Object.values(mode?.rounds ?? {})) {
+    if (typeof rd?.template === 'string') ids.push(rd.template);
+    for (const id of Object.values(rd?.bossTemplates ?? {})) if (typeof id === 'string') ids.push(id);
+  }
+  return ids;
+}
+
 /** C1. ids accepts ids or {id, settings}; failures return only {problems}, never a usable cs/data. */
 function composeContentSet({ registry, ids = [] }) {
   if (!registry || !Array.isArray(ids)) return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'ids', 'registry and plugin ids required')] };
@@ -99,6 +115,8 @@ function composeContentSet({ registry, ids = [] }) {
   };
   const resolved = resolvePluginOrder(selected.map(v => v?.id), id => usable(id)?.manifest ?? null);
   if ('error' in resolved) return { problems: [problem(resolved.error, 'ids', resolved.detail)] };
+  const collisions = namespaceCollisions(resolved.order);
+  if (collisions.length) return { problems: collisions };
   const plugins = resolved.order.map(usable).filter(p => p.class === 'content'), settings = {}, owners = new Map();
   let data = base.data;
   const problems = [], warnings = [], writes = new Map();
@@ -131,8 +149,19 @@ function composeContentSet({ registry, ids = [] }) {
     problems.push(...validateData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data }));
     if (problems.length) return { problems };
     data = { ...data, stages: { ...data.stages } };
-    const routes = Object.values(data.waves).flatMap(w => [...w.routes, ...w.extraRoutes]);
-    for (const [id, stage] of Object.entries(data.stages)) if (canonicalJson(stage) !== canonicalJson(base.data.stages[id] ?? null)) data.stages[id] = { ...stage, ...computeGroundPaths(stage, routes), deployTiles: computeDeployTiles(stage) };
+    const routes = Object.values(data.waves).flatMap(w => [...(w.routes ?? []), ...(w.extraRoutes ?? [])]);
+    const changedWaves = new Set();
+    for (const [id, wave] of Object.entries(data.waves)) if (routesChanged(base.data.waves[id], wave)) changedWaves.add(id);
+    const stagesFromWaves = new Set();
+    if (changedWaves.size) for (const mode of Object.values(data.config.modes ?? {})) {
+      if (wavesUsedByMode(mode).some(id => changedWaves.has(id))) for (const sid of mode.stages ?? []) stagesFromWaves.add(sid);
+    }
+    for (const [id, stage] of Object.entries(data.stages)) {
+      const stageChanged = canonicalJson(stage) !== canonicalJson(base.data.stages[id] ?? null);
+      // A route-only change keeps the stage's own deployTiles. [ASSUMED] bots then read the new paths; deployment lists stay the stage's.
+      if (stageChanged) data.stages[id] = { ...stage, ...computeGroundPaths(stage, routes), deployTiles: computeDeployTiles(stage) };
+      else if (stagesFromWaves.has(id)) data.stages[id] = { ...stage, ...computeGroundPaths(stage, routes) };
+    }
   }
   const tr = translations(data, base.i18n, plugins);
   if (tr.problems.length) return { problems: tr.problems };
@@ -145,7 +174,12 @@ function composeContentSet({ registry, ids = [] }) {
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));
   if ([...bodies.values()].reduce((n, b) => n + b.length, 0) > 300 * 1024 * 1024) return { problems: [problem('PLUGIN_DATA_LIMIT', 'content', 'set exceeds 300 MB')] };
   const parts = plugins.map(p => ({ id: p.id, version: p.manifest.version, files: p.content.files }));
-  const cs = contentHashOf({ app: base.identity.app, sim: base.identity.sim, data: hashes, plugins: parts, settings });
+  const i18n = {};
+  if (plugins.length) for (const [rel, body] of bodies) {
+    const m = /^i18n\/([A-Za-z0-9-]+)\.json$/.exec(rel);
+    if (m) i18n[m[1]] = nodeSha256(body);
+  }
+  const cs = contentHashOf({ app: base.identity.app, sim: base.identity.sim, data: hashes, plugins: parts, settings, ...(Object.keys(i18n).length ? { i18n } : {}) });
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };

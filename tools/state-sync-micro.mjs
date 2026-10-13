@@ -19,6 +19,7 @@ import { PlayerState } from '../server/match/PlayerState.js';
 import { publicStateJson } from '../server/match/match/messaging.js';
 import { captureMatch, encodeMatchCapture } from '../server/match/snapshot.js';
 import { diffState, applyStatePatch } from '../shared/stateDelta.js';
+import { stateDeltaStats } from '../server/stateTransport.js';
 import { bondList, offBondCounts } from '../server/match/bondsMeta.js';
 import { boardOrder } from '../server/match/board.js';
 
@@ -205,6 +206,9 @@ try {
     applyStatePatch: timeSegment(() => applyStatePatch(pubParsed, diffState(before, after)), { iterations: count }),
     patchStringify: timeSegment(() => JSON.stringify(diffState(before, after)), { iterations: count }),
     ...transport,
+    // 优先级 1 去掉的那一步的精确成本:每帧一次整帧文本拼接 + 其 UTF-8 字节数扫描(基线为增量帧也做)
+    fullTextBuildPublic: timeSegment(() => Buffer.byteLength(`{"t":"m.state","kind":"m.public","seq":1,"full":${pubJson}}`), { iterations: 500, warmup: 100 }),
+    fullTextBuildPrivate: timeSegment(() => Buffer.byteLength(`{"t":"m.state","kind":"m.private","seq":1,"full":${privJson}}`), { iterations: 500, warmup: 100 }),
     checkpointCapture: timeSegment(() => captureMatch(m), { iterations: 500, warmup: 100 }),
     checkpointClone: timeSegment(() => structuredClone(captureMatch(m)), { iterations: 300, warmup: 60 }),
     checkpointEncodeSync: timeSegment(() => encodeMatchCapture(captureMatch(m)), { iterations: 200, warmup: 50 }),
@@ -262,6 +266,8 @@ try {
   const result = {
     node: process.version, platform: process.platform, seed, round, steps,
     phase: m.phase, publicBytes, privateBytes, players: boards,
+    // 差分账本:每个状态帧被解析了几次(parsedBaselines / frames)、整帧与增量各多少
+    stateDelta: { ...stateDeltaStats },
     segments: Object.fromEntries(Object.entries(segments).map(([k, v]) => [k, v.msPerCall])),
     breakdown: Object.fromEntries(Object.entries(breakdown).map(([k, v]) => [k, v.msPerCall])),
     patchOps: diffState(before, after).length,

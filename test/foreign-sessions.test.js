@@ -1,14 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { SessionRegistry } from '../server/net.js';
 import { ForeignSessions } from '../server/foreignSessions.js';
 import { snapshotServer } from '../server/persist.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
+import { lobbyOptionsFrom } from '../server/http/config.js';
 
 const foreign = '203.0.113.1', domestic = '203.0.113.10';
 const lookup = (ip) => ip === domestic ? 'CN' : ['203.0.113.1', '203.0.113.2', '2001:db8::1', '2001:0db8:0:0:0:0:0:1'].includes(ip) ? 'HK' : null;
+const adminToken = 'foreign-policy-test-token-01234567890123456789';
+const putPolicy = (srv, body, token = adminToken) => fetch(srv.roomAdminUrl + '/api/room-config', {
+  method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+});
 
 async function fixture(t, countryLookup = lookup, options = {}) {
   const logs = [], clients = [];
@@ -167,4 +175,67 @@ test('failed room cleanup refuses the newcomer without revoking the old identity
   assert.equal((await b.request({ t: 'hello', name: 'B' })).code, 'INTERNAL');
   assert.ok(f.srv.registry.byToken(w.token));
   assert.equal(f.srv.registry.size, 1);
+});
+
+test('foreign session policy validates its environment default and explicit option', () => {
+  assert.equal(lobbyOptionsFrom({}, {}).limitForeignSessions, true);
+  for (const value of ['off', 'false', '0'])
+    assert.equal(lobbyOptionsFrom({}, { SP_FOREIGN_SESSION_LIMIT: value }).limitForeignSessions, false);
+  assert.equal(lobbyOptionsFrom({ limitForeignSessions: true }, { SP_FOREIGN_SESSION_LIMIT: 'off' }).limitForeignSessions, true);
+  assert.throws(() => lobbyOptionsFrom({}, { SP_FOREIGN_SESSION_LIMIT: 'maybe' }), RangeError);
+});
+
+test('live toggling preserves online players, tracks disabled-period identities and keeps valid resumes', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-session-policy-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const f = await fixture(t, lookup, { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: path.join(dir, 'config.json') });
+  const a = await f.connect(), wa = await a.hello('A'), b = await f.connect();
+  assert.equal((await b.request({ t: 'hello', name: 'B' })).code, 'FOREIGN_SESSION_LIMIT');
+  assert.equal((await putPolicy(f.srv, { limitForeignSessions: false })).status, 200);
+  const wb = await b.hello('B');
+  assert.equal(f.srv.network.foreignSessions.stats().enabled, false);
+  assert.equal((await putPolicy(f.srv, { limitForeignSessions: true })).status, 200);
+  assert.ok(a.isOpen && b.isOpen, 'enabling must not evict existing online players');
+  const c = await f.connect();
+  assert.equal((await c.request({ t: 'hello', name: 'C' })).code, 'FOREIGN_SESSION_LIMIT');
+  const resume = await f.connect();
+  assert.equal((await resume.hello('B', wb.token)).resumed, true);
+  await f.disconnect(a, wa.playerId); await f.disconnect(resume, wb.playerId);
+  await c.hello('C');
+  assert.equal(f.srv.registry.size, 1, 'offline identities made while disabled are still reclaimed');
+  assert.equal(f.srv.network.foreignSessions.stats().reclaimed, 2);
+  assert.ok(f.logs.some((line) => line.includes('session.foreignLimit.changed')));
+});
+
+test('policy persists with other room settings, honors override and reports missing country database', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-session-policy-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'config.json'), options = { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: file };
+  const f = await fixture(t, lookup, options);
+  for (const body of [{ limitForeignSessions: 'false' }, { limitForeignSessions: 0 }, { foreignSessionGeoipAvailable: true }])
+    assert.equal((await putPolicy(f.srv, body)).status, 400);
+  assert.equal((await putPolicy(f.srv, { limitForeignSessions: false }, 'wrong')).status, 401);
+  assert.equal(f.srv.lobby.opts.limitForeignSessions, true);
+  const results = await Promise.all([putPolicy(f.srv, { limitForeignSessions: false }), putPolicy(f.srv, { maxRooms: 700, allowBots: false })]);
+  assert.ok(results.every((r) => r.status === 200));
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false });
+  await f.srv.close();
+  const restored = await fixture(t, lookup, options);
+  assert.equal(restored.srv.network.foreignSessions.stats().enabled, false);
+  const override = await fixture(t, lookup, { ...options, limitForeignSessions: true });
+  assert.equal(override.srv.network.foreignSessions.stats().enabled, true);
+  const noDatabase = await fixture(t, null, { ...options, limitForeignSessions: true });
+  const config = await (await putPolicy(noDatabase.srv, { limitForeignSessions: true })).json();
+  assert.equal(config.limitForeignSessions, true); assert.equal(config.foreignSessionGeoipAvailable, false);
+  assert.equal(noDatabase.srv.network.foreignSessions.stats().configured, true);
+  assert.equal(noDatabase.srv.network.foreignSessions.stats().enabled, false);
+});
+
+test('failed policy persistence leaves enforcement unchanged', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-session-policy-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const blocker = path.join(dir, 'blocked'); await writeFile(blocker, 'not a directory');
+  const f = await fixture(t, lookup, { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: path.join(blocker, 'config.json') });
+  assert.equal((await putPolicy(f.srv, { limitForeignSessions: false })).status, 503);
+  assert.equal(f.srv.network.foreignSessions.stats().enabled, true);
 });

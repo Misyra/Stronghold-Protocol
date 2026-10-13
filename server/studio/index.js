@@ -602,7 +602,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
    * @param {string} rawPath @param {string} query
    */
   async function handle(req, res, rawPath, query) {
-    const notFound = () => sendError(req, res, 404, '页面不存在 · Not found', rawPath.length <= 200 ? rawPath : '');
+    const notFound = () => sendError(req, res, 404, '页面不存在 · Not found', rawPath.length <= 200 ? rawPath : ''); // i18n-ignore (the bilingual 404 page of server/http/common.js)
     const gate = studioAllowed(req, { trustProxy, mode });
     if (!gate.ok) { notFound(); return; }
     // only the exact spelling (another case, doubled slashes or percent-encoding of the prefix: a 404, see isStudioPath)

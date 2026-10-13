@@ -363,8 +363,9 @@ export function smogMaterial(THREE, tex, focus) {
  *     (a few percent bright), exact only after the scene is extracted again;
  *   - the tangent frame of the normal map — built from screen-space derivatives with t along +u and b along +v
  *     (scene.bin has no tangents); the sign of the bump was not checked against the client surface by surface;
- *   - reflection probes — a scene with a ReflectionProbe (act2autochess_m01 / m03) shows the scene's default
- *     reflection cubemap everywhere;
+ *   - reflection probes — one cubemap per scene, chosen at the board's anchor: the baked cubemap of the
+ *     ReflectionProbe whose box holds the board (act2autochess_m01 / m03, at the probe's intensity), else the
+ *     scene's default reflection; a renderer outside that box and the blend at its edge are not reproduced;
  *   - the vertex-colour blend is left out on the reading that it is a tile buried in sand
  *     (mix(albedo, _BlendColor, smoothstep(colour.r) · _BlendStrength) in the program) which the client uncovers at
  *     run time by a rule not found yet; drawn as written it covers every patterned tile of the field.

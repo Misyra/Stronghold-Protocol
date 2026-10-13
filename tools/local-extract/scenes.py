@@ -492,22 +492,43 @@ def export_scene(stage_id, deps, scene_path, ab_root, out_root, manifest, log, m
         lightmaps = max(lightmaps, i + 1)
         n += 1
 
-    # the reflection every surface shows: the scene's default reflection cubemap (RenderSettings), decoded
-    # [ASSUMED] a scene with ReflectionProbe objects (act2autochess_m01 / m03) gets the default cubemap everywhere too:
-    # the probes' own cubemaps and boxes are not exported
+    # the reflection every surface shows (unity_SpecCube0): the baked cubemap of the ReflectionProbe whose box holds
+    # the board (act2autochess_m01 / m03: one probe, box 40 / 50 units, every renderer set to blend probes), at the
+    # probe's intensity; else the scene's default reflection cubemap (RenderSettings) at the scene's reflection
+    # intensity. Unity picks by importance, then the smaller box.
+    # [ASSUMED] one cubemap for the whole scene, chosen at the board's anchor: a renderer outside the probe's box (far
+    # background) would show the default reflection in the client, and probes are not blended at the box's edge
     env_doc = None
     try:
         rs = next(o.read_typetree() for o in scene_objs if o.type.name == 'RenderSettings')
         want = rs['m_GeneratedSkyboxReflection']['m_PathID'] if rs.get('m_DefaultReflectionMode', 0) == 0 else rs['m_CustomReflection']['m_PathID']
+        intensity = rs.get('m_ReflectionIntensity', 1.0)
+        probes = []
+        for o in scene_objs:
+            if o.type.name != 'ReflectionProbe':
+                continue
+            d = o.read_typetree()
+            gid = d['m_GameObject']['m_PathID']
+            baked = (d.get('m_CustomBakedTexture') or {}).get('m_PathID') or (d.get('m_BakedTexture') or {}).get('m_PathID')
+            if not d.get('m_Enabled', 1) or not baked or gid not in tf_of_go or not state(gid)[0]:
+                continue
+            m = world(tf_of_go[gid])
+            size, off = d.get('m_BoxSize', {}), d.get('m_BoxOffset', {})
+            half = [abs(size.get(k, 0.0)) / 2 for k in 'xyz']
+            centre = [m[i][3] + off.get(k, 0.0) for i, k in enumerate('xyz')]
+            if all(abs(anchor[i] - centre[i]) <= half[i] for i in range(3)):
+                probes.append((-d.get('m_Importance', 1), half[0] * half[1] * half[2], baked, d.get('m_IntensityMultiplier', 1.0)))
+        if probes:
+            _, _, want, intensity = min(probes)
         cubes = [o for o in env.objects if o.type.name == 'Cubemap']
         cube = next((o for o in cubes if o.path_id == want), None)
         if cube is not None:
             t = cube.read()
             atlas, rng = env_atlas(bytes(t.get_image_data()), t.m_Width, t.m_MipCount, t.m_TextureFormat, cube.assets_file.version,
-                                   cube.assets_file.target_platform, rs.get('m_ReflectionIntensity', 1.0))
+                                   cube.assets_file.target_platform, intensity)
             atlas.save(out_dir / 'env.png')   # PNG only: a lossy copy would bleed between the atlas cells
             manifest[sub]['env'] = {'path': f'/assets/local/{sub}/env.png', 'w': atlas.width, 'h': atlas.height, 'kind': 'Reflection'}
-            env_doc = {'size': t.m_Width, 'mips': t.m_MipCount, 'range': rng}
+            env_doc = {'size': t.m_Width, 'mips': t.m_MipCount, 'range': rng, 'source': 'probe' if probes else 'default'}
             n += 1
     except Exception as e:
         log(f'  warn {stage_id}: reflection cubemap: {e}')

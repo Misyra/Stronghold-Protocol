@@ -19,7 +19,11 @@
 //                content hash (DESIGN §32; never cached). Of plugins/ only the files a lang manifest names (through
 //                /packs/<id>/<file>) and the files a loaded cosmetic overlay names (/p/…) are served
 //     /cs/<cs16>/index.json → the manifest of the vanilla content set (server/plugins/identity.js contentIndexOf),
-//                cached for good — only for this server's vanilla `cs` (its first 16 hex digits)
+//                cached for good — for this server's vanilla `cs` (its first 16 hex digits) and, from P1c (DESIGN §32.6),
+//                a content set with gameplay plugins a room uses or used lately (server/plugins/contentSets.js: the same
+//                shape with `vanilla: false`, its plugins, settings and modes)
+//     /cs/<cs16>/data/<file>.json → a data file that content set patched, its served bytes from memory (cached for good;
+//                every other data file of the set is named by its plain /data/<file>?v=<8 hex> URL in the manifest)
 //     /vs/<vs16>/overlay.json → a visual set of cosmetic plugins (server/plugins/visualSet.js): its composition and
 //                its plugins' writes, which a page lays over the manifest it loaded itself (a room's set, a player's
 //                personal plugin) — no-cache, the body's hash as ETag; 404 for a set this server does not know
@@ -88,6 +92,8 @@ const IMMUTABLE_JSON = 'public, max-age=31536000, immutable';
 const VISUAL_DOC = new RegExp(`^${VISUAL_SETS_URL}([0-9a-f]{${VS_URL_DIGITS}})/${VISUAL_DOC_FILE.replace('.', '\\.')}$`);
 /** A plugin file URL's hash segment. */
 const FILE_HASH = new RegExp(`^[0-9a-f]{${FILE_URL_DIGITS}}$`);
+/** /cs/<cs16>/<path> of a content set with gameplay plugins (DESIGN §32.6). */
+const CS_FILE = /^\/cs\/([0-9a-f]{16})\/([A-Za-z0-9._\/-]{1,200})$/;
 
 /**
  * Create the static request handler.
@@ -96,17 +102,19 @@ const FILE_HASH = new RegExp(`^[0-9a-f]{${FILE_URL_DIGITS}}$`);
  *   log?: object,
  *   assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null,
  *   views?: ReturnType<typeof import('./assetViews.js').createManifestViews> | null,
- *   visual?: ReturnType<typeof createVisualSets> | null }} dirs
+ *   visual?: ReturnType<typeof createVisualSets> | null,
+ *   contents?: ReturnType<typeof import('../plugins/contentSets.js').createContentSets> | null }} dirs
  *   packs: the server's plugin registry (default: one over publicDir, dataDir, packsDir and pluginsDir — ROOT/packs, and
  *   the plugins/ folder beside packsDir); content: the vanilla content (default: computed from simDir, sharedDir and
  *   dataDir on first use); assetIndex / views: the content hashes and the served manifests (none: plain URLs,
  *   size-mtime ETags); visual: the visual sets (default: one over the registry — a registry of 0.2.0's shape has none:
- *   /vs/ and /p/ answer 404)
+ *   /vs/ and /p/ answer 404); contents: the content sets with gameplay plugins (DESIGN §32.6; none: only the vanilla
+ *   set's /cs/ manifest)
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
 export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'),
   pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, log = noopLog,
-  assetIndex = null, views = null, visual = null }) {
+  assetIndex = null, views = null, visual = null, contents = null }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   const sets = visual || (typeof registry.pluginFile === 'function' ? createVisualSets({ registry, log }) : null);
   let vanilla = content;
@@ -149,7 +157,15 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     if (decoded.startsWith('/cs/')) {
       const c = vanillaContent();
-      if (decoded !== `/cs/${csUrlPart(c.cs)}/index.json`) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
+      if (decoded !== `/cs/${csUrlPart(c.cs)}/index.json`) {
+        // a content set with gameplay plugins (DESIGN §32.6, server/plugins/contentSets.js): its manifest and its patched
+        // data files — a URL naming its content, so cached for good; 404 for a set this server does not keep
+        const m = CS_FILE.exec(decoded);
+        const f = m && contents && !m[2].split('/').some((s) => s === '' || s === '.' || s === '..' || s.startsWith('.')) ? contents.file(m[1], m[2]) : null;
+        if (!f) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
+        await serveBuffer(req, res, { body: f.body, hash: `cs-${m[1]}-${(f.sha256 || 'index').slice(0, 8)}`, type: MIME['.json'], cacheControl: IMMUTABLE_JSON, key: `cs:${decoded}`, cache: gzipCache });
+        return;
+      }
       const body = Buffer.from(JSON.stringify(c.index));
       const tag = `"cs-${csUrlPart(c.cs)}-v${PLUGIN_INDEX_VERSION}"`;
       const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_JSON, ETag: tag, 'Content-Length': body.length };

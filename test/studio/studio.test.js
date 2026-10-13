@@ -240,7 +240,7 @@ describe('the studio over HTTP', () => {
 
   test('a new plugin from a template; files on a slot; a reference; a slot emptied; the preview; pack and zip; the list', async () => {
     const info = await call('GET', '/studio/api/info');
-    assert.deepEqual(info.body.templates.map((t) => t.id), ['art', 'spine', 'voice', 'audio', 'dsl']);
+    assert.deepEqual(info.body.templates.map((t) => t.id), ['art', 'spine', 'voice', 'audio', 'numbers', 'operator', 'dsl', 'meta', 'mode', 'ui', 'script']);
     const found = await call('GET', `/studio/api/targets?q=${encodeURIComponent('德克萨斯')}&kinds=operator`);
     assert.equal(found.body.targets[0].key, 'char_102_texas');
     const slots = await call('GET', '/studio/api/slots?template=art&target=operator:char_102_texas');

@@ -226,3 +226,15 @@ maintainer's decision of 2026-10-13). On, an operator's ammo bar carries `left/m
 the exact b.snap `ammo` counts, extra rounds and refills included), centred in the bar's yellow; the rows under the bars
 move down by its height. It hides with the magazine, in the prep view and after death. The simplified board has no ammo
 bar and so no count.
+
+
+### Plugin studio gameplay previews (§32.9.1)
+
+Gameplay authoring uses a separate editor module per template under `public/studio/js/editors/`. DSL inputs are
+structured controls with server validation; script source is read-only. Trial replays feed actual field metadata,
+`b.snap` and `b.ev` shapes into `render/app.js`. The studio never executes author battle scripts in its page.
+UI-widget previews use the same `pluginFrame` host as the game, with fake data and memory-only preview storage; all
+frame sandbox, navigation and message limits remain in force. The room's settings form is manifest-driven and shows
+normalized values from the room, read-only for non-hosts and during a match. Vanilla pages load no extra studio code.
+
+Authoring checks (DESIGN §32.9.1): numeric fields display the shared official bounds and positive step floor; invalid saves are refused. DSL validation network failures are explicit, and saving revalidates the current spec before writing. Unkeyed studio state reads omit script source. Trial replay remains a data-only renderer feed; sandbox simulation runs in the same SES executor as a formal match. Forge and catalogue entry points remain available beside the authoring templates.

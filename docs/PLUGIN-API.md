@@ -248,6 +248,12 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `ui.slot.stats.tab` | stable | 0.3.0 | `shared/plugins/manifest.js#UI_SLOT_IDS` |
 | `ui.slot.room.panel` | stable | 0.3.0 | `shared/plugins/manifest.js#UI_SLOT_IDS` |
 | `studio.route.GET /studio/api/info` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.GET /studio/api/trial-options` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/trial` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.GET /studio/api/authoring` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.GET /studio/api/dsl-example` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/validate-dsl` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/plugins/:id/authoring` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/targets` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/slots` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/suggest-id` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
@@ -274,6 +280,12 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `studio.route.POST /studio/api/catalog/install` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.POST /studio/api/forge/preview` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.POST /studio/api/forge/import` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `error.PLUGIN_STUDIO_CHANGED` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_TRIAL_BUSY` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_TRIAL_TIMEOUT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_TRIAL_FAILED` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_TRIAL_LIMIT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_TRIAL_SCENARIO` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_CONSENT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_TRUST_PUBLIC` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_TRUST_PIN` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |

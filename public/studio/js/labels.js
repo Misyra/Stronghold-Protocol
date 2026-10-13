@@ -12,6 +12,13 @@ export const KIND_LABELS = Object.freeze({
 
 /** Templates (server/studio/templates/): title, one line on what it does. */
 export const TEMPLATE_LABELS = Object.freeze({
+  numbers: { title: N_('改数值'), line: N_('按官方名字选目标，修改属性与黑板数值。') },
+  operator: { title: N_('新干员'), line: N_('填写属性，选择技能来源，自动生成普通与精锐卡。') },
+  dsl: { title: N_('DSL 技能 / 天赋'), line: N_('用下拉选项组合触发器、条件与动作。') },
+  meta: { title: N_('备战效果'), line: N_('用 DSL 改变资金、盟约层数或获得道具。') },
+  mode: { title: N_('新模式'), line: N_('基于原版模式调整经济与时长。') },
+  ui: { title: N_('界面小组件'), line: N_('选择插槽和标题，在沙箱中预览演示数据。') },
+  script: { title: N_('脚本插件'), line: N_('生成 SDK 骨架与测试，再用编辑器编写代码。') },
   art: { title: N_('换头像 / 立绘 / 图标'), line: N_('替换干员的头像和立绘，或敌人、召唤物、道具、盟约、策略、界面上的图片。') },
   spine: { title: N_('换 Spine 模型'), line: N_('替换干员、召唤物或敌人在战场上的动画模型（Spine 3.8）。') },
   voice: { title: N_('换语音'), line: N_('替换干员在战斗中说的每一句话（中文和日文配音）。') },

@@ -167,7 +167,8 @@ test('the studio\'s templates and plugins/_template/cosmetic/ and ui/ are accept
     const t = tpl.kinds.includes('operator') ? target : { kind: 'music', key: 'lobby', container: ['audio', 'bgm'], name: 'lobby', group: 'bgm' };
     for (const tg of [t, null]) {
       const { manifest } = createPlugin(tpl, { id: 'demo', name: '名字', target: tg, authors: ['me'], license: 'CC0-1.0' });
-      assert.deepEqual(v.validate('plugin.schema.json', manifest), [], `${tpl.id} ${tg ? tg.kind : 'no target'}`);
+      const errors = v.validate('plugin.schema.json', manifest);
+      assert.deepEqual(errors, [], `${tpl.id} ${tg ? tg.kind : 'no target'}`);
     }
   }
   for (const dir of ['cosmetic', 'ui', 'content']) {

@@ -135,8 +135,8 @@ export function createPluginFiles(pluginsDir) {
    * renamed over the target.
    * @param {string} id @param {string} rel @param {Buffer} data
    */
-  function write(id, rel, data) {
-    if (!writable(rel)) throw new StudioError('PLUGIN_FILE_TYPE', 400, { file: rel, ext: extOf(rel) || '-', class: 'cosmetic' }, `${rel}: not a file type the studio writes`);
+  function write(id, rel, data, { generated = false } = {}) {
+    if (!writable(rel) && !(generated && ['.js', '.html', '.css'].includes(extOf(rel)))) throw new StudioError('PLUGIN_FILE_TYPE', 400, { file: rel, ext: extOf(rel) || '-', class: 'cosmetic' }, `${rel}: not a file type the studio writes`);
     const limit = rel === PLUGIN_MANIFEST ? STUDIO_LIMITS.manifestBytes : extOf(rel) === '.json' ? PLUGIN_LIMITS.jsonBytes : STUDIO_LIMITS.fileBytes;
     if (data.length > limit) throw new StudioError('PLUGIN_STUDIO_SIZE', 413, { max: `${Math.round(limit / 1048576)} MB`, file: rel }, `${rel}: larger than ${limit} bytes`);
     const top = root(id);

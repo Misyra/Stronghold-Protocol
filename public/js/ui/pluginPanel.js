@@ -26,6 +26,7 @@
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { APP_VERSION } from '../../../shared/constants.js';
 import { html, Modal, Button, Icon } from './components.js';
+import { PluginSettings, settingsSelection } from './pluginSettings.js';
 import { toastError } from './toasts.js';
 import { net } from '../net.js';
 import { useStore } from '../store.js';
@@ -118,12 +119,12 @@ export function PluginPanel({ open, room, myId, onClose }) {
   const classOf = (id) => cat.plugins.find((x) => x.id === id)?.class || f.plugins.find((x) => x.id === id)?.class || 'cosmetic';
   const anyContent = f.modded || offered.some((p) => ['content','script','trusted'].includes(p.class));
   /** room.setPlugins with these ids (one request at a time; `what`: the row — or 'reapply' — that shows it busy). */
-  const send = async (ids, what) => {
+  const send = async (ids, what, change = null) => {
     if (inFlight.current || !f.editable) return;
     inFlight.current = true;
     setBusy(what);
     try {
-      await net.request('room.setPlugins', { plugins: ids.map((x) => ({ id: x })) });
+      await net.request('room.setPlugins', { plugins: settingsSelection(ids, f.plugins, change) });
     } catch (err) { toastError(err); } finally {
       inFlight.current = false;
       if (alive.current) setBusy(null);
@@ -177,6 +178,8 @@ export function PluginPanel({ open, room, myId, onClose }) {
                 ${Number.isFinite(p.artBytes) ? html`<span class="num">${sizeText(p.artBytes)}</span>` : null}
                 ${p.missing ? html`<span>${t('本服务器已不再提供')}</span>` : null}
               </div>
+              ${on && p.settings ? html`<${PluginSettings} definitions=${p.settings} values=${f.plugins.find(x => x.id === p.id)?.settings || {}}
+                disabled=${!f.editable || !!busy || p.missing} onSave=${settings => send([...new Set([...f.chosen, p.id])], p.id, { id: p.id, settings })} />` : null}
               ${p.compatible === false ? html`<div class="plugrow__warn">${content
                 ? t('适配 {app}，本服务器是 {version}（改变玩法的插件不能启用）', { app: p.app || '', version: APP_VERSION })
                 : t('适配 {app}，本服务器是 {version}（外观插件，仍可使用）', { app: p.app || '', version: APP_VERSION })}</div>` : null}

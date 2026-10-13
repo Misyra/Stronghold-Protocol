@@ -2,7 +2,7 @@
 // code behind `node tools/plugin.mjs check / pack` and the studio's 校验 / 打包 (server/studio/), here because the server
 // ships and tools/plugin.mjs does not (tools/package.mjs).
 //
-//   checkPluginFolder(dir, where, { vanilla })   the registry's rules (readPluginFolder — a cosmetic plugin's overlay too)
+//   checkPluginFolder(dir, where, { vanilla, dataDir })   the registry's rules (readPluginFolder — a cosmetic plugin's overlay too)
 //                                                and every JSON file's content (valid, nesting ≤ 64, numbers within ±1e9)
 //   buildPluginLock(dir, { vanilla })            plugin.lock.json: every file's SHA-256 and size, and each Spine model's
 //                                                clip data (skeletonClipData) — null with the overlay's problems
@@ -30,6 +30,10 @@ import { issueList } from '../../shared/plugins/errors.js';
 import { parseSkel } from '../../tools/assets/skel.mjs';
 import { resolveRoles } from '../../tools/assets/anim-roles.mjs';
 import { atlasInfo } from '../../tools/assets/atlas.mjs';
+import { DATA_DIR } from '../data.js';
+import { gameplayDataFiles } from './identity.js';
+import { applyPatches, normalizeSettings } from '../../shared/plugins/patch.js';
+import { appendOfficialBounds } from '../../shared/plugins/officialBounds.js';
 import { zipFiles } from './zip.js';
 
 /** What packs a lock (its `generator`). */
@@ -74,11 +78,11 @@ export const errorWords = (e) => (e instanceof SyntaxError ? e.message : e?.code
  * every JSON file's content.
  * @param {string} dir
  * @param {string} where how the folder is named in the output
- * @param {{ vanilla?: VanillaAssets }} [opts] vanilla: the art manifest references must name (default: none — they are
+ * @param {{ vanilla?: VanillaAssets, dataDir?: string }} [opts] vanilla: the art manifest references must name (default: none — they are
  *   not checked)
  * @returns {Findings & { where: string, plugin: import('./registry.js').Plugin | null }}
  */
-export function checkPluginFolder(dir, where, { vanilla } = {}) {
+export function checkPluginFolder(dir, where, { vanilla, dataDir = DATA_DIR } = {}) {
   const r = readPluginFolder(dir, { where, vanilla });
   const list = issueList();
   list.take(r);
@@ -94,6 +98,20 @@ export function checkPluginFolder(dir, where, { vanilla } = {}) {
       const bad = checkJsonLimits(json);
       if (bad) list.problem('PLUGIN_JSON_LIMIT', `${f.rel}: ${bad}`, { file: f.rel, detail: bad });
     }
+  }
+  // Check patched official values with the same bounds as C1, without running any script/preflight.
+  // Paths supplied only by dependencies still need the complete content-set check in C1.
+  const p = r.plugin;
+  const patches = (p?.manifest.parts.data?.files || []).map(rel => p.content?.documents[rel]).filter(doc => doc?.patch === 1);
+  if (!list.problems.length && patches.length) {
+    const official = Object.fromEntries(gameplayDataFiles(dataDir).map(f => [f.name, JSON.parse(fs.readFileSync(f.abs, 'utf8'))]));
+    let data = official;
+    const settings = normalizeSettings(p.manifest.settings);
+    for (const doc of patches) for (const op of doc.ops) {
+      const applied = applyPatches(data, [op], { pluginId: p.id, settings });
+      if (!applied.problems.length) data = applied.data;
+    }
+    appendOfficialBounds(data, official, (where, detail, code) => list.problem(code, detail, { where, detail }));
   }
   return { where, plugin: list.problems.length ? null : r.plugin, problems: list.problems, warnings: list.warnings, issues: list.issues };
 }
@@ -216,11 +234,11 @@ export function buildPluginLock(dir, { vanilla } = {}) {
 /**
  * Pack a folder: write plugin.lock.json when it has no problem, then check the folder (checkPluginFolder).
  * @param {string} dir
- * @param {{ vanilla?: VanillaAssets, where?: string }} [opts]
+ * @param {{ vanilla?: VanillaAssets, where?: string, dataDir?: string }} [opts]
  * @returns {{ wrote: boolean, lock: Record<string, any> | null, build: Findings, check: ReturnType<typeof checkPluginFolder> | null }}
  *   build: what building the lock found; check: the folder's check after the write (null when nothing was written)
  */
-export function packPlugin(dir, { vanilla, where = `plugins/${path.basename(dir)}/` } = {}) {
+export function packPlugin(dir, { vanilla, dataDir = DATA_DIR, where = `plugins/${path.basename(dir)}/` } = {}) {
   const r = buildPluginLock(dir, { vanilla });
   const build = { problems: r.problems, warnings: r.warnings, issues: r.issues };
   if (!r.lock || r.problems.length) return { wrote: false, lock: r.lock, build, check: null };
@@ -229,7 +247,7 @@ export function packPlugin(dir, { vanilla, where = `plugins/${path.basename(dir)
   const tmp = path.join(dir, `.lock-${randomBytes(6).toString('hex')}.tmp`);
   fs.writeFileSync(tmp, `${JSON.stringify(r.lock, null, 2)}\n`, { flag: 'wx' });
   try { fs.renameSync(tmp, path.join(dir, LOCK_FILE)); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
-  return { wrote: true, lock: r.lock, build, check: checkPluginFolder(dir, where, { vanilla }) };
+  return { wrote: true, lock: r.lock, build, check: checkPluginFolder(dir, where, { vanilla, dataDir }) };
 }
 
 /**

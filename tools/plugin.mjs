@@ -80,6 +80,7 @@ import { PLUGIN_CLASSES, PLUGIN_MANIFEST, isPluginId } from '../shared/plugins/m
 import { LOCK_FILE } from '../shared/plugins/visual.js';
 import { PLUGIN_ERRORS, TABLE_MARKERS, describeIssue, errorLang, issueLine, symptomTable } from '../shared/plugins/errors.js';
 import { TEMPLATES, templateById, createPlugin, manifestText } from '../server/studio/templates/index.js';
+import { readStudioData } from '../server/studio/gameData.js';
 import { createTargetIndex, searchTargets, targetSpec } from '../server/studio/targets.js';
 import { STUDIO_ROUTES } from '../server/studio/index.js';
 import { annotateCatalog, readCatalog } from '../shared/plugins/catalog.js';
@@ -164,7 +165,7 @@ export async function main(argv) {
   try {
     for (let i = 0; i < rest.length; i++) {
       const a = rest[i];
-      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir', '--sha256', '--id'].includes(a)) {
+      if (['--root', '--lang', '--out', '--name', '--target', '--author', '--license', '--credits', '--dir', '--options', '--sha256', '--id'].includes(a)) {
         values[a.slice(2)] = takeValue(rest, i, a.slice(2));
         i++;
       } else if (a.startsWith('--')) flags.add(a.slice(2));
@@ -237,7 +238,7 @@ export async function main(argv) {
       const inPlugins = path.join(dirs.pluginsDir, t);
       const dir = fs.existsSync(path.join(asDir, PLUGIN_MANIFEST)) ? asDir : fs.existsSync(path.join(inPlugins, PLUGIN_MANIFEST)) ? inPlugins : null;
       if (!dir) { console.error(`plugin: ${t} is not a plugin folder (no ${PLUGIN_MANIFEST})`); return 2; }
-      const r = packPlugin(dir, { vanilla, where: `${t}/` });
+      const r = packPlugin(dir, { vanilla, dataDir: dirs.dataDir, where: `${t}/` });
       for (const line of findingLines(r.build, lang)) console.log(line);
       if (!r.wrote) { console.log(`${t}: ${LOCK_FILE} not written`); failed++; continue; }
       const nFiles = Object.keys(/** @type {any} */ (r.lock).files).length;
@@ -286,7 +287,7 @@ export async function main(argv) {
     const vanilla = readVanillaAssets(dirs.dataDir);
     const report = [];
     for (const { dir, where } of folders) {
-      const r = checkPluginFolder(dir, where, { vanilla });
+      const r = checkPluginFolder(dir, where, { vanilla, dataDir: dirs.dataDir });
       const p = r.plugin;
       problems += r.problems.length;
       warnings += r.warnings.length;
@@ -324,15 +325,12 @@ export async function main(argv) {
       target = found[0];
       if (found.length > 1 && found[1].name === target.name) console.log(`  (several match "${values.target}": took ${targetSpec(target)})`);
     }
-    const made = createPlugin(tpl, { id, name: values.name, target, authors: values.author ? [values.author] : [], license: values.license, credits: values.credits, lang });
+    const made = createPlugin(tpl, { id, name: values.name, target, authors: values.author ? [values.author] : [], license: values.license, credits: values.credits, lang, data: tpl.build ? readStudioData(dirs.dataDir) : null, options: values.options ? JSON.parse(fs.readFileSync(values.options, 'utf8')) : {} });
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, PLUGIN_MANIFEST), manifestText(made.manifest));
-    for (const [rel, text] of Object.entries(made.files)) {
-      const out = path.join(dir, rel);
-      fs.mkdirSync(path.dirname(out), { recursive: true });
-      fs.writeFileSync(out, text);
-    }
-    if (target) fs.writeFileSync(path.join(dir, '.studio.json'), `${JSON.stringify({ v: 1, sections: [{ template: tpl.id, target: targetSpec(target) }] }, null, 2)}\n`);
+    for (const [rel, text] of Object.entries(made.files)) { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); }
+    if (made.authoring) fs.writeFileSync(path.join(dir, '.studio.json'), manifestText({ v: 1, authoring: made.authoring }));
+    if (target && !made.authoring) fs.writeFileSync(path.join(dir, '.studio.json'), `${JSON.stringify({ v: 1, sections: [{ template: tpl.id, target: targetSpec(target) }] }, null, 2)}\n`);
     const shown = path.relative(process.cwd(), dir) || dir;
     console.log(`${shown}: a ${tpl.class} plugin from the template ${tpl.id}${target ? ` for ${target.name} (${target.key})` : ''}`);
     console.log(lang === 'zh'

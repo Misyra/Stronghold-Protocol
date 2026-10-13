@@ -272,6 +272,14 @@ function boundMessage(label, key, value, cap, known, officialMax) {
   return `${label} ${key} 的值 ${value} 超过上限 ${cap}（${tail}）`;
 }
 
+/** Editor and admission bounds for one blackboard key, from the same official snapshot. */
+export function officialBbRange(key) {
+  const max = officialBbMax(key);
+  return { max: dataBound(max), min: -dataBound(max), officialMax: max ?? 0,
+    positiveMin: isStepKey(key) ? minimumStep(officialPositiveMin(key)) : 0 };
+}
+const minimumStep = officialMin => officialMin > 0 ? officialMin / 10 : STEP_TICK / 10;
+
 function exceed(bad, ev, map, minMap, label, key) {
   const known = map.has(key);
   const officialMax = known ? map.get(key) : null;
@@ -279,7 +287,7 @@ function exceed(bad, ev, map, minMap, label, key) {
   if (Math.abs(ev.value) > cap) bad(ev.path, boundMessage(label, key, ev.value, cap, known, officialMax), 'PLUGIN_DATA_BOUND');
   if (!(ev.value > 0) || !isStepKey(key)) return;
   const officialMin = minMap && minMap.has(key) ? minMap.get(key) : 0;
-  const tenth = officialMin > 0 ? officialMin / 10 : STEP_TICK / 10;
+  const tenth = minimumStep(officialMin);
   if (ev.value < tenth) {
     const tail = officialMin > 0 ? `原版最小正值 ${officialMin}` : '原版没有这个键的正值';
     bad(ev.path, `${label} ${key} 的值 ${ev.value} 低于最小步长 ${tenth}（${tail}）`, 'PLUGIN_DATA_BOUND');

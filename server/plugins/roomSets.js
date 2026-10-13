@@ -24,6 +24,7 @@
 // visual set, so the room's `vs` names it too).
 
 import { ERR } from '../../shared/constants.js';
+import { normalizeSettings } from '../../shared/plugins/patch.js';
 import { resolvePluginOrder } from '../../shared/plugins/order.js';
 
 /**
@@ -93,7 +94,8 @@ export function createRoomSets({ registry, visual, contents, policy }) {
       // a content plugin is named by its gameplay part (the content set's hash) even when it brings art too
       const src = ['content','script','trusted'].includes(p.class) ? cById.get(p.id) : vById.get(p.id);
       // (16 hex digits, as a cosmetic plugin's: the content set's plugin hash is a full SHA-256)
-      return { id: p.id, version: p.manifest.version, class: p.class, ...(p.script ? {execution:cset?.execution} : {}), hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
+      const normalized = normalizeSettings(p.manifest.settings, settings[p.id]);
+      return { id: p.id, version: p.manifest.version, class: p.class, ...(p.script ? { execution: cset?.execution } : {}), ...(Object.keys(normalized).length ? { settings: normalized } : {}), hash: String(src?.hash || '').slice(0, 16), ...(auto.has(p.id) ? { auto: true } : {}) };
     });
     return {
       ok: true,
@@ -116,6 +118,7 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     release: (vs) => visual?.release?.(vs),
     holdContent: (cs) => contents?.hold?.(cs),
     releaseContent: (cs) => contents?.release?.(cs),
+    onContentStale: (fn) => contents?.onStale?.(fn) || (() => {}),
     onStale: (fn) => (visual?.onStale ? visual.onStale(fn) : () => {}),
     unofficial: () => (visual?.unofficial ? visual.unofficial() : 0),
     defaults: () => { const p = policy?.get(); return p && p.rooms !== 'off' ? [...p.default] : []; },

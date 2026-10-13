@@ -195,7 +195,7 @@ function studioRoutesFromApi(src) {
   }
   const postAt = tail.indexOf("if (method !== 'POST') return false;");
   const postTail = postAt < 0 ? '' : tail.slice(postAt);
-  for (const sub of ['slot', 'meta', 'sections', 'ref', 'clear', 'fix', 'pack']) {
+  for (const sub of ['slot', 'meta', 'sections', 'ref', 'clear', 'fix', 'pack', 'authoring']) {
     if (postTail.includes(`sub === '${sub}'`)) add('POST', `plugins/:id/${sub}`);
   }
   return found;

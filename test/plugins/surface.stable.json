@@ -876,6 +876,30 @@
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
   },
   {
+    "name": "studio.route.GET /studio/api/trial-options",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.POST /studio/api/trial",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.GET /studio/api/authoring",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.GET /studio/api/dsl-example",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.POST /studio/api/validate-dsl",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "studio.route.POST /studio/api/plugins/:id/authoring",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
     "name": "studio.route.GET /studio/api/targets",
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
   },
@@ -978,6 +1002,30 @@
   {
     "name": "studio.route.POST /studio/api/forge/import",
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_CHANGED",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_TRIAL_BUSY",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_TRIAL_TIMEOUT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_TRIAL_FAILED",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_TRIAL_LIMIT",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_TRIAL_SCENARIO",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
   {
     "name": "error.PLUGIN_CONSENT",

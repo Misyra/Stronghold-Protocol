@@ -1,3 +1,6 @@
+import meta from './meta.js';
+import { buildOperator } from './operator.js';
+import { dslExample } from '../dslExamples.js';
 // server/studio/templates/dsl.js — the template 「数据插件里的 DSL」 (server/studio/templates/index.js): a content plugin
 // with one operator whose kit is a DSL spec, and one prep spec. No target: the ids are the plugin's own namespace.
 // [ASSUMED] The example operator is a passive +50% attack, and the prep file sets round-1 income to 15 (DESIGN §32.7).
@@ -41,29 +44,24 @@ function income(id) {
   };
 }
 
-/** @type {import('./index.js').StudioTemplate} */
 export default {
-  id: 'dsl',
-  class: 'content',
-  kinds: [],
-  slots() { return []; },
-  overlay() { return {}; },
-  /**
-   * A content manifest and its two JSON files. `target` is ignored: this template has no official target.
-   * @param {{ id: string, manifest: Record<string, any> }} opts
-   */
-  assemble({ id, manifest }) {
-    const ns = id.replace(/-/g, '_');
-    manifest.scope = ['room'];
-    manifest.permissions = ['data.add', 'dsl'];
-    manifest.operators = [`operators/${ns}.json`];
-    manifest.dsl = ['dsl/income.json'];
-    return {
-      manifest,
-      files: {
-        [`operators/${ns}.json`]: json(operator(id)),
-        'dsl/income.json': json(income(id)),
-      },
-    };
+  id: 'dsl', class: 'content', kinds: [], slots: () => [], overlay: () => ({}),
+  build(args) {
+    const { id, options } = args;
+    const example = options.example || 'demo';
+    if (example === 'demo') {
+      const rec = operator(id);
+      if (options.dsl !== undefined) rec.kit.dsl = options.dsl;
+      return { manifest: { scope: ['room'], permissions: ['data.add', 'dsl'],
+        operators: [`operators/${id.replaceAll('-', '_')}.json`], dsl: ['dsl/income.json'] },
+      files: { [`operators/${id.replaceAll('-', '_')}.json`]: json(rec), 'dsl/income.json': json(income(id)) } };
+    }
+    const start = dslExample(example, id);
+    if (start.spec.meta) return meta.build(args);
+    const made = buildOperator({ ...args, target: { key: start.charId || 'char_102_texas' },
+      options: { ...options, kitSource: 'dsl', dsl: options.dsl !== undefined ? options.dsl : start.spec } });
+    made.manifest.dsl = ['dsl/income.json'];
+    made.files['dsl/income.json'] = json(income(id));
+    return made;
   },
 };

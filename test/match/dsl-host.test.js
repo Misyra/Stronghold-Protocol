@@ -11,6 +11,7 @@ import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createContentSets } from '../../server/plugins/contentSets.js';
 import { createMatchHosts } from '../../server/match/host/index.js';
 import { writePlugin } from '../helpers/pluginFixtures.js';
+import { createPlugin, templateById } from '../../server/studio/templates/index.js';
 import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { contentHashOf } from '../../shared/plugins/identity.js';
@@ -83,8 +84,9 @@ async function roundOneFunds(hosts, cs) {
 }
 
 test('a prep DSL spec rewrites round-1 income inside the match host; a set with no dsl does not', { timeout: 90_000 }, async () => {
+  const generated = createPlugin(templateById('meta'), { id: 'roundgold', options: { dsl: incomeSpec('roundgold') } });
   const dir = pluginsDir({
-    roundgold: [{ permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeSpec('roundgold') }],
+    roundgold: [generated.manifest, generated.files],
     plainbond: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.33) }],
   });
   const contents = setsOf(dir);

@@ -62,21 +62,21 @@ export function CreateDialog({ open, templates, onClose, onCreated }) {
   };
   const idOk = ID_RULE.test(id);
   const actions = html`
-    ${step > 0 ? html`<${Button} onClick=${() => setStep(step - 1)} disabled=${busy}>${t('上一步')}<//>` : null}
+    ${step > 0 ? html`<${Button} onClick=${() => setStep(step === 2 && !tpl?.kinds.length ? 0 : step - 1)} disabled=${busy}>${t('上一步')}<//>` : null}
     <${Button} onClick=${onClose} disabled=${busy}>${t('取消')}<//>
     ${step === 1 ? html`<${Button} onClick=${() => setStep(2)} disabled=${busy}>${target ? t('下一步') : t('先跳过')}<//>` : null}
     ${step === 2 ? html`<${Button} variant="primary" onClick=${create} loading=${busy} disabled=${!idOk || !name.trim()} data-testid="create-confirm">${t('创建插件')}<//>` : null}`;
   return html`<${Modal} open=${open} title=${t('新建插件')} micro=${t('第 {n} / 3 步', { n: step + 1 })} onClose=${busy ? undefined : onClose} width="9.4rem" actions=${actions}>
     ${step === 0 ? html`<div class="st-templates" data-testid="templates">
       ${templates.map((x) => html`<button type="button" key=${x.id} class=${cx('st-template', tpl?.id === x.id && 'is-on')} data-template=${x.id}
-          onClick=${() => { setTpl(x); setTarget(null); setStep(1); }}>
+          onClick=${() => { setTpl(x); setTarget(null); setStep(x.kinds.length ? 1 : 2); }}>
         <strong>${templateTitle(x.id)}</strong>
         <span>${templateLine(x.id)}</span>
         <small>${x.kinds.map(kindLabel).join(' · ')}</small>
       </button>`)}
     </div>` : null}
     ${step === 1 && tpl ? html`<div class="st-step">
-      <p class="st-note">${t('「{template}」要替换哪一个？按官方名字搜索：', { template: templateTitle(tpl.id) })}</p>
+      <p class="st-note">${t('「{template}」选择参考目标，按官方名字搜索：', { template: templateTitle(tpl.id) })}</p>
       <${TargetPicker} kinds=${tpl.kinds} selected=${target} autoFocus=${true} onPick=${(tg) => { setTarget(tg); setStep(2); }} />
     </div>` : null}
     ${step === 2 && tpl ? html`<div class="st-form">

@@ -49,9 +49,10 @@ import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustP
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
-import { MIME, COMPRESSIBLE, acceptsGzip, parseRange } from './http/files.js';
+import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { createTrafficCounter } from './http/traffic.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 import { Persister, restoreServer } from './persist.js';
@@ -70,7 +71,7 @@ import { cleanupRuntime } from './runtimeCleanup.js';
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
 export {
   ROOT, WS_MAX_PAYLOAD, DATA_SHIM_JS, MIME, COMPRESSIBLE, BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag,
-  acceptsGzip, parseRange, createStaticHandler, lanUrls, parseTrustProxy, VERSION_PREFIX,
+  acceptsGzip, pickEncoding, parseRange, createStaticHandler, createTrafficCounter, lanUrls, parseTrustProxy, VERSION_PREFIX,
 };
 
 /**
@@ -90,7 +91,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
- *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number,
+ *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -134,6 +135,12 @@ export async function startServer(opts = {}) {
   }
   lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
   if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
+  if (opts.limitForeignSessions == null && typeof savedRoomConfig?.limitForeignSessions === 'boolean')
+    lobbyOptions.limitForeignSessions = savedRoomConfig.limitForeignSessions;
+  if (opts.allowForeignConnections == null && typeof savedRoomConfig?.allowForeignConnections === 'boolean')
+    lobbyOptions.allowForeignConnections = savedRoomConfig.allowForeignConnections;
+  log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? 'on' : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
+  log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
@@ -229,13 +236,17 @@ export async function startServer(opts = {}) {
   // createStaticHandler already computes the authoritative 16-character release
   // tag. The legacy buildTag exports remain compatibility helpers only.
 
+  // Every response's body bytes and every WebSocket's wire/payload bytes count here (upstream 0.2.6); the snapshot is
+  // reachable through GET /healthz?traffic=1 for a loopback or private-network client only (http/routes.js).
+  const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
     serveStatic,
-    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog },
+    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
+    trustProxy: network.opts.trustProxy,
   }));
   server.on('clientError', answerClientError);
-  const wss = attachWebSocket(server, { network, log, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });
+  const wss = attachWebSocket(server, { network, log, traffic, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost, roomAdmin = null;
@@ -306,7 +317,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, roomAdminUrl: roomAdmin?.url || null, server, wss, lobby, network, registry, packs, workerPool, store, persister, chatLog, close };
+  return { port: actualPort, host: boundHost, url, roomAdminUrl: roomAdmin?.url || null, server, wss, lobby, network, registry, packs, workerPool, store, persister, chatLog, traffic, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

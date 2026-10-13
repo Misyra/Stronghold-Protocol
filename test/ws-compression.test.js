@@ -1,9 +1,14 @@
+// WebSocket permessage-deflate: this fork's SP_WS_COMPRESSION switch, level 1, concurrency cap and the same
+// settings upstream 0.2.6 uses (a 1 KB threshold, no server context takeover, a 2 KB server window) — plus the
+// upstream 0.2.6 fix this fork lacked: an offer that caps the server window below ours connects uncompressed
+// instead of being refused at the handshake.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { startServer, WS_MAX_PAYLOAD } from '../server/index.js';
 import { sendRaw } from '../server/net.js';
 import { TestClient } from './helpers/wsClient.js';
+import { narrowDeflateOffer, WS_DEFLATE } from '../server/http/websocket.js';
 
 async function connect(t, serverOptions = {}, wsOptions = {}) {
   const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...serverOptions });
@@ -85,4 +90,21 @@ test('compressed inbound messages still obey the decompressed payload limit', as
   client.ws.send(JSON.stringify({ t: 'ping', c: 12345, rid: 2, padding: 'x'.repeat(WS_MAX_PAYLOAD) }));
   const closed = await client.closed;
   assert.equal(closed.code, 1009);
+});
+
+test('an offer that caps the server window below ours connects uncompressed instead of a refused handshake', async (t) => {
+  // ws refuses the whole upgrade (400) when the client's server_max_window_bits is under the configured one; the
+  // upgrade drops the header instead (server/http/websocket.js narrowDeflateOffer), so the socket still works.
+  const { client } = await connect(t, {}, { perMessageDeflate: { serverMaxWindowBits: 9 } });
+  assert.equal(client.ws.extensions, '', 'no extension negotiated, and no 400');
+  const pong = await client.request({ t: 'ping', c: 7 });
+  assert.equal(pong.c, 7, 'the connection still plays');
+  assert.equal(narrowDeflateOffer('permessage-deflate; server_max_window_bits=9'), true);
+  assert.equal(narrowDeflateOffer('permessage-deflate; server_max_window_bits=9', WS_DEFLATE.serverMaxWindowBits), true);
+  assert.equal(narrowDeflateOffer('permessage-deflate; server_max_window_bits=12; client_max_window_bits'), false);
+  assert.equal(narrowDeflateOffer('permessage-deflate; server_max_window_bits=9, permessage-deflate'), false, 'another offer is acceptable');
+  assert.equal(narrowDeflateOffer('permessage-deflate; client_max_window_bits'), false);
+  assert.equal(narrowDeflateOffer(undefined), false);
+  assert.equal(WS_DEFLATE.threshold, 1024);
+  assert.equal(WS_DEFLATE.serverMaxWindowBits, 11);
 });

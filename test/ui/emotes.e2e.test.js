@@ -324,6 +324,7 @@ describe('official emotes in the browser', { skip: !ENABLED && 'set SP_E2E=1 (an
     // neither the local-client art nor the copies setup downloads (GitHub #42) load: the glyph is the last link
     const { page, problems } = await open('/dev/uikit.html', {
       manifest: { version: 1, groups: { 'emoticon/basic': { pic_happy_battle: { path: '/assets/local/emoticon/basic/nope_404.png', w: 120, h: 120 } } } },
+      // our art URLs may carry the release prefix (/_v/<tag>/assets/…): the pattern is unanchored, so it matches both
       block: /\/assets\/(?:ui\/emoticon|local\/emoticon\/ciallo)\//,
       ignore: [/nope_404\.png/, /\/assets\/(?:ui\/emoticon|local\/emoticon\/ciallo)\//, /Failed to load resource/],
     });

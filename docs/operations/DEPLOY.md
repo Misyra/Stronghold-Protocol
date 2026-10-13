@@ -66,6 +66,23 @@ SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key
 
 <a id="4-macos--linux-常驻"></a>
 
+## 开服流量（0.2.6）
+
+开服的电脑主要在两处出流量：素材（图片 / Spine 模型 / 音频）和对局期间的 WebSocket 消息。0.2.6 起：
+
+- **WebSocket 消息压缩**：1 KB 以上的消息走 permessage-deflate（`SP_WS_COMPRESSION`，默认 `on`），一局单人对局的服务器消息实测从 173 KB 降到 60 KB。客户端声明 `server_max_window_bits` 比服务器小时，握手不再被拒，而是回落到不压缩。
+- **素材地址版本化长期缓存**：本机模式下发 `/_v/<tag>/…`（`server/assetVersion.js`，整棵素材树的内容哈希，字节没变 tag 就不变）；CDN 模式按文件哈希发 `<base>/assets/…?v=<hash>`（见 [CDN.md](CDN.md)）。重新解压、重建容器只要字节没变，玩家就不重下。
+- **brotli**：脚本、样式、数据和 `.skel`/`.atlas` 在浏览器声明 brotli 时用 brotli（质量 5），否则 gzip；图片和音频原样发送。浏览器只在 https 页面（和 `localhost`）上声明 brotli，所以隧道 / 域名访问用 brotli，局域网 `http://192.168.x.x:3000` 用 gzip。代理不需要再开压缩。
+- **静音不下载背景音乐**：静音或背景音乐音量 0 时不下载 BGM，恢复可听后再取当前该放的那首。
+- **教程图 WebP**：本地提取的 19 页玩法说明每页另存 WebP（有损，质量 90，19 页由约 25.6 MB 降到约 4.2 MB），看说明时只预载下一页。重新提取用 `python3 tools/local-extract/extract.py --webp`。
+- **看主机的出流量**：本机或局域网打开 `http://localhost:3000/healthz?traffic=1`，`traffic.http` 是按类别（assets / audio / code / data）发出的字节与请求数，`traffic.ws` 是 WebSocket 的线上字节与压缩前的消息字节。数字只在内存里，重启清零；只有本机 / 局域网访问能看到。玩家那边：设置 →「问题反馈」的诊断里有一行 `traffic:`，是本页打开以来的下载量（`cached` 是浏览器缓存直接给的）。
+
+**固定访问地址能省很多流量**：浏览器的缓存、设置、本机统计和断线令牌都按地址（域名或 IP + 端口）分开保存。地址一换，对玩家来说就是一个新网站：素材要重新下载一遍（第一局约 20–50 MB），设置和统计也看不到了。临时隧道每次重启都换域名，长期开服建议用命名隧道、Tailscale 或固定的公网 / 局域网 IP，让大家一直用同一个地址。
+
+**HTTP/2**：客户端由数百个小脚本模块组成，隔着公网时建议让代理以 HTTP/2 提供页面（所有模块走同一条连接，首次进入对局明显更快）。Caddy 默认就是 HTTP/2；Nginx 见上面的 `http2`。服务器本身只说 HTTP/1.1，局域网或本机游玩不受影响。
+
+**Cloudflare 缓存**（命名隧道或自己的域名经过 Cloudflare 时）：Cloudflare 默认只缓存常见扩展名，`.skel`、`.atlas` 和无扩展名的 `/media/…` 都不在其中。在「缓存规则」里加一条：主机名是游戏域名、路径以 `/assets/`、`/fonts/` 或 `/media/` 开头时「符合缓存条件」，边缘 TTL 选「使用源站的 Cache-Control」。`/data/`、页面和脚本不要加（它们要随服务器更新）。注意边缘公开缓存官方素材会增加被投诉的风险。
+
 ## Linux 常驻
 
 先创建运行账号和可写状态目录（已有账号不必重复创建）：
@@ -261,6 +278,8 @@ sudo systemctl start stronghold
 | 重启后无法恢复 | `/healthz.persist` 和状态目录权限；是否挂载原持久卷；见[持久化说明](PERSISTENCE.md) |
 | 游戏能访问，面板监控无数据 | 探针、令牌及 nginx 管理路由；见[监控接入](MONITORING.md) |
 | CPU / 内存过高 | Worker 数量、队列与校验模式，见[性能说明](../development/PERFORMANCE.md) |
+| 想知道开服电脑上传了多少流量 | 本机 / 局域网打开 `/healthz?traffic=1`，按类别看 `traffic.http` 与 `traffic.ws`；公网访问者只会拿到普通报告 |
+| 素材地址里出现 `/_v/<tag>/` 前缀 | 这是本仓库的版本化地址（`server/assetVersion.js`）：素材字节没变前缀就不变、浏览器长期缓存，属正常现象；怀疑素材没更新时先确认服务器上真的换了文件 |
 
 `SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/healthz` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
 

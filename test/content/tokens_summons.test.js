@@ -111,6 +111,20 @@ test('#4 audio classes (official ON_UNIT_DEAD/BORN defaults): only operators pla
   assert.equal(deathSfxUrl(manifest, bomb, { consumed: true }), null, 'used up ⇒ silent');
   assert.equal(deathSfxUrl(manifest, mapChar), SFX.battle.charDie, 'band map characters are operators');
   assert.equal(deathSfxUrl(manifest, crate), TOKEN_DEAD, 'act crate trap_1105 ⇒ b_char_tokendead');
+  // a served manifest's charDie carries this fork's release prefix (/_v/<tag>/, 0.2.6 keeps per-file cache busting on
+  // the CDN instead): the sound derived beside it names another file, so it goes out on the TARGET file's address —
+  // the release prefix stays, charDie's own cache-busting never applies to it
+  const versioned = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, charDie: `/_v/0123456789abcdef${SFX.battle.charDie}` } } } };
+  assert.equal(deathSfxUrl(versioned, op), versioned.audio.sfx.battle.charDie, 'charDie itself is untouched');
+  assert.equal(deathSfxUrl(versioned, tok), `/_v/0123456789abcdef${TOKEN_DEAD}`, 'release prefix kept, name is the target\'s');
+  // a CDN address carries the per-file hash as a query (`?v=<hash>`): it names charDie's bytes, so it is dropped before
+  // the name is swapped (no CDN configured in Node: the target resolves to the plain path)
+  const served = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, charDie: `${SFX.battle.charDie}?v=0123456789abcdef` } } } };
+  assert.equal(deathSfxUrl(served, op), served.audio.sfx.battle.charDie);
+  assert.equal(deathSfxUrl(served, tok), TOKEN_DEAD, 'never charDie\'s ?v= hash');
+  // the manifest's own tokenDie entry wins over any derivation
+  const explicit = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, tokenDie: '/assets/audio/sfx/custom_tokendead.mp3' } } } };
+  assert.equal(deathSfxUrl(explicit, tok), '/assets/audio/sfx/custom_tokendead.mp3');
   assert.equal(deathSfxUrl(manifest, enemy), SFX.battle.enemyDie);
   assert.equal(deathSfxUrl(manifest, boss), SFX.battle.enemyDieHeavy);
   assert.equal(deathSfxUrl(manifest, op, { reason: 'retreat' }), null, 'a retreat is no knock-down');

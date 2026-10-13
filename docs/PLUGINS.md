@@ -43,10 +43,10 @@ intent, and not an input of `cs`.
   the diagnostics (`content: … cosmetic vs=… plugins=…`, `MODDED …` for gameplay plugins), later the HUD, the result and
   the statistics (plugin matches stay out of the overview by default; a match with cosmetic plugins only is still the
   original game — §9).
-- **No third-party code in a battle.** Art and data plugins carry no code. An interface plugin (P4, §14) is the one
-  page that runs, and only inside a sandboxed iframe: it sees a read-only feed and cannot send a match intent.
-  Classes `script` and `trusted` stay unsupported (a declarative DSL first, then any further sandbox; full trust only
-  with the server owner's and every player's explicit consent).
+- **No third-party code in a battle.** Art and data plugins carry no code, and the declarative DSL (§12) is data, not
+  code. An interface plugin (P4, §14) is the one page that runs, and only inside a sandboxed iframe: it sees a
+  read-only feed and cannot send a match intent. Classes `script` and `trusted` stay unsupported until P3 (trusted
+  code only with the server owner's and every player's explicit consent, then a sandbox).
 - **No plugin overrides arbitrary project files**; a plugin changes only what its class allows, through its manifest.
 - **Gameplay plugins are installed on the server** (every player of a room plays the same content and the server can
   still check a battle). Players never install gameplay content of their own.
@@ -394,15 +394,15 @@ set, 2 MB copied by references per plugin and 4 MB per set, the lock's limits ab
 **Start from** `plugins/_template/cosmetic/` — references to the installation's own art only, no file. Never put files
 of the official game in a plugin.
 
-## 10. Next steps
+## 12. DSL
 
-P1b data plugins (patches, compact records, kitRef / SkillSpec operators, modes, i18n), P1c per-room content sets (a
-worker per content set, the client loading and checking `/cs/<cs>/`, the unofficial marks in the HUD, the result and
-the statistics). Later, by separate decisions: themes and fonts for cosmetic plugins, a declarative DSL, sandboxed code,
-trusted code. DESIGN §32 keeps the plan and its open questions.
-
-§11 (data plugins, P1b), §12 (per-room content sets, P1c) and §13 (the script classes, P2) are reserved. Interface
-plugins are §14 so those numbers stay free.
+A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the
+per-battle action budget and the worked examples are [PLUGIN-DSL.md](PLUGIN-DSL.md). `compileDsl` in
+`server/sim/content/dsl/compile.js` turns a spec into a Kit; `server/match/dslMeta.js` turns the prep half into
+MetaRegistry hooks. The schema is `schemas/dsl.schema.json`. DESIGN §32.7. A vanilla battle does not load the compiler.
+Teaching `kitOf` to read `def.raw.dsl` is the data-plugin work, not this section. The host supplies the plugin id
+(an author id cannot take another plugin's budget). Prep keys are `effect:<that id>:<local>`. DESIGN §32.7 records
+the open points, including the generic-kit fallback until the data-plugin work records a compile error itself.
 
 ## 14. Interface plugins (P4)
 
@@ -454,6 +454,16 @@ message. The host may toggle it during a match because it changes no match.
 
 **Errors.** `PLUGIN_SLOT`, `PLUGIN_RATE`, `PLUGIN_STORAGE`, `PLUGIN_INTENT`, `PLUGIN_SHAPE`, `PLUGIN_LIMIT` live in
 `shared/plugins/ui.js` and are merged into the shared error catalogue at integration (C6).
+
+## 18. Later
+
+The old next-steps list lives here. Data plugins are §10 (that work package), per-room content sets are §11, and the
+declarative DSL is §12. Still later, by separate decisions: themes and fonts for cosmetic plugins, sandboxed code,
+trusted code. DESIGN §32 keeps the plan and its open questions.
+
+The numbers are fixed by the 0.3.0 plan: §10 data plugins, §11 per-room content sets, §12 the DSL, §13 the script
+classes, §14 interface plugins, §15 the studio and tools, §16 the Forge importer, §17 the catalogue and installing by
+address; each is filled in by its work package.
 
 ## Tests
 

@@ -29,6 +29,11 @@ function pluginCount(lobby) {
   return n > 0 ? { plugins: n } : {};
 }
 
+/** The content sets with gameplay plugins rooms hold now (DESIGN §32.6; 0 without any). */
+function contentSets(lobby) {
+  try { return Number(lobby?.plugins?.contentInUse?.()) || 0; } catch { return 0; }
+}
+
 /**
  * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
@@ -45,10 +50,10 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
     // older than this reloads itself, so a deploy reaches clients that never reload
     build: buildTag(),
-    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins are
-    // in use — none before rooms can choose them (P1c; a room's cosmetic plugins leave its cs the vanilla one, §32.3);
-    // how many unofficial plugins it has, when it has some (a page's title screen says so; P1a)
-    ...(content ? { content: { vanilla: content.cs, sets: 0, ...pluginCount(lobby) } } : {}),
+    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins rooms
+    // hold now (P1c, §32.6 — a room's cosmetic plugins leave its cs the vanilla one, §32.3); how many unofficial plugins
+    // it has, when it has some (a page's title screen says so; P1a)
+    ...(content ? { content: { vanilla: content.cs, sets: contentSets(lobby), ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
   if (withTraffic && traffic) report.traffic = traffic.snapshot();

@@ -9,7 +9,10 @@
 //                      the language packs (/packs/index.json, /packs/<id>/<file>), the plugin catalogue
 //                      (/plugins/index.json — the registry is plugins/registry.js), the vanilla content set's manifest
 //                      (/cs/<cs16>/index.json — plugins/identity.js: the content hash `cs`, DESIGN §32), the visual sets
-//                      of cosmetic plugins (/vs/<vs16>/…, plugins/visualSet.js) and their files (/p/<id>/<hash8>/…)
+//                      of cosmetic plugins (/vs/<vs16>/…, plugins/visualSet.js) and their files (/p/<id>/<hash8>/…),
+//                      the content sets of gameplay plugins (/cs/<cs16>/…, plugins/contentSets.js — DESIGN §32.6; the
+//                      server owner's plugins/config.json: plugins/policy.js; a room's plugins: plugins/roomSets.js; its
+//                      match then runs in that set's worker: match/host/)
 //   http/media.js      /media/bgm/act1 → public/assets/audio/bgm/act1.mp3 (audio addressed without its extension)
 //   http/files.js      one file → response: MIME, brotli / gzip + memory cache, ETag / Last-Modified / 304, Cache-Control, ranges
 //   http/assetIndex.js the content hashes of public/assets and public/fonts (built in the background, cached in
@@ -40,6 +43,10 @@ import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPluginRegistry } from './plugins/registry.js';
 import { computeVanillaContent } from './plugins/identity.js';
 import { createVisualSets } from './plugins/visualSet.js';
+import { createContentSets } from './plugins/contentSets.js';
+import { createPluginPolicy } from './plugins/policy.js';
+import { createRoomSets } from './plugins/roomSets.js';
+import { createMatchHosts } from './match/host/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
@@ -66,12 +73,15 @@ export {
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number },
+ *   matchHost?: object,
  * }} [opts]
- *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom)
+ *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom);
+ *   matchHost: options of the match hosts (server/match/host/index.js — watchdogMs, matchOptions …; tests)
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPluginRegistry>,
  *                     content: import('./plugins/identity.js').VanillaContent, visual: ReturnType<typeof createVisualSets>,
+ *                     contents: ReturnType<typeof createContentSets>, hosts: ReturnType<typeof createMatchHosts>,
  *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
  *                     views: ReturnType<typeof createManifestViews> | null, close: () => Promise<void> }>}
  */
@@ -97,8 +107,14 @@ export async function startServer(opts = {}) {
   const views = assetIndex ? createManifestViews({ dataDir, index: assetIndex, log }) : null;
   // the visual sets of the cosmetic plugins (DESIGN §32 P1a): what a room's host switches on, served at /vs/ and /p/
   const visual = createVisualSets({ registry: packs, log });
-  const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: visual });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual });
+  // the server owner's policy (plugins/config.json), the content sets of the gameplay plugins (served at /cs/<cs16>/…),
+  // what a room's plugins make of both, and the match hosts a room with gameplay plugins plays in (DESIGN §32.6)
+  const policy = createPluginPolicy({ pluginsDir, log });
+  const contents = createContentSets({ registry: packs, vanilla: content, vanillaData: data, dataDir, pluginsDir, log, maxSets: () => policy.get().maxSets });
+  const roomSets = createRoomSets({ registry: packs, visual, contents, policy });
+  const hosts = createMatchHosts({ contents, log, options: { maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
+  const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents });
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
@@ -155,6 +171,7 @@ export async function startServer(opts = {}) {
     if (closing) return closing;
     closing = (async () => {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
+      try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       network.close();
       assetIndex?.close();
       await new Promise((resolve) => {
@@ -167,7 +184,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, traffic, assetIndex, views, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, traffic, assetIndex, views, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

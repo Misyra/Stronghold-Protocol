@@ -3,7 +3,7 @@
 // DESIGN §14. Pure ESM (served at /sim/spec.js): no Node API.
 //
 //   const spec = buildBattleSpec({ battleId, fieldId, kind, seed, modeId, round, stageId, rect, timeLimit, players,
-//                                  spawns, routes, flags, enemyOverrides, waveId, bossId, content, boss, cs })
+//                                  spawns, routes, flags, enemyOverrides, waveId, bossId, content, boss, cs, vs })
 //   const battle = createBattleFromSpec(spec, dataSource, { sharedBoss?, BattleClass?, logger?, recordEvents?, quiet? })
 //
 // A spec is JSON-safe by construction (it IS the JSON round trip of its inputs: `undefined` / functions vanish,
@@ -32,7 +32,10 @@
 // unit — the match always states both for an owned operator: PlayerState.battleInput).
 // Content identity (DESIGN §32): `cs`, the content hash of the room's content set (shared/plugins/identity.js; 64 hex
 // digits), is kept when well-formed and left out otherwise — a spec built without one is what it always was. The sim
-// never reads it: it names what the battle runs on, for the checks of a later step, the diagnostics and replays.
+// never reads it: it names what the battle runs on — a browser that has not loaded that content is no authority of the
+// battle and a b.result naming another one is refused (P1c, DESIGN §32.6) —, the diagnostics and replays. `vs` (P1c), the
+// room's visual set of cosmetic plugins (shared/plugins/visual.js; 64 hex digits), likewise: kept when well-formed, never
+// read by the sim — a replay or a bug report names the art the battle was drawn with.
 
 import { Battle } from './Battle.js';
 import { toDataSource, withUnitLoadouts } from './simdata.js';
@@ -83,8 +86,9 @@ export function buildBattleSpec(o = {}) {
     bossId: o.bossId ?? null,
     content: o.content ?? 'full',
     boss: bossLike && o.boss ? { poolHp: Number(o.boss.poolHp) || 0, poolMax: Number(o.boss.poolMax) || 1 } : null,
-    // the content set the battle runs on (header): not read by the sim
+    // the content set the battle runs on and the art it was drawn with (header): not read by the sim
     ...(isContentHash(o.cs) ? { cs: o.cs } : {}),
+    ...(isContentHash(o.vs) ? { vs: o.vs } : {}),
   };
   const out = JSON.parse(JSON.stringify(spec, specReplacer));
   for (const p of out.players) for (const u of (p && Array.isArray(p.units) ? p.units : [])) if (u && typeof u === 'object') sanitizeUnitLoadout(u);

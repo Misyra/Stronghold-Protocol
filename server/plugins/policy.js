@@ -8,7 +8,9 @@
 //                                   (a player's personal cosmetic plugins still work: they never reach a room)
 //     "default": [],                plugin ids a new room starts with (default: none — the original game)
 //     "allow": ["*"],               the plugins rooms may use: "*" every one, or a list of ids
-//     "classes": { "cosmetic": true, "content": true },   a class switched off here is never offered to rooms
+//     "classes": { "cosmetic": true, "content": true },   a class switched off here is never offered to rooms, and a
+//                                   class not listed (script, ui, trusted …) is denied too; the file's list is laid over
+//                                   these two defaults
 //     "limits": { "maxSets": 4 },   content sets with gameplay plugins rooms may hold at once (each running match of one
 //                                   is a worker: server/match/host/)
 //     "allowIncompatible": false    a gameplay plugin made for other game versions or another plugin API: refused
@@ -107,11 +109,11 @@ export function createPluginPolicy({ pluginsDir, log = noopLog, env = process.en
   return {
     /** The policy now. */
     get: look,
-    /** May rooms use the plugin `id` of class `cls`? */
+    /** May rooms use the plugin `id` of class `cls`? A class `classes` does not switch on (true) is denied. */
     allows(id, cls) {
       const p = look();
       if (p.rooms === 'off') return false;
-      if (p.classes[cls] === false) return false;
+      if (!Object.hasOwn(p.classes, cls) || p.classes[cls] !== true) return false;
       return p.allow.includes('*') || p.allow.includes(id);
     },
   };

@@ -628,8 +628,8 @@ diagnostics line reads `MODDED cs=… plugins=…` and the bug template asks whe
 
 **Server owner's policy** (`plugins/config.json`, git-ignored like the plugins): whether a room's host chooses its
 plugins (`rooms: "host"`, the default), every room plays a fixed set (`"fixed"`) or rooms play the original game
-(`"off"`); the plugins a new room starts with (`default`); the plugins rooms may use (`allow`); classes switched off
-(`classes`); the concurrent content sets (`limits.maxSets`); whether gameplay plugins made for other versions may be
+(`"off"`); the plugins a new room starts with (`default`); the plugins rooms may use (`allow`); the classes rooms may
+use (`classes`: cosmetic and content by default, a class not listed is denied); the concurrent content sets (`limits.maxSets`); whether gameplay plugins made for other versions may be
 used (`allowIncompatible`). `SP_PLUGINS=off|host|fixed` overrides `rooms`. The file is read again when it changes;
 a bad field keeps its default and is reported in the log. `docs/DEPLOY.md` has an example.
 

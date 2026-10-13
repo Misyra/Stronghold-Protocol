@@ -23,7 +23,7 @@ import { validateC2S } from '../shared/protocol.js';
 import { layVisualOps, prepareVisualDoc } from '../shared/plugins/visual.js';
 import { contentHashOf } from '../shared/plugins/identity.js';
 import { nodeSha256 } from '../server/plugins/identity.js';
-import { DEFAULT_POLICY, readPolicy } from '../server/plugins/policy.js';
+import { DEFAULT_POLICY, readPolicy, createPluginPolicy } from '../server/plugins/policy.js';
 import { ROOT } from '../server/data.js';
 
 class RecordingStub extends StubMatch {
@@ -689,5 +689,8 @@ describe('the server owner\'s policy and the content-set limit (P1c)', () => {
     assert.equal(r.problems.length, 6);
     const off = readPolicy({ rooms: 'host', limits: { maxSets: 2 }, classes: { content: false } }, { env: { SP_PLUGINS: 'off' } }).policy;
     assert.deepEqual([off.rooms, off.maxSets, off.classes.content], ['off', 2, false]);
+    // classes not listed are denied (the review's LOW-6): only the ones switched on pass
+    const pol = createPluginPolicy({ pluginsDir: null, env: {} });
+    assert.deepEqual(['cosmetic', 'content', 'script', 'ui', 'trusted', 'lang', 'toString', '__proto__'].map((c) => pol.allows('x', c)), [true, true, false, false, false, false, false, false]);
   });
 });

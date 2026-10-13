@@ -122,7 +122,8 @@ export function lobbyOptionsFrom(opts, env = process.env) {
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${name} must be ${min}..${max}`);
     lobbyOptions[key] = value;
   }
-  for (const [key, name] of [['allowBots', 'SP_ALLOW_BOTS'], ['limitForeignSessions', 'SP_FOREIGN_SESSION_LIMIT']]) {
+  for (const [key, name] of [['allowBots', 'SP_ALLOW_BOTS'], ['limitForeignSessions', 'SP_FOREIGN_SESSION_LIMIT'],
+    ['allowForeignConnections', 'SP_ALLOW_FOREIGN_CONNECTIONS']]) {
     const value = String(opts[key] ?? env[name] ?? 'on').trim().toLowerCase();
     if (!['1', 'true', 'on', '0', 'false', 'off'].includes(value)) throw new RangeError(`${name} must be on or off`);
     lobbyOptions[key] = ['1', 'true', 'on'].includes(value);

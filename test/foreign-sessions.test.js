@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { startServer } from '../server/index.js';
 import { SessionRegistry } from '../server/net.js';
 import { ForeignSessions } from '../server/foreignSessions.js';
@@ -17,6 +18,22 @@ const adminToken = 'foreign-policy-test-token-01234567890123456789';
 const putPolicy = (srv, body, token = adminToken) => fetch(srv.roomAdminUrl + '/api/room-config', {
   method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 });
+
+function refusedUpgrade(srv, ip = foreign) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(`${srv.url}/ws`, { headers: { 'X-Real-IP': ip, Connection: 'Upgrade', Upgrade: 'websocket',
+      'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'MDEyMzQ1Njc4OWFiY2RlZg==' } });
+    req.on('error', reject);
+    req.on('upgrade', (_res, socket) => { socket.destroy(); reject(new Error('foreign connection must not upgrade')); });
+    req.on('response', res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('error', reject);
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+    });
+    req.end();
+  });
+}
 
 async function fixture(t, countryLookup = lookup, options = {}) {
   const logs = [], clients = [];
@@ -218,7 +235,7 @@ test('policy persists with other room settings, honors override and reports miss
   assert.equal(f.srv.lobby.opts.limitForeignSessions, true);
   const results = await Promise.all([putPolicy(f.srv, { limitForeignSessions: false }), putPolicy(f.srv, { maxRooms: 700, allowBots: false })]);
   assert.ok(results.every((r) => r.status === 200));
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false });
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false, allowForeignConnections: true });
   await f.srv.close();
   const restored = await fixture(t, lookup, options);
   assert.equal(restored.srv.network.foreignSessions.stats().enabled, false);
@@ -238,4 +255,87 @@ test('failed policy persistence leaves enforcement unchanged', async (t) => {
   const f = await fixture(t, lookup, { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: path.join(blocker, 'config.json') });
   assert.equal((await putPolicy(f.srv, { limitForeignSessions: false })).status, 503);
   assert.equal(f.srv.network.foreignSessions.stats().enabled, true);
+  assert.equal((await putPolicy(f.srv, { allowForeignConnections: false })).status, 503);
+  assert.equal(f.srv.network.foreignSessions.stats().allowForeignConnections, true);
+});
+
+test('foreign connection environment defaults to allowed and accepts explicit overrides', () => {
+  assert.equal(lobbyOptionsFrom({}, {}).allowForeignConnections, true);
+  for (const value of ['off', 'false', '0'])
+    assert.equal(lobbyOptionsFrom({}, { SP_ALLOW_FOREIGN_CONNECTIONS: value }).allowForeignConnections, false);
+  assert.equal(lobbyOptionsFrom({ allowForeignConnections: true }, { SP_ALLOW_FOREIGN_CONNECTIONS: 'off' }).allowForeignConnections, true);
+  assert.throws(() => lobbyOptionsFrom({}, { SP_ALLOW_FOREIGN_CONNECTIONS: 'maybe' }), RangeError);
+});
+
+test('known overseas sources receive HTTP 403 and never complete a WebSocket upgrade', async (t) => {
+  for (const country of ['HK', 'MO', 'TW', 'US']) {
+    const f = await fixture(t, () => country, { allowForeignConnections: false });
+    const refusal = await refusedUpgrade(f.srv);
+    assert.equal(refusal.status, 403);
+    assert.deepEqual(refusal.body, { code: 'FOREIGN_CONNECTIONS_DISABLED', msg: '本服务器暂时仅对中国大陆服务' });
+    assert.equal(f.srv.registry.size, 0); assert.equal(f.srv.network.conns.size, 0);
+    assert.equal(f.srv.network.foreignSessions.stats().connectionDenied, 1);
+    assert.ok(f.logs.some(line => line.includes('connection.foreignPolicy.denied')));
+  }
+});
+
+test('blocking new connections keeps authenticated players but rejects reconnect and pre-hello sockets', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-access-policy-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'config.json');
+  const options = { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: file };
+  const f = await fixture(t, lookup, options);
+  const old = await f.connect(), welcome = await old.hello('Old');
+  await old.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+  const room = f.srv.lobby.roomOf(f.srv.registry.byId(welcome.playerId));
+  const pending = await f.connect();
+  for (const value of ['false', 0, null])
+    assert.equal((await putPolicy(f.srv, { allowForeignConnections: value })).status, 400);
+  assert.equal((await putPolicy(f.srv, { allowForeignConnections: false }, 'wrong')).status, 401);
+  assert.equal((await putPolicy(f.srv, { allowForeignConnections: false })).status, 200);
+  assert.equal(old.isOpen, true);
+  assert.equal((await old.hello('Renamed', welcome.token)).playerId, welcome.playerId);
+  assert.equal(f.srv.lobby.getRoom(room.code), room);
+  assert.equal((await pending.request({ t: 'hello', name: 'Pending' })).code, 'FOREIGN_CONNECTIONS_DISABLED');
+  assert.equal((await pending.closed).code, 4003);
+  assert.equal((await refusedUpgrade(f.srv)).status, 403);
+  assert.equal((await (await f.connect(domestic)).hello('Domestic')).t, 'welcome');
+  assert.equal(f.srv.registry.size, 2);
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).allowForeignConnections, false);
+  const restored = await fixture(t, lookup, options);
+  assert.equal(restored.srv.network.foreignSessions.stats().foreignConnectionsBlocked, true);
+  const override = await fixture(t, lookup, { ...options, allowForeignConnections: true });
+  assert.equal(override.srv.network.foreignSessions.stats().foreignConnectionsBlocked, false);
+  assert.equal((await putPolicy(f.srv, { allowForeignConnections: true })).status, 200);
+  assert.equal((await (await f.connect()).hello('Old', welcome.token)).playerId, welcome.playerId);
+  assert.ok(f.logs.some(line => line.includes('connection.foreignPolicy.changed')));
+});
+
+test('connection policy fails open for domestic, unknown, private and unavailable country lookup', async (t) => {
+  for (const [countryLookup, ip] of [[lookup, domestic], [lookup, '203.0.113.99'], [() => 'HK', '127.0.0.2'],
+    [null, foreign], [() => { throw new Error('lookup failed'); }, foreign]]) {
+    const f = await fixture(t, countryLookup, { allowForeignConnections: false });
+    assert.equal((await (await f.connect(ip)).hello('Allowed')).t, 'welcome');
+    assert.equal(f.srv.network.foreignSessions.stats().connectionDenied, 0);
+    assert.equal(f.srv.network.foreignSessions.stats().foreignConnectionsBlocked, !!countryLookup);
+  }
+});
+
+test('overseas game documents return only the refusal message without blocking assets or monitoring', async (t) => {
+  const f = await fixture(t, lookup, { allowForeignConnections: false });
+  const headers = { 'X-Real-IP': foreign };
+  for (const entry of ['/', '/index.html', '/%69ndex.html', '/build/index.html', '/dev/', '/dev/spine.html']) {
+    const response = await fetch(f.srv.url + entry, { headers });
+    assert.equal(response.status, 403, entry);
+    assert.match(response.headers.get('cache-control'), /no-store/);
+    assert.deepEqual(await response.json(), { code: 'FOREIGN_CONNECTIONS_DISABLED', msg: '本服务器暂时仅对中国大陆服务' });
+  }
+  const head = await fetch(f.srv.url, { method: 'HEAD', headers });
+  assert.equal(head.status, 403); assert.equal(await head.text(), '');
+  for (const allowed of ['/js/main.js', '/healthz', '/api/ping'])
+    assert.equal((await fetch(f.srv.url + allowed, { headers })).status, 200, allowed);
+  assert.equal((await fetch(f.srv.url, { headers: { 'X-Real-IP': domestic } })).status, 200);
+  const untrusted = await fixture(t, lookup, { allowForeignConnections: false, trustProxy: false });
+  assert.equal((await fetch(untrusted.srv.url, { headers })).status, 200, 'untrusted forwarding headers cannot override the private peer');
+  assert.equal(f.srv.registry.size, 0); assert.equal(f.srv.network.connectionCount, 0);
 });

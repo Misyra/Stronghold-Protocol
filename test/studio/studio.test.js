@@ -414,10 +414,17 @@ describe('the studio over HTTP', () => {
         await reader.read(); // hello
         open.push({ ctl, reader });
       }
-      const first = await Promise.race([open[0].reader.read(), wait(2000).then(() => ({ done: 'still open' }))]);
-      assert.equal(first.done, true, 'the oldest stream was ended');
+      // the oldest ends (an event of a change may come before its end)
+      let ended = false;
+      for (const until = Date.now() + 2000; !ended && Date.now() < until;) {
+        const r = await Promise.race([open[0].reader.read(), wait(until - Date.now()).then(() => null)]);
+        if (!r) break;
+        ended = r.done;
+      }
+      assert.equal(ended, true, 'the oldest stream was ended');
+      // the newest stays (nothing, or an event of a change, arrives — never its end)
       const last = await Promise.race([open[3].reader.read(), wait(300).then(() => ({ done: 'still open' }))]);
-      assert.equal(last.done, 'still open');
+      assert.notEqual(last.done, true);
     } finally { for (const o of open) o.ctl.abort(); }
   });
 

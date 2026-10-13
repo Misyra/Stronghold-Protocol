@@ -1,6 +1,8 @@
 import { parentPort } from 'node:worker_threads';
 import { fixtureRuntime } from './simSandboxFixture.js';
 import { parse } from 'acorn';
+// `node --test` also loads every file under test/: outside a worker thread there is nothing to serve
+if (!parentPort) process.exit(0);
 const dispatch = fixtureRuntime({ base: new URL('../../server/sim/', import.meta.url).href, loadSES: () => import('ses'), parse });
 let queue = Promise.resolve();
 parentPort.on('message', data => {

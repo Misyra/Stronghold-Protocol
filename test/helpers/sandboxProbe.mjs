@@ -4,6 +4,8 @@ import { parse } from 'acorn';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
+// `node --test` also loads every file under test/: without the parent's IPC channel there is nothing to probe
+if (typeof process.send !== 'function') process.exit(0);
 await initializeSandbox({ loadSES: () => import('ses') });
 process.send({ ready: true, permission: !!process.permission });
 process.on('message', async ({ source, plugin, probePermissions, probeSdk, probeLength }) => {

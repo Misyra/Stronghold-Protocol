@@ -7,6 +7,8 @@ import { SessionRegistry } from '../server/net.js';
 import { DATA, makeMatch } from '../test/match/harness.js';
 import { PHASE } from '../shared/constants.js';
 
+if (typeof global.gc !== 'function') throw new Error('Run this retained-memory probe with node --expose-gc.');
+
 const mib = (n) => +(n / 1024 / 1024).toFixed(2);
 function report(label, pool = null) {
   global.gc?.();

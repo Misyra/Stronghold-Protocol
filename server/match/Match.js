@@ -235,6 +235,9 @@ function dataSourceFor(data) {
 
 export class Match {
   /** @param {object} opts see MATCH INTERFACE above */
+  get workerTasks() { return this._workerTasks.values(); }
+  get pendingWorkerTasks() { return this._workerTasks.size; }
+
   constructor(opts) {
     if (!opts || !Array.isArray(opts.seats) || opts.seats.length === 0) throw new TypeError('Match: seats required');
     if (typeof opts.send !== 'function' || typeof opts.broadcast !== 'function' || typeof opts.onEnd !== 'function') {

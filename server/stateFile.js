@@ -8,6 +8,7 @@
 //            the index or shards. A shard includes its initial clocks and a revision: if a save stops before runtime
 //            commits, recovery uses the shard's own clocks instead of an older round's runtime clocks. Old directory
 //            and sibling `<dir>.state.json` layouts are read and upgraded on the next save.
+import { splitClocks, mergeClocks } from './stateClocks.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -21,9 +22,7 @@ function indexMetadata(index) {
   return rest;
 }
 
-function canonicalIndex(index) {
-  return JSON.stringify(indexMetadata(index));
-}
+function canonicalIndex(index) { return JSON.stringify(indexMetadata(index)); }
 
 export class FileStateStore {
   constructor({ file, log = console }) {
@@ -39,6 +38,7 @@ export class FileStateStore {
     this.mode = null;          // resolved once, on first use: 'file' | 'dir'
     /** dir mode: exactly what is on disk per room code — the shard dirty check. */
     this.shards = new Map();
+    this.staleShards = new Set();
     /** The shard revision and match generation on disk; unchanged bodies retain their revision. */
     this.shardRevisions = new Map();
     this.shardWrites = 0;
@@ -59,6 +59,7 @@ export class FileStateStore {
       try { st = await fs.stat(this.file); } catch (err) { if (err.code !== 'ENOENT') throw err; }
       this.mode = st && !st.isDirectory() ? 'file' : 'dir';
     }
+    this.kind = this.mode;
     if (this.mode === 'dir') {
       this.dir = this.file;
       this.indexFile = path.join(this.dir, 'index.json');
@@ -163,7 +164,7 @@ export class FileStateStore {
       const room = rooms.get(code);
       if (!room || room.hasMatch === false) {
         // the room closed (or the index rolled back) after the shard was written
-        await fs.unlink(shardFile).catch(() => {});
+        await this.removeShard(code);
         continue;
       }
       let raw;
@@ -173,6 +174,7 @@ export class FileStateStore {
         body = JSON.parse(raw);
         if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid shard');
       } catch {
+        this.staleShards.add(code);
         this.log.warn?.(`[persist] ${code}: shard unreadable, the room restores without its match`);
         continue;
       }
@@ -181,11 +183,12 @@ export class FileStateStore {
         const envelope = body;
         body = envelope.checkpoint;
         if (!body || typeof body !== 'object' || Array.isArray(body) || typeof envelope.revision !== 'string') {
+          this.staleShards.add(code);
           this.log.warn?.(`[persist] ${code}: invalid shard envelope, the room restores without its match`);
           continue;
         }
         // An index write may not have committed the start of a new match in the same room yet.
-        if ((envelope.matchCount ?? null) !== (room.matchCount ?? null)) continue;
+        if ((envelope.matchCount ?? null) !== (room.matchCount ?? null)) { this.staleShards.add(code); continue; }
         this.shardRevisions.set(code, { revision: envelope.revision, matchCount: room.matchCount });
         this.shards.set(code, JSON.stringify(body));
         const fresh = runtimeMatches && runtime.clocks[code];
@@ -194,9 +197,7 @@ export class FileStateStore {
         this.shards.set(code, raw);                  // legacy, clock-free shard; upgraded on the next save
       }
       if (c && typeof c === 'object') clocks[code] = c;
-      if (c && Number.isFinite(c.deadlineRemainingMs)) body.deadlineRemainingMs = c.deadlineRemainingMs;
-      if (c && Number.isFinite(c.startedAtAgoMs)) body.startedAtAgoMs = c.startedAtAgoMs;
-      matches[code] = body;
+      matches[code] = mergeClocks(body, c);
     }
     // restoreServer uses this timestamp only for previously connected identities. Real disconnect times stay intact.
     const savedAt = runtimeMatches ? Math.max(Number(index.savedAt) || 0, runtime.savedAt) : index.savedAt;
@@ -218,20 +219,11 @@ export class FileStateStore {
   }
 
   save(doc) {
+    return this.saveSharded(this.shardedPayloadFromDoc(doc));
+  }
+
+  enqueue(work) {
     if (this.closed) return Promise.resolve(false);
-    // Serialize writes, including a final write submitted while an interval write is still running.
-    const work = async () => {
-      await this.acquire();
-      if (this.mode === 'dir') return this.runShardedWrite(this.shardedPayloadFromDoc(doc));
-      try {
-        await this.writeAtomic(this.file, JSON.stringify(doc));
-        this.saved++;
-        return true;
-      } catch (err) {
-        this.log.warn?.('[persist] state file save failed', err.message);
-        return false;
-      }
-    };
     const result = this.pending.then(work, work);
     this.pending = result.catch(() => false);
     return result;
@@ -241,9 +233,9 @@ export class FileStateStore {
    * dir mode entry point. `shards` is the full current set of clock-free checkpoint bodies (JSON text) keyed by room
    * code; only shards whose text differs from what is on disk are rewritten. A single-file store accepts the same
    * payload and merges it back into the classic one-file document — callers need not know which layout is in use.
-   * @param {{ index: object, shards: Map<string, string> }} payload
+   * @param {{ index: object, shards: Map<string, string>, metadataVersion?: number, omitMatches?: boolean, omitClocks?: boolean }} payload
    */
-  saveSharded({ index, shards }) {
+  saveSharded({ index, shards, metadataVersion, omitMatches = false, omitClocks = false }) {
     if (this.closed) return Promise.resolve(false);
     // Checkpoint events can replace/delete entries while disk I/O yields; capture this round's complete set now.
     shards = new Map(shards);
@@ -255,8 +247,10 @@ export class FileStateStore {
         for (const [code, body] of shards) {
           const parsed = JSON.parse(body);
           const c = clocks[code];
-          doc.matches[code] = c ? { ...parsed, deadlineRemainingMs: c.deadlineRemainingMs, startedAtAgoMs: c.startedAtAgoMs } : parsed;
+          doc.matches[code] = mergeClocks(parsed, c);
         }
+        if (omitMatches) delete doc.matches;
+        if (omitClocks) delete doc.clocks;
         try {
           await this.writeAtomic(this.file, JSON.stringify(doc));
           this.saved++;
@@ -266,15 +260,13 @@ export class FileStateStore {
           return false;
         }
       }
-      return this.runShardedWrite({ index, shards });
+      return this.runShardedWrite({ index, shards, metadataVersion });
     };
-    const result = this.pending.then(work, work);
-    this.pending = result.catch(() => false);
-    return result;
+    return this.enqueue(work);
   }
 
   /** Runs inside the serialized work queue — never called from another queued work item. */
-  async runShardedWrite({ index, shards }) {
+  async runShardedWrite({ index, shards, metadataVersion }) {
     let ok = true;
     const savedAt = Number.isFinite(index.savedAt) ? index.savedAt : Date.now();
     const rooms = new Map((index.rooms || []).map((room) => [room.code, room]));
@@ -297,7 +289,7 @@ export class FileStateStore {
       }
     }
     if (!ok) return false;                          // never publish clocks for a checkpoint that failed to land
-    const commit = canonicalIndex(index);
+    const commit = metadataVersion == null ? canonicalIndex(index) : `version:${metadataVersion}`;
     if (commit !== this.indexCommit) {
       const revision = randomUUID();
       const meta = { ...indexMetadata(index), savedAt, layout: DIRECTORY_LAYOUT, revision };
@@ -327,22 +319,27 @@ export class FileStateStore {
       }
     }
     // Remove obsolete shards only after the metadata/runtime commit. A failed removal remains queued for retry.
-    for (const code of [...this.shards.keys()]) {
+    for (const code of new Set([...this.shards.keys(), ...this.staleShards])) {
       if (shards.has(code)) continue;
-      try {
-        await fs.unlink(path.join(this.matchesDir, code + SHARD_SUFFIX));
-      } catch (err) {
-        if (err.code !== 'ENOENT') {
-          ok = false;
-          this.log.warn?.(`[persist] ${code}: shard removal failed`, err.message);
-          continue;
-        }
-      }
-      this.shards.delete(code);
-      this.shardRevisions.delete(code);
+      if (!await this.removeShard(code)) ok = false;
     }
     if (ok) this.saved++;
     return ok;
+  }
+
+  async removeShard(code) {
+    try { await fs.unlink(path.join(this.matchesDir, code + SHARD_SUFFIX)); }
+    catch (err) {
+      if (err.code !== 'ENOENT') {
+        this.staleShards.add(code);
+        this.log.warn?.(`[persist] ${code}: shard removal failed`, err.message);
+        return false;
+      }
+    }
+    this.staleShards.delete(code);
+    this.shards.delete(code);
+    this.shardRevisions.delete(code);
+    return true;
   }
 
   /** Object-document bridge so the classic save(doc) API also works against a directory. */
@@ -351,11 +348,11 @@ export class FileStateStore {
     const shards = new Map();
     for (const [code, checkpoint] of Object.entries(doc.matches || {})) {
       if (!checkpoint || typeof checkpoint !== 'object') continue;
-      const { deadlineRemainingMs, startedAtAgoMs, ...body } = checkpoint;
-      if (!clocks[code] && Number.isFinite(deadlineRemainingMs)) clocks[code] = { deadlineRemainingMs, startedAtAgoMs };
+      const { clocks: initialClocks, body } = splitClocks(checkpoint);
+      if (!clocks[code] && Number.isFinite(initialClocks.deadlineRemainingMs)) clocks[code] = initialClocks;
       shards.set(code, JSON.stringify(body));
     }
-    return { index: { ...doc, matches: undefined, clocks }, shards };
+    return { index: { ...doc, matches: undefined, clocks }, shards, omitMatches: !Object.hasOwn(doc, 'matches'), omitClocks: !Object.hasOwn(doc, 'clocks') };
   }
 
   /** tmp → fsync → rename: a reader never sees a half-written file, a crash never corrupts the target. */

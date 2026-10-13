@@ -63,6 +63,7 @@
 // --out defaults to <tmp>/stronghold-protocol-release and must be outside the repository. --no-install skips npm ci
 // (no node_modules, no public/vendor: a test build). Zipping needs `zip` (or a bsdtar `tar`, e.g. Windows 10+).
 
+import { CUSTOM_EMOTE_THEME } from '../shared/constants.js';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -163,7 +164,7 @@ export function isPlayerFile(rel) {
   const p = posixRel(rel);
   if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === GENERATED_PACK_INDEX) return false;
   // Site emotes are small tracked runtime assets, included even in the lite package without an extraction manifest.
-  if (p.startsWith('public/assets/local/emoticon/ciallo/') && p.endsWith('.png')) return true;
+  if (p.startsWith(`public/assets/local/emoticon/${CUSTOM_EMOTE_THEME.dir}/`) && p.endsWith('.png')) return true;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;
   return ROOT_FILES.includes(p) || PLAYER_DOCS.includes(p) || RUNTIME_RESEARCH.includes(p) || PLAYER_SCRIPTS.includes(p) || PLAYER_TOOLS.includes(p);

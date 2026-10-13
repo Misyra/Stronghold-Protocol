@@ -42,7 +42,7 @@ const MANIFEST_FILE = path.join(ROOT, '.assets-manifest.json');
 const WRANGLER_BIN = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 const args = process.argv.slice(2);
-const KNOWN_ARGS = new Set(['--bucket', '--account', '--dry-run', '--push', '--metadata-only']);
+const KNOWN_ARGS = new Set(['--bucket', '--account', '--dry-run', '--push', '--metadata-only', '--config']);
 for (const a of args) {
   // The flags take no `=` values and unknown flags must fail loudly: a typo here used to be
   // silently ignored and turned a `--help` into a real full upload.
@@ -55,7 +55,11 @@ const flag = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
-const BUCKET = flag('--bucket', 'weishu');
+const BUCKET = flag('--bucket', null);
+if (!BUCKET && !args.includes('--metadata-only') && !args.includes('--dry-run')) {
+  console.error('Uploads require an explicit --bucket <name>.');
+  process.exit(1);
+}
 const DRY = args.includes('--dry-run');
 const CONCURRENCY = 8;
 // api.cloudflare.com caps accounts at ~1200 requests / 5 min on the free plan (4/s);
@@ -63,10 +67,12 @@ const CONCURRENCY = 8;
 const MIN_INTERVAL_MS = 300;
 const MAX_ATTEMPTS = 40;
 
-const CONFIG_PATH = path.join(os.homedir(), 'AppData', 'Roaming', 'xdg.config', '.wrangler', 'config', 'default.toml');
+const CONFIG_PATH = flag('--config', path.join(process.env.WRANGLER_HOME || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), 'AppData', 'Roaming', 'xdg.config'), '.wrangler'), 'config', 'default.toml'));
 let OAUTH = null;
 function readToken() {
-  const toml = fs.readFileSync(CONFIG_PATH, 'utf8');
+  let toml;
+  try { toml = fs.readFileSync(CONFIG_PATH, 'utf8'); }
+  catch (cause) { throw new Error('Cannot read Wrangler config; run `npx wrangler login` or pass --config <path>.', { cause }); }
   OAUTH = /oauth_token\s*=\s*"([^"]+)"/.exec(toml)?.[1] ?? null;
   const account = /account_id\s*=\s*"([^"]+)"/.exec(toml)?.[1];
   if (!OAUTH) throw new Error('No oauth_token in wrangler config; run `npx wrangler login` first.');
@@ -91,8 +97,7 @@ function refreshToken() {
       });
       if (done !== 0) console.log(`  wrangler whoami exited ${done}; re-reading the config anyway`);
       readToken();
-    })();
-    refreshPromise.finally(() => { refreshPromise = null; });
+    })().finally(() => { refreshPromise = null; });
   }
   return refreshPromise;
 }
@@ -216,7 +221,13 @@ if (!files.length) { console.error('No files found under public/{assets,fonts,me
 
 // ---- content-addressed manifest tag ----
 console.log(`Hashing ${files.length} files...`);
-for (const f of files) Object.assign(f, await fingerprintPublishedAsset(f.abs));
+let hashIndex = 0;
+await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+  while (hashIndex < files.length) {
+    const f = files[hashIndex++];
+    Object.assign(f, await fingerprintPublishedAsset(f.abs));
+  }
+}));
 const manifest = publishedAssetsManifest(files);
 const tag = manifest.tag;
 

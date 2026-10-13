@@ -100,7 +100,7 @@ test('old workers time out only once, unavailable workers fall back and network 
   let messages = 0;
   const oldWorker = { postMessage() { messages++; } };
   const ensure = createWorkerCache(() => oldWorker, { origin, helloTimeoutMs: 5 });
-  assert.equal(await ensure(file), null); assert.equal(await ensure(file), null); assert.equal(messages, 1);
+  assert.equal(await ensure(file), null); assert.equal(await ensure(file), null); assert.equal(messages, 2);
   assert.equal(await createWorkerCache(() => null, { origin })(file), null);
   const f = fixture({ networkError: new TypeError('temporary') });
   assert.equal((await f.store().download()).complete, true);

@@ -1,4 +1,5 @@
 // i18n-ignore-file: private server-side chat audit log; never sent to players.
+import { within } from './pathSafety.js';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
@@ -8,11 +9,7 @@ import { logDays, maintainChatLogs } from './chatLogArchive.js';
 export const DEFAULT_CHAT_LOG_DIR = fileURLToPath(new URL('../.state/chat-logs/', import.meta.url));
 const MAX_PENDING = 10000;
 const BATCH_SIZE = 100;
-
-function within(root, target) {
-  const relative = path.relative(root, target);
-  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
-}
+const MAX_WRITE_ATTEMPTS = 3;
 
 /** Resolve existing parent links even when the final log directory has not been created yet. */
 function realLocation(location) {
@@ -30,7 +27,7 @@ function realLocation(location) {
 
 /** Serialized, bounded asynchronous appends; daily files use UTC, like the recorded timestamps. */
 export class ChatLog {
-  /** @param {{ dir?: string, publicDirs?: string[], log?: { error: Function }, compressAfterDays?: number|string,
+  /** @param {{ dir?: string, publicDirs?: string[], log?: { error: Function, warn?: Function }, compressAfterDays?: number|string,
    * retentionDays?: number|string, now?: () => number }} [options] */
   constructor({ dir = DEFAULT_CHAT_LOG_DIR, publicDirs = [], log = console, compressAfterDays, retentionDays, now = Date.now } = {}) {
     this.dir = path.resolve(dir || DEFAULT_CHAT_LOG_DIR);
@@ -38,7 +35,8 @@ export class ChatLog {
     this.checkPrivate();
     this.log = log;
     this.compressAfterDays = logDays(compressAfterDays, 'SP_CHAT_LOG_COMPRESS_AFTER_DAYS', 1);
-    this.retentionDays = logDays(retentionDays, 'SP_CHAT_LOG_RETENTION_DAYS', 0);
+    this.retentionDays = logDays(retentionDays, 'SP_CHAT_LOG_RETENTION_DAYS', 30);
+    if (this.retentionDays === 0) this.log.warn?.('[chat-log] permanent retention explicitly enabled');
     this.now = now;
     this.maintenance = null;
     this.timer = null;
@@ -56,6 +54,7 @@ export class ChatLog {
     this.failed = 0;
     this.writing = 0;
     this.lastErrorAt = -Infinity;
+    this.retries = 0;
   }
 
   checkPrivate() {
@@ -71,7 +70,7 @@ export class ChatLog {
    * @param {{ at: number, ip: string, playerId: string, name: string, roomCode: string, text: string }} record
    */
   record(record) {
-    if (this.closed || this.queue.length >= MAX_PENDING) {
+    if (this.closed || this.queue.length + this.writing >= MAX_PENDING) {
       this.reportFailure(1, 'log is closed or the pending queue is full');
       return false;
     }
@@ -98,13 +97,15 @@ export class ChatLog {
           }
           const name = `${day}.jsonl`, body = batch.map(item => item.line).join('');
           await appendFile(path.join(this.dir, name), body, { encoding: 'utf8', mode: 0o600 });
+          this.retries = 0;
           if (this.disk) {
             if (!this.plainNames.has(name)) { this.plainNames.add(name); this.disk.files++; this.disk.plainFiles++; }
             const bytes = Buffer.byteLength(body); this.disk.totalBytes += bytes; this.disk.plainBytes += bytes;
           }
         } catch (error) {
           this.ready = false;
-          this.reportFailure(batch.length, error.code || error.message);
+          if (++this.retries < MAX_WRITE_ATTEMPTS) this.queue.unshift(...batch);
+          else { this.retries = 0; this.reportFailure(batch.length, error.code || error.message); }
         } finally { this.writing = 0; }
       }
     } finally { this.pending = null; }

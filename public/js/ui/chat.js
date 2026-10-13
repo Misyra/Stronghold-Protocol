@@ -31,7 +31,8 @@ export function Communication({ open, onToggle }) {
   const composer = chat.enabled ? html`<section class="ewheel__chat" aria-label=${t('局内聊天')}>
       <form class="ewheel__chat-form" onSubmit=${submit}>
         <label class="field__box"><input class="field__input" aria-label=${t('聊天消息')} placeholder=${t('请文明交流')} value=${draft} maxlength="60" autocomplete="off"
-          disabled=${muted || !online} onInput=${e => setDraft(e.currentTarget.value)}
+          disabled=${muted || !online} onInput=${e => { if (!e.isComposing) e.currentTarget.value = [...e.currentTarget.value].slice(0, 30).join(''); setDraft(e.currentTarget.value); }}
+          onCompositionEnd=${e => { e.currentTarget.value = [...e.currentTarget.value].slice(0, 30).join(''); setDraft(e.currentTarget.value); }}
           onKeyDown=${e => { if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) { e.preventDefault(); e.stopPropagation(); } }} />
           <span class="ewheel__chat-count" aria-live="polite">${length}/30</span></label>
         <div class="ewheel__chat-send">

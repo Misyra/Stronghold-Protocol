@@ -2,7 +2,7 @@ import { html, Button, Modal } from './components.js';
 import { APP_VERSION } from '../../../shared/constants.js';
 import { t } from '../../../shared/i18n.js';
 
-const REPOSITORY = 'https://github.com/Misyra/Stronghold-Protocol';
+import { REPOSITORY_URL as REPOSITORY } from '../../../shared/constants.js';
 
 export function AboutModal({ open, onClose }) {
   return html`<${Modal} open=${open} title=${t('关于本项目')} micro="STRONGHOLD PROTOCOL · ALLIANCE" width="8rem" class="about-panel" utility=${true}

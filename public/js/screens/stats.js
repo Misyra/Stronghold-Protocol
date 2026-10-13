@@ -27,9 +27,10 @@ import { createStore, useStore, selectRoute } from '../store.js';
 import { ResultView } from './result.js';
 import { toast, toastError } from '../ui/toasts.js';
 import {
-  loadStats, saveStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
+  loadStats, saveStats, subscribeStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf,
   recordToResult, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
 } from '../ui/stats.js';
+import { migrateHistory } from '../history/migration.js';
 import { t, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -40,11 +41,12 @@ export const HISTORY_PAGE = 50;
 const statsStore = createStore({ open: false, tab: 'overview' });
 
 /** Open the stats viewer (title screen / lobby / room entry points). */
-export function openStats() {
+export function openStats(tab = 'overview') {
+  if (!['overview', 'bands', 'totals', 'history'].includes(tab)) tab = 'overview';
   data.load('config');
   data.load('bands');
   data.load('assets');
-  statsStore.set({ open: true, tab: 'overview' });
+  statsStore.set({ open: true, tab });
 }
 export const closeStats = () => statsStore.set({ open: false });
 
@@ -273,6 +275,11 @@ function StatsScreen({ tab }) {
 
   const agg = useMemo(() => aggregateStats(stats.records), [stats]);
   const reload = () => setStats(loadStats());
+  useEffect(() => {
+    const off = subscribeStats(reload);
+    void migrateHistory().then((added) => { if (added) reload(); }, toastError);
+    return off;
+  }, []);
 
   const doExport = () => {
     try {

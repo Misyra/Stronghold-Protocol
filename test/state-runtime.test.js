@@ -9,7 +9,7 @@ import { SessionRegistry } from '../server/net.js';
 import { Lobby } from '../server/lobby.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { startServer } from '../server/index.js';
-import { snapshotServer, restoreServer } from '../server/persist.js';
+import { Persister, roomDoc, snapshotServer, restoreServer } from '../server/persist.js';
 
 const log = { info() {}, warn() {}, error() {}, debug() {} };
 const checkpoint = (round) => JSON.stringify({ v: 1, phase: 'PREP', round, players: [] });
@@ -249,4 +249,33 @@ test('250 unchanged rooms write only the small runtime file during a clock refre
   const doc = await store.load();
   assert.equal(Object.keys(doc.matches).length, 250);
   assert.equal(doc.matches.R249.deadlineRemainingMs, 4000);
+});
+
+test('steady persistence never re-encodes large terminal metadata; replacement and replay deletion dirty it', async (t) => {
+  const { create } = await fixture(t), store = create();
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log, MatchClass: StubMatch, getData: () => ({}) });
+  t.after(() => lobby.shutdown());
+  const session = registry.create('Alice');
+  lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' });
+  const room = lobby.getRoom(session.roomCode);
+  let encodes = 0;
+  room.lastSummary = { toJSON() { encodes++; return { result: 'x'.repeat(1024 * 1024) }; } };
+  room.replay = { publicFrame: 'public', frames: new Map([['one', 'a'.repeat(1024 * 1024)], ['two', 'b']]), pending: new Set(['one', 'two']) };
+  const persister = new Persister({ store, registry, lobby, log, minFlushMs: 0 });
+  t.after(() => persister.dispose());
+  assert.equal(await persister.flush('first'), true);
+  assert.equal(encodes, 1);
+  const frames = roomDoc(room).replay.frames;
+  assert.equal(await persister.flush('idle'), true);
+  assert.equal(encodes, 1, 'clock-only flush never serializes the multi-megabyte payload');
+  assert.equal(store.indexWrites, 1);
+  assert.equal(roomDoc(room).replay.frames, frames, 'replay arrays are reused');
+  lobby.dropReplay(room, 'one');
+  assert.equal(await persister.flush('drop'), true);
+  assert.equal(store.indexWrites, 2);
+  assert.notEqual(roomDoc(room).replay.frames, frames);
+  room.lastSummary = { roundsPassed: 8 };
+  assert.equal(await persister.flush('replacement'), true);
+  assert.equal(store.indexWrites, 3);
 });

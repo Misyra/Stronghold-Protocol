@@ -55,10 +55,8 @@ import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
-import { recordMatchResult } from './history/index.js';
-import { HistoryHost } from './ui/historyPanel.js';
 import { ResourceHost } from './ui/resourcePanel.js';
-import { APP_VERSION, ERR, PHASE } from '../../shared/constants.js';
+import { ERR, PHASE } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError } from './diag.js';
@@ -258,10 +256,8 @@ function wireNet() {
   net.on('m.result', (msg) => {
     const result = payload(msg);
     store.patch('match', { result });
-    void recordMatchResult(result, store.get().me.playerId, { origin: location.origin, appVersion: APP_VERSION });
-    // 本机统计 (PR #323): every arrival, including the lobby's result replay after a reconnect / reload —
-    // replays dedupe by content id inside recordResult (spectator seats' copies build no record at all)
     recordResult(result, { myId: store.get().me.playerId, roomMode: store.get().room?.mode ?? null, now: Date.now() });
+    // 本机统计 (PR #323): every arrival, including the lobby's result replay after a reconnect / reload —
   });
   net.on('m.toast', (msg) => {
     const kind = ['info', 'success', 'warn', 'error'].includes(msg.kind) ? msg.kind : 'info';
@@ -355,7 +351,6 @@ function App() {
     <${UiHosts} />
     <${GuideHost} />
     <${LoadoutHost} />
-    <${HistoryHost} />
     <${ResourceManagerHost} />
     <${StatsHost} />
     <${FullscreenPrompt} />

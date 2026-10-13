@@ -40,6 +40,8 @@
 // Programmatic use (tests): `const srv = await startServer({ port: 0, quiet: true }); … await srv.close();`
 // The server only auto-listens when this file is the process entry point.
 
+import { within } from './pathSafety.js';
+import { initializeModeration } from './moderation/nickname.js';
 import http from 'node:http';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
@@ -99,6 +101,7 @@ export {
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
+  initializeModeration();
   const { port, host } = listenAddress(opts);
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
@@ -111,8 +114,7 @@ export async function startServer(opts = {}) {
   if (!countryLookup && geoLiteFile) {
     const file = path.resolve(geoLiteFile);
     for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
-      const relative = path.relative(path.resolve(root), file);
-      if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))
+      if (within(root, file))
         throw new Error('SP_GEOLITE_COUNTRY_DB cannot be in a public static directory');
     }
     countryLookup = await openCountryLookup(file);
@@ -122,8 +124,7 @@ export async function startServer(opts = {}) {
   else log.warn('[geoip] no country database configured; foreign AI limit is disabled, total AI limit remains active');
   const roomAdminStateFile = path.resolve(opts.roomAdminStateFile ?? process.env.SP_ROOM_ADMIN_STATE_FILE ?? path.join(ROOT, '.state', 'room-admin.json'));
   for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
-    const relative = path.relative(path.resolve(root), roomAdminStateFile);
-    if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))
+    if (within(root, roomAdminStateFile))
       throw new Error('SP_ROOM_ADMIN_STATE_FILE 不能位于公开静态目录');
   }
   let savedRoomConfig = null;
@@ -197,8 +198,7 @@ export async function startServer(opts = {}) {
   if (stateFile && stateFile !== 'off') {
     const absoluteState = path.resolve(stateFile);
     for (const root of [publicDir, dataDir, sharedDir]) {
-      const relative = path.relative(path.resolve(root), absoluteState);
-      if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+      if (within(root, absoluteState)) {
         await release();
         throw new Error('SP_STATE_FILE 不能位于公开静态目录，建议使用 .state/ 或私有数据目录');
       }

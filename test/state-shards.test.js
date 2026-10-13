@@ -87,6 +87,9 @@ test('directory mode: a corrupt shard costs one room, a corrupt index refuses th
   await fs.writeFile(path.join(stateDir, 'matches', 'ABCD.json'), '{"truncated');
   const doc = await store.load();
   assert.equal(doc.matches.ABCD, undefined, 'the unreadable shard is skipped, the index still loads');
+  assert.equal(store.kind, 'dir');
+  await store.saveSharded({ index: index(2, {}), shards: new Map() });
+  await assert.rejects(fs.stat(path.join(stateDir, 'matches', 'ABCD.json')), { code: 'ENOENT' }, 'unreadable shards are reclaimed after commit');
   await store.close();
 
   const broken = new FileStateStore({ file: stateDir, log });

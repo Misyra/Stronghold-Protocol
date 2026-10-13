@@ -34,6 +34,7 @@
 // Pure logic, no Preact / DOM: Node-testable (test/ui/stats.test.js); localStorage is touched only by loadStats /
 // saveStats / their helpers.
 
+import { parseLegacyBackup } from '../history/legacyBackup.js';
 import { PHASE } from '../../../shared/constants.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
@@ -48,6 +49,11 @@ export const FULL_KEEP = 30;
 export const MAX_CHARS = 800_000;
 /** Largest export file the page reads. */
 export const IMPORT_MAX_CHARS = 8_000_000;
+
+const listeners = new Set();
+export function subscribeStats(listener) { listeners.add(listener); return () => listeners.delete(listener); }
+const notifyStats = () => { for (const listener of listeners) listener(); };
+if (typeof window !== 'undefined') window.addEventListener('storage', (e) => { if (e.key === FULL_KEY) notifyStats(); });
 
 const FULL_KEY = `sp.pref.${STATS_PREF_KEY}`;
 const DAMAGED_KEY = `${FULL_KEY}.damaged`;
@@ -336,6 +342,7 @@ export function saveStats(stats) {
       const ls = globalThis.localStorage;
       if (!ls) return false; // no storage at all (disabled by the browser)
       ls.setItem(FULL_KEY, JSON.stringify({ v: STATS_VERSION, records: recs }));
+      notifyStats();
       return true;
     } catch { /* quota or storage disabled — fall through to shrinking */ }
     if (recs.length <= 8) return false; // a small history that still does not fit is foreign quota pressure
@@ -599,6 +606,9 @@ export function mergeStats(a, b) {
  *   not be read
  */
 export function importStats(raw, current) {
+  if (raw?.format === 'stronghold-match-history') {
+    raw = { v: STATS_VERSION, records: parseLegacyBackup(JSON.stringify(raw)).map((r) => buildRecord(r.result, { myId: r.playerId, now: r.endedAt })).filter(Boolean) };
+  }
   if (isObj(raw) && raw.kind != null && raw.kind !== 'local-stats') {
     const err = new Error('not a stats export'); // the page shows its own text
     err.code = 'stats-bad-file';

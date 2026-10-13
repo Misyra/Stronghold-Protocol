@@ -220,12 +220,14 @@ export function createBattleRunner(deps) {
   const entries = new Map();
   /** @type {Map<string, any>} battleId → combat snapshot (battle/metrics.js) of a battle this match simulated */
   const combatHistory = new Map();
+  let combatVersion = 0;
+  const combatCache = new Map();
   /** Keep a battle's snapshot before its entry is dropped (evicted for room, or dropped by clear). */
   const rememberCombat = (e) => {
     if (!e.combatMetrics) return;
     const record = e.combatMetrics();
     // the same battleId is only ever replaced by a longer-running look at it (a replica re-requested, a takeover)
-    if (!(combatHistory.get(e.battleId)?.seconds > record.seconds)) combatHistory.set(e.battleId, record);
+    if (!(combatHistory.get(e.battleId)?.seconds > record.seconds)) { combatHistory.set(e.battleId, record); combatVersion++; }
   };
   /** @type {Map<string, any>} battleId → entry of a b.start still being prepared (prepare(); `battle` null until built) */
   const pending = new Map();
@@ -817,7 +819,7 @@ export function createBattleRunner(deps) {
     // a battle still being prepared too: its preparation finds itself gone and stops (prepare)
     pending.clear();
     entries.clear();
-    if (!keepMetrics) combatHistory.clear();
+    if (!keepMetrics) { combatHistory.clear(); combatVersion++; }
     cur = null;
     lastPool = null;
     if (rafH != null) { caf(rafH); rafH = null; }
@@ -844,7 +846,7 @@ export function createBattleRunner(deps) {
       const round = Number(pub?.round) || 0;
       const resetMetrics = (!pub && lastPhase != null) || round < lastRound
         || (pub?.phase !== lastPhase && ['LOBBY', 'INFO_CHECK', 'BAND_DRAFT', 'BATTLE_CHECK'].includes(pub?.phase));
-      if (resetMetrics) combatHistory.clear();
+      if (resetMetrics) { combatHistory.clear(); combatVersion++; }
       lastRound = round;
       // solo pause (DESIGN §14): the local battle clocks follow m.public.paused
       setPaused(!!(pub && pub.paused));
@@ -887,18 +889,26 @@ export function createBattleRunner(deps) {
      * @returns {{ rows: any[], damage: number, healing: number }}
      */
     combatMetrics({ scope = 'match', ownerId = null } = {}) {
+      const key = JSON.stringify([scope, ownerId]);
+      const version = [combatVersion, cur, ...[...entries.values()].flatMap((e) => [e, e.battle?.tickCount])];
+      const cached = combatCache.get(key);
+      if (cached && version.length === cached.version.length && version.every((v, i) => v === cached.version[i])) return cached.result;
+      const remember = (result) => {
+        if (combatCache.size >= 8) combatCache.clear();
+        combatCache.set(key, { version, result }); return result;
+      };
       if (scope === 'battle') {
         // scouting another field must not replace the player's own current battle statistics
         const e = ownerId == null || cur?.members.includes(ownerId) ? cur
           : [...entries.values()].reverse().find((entry) => entry.members.includes(ownerId));
-        return combineCombat(e?.combatMetrics ? [e.combatMetrics()] : [], ownerId);
+        return remember(combineCombat(e?.combatMetrics ? [e.combatMetrics()] : [], ownerId));
       }
       const records = new Map(combatHistory);
       for (const e of entries.values()) if (e.combatMetrics) {
         const record = e.combatMetrics();
         if (!(records.get(e.battleId)?.seconds > record.seconds)) records.set(e.battleId, record);
       }
-      return combineCombat(records.values(), ownerId);
+      return remember(combineCombat(records.values(), ownerId));
     },
     stats() {
       return { ...stats, avgTickMs: stats.ticks ? stats.stepMs / stats.ticks : 0, entries: entries.size, loadingSim: !!simP };

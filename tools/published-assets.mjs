@@ -1,14 +1,10 @@
 // R2 URL versions and preload fingerprints must describe the same published bytes.
-import fs from 'node:fs';
+import { hashFile } from '../server/fileHash.js';
 import { createHash } from 'node:crypto';
 
 export async function fingerprintPublishedAsset(abs) {
-  const sha256 = createHash('sha256'), sha1 = createHash('sha1');
-  let size = 0;
-  for await (const chunk of fs.createReadStream(abs)) {
-    sha256.update(chunk); sha1.update(chunk); size += chunk.length;
-  }
-  return { hash: sha256.digest('hex').slice(0, 16), contentHash: sha1.digest('hex').slice(0, 12), size };
+  const { hash, version, bytes } = await hashFile(abs, { publication: true });
+  return { hash: version, contentHash: hash, size: bytes };
 }
 
 export function publishedAssetsManifest(files) {

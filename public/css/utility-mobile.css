@@ -69,14 +69,12 @@
   }
   .modal--utility .utility-modal {
     width: min(12rem, 100%);
-    max-height: calc(100vh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px);
     max-height: calc(min(100dvh, calc(var(--sp-vh, 1dvh) * 100)) - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px);
     font-size: max(calc(.16 * var(--utility-text)), 11px);
   }
   .modal--utility .resource-modal { width: min(17rem, 100%); }
   .modal--utility .settings-modal { width: min(14rem, 100%); }
   .modal--utility .minfo-dlg { width: min(17rem, 100%); }
-  .modal--utility .history-panel { width: min(17rem, 100%); }
   .modal--utility .resume-modal { width: min(10rem, 100%); }
   .utility-modal .modal__head { padding: 6px 10px 4px; gap: 8px; }
   .utility-modal .modal__head .micro { font-size: max(calc(.1 * var(--utility-text)), 9px); letter-spacing: .08em; white-space: normal; }
@@ -364,16 +362,6 @@
   .combat-metrics__values b { font-size: max(calc(.14 * var(--t)), 12px); }
   .combat-metrics__note { padding: .1rem .2rem; font-size: max(calc(.1 * var(--t)), 10px); line-height: 1.3; }
   .combat-metrics__note br { display: none; }
-
-  /* ---- local match history (its own small sheet, wrapped like the others) ------------------- */
-
-  .history-panel { max-width: 100%; }
-  .history-panel .modal__body { padding: 6px 10px 8px; }
-  .history-notice, .history-import-notice, .history-meta { margin-bottom: 8px; line-height: 1.45; }
-  .history-list { overflow-x: auto; touch-action: pan-x pan-y; }
-  .history-entry { padding: 8px; gap: 6px; }
-  .history-detail__summary { gap: 8px; }
-  .history-error { line-height: 1.45; }
 
   /* ---- guide ------------------------------------------------------------------------------- */
 

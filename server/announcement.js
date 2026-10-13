@@ -108,7 +108,7 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
       lastError = null;
     } catch (error) {
       const reason = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'source timed out' :
-        error?.expected ? error.message : error.message;
+        error.message;
       if (reason !== lastError) log?.warn?.('[announcement] central source unavailable:', reason);
       lastError = reason;
     }

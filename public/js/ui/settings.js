@@ -14,6 +14,7 @@
 // Only font-size declarations read `--t`, so the board, the HUD bands the prep camera keeps clear and the detail
 // card's side do not move — the field is sized from the host element's clientWidth (render/app.js).
 
+import { REPOSITORY_URL } from '../../../shared/constants.js';
 import { useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button, Icon, MicroLabel } from './components.js';
 import { GIcon } from './gameComponents.js';
@@ -186,7 +187,7 @@ function HotkeySection({ keys, touchUi }) {
 }
 
 /** Where a report goes: this repository's issue tracker (shown as text the player can select; a link may open nothing). */
-export const ISSUES_URL = 'https://github.com/Misyra/Stronghold-Protocol/issues';
+export const ISSUES_URL = `${REPOSITORY_URL}/issues`;
 
 /**
  * 问题反馈: copy the diagnostics of this page (diag.js) for a GitHub issue — the errors recorded since the page opened,

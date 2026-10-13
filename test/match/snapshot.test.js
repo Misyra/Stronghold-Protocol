@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';
 import { createRngFromState } from '../../server/sim/rng.js';
 import {
+  MATCH_FIELDS, PLAYER_FIELDS, TRANSIENT_MATCH_FIELDS, TRANSIENT_PLAYER_FIELDS,
   canSnapshot, snapshotMatch, restoreMatch, matchState, SNAPSHOT_VERSION, encodeState, decodeState,
 } from '../../server/match/snapshot.js';
 import { makeMatch, checkInvariants, legalTileFor } from './harness.js';
@@ -347,4 +348,17 @@ test('a checkpoint keeps personal stock copy counts, class methods and rerolled 
   assert.equal(restoreMatch(m, legacy, DEPS), true);
   assert.equal(m.setupRevision, 0, 'old checkpoints keep the constructor default');
   assert.equal(m.setupVote, null);
+});
+
+test('every constructed Match and PlayerState own field has an explicit persistence policy', () => {
+  const h = makeMatch(OPTIONS);
+  try {
+    const check = (value, saved, rebuilt) => {
+      const allowed = new Set([...saved, ...rebuilt]);
+      assert.equal(allowed.size, saved.length + rebuilt.length, 'policies must not overlap');
+      assert.deepEqual(Object.keys(value).filter((key) => !allowed.has(key)), [], 'classify new fields before merging');
+    };
+    check(h.m, MATCH_FIELDS, TRANSIENT_MATCH_FIELDS);
+    for (const ps of h.m.players.values()) check(ps, PLAYER_FIELDS, TRANSIENT_PLAYER_FIELDS);
+  } finally { h.m.dispose(); }
 });

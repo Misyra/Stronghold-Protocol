@@ -99,7 +99,7 @@ test('the Modal utility prop moves the requested width to a CSS variable and add
 test('management dialogs opt in; gameplay dialogs (equipment, rewards, spectating, leave, fullscreen prompt) do not', () => {
   for (const file of [
     'public/js/ui/settings.js', 'public/js/ui/resourcePanel.js', 'public/js/ui/about.js',
-    'public/js/ui/announcement.js', 'public/js/ui/resumeMatch.js', 'public/js/ui/historyPanel.js',
+    'public/js/ui/announcement.js', 'public/js/ui/resumeMatch.js',
     'public/js/ui/matchInfo.js', 'public/js/screens/loadout.js', 'public/js/screens/stats.js',
     'public/js/screens/room.js',
   ]) assert.match(read(file), /utility=\$\{true\}|utility: true/, file);

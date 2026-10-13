@@ -6,7 +6,7 @@ import { Crc32 } from '../../vendor/zip-crc32.module.js';
 import { CONTENT_HASH_RE, MAX_FILE_BYTES, checkAbort, isResourceUrl } from './common.js';
 import { resourceDigests, verifyResourceBytes } from './integrity.js';
 import { ResourceZipReader } from './zipReader.js';
-import { canonicalResourceUrl } from '../../../shared/resourcePaths.js';
+import { canonicalResourceUrl, resourceIdentity } from '../../../shared/resourcePaths.js';
 
 export const ARCHIVE_MANIFEST = 'stronghold-resources.json';
 export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -17,16 +17,9 @@ const OPTIONS = { useWebWorkers: false };
 /** Stable resource identity across origins/CDN prefixes; only current manifest URLs are ever cache destinations. */
 export function resourcePath(url) {
   if (!isResourceUrl(url)) throw new Error('资源路径无效');
-  const path = new URL(url, 'https://archive.invalid').pathname;
-  const match = /\/(?:assets|fonts)\//.exec(path);
-  if (!match) throw new Error('资源路径无效');
-  const canonical = path.slice(match.index);
-  let decoded;
-  try { decoded = decodeURIComponent(canonical); } catch { throw new Error('资源路径无效'); }
-  if (/[\\\u0000-\u001f?#]/.test(decoded) || decoded.split('/').some((s) => s === '.' || s === '..')) {
-    throw new Error('资源路径无效');
-  }
-  return canonicalResourceUrl(canonical);
+  const identity = resourceIdentity(url);
+  if (!identity || !/^\/(?:assets|fonts)\//.test(identity)) throw new Error('资源路径无效');
+  return canonicalResourceUrl(identity);
 }
 
 /** Enforce the limit on actual decompressed bytes as well as untrusted central-directory sizes. */

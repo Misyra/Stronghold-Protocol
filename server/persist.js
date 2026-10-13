@@ -28,6 +28,7 @@
 //
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
 
+import { splitClocks, mergeClocks } from './stateClocks.js';
 import { captureMatch, canSnapshot, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
@@ -88,6 +89,16 @@ function seatDoc(seat) {
   };
 }
 
+const replayFrames = new WeakMap();
+function replayFrameList(frames) {
+  let cached = replayFrames.get(frames);
+  if (!cached || cached.size !== frames.size) {
+    cached = { size: frames.size, value: [...frames] };
+    replayFrames.set(frames, cached);
+  }
+  return cached.value;
+}
+
 /** One room (the match checkpoint is added by the Persister). */
 export function roomDoc(room) {
   return {
@@ -103,7 +114,7 @@ export function roomDoc(room) {
     seats: room.seats.filter(Boolean).map(seatDoc),
     spectators: room.spectators.map((s) => ({ playerId: s.playerId, name: s.name })),
     lastSummary: room.lastSummary || null,
-    replay: room.replay ? { publicFrame: room.replay.publicFrame, frames: [...room.replay.frames], pending: [...room.replay.pending] } : null,
+    replay: room.replay ? { publicFrame: room.replay.publicFrame, frames: replayFrameList(room.replay.frames), pending: [...room.replay.pending] } : null,
   };
 }
 
@@ -194,8 +205,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
     const c = clocks[room.code];
     const restored = c && typeof c === 'object' ? { ...checkpoint } : checkpoint;
     if (restored !== checkpoint) {
-      if (Number.isFinite(c.deadlineRemainingMs)) restored.deadlineRemainingMs = c.deadlineRemainingMs;
-      if (Number.isFinite(c.startedAtAgoMs)) restored.startedAtAgoMs = c.startedAtAgoMs;
+      Object.assign(restored, mergeClocks(restored, c));
     }
     if (lobby.restoreMatch(room, restored)) stats.matches++;
     else log.warn?.(`[persist] ${room.code}: the running match could not be resumed — room kept in the lobby`);
@@ -234,9 +244,14 @@ export class Persister {
     this.minFlushMs = minFlushMs == null ? this.saveMs : Math.max(0, Number(minFlushMs) || 0);
     /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
+    this.metadataTokens = new WeakMap();
+    this.metadataTokenSeq = 0;
+    this.metadataVersion = 0;
+    this.metadataSignature = null;
     /** Fresh phase clocks per room code (deadlineRemainingMs / startedAtAgoMs; written into the document envelope). */
     this.matchClocks = new Map();
     this.encoder = new PersistenceWorker();
+    this.checkpointPending = new Set();
     /** False while the Worker is failing and checkpoints encode inline (warned once per streak). */
     this._workerHealthy = true;
     /** @type {NodeJS.Timeout | null} */
@@ -252,17 +267,42 @@ export class Persister {
     /** @type {NodeJS.Timeout | null} the deferred flush slot (see flush) */
     this._cooldownTimer = null;
     this._lastFlushAt = -Infinity;
-    this.lobby.onCheckpoint = (code, match) => {
+    const onCheckpoint = (code, match) => {
       if (!match) {
         this.matchDocs.delete(code);
         this.matchClocks.delete(code);
         if (this.running) this.scheduleFlush('checkpoint');
         return;
       }
-      this.encodeRoom(code, match).then((encoded) => {
+      const pending = this.encodeRoom(code, match);
+      this.checkpointPending.add(pending);
+      void pending.then((encoded) => {
         if (encoded && this.running) this.scheduleFlush('checkpoint');
-      }, () => {});
+      }).catch(() => {}).finally(() => this.checkpointPending.delete(pending));
     };
+    // Test doubles may expose only the legacy hook.
+    if (this.lobby.subscribeCheckpoint) this.unsubscribeCheckpoint = this.lobby.subscribeCheckpoint(onCheckpoint);
+    else {
+      const previous = this.lobby.onCheckpoint;
+      const handler = (code, match) => { previous?.(code, match); onCheckpoint(code, match); };
+      this.lobby.onCheckpoint = handler;
+      this.unsubscribeCheckpoint = () => { if (this.lobby.onCheckpoint === handler) this.lobby.onCheckpoint = previous; };
+    }
+  }
+
+  /** Heavy terminal records are replaced, never edited during live operation. Compare their identity once. */
+  versionMetadata(meta) {
+    const token = (value) => {
+      if (!value || typeof value !== 'object') return value;
+      if (!this.metadataTokens.has(value)) this.metadataTokens.set(value, ++this.metadataTokenSeq);
+      return this.metadataTokens.get(value);
+    };
+    const signature = JSON.stringify({ sessions: meta.sessions, rooms: meta.rooms.map((room) => ({
+      ...room, lastSummary: token(room.lastSummary),
+      replay: room.replay ? { frames: token(room.replay.frames), pending: room.replay.pending } : null,
+    })) });
+    if (signature !== this.metadataSignature) { this.metadataSignature = signature; this.metadataVersion++; }
+    return this.metadataVersion;
   }
 
   /** Refresh every checkpointable match (Worker-encoded, one room at a time); drop checkpoints of gone rooms. */
@@ -293,9 +333,9 @@ export class Persister {
       // Re-capture synchronously: the posted capture held references that may have moved on while the Worker died.
       const doc = snapshotMatch(match);
       if (!doc) return false;
-      const { deadlineRemainingMs, startedAtAgoMs, ...rest } = doc;
-      clocks = { deadlineRemainingMs, startedAtAgoMs };
-      body = JSON.stringify(rest);
+      const split = splitClocks(doc);
+      clocks = split.clocks;
+      body = JSON.stringify(split.body);
       if (this._workerHealthy !== false) {
         this._workerHealthy = false;
         this.log.warn?.(`[persist] persistence worker unavailable, encoding inline (${err?.message}); will retry the Worker every save`);
@@ -320,7 +360,7 @@ export class Persister {
     for (const [code, body] of this.matchDocs) {
       const parsed = JSON.parse(body);
       const c = clocks[code];
-      doc.matches[code] = c ? { ...parsed, deadlineRemainingMs: c.deadlineRemainingMs, startedAtAgoMs: c.startedAtAgoMs } : parsed;
+      doc.matches[code] = mergeClocks(parsed, c);
     }
     return doc;
   }
@@ -357,7 +397,7 @@ export class Persister {
     this._pending = (async () => { try {
       await this.checkpointMatches();
       const ok = typeof this.store.saveSharded === 'function'
-        ? await this.store.saveSharded({ index: { ...meta, clocks: Object.fromEntries(this.matchClocks) }, shards: this.matchDocs })
+        ? await this.store.saveSharded({ index: { ...meta, clocks: Object.fromEntries(this.matchClocks) }, shards: this.matchDocs, metadataVersion: this.versionMetadata(meta) })
         : await this.store.save(this.legacyDocument(meta));
       if (ok) this.writes++;
       else { this.failures++; this.skipped++; this.log.debug?.(`[persist] write skipped (${reason})`); }
@@ -410,16 +450,20 @@ export class Persister {
   async dispose() {
     this.stop();
     this._again = false;
-    await this.encoder.close();
+    this.unsubscribeCheckpoint();
     await this._pending;
+    await Promise.allSettled([...this.checkpointPending]);
+    await this.encoder.close();
   }
 
   /** Stop and write the final document. */
   async shutdown(reason = 'shutdown') {
     this.stop();
     this._again = false;
+    this.unsubscribeCheckpoint();
     await this._pending;
+    await Promise.allSettled([...this.checkpointPending]);
     try { return await this.flush(reason); }
-    finally { await this.encoder.close(); }
+    finally { this.unsubscribeCheckpoint(); await this.encoder.close(); }
   }
 }

@@ -87,9 +87,9 @@
     "siteAddedTerms": 67,
     "encoding": "aes-256-gcm",
     "charset": "utf-8",
-    "decodedSha256": "007178577fb2f6ca6e81319bedb1e8f6718c9880e731f2d50532c2f13dfa0174",
     "compression": "gzip",
-    "format": "SPLEX001"
+    "format": "SPLEX001",
+    "termsBucket": "42k"
   },
   "filtering": {
     "normalization": "NFKD, lowercase, retain Unicode letters and numbers",

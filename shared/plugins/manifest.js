@@ -15,10 +15,12 @@
 //                                                                            it on for the room, a player for themself
 //   content    data patches and new records: operators, enemies, waves …    planned (P1b): validated, listed, not applied
 //   script     code the battle or the match runs                             unsupported: listed, never loaded
-//   ui         interface widgets in a sandboxed frame                        unsupported
+//   ui         interface widgets in a sandboxed frame                        loaded (P4): personal, read-only postMessage,
+//                                                                            never a match intent (shared/plugins/ui.js)
 //   trusted    page or server code with full trust                           unsupported
-// No third-party code runs in this version (the owner's decision of 2026-10-12: the first plugins are art and data).
-// Everything but `lang` is marked unofficial wherever it is shown: the original content stays the default.
+// No sim or server code from a plugin runs (the owner's decision of 2026-10-12). A ui plugin's page (P4, DESIGN §32.8)
+// runs only inside the sandboxed frame and cannot send a match intent. Everything but `lang` is marked unofficial
+// wherever it is shown: the original content stays the default.
 //
 // Manifest 2 (plugin.json; `problems` keep a plugin out, `warnings` do not):
 //   manifest     2 (required)
@@ -38,7 +40,9 @@
 //                a list of paths or (assets, theme) the object inline · i18n { <lang>: path } (content+) — paths are
 //                inside the folder (isPackPath) and .json, the files an inline `assets` names are art, models, audio
 //                or fonts
-//   entry        { sim, meta } (script, .js) · { client } (ui: .html) · { server } (trusted, .js)
+//   entry        { sim, meta } (script, .js) · { client } (ui: .html, required) · { server } (trusted, .js)
+//   slots        ui only: hud.right, result.tab, stats.tab, room.panel (UI_SLOT_IDS). Absent or []: a warning, the
+//                plugin still loads but the host grants no slot. A bad list, or slots on another class: a problem.
 //   lang class   the language fields of manifest 1 (lang, base, fallback, complete, machineTranslated, numberUnits —
 //                shared/i18nPacks.js) and files { ui (required), data }, both .json
 //
@@ -99,7 +103,7 @@ export const PLUGIN_CLASSES = Object.freeze({
   cosmetic: Object.freeze({ status: 'supported', summary: 'art, models and audio: the room\'s host switches it on for the room, a player for themself (P1a)', scopes: ['room', 'personal'], defaultScope: ['room', 'personal'], unofficial: true, packType: 'assets', ext: MEDIA }),
   content: Object.freeze({ status: 'planned', summary: 'data patches and new records: operators, enemies, waves, modes (P1b)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'data', ext: MEDIA }),
   script: Object.freeze({ status: 'unsupported', summary: 'code the battle or the match runs (never loaded by this version)', scopes: ['room'], defaultScope: ['room'], unofficial: true, packType: 'script', ext: [...MEDIA, '.js'] }),
-  ui: Object.freeze({ status: 'unsupported', summary: 'interface widgets in a sandboxed frame (never loaded by this version)', scopes: ['personal'], defaultScope: ['personal'], unofficial: true, packType: 'ui', ext: ['.json', '.html', '.js', '.css', '.png'] }),
+  ui: Object.freeze({ status: 'supported', summary: 'interface widgets in a sandboxed frame (P4): read-only, personal, cannot send a match intent', scopes: ['personal'], defaultScope: ['personal'], unofficial: true, packType: 'ui', ext: ['.json', '.html', '.js', '.css', '.png'] }),
   trusted: Object.freeze({ status: 'unsupported', summary: 'page or server code with full trust (never loaded by this version)', scopes: ['server', 'room'], defaultScope: ['server'], unofficial: true, packType: 'trusted', ext: [...MEDIA, '.js', '.html', '.css'] }),
 });
 
@@ -166,7 +170,7 @@ const SETTING_TYPES = ['boolean', 'integer', 'number', 'enum'];
 /** Top-level fields of manifest 2 (anything else is warned about and ignored). */
 const V2_FIELDS = new Set(['$schema', 'manifest', 'id', 'name', 'englishName', 'description', 'version', 'app', 'api', 'class', 'scope',
   'authors', 'credits', 'license', 'homepage', 'sourceLang', 'requires', 'optional', 'conflicts', 'loadAfter', 'loadBefore', 'priority',
-  'settings', 'permissions', 'entry', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
+  'settings', 'permissions', 'entry', 'slots', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
 /** Fields only a lang plugin has. */
 const LANG_ONLY = ['files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits'];
 
@@ -186,6 +190,12 @@ export const isPackId = (v) => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9.
 
 /** A plugin id (manifest 2): lower-case letters, digits and '-', 2–32, not starting with '-'. @param {unknown} v */
 export const isPluginId = (v) => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{1,31}$/.test(v);
+
+/**
+ * The slots a ui plugin may ask the host for (DESIGN §32.8). [ASSUMED] these four; the host mounts at most one plugin
+ * in each (shared/plugins/ui.js).
+ */
+export const UI_SLOT_IDS = Object.freeze(['hud.right', 'result.tab', 'stats.tab', 'room.panel']);
 
 /**
  * A path inside a pack or plugin folder ('ui.json', 'img/a.png'): relative, '/'-separated, no '.' / '..' / hidden /
@@ -268,7 +278,7 @@ export function appVersionMatches(range, version = APP_VERSION) {
  *   homepage: string, sourceLang: string, requires: Record<string, string>, optional: Record<string, string>,
  *   conflicts: Record<string, string>, loadAfter: string[], loadBefore: string[], priority: number,
  *   settings: Record<string, PluginSetting>, permissions: string[], parts: Record<string, PluginPart>,
- *   entry: Record<string, string>, files: Record<string, string>,
+ *   entry: Record<string, string>, slots: string[], files: Record<string, string>,
  *   lang?: string, base?: string | null, fallback?: string[], complete?: boolean, machineTranslated?: boolean,
  *   numberUnits?: string[] | null }} PluginManifest
  *   One shape for both versions. type: the manifest 1 type (lang, assets, data; the class name for the classes that
@@ -284,6 +294,7 @@ function v2Defaults(cls) {
   return {
     names: {}, description: {}, api: null, scope: [...(PLUGIN_CLASSES[cls]?.defaultScope || [])], homepage: '', sourceLang: SOURCE_LANG,
     requires: {}, optional: {}, conflicts: {}, loadAfter: [], loadBefore: [], priority: 0, settings: {}, permissions: [], parts: {}, entry: {},
+    slots: [],
   };
 }
 
@@ -672,6 +683,19 @@ export function readPluginManifest(raw, ctx) {
   }
   if (!isLang) for (const k of LANG_ONLY) if (m[k] !== undefined) problems.push(`"${k}" belongs to a lang plugin, not a ${cls} one`);
 
+  // slots: a ui plugin asks the host for one of UI_SLOT_IDS. Absent (or []): it loads, and the host grants none.
+  /** @type {string[]} */
+  let slots = [];
+  if (m.slots !== undefined && cls !== 'ui') problems.push(`"slots" is not something a ${cls} plugin carries (ui)`);
+  else if (cls === 'ui') {
+    if (m.slots === undefined || (Array.isArray(m.slots) && m.slots.length === 0)) warnings.push('requests no slot (the host will not grant one)');
+    else if (!Array.isArray(m.slots) || m.slots.length > UI_SLOT_IDS.length || new Set(m.slots).size !== m.slots.length
+      || m.slots.some((s) => !UI_SLOT_IDS.includes(s))) {
+      problems.push(`"slots": ${short(m.slots)} — a ui plugin lists ${UI_SLOT_IDS.join(', ')} (one each)`);
+    } else slots = UI_SLOT_IDS.filter((s) => m.slots.includes(s));
+    if (!entry.client) problems.push('"entry.client" is required for a ui plugin (an .html file)');
+  }
+
   // permissions: known, allowed for the class, one for every part and entry point
   const permissions = [];
   if (m.permissions !== undefined) {
@@ -703,7 +727,7 @@ export function readPluginManifest(raw, ctx) {
   const out = {
     manifest: 2, id, class: cls, type: kind.packType, name, englishName, names, description, version, app: range, compatible, api, scope,
     authors: authorsOf(m.authors), credits: str(m.credits, 500), license: str(m.license, 100), homepage, sourceLang: sourceLang || SOURCE_LANG,
-    requires, optional, conflicts, loadAfter, loadBefore, priority, settings, permissions, parts, entry, files: {},
+    requires, optional, conflicts, loadAfter, loadBefore, priority, settings, permissions, parts, entry, slots, files: {},
   };
   if (isLang) {
     readLangFields(m, undefined, out, problems, warnings);
@@ -760,7 +784,7 @@ export function checkPluginFiles(manifest, files) {
     count++;
     const ext = extOf(rel);
     if (!kind.ext.includes(ext)) { problems.push(`${rel}: ${ext || 'a file without an extension'} is not a file a ${manifest.class} plugin may carry (${kind.ext.join(' ')}, documents)`); continue; }
-    if (clientDir !== null && ['.html', '.js', '.css'].includes(ext) && !rel.startsWith(clientDir)) problems.push(`${rel}: a frame file outside the folder of entry.client (${clientDir || 'the plugin folder'})`);
+    if (clientDir !== null && ['.html', '.js', '.css', '.png'].includes(ext) && !rel.startsWith(clientDir)) problems.push(`${rel}: a frame file outside the folder of entry.client (${clientDir || 'the plugin folder'})`);
     if (ext === '.json' && f.bytes > PLUGIN_LIMITS.jsonBytes) problems.push(`${rel}: ${(f.bytes / 1048576).toFixed(1)} MB, larger than the ${PLUGIN_LIMITS.jsonBytes / 1048576} MB a JSON file may be`);
   }
   if (files.length > PLUGIN_LIMITS.files) problems.push(`${files.length} files, more than ${PLUGIN_LIMITS.files}`);
@@ -795,8 +819,8 @@ export function checkJsonLimits(value) {
 // ---- the catalogue ----------------------------------------------------------------------------------------------------
 
 /**
- * What this version does with a class: 'loaded' (lang, cosmetic), 'planned' (validated and listed, not applied yet) or
- * 'unsupported' (code: listed, never loaded).
+ * What this version does with a class: 'loaded' (lang, cosmetic, ui), 'planned' (validated and listed, not applied yet) or
+ * 'unsupported' (script and trusted: listed, never loaded).
  * @param {string} cls
  * @returns {'loaded' | 'planned' | 'unsupported'}
  */
@@ -807,8 +831,11 @@ export function classStatus(cls) {
 
 /**
  * @typedef {{ id: string, class: string, status: string, source: string, manifest: PluginManifest, bytes?: number,
- *   count?: number, visual?: { vs: string | null, bytes: number } }} PluginEntry what the registry knows of one plugin or
- *   pack (server/plugins/registry.js; `visual`: a loaded cosmetic plugin's own visual set and the bytes of art it serves)
+ *   count?: number, visual?: { vs: string | null, bytes: number },
+ *   ui?: { vs: string | null, bytes: number, slots: string[], entry: string, frameFiles: Record<string, string> } }} PluginEntry
+ *   what the registry knows of one plugin or pack (server/plugins/registry.js; `visual`: a loaded cosmetic plugin's own
+ *   visual set and the bytes of art it serves; `ui`: a loaded interface plugin's frame — its own `vs`, the bytes it
+ *   serves, the slots it asked for, the client entry and each frame file's hash)
  */
 
 /**
@@ -816,7 +843,9 @@ export function classStatus(cls) {
  * server. `unofficial` marks every class but lang; requires / optional / conflicts / loadAfter / loadBefore / priority
  * when set (what the load order reads: shared/plugins/order.js); a loaded cosmetic plugin adds `vs` (the visual set of
  * that plugin alone: a player's personal plugin is fetched as /vs/<vs16>/overlay.json, shared/plugins/visual.js) and
- * `artBytes` (the art it serves).
+ * `artBytes` (the art it serves). A loaded interface plugin adds `slots`, `entry` (the client page, relative), `vs`
+ * (the same hash family, of that plugin alone), `frameBytes` and `frameFiles` (relative path → SHA-256, so a page can
+ * build /p/<id>/<hash8>/<path>). Never a path on disk.
  * @param {PluginEntry} p
  * @returns {Record<string, unknown>}
  */
@@ -848,6 +877,13 @@ export function pluginIndexEntry(p) {
   if (Number.isFinite(p.count)) e.files = p.count;
   if (p.visual && typeof p.visual.vs === 'string') e.vs = p.visual.vs;
   if (p.visual && Number.isFinite(p.visual.bytes)) e.artBytes = p.visual.bytes;
+  if (p.ui) {
+    e.slots = [...(p.ui.slots || [])];
+    if (typeof p.ui.entry === 'string') e.entry = p.ui.entry;
+    if (typeof p.ui.vs === 'string') e.vs = p.ui.vs;
+    if (Number.isFinite(p.ui.bytes)) e.frameBytes = p.ui.bytes;
+    if (p.ui.frameFiles && typeof p.ui.frameFiles === 'object') e.frameFiles = { ...p.ui.frameFiles };
+  }
   return e;
 }
 

@@ -15,17 +15,21 @@
 //   * GET /packs/<id>/<file> — only a file the manifest of a loaded lang folder (pack or plugin) names (servable);
 //   * GET /plugins/index.json — the catalogue: every plugin and pack found, by class, with its status (shared/plugins/
 //     manifest.js buildPluginIndex; the vanilla content hash beside it — server/plugins/identity.js);
-//   * the files of a loaded cosmetic plugin (pluginFile) — served at /p/<id>/<hash8>/<path> (server/http/static.js; the
-//     visual sets that use them: server/plugins/visualSet.js).
-// The classes lang and cosmetic load (P1a). A cosmetic plugin's asset overlay is read when it is scanned
+//   * the files of a loaded cosmetic plugin, and the frame files of a loaded ui plugin (pluginFile) — served at
+//     /p/<id>/<hash8>/<path> (server/http/static.js; the visual sets that use cosmetic files: server/plugins/visualSet.js).
+//     A ui file's response also carries the frame Content-Security-Policy (shared/plugins/ui.js UI_FRAME_CSP).
+// The classes lang, cosmetic (P1a) and ui (P4) load. A cosmetic plugin's asset overlay is read when it is scanned
 // (shared/plugins/visual.js readAssetOverlay: its shape, files, references to data/assets.json, permissions; plugin.lock.json
 // for its Spine models) and the files that shape it are hashed — SHA-256, kept by path while the file keeps its size,
 // mtime, inode and ctime (statIdentity: a file rewritten with its old size and mtime put back — rsync -t, touch -r — still
 // changes its ctime), so a rescan reads only what changed [ASSUMED: at scan, synchronously — a 200 MB plugin costs about a
-// second once]; a problem keeps it out like any other. A content plugin is validated and listed as `planned` (P1b); a script, ui or trusted one is listed as
-// `unsupported` and never loaded (no third-party code runs — the owner's decision of 2026-10-12). Of a plugin folder only
-// the files a lang manifest names (at /packs/<id>/<file>) and the files a cosmetic overlay names (at /p/…) are served;
-// nothing else — not plugin.json, the lock, documents or a file the overlay does not name.
+// second once]; a problem keeps it out like any other. A ui plugin's frame files (html, js, css, png under entry.client)
+// are hashed the same way and count toward a catalogue `vs` of that plugin alone; they never count toward `cs`.
+// A content plugin is validated and listed as `planned` (P1b); a script or trusted one is listed as `unsupported` and
+// never loaded (no sim or server plugin code runs). A ui page runs only inside the sandboxed frame and cannot send a
+// match intent. Of a plugin folder only the files a lang manifest names (at /packs/<id>/<file>), the files a cosmetic
+// overlay names and the frame files of a ui plugin (both at /p/…) are served; nothing else — not plugin.json, the lock,
+// documents or a file the overlay does not name.
 // A broken manifest, a file the class may not carry, a second entry with an id (any case: one folder on Windows /
 // macOS) or a language already taken: reported (`skipped`: the start log, `node tools/plugin.mjs list`), never listed.
 // An entry that cannot even be read (an error while reading it) is skipped the same way: one bad folder never stops
@@ -71,12 +75,20 @@ const noop = () => {};
  *   a `vs` (shared/plugins/visual.js) and the `vs` of the set of it alone (null without data/assets.json), the bytes it
  *   serves, what its references copy out of the installation's manifest, a short hash of its composition
  *   (room.state.content.plugins[].hash), its folder
+ * @typedef {{ served: Map<string, ServedFile>, composition: import('../../shared/plugins/visual.js').VisualOverlay,
+ *   vs: string | null, bytes: number, hash: string, dir: string, entry: string, slots: string[],
+ *   frameFiles: Record<string, string> }} PluginUi
+ *   a loaded ui plugin: the frame files it serves (under entry.client), its part of a `vs` (plugin.json is hashed into
+ *   `files` so a manifest edit changes `vs`, and is not served), the `vs` of the set of it alone (null without
+ *   data/assets.json), the bytes it serves, a short hash of its composition, its folder, the client entry, the slots it
+ *   asked for, and each served file's SHA-256 (the catalogue's frameFiles — relative paths only)
  * @typedef {{ id: string, type: string, class: string, status: 'loaded' | 'planned' | 'unsupported', source: 'i18n' | 'packs' | 'plugins',
  *   layout: 'file' | 'folder', where: string, supported: boolean, manifest: PluginManifest, files: Record<string, PackFile>,
- *   strings?: number, bytes?: number, count?: number, visual?: PluginVisual }} Plugin
+ *   strings?: number, bytes?: number, count?: number, visual?: PluginVisual, ui?: PluginUi }} Plugin
  *   One entry of the registry. type: the manifest 1 type (lang, assets, data …); status: what this version does with
- *   it; supported: a language entry of 0.2.0's pack registry (the lang class, loaded — a loaded cosmetic plugin is none);
- *   files: a lang entry's files with their URLs; visual: a loaded cosmetic plugin's overlay.
+ *   it; supported: a language entry of 0.2.0's pack registry (the lang class, loaded — a loaded cosmetic or ui plugin is
+ *   none); files: a lang entry's files with their URLs; visual: a loaded cosmetic plugin's overlay; ui: a loaded
+ *   interface plugin's frame.
  * @typedef {Plugin} Pack an entry of the language-pack view (scanPacks)
  * @typedef {{ where: string, problems: string[] }} Skipped
  * @typedef {{ publicDir: string, dataDir: string, packsDir: string, pluginsDir?: string }} PluginDirs
@@ -277,15 +289,82 @@ function readVisual(dir, manifest, listed, { vanilla, hashCache }) {
   };
 }
 
+const FRAME_EXT = new Set(['.html', '.js', '.css', '.png']);
+
+/**
+ * The frame of a ui plugin (see the header): the files under `entry.client` hashed like a cosmetic overlay's, and a
+ * `vs` of that plugin alone (visualHashOf — the same family; `writes` is the canonical { entry, slots }, not art ops).
+ * plugin.json is part of the composition so editing it changes `vs`, and is not served.
+ * @param {string} dir
+ * @param {PluginManifest} manifest
+ * @param {{ rel: string, bytes: number, link?: boolean }[]} listed
+ * @param {{ vanilla: VanillaAssets, hashCache: HashCache }} ctx
+ * @returns {{ ui: PluginUi | null, problems: string[], warnings: string[] }}
+ */
+function readUiFrame(dir, manifest, listed, { vanilla, hashCache }) {
+  const problems = [];
+  const warnings = [];
+  const entry = manifest.entry?.client;
+  if (!entry) return { ui: null, problems: ['"entry.client" is required for a ui plugin (an .html file)'], warnings };
+  const clientDir = entry.replace(/[^/]*$/, '');
+  const frameRels = listed
+    .filter((f) => !f.link)
+    .map((f) => f.rel)
+    .filter((rel) => FRAME_EXT.has(path.extname(rel).toLowerCase()) && rel.startsWith(clientDir));
+  if (!frameRels.includes(entry)) problems.push(`${entry}: missing`);
+  const shaping = [...new Set([PLUGIN_MANIFEST, ...frameRels])].sort();
+  /** @type {Record<string, StatIdentity & { sha256: string }>} */
+  const hashed = {};
+  for (const rel of shaping) {
+    const abs = path.join(dir, ...rel.split('/'));
+    const h = inside(dir, abs) ? hashFile(abs, hashCache) : null;
+    if (!h) problems.push(`${rel}: cannot be read inside the plugin folder`);
+    else hashed[rel] = h;
+  }
+  if (problems.length) return { ui: null, problems, warnings };
+  /** @type {Map<string, ServedFile>} */
+  const served = new Map();
+  for (const rel of frameRels) {
+    const h = hashed[rel];
+    const abs = path.join(dir, ...rel.split('/'));
+    let real;
+    try { real = fs.realpathSync.native(abs); } catch { problems.push(`${rel}: cannot be read inside the plugin folder`); continue; }
+    served.set(rel, {
+      abs, real, sha256: h.sha256, bytes: h.size, size: h.size, mtimeMs: h.mtimeMs, ino: h.ino, ctimeMs: h.ctimeMs,
+      urlHashes: new Set([h.sha256.slice(0, FILE_URL_DIGITS)]),
+    });
+  }
+  if (problems.length) return { ui: null, problems, warnings };
+  const slots = [...(manifest.slots || [])];
+  const writes = createHash('sha256').update(canonicalJson({ entry, slots })).digest('hex');
+  const composition = {
+    id: manifest.id, version: manifest.version,
+    files: Object.fromEntries(shaping.map((rel) => [rel, hashed[rel].sha256])),
+    writes,
+  };
+  const bytes = [...served.values()].reduce((n, f) => n + f.bytes, 0);
+  const frameFiles = Object.fromEntries([...served.keys()].sort().map((rel) => [rel, served.get(rel).sha256]));
+  return {
+    ui: {
+      served, composition, bytes, dir, entry, slots, frameFiles,
+      vs: vanilla.sha256 ? visualHashOf({ assets: vanilla.sha256, overlays: [composition] }) : null,
+      hash: createHash('sha256').update(canonicalJson(composition)).digest('hex').slice(0, 16),
+    },
+    problems,
+    warnings,
+  };
+}
+
 /**
  * Read one plugin folder: its manifest, its files, the paths the manifest names — and, for a cosmetic plugin, its asset
- * overlay (readVisual). With `problems` it stays out (`plugin` null); otherwise `plugin` is its entry.
+ * overlay (readVisual), for a ui plugin its frame (readUiFrame). With `problems` it stays out (`plugin` null);
+ * otherwise `plugin` is its entry.
  * @param {string} dir the folder (its name is the id)
  * @param {{ app?: string, api?: { current: number, min: number }, where?: string, vanilla?: VanillaAssets | (() => VanillaAssets),
  *   hashCache?: HashCache }} [opts]
- *   vanilla: the installation's art manifest, or a function that reads it (called for a cosmetic plugin only; default:
- *   none — a cosmetic plugin's references are not checked and it has no `vs`); hashCache: kept file hashes (default: a
- *   new one)
+ *   vanilla: the installation's art manifest, or a function that reads it (called for a cosmetic or ui plugin only;
+ *   default: none — a cosmetic plugin's references are not checked and neither has a `vs`); hashCache: kept file hashes
+ *   (default: a new one)
  * @returns {{ plugin: Plugin | null, problems: string[], warnings: string[] }}
  */
 export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, where, vanilla = { manifest: null, sha256: null }, hashCache = new Map() } = {}) {
@@ -320,11 +399,19 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
     id, type: manifest.type, class: manifest.class, status, source: 'plugins', layout: 'folder', where: at,
     supported: status === 'loaded' && manifest.class === 'lang', manifest, files: served, bytes: check.bytes, count: check.count,
   };
-  if (manifest.class === 'cosmetic' && status === 'loaded') {
-    const v = readVisual(dir, manifest, files, { vanilla: typeof vanilla === 'function' ? vanilla() : vanilla, hashCache });
-    warnings.push(...v.warnings);
-    if (!v.visual) return { plugin: null, problems: v.problems, warnings };
-    plugin.visual = v.visual;
+  if ((manifest.class === 'cosmetic' || manifest.class === 'ui') && status === 'loaded') {
+    const art = typeof vanilla === 'function' ? vanilla() : vanilla;
+    if (manifest.class === 'cosmetic') {
+      const v = readVisual(dir, manifest, files, { vanilla: art, hashCache });
+      warnings.push(...v.warnings);
+      if (!v.visual) return { plugin: null, problems: v.problems, warnings };
+      plugin.visual = v.visual;
+    } else {
+      const u = readUiFrame(dir, manifest, files, { vanilla: art, hashCache });
+      warnings.push(...u.warnings);
+      if (!u.ui) return { plugin: null, problems: u.problems, warnings };
+      plugin.ui = u.ui;
+    }
   }
   if (manifest.class === 'lang') {
     const ui = readJson(served.ui.abs);
@@ -342,9 +429,9 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
  * @param {{ app?: string, api?: { current: number, min: number }, hashCache?: HashCache, vanilla?: VanillaAssets | null,
  *   artCache?: Map<string, any> }} [opts]
  *   hashCache: file hashes kept from earlier scans (a registry's); vanilla: the installation's art manifest (default: read
- *   from dataDir — only when a cosmetic plugin is found, through `artCache`)
+ *   from dataDir — only when a cosmetic or ui plugin is found, through `artCache`)
  * @returns {{ plugins: Plugin[], skipped: Skipped[], warnings: { where: string, warning: string }[], vanilla: VanillaAssets | null }}
- *   vanilla: the art manifest read for this scan (null when no cosmetic plugin needed it)
+ *   vanilla: the art manifest read for this scan (null when no cosmetic or ui plugin needed it)
  */
 export function scanPlugins({ publicDir, dataDir, packsDir, pluginsDir }, { app = APP_VERSION, api = PLUGIN_API, hashCache = new Map(), vanilla = null, artCache = new Map() } = {}) {
   let art = vanilla;
@@ -560,7 +647,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
   let checkedAt = -Infinity;
   /** @type {ReturnType<typeof scanPlugins> & { packs: Plugin[], index: ReturnType<typeof packIndexOf>, byId: Map<string, Plugin> }} */
   let state = null;
-  /** @type {HashCache} the file hashes of the cosmetic plugins, kept across scans (an unchanged file is never read again) */
+  /** @type {HashCache} the file hashes of the cosmetic and ui plugins, kept across scans (an unchanged file is never read again) */
   const hashCache = new Map();
   const artCache = new Map();
   const told = new Set();
@@ -578,7 +665,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     const first = !state;
     const scan = scanPlugins(dirs, { app, hashCache, artCache });
     // the hashes of a plugin that is gone (removed, or now skipped) are forgotten
-    const kept = scan.plugins.filter((p) => p.visual).map((p) => p.visual.dir + path.sep);
+    const kept = scan.plugins.flatMap((p) => [p.visual && p.visual.dir + path.sep, p.ui && p.ui.dir + path.sep].filter(Boolean));
     for (const abs of [...hashCache.keys()]) if (!kept.some((d) => abs.startsWith(d))) hashCache.delete(abs);
     sig = s; // after the scan: a scan that throws is tried again on the next look
     const packs = scan.plugins.filter((p) => p.supported);
@@ -640,16 +727,25 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
       return null;
     },
     /**
-     * A file of a loaded cosmetic plugin that its overlay names (served at /p/<id>/<hash8>/<rel>), with its plugin folder,
-     * or null — the only files of plugins/ ever served beside a lang plugin's.
+     * A file of a loaded cosmetic plugin that its overlay names, or a frame file of a loaded ui plugin (served at
+     * /p/<id>/<hash8>/<rel>), with its plugin folder, or null — the only files of plugins/ ever served beside a lang
+     * plugin's. `frame` is true for a ui file (the response then carries the frame CSP).
      * @param {string} id
      * @param {string} rel
-     * @returns {(ServedFile & { dir: string }) | null}
+     * @returns {(ServedFile & { dir: string, frame: boolean }) | null}
      */
     pluginFile(id, rel) {
       const p = refresh().byId.get(id);
-      const f = p && p.status === 'loaded' && p.visual ? p.visual.served.get(rel) : null;
-      return f ? { ...f, dir: p.visual.dir } : null;
+      if (!p || p.status !== 'loaded') return null;
+      if (p.visual) {
+        const f = p.visual.served.get(rel);
+        if (f) return { ...f, dir: p.visual.dir, frame: false };
+      }
+      if (p.ui) {
+        const f = p.ui.served.get(rel);
+        if (f) return { ...f, dir: p.ui.dir, frame: true };
+      }
+      return null;
     },
   };
 }

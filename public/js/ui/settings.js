@@ -33,6 +33,8 @@ import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
 import { copyText } from './clipboard.js';
 import { catalog, loadCatalog, cosmeticPlugins, installedCount, personal, personalApplied, personalSet, pluginName, setPersonalPlugin } from '../content.js';
+import { setUiPlugin, uiPluginEntries, uiPlugins } from './uiPlugins.js';
+import { UI_LIMITS } from '../../../shared/plugins/ui.js';
 import { toast, describeError } from './toasts.js';
 import { pluginMicro } from './pluginTag.js';
 
@@ -278,6 +280,40 @@ function CosmeticSection() {
 }
 
 /**
+ * 界面插件 (DESIGN §32.8): each loaded ui plugin of scope `personal`, switched on in this browser only
+ * (`sp.pref.ui-plugins`). It cannot play the match and it does not change what anyone else sees.
+ */
+function UiPluginSection() {
+  const cat = useStore((s) => s, Object.is, catalog);
+  const ids = useStore((s) => s.ids, Object.is, uiPlugins);
+  const installed = useStore(installedCount);
+  useEffect(() => { if (installed) loadCatalog({ force: true }); }, [installed]);
+  const list = installed ? uiPluginEntries(cat.plugins) : [];
+  if (!installed || (cat.status !== 'ready' && !list.length && !ids.length)) return null;
+  if (!list.length && !ids.length) return null;
+  const onIds = new Set(ids);
+  const flip = (id, on) => {
+    const r = setUiPlugin(id, on);
+    if (!r.error) return;
+    toast(r.error === 'PLUGIN_LIMIT' ? t('最多同时开启 {n} 个界面插件', { n: UI_LIMITS.maxPlugins }) : describeError(r.error), 'warn');
+  };
+  return html`<section class="set-plugins" aria-labelledby="set-ui-plugins-title" data-testid="ui-plugins">
+    <div class="set-keys__head">
+      <span class="set-row__label" id="set-ui-plugins-title">${t('界面插件')}<${MicroLabel}>UI PLUGINS<//></span>
+    </div>
+    <p class="set-hint">${t('只改变这个浏览器里的界面，不能替你操作对局，也不影响其他博士；插件为非官方制作。')}</p>
+    ${!list.length ? html`<p class="set-hint">${t('本服务器没有可开启的界面插件')}</p>` : list.map((p) => {
+      const on = onIds.has(p.id);
+      return html`<div key=${p.id} class="set-row" data-plugin=${p.id}>
+        <span class="set-row__label">${pluginName(p)}<${MicroLabel}>${pluginMicro(p)}<//></span>
+        <button type="button" class=${`set-toggle${on ? ' is-on' : ''}`} role="switch" aria-checked=${on ? 'true' : 'false'} aria-label=${pluginName(p)}
+          onClick=${() => flip(p.id, !on)}><i></i><span>${on ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
+      </div>`;
+    })}
+  </section>`;
+}
+
+/**
  * Settings modal.
  * @param {{ open: boolean, onClose: Function }} props
  */
@@ -329,6 +365,7 @@ export function SettingsModal({ open, onClose }) {
       <p class="set-hint set-textsize-note">${t('调整界面文字大小，棋盘保持原比例。')}</p>
       <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
       <${CosmeticSection} />
+      <${UiPluginSection} />
       <${DiagSection} />
       <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
     </div>

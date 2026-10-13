@@ -1257,5 +1257,15 @@
   "重新应用": "Apply again",
   "插件的文件在服务器上更新后，重新应用才会生效。": "When a plugin's files are updated on the server, apply the plugins again to use them.",
   "房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」": "The files of the room's plugin “{names}” changed on the server — open the Plugins panel and press “Apply again”",
-  "与其他已开启的插件冲突或缺少所需插件，没有生效": "Conflicts with another plugin that is on, or needs a plugin that is missing: not in effect"
+  "与其他已开启的插件冲突或缺少所需插件，没有生效": "Conflicts with another plugin that is on, or needs a plugin that is missing: not in effect",
+  "界面插件": "Interface plugins",
+  "只改变这个浏览器里的界面，不能替你操作对局，也不影响其他博士；插件为非官方制作。": "Changes only this browser's interface. It cannot play the match for you, and it does not affect other Doctors. Plugins are unofficial.",
+  "推荐": "Recommend",
+  "房主推荐": "Host's pick",
+  "本服务器没有可开启的界面插件": "This server has no interface plugin you can turn on",
+  "界面插件由每位博士在「设置」中自己开关。": "Each Doctor turns interface plugins on or off in Settings.",
+  "推荐显示在房间里，是否开启由你自己决定。": "A recommendation shows in the room. You decide whether to turn it on.",
+  "最多同时开启 {n} 个界面插件": "At most {n} interface plugins can be on at once",
+  "界面插件发送得太快，请稍后再试": "That interface plugin is sending too fast. Try again in a moment.",
+  "界面插件离开了自己的页面，本页已停用它（刷新后恢复）": "An interface plugin left its own page and was stopped for this page (reload to restore it)."
 }

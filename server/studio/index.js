@@ -27,6 +27,10 @@
 //   POST /studio/api/authors            the page names its game sessions { tokens } — rooms they host apply plugin changes
 //                                       by themselves
 //   GET  /studio/api/events             server-sent events: { ids } of plugins whose state changed (hot reload)
+//   POST /studio/api/catalog            list a community catalogue { url } or { text } / { catalog } (the server fetches
+//                                       an https URL; the browser does not download a zip)
+//   POST /studio/api/catalog/install    install one https zip { url, sha256, id?, bytes?, force? } — hash checked, no
+//                                       code from the package is run (server/plugins/install.js)
 // A change (POST, PUT, DELETE) carries the studio's key in the header X-SP-Studio (server/studio/key.js: printed with the
 // studio's address when the server starts, kept in plugins/.studio-key; a wrong one → 403 PLUGIN_STUDIO_KEY) and answers
 // with the plugin's state as GET /studio/api/plugins/<id> does. Errors: `{ error: <code>, params, detail }` with an HTTP
@@ -42,6 +46,8 @@ import { APP_VERSION, PLUGIN_API } from '../../shared/constants.js';
 import { PLUGIN_MANIFEST, PLUGIN_LIMITS, PLUGIN_IMAGE_EXTS, PLUGIN_AUDIO_EXTS, extOf, isPackPath, isPluginId, readPluginManifest } from '../../shared/plugins/manifest.js';
 import { LOCK_FILE, locateAssetPath, readPluginLock } from '../../shared/plugins/visual.js';
 import { PLUGIN_ERRORS, isPluginErrorCode, issueList } from '../../shared/plugins/errors.js';
+import { CATALOG_FETCH_MAX_BYTES, annotateCatalog, readCatalog } from '../../shared/plugins/catalog.js';
+import { CATALOG_FETCH_TIMEOUT_MS, InstallError, fetchHttps, installFromUrl, installedPluginVersion } from '../plugins/install.js';
 import { sendError, sendJson } from '../http/common.js';
 import { MIME, serveFile, CompressCache } from '../http/files.js';
 import { checkPluginFolder, packPlugin, zipPlugin } from '../plugins/pack.js';
@@ -68,6 +74,38 @@ export const AUTHOR_TTL_MS = 10 * 60 * 1000;
 const PAGE_TYPES = new Set(['.html', '.js', '.css', '.png', '.svg', '.json']);
 /** One-click fixes the API runs itself (they move files or pack), beside the manifest edits of edit.js FIXES. */
 export const API_FIXES = Object.freeze(['pack', 'moveOut']);
+
+/**
+ * Studio API routes (method and path). Frozen in docs/PLUGIN-API.md. Local and LAN only. HEAD answers as GET.
+ * A new route literal in api() belongs in this list (test/plugins/surface.test.js).
+ */
+export const STUDIO_ROUTES = Object.freeze([
+  'GET /studio/api/info',
+  'GET /studio/api/targets',
+  'GET /studio/api/slots',
+  'GET /studio/api/suggest-id',
+  'POST /studio/api/authors',
+  'GET /studio/api/events',
+  'GET /studio/api/plugins',
+  'POST /studio/api/plugins',
+  'GET /studio/api/plugins/:id',
+  'GET /studio/api/plugins/:id/preview',
+  'GET /studio/api/plugins/:id/zip',
+  'GET /studio/api/plugins/:id/f/:hash8/*',
+  'GET /studio/api/plugins/:id/files/*',
+  'PUT /studio/api/plugins/:id/manifest',
+  'PUT /studio/api/plugins/:id/files/*',
+  'DELETE /studio/api/plugins/:id/files/*',
+  'POST /studio/api/plugins/:id/slot',
+  'POST /studio/api/plugins/:id/meta',
+  'POST /studio/api/plugins/:id/sections',
+  'POST /studio/api/plugins/:id/ref',
+  'POST /studio/api/plugins/:id/clear',
+  'POST /studio/api/plugins/:id/fix',
+  'POST /studio/api/plugins/:id/pack',
+  'POST /studio/api/catalog',
+  'POST /studio/api/catalog/install',
+]);
 
 const noopLog = { info() {}, warn() {}, error() {} };
 /**
@@ -163,7 +201,7 @@ export function suggestId({ name = '', target = null, template = '' }, taken) {
  *   lobby: the rooms (its autoApplyPlugins is set to the studio's rule); sessions: the session registry (a token the page
  *   names → its player)
  */
-export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby = null, sessions = null, log = noopLog, mode = studioMode(), watch }) {
+export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby = null, sessions = null, log = noopLog, mode = studioMode(), watch, fetch: fetchImpl = globalThis.fetch }) {
   const pageDir = path.join(path.resolve(publicDir), 'studio');
   // the key every change carries (key.js; X-SP-Studio) — read or made when first needed (the boot banner, a studio
   // request: a server that only runs tests or never shows its banner writes no key file); none when the studio is off
@@ -549,6 +587,63 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     await serveFile(req, res, abs, st, 'studio', rel.split('/'), query, compress, log, { cacheControl: 'no-cache' });
   }
 
+  /** An InstallError as the studio's error shape. @param {unknown} e */
+  function asStudio(e) {
+    if (e instanceof InstallError) throw new StudioError(e.code, e.status, { ...e.params, detail: e.message }, e.message);
+    throw e;
+  }
+
+  /**
+   * POST /studio/api/catalog — a community list. The zip is not downloaded here. An https URL is fetched by this
+   * process; `{ text }` or `{ catalog }` is the owner's local file (the browser read it). No filesystem path is accepted.
+   */
+  async function catalogList(req) {
+    try {
+      const body = await readJson(req, CATALOG_FETCH_MAX_BYTES);
+      let text;
+      if (typeof body.text === 'string') {
+        if (Buffer.byteLength(body.text) > CATALOG_FETCH_MAX_BYTES) throw new InstallError('PLUGIN_CATALOG_SIZE', 'the catalogue is over 1 MB', {});
+        text = body.text;
+      } else if (isObj(body.catalog)) text = JSON.stringify(body.catalog);
+      else if (typeof body.url === 'string' && body.url) {
+        const buf = await fetchHttps(body.url, { fetch: fetchImpl, maxBytes: CATALOG_FETCH_MAX_BYTES, timeoutMs: CATALOG_FETCH_TIMEOUT_MS, kind: 'catalog' });
+        text = buf.toString('utf8');
+      } else throw new InstallError('PLUGIN_CATALOG_SHAPE', 'send a catalogue url or the catalogue text', {});
+      let json;
+      try { json = JSON.parse(text); } catch {
+        throw new InstallError('PLUGIN_CATALOG_SHAPE', 'the catalogue is not JSON', {});
+      }
+      const read = readCatalog(json);
+      if (!read.ok || !read.catalog) {
+        const p = read.problems[0] || read.warnings[0] || { code: 'PLUGIN_CATALOG_SHAPE', detail: 'the catalogue was refused' };
+        throw new InstallError(p.code, p.detail, {});
+      }
+      const plugins = annotateCatalog(read.catalog, (id) => installedPluginVersion(pluginsDir, id));
+      return { name: read.catalog.name, catalog: read.catalog.catalog, plugins };
+    } catch (e) { asStudio(e); }
+  }
+
+  /**
+   * POST /studio/api/catalog/install — the server downloads the https zip, checks sha256, and installs it.
+   * The browser does not upload the zip. `id`, when sent, must be the id inside the zip.
+   */
+  async function catalogInstall(req) {
+    try {
+      const body = await readJson(req, 64 * 1024);
+      const url = typeof body.url === 'string' ? body.url : '';
+      const sha256 = typeof body.sha256 === 'string' ? body.sha256 : '';
+      const expectedId = typeof body.id === 'string' ? body.id : '';
+      const expectedBytes = Number.isInteger(body.bytes) ? body.bytes : undefined;
+      const installed = await installFromUrl(url, {
+        pluginsDir, sha256, force: body.force === true, expectedId, expectedBytes, fetch: fetchImpl,
+      });
+      watcher.rescan();
+      let plugin = null;
+      try { plugin = stateOf(installed.id); } catch { plugin = null; }
+      return { id: installed.id, replaced: installed.replaced ? path.basename(installed.replaced) : null, plugin };
+    } catch (e) { asStudio(e); }
+  }
+
   /** The API (see the header). @returns {Promise<boolean>} whether it answered */
   async function api(req, res, route, query) {
     const q = new URLSearchParams(query);
@@ -608,6 +703,11 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       streamFrom.set(res, from);
       req.on('close', () => streams.delete(res));
       return true;
+    }
+    if ((route === 'catalog' || route === 'catalog/install') && method === 'POST') {
+      if (!mayChange(req)) return false;
+      const body = route === 'catalog' ? await catalogList(req) : await catalogInstall(req);
+      return json(route === 'catalog' ? 200 : 201, body);
     }
     if (route === 'plugins' && read) return json(200, { plugins: listPlugins() });
     if (route === 'plugins' && method === 'POST') {

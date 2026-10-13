@@ -43,6 +43,7 @@ const D = Object.freeze({
   dslBudget: 'docs/PLUGIN-DSL.md#5-预算和重入',
   dslMeta: 'docs/PLUGIN-DSL.md#6-备战',
   studio: 'docs/PLUGINS.md#15-the-studio-and-the-tools',
+  catalog: 'docs/PLUGINS.md#17-the-catalogue-and-installing-by-address-目录与安装',
   guide: 'docs/PLUGIN-GUIDE.md',
 });
 
@@ -685,6 +686,88 @@ export const PLUGIN_ERRORS = Object.freeze({
     level: 'problem', doc: D.dslTriggers,
     zh: '天赋写得不对（{where}）：{detail}', en: 'A talent is not right ({where}): {detail}',
     fix: { zh: '"talents" 是列表，每一项是 { "when": 触发器, "if": 条件, "do": [ 动作 ] } 这样的对象。', en: '"talents" is a list of objects such as { "when": <trigger>, "if": <condition>, "do": [ <actions> ] }.' },
+  },
+
+  // ---- a community catalogue and installing by address (docs/PLUGINS.md §17) ------------------------------------
+  PLUGIN_CATALOG_SHAPE: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录文件的结构不对：{detail}', en: 'The catalogue file is not in the right shape: {detail}',
+    fix: { zh: '目录是一个 JSON 对象，"catalog" 为 1，"name" 是名字，"plugins" 是插件列表。', en: 'A catalogue is a JSON object with "catalog": 1, a "name" and a "plugins" list.' },
+  },
+  PLUGIN_CATALOG_URL: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录或插件地址不是 https：{detail}', en: 'A catalogue or plugin address is not https: {detail}',
+    fix: { zh: '地址以 https:// 开头，不能是 http，也不能在地址里写账号密码。', en: 'The address starts with https://. It is not http, and it has no user or password in it.' },
+  },
+  PLUGIN_CATALOG_HASH: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录条目缺少 sha256，或者不是 64 位小写十六进制：{detail}', en: 'A catalogue entry has no sha256, or it is not 64 lowercase hex digits: {detail}',
+    fix: { zh: '每个插件都写上它的 zip 的 SHA-256（64 位小写十六进制）。', en: 'Each plugin names the SHA-256 of its zip (64 lowercase hex digits).' },
+  },
+  PLUGIN_CATALOG_ID: {
+    level: 'problem', doc: D.catalog,
+    zh: '插件 id 不合法或重复：{detail}', en: 'A plugin id is not valid, or it is repeated: {detail}',
+    fix: { zh: 'id 是 2 到 32 位小写字母、数字和连字符，并且在这份目录里只出现一次。', en: 'An id is 2 to 32 lowercase letters, digits and hyphens, and it appears once in the catalogue.' },
+  },
+  PLUGIN_CATALOG_FIELD: {
+    level: 'problem', doc: D.catalog,
+    zh: '目录字段不合法：{detail}', en: 'A catalogue field is not valid: {detail}',
+    fix: { zh: '按 docs/plugin-catalog.example.json 写：版本是 semver，class 是已知类别，过长的文字要缩短。', en: 'Follow docs/plugin-catalog.example.json: version is semver, class is a known class, and long text is shortened.' },
+  },
+  PLUGIN_CATALOG_SIZE: {
+    level: 'studio', doc: D.catalog,
+    zh: '目录文件太大：{detail}', en: 'The catalogue file is too large: {detail}',
+    fix: { zh: '目录本身不超过 1 MB。插件 zip 另有 200 MB 的上限。', en: 'The catalogue document itself is at most 1 MB. A plugin zip has its own 200 MB cap.' },
+  },
+  PLUGIN_CATALOG_FETCH: {
+    level: 'studio', doc: D.catalog,
+    zh: '读不到这份目录：{detail}', en: 'The catalogue could not be fetched: {detail}',
+    fix: { zh: '确认地址是 https、服务器能访问它，并且没有被重定向到非 https。也可以改用本机的目录文件。', en: 'Check that the address is https, that the server can reach it, and that it is not redirected off https. A local catalogue file works too.' },
+  },
+  PLUGIN_INSTALL_URL: {
+    level: 'studio', doc: D.catalog,
+    zh: '安装地址不是 https：{detail}', en: 'The install address is not https: {detail}',
+    fix: { zh: '只安装 https 的 zip。本机文件可以直接给出路径。', en: 'Install an https zip only. A file on this machine can be given as a path.' },
+  },
+  PLUGIN_INSTALL_HASH: {
+    level: 'studio', doc: D.catalog,
+    zh: 'zip 的 SHA-256 对不上，或者没有给出：{detail}', en: 'The zip SHA-256 does not match, or none was given: {detail}',
+    fix: { zh: 'https 安装必须带 --sha256（或目录条目里的 sha256）。哈希不对就不要安装。', en: 'An https install needs --sha256 (or the sha256 of a catalogue entry). Do not install when the hash differs.' },
+  },
+  PLUGIN_INSTALL_SIZE: {
+    level: 'studio', doc: D.catalog,
+    zh: 'zip 超过大小上限，或和目录里写的字节数不一致：{detail}', en: 'The zip is over the size cap, or it is not the byte length the catalogue names: {detail}',
+    fix: { zh: '一个插件不超过 200 MB。目录里的 bytes 要和 zip 的实际大小一致。', en: 'A plugin is at most 200 MB. When the catalogue gives bytes, it has to be the zip size.' },
+  },
+  PLUGIN_INSTALL_TIMEOUT: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载超时：{detail}', en: 'The download timed out: {detail}',
+    fix: { zh: '检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。', en: 'Check the network and try again. A zip waits up to 60 seconds, a catalogue up to 20.' },
+  },
+  PLUGIN_INSTALL_FETCH: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载失败：{detail}', en: 'The download failed: {detail}',
+    fix: { zh: '确认地址能打开，并且返回的是 zip（HTTP 200）。', en: 'Check that the address opens and answers with the zip (HTTP 200).' },
+  },
+  PLUGIN_INSTALL_REDIRECT: {
+    level: 'studio', doc: D.catalog,
+    zh: '下载被重定向到了不安全的地址，或重定向次数太多：{detail}', en: 'The download was redirected to an unsafe address, or too many times: {detail}',
+    fix: { zh: '只跟随 https 重定向，最多 5 次。请换一个直接的 https 地址。', en: 'Only https redirects are followed, at most 5. Use a direct https address.' },
+  },
+  PLUGIN_INSTALL_ZIP: {
+    level: 'studio', doc: D.catalog,
+    zh: '这个 zip 不能安装：{detail}', en: 'This zip cannot be installed: {detail}',
+    fix: { zh: 'zip 里要有 plugin.json（可以包在一层以插件 id 命名的文件夹里）。不能有路径穿越、符号链接、加密或超量的文件。', en: 'The zip needs plugin.json (optionally inside one folder named with the plugin id). No path traversal, symbolic links, encryption or too many files.' },
+  },
+  PLUGIN_INSTALL_CHECK: {
+    level: 'studio', doc: D.catalog,
+    zh: '插件没通过检查，没有装进 plugins/：{detail}', en: 'The plugin failed its check and was not placed in plugins/: {detail}',
+    fix: { zh: '按 node tools/plugin.mjs check 的提示改插件，再安装。失败时只删掉临时文件，不会动已经装好的插件。', en: 'Fix the plugin as node tools/plugin.mjs check says, then install again. A failed check deletes only the temporary files.' },
+  },
+  PLUGIN_INSTALL_EXISTS: {
+    level: 'studio', doc: D.catalog,
+    zh: 'plugins/ 里已经有这个 id：{detail}', en: 'plugins/ already has this id: {detail}',
+    fix: { zh: '不加 --force 就不会覆盖。--force 会把旧文件夹挪到 plugins/_replaced/，不会删除。', en: 'Without --force nothing is overwritten. --force moves the old folder to plugins/_replaced/ and does not delete it.' },
   },
 
   // ---- anything a check reported without a code of its own ----------------------------------------------------------

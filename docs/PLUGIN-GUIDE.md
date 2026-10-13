@@ -246,6 +246,22 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_SKILL` | 技能规格写得不对（{where}）：{detail} | "skill" 是一个对象，"kind" 用 instant、duration、ammo、charges、toggle、passive；几个技能就写 "skills": { "技能 id": { … } }。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_META` | 备战规格写得不对（{where}）：{detail} | 写成 "meta": { "on": [ { "when": 触发器, "do": [ 动作 ] } ] }；"meta.key" 写成 effect:<插件 id>:<名字>，插件 id 是这个插件自己的。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_DSL_TALENT` | 天赋写得不对（{where}）：{detail} | "talents" 是列表，每一项是 { "when": 触发器, "if": 条件, "do": [ 动作 ] } 这样的对象。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_SHAPE` | 目录文件的结构不对：{detail} | 目录是一个 JSON 对象，"catalog" 为 1，"name" 是名字，"plugins" 是插件列表。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_URL` | 目录或插件地址不是 https：{detail} | 地址以 https:// 开头，不能是 http，也不能在地址里写账号密码。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_HASH` | 目录条目缺少 sha256，或者不是 64 位小写十六进制：{detail} | 每个插件都写上它的 zip 的 SHA-256（64 位小写十六进制）。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_ID` | 插件 id 不合法或重复：{detail} | id 是 2 到 32 位小写字母、数字和连字符，并且在这份目录里只出现一次。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_CATALOG_FIELD` | 目录字段不合法：{detail} | 按 docs/plugin-catalog.example.json 写：版本是 semver，class 是已知类别，过长的文字要缩短。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_CATALOG_SIZE` | 目录文件太大：{detail} | 目录本身不超过 1 MB。插件 zip 另有 200 MB 的上限。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_CATALOG_FETCH` | 读不到这份目录：{detail} | 确认地址是 https、服务器能访问它，并且没有被重定向到非 https。也可以改用本机的目录文件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_URL` | 安装地址不是 https：{detail} | 只安装 https 的 zip。本机文件可以直接给出路径。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_HASH` | zip 的 SHA-256 对不上，或者没有给出：{detail} | https 安装必须带 --sha256（或目录条目里的 sha256）。哈希不对就不要安装。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_SIZE` | zip 超过大小上限，或和目录里写的字节数不一致：{detail} | 一个插件不超过 200 MB。目录里的 bytes 要和 zip 的实际大小一致。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_TIMEOUT` | 下载超时：{detail} | 检查网络后重试。zip 最长等 60 秒，目录最长等 20 秒。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_FETCH` | 下载失败：{detail} | 确认地址能打开，并且返回的是 zip（HTTP 200）。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_REDIRECT` | 下载被重定向到了不安全的地址，或重定向次数太多：{detail} | 只跟随 https 重定向，最多 5 次。请换一个直接的 https 地址。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_ZIP` | 这个 zip 不能安装：{detail} | zip 里要有 plugin.json（可以包在一层以插件 id 命名的文件夹里）。不能有路径穿越、符号链接、加密或超量的文件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_CHECK` | 插件没通过检查，没有装进 plugins/：{detail} | 按 node tools/plugin.mjs check 的提示改插件，再安装。失败时只删掉临时文件，不会动已经装好的插件。 |
+| 工作台里的操作被拒绝，旁边显示原因 | `PLUGIN_INSTALL_EXISTS` | plugins/ 里已经有这个 id：{detail} | 不加 --force 就不会覆盖。--force 会把旧文件夹挪到 plugins/_replaced/，不会删除。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_INVALID` | 插件有问题：{detail} | 看后面的英文原文；看不懂的话，可以到 GitHub 提问并附上这段文字。 |
 <!-- plugin-errors:end -->
 

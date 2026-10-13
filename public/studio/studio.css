@@ -183,3 +183,11 @@ body.studio { overflow: auto; height: auto; min-height: 100%; -webkit-user-selec
 .st-target__text { display: flex; flex-direction: column; min-width: 0; }
 .st-target__name { color: var(--text-hi); font-size: calc(.13 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-target__meta { color: var(--text-dim); font-size: calc(.1 * var(--t)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- catalogue install (DESIGN §32.13) -------------------------------------------------------------------------- */
+.st-catalog { display: flex; flex-direction: column; gap: .12rem; padding: .2rem .24rem; max-width: 10rem; }
+.st-catalog h2 { font-size: calc(.2 * var(--t)); color: var(--text-hi); }
+.st-catalog__row { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem .12rem; }
+.st-catalog__grow { flex: 1 1 3rem; width: auto; }
+.st-catalog__item { display: flex; flex-wrap: wrap; align-items: center; gap: .06rem .12rem; padding: .08rem 0; border-bottom: 1px solid var(--line); }
+.st-file { color: var(--text-lo); font-size: calc(.12 * var(--t)); }

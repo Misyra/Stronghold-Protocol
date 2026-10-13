@@ -74,10 +74,12 @@ export const UI_ERRORS = Object.freeze({
   PLUGIN_LIMIT: 'PLUGIN_LIMIT',
 });
 
-/** Plugin → host. Anything else is refused. `stats` is a read of the battle on screen, never `g.unitStats`. */
-const PLUGIN_TYPES = new Set(['ready', 'slot', 'resize', 'storage', 'notice', 'stats']);
-/** Host → plugin. */
-const HOST_TYPES = new Set(['welcome', 'state', 'battle', 'stats', 'storage', 'limit', 'slot', 'rejected']);
+/** Plugin → host, postMessage API v1. Anything else is refused. `stats` is a read of the battle on screen, never `g.unitStats`. */
+export const UI_PLUGIN_MESSAGES = Object.freeze(['ready', 'slot', 'resize', 'storage', 'notice', 'stats']);
+/** Host → plugin, postMessage API v1. */
+export const UI_HOST_MESSAGES = Object.freeze(['welcome', 'state', 'battle', 'stats', 'storage', 'limit', 'slot', 'rejected']);
+const PLUGIN_TYPES = new Set(UI_PLUGIN_MESSAGES);
+const HOST_TYPES = new Set(UI_HOST_MESSAGES);
 
 /**
  * A client→server type (shared/protocol.js C2S): hello, ping, room.*, g.*, b.*.

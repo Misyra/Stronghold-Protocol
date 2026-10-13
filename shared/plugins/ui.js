@@ -28,6 +28,7 @@
 // Error codes (PLUGIN_*) stay in this file. Claude merges them into shared/plugins/errors.js (C6) at integration.
 
 import { UI_SLOT_IDS, isPackPath, isPluginId } from './manifest.js';
+import { utf8 } from '../sha256.js';
 
 export { UI_SLOT_IDS as UI_SLOTS };
 
@@ -106,6 +107,7 @@ export function isMatchIntent(value, depth = 0) {
   return false;
 }
 
+/** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : null);
@@ -182,9 +184,8 @@ export function createRateLimiter({ rate = UI_LIMITS.rate, burst = UI_LIMITS.bur
   };
 }
 
-const utf8 = new TextEncoder();
-/** UTF-8 bytes of a JavaScript string. Storage quotas use this, not `s.length` (UTF-16 code units). */
-const utf8Bytes = (s) => utf8.encode(s).length;
+/** UTF-8 bytes of a JavaScript string (shared/sha256.js utf8, as TextEncoder encodes). Storage quotas use this, not `s.length` (UTF-16 code units). @param {string} s */
+const utf8Bytes = (s) => utf8(s).length;
 
 /**
  * Distinct notices, one per `noticeIntervalMs`. The same text is allowed again so the toast host can merge it,
@@ -429,7 +430,7 @@ function plainClone(v, depth, seen, flag) {
   if (v == null) return undefined;
   if (depth > 4) { flag.truncated = true; return undefined; }
   const kind = typeof v;
-  if (kind === 'string') {
+  if (typeof v === 'string') {
     if (v.length > 120) { flag.truncated = true; return v.slice(0, 120); }
     return v;
   }

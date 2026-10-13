@@ -77,8 +77,21 @@ const STATE_CHANGING = new Set(['g.buy', 'g.sell', 'g.freeze', 'g.move']);
 const canonical = (value) => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 const digest = (value) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
-/** Deterministic per-client PRNG (mulberry32): the action schedule must not depend on the host's timing. */
-function mulberry32(a) {
+/**
+ * `sp` + letters-only bijective base-26 index (spa, spb … spz, spaa …): the moderation lexicon flags bare digit runs, so
+ * an index-based nickname would be rejected from a certain fleet size on (see runParent).
+ */
+function lettersOf(index) {
+  let i = Math.max(0, Math.trunc(Number(index) || 0));
+  let out = '';
+  do {
+    out = String.fromCharCode(97 + (i % 26)) + out;
+    i = Math.floor(i / 26) - 1 < 0 ? -1 : Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return out;
+}
+
+/** Deterministic per-client PRNG (mulberry32): the action schedule must not depend on the host's timing. */function mulberry32(a) {
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;
@@ -570,7 +583,14 @@ async function runParent() {
       });
       ws.on('close', () => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('closed')); } pending.clear(); });
       await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-      await client.request({ t: 'hello', name: `sync-${index}`, version: PROTOCOL_VERSION, stateDelta: 1 });
+      // Nicknames are letters only: the moderation lexicon flags bare digit runs (40, 65, 75, 89, 189 …), so an
+      // index-based name would be silently rejected from a certain fleet size on. A rejection here is a bench bug,
+      // not a server state: say so instead of surfacing a bare protocol error.
+      try {
+        await client.request({ t: 'hello', name: `sp${lettersOf(index)}`, version: PROTOCOL_VERSION, stateDelta: 1 });
+      } catch (e) {
+        throw new Error(`hello rejected (${e.code || e.message}) for the bench nickname "sp${lettersOf(index)}" — the moderation lexicon rejects the synthetic name scheme; pick another one (letters only)`, { cause: e });
+      }
       return client;
     };
 

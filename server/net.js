@@ -43,6 +43,7 @@ import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
 import { OutboundQueue } from './outboundQueue.js';
 import { ENCODED, STATE_COALESCE } from './wireHints.js';
+import { ForeignSessions, foreignSessionKey } from './foreignSessions.js';
 export { ENCODED, STATE_COALESCE } from './wireHints.js';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
@@ -137,6 +138,8 @@ export class Session {
     this.addr = '?';
     /** @type {string | null} per-network limit key of the latest connection (null = not limited), see clientAddress */
     this.limitKey = null;
+    /** Private stable quota key, never sent to clients; unlike addr it survives state restoration. */
+    this.foreignSessionKey = null;
     /**
      * @type {number | null} lobby-owned extension of the reconnect window for this session (ms; null = the registry's
      * window). A solo run keeps its session resumable for the official `singleReconnectTime` (24 h) — see lobby.js.
@@ -224,6 +227,7 @@ export class SessionRegistry {
     s.chatStrikes = Number.isInteger(doc.chatStrikes) && doc.chatStrikes > 0 ? doc.chatStrikes : legacy.length;
     s.chatMutedUntil = Number.isFinite(doc.chatMutedUntil) ? Math.max(0, Math.min(doc.chatMutedUntil, now + CHAT_MUTE_MAX_MS)) : 0;
     s.addr = typeof doc.addr === 'string' ? doc.addr : '?';
+    s.foreignSessionKey = foreignSessionKey(doc.foreignSessionKey);
     s.notice = typeof doc.notice === 'string' ? doc.notice : null;
     s.pendingResult = Array.isArray(doc.pendingResult) ? doc.pendingResult.filter((f) => typeof f === 'string') : null;
     this.byPlayerId.set(s.playerId, s);
@@ -652,9 +656,10 @@ export class Network {
    *   log?: { info: Function, warn: Function, error: Function, debug?: Function },
    *   now?: () => number,
    *   options?: Partial<typeof NET_DEFAULTS>,
+   *   countryLookup?: ((ip: string) => string | null) | null,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics() }) {
+  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -667,6 +672,7 @@ export class Network {
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
+    this.foreignSessions = new ForeignSessions({ registry, countryLookup, now });
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
     this._fanoutImmediate = null;
@@ -989,11 +995,35 @@ export class Network {
           return;
         }
         resumed = true;
-        if (session.ws && session.ws !== conn.ws) this.detachReplaced(session.ws);
-      } else {
+      }
+      const ip = normalizeIp(conn.ip);
+      const admission = this.foreignSessions.prepare(ip && !isLocalIp(ip) ? ip : '', session);
+      if (!admission.ok) {
+        if (admission.suppressed !== null) this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(),
+          action: 'session.foreignLimit.denied', ip: conn.ip, network: conn.key, country: admission.country,
+          name, suppressed: admission.suppressed }));
+        this.reply(conn, errorMsg(ERR.FOREIGN_SESSION_LIMIT, rid));
+        return;
+      }
+      try {
+        this.foreignSessions.reclaim(admission, (old) => {
+          this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(), action: 'session.foreignLimit.reclaimed',
+            ip: conn.ip, network: conn.key, country: admission.country, playerId: old.playerId, name: old.name, roomCode: old.roomCode }));
+          this.handler.onExpire?.(old);
+          if (old.ws) this.detachReplaced(old.ws);
+          old.ws = null;
+        });
+      } catch (error) {
+        this.log.error('[net] foreign session cleanup failed', error);
+        this.reply(conn, errorMsg(ERR.INTERNAL, rid));
+        return;
+      }
+      if (!session) {
         session = this.registry.create(name);
         if (!session) { this.reply(conn, errorMsg(ERR.INTERNAL, rid, 'server full')); return; }
       }
+      this.foreignSessions.bind(session, admission);
+      if (session.ws && session.ws !== conn.ws) this.detachReplaced(session.ws);
       conn.session = session;
       session.ws = conn.ws;
       session.connected = true;
@@ -1096,6 +1126,7 @@ export class Network {
     for (const s of expired) {
       try { this.handler.onExpire?.(s); } catch (e) { this.log.error('[net] onExpire crashed', e); }
     }
+    this.foreignSessions.prune();
   }
 
   /** Stop input and expiry before the final snapshot; outbound shutdown notices still work. */

@@ -35,6 +35,7 @@ import { N_ } from '../shared/i18n.js';
 import { chatRetentionUntil } from './moderation/chatState.js';
 import { performance } from 'node:perf_hooks';
 import { botCountry } from './botPopulation.js';
+import { foreignSessionKey } from './foreignSessions.js';
 
 /** Document layout version (bumped when the shape below changes). */
 export const PERSIST_VERSION = 1;
@@ -59,6 +60,7 @@ export function sessionDoc(s, now) {
     token: s.token,
     name: s.name,
     roomCode: s.roomCode || null,
+    ...(foreignSessionKey(s.foreignSessionKey) ? { foreignSessionKey: s.foreignSessionKey } : {}),
     loadout: s.loadout || null,
     ops: s.ops || null,
     notOwned: s.notOwned || null,
@@ -180,6 +182,7 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
       notOwned: s.notOwned,
       diy: s.diy,
       addr: s.addr,
+      foreignSessionKey: s.foreignSessionKey,
       notice: s.notice,
       pendingResult: s.pendingResult,
       chatStrikes: s.chatStrikes,

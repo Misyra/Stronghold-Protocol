@@ -32,6 +32,7 @@
   "当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。": "The server has an unusually high number of AI teammates and may be under attack. AI teammate creation is temporarily paused.",
   "由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友": "Your IP is outside mainland China and the AI teammate limit has been reached. Disable your proxy if you are using one, or find teammates through matchmaking in the online lobby.",
   "AI 队友已禁用": "AI teammates disabled",
+  "当前海外 IP 已有在线玩家，请关闭原窗口或关闭代理后重试": "This overseas IP already has an online player. Close the original window or disable your proxy and try again.",
   "该身份已在其他页面登录，本页已断开": "This identity signed in on another page. This page has been disconnected.",
   "同盟已关闭：{reason}": "Alliance closed: {reason}",
   "同盟已关闭": "Alliance closed",

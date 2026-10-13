@@ -70,8 +70,13 @@ const PAGE_TYPES = new Set(['.html', '.js', '.css', '.png', '.svg', '.json']);
 export const API_FIXES = Object.freeze(['pack', 'moveOut']);
 
 const noopLog = { info() {}, warn() {}, error() {} };
-/** At most this many pages listen to the change events at once (a new one ends the oldest). */
+/**
+ * At most this many pages listen to the change events at once, and at most MAX_STREAMS_PER_CLIENT from one address (a new
+ * one ends the oldest): a browser keeps about six connections to a server, and streams of pages it no longer shows (its
+ * back / forward cache) must never take them all.
+ */
 const MAX_STREAMS = 16;
+const MAX_STREAMS_PER_CLIENT = 3;
 /**
  * The headers of a plugin's file served to the page: never a document of the server's origin — a file put in a plugin
  * folder by hand (an .html, an .svg) cannot run a script there, also when someone is led to open its URL.
@@ -188,6 +193,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   const authors = new Map();
   /** @type {Set<import('node:http').ServerResponse>} the event streams of open pages */
   const streams = new Set();
+  /** @type {WeakMap<import('node:http').ServerResponse, string>} the address of each stream's page */
+  const streamFrom = new WeakMap();
   const send = (ids) => {
     const data = `event: change\ndata: ${JSON.stringify({ ids })}\n\n`;
     for (const res of [...streams]) { try { res.write(data); } catch { streams.delete(res); } }
@@ -583,9 +590,13 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       if (method === 'HEAD') { res.end(); return true; }
       res.write(`event: hello\ndata: ${JSON.stringify({ watching: watcher.active })}\n\n`);
-      // a bounded number of listeners: the oldest goes (its page reconnects when it is still open)
-      while (streams.size >= MAX_STREAMS) { const old = streams.values().next().value; streams.delete(old); try { old.end(); } catch { /* gone */ } }
+      // a bounded number of listeners, in all and from one address: the oldest goes (its page reconnects when it is shown)
+      const from = String(req.socket?.remoteAddress || '');
+      const drop = (old) => { streams.delete(old); try { old.end(); } catch { /* gone */ } };
+      for (let mine = [...streams].filter((x) => streamFrom.get(x) === from); mine.length >= MAX_STREAMS_PER_CLIENT; mine = mine.slice(1)) drop(mine[0]);
+      while (streams.size >= MAX_STREAMS) drop(streams.values().next().value);
       streams.add(res);
+      streamFrom.set(res, from);
       req.on('close', () => streams.delete(res));
       return true;
     }

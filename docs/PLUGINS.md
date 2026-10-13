@@ -486,8 +486,10 @@ them [ASSUMED]) or its host is its only player (a single-player room, or a room 
 `room.state`, during a match too (art never changes a battle; nobody is un-readied: `server/lobby.js refreshPlugins`); any
 other room's host is told as before (§9). Such a room follows every rescan that changes one of its plugins, also after a
 plugin was broken for a moment while its author saved it (the visual sets tell a held set once; the studio looks again
-after each rescan). A server whose owner never opens the studio watches nothing and keeps §9's behaviour exactly. The studio's page hears the plugins whose state changed (`GET /studio/api/events`, server-sent events)
-and reloads its view — an author saving from Spine or an image editor sees the preview follow. A player's personal
+after each rescan). A server whose owner never opens the studio watches nothing and keeps §9's behaviour exactly. The studio's page hears the plugins whose state changed (`GET /studio/api/events`, server-sent events;
+at most three streams from one address, and a page the browser keeps in its back / forward cache closes its own — a
+browser keeps only about six connections to a server) and reloads its view — an author saving from Spine or an image
+editor sees the preview follow. A player's personal
 plugins follow on the next catalogue fetch (not pushed).
 
 **The API** (for experienced authors and agents; the page uses nothing else; a change carries `X-SP-Studio: <the key in

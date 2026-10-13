@@ -403,6 +403,24 @@ describe('the studio over HTTP', () => {
     assert.deepEqual([hz.status, hz.text], [200, ''], 'HEAD of the zip builds none');
   });
 
+  test('event streams: at most three from one address — a fourth ends the oldest (a browser keeps about six connections to a server)', async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const open = [];
+    try {
+      for (let i = 0; i < 4; i++) {
+        const ctl = new AbortController();
+        const res = await fetch(`${srv.url}/studio/api/events`, { signal: ctl.signal });
+        const reader = res.body.getReader();
+        await reader.read(); // hello
+        open.push({ ctl, reader });
+      }
+      const first = await Promise.race([open[0].reader.read(), wait(2000).then(() => ({ done: 'still open' }))]);
+      assert.equal(first.done, true, 'the oldest stream was ended');
+      const last = await Promise.race([open[3].reader.read(), wait(300).then(() => ({ done: 'still open' }))]);
+      assert.equal(last.done, 'still open');
+    } finally { for (const o of open) o.ctl.abort(); }
+  });
+
   test('the key (server/studio/key.js): a change without it is refused whatever the address; reads need none; info tells the page; the same key after a restart, printed with the studio\'s address', async () => {
     assert.match(KEY, /^[A-Za-z0-9_-]{22}$/);
     const file = path.join(plugins, '.studio-key');

@@ -185,7 +185,7 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
       ${previewIssues.length ? html`<div class="st-banner is-warn"><strong>${t('预览')}</strong><${IssueList} issues=${previewIssues} onFix=${onFix} busy=${busy} compact=${true} /></div>` : null}
       ${sections.map((s, n) => html`<${Section} key=${`${s.template}|${s.target}`} section=${s} state=${state} busy=${busy} version=${version}
         onFiles=${onFiles} onRef=${onRef} onClear=${onClear} onFix=${onFix} onRemove=${() => saveSections(sections.filter((_, k) => k !== n))} />`)}
-      ${!sections.length ? html`<p class="st-note">${t('这个插件还没有要替换的内容。')}</p>` : null}
+      ${!(state.sections || []).length ? html`<p class="st-note">${t('这个插件还没有要替换的内容。')}</p>` : null}
       <${Button} icon="plus" onClick=${() => setAddOpen(true)} disabled=${busy} data-testid="add-section">${t('添加替换内容')}<//>
       <${AddSection} open=${addOpen} templates=${info.templates} onClose=${() => setAddOpen(false)}
         onAdd=${(s) => { setAddOpen(false); if (!sections.some((x) => x.template === s.template && x.target === s.target)) saveSections([...sections, s]); }} />
@@ -246,25 +246,35 @@ function App({ info }) {
   const refresh = () => get('plugins').then((r) => setPlugins(r.plugins || [])).catch(() => {});
   useEffect(() => { refresh(); }, []);
   // hot reload: the server's events (a plugin changed on disk)
+  // (closed while the page is hidden in the browser's back / forward cache: an open stream holds one of the few
+  // connections a browser keeps to a server, and a few kept pages would stall every request of the page shown)
   useEffect(() => {
     let es = null;
-    try {
-      es = new EventSource(`${API}events`);
-      // on: the server watches plugins/ (it starts with the first call that carries the key)
-      es.addEventListener('hello', (ev) => {
-        let watching = true;
-        try { watching = JSON.parse(ev.data).watching !== false; } catch { /* an older server */ }
-        setEvents((e) => ({ ...e, on: watching }));
-      });
-      es.addEventListener('change', (ev) => {
-        let ids;
-        try { ids = JSON.parse(ev.data).ids || []; } catch { ids = []; }
-        setEvents({ on: true, at: { ids, n: Date.now() } });
-        refresh();
-      });
-      es.onerror = () => setEvents((e) => ({ ...e, on: false }));
-    } catch { /* no events: the page still works, without hot reload */ }
-    return () => es?.close();
+    const open = () => {
+      if (es) return;
+      try {
+        es = new EventSource(`${API}events`);
+        // on: the server watches plugins/ (it starts with the first call that carries the key)
+        es.addEventListener('hello', (ev) => {
+          let watching = true;
+          try { watching = JSON.parse(ev.data).watching !== false; } catch { /* an older server */ }
+          setEvents((e) => ({ ...e, on: watching }));
+        });
+        es.addEventListener('change', (ev) => {
+          let ids;
+          try { ids = JSON.parse(ev.data).ids || []; } catch { ids = []; }
+          setEvents({ on: true, at: { ids, n: Date.now() } });
+          refresh();
+        });
+        es.onerror = () => setEvents((e) => ({ ...e, on: false }));
+      } catch { /* no events: the page still works, without hot reload */ }
+    };
+    const close = () => { es?.close(); es = null; };
+    const onShow = (e) => { if (e.persisted) { open(); refresh(); } };
+    open();
+    window.addEventListener('pagehide', close);
+    window.addEventListener('pageshow', onShow);
+    return () => { close(); window.removeEventListener('pagehide', close); window.removeEventListener('pageshow', onShow); };
   }, []);
   // the author's game sessions: rooms they host apply a plugin's changes by themselves
   useEffect(() => {

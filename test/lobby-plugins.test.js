@@ -17,9 +17,14 @@ import { SessionRegistry } from '../server/net.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
 import { png, writePlugin, cosmetic } from './helpers/pluginFixtures.js';
-import { ERR } from '../shared/constants.js';
+import { fileURLToPath } from 'node:url';
+import { EMOTES, ERR } from '../shared/constants.js';
 import { validateC2S } from '../shared/protocol.js';
 import { layVisualOps, prepareVisualDoc } from '../shared/plugins/visual.js';
+import { contentHashOf } from '../shared/plugins/identity.js';
+import { nodeSha256 } from '../server/plugins/identity.js';
+import { DEFAULT_POLICY, readPolicy } from '../server/plugins/policy.js';
+import { ROOT } from '../server/data.js';
 
 class RecordingStub extends StubMatch {
   static last = null;
@@ -120,7 +125,7 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     const refuse = async (c, msg, code) => { const r = await c.request(msg); assert.deepEqual([r.t, r.code], ['error', code], JSON.stringify(r)); return r; };
     await refuse(guest, { t: 'room.setPlugins', plugins: [] }, ERR.NOT_HOST);
     await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'absent' }] }, ERR.PLUGIN_UNKNOWN);
-    await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'rules' }] }, ERR.PLUGIN_BLOCKED);
+    // (a content plugin is a room's too since P1c: the "room content sets" tests below)
     const scope = await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'mine' }] }, ERR.PLUGIN_BLOCKED);
     assert.match(scope.detail, /scope room/);
     await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'Texas' }] }, ERR.BAD_MSG);
@@ -246,5 +251,373 @@ describe('room.setPlugins (P1a: cosmetic plugins)', () => {
     assert.deepEqual(lobby.setPlugins(session, { plugins: [] }), { ok: true });
     assert.deepEqual(lobby.getRoom(session.roomCode).toState().content, { cs: 'ab'.repeat(32), vanilla: true, plugins: [] });
     lobby.shutdown();
+  });
+});
+
+// ---- P1c (DESIGN §32.6): room content sets — gameplay plugins in a room ----------------------------------------------
+// room.setPlugins with content plugins gives the room a content set of its own (its own cs, `vanilla: false`), served at
+// /cs/<cs16>/ (the manifest recomputes cs; a patched file's bytes hash to its entry), seats[].content until every page
+// checked it (room.contentReady: ready and start wait — CONTENT_NOT_READY), the match in that set's match host worker
+// (the test fixture's StubMatch probes what the worker runs: the patched data, opts.cs / requireCs / modeId); requirements
+// switched on (「自动」), conflicts / incompatible / not the host / during the match refused; room.setMode among the
+// official modes and the set's plugin modes; settings in the cs; a content plugin with a cosmetic one (cs and vs);
+// loadouts checked against the room's data and filtered at a later vanilla start; a dropped page checks again; the
+// server owner's maxSets (PLUGIN_BUSY) and default set; the room's queue answers a worker room's requests in order.
+describe('room content sets (P1c: gameplay plugins)', () => {
+  const FIXTURE = fileURLToPath(new URL('./match/fixtures/hostMatch.js', import.meta.url));
+  const bondPatch = (value) => ({ patch: 1, ops: [['bb', 'base_def'], ['buffs', 0, 'bb', 'base_def']].map((p) => ({ op: 'set', file: 'bonds', id: 'deputShip', path: p, value })) });
+  const content = (extra = {}) => ({ manifest: 2, name: { zh: '测试数据', en: 'Test data' }, version: '1.0.0', app: '*', api: 1, class: 'content', scope: ['room'], permissions: ['data.patch', 'data.add'], ...extra });
+  let srv;
+  let tmp;
+  const open = [];
+  const player = async (name, s = srv) => {
+    const c = await TestClient.connect(s.url.replace('http', 'ws') + '/ws');
+    open.push(c);
+    const w = await c.hello(name);
+    c.id = w.playerId;
+    c.token = w.token;
+    return c;
+  };
+  const ok = async (c, msg) => { const r = await c.request(msg); assert.equal(r.t, 'ok', `${msg.t}: ${JSON.stringify(r)}`); return r; };
+  const refuse = async (c, msg, code) => { const r = await c.request(msg); assert.deepEqual([r.t, r.code], ['error', code], `${msg.t}: ${JSON.stringify(r)}`); return r; };
+  const seatOf = (s, id) => s.seats.find((x) => x && x.playerId === id) || null;
+  const room = async (host, mode = 'coop') => {
+    await ok(host, { t: 'room.create', mode, difficulty: 'NORMAL' });
+    return host.waitFor('room.state', (s) => s.hostId === host.id);
+  };
+  const csOf = (index) => contentHashOf({ app: index.app, sim: index.sim, data: Object.fromEntries(Object.entries(index.data).map(([k, v]) => [k, v.sha256])), plugins: index.plugins, settings: index.settings });
+
+  before(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-lobby-content-'));
+    const plugins = path.join(tmp, 'plugins');
+    writePlugin(path.join(plugins, 'bond-def'), content({ data: ['patch.json'] }), { 'patch.json': bondPatch(0.3) });
+    writePlugin(path.join(plugins, 'bond-max'), content({ data: ['patch.json'], conflicts: { 'bond-def': '*' } }), { 'patch.json': bondPatch(0.5) });
+    writePlugin(path.join(plugins, 'base-pack'), content({ data: ['patch.json'] }), { 'patch.json': { patch: 1, ops: [] } });
+    writePlugin(path.join(plugins, 'needs-base'), content({ data: ['patch.json'], requires: { 'base-pack': '*' } }), { 'patch.json': { patch: 1, ops: [] } });
+    writePlugin(path.join(plugins, 'old-rules'), content({ app: '<0.2.0', data: ['patch.json'] }), { 'patch.json': { patch: 1, ops: [] } });
+    writePlugin(path.join(plugins, 'marathon'), content({ modes: ['modes/long.json', 'modes/solo.json'] }), {
+      'modes/long.json': { id: 'mode_x_marathon_long', base: 'mode_multi_normal', set: { name: '马拉松·险境' } },
+      'modes/solo.json': { id: 'mode_x_marathon_solo', base: 'mode_single_hard', set: { name: '马拉松·独立' } },
+    });
+    writePlugin(path.join(plugins, 'tuned'), content({ data: ['patch.json'], settings: { def: { type: 'number', min: 0, max: 1, default: 0.5 } } }), { 'patch.json': bondPatch({ $setting: 'def' }) });
+    // the content template's operator (a new operator: char_x_data_demo_guard)
+    const tpl = path.join(ROOT, 'plugins', '_template', 'content');
+    writePlugin(path.join(plugins, 'data-demo'), content({ operators: ['operators/guard.json'] }), { 'operators/guard.json': fs.readFileSync(path.join(tpl, 'operators', 'guard.json'), 'utf8') });
+    writePlugin(path.join(plugins, 'skin'), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(4, 4) });
+    srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, MatchClass: RecordingStub, assetIndex: false,
+      matchHost: { matchModule: FIXTURE } });
+  });
+  after(async () => {
+    await Promise.all(open.map((c) => c.terminate().catch(() => {})));
+    await srv.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('a content plugin: the room gets a content set of its own — served, checked by every page, played in its match host', async () => {
+    const host = await player('Kal\'tsit');
+    const guest = await player('Amiya');
+    const s0 = await room(host);
+    assert.ok(s0.seats.every((x) => !x || !('content' in x)), 'a vanilla room\'s seats name no content state');
+    await ok(guest, { t: 'room.join', code: s0.code });
+    await ok(guest, { t: 'room.ready', ready: true });
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.ready === true);
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'bond-def' }] });
+    const s1 = await guest.waitFor('room.state', (s) => s.content?.vanilla === false);
+    assert.notEqual(s1.content.cs, srv.content.cs, 'a content set of its own');
+    assert.deepEqual(s1.content.plugins.map((p) => [p.id, p.class, p.version]), [['bond-def', 'content', '1.0.0']]);
+    assert.match(s1.content.plugins[0].hash, /^[0-9a-f]{16}$/);
+    assert.equal(s1.content.vs, undefined);
+    assert.ok(s1.content.dataBytes > 0);
+    assert.deepEqual(s1.content.modes, []);
+    assert.equal(seatOf(s1, guest.id).ready, false, 'un-readied like a difficulty change');
+    for (const seat of s1.seats.filter(Boolean)) assert.equal(seat.content, 'loading');
+
+    // served: the manifest recomputes cs; the patched file's bytes hash to its entry; an unchanged file keeps its plain URL
+    const res = await fetch(`${srv.url}/cs/${s1.content.cs.slice(0, 16)}/index.json`);
+    assert.match(res.headers.get('cache-control') || '', /immutable/);
+    const index = await res.json();
+    assert.equal(index.cs, s1.content.cs);
+    assert.equal(index.vanilla, false);
+    assert.equal(csOf(index), s1.content.cs, 'a page can recompute cs from the manifest');
+    assert.match(index.data.bonds.url, /^\/cs\/[0-9a-f]{16}\/data\/bonds\.json$/);
+    const bytes = Buffer.from(await (await fetch(srv.url + index.data.bonds.url)).arrayBuffer());
+    assert.equal(nodeSha256(bytes), index.data.bonds.sha256);
+    assert.equal(JSON.parse(bytes.toString('utf8')).deputShip.bb.base_def, 0.3);
+    assert.match(index.data.chess.url, /^\/data\/chess\.json\?v=[0-9a-f]{8}$/);
+    assert.equal((await fetch(`${srv.url}/cs/${'0'.repeat(16)}/index.json`)).status, 404);
+    assert.equal((await fetch(`${srv.url}/cs/${s1.content.cs.slice(0, 16)}/data/../plugin.json`)).status, 404);
+
+    // ready and start wait for the pages' checks
+    await refuse(guest, { t: 'room.ready', ready: true }, ERR.CONTENT_NOT_READY);
+    await ok(guest, { t: 'room.contentReady', cs: 'ab'.repeat(32) }); // another (older) set: nothing recorded
+    await ok(guest, { t: 'room.contentReady', cs: s1.content.cs, ok: false });
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.content === 'failed');
+    await ok(guest, { t: 'room.contentReady', cs: s1.content.cs });
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.content === 'ready');
+    await ok(guest, { t: 'room.ready', ready: true });
+    await refuse(host, { t: 'room.start' }, ERR.CONTENT_NOT_READY); // the host's page too
+    await ok(host, { t: 'room.contentReady', cs: s1.content.cs });
+    const before = RecordingStub.last;
+    await ok(host, { t: 'room.start' });
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    assert.equal(RecordingStub.last, before, 'not an in-process match');
+    assert.equal(srv.hosts.stats().workers, 1);
+    assert.equal((await (await fetch(`${srv.url}/healthz`)).json()).content.sets, 1, '/healthz counts the content sets in use');
+
+    // the worker's match runs the content set: its data, the room's cs, the cs check on
+    await ok(host, { t: 'g.emote', id: EMOTES[0] });
+    const probe = await host.waitFor('m.toast', (m) => /^probe;/.test(m.text || ''), 5000);
+    assert.match(probe.text, new RegExp(`;cs=${s1.content.cs};`));
+    assert.match(probe.text, /;requireCs=true;/);
+    assert.match(probe.text, /;bond=0\.3;/, 'the patched bond reached the worker');
+    assert.match(probe.text, /;modeId=mode_multi_normal;/);
+    // during the match: refused
+    await refuse(host, { t: 'room.setPlugins', plugins: [] }, ERR.ROOM_STARTED);
+    await refuse(host, { t: 'room.setMode', modeId: 'mode_multi_hard' }, ERR.ROOM_STARTED);
+    // the stub ends once every human is ready: back in the lobby, the pages' checks still stand
+    host.clearInbox();
+    await ok(host, { t: 'g.infoReady' });
+    await ok(guest, { t: 'g.infoReady' });
+    const back = await host.waitFor('room.state', (s) => s.inMatch === false, 5000);
+    assert.equal(seatOf(back, guest.id).content, 'ready');
+  });
+
+  test('requirements switched on (「自动」); refused: a conflict, a plugin for other versions, not the host, unknown', async () => {
+    const host = await player('Texas');
+    const guest = await player('Lappland');
+    const s0 = await room(host);
+    await ok(guest, { t: 'room.join', code: s0.code });
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'needs-base' }] });
+    const s1 = await host.waitFor('room.state', (s) => s.content?.plugins?.length === 2);
+    assert.deepEqual(s1.content.plugins.map((p) => [p.id, !!p.auto]), [['base-pack', true], ['needs-base', false]]);
+    assert.equal(s1.content.vanilla, false);
+    await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'bond-def' }, { id: 'bond-max' }] }, ERR.PLUGIN_CONFLICT);
+    await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'old-rules' }] }, ERR.PLUGIN_INCOMPATIBLE);
+    await refuse(guest, { t: 'room.setPlugins', plugins: [{ id: 'bond-def' }] }, ERR.NOT_HOST);
+    await refuse(host, { t: 'room.setPlugins', plugins: [{ id: 'nope-plugin' }] }, ERR.PLUGIN_UNKNOWN);
+    // the room keeps its set after a refusal; an empty list brings back exactly the vanilla shape
+    assert.equal((await host.request({ t: 'room.setPlugins', plugins: [] })).t, 'ok');
+    const back = await guest.waitFor('room.state', (s) => s.content?.vanilla === true);
+    assert.deepEqual(back.content, { cs: srv.content.cs, vanilla: true, plugins: [] });
+    assert.ok(back.seats.every((x) => !x || !('content' in x)));
+  });
+
+  test('room.setMode: the official modes of the room\'s type and the plugin modes of its set; the match plays the one chosen', async () => {
+    const host = await player('Ifrit');
+    const guest = await player('Saria');
+    const s0 = await room(host);
+    await ok(guest, { t: 'room.join', code: s0.code });
+    await refuse(host, { t: 'room.setMode', modeId: 'mode_x_marathon_long' }, ERR.BAD_TARGET); // no such mode yet
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'marathon' }] });
+    const s1 = await host.waitFor('room.state', (s) => s.content?.modes?.length === 2);
+    assert.deepEqual(s1.content.modes.map((m) => [m.id, m.roomMode, m.difficulty, m.name]),
+      [['mode_x_marathon_long', 'coop', 'NORMAL', '马拉松·险境'], ['mode_x_marathon_solo', 'solo', 'HARD', '马拉松·独立']]);
+    await ok(guest, { t: 'room.contentReady', cs: s1.content.cs });
+    await ok(guest, { t: 'room.ready', ready: true });
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.ready === true);
+    await ok(host, { t: 'room.setMode', modeId: 'mode_x_marathon_long' });
+    const s2 = await guest.waitFor('room.state', (s) => s.content?.modeId === 'mode_x_marathon_long');
+    assert.equal(s2.difficulty, 'NORMAL');
+    assert.equal(seatOf(s2, guest.id).ready, false, 'un-readied like a difficulty change');
+    await refuse(host, { t: 'room.setMode', modeId: 'mode_x_marathon_solo' }, ERR.BAD_TARGET); // a solo room's mode
+    await refuse(guest, { t: 'room.setMode', modeId: 'mode_multi_hard' }, ERR.NOT_HOST);
+    // an official mode sets the difficulty and leaves the plugin mode
+    await ok(host, { t: 'room.setMode', modeId: 'mode_multi_hard' });
+    const s3 = await guest.waitFor('room.state', (s) => s.difficulty === 'HARD');
+    assert.equal(s3.content.modeId, undefined);
+    // a difficulty leaves it too
+    await ok(host, { t: 'room.setMode', modeId: 'mode_x_marathon_long' });
+    await guest.waitFor('room.state', (s) => s.content?.modeId === 'mode_x_marathon_long');
+    await ok(host, { t: 'room.setDifficulty', difficulty: 'ABYSS' });
+    const s4 = await guest.waitFor('room.state', (s) => s.difficulty === 'ABYSS');
+    assert.equal(s4.content.modeId, undefined);
+    // the match plays the mode chosen (the worker's data has it)
+    await ok(host, { t: 'room.setMode', modeId: 'mode_x_marathon_long' });
+    await guest.waitFor('room.state', (s) => s.content?.modeId === 'mode_x_marathon_long');
+    await ok(guest, { t: 'room.ready', ready: true });
+    await ok(host, { t: 'room.contentReady', cs: s1.content.cs });
+    await ok(host, { t: 'room.start' });
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    await ok(host, { t: 'g.emote', id: EMOTES[0] });
+    const probe = await host.waitFor('m.toast', (m) => /^probe;/.test(m.text || ''), 5000);
+    assert.match(probe.text, /;modeId=mode_x_marathon_long;/);
+    assert.match(probe.text, /;plugin-modes=mode_x_marathon_long,mode_x_marathon_solo;/);
+    await ok(host, { t: 'g.infoReady' });
+    await ok(guest, { t: 'g.infoReady' });
+    await host.waitFor('room.state', (s) => s.inMatch === false, 5000);
+    // switching the plugins off takes the plugin mode with it
+    await ok(host, { t: 'room.setPlugins', plugins: [] });
+    const s5 = await guest.waitFor('room.state', (s) => s.content?.vanilla === true);
+    assert.equal(s5.content.modeId, undefined);
+  });
+
+  test('settings are part of the cs (a value out of range is the default); a content plugin with a cosmetic one has cs and vs', async () => {
+    const host = await player('Mudrock');
+    await room(host, 'solo');
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'tuned' }] });
+    const a = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'tuned', settings: { def: 0.7 } }] });
+    const b = await host.waitFor('room.state', (s) => s.content?.vanilla === false && s.content.cs !== a.content.cs);
+    const index = await (await fetch(`${srv.url}/cs/${b.content.cs.slice(0, 16)}/index.json`)).json();
+    assert.equal(index.settings.tuned.def, 0.7);
+    const patched = JSON.parse(Buffer.from(await (await fetch(srv.url + index.data.bonds.url)).arrayBuffer()).toString('utf8'));
+    assert.equal(patched.deputShip.bb.base_def, 0.7);
+    // out of range → the default: the same set as without settings (nothing changes, no room.state)
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'tuned', settings: { def: 5 } }] });
+    const c = await host.waitFor('room.state', (s) => s.content?.cs === a.content.cs);
+    assert.equal(c.content.cs, a.content.cs);
+    // art and gameplay together: the room's cs is the content set's, `vs` its art
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'skin' }, { id: 'bond-def' }] });
+    const m = await host.waitFor('room.state', (s) => s.content?.vanilla === false && !!s.content.vs);
+    assert.match(m.content.vs, /^[0-9a-f]{64}$/);
+    assert.deepEqual(m.content.plugins.map((p) => [p.id, p.class]), [['bond-def', 'content'], ['skin', 'cosmetic']]);
+    assert.equal((await fetch(`${srv.url}/vs/${m.content.vs.slice(0, 16)}/overlay.json`)).status, 200);
+  });
+
+  test('loadouts are checked against the room\'s data; a stored one of another content is filtered when a match starts', async () => {
+    const host = await player('Ptilopsis');
+    await room(host, 'solo');
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'data-demo' }] });
+    const s1 = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
+    // the plugin's operator is an operator of this room: its 潜能 is accepted here …
+    const loadout = { t: 'room.loadout', entries: {}, ops: { char_x_data_demo_guard: { potential: 3 }, char_102_texas: { potential: 2 } } };
+    await ok(host, loadout);
+    await ok(host, { t: 'room.contentReady', cs: s1.content.cs });
+    await ok(host, { t: 'room.start' });
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    await ok(host, { t: 'g.emote', id: EMOTES[0] });
+    const probe = await host.waitFor('m.toast', (m) => /^probe;/.test(m.text || ''), 5000);
+    assert.match(probe.text, /"char_x_data_demo_guard":\{"potential":3/, 'the room\'s match takes it');
+    await ok(host, { t: 'room.leave' });
+    // … refused in a vanilla room (strict, nothing stored) — and the one stored loses its unknown operator at the start
+    await room(host, 'solo');
+    await refuse(host, loadout, ERR.BAD_TARGET);
+    await ok(host, { t: 'room.start' });
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    assert.deepEqual(RecordingStub.last.seats[0].ops, { char_102_texas: { potential: 2, cultivate: 3 } }, 'the vanilla match never sees the plugin operator');
+    await ok(host, { t: 'room.leave' });
+  });
+
+  test('a page that drops checks the content again; the room\'s queue answers a worker room\'s requests in order', async () => {
+    const host = await player('Skadi');
+    const guest = await player('Specter');
+    const s0 = await room(host);
+    await ok(guest, { t: 'room.join', code: s0.code });
+    await ok(host, { t: 'room.setPlugins', plugins: [{ id: 'bond-def' }] });
+    const s1 = await host.waitFor('room.state', (s) => s.content?.vanilla === false);
+    await ok(guest, { t: 'room.contentReady', cs: s1.content.cs });
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.content === 'ready');
+    await guest.terminate();
+    const dropped = await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.connected === false);
+    assert.equal(seatOf(dropped, guest.id).content, 'loading', 'a page that comes back (a reload) checks again');
+    const again = await TestClient.connect(srv.url.replace('http', 'ws') + '/ws');
+    open.push(again);
+    await again.hello('Specter', guest.token);
+    const st = await again.waitFor('room.state', (s) => seatOf(s, guest.id)?.connected === true);
+    assert.equal(seatOf(st, guest.id).content, 'loading');
+    await ok(again, { t: 'room.contentReady', cs: s1.content.cs });
+    await ok(again, { t: 'room.ready', ready: true });
+    await ok(host, { t: 'room.contentReady', cs: s1.content.cs });
+    await ok(host, { t: 'room.start' });
+    await host.waitFor('room.state', (s) => s.inMatch === true);
+    // several requests at once: answered in the order they were sent (the room's queue, one at a time)
+    const rids = [];
+    const replies = [];
+    const want = new Set();
+    for (let i = 0; i < 6; i++) { const rid = host.send({ t: 'g.emote', id: EMOTES[0] }); rids.push(rid); want.add(rid); }
+    while (want.size) {
+      const m = await host.waitFor(null, (x) => (x.t === 'ok' || x.t === 'error') && want.has(x.rid), 5000);
+      want.delete(m.rid);
+      replies.push(m.rid);
+    }
+    assert.deepEqual(replies, rids, 'in order');
+    await ok(host, { t: 'g.infoReady' });
+    await ok(again, { t: 'g.infoReady' });
+    await host.waitFor('room.state', (s) => s.inMatch === false, 5000);
+  });
+
+  test('the protocol: room.setMode { modeId } and room.contentReady { cs, ok? }', () => {
+    assert.equal(validateC2S({ t: 'room.setMode', modeId: 'mode_x_marathon_long' }), null);
+    assert.equal(validateC2S({ t: 'room.setMode' }), 'bad field modeId');
+    assert.equal(validateC2S({ t: 'room.setMode', modeId: 'a b' }), 'bad field modeId');
+    assert.equal(validateC2S({ t: 'room.contentReady', cs: 'ab'.repeat(32) }), null);
+    assert.equal(validateC2S({ t: 'room.contentReady', cs: 'ab'.repeat(32), ok: false }), null);
+    assert.equal(validateC2S({ t: 'room.contentReady', cs: 'AB'.repeat(32) }), 'bad field cs');
+    assert.equal(validateC2S({ t: 'room.contentReady', cs: 'ab'.repeat(32), ok: 'no' }), 'bad field ok');
+  });
+});
+
+describe('the server owner\'s policy and the content-set limit (P1c)', () => {
+  const content = (extra = {}) => ({ manifest: 2, version: '1.0.0', app: '*', api: 1, class: 'content', scope: ['room'], permissions: ['data.patch'], data: ['p.json'], ...extra });
+  const open = [];
+  const servers = [];
+  const dirs = [];
+  /** A server whose plugins folder holds two content plugins and the policy `config`. */
+  async function serverWith(config) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-policy-'));
+    dirs.push(tmp);
+    const plugins = path.join(tmp, 'plugins');
+    writePlugin(path.join(plugins, 'one'), content(), { 'p.json': { patch: 1, ops: [] } });
+    writePlugin(path.join(plugins, 'two'), content(), { 'p.json': { patch: 1, ops: [] } });
+    if (config) fs.writeFileSync(path.join(plugins, 'config.json'), JSON.stringify(config));
+    const s = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, MatchClass: RecordingStub, assetIndex: false });
+    servers.push(s);
+    return s;
+  }
+  const player = async (s, name) => {
+    const c = await TestClient.connect(s.url.replace('http', 'ws') + '/ws');
+    open.push(c);
+    const w = await c.hello(name);
+    c.id = w.playerId;
+    return c;
+  };
+  after(async () => {
+    await Promise.all(open.map((c) => c.terminate().catch(() => {})));
+    for (const s of servers) await s.close();
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  test('limits.maxSets: one content set more than rooms hold is PLUGIN_BUSY; a set already held, or the one a room gives up, is free', async () => {
+    const s = await serverWith({ limits: { maxSets: 1 } });
+    const a = await player(s, 'A');
+    const b = await player(s, 'B');
+    for (const c of [a, b]) { assert.equal((await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok'); await c.waitFor('room.state'); }
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok');
+    const busy = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] });
+    assert.deepEqual([busy.t, busy.code], ['error', ERR.PLUGIN_BUSY]);
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok', 'the set already held');
+    // A gives it up; B (its only holder now) switches to another one: freed by the change
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [] })).t, 'ok');
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] })).t, 'ok');
+    const st = await b.waitFor('room.state', (x) => x.content?.plugins?.[0]?.id === 'two');
+    assert.equal(st.content.vanilla, false);
+  });
+
+  test('rooms: fixed — every room starts with the default set and its host cannot change it; allow — only the listed plugins', async () => {
+    const s = await serverWith({ rooms: 'fixed', default: ['one'] });
+    const a = await player(s, 'A');
+    assert.equal((await a.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
+    const st = await a.waitFor('room.state', (x) => x.content?.vanilla === false);
+    assert.deepEqual(st.content.plugins.map((p) => p.id), ['one']);
+    const r = await a.request({ t: 'room.setPlugins', plugins: [] });
+    assert.deepEqual([r.t, r.code], ['error', ERR.PLUGIN_BLOCKED]);
+    assert.equal((await a.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok', 'the fixed set itself');
+    const s2 = await serverWith({ allow: ['one'] });
+    const b = await player(s2, 'B');
+    assert.equal((await b.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
+    const st2 = await b.waitFor('room.state');
+    assert.equal(st2.content.vanilla, true, 'no default: the original game');
+    const no = await b.request({ t: 'room.setPlugins', plugins: [{ id: 'two' }] });
+    assert.deepEqual([no.t, no.code], ['error', ERR.PLUGIN_BLOCKED]);
+    assert.equal((await b.request({ t: 'room.setPlugins', plugins: [{ id: 'one' }] })).t, 'ok');
+  });
+
+  test('readPolicy: defaults, every field checked, SP_PLUGINS wins over the file', () => {
+    assert.deepEqual(readPolicy(null, { env: {} }).policy, DEFAULT_POLICY);
+    const r = readPolicy({ rooms: 'nope', default: ['Bad Id'], allow: 'all', classes: { content: 'yes' }, limits: { maxSets: -1 }, allowIncompatible: 1 }, { env: {} });
+    assert.deepEqual(r.policy, DEFAULT_POLICY);
+    assert.equal(r.problems.length, 6);
+    const off = readPolicy({ rooms: 'host', limits: { maxSets: 2 }, classes: { content: false } }, { env: { SP_PLUGINS: 'off' } }).policy;
+    assert.deepEqual([off.rooms, off.maxSets, off.classes.content], ['off', 2, false]);
   });
 });

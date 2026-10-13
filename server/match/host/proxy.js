@@ -68,6 +68,8 @@ export class MatchProxy {
     this.started = false;
     this.ended = false;
     this.disposed = false;
+    /** the host no longer routes this match's messages (dispose with nothing pending, or the worker stopped) */
+    this.forgotten = false;
   }
 
   /** Post one message of this match to the worker (never throws). */
@@ -84,6 +86,7 @@ export class MatchProxy {
         if (!this.pending.delete(id)) return;
         this.log.warn?.(`[match ${this.roomCode}] the match host did not answer ${method} in ${this.requestTimeoutMs} ms`);
         resolve({ error: ERR.INTERNAL, detail: 'the match host did not answer' });
+        this._forgetIfDone();
       }, this.requestTimeoutMs);
       timer.unref?.();
       this.pending.set(id, { resolve, timer });
@@ -114,17 +117,26 @@ export class MatchProxy {
   /** The match's diagnostics in the worker (tests). @returns {Promise<any>} */
   diag() { return this.disposed ? Promise.resolve(null) : this._request('diag', []); }
 
+  /**
+   * The lobby is done with the match. The worker still answers what was asked before (its port keeps the order: those
+   * answers come before it handles the dispose), so the host forgets this match only once nothing is pending.
+   */
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    this._settle({ error: ERR.WRONG_PHASE, detail: 'the match ended' });
     this._post({ type: 'dispose' });
-    this.host.forget?.(this.matchId);
+    this._forgetIfDone();
+  }
+
+  /** Disposed and nothing pending: the host stops routing this match's messages (it may stop the idle worker). */
+  _forgetIfDone() {
+    if (this.disposed && this.pending.size === 0 && !this.forgotten) { this.forgotten = true; this.host.forget?.(this.matchId); }
   }
 
   /** Answer every pending request with `result`. */
   _settle(result) {
     for (const [id, p] of this.pending) { clearTimeout(p.timer); this.pending.delete(id); p.resolve(result); }
+    this._forgetIfDone();
   }
 
   /**
@@ -133,11 +145,13 @@ export class MatchProxy {
    */
   deliver(m) {
     if (m.type === 'reply') {
+      // answered after the end, even after the dispose: the request was asked while the match ran (see dispose)
       const p = this.pending.get(m.id);
       if (!p) return;
       clearTimeout(p.timer);
       this.pending.delete(m.id);
       p.resolve(m.result ?? { ok: true });
+      this._forgetIfDone();
       return;
     }
     if (this.disposed) return;
@@ -147,10 +161,13 @@ export class MatchProxy {
     if (m.type === 'failed') { this.crash('plugin-start', m.error); }
   }
 
+  /**
+   * The match is over: the lobby's onEnd. A request still pending keeps waiting for its answer — the match may end inside
+   * the very call that asked (the last g.infoReady of a stub, a g.leave): the worker posts 'end', then that call's reply.
+   */
   _end(summary) {
     if (this.ended) return;
     this.ended = true;
-    this._settle({ error: ERR.WRONG_PHASE, detail: 'the match ended' });
     try { this.opts.onEnd(summary); } catch (e) { this.log.error?.(`[match ${this.roomCode}] onEnd failed`, e); }
   }
 
@@ -158,6 +175,7 @@ export class MatchProxy {
   halt() {
     this._settle({ error: ERR.INTERNAL, detail: 'the match host stopped' });
     if (!this.ended && !this.disposed) this._end({ reason: 'host-stopped', cs: this.opts.cs ?? null });
+    this.forgotten = true;
   }
 
   /**
@@ -165,6 +183,7 @@ export class MatchProxy {
    * @param {'plugin-crash' | 'plugin-hang' | 'plugin-start'} reason @param {string} [detail]
    */
   crash(reason, detail = '') {
+    this.forgotten = true; // the worker is gone: nothing more to route (the host already dropped its matches)
     if (this.ended || this.disposed) { this._settle({ error: ERR.INTERNAL, detail: 'the match host stopped' }); return; }
     this._settle({ error: ERR.INTERNAL, detail: 'the match host stopped' });
     try { this.opts.broadcast({ t: 'm.toast', kind: 'error', ...wireMessage(crashMessage(reason)) }); } catch { /* the room may be gone */ }

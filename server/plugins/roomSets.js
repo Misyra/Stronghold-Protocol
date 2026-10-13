@@ -16,7 +16,8 @@
 //     the policy allows it), PLUGIN_LIMIT (the visual set's art limits), PLUGIN_BUSY (one content set more than the
 //     server runs at once).
 //   hold / release (vs), holdContent / releaseContent (cs), onStale, unofficial — the visual and content sets'.
-//   defaults() → the ids a new room starts with (the policy's `default`; [] for the original game).
+//   defaults() → the ids a new room starts with (the policy's `default`; [] for the original game); fixed() → those ids
+//   when every room must play them (rooms: fixed), else null.
 // A cosmetic plugin's requirements are cosmetic plugins (the visual set closes over them again) [ASSUMED]; a content
 // plugin may require a cosmetic one (its operators' art) and may carry art itself (its `assets`: part of the room's
 // visual set, so the room's `vs` names it too).
@@ -114,6 +115,8 @@ export function createRoomSets({ registry, visual, contents, policy }) {
     onStale: (fn) => (visual?.onStale ? visual.onStale(fn) : () => {}),
     unofficial: () => (visual?.unofficial ? visual.unofficial() : 0),
     defaults: () => { const p = policy?.get(); return p && p.rooms !== 'off' ? [...p.default] : []; },
+    /** The plugins every room must play (plugins/config.json rooms: fixed), else null. */
+    fixed: () => { const p = policy?.get(); return p && p.rooms === 'fixed' ? [...p.default] : null; },
     /** The merged data of a content set (the lobby's checks of loadouts and 自选 picks in its rooms), or null. */
     dataOf: (cs) => contents?.dataOf?.(cs) || null,
     /** The operators a 自选 slot may field in a content set (null = the vanilla list). */

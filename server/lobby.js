@@ -804,7 +804,13 @@ export class Lobby {
    * @returns {{ content: Room['content'] } | { error: string, detail?: string }}
    */
   resolveContent(room, ids, settings = {}) {
-    if (!ids.length) return { content: this.vanilla };
+    if (!ids.length) {
+      // the server owner may fix every room's plugins (plugins/config.json rooms: fixed): the original game is not one
+      let fixed = null;
+      try { fixed = this.plugins?.fixed?.() || null; } catch { fixed = null; }
+      if (fixed && fixed.length) return fail(ERR.PLUGIN_BLOCKED, 'this server fixes every room\'s plugins (plugins/config.json rooms: fixed)');
+      return { content: this.vanilla };
+    }
     if (!this.vanilla || !this.plugins) return fail(ERR.PLUGIN_UNKNOWN, 'this server applies no plugins');
     let r;
     try { r = this.plugins.resolve(ids, { scope: 'room', settings, replacing: room?.content ?? null }); } catch (e) {

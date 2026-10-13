@@ -215,7 +215,7 @@ function font(value) {
   return buf;
 }
 
-test('user changed font originals are verified before WOFF2 generation and failed fonts lose generated outputs', async (t) => {
+test('user changed font originals are verified before WOFF2 generation and failed fonts keep generated outputs', async (t) => {
   const good = font('new!');
   const stale = font('old!');
   let available = true;
@@ -224,9 +224,15 @@ test('user changed font originals are verified before WOFF2 generation and faile
   await writeFile(join(f.root, name + '.otf'), stale);
   await writeFile(join(f.root, name + '.woff2'), 'stale generated');
   await writeFile(join(f.root, 'fonts.css'), 'stale css');
+  const rejectedName = FONTS[1].name;
+  await writeFile(join(f.root, rejectedName + '.ttf'), stale);
+  await writeFile(join(f.root, rejectedName + '.woff2'), 'previous light font');
   await f.dl.run([{ rel: name + '.otf', urls: [raw + 'font.otf'], kind: 'font' }]);
   const built = await buildFonts(f.root, quiet, { verified: true, available: (rel) => f.dl.accepted.has(rel) });
   assert.ok(built.files[name].woff2);
+  assert.equal(built.files[rejectedName], undefined);
+  assert.ok(!built.css.includes(rejectedName));
+  assert.equal(await readFile(join(f.root, rejectedName + '.woff2'), 'utf8'), 'previous light font');
   const tables = decodeWoff2Tables(await readFile(join(f.root, name + '.woff2')));
   assert.equal(tables.tables[0].data.toString(), 'new!');
   available = false;
@@ -240,7 +246,9 @@ test('user changed font originals are verified before WOFF2 generation and faile
   assert.ok(failed.files[name].woff2, 'the preserved original can still regenerate the derived font');
   await access(join(f.root, name + '.woff2'));
   await access(join(f.root, 'fonts.css'));
-  // Given an unverified original still on disk, a failed download must not publish it.
+  const previousWoff = await readFile(join(f.root, name + '.woff2'));
+  const previousCss = await readFile(join(f.root, 'fonts.css'));
+  // Given an unverified original still on disk, a failed download must preserve derivatives without publishing it.
   await writeFile(join(f.root, name + '.otf'), stale);
   const rejected = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier: f.verifier,
     fetchImpl: f.fetchImpl, retries: 1, backoffMs: 0, log: quiet });
@@ -249,8 +257,8 @@ test('user changed font originals are verified before WOFF2 generation and faile
   const excluded = await buildFonts(f.root, quiet, { verified: true, available: (rel) => rejected.accepted.has(rel) });
   assert.deepEqual(excluded.files, {});
   assert.equal(excluded.css, null);
-  await assert.rejects(access(join(f.root, name + '.woff2')));
-  await assert.rejects(access(join(f.root, 'fonts.css')));
+  assert.deepEqual(await readFile(join(f.root, name + '.woff2')), previousWoff);
+  assert.deepEqual(await readFile(join(f.root, 'fonts.css')), previousCss);
   assert.deepEqual(await readFile(join(f.root, name + '.otf')), stale);
 });
 

@@ -125,7 +125,9 @@ every texture page must also be accepted. A previously normalized atlas that no 
 on failure but cannot be used until a verified raw replacement arrives. Pruning defers deletion within a failed model's
 directory, preserving old extra pages without using a rejected atlas for page discovery.
 Font originals use the same verifier and accepted file set. Accepted originals reuse matching WOFF2 outputs;
-rejected originals lose their generated WOFF2 output and CSS references. CSS replacement is atomic.
+rejected originals keep existing WOFF2 files on disk but do not enter the new font manifest or generated CSS.
+If no font is accepted, the existing `fonts.css` is left untouched and no CSS is published in the new manifest.
+When accepted fonts generate CSS, replacement is atomic and includes only those fonts.
 Local-client extraction overlays are not upstream downloads and are outside this check.
 
 `--offline`, `--add-only` and `--local-spines` are incompatible with verification. `--dry-run` still verifies the indexes

@@ -1937,6 +1937,14 @@ export async function createFieldView(host, options = {}) {
       return () => listeners.get(name)?.delete(fn);
     },
     off(name, fn) { listeners.get(name)?.delete(fn); },
+    /** Current prep piece under an unobstructed client point; resolve again when a hotkey is pressed. */
+    pieceAtClientPoint(clientX, clientY) {
+      if (destroyed || mode !== 'prep' || camKind === 'pen' || drag.dragging
+        || !Number.isFinite(clientX) || !Number.isFinite(clientY)
+        || document.elementFromPoint(clientX, clientY) !== canvas) return null;
+      const p = canvasPoint({ clientX, clientY });
+      return pieceAt(p.x, p.y)?.uid ?? null;
+    },
     pieceScreenRect(uid) {
       let v = views.get('p:' + uid);
       if (!v) for (const x of views.values()) if (x.uid === uid || x.info?.uid === uid || x.id === uid) { v = x; break; }

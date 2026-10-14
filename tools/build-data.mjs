@@ -3464,7 +3464,11 @@ function buildChoices(ctx, effects, items, chess) {
       // report (community, 2026-10-06): 「原版凯瑟琳1升2都能有6本装备」; the pool itself is server-side, uniform [ASSUMED]
       // (until 0.2.0 it was capped at the shop level, so the 1 → 2 offer only ever showed tiers I–II)
       pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', assumed: true },
-      pool_equip_narant: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
+      // 娜仁图亚 见者有份 (preparation_start_add_special_goods_every_n_round): the blackboard names no tier cap. Players'
+      // first-hand report (community, 2026-10-14): the two equips can be above the current shop level. Same shape as
+      // 凯瑟琳 — every shop-eligible item, uniform [ASSUMED] (until 0.3.0 it was capped at the shop level, so an even
+      // round at level 1–2 never showed tier III+)
+      pool_equip_narant: { kind: 'equip', rule: 'shopEligible', assumed: true },
       // "获得一件带有随机特殊效果的维式重锤": the 4 hammers with a special effect (never sold, SHOP_EXCLUDED_ITEMS); the
       // weights are server-side (PRTS 11-25 note: "装备【灼燃维式重锤】的出现概率调整") — uniform [ASSUMED]
       pool_equip_vict: { kind: 'equip', items: ['灼燃维式重锤', '坚固维式重锤', '加速维式重锤', '战栗维式重锤'].map(itemByName), assumed: true },

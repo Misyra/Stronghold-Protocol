@@ -133,14 +133,14 @@ const ARTS_GROUPS = Object.freeze({
  * @param {string|string[]} urls
  * @param {number} [bytes] expected size
  */
-function alt(rel, urls, bytes) {
+export function alt(rel, urls, bytes) {
   const a = { rel, urls: [].concat(urls).filter((u) => typeof u === 'string' && u), kind: kindOf(rel) };
   if (Number.isInteger(bytes) && bytes > 0) a.bytes = bytes;
   return a;
 }
 
 /** A leaf with the given alternatives (null alternatives are dropped). */
-function leaf(...alts) {
+export function leaf(...alts) {
   const list = alts.flat().filter((a) => a && a.urls && a.urls.length);
   return list.length ? { alts: list } : null;
 }
@@ -188,6 +188,47 @@ function bytesOf(rec, url) {
 /** Local file stem for a skeleton URL or file name ('…/char_102_texas.skel' → 'char_102_texas'). */
 function skelStem(urlOrName) {
   return safeName(urlBase(urlOrName).replace(/\.skel$/i, ''));
+}
+
+/**
+ * The `plan.models` definition for one fexli source record (skel + atlas + page PNGs, all under `dir`).
+ *
+ * Exported because tools/install-skins.mjs (干员皮肤, docs/SKINS.md) builds a skin model exactly the way the full plan
+ * does — if the two ever drifted, an installed skin would download a different file set than a rebuilt manifest
+ * expects. @param {string} key unique model key @param {string} kind 'op'|'enemy'|'token' @param {string} dir local
+ * directory under public/assets (trailing slash) @param {{skel?:any, atlas?:any, png?:any}} rec research record
+ * @param {number[]} skillIndices skill clip indices to resolve animation roles for
+ * @returns {object|null} null when the record is missing any of the three parts
+ */
+export function fexliModelDef(key, kind, dir, rec, skillIndices) {
+  // rec: 07 { skel:{url,bytes}|url|url[], atlas, png } — arrays are candidate folders (same order for all three)
+  const us = (x) => (Array.isArray(x) ? x : [typeof x === 'string' ? x : x?.url]).filter((v) => typeof v === 'string' && v);
+  const b = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x.bytes : undefined);
+  if (!us(rec?.skel).length || !us(rec?.atlas).length || !us(rec?.png).length) return null;
+  const stem = skelStem(us(rec.skel)[0]);
+  return {
+    key, kind, dir, pma: false, skillIndices,
+    baseUrl: urlDir(us(rec.atlas)[0]),
+    skel: alt(`${dir}${stem}.skel`, us(rec.skel), b(rec.skel)),
+    // pixi-spine finds the atlas by swapping the .skel extension: keep the same stem.
+    atlas: { ...alt(`${dir}${stem}.atlas`, us(rec.atlas), b(rec.atlas)), mutable: true },
+    pngs: [alt(dir + safeName(urlBase(us(rec.png)[0])), us(rec.png), b(rec.png))],
+  };
+}
+
+/**
+ * The tall 立绘 of a skin (干员皮肤, docs/SKINS.md), derived from its 180×180 avatar URL: the same file name in the
+ * source's `portrait/` folder (`…/avatar/char_x_kitchen#2.png` → `…/portrait/char_x_kitchen#2.png`). The shop card
+ * shows this one — its frame is the 180×360 portrait, not the square avatar. Exported so tools/install-skins.mjs
+ * derives exactly the same URL as a full plan run.
+ * @param {{avatar?: {url?: string}}} skin research record
+ * @returns {string|null} null when the record carries no avatar URL (or one without the /avatar/ folder)
+ */
+export function skinPortraitUrl(skin) {
+  const u = skin?.avatar?.url;
+  if (typeof u !== 'string') return null;
+  const i = u.indexOf('/avatar/');
+  return i < 0 ? null : `${u.slice(0, i)}/portrait/${u.slice(i + '/avatar/'.length)}`;
 }
 
 /** Collect every enemy key referenced under a wave/branch structure. */
@@ -328,6 +369,10 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  */
 export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, charword = null, voiceLang = 'cn',
   voiceJp = true, voiceSlots = VOICE_BATTLE_SLOTS,
+  // 干员皮肤 (docs/SKINS.md): the operator skin catalogue, and which of them this install actually has
+  // (data/skins-installed.json). Only these are planned, so the manifest never points at a skin whose files were
+  // never fetched; absent / null = none installed (the default).
+  skins08 = null, skinsInstalled = null,
   extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {}, localTokenSpines = {}, extraOperators = {},
   moduleTypes = [] }) {
   const notes = [];
@@ -338,19 +383,8 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   // --- Spine model helpers -------------------------------------------------
   const addModel = (key, def) => { if (!models.has(key)) models.set(key, { key, ...def }); return { model: key }; };
   const fexliModel = (key, kind, dir, rec, skillIndices) => {
-    // rec: 07 { skel:{url,bytes}|url|url[], atlas, png } — arrays are candidate folders (same order for all three)
-    const us = (x) => (Array.isArray(x) ? x : [typeof x === 'string' ? x : x?.url]).filter((v) => typeof v === 'string' && v);
-    const b = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x.bytes : undefined);
-    if (!us(rec?.skel).length || !us(rec?.atlas).length || !us(rec?.png).length) return null;
-    const stem = skelStem(us(rec.skel)[0]);
-    return addModel(key, {
-      kind, dir, pma: false, skillIndices,
-      baseUrl: urlDir(us(rec.atlas)[0]),
-      skel: alt(`${dir}${stem}.skel`, us(rec.skel), b(rec.skel)),
-      // pixi-spine finds the atlas by swapping the .skel extension: keep the same stem.
-      atlas: { ...alt(`${dir}${stem}.atlas`, us(rec.atlas), b(rec.atlas)), mutable: true },
-      pngs: [alt(dir + safeName(urlBase(us(rec.png)[0])), us(rec.png), b(rec.png))],
-    });
+    const def = fexliModelDef(key, kind, dir, rec, skillIndices);
+    return def ? addModel(def.key, def) : null;
   };
 
   // --- operators -----------------------------------------------------------
@@ -380,6 +414,40 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
     const back = fexliModel(`op:${id}:back`, 'op', `spine/op/${id}/back/`, o.battleSpine?.back, idx);
     if (back) c.spine.back = back;
     chars[id] = c;
+    // 干员皮肤 (docs/SKINS.md): per operator, keyed by the official skinId — a Front/Back Spine pair plus the 180×180
+    // avatar. Every skin model is registered in `models` on purpose: tools/assets/spine.mjs resolves its animation
+    // roles offline there (resolveRoles) and the client's validSpine() requires `anims`. A skin model that skipped
+    // that step would fail to load and silently leave the unit on its placeholder avatar — a failure invisible
+    // until someone looks at the board, so registering them here is not optional.
+    const skinList = skins08?.skins?.[id];
+    if (skinList?.length) {
+      const skins = {};
+      for (const sk of skinList) {
+        // 默认不装皮肤 (docs/SKINS.md): only what data/skins-installed.json lists is built, so a fresh install
+        // downloads no skins at all (~1.1 MB each, ~190 MB for the whole set). The rest stay available in
+        // docs/research/08-skins.json and tools/install-skins.mjs installs them on demand. `null` means "none".
+        if (!skinsInstalled || !skinsInstalled.has(sk.skinId)) continue;
+        const entry = {};
+        const dir = `spine/op/${id}/${sk.stem}/`;
+        const sfront = fexliModel(`skin:${sk.stem}:front`, 'op', `${dir}front/`, sk.battleSpine?.front, idx);
+        if (!sfront) { notes.push(`${sk.skinId}: no Front skin Spine in research data`); continue; }
+        entry.spine = { front: sfront };
+        const sback = fexliModel(`skin:${sk.stem}:back`, 'op', `${dir}back/`, sk.battleSpine?.back, idx);
+        if (sback) entry.spine.back = sback;
+        // the 180×180 avatar rather than the full skin art (~2.5 MB each, ~435 MB for the whole set); `stem` is
+        // already filename-safe (skinId with @ and # turned into _), so it needs no sanitizing.
+        if (sk.avatar?.url) entry.avatar = leaf(alt(`char/avatar/skin/${sk.stem}.png`, sk.avatar.url, sk.avatar.bytes));
+        // the tall 立绘, for the shop card's 180×360 frame (the 商店立绘 choice, ui/skinPicker.js). Same source repo,
+        // its `portrait/` folder: ~90 KB each, and absent for a skin the source lacks → the card keeps the operator's
+        // own portrait (assetUrls.js skinPortraitUrl).
+        const purl = skinPortraitUrl(sk);
+        if (purl) entry.portrait = leaf(alt(`char/portrait/skin/${sk.stem}.png`, purl));
+        entry.name = sk.name;
+        entry.group = sk.group;
+        skins[sk.skinId] = entry;
+      }
+      if (Object.keys(skins).length) c.skins = skins;
+    }
     // skill icons (+ skill SFX) of every skill index; normal-mode attack / impact sounds only (a ranged operator's own
     // projectile banks projectile_chr_<name> as fallbacks — user playtest #4 item 6, audio.mjs pickUnitSfx)
     const short = id.replace(/^char_\d+_/, '');

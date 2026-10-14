@@ -80,7 +80,7 @@ export const useSettings = () => useStore((s) => s, Object.is, settingsStore);
 /**
  * The label of the key a rebindable shortcut has right now ('R', 'Space' …) — the HUD's key hints (shop bar, ready /
  * pause, underframe). Read at render: the game screen re-renders when the settings dialog closes.
- * @param {'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready'} action
+ * @param {'buy'|'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready'} action
  */
 export const hotkeyLabelOf = (action) => hotkeyLabel(settingsStore.get().keys?.[action]);
 
@@ -116,8 +116,8 @@ const TEXT_SCALES = [['sm', N_('小')], ['md', N_('中')], ['lg', N_('大')], ['
 const VOICE_LANG_NAMES = { cn: '中文', jp: '日本語', en: 'English', kr: '한국어' }; // i18n-ignore
 const VOICE_LANG_TAGS = { cn: 'zh', jp: 'ja', en: 'en', kr: 'ko' };
 /** The rebindable shortcuts' names (msgids), by action. */
-const HOTKEY_NAMES = { refresh: N_('刷新商店'), freeze: N_('冻结 / 解冻商店'), levelUp: N_('升级调度中心'), retreat: N_('撤退选中干员'),
-  sell: N_('出售选中干员'), ready: N_('准备就绪 / 暂停（独立模拟）') };
+const HOTKEY_NAMES = { buy: N_('购买鼠标指向的商品'), refresh: N_('刷新商店'), freeze: N_('冻结 / 解冻商店'), levelUp: N_('升级调度中心'), retreat: N_('撤退鼠标指向的干员'),
+  sell: N_('出售鼠标指向的干员'), ready: N_('准备就绪 / 暂停（独立模拟）') };
 
 /**
  * 快捷键: each shortcut with its key. Click its key (or Enter / Space on it) and press the new one: Esc cancels (the

@@ -37,6 +37,8 @@ await data.loadAll('chess', 'bonds', 'items', 'assets');
 
 const OK = { ok: true };
 const PAGER = 'chess_item_4_01_e_a'; // 寻呼模块
+// effect-only items a pool still carries (choices.json `plus`): 凯瑟琳's 突变细胞, GitHub #631
+const POOL_PLUS = new Set(Object.values(DATA.choices.pools).flatMap((p) => p?.plus ?? []));
 
 /** A solo prep with an empty board and hand, plenty of funds, the given strategy. */
 function prep(band, seed = 61) {
@@ -76,8 +78,9 @@ describe('#6 the server names its offers (m.private shop.rewardOffer source / la
     for (const s of offer.slots) {
       assert.equal(s.kind, 'item');
       assert.equal(s.price, 0);
-      // any tier since 0.2.0 (community report of 2026-10-06: 「原版凯瑟琳1升2都能有6本装备」), shop items only
-      assert.ok(DATA.items[s.id] && DATA.items[s.id].itemType === 'EQUIP' && !DATA.items[s.id].shopExcluded, s.id);
+      // any tier since 0.2.0 (community report of 2026-10-06: 「原版凯瑟琳1升2都能有6本装备」), shop items only —
+      // plus the pool's effect-only 突变细胞 (GitHub #631): never sold, offered by 定向投放 like any other 装备
+      assert.ok(DATA.items[s.id] && DATA.items[s.id].itemType === 'EQUIP' && (!DATA.items[s.id].shopExcluded || POOL_PLUS.has(s.id)), s.id);
     }
     const want = offer.slots[1].id;
     const funds = ps.funds;

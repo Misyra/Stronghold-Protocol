@@ -1976,10 +1976,12 @@ function buildGarrisons(ctx, chess) {
  * 变异针…也是有一个策略自带的，商店不卖"). The official shop pool is server-side (no client table tells), so the list is
  * explicit, by normal item id → where the item comes from. items.json marks both qualities `shopExcluded` (+
  * `shopExcludedBy`), and every draw of "shop items" skips them (sim/simdata.js isShopItem: the shop item slot, the
- * 道具补给 / 机密商店 cards, pool_equip_normal / _shop_1 / _kathe / _narant):
+ * 道具补给 / 机密商店 cards, pool_equip_normal / _shop_1 / _narant). The one equip pool that still carries one is
+ * 凯瑟琳 定向投放 (pool_equip_kathe `plus`: 突变细胞, #631 — the shop level does not gate it):
  *   战栗 / 坚固 / 加速 / 灼燃维式重锤 — 维多利亚 <每叠加25层> "获得一件带有随机特殊效果的维式重锤" (pool_equip_vict) and
  *     洛洛 特质 "<获得时>随机制造1件洛洛的定制品" (pool_equip_rockr)
- *   突变细胞 — strategy 昆图斯 【不稳定要素】 "第3回合获得1件特殊装备<突变细胞>" (band_quintus)
+ *   突变细胞 — strategy 昆图斯 【不稳定要素】 "第3回合获得1件特殊装备<突变细胞>" (band_quintus), and 盟约 凯瑟琳's
+ *     定向投放 (升级调度中心, pool_equip_kathe)
  * Every other effect-granted item stays sold: the plain 维式重锤 is (user), and 变形同构体 / 骑士储蓄罐 (strategy items)
  * appear in the official 机密商店 supply (Bahamut bsn=33651 snA=12294 screenshot i.meee.com.tw/Mb2mtd9.png).
  */
@@ -3493,7 +3495,10 @@ function buildChoices(ctx, effects, items, chess) {
       // 凯瑟琳 定向投放 (up_shop_add_special_goods): every shop-eligible item, whatever the shop level — players' first-hand
       // report (community, 2026-10-06): 「原版凯瑟琳1升2都能有6本装备」; the pool itself is server-side, uniform [ASSUMED]
       // (until 0.2.0 it was capped at the shop level, so the 1 → 2 offer only ever showed tiers I–II)
-      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', assumed: true },
+      // `plus`: 突变细胞 (never sold, SHOP_EXCLUDED_ITEMS) comes from this pool too — #631 (2026-10-14, 「凯瑟琳盟约刷不出
+      // 突变细胞」; the report's screenshot is only a 模拟完成 result screen and the pool itself is server-side [ASSUMED]);
+      // it is the pool's only effect-only item [ASSUMED] (the 4 special 维式重锤 are not in it)
+      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', plus: ['chess_item_5_08_e_a'], assumed: true },
       pool_equip_narant: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
       // "获得一件带有随机特殊效果的维式重锤": the 4 hammers with a special effect (never sold, SHOP_EXCLUDED_ITEMS); the
       // weights are server-side (PRTS 11-25 note: "装备【灼燃维式重锤】的出现概率调整") — uniform [ASSUMED]

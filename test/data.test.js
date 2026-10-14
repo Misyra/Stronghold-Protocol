@@ -355,7 +355,7 @@ test('bosses, factions, tokens and choices resolve', () => {
   }
   for (const c of choices.cards.tactic) assert.ok(effects[c.effectId]);
   for (const [id, p] of Object.entries(choices.pools)) {
-    for (const x of [...(p.items || []), ...(p.weighted || []).map((w) => w[0])]) assert.ok(items[x] || chess[x], `pool ${id}: ${x}`);
+    for (const x of [...(p.items || []), ...(p.plus || []), ...(p.weighted || []).map((w) => w[0])]) assert.ok(items[x] || chess[x], `pool ${id}: ${x}`);
   }
 });
 

@@ -18,6 +18,8 @@ const cover = (...ids) => { for (const id of ids) { assert.ok(DATA.bands[id], id
 const close = (a, b, msg, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 const OK = { ok: true };
 const A = (k) => `chess_item_${k}_e_a`;
+// effect-only items a pool still carries (choices.json `plus`): 凯瑟琳's 突变细胞, GitHub #631
+const POOL_PLUS = new Set(Object.values(DATA.choices.pools).flatMap((p) => p?.plus ?? []));
 
 // ---------------------------------------------------------------------------------------------------------------
 // prep helpers
@@ -318,7 +320,7 @@ test('余 文火慢炖 adds no layers to a bond without layers (noStack: 独行,
   }
 });
 
-test('凯瑟琳 定向投放: every shop upgrade offers 3 different shop items (any tier — community report of 2026-10-06), 1 free pick', () => {
+test('凯瑟琳 定向投放: every shop upgrade offers 3 different pool items (any tier — community report of 2026-10-06; the pool also carries 突变细胞, #631), 1 free pick', () => {
   const { m, ps } = setup({ band: 'band_cathy', seed: 9 });
   for (const lvl of [2, 3]) {
     ps.shop.upgradePrice = 0;
@@ -329,7 +331,7 @@ test('凯瑟琳 定向投放: every shop upgrade offers 3 different shop items (
     const ids = offer.slots.map((sl) => sl.id);
     assert.equal(ids.length, 3);
     assert.equal(new Set(ids).size, 3);
-    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && !DATA.items[id].shopExcluded && !DATA.items[id].isGolden, id);
+    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && !DATA.items[id].isGolden && (!DATA.items[id].shopExcluded || POOL_PLUS.has(id)), id);
   }
   const f0 = ps.funds;
   const pick = ps.offers[0].slots[2].id;

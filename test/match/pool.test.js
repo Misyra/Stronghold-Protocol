@@ -98,7 +98,7 @@ test('item slot: tier ≤ level, shop-eligible normal equipment only', () => {
 // are never sold although the official shop table lists them (tools/build-data.mjs SHOP_EXCLUDED_ITEMS)
 const EFFECT_ONLY = ['chess_item_2_03_e_a', 'chess_item_3_09_e_a', 'chess_item_3_10_e_a', 'chess_item_4_09_e_a', 'chess_item_5_08_e_a'];
 
-test('effect-only items are never shop items: not in shopItemsByTier, never in the item slot, the pools or the 机变 supply', () => {
+test('effect-only items are never shop items: not in shopItemsByTier, never in the item slot, the shop pools or the 机变 supply', () => {
   for (const id of EFFECT_ONLY) {
     assert.equal(DATA.items[id].shopExcluded, true, `${id} (${DATA.items[id].name}) marked`);
     assert.equal(DATA.items[id].hideInShop, false, `${id}: the official table does not hide it`);
@@ -114,12 +114,37 @@ test('effect-only items are never shop items: not in shopItemsByTier, never in t
   const pool = new SharedPool(gd);
   const rng = createRng(4);
   for (let level = 1; level <= 6; level++) for (let i = 0; i < 400; i++) assert.ok(!EFFECT_ONLY.includes(pool.rollItem(rng, level)));
-  // every shop-eligible pool (凯瑟琳 / 列装 / 定向投放 / 见者有份) and the plain "random item" roll of effects
+  // every pool that draws the shop table (列装 / 定向投放 / 见者有份) and the plain "random item" roll of effects —
+  // 凯瑟琳's own pool is the documented exception (the next test: GitHub #631 carries 突变细胞 in it)
   const m = makeMatch({ mode: 'coop', seed: 3, fake: true }).m;
-  for (const pid of ['pool_equip_normal', 'pool_equip_shop_1', 'pool_equip_kathe', 'pool_equip_narant']) {
+  for (const pid of ['pool_equip_normal', 'pool_equip_shop_1', 'pool_equip_narant']) {
     for (let i = 0; i < 300; i++) assert.ok(!EFFECT_ONLY.includes(m.rollItemId({ pool: pid, shopLevel: 6 })), pid);
   }
   for (let i = 0; i < 300; i++) assert.ok(!EFFECT_ONLY.includes(m.rollItemId({ maxTier: 6 })));
+  m.dispose();
+});
+
+// GitHub #631 (2026-10-14, community report 「凯瑟琳盟约刷不出突变细胞」): 原版凯瑟琳盟约 refreshes 突变细胞 (针) like any other
+// 装备, at any shop level — the needle never depends on the shop level. It is never sold (SHOP_EXCLUDED_ITEMS), so
+// pool_equip_kathe names it in `plus`; it is the pool's only effect-only item (the 4 special 维式重锤 are not in it, no
+// source says so [ASSUMED]). Effect-only: it has no shop stock limit (gd.itemPoolCopies null, like the 4 hammers).
+test('凯瑟琳 定向投放: the one equip pool that carries 突变细胞 — any shop level', () => {
+  const NEEDLE = 'chess_item_5_08_e_a';
+  assert.deepEqual(DATA.choices.pools.pool_equip_kathe.plus, [NEEDLE]);
+  assert.equal(DATA.items[NEEDLE].shopExcluded, true, 'still never sold');
+  const listed = new Set(Object.values(gdOf().shopItemsByTier).flat());
+  assert.ok(!listed.has(NEEDLE), 'the needle stays out of the shop item tiers');
+  const m = makeMatch({ mode: 'coop', seed: 3, fake: true }).m;
+  const seen = new Set();
+  for (let level = 1; level <= 6; level++) for (let i = 0; i < 300; i++) seen.add(m.rollItemId({ pool: 'pool_equip_kathe', shopLevel: level }));
+  assert.ok(seen.has(NEEDLE), 'the needle comes at every shop level');
+  assert.ok([...seen].every((id) => id === NEEDLE || !EFFECT_ONLY.includes(id)), 'and it is the pool\'s only effect-only item');
+  assert.ok([...seen].some((id) => DATA.items[id].tier === 6), 'the shop items still cover every tier');
+  // an effect-only item carries no shop stock limit (like the 4 special hammers)
+  assert.equal(m.itemPool.cap(NEEDLE), null, 'no shop stock limit');
+  const ps = m.order[0];
+  assert.ok(ps.acquireItem(NEEDLE), 'gained like any item');
+  assert.equal(m.itemPool.canGain(NEEDLE), true, 'and still offerable while one is owned');
   m.dispose();
 });
 

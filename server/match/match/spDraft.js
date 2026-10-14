@@ -182,25 +182,33 @@ export class MatchSpDraft {
     return b.id;
   }
 
-  /** Random item id: a choices.json server pool ({ pool }), a tier, or ≤ maxTier shop-eligible items. */
+  /**
+   * Random item id: a choices.json server pool ({ pool }), a tier, or ≤ maxTier shop-eligible items. An equip pool
+   * draws shop-eligible items (an explicit `items` list, `tiers`, or every tier up to `maxTier`) plus the effect-only
+   * ids it names in `plus` — items the shop never sells but the pool still carries (突变细胞 in 凯瑟琳's 定向投放).
+   */
   rollItemId({ pool = null, tier = null, maxTier = 6, shopLevel = 6 } = {}) {
     const pools = this.gd.choices.pools && typeof this.gd.choices.pools === 'object' ? this.gd.choices.pools : {};
     const p = typeof pool === 'string' && Object.hasOwn(pools, pool) ? pools[pool] : null;
     const rng = this.rngMeta;
     const tierList = (lo, hi) => { const out = []; for (let t = lo; t <= hi; t++) for (const id of this.gd.shopItemsByTier[t] || []) out.push(id); return out; };
     if (p && p.kind === 'equip') {
+      // `plus` = effect-only ids the shop never sells (突变细胞): not in shopItemsByTier, and gd.itemPoolCopies is null
+      // for them (gd.itemPoolCopies: effect-only items have no shop stock limit), so canGain always lets them through
+      const plus = Array.isArray(p.plus) ? p.plus.filter((id) => this.gd.item(id)) : [];
       if (Array.isArray(p.weighted) && p.weighted.length) {
+        // a weighted pool names its own ids and weights, effect-only ones included — `plus` does not apply here
         const pairs = p.weighted.filter((x) => Array.isArray(x) && this.gd.item(x[0]) && this.itemPool.canGain(x[0]));
         return this.itemPool.pick(rng, pairs.map(x => x[0]), new Map(pairs));
       }
       if (Array.isArray(p.items) && p.items.length) {
         const items = p.items.filter((id) => this.gd.item(id));
-        return this.itemPool.pick(rng, items);
+        return this.itemPool.pick(rng, [...items, ...plus]);
       }
       let list;
       if (Array.isArray(p.tiers) && p.tiers.length) list = p.tiers.flatMap((t) => this.gd.shopItemsByTier[t] || []);
       else list = tierList(1, p.maxTier === 'shopLevel' ? Math.max(1, Math.min(6, shopLevel)) : 6);
-      return this.itemPool.pick(rng, list);
+      return this.itemPool.pick(rng, [...list, ...plus]);
     }
     const list = Number.isInteger(tier) ? tierList(tier, tier) : tierList(1, Math.max(1, Math.min(6, maxTier)));
     return this.itemPool.pick(rng, list);

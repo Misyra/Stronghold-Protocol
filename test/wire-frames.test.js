@@ -24,7 +24,8 @@ function httpReq(port, rawPath) {
   });
 }
 
-const healthz = async (port) => JSON.parse((await httpReq(port, '/healthz')).body.toString());
+// The outbound wire counters are a process diagnostic: /metrics (loopback), not the public /healthz.
+const opsHealth = async (port) => JSON.parse((await httpReq(port, '/metrics')).body.toString());
 
 test('public dedup JSON omits only the root clock and always restores the original view', () => {
   const view = { t: 'm.public', serverNow: 123, nested: { serverNow: 456 }, players: [] };
@@ -59,11 +60,13 @@ test('publicWireFrame splices serverNow into the dedup string as valid JSON', ()
   assert.equal(publicWireFrame(json, Number.NaN), null, 'a non-finite clock falls back to a full encode');
 });
 
-test('wire counters in /healthz grow per frame type', async (t) => {
+test('wire counters in /metrics grow per frame type', async (t) => {
   const { srv, client } = await connect(t);
   const welcome = await client.hello('线帧校验');
   assert.ok(welcome.token);
-  const first = await healthz(srv.port);
+  const publicHealth = await (await fetch(`${srv.url}/healthz`)).json();
+  assert.equal(publicHealth.wire, undefined, '/healthz must not expose the outbound wire counters');
+  const first = await opsHealth(srv.port);
   assert.ok(first.wire && first.wire.frames >= 1 && first.wire.bytes > 0, 'queued frames are counted');
   assert.ok(first.wire.byType.welcome && first.wire.byType.welcome.frames >= 1, 'the welcome frame is labelled');
 

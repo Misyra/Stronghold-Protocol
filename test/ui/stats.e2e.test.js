@@ -176,12 +176,15 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     await c.page.waitForSelector('.lobby-screen');
     await openStats(c);
     // 导出: capture the blob the page hands to the browser
+    // (the Blob itself: the site's CSP, 0.3.0, allows fetch only to 'self', not to a blob: URL)
     await c.page.evaluate(() => {
+      const create = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (blob) => { globalThis.__blob = blob; return create(blob); };
       HTMLAnchorElement.prototype.click = function click() { globalThis.__dl = { name: this.download, href: this.href }; };
     });
     await c.click('[data-testid="stats-export"]');
     await c.page.waitForFunction(() => !!globalThis.__dl, { timeout: 5000 });
-    const exported = await c.page.evaluate(async () => { const r = await fetch(globalThis.__dl.href); return { name: globalThis.__dl.name, text: await r.text() }; });
+    const exported = await c.page.evaluate(async () => ({ name: globalThis.__dl.name, text: await globalThis.__blob.text() }));
     assert.match(exported.name, /^stronghold-stats-\d{8}-\d{4}\.json$/);
     const payload = JSON.parse(exported.text);
     assert.equal(payload.kind, 'local-stats');

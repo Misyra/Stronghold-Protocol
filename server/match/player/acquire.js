@@ -117,6 +117,7 @@ export class PlayerAcquire {
       if (this.stow(it, { allowTemp: true })) continue;
       if (where && elite.items.length < this.gd.equipPerChess) { elite.items.push(it); continue; }
       this.m.log.warn?.(`[match ${this.m.roomCode}] ${this.playerId}: returned item ${it.id} destroyed (no space)`);
+      this.releaseItemStock(it);
     }
     // the returned equipment follows the auto-merge rule like any other gain ("已拥有2件同一初始装备时…自动合并")
     this.checkItemMerges();
@@ -193,6 +194,7 @@ export class PlayerAcquire {
       if (this.stow(it, { allowTemp: true })) continue;
       if (np && this.find(np.uid) && np.items.length < this.gd.equipPerChess) { np.items.push(it); continue; }
       this.m.log.warn?.(`[match ${this.m.roomCode}] ${this.playerId}: returned item ${it.id} destroyed (no space)`);
+      this.releaseItemStock(it);
     }
     if (left.length) this.checkItemMerges();
     this.recompute();
@@ -289,14 +291,20 @@ export class PlayerAcquire {
    * call, even when an identical normal copy is already owned. The next prep's start runs checkItemMerges. Nothing
    * already equipped is taken off for the fight about to start. Hand and temp both full keeps the 「整备区已满，获得的装备已销毁」
    * outcome. [ASSUMED] every item granted at 休整期结束, not only 维多利亚's 战栗维式重锤 (owner's decision 2026-10-04).
+   * `displayed` (a shop slot or a reward offer already on screen, #624): skip the stock refusal and, once the piece
+   * is actually kept, record the copies that did not fit (`need` minus `left` before the gain). A failed stow or
+   * merge records nothing. Fixed gift families stay unlimited without a debt entry. Every other grant still refuses.
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true, displayed = false } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
     // Only the fixed operator-gift families can overdraw. Several unrelated strategy grants also pass
     // requirePool:false; they must retain their stock limit (for example commercial packaging).
     const unlimitedGift = !requirePool && this.gd.isUnlimitedGiftItem(itemId);
-    if (!unlimitedGift && !this.m.itemPool.canGain(itemId)) {
+    const pool = this.m.itemPool;
+    const leftBefore = pool.left(itemId);
+    const need = pool.need(itemId);
+    if (!unlimitedGift && !displayed && !pool.canGain(itemId)) {
       this.m.toast(this, 'warn', '装备库存不足，未获得该装备');
       return null;
     }
@@ -310,6 +318,10 @@ export class PlayerAcquire {
     } else if (!this.stow(piece, { allowTemp: true, toTemp })) {
       this.m.toast(this, 'warn', '整备区已满，获得的装备已销毁');
       return null;
+    }
+    if (displayed && !unlimitedGift) {
+      const shortfall = leftBefore === Infinity ? 0 : Math.max(0, need - leftBefore);
+      if (shortfall > 0) pool.owe(itemId, shortfall);
     }
     this.recompute();
     if (!silent) this.m.dispatch(this, 'onGain', { piece, kind: 'item', source });
@@ -330,6 +342,8 @@ export class PlayerAcquire {
     if (!this.stow(golden, { allowTemp: true })) {
       const at = slotOf[0];
       if (!at || !this.find(at.holder.uid)) {
+        // The consumed copies left play and the golden was not kept. Repay their debt; the incoming copy was never held.
+        for (const l of consumed) if (l.area !== 'new') this.releaseItemStock(l.piece);
         this.m.toast(this, 'warn', '整备区已满，合成的装备已销毁');
         return null;
       }

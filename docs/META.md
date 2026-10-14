@@ -989,11 +989,16 @@ revives, leaks and deaths without an attributable allied killer add no credit.
 
 `SharedItemPool` derives equipment availability from current ownership across all players: ordinary 1, upgraded 2.
 Equips, merges and returns cannot lose reservations. Consumptions/destruction release ownership [ASSUMED removal
-interpretation]. Shop/reward displays reserve nothing; rejected exhausted **item** purchases retain funds and offers.
-整备 upgrades the purchased item only when `left` still has the golden's second copy; otherwise the item stays
-normal and the charge remains.
-`m.public.sp.cards[].soldOut` disables duplicates when a preceding choice used the final copy; timer/bot choices
-use the same availability. Non-shop effect-only equipment is unlimited.
+interpretation]. Shop and reward displays reserve nothing. An equipment card already on screen (a shop slot, or a
+reward offer such as 定向投放 / 见者有份) stays purchasable after `left` hits 0 and records `debt` for the copies that
+did not fit (#624, the maintainer's decision of 2026-10-14; `acquireItem(..., { displayed: true })`). `left` stays
+clamped at 0, so later rolls and `canGain` still skip an empty item until the debt is repaid and a copy is free.
+Destroying, consuming, a temp wipe and elimination repay that debt first. Selling a carrier returns equipment to the
+hand and does not repay. 整备 upgrades the purchased item only when `left` still has the golden's second copy;
+otherwise the item stays normal and the charge remains. A random grant is still refused.
+`m.public.sp.cards[].soldOut` disables a 机变 item card when a preceding choice used the final copy; timer/bot choices
+use the same availability. Those cards are not already-shown shop or reward cards, so they stay stock-limited.
+Non-shop effect-only equipment is unlimited.
 
 Operator capacities use measured single-player exceptions and twice those counts in co-op; DIY remains private.
 `take(..., { overdraw: true })` records full occupation, including authorized acquisitions beyond capacity.
@@ -1003,5 +1008,7 @@ Negative internal balance is a deficit, never negative available stock; selling 
 
 Fixed equipment gifts from `SERVER_GAIN_EQUIP` (卡涅利安、蜜蜡、缪尔赛思、耶拉、诗怀雅) may exceed the pool,
 including the same families awarded by 变形者. They still occupy ordinary/advanced 1/2 copies and can leave availability
-at zero after a removal. Ordinary shop, reward and random grants retain their limits. `requirePool:false` is not a
-universal equipment bypass. Rockrock/Flametail's measured weighted subsets remain subject to shared availability (§30.2).
+at zero after a removal, without a `debt` entry. Ordinary grants, 整备 and 机变 item cards retain their limits.
+`requirePool:false` is not a universal equipment bypass. Rockrock/Flametail's measured weighted subsets remain subject
+to shared availability (§30.2). 凯瑟琳's `pool_equip_kathe` is every shop-eligible item plus 突变细胞 (`also`), uniform
+[ASSUMED], at any 调度中心 level (#631); the shop item slot does not read `also`.

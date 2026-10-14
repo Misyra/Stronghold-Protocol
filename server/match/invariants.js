@@ -202,15 +202,19 @@ export function collectViolations(m, { limit = 25 } = {}) {
   }
   for (const [base, n] of held) if (!m.pool.has(base) && n !== 0) fail(`non-pool chess ${base} holds ${n} copies`);
 
-  // Fixed operator gifts may overdraw equipment stock; ownership still counts and keeps shop availability at zero.
-  // Other item families retain their cap. The chess pool above also permits explicit overdraw (Mimic).
+  // Displayed shop cards and item rewards may overdraw; itemPool.debt is that overage (#624). Fixed gift families
+  // may overdraw without a debt entry. debt > over is always a missed repay or a debt recorded for a piece not kept.
+  // The chess pool above also permits explicit overdraw (Mimic, displayed operator cards).
   if (m.itemPool && gd.raw.items) {
     for (const [id, rec] of Object.entries(gd.raw.items)) {
       if (!rec || rec.isGolden) continue;
       const cap = m.itemPool.cap(id);
       if (!Number.isInteger(cap)) continue;
       const h = m.itemPool.held(id);
-      if (h > cap && !gd.isUnlimitedGiftItem(id)) fail(`item ${id}: held ${h} > cap ${cap}`);
+      const over = Math.max(0, h - cap);
+      const debt = m.itemPool.debtOf(id);
+      if (debt > over) fail(`item ${id}: debt ${debt} > overage ${over} (held ${h}, cap ${cap})`);
+      if (!gd.isUnlimitedGiftItem(id) && over > debt) fail(`item ${id}: held ${h} > cap ${cap} without debt ${debt}`);
     }
   }
 

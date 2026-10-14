@@ -154,11 +154,12 @@ export class PlayerEconomy {
       piece = this.acquireChess(slot.id, { source: 'buy' });
     } else {
       if (!this.gd.item(slot.id)) return fail(ERR.BAD_TARGET);
-      if (!this.m.itemPool.canGain(slot.id)) return fail(ERR.SOLD_OUT);
+      // Already displayed equipment stays purchasable after stock runs out (#624, maintainer 2026-10-14).
+      // acquireItem records the debt. Future rolls still exclude empty stock. SOLD_OUT is only this slot, already sold.
       if (handFull) return fail(ERR.HAND_FULL);
       this.spend(price);
       slot.sold = true;
-      piece = this.acquireItem(slot.id, { source: 'buy' });
+      piece = this.acquireItem(slot.id, { source: 'buy', displayed: true });
     }
     this.stats.buys++;
     this.round.buys++;
@@ -225,7 +226,10 @@ export class PlayerEconomy {
     this._detach(loc);
     this.removeTokensOf(piece.uid);
     for (const it of piece.items || []) {
-      if (!this.stow(it, { allowTemp: true })) this.m.log.warn?.(`[match ${this.m.roomCode}] ${this.playerId}: item ${it.id} lost on sell (no space)`);
+      if (!this.stow(it, { allowTemp: true })) {
+        this.m.log.warn?.(`[match ${this.m.roomCode}] ${this.playerId}: item ${it.id} lost on sell (no space)`);
+        this.releaseItemStock(it);
+      }
     }
     piece.items = [];
     this.returnCopies(piece);

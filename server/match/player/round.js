@@ -58,7 +58,11 @@ export class PlayerRound {
     for (const p of this.board.values()) all.push(p);
     for (const p of this.hand) if (p) all.push(p);
     for (const p of this.temp) if (p) all.push(p);
-    for (const p of all) this.returnCopies(p);
+    for (const p of all) {
+      this.returnCopies(p);
+      if (p.kind === 'item') this.releaseItemStock(p);
+      for (const it of p.items || []) this.releaseItemStock(it);
+    }
     this.board.clear();
     this.hand.fill(null);
     this.temp.fill(null);

@@ -117,8 +117,9 @@ export class GameData {
     }).sort();
     /**
      * Shop item ids by tier (sim/simdata.js isShopItem: normal EQUIP, not hidden, not effect-only — the special
-     * 维式重锤 and 突变细胞 are never sold). Every "shop item" draw uses it: the shop item slot (pool.js), the 道具补给 /
-     * 机密商店 cards (choices.js) and the shop-eligible item pools (Match.rollItemId).
+     * 维式重锤 and 突变细胞 are never sold). Every shop-item draw uses it: the shop item slot (pool.js), the 道具补给 /
+     * 机密商店 cards (choices.js) and the shop-eligible item pools (Match.rollItemId). A pool's `also` list
+     * (pool_equip_kathe: 突变细胞, #631) is appended there and is not in this table, so the shop slot still never sells it.
      */
     this.shopItemsByTier = {};
     for (const [id, it] of Object.entries(this._items)) {

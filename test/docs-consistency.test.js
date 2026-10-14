@@ -348,7 +348,7 @@ test('user playtest #4 (DESIGN §18): picking by tile, timers, 机变 two taps, 
   const special = DATA.items.chess_item_4_09_e_a;
   assert.ok(special.shopExcluded && special.shopExcludedBy, '灼燃维式重锤 is never sold');
   assert.match(dataRow('shopExcluded`, `shopExcludedBy'), /isShopItem/);
-  assert.match(PLAYING, /突变细胞只来自昆图斯的策略/);
+  assert.match(PLAYING, /突变细胞来自昆图斯的策略，也会出现在凯瑟琳【定向投放】里（调度中心仍不出售）/);
   // (#11 revisited by user playtest #6: the drone is a hand piece again, still only on the field when her skill fires)
   assert.equal(DATA.tokens.token_10000_silent_healrb.placeable, true, '赫默\'s drone is a hand piece (user playtest #6)');
   assert.match(dataRow('displayType`, `placeable'), /manually deployable summon/);

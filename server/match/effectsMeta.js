@@ -678,11 +678,15 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
       ps._detach(l);
       if (l.piece.kind === 'chess') {
         ps.removeTokensOf(l.piece.uid);
-        for (const it of l.piece.items || []) ps.stow(it, { allowTemp: true });
+        const lost = [];
+        for (const it of l.piece.items || []) {
+          if (!ps.stow(it, { allowTemp: true })) lost.push(it);
+        }
         l.piece.items = [];
         ps.returnCopies(l.piece);
         ps.checkItemMerges(); // the returned equipment auto-merges like any gain
-      }
+        for (const it of lost) ps.releaseItemStock(it);
+      } else if (l.piece.kind === 'item') ps.releaseItemStock(l.piece);
       ps.recompute();
       return true;
     },

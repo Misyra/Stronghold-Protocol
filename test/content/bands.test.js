@@ -329,7 +329,7 @@ test('凯瑟琳 定向投放: every shop upgrade offers 3 different shop items (
     const ids = offer.slots.map((sl) => sl.id);
     assert.equal(ids.length, 3);
     assert.equal(new Set(ids).size, 3);
-    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && !DATA.items[id].shopExcluded && !DATA.items[id].isGolden, id);
+    for (const id of ids) assert.ok(offer.slots[0].kind === 'item' && !DATA.items[id].isGolden && (id === 'chess_item_5_08_e_a' || !DATA.items[id].shopExcluded), id);
   }
   const f0 = ps.funds;
   const pick = ps.offers[0].slots[2].id;

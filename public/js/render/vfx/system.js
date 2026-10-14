@@ -287,14 +287,29 @@ export class OfficialFx {
     const g = this.items.ground, o = this.items.over;
     g.length = 0; o.length = 0;
     let seq = 0, depth = false;
-    const sink = (it) => {
-      it.seq = seq++;
-      if (it.mat.state.zTest) depth = true;
-      (it.ground ? g : o).push(it);
+    const sink = (e) => {
+      e.seq = seq++;
+      if (e.mat.state.zTest) depth = true;
+      (e.ground ? g : o).push(e);
     };
-    for (const fx of this.effects) fx.collect(basis, fd, sink, this.frameNo);
+    for (const fx of this.effects) fx.gather(basis, sink);
     g.sort(byUnityOrder);
     o.sort(byUnityOrder);
+    // geometry in draw order: neighbours of one material and kind become one draw (their ranges are contiguous)
+    const frameNo = this.frameNo;
+    for (const list of [g, o]) {
+      let w = 0, prev = null;
+      for (const e of list) {
+        const r = e.effect.build(e, basis, fd, frameNo);
+        if (!r || !r.count) continue;
+        e.kind = r.kind; e.first = r.first; e.count = r.count;
+        if (prev && prev.mat === e.mat && prev.kind === e.kind && !prev.ov && !e.ov && prev.meshKey === e.meshKey && prev.submesh === e.submesh
+          && prev.first + prev.count === e.first) { prev.count += e.count; continue; }
+        list[w++] = e;
+        prev = e;
+      }
+      list.length = w;
+    }
     this.needDepth = depth;
     this.glr.upload(fd);
   }

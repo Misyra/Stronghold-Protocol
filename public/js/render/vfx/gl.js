@@ -121,7 +121,7 @@ export class FxGL {
         if (info.type === gl.SAMPLER_2D) u.unit = unit++;
         uniforms.push(u);
       }
-      rec = { prog, uniforms, vp: gl.getUniformLocation(prog, 'u_vp'), pass: -1 };
+      rec = { prog, uniforms, vp: gl.getUniformLocation(prog, 'u_vp'), time: gl.getUniformLocation(prog, 'u_Time'), camPos: gl.getUniformLocation(prog, 'u_WorldSpaceCameraPos'), pass: -1, plans: new WeakMap() };
       this.stats.programs++;
     } catch (err) {
       console.warn('[fx] program failed', mat.family, err?.message || err);
@@ -129,6 +129,28 @@ export class FxGL {
     }
     this.programs.set(key, rec);
     return rec;
+  }
+
+  /**
+   * The uniform binding plan of a material on a program (built once): its textures by sampler unit, its floats and
+   * vectors with their values resolved (material value, else the family default).
+   */
+  _plan(rec, mat) {
+    let p = rec.plans.get(mat);
+    if (p) return p;
+    const gl = this.gl;
+    p = { tex: [], f: [], v: [] };
+    for (const u of rec.uniforms) {
+      const nm = u.name;
+      if (nm === '_vp' || nm === '_Time' || nm === '_WorldSpaceCameraPos') continue;
+      if (u.unit >= 0) {
+        const t = mat.textures.find((x) => x.name === nm);
+        p.tex.push({ loc: u.loc, unit: u.unit, key: t && t.key ? t.key : null, fallback: this.defaults[t?.def || 'white'] || this.defaults.white, glTex: null });
+      } else if (u.type === gl.FLOAT) p.f.push({ loc: u.loc, name: nm, value: mat.floats[nm] ?? UNIFORM_DEFAULTS[nm] ?? 0 });
+      else if (u.type === gl.FLOAT_VEC4) p.v.push({ loc: u.loc, name: nm, value: mat.vecs[nm] || (nm.endsWith('_ST') ? ST1 : nm.startsWith('_Rotation') ? ROT1 : V0) });
+    }
+    rec.plans.set(mat, p);
+    return p;
   }
 
   /** The GL texture of an fx texture key (null while its image loads). */
@@ -272,18 +294,18 @@ export class FxGL {
     let lastProg = null, lastState = null;
     const time = frame.time;
     const tv = [time / 20, time, time * 2, time * 3];
+    let lastMat = null, lastOv = null;
     for (const it of items) {
       const mat = it.mat;
       const kind = it.kind;
       const rec = this.program(kind, mat);
       if (!rec) continue;
+      const plan = this._plan(rec, mat);
       // textures first: a draw whose texture is still loading is skipped (no white flash)
       let ready = true;
-      for (const u of rec.uniforms) {
-        if (u.unit < 0) continue;
-        const t = mat.textures.find((x) => x.name === u.name);
-        u._tex = t && t.key ? this.texture(t.key, frame.half) : this.defaults[t?.def || 'white'] || this.defaults.white;
-        if (!u._tex) { ready = false; break; }
+      for (const e of plan.tex) {
+        e.glTex = e.key ? this.texture(e.key, frame.half) : e.fallback;
+        if (!e.glTex) { ready = false; break; }
       }
       if (!ready) continue;
       let mesh = null;
@@ -291,29 +313,31 @@ export class FxGL {
       if (rec !== lastProg) {
         gl.useProgram(rec.prog);
         lastProg = rec;
+        lastMat = null;
         if (rec.pass !== frame.pass) {
           gl.uniformMatrix4fv(rec.vp, false, frame.vp);
           rec.pass = frame.pass;
-          for (const u of rec.uniforms) {
-            if (u.name === '_Time') gl.uniform4fv(u.loc, tv);
-            else if (u.name === '_WorldSpaceCameraPos') gl.uniform3fv(u.loc, frame.cam);
-          }
+          if (rec.time) gl.uniform4fv(rec.time, tv);
+          if (rec.camPos) gl.uniform3fv(rec.camPos, frame.cam);
         }
       }
-      // material uniforms (overrides from clips / UV tweeners first)
+      // material uniforms (overrides from clips / UV tweeners first): uploaded again only for another material / overrides
       const ov = it.ov;
-      for (const u of rec.uniforms) {
-        if (u.unit >= 0) { gl.activeTexture(gl.TEXTURE0 + u.unit); gl.bindTexture(gl.TEXTURE_2D, u._tex); gl.uniform1i(u.loc, u.unit); continue; }
-        const nm = u.name;
-        if (nm === '_vp' || nm === '_Time' || nm === '_WorldSpaceCameraPos') continue;
-        const o = ov ? ov[nm] : undefined;
-        if (u.type === gl.FLOAT) {
-          const v = typeof o === 'number' ? o : mat.floats[nm] ?? UNIFORM_DEFAULTS[nm] ?? 0;
-          gl.uniform1f(u.loc, v);
-        } else if (u.type === gl.FLOAT_VEC4) {
-          const v = Array.isArray(o) ? o : mat.vecs[nm] || (nm.endsWith('_ST') ? ST1 : nm.startsWith('_Rotation') ? ROT1 : V0);
-          gl.uniform4f(u.loc, v[0], v[1], v[2], v[3]);
+      if (mat !== lastMat || ov || lastOv) {
+        for (const e of plan.tex) { gl.activeTexture(gl.TEXTURE0 + e.unit); gl.bindTexture(gl.TEXTURE_2D, e.glTex); gl.uniform1i(e.loc, e.unit); }
+        for (const e of plan.f) {
+          const o = ov ? ov[e.name] : undefined;
+          gl.uniform1f(e.loc, typeof o === 'number' ? o : e.value);
         }
+        for (const e of plan.v) {
+          const o = ov ? ov[e.name] : undefined;
+          const v = Array.isArray(o) ? o : e.value;
+          gl.uniform4f(e.loc, v[0], v[1], v[2], v[3]);
+        }
+        lastMat = mat; lastOv = ov;
+      } else {
+        // same material: only the textures (another frame's upload may have rebound a unit)
+        for (const e of plan.tex) { gl.activeTexture(gl.TEXTURE0 + e.unit); gl.bindTexture(gl.TEXTURE_2D, e.glTex); }
       }
       const st = mat.state;
       if (st !== lastState) { this._state(st, mat.family); lastState = st; }

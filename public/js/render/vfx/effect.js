@@ -572,10 +572,12 @@ export class Effect {
   }
 
   /**
-   * Visible renderers as draw items: sink(item) with item = { kind: 'quad'|'mesh'|'strip', first, count, mat, ov,
-   * order, layer, queue, dist, ground, node, meshKey, submesh, effect }.
+   * The visible renderers of this frame as draw entries (no geometry yet): sink(entry) with entry = { part ('ps' |
+   * 'trailmod' | 'mesh' | 'skinned' | 'trail' | 'line'), node, submesh, mat, ov, order, layer, queue, dist, ground,
+   * meshKey, effect }. render/vfx/system.js sorts them across effects, then builds them in order (`build`), so
+   * neighbours of one material share a draw.
    */
-  collect(cam, fd, sink, frameNo) {
+  gather(cam, sink) {
     if (this.state === 'done' || this.ctime < 0 || this.hidden) return;
     const def = this.def, n = def.n, lite = this.lite;
     const camPos = cam.pos;
@@ -586,89 +588,107 @@ export class Effect {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const nearGround = Math.abs(w[14] - this.groundZ) < 0.25;
       const ov = this.matOv.get(i) || null;
-      const tint = this._tint();
-      // particles (+ the trail module with materials[1])
       const r = def.psr[i], s = this.sys[i];
-      if (r && s && r.enabled && r.mode !== 'none' && (s.count > 0 || s.orphans.length)) {
+      if (r && s && r.enabled && r.mode !== 'none') {
         const m0 = r.mats[0] != null ? def.material(r.mats[0], lite) : null;
         if (m0 && s.count > 0) {
           const meshData = r.mode === 'mesh' ? (r.mesh && this.lib ? this.lib.mesh(r.mesh) : null) : null;
-          const info = this.__ri || (this.__ri = {});
-          Object.assign(info, r, { meshData, tint });
-          const res = buildParticles(s, info, cam, fd, frameNo);
-          if (res) {
-            const flat = isFlatParticles(r, w, meshData);
-            sink(item(res.kind, res.first, res.count, m0, ov, r.order, r.layer, dist + r.fudge, flat && nearGround, i, this, r.mode === 'mesh' ? r.mesh : null, 0));
+          if (r.mode !== 'mesh' || meshData) {
+            sink(entry('ps', i, 0, m0, ov, r.order, r.layer, dist + r.fudge, isFlatParticles(r, w, meshData) && nearGround, this, r.mode === 'mesh' ? r.mesh : null));
           }
         }
-        if (s.def.trail && r.mats[1] != null) {
+        if (s.def.trail && r.mats[1] != null && (s.count > 0 || s.orphans.length)) {
           const m1 = def.material(r.mats[1], lite);
-          if (m1) {
-            const res = buildParticleTrails(s, cam, fd, tint);
-            if (res) sink(item('strip', res.first, res.count, m1, ov, r.order, r.layer, dist + r.fudge, false, i, this, null, 0));
-          }
+          if (m1) sink(entry('trailmod', i, 0, m1, ov, r.order, r.layer, dist + r.fudge, false, this, null));
         }
       }
-      // mesh renderer
       const mr = def.mesh[i];
       if (mr && mr.enabled && mr.mesh && (this.rendOv.get(i)?.enabled ?? true)) {
         const md = this.lib ? this.lib.mesh(mr.mesh) : null;
-        if (md) {
-          const flat = isFlatMesh(md, w);
-          const inst = buildMeshInstance(w, fd, tint);
+        if (md && md.submeshes) {
+          const flat = isFlatMesh(md, w) && nearGround;
           for (let k = 0; k < mr.mats.length; k++) {
-            if (mr.mats[k] == null) continue;
+            if (mr.mats[k] == null || !md.submeshes[k]) continue;
             const mat = def.material(mr.mats[k], lite);
-            if (!mat || !md.submeshes || !md.submeshes[k]) continue;
-            sink(item('mesh', inst, 1, mat, ov, mr.order, mr.layer, dist, flat && nearGround, i, this, mr.mesh, k));
+            if (mat) sink(entry('mesh', i, k, mat, ov, mr.order, mr.layer, dist, flat, this, mr.mesh));
           }
         }
       }
-      // skinned mesh (CPU skinning)
       const sk = def.skinned[i];
       if (sk && sk.enabled && sk.mesh) {
         const md = this.lib ? this.lib.mesh(sk.mesh) : null;
         if (md && md.boneWeights) {
-          const bones = sk.bones.map((b) => (b >= 0 && b < n ? this.world[b] : null));
           for (let k = 0; k < sk.mats.length; k++) {
             if (sk.mats[k] == null || !md.submeshes[k]) continue;
             const mat = def.material(sk.mats[k], lite);
-            if (!mat) continue;
-            const res = buildSkinned(md, bones, k, fd, tint);
-            if (res) sink(item('strip', res.first, res.count, mat, ov, sk.order, sk.layer, dist, false, i, this, null, 0));
+            if (mat) sink(entry('skinned', i, k, mat, ov, sk.order, sk.layer, dist, false, this, sk.mesh));
           }
         }
       }
-      // trail renderer
       const tr = def.trail[i];
       if (tr && tr.enabled && tr.mats[0] != null) {
         const st = this.trails.get(i);
-        if (st && st.n > 0) {
-          const mat = def.material(tr.mats[0], lite);
-          if (mat) {
-            const res = this._trailStrip(i, tr, st, cam, fd);
-            if (res) sink(item('strip', res.first, res.count, mat, ov, tr.order, tr.layer, dist, false, i, this, null, 0));
-          }
-        }
+        const mat = st && st.n > 0 ? def.material(tr.mats[0], lite) : null;
+        if (mat) sink(entry('trail', i, 0, mat, ov, tr.order, tr.layer, dist, false, this, null));
       }
-      // line renderer
       const ln = def.line[i];
       if (ln && ln.enabled && ln.mats[0] != null) {
-        const mat = def.material(ln.mats[0], lite);
         const pts = this.linePts.get(i) || ln.points;
-        if (mat && pts.length >= 2) {
-          const buf = this.__lb && this.__lb.length >= (pts.length + 1) * 3 ? this.__lb : (this.__lb = new Float32Array((pts.length + 1) * 3 + 12));
-          const world = this.linePts.has(i) ? true : ln.world;
-          const cnt = linePoints(pts, world, w, ln.loop, buf);
-          const P = ln.params, wm = this.rendOv.get(i)?.width ?? P.width;
-          const res = buildRibbon(buf, cnt, (k, u) => evalCurve(P.widthCurve, u) * wm / 2, (k, u, out) => {
-            P.color.at(u, out);
-            if (tint) { out[0] *= tint[0]; out[1] *= tint[1]; out[2] *= tint[2]; out[3] *= tint[3]; }
-          }, fd, { texMode: P.textureMode, cam, alignZ: P.alignment === 1 ? [w[8], w[9], w[10]] : null });
-          if (res) sink(item('strip', res.first, res.count, mat, ov, ln.order, ln.layer, dist, false, i, this, null, 0));
-        }
+        const mat = pts.length >= 2 ? def.material(ln.mats[0], lite) : null;
+        if (mat) sink(entry('line', i, 0, mat, ov, ln.order, ln.layer, dist, false, this, null));
       }
     }
+  }
+
+  /** Write a gathered entry's geometry into the frame buffers: { kind, first, count } or null. */
+  build(e, cam, fd, frameNo) {
+    const def = this.def, i = e.node, w = this.world[i];
+    const tint = this._tint();
+    switch (e.part) {
+      case 'ps': {
+        const r = def.psr[i], s = this.sys[i];
+        const info = this.__ri || (this.__ri = {});
+        Object.assign(info, r, { meshData: e.meshKey && this.lib ? this.lib.mesh(e.meshKey) : null, tint });
+        return buildParticles(s, info, cam, fd, frameNo);
+      }
+      case 'trailmod': {
+        const res = buildParticleTrails(this.sys[i], cam, fd, tint);
+        return res ? { kind: 'strip', first: res.first, count: res.count } : null;
+      }
+      case 'mesh': return { kind: 'mesh', first: buildMeshInstance(w, fd, tint), count: 1 };
+      case 'skinned': {
+        const sk = def.skinned[i];
+        const md = this.lib.mesh(sk.mesh);
+        const bones = sk.bones.map((b) => (b >= 0 && b < def.n ? this.world[b] : null));
+        const res = buildSkinned(md, bones, e.submesh, fd, tint);
+        return res ? { kind: 'strip', first: res.first, count: res.count } : null;
+      }
+      case 'trail': {
+        const res = this._trailStrip(i, def.trail[i], this.trails.get(i), cam, fd);
+        return res ? { kind: 'strip', first: res.first, count: res.count } : null;
+      }
+      case 'line': {
+        const ln = def.line[i];
+        const pts = this.linePts.get(i) || ln.points;
+        const buf = this.__lb && this.__lb.length >= (pts.length + 1) * 3 ? this.__lb : (this.__lb = new Float32Array((pts.length + 1) * 3 + 12));
+        const cnt = linePoints(pts, this.linePts.has(i) ? true : ln.world, w, ln.loop, buf);
+        const P = ln.params, wm = this.rendOv.get(i)?.width ?? P.width;
+        const res = buildRibbon(buf, cnt, (k, u) => evalCurve(P.widthCurve, u) * wm / 2, (k, u, out) => {
+          P.color.at(u, out);
+          if (tint) { out[0] *= tint[0]; out[1] *= tint[1]; out[2] *= tint[2]; out[3] *= tint[3]; }
+        }, fd, { texMode: P.textureMode, cam, alignZ: P.alignment === 1 ? [w[8], w[9], w[10]] : null });
+        return res ? { kind: 'strip', first: res.first, count: res.count } : null;
+      }
+      default: return null;
+    }
+  }
+
+  /** gather + build in node order (tests, a single effect): sink(item) with the entry's fields + kind, first, count. */
+  collect(cam, fd, sink, frameNo) {
+    this.gather(cam, (e) => {
+      const g = this.build(e, cam, fd, frameNo);
+      if (g) { e.kind = g.kind; e.first = g.first; e.count = g.count; sink(e); }
+    });
   }
 
   /** The colour multiplier of this frame: ColorModifier × the stop fade. */
@@ -718,8 +738,8 @@ export const DIR_YAW = Object.freeze([Math.PI / 2, 0, -Math.PI / 2, Math.PI]);
 /** Battle seconds a stopped effect takes at most to fade out (see _lifecycle). */
 export const STOP_FADE = 0.6;
 
-function item(kind, first, count, mat, ov, order, layer, dist, ground, node, effect, meshKey, submesh) {
-  return { kind, first, count, mat, ov, order, layer, queue: mat.queue, dist, ground, node, effect, meshKey, submesh };
+function entry(part, node, submesh, mat, ov, order, layer, dist, ground, effect, meshKey) {
+  return { part, node, submesh, mat, ov, order, layer, queue: mat.queue, dist, ground, effect, meshKey, kind: null, first: 0, count: 0, seq: 0 };
 }
 
 /** Particles drawn flat on the board: world / vertical billboards, local quads (or flat meshes) lying in XY. */

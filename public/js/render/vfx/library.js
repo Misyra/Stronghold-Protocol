@@ -123,13 +123,16 @@ export class FxLibrary {
         if (g && isObj(g['fx/prefabs']) && Object.keys(g['fx/prefabs']).length) groups = { fx: g.fx || {}, 'fx/prefabs': g['fx/prefabs'], 'fx/tex': g['fx/tex'] || {}, 'fx/mesh': g['fx/mesh'] || {} };
       }
       this.groups = groups && isObj(groups['fx/prefabs']) ? groups : null;
-      return this.available;
+      // computed once: the full set lists ~4,000 prefabs and `available` is read for every event
+      this._available = false;
+      if (this.groups) for (const _k in this.groups['fx/prefabs']) { this._available = true; break; }
+      return this._available;
     })();
     return this._init;
   }
 
   /** Effects were extracted (the file list names prefabs). */
-  get available() { return !!(this.groups && Object.keys(this.groups['fx/prefabs']).length); }
+  get available() { return !!this._available; }
 
   /** URL of a file-list entry. */
   url(group, key) {

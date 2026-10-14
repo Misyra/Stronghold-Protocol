@@ -69,6 +69,8 @@ export function cameraBasis(tiltDeg, posUnity, viewportH, fovYRad) {
 }
 
 const _c4 = [1, 1, 1, 1], _d4 = [1, 1, 1, 1], _e4 = [1, 1, 1, 1];
+/** Unity keeps particle and line colours as Color32: 0…1 per channel (HDR start colours are clamped). */
+const c01 = (v) => (v > 1 ? 1 : v < 0 ? 0 : v);
 const _p = [0, 0, 0], _q = [0, 0, 0, 1], _v = [0, 0, 0], _w = [0, 0, 0];
 const _ax = [0, 0, 0], _ay = [0, 0, 0], _az = [0, 0, 0];
 const _s = new Float32Array(16);
@@ -230,6 +232,7 @@ export function buildParticles(ps, r, cam, fd, frameNo) {
     ps.worldPos(i, _p);
     particleColor(ps, i, t, _c4);
     if (r.tint) { _c4[0] *= r.tint[0]; _c4[1] *= r.tint[1]; _c4[2] *= r.tint[2]; _c4[3] *= r.tint[3]; }
+    _c4[0] = c01(_c4[0]); _c4[1] = c01(_c4[1]); _c4[2] = c01(_c4[2]); _c4[3] = c01(_c4[3]);
     sizeMul(ps, i, t, _sm);
     let sx = ps.sx[i] * _sm[0], sy = (def.size3D ? ps.sy[i] : ps.sx[i]) * _sm[1], sz = (def.size3D ? ps.sz[i] : ps.sx[i]) * _sm[2];
     const s = ps.seed[i];
@@ -410,7 +413,7 @@ export function buildRibbon(pts, n, widthAt, colorAt, fd, o) {
       const off = (v0 + k * 2 + side) * STRIP_STRIDE, sg = side ? -1 : 1;
       b[off] = pts[k * 3] + wx * hw * sg; b[off + 1] = pts[k * 3 + 1] + wy * hw * sg; b[off + 2] = pts[k * 3 + 2] + wz * hw * sg;
       b[off + 3] = uu; b[off + 4] = side ? 0 : 1;
-      b[off + 5] = _c4[0]; b[off + 6] = _c4[1]; b[off + 7] = _c4[2]; b[off + 8] = _c4[3];
+      b[off + 5] = c01(_c4[0]); b[off + 6] = c01(_c4[1]); b[off + 7] = c01(_c4[2]); b[off + 8] = c01(_c4[3]);
       b[off + 9] = 0; b[off + 10] = 0; b[off + 11] = -1;
     }
   }

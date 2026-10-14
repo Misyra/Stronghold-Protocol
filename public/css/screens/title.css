@@ -237,6 +237,27 @@
 .asset-download__errors { color: var(--amber); }
 .asset-download__errors ul { max-height: 1.8rem; overflow: auto; padding-left: .24rem; }
 .asset-download__errors code { overflow-wrap: anywhere; font-size: calc(.13 * var(--t)); }
+.asset-import { margin-top: .16rem; padding-top: .12rem; border-top: 1px solid var(--line); text-align: left; }
+.asset-import__row { display: flex; flex-wrap: wrap; gap: .08rem; margin: .08rem 0; }
+.asset-import__drop {
+  margin: .08rem 0;
+  padding: .12rem;
+  border: 1px dashed var(--line);
+  color: var(--text-lo);
+  text-align: center;
+}
+.asset-import__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.asset-import__reason { color: var(--text-lo); }
 .title-invite {
   display: flex;
   align-items: center;

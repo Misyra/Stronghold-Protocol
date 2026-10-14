@@ -1,6 +1,8 @@
 // Explicit title-screen predownload. Reuse the game's HTTP cache and exact manifest URLs;
 // never decode every model/image/audio file into RAM or persist an unverified "complete" flag.
+// A URL already stored by a local import (assetPack.js) is marked done and not requested again.
 import { mediaUrl } from './media.js';
+import { listImportedPaths } from './assetCache.js';
 
 /**
  * Collect only same-origin art files, including all Spine pages and optional local scenes.
@@ -24,8 +26,8 @@ export function collectAssetUrls(...manifests) {
 
 /** A bounded, pausable download queue. A file counts only after its entire body arrives. */
 export function createAssetDownload({ fetch: doFetch = (...args) => globalThis.fetch(...args),
-  concurrency = 4, timeoutMs = 60000, retries = 2 } = {}) {
-  let state = { phase: 'idle', total: 0, done: 0, bytes: 0, failures: [], localMissing: false };
+  concurrency = 4, timeoutMs = 60000, retries = 2, lookupImported = listImportedPaths } = {}) {
+  let state = { phase: 'idle', total: 0, done: 0, bytes: 0, failures: [], localMissing: false, cached: 0 };
   let urls = null, running = null, controller = null, paused = false, lastNotice = 0;
   const complete = new Set(), failures = new Map(), listeners = new Set();
   const emit = (force = false) => {
@@ -103,6 +105,22 @@ export function createAssetDownload({ fetch: doFetch = (...args) => globalThis.f
         state = { ...state, total: urls.length, localMissing: local === null };
       }
       if (paused) return;
+      let imported = null;
+      try { imported = await lookupImported(); } catch { imported = null; }
+      if (paused) return;
+      let cached = 0;
+      if (imported && typeof imported.has === 'function') {
+        for (const url of urls) {
+          let path = url;
+          try { path = new URL(url, 'http://localhost').pathname; } catch { /* keep the queue string */ }
+          if (imported.has(url) || imported.has(path)) {
+            cached++;
+            complete.add(url);
+          }
+        }
+      }
+      state = { ...state, cached };
+      if (paused) return;
       state = { ...state, phase: 'downloading' };
       failures.clear();
       emit(true);
@@ -140,7 +158,7 @@ export function createAssetDownload({ fetch: doFetch = (...args) => globalThis.f
       // A new check after completion revalidates the manifest and all files through the HTTP cache.
       if (state.phase === 'complete') {
         urls = null; complete.clear();
-        state = { phase: 'idle', total: 0, done: 0, bytes: 0, failures: [], localMissing: false };
+        state = { phase: 'idle', total: 0, done: 0, bytes: 0, failures: [], localMissing: false, cached: 0 };
       }
       running = run().finally(() => { running = null; });
       return running;

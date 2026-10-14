@@ -75,11 +75,14 @@ Audio: autochess BGM per phase, UI SFX (buy/sell/refresh/level/merge/ready/timer
 
 ## 13. Local-client art (optional, host-side)
 
-Title-screen asset download (downstream request, 2026-10-14): **下载完整素材** explicitly predownloads the server's
+Title-screen asset download (downstream request, 2026-10-14, PR #628): **下载完整素材** explicitly predownloads the server's
 manifest-listed models, textures, audio and optional local art into the browser's HTTP cache. Show file progress,
 bytes read, pause/resume and failed-file retry. Do not mark completion until every listed response is fully read;
 missing server files remain visible failures. Closing the dialog pauses the queue. Cache eviction and refreshes
-do not retain a permanent completion flag. See [ASSETS.md](../ASSETS.md#player-initiated-predownload).
+do not retain a permanent completion flag. The same dialog can import a local folder or zip. Only bytes whose
+SHA-256 matches the served manifest are kept (a Spine model only as a whole group). They are stored in Cache
+Storage and served by `public/sw.js` for hashed `/assets/`, `/fonts/` and `/media/` URLs alone. Import requires
+HTTPS or localhost. Files already imported are not requested again. See [ASSETS.md](../ASSETS.md#player-initiated-predownload).
 
 `tools/local-extract/extract.py` (Python: UnityPy + lz4 + Pillow; decodes Arknights' custom **LZ4AK** bundle compression via `aklz4.py`) extracts the art the web download does not include (some of it, most official HUD sprites among it, is on the public mirror too — §22.5) from a locally installed client (CrossOver Windows build or PlayCover iOS build) into `public/assets/local/**` and writes `data/local-assets.json` (`{ groups: { '<subdir>': { name: { path, w, h, kind } } } }`). Everything here is **optional**: clients must render correctly when the file or any entry is missing (fall back to the web assets / procedural art). The emotes and the guide pages below are on the public mirror too (§22.5): fetch-assets downloads them (data/assets.json `ui['emoticon/<dir>/<picId>']`, `ui['guide/<key>']`) and the client shows the local copy first, then that one (`data.js artUrls`); docs/DEPLOY.md §6 lists what still needs the client.
 - `map/autochess/TX_autochessi_*` — the real autochess board atlas (`_D` diffuse 2048² with floor tiles, gold-framed high-ground plates, REINFORCEMENTS bench pads, EQUIPMENTS pads, crates, gates; `_N/_M/_E` normal/mask/emission; `common_D` device icons; `BG` backdrop). `map/autochesssand/*` — the textures and materials of the sand theme (the theme of nine of the eleven battlefield scenes, §15).
@@ -189,8 +192,10 @@ The same master supplies 16/32/48 px PNG / ICO favicons and the 180 px Apple tou
 These project-owned assets live in `public/icons/` and ship in full and lite packages; ASSETS.md records their provenance.
 The install button appears only for a live browser install offer and hides
 in standalone/fullscreen windows or after installation. Every offer is consumed before awaiting the prompt, including
-cancellation or failure. No service worker, offline cache or persistent server is introduced; HTTPS or localhost and
-browser support still govern installation.
+cancellation or failure. The install button does not register a service worker and does not make the server available
+offline. A separate asset-only worker (`public/sw.js`) may be registered on HTTPS or localhost to serve imported
+hashed art from Cache Storage; it does not intercept the page, scripts, `/data/`, `/sim/` or `/ws`. HTTPS or
+localhost and browser support still govern installation.
 
 ### Skill-mode sound and delayed models (§28.17, §28.22)
 

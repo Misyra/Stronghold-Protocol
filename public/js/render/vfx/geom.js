@@ -6,17 +6,18 @@
 // Billboards (DESIGN §33.6 renderAlignment): view = the camera plane; facing = towards the camera position; world =
 // the world XY plane (the board); local = the system's own XY plane; velocity = across the velocity; horizontal
 // billboards lie in the world XZ plane and vertical ones turn about world Y — Unity's literal geometry in this frame,
-// whose ground is XY. The roll of a billboard turns it clockwise on screen for positive angles (ROLL_SIGN, §33.5
-// [verify]). Stretched billboards run along the velocity from the particle (the head) back by
+// whose ground is XY. The roll of a billboard turns it clockwise on screen for positive angles (ROLL_SIGN, §33.5:
+// assumed, Unity's behaviour, which no data of the client confirms). Stretched billboards run along the velocity from the particle (the head) back by
 // size × lengthScale + speed × velocityScale, the texture's u along the stretch (u = 1 at the head) [ASSUMED: the
 // streak textures are horizontal]. Mesh particles: the mesh × the 3D size, turned by the particle's Euler rotation
 // inside the alignment frame. Texture sheets: frame 0 is the top-left tile; frame index =
-// floor(frac(startFrame + frameOverTime(frac(t · cycles))) · frames) (§33.5 [verify]).
+// floor(frac(startFrame + frameOverTime(frac(t · cycles))) · frames) (§33.5, resolved: the authored curves end at
+// 0.9999 so that the last frame does not wrap to the first).
 
 import { hashRand, RF } from './rng.js';
 import { quatEuler, mat4Point, mat4Dir } from './math.js';
 
-/** Sign of a billboard's roll: −1 = positive angles turn clockwise on screen (Unity, §33.5 [verify]). */
+/** Sign of a billboard's roll: −1 = positive angles turn clockwise on screen (Unity, §33.5, assumed). */
 export const ROLL_SIGN = -1;
 
 export const QUAD_STRIDE = 27;   // center 3, ax 3, ay 3, color 4, uvr 4, t0 2, t1 4, t2 4

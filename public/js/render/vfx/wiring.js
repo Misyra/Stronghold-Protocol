@@ -9,13 +9,17 @@
 //
 //   const w = new FxWiring(ofx, { unitKey: (info) => string|null, speed: (kind) => tiles per game s })
 //   await w.begin(infos)          preload the battle's units' effects (prep → battle)
-//   w.attack(src, tgt, kind, time) / w.damage(v, type, src, time) / w.heal(v, time) / w.status(v, name, on) /
-//   w.death(v) / w.deploy(v) / w.clear()
+//   w.castStart(src, tgt, kind, { skip, left }) / w.attack(src, tgt, kind, time, wound) / w.damage(v, type, src, time) /
+//   w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) / w.clear()
 //
-// [ASSUMED] (index.json does not say): a cast list with a direction type other than NONE plays its first effect; a
-// non-oneshot cast stops after CAST_LOOP_S; a FLIP_TWO_SIDE hit is mirrored when the blow comes from the right; the
-// generic hit by damage type for a melee attack that lists none (an enemy's: `enemy`); a heal that came by no official
-// projectile plays the generic heal hit.
+// The cast rows follow their ability events (DESIGN §33.12, resolved): ON_CAST_START rows play when the attack's wind-up
+// begins (render/app.js starts the attacker's Spine clip ahead of the 'atk' event: `castStart`), ON_SPELL_ON rows at the
+// strike (the 'atk' event), a looping row until the attack clip ends; NONE rows play their first slot, directional rows
+// the slot for the owner's facing; `onlyOnce` and `hookEffectAfterFirstAttack` count the unit's attacks.
+// [ASSUMED] (index.json does not say): the facing a directional row reads (`_dirIndex`); a looping cast without a wind-up
+// stops after CAST_LOOP_S; `delayIfFirstAttack` is not applied (the field view's first attack has no lead-in clip);
+// a FLIP_TWO_SIDE hit is mirrored when the blow comes from the right; the generic hit by damage type for a melee attack
+// that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit.
 
 import { spawnPoint, mountPoint, unitPoint, spawnKind } from './mounts.js';
 import { GROUND_SPAWNS } from './effect.js';
@@ -29,6 +33,14 @@ const MELEE_WINDOW = 0.4;
 const ARRIVAL_WINDOW = 0.35;
 
 const lc = (k) => (typeof k === 'string' && k ? k.toLowerCase() : null);
+/** Torappu.SharedConsts.Direction order (a directional emitter row's `slots`). */
+const DIRS = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+/** Cast rows starting at these ability events start with the cast (0 ON_ATTACHED, 2 ON_CAST_START); 4 ON_SPELL_ON … at the strike. */
+const CAST_START_EVENTS = new Set([0, 2]);
+/** Bounces of a chain: no attack of the unit's own. */
+const CHAIN = new Set(['chain', 'chainHeal']);
+/** A point past `b` on the line from `a` (an effect on the target turned along the blow). */
+const beyond = (a, b) => ({ x: b.x + (b.x - a.x), y: b.y + (b.y - a.y) });
 
 export class FxWiring {
   /**
@@ -45,6 +57,7 @@ export class FxWiring {
     this.arrived = new Map();     // target id → battle time of an official projectile hit
     this.healed = new Map();      // target id → battle time of an official heal projectile hit
     this.keyCache = new Map();    // unit id → index unit key | null
+    this.attackN = new Map();     // unit id → attacks so far (onlyOnce / hookEffectAfterFirstAttack rows)
   }
 
   get index() { return this.idx; }
@@ -97,7 +110,13 @@ export class FxWiring {
       if (!u) continue;
       for (const m of u.modes || []) {
         const a = m.attack || {};
-        for (const list of [a.cast, a.hit]) for (const e of list || []) for (const k of e.effects || []) keys.add(k);
+        for (const list of [a.cast, a.hit, a.castTarget, a.inputTarget]) {
+          for (const e of list || []) {
+            for (const k of e.effects || []) keys.add(k);
+            for (const k of e.slots || []) if (k) keys.add(k);
+            if (e.hookEffectAfterFirstAttack) keys.add(e.hookEffectAfterFirstAttack);
+          }
+        }
         for (const pk of [a.projectileKey, ...(a.extraProjectileKeys || [])]) {
           const p = pk && this.idx.projectiles[lc(pk)];
           if (p) for (const k of p.effects || []) keys.add(k);
@@ -148,14 +167,27 @@ export class FxWiring {
     return null;
   }
 
-  /** PauseEffectIf: the effect hides while its owner shows a condition (facing, abnormal flags). */
+  /**
+   * PauseEffectIf: whether the effect hides now. Each kept condition pauses by its CheckType (1: while it holds, 2:
+   * while it does not); one the renderer cannot answer (a flag no view shows, an immunity, a buff …) never pauses it,
+   * and so fails `_requireAllConditions`.
+   */
   _paused(pz, v, pose) {
-    const conds = [];
-    if (pz.back) conds.push(pose.back || v?.dir === 'UP');
-    if (pz.right) conds.push(!pose.left);
-    if (pz.flags.length) conds.push(pz.flags.some((f) => abnormal(v, f)));
-    if (!conds.length) return false;
-    return pz.all ? conds.every(Boolean) : conds.some(Boolean);
+    let any = false, all = !pz.unknown;
+    for (const q of pz.conds) {
+      let h = null;
+      switch (q.kind) {
+        case 'flag': if (q.flags.some((f) => SEEN_FLAGS.has(f))) h = q.flags.some((f) => abnormal(v, f)); break;
+        case 'notFlag': if (SEEN_FLAGS.has(q.flags[0])) h = !abnormal(v, q.flags[0]); break;
+        case 'combo': if (q.combo === 0) h = abnormal(v, 43); break; // AbnormalCombo SLEEPING
+        case 'back': h = pose.back || (typeof v?.dir === 'string' && v.dir.toUpperCase() === 'UP'); break;
+        case 'right': h = !pose.left; break;
+        default: break;
+      }
+      const p = h !== null && (q.no ? !h : h);
+      if (p) any = true; else all = false;
+    }
+    return pz.all ? all && pz.conds.length > 0 : any;
   }
 
   /** Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track }. */
@@ -177,7 +209,7 @@ export class FxWiring {
     if (def && GROUND_SPAWNS.has(spawn)) pos[2] = -ground;
     const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false };
     this._orient(def, place, pose, o, v);
-    const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important };
+    const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
     // the owner each frame: FollowMountPoint keeps the effect on the unit's point (status loops: o.follow), FollowDirection
     // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
     const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause;
@@ -224,24 +256,90 @@ export class FxWiring {
   }
 
   /**
-   * b.ev 'atk': casts, the projectile and the melee blow. Returns true when the unit's official attack was drawn
-   * (the procedural shot is skipped).
+   * The keys an emitter row plays now (index.json Emit, DESIGN §33.12): nothing after the unit's first attack for an
+   * `onlyOnce` row, `hookEffectAfterFirstAttack` from its second attack on; directionType 0 (NONE) its first slot; a
+   * directional row its slot for the owner's facing (`slots`, Torappu.SharedConsts.Direction: 0 UP, 1 RIGHT, 2 DOWN,
+   * 3 LEFT; null = nothing), its first key without `slots` (an index written before Phase 1b).
    */
-  attack(src, tgt, kind, time) {
+  _rowKeys(e, v, nth) {
+    if (!e) return [];
+    if (nth > 0 && e.onlyOnce) return [];
+    if (nth > 0 && e.hookEffectAfterFirstAttack) return [e.hookEffectAfterFirstAttack];
+    const keys = (e.effects || []).filter(Boolean);
+    if (!e.directionType || !Array.isArray(e.slots)) return keys.slice(0, 1);
+    const k = e.slots[this._dirIndex(e.directionType, v)];
+    return k ? [k] : [];
+  }
+
+  /**
+   * The facing a directional row picks its slot by: L_OR_R (1) the side the unit faces, U_OR_D (2) its back view
+   * (facing up) or front view, the four-direction types (3 FOUR_DIR, 4 UD_OR_LR, 5 FOUR_DIR_FIXED) an operator's deploy
+   * direction, else the view's facing. [ASSUMED] (the client's choice is engine code).
+   */
+  _dirIndex(type, v) {
+    const pose = this.pose(v);
+    const d = typeof v?.dir === 'string' ? v.dir.toUpperCase() : null;
+    if (type === 1) return pose.left ? 3 : 1;
+    if (type === 2) return pose.back || d === 'UP' ? 0 : 2;
+    const i = d ? DIRS.indexOf(d) : -1;
+    return i >= 0 ? i : pose.back ? 0 : pose.left ? 3 : 1;
+  }
+
+  /**
+   * An attack's cast rows (`cast` on the attacker, `castTarget` / `inputTarget` on its target) for a phase: 'start' —
+   * the rows that start with the cast (ON_CAST_START; the wind-up began), 'strike' — the others (ON_SPELL_ON: the
+   * attack fires), 'all' — both at the strike (an attack nobody wound up). A looping row stops when the attack clip
+   * ends (`info.left` s, from the wind-up) or after CAST_LOOP_S; `info.skip` starts the effects that far in.
+   */
+  _casts(a, src, tgt, phase, info = {}) {
+    const nth = this.attackN.get(src.id ?? src.info?.id) || 0;
+    for (const [rows, onTarget] of [[a.cast, false], [a.castTarget, true], [a.inputTarget, true]]) {
+      for (const e of rows || []) {
+        const first = e.startEvent == null || CAST_START_EVENTS.has(e.startEvent);
+        if ((phase === 'start' && !first) || (phase === 'strike' && first) || (onTarget && !tgt)) continue;
+        const skip = phase === 'start' ? info.skip : 0;
+        for (const k of this._rowKeys(e, src, nth)) {
+          const h = onTarget
+            ? this.playOn(k, tgt, { toward: beyond(src, tgt), flipFrom: src, skip })
+            : this.playOn(k, src, { toward: tgt, skip });
+          if (h && !e.oneshot) setTimeout0(this.ofx, h, phase === 'start' && info.left > 0 ? Math.min(3, info.left) : CAST_LOOP_S);
+        }
+      }
+    }
+  }
+
+  /**
+   * An attack's wind-up began (render/app.js: the attacker's Spine clip starts so that its strike frame lands with the
+   * 'atk' event): the cast rows that start with the cast play now. info: { skip (s of the clip the wind-up started
+   * past), left (s until the clip ends) }.
+   */
+  castStart(src, tgt, kind, info = {}) {
+    if (!this.ofx.active || !src || !this.idx || CHAIN.has(kind)) return false;
+    const a = this.mode(this.unitOf(src), src)?.attack;
+    if (!a) return false;
+    this._casts(a, src, tgt, 'start', info);
+    return true;
+  }
+
+  /**
+   * b.ev 'atk': the casts (those that start with the cast only when its wind-up did not play them: `wound`), the
+   * projectile and the melee blow. Returns true when the unit's official attack was drawn (the procedural shot is
+   * skipped).
+   */
+  attack(src, tgt, kind, time, wound = false) {
     if (!this.ofx.active || !src || !this.idx) return false;
     const u = this.unitOf(src);
     const m = this.mode(u, src);
     const a = m?.attack;
     if (!a) return false;
-    // casts at the attacker
-    for (const e of a.cast || []) {
-      const keys = (e.effects || []).filter(Boolean);
-      const list = e.directionType ? keys.slice(0, 1) : keys;
-      for (const k of list) {
-        const h = this.playOn(k, src, { toward: tgt });
-        if (h && !e.oneshot) setTimeout0(this.ofx, h, CAST_LOOP_S);
-      }
-    }
+    const id = src.id ?? src.info?.id;
+    const nth = this.attackN.get(id) || 0;
+    this._casts(a, src, tgt, wound ? 'strike' : 'all');
+    this.attackN.set(id, nth + 1);
+    // the hit rows wait for the damage (each target hit: HitEffectOptions); useOwnerToTargetDirection turns the hit
+    // along the blow
+    const hits = [];
+    for (const e of a.hit || []) for (const k of this._rowKeys(e, src, nth)) hits.push({ k, along: !!e.useOwnerToTargetDirection });
     const pk = lc(a.projectileKey);
     const proj = pk ? this.idx.projectiles[pk] : null;
     const isShot = kind && kind !== 'none';
@@ -251,19 +349,11 @@ export class FxWiring {
     }
     if (!isShot && tgt) {
       // melee: the hit effects wait for the damage (else the generic hit by damage type)
-      const keys = [];
-      for (const e of a.hit || []) {
-        const list = (e.effects || []).filter(Boolean);
-        keys.push(...(e.directionType ? list.slice(0, 1) : list));
-      }
-      this.melee.set(tgt.id ?? tgt.info?.id, { keys, src, t: time });
+      this.melee.set(tgt.id ?? tgt.info?.id, { hits, src, t: time });
       return true;
     }
     // a ranged attack without a projectile of its own (direct / chain): the hits play on the damage
-    if (tgt && (a.hit || []).length) {
-      const keys = (a.hit || []).flatMap((e) => (e.effects || []).filter(Boolean));
-      this.melee.set(tgt.id ?? tgt.info?.id, { keys, src, t: time });
-    }
+    if (tgt && hits.length) this.melee.set(tgt.id ?? tgt.info?.id, { hits, src, t: time });
     return false;
   }
 
@@ -350,15 +440,15 @@ export class FxWiring {
     const m = this.melee.get(id);
     if (!m || time - m.t > MELEE_WINDOW) return false;
     this.melee.delete(id);
-    let keys = m.keys;
-    if (!keys.length) {
+    let hits = m.hits;
+    if (!hits.length) {
       const g = this.idx.generic?.hit || {};
       const side = m.src?.isEnemy ? 'enemy' : null;
       const k = side ? g.enemy : (type === 'arts' ? g.arts : g.phys);
-      keys = k ? [k] : [];
+      hits = k ? [{ k, along: false }] : [];
     }
     let drawn = false;
-    for (const k of keys) if (this.playOn(k, v, { flipFrom: m.src })) drawn = true;
+    for (const h of hits) if (this.playOn(h.k, v, { flipFrom: m.src, toward: h.along && m.src ? beyond(m.src, v) : undefined })) drawn = true;
     return drawn;
   }
 
@@ -423,6 +513,7 @@ export class FxWiring {
     this.arrived.clear();
     this.healed.clear();
     this.keyCache.clear();
+    this.attackN.clear();
     this.ofx.timers = [];
   }
 
@@ -440,10 +531,13 @@ export class FxWiring {
   }
 }
 
+/** The abnormal flags a client view can show (abnormal() below); PauseEffectIf ignores the others. */
+export const SEEN_FLAGS = new Set([0, 9, 11, 12, 16, 17, 23, 25, 33, 43]);
+
 /**
  * Whether a view shows an abnormal flag (Torappu.AbnormalFlag): the ones a client view knows from its b.snap flags
  * and statuses — STUNNED 0, INVISIBLE 9 / CAMOUFLAGE 17 (stealth), FROZEN 16, COLD 23, LEVITATE 25, SILENCED 12,
- * DISARMED 11, FEARED 33, DOZE 43 (sleep). Others read as absent.
+ * DISARMED 11, FEARED 33, DOZE 43 (sleep; also the SLEEPING combo). Others read as absent.
  */
 function abnormal(v, flag) {
   const f = v?.flags | 0, st = v?.statuses;

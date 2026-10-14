@@ -158,10 +158,22 @@ export function compileEffect(desc, lib = {}) {
         case 'SwitchableEffectByFaceDirection': def.switchable = { ...(def.switchable || {}), up: f._upEffect ? String(f._upEffect).toLowerCase() : null, down: f._downEffect ? String(f._downEffect).toLowerCase() : null, left: f._leftEffect ? String(f._leftEffect).toLowerCase() : null }; break;
         case 'ColorModifier': if (Array.isArray(f._color)) def.colorMod = f._color.map((x) => num(x, 1)); break;
         case 'PauseEffectIf': {
-          // the owner conditions a client view can answer: its facing and the abnormal flags it shows (immunities,
-          // combos, buffs and modes are not visible to the renderer: never paused for them)
-          const flags = on(f._checkAbnormalFlag) ? [num(f._pauseWhenAbnormalFlag, -1), ...(Array.isArray(f._pauseWhenAbnormalFlags) ? f._pauseWhenAbnormalFlags : [])].filter((x) => x >= 0) : [];
-          def.pause = { back: on(f._checkFaceToBack), right: on(f._checkFaceToRight), flags, all: on(f._requireAllConditions) };
+          // each _check… is a PauseEffectIf.CheckType (§33.11): 0 NOT_CHECK, 1 CHECK_YES (pause while the condition
+          // holds), 2 CHECK_NO (pause while it does not); the value a check tests counts only when it is 1 or 2. Kept:
+          // the owner conditions a client view can answer — its facing, its abnormal flags (in / not in) and the
+          // SLEEPING combo; immunities, the other combos, buffs, modes, blackboard keys and states are not visible to
+          // the renderer (`unknown`: they never pause it, so they also fail `_requireAllConditions`)
+          const ck = (v) => (v === 1 || v === 2 ? v : 0);
+          const conds = [];
+          const add = (c, q) => { if (c) conds.push({ ...q, no: c === 2 }); };
+          const list = Array.isArray(f._pauseWhenAbnormalFlags) ? f._pauseWhenAbnormalFlags.map((x) => num(x, -1)) : [];
+          add(ck(f._checkAbnormalFlag), { kind: 'flag', flags: [num(f._pauseWhenAbnormalFlag, -1), ...list].filter((x) => x >= 0) });
+          add(ck(f._checkNotInAbnormalFlag), { kind: 'notFlag', flags: [num(f._pauseWhenNotInAbnormalFlag, 0)] });
+          add(ck(f._checkAbnormalCombo), { kind: 'combo', combo: num(f._pauseWhenAbnormalCombo, -1) });
+          add(ck(f._checkFaceToBack), { kind: 'back' });
+          add(ck(f._checkFaceToRight), { kind: 'right' });
+          const unknown = ['_checkAbnormalImmune', '_checkUnitModeIndex', '_checkContainBuff', '_checkCharacterSharedBlackboardKey', '_checkState', '_checkDisappear'].some((nm) => ck(f[nm]) > 0);
+          if (conds.length || unknown) def.pause = { conds, unknown, all: on(f._requireAllConditions) };
           break;
         }
         default: break;

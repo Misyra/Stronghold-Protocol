@@ -564,6 +564,9 @@ export class SpineActor {
     this._play(clip.loop, false, { timeScale: plan.tsWind, start: plan.start, mix: 0.06 });
     this.windTs = plan.ts;
     this.windUntil = this.clock + lead;
+    // how far into its clip the wind-up started (game s at the attack's rhythm): the official effects that start with
+    // the cast begin that far in (render/vfx/wiring.js castStart)
+    this.windSkip = plan.start / plan.ts;
     this.wound = true;
     return true;
   }

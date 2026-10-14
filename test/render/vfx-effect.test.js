@@ -252,6 +252,11 @@ describe('wiring', () => {
         { name: 'S2', attack: { class: 'RangedAttack', projectileKey: 'proj_x', cast: [] } },
       ], deadEffect: null, startEffect: null },
       enemy_y: { kind: 'enemy', modes: [{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }] },
+      char_c: { kind: 'char', modes: [{ name: 'Default', attack: { class: 'RangedAttack', cast: [
+        { effects: ['c_start'], oneshot: 0, startEvent: 2, endEvent: 3, directionType: 0 },
+        { effects: ['c_spell'], oneshot: 1, startEvent: 4, endEvent: 3, directionType: 0 },
+        { effects: [], oneshot: 1, startEvent: 4, endEvent: 3, directionType: 0, hookEffectAfterFirstAttack: 'c_hook' },
+      ], inputTarget: [{ effects: ['c_target'], oneshot: 1, startEvent: 4, endEvent: 3, directionType: 0, useInputPos: 1 }], hit: [] } }] },
     },
     projectiles: { proj_x: { main: 'x_trail', onHit: ['x_phit'], effects: ['x_trail', 'x_phit'], movement: { class: 'AdvancedMovement' } } },
     skins: { char_x: { points: { HitPoint: { all: { pos: [0, 0.2, -0.25] } }, Muzzle: { all: { pos: [0.3, 0.3, -0.3] } } } } },
@@ -317,6 +322,80 @@ describe('wiring', () => {
     assert.equal(w.deploy(u), true);
     assert.equal(spawned.at(-1), 'g_birth');
     assert.equal(w.deploy(view(5, 'enemy_y', 3, true)), false, 'enemies have no deploy effect');
+  });
+
+  test('emitter rows: NONE plays its first slot, a directional row its slot for the facing; hooks and onlyOnce count attacks', async () => {
+    const { ofx } = fakeOfx();
+    const w = new FxWiring(ofx, {});
+    await w.ready();
+    const right = { ...view(1, 'char_x', 5), dir: 'RIGHT' }, left = { ...view(2, 'char_x', 5), dir: 'LEFT', visFacing: -1 }, up = { ...view(3, 'char_x', 5), dir: 'UP' };
+    assert.deepEqual(w._rowKeys({ directionType: 0, effects: ['a', 'leftover'] }, right, 0), ['a']);
+    const lr = { directionType: 1, effects: ['r', 'l'], slots: [null, 'r', null, 'l'] };
+    assert.deepEqual(w._rowKeys(lr, right, 0), ['r']);
+    assert.deepEqual(w._rowKeys(lr, left, 0), ['l']);
+    const four = { directionType: 3, effects: ['u', 's'], slots: ['u', 's', null, 's'] };
+    assert.deepEqual(w._rowKeys(four, up, 0), ['u']);
+    assert.deepEqual(w._rowKeys(four, { ...right, dir: 'DOWN' }, 0), [], 'a null slot plays nothing');
+    const ud = { directionType: 2, effects: ['b'], slots: ['b'] };
+    assert.deepEqual(w._rowKeys(ud, up, 0), ['b'], 'U_OR_D: the up (back) view');
+    assert.deepEqual(w._rowKeys(ud, right, 0), [], 'U_OR_D: the front view has no slot here');
+    assert.deepEqual(w._rowKeys({ directionType: 3, effects: ['first'] }, right, 0), ['first'], 'no slots: the first key');
+    const hook = { directionType: 0, effects: [], hookEffectAfterFirstAttack: 'h' };
+    assert.deepEqual(w._rowKeys(hook, right, 0), []);
+    assert.deepEqual(w._rowKeys(hook, right, 1), ['h']);
+    assert.deepEqual(w._rowKeys({ directionType: 0, effects: ['o'], onlyOnce: 1 }, right, 0), ['o']);
+    assert.deepEqual(w._rowKeys({ directionType: 0, effects: ['o'], onlyOnce: 1 }, right, 2), []);
+  });
+
+  test('cast rows by ability event: ON_CAST_START with the wind-up, ON_SPELL_ON (and the target rows) at the strike', async () => {
+    const { ofx, spawned, handles } = fakeOfx();
+    const w = new FxWiring(ofx, {});
+    await w.ready();
+    const a = view(1, 'char_c', 5), t = view(2, 'enemy_y', 8, true);
+    assert.equal(w.castStart(a, t, 'arrow', { skip: 0.1, left: 0.5 }), true);
+    assert.deepEqual(spawned, ['c_start']);
+    assert.equal(handles[0].opts.skip, 0.1, 'started as far in as the clip');
+    w.attack(a, t, 'arrow', 0.2, true);
+    assert.deepEqual(spawned, ['c_start', 'c_spell', 'c_target'], 'the wound-up start row is not played twice');
+    assert.equal(handles[2].place.pos[0], t.x - 10, 'an inputTarget row plays on the target');
+    ofx.time = 0.6; w.tick();
+    assert.ok(handles[0].stopped, 'the looping cast stops when the attack clip ends');
+    // the second attack, nobody wound up: every row at the strike, and the hook row joins in
+    w.attack(a, t, 'arrow', 1, false);
+    assert.deepEqual(spawned.slice(3), ['c_start', 'c_spell', 'c_hook', 'c_target']);
+    assert.equal(w.castStart(a, t, 'chain', {}), false, 'a chain bounce is no attack of its own');
+  });
+
+  test('PauseEffectIf: each check is a CheckType (1 pause while it holds, 2 while not); conditions no view shows never pause', async () => {
+    const { ofx } = fakeOfx();
+    const w = new FxWiring(ofx, {});
+    const pauseOf = (fields) => compileEffect(desc([root([pe({}), { class: 'PauseEffectIf', enabled: true, fields }])])).pause;
+    const u = { ...view(1, 'char_x', 5) };
+    const pose = (v) => w.pose(v);
+    // buff_stun: immune to STUNNED (check 1, not visible) or not stunned (not-in check 1, value 0)
+    const stun = pauseOf({ _checkAbnormalImmune: 1, _pauseWhenAbnormalImmune: 0, _checkNotInAbnormalFlag: 1, _pauseWhenNotInAbnormalFlag: 0, _checkAbnormalFlag: 0, _pauseWhenAbnormalFlag: 16, _requireAllConditions: 0 });
+    assert.equal(w._paused(stun, u, pose(u)), true, 'not stunned: paused');
+    u.flags = 2; // UF.STUNNED
+    assert.equal(w._paused(stun, u, pose(u)), false, 'stunned: shown');
+    // buff_cold: paused while FROZEN (flag check 1, value 16)
+    const cold = pauseOf({ _checkAbnormalFlag: 1, _pauseWhenAbnormalFlag: 16, _checkNotInAbnormalFlag: 0, _pauseWhenNotInAbnormalFlag: 41 });
+    u.flags = 128; // COLD
+    assert.equal(w._paused(cold, u, pose(u)), false);
+    u.flags = 128 | 4; // + FROZEN
+    assert.equal(w._paused(cold, u, pose(u)), true);
+    // buff_sleep: paused while not SLEEPING (combo check 2, value 0)
+    const sleep = pauseOf({ _checkAbnormalCombo: 2, _pauseWhenAbnormalCombo: 0 });
+    u.flags = 0;
+    assert.equal(w._paused(sleep, u, pose(u)), true);
+    u.flags = 256; // UF.SLEEP
+    assert.equal(w._paused(sleep, u, pose(u)), false);
+    // facing: CHECK_NO on the right side pauses a unit facing left; an invisible condition fails "require all"
+    const face = pauseOf({ _checkFaceToRight: 2 });
+    assert.equal(w._paused(face, { ...u, visFacing: -1 }, pose({ ...u, visFacing: -1 })), true);
+    assert.equal(w._paused(face, u, pose(u)), false);
+    const both = pauseOf({ _checkFaceToRight: 1, _checkContainBuff: 1, _requireAllConditions: 1 });
+    assert.equal(w._paused(both, u, pose(u)), false);
+    assert.equal(pauseOf({ _checkAbnormalFlag: 0, _pauseWhenAbnormalFlag: 16 }), null, 'no check, no pause');
   });
 
   test('keysFor lists the battle units’ attack, projectile and generic keys', async () => {

@@ -1562,7 +1562,12 @@ export async function createFieldView(host, options = {}) {
     if (e[0] !== 'atk' || woundUp.has(e) || CHAIN_KINDS.has(e[3])) return;
     const v = views.get(e[1]);
     if (!v || !v.windUp) return;
-    if (v.windUp(t - upcomingT, e[3])) woundUp.add(e);
+    if (v.windUp(t - upcomingT, e[3])) {
+      woundUp.add(e);
+      // the official cast effects that start with the cast play with the clip (render/vfx/wiring.js castStart)
+      const a = v.actor;
+      wiring.castStart(v, views.get(e[2]), e[3], a ? { skip: a.windSkip || 0, left: Number.isFinite(a.attackUntil) ? a.attackUntil - a.clock : 0 } : {});
+    }
   }
 
   const EVS = [];
@@ -1600,7 +1605,7 @@ export async function createFieldView(host, options = {}) {
         if (src && !CHAIN_KINDS.has(e[3])) src.onAttack?.(tgt, now, e[3]);
         if (e[3] === 'none' || !e[3]) { if (tgt && src) meleePending.set(tgt.id, { src, t: now }); }
         // the unit's official attack (casts, projectile, melee hits — render/vfx/wiring.js), else the procedural one
-        if (!(src && !CHAIN_KINDS.has(e[3]) && wiring.attack(src, tgt, e[3], now))) fx.attack(src, tgt, e[3]);
+        if (!(src && !CHAIN_KINDS.has(e[3]) && wiring.attack(src, tgt, e[3], now, woundUp.has(e)))) fx.attack(src, tgt, e[3]);
         break;
       }
       case 'dmg': {

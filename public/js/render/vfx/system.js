@@ -170,7 +170,7 @@ export class OfficialFx {
 
   /**
    * Start an effect. place: { pos (Unity), yaw, pitch, mirror, groundZ }; opts: { loop?: boolean (keep pending until
-   * it loads), priority?: number, seed?: number, track?: fn, onFinish?: fn, data?: any }.
+   * it loads), important?: boolean, seed?: number, track?: fn, onFinish?: fn, data?: any, skip?: s to start it in }.
    * Returns a handle (its `effect` is null until the prefab is loaded) or null when off / absent / over the caps.
    */
   spawn(key, place, opts = {}) {
@@ -427,6 +427,8 @@ export class FxHandle {
       };
     }
     this.effect = fx;
+    // started late (a cast whose wind-up began past the clip's start): advanced to where it would be
+    if (this.opts.skip > 0) fx.update(Math.min(1, this.opts.skip));
     if (this.stopped) fx.stop(this.stopped);
     s._add(fx);
     return fx;

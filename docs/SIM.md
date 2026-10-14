@@ -1629,6 +1629,14 @@ yet — enemy content must pick one); 抵抗 covers the control statuses of `RES
 entering another pulse. This retains the lethal-hit pulse and prevents valid high hit-count chains from tripping the
 general hook guard. The queue is emptied in `finally`; it introduces no timer or simulation RNG.
 
+### Player kill credit
+
+`BattleResult.perPlayer[playerId].creditedKills` totals that player's operator and summon kill counters before
+compacting unitStats. The compact report preserves this number, including teammates' leaked enemies killed during
+联防; the verification digest (`resultDigest`) leaves it out — statistics only, it must not split a client's and the
+server's digests (DESIGN §32.14.16). The match adds phase credits into its single-match total; combat rules and wave-owned
+`killed` remain unchanged.
+
 ### Community follow-up contracts (DESIGN §29)
 
 - Optional snapshot `coins: [[id, balance, cap]]` comes from `snapshot.js coinView`: a live allied Swire skill's nonnegative integer balance and blackboard cap, including zero. Invalid/missing entries are omitted; interpolation clears absent values.

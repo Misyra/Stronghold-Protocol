@@ -19,7 +19,8 @@
 // round k runs has passed k − 1 rounds, leaving in its settlement k) or already eliminated. A match left earlier is
 // history only.
 //
-// Bounded storage: at most MAX_RECORDS matches and MAX_CHARS characters of JSON. Only the newest FULL_KEEP records
+// Bounded storage: at most MAX_RECORDS matches and MAX_CHARS characters of JSON. The newest FULL_KEEP records and
+// the highest settlement bond-layer record
 // keep their full rows (lineups, bonds, teammates' names — what the settlement replay needs); older ones are compacted
 // to the player's own summary row, which is all the aggregates read. The oldest records go first when a budget is hit,
 // and a write the browser refuses shrinks the list further instead of failing. Teammates' display names are part of
@@ -45,6 +46,7 @@
 // saveStats / their helpers.
 
 import { PHASE } from '../../../shared/constants.js';
+import { sanitizeName } from './playerName.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
 export const STATS_VERSION = 2;
@@ -179,6 +181,7 @@ function normalizePlayerRow(raw, quit = false) {
     alive: bool(p.alive, true),
     victory: bool(p.victory), // server semantics: team won AND this player was still in at the end
     roundsPassed: quit ? num(p.roundsPassed) : int(p.roundsPassed, 0),
+    ...(Number.isInteger(p.creditedKills) && p.creditedKills >= 0 && p.creditedKills <= 1e9 ? { creditedKills: p.creditedKills } : {}),
     eliminatedRound: num(p.eliminatedRound),
     lp: num(p.lp),
     bandId: str(p.bandId),
@@ -187,6 +190,7 @@ function normalizePlayerRow(raw, quit = false) {
     reward: int(p.reward, 0),
     lineup,
     bonds,
+    ...(Array.isArray(p.usedBondIds) ? { usedBondIds: usedBondIdsOf(p) } : {}),
     stats: normalizeStatBlock(p.stats),
   };
 }
@@ -243,7 +247,9 @@ export function normalizeRecord(raw) {
  * The MIGRATIONS chain: `MIGRATIONS[v]` upgrades a v-envelope to v+1, for v = STATS_VERSION and down — every stored /
  * imported envelope walks the whole chain.
  *   1 → 2 (0.3.0, DESIGN §32.6): records name the room's content set (`content`); a record from before played the
- *         original game (null).
+ *         original game (null). The same step covers PR #509's fields (§32.14.16): a v1 row has no `creditedKills`
+ *         (the actual player kills stay unknown rather than guessed) and a compacted v1 row lost its bonds
+ *         (`usedBondIds` stays absent) — nothing to rewrite, the version keeps an older build from stripping them.
  * @type {Record<number, (stats: any) => any>}
  */
 export const MIGRATIONS = {
@@ -326,18 +332,22 @@ const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRo
  */
 export function compactRecord(rec) {
   const self = selfRowOf(rec);
+  const usedBondIds = usedBondIdsOf(self);
   const out = {};
   for (const k of COMPACT_FRAME) if (rec[k] != null) out[k] = rec[k];
   out.compact = true;
   out.players = self ? [{
     playerId: self.playerId, seat: self.seat, alive: self.alive, victory: self.victory, roundsPassed: self.roundsPassed,
     eliminatedRound: self.eliminatedRound, bandId: self.bandId, title: self.title, left: self.left, stats: self.stats,
+    trophies: self.trophies,
+    ...(usedBondIds.length ? { usedBondIds } : {}),
+    ...(self.creditedKills != null ? { creditedKills: self.creditedKills } : {}),
   }] : [];
   return out;
 }
 
 /**
- * What goes to storage: the newest FULL_KEEP records as they are, older ones compacted, then the oldest dropped until
+ * What goes to storage: the newest FULL_KEEP and highest bond-layer record as they are, other older ones compacted, then dropped until
  * the JSON fits `maxChars` (the newest record is always kept).
  * @param {any[]} records newest first
  * @param {number} [maxChars]
@@ -346,14 +356,29 @@ export function compactRecord(rec) {
 export function fitToBudget(records, maxChars = MAX_CHARS) {
   const kept = [];
   let used = 40; // the envelope itself
+  const peakId = highestBondRecord(records.slice(0, MAX_RECORDS))?.record.id;
   records.slice(0, MAX_RECORDS).forEach((r, i) => {
-    const rec = i < FULL_KEEP ? r : compactRecord(r);
+    const rec = i < FULL_KEEP || r.id === peakId ? r : compactRecord(r);
     const n = JSON.stringify(rec).length + 1;
     if (kept.length && used + n > maxChars) return;
     used += n;
     kept.push(rec);
   });
   return kept;
+}
+
+/** [ASSUMED] Official peak layers are approximated by the self player's active bonds at settlement. */
+export function highestBondRecord(records) {
+  let best = null;
+  for (const record of records) {
+    if (record.end === 'quit' || record.compact) continue;
+    const player = selfRowOf(record);
+    for (const bond of player?.bonds || []) {
+      if (!bond.active || !Number.isFinite(bond.layers) || bond.layers <= 0) continue;
+      if (!best || bond.layers > best.bond.layers) best = { record, player, bond };
+    }
+  }
+  return best;
 }
 
 /**
@@ -634,9 +659,9 @@ export function mergeStats(a, b) {
  * Parse + migrate + merge an exported / pasted payload into the current data.
  * @param {any} raw parsed JSON of the imported file
  * @param {{ records: any[] }} current current envelope
- * @returns {{ stats: { v: number, records: any[] }, added: number, skipped: number, dropped: number }}
+ * @returns {{ stats: { v: number, records: any[] }, added: number, skipped: number, dropped: number, name: string }}
  *   added = records new to this device; skipped = duplicates of records it has; dropped = rows of the file that could
- *   not be read
+ *   not be read; name = newest usable imported self nickname (the caller only adopts it when its current name is empty)
  */
 export function importStats(raw, current) {
   if (isObj(raw) && raw.kind != null && raw.kind !== 'local-stats') {
@@ -658,7 +683,9 @@ export function importStats(raw, current) {
   const have = new Set((Array.isArray(current?.records) ? current.records : []).map((r) => r.id));
   const merged = mergeStats(current, incoming);
   const added = incoming.records.filter((r) => !have.has(r.id)).length;
-  return { stats: merged, added, skipped: incoming.records.length - added, dropped };
+  // Incoming rows are newest first; compacted or unnamed rows cannot restore a nickname.
+  const name = incoming.records.map((rec) => sanitizeName(selfRowOf(rec)?.name)).find(Boolean) || '';
+  return { stats: merged, added, skipped: incoming.records.length - added, dropped, name };
 }
 
 /**
@@ -723,6 +750,28 @@ export function countsTowardStats(rec) {
   return self.alive === false || (Number.isFinite(self.roundsPassed) && self.roundsPassed >= 1);
 }
 
+/** Active settlement bonds, deduplicated per player and bounded like imported bond rows. */
+function usedBondIdsOf(player) {
+  const ids = Array.isArray(player?.usedBondIds) ? player.usedBondIds
+    : (Array.isArray(player?.bonds) ? player.bonds : []).filter((b) => b?.active === true).map((b) => b.bondId);
+  return [...new Set(ids.filter((id) => typeof id === 'string' && id.length).map((id) => id.slice(0, 64)))].slice(0, MAX_BONDS);
+}
+
+/** Strategy corner badges use official band victorCount thresholds; training awards no progress. */
+export function strategyBadgeIds(records, bands) {
+  const clears = new Map();
+  for (const rec of Array.isArray(records) ? records : []) {
+    if (!rec || rec.end === 'quit' || rec.difficulty === 'TRAINING' || rec.modeId === 'mode_training_1') continue;
+    const self = selfRowOf(rec);
+    if (!self?.bandId || !selfWon(rec, self)) continue;
+    clears.set(self.bandId, (clears.get(self.bandId) || 0) + 1);
+  }
+  return Object.values(bands || {}).filter((band) => Number.isInteger(band.victorCount) && band.victorCount > 0
+    && (clears.get(band.bandId) || 0) >= band.victorCount)
+    .sort((a, b) => (a.sortId || 0) - (b.sortId || 0) || a.bandId.localeCompare(b.bandId))
+    .map((band) => band.bandId);
+}
+
 /**
  * Aggregate records for the stats page — over the records that count; `total` / `excluded` say how many did not.
  * Everything is keyed by ids (bandId / titleId / difficulty); the page maps them to names and icons through the game
@@ -741,11 +790,22 @@ export function aggregateStats(records, { modded: withModded = false } = {}) {
     rounds: { total: 0, max: 0 },
     duration: { totalMs: 0 },
     hidden: { reached: 0, cleared: 0 },
-    byDifficulty: {}, byMode: { solo: 0, coop: 0 },
+    trophies: 0,
+    byDifficulty: {},
+    byMode: { solo: { games: 0, wins: 0, hiddenCleared: 0 }, coop: { games: 0, wins: 0, hiddenCleared: 0 } },
     titles: {}, bands: {}, sums: {},
+    bonds: Object.create(null),
+    maxima: { gold: null, merges: null, kills: null },
   };
   for (const rec of rs) {
     const self = selfRowOf(rec);
+    // Single-match records only use settled totals, never a partial quit or a teammate's row.
+    if (rec.end !== 'quit' && self) {
+      const values = { gold: self.stats?.gold, merges: self.stats?.merges, kills: self.creditedKills };
+      for (const [key, value] of Object.entries(values)) {
+        if (Number.isFinite(value) && value >= 0) out.maxima[key] = Math.max(out.maxima[key] ?? 0, value);
+      }
+    }
     const won = selfWon(rec, self);
     if (won) out.wins++;
     const rounds = roundsOf(rec);
@@ -754,6 +814,8 @@ export function aggregateStats(records, { modded: withModded = false } = {}) {
     out.duration.totalMs += num(rec.durationMs) || 0;
     if (rec.hiddenReached) out.hidden.reached++;
     if (rec.hiddenCleared) out.hidden.cleared++;
+    // Sum the actual settlement award, including defeats, rather than teammates' or solo-mode trophies.
+    if (rec.end !== 'quit' && rec.roomMode === 'coop' && Number.isFinite(self?.trophies)) out.trophies += Math.max(0, self.trophies);
 
     const d = rec.difficulty || 'UNKNOWN';
     const bd = (out.byDifficulty[d] ||= { games: 0, wins: 0, hiddenCleared: 0 });
@@ -761,7 +823,12 @@ export function aggregateStats(records, { modded: withModded = false } = {}) {
     if (won) bd.wins++;
     if (rec.hiddenCleared) bd.hiddenCleared++;
 
-    if (rec.roomMode === 'solo' || rec.roomMode === 'coop') out.byMode[rec.roomMode]++;
+    if (rec.roomMode === 'solo' || rec.roomMode === 'coop') {
+      const mode = out.byMode[rec.roomMode];
+      mode.games++;
+      if (won) mode.wins++;
+      if (won && rec.hiddenCleared) mode.hiddenCleared++;
+    }
 
     const titleId = self?.title?.id;
     if (titleId) {
@@ -776,6 +843,14 @@ export function aggregateStats(records, { modded: withModded = false } = {}) {
       if (won) b.wins++;
     }
 
+    // [ASSUMED] Usage means active in the self player's settlement; once per match, irrespective of layers.
+    if (rec.end !== 'quit') {
+      for (const id of usedBondIdsOf(self)) {
+        const bond = (out.bonds[id] ||= { games: 0 });
+        bond.games++;
+      }
+    }
+
     if (rec.end !== 'quit' && self && isObj(self.stats)) {
       for (const k of SELF_STATS) {
         const v = self.stats[k];
@@ -784,4 +859,24 @@ export function aggregateStats(records, { modded: withModded = false } = {}) {
     }
   }
   return out;
+}
+
+/** Highest earned trophy tier from the official config, independent of the order of its medal rows. */
+export function trophyMedalOf(total, medals) {
+  const count = Number.isFinite(total) ? Math.max(0, total) : 0;
+  return (Array.isArray(medals) ? medals : []).reduce((best, medal) =>
+    Number.isFinite(medal?.count) && medal.count >= 0 && medal.count <= count && (!best || medal.count > best.count) ? medal : best, null);
+}
+
+/** All season members of TOP1, independent of the player's recruitment history. */
+export function bondMemberChess(chess, bondId) {
+  if (!bondId) return [];
+  const seen = new Set();
+  return (Array.isArray(chess) ? chess : []).filter((c) => {
+    if (!c || c.isGolden || c.isHidden || c.isDiy || c.visible === false || !c.bonds?.includes(bondId)) return false;
+    const key = `${c.charId}#${c.tier}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => a.tier - b.tier || (a.shopSortId || 0) - (b.shopSortId || 0) || a.chessId.localeCompare(b.chessId));
 }

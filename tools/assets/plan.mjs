@@ -324,12 +324,13 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  *   operators from patternOperator
  * @param {string[]} [p.moduleTypes] module type icon ids (`typeIcon`, e.g. 'sol-x') → manifest `modules[typeIcon]`, the
  *   official type icon (arts/ui/uniequiptype) the 干员调配 / 自选 module tiles draw when the local-client art lacks it
+ * @param {Array<{name:string,rel:string,urls:string[],kind:string}>} [p.statsTemplate] official statistics UI assets
  * @returns {{ template: any, models: Map<string, any>, notes: string[] }}
  */
 export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, charword = null, voiceLang = 'cn',
   voiceJp = true, voiceSlots = VOICE_BATTLE_SLOTS,
   extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {}, localTokenSpines = {}, extraOperators = {},
-  moduleTypes = [] }) {
+  moduleTypes = [], statsTemplate = [] }) {
   const notes = [];
   /** @type {Map<string, any>} */
   const models = new Map();
@@ -591,6 +592,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
     }
   }
   for (const [group, key, path] of UI_EXTRAS) addUi(group, key, joinUrl(RAW.aa2, path));
+  for (const { name, ...job } of statsTemplate) ui[`statistics/${name}`] = { alts: [job] };
 
   // --- audio ----------------------------------------------------------------
   const bgmLeaf = (bankName) => {

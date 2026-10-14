@@ -331,9 +331,18 @@ function numberOrNull(v, cap = Infinity) {
 const r4 = (v) => Math.round((Number(v) || 0) * 1e4) / 1e4;
 const modsKey = (m) => (m && typeof m === 'object' ? JSON.stringify(Object.keys(m).filter((k) => m[k] !== undefined).sort().map((k) => [k, m[k]])) : '');
 
+/** Actual enemy kills credited to a player, with a fallback for older reports. @param {any} player */
+export function creditedKillsOf(player) {
+  if (Number.isInteger(player?.creditedKills) && player.creditedKills >= 0) return player.creditedKills;
+  // Compatibility with battle reports made before the summary existed; never use wave-owned `killed` here.
+  return (Array.isArray(player?.unitStats) ? player.unitStats : []).reduce((n, u) => n + (Number.isFinite(u?.kills) ? Math.max(0, Math.trunc(u.kills)) : 0), 0);
+}
+
 /**
  * Canonical summary of a BattleResult (everything the match consumes): used to compare a client's result with the
- * server's re-simulation (SP_VERIFY) and by the determinism tests. Returns `{ json, hash }`.
+ * server's re-simulation (SP_VERIFY) and by the determinism tests. Returns `{ json, hash }`. The statistics-only
+ * `creditedKills` (PR #509) is left out: the match never reads it for an outcome, so it must not split a client's and the
+ * server's digests (a report without it falls back to the capped unitStats).
  */
 export function resultDigest(result) {
   const res = result && typeof result === 'object' ? result : {};
@@ -395,6 +404,7 @@ export function compactResult(res) {
       // `killed` keeps the sim's reading (every counted knock-out, runtime splits / summons included) and is deliberately
       // NOT clamped to `total`: the denominator counts only the round's own scheduled enemies (Battle.resolved)
       killed: Math.max(0, Math.trunc(fnum(p.killed))),
+      creditedKills: creditedKillsOf(p),
       total,
       leaked: leakEntries(p).map((l) => {
         const o = { enemyKey: l.enemyKey, mods: compactMods(l.mods), lpr: leakLpr(l), sourcePlayerId: keyOr(l.sourcePlayerId), tag: typeof l.tag === 'string' && l.tag.length <= 16 ? l.tag : null, counted: l.counted !== false };

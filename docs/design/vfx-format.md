@@ -213,8 +213,9 @@ velocity for inherit-velocity and rate-over-distance), `useUnscaledTime`, `autoR
 
 **InitialModule** (Main): `startLifetime`, `startSpeed` (along the shape's emission direction), `startSize` (or, with
 `size3D`, `startSize` / `startSizeY` / `startSizeZ` per axis), `startRotation` (radians; with `rotation3D`
-`startRotationX` / `startRotationY` / `startRotation` (Z)), `randomizeRotationDirection` (0…1: the share of particles
-whose rotation and spin are mirrored), `startColor` (MinMaxGradient), `gravityModifier` (MinMaxCurve × Physics.gravity,
+`startRotationX` / `startRotationY` / `startRotation` (Z)) — a billboard's roll about the view axis; Unity turns
+particles clockwise on screen for positive angles, the opposite of a Transform's Z rotation **[verify]** —,
+`randomizeRotationDirection` (0…1: the share of particles whose rotation and spin are mirrored), `startColor` (MinMaxGradient), `gravityModifier` (MinMaxCurve × Physics.gravity,
 §33.2), `maxNumParticles` (emission stops at this many live particles), `customEmitterVelocity`.
 
 **ShapeModule** (where particles are born and their initial direction; omitted = emit at the system's origin, direction

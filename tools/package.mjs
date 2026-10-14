@@ -140,6 +140,15 @@ export const FULL_ZIP_OPTIONAL_VOICE = true;
 export const OPTIONAL_VOICE_DIRS = Object.freeze(['public/assets/audio/voice/en/', 'public/assets/audio/voice/kr/', 'public/assets/audio/voice/native/']);
 /** Extracted official battlefield scenes (0.2.5 asset pack). Already ignored with public/assets/. */
 const SCENE_ART_PREFIX = 'public/assets/local/scene/';
+/**
+ * The official battle effects (tools/local-extract/fx.py, DESIGN §33: public/assets/local/fx/ and their file list
+ * data/local-fx.json, ~170 MB / ~12,000 files for the full set). false (0.3.0, until the maintainer decides): a full zip
+ * leaves them out even when this machine extracted them (`fxHeld`) — they are not part of the local art the releases
+ * have shipped so far. true: the full zip ships the folder and data/local-fx.json.
+ */
+export const FULL_ZIP_FX = false;
+/** Where the extracted effects lie. */
+export const FX_ART_PREFIX = 'public/assets/local/fx/';
 
 /**
  * Refused in a plan and in a stage: 0.1.x's list (owner-only notes, the promo project, caches, per-machine config) and
@@ -181,7 +190,7 @@ export function isJunk(rel) {
 /** Whether a tracked file belongs in the player package. */
 export function isPlayerFile(rel) {
   const p = posixRel(rel);
-  if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === GENERATED_PACK_INDEX) return false;
+  if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === 'data/local-fx.json' || p === GENERATED_PACK_INDEX) return false;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
   if (isPluginResource(p) || AUTHOR_TEST_FILES.includes(p)) return true;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;
@@ -255,21 +264,23 @@ export const manifestFiles = listedArtFiles;
 
 /**
  * The art of a full package: every file data/assets.json lists, public/fonts, public/assets/local/ and
- * data/local-assets.json (when present). `missing`: listed files not on disk; `orphans`: files under public/assets
+ * data/local-assets.json (when present); the official effects (public/assets/local/fx/ with data/local-fx.json) only
+ * with `fx` (FULL_ZIP_FX), else they are `fxHeld`. `missing`: listed files not on disk; `orphans`: files under public/assets
  * that nothing lists (left out); `held`: listed files the zip holds back on purpose — the JP voice dub when `jpVoice`
  * (FULL_ZIP_JP_VOICE) is off, the English / Korean / own-language dubs when `optionalVoice` (FULL_ZIP_OPTIONAL_VOICE)
  * is off: neither shipped nor missing, and never deleted by an update.
  * `scenes`: the files under public/assets/local/scene/ (the 0.2.5 battlefield scenes). They are also in `files`.
  * A lite plan and a machine that has not extracted them return `scenes: []`; packaging still succeeds.
  */
-export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE, optionalVoice = FULL_ZIP_OPTIONAL_VOICE } = {}) {
-  if (lite) return { files: [], missing: [], orphans: [], held: [], local: false, scenes: [] };
+export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE, optionalVoice = FULL_ZIP_OPTIONAL_VOICE, fx = FULL_ZIP_FX } = {}) {
+  if (lite) return { files: [], missing: [], orphans: [], held: [], fxHeld: [], local: false, scenes: [] };
   const listed = manifestFiles(readJson(path.join(root, 'data', 'assets.json')) ?? {});
   const local = isFile(path.join(root, 'data', 'local-assets.json'));
   if (local) for (const f of manifestFiles(readJson(path.join(root, 'data', 'local-assets.json')) ?? {})) listed.add(f);
   const files = new Set();
   const missing = [];
   const held = [];
+  const fxHeld = [];
   for (const f of listed) {
     if (!jpVoice && f.startsWith(JP_VOICE_DIR)) held.push(f);
     else if (!optionalVoice && OPTIONAL_VOICE_DIRS.some((d) => f.startsWith(d))) held.push(f);
@@ -277,16 +288,18 @@ export function artPlan(root, { lite = false, jpVoice = FULL_ZIP_JP_VOICE, optio
     else missing.push(f);
   }
   for (const f of listTree(root, 'public/fonts')) files.add(f);
-  if (local) {
-    for (const f of listTree(root, 'public/assets/local')) files.add(f);
-    files.add('data/local-assets.json');
+  const fxList = isFile(path.join(root, 'data', 'local-fx.json'));
+  for (const f of listTree(root, 'public/assets/local')) {
+    if (!f.startsWith(FX_ART_PREFIX)) { if (local) files.add(f); } else if (fx && fxList) files.add(f); else fxHeld.push(f);
   }
+  if (local) files.add('data/local-assets.json');
+  if (fx && fxList) files.add('data/local-fx.json');
   // without case: on Windows / macOS a file whose name differs only in case is the listed one (fetch-assets orphanFiles)
-  const lower = new Set([...files, ...held].map((f) => f.toLowerCase()));
+  const lower = new Set([...files, ...held, ...fxHeld].map((f) => f.toLowerCase()));
   const orphans = listTree(root, 'public/assets').filter((f) => !lower.has(f.toLowerCase()));
   const sorted = [...files].sort();
   return {
-    files: sorted, missing: missing.sort(), orphans, held: held.sort(), local,
+    files: sorted, missing: missing.sort(), orphans, held: held.sort(), fxHeld: fxHeld.sort(), local,
     scenes: sorted.filter((f) => f.startsWith(SCENE_ART_PREFIX)),
   };
 }
@@ -561,7 +574,7 @@ export function plan(root, opts = {}) {
   const dropBytes = Object.values(dropped).reduce((n, g) => n + g.bytes, 0);
   return {
     version: pkg.version || '0.0.0', lite, tracked: keep, art: art.files, generated, files, dropped, orphans: art.orphans,
-    held: art.held, localArt: art.local, problems, names: names.length, scanned,
+    held: art.held, fxHeld: art.fxHeld, localArt: art.local, problems, names: names.length, scanned,
     scenes: { files: art.scenes || [], bytes: sumBytes(root, art.scenes || []) },
     bytes: {
       tracked: trackedBytes, art: artBytes, modules: modulesBytes, vendor: vendorBytes,
@@ -595,6 +608,7 @@ export function formatSummary(p) {
   if (groups.length) lines.push(`left out: ${groups.map(([g, v]) => `${g} ${v.files} (${MB(v.bytes)})`).join(', ')}`);
   if (!p.lite && p.orphans.length) lines.push(`left out art: ${p.orphans.length} files under public/assets that nothing lists (${MB(p.bytes.orphans)})`);
   if (!p.lite && p.held?.length) lines.push(`held back: ${p.held.length} voice files (FULL_ZIP_JP_VOICE / FULL_ZIP_OPTIONAL_VOICE off: setup downloads them on the first start)`);
+  if (!p.lite && p.fxHeld?.length) lines.push(`held back: ${p.fxHeld.length} official effect files (public/assets/local/fx with data/local-fx.json, FULL_ZIP_FX off: extracted on this machine, not shipped)`);
   lines.push(`personal-info scan: ${p.scanned} files, ${p.names ? `home paths + ${p.names} account name(s)` : 'home paths only (no account name to refuse)'}`);
   lines.push(p.problems.length ? `PROBLEMS (${p.problems.length}):\n${p.problems.map((x) => `  ${x}`).join('\n')}` : 'checks: ok');
   return lines.join('\n') + '\n';

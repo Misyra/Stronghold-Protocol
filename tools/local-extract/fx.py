@@ -16,7 +16,9 @@ What is read (paths relative to the AB root, see extract.py CANDIDATES):
   battle/prefabs/[uc]projectiles.ab, [uc]skills.ab           projectile flight + effects, the skills' effect keys
   battle/enm_pfb_*.ab, pkgrps/btl_pfb_tokens_*.ab            enemies and tokens
 
-What is written under <out>/fx (each file is listed in data/local-assets.json, so the server hashes its URL):
+What is written under <out>/fx (every file is listed in data/local-fx.json, next to the --manifest — its own file: ~8,300
+entries kept out of data/local-assets.json, which has no fx group — and the server hands that list out with each URL
+carrying its file's content hash):
   index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), skill effect
                        keys, mount points; the projectiles; the generic keys (hits, deaths, deploy, status loops)
   textures.json        texture key → size, wrap, filter, alpha, the WebP files
@@ -41,6 +43,8 @@ from pathlib import Path
 
 FX_SUB = 'fx'
 FORMAT_VERSION = 1
+FX_MANIFEST = 'local-fx.json'                           # data/local-fx.json: every fx file, served as a hashed view
+FX_GROUPS = ('fx', 'fx/prefabs', 'fx/tex', 'fx/mesh')   # its groups (§33.1; none of them in data/local-assets.json)
 
 # effect prefabs: battle/prefabs/effects/<prefix>.ab holds the keys `<prefix>_…`; the enemy / token / map effects are
 # grouped in pkgrps packs (looked up through the container index)
@@ -254,7 +258,9 @@ def is_gradient(v):
 
 
 def is_curve(v):
-    return isinstance(v, dict) and 'm_Curve' in v
+    # an AnimationCurve's m_Curve is its key list (InheritVelocityModule / LifetimeByEmitterSpeedModule name a
+    # MinMaxCurve m_Curve: those modules are dicts, encoded field by field)
+    return isinstance(v, dict) and isinstance(v.get('m_Curve'), list)
 
 
 def is_vec(v):
@@ -1597,12 +1603,22 @@ def client_version(ab_root):
         return None
 
 
-def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, jobs=None, root=None):
-    """The fx run (extract.py --only fx): fills the manifest groups fx, fx/prefabs, fx/tex and fx/mesh; returns the
-    number of files written."""
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
+def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, jobs=None, root=None, fx_manifest=None):
+    """The fx run (extract.py --only fx): writes <out_root>/fx/** and `fx_manifest` (default <root>/data/local-fx.json:
+    the groups FX_GROUPS, every file); returns the number of files written. `manifest` (the groups of
+    data/local-assets.json) gets nothing: extract.py drops the fx groups an earlier run left there (ran_groups). A
+    --fx-keys run (`keys`) updates those prefabs in the earlier set's index and file list."""
     t_start = time.time()
     ab_root = Path(ab_root)
     root = Path(root) if root else Path(__file__).resolve().parents[2]
+    fx_manifest = Path(fx_manifest) if fx_manifest else root / 'data' / FX_MANIFEST
     jobs = max(1, jobs or min(8, os.cpu_count() or 2))
     out = Path(out_root) / FX_SUB
     out.mkdir(parents=True, exist_ok=True)
@@ -1667,26 +1683,44 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
             todo = {k for k in named if k in eff and k not in done}
     timings['prefabs'] = time.time() - t0
 
+    summaries = {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs')}
+                 for k, v in entries.items()}
+    url = lambda rel: f'/assets/local/{FX_SUB}/{rel}'  # noqa: E731
+    groups = {
+        'fx/prefabs': {k: {'path': url(v['file']), 'kind': 'FxPrefab'} for k, v in entries.items()},
+        'fx/tex': {k: {'path': url(v['file']), 'w': v['w'], 'h': v['h'], 'kind': 'Texture2D',
+                       **({'half': url(v['half'])} if v.get('half') else {})} for k, v in textures.items()},
+        'fx/mesh': {k: {'path': url(v['file']), 'kind': 'FxMesh', 'verts': v['verts']} for k, v in meshes.items()},
+    }
+    tex_all, set_name = dict(textures), 'keys' if keys else selection
+    prev = _read_json(out / 'index.json') if keys else None
+    if isinstance(prev, dict) and prev.get('format') == 'fx-index' and prev.get('version') == FORMAT_VERSION:
+        # a --fx-keys run: these prefabs replace their earlier copies; the earlier set's units, skills, prefabs stay
+        units, projectiles, skills, skins = (prev.get(x) or {} for x in ('units', 'projectiles', 'skills', 'skins'))
+        summaries = {**(prev.get('prefabs') or {}), **summaries}
+        tex_all = {**((_read_json(out / 'textures.json') or {}).get('textures') or {}), **textures}
+        old_groups = (_read_json(fx_manifest) or {}).get('groups') or {}
+        groups = {g: {**(old_groups.get(g) or {}), **v} for g, v in groups.items()}
+        set_name = prev.get('set') or set_name
+    groups = {'fx': {'index': {'path': url('index.json'), 'kind': 'FxIndex', 'version': FORMAT_VERSION, 'set': set_name,
+                               'prefabs': len(summaries)},
+                     'textures': {'path': url('textures.json'), 'kind': 'FxTextures', 'count': len(tex_all)}},
+              **{g: dict(sorted(v.items())) for g, v in groups.items()}}
     index = {
-        'format': 'fx-index', 'version': FORMAT_VERSION, 'set': 'keys' if keys else selection,
+        'format': 'fx-index', 'version': FORMAT_VERSION, 'set': set_name,
         'source': {'root': ab_root.name, 'client': client_version(ab_root)},
         'units': units, 'projectiles': projectiles, 'skills': skills, 'skins': skins,
-        'generic': {**FX_GENERIC, 'keys': sorted(k for k in generic if k in entries)},
-        'prefabs': {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs')}
-                    for k, v in sorted(entries.items())},
+        'generic': {**FX_GENERIC, 'keys': sorted(k for k in generic if k in summaries)},
+        'prefabs': dict(sorted(summaries.items())),
     }
     write_atomic(out / 'index.json', json.dumps(index, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
     write_atomic(out / 'textures.json', json.dumps({'format': 'fx-textures', 'version': FORMAT_VERSION,
-                                                   'textures': dict(sorted(textures.items()))}, separators=(',', ':')).encode('utf-8'))
-    url = lambda rel: f'/assets/local/{FX_SUB}/{rel}'  # noqa: E731
-    manifest['fx'] = {'index': {'path': url('index.json'), 'kind': 'FxIndex', 'version': FORMAT_VERSION, 'set': index['set'],
-                                'prefabs': len(entries)},
-                      'textures': {'path': url('textures.json'), 'kind': 'FxTextures', 'count': len(textures)}}
-    manifest['fx/prefabs'] = {k: {'path': url(v['file']), 'kind': 'FxPrefab'} for k, v in sorted(entries.items())}
-    manifest['fx/tex'] = {k: {'path': url(v['file']), 'w': v['w'], 'h': v['h'], 'kind': 'Texture2D',
-                              **({'half': url(v['half'])} if v.get('half') else {})} for k, v in sorted(textures.items())}
-    manifest['fx/mesh'] = {k: {'path': url(v['file']), 'kind': 'FxMesh', 'verts': v['verts']} for k, v in sorted(meshes.items())}
-    total = 2 + len(entries) + len(meshes) + sum(1 + (1 if v.get('half') else 0) for v in textures.values())
+                                                   'textures': dict(sorted(tex_all.items()))}, separators=(',', ':')).encode('utf-8'))
+    count = sum(len(v) for v in groups.values())
+    write_atomic(fx_manifest, json.dumps({'version': 1, 'format': 'fx-manifest', 'source': 'local-client',
+                                          'client': client_version(ab_root), 'set': set_name, 'count': count,
+                                          'groups': groups}, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+    total = 3 + len(entries) + len(meshes) + sum(1 + (1 if v.get('half') else 0) for v in textures.values())
     if not keys:                                              # a full set: drop files an earlier run left behind
         keep = {out / 'index.json', out / 'textures.json'} | {out / v['file'] for v in entries.values()}
         keep |= {out / v['file'] for v in meshes.values()} | {out / v['file'] for v in textures.values()}
@@ -1699,7 +1733,8 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
     timings['total'] = time.time() - t_start
     size = sum(p.stat().st_size for p in out.rglob('*') if p.is_file() and not p.name.startswith('.'))
     log(f'fx: {len(entries)} prefabs, {len(textures)} textures, {len(meshes)} meshes, {len(units)} units, '
-        f'{len(projectiles)} projectiles, {len(skills)} skills → {out} ({size / 1e6:.1f} MB); '
+        f'{len(projectiles)} projectiles, {len(skills)} skills → {out} ({size / 1e6:.1f} MB), {fx_manifest} '
+        f'({count} entries, {fx_manifest.stat().st_size / 1e6:.2f} MB); '
         + ', '.join(f'{k} {v:.1f}s' for k, v in timings.items()))
     return total
 

@@ -9,7 +9,7 @@
 #        docker build -t stronghold-protocol .
 #        docker run -d --name stronghold -p 3000:3000 --restart unless-stopped \
 #          -v "$PWD/public/assets:/app/public/assets:ro" stronghold-protocol
-#      (public/fonts, data/assets.json and data/local-assets.json are copied from the build context when present)
+#      (public/fonts, data/assets.json, data/local-assets.json and data/local-fx.json are copied from the build context when present)
 # Without any art the game still runs with placeholder visuals.
 #
 # Run:  docker run -d --name stronghold -p 3000:3000 --restart unless-stopped stronghold-protocol

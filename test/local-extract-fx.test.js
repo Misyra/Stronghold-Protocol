@@ -1,9 +1,9 @@
 // tools/local-extract/fx.py (DESIGN §33, docs/design/vfx-format.md): the encodings of the official battle effects'
 // descriptors — curves, gradients, render states, decoded animation clips, mount-point matrices, the file names of
 // effect keys — and extract.py's opt-in fx run. The Python helpers run without UnityPy (pure functions; plain
-// python3). When the effects were extracted on this machine (data/local-assets.json has the fx groups), the output is
-// checked for consistency: every listed file exists, the index and the manifest agree, every key the index names has
-// a descriptor.
+// python3). When the effects were extracted on this machine (data/local-fx.json, the list of the fx files, exists), the
+// output is checked for consistency: every listed file exists, the index and the list agree, every key the index names
+// has a descriptor, and data/local-assets.json holds no fx group.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +16,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = path.join(ROOT, 'tools/local-extract');
 const PY = ['python3', 'python'].find((bin) => spawnSync(bin, ['--version']).status === 0);
 const ENV = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
-const manifest = (() => { try { return JSON.parse(readFileSync(path.join(ROOT, 'data/local-assets.json'), 'utf8')); } catch { return null; } })();
+const readJson = (rel) => { try { return JSON.parse(readFileSync(path.join(ROOT, rel), 'utf8')); } catch { return null; } };
+const manifest = readJson('data/local-assets.json');
+const fxList = readJson('data/local-fx.json');
 
 /** Run python code with `fx` imported; returns the parsed JSON it prints. */
 function py(code) {
@@ -150,6 +152,21 @@ describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () =
     assert.deepEqual(JSON.parse(r.stdout), [false, true, true, true, false, false, true]);
   });
 
+  test('an fx run drops the fx groups an earlier run left in data/local-assets.json (the files have data/local-fx.json)', () => {
+    const src = `import sys, json\nsys.path.insert(0, ${JSON.stringify(TOOL)})\nimport extract as e, fx\n`
+      + "old = {'fx': {'index': {}}, 'fx/prefabs': {'a': {}}, 'fx/tex': {}, 'map/fx': {'m': {}}, 'emoticon/x': {}}\n"
+      + "print(json.dumps([sorted(e.ran_groups(old, {}, True)), sorted(e.ran_groups(old, {'map/fx': {}})),\n"
+      + "  sorted(e.merge_manifest(old, {}, e.ran_groups(old, {}, True))), fx.FX_MANIFEST, list(fx.FX_GROUPS)]))";
+    const r = spawnSync(PY, ['-c', src], { encoding: 'utf8', env: ENV });
+    assert.equal(r.status, 0, r.stderr);
+    const [afterFx, afterMap, merged, name, groups] = JSON.parse(r.stdout);
+    assert.deepEqual(afterFx, ['fx', 'fx/prefabs', 'fx/tex'], 'map/fx is not an fx group');
+    assert.deepEqual(afterMap, ['map/fx'], 'another run keeps the groups it did not write');
+    assert.deepEqual(merged, ['emoticon/x', 'map/fx']);
+    assert.equal(name, 'local-fx.json');
+    assert.deepEqual(groups, ['fx', 'fx/prefabs', 'fx/tex', 'fx/mesh']);
+  });
+
   test('--print-jobs lists the fx run: its output dir, format version and the Phase 1a sample', () => {
     const r = spawnSync(PY, [path.join(TOOL, 'extract.py'), '--print-jobs'], { encoding: 'utf8', env: ENV });
     assert.equal(r.status, 0, r.stderr);
@@ -165,12 +182,19 @@ describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () =
   });
 });
 
-describe('extracted effects (when fx was extracted on this machine)', { skip: !manifest?.groups?.fx?.index && 'fx not extracted' }, () => {
-  const groups = manifest?.groups || {};
+describe('extracted effects (when fx was extracted on this machine)', { skip: !fxList?.groups?.fx?.index && 'fx not extracted' }, () => {
+  const groups = fxList?.groups || {};
   const onDisk = (p) => path.join(ROOT, 'public', p);
   const hasFiles = existsSync(path.join(ROOT, 'public/assets/local/fx/index.json'));
 
-  test('the manifest lists every file, the index and the manifest agree, every named key has a descriptor', { skip: !hasFiles && 'files not here' }, () => {
+  test('data/local-fx.json lists the fx files in its groups; data/local-assets.json has none of them', () => {
+    assert.equal(fxList.format, 'fx-manifest');
+    assert.deepEqual(Object.keys(fxList.groups).sort(), ['fx', 'fx/mesh', 'fx/prefabs', 'fx/tex']);
+    assert.equal(fxList.count, Object.values(fxList.groups).reduce((n, g) => n + Object.keys(g).length, 0));
+    for (const g of Object.keys(manifest?.groups || {})) assert.ok(g !== 'fx' && !g.startsWith('fx/'), `${g} left in data/local-assets.json`);
+  });
+
+  test('the list names every file, the index and the list agree, every named key has a descriptor', { skip: !hasFiles && 'files not here' }, () => {
     const index = JSON.parse(readFileSync(onDisk(groups.fx.index.path), 'utf8'));
     assert.equal(index.format, 'fx-index');
     assert.equal(index.version, groups.fx.index.version);

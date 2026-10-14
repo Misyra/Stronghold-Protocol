@@ -17,8 +17,8 @@
 //   http/files.js      one file → response: MIME, brotli / gzip + memory cache, ETag / Last-Modified / 304, Cache-Control, ranges
 //   http/assetIndex.js the content hashes of public/assets and public/fonts (built in the background, cached in
 //                      .cache/asset-hashes.json by path + size + mtime; Spine models share one hash)
-//   http/assetViews.js the served /data/assets.json and /data/local-assets.json: every art URL with its hash segment
-//                      (/assets/~<hash>/…, immutable when the hash matches); the committed files stay unchanged
+//   http/assetViews.js the served /data/assets.json, /data/local-assets.json and /data/local-fx.json: every art URL with
+//                      its hash segment (/assets/~<hash>/…, immutable when the hash matches); the files stay unchanged
 //   http/buildTag.js   the build tag of the served browser runtime (/healthz `build`, public/js/ui/buildGuard.js)
 //   http/routes.js     the request listener: security headers, 414 / 400, the plugin studio (/studio/, studio/index.js —
 //                      this machine and the local network only), 405, GET /healthz → JSON status, else static

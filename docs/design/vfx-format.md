@@ -21,7 +21,7 @@ marked **[verify]** are read from the data but their exact runtime behaviour sti
 Enum names marked *metadata* come from the client's il2cpp metadata (`Arknights_Data/il2cpp_data/Metadata/
 global-metadata.dat`, version 29, not encrypted: the enum constants with their values).
 
-### 33.1 Files, the manifest and the extractor run
+### 33.1 Files, the file list and the extractor run
 
 ```
 .venv/bin/python tools/local-extract/extract.py --only fx                        the Phase 1a sample (§33.13)
@@ -42,8 +42,19 @@ A plain `extract.py` run (no `--only`) does not run fx. The run reads `data/ches
 | `tex/<key>.webp`, `tex/half/<key>.webp` | §33.8: every texture (WebP q90, alpha kept), and a half-size copy for the light tier (both sides ≥ 64 px) |
 | `mesh/<key>.json` | §33.9: meshes of mesh particles, MeshRenderers, skinned meshes and mesh-shaped emitters |
 
-`data/local-assets.json` lists every file, so the server's asset index hashes its URL (§13; the served manifest carries
-`/assets/~<hash>/local/fx/…`); the runtime takes URLs from the manifest, never builds them:
+**The file list: `data/local-fx.json`** (written next to `data/local-assets.json`, `--manifest`; gitignored like it).
+It names every file, so the server's asset index hashes its URL: the server hands it out at `GET /data/local-fx.json` as
+a view whose URLs carry the content hash, `/assets/~<hash>/local/fx/…` (immutable for a year; docs/ASSETS.md "The
+committed manifest and the served manifests"), and answers an empty `{ groups: {} }` on an install without effects. It
+is a file of its own — ~8,300 entries for the full set — so that `data/local-assets.json`, which every page loads, stays
+small: that file has no fx group (an fx run removes the ones a Phase 1a run wrote there). The server never loads it
+(`server/data.js UNLOADED_DATA`), it is no part of the content hash (`PRESENTATION_DATA`), and the release zips leave the
+effects out while `tools/package.mjs FULL_ZIP_FX` is off. The runtime takes URLs from it, never builds them:
+
+```
+{ version: 1, format: 'fx-manifest', source: 'local-client', client (the client version), set ('sample' | 'used' | 'keys'),
+  count (entries), groups: { fx, fx/prefabs, fx/tex, fx/mesh } }
+```
 
 | group | entries |
 |---|---|
@@ -53,12 +64,13 @@ A plain `extract.py` run (no `--only`) does not run fx. The run reads `data/ches
 | `fx/mesh` | mesh key → `{ path, kind: 'FxMesh', verts }` |
 
 Each JSON file starts with `format` (`fx-index`, `fx-textures`, `fx-prefab`, `fx-mesh`) and `version` (1). A full run
-(`sample` / `used`) replaces the four groups and removes the files of an earlier run that are no longer listed;
-`--fx-keys` writes a small self-contained set (index and groups describe only those keys and what they name).
+(`sample` / `used`) rewrites the list and removes the files of an earlier run that are no longer listed; `--fx-keys`
+re-exports the named prefabs (and the keys they name) into the earlier set — their descriptors, index summaries and list
+entries are replaced, everything else stays (without an earlier set it writes a set of just those keys).
 
 **Keys are case-insensitive.** Effect, projectile and skill keys are the bundles' container names, which are lower
 case; the client's own references mix cases (a `SwitchableBackEffect` names `chen2_skill_01_buff_02_B`). Every key the
-extractor writes (file names, manifest entries, the index, the descriptors' `refs`) is lower case; behaviour fields keep
+extractor writes (file names, file-list entries, the index, the descriptors' `refs`) is lower case; behaviour fields keep
 the client's spelling — lower-case a key read from them before looking it up.
 
 Timings on the maintainer's Mac (Windows client 26-09-13, 8 processes): the sample (126 prefabs, 290 textures,

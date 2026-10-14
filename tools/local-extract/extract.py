@@ -40,7 +40,8 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     only while the season runs: they are read from the client when it has them, else from --scenes <dir> (default
     .cache/official-scenes/*, filled by tools/local-extract/fetch_scenes.py)
   - the official battle effects (特效) of the mode's operators, enemies and tokens (fx.py, DESIGN §33)
-    → fx/index.json, fx/textures.json, fx/prefabs/*.json, fx/tex/**.webp, fx/mesh/*.json;
+    → fx/index.json, fx/textures.json, fx/prefabs/*.json, fx/tex/**.webp, fx/mesh/*.json, listed in their own
+    data/local-fx.json (next to --manifest; data/local-assets.json has no fx group);
     only with an explicit --only fx (a plain run leaves them out): the Phase 1a sample by default, --fx-set used for
     every effect the units reference, --fx-keys <k1,k2> for named prefabs
 
@@ -529,6 +530,15 @@ def webp_only(out_root, manifest_path, log):
     return 0 if n else 1
 
 
+def ran_groups(old_groups, new_groups, fx_ran=False):
+    """The groups a run replaces: the ones it wrote, and after an fx run the fx / fx/* groups an earlier fx run left in
+    the manifest (the fx files have their own list, data/local-fx.json, since 0.3.0's Phase 1b — DESIGN §33.1)."""
+    ran = set(new_groups)
+    if fx_ran:
+        ran |= {g for g in (old_groups or {}) if g == fx.FX_SUB or g.startswith(fx.FX_SUB + '/')}
+    return ran
+
+
 def merge_manifest(old_groups, new_groups, ran_subs):
     """Groups of the previous manifest minus the subdirs that were re-extracted, plus the new ones (sorted keys)."""
     out = {g: v for g, v in (old_groups or {}).items() if g not in ran_subs}
@@ -945,7 +955,8 @@ def main():
     if fx_on:
         keys = [k.strip().lower() for k in args.fx_keys.split(',') if k.strip()]
         total += fx.export_fx(ab_root, out_root, manifest, print, selection=args.fx_set, keys=keys or None,
-                              jobs=args.fx_jobs or None, root=ROOT)
+                              jobs=args.fx_jobs or None, root=ROOT,
+                              fx_manifest=Path(args.manifest).with_name(fx.FX_MANIFEST))
     if stage_ids:
         total += export_scenes(ab_root, out_root, manifest, print, stage_ids, scene_roots(ab_root, args.scenes))
     old = {}
@@ -954,7 +965,7 @@ def main():
             old = json.loads(Path(args.manifest).read_text(encoding='utf-8')).get('groups') or {}
         except (OSError, ValueError) as e:
             print(f'warn: previous manifest unreadable ({e}); writing only the re-extracted groups', file=sys.stderr)
-    groups = merge_manifest(old, manifest, set(manifest))  # a missing bundle keeps its previous group
+    groups = merge_manifest(old, manifest, ran_groups(old, manifest, fx_on))  # a missing bundle keeps its previous group
     count = sum(len(v) for v in groups.values())
     doc = {'version': 1, 'source': 'local-client', 'count': count, 'groups': groups}
     Path(args.manifest).write_text(json.dumps(doc, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')

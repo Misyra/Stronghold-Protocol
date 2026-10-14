@@ -11,7 +11,7 @@
 //               stand-in, each named by its URL path without the leading '/' ('sim/Battle.js', 'shared/protocol.js',
 //               'data.js')
 //     data      { <name>: sha256 of data/<name>.json } — every data file the match or the simulation reads; not the
-//               presentation files (assets, local-assets, emotes) and not data/i18n/
+//               presentation files (assets, local-assets, local-fx, emotes) and not data/i18n/
 //     plugins   [{ id, version, files: { <path>: sha256 } } …] in load order, their gameplay files only ([] = vanilla)
 //     settings  { <id>: { <key>: value } } — the plugins' normalised settings ({} = vanilla)
 //     i18n      omitted for vanilla and for a cosmetic-only selection, so the P0 hash stays bit-identical. A content

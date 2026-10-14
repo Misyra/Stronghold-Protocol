@@ -43,6 +43,37 @@ export function mountKind(type) {
   }
 }
 
+const fixes = new WeakMap();
+const _fixed = [0, 0, 0];
+
+/**
+ * A skin whose points sit whole tiles away from the unit's feet (84 of the full set's 709 hit points — 72 enemies,
+ * 10 tokens, 2 operators — are shifted by one constant x / y per skin: the prefab's Spine / FaceSwitcher placement,
+ * which the client resets at run time, is part of the extracted composition) is moved back: its HitPoint over the feet
+ * at the height it has (y = −0.9 z, the slope of the well-placed skins' hit points), every point by the same shift.
+ * [ASSUMED] the shift; the extractor should drop that placement (reported to the extraction).
+ */
+export function skinShift(skin) {
+  if (!skin || !skin.points) return null;
+  let f = fixes.get(skin);
+  if (f !== undefined) return f;
+  f = null;
+  let ref = null;
+  for (const nm of ['HitPoint', 'Hit', 'HeadPoint', ...Object.keys(skin.points)]) {
+    const p = skin.points[nm];
+    const v = p && (p.front || p.all || p.back);
+    if (v && Array.isArray(v.pos)) { ref = { nm, pos: v.pos }; break; }
+  }
+  if (ref) {
+    const [x, y, z] = ref.pos;
+    const head = ref.nm.startsWith('Head');
+    const yWant = -z * (head ? 1.3 : 0.9);
+    if (Math.abs(x) > 0.9 || y > 1.6 || y < -0.6) f = [-x, yWant - y, 0];
+  }
+  fixes.set(skin, f);
+  return f;
+}
+
 /** A skin point's offset (Unity, unit root frame) by kind and facing; null when the skin lacks it. */
 export function pointOffset(skin, kind, back) {
   const pts = skin && skin.points;
@@ -52,7 +83,12 @@ export function pointOffset(skin, kind, back) {
     const p = pts[nm];
     if (!p) continue;
     const f = (back ? p.back : p.front) || p.all || p.front || p.back;
-    if (f && Array.isArray(f.pos)) return f.pos;
+    if (f && Array.isArray(f.pos)) {
+      const sh = skinShift(skin);
+      if (!sh) return f.pos;
+      _fixed[0] = f.pos[0] + sh[0]; _fixed[1] = f.pos[1] + sh[1]; _fixed[2] = f.pos[2] + sh[2];
+      return _fixed;
+    }
   }
   return null;
 }

@@ -182,6 +182,10 @@ export function compileEffect(desc, lib = {}) {
   def.inactiveOnHit = (Array.isArray(def.proj?._inactiveOnHit) ? def.proj._inactiveOnHit : []).map((o) => o && o.node).filter((x) => x != null);
   def.flipIfLeft = on(def.proj?._flipIfLeft);
   def.rotate180Y = on(def.proj?._rotate180Y);
+  // the art's own direction (ParticleEffect / ProjectileEffect `_mainDir`: the client's Direction enum)
+  const md = num(pe._mainDir, 1) | 0;
+  def.mainYaw = (def.rotateType === 2 || def.rotateType === 4 || def.proj) && md >= 0 && md <= 3 ? DIR_YAW[md] : 0;
+  def.useBodyRotation = on(def.pe?._useBodyRotation);
   def.loops = def.isLoop || def.ps.some((p) => p && p.looping && p.playOnAwake !== false) || def.animators.some((a) => def.clips[a.clip]?.loop);
   def.material = (i, lite) => {
     const list = lite ? def.lite : def.materials;
@@ -222,6 +226,7 @@ export class Effect {
     this.anchor = [0, 0, 0];
     this.yaw = 0; this.pitch = 0; this.roll = 0;
     this.mirror = false;
+    this.flipY = false;                                // FLIP_TWO_SIDE with a `_rotationY` helper
     this.groundZ = 0;
     this.time = 0;                                     // s since spawn (battle clock)
     this.delay = def.delayToPlay + (def.randomDelay > 0 ? Math.random() * def.randomDelay : 0);
@@ -261,6 +266,7 @@ export class Effect {
     if (typeof o.pitch === 'number') this.pitch = o.pitch;
     if (typeof o.roll === 'number') this.roll = o.roll;
     if (typeof o.mirror === 'boolean') this.mirror = o.mirror;
+    if (typeof o.flipY === 'boolean') this.flipY = o.flipY;
     if (typeof o.groundZ === 'number') this.groundZ = o.groundZ;
     return this;
   }
@@ -466,15 +472,18 @@ export class Effect {
       _p3[0] = L[o]; _p3[1] = L[o + 1]; _p3[2] = L[o + 2];
       _q[0] = L[o + 3]; _q[1] = L[o + 4]; _q[2] = L[o + 5]; _q[3] = L[o + 6];
       _s3[0] = L[o + 7]; _s3[1] = L[o + 8]; _s3[2] = L[o + 9];
-      // the direction turns the _rotationZ helper (or the root): yaw about Z, pitch about the turned Y
-      const turnHere = def.rotZ >= 0 ? i === def.rotZ : i === 0;
-      if (turnHere && (this.yaw || this.pitch || this.roll)) {
-        quatAxis(0, 0, 1, this.yaw, _q2);
-        if (this.pitch) quatMul(_q2, quatAxis(0, 1, 0, this.pitch, _qa), _q2);
-        if (this.roll) quatMul(_q2, quatAxis(1, 0, 0, this.roll, _qa), _q2);
+      // the direction: a `_rotationZ` helper's rotation is set to it (the client's script replaces the helper's
+      // authored rotation — ifrit_attack_01_start's is a leftover 90°), else the root turns; yaw about Z relative to
+      // the art's `_mainDir`, pitch about the turned Y. A `_rotationY` helper turns 180° about Y for a flipped owner.
+      if (i === def.rotZ) {
+        dirQuat(this.yaw - def.mainYaw, this.pitch, this.roll, _q);
+      } else if (i === 0 && def.rotZ < 0 && (this.yaw || this.pitch || this.roll || def.mainYaw)) {
+        dirQuat(this.yaw - def.mainYaw, this.pitch, this.roll, _q2);
         quatMul(_q2, _q, _q);
         quatNormalize(_q);
       }
+      if (i === def.rotY) { if (this.flipY) quatAxis(0, 1, 0, Math.PI, _q); else { _q[0] = 0; _q[1] = 0; _q[2] = 0; _q[3] = 1; } }
+      if (i === 0 && def.rotate180Y) { quatMul(quatAxis(0, 1, 0, Math.PI, _q2), _q, _q); }
       mat4Trs(_p3, _q, _s3, _m);
       const p = def.parent[i];
       if (p < 0) {
@@ -690,6 +699,17 @@ export class Effect {
   }
 }
 const _qa = [0, 0, 0, 1];
+
+/** Rotation of a direction: yaw about Z, then pitch about the turned Y, then roll about the turned X. */
+function dirQuat(yaw, pitch, roll, out) {
+  quatAxis(0, 0, 1, yaw, out);
+  if (pitch) quatMul(out, quatAxis(0, 1, 0, pitch, _qa), out);
+  if (roll) quatMul(out, quatAxis(1, 0, 0, roll, _qa), out);
+  return quatNormalize(out);
+}
+
+/** The world yaw of the client's direction enum (Torappu.SharedConsts.Direction: UP 0, RIGHT 1, DOWN 2, LEFT 3). */
+export const DIR_YAW = Object.freeze([Math.PI / 2, 0, -Math.PI / 2, Math.PI]);
 
 /** Battle seconds a stopped effect takes at most to fade out (see _lifecycle). */
 export const STOP_FADE = 0.6;

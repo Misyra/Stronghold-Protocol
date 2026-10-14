@@ -143,8 +143,8 @@ export class FxWiring {
     const pos = spawnPoint(skin, spawn, pose);
     const ground = (v.z || 0);
     if (def && GROUND_SPAWNS.has(spawn)) pos[2] = -ground;
-    const place = { pos, groundZ: -ground, yaw: 0, mirror: false };
-    this._orient(def, place, pose, o);
+    const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false };
+    this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important };
     if (o.follow && def?.follow) {
       // FollowMountPoint: the effect stays on the unit's point
@@ -159,21 +159,29 @@ export class FxWiring {
     return this.ofx.spawn(k, place, opts);
   }
 
-  /** Direction of an effect: mirror (FLIP_TWO_SIDE, by facing) or a yaw towards a target (FOUR_DIRECTION / ANY_DIR). */
-  _orient(def, place, pose, o) {
+  /**
+   * Direction of an effect (ParticleEffect `_rotateType`): FLIP_TWO_SIDE turns the `_rotationY` helper 180° (or
+   * mirrors the effect without one) for a left-facing owner — a hit by the blow's side —; FOUR_DIRECTION / ANY_DIR
+   * turn towards the target, or along the owner's body direction (`_useBodyRotation`: an operator's deploy direction,
+   * an enemy's facing); FOUR_DIRECTION snaps to the four directions.
+   */
+  _orient(def, place, pose, o, v) {
     if (!def) return;
     const rt = def.rotateType;
     if (rt === 1) {
       let left = pose.left;
       if (o.flipFrom) left = o.flipFrom.x > pose.x; // a blow from the right splashes to the left
-      place.mirror = left !== def.leftIsDefault;
-    } else if ((rt === 2 || rt === 4) && o.toward) {
-      const dx = o.toward.x - pose.x, dy = o.toward.y - pose.y;
-      if (Math.abs(dx) + Math.abs(dy) > 1e-4) {
-        let a = Math.atan2(dy, dx);
-        if (rt === 2) a = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
-        place.yaw = a;
-      } else place.mirror = pose.left;
+      const flip = left !== def.leftIsDefault;
+      if (def.rotY >= 0) place.flipY = flip; else place.mirror = flip;
+    } else if (rt === 2 || rt === 4) {
+      let a = null;
+      if (def.useBodyRotation || !o.toward) a = bodyYaw(v, pose);
+      else {
+        const dx = o.toward.x - pose.x, dy = o.toward.y - pose.y;
+        a = Math.abs(dx) + Math.abs(dy) > 1e-4 ? Math.atan2(dy, dx) : bodyYaw(v, pose);
+      }
+      if (rt === 2) a = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+      place.yaw = a;
     }
   }
 
@@ -392,6 +400,16 @@ export class FxWiring {
     }
     T.length = w;
   }
+}
+
+/** The world yaw a unit faces: an operator's deploy direction (UP = +row), else its facing (±x). */
+function bodyYaw(v, pose) {
+  const d = typeof v?.dir === 'string' ? v.dir.toUpperCase() : null;
+  if (d === 'UP') return Math.PI / 2;
+  if (d === 'DOWN') return -Math.PI / 2;
+  if (d === 'LEFT') return Math.PI;
+  if (d === 'RIGHT') return 0;
+  return pose.left ? Math.PI : 0;
 }
 
 /** Run `h.stop()` (or a function) after `s` battle seconds on the effects' clock. */

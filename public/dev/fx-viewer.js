@@ -5,10 +5,14 @@
 // for the 3D board, so the effects composite onto it as they do in the game.
 //
 // Query: ?key=<prefab> &unit=<unit id> &speed=1|2 &tier=full|lite &face=L|R &panel=0 &seed=<n> &bg=<css colour>
+//        &attack=<unit id> (the wiring demo: that unit attacks a dummy 3 tiles away every second — its casts,
+//        projectile and hits from index.json through render/vfx/wiring.js, as in a battle) &kind=<projKind> &skill=1
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
 //   setTier(t), keys() } — the tests drive frames by hand (ticker stopped) for deterministic pictures.
 
 import { OfficialFx } from '../js/render/vfx/system.js';
+import { FxWiring } from '../js/render/vfx/wiring.js';
+import { projSpeed } from '../js/render/fx.js';
 import { spawnPoint, unitPoint } from '../js/render/vfx/mounts.js';
 import { fallbackLog } from '../js/render/vfx/materials.js';
 import { presetCamera } from '../js/render/projection.js';
@@ -73,6 +77,8 @@ async function main() {
   $('key').value = state.key;
   $('unit').value = state.unit;
 
+  let demo = { on: false, t: 0, src: null, tgt: null, kind: q.get('kind') || 'arrow' };
+  let demoStep = () => {};
   const unitAt = () => ({ x: UNIT_TILE.col, y: UNIT_TILE.row, z: 0, left: state.left, back: false });
   const skinOf = () => {
     const u = index?.units?.[state.unit];
@@ -101,7 +107,9 @@ async function main() {
     await ofx.lib.preload([state.key], { half: ofx.lite });
     const u = unitAt();
     const pos = spawnPoint(skinOf(), def.spawn, u);
-    const mirror = (def.rotateType === 1 && (u.left !== def.leftIsDefault)) || (!!def.proj && u.left);
+    const flip = (def.rotateType === 1 && (u.left !== def.leftIsDefault)) || (!!def.proj && u.left);
+    const mirror = flip && !(def.rotateType === 1 && def.rotY >= 0), flipY = flip && def.rotateType === 1 && def.rotY >= 0;
+    const yaw = def.rotateType === 2 || def.rotateType === 4 ? (u.left ? Math.PI : 0) : 0;
     // a projectile's flying part flies 3 tiles to the right (or left) and back, like a shot across the board
     let track = null;
     if (def.proj) {
@@ -116,7 +124,7 @@ async function main() {
         fx.mirror = false;
       };
     }
-    state.handle = ofx.spawn(state.key, { pos, yaw: 0, mirror: def.proj ? false : mirror, groundZ: 0 }, { loop: true, track, seed: o.seed ?? (Number(q.get('seed')) || 1) });
+    state.handle = ofx.spawn(state.key, { pos, yaw, mirror: def.proj ? false : mirror, flipY, groundZ: 0 }, { loop: true, track, seed: o.seed ?? (Number(q.get('seed')) || 1) });
     drawMarkers();
     return state.handle;
   }
@@ -124,7 +132,8 @@ async function main() {
   function step(frames = 1, dt = 1 / 60) {
     for (let i = 0; i < frames; i++) {
       ofx.update(dt * state.speed);
-      if (state.loop && state.handle && !state.handle.alive) play(state.key);
+      demoStep(dt * state.speed);
+      if (state.loop && state.handle && !state.handle.alive && !demo.on) play(state.key);
     }
   }
 
@@ -154,8 +163,40 @@ async function main() {
   $('unit').onchange = () => { state.unit = $('unit').value; play(state.key); };
   if (q.get('speed')) toggle(state.speed === 1 ? 'speed1' : 'speed2', state.speed === 1 ? 'speed2' : 'speed1');
 
+  // ---- the wiring demo: a unit attacking a dummy (render/vfx/wiring.js) ----------------------------------------------
+  const wiring = new FxWiring(ofx, { speed: projSpeed });
+  await wiring.ready();
+  const fake = (id, unitKey, col, row, enemy) => ({ id, x: col, y: row, z: 0, hover: 0, visFacing: enemy ? -1 : 1, isEnemy: enemy, alive: true, flags: 0,
+    info: { id, spine: unitKey, defId: unitKey, side: enemy ? 'enemy' : 'ally', kind: enemy ? 'enemy' : 'op', skillIndex: 0 } });
+  function startAttackDemo(unitKey, o = {}) {
+    ofx.clear(); wiring.clear();
+    demo.on = true; demo.t = 0; demo.kind = o.kind || demo.kind;
+    demo.src = fake(1, unitKey, UNIT_TILE.col, UNIT_TILE.row, /^enemy_/.test(unitKey));
+    demo.tgt = fake(2, o.target || 'enemy_1007_slime', UNIT_TILE.col + (o.dist ?? 3), UNIT_TILE.row, !/^enemy_/.test(unitKey));
+    if (demo.src.isEnemy) demo.src.visFacing = 1;
+    if (o.skill) demo.src.flags |= 16;
+    wiring.begin([demo.src, demo.tgt]);
+  }
+  demoStep = (dt) => {
+    if (!demo.on) return;
+    const before = demo.t;
+    demo.t += dt;
+    wiring.tick();
+    if (Math.floor(before) !== Math.floor(demo.t) || before === 0) {
+      const melee = demo.kind === 'none';
+      wiring.attack(demo.src, demo.tgt, demo.kind, ofx.time);
+      // the damage lands when the sim's projectile would (melee: at once)
+      const dur = melee ? 0 : Math.hypot(demo.tgt.x - demo.src.x, demo.tgt.y - demo.src.y) / projSpeed(demo.kind);
+      (ofx.timers || (ofx.timers = [])).push({ at: ofx.time + dur, fn: () => wiring.damage(demo.tgt, 'phys', demo.src, ofx.time) });
+    }
+  };
+  if (q.get('attack')) startAttackDemo(q.get('attack'), { kind: q.get('kind') || undefined, skill: q.get('skill') === '1' });
+
   Object.assign(api, {
     play, step,
+    attackDemo: startAttackDemo,
+    stopDemo: () => { demo.on = false; },
+    wiring,
     render: () => app.renderer.render(app.stage),
     clear: () => { ofx.clear(); state.handle = null; },
     stats: () => ofx.stats(),
@@ -167,7 +208,7 @@ async function main() {
     setUnit: (u) => { state.unit = u || ''; },
     fallbacks: () => fallbackLog(),
   });
-  await play(state.key);
+  if (!q.get('attack')) await play(state.key);
   api.ready = true;
 }
 

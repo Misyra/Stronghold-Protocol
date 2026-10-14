@@ -335,7 +335,11 @@ test('server shares one pool across matches, reports health, and responds over W
   const srv = await startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 1, store: null });
   t.after(() => srv.close());
   assert.equal(srv.lobby.workerPool, srv.workerPool);
-  const health = await (await fetch(`${srv.url}/healthz`)).json();
+  // The process diagnostics are /metrics-only and loopback-gated; /healthz stays the public body.
+  const publicHealth = await (await fetch(`${srv.url}/healthz`)).json();
+  assert.equal(publicHealth.workers, undefined);
+  assert.equal(publicHealth.memory, undefined);
+  const health = await (await fetch(`${srv.url}/metrics`)).json();
   assert.equal(health.workers.size, 1);
   assert.equal(health.workers.avgComputeMs, 0);
   assert.ok(health.memory.rss > 0);
@@ -442,7 +446,7 @@ test('room lanes: opt-in server wiring pins a started match to one lane; the env
   const match = srv.lobby.rooms.get(room.code).match;
   assert.ok(match.workerPool && match.workerPool !== srv.workerPool, 'the match runs on a lane pool, not the wrapper');
   assert.ok(srv.workerPool.lanes.some((lane) => lane.pool === match.workerPool));
-  const health = await (await fetch(`${srv.url}/healthz`)).json();
+  const health = await (await fetch(`${srv.url}/metrics`)).json();
   assert.equal(health.workers.kind, 'room-lanes');
   assert.deepEqual(health.workers.lanes.map((lane) => [lane.id, lane.rooms]), [[0, 1], [1, 0]]);
   await srv.close();

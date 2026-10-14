@@ -1,9 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHealthBody, createRequestHandler } from '../server/http/routes.js';
+import { createHealthBody, createRequestHandler, healthReport } from '../server/http/routes.js';
 import { startServer } from '../server/index.js';
 import { RoomActionLimiter } from '../server/roomProtection.js';
 import { BotPopulation } from '../server/botPopulation.js';
+
+// The process diagnostics: they describe the host, so they belong to /metrics (loopback/private-network) and
+// must never appear in the public /healthz body.
+const OPS_FIELDS = ['memory', 'wire', 'socketBuffers', 'persist', 'stateDelta', 'staticCache', 'workers',
+  'processDiagnostics', 'chatLog', 'rehearsalPressure', 'traffic'];
 
 function fixture() {
   let scans = 0, workerScans = 0, bufferScans = 0;
@@ -27,33 +32,50 @@ function response() {
     end(body) { this.body = body; } };
 }
 
-test('health: 10000 stable reads reuse one full collection and encoding; detailed ops fields survive', () => {
+test('health: 10000 stable reads reuse one public collection and encoding, and carry no process diagnostics', () => {
   const f = fixture(); let now = 0;
   const read = createHealthBody(f.health, { now: () => now });
   const first = read();
   for (let i=0;i<10000;i++) assert.equal(read(),first);
-  assert.equal(f.scans(),1); assert.equal(f.workerScans(),1); assert.equal(f.bufferScans(),1);
+  assert.equal(f.scans(),1);
+  // The public body must not even collect the diagnostics: no worker stats, no socket-buffer walk.
+  assert.equal(f.workerScans(),0); assert.equal(f.bufferScans(),0);
   const report=JSON.parse(first);
   assert.equal(report.build,'code-tag'); assert.equal(report.artVersion,'art-tag');
   assert.equal(report.runtimeVersion, 'runtime-tag');
   assert.equal(report.assetsCdnVersion,'cdn-tag'); assert.equal(report.assetsManifest,'manifest-tag');
-  assert.ok(report.memory.rss>0); assert.ok(report.wire.byType);
+  assert.equal(report.sockets,4); assert.equal(report.sessions,4); assert.equal(report.rooms,1); assert.equal(report.humans,4);
   assert.equal(report.roomProtection.createDenied, 0);
   assert.equal(report.botPopulation.maxTotal, 300);
   assert.equal(report.botPopulation.maxForeign, 50);
-  assert.deepEqual(report.socketBuffers,{total:12,max:8});
-  assert.equal(report.persist.backend,'file'); assert.equal(report.persist.workerMemory.heapUsed,42);
-  // the state-sync sampling hook: frames, full/delta split, baseline parses, verification mismatches
-  assert.equal(report.stateDelta.frames, 0);
-  assert.equal(report.stateDelta.deltaFrames, 0);
-  // checkpoint bookkeeping of the persistence version (a stub persister exposes none: null, never undefined)
-  assert.equal(report.persist.checkpointsSkipped, null);
-  assert.equal(report.persist.versionHoles, null);
-  assert.equal(report.staticCache.gzipBytes,9); assert.equal(report.workers.size,2);
+  for (const field of OPS_FIELDS) assert.ok(!(field in report), `/healthz must not carry ${field}`);
   f.counts.matches=1; f.health.persister.writes=8;
   now=999; assert.equal(read(),first);
   now=1000; const next=JSON.parse(read());
-  assert.equal(next.matches,1); assert.equal(next.persist.writes,8); assert.equal(f.scans(),2);
+  assert.equal(next.matches,1); assert.equal(f.scans(),2);
+  assert.ok(!('persist' in next), '/healthz stays free of the persistence accounting');
+});
+
+test('metrics report: a single collection carries every detailed ops field', () => {
+  const f=fixture();
+  const r=healthReport(f.health);
+  assert.equal(f.scans(),1); assert.equal(f.workerScans(),1); assert.equal(f.bufferScans(),1);
+  // the public half is shared value for value
+  assert.equal(r.build,'code-tag'); assert.equal(r.artVersion,'art-tag'); assert.equal(r.runtimeVersion,'runtime-tag');
+  assert.equal(r.assetsCdnVersion,'cdn-tag'); assert.equal(r.assetsManifest,'manifest-tag');
+  assert.equal(r.sockets,4); assert.equal(r.sessions,4); assert.equal(r.roomProtection.createDenied,0);
+  assert.equal(r.botPopulation.maxTotal,300);
+  // and the diagnostics only the operations endpoint serves
+  assert.ok(r.memory.rss>0); assert.ok(r.wire.byType);
+  assert.deepEqual(r.socketBuffers,{total:12,max:8});
+  assert.equal(r.persist.backend,'file'); assert.equal(r.persist.workerMemory.heapUsed,42);
+  // the state-sync sampling hook: frames, full/delta split, baseline parses, verification mismatches
+  assert.equal(r.stateDelta.frames, 0);
+  assert.equal(r.stateDelta.deltaFrames, 0);
+  // checkpoint bookkeeping of the persistence version (a stub persister exposes none: null, never undefined)
+  assert.equal(r.persist.checkpointsSkipped, null);
+  assert.equal(r.persist.versionHoles, null);
+  assert.equal(r.staticCache.gzipBytes,9); assert.equal(r.workers.size,2);
 });
 
 test('health: sockets/sessions/uptime remain current; expiry uses monotonic time', (t) => {
@@ -110,7 +132,31 @@ test('build-only health skips diagnostics and keeps GET/HEAD, absolute URLs and 
   assert.equal(f.scans(), 0); assert.equal(f.workerScans(), 0); assert.equal(f.bufferScans(), 0);
   const bad = response(); handler({ url: '/healthz?build=1', method: 'POST' }, bad); assert.equal(bad.status, 405);
   const full = response(); handler({ url: '/healthz', method: 'GET' }, full);
-  assert.equal(JSON.parse(full.body).build, 'code-tag'); assert.ok(JSON.parse(full.body).memory.rss > 0);
+  assert.equal(JSON.parse(full.body).build, 'code-tag');
+  assert.ok(!('memory' in JSON.parse(full.body)), '/healthz is the public body');
+  const ops = response(); handler({ url: '/metrics', method: 'GET' }, ops);
+  assert.equal(ops.status, 200); assert.ok(JSON.parse(ops.body).memory.rss > 0);
+});
+
+test('metrics is loopback/private-network only: every other caller falls through to the static handler', async () => {
+  const f = fixture(); let staticCalls = 0;
+  const handler = createRequestHandler({ health: f.health, log: { error: assert.fail },
+    serveStatic: async () => { staticCalls++; } });
+  const call = async (req) => { const res = response(); handler({ url: '/metrics', method: 'GET', ...req }, res);
+    await Promise.resolve(); return res; };
+  // a public visitor: the route does not exist for them, and nothing is collected
+  const pub = await call({ socket: { remoteAddress: '203.0.113.9' } });
+  assert.equal(pub.status, null); assert.equal(staticCalls, 1); assert.equal(f.scans(), 0); assert.equal(f.workerScans(), 0);
+  // the host itself, and the private networks it sits in, get the diagnostics
+  const loop = await call({ socket: { remoteAddress: '127.0.0.1' } });
+  assert.equal(loop.status, 200); assert.ok(JSON.parse(loop.body).memory.rss > 0);
+  const lan = await call({ socket: { remoteAddress: '10.1.2.3' } });
+  assert.equal(lan.status, 200); assert.equal(JSON.parse(lan.body).workers.size, 2);
+  // a tunnel/proxy on this machine forwards a public client: still public, still gated
+  const tunnel = await call({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'cf-connecting-ip': '2001:db8::7' } });
+  assert.equal(tunnel.status, null); assert.equal(staticCalls, 2);
+  const proxied = await call({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-forwarded-for': '198.51.100.4' } });
+  assert.equal(proxied.status, null); assert.equal(staticCalls, 3);
 });
 
 test('metrics: fresh detailed collections do not read or replace the cached health snapshot', async () => {
@@ -127,6 +173,7 @@ test('metrics: fresh detailed collections do not read or replace the cached heal
   assert.equal(f.scans(),3);
   const cached=response(); handler({url:'/healthz',method:'GET'},cached);
   assert.equal(cached.body,first.body); assert.equal(f.scans(),3);
+  assert.ok(!('memory' in JSON.parse(cached.body)), 'the cached snapshot is the public body');
   const bad=response(); handler({url:'/metrics',method:'POST'},bad); await Promise.resolve(); assert.equal(bad.status,405);
 });
 
@@ -140,14 +187,17 @@ test('failed collection returns 500 and retries; stale success is never substitu
   assert.throws(read,/unavailable/);fail=false;assert.ok(read());
 });
 
-test('real HTTP: health keeps operations metadata, metrics exposes per-instance network diagnostics', async (t) => {
+test('real HTTP: health stays public, metrics carries the operations metadata and network diagnostics', async (t) => {
   const srv=await startServer({host:'127.0.0.1',port:0,quiet:true,workers:0,store:null,announcementFile:null});
   t.after(()=>srv.close());
   const diag=srv.network.diagnostics;
   diag.received('ping',6,2);diag.intervals.settle();
   const h=await (await fetch(srv.url+'/healthz')).json();
-  assert.ok(h.memory.rss>0);assert.ok(h.wire.byType);assert.equal(h.workers,null);assert.equal(h.persist,null);
+  assert.equal(h.ok,true);
+  assert.equal(typeof h.sockets,'number'); assert.equal(typeof h.rooms,'number'); assert.equal(typeof h.build,'string');
+  for(const field of OPS_FIELDS) assert.ok(!(field in h), `/healthz must not carry ${field}`);
   const m=await (await fetch(srv.url+'/metrics')).json();
+  assert.ok(m.memory.rss>0);assert.ok(m.wire.byType);assert.equal(m.workers,null);assert.equal(m.persist,null);
   assert.equal(m.build,h.build);assert.equal(m.websocket.diagnostics.period,'sinceStart');
   assert.equal(m.websocket.diagnostics.eventLoop.resolutionMs,20);
   assert.ok(Number.isFinite(m.websocket.diagnostics.eventLoop.p95Ms));
@@ -155,7 +205,7 @@ test('real HTTP: health keeps operations metadata, metrics exposes per-instance 
   assert.equal(m.websocket.diagnostics.handlerMs.ping.sumMs,2);
   assert.equal(m.websocket.diagnostics.handlerMs.ping.buckets.at(-1).leMs,'+Inf');
   assert.equal(m.websocket.diagnostics.handlerMs.ping.buckets.at(-1).count,1);
-  const latest=h.processDiagnostics.latest;assert.ok(latest);
+  const latest=m.processDiagnostics.latest;assert.ok(latest);
   const util=latest.eventLoop.utilization;
   assert.ok(util==null||(util>=0&&util<=1));
   assert.ok(latest.processCpuDelta&&Number.isFinite(latest.processCpuDelta.userSeconds)&&Number.isFinite(latest.processCpuDelta.systemSeconds));
@@ -164,8 +214,10 @@ test('real HTTP: health keeps operations metadata, metrics exposes per-instance 
 
 test('failed snapshot encoding does not advance expiry or serve an older success on the next request', () => {
   const f=fixture();let now=0;const read=createHealthBody(f.health,{now:()=>now});read();
-  const good=f.health.workerPool.stats;f.health.workerPool.stats=()=>({bad:1n});now=1000;
+  // Poison a PUBLIC field (sessions is re-stamped from the live registry on every read): the encoding fails, so
+  // the refresh must neither commit nor advance the expiry.
+  f.health.registry.size=1n;now=1000;
   assert.throws(read,/BigInt/);assert.throws(read,/BigInt/);
-  f.health.workerPool.stats=good;f.counts.matches=1;
+  f.health.registry.size=4;f.counts.matches=1;
   assert.equal(JSON.parse(read()).matches,1);assert.equal(f.scans(),4);
 });

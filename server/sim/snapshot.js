@@ -127,9 +127,9 @@ export function unitTuple(u, t) {
 }
 
 /**
- * The three optional HUD readouts of b.snap (events.js snapshot(): `ammo`, `wolves`, `neg`; each only for a living,
- * deployed, visible unit and only when it has one). They ride beside the 9-field tuples — the tuple, and the SP
- * fraction the ammo skill still puts in it, stay as they are.
+ * The optional HUD readouts of b.snap (events.js snapshot(); each only for a living, deployed, visible unit and only
+ * when it has one). They ride beside the 9-field tuples — the tuple, and the SP fraction the ammo skill still puts in
+ * it, stay as they are.
  *
  * `ammoView(u)` = `[rounds left, rounds in the magazine]` of a running ammo skill (whole numbers; the magazine is the
  * activation's real total — extra bullets and refills included — that unitTuple's SP fraction runs on): the segmented
@@ -145,6 +145,19 @@ export function ammoView(u) {
 /** 琳琅诗怀雅's skill purse: zero is a balance; no purse is null. Display only. */
 export function coinView(u) {
   const n = u.mem?.coins, max = u.skill?.bb?.sp;
+  if (u.side !== 'ally' || !Number.isSafeInteger(n) || n < 0 || !Number.isSafeInteger(max) || max < 1) return null;
+  return [Math.min(n, max), max];
+}
+
+/**
+ * `mysticView(u)` = `[stored attack energies, the trait's maximum]` of a 秘术师 (professions.js installMystic keeps the
+ * count in `trait.stored` — the trait's storeEnergy adds one when the attack finds no target, releaseEnergy empties the
+ * lot into the next one — and the cap is `profile.storeMax`: the trait's 最多3个, 4 for 深靛's MSC-X module, TUNE
+ * mystic): the number under the HP bar. Zero is a count. Kits that keep a store of their own (维伊's 转置能量, 黑键's
+ * elite energies) replace `storeEnergy` and never set `trait.stored`: no row. Display only.
+ */
+export function mysticView(u) {
+  const n = u.trait?.stored, max = u.profile?.storeMax;
   if (u.side !== 'ally' || !Number.isSafeInteger(n) || n < 0 || !Number.isSafeInteger(max) || max < 1) return null;
   return [Math.min(n, max), max];
 }

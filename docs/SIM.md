@@ -1400,7 +1400,7 @@ Unknown subprofessions fall back to the profession default (test `professions.te
 
 ## 9. Wire format (snapshot.js, DESIGN §8.2)
 
-- `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, resolved, dps?, boss?, down?, elem?, ammo?, coins?, wolves?, neg?, stand?, standCut? }`.
+- `snapshot()` → `{ fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, resolved, dps?, boss?, down?, elem?, ammo?, coins?, energy?, wolves?, neg?, stand?, standCut? }`.
   `killed` counts every `counted` knock-out (§1.3) and `total` only the enemies this field scheduled (`inTotal`), so it may
   exceed it; `resolved = min(total, killedInTotal + leakedInTotal)` is the HUD capsule's numerator (DESIGN §14 顶栏胶囊).
   `sp/spMax` show remaining duration/ammo as a draining bar while a timed skill is active (ammo: `ammoLeft / ammoMax`, the
@@ -1613,6 +1613,7 @@ general hook guard. The queue is emptied in `finally`; it introduces no timer or
 ### Community follow-up contracts (DESIGN §29)
 
 - Optional snapshot `coins: [[id, balance, cap]]` comes from `snapshot.js coinView`: a live allied Swire skill's nonnegative integer balance and blackboard cap, including zero. Invalid/missing entries are omitted; interpolation clears absent values.
+- Optional snapshot `energy: [[id, stored, cap]]` comes from `snapshot.js mysticView` (GitHub #633): a 秘术师's stored attack energies — the trait's `trait.stored` against its `profile.storeMax` (3 by default, 4 with 深靛's MSC-X module) — including zero. Invalid/missing entries are omitted; interpolation clears absent values. A kit whose store is its own (维伊's 转置能量, 黑键's elite energies) keeps no `trait.stored` and reports no row.
 - Raid's one reselect after a revive orders by taunt, then remaining route distance, then id, and jumps while the operator is not blocking (contact on the current tile is refreshed first). Ordinary polls keep remaining-distance order and the empty-range prerequisite.
 - Healing skill activation includes elemental-only injury when the operator's heal profile can cure it. Pinecone S2 growth is deployment-local. Skadi S1 and Stead preserve redirect ancestry and take both shares from the pre-redirect hit, so the total damage is conserved.
 

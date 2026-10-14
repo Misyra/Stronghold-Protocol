@@ -68,6 +68,9 @@ export const COLORS = Object.freeze({
   // the ammo bar's yellow cells (b.snap `ammo`) and 伺夜's 狼影 pips (b.snap `wolves`)
   ammo: 0xffd04a,
   wolf: 0xe8f0ff,
+  // 秘术师's stored attack energies (b.snap `energy`): a violet no other HUD state uses — the purse's gold coin and its
+  // count are told apart from the orb and its count at a glance
+  energy: 0xb07dff,
   shield: 0xdfe8ff,
 });
 

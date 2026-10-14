@@ -1643,7 +1643,7 @@ test(`${nm('enemy_10162_mnctpt')}: three hits per attack with a small splash`, (
   h.step();
   const e = put(h, 'enemy_10162_mnctpt', [10, 7]);
   h.runUntil(() => e.stats.attacks >= 1, 10);
-  h.run(0.5);
+  h.run(0.7); // stones at 0, 0.3 and 0.6 s (Attack.attack@hit_interval)
   approx(h.unit('t_wall').stats.taken, tb('enemy_10162_mnctpt', 'Attack.attack@times') * e.s.atk);
 });
 

@@ -214,6 +214,67 @@ function kitExposeOnHit(ab) {
   return [{ sil: true, taken(c, b) { const s = c.source; if (s && s.side === 'ally' && s.alive && s.kind !== 'device') expose(b, s, dur, scale); } }];
 }
 
+/**
+ * 自制投石机 (PRTS 天赋). A normal stone is a physical attack that splashes every ally within 1.5 of the impact
+ * (the page's 半径1.5; the blackboard `projectile_range` 0.5 is the 入戏 stone, not this volley). `times` stones
+ * land `hit_interval` (0.3 s) apart, each its own damage instance — DEF, shields and 「每次受到攻击」 effects
+ * (坚守 thorns, cd 0.2 s) see them separately. The attack does not end when the target is lost: a later stone
+ * still splashes at the last aim, and a stone already scheduled still lands if the catapult dies (no `owner`
+ * on the timer, so offOwner does not cancel it). 入戏(敌方) — a buff key or flag `inPlay`, which this mode's
+ * tables never grant — aims each stone at a random point of the side-`offset_bound`*2 square (默认 ±3, side 6)
+ * and splashes `projectile_range` (0.5) there, without forcing a hit on the main target. The roll is `battle.rng`.
+ */
+const CATAPULT_SPLASH = 1.5;
+const CATAPULT_STONE = 'catapult:stone';
+
+function catapultInPlay(e) {
+  if (e?.s?.flags?.inPlay) return true;
+  for (const bf of e?.buffs ?? []) if (bf && (bf.key === 'inPlay' || bf.flags?.inPlay)) return true;
+  return false;
+}
+
+function catapultSplash(b, e, x, y, r, skip) {
+  if (!(r > 0)) return;
+  for (const u of areaAllies(b, e, x, y, r)) {
+    if (u === skip) continue;
+    b.dealDamage(e, u, { amount: e.s.atk, type: 'phys', isAttack: true, isSplash: true, tags: [CATAPULT_STONE] });
+  }
+}
+
+/** One stone. `forcePrimary` hits the locked ally when they are still selectable, then splashes around the impact. */
+function catapultStone(b, e, aim, radius, forcePrimary, inPlay, bound) {
+  let x = aim.x, y = aim.y;
+  const t = aim.target;
+  if (inPlay) {
+    if (t && t.alive) { x = t.x; y = t.y; aim.x = x; aim.y = y; }
+    const span = bound > 0 ? bound : 0;
+    x += (b.rng() * 2 - 1) * span;
+    y += (b.rng() * 2 - 1) * span;
+    catapultSplash(b, e, x, y, radius, null);
+    return;
+  }
+  if (t && t.alive) { x = t.x; y = t.y; aim.x = x; aim.y = y; }
+  let skip = null;
+  if (forcePrimary && t && t.alive && canTargetAlly(e, t, true)) {
+    b.dealDamage(e, t, { amount: e.s.atk, type: 'phys', isAttack: true, tags: [CATAPULT_STONE] });
+    skip = t;
+  }
+  catapultSplash(b, e, x, y, radius, skip);
+}
+
+function catapultVolley(ab, b, e, aim) {
+  const n = Math.max(1, Math.floor(boundedCount(T(ab, 'Attack.attack@times') ?? 1, PLUGIN_TIMES_MAX, 1)));
+  const interval = T(ab, 'Attack.attack@hit_interval') ?? 0.3;
+  const inPlay = catapultInPlay(e);
+  const radius = inPlay ? (T(ab, 'Attack.attack@projectile_range') ?? 0.5) : CATAPULT_SPLASH;
+  const bound = T(ab, 'Attack.attack@offset_bound') ?? 3;
+  for (let i = 0; i < n; i++) {
+    const fire = () => catapultStone(b, e, aim, radius, true, inPlay, bound);
+    if (i === 0 || !(interval > 0)) fire();
+    else b.after(interval * i, fire);
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // this family's part of KITS (content/enemies.js spreads the parts in this order)
 
@@ -413,19 +474,21 @@ export const SPECIAL_KITS = Object.freeze({
     b.fx('explode', { x: e.x, y: e.y, r, kind: 'heal' });
     for (const o of b.enemiesInRadius(e.x, e.y, r)) if (o !== e) b.heal(e, o, amt);
   } }],
-  enemy_10162_mnctpt: (ab) => [{                                     // 自制投石机 · 3-hit attacks with small splash; 索敌不受阻挡影响
+  enemy_10162_mnctpt: (ab) => [{                                     // 自制投石机 · 3 physical attacks, 1.5 splash; 索敌不受阻挡影响
     // PRTS 天赋 「索敌不受阻挡影响，且不会因丢失目标而结束攻击」: its target selection ignores its block — a 隐匿 blocker (an
     // operator on the 排气格栅) is no target, so with nobody else in range it does not attack (the official game, community
-    // report of 2026-10-06, item 24); it picks by 仇恨值, not its blocker first
-    spawn(b, e) { e.profile.blockFree = true; },
-    dealt(c, b, e) {
-      // PRTS 自制投石机: normal stones splash in radius 1.5. The talent's projectile_range (0.5) belongs to
-      // the separate 入戏 random-offset attack, not its ordinary volley in this mode.
-      const n = boundedCount(T(ab, 'Attack.attack@times') ?? 1, PLUGIN_TIMES_MAX, 1), r = 1.5;
-      const t = c.target;
-      for (let i = 1; i < n; i++) hurt(b, e, t, e.s.atk, 'phys');
-      // the stone's splash ("碰撞无视迷彩"): an area selection — no unblocking 隐匿 ally
-      if (r > 0) for (const u of areaAllies(b, e, t.x, t.y, r)) if (u !== t) for (let i = 0; i < n; i++) hurt(b, e, u, e.s.atk, 'phys');
+    // report of 2026-10-06, item 24); it picks by 仇恨值, not its blocker first. The volley itself is the kit's
+    // (profile.deferHit): three physical attacks `hit_interval` apart, each splashing, including after the target is lost.
+    spawn(b, e) { e.profile.blockFree = true; e.profile.deferHit = true; },
+    before(c, b, e) {
+      e.profile.deferHit = true;
+      const t = c.targets && c.targets[0];
+      e.mem.catapultAim = t ? { target: t, x: t.x, y: t.y } : (e.mem.catapultAim || { target: null, x: e.x, y: e.y });
     },
+    attack(c, b, e) {
+      catapultVolley(ab, b, e, e.mem.catapultAim || { target: null, x: e.x, y: e.y });
+    },
+    // a follow-up stone is itself an attack, so `dealt` runs again; the tag keeps it from starting another volley
+    dealt(c) { if (c.dmg?.tags?.includes(CATAPULT_STONE)) return; },
   }],
 });

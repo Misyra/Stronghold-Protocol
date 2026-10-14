@@ -4,7 +4,7 @@
 // Installed on Battle.prototype by server/sim/Battle.js (a method container: never instantiated; `this` is the battle).
 
 import { FORCED_EXIT, MAX_BATTLE_TIME } from '../constants.js';
-import { updateAlly, updateEnemy } from '../ai.js';
+import { noteAttackCommit, updateAlly, updateEnemy } from '../ai.js';
 
 export class BattleLifecycle {
   start() {
@@ -81,6 +81,8 @@ export class BattleLifecycle {
         for (const ps of this.players) ps.dp = Math.min(this.flags.dpMax, ps.dp + this.flags.dpPerSec * dt);
       });
       this._phase('buffs', () => this._tickBuffs(dt));
+      // Allies whose attack comes off cooldown this tick keep the target they have now, before enemies move.
+      this._phase('attackCommit', () => noteAttackCommit(this, dt));
       this._phase('enemies', () => {
         // enemies spawned by hooks during this loop start moving next tick (a leak hook that spawns an enemy which
         // leaks at once would otherwise loop forever inside a single tick)

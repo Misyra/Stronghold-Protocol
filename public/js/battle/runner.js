@@ -142,7 +142,8 @@ function deepFreeze(root) {
 
 /**
  * Browser sim loader: the /sim/ modules + the data files (own frozen copies — the server's data is frozen too, so a
- * content bug that writes into a record fails identically on both sides).
+ * content bug that writes into a record fails identically on both sides). `raw` is that frozen data: the rehearsal
+ * worker (battle/rehearsal.js) is handed the page's copy once instead of fetching and parsing the files again.
  */
 export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a) } = {}) {
   const [spec, simdata, support] = await Promise.all([
@@ -163,7 +164,7 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   SIM_DATA_FILES.forEach((n, i) => { raw[n] = deepFreeze(files[i]); });
   simdata.setSimData(raw);
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
-  return { spec, ds: new simdata.DataSource(raw, null) };
+  return { spec, ds: new simdata.DataSource(raw, null), raw };
 }
 
 /**

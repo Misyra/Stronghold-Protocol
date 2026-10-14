@@ -1,7 +1,9 @@
-// server/sim/rehearsal.js — the bot layout rehearsal's comparison (server/match/bot.js). The candidates of one rehearsal
-// are simulated once each and the winner is the one with the fewest counted leaks, then the most kills, then the
-// earliest candidate, including the early stop (a candidate whose counted leaks already exceed the best finished one's
-// can no longer win) and the tick cap (the field's time limit + 5 s of slack).
+// server/sim/rehearsal.js — the bot layout rehearsal's comparison, shared by the server and by the host's browser
+// (DESIGN §14 rehearsal delegation). The candidates of one rehearsal are simulated once each and the winner is the one
+// with the fewest counted leaks, then the most kills, then the earliest candidate (server/match/bot.js). Both sides
+// step the same BattleSpecs in the same order and use THIS module, so a rehearsal delegated to a browser picks exactly
+// the candidate the server would pick — including the early stop (a candidate whose counted leaks already exceed the
+// best finished one's can no longer win) and the tick cap (the field's time limit + 5 s of slack).
 //
 // Pure ESM (served at /sim/rehearsal.js): no Node API, no clock, no randomness — the caller owns the stepping, the
 // candidates' construction and its wall-clock slices (`RehearsalRun.run(outOfBudget)`).

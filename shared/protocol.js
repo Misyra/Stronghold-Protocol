@@ -465,6 +465,17 @@ export const C2S = {
     $optional: ['resolved', 'leaks', 'bossDmg', 'by', 'done', 'left', 'leaksBy'],
   },
   'b.result': { battleId: isId, result: isBattleResult },
+  // A delegated bot layout rehearsal (DESIGN §14): the match's current host answers the candidates it was handed with
+  // the S2C 'b.rehearsal' frame. `choice` is the index of the candidate its browser picked, in the order the task sent
+  // them — a malicious or buggy client can only name one of the server's own candidate layouts, never a layout or a
+  // match state of its own; `error: true` says this client cannot run the task at all (no module Worker, or the
+  // simulation data did not load), so the server takes the rehearsal over at once instead of waiting for its timeout.
+  // An unknown task, another sender or a task the server already took over is ignored; an invalid `choice` makes the
+  // server run the candidates itself.
+  'b.rehearsalResult': {
+    taskId: isId, choice: (v) => v === undefined || isInt(v, 0, 7), error: (v) => v === undefined || v === true,
+    $optional: ['choice', 'error'],
+  },
 };
 
 // Server → client message types (documentation + client dispatch table keys).
@@ -480,6 +491,11 @@ export const S2C = [
   // speed, watch? } · b.pool { hp, max, teamLp, acked: { [fieldId]: cumulative boss damage counted } } ·
   // b.end { battleId, fieldId, reason }
   'b.start', 'b.pool', 'b.end',
+  // a delegated bot layout rehearsal (DESIGN §14): b.rehearsal { taskId, playerId, cap, specs } — the host's browser
+  // runs the candidate BattleSpecs off the page's main thread and answers with a C2S b.rehearsalResult ·
+  // b.rehearsalCancel { taskId } — the server dropped that task (it timed out, the host changed, the prep ended):
+  // the executor drops it too, and only a running simulation (the Worker) is really stopped
+  'b.rehearsal', 'b.rehearsalCancel',
   // server-run combat streaming (legacy / SP_COMBAT=server only)
   'b.snap', 'b.ev',
 ];

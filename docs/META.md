@@ -297,9 +297,24 @@ early. A candidate is a whole battle — ≈ 20–300 ms of CPU (late rounds, 4 
 CPU of the real battles), so it never runs in one go on a real server: `Match.scheduleBotPrep` runs `botPrepBegin`
 (economy + the default layout on the board), then steps the rehearsal in slices of ≤ `opts.botSliceMs` (default 8 ms of
 wall clock, checked every 4 ticks; one scheduler callback each, so other rooms' battles and every request keep
-flowing), then `botPrepEnd` (the rehearsed layout when it won, temp, Ready). The prep ending first drops the job (the
+flowing), then `botPrepEnd` (the rehearsed layout when it won, temp, Ready). Each candidate's `Battle` is built only
+when its turn comes. The time budget is checked between candidates; a single build cannot be interrupted.
+The prep ending first drops the job (the
 default layout stays). Virtual time runs it in one go (same decisions). Tests default rehearsal to 0
 (`test/match/harness.js`); `tools/matchrun.mjs --rehearsal N` sets it.
+
+**Host rehearsal (optional, `Match.botRehearsalDelegate` / `SP_BOT_REHEARSAL=host`, off by default):** the room host's
+browser can test AI teammates' layouts. The server still handles the shop, builds the candidate list and applies the
+chosen layout. Both sides use `server/sim/rehearsal.js` with the same battle specs, data and seeds. The host returns
+only a candidate index; an accepted choice is applied once, without another simulation. Actual battles and human
+seats under AI 托管 are unchanged.
+
+If no host is available, the host changes or disconnects, or the answer fails or exceeds `botRehearsalDelegateMs`
+(default 3 s), the server tests the same candidates itself. Cancelled tasks stop in the browser, and late or repeated
+answers are ignored. If prep ends first, the task is cancelled and the default layout stays; the deadline never moves.
+
+The browser uses one Web Worker without rendering and reuses the data already loaded by the page. It clears tasks
+when leaving the match or losing its connection. Message details: DESIGN §14 ([design/network.md](design/network.md)).
 
 ---
 

@@ -1,7 +1,8 @@
-// The shared bot layout rehearsal run (server/sim/rehearsal.js): the candidate comparison the server's bot prep uses
-// (DESIGN §14). It is pure ESM with no clock of its own — the caller passes the wall-clock slice —, so this file covers
-// the scoring order (fewest counted leaks, then most kills, then the earlier candidate), the early stop, the tick cap,
-// the candidate boundaries a slice stops on and the candidates that cannot be built.
+// The shared bot layout rehearsal run (server/sim/rehearsal.js): the candidate comparison the server and the host's
+// browser both use (DESIGN §14). It is pure ESM with no clock of its own — the caller passes the wall-clock slice —, so
+// this file covers the scoring order (fewest counted leaks, then most kills, then the earlier candidate), the early stop,
+// the tick cap, the candidate boundaries a slice stops on and the candidates that cannot be built. The delegation that
+// hands one such run to a browser is test/match/rehearsal-delegate.test.js.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RehearsalRun } from '../../server/sim/rehearsal.js';

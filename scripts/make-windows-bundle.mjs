@@ -66,6 +66,8 @@ const LEGAL_FILES = ['LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md'];
  * 可用 —— 只带贴图不带清单，玩家拿到的是 68 MB 用不上的文件。它存在时就一起收。
  */
 const LOCAL_ASSET_MANIFEST = path.join('data', 'local-assets.json');
+/** 本机提取的官方战斗特效的文件清单（tools/local-extract/fx.py，DESIGN §33；文件在 public/assets/local/fx）。 */
+const LOCAL_FX_MANIFEST = path.join('data', 'local-fx.json');
 
 function parseArgs(argv) {
   const o = { out: '', node: true, force: false, nodeSpec: '', sha256: '' };
@@ -529,6 +531,12 @@ async function main() {
   } else if (fs.existsSync(localTextures)) {
     console.log(`    ! 有 public/assets/local 但没有 ${LOCAL_ASSET_MANIFEST}：贴图进了包也用不上，`
       + '先跑 node tools/setup.mjs --local 生成清单（或删掉该目录）');
+  }
+  // 2c) 官方战斗特效的清单（本机提取过才有）：特效文件随 public/assets/local/fx 进包，靠这份 JSON 才会被采用。
+  const fxManifest = path.join(ROOT, LOCAL_FX_MANIFEST);
+  if (fs.existsSync(fxManifest)) {
+    await fsp.copyFile(fxManifest, path.join(appDir, LOCAL_FX_MANIFEST));
+    console.log(`    带上 ${LOCAL_FX_MANIFEST}（官方战斗特效的清单，文件本体在 public/assets/local/fx）`);
   }
 
   // 3) 生产依赖

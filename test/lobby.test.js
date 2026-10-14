@@ -1978,10 +1978,11 @@ describe('platform units', () => {
       fs.writeFileSync(path.join(dir, 'chess.json'), JSON.stringify([{ id: 'x', stats: { hp: 1 } }]));
       fs.writeFileSync(path.join(dir, 'broken.json'), '{oops');
       fs.writeFileSync(path.join(dir, 'notes.txt'), 'ignored');
+      fs.writeFileSync(path.join(dir, 'local-fx.json'), JSON.stringify({ version: 1, format: 'fx-manifest', groups: {} }));
       const warnings = [];
       const errors = [];
       const data = loadData(dir, { log: { warn: (m) => warnings.push(m), error: (m) => errors.push(m) } });
-      assert.deepEqual(Object.keys(data).sort(), ['chess', 'config']);
+      assert.deepEqual(Object.keys(data).sort(), ['chess', 'config'], 'data/local-fx.json (the official effects\' file list, UNLOADED_DATA) is never loaded');
       assert.equal(data.config.modes.a.rounds[1], 2);
       assert.ok(Object.isFrozen(data));
       assert.ok(Object.isFrozen(data.config.modes.a.rounds));

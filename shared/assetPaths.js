@@ -1,12 +1,12 @@
 // Asset URL paths shared by the server and the browser (host bandwidth, docs/ASSETS.md "The served manifests"):
 //
-//   * the content-hash segment. The server hands out data/assets.json and data/local-assets.json with every file URL
-//     carrying the first 16 hex digits of the file's SHA-256 (of the model's files for a Spine model) as its first
-//     segment — `/assets/char/avatar/x.png` → `/assets/~0123456789abcdef/char/avatar/x.png`, audio at
-//     `/media/~<hash>/…` (shared/media.js) — so a browser may keep it for a year. The server strips the segment and
-//     serves the file at the plain path (server/http/static.js, media.js). A path segment, never `?v=`: several
-//     loaders look at the URL's ending (`.skel`, `.mp3`) and pixi-spine finds the atlas and its pages next to the
-//     skeleton, which a query string would not survive.
+//   * the content-hash segment. The server hands out data/assets.json, data/local-assets.json and data/local-fx.json (the
+//     official effects' file list) with every file URL carrying the first 16 hex digits of the file's SHA-256 (of the
+//     model's files for a Spine model) as its first segment — `/assets/char/avatar/x.png` →
+//     `/assets/~0123456789abcdef/char/avatar/x.png`, audio at `/media/~<hash>/…` (shared/media.js) — so a browser may
+//     keep it for a year. The server strips the segment and serves the file at the plain path (server/http/static.js,
+//     media.js). A path segment, never `?v=`: several loaders look at the URL's ending (`.skel`, `.mp3`) and pixi-spine
+//     finds the atlas and its pages next to the skeleton, which a query string would not survive.
 //   * trafficCategory: the category a request path counts under in the traffic counters (server/http/traffic.js,
 //     /healthz?traffic=1; public/js/diag.js for the browser's own totals).
 

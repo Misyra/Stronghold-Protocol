@@ -46,13 +46,14 @@
 //                (shared/assetPaths.js) is stripped. A hash that names the file's current bytes (assetIndex.js
 //                urlHashOk: its own hash, or its Spine model's) answers `immutable` for a year; any other hash —
 //                an old page, a URL derived from another file's — the current file with `no-cache`
-//     /data/assets.json, /data/local-assets.json → the served manifests (assetViews.js: every art URL with its
-//                content-hash segment; no-cache, the ETag of the view) once the asset index is ready, the files as
-//                they are before that or without an index
+//     /data/assets.json, /data/local-assets.json, /data/local-fx.json → the served manifests (assetViews.js: every
+//                art URL with its content-hash segment; no-cache, the ETag of the view) once the asset index is ready,
+//                the files as they are before that or without an index
 //
 // Files under public/assets/ and public/fonts/ get their content hash as ETag when the index has it (a file whose
 // size or mtime changed since asks for a rescan), others size + mtime. Traversal & dotfile protection, a directory
-// without its trailing slash → 301, 404 page; an absent data/local-assets.json is answered with an empty manifest.
+// without its trailing slash → 301, 404 page; an absent data/local-assets.json or data/local-fx.json is answered with
+// an empty manifest.
 // Files go out through files.js serveFile.
 
 import fsp from 'node:fs/promises';
@@ -90,8 +91,9 @@ const SIM_PRIVATE = new Set(['nodedata.js']); // lower-case (compared case-insen
 // Static file handler
 // ---------------------------------------------------------------------------------------------------
 
-/** Optional per-machine art manifest (tools/local-extract) and the empty stand-in served when it is absent. */
-const LOCAL_ART_MANIFEST = 'local-assets.json';
+/** Optional per-machine art manifests (tools/local-extract: the local art, the official effects' files — DESIGN §33)
+ * and the empty stand-in served when one is absent. */
+const LOCAL_ART_MANIFESTS = new Set(['local-assets.json', 'local-fx.json']);
 const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none', count: 0, groups: {} }));
 
 /** The content-set manifest's cache policy: its URL names its content (the `cs`), so it never changes. */
@@ -249,7 +251,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       return;
     }
     // The served manifests: every art URL with its content hash (assetViews.js), once the index is ready
-    if (views && (decoded === '/data/assets.json' || decoded === '/data/local-assets.json')) {
+    if (views && (decoded === '/data/assets.json' || decoded === '/data/local-assets.json' || decoded === '/data/local-fx.json')) {
       const view = await views.get(decoded.slice('/data/'.length));
       if (view) {
         await serveBuffer(req, res, { body: view.body, hash: view.hash, type: MIME['.json'], cacheControl: 'no-cache', key: `view:${decoded}`, cache: gzipCache });
@@ -298,7 +300,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         if (mount.deny.has(path.basename(real).toLowerCase())) throw Object.assign(new Error('private'), { code: 'ENOENT' });
       }
     } catch (e) {
-      if (e && e.code === 'ENOENT' && mount.name === 'data' && segments.length === 1 && segments[0] === LOCAL_ART_MANIFEST) {
+      if (e && e.code === 'ENOENT' && mount.name === 'data' && segments.length === 1 && LOCAL_ART_MANIFESTS.has(segments[0])) {
         // Optional local-client art (DESIGN §13): an install without it gets an empty manifest instead of a 404,
         // so browsers don't log an error on every page load. Clients treat empty groups as "no local art".
         res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', 'Content-Length': EMPTY_LOCAL_ART.length });

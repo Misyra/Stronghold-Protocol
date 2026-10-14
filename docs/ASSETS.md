@@ -223,6 +223,7 @@ The research JSONs in `docs/research/` (03, 05, 07) define **which** ids are nee
 | Enemy Spine that no dump carries (灼热源石虫 / 炽焰源石虫) | the local client only (`tools/local-extract/extract.py ENEMY_SPINES`, optional); never downloaded and never required: an overlay of the web alias (`enemies[id].spineLocal`) | `local/spine/enemy/{enemyId}/{stem}.*` (listed in `data/local-assets.json`) |
 | Original token Spine overlays (40 summons: most 自选 summons, 凯瑟琳's 爬行号·防护单元, 凛御银灰's 风雪之眼, 香槟炸弹) | local-client extraction (`tools/local-extract/extract.py TOKEN_SPINES`, optional); the original overlay is preferred, with any listed web model retained as fallback | `local/spine/token/{tokenId}/{stem}.*` (listed in `data/local-assets.json`) |
 | Official battlefield scenes (one per battlefield: meshes, lightmaps, albedo textures; DESIGN §15, DESIGN §30.21) | the scene bundles `scenes/activities/<season>/level_<stage>/…` (`tools/local-extract/extract.py --only scene`, optional). The client carries them only while the season runs; off season `tools/local-extract/fetch_scenes.py` downloads the bundles of the in-season version `26-04-13-12-31-42_e9b560` from the official CDN into `.cache/official-scenes/` (33 bundles, 22,801,308 bytes compressed on the Android list, md5-checked), and the materials / textures still come from the local client's theme bundles. The 0.2.5 full release zip includes the extracted files under `public/assets/local/scene/` when the maintainer extracted them before packaging; a lite zip and a source install may fetch and extract them (`node tools/setup.mjs --scenes`). The repository never stores the bundles or the extracted files. Without a scene the 3D board draws its procedural metal tiles | `local/scene/{stageId}/scene.json`, `scene.bin`, `lm{i}.*`; `local/scene/tex/{texture}.*` (listed in `data/local-assets.json`) |
+| Official battle effects (特效: the particle systems, meshes and textures of hits, projectiles, casts, status loops and skills; DESIGN §33) | the local client only (`tools/local-extract/extract.py --only fx --fx-set used`, opt-in: a plain extraction leaves them out); never downloaded, and not in the release zips while `tools/package.mjs FULL_ZIP_FX` is off | `local/fx/index.json`, `local/fx/textures.json`, `local/fx/prefabs/{key}.json`, `local/fx/tex/{key}.webp` (and `tex/half/`), `local/fx/mesh/{key}.json` (listed in their own `data/local-fx.json`, not in `data/local-assets.json`) |
 | BGM | AA2 `voice` branch `audio/sound_beta_2/music/**` (大厅/休整期 `act1autochess`, 开战 `act13side/m_bat_kazimierz2_{1,2}` — 骑士之日 / 无畏者; the 开战 track follows the round: `_2` 无畏者 rounds 1–7, `_1` 骑士之日 from round 8) | `audio/bgm/{file}.mp3` |
 | SFX (UI, battle, per unit) | AA2 `voice` `audio/sound_beta_2/**`, mapped from `audio_data.json` banks | `audio/sfx/{same sub-path}.mp3` |
 | 干员战斗语音 | AA2 `voice` `audio/sound_beta_2/voice_cn/{charId}/cn_nn.mp3` (Chinese, `audio.voice`), `voice/{charId}/cn_nn.mp3` (Japanese, `audio.voiceJp`), `voice_en/` (English, `audio.voiceEn`), `voice_kr/` (Korean, `audio.voiceKr`) and `voice_custom/<wordkey lowercase>/` (the operator's own-language dub, `audio.voiceNative`: charword `voiceLangDict` entries whose `voiceLangTypeDict` `groupType` is `CUSTOM` — Italian, Russian, Spanish, Chinese dialect, German, French; the first such dub when there are several). Same file names. `--voice-lang=jp|en|kr` fills `audio.voice` from `voice/`, `voice_en/`, `voice_kr/` instead. `--no-optional-voice` skips the three extra trees. | `audio/voice/cn/{charId}/{cn_nn}.mp3`, `audio/voice/jp/…`, `audio/voice/en/…`, `audio/voice/kr/…`, `audio/voice/native/<wordkey>/{cn_nn}.mp3` |
@@ -542,17 +543,19 @@ Other renderer rules from research 07 §5.4–5.5:
 
 ## The committed manifest and the served manifests
 
-`data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it) and `data/local-assets.json` (as
-`tools/local-extract` writes it) hold plain URLs. Since 0.2.6 (host bandwidth, layer 1) the server hands out a view of
-each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
+`data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it), `data/local-assets.json` (as
+`tools/local-extract` writes it) and `data/local-fx.json` (0.3.0: the official battle effects' files, written by
+`extract.py --only fx` next to `data/local-assets.json` — about 8,800 entries for the full set, kept in a file of their
+own so that the local-art manifest every page loads stays small; DESIGN §33.1) hold plain URLs. Since 0.2.6 (host
+bandwidth, layer 1) the server hands out a view of each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
 
 - Shortly after the start (1 s) the server hashes every file under `public/assets/` and `public/fonts/` in the
   background: SHA-256, the first 16 hex digits. The hashes are kept in `.cache/asset-hashes.json` by path + size +
   mtime, so a restart only stats the files and reads none of the unchanged ones (12,691 files / 724 MB on the
   maintainer's machine: 1.3 s for the first build, 0.25 s after that). A file whose size or mtime changed is hashed
   again; a re-extraction, `setup --force` or a Docker rebuild then costs the players only the files whose bytes changed.
-- `GET /data/assets.json` and `GET /data/local-assets.json` answer with every art URL carrying its file's hash as the
-  first segment: `/assets/char/avatar/char_003_kalts.png` → `/assets/~398f32e2ff78d9e6/char/avatar/char_003_kalts.png`,
+- `GET /data/assets.json`, `GET /data/local-assets.json` and `GET /data/local-fx.json` answer with every art URL carrying
+  its file's hash as the first segment: `/assets/char/avatar/char_003_kalts.png` → `/assets/~398f32e2ff78d9e6/char/avatar/char_003_kalts.png`,
   `/fonts/~<hash>/…`. Audio keeps its `/assets/~<hash>/audio/….mp3` form; `public/js/media.js` asks for it as
   `/media/~<hash>/…` (the download-manager route, `shared/media.js`).
 - A Spine model's skeleton, atlas and pages carry one hash, the model's (SHA-256 of the files' hashes): pixi-spine finds
@@ -569,6 +572,9 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
   query string survives none of that.
 - A URL the index has no hash for (the file is missing, or not hashed yet) stays plain; plain URLs work as before
   (`public, max-age=86400`, revalidated after a day).
+- An install without `data/local-assets.json` or `data/local-fx.json` gets an empty manifest (`groups: {}`) for it, not a
+  404. The server itself never loads `data/local-fx.json` (`server/data.js UNLOADED_DATA`) and no presentation file
+  enters the content hash (`server/plugins/identity.js PRESENTATION_DATA`).
 - Until the index is ready, with `SP_ASSET_INDEX=0`, or on a static host without this server, the manifests go out as
   committed. The views are rebuilt in memory when a manifest or the hashes change; neither file is ever written by the
   server, and the `hash` field is the committed one. The index lives in `.cache/` only and is never packaged.

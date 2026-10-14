@@ -163,7 +163,7 @@
   "关": "Off",
   "精简": "Lite",
   "完整": "Full",
-  "使用从本机游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡和部署）；技能特效仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。": "Uses the official battle effects extracted from your own game client (normal attacks, projectiles, hits, statuses, deaths and deployments); skill effects stay this game's own. Lite: half-resolution textures and half the particles, suited to phones. Shown on the 3D board only.",
+  "使用服主从自己的游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡、部署，以及干员技能和秘术师储存的能量），连到这台服务器的玩家看到的都是服主提取的这一份；提取里没有的（敌人和召唤物的技能等）仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。": "Uses the official battle effects the server owner extracted from their own game client (normal attacks, projectiles, hits, statuses, deaths, deployments, operator skills and a Mystic Caster's stored energy); every player on this server sees the owner's extraction. What it does not cover (enemy and summon skills, among others) stays this game's own. Lite: half-resolution textures and half the particles, suited to phones. Shown on the 3D board only.",
   "弹药类技能开启时，在弹药条下方显示剩余弹药 / 总弹药数（如 13/14）。官方界面没有这个数字。": "While an ammo skill runs, shows the rounds left / in total under its ammo bar (e.g. 13/14). The official interface has no such number.",
   "画面质量": "Graphics Quality",
   "触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向": "Touch controls: tap a unit to select it (Retreat / Sell) · long-press a unit or card for details · after dragging to deploy, swipe to choose a direction",

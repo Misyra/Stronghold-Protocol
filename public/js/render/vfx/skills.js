@@ -127,18 +127,21 @@
 //             after a heal 'atk'. Hit k of a multi-hit attack: the sim deals all hits of one attack in one tick — the
 //             k-th 'dmg' on that target (the order is the only link).
 //   trigger   ['dmg', ownerId, …] while the skill is on (ON_TAKE_DAMAGE on the owner).
-//   charge    b.snap `energy` [[id, stored, cap]] → view `o.energy` (branch claude/030-int, PR #636; not on this line).
+//   charge    b.snap `energy` [[id, stored, cap]] → view `o.energy` (PR #636; sent whatever 设置「秘术师能量」 says).
+//   targets   (only) the buffs of the skill's own attack abilities: their carriers are that attack's 'atk' targets
+//             (targetsOf `hit`, Phase 3b).
 // No client-visible signal today (and so `targets` / unmapped):
-//   * who carries a skill's buff when it is not the owner — the targets of an attack's _activeBuffs, the members of an
+//   * who carries a skill's buff when it is not the owner and no attack of the skill put it there — the members of an
 //     aura / a global aura, a skill's selector targets: ['status', id, key, on] names only the sim's statuses (drawn by
 //     generic.status), never a source or a skill;
 //   * a buff given to the unit's summons (CreateBuffToToken, _buffsToToken): UnitInfo has no summoner link;
 //   * the source of damage that is no attack (a kit's AoE, a DoT, a channel's ticks): 'dmg' carries no source; only the
-//     kits' own 'fx' tuples name a caster (`extra.id`; `extra.skill` in 97 sim call sites), without a shared contract;
+//     kits' own 'fx' tuples name a caster (`extra.id`; `extra.skill` in 97 sim call sites), without a shared contract
+//     (Phase 3b binds them where they stand for a plan's `pulse` rows or an FX_BINDINGS entry);
 //   * buff events past start / finish / take-damage (periodic ticks, condition checks, would-die, kills, moves);
 //   * the tiles / path of an area or line effect (_tileEffectKey, Aphris's path, range outlines);
 //   * enemy and token skills (not in index.json); the hit index of a multi-hit attack (only the event order);
-//   * a 秘术师's stored energy on this line (see the charge section; 维伊's and 黑键's stores are kit-private everywhere).
+//   * 维伊's and 黑键's stores (kit-private: the charge section).
 //
 // ---- The 秘术师 charge (CHARGE_EMITTERS, chargePlan, chargeStep; GitHub #633) --------------------------------------
 // index.json does not carry the charge emitters: they sit on the unit prefab's Trait/Charge*Group (AbilityChargeableGroup /
@@ -243,8 +246,8 @@ export const SIGNALS = Object.freeze({
   cast: "b.ev ['atk', ownerId, tgt, kind] while the skill is on",
   hit: "that attack's damage on its target (melee 'dmg' window / projectile arrival / 'heal')",
   trigger: "b.ev ['dmg', ownerId, …] while the skill is on",
-  targets: 'none (the client is not told who carries the buff)',
-  charge: 'b.snap energy [[id, stored, cap]] (claude/030-int; char_469_indigo / the shared mystic store only)',
+  targets: "the buffs of the skill's own attacks: that attack's 'atk' targets; the others none (the client is not told who carries them)",
+  charge: 'b.snap energy [[id, stored, cap]] (PR #636; char_469_indigo / the shared mystic store only)',
 });
 
 const lc = (k) => (typeof k === 'string' && k ? k.toLowerCase() : null);

@@ -311,9 +311,31 @@ early. A candidate is a whole battle — ≈ 20–300 ms of CPU (late rounds, 4 
 CPU of the real battles), so it never runs in one go on a real server: `Match.scheduleBotPrep` runs `botPrepBegin`
 (economy + the default layout on the board), then steps the rehearsal in slices of ≤ `opts.botSliceMs` (default 8 ms of
 wall clock, checked every 4 ticks; one scheduler callback each, so other rooms' battles and every request keep
-flowing), then `botPrepEnd` (the rehearsed layout when it won, temp, Ready). The prep ending first drops the job (the
-default layout stays). Virtual time runs it in one go (same decisions). Tests default rehearsal to 0
-(`test/match/harness.js`); `tools/matchrun.mjs --rehearsal N` sets it.
+flowing), then `botPrepEnd` (the rehearsed layout when it won, temp, Ready). On the server path each candidate's
+`Battle` is built in that generator step from the detached preview board, then stepped; a takeover (below) builds
+the same inputs when its turn comes, inside the slice budget. A single build cannot be interrupted. The prep ending
+first drops the job (the default layout stays). Virtual time runs it in one go (same decisions). Tests default
+rehearsal to 0 (`test/match/harness.js`); `tools/matchrun.mjs --rehearsal N` sets it.
+
+**Host rehearsal (optional, `Match.botRehearsalDelegate` / `SP_BOT_REHEARSAL=host`, off unless that exact value):**
+the room host's browser can test AI teammates' layouts. The server still handles the shop, builds the candidate list
+from the preview inputs above (same seed, same scoring) and applies the chosen layout. Both sides use
+`server/sim/rehearsal.js`. The host returns only a candidate index; an accepted choice is applied once, without
+another simulation. Actual battles and human seats under AI 托管 are unchanged. A gameplay-plugin room
+(`requireCs`) never delegates: the match runs on that content set, and the browser must not load its scripts or
+spend a different budget. The server rehearses those rooms itself.
+
+The interface a later local or external compute can plug into — this version makes no external network call — is:
+the server offers one task (`b.rehearsal`: task id, the AI seat, the tick cap, the candidate specs); the executor
+answers with the winning index or `error: true`; a timeout (`botRehearsalDelegateMs`, default 3 s), a missing host,
+a host change, a disconnect, an invalid index or an error makes the server run the same candidates; prep ending
+cancels the task and keeps the default layout. The deadline never moves. Only the connected human host may answer,
+and only while the task is still waiting. Late, repeated and forged answers are ignored.
+
+The browser uses one same-origin module Worker (`/js/battle/rehearsalWorker.js`, no `blob:` URL and no `eval`)
+without rendering, and posts the official data the page already loaded. A spec that names a content set is answered
+`error` and is not simulated there. It clears tasks when leaving the match or losing its connection. Message
+details: DESIGN §14 ([design/network.md](design/network.md)).
 
 ---
 

@@ -1278,6 +1278,9 @@ export class Lobby {
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),
+        // the room's host: the current executor of a delegated bot layout rehearsal (DESIGN §14; setHost follows a
+        // migration while the match runs)
+        hostId: room.hostId,
         seed,
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
         matchNo: room.matchCount + 1,
@@ -1624,6 +1627,9 @@ export class Lobby {
     const prev = room.hostId;
     room.hostId = pick ? pick.playerId : null;
     if (pick && prev !== pick.playerId) this.log.info(`[lobby] ${room.code} host → ${pick.name}`);
+    // a running match follows the host change: its delegated bot rehearsals fall back to the server and later ones ask
+    // the new host (DESIGN §14, Match.setHost)
+    if (room.match && room.hostId !== prev) this.callMatch(room, 'setHost', room.hostId);
   }
 
   startGrace(room, seat) {

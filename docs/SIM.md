@@ -30,6 +30,8 @@ server/sim/
   fear.js          恐惧 movement of enemies: reachable-tile fan away from the source, random checkpoints, self-fear flutter
   professions.js   default behaviour per subProfessionId
   snapshot.js      wire format (UnitInfo, snapshot tuples, flags, anim codes)
+  rehearsal.js     shared AI-layout scoring (DESIGN §14): fewest counted leaks, then most kills,
+                   then the earlier candidate; the same early stop and tick cap on both sides
   simdata.js       data access + normalisation (data/*.json, research fallback)
   content/index.js installContent / setupUnitKit / registerAllMeta
   content/enemies/ helpers.js, archetypes.js, one kit file per special type + leaders.js (content/enemies.js builds KITS)

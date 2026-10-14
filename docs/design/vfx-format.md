@@ -4,6 +4,33 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 **Changelog** (for runtimes reading the files; newest first)
 
+* **2026-10-15 — Phase 1c: `index.json` version 2, meshes version 2** (§33.12, §33.9; the descriptors and
+  `textures.json` stay version 1, the file list's `fx.index.version` is 2; no field was removed or renamed — a version-1
+  reader keeps working and simply does not see the additions, except the two corrections (9) and (10)). (1) A mode's
+  `attack` takes the rows of every effect emitter on its node, not only an exact `UberEffectEmitter`: its subclasses
+  (`MultiHitUberEffectEmitter`, `UberAnimationEffectEmitter`, the charge emitters, …) and the custom emitters
+  (`AphrisEffectEmitter`, `FunnelEffectEmitter`, …) — the mode attacks of 19 operators had no rows; when the node's
+  emitters are not one plain `UberEffectEmitter`, `attack.emitters` lists them with their settings and each row names
+  its `emitter`; a MultiHit emitter's `_hitGroups` rows join `hit` with `group`, an UberAnimation emitter's
+  `_replaceGroup` rows join `cast` / `hit` with `group` and `anim`, another row list keeps its `field`; two emitters on
+  one node no longer overwrite each other's rows. (2) `attack.node`; `attack.abilities`: a group ability's sub-abilities
+  and a funnel attack's funnels, each an attack of its own. (3) `combat`: the mode's `_combat` (the blow on a blocker)
+  when it is another ability than `attack`'s — the only attack of most enemies, whose `attack` is null. (4)
+  `units[id].charge` and `attack.charge`: the 秘术师's chargeable groups — per-energy effect groups, store abilities,
+  projectiles and mount points (§33.12 Charge). (5) Skills: `rootClass` / `rootAbility`; the uses of a group list carry
+  `group` / `groups` (a replace group's `anim`, the MultiHit choice flags); a `_replaceGroup`'s `hitEffectOptions` are
+  hit uses (they counted as cast uses; none in this client). (6) Enemies' skills: `units[enemy].skills`, keyed by the
+  lower-case node name = data/enemies.json `skills[].prefabKey`, with `nodes` / `inModes` (not in `index.skills`: the
+  keys repeat across enemies); summons' skills (`sktok_*` / `skcom_*` of the tokens' data) in `units[token].skills` and
+  `index.skills`. (7) `prefabs[key].spawn` / `follow`: the descriptor's SpawnLocation and FollowMountPoint type. (8)
+  `extract.py --print-jobs` lists `fx.indexVersion`; a `--fx-keys` run merges only into an earlier version-2 index (else
+  it writes a set of just those keys). (9) Corrected: `skins[id].points` no longer include the prefab root's own
+  transform — 90 skins change (78 enemies, 10 tokens, 2 operators: 88 roots authored tiles away, e.g. `enemy_1007_slime`
+  at (3, 3, 0), and float noise), their points now sit over the feet; the runtime's `skinShift` (render/vfx/mounts.js),
+  which moved 84 of them back, has nothing left to move for an index of version 2 and can go (or skip version ≥ 2). (10)
+  Corrected: a mesh's `colors` are 0…1 as §33.9 says (version 1 wrote the client's bytes, 0…255; a reader that divides
+  values above 1 by 255 reads both); the mesh files are version 2, and their keys (a hash of the file) all change.
+  Numbers: §33.15.
 * **2026-10-15 — Phase 1b, the full set.** (1) The file list left `data/local-assets.json`: it is `data/local-fx.json`
   (§33.1), served at `/data/local-fx.json` with hashed URLs; its groups (`fx`, `fx/prefabs`, `fx/tex`, `fx/mesh`) and
   entries are the ones `data/local-assets.json` had, which now has no fx group. A worktree that links
@@ -22,7 +49,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   changed.
 * **2026-10-14 — Phase 1a**: the format and the sample.
 
-## 33. Official battle effects — the extracted format (0.3.0, Phase 1a–1b)
+## 33. Official battle effects — the extracted format (0.3.0, Phase 1a–1c)
 
 The official battle effects (hit sparks, projectiles, cast flashes, status loops, skill effects) are Unity prefabs of
 ParticleSystems, meshes, trails and small behaviour scripts. `tools/local-extract/fx.py` (run as `extract.py --only fx`)
@@ -36,12 +63,14 @@ the descriptor keeps Unity's names so that every field can also be looked up in 
 extractor adds is the resolution of references (other files, other nodes, shaders' render states, clip bindings) and the
 decoding of compressed data (animation clips, textures, meshes).
 
-**Status (Phase 1b).** The extractor and this format cover the full set the mode uses (§33.14; the Phase 1a sample,
-§33.13, is a subset); the runtime is the next phase. Where the client's own behaviour cannot be read from its data,
-the text says **assumed** (Unity behaviour the data cannot confirm); **resolved** marks what Phase 1b checked against
-the client (its shader source, il2cpp metadata, prefab data). Enum and field names marked *metadata* come from the
-client's il2cpp metadata (`Arknights_Data/il2cpp_data/Metadata/global-metadata.dat`, version 29, not encrypted: type
-and field names, nested types, the enum constants with their values; method bodies are native code and not read).
+**Status (Phase 1c).** The extractor and this format cover the full set the mode uses (§33.14; the Phase 1a sample,
+§33.13, is a subset) and, since Phase 1c (§33.15), every emitter of the units' attacks, the charge groups and the
+enemies' and summons' skills; the runtime and the skill mapping read them (Phases 2 and 3). Where the client's own
+behaviour cannot be read from its data, the text says **assumed** (Unity behaviour the data cannot confirm);
+**resolved** marks what Phase 1b checked against the client (its shader source, il2cpp metadata, prefab data). Enum and
+field names marked *metadata* come from the client's il2cpp metadata
+(`Arknights_Data/il2cpp_data/Metadata/global-metadata.dat`, version 29, not encrypted: type and field names, nested
+types, the enum constants with their values; method bodies are native code and not read).
 
 ### 33.1 Files, the file list and the extractor run
 
@@ -51,6 +80,11 @@ and field names, nested types, the enum constants with their values; method bodi
 .venv/bin/python tools/local-extract/extract.py --only fx --fx-keys k1,k2        named prefabs only (a dev aid)
                                                  [--fx-jobs N]  worker processes (default up to 8)
 ```
+
+A run can be staged away from the live folders: `--out <dir>/public/assets/local --manifest
+<dir>/data/local-assets.json` writes the files under `<dir>/public/assets/local/fx/` and the file list next to that
+manifest, `<dir>/data/local-fx.json` (the URLs in it stay `/assets/local/fx/…`: copying both into place promotes the
+set, and `SP_FX_ROOT=<dir> node --test test/local-extract-fx.test.js` checks it where it is).
 
 A plain `extract.py` run (no `--only`) does not run fx. The run reads `data/chess.json`, `data/backups.json`,
 `data/enemies.json` and `data/tokens.json` for the unit list, caches the bundles' prefab lists under `.cache/fx/`
@@ -85,7 +119,8 @@ effects out while `tools/package.mjs FULL_ZIP_FX` is off. The runtime takes URLs
 | `fx/tex` | texture key → `{ path, w, h, kind: 'Texture2D', half? }` (`half`: the half-size copy's URL) |
 | `fx/mesh` | mesh key → `{ path, kind: 'FxMesh', verts }` |
 
-Each JSON file starts with `format` (`fx-index`, `fx-textures`, `fx-prefab`, `fx-mesh`) and `version` (1). A full run
+Each JSON file starts with `format` (`fx-index`, `fx-textures`, `fx-prefab`, `fx-mesh`) and `version` (1; since Phase
+1c `index.json` 2 and the meshes 2 — the changelog says what changed). A full run
 (`sample` / `used`) rewrites the list and removes the files of an earlier run that are no longer listed; `--fx-keys`
 re-exports the named prefabs (and the keys they name) into the earlier set — their descriptors, index summaries and list
 entries are replaced, everything else stays (without an earlier set it writes a set of just those keys).
@@ -436,13 +471,15 @@ fringes). `srgb` is informational: render in gamma space (§33.2). Built-in text
 ### 33.9 Meshes (`mesh/<key>.json`)
 
 ```
-{ format: 'fx-mesh', version: 1, name, vertexCount,
-  positions: [x, y, z, …], normals?: […], uv0?: [u, v, …], uv1?: […], colors?: [r, g, b, a, …] (0…1),
+{ format: 'fx-mesh', version: 2, name, vertexCount,
+  positions: [x, y, z, …], normals?: […], uv0?: [u, v, …], uv1?: […], colors?: [r, g, b, a, …] (0…1, since version 2),
   submeshes: [[i0, i1, i2, …], …] (triangle lists, one per material),
   boneWeights?: [w0, w1, w2, w3, …], boneIndices?: [i0…i3, …], bindPoses?: [[16 floats row-major]…] }
 ```
 
-Unity mesh space (left-handed, as authored). Key = safe name + 8 hex digits of the SHA-1 of the file. Meshes of mesh
+Unity mesh space (left-handed, as authored). Key = safe name + 8 hex digits of the SHA-1 of the file. The client
+stores vertex colours as bytes (a UNorm8 channel): version 1 wrote those bytes (0…255; 722 meshes of the used set have
+colours), version 2 writes them as 0…1 floats (the bytes ÷ 255), as this section always said. Meshes of mesh
 particles are small (`Plane003`, `Cone001`, `Torus001`, `Sphere001`: 4–200 vertices; 435 meshes / 57k vertices in the
 whole used set).
 
@@ -570,26 +607,35 @@ a sound — the runtime's audio may play it), and the long tail (55 classes in t
 ### 33.12 `index.json`
 
 ```
-{ format: 'fx-index', version: 1, set: 'sample' | 'used' | 'keys', source: { root, client },
+{ format: 'fx-index', version: 2, set: 'sample' | 'used' | 'keys', source: { root, client },
   units: { id: Unit }, projectiles: { key: Projectile }, skills: { skillId: Skill },
   skins: { id: Skin }, generic: { hit, die, birth, status, keys }, prefabs: { key: PrefabSummary } }
 ```
 
-**Unit** (`char_*` from charpack/, `enemy_*` from battle/enm_pfb_*, tokens from pkgrps/btl_pfb_tokens_*):
+`version` is 2 since Phase 1c (the changelog lists what it added; a version-1 reader finds every field it reads where
+it was). **Unit** (`char_*` from charpack/, `enemy_*` from battle/enm_pfb_*, tokens from pkgrps/btl_pfb_tokens_*):
 
 ```
 { kind: 'char' | 'enemy' | 'token', prefab (bundle), rootClass ('Character' | 'Enemy' | …),
   startEffect, deadEffect (keys or null: the deploy / death effect when the unit names one),
   graphic: { path, pos, rot, scale },          the unit's Graphic node (its skin's placement and tilt)
   modes: [{ name ('Default', 'S1', 'S2', …), overrideStartEffect, overrideDeadEffect,
-            attack: { class ('RangedAttack', 'MeleeAttack', 'RangedHeal', …), animKey, attackType, damageType,
-                      projectileKey, extraProjectileKeys, projectileDestination,
-                      cast?, hit?, attach?, inputTarget?, castTarget?: [Emit…] } }],
-  skills: { skillId: Skill },                  the same objects as index.skills
+            attack: Attack | null,             the mode's `_attack`
+            combat?: Attack }],                its `_combat` (the blow on a blocker), when another ability (v2)
+  charge?: [Charge…],                          the chargeable groups (the 秘术师's stored energies, below; v2)
+  skills: { skillId: Skill },                  the same objects as index.skills; an enemy's own skills (v2, below)
   projectiles: [key…], refs: [every effect key the unit uses], skin: id | absent,
   aliasOf?: id }                               a copy of unit `id` (below)
+Attack = { class ('RangedAttack', 'MeleeAttack', 'RangedHeal', 'MultiMeleeAttack', 'AbilityRandomGroup', …), animKey,
+           attackType, damageType, projectileKey, extraProjectileKeys, projectileDestination,
+           node?,                              the ability's node in the unit prefab, e.g. 'Modes/S1/Body/Attack' (v2)
+           cast?, hit?, attach?, inputTarget?, castTarget?: [Emit…],
+           emitters?: [{ class, …settings }],  the node's effect emitters, when not one plain UberEffectEmitter (v2)
+           abilities?: [Attack…],              a group's sub-abilities, a funnel attack's funnels (v2)
+           charge?: { group, ability, animKey? } }   the charge ability it releases: indexes into `charge` (v2)
 Emit = { effects: [key…], slots?: [key | null…], directionType, oneshot, startEvent, endEvent, onlyOnce,
-         useFourDirectionalFace, hookEffectAfterFirstAttack, … }
+         useFourDirectionalFace, hookEffectAfterFirstAttack, …,
+         emitter?, group?, anim?, field? }     (v2: below)
 ```
 
 `modes[0]` (`Default`) is the normal attack; the others are the modes a skill switches to (`S1` = skill 1's attack,
@@ -613,26 +659,124 @@ distinct key, and `slots` holds the effect per facing as *metadata* `Torappu.Sha
 0 / 2). `hookEffectAfterFirstAttack` (a key or '') replaces the row's effect from the second attack on; a row may have
 only that. Keys the client does not have are dropped (the extractor logs them).
 
+**Every emitter of the attack's node (v2).** The rows come from every effect emitter on the ability's node, whatever its
+class: `UberEffectEmitter` and its subclasses — `MultiHitUberEffectEmitter`, `UberAnimationEffectEmitter`,
+`MultiChargeUberEffectEmitter`, `MultiExChargeUberEffectEmitter`, `MergeableChargeUberEffectEmitter`,
+`UberEffectEmitterInCertainMode`, `VigilWolfEffectEmitter` — and the emitters of their own kind (`AphrisEffectEmitter`,
+`FunnelEffectEmitter`, `MuzzleGroupEffectEmitter`, `RangeLineEffectEmitter`, `InputTargetProjectileEmitter`,
+`EndAnimEffectEmitter`). Version 1 read only an exact `UberEffectEmitter`: the mode attacks whose emitter is a subclass
+— 19 operators': 深靛 / 黑键 / 维伊's charge attacks, the multi-hit attacks of 赤刃明霄陈, 艾丽妮, 缄默德克萨斯, 玛恩纳, 薇薇安娜, 锏, 弑君者, 斩业星熊 and
+the animation-switching attacks of nine more — had no rows, and a node with two emitters kept only the second one's
+lists. When the node's emitters are anything but one plain `UberEffectEmitter`, `attack.emitters` lists them in
+component order — `{ class, …settings }`, the settings being the fields the base class lacks (Unity names without the
+underscore; PPtrs dropped; effect / projectile keys lower case) — and every row says whose it is (`emitter`: an index
+into `emitters`). The rows a subclass keeps in groups join the lists with the group's index:
+
+* `MultiHitUberEffectEmitter._hitGroups` (`hit` rows; `_castGroups` / `_timesBasedHitEffects` the same, empty in this
+  client): `group` = the group, played on one hit of the attack — **assumed** (engine code): hit k of a cast plays group
+  min(k, last); with the emitter's `useLoopHitEffect` 1 group k mod n, with `useRandomHitEffect` 1 a random one;
+  `keepBaseHitEffect` 1 also plays its rows without a group (no MultiHit emitter of this client has both);
+  `oncePerTarget` 1: once per target per cast. The emitter's `groups` gives each group list's length (a group without
+  rows still counts: the 2nd of 3 groups may play nothing).
+* `UberAnimationEffectEmitter._replaceGroup` (`effectOptions` → `cast`, `hitEffectOptions` → `hit`): `group` and
+  `anim`, the animation the group belongs to; the emitter's `sourceAnimKey` (the attack animation it replaces),
+  `loopType` and `replaceAnims` (the group animations in order) — **assumed**: the attack plays the group animations in
+  turn instead of `sourceAnimKey` (loopType 1; 0: by the client's own choice), and a row with `anim` plays when the
+  attack plays that animation, while the rows without `anim` play on every attack.
+* another list of rows keeps its field name (`field`, e.g. `VigilWolfEffectEmitter._vigilWolfCastEffects`, whose rows
+  carry the `buffKey` the owner must have).
+
+A row with `group` or `anim` is conditional: a version-1 reader that plays every row of `hit` plays every group on
+each hit. The charge emitters' per-energy groups are no attack rows (Charge, below).
+
+**Sub-abilities and the blow on a blocker (v2).** A group ability (`AbilityRandomGroup`, `AbilitySelectableGroup`,
+`AbilityParallelGroup`, `AbilityFirstSucceedGroup`, `BurstAttackGroup` — its `_abilities`) and an attack whose child
+nodes carry abilities of their own (`MultiFunnelRemoteAttack`'s funnels) list them in `abilities`, each an Attack with
+its node, rows, projectile and charge: per cast a Parallel group casts all of them, the others one (random, the first
+whose condition holds, …: the client's choice, which no data shows — a reader without that signal may play
+`abilities[0]`). The group's own `cast` / `hit` lists hold only the group node's emitters (usually none). `combat` is
+the mode's `_combat` — the ability a unit uses on a unit blocking it — when it is not `attack`'s ability: it is the
+only attack of a melee enemy (`attack` null: 169 enemy modes of the used set), and the blocked attack of many ranged
+ones; a runtime plays `combat` for a blocked blow (a melee 'atk'), `attack` else, and either one when the other is null.
+
 **Aliases.** An enemy key without a prefab of its own (`enemy_2001_duckmi_2`, `enemy_2002_bearmi_2`,
 `enemy_2034_sythef_2`, `enemy_2085_skzjxd_2`, `enemy_9013_acstmk_2`, `enemy_9017_achunt_2`: elite variants) is drawn
 with its base prefab: its unit is a copy of the base unit's with `aliasOf: <base id>`.
 
-**Skill** (`[uc]skills.ab`, the skills of the units: the chess data's and every `skchr_<code>_<n>` of an operator):
+**Charge** (v2; the 秘术师's stored energies — 深靛 `char_469_indigo`, 黑键 `char_4046_ebnhlz`, 维伊 `char_4226_veen` —
+from the unit prefab's Trait/Charge…Group):
 
 ```
-{ effects: [every key it names — its buff templates' included], projectiles: [key…],
+Charge = { node ('Trait/ChargableAttackGroup'), class ('AbilityChargeableGroup' | 'AbilityExChargeGroup'),
+           maxChargeTimes?, emitters: [ChargeEmitter…],        the group node's emitters (深靛's, 维伊's)
+           abilities: [ChargeAbility…] }                        the group's `_abilities`, in order
+ChargeAbility = { node, class ('ChargeRangedAttack' | 'ExChargeRangedAttack' | 'MergeableChargeRangeAttack'),
+                  modes: [the mode names whose attack releases it], animKey, projectileKey, extraProjectileKeys,
+                  exProjectileKey?, mergeProjectileKey?, maxChargeTimes, maxExChargeTimes?, mergeSize?, forceExCharge?,
+                  mountPointType + mount, mountPointForProjectiles + mounts, exMounts + exMountNames,
+                  emitters: [ChargeEmitter…] }
+ChargeEmitter = { class, …settings (isExEffectEmitter, chargeEffectStartEvent, mergeSize, …), cast?, hit?, …: [Emit…],
+                  chargeEffectGroups?, chargeCastGroups?,
+                  mergedChargeEffectGroups?, mergedChargeCastGroups?: [[Emit…]…] }   group k: the (k+1)-th energy
+```
+
+Group k (0-based) of `chargeEffectGroups` / `chargeCastGroups` holds the rows played when the (k+1)-th energy is
+stored, each at its row's start event: in this client the group node's (or an ExCharge ability's) `chargeEffectGroups`
+at ON_SPELL_ON (4), whose loops (`prefabs[key].looping`, a FollowMountPoint on a Special point — `prefabs[key].follow`)
+stay while that energy is stored, and the store ability's `chargeEffectGroups` / `chargeCastGroups` at ON_CAST_START
+(2), one-shots; `merged…` the same for 维伊's merged energies (every `mergeSize` stored energies merge into one).
+`isExEffectEmitter` 1 marks 黑键's elite-energy emitter. A release fires the stored energies as projectiles from
+`mounts[k]` (MountPointType names, §33.11 FollowMountPoint; `exMountNames` for 黑键's elite ones; ability without its
+own mounts: its effects' `follow`) to the target — the ability's `projectileKey` (`exProjectileKey`,
+`mergeProjectileKey`). The mode attack that stores and releases names its charge ability: `attack.charge` =
+`{ group, ability }` (indexes into `charge` and its `abilities`) and `animKey`, its store animation (`_chargeAnimKey`).
+The store events themselves come from the game (in the remake, the snapshot's stored-energy count of PR #636).
+
+**Skill** (`[uc]skills.ab`, the skills of the units: the chess data's, the 补位 / 自选 forms' of data/backups.json and
+every `skchr_<code>_<n>` of an operator, the tokens' of data/tokens.json and data/backups.json `tokens`; an enemy's
+skills come from its own prefab, below):
+
+```
+{ rootClass, rootAbility,                     the skill root's class and ability (v2, below)
+  effects: [every key it names — its buff templates' included], projectiles: [key…],
   mode: index into the owner's modes | null, modeBy?: 'data' | 'name',
   uses: [Use…], roles: { start?, loop?, range?, cast?, hit?, end?, ready?, trigger?, other?: [key…] },
-  unclassified: [keys found in the prefab that no use places] }
+  unclassified: [keys found in the prefab that no use places],
+  nodes?, inModes?: [path… / mode name…] }    an enemy's skill: its node(s) and their modes (v2)
 Use = { role, keys: [key…], from ('UberEffectEmitter._castEffects', 'ActiveBuffAbility._buffs',
         'ActiveBuffAbility._buffs → template <templateKey>', …), node (the skill prefab's GameObject),
         ability? (the ability an emitter serves: 'MeleeAttack', 'ActiveBuffAbility', …),
         list?, startEvent?, endEvent?, oneshot?, directionType?, slots?   (an emitter row, as Emit)
+        group?, groups?, anim?, useLoopHitEffect?, useRandomHitEffect?, … (a group list's row, v2: below)
         on? ('owner' | 'targets' | 'token'), buff?, template?            (a buff: who carries it, its keys)
         event?, action?                                                  (a buff template's action: a Buff event name,
                                                                           the action node: CreateEffect, CreateBuff, …)
-        bb?, by? ('name': placed by the key's name) }
+        bb?, by? ('name': placed by the key's name), mode? (v2: an enemy skill's copy, below) }
 ```
+
+`rootClass` (v2) is the class of the skill root deriving from *metadata* `Torappu.Battle.Skill` — `CastSkill` (900 of
+the client's 1,549 skill prefabs), `PassiveSkill`, `AppearSkill` (a summon's or a deploy skill), `ReplacementSkill` /
+`ReplacementSkillFixed` (one cast that replaces the next attack), `AttachOrDetachSkill`, `CastSkillWithLimitTimes`,
+`CastTokenSkill`, `ToggleSkill`, `BurstCastSkill`, … (helpers on the same node — `BuffDuringSkill`, `BuffAfterSkill`,
+`ChantBeforeSkill` — are not: the Skill class is the one with `_canSilenced` and `_attachSignalIds`), `EnemySkill` for
+an enemy's skill, null when none (`sktok_tooltree`); `rootAbility` the root node's ability (`ActiveBuffAbility`,
+`MeleeAttack`, `AbilitySequenceGroup`, …) or null. The uses of a group list (`MultiHitUberEffectEmitter._hitGroups` —
+10 skills of the used set: skchr_acpion_3 8 groups, ascln_1 2, blkkgt_1 2, chen_3 10, chen3_2 6, irene_1 2, phatm2_1 2,
+vvana_1 3, zuole_1 3, zuole_3 7 —, `_castGroups`, `_timesBasedHitEffects`, `UberAnimationEffectEmitter._replaceGroup`)
+carry `group` (the group's index), `groups` (the list's length) and the emitter's `useLoopHitEffect` /
+`useRandomHitEffect` / `keepBaseHitEffect` / `oncePerTarget` when set, a replace group's `anim` (its
+`hitEffectOptions` are `hit` uses; version 1 counted them as cast uses — no skill of this client has any); the group
+semantics are the mode attacks' (above).
+
+**Enemies' and summons' skills (v2).** An enemy's skills are nodes of its own prefab carrying an `EnemySkill` (with the
+ability and the emitters; a `ReadyEnemySkillEffect` gives `ready`): `units[enemy].skills` holds one per node, keyed by
+the node's name in lower case — the `prefabKey` of data/enemies.json `skills[]` (`stuncombat`, `bornanim`, `1`, …) —,
+with `nodes` (its path; one per copy when a boss has the skill in several modes — the copies' uses are joined with
+`mode`, the copy's mode name, when they differ) and `inModes` (the modes holding the copies; absent for a skill outside
+the modes). These keys repeat across enemies (`1`, `skill`): they are not in `index.skills`. The roles are the
+operators' (the uses of a skill whose ability is an attack — `MeleeAttack`, `RangedAttack` — follow each of its casts,
+below). A summon's skills (`sktok_*`, `skcom_*`: every `skill` object of its data record, `prefabId` else `skillId`, a
+`[n]` suffix dropped) are `[uc]skills.ab` prefabs like the operators': in `units[token].skills` and `index.skills`.
 
 The extractor reads every behaviour of the skill prefab (its emitters, abilities, buffs, the Odin action graphs some
 abilities carry) and the client's buff templates (`config/buff_template_holder.ab`, *metadata*
@@ -647,7 +791,7 @@ and gives every effect a role — when the runtime plays it on the sim's skill t
 | `cast` | each ability use while a buff lasts | a template's action at ON_ABILITY_START / ON_ABILITY_SPELL_ON / ON_BEFORE_ATTACK |
 | `hit` | each target hit (on the target) | hit / castTarget / inputTarget rows (and `MultiHitUberEffectEmitter` groups), `_hitEffect(Key)`, a template's action at ON_OUTPUT_DAMAGE / ON_AFTER_ATTACK / …, a target buff's start action |
 | `end` | when the skill (or the buff) ends | cast rows starting at 1 / 3 / 5 / 6 or named `*_end`, `_endEffect`, `_beforeEndEffects`, ON_BUFF_FINISH / ON_SKILL_FINISH actions |
-| `ready` | while the skill is ready to cast | `ReadySkillEffect` |
+| `ready` | while the skill is ready to cast | `ReadySkillEffect`, an enemy's `ReadyEnemySkillEffect` (v2) |
 | `trigger` | a buff's other events (periodic ON_BUFF_TRIGGER, reactive ON_TAKE_DAMAGE, …; `event` names it) | template actions |
 | `other` | not placed | (none in the used set) |
 
@@ -688,13 +832,17 @@ speeds; the visual flies `main` along the sim's flight and plays `onHit` at the 
 lands). Graphic / logic pairs (`projectile_amgoat_s3_graphic` / `_logic`) are listed as nested projectiles.
 
 **Skin** (mount points): `{ source, graphic, points: { name: { facing: { pos, bone, path } } } }`. `pos` is the point in
-the unit's root frame (Unity axes and units, through the unit's `Graphic` node and the skin's FaceSwitcher scale) —
-e.g. 隐现's `HitPoint` (0, 0.232, −0.250): 0.25 above the feet. `facing` is `front` / `back` (operators have Front and
-Back skeletons) or `all`. `bone` names the Spine bone a `BoneFollower` keeps the point on (`F_Muzzle`, `B_Muzzle`,
-`Muzzle`, `Hip`, …): the runtime can read that bone from the unit's skeleton for a moving muzzle, else use `pos`.
-Operators' points come from `chararts/<id>.ab` (`defaultskin`) placed under the charpack's `Graphic`; enemies' and
-tokens' from their own prefab. Point names vary by skin: `HitPoint`, `HeadPoint`, `HeadAnchor`, `Muzzle` /
-`MuzzlePoint`, `Special0` / `SpecialPoint0` (… `1`, `2`).
+the unit's root frame (Unity axes and units, through the unit's `Graphic` node and the skin's FaceSwitcher scale) — e.g.
+隐现's `HitPoint` (0, 0.232, −0.250): 0.25 above the feet. The prefab root's own transform is no part of it (index version
+2): an enemy or token prefab's root sits where it was authored — 88 of the used set's sit tiles away (`enemy_1007_slime`
+at (3, 3, 0), `token_10050_monstr_prosts` 99.8 down) — and the game places the unit; an operator's skin root may carry
+an offset the client drops when it attaches the skin (`char_446_aroma`: −1.895 in x). Version 1 composed it, so those
+skins' points sat tiles away from the feet (the runtime's `skinShift` moved 84 of them back). `facing` is `front` /
+`back` (operators have Front and Back skeletons) or `all`. `bone` names the Spine bone a `BoneFollower` keeps the point
+on (`F_Muzzle`, `B_Muzzle`, `Muzzle`, `Hip`, …): the runtime can read that bone from the unit's skeleton for a moving
+muzzle, else use `pos`. Operators' points come from `chararts/<id>.ab` (`defaultskin`) placed under the charpack's
+`Graphic`; enemies' and tokens' from their own prefab. Point names vary by skin: `HitPoint`, `HeadPoint`, `HeadAnchor`,
+`Muzzle` / `MuzzlePoint`, `Special0` / `SpecialPoint0` (… `1`, `2`).
 
 **generic**: `{ hit: { phys, arts, heal, enemy, fire, cut, ranger }, die: { char, enemy }, birth: { char },
 status: { <sim status>: key }, keys: [every generic key exported] }` — the keys the client binds in code (no data file
@@ -703,8 +851,10 @@ names them): the hit by damage type, deaths, deploy, and the status loops by the
 `cold` → `buff_cold`, `sleep` → `buff_sleep`, `burn` → `buff_burn`). The map is the extractor's default
 (`FX_GENERIC`); `keys` also holds every prefab of `buff.ab`.
 
-**prefabs**: key → `{ file, bundle, nodes, particleSystems, liveParticles, duration, looping, refs }` (the descriptor's
-stats and `refs`).
+**prefabs**: key → `{ file, bundle, nodes, particleSystems, liveParticles, duration, looping, refs, spawn?, follow? }`
+(the descriptor's stats and `refs`; v2: `spawn` = its first enabled `ParticleEffect` / `EmptyEffect`'s `_spawnLocation`
+and `follow` = its first enabled `FollowMountPoint`'s `_mountPointType`, §33.11, when it has them — where the effect
+sits on its owner without loading the descriptor).
 
 ### 33.13 The Phase 1a sample (a subset of the full set, §33.14)
 
@@ -755,3 +905,44 @@ effect of their own but switch to a mode, whose attacks carry their effects; 10 
 `skchr_prove_1`, `skchr_silent_2`, `skchr_sunbr_1`, `skchr_svrash_1`, `skchr_vodfox_2`, `skchr_vvana_3`,
 `skchr_wang_1`: what the client shows for them comes from what they place (tokens, traps), the unit's own animation, or
 nothing. 333 skills have a mode (221 from their data, 112 by name).
+
+### 33.15 Phase 1c: index.json and the meshes version 2
+
+`extract.py --only fx --fx-set used` with the Phase 1c extractor (Windows client 26-09-13, 8 processes on the
+maintainer's Mac) exports 516 units, 541 projectiles (+3), 596 skills (+67: 65 summons' `sktok_*` and two `skcom_*` of
+the 补位 / 自选 forms) and 4,311 effect prefabs (+58, none dropped: the enemies' and summons' skills' effects and their buff
+templates' — `doroth_bomb_*`, `cqbw_skill_02_*`, …), 3,323 textures (3,282 half-size copies) and 1,214 meshes (version
+2: 11.0 MB, 11.5 before — 0…1 colours write shorter than bytes): 12,132 files, 188.1 MB (+1.9 MB); descriptors 119.8 MB
+(17.3 MB gzipped), `index.json` 6.0 MB (0.33 MB gzipped; 5.4 / 0.29 in version 1), the file list 8,850 entries, 1.2 MB.
+The run takes 152 s (units, skills and buff templates 45 s). 90 skins' points moved (the root transform, changelog (9)):
+every HitPoint of the set is now within 0.33 of the feet across and 1.15 up. The consistency test passes on the output
+(`SP_FX_ROOT`, §33.1), now over every attack, combat, sub-ability, charge group and enemy skill, the skins' hit points
+and the meshes' colours as well.
+
+* **Mode attacks.** The subclass emitters (§33.12): 15 MultiCharge attacks of 深靛, 黑键 and 维伊 (维伊's six are the
+  sub-abilities of an AbilitySelectableGroup), 19 MultiHit attacks with 46 hit groups (8 operators and
+  `enemy_1535_wlfmster`), 16 UberAnimation emitters of 10 operators (22 rows with `anim`; 圣聆初雪's and 谬因's name none:
+  empty replace groups next to a plain emitter). Operators with attack rows: 202 of 210 (189 in version 1); enemies 197
+  of 243 (75): `combat` is in 220 enemy modes, the only attack in 169; summons 21 of 57 (19). Sub-abilities: 66 operator
+  attacks and 2 combats, 8 enemy, 2 summon; `attack.emitters` on 39 operator attacks.
+* **Charge.** 深靛: an AbilityChargeableGroup of 3 energies, its node's emitter with 4 per-energy loop groups, 3 store
+  abilities (Default, S1, S2 — each with its projectile, mounts SPECIAL_1, SPECIAL_2, SPECIAL_3, SPECIAL_0 and a 4-group
+  one-shot emitter). 黑键: an AbilityExChargeGroup of 3 ExCharge abilities (Default, S1: a normal emitter with 4 + 4
+  groups and an elite one, `isExEffectEmitter`, with 1 + 1, mounts SPECIAL_0–3 and elite SPECIAL_4; S3: elite only,
+  5 + 5, `forceExCharge`). 维伊: an AbilityChargeableGroup of 9 energies, `mergeSize` 3, its node's emitter with 5 + 5
+  energy and 4 + 4 merged groups, 3 store abilities (Default, also released in S1; S2; S3).
+* **Skills.** `rootClass`: CastSkill 369, ReplacementSkill 38, ReplacementSkillFixed 37, PassiveSkill 34,
+  CastSkillWithLimitTimes 27, AppearSkill 26, AttachOrDetachSkill 20, CastSkillWithSuspendable 15, MultiAppearSkill 9,
+  CastTokenSkill 7, … The 10 skills with MultiHit groups (§33.12) carry `group`.
+* **Enemies' and summons' skills**, against the game's roster (tools/vfx-skill-coverage.mjs's (unit, skill) pairs: 126
+  of enemies, 78 of summons): 123 enemy pairs have an entry (120 skill entries on 78 enemies, 91 with uses; the copies
+  of 4 bosses' skills differ by mode) and 71 summon pairs (66 summon skills, 22 with uses). Without one:
+  `enemy_1174_duholy(_2)` `Flame` (the prefab has no such node: an attack and talents only), `enemy_9023_acdums`
+  `Skill` (its abilities are `CommonAbilities` — AOE, PassionSkill, DepassionSkill — with no skill node);
+  `sktok_mtship_1` / `_2`, `sktok_mcgraf_1`, `sktok_svash2_2` (three tokens), `sktok_phatm2_mndclv_3`: no skill prefab
+  in the client (nor in the iOS hot update of 26-10-08) — skills of the data only. The operators' pairs: 548 of 549
+  (534: the forms' `skcom_*` were not crawled); `skcom_assist_cost[3]` has no prefab either.
+
+Still outside the index: the effect emitters of talents (deploy effects, the bosses' revive loops), common abilities
+(stand switches, revives) and a few modes' general abilities (funnels, an aura) — 33 units, about 50 nodes — whose
+moments no client signal gives yet.

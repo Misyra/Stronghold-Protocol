@@ -1621,3 +1621,7 @@ general hook guard. The queue is emptied in `finally`; it introduces no timer or
 维什戴尔's `shadowTile` requires `Battle.onFieldBoard` before ranking summon candidates: a board of this field (a
 teammate's half), never a boss field's hand / 临时整备区 rows or an empty half (§31.10). `grid.inRect` alone also admits
 those bench rows. See [DESIGN §3](design/geometry-time.md#3-coordinates-fields-and-geometry) for the deployment boundary.
+
+假想敌：镜膜 (#481): `refraction(res, hpPct)` permanently latches `hpLost` on the first silence. Subsequent
+折射 buffs restore RES only; max HP and current HP never regain the bonus. `setForm('stopped')` publishes the
+permanent B animation set through the existing form event and UnitInfo for late observers.

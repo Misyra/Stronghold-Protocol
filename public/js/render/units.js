@@ -370,6 +370,9 @@ const dollRoles = (idle, die, attack = null) => Object.freeze({
   idle, deploy: idle, die, attack: attack ? Object.freeze({ begin: null, loop: attack, end: null }) : null, attackDown: null, skill: null,
 });
 export const FORMS = Object.freeze({
+	enemy_9011_acrefr: Object.freeze({
+		stopped: Object.freeze({ change: null, roles: clipSet('B_Idle', 'B_Move', 'B_Die', 'B_Attack') }),
+	}),
   char_1023_ghost2: Object.freeze({
     doll: Object.freeze({ change: 'Start_B', end: 'Die_B', leave: 'Start_2', roles: dollRoles('Idle_B', 'Die_B_2') }),
   }),

@@ -77,7 +77,7 @@
 //                清明's veil 0 s) — Battle._stealthSwitch / targeting.js enemyStealthed (until 0.1.2: at once).
 //                The mirror rule for an ally's 隐匿 — enemy area effects skip it even when it blocks the enemy (0.1.3, GitHub #97) — is areaAllies.
 //   REFLECTION — 折射 (ba.refraction "生效时，法术抗性+70"): RES +refracting.magic_resistance while NOT silenced
-//                (the ability line is SILENCE-flagged: silencing turns it off); 镜膜 also gets max HP +100 % while on.
+//                (the ability line is SILENCE-flagged: silencing turns it off); 镜膜 also gets max HP +100 % until its first silence, which permanently stops its fan.
 //   SPECIAL    — mostly stats; prisoners, 穿刺手, 暴虐兵长, 镜卫, 动力装甲 … in enemies/special.js.
 // Every enemy key of data/enemies.json is either in KITS (this file), BOSS_KEYS (bosses.js) or STATS_ONLY (with the
 // reason) — pinned by test/content/enemies_bosses.test.js. Bounty (悬赏) leaders are included: multi-form ones

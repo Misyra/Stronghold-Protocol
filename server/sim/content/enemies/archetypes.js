@@ -202,16 +202,23 @@ const deathBoom = ({ scale, type = 'phys', r = BOOM_RADIUS, status = null, sil =
   },
 });
 
-/** 折射: RES +v (and optional max HP +hpPct) while not silenced. */
+/**
+ * 折射: RES +res while not silenced. 镜膜's optional max HP bonus is permanently lost on the first silence
+ * (PRTS 假想敌：镜膜, 天赋: "受沉默影响后失效，无法恢复"); its fan stays in the stopped B_* form afterwards.
+ */
 const refraction = (res, hpPct = 0) => ({
-  silAware: true,                                                    // SILENCE-flagged: silence switches it off in tick()
-  tick(b, e, a) {
-    const on = !e.s.flags.silence;
-    if (on === a.on) return;
-    a.on = on;
-    if (on) b.addBuff(e, { key: 'ab:refraction', mods: hpPct ? { resFlat: res, hpPct } : { resFlat: res }, persist: true, visible: true });
-    else b.removeBuff(e, 'ab:refraction');
-  },
+	silAware: true,
+	tick(b, e, a) {
+		const on = !e.s.flags.silence;
+		if (hpPct && !on && !a.hpLost) {
+			a.hpLost = true;
+			setForm(b, e, 'stopped');
+		}
+		if (on === a.on) return;
+		a.on = on;
+		if (on) b.addBuff(e, { key: 'ab:refraction', mods: hpPct && !a.hpLost ? { resFlat: res, hpPct } : { resFlat: res }, persist: true, visible: true });
+		else b.removeBuff(e, 'ab:refraction');
+	},
 });
 
 /**

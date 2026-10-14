@@ -109,7 +109,7 @@ npm run assets                                               # rebuilds the mani
 `tools/fetch-assets.mjs` only builds the skins listed in `data/skins-installed.json`, so a full run never
 re-downloads one that was uninstalled **and** removes it from the manifest — matching what the installer writes.
 
-Upstream sources: `fexli/ArknightsResource` (`spine/{charId}/{stem}/{Front,Back}/`) for the models,
+Upstream sources: `fexli/ArknightsResource` (`spine/{charId}/{stem}/{Front,Back}/`, or `…/{stem}/Spine/` for the outfits that ship one merged model — see meta.layoutRule) for the models,
 `yuanyan3060/ArknightsGameResource` (`avatar/{avatarId}.png`) for the 180×180 thumbnails, and Kengxxiao's
 `skin_table.json` for the names and series. Two naming rules, both verified:
 
@@ -155,12 +155,23 @@ the model itself is **played live** in the frame below them, with one button per
   (30 frames, transparent; 128 px ≈ 140 KB) — ~1.1 MB per skin over three clips, ~190 MB over the catalogue, all of
   it extra files every client would fetch, and none of it 60 fps. Live playback costs **0 extra bytes**: the model
   files are the ones a battle already pulls, from the HTTP cache.
-- **Buttons follow the model, not a list.** `clipsOf(m, assetId, skinId)` reads the manifest's `anims` roles — the
-  same roles the battlefield plays — and returns one entry per animation that exists: 部署 / 待机 / 攻击 / 攻击·下 /
-  技能1…n / 眩晕 / 移动 / 死亡. It differs per skin (隐现's own model ships two skills, its 罗德厨房 skin only one),
-  which is exactly why it is derived rather than hardcoded. Each button plays the real sequence (an attack is
-  `Attack_Begin → Attack_Loop ×2 → Attack_End → Idle`; 死亡 stops on its last frame) and carries the underlying clip
-  names as its tooltip. The caption counts every clip in the skeleton (隐现: 19), stance variants included.
+- **Buttons follow the skeleton, not a list.** `clipsOf(m, assetId, skinId)` collects one entry per animation the
+  model actually has: 部署 / 待机 / 攻击 / 攻击·下 / 技能1…n / 眩晕 / 移动 / 死亡 — 部署 / 待机 / 攻击 and up to three
+  skills stay on screen, the rest fold behind a 更多动画 toggle. Two sources, on purpose:
+  - the manifest's `anims` roles (the same roles the battlefield plays), and
+  - **the skeleton's own clip names**, via `skillFamilies()`: `Skill_1` / `Skill1` / `Skill_01` (a one-clip skill) and
+    `Skill_<n>_Begin/_Loop/_End`, merged with the roles by index. Directional (`Skill_Right_Loop`) and prone
+    (`Skill_Down_2`) variants are not families of their own.
+  This second source matters because the manifest only resolves the skills a mode *uses* — `skillIndicesByChar()`
+  turns the pool's `defaultSkillIndex` into a per-operator list, so 锏's model (Skill_1, Skill_2 and a
+  Skill_3_Begin/Loop/End trio) came back with index 2 alone and her preview offered a single 技能 button. With the
+  scan she shows three, as do 浊心斯卡蒂's outfits (whose resolved roles likewise cover one skill). Each button plays
+  the real sequence (an attack is `Attack_Begin → Attack_Loop ×2 → Attack_End → Idle`; a one-clip skill casts once and
+  returns to 待机; 死亡 stops on its last frame) and carries the underlying clip names as its tooltip. The caption
+  names the animation being played and counts every clip in the skeleton (隐现: 19), stance variants included.
+  ⚠️ The same gap is visible in battle: picking S1/S2 for 锏 makes the renderer fall back to `roles.skill` (her S3),
+  so the wrong animation plays. Fixing that means changing what the manifest resolves, which is a separate concern
+  from this feature.
 - **A static snapshot still exists**: a 256 px PNG (`previewState` / `requestPreview`) is the instant first paint and
   the fallback when WebGL is unavailable.
 - Two traps that cost real debugging, both worth remembering:
@@ -190,10 +201,11 @@ the model itself is **played live** in the frame below them, with one button per
 - **Docker images cannot install.** The runtime stage of the `Dockerfile` copies `server/`, `shared/`, `data/`,
   `public/` and `docs/research/` but not `tools/`, which `server/skinInstall.js` imports on demand. Add `tools/` to
   that stage if the in-game button should work there.
-- **Two skins have no model upstream.** `char_1012_skadi2@boc#4` and `char_1012_skadi2@iteration#2` (斯卡蒂)
-  404 in `fexli/ArknightsResource` — verified 2026-10-14, both skel and atlas, while other skins in the same repo
-  answer 200. The installer reports them as failed, the picker keeps showing 未安装 · 点击安装 and the unit falls
-  back to the operator's default model. The other 172 install cleanly, so a catalogue of 174 skins yields 172
-  installed (this checkout has all of them; `data/skins-installed.json` is the truth).
+- **Some outfits ship ONE model under `Spine/`, not a `Front`/`Back` pair.** A model's files normally live at
+  `spine/{charId}/{stem}/{Front,Back}/<stem>.<ext>`; two outfits (`char_1012_skadi2@boc#4`, `@iteration#2`) instead
+  have a single `spine/{charId}/{stem}/Spine/<stem>.{skel,atlas,png}`. Their `{Front,Back}` paths 404, which is what
+  the first install run hit — the resources were always there, the URL shape was wrong. Both are recorded as `front`
+  with no `back` (one direction only, so a unit facing up draws the same model). `docs/research/08-skins.json`'s
+  `meta.layoutRule` says so; a future skin in that shape needs the same treatment.
 - **An install is tens of seconds, not instant.** The eight files come from GitHub at the link's speed; the panel
   acknowledges immediately and reports back through `skins.changed`.

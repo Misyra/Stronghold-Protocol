@@ -728,3 +728,6 @@
   color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%);
   border-color: rgba(78, 216, 175, .7);
 }
+
+.lo-clipbtn--more { color: var(--text-dim); border-style: dashed; }
+.lo-clipbtn--more .num { font-family: var(--font-num); }

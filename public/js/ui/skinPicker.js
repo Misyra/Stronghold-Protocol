@@ -152,6 +152,11 @@ export function SkinSection({ chess, net = appNet }) {
   const renderable = !!(chessId && charId && list.length);
   // the animations this exact model ships (per operator AND skin — a skin can have fewer skills)
   const { total: clipTotal, clips } = charId ? clipsOf(m, charId, previewSkin) : { total: 0, clips: [] };
+  // 部署 / 待机 / 攻击 and up to three skills stay out; 攻击·下 / 眩晕 / 移动 / 死亡 and any further skill fold away
+  const isPrimary = (c) => (c.kind === 'skill' ? c.skillIndex < 3 : (c.id === 'deploy' || c.id === 'idle' || c.id === 'attack'));
+  const primaryClips = clips.filter(isPrimary);
+  const extraClips = clips.filter((c) => !isPrimary(c));
+  const [extraOpen, setExtraOpen] = useState(false);
   // the catalogue lives in data/skins.json and the installed set in data/assets.json; both may still be loading
   useEffect(() => {
     let dead = false;
@@ -176,6 +181,7 @@ export function SkinSection({ chess, net = appNet }) {
   // a new model starts on 待机 (its first animation when it has no idle)
   useEffect(() => {
     setClipId('');
+    setExtraOpen(false);
     setLive(false);
   }, [charId, previewSkin]);
 
@@ -249,6 +255,7 @@ export function SkinSection({ chess, net = appNet }) {
   const previewStateNow = previewState(charId, previewSkin).status;
   const previewUrl = modelArt(charId, previewSkin);
   const previewName = chosen ? (list.find((x) => x.id === chosen)?.name || chosen) : t('默认');
+  const currentClip = clips.find((c) => c.id === (clipId || 'idle')) || clips[0] || null;
   const note = previewStateNow === 'failed' ? ` · ${t('模型不可用')}` : '';
   return html`<section class="lo-sec lo-sec--skin" data-testid="skin-section">
     <header class="lo-sec__head">
@@ -274,12 +281,15 @@ export function SkinSection({ chess, net = appNet }) {
         <img class="lo-model__art" src=${previewUrl || TRANSPARENT_PX} alt="" />
         <div class="lo-model__live" ref=${setBoxNode}></div>
       </div>
-      <p class="lo-model__cap">${t('当前战斗模型：{name}', { name: previewName })}${clipTotal ? ` · ${t('共 {n} 段动画', { n: clipTotal })}` : ''}${note}</p>
+      <p class="lo-model__cap">${t('当前战斗模型：{name}', { name: previewName })}${currentClip ? ` · ${clipLabel(currentClip)}` : ''}${clipTotal ? ` · ${t('共 {n} 段动画', { n: clipTotal })}` : ''}${note}</p>
       <div class="lo-model__clips" role="group" aria-label=${t('预览动画')}>
-        ${clips.map((c) => html`<button key=${c.id} type="button" data-clip=${c.id} title=${c.names.join(' > ')}
+        ${[...primaryClips, ...(extraOpen ? extraClips : [])].map((c) => html`<button key=${c.id} type="button" data-clip=${c.id} title=${c.names.join(' > ')}
             aria-pressed=${(clipId || 'idle') === c.id ? 'true' : 'false'}
             class=${cx('lo-clipbtn', (clipId || 'idle') === c.id && 'is-on')}
             onClick=${() => setClipId(c.id)}>${clipLabel(c)}</button>`)}
+        ${extraClips.length ? html`<button key="more" type="button" data-clip-more="1" aria-expanded=${extraOpen ? 'true' : 'false'}
+            class=${cx('lo-clipbtn', 'lo-clipbtn--more', extraOpen && 'is-on')}
+            onClick=${() => setExtraOpen((v) => !v)}>${extraOpen ? t('收起') : t('更多动画')} <b class="num">${extraClips.length}</b></button>` : null}
       </div>
     </div>
     <p class="lo-skin__hint">${t('战斗模型决定局内小人的样子（队友也看得见）；商店立绘只影响你自己看到的商店卡，两者互不影响。')}</p>

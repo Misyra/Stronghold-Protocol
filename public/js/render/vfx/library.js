@@ -96,6 +96,7 @@ export class FxLibrary {
     this.meshLoads = new Map(); // key → Promise
     this.images = new Map();    // `${key}|${half}` → { image, flipped, info } | null
     this.imageLoads = new Map();
+    this.onGpu = new Set();     // the same ids once FxGL holds them (their images were let go: not decoded again)
     this.queue = [];
     this.active = 0;
     this.failed = new Set();
@@ -240,6 +241,7 @@ export class FxLibrary {
   loadTexture(key, half) {
     const id = `${key}|${half ? 1 : 0}`;
     if (this.images.has(id)) return Promise.resolve(this.images.get(id));
+    if (this.onGpu.has(id)) return Promise.resolve(null);
     let p = this.imageLoads.get(id);
     if (!p) {
       p = Promise.all([this.init(), this.texInfo()]).then(async ([, infos]) => {
@@ -302,7 +304,11 @@ export class FxLibrary {
     if (r && r.image && typeof r.image.close === 'function') r.image.close();
     this.images.delete(id);
     this.imageLoads.delete(id);
+    this.onGpu.add(id);
   }
+
+  /** The GPU let its textures go (FxGL destroyed): they load again when drawn. */
+  forgetGpu() { this.onGpu.clear(); }
 
   onLoad(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   _notify() { for (const fn of this.listeners) { try { fn(); } catch { /* ignore */ } } }
@@ -312,5 +318,6 @@ export class FxLibrary {
     for (const r of this.images.values()) if (r && r.image && typeof r.image.close === 'function') r.image.close();
     this.images.clear();
     this.imageLoads.clear();
+    this.onGpu.clear();
   }
 }

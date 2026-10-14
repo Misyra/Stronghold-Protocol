@@ -64,8 +64,10 @@
 //   view.holdPiece(uid, {row,col} | null)       keep a dropped prep piece standing on a tile while its direction is
 //                                               chosen / the move is in flight (null releases; setPrep then settles it)
 //   view.setPieceDir(uid, dir)                  show a prep piece facing UP|RIGHT|DOWN|LEFT (wheel preview / stored dir)
-//   view.setSettings({ damageNumbers, officialDamageNumbers, ammoCount, quality: 'high'|'medium'|'low' }) ; view.resize() ; view.destroy()
-//                                               (ammoCount: 设置「弹药数量」, the count under an ammo skill's bar — PR #552)
+//   view.setSettings({ damageNumbers, officialDamageNumbers, ammoCount, officialFx, quality: 'high'|'medium'|'low' }) ; view.resize() ; view.destroy()
+//                                               (ammoCount: 设置「弹药数量」, the count under an ammo skill's bar — PR #552;
+//                                               officialFx: 设置「官方特效」 'auto'|'off'|'lite'|'full', the official battle
+//                                               effects on the 3D board — render/vfx, DESIGN §9 "Official battle effects")
 //   view.stats() → { fps, frameMs, cpuMs, renderMs, units, particles, impostor, impostorAtlas, boardArt, … } (dev / perf)
 //
 // Enemy preview pen (research 09 §2.2 / 08 §4.2, render/pen.js): in prep the next round's enemies idle in the pen
@@ -1543,11 +1545,15 @@ export async function createFieldView(host, options = {}) {
     if (!Array.isArray(list)) return 0;
     // spawn infos are needed as soon as possible (a snapshot may reference the unit first); a placeholder view made
     // for a snapshot unit nobody announced is rebuilt with the real info
+    let fresh = null;
     for (const e of list) {
       if (!Array.isArray(e) || e[0] !== 'spawn') continue;
       const info = addInfo(e[1]);
       if (info && views.get(info.id)?._unknown) dropView(info.id);
+      if (info && ofx.active) (fresh || (fresh = [])).push({ id: info.id, info });
     }
+    // the official effects of units joining the battle load ahead of their first attack (render/vfx/wiring.js more)
+    if (fresh) wiring.more(fresh);
     return interp.pushEvents(list, performance.now() / 1000, t);
   }
 
@@ -1566,7 +1572,7 @@ export async function createFieldView(host, options = {}) {
       woundUp.add(e);
       // the official cast effects that start with the cast play with the clip (render/vfx/wiring.js castStart)
       const a = v.actor;
-      wiring.castStart(v, views.get(e[2]), e[3], a ? { skip: a.windSkip || 0, left: Number.isFinite(a.attackUntil) ? a.attackUntil - a.clock : 0 } : {});
+      wiring.castStart(v, views.get(e[2]), e[3], a ? { skip: a.windSkip || 0, left: a.windCastLeft || 0 } : {});
     }
   }
 

@@ -10,6 +10,7 @@
 //        the particle budget's perf check; window.__fx.sample(ms) → { fps, p95, cpuMs, particles, effects, draws })
 //        &attack=<unit id> (the wiring demo: that unit attacks a dummy 3 tiles away every second — its casts,
 //        projectile and hits from index.json through render/vfx/wiring.js, as in a battle) &kind=<projKind> &skill=1
+//        &dist=<tiles> (to the dummy; with &face=L it stands on the left and the attacker faces it)
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
 //   setTier(t), keys() } — the tests drive frames by hand (ticker stopped) for deterministic pictures.
 
@@ -198,26 +199,34 @@ async function main() {
   function startAttackDemo(unitKey, o = {}) {
     ofx.clear(); wiring.clear();
     demo.on = true; demo.t = 0; demo.kind = o.kind || demo.kind;
+    // facing left (&face=L): the dummy stands on the left and the attacker faces it (an operator's deploy direction LEFT)
+    const left = o.left ?? state.left, dist = o.dist ?? 3;
     demo.src = fake(1, unitKey, UNIT_TILE.col, UNIT_TILE.row, /^enemy_/.test(unitKey));
-    demo.tgt = fake(2, o.target || 'enemy_1007_slime', UNIT_TILE.col + (o.dist ?? 3), UNIT_TILE.row, !/^enemy_/.test(unitKey));
-    if (demo.src.isEnemy) demo.src.visFacing = 1;
+    demo.tgt = fake(2, o.target || 'enemy_1007_slime', UNIT_TILE.col + (left ? -dist : dist), UNIT_TILE.row, !/^enemy_/.test(unitKey));
+    demo.src.visFacing = left ? -1 : 1;
+    demo.tgt.visFacing = left ? 1 : -1;
+    if (!demo.src.isEnemy) demo.src.dir = left ? 'LEFT' : 'RIGHT';
     if (o.skill) demo.src.flags |= 16;
     wiring.begin([demo.src, demo.tgt]);
   }
+  // the wind-up, as render/app.js starts it with the attacker's clip: the casts that start with the cast (ON_CAST_START)
+  // play WIND_UP s before each attack after the first, the rest at the strike
+  const WIND_UP = 0.3;
   demoStep = (dt) => {
     if (!demo.on) return;
     const before = demo.t;
     demo.t += dt;
     wiring.tick();
+    if (before > 0 && Math.floor(before + WIND_UP) !== Math.floor(demo.t + WIND_UP)) wiring.castStart(demo.src, demo.tgt, demo.kind, { skip: 0, left: WIND_UP + 0.5 });
     if (Math.floor(before) !== Math.floor(demo.t) || before === 0) {
       const melee = demo.kind === 'none';
-      wiring.attack(demo.src, demo.tgt, demo.kind, ofx.time);
+      wiring.attack(demo.src, demo.tgt, demo.kind, ofx.time, before > 0);
       // the damage lands when the sim's projectile would (melee: at once)
       const dur = melee ? 0 : Math.hypot(demo.tgt.x - demo.src.x, demo.tgt.y - demo.src.y) / projSpeed(demo.kind);
       (ofx.timers || (ofx.timers = [])).push({ at: ofx.time + dur, fn: () => wiring.damage(demo.tgt, 'phys', demo.src, ofx.time) });
     }
   };
-  if (q.get('attack')) startAttackDemo(q.get('attack'), { kind: q.get('kind') || undefined, skill: q.get('skill') === '1' });
+  if (q.get('attack')) startAttackDemo(q.get('attack'), { kind: q.get('kind') || undefined, skill: q.get('skill') === '1', dist: Number(q.get('dist')) || undefined });
   if (q.get('stress')) { const [l, h] = q.get('stress').split(',').map(Number); await startStress(l || 0, h || 0); }
 
   Object.assign(api, {

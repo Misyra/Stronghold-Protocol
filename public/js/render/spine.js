@@ -564,9 +564,12 @@ export class SpineActor {
     this._play(clip.loop, false, { timeScale: plan.tsWind, start: plan.start, mix: 0.06 });
     this.windTs = plan.ts;
     this.windUntil = this.clock + lead;
-    // how far into its clip the wind-up started (game s at the attack's rhythm): the official effects that start with
-    // the cast begin that far in (render/vfx/wiring.js castStart)
-    this.windSkip = plan.start / plan.ts;
+    // for the official effects that start with the cast (render/vfx/wiring.js castStart): how far into its clip the
+    // wind-up started and when the cast ends, in game s at the clip's own speed — sped up only when the attacks come
+    // quicker than the clip, as the client plays it (this actor may stretch the clip over a slower rhythm)
+    const tsOff = clampN(loopDur / iv, 1, 4);
+    this.windSkip = plan.start / tsOff;
+    this.windCastLeft = lead + Math.max(0, loopDur - hit) / tsOff;
     this.wound = true;
     return true;
   }

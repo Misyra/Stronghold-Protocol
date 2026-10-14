@@ -33,6 +33,8 @@ export const LATE_START = 0.6;
 export const POOL_MAX = 12;
 /** Battle seconds a one-shot without an authored duration (it loops) may play before it is stopped. */
 export const ONE_SHOT_TTL = 4;
+/** Battle seconds a looping effect nobody owns lasts at most (the wiring stops a cast loop at its end event). */
+export const LOOP_TTL = 8;
 /** Real milliseconds per frame spent compiling programs / uploading textures ahead of their first draw. */
 export const WARM_MS = 2;
 
@@ -410,22 +412,25 @@ export class FxHandle {
     fx.place(this.placeArgs);
     fx.track = this.opts.track || null;
     fx.handle = this;
-    // a one-shot nobody stops is capped: its authored duration (plus its linger), else ONE_SHOT_TTL
-    if (!this.opts.loop && !this.opts.important && !def.isLoop) {
+    // a one-shot nobody stops is capped: its authored duration (plus its linger), else ONE_SHOT_TTL; a looping prefab
+    // nobody owns (the wiring stops it at its end event) ends after LOOP_TTL at the latest
+    if (!this.opts.loop && !this.opts.important) {
       const d = Number(def.stats?.duration);
-      fx.ttl = Number.isFinite(d) && d > 0 ? Math.min(ONE_SHOT_TTL * 2, d + def.delayToPlay + 0.5) : ONE_SHOT_TTL;
+      fx.ttl = def.isLoop ? LOOP_TTL : Number.isFinite(d) && d > 0 ? Math.min(ONE_SHOT_TTL * 2, d + def.delayToPlay + 0.5) : ONE_SHOT_TTL;
     }
     fx.data = this.opts.data ?? null;
     if (this.opts.onFinish) fx.onFinish = this.opts.onFinish;
-    // a chained effect of the prefab itself (OnPlayEmitter / OnFinishEmitter) starts with the same placement
-    for (const e of def.onPlay) for (const k of e.keys) if (k !== def.key) s.spawn(k, this.placeArgs, { track: this.opts.track, data: this.opts.data });
-    if (def.onFinish.length) {
-      const prev = fx.onFinish;
-      fx.onFinish = (f) => {
-        prev?.(f);
-        for (const k of def.onFinish) if (k !== def.key) s.spawn(k, { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { track: this.opts.track });
-      };
-    }
+    // a chained effect of the prefab itself (OnPlayEmitter) starts with the same placement and owner; a looping one
+    // stops with it (OnFinishEmitter's start where it finished)
+    this.children = [];
+    const own = { track: this.opts.track, data: this.opts.data, loop: this.opts.loop, important: this.opts.important };
+    for (const e of def.onPlay) for (const k of e.keys) if (k !== def.key) { const c = s.spawn(k, this.placeArgs, own); if (c) this.children.push(c); }
+    const prev = fx.onFinish;
+    fx.onFinish = (f) => {
+      prev?.(f);
+      this._stopChildren();
+      for (const k of def.onFinish) if (k !== def.key) s.spawn(k, { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { track: this.opts.track });
+    };
     this.effect = fx;
     // started late (a cast whose wind-up began past the clip's start): advanced to where it would be
     if (this.opts.skip > 0) fx.update(Math.min(1, this.opts.skip));
@@ -436,9 +441,14 @@ export class FxHandle {
 
   place(o) { Object.assign(this.placeArgs, o); this.effect?.place(o); return this; }
 
-  stop(o = {}) { this.stopped = o; this.cancelled = !this.effect; this.effect?.stop(o); }
+  stop(o = {}) { this.stopped = o; this.cancelled = !this.effect; this.effect?.stop(o); this._stopChildren(); }
 
-  kill() { this.cancelled = true; this.effect?.kill(); }
+  kill() { this.cancelled = true; this.effect?.kill(); for (const c of this.children || []) c.kill(); }
+
+  /** The looping chained effects end with this one (a one-shot child plays out). */
+  _stopChildren() {
+    for (const c of this.children || []) if (this.sys.lib.def(c.key)?.isLoop) c.stop();
+  }
 
   get alive() { return !this.cancelled && !this.done && (!this.effect || !this.effect.done); }
 }

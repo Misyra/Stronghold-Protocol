@@ -8,7 +8,7 @@
 // returns whether it drew the official effect.
 //
 //   const w = new FxWiring(ofx, { unitKey: (info) => string|null, speed: (kind) => tiles per game s })
-//   await w.begin(infos)          preload the battle's units' effects (prep → battle)
+//   await w.begin(infos)          preload the battle's units' effects (prep → battle); w.more(infos) those who join later
 //   w.castStart(src, tgt, kind, { skip, left }) / w.attack(src, tgt, kind, time, wound) / w.damage(v, type, src, time) /
 //   w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) / w.clear()
 //
@@ -95,10 +95,10 @@ export class FxWiring {
     return { x: v.x, y: v.y, z: (v.z || 0) + (v.hover || 0), left: (v.visFacing ?? v.facing ?? 1) < 0, back: typeof v._wantsBack === 'function' ? !!v._wantsBack() && !!v.entryBack : false };
   }
 
-  /** The battle's units' effect keys (for preloading). */
-  keysFor(views) {
+  /** The battle's units' effect keys (for preloading; `generic` false: the units' own only). */
+  keysFor(views, generic = true) {
     const keys = new Set();
-    const g = this.idx?.generic;
+    const g = generic ? this.idx?.generic : null;
     if (g) {
       for (const k of Object.values(g.hit || {})) if (k) keys.add(k);
       for (const k of Object.values(g.die || {})) if (k) keys.add(k);
@@ -139,6 +139,14 @@ export class FxWiring {
     const n = await this.ofx.lib.preload(keys, { half: this.ofx.lite });
     this.ofx.warm?.(keys);
     return n;
+  }
+
+  /** Units that joined the battle (spawn events): their prefabs not loaded yet load now, without blocking. */
+  more(views) {
+    if (!this.ofx.active || !this.idx) return;
+    const keys = this.keysFor(views, false).filter((k) => !this.ofx.lib.defs?.has(k));
+    if (!keys.length) return;
+    this.ofx.lib.preload(keys, { half: this.ofx.lite }).then(() => this.ofx.warm?.(keys), () => {});
   }
 
   /** The attack mode of a unit now (`S<n>` while its skill n is on and the unit has such a mode). */
@@ -302,7 +310,12 @@ export class FxWiring {
           const h = onTarget
             ? this.playOn(k, tgt, { toward: beyond(src, tgt), flipFrom: src, skip })
             : this.playOn(k, src, { toward: tgt, skip });
-          if (h && !e.oneshot) setTimeout0(this.ofx, h, phase === 'start' && info.left > 0 ? Math.min(3, info.left) : CAST_LOOP_S);
+          // a looping row stops at its end event (the cast's end); so does a looping prefab on a one-shot row, which
+          // would otherwise never end (known once loaded: decided when the time comes)
+          if (h) {
+            const loopRow = !e.oneshot;
+            setTimeout0(this.ofx, { stop: () => { if (loopRow || this.ofx.lib.def(h.key)?.isLoop) h.stop(); } }, phase === 'start' && info.left > 0 ? Math.min(3, info.left) : CAST_LOOP_S, true);
+          }
         }
       }
     }

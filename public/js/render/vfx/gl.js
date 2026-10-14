@@ -321,9 +321,11 @@ export class FxGL {
           if (rec.camPos) gl.uniform3fv(rec.camPos, frame.cam);
         }
       }
-      // material uniforms (overrides from clips / UV tweeners first): uploaded again only for another material / overrides
+      // material uniforms (overrides from clips / UV tweeners first): all of them for another material; for the same
+      // material with other overrides only the uniforms either set names (the textures are bound again regardless:
+      // another frame's upload may have rebound a unit)
       const ov = it.ov;
-      if (mat !== lastMat || ov || lastOv) {
+      if (mat !== lastMat) {
         for (const e of plan.tex) { gl.activeTexture(gl.TEXTURE0 + e.unit); gl.bindTexture(gl.TEXTURE_2D, e.glTex); gl.uniform1i(e.loc, e.unit); }
         for (const e of plan.f) {
           const o = ov ? ov[e.name] : undefined;
@@ -336,8 +338,21 @@ export class FxGL {
         }
         lastMat = mat; lastOv = ov;
       } else {
-        // same material: only the textures (another frame's upload may have rebound a unit)
         for (const e of plan.tex) { gl.activeTexture(gl.TEXTURE0 + e.unit); gl.bindTexture(gl.TEXTURE_2D, e.glTex); }
+        if (ov !== lastOv) {
+          for (const e of plan.f) {
+            if (!(ov && e.name in ov) && !(lastOv && e.name in lastOv)) continue;
+            const o = ov ? ov[e.name] : undefined;
+            gl.uniform1f(e.loc, typeof o === 'number' ? o : e.value);
+          }
+          for (const e of plan.v) {
+            if (!(ov && e.name in ov) && !(lastOv && e.name in lastOv)) continue;
+            const o = ov ? ov[e.name] : undefined;
+            const v = Array.isArray(o) ? o : e.value;
+            gl.uniform4f(e.loc, v[0], v[1], v[2], v[3]);
+          }
+          lastOv = ov;
+        }
       }
       const st = mat.state;
       if (st !== lastState) { this._state(st, mat.family); lastState = st; }
@@ -416,6 +431,7 @@ export class FxGL {
     const gl = this.gl;
     for (const t of this.textures.values()) gl.deleteTexture(t.tex);
     this.textures.clear();
+    this.lib.forgetGpu?.();
     this.stats.textures = 0; this.stats.texBytes = 0;
   }
 

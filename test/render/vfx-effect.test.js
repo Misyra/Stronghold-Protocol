@@ -13,6 +13,7 @@ import { FrameData, cameraBasis } from '../../public/js/render/vfx/geom.js';
 import { resolveOfficialFx } from '../../public/js/render/vfx/tier.js';
 import { FxWiring } from '../../public/js/render/vfx/wiring.js';
 import { listHasEffects } from '../../public/js/render/vfx/available.js';
+import { OfficialFx, LOOP_TTL } from '../../public/js/render/vfx/system.js';
 import { quatRotate } from '../../public/js/render/vfx/math.js';
 
 const MAT = {
@@ -125,6 +126,22 @@ describe('effect lifecycle', () => {
     runUntil(fx, 2);
     assert.equal(n, 1);
   });
+});
+
+test('an unowned looping effect ends after LOOP_TTL; an OnPlayEmitter loop is owned and stopped with its parent', () => {
+  const loopy = compileEffect(desc([root([pe({ _isLoop: 1 })]), psNode(1, 0, { loop: true, rate: 10 })], { key: 'loopy' }));
+  const parent = compileEffect(desc([root([pe({}), { class: 'OnPlayEmitter', enabled: true, fields: { _effects: ['loopy'], _preDelay: 0 } }]), psNode(1, 0)], { key: 'parent' }));
+  const defs = new Map([['loopy', loopy], ['parent', parent]]);
+  const lib = { available: true, defs, has: (k) => defs.has(k), def: (k) => defs.get(k) || null, load: async (k) => defs.get(k) || null };
+  const ofx = new OfficialFx({ P: { Container: class {} }, renderer: null, cam: () => null, lib, tier: 'full' });
+  const h = ofx.spawn('loopy', { pos: [0, 0, 0] }, {});
+  assert.equal(h.effect.ttl, LOOP_TTL, 'a cast loop the wiring forgot still ends');
+  const p = ofx.spawn('parent', { pos: [0, 0, 0] }, { loop: true });
+  const child = p.children[0];
+  assert.equal(child?.key, 'loopy');
+  assert.equal(child.effect.ttl, Infinity, 'owned like the effect that played it');
+  p.stop();
+  assert.ok(child.stopped, 'stopped with it');
 });
 
 describe('placement and direction', () => {
@@ -364,6 +381,17 @@ describe('wiring', () => {
     w.attack(a, t, 'arrow', 1, false);
     assert.deepEqual(spawned.slice(3), ['c_start', 'c_spell', 'c_hook', 'c_target']);
     assert.equal(w.castStart(a, t, 'chain', {}), false, 'a chain bounce is no attack of its own');
+  });
+
+  test('a looping prefab on a one-shot cast row stops at the cast end too (it would never end)', async () => {
+    const { ofx, handles } = fakeOfx();
+    ofx.lib.def = (k) => (k === 'x_start' ? { isLoop: true } : null);
+    const w = new FxWiring(ofx, {});
+    await w.ready();
+    w.attack(view(1, 'char_x', 5), view(2, 'enemy_y', 6, true), 'none', 0);
+    assert.equal(handles[0].key, 'x_start');
+    ofx.time = 0.7; w.tick();
+    assert.ok(handles[0].stopped);
   });
 
   test('PauseEffectIf: each check is a CheckType (1 pause while it holds, 2 while not); conditions no view shows never pause', async () => {

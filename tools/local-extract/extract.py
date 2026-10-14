@@ -39,6 +39,10 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     scene.json + scene.bin + lightmap pages and scene/tex/ (the materials' albedo textures). The scene bundles ship
     only while the season runs: they are read from the client when it has them, else from --scenes <dir> (default
     .cache/official-scenes/*, filled by tools/local-extract/fetch_scenes.py)
+  - the official battle effects (特效) of the mode's operators, enemies and tokens (fx.py, docs/design/vfx-format.md)
+    → fx/index.json, fx/textures.json, fx/prefabs/*.json, fx/tex/**.webp, fx/mesh/*.json;
+    only with an explicit --only fx (a plain run leaves them out): the Phase 1a sample by default, --fx-set used for
+    every effect the units reference, --fx-keys <k1,k2> for named prefabs
 
 Usage:
   python3 -m venv .venv && .venv/bin/pip install -r tools/local-extract/requirements.txt
@@ -48,6 +52,7 @@ Usage:
                                                           pages, from the PNGs already extracted — e.g. the local art
                                                           copied from a release bundle; needs Pillow)
   .venv/bin/python tools/local-extract/extract.py --only scene [--scenes <dir of in-season bundles>]
+  .venv/bin/python tools/local-extract/extract.py --only fx [--fx-set sample|used] [--fx-keys k1,k2] [--fx-jobs N]
 
 Writes <out>/**.png|.webp|.skel|.atlas and data/local-assets.json (manifest of what was extracted). With --only, just
 the jobs whose output subdir starts with one of the prefixes run, and their groups replace those of the existing
@@ -63,6 +68,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scenes  # noqa: E402  (the battlefield scene table and exporter; imports UnityPy only when it runs)
+import fx  # noqa: E402  (the official battle effects, docs/design/vfx-format.md; imports UnityPy only when it runs)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path.home()
@@ -759,6 +765,12 @@ def write_spine(objects, sda, sub, name, out_root, manifest, log):
     return len(files) + len(pages)
 
 
+def fx_selected(only):
+    """Whether the fx run (fx.py) runs: only when an --only prefix names fx (or a path under it) — a plain run, with no
+    prefix, leaves the effects out (minutes of work and ~100 MB for the full set)."""
+    return any(p.rstrip('/') == fx.FX_SUB or p.startswith(fx.FX_SUB + '/') for p in only)
+
+
 def scene_ids(only):
     """The stage ids of scenes.SCENES that run under --only (all with no prefix, `scene` or a parent of it)."""
     return spine_ids(only, scenes.SCENE_SUB, [sid for sid, _deps in scenes.SCENES])
@@ -876,6 +888,11 @@ def main():
                     help='an AB root holding the battlefield scene bundles of an in-season version (repeatable; '
                          'searched after --game and before .cache/official-scenes/*)')
     ap.add_argument('--print-jobs', action='store_true', help='print the job table as JSON and exit')
+    ap.add_argument('--fx-set', choices=('sample', 'used'), default='sample',
+                    help='with --only fx: the Phase 1a sample (default) or every effect the mode\'s units reference')
+    ap.add_argument('--fx-keys', default='', metavar='K1,K2',
+                    help='with --only fx: export only these effect prefabs (comma-separated keys)')
+    ap.add_argument('--fx-jobs', type=int, default=0, metavar='N', help='with --only fx: worker processes (default up to 8)')
     ap.add_argument('--webp', action='store_true',
                     help='only write the WebP copies of the board textures and the guide pages from the PNGs already '
                          'under --out and list them in the manifest (needs Pillow, not the client)')
@@ -892,6 +909,9 @@ def main():
                                         'options': GUIDE_WEBP_OPTIONS[GUIDE_WEBP_MODE]},
                           'enemySpines': {'bundles': ENEMY_ART, 'sub': ENEMY_SPINE_SUB, 'ids': ENEMY_SPINES},
                           'tokenSpines': {'bundles': TOKEN_PACKS, 'sub': TOKEN_SPINE_SUB, 'ids': TOKEN_SPINES},
+                          'fx': {'sub': fx.FX_SUB, 'version': fx.FORMAT_VERSION, 'optIn': True,
+                                 'sample': {'keys': fx.FX_SAMPLE_KEYS, 'units': fx.FX_SAMPLE_UNITS,
+                                            'coverage': fx.FX_COVERAGE_KEYS}},
                           'scenes': {'sub': scenes.SCENE_SUB, 'tex': scenes.TEX_SUB,
                                      'stages': [{'id': sid, 'bundle': scenes.scene_bundle(sid), 'deps': deps}
                                                 for sid, deps in scenes.SCENES]}},
@@ -908,7 +928,8 @@ def main():
     enemy_ids = spine_ids(args.only, ENEMY_SPINE_SUB, ENEMY_SPINES)
     token_ids = spine_ids(args.only, TOKEN_SPINE_SUB, TOKEN_SPINES)
     stage_ids = scene_ids(args.only)
-    if not jobs and not enemy_ids and not token_ids and not stage_ids:
+    fx_on = fx_selected(args.only)
+    if not jobs and not enemy_ids and not token_ids and not stage_ids and not fx_on:
         print(f'--only {args.only}: no job matches', file=sys.stderr)
         return 2
     out_root = Path(args.out)
@@ -921,6 +942,10 @@ def main():
         total += export_enemy_spines(ab_root, out_root, manifest, print, enemy_ids)
     if token_ids:
         total += export_token_spines(ab_root, out_root, manifest, print, token_ids)
+    if fx_on:
+        keys = [k.strip() for k in args.fx_keys.split(',') if k.strip()]
+        total += fx.export_fx(ab_root, out_root, manifest, print, selection=args.fx_set, keys=keys or None,
+                              jobs=args.fx_jobs or None, root=ROOT)
     if stage_ids:
         total += export_scenes(ab_root, out_root, manifest, print, stage_ids, scene_roots(ab_root, args.scenes))
     old = {}

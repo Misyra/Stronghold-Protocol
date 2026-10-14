@@ -289,7 +289,6 @@ the exact b.snap `ammo` counts, extra rounds and refills included), centred in t
 move down by its height. It hides with the magazine, in the prep view and after death. The simplified board has no ammo
 bar and so no count.
 
-
 ### Plugin studio gameplay previews (§32.9.1)
 
 Gameplay authoring uses a separate editor module per template under `public/studio/js/editors/`. DSL inputs are
@@ -300,3 +299,22 @@ frame sandbox, navigation and message limits remain in force. The room's setting
 normalized values from the room, read-only for non-hosts and during a match. Vanilla pages load no extra studio code.
 
 Authoring checks (DESIGN §32.9.1): numeric fields display the shared official bounds and positive step floor; invalid saves are refused. DSL validation network failures are explicit, and saving revalidates the current spec before writing. Unkeyed studio state reads omit script source. Trial replay remains a data-only renderer feed; sandbox simulation runs in the same SES executor as a formal match. Forge and catalogue entry points remain available beside the authoring templates.
+
+### Combat metrics (作战统计) — ported from the xinhai-ai fork
+
+The corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a modeless panel over the running battle: the
+fight keeps playing behind it, ✕ / Esc closes it, and the next frame's prep keeps it usable. It reads only the local
+battle runner — `battle/metrics.js` (`trackCombat`) attaches in `prepare` to every in-page Battle. A gameplay-plugin
+room simulates in a Worker: the page holds wire state only (time and ids, no `damaged` hook and no `heal`), so the
+meter is not attached there. `combatMetrics({ scope: 'battle' | 'match', ownerId })` sits beside `currentBattle()` on
+the runner. A row is one
+operator: the effective HP the sim's own counters lost (mitigation, silent damage and DoTs included; overkill, element
+gauge fill and friendly damage excluded), the HP a heal actually restored (overheal and shields excluded), the local
+battle seconds, and dps / hps; the bar under the name is segmented by damage type (物理 / 法术 / 真实 / 元素) and rows
+sort by damage. Same-name operators merge per player (`combineCombat`), summons count toward their owner, and the panel
+passes `myId` — it shows the own player only. 本局累计 keeps the last snapshot of every locally simulated battle
+(evicted replicas included; a replayed battle replaces its snapshot, never adds a second) until the match really
+restarts (a new match / a rewound round); a new round's prep clears only 当前战斗. Nothing here is sent to the server or
+enters b.progress / b.result, and a tracked battle's result and rendered events are byte-identical to an untracked one
+(test/match/combat-metrics.test.js, test/match/runner.test.js). Ported from [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)
+(其公开部署分支，作者 @临夏俨然) with thanks.

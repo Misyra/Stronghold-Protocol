@@ -150,6 +150,10 @@ export function cameraLayers(field, pub, myId) {
 export function layerCamera(field, layer, mySide = 'L') {
   const rect = field?.rect;
   if (layer === 'L' || layer === 'R') return { rect, side: layer, half: true };
+  if (layer === 'ALL' && field?.kind === 'unite') {
+    const occupied = ['L', 'R'].filter((side) => Object.values(sidesOf(field)).includes(side));
+    if (occupied.length === 1) return { rect, side: occupied[0], half: true };
+  }
   return { rect, side: mySide };
 }
 

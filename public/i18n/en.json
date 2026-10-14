@@ -1218,5 +1218,21 @@
   "{names}只能部署在召唤者相邻四格，已退回整备区": "{names} can only be deployed on the four tiles adjacent to the summoner and returned to the Bench",
   "{names}只能部署在召唤者相邻四格，整备区已满，下回合返还": "{names} can only be deployed on the four tiles adjacent to the summoner; the Bench is full, so they come back next round",
   "装备库存不足，未获得该装备": "Equipment stock is insufficient; no equipment was received",
-  "库存不足": "Out of stock"
+  "库存不足": "Out of stock",
+  "作战统计": "Combat statistics",
+  "元素": "Elemental",
+  "关闭作战统计": "Close combat statistics",
+  "统计范围": "Statistics scope",
+  "当前战斗": "Current battle",
+  "本局累计": "Match total",
+  "总伤害": "Total damage",
+  "总治疗": "Total healing",
+  "伤害类型图例": "Damage type legend",
+  "伤害降序": "Damage, descending",
+  "干员伤害排行": "Operator damage ranking",
+  "伤害": "Damage",
+  "暂无本地战斗记录": "No local battle records",
+  "开始战斗后实时显示干员数据": "Live operator statistics appear when battle starts",
+  "仅统计自己 · 同名干员合并 · 召唤物计入所属干员": "Your units only · Same-name operators combined · Summons count toward their operator",
+  "实际扣血 / 有效治疗，DPS / HPS 按自己的战斗秒数计算。刷新后重新累计。": "Actual HP damage and effective healing. DPS/HPS uses your simulated battle time. Reloading resets totals."
 }

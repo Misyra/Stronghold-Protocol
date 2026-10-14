@@ -226,3 +226,20 @@ maintainer's decision of 2026-10-13). On, an operator's ammo bar carries `left/m
 the exact b.snap `ammo` counts, extra rounds and refills included), centred in the bar's yellow; the rows under the bars
 move down by its height. It hides with the magazine, in the prep view and after death. The simplified board has no ammo
 bar and so no count.
+
+### Combat metrics (作战统计) — ported from the xinhai-ai fork
+
+The corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a modeless panel over the running battle: the
+fight keeps playing behind it, ✕ / Esc closes it, and the next frame's prep keeps it usable. It reads only the local
+battle runner — `battle/metrics.js` (`trackCombat`) attaches to every Battle the runner builds (`prepare`), and
+`combatMetrics({ scope: 'battle' | 'match', ownerId })` sits beside `currentBattle()` on the runner. A row is one
+operator: the effective HP the sim's own counters lost (mitigation, silent damage and DoTs included; overkill, element
+gauge fill and friendly damage excluded), the HP a heal actually restored (overheal and shields excluded), the local
+battle seconds, and dps / hps; the bar under the name is segmented by damage type (物理 / 法术 / 真实 / 元素) and rows
+sort by damage. Same-name operators merge per player (`combineCombat`), summons count toward their owner, and the panel
+passes `myId` — it shows the own player only. 本局累计 keeps the last snapshot of every locally simulated battle
+(evicted replicas included; a replayed battle replaces its snapshot, never adds a second) until the match really
+restarts (a new match / a rewound round); a new round's prep clears only 当前战斗. Nothing here is sent to the server or
+enters b.progress / b.result, and a tracked battle's result and rendered events are byte-identical to an untracked one
+(test/match/combat-metrics.test.js, test/match/runner.test.js). Ported from [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)
+(其公开部署分支，作者 @临夏俨然) with thanks.

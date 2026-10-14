@@ -210,7 +210,8 @@ if (isMain) {
   if (!o) { console.error(USAGE); process.exit(2); }
   const idx = readJson(o.index);
   if (!idx || !idx.units) {
-    console.log(`no extracted effects at ${path.relative(ROOT, o.index) || o.index} (tools/local-extract: extract.py --only fx --fx-set used) — nothing to report`);
+    const shown = o.index.startsWith(ROOT + path.sep) ? path.relative(ROOT, o.index) : o.index;
+    console.log(`no extracted effects at ${shown} (tools/local-extract: extract.py --only fx --fx-set used) — nothing to report`);
     process.exit(0);
   }
   const data = Object.fromEntries(['chess', 'backups', 'tokens', 'enemies'].map((n) => [n, readJson(path.join(ROOT, 'data', `${n}.json`)) || {}]));

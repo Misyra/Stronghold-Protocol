@@ -132,8 +132,11 @@
 // index.json does not carry the charge emitters: they sit on the unit prefab's Trait/Charge*Group (AbilityChargeableGroup /
 // AbilityExChargeGroup with MultiChargeUberEffectEmitter, MultiExChargeUberEffectEmitter, MergeableChargeUberEffectEmitter),
 // which the extractor's attack reader skips (it takes a mode's `UberEffectEmitter` only — so 深靛's, 黑键's and 维伊's
-// attack `cast` rows, a MultiChargeUberEffectEmitter's, are missing from their modes too). CHARGE_EMITTERS transcribes
-// them from the client's charpacks (26-09-13); chargePlan checks every key against index.json. What the data says:
+// attack `cast` rows, a MultiChargeUberEffectEmitter's, are missing from their modes too; client 26-09-13, the operators'
+// mode attacks: MultiChargeUberEffectEmitter 9 of 3 operators, MultiHitUberEffectEmitter 11 of 8 — 41 rows / hit groups
+// of blkkgt, chen3, crosly, hsgma2, irene, mlynar, texas2, vvana —, UberAnimationEffectEmitter 14 of 9, and a few
+// classes without standard rows). CHARGE_EMITTERS transcribes the charge groups from the client's charpacks
+// (26-09-13); chargePlan checks every key against index.json. What the data says:
 //   * per stored energy k (1-based) the k-th group of the trait group's emitter plays at the store's ON_SPELL_ON (event
 //     4) — its looping prefab (_isLoop 1, _holdByOwner 1, FollowMountPoint on a Special point) stays while the energy is
 //     stored —, and the k-th group of the store ability's own emitter (ChargeRangedAttack / ExChargeRangedAttack /

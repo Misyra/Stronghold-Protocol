@@ -503,6 +503,23 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
   committed. The views are rebuilt in memory when a manifest or the hashes change; neither file is ever written by the
   server, and the `hash` field is the committed one. The index lives in `.cache/` only and is never packaged.
 
+## Player-initiated predownload
+
+The title screen's **下载完整素材** button (`public/js/ui/assetDownload.js`, queue in
+`public/js/assetDownload.js`) downloads every unique art/font URL in the server's current `assets.json` and optional
+`local-assets.json`, including Spine skeletons, atlases, pages, scene files, and audio. Audio uses the same `/media/`
+URLs as playback. Four concurrent requests consume complete response bodies without decoding them or retaining
+all files in memory. This warms the existing browser HTTP cache and works over HTTP as well as HTTPS; it does not
+require a service worker. Freshness and eviction remain under the browser's control, so completion is not persisted
+as a permanent/offline guarantee. A later check reads current manifests and uses ordinary HTTP cache validation.
+
+The dialog shows successful file count, progress, and bytes read (including cache hits). Closing it or leaving the
+title screen pauses and aborts pending requests. Resume keeps completed files for this page; retry requests only
+unfinished files. Network errors/timeouts/5xx/408/429 receive at most two retries; a 404, HTML fallback, empty body,
+or partial response is never counted as successful. A missing optional local manifest is disclosed, while a failed
+base manifest or any listed missing file prevents successful completion. Server owners still install missing art
+with setup; this button only transfers files already supplied by the server.
+
 ## Verification
 
 `node --test test/assets.test.js` covers the pure helpers: the resolver, the atlas normalizer, the format sniffers, WOFF2, audio banks, the plan id sets, the downloader against a fake network, and the self-heal of corrupt skeletons.

@@ -230,6 +230,13 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
+.title-download { width: 4.9rem; margin-top: .12rem; text-align: center; }
+.title-download > small { display: block; margin-top: .06rem; color: var(--text-lo); font-size: calc(.12 * var(--t)); }
+.asset-download { text-align: left; }
+.asset-download p { margin: .12rem 0; line-height: 1.6; }
+.asset-download__errors { color: var(--amber); }
+.asset-download__errors ul { max-height: 1.8rem; overflow: auto; padding-left: .24rem; }
+.asset-download__errors code { overflow-wrap: anywhere; font-size: calc(.13 * var(--t)); }
 .title-invite {
   display: flex;
   align-items: center;

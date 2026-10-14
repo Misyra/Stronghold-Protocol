@@ -11,6 +11,7 @@
 // pure CSS/SVG (radar, ridgelines, glow), so it never issues a request that can 404.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
+import { AssetDownloadButton } from '../ui/assetDownload.js';
 import { useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
@@ -283,6 +284,7 @@ export function TitleScreen() {
           <${FullscreenButton} class="title-fs" />
         </div>
       </div>
+      <${AssetDownloadButton} />
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />

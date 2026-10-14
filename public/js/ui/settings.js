@@ -38,6 +38,8 @@ import { setUiPlugin, uiPluginEntries, uiPlugins } from './uiPlugins.js';
 import { UI_LIMITS } from '../../../shared/plugins/ui.js';
 import { toast, describeError } from './toasts.js';
 import { pluginMicro } from './pluginTag.js';
+import { fxAvailable } from '../render/vfx/available.js';
+import { resolveOfficialFx } from '../render/vfx/tier.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -103,6 +105,12 @@ function Toggle({ label, micro, value, onChange }) {
 }
 
 const QUALITY = [['high', N_('高')], ['medium', N_('中')], ['low', N_('低')]];
+/**
+ * 官方特效 (0.3.0, render/vfx): the official battle effects extracted from the player's own client — 关 / 精简 / 完整. The
+ * stored default 'auto' shows as the tier it resolves to (完整 on a desktop, 精简 on a touch device, render/vfx/tier.js);
+ * the row is left out when no effects were extracted (data/local-fx.json lists none).
+ */
+const OFFICIAL_FX = [['off', N_('关')], ['lite', N_('精简')], ['full', N_('完整')]];
 /**
  * 文字大小: one step of TEXT_SIZES (ui/gameLogic/settings.js) with its label — 小 is the design's own sizes, the others
  * raise the text root `--t` (css/theme.css) and with it every readable font-size; the board and the HUD's boxes stay.
@@ -327,6 +335,13 @@ export function SettingsModal({ open, onClose }) {
   const [tested, setTested] = useState(false);
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
   const mtNote = machineTranslationNote(); // a pack marked as machine translation says so under the switch
+  const [fxOk, setFxOk] = useState(false);  // effects extracted from the local client: the 官方特效 row shows
+  useEffect(() => {
+    let live = true;
+    import('../assets.js').then((m) => fxAvailable(m.assets)).catch(() => fxAvailable(null)).then((ok) => { if (live) setFxOk(!!ok); }, () => {});
+    return () => { live = false; };
+  }, []);
+  const fxTier = resolveOfficialFx(s.officialFx, true);
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('设置')} micro="SETTINGS" width="7.4rem"
                         actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>${t('玩法说明')}<//>
                         <${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
@@ -368,6 +383,14 @@ export function SettingsModal({ open, onClose }) {
             class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
         </div>
       </div>
+      ${fxOk ? html`<div class="set-row" data-testid="official-fx">
+        <span class="set-row__label">${t('官方特效')}<${MicroLabel}>OFFICIAL FX<//></span>
+        <div class="set-seg" role="radiogroup" aria-label=${t('官方特效')}>
+          ${OFFICIAL_FX.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${fxTier === id ? 'true' : 'false'}
+            class=${fxTier === id ? 'is-on' : ''} onClick=${() => updateSettings({ officialFx: id })}>${t(label)}</button>`)}
+        </div>
+      </div>
+      <p class="set-hint">${t('使用从本机游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡和部署）；技能特效仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。')}</p>` : null}
       <div class="set-row">
         <span class="set-row__label">${t('文字大小')}<${MicroLabel}>TEXT SIZE<//></span>
         <div class="set-seg set-textsize" role="radiogroup" aria-label=${t('文字大小')} data-testid="text-size">

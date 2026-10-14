@@ -24,7 +24,7 @@
 
 - 整帧文本改为按需构建：原先每个状态帧都先拼出一份完整帧文本（增量帧也一样），现在只在确实要发整帧时构建，字节数由头部长度加编码长度算术得出（头部是纯 ASCII）。增量帧因此不再各自产生一份 4–5 KiB 的短命字符串。
 - `SP_STATE_DELTA_VERIFY=1`（每次转换读取环境变量，可在进程内打开）：把每条线上增量按客户端路径回放（`JSON.parse` 文本 → `applyStatePatch`），与服务端当前状态做键序无关的比对；不符则计入 `stateDeltaStats.verifyMismatches` 并退回整帧，不会发出错误的补丁。
-- `/healthz` 新增 `stateDelta`：`frames` / `fullFrames` / `deltaFrames` / `parsedBaselines` / `verifyChecked` / `verifyMismatches`。两次采样相减即为速率；`parsedBaselines` 用来复核“每个快照到底被解析了几次”。
+- `/metrics` 提供 `stateDelta`：`frames` / `fullFrames` / `deltaFrames` / `parsedBaselines` / `verifyChecked` / `verifyMismatches`。两次采样相减即为速率；`parsedBaselines` 用来复核“每个快照到底被解析了几次”。（该接口只回应回环 / 私网调用者，公开的 `/healthz` 不再携带任何进程诊断字段。）
 - 差分基线仍然只从编码文本解析（快照内缓存 `snapshot.parsed`，一个状态帧全进程只解析一次）。**没有**改成复用活的视图对象：那会拿掉本文件上一段承诺的“避免引用游戏内可变对象”，而收益只有每帧一次解析（约 13–14 µs，占单次动作链路约 8%，见 [同步链路基线](STATE_SYNC_BENCHMARK.md) §四）。
 
 部署时同步服务器和前端代码并重启服务器；保留现有状态目录及环境配置。此次没有新增或更改素材，无需发布 CDN 资源。

@@ -4,11 +4,11 @@
 
 ## 健康检查缓存
 
-`GET /healthz` 和 `HEAD /healthz` 保持原字段、HTTP `Cache-Control: no-store`、安全响应头和 HEAD 语义。服务端内部按实例复用统计快照和编码后的 JSON，单调时钟控制有效期，最长一秒。房间总数或匹配队列条目数变化立即刷新；连接数、会话数和 uptime 每次请求读取。对局、人数、worker、内存、缓存、发送量、发送缓冲和持久化等详细字段仍然存在，最多滞后一秒。
+`GET /healthz` 和 `HEAD /healthz` 保持原字段、HTTP `Cache-Control: no-store`、安全响应头和 HEAD 语义。服务端内部按实例复用统计快照和编码后的 JSON，单调时钟控制有效期，最长一秒。房间总数或匹配队列条目数变化立即刷新；连接数、会话数和 uptime 每次请求读取。进程自身的性能数据（worker、内存、静态缓存、发送量、发送缓冲、增量记账、持久化等）**不在**这个响应里，也不为它采集；它们只在 `GET /metrics` 提供，见下。
 
 常见健康检查路径直接同步返回，减少 URL 解析与 Promise 分配。统计采集或编码失败返回 500，并在下次请求重试，避免把旧快照当成刷新成功。
 
-`GET /metrics` / `HEAD /metrics` 返回即时采集的完整健康报告，以及 `websocket.diagnostics`；它不复用健康检查缓存，适合运维按需或低频采样。
+`GET /metrics` / `HEAD /metrics` 返回即时采集的完整健康报告（worker、内存、静态缓存、发送缓冲、线帧、增量记账、持久化、聊天日志占用、演练压力、进程区间窗口），以及 `websocket.diagnostics`；它不复用健康检查缓存，适合运维按需或低频采样。该接口只回应本机回环或私网调用者：其他调用者回落到静态文件处理，得到与未知路径相同的 404（判定与 `?traffic=1` 相同——`net.js` 的 `clientAddress` + `isLocalIp`，并受 `TRUST_PROXY` 影响，所以经本机反代或隧道转发来的公网客户端仍算公网）。同机监控进程（sp-portal 的 `collector.mjs`）就经 `http://127.0.0.1:<游戏端口>/metrics` 读取它。
 
 ## 有上限的网络诊断
 

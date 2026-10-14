@@ -16,6 +16,7 @@
 // the page never asks for its catalogue — and the title page loads none of the panel's code.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
+import { AssetDownloadButton } from '../ui/assetDownload.js';
 import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
@@ -260,6 +261,7 @@ export function TitleScreen() {
           <${FullscreenButton} class="title-fs" />
         </div>
       </div>
+      <${AssetDownloadButton} />
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />

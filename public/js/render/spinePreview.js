@@ -178,6 +178,33 @@ async function renderOne(assetId, skinId) {
 /** A clip name out of a role slot that may be a string or `{ begin, loop, end, idle }`. */
 const clipName = (x) => (typeof x === 'string' ? x : (x && typeof x === 'object' && typeof x.loop === 'string' ? x.loop : null));
 
+/**
+ * Every skill family the SKELETON ships, read from its clip names: `Skill_1` / `Skill1` / `Skill_01` (a one-clip
+ * skill) and `Skill_<n>_Begin/_Loop/_End`. The manifest's resolved `skills` only covers the indices the mode's pool
+ * uses — `skillIndicesByChar()` resolves the skill the pool fields, so 锏's model (Skill_1, Skill_2 and a
+ * Skill_3_Begin/Loop/End trio) came back with index 2 alone and the preview offered a single 技能 button.
+ * Directional (`Skill_Right_Loop`) and prone (`Skill_Down_2`) variants are not families of their own.
+ * @param {string[]} names the skeleton's clip names
+ * @returns {Map<number, { begin: string|null, loop: string|null, end: string|null, one: string|null }>} by 0-based index
+ */
+function skillFamilies(names) {
+  const out = new Map();
+  for (const n of names) {
+    const m = /^skill_?0*(\d+)(?:_(begin|loop|end))?$/i.exec(n);
+    if (!m) continue;
+    const i = Number(m[1]) - 1;
+    if (!(i >= 0 && i < 20)) continue;
+    const slot = out.get(i) || { begin: null, loop: null, end: null, one: null };
+    const part = (m[2] || '').toLowerCase();
+    if (part === 'begin') slot.begin = slot.begin || n;
+    else if (part === 'loop') slot.loop = slot.loop || n;
+    else if (part === 'end') slot.end = slot.end || n;
+    else slot.one = slot.one || n; // a bare Skill_1: the whole cast is that clip
+    out.set(i, slot);
+  }
+  return out;
+}
+
 /** begin → loop ×2 → end → idle: what the battlefield plays for an attack or a skill. */
 function sequenced(role, idle) {
   const begin = typeof role?.begin === 'string' ? role.begin : null;
@@ -221,9 +248,21 @@ export function clipsOf(m, assetId, skinId = '') {
   push('idle', 'idle', loop(idle));
   push('attack', 'attack', seq(a.attack));
   push('attackDown', 'attackDown', loop(clipName(a.attackDown)));
-  const skills = Object.entries(a.skills || {}).sort(([x], [y]) => Number(x) - Number(y));
-  if (skills.length) for (const [k, s] of skills) push(`skill${k}`, 'skill', seq(s), Number(k));
-  else push('skill', 'skill', seq(a.skill));
+  // 技能: every family the skeleton ships, merged with the resolved roles (which cover only the pool's indices)
+  const families = skillFamilies(Object.keys(entry.animations || {}));
+  const indices = [...new Set([...families.keys(), ...Object.keys(a.skills || {}).map(Number)])].sort((x, y) => x - y);
+  if (indices.length) {
+    for (const i of indices) {
+      const fam = families.get(i);
+      const role = (a.skills || {})[String(i)] || (i === 0 ? a.skill : null);
+      const steps = fam && (fam.begin || fam.loop || fam.end || fam.one)
+        ? (fam.one && !fam.loop && !fam.begin && !fam.end
+          ? [[fam.one, false], ...loop(idle)]           // a one-clip skill: cast once, then back to 待机
+          : seq({ begin: fam.begin, loop: fam.loop, end: fam.end }))
+        : seq(role);
+      push(`skill${i}`, 'skill', steps, i);
+    }
+  } else push('skill', 'skill', seq(a.skill));
   push('stun', 'stun', loop(clipName(a.stun)));
   push('move', 'move', loop(clipName(a.move)));
   push('die', 'die', typeof a.die === 'string' ? [[a.die, false]] : seq(a.die));

@@ -138,17 +138,29 @@ describe('spinePreview: clipsOf — the animation buttons follow the model', () 
     assert.ok(r.total > 10, `隐现本体剪辑不少，实际 ${r.total}`);
   });
 
-  test('换皮肤后按钮跟着变（皮肤可能少一个技能）；皮肤未安装时回退到本体', () => {
+  test('技能按钮来自骨架自己的剪辑，不是清单里预设的那几个', () => {
+    // 锏's model ships Skill_1 / Skill_2 (one-clip skills) and a Skill_3_Begin/Loop/End trio, but the pool the
+    // manifest was built from only fields her S3 — `skillIndicesByChar()` resolves exactly the skills a mode uses,
+    // so the resolved `skills` map carried index 2 alone and the preview showed a single 技能 button.
+    const degen = clipsOf(MANIFEST, 'char_4116_blkkgt');
+    const skills = degen.clips.filter((c) => c.kind === 'skill');
+    assert.equal(skills.length, 3, `锏的三个技能都该有按钮，实际 ${skills.map((c) => c.id).join(',')}`);
+    assert.deepEqual(skills.map((c) => c.id), ['skill0', 'skill1', 'skill2']);
+    assert.deepEqual(skills.map((c) => c.skillIndex), [0, 1, 2]);
+    assert.deepEqual(skills[0].steps, [['Skill_1', false], ['Idle', true]], '单剪辑技能：放一次再回待机');
+    assert.equal(skills[2].steps.length, 5, '三段式技能：Begin → Loop → Loop → End → 待机');
+    for (const c of skills) assert.ok(c.names.length >= 1 && c.names.every((n) => typeof n === 'string' && n), c.id);
+  });
+
+  test('换皮肤后按钮跟着模型走；皮肤未安装时回退到本体', () => {
     const base = clipsOf(MANIFEST, CHAR);
     const skin = clipsOf(MANIFEST, CHAR, SKIN);
     const skills = (r) => r.clips.filter((c) => c.id.startsWith('skill')).map((c) => c.id);
-    // data/assets.json decides: a checkout with no skins installed has no skin records at all, and then the lookup
-    // falls back to the operator's own model (which is what the picker shows too) — both states are correct
-    if (MANIFEST.chars?.[CHAR]?.skins?.[SKIN]) {
-      assert.notDeepEqual(skills(skin), skills(base), '这款皮肤与本体技能段数不同');
-    } else {
-      assert.deepEqual(skills(skin), skills(base), '皮肤未安装 → 回退本体模型，按钮与本体一致');
-    }
+    // data/assets.json decides: a checkout with no skins installed has no skin record at all, and then the lookup
+    // falls back to the operator's own model (which is what the picker shows too) — both states end at the same
+    // clip list, because the buttons follow the SKELETON's own clips either way
+    assert.deepEqual(skills(skin), skills(base), MANIFEST.chars?.[CHAR]?.skins?.[SKIN] ? '同一模型 → 按钮一致' : '未安装 → 回退本体');
+    assert.ok(skills(base).length >= 2, '隐现的模型有两套技能剪辑');
     assert.ok(ids(skin).includes('idle') && ids(skin).includes('attack'));
   });
 

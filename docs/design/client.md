@@ -300,14 +300,24 @@ normalized values from the room, read-only for non-hosts and during a match. Van
 
 Authoring checks (DESIGN §32.9.1): numeric fields display the shared official bounds and positive step floor; invalid saves are refused. DSL validation network failures are explicit, and saving revalidates the current spec before writing. Unkeyed studio state reads omit script source. Trial replay remains a data-only renderer feed; sandbox simulation runs in the same SES executor as a formal match. Forge and catalogue entry points remain available beside the authoring templates.
 
-### Combat metrics (作战统计) — ported from the xinhai-ai fork
+### Combat metrics (作战统计) — ported from the xinhai-ai fork, opt-in
 
-The corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a modeless panel over the running battle: the
-fight keeps playing behind it, ✕ / Esc closes it, and the next frame's prep keeps it usable. It reads only the local
-battle runner — `battle/metrics.js` (`trackCombat`) attaches in `prepare` to every in-page Battle. A gameplay-plugin
-room simulates in a Worker: the page holds wire state only (time and ids, no `damaged` hook and no `heal`), so the
-meter is not attached there. `combatMetrics({ scope: 'battle' | 'match', ownerId })` sits beside `currentBattle()` on
-the runner. A row is one
+设置 →「作战统计」 (`combatMetrics`, PR #618 by @robll-v1) defaults off, the same kind of decision as 弹药数量: the
+official HUD has no such panel. Off, the corner button is not rendered and `trackCombat` is not called (no `damaged`
+hook, `battle.heal` is not wrapped). On, the corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a
+modeless panel over the running battle: the fight keeps playing behind it, ✕ / Esc closes it, and the next frame's
+prep keeps it usable.
+
+`battle/metrics.js` (`trackCombat`) attaches in `prepare` only when the setting is on and the host is in-page.
+`screens/game.js` pushes the switch with `setCombatMetrics` (the runner does not import the settings store). A
+gameplay-plugin room (`room.content.vanilla === false`) simulates in a Worker: the page holds wire state only (time
+and ids, no `damaged` hook and no `heal`), so the meter is not attached and the button stays hidden. A cosmetic plugin
+keeps the vanilla content set and the in-page host, so the meter still runs. A `hud.right` ui-slot is a separate node
+and is not gated by this setting. Turning the setting off mid-battle detaches the hook and restores `heal`. Turning it
+on does not backfill a battle already prepared ([ASSUMED]: the hooks would have missed damage already dealt); the next
+battle prepared after the switch is the first one counted.
+
+`combatMetrics({ scope: 'battle' | 'match', ownerId })` sits beside `currentBattle()` on the runner. A row is one
 operator: the effective HP the sim's own counters lost (mitigation, silent damage and DoTs included; overkill, element
 gauge fill and friendly damage excluded), the HP a heal actually restored (overheal and shields excluded), the local
 battle seconds, and dps / hps; the bar under the name is segmented by damage type (物理 / 法术 / 真实 / 元素) and rows

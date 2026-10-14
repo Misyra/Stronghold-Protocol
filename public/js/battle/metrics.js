@@ -29,7 +29,7 @@ export function trackCombat(battle) {
   for (const u of battle.allyUnits || []) rowOf(u);
   // Runs before gameplay damaged handlers can cause nested damage. This also sees loseHp and silent DoT.
   // Element gauge fill changes stats.elem, never stats.dmg, so it cannot inflate HP damage.
-  battle.on('damaged', ({ source, credit, type }) => {
+  const onDamaged = ({ source, credit, type }) => {
     const src = credit || source;
     if (!src || src.side !== 'ally') return;
     const total = positive(src.stats?.dmg);
@@ -39,22 +39,36 @@ export function trackCombat(battle) {
     if (!row || !delta) return;
     row.damage += delta;
     row.types[DAMAGE_TYPES.includes(type) ? type : 'true'] += delta;
-  }, { priority: Number.MAX_VALUE });
+  };
+  const damagedHook = battle.on('damaged', onDamaged, { priority: Number.MAX_VALUE });
   // The heal hook is before mitigation/overheal. The return value is the actual restored HP, including silent regen.
   const heal = battle.heal;
-  battle.heal = function (source, target, amount, opts) {
+  function wrappedHeal(source, target, amount, opts) {
     const actual = heal.call(this, source, target, amount, opts);
     if (target?.side === 'ally' && positive(actual)) {
       const row = rowOf(source);
       if (row) row.healing += actual;
     }
     return actual;
-  };
-  return () => ({
+  }
+  battle.heal = wrappedHeal;
+  let stopped = false;
+  const read = () => ({
     seconds: positive(battle.time),
     owners: (battle.players || []).map((p) => p.playerId),
     rows: [...rows.values()].map((r) => ({ ...r, types: { ...r.types } })),
   });
+  // The settings switch turns the meter off mid-battle. Later damage is not counted; rows already taken stay readable.
+  read.stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (typeof battle.off === 'function') battle.off(damagedHook);
+    if (battle.heal !== wrappedHeal) return;
+    const proto = Object.getPrototypeOf(battle);
+    if (proto && proto.heal === heal) delete battle.heal;
+    else battle.heal = heal;
+  };
+  return read;
 }
 
 /** Replace each battle's snapshot by ID: switching fields / replaying an evicted replica never adds it twice. */

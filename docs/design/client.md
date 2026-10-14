@@ -46,6 +46,72 @@ Asset URLs (0.2.6, host bandwidth layer 1): the client takes every art, model an
 
 Visuals: oblique perspective board (tilted ~30°, trapezoid tiles), raised highland blocks with side faces, road/floor/forbidden styles per research 07 §7, pulsing red gates, blue objective, dashed hand pads. Units: Spine (Front/Back rule, feet anchored — flying units hover `FLY_HOVER` 1.3 tiles up, the client's 0.35 in character space, research 12, §25.13.5 — an enemy flyer from the road whatever tile it crosses (GitHub #277) —, shadow sprite on the ground), elite gold outline glow, tier chip, HP bar (green ally / red enemy), SP bar (skill ready glow; while an ammo skill runs it is the magazine instead — a yellow cell per round, emptying from the right, `b.snap ammo`, and the skill draws no standing aura, UnitInfo `ammoSkill`; with 设置「弹药数量」 on, its count `left/magazine` under it, §31.9), 斩业星熊's 我执 pool as a red bar over her drained HP bar (`b.snap neg`), 伺夜's 狼群 count as a row of diamonds under the bars, the lit ones the 狼影 left (`b.snap wolves`; 0.2.2, GitHub PR #303 / #378 / #383), status icons, the element gauge row under the bars — icon + white bar of the remaining 元素值, element-coloured refill during a 爆发冷却 (§18.3, §20.8); enemies drawn × their official prefab factor (enemies.json `modelScale`, §20.4); an enemy's mode — the `form` of a sim fx (`shared/protocol.js fxForm`), or UnitInfo `form` for a view built later through `render/app/info.js renderInfo` — switches clip sets (`render/units.js FORMS`: 掠海漂移体 crawl, 暴鸰 bombed, 转译基底's forms, the 逐火 embers, the leaders' 重生, 守墓石像, the 孤岛风云 prisoners' warning and 解放; closing clips timed from the fx `dur`), a one-off cast (`PROJ[kind].once`) plays once, and a local-only model's web alias is tinted (`ALIAS_TINT`: 灼热 / 炽焰源石虫, §21.14); damage numbers (phys orange-white, arts purple, true white, heal green); projectiles drawn per kind, hit sparks and melee slashes, skill activation bursts and auras (§17.3); death fade for enemies, summons and devices — a knocked-out operator stays on its tile in its held Die pose under a redeploy ring (§18.3); leak flash at the objective. Fallback when Spine missing/failed: avatar in a rarity-coloured diamond with bob/lunge tweens — a failed or timed-out model is loaded again (bounded), and a view re-resolves its model and avatar when the asset manifest arrives late or the tab is shown again (§21.27). 60 fps target with ≤ 120 units (a crowd draws its Spine units through the cached atlas, `render/impostor.js`, each refreshed every k-th frame: the refresh turns follow this frame's update order — `ctx.impostorSlot()`, a counter reset at the start of every frame — so a frame refreshes ⌊n/k⌋ or ⌈n/k⌉ of n units instead of whatever random per-unit phases gave, and a unit not refreshed for 2k frames is refreshed regardless; GitHub PR #334 by @Cloudnyco, issue #327 step 1 — its step 2, a time budget by priority, is not done; a model whose pose cannot change — `SpineActor.poseHeld()`: a knocked-out operator in the held end of its Die clip, a frozen model — is neither re-posed nor redrawn, only its clock runs, until a new clip, a revive, a wind-up, a form's closing clip, a clipping switch or a zoom past the impostor's rescale threshold; an impostor's slot is sized from every clip the unit can play — measured once per skeleton, a few frames after the model loads (`render/spine.js clipBounds`, sampled within a 2.5 ms frame budget; until then the unit is drawn directly); no model shows its setup pose (one frozen before its first update — built while stunned without a stun clip — shows its clip's first frame) —, a clip too large for that box (`render/units.js impostorBox`: mostly a deploy drop from above) is drawn directly while it plays, and the atlas draws every slot clipped to its own rectangle (a scissor rect; every batch flush gets its own vertex buffer, which Apple GPUs need), so no pose is cut and nothing is left in another unit's slot (GitHub #542, §31.6); the redeploy rings draw one shared rasterised label per number, `render/textures.js downLabel`, the same pixels as a Text of their own). Picking (which unit a press / hover / dropped item is on) and the drag target follow one rule, `render/pick.js` — the tile under the pointer (§18.1); the Spine store never hands out a skeleton whose unload is in flight (§17.1).
 
+### Official battle effects (官方特效; render/vfx, 0.3.0)
+
+`public/js/render/vfx/` plays the official battle effect prefabs that `tools/local-extract/fx.py` extracts from the
+player's own client (the format: DESIGN §33, docs/design/vfx-format.md) on the 3D board. It is client-only: it draws
+events the field view already receives, and the simulation, the protocol and the golden results do not change. The
+history and the open points: DESIGN §32.14.25.
+
+- **Files.** `available.js loadFxList` fetches `data/local-fx.json` once per page (the served view carries hashed URLs;
+  an empty `{ groups: {} }` or a 404 means none; without it the Phase 1a `fx` groups of `data/local-assets.json` serve).
+  `library.js FxLibrary` loads `index.json`, `textures.json`, the descriptors (compiled once per prefab:
+  `effect.js compileEffect`), meshes (`normalizeMesh`: colours written as bytes are read as 0…1) and the WebP textures
+  (`tex/half/` on the light tier) as they are needed. At the prep → battle switch the battle's units' keys are loaded
+  (`wiring.js begin`; a unit that joins later, at its spawn event: `more`) and their programs and textures go to the
+  GPU a few per frame (`system.js warm`, `WARM_MS` 2 ms); a texture on the GPU is not decoded again.
+- **Simulation.** `psys.js` interprets Unity's ParticleSystem: the main module, emission (rate over time and distance,
+  bursts with cycles and probability), the shapes, velocity / limit velocity / force / inherit velocity / noise /
+  rotation / size / colour over lifetime and by speed, texture sheets, trails, sub-emitters, prewarm, start delay,
+  simulation spaces and scaling modes, in fixed sub-steps of at most 1/30 s with a seeded generator. `clips.js` samples
+  the prefabs' clips (transforms, active flags, material, renderer and system properties). `effect.js Effect` runs the
+  hierarchy and the behaviours: ParticleEffect (delays, loop and stop fade, max lifetime, direction helpers, spawn
+  location), ProjectileEffect, FxDelay, FxUVTweener(Advance), FxUVRotation, FxLODSetting, FollowMountPoint /
+  FollowOwner, FollowDirection, OnPlay / OnFinish emitters, the Switchable*Effect variants, ColorModifier and
+  PauseEffectIf (its CheckType conditions that a view can answer: facing, abnormal flags, sleep).
+- **Clock.** The battle clock: the advance of the interpolated render time each frame (`app.js frameBody`, at most
+  0.25 s), so the effects follow the game speed and stop with a paused or stalled battle.
+- **Drawing.** Two passes in the Pixi stage, `vfxGround` (renderers lying flat within 0.25 of the ground: under the
+  units) and `vfxOver` (the rest, over the units and the procedural fx), drawn with raw WebGL2 in Pixi's context
+  (`gl.js FxGL`; Pixi's state is reset after the pass) and the board's camera: `system.js unityViewProj` maps the
+  Unity battle frame (board frame through C = diag(1, 1, −1) about the centre (10, 9)) through `projection.js`'s
+  camera, pixel for pixel. The entries of every live effect are sorted as Unity sorts them (sorting layer, order,
+  render queue, distance back to front) and contiguous draws of one material are merged; a ZTest material tests
+  against a depth pre-pass of the board's tile heights. The Pixi canvas is transparent over the three.js board, so the
+  blend factors are rewritten for premultiplied compositing: a straight alpha blend becomes (One, OneMinusSrcAlpha),
+  additive blends keep the destination alpha, and the Multiply family darkens through (Zero, SrcColor).
+- **Shaders.** `glsl.js` holds GLSL ES 3.0 programs written for the client's particle shader families (no official
+  source is in the repository): basic, legacy premultiplied / alpha-blended, standard unlit, dissolve (tween, vertex
+  colour, double, custom data), disturb (origin, anchor, custom data, ramp), ramp, mask, rim, flipbook and multiply,
+  with `_Time` on the battle clock, the custom vertex streams and FxUVRotation as DESIGN §33.6 / §33.11 resolve them.
+  A shader of no ported family (GrabPass distortion, RGB split, blur, toon, matcap, outline, …) draws with the basic or
+  dissolve program by its name and is logged once (`materials.js fallbackLog`).
+- **Wiring** (`wiring.js FxWiring`, from index.json §33.12). An attack: its cast rows on the attacker — the
+  ON_CAST_START ones when the attack's wind-up starts its Spine clip (`app.js onUpcoming` → `castStart`, as far into
+  the effect as the clip started), the ON_SPELL_ON ones at the 'atk' event; a NONE row's first slot, a directional
+  row's slot for the facing, `hookEffectAfterFirstAttack` / `onlyOnce` by the unit's attack count; a looping row, and
+  a looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
+  `castTarget` / `inputTarget` rows on the target, its projectile's main effect flown from the muzzle to the target's
+  HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival, its hit rows when a melee or
+  direct blow's damage lands (else the generic hit by damage type). Also the generic heal hit, the status loops
+  (`generic.status` by the sim's status names) on the unit's mount point while they last, and the unit's own death /
+  deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
+  what index.json does not drive — skills, a unit it does not list, chain bounces — stays procedural. `mounts.js`
+  reads the skin's points (HitPoint, Muzzle, HeadPoint, Special points; front / back skeleton, mirrored for a unit
+  facing left) at the unit's feet.
+- **Budget.** Tier 完整 (`full`: up to 220 effects and 6,000 particles, full-size textures) and 精简 (`lite`: 90 and
+  2,500, half-size textures, half the emission, the prefabs' FxLODSetting nodes off, no rim or distortion lookups).
+  Past the caps a new one-shot is dropped (loops and projectiles always start), and so is a one-shot whose prefab
+  loads more than 0.6 s late; a one-shot nobody stops ends after its authored duration, a looping prefab nobody owns
+  after 8 s at the latest, and an OnPlayEmitter's looping effect with the effect that played it; finished instances
+  are pooled per prefab (up to its `_preloadCnt`, at most 12).
+- **Setting.** 设置「官方特效」 (`officialFx`: auto / off / lite / full; `tier.js resolveOfficialFx`: auto is 完整 on a
+  desktop and 精简 on a touch device) shows only when the served list names effects. The effects draw on the 3D board
+  with WebGL2 only; the 2D board and the simplified board keep the procedural effects.
+- **Dev.** `public/dev/fx-viewer.html` plays any effect key (`?key=`, on a unit's mount points with `&unit=`;
+  `?attack=<unit id>` repeats that unit's attack from index.json through the wiring; `&tier=`, `&stress=<loops>,<hits
+  per s>`); `public/dev/battle-perf.html` takes `&fx=off|lite|full|auto` and `tools/perfbench.mjs --fx`.
+
 ---
 
 ## 10. Client UI (screens & components)

@@ -219,14 +219,16 @@ function sequenced(role, idle) {
 }
 
 /**
- * Every animation the model of (operator, skin) actually has, as buttons for the preview frame. Derived from the
- * manifest's `anims` roles — the same roles the battlefield plays — so it follows a skin that ships fewer skills.
+ * Every animation the model of (operator, skin) actually has, as buttons for the preview frame: the semantic ones
+ * from the manifest's `anims` roles (the same roles the battlefield plays) plus the skeleton's own skill families
+ * and one entry per remaining clip — so a model with 13 clips offers buttons that between them reach all 13.
+ * @returns {{ total: number, clips: { id: string, kind: string, skillIndex: number, clipName?: string, names: string[], steps: [string, boolean][] }[] }}
  *
  * @param {any} m manifest @param {string} assetId @param {string} [skinId]
  * @returns {{ total: number, clips: { id: string, kind: string, skillIndex: number, names: string[], steps: [string, boolean][] }[] }}
- *   `kind` is what the caller labels (ui/skinPicker.js maps it to 待机 / 攻击 / 技能…); `names` is the underlying
- *   clip list, shown as the button's tooltip; `total` counts every clip in the skeleton, including the stance
- *   variants no role points at.
+ *   `kind` is what the caller labels (ui/skinPicker.js maps it to 待机 / 攻击 / 技能…); a `raw` entry carries a
+ *   `clipName` and is labelled with it; `names` is the underlying clip list, shown as the button's tooltip;
+ *   `total` counts every clip in the skeleton — and every one of them is reachable through some button.
  */
 export function clipsOf(m, assetId, skinId = '') {
   const entry = spineEntry(m, assetId, skinId ? { skin: skinId } : undefined);
@@ -266,6 +268,15 @@ export function clipsOf(m, assetId, skinId = '') {
   push('stun', 'stun', loop(clipName(a.stun)));
   push('move', 'move', loop(clipName(a.move)));
   push('die', 'die', typeof a.die === 'string' ? [[a.die, false]] : seq(a.die));
+  // Every remaining clip gets its own button, so `total` clips and buttons line up: stance and variant clips no role
+  // points at (锏: Default, Skill_2_B, Skill_Down_2, Skill_Down_2_B; 隐现: Attack_Idle, Skill_1_Idle, …) are still
+  // part of what the model ships, and the user asked to be able to look at each one. They loop: nothing says whether
+  // a clip is a one-shot, and a loop keeps the preview alive. The picker labels them with the raw clip name.
+  const used = new Set(out.flatMap((c) => c.names));
+  for (const n of Object.keys(entry.animations || {})) {
+    if (used.has(n)) continue;
+    out.push({ id: `clip:${n}`, kind: 'raw', skillIndex: 0, clipName: n, names: [n], steps: [[n, true]] });
+  }
   return { total: Object.keys(entry.animations || {}).length, clips: out };
 }
 

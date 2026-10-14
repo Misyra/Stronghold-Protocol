@@ -936,16 +936,37 @@ for (const key of ['enemy_1174_duholy', 'enemy_1174_duholy_2']) {
   });
 }
 
-test(`${nm('enemy_9011_acrefr')}: refraction also doubles max HP while active`, () => {
+test(`${nm('enemy_9011_acrefr')}: first silence permanently removes the HP bonus and stops its fan; RES returns`, () => {
   const h = arena();
   h.step();
   const e = put(h, 'enemy_9011_acrefr', [10, 7]);
+  const other = put(h, 'enemy_9011_acrefr', [12, 7]);
   h.step();
-  assert.equal(e.s.maxHp, E.enemy_9011_acrefr.stats.maxHp * (1 + tb('enemy_9011_acrefr', 'Refracting.max_hp')));
+  const baseHp = E.enemy_9011_acrefr.stats.maxHp;
+  assert.equal(e.s.maxHp, baseHp * (1 + tb(e.defId, 'Refracting.max_hp')));
   assert.equal(e.s.res, 70);
+  e.hp = e.s.maxHp * 0.6;
   h.b.applyStatus(e, 'silence', { duration: 1 });
   h.step();
-  assert.equal(e.s.maxHp, E.enemy_9011_acrefr.stats.maxHp);
+  assert.equal(e.s.maxHp, baseHp);
+  approx(e.hp, baseHp * 0.6, 1e-6, 'HP ratio survives losing the bonus');
+  assert.equal(e.s.res, 0);
+  assert.equal(e.form, 'stopped');
+  assert.equal(h.b.fieldMeta().units.find((u) => u.id === e.id).form, 'stopped', 'late observers get the stopped form');
+  h.run(1.2);
+  assert.equal(e.s.flags.silence, undefined);
+  assert.equal(e.s.res, 70, 'only RES returns after silence');
+  assert.equal(e.s.maxHp, baseHp, 'HP bonus never returns');
+  approx(e.hp, baseHp * 0.6);
+  assert.equal(e.form, 'stopped');
+  assert.equal(other.s.maxHp, baseHp * 2, 'another mirror keeps its own bonus');
+  assert.equal(other.form, null);
+  h.b.applyStatus(e, 'silence', { duration: 1 });
+  h.run(1.2);
+  assert.equal(e.s.maxHp, baseHp);
+  assert.equal(e.s.res, 70);
+  assert.equal(h.eventsOf('fx').filter((event) => event[4]?.form === 'stopped').length, 1, 'one permanent form change');
+  checkInvariants(h.b);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

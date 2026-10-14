@@ -615,3 +615,23 @@ test('every clip FORMS names exists in its model’s manifest', () => {
   assert.ok(checked > 10, `the table was walked (${checked} models)`);
   assert.deepEqual(bad, [], 'clips named by a form set but missing from the manifest');
 });
+
+
+test('镜膜: first silence switches all clips to the stopped B form, including late observers', async () => {
+  const id = 'enemy_9011_acrefr';
+  for (const late of [false, true]) {
+    const v = await enemy(id, late ? { form: 'stopped' } : {});
+    try {
+      v.sync(sample(), 1);
+      assert.equal(clip(v), late ? 'B_Idle' : 'A_Idle');
+      if (!late) v.setForm('stopped');
+      assert.equal(clip(v), 'B_Idle');
+      v.sync(sample(0, ANIM.MOVE), 2);
+      assert.equal(clip(v), 'B_Move');
+      v.onAttack?.(null, 2.1);
+      assert.equal(clip(v), 'B_Attack');
+      v.die();
+      assert.equal(clip(v), 'B_Die');
+    } finally { v.destroy(); }
+  }
+});

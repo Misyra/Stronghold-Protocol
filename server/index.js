@@ -65,7 +65,7 @@ import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { listenRoomAdmin, loadRoomConfig } from './roomAdmin.js';
-import { openCountryLookup } from './geoip.js';
+import { openCountryLookup, parseGeoipMode } from './geoip.js';
 import { cleanupRuntime } from './runtimeCleanup.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -91,7 +91,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
- *   geoLiteCountryFile?: string, countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean,
+ *   geoLiteCountryFile?: string, geoipMode?: 'country' | 'cn-only', countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -110,6 +110,7 @@ export async function startServer(opts = {}) {
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
   const lobbyOptions = lobbyOptionsFrom(opts);
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
+  const geoipMode = parseGeoipMode(opts.geoipMode ?? process.env.SP_GEOIP_MODE);
   let countryLookup = opts.countryLookup ?? null;
   if (countryLookup !== null && typeof countryLookup !== 'function') throw new TypeError('countryLookup must be a function');
   if (!countryLookup && geoLiteFile) {
@@ -118,7 +119,9 @@ export async function startServer(opts = {}) {
       if (within(root, file))
         throw new Error('SP_GEOLITE_COUNTRY_DB cannot be in a public static directory');
     }
-    countryLookup = await openCountryLookup(file);
+    countryLookup = await openCountryLookup(file, { mode: geoipMode });
+    log.info(`[geoip] country database loaded in ${geoipMode} mode`);
+    if (geoipMode === 'cn-only') log.warn('[geoip] mainland-only IPv4 mode: unmatched IPv6 addresses remain unknown and are not restricted as foreign');
   }
   log.info(`[bots] total AI population limit: ${lobbyOptions.maxBots}`);
   if (countryLookup) log.info(`[geoip] foreign AI population limit enabled: ${lobbyOptions.maxForeignBots}`);

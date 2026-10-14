@@ -25,7 +25,7 @@
 
 已有已登录连接继续游玩，不踢人；素材、管理接口和探针不拦截。断线后的 token 重连属于新连接，同样拒绝。开关切换前建立但尚未登录的连接，在首次 hello 时再次检查，发送协议拒绝后以 `4003` 关闭，浏览器显示提示并停止自动重连；这是切换时已存在连接的兜底，不是新连接准入方式。拒绝审计 `connection.foreignPolicy.denied` 全局每 10 秒采样一次并记录省略次数，防止刷日志；切换审计为 `connection.foreignPolicy.changed`。
 
-必须正确配置可信代理和有效 `SP_GEOLITE_COUNTRY_DB`。内网、国家未知、查询错误或缺库时放行，不猜测归属；面板缺库警告、只读 `foreignSessionGeoipAvailable` 与健康信息 `foreignSessions.foreignConnectionsBlocked` 指示配置是否具备生效条件，`connectionDenied` 为拒绝次数。单会话开关、AI 开关和房间上限独立，均不被覆盖。
+必须正确配置可信代理和有效 `SP_GEOLITE_COUNTRY_DB`。内网、国家未知、查询错误或缺库时放行，不猜测归属；大陆专用库的 IPv4 未命中按下面 `cn-only` 规则处理。面板缺库警告、只读 `foreignSessionGeoipAvailable` 与健康信息 `foreignSessions.foreignConnectionsBlocked` 指示配置是否具备生效条件，`connectionDenied` 为拒绝次数。单会话开关、AI 开关和房间上限独立，均不被覆盖。
 
 ## 海外 IP 单身份
 
@@ -69,13 +69,36 @@
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
 | `SP_GEOLITE_COUNTRY_DB` | 未配置 | 私有 Country `.mmdb` 文件路径；未配置时海外限制不启用，全服总量限制仍生效 |
+| `SP_GEOIP_MODE` | `country` | `country` 用于全球国家库；`cn-only` 用于大陆 IPv4 专用库（GeoIP2-CN），将 IPv4 未命中视为非大陆 |
 | `SP_BOT_MAX_TOTAL` | `300` | 全服 AI 席位上限，1–10000 |
 | `SP_BOT_MAX_FOREIGN` | `50` | 海外来源 AI 席位共用上限，1–10000 |
 
-注册 MaxMind 账户后使用 `geoipupdate` 下载并更新 `GeoLite2-Country.mmdb`，账户与 LicenseKey 放服务器私有配置，不入库、不发给浏览器。MMDB 不随游戏分发，不能放在 `public/`、`data/`、`shared/` 或 `packs/` 静态目录中。只在游戏启动时加载本地库；更新库后需在安排好的维护窗口重启游戏加载新版。配置了路径却缺失、损坏或误用了 ASN 库时启动报错，不能静默放开。
+本部署选择 [Hackl0us/GeoIP2-CN](https://github.com/Hackl0us/GeoIP2-CN) 的离线 `Country.mmdb`，无需 MaxMind 账户或下载密钥。它只包含大陆地址，海外 IPv4 查询返回空值，**不能直接按默认全球国家库模式使用**，否则海外来源会被当成未知而放行。
+
+初次下载的项目官方地址：
+
+```text
+https://raw.githubusercontent.com/Hackl0us/GeoIP2-CN/release/Country.mmdb
+```
+
+两台服务器分别在私有目录放置文件，游戏服务配置：
+
+```ini
+SP_GEOLITE_COUNTRY_DB=/var/lib/GeoIP/Country.mmdb
+SP_GEOIP_MODE=cn-only
+```
+
+`cn-only` 模式中，命中 `CN` 为大陆，合法 IPv4 未命中返回内部标记 `ZZ`（仅表示非大陆，不表示真实国家）。连接准入、海外单身份和海外 AI 总量限制共用同一个结果，不需要修改监控 Agent。错误或畸形记录不会被当成有效的非大陆判断；库格式、常用大陆 IPv4 样本及海外样本在启动时校验，缺失、损坏、空库、ASN 库或模式明显不匹配会报错而非启用空白名单。不要根据文件名自动猜测模式。
+
+**IPv6 限制：该数据源缺少大陆 IPv6 覆盖，未命中的 IPv6 仍视为未知并放行。** 文件元数据的 `ipVersion: 6` 不代表包含大陆 IPv6 网段。不能据此声称完整封禁了海外 IPv6；如需覆盖 IPv6，需另补具备 IPv6 覆盖的国家库或地址数据，不可把所有 IPv6 未命中直接封禁而误伤大陆玩家。
+
+MMDB 不随游戏分发，不能放在 `public/`、`data/`、`shared/` 或 `packs/` 静态目录中。只在游戏启动时加载本地库，游戏请求期间不下载、不联网查询。后续更新先下载到临时文件，校验成功后原子替换；下载失败保留旧库，不用空文件覆盖。更新文件后需在安排好的维护窗口重启游戏加载新版。
+
+仍兼容 MaxMind 全球国家库：注册账户后用 `geoipupdate` 下载并更新 `GeoLite2-Country.mmdb`，账户与 LicenseKey 放服务器私有配置，不入库、不发给浏览器；同时配置 `SP_GEOIP_MODE=country`（默认）。
 
 ```sh
 SP_GEOLITE_COUNTRY_DB=/var/lib/GeoIP/GeoLite2-Country.mmdb
+SP_GEOIP_MODE=country
 SP_BOT_MAX_TOTAL=300
 SP_BOT_MAX_FOREIGN=50
 ```

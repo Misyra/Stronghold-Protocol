@@ -1,10 +1,10 @@
 // server/sim/content/enemies/fly.js — FLY 飞行 kits (auras, 暴鸰, the “萨科塔”, 假想敌：黑云, shells, seeds) and their part of KITS
 // (split from content/enemies.js).
 
-import { TICK, MOVE_SCALE, PROJECTILE_SPEEDS, ALLY_COLLIDER_RADIUS } from '../../constants.js';
+import { TICK, PROJECTILE_SPEEDS, ALLY_COLLIDER_RADIUS } from '../../constants.js';
 import {
   num, T, hurt, targetsNear, allTargets, areaAllies, areaAlliesInTiles, fieldAllies, byPriority, spawnChildren,
-  stepToward, setForm, expose, unbalancedNow,
+  setForm, expose, unbalancedNow,
 } from './helpers.js';
 import { enemyAura, allyAura, selfFear, skill, kitSelfFear } from './archetypes.js';
 import { hypot } from '../../detmath.js';
@@ -43,6 +43,8 @@ const GRAB_RADIUS_SCALE = 2.5, GRAB_MAX_PREY = 3, GRAB_DELAY = 0.5;
 
 /** 枯朽之种 summoned per BornBugs cast ("数个") [ASSUMED]. */
 const BUGS_PER_CAST = 3;
+/** 枯朽之种's self-destruct attack projectile speed (PRTS 枯朽之种). */
+const SEED_PROJECTILE_SPEED = 10;
 
 // ---------------------------------------------------------------------------------------------------------------
 // kits
@@ -258,21 +260,29 @@ export const FLY_KITS = Object.freeze({
   enemy_1112_emppnt: kitShell,                                       // 帝国炮火先兆者 · attacks are shells landing 3 s later (r 1.2)
   enemy_1112_emppnt_2: kitShell,                                     // 帝国炮火中枢先兆者 · same
   enemy_1321_wdarft: (ab) => [skill(ab.sk.BornBugs, (b, e) => spawnChildren(b, e, 'enemy_1269_nhfly', BUGS_PER_CAST))], // 枯朽萃聚使徒 · spawns 枯朽之种
-  enemy_1269_nhfly: () => [{                                         // 枯朽之种 · no normal attack: dives onto a nearby operator and self-destructs
+  enemy_1269_nhfly: () => [{                                         // 枯朽之种 · becomes a projectile when self-destructing
     spawn(b, e) { e.profile.noAttack = true; },
-    tick(b, e, a, dt) {
-      if (a.t && !a.t.alive) { a.t = null; b.removeBuff(e, 'ab:dive'); }
-      if (unbalancedNow(b, e)) return;                               // 失衡: no dive, no blast meanwhile
-      if (!a.t) {
-        const l = targetsNear(b, e, e.base.rangeRadius || 1).sort((p, q) => hypot(p.x - e.x, p.y - e.y) - hypot(q.x - e.x, q.y - e.y));
-        if (!l.length) return;
-        a.t = l[0];
-        b.addBuff(e, { key: 'ab:dive', flags: { noMove: true } });
-      }
-      if (!stepToward(e, a.t.x, a.t.y, Math.max(e.s.moveSpeed, 0.5) * MOVE_SCALE * dt) && hypot(a.t.x - e.x, a.t.y - e.y) > 0.3) return;
-      hurt(b, e, a.t, e.s.atk, 'phys');
-      b.fx('explode', { x: e.x, y: e.y, r: 0.5, kind: 'seed' });
-      b.kill(e, null);
+    tick(b, e, a) {
+      if (a.shot || unbalancedNow(b, e)) return;
+      const l = targetsNear(b, e, e.base.rangeRadius || 1).sort((p, q) => hypot(p.x - e.x, p.y - e.y) - hypot(q.x - e.x, q.y - e.y));
+      if (!l.length) return;
+      const target = l[0], atk = e.s.atk;
+      // PRTS 枯朽之种: attack radius 2 and projectile speed 10. Keep its model as the projectile's visual while
+      // removing it from operator target selection. [ASSUMED] A lost target leaves the shot to burst at its last point.
+      b.addBuff(e, { key: 'ab:dive', flags: { noMove: true, untargetable: true, invulnerable: true, unblockable: true } });
+      a.shot = b.addProjectile({ from: e, target, speed: SEED_PROJECTILE_SPEED, source: e, hitDead: true,
+        onHit: ({ target: hit, x, y }) => {
+          e.x = x; e.y = y;
+          if (hit) hurt(b, e, hit, atk, 'phys');
+          b.fx('explode', { x, y, r: 0.5, kind: 'seed' });
+          b.kill(e, null);
+        },
+      });
+      b.on('tick', () => {
+        if (!e.alive) return;
+        if (!b.projectiles.list.includes(a.shot)) { b.kill(e, null); return; } // e.g. 逻各斯 S3 cleared the shot
+        e.x = a.shot.x; e.y = a.shot.y;
+      }, { owner: e });
     },
   }],
 });

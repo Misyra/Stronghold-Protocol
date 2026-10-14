@@ -29,6 +29,8 @@ export const MAX_EFFECTS = Object.freeze({ lite: 90, full: 220 });
 export const MAX_PARTICLES = Object.freeze({ lite: 2500, full: 6000 });
 /** Battle seconds a pending one-shot may start late (its prefab still loading) before it is dropped. */
 export const LATE_START = 0.6;
+/** Finished instances kept per prefab for reuse (at most; `_preloadCnt` sets the share of each). */
+export const POOL_MAX = 12;
 /** Battle seconds a one-shot without an authored duration (it loops) may play before it is stopped. */
 export const ONE_SHOT_TTL = 4;
 /** Real milliseconds per frame spent compiling programs / uploading textures ahead of their first draw. */
@@ -135,6 +137,8 @@ export class OfficialFx {
     this.camU = [0, 0, 0];
     this.seed = 1;
     this.warmQueue = [];       // { kind, mat } programs / { tex } textures to put on the GPU ahead of their first draw
+    this.pool = new Map();     // compiled prefab → finished instances to reuse (this tier's)
+    this.pooled = 0;
     const mk = (pass) => {
       const c = new this.P.Container();
       c._render = (renderer) => this.renderPass(pass, renderer);
@@ -161,6 +165,7 @@ export class OfficialFx {
     this.tier = tier;
     if (tier === 'off') this.clear();
     else if (wasLite !== (tier === 'lite')) this.clear(); // the instances were built for the other tier
+    if (wasLite !== (tier === 'lite')) this.pool.clear();
   }
 
   /**
@@ -212,7 +217,7 @@ export class OfficialFx {
     let w = 0, parts = 0;
     for (const fx of this.effects) {
       if (d > 0) fx.update(d);
-      if (fx.done) { fx.handle && (fx.handle.effect = null, fx.handle.done = true); continue; }
+      if (fx.done) { if (fx.handle) { fx.handle.effect = null; fx.handle.done = true; } this._recycle(fx); continue; }
       for (const s of fx.sys) if (s) parts += s.count;
       this.effects[w++] = fx;
     }
@@ -254,6 +259,24 @@ export class OfficialFx {
       if (w.kind) this.glr.program(w.kind, w.mat);
       else if (!this.glr.texture(w.tex, this.lite) && ++w.tries < 120) this.warmQueue.push(w); // its image still loads
     }
+  }
+
+  /** Keep a finished instance for the next play of its prefab (up to its `_preloadCnt`, POOL_MAX). */
+  _recycle(fx) {
+    if (fx.lite !== this.lite) return;
+    let list = this.pool.get(fx.def);
+    if (!list) { list = []; this.pool.set(fx.def, list); }
+    const cap = Math.min(POOL_MAX, Math.max(2, Number((fx.def.pe || fx.def.proj || {})._preloadCnt) || 2));
+    if (list.length < cap) { fx.handle = null; fx.track = null; fx.onFinish = null; list.push(fx); }
+  }
+
+  /** A pooled instance of a prefab, reset for another play (null when none is free). */
+  _take(def, seed) {
+    const list = this.pool.get(def);
+    const fx = list && list.pop();
+    if (!fx) return null;
+    this.pooled++;
+    return fx.reset(seed);
   }
 
   /** Remove every effect (battle reset). */
@@ -343,7 +366,7 @@ export class OfficialFx {
     let systems = 0;
     for (const fx of this.effects) for (const s of fx.sys) if (s && s.count) systems++;
     return {
-      tier: this.tier, available: this.available, effects: this.effects.length, pending: this.pending.length, particles: this.particles,
+      tier: this.tier, available: this.available, effects: this.effects.length, pending: this.pending.length, particles: this.particles, reused: this.pooled,
       systems, dropped: this.dropped, draws: this.glr ? this.glr.stats.draws : 0, programs: this.glr ? this.glr.stats.programs : 0,
       textures: this.glr ? this.glr.stats.textures : 0, texMB: this.glr ? Math.round(this.glr.stats.texBytes / 1048576) : 0,
     };
@@ -382,7 +405,8 @@ export class FxHandle {
 
   _start(def) {
     const s = this.sys;
-    const fx = new Effect(def, { lite: s.lite, lib: s.lib, seed: this.opts.seed ?? ((s.seed = (s.seed * 1103515245 + 12345) >>> 0) || 1) });
+    const seed = this.opts.seed ?? ((s.seed = (s.seed * 1103515245 + 12345) >>> 0) || 1);
+    const fx = s._take(def, seed) || new Effect(def, { lite: s.lite, lib: s.lib, seed });
     fx.place(this.placeArgs);
     fx.track = this.opts.track || null;
     fx.handle = this;

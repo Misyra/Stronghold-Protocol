@@ -6,6 +6,8 @@
 //
 // Query: ?key=<prefab> &unit=<unit id> &speed=1|2 &tier=full|lite &face=L|R &panel=0 &seed=<n> &bg=<css colour>
 //        &grid=0 (a flat background without the tiles: the browser test measures the blending on it)
+//        &stress=<loops>,<hits per s> (a crowd: that many status loops on a 11 × 5 tile area and hits every second —
+//        the particle budget's perf check; window.__fx.sample(ms) → { fps, p95, cpuMs, particles, effects, draws })
 //        &attack=<unit id> (the wiring demo: that unit attacks a dummy 3 tiles away every second — its casts,
 //        projectile and hits from index.json through render/vfx/wiring.js, as in a battle) &kind=<projKind> &skill=1
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
@@ -140,8 +142,30 @@ async function main() {
     }
   }
 
+  // ---- stress: a crowd of loops and hits (the particle budget) --------------------------------------------------------
+  const stress = { on: false, loops: 0, hits: 0, acc: 0, handles: [] };
+  const LOOPS = ['buff_burn', 'buff_autochess_frozen', 'buff_poison', 'buff_cold', 'buff_stun', 'common_shield_01', 'buff_slowdown', 'common_invincible_01'];
+  const HITS = ['common_hit_01', 'common_magic_hit_01', 'common_firemagic_hit_01', 'common_enemy_hit_01', 'common_heal_hit_01', 'common_ranger_hit_01'];
+  const at = (i) => { const col = (i * 7) % 11, row = 8 + ((i * 3) % 5); return [col - 10, row - 9 + 0.2, -0.25]; };
+  async function startStress(loops, hits) {
+    ofx.clear(); state.loop = false; state.handle = null;
+    await ofx.lib.preload([...LOOPS, ...HITS], { half: ofx.lite });
+    stress.on = true; stress.loops = loops; stress.hits = hits; stress.acc = 0; stress.n = 0;
+    stress.handles = Array.from({ length: loops }, (_, i) => ofx.spawn(LOOPS[i % LOOPS.length], { pos: at(i), groundZ: 0 }, { loop: true, important: true }));
+  }
+  const stressStep = (dt) => {
+    if (!stress.on) return;
+    stress.acc += dt * stress.hits;
+    while (stress.acc >= 1) { stress.acc -= 1; const i = stress.n++; ofx.spawn(HITS[i % HITS.length], { pos: at(i * 5 + 1), groundZ: 0 }, {}); }
+  };
+  let cpuMs = 0, renderMs = 0, r0 = 0;
+  // the render's cost (Pixi renders at UPDATE_PRIORITY.LOW = −25)
+  app.ticker.add(() => { r0 = performance.now(); }, null, -24);
+  app.ticker.add(() => { if (r0) renderMs = renderMs * 0.9 + (performance.now() - r0) * 0.1; }, null, -26);
   app.ticker.add(() => {
-    if (!state.paused) step(1, app.ticker.deltaMS / 1000);
+    const t0 = performance.now();
+    if (!state.paused) { step(1, app.ticker.deltaMS / 1000); stressStep(app.ticker.deltaMS / 1000 * state.speed); }
+    cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
     const s = ofx.stats();
     $('stats').textContent = `${state.key}  ${state.handle?.effect ? state.handle.effect.state : '—'}  t=${state.handle?.effect ? state.handle.effect.time.toFixed(2) : '—'}\n` +
       `effects ${s.effects}  particles ${s.particles}  draws ${s.draws}  programs ${s.programs}  textures ${s.textures} (${s.texMB} MB)\n` +
@@ -194,10 +218,31 @@ async function main() {
     }
   };
   if (q.get('attack')) startAttackDemo(q.get('attack'), { kind: q.get('kind') || undefined, skill: q.get('skill') === '1' });
+  if (q.get('stress')) { const [l, h] = q.get('stress').split(',').map(Number); await startStress(l || 0, h || 0); }
 
   Object.assign(api, {
     play, step,
     attackDemo: startAttackDemo,
+    stress: startStress,
+    /** Frame figures over `ms` of animation frames (the stress check). */
+    sample: (ms = 4000) => new Promise((resolve) => {
+      const d = [];
+      let last = performance.now();
+      const t0 = last;
+      let draws = 0, frames = 0;
+      const tick = (t) => {
+        d.push(t - last); last = t;
+        draws += ofx.stats().draws; frames++;
+        if (t - t0 < ms) { requestAnimationFrame(tick); return; }
+        d.shift();
+        const sorted = [...d].sort((a, b) => a - b);
+        const avg = d.reduce((a, b) => a + b, 0) / Math.max(1, d.length);
+        const st = ofx.stats();
+        resolve({ fps: Math.round(1000 / avg * 10) / 10, p95: Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10, cpuMs: Math.round(cpuMs * 100) / 100, renderMs: Math.round(renderMs * 100) / 100,
+          particles: st.particles, effects: st.effects, draws: Math.round(draws / Math.max(1, frames)), texMB: st.texMB });
+      };
+      requestAnimationFrame(tick);
+    }),
     stopDemo: () => { demo.on = false; },
     wiring,
     render: () => app.renderer.render(app.stage),

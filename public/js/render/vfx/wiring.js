@@ -134,11 +134,40 @@ export class FxWiring {
     return modes.find((x) => x.name === 'Default') || modes[0];
   }
 
+  /**
+   * The facing variant a prefab names for its owner (SwitchableBackEffect for a unit facing up, SwitchableRightEffect,
+   * SwitchableEffectByFaceDirection), or null to keep it; 'common_empty' means none.
+   */
+  _variant(sw, v, pose) {
+    const dir = typeof v?.dir === 'string' ? v.dir.toUpperCase() : null;
+    if (sw.back && (pose.back || dir === 'UP')) return sw.back;
+    if (sw.right && (!pose.left !== !!sw.reverse)) return sw.right;
+    if (dir === 'UP' && sw.up) return sw.up;
+    if (dir === 'DOWN' && sw.down) return sw.down;
+    if (dir === 'LEFT' && sw.left) return sw.left;
+    return null;
+  }
+
+  /** PauseEffectIf: the effect hides while its owner shows a condition (facing, abnormal flags). */
+  _paused(pz, v, pose) {
+    const conds = [];
+    if (pz.back) conds.push(pose.back || v?.dir === 'UP');
+    if (pz.right) conds.push(!pose.left);
+    if (pz.flags.length) conds.push(pz.flags.some((f) => abnormal(v, f)));
+    if (!conds.length) return false;
+    return pz.all ? conds.every(Boolean) : conds.some(Boolean);
+  }
+
   /** Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track }. */
   playOn(key, v, o = {}) {
-    const k = lc(key);
+    let k = lc(key);
     if (!k || !this.ofx.lib.has(k)) return null;
-    const def = this.ofx.lib.def(k);
+    let def = this.ofx.lib.def(k);
+    if (def && def.switchable) {
+      const alt = lc(this._variant(def.switchable, v, this.pose(v)));
+      if (alt === 'common_empty') return null;
+      if (alt && alt !== k && this.ofx.lib.has(alt)) { k = alt; def = this.ofx.lib.def(k); }
+    }
     const u = this.unitOf(v);
     const skin = this.skinOf(u);
     const spawn = def ? def.spawn : 2;
@@ -149,14 +178,20 @@ export class FxWiring {
     const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important };
-    if (o.follow && def?.follow) {
-      // FollowMountPoint: the effect stays on the unit's point
-      const type = def.follow.mount;
+    // the owner each frame: FollowMountPoint keeps the effect on the unit's point (status loops: o.follow), FollowDirection
+    // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
+    const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause;
+    if (!o.track && (follow || turn || pause)) {
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
         const p = this.pose(v);
-        mountPoint(skin, type, p, fx.anchor);
-        fx.groundZ = -(v.z || 0);
+        if (follow) { mountPoint(skin, def.follow.mount, p, fx.anchor); fx.groundZ = -(v.z || 0); }
+        if (turn) {
+          const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY };
+          this._orient(def, pl, p, {}, v);
+          fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY;
+        }
+        if (pause) fx.hidden = this._paused(pause, v, p);
       };
     }
     return this.ofx.spawn(k, place, opts);
@@ -402,6 +437,28 @@ export class FxWiring {
       else T[w++] = t;
     }
     T.length = w;
+  }
+}
+
+/**
+ * Whether a view shows an abnormal flag (Torappu.AbnormalFlag): the ones a client view knows from its b.snap flags
+ * and statuses — STUNNED 0, INVISIBLE 9 / CAMOUFLAGE 17 (stealth), FROZEN 16, COLD 23, LEVITATE 25, SILENCED 12,
+ * DISARMED 11, FEARED 33, DOZE 43 (sleep). Others read as absent.
+ */
+function abnormal(v, flag) {
+  const f = v?.flags | 0, st = v?.statuses;
+  const has = (k) => !!(st && (typeof st.has === 'function' ? st.has(k) : st[k]));
+  switch (flag) {
+    case 0: return !!(f & UF.STUNNED) || has('stun');
+    case 9: case 17: return !!(f & UF.STEALTH);
+    case 16: return !!(f & UF.FROZEN) || has('freeze');
+    case 23: return !!(f & UF.COLD) || has('cold');
+    case 25: return has('levitate');
+    case 12: return has('silence');
+    case 11: return has('disarm');
+    case 33: return has('fear');
+    case 43: return !!(f & UF.SLEEP) || has('sleep');
+    default: return false;
   }
 }
 

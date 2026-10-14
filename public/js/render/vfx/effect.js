@@ -157,7 +157,13 @@ export function compileEffect(desc, lib = {}) {
         case 'SwitchableRightEffect': def.switchable = { ...(def.switchable || {}), right: f._rightEffect ? String(f._rightEffect).toLowerCase() : null, reverse: on(f._reverseLeftRight) }; break;
         case 'SwitchableEffectByFaceDirection': def.switchable = { ...(def.switchable || {}), up: f._upEffect ? String(f._upEffect).toLowerCase() : null, down: f._downEffect ? String(f._downEffect).toLowerCase() : null, left: f._leftEffect ? String(f._leftEffect).toLowerCase() : null }; break;
         case 'ColorModifier': if (Array.isArray(f._color)) def.colorMod = f._color.map((x) => num(x, 1)); break;
-        case 'PauseEffectIf': def.pause = { back: on(f._checkFaceToBack), right: on(f._checkFaceToRight) }; break;
+        case 'PauseEffectIf': {
+          // the owner conditions a client view can answer: its facing and the abnormal flags it shows (immunities,
+          // combos, buffs and modes are not visible to the renderer: never paused for them)
+          const flags = on(f._checkAbnormalFlag) ? [num(f._pauseWhenAbnormalFlag, -1), ...(Array.isArray(f._pauseWhenAbnormalFlags) ? f._pauseWhenAbnormalFlags : [])].filter((x) => x >= 0) : [];
+          def.pause = { back: on(f._checkFaceToBack), right: on(f._checkFaceToRight), flags, all: on(f._requireAllConditions) };
+          break;
+        }
         default: break;
       }
     }
@@ -258,6 +264,36 @@ export class Effect {
     if (this.lite && def.lod) for (const nd of def.lod.disable) if (nd >= 0 && nd < n) { this.act[nd] = 0; this.forcedOff[nd] = 1; }
     // FxDelay nodes wait (inactive) until their delay
     for (const nd of def.fxDelay.keys()) if (nd >= 0 && nd < n) this.act[nd] = 0;
+  }
+
+  /**
+   * Make a finished instance new again for another play (render/vfx/system.js pools them per prefab and tier: a hit
+   * that plays every second reuses its arrays instead of allocating them). `seed` reseeds its systems.
+   */
+  reset(seed) {
+    const def = this.def, n = def.n;
+    this.loc.set(def.base);
+    this.act.set(def.activeBase);
+    this.hier.fill(0); this.prevHier.fill(0); this.actAt.fill(-1); this.forcedOff.fill(0);
+    this.matOv.clear(); this.rendOv.clear(); this.trails.clear(); this.linePts.clear();
+    this.anchor[0] = this.anchor[1] = this.anchor[2] = 0;
+    this.yaw = 0; this.pitch = 0; this.roll = 0; this.mirror = false; this.flipY = false; this.groundZ = 0;
+    this.time = 0;
+    this.delay = def.delayToPlay + (def.randomDelay > 0 ? Math.random() * def.randomDelay : 0);
+    this.state = 'play'; this.linger = 0; this.started = false; this.track = null; this.hidden = false; this.owner = null;
+    this.tint = def.colorMod || null; this.speed = 1; this.ttl = Infinity; this.onFinish = null; this.data = null;
+    this.handle = null; this.fade = 1; this.stopT = 0;
+    const seed0 = (num(seed, 0) >>> 0) || ((Math.random() * 4294967296) >>> 0);
+    for (let i = 0; i < n; i++) {
+      const s = this.sys[i];
+      if (!s) continue;
+      s.clear(); s.playing = false; s.emitting = false; s.deaths = 0; s.prevPos = null; s.started = false;
+      s.rate = def.ps[i].emission ? def.ps[i].emission.rate : null; s.sizeX = def.ps[i].size ? def.ps[i].size.x : null; s.startColor = def.ps[i].startColor;
+      s.rng.s = ((seed0 + i * 7919) >>> 0) || 0x9e3779b9;
+    }
+    if (this.lite && def.lod) for (const nd of def.lod.disable) if (nd >= 0 && nd < n) { this.act[nd] = 0; this.forcedOff[nd] = 1; }
+    for (const nd of def.fxDelay.keys()) if (nd >= 0 && nd < n) this.act[nd] = 0;
+    return this;
   }
 
   /** Place the effect (see the header). */

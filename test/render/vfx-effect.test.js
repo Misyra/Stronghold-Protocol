@@ -106,6 +106,18 @@ describe('effect lifecycle', () => {
     assert.equal(p.hier[2], 1);
   });
 
+  test('a reset (pooled) instance plays like a new one', () => {
+    const def = compileEffect(desc([root([pe({ _delayToFinish: 0.2 })]), psNode(1, 0, { behaviours: [{ class: 'FxDelay', enabled: true, fields: { _delayTime: 0.1 } }] })]));
+    const a = new Effect(def, { seed: 5 });
+    const trace = (fx) => { const out = []; for (let i = 0; i < 30; i++) { fx.update(1 / 30); out.push(`${fx.state}:${fx.sys[1].count}`); } return out.join(','); };
+    const first = trace(a);
+    assert.ok(a.done);
+    a.reset(5);
+    assert.equal(a.state, 'play');
+    assert.equal(trace(a), first);
+    assert.equal(trace(new Effect(def, { seed: 5 }).reset(5)), first);
+  });
+
   test('onFinish runs once when the effect finishes (OnFinishEmitter chains)', () => {
     let n = 0;
     const fx = new Effect(compileEffect(desc([root([pe({})]), psNode(1, 0)])), { seed: 1 });

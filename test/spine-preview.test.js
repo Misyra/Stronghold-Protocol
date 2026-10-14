@@ -164,6 +164,29 @@ describe('spinePreview: clipsOf — the animation buttons follow the model', () 
     assert.ok(ids(skin).includes('idle') && ids(skin).includes('attack'));
   });
 
+  test('每个骨架剪辑都能被某个按钮点到（含没有角色指向的变体）', () => {
+    // 锏 ships 13 clips: the seven semantic buttons cover nine of them (Start+Idle, the Skill_3 trio), and the rest —
+    // Default, Skill_2_B, Skill_Down_2, Skill_Down_2_B — come back as `raw` entries labelled with their clip name.
+    // The invariant is what matters: total clips === names reachable from the buttons.
+    for (const [id, skin] of [['char_4116_blkkgt', 'char_4116_blkkgt@witch#5'], [CHAR, ''], ['char_1012_skadi2', 'char_1012_skadi2@boc#4']]) {
+      const r = clipsOf(MANIFEST, id, skin);
+      const src = MANIFEST.chars[id].skins?.[skin]?.spine?.front || MANIFEST.chars[id].spine.front;
+      const all = Object.keys(src.animations || {});
+      const covered = new Set(r.clips.flatMap((c) => c.names));
+      const missing = all.filter((n) => !covered.has(n));
+      assert.deepEqual(missing, [], `${id} ${skin || '(本体)'}: 未覆盖的剪辑`);
+      assert.equal(r.total, all.length);
+      const raw = r.clips.filter((c) => c.kind === 'raw');
+      for (const c of raw) {
+        assert.equal(c.names[0], c.clipName, 'raw 条目用剪辑名当标签');
+        assert.deepEqual(c.steps, [[c.clipName, true]]);
+      }
+    }
+    const degen = clipsOf(MANIFEST, 'char_4116_blkkgt', 'char_4116_blkkgt@witch#5');
+    assert.equal(degen.total, 13);
+    assert.equal(degen.clips.filter((c) => c.kind === 'raw').length, 4, '锏的四个变体剪辑各有一个按钮');
+  });
+
   test('每个按钮都带底层剪辑名（按钮 title 用）', () => {
     for (const c of clipsOf(MANIFEST, CHAR).clips) {
       assert.ok(c.names.length >= 1, c.id);

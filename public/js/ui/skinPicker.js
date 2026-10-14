@@ -49,13 +49,16 @@ const TRANSPARENT_PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAA
 /**
  * Animation button labels. `clipsOf()` reports a `kind` (it holds no Chinese itself — the i18n audit runs over
  * public/js), and the UI names it here: `N_()` registers the msgid without translating, `t()` translates at the
- * call site, which is what the audit wants.
+ * call site, which is what the audit wants. A `raw` entry is a clip no role points at (a stance, a variant): it has
+ * no translated name, so the button shows the clip's own name.
  */
 const CLIP_LABEL = {
   deploy: N_('部署'), idle: N_('待机'), attack: N_('攻击'), attackDown: N_('攻击·下'),
   stun: N_('眩晕'), move: N_('移动'), die: N_('死亡'),
 };
-const clipLabel = (c) => (c.kind === 'skill' ? t('技能{n}', { n: (c.skillIndex ?? 0) + 1 }) : t(CLIP_LABEL[c.kind] || c.kind));
+const clipLabel = (c) => (c.kind === 'raw' ? c.clipName
+  : c.kind === 'skill' ? t('技能{n}', { n: (c.skillIndex ?? 0) + 1 })
+    : t(CLIP_LABEL[c.kind] || c.kind));
 
 /** A manifest asset URL of one operator (`chars[charId].<field>`), or null. */
 function charAsset(charId, field) {

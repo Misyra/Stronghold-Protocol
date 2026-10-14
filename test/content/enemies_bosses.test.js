@@ -1147,6 +1147,26 @@ test(`${nm('enemy_1321_wdarft')} + ${nm('enemy_1269_nhfly')}: the apostle spawns
   assert.ok(h.unit('t_wall').stats.taken > 0);
 });
 
+test(`${nm('enemy_1269_nhfly')}: entering its 2-tile self-destruct range turns it into a 10-tile/s untargetable projectile`, () => {
+  const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 4 }, { chessId: 't_gun', row: 10, col: 4 }] });
+  h.step();
+  const seed = put(h, 'enemy_1269_nhfly', [9, 6], { route: 2, move: true });
+  assert.equal(seed.base.rangeRadius, 2);
+  h.step();
+  const shot = h.b.projectiles.list.find((p) => p.source === seed);
+  assert.ok(shot, 'self-destruct is an enemy projectile');
+  assert.equal(shot.speed, 10);
+  assert.equal(shot.target, h.unit('t_wall'));
+  assert.ok(seed.s.flags.untargetable, 'operators cannot target the seed after launch');
+  const x = seed.x;
+  h.run(0.1);
+  assert.ok(x - seed.x > 0.8, 'the diving seed travels at projectile speed');
+  assert.equal(seed.x, shot.x, 'the seed model follows the projectile');
+  assert.equal(seed.stats.taken, 0, 'the seed cannot be hit in flight');
+  assert.ok(h.runUntil(() => !seed.alive, 1), 'the seed reaches its target and self-destructs');
+  assert.ok(h.unit('t_wall').stats.taken > 0);
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // SPECIAL and others
 

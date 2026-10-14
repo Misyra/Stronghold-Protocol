@@ -29,6 +29,10 @@ export const MAX_EFFECTS = Object.freeze({ lite: 90, full: 220 });
 export const MAX_PARTICLES = Object.freeze({ lite: 2500, full: 6000 });
 /** Battle seconds a pending one-shot may start late (its prefab still loading) before it is dropped. */
 export const LATE_START = 0.6;
+/** Battle seconds a one-shot without an authored duration (it loops) may play before it is stopped. */
+export const ONE_SHOT_TTL = 4;
+/** Real milliseconds per frame spent compiling programs / uploading textures ahead of their first draw. */
+export const WARM_MS = 2;
 
 /** Unity battle frame → board frame (x + 10, y + 9, −z) as a column-major matrix. */
 const U2B = (() => { const m = mat4(); m[10] = -1; m[12] = 10; m[13] = 9; return m; })();
@@ -130,6 +134,7 @@ export class OfficialFx {
     this.vpB = mat4(); this.vpU = mat4();
     this.camU = [0, 0, 0];
     this.seed = 1;
+    this.warmQueue = [];       // { kind, mat } programs / { tex } textures to put on the GPU ahead of their first draw
     const mk = (pass) => {
       const c = new this.P.Container();
       c._render = (renderer) => this.renderPass(pass, renderer);
@@ -215,6 +220,42 @@ export class OfficialFx {
     this.particles = parts;
   }
 
+  /**
+   * Programs and textures of these prefabs go to the GPU ahead of their first draw, a few per frame (WARM_MS of each
+   * frame's pass): a battle's effects compile at its start instead of hitching when each first plays.
+   */
+  warm(keys) {
+    const seenP = new Set(this.warmQueue.map((w) => w.id));
+    for (const key of keys) {
+      const def = this.lib.def(key);
+      if (!def) continue;
+      const add = (kind, mi) => {
+        if (mi == null) return;
+        const mat = def.material(mi, this.lite);
+        if (!mat) return;
+        const id = `${kind}|${mat.key}`;
+        if (!seenP.has(id)) { seenP.add(id); this.warmQueue.push({ id, kind, mat }); }
+        for (const t of mat.textures) if (t.key && !seenP.has('t|' + t.key)) { seenP.add('t|' + t.key); this.warmQueue.push({ id: 't|' + t.key, tex: t.key, tries: 0 }); }
+      };
+      for (let i = 0; i < def.n; i++) {
+        const r = def.psr[i];
+        if (r && r.enabled && r.mode !== 'none') { add(r.mode === 'mesh' ? 'mesh' : 'quad', r.mats[0]); if (def.ps[i]?.trail) add('strip', r.mats[1]); }
+        for (const x of [def.mesh[i]]) if (x) for (const mi of x.mats) add('mesh', mi);
+        for (const x of [def.skinned[i], def.trail[i], def.line[i]]) if (x) for (const mi of x.mats) add('strip', mi);
+      }
+    }
+  }
+
+  _warmStep() {
+    if (!this.warmQueue.length || !this.glr) return;
+    const t0 = performance.now();
+    while (this.warmQueue.length && performance.now() - t0 < WARM_MS) {
+      const w = this.warmQueue.shift();
+      if (w.kind) this.glr.program(w.kind, w.mat);
+      else if (!this.glr.texture(w.tex, this.lite) && ++w.tries < 120) this.warmQueue.push(w); // its image still loads
+    }
+  }
+
   /** Remove every effect (battle reset). */
   clear() {
     for (const fx of this.effects) fx.kill();
@@ -260,7 +301,7 @@ export class OfficialFx {
 
   /** Draw one pass from inside Pixi's render (see the header). */
   renderPass(pass, renderer) {
-    if (!this.active || !this.effects.length) return;
+    if (!this.active || (!this.effects.length && !this.warmQueue.length)) return;
     const gl = renderer.gl;
     if (!this.glr) {
       if (!gl || renderer.context?.webGLVersion !== 2) { this.unsupported = true; return; }
@@ -271,6 +312,7 @@ export class OfficialFx {
     }
     renderer.batch.flush();
     try {
+      if (pass === 'ground' || this.prepared !== this.frameNo) this._warmStep();
       if (this.prepared !== this.frameNo) this._prepare(renderer);
       const items = this.items[pass];
       if (this.needDepth && this.depthDone !== this.frameNo) { this.glr.depthPrepass(this.vpB); this.depthDone = this.frameNo; }
@@ -329,6 +371,11 @@ export class FxHandle {
     fx.place(this.placeArgs);
     fx.track = this.opts.track || null;
     fx.handle = this;
+    // a one-shot nobody stops is capped: its authored duration (plus its linger), else ONE_SHOT_TTL
+    if (!this.opts.loop && !this.opts.important && !def.isLoop) {
+      const d = Number(def.stats?.duration);
+      fx.ttl = Number.isFinite(d) && d > 0 ? Math.min(ONE_SHOT_TTL * 2, d + def.delayToPlay + 0.5) : ONE_SHOT_TTL;
+    }
     fx.data = this.opts.data ?? null;
     if (this.opts.onFinish) fx.onFinish = this.opts.onFinish;
     // a chained effect of the prefab itself (OnPlayEmitter / OnFinishEmitter) starts with the same placement

@@ -116,7 +116,10 @@ export class FxWiring {
     if (!this.ofx.active) return 0;
     await this.ready();
     if (!this.idx) return 0;
-    return this.ofx.lib.preload(this.keysFor(views), { half: this.ofx.lite });
+    const keys = this.keysFor(views);
+    const n = await this.ofx.lib.preload(keys, { half: this.ofx.lite });
+    this.ofx.warm?.(keys);
+    return n;
   }
 
   /** The attack mode of a unit now (`S<n>` while its skill n is on and the unit has such a mode). */
@@ -174,7 +177,7 @@ export class FxWiring {
       const flip = left !== def.leftIsDefault;
       if (def.rotY >= 0) place.flipY = flip; else place.mirror = flip;
     } else if (rt === 2 || rt === 4) {
-      let a = null;
+      let a;
       if (def.useBodyRotation || !o.toward) a = bodyYaw(v, pose);
       else {
         const dx = o.toward.x - pose.x, dy = o.toward.y - pose.y;

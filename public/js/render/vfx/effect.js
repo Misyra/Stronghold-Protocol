@@ -238,6 +238,7 @@ export class Effect {
     this.owner = null;
     this.tint = def.colorMod || null;
     this.speed = 1;                                    // playback speed (1 = the battle clock)
+    this.ttl = Infinity;                               // battle s after which a still-playing effect is stopped (a cap)
     this.onFinish = null;                              // callback (chained effects)
     this.data = null;                                  // the caller's own record (wiring)
     const emission = num(opts.emission, 1) * (this.lite ? 0.5 : 1);
@@ -366,6 +367,7 @@ export class Effect {
     const def = this.def;
     const ct = this.ctime;
     if (ct < 0) return;
+    if (this.state === 'play' && this.time >= this.ttl) this.stop();
     const first = !this.started;
     this.started = true;
     // FxDelay activations
@@ -538,7 +540,9 @@ export class Effect {
       const s = this.sys[i];
       if (s && (s.alive || (s.isSub && s.count > 0))) { busy = true; break; }
     }
-    if (!busy) for (const t of this.trails.values()) if (t.n > 0) { busy = true; break; }
+    // a trail keeps a stopped effect until it has faded; a playing one-shot ends with its systems and clips (its trail
+    // fades during the `_delayToFinish` linger — a standing trail holds one point for ever)
+    if (!busy && this.state === 'stopping') for (const t of this.trails.values()) if (t.n > 1) { busy = true; break; }
     if (!busy) for (const [nd, d] of def.fxDelay) if (!this.forcedOff[nd] && ct < d) { busy = true; break; }
     if (!busy && this.state === 'play') {
       for (const a of def.animators) {

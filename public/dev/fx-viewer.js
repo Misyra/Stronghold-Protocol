@@ -5,6 +5,7 @@
 // for the 3D board, so the effects composite onto it as they do in the game.
 //
 // Query: ?key=<prefab> &unit=<unit id> &speed=1|2 &tier=full|lite &face=L|R &panel=0 &seed=<n> &bg=<css colour>
+//        &grid=0 (a flat background without the tiles: the browser test measures the blending on it)
 //        &attack=<unit id> (the wiring demo: that unit attacks a dummy 3 tiles away every second — its casts,
 //        projectile and hits from index.json through render/vfx/wiring.js, as in a battle) &kind=<projKind> &skill=1
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
@@ -35,6 +36,7 @@ function drawBoard(cam, w, h) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = q.get('bg') || '#1b2422';
   g.fillRect(0, 0, w, h);
+  if (q.get('grid') === '0') return;
   for (let r = 6; r <= 13; r++) for (let col = -1; col <= 11; col++) {
     const pts = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([dx, dy]) => cam.project(col + dx, r + dy, 0));
     g.beginPath();
@@ -89,6 +91,7 @@ async function main() {
     markers.clear();
     const skin = skinOf();
     const u = unitAt();
+    if (q.get('grid') === '0') return;
     const foot = cam.project(u.x, u.y, 0);
     markers.lineStyle(1, 0xffffff, 0.5).drawCircle(foot.x, foot.y, 4);
     if (!skin) return;
@@ -202,6 +205,9 @@ async function main() {
     stats: () => ofx.stats(),
     setTier: (t) => ofx.setTier(t),
     keys: () => keys,
+    /** Screen px of a board point (col, row, height): where the tests look. */
+    project: (x, y, z = 0) => { const p = cam.project(x, y, z); return { x: p.x, y: p.y, s: p.s }; },
+    unitTile: () => ({ ...UNIT_TILE }),
     stopTicker: () => app.ticker.stop(),
     setLoop: (v) => { state.loop = !!v; },
     setFace: (left) => { state.left = !!left; },

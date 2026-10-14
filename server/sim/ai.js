@@ -21,7 +21,10 @@
 // (Battle.setAllyTarget: 白铁's 铁钳号·原型机, an enemy-camp summon our operators attack, 嘲讽等级 −2) on the range comes after
 // every enemy (acquireTargets) and a ranged attack flies to it like to an enemy.
 // Every enemy attack strikes at its clip's damage frame after its swing starts (attackWindup; a stun before the frame
-// cuts the swing — enemyAttack, GitHub #187). Unblocked ranged enemies attack allies within their radius and stand for
+// cuts the swing — enemyAttack, GitHub #187). The allies locked when the swing starts are the ones it hits, even if
+// they leave range before the frame (PRTS 作战机制 锁定人数; a melee hit settles on that ally, a ranged shot chases).
+// An operator whose cooldown reaches 0 on this tick keeps the target they had before enemies moved (noteAttackCommit);
+// a `rangeAoe` / `allInRange` attack and a heal still select at the strike. Unblocked ranged enemies attack allies within their radius and stand for
 // each attack's clip — through its wind-up and until the clip ends — then walk on (attackStand, GitHub #58;
 // ATTACK_PAUSE after the strike when no clip is known; 「不停止移动」 attackers never stop); every enemy whose block ends
 // after its strike (its blocker stunned by that strike, knocked out, retreated) stands for the rest of the clip too
@@ -108,6 +111,11 @@ export function updateAlly(b, u, dt) {
     prof = effectiveProfile(u);
     if (prof.noAttack || !u.alive) return;
     targets = acquireTargets(b, u, prof);
+  } else if (!targets.length) {
+    // The enemy phase already ran. A target that was in range when this cooldown reached 0 (noteAttackCommit,
+    // before that phase) is still this attack: the projectile chases them. A cast that found nobody is not one.
+    const committed = committedAttackTargets(b, u, prof);
+    if (committed.length) targets = committed;
   }
   if (!targets.length) { u.trait.hadTarget = false; storeEnergy(b, u, prof); return; }
   u.trait.hadTarget = true;
@@ -140,6 +148,45 @@ export function enforceBlockCapacity(b, u) {
     if (e.blockedBy === u) { e.blockedBy = null; b._stealthSwitch(e); }   // a released 隐匿 enemy hides again later
     used -= e.blockWeight ?? 1;
   }
+}
+
+/**
+ * Snapshot, before enemies move this tick, the targets of every ally whose attack cooldown reaches 0 this tick.
+ * updateAlly falls back to it when the post-move search is empty, so an attack that was already due still fires
+ * and its projectile chases (PRTS 作战机制: a shot that has started keeps its target). `rangeAoe` / `allInRange`
+ * re-select at the strike (锁定攻击范围). Heals, disarmed units and units that cannot attack are not snapshotted.
+ */
+export function noteAttackCommit(b, dt) {
+  b._attackCommit = null;
+  const allies = b.allyUnits;
+  if (!allies || !allies.length) return;
+  let map = null;
+  for (let i = 0; i < allies.length; i++) {
+    const u = allies[i];
+    if (!u.alive || !u.deployed || !u.canAct || !u.profile) continue;
+    if (u.s.flags.disarm) continue;
+    if (u.atkCd > dt + 1e-9) continue;
+    const prof = effectiveProfile(u);
+    if (prof.noAttack || (prof.noAttackUnlessSkill && !(u.skill && u.skill.active))) continue;
+    if (prof.heal && prof.dmgType === 'heal') continue;
+    if (prof.allInRange || prof.rangeAoe) continue;
+    if (prof.canAttack && !prof.canAttack(b, u)) continue;
+    // acquireTargets writes `_fortressMelee` on the profile it is given; keep that off the live profile
+    const targets = acquireTargets(b, u, Object.assign({}, prof));
+    if (!targets.length) continue;
+    (map ??= new Map()).set(u.id, targets.filter((t) => t && t.alive));
+  }
+  b._attackCommit = map;
+}
+
+/** The pre-move snapshot for `u`, dropping anyone who died or became unselectable. Empty for a re-selecting AoE. */
+function committedAttackTargets(b, u, prof) {
+  if (!prof || prof.rangeAoe || prof.allInRange || (prof.heal && prof.dmgType === 'heal')) return [];
+  const raw = b._attackCommit && b._attackCommit.get(u.id);
+  if (!raw || !raw.length) return [];
+  const out = [];
+  for (let i = 0; i < raw.length; i++) if (raw[i] && canTargetEnemy(u, raw[i], prof)) out.push(raw[i]);
+  return out;
 }
 
 /** Collect targets for an ally with profile `prof`. */
@@ -596,7 +643,7 @@ export function updateEnemy(b, e, dt) {
   if (e.atkCd > 0 && !stunned && !e.hidden) e.atkCd = attackCountdown(e.atkCd, dt);
   // a stun / freeze / sleep / 浮空 / 失衡 — or leaving the field — takes the enemy out of its attack: a swing short of its
   // damage frame does not land, and the attack starts again from its wind-up afterwards (enemyAttack)
-  if (e.swing && (stunned || e.hidden || unbalanced)) e.swing = false;
+  if (e.swing && (stunned || e.hidden || unbalanced)) { e.swing = false; e.swingTargets = null; }
   // true: an unblocked ranged enemy in the wind-up of its next attack with a target in range (it stands)
   const winding = !e.hidden && !stunned && !unbalanced && enemyAttack(b, e, prevCd);
   if (!e.alive) return;
@@ -855,15 +902,17 @@ function attackTargets(b, e, radius, reach, own) {
 /**
  * One tick of an enemy's attack. Its cooldown (`atkCd`) counts down to the damage frame of its next attack: the swing
  * starts `attackWindup` before it — the cooldown down to the wind-up with a target in reach (attackTargets) — and lasts
- * while a target stays in reach; at the frame the attack is made on the targets in reach then. An enemy whose cooldown
- * ran out before it had a target (walking, a swing cut short) swings from the start: the whole wind-up from that tick.
- * A swing short of its frame is cut by a stun / freeze / sleep / 浮空 / leaving the field (updateEnemy), 缴械, 恐惧, 战栗
- * while blocked, or losing every target: no damage, and the next swing starts from its wind-up again — PRTS 状态机
+ * while that swing lasts. The allies it could hit when the swing started stay the ones it hits at the frame, even
+ * after they leave its reach (PRTS 作战机制 §AOE伤害判定: 锁定人数的无弹道攻击在抬手时选取目标，前摇结束时仍对它们造成伤害;
+ * a ranged shot is the projectile that then chases). An enemy whose cooldown ran out before it had a target (walking,
+ * a swing cut short) swings from the start: the whole wind-up from that tick.
+ * A swing short of its frame is cut by a stun / freeze / sleep / 浮空 / leaving the field (updateEnemy), 缴械, 恐惧 or 战栗
+ * while blocked: no damage, and the next swing starts from its wind-up again — PRTS 状态机
  * (ATTACK / COMBAT "每帧检查异常状态，若有则切换到异常状态的状态") and 异常效果 (STUNNED, DISARMED "正在进行的普通攻击将被
- * 中断"); GitHub #187 / #170 (a 0.1 s 卡西米尔 pulse, 忍冬 S3's 0.2 s stun). A strike already made stays made (a shot in
- * flight lands). An enemy with no attack clip known has no wind-up: it strikes as the swing starts (the old rule).
- * [ASSUMED] the targets are taken at the frame (the swing needs one in reach every tick; the official selection happens
- * as the swing starts); an enemy healer's heal has no wind-up.
+ * 中断"); GitHub #187 / #170 (a 0.1 s 卡西米尔 pulse, 忍冬 S3's 0.2 s stun). Leaving range does not cut it. A target that
+ * died or became unselectable (隐匿, 沉睡, 无法选择) is skipped; the swing still spends its cooldown. A strike already
+ * made stays made (a shot in flight lands). An enemy with no attack clip known has no wind-up: it strikes as the swing
+ * starts (the old rule). An enemy healer's heal has no wind-up.
  * Returns true while an unblocked ranged enemy swings (its wind-up): it stands (updateEnemy). `prevCd`: the cooldown
  * before this tick's countdown.
  */
@@ -873,7 +922,7 @@ function enemyAttack(b, e, prevCd) {
   const dmgType = (e.profile && e.profile.dmgType) || def.dmgType;
   if (dmgType === 'none' || e.s.atk <= 0) { e.swing = false; return false; }
   // 恐惧 / 缴械 / 战栗 (被阻挡后无法进行普通攻击): no normal attack, and the one swung is interrupted
-  if (e.s.flags.fear || e.s.flags.disarm || (e.s.flags.tremble && e.blockedBy)) { e.swing = false; return false; }
+  if (e.s.flags.fear || e.s.flags.disarm || (e.s.flags.tremble && e.blockedBy)) { e.swing = false; e.swingTargets = null; return false; }
   if (dmgType === 'heal') { if (e.atkCd <= 0) enemyHeal(b, e, e.base.rangeRadius); return false; }
   // applyWay MELEE enemies only ever hit their blocker, even when their data carries a rangeRadius (粉碎攻坚手 2.5,
   // 宿主士兵 2.5, 深池伙友卫队 1.4 … — that radius belongs to their abilities/splash, handled by content).
@@ -886,17 +935,31 @@ function enemyAttack(b, e, prevCd) {
   // applied to the candidates before the priority sort and the target count
   const own = e.profile && typeof e.profile.canTarget === 'function' ? e.profile.canTarget : null;
   const wind = attackWindup(e);
-  if (e.atkCd > wind + 1e-9) { e.swing = false; return false; }   // the cooldown runs
-  let targets = attackTargets(b, e, radius, reach, own);
-  if (!targets.length) { e.swing = false; return false; }          // ready, nobody in reach: no swing (or it is cut)
-  if (!e.swing) {
+  if (e.atkCd > wind + 1e-9) { e.swing = false; e.swingTargets = null; return false; }   // the cooldown runs
+  // A swing locks the allies it had when it started. Losing every current target does not cut it.
+  let targets;
+  if (e.swing) {
+    targets = e.swingTargets || [];
+  } else {
+    targets = attackTargets(b, e, radius, reach, own);
+    if (!targets.length) { e.swing = false; e.swingTargets = null; return false; }
     e.swing = true;
+    e.swingTargets = targets.slice();
     // ready before this tick (it walked with its cooldown over, or its swing was cut): the whole wind-up from now
     if (prevCd < wind) e.atkCd = wind;
   }
   // the wind-up (GitHub #58): an unblocked ranged enemy stands through it (a 「不停止移动」 one walks on)
   if (e.atkCd > 0) return !e.blockedBy && radius > 0 && !(e.profile?.attackMoves ?? def.attackMoves);
   e.swing = false;
+  const locked = targets.slice();
+  e.swingTargets = null;
+  // Out of reach is still a hit. Dead, hidden, asleep or (for a ranged shot) stealthed is not.
+  const still = (t) => {
+    if (!t) return false;
+    const close = e.blockedBy === t && !(radius > 0 && e.profile && e.profile.blockFree);
+    return canTargetAlly(e, t, radius > 0 && !close);
+  };
+  targets = locked.filter(still);
   if (targets.length > 1) sortAllyTargets(e, targets);
   // `enemyAttackStart` { enemy, targets }: the enemy starts a normal attack, before 麻痹 may interrupt it (the client's
   // ON_BEFORE_ABILITY_SPELL_ON of an attack that 麻痹 can interrupt — 酒神 堕梦 "攻击范围内的敌人普通攻击时受到70点神经损伤",
@@ -925,10 +988,12 @@ function enemyAttack(b, e, prevCd) {
   const n = Math.max(1, Math.floor(e.profile?.maxTargets ?? 1) + Math.floor(e.s.maxTargets));
   if (targets.length > n) targets = targets.slice(0, n);
   if (b._hooks.beforeAttack) {
-    const ctx = { attacker: e, targets, isSkill: false, profile: e.profile };
+    // A dead locked ally is still passed through so a volley that does not need a living target (自制投石机)
+    // can aim at the last position. Content that clears the list cancels the strike, as before.
+    const ctx = { attacker: e, targets: targets.length ? targets : locked, isSkill: false, profile: e.profile };
     b.emit('beforeAttack', ctx);
-    targets = (ctx.targets || []).filter((t) => t && t.alive);
-    if (!targets.length || !e.alive) return false;
+    if (!e.alive || !ctx.targets || !ctx.targets.length) return false;
+    targets = ctx.targets.filter(still);
   }
   e.lastAttackAt = b.time;
   e.stats.attacks++;

@@ -129,7 +129,7 @@ describe('统计数据 page (real server, headless Chrome)', { skip: !ENABLED &&
     for (const nickname of [null, 'SessionID']) {
       const c = await open({ entered: false, nickname });
       await openStats(c, '.title-corner .btn');
-      await c.page.waitForFunction((name) => document.querySelector('.st-profile__name')?.textContent.trim() === `Dr. ${name}`, {}, nickname || '未知');
+      await c.page.waitForSelector('.st-empty'); // no records yet: the empty page, no profile until the import
       const input = await c.page.$('.st input[type="file"]');
       await input.uploadFile(file);
       const expected = nickname || 'ArchiveID';

@@ -129,7 +129,7 @@ function memoryCache() {
   return { caches, store };
 }
 
-function manifestFetch(assets, local = { groups: {} }) {
+function manifestFetch(assets, local = { groups: {} }, fx = null) {
   const calls = [];
   const fetch = async (url, opts) => {
     calls.push({ url, cache: opts?.cache });
@@ -137,6 +137,7 @@ function manifestFetch(assets, local = { groups: {} }) {
     if (url === '/data/local-assets.json') return local === null
       ? new Response('', { status: 404 })
       : Response.json(local);
+    if (url === '/data/local-fx.json') return fx === null ? new Response('', { status: 404 }) : Response.json(fx);
     throw new Error(`unexpected fetch ${url}`);
   };
   return { fetch, calls };
@@ -319,7 +320,7 @@ test('import keeps a matching file and its /media alias, and rejects a mismatch'
   });
   assert.equal(imp.get().phase, 'complete');
   assert.equal(imp.get().accepted, 1);
-  assert.deepEqual(calls.map((c) => c.url), ['/data/assets.json', '/data/local-assets.json']);
+  assert.deepEqual(calls.map((c) => c.url), ['/data/assets.json', '/data/local-assets.json', '/data/local-fx.json']);
   const urls = cacheUrlsFor(planFromManifests(view.doc, null).files.get('assets/audio/bgm/a.mp3').url);
   assert.equal(urls[1], `/media/~${hash}/bgm/a`);
   assert.equal(store.has(urls[0]), true);
@@ -423,7 +424,7 @@ test('a file the manifest does not list is skipped, and a bad zip stops the impo
   assert.equal(imp.get().accepted, 1);
   assert.ok(imp.get().skipped >= 2);
   assert.equal(store.size, 1);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);   // assets.json, local-assets.json, local-fx.json (DESIGN §33)
   assert.equal(imp.get().localMissing, undefined);
 
   const broken = createAssetImport({ fetch, caches });
@@ -483,6 +484,7 @@ test('the download queue does not request a URL the import cache already has', a
       calls.push(url);
       if (url === '/data/assets.json') return Response.json({ audio: '/assets/~1234567890abcdef/audio/bgm/a.mp3' });
       if (url === '/data/local-assets.json') return Response.json({ groups: {} });
+      if (url === '/data/local-fx.json') return new Response('', { status: 404 });
       return new Response('x', { headers: { 'content-type': 'application/octet-stream' } });
     },
   });
@@ -605,4 +607,15 @@ test('site CSP keeps worker-src self and blob, and the sim worker policy does no
   assert.equal(SIM_WORKER_CSP.includes('/sw.js'), false);
   assert.equal(importSupport({ serviceWorker: {} }, false).reason, 'insecure');
   assert.equal(importSupport({}, true).ok, false);
+});
+
+test('mergeLocalManifests: the effects manifest\'s groups join the local ones for the import plan (DESIGN §33)', async () => {
+  const { mergeLocalManifests } = await import('../../public/js/assetPack.js');
+  assert.equal(mergeLocalManifests(null, null), null);
+  const merged = mergeLocalManifests({ groups: { scene: { a: { path: '/assets/~0123456789abcdef/local/scene/a.bin' } } } },
+    { format: 'fx-manifest', groups: { 'fx/tex': { t: { path: '/assets/~fedcba9876543210/local/fx/tex/t.webp' } } } });
+  assert.deepEqual(Object.keys(merged.groups).sort(), ['fx/tex', 'scene']);
+  const plan = planFromManifests({}, merged);
+  assert.ok(plan.rels.has('assets/local/fx/tex/t.webp'));
+  assert.ok(plan.rels.has('assets/local/scene/a.bin'));
 });

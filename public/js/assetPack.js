@@ -352,6 +352,21 @@ function spineMemberUrls(obj) {
  * @param {object | null} local served /data/local-assets.json
  */
 export function planFromManifests(assets, local) {
+  return planFrom(assets, local);
+}
+
+/**
+ * The local groups of /data/local-assets.json and /data/local-fx.json (the official battle effects, DESIGN §33) as one
+ * `{ groups }` manifest: their group names never overlap (fx groups are `fx…`); null when the host has neither.
+ * @param {object | null} local
+ * @param {object | null} fx
+ */
+export function mergeLocalManifests(local, fx) {
+  if (!local && !fx) return null;
+  return { groups: { ...((local && local.groups) || {}), ...((fx && fx.groups) || {}) } };
+}
+
+function planFrom(assets, local) {
   /** @type {Map<string, { hash: string, url: string, alts: { hash: string, url: string }[] }>} */
   const files = new Map();
   /** @type {{ hash: string, members: { rel: string, url: string }[] }[]} */
@@ -574,12 +589,13 @@ export function createAssetImport({
     try {
       const assets = await readManifest('/data/assets.json', false);
       const local = await readManifest('/data/local-assets.json', true);
+      const fx = await readManifest('/data/local-fx.json', true);
       if (cancelFlag) { phase = 'cancelled'; return; }
-      if (!assets || typeof assets !== 'object' || Array.isArray(assets)
-        || (local !== null && (!local || typeof local !== 'object' || Array.isArray(local) || !local.groups))) {
+      const badLocal = (m) => m !== null && (!m || typeof m !== 'object' || Array.isArray(m) || !m.groups);
+      if (!assets || typeof assets !== 'object' || Array.isArray(assets) || badLocal(local) || badLocal(fx)) {
         throw Object.assign(new Error('manifest'), { code: 'manifest' });
       }
-      const plan = planFromManifests(assets, local);
+      const plan = planFromManifests(assets, mergeLocalManifests(local, fx));
       let list;
       if (source?.type === 'zip') list = await loadZip(source.data);
       else if (source?.type === 'files') list = await loadFiles(source.files);

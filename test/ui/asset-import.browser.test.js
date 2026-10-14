@@ -64,7 +64,8 @@ test('imported art is not fetched again, and plain HTTP hides import', {
   srv.server.on('request', (req, res) => {
     const url = req.url.split('?')[0];
     if (req.url.startsWith('/healthz')) probes++;
-    if (url === '/data/assets.json' || url === '/data/local-assets.json') {
+    // (local-fx.json: the host's official battle effects, DESIGN §33 — none in this fixture)
+    if (url === '/data/assets.json' || url === '/data/local-assets.json' || url === '/data/local-fx.json') {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
       res.end(JSON.stringify(url === '/data/assets.json'

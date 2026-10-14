@@ -4,10 +4,11 @@ import { collectAssetUrls, createAssetDownload } from '../../public/js/assetDown
 
 const json = (value) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 const file = () => new Response('asset', { headers: { 'content-type': 'application/octet-stream' } });
-function fixture(assets, get, local = { groups: {} }) {
+function fixture(assets, get, local = { groups: {} }, fx = null) {
   return async (url, options) => url === '/data/assets.json' ? json(assets)
     : url === '/data/local-assets.json' ? local === null ? new Response('', { status: 404 }) : json(local)
-      : get(url, options);
+      : url === '/data/local-fx.json' ? fx === null ? new Response('', { status: 404 }) : json(fx)
+        : get(url, options);
 }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -157,4 +158,17 @@ test('a completed check reads updated manifests and downloads newly supplied fil
   await queue.start();
   assert.equal(queue.get().done, 2);
   assert.deepEqual(calls, ['/assets/a', '/assets/a', '/assets/b']);
+});
+
+test('the official battle effects manifest (/data/local-fx.json, DESIGN §33) is queued when the host has it', async () => {
+  const got = [];
+  const queue = createAssetDownload({
+    lookupImported: async () => new Set(),
+    fetch: fixture({ a: '/assets/~1234567890abcdef/a.png' }, async (url) => { got.push(url); return file(); }, { groups: {} },
+      { format: 'fx-manifest', groups: { 'fx/prefabs': { common_hit_01: { path: '/assets/~fedcba0987654321/local/fx/prefabs/common_hit_01.json' } } } }),
+  });
+  await queue.start();
+  assert.equal(queue.get().phase, 'complete');
+  assert.ok(got.includes('/assets/~fedcba0987654321/local/fx/prefabs/common_hit_01.json'));
+  assert.ok(got.includes('/assets/~1234567890abcdef/a.png'));
 });

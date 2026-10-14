@@ -3461,9 +3461,11 @@ function buildChoices(ctx, effects, items, chess) {
       pool_equip_normal: { kind: 'equip', rule: 'shopEligible', maxTier: 'shopLevel', assumed: true },
       pool_equip_shop_1: { kind: 'equip', rule: 'shopEligible', tiers: [1], assumed: true },
       // 凯瑟琳 定向投放 (up_shop_add_special_goods): every shop-eligible item, whatever the shop level — players' first-hand
-      // report (community, 2026-10-06): 「原版凯瑟琳1升2都能有6本装备」; the pool itself is server-side, uniform [ASSUMED]
-      // (until 0.2.0 it was capped at the shop level, so the 1 → 2 offer only ever showed tiers I–II)
-      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', assumed: true },
+      // report (community, 2026-10-06): 「原版凯瑟琳1升2都能有6本装备」 — plus 突变细胞, which the shop never sells
+      // (maintainer, 2026-10-14: the official offer can roll it at any 调度中心 level, #631). The pool is server-side
+      // and the official table names it but not its weights, so the draw stays uniform [ASSUMED]. `also` is appended
+      // by Match.rollItemId; the shop item slot does not read it. Until 0.2.0 the pool was capped at the shop level.
+      pool_equip_kathe: { kind: 'equip', rule: 'shopEligible', also: [itemByName('突变细胞')], assumed: true },
       // 娜仁图亚 见者有份 (preparation_start_add_special_goods_every_n_round): the blackboard names no tier cap. Players'
       // first-hand report (community, 2026-10-14): the two equips can be above the current shop level. Same shape as
       // 凯瑟琳 — every shop-eligible item, uniform [ASSUMED] (until 0.3.0 it was capped at the shop level, so an even

@@ -181,8 +181,12 @@ mode rule. Unrelated result-screen changes from PR #408 are not included.
 
 The shared DIY detail preview (stats, range, trait, talents, potential, cultivation and matching normal/elite skill descriptions) follows roster loadout resolution. Jessica shield placement is limited to her four orthogonal neighbors. The two Ptilopsis prep-gift copy exceptions are defined in §29.3 and META; no generic change to all copied conditions is implied.
 
-Shared-stock corrections (§30.1–2): fixed `SERVER_GAIN_EQUIP` gifts still occupy ordinary/advanced 1/2 copies but
+Shared-stock corrections (§30.1–2, §32.14.24): fixed `SERVER_GAIN_EQUIP` gifts still occupy ordinary/advanced 1/2 copies but
 may exceed capacity; `requirePool:false` bypasses equipment limits only for these fixed families. Already displayed
-operator shop and reward offers remain valid after exhaustion and record the deficit. Future rolls exclude empty
-stock; selling repays the deficit first. Item shop/reward claims and 整备 remain stock-limited. Rockrock and Flametail
-use the measured weighted subsets described in DATA and §30.2.
+operator and equipment shop cards, and already displayed operator and equipment reward offers, remain valid after
+exhaustion and record the deficit (operators: a negative raw left; equipment: `SharedItemPool.debt`, #624, the
+maintainer's decision of 2026-10-14). Future rolls exclude empty stock. A copy that actually leaves the match —
+destroyed, consumed, wiped from temp, or removed on elimination — repays that deficit first; selling a carrier still
+returns its equipment to the hand, so the equipment debt stays. 整备, random grants, 机变 item cards and strategy
+grants that are not an already-shown card stay stock-limited. Rockrock and Flametail use the measured weighted
+subsets described in DATA and §30.2.

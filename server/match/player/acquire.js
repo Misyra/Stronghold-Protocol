@@ -260,14 +260,20 @@ export class PlayerAcquire {
    * call, even when an identical normal copy is already owned. The next prep's start runs checkItemMerges. Nothing
    * already equipped is taken off for the fight about to start. Overflow waits in the expandable temp queue.
    * [ASSUMED] every prep-end item grant, not only Victoria's hammer (owner's decision 2026-10-04).
+   * `displayed` (a shop slot or a reward offer already on screen, #624): skip the stock refusal and, once the piece
+   * is actually kept, record the copies that did not fit (`need` minus `left` before the gain). A failed stow or
+   * merge records nothing. Fixed gift families stay unlimited without a debt entry. Every other grant still refuses.
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true, displayed = false } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
     // Only the fixed operator-gift families can overdraw. Several unrelated strategy grants also pass
     // requirePool:false; they must retain their stock limit (for example commercial packaging).
     const unlimitedGift = !requirePool && this.gd.isUnlimitedGiftItem(itemId);
-    if (!unlimitedGift && !this.m.itemPool.canGain(itemId)) {
+    const pool = this.m.itemPool;
+    const leftBefore = pool.left(itemId);
+    const need = pool.need(itemId);
+    if (!unlimitedGift && !displayed && !pool.canGain(itemId)) {
       this.m.toast(this, 'warn', '装备库存不足，未获得该装备');
       return null;
     }
@@ -280,6 +286,10 @@ export class PlayerAcquire {
       if (!piece) return null;
     } else {
       this.stow(piece, { allowTemp: true, toTemp });
+    }
+    if (displayed && !unlimitedGift) {
+      const shortfall = leftBefore === Infinity ? 0 : Math.max(0, need - leftBefore);
+      if (shortfall > 0) pool.owe(itemId, shortfall);
     }
     this.recompute();
     if (!silent) this.m.dispatch(this, 'onGain', { piece, kind: 'item', source });

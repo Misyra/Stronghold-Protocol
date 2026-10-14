@@ -13,14 +13,17 @@ What is read (paths relative to the AB root, see extract.py CANDIDATES):
                                                              MonoScripts (class names of the behaviours)
   charpack/<charId>.ab, chararts/<charId>.ab                 the operators' attack modes / effect emitters, the skin
                                                              mount points (HitPoint, Muzzle, HeadPoint, …)
-  battle/prefabs/[uc]projectiles.ab, [uc]skills.ab           projectile flight + effects, the skills' effect keys
+  battle/prefabs/[uc]projectiles.ab, [uc]skills.ab           projectile flight + effects, the skills' effects
+  config/buff_template_holder.ab                             the buff templates (a buff's default effect, its actions)
   battle/enm_pfb_*.ab, pkgrps/btl_pfb_tokens_*.ab            enemies and tokens
 
 What is written under <out>/fx (every file is listed in data/local-fx.json, next to the --manifest — its own file: ~8,300
 entries kept out of data/local-assets.json, which has no fx group — and the server hands that list out with each URL
 carrying its file's content hash):
-  index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), skill effect
-                       keys, mount points; the projectiles; the generic keys (hits, deaths, deploy, status loops)
+  index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), mount points;
+                       per skill its effects with their roles (start / loop / range / hit / end …, from the skill
+                       prefab and the buff templates) and the mode it switches to; the projectiles; the generic keys
+                       (hits, deaths, deploy, status loops)
   textures.json        texture key → size, wrap, filter, alpha, the WebP files
   prefabs/<file>.json  one descriptor per effect prefab: nodes (Unity-native transforms), ParticleSystems (every
                        enabled module), renderers, materials (shader name + resolved render state), decoded clips,
@@ -157,6 +160,78 @@ LINE_FIELDS = ('m_Positions', 'm_Parameters', 'm_UseWorldSpace', 'm_Loop')
 SKIN_FIELDS = ('m_Mesh', 'm_Bones', 'm_RootBone', 'm_Quality', 'm_UpdateWhenOffscreen', 'm_BlendShapeWeights')
 SKIP_FIELDS = {'m_GameObject', 'm_Script', 'm_Name', 'm_Enabled'}
 MOUNT_NAME = re.compile(r'(Point|Muzzle|Anchor|^Special)', re.I)
+
+# ---- Torappu enums of the skills' effect fields (il2cpp metadata, DESIGN §33.12) ------------------------------------
+# Torappu.Battle.AbilityStandard/Event: an UberEffectEmitter row's _startEvent / _endEvent, the play / stop events of the
+# channeling and range emitters
+ABILITY_EVENTS = ('ON_ATTACHED', 'ON_DETACHED', 'ON_CAST_START', 'ON_CAST_END', 'ON_SPELL_ON', 'ON_SPELL_END',
+                  'ON_ATTACK_FINISH', 'ON_ATTACK_CHECK_POINT', 'ON_OVERLOAD')
+# Torappu.Battle.Buff/Event: the keys of a buff template's action graphs (eventToActions)
+BUFF_EVENTS = (
+    'ON_BUFF_START', 'ON_BUFF_FINISH', 'ON_BUFF_TRIGGER', 'ON_OWNER_KILLED', 'ON_OWNER_FINISH', 'ON_BEFORE_APPLYING_MODIFIER',
+    'ON_APPLYING_MODIFIER', 'ON_APPLIED_MODIFIER', 'ON_OUTPUT_MODIFIER', 'ON_TARGET_KILLED', 'ON_TAKE_DAMAGE',
+    'ON_OUTPUT_DAMAGE', 'ON_OWNER_BORN', 'ON_OWNER_LOCATE', 'ON_CALCULATE_DAMAGE', 'ON_EVADE_DAMAGE', 'ON_ABILITY_START',
+    'ON_ABILITY_FINISH', 'ON_ABILITY_SPELL_ON', 'ON_ABILITY_CAST_ON_TARGET', 'ON_SKILL_FINISH', 'ON_AFTER_OUTPUT_DAMAGE',
+    'ON_OUTPUT_ATK_OR_HEAL', 'ON_AFTER_ATTACK', 'ON_BUFF_ENABLE', 'ON_BUFF_DISABLE', 'ON_BEFORE_ATTACK',
+    'ON_BEFORE_TRY_SET_HP_ZERO', 'ON_BEFORE_DISAPPEAR', 'ON_OWNER_KILLED_BY_MAIN_TARGET', 'ON_ABNORMAL_FLAG_DIRTY',
+    'ON_AFTER_CALCULATE_DAMAGE', 'ON_BUFF_LATE_ENABLE', 'ON_SKILL_START', 'ON_OWNER_REACH_EXIT', 'ON_OWNER_POST_BORN',
+    'ON_OTHER_BUFF_START', 'ON_OWNER_BLOCKEE_CHANGED', 'ON_COLLIDE_WITH_HIGHLAND', 'ON_BEFORE_EXIT_UNBALANCED_STATE',
+    'ON_CALCULATE_CACHED_PROJECTILE_DAMAGE', 'ON_APPLYING_SKIPPED_MODIFIER', 'ON_ABILITY_INTERRUPTED', 'ON_BEFORE_APPEAR',
+    'ON_OWNER_ROOT_TILE_CHANGED', 'ON_OTHER_RESISTABLE_BUFF_START', 'ON_BEFORE_TRY_SET_EP_ZERO', 'ON_ES_OVER_ZERO',
+    'ON_ENTER_MAGICCIRCUIT', 'ON_LEAVE_MAGICCIRCUIT', 'ON_OWNER_DYING', 'ON_GAME_OVER', 'ON_MAKE_ENEMY_UNBALANCED',
+    'ON_END_PULLING', 'ON_BLOCK_DAMAGE', 'ON_OWNER_OVERLAPPED', 'ON_BOSS_WAVE_WILL_START', 'ON_LEGION_MODE_DRAW_CARD',
+    'ON_LEGION_MODE_REFRESH_CARD', 'ON_MOTION_MODE_CHANGED', 'ON_SANDBOX_OWNER_RES_CHANGED',
+    'ON_BEFORE_TARGET_APPLY_MODIFIER', 'ON_ENTER_LEVITATE_STATE', 'ON_BEFORE_EXIT_LEVITATE_STATE',
+    'ON_ENTITY_WILL_OVERLAP', 'ON_SKILL_CAST_SUCCEED', 'ON_DIRECTION_CHANGED', 'ON_BEFORE_DIRECTION_CHANGE',
+    'ON_TAKE_EP_DAMAGE', 'ON_EP_BREAK_START', 'ON_EP_BREAK_FINISH', 'ON_BEFORE_FALLDOWN', 'ON_OWNER_BEFORE_DEAD',
+    'ON_BEING_CALCULATE_DAMAGE', 'ON_STAGE_END', 'ON_UNIT_SWITCH_MODE', 'COOPERATE_PLAYER_DYING',
+    'COOPERATE_PLAYER_REVIVE', 'ON_ENTER_UNBALANCED_STATE', 'ON_BEFORE_EP_BREAK_FINISH', 'ON_TOGGLE_SKILL_START',
+    'ON_BEFORE_EP_BREAK_START', 'ON_POST_TRY_SET_HP_ZERO', 'ON_AFTER_OUTPUT_ELEMENT_DAMAGE', 'ON_BEFORE_ABILITY_SPELL_ON',
+    'ON_AFTER_OUTPUT_HEAL', 'ON_LEGION_MODE_DANGER_LEVEL_REFRESH', 'ON_HALF_IDLE_TRAP_CHECK_UPGRADE',
+    'ON_HALF_IDLE_KAWA_CLEANED', 'ON_HALF_IDLE_KAWA_POLLUTED', 'HALF_IDLE_GAIN_EQUIP', 'HALF_IDLE_GAIN_TRAP',
+    'ON_OUTPUT_ATK_OR_HEAL_EACH_SPELL', 'ON_PALSY_OVERFLOW', 'ON_TRIGGER_PALSY', 'ON_SKILL_RETRIGGERED',
+    'ON_AUTO_CHESS_MODE_CHANGED', 'ON_OWNER_BLOCK_MODE_CHANGED', 'ON_OWNER_HP_FULL', 'ON_PROJECTILE_SELECT_TARGETS',
+    'ON_OWNER_REBORN', 'ON_SANDBOX_V3_RESOURCE_CNT_CHANGE', 'ON_BLOCK_CNT_CHANGE', 'ON_SANDBOX_V3_RECIPE_CHANGE',
+    'ON_ENTER_GROUND_BOUND_STATE', 'ON_BEFORE_EXIT_GROUND_BOUND_STATE', 'ON_OTHER_BUFF_LATE_ENABLE', 'ON_PROJECTILE_BORN',
+    'ON_PROJECTILE_HIT_TARGET')
+BUFF_TEMPLATES = 'config/buff_template_holder.ab'   # Torappu BuffTemplateHolder: templateKey → effectKey + action graphs
+
+# A skill's effect roles (index.json skills[id].roles; §33.12): start (once, when the skill — or its one cast — starts),
+# loop (while it, or the buff carrying the effect, lasts), range (its area), cast (each ability use of a buff's owner),
+# hit (each target hit), end (when it ends), ready (while it is ready to cast), trigger (a buff's periodic or reactive
+# event), other (an effect the extractor cannot place in time)
+SKILL_ROLES = ('start', 'loop', 'range', 'cast', 'hit', 'end', 'ready', 'trigger', 'other')
+SKILL_RANGE = re.compile(r'_range', re.I)
+SKILL_END = re.compile(r'_end(?:_|$)', re.I)
+# UberEffectEmitter-like lists (rows `{_effects, …}`) → the list kind; group lists hold such rows one level down
+EMIT_LISTS = {'_castEffects': 'cast', '_hitEffects': 'hit', '_attachEffects': 'attach', '_inputTargetEffects': 'inputTarget',
+              '_castTargetEffects': 'castTarget'}
+EMIT_GROUPS = {'_hitGroups': 'hit', '_timesBasedHitEffects': 'hit', '_castGroups': 'cast', '_replaceGroup': 'cast'}
+# single effect fields (a key or a list of keys) → role, whatever the class
+EFFECT_FIELDS = {'_beginEffect': 'start', '_endEffect': 'end', '_overrideStartEffect': 'start', '_startEffect': 'start',
+                 '_mainChantEffects': 'loop', '_extraChantEffects': 'loop', '_chantSuccessEffects': 'start',
+                 '_beforeEndEffects': 'end', '_hitEffect': 'hit', '_hitEffectKey': 'hit', '_tileEffectKey': 'range',
+                 '_edgeLineRendererEffectKey': 'range', '_effectOnEliminatePos': 'hit', '_lineEffectKey': 'loop',
+                 '_startPointEffectKey': 'loop', '_waypointEffectKey': 'loop', '_endPointEffectKey': 'loop'}
+# `_effects` / `_effect` / `_effectKey` by class (others: role other)
+CLASS_EFFECTS = {'ReadySkillEffect': 'ready', 'TrapEddSkillReadyEffect': 'ready', 'AuraAbility': 'loop',
+                 'GlobalAuraAbility': 'loop', 'ProjectileAuraAbility': 'loop', 'AuraWithHostAsSourceAbility': 'loop',
+                 'ChannelingEffectEmitter': 'loop', 'ChannelingEffectGroupEmitter': 'loop', 'PauseEffectDuringCasting': None}
+# ability events of the emitters that are not UberEffectEmitters: class → (start field, end field, oneshot field)
+CLASS_EVENTS = {'ChannelingEffectEmitter': ('_playOnEvent', '_stopOnEvent', None),
+                'ChannelingEffectGroupEmitter': ('_playOnEvent', '_stopOnEvent', None),
+                'RangeEffectEmitter': ('_playCastEffectOnEvent', '_stopCastEffectOnEvent', '_oneShot'),
+                'PauseEffectDuringCasting': ('_startEv', '_endEv', None)}
+# buff events → role (a template's CreateEffect / CreateBuff nodes); others: trigger
+BUFF_EVENT_ROLES = {'ON_BUFF_START': 'start', 'ON_BUFF_ENABLE': 'start', 'ON_BUFF_LATE_ENABLE': 'start',
+                    'ON_SKILL_START': 'start', 'ON_TOGGLE_SKILL_START': 'start', 'ON_BUFF_FINISH': 'end',
+                    'ON_BUFF_DISABLE': 'end', 'ON_SKILL_FINISH': 'end', 'ON_ABILITY_START': 'cast',
+                    'ON_ABILITY_SPELL_ON': 'cast', 'ON_BEFORE_ABILITY_SPELL_ON': 'cast', 'ON_BEFORE_ATTACK': 'cast',
+                    'ON_OUTPUT_DAMAGE': 'hit', 'ON_AFTER_OUTPUT_DAMAGE': 'hit', 'ON_ABILITY_CAST_ON_TARGET': 'hit',
+                    'ON_OUTPUT_ATK_OR_HEAL': 'hit', 'ON_OUTPUT_ATK_OR_HEAL_EACH_SPELL': 'hit', 'ON_AFTER_ATTACK': 'hit',
+                    'ON_AFTER_OUTPUT_HEAL': 'hit', 'ON_AFTER_OUTPUT_ELEMENT_DAMAGE': 'hit'}
+# fields that hold animation / audio names, never effect keys (a name may equal a key by chance)
+NOT_EFFECT_FIELDS = re.compile(r'anim|audio|signal', re.I)
 
 
 # ---- pure helpers (no UnityPy; test/local-extract-fx.test.js) ---------------------------------------------------------
@@ -1302,7 +1377,9 @@ def container_index(ab_root, globs, cache_file, jobs, log):
 
 def emitter_lists(fields):
     """The effect lists of an UberEffectEmitter, keyed cast / hit / attach / inputTarget / castTarget; each entry keeps
-    its fields without the leading underscore and the non-empty `effects`."""
+    its fields without the leading underscore and `effects`, the keys it plays: the first slot when directionType is 0
+    (NONE — the other slots are leftovers the game does not play), else every non-empty slot, and then also `slots`,
+    the effect per facing (Torappu SharedConsts.Direction: 0 UP, 1 RIGHT, 2 DOWN, 3 LEFT; null: none)."""
     out = {}
     for src, dst in (('_castEffects', 'cast'), ('_hitEffects', 'hit'), ('_attachEffects', 'attach'),
                      ('_inputTargetEffects', 'inputTarget'), ('_castTargetEffects', 'castTarget')):
@@ -1311,12 +1388,245 @@ def emitter_lists(fields):
             if not isinstance(e, dict):
                 continue
             row = {k.lstrip('_'): v for k, v in e.items()}
-            row['effects'] = [x for x in row.get('effects', []) if x]
-            if row['effects']:
+            slots = [x if isinstance(x, str) and x else None for x in row.get('effects', []) or []]
+            if row.get('directionType'):
+                row['effects'] = list(dict.fromkeys(x for x in slots if x))
+            else:
+                row['effects'] = slots[:1] if slots and slots[0] else []
+            if row.get('directionType'):
+                while slots and slots[-1] is None:
+                    slots.pop()
+                row['slots'] = slots
+            if row['effects'] or row.get('hookEffectAfterFirstAttack'):
                 rows.append(row)
         if rows:
             out[dst] = rows
     return out
+
+
+def event_name(table, v):
+    """An enum value's name from `table` (ABILITY_EVENTS, BUFF_EVENTS, …); None for a missing or unknown value."""
+    return table[v] if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < len(table) else None
+
+
+def emit_role(kind, row, key):
+    """The role (SKILL_ROLES) of an effect of an UberEffectEmitter-like row of list kind `kind` (EMIT_LISTS values):
+    hit / castTarget / inputTarget rows play on targets, attach rows while the ability is attached; a cast row loops
+    from its start to its end event unless one-shot; by name a cast row is the skill's range or end."""
+    if kind in ('hit', 'castTarget', 'inputTarget'):
+        return 'hit'
+    if kind == 'attach':
+        return 'loop'
+    if SKILL_RANGE.search(key):
+        return 'range'
+    if not row.get('_oneshot', 1):
+        return 'loop'
+    if row.get('_startEvent') in (1, 3, 5, 6) or SKILL_END.search(key):   # ON_DETACHED, ON_CAST_END, ON_SPELL_END, …
+        return 'end'
+    return 'start'
+
+
+def name_role(key, event=None):
+    """The role of an effect whose field says nothing about its timing (a buff's blackboard `effect`, an extra event
+    group, an unknown class's `_effects`), from the key's name and the event that plays it; 'other' when neither tells."""
+    if SKILL_RANGE.search(key):
+        return 'range'
+    if SKILL_END.search(key):
+        return 'end'
+    if re.search(r'_(hit|heal)', key, re.I):
+        return 'hit'
+    if re.search(r'_(buff|loop)', key, re.I):
+        return 'loop'
+    if re.search(r'_start', key, re.I) or event in ('ON_ATTACHED', 'ON_CAST_START', 'ON_SPELL_ON'):
+        return 'start'
+    if event in ('ON_DETACHED', 'ON_CAST_END', 'ON_SPELL_END', 'ON_ATTACK_FINISH'):
+        return 'end'
+    return 'other'
+
+
+def buff_target(cls, field, fields):
+    """Who carries the buffs of field `field` of a behaviour `cls`: 'owner', 'targets', 'token' or None (not known)."""
+    if field == '_buffsToToken':
+        return 'token'
+    if field == '_activeBuffs' or cls in ('BuffToCastTargets', 'GlobalUniqueBuffToTargetsBySelectorAbility',
+                                          'GloballUniqueBuffAbility', 'Headb2S3HighlandAOE'):
+        return 'targets'
+    if 'Aura' in cls:
+        return 'owner' if field == '_passiveBuffs' else 'targets'
+    if cls in ('ActiveBuffAbility', 'ActiveOneOfBuffAbility'):
+        sel = fields.get('_selector')
+        return 'targets' if field != '_passiveBuffs' and isinstance(sel, dict) and sel.get('m_PathID') else 'owner'
+    if cls.startswith(('BuffToOwner', 'BuffDuring', 'BuffAfter', 'Passive', 'ToggleablePassive', 'ExtraPassive', 'Chant')):
+        return 'owner'
+    return None
+
+
+def buffs_in(v):
+    """Every BuffData (a dict with buffKey and overrideEffectKey) inside a value."""
+    out = []
+    if isinstance(v, dict):
+        if 'buffKey' in v and 'overrideEffectKey' in v:
+            out.append(v)
+        for x in v.values():
+            out += buffs_in(x)
+    elif isinstance(v, list):
+        for x in v:
+            out += buffs_in(x)
+    return out
+
+
+def graph_effects(state, ek):
+    """The effect keys of an Odin-serialized action graph (a SerializedState JSON string): [(node type, field, key)…]
+    — the node type without its namespace (CreateEffect, CreateBuff, …), the field naming the key."""
+    try:
+        nodes = json.loads(state) if isinstance(state, str) and state[:1] in '[{' else None
+    except ValueError:
+        return []
+    out = []
+
+    def walk(v, typ):
+        if isinstance(v, dict):
+            typ = str(v.get('$type') or typ).split('+')[-1]
+            for k, x in v.items():
+                if isinstance(x, str) and ek(x):
+                    out.append((typ, k, ek(x)))
+                elif isinstance(x, list) and x and all(isinstance(y, str) for y in x):
+                    out.extend((typ, k, ek(y)) for y in x if ek(y))
+                elif isinstance(x, (dict, list)):
+                    walk(x, typ)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, typ)
+    walk(nodes, '')
+    return out
+
+
+def template_uses(tkey, template, on, buff):
+    """The uses of a buff template's action graph (a buff_templates() entry): its CreateEffect nodes play at their buff
+    event (BUFF_EVENT_ROLES; a target's buff starts when the target is hit), the buffs it creates loop."""
+    uses = []
+    for event, typ, field, key in template.get('graph', []):
+        role = BUFF_EVENT_ROLES.get(event, 'trigger')
+        if typ.startswith(('CreateBuff', 'CreateNoSourceBuff', 'CreateLineEffect')) or field == 'overrideEffectKey':
+            role = 'loop'
+        elif typ.startswith('CreateTileEffect'):
+            role = 'range'
+        if on == 'targets' and role == 'start':
+            role = 'hit'
+        uses.append({'role': role, 'keys': [key], 'from': f'template {tkey}', 'event': event, 'action': typ,
+                     **({'on': on} if on else {}), 'buff': buff})
+    return uses
+
+
+def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
+    """The effect uses of one behaviour of a skill prefab (class `cls`, typetree `fields`): [{role (SKILL_ROLES), keys,
+    from (class.field, or `template <key>`), node?, ability?, startEvent? / endEvent? (ABILITY_EVENTS names), oneshot?,
+    directionType?, slots?, on?, buff?, template?, event? / action? (a buff template's), bb?}…]. `ek(name)` gives the
+    lower-case effect key or None; `templates`: buff_templates()."""
+    templates = templates or {}
+    uses = []
+
+    def add(keys, role, src, **kw):
+        ks = [ek(x) for x in keys if isinstance(x, str) and x and ek(x)]
+        if ks:
+            u = {'role': role, 'keys': ks, 'from': f'{cls}.{src}'}
+            if node:
+                u['node'] = node
+            if ability and ability != cls:
+                u['ability'] = ability
+            u.update({a: b for a, b in kw.items() if b is not None})
+            uses.append(u)
+
+    def row(kind, r, src):
+        if not isinstance(r, dict) or not isinstance(r.get('_effects'), list):
+            return
+        slots = [ek(x) if isinstance(x, str) and x else None for x in r['_effects']]
+        directional = bool(r.get('_directionType'))
+        keys = list(dict.fromkeys(x for x in slots if x)) if directional else slots[:1] if slots and slots[0] else []
+        while directional and slots and slots[-1] is None:
+            slots.pop()
+        kw = {'startEvent': event_name(ABILITY_EVENTS, r.get('_startEvent')), 'endEvent': event_name(ABILITY_EVENTS, r.get('_endEvent')),
+              'oneshot': bool(r['_oneshot']) if '_oneshot' in r else None, 'list': kind}
+        if keys:
+            add(keys, emit_role(kind, r, keys[0]), src, **kw, **({'directionType': r['_directionType'], 'slots': slots} if directional else {}))
+        hook = r.get('_hookEffectAfterFirstAttack')     # played instead of the row's effect from the second attack on
+        if isinstance(hook, str) and ek(hook):
+            add([hook], emit_role(kind, r, ek(hook)), f'{src}._hookEffectAfterFirstAttack', **kw)
+
+    events = CLASS_EVENTS.get(cls)
+    ev_kw = {}
+    if events:
+        ev_kw = {'startEvent': event_name(ABILITY_EVENTS, fields.get(events[0])),
+                 'endEvent': event_name(ABILITY_EVENTS, fields.get(events[1]))}
+        if events[2]:
+            ev_kw['oneshot'] = bool(fields.get(events[2]))
+    for f, v in fields.items():
+        if f in EMIT_LISTS and isinstance(v, list):
+            if v and all(isinstance(x, str) for x in v):          # RangeEffectEmitter._castEffects: plain keys
+                add(v, 'range' if cls == 'RangeEffectEmitter' else emit_role(EMIT_LISTS[f], {}, v[0]), f, **ev_kw)
+            for r in v:
+                row(EMIT_LISTS[f], r, f)
+        elif f in EMIT_GROUPS and isinstance(v, list):
+            for g in v:
+                for x in (g.values() if isinstance(g, dict) else []):
+                    for r in (x if isinstance(x, list) else []):
+                        row(EMIT_GROUPS[f], r, f)
+        elif f in EFFECT_FIELDS:
+            add(v if isinstance(v, list) else [v], EFFECT_FIELDS[f], f, **ev_kw)
+        elif f in ('_effects', '_effect', '_effectKey'):
+            role = CLASS_EFFECTS.get(cls, 'other')
+            for k in (v if isinstance(v, list) else [v]) if role else []:
+                if isinstance(k, str) and ek(k):
+                    r2 = role if role != 'other' else name_role(ek(k), ev_kw.get('startEvent'))
+                    add([k], r2, f, **ev_kw, **({'by': 'name'} if role == 'other' else {}))
+        elif f == '_extraEventGroup' and isinstance(v, list):    # ChannelingEffectGroupEmitter: {effect, event…}
+            for g in v:
+                if isinstance(g, dict) and isinstance(g.get('effect'), str) and ek(g['effect']):
+                    ev = event_name(ABILITY_EVENTS, g.get('playOnEvent', g.get('_playOnEvent', g.get('event'))))
+                    add([g['effect']], name_role(ek(g['effect']), ev), f, startEvent=ev, by='name')
+        if isinstance(v, (dict, list)):
+            for b in buffs_in(v):
+                on, tkey = buff_target(cls, f, fields), b.get('templateKey') or None
+                t = templates.get(tkey) or {}
+                effect = b.get('overrideEffectKey') or t.get('effect')
+                add([effect], 'loop', f, on=on, buff=b.get('buffKey') or None, template=tkey)
+                for u in template_uses(tkey, t, on, b.get('buffKey') or None) if t else []:
+                    u['from'] = f'{cls}.{f} → {u["from"]}'
+                    if node:
+                        u['node'] = node
+                    uses.append(u)
+                for bb in b.get('blackboard') or []:            # an effect the template's actions read by name
+                    if isinstance(bb, dict) and isinstance(bb.get('valueStr'), str) and ek(bb['valueStr']):
+                        add([bb['valueStr']], name_role(ek(bb['valueStr'])), f'{f}.blackboard', on=on,
+                            buff=b.get('buffKey') or None, bb=bb.get('key'), by='name')
+            if isinstance(v, dict) and isinstance(v.get('SerializedState'), str):
+                for typ, field, key in graph_effects(v['SerializedState'], ek):
+                    role = 'loop' if field == 'overrideEffectKey' or typ.startswith('CreateBuff') else 'start'
+                    add([key], role, f'{f} {typ}', action=typ)
+    return uses
+
+
+def skill_mode(fields):
+    """The unit mode a skill behaviour switches its owner to (index into the unit's modes), or None: the blackboard
+    `mode` of a switch_mode* buff, a ToggleSkill's _switchToMode."""
+    for b in buffs_in(fields):
+        if str(b.get('templateKey') or '').startswith('switch_mode'):
+            for bb in b.get('blackboard') or []:
+                if isinstance(bb, dict) and bb.get('key') == 'mode' and isinstance(bb.get('value'), (int, float)):
+                    return int(bb['value'])
+    m = fields.get('_switchToMode')
+    return m if isinstance(m, int) and not isinstance(m, bool) and m >= 0 else None
+
+
+def roles_of(uses):
+    """{role: [keys…]} of a skill's uses (SKILL_ROLES order, keys in first-use order, slots included)."""
+    out = {}
+    for u in uses:
+        lst = out.setdefault(u['role'], [])
+        for k in list(u['keys']) + [x for x in u.get('slots') or [] if x]:
+            if k not in lst:
+                lst.append(k)
+    return {r: out[r] for r in SKILL_ROLES if r in out}
 
 
 def parse_unit(env, rel, name, kind):
@@ -1412,6 +1722,76 @@ def skin_points(env, rel, prefab, graphic, container=None):
     return points
 
 
+def strings_of(v, out):
+    """all_strings without the fields that name animations or sounds (NOT_EFFECT_FIELDS)."""
+    if isinstance(v, dict):
+        for k, x in v.items():
+            if not NOT_EFFECT_FIELDS.search(str(k)):
+                strings_of(x, out)
+    elif isinstance(v, (list, tuple)):
+        for x in v:
+            strings_of(x, out)
+    else:
+        all_strings(v, out)
+    return out
+
+
+def buff_templates(env, ek):
+    """templateKey → {effect: key | None, graph: [[buff event, action node type, field, key]…]} for every buff template
+    (BUFF_TEMPLATES, Torappu BuffTemplateHolder._templates) that names an effect: a buff whose overrideEffectKey is
+    empty loops its template's effectKey; the graph's CreateEffect / CreateBuff nodes play at their buff event."""
+    try:
+        files = env.load_rel(BUFF_TEMPLATES)
+    except Exception:  # noqa: BLE001 — an older client without the holder: buffs keep their override keys only
+        return {}
+    out = {}
+    for sf in files:
+        for o in sf.objects.values():
+            if o.type.name != 'MonoBehaviour':
+                continue
+            for t in (env.tt(o).get('_templates') or []):
+                if not isinstance(t, dict) or not t.get('templateKey'):
+                    continue
+                graph = []
+                for it in ((t.get('eventToActions') or {}).get('_items') or []):
+                    ev = it.get('key')
+                    for typ, field, key in graph_effects((it.get('value') or {}).get('SerializedState'), ek):
+                        graph.append([event_name(BUFF_EVENTS, ev) or ev, typ, field, key])
+                effect = ek(t.get('effectKey')) if t.get('effectKey') else None
+                if effect or graph:
+                    out[t['templateKey']] = {'effect': effect, 'graph': graph}
+    return out
+
+
+def skill_entry(env, root, ek, pk, effect_refs, templates):
+    """index.json skills[id] of a skill prefab ([uc]skills.ab): effects (every effect key it names, its templates'
+    included), projectiles, mode (the unit mode it switches to, or null), uses (behaviour_uses of every behaviour),
+    roles (roles_of), unclassified (keys found in the prefab that no use places)."""
+    strings, uses, mode, stack = set(), [], None, [root]
+    while stack:
+        go = stack.pop()
+        gd = env.tt(go)
+        mbs = []
+        for c in gd.get('m_Component', []):
+            f, o = env.resolve(go.assets_file, c.get('component'))
+            if o is not None and f != 'builtin' and o.type.name == 'MonoBehaviour':
+                mbs.append((env.script(o)[1] or 'MonoBehaviour', env.tt(o)))
+        cands = [c for c, _ in mbs if not re.search(r'Emitter|Selector|Range$|Validator|Trigger|Checker|Effect$', c)]
+        ability = next((c for c in cands if re.search(r'Attack|Heal|Ability', c)), cands[0] if cands else None)
+        for cls, d in mbs:
+            fields = {k: v for k, v in d.items() if k not in SKIP_FIELDS}
+            strings_of(fields, strings)
+            uses += behaviour_uses(cls, fields, ek, templates, node=gd.get('m_Name'), ability=ability if 'Emitter' in cls else None)
+            if mode is None:
+                mode = skill_mode(fields)
+        stack.extend(go_children(env, go))
+    found = set(effect_refs(strings))
+    placed = {k for u in uses for k in list(u['keys']) + [x for x in u.get('slots') or [] if x]}
+    return {'effects': sorted(found | placed), 'projectiles': sorted({pk(x) for x in strings if pk(x)}), 'mode': mode,
+            **({'modeBy': 'data'} if mode is not None else {}), 'uses': uses, 'roles': roles_of(uses),
+            'unclassified': sorted(found - placed)}
+
+
 def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
     """index.json's units / projectiles / skills / skins for `unit_ids`, and every effect key they reference."""
     units, projectiles, skills, skins, referenced = {}, {}, {}, {}, set()
@@ -1461,23 +1841,29 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
         for p in entry['projectiles']:
             projectile(p, depth + 1)
 
+    templates = buff_templates(shared, lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else None)
+
     def skill(sid):
         if sid in skills or sid not in skill_roots:
             return
-        strings, stack = set(), [skill_roots[sid]]
-        while stack:
-            go = stack.pop()
-            for c in shared.tt(go).get('m_Component', []):
-                f, o = shared.resolve(go.assets_file, c.get('component'))
-                if o is not None and f != 'builtin' and o.type.name == 'MonoBehaviour':
-                    all_strings({k: v for k, v in shared.tt(o).items() if k != 'm_Name'}, strings)
-            stack.extend(go_children(shared, go))
-        projs = sorted({pk(x) for x in strings if pk(x)})
-        for p in projs:
+        entry = skill_entry(shared, skill_roots[sid], lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else None,
+                            pk, effect_refs, templates)
+        for p in entry['projectiles']:
             projectile(p)
-        skills[sid] = {'effects': effect_refs(strings), 'projectiles': projs}
+        skills[sid] = entry
 
+    # an enemy variant without a prefab of its own (the elite `_2` keys of six enemies) is drawn with its base prefab:
+    # index.json gets a copy of the base unit with `aliasOf`
+    aliases, ids = {}, []
     for uid in unit_ids:
+        base = re.sub(r'_\d+$', '', uid)
+        if uid.startswith('enemy_') and uid not in enemy_idx and base != uid and base in enemy_idx:
+            aliases[uid] = base
+            if base not in unit_ids and base not in ids:
+                ids.append(base)
+        elif uid not in ids:
+            ids.append(uid)
+    for uid in ids:
         env = AssetEnv(ab_root, cabs)                          # one environment per unit: chararts are large
         try:
             if uid.startswith('char_'):
@@ -1503,7 +1889,17 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                     a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
                 for lst in ('cast', 'hit', 'attach', 'inputTarget', 'castTarget'):
                     for e in a.get(lst, []):
-                        e['effects'] = [ek(x) for x in e['effects']]
+                        for x in e['effects']:
+                            if x.lower() not in eff:
+                                log(f'  {uid} {m.get("name")} {lst}: names {x}, which the client lacks (dropped)')
+                        e['effects'] = [ek(x) for x in e['effects'] if x.lower() in eff]
+                        if 'slots' in e:
+                            e['slots'] = [ek(x) if x and x.lower() in eff else None for x in e['slots']]
+                        if e.get('hookEffectAfterFirstAttack'):
+                            e['hookEffectAfterFirstAttack'] = ek(e['hookEffectAfterFirstAttack'])
+                    a[lst] = [e for e in a.get(lst, []) if e['effects'] or e.get('hookEffectAfterFirstAttack')]
+                    if not a[lst]:
+                        a.pop(lst, None)
             for x in sorted(strings):
                 if pk(x):
                     projectile(x)
@@ -1513,6 +1909,12 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 sids |= {k for k in skill_roots if k.startswith(f'skchr_{code}_')}
             for sid in sorted(sids):
                 skill(sid)
+            for sid in sids:                     # no mode in the skill's data: the unit's mode named after the skill
+                m = re.match(r'skchr_.+_(\d+)$', sid)
+                names = [str(x.get('name') or '').lower() for x in u['modes']]
+                if sid in skills and skills[sid]['mode'] is None and m and f's{m.group(1)}' in names:
+                    skills[sid]['mode'] = names.index(f's{m.group(1)}')
+                    skills[sid]['modeBy'] = 'name'
             u['skills'] = {sid: skills[sid] for sid in sorted(sids) if sid in skills}
             u['projectiles'] = sorted({pk(x) for x in strings if pk(x) in projectiles})
             refs = set(effect_refs(strings))
@@ -1537,6 +1939,23 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
             units[uid] = u
         except Exception as e:
             log(f'  FAIL unit {uid}: {e!r}')
+    for uid, base in aliases.items():
+        if base in units:
+            units[uid] = {**units[base], 'aliasOf': base}
+            log(f'  {uid}: no prefab of its own, drawn with {base} (aliasOf)')
+        else:
+            log(f'  skip (no prefab, nor its base {base}) {uid}')
+    if skills:
+        with_roles = [s for s, e in skills.items() if e['uses']]
+        mode_only = [s for s, e in skills.items() if not e['uses'] and e['mode'] is not None]
+        by_name = [s for s, e in skills.items() if e.get('modeBy') == 'name']
+        none = [s for s, e in skills.items() if not e['uses'] and e['mode'] is None and not e['effects']]
+        open_keys = {s: e['unclassified'] for s, e in skills.items() if e['unclassified']}
+        log(f'fx: {len(skills)} skills: {len(with_roles)} with effect roles, {len(mode_only)} drawn by the mode they switch '
+            f'to only, {len(none)} without effects; {len(open_keys)} name keys no role places; {len(by_name)} modes found by '
+            f'name ({len(templates)} buff templates with effects)')
+        for s, ks in sorted(open_keys.items()):
+            log(f'  skill {s}: unclassified {", ".join(ks)}')
     for p in projectiles.values():
         referenced.update(p['effects'])
     return units, projectiles, skills, skins, referenced
@@ -1649,10 +2068,8 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
     generic |= {k for k, rel in eff.items() if rel in FX_GENERIC_BUNDLES}
     if keys:
         wanted = set(keys)
-    elif selection == 'sample':
+    else:                         # the used set holds the sample too (a full run never drops a key a sample has)
         wanted = set(FX_SAMPLE_KEYS) | set(FX_COVERAGE_KEYS) | referenced | generic
-    else:
-        wanted = referenced | generic
     missing = sorted(k for k in wanted if k not in eff)
     for k in missing:
         log(f'  skip (no such effect prefab in this client) {k}')

@@ -100,7 +100,7 @@ import { pieceTile } from '../render/drag.js';
 import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
   battleOverSfx, uniteResultBox, battleResultBox,
-  snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, normalizePersonalChoice, sortedPlayers,
+  snapHud, activeBubbles, shortcutFor, shortcutBlocked, prepShortcutsSuspended, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, normalizePersonalChoice, sortedPlayers,
   terrainInfo, deviceInfo, deviceTipAt, noteDeviceUnits, deviceUnitsForEntry,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
@@ -218,6 +218,8 @@ function MatchScreen() {
   const [facing, setFacing] = useState(null);            // direction step: { uid, piece, row, col, grid, name }
   const [sel, setSel] = useState(null);                  // tapped own piece: { uid }
   const [selBusy, setSelBusy] = useState(false);
+  const pieceActionBusy = useRef(false);
+  const buyPending = useRef(new Set());
   const [holdSeq, setHoldSeq] = useState(0);             // bumped when a held piece is released (re-apply the prep state)
   const [hud, setHud] = useState(null);
   const [banner, setBanner] = useState(null);
@@ -314,7 +316,7 @@ function MatchScreen() {
     getChess: (id) => { const c = gd.chess(id); return ownDiyRecord(c, priv, { chess: data.get('chess'), backups: data.get('backups') }) || c; },
     getToken: gd.token, getItem: gd.item, getEffect: gd.effect, backups: gd.backups,
   }), [priv, pub?.stageId, editable, gd.ready, deployField]);
-  live.current = { pub, priv, field, editable, hasPersonalChoice, placeCtx, watching, watchWho, home, myId, alive, spectator, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, selBusy, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
+  live.current = { pub, priv, field, view, editable, hasPersonalChoice, placeCtx, watching, watchWho, watchingOther, home, myId, alive, spectator, detail, drawer, bondOpen, emoteOpen, settingsOpen, exitOpen, drag, facing, sel, selBusy, pen, collapsedNow: collapsed, localDone: false, canPause: false, paused };
 
   // ---- camera: every request goes through setCam, which remembers it for the pen's way back -----------------------
   // the own prep board: the normal board, or — in the prep of a boss round — the player's half of the boss field
@@ -814,7 +816,13 @@ function MatchScreen() {
   }, [emotes]);
 
   // ---- actions ----------------------------------------------------------------------------------------------
-  const buy = useCallback((i) => actions.buy(i), []);
+  const buy = useCallback(async (i) => {
+    // Clicks and hotkeys share this guard while the same slot's purchase is awaiting a reply.
+    if (buyPending.current.has(i)) return false;
+    buyPending.current.add(i);
+    try { return await actions.buy(i); }
+    finally { buyPending.current.delete(i); }
+  }, []);
   const removeSpectator = useCallback((playerId) => actions.removeSpectator(playerId), []);
   // 准备 with funds left asks first: the prep's end wipes them (community report #4; not 坎诺特, not at 0 funds, not
   // under AI 托管 — gameLogic.readyFundsPrompt). The button and Space both come here.
@@ -1197,25 +1205,33 @@ function MatchScreen() {
   // the gold tile of an armed merge card (mergeAt): the detail card the first tap opened docks away from it (QA 6b — at
   // 1920×1080 the left card covered half of a target tile in the leftmost legal column)
   const mergeGeo = useTileScreen(view, mergeAt ? mergeAt.row : null, mergeAt ? mergeAt.col : null);
-  const retreatSel = useCallback(async () => {
+  const retreatPiece = useCallback(async (uid) => {
     const L = live.current;
-    const uid = L.sel?.uid;
+    if (pieceActionBusy.current || !underframeActions(L.placeCtx, uid)?.retreat) return;
     const to = uid != null ? retreatSlot(L.placeCtx, uid) : null;
     if (!to) { toast(t('整备区已满'), 'warn'); audio.sfx('error', { volume: 0.5 }); return; }
+    pieceActionBusy.current = true;
     setSelBusy(true);
-    if (await actions.move(uid, to)) {
-      setSel(null);
-      setDetail((d) => (d?.kind === 'piece' && d.uid === uid ? null : d)); // its card would cover the bench
+    try {
+      if (await actions.move(uid, to)) {
+        setSel((s) => s?.uid === uid ? null : s);
+        setDetail((d) => (d?.kind === 'piece' && d.uid === uid ? null : d));
+      }
+    } finally {
+      pieceActionBusy.current = false;
+      setSelBusy(false);
     }
-    setSelBusy(false);
   }, []);
-  const sellSel = useCallback(async () => {
-    const e = live.current.sel ? live.current.placeCtx.pieces.get(live.current.sel.uid) : null;
-    if (!e) return;
+  const sellOwnPiece = useCallback(async (uid) => {
+    const e = live.current.placeCtx.pieces.get(uid);
+    if (!e || pieceActionBusy.current) return;
+    pieceActionBusy.current = true;
     setSelBusy(true);
-    await sellPiece(e.piece);
-    setSelBusy(false);
+    try { await sellPiece(e.piece); }
+    finally { pieceActionBusy.current = false; setSelBusy(false); }
   }, []);
+  const retreatSel = useCallback(() => retreatPiece(live.current.sel?.uid), [retreatPiece]);
+  const sellSel = useCallback(() => sellOwnPiece(live.current.sel?.uid), [sellOwnPiece]);
 
   // unit clicks from the engine may only carry an id: resolve through m.field / spawn infos
   const detailTarget = useMemo(() => {
@@ -1279,11 +1295,35 @@ function MatchScreen() {
 
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
+    // Remember only pointer coordinates. Hit-test again on keydown so moved/removed pieces, overlays,
+    // camera changes and an old click selection cannot redirect a destructive action.
+    let pointer = null;
+    const trackPointer = (e) => {
+      pointer = e.pointerType === 'touch' ? null : { x: e.clientX, y: e.clientY, buttons: e.buttons };
+    };
+    const clearPointer = () => { pointer = null; };
+    const leaveWindow = (e) => { if (!e.relatedTarget) clearPointer(); };
     const onKey = async (e) => {
-      const act = shortcutFor(e, settingsStore.get().keys); // the player's key map (设置 → 快捷键)
+      const act = shortcutFor(e, settingsStore.get().keys); // the player's key map (Settings > Shortcuts)
       const L = live.current;
       // dialogs / the guide own the keyboard; behind the 本局信息 / 敌方情报 drawer only Esc (closing it) acts
       if (shortcutBlocked(act, { modal: !!document.querySelector('.modal, .guide'), drawer: !!L.drawer })) return;
+      // Spectating, eliminated, watching another board, or AI 托管: prep shortcuts do nothing. Esc still closes,
+      // except a pending 教鞭 choice, whose overlay keeps Escape. Solo pause is below and does not run for these seats.
+      const suspended = prepShortcutsSuspended({
+        spectator: L.spectator,
+        alive: L.alive,
+        watchingOther: L.watchingOther,
+        away: awayStore.get().away === true,
+        autoplay: Array.isArray(L.pub?.players) && L.pub.players.some((p) => p && p.playerId === L.myId && p.autoplay),
+      });
+      if (suspended) {
+        if (act === 'escape' && L.hasPersonalChoice) return;
+        if (act !== 'escape') {
+          if (L.pub?.phase === PHASE.PREP) e.preventDefault();
+          return;
+        }
+      }
       if (L.hasPersonalChoice) {
         if (act !== 'escape') e.preventDefault();
         if (act === 'ready') {
@@ -1320,13 +1360,25 @@ function MatchScreen() {
         return;
       }
       if (!L.editable) return;
+      if (act === 'buy') {
+        if (L.drag || L.facing || !pointer || pointer.buttons) return;
+        const card = document.elementFromPoint(pointer.x, pointer.y)?.closest('.scard[data-shop-slot]');
+        if (!card || !barRef.current?.contains(card)) return;
+        const idx = Number(card.dataset.shopSlot);
+        if (!Number.isInteger(idx) || idx < 0) return;
+        const reason = shopBlockReason('buy', { priv: L.priv, editable: L.editable, slot: L.priv.shop?.slots?.[idx] });
+        if (reason) { toast(reason, 'warn'); audio.sfx('error', { volume: 0.5 }); return; }
+        await buy(idx);
+        return;
+      }
       if (act === 'retreat' || act === 'sell') {
-        if (!L.showPrep || L.drag || L.facing || L.selBusy || !L.sel) return;
-        const selected = L.placeCtx.pieces.get(L.sel.uid);
-        if (selected?.piece.kind !== 'chess') return;
-        const available = underframeActions(L.placeCtx, L.sel.uid);
-        if (act === 'retreat' && available?.retreat) await retreatSel();
-        else if (act === 'sell' && available?.sell != null) await sellSel();
+        if (!L.showPrep || L.drag || L.facing || L.selBusy || L.pen || !pointer || pointer.buttons) return;
+        const uid = L.view?.pieceAtClientPoint(pointer.x, pointer.y);
+        const hovered = Number.isInteger(uid) ? L.placeCtx.pieces.get(uid) : null;
+        if (hovered?.piece.kind !== 'chess') return;
+        const available = underframeActions(L.placeCtx, uid);
+        if (act === 'retreat' && available?.retreat) await retreatPiece(uid);
+        else if (act === 'sell' && available?.sell != null) await sellOwnPiece(uid);
         return;
       }
       const reason = shopBlockReason(act, { priv: L.priv, editable: L.editable });
@@ -1335,8 +1387,16 @@ function MatchScreen() {
       else if (act === 'freeze') actions.freeze();
       else if (act === 'levelUp') actions.levelUp();
     };
+    for (const name of ['pointermove', 'pointerdown', 'pointerup']) window.addEventListener(name, trackPointer, true);
+    window.addEventListener('pointerout', leaveWindow, true);
+    window.addEventListener('blur', clearPointer);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      for (const name of ['pointermove', 'pointerdown', 'pointerup']) window.removeEventListener(name, trackPointer, true);
+      window.removeEventListener('pointerout', leaveWindow, true);
+      window.removeEventListener('blur', clearPointer);
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   // ---- render ---------------------------------------------------------------------------------------------------

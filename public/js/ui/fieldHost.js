@@ -20,7 +20,7 @@ const METHODS = ['setStage', 'setCamera', 'setPrep', 'enterBattle', 'pushSnapsho
 // setPen (enemy preview pen list), prepField ({ kind, side, mirror } of the Final Assault prep), stripesUnder (the view
 // stripes range previews under the units itself), replayDeploys (the round start's Start-clip replay, PR #416) —
 // render/app.js; the DOM fallback lacks them (→ null)
-const OPTIONAL = ['pieceScreenRect', 'setSettings', 'off', 'tileScreen', 'holdPiece', 'setPieceDir', 'setPen', 'prepField', 'stripesUnder', 'replayDeploys'];
+const OPTIONAL = ['pieceScreenRect', 'pieceAtClientPoint', 'setSettings', 'off', 'tileScreen', 'holdPiece', 'setPieceDir', 'setPen', 'prepField', 'stripesUnder', 'replayDeploys'];
 
 /**
  * Camera padding (px) that keeps the field clear of the DOM HUD (top bar + bond strip, team panel, shop bar /

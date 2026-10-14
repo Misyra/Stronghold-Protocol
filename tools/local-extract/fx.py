@@ -17,7 +17,7 @@ What is read (paths relative to the AB root, see extract.py CANDIDATES):
   config/buff_template_holder.ab                             the buff templates (a buff's default effect, its actions)
   battle/enm_pfb_*.ab, pkgrps/btl_pfb_tokens_*.ab            enemies and tokens
 
-What is written under <out>/fx (every file is listed in data/local-fx.json, next to the --manifest — its own file: ~8,300
+What is written under <out>/fx (every file is listed in data/local-fx.json, next to the --manifest — its own file: ~8,800
 entries kept out of data/local-assets.json, which has no fx group — and the server hands that list out with each URL
 carrying its file's content hash):
   index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), mount points;

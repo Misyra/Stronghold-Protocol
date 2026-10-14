@@ -142,7 +142,7 @@ export const OPTIONAL_VOICE_DIRS = Object.freeze(['public/assets/audio/voice/en/
 const SCENE_ART_PREFIX = 'public/assets/local/scene/';
 /**
  * The official battle effects (tools/local-extract/fx.py, DESIGN §33: public/assets/local/fx/ and their file list
- * data/local-fx.json, ~170 MB / ~12,000 files for the full set). false (0.3.0, until the maintainer decides): a full zip
+ * data/local-fx.json, ~190 MB / ~12,000 files for the full set). false (0.3.0, until the maintainer decides): a full zip
  * leaves them out even when this machine extracted them (`fxHeld`) — they are not part of the local art the releases
  * have shipped so far. true: the full zip ships the folder and data/local-fx.json.
  */

@@ -1,6 +1,6 @@
 // server/http/assetViews.js — the served manifests (host bandwidth, layer 1; docs/ASSETS.md "The served manifests"):
 // data/assets.json, data/local-assets.json and data/local-fx.json (the official battle effects' file list, DESIGN §33 —
-// kept out of local-assets.json: ~8,000 entries) as this server hands them out, every art URL carrying the content hash
+// kept out of local-assets.json: ~8,800 entries) as this server hands them out, every art URL carrying the content hash
 // of its file as its first segment (shared/assetPaths.js) — `/assets/char/avatar/x.png` →
 // `/assets/~<hash>/char/avatar/x.png`, `/fonts/~<hash>/…` — so the browser keeps the file for a year and asks again
 // only when the bytes change. Audio keeps the `/assets/~<hash>/audio/….mp3` form: public/js/media.js turns it into

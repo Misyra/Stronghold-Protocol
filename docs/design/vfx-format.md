@@ -2,7 +2,27 @@
 
 Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
-## 33. Official battle effects — the extracted format (0.3.0, Phase 1a)
+**Changelog** (for runtimes reading the files; newest first)
+
+* **2026-10-15 — Phase 1b, the full set.** (1) The file list left `data/local-assets.json`: it is `data/local-fx.json`
+  (§33.1), served at `/data/local-fx.json` with hashed URLs; its groups (`fx`, `fx/prefabs`, `fx/tex`, `fx/mesh`) and
+  entries are the ones `data/local-assets.json` had, which now has no fx group. A worktree that links
+  `data/local-assets.json` from another checkout links `data/local-fx.json` too (it is written next to the
+  `--manifest` path as given). (2) `index.json` (§33.12): the six enemy `_2` variants without a prefab of their own
+  are copies of their base unit with `aliasOf`; an emitter row's `effects` is what it plays — directionType 0 (NONE)
+  plays only the first slot (the other slots are leftovers: before, they were listed too), a directional row keeps
+  every distinct key plus `slots` (the effect per facing); keys the client lacks are dropped; a row may carry only a
+  `hookEffectAfterFirstAttack`. (3) Skills gained `mode` / `modeBy`, `uses`, `roles` and `unclassified` (§33.12),
+  from the skill prefabs and the client's buff templates. (4) The used set holds the sample's keys too. (5)
+  `InheritVelocityModule` / `LifetimeByEmitterSpeedModule` export: their `m_Curve` is a MinMaxCurve (159 prefabs of
+  the full set failed on it). (6) The **[verify]** marks were checked against the client: resolved — ability events (§33.12), vertex stream
+  packing and the custom-data components (§33.6), `FxUVRotation` (§33.11), `PauseEffectIf` (§33.11, the earlier
+  `buff_stun` example was wrong), the texture-sheet frame from the data's `0.9999` ends (§33.5); still assumed —
+  the billboard roll's sign, the Limit Velocity dampen step (§33.5), `FxUVRotation`'s matrix sign. No descriptor field
+  changed.
+* **2026-10-14 — Phase 1a**: the format and the sample.
+
+## 33. Official battle effects — the extracted format (0.3.0, Phase 1a–1b)
 
 The official battle effects (hit sparks, projectiles, cast flashes, status loops, skill effects) are Unity prefabs of
 ParticleSystems, meshes, trails and small behaviour scripts. `tools/local-extract/fx.py` (run as `extract.py --only fx`)
@@ -16,10 +36,12 @@ the descriptor keeps Unity's names so that every field can also be looked up in 
 extractor adds is the resolution of references (other files, other nodes, shaders' render states, clip bindings) and the
 decoding of compressed data (animation clips, textures, meshes).
 
-**Status (Phase 1a).** The extractor and this format exist for a sample (§33.13); the runtime is the next phase. Values
-marked **[verify]** are read from the data but their exact runtime behaviour still has to be compared with the client.
-Enum names marked *metadata* come from the client's il2cpp metadata (`Arknights_Data/il2cpp_data/Metadata/
-global-metadata.dat`, version 29, not encrypted: the enum constants with their values).
+**Status (Phase 1b).** The extractor and this format cover the full set the mode uses (§33.14; the Phase 1a sample,
+§33.13, is a subset); the runtime is the next phase. Where the client's own behaviour cannot be read from its data,
+the text says **assumed** (Unity behaviour the data cannot confirm); **resolved** marks what Phase 1b checked against
+the client (its shader source, il2cpp metadata, prefab data). Enum and field names marked *metadata* come from the
+client's il2cpp metadata (`Arknights_Data/il2cpp_data/Metadata/global-metadata.dat`, version 29, not encrypted: type
+and field names, nested types, the enum constants with their values; method bodies are native code and not read).
 
 ### 33.1 Files, the file list and the extractor run
 
@@ -46,7 +68,7 @@ A plain `extract.py` run (no `--only`) does not run fx. The run reads `data/ches
 It names every file, so the server's asset index hashes its URL: the server hands it out at `GET /data/local-fx.json` as
 a view whose URLs carry the content hash, `/assets/~<hash>/local/fx/…` (immutable for a year; docs/ASSETS.md "The
 committed manifest and the served manifests"), and answers an empty `{ groups: {} }` on an install without effects. It
-is a file of its own — ~8,300 entries for the full set — so that `data/local-assets.json`, which every page loads, stays
+is a file of its own — ~8,800 entries for the full set — so that `data/local-assets.json`, which every page loads, stays
 small: that file has no fx group (an fx run removes the ones a Phase 1a run wrote there). The server never loads it
 (`server/data.js UNLOADED_DATA`), it is no part of the content hash (`PRESENTATION_DATA`), and the release zips leave the
 effects out while `tools/package.mjs FULL_ZIP_FX` is off. The runtime takes URLs from it, never builds them:
@@ -73,10 +95,10 @@ case; the client's own references mix cases (a `SwitchableBackEffect` names `che
 extractor writes (file names, file-list entries, the index, the descriptors' `refs`) is lower case; behaviour fields keep
 the client's spelling — lower-case a key read from them before looking it up.
 
-Timings on the maintainer's Mac (Windows client 26-09-13, 8 processes): the sample (126 prefabs, 290 textures,
-43 meshes, 6.8 MB) takes ~17 s, ~10 s more on the first run (the bundles' prefab lists: 606 effect bundles read once,
-then cached in `.cache/fx/`). The prefab export costs ~0.35 s CPU per prefab; libwebp effort 4 (`WEBP_METHOD`; effort 6
-is ~90× slower here for 4.5 % smaller files).
+Timings on the maintainer's Mac (Windows client 26-09-13, 8 processes): the full set (§33.14: 4,253 prefabs, 186 MB)
+takes ~3 minutes; the sample (126 prefabs, 290 textures, 43 meshes, 6.8 MB) ~17 s; a first run adds ~10 s (the bundles'
+prefab lists: 606 effect bundles read once, then cached in `.cache/fx/`). The prefab export costs ~0.18 s CPU per
+prefab; libwebp effort 4 (`WEBP_METHOD`; effort 6 is ~90× slower here for 4.5 % smaller files).
 
 ### 33.2 Conventions
 
@@ -226,7 +248,8 @@ velocity for inherit-velocity and rate-over-distance), `useUnscaledTime`, `autoR
 **InitialModule** (Main): `startLifetime`, `startSpeed` (along the shape's emission direction), `startSize` (or, with
 `size3D`, `startSize` / `startSizeY` / `startSizeZ` per axis), `startRotation` (radians; with `rotation3D`
 `startRotationX` / `startRotationY` / `startRotation` (Z)) — a billboard's roll about the view axis; Unity turns
-particles clockwise on screen for positive angles, the opposite of a Transform's Z rotation **[verify]** —,
+particles clockwise on screen for positive angles, the opposite of a Transform's Z rotation (**assumed**: Unity's
+behaviour, which no data of the client confirms; the transform-driven spins such as `buff_stun`'s are clips, §33.10) —,
 `randomizeRotationDirection` (0…1: the share of particles whose rotation and spin are mirrored), `startColor` (MinMaxGradient), `gravityModifier` (MinMaxCurve × Physics.gravity,
 §33.2), `maxNumParticles` (emission stops at this many live particles), `customEmitterVelocity`.
 
@@ -255,8 +278,8 @@ repeatInterval, probability }]` (`m_BurstCount` is their number).
   `inWorldSpace` (0 local, 1 world).
 * `ClampVelocityModule` (Limit Velocity): `magnitude` (or `x` / `y` / `z` with `separateAxis`), `dampen` (the share of
   the excess speed removed per step), `drag` (MinMaxCurve) with `multiplyDragByParticleSize` /
-  `multiplyDragByParticleVelocity`, `inWorldSpace`. **[verify]** the step size (Unity applies dampen per simulation
-  step: sub-step at ≤ 1/30 s, §33.2).
+  `multiplyDragByParticleVelocity`, `inWorldSpace`. **Assumed**: Unity applies dampen once per simulation step
+  (sub-steps of ≤ 1/30 s, §33.2); the client's data cannot show the step (engine code).
 * `ForceModule`: `x`, `y`, `z` (acceleration), `inWorldSpace`, `randomizePerFrame`.
 * `InheritVelocityModule`: `m_Mode` (0 Initial, 1 Current), `m_Curve`.
 * `LifetimeByEmitterSpeedModule`, `SizeBySpeedModule`, `RotationBySpeedModule`, `ColorBySpeedModule` (`range` = the
@@ -270,8 +293,10 @@ repeatInterval, probability }]` (`m_BurstCount` is their number).
 `animationType` (0 whole sheet, 1 single row: `rowMode` / `rowIndex`), `timeMode` (0 lifetime, 1 speed (`speedRange`),
 2 fps (`fps`)), `frameOverTime` and `startFrame` (MinMaxCurves **normalized**: 0…1 of the frame count — the client's
 values run to 0.9999), `cycles` (sheet loops per lifetime), `flipU` / `flipV` (probabilities), `uvChannelMask`. Frame
-index = floor(frac(startFrame + frameOverTime(frac(t · cycles))) · frames) **[verify]**; frames run left to right, top
-to bottom (frame 0 is the top-left tile).
+index = floor(frac(startFrame + frameOverTime(frac(t · cycles))) · frames); frames run left to right, top to bottom
+(frame 0 is the top-left tile). **Resolved** by the data: the authored curves end at 0.9999, not 1, exactly so that
+floor(v · frames) stays on the last frame instead of wrapping to the first; the `cycles` repetition is Unity's
+documented meaning (assumed).
 
 **SubModule**: `subEmitters`: `[{ emitter: {node, component: 'ParticleSystem'} | null, type, properties,
 emitProbability }]` — type 0 Birth, 1 Collision, 2 Death, 3 Trigger, 4 Manual; `properties` a bitmask of what the
@@ -321,7 +346,20 @@ Custom vertex streams: `m_UseCustomVertexStreams` and `vertexStreams` (names; `m
 Normal, Color, UV. Unity packs the streams in list order: Position → POSITION, Normal → NORMAL, Tangent → TANGENT,
 Color → COLOR, then every other stream fills TEXCOORD0, TEXCOORD1, … four floats at a time (UV is 2 floats, Custom1XYZW
 4, AgePercent 1, …) — e.g. `[Position, Normal, Color, UV, Custom1XYZW]` gives TEXCOORD0.xy = UV, TEXCOORD0.zw =
-Custom1.xy, TEXCOORD1.xy = Custom1.zw. **[verify]** against the shader inputs of the `*(CustomData)` family.
+Custom1.xy, TEXCOORD1.xy = Custom1.zw.
+
+**Resolved** against the client's shader source (the custom-data variants, keyword `_HGCUSTOMVERTEXSTREAM_ON`): their
+vertex inputs are sized to exactly these packings — `TEXCOORD0` half4, `TEXCOORD1` half4, `TEXCOORD2` half2 (10 floats)
+in the Disturb / Ram / ZDistort `(CustomData)` families, whose renderers stream `[Position, Normal, Color, UV,
+Custom1XYZW, Custom2XYZW]` (2,301 renderers of the used set: UV 2 + 4 + 4); `TEXCOORD0` + `TEXCOORD1` (8 floats) in
+`Dissolve(CustomData)`, whose renderers stream `[…, UV, Custom1XYZW, Custom2XY]` (653). What the components do there
+(CustomDataModule curves, §33.5) — offsets are added to a texture's UV after its tiling / offset, before the UV
+rotation and the scrolling: in `Disturb(CustomData)` Custom1.xy offsets the main texture, Custom1.zw the dissolve
+texture, Custom2.zw the disturb texture (the Ram and ZDistort families add the same three inputs to their own three
+textures), Custom2.x is added to `_Amount` (the dissolve threshold) and Custom2.y to `_IntensityU` / `_IntensityV`
+(the disturb strength); in `Dissolve(CustomData)` Custom1.xy / Custom1.zw offset its main / dissolve textures,
+Custom2.x is added to `_DissolveIntensity` and Custom2.y to `_BorderWidth`. Without the keyword (or without custom
+streams) the components are 0.
 
 **`meshFilter` + `meshRenderer`**: the mesh drawn with the node's world transform, one material per sub-mesh.
 `builtin:Quad` is Unity's quad: vertices (±0.5, ±0.5, 0), normal −Z, UV (0,0) at (−0.5, −0.5).
@@ -441,8 +479,8 @@ segments), dense (sampled; written as linear keys) and constant tracks; legacy c
 
 `{ class, namespace, enabled, fields }` — every MonoBehaviour with its serialized fields (Unity names, references
 resolved per §33.3; `_bodyTransofrm` is the client's spelling). Disabled behaviours (`enabled: false`) do nothing.
-Semantics below are read from the field names, the data and the client's enum names (*metadata*); **[verify]** marks
-the ones a runtime should compare with the client.
+Semantics below are read from the field names, the data and the client's type, field and enum names (*metadata*);
+**resolved** marks what was checked against the client's shader source or metadata, **assumed** what still is not.
 
 **`ParticleEffect`** (Torappu.Battle.Effects — the root of most effects; 3,630 in the used set):
 * `_spawnLocation` — where the game places the effect on its owner (*metadata* SpawnLocation): 0 NONE, 1 FOOT_POINT,
@@ -475,8 +513,14 @@ inactive or the behaviour hides them first).
 `xspeed`, `yspeed` (UV units per second, `_MainTex`), `useSecondMap` + `secondMapName` (e.g. `_DisturTex`, `_RamTex`,
 `_DissolveTex`) + `secondXSpeed` / `secondYSpeed`, `keepInitOffset` (start from the material's offset), `protectMainUV`
 / `protectSecondUV`, `useSharedMaterial`; Advance adds `tweenRepeat`, `tweenAnmTime`, `extraMapSettings`.
-**`FxUVRotation`**: `_propertyName` (e.g. `_Rotation`), `_rotateTex1…4`, `angle1`, `_angle2…4` — sets a rotation
-property per texture **[verify]**.
+**`FxUVRotation`** (186 prefabs): `_propertyName` (`_Rotation`), `_rotateTex1…4` (which textures), `angle1`,
+`_angle2…4` (degrees). **Resolved** in the shader source: the Torappu particle shaders that support it rotate each
+texture's UV about its centre when the float `_HG_UV_ROTATION` is > 0.5 — uv′ = (dot(uv − 0.5, R.xz),
+dot(uv − 0.5, R.yw)) + 0.5, after the texture's tiling / offset and before its time scroll — with one matrix per
+texture slot, `<propertyName>0…3` = `_Rotation0` (texture 1, `_MainTex`), `_Rotation1` (2, `_DissolveTex`),
+`_Rotation2` (3, `_WeightTex`), `_Rotation3` (4, `_DisturbTex` / the ramp's disturb map). No material stores them: the
+behaviour sets them at run time. **Assumed**: R = (cos θ, sin θ, −sin θ, cos θ) for its angle θ (the standard 2D
+rotation, so u′ = cos θ·u − sin θ·v), and `_HG_UV_ROTATION` = 1 while it runs.
 
 **`FollowMountPoint`**: keeps the effect on a mount point of its owner (*metadata* MountPointType): 0 FOOT, 1 HIT,
 2 MUZZLE, 3 HEAD, 4 UI, 5 SPECIAL_0, 6 SPECIAL_1, 7 GROUND, 8 SPECIAL_2, 9 SPECIAL_3, 10 SPECIAL_4, 11–29
@@ -505,10 +549,14 @@ follow the owner / the height of the tile under it.
 `_pauseWhenAbnormalFlag(s)`, `_checkAbnormalImmune` + `_pauseWhenAbnormalImmune`, `_checkNotInAbnormalFlag` +
 `_pauseWhenNotInAbnormalFlag`, `_checkAbnormalCombo` + `_pauseWhenAbnormalCombo`, `_checkContainBuff` + keys,
 `_checkFaceToBack` / `_checkFaceToRight`, `_checkDisappear`, `_checkUnitModeIndex`, `_checkState`, `_checkOnPlay`,
-`_requireAllConditions`, `_disableMeshRendererWhenPause`. Flags (*metadata* AbnormalFlag): 0 STUNNED, 5 INVINCIBLE,
-9 INVISIBLE, 11 DISARMED, 12 SILENCED, 13 UNMOVABLE, 16 FROZEN, 17 CAMOUFLAGE, 23 COLD, 25 LEVITATE, 33 FEARED,
-39 PALSY, 43 DOZE, 45 GROUND_BOUND, …; combos (AbnormalCombo): 0 SLEEPING, 1 SHELTERING, 2 ISOLATE — e.g. `buff_stun`
-pauses while its owner is immune to FROZEN (16) **[verify]**. **`PauseEffectIfDisappeared`**,
+`_requireAllConditions`, `_disableMeshRendererWhenPause`. Each `_check…` is a *metadata* PauseEffectIf.CheckType:
+0 NOT_CHECK, 1 CHECK_YES (pause while the condition holds), 2 CHECK_NO (pause while it does not) — not a boolean; the
+`_pauseWhen…` value it tests is read only when the check is 1 or 2 (a 0 there is a value, not "off"). Flags (*metadata*
+AbnormalFlag): 0 STUNNED, 5 INVINCIBLE, 9 INVISIBLE, 11 DISARMED, 12 SILENCED, 13 UNMOVABLE, 16 FROZEN, 17 CAMOUFLAGE,
+23 COLD, 25 LEVITATE, 33 FEARED, 39 PALSY, 43 DOZE, 45 GROUND_BOUND, …; combos (AbnormalCombo): 0 SLEEPING,
+1 SHELTERING, 2 ISOLATE. **Resolved** examples: `buff_stun` pauses while its owner is immune to STUNNED (immune check 1,
+value 0) or not stunned (not-in check 1, value 0); `buff_frozen` the same with FROZEN (16); `buff_cold` while the owner
+is FROZEN (flag check 1, value 16); `buff_sleep` while the owner is not SLEEPING (combo check 2, value 0). **`PauseEffectIfDisappeared`**,
 **`PauseEffectIfRenderInvisible`**, **`PauseEffectWithAnimation`** (`_validAnimation`, `_invalidAnimation`,
 `_delayToPause`, `_delayToRestore`, `_finishIfPause`).
 
@@ -523,7 +571,7 @@ a sound — the runtime's audio may play it), and the long tail (55 classes in t
 
 ```
 { format: 'fx-index', version: 1, set: 'sample' | 'used' | 'keys', source: { root, client },
-  units: { id: Unit }, projectiles: { key: Projectile }, skills: { skillId: { effects, projectiles } },
+  units: { id: Unit }, projectiles: { key: Projectile }, skills: { skillId: Skill },
   skins: { id: Skin }, generic: { hit, die, birth, status, keys }, prefabs: { key: PrefabSummary } }
 ```
 
@@ -537,20 +585,91 @@ a sound — the runtime's audio may play it), and the long tail (55 classes in t
             attack: { class ('RangedAttack', 'MeleeAttack', 'RangedHeal', …), animKey, attackType, damageType,
                       projectileKey, extraProjectileKeys, projectileDestination,
                       cast?, hit?, attach?, inputTarget?, castTarget?: [Emit…] } }],
-  skills: { skillId: { effects: [key…], projectiles: [key…] } },
-  projectiles: [key…], refs: [every effect key the unit uses], skin: id | absent }
-Emit = { effects: [key…], directionType, oneshot, startEvent, endEvent, onlyOnce, useFourDirectionalFace, … }
+  skills: { skillId: Skill },                  the same objects as index.skills
+  projectiles: [key…], refs: [every effect key the unit uses], skin: id | absent,
+  aliasOf?: id }                               a copy of unit `id` (below)
+Emit = { effects: [key…], slots?: [key | null…], directionType, oneshot, startEvent, endEvent, onlyOnce,
+         useFourDirectionalFace, hookEffectAfterFirstAttack, … }
 ```
 
 `modes[0]` (`Default`) is the normal attack; the others are the modes a skill switches to (`S1` = skill 1's attack,
-named by the client). An attack's `cast` effects play on the attacker, its `hit` effects on each target hit (melee and
-direct attacks), and a projectile's own `onHit` effects where the projectile arrives. `startEvent` / `endEvent` are
-ability events — likely (*metadata*) 0 ON_ATTACHED, 1 ON_DETACHED, 2 ON_CAST_START, 3 ON_CAST_END, 4 ON_SPELL_ON,
-5 ON_SPELL_END, 6 ON_ATTACK_FINISH, 7 ON_ATTACK_CHECK_POINT, 8 ON_OVERLOAD (normal attacks start a cast effect at 2,
-skill modes at 4, both end at 3) **[verify]**. `directionType` (*metadata* DirectionType): 0 NONE, 1 L_OR_R, 2 U_OR_D,
-3 FOUR_DIR, 4 UD_OR_LR, …. Skills list the effect keys found anywhere in the skill prefab (`[uc]skills.ab`): which event
-plays which key is not in the data the extractor reads — `*_start` at activation, `*_buff` while active, `*_range` /
-`*_hit` per hit by naming convention.
+named by the client; a skill's `mode` names it, below). An attack's `cast` effects play on the attacker, its `hit`
+effects on each target hit (melee and direct attacks), and a projectile's own `onHit` effects where the projectile
+arrives. **Resolved** (*metadata*): an Emit row is a `Torappu.Battle.Abilities.UberEffectEmitter` option —
+`CastEffectOptions` (`cast`, `inputTarget`, `castTarget`: `_oneshot`, `_startEvent`, `_endEvent`, …),
+`HitEffectOptions` (`hit`: `_oneshot`, `_endEvent` — it starts at each hit on a target, the emitter's OnCastOnTarget),
+`AttachEffectOptions` (`attach`: from the ability's attach to its detach, no events); `startEvent` / `endEvent` are
+`Torappu.Battle.AbilityStandard/Event` — 0 ON_ATTACHED, 1 ON_DETACHED, 2 ON_CAST_START, 3 ON_CAST_END, 4 ON_SPELL_ON,
+5 ON_SPELL_END, 6 ON_ATTACK_FINISH, 7 ON_ATTACK_CHECK_POINT, 8 ON_OVERLOAD, the only enum with these names: a cast
+effect plays from its start event (a one-shot just plays there) and a looping one stops at its end event. In the used
+set the units' cast rows start at 2 (662) or 4 (79, the spell — the moment the attack fires) and end at 3 (719) or 6
+(21). `directionType`
+(*metadata* UberEffectEmitter.EffectOptions.DirectionType): 0 NONE, 1 L_OR_R, 2 U_OR_D, 3 FOUR_DIR, 4 UD_OR_LR,
+5 FOUR_DIR_FIXED. `effects` are the keys a row plays: for 0 the first slot only (the client fills the other slots of
+some NONE rows with leftovers — 5 rows of the used set, one naming a key the client lacks — which the game does not
+play; the variants by facing then come from the effect's own `SwitchableEffectByFaceDirection`, §33.11), else every
+distinct key, and `slots` holds the effect per facing as *metadata* `Torappu.SharedConsts.Direction` indexes it:
+0 UP (the back view), 1 RIGHT, 2 DOWN (the front view), 3 LEFT (null: nothing; L_OR_R rows use 1 / 3, U_OR_D rows
+0 / 2). `hookEffectAfterFirstAttack` (a key or '') replaces the row's effect from the second attack on; a row may have
+only that. Keys the client does not have are dropped (the extractor logs them).
+
+**Aliases.** An enemy key without a prefab of its own (`enemy_2001_duckmi_2`, `enemy_2002_bearmi_2`,
+`enemy_2034_sythef_2`, `enemy_2085_skzjxd_2`, `enemy_9013_acstmk_2`, `enemy_9017_achunt_2`: elite variants) is drawn
+with its base prefab: its unit is a copy of the base unit's with `aliasOf: <base id>`.
+
+**Skill** (`[uc]skills.ab`, the skills of the units: the chess data's and every `skchr_<code>_<n>` of an operator):
+
+```
+{ effects: [every key it names — its buff templates' included], projectiles: [key…],
+  mode: index into the owner's modes | null, modeBy?: 'data' | 'name',
+  uses: [Use…], roles: { start?, loop?, range?, cast?, hit?, end?, ready?, trigger?, other?: [key…] },
+  unclassified: [keys found in the prefab that no use places] }
+Use = { role, keys: [key…], from ('UberEffectEmitter._castEffects', 'ActiveBuffAbility._buffs',
+        'ActiveBuffAbility._buffs → template <templateKey>', …), node (the skill prefab's GameObject),
+        ability? (the ability an emitter serves: 'MeleeAttack', 'ActiveBuffAbility', …),
+        list?, startEvent?, endEvent?, oneshot?, directionType?, slots?   (an emitter row, as Emit)
+        on? ('owner' | 'targets' | 'token'), buff?, template?            (a buff: who carries it, its keys)
+        event?, action?                                                  (a buff template's action: a Buff event name,
+                                                                          the action node: CreateEffect, CreateBuff, …)
+        bb?, by? ('name': placed by the key's name) }
+```
+
+The extractor reads every behaviour of the skill prefab (its emitters, abilities, buffs, the Odin action graphs some
+abilities carry) and the client's buff templates (`config/buff_template_holder.ab`, *metadata*
+`Torappu.Battle.BuffTemplate`: `templateKey`, `effectKey`, `eventToActions` keyed by *metadata* `Torappu.Battle.Buff/Event`),
+and gives every effect a role — when the runtime plays it on the sim's skill timeline:
+
+| role | when | from |
+|---|---|---|
+| `start` | once when the skill starts (for a one-cast skill — `ReplacementSkill` — its cast) | one-shot cast rows (start event 2 / 4 / 0), `_beginEffect`, `_overrideStartEffect` (summons), `_startEffect`, `_chantSuccessEffects`, a buff template's action at ON_BUFF_START / ON_SKILL_START |
+| `loop` | while the skill lasts (or the buff carrying it: `on` says on whom) | looping cast rows (start → end event), attach rows, a buff's effect (`overrideEffectKey`, else its template's `effectKey`), aura `_effects`, channel emitters, buffs a template creates |
+| `range` | the skill's area marker (loop or one-shot by `oneshot`) | a cast row or a field named `*_range*`, `RangeEffectEmitter`, `_tileEffectKey` |
+| `cast` | each ability use while a buff lasts | a template's action at ON_ABILITY_START / ON_ABILITY_SPELL_ON / ON_BEFORE_ATTACK |
+| `hit` | each target hit (on the target) | hit / castTarget / inputTarget rows (and `MultiHitUberEffectEmitter` groups), `_hitEffect(Key)`, a template's action at ON_OUTPUT_DAMAGE / ON_AFTER_ATTACK / …, a target buff's start action |
+| `end` | when the skill (or the buff) ends | cast rows starting at 1 / 3 / 5 / 6 or named `*_end`, `_endEffect`, `_beforeEndEffects`, ON_BUFF_FINISH / ON_SKILL_FINISH actions |
+| `ready` | while the skill is ready to cast | `ReadySkillEffect` |
+| `trigger` | a buff's other events (periodic ON_BUFF_TRIGGER, reactive ON_TAKE_DAMAGE, …; `event` names it) | template actions |
+| `other` | not placed | (none in the used set) |
+
+An emitter row's role is relative to the cast of the ability it serves (`ability`): for an `ActiveBuffAbility` or a
+`ReplacementSkill`'s single attack that cast is the skill's start, so `start` / `end` / `loop` follow the skill; when the
+ability is an attack the skill repeats (`MeleeAttack`, `RangedAttack`, `Multi…Attack`, `ChannelingMeleeAttack` in a
+skill that lasts), they follow each of its casts — `startEvent` / `endEvent` say where in the cast.
+
+A buff's carrier (`on`): `owner` for the buffs a skill gives its unit (`ActiveBuffAbility` without a selector,
+`BuffDuringSkill`, `BuffToOwner…`, passive and chant buffs), `targets` for the buffs an attack applies (`_activeBuffs`
+— status loops such as `buff_burn` on Ifrit S2's targets) and the selector-driven or aura buffs, `token` for buffs a
+summon gets; absent when unknown. `by: 'name'` marks the few effects (11 in the used set: a buff blackboard's `effect`
+value, an extra event group) whose field says nothing about time, placed by their names (`*_hit` / `*_heal` → hit,
+`*_buff` / `*_loop` → loop, `*_start` → start, `*_end` → end, `*_range` → range).
+
+`mode` is the owner's mode the skill switches to — its attacks then use that mode's cast / hit effects (and its
+projectile): `modeBy: 'data'` when the skill's data say it (the blackboard `mode` of a `switch_mode*` buff, a
+`ToggleSkill`'s `_switchToMode`), `'name'` when the owner has a mode named after the skill (`S<n>` for `skchr_…_<n>`,
+case-insensitive; where both exist they agree in 204 of 210 skills). So a runtime plays, on the sim's events: skill
+start → `roles.start` (+ `range`), while active → `roles.loop` on `on` (default the owner) and the attacks of
+`modes[mode]`, each hit → `roles.hit` (+ the mode's hit / projectile effects), skill end → `roles.end` (and stops the
+loops).
 
 **Projectile** (`[uc]projectiles.ab`):
 
@@ -587,7 +706,7 @@ names them): the hit by damage type, deaths, deploy, and the status loops by the
 **prefabs**: key → `{ file, bundle, nodes, particleSystems, liveParticles, duration, looping, refs }` (the descriptor's
 stats and `refs`).
 
-### 33.13 The Phase 1a sample
+### 33.13 The Phase 1a sample (a subset of the full set, §33.14)
 
 `extract.py --only fx` exports (client 26-09-13, `set: 'sample'`) 126 prefabs from 32 bundles, 290 textures (each with
 a half-size copy), 43 meshes, 9 units, 11 projectiles, 12 skills — 6.8 MB (descriptors 2.2 MB, textures 3.9 MB, meshes
@@ -618,13 +737,21 @@ Checked on the output: clip decoding against known values (`buff_stun` z 0 → �
 `_PremultiplyAlpha`, default SrcAlpha), mount points against the transforms they compose, every clip binding resolved
 (675 curves, no `crc:` property; 50 name objects their prefab lacks), every key the index names has a descriptor.
 
-### 33.14 Phase 1b (the full set)
+### 33.14 Phase 1b: the full set
 
-`--fx-set used` exports every effect the mode's units reference. A dry run of its crawl (client 26-09-13) finds
-510 units (210 operators, 243 enemies — six `_2` variants have no prefab of their own —, 57 tokens), 538 projectiles,
-529 skills and 3,869 effect prefabs (3,834 referenced + the generic keys) in 264 bundles, in 45 s; the export is ~0.35 s
-CPU per prefab (~23 minutes of CPU, ~3–4 minutes with 8 processes), before the second pass over the keys behaviours
-name. Expected output: ~3,400 textures, ~435 meshes — about 40 MB of WebP and ~60 MB of JSON (10 MB gzipped). Still to
-do there: run and check it (every key an index entry names has a descriptor — the consistency test does this on any
-extracted set), and the manifest's size (one entry per file: ~8,000 entries, ~1 MB raw / ~150 KB gzipped added to
-`data/local-assets.json`) — a separate served manifest for fx may be wanted.
+`extract.py --only fx --fx-set used` (Windows client 26-09-13, 8 processes on the maintainer's Mac) exports 516 units
+(210 operators, 243 enemies, 57 tokens and the 6 enemy aliases), 538 projectiles, 529 skills and 4,253 effect prefabs
+from 264 bundles — 3,990 named by the units, their skills and the skills' buff templates, the generic keys and the
+sample's, then 263 named by the exported behaviours (two more passes) — with 3,303 textures (3,263 with a half-size
+copy) and 1,201 meshes: 12,023 files, 186 MB — descriptors 118 MB (17 MB gzipped, as the server sends them), textures
+35 MB + 15 MB half-size, meshes 11.5 MB, `index.json` 5.4 MB (0.3 MB gzipped), `textures.json` 0.85 MB; the file list
+`data/local-fx.json` has 8,759 entries, 1.2 MB (0.1 MB gzipped). The run takes 172 s: the bundles' prefab lists 0.5 s
+(cached; a first run reads the ~600 effect bundles once), units, skills and buff templates 47 s, the prefabs 124 s
+(757 s of CPU). No prefab fails, and the consistency test (`test/local-extract-fx.test.js`) passes on the output: every
+key the index names — attack rows, slots, hooks, skill uses — has a descriptor, every listed file exists.
+
+Skills: 497 of the 529 have effect roles (§33.12; 0 keys left unclassified, 11 effects placed by name); 22 more name no
+effect of their own but switch to a mode, whose attacks carry their effects; 10 name neither — `skchr_doroth_1`–`3`,
+`skchr_prove_1`, `skchr_silent_2`, `skchr_sunbr_1`, `skchr_svrash_1`, `skchr_vodfox_2`, `skchr_vvana_3`,
+`skchr_wang_1`: what the client shows for them comes from what they place (tokens, traps), the unit's own animation, or
+nothing. 333 skills have a mode (221 from their data, 112 by name).

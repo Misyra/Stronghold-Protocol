@@ -545,7 +545,7 @@ Other renderer rules from research 07 §5.4–5.5:
 
 `data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it), `data/local-assets.json` (as
 `tools/local-extract` writes it) and `data/local-fx.json` (0.3.0: the official battle effects' files, written by
-`extract.py --only fx` next to `data/local-assets.json` — about 8,300 entries for the full set, kept in a file of their
+`extract.py --only fx` next to `data/local-assets.json` — about 8,800 entries for the full set, kept in a file of their
 own so that the local-art manifest every page loads stays small; DESIGN §33.1) hold plain URLs. Since 0.2.6 (host
 bandwidth, layer 1) the server hands out a view of each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
 

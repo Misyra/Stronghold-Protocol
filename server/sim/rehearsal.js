@@ -108,7 +108,7 @@ export class RehearsalRun {
     // candidate that never ticks (it was already finished, it could not be built, its construction threw) cannot run
     // the whole candidate list past the caller's budget either
     let worked = false;
-    while (this.index < this.candidates.length) {
+    while (this.index < this.candidates.length) { // loop-cap: the candidate list
       // a candidate that ended mid-slice (finished, cap, or beaten at a 64-tick check that skipped the budget test):
       // check the budget before building and stepping the next one
       if (outOfBudget && worked && outOfBudget()) return false;
@@ -123,7 +123,7 @@ export class RehearsalRun {
         const battle = this.current;
         if (battle) {
           let beaten = false;
-          while (this.ticks < this.cap && !battle.finished) {
+          while (this.ticks < this.cap && !battle.finished) { // loop-cap: the tick cap
             battle.step();
             this.ticks++;
             n++;

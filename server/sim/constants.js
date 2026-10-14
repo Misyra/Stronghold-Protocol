@@ -34,7 +34,7 @@ export const ALLY_COLLIDER_RADIUS = 0.25;
  * skill's or trait's range grid, the skill-range trigger — takes an enemy whose circle overlaps one of its tiles
  * (body.js colliderKeys / bodyInRange; the owner's decision of 2026-10-14). Tile rules keep the tile of the position
  * (格子判定: terrain, traps, fields and marks laid on tiles, "所在格" effects — Battle.enemiesOnTiles, body.js bodyInKeys),
- * blocking and splash keep the position (中点判定).
+ * blocking and splash keep the position (中点判定); a radius PRTS marks 碰撞判定 takes the collider (Battle.foesInColliderRadius).
  */
 export const ENEMY_COLLIDER_RADIUS = 0.1;
 /**

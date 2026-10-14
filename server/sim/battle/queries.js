@@ -265,7 +265,7 @@ export class BattleQueries {
 
   /**
    * foesInRadius by the enemies' colliders — a radius effect PRTS marks 碰撞判定 / 碰撞箱判定 (机械师's S1 splash and
-   * 结构性原理's stop, 提丰's S3 mark, 蕾缪安's shells): a regular enemy whose 0.1 circle (ENEMY_COLLIDER_RADIUS) overlaps
+   * 结构性原理's stop, 提丰's S3 mark, 蕾缪安's shells, 克莱门莎's S2 splash): a regular enemy whose 0.1 circle (ENEMY_COLLIDER_RADIUS) overlaps
    * the circle — centre distance ≤ r + 0.1 —, a huge one whose rectangle does (its rectangle is its collider). Other
    * radius effects keep foesInRadius (the centre of a regular enemy) [ASSUMED where PRTS names neither].
    */

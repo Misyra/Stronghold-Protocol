@@ -30,7 +30,7 @@ LOBBY(room) → INFO_CHECK (co-op 25 s; solo and any single-human match untimed 
    R14 FINAL_ASSAULT (merged team LP; random pairs fixed for this match; shared boss pool; 120 real s countdown, no hard stop; overtime −1 team LP per
                     real s after 120 real s, or 150 with an AI teammate at fight start (§29.1, m.public.overtimeAt); no layer gains; team LP 0 ⇒ defeat at once (PRTS 直接失败),
                     pool 0 ⇒ victory — the first end the server registers decides, §20.5)
-   R15 HIDDEN_CORE  (if difficulty ≥ NORMAL and Σ activated layers > 350 solo / 1200 co-op and team LP > 1)
+   R15 HIDDEN_CORE  (if difficulty ≥ NORMAL and Σ activated layers > 350 solo / 1200 co-op and team LP ≥ 1 — GitHub #645)
 → RESULT (per-player stats, titles, rounds passed, victory/defeat)
 ```
 Solo FUNNY has 9 rounds (boss at R9); everything is read from `data/config.json → modes[modeId]`.

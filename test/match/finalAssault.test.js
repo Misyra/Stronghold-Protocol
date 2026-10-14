@@ -183,7 +183,7 @@ test('Final Assault leaks cost their lpr from the merged LP', () => {
   m.dispose();
 });
 
-test('Hidden Core: Σ activated layers (end of the boss prep) > 1200 and team LP > 1 after a win → R15 prep → HIDDEN_CORE', () => {
+test('Hidden Core: Σ activated layers (end of the boss prep) > 1200 and team LP ≥ 1 after a win → R15 prep → HIDDEN_CORE', () => {
   const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, seed: 52, fake: true, script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 1e9 } : {}) }).start();
   const m = h.m;
   assert.equal(m.gd.hiddenRound, 15);
@@ -210,11 +210,14 @@ test('Hidden Core: Σ activated layers (end of the boss prep) > 1200 and team LP
   m.dispose();
 });
 
-test('Hidden Core is skipped at Σ layers ≤ threshold, on FUNNY, or with team LP ≤ 1; a failed hidden core keeps the clear', () => {
+test('Hidden Core is skipped at Σ layers ≤ threshold, on FUNNY, or with no team LP left; a failed hidden core keeps the clear', () => {
   const gd = new GameData(DATA, 'mode_multi_normal');
   assert.equal(hiddenEligible(gd, { layerSum: 1200, teamLp: 50 }), false);
   assert.equal(hiddenEligible(gd, { layerSum: 1201, teamLp: 50 }), true);
-  assert.equal(hiddenEligible(gd, { layerSum: 5000, teamLp: 1 }), false);
+  // team LP ≥ 1 is enough: the owner's decision of 2026-10-15 (GitHub #645; PRTS's user-contributed text says > 1)
+  assert.equal(hiddenEligible(gd, { layerSum: 5000, teamLp: 1 }), true);
+  assert.equal(hiddenEligible(gd, { layerSum: 5000, teamLp: 0 }), false);
+  assert.equal(hiddenEligible(new GameData(DATA, 'mode_single_hard'), { layerSum: 351, teamLp: 1 }), true);
   assert.equal(hiddenEligible(new GameData(DATA, 'mode_single_hard'), { layerSum: 351, teamLp: 2 }), true);
   assert.equal(hiddenEligible(new GameData(DATA, 'mode_single_hard'), { layerSum: 350, teamLp: 2 }), false);
   assert.equal(hiddenEligible(new GameData(DATA, 'mode_multi_funny'), { layerSum: 9999, teamLp: 99 }), false);

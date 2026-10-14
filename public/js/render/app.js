@@ -149,6 +149,7 @@ import { pieceDirOf, pickUnitOf } from './app/pick.js';
 import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
 import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, penShown, leaderShown } from './app/view.js';
 import { renderInfo, FORCED_EXIT, showsDeathFx } from './app/info.js';
+import { skinFor } from '../ui/skins.js';
 import { resolveAssets, makeData, withTimeout, QUALITY_RES, BOARD_RES, releaseGl } from './app/host.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -710,9 +711,14 @@ export async function createFieldView(host, options = {}) {
     const pick = chess && chess.isDiy ? diyPicks[chess.baseId || chess.chessId] : null;
     const dr = pick ? data.diy(piece.id, pick) : null;
     const rec = si || dr || chess;
+    const baseId = chess?.baseId || piece.id;
     return {
       kind: 'op', side: 'ally', defId: piece.id,
       spine: rec?.assets?.spine || rec?.charId || null, avatar: rec?.assets?.avatar || rec?.charId || null,
+      // 干员皮肤 (docs/SKINS.md): present when the prep unit came from the server (Match.prepView / the snapshot); a
+      // golden piece's own id is not a skin key (setSkins only accepts base chess ids), so fall back to this client's
+      // own choice
+      skin: piece.skin ?? skinFor(baseId) ?? skinFor(piece.id) ?? null,
       tier: chess?.tier || piece.tier || 1, golden: !!(piece.golden || chess?.isGolden), dir,
       ...(si ? { standInFor: si.standInFor } : null),
       ...(dr ? { diy: { charId: pick.charId, skillIndex: pick.skillIndex ?? null, uniEquipId: pick.uniEquipId ?? null } } : null),
@@ -797,15 +803,18 @@ export async function createFieldView(host, options = {}) {
       const info = pieceInfo(e.piece, e.area);
       // (the model is part of it: a piece whose body changes — a merge, an own 补位 / 自选 setting arriving — is rebuilt)
       const sig = `${info.kind}|${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}`;
+      // 干员皮肤 (docs/SKINS.md): the chosen skin is part of the model too — swapping it rebuilds the prep piece.
+      // Derived on its own line on purpose: test/ui/standin-ui.test.js pins the `sig` line above verbatim.
+      const viewSig = `${sig}|${info.skin || ''}`;
       let v = views.get(key);
-      if (v && v._sig !== sig) { dropView(key); v = null; }
+      if (v && v._sig !== viewSig) { dropView(key); v = null; }
       const w = slotWorld(e);
       if (!w) continue;
       if (!v) {
         // board pieces are built facing their stored dir (no Front → Back swap after every round's rebuild)
         const full = { ...info, id: key, uid: e.uid, x: w.x, y: w.y, facing: info.dir === 'LEFT' ? -1 : 1, maxHp: 1 };
         v = info.kind === 'item' ? new ItemView(ctx, full) : new UnitView(ctx, full, { prep: true });
-        v._sig = sig;
+        v._sig = viewSig;
         v.setWorld(w.x, w.y, w.z);
         views.set(key, v);
         if (promoFrom.has(e.uid)) {
@@ -923,7 +932,7 @@ export async function createFieldView(host, options = {}) {
       const info = u && Number.isInteger(u.uid) ? renderInfo({ ...u, id: `m:${u.uid}` }) : null;
       if (!info) continue;
       keep.add(info.id);
-      const sig = `${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}|${info.x},${info.y}|${info.dir || ''}|${(info.items || []).join(',')}`;
+      const sig = `${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}|${info.skin || ''}|${info.x},${info.y}|${info.dir || ''}|${(info.items || []).join(',')}`;
       let v = views.get(info.id);
       if (v && v._sig !== sig) { dropView(info.id); v = null; }
       if (v) continue;

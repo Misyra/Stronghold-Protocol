@@ -44,6 +44,9 @@ export const DATA_FILES = Object.freeze({
   choices: 'choices.json',
   config: 'config.json',
   assets: 'assets.json',
+  // 干员皮肤目录 (docs/SKINS.md): { chars: { [charId]: [{ id, name, group }] } } — every skin the project knows,
+  // installed or not. The URLs of an installed one come from `assets` above; this file never carries URLs.
+  skins: 'skins.json',
   // 补位 stand-ins (DATA.md §18): the bodies the 干员持有 screen, the cards and the detail card compose (shared/standIn.js)
   backups: 'backups.json',
   // Optional art extracted from a local game client (DESIGN §13): { groups: { '<subdir>': { name: { path, w, h } } } }.

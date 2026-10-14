@@ -85,7 +85,8 @@ import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
-import { SettingsModal, settingsStore } from '../ui/settings.js';
+import { CombatMetricsPanel } from '../ui/combatMetrics.js';
+import { SettingsModal, settingsStore, useSettings } from '../ui/settings.js';
 import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { openGuide } from '../ui/guide.js';
 import { actions, onRefreshBusy } from '../ui/gameActions.js';
@@ -124,6 +125,14 @@ import { keepEarly, audioEarly } from './game/early.js';
 import { MatchEnded, PausedOverlay } from './game/overlays.js';
 import { inspectRange } from './game/range.js';
 import { t, tParts } from '../../../shared/i18n.js';
+
+// 作战统计 is opt-in (settings `combatMetrics`, default off). The runner does not import the settings store;
+// this screen pushes the switch. Outside a browser battleRunner is null, so this is a no-op.
+if (battleRunner) {
+  const applyCombatMetrics = (s) => battleRunner.setCombatMetrics(s?.combatMetrics === true);
+  applyCombatMetrics(settingsStore.get());
+  settingsStore.subscribe(applyCombatMetrics);
+}
 
 /** Router for the in-match screens. */
 export function GameScreen() {
@@ -165,6 +174,7 @@ function MatchScreen() {
   const emotes = useStore((s) => s.emotes);
   const roomSolo = useStore((s) => s.room?.mode === 'solo');
   const spectator = useStore((s) => isSpectating(s.room, s.me.playerId));
+  const metricsSetting = useSettings().combatMetrics === true;
   // gameplay plugins (DESIGN §32.6): the HUD corner's MOD mark — re-rendered only when the room's content changes
   const modRoom = useStore((s) => (s.room?.content?.vanilla === false ? s.room : null), (a, b) => (a?.content ?? null) === (b?.content ?? null));
   // the room's spectator seats for the top bar's 观战席 capsule (ui/hud.js SpectatorPill; GitHub #120): room.state keeps coming
@@ -195,6 +205,12 @@ function MatchScreen() {
   const [refreshBusy, setRefreshBusy] = useState(false);
   useEffect(() => onRefreshBusy(setRefreshBusy), []);
   const [rewardMin, setRewardMin] = useState(false);
+  // 作战统计 (battle/metrics.js): a client-only local damage/healing panel — never uploaded to the server.
+  // Off unless the setting is on. A gameplay-plugin room (modRoom: content.vanilla === false) is simulated in a
+  // Worker, which has no damaged/heal data, so the button stays hidden. The hud.right ui-slot is not this gate.
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const showMetrics = metricsSetting && !modRoom && !spectator;
+  useEffect(() => { if (!showMetrics) setMetricsOpen(false); }, [showMetrics]);
   const [emoteOpen, setEmoteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
@@ -1517,7 +1533,16 @@ function MatchScreen() {
       <div class="ui-slot gm__ui-slot" data-ui-slot="hud.right" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>
 
       <div class="gm__corner">
+        ${showMetrics && metricsOpen ? html`<${CombatMetricsPanel} myId=${myId} onClose=${() => setMetricsOpen(false)} />` : null}
         ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        ${showMetrics ? html`<button type="button" class="gm__gear gm__metrics" aria-label=${t('作战统计')} title=${t('作战统计')} aria-expanded=${metricsOpen}
+          aria-controls="combat-metrics-panel" onKeyDown=${(e) => { if (e.key === ' ') e.stopPropagation(); }} onClick=${() => {
+            setMetricsOpen(!metricsOpen);
+            setEmoteOpen(false);
+            setDetail(null);
+            setSel(null);
+            setBondOpen(null);
+          }}><${Icon} name="signal" /></button>` : null}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />

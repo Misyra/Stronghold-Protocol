@@ -23,7 +23,7 @@ npm start
 
 `SP_STATE_SAVE_MS` 调整周期，最短 1000 毫秒，默认 10000。`SP_STATE_FILE=off` 关闭持久化。程序调用 `startServer()` 时默认不创建文件；传入 `stateFile` 或 `store` 启用，`store: null` 显式关闭，方便测试与嵌入使用。
 
-升级流程：正常停止旧进程，备份状态文件，更新代码与依赖，再启动新进程。不要删除 `.state/`，也不要运行两个进程同时写同一路径。检查 `/healthz.persist` 的 `enabled`、`mode`、`writes`、`failures`、`checkpoints`；`failures` 增长说明保存有问题。不能在旧版首次升级前自动取回旧进程尚未写盘的内存，请等那批对局结束后部署此功能。
+升级流程：正常停止旧进程，备份状态文件，更新代码与依赖，再启动新进程。不要删除 `.state/`，也不要运行两个进程同时写同一路径。检查 `/metrics.persist`（只对本机回环 / 私网应答）的 `enabled`、`mode`、`writes`、`failures`、`checkpoints`；`failures` 增长说明保存有问题。不能在旧版首次升级前自动取回旧进程尚未写盘的内存，请等那批对局结束后部署此功能。
 
 ## 存储布局与持久化 Worker
 
@@ -35,7 +35,7 @@ npm start
 
 无论哪种布局，检查点的**编码与 JSON 校验都在专用持久化 Worker 线程**完成（`server/workers/persistence.js`）；主线程仍需捕获字段及编码元数据，Worker 崩溃或超时自动降级为同步检查点编码。写轮次按 `SAVE_MS`（默认 10 秒）合并，检查点事件预约下一个写槽。目录模式按「分片 → 必要的 index → runtime」写入：分片带本次检查点版本、局数和初始时钟，runtime 的时钟引用对应分片版本，并引用 index 版本。保存中断时只合并版本匹配的时钟，否则使用分片自带时钟；尚未提交的新一局不会挂到旧房间。废弃分片在元数据提交成功后才删除。每个文件独立原子替换，整轮保存不是跨文件事务，崩溃可能恢复到已写入的部分进度。失败不会更新对应的已保存缓存，下一轮继续重试。
 
-**未变化的对局不再重复编码**（2026-10，`snapshot.persistVersion`）：每局有一个便宜的持久化版本号（`markPublic`/`markPrivate` 的变更计数 + 直接读取的持久化标量面 + 六个 RNG 位置 + 共享池 revision）。与已落盘分片同一版本时只刷新时钟信封，跳过字段捕获、跨线程结构化克隆、编解码与 JSON 往返；分片字节不变，因此也不会重写。房间结束、换局或房间消失时丢弃版本号。`SP_PERSIST_VERIFY=1`（或构造参数 `verifyVersion`）打开反向自证：版本说没变时照常编码并与已存 body 逐字节比对，不同则计入 `versionHoles`、告警并提交新 body。`/healthz` 的 `persist` 暴露 `checkpointsEncoded` / `checkpointsSkipped` / `versionChecks` / `versionHoles`，采样复核用；`versionHoles` 应长期为 0。测量与复现见 [同步链路基线](../development/STATE_SYNC_BENCHMARK.md)。
+**未变化的对局不再重复编码**（2026-10，`snapshot.persistVersion`）：每局有一个便宜的持久化版本号（`markPublic`/`markPrivate` 的变更计数 + 直接读取的持久化标量面 + 六个 RNG 位置 + 共享池 revision）。与已落盘分片同一版本时只刷新时钟信封，跳过字段捕获、跨线程结构化克隆、编解码与 JSON 往返；分片字节不变，因此也不会重写。房间结束、换局或房间消失时丢弃版本号。`SP_PERSIST_VERIFY=1`（或构造参数 `verifyVersion`）打开反向自证：版本说没变时照常编码并与已存 body 逐字节比对，不同则计入 `versionHoles`、告警并提交新 body。`/metrics` 的 `persist` 暴露 `checkpointsEncoded` / `checkpointsSkipped` / `versionChecks` / `versionHoles`，采样复核用；`versionHoles` 应长期为 0。测量与复现见 [同步链路基线](../development/STATE_SYNC_BENCHMARK.md)。
 
 单个分片损坏只影响该房间（对局回到大厅），不阻止整个服务器启动；index 或 runtime 损坏会阻止启动并保留原文件。首次保存若在 index 写完、runtime 创建前中断，允许使用 index 时间和分片初始时钟恢复。
 

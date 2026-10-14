@@ -50,7 +50,7 @@ server/
     files.js               one file → response: MIME, brotli q5 / gzip (.skel/.atlas/.json/.js/.css …), ETag (size + mtime, and the release tag of a transformed body) / 304,
                            cache policy, ranges; serveBuffer for the served manifests
     buildTag.js            the legacy build-tag helper (the served build is the release tag, static.jsersion)
-    routes.js              request listener: 414 / 400 / 405 guards, GET /healthz (?traffic=1: the counters), then static files
+    routes.js              request listener: 414 / 400 / 405 guards, GET /healthz (public), GET /metrics (?traffic=1: the counters) — the latter two loopback / private only — then static files
     traffic.js             traffic counters: HTTP body bytes by category (assets / audio / code / data), WebSocket wire / payload
     common.js              security headers, URL split, error page, JSON replies, bare 400 for unparseable requests
     boot.js                boot banner (Local / LAN / tunnel URLs), port-in-use hint, graceful SIGINT / SIGTERM

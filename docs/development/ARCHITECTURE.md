@@ -77,7 +77,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | path | what |
 |---|---|
 | `server/index.js` | the process entry (`npm start`); `startServer()` wires `server/http/` |
-| `server/http/` | `config.js` (environment), `websocket.js` (sessions, `/ws`, permessage-deflate), `static.js` (the mounts, the `/_v/<tag>/` release routes, the served manifests), `media.js`, `files.js` (MIME, brotli / gzip, ETag, ranges), `buildTag.js`, `routes.js` (`/healthz`, the loopback-only `?traffic=1`), `traffic.js` (bytes sent by category and on the WebSocket), `common.js`, `boot.js` (a pending update package first, banner, shutdown) |
+| `server/http/` | `config.js` (environment), `websocket.js` (sessions, `/ws`, permessage-deflate), `static.js` (the mounts, the `/_v/<tag>/` release routes, the served manifests), `media.js`, `files.js` (MIME, brotli / gzip, ETag, ranges), `buildTag.js`, `routes.js` (the public `/healthz`, the loopback/private-only `/metrics` and `?traffic=1`), `traffic.js` (bytes sent by category and on the WebSocket), `common.js`, `boot.js` (a pending update package first, banner, shutdown) |
 | `server/net.js` | sessions and reconnect tokens, rate limits, message validation |
 | `server/lobby.js` | rooms, seats, AI seats, spectators; starts a `Match` |
 | `server/data.js` | loads `data/*.json` once (frozen) |

@@ -194,7 +194,7 @@ sudo systemctl reload nginx
 
 验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 请求应返回 304。素材清单看 `X-Asset-Manifest-Cache`，公告看 `X-Announcement-Cache`。`/api/ping` 不应有共享缓存，普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
 
-完整示例中的 `/healthz` 已禁用共享缓存：探针读取完整实时样本，玩家使用 `/healthz?build=1` 读取小型版本响应。合入时删除旧的 healthz `proxy_ignore_headers Cache-Control` 与 5 秒共享缓存配置。缓存 location 显式 `proxy_buffering on`，避免继承 WebSocket 的关闭缓冲配置导致缓存不生效；不要全站覆盖 `X-Accel-Buffering: no`。`/_v/` 缓存键使用新命名空间并隔离 Host、端口、上游与完整 URI，只缓存 200，保留 Vary。Range 可由缓存完整响应切片，不能据此把 206 单独长期缓存。
+完整示例中的 `/healthz` 已禁用共享缓存：探针读取实时样本，玩家使用 `/healthz?build=1` 读取小型版本响应。进程性能数据在 `/metrics`（只对本机回环 / 私网应答），它走通用 `location /`（同样 `proxy_cache off`），不需要单独的 location。合入时删除旧的 healthz `proxy_ignore_headers Cache-Control` 与 5 秒共享缓存配置。缓存 location 显式 `proxy_buffering on`，避免继承 WebSocket 的关闭缓冲配置导致缓存不生效；不要全站覆盖 `X-Accel-Buffering: no`。`/_v/` 缓存键使用新命名空间并隔离 Host、端口、上游与完整 URI，只缓存 200，保留 Vary。Range 可由缓存完整响应切片，不能据此把 206 单独长期缓存。
 
 <a id="3-docker"></a>
 
@@ -263,7 +263,7 @@ sudo systemctl start stronghold
 
 验收：
 
-1. `curl -s http://127.0.0.1:3000/healthz`：版本、`persist`、`assetsCdn`、`assetsManifest` 符合部署配置。
+1. `curl -s http://127.0.0.1:3000/healthz`：版本、`assetsCdn`、`assetsManifest` 与在线统计符合部署配置；`curl -s http://127.0.0.1:3000/metrics`：`persist`、`workers`、`memory` 等进程诊断正常（该接口只对本机回环 / 私网应答）。
 2. `curl -s http://127.0.0.1:3000/api/announcement`：`source.mode` 为 `agent`（无探针 feed 站点为 `panel`）；在面板发布后确认正文生效。
 3. 浏览器打开游戏，创建并加入房间；确认 WebSocket 正常连接，刷新后可重连。
 4. CDN 模式检查图片和音频请求带 `?v=`；预载窗口可导入资源包并显示结果。
@@ -275,15 +275,15 @@ sudo systemctl start stronghold
 | 端口占用 | 是否重复启动了 systemd、计划任务或手动进程；先停止重复进程 |
 | 画面或声音缺失 | `node tools/doctor.mjs`；CDN 模式核对清单和资源 URL，本机模式补跑 setup |
 | 面板已发布，游戏无公告 | 核对 `/api/announcement.source`、探针推送状态、文件路径和日志 `[announcement]`；见[公告排错](ANNOUNCEMENTS.md#排错) |
-| 重启后无法恢复 | `/healthz.persist` 和状态目录权限；是否挂载原持久卷；见[持久化说明](PERSISTENCE.md) |
+| 重启后无法恢复 | `/metrics.persist`（本机回环）和状态目录权限；是否挂载原持久卷；见[持久化说明](PERSISTENCE.md) |
 | 游戏能访问，面板监控无数据 | 探针、令牌及 nginx 管理路由；见[监控接入](MONITORING.md) |
 | CPU / 内存过高 | Worker 数量、队列与校验模式，见[性能说明](../development/PERFORMANCE.md) |
 | 想知道开服电脑上传了多少流量 | 本机 / 局域网打开 `/healthz?traffic=1`，按类别看 `traffic.http` 与 `traffic.ws`；公网访问者只会拿到普通报告 |
 | 素材地址里出现 `/_v/<tag>/` 前缀 | 这是本仓库的版本化地址（`server/assetVersion.js`）：素材字节没变前缀就不变、浏览器长期缓存，属正常现象；怀疑素材没更新时先确认服务器上真的换了文件 |
 
-`SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/healthz` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
+`SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/metrics` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
 
-`SP_ROOM_WORKERS`（默认 0，可选 1 到 SP_WORKERS，不得超过 SP_WORKERS，否则拒绝启动）启用按房间分组的模拟泳道：每个房间的模拟任务固定排进同一泳道的独立队列，不同房间的任务互不插队；对局本身仍留在主线程。开启后 `/healthz` 的 `workers.kind` 变为 `room-lanes`，并逐泳道给出房间数与任务明细。它只改变排队方式（队列隔离），不承诺任何性能收益；是否开启请结合 `/healthz` 的实测数据决定，变量修改需重启。
+`SP_ROOM_WORKERS`（默认 0，可选 1 到 SP_WORKERS，不得超过 SP_WORKERS，否则拒绝启动）启用按房间分组的模拟泳道：每个房间的模拟任务固定排进同一泳道的独立队列，不同房间的任务互不插队；对局本身仍留在主线程。开启后 `/metrics` 的 `workers.kind` 变为 `room-lanes`，并逐泳道给出房间数与任务明细。它只改变排队方式（队列隔离），不承诺任何性能收益；是否开启请结合 `/metrics` 的实测数据决定，变量修改需重启。
 
 <!-- 保留旧文档锚点，外部链接继续到达对应说明。 -->
 <a id="16-维护公告"></a>
@@ -336,7 +336,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 例如 `SP_CHAT_LOG_RETENTION_DAYS=30` 保留最近 30 个 UTC 日期，修改后重启。清理只处理目录内日期有效的标准日志文件，不递归遍历目录、不跟随文件链接，也不删除其他文件；一天前遗留的本程序临时归档文件会回收。
 
-`/healthz.chatLog` 和 `/metrics.chatLog` 提供日志文件数、总占用字节数、原文件与归档的数量/大小、待写记录数、丢失记录数、维护错误次数、最近完成维护时间和保留配置。统计在后台扫描后缓存，正常追加成功时增量更新；初次扫描完成前大小和文件数为 `null`，目录不存在时完成扫描后为 `0`。接口不读取或返回消息正文、IP、昵称、日志目录路径或文件名，玩家界面不增加日志入口。
+`/metrics.chatLog`（只回应回环 / 私网调用者，公开的 `/healthz` 不含该字段）提供日志文件数、总占用字节数、原文件与归档的数量/大小、待写记录数、丢失记录数、维护错误次数、最近完成维护时间和保留配置。统计在后台扫描后缓存，正常追加成功时增量更新；初次扫描完成前大小和文件数为 `null`，目录不存在时完成扫描后为 `0`。接口不读取或返回消息正文、IP、昵称、日志目录路径或文件名，玩家界面不增加日志入口。
 
 ## 同盟房间收录到联机站
 

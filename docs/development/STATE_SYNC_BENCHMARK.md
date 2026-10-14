@@ -91,7 +91,7 @@
 
 - 整帧文本不再为每个状态帧预建:`prepareStateFrame` 只在真的要发整帧时构建它,字节数用头部长度 + 编码长度算术得出(头部是纯 ASCII)。增量帧因此不再各自产生一份 4–5 KiB 的短命字符串。
 - `SP_STATE_DELTA_VERIFY=1`:每条增量按客户端解码路径回放(`JSON.parse` 线上文本 → `applyStatePatch`),与服务端当前状态做键序无关的比对;不符则计数并**退回整帧**(不会发出错误的补丁)。它是"差分基线必须跟实际发送一致"的运行时版本,`test/state-delta.test.js` 用整局脚本对局断言 `verifyChecked > 50 && verifyMismatches === 0`。
-- `/healthz` 新增 `stateDelta`:`frames` / `fullFrames` / `deltaFrames` / `parsedBaselines` / `verifyChecked` / `verifyMismatches`。两次采样相减即为速率——这是复核"解析到底发生了几次"的采样钩子。
+- `/metrics` 提供 `stateDelta`:`frames` / `fullFrames` / `deltaFrames` / `parsedBaselines` / `verifyChecked` / `verifyMismatches`(该接口只回应回环 / 私网调用者,公开的 `/healthz` 不再携带进程诊断字段)。两次采样相减即为速率——这是复核"解析到底发生了几次"的采样钩子。
 
 ## 五、优先级 2:无效状态更新
 
@@ -128,7 +128,7 @@
 - **被跳过的检查点仍然精确还原当前对局**:`restoreMatch` 后的 `matchState` 与活对局逐字段相等(这是"恢复不能漏掉任何已确认的状态变化");
 - 版本号不是"信"而是"查":故意只改一个持久化字段(`gameSpeed`)时,检测器报警并且新 body 覆盖旧 body(证明前一条测试的 0 洞是有意义的)。
 
-`/healthz` 的 `persist` 新增 `checkpointsEncoded` / `checkpointsSkipped` / `versionChecks` / `versionHoles`(`versionHoles` 应长期为 0)。
+`/metrics` 的 `persist` 新增 `checkpointsEncoded` / `checkpointsSkipped` / `versionChecks` / `versionHoles`(`versionHoles` 应长期为 0)。
 
 ## 八、端到端对照(同规模,A/B)
 
@@ -143,7 +143,7 @@
 | 稳态分片写入 | 0 | 0(两侧都靠分片脏检测) |
 | 磁盘 / 重启恢复 | 253 文件 1978 KB,250/250 恢复 | 253 文件 1979 KB,250/250 恢复 |
 
-稳态那一轮是 **-89%(约 10 倍)**:跳过的是 250 次捕获 + 250 次跨线程结构化克隆 + 250 次编解码。这是"房间在两轮存档之间什么都没变"时的上限;真实服务器上的收益取决于有多少轮存档落在这样的时刻,用 `/healthz` 的 `checkpointsSkipped` 与 `checkpointsEncoded` 两个计数即可直接测出来。
+稳态那一轮是 **-89%(约 10 倍)**:跳过的是 250 次捕获 + 250 次跨线程结构化克隆 + 250 次编解码。这是"房间在两轮存档之间什么都没变"时的上限;真实服务器上的收益取决于有多少轮存档落在这样的时刻,用 `/metrics` 的 `persist.checkpointsSkipped` 与 `persist.checkpointsEncoded` 两个计数即可直接测出来。
 
 ### 状态链(16 房间 / 64 连接 / 25 s 窗口,每侧 4 次)
 
@@ -246,7 +246,7 @@ node tools/state-sync-bench.mjs --rooms 24 --sockets 96 --idle-rooms 300 --secon
 SP_MODERATION_KEY_FILE=<部署密钥> node tools/bench-state-delta.mjs --generate-samples
 SP_MODERATION_KEY_FILE=<部署密钥> node tools/bench-state-delta.mjs --variant full|delta --sockets 2000 --seconds 20
 
-# 检查点:编码 vs 跳过(/healthz 的 persist 与 stateDelta 计数是生产侧采样钩子)
+# 检查点:编码 vs 跳过(/metrics 的 persist 与 stateDelta 计数是生产侧采样钩子)
 SP_PERSIST_VERIFY=1 node --test test/persist-version.test.js
 
 # 差分:整局脚本对局的回放自检

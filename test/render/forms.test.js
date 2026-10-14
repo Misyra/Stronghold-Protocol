@@ -566,7 +566,8 @@ test('render/app.js hands the `form` of a sim fx (shared/protocol.js fxForm) wit
   assert.match(src, /const x = late > 0 \? \{ \.\.\.e\[4\], late, \.\.\.\(Number\(e\[4\]\.dur\) > 0 \? \{ dur: Math\.max\(0, Number\(e\[4\]\.dur\) - late\) \} : \{\}\) \} : e\[4\];/);
   // …and UnitView.setForm skips a change clip that would already have ended
   assert.match(readFileSync(path.join(ROOT, 'public/js/render/units.js'), 'utf8'), /!\(late > 0 && late >= \(this\.actor\.dur\?\.\(f\.change\) \?\? Infinity\)\)/);
-  assert.match(src, /if \(!\(late > 0\)\) fx\.simFx\(/);
+  // (a kit fx the official skill effects stand for is not drawn procedurally either: render/vfx/skillfx.js simFx)
+  assert.match(src, /if \(!\(late > 0\) && !wiring\.simFx\(e\[1\], Number\(e\[2\]\), Number\(e\[3\]\), e\[4\]\)\) fx\.simFx\(/);
   assert.match(src, /interp\.takeEvents\(renderT, EVS, renderT - 1\.5, LATE\);/);
 });
 

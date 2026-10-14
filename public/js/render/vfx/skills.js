@@ -3,12 +3,19 @@
 //
 //   resolveSkill(idx, { info, rec })        → { unitKey, skillId, skill, via, reason } — the official skill a unit uses
 //   skillPlan(idx, unitKey, skillId, opts)  → SkillPlan (below): what to play on which client signal, and where
+//   planFor(idx, { info, rec })             → { unitKey, skillId, reason, srec, plan, charge } — both in one call (the wiring)
 //   attackFx(plan, { heal, ranged })        → the effects of one attack of the owner while the skill is on
+//   skillProjectile(idx, plan)              → the projectile a ranged attack of the skill's own ability flies, or null
+//   targetsOf(idx, plan)                    → the `targets` entries the client can place: { status, hit, none }
+//   buffDuration(srec)                      → a skill's buff duration from our record's blackboard, or null
 //   slotKey(entry, dir)                     → the key of a directional row for a facing ('UP' | 'RIGHT' | 'DOWN' | 'LEFT')
 //   planKeys(plan) / chargeKeys(plan)       → every key of a plan (preloading)
 //   anchorOf(desc)                          → where a prefab descriptor places its effect (_spawnLocation, FollowMountPoint)
-//   chargePlan(idx, unitKey)                → a 秘术师's stored-energy effects (CHARGE_EMITTERS), null for other units
+//   chargePlan(idx, unitKey)                → a 秘术师's stored-energy effects (chargeSource: the index's export, else
+//                                             CHARGE_EMITTERS), null for other units
 //   chargeStep(plan, prev, next)            → what changes when the stored count goes prev → next
+//   FX_BINDINGS / bindingKeys(idx, skillId) → kit 'fx' tuples bound to a skill's official effect (Phase 3b, below)
+//   eventNum(e)                             → an ability event (name or number) → Torappu.Battle.AbilityStandard/Event
 //
 // ---- Resolving a battle unit (resolveSkill) --------------------------------------------------------------------------
 // Fields relied on — the view's info (render/app/info.js renderInfo of the sim's UnitInfo, server/sim/snapshot.js):
@@ -97,6 +104,11 @@
 //     all 10 skills of the used set that have them (client 26-09-13, [uc]skills.ab: skchr_acpion_3 8, ascln_1 2,
 //     blkkgt_1 2, chen_3 10, chen3_2 6, irene_1 2, phatm2_1 2 (hit + hit_range each), vvana_1 2 + 3, zuole_1 2 / 3,
 //     zuole_3 7); [ASSUMED] for later sets — a `group` field on the use (a later extractor) wins.
+//   * `pulse`: the entries left unmapped as 'tick' / 'channel-hit' / 'hit-no-attack' (the skill's periodic or non-attack
+//     hits) are also listed here with their reason: no event of the engine names them, but a kit may send an 'fx' of its
+//     own for that moment (the wiring binds them to it, Phase 3b — below). They stay in `unmapped` (the static count).
+//   * `projectiles`: the skill's own projectile keys that index.json has (skills[id].projectiles); `rootClass`: the
+//     skill's root class when the extractor writes it (ReplacementSkill, CastSkill, … — a later extractor), else null.
 //
 // ---- Role → client signal (render/app.js handleEvent; b.ev tuples, DESIGN §8.2; b.snap via render/interp.js) ---------
 //   start     ['skill', id, 1]. An instant skill sends 1 and 0 in one tick (its attack, if any, between them); a passive
@@ -157,9 +169,37 @@
 //     5, 6, 8, 9, 10), every 3 merge (_mergeSize) into a 转置能量 slot (…_rank_02[_k] + …_rank_02_change[_k]); her kit
 //     (op-veen.js) keeps its own store: no signal either.
 //
+// A later extractor exports the charge emitters itself (Phase 1c): `chargeSource` reads index.json's `units[id].charge`
+// when it has CHARGE_EMITTERS' shape ({ cap, slots: [{ spell, cast, mount }], projectiles, … }) and falls back to the table.
+//
+// ---- What the client can place beyond the signals above (Phase 3b; render/vfx/skillfx.js plays it) --------------------
+//   * targetsOf: a `targets` entry carried by the buffs an attack ability of the skill applies (`<Attack>._activeBuffs`)
+//     sits on that attack's targets, which the 'atk' events name — `hit` (from the hit, for buffDuration(srec) s, else
+//     while the skill lasts [ASSUMED]; when the sim reports a status whose generic loop is the same key, the status
+//     wiring's loop takes over — never drawn twice); another whose key is a generic status loop (index.json
+//     generic.status: buff_stun, buff_burn, …) is drawn by the status wiring when the sim reports that status —
+//     `status`; the rest — auras, global auras, selectors, other abilities' targets — `none`.
+//   * skillProjectile: a ranged attack ability of the skill flies the skill's own projectile (index.json does not say
+//     which ability fires which projectile): the only one, else the one named `_s<n>` / `_sk<n>` after the skill's number
+//     (the shortest such key), else the first [ASSUMED].
+//   * FX_BINDINGS: a kit 'fx' tuple that stands for an official effect of the skill which no plan row places (the skill's
+//     projectile reaching a target the kit picks, …), by skill id and fx kind — see the table.
+//
 // [ASSUMED] (the data does not say): the placements marked above; a looping prefab in a one-shot role is held for one
 // cast (a skill-level begin effect for the skill); buff loops on the owner last the skill (a buff's own duration is not
 // in index.json); hit groups beyond the last repeat the last; passive skills' loops follow the deploy.
+
+/** Torappu.Battle.AbilityStandard/Event (DESIGN §33.12): index.json's skill uses write the names, units' Emit rows the numbers. */
+export const ABILITY_EVENTS = Object.freeze({
+  ON_ATTACHED: 0, ON_DETACHED: 1, ON_CAST_START: 2, ON_CAST_END: 3, ON_SPELL_ON: 4, ON_SPELL_END: 5, ON_ATTACK_FINISH: 6,
+  ON_ATTACK_CHECK_POINT: 7, ON_OVERLOAD: 8,
+});
+
+/** An ability event as its number (a name of ABILITY_EVENTS or a number); null when absent or unknown. */
+export function eventNum(e) {
+  if (Number.isInteger(e)) return e;
+  return typeof e === 'string' && Object.prototype.hasOwnProperty.call(ABILITY_EVENTS, e) ? ABILITY_EVENTS[e] : null;
+}
 
 /** Ability classes whose emitter rows follow each attack (the skill prefab's own attack). */
 const isAttack = (a) => typeof a === 'string' && /Attack|Heal/.test(a) && !/^Channeling/.test(a);
@@ -347,10 +387,13 @@ function kindOf(srec) {
 }
 
 const emptyPlan = (unitKey, skillId) => ({
-  unitKey, skillId, mode: null, modeName: null, kind: null,
+  unitKey, skillId, mode: null, modeName: null, kind: null, rootClass: null, projectiles: [],
   start: [], loop: [], end: [], ready: [], range: [], attacks: [], each: { cast: [], hit: [[]] }, trigger: [], targets: [],
-  unmapped: [],
+  pulse: [], unmapped: [],
 });
+
+/** Unmapped reasons whose entries a kit's own 'fx' of the skill may stand for (plan.pulse). */
+const PULSE = new Set(['tick', 'channel-hit', 'hit-no-attack']);
 
 /**
  * The plan of a skill (module header).
@@ -370,6 +413,12 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
   if (Number.isInteger(skill.mode)) {
     plan.mode = skill.mode;
     plan.modeName = unit?.modes?.[skill.mode]?.name ?? null;
+  }
+  if (typeof skill.rootClass === 'string' && skill.rootClass) plan.rootClass = skill.rootClass;
+  const projs = isObj(idx.projectiles) ? idx.projectiles : {};
+  for (const k of Array.isArray(skill.projectiles) ? skill.projectiles : []) {
+    const kk = lc(k);
+    if (kk && projs[kk] && !plan.projectiles.includes(kk)) plan.projectiles.push(kk);
   }
   const prefabs = isObj(idx.prefabs) ? idx.prefabs : {};
   const uses = Array.isArray(skill.uses) ? skill.uses : [];
@@ -399,7 +448,11 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
       if (hook) e.afterFirst = true;
       if (hooked) e.firstOnly = true;
       const placed = place(plan, e, u, { attackOf, eachHit });
-      if (placed) miss(key, role, placed, u);
+      if (placed) {
+        miss(key, role, placed, u);
+        // a tick of the owner's buff plays on the owner, the others on what they hit
+        if (PULSE.has(placed)) plan.pulse.push({ ...e, at: placed === 'tick' && e.on !== 'targets' ? 'owner' : 'target', hold: oneShotHold(e), reason: placed });
+      }
     }
   }
   for (const a of attacks.values()) {
@@ -534,6 +587,77 @@ export function attackFx(plan, { heal = false, ranged = false } = {}) {
   };
 }
 
+/**
+ * The projectile a ranged attack ability of the skill flies (module header: the only one of the skill's projectiles, else
+ * the shortest key named `_s<n>` / `_sk<n>` after the skill's number, else the first) — null without one.
+ * @param {any} _idx index.json (unused for now: the plan carries the keys it has)
+ * @param {ReturnType<typeof skillPlan>} plan
+ */
+export function skillProjectile(_idx, plan) {
+  const list = Array.isArray(plan?.projectiles) ? plan.projectiles : [];
+  if (list.length <= 1) return list[0] || null;
+  const n = /_(\d+)$/.exec(plan.skillId || '')?.[1];
+  if (n) {
+    const re = new RegExp(`_(s|sk)${n}(?![0-9])`);
+    const named = list.filter((k) => re.test(k)).sort((a, b) => a.length - b.length);
+    if (named.length) return named[0];
+  }
+  return list[0];
+}
+
+/** Attack abilities whose `_activeBuffs` sit on the targets an 'atk' names (targetsOf `hit`). */
+const ACTIVE_BUFFS = /^(\w+)\._activeBuffs\b/;
+
+/**
+ * The `targets` entries the client can place (module header): `hit` — carried by an attack ability's `_activeBuffs`, on
+ * that attack's targets (the 'atk' events name them; a status loop the status wiring draws for the same key takes over);
+ * `status` — another carrier, but the key is a generic status loop the status wiring draws when the sim reports it;
+ * `none` — no client signal names the carrier.
+ * @returns {{ status: any[], hit: any[], none: any[] }}
+ */
+export function targetsOf(idx, plan) {
+  const generic = new Set(Object.values(isObj(idx?.generic?.status) ? idx.generic.status : {}).map(lc).filter(Boolean));
+  const out = { status: [], hit: [], none: [] };
+  for (const e of plan?.targets || []) {
+    const m = ACTIVE_BUFFS.exec(e.from || '');
+    if (m && isAttack(m[1])) out.hit.push(e);
+    else if (generic.has(e.key)) out.status.push(e);
+    else out.none.push(e);
+  }
+  return out;
+}
+
+/** Blackboard keys of a buff's duration in our skill records (the first found wins): `duration`, `…_duration`, `….duration`. */
+const DURATION_KEY = /(^|[._])duration$/;
+
+/**
+ * A skill's buff duration (s) from our record's blackboard — `duration`, else the first `…_duration` / `….duration` key
+ * (not a `max_duration`) — or null [ASSUMED: the buffs a skill's attacks apply last that long].
+ */
+export function buffDuration(srec) {
+  const bb = isObj(srec?.bb) ? srec.bb : null;
+  if (!bb) return null;
+  const ok = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (ok(bb.duration)) return bb.duration;
+  for (const [k, v] of Object.entries(bb)) if (DURATION_KEY.test(k) && !/max_duration$/.test(k) && ok(v)) return v;
+  return null;
+}
+
+/**
+ * Everything the wiring needs of a battle unit, in one call: its official skill (resolveSkill), our skill record, the
+ * plan (with `kind` from the record) and its charge plan.
+ * @param {any} idx index.json
+ * @param {{ info?: any, rec?: any, unitKey?: string|null }} unit
+ * @returns {{ unitKey: string|null, skillId: string|null, reason: string|null, srec: any, plan: ReturnType<typeof skillPlan>|null, charge: ReturnType<typeof chargePlan> }}
+ */
+export function planFor(idx, { info = null, rec = null, unitKey = null } = {}) {
+  const res = resolveSkill(idx, { info, rec, unitKey });
+  const index = Number.isInteger(info?.diy?.skillIndex) ? info.diy.skillIndex : Number.isInteger(info?.skillIndex) ? info.skillIndex : undefined;
+  const srec = skillRecordOf(rec, index);
+  const plan = res.skill ? skillPlan(idx, res.unitKey, res.skillId, { rec: srec }) : null;
+  return { unitKey: res.unitKey, skillId: res.skillId, reason: res.reason, srec, plan, charge: res.unitKey ? chargePlan(idx, res.unitKey) : null };
+}
+
 /** Torappu SharedConsts.Direction: the slot of a facing. */
 const DIR_SLOT = Object.freeze({ UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 });
 
@@ -563,6 +687,7 @@ export function planKeys(plan) {
   }
   for (const e of plan?.each?.cast || []) add(e);
   for (const g of plan?.each?.hit || []) for (const e of g) add(e);
+  for (const e of plan?.pulse || []) add(e);
   return [...out];
 }
 
@@ -615,41 +740,59 @@ export const CHARGE_EMITTERS = Object.freeze({
 /** One slot list of a charge emitter → plan slots, keys checked against the index (absent ones go to `missing`). */
 function chargeSlots(list, prefabs, missing) {
   return (list || []).map((s) => {
-    const ok = (k) => { if (prefabs[k]) return true; missing.push(k); return false; };
-    const spell = s.spell.filter(ok), cast = s.cast.filter(ok);
+    const ok = (k) => { if (k && prefabs[k]) return true; if (k) missing.push(k); return false; };
+    const spell = s.spell.map(lc).filter(ok), cast = s.cast.map(lc).filter(ok);
     return {
       hold: spell.filter((k) => prefabs[k].looping),     // stays while the energy is stored
       gain: [...cast, ...spell.filter((k) => !prefabs[k].looping)],   // one-shots of the store (cast start, spell on)
       mount: mountPointName(s.mount),                     // where its projectile leaves from
+      mountType: Number.isInteger(s.mount) ? s.mount : null,   // the same as a MountPointType (render/vfx/mounts.js)
     };
   });
 }
 
+/** A charge-emitter description of CHARGE_EMITTERS' shape (an exported one is checked before it is used). */
+const isChargeSource = (c) => isObj(c) && Number.isInteger(c.cap) && Array.isArray(c.slots) && c.slots.length > 0
+  && c.slots.every((s) => isObj(s) && Array.isArray(s.spell) && Array.isArray(s.cast));
+
 /**
- * A 秘术师's stored-energy plan, or null for a unit without a charge emitter (CHARGE_EMITTERS) or one index.json lacks.
+ * The charge emitters of a unit: index.json's own export (`units[id].charge`, a later extractor) when it has
+ * CHARGE_EMITTERS' shape, else the transcribed table; null for a unit without one.
+ */
+export function chargeSource(idx, unitKey) {
+  const own = idx?.units?.[unitKey]?.charge;
+  if (isChargeSource(own)) return own;
+  return CHARGE_EMITTERS[unitKey] || null;
+}
+
+/**
+ * A 秘术师's stored-energy plan, or null for a unit without a charge emitter (chargeSource) or one index.json lacks.
  * byCount[n]: the loops lit with n stored (cumulative: slots 1…n); onGain[n]: the one-shots of the n-th store; onRelease:
  * the loops stop and n projectiles leave from `mounts[0…n−1]` (the mode's `projectiles` key). `elite` / `eliteS3` /
  * `merged`: 黑键's and 维伊's other stores (no client signal drives them — header).
  */
 export function chargePlan(idx, unitKey) {
-  const src = CHARGE_EMITTERS[unitKey];
-  if (!src || !isObj(idx?.units?.[unitKey])) return null;
+  if (!isObj(idx?.units?.[unitKey])) return null;
+  const src = chargeSource(idx, unitKey);
+  if (!src) return null;
   const prefabs = isObj(idx.prefabs) ? idx.prefabs : {};
   const missing = [];
   const slots = chargeSlots(src.slots, prefabs, missing);
+  // projectile keys by mode, lower case (an exported source may keep the client's case)
+  const byMode = (set) => Object.fromEntries(Object.entries(isObj(set) ? set : {}).map(([m, k]) => [m, lc(k)]).filter(([, k]) => k));
   const plan = {
     unitKey, cap: src.cap, slots, byCount: {}, onGain: {},
-    onRelease: { stop: 'hold', mounts: slots.map((s) => s.mount), projectiles: { ...src.projectiles } },
+    onRelease: { stop: 'hold', mounts: slots.map((s) => s.mount), mountTypes: slots.map((s) => s.mountType), projectiles: byMode(src.projectiles) },
     elite: src.elite ? chargeSlots(src.elite, prefabs, missing) : null,
     eliteS3: src.eliteS3 ? chargeSlots(src.eliteS3, prefabs, missing) : null,
     merged: src.merged ? chargeSlots(src.merged, prefabs, missing) : null,
     mergeSize: src.mergeSize ?? null,
     missing: [...new Set(missing)],
   };
-  if (src.eliteProjectiles) plan.onRelease.eliteProjectiles = { ...src.eliteProjectiles };
-  if (src.mergedProjectiles) plan.onRelease.mergedProjectiles = { ...src.mergedProjectiles };
+  if (src.eliteProjectiles) plan.onRelease.eliteProjectiles = byMode(src.eliteProjectiles);
+  if (src.mergedProjectiles) plan.onRelease.mergedProjectiles = byMode(src.mergedProjectiles);
   const projs = isObj(idx.projectiles) ? idx.projectiles : {};
-  for (const set of [src.projectiles, src.eliteProjectiles, src.mergedProjectiles]) {
+  for (const set of [plan.onRelease.projectiles, plan.onRelease.eliteProjectiles, plan.onRelease.mergedProjectiles]) {
     for (const k of Object.values(set || {})) if (!projs[k] && !plan.missing.includes(k)) plan.missing.push(k);
   }
   for (let n = 1; n <= slots.length; n++) {
@@ -682,5 +825,43 @@ export function chargeKeys(plan) {
   for (const list of [plan?.slots, plan?.elite, plan?.eliteS3, plan?.merged]) {
     for (const s of list || []) for (const k of [...s.hold, ...s.gain]) out.add(k);
   }
+  return [...out];
+}
+
+// ---- kit 'fx' tuples bound to official effects (Phase 3b) ---------------------------------------------------------------
+
+/**
+ * Kit 'fx' tuples (b.ev ['fx', kind, x, y, extra] of server/sim/content/kits) that stand for an official effect of a skill
+ * which no plan row places, by skill id → fx kind. render/vfx/skillfx.js plays the binding and the field view skips the
+ * procedural fx. A binding:
+ *   owner       the extra field naming the skill's owner ('id' | 'src')
+ *   projectile  the skill projectile whose reached effects (onReached, else onHit) play where the fx happens
+ *   at          'point': the fx's (x, y) on the ground (the unit `extra.id` names stands there: its feet)
+ *   hold        how long a looping reached effect stays: a blackboard key of our skill record (seconds), else `holdS`
+ *   cover       fx kinds of the same owner at that tile that the reached effect draws (skipped while it plays)
+ */
+export const FX_BINDINGS = Object.freeze({
+  // 克莱门莎 S3 (op-clemnt.js bombard): the kit marks an enemy's tile ('lock': id = the enemy, src = her) and strikes it
+  // three times ('blast', id = her, 0.5 / 1.5 / 2.5 s later). The client fires projectile_chr_clemnt_s3 at the marked
+  // enemy (AttachToTarget, _immediatelyReach), whose reached effect clemnt_skill_03_mark_all_01 is the mark and its three
+  // strikes (clips Mark_01_start 4.13 s and three Mark_trail_01), cleared when the projectile stops
+  // (_clearReachedEffectWhenStop; its life time from the blackboard: projectile_life_time — the kit's tile lock)
+  skchr_clemnt_3: Object.freeze({
+    lock: Object.freeze({ owner: 'src', projectile: 'projectile_chr_clemnt_s3', at: 'point', hold: 'projectile_life_time', holdS: 5, cover: Object.freeze(['blast']) }),
+  }),
+});
+
+/** The reached effects of a binding's projectile (onReached, else onHit), lower case; [] without them. */
+export function bindingEffects(idx, bind) {
+  const p = bind?.projectile ? idx?.projectiles?.[lc(bind.projectile)] : null;
+  if (!p) return [];
+  const list = Array.isArray(p.onReached) && p.onReached.length ? p.onReached : Array.isArray(p.onHit) ? p.onHit : [];
+  return list.map(lc).filter(Boolean);
+}
+
+/** Every key a skill's bindings can play (preloading). */
+export function bindingKeys(idx, skillId) {
+  const out = new Set();
+  for (const bind of Object.values(FX_BINDINGS[lc(skillId)] || {})) for (const k of bindingEffects(idx, bind)) out.add(k);
   return [...out];
 }

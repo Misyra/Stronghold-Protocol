@@ -397,6 +397,10 @@ export async function createFieldView(host, options = {}) {
       const c = info.side === 'ally' && info.kind === 'op' && !info.standInFor && !info.diy ? data.chess(info.defId) : null;
       return [info.diy?.charId, info.spine, c?.charId, info.defId].filter(Boolean);
     },
+    // the unit's data record (its skill: render/vfx/skills.js resolves the official skill and its plan from it)
+    record: (info) => (info ? ctx.lookupDef(info) : null),
+    // a battle view by id (the skill effects a kit fx stands for may land on its target)
+    view: (id) => views.get(id) || null,
   });
   ctx.ofx = ofx;
   let ofxPrevT = null;        // renderT of the last effects step (the battle clock)
@@ -1562,10 +1566,15 @@ export async function createFieldView(host, options = {}) {
   // land when the event is rendered (the look-ahead is the interpolation delay, ~0.2 game s)
   function windUpAttacks(renderT) {
     upcomingT = renderT;
+    upSkill.clear();
     interp.forEachUpcoming(renderT, renderT + 1.5, onUpcoming);
   }
   let upcomingT = 0;
+  // the look-ahead's skill state: a ['skill', id, on] queued before an 'atk' of that unit (an instant skill sends 1, its
+  // attack and 0 in one tick) — the official cast effects of the wind-up are the skill's own then
+  const upSkill = new Map();
   function onUpcoming(e, t) {
+    if (e[0] === 'skill') { upSkill.set(e[1], !!e[2]); return; }
     if (e[0] !== 'atk' || woundUp.has(e) || CHAIN_KINDS.has(e[3])) return;
     const v = views.get(e[1]);
     if (!v || !v.windUp) return;
@@ -1573,7 +1582,8 @@ export async function createFieldView(host, options = {}) {
       woundUp.add(e);
       // the official cast effects that start with the cast play with the clip (render/vfx/wiring.js castStart)
       const a = v.actor;
-      wiring.castStart(v, views.get(e[2]), e[3], a ? { skip: a.windSkip || 0, left: a.windCastLeft || 0 } : {});
+      const skillOn = upSkill.has(e[1]) ? upSkill.get(e[1]) : undefined;
+      wiring.castStart(v, views.get(e[2]), e[3], a ? { skip: a.windSkip || 0, left: a.windCastLeft || 0, skillOn } : { skillOn });
     }
   }
 
@@ -1627,8 +1637,14 @@ export async function createFieldView(host, options = {}) {
         fx.damage(v, amt, e[3], src, e[4], official ? NO_SPARK : undefined);
         break;
       }
-      case 'heal': { const v = views.get(e[1]); if (v) fx.heal(v, Number(e[2]) || 0, wiring.heal(v) ? NO_SPARK : undefined); break; }
-      case 'skill': { const v = views.get(e[1]); if (v) { v.setSkill?.(!!e[2]); fx.skill(v, !!e[2]); } break; }
+      case 'heal': { const v = views.get(e[1]); if (v) fx.heal(v, Number(e[2]) || 0, wiring.heal(v, now) ? NO_SPARK : undefined); break; }
+      // the skill's official effects (render/vfx/skillfx.js: start / range / loop on, end off) stand for the procedural
+      // activation burst and aura when the official layer shows the skill
+      case 'skill': {
+        const v = views.get(e[1]);
+        if (v) { v.setSkill?.(!!e[2]); if (!wiring.skill(v, !!e[2]) || !e[2]) fx.skill(v, !!e[2]); }
+        break;
+      }
       // the skill slot an enemy ability casts (PR #275): the view swaps to that slot's clip (a multi-skill boss's Skill_01..04)
       case 'cast': { const v = views.get(e[1]); if (v) v.setSkillSlot?.(e[2] | 0); break; }
       case 'die': {
@@ -1682,7 +1698,8 @@ export async function createFieldView(host, options = {}) {
           const x = late > 0 ? { ...e[4], late, ...(Number(e[4].dur) > 0 ? { dur: Math.max(0, Number(e[4].dur) - late) } : {}) } : e[4];
           views.get(e[4].id)?.setForm?.(form, x);
         }
-        if (!(late > 0)) fx.simFx(e[1], Number(e[2]), Number(e[3]), e[4]);
+        // a kit fx the official skill effects stand for (render/vfx/skillfx.js simFx) is not drawn procedurally
+        if (!(late > 0) && !wiring.simFx(e[1], Number(e[2]), Number(e[3]), e[4])) fx.simFx(e[1], Number(e[2]), Number(e[3]), e[4]);
         break;
       }
       case 'layer': {
@@ -1877,9 +1894,11 @@ export async function createFieldView(host, options = {}) {
           processEvents(renderT);
           syncBattle(renderT);
           windUpAttacks(renderT);
-          // the official effects run on the battle clock (render time of the snapshots: 1× / 2×, still while paused)
+          // the official effects run on the battle clock (render time of the snapshots: 1× / 2×, still while paused); the
+          // skill effects' per-frame part reads the views' fresh sample (render/vfx/skillfx.js sync)
           const gdt = ofxPrevT == null ? 0 : Math.min(0.25, Math.max(0, renderT - ofxPrevT));
           ofxPrevT = renderT;
+          wiring.sync(views.values());
           if (ofx.active) { wiring.tick(); ofx.update(gdt); }
         }
       } else if (mode === 'prep') {

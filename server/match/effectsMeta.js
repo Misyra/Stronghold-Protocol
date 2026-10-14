@@ -238,7 +238,8 @@ export class EffectDispatcher {
       const reg = this.registry;
       // onRefresh: the board / hand chess as they stood when the refresh happened, taken before any handler runs — a
       // chess gained during this dispatch (贾维's gift on the 6th refresh, the elite its copy completes) was not there
-      // when it happened: its 刷新时 特质 waits for the next manual refresh (拉普兰德's "本回合首次主动刷新", PR #196)
+      // when it happened: its 刷新时 特质 waits for the next manual refresh (拉普兰德's "本回合首次主动刷新", PR #196);
+      // the copies that elite consumed were there, and still fire (GitHub #627)
       const refreshed = hook === 'onRefresh' ? refreshPieces(ps) : null;
       // 0. onPrice: the priced chess's own 特质 first — 购买价格为N defines the price every other modifier acts on
       if (hook === 'onPrice') this._garrisons(ps, hook, ev);
@@ -317,8 +318,10 @@ export class EffectDispatcher {
 
   /**
    * Run the owned chess's garrisons of `hook`. `refreshed` (onRefresh): the board / hand chess taken when the dispatch
-   * began (refreshPieces) — each runs if it is still on the board or in the hand (where it stands now); a chess gained
-   * meanwhile does not run, nor one that left (sold, consumed by a merge, moved to the 临时整备区).
+   * began (refreshPieces) — each runs if it is still on the board or in the hand (where it stands now), or, consumed by
+   * a merge during this dispatch (`mergedInto`: 贾维's gift completing the elite), where it stood — it witnessed the
+   * refresh (GitHub #627: two 拉普兰德 merged by the round's first refresh still add their layers); a chess gained
+   * meanwhile does not run, nor one that left otherwise (sold, moved to the 临时整备区).
    */
   _garrisons(ps, hook, ev, refreshed = null) {
     const gd = ps.gd || this.m.gd;
@@ -346,9 +349,10 @@ export class EffectDispatcher {
     }
     if (hook !== 'onRoundStart' && hook !== 'onPrepEnd' && hook !== 'onRefresh') return;
     if (refreshed) {
-      for (const piece of refreshed) {
+      for (const { piece, area } of refreshed) {
         const loc = ps.find(piece.uid);
         if (loc && loc.piece === piece && (loc.area === 'board' || loc.area === 'hand')) run(piece, loc.area);
+        else if (!loc && piece.mergedInto != null) run(piece, area);
       }
       return;
     }
@@ -434,11 +438,11 @@ function ownedChess(ps) {
   return out;
 }
 
-/** The board chess (reading order) then the hand chess — the pieces whose 刷新时 特质 a refresh runs (onRefresh). */
+/** The board chess (reading order) then the hand chess, with where each stood — the pieces whose 刷新时 特质 a refresh runs (onRefresh). */
 function refreshPieces(ps) {
   const out = [];
-  for (const { piece } of boardOrder(ps.board)) if (piece.kind === 'chess') out.push(piece);
-  for (const p of ps.hand) if (p && p.kind === 'chess') out.push(p);
+  for (const { piece } of boardOrder(ps.board)) if (piece.kind === 'chess') out.push({ piece, area: 'board' });
+  for (const p of ps.hand) if (p && p.kind === 'chess') out.push({ piece: p, area: 'hand' });
   return out;
 }
 
@@ -490,6 +494,14 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
   // The roll helpers only read pools/data; shadow their RNG receiver without replacing the live match stream.
   const rolls = preview ? Object.assign(Object.create(m), { rngMeta: rng }) : m;
   const view = (p) => (p ? ps.pieceView(p) : null);
+  // the piece whose per-round counters a handler reads: an owned one, or the handler's own source copy that a merge
+  // consumed during this refresh dispatch — it still witnessed the refresh (EffectDispatcher._garrisons, GitHub #627)
+  const counted = (uid) => {
+    const l = ps.find(uid);
+    if (l) return l.piece;
+    const p = source && source.piece;
+    return p && p.uid === uid && p.mergedInto != null ? p : null;
+  };
   const ctx = {
     hook,
     source,
@@ -556,8 +568,8 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
     incCounter: (k, n = 1) => { if (typeof k !== 'string' || !Number.isFinite(n)) return 0; ps.counters[k] = (Number.isFinite(ps.counters[k]) ? ps.counters[k] : 0) + n; return ps.counters[k]; },
     /** Per-piece counter of the current round (0 in a new round / for a new piece, an elite merged this round included —
      *  PlayerState.pieceRoundCount). */
-    pieceCounter: (uid, k) => { const l = ps.find(uid); return l ? ps.pieceRoundCount(l.piece, k) : 0; },
-    incPieceCounter: (uid, k, n = 1) => { const l = ps.find(uid); return l ? ps.bumpPieceRoundCount(l.piece, k, n) : 0; },
+    pieceCounter: (uid, k) => { const p = counted(uid); return p ? ps.pieceRoundCount(p, k) : 0; },
+    incPieceCounter: (uid, k, n = 1) => { const p = counted(uid); return p ? ps.bumpPieceRoundCount(p, k, n) : 0; },
 
     // ---- economy
     addFunds: (n, reason = '') => ps.addFunds(finiteInt(n), { reason }),

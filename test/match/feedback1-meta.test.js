@@ -219,6 +219,36 @@ for (const variant of ['a new copy', 'a copy that completes the elite']) {
   });
 }
 
+// GitHub #627: the gift falls on the round's FIRST refresh while two 拉普兰德 stand there unrefreshed. The band step runs
+// before the garrisons, so the gift completes the elite first and consumes both copies; they witnessed the refresh and
+// still add their layers (+4 each), and the elite — a new 拉普兰德 — adds +8 on its own first refresh, the next one.
+for (const where of ['hand', 'board']) {
+  test(`#627 贾维's gift on the round's first refresh: the two 拉普兰德 it merges still fire (${where})`, () => {
+    const s = setup();
+    const { m, ps } = s;
+    ps.bandId = 'band_chiave';
+    ps.shop.level = 2;
+    const roll = m.pool.roll.bind(m.pool);
+    m.pool.roll = (rng, opts = {}) => (rng === m.rngMeta && typeof opts.filter === 'function' && opts.filter(LAP) ? LAP : roll(rng, opts));
+    s.activate();
+    for (let i = 0; i < 2; i++) {
+      const p = give(m, ps, LAP, 'hand');
+      if (where === 'board') s.place(p);
+    }
+    ps.counters['band:chiave:refreshes'] = 5;   // this round's first manual refresh is the match's 6th
+    s.refresh();
+    assert.ok(ps.allChess().some((p) => p.id === LAP_B) && !ps.allChess().some((p) => p.id === LAP), 'the gift completed the elite');
+    assert.equal(s.L(), 8, 'both copies fired in the refresh they saw');
+    s.refresh();
+    assert.equal(s.L(), 16, 'the elite fires on its own first refresh');
+    s.refresh();
+    assert.equal(s.L(), 16, 'once a round');
+    assert.equal(m.dispatcher.errors, 0);
+    checkInvariants(m);
+    m.dispose();
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // #4 突变细胞
 

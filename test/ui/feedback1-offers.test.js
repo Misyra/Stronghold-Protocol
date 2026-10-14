@@ -223,3 +223,10 @@ describe('#6 the shop bar draws the offer by its slots and names it', () => {
     assert.ok([...walk(mp)].flatMap((n) => (typeof n.props?.children === 'string' ? [n.props.children] : [])).includes('晋升奖励待选择'));
   });
 });
+
+test('#617: a reward offer replaces the whole shop row — the equipment slot hides too, and only the offer\'s cards arm', () => {
+  const src = readFileSync(path.join(ROOT, 'public/js/ui/shopBar.js'), 'utf8');
+  assert.match(src, /\$\{showReward \? null : html`<div class="shopbar__item">/, 'the equipment column is not drawn under a reward offer');
+  assert.match(src, /if \(showReward\) reward\.slots\.forEach\([^\n]*\n\s*else slots\.forEach/, 'the shop slots are not armable meanwhile');
+});
+

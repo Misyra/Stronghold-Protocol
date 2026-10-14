@@ -13,8 +13,9 @@
 // D / R / F keys stay one-press shortcuts — a 刷新 whose request is still on the wire dims the button and swallows
 // further taps and the R key until the reply lands (GitHub #501; the single-flight lives in ui/gameActions.js
 // onRefreshBusy, ui/shopBar.js only draws it). There is no drag-to-sell zone: selling is the 出售 +N button of a tapped
-// unit's underframe (ui/underframe.js). After a promotion the operator cards are replaced by
-// the 晋升奖励 cards (3 free operators, pick 1 — also two taps) until picked or put off (稍后 → rewardOverlay.js pill);
+// unit's underframe (ui/underframe.js). After a promotion the shop's cards — operators and the equipment slot alike
+// (GitHub #617) — are replaced by the 晋升奖励 cards (3 free operators, pick 1 — also two taps) until picked or put off
+// (稍后 → the normal shop again + rewardOverlay.js pill);
 // a special refresh (凯瑟琳 定向投放's 3 items, 娜仁图亚, 寻呼模块, 信标, 松果) takes the same place under its own name, an
 // item slot drawn as an item card (player report #6 after 0.1.0).
 // Every operator card shows the skill it will fight with — the player's 干员调配 loadout (m.private.loadout, DESIGN
@@ -315,8 +316,9 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
   const keys = new Set();
   if (!collapsed) {
     if (!lvReason) keys.add(levelKey);
-    slots.forEach((s, i) => { if (s && !s.sold) keys.add(armKey(s.kind === 'item' ? 'i' : 'c', i, s)); });
+    // a reward offer hides the shop's cards (operators and the equipment slot, #617): only its own cards arm
     if (showReward) reward.slots.forEach((s, i) => { if (s && !s.sold) keys.add(armKey('r', i, s)); });
+    else slots.forEach((s, i) => { if (s && !s.sold) keys.add(armKey(s.kind === 'item' ? 'i' : 'c', i, s)); });
   }
   const [armed, setArmed] = useTwoTap({ editable, keys });
   // the armed card's slot (game.js lights the tile a merge's elite will take — gameLogic.mergeTarget); kept before the
@@ -376,7 +378,7 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
               reason=${reason} armed=${armed === armKey('c', i, s)} onTap=${editable ? (idx) => tapCard('c', idx, s, 'chess', reason, onBuy) : null} />`;
         })}
       </div>`}
-      <div class="shopbar__item">
+      ${showReward ? null : html`<div class="shopbar__item">
         ${itemSlots.length
           ? itemSlots.map(({ s, i }) => {
             if (s.sold) return html`<${SoldCard} key=${`is${i}`} item=${true} />`;
@@ -385,7 +387,7 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
               armed=${armed === armKey('i', i, s)} onTap=${editable ? (idx) => tapCard('i', idx, s, 'item', reason, onBuy) : null} />`;
           })
           : html`<${SoldCard} item=${true} />`}
-      </div>
+      </div>`}
       <div class="funds">
         <div class="funds__hex">
           <${CoinGlyph} class="funds__coin" />

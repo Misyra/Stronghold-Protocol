@@ -150,11 +150,18 @@ export function cameraLayers(field, pub, myId) {
 export function layerCamera(field, layer, mySide = 'L') {
   const rect = field?.rect;
   if (layer === 'L' || layer === 'R') return { rect, side: layer, half: true };
-  if (layer === 'ALL' && field?.kind === 'unite') {
-    const occupied = ['L', 'R'].filter((side) => Object.values(sidesOf(field)).includes(side));
-    if (occupied.length === 1) return { rect, side: occupied[0], half: true };
-  }
   return { rect, side: mySide };
+}
+
+/**
+ * The one occupied half ('L' | 'R') of a 联防 field with a lone helper, else null. That field
+ * (act1autochess_escaped_single) routes every enemy through the helper's half and the other half holds no player, so
+ * the camera starts on the helper's half and the ‹ › pill keeps 全景 (GitHub #635, PR #637).
+ */
+export function loneHalf(field) {
+  if (field?.kind !== 'unite') return null;
+  const occupied = ['L', 'R'].filter((side) => Object.values(sidesOf(field)).includes(side));
+  return occupied.length === 1 ? occupied[0] : null;
 }
 
 /**

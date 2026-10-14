@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   HOTKEY_ACTIONS, DEFAULT_HOTKEYS, isBindableCode, hotkeyLabel, sanitizeHotkeys, rebindHotkey, isDefaultHotkeys, hotkeyOf,
-  actionForKey, captureHotkey, facingSwallows, facingEnter, shortcutFor, shortcutBlocked, sanitizeSettings, DEFAULT_SETTINGS,
+  actionForKey, captureHotkey, facingSwallows, facingEnter, shortcutFor, shortcutBlocked, prepShortcutsSuspended, sanitizeSettings, DEFAULT_SETTINGS,
 } from '../../public/js/ui/gameLogic.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -273,6 +273,30 @@ describe('the one lookup (actionForKey) and shortcutFor', () => {
     assert.doesNotMatch(src, /e\.key === 'Enter' && L\.dir/, 'no Enter that ignores the focus');
     assert.match(src, /<div ref=\$\{rootRef\} tabIndex="-1" class=\$\{cx\('fwheel'/);
     assert.match(src, /rootRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  });
+});
+
+describe('prep shortcuts stay idle while spectating, eliminated, watching, or on AI autopilot', () => {
+  const playing = { spectator: false, alive: true, watchingOther: false, away: false, autoplay: false };
+
+  test('each of those states suspends; a living player on their own board does not', () => {
+    assert.equal(prepShortcutsSuspended(playing), false);
+    assert.equal(prepShortcutsSuspended({ ...playing, spectator: true, alive: false }), true);
+    assert.equal(prepShortcutsSuspended({ ...playing, alive: false }), true);
+    assert.equal(prepShortcutsSuspended({ ...playing, watchingOther: true }), true);
+    assert.equal(prepShortcutsSuspended({ ...playing, away: true }), true);
+    assert.equal(prepShortcutsSuspended({ ...playing, autoplay: true }), true);
+    for (const raw of [null, undefined, 0, '', []]) assert.equal(prepShortcutsSuspended(raw), false, String(raw));
+    assert.equal(prepShortcutsSuspended({}), false, 'a missing flag is not that state');
+  });
+
+  test('the match screen asks before buy and before the solo pause', () => {
+    const src = read('public/js/screens/game.js');
+    const key = src.slice(src.indexOf('const onKey = async'), src.indexOf("for (const name of ['pointermove'"));
+    const gate = key.indexOf('prepShortcutsSuspended');
+    assert.ok(gate > 0, 'onKey calls prepShortcutsSuspended');
+    assert.ok(gate < key.indexOf("act === 'buy'"), 'the gate is before a hovered buy');
+    assert.ok(gate < key.indexOf('L.canPause || L.paused'), 'the gate is before solo pause');
   });
 });
 

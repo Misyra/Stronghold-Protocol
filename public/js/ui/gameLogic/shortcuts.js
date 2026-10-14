@@ -213,3 +213,15 @@ export function shortcutBlocked(act, { modal = false, drawer = false } = {}) {
   if (modal) return true;
   return !!drawer && act !== 'escape';
 }
+
+/**
+ * Prep shortcuts (buy, refresh, freeze, level-up, retreat, sell, ready) stay idle for a spectator, an eliminated
+ * player, someone watching another board, or a seat on AI autopilot (local 暂离 or the server's autoplay). Esc, and
+ * a living solo player's battle pause, are the caller's and are not decided here. A missing flag is not that state.
+ * @param {{ spectator?: boolean, alive?: boolean, watchingOther?: boolean, away?: boolean, autoplay?: boolean }|null|undefined} s
+ * @returns {boolean}
+ */
+export function prepShortcutsSuspended(s) {
+  if (!s || typeof s !== 'object') return false;
+  return s.spectator === true || s.alive === false || s.watchingOther === true || s.away === true || s.autoplay === true;
+}

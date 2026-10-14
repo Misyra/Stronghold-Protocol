@@ -3,7 +3,8 @@
   "generatedFrom": [
    "fexli/ArknightsResource — spine/{charId}/{stem}/{Front,Back}/ (dir listing, via the GitHub contents API)",
    "Kengxxiao/ArknightsGameData — zh_CN/gamedata/excel/skin_table.json (charSkins[].displaySkin / portraitId)",
-   "yuanyan3060/ArknightsGameResource — avatar/{avatarId}.png"
+   "yuanyan3060/ArknightsGameResource — avatar/{avatarId}.png",
+   "fexli/ArknightsResource — spine/{charId}/{stem}/Spine/<stem>.{skel,atlas,png} for the skins whose directory holds a single merged model instead of Front/Back (char_1012_skadi2@boc#4, @iteration#2; found 2026-10-15)"
   ],
   "note": "Only skins whose Spine model directory exists upstream, and only for the pool operators of 07-assets.json. Default outfits (默认服装) are omitted: they are the chars[].spine entries the manifest already carries.",
   "stemRule": "skinId.replace(/@/g,'_').replace(/#/g,'_') === stem  (fexli directory and model file stem)",
@@ -11,7 +12,8 @@
   "counts": {
    "operators": 115,
    "skins": 174
-  }
+  },
+  "layoutRule": "A model's files live at spine/{charId}/{stem}/{Front,Back}/<stem>.<ext>. The skins whose upstream directory instead holds a single Spine/ folder carry ONE model, recorded as `front` with no `back` — one direction only, so a unit facing up draws the same model (their {Front,Back} paths 404, which is what the first install run hit)."
  },
  "skins": {
   "char_498_inside": [
@@ -5474,27 +5476,15 @@
     "battleSpine": {
      "front": {
       "skel": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Front/char_1012_skadi2_boc_4.skel"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Spine/char_1012_skadi2_boc_4.skel"
       },
       "atlas": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Front/char_1012_skadi2_boc_4.atlas"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Spine/char_1012_skadi2_boc_4.atlas"
       },
       "png": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Front/char_1012_skadi2_boc_4.png"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Spine/char_1012_skadi2_boc_4.png"
       },
-      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Front/char_1012_skadi2_boc_4.skel"
-     },
-     "back": {
-      "skel": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Back/char_1012_skadi2_boc_4.skel"
-      },
-      "atlas": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Back/char_1012_skadi2_boc_4.atlas"
-      },
-      "png": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Back/char_1012_skadi2_boc_4.png"
-      },
-      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Back/char_1012_skadi2_boc_4.skel"
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_boc_4/Spine/char_1012_skadi2_boc_4.skel"
      }
     }
    },
@@ -5509,27 +5499,15 @@
     "battleSpine": {
      "front": {
       "skel": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Front/char_1012_skadi2_iteration_2.skel"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Spine/char_1012_skadi2_iteration_2.skel"
       },
       "atlas": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Front/char_1012_skadi2_iteration_2.atlas"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Spine/char_1012_skadi2_iteration_2.atlas"
       },
       "png": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Front/char_1012_skadi2_iteration_2.png"
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Spine/char_1012_skadi2_iteration_2.png"
       },
-      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Front/char_1012_skadi2_iteration_2.skel"
-     },
-     "back": {
-      "skel": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Back/char_1012_skadi2_iteration_2.skel"
-      },
-      "atlas": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Back/char_1012_skadi2_iteration_2.atlas"
-      },
-      "png": {
-       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Back/char_1012_skadi2_iteration_2.png"
-      },
-      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Back/char_1012_skadi2_iteration_2.skel"
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1012_skadi2/char_1012_skadi2_iteration_2/Spine/char_1012_skadi2_iteration_2.skel"
      }
     }
    }

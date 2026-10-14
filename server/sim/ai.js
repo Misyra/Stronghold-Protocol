@@ -958,9 +958,10 @@ function enemyAttack(b, e, prevCd) {
   e.swingTargets = null;
   // Out of reach is still a hit. Dead, hidden, asleep or (for a ranged shot) stealthed is not.
   const still = (t) => {
-    if (!t) return false;
-    const close = e.blockedBy === t && !(radius > 0 && e.profile && e.profile.blockFree);
-    return canTargetAlly(e, t, radius > 0 && !close);
+    if (!t || !t.alive) return false;
+    // its blocker is struck whatever its selectability — a crate too (attackTargets: PRTS 作战机制 「阻挡优先级最高」)
+    if (e.blockedBy === t && !(radius > 0 && e.profile && e.profile.blockFree)) return !!t.deployed;
+    return canTargetAlly(e, t, radius > 0);
   };
   targets = locked.filter(still);
   if (targets.length > 1) sortAllyTargets(e, targets);

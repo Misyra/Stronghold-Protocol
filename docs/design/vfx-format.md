@@ -669,7 +669,8 @@ projectile): `modeBy: 'data'` when the skill's data say it (the blackboard `mode
 case-insensitive; where both exist they agree in 204 of 210 skills). So a runtime plays, on the sim's events: skill
 start → `roles.start` (+ `range`), while active → `roles.loop` on `on` (default the owner) and the attacks of
 `modes[mode]`, each hit → `roles.hit` (+ the mode's hit / projectile effects), skill end → `roles.end` (and stops the
-loops).
+loops). The web runtime reads `uses` (not the flat `roles`) through `render/vfx/skills.js` and plays them as §33.15
+says.
 
 **Projectile** (`[uc]projectiles.ab`):
 
@@ -755,3 +756,35 @@ effect of their own but switch to a mode, whose attacks carry their effects; 10 
 `skchr_prove_1`, `skchr_silent_2`, `skchr_sunbr_1`, `skchr_svrash_1`, `skchr_vodfox_2`, `skchr_vvana_3`,
 `skchr_wang_1`: what the client shows for them comes from what they place (tokens, traps), the unit's own animation, or
 nothing. 333 skills have a mode (221 from their data, 112 by name).
+
+### 33.15 The runtime's skill wiring (0.3.0 Phase 3b)
+
+The field view plays a skill's effects from its `uses` (`render/vfx/skills.js skillPlan`: each use placed by its
+role, its ability, its events and its carrier — the module header; `render/vfx/skillfx.js` plays the plan, DESIGN §9
+"Official battle effects", Skills). What it reads, and what it does with the fields a later extractor adds:
+
+* **A unit's skill**: the unit by FxWiring's candidates (a stand-in's or a 自选 pick's operator, the chess' operator,
+  the spine, the def id), its skill from our data record's `skills[]` by the loadout's index (`prefabId`, else
+  `skillId`), looked up in the unit's `skills`, then in `skills`; without a record, `skchr_<code>_<index + 1>`.
+* **Modes**: `skills[id].mode` names the attack mode while the skill is on (`modes[mode].name`; a mode whose name ends in
+  `[Down]` / `[D]` is a facing variant and not chosen). A unit without a resolved skill keeps `S<n>`.
+* **Events**: a use's `startEvent` / `endEvent` are AbilityStandard/Event names (`ON_CAST_START` …), a unit's Emit row's
+  numbers; ON_ATTACHED / ON_CAST_START rows start with the cast (the attack's wind-up), the others at the strike.
+* **Attack abilities** (`ability` matching /Attack|Heal/, not Channeling*): their rows replace the attack mode's while
+  the skill is on; a ranged one flies one of the skill's `projectiles` — the only one, else the shortest named
+  `_s<n>` / `_sk<n>` after the skill's number, else the first (index.json does not say which ability fires which
+  projectile: an ability's `projectileKey` on its uses would settle it).
+* **Hit groups**: `MultiHitUberEffectEmitter._hitGroups` rows arrive flattened; a use's integer `group` (a later
+  extractor) is taken as the group index when present, else the `_range` rule of §33.12's skills.js reading.
+* **Buffs on targets** (`on: 'targets'`) from an attack ability's `_activeBuffs` loop on that attack's targets for our
+  record's blackboard duration (`duration`, `…_duration`, `….duration`) — the template's own life time is not exported.
+* **Charges**: a unit's `charge` ({ cap, slots: [{ spell: [key…], cast: [key…], mount: MountPointType }], projectiles: {
+  mode: key }, … } — CHARGE_EMITTERS' shape) replaces the transcribed table when present (`skills.js chargeSource`).
+* **Root class**: a skill's `rootClass` (ReplacementSkill, CastSkill, …) is kept on the plan (`plan.rootClass`); the
+  runtime's one-cast rule does not need it (a skill turned on and off in one frame without an attack).
+* **Enemy and token skills**: none in this index (`reason: 'enemy-skill'` / `'token-skill'`); a token's skill found in its
+  unit's `skills` by our record's id plays like an operator's. An enemy's skill slot (the sim's ['cast', id, slot]) has
+  no reader yet.
+* **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
+  where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
+

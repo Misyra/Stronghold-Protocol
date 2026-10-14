@@ -1986,9 +1986,9 @@ function makeHandRoom(m, ps, piece = null) {
  * chess is sold; an item: see below, else destroyed.
  */
 function resolveTemp(m, ps) {
-  for (let i = ps.temp.length - 1; i >= 0; i--) {
-    const p = ps.temp[i];
-    if (!p) continue;
+  // Track pieces, not indices: draining an extended queue refills and compacts its visible window.
+  for (const p of ps.tempPieces()) {
+    if (!ps.temp.includes(p)) continue;
     const idx = freeSlot(ps.hand); // (a recompute pulls it in; a state set up without one)
     if (idx >= 0 && tryDo(() => ps.move(p.uid, { area: 'hand', idx }))) continue;
     if (p.kind === 'chess') {
@@ -2006,9 +2006,8 @@ function resolveTemp(m, ps) {
   }
   // anything left (e.g. sells failed): final sweep — tokens cannot be sold, they are dropped with the temp slot (and
   // come back at the next round start, PlayerState.startRound)
-  for (let i = 0; i < ps.temp.length; i++) {
-    const p = ps.temp[i];
-    if (!p) continue;
+  for (const p of [...ps.temp]) {
+    if (!p || !ps.temp.includes(p)) continue;
     if (p.kind === 'chess') tryDo(() => ps.sell(p.uid));
     else if (p.kind === 'item') tryDo(() => ps.destroy(p.uid));
   }

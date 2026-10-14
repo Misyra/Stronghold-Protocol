@@ -7,6 +7,7 @@
 // the player state).
 
 import { tileKey, boardOrder, freeSlot } from '../board.js';
+import { TEMP_SIZE } from './common.js';
 
 export class PlayerPieces {
   newPiece(kind, id, extra = {}) {
@@ -68,7 +69,7 @@ export class PlayerPieces {
   }
 
   /**
-   * Put a piece into the hand (right→left) or, when `allowTemp`, the temp slots (due at the deadline of the first prep
+   * Put a piece into the hand (right→left) or, when `allowTemp`, the expandable temp queue (due at the deadline of the first prep
    * in which the player can act on it, _tempDueNow). Returns 'hand' | 'temp' | null. A piece put into temp while a hand
    * slot is free (`toTemp`) moves into the hand at the next recompute (_fillHandFromTemp).
    */
@@ -82,25 +83,31 @@ export class PlayerPieces {
       if (i >= 0) { this.hand[i] = piece; return 'hand'; }
       if (!allowTemp) return null;
     }
-    const j = freeSlot(this.temp);
-    if (j >= 0) { this._putTemp(j, piece); return 'temp'; }
-    return null;
+    // Five visible slots are a window, not a capacity limit. Once resources are queued, append
+    // new gains behind them; recompute fills visible holes without changing an in-progress merge's indices.
+    const j = this.temp.length > TEMP_SIZE ? -1 : freeSlot(this.temp);
+    this._putTemp(j >= 0 ? j : this.temp.length, piece);
+    return 'temp';
+  }
+
+  /** Overflow refill order: the visible row right-to-left, then the hidden queue. */
+  tempPieces() {
+    return this.temp.slice(0, TEMP_SIZE).reverse().concat(this.temp.slice(TEMP_SIZE)).filter(Boolean);
   }
 
   /**
-   * PRTS 卫戍协议/帮助 §手牌区 "溢出单位会自动进入临时手牌区，常规手牌区出现空位时自动移入" (GitHub #82; until 0.1.3 the
-   * player had to drag them back): every free regular hand slot takes a temp piece at once. Order [ASSUMED] (PRTS names
-   * none): the temp row empties in the order it fills — right→left, the way stow fills it (freeSlot), so the piece that
-   * overflowed first moves first — and each piece takes the hand's next free slot right→left ("被发送至手牌区的物资优先
-   * 从右到左填充空位"). recompute() runs it, so it follows every change that frees a slot: a sale, a deployment from the
-   * hand, a merge that consumed hand copies, an item equipped / destroyed / used from the hand, a summon stack removed
-   * with its owner, an effect's destroyPiece… A piece that leaves temp is no longer due (tempDue). Returns the number
-   * moved.
+   * PRTS help's hand-area rule: free regular slots automatically receive overflow.
+   * Refill order [ASSUMED]: visible slots right-to-left, followed by the hidden queue in arrival order;
+   * each piece takes the hand's next free slot right-to-left. Recompute runs this after sales, deployments,
+   * merges, item use and summon removal. Moving into the hand clears the piece's temp deadline;
+   * moving within the visible window keeps it. Returns the number moved into the regular hand.
    * @returns {number}
    */
   _fillHandFromTemp() {
     let moved = 0;
-    for (let j = this.temp.length - 1; j >= 0; j--) {
+    const indices = Array.from({ length: TEMP_SIZE }, (_, i) => TEMP_SIZE - 1 - i)
+      .concat(Array.from({ length: Math.max(0, this.temp.length - TEMP_SIZE) }, (_, i) => TEMP_SIZE + i));
+    for (const j of indices) {
       const p = this.temp[j];
       if (!p) continue;
       const i = freeSlot(this.hand);
@@ -108,6 +115,13 @@ export class PlayerPieces {
       this._detach({ piece: p, area: 'temp', idx: j });
       this.hand[i] = p;
       moved++;
+    }
+    if (this.temp.length > TEMP_SIZE) {
+      // Keep the oldest five visible and refill them after sales, deployments, equipment use or merges.
+      // Moving within temp preserves each UID's existing prep deadline.
+      const pending = this.tempPieces();
+      this.temp = new Array(TEMP_SIZE).fill(null);
+      pending.forEach((p, i) => { this.temp[i < TEMP_SIZE ? TEMP_SIZE - 1 - i : i] = p; });
     }
     return moved;
   }

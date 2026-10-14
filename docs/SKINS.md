@@ -157,18 +157,20 @@ the model itself is **played live** in the frame below them, with one button per
   files are the ones a battle already pulls, from the HTTP cache.
 - **Buttons follow the skeleton, not a list.** `clipsOf(m, assetId, skinId)` collects one entry per animation the
   model actually has: 部署 / 待机 / 攻击 / 攻击·下 / 技能1…n / 眩晕 / 移动 / 死亡 — 部署 / 待机 / 攻击 and up to three
-  skills stay on screen, the rest fold behind a 更多动画 toggle. Two sources, on purpose:
-  - the manifest's `anims` roles (the same roles the battlefield plays), and
+  skills stay on screen, the rest fold behind a 更多动画 toggle. Three sources, on purpose:
+  - the manifest's `anims` roles (the same roles the battlefield plays),
   - **the skeleton's own clip names**, via `skillFamilies()`: `Skill_1` / `Skill1` / `Skill_01` (a one-clip skill) and
     `Skill_<n>_Begin/_Loop/_End`, merged with the roles by index. Directional (`Skill_Right_Loop`) and prone
-    (`Skill_Down_2`) variants are not families of their own.
-  This second source matters because the manifest only resolves the skills a mode *uses* — `skillIndicesByChar()`
-  turns the pool's `defaultSkillIndex` into a per-operator list, so 锏's model (Skill_1, Skill_2 and a
-  Skill_3_Begin/Loop/End trio) came back with index 2 alone and her preview offered a single 技能 button. With the
-  scan she shows three, as do 浊心斯卡蒂's outfits (whose resolved roles likewise cover one skill). Each button plays
-  the real sequence (an attack is `Attack_Begin → Attack_Loop ×2 → Attack_End → Idle`; a one-clip skill casts once and
-  returns to 待机; 死亡 stops on its last frame) and carries the underlying clip names as its tooltip. The caption
-  names the animation being played and counts every clip in the skeleton (隐现: 19), stance variants included.
+    (`Skill_Down_2`) variants are not families of their own. This source matters because the manifest only resolves
+    the skills a mode *uses* — `skillIndicesByChar()` turns the pool's `defaultSkillIndex` into a per-operator list,
+    so 锏's model (Skill_1, Skill_2 and a Skill_3_Begin/Loop/End trio) came back with index 2 alone and her preview
+    offered a single 技能 button. With the scan she shows three, as do 浊心斯卡蒂's outfits.
+  - **one entry per remaining clip**: stance and variant clips no role points at (锏: Default, Skill_2_B, Skill_Down_2,
+    Skill_Down_2_B; 隐现: Attack_Idle, Skill_1_Idle, …) get a `raw` button labelled with the clip's own name, so a
+    13-clip skeleton offers buttons that between them reach all 13 — `total` and the buttons agree.
+  Each button plays the real sequence (an attack is `Attack_Begin → Attack_Loop ×2 → Attack_End → Idle`; a one-clip
+  skill casts once and returns to 待机; 死亡 stops on its last frame) and carries the underlying clip names as its
+  tooltip. The caption names the animation being played and counts every clip in the skeleton (隐现: 19).
   ⚠️ The same gap is visible in battle: picking S1/S2 for 锏 makes the renderer fall back to `roles.skill` (her S3),
   so the wrong animation plays. Fixing that means changing what the manifest resolves, which is a separate concern
   from this feature.

@@ -388,7 +388,11 @@ class Client {
       await sleep(150);
     }
     assert.ok(after.funds !== s.funds || now.free !== before.free || now.ids !== before.ids, `${this.label}: R refreshed the shop`);
-    if (s.refreshPrice > 0) assert.equal(after.funds, s.funds - s.refreshPrice, `${this.label}: refresh cost`);
+    // a free refresh (a 机变 card's) is used before any funds — which card the draft offers depends on the run
+    if (before.free > 0) {
+      assert.equal(now.free, before.free - 1, `${this.label}: a free refresh used`);
+      assert.equal(after.funds, s.funds, `${this.label}: a free refresh costs nothing`);
+    } else if (s.refreshPrice > 0) assert.equal(after.funds, s.funds - s.refreshPrice, `${this.label}: refresh cost`);
     this.note(`refresh (${s.refreshPrice ? `funds ${s.funds} → ${after.funds}` : `free ${before.free} → ${now.free}`}, slots ${before.ids === now.ids ? 'same ids' : 'rerolled'})`);
     return true;
   }

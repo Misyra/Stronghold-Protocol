@@ -585,6 +585,35 @@ each (`server/http/assetIndex.js`, `server/http/assetViews.js`):
   and are laid over whatever the page draws. Neither committed manifest, nor the views above, ever change with a plugin:
   without one a page loads exactly what it loaded before.
 
+## Player-initiated predownload
+
+The title screen's **下载完整素材** button (`public/js/ui/assetDownload.js`, queue in
+`public/js/assetDownload.js`) downloads every unique art/font URL in the server's current `assets.json` and optional
+`local-assets.json`, including Spine skeletons, atlases, pages, scene files, and audio. Audio uses the same `/media/`
+URLs as playback. Four concurrent requests consume complete response bodies without decoding them or retaining
+all files in memory. This warms the existing browser HTTP cache and works over HTTP as well as HTTPS; it does not
+require a service worker. Freshness and eviction remain under the browser's control, so completion is not persisted
+as a permanent/offline guarantee. A later check reads current manifests and uses ordinary HTTP cache validation.
+
+The dialog shows successful file count, progress, and bytes read (including cache hits). Closing it or leaving the
+title screen pauses and aborts pending requests. Resume keeps completed files for this page; retry requests only
+unfinished files. Network errors/timeouts/5xx/408/429 receive at most two retries; a 404, HTML fallback, empty body,
+or partial response is never counted as successful. A missing optional local manifest is disclosed, while a failed
+base manifest or any listed missing file prevents successful completion. Server owners still install missing art
+with setup; this button only transfers files already supplied by the server.
+
+## Importing a local asset pack
+
+The same title-screen dialog can import art the player already has: a setup `public/assets` folder, or a published full zip whose paths contain `public/assets/`. The page reads a zip's central directory in the browser. Method 0 (stored) is copied. Method 8 is inflated with `DecompressionStream('deflate-raw')`. Any other method, and an encrypted entry, is counted and skipped. Nothing is uploaded. The project does not add a new download for this.
+
+Verification uses the served manifests (`GET /data/assets.json`, and `GET /data/local-assets.json` when the server has one). A hashed URL maps back to a plain `assets/…` or `fonts/…` path. A file is stored only when the first 16 hex digits of its SHA-256 equal the hash in that URL. A Spine model is accepted only as a whole group, with the same model hash the server uses: SHA-256 of the members' file hashes joined by newlines (skeleton, atlas, then pages — the default `<skel>.png` when the manifest lists no textures). A mismatch, or a file the manifest does not list, is not stored. A path with no hash segment cannot be checked, so it is not imported; the download queue can still fetch it.
+
+Accepted bytes go into Cache Storage under the name `sp-imported-assets-v1`, at the hashed `/assets/` or `/fonts/` URL and, for audio, also at the `/media/~<hash>/…` URL playback requests. `public/sw.js` is a classic service worker (not a module, so the browsers this project already supports can register it). `public/js/main.js` registers it on a secure context only (`updateViaCache: 'none'`, scope `/`). It intercepts same-origin GET whose path matches `/assets/~<16 hex>/`, `/fonts/~<16 hex>/` or `/media/~<16 hex>/`. A cache hit is returned. A miss is fetched from the network and is not written into this cache. A request with a `Range` header is not intercepted. HTML, scripts, `/data/`, `/sim/` and `/ws` are never handled.
+
+`worker-src 'self' blob:` was already the site policy (`server/http/csp.js`). `'self'` is what `/sw.js` needs. `blob:` stays for the simulation worker the page already starts. No remote worker origin is added, and `SIM_WORKER_CSP` does not gain this worker.
+
+On `http://` to a LAN IP, `isSecureContext` is false. The import controls explain why and do not throw. Download still works over plain HTTP. The download queue does not request a URL already present in the import cache. Closing the dialog cancels an in-progress import and pauses the download. Clear deletes only this cache. `navigator.storage.estimate()` is the whole origin, and `navigator.storage.persist()` is a request the browser may refuse.
+
 ## Verification
 
 `node --test test/assets.test.js` covers the pure helpers: the resolver, the atlas normalizer, the format sniffers, WOFF2, audio banks, the plan id sets, the downloader against a fake network, and the self-heal of corrupt skeletons.

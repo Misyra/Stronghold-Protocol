@@ -230,6 +230,34 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
+.title-download { width: 4.9rem; margin-top: .12rem; text-align: center; }
+.title-download > small { display: block; margin-top: .06rem; color: var(--text-lo); font-size: calc(.12 * var(--t)); }
+.asset-download { text-align: left; }
+.asset-download p { margin: .12rem 0; line-height: 1.6; }
+.asset-download__errors { color: var(--amber); }
+.asset-download__errors ul { max-height: 1.8rem; overflow: auto; padding-left: .24rem; }
+.asset-download__errors code { overflow-wrap: anywhere; font-size: calc(.13 * var(--t)); }
+.asset-import { margin-top: .16rem; padding-top: .12rem; border-top: 1px solid var(--line); text-align: left; }
+.asset-import__row { display: flex; flex-wrap: wrap; gap: .08rem; margin: .08rem 0; }
+.asset-import__drop {
+  margin: .08rem 0;
+  padding: .12rem;
+  border: 1px dashed var(--line);
+  color: var(--text-lo);
+  text-align: center;
+}
+.asset-import__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.asset-import__reason { color: var(--text-lo); }
 .title-invite {
   display: flex;
   align-items: center;

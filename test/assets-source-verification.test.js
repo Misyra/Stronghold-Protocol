@@ -70,20 +70,45 @@ test('user same-path remapping replaces equal-size bytes despite an old ledger U
   assert.equal(f.dl.ledger.files['asset.bin'].url, raw + 'new.bin');
 });
 
-test('user failed replacement preserves the last verified output and cannot resolve an unverified cached alternative', async (t) => {
-  const good = Buffer.from('new!');
-  const f = await fixture(t, { 'a.bin': good, 'fallback.bin': good }, { payload: () => Buffer.from('old!') });
-  await writeFile(join(f.root, 'a.bin'), 'old!');
-  await writeFile(join(f.root, 'fallback.bin'), good);
-  const template = { item: { alts: [
-    { rel: 'a.bin', urls: [raw + 'a.bin'], kind: 'bin' },
-    { rel: 'fallback.bin', urls: [raw + 'fallback.bin'], kind: 'bin' },
-  ] } };
-  assert.deepEqual(await downloadLeaves(collectLeaves(template), f.dl, f.root), ['item']);
-  assert.equal((await readFile(join(f.root, 'a.bin'))).toString(), 'old!');
-  assert.equal(f.dl.ledger.files['a.bin'], undefined);
-  const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => f.dl.accepted.has(rel) });
-  assert.deepEqual(resolved.droppedLeaves, ['item']);
+test('user transient primary failures preserve untried cached alternatives through pruning without publishing them', async (t) => {
+  for (const failure of ['api', 'payload', 'invalid']) {
+    // Given a previous run that downloaded a fallback after a primary 404.
+    const good = Buffer.from('new!');
+    const f = await fixture(t, { 'a.bin': good, 'fallback.bin': good }, {
+      payload: (url) => url.endsWith('a.bin') ? null : good,
+    });
+    const template = { item: { alts: ['a.bin', 'fallback.bin', 'older.bin'].map((rel) =>
+      ({ rel, urls: [raw + rel], kind: 'bin' })) } };
+    await downloadLeaves(collectLeaves(template), f.dl, f.root);
+    assert.deepEqual(resolveTemplate(template, { root: f.root, spine: new Map(),
+      available: (rel) => f.dl.accepted.has(rel) }).value, { item: '/assets/fallback.bin' });
+    await writeFile(join(f.root, 'a.bin'), 'old!');
+    await writeFile(join(f.root, 'older.bin'), 'older fallback');
+    await writeFile(join(f.root, 'unrelated.bin'), 'orphan');
+    const fetchImpl = async (url, options) => {
+      if (failure === 'api' || url.endsWith('a.bin')) {
+        return failure === 'invalid' ? new Response('old!') : new Response(null, { status: 503 });
+      }
+      return f.fetchImpl(url, options);
+    };
+    const verifier = new SourceVerifier({ 'o/r@main': { commit, tree } }, { fetchImpl, token: 'test-api-token' });
+    const dl = new Downloader({ root: f.root, ledgerPath: join(f.root, 'ledger.json'), verifier,
+      fetchImpl, retries: 1, backoffMs: 0, log: quiet });
+    await dl.loadLedger();
+    // When a new run fails on the primary and prunes unreferenced files.
+    assert.deepEqual(await downloadLeaves(collectLeaves(template), dl, f.root), ['item']);
+    const resolved = resolveTemplate(template, { root: f.root, spine: new Map(), available: (rel) => dl.accepted.has(rel) });
+    const orphans = orphanFiles(['a.bin', 'fallback.bin', 'older.bin', 'unrelated.bin'],
+      new Set([...resolved.files, ...dl.preserved]));
+    for (const rel of orphans) await rm(join(f.root, rel));
+    // Then cached alternatives survive, but only independently accepted files can be published.
+    assert.deepEqual(await readFile(join(f.root, 'fallback.bin')), good);
+    assert.equal(await readFile(join(f.root, 'older.bin'), 'utf8'), 'older fallback');
+    assert.equal(await readFile(join(f.root, 'a.bin'), 'utf8'), 'old!');
+    assert.deepEqual(orphans, ['unrelated.bin']);
+    assert.deepEqual(resolved.value, {});
+    assert.deepEqual(resolved.droppedLeaves, ['item']);
+  }
 });
 
 test('user missing sources preserve legacy and verified caches through shared fallback pruning', async (t) => {

@@ -115,6 +115,7 @@ including confirmed source absence and HTTP 404/410, preserve existing bytes and
 these paths across all consumers, even when an older ledger has no blob record. Preservation alone does not authorize
 publication: only files matching the current source blob or revalidated against a previous ledger blob can enter the
 rebuilt manifest. Legacy files without that proof remain on disk for retry, excluded from the manifest and post-processing.
+When a transient error blocks later alternatives, `--prune` preserves their cached files without publication approval.
 Unattempted cached alternatives cannot enter the rebuilt manifest. A verified run exits 1 on
 download errors or font-generation errors; missing optional sources still follow the existing fallback/drop rules,
 and `--strict` rejects dropped leaves. The manifest shrink guard remains in effect.

@@ -1,9 +1,10 @@
 // server/sim/targeting.js — range tests, target filters and priorities (DESIGN §3, §5.5).
 //
 // Grid ranges: `[dRow, dCol]` offsets relative to facing RIGHT, rotated by the unit's direction (sim/dir.js: RIGHT
-// (dr,dc), UP (dc,−dr), LEFT (−dr,−dc), DOWN (−dc,dr); row 0 = bottom). An enemy is in range when the tile containing
-// it (rounded half to even, detmath roundHalfEven; PRTS 作战机制 四舍六入五成双) is one of the absolute range tiles — a huge enemy (巨型单位) when any tile its hit rectangle
-// occupies is (body.js; user playtest #5 item 10). `rangeExtend` (ability_range_forward_extend) adds N tiles
+// (dr,dc), UP (dc,−dr), LEFT (−dr,−dc), DOWN (−dc,dr); row 0 = bottom). An enemy is in range when its 0.1 collider
+// overlaps one of the absolute range tiles (body.js colliderKeys, constants.js ENEMY_COLLIDER_RADIUS — the owner's
+// decision of 2026-10-14) — a huge enemy (巨型单位) when its hit rectangle does (body.js; user playtest #5 item 10); a
+// tile rule takes the tile containing it (rounded half to even, detmath roundHalfEven; PRTS 作战机制 四舍六入五成双). `rangeExtend` (ability_range_forward_extend) adds N tiles
 // past the furthest cell of every row, along +dCol BEFORE rotating (DESIGN §3).
 // Operator priority: (1) enemies it blocks (every blocker, ranged ones on melee tiles included — user playtest #6
 // follow-up "阻挡了就一定要能打到"; Battle.blockedTargets; a healer's heal attack picks injured allies instead, blocking

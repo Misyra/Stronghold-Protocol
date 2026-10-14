@@ -468,7 +468,7 @@ export class SkillRuntime {
     if (this.rule === 'SKILL_RANGE') {
       if (this.triggerAllies) return this._allyTriggerSatisfied();
       if (!this.triggerGrid) return this._defaultCondition();
-      return b.anyEnemyInKeys(this._triggerKeys()) || this._allyTargetIn(this._trigSet);
+      return b.anyEnemyInKeys(this._triggerKeys(), u) || this._allyTargetIn(this._trigSet);
     }
     if (this.rule === 'ACTIVE_RANGE') return this._defaultCondition(this.triggerGrid ? this._triggerKeys() : null);
     // GDGLOW_SKILL_2 "全场存在可选目标时释放技能": a targetable enemy anywhere (heal skill: an ally that needs healing)

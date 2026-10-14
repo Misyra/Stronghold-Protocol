@@ -20,7 +20,7 @@
 import { getData } from '../../../data.js';
 import { COLS, DIRECT_BONUS_STACKING } from '../../constants.js';
 import { frontOf, offsetTile } from '../../dir.js';
-import { bodyInKeys, bodyDist, bodyInRadius, bodyOnTile, bodyTileReach } from '../../body.js';
+import { bodyInKeys, bodyDist, bodyInRadius, bodyOnTile, bodyTileReach, bodyInRange } from '../../body.js';
 
 export { COLS };
 /** Where an enemy can be hit (a huge enemy's whole hit rectangle, sim/body.js) — for every range test on enemies. */
@@ -267,7 +267,7 @@ export const tileKey = (u) => (u.side === 'ally' ? u.tileR * COLS + u.tileC : Ma
 /** Is `target` on a tile of `keys` (Set or array)? An ally: its tile; an enemy: its body (a huge one: every tile). */
 export const onKeys = (target, keys) => {
   if (!target || !keys) return false;
-  if (target.side !== 'ally') return bodyInKeys(target, keys);
+  if (target.side !== 'ally') return bodyInRange(target, keys);
   const k = tileKey(target);
   return keys instanceof Set ? keys.has(k) : keys.includes(k);
 };

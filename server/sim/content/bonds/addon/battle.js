@@ -73,7 +73,7 @@
 
 import { canTargetEnemy, enemyStealthed, extendedGrid } from '../../../targeting.js';
 import { normDir, rotateOffset, localOrder, localBefore } from '../../../dir.js';
-import { bodyKeys, bodyInKeys } from '../../../body.js';
+import { bodyKeys, bodyInRange } from '../../../body.js';
 import { applyRedirectCut, isHpLoss, redirectShare } from '../../../damage.js';
 import { BOSS_ROW_OFFSET } from '../../../constants.js';
 import { GEO } from '../../../../../shared/constants.js';
@@ -370,7 +370,7 @@ function raidGroundEnemy(u, e) {
 function raidStealthInRange(battle, u) {
   const keys = u.rangeKeySet || u.rangeKeys;
   if (!keys) return false;
-  for (const e of battle.enemies) if (e.alive && enemyStealthed(e) && raidGroundEnemy(u, e) && bodyInKeys(e, keys)) return true;
+  for (const e of battle.enemies) if (e.alive && enemyStealthed(e) && raidGroundEnemy(u, e) && bodyInRange(e, keys)) return true;
   return false;
 }
 

@@ -30,16 +30,17 @@ test('an operator whose target leaves the range grid on the tick the attack come
       enemies: { walker: enemyRec({ key: 'walker', hp: 1e6, atk: 0, speed: 2, def: 0 }) },
     },
     units: [{ uid: 1, chessId: 'sn', row: 10, col: 5, dir: 'RIGHT' }],
-    enemies: [{ key: 'walker', route: { motion: 'WALK', start: [10, 7.49 - step], end: [10, 16], checkpoints: [] } }],
+    // 7.59: its 0.1 collider still overlaps column 7 (the range's last tile); one step later it has left it (0.3.0)
+    enemies: [{ key: 'walker', route: { motion: 'WALK', start: [10, 7.59 - step], end: [10, 16], checkpoints: [] } }],
   });
   h.step();
   const u = h.unit(1), e = h.b.enemies[0];
-  assert.equal(roundHalfEven(e.x), 7);
+  assert.equal(roundHalfEven(e.x), 8, 'the centre is past column 7, the collider not yet');
   assert.ok(h.b.enemiesInKeys(u.rangeKeys, u, u.profile).includes(e), 'in range before the leaving step');
   const attacks = u.stats.attacks;
   u.atkCd = h.b.dt;
   h.step();
-  assert.equal(roundHalfEven(e.x), 8, 'the centre has left the tile the range covered');
+  assert.ok(e.x - 0.1 > 7.5, 'the collider has left the tile the range covered');
   assert.equal(h.b.enemiesInKeys(u.rangeKeys, u, u.profile).includes(e), false);
   assert.equal(u.stats.attacks, attacks + 1, 'the committed attack fired');
   const hp = e.hp;

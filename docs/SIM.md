@@ -287,8 +287,7 @@ tile in front of it (PRTS 作战机制: a blocked enemy's collider does not ente
 hundredths of a tile of deceleration are not modelled), and **every blocker** — melee units (要塞 / 领主 / 哨戒铁卫
 included), summons (流形's melee copy) and a ranged operator standing on a melee tile alike — may always target the
 enemies it blocks, in range or not, whatever its facing, and targets them first ("可以选择且优先选择阻挡单位", PRTS 选择器;
-the user's rule after playtest #6, "阻挡了就一定要能打到": officially the collision pushes a blocked enemy to its blocker's
-front — `Battle.blockedTargets`, used by `ai.js acquireTargets` and the skills' DEFAULT trigger, and
+the user's rule after playtest #6, "阻挡了就一定要能打到", where the enemy stands — `Battle.blockedTargets`, used by `ai.js acquireTargets` and the skills' DEFAULT trigger, and
 `sortEnemyTargets`; one exception, the owner's decision of 2026-10-08 (GitHub #220): the 速射手 air priority —
 priority 'fly', trait 优先攻击空中单位 — comes before its own blocked enemy, so a 速狙 on a melee tile shoots a flyer in its
 range first, PRTS 索敌的概念 「阻挡（近战限定）→特殊优先级→…」; every other priority keeps the blocked enemy first; "自身这格内" rules name the blocked enemies separately — 瑕光 S2, PRTS 备注). A kit that picks its own
@@ -563,8 +562,15 @@ that died, became hidden / uncarryable or cannot path to the next cabin position
 returns their current `weight` (including modifiers). The same tick's count and weight limits use that cleaned
 list and budget (DESIGN §28.27); this is local to the kit, not a change to general displacement.
 
-**Hit areas (`body.js`, user playtest #5 item 10).** A regular enemy is a point: in a grid range when the tile of its
-position (`roundHalfEven(y)`, `roundHalfEven(x)` — PRTS 作战机制 "四舍六入五成双"; `Math.round` would take 2.5 to 3) is a range tile, in a radius when its position is (DESIGN §3). An enemy held on the field edge is inset by `FIELD_EDGE_INSET` (1/1048576) [ASSUMED] so that rounding keeps it on the edge tile; movement, knockback and a unit's standing tile for range keys still use `Math.round` (§30.27). A huge enemy (巨型单位:
+**Hit areas (`body.js`, user playtest #5 item 10).** A regular enemy is a point with a collider: in an operator-side
+grid range (an attack range, a skill's or trait's range grid, the skill-range trigger, an aura over a range, a strike
+area) when its circle of radius 0.1 (`ENEMY_COLLIDER_RADIUS`, the client's CircleCollider2D; PRTS 作战机制 "索敌抬手等均使用
+碰撞箱"; the owner's decision of 2026-10-14) overlaps a range tile — `colliderKeys` / `bodyInRange`, the range buckets of
+`Battle.enemiesInKeys` / `anyEnemyInKeys` / `unitsInGrid` —; on a tile for a tile rule (格子判定: terrain and tile
+states, traps, "所在格" effects, the PRTS notes that say so, a `rangeTiles` profile — 谬因) when the tile of its position
+(`roundHalfEven(y)`, `roundHalfEven(x)` — PRTS 作战机制 "四舍六入五成双"; `Math.round` would take 2.5 to 3) is that tile —
+`bodyKeys` / `bodyInKeys` / `bodyOnTile`, `Battle.enemiesOnTiles` —; in a radius when its position is (DESIGN §3), or,
+for the radius effects PRTS marks 碰撞判定, when its circle overlaps the radius (`Battle.foesInColliderRadius`). An enemy held on the field edge is inset by `FIELD_EDGE_INSET` (1/1048576) [ASSUMED] so that rounding keeps it on the edge tile; movement, knockback and a unit's standing tile for range keys still use `Math.round` (§30.27). A huge enemy (巨型单位:
 `enemy.hitArea` from data/enemies.json `hitArea` — 假想敌：胄 / 管 / 盐风主教昆图斯 / 阿利斯泰尔 / “萨米的意志”, PRTS
 "受击判定区域为长4.95、宽2.95的长方形，向上偏移1.0") is hit anywhere on a rectangle `w` × `h` tiles centred on its position
 moved `dx` columns right / `dy` rows up: it occupies every tile the rectangle overlaps (`bodyKeys` — 5 × 3 tiles; PRTS
@@ -576,8 +582,9 @@ centred on an enemy — 焰影苇草 S3's 灼痕 burst, 新约能天使 火力�
 attacks, and splash centred on it, measure from it); body size plays no part in blocking or movement: every huge leader is 自缚 + 无法被阻挡 (PRTS 天赋; content/bosses.js
 `SELF_BOUND` gives it a persistent `noMove` + `unblockable` buff at spawn — it stands where it spawns, its route is never
 walked, so the rectangle stays on the pipe block). Content tests enemies only through the engine
-queries above or `body.js` (`bodyInKeys`, `bodyOnTile`, `bodyInRadius`, `bodyDist`, `bodyTileReach`; wave-B modules via
-`support/index.js` `onKeys` / `inRange`), never `rangeKeySet.has(tileKey(enemy))`; distance-scaled numbers (farther
+queries above or `body.js` (`bodyInRange` for a range, `bodyInKeys` / `bodyOnTile` for a tile rule, `bodyInRadius`,
+`bodyDist`, `bodyTileReach`; wave-B modules via `support/index.js` `onKeys` / `inRange` — ranges), never
+`rangeKeySet.has(tileKey(enemy))`; distance-scaled numbers (farther
 targets take more damage, pull strength), movement, pathing, terrain under the enemy, tile-entry tracking, placement
 heuristics and the range keys taken from blocked enemies (a huge enemy is never blocked) keep the position. The one
 placement heuristic that is a body query is 突袭's landing search window (`addon/battle.js` `raidTile`, DESIGN §32.14.12;
@@ -929,8 +936,8 @@ instance) and skip `'counter'` / `'reflect'` damage. When the guard trips, the l
 | `downOn(r, c, except?)`, `restTile(u)` | the down operator (`isDown`: knocked out or forced out) lying on a tile (no ally deploys / moves there: `_deploy`, `spawnDevice`, `relocate`); the tile a withdrawn ally comes back on — its `body` tile when down, else its home (§1) |
 | `addProjectile({ from, target | to:{x,y}, speed, onHit(ctx), visual, source, hitDead })` | homing; fizzles if the target dies unless `hitDead` |
 | `allySelectable(ally, by)`, `alliesFor(by, ownerId?)` | may an ability of ally `by` select `ally` — never a 孤立 unit (炎佑, 从不混淆的方向) but `by` itself (PRTS 选择器: "若掩码中孤立为1，且选择器的阵营与目标为友好关系，则不可选中"); `allies()` without the 孤立 ones — content picks ally targets (buffs, auras, 全场 talents, heal picks) through these, `alliesInGrid` too |
-| `unitsInGrid(unit, grid, {side, extend})`, `alliesInGrid(unit)`, `enemiesInRadius(x, y, r, centre?)`, `foesInRadius(x, y, r, centre?)`, `alliesInRadius(x, y, r, ownerId?)` | grid offsets are relative to facing RIGHT, rotated by `unit.dir`; enemies by their body (§2 hit areas: a huge enemy on every tile it occupies / within `r` of its rectangle; `centre` = splash around a target, a 中点判定 by position; `foesInRadius` = the enemies an operator's area effect can select — no untargetable enemy, none whose 隐匿 is on (`targeting.js enemyStealthed`: not blocked, not revealed, not within 3 s of its last block), PRTS 作战机制 §AOE伤害判定 — while enemy-side auras / heals and collisions keep `enemiesInRadius`) |
-| `enemiesInKeys(keys, attacker, profile)`, `blockedTargets(unit, profile)` | targetable enemies whose body is on the tiles (a huge one listed once); the enemies a unit blocks — always selectable by it, a ranged operator on a melee tile included (§1.2 Blocking) |
+| `unitsInGrid(unit, grid, {side, extend})`, `alliesInGrid(unit)`, `enemiesInRadius(x, y, r, centre?)`, `foesInRadius(x, y, r, centre?)`, `foesInColliderRadius(x, y, r)`, `alliesInRadius(x, y, r, ownerId?)` | grid offsets are relative to facing RIGHT, rotated by `unit.dir`; enemies by their body (§2 hit areas: a regular enemy in a grid by its 0.1 collider, a huge enemy on every tile it occupies / within `r` of its rectangle; `foesInColliderRadius` = a radius effect PRTS marks 碰撞判定, a regular enemy within `r` + 0.1; `centre` = splash around a target, a 中点判定 by position; `foesInRadius` = the enemies an operator's area effect can select — no untargetable enemy, none whose 隐匿 is on (`targeting.js enemyStealthed`: not blocked, not revealed, not within 3 s of its last block), PRTS 作战机制 §AOE伤害判定 — while enemy-side auras / heals and collisions keep `enemiesInRadius`) |
+| `enemiesInKeys(keys, attacker, profile)`, `enemiesOnTiles(keys, attacker, profile)`, `blockedTargets(unit, profile)` | targetable enemies in the range of the tiles — a regular one by its 0.1 collider, each listed once (a `rangeTiles` attacker: by tile) —, or standing on them (`enemiesOnTiles`, the tile rule: the tile of the position; a huge one on its rectangle's tiles); the enemies a unit blocks — always selectable by it, a ranged operator on a melee tile included (§1.2 Blocking) |
 | `setAllyTarget(unit, on)`, `allyTargetsInKeys(keys, attacker)`, `isAllyTarget(unit)` | an **ally target**: an ally unit our attacks select like an enemy — 白铁's 铁钳号·原型机, a summon of the enemy camp ("可被我方干员攻击但不受伤害", PRTS; kits/ops/op-ironmn.js). The attack loop (ai.js `acquireTargets`) appends the registered ones standing on the attacker's range after every enemy (their 嘲讽等级 −2 puts them last: one target ⇒ an enemy first; all in range / more targets ⇒ them too) and ranged attacks fly to them; heals, skills that pick their own victims and enemies never select them (the kit gives it `untargetable` against enemies and cancels the damage it takes in its `hit` hook). A skill that acts on them counts the registered ones like enemies for its automatic start (skills.js `_allyTargetIn` / `allyTargetsOk`, every enemy condition of the trigger rules — the owner's rule of 2026-10-08): one that acts through the unit's own attacks, or whose kit flags `allyTargets: true` because its selectors take them too (`allyTargetsInKeys` / `allyTargetsInRadius`: 蕾缪安 S3's locks, 艾丽妮 S3, 陈 S2, 引星棘刺 S2); [ASSUMED] a skill that picks its victims among enemies only (or whose kit says `allyTargets: false`) is not opened by them and waits for an enemy. None registered ⇒ the loop is unchanged |
 | `allies(ownerId?)`, `aliveEnemies()`, `unitAt(r, c)`, `unitById(id)`, `tileInfo(r, c)`, `lowestHpAllyInRange(unit)` | |
 | `addLayers(playerId, bondId, n, reason, {source})`, `addCoins(playerId, n)` | layers are a no-op when `flags.layerGainsEnabled` is false (unite/boss); a gain adds at most the room left under `BOND_LAYER_CAP` (999, shared/constants.js `layerGainRoom`: the client's `AddBondCount` min(L + n, 999)) on the live copy — or, without one, on the battle's own gains — and returns what it added (0 at the cap: no hook, no event) |

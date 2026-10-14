@@ -542,7 +542,8 @@ test('user: Given normal battle-start effects, When rehearsing candidate layouts
     return { h, m, ps, pieces };
   };
   const cases = [
-    { effect: 'in-battle layer gains', keys: ['9,4', '9,8'] },
+    // (0.3.0's 0.1 enemy collider changed the leaks: 9,4 3 / 9,8 7 — 9,5 now has the strict advantage)
+    { effect: 'in-battle layer gains', keys: ['9,4', '9,5'] },
     { effect: 'duck replacements and a teammate medic', keys: ['9,9', '9,7'] },
   ];
   for (const { effect, keys } of cases) {

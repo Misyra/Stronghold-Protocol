@@ -50,7 +50,7 @@
 
 import { num, talentBb, traitBb, skillRec, up } from '../shared/tier1.js';
 import { offsetTile, frontOf, dirVec } from '../../../dir.js';
-import { bodyInKeys } from '../../../body.js';
+import { bodyInKeys, bodyInRange } from '../../../body.js';
 import { enemyStealthed, tileKeyOf } from '../../../targeting.js';
 import { hasHp } from '../../../damage.js';
 import { COLS } from '../../../constants.js';
@@ -301,7 +301,7 @@ export default {
           battle.on('elementBurst', (c) => {
             const belt = unit.mem.thumpyBelt, t = c.target;
             if (!belt || !up(unit) || c.element !== 'erosion' || !t || t.side !== 'enemy') return;
-            if (t.blockedBy !== unit && (t.isFlying || !bodyInKeys(t, belt.hurtSet))) return;
+            if (t.blockedBy !== unit && (t.isFlying || !bodyInRange(t, belt.hurtSet))) return;
             battle.addBuff(t, { key: BELT_BREAK, refresh: 'stack', stacks: 1, maxStacks: 1e6, mods: { defFlat: breakDef }, source: unit });
           }, { owner: unit });
         }

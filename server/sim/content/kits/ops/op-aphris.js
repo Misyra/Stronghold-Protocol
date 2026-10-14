@@ -199,6 +199,9 @@ export default {
     const t0 = talentBb(chess, 0), t1 = talentBb(chess, 1);
     const b1 = bbOf(chess, S1), b2 = bbOf(chess, S2), b3 = bbOf(chess, S3);
     return {
+      // PRTS 链路协议 备注 "索敌与攻击始终采用格子判定": her searches take the tile of an enemy's position, never its 0.1
+      // collider (Battle.enemiesInKeys / anyEnemyInKeys / unitsInGrid read `rangeTiles`)
+      trait: { rangeTiles: true },
       skills: {
         [S1]: {
           kind: 'toggle', trigger: 'SP_FULL', mods: { atkPct: num(b1.atk) },

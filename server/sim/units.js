@@ -66,6 +66,9 @@ export class Unit {
     this.removed = false;       // permanently gone (enemies, tokens, retreated-for-good)
     this.blocking = [];         // ops: enemies currently blocked
     this.blockedBy = null;      // enemies: blocker unit
+    // enemies: listed on more than one tile of the per-tick range index (their 0.1 collider straddles an edge —
+    // battle/queries.js _buildEnemyIndex); declared here so the index writing it never changes a unit's shape
+    this._ebMulti = false;
     this.motion = init.motion ?? 'GROUND'; // enemies: 'WALK' | 'FLY'
     this.profile = null;        // resolved profession/attack profile
     this.skill = null;          // SkillRuntime

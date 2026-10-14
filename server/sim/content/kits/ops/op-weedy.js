@@ -48,7 +48,7 @@
 import { num, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
 import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
-import { COLS } from '../../../constants.js';
+import { bodyInRange } from '../../../body.js';
 import { startCountdown } from '../../tokens.js';
 import { hypot } from '../../../detmath.js';
 
@@ -171,7 +171,7 @@ function cannonKit(t, owner) {
       afterHit(battle, unit, target) {
         if (!target || !target.alive || target.side !== 'enemy' || target.isFlying) return;
         const ahead = new Set(absoluteRangeKeys(AHEAD, unit.tileR, unit.tileC, unit.dir, 0));
-        if (!ahead.has(Math.round(target.y) * COLS + Math.round(target.x))) return;
+        if (!bodyInRange(target, ahead)) return;
         battle.push(target, forceUp, { from: unit, dir: along(unit) });
       },
     },

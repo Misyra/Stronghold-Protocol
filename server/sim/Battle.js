@@ -137,9 +137,12 @@ export class Battle {
     this._evq = [];
     this.projectiles = new ProjectileSystem(this);
     this._occ = new Array(ROWS * COLS).fill(null);
-    this._eb = new Array(ROWS * COLS);
+    this._eb = new Array(ROWS * COLS);   // range buckets (colliders: queries.js _buildEnemyIndex)
     for (let i = 0; i < this._eb.length; i++) this._eb[i] = [];
     this._ebUsed = [];
+    this._et = new Array(ROWS * COLS);   // tile buckets (格子判定: the position's tile, a huge enemy's rectangle tiles)
+    for (let i = 0; i < this._et.length; i++) this._et[i] = [];
+    this._etUsed = [];
     this._idSeq = 0;
     this._attackSeq = 0;   // DamageInfo.attackId of normal attacks (one id per attack, all its damage instances)
     this._deploySeq = 0;

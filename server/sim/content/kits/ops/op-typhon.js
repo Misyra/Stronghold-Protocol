@@ -31,7 +31,7 @@
 //   重新计算该技能的使用次数").
 // - S3 “永恒狩猎” (ammo attack@s3_trigger_time): base attack time +base_attack_time s (flat: batMod). At the cast she marks the first
 //   enemy of her own range (未开启技能时的攻击范围: the initial range, her heaviest-first order); the mark area (radius MARK_RADIUS,
-//   碰撞判定 — foesInRadius) follows that enemy until it leaves the field, then stays; its enemies are re-read every MARK_SCAN s.
+//   碰撞判定 — foesInColliderRadius: the enemies' 0.1 colliders) follows that enemy until it leaves the field, then stays; its enemies are re-read every MARK_SCAN s.
 //   Her range is the whole field (the card shows 全场) but she attacks only while an enemy is in the mark area; each attack
 //   deals nothing itself and drops a round of s3_max_hit_num arrows, RAIN_GAP s apart, each on a random enemy of the area: a
 //   physical skill hit (not an attack: PRTS "不属于普通攻击/技能攻击的直接伤害", so the SIE-X / SIE-Y attack riders do not apply
@@ -77,7 +77,7 @@ export default {
     /** S3: the enemies of the mark area (last scan) her attacks may still select. */
     const areaFoes = (unit, st) => st.inArea.filter((e) => e.alive && e.deployed && !e.hidden && canTargetEnemy(unit, e, unit.profile));
     const follow = (st) => { const t = st.target; if (t && t.alive && t.deployed && !t.hidden) { st.x = t.x; st.y = t.y; } };
-    const scan = (battle, unit, st) => { st.inArea = battle.foesInRadius(st.x, st.y, MARK_RADIUS).filter((e) => canTargetEnemy(unit, e, unit.profile)); };
+    const scan = (battle, unit, st) => { st.inArea = battle.foesInColliderRadius(st.x, st.y, MARK_RADIUS).filter((e) => canTargetEnemy(unit, e, unit.profile)); };
     const rain = (battle, unit) => {
       const st = unit.mem.typhonMark;
       if (!st) return;

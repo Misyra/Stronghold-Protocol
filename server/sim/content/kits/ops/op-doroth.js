@@ -191,7 +191,7 @@ export default {
         battle.fx('explode', { x: t.x, y: t.y, r: S2_RADIUS, id: t.id, consumed: true, kind: 'doroth:quicksand' });
       } else if (s3) {
         const keys = absoluteRangeKeys(sk?.rangeGrid ?? X6, t.tileR, t.tileC, t.dir, 0);
-        for (const x of battle.enemiesInKeys(keys, t, GROUND)) {
+        for (const x of battle.enemiesOnTiles(keys, t, GROUND)) {
           battle.dealDamage(t, x, { amount: atk * num(tb2.atk_scale), type: 'arts', isSkill: true, tags });
           if (x.alive && num(tb2.sluggish) > 0) battle.applyStatus(x, 'sluggish', { duration: num(tb2.sluggish), source: t });
         }

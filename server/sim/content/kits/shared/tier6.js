@@ -14,7 +14,8 @@
 //  1_15 盟约·辅助干员  every damage she deals attaches all three elements, neural → burn → apoptosis (see pithst).
 //  6_01 蕾缪安   locks every 0.5 s while an enemy is in range (ends early — and bombs — when the range empties);
 //                the shells then follow one every 0.3 s (PRTS), each landing 0.3 s after it is fired [ASSUMED flight];
-//                the 1.5 radius (PRTS "碰撞箱判定") is read as the centre distance like every engine radius; knocked
+//                the 1.5 radius (PRTS "碰撞箱判定") takes an enemy whose 0.1 collider overlaps it
+//                (foesInColliderRadius, 0.3.0); the 0.8 inner ring stays a centre distance [ASSUMED]; knocked
 //                out / withdrawn after the end, she fires no further shell (those already in the air still land);
 //                "wanted" needs a continuous 8 s stay in some 拉特兰 range; wanted targets are added to her range tiles.
 //  6_02 圣聆初雪 "诱导" (ba.attract 无法被阻挡并向目标位置移动) = the engine `attract` status for attract_time: the enemy

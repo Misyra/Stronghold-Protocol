@@ -90,7 +90,7 @@
 
 import { COLS, ROWS, MOVE_SCALE, FORCED_EXIT } from '../constants.js';
 import { absoluteRangeKeys, sortEnemyTargets, canTargetEnemy } from '../targeting.js';
-import { bodyInKeys, bodyOnTile } from '../body.js';
+import { bodyOnTile, bodyInRange } from '../body.js';
 import { hasHp } from '../damage.js';
 import { textCount } from '../../../shared/plugins/textNumber.js';
 import { genericKit } from './generic.js';
@@ -251,7 +251,7 @@ function enemiesOnKeys(battle, keys) {
   const out = [];
   for (const e of battle.enemies) {
     if (!e.alive || e.hidden) continue;
-    if (bodyInKeys(e, set)) out.push(e);
+    if (bodyInRange(e, set)) out.push(e);
   }
   return out;
 }

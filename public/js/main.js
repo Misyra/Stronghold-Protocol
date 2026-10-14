@@ -53,6 +53,7 @@ import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport } from './ui/device.js';
 import { LoadoutHost } from './screens/loadout.js';
 import { StatsHost } from './screens/stats.js';
+import { installRehearsal } from './battle/rehearsal.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
@@ -93,6 +94,8 @@ let matchAt = 0;
 let restoreTimer = null;
 let joinTimer = null;
 let joinInFlight = false;
+/** The rehearsal installer (battle/rehearsal.js): its tasks follow the match on screen (see wireNet's store hook). */
+let rehearsal = null;
 
 function clearPendingJoin() {
   store.patch('ui', { pendingJoin: null });
@@ -282,6 +285,9 @@ function wireNet() {
     if (s.session.entered && !prev.session.entered) schedulePendingJoin();
     // in a room (co-op or solo, also a resumed one) a match is near: its data starts downloading
     if (s.room && !prev.room) warmGameData();
+    // the match on screen is over (left, closed, kicked, a new session): a rehearsal task of it is dead, and the frame
+    // that cancels it may never arrive (a disposed match sends nothing) — the page stops what it is running itself
+    if (selectRoute(prev) === 'game' && selectRoute(s) !== 'game') rehearsal?.clear();
   });
 }
 
@@ -391,6 +397,11 @@ async function boot() {
   installContent({ toast });
   // a room with gameplay plugins: its content set downloaded, checked and shown (content.js — DESIGN §32.6)
   installContentSet({ toast });
+  // A bot prep's layout rehearsal the server offers this host's browser (DESIGN §14, SP_BOT_REHEARSAL=host on the
+  // server): a same-origin module Worker simulates the candidates off the main thread and answers with its pick; a
+  // browser that cannot run one answers `error` and the server rehearses itself. Nothing happens while the server
+  // does not delegate. A gameplay-plugin room is never offered (the server keeps that rehearsal).
+  rehearsal = installRehearsal({ net });
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   // a cosmetic plugin's sound that will not load falls back like its art (content.js, DESIGN §32 P1a)

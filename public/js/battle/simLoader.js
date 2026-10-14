@@ -14,9 +14,10 @@ function deepFreeze(root) {
 
 /**
  * Browser sim loader: the /sim/ modules + the data files (own frozen copies — the server's data is frozen too, so a
- * content bug that writes into a record fails identically on both sides). `data` (DESIGN §32.6): the files of a room's
- * content set the page checked (public/js/content.js) instead of fetching /data/; `cs` names what was loaded; `bounds`
- * its official-bounds snapshot (installSimBounds).
+ * content bug that writes into a record fails identically on both sides). `raw` is that frozen data: the rehearsal
+ * worker (battle/rehearsal.js) is handed the page's official copy once instead of fetching the files again. `data`
+ * (DESIGN §32.6): the files of a room's content set the page checked (public/js/content.js) instead of fetching
+ * /data/; `cs` names what was loaded; `bounds` its official-bounds snapshot (installSimBounds).
  */
 let loadedScripts = false;
 export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
@@ -48,7 +49,7 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
     await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:base+'content/extensions.js',cs,nativeVerified});
   } else if (loadedScripts) (await import(base+'content/extensions.js')).resetExtensions();
   loadedScripts = !deferScripts && scripts.length > 0;
-  return { spec, ds: new simdata.DataSource(raw, null), cs };
+  return { spec, ds: new simdata.DataSource(raw, null), cs, raw };
 }
 
 /**

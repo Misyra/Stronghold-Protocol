@@ -225,7 +225,7 @@ test('messages arriving during maintenance stay queued, shutdown waits for archi
   assert.equal(logger.stats().totalBytes, readdirSync(dir).reduce((sum, name) => sum + statSync(path.join(dir, name)).size, 0));
 });
 
-test('invalid retention/compression settings fail early; health exposes aggregate log usage without path or contents', async t => {
+test('invalid retention/compression settings fail early; /metrics exposes aggregate log usage without path or contents', async t => {
   const { dir, dispose } = temporary(t);
   for (const value of [-1, 1.5, 'bad', 36501]) {
     assert.throws(() => new ChatLog({ dir, compressAfterDays: value }), /SP_CHAT_LOG_COMPRESS_AFTER_DAYS/);
@@ -236,12 +236,14 @@ test('invalid retention/compression settings fail early; health exposes aggregat
   const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, stateFile: 'off',
     chatLogDir: dir, chatLogCompressAfterDays: 2, chatLogRetentionDays: 30 });
   dispose.push(() => server.close()); await server.chatLog.maintain();
-  for (const route of ['/healthz', '/metrics']) {
-    const data = await (await fetch(server.url + route)).json();
-    assert.equal(data.chatLog.archiveFiles, 1); assert.equal(data.chatLog.plainFiles, 0);
-    assert.equal(data.chatLog.retentionDays, 30); assert.equal(data.chatLog.compressAfterDays, 2);
-    assert.ok(data.chatLog.totalBytes > 0); assert.ok(data.chatLog.lastMaintenanceAt);
-    const serialized = JSON.stringify(data);
+  // The log usage is a process diagnostic: /metrics (loopback) only, never the public /healthz.
+  const publicHealth = await (await fetch(server.url + '/healthz')).json();
+  assert.equal(publicHealth.chatLog, undefined);
+  const data = await (await fetch(server.url + '/metrics')).json();
+  assert.equal(data.chatLog.archiveFiles, 1); assert.equal(data.chatLog.plainFiles, 0);
+  assert.equal(data.chatLog.retentionDays, 30); assert.equal(data.chatLog.compressAfterDays, 2);
+  assert.ok(data.chatLog.totalBytes > 0); assert.ok(data.chatLog.lastMaintenanceAt);
+  for (const serialized of [JSON.stringify(data), JSON.stringify(publicHealth)]) {
     assert.ok(!serialized.includes(secret)); assert.ok(!serialized.includes(dir));
   }
 });

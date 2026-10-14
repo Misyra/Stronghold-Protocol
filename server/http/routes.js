@@ -4,14 +4,22 @@
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * POST /api/nickname/validate → server-only nickname preflight, bounded and rate-limited;
 //   * other routes reject methods but GET / HEAD with 405;
-//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, sockets, sessions,
-//     rooms, matches), HTTP no-store with a one-second internal snapshot; this fork adds worker/memory/static-cache/
-//     socket-buffer/wire/persist diagnostics, and `?traffic=1` adds the traffic counters (traffic.js: bytes by
-//     category since the start, WebSocket wire and payload bytes) for a loopback or private-network client only —
-//     the maintainer's decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or
+//   * GET /healthz → the PUBLIC status (protocol `version`, release `app`, uptime, the served `build`, the asset
+//     identity fields, sockets/sessions/rooms/matches/humans/bots/spectators and this fork's public counters
+//     roomProtection/botPopulation/foreignSessions), HTTP no-store with a one-second internal snapshot. This fork's
+//     process diagnostics are NOT part of it — they describe this host, not the players, and live on /metrics below.
+//     `?build=1` answers the release tag alone; `?traffic=1` adds the traffic counters (traffic.js: bytes by category
+//     since the start, WebSocket wire and payload bytes) for a loopback or private-network client only — the
+//     maintainer's decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or
 //     proxy on this machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the
 //     WebSocket limits);
-//   * GET /metrics → fresh detailed health plus bounded WebSocket latency diagnostics;
+//   * GET /metrics → the one endpoint carrying those diagnostics: workers, memory, static cache, socket buffers,
+//     outbound wire counters, state-delta and persistence accounting, chat log, rehearsal pressure and the
+//     per-instance process windows, plus bounded WebSocket latency diagnostics. Always collected fresh, and NOT
+//     public: only a loopback or private-network client gets it — every other caller falls through to the static
+//     files and sees the same 404 as an unknown path, so the route does not even advertise itself. The host's monitor
+//     reads it over 127.0.0.1 (sp-portal collector.mjs; MON_METRICS_URL, default derived as
+//     http://127.0.0.1:<game port>/metrics);
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);
@@ -33,7 +41,33 @@ import { setSecurityHeaders, sendError, sendJson, sendJsonBody, splitUrl } from 
 const MAX_URL_LENGTH = 4096;
 
 /**
- * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
+ * The public GET /healthz body: protocol and asset identity plus the counters a player, the middle station or a
+ * third-party site may see. Deliberately free of process diagnostics — healthReport below adds those, and only
+ * /metrics (loopback/private-network) ever serves them.
+ * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
+ *           lobby: import('../lobby.js').Lobby, serveStatic?: object, cdn?: { base: string, version: string },
+ *           assetsManifest?: object | null }} health
+ */
+export function publicHealthReport({ startedAt, network, registry, lobby, serveStatic = null, cdn = null, assetsManifest = null }) {
+  return {
+    ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+    // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
+    // older than this reloads itself, so a deploy reaches clients that never reload
+    build: serveStatic ? serveStatic.version : null,
+    ...(serveStatic ? { runtimeVersion: serveStatic.runtimeVersion, artVersion: serveStatic.artVersion } : {}),
+    assetsCdn: cdn?.base || null,
+    assetsCdnVersion: cdn?.version || null,
+    assetsManifest: assetsManifest?.tag || null,
+    sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+    roomProtection: lobby.roomActions.stats(),
+    botPopulation: lobby.botPopulation.stats(),
+    foreignSessions: network.foreignSessions?.stats() || null,
+  };
+}
+
+/**
+ * The GET /metrics body: the public snapshot plus every process diagnostic this fork adds. Served to a loopback
+ * or private-network client only (`withTraffic`: plus the traffic counters, the loopback-only `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, workerPool: object | null, persister: object | null, store: object | null,
  *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null,
@@ -43,18 +77,8 @@ const MAX_URL_LENGTH = 4096;
  */
 export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
   const report = {
-    ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-    // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
-    // older than this reloads itself, so a deploy reaches clients that never reload
-    build: serveStatic ? serveStatic.version : null,
-    ...(serveStatic ? { runtimeVersion: serveStatic.runtimeVersion, artVersion: serveStatic.artVersion, staticCache: serveStatic.cacheStats() } : {}),
-    assetsCdn: cdn?.base || null,
-    assetsCdnVersion: cdn?.version || null,
-    assetsManifest: assetsManifest?.tag || null,
-    sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
-    roomProtection: lobby.roomActions.stats(),
-    botPopulation: lobby.botPopulation.stats(),
-    foreignSessions: network.foreignSessions?.stats() || null,
+    ...publicHealthReport({ startedAt, network, registry, lobby, serveStatic, cdn, assetsManifest }),
+    ...(serveStatic ? { staticCache: serveStatic.cacheStats() } : {}),
     rehearsalPressure: network.diagnostics?.rehearsalPressure?.stats() || null,
     workers: workerPool?.stats() || null,
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
@@ -88,7 +112,8 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
 
 /** Cache expensive collection and encoded JSON for at most one second per server.
  * Cheap connection/session/uptime fields stay current. Topology changes invalidate immediately.
- * Refresh errors propagate; HTTP remains no-store. /metrics always collects fresh diagnostics.
+ * Refresh errors propagate; HTTP remains no-store. The cached body is publicHealthReport — the process
+ * diagnostics /metrics serves are never cached there, and /metrics always collects fresh.
  */
 export function createHealthBody(health, { now = () => performance.now(), maxAgeMs = 1000 } = {}) {
   let snapshot = null, body = null, expiresAt = -Infinity;
@@ -100,7 +125,8 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
     const currentSockets = health.network.connectionCount, currentSessions = health.registry.size;
     const currentUptime = Math.round((Date.now() - health.startedAt) / 1000);
     if (!body || refresh || currentSockets !== sockets || currentSessions !== sessions || currentUptime !== uptimeSec) {
-      const next = refresh ? healthReport(health) : snapshot;
+      // The cached body is the PUBLIC report: the diagnostics /metrics serves are always collected fresh.
+      const next = refresh ? publicHealthReport(health) : snapshot;
       const encoded = Buffer.from(JSON.stringify({ ...next, sockets: currentSockets, sessions: currentSessions, uptimeSec: currentUptime }));
       // Commit only after collection and encoding both succeed: failed refreshes must retry.
       if (refresh) {
@@ -148,11 +174,14 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
       sendJson(req, res, 200, healthReport(health, true));
       return;
     }
-    // Players only need the release tag; keep full diagnostics for collectors.
+    // Players only need the release tag; the process diagnostics live on /metrics, for this host alone.
     if (new URLSearchParams(query).get('build') === '1') {
       sendJson(req, res, 200, { build: health.serveStatic ? health.serveStatic.version : null });
     } else sendJsonBody(req, res, 200, healthBody());
   };
+  // Whose client address the diagnostics may be served to: this host and the private networks it sits in, or an
+  // in-process caller with no socket at all ('?', net.js clientAddress). Everything else is the public internet.
+  const hostCaller = (req) => { const { ip } = clientAddress(req, trustProxy); return ip === '?' || isLocalIp(ip); };
   const failed = (req, res, e) => {
     log.error('[http] request failed', e);
     sendError(req, res, 500, '服务器内部错误 · Internal error');
@@ -172,7 +201,11 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
       serveHealth(req, res);
       return;
     }
-    if (parts.rawPath === '/metrics') {
+    // The process diagnostics: this host's own numbers, so a loopback or private-network client only. Everyone
+    // else falls through to the static handler and gets the same 404 an unknown path gets — the route never
+    // confirms it exists (net.js clientAddress, honouring TRUST_PROXY like the WebSocket limits, so a tunnel or
+    // proxy on this machine still counts as the remote client it forwards).
+    if (parts.rawPath === '/metrics' && hostCaller(req)) {
       if (methodAllowed(req, res)) sendJson(req, res, 200, { ...healthReport(health),
         websocket: { diagnostics: health.network.diagnostics.stats() } });
       return;

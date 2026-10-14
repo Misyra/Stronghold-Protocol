@@ -21,7 +21,8 @@ const KEYS = ['foo_atk_start', 'foo_atk_hit', 'foo_s2_mode_cast', 'foo_s3_mode_c
   'foo_s1_range', 'foo_s1_range_l', 'foo_s1_end', 'foo_s1_ready', 'foo_s1_trig', 'foo_s2_cast_start', 'foo_s2_cast_spell', 'foo_s2_aim', 'foo_s2_h1',
   'foo_s2_h2', 'foo_s2_burn', 'foo_s2_trail', 'foo_s2_phit', 'foo_s3_loop', 'foo_s3_tick', 'foo_each_hit', 'bar_buff', 'bar_birth',
   'indigo_attack_charge_01_start', 'indigo_attack_charge_02', 'indigo_attack_charge_03', 'indigo_attack_charge_04', 'indigo_attack_charge_05',
-  'indigo_attack_01_trail', 'indigo_attack_01_hit', 'clemnt_skill_03_mark_all_01', 'buff_stun', 'buff_burn', 'g_hit', 'g_heal', 'g_enemy', 'g_die'];
+  'indigo_attack_01_trail', 'indigo_attack_01_hit', 'clemnt_skill_03_mark_all_01', 'buff_stun', 'buff_burn', 'g_hit', 'g_heal', 'g_enemy', 'g_die',
+  'qux_s1_cast', 'qux_s1_trail', 'qux_mode_cast'];
 
 const melee = (k, ev = 2) => ({ effects: [k], oneshot: 1, startEvent: ev, endEvent: 3, directionType: 0 });
 
@@ -31,6 +32,8 @@ function makeIndex() {
     // lasting: mode S2, a buff loop, a begin effect, a range (one-shot and looping), an end effect, ready, a trigger
     skchr_foo_1: { mode: 1, projectiles: [], uses: [
       { role: 'loop', keys: ['foo_s1_buff'], from: 'BuffDuringSkill._buffs', node: 'sk1', on: 'owner' },
+      // the same buff reached a second way (an _extraBuffs list): one effect, played once
+      { role: 'loop', keys: ['foo_s1_buff'], from: 'BuffDuringSkill._extraBuffs', node: 'sk1', on: 'owner' },
       { role: 'start', keys: ['foo_s1_begin'], from: 'CastSkill._beginEffect', node: 'sk1' },
       { role: 'range', keys: ['foo_s1_range'], from: 'CastSkill._rangeEffect', node: 'sk1' },
       { role: 'range', keys: ['foo_s1_range_l'], from: 'RangeEffectEmitter._effect', node: 'sk1' },
@@ -59,6 +62,10 @@ function makeIndex() {
       { role: 'start', keys: ['bar_birth'], from: 'AttachOrDetachSkill._startEffect', node: 'sk' },
     ] },
     skchr_indigo_1: { mode: null, projectiles: [], uses: [] },
+    // a ranged attack ability of the skill's own with its projectile (none of a melee blow's)
+    skchr_qux_1: { mode: null, projectiles: ['proj_qux_s1_2', 'proj_qux_s1'], uses: [
+      { role: 'start', keys: ['qux_s1_cast'], from: 'UberEffectEmitter._castEffects', node: 'sk', ability: 'RangedAttack', startEvent: 'ON_SPELL_ON', endEvent: 'ON_CAST_END', oneshot: true, list: 'cast' },
+    ] },
     skchr_clemnt_3: { mode: 1, projectiles: ['projectile_chr_clemnt_s3'], uses: [] },
   };
   const unit = (modes, sk, skin = null) => ({ kind: 'char', skin, modes, skills: Object.fromEntries(sk.map((s) => [s, skills[s]])), startEffect: null, deadEffect: null });
@@ -74,7 +81,7 @@ function makeIndex() {
         { name: 'Default', attack: { class: 'MultiChargeRangedAttack', projectileKey: 'projectile_chr_indigo', cast: [] } },
       ], ['skchr_indigo_1'], 'char_469_indigo'),
       char_4231_clemnt: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }, { name: 'S3', attack: { class: 'MeleeAttack', cast: [] } }], ['skchr_clemnt_3']),
-      char_300_qux: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }, { name: 'S2', attack: { class: 'MeleeAttack', cast: [] } }], []),
+      char_300_qux: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [melee('qux_mode_cast', 4)], hit: [] } }, { name: 'S2', attack: { class: 'MeleeAttack', cast: [] } }], ['skchr_qux_1']),
       enemy_1: { kind: 'enemy', modes: [{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }], skills: {} },
     },
     skills,
@@ -85,6 +92,8 @@ function makeIndex() {
       projectile_chr_indigo_s1: { main: 'indigo_attack_01_trail', onHit: [], effects: ['indigo_attack_01_trail'] },
       projectile_chr_indigo_s2: { main: 'indigo_attack_01_trail', onHit: [], effects: ['indigo_attack_01_trail'] },
       projectile_chr_clemnt_s3: { main: null, onReached: ['clemnt_skill_03_mark_all_01'], effects: ['clemnt_skill_03_mark_all_01'] },
+      proj_qux_s1: { main: 'qux_s1_trail', onHit: [], effects: ['qux_s1_trail'] },
+      proj_qux_s1_2: { main: 'qux_s1_trail', onHit: [], effects: ['qux_s1_trail'] },
     },
     skins: {
       char_100_foo: { points: { HitPoint: { all: { pos: [0, 0.2, -0.25] } }, Muzzle: { all: { pos: [0.3, 0.3, -0.3] } } } },
@@ -106,6 +115,7 @@ const RECS = {
   char_200_bar: { charId: 'char_200_bar', skill: { skillId: 'skchr_bar_1', index: 0, skillType: 'PASSIVE', durationType: 'NONE', duration: -1, bb: {} } },
   char_469_indigo: { charId: 'char_469_indigo', skill: { skillId: 'skchr_indigo_1', index: 0, skillType: 'MANUAL', duration: 20, bb: {} } },
   char_4231_clemnt: { charId: 'char_4231_clemnt', skill: { skillId: 'skchr_clemnt_3', index: 2, skillType: 'MANUAL', durationType: 'AMMO', duration: 0, bb: { projectile_life_time: 5 } } },
+  char_300_qux: { charId: 'char_300_qux', skill: { skillId: 'skchr_qux_1', index: 0, skillType: 'MANUAL', durationType: 'NONE', duration: 10, bb: {} } },
 };
 
 function fakeOfx(index, { active = true } = {}) {
@@ -154,7 +164,7 @@ describe('skill events', () => {
     frame();
     assert.equal(w.skill(u, true), true, 'the official layer shows this skill: no procedural burst');
     for (const k of ['foo_s1_begin', 'foo_s1_range', 'foo_s1_range_l', 'foo_s1_buff']) assert.ok(spawned.includes(k), k);
-    assert.equal(live(handles, 'foo_s1_buff').length, 1);
+    assert.equal(live(handles, 'foo_s1_buff').length, 1, 'a buff the plan lists twice loops once');
     assert.equal(handles.find((h) => h.key === 'foo_s1_buff').opts.loop, true, 'a held loop is never dropped');
     u.flags = SKILL;
     frame(); frame();
@@ -284,16 +294,14 @@ describe('attacks while the skill is on', () => {
     frame();
     // the look-ahead saw the skill's 1 queued before this 'atk': the wind-up plays the skill's ON_CAST_START rows (the
     // aim on the target: castTarget rows start with the cast, like the index's)
-    assert.equal(w.castStart(u, t, 'arrow', { skip: 0, left: 0.5, skillOn: true }), true);
+    assert.equal(w.castStart(u, t, 'none', { skip: 0, left: 0.5, skillOn: true }), true);
     assert.deepEqual(spawned, ['foo_s2_cast_start', 'foo_s2_aim']);
     w.skill(u, true);
-    w.attack(u, t, 'arrow', 0.2, true);
+    w.attack(u, t, 'none', 0.2, true);
     assert.ok(spawned.includes('foo_s2_cast_spell'), 'the ON_SPELL_ON row at the strike');
     assert.equal(spawned.filter((k) => k === 'foo_s2_cast_start' || k === 'foo_s2_aim').length, 2, 'the wound-up rows are not played twice');
     assert.ok(!spawned.includes('foo_atk_start') && !spawned.includes('foo_s2_mode_cast'), "the mode's rows are replaced");
     assert.equal(handles.find((h) => h.key === 'foo_s2_aim').place.pos[0], t.x - 10, 'aim plays on the target');
-    assert.ok(spawned.includes('foo_s2_trail'), "the skill's projectile flies");
-    assert.ok(!spawned.includes('foo_trail'), "not the mode's");
     // off: the next attack (a later frame) is the Default mode's again
     w.skill(u, false);
     frame();
@@ -314,6 +322,19 @@ describe('attacks while the skill is on', () => {
     frame();
     w.attack(u, a, 'none', 2);
     assert.equal(spawned.filter((k) => k === 'foo_s2_cast_start').length, 2, 'the next attack casts again');
+  });
+
+  test("a ranged skill attack flies the skill's projectile (named after the skill: _s1 before _s1_2); a blow of another kind keeps the mode's rows", async () => {
+    const { w, spawned, view, frame } = await setup();
+    const u = view(1, 'char_300_qux', 5, { skill: 0 });
+    const t = view(2, 'enemy_1', 8);
+    frame();
+    w.skill(u, true);
+    w.attack(u, t, 'arrow', 1);
+    assert.deepEqual(spawned, ['qux_s1_cast', 'qux_s1_trail']);
+    frame();
+    w.attack(u, t, 'none', 2);
+    assert.deepEqual(spawned.slice(2), ['qux_mode_cast'], "a melee blow is no ranged ability's: the mode's rows");
   });
 
   test('hit groups: the k-th damage on the target in one frame plays group k; a later frame does not replay them', async () => {

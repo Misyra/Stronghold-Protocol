@@ -72,12 +72,29 @@ const DIRS = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
 const CAST_START = new Set([0, 2]);
 
 const idOf = (v) => v?.info?.id ?? v?.id;
+/**
+ * The entries of a list with a key of their own (the first of each): the extractor may reach one effect by two paths
+ * (a buff's `_buffs` and `_extraBuffs`, two nodes of one skill) — played once, as the one buff it is [ASSUMED].
+ */
+export function uniq(list) {
+  if (!list || list.length < 2) return list || [];
+  const seen = new Set();
+  return list.filter((e) => (seen.has(e.key) ? false : (seen.add(e.key), true)));
+}
 const beyond = (a, b) => ({ x: b.x + (b.x - a.x), y: b.y + (b.y - a.y) });
 
 /** Run `fn` after `s` battle seconds on the effects' clock (FxWiring.tick runs the timers). */
 export function later(ofx, s, fn) {
   if (!ofx.timers) ofx.timers = [];
   ofx.timers.push({ at: ofx.time + Math.max(0, s), fn });
+}
+
+/** Whether a skill's attack ability is the kind of attack the sim made (a heal, a shot, a blow). */
+export function fitsAttack(ability, { heal = false, ranged = false } = {}) {
+  if (typeof ability !== 'string') return false;
+  if (heal) return /Heal/.test(ability);
+  if (/Heal/.test(ability)) return false;
+  return ranged ? /Ranged/.test(ability) : !/Ranged/.test(ability);
 }
 
 /**
@@ -147,7 +164,7 @@ export class SkillFx {
     return {
       id, v: null, key: r.unitKey, skillId: r.skillId, plan, charge: r.charge, srec: r.srec,
       buffS: buffDuration(r.srec), tHit: plan ? targetsOf(idx, plan).hit : [], drawsStart: draws,
-      on: null, onT: 0, startFrame: -1, atkN: 0, attacked: false, byFlag: false, loopsOn: false,
+      on: null, startFrame: -1, atkN: 0, attacked: false, byFlag: false, loopsOn: false,
       loops: [], ready: [], readyOn: false, passiveOn: false, passiveShots: false, passiveDraws: false, passiveDone: false, timed: false,
       energy: 0, slotLoops: [], guardUntil: -Infinity, quiet: false, trigFrame: -1, seen: 0,
     };
@@ -203,7 +220,7 @@ export class SkillFx {
 
   _startReady(U, v) {
     U.readyOn = true;
-    for (const e of U.plan.ready) this._keep(U, e, this._play(e, v));
+    for (const e of uniq(U.plan.ready)) this._keep(U, e, this._play(e, v));
   }
 
   _stopReady(U) {
@@ -216,7 +233,7 @@ export class SkillFx {
   _loopsOnly(U, v, byFlag) {
     U.loopsOn = true;
     U.byFlag = byFlag;
-    for (const e of [...U.plan.start, ...U.plan.range, ...U.plan.loop]) if (e.hold === 'skill') this._keep(U, e, this._play(e, v));
+    for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) if (e.hold === 'skill') this._keep(U, e, this._play(e, v));
   }
 
   /** A passive's loops (while deployed) and, once per deployment, its start one-shots. */
@@ -225,7 +242,7 @@ export class SkillFx {
     if (!U.passiveOn) {
       U.passiveOn = true;
       U.loopsOn = true;
-      for (const e of [...U.plan.start, ...U.plan.range, ...U.plan.loop]) {
+      for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) {
         if (e.hold !== 'skill') continue;
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
@@ -233,7 +250,7 @@ export class SkillFx {
     }
     if (shots && !U.passiveShots) {
       U.passiveShots = true;
-      for (const e of [...U.plan.start, ...U.plan.range]) {
+      for (const e of uniq([...U.plan.start, ...U.plan.range])) {
         if (e.hold === 'skill') continue;
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
@@ -258,13 +275,12 @@ export class SkillFx {
       if (U.timed) {
         U.passiveDone = true;
         U.passiveOn = false;
-        if (live) { this._stopLoops(U); for (const e of U.plan.end) this._keep(U, e, this._play(e, v)); }
+        if (live) { this._stopLoops(U); for (const e of uniq(U.plan.end)) this._keep(U, e, this._play(e, v)); }
       }
       return live && U.passiveDraws;
     }
     if (on) {
       U.on = true;
-      U.onT = this.w.ofx.time;
       U.startFrame = this.frame;
       U.atkN = 0;
       U.attacked = false;
@@ -272,7 +288,7 @@ export class SkillFx {
       this._stopReady(U);
       this._stopLoops(U);          // a cast while on (onEnd re-cast) starts afresh
       let drew = false;
-      for (const e of [...U.plan.start, ...U.plan.range, ...U.plan.loop]) {
+      for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) {
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
       }
@@ -285,10 +301,10 @@ export class SkillFx {
     // an instant skill whose kit made no attack between 1 and 0: its own attack's cast plays once (skills.js: one cast)
     if (was && !U.attacked && U.startFrame === this.frame && U.plan.attacks.length) {
       const a = U.plan.attacks[0];
-      for (const e of [...a.cast, ...a.range]) this._keep(U, e, this._play(e, v));
+      for (const e of uniq([...a.cast, ...a.range])) this._keep(U, e, this._play(e, v));
     }
     this._stopLoops(U);
-    for (const e of U.plan.end) this._keep(U, e, this._play(e, v));
+    for (const e of uniq(U.plan.end)) this._keep(U, e, this._play(e, v));
     return U.drawsStart;
   }
 
@@ -342,7 +358,10 @@ export class SkillFx {
     const ranged = !!kind && kind !== 'none';
     const heal = !!tgt && !tgt.isEnemy && !src.isEnemy;
     const fx = planAttack(st.plan, { heal, ranged });
-    const replace = !!fx.ability;
+    // the skill's own ability replaces the mode's rows when it is this kind of attack: a melee blow is no shield throw
+    // (斩业星熊 S2: her MultiMelee mode attacks while the skill's AroundTargetRangedAttack throws on its own)
+    const replace = !!fx.ability && fitsAttack(fx.ability, { heal, ranged });
+    if (fx.ability && !replace) { fx.cast = fx.cast.filter((e) => e.ability !== fx.ability); fx.range = []; fx.aim = []; fx.hit = st.plan.each.hit[0].length ? [st.plan.each.hit[0]] : []; }
     const projectile = replace && ranged ? skillProjectile(this.w.idx, st.plan) : null;
     if (!replace && !fx.cast.length && !fx.hit.length && !st.U.tHit.length) return null;
     return { U: st.U, fx, replace, projectile, buffs: st.U.tHit };
@@ -356,7 +375,7 @@ export class SkillFx {
     const nth = sk.U.atkN;
     for (const [rows, onTarget] of [[sk.fx.cast, false], [sk.fx.range, false], [sk.fx.aim, true]]) {
       if (!onTarget && info.owner === false) continue;
-      for (const e of rows) {
+      for (const e of uniq(rows)) {
         const first = castPhase(e) === 'start';
         if ((phase === 'start' && !first) || (phase === 'strike' && first) || (onTarget && !tgt)) continue;
         if ((e.firstOnly && nth > 0) || (e.afterFirst && nth === 0)) continue;
@@ -380,8 +399,8 @@ export class SkillFx {
     if (m.hitT == null) { m.hitT = time; m.k = 0; }
     const g = m.groups.length ? m.groups[Math.min(m.k, m.groups.length - 1)] : [];
     m.k++;
-    for (const e of g) if (this._play(e, v, { flipFrom: m.src })) drew = true;
-    if (m.k === 1) for (const e of m.buffs || []) if (this._targetLoop(m.U, e, v)) drew = true;
+    for (const e of uniq(g)) if (this._play(e, v, { flipFrom: m.src })) drew = true;
+    if (m.k === 1) for (const e of uniq(m.buffs)) if (this._targetLoop(m.U, e, v)) drew = true;
     return drew;
   }
 
@@ -407,7 +426,7 @@ export class SkillFx {
     if (!U || !U.plan || !U.plan.trigger.length || !this.active() || !this._on(U) || U.trigFrame === this.frame) return false;
     U.trigFrame = this.frame;
     let drew = false;
-    for (const e of U.plan.trigger) { const h = this._play(e, v); if (h) { drew = true; this._keep(U, e, h); } }
+    for (const e of uniq(U.plan.trigger)) { const h = this._play(e, v); if (h) { drew = true; this._keep(U, e, h); } }
     return drew;
   }
 
@@ -535,7 +554,7 @@ export class SkillFx {
       if (list.length) {
         const at = near ? v : (this.w.view(extra.target ?? extra.to) || { id: 'fx:point', x, y, z: 0 });
         let drew = false;
-        for (const e of list) { const h = this._play(e, at, { flipFrom: near ? undefined : v }); if (h) { drew = true; this._keep(U, e, h); } }
+        for (const e of uniq(list)) { const h = this._play(e, at, { flipFrom: near ? undefined : v }); if (h) { drew = true; this._keep(U, e, h); } }
         if (drew) return true;
       }
     }

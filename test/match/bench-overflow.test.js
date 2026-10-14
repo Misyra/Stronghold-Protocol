@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ERR, GEO } from '../../shared/constants.js';
 import { botPrepEnd } from '../../server/match/bot.js';
+import { registerDslMeta } from '../../server/match/dslMeta.js';
 import { DATA, makeMatch, give, checkInvariants } from './harness.js';
 
 const FILLER = 'chess_item_2_03_e_b';
@@ -187,5 +188,46 @@ test('Suzuran, two elite Flametails and 100 Investor layers retain all twelve pr
   assert.equal(ps.round.gainedChess - gained, 12);
   assert.equal(held() - before, 12, 'all copies retained even when automatic merges reduce the piece count');
   assert.ok(ps.temp.length > 5);
+  checkInvariants(m);
+});
+
+test('plugin DSL gainItem and a script meta handler queue past the visible bench (PRTS 卫戍协议/帮助 §手牌区)', (t) => {
+  const { m, ps } = prep(t);
+  fill(ps, 15);
+  // Distinct from the filler already on the bench, and granted once each, so neither merges away.
+  const dslItemId = 'chess_item_1_02_e_a';
+  const scriptItemId = 'chess_item_2_03_e_a';
+  const dslKey = 'effect:benchplug:gain';
+  const scriptKey = 'effect:benchscript:gain';
+  t.after(() => {
+    m.registry.unregister(dslKey);
+    m.registry.unregister(scriptKey);
+  });
+  registerDslMeta(m.registry, {
+    dsl: 1,
+    pluginId: 'benchplug',
+    meta: {
+      key: dslKey,
+      on: [{ when: 'roundStart', do: [{ gainItem: { item: dslItemId } }] }],
+    },
+  }, { pluginId: 'benchplug' });
+  assert.equal(m.dispatcher.runKey(ps, dslKey, 'onRoundStart', { kind: 'effect', key: dslKey }, { round: m.round }), true);
+  const dslItem = ps.temp.at(-1);
+  assert.equal(dslItem && dslItem.id, dslItemId);
+  assert.ok(ps.temp.indexOf(dslItem) >= GEO.TEMP_SIZE, 'the DSL item waits behind the five visible slots');
+  const chessBefore = ps.allChess().filter((p) => p.id === NORMAL).length;
+  m.registry.register(scriptKey, {
+    onRoundStart(ctx) {
+      ctx.grantChess(NORMAL, { requirePool: false, source: 'plugin:benchscript', toast: false });
+      ctx.grantItem(scriptItemId, { source: 'plugin:benchscript', requirePool: false });
+    },
+  });
+  assert.equal(m.dispatcher.runKey(ps, scriptKey, 'onRoundStart', { kind: 'effect', key: scriptKey }, { round: m.round }), true);
+  assert.ok(ps.allChess().filter((p) => p.id === NORMAL).length >= chessBefore + 1);
+  const scriptItem = [...ps.hand, ...ps.temp].find((p) => p && p.id === scriptItemId);
+  assert.ok(scriptItem);
+  assert.ok(ps.temp.indexOf(scriptItem) >= GEO.TEMP_SIZE);
+  assert.ok(ps.temp.length > GEO.TEMP_SIZE);
+  assert.ok(ps.temp.every(Boolean), 'a queue longer than the visible row has no hole');
   checkInvariants(m);
 });

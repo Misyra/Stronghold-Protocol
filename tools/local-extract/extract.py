@@ -23,7 +23,8 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
   - for the official 3D board (DESIGN §15): the map theme's Material parameters (map/<theme>/materials.json; shader
     names resolved through the shaders/*.ab bundles), the background / device meshes as Wavefront OBJ
     (mesh/<bundle>/<mesh>.obj; UnityPy's exporter, X mirrored into a right-handed frame) and their GameObject
-    placement (mesh/<bundle>/prefab.json)
+    placement (mesh/<bundle>/prefab.json); of the 卫戍协议 device bundle (arts/maps/common/trap/trap_110.ab) only the
+    射击台 (trap_1106_achplat: mesh, texture, material → mesh/trap_110), which the board draws in place of its slab
   - the standard gate / objective effects of every battle map (arts/effects/[pack]map.ab → map/fx: the [opt]start_box /
     [opt]end_box / [opt]start_fly meshes, their merged additive textures, materials and prefab), the blower's texture
     (arts/maps/common/res.ab → map/common: TX_wind_device of the s_wind_device mesh) and the shared water / noise
@@ -108,6 +109,10 @@ JOBS = [
     # official module (uniequip) type icons, keyed by lower-case type name (e.g. 'mar-x')
     ('spritepack/ui_equip_type_hub_h2_0.ab', 'module', {'Sprite'}),
     *[(rel, f'mesh/{sub}', {'Mesh', 'GameObject', 'Material', 'Texture2D'}) for rel, sub in MESH_BUNDLES],
+    # the official 射击台 model (GitHub round 40: 战场#03's raised tiles by the blue gate were our flat grey slab): the
+    # bundle holds every 卫戍协议 device model (red door, plane, laser, crate, 射击台); only the 射击台 is kept
+    ('arts/maps/common/trap/trap_110.ab', 'mesh/trap_110', {'Mesh', 'GameObject', 'Material', 'Texture2D'},
+     r'^((MT|TX)_)?trap_1106_achplat$'),
     ('arts/effects/[pack]map.ab', 'map/fx', {'Mesh', 'GameObject', 'Material', 'Texture2D'}),
     ('arts/maps/common/res.ab', 'map/common', {'Material', 'Texture2D'}, r'^(TX|MT)_wind_device$'),
     ('arts/maps/effect.ab', 'map/water', {'Texture2D'}, r'water_normal|Caustics|WaterNoise|noise_clouds|Water_Foam|SmoothWaves'),
@@ -183,6 +188,7 @@ WEBP = [
     ('map/water', '[ucp]TX_water_normal', 'lossless'),
     ('map/water', 'TX_Caustics256', 'lossy'),
     ('map/water', 'T_noise_clouds_01', 'lossless'),
+    ('mesh/trap_110', 'TX_trap_1106_achplat', 'lossy'),
 ]
 WEBP_OPTIONS = {
     'lossy': {'quality': 95, 'method': 6, 'alpha_quality': 100, 'exact': True},

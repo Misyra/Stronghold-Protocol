@@ -201,6 +201,27 @@ describe('board geometry (layout.js)', () => {
     for (const id of ['act2autochess_m01', 'act2autochess_m02']) assert.equal(buildBoard(stages[id], { area: AREAS.normal }).buckets.raised.vertexCount, 0, id);
   });
 
+  test('round 40: with the official 射击台 model (platformMesh) the 射击台 get no slab on either board; water platforms and sealed floors keep theirs', () => {
+    for (const [id, st] of Object.entries(stages)) {
+      if (!Array.isArray(st?.rows)) continue;
+      for (const area of [AREAS.normal, AREAS.boss]) {
+        const slab = buildBoard(st, { area }), model = buildBoard(st, { area, platformMesh: true });
+        const n = slab.devices.filter((d) => d.kind === 'platform').length;
+        assert.deepEqual(model.devices, slab.devices, `${id}: the same devices`);
+        // a platform slab = a top plate and four sides on each of the two boards
+        assert.equal(slab.buckets.board.vertexCount - model.buckets.board.vertexCount, n * 5 * 4, `${id}: board quads`);
+        assert.equal(slab.buckets.raised.vertexCount - model.buckets.raised.vertexCount, n * 5 * 4, `${id}: scene-board quads`);
+        assert.equal(model.buckets.raisedDecal.vertexCount, slab.buckets.raisedDecal.vertexCount, `${id}: sealed floors stay`);
+      }
+    }
+    assert.equal(buildBoard(stages.act1autochess_m03, { area: AREAS.normal, platformMesh: true }).buckets.raised.vertexCount, 0, '战场#03: only 射击台');
+    const m05 = buildBoard(stages.act1autochess_m05, { area: AREAS.normal, platformMesh: true });
+    assert.equal(m05.buckets.raised.vertexCount, buildBoard(stages.act1autochess_m05, { area: AREAS.normal }).buckets.raised.vertexCount, '战场#05: the water platforms stay');
+    // units stand on the model's top (46.5 cm at the prefab scale 0.01) on every board
+    assert.equal(TILE_H.platform, 0.465);
+    assert.equal(DEVICE_H.platform, TILE_H.platform);
+  });
+
   test('malformed stages never throw and still build an island', () => {
     for (const st of [null, {}, { rows: ['xyz'] }, { rows: Array(19).fill('r'.repeat(21)), devices: [{ role: 'crate', pos: [3, 3] }, { role: 'crate', pos: 'x' }] }]) {
       const b = buildBoard(st, { area: AREAS.all });

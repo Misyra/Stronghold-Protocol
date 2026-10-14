@@ -6,7 +6,8 @@ export const TILE_H = Object.freeze({
   forbid: 0.3,     // '#' forbidden block (data: HIGH)
   sep: 0.55,       // 'X' hard separator wall (rows 6 / 13)
   bench: 0.16,     // 'a' / 'A' hand & temp slots (data: HIGH)
-  platform: 0.26,  // active 射击台 / mound devices
+  platform: 0.465, // active 射击台: the top of the official model (trap_1106_achplat, 46.5 cm; round 40)
+  mound: 0.26,     // active mound devices
 });
 
 /** Stage glyph → material + height class (data/stages.json legend, DATA.md §12). */

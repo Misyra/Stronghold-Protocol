@@ -69,12 +69,14 @@ export const PACK_IMAGES = Object.freeze({
   waterN: ['map/water', '[ucp]TX_water_normal'],
   caustics: ['map/water', 'TX_Caustics256'],
   noise: ['map/water', 'T_noise_clouds_01'],
+  platform: ['mesh/trap_110', 'TX_trap_1106_achplat'],
 });
 
 export const PACK_MESHES = Object.freeze({
   crate: ['mesh/s_common_box_01', 'pCube2'],
   blower: ['mesh/s_wind_device', 'S_wild_wind_device'],
   bgPlane: ['mesh/s_background_common', 'pPlane1'],
+  platform: ['mesh/trap_110', 'trap_1106_achplat'],
 });
 
 /** The official gate / objective boxes: prefab node → pack slot (meshes resolved through map/fx/prefab.json). */
@@ -124,11 +126,12 @@ export function loadBoardPack(assets) {
     }));
     if (!images.D) return null;
     const dir = dUrl.replace(/\/[^/]*$/, '');
-    const [tiles, theme, fxMats, fxPrefab] = await Promise.all([
+    const [tiles, theme, fxMats, fxPrefab, trapMats] = await Promise.all([
       fetchJson(`${dir}/tiles.json`),
       (async () => { const u = url('map/autochess', 'materials'); return u ? fetchJson(u) : null; })(),
       (async () => { const u = url('map/fx', 'materials'); return u ? fetchJson(u) : null; })(),
       (async () => { const u = url('map/fx', 'prefab'); return u ? fetchJson(u) : null; })(),
+      (async () => { const u = url('mesh/trap_110', 'materials'); return u ? fetchJson(u) : null; })(),
     ]);
     const meshes = { gate: {} };
     await Promise.all(Object.entries(PACK_MESHES).map(async ([k, [g, n]]) => {
@@ -149,7 +152,7 @@ export function loadBoardPack(assets) {
     return {
       key: `${dUrl}#${tiles?.version || 0}`,
       images, meshes, tiles: isObj(tiles) ? tiles : null, uv: resolveUvTable(isObj(tiles) ? tiles : null),
-      materials: { theme: isObj(theme) ? theme : null, fx: isObj(fxMats) ? fxMats : null },
+      materials: { theme: isObj(theme) ? theme : null, fx: isObj(fxMats) ? fxMats : null, trap: isObj(trapMats) ? trapMats : null },
     };
   })().catch((err) => { console.warn('[board3d] art load failed', err); return null; }).then((pack) => {
     // A timeout / failed atlas is not proof the host lacks 3D art. A later mount or visibility change may retry.

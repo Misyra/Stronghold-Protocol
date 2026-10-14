@@ -16,7 +16,8 @@
 //   board.resize(w, h, dpr) · board.stats() · board.destroy()
 //
 // Draw calls: board (tiles + blocks + platforms, merged, MT_autochess), the pen's glass hatches (glassMaterial),
-// static crates (merged, same material),
+// static crates (merged, same material), the 射击台 as the official model (trap_1106_achplat, merged, trapMaterial —
+// the slab of layout.js stays the fallback without the local art),
 // decals (MT_autochess_common), fence pipes, blowers (merged, unlit), gate boxes (additive + alpha, merged per
 // material), cyan field edges, terrain overlays (≤ 4), background plane + its shadow catcher — ~12–16 in total.
 // An official scene replaces the tiles, glass, decals, pipes and background (all but the device slabs, layout.js
@@ -29,7 +30,7 @@ import { surfaceUV } from './atlas.js';
 import {
   focusUniforms, makeTexture, boardMaterial, glassMaterial, decalMaterial, pipeMaterial, unlitMaterial, gateMaterial, glowMaterial,
   waterMaterial, mireMaterial, infectionMaterial, smogMaterial, dashTexture, environmentMap, sceneMaterial, sceneWaterDecalMaterial,
-  sceneEnvTexture, applyWaterMaterial,
+  sceneEnvTexture, applyWaterMaterial, trapMaterial,
 } from './materials.js';
 import { syncThreeCamera } from '../projection.js';
 import { mergeSceneChunks, sceneMaterialKey, sceneWaterInfo, isSceneWater } from './load.js';
@@ -172,6 +173,7 @@ export class BoardScene {
       BG: makeTexture(T, img.BG, { aniso }), wind: makeTexture(T, img.wind, { aniso }), gate: makeTexture(T, img.gate, {}),
       waterN: makeTexture(T, img.waterN, { srgb: false, repeat: true }), caustics: makeTexture(T, img.caustics, { srgb: false, repeat: true }),
       noise: makeTexture(T, img.noise, { srgb: false, repeat: true }),
+      platform: makeTexture(T, img.platform, { aniso }),
     };
     if (this.tex.BG) { this.tex.BG.wrapS = T.MirroredRepeatWrapping; this.tex.BG.wrapT = T.MirroredRepeatWrapping; }
     this.mat = {
@@ -190,6 +192,7 @@ export class BoardScene {
       infection: infectionMaterial(T, this.tex, this.focus),
       smog: smogMaterial(T, this.tex, this.focus),
       shadowCatcher: new T.ShadowMaterial({ opacity: 0.32, color: 0x000000 }),
+      platform: this.tex.platform ? trapMaterial(T, this.tex.platform, this.focus, pack?.materials?.trap?.MT_trap_1106_achplat || null, LIGHTING.key.dir) : null,
     };
     this.mat.crateFade = null;
     // lights
@@ -228,6 +231,7 @@ export class BoardScene {
     this.frames = 0;
     this.lastMs = 0;
     this._crateGeom = null;
+    this._platformGeom = undefined;
   }
 
   // ---- geometry ----------------------------------------------------------------------------------------------
@@ -275,6 +279,17 @@ export class BoardScene {
     return this._crateGeom;
   }
 
+  /**
+   * The official 射击台 model in board space (trap_1106_achplat at its prefab scale 0.01: 1.05 tiles square, 0.465
+   * high — render/style.js TILE_H.platform is its top), or null without the local art (layout.js draws the slab).
+   */
+  platformGeometry() {
+    if (this._platformGeom !== undefined) return this._platformGeom;
+    const obj = this.pack?.meshes?.platform;
+    this._platformGeom = obj && obj.normal && obj.uv && this.mat.platform ? objToBoard(obj, 0.01) : null;
+    return this._platformGeom;
+  }
+
   /** Built areas (inclusive tile rects): rebuilds when they change. */
   setArea(rects) {
     const list = Array.isArray(rects) && rects.length ? rects : AREAS.normal;
@@ -298,7 +313,7 @@ export class BoardScene {
     this.sceneWater = [];
     this.official = null;
     if (!stage) { applyWaterMaterial(this.mat.water, null); return; }
-    const board = buildBoard(stage, { uv: this.pack?.uv || null, area: this.area });
+    const board = buildBoard(stage, { uv: this.pack?.uv || null, area: this.area, platformMesh: !!this.platformGeometry() });
     this.board = board;
     const M = this.meshes = {};
     this.official = official && this._buildScene(official) ? official : null;
@@ -314,8 +329,8 @@ export class BoardScene {
       M.decal = this._mesh(board.buckets.decal, this.mat.decal, { cast: false });
       M.pipe = this._mesh(board.buckets.pipe, this.mat.pipe);
     } else {
-      // the scene has no device slabs: the 射击台 / 特制水上平台 / 封印的地面 slabs stay drawn on it (units stand
-      // on them at tiles.js heightAt; GitHub #569)
+      // the scene has no device slabs: the 特制水上平台 / 封印的地面 slabs (and the 射击台's without its model) stay
+      // drawn on it (units stand on them at tiles.js heightAt; GitHub #569)
       M.raised = this._mesh(board.buckets.raised, this.mat.board);
       M.raisedDecal = this._mesh(board.buckets.raisedDecal, this.mat.decal, { cast: false });
     }
@@ -419,11 +434,18 @@ export class BoardScene {
   }
 
   _buildDevices(board) {
-    const crates = [], blowers = [];
+    const crates = [], blowers = [], platforms = [];
     this.staticCrates = [];
     const wind = this.pack?.meshes?.blower ? objToBoard(this.pack.meshes.blower, 1) : null;
+    const plat = this.platformGeometry();
+    if (plat) {
+      // lit by the official scene's own key light when one is drawn, else by the procedural board's
+      const dir = this.official?.doc?.light?.dir;
+      this.mat.platform.uniforms.uLightDir.value.set(...(Array.isArray(dir) && dir.length === 3 ? dir : LIGHTING.key.dir)).normalize();
+    }
     for (const d of board.devices) {
       if (d.kind === 'crate') this.staticCrates.push(d);
+      else if (d.kind === 'platform' && plat) platforms.push(placeMesh(plat, { x: d.c, y: d.r, z: d.z0 }));
       else if (d.kind === 'blower' && wind && this.mat.wind) blowers.push(placeMesh(wind, { x: d.c, y: d.r, z: d.z0 + 0.078, rot: DIR_TURNS[d.dir] ?? 0 }));
       else if (d.kind === 'blower' || d.kind === 'turret') crates.push(placeMesh(boxWithTop(this.pack?.uv, d.kind), { x: d.c, y: d.r, z: d.z0 }));
       else if (d.kind === 'mound') crates.push(placeMesh(this.crateGeometry(), { x: d.c, y: d.r, z: d.z0, s: 0.95, sz: 0.55 }));
@@ -431,6 +453,7 @@ export class BoardScene {
     }
     if (blowers.length) this.meshes.blowers = this._mesh(mergeInto(blowers), this.mat.wind, { receive: false });
     if (crates.length) this.meshes.props = this._mesh(mergeInto(crates), this.mat.board);
+    if (platforms.length) this.meshes.platforms = this._mesh(mergeInto(platforms), this.mat.platform);
     this._rebuildCrates();
   }
 

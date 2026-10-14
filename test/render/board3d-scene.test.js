@@ -12,7 +12,9 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
-import { BoardScene, sceneGroupVisible } from '../../public/js/render/board3d/scene.js';
+import { BoardScene, sceneGroupVisible, LIGHTING } from '../../public/js/render/board3d/scene.js';
+import { parseObj } from '../../public/js/render/board3d/obj.js';
+import { TILE_H } from '../../public/js/render/style.js';
 import { AREAS } from '../../public/js/render/board3d/layout.js';
 import { resolveUvTable } from '../../public/js/render/board3d/atlas.js';
 import { presetCamera } from '../../public/js/render/projection.js';
@@ -658,6 +660,44 @@ describe('BoardScene with an official scene (stub renderer)', () => {
     board.setStage(stage);
     assert.ok(board.official && !board.meshes.raised && !board.meshes.raisedDecal, `${stage.id}: no slab devices`);
     board.destroy();
+  });
+
+  test('round 40: the 射击台 are the official model (trap_1106_achplat) on the scene and on the procedural board, lit by its material; without the model the slab stays', () => {
+    // a 1 × 0.465 quad standing in for the model (OBJ in the exported centimetres, prefab scale 0.01)
+    const quad = parseObj(['v -50 0 -50', 'v 50 0 -50', 'v 50 46.5 -50', 'v -50 46.5 -50', 'vt 0 0', 'vt 1 0', 'vt 1 1', 'vt 0 1',
+      'vn 0 0 -1', 'f 1/1/1 2/2/1 3/3/1 4/4/1'].join('\n'));
+    const pack = fakePack();
+    pack.images.platform = { width: 4, height: 4 };
+    pack.meshes.platform = quad;
+    pack.materials = { trap: { MT_trap_1106_achplat: { floats: { _Ambient: 0.895, _Diffuse: 0.197 } } } };
+    const board = new BoardScene(THREE, pack, { renderer: stubRenderer() });
+    const m03 = stages.act1autochess_m03;
+    board.setStage(m03);
+    const count = board.board.devices.filter((d) => d.kind === 'platform').length;
+    assert.ok(count >= 4, 'm03 has its 射击台 in the normal field');
+    assert.ok(board.meshes.board && board.meshes.platforms, 'procedural board: the model');
+    assert.equal(board.meshes.platforms.material, board.mat.platform);
+    assert.equal(board.meshes.platforms.geometry.getAttribute('position').count, count * 4, 'one model per 射击台');
+    const P = board.meshes.platforms.geometry.getAttribute('position').array;
+    let top = -Infinity;
+    for (let i = 2; i < P.length; i += 3) top = Math.max(top, P[i]);
+    assert.ok(Math.abs(top - TILE_H.platform) < 1e-6, `the model's top is where units stand (${top})`);
+    assert.equal(board.mat.platform.uniforms.uAmbient.value, 0.895);
+    assert.equal(board.mat.platform.uniforms.uDiffuse.value, 0.197);
+    const key = new THREE.Vector3(...LIGHTING.key.dir).normalize();
+    assert.ok(board.mat.platform.uniforms.uLightDir.value.distanceTo(key) < 1e-6, 'lit like the procedural board');
+    board.setScenePack(m03.id, fakeScenePack());
+    assert.ok(board.official && board.meshes.platforms && !board.meshes.raised, 'scene: the model and no slab');
+    const sun = new THREE.Vector3(0.36, 0.45, 0.82).normalize();
+    assert.ok(board.mat.platform.uniforms.uLightDir.value.distanceTo(sun) < 1e-6, "lit by the scene's own light");
+    board.destroy();
+    const plain = new BoardScene(THREE, fakePack(), { renderer: stubRenderer() });
+    plain.setStage(m03);
+    assert.ok(plain.mat.platform === null && !plain.meshes.platforms, 'no local model: no platform mesh');
+    assert.ok(plain.board.buckets.board.vertexCount > 0);
+    plain.setScenePack(m03.id, fakeScenePack());
+    assert.ok(plain.meshes.raised, 'no local model: the slab on the scene');
+    plain.destroy();
   });
 
   test('another stage, or dropping the scene, shows the procedural board again', () => {

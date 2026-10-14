@@ -108,7 +108,9 @@ test('server shares its monitor with new matches and exposes pressure without co
   await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   await client.request({ t: 'room.start' });
   assert.equal(captured, pressure);
-  const health = await (await fetch(srv.url + '/healthz')).json();
+  const publicHealth = await (await fetch(srv.url + '/healthz')).json();
+  assert.equal(publicHealth.rehearsalPressure, undefined, 'the pressure sampler is /metrics-only');
+  const health = await (await fetch(srv.url + '/metrics')).json();
   assert.equal(health.rehearsalPressure.thresholds.disableAbovePercent, 70);
   await srv.close();
   assert.equal(pressure.timer, null);

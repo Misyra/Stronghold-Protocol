@@ -77,8 +77,10 @@ test('stored energies are snapshot-owned too: zero preserved, malformed rows dro
   assert.equal(b.sample(1).get(1).energy, null);
 });
 
+const energyOn = (info = {}) => view(info, { settings: { damageNumbers: true, quality: 'high', mysticEnergy: true } });
+
 test('the energy HUD counts stored/cap in its own violet orb and hides when its snapshot entry disappears', () => {
-  const v = view();
+  const v = energyOn();
   try {
     v.sync(sample({ energy: [0, 3] }), 0); v.update(0.02, cam(), 0);
     assert.equal(v.energyHud?.text.text, '0/3');
@@ -92,7 +94,7 @@ test('the energy HUD counts stored/cap in its own violet orb and hides when its 
 });
 
 test('the rows stack: the energy count sits under the purse and pushes the element gauge down', () => {
-  const v = view();
+  const v = energyOn();
   try {
     const el = { el: 'burn', elFill: 0.5, elUntil: 0, elDur: 0 };
     v.sync(sample({ coins: [2, 10], ...el }), 0); v.update(0.02, cam(), 0);
@@ -101,6 +103,27 @@ test('the rows stack: the energy count sits under the purse and pushes the eleme
     assert.equal(v.coinHud.root.visible, true, 'the purse keeps its row');
     assert.equal(v.energyHud.root.visible, true);
     assert.ok(v._elBar.bg.position.y > first, 'the gauge moves down by the energy row\'s height');
+  } finally { v.destroy(); }
+});
+
+// 设置「秘术师能量」 (PR #636, GitHub #633) is off by default: the official HUD shows the stored energies as an effect on
+// the operator, not a number (the maintainer's decision of 2026-10-15)
+test('the energy count is an option, off by default: no row and no gap until 设置「秘术师能量」 turns it on, live', () => {
+  const v = view();
+  try {
+    const el = { el: 'burn', elFill: 0.5, elUntil: 0, elDur: 0 };
+    v.sync(sample({ ...el }), 0); v.update(0.02, cam(), 0);
+    const bare = v._elBar.bg.position.y;
+    v.sync(sample({ energy: [2, 3], ...el }), 1); v.update(0.02, cam(), 1);
+    assert.ok(!v.energyHud || v.energyHud.root.visible === false, 'off by default');
+    assert.equal(v._elBar.bg.position.y, bare, 'the gauge keeps its place');
+    v.ctx.settings.mysticEnergy = true;
+    v.update(0.02, cam(), 1);
+    assert.equal(v.energyHud?.text.text, '2/3');
+    assert.ok(v._elBar.bg.position.y > bare);
+    v.ctx.settings.mysticEnergy = false;
+    v.update(0.02, cam(), 1);
+    assert.equal(v.energyHud.root.visible, false);
   } finally { v.destroy(); }
 });
 const frames = (v, n = 2) => { for (let i = 0; i < n; i++) v.update(1 / 60, cam(), i / 60); };

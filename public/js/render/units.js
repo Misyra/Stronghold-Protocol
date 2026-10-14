@@ -556,7 +556,7 @@ function bar(P, parent, color, alpha = 1) {
  * Shared context handed to every view by app.js (`audio`: the audio manager of public/js/audio.js — prep landings, land()).
  * @typedef {{ P: any, layers: { shadow: any, units: any, bars: any, groundFx: any },
  *   assets: any, audio?: any, cam: () => any, heightAt: (r:number,c:number)=>number, fx: any, time: () => number,
- *   settings: { damageNumbers: boolean, quality: string, ammoCount?: boolean } }} ViewCtx
+ *   settings: { damageNumbers: boolean, quality: string, ammoCount?: boolean, mysticEnergy?: boolean } }} ViewCtx
  */
 
 export class UnitView {
@@ -1669,15 +1669,16 @@ export class UnitView {
       ic.width = ic.height = isz;
       ic.position.set(x - ((icons.length - 1) * (isz + 2)) / 2 + i * (isz + 2), iy);
     }
-    // 狼影 pips under the bars (b.snap `wolves`), then the purses and the stored energies (b.snap `coins` / `energy`),
-    // then the element gauge row under them (b.snap `elem`); redeploy ring above a knocked-down operator (b.snap `down`).
+    // 狼影 pips under the bars (b.snap `wolves`), then the purses and — 设置「秘术师能量」 on (off by default) — the stored
+    // energies (b.snap `coins` / `energy`), then the element gauge row under them (b.snap `elem`); redeploy ring above a
+    // knocked-down operator (b.snap `down`).
     // 设置「弹药数量」 (off by default) first puts the magazine's count right under the ammo bar, and the rows below move
     // down by its height
     let rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
     rowsTop += this._updateAmmoCount(showSp && !!ammo && this.ctx.settings?.ammoCount === true, x0 + bw / 2, rowsTop, s);
     const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
     const coinH = this._updateCoins(showBars && !this.isEnemy && !!this.coins, x0, rowsTop + wolfH, s);
-    const energyH = this._updateEnergy(showBars && !this.isEnemy && !!this.energy, x0, rowsTop + wolfH + coinH, s);
+    const energyH = this._updateEnergy(showBars && !this.isEnemy && !!this.energy && this.ctx.settings?.mysticEnergy === true, x0, rowsTop + wolfH + coinH, s);
     this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + energyH + 1, spH, s, t);
     this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
     // blocked marker at the feet (enemies held by a blocker)
@@ -1807,6 +1808,8 @@ export class UnitView {
    * the trait stores one attack's energy whenever the attack finds no target and empties the lot into the next one, so
    * the count sits in the same row stack as the purse above, in a violet of its own — no other HUD state uses one, and
    * the orb is told apart from 琳琅诗怀雅's coin at a glance. Zero is shown: it is a count, not an absent state.
+   * 设置「秘术师能量」 (PR #636 by @zasx77771) turns it on — off by default: the official HUD has no such number and shows
+   * the energies as an effect on the operator (the maintainer's decision of 2026-10-15, GitHub #633).
    */
   _updateEnergy(show, x, top, s) {
     let r = this.energyHud;

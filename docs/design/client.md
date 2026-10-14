@@ -300,6 +300,14 @@ the exact b.snap `ammo` counts, extra rounds and refills included), centred in t
 move down by its height. It hides with the magazine, in the prep view and after death. The simplified board has no ammo
 bar and so no count.
 
+### Optional stored-energy count (§32.14.28)
+
+设置 →「秘术师能量」 (`mysticEnergy`, PR #636 by @zasx77771, GitHub #633) defaults off — the official HUD has no such
+number; the client shows a 秘术师's stored attack energies as an effect on the operator (the maintainer's decision of
+2026-10-15). On, the count `stored/cap` sits in the row stack under the purse (`UnitView._updateEnergy`, b.snap `energy`
+from `snapshot.js mysticView`: `trait.stored` against `profile.storeMax`, zero included), in a violet orb of its own;
+the element gauge moves down by its height. Allies only; kits with a store of their own (维伊, 黑键) have no row.
+
 ### Plugin studio gameplay previews (§32.9.1)
 
 Gameplay authoring uses a separate editor module per template under `public/studio/js/editors/`. DSL inputs are

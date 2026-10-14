@@ -105,6 +105,7 @@ import { encode, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
+import { installSkinInBackground } from './skinInstall.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -148,6 +149,27 @@ function freezeLoadout(loadout) {
 function freezeOps(ops) {
   const out = {};
   for (const [id, e] of Object.entries(ops || {})) out[id] = Object.freeze({ potential: e.potential, cultivate: e.cultivate });
+  return Object.freeze(out);
+}
+
+/**
+ * Frozen copy of a skin selection (干员皮肤, docs/SKINS.md), keeping only entries whose chess the game data knows.
+ *
+ * Deliberately not a `checkLoadout`-style validator: nothing here can be abused. A skinId the client made up, or one
+ * belonging to a different operator, simply fails to resolve in `spineEntry()` and the unit draws its default model
+ * — so the only thing worth filtering is the chess id, exactly as the loadout does.
+ * @param {Record<string, string>} skins `{ [baseChessId]: skinId }` @param {(id: string) => any} getChess
+ */
+function freezeSkins(skins, getChess) {
+  const out = {};
+  for (const [id, skinId] of Object.entries(skins || {})) {
+    // Keyed by chess id and gated exactly like the loadout (checkLoadout, shared/protocol.js): a base, visible chess
+    // record. NOT `rec.charId === id` — a chess id is `chess_char_1_01_a` while its operator is `char_498_inside`, so
+    // that test would drop every entry.
+    const rec = getChess(id);
+    if (!rec || rec.isGolden || rec.visible === false || rec.isHidden || rec.isDiy || (rec.baseId && rec.baseId !== id)) continue;
+    out[id] = String(skinId);
+  }
   return Object.freeze(out);
 }
 
@@ -348,6 +370,8 @@ export class Lobby {
       case 'room.loadout': return this.loadout(session, msg);
       case 'room.ownership': return this.ownership(session, msg);
       case 'room.diy': return this.diy(session, msg);
+      case 'room.skins': return this.skins(session, msg);
+      case 'room.skin.install': return this.skinInstall(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
       case 'room.removeSpectator': return this.removeSpectator(session, msg);
       default:
@@ -668,6 +692,65 @@ export class Lobby {
   }
 
   /**
+   * room.skins (docs/SKINS.md): store the player's chosen operator skins on the session and the seat, and hand them
+   * to a running match.
+   *
+   * Unlike room.loadout there is no phase gate. The loadout is frozen at INFO_CHECK because it changes what a unit
+   * *does*; a skin changes only what it looks like, and it is public — a teammate switching model mid-match is
+   * harmless, and the next `m.public` broadcast carries it to everyone.
+   */
+  skins(session, { skins }) {
+    const data = this.safeData();
+    const cleaned = freezeSkins(skins, (id) => lookup('chess', id, data));
+    session.skins = cleaned;
+    const room = this.roomOf(session);
+    if (!room) return OK;
+    const seat = room.seatOf(session.playerId);
+    if (seat) seat.skins = cleaned;
+    if (!room.match || !seat) return OK; // a spectator's skins stay on its session, never reaching the match
+    if (typeof room.match.setSkins !== 'function') return fail(ERR.ROOM_STARTED, 'stored for the next match');
+    let r;
+    try {
+      r = room.match.setSkins(session.playerId, cleaned);
+    } catch (e) {
+      this.log.error(`[lobby] ${room.code} match.setSkins threw`, e);
+      return fail(ERR.INTERNAL);
+    }
+    if (r && typeof r === 'object' && r.error) {
+      return fail(isErrCode(r.error) ? r.error : ERR.INTERNAL, typeof r.detail === 'string' ? r.detail : undefined);
+    }
+    return OK;
+  }
+
+  /**
+   * room.skin.install (docs/SKINS.md): install one skin's files on this server, on demand.
+   *
+   * Answers at once and reports the outcome later — an install is tens of seconds and the client gives up after 8
+   * (server/skinInstall.js explains the queue and why it is not awaited here). The id is NOT checked against a
+   * catalogue first: tools/install-skins.mjs validates it against docs/research/08-skins.json and reports an unknown
+   * id as a failure, so keeping a second copy of that list in the lobby would only be one more thing to fall out of
+   * date.
+   */
+  skinInstall(session, { skinId }) {
+    return {
+      ...installSkinInBackground(skinId, {
+        log: (m) => this.log.info(String(m)),
+        // To the requester only: seven updates per install would be noise for everyone else, and the progress bar
+        // belongs to the player who clicked. The OUTCOME still goes to everyone (onDone below), because a finished
+        // skin changes the manifest they all read.
+        onProgress: (p) => { if (session.connected) sendSession(session, { t: 'skin.progress', skinId: p.skinId, phase: p.phase, done: p.done, total: p.total }); },
+        onDone: (done) => {
+          // Everyone, not just the requester: a skin has to be in a client's data/assets.json before it can draw, so
+          // without this nudge a teammate would keep seeing the default model until they reloaded the page.
+          for (const s of this.registry.byPlayerId.values()) {
+            if (s.connected) sendSession(s, { t: 'skins.changed', skinId: done.skinId, ok: done.ok });
+          }
+        },
+      }),
+    };
+  }
+
+  /**
    * room.ownership (0.2.0 补位): keep the droppable chess of the not-owned list, store it on the session and the seat
    * (see the header). A running match never takes it: it keeps the list its seat had at its start.
    */
@@ -725,6 +808,8 @@ export class Lobby {
       notOwned: s.isBot ? null : s.notOwned || null,
       // 0.2.0 自选编队: the human's checked DIY picks (bots field no 自选 piece [ASSUMED])
       diy: s.isBot ? null : s.diy || null,
+      // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
+      skins: s.isBot ? null : s.skins || null,
     }));
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
     const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, sharedResult: null, results: new Map() };
@@ -988,6 +1073,8 @@ export class Lobby {
       ops: session.ops || null,
       notOwned: session.notOwned || null,
       diy: session.diy || null,
+      // 干员皮肤 (docs/SKINS.md): a seat carries the player's choice into the room and on into Match (PlayerState)
+      skins: session.skins || null,
     };
   }
 

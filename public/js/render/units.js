@@ -617,6 +617,8 @@ export class UnitView {
     this.wolves = null;           // [狼影 left, the talent's maximum] of a 狼群 (sync; b.snap `wolves`)
     this.coins = null;            // [balance, cap] of 琳琅诗怀雅's skill purse, including zero
     this.coinHud = null;
+    this.energy = null;           // [stored energies, the trait's maximum] of a 秘术师, including zero (sync; b.snap `energy`)
+    this.energyHud = null;
     this.neg = 0;                 // the share of its cap a negative-HP pool holds, 0 = none (sync; b.snap `neg`, 斩业星熊's 我执)
     this.flags = 0; this.anim = ANIM.IDLE;
     this.statuses = new Set();
@@ -1046,6 +1048,7 @@ export class UnitView {
     this.sp = s.sp; this.spMax = s.spMax;
     this.ammo = s.ammo || null; this.wolves = s.wolves || null; this.neg = s.neg > 0 ? Math.min(1, s.neg) : 0;
     this.coins = s.coins || null;
+    this.energy = s.energy || null;
     const prevFlags = this.flags;
     this.flags = s.flags | 0;
     this.anim = s.anim | 0;
@@ -1666,14 +1669,16 @@ export class UnitView {
       ic.width = ic.height = isz;
       ic.position.set(x - ((icons.length - 1) * (isz + 2)) / 2 + i * (isz + 2), iy);
     }
-    // 狼影 pips under the bars (b.snap `wolves`), then the element gauge row under them (b.snap `elem`); redeploy ring above a
-    // knocked-down operator (b.snap `down`). 设置「弹药数量」 (off by default) first puts the magazine's count right under
-    // the ammo bar, and the rows below move down by its height
+    // 狼影 pips under the bars (b.snap `wolves`), then the purses and the stored energies (b.snap `coins` / `energy`),
+    // then the element gauge row under them (b.snap `elem`); redeploy ring above a knocked-down operator (b.snap `down`).
+    // 设置「弹药数量」 (off by default) first puts the magazine's count right under the ammo bar, and the rows below move
+    // down by its height
     let rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
     rowsTop += this._updateAmmoCount(showSp && !!ammo && this.ctx.settings?.ammoCount === true, x0 + bw / 2, rowsTop, s);
     const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
     const coinH = this._updateCoins(showBars && !this.isEnemy && !!this.coins, x0, rowsTop + wolfH, s);
-    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + 1, spH, s, t);
+    const energyH = this._updateEnergy(showBars && !this.isEnemy && !!this.energy, x0, rowsTop + wolfH + coinH, s);
+    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + energyH + 1, spH, s, t);
     this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
     // blocked marker at the feet (enemies held by a blocker)
     const blocked = !prep && this.alive && this.isEnemy && (this.flags & UF.BLOCKED);
@@ -1789,6 +1794,32 @@ export class UnitView {
       r = this.coinHud = { root, text, label: '' };
     }
     const label = `${this.coins[0]}/${this.coins[1]}`;
+    if (r.label !== label) { r.label = label; r.text.text = label; }
+    const size = clamp(s * 0.2, 10, 16);
+    r.root.scale.set(size / 16); r.root.position.set(x, top + 3); r.root.visible = true;
+    // Text includes font metrics and stroke beyond its nominal 16 px size; reserve the measured row so the next
+    // elemental gauge cannot overlap it (especially with a substituted browser font).
+    return Math.max(16, r.root.getLocalBounds?.().height || 24) * (size / 16) + 8;
+  }
+
+  /**
+   * Energy orb and stored/cap of a 秘术师, read from the current snapshot (b.snap `energy`, snapshot.js mysticView):
+   * the trait stores one attack's energy whenever the attack finds no target and empties the lot into the next one, so
+   * the count sits in the same row stack as the purse above, in a violet of its own — no other HUD state uses one, and
+   * the orb is told apart from 琳琅诗怀雅's coin at a glance. Zero is shown: it is a count, not an absent state.
+   */
+  _updateEnergy(show, x, top, s) {
+    let r = this.energyHud;
+    if (!show) { if (r) r.root.visible = false; return 0; }
+    if (!r) {
+      const P = this.P, root = new P.Container(), icon = new P.Sprite(fxAtlas().tex.orb);
+      icon.width = icon.height = 16;
+      icon.tint = COLORS.energy;
+      const text = new P.Text('', { fontFamily: 'Bender, Oxanium, sans-serif', fontSize: 16, fontWeight: '700', fill: '#b07dff', stroke: '#0b0f0e', strokeThickness: 3 });
+      text.position.set(19, -2); root.addChild(icon, text); this.hud.addChild(root);
+      r = this.energyHud = { root, text, label: '' };
+    }
+    const label = `${this.energy[0]}/${this.energy[1]}`;
     if (r.label !== label) { r.label = label; r.text.text = label; }
     const size = clamp(s * 0.2, 10, 16);
     r.root.scale.set(size / 16); r.root.position.set(x, top + 3); r.root.visible = true;

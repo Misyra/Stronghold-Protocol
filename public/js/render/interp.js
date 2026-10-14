@@ -117,6 +117,7 @@ export function normalizeSnapshot(snap) {
     }
   }
   const ammo = countList(snap.ammo, units), wolves = countList(snap.wolves, units), coins = countList(snap.coins, units);
+  const energy = countList(snap.energy, units);
   let neg = null;
   if (Array.isArray(snap.neg)) {
     for (const e of snap.neg) {
@@ -147,12 +148,12 @@ export function normalizeSnapshot(snap) {
       (standCut || (standCut = new Map())).set(e[0], e[1]);
     }
   }
-  return { t, units, down, ammo, wolves, coins, neg, stand, standCut, raw: snap };
+  return { t, units, down, ammo, wolves, coins, energy, neg, stand, standCut, raw: snap };
 }
 
 /**
  * `[[id, left, max]]` → Map id → [left, max] for the ids in `units`: whole numbers with 0 ≤ left ≤ max and max ≥ 1 (the
- * `ammo` and `wolves` lists); null without a valid entry.
+ * `ammo`, `wolves`, `coins` and `energy` lists); null without a valid entry.
  */
 function countList(list, units) {
   if (!Array.isArray(list)) return null;
@@ -403,6 +404,7 @@ export class SnapshotBuffer {
       o.ammo = A.ammo ? A.ammo.get(id) || null : null;
       o.wolves = A.wolves ? A.wolves.get(id) || null : null;
       o.coins = A.coins?.get(id) ?? null;
+      o.energy = A.energy?.get(id) ?? null;
       o.neg = A.neg ? A.neg.get(id) || 0 : 0;
       o.seen = stamp;
     }

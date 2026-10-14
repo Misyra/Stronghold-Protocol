@@ -349,6 +349,8 @@ describe('BoardScene (three.js scene graph, stub renderer)', () => {
     // the objective's curve falls while the start's rises (the client's clip: 0.16 → 0.097 → 0.16)
     assert.ok(near(gatePulse(0, GATE_TINT.end.alpha), 0.16, 1e-9) && near(gatePulse(1, GATE_TINT.end.alpha), 0.097, 1e-9));
     assert.deepEqual(GATE_TINT.start.rgb, [1, 0, 0], 'the start gate is tinted red, not white');
+    // the clip's cubic keys (flat ends): 0.134 + 0.095 · smoothstep(0.25) at 0.25 s, mirrored on the way back
+    assert.ok(near(gatePulse(0.25), 0.134 + 0.095 * 0.15625, 1e-9) && near(gatePulse(1.75), gatePulse(0.25), 1e-9));
     assert.deepEqual(new Set(Object.values(DIR_TURNS)), new Set([0, 1, 2, 3]));
     assert.ok(LIGHTING.key.intensity > 0 && LIGHTING.bg.z < 0);
   });

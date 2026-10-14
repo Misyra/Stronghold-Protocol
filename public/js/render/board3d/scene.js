@@ -54,21 +54,26 @@ export const LIGHTING = Object.freeze({
 
 /**
  * The gate boxes' _TintColor, from the client's 2 s clip (arts/effects/[pack]map.ab, controller `starting`,
- * `UVAnimation`): one renderer red (1, 0, 0) with alpha 0.134 → 0.229 → 0.134, the other blue (0, 0.09, 1) with alpha
+ * `UVAnimation`): one renderer red (1, 0, 0) with alpha 0.134 → 0.229 → 0.134, the other blue (0, 0.0897, 1) with alpha
  * 0.16 → 0.097 → 0.16. The alpha-blended part has the material's own (1, 1, 1, 1).
  * [ASSUMED] the clip's renderer paths are hashes that match no name in the bundle: red is read as the start gate,
  * blue as the objective.
  */
 export const GATE_TINT = Object.freeze({
   start: { rgb: [1, 0, 0], alpha: [0.134, 0.229] },
-  end: { rgb: [0, 0.09, 1], alpha: [0.16, 0.097] },
+  end: { rgb: [0, 0.0897, 1], alpha: [0.16, 0.097] },
   endAb: { rgb: [1, 1, 1], alpha: [1, 1] },
 });
 
-/** Gate pulse: a _TintColor.a curve [at 0 s and 2 s, at 1 s] of the 2 s loop. */
+/**
+ * Gate pulse: a _TintColor.a curve [at 0 s and 2 s, at 1 s] of the 2 s loop. The clip's streamed keys are cubic
+ * segments a·x³ + b·x² + c·x + d with flat ends (red: −0.19, 0.285, 0, 0.134 on 0–1 s, then the mirror), i.e. a
+ * smoothstep between the two values.
+ */
 export function gatePulse(t, [from, mid] = GATE_TINT.start.alpha) {
-  const k = 0.5 - 0.5 * Math.cos(((t / 2) % 1) * Math.PI * 2);
-  return from + (mid - from) * k;
+  const u = ((t % 2) + 2) % 2;
+  const x = u < 1 ? u : 2 - u;
+  return from + (mid - from) * x * x * (3 - 2 * x);
 }
 
 /**

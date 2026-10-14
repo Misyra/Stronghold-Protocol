@@ -15,8 +15,7 @@
 // 'builtin:Sphere') are generated here.
 
 import { compileEffect } from './effect.js';
-
-const FX_LIST_URL = '/data/local-fx.json';
+import { FX_LIST_URL, loadFxList } from './available.js';
 const MAX_PARALLEL = 8;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -83,7 +82,8 @@ export class FxLibrary {
    */
   constructor(opts = {}) {
     this.assets = opts.assets || null;
-    this.fetch = opts.fetch || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    this._defaultFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
+    this.fetch = opts.fetch || this._defaultFetch;
     this.listUrl = opts.listUrl || FX_LIST_URL;
     this.list = isObj(opts.list) ? opts.list : null;
     this.groups = null;
@@ -107,7 +107,8 @@ export class FxLibrary {
     if (this._init) return this._init;
     this._init = (async () => {
       let list = this.list;
-      if (!list && this.fetch) {
+      if (!list && this.listUrl === FX_LIST_URL && this.fetch === this._defaultFetch) list = await loadFxList(this.fetch);
+      else if (!list && this.fetch) {
         try {
           const res = await this.fetch(this.listUrl);
           if (res && res.ok) list = await res.json();

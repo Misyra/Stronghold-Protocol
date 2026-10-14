@@ -83,6 +83,19 @@ export function heightfield(heightAt, rows = 19, cols = 21, bias = 0.02) {
   return new Float32Array(out);
 }
 
+/**
+ * Pixi's GL state is stale after raw GL calls: its program, VAO, texture and render-state caches are reset so its
+ * systems rebind on their next use. Not `renderer.reset()`: that also rebinds the render target, which syncs Pixi's
+ * global uniforms while our program is still bound (WebGL INVALID_OPERATION).
+ */
+export function resetPixi(renderer) {
+  try { renderer.shader.reset(); } catch { /* ignore */ }
+  try { renderer.batch.reset(); } catch { /* ignore */ }
+  try { renderer.geometry.reset(); } catch { /* ignore */ }
+  try { renderer.texture.reset(); } catch { /* ignore */ }
+  try { renderer.state.reset(); } catch { /* ignore */ }
+}
+
 /** Draw order of two items: sorting layer, sorting order, render queue, then back to front (Unity's transparent sort). */
 function byUnityOrder(a, b) {
   return (a.layer - b.layer) || (a.order - b.order) || (a.queue - b.queue) || (b.dist - a.dist) || (a.seq - b.seq);
@@ -265,8 +278,7 @@ export class OfficialFx {
     } catch (err) {
       if (!this._warned) { this._warned = true; console.error('[fx] render failed', err); }
     } finally {
-      // Pixi's own GL state is stale after raw GL calls: its systems rebind on their next use
-      renderer.reset();
+      resetPixi(renderer);
     }
   }
 

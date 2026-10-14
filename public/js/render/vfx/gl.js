@@ -266,10 +266,9 @@ export class FxGL {
    */
   draw(items, frame) {
     const gl = this.gl;
+    // a mask up the Pixi tree may have scissor / stencil on: kept as they are (the effects layers are never masked)
     gl.enable(gl.BLEND);
     gl.frontFace(gl.CW);
-    gl.disable(gl.SCISSOR_TEST);
-    gl.disable(gl.STENCIL_TEST);
     let lastProg = null, lastState = null;
     const time = frame.time;
     const tv = [time / 20, time, time * 2, time * 3];

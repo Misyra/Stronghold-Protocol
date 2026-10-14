@@ -39,7 +39,7 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     scene.json + scene.bin + lightmap pages and scene/tex/ (the materials' albedo textures). The scene bundles ship
     only while the season runs: they are read from the client when it has them, else from --scenes <dir> (default
     .cache/official-scenes/*, filled by tools/local-extract/fetch_scenes.py)
-  - the official battle effects (特效) of the mode's operators, enemies and tokens (fx.py, docs/design/vfx-format.md)
+  - the official battle effects (特效) of the mode's operators, enemies and tokens (fx.py, DESIGN §33)
     → fx/index.json, fx/textures.json, fx/prefabs/*.json, fx/tex/**.webp, fx/mesh/*.json;
     only with an explicit --only fx (a plain run leaves them out): the Phase 1a sample by default, --fx-set used for
     every effect the units reference, --fx-keys <k1,k2> for named prefabs
@@ -68,7 +68,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scenes  # noqa: E402  (the battlefield scene table and exporter; imports UnityPy only when it runs)
-import fx  # noqa: E402  (the official battle effects, docs/design/vfx-format.md; imports UnityPy only when it runs)
+import fx  # noqa: E402  (the official battle effects, DESIGN §33; imports UnityPy only when it runs)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path.home()
@@ -943,7 +943,7 @@ def main():
     if token_ids:
         total += export_token_spines(ab_root, out_root, manifest, print, token_ids)
     if fx_on:
-        keys = [k.strip() for k in args.fx_keys.split(',') if k.strip()]
+        keys = [k.strip().lower() for k in args.fx_keys.split(',') if k.strip()]
         total += fx.export_fx(ab_root, out_root, manifest, print, selection=args.fx_set, keys=keys or None,
                               jobs=args.fx_jobs or None, root=ROOT)
     if stage_ids:

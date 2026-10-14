@@ -1,5 +1,5 @@
 """The official battle effects (特效) of 卫戍协议：盟约 from a locally installed client
-(docs/design/vfx-format.md: the format every file below follows).
+(DESIGN §33, docs/design/vfx-format.md: the format every file below follows).
 
 Run through extract.py (needs the client and .venv-extract; nothing is extracted on a plain `extract.py` run):
   .venv/bin/python tools/local-extract/extract.py --only fx                 the Phase 1a sample (FX_SAMPLE_*)
@@ -66,7 +66,7 @@ FX_SAMPLE_KEYS = [
 ]
 FX_SAMPLE_UNITS = ['char_498_inside', 'char_253_greyy', 'char_108_silent', 'char_134_ifrit', 'char_180_amgoat',
                    'enemy_1041_lazerd', 'enemy_1041_lazerd_2', 'enemy_1161_tidmag', 'enemy_1161_tidmag_2']
-# one prefab per rare feature (docs/design/vfx-format.md, coverage): mesh shape, ribbon / particle trails, rate over
+# one prefab per rare feature (DESIGN §33.13): mesh shape, ribbon / particle trails, rate over
 # distance, orbital velocity, velocity alignment, horizontal billboard, custom-data shader, clips on GameObject.active /
 # ParticleSystem / LineRenderer, LineRenderer, birth / death sub-emitters, prewarm
 FX_COVERAGE_KEYS = [
@@ -74,6 +74,12 @@ FX_COVERAGE_KEYS = [
     'akkord_skill_02_buff_01', 'jesca2_skill_01_trail_01', 'chen2_skill_02_range_01', 'enemy_tgshd_attack_start_01',
     'crosly_attack_a_start', 'aphris_attack_01_line_01', 'enemy_jakill_reborn_03_start', 'irene_skill_03_range_02',
     'enemy_achunt_chain',
+    # and one prefab per rarer behaviour class: SwitchableBackEffect, SwitchableRightEffect,
+    # SwitchableEffectByFaceDirection, FollowTileHeight, FunnelHitEffect, TriggerAnimatorWhenFinish, OnFinishAnime,
+    # PauseEffectIfDisappeared, FxUVRotation, FollowDirection, PauseEffectWithAnimation
+    'chen2_skill_01_buff_02', 'indigo_skill_01_buff_02', 'angel2_attack_loop_start_01', 'sbell2_ground_01',
+    'lumen_skill_02_hit', 'glady_skill_01_line', 'phatm2_skill_03_buff_02', 'etlchi_innate_hit_01', 'enemy_crstf_buff_01',
+    'yu_skill1_attack_01', 'aglna2_skill_02_buff_weapon_02',
 ]
 # Generic keys the client binds in code (no data file names them): what the remake shows for a hit by damage type, a
 # death, a deploy, and the status loops keyed by the sim's status names (render/style.js STATUS_ICON)
@@ -669,6 +675,27 @@ def all_strings(v, out, quoted=re.compile(r'"([^"\\]{2,160})"')):
 
 # ---- the effect descriptor ------------------------------------------------------------------------------------------
 
+EFFECT_KEYS = frozenset()   # every effect prefab key of the client (set in each worker: the behaviours' references)
+
+
+def _init_worker(keys):
+    global EFFECT_KEYS
+    EFFECT_KEYS = frozenset(keys)
+
+
+def string_values(v, out):
+    """Every string inside an encoded value."""
+    if isinstance(v, str):
+        out.add(v)
+    elif isinstance(v, dict):
+        for x in v.values():
+            string_values(x, out)
+    elif isinstance(v, list):
+        for x in v:
+            string_values(x, out)
+    return out
+
+
 class Exporter:
     """Writes the descriptors, textures and meshes of the effect prefabs of one AssetEnv into <out>/fx."""
 
@@ -881,13 +908,17 @@ class Exporter:
         ctx.finish()
         stats['liveParticles'] = round(stats['liveParticles'])
         stats['duration'] = None if stats['looping'] else f6(stats['duration'])
+        refs = set()
+        for n in nodes:
+            for b in n.get('behaviours', []):
+                refs |= {x.lower() for x in string_values(b['fields'], set()) if x.lower() in EFFECT_KEYS and x.lower() != key}
         doc = {'format': 'fx-prefab', 'version': FORMAT_VERSION, 'key': key, 'bundle': bundle, 'root': 0,
                'nodes': nodes, 'materials': ctx.materials, 'clips': ctx.clips, 'textures': sorted(ctx.tex_used),
-               'meshes': sorted(ctx.mesh_used), 'stats': stats}
+               'meshes': sorted(ctx.mesh_used), 'refs': sorted(refs), 'stats': stats}
         body = json.dumps(doc, ensure_ascii=False, separators=(',', ':'))
         write_atomic(self.out / 'prefabs' / f'{fx_file(key)}.json', body.encode('utf-8'))
         return {'file': f'prefabs/{fx_file(key)}.json', 'bundle': bundle, 'bytes': len(body),
-                'textures': sorted(ctx.tex_used), 'meshes': sorted(ctx.mesh_used), **stats}
+                'textures': sorted(ctx.tex_used), 'meshes': sorted(ctx.mesh_used), 'refs': sorted(refs), **stats}
 
 
 class PrefabCtx:
@@ -1381,13 +1412,18 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
     shared = AssetEnv(ab_root, cabs)                           # [uc]projectiles.ab and [uc]skills.ab, loaded once
     proj_roots = shared.prefabs(PROJECTILES)
     skill_roots = shared.prefabs(SKILLS)
-    effect_refs = lambda strings: sorted({s for s in strings if s in eff})  # noqa: E731
+    # effect / projectile / skill keys are case-insensitive: the client's references mix cases ('…_buff_02_B'), the
+    # bundles' containers (and so the files, the manifest and this index) use the lower-case names
+    effect_refs = lambda strings: sorted({x.lower() for x in strings if x.lower() in eff})  # noqa: E731
+    ek = lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else x  # noqa: E731
+    pk = lambda x: x.lower() if isinstance(x, str) and x.lower() in proj_roots else None  # noqa: E731
     lists = (('_effectsWhenStart', 'onStart'), ('_effectsWhenReached', 'onReached'), ('_effectsWhenHit', 'onHit'),
              ('_effectsWhenStop', 'onStop'), ('_effectsToTargetWhenStart', 'toTargetOnStart'),
              ('_effectsToTileWhenStart', 'toTileOnStart'), ('_effectOnTrigger', 'onTrigger'), ('_effectsWhenSelect', 'onSelect'))
 
     def projectile(key, depth=0):
-        if key in projectiles or depth > 3 or key not in proj_roots:
+        key = pk(key)
+        if key is None or key in projectiles or depth > 3:
             return
         entry = {'main': None, 'lifeTime': None, 'movement': None, 'behaviours': []}
         projectiles[key] = entry
@@ -1405,17 +1441,17 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 entry['behaviours'].append({'class': cls, 'node': gdd.get('m_Name'), 'fields': fields})
                 all_strings({k: v for k, v in d.items() if k != 'm_Name'}, strings)
                 if '_mainEffect' in d:
-                    entry['main'] = d.get('_mainEffect') or entry['main']
+                    entry['main'] = ek(d.get('_mainEffect')) or entry['main']
                     entry['lifeTime'] = f6(d.get('_lifeTime'))
                 if cls.endswith('Movement') and entry['movement'] is None:
                     entry['movement'] = {'class': cls, **{k.lstrip('_'): v for k, v in fields.items()}}
                 for src, dst in lists:
-                    vals = [x for x in (d.get(src) or []) if isinstance(x, str) and x]
+                    vals = [ek(x) for x in (d.get(src) or []) if isinstance(x, str) and x]
                     if vals:
                         entry.setdefault(dst, []).extend(vals)
             stack.extend(go_children(shared, go))
         entry['effects'] = effect_refs(strings)
-        entry['projectiles'] = sorted(s for s in strings if s in proj_roots and s != key)
+        entry['projectiles'] = sorted({pk(x) for x in strings if pk(x) and pk(x) != key})
         for p in entry['projectiles']:
             projectile(p, depth + 1)
 
@@ -1430,7 +1466,7 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 if o is not None and f != 'builtin' and o.type.name == 'MonoBehaviour':
                     all_strings({k: v for k, v in shared.tt(o).items() if k != 'm_Name'}, strings)
             stack.extend(go_children(shared, go))
-        projs = sorted(s for s in strings if s in proj_roots)
+        projs = sorted({pk(x) for x in strings if pk(x)})
         for p in projs:
             projectile(p)
         skills[sid] = {'effects': effect_refs(strings), 'projectiles': projs}
@@ -1451,9 +1487,20 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 log(f'  skip (no prefab) {uid}')
                 continue
             strings = u.pop('_strings')
-            for s in sorted(strings):
-                if s in proj_roots:
-                    projectile(s)
+            for x in ('startEffect', 'deadEffect'):
+                u[x] = ek(u[x]) if u[x] else None
+            for m in u['modes']:
+                for x in ('overrideStartEffect', 'overrideDeadEffect'):
+                    m[x] = ek(m[x]) if m[x] else None
+                a = m.get('attack') or {}
+                if a.get('projectileKey'):
+                    a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
+                for lst in ('cast', 'hit', 'attach', 'inputTarget', 'castTarget'):
+                    for e in a.get(lst, []):
+                        e['effects'] = [ek(x) for x in e['effects']]
+            for x in sorted(strings):
+                if pk(x):
+                    projectile(x)
             code = uid.split('_', 2)[2] if uid.startswith('char_') else None
             sids = set(gd['skills'].get(uid, []))
             if code:
@@ -1461,7 +1508,7 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
             for sid in sorted(sids):
                 skill(sid)
             u['skills'] = {sid: skills[sid] for sid in sorted(sids) if sid in skills}
-            u['projectiles'] = sorted({s for s in strings if s in projectiles})
+            u['projectiles'] = sorted({pk(x) for x in strings if pk(x) in projectiles})
             refs = set(effect_refs(strings))
             for p in u['projectiles']:
                 refs.update(projectiles[p]['effects'])
@@ -1491,8 +1538,11 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
 
 # ---- the run ----------------------------------------------------------------------------------------------------------
 
-def _export_worker(args):
-    """Export the prefabs `keys` of bundle `rel` (pool worker): (entries, textures meta, meshes meta, log lines)."""
+def _export_worker(args, keys_all=None):
+    """Export the prefabs `keys` of bundle `rel` (pool worker, or in-process with `keys_all`, every effect key):
+    (entries, textures meta, meshes meta, log lines)."""
+    if keys_all is not None:
+        _init_worker(keys_all)
     ab_root, out_root, cabs, rel, keys = args
     lines = []
     env = AssetEnv(ab_root, cabs)
@@ -1590,25 +1640,31 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
     missing = sorted(k for k in wanted if k not in eff)
     for k in missing:
         log(f'  skip (no such effect prefab in this client) {k}')
-    by_bundle = {}
-    for k in sorted(wanted - set(missing)):
-        by_bundle.setdefault(eff[k], []).append(k)
-    log(f'fx: exporting {sum(len(v) for v in by_bundle.values())} prefabs from {len(by_bundle)} bundles ({jobs} processes)')
+    wanted -= set(missing)
 
+    # -- descriptors, textures, meshes; then the keys the exported behaviours name (variants by facing, chained
+    #    effects), until nothing new is named
     t0 = time.time()
-    entries, textures, meshes = {}, {}, {}
-    work = [(str(ab_root), str(out_root), cabs, rel, ks) for rel, ks in sorted(by_bundle.items(), key=lambda kv: -len(kv[1]))]
-    if jobs > 1 and len(work) > 1:
-        with ProcessPoolExecutor(max_workers=jobs) as pool:
-            results = list(pool.map(_export_worker, work))
-    else:
-        results = [_export_worker(w) for w in work]
-    for e, tx, me, lines in results:
-        entries.update(e)
-        textures.update(tx)
-        meshes.update(me)
-        for line in lines:
-            log(line)
+    entries, textures, meshes, done = {}, {}, {}, set()
+    todo, rounds = set(wanted), 0
+    with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker, initargs=(tuple(eff),)) as pool:
+        while todo and rounds < 6:
+            rounds += 1
+            by_bundle = {}
+            for k in sorted(todo):
+                by_bundle.setdefault(eff[k], []).append(k)
+            log(f'fx: pass {rounds}: exporting {len(todo)} prefabs from {len(by_bundle)} bundles ({jobs} processes)')
+            work = [(str(ab_root), str(out_root), cabs, rel, ks) for rel, ks in sorted(by_bundle.items(), key=lambda kv: -len(kv[1]))]
+            results = list(pool.map(_export_worker, work)) if jobs > 1 and len(work) > 1 else [_export_worker(w, tuple(eff)) for w in work]
+            done |= todo
+            for e, tx, me, lines in results:
+                entries.update(e)
+                textures.update(tx)
+                meshes.update(me)
+                for line in lines:
+                    log(line)
+            named = {r for e in entries.values() for r in e.get('refs', [])}
+            todo = {k for k in named if k in eff and k not in done}
     timings['prefabs'] = time.time() - t0
 
     index = {
@@ -1616,7 +1672,7 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
         'source': {'root': ab_root.name, 'client': client_version(ab_root)},
         'units': units, 'projectiles': projectiles, 'skills': skills, 'skins': skins,
         'generic': {**FX_GENERIC, 'keys': sorted(k for k in generic if k in entries)},
-        'prefabs': {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping')}
+        'prefabs': {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs')}
                     for k, v in sorted(entries.items())},
     }
     write_atomic(out / 'index.json', json.dumps(index, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))

@@ -697,9 +697,12 @@ export class UnitView {
   // is missing or still loading after PIC_WAIT_MS).
   _loadPicture() {
     const a = this.ctx.assets;
+    // 干员皮肤 (docs/SKINS.md): an installed skin may ship its own avatar, so the fallback diamond asks for it too;
+    // the cache key carries the skinId, else switching skins would keep the previous operator's portrait
+    const skinOpt = this.info.skin ? { skin: this.info.skin } : undefined;
     // (an ICE_TOKENS unit takes no picture: the token fallback would be its owner's face — assets.js tokenAvatarUrl)
-    const url = ICE_TOKENS.has(this.info.defId) ? null : a && (a.picture ? a.picture(this.info.avatar) || a.picture(this.info.defId) || a.picture(this.info.spine) : null);
-    this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown'), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs() };
+    const url = ICE_TOKENS.has(this.info.defId) ? null : a && (a.picture ? a.picture(this.info.avatar, skinOpt) || a.picture(this.info.defId, skinOpt) || a.picture(this.info.spine, skinOpt) : null);
+    this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown') + (this.info.skin ? `|${this.info.skin}` : ''), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs() };
     if (!url || !a.image) return;
     const cached = typeof a.imageNow === 'function' ? a.imageNow(url) : null;
     if (cached) { this._pic.img = cached; this._pic.state = 'img'; return; }
@@ -729,7 +732,8 @@ export class UnitView {
     // Front/Back rule (research 07 §5.5 / 09 §1.2): Front facing right/down (mirrored for left), Back facing up — while
     // standing (a knocked-out operator lies with the model that has a fall: _wantsBack).
     const back = this._wantsBack();
-    const entry = id ? a.spineEntry(id, { back }) : null;
+    // 干员皮肤 (docs/SKINS.md): `info.skin` is the owner's chosen skinId; spineEntry falls back to the default model
+    const entry = id ? a.spineEntry(id, { back, skin: this.info.skin }) : null;
     if (!entry || this.ctx.settings?.quality === 'low' && this.isEnemy && !this.isBoss && this.ctx.crowded?.()) return;
     this.entryBack = back;
     this._acquireSpine(entry, id, retry);
@@ -1050,8 +1054,9 @@ export class UnitView {
   _wantsBack() {
     const a = this.ctx.assets;
     const id = this.info.spine || this.info.defId;
-    if (this.isEnemy || this.dir !== 'UP' || !id || !a || typeof a.hasBack !== 'function' || !a.hasBack(id)) return false;
-    return this.alive || dieClipDur(typeof a.spineEntry === 'function' ? a.spineEntry(id, { back: true }) : null) > 0;
+    // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin
+    if (this.isEnemy || this.dir !== 'UP' || !id || !a || typeof a.hasBack !== 'function' || !a.hasBack(id, this.info.skin)) return false;
+    return this.alive || dieClipDur(typeof a.spineEntry === 'function' ? a.spineEntry(id, { back: true, skin: this.info.skin }) : null) > 0;
   }
 
   /**
@@ -1237,7 +1242,7 @@ export class UnitView {
   _fallDur() {
     const a = this.ctx.assets;
     const id = this.info.spine || this.info.defId;
-    return a && typeof a.spineEntry === 'function' && id ? dieClipDur(a.spineEntry(id, { back: this._wantsBack() })) : 0;
+    return a && typeof a.spineEntry === 'function' && id ? dieClipDur(a.spineEntry(id, { back: this._wantsBack(), skin: this.info.skin })) : 0;
   }
 
   /** Standing again (a redeploy, a revive): an operator facing UP gets its Back model back (this frame's update). */

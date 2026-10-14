@@ -1,16 +1,19 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { activeChatStrikes } from './moderation/chatState.js';
+import { ROOM_PROTECTION_DEFAULTS } from './roomConfig.js';
 
 export const foreignSessionKey = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
 
-/** One gameplay identity per foreign IP; the registry and Lobby retain ownership of cleanup. */
+/** A live-configured gameplay identity cap per foreign IP; Lobby retains ownership of cleanup. */
 export class ForeignSessions {
-  constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true, allowConnections = () => true }) {
+  constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true, allowConnections = () => true,
+    maxPerIp = () => ROOM_PROTECTION_DEFAULTS.maxForeignSessionsPerIp }) {
     this.registry = registry;
     this.countryLookup = countryLookup;
     this.now = now;
     this.isEnabled = isEnabled;
+    this.maxPerIp = maxPerIp;
     this.allowConnections = allowConnections;
     this.connectionLog = { at: -Infinity, suppressed: 0 };
     this.byIp = new Map();
@@ -83,12 +86,14 @@ export class ForeignSessions {
     }
     const entry = this.byIp.get(plan.key);
     if (!entry) return plan;
+    let online = 0;
     for (const session of entry.sessions) {
       if (this.registry.byId(session.playerId) !== session) { this.forget(session); continue; }
       if (session === current) continue;
-      if (session.connected) plan.ok = false;
+      if (session.connected) online++;
       else plan.stale.push(session);
     }
+    plan.ok = online < this.maxPerIp();
     if (!plan.ok) {
       this.counts.denied++;
       if (this.now() - entry.logAt >= 10000) {
@@ -129,6 +134,6 @@ export class ForeignSessions {
     const configured = this.isEnabled(), allowForeignConnections = this.allowConnections();
     return { configured, geoipAvailable: !!this.countryLookup, enabled: configured && !!this.countryLookup,
       allowForeignConnections, foreignConnectionsBlocked: !allowForeignConnections && !!this.countryLookup,
-      maxPerIp: 1, ...this.counts };
+      maxPerIp: this.maxPerIp(), ...this.counts };
   }
 }

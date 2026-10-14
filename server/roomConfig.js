@@ -10,10 +10,12 @@ export const ROOM_LIMIT_OPTIONS = Object.freeze({
   matchStartRefillMs: ['SP_MATCH_START_REFILL_MS', 30000, 100, 3600000],
   maxBots: ['SP_BOT_MAX_TOTAL', 300, 1, 10000],
   maxForeignBots: ['SP_BOT_MAX_FOREIGN', 50, 1, 10000],
+  maxForeignSessionsPerIp: ['SP_FOREIGN_MAX_SESSIONS_PER_IP', 1, 1, 100],
 });
 export const ROOM_PROTECTION_DEFAULTS = Object.freeze({
   limitForeignSessions: true,
   allowForeignConnections: true,
+  maxForeignSessionsPerIp: ROOM_LIMIT_OPTIONS.maxForeignSessionsPerIp[1],
   roomCreateBurst: ROOM_LIMIT_OPTIONS.roomCreateBurst[1],
   roomCreateRefillMs: ROOM_LIMIT_OPTIONS.roomCreateRefillMs[1],
   matchStartBurst: ROOM_LIMIT_OPTIONS.matchStartBurst[1],
@@ -24,12 +26,15 @@ export const ROOM_PROTECTION_DEFAULTS = Object.freeze({
 
 export function validateRoomConfig(config, { partial = false } = {}) {
   if (!config || Array.isArray(config) || typeof config !== 'object' || !Object.keys(config).length ||
-    Object.keys(config).some((key) => !['maxRooms', 'allowBots', 'limitForeignSessions', 'allowForeignConnections'].includes(key))) return 'INVALID_ROOM_CONFIG';
+    Object.keys(config).some((key) => !['maxRooms', 'allowBots', 'limitForeignSessions', 'allowForeignConnections', 'maxForeignSessionsPerIp'].includes(key))) return 'INVALID_ROOM_CONFIG';
   if ((!partial || Object.hasOwn(config, 'maxRooms')) &&
     (!Number.isSafeInteger(config.maxRooms) || config.maxRooms < 1 || config.maxRooms > 10000)) return 'INVALID_MAX_ROOMS';
   if (Object.hasOwn(config, 'allowBots') && typeof config.allowBots !== 'boolean') return 'INVALID_ALLOW_BOTS';
   if (Object.hasOwn(config, 'limitForeignSessions') && typeof config.limitForeignSessions !== 'boolean') return 'INVALID_FOREIGN_SESSION_LIMIT';
   if (Object.hasOwn(config, 'allowForeignConnections') && typeof config.allowForeignConnections !== 'boolean') return 'INVALID_ALLOW_FOREIGN_CONNECTIONS';
+  if (Object.hasOwn(config, 'maxForeignSessionsPerIp') && (!Number.isSafeInteger(config.maxForeignSessionsPerIp) ||
+    config.maxForeignSessionsPerIp < ROOM_LIMIT_OPTIONS.maxForeignSessionsPerIp[2] ||
+    config.maxForeignSessionsPerIp > ROOM_LIMIT_OPTIONS.maxForeignSessionsPerIp[3])) return 'INVALID_FOREIGN_MAX_SESSIONS_PER_IP';
   return null;
 }
 

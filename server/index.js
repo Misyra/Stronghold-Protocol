@@ -91,7 +91,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
- *   geoLiteCountryFile?: string, geoipMode?: 'country' | 'cn-only', countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean,
+ *   geoLiteCountryFile?: string, geoipMode?: 'country' | 'cn-only', countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean, maxForeignSessionsPerIp?: number,
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  * }} [opts]
@@ -142,7 +142,9 @@ export async function startServer(opts = {}) {
     lobbyOptions.limitForeignSessions = savedRoomConfig.limitForeignSessions;
   if (opts.allowForeignConnections == null && typeof savedRoomConfig?.allowForeignConnections === 'boolean')
     lobbyOptions.allowForeignConnections = savedRoomConfig.allowForeignConnections;
-  log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? 'on' : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
+  if (opts.maxForeignSessionsPerIp == null && Number.isSafeInteger(savedRoomConfig?.maxForeignSessionsPerIp))
+    lobbyOptions.maxForeignSessionsPerIp = savedRoomConfig.maxForeignSessionsPerIp;
+  log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
   log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,

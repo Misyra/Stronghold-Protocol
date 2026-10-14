@@ -99,6 +99,7 @@ export function createSessionStack(opts, { data, log, chatLog }) {
     const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
       foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,
+      foreignSessionsMaxPerIp: () => lobby.opts.maxForeignSessionsPerIp,
       allowForeignConnections: () => lobby.opts.allowForeignConnections });
     return { registry, lobby, network };
   } catch (error) {

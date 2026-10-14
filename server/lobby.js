@@ -353,7 +353,8 @@ export class Lobby {
   get roomPressure() { return this.roomReclamation.state; }
 
   getRoomConfig() { return { maxRooms: this.opts.maxRooms, allowBots: this.opts.allowBots,
-    limitForeignSessions: this.opts.limitForeignSessions, allowForeignConnections: this.opts.allowForeignConnections }; }
+    limitForeignSessions: this.opts.limitForeignSessions, allowForeignConnections: this.opts.allowForeignConnections,
+    maxForeignSessionsPerIp: this.opts.maxForeignSessionsPerIp }; }
 
   /** The admin transport persists accepted changes first, then applies all side effects here. */
   applyRoomConfig(patch) {
@@ -373,6 +374,8 @@ export class Lobby {
       this.audit('session.foreignLimit.changed', null, null, { previous: previous.limitForeignSessions, limitForeignSessions: next.limitForeignSessions });
     if (previous.allowForeignConnections !== next.allowForeignConnections)
       this.audit('connection.foreignPolicy.changed', null, null, { previous: previous.allowForeignConnections, allowForeignConnections: next.allowForeignConnections });
+    if (previous.maxForeignSessionsPerIp !== next.maxForeignSessionsPerIp)
+      this.audit('session.foreignMaxPerIp.changed', null, null, { previous: previous.maxForeignSessionsPerIp, maxForeignSessionsPerIp: next.maxForeignSessionsPerIp });
     return { ...next, roomCount: this.rooms.size };
   }
 

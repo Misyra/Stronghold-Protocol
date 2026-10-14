@@ -494,7 +494,7 @@ test('贾维 团伙行动: every 6 manual refreshes ⇒ a <叙拉古> operator (
   cover('band_chiave');
 });
 
-test('娜仁图亚 见者有份: even rounds\' prep start — pick 1 of 2 different items (tier ≤ shop level) for free', () => {
+test('娜仁图亚 见者有份: even rounds\' prep start — pick 1 of 2 different shop equips for free (any tier [ASSUMED])', () => {
   const { ps, roundStart } = setup({ band: 'band_narant', seed: 13 });
   ps.shop.level = 3;
   for (const r of [1, 2, 3, 4]) {
@@ -505,7 +505,8 @@ test('娜仁图亚 见者有份: even rounds\' prep start — pick 1 of 2 differ
     const ids = ps.offers[0].slots.map((sl) => sl.id);
     assert.equal(ids.length, 2);
     assert.equal(new Set(ids).size, 2);
-    for (const id of ids) assert.ok(DATA.items[id].itemType === 'EQUIP' && DATA.items[id].tier <= 3);
+    // The blackboard names no tier cap. A level-3 shop can offer tier IV–VI (test/match/r40a-narant-pool.test.js).
+    for (const id of ids) assert.ok(DATA.items[id].itemType === 'EQUIP' && !DATA.items[id].shopExcluded);
   }
   cover('band_narant');
 });

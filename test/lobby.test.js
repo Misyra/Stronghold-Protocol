@@ -317,6 +317,75 @@ describe('static http server', () => {
     assert.equal(textRange.body.toString(), js.slice(0, 2));
   });
 
+  for (const url of ['/assets/audio/bgm.mp3', '/media/bgm']) {
+    for (const range of ['bytes=0-0', `bytes=${mp3.length}-`]) {
+      test(`HEAD ignores Range ${range} on ${url}`, async () => {
+        const full = await httpReq(srv.port, url);
+        const head = await httpReq(srv.port, url, { method: 'HEAD', headers: { range } });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-length'], String(full.body.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.headers['content-type'], full.headers['content-type']);
+        assert.equal(head.headers.etag, full.headers.etag);
+        assert.equal(head.body.length, 0);
+      });
+    }
+  }
+
+  for (const encoding of ['gzip', 'br']) {
+    test(`HEAD ignores Range when selecting the ${encoding} representation`, async () => {
+      const url = '/js/app.js';
+      const headers = { 'accept-encoding': encoding };
+      const full = await httpReq(srv.port, url, { headers });
+      assert.equal(full.status, 200);
+      assert.equal(full.headers['content-encoding'], encoding);
+      for (const range of ['bytes=0-0', `bytes=${Buffer.byteLength(js)}-`]) {
+        const head = await httpReq(srv.port, url, { method: 'HEAD', headers: { ...headers, range } });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-encoding'], encoding);
+        assert.equal(head.headers['content-length'], String(full.body.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.headers.etag, full.headers.etag);
+        assert.equal(head.headers.vary, full.headers.vary);
+        assert.equal(head.body.length, 0);
+
+        const cached = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { ...headers, range, 'if-none-match': full.headers.etag },
+        });
+        assert.equal(cached.status, 304, 'Range must not change the selected validator');
+        assert.equal(cached.headers.etag, full.headers.etag);
+        assert.equal(cached.headers['content-range'], undefined);
+        assert.equal(cached.body.length, 0);
+      }
+    });
+  }
+
+  test('HEAD ignores Range while honoring cache validators and ignoring If-Range', async () => {
+    for (const url of ['/assets/audio/bgm.mp3', '/media/bgm']) {
+      const full = await httpReq(srv.port, url);
+      for (const condition of [
+        { 'if-none-match': full.headers.etag },
+        { 'if-modified-since': full.headers['last-modified'] },
+      ]) {
+        const cached = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { range: `bytes=${mp3.length}-`, ...condition },
+        });
+        assert.equal(cached.status, 304);
+        assert.equal(cached.headers['content-range'], undefined);
+        assert.equal(cached.body.length, 0);
+      }
+      for (const ifRange of [full.headers.etag, '"stale"']) {
+        const head = await httpReq(srv.port, url, {
+          method: 'HEAD', headers: { range: 'bytes=0-0', 'if-range': ifRange },
+        });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers['content-length'], String(mp3.length));
+        assert.equal(head.headers['content-range'], undefined);
+        assert.equal(head.body.length, 0);
+      }
+    }
+  });
+
   test('extension-less /media audio route (download managers sniff .mp3 URLs)', async () => {
     const direct = await httpReq(srv.port, '/assets/audio/bgm.mp3');
     const media = await httpReq(srv.port, '/media/bgm');

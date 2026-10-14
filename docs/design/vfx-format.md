@@ -87,8 +87,9 @@ down, vertical FOV 40° — `OFFICIAL` in `render/projection.js`, which is exact
 The recommended way to render: build every effect in Unity space (Unity's TRS order, Unity's quaternions, Unity's
 camera-facing math), with the camera transformed into the same space, and map positions with the linear map
 `C = diag(1, 1, −1)` plus the anchor's translation only when they become board / clip-space positions. C is its own
-inverse. Because C has determinant −1, triangle winding flips: draw effect geometry with culling off (every Torappu
-particle pass is `Cull Off`; for the rare `Back` / `Front` pass swap the two). Direction vectors map with C as well
+inverse. Because C has determinant −1, triangle winding flips: draw effect geometry with culling off (nearly every
+Torappu particle pass is `Cull Off`; for a `Back` / `Front` pass — the Rim shaders, a material's `_CullMode` — swap the
+two). Direction vectors map with C as well
 (`v_o = (v.x, v.y, −v.z)`); a quaternion maps as `(−qx, −qy, qz, qw)` when an orientation must be expressed in the board
 frame. Euler angles (transforms, clips, shape rotation) are degrees applied as Unity's `Quaternion.Euler(x, y, z)`:
 rotate about Z, then X, then Y (q = q_y · q_x · q_z).
@@ -351,7 +352,9 @@ factors (`Zero`, `One`, `DstColor`, `SrcColor`, `OneMinusDstColor`, `SrcAlpha`, 
 — `Less`, `LessEqual`, …), `zWrite`, `cull` (`Off`, `Front`, `Back`), `colorMask` (bits R 8, G 4, B 2, A 1) — where
 the shader takes a state from a property (`_ZTest`, `_DstBlend`, `_SrcBlend`, `_PremultiplyAlpha`, `_CullMode`, …) the
 material's value (or the property default) is used. The alpha factors matter only when the effect layer's alpha is
-composited (a transparent canvas).
+composited (a transparent canvas). `keywords` select the shader's variant: in this client `_HGCUSTOMVERTEXSTREAM_ON`
+(the custom-data variant of the `*(CustomData)` shaders), `HG_SPRITE_SHEET` / `HG_SPRITE_SHEET_LERP` (AlphaBlend's
+in-shader flipbook), `_ALPHABLEND_ON`, `_WEIGHT_ON`, …
 
 Shaders of the used set (by material uses; 38 names): `Torappu/Particles/AlphaBlend` 9,208, `…/Additive` 9,124,
 `…/Ram/Disturb(CustomData)` 3,244, `…/Disturb/Disturb(CustomData)` 1,823, `…/Dissolve/Dissolve(CustomData)` 968,
@@ -604,10 +607,11 @@ Checked on the output: clip decoding against known values (`buff_stun` z 0 → �
 
 ### 33.14 Phase 1b (the full set)
 
-`--fx-set used` exports every effect the mode's units reference: ~4,000 prefabs (the study's count: 4,013 in 267
-bundles, client 26-08-16), ~3,400 textures, ~435 meshes — about 40 MB of WebP and ~60 MB of JSON (10 MB gzipped);
-~25 minutes of CPU, ~3–4 minutes with 8 processes. Still to do there: the units' crawl in parallel (one environment per
-unit, ~500 units, sequential now), the export passes of the keys the behaviours name over the whole set (implemented,
-run on the sample only), a test that every key an index entry names has a descriptor, and the manifest's size (one
-entry per file: ~8,000 entries, ~1 MB raw / ~150 KB gzipped added to `data/local-assets.json`) — a separate served
-manifest for fx may be wanted.
+`--fx-set used` exports every effect the mode's units reference. A dry run of its crawl (client 26-09-13) finds
+510 units (210 operators, 243 enemies — six `_2` variants have no prefab of their own —, 57 tokens), 538 projectiles,
+529 skills and 3,869 effect prefabs (3,834 referenced + the generic keys) in 264 bundles, in 45 s; the export is ~0.35 s
+CPU per prefab (~23 minutes of CPU, ~3–4 minutes with 8 processes), before the second pass over the keys behaviours
+name. Expected output: ~3,400 textures, ~435 meshes — about 40 MB of WebP and ~60 MB of JSON (10 MB gzipped). Still to
+do there: run and check it (every key an index entry names has a descriptor — the consistency test does this on any
+extracted set), and the manifest's size (one entry per file: ~8,000 entries, ~1 MB raw / ~150 KB gzipped added to
+`data/local-assets.json`) — a separate served manifest for fx may be wanted.

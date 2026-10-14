@@ -755,6 +755,7 @@ export async function createFieldView(host, options = {}) {
     const addList = (arr, area) => {
       if (!Array.isArray(arr)) return;
       arr.forEach((pc, i) => {
+        if (area === 'temp' && i >= GEO.TEMP_SIZE) return; // Hidden overflow waits for a visible slot.
         if (!pc || typeof pc !== 'object' || !Number.isInteger(pc.uid)) return;
         if (area === 'board') {
           if (!Number.isInteger(pc.row) || !Number.isInteger(pc.col)) return;

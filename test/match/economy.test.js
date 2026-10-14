@@ -184,18 +184,17 @@ test('selling: +1 (normal and elite, board or hand), items return to the hand, i
   assert.ok(!ps.hand.some((p) => p && p.uid === it.uid));
   assert.equal(ps.funds, 1, 'destroying pays nothing');
   assert.deepEqual(m.handle('p_0', { t: 'g.sell', uid: 424242 }).error, ERR.BAD_TARGET);
-  // a board chess carrying equipment is not sold while neither the hand nor the temp slots can take the equipment back
+  // Returned equipment queues even when the visible bench cannot fit both items.
   const b = give(m, ps, chessOfTier(4).find((x) => m.pool.has(x)), 'board', [10, 3]);
   b.items.push(ps.newPiece('item', 'chess_item_1_01_e_a'), ps.newPiece('item', 'chess_item_3_03_e_a'));
   const fill = chessOfTier(1).filter((x) => m.pool.has(x));
   for (let i = 0; ps.hand.some((p) => p == null); i++) give(m, ps, fill[i]);
   const fill2 = chessOfTier(2).filter((x) => m.pool.has(x));
   for (let i = 0; i < 4; i++) give(m, ps, fill2[i], 'temp');
-  assert.equal(m.handle('p_0', { t: 'g.sell', uid: b.uid }).error, ERR.HAND_FULL, '2 items, 1 free temp slot');
-  assert.ok(ps.find(b.uid) && b.items.length === 2, 'nothing lost');
-  ps.resolveTemp();
+  const returned = [...b.items];
   assert.deepEqual(m.handle('p_0', { t: 'g.sell', uid: b.uid }), { ok: true });
-  assert.equal(ps.temp.filter(Boolean).length, 2, 'the equipment overflowed into temp');
+  assert.equal(ps.temp.filter(Boolean).length, 6, 'both items retained beyond the five visible slots');
+  for (const item of returned) assert.equal(ps.find(item.uid).piece, item);
   checkInvariants(m);
   m.dispose();
 });

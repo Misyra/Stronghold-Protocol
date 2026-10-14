@@ -15,7 +15,7 @@ import {
   buildBoard, classifyStage, heightOf, AREAS, areaFor, unionAreas, objToBoard, boxProjectUV, tube, Geom, uvAt, ROWS, COLS,
   DEVICE_H, RAISED_FOOT,
 } from '../../public/js/render/board3d/layout.js';
-import { BoardScene, gatePulse, DIR_TURNS, boxData, LIGHTING } from '../../public/js/render/board3d/scene.js';
+import { BoardScene, gatePulse, GATE_TINT, DIR_TURNS, boxData, LIGHTING } from '../../public/js/render/board3d/scene.js';
 import { loadBoardPack, loadThree, resetBoardPack, PACK_IMAGES } from '../../public/js/render/board3d/load.js';
 import { parseStage } from '../../public/js/render/tiles.js';
 import { TILE_H } from '../../public/js/render/style.js';
@@ -303,9 +303,9 @@ describe('BoardScene (three.js scene graph, stub renderer)', () => {
       const a = new THREE.Vector3(x, y, z).project(board.camera), b = new THREE.Vector3(x, y, z).project(ref);
       assert.ok(near(a.x, b.x, 1e-9) && near(a.y, b.y, 1e-9));
     }
-    const p0 = board.mat.gateStartAdd.uniforms.uPulse.value;
+    const p0 = board.mat.gateStartAdd.uniforms.uAlpha.value;
     board.render(cam, 2.25);
-    assert.notEqual(board.mat.gateStartAdd.uniforms.uPulse.value, p0, 'gate pulse animates');
+    assert.notEqual(board.mat.gateStartAdd.uniforms.uAlpha.value, p0, 'gate pulse animates');
     board.flashObjective(9, 2);
     board.render(cam, 2.4);
     assert.ok(board.mat.gateEndAb.uniforms.uFlash.value.r > 0.5, 'leak flash');
@@ -325,6 +325,9 @@ describe('BoardScene (three.js scene graph, stub renderer)', () => {
     for (let t = 0; t < 2; t += 0.01) { const v = gatePulse(t); lo = Math.min(lo, v); hi = Math.max(hi, v); }
     assert.ok(near(lo, 0.134, 1e-3) && near(hi, 0.229, 1e-3));
     assert.ok(near(gatePulse(0.3), gatePulse(2.3), 1e-9), 'periodic');
+    // the objective's curve falls while the start's rises (the client's clip: 0.16 → 0.097 → 0.16)
+    assert.ok(near(gatePulse(0, GATE_TINT.end.alpha), 0.16, 1e-9) && near(gatePulse(1, GATE_TINT.end.alpha), 0.097, 1e-9));
+    assert.deepEqual(GATE_TINT.start.rgb, [1, 0, 0], 'the start gate is tinted red, not white');
     assert.deepEqual(new Set(Object.values(DIR_TURNS)), new Set([0, 1, 2, 3]));
     assert.ok(LIGHTING.key.intensity > 0 && LIGHTING.bg.z < 0);
   });

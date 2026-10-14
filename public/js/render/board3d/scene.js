@@ -50,13 +50,23 @@ export const LIGHTING = Object.freeze({
   bg: { z: -8, size: 43.16, color: 0.713, dim: 0.8, tiles: 3 },
 });
 
-/** Additive gain of the gate boxes at the curve's mean (tuned against the official screenshots). */
-export const GATE_GAIN = 0.6;
+/**
+ * The gate boxes' _TintColor, from the client's 2 s clip (arts/effects/[pack]map.ab, controller `starting`,
+ * `UVAnimation`): one renderer red (1, 0, 0) with alpha 0.134 → 0.229 → 0.134, the other blue (0, 0.09, 1) with alpha
+ * 0.16 → 0.097 → 0.16. The alpha-blended part has the material's own (1, 1, 1, 1).
+ * [ASSUMED] the clip's renderer paths are hashes that match no name in the bundle: red is read as the start gate,
+ * blue as the objective.
+ */
+export const GATE_TINT = Object.freeze({
+  start: { rgb: [1, 0, 0], alpha: [0.134, 0.229] },
+  end: { rgb: [0, 0.09, 1], alpha: [0.16, 0.097] },
+  endAb: { rgb: [1, 1, 1], alpha: [1, 1] },
+});
 
-/** Gate pulse: the official clip's _TintColor.a curve (2 s loop, 0.134 → 0.229 → 0.134) scaled to our intensity. */
-export function gatePulse(t, phase = 0) {
-  const k = 0.5 - 0.5 * Math.cos(((t / 2 + phase) % 1) * Math.PI * 2);
-  return 0.134 + (0.229 - 0.134) * k;
+/** Gate pulse: a _TintColor.a curve [at 0 s and 2 s, at 1 s] of the 2 s loop. */
+export function gatePulse(t, [from, mid] = GATE_TINT.start.alpha) {
+  const k = 0.5 - 0.5 * Math.cos(((t / 2) % 1) * Math.PI * 2);
+  return from + (mid - from) * k;
 }
 
 /**
@@ -168,7 +178,7 @@ export class BoardScene {
     this.tex = {
       D: makeTexture(T, img.D, { aniso }), N: makeTexture(T, img.N, { srgb: false, aniso }), R: makeTexture(T, img.R, { srgb: false, aniso }),
       E: makeTexture(T, img.E, { aniso }), common: makeTexture(T, img.common, { aniso }), commonE: makeTexture(T, img.commonE, { aniso }),
-      BG: makeTexture(T, img.BG, { aniso }), wind: makeTexture(T, img.wind, { aniso }), gate: makeTexture(T, img.gate, {}),
+      BG: makeTexture(T, img.BG, { aniso }), wind: makeTexture(T, img.wind, { aniso }), gate: makeTexture(T, img.gate, { srgb: false }),
       waterN: makeTexture(T, img.waterN, { srgb: false, repeat: true }), caustics: makeTexture(T, img.caustics, { srgb: false, repeat: true }),
       noise: makeTexture(T, img.noise, { srgb: false, repeat: true }),
     };
@@ -180,9 +190,9 @@ export class BoardScene {
       pipe: pipeMaterial(T, this.focus),
       bg: this.tex.BG ? unlitMaterial(T, this.tex.BG, new T.Color().setScalar(LIGHTING.bg.color * LIGHTING.bg.dim)) : new T.MeshBasicMaterial({ color: 0x1a1d1f }),
       wind: this.tex.wind ? unlitMaterial(T, this.tex.wind) : null,
-      gateStartAdd: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: true }) : null,
-      gateEndAdd: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: true }) : null,
-      gateEndAb: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: false }) : null,
+      gateStartAdd: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: true, tint: GATE_TINT.start.rgb }) : null,
+      gateEndAdd: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: true, tint: GATE_TINT.end.rgb }) : null,
+      gateEndAb: this.tex.gate ? gateMaterial(T, this.tex.gate, { additive: false, tint: GATE_TINT.endAb.rgb }) : null,
       edge: glowMaterial(T, dashTexture(T)),
       water: waterMaterial(T, this.tex, this.focus),
       mire: mireMaterial(T, this.tex, this.focus),
@@ -656,11 +666,10 @@ export class BoardScene {
       if (Math.abs(F.x - tg[0]) + Math.abs(F.y - tg[1]) + Math.abs(F.z - tg[2]) + Math.abs(F.w - tg[3]) > 40) F.set(tg[0], tg[1], tg[2], tg[3]);
       else F.set(F.x + (tg[0] - F.x) * k, F.y + (tg[1] - F.y) * k, F.z + (tg[2] - F.z) * k, F.w + (tg[3] - F.w) * k);
     }
-    // gate pulses (official 2 s curve → additive intensity), objective leak flashes
-    const pulse = gatePulse(t);
-    if (this.mat.gateStartAdd) this.mat.gateStartAdd.uniforms.uPulse.value = GATE_GAIN * pulse / 0.18;
-    if (this.mat.gateEndAdd) this.mat.gateEndAdd.uniforms.uPulse.value = GATE_GAIN * gatePulse(t, 0.5) / 0.18;
-    if (this.mat.gateEndAb) this.mat.gateEndAb.uniforms.uPulse.value = 0.9;
+    // gate pulses (the official clip's _TintColor.a curves), objective leak flashes
+    if (this.mat.gateStartAdd) this.mat.gateStartAdd.uniforms.uAlpha.value = gatePulse(t, GATE_TINT.start.alpha);
+    if (this.mat.gateEndAdd) this.mat.gateEndAdd.uniforms.uAlpha.value = gatePulse(t, GATE_TINT.end.alpha);
+    if (this.mat.gateEndAb) this.mat.gateEndAb.uniforms.uAlpha.value = gatePulse(t, GATE_TINT.endAb.alpha);
     let flash = 0;
     for (let i = this.flashes.length - 1; i >= 0; i--) { const f = this.flashes[i]; f.t += dt; if (f.t > 1.2) this.flashes.splice(i, 1); else flash = Math.max(flash, 1 - f.t / 1.2); }
     for (const m of [this.mat.gateEndAdd, this.mat.gateEndAb]) if (m) m.uniforms.uFlash.value.setRGB(flash, flash * 0.12, flash * 0.1);

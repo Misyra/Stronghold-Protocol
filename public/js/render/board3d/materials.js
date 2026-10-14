@@ -152,11 +152,16 @@ export function unlitMaterial(THREE, map, color = 0xffffff, opts = {}) {
 }
 
 /**
- * Gate / objective box material ([opt]start_end_add: additive; [opt]start_end_ab: alpha blend). `uniforms.uPulse`
- * animates the intensity (the clip's _TintColor.a curve).
+ * Gate / objective box material, after the client's Torappu/Particles/Additive and /AlphaBlend (GLES source in
+ * [uc]shaders.ab): colour = 2 · vertex colour · _TintColor · tex, alpha clamped to [0, 1]; Additive blends SrcAlpha One,
+ * AlphaBlend SrcAlpha OneMinusSrcAlpha. The client renders in gamma space, so this works on the texture's stored
+ * (display) values: `map` must be a non-sRGB texture, and the result is written without a colour-space conversion.
+ * `tint` = _TintColor.rgb, `uniforms.uAlpha` = _TintColor.a (animated by the box's clip). The box meshes carry no
+ * vertex colours.
+ * [ASSUMED] a mesh without vertex colours reads them as white (1, 1, 1, 1).
  */
 export function gateMaterial(THREE, map, { additive = true, tint = [1, 1, 1] } = {}) {
-  const uniforms = { map: { value: map }, uTint: { value: new THREE.Color(tint[0], tint[1], tint[2]) }, uPulse: { value: 1 }, uFlash: { value: new THREE.Color(0, 0, 0) } };
+  const uniforms = { map: { value: map }, uTint: { value: new THREE.Vector3(tint[0], tint[1], tint[2]) }, uAlpha: { value: 1 }, uFlash: { value: new THREE.Color(0, 0, 0) } };
   const m = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: [
@@ -173,17 +178,17 @@ export function gateMaterial(THREE, map, { additive = true, tint = [1, 1, 1] } =
     fragmentShader: [
       'uniform sampler2D map;',
       'uniform vec3 uTint;',
-      'uniform float uPulse;',
+      'uniform float uAlpha;',
       'uniform vec3 uFlash;',
       'varying vec2 vUv;',
       '#include <common>',
       '#include <fog_pars_fragment>',
       'void main() {',
       '  vec4 t = texture2D(map, vUv);',
-      '  vec3 c = t.rgb * uTint;',
+      '  vec3 c = 2.0 * uTint * t.rgb;',
+      '  float a = clamp(2.0 * uAlpha * t.a, 0.0, 1.0);',
       '  c = mix(c, uFlash * max(max(t.r, t.g), t.b) * 1.6, clamp(length(uFlash), 0.0, 1.0));',
-      additive ? '  gl_FragColor = vec4(c * t.a * uPulse, 1.0);' : '  gl_FragColor = vec4(c, t.a * clamp(uPulse, 0.0, 1.0));',
-      '  #include <colorspace_fragment>',
+      additive ? '  gl_FragColor = vec4(c * a, 1.0);' : '  gl_FragColor = vec4(c, a);',
       '}',
     ].join('\n'),
     transparent: true, depthWrite: false, side: THREE.DoubleSide,

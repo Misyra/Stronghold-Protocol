@@ -9,7 +9,8 @@
 // IMPORT-REPORT.md with a reason in Chinese and in English.
 //
 // [ASSUMED] choices the author must confirm, also listed in the report:
-//   * voices (Forge's default dub, which Forge documents as Japanese) → audio.voiceJp; voiceLangs.cn → audio.voice;
+//   * voices (Forge's default dub, which Forge documents as Japanese) → audio.voiceJp; voiceLangs.cn → audio.voice (ja / en / ko →
+//     audio.voiceJp / voiceEn / voiceKr, round 40);
 //     en/kr have no table here.
 //   * skins[] collapse onto one overlay of that operator. Our cosmetic plugin has no wardrobe.
 //   * DEFENDER / HEAVY / GUARDIAN → TANK, VANGUARD → PIONEER, GUARD → WARRIOR.
@@ -902,11 +903,17 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
   if (isObj(pack.voiceLangs)) {
     for (const [lang, block] of Object.entries(pack.voiceLangs)) {
       const code = canonicalLang(lang);
-      if (code === 'zh' || code === 'cn' || lang === 'cn') {
+      // the dubs with a table here (round 40, DESIGN §32.14.11): 中文 audio.voice, 日本語 voiceJp, English voiceEn, 한국어 voiceKr
+      const tree = code === 'zh' || code === 'cn' ? 'voice' : code === 'ja' || code === 'jp' ? 'voiceJp' : code === 'en' ? 'voiceEn'
+        : code === 'ko' || code === 'kr' ? 'voiceKr' : null;
+      if (tree === 'voice') {
         assume('voice-cn', 'voiceLangs.cn 写入 audio.voice（中文配音）。', 'voiceLangs.cn was written to audio.voice (the Chinese dub).');
         putVoices(`voiceLangs.${lang}`, ['audio', 'voice'], block);
         rewrittenAssets.push(`voiceLangs.${lang} → audio.voice`);
-      } else skip(`voiceLangs.${lang}`, '我们只有 audio.voice 和 audio.voiceJp，这一档配音没有导入。', 'Only audio.voice and audio.voiceJp exist here, so this dub was not imported.');
+      } else if (tree) {
+        putVoices(`voiceLangs.${lang}`, ['audio', tree], block);
+        rewrittenAssets.push(`voiceLangs.${lang} → audio.${tree}`);
+      } else skip(`voiceLangs.${lang}`, '这一档配音没有对应的语音表（只有中文、日文、英文、韩文），没有导入。', 'There is no voice table for this dub (only Chinese, Japanese, English and Korean), so it was not imported.');
     }
   }
   if (Array.isArray(pack.skins)) {
@@ -1357,7 +1364,7 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
   rewriteKey(assets.enemies, enemyIds, 'art.enemies');
   rewriteKey(assets.skills, skillIds, 'art.skills');
   if (assets.audio && typeof assets.audio === 'object') {
-    rewriteKey(assets.audio.voiceJp, charIds, 'audio.voiceJp');
+    for (const tree of ['voiceJp', 'voiceEn', 'voiceKr']) rewriteKey(assets.audio[tree], charIds, `audio.${tree}`);
     rewriteKey(assets.audio.voice, charIds, 'audio.voice');
     if (assets.audio.sfx && typeof assets.audio.sfx === 'object') rewriteKey(assets.audio.sfx.units, charIds, 'audio.sfx.units');
   }

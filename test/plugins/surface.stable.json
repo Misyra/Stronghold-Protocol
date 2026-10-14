@@ -476,6 +476,18 @@
     "anchor": "shared/plugins/visual.js#ASSET_CONTAINERS"
   },
   {
+    "name": "overlay.audio.voiceEn.*",
+    "anchor": "shared/plugins/visual.js#ASSET_CONTAINERS"
+  },
+  {
+    "name": "overlay.audio.voiceKr.*",
+    "anchor": "shared/plugins/visual.js#ASSET_CONTAINERS"
+  },
+  {
+    "name": "overlay.audio.voiceNative.*",
+    "anchor": "shared/plugins/visual.js#ASSET_CONTAINERS"
+  },
+  {
     "name": "overlay.audio.sfx.ui.*",
     "anchor": "shared/plugins/visual.js#ASSET_CONTAINERS"
   },

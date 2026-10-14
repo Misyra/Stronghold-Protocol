@@ -14,7 +14,7 @@
 //   enemies[key]             { icon: image, spine: Spine }          tokens[id]  { avatar: image, spine: Spine }
 //   bonds / items / bands / skills / modules / ui[key], prof.icon / large / battlecard / sub[key]     image
 //   audio.bgm[lobby|prep|combat|unite|boss], audio.bossBgm[bossId]     a track { loop, intro? }: replaced as a whole
-//   audio.voice / voiceJp[charId]  { <slot>: audio or a list of 1–16 }      audio.sfx.ui / battle[key]  audio
+//   audio.voice / voiceJp / voiceEn / voiceKr / voiceNative[charId]  { <slot>: audio or a list of 1–16 }      audio.sfx.ui / battle[key]  audio
 //   audio.sfx.units[id]      { attack, hit, skill, die, born: audio, skills / attacks / hits: { <index>: audio } }
 // A value is a path inside the plugin folder (an image .png .jpg .webp, audio .mp3 .ogg), a Spine object
 // `{ skel, atlas, textures?, pma? }` (.skel and .atlas side by side with one name — pixi-spine finds the atlas next to the
@@ -137,6 +137,10 @@ export const ASSET_CONTAINERS = Object.freeze(/** @type {AssetContainer[]} */ ([
   { path: ['audio', 'bossBgm'], record: 'track' },
   { path: ['audio', 'voice'], record: { each: 'audioList', key: SLOT } },
   { path: ['audio', 'voiceJp'], record: { each: 'audioList', key: SLOT } },
+  // the other official dubs of round 40 (DESIGN §32.14.11): English, Korean, the operator's own-language dub
+  { path: ['audio', 'voiceEn'], record: { each: 'audioList', key: SLOT } },
+  { path: ['audio', 'voiceKr'], record: { each: 'audioList', key: SLOT } },
+  { path: ['audio', 'voiceNative'], record: { each: 'audioList', key: SLOT } },
   { path: ['audio', 'sfx', 'ui'], record: 'audio' },
   { path: ['audio', 'sfx', 'battle'], record: 'audio' },
   { path: ['audio', 'sfx', 'units'], record: SFX_UNIT },

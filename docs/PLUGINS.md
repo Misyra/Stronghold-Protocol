@@ -292,7 +292,7 @@ is a number of `data/enemies.json`), so a room's `cs` is the vanilla one whateve
 | `tokens[id]` | `avatar` (image), `spine` (Spine) |
 | `bonds`, `items`, `bands`, `skills`, `modules`, `ui`, `prof.icon` / `large` / `battlecard` / `sub` `[key]` | an image |
 | `audio.bgm[lobby \| prep \| combat \| unite \| boss]`, `audio.bossBgm[bossId]` | a track `{ loop, intro? }` (audio), written whole — not `audio.bgm.combatAlts` (see below) |
-| `audio.voice[charId]`, `audio.voiceJp[charId]` | `<slot>`: an audio file or a list of 1–16 |
+| `audio.voice[charId]`, `audio.voiceJp[charId]`, `audio.voiceEn[charId]`, `audio.voiceKr[charId]`, `audio.voiceNative[charId]` (the operator's own-language dub) | `<slot>`: an audio file or a list of 1–16 |
 | `audio.sfx.ui[key]`, `audio.sfx.battle[key]` | audio |
 | `audio.sfx.units[id]` | `attack`, `hit`, `skill`, `die`, `born` (audio), `skills` / `attacks` / `hits` `{ <index>: audio }` |
 
@@ -1392,7 +1392,7 @@ view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_
 | `art` of bonds, items, bands, skills, modules, ui, prof.sub; enemy `icon`; token `avatar` | the matching overlay container | `art.tokens.*.owner` is not an asset |
 | `bondIcons`, `itemIcons` | `assets.bonds`, `assets.items` | a bond already named by `art.bonds` is not imported again from `bondIcons` |
 | `voices` | `audio.voiceJp` [ASSUMED: Forge documents that table as the Japanese dub] | a slot outside `^[A-Za-z][A-Za-z0-9]{0,31}$`, or a file that is not `.mp3` / `.ogg` |
-| `voiceLangs.cn` (and `zh`) | `audio.voice` | `en`, `kr` and any other dub: only those two tables exist |
+| `voiceLangs.cn` (and `zh`), `voiceLangs.ja` / `jp`, `voiceLangs.en`, `voiceLangs.ko` / `kr` | `audio.voice`, `audio.voiceJp`, `audio.voiceEn`, `audio.voiceKr` | any other dub: no table of that language (an own-language dub is per operator, `audio.voiceNative`, which Forge has no table for) |
 | `skins[]` | collapsed onto that operator's one overlay [ASSUMED: no wardrobe] | a skin without `charId` |
 | `art.audio.bgm` of lobby, prep, combat, unite, boss; an unreferenced file whose basename is one of those | `audio.bgm` `{ loop }` | any other music key. `art.audio` is not a documented Forge table [ASSUMED] |
 | `art.audio.bossBgm` | `audio.bossBgm` `{ loop, intro? }` | an id that is not an asset key, or a file that is not audio |

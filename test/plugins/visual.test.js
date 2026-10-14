@@ -175,7 +175,7 @@ describe('reading an overlay', () => {
 
   test('the containers: every one is a path of data/assets.json\'s schema; keys are plain and never Object.prototype\'s', () => {
     assert.deepEqual(ASSET_CONTAINERS.map((c) => c.path.join('.')), ['chars', 'enemies', 'tokens', 'bonds', 'items', 'bands', 'skills', 'modules', 'ui',
-      'prof.icon', 'prof.large', 'prof.battlecard', 'prof.sub', 'audio.bgm', 'audio.bossBgm', 'audio.voice', 'audio.voiceJp', 'audio.sfx.ui', 'audio.sfx.battle', 'audio.sfx.units']);
+      'prof.icon', 'prof.large', 'prof.battlecard', 'prof.sub', 'audio.bgm', 'audio.bossBgm', 'audio.voice', 'audio.voiceJp', 'audio.voiceEn', 'audio.voiceKr', 'audio.voiceNative', 'audio.sfx.ui', 'audio.sfx.battle', 'audio.sfx.units']);
     for (const k of ['char_102_texas', 'hudPanel/icon_hp', 'sol-x', 'emoticon/basic/pic_happy_battle']) assert.ok(isAssetKey(k), k);
     for (const k of ['', '__proto__', 'constructor', 'a b', '/x', 'x'.repeat(129)]) assert.ok(!isAssetKey(k), k);
   });

@@ -148,6 +148,9 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `overlay.audio.bossBgm.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
 | `overlay.audio.voice.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
 | `overlay.audio.voiceJp.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
+| `overlay.audio.voiceEn.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
+| `overlay.audio.voiceKr.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
+| `overlay.audio.voiceNative.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
 | `overlay.audio.sfx.ui.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
 | `overlay.audio.sfx.battle.*` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |
 | `overlay.audio.sfx.units.attack` | stable | 0.3.0 | `shared/plugins/visual.js#ASSET_CONTAINERS` |

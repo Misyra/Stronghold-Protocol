@@ -212,7 +212,8 @@ export class PlayerBasics {
    * After a terrain change, pieces standing on tiles they may no longer occupy (a melee operator on a tile that became
    * a 射击台, anything on a tile that became undeployable) are withdrawn like 撤退: an operator goes to the hand
    * (overflow temp — a passive move; the player re-places it during the prep), its summons leave the board with it; a
-   * summon returns to its owner's stack. Nothing is lost: with the hand and temp both full a piece stays put.
+   * summon returns to its owner's stack. Nothing is lost: with the hand and the visible temp row both full the piece
+   * joins the expandable overflow queue (PRTS 卫戍协议/帮助 §手牌区).
    * @returns {number} pieces moved
    */
   _evictIllegal() {

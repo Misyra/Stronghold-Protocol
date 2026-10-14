@@ -309,7 +309,7 @@ test('consume-on-equip built-ins: 盟约之币 funds, 随身身份牌 layers, �
   m.dispose();
 });
 
-test('item merge with a full hand AND a full temp: the golden item takes the equipped twin\'s slot instead of being lost', () => {
+test('item merge with a full visible bench: the golden item waits in the overflow queue', () => {
   const { m, ps } = prep(29);
   const id = chessOfTier(3).find((c) => m.pool.has(c));
   const carrier = give(m, ps, id, 'board', [10, 3]);
@@ -325,7 +325,8 @@ test('item merge with a full hand AND a full temp: the golden item takes the equ
   ps.recompute();
   const got = ps.acquireItem('chess_item_1_02_e_a', { source: 'grant' });
   assert.ok(got && got.id === 'chess_item_1_02_e_b', 'the merge produced the golden item');
-  assert.deepEqual(carrier.items.map((x) => x.id), ['chess_item_1_01_e_a', 'chess_item_1_02_e_b'], 'golden item equipped in the twin\'s slot');
+  assert.deepEqual(carrier.items.map((x) => x.id), ['chess_item_1_01_e_a']);
+  assert.equal(ps.temp[5], got, 'the golden item waits behind the visible window');
   assert.ok(!ps.find(twin.uid), 'the twin was consumed');
   assert.equal(ps.stats.itemMerges, 1);
   checkInvariants(m);

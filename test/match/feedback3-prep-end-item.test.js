@@ -107,22 +107,23 @@ test('two milestones owed at prep end both wait: no golden before the fight; the
   h.m.dispose();
 });
 
-test('hand and temp full at prep end: the new hammer is destroyed, the equipped one stays, and the next prep does not put a golden in the slot', () => {
+test('full visible bench at prep end: new hammers queue, then merge next prep without removing the equipped one', () => {
   const h = fresh();
   const { ps, carrier, equipped } = arm(h, { layers: 50, fill: true });
+  ps.ready = true; // Model late overflow after Ready, before the prep-end grant dispatch.
   h.m.endPrep();
   assert.equal(carrier.items.length, 1);
   assert.equal(carrier.items[0].uid, equipped.uid);
   assert.equal(carrier.items[0].id, HAMMER);
   assert.equal(copies(ps, GOLDEN), 0);
-  assert.equal(copies(ps, HAMMER), 1);
+  assert.equal(copies(ps, HAMMER), 3);
   const toasts = h.sent.filter(([, msg]) => msg.t === 'm.toast').map(([, msg]) => msg.text);
-  assert.equal(toasts.filter((t) => t === '整备区已满，获得的装备已销毁').length, 2);
+  assert.equal(toasts.filter((t) => t === '整备区已满，获得的装备已销毁').length, 0);
   const input = FakeBattle.instances.at(-1).opts.players[0];
   assert.ok(input.units.find((u) => u.uid === carrier.uid).items.includes(HAMMER));
   h.toPrep(2);
   assert.equal(carrier.items[0].uid, equipped.uid, 'nothing was merged into the slot');
-  assert.equal(copies(ps, GOLDEN), 0);
+  assert.equal(copies(ps, GOLDEN), 1);
   assert.equal(copies(ps, HAMMER), 1);
   h.m.dispose();
 });

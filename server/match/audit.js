@@ -263,8 +263,8 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         if (want) {
           if (loc.area !== 'board' || loc.key !== want.key) fail(`${id}: the elite of ${baseId} went to ${loc.area} ${loc.key || ''}, expected the deployed copy's tile ${want.key}`);
           else if (pieceDir(elite) !== tiles.get(want.key)) fail(`${id}: the elite of ${baseId} faces ${pieceDir(elite)}, its copy faced ${tiles.get(want.key)}`);
-        } else if (loc.area === 'board' && (!tiles.has(loc.key) || ps.hand.some((x) => x == null) || ps.temp.some((x) => x == null))) {
-          // only the no-room fallback (hand and temp full, no deployed tile legal for it) leaves it on a copy's tile
+        } else if (loc.area === 'board') {
+          // Without a legal consumed tile, the elite must use the hand or expandable temp queue.
           fail(`${id}: the elite of ${baseId} took tile ${loc.key} although no consumed copy stood on a legal tile`);
         }
       });

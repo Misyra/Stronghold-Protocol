@@ -235,7 +235,7 @@ test('policy persists with other room settings, honors override and reports miss
   assert.equal(f.srv.lobby.opts.limitForeignSessions, true);
   const results = await Promise.all([putPolicy(f.srv, { limitForeignSessions: false }), putPolicy(f.srv, { maxRooms: 700, allowBots: false })]);
   assert.ok(results.every((r) => r.status === 200));
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false, allowForeignConnections: true });
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false, allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
   await f.srv.close();
   const restored = await fixture(t, lookup, options);
   assert.equal(restored.srv.network.foreignSessions.stats().enabled, false);
@@ -257,6 +257,94 @@ test('failed policy persistence leaves enforcement unchanged', async (t) => {
   assert.equal(f.srv.network.foreignSessions.stats().enabled, true);
   assert.equal((await putPolicy(f.srv, { allowForeignConnections: false })).status, 503);
   assert.equal(f.srv.network.foreignSessions.stats().allowForeignConnections, true);
+  assert.equal((await putPolicy(f.srv, { maxForeignSessionsPerIp: 2 })).status, 503);
+  assert.equal(f.srv.network.foreignSessions.stats().maxPerIp, 1);
+});
+
+test('foreign session count validates its environment default, range and explicit option', () => {
+  assert.equal(lobbyOptionsFrom({}, {}).maxForeignSessionsPerIp, 1);
+  assert.equal(lobbyOptionsFrom({}, { SP_FOREIGN_MAX_SESSIONS_PER_IP: '3' }).maxForeignSessionsPerIp, 3);
+  assert.equal(lobbyOptionsFrom({ maxForeignSessionsPerIp: 2 }, { SP_FOREIGN_MAX_SESSIONS_PER_IP: '3' }).maxForeignSessionsPerIp, 2);
+  for (const value of ['0', '-1', '1.5', '101', 'bad', ''])
+    assert.throws(() => lobbyOptionsFrom({}, { SP_FOREIGN_MAX_SESSIONS_PER_IP: value }), RangeError);
+});
+
+test('live foreign cap admits spare slots, reclaims only offline identities and does not evict players after lowering', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-session-cap-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const f = await fixture(t, lookup, { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: path.join(dir, 'config.json') });
+  const a = await f.connect(), wa = await a.hello('A');
+  await a.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+  await a.request({ t: 'room.addBot' });
+  const b = await f.connect();
+  assert.equal((await b.request({ t: 'hello', name: 'B' })).code, 'FOREIGN_SESSION_LIMIT');
+  assert.equal((await putPolicy(f.srv, { maxForeignSessionsPerIp: 2 })).status, 200);
+  const wb = await b.hello('B');
+  const c = await f.connect();
+  assert.equal((await c.request({ t: 'hello', name: 'C' })).code, 'FOREIGN_SESSION_LIMIT');
+  assert.equal(f.srv.network.foreignSessions.stats().maxPerIp, 2);
+  await f.disconnect(a, wa.playerId);
+  const wc = await c.hello('C');
+  assert.ok(b.isOpen && c.isOpen);
+  assert.equal(f.srv.registry.byToken(wa.token), null);
+  assert.equal(f.srv.lobby.rooms.size, 0);
+  assert.equal(f.srv.lobby.botPopulation.stats().total, 0);
+  assert.equal((await putPolicy(f.srv, { maxForeignSessionsPerIp: 1 })).status, 200);
+  assert.ok(b.isOpen && c.isOpen, 'lowering does not kick online identities');
+  const d = await f.connect();
+  assert.equal((await d.request({ t: 'hello', name: 'D' })).code, 'FOREIGN_SESSION_LIMIT');
+  const resume = await f.connect();
+  assert.equal((await resume.hello('B', wb.token)).playerId, wb.playerId, 'existing same-IP tokens still resume');
+  assert.equal((await b.closed).code, 4001);
+  await f.disconnect(c, wc.playerId);
+  assert.equal((await d.request({ t: 'hello', name: 'D' })).code, 'FOREIGN_SESSION_LIMIT', 'one remaining online identity still fills the lowered cap');
+  await f.disconnect(resume, wb.playerId);
+  await d.hello('D');
+  assert.equal(f.srv.registry.size, 1);
+  assert.ok(f.logs.some(line => line.includes('session.foreignMaxPerIp.changed')));
+});
+
+test('foreign cap persistence, auth, partial updates and explicit restart overrides preserve unrelated policies', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sp-session-cap-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'config.json');
+  const options = { roomAdminToken: adminToken, roomAdminPort: 0, roomAdminStateFile: file };
+  const f = await fixture(t, lookup, options);
+  for (const value of [0, -1, 1.5, 101, '2', null, true])
+    assert.equal((await putPolicy(f.srv, { maxForeignSessionsPerIp: value })).status, 400);
+  assert.equal((await putPolicy(f.srv, { maxForeignSessionsPerIp: 2 }, 'wrong')).status, 401);
+  assert.equal(f.srv.network.foreignSessions.stats().maxPerIp, 1);
+  const results = await Promise.all([putPolicy(f.srv, { maxForeignSessionsPerIp: 3 }), putPolicy(f.srv, { maxRooms: 700, allowBots: false })]);
+  assert.ok(results.every(response => response.status === 200));
+  const config = await (await fetch(f.srv.roomAdminUrl + '/api/room-config', { headers: { Authorization: `Bearer ${adminToken}` } })).json();
+  assert.equal(config.maxForeignSessionsPerIp, 3); assert.equal(config.maxRooms, 700); assert.equal(config.allowBots, false);
+  assert.equal(config.limitForeignSessions, true); assert.equal(config.allowForeignConnections, true);
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false,
+    limitForeignSessions: true, allowForeignConnections: true, maxForeignSessionsPerIp: 3 });
+  await f.srv.close();
+  const restored = await fixture(t, lookup, options);
+  assert.equal(restored.srv.network.foreignSessions.stats().maxPerIp, 3);
+  const override = await fixture(t, lookup, { ...options, maxForeignSessionsPerIp: 2 });
+  assert.equal(override.srv.network.foreignSessions.stats().maxPerIp, 2);
+  const missing = await fixture(t, null, options);
+  assert.equal(missing.srv.network.foreignSessions.stats().maxPerIp, 3);
+  assert.equal(missing.srv.network.foreignSessions.stats().enabled, false);
+  await writeFile(file, JSON.stringify({ schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: true, allowForeignConnections: true }));
+  const legacy = await fixture(t, lookup, options);
+  assert.equal(legacy.srv.network.foreignSessions.stats().maxPerIp, 1, 'old saved files retain the default');
+});
+
+test('simultaneous foreign hellos cannot overbook the configured cap and domestic identities remain exempt', async t => {
+  const f = await fixture(t, lookup, { maxForeignSessionsPerIp: 2 });
+  const clients = await Promise.all([f.connect(), f.connect(), f.connect()]);
+  const replies = await Promise.all(clients.map((client, i) => client.request({ t: 'hello', name: `Foreign${i}` })));
+  assert.equal(replies.filter(reply => reply.t === 'welcome').length, 2);
+  assert.equal(replies.filter(reply => reply.code === 'FOREIGN_SESSION_LIMIT').length, 1);
+  for (let i = 0; i < 3; i++) assert.equal((await (await f.connect(domestic)).hello(`Domestic${i}`)).t, 'welcome');
+  const other = await f.connect('203.0.113.2'), owner = await other.hello('Other');
+  const moved = await f.connect();
+  assert.equal((await moved.request({ t: 'hello', name: 'Other', token: owner.token })).code, 'FOREIGN_SESSION_LIMIT');
+  assert.equal(f.srv.registry.byToken(owner.token).connected, true);
 });
 
 test('foreign connection environment defaults to allowed and accepts explicit overrides', () => {

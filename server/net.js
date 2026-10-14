@@ -658,11 +658,12 @@ export class Network {
    *   options?: Partial<typeof NET_DEFAULTS>,
    *   countryLookup?: ((ip: string) => string | null) | null,
    *   foreignSessionsEnabled?: () => boolean,
+   *   foreignSessionsMaxPerIp?: () => number,
    *   allowForeignConnections?: () => boolean,
    * }} opts
    */
   constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null,
-    foreignSessionsEnabled = () => true, allowForeignConnections = () => true }) {
+    foreignSessionsEnabled = () => true, allowForeignConnections = () => true, foreignSessionsMaxPerIp = undefined }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -676,7 +677,7 @@ export class Network {
     this.diagnostics = diagnostics;
     this.draining = false;
     this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
-      allowConnections: allowForeignConnections });
+      allowConnections: allowForeignConnections, maxPerIp: foreignSessionsMaxPerIp });
     /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
     this._fanout = [];
     this._fanoutImmediate = null;
@@ -1028,7 +1029,7 @@ export class Network {
       if (!admission.ok) {
         if (admission.suppressed !== null) this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(),
           action: 'session.foreignLimit.denied', ip: conn.ip, network: conn.key, country: admission.country,
-          name, suppressed: admission.suppressed }));
+          name, maxPerIp: this.foreignSessions.stats().maxPerIp, suppressed: admission.suppressed }));
         this.reply(conn, errorMsg(ERR.FOREIGN_SESSION_LIMIT, rid));
         return;
       }

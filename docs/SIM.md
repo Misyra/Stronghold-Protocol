@@ -569,7 +569,13 @@ walked, so the rectangle stays on the pipe block). Content tests enemies only th
 queries above or `body.js` (`bodyInKeys`, `bodyOnTile`, `bodyInRadius`, `bodyDist`, `bodyTileReach`; wave-B modules via
 `support/index.js` `onKeys` / `inRange`), never `rangeKeySet.has(tileKey(enemy))`; distance-scaled numbers (farther
 targets take more damage, pull strength), movement, pathing, terrain under the enemy, tile-entry tracking, placement
-heuristics and the range keys taken from blocked enemies (a huge enemy is never blocked) keep the position.
+heuristics and the range keys taken from blocked enemies (a huge enemy is never blocked) keep the position. The one
+placement heuristic that is a body query is 突袭's landing search window (`addon/battle.js` `raidTile`, DESIGN §32.14.12;
+community report of 2026-10-13): a landing tile counts while its Chebyshev gap to the body's tiles is at most
+`RAID_SEARCH` (2), never the gap to the position's tile — a leader's `hitArea` offset and its route anchor split one and
+the same body two ways (假想敌：管: `dx` 0 from (3,10) in the Final Assault, `dx` 1 from (3,9) in the Hidden Core — one
+body, cols 8–12), which dropped the landings on the body's far column; the landing preference, the block-preference
+order and the attack-reach test keep the position.
 
 `unit.s` (lazy, recomputed after any buff change): `maxHp, atk, def, res, aspd, bat, interval, blockCnt, moveSpeed,
 rangeExtend, blockRadiusScale (阻挡半径倍率 − 1: the air-block radius, §1.2), baseRangeExtend (its permanent part: persist +

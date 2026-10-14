@@ -150,4 +150,4 @@ Agent 可在同机通过 `MON_GAME_ADMIN_URL=http://127.0.0.1:3001/` 和 `SP_GAM
 
 三项配置会原子保存到 `.state/room-admin.json`，或由 `SP_ROOM_ADMIN_STATE_FILE` 指定私有路径；保存失败不应用运行时改动。重启优先读取已保存配置（高于环境变量默认值，显式程序启动参数仍优先），旧配置缺少的开关沿用环境默认值。策略变更记录 `room.botPolicy.changed` 或 `session.foreignLimit.changed` 审计。降低上限会按前述高水位规则回收无人房间，不影响在线房间。关闭操作会断开成员并终止该房间对局，使用创建时间校验防止误关复用房间号的新房间。
 
-`/healthz` / `/metrics` 新增 `roomProtection`（允许/拒绝计数及已跟踪网络数）、`offlinePausedMatches`；`rehearsalPressure` 提供指标来源、负载百分比、采样时间、当前档位、候选上限（`null` 表示沿用配置）及阈值。计算池提供 `queuedByType`、`oldestQueuedMs`。这些是进程内累计/当前值，重启归零。判断攻击应结合实际动作、频率和计算消耗，不仅凭 ASN 或昵称封禁。
+`/healthz` 新增 `roomProtection`（允许/拒绝计数及已跟踪网络数）、`offlinePausedMatches`；`/metrics`（仅本机回环/内网，见 [CUSTOM_API.md](../development/CUSTOM_API.md) 第 6 节）提供 `rehearsalPressure`：指标来源、负载百分比、采样时间、当前档位、候选上限（`null` 表示沿用配置）及阈值，以及计算池的 `queuedByType`、`oldestQueuedMs`。这些是进程内累计/当前值，重启归零。判断攻击应结合实际动作、频率和计算消耗，不仅凭 ASN 或昵称封禁。

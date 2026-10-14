@@ -37,7 +37,7 @@ curl -sS --max-time 20 -D - -o /dev/null http://127.0.0.1:3000/data/resource-man
 从生效配置中核对并摘录相关块：
 
 - http 级 proxy_cache_path、log_format，以及目标站 access_log。
-- `/data/resource-manifest.json`、`/assets-manifest.json`、`/_v/`、`/api/announcement`、`/healthz` location。
+- `/data/resource-manifest.json`、`/assets-manifest.json`、`/_v/`、`/api/announcement`、`/healthz` location；`/metrics` 走通用 `location /`（不单独缓存）。
 - proxy_cache 是否启用、缓存键是否保留站点/版本 query、Vary 编码处理、缓存锁、TTL、Cache-Control/X-Accel-Expires 处理。
 - 新计时格式是否保留完整 combined 前缀和 UA，并包含 rt/urt/cache/reason。
 
@@ -45,7 +45,7 @@ curl -sS --max-time 20 -D - -o /dev/null http://127.0.0.1:3000/data/resource-man
 
 用页面实际出现的当前 `/_v/<tag>/js/...` URL 核对正文/缓存头与 Node 一致；无效旧 tag 不应永久映射到当前代码。分别检查裸路径和版本路径的 `/sim/nodeData.js` 及大小写变体，不得返回私有文件内容；403/404 都可接受。
 
-新增版本简版接口上线后，`/healthz?build=1` 应只返回 build，`/healthz` 仍是完整监控响应；代理不得忽略 query 而混用二者。完整响应的 `runtimeVersion` 对应 JS/vendor/shared/sim 代码 URL，`artVersion` 对应本站素材，`build` 对应 release（数据/CSS 及客户端更新检查）；代码 URL 的 tag 应与 `runtimeVersion` 一致。部署时另记录进程启动到 `/healthz` 首次成功的耗时，涵盖全量资源内容哈希的读盘成本。
+新增版本简版接口上线后，`/healthz?build=1` 应只返回 build，`/healthz` 是公开状态响应（版本、站点身份与在线统计），进程诊断在只对本机 / 私网应答的 `/metrics`；代理不得忽略 query 而混用二者。`/healthz` 的 `runtimeVersion` 对应 JS/vendor/shared/sim 代码 URL，`artVersion` 对应本站素材，`build` 对应 release（数据/CSS 及客户端更新检查）；代码 URL 的 tag 应与 `runtimeVersion` 一致。部署时另记录进程启动到 `/healthz` 首次成功的耗时，涵盖全量资源内容哈希的读盘成本。
 
 返回两条脱敏日志样例和计时字段是否存在即可，不需要整份 nginx -T 或整份访问日志。
 
@@ -66,14 +66,17 @@ curl -sS --max-time 20 -D - -o /dev/null http://127.0.0.1:3000/data/resource-man
 
 ```bash
 curl -fsS --max-time 10 http://127.0.0.1:3000/healthz
+curl -fsS --max-time 10 http://127.0.0.1:3000/metrics
 curl -fsS --max-time 10 http://127.0.0.1:3999/api/data
 ```
 
+`/healthz` 是公开状态；进程自身的性能数据只在 `/metrics`，且只回应回环 / 私网调用者。顺手确认边界：`/healthz` 的响应里**不应**出现 `memory`、`workers`、`persist`、`processDiagnostics`、`socketBuffers`、`wire`、`stateDelta`、`staticCache`、`chatLog`、`rehearsalPressure` 中的任何一个；带上 `X-Forwarded-For: 203.0.113.9` 请求 `/metrics` 应得到与未知路径相同的 404（而不是 200 或 403）。
+
 新代码上线、等待至少两个采样周期后检查：
 
-- 游戏 processDiagnostics 有完整区间窗口、事件循环/GC 值；persist.lastSaveMs 按实际持久化能力存在。
+- `/metrics` 的 processDiagnostics 有完整区间窗口、事件循环/GC 值；persist.lastSaveMs 按实际持久化能力存在。
 - 探针 current 有 gameMainThreadCpuPct、gameWorkerCpuPct、gameNvcswPerSec、cpuStealPct、tcpRetransPct 等；启动首样本/不支持来源可为 null，不应编造 0。
-- socketBuffers、worker queue/compute、heap、persist 计数进入探针。
+- socketBuffers、worker queue/compute、heap、persist 计数进入探针；探针经 `MON_METRICS_URL`（默认 `http://127.0.0.1:<游戏端口>/metrics`）走回环读取，公网侧不可达。
 - 新日志完整覆盖一分钟并追平积压后，httpMinute* 有值；启动半分钟、缺口或积压未追平时允许 null。正常无失败应为 0。
 - diagnostics.nginx/storage 状态、日志积压、采样时间与探针版本是否正常。
 - 中央单站详情、历史图和导出能找到同一字段；断连补传按原时间落图，不挤到恢复时刻、不重复计数。

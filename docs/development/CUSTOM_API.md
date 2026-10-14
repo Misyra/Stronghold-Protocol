@@ -14,7 +14,8 @@
 | `/api/ping` | HTTP GET / HEAD / OPTIONS | 无会话的 HTTP 延迟探测 | `Access-Control-Allow-Origin: *` |
 | `/api/nickname/validate` | HTTP POST | 进入游戏前校验昵称；不返回词表或命中详情 | 未开放 CORS |
 | `/api/announcement` | HTTP GET / HEAD | 读取当前维护公告 | 未开放 CORS |
-| `/healthz` | HTTP GET / HEAD | 增加素材版本、CDN、工作线程、持久化信息 | 未开放 CORS |
+| `/healthz` | HTTP GET / HEAD | 公开状态：增加素材版本、CDN、`roomProtection` / `botPopulation` / `foreignSessions` 计数 | 未开放 CORS |
+| `/metrics` | HTTP GET / HEAD | 进程内部性能与诊断（worker、内存、持久化…）；只回应回环 / 私网调用者 | 未开放 CORS |
 | `/data/resource-manifest.json` | HTTP GET / HEAD | 动态生成资源预载清单 | 未开放 CORS |
 | `/_v/:version/...` 及素材路径 | HTTP 资源请求 | 版本缓存、素材 CORS | 仅素材开放 CORS |
 | `/ws` → `matchmaking.join` / `room.matchmaking` / `matchmaking.cancel` | WebSocket JSON | 四人同站匹配，支持组队补齐 | 按原有 WebSocket 连接规则 |
@@ -328,22 +329,63 @@ HEAD /api/announcement
 
 本分支默认启用可协商的 `permessage-deflate`，设置 `SP_WS_COMPRESSION=off` 可关闭。服务端采用压缩等级 1、1024 字节阈值和不复用消息间压缩上下文的配置；客户端由 WebSocket 实现处理协商与解压，应用层仍收发原有 JSON，不增加消息字段或自定义压缩格式。
 
-## 6. 原有健康检查的新增字段
+## 6. 健康检查与运维诊断
 
-`GET /healthz` / `HEAD /healthz` 沿用上游接口，只增加以下字段。原有 `ok`、`version`、`app`、`build`、在线统计等字段不在这里重新定义。
+### 6.1 公开接口 `GET /healthz`
+
+`GET /healthz` / `HEAD /healthz` 沿用上游接口；上游字段（`ok`、`version`、`app`、`uptimeSec`、`build`、`runtimeVersion`、`assetsManifest` 与在线统计 `sockets` / `sessions` / `rooms` / `matches` / `humans` / `bots` / `spectators`）语义不变，本分支只增加站点身份与公开计数：
 
 | 新增字段 | 类型 | 含义 |
 |---|---|---|
 | `artVersion` | string | 本站素材版本，16 位小写十六进制字符串 |
 | `assetsCdn` | string / null | 当前素材 CDN 基地址，未配置为 `null` |
 | `assetsCdnVersion` | string / null | 配置的远端素材版本，未配置为 `null` |
+| `roomProtection` | object | 房间动作限流计数；见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md) |
+| `botPopulation` | object | 机器人人口上限与当前数量 |
+| `foreignSessions` | object / null | 海外会话判定统计，未启用为 `null` |
+
+`?build=1` 只返回 `{ build }`（页面的版本守卫用它）；`?traffic=1` 追加本机流量计数，仅回环/私网客户端可得。
+
+**进程自身的性能数据不在这个响应里。** `memory`、`staticCache`、`socketBuffers`、`workers`、`persist`、`wire`、`stateDelta`、`processDiagnostics`、`chatLog`、`rehearsalPressure` 只在 6.2 出现：它们描述的是这台主机，而不是玩家，公开响应既不采集也不发送。因此探针换代后 `/healthz` 的体积明显变小。
+
+### 6.2 运维诊断接口 `GET /metrics`
+
+```http
+GET /metrics
+HEAD /metrics
+```
+
+即时采集完整诊断（不复用 `/healthz` 的一秒缓存），并附带 `websocket` 延迟诊断：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
 | `workers` | object / null | 工作线程池统计，未启用为 `null` |
 | `persist` | object / null | 持久化统计，未启用为 `null` |
 | `memory` | object | 主进程内存（`process.memoryUsage()`；`rss` 覆盖全部线程，其余为该主线程的堆计数，单位字节） |
 | `staticCache` | object | 静态缓存占用：`gzipBytes` / `gzipEntries` / `gzipLimitBytes` / `gzipInflight`（gzip LRU），`transformedBytes` / `transformedEntries`（重写响应缓存） |
 | `socketBuffers` | object | 全部打开 WebSocket 的未发送字节 `{ total, max }`，排查积压的对端 |
+| `wire` | object | 进程启动以来的出站帧计数（`frames` / `bytes` / `byType`），采样两次得速率 |
+| `stateDelta` | object | 增量同步记账；见 [STATE_DELTA.md](STATE_DELTA.md) |
+| `processDiagnostics` | object | 事件循环 / GC / 进程 CPU 的有界区间窗口；见 [PERFORMANCE.md](PERFORMANCE.md) |
+| `chatLog` | object / null | 聊天日志的聚合占用（不含路径与内容）；字段见 [DEPLOY.md](../operations/DEPLOY.md) |
+| `rehearsalPressure` | object / null | 演练压力采样器：指标来源、负载百分比、当前档位、候选上限（`null` 表示沿用配置）与阈值 |
+| `websocket` | object | WebSocket 延迟诊断（`diagnostics`），仅本接口提供 |
+
+**只有回环或私网客户端能读到它。** 其余调用者不会被拒绝，而是回落到静态文件处理，得到与未知路径相同的 404，所以这条路径对外不暴露自身存在。判定与 `?traffic=1` 一致（`net.js` `clientAddress` + `isLocalIp`，受 `TRUST_PROXY` 影响），因此经隧道或本机反向代理转发来的公网客户端仍算公网；同机的监控进程经回环读取它（sp-portal `collector.mjs`，`MON_METRICS_URL`，默认 `http://127.0.0.1:<游戏端口>/metrics`），核查步骤见 [ONLINE-CHECKLIST.md §5](../operations/ONLINE-CHECKLIST.md)。
 
 `workers` 对象字段：
+
+| 字段 | 含义 |
+|---|---|
+| `size` / `threads` / `busy` | 配置线程容量 / 已创建线程数 / 忙碌线程数 |
+| `queued` / `maxQueue` / `timeoutMs` | 排队任务数 / 队列上限 / 任务超时毫秒数 |
+| `submitted` / `completed` / `failed` / `cancelled` / `rejected` | 各类任务累计计数 |
+| `queueMs` / `computeMs` | 累计排队 / 计算毫秒数 |
+| `avgComputeMs` | `completed > 0` 时为 `computeMs / completed`，否则为 0 |
+| `memory` | 每线程 `{ threadId, busy, sample }` 数组；`sample` 为该线程最近一次回包携带的堆采样（`heapUsed` / `heapTotal` / `external` / `arrayBuffers` / `sampledAt`），尚未回包时为 `null` |
+| `lanes` | 仅 `SP_ROOM_WORKERS` 房间泳道池：每条泳道的 `{ id, rooms, ... }` |
+
+`persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）、`workerMemory`（持久化 Worker 最近一次回包的堆采样，尚未回包为 `null`）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](../operations/PERSISTENCE.md)。
 
 | 字段 | 含义 |
 |---|---|

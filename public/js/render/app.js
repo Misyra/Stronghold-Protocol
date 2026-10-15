@@ -1630,8 +1630,10 @@ export async function createFieldView(host, options = {}) {
         // chain / chainHeal bounces: the "source" is the previous target of the bounce, not an attacker
         if (src && !CHAIN_KINDS.has(e[3])) src.onAttack?.(tgt, now, e[3]);
         if (e[3] === 'none' || !e[3]) { if (tgt && src) meleePending.set(tgt.id, { src, t: now }); }
-        // the unit's official attack (casts, projectile, melee hits — render/vfx/wiring.js), else the procedural one
-        if (!(src && !CHAIN_KINDS.has(e[3]) && wiring.attack(src, tgt, e[3], now, woundUp.has(e)))) fx.attack(src, tgt, e[3]);
+        // the unit's official attack (casts, projectile, melee hits — render/vfx/wiring.js) or a chain's bounce (the line of
+        // the official shot that opened the chain: wiring.chain), else the procedural one
+        const drew = !!src && (CHAIN_KINDS.has(e[3]) ? wiring.chain(src, tgt, e[3], now) : wiring.attack(src, tgt, e[3], now, woundUp.has(e)));
+        if (!drew) fx.attack(src, tgt, e[3]);
         break;
       }
       case 'dmg': {

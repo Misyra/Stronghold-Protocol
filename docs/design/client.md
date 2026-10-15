@@ -96,8 +96,10 @@ history and the open points: DESIGN §32.14.25.
   effect as the clip started), the ON_SPELL_ON ones at the 'atk' event; a NONE row's first slot, a directional row's
   slot for the facing, `hookEffectAfterFirstAttack` / `onlyOnce` by the unit's attack count; a looping row, and a
   looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
-  `castTarget` / `inputTarget` rows on the target, its projectile's main effect flown from the muzzle to the target's
-  HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival, its hit rows when a melee or
+  `castTarget` / `inputTarget` rows on the target, its projectile's flying effect (the projectile behaviour's own, not a
+  chain line or a harpoon's rope) flown from the muzzle — the bone where the model draws it at the attack clip's strike
+  frame — to the target's HitPoint in the sim's flight time (homing, the client's Paracurve arc and AmiyaS2 wobble:
+  `flight.js`; a harpoon's rope stretched behind it) with `onHit` on arrival, its hit rows when a melee or
   direct blow's damage lands (else the generic hit by damage type). One attack on several targets — the sim sends an
   'atk' per target in one tick — casts once (its target rows play on each). Index version 2 (0.3.0 Phase 3c, §33.16): a
   melee blow of a unit that is blocked or blocks (UF.BLOCKED), and every attack of a mode without `attack`, plays the
@@ -115,7 +117,10 @@ history and the open points: DESIGN §32.14.25.
   / deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
   what index.json does not drive — a unit it does not list, chain bounces, an enemy skill no signal opens (Skills,
   below), a talent no signal binds (Talents) — stays procedural. `mounts.js` reads the skin's points (HitPoint, Muzzle,
-  HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet.
+  HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet — a point a
+  BoneFollower keeps on a Spine bone where the model draws that bone (`UnitView.boneOffset`) —; an effect with a
+  FollowMountPoint follows its point, a weapon effect (and a MUZZLE_POINT / Special-point spawn) with the point's
+  rotation; a mode's facing variant plays for the unit's facing (DESIGN §32.14.36).
 - **Skills** (0.3.0 Phase 3b – 3d, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12
   and §33.16). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
   秘术师 charge plan. ['skill', id, 1] plays the plan's `start` and `range` and starts its `loop` (held for the skill:

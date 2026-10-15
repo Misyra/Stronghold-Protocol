@@ -1,10 +1,14 @@
 // Import a local asset pack (a folder or a zip) and keep only bytes the server manifest already names.
 //
-// Nothing in this file uploads. The only network reads are the two served manifests. A file is stored only when
-// the first 16 hex digits of its SHA-256 equal the hash in the served URL. A Spine model is stored only when the
-// whole group is present and the model hash matches server/http/assetIndex.js (the file hashes joined by '\n',
-// no trailing newline). The default page is `<skel>.png` when the served object lists no textures: the server
-// includes that page in the model hash without adding a textures field to the JSON.
+// Nothing in this file uploads. The only network reads are the three served manifests, once an import starts. A file
+// is stored only when the first 16 hex digits of its SHA-256 equal the hash in the served URL. A Spine model is stored
+// only when the whole group is present and the model hash matches server/http/assetIndex.js (the file hashes joined
+// by '\n', no trailing newline). The default page is `<skel>.png` when the served object lists no textures: the server
+// includes that page in the model hash without adding a textures field to the JSON. A zip File is read slice by slice
+// (openZip), never whole.
+//
+// What a run stored is added to one index entry of the import cache as the run ends (assetCache.js IMPORTED_INDEX_URL):
+// Chrome cannot list a cache of a whole pack's size with Cache.keys().
 //
 // [ASSUMED] One prefix is chosen for the whole pack. A path the manifest does not list is skipped, not failed.
 // An incomplete Spine group is not stored under the model URL. A member that also has its own file-hash URL can
@@ -13,7 +17,7 @@
 
 import { splitHashedPath } from '../../shared/assetPaths.js';
 import { mediaUrl } from './media.js';
-import { IMPORTED_ASSET_CACHE, putImportedAsset } from './assetCache.js';
+import { IMPORTED_ASSET_CACHE, addImportedPaths, putImportedAsset } from './assetCache.js';
 
 export const MAX_ZIP_ENTRIES = 500_000;
 export const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
@@ -103,60 +107,97 @@ function zip64Extra(extra, need) {
 }
 
 /**
+ * Random access to an archive: `size`, and `read(offset, length)` → the bytes. A Blob (the File a player picks or drops)
+ * is read slice by slice and its deflated entries stream from their slice, so a whole-pack zip (some 700 MB) never sits
+ * in memory at once; bytes already in memory are read in place.
+ * @param {Blob | ArrayBuffer | Uint8Array} data
+ */
+async function zipSource(data) {
+  if (data && typeof data.slice === 'function' && typeof data.arrayBuffer === 'function' && typeof data.stream === 'function'
+    && Number.isFinite(data.size)) {
+    return {
+      size: data.size,
+      read: async (offset, length) => new Uint8Array(await data.slice(offset, offset + length).arrayBuffer()),
+      part: (offset, length) => data.slice(offset, offset + length),
+      copies: true,
+    };
+  }
+  const bytes = await toBytes(data);
+  if (!bytes) return null;
+  return { size: bytes.length, read: async (offset, length) => bytes.subarray(offset, offset + length), part: null, copies: false };
+}
+
+/**
  * Read a zip's central directory. Stored entries are copied; method 8 is inflated with
  * `DecompressionStream('deflate-raw')`. Encryption and any other method are skipped per entry (`unsupported`).
- * A broken archive returns `{ ok: false, code: 'bad-zip' }` and does not throw.
+ * A broken archive returns `{ ok: false, code: 'bad-zip' }` and does not throw. A Blob is read in slices (zipSource).
  * @param {Blob | ArrayBuffer | Uint8Array} data
  */
 export async function openZip(data) {
-  const bytes = await toBytes(data);
-  if (!bytes || bytes.length < 22) return { ok: false, code: 'bad-zip' };
-  const eocd = findEocd(bytes);
-  if (eocd < 0) return { ok: false, code: 'bad-zip' };
+  let src;
+  try { src = await zipSource(data); } catch { return { ok: false, code: 'bad-zip' }; }
+  if (!src || src.size < 22) return { ok: false, code: 'bad-zip' };
+  try {
+    return await readDirectory(src);
+  } catch {
+    return { ok: false, code: 'bad-zip' };
+  }
+}
 
-  let disk = u16(bytes, eocd + 4);
-  let cdDisk = u16(bytes, eocd + 6);
-  let entries = u16(bytes, eocd + 10);
-  let cdSize = u32(bytes, eocd + 12);
-  let cdOffset = u32(bytes, eocd + 16);
+async function readDirectory(src) {
+  const tailStart = Math.max(0, src.size - (22 + 65535));
+  const tail = await src.read(tailStart, src.size - tailStart);
+  const at = findEocd(tail);
+  if (at < 0) return { ok: false, code: 'bad-zip' };
+  const eocd = tailStart + at;
+
+  let disk = u16(tail, at + 4);
+  let cdDisk = u16(tail, at + 6);
+  let entries = u16(tail, at + 10);
+  let cdSize = u32(tail, at + 12);
+  let cdOffset = u32(tail, at + 16);
   const needZip64 = disk === 0xffff || cdDisk === 0xffff || entries === 0xffff
     || cdSize === 0xffffffff || cdOffset === 0xffffffff;
   if (needZip64) {
     const loc = eocd - 20;
-    if (loc < 0 || u32(bytes, loc) !== 0x07064b50) return { ok: false, code: 'bad-zip' };
-    const zoff = u64(bytes, loc + 8);
-    if (!Number.isFinite(zoff) || zoff < 0 || zoff + 56 > bytes.length) return { ok: false, code: 'bad-zip' };
-    if (u32(bytes, zoff) !== 0x06064b50) return { ok: false, code: 'bad-zip' };
-    disk = u32(bytes, zoff + 16);
-    cdDisk = u32(bytes, zoff + 20);
-    entries = u64(bytes, zoff + 32);
-    cdSize = u64(bytes, zoff + 40);
-    cdOffset = u64(bytes, zoff + 48);
+    if (loc < 0) return { ok: false, code: 'bad-zip' };
+    const locator = await src.read(loc, 20);
+    if (u32(locator, 0) !== 0x07064b50) return { ok: false, code: 'bad-zip' };
+    const zoff = u64(locator, 8);
+    if (!Number.isFinite(zoff) || zoff < 0 || zoff + 56 > src.size) return { ok: false, code: 'bad-zip' };
+    const record = await src.read(zoff, 56);
+    if (u32(record, 0) !== 0x06064b50) return { ok: false, code: 'bad-zip' };
+    disk = u32(record, 16);
+    cdDisk = u32(record, 20);
+    entries = u64(record, 32);
+    cdSize = u64(record, 40);
+    cdOffset = u64(record, 48);
   }
   if (disk !== 0 || cdDisk !== 0) return { ok: false, code: 'bad-zip' };
   if (!Number.isFinite(entries) || !Number.isFinite(cdSize) || !Number.isFinite(cdOffset)) return { ok: false, code: 'bad-zip' };
   if (entries > MAX_ZIP_ENTRIES || cdSize > MAX_CD_BYTES) return { ok: false, code: 'bad-zip' };
-  if (cdOffset < 0 || cdOffset + cdSize > bytes.length) return { ok: false, code: 'bad-zip' };
+  if (cdOffset < 0 || cdOffset + cdSize > src.size) return { ok: false, code: 'bad-zip' };
 
+  const cd = await src.read(cdOffset, cdSize);
   const list = [];
-  let p = cdOffset;
-  const end = cdOffset + cdSize;
+  let p = 0;
+  const end = cdSize;
   for (let n = 0; n < entries; n++) {
-    if (p + 46 > end || u32(bytes, p) !== 0x02014b50) return { ok: false, code: 'bad-zip' };
-    const flags = u16(bytes, p + 8);
-    const method = u16(bytes, p + 10);
-    const crc = u32(bytes, p + 16);
-    let compSize = u32(bytes, p + 20);
-    let uncompSize = u32(bytes, p + 24);
-    const nameLen = u16(bytes, p + 28);
-    const extraLen = u16(bytes, p + 30);
-    const commentLen = u16(bytes, p + 32);
-    let diskStart = u16(bytes, p + 34);
-    let localOffset = u32(bytes, p + 42);
+    if (p + 46 > end || u32(cd, p) !== 0x02014b50) return { ok: false, code: 'bad-zip' };
+    const flags = u16(cd, p + 8);
+    const method = u16(cd, p + 10);
+    const crc = u32(cd, p + 16);
+    let compSize = u32(cd, p + 20);
+    let uncompSize = u32(cd, p + 24);
+    const nameLen = u16(cd, p + 28);
+    const extraLen = u16(cd, p + 30);
+    const commentLen = u16(cd, p + 32);
+    let diskStart = u16(cd, p + 34);
+    let localOffset = u32(cd, p + 42);
     const nameStart = p + 46;
     if (nameStart + nameLen + extraLen + commentLen > end) return { ok: false, code: 'bad-zip' };
-    const name = new TextDecoder('utf-8').decode(bytes.subarray(nameStart, nameStart + nameLen));
-    const extra = bytes.subarray(nameStart + nameLen, nameStart + nameLen + extraLen);
+    const name = new TextDecoder('utf-8').decode(cd.subarray(nameStart, nameStart + nameLen));
+    const extra = cd.subarray(nameStart + nameLen, nameStart + nameLen + extraLen);
     const need = {
       uncomp: uncompSize === 0xffffffff,
       comp: compSize === 0xffffffff,
@@ -188,22 +229,24 @@ export async function openZip(data) {
   return {
     ok: true,
     entries: list,
-    read: (entry) => readEntry(bytes, entry),
+    read: (entry) => readEntry(src, entry),
   };
 }
 
+/** Inflate raw deflate data: bytes, or a Blob slice streamed as it is read. */
 async function inflateRaw(comp) {
   const Stream = globalThis.DecompressionStream;
   if (typeof Stream !== 'function') return null;
   try {
-    const stream = new Blob([comp]).stream().pipeThrough(new Stream('deflate-raw'));
+    const blob = typeof comp?.stream === 'function' ? comp : new Blob([comp]);
+    const stream = blob.stream().pipeThrough(new Stream('deflate-raw'));
     return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
     return null;
   }
 }
 
-async function readEntry(bytes, entry) {
+async function readEntry(src, entry) {
   if (!entry || entry.encrypted || (entry.method !== 0 && entry.method !== 8)) {
     return { ok: false, code: 'unsupported' };
   }
@@ -213,20 +256,21 @@ async function readEntry(bytes, entry) {
     return { ok: false, code: 'bad-entry' };
   }
   const offset = entry.localOffset;
-  if (!Number.isFinite(offset) || offset < 0 || offset + 30 > bytes.length) return { ok: false, code: 'bad-entry' };
-  if (u32(bytes, offset) !== 0x04034b50) return { ok: false, code: 'bad-entry' };
-  const nameLen = u16(bytes, offset + 26);
-  const extraLen = u16(bytes, offset + 28);
+  if (!Number.isFinite(offset) || offset < 0 || offset + 30 > src.size) return { ok: false, code: 'bad-entry' };
+  const head = await src.read(offset, 30);
+  if (u32(head, 0) !== 0x04034b50) return { ok: false, code: 'bad-entry' };
+  const nameLen = u16(head, 26);
+  const extraLen = u16(head, 28);
   const dataStart = offset + 30 + nameLen + extraLen;
   const dataEnd = dataStart + entry.compSize;
-  if (dataEnd > bytes.length) return { ok: false, code: 'bad-entry' };
-  const comp = bytes.subarray(dataStart, dataEnd);
+  if (dataEnd > src.size) return { ok: false, code: 'bad-entry' };
   let raw;
   if (entry.method === 0) {
     if (entry.compSize !== entry.uncompSize) return { ok: false, code: 'bad-entry' };
-    raw = comp.slice();
+    const comp = await src.read(dataStart, entry.compSize);
+    raw = src.copies ? comp : comp.slice();
   } else {
-    raw = await inflateRaw(comp);
+    raw = await inflateRaw(src.part ? src.part(dataStart, entry.compSize) : await src.read(dataStart, entry.compSize));
     if (!raw || raw.byteLength !== entry.uncompSize) return { ok: false, code: 'bad-entry' };
   }
   if (entry.crc !== 0 && crc32(raw) !== entry.crc) return { ok: false, code: 'bad-entry' };
@@ -576,6 +620,9 @@ export function createAssetImport({
   }
 
   async function run(source) {
+    let cache = null;
+    /** Pathnames this run stored: added to the import's index as it ends (assetCache.js addImportedPaths). */
+    const storedPaths = new Set();
     phase = 'reading';
     error = null;
     total = 0;
@@ -638,13 +685,15 @@ export function createAssetImport({
         finish(kind);
       };
 
-      let cache = null;
       const store = async (urls, bytes) => {
         if (!cache) {
           if (!cachesApi?.open) throw Object.assign(new Error('cache'), { code: 'unknown' });
           cache = await cachesApi.open(IMPORTED_ASSET_CACHE);
         }
         await putImportedAsset(cache, urls, bytes);
+        for (const url of urls) {
+          try { storedPaths.add(new URL(url, 'http://localhost').pathname); } catch { /* not a URL: never stored */ }
+        }
       };
 
       for (const group of plan.groups) {
@@ -742,6 +791,10 @@ export function createAssetImport({
         error = cause?.code === 'bad-zip' || cause?.code === 'manifest' ? cause.code : 'unknown';
       }
     } finally {
+      // before the end is published: the dialog's count and the download queue read the index as the import ends
+      if (cache && storedPaths.size) {
+        try { await addImportedPaths(cache, storedPaths); } catch { /* the entries stay; Cache.keys() may still list them */ }
+      }
       publish(true);
     }
   }

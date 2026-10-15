@@ -8,8 +8,8 @@ import { rewriteManifest } from '../../server/http/assetViews.js';
 import { siteCsp, SIM_WORKER_CSP } from '../../server/http/csp.js';
 import { createAssetDownload } from '../../public/js/assetDownload.js';
 import {
-  IMPORTED_ASSET_CACHE, IMPORTED_ASSET_CACHE_PREFIX, IMPORTED_ASSET_PATH,
-  importSupport, shouldServeImportedAsset,
+  IMPORTED_ASSET_CACHE, IMPORTED_ASSET_CACHE_PREFIX, IMPORTED_ASSET_PATH, IMPORTED_INDEX_URL,
+  addImportedPaths, countImportedFiles, importSupport, listImportedPaths, shouldServeImportedAsset,
 } from '../../public/js/assetCache.js';
 import {
   cacheUrlsFor, crc32, createAssetImport, detectAssetPrefix, modelHashOf, normalizePackPath,
@@ -108,7 +108,11 @@ function indexFor(map) {
   };
 }
 
-function memoryCache() {
+/**
+ * Cache Storage in memory. `keysLimit`: Cache.keys() throws above that many entries, as Chrome's does ("Operation too
+ * large", about 15,000 entries). `assets()`: the stored URLs without the import's index entry.
+ */
+function memoryCache({ keysLimit = Infinity } = {}) {
   const store = new Map();
   const caches = {
     async open(name) {
@@ -120,13 +124,21 @@ function memoryCache() {
             type: response.headers.get('content-type'),
           });
         },
-        async keys() { return [...store.keys()].map((url) => ({ url })); },
+        async match(url) {
+          const hit = store.get(String(url));
+          return hit ? new Response(hit.bytes.slice(), { headers: { 'content-type': hit.type || '' } }) : undefined;
+        },
+        async keys() {
+          if (store.size > keysLimit) throw new DOMException("Failed to execute 'keys' on 'Cache': Operation too large.", 'AbortError');
+          return [...store.keys()].map((url) => ({ url }));
+        },
       };
     },
     async keys() { return [IMPORTED_ASSET_CACHE]; },
     async delete() { store.clear(); return true; },
   };
-  return { caches, store };
+  const assets = () => [...store.keys()].filter((url) => url !== IMPORTED_INDEX_URL);
+  return { caches, store, assets };
 }
 
 function manifestFetch(assets, local = { groups: {} }, fx = null) {
@@ -423,7 +435,7 @@ test('a file the manifest does not list is skipped, and a bad zip stops the impo
   assert.equal(imp.get().phase, 'complete');
   assert.equal(imp.get().accepted, 1);
   assert.ok(imp.get().skipped >= 2);
-  assert.equal(store.size, 1);
+  assert.deepEqual([...store.keys()].filter((url) => url !== IMPORTED_INDEX_URL).length, 1);
   assert.equal(calls.length, 3);   // assets.json, local-assets.json, local-fx.json (DESIGN §33)
   assert.equal(imp.get().localMissing, undefined);
 
@@ -458,7 +470,7 @@ test('cancel keeps bytes already accepted and does not store the file still bein
   }, 'assets.json', indexFor({ 'assets/a.png': hash16(a), 'assets/b.png': hash16(b) }));
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const { caches, store } = memoryCache();
+  const { caches, assets } = memoryCache();
   const imp = createAssetImport({ fetch: manifestFetch(view.doc).fetch, caches });
   const run = imp.start({
     type: 'files',
@@ -473,7 +485,8 @@ test('cancel keeps bytes already accepted and does not store the file still bein
   release();
   await run;
   assert.equal(imp.get().phase, 'cancelled');
-  assert.equal(store.size, 1);
+  assert.equal(assets().length, 1);
+  assert.deepEqual([...await listImportedPaths(caches)], [new URL(assets()[0], 'http://x').pathname], 'a cancelled import indexes what it stored');
 });
 
 test('the download queue does not request a URL the import cache already has', async () => {
@@ -519,9 +532,11 @@ test('the worker answers only hashed asset GET, and its copy matches the module'
     caches: {
       async open() {
         return {
-          async match(request) {
-            const url = new URL(request.url);
-            const hit = stored.get(`${url.origin}${url.pathname}`);
+          async match(request, options) {
+            // exact keys only (the worker never asks for ignoreSearch: Chrome scans every entry for it)
+            assert.equal(options, undefined);
+            const key = typeof request === 'string' ? request : request.url;
+            const hit = stored.get(key);
             return hit ? new Response(hit) : undefined;
           },
           async put() { throw new Error('network responses must not be cached'); },
@@ -587,6 +602,12 @@ test('the worker answers only hashed asset GET, and its copy matches the module'
   listeners.fetch({ request: hit, respondWith(p) { hitPromise = p; } });
   assert.equal(await (await hitPromise).text(), 'cached-bytes');
   assert.equal(fetched.length, fetchedBeforeHit);
+  const withQuery = new Request(`${origin}/assets/~0123456789abcdef/hit.png?x=1`);
+  let queryPromise = null;
+  listeners.fetch({ request: withQuery, respondWith(p) { queryPromise = p; } });
+  assert.equal(await (await queryPromise).text(), 'cached-bytes', 'a query string still finds the imported entry');
+  assert.equal(fetched.length, fetchedBeforeHit);
+  assert.equal(/ignoreSearch\s*:/.test(sw), false, 'no ignoreSearch option: Chrome scans every entry for it');
 
   const miss = new Request(`${origin}/assets/~0123456789abcdef/miss.png`);
   let missPromise = null;
@@ -618,4 +639,97 @@ test('mergeLocalManifests: the effects manifest\'s groups join the local ones fo
   const plan = planFromManifests({}, merged);
   assert.ok(plan.rels.has('assets/local/fx/tex/t.webp'));
   assert.ok(plan.rels.has('assets/local/scene/a.bin'));
+});
+
+test('a whole pack is too large for Cache.keys() in Chrome: the import\'s index keeps the count and the download queue\'s skips', async () => {
+  const files = Array.from({ length: 12 }, (_, i) => bytesOf(`file-${i}`));
+  const manifest = Object.fromEntries(files.map((_, i) => [`f${i}`, `/assets/f${i}.png`]));
+  const map = Object.fromEntries(files.map((b, i) => [`assets/f${i}.png`, hash16(b)]));
+  manifest.audio = '/assets/audio/bgm/a.mp3';
+  const audio = bytesOf('bgm');
+  map['assets/audio/bgm/a.mp3'] = hash16(audio);
+  const view = rewriteManifest(manifest, 'assets.json', indexFor(map));
+  // keys() refuses more than 5 entries here, as Chrome refuses some 15,000: 12 files and the audio twice are 14
+  const mem = memoryCache({ keysLimit: 5 });
+  const imp = createAssetImport({ fetch: manifestFetch(view.doc).fetch, caches: mem.caches });
+  await imp.start({ type: 'files', files: [
+    ...files.map((b, i) => ({ path: `public/assets/f${i}.png`, read: async () => b })),
+    { path: 'public/assets/audio/bgm/a.mp3', read: async () => audio },
+  ] });
+  assert.equal(imp.get().phase, 'complete');
+  assert.equal(imp.get().accepted, 13);
+  assert.equal(mem.assets().length, 14, '12 images, the audio and its /media/ alias');
+  await assert.rejects(async () => (await mem.caches.open(IMPORTED_ASSET_CACHE)).keys(), /Operation too large/);
+  const paths = await listImportedPaths(mem.caches);
+  assert.equal(paths.size, 14);
+  assert.ok(paths.has(`/media/~${hash16(audio)}/bgm/a`));
+  assert.equal(await countImportedFiles(mem.caches), 13, '/assets/ and /fonts/ only, not the /media/ alias');
+
+  const requested = [];
+  const queue = createAssetDownload({
+    lookupImported: () => listImportedPaths(mem.caches),
+    fetch: async (url) => {
+      if (url === '/data/assets.json') return Response.json(view.doc);
+      if (url === '/data/local-assets.json' || url === '/data/local-fx.json') return new Response('', { status: 404 });
+      requested.push(url);
+      return new Response('x', { headers: { 'content-type': 'application/octet-stream' } });
+    },
+  });
+  await queue.start();
+  assert.equal(queue.get().phase, 'complete');
+  assert.equal(queue.get().cached, 13);
+  assert.deepEqual(requested, [], 'nothing imported is downloaded again');
+});
+
+test('the import index merges imports, seeds itself from the keys once, and never lists itself', async () => {
+  const mem = memoryCache();
+  const cache = await mem.caches.open(IMPORTED_ASSET_CACHE);
+  await cache.put('/assets/~0123456789abcdef/old.png', new Response('old'));
+  assert.deepEqual([...await listImportedPaths(mem.caches)], ['/assets/~0123456789abcdef/old.png'], 'no index: the keys');
+  await addImportedPaths(cache, ['/assets/~1111111111111111/a.png', IMPORTED_INDEX_URL]);
+  await addImportedPaths(cache, ['/fonts/~2222222222222222/b.woff2']);
+  assert.deepEqual([...await listImportedPaths(mem.caches)].sort(), [
+    '/assets/~0123456789abcdef/old.png', '/assets/~1111111111111111/a.png', '/fonts/~2222222222222222/b.woff2',
+  ]);
+  assert.equal(await countImportedFiles(mem.caches), 3);
+  assert.ok(!IMPORTED_ASSET_PATH.test(IMPORTED_INDEX_URL), 'the worker never answers the index');
+  await cache.put(IMPORTED_INDEX_URL, new Response('not json'));
+  assert.deepEqual([...await listImportedPaths(mem.caches)], ['/assets/~0123456789abcdef/old.png'], 'a broken index falls back to the keys (the one stored file)');
+});
+
+test('a zip File is read in slices, never whole: the same entries and bytes as from memory, and the import accepts it', async () => {
+  const big = new Uint8Array(150_000).map((_, i) => (i * 7) & 0xff);      // > the 64 KB tail the reader looks at
+  const text = bytesOf('deflated-bytes '.repeat(40));
+  const comp = await deflateRaw(text);
+  const zipBytes = buildZip([
+    { name: 'pack/public/assets/big.bin', raw: big },
+    { name: 'pack/public/assets/t.json', raw: text, comp, method: 8 },
+    { name: 'pack/public/assets/bad.png', raw: bytesOf('crc'), crc: 1 },
+    { name: 'pack/README.txt', raw: bytesOf('readme') },
+  ]);
+  const real = new Blob([zipBytes]);
+  const slices = [];
+  const file = {
+    size: real.size,
+    slice: (a, b) => { slices.push([a, b]); return real.slice(a, b); },
+    stream: () => { throw new Error('the whole file was streamed'); },
+    arrayBuffer: () => { throw new Error('the whole file was read'); },
+  };
+  const zip = await openZip(file);
+  const mem = await openZip(zipBytes);
+  assert.equal(zip.ok, true);
+  assert.deepEqual(zip.entries, mem.entries);
+  for (const entry of zip.entries) assert.deepEqual(await zip.read(entry), await mem.read(entry), entry.name);
+  assert.ok(slices.length > 0 && slices.every(([a, b]) => b - a < zipBytes.length), 'no read spans the file');
+  assert.deepEqual((await openZip({ ...file, size: 10 })).code, 'bad-zip');
+
+  const view = rewriteManifest({ big: '/assets/big.bin', t: '/assets/t.json', bad: '/assets/bad.png' }, 'assets.json', indexFor({
+    'assets/big.bin': hash16(big), 'assets/t.json': hash16(text), 'assets/bad.png': hash16(bytesOf('crc')),
+  }));
+  const mc = memoryCache();
+  const imp = createAssetImport({ fetch: manifestFetch(view.doc).fetch, caches: mc.caches });
+  await imp.start({ type: 'zip', data: file });
+  assert.deepEqual({ accepted: imp.get().accepted, failed: imp.get().failed, skipped: imp.get().skipped }, { accepted: 2, failed: 1, skipped: 1 },
+    'big.bin and t.json stored, bad.png unreadable (its CRC), the README skipped');
+  assert.equal(mc.assets().length, 2);
 });

@@ -28,7 +28,9 @@ self.addEventListener('fetch', (event) => {
   if (!IMPORTED_ASSET_PATH.test(url.pathname)) return;
   event.respondWith((async () => {
     const cache = await caches.open(IMPORTED_ASSET_CACHE);
-    const hit = await cache.match(request, { ignoreSearch: true });
+    // The exact key: an import stores each URL without a query, so the path is the key. `ignoreSearch` would make
+    // Chrome scan every entry — about 4 s per request once a whole pack (some 43,000 entries) is imported.
+    const hit = await cache.match(url.origin + url.pathname);
     if (hit) return hit;
     // Do not cache the network response. The browser's own HTTP cache still applies to this fetch.
     return fetch(request);

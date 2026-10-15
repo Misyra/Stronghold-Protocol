@@ -6,7 +6,7 @@ import path from 'node:path';
 import { startServer } from '../../server/index.js';
 import { CHROME, hasChrome } from '../e2e/client.mjs';
 
-test('homepage download, visible failure/retry, pause, cache reuse, and responsive placement', {
+test('homepage download, visible failure/retry, pause, cache reuse, and the two asset buttons\' responsive placement', {
   skip: process.env.SP_E2E !== '1' || !hasChrome(), timeout: 90000,
 }, async (t) => {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
@@ -71,15 +71,31 @@ test('homepage download, visible failure/retry, pause, cache reuse, and responsi
     await page.screenshot({ path: path.join(process.env.SP_ASSET_SCREENSHOTS, 'complete.png') });
   }
   await page.keyboard.press('Escape');
+  // 下载完整素材 and 导入素材包 side by side (ui/assetDownload.js, ui/assetImport.js): both inside the viewport, uncovered, on one
+  // row, not overlapping, their hint lines clear of the footer — on a desktop and on a landscape phone
   for (const viewport of [{ width: 1280, height: 900 }, { width: 844, height: 390 }]) {
     await page.setViewport(viewport);
-    const bounds = await page.$eval('[data-testid="asset-download"]', (el) => {
+    const box = (sel) => page.$eval(sel, (el) => {
       const b = el.getBoundingClientRect();
       return { left: b.left, top: b.top, right: b.right, bottom: b.bottom,
         visible: el.contains(document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2)) };
     });
-    assert.ok(bounds.left >= 0 && bounds.right <= viewport.width && bounds.top >= 0 && bounds.bottom <= viewport.height, JSON.stringify(bounds));
-    assert.ok(bounds.visible, 'the download button is not covered');
+    const download = await box('[data-testid="asset-download"]');
+    const importer = await box('[data-testid="asset-import"]');
+    for (const [name, bounds] of [['download', download], ['import', importer]]) {
+      assert.ok(bounds.left >= 0 && bounds.right <= viewport.width && bounds.top >= 0 && bounds.bottom <= viewport.height, `${name} ${JSON.stringify(bounds)}`);
+      assert.ok(bounds.visible, `the ${name} button is not covered`);
+    }
+    assert.ok(Math.abs(download.top - importer.top) < 1 && download.right <= importer.left, `side by side ${JSON.stringify({ download, importer })}`);
+    const hints = await page.$$eval('.title-assets__item > small', (els) => els.map((el) => el.getBoundingClientRect().bottom));
+    const foot = await page.$eval('.title-foot', (el) => [...el.children].map((c) => c.getBoundingClientRect())
+      .filter((b) => b.width > 0).map((b) => ({ top: b.top, left: b.left, right: b.right })));
+    const block = await page.$eval('.title-assets', (el) => el.getBoundingClientRect().toJSON());
+    assert.equal(hints.length, 2, 'a hint line under each button');
+    for (const f of foot) {
+      const across = f.left < block.right && f.right > block.left;
+      assert.ok(!across || Math.max(...hints) <= f.top, `the hints stay above the footer ${JSON.stringify({ hints, f })}`);
+    }
     if (process.env.SP_ASSET_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.SP_ASSET_SCREENSHOTS, `title-${viewport.width}.png`) });
   }
   // A new browser context has an empty HTTP cache. Closing the dialog must stop a hanging request.

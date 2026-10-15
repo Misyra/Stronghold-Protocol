@@ -10,6 +10,7 @@
 //   s.attackFx(v, tgt, kind, skillOn) → the skill's part of one attack of the owner (FxWiring.attack / castStart), or null
 //   s.casts(sk, src, tgt, phase, info) / s.landed(m, v, k)   its cast / range / aim rows and its hit groups (pickGroup)
 //   s.trigger(v)                 b.ev 'dmg' on the owner while its skill is on
+//   s.seen(v, heal, claimed)     b.ev 'dmg' (HP) / 'heal' in the frame's order: a kit hit of an open window (true: drawn)
 //   s.released(src, tgt, kind, time)   a 秘术师's attack: the stored energies fly from their slots
 //   s.deployed(v) / s.release(v) passive loops follow the deployment; a death / leak / retreat stops all of a unit's loops
 //   s.status(v, key)             the status wiring started that loop on v: a skill's target loop of the same key hands over
@@ -24,7 +25,14 @@
 //     the unit's death / leak / retreat, the battle's reset — with the effect's own stop fade); the ready loop stops.
 //     ['skill', id, 0]: the loops stop, `end` plays. An activation whose 1 and 0 came in the same frame with no 'atk' of
 //     the owner between them (an instant skill whose kit deals the damage itself: 23 of the roster's 61 instant casts in
-//     a survey of every kit) plays its first attack's cast and range once.
+//     a survey of every kit) plays the cast and range of the attack that fits what its kit hit (a heal ability for heals)
+//     once — a ReplacementSkill's at the frame's end, as its replaced attack may follow the 0 in that frame and carry
+//     the skill. The skill's own casts (skills.js tagCasts: `when` 'start' / 'end') play their rows at its start / 0.
+//   * Kit hits (history §32.14.43): 'dmg' names no source; an instant activation, a 'start' cast and a kit fx bound to a
+//     plan attack open a window for the rest of the frame, and an HP 'dmg' on the owner's enemies (a heal ability's:
+//     a 'heal' on its side) that no attack owns is a hit of that attack — its group by the target's hit count, its aims
+//     and buffs on the first — standing for the procedural spark; a final attack's hits are the 0's frame's damage
+//     before the 0. In an instant activation's frame its 'atk' is the skill's whatever kind the sim made it.
 //   * A view built mid-battle (a reconnect, a watched field) has seen no 'skill' event: its loops follow the snapshot
 //     flag UF.SKILL (no start one-shots). A passive (`kind: 'passive'`) is on while the unit is deployed: its loops start
 //     at the 'deploy' event (or when the view first shows it), its start one-shots once per deployment.
@@ -100,6 +108,8 @@ export function formMode(unit, form, map = null) {
 const idOf = (v) => v?.info?.id ?? v?.id;
 /** A held entry that loops for its hold: hold 'skill' and a looping prefab (a one-shot prefab plays once at the start). */
 const isLoop = (e) => e.hold === 'skill' && e.loop !== false;
+/** The plan's attacks a normal attack can use: not the skill's own casts at its start / end (`when`, skills.js tagCasts). */
+const perAttack = (plan) => (plan.attacks.some((a) => a.when) ? { ...plan, attacks: plan.attacks.filter((a) => !a.when) } : plan);
 /**
  * The entries of a list with a key of their own (the first of each): the extractor may reach one effect by two paths
  * (a buff's `_buffs` and `_extraBuffs`, two nodes of one skill) — played once, as the one buff it is [ASSUMED].
@@ -161,6 +171,10 @@ export class SkillFx {
     this.sweep = 0;
     this.tier = null;
     this.wasActive = false;
+    this.seq = 0;              // the order of the frame's events the kit hits read (hits seen, activations, kit fx)
+    this.hitLog = [];          // the frame's HP 'dmg' / 'heal' events: { v, heal, claimed, seq } (seen)
+    this.hitFrame = -1;
+    this.windows = [];         // the frame's kit-hit windows: { U, a (null: an instant activation's, by the hit), inst, frame, n, sawHeal, sawDmg }
   }
 
   active() { return !!this.w.ofx.active && !!this.w.idx; }
@@ -310,6 +324,8 @@ export class SkillFx {
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
       }
+      // the skill's own cast at the start (缄默德克萨斯 S2 / S3's appear strike, tagCasts 'start')
+      if (this._castOnce(U, v, 'start')) drew = true;
     }
     U.passiveDraws = U.passiveDraws || drew || U.drawsStart;
     return U.passiveDraws;
@@ -347,6 +363,10 @@ export class SkillFx {
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
       }
+      // the skill's own cast at its start (tagCasts 'start'): its rows now, its hits on the damage that follows
+      if (this._castOnce(U, v, 'start')) drew = true;
+      // an instant skill: what its kit hits in this frame without an attack are its attack's hits (kit hits)
+      if (U.plan.kind === 'instant' && perAttack(U.plan).attacks.length) this._open(U, null, true);
       U.loopsOn = true;
       return drew || U.drawsStart;
     }
@@ -354,13 +374,123 @@ export class SkillFx {
     U.on = false;
     if (!live) return false;
     // an instant skill whose kit made no attack between 1 and 0: its own attack's cast plays once (skills.js: one cast)
-    if (was && !U.attacked && U.startFrame === this.frame && U.plan.attacks.length) {
-      const a = U.plan.attacks[0];
-      for (const e of uniq([...a.cast, ...a.range])) this._keep(U, e, this._play(e, v));
+    // and its hits on what the kit hit in between (kit hits); a ReplacementSkill's replaced attack may still follow the
+    // 0 in this frame — the fallback waits for the frame's end (instPending)
+    if (was && !U.attacked && U.startFrame === this.frame && perAttack(U.plan).attacks.length) {
+      if (/^ReplacementSkill/.test(U.plan.rootClass || '')) U.instPending = this.frame;
+      else { this._instCast(U, v); this.windows = this.windows.filter((w) => !(w.inst && w.U === U)); }
     }
+    // the skill's final attack (tagCasts 'end'): its rows, its hits on this frame's damage (the kit deals it before the 0)
+    if (was) this._endCast(U, v);
     this._stopLoops(U);
     for (const e of uniq(U.plan.end)) this._keep(U, e, this._play(e, v));
     return U.drawsStart;
+  }
+
+  // ---- the skill's own casts and the kit's hits (history §32.14.43) ------------------------------------------------
+
+  /** The next mark of the frame's event order (a new frame empties the hit log and closes the kit-hit windows). */
+  _mark() {
+    if (this.hitFrame !== this.frame) { this.hitLog = []; this.hitFrame = this.frame; this.windows = this.windows.filter((w) => w.frame === this.frame); }
+    return ++this.seq;
+  }
+
+  /** Open a kit-hit window of this frame for attack `a` of U (null: an instant activation's — the hit's kind picks it). */
+  _open(U, a, inst = false) {
+    this._mark();
+    this.windows.push({ U, a, inst, frame: this.frame, n: new Map(), sawHeal: false, sawDmg: false });
+  }
+
+  /**
+   * b.ev 'dmg' (an HP hit) or 'heal' on v (FxWiring.damage / heal), in the frame's order. One no attack owns (`claimed`:
+   * a waiting blow, a melee attacker, a floating unit's hit) is a kit hit of the frame's open windows — an instant
+   * activation without an attack, a skill's own cast at its start, a kit fx bound to a plan attack: no event names the
+   * source of a kit's damage, the frame's order does [ASSUMED: the kit hits in that frame]. Returns true when an official
+   * hit stands for it (the procedural spark / generic heal is skipped).
+   */
+  seen(v, heal, claimed) {
+    if (!v) return false;
+    const seq = this._mark();
+    this.hitLog.push({ v, heal: !!heal, claimed: !!claimed, seq });
+    if (claimed || !this.windows.length || !this.active()) return false;
+    let drew = false;
+    for (const win of this.windows) {
+      if (win.inst && win.U.attacked) continue;   // the activation made its attack: its rows are that attack's
+      const a = win.a || this._instAttack(win.U, heal);
+      if (!a || /Heal/.test(String(a.ability || '')) !== !!heal) continue;
+      const r = this._kitHit(win, a, v);
+      if (r === null) continue;
+      if (heal) win.sawHeal = true; else win.sawDmg = true;
+      if (r) drew = true;
+    }
+    return drew;
+  }
+
+  /** The attack of an instant activation a kit hit belongs to: a heal ability for a heal, another for damage. */
+  _instAttack(U, heal) {
+    const att = perAttack(U.plan).attacks;
+    return (heal ? att.find((x) => /Heal/.test(x.ability)) : att.find((x) => !/Heal/.test(x.ability))) || null;
+  }
+
+  /**
+   * One kit hit of attack `a` on t (damage on the owner's enemies, a heal ability's heal on its side; else null): hit k
+   * of t in the window plays its group (pickGroup), the first one its aims and the attack's buffs (targetsOf `hit` of
+   * its node).
+   */
+  _kitHit(win, a, t) {
+    const U = win.U, own = U.v;
+    const heal = /Heal/.test(String(a.ability || ''));
+    if (!own || !t || t === own || t.destroyed || (!!t.isEnemy === !!own.isEnemy) !== heal) return null;
+    const id = idOf(t);
+    const k = win.n.get(id) || 0;
+    win.n.set(id, k + 1);
+    let drew = false;
+    if (k === 0) {
+      for (const e of uniq(a.aim || [])) {
+        const h = this._play(e, t, { toward: beyond(own, t), flipFrom: own });
+        if (h) { drew = true; if (e.hold === 'cast' || e.loop) later(this.w.ofx, SKILL_CAST_S, () => h.stop()); }
+      }
+      for (const e of uniq(U.tHit.filter((x) => x.node == null || x.node === a.node))) if (this._targetLoop(U, e, t)) drew = true;
+    }
+    for (const e of uniq(pickGroup(a.hit, k, a.hitOpts, U.atkN))) if (this._play(e, t, { flipFrom: own })) drew = true;
+    return drew;
+  }
+
+  /** The cast / range rows of the plan's attacks cast `when` ('start' | 'end'); a start's hits are the frame's kit hits. */
+  _castOnce(U, v, when) {
+    let drew = false;
+    for (const a of U.plan.attacks) {
+      if (a.when !== when) continue;
+      for (const e of uniq([...a.cast, ...a.range])) { const h = this._play(e, v); if (h) { drew = true; this._keep(U, e, h); } }
+      if (when === 'start' && (a.hit.some((g) => g.length) || (a.aim || []).length || U.tHit.length)) this._open(U, a);
+    }
+    return drew;
+  }
+
+  /**
+   * The skill ends: its final attacks' rows on the owner and their hits on what this frame damaged before the 0 (the kit
+   * deals the end's damage first; tagCasts 'end').
+   */
+  _endCast(U, v) {
+    for (const a of U.plan.attacks) {
+      if (a.when !== 'end') continue;
+      for (const e of uniq([...a.cast, ...a.range])) this._keep(U, e, this._play(e, v));
+      if (this.hitFrame !== this.frame) continue;
+      const win = { U, n: new Map() };
+      const heal = /Heal/.test(String(a.ability || ''));
+      for (const h of this.hitLog) if (!h.claimed && h.heal === heal) this._kitHit(win, a, h.v);
+    }
+  }
+
+  /**
+   * An instant activation without an attack: the attack that fits what its kit hit (a heal ability for heals, another for
+   * damage, else the first) casts its rows on the owner; the hits played as they came (seen).
+   */
+  _instCast(U, v, win = this.windows.find((w) => w.inst && w.U === U)) {
+    const att = perAttack(U.plan).attacks;
+    if (!att.length) return;
+    const a = (win?.sawDmg ? this._instAttack(U, false) : win?.sawHeal ? this._instAttack(U, true) : null) || att[0];
+    for (const e of uniq([...a.cast, ...a.range])) this._keep(U, e, this._play(e, v));
   }
 
   /** b.ev 'deploy': a passive's loops and start one-shots; a redeployed 秘术师 starts with no energy. */
@@ -471,19 +601,29 @@ export class SkillFx {
    * the attack mode's), `projectile` (a ranged one's: the skill's own), `buffs` (targetsOf `hit`).
    */
   attackFx(src, tgt, kind, skillOn) {
-    const st = this.state(src, skillOn);
+    let st = this.state(src, skillOn);
+    const U = st.U;
+    // the frame of an instant skill's activation: a ReplacementSkill's replaced attack may come right after its 0 (the
+    // activation's fallback waits for it: instPending)
+    const inst = !!U && !U.ewin && U.plan?.kind === 'instant' && U.startFrame === this.frame;
+    if (!st.on && inst && !U.attacked && U.instPending === this.frame) st = { ...st, on: true };
     if (!st.on || !st.plan) return null;
     const ranged = !!kind && kind !== 'none';
     const heal = !!tgt && !tgt.isEnemy && !src.isEnemy;
-    const fx = planAttack(st.plan, { heal, ranged });
+    // the skill's own casts at its start / end are no normal attack (tagCasts): the mode attacks while it is on
+    const fx = planAttack(perAttack(st.plan), { heal, ranged });
     // the skill's own ability replaces the mode's rows when it is this kind of attack: a melee blow is no shield throw
-    // (斩业星熊 S2: her MultiMelee mode attacks while the skill's AroundTargetRangedAttack throws on its own)
-    const replace = !!fx.ability && fitsAttack(fx.ability, { heal, ranged });
+    // (斩业星熊 S2: her MultiMelee mode attacks while the skill's AroundTargetRangedAttack throws on its own); in the frame
+    // of an instant skill's activation its attack is the skill's whatever kind the sim made it (阿罗玛 S1's 'beam' is her
+    // MeleeAttack, 夕 S1's 'bolt' her MultiMeleeAttack: their cast, aim and hits) — a heal stays a heal
+    const fits = !!fx.ability && fitsAttack(fx.ability, { heal, ranged });
+    const forced = !fits && inst && !!fx.ability && /Heal/.test(fx.ability) === heal;
+    const replace = fits || forced;
     if (fx.ability && !replace) { fx.cast = fx.cast.filter((e) => e.ability !== fx.ability); fx.range = []; fx.aim = []; fx.hit = st.plan.each.hit[0].length ? [st.plan.each.hit[0]] : []; }
     // the projectile its ability fires (index v3: abilities[].projectileKey, a use's projectileKey), else the naming guess
-    const projectile = replace && ranged ? fx.projectile || skillProjectile(this.w.idx, st.plan) : null;
+    const projectile = fits && ranged ? fx.projectile || skillProjectile(this.w.idx, st.plan) : null;
     if (!replace && !fx.cast.length && !fx.hit.length && !st.U.tHit.length) return null;
-    return { U: st.U, fx, replace, projectile, shot: replace ? fx.shot : null, buffs: st.U.tHit };
+    return { U: st.U, fx, replace, projectile, shot: replace ? fx.shot : null, buffs: st.U.tHit, late: forced };
   }
 
   /**
@@ -492,6 +632,8 @@ export class SkillFx {
    */
   casts(sk, src, tgt, phase, info = {}) {
     const nth = sk.U.atkN;
+    // a skill attack known only at the strike (attackFx `late`): the wind-up played the mode's rows, the strike all of its
+    if (sk.late && phase === 'strike') phase = 'all';
     for (const [rows, onTarget] of [[sk.fx.cast, false], [sk.fx.range, false], [sk.fx.aim, true]]) {
       if (!onTarget && info.owner === false) continue;
       for (const e of uniq(rows)) {
@@ -616,7 +758,16 @@ export class SkillFx {
       this.tier = tier;
       this.wasActive = active;
     }
+    // the frame's end (every event of it is in): a ReplacementSkill whose replaced attack never came casts its rows now;
+    // the kit-hit windows close
+    const wins = this.windows;
+    this.windows = [];
     if (!active) return;
+    for (const win of wins) {
+      if (!win.inst || win.frame !== this.frame) continue;
+      if (win.U.instPending === this.frame && !win.U.attacked && win.U.v) this._instCast(win.U, win.U.v, win);
+      win.U.instPending = -1;
+    }
     const sweep = ++this.sweep;
     const now = this.w.ofx.time;
     for (const v of views) {
@@ -686,7 +837,7 @@ export class SkillFx {
     for (const field of ['src', 'id']) {
       const U = extra[field] != null ? this.units.get(extra[field]) : null;
       const bind = U ? FX_BINDINGS[U.skillId]?.[kind] : null;
-      if (bind && bind.owner === field) return this._bound(U, bind, x, y, extra);
+      if (bind && bind.owner === field) return bind.attack ? this._boundAttack(U, bind) : this._bound(U, bind, x, y, extra);
     }
     const U = this.units.get(extra.id ?? extra.src);
     if (!U || !U.v || !(U.plan || U.ewin)) return false;
@@ -709,6 +860,17 @@ export class SkillFx {
     // (3) the frame of the official skill start, (4) a skill-tagged flash while the official loops play
     if (U.startFrame === this.frame && (U.ewin ? U.ewin.draws : U.drawsStart)) return true;
     return extra.skill != null && on && (U.loops.some((h) => h.alive) || !!U.ewin?.loops.some((h) => h.alive));
+  }
+
+  /** An FX_BINDINGS `attack` entry: that plan attack's rows on the owner now, its hits on the damage that follows. */
+  _boundAttack(U, bind) {
+    const a = U.plan?.attacks.find((x) => x.node === bind.attack);
+    const v = U.v;
+    if (!a || !v) return false;
+    let drew = false;
+    for (const e of uniq([...a.cast, ...a.range])) { const h = this._play(e, v); if (h) { drew = true; this._keep(U, e, h); } }
+    if (a.hit.some((g) => g.length) || (a.aim || []).length || U.tHit.length) this._open(U, a);
+    return drew;
   }
 
   /** An FX_BINDINGS entry: the projectile's reached effects where the fx happens, held as the binding says. */
@@ -766,5 +928,7 @@ export class SkillFx {
     this.units.clear();
     this.tloops.clear();
     this.marks = [];
+    this.hitLog = [];
+    this.windows = [];
   }
 }

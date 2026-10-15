@@ -986,6 +986,8 @@ export class FxWiring {
     // an attached floating unit's hit lands with its damage (荒芜拉普兰德's wolves: render/vfx/funnelfx.js)
     const fun = hpHit ? this.funnels.damage(v, time, type) : false;
     const drawn = (m && hpHit ? this._landed(m, v, time, type) : false) || fun;
+    // a skill's kit hit (SkillFx.seen: no attack owns it — the frame's order names the skill): its hit stands for the spark
+    if (hpHit && this.skills.seen(v, false, !!(m || src || fun))) return true;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
     const ph = this.pendingHit.get(id);
@@ -1026,6 +1028,7 @@ export class FxWiring {
     const id = v.id ?? v.info?.id;
     const m = Number.isFinite(time) ? this._pending(id, time) : null;
     if (m && this._landed(m, v, time, 'heal')) return true;
+    if (this.skills.seen(v, true, !!m)) return true;   // a skill's kit heal (SkillFx.seen)
     const t = this.healed.get(id) ?? this.arrived.get(id);
     if (t != null && this.ofx.time - t < ARRIVAL_WINDOW) return true;
     const k = this.idx.generic?.hit?.heal;

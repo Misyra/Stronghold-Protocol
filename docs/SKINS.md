@@ -100,6 +100,26 @@ Three properties are load-bearing:
 | `public/js/ui/detailPanel.js` | `ChessDetail()` | the same art on the card a shop tap opens (a stand-in shows its own operator, never a skin) |
 | `data/assets.json` | — | regenerated; carries `chars[charId].skins` for whatever is installed |
 
+### 离线预载 (offline preload, this fork)
+
+Not part of upstream's PR: a full install is ~328 MiB, and the preload manifest is built by walking `data/assets.json`
+— so every skin file landed in the **required** tier of `/data/resource-manifest.json` and 「必备资源」 quietly meant
+one third of a gigabyte. Skins are now their own optional, off-by-default scope:
+
+| File | Where | What |
+|---|---|---|
+| `server/resources.js` | `skinKeyForPath()` + `tierForPath()` | a key path through `chars.<charId>.skins.<skinId>…` is tier 2 (`TIER_REST`) and carries `skin: '<charId>/<skinId>'` into the manifest entry — the one field the client groups and scopes by |
+| `public/js/resources/common.js` | `RESOURCE_GROUPS` / `resourceGroup()` | `skin: { name: N_('干员皮肤'), tier: TIER_REST }`; `resourceGroup()` returns `'skin'` for a marked entry; `SKIN_KEY_RE` / `isSkinKey` validate the key |
+| `public/js/resources/store.js` | `setScope()` / `skinWanted()` / `#tally()` | the voice language and the skin picks are one selection: unpicked skins leave `selectedFiles`, so they are neither downloaded nor counted (but stay importable/retained); `status()` also reports per-skin counters (`skins: [{ id, files, wanted, present, bytes, totalBytes }]`) for the list |
+| `public/js/resources/index.js` | `syncResources(…, skins)` | the controller applies the scope; the optional pass now runs whenever the selection contains tier-2 files (`可选` switch **or** picked skins), so a skin choice never drags the voices in and vice versa. `requiredComplete` / `selectionComplete` split what the panel words 「必备已保存」 / 「全部已保存」 |
+| `public/js/ui/resourcePanel.js` | `ResourceSkins()` / `SkinList()` | the 干员皮肤 section: 不预载 / 挑选 / 全部, per-outfit checkboxes with search, 全选 / 清空 / 跟随我的皮肤选择, per-outfit size and 已保存 state. It is outside the 可选资源 list (`g.id !== 'skin'`), and the whole section disappears when the deployment has no skins |
+| `public/js/ui/gameLogic/settings.js` | `DEFAULT_SETTINGS` / `sanitizeSettings()` | `preloadSkins: 'off'|'all'|'picked'` + `preloadSkinIds: string[]` (validated by `SKIN_KEY_RE`, deduplicated, ≤ 400) |
+| `public/css/components.css` | end of the resource block | `.resource-skins*` — rem/`--utility-text` based, like the rest of the manager, with a compact-width variant that drops the numbers |
+| `test/resources/{manifest,store,index,panel}.test.js` | — | classification and the key, the scope engine, the controller end to end, the panel wiring |
+
+安装 (server-side, everyone shares) and 预载 (this browser's cache) stay separate: the preload list is built from the
+manifest, so it only ever offers skins the server actually has.
+
 ## Regenerating the asset side
 
 ```

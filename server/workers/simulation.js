@@ -36,7 +36,10 @@ parentPort.on('message', ({ id, type, payload, cancel }) => {
     } else if (type === 'rehearsal') {
       const battles = payload.options.map((opts) => new Battle({ ...opts, data: ds, logger: quiet }));
       const plans = battles.map((_, i) => i);
-      const job = createRehearsalJob(battles, [], plans, payload.playerId, payload.cap, quiet);
+      // Identity plans: the match asks for the index of the winning candidate in the order it sent them, which is
+      // exactly what this job compares (server/sim/rehearsal.js scoring).
+      const job = createRehearsalJob({ wave: { timeLimit: payload.timeLimit } }, { playerId: payload.playerId }, [], plans,
+        payload.options, battles);
       while (!job.run(4)) if (cancelled()) throw new Error('cancelled');
       value = { bestIndex: job.best };
     } else throw new Error(`unknown simulation task: ${type}`);

@@ -245,6 +245,9 @@ export const PLAYER_FIELDS = Object.freeze([
   // 干员皮肤 (docs/SKINS.md): the per-chess model choice, carried in by the seat and public on the wire. Persisted
   // like the loadout — a restored match would otherwise silently revert every player to the default model.
   'skins',
+  // 0.3.0 kill credit (PR #509, DESIGN §32.14.16): an accumulated per-player counter reported by server/match/results.js
+  // and the stats page — like `stats` it is not rebuilt on restore, so it is persisted.
+  'creditedKills',
 ]);
 
 // Explicitly rebuilt or phase-local state. A new own property must be classified here or persisted above.
@@ -258,6 +261,12 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
   '_privDirty', '_prepEndQueued', 'bossPairs', 'fields', 'runner', 'watchers', 'watchPref', 'lastResults', 'unitePlan',
   'uniteResultView', '_uniteLeftKey', '_uniteBounds', 'teamLp', 'bossPool', 'outcome', '_turnToken',
+  // 0.3.0's plugin / content layer (cs, vs, requireCs) and its delegation target (hostId), plus this fork's delegated
+  // bot rehearsals (botRehearsalDelegate, _rehearsalTasks, rehearsalStats …): every one of them is rebuilt on restore —
+  // server/lobby.js startMatchWith builds opts from room.content / room.hostId and every checkpoint goes through it
+  // (server/matchRestore.js restoreLobbyMatch) — so none of them belong in a checkpoint. Same reason battleContent,
+  // botRehearsalLimit, botSliceMs and _workerTasks are listed here.
+  'cs', 'vs', 'requireCs', 'hostId', 'botRehearsalDelegate', 'botRehearsalDelegateMs', '_rehearsalTasks', '_rehearsalSeq', 'rehearsalStats',
   // the persistence version (persistVersion): a derived counter, never part of the document
   '_persistRev',
 ]);

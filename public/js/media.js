@@ -15,15 +15,23 @@
 // keeps its `/_v/<tag>/` prefix and the server checks the file's bytes behind it:
 //
 //     /_v/<tag>/assets/audio/bgm/act1.mp3   →   /_v/<tag>/media/bgm/act1
+// A cosmetic plugin audio (DESIGN §32 P1a, docs/PLUGINS.md §9) is served without its extension at its own URL — the
+// same plugin route, its /p/<id>/<hash8>/ prefix kept (server/http/static.js):
 //
-// (A CDN install keeps its per-file `?v=<hash>` query on the audio URL — shared/assetCdn.js — and rewrites only
+//     /p/my-skin/0123abcd/voice/s1.mp3   →   /p/my-skin/0123abcd/voice/s1
+//
+// (A CDN install keeps its per-file ?v=<hash> query on the audio URL — shared/assetCdn.js — and rewrites only
 // its path; the hash is not part of the path, so nothing else changes here.)
 // A host that does not implement /media/ keeps working: `audio.js` falls back to the original URL whenever the
 // /media/ response is unusable (a 404, or a 200 that is not audio at all — some static hosts answer a missing
 // path with the SPA's index.html).
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../../shared/media.js';
 
+import { PLUGIN_AUDIO_EXTS } from '../../shared/plugins/manifest.js';
+
 const AUDIO_PATH = /^(\/_v\/[a-f0-9]{16})?\/assets\/audio\/(.+)$/i;
+/** A cosmetic plugin audio file: /p/<id>/<hash8>/<path>.<mp3 | ogg> (shared/plugins/visual.js pluginFileUrl). */
+const PLUGIN_AUDIO = /^\/p\/[a-z0-9][a-z0-9-]{1,31}\/[0-9a-f]{8}\/(.+)$/;
 
 /**
  * Rewrite an audio URL to its extension-less `/media/…` form.
@@ -43,6 +51,15 @@ export function mediaUrl(url, origin = globalThis.location?.origin) {
   // Cross-origin (or absolute while the page origin is unknown) stays untouched: that host serves its own media.
   const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//');
   if (origin ? u.origin !== origin : absolute) return url;
+  // a cosmetic plugin audio: the same URL without its extension (a stem that still ends in one stays as it is; an
+  // upper-case extension too — the server finds <stem>.mp3 / .ogg exactly, so it would only cost a 404 first)
+  const pm = PLUGIN_AUDIO.exec(u.pathname);
+  if (pm) {
+    const ext = PLUGIN_AUDIO_EXTS.find((e) => pm[1].endsWith(e));
+    const stem = ext ? u.pathname.slice(0, -ext.length) : '';
+    if (!ext || /\.[A-Za-z0-9]+$/.test(stem) || stem.endsWith('/') || stem.split('/').some((x) => x === '.' || x === '..')) return url;
+    return stem + u.search;
+  }
   const m = AUDIO_PATH.exec(u.pathname);
   if (!m) return url;
   let rest = m[2];

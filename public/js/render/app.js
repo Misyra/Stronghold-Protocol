@@ -1646,7 +1646,8 @@ export async function createFieldView(host, options = {}) {
         break;
       }
       // the skill slot an enemy ability casts (PR #275): the view swaps to that slot's clip (a multi-skill boss's Skill_01..04)
-      case 'cast': { const v = views.get(e[1]); if (v) v.setSkillSlot?.(e[2] | 0); break; }
+      // (and its official skill effects: render/vfx/skillfx.js cast — index v2 has the enemies' skills)
+      case 'cast': { const v = views.get(e[1]); if (v) { v.setSkillSlot?.(e[2] | 0); wiring.enemyCast(v, e[2] | 0); } break; }
       case 'die': {
         const v = views.get(e[1]);
         const used = consumedIds.delete(e[1]);

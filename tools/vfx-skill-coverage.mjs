@@ -109,7 +109,11 @@ export function coverage(idx, data, opts = {}) {
     const g = groups[r.group];
     g.skills++;
     const unitKey = unitKeyOf(idx, [r.id]);
-    const res = resolveSkill(idx, { unitKey, rec: { charId: r.id, skill: r.skill, skills: [r.skill] }, skillIndex: r.skill.index });
+    // an enemy's skill: index v2's `units[enemy].skills`, keyed by the lower-case prefabKey of data/enemies.json
+    const ekey = r.group === 'enemies' ? String(r.skill.prefabKey || '').toLowerCase() : null;
+    const res = ekey
+      ? { unitKey, skillId: ekey, skill: (unitKey && idx.units[unitKey]?.skills?.[ekey]) || null, reason: null }
+      : resolveSkill(idx, { unitKey, rec: { charId: r.id, skill: r.skill, skills: [r.skill] }, skillIndex: r.skill.index });
     if (!res.skill) {
       const why = !unitKey ? 'no-unit' : r.group === 'enemies' ? 'enemy-skill' : r.group === 'tokens' ? 'token-skill' : res.reason || 'not-in-index';
       g.notResolved[why] = (g.notResolved[why] || 0) + 1;
@@ -145,19 +149,60 @@ export function coverage(idx, data, opts = {}) {
     if (opts.describe) for (const e of entries) { const k = `${e.at}:${e.point ?? '?'}`; anchors[k] = (anchors[k] || 0) + 1; }
   }
   const charge = [];
-  for (const unitKey of Object.keys(CHARGE_EMITTERS)) {
+  // the 秘术师: index v2's chargeable groups (units[id].charge), the transcribed table for a version-1 index
+  const chargeUnits = new Set([...Object.keys(CHARGE_EMITTERS), ...Object.keys(idx?.units || {}).filter((k) => Array.isArray(idx.units[k]?.charge))]);
+  for (const unitKey of chargeUnits) {
     const p = chargePlan(idx, unitKey);
     const inRoster = list.some((r) => r.id === unitKey);
+    const source = Array.isArray(idx?.units?.[unitKey]?.charge) ? 'index v2' : 'CHARGE_EMITTERS';
     charge.push(p
-      ? { unit: unitKey, inRoster, slots: p.slots.length, keys: chargeKeys(p).length, missing: p.missing,
+      ? { unit: unitKey, inRoster, source, slots: p.slots.length, keys: chargeKeys(p).length, missing: p.missing,
         signal: unitKey === 'char_469_indigo' ? 'b.snap energy (PR #636)' : 'none (kit-private store)' }
-      : { unit: unitKey, inRoster, slots: 0, keys: 0, missing: ['(unit not in index.json)'], signal: null });
+      : { unit: unitKey, inRoster, source, slots: 0, keys: 0, missing: ['(unit not in index.json)'], signal: null });
   }
   const bindings = Object.entries(FX_BINDINGS).map(([skill, kinds]) => ({ skill, kinds: Object.keys(kinds), keys: bindingKeys(idx, skill) }));
   return {
-    index: { set: idx?.set ?? null, client: idx?.source?.client ?? null, skills: Object.keys(idx?.skills || {}).length },
-    groups, unmapped, unplanned, charge, bindings, ...(opts.describe ? { anchors } : {}),
+    index: { set: idx?.set ?? null, client: idx?.source?.client ?? null, version: idx?.version ?? 1, skills: Object.keys(idx?.skills || {}).length },
+    groups, unmapped, unplanned, charge, bindings, attacks: attackCoverage(idx), ...(opts.describe ? { anchors } : {}),
   };
+}
+
+/**
+ * The units' own attacks (render/vfx/wiring.js: every 'atk' plays them): per kind, the units with official attack rows
+ * (their modes' `attack` and — index v2 — `combat` and sub-abilities), and the v2 parts — combats, sub-ability groups,
+ * MultiHit hit groups, UberAnimation replace groups, other emitters, charge groups.
+ */
+export function attackCoverage(idx) {
+  const out = {};
+  const rowsOf = (a, depth = 0) => {
+    if (!a || depth > 4) return 0;
+    let n = 0;
+    for (const l of ['cast', 'hit', 'castTarget', 'inputTarget']) n += (a[l] || []).length;
+    for (const x of a.abilities || []) n += rowsOf(x, depth + 1);
+    return n;
+  };
+  for (const u of Object.values(idx?.units || {})) {
+    const k = u.kind || 'other';
+    const o = out[k] || (out[k] = { units: 0, withRows: 0, combat: 0, combatOnly: 0, groups: 0, multiHit: 0, animGroups: 0, emitters: {}, charge: 0 });
+    o.units++;
+    let rows = 0;
+    for (const m of u.modes || []) {
+      rows += rowsOf(m.attack) + rowsOf(m.combat);
+      if (m.combat) { o.combat++; if (!m.attack) o.combatOnly++; }
+      for (const a of [m.attack, m.combat]) {
+        if (!a) continue;
+        if ((a.abilities || []).length) o.groups++;
+        for (const em of a.emitters || []) {
+          o.emitters[em.class] = (o.emitters[em.class] || 0) + 1;
+          if (em.class === 'MultiHitUberEffectEmitter') o.multiHit++;
+          if (em.class === 'UberAnimationEffectEmitter') o.animGroups++;
+        }
+      }
+    }
+    if (rows) o.withRows++;
+    if (Array.isArray(u.charge) && u.charge.length) o.charge++;
+  }
+  return out;
 }
 
 /** What the battle view does with each role (render/vfx/skillfx.js, Phase 3b): the coverage tool prints it. */
@@ -172,6 +217,8 @@ export const RUNTIME = Object.freeze({
   'targets.none': 'not drawn (no signal names the carrier)',
   pulse: "bound to the kit's own fx of the skill (extra.skill) at the owner (a tick) or away from it (the skill's hits)",
   charge: 'b.snap energy (深靛 and the shared mystic store); 黑键 / 维伊 keep their stores kit-private',
+  'enemy skills': "b.ev ['cast', id, slot] (none on this line yet), else the snapshot's skill window (anim SKILL) of a single-skill enemy",
+  'mode attacks (v2)': "a blocked melee blow plays the mode's combat; a group plays its sub-abilities; MultiHit groups by the hit's order; UberAnimation groups by the animation",
 });
 
 /** Every placed entry of a plan. */
@@ -210,7 +257,13 @@ function printReport(rep, { list = false } = {}) {
       console.log(`  targets entries: ${g.targets.hit} on the skill attacks' targets, ${g.targets.status} by the status wiring, ${g.targets.none} not drawn; pulse rows: ${g.pulseEntries} in ${g.pulseSkills} skills (bound to the kit's own fx)`);
     }
   }
-  console.log('\nwired at runtime (render/vfx/skillfx.js, Phase 3b):');
+  if (rep.attacks) {
+    console.log(`\nunits' own attacks (index version ${rep.index.version}; render/vfx/wiring.js):`);
+    for (const [k, o] of Object.entries(rep.attacks)) {
+      console.log(`  ${k}: ${o.withRows} of ${o.units} with attack rows; ${o.combat} modes with a combat (${o.combatOnly} its only attack), ${o.groups} sub-ability groups, ${o.multiHit} MultiHit and ${o.animGroups} UberAnimation emitters, ${o.charge} charge groups`);
+    }
+  }
+  console.log('\nwired at runtime (render/vfx/skillfx.js, Phase 3b / 3c):');
   for (const [k, v] of Object.entries(RUNTIME)) console.log(`  ${k.padEnd(27)} ${v}`);
   console.log('\nkit fx bound to official effects (FX_BINDINGS):');
   for (const b of rep.bindings) console.log(`  ${b.skill}: ${b.kinds.join(', ')} → ${b.keys.join(' ') || '(keys not in this index)'}`);
@@ -218,8 +271,8 @@ function printReport(rep, { list = false } = {}) {
   for (const [k, v] of Object.entries(UNMAPPED)) console.log(`  ${k.padEnd(14)} ${v}`);
   console.log('\nsignals:');
   for (const [k, v] of Object.entries(SIGNALS)) console.log(`  ${k.padEnd(8)} ${v}`);
-  console.log('\n秘术师 charge (CHARGE_EMITTERS):');
-  for (const c of rep.charge) console.log(`  ${c.unit}${c.inRoster ? '' : ' (not in the roster)'}: ${c.slots} slots, ${c.keys} keys${c.missing.length ? `, missing ${c.missing.join(' ')}` : ''}; signal: ${c.signal}`);
+  console.log('\n秘术师 charge (index v2 units[id].charge; CHARGE_EMITTERS for a version-1 index):');
+  for (const c of rep.charge) console.log(`  ${c.unit}${c.inRoster ? '' : ' (not in the roster)'}: ${c.source}, ${c.slots} slots, ${c.keys} keys${c.missing.length ? `, missing ${c.missing.join(' ')}` : ''}; signal: ${c.signal}`);
   if (rep.anchors) {
     console.log('\nanchors (at:SpawnLocation):');
     for (const [k, v] of Object.entries(rep.anchors).sort((a, b) => b[1] - a[1])) console.log(`  ${String(v).padStart(5)} ${k}`);

@@ -5,7 +5,9 @@
 // changed where they sit): 克莱门莎 S1's cast and hit (an instant skill with its attack), her S3 mark on the dummy's
 // tile (FX_BINDINGS: the 'lock' fx), 伊芙利特 S3's loops and range and S2's cast, range and the burn on the dummy, 深靛's
 // three stored energies and their release beside the shot, a passive's loop (砾 S2), a ready loop (阿罗玛 S1), the light
-// tier; the console stays clean.
+// tier; index v2 (Phase 3c): an enemy's skill by its 'cast' slot (enemy_1209_sfden), a single-skill enemy's window from
+// the snapshot's SKILL anim (enemy_10001_trslim: its loop held until the window ends), a MultiHit mode attack (char_4009_irene:
+// hit 1 and hit 2 play their own groups), a blocked enemy's combat (enemy_10027_vtsk); the console stays clean.
 //
 // Opt-in (starts Chrome, needs the effects extracted from the local client: extract.py --only fx):
 //   RENDER_E2E=1 node --test test/render/vfx-skills.browser.test.js
@@ -162,6 +164,43 @@ describe('official skill effects in headless Chrome', { skip }, () => {
     assert.equal(r.stats.tier, 'lite');
     assert.ok(r.keys.includes('ifrit_skill_03_buff'));
     assert.ok(changed(r.img, r.src.x, r.src.y, 90) > 800);
+  });
+
+  test("an enemy's skill (index v2, enemy_1209_sfden's InvisibleShield): the 'cast' slot plays its range on the enemy", async () => {
+    const r = await shot('enemy-sfden-cast', 'enemy_1209_sfden', { s: 0 }, [['cast', 0], 40]);
+    assert.equal(r.plan.sid, 'invisibleshield');
+    assert.ok(r.keys.includes('enemy_sfden_skill_range_01'), String(r.keys));
+    assert.ok(changed(r.img, r.src.x, r.src.y, 100) > 300, 'the range around the enemy');
+  });
+
+  test("a single-skill enemy's window (enemy_10001_trslim's StartRun): the snapshot's SKILL anim opens it, its loop lasts until the window ends", async () => {
+    const r = await shot('enemy-trslim-window', 'enemy_10001_trslim', { s: 0 }, [['anim', 3], 14]);
+    for (const k of ['enemy_trslim_skill_01', 'enemy_trslim_skill_buff_01']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    assert.ok(changed(r.img, r.src.x, r.src.y, 80) > 500);
+    // the anim leaves SKILL: after the grace (0.3 s) the window ends and its loop stops (no longer playing: its stop
+    // fade and the prefab's _delayToFinish linger follow)
+    await page.evaluate(() => { window.__fx.skillCmd('anim', 0); window.__fx.step(30, 1 / 60); });
+    const left = await page.evaluate(() => window.__fx.ofx.effects.filter((e) => e.state === 'play').map((e) => e.def?.key));
+    assert.ok(!left.includes('enemy_trslim_skill_buff_01'), String(left));
+  });
+
+  test("a MultiHit mode attack (char_4009_irene's Default): the blow's cast, hit 1 and hit 2 each play their own group", async () => {
+    const r = await shot('irene-multihit', 'char_4009_irene', { kind: 'none', dist: 1, hits: 2 }, [['attack'], 3]);
+    for (const k of ['irene_attack_start_front_01', 'irene_attack_hit_01', 'irene_attack_hit_02']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    assert.ok(!r.keys.includes('common_hit_01'), 'its own hits: no generic hit');
+    assert.ok(changed(r.img, r.tgt.x, r.tgt.y, 70) > 300, 'the hits on the dummy');
+    // one hit only: group 1, never group 2
+    const one = await shot('irene-onehit', 'char_4009_irene', { kind: 'none', dist: 1, hits: 1 }, [['attack'], 3]);
+    assert.ok(one.keys.includes('irene_attack_hit_01') && !one.keys.includes('irene_attack_hit_02'), String(one.keys));
+  });
+
+  test("a blocked enemy's blow plays its mode's combat, a free one its shot (index v2, enemy_10027_vtsk)", async () => {
+    const r = await shot('enemy-vtsk-combat', 'enemy_10027_vtsk', { kind: 'none', dist: 1, block: true }, [['attack'], 10]);
+    for (const k of ['enemy_vtsk_attack_weapon_01', 'enemy_vtsk_attack_start_01', 'enemy_vtsk_attack_hit_01']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    assert.ok(!r.keys.includes('enemy_vtsk_skill_01_trail_01'), 'not the shot');
+    const f = await shot('enemy-vtsk-shot', 'enemy_10027_vtsk', { kind: 'enemy', dist: 3 }, [['attack'], 6]);
+    assert.ok(f.keys.includes('enemy_vtsk_skill_01_trail_01'), String(f.keys));
+    assert.ok(!f.keys.includes('enemy_vtsk_attack_start_01'), 'not the combat');
   });
 
   test('the console stays clean', () => {

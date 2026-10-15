@@ -1,5 +1,5 @@
-// render/vfx/skillfx.js — the official skill, talent and charge effects in a battle (DESIGN §33, 0.3.0 Phase 3b): the
-// plans of render/vfx/skills.js played on the signals the field view already receives. render/vfx/wiring.js owns one
+// render/vfx/skillfx.js — the official skill, talent and charge effects in a battle (DESIGN §33, 0.3.0 Phase 3b, 3c):
+// the plans of render/vfx/skills.js played on the signals the field view already receives. render/vfx/wiring.js owns one
 // (`FxWiring.skills`) and calls it from its event entry points; client only — no sim, protocol or golden change.
 //
 //   const s = new SkillFx(wiring)
@@ -8,11 +8,12 @@
 //   s.skill(v, on)               b.ev ['skill', id, on] — true when the official layer shows this skill (render/app.js
 //                                then skips the procedural activation burst and aura)
 //   s.attackFx(v, tgt, kind, skillOn) → the skill's part of one attack of the owner (FxWiring.attack / castStart), or null
-//   s.casts(sk, src, tgt, phase, info) / s.landed(m, v)   its cast / range / aim rows and its hit groups
+//   s.casts(sk, src, tgt, phase, info) / s.landed(m, v, k)   its cast / range / aim rows and its hit groups (pickGroup)
 //   s.trigger(v)                 b.ev 'dmg' on the owner while its skill is on
 //   s.released(src, tgt, kind, time)   a 秘术师's attack: the stored energies fly from their slots
 //   s.deployed(v) / s.release(v) passive loops follow the deployment; a death / leak / retreat stops all of a unit's loops
 //   s.status(v, key)             the status wiring started that loop on v: a skill's target loop of the same key hands over
+//   s.cast(v, slot)              b.ev ['cast', id, slot]: that slot's enemy skill opens its window (index v2)
 //   s.sync(views)                once per frame: loops of views built mid-battle (UF.SKILL), passive loops, ready loops,
 //                                the stored-energy display (b.snap energy), target loops and marks past their time
 //   s.simFx(kind, x, y, extra)   a kit 'fx' tuple the official layer stands for (true: the procedural one is skipped)
@@ -31,7 +32,8 @@
 //   * An attack of the owner while the skill is on (`attackFx`): with an attack ability of its own the skill's rows
 //     replace the attack mode's — its cast / range on the owner (ON_CAST_START rows with the wind-up, the others at the
 //     strike), `aim` on the target, its hit groups on the target (the k-th 'dmg' — or 'heal' — on that target in that
-//     frame plays group k) and, for a ranged one, the skill's own projectile (skills.js skillProjectile); without one the
+//     frame is hit k: pickGroup — group min(k, last), in turn with useLoopHitEffect, seeded with useRandomHitEffect, the
+//     first only with oncePerTarget) and, for a ranged one, the skill's own projectile (skills.js skillProjectile); without one the
 //     attack mode (plan.modeName) plays and the skill adds its `each` rows. `targets` entries of an attack's buffs
 //     (skills.js targetsOf `hit`) loop on each target hit for the buff's duration (our record's blackboard), else while
 //     the skill lasts; a status loop the status wiring draws for the same key takes over.
@@ -39,7 +41,13 @@
 //   * The 秘术师 charge (b.snap energy, PR #636 — sent whatever 设置「秘术师能量」 says): each store plays its one-shots and
 //     lights the next slot's loop (FollowMountPoint on its Special point); an attack releases them — the wiring flies the
 //     attack's own projectile from the muzzle and this flies one per stored energy from its slot's mount point (the
-//     sim's 1 + energy hits: none doubled); a death / redeploy dims them.
+//     sim's 1 + energy hits: none doubled); a death / redeploy dims them. Index v2 gives the slots (skills.js
+//     chargeFromIndex); the transcribed table stands in for a version 1 index.
+//   * An enemy's skill (index v2: its data record's skills[].prefabKey, the slots): ['cast', id, slot] opens that skill's
+//     window, or — an enemy whose record has a single skill — the snapshot's anim turning SKILL does [ASSUMED]; the window
+//     plays the plan's start, range and loops, the enemy's attacks in it use the plan's attack rows (state), and it ends
+//     ENEMY_GRACE s after the anim leaves SKILL (or on death / leak) with its loops stopped and its end played. An enemy
+//     in a form naming one of its modes (formMode) plays that mode's copy of the skill.
 //   * Kit 'fx' tuples (simFx; the procedural fx is skipped when this returns true):
 //       (1) FX_BINDINGS (skills.js): a kit fx standing for an official effect no plan row places (克莱门莎 S3's mark);
 //       (2) pulse: a fx tagged with its skill (`extra.skill`) while the skill is on, when the plan has `pulse` entries —
@@ -51,11 +59,11 @@
 // the start-flash and loop-cover archetypes.
 
 import {
-  planFor, attackFx as planAttack, slotKey, planKeys, chargeKeys, chargeStep, skillProjectile, targetsOf, buffDuration,
+  planFor, skillPlan, attackFx as planAttack, slotKey, planKeys, chargeKeys, chargeStep, skillProjectile, targetsOf, buffDuration,
   eventNum, FX_BINDINGS, bindingEffects, bindingKeys,
 } from './skills.js';
 import { fxSpec } from '../fx/kinds.js';
-import { UF } from '../../../../shared/constants.js';
+import { UF, ANIM } from '../../../../shared/constants.js';
 
 /** Battle seconds a held (non-oneshot) row of a skill's single cast lasts (FxWiring's CAST_LOOP_S for attacks). */
 export const SKILL_CAST_S = 0.6;
@@ -70,6 +78,21 @@ const NOT_PULSE = new Set(['none', 'dp', 'coin', 'lp', 'crate', 'down', 'reticle
 const DIRS = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
 /** Ability events a row starts with the cast (ON_ATTACHED, ON_CAST_START); the others at the strike. */
 const CAST_START = new Set([0, 2]);
+/** Battle seconds an enemy's skill window outlasts its start before the snapshot's anim may end it (the sim's 0.5 s). */
+const ENEMY_GRACE = 0.3;
+
+/**
+ * The index mode an enemy's form (render/units.js FORMS: a sim setForm) fights in: the mode of that name
+ * (case-insensitive: 'reborn' → Reborn, 'stone' → Stone, 'fly' → Fly), the second form of a reborn boss its Reborn mode;
+ * null else [ASSUMED: the form names are the remake's, not the client's].
+ */
+export function formMode(unit, form) {
+  if (typeof form !== 'string' || !form) return null;
+  const modes = Array.isArray(unit?.modes) ? unit.modes : [];
+  const f = form.toLowerCase();
+  const hit = modes.find((m) => typeof m?.name === 'string' && m.name.toLowerCase() === f) || (f === 'form2' ? modes.find((m) => m?.name === 'Reborn') : null);
+  return hit ? hit.name : null;
+}
 
 const idOf = (v) => v?.info?.id ?? v?.id;
 /**
@@ -89,12 +112,27 @@ export function later(ofx, s, fn) {
   ofx.timers.push({ at: ofx.time + Math.max(0, s), fn });
 }
 
-/** Whether a skill's attack ability is the kind of attack the sim made (a heal, a shot, a blow). */
+/** Whether an attack ability's class is the kind of attack the sim made (a heal, a shot, a blow). */
 export function fitsAttack(ability, { heal = false, ranged = false } = {}) {
   if (typeof ability !== 'string') return false;
   if (heal) return /Heal/.test(ability);
-  if (/Heal/.test(ability)) return false;
+  if (/Heal/.test(ability) || !/Attack/.test(ability)) return false;
   return ranged ? /Ranged/.test(ability) : !/Ranged/.test(ability);
+}
+
+/** A 32-bit mix of a seed and a hit index (a random group per hit, the same at every replay). */
+const mix = (seed, k) => { const h = Math.imul((seed >>> 0) ^ Math.imul(k + 1, 2654435761), 2246822519); return (h ^ (h >>> 13)) >>> 0; };
+
+/**
+ * The group hit k (0-based, of one cast on one target) plays (DESIGN §33.12, MultiHit — assumed engine code): group
+ * min(k, last); with `loop` group k mod n; with `random` a seeded random one; with `once` only the first hit plays.
+ */
+export function pickGroup(groups, k, opts = {}, seed = 0) {
+  const n = Array.isArray(groups) ? groups.length : 0;
+  if (!n || (opts?.once && k > 0)) return [];
+  if (opts?.random) return groups[mix(seed, k) % n] || [];
+  if (opts?.loop) return groups[k % n] || [];
+  return groups[Math.min(k, n - 1)] || [];
 }
 
 /**
@@ -135,8 +173,9 @@ export class SkillFx {
       const info = v.info || null;
       if (info && info.kind !== 'device' && info.kind !== 'item') {
         const unitKey = this.w.unitKeyOf(v);
-        const r = unitKey ? planFor(this.w.idx, { info, rec: this._recordOf(info), unitKey }) : null;
-        if (r && (r.plan || r.charge)) U = this._record(id, r);
+        const rec = this._recordOf(info);
+        const r = unitKey ? planFor(this.w.idx, { info, rec, unitKey }) : null;
+        if (r && (r.plan || r.charge || r.enemy.length)) U = this._record(id, r, rec);
       }
       this.units.set(id, U);
     }
@@ -150,7 +189,7 @@ export class SkillFx {
     try { return this.w.opts.record(info) || null; } catch { return null; }
   }
 
-  _record(id, r) {
+  _record(id, r, rec = null) {
     const idx = this.w.idx, plan = r.plan;
     const has = (k) => !!k && this.w.ofx.lib.has(k);
     let draws = false;
@@ -167,6 +206,8 @@ export class SkillFx {
       on: null, startFrame: -1, atkN: 0, attacked: false, byFlag: false, loopsOn: false,
       loops: [], ready: [], readyOn: false, passiveOn: false, passiveShots: false, passiveDraws: false, passiveDone: false, timed: false,
       energy: 0, slotLoops: [], guardUntil: -Infinity, quiet: false, trigFrame: -1, seen: 0,
+      // an enemy's skills by slot (index v2), how many its data record has, its skill window, plans of other modes
+      enemy: r.enemy || [], enemySlots: Array.isArray(rec?.skills) ? rec.skills.length : 0, ewin: null, prevAnim: 0, modePlans: new Map(),
     };
   }
 
@@ -176,6 +217,7 @@ export class SkillFx {
    */
   state(v, skillOn) {
     const U = this.of(v);
+    if (U?.ewin) return { U, on: true, plan: U.ewin.plan };   // an enemy's skill window
     let on = typeof skillOn === 'boolean' ? skillOn : U && U.on !== null ? U.on : !!((v?.flags | 0) & UF.SKILL);
     if (U && this._passive0(U)) on = v.alive !== false;
     return { U, on, plan: U ? U.plan : null };
@@ -184,7 +226,7 @@ export class SkillFx {
   /** A passive the sim keeps on while deployed (it never set UF.SKILL; a kit may run a PASSIVE skill as a timed one). */
   _passive0(U) { return U.plan?.kind === 'passive' && !U.timed; }
 
-  _on(U) { return !!U && (this._passive0(U) ? U.v?.alive !== false : U.on !== null ? U.on : !!((U.v?.flags | 0) & UF.SKILL)); }
+  _on(U) { return !!U && (U.ewin ? true : this._passive0(U) ? U.v?.alive !== false : U.on !== null ? U.on : !!((U.v?.flags | 0) & UF.SKILL)); }
 
   // ---- playing ----------------------------------------------------------------------------------------------------
 
@@ -319,6 +361,58 @@ export class SkillFx {
     return this._passive(U, v, true);
   }
 
+  // ---- enemy skills (index v2) ------------------------------------------------------------------------------------
+
+  /**
+   * b.ev ['cast', id, slot] (PR #275's enemy skill slot; the sim on this line sends none yet): the enemy's skill of that
+   * slot of its data record (its prefabKey → index v2 `units[enemy].skills`) starts its window.
+   */
+  cast(v, slot) {
+    const U = this.of(v);
+    const entry = U?.enemy?.find((x) => x.slot === slot);
+    if (!entry || !this.active()) return false;
+    return this._enemyCast(U, v, entry);
+  }
+
+  /** The plan of an enemy's skill in the mode its form names (formMode; the copies of a boss's skill differ by mode). */
+  _enemyPlan(U, entry, v) {
+    const mode = formMode(this.w.idx.units[U.key], v?.form ?? v?.info?.form) || 'Default';
+    if (mode === 'Default') return entry.plan;
+    const key = `${entry.slot}|${mode}`;
+    let p = U.modePlans.get(key);
+    if (!p) { p = skillPlan(this.w.idx, U.key, entry.prefabKey, { mode }); U.modePlans.set(key, p); }
+    return p;
+  }
+
+  /**
+   * An enemy's skill window starts: the plan's start and range play, its loops start (held until the window ends —
+   * the snapshot's anim leaves SKILL — or the enemy dies); attacks in the window use its attack rows (state).
+   */
+  _enemyCast(U, v, entry) {
+    if (U.ewin) this._enemyEnd(U, v);
+    const plan = this._enemyPlan(U, entry, v);
+    const win = { plan, slot: entry.slot, at: this.w.ofx.time, loops: [], draws: false };
+    U.ewin = win;
+    U.startFrame = this.frame;
+    U.atkN = 0;
+    for (const e of uniq([...plan.start, ...plan.range, ...plan.loop])) {
+      const h = this._play(e, v);
+      if (!h) continue;
+      win.draws = true;
+      if (e.hold === 'skill') win.loops.push(h); else this._keep(U, e, h);
+    }
+    return win.draws;
+  }
+
+  /** The window ends: its loops stop (with their fade), its end plays. */
+  _enemyEnd(U, v) {
+    const win = U.ewin;
+    if (!win) return;
+    U.ewin = null;
+    for (const h of win.loops) h.stop();
+    if (v && this.active()) for (const e of uniq(win.plan.end)) this._keep(U, e, this._play(e, v));
+  }
+
   /** Stop every loop of a unit (its death / leak / retreat, its view gone) and every target loop on it. */
   release(v) {
     const id = idOf(v);
@@ -328,6 +422,7 @@ export class SkillFx {
   }
 
   _releaseU(U) {
+    if (U.ewin) { for (const h of U.ewin.loops) h.stop(); U.ewin = null; }
     this._stopLoops(U);
     this._stopReady(U);
     for (const hs of U.slotLoops) for (const h of hs || []) h.stop();
@@ -390,17 +485,15 @@ export class SkillFx {
   attacked(sk) { sk.U.atkN++; sk.U.attacked = true; }
 
   /**
-   * A hit of a skill attack landed on v ('dmg' / 'heal'; FxWiring keeps the record `m` = { groups, buffs, U, src, k,
-   * hitT } and drops it once a later frame's damage arrives): the k-th hit of the frame plays group k (the last one again
-   * past the end); the first one also starts the buffs' loops.
+   * Hit k (0-based: the k-th HP 'dmg' — or 'heal' — on v in the frame of the blow; FxWiring keeps the record `m` = {
+   * groups, hitOpts, seed, buffs, U, src } and drops it once a later frame's damage arrives) of a skill attack landed:
+   * its group (pickGroup: min(k, last), or k mod n / a seeded random one by the MultiHit settings); the first hit also
+   * starts the buffs' loops.
    */
-  landed(m, v, time) {
+  landed(m, v, k) {
     let drew = false;
-    if (m.hitT == null) { m.hitT = time; m.k = 0; }
-    const g = m.groups.length ? m.groups[Math.min(m.k, m.groups.length - 1)] : [];
-    m.k++;
-    for (const e of uniq(g)) if (this._play(e, v, { flipFrom: m.src })) drew = true;
-    if (m.k === 1) for (const e of uniq(m.buffs)) if (this._targetLoop(m.U, e, v)) drew = true;
+    for (const e of uniq(pickGroup(m.groups, k, m.hitOpts, m.seed))) if (this._play(e, v, { flipFrom: m.src })) drew = true;
+    if (k === 0) for (const e of uniq(m.buffs)) if (this._targetLoop(m.U, e, v)) drew = true;
     return drew;
   }
 
@@ -481,8 +574,9 @@ export class SkillFx {
       // the effects were cleared (a tier switch) or not drawn: what should run starts again below, quietly
       for (const U of this.units.values()) {
         if (!U) continue;
-        for (const h of [...U.loops, ...U.ready, ...U.slotLoops.flat().filter(Boolean)]) h.stop();
+        for (const h of [...U.loops, ...U.ready, ...U.slotLoops.flat().filter(Boolean), ...(U.ewin ? U.ewin.loops : [])]) h.stop();
         U.loops = []; U.ready = []; U.slotLoops = []; U.loopsOn = false; U.readyOn = false; U.passiveOn = false; U.energy = 0; U.quiet = true;
+        U.ewin = null;
       }
       for (const t of this.tloops.values()) t.h.stop();
       this.tloops.clear();
@@ -497,7 +591,15 @@ export class SkillFx {
       if (!U) continue;
       U.seen = sweep;
       const up = v.alive !== false && !v.destroyed && !v.down;
-      if (!up) { if (U.loopsOn || U.readyOn || U.passiveOn || U.energy) this._releaseU(U); continue; }
+      if (!up) { if (U.loopsOn || U.readyOn || U.passiveOn || U.energy || U.ewin) this._releaseU(U); continue; }
+      if (U.enemy.length) {
+        // an enemy's skill window: the snapshot's anim SKILL (the sim's 0.5 s after an ability fires); with no 'cast'
+        // slot event, an enemy whose data record has a single skill opens that skill's window on it [ASSUMED]
+        const anim = v.anim | 0;
+        if (anim === ANIM.SKILL && U.prevAnim !== ANIM.SKILL && !U.ewin && U.enemySlots === 1 && U.enemy.length === 1) this._enemyCast(U, v, U.enemy[0]);
+        else if (U.ewin && anim !== ANIM.SKILL && now - U.ewin.at > ENEMY_GRACE) this._enemyEnd(U, v);
+        U.prevAnim = anim;
+      }
       if (U.plan) {
         const flag = !!((v.flags | 0) & UF.SKILL);
         if (U.plan.kind === 'passive') {
@@ -515,7 +617,7 @@ export class SkillFx {
       U.quiet = false;
     }
     for (const U of this.units.values()) {
-      if (U && U.seen !== sweep && (U.loopsOn || U.readyOn || U.passiveOn || U.energy)) this._releaseU(U);
+      if (U && U.seen !== sweep && (U.loopsOn || U.readyOn || U.passiveOn || U.energy || U.ewin)) this._releaseU(U);
     }
     for (const [slot, t] of this.tloops) {
       const tv = t.tgt;
@@ -543,14 +645,15 @@ export class SkillFx {
       if (bind && bind.owner === field) return this._bound(U, bind, x, y, extra);
     }
     const U = this.units.get(extra.id ?? extra.src);
-    if (!U || !U.plan || !U.v) return false;
+    if (!U || !U.v || !(U.plan || U.ewin)) return false;
+    const plan = U.ewin ? U.ewin.plan : U.plan;
     const v = U.v;
     const a = fxSpec(kind, extra).a;
     const near = !Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(v.x - x, v.y - y) <= ON_UNIT;
     const on = this._on(U);
     // (2) the skill's pulse: the kit's own fx of the moment its plan's tick / hit rows have no event for
-    if (extra.skill != null && on && U.plan.pulse.length && !NOT_PULSE.has(a)) {
-      const list = U.plan.pulse.filter((e) => (e.at === 'owner') === near);
+    if (extra.skill != null && on && plan.pulse.length && !NOT_PULSE.has(a)) {
+      const list = plan.pulse.filter((e) => (e.at === 'owner') === near);
       if (list.length) {
         const at = near ? v : (this.w.view(extra.target ?? extra.to) || { id: 'fx:point', x, y, z: 0 });
         let drew = false;
@@ -560,8 +663,8 @@ export class SkillFx {
     }
     if (!near || !FLASH.has(a)) return false;
     // (3) the frame of the official skill start, (4) a skill-tagged flash while the official loops play
-    if (U.startFrame === this.frame && U.drawsStart) return true;
-    return extra.skill != null && on && U.loops.some((h) => h.alive);
+    if (U.startFrame === this.frame && (U.ewin ? U.ewin.draws : U.drawsStart)) return true;
+    return extra.skill != null && on && (U.loops.some((h) => h.alive) || !!U.ewin?.loops.some((h) => h.alive));
   }
 
   /** An FX_BINDINGS entry: the projectile's reached effects where the fx happens, held as the binding says. */
@@ -597,6 +700,14 @@ export class SkillFx {
         for (const k of planKeys(U.plan)) out.add(k);
         for (const pk of U.plan.projectiles) proj(pk);
         for (const k of bindingKeys(idx, U.skillId)) out.add(k);
+      }
+      for (const en of U.enemy) {
+        for (const k of planKeys(en.plan)) out.add(k);
+        for (const pk of en.plan.projectiles) proj(pk);
+        // the copies of a boss's skill in its other modes (the forms it may take)
+        for (const mode of new Set((en.plan && this.w.idx.units[U.key]?.skills?.[en.prefabKey]?.uses || []).map((x) => x.mode).filter((m) => typeof m === 'string' && m !== 'Default'))) {
+          for (const k of planKeys(skillPlan(idx, U.key, en.prefabKey, { mode }))) out.add(k);
+        }
       }
       if (U.charge) {
         for (const k of chargeKeys(U.charge)) out.add(k);

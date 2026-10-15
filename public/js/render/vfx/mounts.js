@@ -45,16 +45,21 @@ export function mountKind(type) {
 
 const fixes = new WeakMap();
 const _fixed = [0, 0, 0];
+/** The loaded index.json's version (FxLibrary.index sets it): version 2 placed every skin's points over the feet. */
+let indexVersion = 1;
+
+/** The version of the index.json in use (render/vfx/library.js index): from 2 on skinShift has nothing to move. */
+export function setIndexVersion(v) { indexVersion = Number.isInteger(v) && v > 0 ? v : 1; }
 
 /**
  * A skin whose points sit whole tiles away from the unit's feet (84 of the full set's 709 hit points — 72 enemies,
  * 10 tokens, 2 operators — are shifted by one constant x / y per skin: the prefab's Spine / FaceSwitcher placement,
  * which the client resets at run time, is part of the extracted composition) is moved back: its HitPoint over the feet
  * at the height it has (y = −0.9 z, the slope of the well-placed skins' hit points), every point by the same shift.
- * [ASSUMED] the shift; the extractor should drop that placement (reported to the extraction).
+ * [ASSUMED] the shift. Index version 2 drops that placement (DESIGN §33.12 Skin, changelog (9)): nothing to move then.
  */
 export function skinShift(skin) {
-  if (!skin || !skin.points) return null;
+  if (!skin || !skin.points || indexVersion >= 2) return null;
   let f = fixes.get(skin);
   if (f !== undefined) return f;
   f = null;

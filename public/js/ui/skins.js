@@ -78,6 +78,12 @@ export async function requestSkinInstall(net, skinId) {
 
 /** Replace the whole selection (persisted at once; the sync picks the change up). */
 export function setSkins(entries) {
+  applySkins(entries);
+}
+
+/** Write the battle-model map (`entries`) without touching the shop art — the bulk shape the server sync and
+ *  `syncDiySkins()` use, where a cross-sync would rewrite a local choice nobody asked about. */
+function applySkins(entries) {
   const next = {};
   for (const [chessId, skinId] of Object.entries(entries && typeof entries === 'object' ? entries : {})) {
     if (typeof skinId === 'string' && skinId) next[chessId] = skinId;
@@ -86,16 +92,21 @@ export function setSkins(entries) {
   skinsStore.set({ entries: next });
 }
 
-/** Choose a skin for one operator. */
+/**
+ * Choose an outfit for one operator. One pick is enough: the battle model (public, synced) and the shop art (local) are
+ * set together, so a player who wants an outfit does not have to make the same choice twice (docs/SKINS.md). The art row
+ * still offers 原始立绘 / 精英二立绘, and those two are art-only — they never touch the model.
+ */
 export function setSkin(chessId, skinId) {
-  setSkins({ ...skinsStore.get().entries, [chessId]: skinId });
+  applySkins({ ...skinsStore.get().entries, [chessId]: skinId });
+  applyPortraits({ ...skinsStore.get().portraits, [chessId]: skinId });
 }
 
-/** Drop one operator's choice (it goes back to its default model). */
+/** Drop one operator's choice (it goes back to its default model; an explicitly chosen art stays). */
 export function clearSkin(chessId) {
   const next = { ...skinsStore.get().entries };
   delete next[chessId];
-  setSkins(next);
+  applySkins(next);
 }
 
 /** The skin this browser picked for an operator, or null. */
@@ -105,14 +116,20 @@ export const skinFor = (chessId) => skinsStore.get().entries[chessId] || null;
  * The outfits this browser has equipped, as the `<charId>/<skinId>` keys the 资源预载 follows (docs/SKINS.md). The
  * choice is stored per chess and the asset manifest (hence the preload) is keyed per operator, so the chess table has
  * to be in for this to return anything: `loadEquippedSkinKeys()` waits for it.
+ *
+ * Both rows count: the battle model and the shop art are one choice now (`setSkin`), but 「默认模型 + 某套立绘」 is still
+ * reachable by clearing the model afterwards, and that outfit's files are wanted just the same. The art-only values
+ * (`PORTRAIT_E2`, `''`) name no outfit and add nothing.
  * @returns {string[]} sorted, deduplicated
  */
 export function equippedSkinKeys() {
   const keys = new Set();
-  for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) {
+  const add = (chessId, skinId) => {
     const charId = data.lookup('chess', chessId)?.charId;
-    if (charId && skinId) keys.add(`${charId}/${skinId}`);
-  }
+    if (charId && typeof skinId === 'string' && skinId.startsWith('char_')) keys.add(`${charId}/${skinId}`);
+  };
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) add(chessId, skinId);
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().portraits || {})) add(chessId, skinId);
   return [...keys].sort();
 }
 
@@ -125,6 +142,11 @@ export function loadEquippedSkinKeys() {
 
 /** Replace the whole 商店立绘 selection (persisted at once; nothing is synced). */
 export function setPortraits(entries) {
+  applyPortraits(entries);
+}
+
+/** Write the shop-art map (`portraits`) alone — the bulk shape, no cross-sync (see `applySkins`). */
+function applyPortraits(entries) {
   const next = {};
   for (const [chessId, skinId] of Object.entries(entries && typeof entries === 'object' ? entries : {})) {
     if (typeof skinId === 'string' && skinId) next[chessId] = skinId;
@@ -133,16 +155,21 @@ export function setPortraits(entries) {
   skinsStore.set({ portraits: next });
 }
 
-/** Show one skin's 立绘 on that operator's shop card (independent of the battle model). */
+/**
+ * Pick what an operator's shop card shows. A real outfit also becomes that operator's battle model — otherwise the same
+ * choice would have to be made again on the row above (docs/SKINS.md). `PORTRAIT_E2` ('e2') and `''` (原始立绘) are art
+ * only: they are not outfits and must not touch the model.
+ */
 export function setPortrait(chessId, skinId) {
-  setPortraits({ ...skinsStore.get().portraits, [chessId]: skinId });
+  applyPortraits({ ...skinsStore.get().portraits, [chessId]: skinId });
+  if (typeof skinId === 'string' && skinId.startsWith('char_')) applySkins({ ...skinsStore.get().entries, [chessId]: skinId });
 }
 
-/** Drop the choice: the shop card goes back to the operator's own portrait. */
+/** Drop the choice: the shop card goes back to the operator's own portrait (and the model keeps whatever it had). */
 export function clearPortrait(chessId) {
   const next = { ...skinsStore.get().portraits };
   delete next[chessId];
-  setPortraits(next);
+  applyPortraits(next);
 }
 
 /** The skin whose 立绘 this browser shows for an operator's shop card, or null (its own portrait). */

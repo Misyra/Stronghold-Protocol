@@ -525,8 +525,8 @@ for active downloads and archive transfers, and uses the same cross-tab Web Lock
 install is ~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
 (`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the equipped skins in its selection
 (`public/js/resources/store.js` `setScope` / `skinWanted` / `normalizeSkinKeys`). `preloadSkins` is one boolean; the
-keys are not stored at all — they are the outfits this browser has equipped in 干员调配 (`ui/skins.js`
-`equippedSkinKeys()`, chessId → charId through the chess table), so equipping one there is what starts its download:
+keys are not stored at all — they are the outfits this browser has equipped in 干员调配 — either row of the picker, since one pick sets both
+(`ui/skins.js` `equippedSkinKeys()`, chessId → charId through the chess table), so equipping one there is what starts its download:
 `main.js` re-applies the scope whenever `skinsStore` or the settings change. A player who wants a handful of outfits
 never takes every voice and soundtrack, and one who wants the soundtrack never gets 328 MiB of skins. Unequipped skins
 are out of scope for download and for status counting, but stay importable and retained: a ZIP import or a cached copy

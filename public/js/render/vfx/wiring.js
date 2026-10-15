@@ -7,7 +7,9 @@
 // sim's damage; flight.js: the projectile class's own `_mainEffect`, a harpoon's rope stretched from the shooter to the
 // head, the client's Paracurve arc and AmiyaS2 wobble), plays what the projectile puts on its target and the target's
 // tile as it starts (`toTargetOnStart` / `toTileOnStart`: 溯光星源 S3's lightning) and the projectile's `onHit` at the
-// target's HitPoint on arrival (`onReached` where it lands; a timer projectile's at the end of its life); a melee
+// target's HitPoint on arrival (`onReached` where it lands; a timer projectile's at the end of its life) with the
+// attack's own hit rows (round 46 R12), the damage or heal the sim lands for it before the flight ends covered meanwhile
+// (R3 / R9: `_expect`); a chain's bounces draw its lightning line between the targets (`chain`, R14); a melee
 // attack's `hit` effects play when its damage lands; status loops (generic.status by the sim's status names) follow the
 // unit's mount point while the status lasts; deaths and deploys play the unit's own dead / start effect or the generic
 // one. Index version 2 (DESIGN §33.16): a blocked (or blocking) unit's melee blow plays its mode's `combat`, a group
@@ -22,9 +24,9 @@
 //   const w = new FxWiring(ofx, { unitKey: (info) => string|string[]|null, record: (info) => data record,
 //                                 view: (id) => view, speed: (kind) => tiles per game s })
 //   await w.begin(infos)          preload the battle's units' effects (prep → battle); w.more(infos) those who join later
-//   w.castStart(src, tgt, kind, { skip, left, skillOn }) / w.attack(src, tgt, kind, time, wound) / w.damage(v, type, src,
-//   time) / w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) / w.skill(v, on) / w.enemyCast(v, slot) /
-//   w.sync(views) / w.simFx(kind, x, y, extra) / w.clear()
+//   w.castStart(src, tgt, kind, { skip, left, skillOn }) / w.attack(src, tgt, kind, time, wound) / w.chain(prev, next,
+//   kind, time) / w.damage(v, type, src, time) / w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) /
+//   w.skill(v, on) / w.enemyCast(v, slot) / w.sync(views) / w.simFx(kind, x, y, extra) / w.clear()
 //
 // The cast rows follow their ability events (DESIGN §33.12, resolved): ON_CAST_START rows play when the attack's wind-up
 // begins (render/app.js starts the attacker's Spine clip ahead of the 'atk' event: `castStart`), ON_SPELL_ON rows at the
@@ -33,7 +35,9 @@
 // [ASSUMED] (index.json does not say): the facing a directional row reads (`_dirIndex`); a looping cast without a wind-up
 // stops after CAST_LOOP_S; `delayIfFirstAttack` is not applied (the field view's first attack has no lead-in clip);
 // a FLIP_TWO_SIDE hit is mirrored when the blow comes from the right; the generic hit by damage type for a melee attack
-// that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit.
+// that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit; a
+// 领主's ranged-kind 'atk' on the enemy it blocks is its Combat blow (`_combatKind`); a sim-melee attack whose official
+// ability shoots flies its projectile for show (蒂比: `attack`); a chain's line stays CHAIN_LINE_S (`chain`).
 
 import { spawnPoint, mountPoint, unitPoint, spawnKind, mountKind, spawnRotationKind, mountRotation } from './mounts.js';
 import { projectileParts, paracurve, arcHeight, wobble } from './flight.js';
@@ -56,6 +60,18 @@ const ARRIVAL_WINDOW = 0.35;
  * S3, 迷迭香, 德克萨斯 S1's swords) holds its hit for the effect it put on its target to land (its `lifeTime`).
  */
 export const TIMER_HIT_MAX = 1.5;
+/**
+ * Battle seconds before an official hit's arrival from which an HP 'dmg' (or 'heal') on its target is that hit's (R3: the
+ * sim moves a shot in its firing tick and lands it about a tick before the drawn flight ends); an event in the attack's
+ * own frame is always (a heal, a chain bounce, a sim-melee blow flown for show: the sim lands those at once).
+ */
+const CLAIM_LEAD = 0.2;
+/** Battle seconds a chain's lightning line shows between two of its targets (its prefab loops) [ASSUMED]. */
+export const CHAIN_LINE_S = 0.2;
+/** Battle seconds after its shot's hit a chain stays open for the sim's bounces (it bounces in the hit's tick). */
+const CHAIN_WINDOW = 0.5;
+/** Tiles from a blocker's centre a blocked enemy stands within (the sim's block radius: ground 0.7071, air 0.8944). */
+const BLOCK_REACH = 0.75, BLOCK_REACH_AIR = 0.95;
 /** 'dmg' types of HP damage (shared/protocol.js; an element gauge fill names its element instead). */
 const HP_TYPES = new Set(['phys', 'arts', 'true']);
 
@@ -192,6 +208,8 @@ export class FxWiring {
     this.arrived = new Map();     // target id → battle time of an official projectile hit
     this.pendingHit = new Map();  // target id → battle time until which an official hit still to come covers its damage
     this.healed = new Map();      // target id → battle time of an official heal projectile hit
+    this.inAir = new Map();       // target id → official hits on their way [{ from, until, frame, t }] (_expect)
+    this.chains = new Map();      // target id → the chain an official shot opened on it { proj, rows, src, line, at, until }
     this.keyCache = new Map();    // unit id → index unit key | null
     this.attackN = new Map();     // unit id → attacks so far (onlyOnce / hookEffectAfterFirstAttack rows)
     this.castFrame = new Map();   // unit id → the frame of its last attack (several targets of one attack cast once)
@@ -642,9 +660,10 @@ export class FxWiring {
    * `attack`; the attacks that fire (pickAttacks: a group's sub-abilities); their rows as their emitters allow (_rowOk);
    * a MultiHit emitter's grouped hit rows as the hit groups (with its loop / random / once settings; its rows without a
    * group only with `keepBaseHitEffect`); the first projectile, and (index v3) the shots of the ability firing it — its
-   * mount, a mount group's points, its follow-up shots (skills.js shotOf). Index v1's attacks have none of these fields
-   * and pass through unchanged.
-   * @returns {{ cast: any[], castTarget: any[], inputTarget: any[], hit: any[], groups: any[][]|null, hitOpts: any, projectileKey: string|null, shot: any }|null}
+   * mount, a mount group's points, its follow-up shots (skills.js shotOf) — and its class (`shotClass`: a ranged ability
+   * flies for show when the sim makes the attack melee, attack()). Index v1's attacks have none of these fields and pass
+   * through unchanged.
+   * @returns {{ cast: any[], castTarget: any[], inputTarget: any[], hit: any[], groups: any[][]|null, hitOpts: any, projectileKey: string|null, shot: any, shotClass: string|null }|null}
    */
   _attackSet(u, m, src, tgt, kind, nth) {
     if (!m) return null;
@@ -656,7 +675,7 @@ export class FxWiring {
     let mem = this.picks.get(id);
     if (!mem) { mem = new Map(); this.picks.set(id, mem); }
     const list = pickAttacks(a, { heal, ranged: !!kind && kind !== 'none', blocked: !!((src.flags | 0) & UF.BLOCKED) }, seedOf(id, nth), 0, nth, mem);
-    const set = { cast: [], castTarget: [], inputTarget: [], hit: [], groups: null, hitOpts: null, projectileKey: null, shot: null };
+    const set = { cast: [], castTarget: [], inputTarget: [], hit: [], groups: null, hitOpts: null, projectileKey: null, shot: null, shotClass: null };
     const modeIdx = (u?.modes || []).indexOf(m);
     for (const x of list) {
       const ems = Array.isArray(x.emitters) ? x.emitters : [];
@@ -676,7 +695,7 @@ export class FxWiring {
           // a MultiHit emitter's own rows without a group give way to its groups unless it keeps them (none in this client)
         } else set.hit.push(r);
       }
-      if (!set.projectileKey && lc(x.projectileKey)) { set.projectileKey = lc(x.projectileKey); set.shot = shotOf(x, this.idx.projectiles); }
+      if (!set.projectileKey && lc(x.projectileKey)) { set.projectileKey = lc(x.projectileKey); set.shot = shotOf(x, this.idx.projectiles); set.shotClass = x.class || null; }
     }
     return set;
   }
@@ -710,6 +729,7 @@ export class FxWiring {
    */
   castStart(src, tgt, kind, info = {}) {
     if (!this.ofx.active || !src || !this.idx || CHAIN.has(kind)) return false;
+    kind = this._combatKind(src, tgt, kind, info.skillOn);
     const sk = this.skills.attackFx(src, tgt, kind, info.skillOn);
     const u = this.unitOf(src);
     const nth = this.attackN.get(src.id ?? src.info?.id) || 0;
@@ -725,13 +745,19 @@ export class FxWiring {
   /**
    * b.ev 'atk': the casts (those that start with the cast only when its wind-up did not play them: `wound`), the
    * projectile and the blow's hits, which wait for its damage (a melee or direct attack's hit rows on every HP hit of
-   * its frame, a MultiHit emitter's groups by the hit's order). While the owner's skill is on, the skill's part
-   * (SkillFx.attackFx): its own attack's rows, hit groups and projectile replace the mode's, or its `each` rows join
-   * them; a 秘术师's stored energies leave with the attack (SkillFx.released). Returns true when the unit's official
-   * attack was drawn (the procedural shot is skipped).
+   * its frame, a MultiHit emitter's groups by the hit's order; a projectile attack's rows with its projectile's hit). While
+   * the owner's skill is on, the skill's part (SkillFx.attackFx): its own attack's rows, hit groups and projectile replace
+   * the mode's, or its `each` rows join them; a 秘术师's stored energies leave with the attack (SkillFx.released). Round
+   * 46: a 领主's ranged-kind 'atk' on the enemy it blocks is its Combat blow (_combatKind, R15); an attack the sim makes
+   * melee whose official ability is a ranged one with a projectile (蒂比: RangedAttack, the sim's 天空行者 melee) flies
+   * that projectile for show, at its own speed (R16) [ASSUMED: display only — the sim's damage lands at the blow, covered
+   * until the drawn hit]; a direct ranged attack (no projectile of its own: 能天使's, a 阵法术师's beam) is drawn by its
+   * official rows alone when it has any (R4). Returns true when the unit's official attack was drawn (the procedural
+   * shot is skipped).
    */
   attack(src, tgt, kind, time, wound = false) {
     if (!this.ofx.active || !src || !this.idx) return false;
+    kind = this._combatKind(src, tgt, kind);
     const u = this.unitOf(src);
     const sk = this.skills.attackFx(src, tgt, kind);
     const id = src.id ?? src.info?.id;
@@ -766,15 +792,27 @@ export class FxWiring {
     if (a?.groups) { rec.modeGroups = a.groups.map(keysOf); rec.modeOpts = a.hitOpts; }
     if (sk && (sk.fx.hit.length || sk.buffs.length)) { rec.groups = sk.fx.hit; rec.hitOpts = sk.fx.hitOpts; rec.buffs = sk.buffs; rec.U = sk.U; }
     const grouped = !!(rec.groups || rec.modeGroups);
-    if (proj && tgt && isShot && fun?.skipBody) return true;
-    if (proj && tgt && isShot) {
-      // index v3: where the shot leaves (mount, a mount group's points) and its follow-up shots (skills.js shotOf)
+    // a sim-melee attack whose official ability is a ranged one with a projectile (蒂比): the projectile flies for show
+    const heal = !!tgt && !tgt.isEnemy && !src.isEnemy;
+    const display = !isShot && !!proj && !!tgt && !src.isEnemy && !sk?.projectile && fitsAttack(set?.shotClass, { heal, ranged: true });
+    const flies = !!proj && !!tgt && (isShot || display);
+    if (flies && fun?.skipBody) return true;
+    if (flies) {
+      // index v3: where the shot leaves (mount, a mount group's points) and its follow-up shots (skills.js shotOf); the
+      // attack's hit rows play with its projectile's hit (none of the index's projectiles has an onHit and rows both:
+      // 能天使 S2/S3, 录武官, 烛煌 S3 have only rows), its hit groups on the damage
       const shot = sk?.projectile ? sk.shot : set?.shot;
       const mount = this._shotMount(shot, id, nth);
-      this._fly(proj, src, tgt, kind, time, mount != null ? { mount } : {});
+      const fo = { hits: grouped ? [] : hits };
+      if (mount != null) fo.mount = mount;
+      if (display) fo.dur = this._displayTime(proj, src, tgt);
+      const hitAt = this._fly(proj, src, tgt, kind, time, fo);
       if (!again) this._followUps(shot, pk, src, tgt, kind, time, mount);
       this.skills.released(src, tgt, kind, time);
-      if (grouped) { rec.hits = []; rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW; this.melee.set(tid, rec); }
+      if (grouped) { rec.hits = []; rec.window = (fo.dur || this._flightTime(src, tgt, kind)) + ARRIVAL_WINDOW; this.melee.set(tid, rec); }
+      // a chain lightning's shot: its bounces (the sim's 'chain' / 'chainHeal' events) draw its line from here (chain())
+      const line = projectileParts(proj).chain;
+      if (line && tid != null) this.chains.set(tid, { proj, rows: fo.hits, src, line, at: this.ofx.time + hitAt, until: this.ofx.time + hitAt + CHAIN_WINDOW });
       return true;
     }
     if (!isShot && tgt) {
@@ -782,13 +820,62 @@ export class FxWiring {
       this.melee.set(tid, rec);
       return true;
     }
-    // a ranged attack without a projectile of its own (direct / chain): the hits play on the damage (the procedural shot
-    // still flies)
+    // a ranged attack without a projectile of its own (a direct shot, a beam): the hits play on its damage, which the sim
+    // lands after its own flight; its official rows stand for the attack when it has any (no procedural shot over them) —
+    // not when its projectile is missing from the index (the procedural shot stands for that one)
     if (tgt && (hits.length || grouped)) {
-      if (grouped) rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW;
+      rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW;
       this.melee.set(tid, rec);
     }
+    return !pk && this._drawable(a, sk, src, nth);
+  }
+
+  /**
+   * Whether an attack's official part draws anything (a direct ranged attack, R4): the mode's rows — its casts in any
+   * phase (a wound-up attack played its first ones already), hit rows, hit groups — or the skill's cast, range, aim and
+   * hit rows, with a key the library has. Without any (the data missing) the procedural shot stays.
+   */
+  _drawable(a, sk, src, nth) {
+    const has = (k) => { const kk = lc(k); return !!kk && this.ofx.lib.has(kk); };
+    const rowHas = (e) => this._rowKeys(e, src, nth).some(has);
+    const entryHas = (e) => !!e && (has(e.key) || (Array.isArray(e.slots) && e.slots.some(has)));
+    if (a) {
+      for (const f of ['cast', 'castTarget', 'inputTarget', 'hit']) if ((a[f] || []).some(rowHas)) return true;
+      if ((a.groups || []).some((g) => (g || []).some(rowHas))) return true;
+    }
+    if (sk) {
+      for (const list of [sk.fx.cast, sk.fx.range, sk.fx.aim]) if ((list || []).some(entryHas)) return true;
+      if ((sk.fx.hit || []).some((g) => (g || []).some(entryHas))) return true;
+    }
     return false;
+  }
+
+  /**
+   * The kind an 'atk' is drawn as (R15). The sim names every attack of a 领主 — and of a 情报官 (伊内丝), whose modes hold
+   * a ranged Attack and a melee Combat too — by its ranged kind, the enemy it blocks included; the client strikes that
+   * enemy with the Combat ability (the mode's `combat`) and shoots the others. A ranged-kind 'atk' of an operator on an
+   * enemy while both show UF.BLOCKED and the enemy stands within the block reach of its centre (BLOCK_REACH: the sim's
+   * block radius) is drawn as a melee blow ('none') when its mode has both. [ASSUMED: the snapshot does not say who
+   * blocks whom — an enemy that close is the operator's]
+   */
+  _combatKind(src, tgt, kind, skillOn) {
+    if (!kind || kind === 'none' || CHAIN.has(kind) || !src || !tgt || src.isEnemy || !tgt.isEnemy) return kind;
+    if (!((src.flags | 0) & UF.BLOCKED) || !((tgt.flags | 0) & UF.BLOCKED)) return kind;
+    const reach = (tgt.flags | 0) & UF.FLYING ? BLOCK_REACH_AIR : BLOCK_REACH;
+    if (!(Math.hypot(tgt.x - src.x, tgt.y - src.y) <= reach)) return kind;
+    const u = this.unitOf(src);
+    const m = u ? this.mode(u, src, skillOn) : null;
+    return m && m.attack && m.combat ? 'none' : kind;
+  }
+
+  /**
+   * The flight of a projectile flown for show (a sim-melee attack, R16): the distance at the projectile's own speed
+   * (index.json movement `speed`, tiles per s), else the sim's arrow speed.
+   */
+  _displayTime(proj, src, tgt) {
+    const sp = Number(proj?.movement?.speed);
+    const speed = sp > 0 ? sp : this.opts.speed ? this.opts.speed('arrow') : 12;
+    return Math.max(0.04, Math.min(1.5, Math.hypot(tgt.x - src.x, tgt.y - src.y) / speed));
   }
 
   /** The MountPointType a shot leaves from (a mount group's point in turn or at random by attack count), or null (muzzle). */
@@ -809,7 +896,7 @@ export class FxWiring {
       const key = shot.additional[i - 1] || pk;
       const proj = key ? this.idx.projectiles[key] : null;
       if (!proj) continue;
-      const go = () => { if (tgt && !tgt.destroyed && tgt.alive !== false && src && !src.destroyed) this._fly(proj, src, tgt, kind, this.ofx.time, mount != null ? { mount, later: shot.delta > 0 } : { later: shot.delta > 0 }); };
+      const go = () => { if (tgt && !tgt.destroyed && tgt.alive !== false && src && !src.destroyed) this._fly(proj, src, tgt, kind, this.ofx.time, mount != null ? { mount, later: shot.delta > 0, followUp: true } : { later: shot.delta > 0, followUp: true }); };
       if (!(shot.delta > 0)) go();
       else setTimeout0(this.ofx, { stop: go }, shot.delta * i, true);
     }
@@ -829,13 +916,16 @@ export class FxWiring {
    * along the client's arc (`paracurve`: `raiseHeight` above the start), an AmiyaS2Movement wobbles it across its path
    * (`wobble`), and a HarpoonRenderer's rope (`rope`) runs from the mount point as it is drawn to the head while it
    * flies, then fades from the shooter to the target. A chain lightning's line (`chain`) is not flown: the client plays
-   * it between the chain's targets as the shot reaches them (the sim's 'chain' bounces stay procedural). As it starts,
+   * it between the chain's targets as the shot reaches them (the sim's 'chain' bounces: chain()). As it starts,
    * the effects the projectile puts on its target and on the target's tile (index.json `toTargetOnStart` /
    * `toTileOnStart`: EffectBehaviour _effectsToTargetWhenStart / _effectsToTileWhenStart — 溯光星源 S3's lightning
    * falling on the target, 迷迭香's blades) play there, turned by the shot's side and kept on the target. A projectile
    * with no flying effect of its own is a timer whose hit lands at the end of its life (_alwaysHitTraceTargetInTheEnd):
    * its hit waits for its life when that is longer than the sim's flight (up to TIMER_HIT_MAX), the target's damage
-   * meanwhile covered (no procedural spark) [ASSUMED: the sim keeps its own flight time for the damage].
+   * meanwhile covered (no procedural spark) [ASSUMED: the sim keeps its own flight time for the damage]. The hit plays the
+   * projectile's onHit and `o.hits`, the attack's own hit rows (R12); the damage or heal the sim lands for the shot before
+   * the drawn hit is the shot's (`_expect`, R3 / R9; not for a drawn follow-up shot, `o.followUp`). `o.dur`: a flight
+   * time of its own (a shot flown for show, R16). Returns the battle seconds until the hit.
    */
   _fly(proj, src, tgt, kind, time, o = {}) {
     const su = this.unitOf(src), tu = this.unitOf(tgt);
@@ -849,7 +939,7 @@ export class FxWiring {
     };
     const from = startAt([0, 0, 0], !o.later);
     const to0 = unitPoint(tSkin, 'hit', this.pose(tgt));
-    const dur = this._flightTime(src, tgt, kind);
+    const dur = o.dur > 0 ? o.dur : this._flightTime(src, tgt, kind);
     const mv = proj.movement || {};
     const id = src.id ?? src.info?.id;
     const seed = seedOf(id, this.attackN.get(id) || 0);
@@ -867,7 +957,11 @@ export class FxWiring {
       if (placed && life > dur && life <= TIMER_HIT_MAX) hitAt = life;
       if (hitAt > dur && tgt) this.pendingHit.set(tgt.id ?? tgt.info?.id, this.ofx.time + hitAt);
     }
-    if (!mainKey && !ropeKey) { this._arrive(proj, tgt, to0, time + hitAt); return; }
+    // the hit's time on the effects' clock (the render time `time` is another clock), the attack's rows, the damage covered
+    const t0 = this.ofx.time;
+    const rows = Array.isArray(o.hits) && o.hits.length ? o.hits : null;
+    if (tgt && !o.followUp) this._expect(tgt, hitAt);
+    if (!mainKey && !ropeKey) { this._arrive(proj, tgt, to0, t0 + hitAt, rows, src); return hitAt; }
     const flight = { t: -1, dur, from, to: to0.slice(), pos: from.slice(), next: from.slice(), done: false, rope: null };
     // the flight at t battle s: the head and a point a little further on (its direction), homing on the target's point
     const step = (t) => {
@@ -883,7 +977,7 @@ export class FxWiring {
       fx.stop({ hit: true });
       if (flight.rope && flight.rope !== fx) flight.rope.stop();
       this.flights.delete(flight);
-      this._arrive(proj, tgt, flight.to, hitAt > dur ? time + hitAt : null);
+      this._arrive(proj, tgt, flight.to, hitAt > dur ? t0 + hitAt : null, rows, src);
     };
     const def = mainKey ? this.ofx.lib.def(mainKey) : null;
     const flipIfLeft = def ? def.flipIfLeft : false;
@@ -918,7 +1012,8 @@ export class FxWiring {
       });
     }
     if (handle || flight.rope) this.flights.add(flight);
-    else this._arrive(proj, tgt, to0, time + hitAt);
+    else this._arrive(proj, tgt, to0, t0 + hitAt, rows, src);
+    return hitAt;
   }
 
   /**
@@ -962,12 +1057,20 @@ export class FxWiring {
     return n > 0;
   }
 
-  /** A projectile reached its target: onHit at the target's HitPoint, onReached where it landed. */
-  _arrive(proj, tgt, at, laterAt) {
+  /**
+   * A projectile reached its target (at `laterAt` on the effects' clock, else now): onHit at the target's HitPoint with
+   * the attack's own hit rows (`rows` { k, along }: turned along the shot from `src` when the row says; a key the onHit
+   * plays already is not played twice), onReached where it landed.
+   */
+  _arrive(proj, tgt, at, laterAt, rows = null, src = null) {
     const go = () => {
       const now = this.ofx.time;
       if (tgt && !tgt.destroyed) {
         for (const k of proj.onHit || []) this.playOn(k, tgt, {});
+        if (rows) {
+          const own = new Set((proj.onHit || []).map(lc));
+          for (const h of rows) if (!own.has(lc(h.k))) this.playOn(h.k, tgt, { flipFrom: src || undefined, toward: h.along && src ? beyond(src, tgt) : undefined });
+        }
         const id = tgt.id ?? tgt.info?.id;
         this.arrived.set(id, now);
         if ((proj.onHit || []).some((k) => /heal/.test(k))) this.healed.set(id, now);
@@ -979,6 +1082,45 @@ export class FxWiring {
     };
     if (laterAt == null) go();
     else setTimeout0(this.ofx, { stop: go }, Math.max(0, laterAt - this.ofx.time), true);
+  }
+
+  /**
+   * An official hit on `tgt` lands in `s` battle s (R3 / R9): the HP damage or heal the sim lands for it is the hit's — in
+   * the attack's frame (a heal, a chain bounce, a blow flown for show: the sim lands those at once) or from CLAIM_LEAD s
+   * before the hit until ARRIVAL_WINDOW after (a shot: the sim lands it about a tick before the drawn flight ends). One
+   * entry per target and frame (an attack's shots — a group's, a 秘术师's energies — stand for its hits of that frame).
+   */
+  _expect(tgt, s) {
+    const id = tgt?.id ?? tgt?.info?.id;
+    if (id == null) return;
+    const now = this.ofx.time, frame = this.skills.frame;
+    const at = now + Math.max(0, s);
+    const list = this.inAir.get(id);
+    const last = list ? list[list.length - 1] : null;
+    if (last && last.frame === frame && last.t == null) { last.until = Math.max(last.until, at + ARRIVAL_WINDOW); return; }
+    const f = { from: at - CLAIM_LEAD, until: at + ARRIVAL_WINDOW, frame, t: null };
+    if (list) list.push(f); else this.inAir.set(id, [f]);
+  }
+
+  /**
+   * Whether an official hit on its way (_expect) stands for an event on target `id` at render time `time`: one that took
+   * an event of this frame before (an attack's several hits in one tick), else — `claim`: an HP hit or a heal — the
+   * oldest one open now takes it.
+   */
+  _inAir(id, time, claim = true) {
+    const list = this.inAir.get(id);
+    if (!list) return false;
+    const now = this.ofx.time, frame = this.skills.frame;
+    let n = 0;
+    for (const f of list) if (now <= f.until) list[n++] = f;
+    list.length = n;
+    if (!n) { this.inAir.delete(id); return false; }
+    if (list.some((f) => f.t === time)) return true;
+    if (!claim) return false;
+    const f = list.find((x) => x.t == null && (x.frame === frame || now >= x.from));
+    if (!f) return false;
+    f.t = time;
+    return true;
   }
 
   /**
@@ -1008,6 +1150,8 @@ export class FxWiring {
     // an attached floating unit's hit lands with its damage (荒芜拉普兰德's wolves: render/vfx/funnelfx.js)
     const fun = hpHit ? this.funnels.damage(v, time, type) : false;
     const drawn = (m && hpHit ? this._landed(m, v, time, type) : false) || fun;
+    // an official shot on its way stands for the damage it brings (R3: the sim lands it before the drawn flight ends)
+    if (this._inAir(id, time, hpHit)) return true;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
     const ph = this.pendingHit.get(id);
@@ -1041,17 +1185,62 @@ export class FxWiring {
 
   /**
    * b.ev 'heal' on view v at `time` (the event's render time, as attack's): a hit of a waiting heal (_landed: its rows,
-   * a skill heal's group); covered by an official heal projectile, else the generic heal hit.
+   * a skill heal's group); covered by an official heal on its way (_expect) or just arrived, else the generic heal hit.
    */
   heal(v, time) {
     if (!this.ofx.active || !v || !this.idx) return false;
     const id = v.id ?? v.info?.id;
     const m = Number.isFinite(time) ? this._pending(id, time) : null;
     if (m && this._landed(m, v, time, 'heal')) return true;
+    // an official heal on its way stands for it (R9: the sim heals at the 'atk', the projectile's hit plays on arrival)
+    if (this._inAir(id, time)) return true;
     const t = this.healed.get(id) ?? this.arrived.get(id);
     if (t != null && this.ofx.time - t < ARRIVAL_WINDOW) return true;
     const k = this.idx.generic?.hit?.heal;
     return !!(k && this.playOn(k, v, {}));
+  }
+
+  /**
+   * b.ev ['atk', prev, next, 'chain' | 'chainHeal']: a bounce of a chain (the sim names the previous target as its source
+   * and bounces in the tick its shot hits — a heal's at once). A chain an official shot opened (attack: its projectile's
+   * ChainLightningEffectBehaviour, projectileParts `chain` — 惊蛰, 异客, 莎草) draws the bounce as the client does when the
+   * shot reaches its first target (ChainLightningHitBehaviour → PlayLineEffect): the line from the previous target's
+   * HitPoint to the next one's and the projectile's hit — with the attack's rows — on the next; its damage or heal is the
+   * bounce's meanwhile (_expect). Returns true when drawn (else the procedural arc). [ASSUMED: every bounce at the first
+   * hit (`_interval` 0), the line between HitPoints for `_playEffectOnHitPoint` 0 too, shown CHAIN_LINE_S]
+   */
+  chain(prev, next, kind, time) {
+    if (!this.ofx.active || !prev || !next || prev === next || !this.idx || !CHAIN.has(kind)) return false;
+    const c = this.chains.get(prev.id ?? prev.info?.id);
+    if (!c || this.ofx.time > c.until) return false;
+    const nid = next.id ?? next.info?.id;
+    if (nid != null) this.chains.set(nid, c);
+    const delay = Math.max(0, c.at - this.ofx.time);
+    this._expect(next, delay);
+    const go = () => this._bounce(c, prev, next);
+    if (delay > 0) setTimeout0(this.ofx, { stop: go }, delay, true);
+    else go();
+    return true;
+  }
+
+  /** A chain's bounce lands: its line from prev to next (kept on their HitPoints while it shows), its hit on next. */
+  _bounce(c, prev, next) {
+    if (!next || next.destroyed) return;
+    const ps = this.skinOf(this.unitOf(prev)), ns = this.skinOf(this.unitOf(next));
+    const a = unitPoint(ps, 'hit', this.pose(prev)), b = unitPoint(ns, 'hit', this.pose(next));
+    if (c.line && this.ofx.lib.has(c.line)) {
+      const h = this.ofx.spawn(c.line, { pos: a.slice(), groundZ: -(prev.z || 0) }, {
+        important: true,
+        track: (fx) => {
+          if (!prev.destroyed && prev.alive !== false) unitPoint(ps, 'hit', this.pose(prev), a);
+          if (!next.destroyed && next.alive !== false) unitPoint(ns, 'hit', this.pose(next), b);
+          fx.anchor[0] = a[0]; fx.anchor[1] = a[1]; fx.anchor[2] = a[2];
+          fx.linkLines(a, b);
+        },
+      });
+      if (h) setTimeout0(this.ofx, h, CHAIN_LINE_S);
+    }
+    this._arrive(c.proj, next, b, null, c.rows, prev);
   }
 
   /**
@@ -1161,6 +1350,8 @@ export class FxWiring {
     this.arrived.clear();
     this.pendingHit.clear();
     this.healed.clear();
+    this.inAir.clear();
+    this.chains.clear();
     this.keyCache.clear();
     this.attackN.clear();
     this.castFrame.clear();

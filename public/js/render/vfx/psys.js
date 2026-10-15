@@ -222,6 +222,32 @@ const _ctx = { time: 0, tau: 0, index: 0, count: 0 };
 const _c4 = [1, 1, 1, 1];
 const _v3 = [0, 0, 0];
 const _w3 = [0, 0, 0];
+const _full = new Float32Array(16);
+
+/**
+ * A copy of affine matrix m whose empty basis columns (a zero scale) are unit axes — the cross product of the other two
+ * (two empty: world axes) — for an invertible stand-in (PSys._inverse).
+ */
+export function completeAxes(m, out) {
+  out.set(m);
+  const len = (c) => Math.hypot(m[c * 4], m[c * 4 + 1], m[c * 4 + 2]);
+  const k = [len(0), len(1), len(2)];
+  const eps = 1e-5 * Math.max(1e-6, k[0], k[1], k[2]);   // (relative: float noise of a zero-scaled axis is no axis)
+  const empty = k.map((v) => !(v > eps));
+  const n = empty.filter(Boolean).length;
+  for (let c = 0; c < 3; c++) {
+    if (!empty[c]) continue;
+    let x = c === 0 ? 1 : 0, y = c === 1 ? 1 : 0, z = c === 2 ? 1 : 0;
+    if (n === 1) {
+      const a = ((c + 1) % 3) * 4, b = ((c + 2) % 3) * 4;
+      const cx = m[a + 1] * m[b + 2] - m[a + 2] * m[b + 1], cy = m[a + 2] * m[b] - m[a] * m[b + 2], cz = m[a] * m[b + 1] - m[a + 1] * m[b];
+      const l = Math.hypot(cx, cy, cz);
+      if (l > 1e-12) { x = cx / l; y = cy / l; z = cz / l; }
+    }
+    out[c * 4] = x; out[c * 4 + 1] = y; out[c * 4 + 2] = z;
+  }
+  return out;
+}
 
 export class PSys {
   /**
@@ -358,8 +384,21 @@ export class PSys {
     this.pos[0] = frame.m[12]; this.pos[1] = frame.m[13]; this.pos[2] = frame.m[14];
   }
 
+  /**
+   * The inverse of the render matrix; a singular one (a zero scale of the scaling mode — the system's own in Local
+   * mode, any in Hierarchy) is inverted with its empty axes as unit axes, so a conversion world → local → world keeps
+   * the other components instead of the identity's (which made a world-space system's limited velocity grow without
+   * bound: 珊比's 'lizi (2)' flew 24,000 tiles in a second).
+   */
   _inverse() {
-    if (!this._invOk) { mat4InvertAffine(this.m, this.inv); this._invOk = true; }
+    if (!this._invOk) {
+      const m = this.m;
+      const det = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]);
+      const k = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
+      if (Math.abs(det) > 1e-6 * k * k * k) mat4InvertAffine(m, this.inv);
+      else mat4InvertAffine(completeAxes(m, _full), this.inv);
+      this._invOk = true;
+    }
     return this.inv;
   }
 

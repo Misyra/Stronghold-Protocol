@@ -4,6 +4,16 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 **Changelog** (for runtimes reading the files; newest first)
 
+* **2026-10-15 — corrections after the maintainer's play (history §32.14.38)**; no version changes — the files now
+  match what this text already said, and a reader of the earlier files keeps working. (1) Meshes (§33.9): a skinned
+  mesh has four bone influences per vertex. A Unity 2019+ mesh stores 1–4 (its BlendIndices / BlendWeight channels'
+  dimension) and no BlendWeight when every vertex follows one bone; earlier runs wrote those rows as they came — 2 per
+  vertex for 21 skinned renderers of the used set (铃兰 S3's ninth tail, 琴柳's flags …), no bone data at all for 41
+  (伊芙利特 S3's flame tongues, eight of 铃兰's tails …) —, so a reader can infer the count from `boneIndices.length /
+  vertexCount` and must extract again for the second kind. (2) index.json projectiles (§33.12): `main` and `lifeTime`
+  are the projectile class's own (SimpleProjectile, HarpoonProjectile, …); earlier runs took the last behaviour's
+  `_mainEffect` — 30 projectiles named their chain or rope line and lost the flying effect and the life (their
+  `behaviours` give both) —; the new `link` names that line.
 * **2026-10-15 — Phase 1d: `index.json` version 3** (§33.17; the descriptors, `textures.json` and the meshes keep their
   versions, the file list's `fx.index.version` is 3; no field was removed or renamed, and only two mode attacks change
   besides the additions — (6) —: a version-2 reader keeps working). (1) `units[id].talents` — the unit's talents by
@@ -307,12 +317,14 @@ Only enabled modules are written (InitialModule always); a missing module is off
 names (`ParticleSystem` in a Unity YAML scene); the enum values are Unity's.
 
 **System fields**: `lengthInSec` (duration), `looping`, `prewarm` (a looping system starts as if one full duration had
-already run), `startDelay` (MinMaxCurve, s), `playOnAwake`, `simulationSpeed`, `moveWithTransform` (simulation space:
-0 Local — particles move with the system's transform, 1 World — they stay where they were emitted, 2 Custom — relative
-to `moveWithCustomTransform` `{node, component}`), `scalingMode` (0 Hierarchy — the full world scale applies, 1 Local —
-only the system's own `scale` applies to its particles, 2 Shape — scale applies to the emission shape only), `stopAction`,
-`cullingMode`, `ringBufferMode`, `ringBufferLoopRange`, `emitterVelocityMode` (0 Transform, 1 Rigidbody: the emitter's
-velocity for inherit-velocity and rate-over-distance), `useUnscaledTime`, `autoRandomSeed`, `randomSeed`.
+already run), `startDelay` (MinMaxCurve, s), `playOnAwake`, `simulationSpeed`, `moveWithTransform` (simulation space: 0
+Local — particles move with the system's transform, 1 World — they stay where they were emitted, 2 Custom — relative to
+`moveWithCustomTransform` `{node, component}`), `scalingMode` (0 Hierarchy — the full world scale applies, 1 Local —
+only the system's own `scale` applies to its particles: the player's frame is the world rotation with unit axes times
+that scale, and an axis a parent scaled to zero is rebuilt from the other two, mirrored with the effect (history
+§32.14.38), 2 Shape — scale applies to the emission shape only), `stopAction`, `cullingMode`, `ringBufferMode`,
+`ringBufferLoopRange`, `emitterVelocityMode` (0 Transform, 1 Rigidbody: the emitter's velocity for inherit-velocity and
+rate-over-distance), `useUnscaledTime`, `autoRandomSeed`, `randomSeed`.
 
 **InitialModule** (Main): `startLifetime`, `startSpeed` (along the shape's emission direction), `startSize` (or, with
 `size3D`, `startSize` / `startSizeY` / `startSizeZ` per axis), `startRotation` (radians; with `rotation3D`
@@ -444,13 +456,21 @@ numCapVertices, alignment (0 view, 1 transform Z / local), textureMode (0 Stretc
 
 **`lineRenderer`**: `m_Positions` (in world space when `m_UseWorldSpace`, else the node's space), `m_Loop`, the same
 `m_Parameters`. The authored positions are placeholders: the effects that use lines (chains, beams) get their end
-points from the game (source and target).
+points from the game (source and target). 32 of the used set's 34 line prefabs are world-space — their points are
+fixed spots of the authoring scene (溯光星源 S1's chain at world (5, 4) → (6, 3)) and must not be drawn as they are;
+the web runtime draws such a line only once it set its end points (a projectile's `link`, §33.12: from the muzzle to
+the shot).
 
 **`spriteRenderer`**: not used by the effects of this mode (written with its materials only).
 
 **Sorting and depth.** Transparent renderers sort by sorting layer, then `m_SortingOrder`, then the material's queue,
 then camera distance (with `m_SortingFudge`). 71 % of the effect materials have ZTest `Disabled` (§33.7): they ignore
-the board's depth; the rest test against it (ground decals, ranges).
+the board's depth; the rest test against it (ground decals, ranges). The units sort among them: an operator's Spine
+renderers (its chararts' `Front` / `Back` / `Spine` MeshRenderers) sit on the Default layer (`m_SortingLayer` 0) at
+order 0, so an effect renderer on a lower layer, or on the Default layer with a negative order, is drawn before every
+unit — behind it (野鬃 S2's ring of lances at −3, a bubble's back half at −2; 5,637 of the used set's 34,061 enabled
+renderers) —, a positive order after them, and order 0 by distance with them. The web runtime draws the first kind in
+its pass under the units (`render/vfx/effect.js` `behindUnits`) along with the renderers lying flat on the ground.
 
 ### 33.7 Materials (`descriptor.materials[]`)
 
@@ -511,7 +531,10 @@ fringes). `srgb` is informational: render in gamma space (§33.2). Built-in text
   boneWeights?: [w0, w1, w2, w3, …], boneIndices?: [i0…i3, …], bindPoses?: [[16 floats row-major]…] }
 ```
 
-Unity mesh space (left-handed, as authored). Key = safe name + 8 hex digits of the SHA-1 of the file. The client
+Unity mesh space (left-handed, as authored). Key = safe name + 8 hex digits of the SHA-1 of the file. `boneWeights` /
+`boneIndices` hold four pairs per vertex, missing ones (0, 0): the client's meshes keep 1–4 influences per vertex and no
+weights when each vertex follows one bone (then its weight is 1) — an extraction made before the correction of
+2026-10-15 wrote that count (2 per vertex) or, without weights, no bone data at all (changelog). The client
 stores vertex colours as bytes (a UNorm8 channel): version 1 wrote those bytes (0…255; 722 meshes of the used set have
 colours), version 2 writes them as 0…1 floats (the bytes ÷ 255), as this section always said. Meshes of mesh
 particles are small (`Plane003`, `Cone001`, `Torus001`, `Sphere001`: 4–200 vertices; 435 meshes / 57k vertices in the
@@ -869,10 +892,16 @@ says.
 **Projectile** (`[uc]projectiles.ab`):
 
 ```
-{ main (the flying effect key), lifeTime (s), movement: { class, … every field },
+{ main (the flying effect key: the projectile class's _mainEffect), lifeTime (s: its _lifeTime),
+  link? (the line a ChainLightningEffectBehaviour / HarpoonRenderer stretches from the shooter to the shot),
+  movement: { class, … every field },
   onStart?, onReached?, onHit?, onStop?, toTargetOnStart?, toTileOnStart?, onTrigger?, onSelect?: [key…],
   effects: [every key], projectiles: [nested projectile keys], behaviours: [{ class, node, fields }] }
 ```
+
+`toTargetOnStart` / `toTileOnStart` (EffectBehaviour `_effectsToTargetWhenStart` / `_effectsToTileWhenStart`) play on
+the target and on its tile when the projectile starts — 溯光星源 S3's lightning, whose projectile has no flying effect
+(a SimpleProjectile with a 0.517 s LIMITED life: a timer whose hit comes at its end); `onHit` at each target hit.
 
 `movement.class` is `AdvancedMovement` (fields `speed` in tiles/s, `moveType` — *metadata* MoveType: 0 NONE,
 1 TRACE_TARGET_WITH_SPEED, 2 TRACE_TARGET_WITHIN_TIME, 3 TWO_POINTS, 4 FIXED_DIRECTION, 5 FIXED_DISTANCE,
@@ -1105,6 +1134,23 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   index.
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
+* **A projectile's parts** (2026-10-15, history §32.14.38; `wiring.js projectileParts`, `_fly`): the flying effect is
+  the projectile class's own `_mainEffect` and its life that class's LIMITED `_lifeTime`, read from `behaviours` (an
+  index written before the correction named the link line `main` for 30 projectiles); the link (`link`, else a
+  ChainLightningEffectBehaviour's / HarpoonRenderer's `_mainEffect`) runs from the muzzle to the shot while it flies —
+  its LineRenderers' end points set by the runtime (`effect.js linkLines`; a world-space line without them draws
+  nothing) — and fades once it lands. As the shot starts, `toTargetOnStart` plays on the target (FLIP_TWO_SIDE by the
+  side the shot comes from, kept on the target while it lives) and `toTileOnStart` on the target's tile; a projectile
+  without a flying effect holds its `onHit` for its life when that is longer than the sim's flight (up to 1.5 s,
+  `TIMER_HIT_MAX`), the target's damage meanwhile drawing no procedural spark [ASSUMED: the sim's damage keeps its own
+  time].
+* **A skill's mode attach rows** (`skills.js attachUses`): the `attach` rows of the mode a skill switches to
+  (AttachEffectOptions: attached with the mode) join the plan, held for the skill — `range` for a `*_range*` key, else
+  `loop`; a row `onlyAttachOnDummy` (the client's preview dummy) is left out. The enemies' rows in their Default /
+  combat modes are not played.
+* **Sorting against the units**: a renderer that sorts before the units (§33.6: a lower sorting layer, or the Default
+  layer with a negative order) draws in the pass under them (`effect.js behindUnits`), with those lying flat on the
+  ground; skinned meshes read the influences per vertex their file stores (`geom.js skinStride`, §33.9).
 
 Coverage of the roster (`tools/vfx-skill-coverage.mjs`, version 1 → version 2; version 3 below): operator (unit, skill)
 pairs 547 → 548 of 549 in the index, 501 → 502 with a plan the battle view drives (91.4 %); summons 2 → 71 of 78, 2 → 23

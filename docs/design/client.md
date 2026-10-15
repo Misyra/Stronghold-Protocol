@@ -76,8 +76,10 @@ history and the open points: DESIGN §32.14.25.
   PauseEffectIf (its CheckType conditions that a view can answer: facing, abnormal flags, sleep).
 - **Clock.** The battle clock: the advance of the interpolated render time each frame (`app.js frameBody`, at most
   0.25 s), so the effects follow the game speed and stop with a paused or stalled battle.
-- **Drawing.** Two passes in the Pixi stage, `vfxGround` (renderers lying flat within 0.25 of the ground: under the
-  units) and `vfxOver` (the rest, over the units and the procedural fx), drawn with raw WebGL2 in Pixi's context
+- **Drawing.** Two passes in the Pixi stage, `vfxGround` (renderers lying flat within 0.25 of the ground, and those
+  the client sorts before the units — a lower sorting layer, or the Default layer with a negative order: DESIGN §33.6
+  — under the units) and `vfxOver` (the rest, over the units and the procedural fx), drawn with raw WebGL2 in Pixi's
+  context
   (`gl.js FxGL`; Pixi's state is reset after the pass) and the board's camera: `system.js unityViewProj` maps the
   Unity battle frame (board frame through C = diag(1, 1, −1) about the centre (10, 9)) through `projection.js`'s
   camera, pixel for pixel. The entries of every live effect are sorted as Unity sorts them (sorting layer, order,
@@ -96,8 +98,10 @@ history and the open points: DESIGN §32.14.25.
   effect as the clip started), the ON_SPELL_ON ones at the 'atk' event; a NONE row's first slot, a directional row's
   slot for the facing, `hookEffectAfterFirstAttack` / `onlyOnce` by the unit's attack count; a looping row, and a
   looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
-  `castTarget` / `inputTarget` rows on the target, its projectile's main effect flown from the muzzle to the target's
-  HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival, its hit rows when a melee or
+  `castTarget` / `inputTarget` rows on the target, its projectile's flying effect flown from the muzzle to the target's
+  HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival — its link line (a chain, a
+  rope) stretched from the muzzle to the shot, its `toTargetOnStart` / `toTileOnStart` on the target and its tile as it
+  starts, a timer projectile's hit at the end of its life (§33.16) —, its hit rows when a melee or
   direct blow's damage lands (else the generic hit by damage type). One attack on several targets — the sim sends an
   'atk' per target in one tick — casts once (its target rows play on each). Index version 2 (0.3.0 Phase 3c, §33.16): a
   melee blow of a unit that is blocked or blocks (UF.BLOCKED), and every attack of a mode without `attack`, plays the

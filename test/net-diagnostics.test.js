@@ -114,7 +114,7 @@ test('socket diagnostics count actual queued UTF-8 frames; completion sampled ev
   const ws=socket(network),msg={t:'ok',text:'中文'};
   for(let i=0;i<64;i++)assert.equal(send(ws,msg),true);
   // The shared send budget may defer writes when the test process itself was descheduled mid-burst.
-  while(network._outbound.size)await new Promise((resolve)=>setImmediate(resolve));
+  while(network.outbound._outbound.size)await new Promise((resolve)=>setImmediate(resolve));
   let stats=network.diagnostics.stats();assert.equal(stats.sentFrames,64);
   assert.equal(stats.sentBytes,Buffer.byteLength(JSON.stringify(msg))*64);
   for(const cb of ws.callbacks.slice(0,63))cb();assert.equal(network.diagnostics.stats().sendCompletionMs.count,0);

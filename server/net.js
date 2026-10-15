@@ -41,7 +41,9 @@ import { STRIP_RE, LONE_SURROGATE_RE } from './moderation/characters.js';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
-import { OutboundQueue } from './outboundQueue.js';
+import { OutboundPump } from './outboundPump.js';
+import { noteWireFrame } from './wireStats.js';
+export { wireStats, wireStatsSnapshot } from './wireStats.js';
 import { ENCODED, STATE_COALESCE } from './wireHints.js';
 import { ForeignSessions, foreignSessionKey } from './foreignSessions.js';
 export { ENCODED, STATE_COALESCE } from './wireHints.js';
@@ -53,9 +55,6 @@ import { negotiateStateDelta, prepareStateFrame, reserveStateFrame, resetStateDe
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
-const PUMP_VISITS = 128;
-const PUMP_MS = 2;
-
 export const NET_DEFAULTS = Object.freeze({
   ratePerSec: 40,               // token bucket refill rate
   rateBurst: 40,                // token bucket capacity
@@ -315,29 +314,7 @@ export class TokenBucket {
 // Send helpers (never throw)
 // ---------------------------------------------------------------------------------------------------
 
-/** Monotonic outbound frame counters since process start (per-socket sends; /healthz `wire`). */
-export const wireStats = { frames: 0, bytes: 0, byType: new Map() };
-
-/**
- * @param {string | null} kind frame type (null = unknown, counted in the totals only)
- * @param {number} len data.length (UTF-16 units ≈ wire bytes for the ASCII-heavy frames here)
- */
-function noteWireFrame(kind, len) {
-  wireStats.frames++;
-  wireStats.bytes += len;
-  if (kind == null) return;
-  let e = wireStats.byType.get(kind);
-  if (!e) { e = { frames: 0, bytes: 0 }; wireStats.byType.set(kind, e); }
-  e.frames++;
-  e.bytes += len;
-}
-
-/** Plain-object snapshot of wireStats for /healthz (diff two polls for rates). */
-export function wireStatsSnapshot() {
-  const byType = {};
-  for (const [k, v] of wireStats.byType) byType[k] = { frames: v.frames, bytes: v.bytes };
-  return { frames: wireStats.frames, bytes: wireStats.bytes, byType };
-}
+/** Monotonic outbound frame counters live in server/wireStats.js (re-exported above for /healthz). */
 
 /**
  * JSON-encode a message; returns null (and never throws) on unserializable input. A message
@@ -680,18 +657,9 @@ export class Network {
     this.draining = false;
     this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
       allowConnections: allowForeignConnections, maxPerIp: foreignSessionsMaxPerIp });
-    /** Fanout queue (see _eachConnection): FIFO jobs of per-connection callbacks, pumped in small slices. */
-    this._fanout = [];
-    this._fanoutImmediate = null;
-    this._fanoutRunning = false;
-    this._heartbeatPending = false;
-    /** Per-socket FIFO frames; Map insertion order rotates recipients fairly between slices. */
-    this._outbound = new Map();
-    this._blockedOutbound = new Map();
-    this._backpressureTimer = null;
-    this._outboundImmediate = null;
-    this._sendVisits = 0;
-    this._sendDeadline = 0;
+    // Frame scheduling and connection fanout live in their own module; Network keeps only the seams.
+    this.outbound = new OutboundPump({ conns: this.conns, opts: this.opts, diagnostics, defaults: NET_DEFAULTS,
+      isClosed: () => this.closed, writeFrame, writeMessage, encode, send });
     this.heartbeatTimer = setInterval(() => this.heartbeat(), this.opts.heartbeatMs);
     this.heartbeatTimer.unref?.();
     const sweepMs = Math.max(20, Math.min(15_000, Math.floor(this.opts.reconnectWindowMs / 4)));
@@ -703,176 +671,18 @@ export class Network {
   get connectionCount() { return this.conns.size; }
 
   /** Bytes queued unsent across all open sockets ({ total, max }) — health diagnostics for a backed-up peer. */
-  bufferedBytes() {
-    let total = 0, max = 0;
-    for (const conn of this.conns.values()) {
-      const n = (conn.ws?.bufferedAmount || 0) + (this._outbound.get(conn.ws)?.bytes || this._blockedOutbound.get(conn.ws)?.bytes || 0);
-      total += n;
-      if (n > max) max = n;
-    }
-    return { total, max };
-  }
+  bufferedBytes() { return this.outbound.bufferedBytes(); }
 
   /**
    * Accept one immutable encoding, preserving FIFO across broadcasts, raw room states and unicasts.
-   * The first 128 writes / 2 ms are immediate; the budget is shared across all rooms until setImmediate.
-   * Deferred bytes count toward the existing snapshot-drop and disconnect limits.
+   * The budget, the per-socket queues and the pumped turns live in server/outboundPump.js.
    * @param {import('ws').WebSocket} ws
    * @param {{ data: string, bytes: number, droppable: boolean, kind: string | null, msg: object | null, scope?: object | null, reset?: boolean }} frame
    */
-  queueFrame(ws, frame) {
-    const conn = this.conns.get(ws);
-    if (this.closed || !conn || conn.closing || ws.readyState !== WS_OPEN) return false;
-    const pending = this._outbound.get(ws) || this._blockedOutbound.get(ws);
-    const buffered = (ws.bufferedAmount || 0) + (pending?.bytes || 0);
-    if (buffered > NET_DEFAULTS.hardBufferBytes) {
-      this.diagnostics.slowDisconnects++;
-      try { ws.terminate(); } catch { /* socket already closing */ }
-      return false;
-    }
-    if (frame.droppable && buffered > NET_DEFAULTS.snapDropBytes) {
-      this.diagnostics.droppedSnapshots++;
-      return false;
-    }
-    // Transport probes carry no game state and may bypass queued gameplay frames.
-    if (frame.kind === 'pong') return writeMessage(ws, frame);
-    const blocked = (ws.bufferedAmount || 0) > NET_DEFAULTS.snapDropBytes;
-    if (!this._sendVisits) this._sendDeadline = performance.now() + PUMP_MS;
-    if (!blocked && !pending && this._sendVisits < PUMP_VISITS && performance.now() < this._sendDeadline) {
-      this._sendVisits++;
-      this._scheduleOutbound();
-      return writeFrame(ws, frame);
-    }
-    const queue = pending || new OutboundQueue();
-    if (queue.push(frame, buffered > NET_DEFAULTS.snapDropBytes)) this.diagnostics.coalescedStates++;
-    if (queue.size > this.opts.maxQueuedFrames || (ws.bufferedAmount || 0) + queue.bytes > NET_DEFAULTS.hardBufferBytes) {
-      this.diagnostics.slowDisconnects++;
-      this._outbound.delete(ws);
-      this._blockedOutbound.delete(ws);
-      try { ws.terminate(); } catch { /* socket already closing */ }
-      return false;
-    }
-    if (blocked) {
-      this._outbound.delete(ws);
-      this._blockedOutbound.set(ws, queue);
-      this._scheduleBackpressure();
-    } else {
-      this._blockedOutbound.delete(ws);
-      this._outbound.set(ws, queue);
-      this._scheduleOutbound();
-    }
-    return true;
-  }
+  queueFrame(ws, frame) { return this.outbound.queueFrame(ws, frame); }
 
-  _scheduleBackpressure() {
-    if (this._backpressureTimer !== null || this.closed || !this._blockedOutbound.size) return;
-    this._backpressureTimer = setTimeout(() => {
-      this._backpressureTimer = null;
-      for (const [ws, queue] of this._blockedOutbound) {
-        const conn = this.conns.get(ws);
-        if (!conn || conn.closing || ws.readyState !== WS_OPEN) this._blockedOutbound.delete(ws);
-        else if ((ws.bufferedAmount || 0) + queue.bytes > NET_DEFAULTS.hardBufferBytes) {
-          this.diagnostics.slowDisconnects++;
-          this._blockedOutbound.delete(ws);
-          try { ws.terminate(); } catch { /* socket already closing */ }
-        } else if ((ws.bufferedAmount || 0) <= NET_DEFAULTS.snapDropBytes) {
-          this._blockedOutbound.delete(ws);
-          this._outbound.set(ws, queue);
-        }
-      }
-      if (this._outbound.size) this._scheduleOutbound();
-      this._scheduleBackpressure();
-    }, this.opts.backpressurePollMs);
-    this._backpressureTimer.unref?.();
-  }
-
-  _scheduleOutbound() {
-    if (this._outboundImmediate !== null || this.closed) return;
-    this._outboundImmediate = setImmediate(() => {
-      this._outboundImmediate = null;
-      this._sendVisits = 0;
-      this._sendDeadline = 0;
-      this._pumpOutbound();
-    });
-    this._outboundImmediate.unref?.();
-  }
-
-  /** Drain fairly across sockets; each socket's broadcast / private / result order stays intact. */
-  _pumpOutbound() {
-    this._sendDeadline = performance.now() + PUMP_MS;
-    while (!this.closed && this._outbound.size && this._sendVisits < PUMP_VISITS && performance.now() < this._sendDeadline) {
-      const [ws, queue] = this._outbound.entries().next().value;
-      this._outbound.delete(ws);
-      this._sendVisits++;
-      const conn = this.conns.get(ws);
-      if (conn && !conn.closing && ws.readyState === WS_OPEN) {
-        if ((ws.bufferedAmount || 0) > NET_DEFAULTS.snapDropBytes) {
-          this._blockedOutbound.set(ws, queue);
-          this._scheduleBackpressure();
-          continue;
-        }
-        const frame = queue.shift();
-        if (queue.size) this._outbound.set(ws, queue);
-        writeFrame(ws, frame);
-      } else this._outbound.delete(ws);
-    }
-    // A final empty turn resets the shared budget even when small-room broadcasts drained synchronously.
-    if (this._sendVisits || this._outbound.size) this._scheduleOutbound();
-  }
-
-  /**
-   * Queue a per-connection callback over a snapshot of the current sockets and pump it in small slices
-   * (at most 128 visits or 2 ms per turn, then `setImmediate`) so one huge fanout cannot stall the event
-   * loop or starve fresh I/O: work that arrives between slices (new frames, replies) runs first. `fn` must
-   * not throw — callbacks are invoked from setImmediate, an exception would surface as uncaughtException.
-   * @param {(conn: Connection) => void} fn
-   * @param {'broadcast' | 'heartbeat'} [kind]
-   */
-  _eachConnection(fn, kind) {
-    if (this.closed) return;
-    this._fanout.push({ connections: [...this.conns.values()], index: 0, fn, kind });
-    if (!this._fanoutRunning && this._fanoutImmediate === null) this._pumpFanout();
-  }
-
-  /** Drain the fanout FIFO one slice; a connection is visited only while still live (this.conns owns it). */
-  _pumpFanout() {
-    this._fanoutImmediate = null;
-    this._fanoutRunning = true;
-    const deadline = performance.now() + PUMP_MS;
-    let visited = 0;
-    try {
-      while (!this.closed && this._fanout.length && visited < PUMP_VISITS) {
-        const job = this._fanout[0];
-        if (job.index === job.connections.length) {
-          this._fanout.shift();
-          if (job.kind === 'heartbeat') this._heartbeatPending = false; // the next heartbeat() may queue a new round
-          continue;
-        }
-        const conn = job.connections[job.index++];
-        if (this.conns.get(conn.ws) === conn) job.fn(conn);
-        visited++;
-        if (performance.now() >= deadline) break;
-      }
-    } finally {
-      this._fanoutRunning = false;
-      if (!this.closed && this._fanout.length) {
-        this._fanoutImmediate = setImmediate(() => this._pumpFanout());
-        this._fanoutImmediate.unref?.();
-      }
-    }
-  }
-
-  /**
-   * Global broadcast: the same send budget also serves Lobby.broadcastRoom / broadcastState / unicasts.
-   * Capture recipients now, encode once, and defer expensive writes / state deltas through queueFrame.
-   * @param {object} msg
-   */
-  broadcastAll(msg) {
-    if (this.closed) return;
-    const data = encode(msg);
-    if (data == null) return;
-    for (const conn of this.conns.values()) if (!conn.closing) send(conn.ws, msg, data);
-  }
+  /** Global broadcast (server/outboundPump.js): recipients captured now, encoded once, deferring writes. */
+  broadcastAll(msg) { return this.outbound.broadcastAll(msg); }
 
   /**
    * Upgrade-time admission check (server/http/websocket.js): null to accept, otherwise the reason to refuse.
@@ -1095,12 +905,7 @@ export class Network {
   /** @param {Connection} conn */
   onClose(conn) {
     socketNetworks.delete(conn.ws);
-    this._outbound.delete(conn.ws);
-    this._blockedOutbound.delete(conn.ws);
-    if (!this._blockedOutbound.size && this._backpressureTimer !== null) {
-      clearTimeout(this._backpressureTimer);
-      this._backpressureTimer = null;
-    }
+    this.outbound.forget(conn.ws);
     socketDiagnostics.delete(conn.ws);
     if (this.conns.delete(conn.ws) && conn.key) {
       const n = (this.connsPerKey.get(conn.key) || 1) - 1;
@@ -1119,11 +924,9 @@ export class Network {
 
   /** Ping every socket; terminate the ones that did not answer since the previous heartbeat. */
   heartbeat() {
-    if (this.closed || this._heartbeatPending) return;
-    this._heartbeatPending = true;
     // One `now` per connection, not one per round: the pumped fanout slices across event-loop turns,
     // a timestamp taken at enqueue time would go stale for later slices (hello timeout would misfire).
-    this._eachConnection((conn) => {
+    this.outbound.runHeartbeat((conn) => {
       const now = this.now();
       try {
         if (conn.closing) {
@@ -1172,21 +975,8 @@ export class Network {
    */
   close(code = CLOSE.SHUTDOWN, reason = 'server shutdown') {
     if (this.closed) return;
-    for (const [ws, queue] of [...this._outbound, ...this._blockedOutbound]) {
-      const conn = this.conns.get(ws);
-      if (!conn || conn.closing || ws.readyState !== WS_OPEN) continue;
-      while (queue.size) writeFrame(ws, queue.shift());
-    }
+    this.outbound.close();
     this.closed = true;
-    if (this._fanoutImmediate !== null) clearImmediate(this._fanoutImmediate);
-    this._fanoutImmediate = null;
-    this._fanout.length = 0;
-    if (this._outboundImmediate !== null) clearImmediate(this._outboundImmediate);
-    this._outboundImmediate = null;
-    this._outbound.clear();
-    if (this._backpressureTimer !== null) clearTimeout(this._backpressureTimer);
-    this._backpressureTimer = null;
-    this._blockedOutbound.clear();
     this.diagnostics.close();
     clearInterval(this.heartbeatTimer);
     clearInterval(this.sweepTimer);

@@ -1191,8 +1191,11 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   frame (its first OnAttack time) — `pos` only without a model or the bone [ASSUMED: the drawn frame; the static points
   keep the client's offsets]; an effect with a FollowMountPoint starts on its point and follows it, with its rotation
   unless `_keepOriginRotation`, and a MUZZLE_POINT or Special-point spawn takes the point's rotation (§33.11):
-  `mounts.js mountRotation` = the Graphic rotation · the facing turn · the bone's angle. A shot flies along the
-  client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below).
+  `mounts.js mountRotation` = the Graphic rotation · the facing turn · the bone's angle. Open: a point's own local
+  rotation is not exported, and at least 洛洛's SpecialPoint1 and 令's SpecialPoint2 keep a fixed one their BoneFollower
+  does not take from the bone (30° about X, cancelling the Graphic's tilt; the only X / Y turns among the 1,365 point
+  transforms of the index's operator skins) — turned by the bone's angle, 洛洛's drone stands upright at home. A shot
+  flies along the client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below).
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
 * **A projectile's parts** (2026-10-15, history §32.14.36 and §32.14.38; `flight.js projectileParts`, `wiring.js
@@ -1490,6 +1493,8 @@ SkillFx and TalentFx —, the wiring follows the bone as it follows every Follow
 added), 0.85 s before an attached unit is home again and 2 s before a remote one comes back, the appear / disappear
 moments at a skill's start and end, the initial count from the skill's text, the flights' height (0.3 over the ground),
 the S3 pulse correction, the hover radius (the sim kit's 0.9; the client's HoveringInPlaceMovement says 1.25), the
-groups one apart; the units on their bones as the remake's model draws them (§33.16 Placement). Not drawn: 澄闪's self-destruct (`projectile_chr_gdglow_funnel_s12_3`
-… — the kit's 'explode' keeps the procedural blast), a unit hidden while its owner is stunned
-(`setActiveFalseWhenPause`: no signal ties a unit's pause to a status).
+groups one apart; the units on their bones as the remake's model draws them, with their point's rotation (§33.16
+Placement: 荒芜拉普兰德's wolves face forward on the bones' 87°, 洛洛's drone — a point with a fixed rotation, open there —
+stands upright). Not drawn: 澄闪's self-destruct (`projectile_chr_gdglow_funnel_s12_3` … — the kit's 'explode' keeps the
+procedural blast), a unit hidden while its owner is stunned (`setActiveFalseWhenPause`: no signal ties a unit's pause
+to a status).

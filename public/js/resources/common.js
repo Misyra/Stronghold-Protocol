@@ -51,9 +51,21 @@ export const RESOURCE_GROUPS = Object.freeze({
   sfx: { name: N_('音效'), tier: TIER_REST },
   music: { name: N_('背景音乐'), tier: TIER_REST },
   other: { name: N_('玩法说明与其他资源'), tier: TIER_REST },
+  // 干员皮肤 is optional like the rest, but it is the one group the player picks item by item (docs/SKINS.md):
+  // the manifest marks those entries with `skin`, and the store keeps only the chosen skins in its selection.
+  skin: { name: N_('干员皮肤'), tier: TIER_REST },
 });
 
+/** `charId/skinId` as the server writes it (`server/resources.js` `skinKeyForPath`): both halves are key-path segments,
+ *  so a dot is what separates them and can never appear inside one. */
+export const SKIN_KEY_RE = /^[A-Za-z0-9_@#-]{1,80}\/[A-Za-z0-9_@#-]{1,80}$/;
+/** Whether a manifest entry's `skin` field is a key this client accepts. */
+export function isSkinKey(key) {
+  return typeof key === 'string' && SKIN_KEY_RE.test(key);
+}
+
 export function resourceGroup(file) {
+  if (isSkinKey(file?.skin)) return 'skin';
   const path = new URL(file.url, 'https://resources.invalid').pathname;
   if (file.tier === TIER_REST) {
     if (/\/voice\//.test(path)) return 'voice';
@@ -199,6 +211,8 @@ export function validateManifest(m) {
     if (f.size != null && (!Number.isSafeInteger(f.size) || f.size < 0)) throw new Error(`资源大小无效：${f.url.slice(0, 80)}`);
     // Optional: without a hash an entry keeps the old "a new manifest replaces the whole cache" rule.
     if (f.hash != null && (typeof f.hash !== 'string' || !HASH_RE.test(f.hash))) throw new Error(`资源指纹无效：${f.url.slice(0, 80)}`);
+    // Optional too: 干员皮肤 files carry the skin they belong to, which is what the panel scopes by.
+    if (f.skin != null && !isSkinKey(f.skin)) throw new Error(`资源皮肤标识无效：${f.url.slice(0, 80)}`);
   }
   return m;
 }

@@ -332,10 +332,14 @@ function ScreenCrashed({ error, reset }) {
 
 function ResourceManagerHost() {
   const settings = useSettings();
+  // 干员皮肤 rides its own axis (docs/SKINS.md): a mode plus the picked `charId/skinId` keys, so the panel can offer
+  // 「全部」 without turning it into a synonym of 「同时预载可选资源」.
+  const skinScope = { mode: settings.preloadSkins, keys: settings.preloadSkinIds };
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} allVoices=${settings.preloadAllVoices}
-    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })}
+    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })} skins=${skinScope}
     onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
-    onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })} />`;
+    onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })}
+    onSkins=${(scope) => updateSettings({ preloadSkins: scope.mode, preloadSkinIds: scope.keys })} />`;
 }
 
 function App() {
@@ -462,7 +466,10 @@ async function boot() {
 function installResourcePreload() {
   // Resume only when the player enabled preload; a saved pause survives page reloads.
   import('./resources/index.js').then((r) => {
-    const apply = (s) => { r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices).catch((err) => console.warn('[resources] sync failed', err)); };
+    const apply = (s) => {
+      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices,
+        { mode: s.preloadSkins, keys: s.preloadSkinIds }).catch((err) => console.warn('[resources] sync failed', err));
+    };
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
     let timer;

@@ -11,7 +11,7 @@
 // persisted setting at boot and on every settings change.
 
 import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
-import { ResourceStore } from './store.js';
+import { ResourceStore, normalizeSkinScope } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
 import { missingStorage, storageEstimate } from './storage.js';
@@ -55,6 +55,10 @@ const stateStore = createResourceState({
   storage: null,
   voiceLang: 'cn',
   allVoices: false,
+  // 干员皮肤: the per-item selection and the counters the panel's skin list renders (docs/SKINS.md).
+  skins: [],
+  skinScope: { mode: 'off', keys: [] },
+  requiredComplete: false,
   clearing: false,
   combat: false,
 });
@@ -68,6 +72,8 @@ let wantRun = false;
 let workerPromise = null;
 let voiceLang = 'cn';
 let allVoices = false;
+/** @type {{ mode: 'off'|'all'|'picked', keys: string[] }} 干员皮肤 selection, as the settings store keeps it. */
+let skins = { mode: 'off', keys: [] };
 
 const schedule = new ResourceSchedule();
 
@@ -137,15 +143,32 @@ const counters = (s) => ({
   sizedTotal: s.sizedTotal,
   skipped: s.skipped,
   complete: s.complete,
-  selectionComplete: selectionComplete(s),
+  // The whole current selection is cached. `requiredComplete` is only the required tier: the panel says 「必备已保存」
+  // while optional files — or chosen 干员皮肤 — are still outstanding.
+  selectionComplete: !!s.complete,
+  requiredComplete: requiredComplete(s),
   // migration (kept bytes) vs network (fetched bytes): 0 unless a run is/was in flight
   adopted: s.adopted ?? 0,
   downloaded: s.downloaded ?? 0,
   groups: s.groups ?? [],
+  skins: s.skins ?? [],
+  skinScope: s.skinScope ?? { mode: 'off', keys: [] },
 });
 
-const selectionComplete = (s) => (s.tier1Present >= (s.tier1Wanted ?? s.tier1))
-  && (!optional || s.tier2Present >= (s.tier2Wanted ?? s.tier2));
+/** Required (tier 1) files of the selection are cached — the store's counters already exclude everything out of scope. */
+const requiredComplete = (s) => s.tier1 === 0 || s.tier1Present >= (s.tier1Wanted ?? s.tier1);
+
+/** The serializable 干员皮肤 selection both the settings store and the store's scope speak (`{ mode, keys }`). */
+const skinScopeOf = (raw) => {
+  const { mode, keys } = normalizeSkinScope(raw);
+  return { mode, keys: [...keys].sort() };
+};
+
+const sameSkinScope = (a, b) => a.mode === b.mode && a.keys.length === b.keys.length
+  && a.keys.every((key, i) => key === b.keys[i]);
+
+/** The current selection as the store wants it, whichever axis changed last. */
+const storeScope = () => ({ optional, voiceLang, allVoices, skins });
 
 /** Why this browser cannot keep the resources (empty ⇒ it can). */
 export function unsupportedReason() {
@@ -210,13 +233,21 @@ async function dropWorker() {
 }
 
 /**
- * Turn the preload on or off (idempotent: the settings store fires on every volume change).
+ * Turn the preload on or off and hand it the current selection (idempotent: the settings store fires on every volume
+ * change).
  * @param {boolean} enabled
+ * @param {boolean} [includeOptional] the optional (tier 2) set — voices, sound effects, music, tutorial art
+ * @param {string} [language] voice language kept in the selection
+ * @param {boolean} [includeAllVoices]
+ * @param {'off'|'all'|'picked'|string[]|{ mode?: string, keys?: Iterable<string> }} [skinSelection]
+ *   干员皮肤: off / every skin the server offers / only the listed `charId/skinId` keys (docs/SKINS.md)
  */
-export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices) {
+export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, skinSelection = skins) {
   enabled = !!enabled;
   language = language === 'jp' ? 'jp' : 'cn';
-  const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices;
+  const nextSkins = skinScopeOf(skinSelection);
+  const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices
+    || !sameSkinScope(skins, nextSkins);
   if (enabled === current && !changed) { set({ enabled }); return; }
   tasks.invalidate();
   current = enabled;
@@ -224,10 +255,14 @@ export async function syncResources(enabled, includeOptional = optional, languag
   optional = !!includeOptional;
   voiceLang = language;
   allVoices = !!includeAllVoices;
-  set({ enabled, optional, voiceLang, allVoices, error: false, message: '' });
+  skins = nextSkins;
+  set({ enabled, optional, voiceLang, allVoices, skinScope: nextSkins, error: false, message: '' });
   if (!enabled) {
     tasks.cancel('download', 'archive');
     set({ phase: state.complete ? 'ready' : 'paused', message: state.complete ? t('预载已停止；已保存的资源保留，可继续下载或清理缓存。') : t('已停止预载。') });
+    // The selection can still change while preloading is off (the manager's tier / voice / 皮肤 switches): re-read the
+    // cache so its counters follow the click instead of showing what the last inspection saw.
+    if (changed) void refreshSelection();
     return;
   }
   if (changed) tasks.download.controller?.abort();
@@ -243,6 +278,16 @@ export async function startResources() {
   if (!current) return;
   wantRun = true;
   return start();
+}
+
+/**
+ * Publish fresh counters after a selection change that no run will follow (preloading off, so `start()` never runs).
+ * Waits for a cancelled run to release its slot first: `inspectResources()` refuses to scan while one is in flight.
+ */
+async function refreshSelection() {
+  const stopping = tasks.download.promise || tasks.archive.promise;
+  if (stopping) await stopping.catch(() => {});
+  if (!current) await inspectResources().catch(() => {});
 }
 
 /**
@@ -306,7 +351,10 @@ async function startDownload(task) {
     return;
   }
   const store = ctx.store;
-  store.setVoiceScope(voiceLang, allVoices);
+  store.setScope(storeScope());
+  // Optional files are in play when the 「同时预载」 switch asks for them or when 干员皮肤 were picked — the store's
+  // selection already excludes everything else, so one question covers both and voices never ride along on a skin choice.
+  const restWanted = store.selectedFiles.some((f) => f.tier === TIER_REST);
   set({ supported: true, version: store.manifest.version });
   // registering an already-registered worker is a cheap no-op, so every start can retry a failed one. A failure here
   // does NOT stop the download (the page fills Cache Storage itself) — it only means nothing can be served offline.
@@ -319,8 +367,9 @@ async function startDownload(task) {
   console.info('[resources] preload check timings', { manifestMs: manifestReady - checkStart,
     ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
-  const ready = selectionComplete(before);
-  set({ ...counters(before), phase: ready ? 'ready' : 'download', message: ready ? optional ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
+  const ready = !!before.complete;
+  set({ ...counters(before), phase: ready ? 'ready' : 'download',
+    message: ready ? restWanted ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
   if (ready) { if (before.complete) await withDownloadLock(() => store.prune()); return; }
   const onProgress = (p) => {
     if (signal.aborted) return;
@@ -329,11 +378,11 @@ async function startDownload(task) {
     set({ ...counters(p), phase: 'download', failed: p.failed, failures: p.failures || [], error: false, message });
   };
   try {
-    // Required visuals first, then optional audio/tutorials when selected.
+    // Required visuals first, then the optional set (audio/tutorials when 「同时预载」, plus any picked 干员皮肤).
     const outcome = await withDownloadLock(async () => {
       checkAbort(signal);
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
-      const rest = optional ? await store.download({ tiers: [TIER_REST], signal,
+      const rest = restWanted ? await store.download({ tiers: [TIER_REST], signal,
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
       return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10) };
     });
@@ -348,8 +397,9 @@ async function startDownload(task) {
       failed: outcome.failed,
       failures: outcome.failures,
       error: outcome.failed > 0,
-      message: !optional && selectionComplete(after) ? t('必备资源已预载完成；可选资源按需加载。') : after.complete
+      message: after.complete ? restWanted
         ? t('资源已全部预载完成（{0}）。', { 0: formatBytes(after.bytes) })
+        : t('必备资源已预载完成；可选资源按需加载。')
         : t('已保存 {count}/{total} 个文件；未完成的会在下次开启时重试。', { count: after.count, total: after.total }),
     });
   } catch (err) {
@@ -410,7 +460,7 @@ function transferArchive(kind, file) {
       const ctx = await resourceContext();
       if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
       checkAbort(signal);
-      ctx.store.setVoiceScope(voiceLang, allVoices);
+      ctx.store.setScope(storeScope());
       const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
         set(counters(await ctx.store.status()));
         const archive = await import('./archive.js');
@@ -442,8 +492,8 @@ function transferArchive(kind, file) {
       set({ archivePhase: '', archiveGroup: '' });
       const status = await ctx.store.status();
       await updateStorage(ctx.store, status, undefined, set);
-      const missing = status.tier1Wanted - status.tier1Present + (optional ? status.tier2Wanted - status.tier2Present : 0);
-      set({ ...counters(status), failed: 0, phase: selectionComplete(status) ? 'ready' : 'paused',
+      const missing = (status.tier1Wanted - status.tier1Present) + (status.tier2Wanted - status.tier2Present);
+      set({ ...counters(status), failed: 0, phase: status.complete ? 'ready' : 'paused',
         message: kind === 'export'
           ? t('已导出 {count} 个资源文件。', { count: outcome.count })
           : t('已导入 {imported} 个资源文件，已有 {already} 个，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, already: outcome.already || 0, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
@@ -528,12 +578,12 @@ export async function inspectResources() {
   try {
     if (tasks.download.promise || tasks.archive.promise || tasks.clear) return;
     const revision = tasks.revision;
-    ctx.store.setVoiceScope(voiceLang, allVoices);
+    ctx.store.setScope(storeScope());
     const status = await ctx.store.status();
     await updateStorage(ctx.store, status, undefined, set);
     if (tasks.download.promise || tasks.archive.promise || tasks.clear || revision !== tasks.revision) return;
     set({ ...counters(status), version: ctx.manifest.version, supported: true,
-      ...(!tasks.download.promise && !tasks.archive.promise ? { phase: selectionComplete(status) ? 'ready' : 'paused', message: '', error: false } : {}) });
+      ...(!tasks.download.promise && !tasks.archive.promise ? { phase: status.complete ? 'ready' : 'paused', message: '', error: false } : {}) });
   } catch (err) {
     set({ phase: 'error', error: true, message: t('无法读取本机资源缓存：{0}', { 0: err?.message || err }) });
   }

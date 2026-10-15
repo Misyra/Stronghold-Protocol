@@ -2357,10 +2357,15 @@ def unit_roots(env, root, gos, mbs_of, gkey, go_of, deref, head, general_of, cla
 def skin_points(env, rel, prefab, graphic, container=None):
     """Mount points under a skin root (an operator's chararts defaultskin, placed under the charpack's Graphic) or
     under a unit prefab (an enemy / token: its own Graphic subtree): name → {facing ('front' | 'back' | 'all'):
-    {pos (unit-root frame, Unity units and axes), bone (BoneFollower bone or null), path}}. The root's own transform is
-    not composed: a unit prefab's root transform is where the prefab was authored (88 of the full set's roots sit tiles
-    away, e.g. enemy_1007_slime at (3, 3, 0); the game places the unit), a skin root's the offset the client drops when
-    it attaches the skin under Graphic (char_446_aroma's −1.895 in x) — the points are relative to the unit's feet."""
+    {pos (unit-root frame, Unity units and axes), bone (BoneFollower bone or null), path, rot (the point's local
+    rotation, quaternion x y z w), followRot (with a bone: the BoneFollower's followBoneRotation)}}. The root's own
+    transform is not composed: a unit prefab's root transform is where the prefab was authored (88 of the full set's
+    roots sit tiles away, e.g. enemy_1007_slime at (3, 3, 0); the game places the unit), a skin root's the offset the
+    client drops when it attaches the skin under Graphic (char_446_aroma's −1.895 in x) — the points are relative to
+    the unit's feet. spine-unity's BoneFollower (the point's parent holds the skeleton: an operator's Front / Back, an
+    enemy's Spine) sets the point's local position from the bone every frame and, with followBoneRotation, its local
+    rotation to the bone's angle about z; without it the point keeps `rot` (洛洛's SpecialPoint1 and 令's
+    SpecialPoint2: 30° about x, which cancels the Graphic's −30° tilt)."""
     prefabs = env.prefabs(rel, full=container is not None)
     root = None
     if container is not None:
@@ -2375,15 +2380,21 @@ def skin_points(env, rel, prefab, graphic, container=None):
     def walk(go, m, facing, path):
         gd = env.tt(go)
         name = gd.get('m_Name', '')
-        m2 = m if go is root else mat_mul(m, trs_matrix(*go_transform(env, go)))
+        trs = None if go is root else go_transform(env, go)
+        m2 = m if trs is None else mat_mul(m, trs_matrix(*trs))
         f2 = 'front' if name == 'Front' else 'back' if name == 'Back' else facing
-        bone = None
+        bone, follow_rot = None, True
         for c in gd.get('m_Component', []):
             cf, co = env.resolve(go.assets_file, c.get('component'))
             if co is not None and cf != 'builtin' and co.type.name == 'MonoBehaviour' and env.script(co)[1] == 'BoneFollower':
-                bone = env.tt(co).get('boneName') or None
-        if go is not root and MOUNT_NAME.search(name):
-            points.setdefault(name, {})[f2 or 'all'] = {'pos': mat_point(m2), 'bone': bone, 'path': path + name}
+                bf = env.tt(co)
+                bone = bf.get('boneName') or None
+                follow_rot = bool(bf.get('followBoneRotation', 1))   # spine-unity's default: true
+        if trs is not None and MOUNT_NAME.search(name):
+            pt = {'pos': mat_point(m2), 'bone': bone, 'path': path + name, 'rot': [f6(x) for x in trs[1]]}
+            if bone:
+                pt['followRot'] = follow_rot
+            points.setdefault(name, {})[f2 or 'all'] = pt
         for k in go_children(env, go):
             walk(k, m2, f2, '' if go is root else f'{path}{name}/')
     walk(root, base, None, '')

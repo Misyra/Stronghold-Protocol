@@ -787,6 +787,30 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
     assert.ok(n > 0, 'the set has skinned meshes (伊芙利特 S3, 铃兰 S3, 凯尔希 S1 …)');
   });
 
+  test('skin points carry their local rotation and whether their BoneFollower follows the bone\'s rotation (rot / followRot)', { skip: !Object.values(index?.skins || {}).some((s) => Object.values(s.points || {}).some((p) => Object.values(p).some((f) => 'rot' in f))) && 'an index extracted before the points\' rotations' }, () => {
+    let still = 0;
+    for (const [id, sk] of Object.entries(index.skins)) {
+      for (const [nm, p] of Object.entries(sk.points || {})) {
+        for (const [face, f] of Object.entries(p)) {
+          assert.ok(Array.isArray(f.rot) && f.rot.length === 4 && f.rot.every(Number.isFinite), `${id} ${nm} (${face}): rot`);
+          assert.ok(Math.abs(Math.hypot(...f.rot) - 1) < 1e-4, `${id} ${nm} (${face}): a unit quaternion`);
+          if (f.bone) assert.equal(typeof f.followRot, 'boolean', `${id} ${nm} (${face}): followRot with a bone`);
+          else assert.ok(!('followRot' in f), `${id} ${nm} (${face}): no followRot without a bone`);
+          if (f.followRot === false) still++;
+        }
+      }
+    }
+    assert.ok(still > 0, 'some BoneFollowers keep the point\'s own rotation');
+    // 洛洛's SpecialPoint1 and 令's SpecialPoint2: on their bones, 30° about x of their own (chararts defaultskin)
+    for (const [id, nm] of [['char_4040_rockr', 'SpecialPoint1'], ['char_2023_ling', 'SpecialPoint2']]) {
+      for (const f of Object.values(index.skins[id]?.points?.[nm] || {})) {
+        assert.equal(f.followRot, false, `${id} ${nm}`);
+        assert.ok(Math.abs(f.rot[0] - 0.258819) < 1e-5 && Math.abs(f.rot[3] - 0.965926) < 1e-5, `${id} ${nm}: ${f.rot}`);
+      }
+    }
+    for (const f of Object.values(index.skins.char_1038_whitw2?.points?.SpecialPoint0 || {})) assert.equal(f.followRot, true, '荒芜拉普兰德\'s wolves turn with their bones');
+  });
+
   test('projectiles of an index written by the fixed extractor: `main` is the projectile class\'s flying effect, a chain\'s line is `link`', { skip: !Object.values(index?.projectiles || {}).some((p) => p.link) && 'an index written before the fix (the runtime reads the behaviours: flight.js projectileParts)' }, () => {
     for (const [k, p] of Object.entries(index.projectiles)) {
       const own = (p.behaviours || []).find((b) => /Projectile$/.test(b.class) && b.fields && '_mainEffect' in b.fields);

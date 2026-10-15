@@ -102,6 +102,69 @@ describe('mount points on the drawn model (mounts.js)', () => {
     assert.deepEqual([3, 8, 11, 13, 18, 34].map(spawnRotationKind), ['muzzle', 's0', 's3', 's4', 's8', 's23']);
     assert.deepEqual([0, 1, 2, 4, 5, 6, 7, 12].map(spawnRotationKind), [null, null, null, null, null, null, null, null]);
   });
+
+  // 洛洛's skin as the client has it (chararts/char_4040_rockr.ab defaultskin): SpecialPoint1's BoneFollower keeps the
+  // point on F_UVA_01 / B_UVA_01 without its rotation (followBoneRotation 0), the point's own 30° about X cancelling the
+  // Graphic's −30°; SpecialPoint2 follows F_Weapon_24's rotation; an enemy-like static Muzzle turned 45° about Z
+  const X30 = [0.258819, 0, 0, 0.965926];
+  const ROCKR = {
+    graphic: { rot: GRAPHIC },
+    points: {
+      HitPoint: { all: { pos: [0, 0.232, -0.25], bone: null, rot: [0, 0, 0, 1] } },
+      SpecialPoint1: { front: { pos: [0.575, 0.499, -0.404], bone: 'F_UVA_01', rot: X30, followRot: false },
+        back: { pos: [0.576, 0.499, -0.404], bone: 'B_UVA_01', rot: X30, followRot: false } },
+      SpecialPoint2: { front: { pos: [-0.688, 0.517, -0.414], bone: 'F_Weapon_24', rot: [0, 0, -0.374788, 0.927108], followRot: true } },
+      Muzzle: { all: { pos: [0.3, 0.4, -0.3], bone: null, rot: [0, 0, 0.382683, 0.92388] } },
+    },
+  };
+  /** The same skin as an index extracted before the points' rotations has it: no `rot`, no `followRot`. */
+  const OLD = { graphic: ROCKR.graphic, points: Object.fromEntries(Object.entries(ROCKR.points).map(([nm, p]) => [nm,
+    Object.fromEntries(Object.entries(p).map(([f, v]) => [f, { pos: v.pos, bone: v.bone }]))])) };
+  const axes = (skin, kind, bones, flip, extra = {}) => {
+    const q = mountRotation(skin, kind, { x: 4, y: 11, z: 0, left: flip < 0, back: false, view: boneView(bones, flip), ...extra });
+    return { x: quatRotate(q, [1, 0, 0]), y: quatRotate(q, [0, 1, 0]), q };
+  };
+
+  test('a point whose BoneFollower does not follow the bone\'s rotation keeps its own: 洛洛\'s drone lies flat at home whatever F_UVA_01\'s angle', () => {
+    const bones = { F_UVA_01: { x: 0.6, up: 0.7, angle: 90 }, B_UVA_01: { x: 0.6, up: 0.7, angle: 90 }, F_Weapon_24: { x: -0.7, up: 0.6, angle: 40 } };
+    // facing right: Graphic (−30° about X) · the point's 30° about X = the identity — the prefab as authored
+    let r = axes(ROCKR, 's1', bones, 1);
+    nearV(r.x, [1, 0, 0], 1e-5, 'right: x');
+    nearV(r.y, [0, 1, 0], 1e-5, 'right: y (no tilt, not the bone\'s 90°)');
+    // another angle of the bone changes nothing
+    nearV(axes(ROCKR, 's1', { F_UVA_01: { x: 0.6, up: 0.7, angle: -35 } }, 1).y, [0, 1, 0], 1e-5, 'any bone angle');
+    // facing left: the FaceSwitcher's 180° about the plane's up, between the Graphic and the point: Rx(−60°) · Ry(180°)
+    r = axes(ROCKR, 's1', bones, -1);
+    nearV(r.x, [-1, 0, 0], 1e-5, 'left: x');
+    nearV(r.y, [0, 0.5, -Math.sqrt(3) / 2], 1e-5, 'left: y');
+    // the Back skeleton's point: the same
+    nearV(axes(ROCKR, 's1', bones, 1, { back: true }).y, [0, 1, 0], 1e-5, 'back');
+    // its position still follows the bone (followXYPosition)
+    nearV(unitPoint(ROCKR, 's1', { x: 4, y: 11, z: 0, left: false, back: false, view: boneView(bones, 1) }), [-6 + 0.6, 2 + 0.7 * C30, -0.7 * S30], 1e-9, 'on the bone');
+    // a point that follows its bone's rotation: the bone's angle, not its own `rot` (the edit-time pose)
+    r = axes(ROCKR, 's2', bones, 1);
+    nearV(r.x, [Math.cos(40 * Math.PI / 180), Math.sin(40 * Math.PI / 180) * C30, -Math.sin(40 * Math.PI / 180) * S30], 1e-5, 'SpecialPoint2 on its bone');
+    // ... and without the drawn bone the angle is 0 (as before), not the edit-time `rot`
+    nearV(axes(ROCKR, 's2', {}, 1).x, [1, 0, 0], 1e-5, 'SpecialPoint2 without a model');
+    // a point no bone moves keeps its own rotation (45° about Z on the skeleton plane)
+    r = axes(ROCKR, 'muzzle', {}, 1);
+    nearV(r.x, [Math.SQRT1_2, Math.SQRT1_2 * C30, -Math.SQRT1_2 * S30], 1e-5, 'static Muzzle');
+    nearV(axes(ROCKR, 'hit', {}, 1).y, [0, C30, -S30], 1e-5, 'HitPoint: the identity under the tilt');
+  });
+
+  test('an index without the points\' rotations: every bone-followed point takes the bone\'s angle, the others the identity', () => {
+    const bones = { F_UVA_01: { x: 0.6, up: 0.7, angle: 90 } };
+    // 洛洛's drone as the merge drew it: turned by the bone's 90° (upright)
+    nearV(axes(OLD, 's1', bones, 1).x, [0, C30, -S30], 1e-5, 'old index: the bone\'s angle');
+    nearV(axes(OLD, 'muzzle', {}, 1).x, [1, 0, 0], 1e-5, 'old index: a static point has no rotation of its own');
+    nearV(axes(OLD, 'muzzle', {}, -1).x, [-1, 0, 0], 1e-5, 'old index: static, facing left');
+    assert.deepEqual(skinPoint(OLD, 's1', false), { pos: OLD.points.SpecialPoint1.front.pos, bones: ['F_UVA_01', 'B_UVA_01'], rot: null, followRot: true });
+    assert.deepEqual(skinPoint(ROCKR, 's1', true), { pos: ROCKR.points.SpecialPoint1.back.pos, bones: ['B_UVA_01', 'F_UVA_01'], rot: X30, followRot: false });
+    assert.equal(skinPoint(ROCKR, 'muzzle', false).followRot, false, 'no bone: nothing to follow');
+    // a malformed `rot` is ignored (the identity)
+    const bad = { graphic: ROCKR.graphic, points: { Muzzle: { all: { pos: [0, 0, 0], bone: null, rot: [0, 0, 'x', 1] } } } };
+    nearV(axes(bad, 'muzzle', {}, 1).x, [1, 0, 0], 1e-5, 'malformed rot');
+  });
 });
 
 describe('projectile flights (flight.js)', () => {

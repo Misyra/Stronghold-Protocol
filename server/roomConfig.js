@@ -197,3 +197,13 @@ export function roomConfigDocument(document, { persisted = false, applied = fals
   return { ...document.values, values: { ...document.values }, revision: document.revision,
     lastMutation: document.lastMutation ? { ...document.lastMutation } : null, persisted, applied, ...extra };
 }
+
+/**
+ * 只读投影：值与版本，**不带** persisted/applied —— 那两个字段描述的是「这一次写有没有落地」，读响应上
+ * 没有它们的含义（写 false 会让人以为配置没落盘，写 true 更糟）。
+ * @param {{ values: Record<string, unknown>, revision: number, lastMutation: object | null }} document
+ */
+export function roomConfigReadDocument(document, { extra = {} } = {}) {
+  return { ...document.values, values: { ...document.values }, revision: document.revision,
+    lastMutation: document.lastMutation ? { ...document.lastMutation } : null, ...extra };
+}

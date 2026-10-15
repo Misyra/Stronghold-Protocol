@@ -4,7 +4,7 @@ import { ROOM_CODE_LEN } from '../shared/constants.js';
 import { roomStatus } from './roomStatus.js';
 import { sendJson } from './http/common.js';
 import { readJsonBody } from './http/readJson.js';
-import { roomConfigDocument, roomConfigMutation, saveRoomConfigDocument, validateRoomConfig } from './roomConfig.js';
+import { roomConfigDocument, roomConfigMutation, roomConfigReadDocument, saveRoomConfigDocument, validateRoomConfig } from './roomConfig.js';
 export { loadRoomConfig, loadRoomConfigDocument } from './roomConfig.js';
 
 const hashSecret = (value) => createHash('sha256').update(value).digest();
@@ -109,7 +109,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         // 配置版本（§10.2）。页面拿它去当下一次写的 expectedRevision，中央靠它判「过时页面」；values 是
         // **已落盘**的那一份，平铺在顶层只是为了过渡期兼容旧面板/旧脚本。读取不给 persisted/applied：
         // 那两个字段描述的是「这一次写有没有落地」，读响应上没有它们的含义。
-        ...roomConfigDocument(configState),
+        ...roomConfigReadDocument(configState),
         // 游戏启动号（§13.3）：Agent 把它随 sync.report / 房间观测一路报给中央，中央据此判「这台游戏进程
         // 重启过，它上一次说过的一切都不再成立」。放在同一个响应里是因为探针就是从这里读配置版本的。
         gameBootId,

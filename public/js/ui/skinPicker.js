@@ -152,7 +152,12 @@ export function SkinSection({ chess, net = appNet }) {
   // frame's box does not exist yet. `renderable` is part of the mount effect's deps for exactly that reason: without
   // it the effect would run once against a null ref and never again, and the live canvas would never mount.
   const list = charId ? availableSkins(charId) : [];
-  const renderable = !!(chessId && charId && list.length);
+  // The section is NOT only about skins: the 商店立绘 switch (原始 / 精英二) and the model preview belong to any
+  // operator that has art or a model, and plenty of them ship no outfit at all (溯光星源 has none and wants both).
+  // So it renders when there is a catalogue, an operator record, or both — and hides only for a piece whose art is
+  // missing entirely, where every part of it would be empty.
+  const knownArt = !!(m?.chars?.[charId]);
+  const renderable = !!(chessId && charId && (list.length || knownArt));
   // the animations this exact model ships (per operator AND skin — a skin can have fewer skills)
   const { total: clipTotal, clips } = charId ? clipsOf(m, charId, previewSkin) : { total: 0, clips: [] };
   // 部署 / 待机 / 攻击 and up to three skills stay out; 攻击·下 / 眩晕 / 移动 / 死亡 and any further skill fold away
@@ -220,7 +225,7 @@ export function SkinSection({ chess, net = appNet }) {
     if (pick) h.play(pick.steps);
   }, [clipId, live, charId, previewSkin]);
 
-  if (!renderable) return null; // no slot / no operator / this operator has no skins at all: show nothing at all
+  if (!renderable) return null; // no slot, or a piece with neither a catalogue nor any art: nothing to show
 
   const installedCount = list.filter((x) => x.installed).length;
   const sock = net;
@@ -266,7 +271,9 @@ export function SkinSection({ chess, net = appNet }) {
       <span class="lo-sec__note">
         ${installing
           ? html`<${Spinner} size="sm" /> ${t('正在安装')} <b class="num">${progLabel}</b>`
-          : t('{installed}/{total} 已安装', { installed: installedCount, total: list.length })}
+          : list.length
+            ? t('{installed}/{total} 已安装', { installed: installedCount, total: list.length })
+            : t('该干员暂无皮肤')}
       </span>
     </header>
     <h4 class="lo-skin__title">${t('商店立绘')}<${MicroLabel}>SHOP ART<//></h4>

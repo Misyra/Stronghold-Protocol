@@ -4,6 +4,35 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 **Changelog** (for runtimes reading the files; newest first)
 
+* **2026-10-15 — Phase 1d: `index.json` version 3** (§33.17; the descriptors, `textures.json` and the meshes keep their
+  versions, the file list's `fx.index.version` is 3; no field was removed or renamed, and only two mode attacks change
+  besides the additions — (6) —: a version-2 reader keeps working). (1) `units[id].talents` — the unit's talents by
+  prefab key (`Talents/<key>`: `1`, `2`, `-1`, `Reborn`, …), each with its nodes (Talent class, ability, mode, `when`:
+  deploy / reborn / attack / toggle / passive, the reborn talent's mode / handler / count, the toggle checkers, the buff
+  template actions that cast it, the skills it is valid with, the modes its buffs switch to) and the skills' fields
+  (`uses` with the skills' role vocabulary, `roles`, `effects`, `projectiles`, `unclassified`, `abilities`); `bb` on an
+  enemy's talent: the key of data/enemies.json `talents.bb` (`Reborn.duration` → `Reborn`). (2) `units[id].abilities`:
+  the common abilities (the head's `_commonAbilities` — stand switches, revives, the talents' bombs), the modes'
+  general abilities (`_generalAbilities` — auras, funnels, effects while a mode is on) and the trait, the same entry
+  shape with `kind`, `name` / `alias`, `modes`, `triggers` / `stops` and `switchMode`. (3) `units[id].talentKeys`: our
+  data's talent indexes → the prefab keys (operators and summons, from the official character / module tables), and
+  `units[id].spineEffects` (a SpineEffectEmitter's presets). (4) Which projectile an ability fires: `skills[id].abilities`
+  (every attack ability of the skill prefab: class, node, projectileKey, extraProjectileKeys, additionalProjectile,
+  mount, …; and the helpers that fire one — SimpleProjectileEmitter, ChantWithProjectileBeforeSkill), `projectileKey` on
+  the emitter uses of a projectile-firing ability; the same fields on talents' and abilities' entries; mode attacks and
+  their sub-abilities gain `mount`, `mountGroup`, `additionalTimes`, `triggerDelta`, `additionalProjectile`. (5) A buff's
+  life on each use it carries (`life`: Torappu.LifeType — IMMEDIATELY / LIMITED / INFINITY / CUSTOM —, `time`, the
+  blackboard `key` of a timed buff's duration, `tick`, `db`). (6) Group choice from the data: `select` on group abilities
+  (AbilityRandomGroup's SelectMethod Random / Loop and weights, AbilitySelectableGroup's configs in order, Parallel,
+  FirstSucceed, Sequence; `main` / `burst`); an AbilitySelectableGroup's sub-abilities now follow its `_abilityConfigs`
+  (and a BurstAttackGroup's burst attack comes last — 号角 S2's order changes), a funnel attack takes the funnels beside it
+  (耶拉 S2 gains its two). (7) Corrected: UberAnimationEffectEmitter's `loopType` is *metadata* LoopType 0 LOOP (the
+  animations in turn), 1 RANDOM — §33.12 assumed 1 meant "in turn"; emitters carry `loopTypeName`, replace-group uses
+  `loopType`. (8) Corrected carriers (`on`): an attachment's `_additiveActiveBuffs`, a blocker's `_buffsToBlockee`,
+  `_projectileBuffs`, the tile listeners' and LockTargetAbility's buffs are the targets', `_buffsToExistToken` a summon's
+  (one skill use changes: `SpawnTokenOnTileByIDAbility._buffsToExistToken`, unknown → token). (9) New effect fields:
+  a funnel's `_idleEffect` / `_idleBackEffect` / `_overloadIdleEffect` (loop), `_appearEffect` (start), `_disappearEffect`
+  (end); a reborn talent's `_effects` (start); `ExtraAbilityPreloads._effects` is no use (preloads only). Numbers: §33.17.
 * **2026-10-15 — Phase 1c: `index.json` version 2, meshes version 2** (§33.12, §33.9; the descriptors and
   `textures.json` stay version 1, the file list's `fx.index.version` is 2; no field was removed or renamed — a version-1
   reader keeps working and simply does not see the additions, except the two corrections (9) and (10)). (1) A mode's
@@ -49,7 +78,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   changed.
 * **2026-10-14 — Phase 1a**: the format and the sample.
 
-## 33. Official battle effects — the extracted format (0.3.0, Phase 1a–1c)
+## 33. Official battle effects — the extracted format (0.3.0, Phase 1a–1d)
 
 The official battle effects (hit sparks, projectiles, cast flashes, status loops, skill effects) are Unity prefabs of
 ParticleSystems, meshes, trails and small behaviour scripts. `tools/local-extract/fx.py` (run as `extract.py --only fx`)
@@ -63,9 +92,11 @@ the descriptor keeps Unity's names so that every field can also be looked up in 
 extractor adds is the resolution of references (other files, other nodes, shaders' render states, clip bindings) and the
 decoding of compressed data (animation clips, textures, meshes).
 
-**Status (Phase 1c).** The extractor and this format cover the full set the mode uses (§33.14; the Phase 1a sample,
+**Status (Phase 1d).** The extractor and this format cover the full set the mode uses (§33.14; the Phase 1a sample,
 §33.13, is a subset) and, since Phase 1c (§33.15), every emitter of the units' attacks, the charge groups and the
-enemies' and summons' skills; the runtime and the skill mapping read them (Phases 2 and 3). Where the client's own
+enemies' and summons' skills; since Phase 1d (§33.17) the units' talents, common and general abilities, which ability
+fires which projectile, the buffs' lives and the groups' choice; the runtime and the skill mapping read them (Phases 2
+and 3; what the runtime does not read yet: §33.17's list). Where the client's own
 behaviour cannot be read from its data, the text says **assumed** (Unity behaviour the data cannot confirm);
 **resolved** marks what Phase 1b checked against the client (its shader source, il2cpp metadata, prefab data). Enum and
 field names marked *metadata* come from the client's il2cpp metadata
@@ -87,12 +118,15 @@ manifest, `<dir>/data/local-fx.json` (the URLs in it stay `/assets/local/fx/…`
 set, and `SP_FX_ROOT=<dir> node --test test/local-extract-fx.test.js` checks it where it is).
 
 A plain `extract.py` run (no `--only`) does not run fx. The run reads `data/chess.json`, `data/backups.json`,
-`data/enemies.json` and `data/tokens.json` for the unit list, caches the bundles' prefab lists under `.cache/fx/`
-(per bundle size + mtime) and writes, under `public/assets/local/fx/`:
+`data/enemies.json` and `data/tokens.json` for the unit list (and the enemies' talent keys), the official
+`character_table.json`, `battle_equip_table.json` and `uniequip_table.json` under `.cache/gamedata/excel/` when setup
+fetched them (our data's talent indexes → the prefabs' talent nodes, §33.17 `talentKeys`; without them the links are
+left out), caches the bundles' prefab lists under `.cache/fx/` (per bundle size + mtime) and writes, under
+`public/assets/local/fx/`:
 
 | file | content |
 |---|---|
-| `index.json` | §33.12: per unit (operator / enemy / token) the attack modes, skills, projectiles and mount points; the projectiles; the generic keys; one summary per exported prefab |
+| `index.json` | §33.12: per unit (operator / enemy / token) the attack modes, skills, talents and common / general abilities (§33.17), projectiles and mount points; the projectiles; the generic keys; one summary per exported prefab |
 | `textures.json` | §33.8: texture key → size, wrap, filter, alpha, files |
 | `prefabs/<file>.json` | §33.4: one descriptor per effect prefab (effect key → file: `fx_file(key)` — the key itself when it is URL-safe (`[A-Za-z0-9_.-]`), else the safe form + `-` + the key's CRC32 in hex, e.g. `buff_ fragile_01` → `buff__fragile_01-9c1f…`) |
 | `tex/<key>.webp`, `tex/half/<key>.webp` | §33.8: every texture (WebP q90, alpha kept), and a half-size copy for the light tier (both sides ≥ 64 px) |
@@ -120,7 +154,7 @@ effects out while `tools/package.mjs FULL_ZIP_FX` is off. The runtime takes URLs
 | `fx/mesh` | mesh key → `{ path, kind: 'FxMesh', verts }` |
 
 Each JSON file starts with `format` (`fx-index`, `fx-textures`, `fx-prefab`, `fx-mesh`) and `version` (1; since Phase
-1c `index.json` 2 and the meshes 2 — the changelog says what changed). A full run
+1c `index.json` 2 and the meshes 2, since Phase 1d `index.json` 3 — the changelog says what changed). A full run
 (`sample` / `used`) rewrites the list and removes the files of an earlier run that are no longer listed; `--fx-keys`
 re-exports the named prefabs (and the keys they name) into the earlier set — their descriptors, index summaries and list
 entries are replaced, everything else stays (without an earlier set it writes a set of just those keys).
@@ -607,13 +641,14 @@ a sound — the runtime's audio may play it), and the long tail (55 classes in t
 ### 33.12 `index.json`
 
 ```
-{ format: 'fx-index', version: 2, set: 'sample' | 'used' | 'keys', source: { root, client },
+{ format: 'fx-index', version: 3, set: 'sample' | 'used' | 'keys', source: { root, client },
   units: { id: Unit }, projectiles: { key: Projectile }, skills: { skillId: Skill },
   skins: { id: Skin }, generic: { hit, die, birth, status, keys }, prefabs: { key: PrefabSummary } }
 ```
 
-`version` is 2 since Phase 1c (the changelog lists what it added; a version-1 reader finds every field it reads where
-it was). **Unit** (`char_*` from charpack/, `enemy_*` from battle/enm_pfb_*, tokens from pkgrps/btl_pfb_tokens_*):
+`version` is 2 since Phase 1c and 3 since Phase 1d (the changelog lists what each added; an older reader finds every
+field it reads where it was). **Unit** (`char_*` from charpack/, `enemy_*` from battle/enm_pfb_*, tokens from
+pkgrps/btl_pfb_tokens_*):
 
 ```
 { kind: 'char' | 'enemy' | 'token', prefab (bundle), rootClass ('Character' | 'Enemy' | …),
@@ -624,6 +659,10 @@ it was). **Unit** (`char_*` from charpack/, `enemy_*` from battle/enm_pfb_*, tok
             combat?: Attack }],                its `_combat` (the blow on a blocker), when another ability (v2)
   charge?: [Charge…],                          the chargeable groups (the 秘术师's stored energies, below; v2)
   skills: { skillId: Skill },                  the same objects as index.skills; an enemy's own skills (v2, below)
+  talents?: { key: Talent },                   its talents by prefab key (v3, §33.17)
+  abilities?: [Ability…],                      its common / general abilities and trait (v3, §33.17)
+  talentKeys?: { base, trait?, modules? },     our data's talent indexes → the talents' keys (v3, §33.17)
+  spineEffects?: [Emit…],                      a SpineEffectEmitter's presets (v3, §33.17)
   projectiles: [key…], refs: [every effect key the unit uses], skin: id | absent,
   aliasOf?: id }                               a copy of unit `id` (below)
 Attack = { class ('RangedAttack', 'MeleeAttack', 'RangedHeal', 'MultiMeleeAttack', 'AbilityRandomGroup', …), animKey,
@@ -632,7 +671,9 @@ Attack = { class ('RangedAttack', 'MeleeAttack', 'RangedHeal', 'MultiMeleeAttack
            cast?, hit?, attach?, inputTarget?, castTarget?: [Emit…],
            emitters?: [{ class, …settings }],  the node's effect emitters, when not one plain UberEffectEmitter (v2)
            abilities?: [Attack…],              a group's sub-abilities, a funnel attack's funnels (v2)
-           charge?: { group, ability, animKey? } }   the charge ability it releases: indexes into `charge` (v2)
+           charge?: { group, ability, animKey? },    the charge ability it releases: indexes into `charge` (v2)
+           select?: { method, … },             a group's choice of sub-abilities (v3, §33.17)
+           mount?, mountGroup?, additionalTimes?, triggerDelta?, additionalProjectile(s)? }   (v3, §33.17)
 Emit = { effects: [key…], slots?: [key | null…], directionType, oneshot, startEvent, endEvent, onlyOnce,
          useFourDirectionalFace, hookEffectAfterFirstAttack, …,
          emitter?, group?, anim?, field? }     (v2: below)
@@ -680,9 +721,11 @@ into `emitters`). The rows a subclass keeps in groups join the lists with the gr
   rows still counts: the 2nd of 3 groups may play nothing).
 * `UberAnimationEffectEmitter._replaceGroup` (`effectOptions` → `cast`, `hitEffectOptions` → `hit`): `group` and
   `anim`, the animation the group belongs to; the emitter's `sourceAnimKey` (the attack animation it replaces),
-  `loopType` and `replaceAnims` (the group animations in order) — **assumed**: the attack plays the group animations in
-  turn instead of `sourceAnimKey` (loopType 1; 0: by the client's own choice), and a row with `anim` plays when the
-  attack plays that animation, while the rows without `anim` play on every attack.
+  `loopType` and `replaceAnims` (the group animations in order). **Resolved** (v3, *metadata*
+  UberAnimationEffectEmitter.LoopType, written as `loopTypeName`): 0 LOOP — the attack plays the group animations in
+  turn instead of `sourceAnimKey` —, 1 RANDOM — a random one per attack (version 2 of this text assumed 1 meant in
+  turn); **assumed**: a row with `anim` plays when the attack plays that animation, the rows without `anim` on every
+  attack.
 * another list of rows keeps its field name (`field`, e.g. `VigilWolfEffectEmitter._vigilWolfCastEffects`, whose rows
   carry the `buffKey` the owner must have).
 
@@ -692,9 +735,12 @@ each hit. The charge emitters' per-energy groups are no attack rows (Charge, bel
 **Sub-abilities and the blow on a blocker (v2).** A group ability (`AbilityRandomGroup`, `AbilitySelectableGroup`,
 `AbilityParallelGroup`, `AbilityFirstSucceedGroup`, `BurstAttackGroup` — its `_abilities`) and an attack whose child
 nodes carry abilities of their own (`MultiFunnelRemoteAttack`'s funnels) list them in `abilities`, each an Attack with
-its node, rows, projectile and charge: per cast a Parallel group casts all of them, the others one (random, the first
-whose condition holds, …: the client's choice, which no data shows — a reader without that signal may play
-`abilities[0]`). The group's own `cast` / `hit` lists hold only the group node's emitters (usually none). `combat` is
+its node, rows, projectile and charge: per cast a Parallel group casts all of them, the others one — v3's `select`
+(§33.17) says how: a random one or each in turn (AbilityRandomGroup), the first in config order whose trigger finds a
+target (AbilitySelectableGroup / BurstAttackGroup, whose `abilities` follow `_abilityConfigs` since v3), the first that
+succeeds, one after the other; which one a given cast picks is still the client's choice at run time (a reader without
+that signal may play `abilities[0]`). The group's own `cast` / `hit` lists hold only the group node's emitters (usually
+none). `combat` is
 the mode's `_combat` — the ability a unit uses on a unit blocking it — when it is not `attack`'s ability: it is the
 only attack of a melee enemy (`attack` null: 169 enemy modes of the used set), and the blocked attack of many ranged
 ones; a runtime plays `combat` for a blocked blow (a melee 'atk'), `attack` else, and either one when the other is null.
@@ -742,6 +788,7 @@ skills come from its own prefab, below):
   mode: index into the owner's modes | null, modeBy?: 'data' | 'name',
   uses: [Use…], roles: { start?, loop?, range?, cast?, hit?, end?, ready?, trigger?, other?: [key…] },
   unclassified: [keys found in the prefab that no use places],
+  abilities: [{ node, class, animKey?, projectileKey?, … }],   its attack abilities and projectiles (v3, §33.17)
   nodes?, inModes?: [path… / mode name…] }    an enemy's skill: its node(s) and their modes (v2)
 Use = { role, keys: [key…], from ('UberEffectEmitter._castEffects', 'ActiveBuffAbility._buffs',
         'ActiveBuffAbility._buffs → template <templateKey>', …), node (the skill prefab's GameObject),
@@ -751,7 +798,8 @@ Use = { role, keys: [key…], from ('UberEffectEmitter._castEffects', 'ActiveBuf
         on? ('owner' | 'targets' | 'token'), buff?, template?            (a buff: who carries it, its keys)
         event?, action?                                                  (a buff template's action: a Buff event name,
                                                                           the action node: CreateEffect, CreateBuff, …)
-        bb?, by? ('name': placed by the key's name), mode? (v2: an enemy skill's copy, below) }
+        bb?, by? ('name': placed by the key's name), mode? (v2: an enemy skill's copy, below)
+        projectileKey?, extraProjectileKeys?, life?, loopType? }        (v3, §33.17)
 ```
 
 `rootClass` (v2) is the class of the skill root deriving from *metadata* `Torappu.Battle.Skill` — `CastSkill` (900 of
@@ -802,8 +850,10 @@ skill that lasts), they follow each of its casts — `startEvent` / `endEvent` s
 
 A buff's carrier (`on`): `owner` for the buffs a skill gives its unit (`ActiveBuffAbility` without a selector,
 `BuffDuringSkill`, `BuffToOwner…`, passive and chant buffs), `targets` for the buffs an attack applies (`_activeBuffs`
-— status loops such as `buff_burn` on Ifrit S2's targets) and the selector-driven or aura buffs, `token` for buffs a
-summon gets; absent when unknown. `by: 'name'` marks the few effects (11 in the used set: a buff blackboard's `effect`
+— status loops such as `buff_burn` on Ifrit S2's targets; since v3 also an attachment's `_additiveActiveBuffs`, added to
+the owner's attacks, a blocker's `_buffsToBlockee`, `_projectileBuffs`, the tile listeners' and LockTargetAbility's)
+and the selector-driven or aura buffs, `token` for buffs a summon gets (`_buffsToToken`, `_buffsToExistToken`); absent
+when unknown. Every use a buff carries has its `life` since v3 (§33.17). `by: 'name'` marks the few effects (11 in the used set: a buff blackboard's `effect`
 value, an extra event group) whose field says nothing about time, placed by their names (`*_hit` / `*_heal` → hit,
 `*_buff` / `*_loop` → loop, `*_start` → start, `*_end` → end, `*_range` → range).
 
@@ -944,9 +994,9 @@ and the meshes' colours as well.
   in the client (nor in the iOS hot update of 26-10-08) — skills of the data only. The operators' pairs: 548 of 549
   (534: the forms' `skcom_*` were not crawled); `skcom_assist_cost[3]` has no prefab either.
 
-Still outside the index: the effect emitters of talents (deploy effects, the bosses' revive loops), common abilities
-(stand switches, revives) and a few modes' general abilities (funnels, an aura) — 33 units, about 50 nodes — whose
-moments no client signal gives yet.
+Still outside the index after Phase 1c: the effect emitters of talents (deploy effects, the bosses' revive loops), common
+abilities (stand switches, revives) and a few modes' general abilities (funnels, an aura) — 33 units, 47 nodes. Phase 1d
+exports them (§33.17: 42 of the 47; the other 5 are attacks no mode references).
 
 ### 33.16 The runtime's skill wiring (0.3.0 Phase 3b)
 
@@ -979,3 +1029,158 @@ role, its ability, its events and its carrier — the module header; `render/vfx
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
 
+
+### 33.17 Phase 1d: talents, common and general abilities, the abilities' projectiles, buff lives (index.json version 3)
+
+`extract.py --only fx --fx-set used` with the Phase 1d extractor (Windows client 26-09-13, 8 processes on the
+maintainer's Mac) exports what the units do outside their attacks and skills: every talent node, common ability,
+general ability and trait of the roster's units (the chess operators, the 补位 / 自选 forms, the enemies, the summons)
+that names an effect or fires a projectile — read with the skills' reader (§33.12: the same `uses`, roles, events,
+carriers), so a runtime can feed them to the same planner — and what the data says about when they act. Where a field
+below says *metadata*, the names come from the client's il2cpp metadata (§33).
+
+**Talent** (`units[id].talents[key]`: one entry per prefab key — the name of a `Talents/<key>` node, wherever it sits:
+under the root, `Others/Direction/Talents`, a mode, an attack; a node is a talent when it carries a Torappu.Battle.Talent
+behaviour — `Talent`, `AppearTalent`, `RebornTalent`, `ProbReplaceNextAtkTalent`, … —; exported when one of its nodes
+names an effect or a projectile):
+
+```
+Talent = { nodes: [TalentNode…],                      every node with that key (one key can have several: an ability
+                                                       and its effects on two nodes, one copy per mode)
+           bb?,                                        an enemy's: the key data/enemies.json talents.bb uses for it
+                                                       (`Reborn.duration` → 'Reborn'; case as our data writes it)
+           effects, projectiles, uses, roles, unclassified, abilities }   as a Skill's (§33.12; a use's `node` is the
+                                                       node's path, `mode` the mode holding it when it sits in one)
+TalentNode = { node (its path in the unit prefab), class (the Talent class), ability (the node's ability class),
+               mode? (the mode holding the node), when, skills? (Talent._checkValidBySkillIndex: valid only with these
+               skill indexes equipped), overwriteKey? (_overwriteTalentKey), reborn?, toggle?, triggers?, stops?,
+               switchMode?, same? (the index of a node outside the modes with the same uses: a mode's copy is listed,
+               its uses are not repeated) }
+```
+
+**Ability** (`units[id].abilities[]`: one entry per root node — the head's `_commonAbilities` and the abilities right
+under a `CommonAbilities` node (`common`), the modes' `_generalAbilities` (`general`), the head's `_traitAbility`
+(`trait`); a group's sub-abilities belong to its entry; exported when it names an effect or a projectile):
+
+```
+Ability = { kind ('common' | 'general' | 'trait'), name (its GameObject's name, e.g. 'kazema[switch2stand]'),
+            alias? (its namedAsAlias when another), node, class (its ability class), modes? (a general ability: the
+            modes listing it) | mode?, when, toggle?, triggers?, stops?, switchMode?,
+            effects, projectiles, uses, roles, unclassified, abilities }
+```
+
+* **`when`** — what the classes say about the moment: `deploy` (AppearTalent, AppearSyncedTalent: cast as the unit
+  appears — 16 talent nodes, e.g. 耀骑士临光's `nearl2_birth_01_start`), `reborn` (RebornTalent and its kin, and the
+  ability that handles the 重生 — 15), `attack` (ProbReplaceNextAtkTalent / ProbAdditionNextAtkTalent: an attack the
+  talent replaces or adds to, with the blackboard probability its `_probKey` names — 8), `toggle` (a ToggleablePassive*
+  ability with a toggle checker: on while the checker's condition holds — 53 talent nodes, 5 abilities), `passive` (a
+  passive or aura ability: attached for as long as its holder is — a talent from the deploy, one in a mode while that
+  mode is on, a general ability while its mode is on — 297 talent nodes, 133 abilities), null (cast by something else:
+  `triggers`, a reborn talent's handler, a sequence's step — 54 talent nodes, 37 abilities).
+* **`triggers`** / **`stops`** — the buff template actions that cast (`TriggerAbility`, `TriggerAbilityMergeBB`,
+  `TriggerAbilityUseSelector…`) or stop (`InterruptAbility`, `PauseAbility`) the node by its name or alias: `{ template,
+  event (the Buff/Event that runs the action), action, name, buff? }`, from the templates the unit reaches (its prefab's
+  and its skills' buffs, the buffs their templates create) or named after its code (`kazema_…`, `enemy_reid…`). A
+  template whose TriggerAbility names no ability casts the one its buff's blackboard `ability_name` names (`buff`:
+  that buff; *assumed* from the data — the generic templates `triggerability_tick_trigger`, `trigger_ability[onstart]`
+  have an empty name, their buffs carry the key). E.g. 风丸's `kazema[switch2stand]`: `kazema_tr` at
+  ON_BEFORE_TRY_SET_HP_ZERO (the fatal blow), `kazema[switch2normal]`: `kazema_standin[switch]` at ON_BUFF_FINISH;
+  灵知's talent 2: `triggerability_tick_trigger` through the buff `gnosis_t_2`.
+* **`switchMode`** — `[{ mode (the unit's mode name, or null), restore, event, buff }]`: the SwitchMode actions of the
+  templates of the node's buffs (the mode read from the buff's blackboard `mode` when the action says so) — the form the
+  ability puts the unit in (风丸's stand switch → `Stand`, 烛煌's `blaze2[to_default_state]` → `Default`).
+* **`reborn`** (a reborn talent's node) — `{ mode (the mode it revives into, `_modeIndex`), maxCount, hpRatio, handler
+  (the `_abilityName` of the ability that plays the 重生, `_useAbilityToHandle`), handlerNode (that ability's node) }`;
+  the handler's emitter rows run from the 重生's start (ON_CAST_START) to its end (ON_CAST_END), the talent's `_buffs`
+  (the 无敌 loop, `life.key` `invincible` — data/enemies.json `Reborn.invincible`) after it, its `_effects` at the start.
+  E.g. “复仇者” (`enemy_1539_reid`): handler `Revive`, `enemy_reid_revive_01` looping until `enemy_reid_revive_02`, then
+  mode `Reborn`.
+* **`toggle`** — the node's toggle checkers with their settings: `HpRatioToggleChecker` (`minHpRatio`, `maxHpRatio`: on
+  while the HP ratio lies between — “复仇者”'s AtkUp at ≤ 0.5), `AdvancedCompoundToggleChecker` (`disableWhenBlocked`,
+  `restoreDelay`, …: the enemies' 隐匿, `common_invisible`, off while blocked and 3 s after), `BlockedToggleChecker`,
+  `RangeTileToggleChecker`, `FilterBuffToggleChecker`.
+
+**Our data's talent ids.** `units[id].talentKeys` (operators and summons) = `{ base: { talent index: [prefab keys] },
+trait?: [prefab keys], modules?: { uniEquipId: { talent index: [prefab keys] } } }`: data/chess.json / data/tokens.json
+`talents[].index` is the index into the official character_table's talents, whose candidates name their node
+(`prefabKey`: `1`, `2`, but also `-1`, `1+`, `t1`, `#`, …); the trait's candidates (always on: 风丸's trait talent is
+`-1`); a module's talents (our `fromModule` talents: index −1 for one it adds, e.g. 灵知's `uniequip_003_gnosis` →
+`10`). So a unit's active talents are the keys of its record's talents (`fromModule` → `modules[record.module.id]`, else
+`base`) and of its trait. An enemy's talents are all on; `bb` links them to its record's blackboard.
+
+**`units[id].spineEffects`** — a SpineEffectEmitter's presets (on the unit's Graphic: `扎罗，“狼之主”`'s two skill
+loops), Emit rows with `node`, `preset` (the index a Spine event names — *assumed* from the class; the events are in the
+skeleton, not the prefab) and `createAtWorldPos`.
+
+**Which projectile an ability fires.** `skills[id].abilities` lists every attack ability of the skill prefab — `{ node,
+class, animKey, attackType, damageType, projectileKey, extraProjectileKeys, projectileDestination, mount, mountGroup?,
+additionalTimes?, triggerDelta?, additionalProjectile(s)?, select? }` — and every other behaviour that fires a
+projectile of its own (`SimpleProjectileEmitter`: 赤刃明霄陈 S3, `ChantWithProjectileBeforeSkill`: 予愿安洁莉娜 S2, as
+`{ node, class, projectileKey }`); an emitter use of a projectile-firing ability carries its `projectileKey` (and
+`extraProjectileKeys`). Talents and abilities have the same `abilities`; the mode attacks and their sub-abilities gain
+`mount` (the MountPointType name of `_mountPointType`: where the shot leaves), `mountGroup` (`{ loop, mounts }`: points
+taken in turn — *metadata* MountPointGroup.LoopType RANDOM / LOOP), `additionalTimes` / `triggerDelta` (a multi attack's
+hits after the first and their spacing) and `additionalProjectile(s)` (the projectile of those shots: 阿's S2 and S3).
+
+**Buff lives.** Every use a buff carries has `life` = `{ type, time?, key?, db?, tick? }`: `type` *metadata*
+Torappu.LifeType of the BuffData's `lifeTimeType` (the templates' own Odin data write the same field by name):
+IMMEDIATELY (applied and gone — its effect plays once), LIMITED (for a time: `time` = `lifeTime` s when set, else the
+blackboard `key` (`durationKey`) — our data's records carry the values, e.g. `duration`; a LIMITED buff with neither
+lasts what its ability gives it, *assumed*: the skill), INFINITY (until removed: its ability ends, the target leaves the
+aura, the skill ends), CUSTOM; `db` = `loadFromDB` (the client's buff table may replace these; 2 uses); `tick` =
+`triggerInterval` (the period of its ON_BUFF_TRIGGER actions — the ticks no client event reports). The templates have
+no life of their own (Torappu.Battle.BuffTemplate: `templateKey`, `effectKey`, `eventToActions`, `onEventPriority`).
+
+**Group choice.** `select` on a group ability (mode attacks, sub-abilities, skills' and talents' abilities): `{ method,
+probKeys?, diffFromLast?, allAtLeastOnce?, loop?, main?, burst? }` — `random` / `loop` (*metadata*
+AbilityRandomGroup.SelectMethod Random / Loop; `probKeys`: the blackboard keys of the weights when configurable),
+`trigger` (AbilitySelectableGroup, BurstAttackGroup: the first config whose own trigger finds its target; `sequential`
+with `_selectAbilitySequentially`), `firstSucceed`, `parallel` (`main`: the index of `_mainAbility`), `sequence`
+(`loop`: it starts over); `burst`: the index of a BurstAttackGroup's burst attack. The MultiHit groups need no new
+field: their choice flags were exported (§33.12) and the base rule (hit k plays group min(k, last)) is engine code no
+data shows — still **assumed**; `additionalTimes` + 1 is the hits of the attack, against `groups` the groups.
+
+**Numbers** (the full set): 4,518 effect prefabs (+207: the effects the talents' and abilities' buff templates name;
+none dropped), 3,388 textures (+65), 1,233 meshes (+19): 12,489 files, 193.5 MB (+5.4 MB); `index.json` 6.7 MB
+(0.40 MB gzipped; 6.0 / 0.34 in version 2), the file list 9,141 entries, 1.22 MB. The run takes 158 s (units, skills
+and buff templates 48 s). Talents of 268 units (105 operators, 140 enemies, 23 summons): 337 keys, 443 nodes, 575 uses;
+abilities of 119 units: 59 common, 111 general, 5 traits, 291 uses; 57 nodes cast by a template action (5 through a
+blackboard name), 57 with a mode switch, 11 reborn talents (6 with their handler node); `talentKeys` for 210 operators
+and 45 summons (125 of the operators' 126 exported talent keys and all 24 of the summons' are named there; 夕's `2+`
+is not); `bb` on 150 of the enemies' 187 talents (the rest have no blackboard in our data). Of Phase 1c's 47 nodes
+outside the index (§33.15) 42 are exported; the other 5 are `Combat` attacks no mode references (妖怪, 御4, 寒霜:
+their mode's `_combat` is `EmptyCombat`; 守墓石像's `Stone` mode has none). Skills: 210 of the 596 list `abilities`
+(104 entries fire a projectile); of the 85 skills with projectiles 76 name all of them through an ability, 9 do not
+(伊内丝 S3, 魔王 S1–S3, 仇白 S1, 菲亚梅塔 S2, 老鲤 S2, 维什戴尔 S1, 克莱门莎 S3: a buff's blackboard or a template's
+EmitProjectile action names them); 109 uses carry a `projectileKey`. Mode attacks: `select` on 76 groups, `mount` on
+458 abilities, `additionalTimes` on 74, 16 UberAnimation emitters (LOOP 6, RANDOM 10). Buff uses with a `life`: 713 of
+the operators' and summons' skills (LIMITED 407 — 268 with a blackboard key, 4 with a time —, INFINITY 286, IMMEDIATELY
+20), 485 of the talents, 252 of the abilities, 71 of the enemies' skills.
+
+**What the runtime does not read yet, and the signals it has** (§33.16 reads skills only; `render/vfx/skills.js` is
+the runtime's; the sim's client events are docs/SIM.md §9's): `talents` / `abilities` can go through the skill planner
+(their `uses` have the skills' shape), bound per node by `when`: `deploy` → `['deploy', id]` (and a unit's `['spawn',
+…]`); `passive` → from the spawn / deploy to `['die', …]` / `['leak', id]` / the battle's end (a general ability only
+while its mode is on: the skill's mode, `skills[id].mode`, between `['skill', id, 1]` and `0`, or a form); `reborn` →
+an enemy's 重生 (`content/enemies/archetypes.js reborn()`): the knock-out's `['fx', 'telegraph', …, { id, form: 'reborn',
+dur, kind: 'reborn' }]` starts the handler's ON_CAST_START rows, the stand-up's `['fx', 'revive', …, { id, form:
+'form2' }]` its ON_CAST_END rows and the talent's buffs (the 无敌 loop for `life.key`'s blackboard value), and the
+attacks of `reborn.mode`; `toggle` → the snapshot (HP ratio for HpRatioToggleChecker, UF.blocked for the blocked
+checkers, UF.stealth and `['status', id, 'stealth', 1 | 0]` for the 隐匿 one); `switchMode` / a mode's general
+abilities → the form tuples (`shared/protocol.js fxForm`: the sim's form names — a 傀儡师's `doll` on `['fx',
+'substitute']`, `null` on `swap` / `dollEnd`, the enemies' setForm forms — need a map to the client's mode names: 风丸's
+`doll` is `Stand`); `triggers` at ON_BEFORE_TRY_SET_HP_ZERO → the kits' `['fx', 'undying', …]` / `substitute`,
+ON_BUFF_FINISH of a stand-in buff → `swap` / `dollEnd`; `attack` → no event names the talent's attack (unmapped, or a
+kit's fx); `tick` and the other buff events, a template's casts at events the client never sees, `spineEffects`: no
+signal. The attacks: `select` / `abilities` order for a group's sub-ability (still the client's pick per cast),
+`mount` for where a shot leaves, `additionalProjectile` for the follow-up shots; skills: `abilities[].projectileKey` /
+a use's `projectileKey` replaces `skillProjectile`'s naming rule; `life` replaces `buffDuration(srec)`'s guess for the
+buffs on targets (`key` → our record's blackboard, `time`, INFINITY → while the skill or aura lasts, IMMEDIATELY → once).
+
+**Still assumed, or not exported.** Which sub-ability a group picks for a given cast and which hit group a MultiHit hit
+plays (engine code; the data's flags are exported); the unnamed TriggerAbility reading the blackboard `ability_name`;
+a LIMITED buff without a key or time lasting its ability; a SpineEffectEmitter preset per Spine event; the projectiles a
+buff's blackboard (`next_projectile_key`, `projectile`) or a template's EmitProjectile action names (9 skills above) —
+in `projectiles`, not tied to an ability; the 5 unreferenced `Combat` nodes; template-created buffs' lives (their
+CreateBuff data is not read for `life`); talents and abilities whose nodes name no effect (stat buffs, card plugins:
+nothing to draw).

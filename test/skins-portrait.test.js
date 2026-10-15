@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // test/skins-portrait.test.js — 商店立绘 (docs/SKINS.md): the shop card's portrait is a per-browser choice,
 // INDEPENDENT of the battle model (whose own test is test/skins.test.js / test/skins-lifecycle.test.js).
 //

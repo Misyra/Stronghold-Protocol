@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // public/js/render/spinePreview.js — 干员小人预览 (docs/SKINS.md).
 //
 // Two things live here, both for the 皮肤 section's preview frame (ui/skinPicker.js):

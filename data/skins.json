@@ -4,6 +4,7 @@
   "chars": 174,
   "skins": 273
  },
+ "source": "ported from sganggs/Stronghold-Protocol PR #652 (upstream 0.2.7-dev)",
  "chars": {
   "char_498_inside": [
    {

@@ -15,6 +15,8 @@ Copyright (C) 2026 Stronghold-Protocol contributors
 
 **英文翻译致谢**：界面英文文本 `public/i18n/en.json` 与游戏文本的补充译文 `tools/i18n/fallback-pr70.json` 以 GitHub PR #70（分支 `en-translation`）中 **@YuriRestia** 的翻译为基础，经项目所有者决定（2026-10-05）署名沿用，随本项目一同以 GPL-3.0-or-later 发布；PR #70 中取自 ak-spa-database.pages.dev（未声明许可）的文本未被采用。英文游戏文本 `data/i18n/en.json` 本身是官方英文服数据（见第 2 节）。
 
+**干员皮肤致谢**：干员皮肤（官方时装换局内模型 / 商店立绘，`docs/SKINS.md`）移植自 [sganggs/Stronghold-Protocol PR #652](https://github.com/sganggs/Stronghold-Protocol/pull/652) 中 **@alien-zzy** 的实现（11 个提交，上游 0.2.7-dev），经项目所有者决定（2026-10-14）并入本分支，同一 GPL-3.0-or-later 许可；皮肤素材（Spine 模型、头像、立绘）来自上游公开镜像，版权归原权利人所有，与代码许可无关（见第 2 节）。
+
 **附加许可（GPL-3.0 第 7 条）** — Additional permission under GNU GPL version 3 section 7:
 
 > If you modify this Program, or any covered work, by linking or combining it with the Spine Runtimes (as shipped in

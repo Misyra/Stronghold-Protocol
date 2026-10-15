@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // tools/install-skins.mjs — 按需安装干员皮肤 (docs/SKINS.md).
 //
 // Why this exists instead of just re-running tools/fetch-assets.mjs: a full run takes ~80 s even with a warm

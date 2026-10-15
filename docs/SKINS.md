@@ -1,5 +1,10 @@
 # 干员皮肤 (Operator skins)
 
+> **来源 / Provenance.** This document, and the feature it describes, are ported from
+> [sganggs/Stronghold-Protocol PR #652](https://github.com/sganggs/Stronghold-Protocol/pull/652) by **@alien-zzy**
+> (11 commits, upstream 0.2.7-dev). Everything below the next heading is that PR's own note; the changes this fork
+> needed to land it are in [移植说明](#移植说明-this-fork) at the end.
+
 An operator's Spine model and avatar can be replaced by one of its official alternative outfits (时装). Written to
 be **portable**: nearly everything lives in new files, and the handful of edits to existing ones are listed below
 line by line so they can be re-applied after merging an upstream release.
@@ -230,3 +235,24 @@ The pipeline is ready for the day the catalogue grows: nothing about a slot is s
   `meta.layoutRule` says so; a future skin in that shape needs the same treatment.
 - **An install is tens of seconds, not instant.** The eight files come from GitHub at the link's speed; the panel
   acknowledges immediately and reports back through `skins.changed`.
+
+## 移植说明 (this fork)
+
+What had to change to land PR #652 in this fork. Every row was a red test, a broken screen or a swallowed click
+before it — none of them is a preference.
+
+| Where | What | Why |
+|---|---|---|
+| `server/lobby.js` → `startMatchWith` | the checkpoint-restore seat mapping carries `skins` as well | this fork rebuilds a reclaimed match from a checkpoint's captured player records; without the field a restored match silently reverts every player to the default model |
+| `public/css/screens/loadout.css` | the section's font sizes are `max(calc(N * var(--utility-text, var(--t))), Mpx)` | this fork's compact-layer text contract (`test/ui/utility-mobile.test.js`); upstream's rules read `--t` alone |
+| `server/match/snapshot.js` | `skins` is classified in `PLAYER_FIELDS` (persisted), not with the transient fields | `test/match/snapshot.test.js` requires every new Match / PlayerState field to declare a persistence policy, and a transient `skins` would drop the choice on every restore |
+| `public/js/ui/skinPicker.js` | the two `<img>` templates take `crossorigin="anonymous"` before `src` + `recoverImageError` | this fork's DOM image rule (`test/ui/image-policy.test.js`); the frame keeps ONE constant child shape, or Preact re-diffs the box and takes the live canvas with it |
+| `tools/README.md`, `tools/package.mjs` | both new tools listed in the tools README; `docs/SKINS.md` in `PLAYER_DOCS`, `docs/research/08-skins.json` in `RUNTIME_RESEARCH` | this fork ships its docs under `docs/guides/` + `docs/operations/` and has no `docs/DEPLOY.md` (upstream's lists name it) |
+| `public/i18n/{ja,ko,zh-TW}.json` | the 35 new msgids translated | this fork ships four language packs and the three non-English ones declare themselves complete |
+| `test/skins-lifecycle.test.js` | the lobby fixture builds a real `SessionRegistry` | this fork's lobby calls `registry.byId()` and the room limiter reads `session.limitKey`, so upstream's `{ byId: new Map() }` stub throws |
+| `test/ui/skins.e2e.test.js` | dismisses the 全屏游玩 prompt, and opens 干员调配 only while the overlay is closed | a fork-only entry overlay sits above the lobby and swallows the first physical click; the entry button is hidden while the overlay is open |
+
+Data side (unchanged from upstream's design): `data/skins-installed.json` ships empty, and each deployment installs
+what it wants — `node tools/install-skins.mjs add <skinId…>` / `add-char <charId…>`. The upstream link is slow from a
+mainland line; through a local proxy the whole 273-skin catalogue is minutes rather than an hour, provided the process
+is started with `NODE_USE_ENV_PROXY=1` (`tools/assets/env-proxy.mjs` explains why that has to be at startup).

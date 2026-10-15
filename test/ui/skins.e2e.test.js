@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // Browser E2E for 干员皮肤 (docs/SKINS.md) in headless Chrome. Opt-in, like the other E2E files.
 //
 //   SP_E2E=1 node --test test/ui/skins.e2e.test.js

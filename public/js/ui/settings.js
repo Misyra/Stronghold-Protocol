@@ -338,11 +338,13 @@ export function SettingsModal({ open, onClose }) {
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
   const mtNote = machineTranslationNote(); // a pack marked as machine translation says so under the switch
   const [fxOk, setFxOk] = useState(false);  // effects extracted from the local client: the 官方特效 row shows
-  // only while it is open: the title page keeps the modal mounted (closed), and assets.js stays lazy there
+  // only while it is open (the title page keeps the modal mounted, closed), and from the effects' own file list: the
+  // asset store (assets.js) is not loaded before a match (test/ui/plugins.e2e.test.js). A Phase 1a extraction (0.3.0
+  // development builds only) listed its effects in data/local-assets.json instead and shows no row: re-extract.
   useEffect(() => {
     if (!open) return undefined;
     let live = true;
-    import('../assets.js').then((m) => fxAvailable(m.assets)).catch(() => fxAvailable(null)).then((ok) => { if (live) setFxOk(!!ok); }, () => {});
+    fxAvailable(null).then((ok) => { if (live) setFxOk(!!ok); }, () => {});
     return () => { live = false; };
   }, [open]);
   const fxTier = resolveOfficialFx(s.officialFx, true);

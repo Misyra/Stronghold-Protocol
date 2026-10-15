@@ -4,16 +4,18 @@
    "fexli/ArknightsResource — spine/{charId}/{stem}/{Front,Back}/ (dir listing, via the GitHub contents API)",
    "Kengxxiao/ArknightsGameData — zh_CN/gamedata/excel/skin_table.json (charSkins[].displaySkin / portraitId)",
    "yuanyan3060/ArknightsGameResource — avatar/{avatarId}.png",
-   "fexli/ArknightsResource — spine/{charId}/{stem}/Spine/<stem>.{skel,atlas,png} for the skins whose directory holds a single merged model instead of Front/Back (char_1012_skadi2@boc#4, @iteration#2; found 2026-10-15)"
+   "fexli/ArknightsResource — spine/{charId}/{stem}/Spine/<stem>.{skel,atlas,png} for the skins whose directory holds a single merged model instead of Front/Back (char_1012_skadi2@boc#4, @iteration#2; found 2026-10-15)",
+   "2026-10-15: extended to the 自选编队 pool (the owned 6★ outside the chess pool, ui/diyModel.js) — same sources, per-skin model existence re-verified with HEAD probes; documented in meta.diyPoolExtension"
   ],
   "note": "Only skins whose Spine model directory exists upstream, and only for the pool operators of 07-assets.json. Default outfits (默认服装) are omitted: they are the chars[].spine entries the manifest already carries.",
   "stemRule": "skinId.replace(/@/g,'_').replace(/#/g,'_') === stem  (fexli directory and model file stem)",
   "avatarRule": "avatar/{avatarId}.png from yuanyan3060 (180×180, ~25 KB), with '#' percent-encoded as %23. Deliberately NOT the full skin art skin/{portraitId}b.png: that is ~2.5 MB each, 435 MB for the set.",
   "counts": {
-   "operators": 115,
-   "skins": 174
+   "operators": 174,
+   "skins": 273
   },
-  "layoutRule": "A model's files live at spine/{charId}/{stem}/{Front,Back}/<stem>.<ext>. The skins whose upstream directory instead holds a single Spine/ folder carry ONE model, recorded as `front` with no `back` — one direction only, so a unit facing up draws the same model (their {Front,Back} paths 404, which is what the first install run hit)."
+  "layoutRule": "A model's files live at spine/{charId}/{stem}/{Front,Back}/<stem>.<ext>. The skins whose upstream directory instead holds a single Spine/ folder carry ONE model, recorded as `front` with no `back` — one direction only, so a unit facing up draws the same model (their {Front,Back} paths 404, which is what the first install run hit).",
+  "diyPoolExtension": "The skins of the 自选 pool (backups.json diy.operators — the owned 6★ outside the chess pool) enumerated from zh_CN skin_table.json (Kengxxiao) + fexli dir existence; the two 浊心斯卡蒂-style single-model layouts apply here too (meta.layoutRule)."
  },
  "skins": {
   "char_498_inside": [
@@ -6308,6 +6310,3589 @@
        "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1039_thorn2/char_1039_thorn2_marthe_9/Back/char_1039_thorn2_marthe_9.png"
       },
       "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1039_thorn2/char_1039_thorn2_marthe_9/Back/char_1039_thorn2_marthe_9.skel"
+     }
+    }
+   }
+  ],
+  "char_003_kalts": [
+   {
+    "skinId": "char_003_kalts@sale#14",
+    "stem": "char_003_kalts_sale_14",
+    "name": "时遗",
+    "group": "忒斯特收藏/XVI/XIV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_sale%2314"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Front/char_003_kalts_sale_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Front/char_003_kalts_sale_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Front/char_003_kalts_sale_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_003_kalts/char_003_kalts_sale_14/Front/char_003_kalts_sale_14.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Back/char_003_kalts_sale_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Back/char_003_kalts_sale_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_sale_14/Back/char_003_kalts_sale_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_003_kalts/char_003_kalts_sale_14/Back/char_003_kalts_sale_14.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_003_kalts@boc#6",
+    "stem": "char_003_kalts_boc_6",
+    "name": "残余",
+    "group": "斗争血脉/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_boc%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Front/char_003_kalts_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Front/char_003_kalts_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Front/char_003_kalts_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_003_kalts/char_003_kalts_boc_6/Front/char_003_kalts_boc_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Back/char_003_kalts_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Back/char_003_kalts_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_003_kalts/char_003_kalts_boc_6/Back/char_003_kalts_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_003_kalts/char_003_kalts_boc_6/Back/char_003_kalts_boc_6.skel"
+     }
+    }
+   }
+  ],
+  "char_010_chen": [
+   {
+    "skinId": "char_010_chen@sale#10",
+    "stem": "char_010_chen_sale_10",
+    "name": "初晴",
+    "group": "忒斯特收藏/XI/X",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_sale%2310"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Front/char_010_chen_sale_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Front/char_010_chen_sale_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Front/char_010_chen_sale_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_010_chen/char_010_chen_sale_10/Front/char_010_chen_sale_10.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Back/char_010_chen_sale_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Back/char_010_chen_sale_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_sale_10/Back/char_010_chen_sale_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_010_chen/char_010_chen_sale_10/Back/char_010_chen_sale_10.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_010_chen@nian#2",
+    "stem": "char_010_chen_nian_2",
+    "name": "岁红霞",
+    "group": "0011制造/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_nian%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Front/char_010_chen_nian_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Front/char_010_chen_nian_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Front/char_010_chen_nian_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_010_chen/char_010_chen_nian_2/Front/char_010_chen_nian_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Back/char_010_chen_nian_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Back/char_010_chen_nian_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_010_chen/char_010_chen_nian_2/Back/char_010_chen_nian_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_010_chen/char_010_chen_nian_2/Back/char_010_chen_nian_2.skel"
+     }
+    }
+   }
+  ],
+  "char_017_huang": [
+   {
+    "skinId": "char_017_huang@witch#5",
+    "stem": "char_017_huang_witch_5",
+    "name": "易爆蓝焰",
+    "group": "巫异盛宴/V/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_witch%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Front/char_017_huang_witch_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Front/char_017_huang_witch_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Front/char_017_huang_witch_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_017_huang/char_017_huang_witch_5/Front/char_017_huang_witch_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Back/char_017_huang_witch_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Back/char_017_huang_witch_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_witch_5/Back/char_017_huang_witch_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_017_huang/char_017_huang_witch_5/Back/char_017_huang_witch_5.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_017_huang@as#1",
+    "stem": "char_017_huang_as_1",
+    "name": "爆裂菲林",
+    "group": "音律联觉",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_as%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Front/char_017_huang_as_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Front/char_017_huang_as_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Front/char_017_huang_as_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_017_huang/char_017_huang_as_1/Front/char_017_huang_as_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Back/char_017_huang_as_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Back/char_017_huang_as_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_017_huang/char_017_huang_as_1/Back/char_017_huang_as_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_017_huang/char_017_huang_as_1/Back/char_017_huang_as_1.skel"
+     }
+    }
+   }
+  ],
+  "char_112_siege": [
+   {
+    "skinId": "char_112_siege@wild#2",
+    "stem": "char_112_siege_wild_2",
+    "name": "遗石",
+    "group": "生命之地/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_wild%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Front/char_112_siege_wild_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Front/char_112_siege_wild_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Front/char_112_siege_wild_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_112_siege/char_112_siege_wild_2/Front/char_112_siege_wild_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Back/char_112_siege_wild_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Back/char_112_siege_wild_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_wild_2/Back/char_112_siege_wild_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_112_siege/char_112_siege_wild_2/Back/char_112_siege_wild_2.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_112_siege@striker#2",
+    "stem": "char_112_siege_striker_2",
+    "name": "摧城",
+    "group": "雷神推进者/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_striker%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Front/char_112_siege_striker_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Front/char_112_siege_striker_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Front/char_112_siege_striker_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_112_siege/char_112_siege_striker_2/Front/char_112_siege_striker_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Back/char_112_siege_striker_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Back/char_112_siege_striker_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_112_siege/char_112_siege_striker_2/Back/char_112_siege_striker_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_112_siege/char_112_siege_striker_2/Back/char_112_siege_striker_2.skel"
+     }
+    }
+   }
+  ],
+  "char_113_cqbw": [
+   {
+    "skinId": "char_113_cqbw@epoque#7",
+    "stem": "char_113_cqbw_epoque_7",
+    "name": "恍惚",
+    "group": "时代/VII/VII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_113_cqbw_epoque%237"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Front/char_113_cqbw_epoque_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Front/char_113_cqbw_epoque_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Front/char_113_cqbw_epoque_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Front/char_113_cqbw_epoque_7.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Back/char_113_cqbw_epoque_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Back/char_113_cqbw_epoque_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Back/char_113_cqbw_epoque_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_113_cqbw/char_113_cqbw_epoque_7/Back/char_113_cqbw_epoque_7.skel"
+     }
+    }
+   }
+  ],
+  "char_134_ifrit": [
+   {
+    "skinId": "char_134_ifrit@summer#1",
+    "stem": "char_134_ifrit_summer_1",
+    "name": "日晒 SS.SP",
+    "group": "珊瑚海岸/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_summer%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Front/char_134_ifrit_summer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Front/char_134_ifrit_summer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Front/char_134_ifrit_summer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_summer_1/Front/char_134_ifrit_summer_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Back/char_134_ifrit_summer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Back/char_134_ifrit_summer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_summer_1/Back/char_134_ifrit_summer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_summer_1/Back/char_134_ifrit_summer_1.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_134_ifrit@kfc#1",
+    "stem": "char_134_ifrit_kfc_1",
+    "name": "儿童派对",
+    "group": "肯德基/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_kfc%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Front/char_134_ifrit_kfc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Front/char_134_ifrit_kfc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Front/char_134_ifrit_kfc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Front/char_134_ifrit_kfc_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Back/char_134_ifrit_kfc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Back/char_134_ifrit_kfc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Back/char_134_ifrit_kfc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_kfc_1/Back/char_134_ifrit_kfc_1.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_134_ifrit@rilakkuma#1",
+    "stem": "char_134_ifrit_rilakkuma_1",
+    "name": "轻松旅途",
+    "group": "轻松小熊/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_rilakkuma%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Front/char_134_ifrit_rilakkuma_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Front/char_134_ifrit_rilakkuma_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Front/char_134_ifrit_rilakkuma_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Front/char_134_ifrit_rilakkuma_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Back/char_134_ifrit_rilakkuma_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Back/char_134_ifrit_rilakkuma_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Back/char_134_ifrit_rilakkuma_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_134_ifrit/char_134_ifrit_rilakkuma_1/Back/char_134_ifrit_rilakkuma_1.skel"
+     }
+    }
+   }
+  ],
+  "char_147_shining": [
+   {
+    "skinId": "char_147_shining@summer#1",
+    "stem": "char_147_shining_summer_1",
+    "name": "静谧午夜 DN02",
+    "group": "珊瑚海岸/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_147_shining_summer%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Front/char_147_shining_summer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Front/char_147_shining_summer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Front/char_147_shining_summer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_147_shining/char_147_shining_summer_1/Front/char_147_shining_summer_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Back/char_147_shining_summer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Back/char_147_shining_summer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_147_shining/char_147_shining_summer_1/Back/char_147_shining_summer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_147_shining/char_147_shining_summer_1/Back/char_147_shining_summer_1.skel"
+     }
+    }
+   }
+  ],
+  "char_179_cgbird": [
+   {
+    "skinId": "char_179_cgbird@witch#1",
+    "stem": "char_179_cgbird_witch_1",
+    "name": "挽歌",
+    "group": "巫异盛宴 /I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_witch%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Front/char_179_cgbird_witch_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Front/char_179_cgbird_witch_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Front/char_179_cgbird_witch_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_179_cgbird/char_179_cgbird_witch_1/Front/char_179_cgbird_witch_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Back/char_179_cgbird_witch_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Back/char_179_cgbird_witch_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_witch_1/Back/char_179_cgbird_witch_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_179_cgbird/char_179_cgbird_witch_1/Back/char_179_cgbird_witch_1.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_179_cgbird@sightseer#1",
+    "stem": "char_179_cgbird_sightseer_1",
+    "name": "流辉",
+    "group": "错位巡礼/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_sightseer%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Front/char_179_cgbird_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Front/char_179_cgbird_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Front/char_179_cgbird_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Front/char_179_cgbird_sightseer_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Back/char_179_cgbird_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Back/char_179_cgbird_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Back/char_179_cgbird_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_179_cgbird/char_179_cgbird_sightseer_1/Back/char_179_cgbird_sightseer_1.skel"
+     }
+    }
+   }
+  ],
+  "char_180_amgoat": [
+   {
+    "skinId": "char_180_amgoat@summer#5",
+    "stem": "char_180_amgoat_summer_5",
+    "name": "夏卉 FA018",
+    "group": "珊瑚海岸/V/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_summer%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Front/char_180_amgoat_summer_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Front/char_180_amgoat_summer_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Front/char_180_amgoat_summer_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_180_amgoat/char_180_amgoat_summer_5/Front/char_180_amgoat_summer_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Back/char_180_amgoat_summer_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Back/char_180_amgoat_summer_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_summer_5/Back/char_180_amgoat_summer_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_180_amgoat/char_180_amgoat_summer_5/Back/char_180_amgoat_summer_5.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_180_amgoat@sanrio#2",
+    "stem": "char_180_amgoat_sanrio_2",
+    "name": "绵绒小魔女",
+    "group": "三丽鸥家族/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_sanrio%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Front/char_180_amgoat_sanrio_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Front/char_180_amgoat_sanrio_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Front/char_180_amgoat_sanrio_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Front/char_180_amgoat_sanrio_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Back/char_180_amgoat_sanrio_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Back/char_180_amgoat_sanrio_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Back/char_180_amgoat_sanrio_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_180_amgoat/char_180_amgoat_sanrio_2/Back/char_180_amgoat_sanrio_2.skel"
+     }
+    }
+   }
+  ],
+  "char_188_helage": [
+   {
+    "skinId": "char_188_helage@boc#2",
+    "stem": "char_188_helage_boc_2",
+    "name": "歧路幻影",
+    "group": "斗争血脉/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_188_helage_boc%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Front/char_188_helage_boc_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Front/char_188_helage_boc_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Front/char_188_helage_boc_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_188_helage/char_188_helage_boc_2/Front/char_188_helage_boc_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Back/char_188_helage_boc_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Back/char_188_helage_boc_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_188_helage/char_188_helage_boc_2/Back/char_188_helage_boc_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_188_helage/char_188_helage_boc_2/Back/char_188_helage_boc_2.skel"
+     }
+    }
+   }
+  ],
+  "char_197_poca": [
+   {
+    "skinId": "char_197_poca@epoque#12",
+    "stem": "char_197_poca_epoque_12",
+    "name": "杰作",
+    "group": "时代/XII/XII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_epoque%2312"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Front/char_197_poca_epoque_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Front/char_197_poca_epoque_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Front/char_197_poca_epoque_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_197_poca/char_197_poca_epoque_12/Front/char_197_poca_epoque_12.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Back/char_197_poca_epoque_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Back/char_197_poca_epoque_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_epoque_12/Back/char_197_poca_epoque_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_197_poca/char_197_poca_epoque_12/Back/char_197_poca_epoque_12.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_197_poca@rilakkuma#1",
+    "stem": "char_197_poca_rilakkuma_1",
+    "name": "常伴我身",
+    "group": "轻松小熊/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_rilakkuma%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Front/char_197_poca_rilakkuma_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Front/char_197_poca_rilakkuma_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Front/char_197_poca_rilakkuma_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_197_poca/char_197_poca_rilakkuma_1/Front/char_197_poca_rilakkuma_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Back/char_197_poca_rilakkuma_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Back/char_197_poca_rilakkuma_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_197_poca/char_197_poca_rilakkuma_1/Back/char_197_poca_rilakkuma_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_197_poca/char_197_poca_rilakkuma_1/Back/char_197_poca_rilakkuma_1.skel"
+     }
+    }
+   }
+  ],
+  "char_225_haak": [
+   {
+    "skinId": "char_225_haak@nian#4",
+    "stem": "char_225_haak_nian_4",
+    "name": "百面郎中",
+    "group": "0011制造/III/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Front/char_225_haak_nian_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Front/char_225_haak_nian_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Front/char_225_haak_nian_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_225_haak/char_225_haak_nian_4/Front/char_225_haak_nian_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Back/char_225_haak_nian_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Back/char_225_haak_nian_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_4/Back/char_225_haak_nian_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_225_haak/char_225_haak_nian_4/Back/char_225_haak_nian_4.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_225_haak@nian#5",
+    "stem": "char_225_haak_nian_5",
+    "name": "妙手玄心",
+    "group": "0011制造/IV/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Front/char_225_haak_nian_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Front/char_225_haak_nian_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Front/char_225_haak_nian_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_225_haak/char_225_haak_nian_5/Front/char_225_haak_nian_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Back/char_225_haak_nian_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Back/char_225_haak_nian_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_225_haak/char_225_haak_nian_5/Back/char_225_haak_nian_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_225_haak/char_225_haak_nian_5/Back/char_225_haak_nian_5.skel"
+     }
+    }
+   }
+  ],
+  "char_248_mgllan": [
+   {
+    "skinId": "char_248_mgllan@kitchen#1",
+    "stem": "char_248_mgllan_kitchen_1",
+    "name": "回味冰霜雪",
+    "group": "罗德厨房/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_248_mgllan_kitchen%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Front/char_248_mgllan_kitchen_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Front/char_248_mgllan_kitchen_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Front/char_248_mgllan_kitchen_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Front/char_248_mgllan_kitchen_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Back/char_248_mgllan_kitchen_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Back/char_248_mgllan_kitchen_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Back/char_248_mgllan_kitchen_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_248_mgllan/char_248_mgllan_kitchen_1/Back/char_248_mgllan_kitchen_1.skel"
+     }
+    }
+   }
+  ],
+  "char_250_phatom": [
+   {
+    "skinId": "char_250_phatom@sale#4",
+    "stem": "char_250_phatom_sale_4",
+    "name": "焦点",
+    "group": "忒斯特收藏/V/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_sale%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Front/char_250_phatom_sale_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Front/char_250_phatom_sale_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Front/char_250_phatom_sale_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_250_phatom/char_250_phatom_sale_4/Front/char_250_phatom_sale_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Back/char_250_phatom_sale_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Back/char_250_phatom_sale_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_sale_4/Back/char_250_phatom_sale_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_250_phatom/char_250_phatom_sale_4/Back/char_250_phatom_sale_4.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_250_phatom@ghost#1",
+    "stem": "char_250_phatom_ghost_1",
+    "name": "梦魇之梦",
+    "group": "缠梦古堡/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_ghost%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Front/char_250_phatom_ghost_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Front/char_250_phatom_ghost_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Front/char_250_phatom_ghost_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_250_phatom/char_250_phatom_ghost_1/Front/char_250_phatom_ghost_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Back/char_250_phatom_ghost_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Back/char_250_phatom_ghost_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_250_phatom/char_250_phatom_ghost_1/Back/char_250_phatom_ghost_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_250_phatom/char_250_phatom_ghost_1/Back/char_250_phatom_ghost_1.skel"
+     }
+    }
+   }
+  ],
+  "char_293_thorns": [
+   {
+    "skinId": "char_293_thorns@boc#8",
+    "stem": "char_293_thorns_boc_8",
+    "name": "锋潮",
+    "group": "斗争血脉/VIII/VIII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_boc%238"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Front/char_293_thorns_boc_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Front/char_293_thorns_boc_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Front/char_293_thorns_boc_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_293_thorns/char_293_thorns_boc_8/Front/char_293_thorns_boc_8.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Back/char_293_thorns_boc_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Back/char_293_thorns_boc_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_boc_8/Back/char_293_thorns_boc_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_293_thorns/char_293_thorns_boc_8/Back/char_293_thorns_boc_8.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_293_thorns@it#1",
+    "stem": "char_293_thorns_it_1",
+    "name": "惬意",
+    "group": "i.t/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_it%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Front/char_293_thorns_it_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Front/char_293_thorns_it_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Front/char_293_thorns_it_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_293_thorns/char_293_thorns_it_1/Front/char_293_thorns_it_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Back/char_293_thorns_it_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Back/char_293_thorns_it_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_293_thorns/char_293_thorns_it_1/Back/char_293_thorns_it_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_293_thorns/char_293_thorns_it_1/Back/char_293_thorns_it_1.skel"
+     }
+    }
+   }
+  ],
+  "char_300_phenxi": [
+   {
+    "skinId": "char_300_phenxi@witch#4",
+    "stem": "char_300_phenxi_witch_4",
+    "name": "至圣誓言",
+    "group": "巫异盛宴/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_witch%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Front/char_300_phenxi_witch_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Front/char_300_phenxi_witch_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Front/char_300_phenxi_witch_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_300_phenxi/char_300_phenxi_witch_4/Front/char_300_phenxi_witch_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Back/char_300_phenxi_witch_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Back/char_300_phenxi_witch_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_witch_4/Back/char_300_phenxi_witch_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_300_phenxi/char_300_phenxi_witch_4/Back/char_300_phenxi_witch_4.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_300_phenxi@boc#9",
+    "stem": "char_300_phenxi_boc_9",
+    "name": "审判日",
+    "group": "斗争血脉/IX/IX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_boc%239"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Front/char_300_phenxi_boc_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Front/char_300_phenxi_boc_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Front/char_300_phenxi_boc_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_300_phenxi/char_300_phenxi_boc_9/Front/char_300_phenxi_boc_9.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Back/char_300_phenxi_boc_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Back/char_300_phenxi_boc_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_300_phenxi/char_300_phenxi_boc_9/Back/char_300_phenxi_boc_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_300_phenxi/char_300_phenxi_boc_9/Back/char_300_phenxi_boc_9.skel"
+     }
+    }
+   }
+  ],
+  "char_322_lmlee": [
+   {
+    "skinId": "char_322_lmlee@whirlwind#10",
+    "stem": "char_322_lmlee_whirlwind_10",
+    "name": "鉴浮生",
+    "group": "0011/飙系列/X/X",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_whirlwind%2310"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Front/char_322_lmlee_whirlwind_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Front/char_322_lmlee_whirlwind_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Front/char_322_lmlee_whirlwind_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Front/char_322_lmlee_whirlwind_10.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Back/char_322_lmlee_whirlwind_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Back/char_322_lmlee_whirlwind_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Back/char_322_lmlee_whirlwind_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_whirlwind_10/Back/char_322_lmlee_whirlwind_10.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_322_lmlee@witch#3",
+    "stem": "char_322_lmlee_witch_3",
+    "name": "手到牌来",
+    "group": "巫异盛宴/III/III",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_witch%233"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Front/char_322_lmlee_witch_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Front/char_322_lmlee_witch_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Front/char_322_lmlee_witch_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_witch_3/Front/char_322_lmlee_witch_3.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Back/char_322_lmlee_witch_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Back/char_322_lmlee_witch_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_witch_3/Back/char_322_lmlee_witch_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_witch_3/Back/char_322_lmlee_witch_3.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_322_lmlee@sanrio#1",
+    "stem": "char_322_lmlee_sanrio_1",
+    "name": "坊间凉茶铺",
+    "group": "三丽鸥家族/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_sanrio%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Front/char_322_lmlee_sanrio_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Front/char_322_lmlee_sanrio_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Front/char_322_lmlee_sanrio_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Front/char_322_lmlee_sanrio_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Back/char_322_lmlee_sanrio_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Back/char_322_lmlee_sanrio_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Back/char_322_lmlee_sanrio_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_322_lmlee/char_322_lmlee_sanrio_1/Back/char_322_lmlee_sanrio_1.skel"
+     }
+    }
+   }
+  ],
+  "char_340_shwaz": [
+   {
+    "skinId": "char_340_shwaz@snow#1",
+    "stem": "char_340_shwaz_snow_1",
+    "name": "厚礼",
+    "group": "冰原信使/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_snow%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Front/char_340_shwaz_snow_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Front/char_340_shwaz_snow_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Front/char_340_shwaz_snow_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_340_shwaz/char_340_shwaz_snow_1/Front/char_340_shwaz_snow_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Back/char_340_shwaz_snow_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Back/char_340_shwaz_snow_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_snow_1/Back/char_340_shwaz_snow_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_340_shwaz/char_340_shwaz_snow_1/Back/char_340_shwaz_snow_1.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_340_shwaz@striker#1",
+    "stem": "char_340_shwaz_striker_1",
+    "name": "天际线",
+    "group": "雷神推进者/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_striker%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Front/char_340_shwaz_striker_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Front/char_340_shwaz_striker_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Front/char_340_shwaz_striker_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_340_shwaz/char_340_shwaz_striker_1/Front/char_340_shwaz_striker_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Back/char_340_shwaz_striker_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Back/char_340_shwaz_striker_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_340_shwaz/char_340_shwaz_striker_1/Back/char_340_shwaz_striker_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_340_shwaz/char_340_shwaz_striker_1/Back/char_340_shwaz_striker_1.skel"
+     }
+    }
+   }
+  ],
+  "char_362_saga": [
+   {
+    "skinId": "char_362_saga@sale#9",
+    "stem": "char_362_saga_sale_9",
+    "name": "彼有",
+    "group": "忒斯特收藏/X/IX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_362_saga_sale%239"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Front/char_362_saga_sale_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Front/char_362_saga_sale_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Front/char_362_saga_sale_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_362_saga/char_362_saga_sale_9/Front/char_362_saga_sale_9.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Back/char_362_saga_sale_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Back/char_362_saga_sale_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_362_saga/char_362_saga_sale_9/Back/char_362_saga_sale_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_362_saga/char_362_saga_sale_9/Back/char_362_saga_sale_9.skel"
+     }
+    }
+   }
+  ],
+  "char_377_gdglow": [
+   {
+    "skinId": "char_377_gdglow@summer#12",
+    "stem": "char_377_gdglow_summer_12",
+    "name": "夏卉 FA394",
+    "group": "珊瑚海岸/XII/XII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_summer%2312"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Front/char_377_gdglow_summer_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Front/char_377_gdglow_summer_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Front/char_377_gdglow_summer_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_summer_12/Front/char_377_gdglow_summer_12.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Back/char_377_gdglow_summer_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Back/char_377_gdglow_summer_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_summer_12/Back/char_377_gdglow_summer_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_summer_12/Back/char_377_gdglow_summer_12.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_377_gdglow@snow#5",
+    "stem": "char_377_gdglow_snow_5",
+    "name": "喜夜侍者",
+    "group": "冰原信使/V/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_snow%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Front/char_377_gdglow_snow_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Front/char_377_gdglow_snow_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Front/char_377_gdglow_snow_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_snow_5/Front/char_377_gdglow_snow_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Back/char_377_gdglow_snow_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Back/char_377_gdglow_snow_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_snow_5/Back/char_377_gdglow_snow_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_snow_5/Back/char_377_gdglow_snow_5.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_377_gdglow@sanrio#1",
+    "stem": "char_377_gdglow_sanrio_1",
+    "name": "花房茶话会",
+    "group": "三丽鸥家族/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_sanrio%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Front/char_377_gdglow_sanrio_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Front/char_377_gdglow_sanrio_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Front/char_377_gdglow_sanrio_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Front/char_377_gdglow_sanrio_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Back/char_377_gdglow_sanrio_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Back/char_377_gdglow_sanrio_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Back/char_377_gdglow_sanrio_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_377_gdglow/char_377_gdglow_sanrio_1/Back/char_377_gdglow_sanrio_1.skel"
+     }
+    }
+   }
+  ],
+  "char_400_weedy": [
+   {
+    "skinId": "char_400_weedy@snow#2",
+    "stem": "char_400_weedy_snow_2",
+    "name": "糖果仙子",
+    "group": "冰原信使/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_snow%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Front/char_400_weedy_snow_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Front/char_400_weedy_snow_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Front/char_400_weedy_snow_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_400_weedy/char_400_weedy_snow_2/Front/char_400_weedy_snow_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Back/char_400_weedy_snow_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Back/char_400_weedy_snow_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_snow_2/Back/char_400_weedy_snow_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_400_weedy/char_400_weedy_snow_2/Back/char_400_weedy_snow_2.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_400_weedy@sightseer#1",
+    "stem": "char_400_weedy_sightseer_1",
+    "name": "倾听",
+    "group": "错位巡礼/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_sightseer%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Front/char_400_weedy_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Front/char_400_weedy_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Front/char_400_weedy_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_400_weedy/char_400_weedy_sightseer_1/Front/char_400_weedy_sightseer_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Back/char_400_weedy_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Back/char_400_weedy_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_400_weedy/char_400_weedy_sightseer_1/Back/char_400_weedy_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_400_weedy/char_400_weedy_sightseer_1/Back/char_400_weedy_sightseer_1.skel"
+     }
+    }
+   }
+  ],
+  "char_416_zumama": [
+   {
+    "skinId": "char_416_zumama@boc#3",
+    "stem": "char_416_zumama_boc_3",
+    "name": "熔锻铸匠",
+    "group": "斗争血脉/III/III",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_416_zumama_boc%233"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Front/char_416_zumama_boc_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Front/char_416_zumama_boc_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Front/char_416_zumama_boc_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_416_zumama/char_416_zumama_boc_3/Front/char_416_zumama_boc_3.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Back/char_416_zumama_boc_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Back/char_416_zumama_boc_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_416_zumama/char_416_zumama_boc_3/Back/char_416_zumama_boc_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_416_zumama/char_416_zumama_boc_3/Back/char_416_zumama_boc_3.skel"
+     }
+    }
+   }
+  ],
+  "char_450_necras": [
+   {
+    "skinId": "char_450_necras@summer#20",
+    "stem": "char_450_necras_summer_20",
+    "name": "夏卉 FA161",
+    "group": "珊瑚海岸/XX/XX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_summer%2320"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Front/char_450_necras_summer_20.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Front/char_450_necras_summer_20.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Front/char_450_necras_summer_20.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_450_necras/char_450_necras_summer_20/Front/char_450_necras_summer_20.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Back/char_450_necras_summer_20.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Back/char_450_necras_summer_20.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_summer_20/Back/char_450_necras_summer_20.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_450_necras/char_450_necras_summer_20/Back/char_450_necras_summer_20.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_450_necras@ambienceSynesthesia#7",
+    "stem": "char_450_necras_ambienceSynesthesia_7",
+    "name": "晶化信念",
+    "group": "音律联觉/VIII/VII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_ambienceSynesthesia%237"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Front/char_450_necras_ambienceSynesthesia_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Front/char_450_necras_ambienceSynesthesia_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Front/char_450_necras_ambienceSynesthesia_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Front/char_450_necras_ambienceSynesthesia_7.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Back/char_450_necras_ambienceSynesthesia_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Back/char_450_necras_ambienceSynesthesia_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Back/char_450_necras_ambienceSynesthesia_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_450_necras/char_450_necras_ambienceSynesthesia_7/Back/char_450_necras_ambienceSynesthesia_7.skel"
+     }
+    }
+   }
+  ],
+  "char_479_sleach": [
+   {
+    "skinId": "char_479_sleach@epoque#14",
+    "stem": "char_479_sleach_epoque_14",
+    "name": "识芳",
+    "group": "时代/XIV/XIV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_epoque%2314"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Front/char_479_sleach_epoque_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Front/char_479_sleach_epoque_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Front/char_479_sleach_epoque_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_479_sleach/char_479_sleach_epoque_14/Front/char_479_sleach_epoque_14.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Back/char_479_sleach_epoque_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Back/char_479_sleach_epoque_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_epoque_14/Back/char_479_sleach_epoque_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_479_sleach/char_479_sleach_epoque_14/Back/char_479_sleach_epoque_14.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_479_sleach@summer#11",
+    "stem": "char_479_sleach_summer_11",
+    "name": "夏卉 FA317",
+    "group": "珊瑚海岸/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_summer%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Front/char_479_sleach_summer_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Front/char_479_sleach_summer_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Front/char_479_sleach_summer_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_479_sleach/char_479_sleach_summer_11/Front/char_479_sleach_summer_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Back/char_479_sleach_summer_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Back/char_479_sleach_summer_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_479_sleach/char_479_sleach_summer_11/Back/char_479_sleach_summer_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_479_sleach/char_479_sleach_summer_11/Back/char_479_sleach_summer_11.skel"
+     }
+    }
+   }
+  ],
+  "char_485_pallas": [
+   {
+    "skinId": "char_485_pallas@epoque#12",
+    "stem": "char_485_pallas_epoque_12",
+    "name": "传承",
+    "group": "时代/XII/XII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2312"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Front/char_485_pallas_epoque_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Front/char_485_pallas_epoque_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Front/char_485_pallas_epoque_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_485_pallas/char_485_pallas_epoque_12/Front/char_485_pallas_epoque_12.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Back/char_485_pallas_epoque_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Back/char_485_pallas_epoque_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_12/Back/char_485_pallas_epoque_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_485_pallas/char_485_pallas_epoque_12/Back/char_485_pallas_epoque_12.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_485_pallas@epoque#19",
+    "stem": "char_485_pallas_epoque_19",
+    "name": "山川的酿造",
+    "group": "时代/XIX/XIX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2319"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Front/char_485_pallas_epoque_19.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Front/char_485_pallas_epoque_19.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Front/char_485_pallas_epoque_19.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_485_pallas/char_485_pallas_epoque_19/Front/char_485_pallas_epoque_19.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Back/char_485_pallas_epoque_19.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Back/char_485_pallas_epoque_19.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_485_pallas/char_485_pallas_epoque_19/Back/char_485_pallas_epoque_19.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_485_pallas/char_485_pallas_epoque_19/Back/char_485_pallas_epoque_19.skel"
+     }
+    }
+   }
+  ],
+  "char_1013_chen2": [
+   {
+    "skinId": "char_1013_chen2@summer#20",
+    "stem": "char_1013_chen2_summer_20",
+    "name": "悠然假日 HD79",
+    "group": "珊瑚海岸/XX/XX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_summer%2320"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Front/char_1013_chen2_summer_20.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Front/char_1013_chen2_summer_20.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Front/char_1013_chen2_summer_20.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1013_chen2/char_1013_chen2_summer_20/Front/char_1013_chen2_summer_20.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Back/char_1013_chen2_summer_20.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Back/char_1013_chen2_summer_20.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_summer_20/Back/char_1013_chen2_summer_20.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1013_chen2/char_1013_chen2_summer_20/Back/char_1013_chen2_summer_20.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_1013_chen2@boc#6",
+    "stem": "char_1013_chen2_boc_6",
+    "name": "万重山",
+    "group": "斗争血脉/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_boc%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Front/char_1013_chen2_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Front/char_1013_chen2_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Front/char_1013_chen2_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1013_chen2/char_1013_chen2_boc_6/Front/char_1013_chen2_boc_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Back/char_1013_chen2_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Back/char_1013_chen2_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1013_chen2/char_1013_chen2_boc_6/Back/char_1013_chen2_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1013_chen2/char_1013_chen2_boc_6/Back/char_1013_chen2_boc_6.skel"
+     }
+    }
+   }
+  ],
+  "char_1031_slent2": [
+   {
+    "skinId": "char_1031_slent2@epoque#32",
+    "stem": "char_1031_slent2_epoque_32",
+    "name": "栖息",
+    "group": "时代/XXXII/XXXII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1031_slent2_epoque%2332"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Front/char_1031_slent2_epoque_32.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Front/char_1031_slent2_epoque_32.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Front/char_1031_slent2_epoque_32.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Front/char_1031_slent2_epoque_32.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Back/char_1031_slent2_epoque_32.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Back/char_1031_slent2_epoque_32.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Back/char_1031_slent2_epoque_32.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1031_slent2/char_1031_slent2_epoque_32/Back/char_1031_slent2_epoque_32.skel"
+     }
+    }
+   }
+  ],
+  "char_1034_jesca2": [
+   {
+    "skinId": "char_1034_jesca2@cfa#1",
+    "stem": "char_1034_jesca2_cfa_1",
+    "name": "《上任达维镇》",
+    "group": "中国电影资料馆/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1034_jesca2_cfa%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Front/char_1034_jesca2_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Front/char_1034_jesca2_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Front/char_1034_jesca2_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Front/char_1034_jesca2_cfa_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Back/char_1034_jesca2_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Back/char_1034_jesca2_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Back/char_1034_jesca2_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1034_jesca2/char_1034_jesca2_cfa_1/Back/char_1034_jesca2_cfa_1.skel"
+     }
+    }
+   }
+  ],
+  "char_1035_wisdel": [
+   {
+    "skinId": "char_1035_wisdel@sale#14",
+    "stem": "char_1035_wisdel_sale_14",
+    "name": "超新星",
+    "group": "忒斯特收藏/XV/XIV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_sale%2314"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Front/char_1035_wisdel_sale_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Front/char_1035_wisdel_sale_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Front/char_1035_wisdel_sale_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Front/char_1035_wisdel_sale_14.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Back/char_1035_wisdel_sale_14.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Back/char_1035_wisdel_sale_14.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Back/char_1035_wisdel_sale_14.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1035_wisdel/char_1035_wisdel_sale_14/Back/char_1035_wisdel_sale_14.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_1035_wisdel@game#9",
+    "stem": "char_1035_wisdel_game_9",
+    "name": "绝对主角",
+    "group": "成就之星/IX/IX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_game%239"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Front/char_1035_wisdel_game_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Front/char_1035_wisdel_game_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Front/char_1035_wisdel_game_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Front/char_1035_wisdel_game_9.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Back/char_1035_wisdel_game_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Back/char_1035_wisdel_game_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Back/char_1035_wisdel_game_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1035_wisdel/char_1035_wisdel_game_9/Back/char_1035_wisdel_game_9.skel"
+     }
+    }
+   }
+  ],
+  "char_1042_phatm2": [
+   {
+    "skinId": "char_1042_phatm2@sightseer#4",
+    "stem": "char_1042_phatm2_sightseer_4",
+    "name": "真我自扼",
+    "group": "错位巡礼/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1042_phatm2_sightseer%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Front/char_1042_phatm2_sightseer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Front/char_1042_phatm2_sightseer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Front/char_1042_phatm2_sightseer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Front/char_1042_phatm2_sightseer_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Back/char_1042_phatm2_sightseer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Back/char_1042_phatm2_sightseer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Back/char_1042_phatm2_sightseer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1042_phatm2/char_1042_phatm2_sightseer_4/Back/char_1042_phatm2_sightseer_4.skel"
+     }
+    }
+   }
+  ],
+  "char_1043_leizi2": [
+   {
+    "skinId": "char_1043_leizi2@game#8",
+    "stem": "char_1043_leizi2_game_8",
+    "name": "血翼蔷薇",
+    "group": "成就之星/VIII/VIII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1043_leizi2_game%238"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Front/char_1043_leizi2_game_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Front/char_1043_leizi2_game_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Front/char_1043_leizi2_game_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Front/char_1043_leizi2_game_8.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Back/char_1043_leizi2_game_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Back/char_1043_leizi2_game_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Back/char_1043_leizi2_game_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1043_leizi2/char_1043_leizi2_game_8/Back/char_1043_leizi2_game_8.skel"
+     }
+    }
+   }
+  ],
+  "char_1044_hsgma2": [
+   {
+    "skinId": "char_1044_hsgma2@whirlwind#11",
+    "stem": "char_1044_hsgma2_whirlwind_11",
+    "name": "一闪极意",
+    "group": "0011/飙系列/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1044_hsgma2_whirlwind%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Front/char_1044_hsgma2_whirlwind_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Front/char_1044_hsgma2_whirlwind_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Front/char_1044_hsgma2_whirlwind_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Front/char_1044_hsgma2_whirlwind_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Back/char_1044_hsgma2_whirlwind_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Back/char_1044_hsgma2_whirlwind_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Back/char_1044_hsgma2_whirlwind_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1044_hsgma2/char_1044_hsgma2_whirlwind_11/Back/char_1044_hsgma2_whirlwind_11.skel"
+     }
+    }
+   }
+  ],
+  "char_1502_crosly": [
+   {
+    "skinId": "char_1502_crosly@iteration#5",
+    "stem": "char_1502_crosly_iteration_5",
+    "name": "夜之终局",
+    "group": "命途迭代/V/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1502_crosly_iteration%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Front/char_1502_crosly_iteration_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Front/char_1502_crosly_iteration_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Front/char_1502_crosly_iteration_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Front/char_1502_crosly_iteration_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Back/char_1502_crosly_iteration_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Back/char_1502_crosly_iteration_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Back/char_1502_crosly_iteration_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1502_crosly/char_1502_crosly_iteration_5/Back/char_1502_crosly_iteration_5.skel"
+     }
+    }
+   }
+  ],
+  "char_2012_typhon": [
+   {
+    "skinId": "char_2012_typhon@summer#17",
+    "stem": "char_2012_typhon_summer_17",
+    "name": "温差 RT.RX07",
+    "group": "珊瑚海岸/XVII/XVII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_summer%2317"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Front/char_2012_typhon_summer_17.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Front/char_2012_typhon_summer_17.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Front/char_2012_typhon_summer_17.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2012_typhon/char_2012_typhon_summer_17/Front/char_2012_typhon_summer_17.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Back/char_2012_typhon_summer_17.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Back/char_2012_typhon_summer_17.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_summer_17/Back/char_2012_typhon_summer_17.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2012_typhon/char_2012_typhon_summer_17/Back/char_2012_typhon_summer_17.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2012_typhon@wild#9",
+    "stem": "char_2012_typhon_wild_9",
+    "name": "北地引路人",
+    "group": "生命之地/IX/IX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_wild%239"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Front/char_2012_typhon_wild_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Front/char_2012_typhon_wild_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Front/char_2012_typhon_wild_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2012_typhon/char_2012_typhon_wild_9/Front/char_2012_typhon_wild_9.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Back/char_2012_typhon_wild_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Back/char_2012_typhon_wild_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2012_typhon/char_2012_typhon_wild_9/Back/char_2012_typhon_wild_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2012_typhon/char_2012_typhon_wild_9/Back/char_2012_typhon_wild_9.skel"
+     }
+    }
+   }
+  ],
+  "char_2013_cerber": [
+   {
+    "skinId": "char_2013_cerber@whirlwind#2",
+    "stem": "char_2013_cerber_whirlwind_2",
+    "name": "无拘无束",
+    "group": "0011/飙系列/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_whirlwind%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Front/char_2013_cerber_whirlwind_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Front/char_2013_cerber_whirlwind_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Front/char_2013_cerber_whirlwind_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Front/char_2013_cerber_whirlwind_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Back/char_2013_cerber_whirlwind_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Back/char_2013_cerber_whirlwind_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Back/char_2013_cerber_whirlwind_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2013_cerber/char_2013_cerber_whirlwind_2/Back/char_2013_cerber_whirlwind_2.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2013_cerber@summer#4",
+    "stem": "char_2013_cerber_summer_4",
+    "name": "夏卉 FA333",
+    "group": "珊瑚海岸/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_summer%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Front/char_2013_cerber_summer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Front/char_2013_cerber_summer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Front/char_2013_cerber_summer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2013_cerber/char_2013_cerber_summer_4/Front/char_2013_cerber_summer_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Back/char_2013_cerber_summer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Back/char_2013_cerber_summer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2013_cerber/char_2013_cerber_summer_4/Back/char_2013_cerber_summer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2013_cerber/char_2013_cerber_summer_4/Back/char_2013_cerber_summer_4.skel"
+     }
+    }
+   }
+  ],
+  "char_2014_nian": [
+   {
+    "skinId": "char_2014_nian@nian#4",
+    "stem": "char_2014_nian_nian_4",
+    "name": "乐逍遥",
+    "group": "0011制造/III/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_nian%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Front/char_2014_nian_nian_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Front/char_2014_nian_nian_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Front/char_2014_nian_nian_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2014_nian/char_2014_nian_nian_4/Front/char_2014_nian_nian_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Back/char_2014_nian_nian_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Back/char_2014_nian_nian_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_nian_4/Back/char_2014_nian_nian_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2014_nian/char_2014_nian_nian_4/Back/char_2014_nian_nian_4.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2014_nian@cfa#1",
+    "stem": "char_2014_nian_cfa_1",
+    "name": "霹雳导演",
+    "group": "中国电影资料馆/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_cfa%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Front/char_2014_nian_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Front/char_2014_nian_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Front/char_2014_nian_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2014_nian/char_2014_nian_cfa_1/Front/char_2014_nian_cfa_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Back/char_2014_nian_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Back/char_2014_nian_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2014_nian/char_2014_nian_cfa_1/Back/char_2014_nian_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2014_nian/char_2014_nian_cfa_1/Back/char_2014_nian_cfa_1.skel"
+     }
+    }
+   }
+  ],
+  "char_2023_ling": [
+   {
+    "skinId": "char_2023_ling@nian#9",
+    "stem": "char_2023_ling_nian_9",
+    "name": "濯缨",
+    "group": "0011制造/VIII/IX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%239"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Front/char_2023_ling_nian_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Front/char_2023_ling_nian_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Front/char_2023_ling_nian_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_nian_9/Front/char_2023_ling_nian_9.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Back/char_2023_ling_nian_9.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Back/char_2023_ling_nian_9.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_9/Back/char_2023_ling_nian_9.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_nian_9/Back/char_2023_ling_nian_9.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2023_ling@nian#12",
+    "stem": "char_2023_ling_nian_12",
+    "name": "方遒卷",
+    "group": "0011制造/XII/XII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%2312"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Front/char_2023_ling_nian_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Front/char_2023_ling_nian_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Front/char_2023_ling_nian_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_nian_12/Front/char_2023_ling_nian_12.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Back/char_2023_ling_nian_12.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Back/char_2023_ling_nian_12.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_nian_12/Back/char_2023_ling_nian_12.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_nian_12/Back/char_2023_ling_nian_12.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2023_ling@ncg#1",
+    "stem": "char_2023_ling_ncg_1",
+    "name": "崖高梦远",
+    "group": "国家地理/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_ncg%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Front/char_2023_ling_ncg_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Front/char_2023_ling_ncg_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Front/char_2023_ling_ncg_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_ncg_1/Front/char_2023_ling_ncg_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Back/char_2023_ling_ncg_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Back/char_2023_ling_ncg_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2023_ling/char_2023_ling_ncg_1/Back/char_2023_ling_ncg_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2023_ling/char_2023_ling_ncg_1/Back/char_2023_ling_ncg_1.skel"
+     }
+    }
+   }
+  ],
+  "char_2024_chyue": [
+   {
+    "skinId": "char_2024_chyue@nian#10",
+    "stem": "char_2024_chyue_nian_10",
+    "name": "何处栖",
+    "group": "0011制造/IX/X",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_nian%2310"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Front/char_2024_chyue_nian_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Front/char_2024_chyue_nian_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Front/char_2024_chyue_nian_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2024_chyue/char_2024_chyue_nian_10/Front/char_2024_chyue_nian_10.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Back/char_2024_chyue_nian_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Back/char_2024_chyue_nian_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_nian_10/Back/char_2024_chyue_nian_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2024_chyue/char_2024_chyue_nian_10/Back/char_2024_chyue_nian_10.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_2024_chyue@cfa#1",
+    "stem": "char_2024_chyue_cfa_1",
+    "name": "全能演员",
+    "group": "中国电影资料馆/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_cfa%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Front/char_2024_chyue_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Front/char_2024_chyue_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Front/char_2024_chyue_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Front/char_2024_chyue_cfa_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Back/char_2024_chyue_cfa_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Back/char_2024_chyue_cfa_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Back/char_2024_chyue_cfa_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2024_chyue/char_2024_chyue_cfa_1/Back/char_2024_chyue_cfa_1.skel"
+     }
+    }
+   }
+  ],
+  "char_2025_shu": [
+   {
+    "skinId": "char_2025_shu@nian#11",
+    "stem": "char_2025_shu_nian_11",
+    "name": "春日宴",
+    "group": "0011制造/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2025_shu_nian%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Front/char_2025_shu_nian_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Front/char_2025_shu_nian_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Front/char_2025_shu_nian_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2025_shu/char_2025_shu_nian_11/Front/char_2025_shu_nian_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Back/char_2025_shu_nian_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Back/char_2025_shu_nian_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nian_11/Back/char_2025_shu_nian_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2025_shu/char_2025_shu_nian_11/Back/char_2025_shu_nian_11.skel"
+     }
+    }
+   }
+  ],
+  "char_4009_irene": [
+   {
+    "skinId": "char_4009_irene@ambienceSynesthesia#3",
+    "stem": "char_4009_irene_ambienceSynesthesia_3",
+    "name": "飞羽",
+    "group": "音律联觉/III/III",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_ambienceSynesthesia%233"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Front/char_4009_irene_ambienceSynesthesia_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Front/char_4009_irene_ambienceSynesthesia_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Front/char_4009_irene_ambienceSynesthesia_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Front/char_4009_irene_ambienceSynesthesia_3.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Back/char_4009_irene_ambienceSynesthesia_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Back/char_4009_irene_ambienceSynesthesia_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Back/char_4009_irene_ambienceSynesthesia_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4009_irene/char_4009_irene_ambienceSynesthesia_3/Back/char_4009_irene_ambienceSynesthesia_3.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4009_irene@game#3",
+    "stem": "char_4009_irene_game_3",
+    "name": "至高判决",
+    "group": "成就之星/III/III",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_game%233"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Front/char_4009_irene_game_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Front/char_4009_irene_game_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Front/char_4009_irene_game_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4009_irene/char_4009_irene_game_3/Front/char_4009_irene_game_3.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Back/char_4009_irene_game_3.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Back/char_4009_irene_game_3.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4009_irene/char_4009_irene_game_3/Back/char_4009_irene_game_3.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4009_irene/char_4009_irene_game_3/Back/char_4009_irene_game_3.skel"
+     }
+    }
+   }
+  ],
+  "char_4011_lessng": [
+   {
+    "skinId": "char_4011_lessng@whirlwind#7",
+    "stem": "char_4011_lessng_whirlwind_7",
+    "name": "幻火",
+    "group": "0011/飙系列/VII/VII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4011_lessng_whirlwind%237"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Front/char_4011_lessng_whirlwind_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Front/char_4011_lessng_whirlwind_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Front/char_4011_lessng_whirlwind_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Front/char_4011_lessng_whirlwind_7.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Back/char_4011_lessng_whirlwind_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Back/char_4011_lessng_whirlwind_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Back/char_4011_lessng_whirlwind_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4011_lessng/char_4011_lessng_whirlwind_7/Back/char_4011_lessng_whirlwind_7.skel"
+     }
+    }
+   }
+  ],
+  "char_4027_heyak": [
+   {
+    "skinId": "char_4027_heyak@epoque#50",
+    "stem": "char_4027_heyak_epoque_50",
+    "name": "恒久祭礼",
+    "group": "时代/XLIX/L",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_epoque%2350"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Front/char_4027_heyak_epoque_50.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Front/char_4027_heyak_epoque_50.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Front/char_4027_heyak_epoque_50.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Front/char_4027_heyak_epoque_50.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Back/char_4027_heyak_epoque_50.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Back/char_4027_heyak_epoque_50.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Back/char_4027_heyak_epoque_50.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4027_heyak/char_4027_heyak_epoque_50/Back/char_4027_heyak_epoque_50.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4027_heyak@ambienceSynesthesia#4",
+    "stem": "char_4027_heyak_ambienceSynesthesia_4",
+    "name": "历世流风",
+    "group": "音律联觉/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_ambienceSynesthesia%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Front/char_4027_heyak_ambienceSynesthesia_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Front/char_4027_heyak_ambienceSynesthesia_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Front/char_4027_heyak_ambienceSynesthesia_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Front/char_4027_heyak_ambienceSynesthesia_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Back/char_4027_heyak_ambienceSynesthesia_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Back/char_4027_heyak_ambienceSynesthesia_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Back/char_4027_heyak_ambienceSynesthesia_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4027_heyak/char_4027_heyak_ambienceSynesthesia_4/Back/char_4027_heyak_ambienceSynesthesia_4.skel"
+     }
+    }
+   }
+  ],
+  "char_4046_ebnhlz": [
+   {
+    "skinId": "char_4046_ebnhlz@boc#6",
+    "stem": "char_4046_ebnhlz_boc_6",
+    "name": "变奏",
+    "group": "斗争血脉/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4046_ebnhlz_boc%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Front/char_4046_ebnhlz_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Front/char_4046_ebnhlz_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Front/char_4046_ebnhlz_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Front/char_4046_ebnhlz_boc_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Back/char_4046_ebnhlz_boc_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Back/char_4046_ebnhlz_boc_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Back/char_4046_ebnhlz_boc_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4046_ebnhlz/char_4046_ebnhlz_boc_6/Back/char_4046_ebnhlz_boc_6.skel"
+     }
+    }
+   }
+  ],
+  "char_4048_doroth": [
+   {
+    "skinId": "char_4048_doroth@witch#4",
+    "stem": "char_4048_doroth_witch_4",
+    "name": "命运主宰",
+    "group": "巫异盛宴/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4048_doroth_witch%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Front/char_4048_doroth_witch_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Front/char_4048_doroth_witch_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Front/char_4048_doroth_witch_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4048_doroth/char_4048_doroth_witch_4/Front/char_4048_doroth_witch_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Back/char_4048_doroth_witch_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Back/char_4048_doroth_witch_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4048_doroth/char_4048_doroth_witch_4/Back/char_4048_doroth_witch_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4048_doroth/char_4048_doroth_witch_4/Back/char_4048_doroth_witch_4.skel"
+     }
+    }
+   }
+  ],
+  "char_4055_bgsnow": [
+   {
+    "skinId": "char_4055_bgsnow@wild#7",
+    "stem": "char_4055_bgsnow_wild_7",
+    "name": "字句中的雪原",
+    "group": "生命之地/VII/VII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_wild%237"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Front/char_4055_bgsnow_wild_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Front/char_4055_bgsnow_wild_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Front/char_4055_bgsnow_wild_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Front/char_4055_bgsnow_wild_7.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Back/char_4055_bgsnow_wild_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Back/char_4055_bgsnow_wild_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Back/char_4055_bgsnow_wild_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4055_bgsnow/char_4055_bgsnow_wild_7/Back/char_4055_bgsnow_wild_7.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4055_bgsnow@yun#7",
+    "stem": "char_4055_bgsnow_yun_7",
+    "name": "行梦侧畔",
+    "group": "0011/韵系列/VII/VII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_yun%237"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Front/char_4055_bgsnow_yun_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Front/char_4055_bgsnow_yun_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Front/char_4055_bgsnow_yun_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Front/char_4055_bgsnow_yun_7.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Back/char_4055_bgsnow_yun_7.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Back/char_4055_bgsnow_yun_7.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Back/char_4055_bgsnow_yun_7.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4055_bgsnow/char_4055_bgsnow_yun_7/Back/char_4055_bgsnow_yun_7.skel"
+     }
+    }
+   }
+  ],
+  "char_4065_judge": [
+   {
+    "skinId": "char_4065_judge@epoque#33",
+    "stem": "char_4065_judge_epoque_33",
+    "name": "记叙",
+    "group": "时代/XXXIII/XXXIII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_epoque%2333"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Front/char_4065_judge_epoque_33.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Front/char_4065_judge_epoque_33.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Front/char_4065_judge_epoque_33.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4065_judge/char_4065_judge_epoque_33/Front/char_4065_judge_epoque_33.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Back/char_4065_judge_epoque_33.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Back/char_4065_judge_epoque_33.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_epoque_33/Back/char_4065_judge_epoque_33.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4065_judge/char_4065_judge_epoque_33/Back/char_4065_judge_epoque_33.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4065_judge@snow#6",
+    "stem": "char_4065_judge_snow_6",
+    "name": "偶尔醉陶",
+    "group": "冰原信使/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_snow%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Front/char_4065_judge_snow_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Front/char_4065_judge_snow_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Front/char_4065_judge_snow_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4065_judge/char_4065_judge_snow_6/Front/char_4065_judge_snow_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Back/char_4065_judge_snow_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Back/char_4065_judge_snow_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4065_judge/char_4065_judge_snow_6/Back/char_4065_judge_snow_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4065_judge/char_4065_judge_snow_6/Back/char_4065_judge_snow_6.skel"
+     }
+    }
+   }
+  ],
+  "char_4072_ironmn": [
+   {
+    "skinId": "char_4072_ironmn@summer#11",
+    "stem": "char_4072_ironmn_summer_11",
+    "name": "沙滩护卫 GT003",
+    "group": "珊瑚海岸/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_summer%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Front/char_4072_ironmn_summer_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Front/char_4072_ironmn_summer_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Front/char_4072_ironmn_summer_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Front/char_4072_ironmn_summer_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Back/char_4072_ironmn_summer_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Back/char_4072_ironmn_summer_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Back/char_4072_ironmn_summer_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4072_ironmn/char_4072_ironmn_summer_11/Back/char_4072_ironmn_summer_11.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4072_ironmn@ambienceSynesthesia#5",
+    "stem": "char_4072_ironmn_ambienceSynesthesia_5",
+    "name": "空心王冠",
+    "group": "音律联觉/V/V",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_ambienceSynesthesia%235"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Front/char_4072_ironmn_ambienceSynesthesia_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Front/char_4072_ironmn_ambienceSynesthesia_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Front/char_4072_ironmn_ambienceSynesthesia_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Front/char_4072_ironmn_ambienceSynesthesia_5.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Back/char_4072_ironmn_ambienceSynesthesia_5.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Back/char_4072_ironmn_ambienceSynesthesia_5.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Back/char_4072_ironmn_ambienceSynesthesia_5.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4072_ironmn/char_4072_ironmn_ambienceSynesthesia_5/Back/char_4072_ironmn_ambienceSynesthesia_5.skel"
+     }
+    }
+   }
+  ],
+  "char_4080_lin": [
+   {
+    "skinId": "char_4080_lin@nian#10",
+    "stem": "char_4080_lin_nian_10",
+    "name": "列瑶台",
+    "group": "0011制造/IX/X",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_nian%2310"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Front/char_4080_lin_nian_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Front/char_4080_lin_nian_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Front/char_4080_lin_nian_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_nian_10/Front/char_4080_lin_nian_10.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Back/char_4080_lin_nian_10.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Back/char_4080_lin_nian_10.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_nian_10/Back/char_4080_lin_nian_10.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_nian_10/Back/char_4080_lin_nian_10.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4080_lin@summer#19",
+    "stem": "char_4080_lin_summer_19",
+    "name": "夏卉 FA137",
+    "group": "珊瑚海岸/XIX/XIX",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_summer%2319"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Front/char_4080_lin_summer_19.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Front/char_4080_lin_summer_19.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Front/char_4080_lin_summer_19.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_summer_19/Front/char_4080_lin_summer_19.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Back/char_4080_lin_summer_19.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Back/char_4080_lin_summer_19.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_summer_19/Back/char_4080_lin_summer_19.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_summer_19/Back/char_4080_lin_summer_19.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4080_lin@littlePony#1",
+    "stem": "char_4080_lin_littlePony_1",
+    "name": "求知的魔法",
+    "group": "小马宝莉/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_littlePony%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Front/char_4080_lin_littlePony_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Front/char_4080_lin_littlePony_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Front/char_4080_lin_littlePony_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_littlePony_1/Front/char_4080_lin_littlePony_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Back/char_4080_lin_littlePony_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Back/char_4080_lin_littlePony_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4080_lin/char_4080_lin_littlePony_1/Back/char_4080_lin_littlePony_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4080_lin/char_4080_lin_littlePony_1/Back/char_4080_lin_littlePony_1.skel"
+     }
+    }
+   }
+  ],
+  "char_4088_hodrer": [
+   {
+    "skinId": "char_4088_hodrer@sightseer#1",
+    "stem": "char_4088_hodrer_sightseer_1",
+    "name": "沉思之庭",
+    "group": "错位巡礼/I/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4088_hodrer_sightseer%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Front/char_4088_hodrer_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Front/char_4088_hodrer_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Front/char_4088_hodrer_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Front/char_4088_hodrer_sightseer_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Back/char_4088_hodrer_sightseer_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Back/char_4088_hodrer_sightseer_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Back/char_4088_hodrer_sightseer_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4088_hodrer/char_4088_hodrer_sightseer_1/Back/char_4088_hodrer_sightseer_1.skel"
+     }
+    }
+   }
+  ],
+  "char_4098_vvana": [
+   {
+    "skinId": "char_4098_vvana@epoque#40",
+    "stem": "char_4098_vvana_epoque_40",
+    "name": "寄自奥格尼斯科",
+    "group": "时代/XXXIX/XL",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4098_vvana_epoque%2340"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Front/char_4098_vvana_epoque_40.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Front/char_4098_vvana_epoque_40.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Front/char_4098_vvana_epoque_40.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Front/char_4098_vvana_epoque_40.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Back/char_4098_vvana_epoque_40.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Back/char_4098_vvana_epoque_40.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Back/char_4098_vvana_epoque_40.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4098_vvana/char_4098_vvana_epoque_40/Back/char_4098_vvana_epoque_40.skel"
+     }
+    }
+   }
+  ],
+  "char_4117_ray": [
+   {
+    "skinId": "char_4117_ray@summer#22",
+    "stem": "char_4117_ray_summer_22",
+    "name": "夏卉 FA098",
+    "group": "珊瑚海岸/XXII/XXII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_summer%2322"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Front/char_4117_ray_summer_22.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Front/char_4117_ray_summer_22.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Front/char_4117_ray_summer_22.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4117_ray/char_4117_ray_summer_22/Front/char_4117_ray_summer_22.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Back/char_4117_ray_summer_22.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Back/char_4117_ray_summer_22.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_summer_22/Back/char_4117_ray_summer_22.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4117_ray/char_4117_ray_summer_22/Back/char_4117_ray_summer_22.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4117_ray@shining#2",
+    "stem": "char_4117_ray_shining_2",
+    "name": "梦幻高空",
+    "group": "闪耀阶梯/II/II",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_shining%232"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Front/char_4117_ray_shining_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Front/char_4117_ray_shining_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Front/char_4117_ray_shining_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4117_ray/char_4117_ray_shining_2/Front/char_4117_ray_shining_2.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Back/char_4117_ray_shining_2.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Back/char_4117_ray_shining_2.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4117_ray/char_4117_ray_shining_2/Back/char_4117_ray_shining_2.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4117_ray/char_4117_ray_shining_2/Back/char_4117_ray_shining_2.skel"
+     }
+    }
+   }
+  ],
+  "char_4121_zuole": [
+   {
+    "skinId": "char_4121_zuole@sale#16",
+    "stem": "char_4121_zuole_sale_16",
+    "name": "无息破局",
+    "group": "忒斯特收藏/XVIII/XVI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_sale%2316"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Front/char_4121_zuole_sale_16.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Front/char_4121_zuole_sale_16.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Front/char_4121_zuole_sale_16.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4121_zuole/char_4121_zuole_sale_16/Front/char_4121_zuole_sale_16.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Back/char_4121_zuole_sale_16.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Back/char_4121_zuole_sale_16.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_sale_16/Back/char_4121_zuole_sale_16.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4121_zuole/char_4121_zuole_sale_16/Back/char_4121_zuole_sale_16.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4121_zuole@nian#11",
+    "stem": "char_4121_zuole_nian_11",
+    "name": "少年游",
+    "group": "0011制造/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_nian%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Front/char_4121_zuole_nian_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Front/char_4121_zuole_nian_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Front/char_4121_zuole_nian_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4121_zuole/char_4121_zuole_nian_11/Front/char_4121_zuole_nian_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Back/char_4121_zuole_nian_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Back/char_4121_zuole_nian_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4121_zuole/char_4121_zuole_nian_11/Back/char_4121_zuole_nian_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4121_zuole/char_4121_zuole_nian_11/Back/char_4121_zuole_nian_11.skel"
+     }
+    }
+   }
+  ],
+  "char_4132_ascln": [
+   {
+    "skinId": "char_4132_ascln@iteration#4",
+    "stem": "char_4132_ascln_iteration_4",
+    "name": "趋光之暗",
+    "group": "命途迭代/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4132_ascln_iteration%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Front/char_4132_ascln_iteration_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Front/char_4132_ascln_iteration_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Front/char_4132_ascln_iteration_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Front/char_4132_ascln_iteration_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Back/char_4132_ascln_iteration_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Back/char_4132_ascln_iteration_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Back/char_4132_ascln_iteration_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4132_ascln/char_4132_ascln_iteration_4/Back/char_4132_ascln_iteration_4.skel"
+     }
+    }
+   }
+  ],
+  "char_4133_logos": [
+   {
+    "skinId": "char_4133_logos@ambienceSynesthesia#6",
+    "stem": "char_4133_logos_ambienceSynesthesia_6",
+    "name": "辉煌的静谧",
+    "group": "音律联觉/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4133_logos_ambienceSynesthesia%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Front/char_4133_logos_ambienceSynesthesia_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Front/char_4133_logos_ambienceSynesthesia_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Front/char_4133_logos_ambienceSynesthesia_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Front/char_4133_logos_ambienceSynesthesia_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Back/char_4133_logos_ambienceSynesthesia_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Back/char_4133_logos_ambienceSynesthesia_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Back/char_4133_logos_ambienceSynesthesia_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4133_logos/char_4133_logos_ambienceSynesthesia_6/Back/char_4133_logos_ambienceSynesthesia_6.skel"
+     }
+    }
+   }
+  ],
+  "char_4138_narant": [
+   {
+    "skinId": "char_4138_narant@breaker#1",
+    "stem": "char_4138_narant_breaker_1",
+    "name": "链锯陪护者",
+    "group": "破格视界/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_breaker%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Front/char_4138_narant_breaker_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Front/char_4138_narant_breaker_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Front/char_4138_narant_breaker_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4138_narant/char_4138_narant_breaker_1/Front/char_4138_narant_breaker_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Back/char_4138_narant_breaker_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Back/char_4138_narant_breaker_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_breaker_1/Back/char_4138_narant_breaker_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4138_narant/char_4138_narant_breaker_1/Back/char_4138_narant_breaker_1.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_4138_narant@littlePony#1",
+    "stem": "char_4138_narant_littlePony_1",
+    "name": "率直诚实之人",
+    "group": "小马宝莉/I",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_littlePony%231"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Front/char_4138_narant_littlePony_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Front/char_4138_narant_littlePony_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Front/char_4138_narant_littlePony_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4138_narant/char_4138_narant_littlePony_1/Front/char_4138_narant_littlePony_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Back/char_4138_narant_littlePony_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Back/char_4138_narant_littlePony_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4138_narant/char_4138_narant_littlePony_1/Back/char_4138_narant_littlePony_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4138_narant/char_4138_narant_littlePony_1/Back/char_4138_narant_littlePony_1.skel"
+     }
+    }
+   }
+  ],
+  "char_4179_monstr": [
+   {
+    "skinId": "char_4179_monstr@boc#11",
+    "stem": "char_4179_monstr_boc_11",
+    "name": "锋锐",
+    "group": "斗争血脉/XI/XI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4179_monstr_boc%2311"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Front/char_4179_monstr_boc_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Front/char_4179_monstr_boc_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Front/char_4179_monstr_boc_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4179_monstr/char_4179_monstr_boc_11/Front/char_4179_monstr_boc_11.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Back/char_4179_monstr_boc_11.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Back/char_4179_monstr_boc_11.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4179_monstr/char_4179_monstr_boc_11/Back/char_4179_monstr_boc_11.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4179_monstr/char_4179_monstr_boc_11/Back/char_4179_monstr_boc_11.skel"
+     }
+    }
+   }
+  ],
+  "char_4195_radian": [
+   {
+    "skinId": "char_4195_radian@game#8",
+    "stem": "char_4195_radian_game_8",
+    "name": "乱数法则",
+    "group": "成就之星/VIII/VIII",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4195_radian_game%238"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Front/char_4195_radian_game_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Front/char_4195_radian_game_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Front/char_4195_radian_game_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4195_radian/char_4195_radian_game_8/Front/char_4195_radian_game_8.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Back/char_4195_radian_game_8.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Back/char_4195_radian_game_8.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4195_radian/char_4195_radian_game_8/Back/char_4195_radian_game_8.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4195_radian/char_4195_radian_game_8/Back/char_4195_radian_game_8.skel"
+     }
+    }
+   }
+  ],
+  "char_4202_haruka": [
+   {
+    "skinId": "char_4202_haruka@iteration#6",
+    "stem": "char_4202_haruka_iteration_6",
+    "name": "常世之幻",
+    "group": "命途迭代/VI/VI",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4202_haruka_iteration%236"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Front/char_4202_haruka_iteration_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Front/char_4202_haruka_iteration_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Front/char_4202_haruka_iteration_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Front/char_4202_haruka_iteration_6.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Back/char_4202_haruka_iteration_6.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Back/char_4202_haruka_iteration_6.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Back/char_4202_haruka_iteration_6.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4202_haruka/char_4202_haruka_iteration_6/Back/char_4202_haruka_iteration_6.skel"
+     }
+    }
+   }
+  ],
+  "char_4204_mantra": [
+   {
+    "skinId": "char_4204_mantra@sightseer#4",
+    "stem": "char_4204_mantra_sightseer_4",
+    "name": "万籁俱寂",
+    "group": "错位巡礼/IV/IV",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4204_mantra_sightseer%234"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Front/char_4204_mantra_sightseer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Front/char_4204_mantra_sightseer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Front/char_4204_mantra_sightseer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Front/char_4204_mantra_sightseer_4.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Back/char_4204_mantra_sightseer_4.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Back/char_4204_mantra_sightseer_4.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Back/char_4204_mantra_sightseer_4.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_4204_mantra/char_4204_mantra_sightseer_4/Back/char_4204_mantra_sightseer_4.skel"
      }
     }
    }

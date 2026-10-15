@@ -10,7 +10,8 @@
 //                                        view? (a UnitView: boneOffset), tilt? (the camera's, degrees), strike? (the
 //                                        bone at the attack clip's strike frame) }
 //   mountPoint(skin, type, unit, out)    FollowMountPoint's MountPointType (0 FOOT, 1 HIT, 2 MUZZLE, 3 HEAD, …)
-//   mountRotation(skin, kind, unit, out) the world rotation of a mount point (Graphic tilt · facing turn · bone angle)
+//   mountRotation(skin, kind, unit, out) the world rotation of a mount point (Graphic tilt · facing turn · the bone's
+//                                        angle, or the point's own rotation when its BoneFollower does not follow it)
 //   POINT_NAMES                          the skin point names tried per point kind (names vary by skin)
 
 /** Point names per kind, in the order tried (§33.12: HitPoint, HeadPoint / HeadAnchor, Muzzle / MuzzlePoint, …). */
@@ -109,10 +110,12 @@ export function skinShift(skin) {
 }
 
 /**
- * The skin point of a kind for a facing: `{ pos, bones }` — `pos` its offset (Unity, unit root frame; skinShift
- * applied), `bones` the BoneFollower bone names to look for in the model drawn (the facing's first, then the other
- * skeleton's: a unit facing up without a Back model draws the Front one) or null for a point no bone moves — or null
- * when the skin lacks it.
+ * The skin point of a kind for a facing: `{ pos, bones, rot, followRot }` — `pos` its offset (Unity, unit root frame;
+ * skinShift applied), `bones` the BoneFollower bone names to look for in the model drawn (the facing's first, then the
+ * other skeleton's: a unit facing up without a Back model draws the Front one) or null for a point no bone moves, `rot`
+ * the point's local rotation (index.json's `rot`, quaternion [x, y, z, w]; null in an index extracted without it),
+ * `followRot` whether the bone's angle turns it (a BoneFollower's followBoneRotation: index.json's `followRot`, true
+ * when the index does not say) — or null when the skin lacks it.
  */
 export function skinPoint(skin, kind, back) {
   const pts = skin && skin.points;
@@ -125,9 +128,11 @@ export function skinPoint(skin, kind, back) {
     if (!f || !Array.isArray(f.pos)) continue;
     const other = f === p.front ? p.back : p.front;
     const bones = f.bone ? (other && other.bone && other.bone !== f.bone ? [f.bone, other.bone] : [f.bone]) : null;
+    const rot = Array.isArray(f.rot) && f.rot.length === 4 && f.rot.every(Number.isFinite) ? f.rot : null;
+    const followRot = !!bones && f.followRot !== false;
     const sh = skinShift(skin);
-    if (!sh) return { pos: f.pos, bones };
-    return { pos: [f.pos[0] + sh[0], f.pos[1] + sh[1], f.pos[2] + sh[2]], bones };
+    if (!sh) return { pos: f.pos, bones, rot, followRot };
+    return { pos: [f.pos[0] + sh[0], f.pos[1] + sh[1], f.pos[2] + sh[2]], bones, rot, followRot };
   }
   return null;
 }
@@ -189,11 +194,13 @@ export function mountPoint(skin, type, unit, out) { return unitPoint(skin, mount
  * The world rotation of a unit's mount point (Unity quaternion [x, y, z, w]) — what the client's effects take from it
  * (FollowMountPoint without `_keepOriginRotation`, a MUZZLE_POINT or Special-point spawn): the unit's Graphic tilt
  * (the skin's `graphic.rot`, −30° about X), the FaceSwitcher's turn for a unit drawn facing left (180° about the
- * skeleton plane's up axis: the client turns that node to face left) and, for a bone-followed point, the bone's angle in
- * the skeleton plane (Spine's world rotation, counter-clockwise; the BoneFollower turns the point with it). A point no
- * bone moves (HitPoint, HeadPoint) has no rotation of its own [ASSUMED: the skins do not export the points' local
- * rotations; the ones read, HitPoint / HeadPoint, are the identity]. Null without a kind (FOOT, GROUND: the unit's own,
- * unturned rotation).
+ * skeleton plane's up axis: the client turns that node to face left) and the point's local rotation in its skeleton
+ * node. A BoneFollower with followBoneRotation sets that to the bone's angle in the skeleton plane (Spine's world
+ * rotation, counter-clockwise; 0 without the drawn bone); a point whose BoneFollower does not follow the bone's
+ * rotation (`followRot: false` — 洛洛's SpecialPoint1, 令's SpecialPoint2: 30° about X, cancelling the Graphic's tilt)
+ * and a point no bone moves keep their own (`rot`). An index extracted without them (no `rot` / `followRot`): the
+ * bone's angle for every bone-followed point, the identity for the others (the ones read then, HitPoint / HeadPoint,
+ * are the identity). Null without a kind (FOOT, GROUND: the unit's own, unturned rotation).
  */
 export function mountRotation(skin, kind, unit, out = [0, 0, 0, 1]) {
   if (!kind) return null;
@@ -201,10 +208,17 @@ export function mountRotation(skin, kind, unit, out = [0, 0, 0, 1]) {
   const p = skinPoint(skin, kind, !!unit.back);
   const b = p ? liveBone(p, unit) : null;
   const left = b ? b.flip < 0 : !!unit.left;
-  const ang = b && Number.isFinite(b.angle) ? b.angle * DEG : 0;
-  // g · Ry(left ? 180° : 0) · Rz(ang): Rz = (0, 0, s, c); Ry(180°) · Rz = (0, 1, 0, 0) · (0, 0, s, c) = (s, c, 0, 0)
-  const c = Math.cos(ang / 2), s = Math.sin(ang / 2);
-  const fx = left ? s : 0, fy = left ? c : 0, fz = left ? 0 : s, fw = left ? 0 : c;
+  // the point's local rotation l: Rz(the bone's angle) = (0, 0, sin, cos) when the bone turns it, else its own
+  let lx = 0, ly = 0, lz = 0, lw = 1;
+  if (p && p.followRot) {
+    const ang = b && Number.isFinite(b.angle) ? b.angle * DEG : 0;
+    lz = Math.sin(ang / 2); lw = Math.cos(ang / 2);
+  } else if (p && p.rot) {
+    const r = p.rot;
+    lx = r[0]; ly = r[1]; lz = r[2]; lw = r[3];
+  }
+  // g · Ry(left ? 180° : 0) · l, with Ry(180°) · l = (0, 1, 0, 0) · (lx, ly, lz, lw) = (lz, lw, −lx, −ly)
+  const fx = left ? lz : lx, fy = left ? lw : ly, fz = left ? -lx : lz, fw = left ? -ly : lw;
   const ax = g[0], ay = g[1], az = g[2], aw = g[3];
   out[0] = aw * fx + ax * fw + ay * fz - az * fy;
   out[1] = aw * fy - ax * fz + ay * fw + az * fx;

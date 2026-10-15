@@ -4,6 +4,12 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 **Changelog** (for runtimes reading the files; newest first)
 
+* **2026-10-15 — the skin points' rotation (index.json `skins`, §33.12 Skin)**; no version change, fields added only:
+  every point has `rot` (its local rotation, quaternion x y z w) and every point with a `bone` has `followRot` (its
+  BoneFollower's `followBoneRotation`). 54 of the used set's 1,118 bone-followed points do not take their bone's
+  rotation and keep `rot`: 洛洛's SpecialPoint1 and 令's SpecialPoint2 (30° about x, cancelling the Graphic's −30°) and
+  50 with the identity or a small turn about z (烛煌, 塑心, 焰尾 … and 19 enemies' and 2 tokens' points). A reader of an
+  earlier index (no `rot` / `followRot`) takes the bone's angle for every bone-followed point and no turn for the others.
 * **2026-10-15 — corrections after the maintainer's play (history §32.14.38)**; no version changes — the files now
   match what this text already said, and a reader of the earlier files keeps working. (1) Meshes (§33.9): a skinned
   mesh has four bone influences per vertex. A Unity 2019+ mesh stores 1–4 (its BlendIndices / BlendWeight channels'
@@ -973,7 +979,8 @@ sim keeps its own projectile speeds; the visual flies its flying effect along th
 target's HitPoint (`onReached` where it lands). Graphic / logic pairs (`projectile_amgoat_s3_graphic` / `_logic`) are
 listed as nested projectiles.
 
-**Skin** (mount points): `{ source, graphic, points: { name: { facing: { pos, bone, path } } } }`. `pos` is the point in
+**Skin** (mount points): `{ source, graphic, points: { name: { facing: { pos, bone, path, rot, followRot? } } } }`
+(`rot` / `followRot` since 2026-10-15, below). `pos` is the point in
 the unit's root frame (Unity axes and units, through the unit's `Graphic` node and the skin's FaceSwitcher scale) — e.g.
 隐现's `HitPoint` (0, 0.232, −0.250): 0.25 above the feet. The prefab root's own transform is no part of it (index version
 2): an enemy or token prefab's root sits where it was authored — 88 of the used set's sit tiles away (`enemy_1007_slime`
@@ -986,9 +993,16 @@ on (`F_Muzzle`, `B_Muzzle`, `Muzzle`, `Hip`, …; 125 of the 126 operators' muzz
 her feet, her cannon lowered; 溯光星源's 2.45 tiles to her right, her Idle's parking spot — while in battle the client
 reads the point's live transform (`MountPoint.get_mapPositionV3`, or the same bone baked per frame): a shot leaves
 where the attack clip holds the muzzle when it fires. A runtime reads the bone from the unit's skeleton (§33.16
-Placement), `pos` only without one. Operators' points come from `chararts/<id>.ab` (`defaultskin`) placed under the charpack's
-`Graphic`; enemies' and tokens' from their own prefab. Point names vary by skin: `HitPoint`, `HeadPoint`, `HeadAnchor`,
-`Muzzle` / `MuzzlePoint`, `Special0` / `SpecialPoint0` (… `1`, `2`).
+Placement), `pos` only without one. `rot` is the point's local rotation in its parent (Front / Back / FaceSwitcher —
+none of them turned in an operator's skin; quaternion x y z w). spine-unity's BoneFollower (the point's parent holds
+its skeleton) sets the point's local position from the bone every frame and, with `followBoneRotation` (`followRot`
+true: 1,064 of the used set's 1,118 bone-followed points), its local rotation to the bone's angle about z; without it
+the point keeps `rot` — 洛洛's SpecialPoint1 on F_UVA_01 and 令's SpecialPoint2 on F_Effects_01 are turned 30° about x
+(the only X / Y turns a point keeps: 19 enemy and token points with the same 30° follow their bone's rotation). A point
+no bone moves keeps `rot` too (the identity but for 3: `enemy_2025_syufo`'s HitPoint and HeadPoint,
+`token_10012_rosmon_shield`'s Special0, 90° about z). Operators' points come from `chararts/<id>.ab` (`defaultskin`)
+placed under the charpack's `Graphic`; enemies' and tokens' from their own prefab. Point names vary by skin:
+`HitPoint`, `HeadPoint`, `HeadAnchor`, `Muzzle` / `MuzzlePoint`, `Special0` / `SpecialPoint0` (… `1`, `2`).
 
 **generic**: `{ hit: { phys, arts, heal, enemy, fire, cut, ranger }, die: { char, enemy }, birth: { char },
 status: { <sim status>: key }, keys: [every generic key exported] }` — the keys the client binds in code (no data file
@@ -1244,16 +1258,19 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   frame (its first OnAttack time) — `pos` only without a model or the bone [ASSUMED: the drawn frame; the static points
   keep the client's offsets]; an effect with a FollowMountPoint starts on its point and follows it, with its rotation
   unless `_keepOriginRotation`, and a MUZZLE_POINT or Special-point spawn takes the point's rotation (§33.11):
-  `mounts.js mountRotation` = the Graphic rotation · the facing turn · the bone's angle. Open: a point's own local
-  rotation is not exported, and at least 洛洛's SpecialPoint1 and 令's SpecialPoint2 keep a fixed one their BoneFollower
-  does not take from the bone (30° about X, cancelling the Graphic's tilt; the only X / Y turns among the 1,365 point
-  transforms of the index's operator skins) — turned by the bone's angle, 洛洛's drone stands upright at home. A shot
-  flies along the client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below). Since DESIGN §32.14.40:
-  an effect its unit holds — a held one (`playOn` `follow`: a status loop, an aura, a skill's or a talent's loop) or a
-  `_holdByOwner` prefab — without a FollowMountPoint moves with the unit, its offset from the feet as it started (a
-  ground spawn on the ground); a hit or a ground range not held stays where it started, a FollowOwner one keeps to the
-  feet only when held, as before [ASSUMED: §33.11 `_holdByOwner`; a status loop whose prefab says 0 —
-  `common_stealth`, `buff_ fragile_01`, `common_invincible_01` — follows its unit all the same].
+  `mounts.js mountRotation` = the Graphic rotation · the facing turn · the point's local rotation: the bone's angle
+  when its BoneFollower follows the bone's rotation (`followRot`, §33.12 Skin; 0 without the drawn bone), else the
+  point's own `rot`. 洛洛's SpecialPoint1 and 令's SpecialPoint2 keep their 30° about X, which cancels the Graphic's
+  tilt: 洛洛's drone lies flat at home as the client draws it (turned by F_UVA_01's 90° it stood upright after the
+  merge); 50 more points (10 more operators', 19 enemies', 2 tokens') keep the identity or a small turn about Z instead
+  of their bone's angle, and 3 static points their 90° about Z. An index without `rot` / `followRot`: the bone's angle
+  for every bone-followed point, no turn for the others, as before. A shot flies along the client's arc (§33.12
+  Projectile; `render/vfx/flight.js`; its parts below). Since DESIGN §32.14.40: an effect its unit holds — a held one
+  (`playOn` `follow`: a status loop, an aura, a skill's or a talent's loop) or a `_holdByOwner` prefab — without a
+  FollowMountPoint moves with the unit, its offset from the feet as it started (a ground spawn on the ground); a hit or
+  a ground range not held stays where it started, a FollowOwner one keeps to the feet only when held, as before
+  [ASSUMED: §33.11 `_holdByOwner`; a status loop whose prefab says 0 — `common_stealth`, `buff_ fragile_01`,
+  `common_invincible_01` — follows its unit all the same].
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`). A binding may name its own
   `keys` instead, played once `at: 'target'` on the unit the fx names (round 46: 泡泡 S2's 'counter' →
@@ -1579,7 +1596,7 @@ added), 0.85 s before an attached unit is home again and 2 s before a remote one
 moments at a skill's start and end, the initial count from the skill's text, the flights' height (0.3 over the ground),
 the S3 pulse correction, the hover radius (the sim kit's 0.9; the client's HoveringInPlaceMovement says 1.25), the
 groups one apart; the units on their bones as the remake's model draws them, with their point's rotation (§33.16
-Placement: 荒芜拉普兰德's wolves face forward on the bones' 87°, 洛洛's drone — a point with a fixed rotation, open there —
-stands upright). Not drawn: 澄闪's self-destruct (`projectile_chr_gdglow_funnel_s12_3` … — the kit's 'explode' keeps the
+Placement: 荒芜拉普兰德's wolves face forward on the bones' 87°; 洛洛's drone keeps its point's own 30° about X — its
+BoneFollower does not follow F_UVA_01's rotation — and lies flat). Not drawn: 澄闪's self-destruct (`projectile_chr_gdglow_funnel_s12_3` … — the kit's 'explode' keeps the
 procedural blast), a unit hidden while its owner is stunned (`setActiveFalseWhenPause`: no signal ties a unit's pause
 to a status).

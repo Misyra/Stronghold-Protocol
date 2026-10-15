@@ -106,9 +106,11 @@ function Toggle({ label, micro, value, onChange }) {
 
 const QUALITY = [['high', N_('高')], ['medium', N_('中')], ['low', N_('低')]];
 /**
- * 官方特效 (0.3.0, render/vfx): the official battle effects extracted from the player's own client — 关 / 精简 / 完整. The
- * stored default 'auto' shows as the tier it resolves to (完整 on a desktop, 精简 on a touch device, render/vfx/tier.js);
- * the row is left out when no effects were extracted (data/local-fx.json lists none).
+ * 官方特效 (0.3.0, render/vfx): the official battle effects the server's owner extracted from their own client (the
+ * server serves them: every player of that server sees the owner's extraction) — normal attacks, projectiles, hits,
+ * statuses, deaths, deploys, the operators' skills and a 秘术师's stored energies; 关 / 精简 / 完整. The stored default
+ * 'auto' shows as the tier it resolves to (完整 on a desktop, 精简 on a touch device, render/vfx/tier.js); the row is
+ * left out when no effects were extracted (data/local-fx.json lists none).
  */
 const OFFICIAL_FX = [['off', N_('关')], ['lite', N_('精简')], ['full', N_('完整')]];
 /**
@@ -390,7 +392,7 @@ export function SettingsModal({ open, onClose }) {
             class=${fxTier === id ? 'is-on' : ''} onClick=${() => updateSettings({ officialFx: id })}>${t(label)}</button>`)}
         </div>
       </div>
-      <p class="set-hint">${t('使用从本机游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡和部署）；技能特效仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。')}</p>` : null}
+      <p class="set-hint">${t('使用服主从自己的游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡、部署，以及干员技能和秘术师储存的能量），连到这台服务器的玩家看到的都是服主提取的这一份；提取里没有的（敌人和召唤物的技能等）仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。')}</p>` : null}
       <div class="set-row">
         <span class="set-row__label">${t('文字大小')}<${MicroLabel}>TEXT SIZE<//></span>
         <div class="set-seg set-textsize" role="radiogroup" aria-label=${t('文字大小')} data-testid="text-size">

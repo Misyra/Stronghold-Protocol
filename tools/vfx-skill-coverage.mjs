@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // tools/vfx-skill-coverage.mjs — how many skills of this game's roster get an official-effects plan
-// (public/js/render/vfx/skills.js, DESIGN §33 — 0.3.0 Phase 3a), per role, and what stays unmapped and why. Read-only.
+// (public/js/render/vfx/skills.js, DESIGN §33 — 0.3.0 Phase 3a), per role, and what stays unmapped and why; and what the
+// battle view plays of them (render/vfx/skillfx.js, Phase 3b: every role on its signal; `targets` split into the
+// attack-borne buffs it places, the status loops the status wiring draws and the rest; the `pulse` rows a kit's own fx
+// can stand for; FX_BINDINGS; the 秘术师 charge). Read-only.
 //
 // Usage: node tools/vfx-skill-coverage.mjs [--index <path>] [--json] [--list] [--anchors]
 //   --index    index.json of an extraction (default public/assets/local/fx/index.json, tools/local-extract fx.py)
@@ -16,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  resolveSkill, skillPlan, chargePlan, chargeKeys, unitKeyOf, CHARGE_EMITTERS, UNMAPPED, SIGNALS,
+  resolveSkill, skillPlan, chargePlan, chargeKeys, unitKeyOf, targetsOf, CHARGE_EMITTERS, UNMAPPED, SIGNALS, FX_BINDINGS, bindingKeys,
 } from '../public/js/render/vfx/skills.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -86,6 +89,8 @@ export function roster({ chess = {}, backups = {}, tokens = {}, enemies = {} } =
 const groupStats = () => ({
   skills: 0, resolved: 0, planned: 0, targetsOnly: 0, modeOnly: 0, empty: 0, notResolved: {},
   roles: Object.fromEntries(ROLE_GROUPS.map((g) => [g, 0])), unmapped: {}, entries: 0, placed: 0,
+  // Phase 3b (render/vfx/skillfx.js): `targets` entries by what the client can do with them, skills with pulse rows
+  targets: { hit: 0, status: 0, none: 0 }, pulseSkills: 0, pulseEntries: 0,
 });
 
 /**
@@ -127,6 +132,9 @@ export function coverage(idx, data, opts = {}) {
     else if (plan.mode != null) g.modeOnly++;
     else g.empty++;
     if (!drivable) unplanned.push({ group: r.group, unit: r.id, skill: res.skillId, reason: has.targets ? 'targets-only' : plan.mode != null ? 'mode-only' : 'no-effects' });
+    const tg = targetsOf(idx, plan);
+    for (const k of ['hit', 'status', 'none']) g.targets[k] += tg[k].length;
+    if (plan.pulse.length) { g.pulseSkills++; g.pulseEntries += plan.pulse.length; }
     const entries = entriesOf(plan);
     g.placed += entries.length;
     g.entries += entries.length + plan.unmapped.length;
@@ -142,14 +150,29 @@ export function coverage(idx, data, opts = {}) {
     const inRoster = list.some((r) => r.id === unitKey);
     charge.push(p
       ? { unit: unitKey, inRoster, slots: p.slots.length, keys: chargeKeys(p).length, missing: p.missing,
-        signal: unitKey === 'char_469_indigo' ? 'b.snap energy (claude/030-int)' : 'none (kit-private store)' }
+        signal: unitKey === 'char_469_indigo' ? 'b.snap energy (PR #636)' : 'none (kit-private store)' }
       : { unit: unitKey, inRoster, slots: 0, keys: 0, missing: ['(unit not in index.json)'], signal: null });
   }
+  const bindings = Object.entries(FX_BINDINGS).map(([skill, kinds]) => ({ skill, kinds: Object.keys(kinds), keys: bindingKeys(idx, skill) }));
   return {
     index: { set: idx?.set ?? null, client: idx?.source?.client ?? null, skills: Object.keys(idx?.skills || {}).length },
-    groups, unmapped, unplanned, charge, ...(opts.describe ? { anchors } : {}),
+    groups, unmapped, unplanned, charge, bindings, ...(opts.describe ? { anchors } : {}),
   };
 }
+
+/** What the battle view does with each role (render/vfx/skillfx.js, Phase 3b): the coverage tool prints it. */
+export const RUNTIME = Object.freeze({
+  'start / range / loop / end': "played on ['skill', id, 1 / 0]; loops held for the skill (UF.SKILL for a view built mid-battle, the deploy for a passive)",
+  ready: 'looped while b.snap sp >= spMax > 0 and the skill is off',
+  'attack.*': "each 'atk' of the owner while on: the skill's own ability replaces the mode's rows (cast / range on the owner, aim on the target, hit groups by the frame's damage order, its projectile)",
+  'each.*': "each 'atk' while on, beside the mode's rows",
+  trigger: "a 'dmg' on the owner while on (once a frame)",
+  'targets.hit': "on each target of the skill's attacks, for the buff's blackboard duration (else while the skill lasts); a status loop of the same key takes over",
+  'targets.status': 'drawn by the status wiring when the sim reports that status',
+  'targets.none': 'not drawn (no signal names the carrier)',
+  pulse: "bound to the kit's own fx of the skill (extra.skill) at the owner (a tick) or away from it (the skill's hits)",
+  charge: 'b.snap energy (深靛 and the shared mystic store); 黑键 / 维伊 keep their stores kit-private',
+});
 
 /** Every placed entry of a plan. */
 function entriesOf(plan) {
@@ -184,8 +207,13 @@ function printReport(rep, { list = false } = {}) {
     if (g.resolved) {
       console.log(`  skills per role: ${ROLE_GROUPS.map((k) => `${k} ${g.roles[k]}`).join(', ')}`);
       console.log(`  effect keys: ${g.entries} — ${g.placed} placed, ${g.entries - g.placed} unmapped${Object.keys(g.unmapped).length ? ` (${Object.entries(g.unmapped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')})` : ''}`);
+      console.log(`  targets entries: ${g.targets.hit} on the skill attacks' targets, ${g.targets.status} by the status wiring, ${g.targets.none} not drawn; pulse rows: ${g.pulseEntries} in ${g.pulseSkills} skills (bound to the kit's own fx)`);
     }
   }
+  console.log('\nwired at runtime (render/vfx/skillfx.js, Phase 3b):');
+  for (const [k, v] of Object.entries(RUNTIME)) console.log(`  ${k.padEnd(27)} ${v}`);
+  console.log('\nkit fx bound to official effects (FX_BINDINGS):');
+  for (const b of rep.bindings) console.log(`  ${b.skill}: ${b.kinds.join(', ')} → ${b.keys.join(' ') || '(keys not in this index)'}`);
   console.log('\nunmapped reasons:');
   for (const [k, v] of Object.entries(UNMAPPED)) console.log(`  ${k.padEnd(14)} ${v}`);
   console.log('\nsignals:');

@@ -93,12 +93,38 @@ history and the open points: DESIGN §32.14.25.
   a looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
   `castTarget` / `inputTarget` rows on the target, its projectile's main effect flown from the muzzle to the target's
   HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival, its hit rows when a melee or
-  direct blow's damage lands (else the generic hit by damage type). Also the generic heal hit, the status loops
+  direct blow's damage lands (else the generic hit by damage type). One attack on several targets — the sim sends an
+  'atk' per target in one tick — casts once (its target rows play on each). Also the generic heal hit, the status loops
   (`generic.status` by the sim's status names) on the unit's mount point while they last, and the unit's own death /
   deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
-  what index.json does not drive — skills, a unit it does not list, chain bounces — stays procedural. `mounts.js`
-  reads the skin's points (HitPoint, Muzzle, HeadPoint, Special points; front / back skeleton, mirrored for a unit
-  facing left) at the unit's feet.
+  what index.json does not drive — a unit it does not list, chain bounces, enemy and summon skills — stays procedural.
+  `mounts.js` reads the skin's points (HitPoint, Muzzle, HeadPoint, Special points; front / back skeleton, mirrored for
+  a unit facing left) at the unit's feet.
+- **Skills** (0.3.0 Phase 3b, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12 and
+  §33.15). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
+  秘术师 charge plan. ['skill', id, 1] plays the plan's `start` and `range` and starts its `loop` (held for the skill:
+  stopped with the effect's own fade on ['skill', id, 0], the unit's death, leak or retreat, the battle's reset); 0
+  plays `end`. A view built mid-battle (a reconnect, a watched field) starts the loops from the snapshot flag UF.SKILL;
+  a passive loops while the unit is deployed (its start one-shots once per deployment; a PASSIVE skill its kit runs
+  as a timed one — UF.SKILL seen — follows its events); `ready` loops while sp ≥ spMax > 0 and the skill is off. While
+  the skill is on its attacks use the plan's mode (`modeName`; the old `S<n>` rule without a plan): a skill with an
+  attack ability of its own replaces the mode's rows with its own for an attack of its kind (a heal, a shot, a blow — 斩业星熊
+  S2's shield throw is no melee blow) — cast and range on the owner (ON_CAST_START rows with
+  the wind-up: `app.js onUpcoming` sees a ['skill', id, 1] queued before the 'atk'), `aim` on the target, its hit
+  groups on the target (the k-th HP 'dmg' — or 'heal' — on it in that frame plays group k; an element gauge fill is
+  no hit), its own projectile for a ranged one —, else its `each` rows join the mode's; the buffs of its attacks loop
+  on their targets for the blackboard's duration (a status loop of the same key takes over); `trigger` plays on the
+  owner's damage (once a frame). An instant skill whose kit made no attack between 1 and 0 plays its attack's cast
+  once. 深靛's stored energies (b.snap `energy`, sent whatever 设置「秘术师能量」 says): each store plays its one-shot and
+  lights the next slot's loop at its Special point; an attack flies one projectile per stored energy from its slot
+  beside the shot (the sim's 1 + n hits) and the slots go dark; a death or redeploy dims them. When the official layer
+  shows a skill, its procedural activation burst and aura are not drawn, and neither are the kit 'fx' it stands for
+  (`simFx`): a cast flash on the owner in the frame of the skill start or, tagged with the skill, while its loops play;
+  a skill-tagged fx standing for the plan's `pulse` rows (its buff's ticks on the owner, its other hits away from it),
+  which play there; and `skills.js FX_BINDINGS` (克莱门莎 S3's 'lock': her skill projectile's mark and three strikes on
+  the tile, which also stand for her 'blast's there). A skill with nothing official (no plan, or none of its rows
+  extracted) keeps the procedural burst and aura. An effect a plan reaches two ways (a buff's `_buffs` and
+  `_extraBuffs`) plays once.
 - **Budget.** Tier 完整 (`full`: up to 220 effects and 6,000 particles, full-size textures) and 精简 (`lite`: 90 and
   2,500, half-size textures, half the emission, the prefabs' FxLODSetting nodes off, no rim or distortion lookups).
   Past the caps a new one-shot is dropped (loops and projectiles always start), and so is a one-shot whose prefab
@@ -106,11 +132,16 @@ history and the open points: DESIGN §32.14.25.
   after 8 s at the latest, and an OnPlayEmitter's looping effect with the effect that played it; finished instances
   are pooled per prefab (up to its `_preloadCnt`, at most 12).
 - **Setting.** 设置「官方特效」 (`officialFx`: auto / off / lite / full; `tier.js resolveOfficialFx`: auto is 完整 on a
-  desktop and 精简 on a touch device) shows only when the served list names effects. The effects draw on the 3D board
-  with WebGL2 only; the 2D board and the simplified board keep the procedural effects.
+  desktop and 精简 on a touch device) shows only when the served list names effects. The files are the server owner's
+  extraction (`tools/local-extract`), served to every player of that server: a remote player sees the host's effects,
+  whatever client they have. The effects draw on the 3D board with WebGL2 only; the 2D board and the simplified board
+  keep the procedural effects. A tier switch clears the effects; the skill loops that should run start again quietly.
 - **Dev.** `public/dev/fx-viewer.html` plays any effect key (`?key=`, on a unit's mount points with `&unit=`;
-  `?attack=<unit id>` repeats that unit's attack from index.json through the wiring; `&tier=`, `&stress=<loops>,<hits
-  per s>`); `public/dev/battle-perf.html` takes `&fx=off|lite|full|auto` and `tools/perfbench.mjs --fx`.
+  `?attack=<unit id>` repeats that unit's attack from index.json through the wiring; `?skilldemo=<unit id>&s=<slot>`
+  cycles its skill through the wiring — on, an attack a second, off — with `&instant=1`, `&passive=1`, `&charge=<n>`,
+  `&ready=1`; `&tier=`, `&stress=<loops>,<hits per s>`); `public/dev/battle-perf.html` takes `&fx=off|lite|full|auto`
+  and `tools/perfbench.mjs --fx`; `tools/vfx-skill-coverage.mjs` prints the roster's plan coverage and what the battle
+  view plays of it.
 
 ---
 
@@ -372,7 +403,9 @@ bar and so no count.
 number; the client shows a 秘术师's stored attack energies as an effect on the operator (the maintainer's decision of
 2026-10-15). On, the count `stored/cap` sits in the row stack under the purse (`UnitView._updateEnergy`, b.snap `energy`
 from `snapshot.js mysticView`: `trait.stored` against `profile.storeMax`, zero included), in a violet orb of its own;
-the element gauge moves down by its height. Allies only; kits with a store of their own (维伊, 黑键) have no row.
+the element gauge moves down by its height. Allies only; kits with a store of their own (维伊, 黑键) have no row. The
+official effect is the default display: with 设置「官方特效」 on, the same readout lights 深靛's stored energies on the
+operator (§9 "Official battle effects", Skills) whatever this setting says.
 
 ### Plugin studio gameplay previews (§32.9.1)
 

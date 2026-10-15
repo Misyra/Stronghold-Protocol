@@ -1,16 +1,21 @@
 // render/vfx/wiring.js — the battle's events → official effects, generated from index.json (DESIGN §33.12): every
-// unit's normal attack (its mode `Default`, or `S<n>` while skill n is on) casts its `cast` effects at its muzzle
-// (`_spawnLocation`), flies its projectile's `main` effect along the sim's flight (the sim's speed: the visual lands
-// with the sim's damage) and plays the projectile's `onHit` at the target's HitPoint on arrival (`onReached` where it
-// lands); a melee attack's `hit` effects play when its damage lands; status loops (generic.status by the sim's status
-// names) follow the unit's mount point while the status lasts; deaths and deploys play the unit's own dead / start
-// effect or the generic one. What index.json cannot drive (skills, an unknown unit) stays procedural: each entry point
-// returns whether it drew the official effect.
+// unit's normal attack (its mode `Default`, or the mode its skill switches to while the skill is on — the skill plan's
+// `modeName`, else `S<n>` for skill n) casts its `cast` effects at its muzzle (`_spawnLocation`), flies its projectile's
+// `main` effect along the sim's flight (the sim's speed: the visual lands with the sim's damage) and plays the
+// projectile's `onHit` at the target's HitPoint on arrival (`onReached` where it lands); a melee attack's `hit` effects
+// play when its damage lands; status loops (generic.status by the sim's status names) follow the unit's mount point while
+// the status lasts; deaths and deploys play the unit's own dead / start effect or the generic one. The skill, talent and
+// charge effects (render/vfx/skills.js plans) are played by `this.skills` (render/vfx/skillfx.js SkillFx): the skill's
+// start / loop / end / ready / range, its attacks' rows, hit groups and projectile, its trigger, the 秘术师 charge and
+// the kit 'fx' tuples it stands for. What index.json cannot drive (an unknown unit, enemy and summon skills) stays
+// procedural: each entry point returns whether it drew the official effect.
 //
-//   const w = new FxWiring(ofx, { unitKey: (info) => string|null, speed: (kind) => tiles per game s })
+//   const w = new FxWiring(ofx, { unitKey: (info) => string|string[]|null, record: (info) => data record,
+//                                 view: (id) => view, speed: (kind) => tiles per game s })
 //   await w.begin(infos)          preload the battle's units' effects (prep → battle); w.more(infos) those who join later
-//   w.castStart(src, tgt, kind, { skip, left }) / w.attack(src, tgt, kind, time, wound) / w.damage(v, type, src, time) /
-//   w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) / w.clear()
+//   w.castStart(src, tgt, kind, { skip, left, skillOn }) / w.attack(src, tgt, kind, time, wound) / w.damage(v, type, src,
+//   time) / w.heal(v, time) / w.status(v, name, on) / w.death(v) / w.deploy(v) / w.skill(v, on) / w.sync(views) /
+//   w.simFx(kind, x, y, extra) / w.clear()
 //
 // The cast rows follow their ability events (DESIGN §33.12, resolved): ON_CAST_START rows play when the attack's wind-up
 // begins (render/app.js starts the attacker's Spine clip ahead of the 'atk' event: `castStart`), ON_SPELL_ON rows at the
@@ -23,6 +28,7 @@
 
 import { spawnPoint, mountPoint, unitPoint, spawnKind } from './mounts.js';
 import { GROUND_SPAWNS } from './effect.js';
+import { SkillFx } from './skillfx.js';
 import { UF } from '../../../../shared/constants.js';
 
 /** Battle seconds a non-oneshot cast effect lasts without its end event. */
@@ -31,6 +37,8 @@ export const CAST_LOOP_S = 0.6;
 const MELEE_WINDOW = 0.4;
 /** Battle seconds a projectile's arrival covers the damage event it stands for. */
 const ARRIVAL_WINDOW = 0.35;
+/** 'dmg' types of HP damage (shared/protocol.js; an element gauge fill names its element instead). */
+const HP_TYPES = new Set(['phys', 'arts', 'true']);
 
 const lc = (k) => (typeof k === 'string' && k ? k.toLowerCase() : null);
 /** Torappu.SharedConsts.Direction order (a directional emitter row's `slots`). */
@@ -45,7 +53,9 @@ const beyond = (a, b) => ({ x: b.x + (b.x - a.x), y: b.y + (b.y - a.y) });
 export class FxWiring {
   /**
    * @param {import('./system.js').OfficialFx} ofx
-   * @param {{ unitKey?: (info: any) => string|null, speed?: (kind: string) => number }} [opts]
+   * @param {{ unitKey?: (info: any) => string|string[]|null, record?: (info: any) => any, view?: (id: any) => any,
+   *           speed?: (kind: string) => number }} [opts]  record: the unit's data record (render/app.js ctx.lookupDef — the
+   *   skill plans read its skill); view: a battle view by id (the skill bindings place effects on a kit fx's target)
    */
   constructor(ofx, opts = {}) {
     this.ofx = ofx;
@@ -53,11 +63,13 @@ export class FxWiring {
     this.idx = null;
     this.flights = new Set();     // projectile flights in the air
     this.loops = new Map();       // `${unitId}|${status}` → handle
-    this.melee = new Map();       // target id → { keys, src, t, flip }
+    this.melee = new Map();       // target id → { hits, src, t, groups?, buffs?, U?, k, hitT, window }
     this.arrived = new Map();     // target id → battle time of an official projectile hit
     this.healed = new Map();      // target id → battle time of an official heal projectile hit
     this.keyCache = new Map();    // unit id → index unit key | null
     this.attackN = new Map();     // unit id → attacks so far (onlyOnce / hookEffectAfterFirstAttack rows)
+    this.castFrame = new Map();   // unit id → the frame of its last attack (several targets of one attack cast once)
+    this.skills = new SkillFx(this);
   }
 
   get index() { return this.idx; }
@@ -68,14 +80,15 @@ export class FxWiring {
     return !!this.idx;
   }
 
-  /** The index unit of a view (by its info), cached per battle id. */
-  unitOf(v) {
+  /** The index unit key of a view (by its info), cached per battle id; null when index.json does not list it. */
+  unitKeyOf(v) {
     if (!v || !this.idx) return null;
     const id = v.info?.id ?? v.id;
     let k = this.keyCache.get(id);
     if (k === undefined) {
       k = null;
-      const cands = this.opts.unitKey ? [].concat(this.opts.unitKey(v.info) || []) : [];
+      // (a point on the ground — a kit fx's tile, SkillFx — has no info and no unit)
+      const cands = this.opts.unitKey && v.info ? [].concat(this.opts.unitKey(v.info) || []) : [];
       cands.push(v.info?.spine, v.info?.defId);
       for (const c of cands) {
         if (!c) continue;
@@ -85,7 +98,33 @@ export class FxWiring {
       }
       this.keyCache.set(id, k);
     }
+    return k;
+  }
+
+  /** The index unit of a view (by its info), cached per battle id. */
+  unitOf(v) {
+    const k = this.unitKeyOf(v);
     return k ? this.idx.units[k] : null;
+  }
+
+  /** A battle view by id (opts.view), or null. */
+  view(id) {
+    if (id == null || typeof this.opts.view !== 'function') return null;
+    const v = this.opts.view(id);
+    return v && !v.destroyed ? v : null;
+  }
+
+  /** Whether the status wiring draws `key` on v now (a status loop whose generic key it is). */
+  statusShows(v, key) {
+    const st = this.idx?.generic?.status;
+    if (!st) return false;
+    const id = v?.id ?? v?.info?.id;
+    for (const [name, k] of Object.entries(st)) {
+      if (lc(k) !== key) continue;
+      const h = this.loops.get(`${id}|${name}`);
+      if (h && h.alive) return true;
+    }
+    return false;
   }
 
   skinOf(u) { return u && u.skin && this.idx ? this.idx.skins[u.skin] || null : null; }
@@ -127,6 +166,8 @@ export class FxWiring {
       if (u.startEffect) keys.add(u.startEffect);
       if (u.deadEffect) keys.add(u.deadEffect);
     }
+    // the skill, talent and charge effects (render/vfx/skillfx.js keys: plans, the skills' projectiles, bindings)
+    for (const k of this.skills.keys(views)) keys.add(k);
     return [...keys].map(lc).filter((k) => k && this.ofx.lib.has(k));
   }
 
@@ -149,13 +190,18 @@ export class FxWiring {
     this.ofx.lib.preload(keys, { half: this.ofx.lite }).then(() => this.ofx.warm?.(keys), () => {});
   }
 
-  /** The attack mode of a unit now (`S<n>` while its skill n is on and the unit has such a mode). */
-  mode(u, v) {
+  /**
+   * The attack mode of a unit now: while its skill is on (`skillOn`, else the skill's events, else UF.SKILL —
+   * SkillFx.state), the mode its skill plan names (`modeName`, skills.js) or, without a plan, `S<n>` for skill n; else
+   * `Default`.
+   */
+  mode(u, v, skillOn) {
     const modes = u?.modes || [];
     if (!modes.length) return null;
-    const skillOn = !!(v.flags & UF.SKILL);
-    if (skillOn && Number.isInteger(v.info?.skillIndex)) {
-      const m = modes.find((x) => x.name === `S${v.info.skillIndex + 1}`);
+    const st = this.skills.state(v, skillOn);
+    const name = st.plan ? st.plan.modeName : Number.isInteger(v?.info?.skillIndex) ? `S${v.info.skillIndex + 1}` : null;
+    if (st.on && name) {
+      const m = modes.find((x) => x.name === name);
       if (m && m.attack) return m;
     }
     return modes.find((x) => x.name === 'Default') || modes[0];
@@ -297,11 +343,13 @@ export class FxWiring {
    * An attack's cast rows (`cast` on the attacker, `castTarget` / `inputTarget` on its target) for a phase: 'start' —
    * the rows that start with the cast (ON_CAST_START; the wind-up began), 'strike' — the others (ON_SPELL_ON: the
    * attack fires), 'all' — both at the strike (an attack nobody wound up). A looping row stops when the attack clip
-   * ends (`info.left` s, from the wind-up) or after CAST_LOOP_S; `info.skip` starts the effects that far in.
+   * ends (`info.left` s, from the wind-up) or after CAST_LOOP_S; `info.skip` starts the effects that far in;
+   * `info.owner` false: the target rows only (another target of the same attack).
    */
   _casts(a, src, tgt, phase, info = {}) {
     const nth = this.attackN.get(src.id ?? src.info?.id) || 0;
     for (const [rows, onTarget] of [[a.cast, false], [a.castTarget, true], [a.inputTarget, true]]) {
+      if (!onTarget && info.owner === false) continue;
       for (const e of rows || []) {
         const first = e.startEvent == null || CAST_START_EVENTS.has(e.startEvent);
         if ((phase === 'start' && !first) || (phase === 'strike' && first) || (onTarget && !tgt)) continue;
@@ -324,57 +372,90 @@ export class FxWiring {
   /**
    * An attack's wind-up began (render/app.js: the attacker's Spine clip starts so that its strike frame lands with the
    * 'atk' event): the cast rows that start with the cast play now. info: { skip (s of the clip the wind-up started
-   * past), left (s until the clip ends) }.
+   * past), left (s until the clip ends), skillOn (whether the owner's skill is on at the strike: the look-ahead saw its
+   * 'skill' event queued before the 'atk') }. While the skill is on, its own attack's rows replace the mode's
+   * (SkillFx.attackFx).
    */
   castStart(src, tgt, kind, info = {}) {
     if (!this.ofx.active || !src || !this.idx || CHAIN.has(kind)) return false;
-    const a = this.mode(this.unitOf(src), src)?.attack;
-    if (!a) return false;
-    this._casts(a, src, tgt, 'start', info);
+    const sk = this.skills.attackFx(src, tgt, kind, info.skillOn);
+    const a = sk?.replace ? null : this.mode(this.unitOf(src), src, info.skillOn)?.attack;
+    if (!a && !sk) return false;
+    if (a) this._casts(a, src, tgt, 'start', info);
+    if (sk) this.skills.casts(sk, src, tgt, 'start', info);
     return true;
   }
 
   /**
    * b.ev 'atk': the casts (those that start with the cast only when its wind-up did not play them: `wound`), the
-   * projectile and the melee blow. Returns true when the unit's official attack was drawn (the procedural shot is
+   * projectile and the melee blow. While the owner's skill is on, the skill's part (SkillFx.attackFx): its own attack's
+   * rows, hit groups and projectile replace the mode's, or its `each` rows join them; a 秘术师's stored energies leave
+   * with the attack (SkillFx.released). Returns true when the unit's official attack was drawn (the procedural shot is
    * skipped).
    */
   attack(src, tgt, kind, time, wound = false) {
     if (!this.ofx.active || !src || !this.idx) return false;
     const u = this.unitOf(src);
-    const m = this.mode(u, src);
-    const a = m?.attack;
-    if (!a) return false;
+    const sk = this.skills.attackFx(src, tgt, kind);
+    const modeAtk = this.mode(u, src)?.attack || null;
+    const a = sk?.replace ? null : modeAtk;
+    if (!a && !sk) return false;
     const id = src.id ?? src.info?.id;
-    const nth = this.attackN.get(id) || 0;
-    this._casts(a, src, tgt, wound ? 'strike' : 'all');
-    this.attackN.set(id, nth + 1);
+    // one attack on several targets is one 'atk' per target in one tick: the attacker casts once (its target rows play
+    // on each target), and it counts as one attack [ASSUMED: the same frame = the same attack]
+    const again = this.castFrame.get(id) === this.skills.frame;
+    this.castFrame.set(id, this.skills.frame);
+    const nth = Math.max(0, (this.attackN.get(id) || 0) - (again ? 1 : 0));
+    const phase = wound ? 'strike' : 'all';
+    if (a) this._casts(a, src, tgt, phase, { owner: !again });
+    if (sk) { this.skills.casts(sk, src, tgt, phase, { owner: !again }); if (!again) this.skills.attacked(sk); }
+    if (!again) this.attackN.set(id, nth + 1);
     // the hit rows wait for the damage (each target hit: HitEffectOptions); useOwnerToTargetDirection turns the hit
     // along the blow
     const hits = [];
-    for (const e of a.hit || []) for (const k of this._rowKeys(e, src, nth)) hits.push({ k, along: !!e.useOwnerToTargetDirection });
-    const pk = lc(a.projectileKey);
+    for (const e of a?.hit || []) for (const k of this._rowKeys(e, src, nth)) hits.push({ k, along: !!e.useOwnerToTargetDirection });
+    // the projectile: a ranged skill attack's own, else the mode's
+    const pk = sk?.projectile || lc(modeAtk?.projectileKey);
     const proj = pk ? this.idx.projectiles[pk] : null;
     const isShot = kind && kind !== 'none';
+    const tid = tgt ? tgt.id ?? tgt.info?.id : null;
+    // the skill's hit groups (and the buffs its attack puts on the target) wait for the damage, ranged or not
+    const rec = { hits, src, t: time, k: 0, hitT: null, window: MELEE_WINDOW };
+    if (sk && (sk.fx.hit.length || sk.buffs.length)) { rec.groups = sk.fx.hit; rec.buffs = sk.buffs; rec.U = sk.U; }
     if (proj && tgt && isShot) {
       this._fly(proj, src, tgt, kind, time);
+      this.skills.released(src, tgt, kind, time);
+      if (rec.groups) { rec.hits = []; rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW; this.melee.set(tid, rec); }
       return true;
     }
     if (!isShot && tgt) {
       // melee: the hit effects wait for the damage (else the generic hit by damage type)
-      this.melee.set(tgt.id ?? tgt.info?.id, { hits, src, t: time });
+      this.melee.set(tid, rec);
       return true;
     }
-    // a ranged attack without a projectile of its own (direct / chain): the hits play on the damage
-    if (tgt && hits.length) this.melee.set(tgt.id ?? tgt.info?.id, { hits, src, t: time });
+    // a ranged attack without a projectile of its own (direct / chain): the hits play on the damage (the procedural shot
+    // still flies)
+    if (tgt && (hits.length || rec.groups)) {
+      if (rec.groups) rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW;
+      this.melee.set(tid, rec);
+    }
     return false;
   }
 
-  /** A projectile's flight: `main` from the attacker's muzzle to the target's HitPoint in the sim's flight time. */
-  _fly(proj, src, tgt, kind, time) {
+  /** The sim's flight time of a shot of `kind` from src to tgt (battle s). */
+  _flightTime(src, tgt, kind) {
+    const speed = this.opts.speed ? this.opts.speed(kind) : 12;
+    return Math.max(0.04, Math.min(3, Math.hypot(tgt.x - src.x, tgt.y - src.y) / Math.max(0.1, speed)));
+  }
+
+  /**
+   * A projectile's flight: `main` from the attacker's muzzle (o.mount: a MountPointType instead — a 秘术师's stored
+   * energy leaves its slot) to the target's HitPoint in the sim's flight time.
+   */
+  _fly(proj, src, tgt, kind, time, o = {}) {
     const su = this.unitOf(src), tu = this.unitOf(tgt);
     const sp = this.pose(src), tp = this.pose(tgt);
-    const from = unitPoint(this.skinOf(su), 'muzzle', sp);
+    const from = Number.isInteger(o.mount) ? mountPoint(this.skinOf(su), o.mount, sp) : unitPoint(this.skinOf(su), 'muzzle', sp);
     const to0 = unitPoint(this.skinOf(tu), 'hit', tp);
     const dist = Math.hypot(to0[0] - from[0], to0[1] - from[1]);
     const speed = this.opts.speed ? this.opts.speed(kind) : 12;
@@ -442,40 +523,66 @@ export class FxWiring {
   }
 
   /**
-   * b.ev 'dmg' on view v: the waiting melee blow's hits (or the generic hit), or nothing when an official projectile
-   * just arrived. Returns true when the official effect stands for this damage (no procedural spark).
+   * The waiting record of a blow on target `id` for an event at `time` (null once its window passed, or — a skill
+   * attack's hit groups — once a later frame's damage arrives: those hits were all dealt in one frame).
+   */
+  _pending(id, time) {
+    const m = this.melee.get(id);
+    if (!m) return null;
+    if (time - m.t > (m.window ?? MELEE_WINDOW) || (m.hitT != null && m.hitT !== time)) { this.melee.delete(id); return null; }
+    return m;
+  }
+
+  /**
+   * b.ev 'dmg' on view v: the waiting blow's hits — a skill attack's k-th hit group for the k-th damage of the frame
+   * (SkillFx.landed) — or the generic hit, or nothing when an official projectile just arrived; the owner's skill
+   * `trigger` (SkillFx.trigger). Returns true when the official effect stands for this damage (no procedural spark).
    */
   damage(v, type, src, time) {
     if (!this.ofx.active || !v || !this.idx) return false;
+    // an element gauge fill ('dmg' typed by its element: a rider, a 灼燃 tick …) is no hit of the attack and no damage
+    // taken in the skills' sense (the sim's TAKE_DAMAGE skips it too)
+    const hpHit = type == null || HP_TYPES.has(type);
+    if (hpHit) this.skills.trigger(v);
     const id = v.id ?? v.info?.id;
+    const m = this._pending(id, time);
+    let drawn = false;
+    if (m && m.groups && hpHit) drawn = this.skills.landed(m, v, time);
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
-    const m = this.melee.get(id);
-    if (!m || time - m.t > MELEE_WINDOW) return false;
-    this.melee.delete(id);
+    if (!m) return drawn;
+    if (!m.groups) this.melee.delete(id);
+    else if (!hpHit || m.k > 1) return drawn;      // a gauge fill, or the later hits of a multi-hit: their groups only
     let hits = m.hits;
-    if (!hits.length) {
+    if (!hits.length && !(m.groups && m.groups.length)) {
       const g = this.idx.generic?.hit || {};
       const side = m.src?.isEnemy ? 'enemy' : null;
       const k = side ? g.enemy : (type === 'arts' ? g.arts : g.phys);
       hits = k ? [{ k, along: false }] : [];
     }
-    let drawn = false;
     for (const h of hits) if (this.playOn(h.k, v, { flipFrom: m.src, toward: h.along && m.src ? beyond(m.src, v) : undefined })) drawn = true;
     return drawn;
   }
 
-  /** b.ev 'heal' on view v: covered by an official heal projectile, else the generic heal hit. */
-  heal(v) {
+  /**
+   * b.ev 'heal' on view v at `time` (the event's render time, as attack's): a skill heal's hit group (SkillFx.landed);
+   * covered by an official heal projectile, else the generic heal hit.
+   */
+  heal(v, time) {
     if (!this.ofx.active || !v || !this.idx) return false;
     const id = v.id ?? v.info?.id;
+    const m = Number.isFinite(time) ? this._pending(id, time) : null;
+    if (m && m.groups && m.groups.length && this.skills.landed(m, v, time)) return true;
     const t = this.healed.get(id) ?? this.arrived.get(id);
     if (t != null && this.ofx.time - t < ARRIVAL_WINDOW) return true;
     const k = this.idx.generic?.hit?.heal;
     return !!(k && this.playOn(k, v, {}));
   }
 
-  /** b.ev 'status' on / off: the status loop follows the unit's mount point while it lasts. */
+  /**
+   * b.ev 'status' on / off: the status loop follows the unit's mount point while it lasts (a skill's target loop of the
+   * same key hands over to it: SkillFx.status).
+   */
   status(v, name, on) {
     if (!v || !this.idx) return false;
     const id = v.id ?? v.info?.id;
@@ -486,15 +593,34 @@ export class FxWiring {
     if (prev && prev.alive) return true;
     const key = this.idx.generic?.status?.[name];
     if (!key) return false;
+    this.skills.status(v, lc(key));
     const h = this.playOn(key, v, { follow: true, loop: true, important: true });
     if (h) this.loops.set(slot, h);
     return !!h;
   }
 
-  /** Stop every loop of a unit (it died / left). */
+  /** Stop every loop of a unit (it died / left): its status loops, its skill / charge loops, the skills' loops on it. */
   release(v) {
     const id = v?.id ?? v?.info?.id;
     for (const [slot, h] of this.loops) if (slot.startsWith(`${id}|`)) { h.stop(); this.loops.delete(slot); }
+    this.skills.release(v);
+  }
+
+  /** b.ev ['skill', id, on] (SkillFx.skill): true when the official layer shows the skill (no procedural burst / aura). */
+  skill(v, on) {
+    if (!v || !this.idx) return false;
+    return this.skills.skill(v, !!on);
+  }
+
+  /** Once per frame after the views took the frame's sample (SkillFx.sync: mid-battle, passive, ready and charge loops). */
+  sync(views) {
+    if (this.idx) this.skills.sync(views);
+  }
+
+  /** b.ev 'fx' of a kit (SkillFx.simFx): true when the official layer stands for it (the procedural fx is skipped). */
+  simFx(kind, x, y, extra) {
+    if (!this.idx) return false;
+    return this.skills.simFx(kind, x, y, extra);
   }
 
   /** b.ev 'die': the unit's own death effect or the generic one. */
@@ -511,7 +637,9 @@ export class FxWiring {
 
   /** b.ev 'deploy': the unit's own start effect or the generic deploy (operators and summons). */
   deploy(v) {
-    if (!this.ofx.active || !v || !this.idx || v.isEnemy) return false;
+    if (!v || !this.idx) return false;
+    this.skills.deployed(v);   // a passive's loops and start one-shots (it is drawn whatever the deploy effect is)
+    if (!this.ofx.active || v.isEnemy) return false;
     const u = this.unitOf(v);
     const m = u ? this.mode(u, v) : null;
     const key = lc(m?.overrideStartEffect) || lc(u?.startEffect) || this.idx.generic?.birth?.char;
@@ -527,11 +655,14 @@ export class FxWiring {
     this.healed.clear();
     this.keyCache.clear();
     this.attackN.clear();
+    this.castFrame.clear();
+    this.skills.clear();
     this.ofx.timers = [];
   }
 
-  /** Called once per frame: delayed actions on the battle clock. */
+  /** Called once per frame: delayed actions on the battle clock (and the frame count the skills' same-frame rules use). */
   tick() {
+    this.skills.frame++;
     const T = this.ofx.timers;
     if (!T || !T.length) return;
     const now = this.ofx.time;

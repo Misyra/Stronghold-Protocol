@@ -11,8 +11,14 @@
 //        &attack=<unit id> (the wiring demo: that unit attacks a dummy 3 tiles away every second — its casts,
 //        projectile and hits from index.json through render/vfx/wiring.js, as in a battle) &kind=<projKind> &skill=1
 //        &dist=<tiles> (to the dummy; with &face=L it stands on the left and the attacker faces it)
+//        &skilldemo=<unit id> (the skill demo, render/vfx/skillfx.js: that unit's official skill — &s=<skill slot, 0-based>
+//        or &sid=<skill id> — turns on, attacks the dummy every second and turns off, every 6 s; &instant=1 one attack
+//        between on and off in one frame, &passive=1 deployed instead, &charge=<n> stores n energies a cycle and releases
+//        them with an attack (深靛), &ready=1 a full SP bar between casts, &hits=<n> damage events per blow, &kind=;
+//        skillDemo(unit, { manual: true }) runs no cycle: skillCmd drives it, every frame still syncs the wiring)
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
-//   setTier(t), keys() } — the tests drive frames by hand (ticker stopped) for deterministic pictures.
+//   setTier(t), keys(), skillDemo(unit, o), skillCmd(cmd, a, b), skillUnits() } — the tests drive frames by hand
+//   (ticker stopped) for deterministic pictures.
 
 import { OfficialFx } from '../js/render/vfx/system.js';
 import { FxWiring } from '../js/render/vfx/wiring.js';
@@ -226,12 +232,101 @@ async function main() {
       (ofx.timers || (ofx.timers = [])).push({ at: ofx.time + dur, fn: () => wiring.damage(demo.tgt, 'phys', demo.src, ofx.time) });
     }
   };
+  // ---- the skill demo: a unit's official skill through the wiring (render/vfx/skillfx.js) --------------------------------
+  // A cycle of SKILL_CYCLE s: the skill turns on at 0.3 s, the unit attacks the dummy every second (wound up WIND_UP s
+  // ahead; the damage lands after the sim's flight time, `hits` damage events per blow), the skill turns off at 4.3 s (an
+  // instant skill: in the frame it turned on, after its one attack); a passive is deployed instead; `charge` stores that
+  // many energies (one a second) before each attack releases them; `ready` fills the SP bar between casts.
+  const SKILL_CYCLE = 6;
+  const sk = { on: false, t: 0, src: null, tgt: null, o: {}, last: -1, store: 0 };
+  function startSkillDemo(unitKey, o = {}) {
+    ofx.clear(); wiring.clear(); demo.on = false;
+    const u = index?.units?.[unitKey];
+    const ids = u ? Object.keys(u.skills || {}) : [];
+    const sid = o.sid || ids[Math.max(0, Math.min(ids.length - 1, o.s | 0))] || null;
+    const left = o.left ?? state.left, dist = o.dist ?? 3;
+    sk.o = { kind: o.kind || 'none', hits: Math.max(1, o.hits | 0 || 1), instant: !!o.instant, passive: !!o.passive, charge: o.charge | 0, ready: !!o.ready, manual: !!o.manual };
+    // a synthetic data record (the viewer has no data store): the skill's id, type and a lasting duration unless instant
+    const rec = sid ? { charId: unitKey, skill: { skillId: sid, index: o.s | 0, skillType: sk.o.passive ? 'PASSIVE' : 'MANUAL', durationType: 'NONE', duration: sk.o.instant || sk.o.passive ? 0 : 4, bb: o.bb || { duration: 3, projectile_life_time: 4 } } } : null;
+    wiring.opts.record = (info) => (info?.id === 1 ? rec : null);
+    wiring.opts.view = (id) => (id === 1 ? sk.src : id === 2 ? sk.tgt : null);
+    sk.src = fake(1, unitKey, UNIT_TILE.col, UNIT_TILE.row, /^enemy_/.test(unitKey));
+    sk.tgt = fake(2, o.target || 'enemy_1007_slime', UNIT_TILE.col + (left ? -dist : dist), UNIT_TILE.row, !/^enemy_/.test(unitKey));
+    sk.src.visFacing = left ? -1 : 1; sk.tgt.visFacing = left ? 1 : -1;
+    if (!sk.src.isEnemy) sk.src.dir = left ? 'LEFT' : 'RIGHT';
+    sk.src.info.skillIndex = o.s | 0;
+    Object.assign(sk.src, { sp: 0, spMax: 10, energy: sk.o.charge ? [0, sk.o.charge] : null });
+    sk.on = true; sk.t = 0; sk.last = -1; sk.store = 0;
+    wiring.begin([sk.src, sk.tgt]);
+    if (sk.o.passive) { wiring.skill(sk.src, true); wiring.deploy(sk.src); }
+    return { sid, plan: wiring.skills.of(sk.src)?.plan || null };
+  }
+  /** One command of the skill demo (the tests drive it by hand): on, off, attack, energy n, deploy, die, fx kind [extra]. */
+  function skillCmd(cmd, a, b) {
+    const s = sk.src, t = sk.tgt;
+    if (!s) return false;
+    switch (cmd) {
+      case 'on': s.flags |= 16; return wiring.skill(s, true);
+      case 'off': s.flags &= ~16; return wiring.skill(s, false);
+      case 'attack': {
+        const kind = a || sk.o.kind;
+        wiring.castStart(s, t, kind, { skip: 0, left: 0.6, skillOn: !!(s.flags & 16) });
+        wiring.attack(s, t, kind, ofx.time, true);
+        const dur = kind === 'none' ? 0 : Math.hypot(t.x - s.x, t.y - s.y) / projSpeed(kind);
+        (ofx.timers || (ofx.timers = [])).push({ at: ofx.time + dur, fn: () => { const now = ofx.time; for (let i = 0; i < sk.o.hits; i++) wiring.damage(t, 'phys', s, now); } });
+        return true;
+      }
+      case 'energy': s.energy = [Math.max(0, a | 0), Math.max(1, sk.o.charge || 3)]; return true;
+      case 'deploy': return wiring.deploy(s);
+      case 'die': return wiring.death(s);
+      case 'sp': s.sp = Number(a) || 0; return true;
+      case 'fx': return wiring.simFx(a, b?.x ?? t.x, b?.y ?? t.y, { id: 1, ...(b || {}) });
+      default: return false;
+    }
+  }
+  const skillStep = (dt) => {
+    if (!sk.on) return;
+    const before = sk.t;
+    sk.t += dt;
+    const c0 = before % SKILL_CYCLE, c1 = sk.t % SKILL_CYCLE;
+    const crossed = (at) => (c0 < at && c1 >= at) || (c1 < c0 && at <= c1);
+    if (sk.o.manual) {
+      // driven by skillCmd (the tests): only the frame's sync and timers
+    } else if (sk.o.charge) {
+      // store one energy a second, release with the attack at the end of the cycle
+      if (Math.floor(before) !== Math.floor(sk.t) && c1 < SKILL_CYCLE - 1) sk.store = Math.min(sk.o.charge, sk.store + 1);
+      sk.src.energy = [sk.store, sk.o.charge];
+      if (crossed(SKILL_CYCLE - 0.5)) { skillCmd('attack', sk.o.kind === 'none' ? 'bolt' : sk.o.kind); sk.store = 0; }
+    } else if (!sk.o.passive) {
+      if (sk.o.ready) sk.src.sp = c1 < 0.3 || c1 > 4.3 ? 10 : 0;
+      if (crossed(0.3)) {
+        skillCmd('on');
+        if (sk.o.instant) { skillCmd('attack'); skillCmd('off'); }
+      }
+      for (const at of [1.3, 2.3, 3.3]) if (!sk.o.instant && crossed(at)) skillCmd('attack');
+      if (!sk.o.instant && crossed(4.3)) skillCmd('off');
+    }
+    wiring.sync([sk.src, sk.tgt]);
+    wiring.tick();
+  };
+  const demoStep0 = demoStep;
+  demoStep = (dt) => { demoStep0(dt); skillStep(dt); };
+
   if (q.get('attack')) startAttackDemo(q.get('attack'), { kind: q.get('kind') || undefined, skill: q.get('skill') === '1', dist: Number(q.get('dist')) || undefined });
+  if (q.get('skilldemo')) {
+    startSkillDemo(q.get('skilldemo'), { s: Number(q.get('s')) || 0, sid: q.get('sid') || undefined, kind: q.get('kind') || undefined, hits: Number(q.get('hits')) || 1,
+      instant: q.get('instant') === '1', passive: q.get('passive') === '1', charge: Number(q.get('charge')) || 0, ready: q.get('ready') === '1', dist: Number(q.get('dist')) || undefined });
+  }
   if (q.get('stress')) { const [l, h] = q.get('stress').split(',').map(Number); await startStress(l || 0, h || 0); }
 
   Object.assign(api, {
     play, step,
     attackDemo: startAttackDemo,
+    skillDemo: startSkillDemo,
+    skillCmd,
+    skillUnits: () => ({ src: sk.src, tgt: sk.tgt }),
+    /** The prefab keys of the live effects (the tests check what plays); `playing`: not those fading out after a stop. */
+    liveKeys: (playing = false) => ofx.effects.filter((e) => !playing || e.state === 'play' || e.state === 'linger').map((e) => e.def?.key).filter(Boolean),
     stress: startStress,
     /** Frame figures over `ms` of animation frames (the stress check). */
     sample: (ms = 4000) => new Promise((resolve) => {
@@ -252,7 +347,7 @@ async function main() {
       };
       requestAnimationFrame(tick);
     }),
-    stopDemo: () => { demo.on = false; },
+    stopDemo: () => { demo.on = false; sk.on = false; },
     wiring,
     render: () => app.renderer.render(app.stage),
     clear: () => { ofx.clear(); state.handle = null; },
@@ -268,7 +363,7 @@ async function main() {
     setUnit: (u) => { state.unit = u || ''; },
     fallbacks: () => fallbackLog(),
   });
-  if (!q.get('attack')) await play(state.key);
+  if (!q.get('attack') && !q.get('skilldemo')) await play(state.key);
   api.ready = true;
 }
 

@@ -59,6 +59,57 @@ describe('Forge import in the studio page', { skip: !ENABLED && 'set SP_E2E=1 (a
     }
   });
 
+  test('a pack with a kit shows the script note; the no-scripts box clears the report and leaves the script plugin out', { timeout: 120000 }, async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-forge-e2e-kit-'));
+    const plugins = path.join(tmp, 'plugins');
+    fs.mkdirSync(plugins);
+    const { startServer } = await import('../../server/index.js');
+    const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, pluginsDir: plugins, assetIndex: false });
+    const P = (await import('puppeteer-core')).default;
+    const browser = await P.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--no-first-run'] });
+    try {
+      // built in memory: node --test runs every .js under test/, so the kit is not a fixture file
+      const pair = (id, golden) => ({ chessId: id, baseId: 'chess_rose_kit_a', goldenId: 'chess_rose_kit_b', isGolden: golden, tier: 3, rarity: 4,
+        name: '玫瑰行为', charId: 'char_102_texas', profession: 'SNIPER', subProfessionId: 'fastshot', position: 'RANGED', bonds: ['deputShip'],
+        stats: { maxHp: 1000, atk: 400, def: 100, res: 0, cost: 12, blockCnt: 1, bat: 1, aspd: 100, respawnTime: 70 }, rangeGrid: [[0, 0]],
+        skills: [{ skillId: 'sk_rose_kit', name: '瞄准', duration: 10, spCost: 40, initSp: 0, bb: { atk: 0.3 }, isDefault: true }] });
+      const zipPath = path.join(tmp, 'rose-kit.zip');
+      fs.writeFileSync(zipPath, zipFiles([
+        { name: 'pack.json', data: Buffer.from(JSON.stringify({ id: 'rose-kit', name: '玫瑰行为', version: '1.0.0', license: 'CC0-1.0', content: ['chess'] })) },
+        { name: 'chess.json', data: Buffer.from(JSON.stringify({ chess_rose_kit_a: pair('chess_rose_kit_a', false), chess_rose_kit_b: pair('chess_rose_kit_b', true) })) },
+        { name: 'kits/chess_rose_kit_a.js', data: Buffer.from("export default function kit() { return { skill: { kind: 'passive', mods: { atkPct: 0.1 } } }; }\n") },
+      ]));
+      const page = await browser.newPage();
+      await page.goto(srv.studio.pageUrl(srv.url), { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('[data-testid="forge-import"]');
+      await page.click('[data-testid="forge-import"]');
+      await page.waitForSelector('[data-testid="forge-zip"]');
+      await (await page.$('[data-testid="forge-zip"]')).uploadFile(zipPath);
+      const previewReady = () => page.waitForFunction(() => { const el = document.querySelector('[data-testid="forge-preview"]'); return el && !el.disabled; });
+      await previewReady();
+      await page.click('[data-testid="forge-preview"]');
+      await page.waitForSelector('[data-testid="forge-report"]');
+      assert.match(await page.$eval('[data-testid="forge-report"]', (el) => el.textContent), /kits-rose-kit/);
+      assert.ok(await page.$('[data-testid="forge-script-note"]'));
+      await page.click('[data-testid="forge-no-scripts"]');
+      await page.waitForFunction(() => !document.querySelector('[data-testid="forge-report"]'));
+      assert.equal(await page.$eval('[data-testid="forge-confirm"]', (el) => el.disabled), true);
+      await previewReady();
+      await page.click('[data-testid="forge-preview"]');
+      await page.waitForSelector('[data-testid="forge-report"]');
+      assert.equal(await page.$('[data-testid="forge-script-note"]'), null);
+      assert.doesNotMatch(await page.$eval('[data-testid="forge-report"]', (el) => el.textContent), /### script/);
+      await page.click('[data-testid="forge-confirm"]');
+      await page.waitForSelector('[data-plugin="rose-kit"]');
+      assert.equal(fs.existsSync(path.join(plugins, 'kits-rose-kit')), false);
+      assert.ok(fs.existsSync(path.join(plugins, 'rose-kit', 'IMPORT-REPORT.md')));
+    } finally {
+      await browser.close();
+      await srv.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('a second file chosen while the first report is open clears it and keeps confirm disabled', { timeout: 120000 }, async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-forge-e2e-race-'));
     const plugins = path.join(tmp, 'plugins');

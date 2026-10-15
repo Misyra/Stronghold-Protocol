@@ -40,6 +40,7 @@ zip, can be imported as the plugins it can become (§16). Install local zips or 
 | `server/plugins/visualSet.js` | the visual sets: a room's (or a player's) cosmetic plugins as one set named by `vs`, served at `/vs/<vs16>/overlay.json` (the composition and each plugin's writes, composed by the browser) |
 | `server/plugins/pack.js`, `server/plugins/zip.js` | checking and packing a plugin folder: the folder's check, `plugin.lock.json` (Spine clip data parsed from the skeleton), a deterministic zip — for `tools/plugin.mjs` and the studio |
 | `server/plugins/forgeImport.js` | Forge workshop packs (§16): read a folder or a zip and write the plugins it can become. It never runs a script from the pack |
+| `server/plugins/forgeKits.js` | a Forge pack's `kits/<id>.js` → the one self-contained sim entry of its script plugin: parsed with acorn, imports rewritten to `sp:sdk@1`, the registry's script check; nothing is run (§16) |
 | `server/studio/` | the plugin studio (§15): `index.js` the page and its API at `/studio/` (this machine and the local network only: `gate.js`), `files.js` (only inside `plugins/<id>/`), `templates/` (one module per template), `targets.js` (by official name), `edit.js` (fields, slots, one-click fixes), `preview.js` (the temporary composition), `watch.js` (hot reload) |
 | `server/packs.js`, `shared/packs.js` | the content-pack API of 0.2.0, kept (compatibility export; the language-pack index) |
 | `public/js/content.js` | the browser: the room's visual set and the player's personal plugins, fetched, checked and laid over the art manifest |
@@ -243,8 +244,8 @@ node tools/plugin.mjs new <template> <id>          a new plugin folder from a te
           [--target <名字|id>] [--name …] [--dir …] optional target found by its official name; --options <json-file> for wizard options
 node tools/plugin.mjs errors [--markdown] [--write] the error catalogue; --write keeps the symptom tables of the documents
 node tools/plugin.mjs import-forge <dir|zip>       a Forge workshop pack → the plugins it can become (§16);
-          [--out <dir>] [--id <id>] [--dry-run]     --dry-run writes nothing; --json prints the report only
-          [--json]
+          [--out <dir>] [--id <id>] [--dry-run]     --dry-run writes nothing; --json prints the report only;
+          [--json] [--no-scripts]                   --no-scripts writes no script plugin for its kits/
 ```
 
 Additional commands:
@@ -477,8 +478,10 @@ changing a default skill requires keeping `skill` equal to its `skills[]` entry.
 `charId`, `name`, `profession`, `subProfessionId`, `position`, `rarity`, `as`, `forms.normal`, `forms.elite` and `skills`.
 Each form supplies `stats` and `rangeGrid`; optional form `skills`, `trait` and `talents` override the shared ones.
 `skills` has exactly one `default: true`, and each skill supplies `skillId`; the expander fills index, SP, trigger,
-blackboards and display fields. `as: "chess"` needs `chess: { tier, bonds, price? }`: normal/elite ids, prices, sell
-values and merge counts come from that tier's economy, and statuses from `economy.chessStatus`. `as: "diy"` creates
+blackboards and display fields. `as: "chess"` needs `chess: { tier, bonds, price?, garrisonIds?, sellPrice?, identifier?,
+shopSortId? }`: normal/elite ids, prices, sell values and merge counts come from that tier's economy, and statuses
+from `economy.chessStatus`. `price` and `garrisonIds` are one value for both pieces or `{ normal, golden }` (an official
+pair's garrisons are `garrison_N_a` / `garrison_N_b`); `sellPrice` is one value. `as: "diy"` creates
 `backups.units`, every existing DIY slot status, `diy.ownedPool` and `diy.operators`; `"both"` does both. The expander
 adds shop chess to their bonds' member lists. An existing record must be changed with patches.
 
@@ -1115,7 +1118,7 @@ GET without the body):
 | `GET /studio/api/trial-options` · `POST /studio/api/trial` | scenarios; a checked child-process battle comparison (key required) |
 | `POST …/authoring` · `POST /studio/api/validate-dsl` | wizard save with revision; structural DSL validation |
 | `POST /studio/api/authors` · `GET /studio/api/events` | name the page's game sessions; the change events |
-| `POST /studio/api/forge/preview` · `POST /studio/api/forge/import` | a Forge pack as `{ zip?: base64, files?: [{ name, data: base64 }], id? }` — never a path on the server. Preview is a dry run. §16 |
+| `POST /studio/api/forge/preview` · `POST /studio/api/forge/import` | a Forge pack as `{ zip?: base64, files?: [{ name, data: base64 }], id?, noScripts? }` — never a path on the server. Preview is a dry run; `noScripts` leaves the script plugin of `kits/` out. §16 |
 
 **The files** (`server/studio/files.js`): everything the studio touches is inside `plugins/<id>/` — the id a plugin id
 (never a `_` template or a dot folder), a path a plain relative path (no `..`, no `.` part, no hidden part, ≤ 200
@@ -1310,7 +1313,7 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_JSON` | JSON in the pack cannot be read: {detail} | JSON must parse, stay within 8 MB and 64 levels of nesting, and keep numbers within ±1e9. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_ID` | This pack's id cannot become a plugin id: {detail} | Pass --id with a plugin id: 2–32 lower-case letters, digits and -, for example rose-skin. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_EXISTS` | The destination folder already exists, so nothing was written: {detail} | Choose another --out or --id, or move the existing plugin folder aside and import again. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_SCRIPT` | A script in the pack was not imported and was not run: {detail} | Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_FORGE_SCRIPT` | A script in the pack was not imported and was not run: {detail} | A kits/<id>.js becomes the sandboxed script plugin when its id is an imported record (or an official id declared in overrides) and its imports map to sp:sdk@1 (@kit/tier1.js, @sim/constants.js, @sim/detmath.js, the pack's ./ files); otherwise rewrite the logic as a JSON SkillSpec, DSL or a script plugin. The importer never runs a .js from the pack. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_INVALID` | The plugin has a problem: {detail} | Read the original line; if it is unclear, ask on GitHub with it. |
 <!-- plugin-errors:end -->
 
@@ -1334,36 +1337,46 @@ A Forge workshop pack — a folder or a zip with `pack.json` at its root, one wr
 into one or more of our plugins. The importer (`server/plugins/forgeImport.js`) is original code. It does not copy
 Forge's source, and it does not screen for official art, the same rule as the packer: what a plugin carries is its
 author's responsibility. A pack is untrusted. The importer reads bytes only. It never `import()`s, `eval()`s or
-`require()`s a file from the pack, and it never copies a script into the plugin it writes.
+`require()`s a file from the pack. The one place a pack's code is written is the sandboxed script plugin of its
+`kits/<id>.js` files (below, `server/plugins/forgeKits.js`): parsed with acorn and rewritten there, never run during
+the import, and run afterwards only where the server owner set `SP_PLUGIN_SCRIPTS` and a room selects that plugin.
 
 ```
-node tools/plugin.mjs import-forge <dir or zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+node tools/plugin.mjs import-forge <dir or zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] [--no-scripts]
 ```
 
 `--out` names the primary product's folder; its basename becomes that product's id. `--id` overrides the pack id
 before the suffixes below. `--dry-run` writes nothing, including `IMPORT-REPORT.md`. `--json` prints the report
 object only, keys sorted. Exit 0 when the pack was read, including when nothing could be imported; exit 1 when the
 pack could not be read or a product failed `check`, `pack`, the visual set or the content set; exit 2 on a bad
-command. A product that fails is not left in `plugins/`.
+command. A product that fails is not left in `plugins/`. `--no-scripts` writes no script plugin: each kit file is
+named in the report with that reason, and its record keeps its own kit in the content plugin.
 
 The studio does the same thing. On `/studio/` the button 「从 Forge 包导入」 takes a zip or a folder. The browser
 sends the bytes. While that read is in progress the preview and confirm buttons stay disabled, and the previous
 report is cleared so a late read cannot confirm the pack that was on screen before. The server is never given a
 path on its disk. `POST /studio/api/forge/preview` and
-`POST /studio/api/forge/import` take `{ zip?: base64, files?: [{ name, data: base64 }], id? }` and use the same gate
-as every other change (`X-SP-Studio`, this machine or the local network). A pack that is unsafe to unpack is 400
-with a `PLUGIN_FORGE_*` code. A pack that was read answers 200 `{ report, plugins: [{ id, class }] }`. `report.ok`
-is false when a product failed the checks, and nothing was written. Preview is a dry run. Confirming writes
-`plugins/<id>/` and rescans.
+`POST /studio/api/forge/import` take `{ zip?: base64, files?: [{ name, data: base64 }], id?, noScripts? }` and use the
+same gate as every other change (`X-SP-Studio`, this machine or the local network). A pack that is unsafe to unpack
+is 400 with a `PLUGIN_FORGE_*` code. A pack that was read answers 200 `{ report, plugins: [{ id, class }] }`.
+`report.ok` is false when a product failed the checks, and nothing was written. Preview is a dry run. Confirming
+writes `plugins/<id>/` and rescans. The dialog's box 「不生成脚本插件」 sends `noScripts: true` (the CLI's
+`--no-scripts`); toggling it clears the report, so confirm always writes what the last preview showed. When the
+report has a script plugin the dialog says when it runs (below).
 
 Each product is checked with `checkPluginFolder` and `packPlugin`. A cosmetic product is then resolved with
 `createVisualSets({ registry }).resolve` (there is no `buildVisualSet`). A content product is built with
-`buildContentSet`. A problem or a warning fails the import. After a successful write the primary folder holds
-`IMPORT-REPORT.md`: what was imported, what was rewritten, what was not and why, and the [ASSUMED] lines. The lock
-`pack` wrote does not list that file; a later `pack` rewrites the lock.
+`buildContentSet`. A script product is not composed: composing it would run its setup in the preflight child, and
+the importer runs nothing; its checks are `checkPluginFolder` (the registry's script scan) and `pack`. A problem or
+a warning fails the import. After a successful write the primary folder holds `IMPORT-REPORT.md`: what was imported,
+what was rewritten, what was not and why, and the [ASSUMED] lines. The lock `pack` wrote does not list that file; a
+later `pack` rewrites the lock. A script product that is primary is packed again after the report is written, because
+a script plugin runs only with a lock that lists every file.
 
 **Ids.** Content keeps the pack id, or `--out`'s basename when that product is primary. Beside it, cosmetic is
-`<id>-look`, each ui slot is `<id>-<slot>` with the dots written as hyphens, and each language is `<id>-<lang>`.
+`<id>-look`, each ui slot is `<id>-<slot>` with the dots written as hyphens, each language is `<id>-<lang>`, and the
+script plugin is `kits-<id>` [ASSUMED]: a room composes it with the content plugin, and a `<id>-…` name would share
+that plugin's record namespace, which composition refuses (`PLUGIN_RECORD_ID`, §10).
 A name that is not a plugin id, or that collides, is fitted to 2–32 characters (`a-z`, `0-9`, `-`). A second import
 into a folder that already exists is `PLUGIN_FORGE_EXISTS` and writes nothing.
 
@@ -1399,10 +1412,13 @@ view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_
 | `art.audio.sfx.ui`, `sfx.battle` | one audio file each | |
 | `art.audio.sfx.units` | attack, hit, skill, die, born, and skills / attacks / hits by an index 0–99 | any other field or bucket (`ui`, `battle`, `units` only) |
 | `overrides` of `"file:id"` plus a partial of an existing record | a content `data` patch. An array whose type already matches is one `set` of the whole array. `talents` and `talentsBase` are not replaced: Forge merges those by index, and this version says so | not listed in `overrides` (a silent replace is refused); a field whose type or path does not match |
-| `units.json`, a new operator | a compact record `char_x_<namespace>_…`, namespace taken from the content plugin id (`--out`'s basename when that product is primary). Skills come from the selected form when that form has a list, otherwise from the record. One default skill | no name, profession, branch, forms or skill; rarity outside 1–6; no bond that exists here. A 6★ declared in `operators` is `as: "diy"` (no shop piece; `chess.tier` is still the rarity, because the compact schema requires it). Below 6★ in that list, and a unit that is not declared there, is chess [ASSUMED] |
+| `units.json`, a new operator | a compact record `char_x_<namespace>_…`, namespace taken from the content plugin id (`--out`'s basename when that product is primary). Skills come from the selected form when that form has a list, otherwise from the record. One default skill (`default` or `isDefault`). Each form's named talents and trait are copied (text, numbers, range) | no name, profession, branch, forms or skill; rarity outside 1–6; no bond that exists here. A 6★ declared in `operators` is `as: "diy"` (no shop piece; `chess.tier` is still the rarity, because the compact schema requires it). Below 6★ in that list, and a unit that is not declared there, is chess, unless a `chess.json` pair of the pack is its shop piece (then that pair is the record) [ASSUMED] |
+| `chess.json`, a new `_a` / `_b` pair (`baseId`, `goldenId`, `isGolden`) | one compact record `char_x_<namespace>_<stem>` (the stem is the base id without `chess_` and `_a`): a shop piece, or `as: "diy"` when `isDiy` and 6★. The normal form is the `_a` record, the elite the `_b` record (stats, range, skills, trait, talents each). `tier`, `bonds`, `price` (normal/golden), `sellPrice` (when both are equal), `garrisonIds` (normal/golden, the `{ normal, golden }` form of §10), `identifier`, `shopSortId`, the identity and attack fields are kept. The unit is the `charId` when it is an official operator (`art.ref`) or a unit of the pack; with `charId` null, an official operator its `assets` name gives the art only [ASSUMED]. A pair with no bond at all gets the fallback bond 协防干员 (`economy.fallbackBondId`), as the studio's operator template does [ASSUMED] | no name, profession, branch, tier, skill or stats; a `chessId` that is not its key; two normal or two elite records; a `charId` that is neither official nor a unit of the pack (and no official art in `assets`); bonds that all do not exist here. `status`, the merge count, the chess type (always `PRESET`, its own stand-in), hidden / invisible flags come from our economy, and a different value is named. Modules, potentials (`potDown`, `potMin` / `potBelow`), `statsBase` / `traitBase` / `talentsBase`, immunities, summons, `rangeId` and module talents are named and dropped. One record alone is copied into both forms [ASSUMED] |
+| skill ids that are official skills of one operator (`data/chess.json` and `data/backups.json` skills → that operator) | the record keeps those ids and names the operator's kit, `kit: { ref }` (§10): its chess kit (`chess_char_…_a`) for a shop piece when the default skill is the same (the same tier first when there are two), its 自选 kit (`char_…`, `ops/op-*.js`, which authors every skill) for a 自选 record or when no chess kit fits. Talents and trait are copied, so the kit reads the record's numbers | a skill id that is not official (a partial match), skills of several operators or of one shared by several (`skcom_*`), a different default for a chess kit, or an operator with no kit of its own: the kit stays `"generic"`, and the report says which skills and why. 补位 stand-in kits are not bound [ASSUMED] |
 | `enemies.json` with an official `base` or `special` that exists here | `enemy_x_<namespace>_…`, stats over that base | no such base: a kit is not invented |
-| a skill `.js` | kit `"generic"`. The file is named in the report and is not run | a JSON object that passes `validateSkillSpec` is kept as `kit.spec`. The importer does not translate scripts to DSL; authors can add DSL afterwards (§12) |
-| new chess, items, stages, waves, tokens, bosses, modes | — | no safe compact mapping. `variants` and `behaviour` are engine switches, not modes |
+| `kits/<id>.js` (top level, not `_…`), or the `.js` file a record's `kit` field names | one script plugin `kits-<id>` for the pack (`server/plugins/forgeKits.js`): its sim entry `sim/index.js` carries each kit and every `./` file of the pack it imports, one function scope per Forge file in dependency order, and calls `sp.kits.register(<the record's new charId>, <that kit>)` once per kit. Imports are rewritten by the table below. It requires the content plugin at its exact version. A kit for an official id the pack declares in `overrides` (`chess:<id>`, `units:<charId>`) registers that id, and the manifest lists it in `overrides` (§13). The record itself keeps `"generic"` (or its official kit) in the content plugin: without the script plugin it plays with that kit | the id is not an imported chess or operator record of this pack, nor a declared official override (a summon `tokens` kit has no record here); a second kit for the same record; `--no-scripts`. A file whose imports do not map, that fails `shared/plugins/scriptCheck.js` (the registry's own scan), that uses syntax the sandbox refuses (dynamic `import()`, `import.meta`, `async`, generators, `**`, `export *`, a `let` / `var` / destructuring export), that does not parse, whose default export is not a function, or whose graph is cyclic, over 64 files or over 1 MiB, is named with its reason and not written; so is every kit that imports it. `PLUGIN_FORGE_SCRIPT` |
+| a skill script referenced any other way | kit `"generic"`. The file is named in the report and is not run | a JSON object that passes `validateSkillSpec` is kept as `kit.spec`. The importer does not translate scripts to DSL; authors can add DSL afterwards (§12) |
+| new items, stages, waves, tokens, bosses, modes | — | no safe compact mapping. `variants` and `behaviour` are engine switches, not modes |
 | a flat `{ msgid: string }` translation | a `lang` plugin, `files.ui` | `zh` is the source language and is not a language pack |
 | `{ version: 1, lang, files }` | content i18n, only when every leaf replaces an existing string | a missing leaf would refuse the whole content set, so the file is skipped |
 | notices, credits, description | `description` (at most 500 characters) and `credits` on every product that is not a language pack | unreadable |
@@ -1414,16 +1430,38 @@ view. Two i18n entries that canonicalise to the same language are `PLUGIN_FORGE_
 | a panel with `wraps`, or `readonly` / `readOnly: false` | — | it rewrites a component, so it is not read-only |
 | the panel's script | not copied. The stub answers welcome with ready, then slot and resize, and says the author must rewrite it to postMessage API v1 | `PLUGIN_FORGE_SCRIPT` |
 | `server`, `routes`, `assets` (`.spresources`), `forms`, `fx`, `variants`, `behaviour`, `playtest`, `support`, `combat: true`, `layer` | — | engine replacement, protocol, server logic, or a switch this manifest has no field for. One reason each, in Chinese and in English |
-| `.js` `.mjs` `.cjs` `.ts` `.jsx` `.tsx` | not imported and not executed | `PLUGIN_FORGE_SCRIPT` |
+| any other `.js` `.mjs` `.cjs` `.ts` `.jsx` `.tsx` | not imported and not executed | `PLUGIN_FORGE_SCRIPT` |
 | a file `pack.json` does not reference | — | named in the report, except a loose music file whose basename is a bgm track |
+
+**Kit imports.** Production script plugins allow only self-contained entries (§13), so a Forge kit's imports are
+rewritten to `sp:sdk@1` where the SDK exports the same helpers, and every other one refuses the file:
+
+| Forge import | Becomes |
+|---|---|
+| `@kit/tier1.js` `{ name }`, a name of the SDK's `kit` (`num`, `talentBb`, `talentGrid`, `moduleBb`, `traitBb`, `moduleOn`, `up`, `cheb`, `isMainHit`, `byEnemyAttack`, `skillBusy`, `giveSp`, `onHitBy`, `onHitOn`, `onDamagedOn`, `enemiesInGrid`, `alliesInGridOf`, `enemyInRange`, `statBuff`, `toggleBuff`, `instantKind`, `skillRec`, `skillBbOf`, `batMod`) | `kit.<name>` of `sp:sdk@1` |
+| `@sim/constants.js` `{ name }` | `constants.<name>` |
+| `@sim/detmath.js` `{ name }` | `math.<name>` |
+| `./x.js`, a file of the pack (`.js`, no `..`, `%`, query or `\`, resolved from the importing file) | that file's scope in the same entry; its exports are read once, after it ran (initialization-time bindings, as in the sandbox) |
+| `@kit/tier1.js` names outside that list, `@kit/tier2.js` … `tier6.js`, `@kit/summoner.js`, `@sim/dir.js`, `@sim/targeting.js`, `@ops/…`, a bare name, an absolute path, `..`, a default or namespace import of an SDK module | refused: the file is named, and nothing of it is written |
+
+**When the script plugin runs.** Only where the server owner set `SP_PLUGIN_SCRIPTS=sandbox` (SES compartments, §13
+P3b), or a trusted mode with the lock pinned in `plugins/config.json` and every player's consent, and a room selects
+it (the content plugin joins automatically). In sandbox mode its lock is valid as written, so rooms can select it at
+once. The import report (`IMPORT-REPORT.md`), the plugin's README and the studio dialog say so. A kit that adds a buff in a
+talent's `install` must pass `allowDead: true` (and `persist: true` for a permanent one): a unit is set up before it is
+alive, and `addBuff` refuses a unit that is not alive unless the buff allows it — Forge's engine has the same rule.
+The report names a kit that calls `addBuff` without `allowDead` (a text search, advice only); Forge's own
+`kit-demo` example is one, so its +25% talent does not change ATK here.
 
 **Profession aliases** [ASSUMED]: DEFENDER, HEAVY and GUARDIAN become TANK; VANGUARD becomes PIONEER; GUARD becomes
 WARRIOR. A missing position is MELEE for tank, warrior and pioneer, and RANGED otherwise. A Forge form rank is
 `phase/level/skillLevel/equipLevel`, compared as integers, or a single integer. The lowest becomes normal and the
 highest becomes elite, and a single rank is copied into both. `"2/60/…"` is a higher rank than `"2/9/…"`. A
-missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when the operator is emitted as chess. Skill fields
-that do not fit the compact record (`rangeId` and anything outside name, duration, spCost, initSp, bb, desc,
-default, skillId, id) are named in the report and dropped. Voice containers and skill icons are renamed with the
+missing range grid becomes `[[0, 0]]`. Shop tier follows rarity when the operator is emitted as chess. A skill keeps
+name, duration, spCost, initSp, maxChargeTime, increment, bb (numbers), bbStr, desc, descRaw, skillType, spType,
+durationType, trigger and its range when their types match our data's values; `index` and `level` are derived; other
+non-null fields (`rangeId`, `prefabId`, `overrideTokenKey`, an `iconId` that is not the skill id …) are named in the
+report and dropped. Voice containers and skill icons are renamed with the
 new char id and skill id. An imported file always gains one `files/` prefix, so `a.png` and `files/a.png` do not
 collapse. A case-only name clash, or a file path that is a directory prefix of another, is `PLUGIN_FORGE_ZIP`.
 
@@ -1490,8 +1528,9 @@ the studio and trial bench, Forge import, and catalogue/address installs. The fo
 - Additional mode-code hooks and plugin-specific `golden` / `simcheck` / balance-tool switches have not been added.
 - Personal plugins refresh on the next catalogue fetch; file changes are not pushed to every player's preferences.
   UI recommendations are local to the host's browser until a shared room recommendation protocol exists (§14).
-- The trial bench simulates a single battle, not prep economy or a complete PvP mode (§15). Forge does not convert
-  scripts, full server logic or every record kind (§16). Sandbox/SDK restrictions are in §13 and PLUGIN-API.md.
+- The trial bench simulates a single battle, not prep economy or a complete PvP mode (§15). Forge import carries
+  `kits/` only when their imports map to `sp:sdk@1`, and does not convert other scripts, server logic, summons or
+  every record kind (§16). Sandbox/SDK restrictions are in §13 and PLUGIN-API.md.
 
 ## Tests
 
@@ -1547,7 +1586,13 @@ fixtures under `test/fixtures/forge/` — a skin, a numbers pack, a mixed pack �
 limit, a script that is not run, `Object.prototype` unchanged on the preview route and on `--dry-run`, a language
 alias, a failed rename, form skills, `--out` as the record namespace, distinct `files/` paths, an array `set`,
 renamed voices and skill icons, an installed dependency, a 6★ 自选 operator, a hard link, a raw zip over the cap,
-and a stored entry that contains the ZIP64 bytes), `test/studio/forge.test.js` (the gate, a server path refused,
-preview writes nothing, import writes, a file list, a path-escape name) and the browser test
-`test/ui/forge-import.e2e.test.js` (`SP_E2E=1`, including a read that starts while a report is on screen; a sandbox
-that cannot open a browser leaves that file unrun).
+and a stored entry that contains the ZIP64 bytes; and, written inline because `node --test` runs every `.js` under
+`test/`: chess pairs as a shop piece and a 自选 piece with per-quality garrisons and the dropped fields named, a pack
+unit covered by its pair, official kits bound for a 自选 unit and a shop pair and checked in a battle, partial and
+ambiguous matches, the script plugin of `kits/` with its rewritten imports and carried `./` file, refused kits
+(unmapped imports, the script check, sandbox syntax), `--no-scripts`, an official override kit, the bundler's own
+refusals, and the imported kit's +25% ATK talent in a real battle through the SES preflight child and an SES Worker —
+which needs a real `node_modules` inside the checkout, as every sandbox test), `test/studio/forge.test.js` (the gate,
+a server path refused, preview writes nothing, import writes, a kit pack's script plugin and `noScripts`, a file list,
+a path-escape name) and the browser test `test/ui/forge-import.e2e.test.js` (`SP_E2E=1`, including a read that starts
+while a report is on screen and the no-scripts box; a sandbox that cannot open a browser leaves that file unrun).

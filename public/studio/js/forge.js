@@ -2,6 +2,8 @@
 // (POST /studio/api/forge/preview); confirming writes plugins/<id>/ (POST /studio/api/forge/import). The server never
 // receives a path on its disk, and it never runs a script from the pack. The same studio key as every other change.
 // A read clears the previous payload and report immediately. A late FileReader or a late preview cannot confirm.
+// 「不生成脚本插件」 sends noScripts (the CLI's --no-scripts): the pack's kits/ do not become a script plugin. Toggling it
+// clears the report, so confirm always writes what the last preview showed.
 
 import { useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Modal, Button } from '../../js/ui/components.js';
@@ -23,6 +25,7 @@ export function ForgeDialog({ open, onClose, onImported }) {
   const [note, setNote] = useState('');
   const [report, setReport] = useState(null);
   const [payload, setPayload] = useState(null);
+  const [noScripts, setNoScripts] = useState(false);
   const zipRef = useRef(null);
   const dirRef = useRef(null);
   const gen = useRef(0);
@@ -37,10 +40,10 @@ export function ForgeDialog({ open, onClose, onImported }) {
     reportGen.current = 0;
     ticket.current += 1;
     if (!open) {
-      setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null);
+      setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null); setNoScripts(false);
       return () => { gen.current += 1; };
     }
-    setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null);
+    setBusy(false); setReading(false); setError(''); setNote(''); setReport(null); setPayload(null); setNoScripts(false);
     if (zipRef.current) zipRef.current.value = '';
     if (dirRef.current) dirRef.current.value = '';
     return () => { if (gen.current === mine) gen.current += 1; };
@@ -116,7 +119,7 @@ export function ForgeDialog({ open, onClose, onImported }) {
     const mineTicket = ++ticket.current;
     setBusy(true); setError('');
     try {
-      const r = await post('forge/preview', payload);
+      const r = await post('forge/preview', { ...payload, ...(noScripts ? { noScripts: true } : {}) });
       if (gen.current !== mine || payloadGen.current !== minePayload || ticket.current !== mineTicket) return;
       reportGen.current = minePayload;
       setReport(r.report);
@@ -136,7 +139,7 @@ export function ForgeDialog({ open, onClose, onImported }) {
     const mineTicket = ++ticket.current;
     setBusy(true); setError('');
     try {
-      const r = await post('forge/import', payload);
+      const r = await post('forge/import', { ...payload, ...(noScripts ? { noScripts: true } : {}) });
       if (gen.current !== mine || payloadGen.current !== minePayload || ticket.current !== mineTicket) return;
       setReport(r.report);
       reportGen.current = minePayload;
@@ -150,7 +153,16 @@ export function ForgeDialog({ open, onClose, onImported }) {
       if (ticket.current === mineTicket) setBusy(false);
     }
   };
+  const toggleScripts = (on) => {
+    // a different product list: the report on screen no longer describes what confirm would write
+    ticket.current += 1;
+    reportGen.current = 0;
+    setReport(null);
+    setBusy(false);
+    setNoScripts(on);
+  };
   const locked = busy || reading;
+  const hasScript = !!report?.products?.some((p) => p.class === 'script');
   const canWrite = !!(report?.ok && report.products?.length && reportGen.current === payloadGen.current && !reading);
   const actions = html`
     <${Button} onClick=${onClose} disabled=${locked}>${t('取消')}<//>
@@ -167,9 +179,12 @@ export function ForgeDialog({ open, onClose, onImported }) {
         <input ref=${dirRef} type="file" webkitdirectory=${true} directory=${true} multiple=${true} data-testid="forge-folder" disabled=${locked}
           onChange=${(e) => { if (zipRef.current) zipRef.current.value = ''; takeDir(e.currentTarget.files || []); }} />
       </label>
+      <label class="st-check"><input type="checkbox" checked=${noScripts} disabled=${locked} data-testid="forge-no-scripts"
+        onChange=${(e) => toggleScripts(e.currentTarget.checked)} /> ${t('不生成脚本插件（kits/ 里的行为脚本）')}</label>
       ${note ? html`<p class="st-note">${note}</p>` : null}
       ${error ? html`<p class="st-error" role="alert">${error}</p>` : null}
       ${report && !report.products?.length ? html`<p class="st-note">${t('这个包没有可以写入的插件。')}</p>` : null}
+      ${hasScript ? html`<p class="st-note" data-testid="forge-script-note">${t('脚本插件只在服主开启 SP_PLUGIN_SCRIPTS=sandbox（或受信任模式）并且房间选中它时运行；导入时没有执行它。')}</p>` : null}
       ${report ? html`<div>
         <h3 class="st-note">${t('导入报告')}</h3>
         <pre class="st-forge-report" data-testid="forge-report">${report.markdown || ''}</pre>

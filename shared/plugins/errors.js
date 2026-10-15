@@ -819,7 +819,7 @@ export const PLUGIN_ERRORS = Object.freeze({
   PLUGIN_FORGE_SCRIPT: {
     level: 'problem', doc: D.forge,
     zh: '包里的脚本没有导入，也没有执行：{detail}', en: 'A script in the pack was not imported and was not run: {detail}',
-    fix: { zh: '技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。', en: 'Rewrite skill logic as a generic kit, a JSON SkillSpec or DSL. The importer never runs a .js from the pack.' },
+    fix: { zh: 'kits/<id>.js 的 id 是包里导入的记录（或 overrides 里声明的官方 id），import 又能映射到 sp:sdk@1（@kit/tier1.js、@sim/constants.js、@sim/detmath.js、包里的 ./ 文件）时，会变成沙箱里的脚本插件；不然就把技能逻辑改写成 JSON SkillSpec、DSL 或脚本插件。导入器不会运行包里的 .js。', en: 'A kits/<id>.js becomes the sandboxed script plugin when its id is an imported record (or an official id declared in overrides) and its imports map to sp:sdk@1 (@kit/tier1.js, @sim/constants.js, @sim/detmath.js, the pack\'s ./ files); otherwise rewrite the logic as a JSON SkillSpec, DSL or a script plugin. The importer never runs a .js from the pack.' },
   },
 
   // ---- anything a check reported without a code of its own ----------------------------------------------------------

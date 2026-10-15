@@ -343,7 +343,7 @@ node tools/plugin.mjs pack my-texas --zip
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_JSON` | 包里的 JSON 读不了：{detail} | JSON 要能解析，不超过 8 MB，嵌套不超过 64 层，数字在 ±1e9 以内。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_ID` | 这个包的 id 变不成插件 id：{detail} | 用 --id 指定一个插件 id：2–32 位小写字母、数字和 -，例如 rose-skin。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_EXISTS` | 目标文件夹已经存在，没有写入：{detail} | 换一个 --out 或 --id，或者把已有的插件文件夹挪走后再导入。 |
-| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_SCRIPT` | 包里的脚本没有导入，也没有执行：{detail} | 技能逻辑要手写成通用 kit、JSON SkillSpec 或 DSL。导入器不会运行包里的 .js。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_FORGE_SCRIPT` | 包里的脚本没有导入，也没有执行：{detail} | kits/<id>.js 的 id 是包里导入的记录（或 overrides 里声明的官方 id），import 又能映射到 sp:sdk@1（@kit/tier1.js、@sim/constants.js、@sim/detmath.js、包里的 ./ 文件）时，会变成沙箱里的脚本插件；不然就把技能逻辑改写成 JSON SkillSpec、DSL 或脚本插件。导入器不会运行包里的 .js。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_INVALID` | 插件有问题：{detail} | 看后面的英文原文；看不懂的话，可以到 GitHub 提问并附上这段文字。 |
 <!-- plugin-errors:end -->
 
@@ -352,19 +352,34 @@ node tools/plugin.mjs pack my-texas --zip
 如果你有一份 Forge 工坊包（一个带 `pack.json` 的文件夹，或它打出来的 zip），可以把对得上的部分导成我们的插件。
 
 在工作台里点 **「从 Forge 包导入」**。选一个 zip，或选整个文件夹。先看导入报告，确认之后才会写入 `plugins/`。
-报告里写着导入了什么、改成了什么、没导入的和原因。常见的没导入原因：这是服务端逻辑、会改协议、是一段脚本（导入器
-**不运行**包里的任何代码），或者挂载点对不上我们的界面插槽。
+报告里写着导入了什么、改成了什么、没导入的和原因。常见的没导入原因：这是服务端逻辑、会改协议、是一段对不上的脚本
+（导入器**不运行**包里的任何代码），或者挂载点对不上我们的界面插槽。
 
 命令行做同一件事：
 
 ```bash
-node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json]
+node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] [--no-scripts]
 ```
 
 `--dry-run` 只打印报告，不写文件。皮肤、立绘、头像、图标、Spine、语音、对得上的音乐和音效会变成外观插件；数值改动、
-新干员和新敌人会变成数据插件（技能脚本改成通用 kit，要自己再写成 JSON 技能规格或 DSL）；界面词条会变成语言包；公告和
-鸣谢写进清单的说明。对不上的部分留在 `IMPORT-REPORT.md` 里，中文和英文各一行。完整对照表在
-[PLUGINS.md](PLUGINS.md) §16。
+新干员、`chess.json` 里成对的新棋子（`_a` 普通、`_b` 精锐；`isDiy` 的六星写成自选）和新敌人会变成数据插件；界面词条
+会变成语言包；公告和鸣谢写进清单的说明。对不上的部分留在 `IMPORT-REPORT.md` 里，中文和英文各一行。
+
+技能怎么办：
+
+- 干员或棋子的技能 id 全是**同一名官方干员**的官方技能时，记录保留这些 id，直接用那名干员在本游戏里的 kit（克莱门莎这类
+  自选干员用她的自选 kit，棋子用对应官方棋子的 kit）。只对上一部分，或者对上好几名干员，就用通用 kit，报告写明原因。
+- 包里的 `kits/<棋子 id>.js` 行为脚本会合成一个**脚本插件** `kits-<id>`：每个文件一个作用域，`@kit/tier1.js`、
+  `@sim/constants.js`、`@sim/detmath.js` 改成 `sp:sdk@1`，包里 `./` 开头的文件一起带上。别的 import（`@kit/tier3.js`、
+  `@sim/dir.js` 之类）映射不过来，那份脚本就不写，报告里点名。导入时**不执行**它。
+- 这个脚本插件**只在服主设置 `SP_PLUGIN_SCRIPTS=sandbox`（或受信任模式）并且房间选中它时**才运行（SES 沙箱，见下一节）。
+  没开脚本的服务器照样能用数据插件，只是那名干员用通用 kit（或官方 kit）。
+- 不想要脚本插件：命令行加 `--no-scripts`，或在工作台里勾选「不生成脚本插件」。
+- 写 kit 的作者注意：天赋的 `install` 里加 buff 要写 `allowDead: true`（常驻的再加 `persist: true`，和 `kit.statBuff` 一样）。
+  开战前干员还没部署，没写的 buff 会被引擎拒掉（Forge 的引擎也是这条规则）。报告会点名这样的 kit；Forge 自带的
+  `kit-demo` 示例就是一例，导入后它的「攻击力 +25%」不生效。
+
+完整对照表在 [PLUGINS.md](PLUGINS.md) §16。
 
 ## 开启脚本插件
 

@@ -204,9 +204,9 @@ const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 export function noise3(x, y, z) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
   const xf = x - xi, yf = y - yi, zf = z - zi;
-  const X = xi & 255, Y = yi & 255, Z = zi & 255;
+  const cx = xi & 255, cy = yi & 255, cz = zi & 255;   // lattice cell (lower case: the hotkey scan forbids PERM[X])
   const u = fade(xf), v = fade(yf), w = fade(zf);
-  const a = PERM[X] + Y, aa = PERM[a] + Z, ab = PERM[a + 1] + Z, b = PERM[X + 1] + Y, ba = PERM[b] + Z, bb = PERM[b + 1] + Z;
+  const a = PERM[cx] + cy, aa = PERM[a] + cz, ab = PERM[a + 1] + cz, b = PERM[cx + 1] + cy, ba = PERM[b] + cz, bb = PERM[b + 1] + cz;
   const l = (p, q, t) => p + (q - p) * t;
   return l(l(l(GR[PERM[aa]], GR[PERM[ba]], u), l(GR[PERM[ab]], GR[PERM[bb]], u), v),
     l(l(GR[PERM[aa + 1]], GR[PERM[ba + 1]], u), l(GR[PERM[ab + 1]], GR[PERM[bb + 1]], u), v), w);

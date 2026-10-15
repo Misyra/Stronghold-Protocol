@@ -13,12 +13,22 @@ const guardedImports = new Map([
   [absolute('server/sim/content/kits/index.js'), ['./ops/*.js']],
 ]);
 
+/** The sim modules are fetched as /sim/* at run time and mapped onto server/sim/ for the bundle.
+ *  The worker pass is its own Rollup build and does not inherit this plugin, so it is registered there too
+ *  (public/js/battle/simHost.js bundles simWorker.js, whose runtime does import('/sim/detmath.js')). */
+const simPaths = () => ({
+  name: 'stronghold-sim-paths',
+  enforce: 'pre',
+  resolveId(source) {
+    if (source.startsWith('/sim/')) return absolute(`server${source}`);
+  },
+});
+
 function browserContracts() {
   return {
     name: 'stronghold-browser-contracts',
     enforce: 'pre',
     resolveId(source, importer) {
-      if (source.startsWith('/sim/')) return absolute(`server${source}`);
       if (source === '/vendor/three.module.js') return absolute('public/vendor/three.module.js');
       const resolved = source.startsWith('.') && importer
         ? normalizePath(path.resolve(path.dirname(importer), source)) : normalizePath(source);
@@ -87,7 +97,9 @@ export default defineConfig({
   root: absolute('public'),
   publicDir: false,
   base: '/build/',
-  plugins: [browserContracts()],
+  plugins: [simPaths(), browserContracts()],
+  // The module worker simHost.js spawns is bundled as ESM (it imports /vendor/acorn.mjs at run time).
+  worker: { format: 'es', plugins: () => [simPaths()] },
   build: {
     outDir: absolute('public/build'),
     // An open tab may still need the preceding build's lazy modules after a deploy.

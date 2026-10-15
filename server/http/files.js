@@ -119,13 +119,13 @@ export class CompressCache {
   }
 
   /**
-   * @returns {Promise<Buffer>} the file identified by (path, size, mtime) compressed with `encoding` (gzip by
-   * default), cached under that key plus `encoding`. `body` (already-read bytes, e.g. a small transformed response)
-   * and `variant` (the release tag of a transformed representation) refine the key.
+   * @returns {Promise<Buffer>} the file identified by (path, size, mtime, inode, ctime) compressed with an encoding
+   *   (gzip by default), cached under that key plus that encoding. body (already-read bytes, e.g. a small transformed
+   *   response) and variant (the release tag of a transformed representation) refine the key. The inode and ctime too:
+   *   a file rewritten with its old size and mtime put back (rsync -t, touch -r) is another file.
    */
   get(absPath, stat, body = null, variant = '', encoding = 'gzip') {
-    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}\0${variant}`;
-    return this.compressed(key, () => body || fsp.readFile(absPath), encoding, path.extname(absPath).toLowerCase());
+    return this.compressed(`${absPath}\0${stat.size}\0${stat.mtimeMs}\0${stat.ino}\0${stat.ctimeMs}\0${variant}`, () => body || fsp.readFile(absPath), encoding, path.extname(absPath).toLowerCase());
   }
 
   /**
@@ -282,17 +282,20 @@ function cacheControlFor(ext, mountName, segments, versioned = false) {
 /**
  * One file → the response.
  * @param {{ body?: Buffer | null, variant?: string, versioned?: boolean, contentHash?: string | null,
- *   cacheControl?: string | null }} [opts] body: already-read bytes (a small transformed response); variant: the
- *   release tag of that representation; versioned: a validated `/_v/<tag>/` path; contentHash: the file's content
- *   hash — the ETag then (size + mtime when null); cacheControl: overrides the policy of its path.
+ *   cacheControl?: string | null, headers?: Record<string, string> | null }} [opts] body: already-read bytes (a
+ *   small transformed response); variant: the release tag of that representation; versioned: a validated release
+ *   path (/_v/<tag>/); contentHash: the file content hash — the ETag then (size + mtime when null); cacheControl:
+ *   overrides the policy of its path; headers: extra response headers (a ui plugin Content-Security-Policy), on 200,
+ *   206 and 304 (they share this header object). 416 is an empty body and does not carry them.
  */
 export async function serveFile(req, res, absPath, stat, mountName, segments, gzipCache, log,
-  { body = null, variant = '', versioned = false, contentHash = null, cacheControl = null } = {}) {
+  { body = null, variant = '', versioned = false, contentHash = null, cacheControl = null, headers: extraHeaders = null } = {}) {
   if (body) stat = { size: body.length, mtime: stat.mtime, mtimeMs: stat.mtimeMs };
   const ext = path.extname(absPath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
   const compressible = COMPRESSIBLE.has(ext);
-  const rangeHeader = req.headers.range;
+  // RFC 9110 §14.2: Range is defined only for GET; other methods ignore it, including for encoding selection.
+  const rangeHeader = req.method === 'GET' ? req.headers.range : undefined;
   const encoding = compressible && stat.size >= GZIP_MIN_BYTES && !rangeHeader ? pickEncoding(req.headers['accept-encoding']) : null;
   const baseTag = `${contentHash || `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`}${variant ? '-' + variant : ''}`;
   const etag = `"${baseTag}${encoding === 'br' ? '-br' : encoding === 'gzip' ? '-gz' : ''}"`;
@@ -306,6 +309,7 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, gz
     'Last-Modified': lastModified,
   };
   if (compressible) headers.Vary = 'Accept-Encoding';
+  if (extraHeaders) for (const [k, v] of Object.entries(extraHeaders)) if (v != null && v !== '') headers[k] = v;
 
   // A transformed representation also depends on the release, not just this file's timestamp.
   if (isNotModified(variant && !req.headers['if-none-match'] ? { headers: {} } : req, etag, stat.mtime)) {

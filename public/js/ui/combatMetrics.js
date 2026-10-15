@@ -67,7 +67,7 @@ export function CombatMetricsPanel({ myId, onClose, runner = battleRunner }) {
   const result = (myId ? runner?.combatMetrics({ scope, ownerId: myId }) : null) || { rows: [], damage: 0, healing: 0 };
   const maximum = Math.max(1, ...result.rows.map((r) => r.damage));
   return html`<section ref=${panelRef} id="combat-metrics-panel" class="combat-metrics brackets" role="dialog" aria-label=${t('作战统计')}
-      onKeyDown=${(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}>
+      onKeyDown=${(e) => { if (e.key === 'Escape') onClose(); e.stopPropagation(); }}>
     <header class="combat-metrics__head">
       <div><span class="combat-metrics__micro">COMBAT ANALYSIS</span><h2>${t('作战统计')}</h2></div>
       <button ref=${closeRef} type="button" class="combat-metrics__close" aria-label=${t('关闭作战统计')} onClick=${onClose}><${Icon} name="close" /></button>
@@ -95,8 +95,8 @@ export function CombatMetricsPanel({ myId, onClose, runner = battleRunner }) {
           <div class="combat-metrics__unit">
             <div class="combat-metrics__name"><b title=${r.name}>${r.name || r.defId}</b></div>
             <div class="combat-metrics__bar" role="img" aria-label=${description} title=${description}>
-              ${TYPES.map((type) => html`<span key=${type.id} class=${`combat-metrics__segment combat-metrics__segment--${type.id}`}
-                style=${{ width: `${r.types[type.id] / maximum * 100}%` }}></span>`)}
+              ${TYPES.map((t) => html`<span key=${t.id} class=${`combat-metrics__segment combat-metrics__segment--${t.id}`}
+                style=${{ width: `${r.types[t.id] / maximum * 100}%` }}></span>`)}
             </div>
             <div class="combat-metrics__values">
               <span><small>${t('伤害')}</small><b>${number(r.damage)}</b></span>

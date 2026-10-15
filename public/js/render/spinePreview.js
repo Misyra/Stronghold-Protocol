@@ -17,8 +17,15 @@
 // the caller keeps the avatar — the section must never be blocked by a preview.
 
 import { ensurePixi } from './app/pixi.js';
-import { assets, spineEntry } from '../assets.js';
 import { data } from '../data.js';
+
+import { spineEntry } from '../spineManifest.js';
+
+// The asset store is imported on demand: the fork's loadout preview must not pull public/js/assets.js (and the local
+// art manifest it reads) into a vanilla page's startup graph — test/ui/plugins-client.test.js pins that graph. The
+// pure Spine-manifest layer above is safe to import eagerly (no store, no fetch).
+let assetsModule = null;
+const loadAssets = () => (assetsModule ||= import('../assets.js').then((m) => m.assets));
 
 /**
  * Side of the static PNG, in px. Square: the preview box crops nothing and a letterboxed model needs no fitting.
@@ -152,6 +159,7 @@ function poseSkeleton(PIXI, skel, clip, at) {
  */
 async function renderOne(assetId, skinId) {
   const PIXI = await ensurePixi();
+  const assets = await loadAssets();
   const entry = spineEntry(data.get('assets'), assetId, skinId ? { skin: skinId } : undefined);
   if (!entry) throw new Error('no spine for ' + assetId + (skinId ? ' (' + skinId + ')' : ''));
   const skel = await assets.spine.acquire(entry);
@@ -298,6 +306,7 @@ export async function mountPreview(host, { assetId, skinId = '', clipSize = PREV
   if (!host) throw new Error('mountPreview: no host');
   const cancelled = () => (typeof isCancelled === 'function' ? !!isCancelled() : false);
   const PIXI = await ensurePixi();
+  const assets = await loadAssets();
   const entry = spineEntry(data.get('assets'), assetId, skinId ? { skin: skinId } : undefined);
   if (!entry) throw new Error('no spine for ' + assetId);
   const skel = await assets.spine.acquire(entry);

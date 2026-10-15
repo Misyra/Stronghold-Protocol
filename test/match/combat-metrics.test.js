@@ -37,6 +37,25 @@ test('effective HP damage: mitigation, silent loss, overkill, shields, friendly 
   assert.equal(read().rows[0].types.true, 60, 'only remaining HP, not the overkill float');
 });
 
+test('stop detaches the meter and keeps the rows already counted', () => {
+  const { b, u, e, read } = rig();
+  const hooks = b._hooks.damaged.length;
+  b.dealDamage(u, e, { amount: 100, type: 'true' });
+  const damage = read().rows[0].damage;
+  assert.ok(damage > 0);
+  const wrapped = b.heal;
+  read.stop();
+  read.stop();
+  assert.equal(b._hooks.damaged?.length || 0, hooks - 1);
+  assert.notEqual(b.heal, wrapped);
+  assert.equal(Object.prototype.hasOwnProperty.call(b, 'heal'), false);
+  b.dealDamage(u, e, { amount: 100, type: 'true' });
+  u.hp -= 30;
+  assert.equal(b.heal(u, u, 30), 30);
+  assert.equal(read().rows[0].damage, damage);
+  assert.equal(read().rows[0].healing, 0);
+});
+
 test('effective healing: silent/self heals included, overheal and shields excluded; enemy healing excluded', () => {
   const { b, u, e, read } = rig();
   u.hp -= 100;

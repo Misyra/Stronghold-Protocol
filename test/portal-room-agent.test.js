@@ -1,4 +1,4 @@
-// 分享的 agent 模式（docs/design/portal-agent-wss.md §43.1 / §44.3）：游戏不直连中央，而是把「提交这间房」
+// 分享的 agent 模式（docs/design/portal-agent-wss.md §45.1 / §46.3）：游戏不直连中央，而是把「提交这间房」
 // 交给本机 Agent 的桥接口，再用一个认证的状态查询收尾。
 //
 // 这一组测试盯的是 agent 模式与老 HMAC 路径**行为不同**的地方：
@@ -98,7 +98,7 @@ test('结果未知：回 202 + opId，重发复用同一个 opId 而不是变成
   assert.equal(pending.ok, false);
   assert.equal(pending.status, 'pending');
   assert.match(pending.opId, UUID_RE);
-  // 一分钟冷却与十分钟有效期是两件事（§43.5）：冷却期内重发直接被拒，但 opId 还在。
+  // 一分钟冷却与十分钟有效期是两件事（§45.5）：冷却期内重发直接被拒，但 opId 还在。
   assert.equal((await f.post()).status, 429);
   f.advance(61_000);
   const again = await f.post();

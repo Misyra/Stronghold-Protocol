@@ -2,7 +2,7 @@
 
 Stronghold Protocol's own code is licensed under **GPL-3.0-or-later** (see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md)).
 The components below are **not** part of that grant: each stays under its own licence, reproduced at the end of this
-file. Nothing here is committed to the repository except `tools/local-extract/aklz4.py`; the client libraries are
+file. The only third-party source committed here is `tools/local-extract/aklz4.py` and the transpiled Pixi no-eval adapter `public/js/render/app/pixiNoEval.js`; the client libraries are
 installed by npm and copied into `public/vendor/` by `tools/vendor.mjs` (postinstall), and the release bundle carries
 them (with `node_modules/`, which keeps each package's own licence file).
 
@@ -18,6 +18,9 @@ them (with `node_modules/`, which keeps each package's own licence file).
 | [htm](https://github.com/developit/htm) | 3.1.1 | Apache-2.0 | UI templates — `public/vendor/htm.module.js` | no (npm) | yes |
 | [three.js](https://github.com/mrdoob/three.js) | 0.186.1 | MIT | official 3D board — `public/vendor/three.core.js`, `three.module.js` | no (npm) | yes |
 | [zip.js](https://github.com/gildas-lormeau/zip.js) | 2.23.0 | BSD-3-Clause | validated resource ZIP import/export — `public/vendor/zip.module.js` | no (npm) | yes |
+| [SES](https://github.com/endojs/endo/tree/master/packages/ses) | 2.3.0 | Apache-2.0 (full text below, shared with htm) | script plugin compartments in isolated Workers/children — `public/vendor/ses.umd.js`; dependencies @endo/cache-map 1.1.0, @endo/env-options 1.1.11, @endo/immutable-arraybuffer 2.0.0, also Apache-2.0 | no (npm) | yes |
+| [Acorn](https://github.com/acornjs/acorn) | 8.18.0 | MIT | parsed sandbox module adapter — `public/vendor/acorn.mjs`, server | no (npm) | yes |
+| [@pixi/unsafe-eval](https://github.com/pixijs/pixijs/tree/v7.4.2/packages/unsafe-eval/src) | 7.4.2 | MIT (PixiJS notice below) | CSP-compatible shader uniform uploads; upstream syncUniforms transpiled, install adapted to lazy global PIXI | **yes**, `public/js/render/app/pixiNoEval.js` | yes |
 | [ws](https://github.com/websockets/ws) | 8.22.0 | MIT | WebSocket server (`server/`) | no (npm) | yes (`node_modules/`) |
 | [maxmind](https://github.com/runk/node-maxmind), [mmdb-lib](https://github.com/runk/mmdb-lib), [tiny-lru](https://github.com/avoidwork/tiny-lru) | 5.0.7 / 3.0.3 / 13.0.0 | MIT / MIT / BSD-3-Clause | optional local country lookup for server AI quotas; licences retained in npm packages | no (npm) | yes (`node_modules/`) |
 | [Node.js](https://nodejs.org/) | v22.23.3 (pinned in `scripts/make-windows-bundle.mjs`) | MIT | the portable `node\node.exe` (**Windows portable package only** — the integration bundle in [Releases](../../releases/latest) ships no `node.exe`) | no (downloaded from nodejs.org at package time, sha256 verified) | **Windows portable package only** (`node\node.exe`, with `node\LICENSE-node.txt`) |
@@ -543,3 +546,35 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 来源：[konsheng/Sensitive-lexicon](https://github.com/konsheng/Sensitive-lexicon)，固定提交 `d967c30b053fa40b06c5a0dddf0be493f2dfae46`，MIT License，Copyright (c) 2024~2099 Konsheng。
 
 上游 17 份 `Vocabulary/*.txt` 与本站补充词经归一化、长度筛选、普通词豁免和去重，合并为服务端唯一词表 `server/moderation/lexicon/words.txt`。完整许可证见同目录 `LICENSE`，上游版本、原始文件 SHA-256、筛选记录和合并文件摘要见 `SOURCE.json`。不再保存散落的原词表，运行时只读取合并文件，不向浏览器分发词表。
+
+### Acorn — MIT
+
+```text
+MIT License
+
+Copyright (C) 2012-2022 by various contributors (see AUTHORS)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+### SES / Endo — Apache-2.0
+
+The Apache-2.0 licence text reproduced above applies to SES and its listed Endo dependencies as well.
+Their package licence files remain in the release bundle. Copyright and source notices are also retained
+in the vendored SES bundle.

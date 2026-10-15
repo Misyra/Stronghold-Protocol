@@ -86,17 +86,22 @@ export function narrowDeflateOffer(header, serverMaxWindowBits = WS_DEFLATE.serv
 /**
  * The session stack of one server.
  * @param {{ MatchClass?: Function, seedFn?: () => number, [option: string]: any }} opts startServer() options
- * @param {{ data: object, log: object, chatLog?: import('../chatLog.js').ChatLog }} deps the game data, logger and private chat log
+ * @param {{ data: object, log: object, chatLog?: import('../chatLog.js').ChatLog, content?: { cs: string } | null,
+ *   plugins?: ReturnType<typeof import('../plugins/roomSets.js').createRoomSets> | null,
+ *   hosts?: ReturnType<typeof import('../match/host/index.js').createMatchHosts> | null }} deps the game data the
+ *   lobby's matches use, the logger, the private chat log, the vanilla content (server/plugins/identity.js: welcome /
+ *   room.state content, BattleSpec cs), the room sets a room's host chooses from (room.setPlugins: visual and content
+ *   sets), the match hosts a room with gameplay plugins plays in (DESIGN §32.6)
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, chatLog }) {
+export function createSessionStack(opts, { data, log, chatLog, content = null, plugins = null, hosts = null }) {
   const enabled = chatEnabled(opts.chatEnabled ?? process.env.SP_CHAT_ENABLED);
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
   const diagnostics = new NetDiagnostics();
   try {
-    const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
+    const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
       foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,
       foreignSessionsMaxPerIp: () => lobby.opts.maxForeignSessionsPerIp,

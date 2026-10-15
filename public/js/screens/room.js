@@ -23,6 +23,11 @@ import { enabled as federationEnabled, currentNode } from '../federation.js';
 // Spectator seats (community report #26, a remake feature): a co-op room with spectators shows the 观战席 strip under
 // the seats — names, offline marks, the host's ✕ (room.removeSpectator) — and a spectator's own view swaps the ready
 // button for 观战中 and offers 入座 (room.join of the room) while a player seat is free.
+// Plugins (DESIGN §32 P1a): the tag under the title — 「原版」 or 「插件 ×N」 — opens the 插件 panel (ui/pluginPanel.js:
+// the host switches the room's plugins, everybody else reads them). With gameplay plugins (§32.6: a content set of its
+// own — the tag reads 「非官方」 too) every seat shows whether its page has loaded and checked the room's content
+// (seats[].content: 载入中 / 就绪 / 校验失败), 准备就绪 and 开始模拟 wait for it (the server refuses them before:
+// CONTENT_NOT_READY), and a plugin mode the host chose shows beside the difficulty.
 // Texts go through t() (docs/I18N.md).
 
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
@@ -54,6 +59,8 @@ import { difficultyInfo, ProtoCard } from './lobby.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
 import { SearchPanel, RecruitHint, FoundPanel } from '../ui/matchFlow.js';
 import { usePresence, useRise, afterLeave } from '../ui/transitions.js';
+import { PluginTag, isModdedRoom } from '../ui/pluginTag.js';
+import { hasScriptConsent, rememberScriptConsent } from '../content.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 const MAX_SEATS = Number(SEAT_CONST.MAX_SEATS) || 4;
@@ -107,16 +114,23 @@ export function roomFacts(room, myId) {
   const isReady = (s) => !!s.ready || s.playerId === room?.hostId;
   const readyHumans = humans.filter(isReady).length;
   const othersReady = others.every((s) => s.ready && s.connected !== false);
+  // a room with gameplay plugins (DESIGN §32.6): every player's page has loaded and checked its content (the host's too)
+  const modded = isModdedRoom(room);
+  const contentReady = !modded || humans.every((s) => s.content === 'ready');
   return {
     seats, occupied, humans, mine, isHost, readyHumans, isReady,
     emptySeats: seats.filter((s) => !s).length,
+    // 0.3.0: a modded room also waits for every doctor's plugin content to load and pass its check.
     // 同盟匹配 (this fork: server/matchmakingRooms.js): a searching room freezes 开始模拟 and the room options, and
     // only the host of a ready, human-only, not-full alliance may opt into the queue.
     searching: !!room?.matchmaking,
-    canStart: isHost && othersReady && !!mine && !room?.matchmaking,
+    canStart: isHost && othersReady && !!mine && !room?.matchmaking && contentReady && (!room?.content?.trusted || humans.every(s => room.content.trusted.consent[s.seat])),
     canMatch: isHost && othersReady && !!mine && mine.connected !== false && !room?.matchmaking && !room?.inMatch &&
       room?.mode === 'coop' && occupied.length < MAX_SEATS && occupied.every((s) => !s.isBot),
     othersReady,
+    modded,
+    contentReady,
+    myContent: modded ? (mine?.content || 'loading') : 'ready',
     // spectator seats (never players: not in `humans`, never counted for ready / start)
     spectators: Array.isArray(room?.spectators) ? room.spectators.filter((s) => s && typeof s === 'object') : [],
     spectating: isSpectating(room, myId),
@@ -218,6 +232,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAd
       <div class="rseat__plate rseat__plate--empty" aria-hidden="true"></div>
     </article>`;
   }
+  const consent = room.content?.trusted?.consent?.[seat.seat];
   const isMe = seat.playerId === myId;
   const isHostSeat = seat.playerId === room.hostId;
   const offline = seat.connected === false && !seat.isBot;
@@ -239,6 +254,10 @@ function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAd
       <span class="rseat__state">${ready
         ? html`<span class="rseat__box"><${Icon} name="check" /></span>${isHostSeat && !seat.ready ? t('待命中') : t('已就绪')}`
         : html`<span class="rseat__box"></span>${t('准备中')}`}</span>
+    ${facts.modded && !seat.isBot ? html`<span class=${`seat__content is-${seat.content || 'loading'}`} data-testid="seat-content">
+      ${seat.content === 'ready' ? t('插件内容就绪') : seat.content === 'failed' ? t('插件内容校验失败') : t('插件内容载入中')}
+    </span>` : null}
+    ${consent ? html`<span data-testid="script-consented">${t('已同意')}</span>` : null}
     </div>
     ${!seat.isBot && !isMe && facts.isHost ? html`<button type="button" class="rseat__kick" disabled=${busy === `kick${index}`}
       onClick=${() => onKick(index, seat.name, seat.playerId)} title=${t('将该博士移出同盟')} aria-label=${t('移出该博士')}><${Icon} name="user" /><${Icon} name="close" /></button>` : null}
@@ -353,7 +372,7 @@ export function RoomScreen() {
   const [found, setFound] = useState(false);
   const [since] = useState(() => Date.now());
 
-  // 分享（portal，§43.5）：探测到的能力 + 本机登记状态 + 两个独立的计时（冷却 / 有效期）。判定全在 ui/roomShare.js 里。
+  // 分享（portal，§45.5）：探测到的能力 + 本机登记状态 + 两个独立的计时（冷却 / 有效期）。判定全在 ui/roomShare.js 里。
   const [share, setShare] = useState(() => initialShare());
   const [, setClockTick] = useState(0);
   const applyShare = (next) => setShare((current) => (typeof next === 'function' ? next(current) : next));
@@ -365,7 +384,7 @@ export function RoomScreen() {
       return data;
     } catch { return null; }
   };
-  /** 登记结果查询（§43.1「操作结果待确认时界面调用状态查询」）。 */
+  /** 登记结果查询（§45.1「操作结果待确认时界面调用状态查询」）。 */
   const queryShare = async ({ silent = false } = {}) => {
     const current = store.get().room;
     if (!current?.code) return null;
@@ -389,7 +408,7 @@ export function RoomScreen() {
     }
   };
   useEffect(() => { probeShare(); }, []);
-  // 房间实例或房主变了：旧登记状态与在途结果都不再属于这个界面（§43.5）。实例号是唯一能区分
+  // 房间实例或房主变了：旧登记状态与在途结果都不再属于这个界面（§45.5）。实例号是唯一能区分
   // 「同一个码被新房间复用」的东西，所以它变了就一定要清。
   useEffect(() => {
     applyShare((current) => ({ ...initialShare({ enabled: current.enabled, mode: current.mode, available: current.available }) }));
@@ -512,7 +531,7 @@ export function RoomScreen() {
   // 房主切换无限火力分支（blitz / endurance）——room.setRandom 带 variant
   const setVariant = (v) => run('variant', () => net.request('room.setRandom', { random: true, variant: v }));
   const cancelMatch = () => run('cancel-match', () => net.request('matchmaking.cancel', {}));
-  // 提交到联机站（§43.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
+  // 提交到联机站（§45.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
   // 其余按业务码给文案。晚回执（房间已经不是当时那间）一概不写进界面。
   const submitPortal = () => run('portal', async () => {
     const boundRoomId = room.roomId ?? null;
@@ -590,6 +609,8 @@ export function RoomScreen() {
       ? html`<span class="t-mint"><${Icon} name="hourglass" />${t('正在搜寻队友')} · ${mmView?.matched ?? 1}/${mmView?.target ?? MAX_SEATS} ${t('名博士')}</span>`
     : !coop
       ? html`<span class="t-mint">${t('*模拟协议已就绪，准许进入模拟')}</span>`
+    : facts.modded && !facts.contentReady
+      ? html`<span class="t-lo">${t('等待所有博士载入房间的插件内容')}</span>`
     : facts.isHost
       ? facts.canStart
         ? facts.emptySeats && searchable
@@ -601,7 +622,7 @@ export function RoomScreen() {
         : html`<span class="t-lo">${t('准备就绪后，创建者即可开始模拟')}</span>`;
 
 
-  // 分享那一行的六个分支（§43.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
+  // 分享那一行的六个分支（§45.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
   const shareStatus = shareView(share, { serverNow: serverNow(), online, hostname: globalThis.location?.hostname,
     canSubmit: !busy && !facts.searching && facts.emptySeats >= 1 });
   const shareLabels = {
@@ -653,6 +674,7 @@ export function RoomScreen() {
         <${RoomTools} />
       </div>
       <div class="rs-top__right">
+        <${PluginTag} room=${room} myId=${me.playerId} />
         <${LoadoutButton} from="room" size="md" class="hub-plate hub-plate--loadout rs-loadout" label=${t('干员调配')} />
         ${coop ? html`<div class="rs-key">
           <span class="rs-key__k">${t('同盟密钥')}</span>
@@ -705,14 +727,14 @@ export function RoomScreen() {
               <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
           ? html`<button type="button" class="proto-start rs-go" disabled=${!facts.canStart || !online || busy === 'start'} onClick=${start}
-              title=${facts.canStart ? undefined : t('仍有博士未准备就绪')}>
+              title=${facts.canStart ? undefined : !facts.contentReady ? t('仍有博士未载入房间的插件内容') : t('仍有博士未准备就绪')}>
               <span class="proto-start__mark" aria-hidden="true"><span class="proto-start__rook"><i>[</i><${Icon} name="rook" /><i>]</i></span><small>STRONGHOLD<br />PROTOCOL</small></span>
               <span class="proto-start__label">${busy === 'start' ? html`<${Spinner} size="sm" />` : null}${t('开始模拟')}</span>
               <span class="proto-start__deco" aria-hidden="true"></span></button>`
           : facts.spectating
             ? html`<button type="button" class="proto-start rs-go" disabled=${true}><span class="proto-start__label"><${Icon} name="eye" />${t('观战中')}</span></button>`
-          : html`<button type="button" class=${`proto-start rs-go${myReady ? ' is-ready' : ''}`} disabled=${!online || !facts.mine || busy === 'ready'} onClick=${toggleReady}
-              title=${myReady ? t('再次点击取消就绪') : undefined}>
+          : html`<button type="button" class=${`proto-start rs-go${myReady ? ' is-ready' : ''}`} disabled=${!online || !facts.mine || busy === 'ready' || (!myReady && facts.myContent !== 'ready')} onClick=${toggleReady}
+              title=${!myReady && facts.myContent !== 'ready' ? t('房间的插件内容载入并通过校验后才能准备') : myReady ? t('再次点击取消就绪') : undefined}>
               <span class="rs-go__box" aria-hidden="true">${myReady ? html`<${Icon} name="check" />` : null}</span>
               <span class="proto-start__label">${busy === 'ready' ? html`<${Spinner} size="sm" />` : null}${myReady ? t('已就绪') : t('准备就绪')}</span>
               <span class="proto-start__deco" aria-hidden="true"></span></button>`}
@@ -730,4 +752,47 @@ export function RoomScreen() {
     ${picking ? html`<${CardPicker} current=${myCard} list=${cardList} m=${m} onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
     ${protoShown ? html`<${RoomProtocol} room=${room} variant=${variant} busy=${busy} onClose=${() => setPicker(false)} onPick=${setDifficulty} leaving=${protoLeaving} />` : null}
   </div>`;
+}
+
+/** Persistent across room/game routes, including spectators who never consent. */
+export function TrustedNotice() {
+  const state = useStore(s => s);
+  const room = state.room, cs = room?.content?.cs, trusted = room?.content?.trusted;
+  const seat = room?.seats?.find(s => s && s.playerId === state.me?.playerId);
+  const [dismissed,setDismissed] = useState(null);
+  const [busy,setBusy] = useState(false);
+  const [review,setReview] = useState(false);
+  const choose = async accept => {
+    setBusy(true);
+    try {
+      if (seat) await net.request('room.consent',{cs,accept});
+      rememberScriptConsent(cs,accept);
+      setDismissed(cs); setReview(false);
+      if (accept && trusted.plugins.some(p => p.permissions.includes('trusted.page'))) {
+        const url = new URL(location.href); url.searchParams.set('cs',cs); url.searchParams.set('room',room.code);
+        location.assign(url.href); return;
+      }
+      store.set({room:{...store.get().room}}); // wake the content loader after local persistence
+    } catch (e) { toastError(e); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => {
+    if (trusted && seat && hasScriptConsent(cs) && !trusted.consent?.[seat.seat] && !room.inMatch) {
+      net.request('room.consent',{cs,accept:true}).catch(toastError);
+    }
+  },[cs,seat?.seat,!!trusted?.consent?.[seat?.seat]]);
+  if (!trusted) return null;
+  return html`<aside class="trusted-banner" data-testid="trusted-banner">
+    <strong>${t('受信任插件')}</strong>
+    <button onClick=${() => setReview(true)}>${t('查看风险与同意状态')}</button>
+    <${Modal} open=${review || (dismissed !== cs && !hasScriptConsent(cs))} title=${t('受信任插件')} tone="red" closeOnBackdrop=${false}
+      onClose=${() => room.inMatch ? setReview(false) : choose(false)} actions=${html`<${Button} disabled=${busy} onClick=${() => choose(false)} data-testid="script-decline">${t('拒绝')}<//>
+        <${Button} disabled=${busy} onClick=${() => choose(true)} data-testid="script-accept">${t('同意运行')}<//>`}>
+      <p>${t('它可以完全控制你的游戏页面')}</p>
+      <p>${t('仅在你信任所有作者及以下代码时同意。换了内容组合需要重新同意。')}</p>
+      <ul>${trusted.plugins.map(p => html`<li key=${p.id}><strong>${p.id} ${p.version}</strong>
+        <p>${t('作者：{authors}',{authors:(p.authors || []).join(', ') || '—'})}</p>
+        <p class="trusted-hash">SHA-256: ${p.hash}</p><p>${t('权限：{permissions}',{permissions:p.permissions.join(', ')})}</p></li>`)}</ul>
+    <//>
+  </aside>`;
 }

@@ -6,12 +6,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { createStaticHandler } from '../server/index.js';
 import { getData } from '../server/data.js';
 import * as nativeSpec from '../server/sim/spec.js';
 import { DataSource } from '../server/sim/simdata.js';
+import { SIM_DATA_FILES } from '../public/js/battle/simLoader.js';
 import { scenariosOf } from '../tools/golden.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -121,14 +122,47 @@ test('simulation, renderer, Three.js and ZIP remain outside the initial module g
   assert.ok(Object.values(manifest).some((entry) => entry.name === 'archive' && entry.isDynamicEntry));
 });
 
-test('bundled simulation preserves domain mechanics, operator kits, snapshots and events', async () => {
-  const simulation = Object.values(manifest).find((m) => m.name === 'simulation');
-  const namespaces = Object.values(await import(pathToFileURL(path.join(outDir, simulation.file)).href));
-  const spec = namespaces.find((n) => typeof n?.createBattleFromSpec === 'function');
-  const simdata = namespaces.find((n) => typeof n?.setSimData === 'function');
-  assert.ok(spec && simdata);
-  const raw = getData({ log: { warn() {} } });
-  simdata.setSimData(raw);
+test('the simulation the browser runs is served unbundled: /sim modules as written, data over HTTP', async () => {
+  // v0.3.0 moved the loader into public/js/battle/simLoader.js, which imports the /sim modules at run time: nothing
+  // reaches server/sim statically any more, so there is no bundle copy of the engine left to drift. The page (and its
+  // workers) run the modules the server itself runs, which is also why the /sim/ mount may serve them raw.
+  assert.ok(!Object.values(manifest).some((m) => m.name === 'simulation'), 'the simulation stays out of the bundle');
+
+  const simDir = path.join(root, 'server', 'sim');
+  for (const rel of ['spec.js', 'simdata.js', 'content/support/index.js']) {
+    const res = await fetch(origin + '/sim/' + rel);
+    assert.equal(res.status, 200, '/sim/' + rel);
+    assert.match(res.headers.get('content-type') || '', /javascript/i, '/sim/' + rel + ' is served as JavaScript');
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), await fs.readFile(path.join(simDir, rel)), rel + ': served as written');
+  }
+  // The Node-only data loader is private (server/http/static.js SIM_PRIVATE) and the only server/sim module that
+  // imports a builtin: that is what makes serving the folder raw safe for a browser.
+  assert.equal((await fetch(origin + '/sim/nodeData.js')).status, 404, 'the Node data loader stays private');
+  const stack = [simDir];
+  const builtinImporters = [];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) { stack.push(abs); continue; }
+      if (!entry.name.endsWith('.js')) continue;
+      if ((await fs.readFile(abs, 'utf8')).includes("from 'node:")) builtinImporters.push(path.relative(simDir, abs));
+    }
+  }
+  assert.deepEqual(builtinImporters.sort(), ['nodeData.js'], 'only the private Node loader needs a builtin');
+
+  // The data the loader fetches (simLoader reads /data/<name>.json for the frozen page copy) drives the same engine
+  // to the identical result as the server's own data object on the parity scenarios.
+  const served = {};
+  for (const name of SIM_DATA_FILES) {
+    const res = await fetch(origin + '/data/' + name + '.json');
+    assert.equal(res.status, 200, '/data/' + name + '.json');
+    served[name] = await res.json();
+  }
+  const native = getData({ log: { warn() {} } });
+  for (const name of SIM_DATA_FILES) assert.deepEqual(served[name], native[name], name + '.json: served as loaded');
+  const fromServer = new DataSource(native);
+  const fromHttp = new DataSource(served);
   const selected = [
     ...scenariosOf('roster').filter((sc) => ['roster-039', 'roster-042'].includes(sc.id)),
     ...scenariosOf('bonds').filter((sc) => ['bond-egirShip-high', 'bond-raidShip-high', 'bond-steadShip-high'].includes(sc.id)),
@@ -139,16 +173,16 @@ test('bundled simulation preserves domain mechanics, operator kits, snapshots an
   for (const sc of selected) {
     const input = nativeSpec.buildBattleSpec({ ...sc, battleId: sc.id, fieldId: sc.fieldId ?? 'g', content: 'full' });
     const options = { quiet: true, recordEvents: true };
-    const native = nativeSpec.createBattleFromSpec(input, new DataSource(raw), options);
-    const built = spec.createBattleFromSpec(input, new simdata.DataSource(raw), options);
-    native.runToEnd(sc.cap ?? 300);
-    built.runToEnd(sc.cap ?? 300);
-    assert.ok(native.finished && built.finished, sc.id);
-    assert.equal(native.errors.length, 0, sc.id);
-    assert.equal(built.errors.length, 0, sc.id);
-    assert.deepEqual(spec.compactResult(built.result()), nativeSpec.compactResult(native.result()), sc.id);
-    assert.deepEqual(built.snapshot(), native.snapshot(), `${sc.id}: snapshot`);
-    assert.deepEqual(built.drainEvents(), native.drainEvents(), `${sc.id}: events`);
-    assert.deepEqual(built.allyUnits.map((u) => Object.keys(u.kit || {})), native.allyUnits.map((u) => Object.keys(u.kit || {})), sc.id);
+    const server = nativeSpec.createBattleFromSpec(input, fromServer, options);
+    const page = nativeSpec.createBattleFromSpec(input, fromHttp, options);
+    server.runToEnd(sc.cap ?? 300);
+    page.runToEnd(sc.cap ?? 300);
+    assert.ok(server.finished && page.finished, sc.id);
+    assert.equal(server.errors.length, 0, sc.id);
+    assert.equal(page.errors.length, 0, sc.id);
+    assert.deepEqual(nativeSpec.compactResult(page.result()), nativeSpec.compactResult(server.result()), sc.id);
+    assert.deepEqual(page.snapshot(), server.snapshot(), sc.id + ': snapshot');
+    assert.deepEqual(page.drainEvents(), server.drainEvents(), sc.id + ': events');
+    assert.deepEqual(page.allyUnits.map((u) => Object.keys(u.kit || {})), server.allyUnits.map((u) => Object.keys(u.kit || {})), sc.id);
   }
 });

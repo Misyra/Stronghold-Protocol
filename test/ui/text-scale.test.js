@@ -71,6 +71,14 @@ const NOT_SCALED = [
   /\.field--code/, /\.minfo-dlg/, /\.set-diag__text/,
   // the keyboard hints of the 快捷键 list (a shared rule with the HUD's .toolbtn kbd)
   /\.set-hint kbd/,
+  // The hub package's two pixel-composed boards (ported 2026-10-15): the 结算 flow (css/screens/result.css: the radar
+  // intro, 个人战报, 同盟) and the 成就统计 panel (css/screens/lobby.css, ach-*). Both are fixed 1920x1080 stages whose
+  // plates sit on the design's own pixels and are scaled to the screen as a whole (--k, screens/settle.js), so their
+  // text is part of the composition: the author's own note in the append block says the 文字大小 boost pushed the plate
+  // and table text over its neighbours, which is why the stage carried a local --t: 1rem. This port keeps that
+  // behaviour the sanctioned way - plain rem text - so these are the selectors that read it, checked against every sheet.
+  /\.ach/, /\.settle/, /\.slogo/, /\.sico/, /\.sintro/, /\.smap/, /\.smode/, /\.sself/, /\.splate/, /\.sop/,
+  /\.selite/, /\.sbond/, /\.slv/, /\.sbtn/, /\.steam/, /\.tcard/, /\.tchip/,
 ];
 
 const notScaled = (selector) => NOT_SCALED.some((re) => re.test(selector));

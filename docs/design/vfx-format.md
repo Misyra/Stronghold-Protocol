@@ -1198,6 +1198,35 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   flies along the client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below).
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
+* **The procedural looks the official layer stands for** (round 46, the official-effects audit's R10 / R11; history
+  §32.14.44). With 官方特效 on and the effects installed — never with the layer off or a lite install without them:
+  - A skill whose official plan has no cast rows (no start, loop or range row, no attack cast / range row: 赫默 S2,
+    巫恋 S2, 古米 S1, 银灰 S1, 塞雷娅 S1, 瑰盐 S1, 流星 S1 / S2, 华法琳 S2, 塑心 S3, 魔王 S2) shows no procedural
+    activation burst or aura (`SkillFx.skill` → true): the client shows nothing at that cast. "Installed" is any
+    prefab of the unit's plan, its skill's `effects`, its modes' rows, its `refs` or its `startEffect`.
+  - A kit fx that stands for an official effect the client plays there is bound to it (`FX_BINDINGS`, now with `keys`
+    — prefabs no projectile record lists as reached —, `hold: 'fx'` — the fx's own `duration` / `dur` / `hold` —,
+    `during` — only while the skill lasts — and owner `'skill'` for an fx that names no owner): the areas 锡人 S1 / S2,
+    引星棘刺 S1 / S3, 波登可 S2, 歌蕾蒂娅 S3 (tornado) and 异客 S3 (storm) are their skill projectiles' reached
+    effects at the fx's tile for the area's time (the projectile stays where it lands: AuraHitBehaviour); 异客 S3's
+    strikes `pasngr_skill_03_hit`; 溯光星源 S2's links the link projectile's hit on each pulled enemy; 焰影苇草 S2's fire strikes `reed2_skill_02_hit`; 蕾缪安 S3's
+    lock the aim projectile's crosshair (`lemuen_skill_03_crosshair_range` / `_02`, 1.5 s without a hold [ASSUMED])
+    and her bombard the attack projectile's reached hit.
+  - A kit fx kind the skill's own official effects stand for is skipped while the skill lasts (`FX_COVER`: on, its
+    activation frame, `COVER_AFTER_S` = 1 s after its end [ASSUMED], or a binding of the owner still held) when the
+    skill's plan has an installed prefab: 莫斯提马 S2's zone, 白面鸮 S2's and 流明 S1's heal fields (his: the skill's
+    buff on the patient, `lumen_skill_01_range`, plays with the heal), 凛御银灰 S2's blast, 远牙 S2's
+    and 溯光星源 S3's links, 空弦 S1 / S2's, 流星 S2's and 雪猎 S2's volleys, 信仰搅拌机 S3's counters, 歌蕾蒂娅 S3's
+    tornado pulls, 伺夜 S1's and 迷迭香 S3's summon pillars, 卡涅利安 S2's chains (once her loops are drawable).
+  - A summon's pillar ('summon' archetypes, not the floating units' kinds) in the frame its official birth effect was
+    drawn (`FxWiring.deploy`'s key: the mode's override, its own, the generic one) is skipped: 风丸 S2's 替身, 伺夜's
+    wolves, 夕's and 维娜·维多利亚 S3's summons, 耀骑士临光 S3's sword; a token's arrival burst ('radiantSword',
+    'summonStun', 'summonBurst', 'paperDoll', 'obelisk') only with its own birth effect.
+  - Kept procedural (the client shows such a cue that is not placed here, or the fx is not the skill's): 引星棘刺 S2's
+    drifting area, 余 S3's fire wall (the client builds it from `yu_skill3_range_01_*` segments), 新约能天使's air
+    strikes (`angel2_skill_N_loop_*` on projectiles not flown), 蕾缪安 S3's falling shells, 扎罗's fear-cage beams (the
+    client's `enemy_wlfmster_a_skill_end_buff` on the caged operators is not placed), 缇缇 S3's wake (the fx names no
+    owner), the talents' cues (刺玫's and 雪猎's strikes / counters, 风丸's 替身 burst) and 泡泡 S2's counter (audit R17).
 * **A projectile's parts** (2026-10-15, history §32.14.36 and §32.14.38; `flight.js projectileParts`, `wiring.js
   _fly`): the flying effect is the projectile class's own `_mainEffect` and its life that class's LIMITED `_lifeTime`,
   read from `behaviours` (an index written before the correction named a chain's or a rope's line `main` for 30

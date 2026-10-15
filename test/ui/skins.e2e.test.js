@@ -63,10 +63,11 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
 
   before(async () => {
     const { startServer } = await import('../../server/index.js');
-    server = await startServer({ port: 0, quiet: true });
+    server = await startServer({ port: 0, quiet: true, clientBuild: false, workers: 0 });
     const puppeteer = (await import('puppeteer-core')).default;
     browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox'] });
     page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.evaluateOnNewDocument(() => {
@@ -95,7 +96,14 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
   }
 
   /** Open 干员调配 and select the operator whose base chess id is `charId`. */
-  async function openDetailFor(charId) {
+  async function openModel(root = '[data-testid="skin-section"]') {
+    const fold = `${root} [data-testid="model-fold"]`;
+    await page.waitForSelector(fold);
+    if (!await page.$eval(fold, (el) => el.open)) await page.click(`${fold} > summary`);
+    await page.waitForSelector(`${root} [data-testid="model-preview"]`);
+  }
+
+  async function openDetailFor(charId, { model = true } = {}) {
     // The client has to be ONLINE first: until it is, the lobby stacks its connection state on top of the button
     // (this fork's own test/ui/loadout.e2e.test.js waits for the same thing).
     await page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online', { timeout: 30000 });
@@ -107,7 +115,7 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
       const opener = '.lobby-screen [data-testid="loadout-open"], .room-screen [data-testid="loadout-open"], .brief [data-testid="loadout-open"]';
       await page.waitForSelector(opener, { visible: true, timeout: 20000 });
       await page.click(opener);
-      await page.waitForSelector('.lo .lo-card', { visible: true, timeout: 20000 });
+      await page.waitForSelector('.lo .lo-op, .lo .lo-card', { visible: true, timeout: 20000 });
     }
     // The row is picked FIRST: this fork's overlay starts with no selection, so `.lo-detail` does not exist until a
     // row is chosen (upstream's version waited for it before clicking the row — which is what timed out here).
@@ -115,22 +123,34 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
       const rows = [...document.querySelectorAll('[data-chess]')];
       const row = rows.find((r) => r.getAttribute('data-chess') === id);
       if (!row) return false;
+      if (row.classList.contains('is-sel') && document.querySelector('.lo-detail')) return true;
       // `data-chess` sits on the row card, but the row's click target is the pick button inside it — clicking the card
       // does nothing at all, which is exactly how these tests passed for the wrong reason before (the panel's
       // default selection is the first roster row, so the assertions held while the click was a no-op)
       (row.querySelector('.lo-card__pick') || row.querySelector('button') || row).click();
       return true;
     }, charId);
-    if (ok) await page.waitForSelector('.lo-detail', { visible: true, timeout: 20000 });
+    if (ok) {
+      await page.waitForSelector('.lo-detail', { visible: true, timeout: 20000 });
+      if (model) await openModel();
+    }
     return ok;
   }
 
   test('the 皮肤 section lists the operator\'s skins, installed and not', async () => {
     const row = anySkinChessId();
     assert.ok(row, 'some roster operator has skins in the catalogue');
-    assert.ok(await openDetailFor(row), `the roster has a row for ${row}`);
+    assert.ok(await openDetailFor(row, { model: false }), `the roster has a row for ${row}`);
 
     await page.waitForSelector('[data-testid="skin-section"]', { timeout: 5000 });
+    assert.equal(await page.$eval('.lo-detail__body', (el) => el.firstElementChild.dataset.testid), 'skin-section');
+    assert.equal(await page.$eval('[data-testid="model-fold"]', (el) => el.open), false);
+    assert.equal(await page.$('[data-testid="model-preview"]'), null, 'no preview mounted before opening');
+    await openModel();
+    await page.click('[data-testid="model-fold"] > summary');
+    await page.waitForSelector('[data-testid="model-preview"]', { hidden: true });
+    assert.equal(await page.$('[data-testid="model-preview"]'), null, 'closing removes the preview canvas host');
+    await openModel();
     const tiles = await page.$$eval('[data-skin-group="model"] .lo-skin', (els) => els.map((b) => ({
       skin: b.getAttribute('data-skin'),
       disabled: b.disabled,
@@ -166,6 +186,30 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     // and it is persisted for this browser, which is what the sync sends to the server
     const stored = await page.evaluate(() => localStorage.getItem('sp.pref.skins'));
     assert.match(stored || '', new RegExp(chosen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the choice is saved to localStorage');
+    // Art picks also update the battle model while its preview stays folded.
+    await page.click('[data-testid="model-fold"] > summary');
+    await page.waitForSelector('[data-testid="model-preview"]', { hidden: true });
+    const pickArt = (id) => page.$eval('[data-skin-group="portrait"]', (group, skinId) => {
+      const tile = [...group.querySelectorAll('.lo-skin')].find((el) => el.dataset.skin === skinId);
+      if (!tile) return false;
+      tile.click();
+      return true;
+    }, id);
+    const expectChoice = (portrait, model) => page.waitForFunction(({ id, portrait, model }) =>
+      (JSON.parse(localStorage.getItem('sp.pref.skinPortraits') || '{}')[id] ?? null) === portrait
+      && (JSON.parse(localStorage.getItem('sp.pref.skins') || '{}')[id] ?? null) === model,
+    {}, { id: installedChessId(), portrait, model });
+    assert.ok(await pickArt(''));
+    await expectChoice(null, null);
+    assert.ok(await pickArt(chosen));
+    await expectChoice(chosen, chosen);
+    assert.equal(await page.$eval('[data-testid="model-fold"]', (el) => el.open), false);
+    assert.equal(await page.$('[data-testid="model-preview"]'), null, 'a portrait choice does not open the preview');
+    if (await pickArt('e2')) await expectChoice('e2', null);
+    assert.ok(await pickArt(chosen));
+    await expectChoice(chosen, chosen);
+    assert.ok(await pickArt(''));
+    await expectChoice(null, null);
   });
 
   test('an operator with no skins still gets the 立绘 switch and the model frame', async () => {
@@ -223,6 +267,7 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
       await new Promise((r) => setTimeout(r, 250));
       assert.ok(await openDetailFor(row), `the roster has a row for ${row}`);
     }
+    await openModel();
     await page.waitForSelector('[data-skin-group="model"]', { timeout: 10000 });
     // 默认 + at least one installed skin: proof the panel is on an operator whose models exist
     await page.waitForFunction(() => document.querySelectorAll('[data-skin-group="model"] .lo-skin').length >= 2, { timeout: 10000 });
@@ -272,7 +317,8 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
       await page.click('[data-testid="loadout-open"]');
       await page.waitForSelector('.lo', { timeout: 10000 });
     }
-    await page.click('.lo .lo-tab[data-tab="diy"]');
+    if (await page.$('.lo .lo-tab[data-tab="diy"]')) await page.click('.lo .lo-tab[data-tab="diy"]');
+    else await page.evaluate(() => document.querySelector('.lo-op--diy[data-diy-tier="5"]')?.click());
     await page.waitForSelector(`.diy-slot[data-slot="${SLOT}"] .diy-slot__fill`, { visible: true, timeout: 15000 });
     await page.click(`.diy-slot[data-slot="${SLOT}"] .diy-slot__fill`);
     await page.waitForSelector('[data-testid="diy-picker"]', { visible: true, timeout: 10000 });
@@ -320,6 +366,7 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     // the 商店立绘 tiles at least offer 原始立绘, and the frame plays the pick's own model
     const tiles = await page.$$eval('[data-testid="diy-skin-panel"] [data-skin-group="portrait"] .lo-skin', (els) => els.map((e) => e.getAttribute('data-skin')));
     assert.ok(tiles.includes(''), `原始立绘 offered for the pick, got ${JSON.stringify(tiles)}`);
+    await openModel('[data-testid="diy-skin-panel"]');
     const drawn = await page.waitForFunction(() => !!document.querySelector('[data-testid="diy-skin-panel"] [data-testid="model-preview"] canvas'), { timeout: 60000 }).then(() => true).catch(() => false);
     assert.ok(drawn, 'the frame plays the pick\'s model live');
   });

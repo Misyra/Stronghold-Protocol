@@ -979,6 +979,8 @@
 
 .lo-skin__title { display: flex; align-items: baseline; gap: .06rem; margin: .06rem 0 .04rem; font-size: max(calc(.13 * var(--utility-text, var(--t))), 10px); font-weight: 700; color: var(--text-md); }
 .lo-skin__hint { margin: .04rem 0 0; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); line-height: 1.7; color: var(--text-dim); }
+.lo-model-fold > summary .lo-skin__title { margin: 0; }
+.lo-model-fold > [data-skin-group] { margin-top: .08rem; }
 
 /* 战斗模型 tiles: text only (the model itself is judged in .lo-model below), so they shrink to chips instead of
    holding a 40 px box that a 400 px character cannot be read in. */

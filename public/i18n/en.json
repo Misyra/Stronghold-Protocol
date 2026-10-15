@@ -1921,5 +1921,6 @@
   "前往联机站招募队友：": "Recruit teammates at the multiplayer hub:",
   "同盟内可快捷分享到联机站。": "You can also share your alliance directly to the multiplayer hub.",
   "本地服务尚未配置联机站分享，可复制邀请链接后前往联机站发布。": "This local server has not configured multiplayer hub sharing. Copy the invitation link and post it at the hub.",
-  "前往联机站": "Open multiplayer hub"
+  "前往联机站": "Open multiplayer hub",
+  "选择立绘会切换至对应战斗模型（队友也看得见）；立绘样式只影响你自己看到的商店卡。": "Selecting art also selects its matching battle model, which teammates can see. The card art itself is only shown in your own shop."
 }

@@ -6,7 +6,7 @@
 //   * the resolution — a chosen skin must resolve through its OPERATOR (`chars[charId].skins[skinId].portrait`), and
 //     must return null (so the card falls back to `chessPortraitUrl`) when nothing is chosen or the skin is unknown;
 //   * choosing an outfit on EITHER row applies it to both (this fork: otherwise the same choice has to be made twice),
-//     while 原始立绘 / 精英二立绘 are art-only and never touch the battle model;
+//     while 原始立绘 / 精英二立绘 restore the default battle model;
 //   * the art lives in its own LOCAL preference and never touches the synced `entries` map.
 
 import { test, describe } from 'node:test';
@@ -89,7 +89,7 @@ describe('商店立绘: resolution', () => {
   });
 });
 
-describe('商店立绘: one pick sets both rows, the art-only values stay local', () => {
+describe('商店立绘: one pick sets both rows, original art restores the default model', () => {
   test('choosing an outfit on either row applies it to both', () => {
     setSkin(CHESS, SKIN);
     assert.equal(portraitFor(CHESS), SKIN, 'the shop card follows the battle model — no second pick');
@@ -102,14 +102,18 @@ describe('商店立绘: one pick sets both rows, the art-only values stay local'
     clearPortrait(OTHER);
   });
 
-  test('原始立绘 and 精英二立绘 are art only — they never touch the battle model', () => {
+  test('原始立绘 and 精英二立绘 restore the default battle model', () => {
     setSkin(CHESS, SKIN);
     setPortrait(CHESS, PORTRAIT_E2);
     assert.equal(portraitFor(CHESS), PORTRAIT_E2);
-    assert.equal(skinFor(CHESS), SKIN, '精英二 is not an outfit');
+    assert.equal(skinFor(CHESS), null, '精英二 restores the default model');
+    setSkin(CHESS, SKIN);
     clearPortrait(CHESS);
-    assert.equal(skinFor(CHESS), SKIN, 'going back to 原始立绘 leaves the model alone');
-    clearSkin(CHESS);
+    assert.equal(portraitFor(CHESS), null);
+    assert.equal(skinFor(CHESS), null, '原始立绘 restores the default model');
+    setSkin(CHESS, SKIN);
+    setPortrait(CHESS, '');
+    assert.equal(skinFor(CHESS), null, 'the empty original-art selection behaves the same way');
   });
 
   test('the bulk writers own one map each (the roster sync must not rewrite local art)', () => {

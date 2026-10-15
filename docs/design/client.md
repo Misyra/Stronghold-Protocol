@@ -101,7 +101,7 @@ history and the open points: DESIGN §32.14.25.
   `mounts.js` reads the skin's points (HitPoint, Muzzle, HeadPoint, Special points; front / back skeleton, mirrored for
   a unit facing left) at the unit's feet.
 - **Skills** (0.3.0 Phase 3b, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12 and
-  §33.15). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
+  §33.16). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
   秘术师 charge plan. ['skill', id, 1] plays the plan's `start` and `range` and starts its `loop` (held for the skill:
   stopped with the effect's own fade on ['skill', id, 0], the unit's death, leak or retreat, the battle's reset); 0
   plays `end`. A view built mid-battle (a reconnect, a watched field) starts the loops from the snapshot flag UF.SKILL;

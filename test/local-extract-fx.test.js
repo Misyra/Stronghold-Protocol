@@ -1,9 +1,11 @@
 // tools/local-extract/fx.py (DESIGN §33, docs/design/vfx-format.md): the encodings of the official battle effects'
 // descriptors — curves, gradients, render states, decoded animation clips, mount-point matrices, the file names of
-// effect keys — and extract.py's opt-in fx run. The Python helpers run without UnityPy (pure functions; plain
-// python3). When the effects were extracted on this machine (data/local-fx.json, the list of the fx files, exists), the
-// output is checked for consistency: every listed file exists, the index and the list agree, every key the index names
-// has a descriptor, and data/local-assets.json holds no fx group.
+// effect keys —, the units' emitters, charge groups and skills of index.json, and extract.py's opt-in fx run. The
+// Python helpers run without UnityPy (pure functions; plain python3). When the effects were extracted on this machine
+// (data/local-fx.json, the list of the fx files, exists), the output is checked for consistency: every listed file
+// exists, the index and the list agree, every key the index names has a descriptor, and data/local-assets.json holds
+// no fx group. SP_FX_ROOT=<dir> checks an extraction staged elsewhere instead (`extract.py --only fx --out
+// <dir>/public/assets/local --manifest <dir>/data/local-assets.json`: <dir>/data/local-fx.json and <dir>/public/…).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,12 +15,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FX_ROOT = process.env.SP_FX_ROOT ? path.resolve(process.env.SP_FX_ROOT) : ROOT;
 const TOOL = path.join(ROOT, 'tools/local-extract');
 const PY = ['python3', 'python'].find((bin) => spawnSync(bin, ['--version']).status === 0);
 const ENV = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
-const readJson = (rel) => { try { return JSON.parse(readFileSync(path.join(ROOT, rel), 'utf8')); } catch { return null; } };
-const manifest = readJson('data/local-assets.json');
-const fxList = readJson('data/local-fx.json');
+const readJson = (rel, root = ROOT) => { try { return JSON.parse(readFileSync(path.join(root, rel), 'utf8')); } catch { return null; } };
+const manifest = readJson('data/local-assets.json', FX_ROOT);
+const fxList = readJson('data/local-fx.json', FX_ROOT);
 
 /** Run python code with `fx` imported; returns the parsed JSON it prints. */
 function py(code) {
@@ -146,6 +149,110 @@ print(json.dumps({'lists': fx.emitter_lists(f), 'live': fx.est_live(ps)}))`);
   });
 });
 
+describe('fx.py units: emitters of every class, charge groups, sub-abilities, skills\' root class (index.json v2)', { skip: !PY && 'no python3' }, () => {
+  const ROW = `row = lambda keys, **kw: {'_directionType': 0, '_effects': keys, '_oneshot': 1, '_startEvent': 2, '_endEvent': 3, **kw}`;
+
+  test('emitter_export: a plain UberEffectEmitter has no settings; subclasses keep theirs, their group rows join the lists with `group` / `anim`', () => {
+    const out = py(`${ROW}
+plain = {'_castEffects': [row(['a_start', '', '', ''])], '_hitEffects': [row(['a_hit'])], '_attachEffects': [], '_preDelayFactor': 0.0,
+         '_recalculatePlaybackSpeed': 0, '_convertCastEndToAttachFinish': 0}
+multi_hit = {'_castEffects': [row(['m_start'])], '_hitEffects': [], '_useRandomHitEffect': 0, '_useLoopHitEffect': 1, '_keepBaseHitEffect': 0,
+             '_hitGroups': [{'effects': [row(['m_hit_01'])]}, {'effects': []}, {'effects': [row(['m_hit_03']), row(['m_hit_03_range'])]}],
+             '_castGroups': [], '_useTimesBasedHitEffect': 0, '_timesBasedHitEffects': [], '_oncePerTarget': 0}
+anim = {'_hitEffects': [row(['s_hit'])], '_castEffects': [], '_sourceAnimKey': 'Attack_1', '_loopType': 1,
+        '_replaceGroup': [{'anim': 'Attack_1', 'effectOptions': [row(['s_start_01'])], 'hitEffectOptions': []},
+                          {'anim': 'Attack_2', 'effectOptions': [row(['s_start_02'])], 'hitEffectOptions': [row(['s_hit_02'])]}]}
+wolf = {'_castEffects': [], '_vigilWolfCastEffects': [row(['w_sub_1'], _buffKey='b1')], '_selector': {'m_FileID': 0, 'm_PathID': 7}}
+mode = {'_hitEffects': [row(['f_hit'])], '_activeMode': 0}
+aphris = {'_lineEffectKey': 'aphris_line', '_emitOnEvent': 4, '_waypointFixedHeight': 0.6499999761581421, '_owner': {'m_FileID': 0, 'm_PathID': 3}}
+charge = {'_castEffects': [], '_chargeEffectGroups': [{'effects': [row(['c_02'], _startEvent=4)]}, {'effects': [row(['c_03'], _startEvent=4)]}],
+          '_chargeCastGroups': [], '_isExEffectEmitter': 1, '_chargeEffectStartEvent': 4}
+print(json.dumps({k: fx.emitter_export(c, f) for k, (c, f) in {'plain': ('UberEffectEmitter', plain), 'hit': ('MultiHitUberEffectEmitter', multi_hit),
+                  'anim': ('UberAnimationEffectEmitter', anim), 'wolf': ('VigilWolfEffectEmitter', wolf), 'mode': ('UberEffectEmitterInCertainMode', mode),
+                  'aphris': ('AphrisEffectEmitter', aphris), 'charge': ('MultiExChargeUberEffectEmitter', charge)}.items()}))`);
+    assert.deepEqual(Object.keys(out.plain[0]), ['cast', 'hit']);
+    assert.equal(out.plain[1], null, 'a plain UberEffectEmitter: no settings (its rows go straight to the attack)');
+    const [hitRows, hitSet] = out.hit;
+    assert.deepEqual(hitRows.cast.map((r) => r.effects[0]), ['m_start']);
+    assert.deepEqual(hitRows.hit.map((r) => [r.effects[0], r.group]), [['m_hit_01', 0], ['m_hit_03', 2], ['m_hit_03_range', 2]], 'the group index survives an empty group');
+    assert.deepEqual(hitSet, { class: 'MultiHitUberEffectEmitter', useRandomHitEffect: 0, useLoopHitEffect: 1, keepBaseHitEffect: 0,
+      useTimesBasedHitEffect: 0, oncePerTarget: 0, groups: { hitGroups: 3 } });
+    const [animRows, animSet] = out.anim;
+    assert.deepEqual(animRows.cast.map((r) => [r.effects[0], r.group, r.anim]), [['s_start_01', 0, 'Attack_1'], ['s_start_02', 1, 'Attack_2']]);
+    assert.deepEqual(animRows.hit.map((r) => [r.effects[0], r.group ?? null, r.anim ?? null]), [['s_hit', null, null], ['s_hit_02', 1, 'Attack_2']],
+      'hitEffectOptions are hit rows; the base hit row has no group');
+    assert.deepEqual(animSet, { class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack_1', loopType: 1, replaceAnims: ['Attack_1', 'Attack_2'], groups: { replaceGroup: 2 } });
+    assert.deepEqual(out.wolf[0].cast, [{ directionType: 0, effects: ['w_sub_1'], oneshot: 1, startEvent: 2, endEvent: 3, buffKey: 'b1', field: '_vigilWolfCastEffects' }]);
+    assert.deepEqual(out.wolf[1], { class: 'VigilWolfEffectEmitter' }, 'PPtrs are dropped');
+    assert.deepEqual(out.mode[1], { class: 'UberEffectEmitterInCertainMode', activeMode: 0 });
+    assert.deepEqual(out.aphris, [{}, { class: 'AphrisEffectEmitter', lineEffectKey: 'aphris_line', emitOnEvent: 4, waypointFixedHeight: 0.65 }]);
+    assert.deepEqual(out.charge[0], {}, 'charge groups are no attack rows');
+    assert.deepEqual(out.charge[1].chargeEffectGroups.map((g) => g.map((r) => [r.effects[0], r.startEvent])), [[['c_02', 4]], [['c_03', 4]]]);
+    assert.equal(out.charge[1].chargeCastGroups, undefined, 'an empty group list is left out');
+    assert.equal(out.charge[1].isExEffectEmitter, 1);
+  });
+
+  test('behaviour_uses: a group list\'s uses carry `group` / `groups`, the MultiHit choice flags, a replace group\'s `anim` (its hit options are hits)', () => {
+    const out = py(`${ROW}
+KEYS = {'h1', 'h2', 'h2_range', 'c1', 'a_start', 'a_hit'}
+ek = lambda s: s.lower() if isinstance(s, str) and s.lower() in KEYS else None
+mh = {'_castEffects': [row(['c1'])], '_useRandomHitEffect': 0, '_useLoopHitEffect': 1,
+      '_hitGroups': [{'effects': [row(['h1'])]}, {'effects': [row(['h2']), row(['h2_range'])]}]}
+ua = {'_replaceGroup': [{'anim': 'Skill_A', 'effectOptions': [row(['a_start'])], 'hitEffectOptions': [row(['a_hit'])]}]}
+print(json.dumps({'mh': fx.behaviour_uses('MultiHitUberEffectEmitter', mh, ek, {}, node='n', ability='MultiMeleeAttack'),
+                  'ua': fx.behaviour_uses('UberAnimationEffectEmitter', ua, ek, {}, node='n', ability='MeleeAttack')}))`);
+    const groups = out.mh.filter((u) => u.list === 'hit').map((u) => [u.keys[0], u.group, u.groups, u.useLoopHitEffect ?? false, u.useRandomHitEffect ?? false]);
+    assert.deepEqual(groups, [['h1', 0, 2, true, false], ['h2', 1, 2, true, false], ['h2_range', 1, 2, true, false]]);
+    assert.equal(out.mh.find((u) => u.list === 'cast').group, undefined, 'a plain row has no group');
+    assert.deepEqual(out.ua.map((u) => [u.role, u.keys[0], u.list, u.anim, u.group]), [['start', 'a_start', 'cast', 'Skill_A', 0], ['hit', 'a_hit', 'hit', 'Skill_A', 0]]);
+  });
+
+  test('skill_root / main_ability / is_ability: the Skill-derived class, an enemy\'s EnemySkill, the ability (counters and helpers are not)', () => {
+    const out = py(`
+sk = lambda: {'_canSilenced': 1, '_attachSignalIds': []}
+print(json.dumps([
+  fx.skill_root([('CastSkill', sk()), ('BuffDuringSkill', {'_buffs': []}), ('ActiveBuffAbility', {})]),
+  fx.skill_root([('BuffDuringSkill', {'_buffs': []}), ('ReplacementSkillFixed', sk()), ('RangedAttack', {}), ('UberEffectEmitter', {})]),
+  fx.skill_root([('MeleeAttack', {}), ('UberEffectEmitter', {}), ('EnemySkill', {'_familyMask': 3}), ('ReadyEnemySkillEffect', {})]),
+  fx.skill_root([('AuraAbility', {}), ('TargetValidator', {})]),
+  fx.main_ability(['AbilityEventCounter', 'MeleeAttack', 'UberEffectEmitter']), fx.main_ability(['ThreePartChannelingAnimation', 'UberEffectEmitter']),
+  [fx.is_ability(c) for c in ('RangedAttackWithExtraActions', 'MultiFunnelNormalAttack', 'Heal', 'AbilityRandomGroup', 'MultiChargeAbilityEventCounter',
+                              'SelectorTriggerWithCertainCondition', 'UberEffectEmitter', 'ChargeTimeListener', 'SimpleUnitAnimatorHooker')],
+  [fx.is_emitter('FunnelEffectEmitter', {}), fx.is_emitter('Foo', {'_hitEffects': []}), fx.is_emitter('MeleeAttack', {})]]))`);
+    assert.deepEqual(out[0], ['CastSkill', 'ActiveBuffAbility']);
+    assert.deepEqual(out[1], ['ReplacementSkillFixed', 'RangedAttack']);
+    assert.deepEqual(out[2], ['EnemySkill', 'MeleeAttack']);
+    assert.deepEqual(out[3], [null, 'AuraAbility']);
+    assert.equal(out[4], 'MeleeAttack', 'an event counter is no ability');
+    assert.equal(out[5], null);
+    assert.deepEqual(out[6], [true, true, true, true, false, false, false, false, false]);
+    assert.deepEqual(out[7], [true, true, false]);
+  });
+
+  test('token_skill_ids, mount_names, prefab_anchor', () => {
+    const out = py(`
+rec = {'skill': {'skillId': 'sktok_a', 'prefabId': 'sktok_a'}, 'variants': {'v1': {'skill': {'skillId': 'sktok_a'}}, 'v2': {'skill': {'skillId': 'x', 'prefabId': 'sktok_b'}}},
+       'talents': [{'skill': {'skillId': 'sktok_c'}}], 'skills': [{'skillId': 'not_under_a_skill_key'}], 'other': {'skill': None}}
+nodes = [{'behaviours': [{'class': 'ParticleEffect', 'enabled': False, 'fields': {'_spawnLocation': 9}}]},
+         {'behaviours': [{'class': 'FollowMountPoint', 'enabled': True, 'fields': {'_mountPointType': 6}},
+                         {'class': 'ParticleEffect', 'enabled': True, 'fields': {'_spawnLocation': 8}}]}]
+print(json.dumps([fx.token_skill_ids(rec), fx.mount_names([6, 8, 9, 5, 10, 29, 30, True]), fx.prefab_anchor(nodes), fx.prefab_anchor([{'name': 'x'}]),
+                  fx.INDEX_VERSION, fx.FORMAT_VERSION, fx.MESH_VERSION,
+                  [fx.norm_channel([255, 128, 0, 51], 2), fx.norm_channel([127, -128], 3), fx.norm_channel([65535], 4), fx.norm_channel([0.5, 1.0], 0), fx.norm_channel([1, 0], None)]]))`);
+    assert.deepEqual(out[0], ['sktok_a', 'sktok_b', 'sktok_c'], 'every object under a `skill` key, prefabId first, once');
+    assert.deepEqual(out[1], ['SPECIAL_1', 'SPECIAL_2', 'SPECIAL_3', 'SPECIAL_0', 'SPECIAL_4', 'SPECIAL_23', null, null]);
+    assert.deepEqual(out[2], [8, 6], 'the first enabled ParticleEffect / FollowMountPoint');
+    assert.deepEqual(out[3], [null, null]);
+    assert.deepEqual(out.slice(4, 7), [2, 1, 2], 'index.json and the meshes are version 2; the descriptors stay 1');
+    const [unorm8, snorm8, unorm16, float, unknown] = out[7];
+    assert.deepEqual(unorm8.map((x) => Math.round(x * 1e4) / 1e4), [1, 0.502, 0, 0.2], 'a UNorm8 colour channel (raw bytes) → 0…1');
+    assert.deepEqual(snorm8, [1, -1], 'SNorm8 → −1…1, clamped');
+    assert.deepEqual(unorm16, [1]);
+    assert.deepEqual(float, [0.5, 1], 'a float channel stays');
+    assert.deepEqual(unknown, [1, 0], 'an unknown format (a compressed mesh\'s colours, already 0…1) stays');
+  });
+});
+
 describe('fx.py skill effect roles (index.json skills, DESIGN §33.12)', { skip: !PY && 'no python3' }, () => {
   const EK = `KEYS = {'ifrit_skill_02_start', 'ifrit_skill_02_range', 'common_firemagic_hit_01', 'buff_burn', 'x_skill_buff',
   'x_skill_end', 'x_hit', 'x_start_up', 'x_start', 'x_start_down', 'x_hook', 'x_ready', 'x_tpl_start', 'x_tpl_finish', 'x_tpl_derived'}
@@ -248,6 +355,8 @@ describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () =
     const { fx, jobs } = JSON.parse(r.stdout);
     assert.equal(fx.sub, 'fx');
     assert.equal(fx.version, 1);
+    assert.equal(fx.indexVersion, 2);
+    assert.equal(fx.meshVersion, 2);
     assert.equal(fx.optIn, true);
     for (const k of ['common_hit_01', 'buff_stun', 'buff_autochess_frozen', 'inside_attack_01_trail_front', 'ifrit_skill_03_buff', 'enemy_tidmag_attack_01_hit']) {
       assert.ok(fx.sample.keys.includes(k), k);
@@ -257,10 +366,29 @@ describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () =
   });
 });
 
+/** Every Emit row of an attack (index.json units[id].modes[].attack / combat): its lists, its sub-abilities'. */
+function attackRows(a, out = []) {
+  if (!a) return out;
+  for (const l of ['cast', 'hit', 'attach', 'inputTarget', 'castTarget']) for (const e of a[l] || []) out.push(e);
+  for (const sub of a.abilities || []) attackRows(sub, out);
+  return out;
+}
+/** Every Emit row of a unit's charge groups (their emitters' rows and per-energy groups, their abilities'). */
+function chargeRows(u, out = []) {
+  const em = (e) => {
+    for (const l of ['cast', 'hit', 'attach', 'inputTarget', 'castTarget']) for (const r of e[l] || []) out.push(r);
+    for (const k of ['chargeEffectGroups', 'chargeCastGroups', 'mergedChargeEffectGroups', 'mergedChargeCastGroups']) for (const g of e[k] || []) out.push(...g);
+  };
+  for (const g of u.charge || []) { for (const e of g.emitters) em(e); for (const ab of g.abilities) for (const e of ab.emitters) em(e); }
+  return out;
+}
+const rowKeys = (e) => [...e.effects, ...(e.slots || []).filter(Boolean), ...(e.hookEffectAfterFirstAttack ? [e.hookEffectAfterFirstAttack] : [])];
+
 describe('extracted effects (when fx was extracted on this machine)', { skip: !fxList?.groups?.fx?.index && 'fx not extracted' }, () => {
   const groups = fxList?.groups || {};
-  const onDisk = (p) => path.join(ROOT, 'public', p);
-  const hasFiles = existsSync(path.join(ROOT, 'public/assets/local/fx/index.json'));
+  const onDisk = (p) => path.join(FX_ROOT, 'public', p);
+  const hasFiles = existsSync(path.join(FX_ROOT, 'public/assets/local/fx/index.json'));
+  const index = hasFiles && groups.fx?.index ? readJson(path.join('public', groups.fx.index.path), FX_ROOT) : null;
 
   test('data/local-fx.json lists the fx files in its groups; data/local-assets.json has none of them', () => {
     assert.equal(fxList.format, 'fx-manifest');
@@ -270,7 +398,7 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
   });
 
   test('the list names every file, the index and the list agree, every named key has a descriptor', { skip: !hasFiles && 'files not here' }, () => {
-    const index = JSON.parse(readFileSync(onDisk(groups.fx.index.path), 'utf8'));
+    assert.ok(index, groups.fx.index.path);
     assert.equal(index.format, 'fx-index');
     assert.equal(index.version, groups.fx.index.version);
     assert.deepEqual(Object.keys(index.prefabs).sort(), Object.keys(groups['fx/prefabs']).sort(), 'one manifest entry per descriptor');
@@ -284,17 +412,13 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
     for (const [id, u] of Object.entries(index.units)) {
       if (u.aliasOf) assert.ok(index.units[u.aliasOf] && !index.units[u.aliasOf].aliasOf, `${id}: aliasOf ${u.aliasOf} is a unit of its own`);
       for (const k of u.refs) named.add(k);
-      for (const m of u.modes) {
-        for (const l of ['cast', 'hit', 'attach', 'inputTarget', 'castTarget']) {
-          for (const e of m.attack?.[l] || []) {
-            for (const k of e.effects) named.add(k);
-            for (const k of e.slots || []) if (k) named.add(k);
-            if (e.hookEffectAfterFirstAttack) named.add(e.hookEffectAfterFirstAttack);
-          }
-        }
-      }
+      for (const m of u.modes) for (const e of [...attackRows(m.attack), ...attackRows(m.combat)]) for (const k of rowKeys(e)) named.add(k);
+      for (const e of chargeRows(u)) for (const k of rowKeys(e)) named.add(k);
     }
-    for (const [sid, s] of Object.entries(index.skills)) {
+    // the skills: index.skills (operators', tokens') and every unit's own (an enemy's are not in index.skills)
+    const allSkills = Object.entries(index.skills);
+    for (const [id, u] of Object.entries(index.units)) for (const [sid, s] of Object.entries(u.skills || {})) if (!index.skills[sid]) allSkills.push([`${id} ${sid}`, s]);
+    for (const [sid, s] of allSkills) {
       assert.ok(Array.isArray(s.uses) && Array.isArray(s.unclassified) && s.roles && typeof s.roles === 'object', `${sid}: uses / roles / unclassified`);
       for (const use of s.uses) {
         assert.ok(['start', 'loop', 'range', 'cast', 'hit', 'end', 'ready', 'trigger', 'other'].includes(use.role), `${sid}: role ${use.role}`);
@@ -320,5 +444,79 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
         }
       }
     }
+  });
+  test('index.json v2 (Phase 1c): subclass emitters in the mode attacks, the charge groups, hit groups, enemy / token skills, skills\' root classes', { skip: !(index?.version >= 2) && 'no v2 index here' }, () => {
+    // the mode attacks whose emitters are UberEffectEmitter subclasses (client 26-09-13: these 19 operators)
+    const SUB = new Set(['MultiChargeUberEffectEmitter', 'MultiHitUberEffectEmitter', 'UberAnimationEffectEmitter']);
+    const hasSub = (a) => !!a && ((a.emitters || []).some((e) => SUB.has(e.class)) || (a.abilities || []).some(hasSub));
+    for (const id of ['char_469_indigo', 'char_4046_ebnhlz', 'char_4226_veen', 'char_1050_chen3', 'char_4009_irene', 'char_1028_texas2',
+      'char_4064_mlynar', 'char_4098_vvana', 'char_4116_blkkgt', 'char_1502_crosly', 'char_1044_hsgma2', 'char_1019_siege2', 'char_1042_phatm2',
+      'char_1046_sbell2', 'char_2027_wang', 'char_4080_lin', 'char_4088_hodrer', 'char_4133_logos', 'char_4229_aphris']) {
+      const u = index.units[id];
+      if (u) assert.ok(u.modes.some((m) => hasSub(m.attack)), `${id}: a mode attack with an UberEffectEmitter subclass`);
+    }
+    for (const u of Object.values(index.units)) {
+      for (const m of u.modes) {
+        for (const a of [m.attack, m.combat]) {
+          if (!a?.emitters) continue;
+          for (const e of attackRows({ ...a, abilities: [] })) assert.ok(Number.isInteger(e.emitter) && e.emitter < a.emitters.length, `${u.prefab} ${m.name}: emitter index`);
+        }
+      }
+    }
+    const chen3 = index.units.char_1050_chen3?.modes.find((m) => m.name === 'S1');
+    if (chen3) {
+      assert.deepEqual(chen3.attack.hit.map((e) => [e.effects[0], e.group]), [['chen3_skill_01_hit_01', 0], ['chen3_skill_01_hit_02', 1]]);
+      assert.deepEqual(chen3.attack.cast.map((e) => e.effects[0]), ['chen3_skill_01_start_01', 'chen3_skill_01_start_02']);
+    }
+    // 深靛's charge: the trait group's per-energy loops, the store abilities' projectiles and mount points, the modes' links
+    const indigo = index.units.char_469_indigo;
+    if (indigo) {
+      const g = indigo.charge[0];
+      assert.equal(g.maxChargeTimes, 3);
+      assert.deepEqual(g.emitters[0].chargeEffectGroups.map((x) => x[0].effects[0]), ['indigo_attack_charge_02', 'indigo_attack_charge_03', 'indigo_attack_charge_04', 'indigo_attack_charge_05']);
+      assert.deepEqual(g.abilities.map((a) => a.projectileKey), ['projectile_chr_indigo', 'projectile_chr_indigo_s1', 'projectile_chr_indigo_s2']);
+      assert.deepEqual(g.abilities[0].mounts, ['SPECIAL_1', 'SPECIAL_2', 'SPECIAL_3', 'SPECIAL_0']);
+      assert.deepEqual(g.abilities[0].emitters[0].chargeEffectGroups[0][0].effects, ['indigo_attack_charge_01_start']);
+      const def = indigo.modes.find((m) => m.name === 'Default').attack;
+      assert.deepEqual(def.charge, { group: 0, ability: 0, animKey: 'Attack_Charge' });
+      assert.deepEqual(g.abilities[0].modes, ['Default', 'Default_T1']);
+    }
+    const veen = index.units.char_4226_veen?.charge?.[0];
+    if (veen) assert.equal(veen.emitters[0].mergedChargeEffectGroups.length, 4);
+    // skills: hit groups, the root class
+    const chen = index.skills.skchr_chen_3;
+    if (chen) assert.equal(new Set(chen.uses.filter((u) => u.list === 'hit' && Number.isInteger(u.group)).map((u) => u.group)).size, 10);
+    for (const [sid, s] of Object.entries(index.skills)) assert.ok('rootClass' in s && 'rootAbility' in s, `${sid}: rootClass`);
+    if (index.skills.skchr_amgoat_2) assert.equal(index.skills.skchr_amgoat_2.rootClass, 'ReplacementSkill');
+    // an enemy's skills (its own nodes) and its blocked attack; a summon's skill (index.skills too)
+    const hammer = index.units.enemy_1045_hammer;
+    if (hammer) {
+      assert.equal(hammer.modes[0].attack, null);
+      assert.deepEqual(hammer.modes[0].combat.hit.map((e) => e.effects[0]), ['hammer_attack_01_hit']);
+      const s = hammer.skills.stuncombat;
+      assert.equal(s.rootClass, 'EnemySkill');
+      assert.deepEqual(s.roles.ready, ['hammer_skill_01_buff']);
+      assert.ok(!index.skills.stuncombat, 'an enemy\'s skill keys stay in its unit');
+    }
+    const drone = index.units.token_10005_mgllan_drone1;
+    if (drone) assert.ok(drone.skills.sktok_mgllan_drone1 && index.skills.sktok_mgllan_drone1, 'token skills');
+    assert.ok(Object.values(index.prefabs).some((p) => Number.isInteger(p.spawn)), 'prefab summaries carry their spawn location');
+    // the skins' points are relative to the unit's feet (no prefab-root placement): every HitPoint over the feet
+    for (const [id, sk] of Object.entries(index.skins)) {
+      for (const [face, p] of Object.entries(sk.points.HitPoint || {})) {
+        const [x, y, z] = p.pos;
+        assert.ok(Math.abs(x) < 0.9 && y > -0.6 && y < 1.6 && z > -1.5 && z < 0.01, `${id} HitPoint (${face}) over the feet: ${p.pos}`);
+      }
+    }
+  });
+
+  test('meshes version 2 (Phase 1c): vertex colours 0…1', { skip: !(index?.version >= 2) && 'no v2 index here' }, () => {
+    let n = 0;
+    for (const [k, e] of Object.entries(groups['fx/mesh'] || {})) {
+      const m = readJson(path.join('public', e.path), FX_ROOT);
+      assert.equal(m?.version, 2, `${k}: mesh version`);
+      if (m.colors) { n++; assert.ok(m.colors.every((c) => c >= 0 && c <= 1), `${k}: colours 0…1`); }
+    }
+    assert.ok(n > 0 || !Object.keys(groups['fx/mesh'] || {}).length, 'some meshes have colours');
   });
 });

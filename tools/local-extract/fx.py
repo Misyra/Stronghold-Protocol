@@ -45,7 +45,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 FX_SUB = 'fx'
-FORMAT_VERSION = 1
+FORMAT_VERSION = 1      # the descriptors and textures.json (§33.4–§33.8)
+MESH_VERSION = 2        # the meshes (§33.9): 2 since Phase 1c — vertex colours 0…1 (version 1 wrote the bytes, 0…255)
+INDEX_VERSION = 2       # index.json (§33.12): 2 since Phase 1c (2026-10-15) — vfx-format.md's changelog lists the fields
 FX_MANIFEST = 'local-fx.json'                           # data/local-fx.json: every fx file, served as a hashed view
 FX_GROUPS = ('fx', 'fx/prefabs', 'fx/tex', 'fx/mesh')   # its groups (§33.1; none of them in data/local-assets.json)
 
@@ -203,10 +205,16 @@ BUFF_TEMPLATES = 'config/buff_template_holder.ab'   # Torappu BuffTemplateHolder
 SKILL_ROLES = ('start', 'loop', 'range', 'cast', 'hit', 'end', 'ready', 'trigger', 'other')
 SKILL_RANGE = re.compile(r'_range', re.I)
 SKILL_END = re.compile(r'_end(?:_|$)', re.I)
-# UberEffectEmitter-like lists (rows `{_effects, …}`) → the list kind; group lists hold such rows one level down
+# UberEffectEmitter's row lists (rows `{_effects, …}`) → the list kind (Emit lists of a unit's attack, a skill use's `list`)
 EMIT_LISTS = {'_castEffects': 'cast', '_hitEffects': 'hit', '_attachEffects': 'attach', '_inputTargetEffects': 'inputTarget',
               '_castTargetEffects': 'castTarget'}
-EMIT_GROUPS = {'_hitGroups': 'hit', '_timesBasedHitEffects': 'hit', '_castGroups': 'cast', '_replaceGroup': 'cast'}
+# lists of groups whose elements hold such rows one level down (MultiHitUberEffectEmitter's per-hit groups,
+# UberAnimationEffectEmitter's per-animation `_replaceGroup`): the kind of their rows, or None when the element's inner
+# list names it (REPLACE_LISTS); the rows carry `group` (and a replace group's `anim`)
+EMIT_GROUPS = {'_hitGroups': 'hit', '_timesBasedHitEffects': 'hit', '_castGroups': 'cast', '_replaceGroup': None}
+REPLACE_LISTS = {'effectOptions': 'cast', 'hitEffectOptions': 'hit'}
+# MultiHitUberEffectEmitter: how a hit picks its group (copied onto the group's uses / the attack's emitters[] when set)
+MULTI_HIT_FLAGS = ('_useRandomHitEffect', '_useLoopHitEffect', '_keepBaseHitEffect', '_oncePerTarget', '_useTimesBasedHitEffect')
 # single effect fields (a key or a list of keys) → role, whatever the class
 EFFECT_FIELDS = {'_beginEffect': 'start', '_endEffect': 'end', '_overrideStartEffect': 'start', '_startEffect': 'start',
                  '_mainChantEffects': 'loop', '_extraChantEffects': 'loop', '_chantSuccessEffects': 'start',
@@ -214,7 +222,7 @@ EFFECT_FIELDS = {'_beginEffect': 'start', '_endEffect': 'end', '_overrideStartEf
                  '_edgeLineRendererEffectKey': 'range', '_effectOnEliminatePos': 'hit', '_lineEffectKey': 'loop',
                  '_startPointEffectKey': 'loop', '_waypointEffectKey': 'loop', '_endPointEffectKey': 'loop'}
 # `_effects` / `_effect` / `_effectKey` by class (others: role other)
-CLASS_EFFECTS = {'ReadySkillEffect': 'ready', 'TrapEddSkillReadyEffect': 'ready', 'AuraAbility': 'loop',
+CLASS_EFFECTS = {'ReadySkillEffect': 'ready', 'TrapEddSkillReadyEffect': 'ready', 'ReadyEnemySkillEffect': 'ready', 'AuraAbility': 'loop',
                  'GlobalAuraAbility': 'loop', 'ProjectileAuraAbility': 'loop', 'AuraWithHostAsSourceAbility': 'loop',
                  'ChannelingEffectEmitter': 'loop', 'ChannelingEffectGroupEmitter': 'loop', 'PauseEffectDuringCasting': None}
 # ability events of the emitters that are not UberEffectEmitters: class → (start field, end field, oneshot field)
@@ -232,6 +240,35 @@ BUFF_EVENT_ROLES = {'ON_BUFF_START': 'start', 'ON_BUFF_ENABLE': 'start', 'ON_BUF
                     'ON_AFTER_OUTPUT_HEAL': 'hit', 'ON_AFTER_OUTPUT_ELEMENT_DAMAGE': 'hit'}
 # fields that hold animation / audio names, never effect keys (a name may equal a key by chance)
 NOT_EFFECT_FIELDS = re.compile(r'anim|audio|signal', re.I)
+
+# ---- the units' abilities and emitters (index.json units[id]: modes' attack / combat, charge, enemy skills; §33.12) ----
+# the base UberEffectEmitter's own fields: a subclass's other fields are its settings (attack.emitters[]); the three
+# timing fields are not exported (as before Phase 1c)
+EMITTER_BASE_FIELDS = frozenset(EMIT_LISTS) | {'_convertCastEndToAttachFinish', '_recalculatePlaybackSpeed', '_preDelayFactor'}
+# the charge emitters' per-energy groups (Multi(Ex)ChargeUberEffectEmitter, MergeableChargeUberEffectEmitter): nested
+# [[Emit…]…] (group k = the k-th stored energy) in the emitter's settings, never attack rows
+CHARGE_GROUP_LISTS = ('_chargeEffectGroups', '_chargeCastGroups', '_mergedChargeEffectGroups', '_mergedChargeCastGroups')
+CHARGE_GROUP_KEYS = tuple(k.lstrip('_') for k in CHARGE_GROUP_LISTS)
+ROW_KINDS = tuple(EMIT_LISTS.values())     # cast, hit, attach, inputTarget, castTarget
+# a unit's chargeable groups (AbilityChargeableGroup, AbilityExChargeGroup: Trait/Charge…Group of the 秘术师)
+CHARGE_GROUP = re.compile(r'Charge\w*Group$')
+# fields of a charge group's abilities (ChargeRangedAttack, ExChargeRangedAttack, MergeableChargeRangeAttack) written
+CHARGE_ABILITY_FIELDS = re.compile(r'^_(\w*[pP]rojectileKeys?|mountPointType|mountPointForProjectiles|exMounts|'
+                                   r'max\w*ChargeTimes|mergeSize|forceExCharge|animKey)$')
+# their mount lists → the field of the MountPointType names written next to them
+CHARGE_MOUNT_NAMES = {'mountPointForProjectiles': 'mounts', 'exMounts': 'exMountNames', 'mountPointType': 'mount'}
+# the attack fields written for every ability (modes' attack / combat, sub-abilities)
+ABILITY_FIELDS = ('_animKey', '_attackType', '_damageType', '_projectileKey', '_extraProjectileKeys', '_projectileDestination')
+# ability classes (a behaviour that casts: MeleeAttack, RangedHeal, ActiveBuffAbility, …) and the helpers that are not
+ABILITY_CLASS = re.compile(r'Attack|Heal|Ability')
+NOT_ABILITY_CLASS = re.compile(r'Emitter|Selector|Range$|Validator|Trigger|Checker|Effect$|Counter|Listener|Hooker|Animation$')
+# Torappu MountPointType (il2cpp metadata; FollowMountPoint, a charge ability's _mountPointForProjectiles)
+MOUNT_POINT_TYPES = ('FOOT', 'HIT', 'MUZZLE', 'HEAD', 'UI', 'SPECIAL_0', 'SPECIAL_1', 'GROUND', 'SPECIAL_2',
+                     'SPECIAL_3') + tuple(f'SPECIAL_{i}' for i in range(4, 24))
+# a skill prefab root's skill class derives from Torappu.Battle.Skill: its fields hold these two (CastSkill, PassiveSkill,
+# AppearSkill, ReplacementSkill, …; helpers such as BuffDuringSkill do not); an enemy's skill is an `…EnemySkill` node
+SKILL_BASE_FIELDS = ('_canSilenced', '_attachSignalIds')
+ENEMY_SKILL_CLASS = re.compile(r'EnemySkill$')
 
 
 # ---- pure helpers (no UnityPy; test/local-extract-fx.test.js) ---------------------------------------------------------
@@ -856,7 +893,7 @@ class Exporter:
         h = MeshHandler(m)
         h.process()
         flat = lambda rows, n: [f6(x) for r in (rows or []) for x in list(r)[:n]]  # noqa: E731
-        doc = {'format': 'fx-mesh', 'version': FORMAT_VERSION, 'name': m.m_Name, 'vertexCount': h.m_VertexCount,
+        doc = {'format': 'fx-mesh', 'version': MESH_VERSION, 'name': m.m_Name, 'vertexCount': h.m_VertexCount,
                'positions': flat(h.m_Vertices, 3)}
         if h.m_Normals:
             doc['normals'] = flat(h.m_Normals, 3)
@@ -865,7 +902,7 @@ class Exporter:
         if h.m_UV1:
             doc['uv1'] = flat(h.m_UV1, 2)
         if h.m_Colors:
-            doc['colors'] = flat(h.m_Colors, 4)
+            doc['colors'] = [f6(x) for x in norm_channel(flat(h.m_Colors, 4), color_format(m, h))]
         doc['submeshes'] = [[i for tri in sub for i in tri] for sub in h.get_triangles()]
         if h.m_BoneWeights:
             doc['boneWeights'] = flat(h.m_BoneWeights, 4)
@@ -998,8 +1035,10 @@ class Exporter:
                'meshes': sorted(ctx.mesh_used), 'refs': sorted(refs), 'stats': stats}
         body = json.dumps(doc, ensure_ascii=False, separators=(',', ':'))
         write_atomic(self.out / 'prefabs' / f'{fx_file(key)}.json', body.encode('utf-8'))
+        spawn, follow = prefab_anchor(nodes)
         return {'file': f'prefabs/{fx_file(key)}.json', 'bundle': bundle, 'bytes': len(body),
-                'textures': sorted(ctx.tex_used), 'meshes': sorted(ctx.mesh_used), 'refs': sorted(refs), **stats}
+                'textures': sorted(ctx.tex_used), 'meshes': sorted(ctx.mesh_used), 'refs': sorted(refs), **stats,
+                **({'spawn': spawn} if spawn is not None else {}), **({'follow': follow} if follow is not None else {})}
 
 
 class PrefabCtx:
@@ -1375,32 +1414,186 @@ def container_index(ab_root, globs, cache_file, jobs, log):
 
 # ---- units: operators, enemies, tokens (index.json) -------------------------------------------------------------------
 
+def emit_row(e):
+    """One UberEffectEmitter option row → an Emit: its fields without the leading underscore and `effects`, the keys
+    it plays: the first slot when directionType is 0 (NONE — the other slots are leftovers the game does not play), else
+    every non-empty slot, and then also `slots`, the effect per facing (Torappu SharedConsts.Direction: 0 UP, 1 RIGHT,
+    2 DOWN, 3 LEFT; null: none). None when the row plays nothing (no key, no hookEffectAfterFirstAttack)."""
+    if not isinstance(e, dict):
+        return None
+    row = {k.lstrip('_'): v for k, v in e.items()}
+    slots = [x if isinstance(x, str) and x else None for x in row.get('effects', []) or []]
+    if row.get('directionType'):
+        row['effects'] = list(dict.fromkeys(x for x in slots if x))
+        while slots and slots[-1] is None:
+            slots.pop()
+        row['slots'] = slots
+    else:
+        row['effects'] = slots[:1] if slots and slots[0] else []
+    return row if row['effects'] or row.get('hookEffectAfterFirstAttack') else None
+
+
 def emitter_lists(fields):
-    """The effect lists of an UberEffectEmitter, keyed cast / hit / attach / inputTarget / castTarget; each entry keeps
-    its fields without the leading underscore and `effects`, the keys it plays: the first slot when directionType is 0
-    (NONE — the other slots are leftovers the game does not play), else every non-empty slot, and then also `slots`,
-    the effect per facing (Torappu SharedConsts.Direction: 0 UP, 1 RIGHT, 2 DOWN, 3 LEFT; null: none)."""
+    """The effect lists of an UberEffectEmitter, keyed cast / hit / attach / inputTarget / castTarget (emit_row rows)."""
     out = {}
-    for src, dst in (('_castEffects', 'cast'), ('_hitEffects', 'hit'), ('_attachEffects', 'attach'),
-                     ('_inputTargetEffects', 'inputTarget'), ('_castTargetEffects', 'castTarget')):
-        rows = []
-        for e in fields.get(src, []) or []:
-            if not isinstance(e, dict):
-                continue
-            row = {k.lstrip('_'): v for k, v in e.items()}
-            slots = [x if isinstance(x, str) and x else None for x in row.get('effects', []) or []]
-            if row.get('directionType'):
-                row['effects'] = list(dict.fromkeys(x for x in slots if x))
-            else:
-                row['effects'] = slots[:1] if slots and slots[0] else []
-            if row.get('directionType'):
-                while slots and slots[-1] is None:
-                    slots.pop()
-                row['slots'] = slots
-            if row['effects'] or row.get('hookEffectAfterFirstAttack'):
-                rows.append(row)
+    for src, dst in EMIT_LISTS.items():
+        rows = [r for r in (emit_row(e) for e in fields.get(src, []) or []) if r]
         if rows:
             out[dst] = rows
+    return out
+
+
+def is_row_list(v):
+    """Whether a value is a list of emitter option rows (dicts with an `_effects` list)."""
+    return isinstance(v, list) and bool(v) and all(isinstance(r, dict) and isinstance(r.get('_effects'), list) for r in v)
+
+
+def list_kind(name):
+    """The Emit list kind a row list of another name holds, by that name: hit / attach / inputTarget / castTarget, else
+    cast (VigilWolfEffectEmitter._vigilWolfCastEffects → cast)."""
+    n = name.lower()
+    return 'hit' if 'hit' in n else 'attach' if 'attach' in n else 'inputTarget' if 'inputtarget' in n \
+        else 'castTarget' if 'casttarget' in n else 'cast'
+
+
+def emitter_export(cls, fields):
+    """An effect emitter of one of a unit's abilities (any class: UberEffectEmitter, its subclasses, the custom
+    emitters) → (rows, settings). rows = {kind: [Emit…]}: its row lists (EMIT_LISTS; another list of rows by its
+    name, the row keeping `field`) and the rows of its group lists (EMIT_GROUPS) with `group`, the element's index,
+    and a replace group's `anim`. settings = {class, …} for anything but a plain UberEffectEmitter (None for one): the
+    fields the base class does not have, without the leading underscore (PPtrs dropped), `groups` {list: element count}
+    (a group without rows still counts), `replaceAnims` (a replace group's animations in order) and the charge groups
+    nested per energy, `chargeEffectGroups` … [[Emit…]…]."""
+    rows, settings, groups = {}, {'class': cls}, {}
+
+    def add(kind, r, **kw):
+        row = emit_row(r)
+        if row is not None:
+            row.update({k: v for k, v in kw.items() if v is not None})
+            rows.setdefault(kind, []).append(row)
+
+    for f, v in fields.items():
+        if f in SKIP_FIELDS:
+            continue
+        if f in EMIT_LISTS:
+            for r in v or []:
+                add(EMIT_LISTS[f], r)
+        elif f in EMIT_GROUPS and isinstance(v, list):
+            if v:
+                groups[f.lstrip('_')] = len(v)
+            if f == '_replaceGroup' and v:
+                settings['replaceAnims'] = [g.get('anim') if isinstance(g, dict) else None for g in v]
+            for gi, g in enumerate(v):
+                if not isinstance(g, dict):
+                    continue
+                anim = g.get('anim') if isinstance(g.get('anim'), str) and g.get('anim') else None
+                for inner, x in g.items():
+                    for r in (x if isinstance(x, list) else []):
+                        add(EMIT_GROUPS[f] or REPLACE_LISTS.get(inner) or list_kind(inner), r, group=gi, anim=anim)
+        elif f in CHARGE_GROUP_LISTS and isinstance(v, list):
+            nested = [[row for row in (emit_row(r) for r in (g.get('effects') or [])) if row]
+                      for g in v if isinstance(g, dict)]
+            if any(nested):
+                settings[f.lstrip('_')] = nested
+        elif is_row_list(v):
+            for r in v:
+                add(list_kind(f), r, field=f)
+        elif f not in EMITTER_BASE_FIELDS and not is_pptr(v) and not (isinstance(v, list) and any(is_pptr(x) for x in v)):
+            settings[f.lstrip('_')] = enc_value(v, lambda p: None)
+    if groups:
+        settings['groups'] = groups
+    plain = cls == 'UberEffectEmitter' and len(settings) == 1
+    return rows, (None if plain else settings)
+
+
+def is_emitter(cls, fields):
+    """Whether a behaviour is an effect emitter: an `…Emitter` class or one with UberEffectEmitter's row lists."""
+    return cls.endswith('Emitter') or any(k in fields for k in EMIT_LISTS)
+
+
+def is_ability(cls):
+    """Whether a behaviour class is an ability (it casts: MeleeAttack, RangedHeal, ActiveBuffAbility, …), not a helper
+    (emitters, selectors, triggers, counters, ranges, validators, …)."""
+    return bool(ABILITY_CLASS.search(cls)) and not NOT_ABILITY_CLASS.search(cls)
+
+
+def main_ability(classes):
+    """The ability among the behaviour classes of one GameObject (the first is_ability one), else the first class that
+    is no helper, else None — the ability its emitters serve."""
+    cands = [c for c in classes if not NOT_ABILITY_CLASS.search(c)]
+    return next((c for c in cands if ABILITY_CLASS.search(c)), cands[0] if cands else None)
+
+
+def skill_root(behaviours):
+    """(rootClass, rootAbility) of a skill's root GameObject from its behaviours [(class, fields)…]: the class deriving
+    from Torappu.Battle.Skill (SKILL_BASE_FIELDS in its fields: CastSkill, PassiveSkill, AppearSkill, ReplacementSkill,
+    …), else an enemy's EnemySkill, else None; the ability (main_ability) or None."""
+    root = next((c for c, f in behaviours if all(k in f for k in SKILL_BASE_FIELDS)), None)
+    root = root or next((c for c, f in behaviours if ENEMY_SKILL_CLASS.search(c)), None)
+    ability = main_ability([c for c, f in behaviours if c != root])
+    return root, ability if ability and is_ability(ability) else None
+
+
+# Unity VertexFormat (2019+) of a normalized integer vertex channel → its divisor (UNorm8, SNorm8, UNorm16, SNorm16)
+NORM_FORMATS = {2: 255.0, 3: 127.0, 4: 65535.0, 5: 32767.0}
+
+
+def norm_channel(values, fmt):
+    """A vertex channel's values as floats: a normalized integer format (NORM_FORMATS) divided to 0…1 (−1…1 for the
+    signed ones, clamped), anything else (Float, Float16; None: unknown or already normalized) unchanged."""
+    div = NORM_FORMATS.get(fmt)
+    return list(values) if div is None else [max(-1.0, x / div) for x in values]
+
+
+def color_format(mesh, handler):
+    """The VertexFormat of a mesh's colour channel (channel 3), which UnityPy reads raw from the vertex data, for a
+    Unity 2019+ file (this client: 2021.3); None otherwise — a compressed mesh's colours arrive as 0…1 floats, an older
+    file's channel formats are another enum (left as read)."""
+    try:
+        ch = mesh.m_VertexData.m_Channels[3]
+        return ch.format if handler.version[0] >= 2019 and ch.dimension & 0xF else None
+    except (AttributeError, IndexError, TypeError):
+        return None
+
+
+def mount_names(values):
+    """MountPointType names (MOUNT_POINT_TYPES) of a list of values; None for an unknown one."""
+    return [MOUNT_POINT_TYPES[v] if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < len(MOUNT_POINT_TYPES)
+            else None for v in values or []]
+
+
+def prefab_anchor(nodes):
+    """(spawn, follow) of an exported descriptor's nodes: the first enabled ParticleEffect / EmptyEffect's
+    `_spawnLocation` (SpawnLocation, §33.11) and the first enabled FollowMountPoint's `_mountPointType` (MountPointType),
+    None when absent."""
+    spawn = follow = None
+    for n in nodes:
+        for b in n.get('behaviours') or []:
+            if not b.get('enabled', True):
+                continue
+            f = b.get('fields') or {}
+            if spawn is None and b.get('class') in ('ParticleEffect', 'EmptyEffect') and isinstance(f.get('_spawnLocation'), int):
+                spawn = f['_spawnLocation']
+            elif follow is None and b.get('class') == 'FollowMountPoint' and isinstance(f.get('_mountPointType'), int):
+                follow = f['_mountPointType']
+    return spawn, follow
+
+
+def token_skill_ids(record, out=None, depth=0):
+    """Every skill id of a token record (data/tokens.json, data/backups.json tokens): the `skillId` / `prefabId` of
+    each object under a `skill` key — its own, per variant, per owner skill or module (as tools/vfx-skill-coverage.mjs
+    counts them) — in first-seen order."""
+    out = [] if out is None else out
+    if depth > 5:
+        return out
+    items = record.items() if isinstance(record, dict) else enumerate(record) if isinstance(record, list) else []
+    for k, v in items:
+        if k == 'skill' and isinstance(v, dict) and isinstance(v.get('skillId'), str):
+            sid = v.get('prefabId') or v['skillId']
+            if sid not in out:
+                out.append(sid)
+        elif isinstance(v, (dict, list)):
+            token_skill_ids(v, out, depth + 1)
     return out
 
 
@@ -1537,7 +1730,7 @@ def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
             u.update({a: b for a, b in kw.items() if b is not None})
             uses.append(u)
 
-    def row(kind, r, src):
+    def row(kind, r, src, **extra):
         if not isinstance(r, dict) or not isinstance(r.get('_effects'), list):
             return
         slots = [ek(x) if isinstance(x, str) and x else None for x in r['_effects']]
@@ -1546,7 +1739,7 @@ def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
         while directional and slots and slots[-1] is None:
             slots.pop()
         kw = {'startEvent': event_name(ABILITY_EVENTS, r.get('_startEvent')), 'endEvent': event_name(ABILITY_EVENTS, r.get('_endEvent')),
-              'oneshot': bool(r['_oneshot']) if '_oneshot' in r else None, 'list': kind}
+              'oneshot': bool(r['_oneshot']) if '_oneshot' in r else None, 'list': kind, **extra}
         if keys:
             add(keys, emit_role(kind, r, keys[0]), src, **kw, **({'directionType': r['_directionType'], 'slots': slots} if directional else {}))
         hook = r.get('_hookEffectAfterFirstAttack')     # played instead of the row's effect from the second attack on
@@ -1567,10 +1760,15 @@ def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
             for r in v:
                 row(EMIT_LISTS[f], r, f)
         elif f in EMIT_GROUPS and isinstance(v, list):
-            for g in v:
-                for x in (g.values() if isinstance(g, dict) else []):
+            # a group's rows: `group` (its index; `groups` the list's length, empty groups included), a replace group's
+            # `anim`, and the MultiHitUberEffectEmitter's choice of group per hit (MULTI_HIT_FLAGS, when set)
+            flags = {k.lstrip('_'): True for k in MULTI_HIT_FLAGS if fields.get(k)}
+            for gi, g in enumerate(v):
+                anim = g.get('anim') if isinstance(g, dict) and isinstance(g.get('anim'), str) and g.get('anim') else None
+                for inner, x in (g.items() if isinstance(g, dict) else []):
+                    kind = EMIT_GROUPS[f] or REPLACE_LISTS.get(inner) or list_kind(inner)
                     for r in (x if isinstance(x, list) else []):
-                        row(EMIT_GROUPS[f], r, f)
+                        row(kind, r, f, group=gi, groups=len(v), anim=anim, **flags)
         elif f in EFFECT_FIELDS:
             add(v if isinstance(v, list) else [v], EFFECT_FIELDS[f], f, **ev_kw)
         elif f in ('_effects', '_effect', '_effectKey'):
@@ -1630,13 +1828,16 @@ def roles_of(uses):
 
 
 def parse_unit(env, rel, name, kind):
-    """Attack modes, start / dead effects, the Graphic transform and every string of a unit prefab (charpack / enemy /
-    token); None when the bundle has no prefab `name`."""
+    """A unit prefab (charpack / enemy / token) → its index.json unit (§33.12) before the keys are checked: the modes
+    (attack, combat: ability_entry), start / dead effects, the Graphic transform, the chargeable groups (`charge`), and
+    `_enemySkills` (its EnemySkill nodes: name, GameObject, path, mode name) and `_strings` (every string of its
+    behaviours) for crawl_units; None when the bundle has no prefab `name`."""
     root = env.prefabs(rel).get(name)
     if root is None:
         return None
     unit = {'kind': kind, 'prefab': rel, 'rootClass': None, 'modes': [], 'startEffect': None, 'deadEffect': None, 'graphic': None}
-    strings, mbs = set(), []
+    strings, gos, mbs_of = set(), [], {}
+    gkey = lambda o: (id(o.assets_file), o.path_id)  # noqa: E731
     stack = [(root, '')]
     while stack:
         go, path = stack.pop()
@@ -1644,6 +1845,7 @@ def parse_unit(env, rel, name, kind):
         if gd.get('m_Name') == 'Graphic' and unit['graphic'] is None:
             p, q, s = go_transform(env, go)
             unit['graphic'] = {'path': path + 'Graphic', 'pos': [f6(x) for x in p], 'rot': [f6(x) for x in q], 'scale': [f6(x) for x in s]}
+        ms = []
         for c in gd.get('m_Component', []):
             f, o = env.resolve(go.assets_file, c.get('component'))
             if o is None or f == 'builtin' or o.type.name != 'MonoBehaviour':
@@ -1652,39 +1854,135 @@ def parse_unit(env, rel, name, kind):
                 d = env.tt(o)
             except Exception:
                 continue
-            mbs.append((o, d, go))
+            ms.append((env.script(o)[1], o, d))
             all_strings({k: v for k, v in d.items() if k != 'm_Name'}, strings)
+        mbs_of[gkey(go)] = ms
+        gos.append((go, '' if go is root else path + gd.get('m_Name', '')))
         for k in go_children(env, go):
             stack.append((k, '' if go is root else f'{path}{gd.get("m_Name")}/'))
-    head = next(((o, d) for o, d, go in mbs if go is root and '_modes' in d), None)
+    path_of = {gkey(go): p for go, p in gos}
+
+    def go_of(o):
+        g = env.resolve(o.assets_file, env.tt(o).get('m_GameObject'))[1]
+        return g if g is not None and gkey(g) in path_of else None
+
+    def deref(o, pptr):
+        f, x = env.resolve(o.assets_file, pptr)
+        return x if x is not None and f != 'builtin' and x.type.name == 'MonoBehaviour' else None
+
+    def node_emitters(go):
+        """[(class, rows, settings)] of the emitters on a GameObject (emitter_export)."""
+        return [(cls,) + emitter_export(cls, d) for cls, o, d in mbs_of.get(gkey(go), []) if is_emitter(cls, d)]
+
+    # the chargeable groups (§33.12 Charge) first: the modes' attacks name their abilities (attack.charge)
+    charge, charge_at = [], {}
+    for go, p in gos:
+        for cls, o, d in mbs_of.get(gkey(go), []):
+            if not (CHARGE_GROUP.search(cls) and isinstance(d.get('_abilities'), list)):
+                continue
+            g = {'node': p, 'class': cls}
+            if isinstance(d.get('_maxChargeTimes'), int):
+                g['maxChargeTimes'] = d['_maxChargeTimes']
+            g['emitters'] = [{'class': c, **(st or {}), **rows} for c, rows, st in node_emitters(go)]
+            g['abilities'] = []
+            for ap in d['_abilities']:
+                ao = deref(o, ap)
+                if ao is None:
+                    continue
+                ad, ago = env.tt(ao), go_of(ao)
+                ab = {'node': path_of.get(gkey(ago)) if ago is not None else None, 'class': env.script(ao)[1], 'modes': []}
+                for k, v in ad.items():
+                    if CHARGE_ABILITY_FIELDS.search(k) and not is_pptr(v) and not isinstance(v, dict) \
+                            and not (isinstance(v, list) and any(isinstance(x, dict) for x in v)):
+                        ab[k.lstrip('_')] = enc_value(v, lambda q: None)
+                for k, n in CHARGE_MOUNT_NAMES.items():
+                    if isinstance(ab.get(k), list):
+                        ab[n] = mount_names(ab[k])
+                    elif isinstance(ab.get(k), int):
+                        ab[n] = mount_names([ab[k]])[0]
+                ab['emitters'] = [{'class': c, **(st or {}), **rows} for c, rows, st in node_emitters(ago)] if ago is not None else []
+                charge_at[gkey(ao)] = (len(charge), len(g['abilities']))
+                g['abilities'].append(ab)
+            charge_at[gkey(o)] = (len(charge), None)
+            charge.append(g)
+
+    def ability_entry(ao, mode_name, depth=0):
+        """A mode's attack / combat (or a sub-ability of one): its class and ABILITY_FIELDS, its node, the rows of every
+        emitter on its node (attack.emitters + `emitter` on each row when that is not one plain UberEffectEmitter), its
+        sub-abilities (a group's `_abilities`, else the child nodes that carry an ability: MultiFunnelRemoteAttack's
+        funnels), the charge ability it releases (`charge`: [group, ability] indexes into unit.charge)."""
+        ad = env.tt(ao)
+        a = {'class': env.script(ao)[1]}
+        for k in ABILITY_FIELDS:
+            if k in ad:
+                a[k.lstrip('_')] = ad[k]
+        ago = go_of(ao)
+        if ago is None:
+            return a
+        a['node'] = path_of[gkey(ago)]
+        ems = node_emitters(ago)
+        if len(ems) == 1 and ems[0][2] is None:
+            a.update(ems[0][1])
+        elif ems:
+            a['emitters'] = [st or {'class': c} for c, rows, st in ems]
+            for i, (c, rows, st) in enumerate(ems):
+                for kind, rs in rows.items():
+                    a.setdefault(kind, []).extend({**r, 'emitter': i} for r in rs)
+        if ad.get('_useChargeableGroup') or '_chargeAbility' in ad:
+            co = deref(ao, ad.get('_chargeAbility'))
+            at = charge_at.get(gkey(co)) if co is not None else None
+            if at:
+                a['charge'] = {'group': at[0], 'ability': at[1]}
+                if isinstance(ad.get('_chargeAnimKey'), str) and ad['_chargeAnimKey']:
+                    a['charge']['animKey'] = ad['_chargeAnimKey']
+                ab = charge[at[0]]['abilities'][at[1]] if at[1] is not None else None
+                if ab is not None and mode_name and mode_name not in ab['modes']:
+                    ab['modes'].append(mode_name)
+        if depth < 4 and not CHARGE_GROUP.search(a['class']):
+            if isinstance(ad.get('_abilities'), list):
+                subs = [s for s in (deref(ao, x) for x in ad['_abilities']) if s is not None]
+            else:
+                subs = []
+                for ch in go_children(env, ago):
+                    subs += [o for cls, o, d in mbs_of.get(gkey(ch), []) if is_ability(cls)][:1]
+            subs = [ability_entry(s, mode_name, depth + 1) for s in subs if gkey(s) != gkey(ao)]
+            if subs:
+                a['abilities'] = subs
+        return a
+
+    head = next(((o, d) for cls, o, d in mbs_of.get(gkey(root), []) if '_modes' in d), None)
+    mode_paths = []
     if head:
         ho, hd = head
         unit['rootClass'] = env.script(ho)[1]
         unit['startEffect'] = hd.get('_startEffect') or None
         unit['deadEffect'] = hd.get('_deadEffect') or None
         for mp in hd.get('_modes', []):
-            f, mo = env.resolve(ho.assets_file, mp)
-            if mo is None or f == 'builtin':
+            mo = deref(ho, mp)
+            if mo is None:
                 continue
             md = env.tt(mo)
             mgo = env.resolve(mo.assets_file, md.get('m_GameObject'))[1]
             mode = {'name': env.tt(mgo).get('m_Name') if mgo is not None else None,
                     'overrideStartEffect': md.get('_overrideStartEffect') or None,
                     'overrideDeadEffect': md.get('_overrideDeadEffect') or None, 'attack': None}
-            af, ao = env.resolve(mo.assets_file, md.get('_attack'))
-            if ao is not None and af != 'builtin':
-                ad = env.tt(ao)
-                attack = {'class': env.script(ao)[1]}
-                for k in ('_animKey', '_attackType', '_damageType', '_projectileKey', '_extraProjectileKeys', '_projectileDestination'):
-                    if k in ad:
-                        attack[k.lstrip('_')] = ad[k]
-                ago = env.resolve(ao.assets_file, ad.get('m_GameObject'))[1]
-                if ago is not None:
-                    for o, d, go in mbs:
-                        if go.path_id == ago.path_id and go.assets_file is ago.assets_file and env.script(o)[1] == 'UberEffectEmitter':
-                            attack.update(emitter_lists(d))
-                mode['attack'] = attack
+            if mgo is not None and gkey(mgo) in path_of:
+                mode_paths.append((path_of[gkey(mgo)], mode['name']))
+            ao, co = deref(mo, md.get('_attack')), deref(mo, md.get('_combat'))
+            if ao is not None:
+                mode['attack'] = ability_entry(ao, mode['name'])
+            if co is not None and (ao is None or gkey(co) != gkey(ao)):   # the blocked units' attack, when another one
+                mode['combat'] = ability_entry(co, mode['name'])
             unit['modes'].append(mode)
+    if charge:
+        unit['charge'] = charge
+    # an enemy's skills: the nodes with an EnemySkill (data/enemies.json skills[].prefabKey names them), with the mode
+    # whose node holds them (a skill a boss has per mode: one copy per mode)
+    unit['_enemySkills'] = []
+    for go, p in gos:
+        if any(ENEMY_SKILL_CLASS.search(cls) for cls, o, d in mbs_of.get(gkey(go), [])):
+            mname = next((n for mp_, n in sorted(mode_paths, key=lambda x: -len(x[0])) if mp_ and p.startswith(mp_ + '/')), None)
+            unit['_enemySkills'].append((env.tt(go).get('m_Name') or '', go, p, mname))
     unit['_strings'] = strings
     return unit
 
@@ -1692,7 +1990,10 @@ def parse_unit(env, rel, name, kind):
 def skin_points(env, rel, prefab, graphic, container=None):
     """Mount points under a skin root (an operator's chararts defaultskin, placed under the charpack's Graphic) or
     under a unit prefab (an enemy / token: its own Graphic subtree): name → {facing ('front' | 'back' | 'all'):
-    {pos (unit-root frame, Unity units and axes), bone (BoneFollower bone or null), path}}."""
+    {pos (unit-root frame, Unity units and axes), bone (BoneFollower bone or null), path}}. The root's own transform is
+    not composed: a unit prefab's root transform is where the prefab was authored (88 of the full set's roots sit tiles
+    away, e.g. enemy_1007_slime at (3, 3, 0); the game places the unit), a skin root's the offset the client drops when
+    it attaches the skin under Graphic (char_446_aroma's −1.895 in x) — the points are relative to the unit's feet."""
     prefabs = env.prefabs(rel, full=container is not None)
     root = None
     if container is not None:
@@ -1707,7 +2008,7 @@ def skin_points(env, rel, prefab, graphic, container=None):
     def walk(go, m, facing, path):
         gd = env.tt(go)
         name = gd.get('m_Name', '')
-        m2 = mat_mul(m, trs_matrix(*go_transform(env, go)))
+        m2 = m if go is root else mat_mul(m, trs_matrix(*go_transform(env, go)))
         f2 = 'front' if name == 'Front' else 'back' if name == 'Back' else facing
         bone = None
         for c in gd.get('m_Component', []):
@@ -1764,10 +2065,11 @@ def buff_templates(env, ek):
 
 
 def skill_entry(env, root, ek, pk, effect_refs, templates):
-    """index.json skills[id] of a skill prefab ([uc]skills.ab): effects (every effect key it names, its templates'
-    included), projectiles, mode (the unit mode it switches to, or null), uses (behaviour_uses of every behaviour),
-    roles (roles_of), unclassified (keys found in the prefab that no use places)."""
-    strings, uses, mode, stack = set(), [], None, [root]
+    """index.json skills[id] of a skill prefab ([uc]skills.ab) or of an enemy's skill node: rootClass / rootAbility (the
+    root's skill class and ability, skill_root), effects (every effect key it names, its templates' included),
+    projectiles, mode (the unit mode it switches to, or null), uses (behaviour_uses of every behaviour), roles
+    (roles_of), unclassified (keys found in the prefab that no use places)."""
+    strings, uses, mode, stack, root_mbs = set(), [], None, [root], []
     while stack:
         go = stack.pop()
         gd = env.tt(go)
@@ -1776,8 +2078,9 @@ def skill_entry(env, root, ek, pk, effect_refs, templates):
             f, o = env.resolve(go.assets_file, c.get('component'))
             if o is not None and f != 'builtin' and o.type.name == 'MonoBehaviour':
                 mbs.append((env.script(o)[1] or 'MonoBehaviour', env.tt(o)))
-        cands = [c for c, _ in mbs if not re.search(r'Emitter|Selector|Range$|Validator|Trigger|Checker|Effect$', c)]
-        ability = next((c for c in cands if re.search(r'Attack|Heal|Ability', c)), cands[0] if cands else None)
+        if go is root:
+            root_mbs = mbs
+        ability = main_ability([c for c, _ in mbs])
         for cls, d in mbs:
             fields = {k: v for k, v in d.items() if k not in SKIP_FIELDS}
             strings_of(fields, strings)
@@ -1787,7 +2090,9 @@ def skill_entry(env, root, ek, pk, effect_refs, templates):
         stack.extend(go_children(env, go))
     found = set(effect_refs(strings))
     placed = {k for u in uses for k in list(u['keys']) + [x for x in u.get('slots') or [] if x]}
-    return {'effects': sorted(found | placed), 'projectiles': sorted({pk(x) for x in strings if pk(x)}), 'mode': mode,
+    root_class, root_ability = skill_root(root_mbs)
+    return {'rootClass': root_class, 'rootAbility': root_ability,
+            'effects': sorted(found | placed), 'projectiles': sorted({pk(x) for x in strings if pk(x)}), 'mode': mode,
             **({'modeBy': 'data'} if mode is not None else {}), 'uses': uses, 'roles': roles_of(uses),
             'unclassified': sorted(found - placed)}
 
@@ -1841,16 +2146,102 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
         for p in entry['projectiles']:
             projectile(p, depth + 1)
 
-    templates = buff_templates(shared, lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else None)
+    ekn = lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else None  # noqa: E731
+    templates = buff_templates(shared, ekn)
+
+    def skill_key(sid):
+        """The [uc]skills.ab prefab of a skill id of our data (lower case; a `[n]` variant suffix dropped), or None."""
+        for k in (sid, str(sid).lower(), re.sub(r'\[\d+\]$', '', str(sid).lower())):
+            if k in skill_roots:
+                return k
+        return None
 
     def skill(sid):
-        if sid in skills or sid not in skill_roots:
-            return
-        entry = skill_entry(shared, skill_roots[sid], lambda x: x.lower() if isinstance(x, str) and x.lower() in eff else None,
-                            pk, effect_refs, templates)
+        sid = skill_key(sid)
+        if sid is None or sid in skills:
+            return sid
+        entry = skill_entry(shared, skill_roots[sid], ekn, pk, effect_refs, templates)
         for p in entry['projectiles']:
             projectile(p)
         skills[sid] = entry
+        return sid
+
+    def fix_rows(rows, where):
+        """Emit rows: keys lower case, the keys the client lacks dropped (logged), rows that play nothing dropped."""
+        out = []
+        for e in rows or []:
+            for x in e['effects']:
+                if x.lower() not in eff:
+                    log(f'  {where}: names {x}, which the client lacks (dropped)')
+            e['effects'] = [ek(x) for x in e['effects'] if x.lower() in eff]
+            if 'slots' in e:
+                e['slots'] = [ek(x) if x and x.lower() in eff else None for x in e['slots']]
+            if e.get('hookEffectAfterFirstAttack'):
+                e['hookEffectAfterFirstAttack'] = ek(e['hookEffectAfterFirstAttack'])
+            if e['effects'] or e.get('hookEffectAfterFirstAttack'):
+                out.append(e)
+        return out
+
+    def keyify(v):
+        """The effect / projectile keys among an emitter's or a charge ability's settings in lower case."""
+        if isinstance(v, str):
+            return v.lower() if v.lower() in eff or v.lower() in proj_roots else v
+        if isinstance(v, list):
+            return [keyify(x) for x in v]
+        if isinstance(v, dict):
+            return {k: keyify(x) for k, x in v.items()}
+        return v
+
+    def fix_emitter(em, where):
+        for k in list(em):
+            if k in ROW_KINDS:
+                em[k] = fix_rows(em[k], f'{where} {k}')
+                if not em[k]:
+                    del em[k]
+            elif k in CHARGE_GROUP_KEYS:
+                em[k] = [fix_rows(g, f'{where} {k}[{i}]') for i, g in enumerate(em[k])]
+            elif k != 'class':
+                em[k] = keyify(em[k])
+        return em
+
+    def fix_attack(a, where):
+        if a.get('projectileKey'):
+            a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
+        for lst in ROW_KINDS:
+            if lst in a:
+                a[lst] = fix_rows(a[lst], f'{where} {lst}')
+                if not a[lst]:
+                    a.pop(lst)
+        for i, em in enumerate(a.get('emitters') or []):
+            fix_emitter(em, f'{where} emitters[{i}]')
+        for i, sub in enumerate(a.get('abilities') or []):
+            fix_attack(sub, f'{where} abilities[{i}]')
+
+    def enemy_skills(env, found):
+        """An enemy's skills (parse_unit `_enemySkills`) → {lower-case node name: skill entry}: a skill node the prefab
+        has once per mode is one entry when the copies agree, else their uses joined with `mode` (the copy's mode name);
+        `nodes` lists the copies' paths, `inModes` the modes holding them."""
+        copies = {}
+        for name, go, path, mname in found:
+            copies.setdefault(name.lower(), []).append((go, path, mname))
+        out = {}
+        for key, cs in copies.items():
+            entries = [(skill_entry(env, go, ekn, pk, effect_refs, templates), path, mname) for go, path, mname in cs]
+            e0 = entries[0][0]
+            if any(json.dumps(e['uses'], sort_keys=True) != json.dumps(e0['uses'], sort_keys=True) for e, _, _ in entries[1:]):
+                uses = [{**x, 'mode': m} for e, _, m in entries for x in e['uses']]
+                found_keys = set().union(*(e['effects'] for e, _, _ in entries))
+                placed = {k for x in uses for k in list(x['keys']) + [y for y in x.get('slots') or [] if y]}
+                e0 = {**e0, 'effects': sorted(found_keys | placed), 'uses': uses, 'roles': roles_of(uses),
+                      'projectiles': sorted(set().union(*(e['projectiles'] for e, _, _ in entries))),
+                      'unclassified': sorted(found_keys - placed)}
+            e0['nodes'] = [p for _, p, _ in entries]
+            if any(m for _, _, m in entries):
+                e0['inModes'] = [m for _, _, m in entries]
+            for p in e0['projectiles']:
+                projectile(p)
+            out[key] = e0
+        return out
 
     # an enemy variant without a prefab of its own (the elite `_2` keys of six enemies) is drawn with its base prefab:
     # index.json gets a copy of the base unit with `aliasOf`
@@ -1879,36 +2270,33 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 log(f'  skip (no prefab) {uid}')
                 continue
             strings = u.pop('_strings')
+            found_skills = u.pop('_enemySkills')
             for x in ('startEffect', 'deadEffect'):
                 u[x] = ek(u[x]) if u[x] else None
             for m in u['modes']:
                 for x in ('overrideStartEffect', 'overrideDeadEffect'):
                     m[x] = ek(m[x]) if m[x] else None
-                a = m.get('attack') or {}
-                if a.get('projectileKey'):
-                    a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
-                for lst in ('cast', 'hit', 'attach', 'inputTarget', 'castTarget'):
-                    for e in a.get(lst, []):
-                        for x in e['effects']:
-                            if x.lower() not in eff:
-                                log(f'  {uid} {m.get("name")} {lst}: names {x}, which the client lacks (dropped)')
-                        e['effects'] = [ek(x) for x in e['effects'] if x.lower() in eff]
-                        if 'slots' in e:
-                            e['slots'] = [ek(x) if x and x.lower() in eff else None for x in e['slots']]
-                        if e.get('hookEffectAfterFirstAttack'):
-                            e['hookEffectAfterFirstAttack'] = ek(e['hookEffectAfterFirstAttack'])
-                    a[lst] = [e for e in a.get(lst, []) if e['effects'] or e.get('hookEffectAfterFirstAttack')]
-                    if not a[lst]:
-                        a.pop(lst, None)
+                for x in ('attack', 'combat'):
+                    if m.get(x):
+                        fix_attack(m[x], f'{uid} {m.get("name")} {x}')
+            for gi, g in enumerate(u.get('charge') or []):
+                for i, em in enumerate(g['emitters']):
+                    fix_emitter(em, f'{uid} charge[{gi}] emitters[{i}]')
+                for ai, ab in enumerate(g['abilities']):
+                    for k in list(ab):
+                        if k == 'emitters':
+                            for i, em in enumerate(ab[k]):
+                                fix_emitter(em, f'{uid} charge[{gi}] abilities[{ai}] emitters[{i}]')
+                        elif k not in ('node', 'class', 'modes', 'mounts', 'mount', 'exMountNames'):
+                            ab[k] = keyify(ab[k])
             for x in sorted(strings):
                 if pk(x):
                     projectile(x)
             code = uid.split('_', 2)[2] if uid.startswith('char_') else None
-            sids = set(gd['skills'].get(uid, []))
+            sids = set(gd['skills'].get(uid, [])) | set((gd.get('tokenSkills') or {}).get(uid, []))
             if code:
                 sids |= {k for k in skill_roots if k.startswith(f'skchr_{code}_')}
-            for sid in sorted(sids):
-                skill(sid)
+            sids = {skill(sid) for sid in sorted(sids)} - {None}
             for sid in sids:                     # no mode in the skill's data: the unit's mode named after the skill
                 m = re.match(r'skchr_.+_(\d+)$', sid)
                 names = [str(x.get('name') or '').lower() for x in u['modes']]
@@ -1916,6 +2304,9 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                     skills[sid]['mode'] = names.index(f's{m.group(1)}')
                     skills[sid]['modeBy'] = 'name'
             u['skills'] = {sid: skills[sid] for sid in sorted(sids) if sid in skills}
+            # an enemy's own skills (their nodes in its prefab; keys like `1` repeat across enemies: not in index.skills)
+            for key, entry in sorted(enemy_skills(env, found_skills).items()):
+                u['skills'].setdefault(key, entry)
             u['projectiles'] = sorted({pk(x) for x in strings if pk(x) in projectiles})
             refs = set(effect_refs(strings))
             for p in u['projectiles']:
@@ -1990,7 +2381,9 @@ def _export_worker(args, keys_all=None):
 
 
 def game_data(root):
-    """Operator ids (chess.json + backups.json units), the chess skill prefab ids per operator, enemy keys, token ids."""
+    """Operator ids (chess.json + backups.json units), the skill prefab ids per operator (its chess records' and its
+    backups.json forms'), enemy keys, token ids and the skill ids of each token (token_skill_ids of its tokens.json /
+    backups.json record)."""
     data = Path(root) / 'data'
     def load(n):
         try:
@@ -2008,11 +2401,22 @@ def game_data(root):
         for s in [v.get('skill')] + list(v.get('skills') or []):
             if isinstance(s, dict) and (s.get('prefabId') or s.get('skillId')):
                 skills.setdefault(cid, set()).add(s.get('prefabId') or s.get('skillId'))
-    for cid in (backups.get('units') or {}):
+    for cid, u in (backups.get('units') or {}).items():
         if cid not in chars:
             chars.append(cid)
+        for form in ((u or {}).get('forms') or {}).values():     # the 补位 / 自选 forms' skills (skcom_* among them)
+            for s in (form or {}).get('skills') or []:
+                if isinstance(s, dict) and (s.get('prefabId') or s.get('skillId')):
+                    skills.setdefault(cid, set()).add(s.get('prefabId') or s.get('skillId'))
     toks = sorted(set(tokens) | set(backups.get('tokens') or {}))
-    return {'chars': chars, 'skills': {k: sorted(v) for k, v in skills.items()}, 'enemies': sorted(enemies), 'tokens': toks}
+    token_skills = {}
+    for src in (backups.get('tokens') or {}, tokens):
+        for tid, rec in src.items():
+            ids = token_skill_ids(rec)
+            if ids:
+                token_skills[tid] = sorted(set(token_skills.get(tid, [])) | set(ids))
+    return {'chars': chars, 'skills': {k: sorted(v) for k, v in skills.items()}, 'enemies': sorted(enemies), 'tokens': toks,
+            'tokenSkills': token_skills}
 
 
 def client_version(ab_root):
@@ -2100,7 +2504,8 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
             todo = {k for k in named if k in eff and k not in done}
     timings['prefabs'] = time.time() - t0
 
-    summaries = {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs')}
+    summaries = {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs',
+                                       'spawn', 'follow') if f in v}
                  for k, v in entries.items()}
     url = lambda rel: f'/assets/local/{FX_SUB}/{rel}'  # noqa: E731
     groups = {
@@ -2111,7 +2516,7 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
     }
     tex_all, set_name = dict(textures), 'keys' if keys else selection
     prev = _read_json(out / 'index.json') if keys else None
-    if isinstance(prev, dict) and prev.get('format') == 'fx-index' and prev.get('version') == FORMAT_VERSION:
+    if isinstance(prev, dict) and prev.get('format') == 'fx-index' and prev.get('version') == INDEX_VERSION:
         # a --fx-keys run: these prefabs replace their earlier copies; the earlier set's units, skills, prefabs stay
         units, projectiles, skills, skins = (prev.get(x) or {} for x in ('units', 'projectiles', 'skills', 'skins'))
         summaries = {**(prev.get('prefabs') or {}), **summaries}
@@ -2119,12 +2524,12 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
         old_groups = (_read_json(fx_manifest) or {}).get('groups') or {}
         groups = {g: {**(old_groups.get(g) or {}), **v} for g, v in groups.items()}
         set_name = prev.get('set') or set_name
-    groups = {'fx': {'index': {'path': url('index.json'), 'kind': 'FxIndex', 'version': FORMAT_VERSION, 'set': set_name,
+    groups = {'fx': {'index': {'path': url('index.json'), 'kind': 'FxIndex', 'version': INDEX_VERSION, 'set': set_name,
                                'prefabs': len(summaries)},
                      'textures': {'path': url('textures.json'), 'kind': 'FxTextures', 'count': len(tex_all)}},
               **{g: dict(sorted(v.items())) for g, v in groups.items()}}
     index = {
-        'format': 'fx-index', 'version': FORMAT_VERSION, 'set': set_name,
+        'format': 'fx-index', 'version': INDEX_VERSION, 'set': set_name,
         'source': {'root': ab_root.name, 'client': client_version(ab_root)},
         'units': units, 'projectiles': projectiles, 'skills': skills, 'skins': skins,
         'generic': {**FX_GENERIC, 'keys': sorted(k for k in generic if k in summaries)},

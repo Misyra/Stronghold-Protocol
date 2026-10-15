@@ -180,7 +180,12 @@ describe('vendored three.js', () => {
 describe('extracted board files (when a local client was extracted)', { skip: !manifest?.groups?.['map/fx'] && 'map/fx not extracted' }, () => {
   const onDisk = (p) => path.join(ROOT, 'public', decodeURIComponent(p));
   const pngOf = (p) => p.replace(/\.webp$/, '.png');  // a WebP copy (extract.py WEBP) keeps its PNG beside it
-  const hasFiles = existsSync(path.join(ROOT, 'public/assets/local/map/fx'));
+  // This fork tracks the client's source art (PNG/OBJ/JSON) and the manifest but not the derived WebP copies
+  // extract.py writes beside them, so the upstream gate (map/fx exists) is true even in a fresh clone. Gate the
+  // on-disk checks on a WebP the manifest lists instead: a checkout without extracted client art then skips these
+  // tests instead of failing on every slot, while a machine with the art still checks all of them.
+  const listedPath = (g, n) => manifest.groups[g]?.[n]?.path ?? null;
+  const hasFiles = !!listedPath('map/autochess', 'TX_autochessi_D') && existsSync(onDisk(listedPath('map/autochess', 'TX_autochessi_D')));
 
   test('every pack slot the renderer loads is in the manifest (and on disk)', () => {
     for (const [slot, [g, n]] of [...Object.entries(PACK_IMAGES), ...Object.entries(PACK_MESHES)]) {

@@ -2,16 +2,18 @@
 // §32.14.38) and the shared causes the audit fixed in render/vfx: skinned meshes with the client's 1–2 bone influences
 // per vertex (铃兰 S3's fox tails: a strip across the board), renderers that sort before the units (野鬃 S2's ring of
 // lances drawn over her body), a projectile's effects on its target and tile and a timer projectile's hit (溯光星源
-// S3's lightning: only her shot straight up was drawn), a projectile's own flying effect and its link line (the
-// index's `main` named the chain), world-space LineRenderers' placeholder points, and the attach rows of a skill's mode
-// (溯光星源 S3's range).
+// S3's lightning: only her shot straight up was drawn), a projectile's own flying effect (the index's `main` named the
+// chain or the rope) and a harpoon's rope — a chain's line is not flown (the client draws it between the chain's
+// targets as the shot reaches them: the merge with §32.14.36) —, world-space LineRenderers' placeholder points, and the
+// attach rows of a skill's mode (溯光星源 S3's range).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileEffect, Effect, behindUnits, basisOf } from '../../public/js/render/vfx/effect.js';
 import { completeAxes } from '../../public/js/render/vfx/psys.js';
 import { FrameData, cameraBasis, buildSkinned, skinStride, STRIP_STRIDE } from '../../public/js/render/vfx/geom.js';
-import { FxWiring, projectileParts, TIMER_HIT_MAX } from '../../public/js/render/vfx/wiring.js';
+import { FxWiring, TIMER_HIT_MAX } from '../../public/js/render/vfx/wiring.js';
+import { projectileParts } from '../../public/js/render/vfx/flight.js';
 import { skillPlan, attachUses } from '../../public/js/render/vfx/skills.js';
 import { mat4Trs } from '../../public/js/render/vfx/math.js';
 import { builtinMesh } from '../../public/js/render/vfx/library.js';
@@ -128,25 +130,30 @@ describe('LineRenderers: the authored points are placeholders, the game sets the
 describe('projectiles: the flying effect, the link line, the effects on the target and the timer\'s hit', () => {
   const simple = (main, life = 10, type = 1) => ({ class: 'SimpleProjectile', node: 'p', fields: { _mainEffect: main, _lifeTimeType: type, _lifeTime: life } });
 
-  test('projectileParts: the projectile class\'s _mainEffect and life; a chain\'s / harpoon\'s line is the link (the index\'s `main` named it)', () => {
+  test('projectileParts: the projectile class\'s _mainEffect and life; a chain\'s and a harpoon\'s lines by their class (the index\'s `main` named them)', () => {
+    // (render/vfx/flight.js since the merge with §32.14.36: `link` became `rope` — drawn in flight — and `chain` — not)
     const chain = { main: 'pasngr_attack_line', lifeTime: null, behaviours: [simple('pasngr_attack_trail'), { class: 'ChainLightningEffectBehaviour', node: 'p', fields: { _mainEffect: 'pasngr_attack_line' } }] };
-    assert.deepEqual({ ...projectileParts(chain) }, { main: 'pasngr_attack_trail', link: 'pasngr_attack_line', life: 10 });
+    assert.deepEqual({ ...projectileParts(chain) }, { main: 'pasngr_attack_trail', rope: null, chain: 'pasngr_attack_line', life: 10 });
     const harpoon = { main: 'glady_skill_01_line', behaviours: [{ class: 'HarpoonProjectile', node: 'p', fields: { _mainEffect: 'glady_skill_01_trail', _lifeTimeType: 1, _lifeTime: 5 } }, { class: 'HarpoonRenderer', node: 'p', fields: { _mainEffect: 'glady_skill_01_line' } }] };
-    assert.deepEqual({ ...projectileParts(harpoon) }, { main: 'glady_skill_01_trail', link: 'glady_skill_01_line', life: 5 });
+    assert.deepEqual({ ...projectileParts(harpoon) }, { main: 'glady_skill_01_trail', rope: 'glady_skill_01_line', chain: null, life: 5 });
     const timer = { main: null, lifeTime: 0.517, behaviours: [simple('', 0.517)] };
-    assert.deepEqual({ ...projectileParts(timer) }, { main: null, link: null, life: 0.517 }, '溯光星源 S3: no flying effect, a 0.517 s life');
-    assert.deepEqual({ ...projectileParts({ main: 'A_Trail', link: 'a_line', lifeTime: 2 }) }, { main: 'a_trail', link: 'a_line', life: 2 }, 'a fixed index (`link`, no behaviours)');
-    assert.deepEqual({ ...projectileParts(null) }, { main: null, link: null, life: null });
+    assert.deepEqual({ ...projectileParts(timer) }, { main: null, rope: null, chain: null, life: 0.517 }, '溯光星源 S3: no flying effect, a 0.517 s life');
+    // an index of the fixed extractor: `main` the projectile class's own, `link` the line (its class in `behaviours`)
+    const fixed = { main: 'A_Trail', link: 'a_line', lifeTime: 2, behaviours: [simple('A_Trail', 2), { class: 'HarpoonRenderer', node: 'p', fields: { _mainEffect: 'A_Line' } }] };
+    assert.deepEqual({ ...projectileParts(fixed) }, { main: 'a_trail', rope: 'a_line', chain: null, life: 2 }, 'a fixed index');
+    assert.deepEqual({ ...projectileParts({ main: 'B_Trail', lifeTime: 2 }) }, { main: 'b_trail', rope: null, chain: null, life: 2 }, 'no behaviours: its main and life');
+    assert.deepEqual({ ...projectileParts(null) }, { main: null, rope: null, chain: null, life: null });
   });
 
   async function setup() {
-    const prefabs = ['bolt', 'tile_fx', 'hit', 'trail', 'line', 'pc'].reduce((o, k) => ({ ...o, [k]: { looping: false } }), {});
+    const prefabs = ['bolt', 'tile_fx', 'hit', 'trail', 'line', 'pc', 'head', 'rope'].reduce((o, k) => ({ ...o, [k]: { looping: false } }), {});
     const index = {
       format: 'fx-index', version: 3, skins: {}, generic: { hit: {}, die: {}, birth: {}, status: {} }, prefabs,
       units: { char_1_sh: { kind: 'char', modes: [{ name: 'Default', attack: { class: 'RangedAttack', projectileKey: 'p_timer', cast: [], hit: [] } }], skills: {} } },
       projectiles: {
         p_timer: { main: null, lifeTime: 0.517, onHit: ['hit'], toTargetOnStart: ['bolt'], toTileOnStart: ['tile_fx'], effects: ['bolt', 'tile_fx', 'hit'], behaviours: [simple('', 0.517)] },
         p_chain: { main: 'line', lifeTime: null, onHit: ['hit'], effects: ['hit', 'line', 'trail'], behaviours: [simple('trail'), { class: 'ChainLightningEffectBehaviour', node: 'p', fields: { _mainEffect: 'line' } }] },
+        p_harp: { main: 'rope', lifeTime: null, onHit: ['hit'], effects: ['hit', 'rope', 'head'], behaviours: [{ class: 'HarpoonProjectile', node: 'p', fields: { _mainEffect: 'head' } }, { class: 'HarpoonRenderer', node: 'p', fields: { _mainEffect: 'rope' } }] },
       },
     };
     const handles = [];
@@ -186,20 +193,25 @@ describe('projectiles: the flying effect, the link line, the effects on the targ
     assert.equal(handles.filter((h) => h.key === 'bolt')[1].place.flipY, true);
   });
 
-  test('a chain projectile flies its own trail, and its link line runs from the muzzle to the shot, then fades', async () => {
+  test('a chain projectile flies its own trail, not its line; a harpoon\'s rope runs from the muzzle to the head, then fades', async () => {
     const { w, ofx, handles, v, index } = await setup();
     const src = v(1, 'char_1_sh', 5), tgt = v(2, 'enemy_9_x', 8);
     w._fly(index.projectiles.p_chain, src, tgt, 'bolt', ofx.time);
-    assert.deepEqual(handles.map((h) => h.key).sort(), ['line', 'trail'], 'the trail flies (the index named the line as `main`)');
-    const link = handles.find((h) => h.key === 'line');
+    // the client plays a chain's line between the chain's targets as the shot reaches them (ChainLightningHitBehaviour:
+    // the sim's 'chain' bounces), never from the muzzle to the shot — read when this round's branches were merged
+    assert.deepEqual(handles.map((h) => h.key), ['trail'], 'the trail flies (the index named the line as `main`), its line does not');
+    handles.length = 0;
+    w._fly(index.projectiles.p_harp, src, tgt, 'arrow', ofx.time);
+    assert.deepEqual(handles.map((h) => h.key).sort(), ['head', 'rope'], 'the head flies (the index named the rope as `main`)');
+    const rope = handles.find((h) => h.key === 'rope');
     const got = [];
     const fake = { time: 0.1, state: 'play', linkLines: (a, b) => got.push([a.slice(), b.slice()]), stop() { this.state = 'stopping'; } };
-    link.opts.track(fake);
+    rope.opts.track(fake);
     const [from, head] = got[0];
     assert.ok(head[0] > from[0] && head[0] < 8 - 10, `the head between the muzzle and the target: ${from} → ${head}`);
     fake.time = 5;
-    link.opts.track(fake);
-    assert.equal(fake.state, 'stopping', 'the line fades once the shot arrives');
+    rope.opts.track(fake);
+    assert.equal(fake.state, 'stopping', 'the rope fades once the shot arrives');
   });
 });
 

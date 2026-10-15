@@ -63,8 +63,9 @@ EFFECT_GLOBS = ('battle/prefabs/effects/*.ab', 'pkgrps/btl_pfb_fx_*.ab')
 CAB_DIRS = ('refs/fx', 'shaders', 'anon', 'arts/effects', 'battle/prefabs/effects', 'pkgrps')
 CAB_FILES = ('[uc]shaders.ab', 'arts/maps/effect.ab')
 PROJECTILES = 'battle/prefabs/[uc]projectiles.ab'
-# projectile behaviours whose _mainEffect is the line they stretch from the shooter to the shot (index.json `link`):
-# a chain lightning's, a harpoon's or lasso's rope — not the projectile's flying effect (`main`)
+# projectile behaviours whose _mainEffect is a line, not the projectile's flying effect (`main`): a chain lightning's
+# (drawn between the chain's targets as the shot reaches them) or a harpoon's rope (from the shooter to the head) —
+# index.json `link`; the runtime tells them apart by `behaviours` (render/vfx/flight.js projectileParts)
 LINK_BEHAVIOURS = ('ChainLightningEffectBehaviour', 'HarpoonRenderer')
 SKILLS = 'battle/prefabs/[uc]skills.ab'
 ENEMY_GLOB = 'battle/enm_pfb_*.ab'

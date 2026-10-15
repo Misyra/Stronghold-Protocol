@@ -286,14 +286,22 @@ describe('official skill effects in headless Chrome', { skip }, () => {
     assert.ok(where.over.some((n) => n.startsWith('wildmn_skill_02_buff/suduxian')), 'its speed lines (order 2) stay over the units');
   });
 
-  test('异客 (char_472_pasngr): the shot flies its own trail and the chain runs from the muzzle to it', async () => {
+  // (merged with §32.14.36: a chain's line is not flown — the client draws it between the chain's targets as the shot
+  // reaches them —; a harpoon's rope runs from the shooter to the head)
+  test('异客 (char_472_pasngr): the shot flies its own trail, never its chain line', async () => {
     const r = await shot('pasngr-chain', 'char_472_pasngr', { s: 0, kind: 'bolt', dist: 3 }, [['attack'], 6]);
-    for (const k of ['pasngr_attack_trail', 'pasngr_attack_line']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    assert.ok(r.keys.includes('pasngr_attack_trail'), String(r.keys));
+    assert.ok(!r.keys.includes('pasngr_attack_line'), `no chain line in flight: ${r.keys}`);
+  });
+
+  test('歌蕾蒂娅 S2 (char_474_glady): the harpoon flies its own head, its rope from her to it', async () => {
+    const r = await shot('glady-s2-rope', 'char_474_glady', { s: 1, kind: 'arrow', dist: 3 }, [['on'], ['attack'], 6]);
+    for (const k of ['glady_skill_02_trail', 'glady_skill_02_line']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
     const pts = await page.evaluate(() => {
-      const fx = window.__fx.ofx.effects.find((e) => e.def?.key === 'pasngr_attack_line');
+      const fx = window.__fx.ofx.effects.find((e) => e.def?.key === 'glady_skill_02_line');
       return fx ? [...fx.linePts.values()].map((p) => p.map((q) => q.slice())) : null;
     });
-    assert.ok(pts && pts.length && pts.every((p) => p.length === 2 && p[1][0] > p[0][0]), `the chain's end points are set: ${JSON.stringify(pts)}`);
+    assert.ok(pts && pts.length && pts.every((p) => p.length === 2 && p[1][0] > p[0][0]), `the rope's end points are set: ${JSON.stringify(pts)}`);
   });
 
   test('the console stays clean', () => {

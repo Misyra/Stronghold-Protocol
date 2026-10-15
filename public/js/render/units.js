@@ -576,6 +576,50 @@ function bar(P, parent, color, alpha = 1) {
  *   settings: { damageNumbers: boolean, quality: string, ammoCount?: boolean, mysticEnergy?: boolean } }} ViewCtx
  */
 
+/** Scratch skeletons per skeleton data (bonePose): one pose is computed and read at a time. */
+const POSE_SKELETONS = new WeakMap();
+/** Bones by name per skeleton (spine's findBone walks every bone): a skeleton's bones keep their identity. */
+const BONES = new WeakMap();
+
+/** A skeleton's bone by name (cached), or null. */
+function boneOf(sk, name) {
+  let m = BONES.get(sk);
+  if (!m) { m = new Map(); BONES.set(sk, m); }
+  let b = m.get(name);
+  if (b === undefined) { b = (typeof sk.findBone === 'function' && sk.findBone(name)) || null; m.set(name, b); }
+  return b;
+}
+
+/**
+ * A bone of a Spine display posed by one clip alone at a time — `anim` / `time`, else its first track's clip at the
+ * track's time — on a scratch skeleton of the same data, so the model drawn (and its cross-fade) is untouched; null
+ * when there is no clip or the runtime's shape is unknown.
+ * @param {any} sp a PIXI.spine Spine
+ * @param {any} bone a bone of its skeleton
+ * @param {any} [anim] a spine Animation
+ * @param {number} [time] seconds into it
+ */
+export function bonePose(sp, bone, anim, time) {
+  try {
+    const tr = sp.state && sp.state.tracks ? sp.state.tracks[0] : null;
+    const a = anim || (tr && tr.animation);
+    if (!a || typeof a.apply !== 'function') return null;
+    let s = POSE_SKELETONS.get(sp.spineData);
+    if (!s) { s = new sp.skeleton.constructor(sp.spineData); POSE_SKELETONS.set(sp.spineData, s); }
+    const t = Number.isFinite(time) ? time : typeof tr.getAnimationTime === 'function' ? tr.getAnimationTime() : tr.trackTime;
+    const loop = !anim && !!tr.loop;
+    // one pose serves every point read of it (a shot and its muzzle flash read the same strike frame)
+    if (s._poseOf !== a || s._poseAt !== t || s._poseLoop !== loop) {
+      s.setToSetupPose();
+      // MixBlend.setup (0), MixDirection.mixIn (0): the clip over the setup pose, as a track's first application does
+      a.apply(s, t, t, loop, null, 1, 0, 0);
+      s.updateWorldTransform();
+      s._poseOf = a; s._poseAt = t; s._poseLoop = loop;
+    }
+    return boneOf(s, bone.data ? bone.data.name : bone.name);
+  } catch { return null; }
+}
+
 export class UnitView {
   /**
    * @param {ViewCtx} ctx
@@ -1171,6 +1215,50 @@ export class UnitView {
     if (this.entry && this._wantsBack() !== !!this.entryBack) this._loadSpine();
   }
 
+  /** The model's horizontal draw sign: −1 when it is drawn mirrored (facing left; an enemy's own quirks applied). */
+  modelFlip() {
+    return (this.isEnemy ? (ENEMY_MODEL_FACES_LEFT ? -this.visFacing : this.visFacing) : this.visFacing) * (this.mirrorX ? -1 : 1);
+  }
+
+  /**
+   * Where a bone of the model is drawn now (render/vfx/mounts.js: the client's BoneFollower mount points — Muzzle, the
+   * Special points — move with the skeleton): the first of `names` the skeleton has, as `out.x` tiles along the
+   * screen's right from the feet (the facing applied), `out.up` tiles up the model (UNIT.modelScale and the enemy factors
+   * applied: the scale the model is drawn at), `out.angle` the bone's angle in the skeleton (degrees counter-clockwise
+   * from its x axis, before the facing) and `out.flip` the draw sign; null when no model is drawn or none of the names
+   * is a bone of it. `strike`: the bone as the attack clip playing now poses it at its strike frame (SpineActor
+   * strikePose — a shot leaves the muzzle at the attack's OnAttack frame, whatever frame the model was last posed in:
+   * a swung staff moves 0.3 tiles in a frame); else a clip started since the model was last posed (an attack nobody
+   * wound up starts at its strike frame, a wind-up just began) is read at its own pose at its track time (bonePose:
+   * not the previous clip's the cross-fade still shows).
+   * @param {string|string[]} names
+   * @param {{ x: number, up: number, angle: number, flip: number }} [out]
+   * @param {boolean} [strike]
+   */
+  boneOffset(names, out = { x: 0, up: 0, angle: 0, flip: 1 }, strike = false) {
+    const a = this.actor;
+    const sp = a && this.spineReady && !this.destroyed ? a.spine : null;
+    const sk = sp && sp.skeleton;
+    if (!sk || typeof sk.findBone !== 'function') return null;
+    let b = null;
+    for (const n of Array.isArray(names) ? names : [names]) if (n && (b = boneOf(sk, n))) break;
+    if (!b) return null;
+    const hit = strike && typeof a.strikePose === 'function' ? a.strikePose() : null;
+    if (hit) b = bonePose(sp, b, hit.anim, hit.time) || b;
+    else if (!a._applied && !a.frozen) b = bonePose(sp, b) || b;
+    // pixi-spine keeps the bone's world transform in `matrix` (skeleton space, y down; spine-ts's worldX / worldY else)
+    const m = b.matrix;
+    const tx = m ? m.tx : b.worldX, ty = m ? m.ty : b.worldY;
+    if (!Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+    const flip = this.modelFlip();
+    const k = UNIT.modelScale * this.modelK;
+    out.x = tx * k * flip;
+    out.up = -ty * k * this.modelKY;
+    out.angle = m ? Math.atan2(-m.b, m.a) * (180 / Math.PI) : (typeof b.getWorldRotationX === 'function' ? -b.getWorldRotationX() : 0);
+    out.flip = flip;
+    return out;
+  }
+
   /**
    * Re-orient an operator / summon (UP|RIGHT|DOWN|LEFT, any case; the direction wheel's live preview and the stored
    * m.private `dir`). Mirrors for LEFT, swaps to the Back model for UP (and back) when the model differs.
@@ -1478,7 +1566,7 @@ export class UnitView {
     this.root.zIndex = unitDepthKey(cam, this.x, this.y, this.lift);
     // off-screen: nothing to animate or draw (bounds / hit-testing still follow `screen`)
     if (this._cull(bx, by, s, dt)) return;
-    const flip = (this.isEnemy ? (ENEMY_MODEL_FACES_LEFT ? -this.visFacing : this.visFacing) : this.visFacing) * (this.mirrorX ? -1 : 1);
+    const flip = this.modelFlip();
 
     // shadow (on a raised top it is drawn with that block row, else in the shadow layer under everything); an enemy
     // flyer's lies on the tile under it while its body hovers from the road (shadowZ, GitHub #277)

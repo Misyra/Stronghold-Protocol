@@ -1,10 +1,16 @@
 // render/vfx/mounts.js — where an official effect sits on a unit (DESIGN §33.11 `_spawnLocation`, §33.12 skins): the
 // mount points of the unit's skin (in its root frame: Unity axes, through its Graphic node and FaceSwitcher scale),
 // mirrored for a left-facing unit and taken from the Back skeleton for one facing up, placed at the unit's feet in the
-// battle's Unity frame. Pure functions (Node tests).
+// battle's Unity frame. A point a BoneFollower keeps on a Spine bone (the skin's `bone`: Muzzle, the Special points —
+// the client moves them with the skeleton, and the skin's `pos` is only the bone in the prefab's edit-time Default
+// pose) is read from the unit's model as it is drawn now (`unit.view.boneOffset`, render/units.js), with its rotation
+// (`mountRotation`). Pure functions (Node tests).
 //
-//   spawnPoint(skin, spawn, unit, out)   unit = { x, y, z (board: col, row, height), left: bool, back: bool, scale? }
+//   spawnPoint(skin, spawn, unit, out)   unit = { x, y, z (board: col, row, height), left: bool, back: bool, scale?,
+//                                        view? (a UnitView: boneOffset), tilt? (the camera's, degrees), strike? (the
+//                                        bone at the attack clip's strike frame) }
 //   mountPoint(skin, type, unit, out)    FollowMountPoint's MountPointType (0 FOOT, 1 HIT, 2 MUZZLE, 3 HEAD, …)
+//   mountRotation(skin, kind, unit, out) the world rotation of a mount point (Graphic tilt · facing turn · bone angle)
 //   POINT_NAMES                          the skin point names tried per point kind (names vary by skin)
 
 /** Point names per kind, in the order tried (§33.12: HitPoint, HeadPoint / HeadAnchor, Muzzle / MuzzlePoint, …). */
@@ -14,6 +20,17 @@ export const POINT_NAMES = Object.freeze({
   head: ['HeadPoint', 'HeadAnchor', 'Head'],
 });
 const special = (n) => [`Special${n}`, `SpecialPoint${n}`, `Special_${n}`];
+
+/**
+ * The camera tilt the drawn model faces (degrees from straight down: render/projection.js OFFICIAL.pitch). The client
+ * turns every unit's Graphic node −30° about X — its skeleton plane faces the 30° battle camera — and the field view
+ * draws the skeleton as an upright billboard under the same camera: a model offset `up` along the model is
+ * (0, up·cos t, −up·sin t) in the Unity frame.
+ */
+export const SKELETON_TILT = 30;
+/** The client's Graphic rotation (−30° about X), for a skin that does not carry its own. */
+const GRAPHIC_ROT = Object.freeze([-0.258819, 0, 0, 0.965926]);
+const DEG = Math.PI / 180;
 
 /** The point kind of a ParticleEffect spawn location (null = the unit's feet / the ground). */
 export function spawnKind(spawn) {
@@ -28,6 +45,18 @@ export function spawnKind(spawn) {
       if (spawn >= 27 && spawn <= 34) return 's' + (spawn - 11);
       return null;
   }
+}
+
+/**
+ * The point kind whose rotation a spawn location also takes (DESIGN §33.11; the client's
+ * Effect._InitLocationFromEntity): MUZZLE_POINT (3) and the MP_SPECIAL points (_SetPosAndRotToMountPoint) set the
+ * effect's rotation to the mount point's; FOOT, HIT, HEAD and MUZZLE_POINT_WITHOUT_ROTATION keep the unit's own
+ * (unturned) rotation — their prefabs are pre-tilted for the camera — and the others are no mount point.
+ */
+export function spawnRotationKind(spawn) {
+  if (spawn === 3) return 'muzzle';
+  const k = spawnKind(spawn);
+  return k && k[0] === 's' ? k : null;
 }
 
 /** The point kind of a FollowMountPoint MountPointType. */
@@ -79,8 +108,13 @@ export function skinShift(skin) {
   return f;
 }
 
-/** A skin point's offset (Unity, unit root frame) by kind and facing; null when the skin lacks it. */
-export function pointOffset(skin, kind, back) {
+/**
+ * The skin point of a kind for a facing: `{ pos, bones }` — `pos` its offset (Unity, unit root frame; skinShift
+ * applied), `bones` the BoneFollower bone names to look for in the model drawn (the facing's first, then the other
+ * skeleton's: a unit facing up without a Back model draws the Front one) or null for a point no bone moves — or null
+ * when the skin lacks it.
+ */
+export function skinPoint(skin, kind, back) {
   const pts = skin && skin.points;
   if (!pts || !kind) return null;
   const names = kind[0] === 's' ? special(kind.slice(1)) : POINT_NAMES[kind] || [];
@@ -88,25 +122,54 @@ export function pointOffset(skin, kind, back) {
     const p = pts[nm];
     if (!p) continue;
     const f = (back ? p.back : p.front) || p.all || p.front || p.back;
-    if (f && Array.isArray(f.pos)) {
-      const sh = skinShift(skin);
-      if (!sh) return f.pos;
-      _fixed[0] = f.pos[0] + sh[0]; _fixed[1] = f.pos[1] + sh[1]; _fixed[2] = f.pos[2] + sh[2];
-      return _fixed;
-    }
+    if (!f || !Array.isArray(f.pos)) continue;
+    const other = f === p.front ? p.back : p.front;
+    const bones = f.bone ? (other && other.bone && other.bone !== f.bone ? [f.bone, other.bone] : [f.bone]) : null;
+    const sh = skinShift(skin);
+    if (!sh) return { pos: f.pos, bones };
+    return { pos: [f.pos[0] + sh[0], f.pos[1] + sh[1], f.pos[2] + sh[2]], bones };
   }
   return null;
 }
 
+/** A skin point's offset (Unity, unit root frame) by kind and facing; null when the skin lacks it. */
+export function pointOffset(skin, kind, back) {
+  const p = skinPoint(skin, kind, back);
+  if (!p) return null;
+  _fixed[0] = p.pos[0]; _fixed[1] = p.pos[1]; _fixed[2] = p.pos[2];
+  return _fixed;
+}
+
+const _bo = { x: 0, up: 0, angle: 0, flip: 1 };
+
+/**
+ * The live bone of a bone-followed point on the unit's model (`unit.view.boneOffset`, render/units.js: the bone as the
+ * model is drawn now — `unit.strike`: as its attack clip poses it at the strike frame —, its offset from the feet in
+ * tiles — `x` along the screen's right with the facing applied, `up` along the model — its angle in the skeleton and
+ * the drawn facing), or null (no model drawn, no such bone).
+ */
+function liveBone(p, unit) {
+  const v = p && p.bones ? unit.view : null;
+  if (!v || typeof v.boneOffset !== 'function') return null;
+  const o = v.boneOffset(p.bones, _bo, !!unit.strike);
+  return o && Number.isFinite(o.x) && Number.isFinite(o.up) ? o : null;
+}
+
 /**
  * The Unity battle-frame position of a point of a unit: its feet (board x, y, z → (x − 10, y − 9, −z)) plus the
- * skin offset (x mirrored when the unit faces left; `scale` multiplies the offset).
+ * skin offset (x mirrored when the unit faces left; `scale` multiplies the offset) — for a bone-followed point the
+ * bone where the model draws it now: `up` along the plane the camera sees face-on (`unit.tilt`, else SKELETON_TILT).
  */
 export function unitPoint(skin, kind, unit, out = [0, 0, 0]) {
   const k = Number.isFinite(unit.scale) ? unit.scale : 1;
   out[0] = unit.x - 10; out[1] = unit.y - 9; out[2] = -(unit.z || 0);
-  const o = pointOffset(skin, kind, !!unit.back);
-  if (o) {
+  const p = kind ? skinPoint(skin, kind, !!unit.back) : null;
+  const b = p ? liveBone(p, unit) : null;
+  if (b) {
+    const t = (Number.isFinite(unit.tilt) ? unit.tilt : SKELETON_TILT) * DEG;
+    out[0] += b.x; out[1] += b.up * Math.cos(t); out[2] -= b.up * Math.sin(t);
+  } else if (p) {
+    const o = p.pos;
     out[0] += (unit.left ? -o[0] : o[0]) * k;
     out[1] += o[1] * k;
     out[2] += o[2] * k;
@@ -121,3 +184,31 @@ export function unitPoint(skin, kind, unit, out = [0, 0, 0]) {
 export function spawnPoint(skin, spawn, unit, out) { return unitPoint(skin, spawnKind(spawn), unit, out); }
 
 export function mountPoint(skin, type, unit, out) { return unitPoint(skin, mountKind(type), unit, out); }
+
+/**
+ * The world rotation of a unit's mount point (Unity quaternion [x, y, z, w]) — what the client's effects take from it
+ * (FollowMountPoint without `_keepOriginRotation`, a MUZZLE_POINT or Special-point spawn): the unit's Graphic tilt
+ * (the skin's `graphic.rot`, −30° about X), the FaceSwitcher's turn for a unit drawn facing left (180° about the
+ * skeleton plane's up axis: the client turns that node to face left) and, for a bone-followed point, the bone's angle in
+ * the skeleton plane (Spine's world rotation, counter-clockwise; the BoneFollower turns the point with it). A point no
+ * bone moves (HitPoint, HeadPoint) has no rotation of its own [ASSUMED: the skins do not export the points' local
+ * rotations; the ones read, HitPoint / HeadPoint, are the identity]. Null without a kind (FOOT, GROUND: the unit's own,
+ * unturned rotation).
+ */
+export function mountRotation(skin, kind, unit, out = [0, 0, 0, 1]) {
+  if (!kind) return null;
+  const g = skin && skin.graphic && Array.isArray(skin.graphic.rot) && skin.graphic.rot.length === 4 ? skin.graphic.rot : GRAPHIC_ROT;
+  const p = skinPoint(skin, kind, !!unit.back);
+  const b = p ? liveBone(p, unit) : null;
+  const left = b ? b.flip < 0 : !!unit.left;
+  const ang = b && Number.isFinite(b.angle) ? b.angle * DEG : 0;
+  // g · Ry(left ? 180° : 0) · Rz(ang): Rz = (0, 0, s, c); Ry(180°) · Rz = (0, 1, 0, 0) · (0, 0, s, c) = (s, c, 0, 0)
+  const c = Math.cos(ang / 2), s = Math.sin(ang / 2);
+  const fx = left ? s : 0, fy = left ? c : 0, fz = left ? 0 : s, fw = left ? 0 : c;
+  const ax = g[0], ay = g[1], az = g[2], aw = g[3];
+  out[0] = aw * fx + ax * fw + ay * fz - az * fy;
+  out[1] = aw * fy - ax * fz + ay * fw + az * fx;
+  out[2] = aw * fz + ax * fy - ay * fx + az * fw;
+  out[3] = aw * fw - ax * fx - ay * fy - az * fz;
+  return out;
+}

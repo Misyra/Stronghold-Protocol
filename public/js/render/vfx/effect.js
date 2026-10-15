@@ -4,9 +4,12 @@
 //
 //   const def = compileEffect(descriptor, lib)          shared per prefab (curves baked, materials compiled lazily)
 //   const fx = new Effect(def, { seed, lite, emission, hooks })
-//   fx.place({ pos, yaw, pitch, mirror, groundZ })      anchor in the Unity battle frame; yaw / pitch (radians) turn the
-//                                                       `_rotationZ` helper (or the root); mirror = left/right mirror
-//                                                       about the anchor (FLIP_TWO_SIDE, `_flipIfLeft`)
+//   fx.place({ pos, yaw, pitch, mirror, groundZ, mountRot })  anchor in the Unity battle frame; yaw / pitch (radians)
+//                                                       turn the `_rotationZ` helper (or the root); mirror = left/right
+//                                                       mirror about the anchor (FLIP_TWO_SIDE, `_flipIfLeft`); mountRot
+//                                                       = the world rotation of the mount point the root takes
+//                                                       (quaternion, or null: MUZZLE_POINT / a Special point's spawn,
+//                                                       FollowMountPoint without `_keepOriginRotation` — render/vfx/mounts.js)
 //   fx.track = (fx) => …                                optional per-frame placement update (FollowMountPoint,
 //                                                       FollowDirection, a projectile's flight) before the update
 //   fx.update(dt); fx.stop({ hit }); fx.kill()
@@ -249,6 +252,7 @@ export class Effect {
     this.yaw = 0; this.pitch = 0; this.roll = 0;
     this.mirror = false;
     this.flipY = false;                                // FLIP_TWO_SIDE with a `_rotationY` helper
+    this.mountRot = null;                              // the mount point's world rotation on the root ([x,y,z,w]) or null
     this.groundZ = 0;
     this.time = 0;                                     // s since spawn (battle clock)
     this.delay = def.delayToPlay + (def.randomDelay > 0 ? Math.random() * def.randomDelay : 0);
@@ -293,7 +297,7 @@ export class Effect {
     this.hier.fill(0); this.prevHier.fill(0); this.actAt.fill(-1); this.forcedOff.fill(0);
     this.matOv.clear(); this.rendOv.clear(); this.trails.clear(); this.linePts.clear();
     this.anchor[0] = this.anchor[1] = this.anchor[2] = 0;
-    this.yaw = 0; this.pitch = 0; this.roll = 0; this.mirror = false; this.flipY = false; this.groundZ = 0;
+    this.yaw = 0; this.pitch = 0; this.roll = 0; this.mirror = false; this.flipY = false; this.groundZ = 0; this.mountRot = null;
     this.time = 0;
     this.delay = def.delayToPlay + (def.randomDelay > 0 ? Math.random() * def.randomDelay : 0);
     this.state = 'play'; this.linger = 0; this.started = false; this.track = null; this.hidden = false; this.owner = null;
@@ -321,6 +325,10 @@ export class Effect {
     if (typeof o.mirror === 'boolean') this.mirror = o.mirror;
     if (typeof o.flipY === 'boolean') this.flipY = o.flipY;
     if (typeof o.groundZ === 'number') this.groundZ = o.groundZ;
+    if (Array.isArray(o.mountRot) && o.mountRot.length === 4) {
+      const q = this.mountRot || (this.mountRot = [0, 0, 0, 1]);
+      q[0] = o.mountRot[0]; q[1] = o.mountRot[1]; q[2] = o.mountRot[2]; q[3] = o.mountRot[3];
+    } else if (o.mountRot === null) this.mountRot = null;
     return this;
   }
 
@@ -331,8 +339,8 @@ export class Effect {
 
   /**
    * The game's end points of the prefab's LineRenderers (world space, Unity frame): every line runs from → to (a
-   * chain lightning's or a harpoon's rope from the shooter's muzzle to the shot, render/vfx/wiring.js). Their authored
-   * points are the editor's placeholders (§33.6), which a world-space line never draws (gather).
+   * harpoon's rope from the shooter's mount point to the head, render/vfx/wiring.js `_fly`). Their authored points are
+   * the editor's placeholders (§33.6), which a world-space line never draws (gather).
    */
   linkLines(from, to) {
     const def = this.def;
@@ -558,6 +566,9 @@ export class Effect {
       }
       if (i === def.rotY) { if (this.flipY) quatAxis(0, 1, 0, Math.PI, _q); else { _q[0] = 0; _q[1] = 0; _q[2] = 0; _q[3] = 1; } }
       if (i === 0 && def.rotate180Y) { quatMul(quatAxis(0, 1, 0, Math.PI, _q2), _q, _q); }
+      // the root takes its mount point's world rotation: the client sets the effect's transform.rotation to it (the
+      // unit's Graphic tilt, its facing turn and a BoneFollower's bone angle — weapon effects are authored along it)
+      if (i === 0 && this.mountRot) { const r = this.mountRot; _q[0] = r[0]; _q[1] = r[1]; _q[2] = r[2]; _q[3] = r[3]; }
       mat4Trs(_p3, _q, _s3, _m);
       const p = def.parent[i];
       if (p < 0) {

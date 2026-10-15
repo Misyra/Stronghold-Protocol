@@ -727,6 +727,18 @@ export class SpineActor {
     return this._attackClip() === sk ? sk.idle : null;
   }
 
+  /**
+   * The strike frame of the attack clip playing now — { anim (the spine Animation), time (its first hit, s) } — or null
+   * when no attack clip plays (render/units.js boneOffset: a shot leaves the muzzle as that frame poses it).
+   */
+  strikePose() {
+    if (this.mode !== 'attack' || this.dead) return null;
+    const tr = this.spine && this.spine.state ? this.spine.state.tracks[0] : null;
+    const anim = tr && tr.animation;
+    if (!anim || anim.name !== this.current) return null;
+    return { anim, time: this._hitTime(anim.name, this.dur(anim.name)) };
+  }
+
   _hitTime(anim, dur) {
     const hits = this.entry.hits && this.entry.hits[anim];
     if (Array.isArray(hits) && hits.length && Number.isFinite(hits[0])) return clampN(hits[0], 0, dur);

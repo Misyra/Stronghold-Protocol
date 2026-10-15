@@ -787,7 +787,7 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
     assert.ok(n > 0, 'the set has skinned meshes (伊芙利特 S3, 铃兰 S3, 凯尔希 S1 …)');
   });
 
-  test('projectiles of an index written by the fixed extractor: `main` is the projectile class\'s flying effect, a chain\'s line is `link`', { skip: !Object.values(index?.projectiles || {}).some((p) => p.link) && 'an index written before the fix (the runtime reads the behaviours: wiring.js projectileParts)' }, () => {
+  test('projectiles of an index written by the fixed extractor: `main` is the projectile class\'s flying effect, a chain\'s line is `link`', { skip: !Object.values(index?.projectiles || {}).some((p) => p.link) && 'an index written before the fix (the runtime reads the behaviours: flight.js projectileParts)' }, () => {
     for (const [k, p] of Object.entries(index.projectiles)) {
       const own = (p.behaviours || []).find((b) => /Projectile$/.test(b.class) && b.fields && '_mainEffect' in b.fields);
       if (own) assert.equal(p.main, (own.fields._mainEffect || '').toLowerCase() || null, `${k}: main`);

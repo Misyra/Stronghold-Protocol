@@ -13,7 +13,17 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   vertexCount` and must extract again for the second kind. (2) index.json projectiles (§33.12): `main` and `lifeTime`
   are the projectile class's own (SimpleProjectile, HarpoonProjectile, …); earlier runs took the last behaviour's
   `_mainEffect` — 30 projectiles named their chain or rope line and lost the flying effect and the life (their
-  `behaviours` give both) —; the new `link` names that line.
+  `behaviours` give both) —; the new `link` names that line (a ChainLightningEffectBehaviour's or a HarpoonRenderer's:
+  `behaviours` say which, and how it is drawn — §33.12 Projectile).
+* **2026-10-15 — readings corrected from the client's code, no format change** (DESIGN §32.14.36). (1) A skin point
+  with a `bone` (§33.12 Skin) has as `pos` that bone in the prefab's edit-time pose (the 0-length `Default` clip), not
+  where the client reads it in battle — the live transform (`MountPoint.get_mapPositionV3`): read the bone from the
+  unit's skeleton. (2) Which spawn locations also take the mount point's rotation, and what FollowMountPoint copies
+  (§33.11, resolved). (3) ParacurveMovement and AmiyaS2Movement (§33.12 Projectile, resolved): the arc tops out
+  `raiseHeight` above the start. (4) A projectile's `main`, written as the last `_mainEffect` of its behaviours, is for
+  a chain-lightning or harpoon projectile (32 of the full set) a line renderer's effect; the flying effect is its
+  projectile behaviour's own, and a harpoon's rope runs from the shooter to the head while a chain's lightning joins
+  the chain's targets as the shot reaches them (`behaviours`, §33.12 Projectile; the extractor's fix: the entry above).
 * **2026-10-15 — Phase 1d: `index.json` version 3** (§33.17; the descriptors, `textures.json` and the meshes keep their
   versions, the file list's `fx.index.version` is 3; no field was removed or renamed, and only two mode attacks change
   besides the additions — (6) —: a version-2 reader keeps working). (1) `units[id].talents` — the unit's talents by
@@ -458,8 +468,8 @@ numCapVertices, alignment (0 view, 1 transform Z / local), textureMode (0 Stretc
 `m_Parameters`. The authored positions are placeholders: the effects that use lines (chains, beams) get their end
 points from the game (source and target). 32 of the used set's 34 line prefabs are world-space — their points are
 fixed spots of the authoring scene (溯光星源 S1's chain at world (5, 4) → (6, 3)) and must not be drawn as they are;
-the web runtime draws such a line only once it set its end points (a projectile's `link`, §33.12: from the muzzle to
-the shot).
+the web runtime draws such a line only once it set its end points (a harpoon's rope, §33.12: from the shooter's point
+to the head).
 
 **`spriteRenderer`**: not used by the effects of this mode (written with its materials only).
 
@@ -583,7 +593,13 @@ Semantics below are read from the field names, the data and the client's type, f
   18–25 MP_SPECIAL_8–15, 26 GROUND_CENTER_WITH_TILE_HEIGHT, 27–34 MP_SPECIAL_16–23, 35 GROUND_CENTER_WITH_HIGHLAND_HEIGHT.
   The points are the unit's mount points (§33.12 `skins`): FOOT = the unit's root, HIT = `HitPoint`, MUZZLE = `Muzzle` /
   `MuzzlePoint`, HEAD = `HeadPoint`, MP_SPECIAL_n = `Special<n>` / `SpecialPoint<n>`. In the sample: hits use 2, cast
-  flashes 3 / 6 / 8, status loops 1 / 4, ranges 5 / 7.
+  flashes 3 / 6 / 8, status loops 1 / 4, ranges 5 / 7. **Resolved** (the client's `Effect._InitLocationFromEntity`):
+  FOOT_POINT, HIT_POINT, HEAD_POINT and MUZZLE_POINT_WITHOUT_ROTATION take the point's position and the unit's own
+  (unturned) rotation — these prefabs are pre-tilted for the camera (§33.2) —; MUZZLE_POINT and the MP_SPECIAL points
+  (`_SetPosAndRotToMountPoint`) take the point's position and its world rotation: the unit's Graphic tilt (−30° about
+  X), the FaceSwitcher's turn for a unit facing left (180° about the skeleton plane's up axis: the client tweens that
+  node's rotation to turn a unit) and, for a point a BoneFollower keeps on a bone, the bone's angle — such prefabs are
+  authored along the point, unturned about X (灰毫's `ashlok_attack_01_start`).
 * `_rotateType` (*metadata* RotateType): 0 NONE, 1 FLIP_TWO_SIDE (mirror for a left-facing owner), 2 FOUR_DIRECTION,
   3 FIXED_DIRECTION, 4 ANY_DIR; `_leftIsDefault` (the art faces left), `_mainDir`, `_useBodyRotation`, `_rotationY` /
   `_rotationZ` / `_flipZ` (`{node}`: the helper nodes the direction turns / flips — e.g. `inside_attack_01_hit`'s
@@ -621,6 +637,11 @@ rotation, so u′ = cos θ·u − sin θ·v), and `_HG_UV_ROTATION` = 1 while it
 SPECIAL_5–SPECIAL_23 — sample: `buff_frozen` 0, `common_root_01` 1, `enemy_tidmag_attack_01_start_01` 2, `buff_stun` /
 `buff_cold` 3, `greyy_attack_01_start` 5; `_followScale` / `_followScaleSign` / `_scaleMultiplier`,
 `_keepOriginRotation`, `_pauseWhenMountPointInvalid`, `_onlyPauseWhenMountPointInvalid`, `_useBehaviourPause`.
+**Resolved** (`FollowMountPoint._FollowMountPoint`): every LateUpdate the effect takes the point's position and,
+unless `_keepOriginRotation`, its world rotation (as MUZZLE_POINT above); `_followScaleSign` copies the sign of the
+point's local scale, `_followScale` the scale itself (× `_scaleMultiplier`). The status loops keep their rotation
+(`buff_stun`, `buff_frozen`, `common_root_01`: `_keepOriginRotation` 1); the weapon effects take it (安洁莉娜's
+`aglina_skill_02_start` on SPECIAL_0, its parts 0.35–0.4 along local +x: up her staff).
 **`FollowDirection`**: turns with the owner's facing (`_useFourDir`, `_useOwnerDirection`, `_useOwnerMoveDirection`,
 `_leftIsDefault`, `_reverseWhenFaceToBack`, `_flipWhenFaceToVertical`, `_onlyFollowOnPlay`, `_useDirectionLerp`,
 `_lerpDuration`, …). **`FollowOwner`**, **`FollowOwnerRootTileHeight`**, **`FollowTileHeight`** (`_followTileHeightSpeed`):
@@ -892,13 +913,24 @@ says.
 **Projectile** (`[uc]projectiles.ab`):
 
 ```
-{ main (the flying effect key: the projectile class's _mainEffect), lifeTime (s: its _lifeTime),
-  link? (the line a ChainLightningEffectBehaviour / HarpoonRenderer stretches from the shooter to the shot),
+{ main (the flying effect key: the projectile class's _mainEffect; before 2026-10-15 the last `_mainEffect` of its
+  behaviours), lifeTime (s: its _lifeTime),
+  link? (the line a ChainLightningEffectBehaviour or a HarpoonRenderer draws: a chain's lightning, a harpoon's rope),
   movement: { class, … every field },
   onStart?, onReached?, onHit?, onStop?, toTargetOnStart?, toTileOnStart?, onTrigger?, onSelect?: [key…],
   effects: [every key], projectiles: [nested projectile keys], behaviours: [{ class, node, fields }] }
 ```
 
+The flying effect is the projectile behaviour's own `_mainEffect` (`behaviours[]` of class SimpleProjectile,
+HarpoonProjectile, LassoProjectile, LaserProjectile …). A `ChainLightningEffectBehaviour`'s `_mainEffect` is the
+lightning between a chain's targets — the client plays it as the shot reaches them (ChainLightningHitBehaviour
+OnProjectileReached / DoSelectTargetToHit → PlayLineEffect; the behaviour has no tick of its own, and all 17 of the
+used set have `_linkSource` 0: no line from the shooter) — and a `HarpoonRenderer`'s the rope from the shooter's point
+to the head, set every tick (OnTick / _UpdatePosition): line renderers whose points the game sets, authored in world
+space. An index written before 2026-10-15 kept as `main` whichever `_mainEffect` came last: for 32 projectiles of the
+full set (惊蛰's `projectile_leizi`, 异客, 莎草, 歌蕾蒂娅, 溯光星源, Mon3tr …) a line, and `lifeTime` was lost; the fixed
+extractor writes the projectile class's own and names the line `link`. A reader takes the parts from `behaviours`
+(the runtime's `render/vfx/flight.js projectileParts`: `main`, `rope`, `chain`, the LIMITED `life`).
 `toTargetOnStart` / `toTileOnStart` (EffectBehaviour `_effectsToTargetWhenStart` / `_effectsToTileWhenStart`) play on
 the target and on its tile when the projectile starts — 溯光星源 S3's lightning, whose projectile has no flying effect
 (a SimpleProjectile with a 0.517 s LIMITED life: a timer whose hit comes at its end); `onHit` at each target hit.
@@ -907,9 +939,19 @@ the target and on its tile when the projectile starts — 溯光星源 S3's ligh
 1 TRACE_TARGET_WITH_SPEED, 2 TRACE_TARGET_WITHIN_TIME, 3 TWO_POINTS, 4 FIXED_DIRECTION, 5 FIXED_DISTANCE,
 6 FUNC_ANGLE_AND_TIME, 7 FUNC_INIT_SPEED_AND_ACC, 8 FUNC_CURVE_AND_X_LENGTH, 9 FUNC_TURN_AND_WAVE_TO_TARGET —
 `rotateToTarget`, `comeBack`, `delayToStart`, …) or `ParacurveMovement` (`speed`, `raiseHeight`,
-`noRaiseHeightThreshold`, `inverseParacurve`, `useRandomHeight`, …: a lobbed arc). The sim keeps its own projectile
-speeds; the visual flies `main` along the sim's flight and plays `onHit` at the target's HitPoint (`onReached` where it
-lands). Graphic / logic pairs (`projectile_amgoat_s3_graphic` / `_logic`) are listed as nested projectiles.
+`noRaiseHeightThreshold`, `inverseParacurve`, `useRandomHeight`, …: a lobbed arc). **Resolved** (the client's
+ParacurveMovement OnInit / OnTick / _CalculateNextPosition): the projectile starts at the shooter's mount point and
+crosses the ground at `speed` homing on the target's point; its raise h is `raiseHeight` (`useRandomHeight`: a value
+in `randomHeightRange`), 0 when the ground distance is not above `noRaiseHeightThreshold`; with H = max(0, start height
++ h − end height) and T = distance / speed it climbs at √(2gh) under g = 2(√h + √H)²/T² — it tops out h above its
+start — and after the top g is re-solved each tick to land on the target's current height; `inverseParacurve`
+(`randomInverseParacurve`: a coin) flies the mirror image. As a function of the flight fraction k the height is
+start + 2√h·s·k − s²·k² (s = √h + √H) whatever T is. `AmiyaS2Movement` (安洁莉娜 S2): straight and homing in `time` s
+after a start phase of `startDuration` towards `startDistance` in a random direction, its body at
+(0, sin φ · `yAnimateOffset`, 0) across the flight, φ advancing 2π · `yAnimateSpeed` per second from a random start. The
+sim keeps its own projectile speeds; the visual flies its flying effect along the sim's flight and plays `onHit` at the
+target's HitPoint (`onReached` where it lands). Graphic / logic pairs (`projectile_amgoat_s3_graphic` / `_logic`) are
+listed as nested projectiles.
 
 **Skin** (mount points): `{ source, graphic, points: { name: { facing: { pos, bone, path } } } }`. `pos` is the point in
 the unit's root frame (Unity axes and units, through the unit's `Graphic` node and the skin's FaceSwitcher scale) — e.g.
@@ -919,8 +961,12 @@ at (3, 3, 0), `token_10050_monstr_prosts` 99.8 down) — and the game places the
 an offset the client drops when it attaches the skin (`char_446_aroma`: −1.895 in x). Version 1 composed it, so those
 skins' points sat tiles away from the feet (the runtime's `skinShift` moved 84 of them back). `facing` is `front` /
 `back` (operators have Front and Back skeletons) or `all`. `bone` names the Spine bone a `BoneFollower` keeps the point
-on (`F_Muzzle`, `B_Muzzle`, `Muzzle`, `Hip`, …): the runtime can read that bone from the unit's skeleton for a moving
-muzzle, else use `pos`. Operators' points come from `chararts/<id>.ab` (`defaultskin`) placed under the charpack's
+on (`F_Muzzle`, `B_Muzzle`, `Muzzle`, `Hip`, …; 125 of the 126 operators' muzzles, every Special point): such a point's
+`pos` is that bone in the prefab's edit-time pose — the 0-length `Default` clip: 灰毫's Muzzle 16 skeleton units above
+her feet, her cannon lowered; 溯光星源's 2.45 tiles to her right, her Idle's parking spot — while in battle the client
+reads the point's live transform (`MountPoint.get_mapPositionV3`, or the same bone baked per frame): a shot leaves
+where the attack clip holds the muzzle when it fires. A runtime reads the bone from the unit's skeleton (§33.16
+Placement), `pos` only without one. Operators' points come from `chararts/<id>.ab` (`defaultskin`) placed under the charpack's
 `Graphic`; enemies' and tokens' from their own prefab. Point names vary by skin: `HitPoint`, `HeadPoint`, `HeadAnchor`,
 `Muzzle` / `MuzzlePoint`, `Special0` / `SpecialPoint0` (… `1`, `2`).
 
@@ -1038,8 +1084,11 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   the spine, the def id), its skill from our data record's `skills[]` by the loadout's index (`prefabId`, else
   `skillId`), looked up in the unit's `skills`, then in `skills`; without a record, `skchr_<code>_<index + 1>`; a summon
   without a record of its skill, the only one its unit has [ASSUMED] (version 2 lists the summons' skills).
-* **Modes**: `skills[id].mode` names the attack mode while the skill is on (`modes[mode].name`; a mode whose name ends in
-  `[Down]` / `[D]` is a facing variant and not chosen). A unit without a resolved skill keeps `S<n>`. An enemy in a form
+* **Modes**: `skills[id].mode` names the attack mode while the skill is on (`modes[mode].name`). A mode whose name
+  ends in `[Down]` / `[D]` / `[DOWN]` / `(D)`, `(U)` or `(LR)` is a facing variant: the unit facing that way attacks in
+  it, else in the plain mode (DESIGN §32.14.36; before, a variant was never chosen) [ASSUMED: by the names]; a skill
+  that names no mode while its unit has only variants of `S<n>` (灰毫 S2: `S2(U)` / `S2(D)` / `S2(LR)`) switches to
+  the variant. A unit without a resolved skill keeps `S<n>`. An enemy in a form
   whose name is one of its modes' (case aside; `form2` → `Reborn`) attacks in that mode, and its skills play that
   mode's copies.
 * **Events**: a use's `startEvent` / `endEvent` are AbilityStandard/Event names (`ON_CAST_START` …), a unit's Emit row's
@@ -1047,8 +1096,9 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
 * **Mode attacks (v2)**: an 'atk' plays the mode's `combat` for a melee blow of a unit that is blocked or blocks
   (UF.BLOCKED) and when `attack` is null, else `attack`. A group ability fires its `abilities` as §33.12 says: a
   Parallel group all of them, a Random group one picked by a seed of the unit's id and attack count (the same in a
-  replay), the other groups the first that fits the attack (a heal: /Heal/, a shot: /Ranged/, a blow: neither), else
-  the first; a funnel attack is one attack. The attack flies the first fired ability's `projectileKey`. A row plays as
+  replay), the other groups the first that fits the attack (a heal: /Heal/, a shot: /Ranged/, a blow: neither; a
+  `Blocked…` node — 号角's BlockedRangedAttack — only while the unit blocks, and then first [ASSUMED: the configs'
+  triggers are not exported]), else the first; a funnel attack is one attack. The attack flies the first fired ability's `projectileKey`. A row plays as
   its `emitter` allows: an UberAnimation replace group's row (`anim`) when the attack plays that animation — for
   `loopType` 1 the group animations in turn by the unit's attack count [ASSUMED], else the animation the model plays
   (SpineActor.attackAnim), else `sourceAnimKey`; an InCertainMode emitter's rows only in the mode of index
@@ -1131,19 +1181,28 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   descriptor (a charge slot without a `mountPointForProjectiles` point leaves from its loop's `follow`; a descriptor
   read with `opts.describe` still wins, and at play time the loaded descriptor places the effect as before);
   `mounts.js skinShift` — version 1's guess at a skin exported without its root transform — is off for a version 2
-  index.
+  index. Since DESIGN §32.14.36: a skin point with a `bone` is read where the unit's model draws that bone
+  (`UnitView.boneOffset`: `UNIT.modelScale` from the feet, the facing applied; its `up` along the plane the camera sees
+  face-on), for a shot, the strike's cast rows and a projectile's `onStart` as the attack clip poses it at its strike
+  frame (its first OnAttack time) — `pos` only without a model or the bone [ASSUMED: the drawn frame; the static points
+  keep the client's offsets]; an effect with a FollowMountPoint starts on its point and follows it, with its rotation
+  unless `_keepOriginRotation`, and a MUZZLE_POINT or Special-point spawn takes the point's rotation (§33.11):
+  `mounts.js mountRotation` = the Graphic rotation · the facing turn · the bone's angle. A shot flies along the
+  client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below).
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
-* **A projectile's parts** (2026-10-15, history §32.14.38; `wiring.js projectileParts`, `_fly`): the flying effect is
-  the projectile class's own `_mainEffect` and its life that class's LIMITED `_lifeTime`, read from `behaviours` (an
-  index written before the correction named the link line `main` for 30 projectiles); the link (`link`, else a
-  ChainLightningEffectBehaviour's / HarpoonRenderer's `_mainEffect`) runs from the muzzle to the shot while it flies —
-  its LineRenderers' end points set by the runtime (`effect.js linkLines`; a world-space line without them draws
-  nothing) — and fades once it lands. As the shot starts, `toTargetOnStart` plays on the target (FLIP_TWO_SIDE by the
-  side the shot comes from, kept on the target while it lives) and `toTileOnStart` on the target's tile; a projectile
-  without a flying effect holds its `onHit` for its life when that is longer than the sim's flight (up to 1.5 s,
-  `TIMER_HIT_MAX`), the target's damage meanwhile drawing no procedural spark [ASSUMED: the sim's damage keeps its own
-  time].
+* **A projectile's parts** (2026-10-15, history §32.14.36 and §32.14.38; `flight.js projectileParts`, `wiring.js
+  _fly`): the flying effect is the projectile class's own `_mainEffect` and its life that class's LIMITED `_lifeTime`,
+  read from `behaviours` (an index written before the correction named a chain's or a rope's line `main` for 30
+  projectiles); it flies from the shot's mount point (Placement above). A harpoon's rope (a HarpoonRenderer's
+  `_mainEffect`) runs from the shooter's point as it is drawn to the head while it flies — its LineRenderers' end
+  points set by the runtime (`effect.js linkLines`; a world-space line without them draws nothing) — and fades once the
+  head arrives; a chain's lightning (a ChainLightningEffectBehaviour's) is not flown — the client plays it between the
+  chain's targets as the shot reaches them (§33.12 Projectile), and the sim's 'chain' bounces stay procedural. As the
+  shot starts, `toTargetOnStart` plays on the target (FLIP_TWO_SIDE by the side the shot comes from, kept on the target
+  while it lives) and `toTileOnStart` on the target's tile; a projectile without a flying effect holds its `onHit` for
+  its life when that is longer than the sim's flight (up to 1.5 s, `TIMER_HIT_MAX`), the target's damage meanwhile
+  drawing no procedural spark [ASSUMED: the sim's damage keeps its own time].
 * **A skill's mode attach rows** (`skills.js attachUses`): the `attach` rows of the mode a skill switches to
   (AttachEffectOptions: attached with the mode) join the plan, held for the skill — `range` for a `*_range*` key, else
   `loop`; a row `onlyAttachOnDummy` (the client's preview dummy) is left out. The enemies' rows in their Default /

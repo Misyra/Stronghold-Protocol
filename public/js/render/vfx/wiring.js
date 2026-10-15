@@ -1,7 +1,10 @@
 // render/vfx/wiring.js — the battle's events → official effects, generated from index.json (DESIGN §33.12): every
 // unit's normal attack (its mode `Default`, or the mode its skill switches to while the skill is on — the skill plan's
-// `modeName`, else `S<n>` for skill n) casts its `cast` effects at its muzzle (`_spawnLocation`), flies its projectile's
-// `main` effect along the sim's flight (the sim's speed: the visual lands with the sim's damage) and plays the
+// `modeName`, else `S<n>` for skill n; a mode's facing variant for the unit's facing) casts its `cast` effects at their
+// spawn location or FollowMountPoint's point on the unit (a point a BoneFollower keeps on a Spine bone — the muzzle, a
+// Special point — where the model draws that bone, at the attack clip's strike frame for the strike: mounts.js), flies
+// its projectile's own flying effect from the muzzle along the sim's flight (the sim's speed: the visual lands with the
+// sim's damage; the client's Paracurve arc and AmiyaS2 wobble: flight.js) and plays the
 // projectile's `onHit` at the target's HitPoint on arrival (`onReached` where it lands); a melee attack's `hit` effects
 // play when its damage lands; status loops (generic.status by the sim's status names) follow the unit's mount point while
 // the status lasts; deaths and deploys play the unit's own dead / start effect or the generic one. Index version 2
@@ -29,7 +32,8 @@
 // a FLIP_TWO_SIDE hit is mirrored when the blow comes from the right; the generic hit by damage type for a melee attack
 // that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit.
 
-import { spawnPoint, mountPoint, unitPoint, spawnKind } from './mounts.js';
+import { spawnPoint, mountPoint, unitPoint, spawnKind, mountKind, spawnRotationKind, mountRotation } from './mounts.js';
+import { projectileEffects, paracurve, arcHeight, wobble } from './flight.js';
 import { GROUND_SPAWNS } from './effect.js';
 import { SkillFx, fitsAttack, pickGroup, formMode } from './skillfx.js';
 import { TalentFx } from './talentfx.js';
@@ -61,6 +65,13 @@ const PARALLEL = /Parallel/;
 const RANDOM = /Random/;
 /** Attacks whose child abilities are funnels firing on their own (MultiFunnelRemoteAttack, MultiFunnelsNormalAttack). */
 const FUNNEL = /Funnel/;
+/** A selectable group's sub-ability for a unit that blocks (its node 'Blocked…': BlockedMeleeAttack, BlockedRangedAttack). */
+const BLOCKED_NODE = /(?:^|\/)Blocked[A-Z]\w*$/;
+/**
+ * A mode name's facing variant (index.json modes: 'S2[Down]', 'S3[D]', 'S2+[DOWN]', 灰毫's 'S2(U)' / 'S2(D)' /
+ * 'S2(LR)', 号角's 'S3(D)'): [1] the base name, [2] / [3] the facing.
+ */
+const MODE_VARIANT = /^(.*?)(?:\[(down|d|up|u|lr)\]|\((down|d|up|u|lr)\))$/i;
 
 /** A deterministic 32-bit seed of a unit and its attack count (random picks of groups and sub-abilities: replayable). */
 export function seedOf(id, n) {
@@ -83,11 +94,13 @@ function abilityFits(a, kind, depth = 0) {
  * `main` first (its projectile is the attack's); `random` — a seeded pick (unit id × attack count: the same in a
  * replay; `diffFromLast` — never the previous one, `mem` keeping it per unit; weights by `probKeys` are not read: equal
  * odds [ASSUMED]); `loop` / `sequential` — in turn by the unit's attack count; `trigger` / `firstSucceed` — the first
- * whose trigger finds its target: the first of the attack's kind (a heal, a shot, a blow); a BurstAttackGroup's `burst`
- * attack is left out (no signal marks it). Without `select` (index v2) the class decides: Parallel all, Random a seeded
- * pick, the others the first of the kind. A funnel attack is itself (its funnels fire on their own). [ASSUMED]
+ * whose trigger finds its target: the first of the attack's kind (a heal, a shot, a blow) — a `Blocked…` node (号角's
+ * BlockedRangedAttack, the blocking unit's own blow: its trigger asks for a blocked enemy) only while the unit blocks
+ * (`kind.blocked`), and then before the others —; a BurstAttackGroup's `burst` attack is left out (no signal marks
+ * it). Without `select` (index v2) the class decides: Parallel all, Random a seeded pick, the others the first of the
+ * kind. A funnel attack is itself (its funnels fire on their own). [ASSUMED]
  * @param {any} a an Attack of index.json
- * @param {{ heal?: boolean, ranged?: boolean }} kind
+ * @param {{ heal?: boolean, ranged?: boolean, blocked?: boolean }} kind
  * @param {number} seed seedOf(unit, attack count)
  * @param {number} depth
  * @param {number} nth the unit's attack count
@@ -107,7 +120,10 @@ export function pickAttacks(a, kind, seed = 0, depth = 0, nth = 0, mem = null) {
   const burst = Number.isInteger(sel?.burst) ? subs[sel.burst] : null;
   const cand = burst && subs.length > 1 ? subs.filter((x) => x !== burst) : subs;
   const fit = cand.filter((x) => abilityFits(x, kind));
-  const pool = fit.length ? fit : cand;
+  const held = fit.filter((x) => BLOCKED_NODE.test(x.node || ''));
+  const free = fit.filter((x) => !BLOCKED_NODE.test(x.node || ''));
+  const pick = kind.blocked && held.length ? held : free.length ? free : fit;
+  const pool = pick.length ? pick : cand;
   let i = 0;
   if (method === 'random') {
     i = seed % pool.length;
@@ -118,6 +134,32 @@ export function pickAttacks(a, kind, seed = 0, depth = 0, nth = 0, mem = null) {
     }
   } else if (method === 'loop' || method === 'sequential') i = nth % pool.length;
   return [a, ...next(pool[i])];
+}
+
+/**
+ * The mode `name` (with an attack) of `modes`, or its facing variant (MODE_VARIANT) for `facing` — DOWN: [Down] / [D] /
+ * (D), UP: [Up] / (U), LEFT / RIGHT: (LR) — when the unit has one; `variantsOnly`: a variant or nothing (a plain
+ * mode is the plan's to name). [ASSUMED] the variants are per facing, by their names (the skill data that switches
+ * between them is not exported); before DESIGN §32.14.36 only the plain name counted.
+ * @param {any[]} modes
+ * @param {string} name
+ * @param {string} facing 'UP' | 'DOWN' | 'LEFT' | 'RIGHT'
+ * @param {boolean} [variantsOnly]
+ */
+export function modeVariant(modes, name, facing, variantsOnly = false) {
+  const want = facing === 'DOWN' ? ['down', 'd'] : facing === 'UP' ? ['up', 'u'] : ['lr'];
+  let plain = null, fit = null, other = null;
+  for (const m of modes || []) {
+    if (!m || !(m.attack || m.combat)) continue;
+    if (m.name === name) { plain = m; continue; }
+    const g = MODE_VARIANT.exec(String(m.name || ''));
+    if (!g || g[1] !== name) continue;
+    if (want.includes((g[2] || g[3]).toLowerCase())) fit = fit || m;
+    else other = other || m;
+  }
+  if (fit) return fit;
+  if (variantsOnly) return plain ? null : other;
+  return plain || null;
 }
 
 export class FxWiring {
@@ -204,9 +246,18 @@ export class FxWiring {
 
   skinOf(u) { return u && u.skin && this.idx ? this.idx.skins[u.skin] || null : null; }
 
-  /** Where a view stands: board feet + facing, as mounts.js reads it. */
+  /**
+   * Where a view stands, as mounts.js reads it: board feet + facing, the view itself (its model's bones: the
+   * BoneFollower points) and the camera's tilt (the plane the drawn model faces).
+   */
   pose(v) {
-    return { x: v.x, y: v.y, z: (v.z || 0) + (v.hover || 0), left: (v.visFacing ?? v.facing ?? 1) < 0, back: typeof v._wantsBack === 'function' ? !!v._wantsBack() && !!v.entryBack : false };
+    return { x: v.x, y: v.y, z: (v.z || 0) + (v.hover || 0), left: (v.visFacing ?? v.facing ?? 1) < 0, back: typeof v._wantsBack === 'function' ? !!v._wantsBack() && !!v.entryBack : false, view: v, tilt: this._camTilt() };
+  }
+
+  /** The battle camera's tilt (degrees from straight down), or undefined (mounts.js SKELETON_TILT). */
+  _camTilt() {
+    const c = typeof this.ofx?.ctx?.cam === 'function' ? this.ofx.ctx.cam() : null;
+    return c && Number.isFinite(c.tilt) ? c.tilt : undefined;
   }
 
   /** The battle's units' effect keys (for preloading; `generic` false: the units' own only). */
@@ -282,16 +333,25 @@ export class FxWiring {
     const modes = u?.modes || [];
     if (!modes.length) return null;
     const st = this.skills.state(v, skillOn);
-    const name = st.plan ? st.plan.modeName : Number.isInteger(v?.info?.skillIndex) ? `S${v.info.skillIndex + 1}` : null;
-    if (st.on && name) {
-      const m = modes.find((x) => x.name === name);
-      if (m && (m.attack || m.combat)) return m;
+    const sn = Number.isInteger(v?.info?.skillIndex) ? `S${v.info.skillIndex + 1}` : null;
+    const name = st.plan ? st.plan.modeName : sn;
+    if (st.on && (name || sn)) {
+      // the mode, or its variant for the unit's facing; a skill whose plan names no mode switches to the facing variants of
+      // S<n> when the unit has them (灰毫 S2: S2(U) / S2(D) / S2(LR), no plain S2 — the extractor's name rule missed them)
+      const m = modeVariant(modes, name || sn, this._facing(v), !name);
+      if (m) return m;
     }
     // a form the data ties to a mode (talents.js formModes: a 重生's second form, a husk, a 傀儡师's 替身 → 风丸's Stand),
     // else a form named like a mode
     const fm = formMode(u, this.formOf(v), this.formMap(this.unitKeyOf(v)));
     if (fm) { const m = modes.find((x) => x.name === fm); if (m && (m.attack || m.combat)) return m; }
-    return modes.find((x) => x.name === 'Default') || modes[0];
+    return modeVariant(modes, 'Default', this._facing(v)) || modes.find((x) => x.name === 'Default') || modes[0];
+  }
+
+  /** The facing a mode variant is chosen by: an operator's deploy direction, else left / right by its facing. */
+  _facing(v) {
+    const d = typeof v?.dir === 'string' ? v.dir.toUpperCase() : null;
+    return d === 'UP' || d === 'DOWN' || d === 'LEFT' || d === 'RIGHT' ? d : this.pose(v).left ? 'LEFT' : 'RIGHT';
   }
 
   /** A unit's sim form now: the last form fx (form()), else the view's / its info's (a view built mid-battle). */
@@ -364,7 +424,12 @@ export class FxWiring {
     return pz.all ? all && pz.conds.length > 0 : any;
   }
 
-  /** Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track }. */
+  /**
+   * Spawn an effect key on a view (o: { toward (view|point), flipFrom (view), track, loop, important, skip, data }):
+   * at its FollowMountPoint's point when it has one — the client keeps it there from its first frame, with the point's
+   * rotation unless `_keepOriginRotation` (a weapon effect rides its bone: 安洁莉娜's staff glow, 灰毫's muzzle flash) —,
+   * else at its spawn location (MUZZLE_POINT and the Special points with the point's rotation; DESIGN §33.11).
+   */
   playOn(key, v, o = {}) {
     let k = lc(key);
     if (!k || !this.ofx.lib.has(k)) return null;
@@ -378,22 +443,31 @@ export class FxWiring {
     const skin = this.skinOf(u);
     const spawn = def ? def.spawn : 2;
     const pose = this.pose(v);
-    const pos = spawnPoint(skin, spawn, pose);
+    pose.strike = !!o.strike;
+    const follow = def?.follow || null;
+    const pos = follow ? mountPoint(skin, follow.mount, pose) : spawnPoint(skin, spawn, pose);
     const ground = (v.z || 0);
-    if (def && GROUND_SPAWNS.has(spawn)) pos[2] = -ground;
-    const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false };
+    const onGround = !!def && GROUND_SPAWNS.has(spawn) && (!follow || !!follow.owner);
+    if (onGround) pos[2] = -ground;
+    const rotKind = follow ? (follow.keepRot ? null : mountKind(follow.mount)) : def ? spawnRotationKind(spawn) : null;
+    const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false, mountRot: rotKind ? mountRotation(skin, rotKind, pose) : null };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
-    // the owner each frame: FollowMountPoint keeps the effect on the unit's point (status loops: o.follow), FollowDirection
+    // the owner each frame: FollowMountPoint keeps the effect on the unit's point (and its rotation), FollowDirection
     // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
-    const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause;
+    const turn = !!def?.direction, pause = def?.pause;
     if (!o.track && (follow || turn || pause)) {
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
         const p = this.pose(v);
-        if (follow) { mountPoint(skin, def.follow.mount, p, fx.anchor); fx.groundZ = -(v.z || 0); }
+        if (follow) {
+          mountPoint(skin, follow.mount, p, fx.anchor);
+          if (onGround) fx.anchor[2] = -(v.z || 0);
+          fx.groundZ = -(v.z || 0);
+          if (rotKind) fx.mountRot = mountRotation(skin, rotKind, p, fx.mountRot || [0, 0, 0, 1]);
+        }
         if (turn) {
-          const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY };
+          const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY, mountRot: fx.mountRot };
           this._orient(def, pl, p, {}, v);
           fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY;
         }
@@ -412,6 +486,9 @@ export class FxWiring {
   _orient(def, place, pose, o, v) {
     if (!def) return;
     const rt = def.rotateType;
+    // an effect that takes its mount point's rotation faces with the unit already (the FaceSwitcher's turn is part of
+    // that rotation): FLIP_TWO_SIDE adds no flip of its own [ASSUMED]
+    if (rt === 1 && place.mountRot) return;
     if (rt === 1) {
       let left = pose.left;
       if (o.flipFrom) left = o.flipFrom.x > pose.x; // a blow from the right splashes to the left
@@ -475,9 +552,10 @@ export class FxWiring {
         if ((phase === 'start' && !first) || (phase === 'strike' && first) || (onTarget && !tgt)) continue;
         const skip = phase === 'start' ? info.skip : 0;
         for (const k of this._rowKeys(e, src, nth)) {
+          // the rows of the strike sit where its attack clip poses the unit's points at the strike frame
           const h = onTarget
             ? this.playOn(k, tgt, { toward: beyond(src, tgt), flipFrom: src, skip })
-            : this.playOn(k, src, { toward: tgt, skip });
+            : this.playOn(k, src, { toward: tgt, skip, strike: phase !== 'start' });
           // a looping row stops at its end event (the cast's end); so does a looping prefab on a one-shot row, which
           // would otherwise never end (known once loaded: decided when the time comes)
           if (h) {
@@ -508,7 +586,7 @@ export class FxWiring {
     const id = src.id ?? src.info?.id;
     let mem = this.picks.get(id);
     if (!mem) { mem = new Map(); this.picks.set(id, mem); }
-    const list = pickAttacks(a, { heal, ranged: !!kind && kind !== 'none' }, seedOf(id, nth), 0, nth, mem);
+    const list = pickAttacks(a, { heal, ranged: !!kind && kind !== 'none', blocked: !!((src.flags | 0) & UF.BLOCKED) }, seedOf(id, nth), 0, nth, mem);
     const set = { cast: [], castTarget: [], inputTarget: [], hit: [], groups: null, hitOpts: null, projectileKey: null, shot: null };
     const modeIdx = (u?.modes || []).indexOf(m);
     for (const x of list) {
@@ -656,7 +734,7 @@ export class FxWiring {
       const key = shot.additional[i - 1] || pk;
       const proj = key ? this.idx.projectiles[key] : null;
       if (!proj) continue;
-      const go = () => { if (tgt && !tgt.destroyed && tgt.alive !== false && src && !src.destroyed) this._fly(proj, src, tgt, kind, this.ofx.time, mount != null ? { mount } : {}); };
+      const go = () => { if (tgt && !tgt.destroyed && tgt.alive !== false && src && !src.destroyed) this._fly(proj, src, tgt, kind, this.ofx.time, mount != null ? { mount, later: shot.delta > 0 } : { later: shot.delta > 0 }); };
       if (!(shot.delta > 0)) go();
       else setTimeout0(this.ofx, { stop: go }, shot.delta * i, true);
     }
@@ -669,58 +747,109 @@ export class FxWiring {
   }
 
   /**
-   * A projectile's flight: `main` from the attacker's muzzle (o.mount: a MountPointType instead — a 秘术师's stored
-   * energy leaves its slot) to the target's HitPoint in the sim's flight time.
+   * A projectile's flight (DESIGN §33.12 Projectile, render/vfx/flight.js): its own flying effect (`projectileEffects`:
+   * the projectile behaviour's `_mainEffect`) from the shot's mount point as the attacker's model draws it now — the
+   * muzzle bone at the strike frame (o.mount: a MountPointType instead — a 秘术师's stored energy leaves its slot, a
+   * mount group's point) — to the target's HitPoint in the sim's flight time, homing on it; a ParacurveMovement lobs it
+   * along the client's arc (`paracurve`: `raiseHeight` above the start), an AmiyaS2Movement wobbles it across its path
+   * (`wobble`), and a HarpoonRenderer's rope runs from the mount point to the head while it flies.
    */
   _fly(proj, src, tgt, kind, time, o = {}) {
     const su = this.unitOf(src), tu = this.unitOf(tgt);
-    const sp = this.pose(src), tp = this.pose(tgt);
-    const from = Number.isInteger(o.mount) ? mountPoint(this.skinOf(su), o.mount, sp) : unitPoint(this.skinOf(su), 'muzzle', sp);
-    const to0 = unitPoint(this.skinOf(tu), 'hit', tp);
-    const dist = Math.hypot(to0[0] - from[0], to0[1] - from[1]);
-    const speed = this.opts.speed ? this.opts.speed(kind) : 12;
-    const dur = Math.max(0.04, Math.min(3, Math.hypot(tgt.x - src.x, tgt.y - src.y) / Math.max(0.1, speed)));
+    const sSkin = this.skinOf(su), tSkin = this.skinOf(tu);
+    // the start: the mount point as the attack clip poses it at its strike frame (a follow-up shot: as it is drawn then);
+    // a rope's end on the shooter follows the point as it is drawn
+    const startAt = (out, strike = false) => {
+      const pose = this.pose(src);
+      pose.strike = strike;
+      return Number.isInteger(o.mount) ? mountPoint(sSkin, o.mount, pose, out) : unitPoint(sSkin, 'muzzle', pose, out);
+    };
+    const from = startAt([0, 0, 0], !o.later);
+    const to0 = unitPoint(tSkin, 'hit', this.pose(tgt));
+    const dur = this._flightTime(src, tgt, kind);
     const mv = proj.movement || {};
-    const lob = mv.class === 'ParacurveMovement';
-    const rise = lob ? Math.max(0, Number(mv.raiseHeight) || 0) * Math.max(1, dist) * 2 : 0;
-    const mainKey = lc(proj.main);
-    for (const k of proj.onStart || []) this.playOn(k, src, { toward: tgt });
-    if (!mainKey || !this.ofx.lib.has(mainKey)) { this._arrive(proj, tgt, to0, time + dur); return; }
-    const def = this.ofx.lib.def(mainKey);
-    const flight = { t: 0, dur, from, to: to0.slice(), done: false };
+    const id = src.id ?? src.info?.id;
+    const seed = seedOf(id, this.attackN.get(id) || 0);
+    const arc = paracurve(mv, -from[2], -to0[2], Math.hypot(to0[0] - from[0], to0[1] - from[1]), seed);
+    const wob = wobble(mv, seed);
+    const keys = projectileEffects(proj);
+    for (const k of proj.onStart || []) this.playOn(k, src, { toward: tgt, strike: !o.later });
+    const mainKey = keys.main && this.ofx.lib.has(keys.main) ? keys.main : null;
+    const ropeKey = keys.rope && this.ofx.lib.has(keys.rope) ? keys.rope : null;
+    if (!mainKey && !ropeKey) { this._arrive(proj, tgt, to0, time + dur); return; }
+    const flight = { t: -1, dur, from, to: to0.slice(), pos: from.slice(), next: from.slice(), done: false, rope: null };
+    // the flight at t battle s: the head and a point a little further on (its direction), homing on the target's point
+    const step = (t) => {
+      if (t === flight.t) return;
+      if (tgt && !tgt.destroyed && tgt.alive !== false) unitPoint(tSkin, 'hit', this.pose(tgt), flight.to);
+      flight.t = t;
+      const k = Math.min(1, t / flight.dur);
+      this._flightPoint(flight, arc, wob, k, t, flight.pos);
+      this._flightPoint(flight, arc, wob, Math.min(1, k + 0.02), t + 0.02 * flight.dur, flight.next);
+    };
+    const finish = (fx) => {
+      flight.done = true;
+      fx.stop({ hit: true });
+      if (flight.rope && flight.rope !== fx) flight.rope.stop();
+      this.flights.delete(flight);
+      this._arrive(proj, tgt, flight.to, null);
+    };
+    const def = mainKey ? this.ofx.lib.def(mainKey) : null;
     const flipIfLeft = def ? def.flipIfLeft : false;
-    const handle = this.ofx.spawn(mainKey, { pos: from.slice(), groundZ: -(src.z || 0) }, {
+    // the rope (HarpoonRenderer): its line nodes from the shooter's mount point now to the head
+    const ropeTrack = (fx, drive) => {
+      if (flight.done && !drive) return;
+      if (drive) { step(Math.min(flight.dur, fx.time)); if (fx.time >= flight.dur) { finish(fx); return; } }
+      const a = startAt(fx.anchor);
+      const d = fx.def;
+      for (let i = 0; d && i < d.n; i++) if (d.line[i]) fx.linePts.set(i, [[a[0], a[1], a[2]], [flight.pos[0], flight.pos[1], flight.pos[2]]]);
+    };
+    const handle = mainKey ? this.ofx.spawn(mainKey, { pos: from.slice(), groundZ: -(src.z || 0) }, {
       important: true,
       track: (fx) => {
         if (flight.done) return;
-        // home on the target's current HitPoint while it lives
-        if (tgt && !tgt.destroyed && tgt.alive !== false) unitPoint(this.skinOf(tu), 'hit', this.pose(tgt), flight.to);
-        flight.t = Math.min(flight.dur, fx.time);
-        const k = flight.t / flight.dur;
-        const ax = from[0] + (flight.to[0] - from[0]) * k, ay = from[1] + (flight.to[1] - from[1]) * k;
-        let az = from[2] + (flight.to[2] - from[2]) * k;
-        if (rise > 0) az -= rise * 4 * k * (1 - k);
+        step(Math.min(flight.dur, fx.time));
         // direction of travel (Unity frame): yaw in the board plane, pitch with the climb
-        const k2 = Math.min(1, k + 0.02);
-        const bx = from[0] + (flight.to[0] - from[0]) * k2, by = from[1] + (flight.to[1] - from[1]) * k2;
-        let bz = from[2] + (flight.to[2] - from[2]) * k2;
-        if (rise > 0) bz -= rise * 4 * k2 * (1 - k2);
-        const dx = bx - ax, dy = by - ay, dz = bz - az;
+        const p = flight.pos, q = flight.next;
+        const dx = q[0] - p[0], dy = q[1] - p[1], dz = q[2] - p[2];
         const horiz = Math.hypot(dx, dy);
-        fx.anchor[0] = ax; fx.anchor[1] = ay; fx.anchor[2] = az;
+        fx.anchor[0] = p[0]; fx.anchor[1] = p[1]; fx.anchor[2] = p[2];
         if (flipIfLeft && dx < 0) { fx.mirror = true; fx.yaw = Math.atan2(dy, -dx); } // mirrored art: +x after the mirror
         else { fx.mirror = false; fx.yaw = Math.atan2(dy, dx); }
         fx.pitch = horiz > 1e-5 || Math.abs(dz) > 1e-5 ? Math.atan2(-dz, horiz) : 0;
-        if (fx.time >= flight.dur) {
-          flight.done = true;
-          fx.stop({ hit: true });
-          this.flights.delete(flight);
-          this._arrive(proj, tgt, flight.to, null);
-        }
+        if (fx.time >= flight.dur) finish(fx);
       },
-    });
-    if (handle) this.flights.add(flight);
+    }) : null;
+    if (ropeKey) {
+      const drive = !handle;
+      flight.rope = this.ofx.spawn(ropeKey, { pos: from.slice(), groundZ: -(src.z || 0) }, { important: true, track: (fx) => ropeTrack(fx, drive) });
+    }
+    if (handle || flight.rope) this.flights.add(flight);
     else this._arrive(proj, tgt, to0, time + dur);
+  }
+
+  /**
+   * A point of a flight at fraction k (t battle s in): the ground track from the start to the target's point now, the
+   * height of the Paracurve arc (else straight), the AmiyaS2 wobble across the path — perpendicular to it in the plane
+   * the camera sees [ASSUMED: the projectile body faces its flight and the camera] — into `out`.
+   */
+  _flightPoint(f, arc, wob, k, t, out) {
+    const a = f.from, b = f.to;
+    out[0] = a[0] + (b[0] - a[0]) * k;
+    out[1] = a[1] + (b[1] - a[1]) * k;
+    out[2] = arc ? -arcHeight(arc, k, -b[2]) : a[2] + (b[2] - a[2]) * k;
+    if (wob) {
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+      const tl = (this._camTilt() ?? 30) * Math.PI / 180;
+      const fy = Math.sin(tl), fz = Math.cos(tl);   // the camera's forward in the Unity frame
+      const px = fy * dz - fz * dy, py = fz * dx, pz = -fy * dx;
+      const l = Math.hypot(px, py, pz);
+      if (l > 1e-6) {
+        const w = wob.amp * Math.sin(wob.phase + 2 * Math.PI * wob.hz * t) / l;
+        out[0] += px * w; out[1] += py * w; out[2] += pz * w;
+      }
+    }
+    return out;
   }
 
   /** A projectile reached its target: onHit at the target's HitPoint, onReached where it landed. */

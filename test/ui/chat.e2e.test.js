@@ -22,7 +22,9 @@ test('real browser: hidden when disabled, Unicode limit, IME Enter, refused send
   const c = new Client(puppeteer, server.url, 'chat-ui', { prefix: 'chat-ui' });
   t.after(() => c.close()); await c.open();
   const errors = []; c.page.on('pageerror', e => errors.push(e.message));
+  await c.page.evaluate(() => [...document.querySelectorAll('.fullscreen-prompt button')].find(b => b.textContent.includes('暂不'))?.click());
   await c.page.$eval('.title-login input', el => { el.value = '博士甲'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await c.page.waitForFunction(() => !document.querySelector('.title-login button.btn--primary').disabled);
   await c.click('.title-login button', '开始');
   await c.page.waitForFunction(() => globalThis.__SP__.store.get().connection.status === 'online');
   await c.page.evaluate(async () => {
@@ -42,6 +44,8 @@ test('real browser: hidden when disabled, Unicode limit, IME Enter, refused send
   const input = '[aria-label="聊天消息"]';
   const fill = value => c.page.$eval(input, (el, value) => { el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   await fill('😀'.repeat(31));
+  assert.equal(await c.page.$eval(input, el => [...el.value].length), 30, 'normal input is truncated by Unicode code points');
+  await c.page.$eval(input, el => { el.value = '😀'.repeat(31); el.dispatchEvent(new InputEvent('input', { isComposing: true, bubbles: true })); });
   assert.equal(await c.page.$eval('#chat-fixture [type="submit"]', el => el.disabled), true);
   await fill('😀'.repeat(30));
   assert.equal(await c.page.$eval('#chat-fixture [type="submit"]', el => el.disabled), false);
@@ -86,14 +90,16 @@ test('communication popup combines emotes and chat, preserves drafts, fits deskt
   const puppeteer = (await import('puppeteer-core')).default;
   const c = new Client(puppeteer, server.url, 'chat-toolbar', { prefix: 'chat-toolbar' });
   t.after(() => c.close()); await c.open();
+  // Set touch emulation before navigation: changing it mid-test reloads the page and discards the open panel/draft.
+  await c.page.setViewport({ width: 1600, height: 900, hasTouch: true });
   await c.page.goto(server.url + '/dev/game-mock.html?phase=PREP', { waitUntil: 'domcontentloaded' });
   await c.page.waitForFunction(() => globalThis.__MOCK__?.store && document.querySelector('.gm__corner'));
   assert.equal(await c.page.$('.gm__corner .gm__chat'), null);
   await c.page.click('.gm__corner .ewheel__btn');
   await c.page.waitForSelector('.gm__corner .ewheel__panel');
   assert.equal(await c.page.$('.gm__corner .ewheel__chat'), null, 'disabled chat does not hide emotes');
-  for (const [width, height] of [[1600, 900], [960, 540]]) {
-    await c.page.setViewport({ width, height }); await sleep(500);
+  for (const [width, height] of [[1600, 900], [960, 540], [1000, 600], [844, 390], [640, 360]]) {
+    await c.page.setViewport({ width, height, hasTouch: true }); await sleep(500);
     const layout = await c.page.$eval('.ewheel__popup', el => {
       const popup = el.getBoundingClientRect(), panel = el.querySelector('.ewheel__panel').getBoundingClientRect();
       return {
@@ -121,19 +127,19 @@ test('communication popup combines emotes and chat, preserves drafts, fits deskt
   await c.page.keyboard.press('ArrowLeft');
   assert.equal(await c.page.$eval('.ewheel__page', el => el.dataset.theme), theme, 'cursor arrows do not flip emote pages');
   assert.equal(await c.page.$eval('.ewheel__chat input', el => el.value), 'rfd ');
-  for (const [width, height] of [[1600, 900], [960, 540]]) {
-    await c.page.setViewport({ width, height }); await sleep(500);
+  for (const [width, height] of [[1600, 900], [960, 540], [1000, 600], [844, 390], [640, 360]]) {
+    await c.page.setViewport({ width, height, hasTouch: true }); await sleep(500);
     const layout = await c.page.$eval('.ewheel__popup', el => {
       const box = el.getBoundingClientRect(), form = el.querySelector('form').getBoundingClientRect();
       const chat = el.querySelector('.ewheel__chat').getBoundingClientRect(), emotes = el.querySelector('.ewheel__viewport').getBoundingClientRect();
       return { inside: box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth,
-        chatAbove: chat.bottom <= emotes.top,
+        chatBelow: chat.top >= emotes.bottom,
         formInside: form.left >= box.left && form.right <= box.right,
-        clickable: [...el.querySelectorAll('input, [type="submit"], .ewheel__chat-help')].every(e => {
+        clickable: [...el.querySelectorAll('input, [type="submit"], .ewheel__chat-help, .ewheel__chat-close, .ewheel__chat-tab, .ewheel__item, .ewheel__dot, .ewheel__nav')].every(e => {
           const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
         }) };
     });
-    assert.deepEqual(layout, { inside: true, chatAbove: true, formInside: true, clickable: true });
+    assert.deepEqual(layout, { inside: true, chatBelow: true, formInside: true, clickable: true });
     await c.page.screenshot({ path: `test/e2e/out/communication-${width}.png` });
     const heightBefore = await c.page.$eval('.ewheel__popup', el => el.getBoundingClientRect().height);
     await c.page.click('.ewheel__chat-help');
@@ -145,14 +151,39 @@ test('communication popup combines emotes and chat, preserves drafts, fits deskt
       const question = el.querySelector('.ewheel__chat-help').getBoundingClientRect();
       return { height: el.getBoundingClientRect().height,
         inside: tooltip.top >= 0 && tooltip.right <= innerWidth && tooltip.left >= 0,
-        upperRight: question.top < button.top && question.right > button.right,
+        inToolbar: question.top < button.top && !!el.querySelector('.ewheel__chat-toolbar .ewheel__chat-help'),
         expanded: el.querySelector('.ewheel__chat-help').getAttribute('aria-expanded') };
     });
-    assert.deepEqual(help, { height: heightBefore, inside: true, upperRight: true, expanded: 'true' });
+    assert.deepEqual(help, { height: heightBefore, inside: true, inToolbar: true, expanded: 'true' });
     await c.page.screenshot({ path: `test/e2e/out/communication-help-${width}.png` });
     await c.page.click('.ewheel__chat-help');
     await c.page.waitForFunction(() => !document.querySelector('.ewheel__chat-rules'));
   }
+  // The server already retains the last 50 messages. Switching views must keep the input and panel height stable.
+  await c.page.evaluate(() => {
+    const s = globalThis.__MOCK__.store;
+    s.patch('chat', { messages: Array.from({ length: 50 }, (_, i) => ({ id: i + 1, playerId: s.get().me.playerId,
+      name: '博士甲', text: i === 49 ? '<img src=x onerror=alert(1)>' : '队友集合，一起守住这一轮。'.repeat(2), at: Date.now() + i })) });
+  });
+  const emoteHeight = await c.page.$eval('.ewheel__popup', el => el.getBoundingClientRect().height);
+  await (await c.page.$('.ewheel__popup')).screenshot({ path: 'test/e2e/out/chat-panel-mobile.png' });
+  await c.page.click('.ewheel__chat-tab[aria-label="聊天记录"]');
+  await c.page.waitForSelector('.ewheel__chat-history');
+  assert.equal(await c.page.$('.ewheel__panel'), null);
+  assert.equal(await c.page.$('.ewheel__chat-history img'), null, 'history renders escaped text');
+  assert.equal(await c.page.$eval('.ewheel__chat input', el => el.value), 'rfd ', 'switching views preserves the draft');
+  assert.ok(Math.abs(await c.page.$eval('.ewheel__popup', el => el.getBoundingClientRect().height) - emoteHeight) < 1);
+  assert.equal(await c.page.$eval('.ewheel__chat-history', el => el.scrollHeight - el.scrollTop - el.clientHeight < 2), true, 'history opens at the latest message');
+  await (await c.page.$('.ewheel__popup')).screenshot({ path: 'test/e2e/out/chat-history-mobile.png' });
+  await c.page.$eval('.ewheel__chat-history', el => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); });
+  await c.page.evaluate(() => {
+    const s = globalThis.__MOCK__.store;
+    s.patch('chat', { messages: [...s.get().chat.messages.slice(1), { id: 51, playerId: 'teammate', name: '博士乙', text: '收到', at: Date.now() }] });
+  });
+  await c.page.waitForFunction(() => document.querySelector('.ewheel__chat-history').textContent.includes('收到'));
+  assert.equal(await c.page.$eval('.ewheel__chat-history', el => el.scrollTop), 0, 'new messages do not interrupt reading older history');
+  await c.page.click('.ewheel__chat-tab[aria-label="表情"]');
+  await c.page.waitForSelector('.ewheel__item');
   await c.page.keyboard.press('Escape');
   await c.page.waitForFunction(() => !document.querySelector('.ewheel__popup'));
   await c.page.click('.gm__corner .ewheel__btn');

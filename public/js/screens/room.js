@@ -8,7 +8,7 @@ import { enabled as federationEnabled, currentNode } from '../federation.js';
 // / 失去信号, the name plate with the account avatar and #tag, the host's 移出; an empty seat is 邀请 (copies the
 // alliance key) or, while searching, a waiting glyph. Top: leave, the time waited, latency, 统计 / 设置 / 玩法说明, the
 // alliance key with 复制 / 链接. Bottom: 干员调配, the status line, the 精确搜寻 | difficulty | ⚙ pill (the host picks the
-// difficulty in 选择模拟协议 over the room and keeps 私密房间 / 人数上限 / AI 队友最后选择 / 无限火力 branch under ⚙),
+// difficulty in 选择模拟协议 over the room and keeps 人数上限 / AI 队友最后选择 / 无限火力 branch under ⚙),
 // 开始搜寻 and 开始模拟 (host) or 准备就绪. 开始搜寻 runs the server's room queue (match.queue: same mode and
 // difficulty) and keeps it running until stopped or full (the server ends a room's turn after 10 s without bots: the
 // host's client queues again); everybody sees 搜寻中 (ui/matchFlow.js), then 搜寻成功 when the seats fill or a player
@@ -52,7 +52,7 @@ import { CARD_PREF, cardOperators, seatPortrait } from '../ui/seatArt.js';
 import { C2S } from '../../../shared/protocol.js';
 import { difficultyInfo, ProtoCard } from './lobby.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
-import { SearchPanel, FoundPanel } from '../ui/matchFlow.js';
+import { SearchPanel, RecruitHint, FoundPanel } from '../ui/matchFlow.js';
 import { usePresence, useRise, afterLeave } from '../ui/transitions.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -155,13 +155,13 @@ export { copyText };
 export { CARD_PREF, cardOperators, seatPortrait };
 /** The server takes room.card (shared/protocol.js of the 10-seat package on): teammates then see one's pick. */
 export const CARD_SYNC = !!C2S && Object.hasOwn(C2S, 'room.card');
-// what else the server offers (its own shared/protocol.js): 开始搜寻 needs match.queue, 私密房间 room.setPrivate
+// what else the server offers (its own shared/protocol.js): the hub's 开始搜寻 needed match.queue, which this server does
+// not know. Its 私密房间 switch (room.setPrivate) is gone with the rest of the public room directory — see the lobby note.
 const CAN_QUEUE = !!C2S && Object.hasOwn(C2S, 'match.queue');
 // This fork's alliance queue (server/matchmakingRooms.js): the room itself becomes one queue entry through
 // room.matchmaking, and the server hands the group a room. The hub's 开始搜寻 needed match.queue, which this
 // server does not know — CAN_SEARCH is what its button reads instead.
 const CAN_SEARCH = true;
-const CAN_PRIVATE = !!C2S && Object.hasOwn(C2S, 'room.setPrivate');
 
 
 /** 名片干员 picker: search, rarity, the operators' avatars; 默认 clears the pick. */
@@ -315,8 +315,8 @@ function RoomProtocol({ room, variant, onClose, onPick, busy, leaving = false })
   </div>`;
 }
 
-/** ⚙ of the bottom pill: 私密房间, 人数上限 (with the 10-seat constants), AI 队友最后选择, 无限火力 branch. */
-function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onMaxSeats, onAiLast, onVariant, onClose, leaving = false }) {
+/** ⚙ of the bottom pill: 人数上限 (with the 10-seat constants), AI 队友最后选择, 无限火力 branch. */
+function RoomOptions({ room, facts, myId, busy, online, variant, onMaxSeats, onAiLast, onVariant, onClose, leaving = false }) {
   const coop = room.mode !== 'solo';
   const host = facts.isHost;
   useEffect(() => {
@@ -327,8 +327,6 @@ function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onMa
   }, []);
   return html`<div class=${`rs-opts${leaving ? ' is-leaving' : ''}`} role="dialog" aria-label=${t('同盟设置')}>
     <h4>${t('同盟设置')}${host ? null : html`<small>${t('由创建者设置')}</small>`}</h4>
-    ${coop && CAN_PRIVATE ? html`<label class="rs-opt"><input type="checkbox" checked=${room.private === true} disabled=${!host || !!busy || !online} onChange=${(e) => onPrivate(e.currentTarget.checked)} />
-      <span>${t('私密房间')}<small>${room.private ? t('仅凭同盟密钥或邀请加入，不能搜寻队友') : t('公开大厅可见，可以搜寻队友')}</small></span></label>` : null}
     ${coop && MAX_SEATS > DEFAULT_SEATS ? html`<label class="rs-opt rs-opt--cap"><span>${t('人数上限')}<small>${facts.seats.length > DEFAULT_SEATS ? t('仅邀请加入 · 卡池扩大') : t('可搜寻队友')}</small></span>
       <select value=${String(facts.seats.length)} disabled=${!host || !!busy || !online} onChange=${(e) => onMaxSeats(Number(e.currentTarget.value))}>
         ${Array.from({ length: MAX_SEATS - DEFAULT_SEATS + 1 }, (_, k) => DEFAULT_SEATS + k).map((n) => html`<option key=${n} value=${String(n)} selected=${n === facts.seats.length}>${t('{n} 人', { n })}</option>`)}
@@ -548,7 +546,6 @@ export function RoomScreen() {
     const ok = await confirmDialog({ utility: true, title: t('移出同盟'), text: t('确定将「{name}」移出同盟吗？对方可以凭同盟密钥重新加入。', { name: name || t('博士') }), okText: t('移出'), danger: true });
     if (ok) run(`kick${seat}`, () => net.request('room.kick', { seat, playerId }));
   };
-  const setPrivate = (isPrivate) => run('privacy', () => net.request('room.setPrivate', { private: isPrivate }));
   const setMaxSeats = (n) => run('cap', () => net.request('room.setMaxSeats', { n })); // 2026-10-12: 4–10 seats
   const setDifficulty = (difficulty) => run('diff', async () => { await net.request('room.setDifficulty', { difficulty }); setPicker(false); });
   const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
@@ -626,6 +623,18 @@ export function RoomScreen() {
     idle: t('公开同盟密钥，方便组队 · 十分钟后自动过期'),
   };
 
+  const portalEntry = coop && facts.isHost && shareStatus.visible ? html`<div class="room-portal-entry">
+    <${Button} size="sm" variant="secondary" icon="link" loading=${shareStatus.kind === 'submitting'}
+      disabled=${shareStatus.kind === 'submitting' || shareStatus.disabled}
+      title=${t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期')}
+      onClick=${submitPortal}>${shareLabels[shareStatus.kind] ?? shareLabels.idle}<//>
+    ${shareStatus.action === 'query' ? html`<${Button} size="sm" variant="ghost" loading=${busy === 'shareQuery'}
+      title=${t('查询登记结果')} onClick=${() => run('shareQuery', () => queryShare())}>${t('查询登记结果')}<//>` : null}
+    ${shareStatus.action === 'retry' ? html`<${Button} size="sm" variant="ghost" title=${t('重试')}
+      onClick=${() => probeShare()}>${t('重试')}<//>` : null}
+    <span>${shareHints[shareStatus.kind] ?? shareHints.idle}</span>
+  </div>` : null;
+
   return html`<div class=${`screen room-screen${coop ? ' room-screen--coop' : ''} rs${coop ? '' : ' rs--solo'}${facts.seats.length > DEFAULT_SEATS ? ' rs--big' : ''}${exiting ? ' is-leaving' : ''}`} style=${`--d-color:${DIFFICULTY_COLORS[room.difficulty]}; --n:${facts.seats.length}`}>
     <div class="rs__bg" aria-hidden="true"></div>
     <header class="rs-top">
@@ -668,25 +677,12 @@ export function RoomScreen() {
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
 
-    ${coop && facts.isHost && shareStatus.visible ? html`<div class="room-portal-entry">
-      <${Button} size="sm" variant="secondary" icon="link" loading=${shareStatus.kind === 'submitting'}
-        disabled=${shareStatus.kind === 'submitting' || shareStatus.disabled}
-        title=${t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期')}
-        onClick=${submitPortal}>${shareLabels[shareStatus.kind] ?? shareLabels.idle}<//>
-      ${shareStatus.action === 'query' ? html`<${Button} size="sm" variant="ghost" loading=${busy === 'shareQuery'}
-        title=${t('查询登记结果')} onClick=${() => run('shareQuery', () => queryShare())}>${t('查询登记结果')}<//>` : null}
-      ${shareStatus.action === 'retry' ? html`<${Button} size="sm" variant="ghost" title=${t('重试')}
-        onClick=${() => probeShare()}>${t('重试')}<//>` : null}
-      <span>${shareHints[shareStatus.kind] ?? shareHints.idle}</span>
-    </div>` : null}
-    ${!share.enabled && facts.searching && searchElapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
-      ${t('迟迟匹配不到人？可前往')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a>
-      ${t('发布当前同盟的房间号，来人更快。')}
-    </p>` : null}
+    ${!searchShown ? portalEntry : null}
 
     <footer class="rs-foot">
       <div class="rs-foot__left" aria-hidden="true"></div>
       <div class="rs-foot__center">
+        ${coop && !searchShown ? html`<${RecruitHint} room=${true} />` : null}
         <p class="rs-hint">${coop ? html`<span class="rs-ready num" title=${t('已就绪')}>${facts.humans.map((s) => html`<${Icon} key=${s.playerId} name="user" class=${facts.isReady(s) ? 'is-on' : ''} />`)}<b>${facts.readyHumans}</b>/${facts.humans.length}</span>` : null}${statusLine}</p>
         <div class="rs-pill">
           ${coop && CAN_QUEUE ? html`<span class="rs-pill__mode" title=${t('精确搜寻：只与选择相同难度的博士组成同盟')}><${Icon} name="search" />${t('精确搜寻')}</span><i class="rs-pill__sep"></i>` : null}
@@ -696,7 +692,7 @@ export function RoomScreen() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" fill-rule="evenodd" /></svg>
           </button>
           ${optsShown ? html`<${RoomOptions} room=${room} facts=${facts} myId=${me.playerId} busy=${busy} online=${online} variant=${variant}
-            onPrivate=${setPrivate} onMaxSeats=${setMaxSeats} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
+            onMaxSeats=${setMaxSeats} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
         </div>
       </div>
       <div class="rs-foot__right">
@@ -722,8 +718,10 @@ export function RoomScreen() {
     ${searchShown ? html`<${SearchPanel} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
       onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
       note=${facts.isHost ? t('搜寻期间可随时直接开始模拟') : t('创建者正在搜寻队友')}
-      tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
-        { key: 'diff', label: t(DIFFICULTY_NAMES[room.difficulty]), color: DIFFICULTY_COLORS[room.difficulty], icon: html`<${DifficultyIcon} difficulty=${room.difficulty} />` }]} />` : null}
+      room=${true} tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
+        { key: 'diff', label: t(DIFFICULTY_NAMES[room.difficulty]), color: DIFFICULTY_COLORS[room.difficulty], icon: html`<${DifficultyIcon} difficulty=${room.difficulty} />` }]}>
+      ${portalEntry}
+    <//>` : null}
     ${foundShown ? html`<${FoundPanel} class=${foundLeaving ? 'is-leaving' : ''} seats=${facts.seats.length} text=${t('同盟集结完毕')} />` : null}
     ${picking ? html`<${CardPicker} current=${myCard} list=${cardList} m=${m} onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
     ${protoShown ? html`<${RoomProtocol} room=${room} variant=${variant} busy=${busy} onClose=${() => setPicker(false)} onPick=${setDifficulty} leaving=${protoLeaving} />` : null}

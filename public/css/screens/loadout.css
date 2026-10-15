@@ -640,204 +640,6 @@
 .lo-voice > small { flex-basis: 100%; color: var(--text-dim); font-size: calc(.15 * var(--utility-text, var(--t))); }
 .lo-voice .lo-select { min-width: 1.6rem; max-width: 100%; }
 
-/* Server custom skin picker */
-
-
-/* ---- 皮肤选择 (docs/SKINS.md, ui/skinPicker.js) --------------------------------------------------------------
-   单行垂直列表：每款皮肤独占一行，左侧头像、中间完整名称与系列、右侧状态标签。兼容旧机型 (Chromium 80-84)。 */
-.lo-skins {
-  display: flex;
-  flex-direction: column;
-  gap: max(.08rem, 6px);
-  width: 100%;
-}
-
-.lo-skin {
-  position: relative;
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: max(.12rem, 8px);
-  padding: max(.06rem, 5px) max(.12rem, 10px) max(.06rem, 5px) max(.06rem, 5px);
-  font: inherit;
-  color: var(--text-md);
-  text-align: left;
-  cursor: pointer;
-  background: rgba(255, 255, 255, .03);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  transition: background var(--t-fast), border-color var(--t-fast);
-  touch-action: manipulation;
-}
-
-.lo-skin:hover:not(:disabled) {
-  border-color: var(--line-3);
-  background: rgba(255, 255, 255, .06);
-}
-
-.lo-skin.is-on {
-  color: var(--text-hi);
-  background: linear-gradient(90deg, rgba(78, 216, 175, .16), rgba(78, 216, 175, .03) 80%);
-  border-color: rgba(78, 216, 175, .75);
-}
-
-.lo-skin:disabled {
-  cursor: default;
-  opacity: .45;
-}
-
-.lo-skin__art {
-  flex: 0 0 auto;
-  width: max(.48rem, 36px);
-  height: max(.48rem, 36px);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: rgba(0, 0, 0, .4);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.lo-skin__art img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center top;
-}
-
-.lo-skin__art-fallback.is-hidden {
-  display: none !important;
-}
-
-.lo-skin__art--none {
-  width: 100%;
-  height: 100%;
-  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .06) 0 3px, transparent 3px 7px);
-}
-
-.lo-skin__text {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: max(.02rem, 1px);
-}
-
-.lo-skin__name {
-  font-size: max(.17rem, 12px);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-hi);
-}
-
-.lo-skin__group {
-  font-family: var(--font-num);
-  font-size: max(.12rem, 9px);
-  letter-spacing: .06em;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lo-skin__badge {
-  flex: 0 0 auto;
-  font-size: max(.12rem, 9px);
-  font-weight: 700;
-  letter-spacing: .04em;
-  padding: max(.02rem, 2px) max(.06rem, 5px);
-  border-radius: 2px;
-  background: rgba(78, 216, 175, .15);
-  color: var(--mint-400);
-  border: 1px solid rgba(78, 216, 175, .4);
-}
-
-
-/* ---- 自选专属皮肤选择网格 (嵌入 DiyPicker) ------------------------------------------------------------- */
-.diy-skin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(max(1.8rem, 120px), 1fr));
-  gap: max(.06rem, 5px);
-  margin-top: .04rem;
-}
-
-.diy-skin-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: max(.08rem, 6px);
-  padding: max(.05rem, 4px) max(.08rem, 6px);
-  font: inherit;
-  color: var(--text-md);
-  text-align: left;
-  cursor: pointer;
-  background: rgba(255, 255, 255, .03);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  transition: background var(--t-fast), border-color var(--t-fast);
-  touch-action: manipulation;
-}
-
-.diy-skin-card:hover { border-color: var(--line-3); background: rgba(255, 255, 255, .06); }
-
-.diy-skin-card.is-on {
-  color: var(--text-hi);
-  background: linear-gradient(90deg, rgba(78, 216, 175, .2), rgba(78, 216, 175, .06));
-  border-color: var(--mint-400);
-  box-shadow: 0 0 8px rgba(78, 216, 175, .35);
-}
-
-.diy-skin-card__img {
-  flex: 0 0 auto;
-  width: max(.36rem, 28px);
-  height: max(.36rem, 28px);
-  border-radius: 2px;
-  background: #0a0d0c;
-  border: 1px solid var(--line-2);
-  object-fit: cover;
-  object-position: center top;
-}
-
-.diy-skin-card__img--none {
-  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .06) 0 3px, transparent 3px 7px);
-}
-
-.diy-skin-card__info {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.diy-skin-card__name {
-  font-size: max(.14rem, 11px);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-hi);
-}
-
-.diy-skin-card__tag {
-  font-family: var(--font-num);
-  font-size: max(.11rem, 9px);
-  letter-spacing: .04em;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.diy-skin-card.is-on .diy-skin-card__tag {
-  color: var(--mint-400);
-  font-weight: 700;
-}
 /* DIY uses the same aligned rows and detail sections as operator loadout. */
 .diy-pick__list .diy-opt { min-height: 64px; padding: .1rem; }
 .diy-pick__list .diy-opt__txt { flex: 1; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: .1rem; }
@@ -1154,7 +956,7 @@
   background: rgba(255, 255, 255, .025); border: 1px solid var(--line);
   transition: background var(--t-fast), border-color var(--t-fast); touch-action: manipulation;
 }
-.lo-skin:hover:not(:disabled) { border-color: var(--line-3); }
+.lo-skin:hover:not(:disabled) { border-color: var(--line-3); background: rgba(255, 255, 255, .05); }
 .lo-skin.is-on { color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%); border-color: rgba(78, 216, 175, .7); }
 .lo-skin:disabled { cursor: default; opacity: .45; }
 .lo-skin--missing:not(:disabled) { opacity: .62; }
@@ -1191,17 +993,37 @@
   mask-image: linear-gradient(180deg, #000 55%, transparent 88%);
 }
 
-/* 商店立绘 tiles: narrow columns (the user asked for a slim frame so the art can be bigger). The art keeps the shop
-   card's own 1:2 portrait shape, so nothing is cropped; the series line moves into the tile's tooltip. */
+/* 商店立绘 tiles: a GRID of narrow columns, not the wrapped flex row the 战斗模型 chips use. A tile has to keep the
+   shop card's own 1:2 portrait shape (a square box crops most of the art) and ONE width whether the operator ships
+   one outfit or three, and a grid keeps the last row honest when a group wraps — a flex row would size the wrapped
+   tiles from whatever is left over. The tracks are sized from the container, so the detail drawer (min(6.4rem, 92vw)
+   wide) lands on five columns: exactly one full row at the catalogue's own maximum, 原始 / 精英二 / three skins,
+   while a phone-sized drawer simply gets fewer. auto-FILL rather than auto-fit, because fit collapses the empty
+   tracks of a SMALL group and hands their space to the tiles that are left — a 1★ with a single outfit (2 tiles:
+   原始 + that skin, no 精英二 art) would draw two 3rem-wide posters, 6rem tall. Fill keeps every tile the drawer's
+   own fifth, the width a full group gets, and leaves the tail of the row empty instead. The series line moves into
+   the tile's tooltip. */
+.lo-skins--tall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(1rem, 56px), 1fr));
+  gap: max(.08rem, 6px);
+}
 .lo-skins--tall .lo-skin--tall {
-  flex: 0 0 auto; width: .98rem; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .05rem; padding: .06rem;
+  width: auto; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .05rem; padding: .06rem;
 }
 .lo-skins--tall .lo-skin--tall .lo-skin__art--tall { width: 100%; aspect-ratio: 1 / 2; height: auto; }
 .lo-skins--tall .lo-skin--tall .lo-skin__text { align-items: center; width: 100%; min-width: 0; }
 .lo-skins--tall .lo-skin--tall .lo-skin__name {
   max-width: 100%; font-size: max(calc(.16 * var(--utility-text, var(--t))), 11px); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* …except on a tile whose files are not on this server: its art is only the hatched placeholder and the click
+   INSTALLS rather than chooses, so it is the one tile that has to say so in the open (the tooltip reaches nobody
+   on touch). It wraps instead of ellipsising — 未安装 · 点击安装 is wider than the tile. */
 .lo-skins--tall .lo-skin--tall .lo-skin__group { display: none; }
+.lo-skins--tall .lo-skin--tall.lo-skin--missing .lo-skin__group,
+.lo-skins--tall .lo-skin--tall.is-installing .lo-skin__group {
+  display: block; max-width: 100%; white-space: normal; line-height: 1.3; text-align: center;
+}
 /* the live preview's canvas fills the frame (render/spinePreview.js appends it there) */
 .lo-model__box { position: relative; }
 .lo-model__box .lo-model__art { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; }

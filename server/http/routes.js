@@ -23,7 +23,8 @@
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);
-//   * GET /api/announcement → the hot-loaded maintenance notice and the server time (no write API);
+//   * GET /api/announcement → the hot-loaded maintenance notice, the server time and the announcement revision
+//     this process actually observed (announcement.js `delivery()`; the Agent reports it to the central, no write API);
 //   * GET /api/portal-room (feature probe) / POST /api/portal-room (submit this room) / GET /api/portal-room/status
 //     (the result of that submission) → the opt-in room share (http/portalRoom.js). The mode (off / legacy-http /
 //     agent), the destination and the credentials all come from the startup configuration, never from the request;
@@ -249,7 +250,13 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
         sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' });
         return;
       }
-      sendJson(req, res, 200, { announcement: await readAnnouncement(), serverTime: Date.now(), source: announcementSource });
+      // 公告的三层状态里，「游戏读到了哪一版」只有这里能回答（§13.3）：Agent 把它随 sync.report 报给中央，
+      // 中央据此区分「文件写好了但游戏还没读到」与「根本没写进去」。它只是版本号与时间，玩家看到的公告
+      // 内容与展示策略（announcement.id）一个字都没变。顺序重要：先真的读一次，再取「读到的是哪一版」。
+      const announcement = await readAnnouncement();
+      const delivery = readAnnouncement.delivery?.() ?? { revision: null, observedAt: null };
+      sendJson(req, res, 200, { announcement, serverTime: Date.now(), source: announcementSource,
+        observedRevision: delivery.revision, observedAt: delivery.observedAt });
       return;
     }
     if (req.method === 'OPTIONS' && /^\/(?:assets|fonts|media)\/|^\/_v\/[a-f0-9]{16}\/(?:assets|fonts|media)\//.test(parts.rawPath)) {

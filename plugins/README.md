@@ -60,7 +60,8 @@ is never loaded. Never put files of the official game in a plugin: refer to the 
 
 Install a local zip with `node tools/plugin.mjs install <zip>`; an HTTPS URL also needs `--sha256 <hash>`.
 `catalog <file|https URL>` inspects a community catalogue; `/studio/` offers 从目录安装. `--force` preserves the old
-folder under `_replaced/`. Forge packs use `import-forge <dir|zip> --dry-run` first, or 从 Forge 包导入 in the studio;
+folder under `_replaced/`; the studio's 删除所选 moves plugins into `_removed/` the same way (move a folder back here,
+named by its id again, to restore it). Forge packs use `import-forge <dir|zip> --dry-run` first, or 从 Forge 包导入 in the studio;
 kits whose imports map become one sandboxed script plugin (`--no-scripts` skips it), other scripts are reported and
 never copied, and nothing is executed. Installation does not enable script execution.
 `test <id>` runs local author code with the shipped battle harness. `surface` and [PLUGIN-API.md](../docs/PLUGIN-API.md)

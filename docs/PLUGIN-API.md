@@ -264,6 +264,7 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `studio.route.GET /studio/api/events` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/plugins` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.POST /studio/api/plugins` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
+| `studio.route.POST /studio/api/plugins/remove` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/plugins/:id` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/plugins/:id/preview` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
 | `studio.route.GET /studio/api/plugins/:id/zip` | stable | 0.3.0 | `server/studio/index.js#STUDIO_ROUTES` |
@@ -378,6 +379,8 @@ This project does not host plugins and does not run a market. A catalogue (`sche
 | `error.PLUGIN_STUDIO_FILE_KIND` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_STUDIO_REQUEST` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_STUDIO_KEY` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_IN_USE` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
+| `error.PLUGIN_STUDIO_REMOVE` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_CONTENT_FILE` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_CONTENT_FORMAT` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |
 | `error.PLUGIN_CONTENT_PERMISSION` | stable | 0.3.0 | `shared/plugins/errors.js#PLUGIN_ERRORS` |

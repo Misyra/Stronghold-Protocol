@@ -1037,6 +1037,21 @@ schema, findings in plain words and hot reload. The design is DESIGN §32.9; the
   downloaded — `<id>-<version>.zip` holding `<id>/…`, every file but dot files, deterministic (the same files give the
   same bytes: a zip can be pinned by its SHA-256). The packer does not screen for official game files (the owner's
   decision of 2026-10-13): what a plugin carries is its author's responsibility — and §1 still asks never to put them in.
+- **删除所选** (removing several plugins at once, `public/studio/js/remove.js`): a checkbox beside each plugin of the
+  list (disabled for a folder that is a symbolic link), 全选 / 清除选择, and 「删除所选（N）」, disabled with nothing
+  checked. The confirmation names the plugins (name and id) and says where they go; confirmed, each folder moves to
+  `plugins/_removed/<id>-<UTC YYYYMMDD-HHMMSS-mmm>/` (-2, -3 … when taken) — nothing is deleted: moving a folder back into
+  `plugins/` under its id restores the plugin, and `plugins/_removed/` is never read (a `_` folder, like `_replaced/` of a
+  forced install and `_moved/`; it grows until the owner empties it). A plugin **in use** stays where it is: one an open
+  room's plugin set lists — the plugins its host switched on and the ones switched on for them (「自动」), which a running
+  match plays too (`server/lobby.js` `room.content.plugins`: the place that knows it). A player's personal cosmetic or
+  interface plugins live in that player's browser alone (localStorage), so the server sees no use of them: a removed one stops
+  applying there (the catalogue no longer offers it) and applies again once restored. Nor do `plugins/config.json`'s
+  `default` list or a trial of the bench count: a room created afterwards logs that a default plugin cannot be applied,
+  as for any default that is missing, and a trial reading the folder fails like one whose folder changed [ASSUMED]. The
+  list follows at once (the change event), the plugin open on the right closes, the note above the list says what went
+  (and takes the keyboard focus), and every plugin left in place is shown with its reason — the error catalogue's words,
+  the room's code for one in use — and stays checked.
 
 **Gameplay templates.** `new <template> <id>` and the browser share one server module per template;
 `--options <json-file>` supplies the same options as the wizard. `numbers` exposes existing numeric stats/blackboards
@@ -1112,6 +1127,7 @@ GET without the body):
 |---|---|
 | `GET /studio/api/info` · `targets?q=&kinds=` · `slots?template=&target=` · `suggest-id?name=&target=&template=` | the templates and limits; targets by official name; a template's slots for a target; a free id |
 | `GET /studio/api/plugins` · `POST /studio/api/plugins` | every plugin folder (loaded or skipped, its codes); a new plugin `{ template, id, name, target, authors, license, credits }` |
+| `POST /studio/api/plugins/remove` | remove plugins `{ ids: [<id>, …] }` (1–100 strings, `limits.removeMax` of `info`; one named twice counts once) → **200** `{ removed: [{ id, to }], refused: [{ id, error, params }] }` in the order asked, also when some or all are refused (like S3's multi-object delete: a well-formed request is answered per id). `to` is relative to `plugins/` (`_removed/<id>-<time>`). Refused alone: not a plugin id — a `_` or dot folder too — (`PLUGIN_ID`), no folder of exactly that name (`PLUGIN_UNKNOWN`), a symbolic link (`PLUGIN_STUDIO_PATH`), in use (`PLUGIN_STUDIO_IN_USE` `{ id, rooms, matches }`: the rooms' codes, how many run a match), a move that failed (`PLUGIN_STUDIO_REMOVE` `{ id, detail }`: a code such as `EACCES`, never a path). A request it cannot read (no list, an empty one, more than 100, a value that is no text, no JSON) is `400 PLUGIN_STUDIO_REQUEST`; a wrong key `403 PLUGIN_STUDIO_KEY` (no `X-SP-Studio` at all, or another origin: the 404 page). Then the registry reads the folders and the change event names the removed ids |
 | `GET /studio/api/plugins/<id>` | its manifest and text, overlay, files, sections, findings (`check.issues`: coded), registry view (`loaded`, `vs`), lock |
 | `PUT …/manifest` · `POST …/meta` · `POST …/sections` | plugin.json as a whole; the basic fields `{ fields, lang }`; the sections the page shows |
 | `POST …/slot` · `…/ref` · `…/clear` · `…/fix` | files for a slot `{ at, files: [{ name, data (base64), role? }] }`; a reference `{ at, ref }`; a slot emptied `{ at }`; a one-click fix `{ code, at?, file?, params? }` |
@@ -1130,7 +1146,9 @@ without; the list shows it apart — an archive unpacked into `plugins/` can bri
 may still load it, and serves only the files its overlay names, at `/p/`); no link inside the folder is followed (every
 folder on the way and the file are lstat'ed) — neither for the studio's reads (plugin.json, an overlay file, the lock, its own note
 `.studio.json`; a folder holding links is checked for its links alone) nor for its writes (the lock and the note are
-renamed over a link put in their place, `plugins/_moved/` must be a plain folder), and the packer reads no file through
+renamed over a link put in their place, `plugins/_moved/` must be a plain folder; 删除所选 renames a whole plugin folder —
+lstat'ed, never a link — into `plugins/_removed/`, which must be a plain folder too: `server/plugins/install.js
+movePluginAside`, the forced install's move), and the packer reads no file through
 a link either (`server/plugins/pack.js plainPath`); every walk of a folder is bounded (§5: the zip and the lock refuse a
 folder past the limits, and `plugins/` is watched as a tree only while it holds at most 100 000 entries); a write goes to a
 dot-named temporary file renamed over the target; a body over the limit is refused before it is read and its connection
@@ -1246,6 +1264,8 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The studio refuses the action and says why | `PLUGIN_STUDIO_FILE_KIND` | This place takes {kind}; the dropped file is {ext} | A picture place takes .png .jpg .webp, a sound place .mp3 .ogg, a model place its .skel, .atlas and .png together. |
 | The studio refuses the action and says why | `PLUGIN_STUDIO_REQUEST` | The studio's request is not right: {detail} | Reload the studio and try again; if it stays, ask on GitHub with this text. |
 | The studio only shows plugins; it cannot make or change one | `PLUGIN_STUDIO_KEY` | Changing a plugin needs the studio's key, which this browser does not have (or it is not the right one) | Open the address on the "Studio" line of the server's window (it carries the key, which is also in plugins/.studio-key), or paste it into the box at the top of the studio. |
+| A plugin chosen for removal stays: it is in use | `PLUGIN_STUDIO_IN_USE` | The plugin “{id}” is in use (room {rooms}) and was not removed | Wait until those rooms close, or until their host switches it off in the room's plugin panel (a room in a match can do so once the match is over), then remove it. |
+| A plugin chosen for removal could not be moved | `PLUGIN_STUDIO_REMOVE` | The plugin “{id}” could not be moved to plugins/_removed/: {detail} | Close programs that hold files of this plugin open (an image editor, Spine …), make sure the server may write the plugins/ folder and try again — or move the folder out of plugins/ yourself. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CONTENT_FILE` | The data file “{where}” cannot be read: {detail} | "data" lists .json files inside the plugin folder; no symbolic links, nothing outside the folder. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CONTENT_FORMAT` | The data file “{where}” is not in the right format: {detail} | A patch file is { "patch": 1, "ops": [ … ] }, a records file { "records": 1, "entries": [ … ] }; plugins/_template/content/ has one of each. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_CONTENT_PERMISSION` | The data file “{where}” needs a permission the manifest does not declare: {detail} | Changing existing values needs "data.patch", adding records (new operators, enemies …) "data.add": list them in "permissions". (the studio fixes it in one click) |

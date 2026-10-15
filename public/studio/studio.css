@@ -35,6 +35,19 @@ body.studio { overflow: auto; height: auto; min-height: 100%; -webkit-user-selec
 .st-list__item.is-bad .st-list__meta { color: var(--amber); }
 .st-list__name { font-weight: 600; font-size: calc(.14 * var(--t)); }
 .st-list__meta { font-size: calc(.11 * var(--t)); color: var(--text-lo); }
+/* 删除所选 (public/studio/js/remove.js): a checkbox beside each plugin, the tools above the list, the note of what went */
+.st-list__row { display: flex; align-items: stretch; gap: .05rem; }
+.st-list__row .st-list__item { flex: 1; min-width: 0; }
+.st-list__check { flex: none; align-self: center; width: max(.16rem, 14px); height: max(.16rem, 14px); margin: 0; }
+.st-select { display: flex; flex-direction: column; gap: .06rem; }
+.st-select__row { display: flex; align-items: center; justify-content: space-between; gap: .08rem; font-size: calc(.12 * var(--t)); }
+.st-side__result { margin: 0; font-size: calc(.12 * var(--t)); line-height: 1.5; }
+.st-side__result:focus { outline: 1px solid var(--mint-500); outline-offset: 1px; }
+.st-remove__list { list-style: none; margin: .06rem 0; padding: 0; max-height: 3rem; overflow: auto; display: flex; flex-direction: column; gap: .04rem; }
+.st-remove__list li { padding: .04rem .08rem; background: var(--bg-2); border: 1px solid var(--line); }
+.st-remove__name { color: var(--text-hi); font-weight: 600; }
+.st-remove__list code { color: var(--text-lo); font-size: calc(.11 * var(--t)); }
+.st-remove__why { white-space: pre-line; color: var(--text-md); font-size: calc(.12 * var(--t)); margin: .03rem 0 0; }
 .st-main { padding: .2rem .26rem .4rem; min-width: 0; }
 .st-main__empty { color: var(--text-md); max-width: 8rem; margin: .4rem auto; line-height: 1.8; }
 .st-main__empty h2 { font-size: calc(.22 * var(--t)); color: var(--text-hi); margin-bottom: .1rem; }

@@ -460,6 +460,19 @@ export const PLUGIN_ERRORS = Object.freeze({
     zh: '改动插件需要工作台钥匙，这个浏览器还没有（或者钥匙不对）', en: 'Changing a plugin needs the studio\'s key, which this browser does not have (or it is not the right one)',
     fix: { zh: '打开服务器窗口里「Studio」那一行的地址（它带着钥匙，钥匙也在 plugins/.studio-key 文件里），或把它粘贴到工作台顶部的输入框。', en: 'Open the address on the "Studio" line of the server\'s window (it carries the key, which is also in plugins/.studio-key), or paste it into the box at the top of the studio.' },
   },
+  // the studio's 删除所选 (POST /studio/api/plugins/remove): a plugin it leaves where it is, refused one by one
+  PLUGIN_STUDIO_IN_USE: {
+    level: 'studio', doc: D.studio,
+    symptom: { zh: '「删除所选」留下了某个插件：它正在使用', en: 'A plugin chosen for removal stays: it is in use' },
+    zh: '插件「{id}」正在使用中（房间 {rooms}），没有删除', en: 'The plugin “{id}” is in use (room {rooms}) and was not removed',
+    fix: { zh: '等这些房间解散，或者房主在房间的插件面板里关掉它（正在对局的房间要等这一局结束才能改）后再删除。', en: 'Wait until those rooms close, or until their host switches it off in the room\'s plugin panel (a room in a match can do so once the match is over), then remove it.' },
+  },
+  PLUGIN_STUDIO_REMOVE: {
+    level: 'studio', doc: D.studio,
+    symptom: { zh: '「删除所选」没能移走某个插件', en: 'A plugin chosen for removal could not be moved' },
+    zh: '插件「{id}」没能移到 plugins/_removed/：{detail}', en: 'The plugin “{id}” could not be moved to plugins/_removed/: {detail}',
+    fix: { zh: '关掉正在使用这个插件里文件的程序（图片编辑器、Spine 等），确认服务器能写 plugins/ 文件夹后再试；也可以自己把这个文件夹移出 plugins/。', en: 'Close programs that hold files of this plugin open (an image editor, Spine …), make sure the server may write the plugins/ folder and try again — or move the folder out of plugins/ yourself.' },
+  },
 
   // ---- a data plugin (class content, P1b — DESIGN §32.5, PLUGINS §10) -------------------------------------------------
   PLUGIN_CONTENT_FILE: {

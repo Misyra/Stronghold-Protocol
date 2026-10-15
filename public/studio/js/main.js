@@ -7,7 +7,8 @@
 // events, server/studio/watch.js), and so do the rooms of the game the author hosts or plays alone (hot reload).
 //
 // Structure: this module (the shell: plugin list, the selected plugin, its tabs and sections), ./api.js (the API),
-// ./create.js (新建插件), ./catalog.js (从目录安装), ./picker.js (targets), ./slots.js (a slot), ./issues.js (findings), ./info.js (信息 / 文件 /
+// ./create.js (新建插件), ./catalog.js (从目录安装), ./remove.js (删除所选: the plugins checked in the list), ./picker.js
+// (targets), ./slots.js (a slot), ./issues.js (findings), ./info.js (信息 / 文件 /
 // 清单), ./editors/ (one module per template — what a section shows), ./preview/ (layers.js: the art the preview
 // draws; field.js: the battlefield; cards.js: the interface; sound.js: the sounds). Strings go through t() (the
 // language packs); the findings' explanations come from the error catalogue (shared/plugins/errors.js) in Chinese or
@@ -27,6 +28,7 @@ import { Authoring } from './authoring.js';
 import { TrialBench } from './trial.js';
 import { CreateDialog } from './create.js';
 import { CatalogPage } from './catalog.js';
+import { SelectTools, confirmRemoval, removePlugins, showRefused } from './remove.js';
 import { ForgeDialog } from './forge.js';
 import { TargetPicker } from './picker.js';
 import { SlotCard } from './slots.js';
@@ -95,8 +97,8 @@ function AddSection({ open, templates, onClose, onAdd }) {
   <//>`;
 }
 
-/** The selected plugin. */
-function PluginView({ id, info, onListChanged, eventsAt }) {
+/** The selected plugin. `onGone`: its folder left plugins/ (删除所选, or moved away by hand) — the page lets it go. */
+function PluginView({ id, info, onListChanged, eventsAt, onGone }) {
   const [state, setState] = useState(null);
   const [sections, setSections] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -123,10 +125,18 @@ function PluginView({ id, info, onListChanged, eventsAt }) {
     layers.set(pv.ops || [], secs.map((s) => s.targetInfo));
     setVersion((v) => v + 1);
   };
-  const reload = () => get(pluginPath(id)).then(adopt).catch((e) => alertDialog({ title: t('读取插件失败'), text: errorText(e) }));
+  /** Read the plugin again. `fromDisk`: a change on disk asked for it — a folder gone from plugins/ is let go, not an error. */
+  const reload = (fromDisk = false) => {
+    const n = req.current;
+    return get(pluginPath(id)).then(adopt).catch((e) => {
+      if (n !== req.current) return; // the view moved on meanwhile (closed, or a newer state shown)
+      if (fromDisk === true && e?.code === 'PLUGIN_UNKNOWN') { onGone?.(id); return; }
+      alertDialog({ title: t('读取插件失败'), text: errorText(e) });
+    });
+  };
   useEffect(() => { setState(null); setSections([]); setPacked(null); setTab('content'); reload(); return () => { req.current++; }; }, [id]);
   // a change on disk (the studio's own or the author's tools): read it again
-  useEffect(() => { if (eventsAt && eventsAt.ids.includes(id)) reload(); }, [eventsAt]);
+  useEffect(() => { if (eventsAt && eventsAt.ids.includes(id)) reload(true); }, [eventsAt]);
 
   /** Run a change; its answer is the plugin's new state. */
   const run = async (fn, { list = false } = {}) => {
@@ -254,6 +264,48 @@ function App({ info }) {
   const [events, setEvents] = useState({ on: false, at: null });
   const refresh = () => get('plugins').then((r) => setPlugins(r.plugins || [])).catch(() => {});
   useEffect(() => { refresh(); }, []);
+  // 删除所选 (./remove.js): the plugins checked in the list — every listed folder but a symbolic link (never moved)
+  const [checked, setChecked] = useState(() => new Set());
+  const [removing, setRemoving] = useState(false);
+  /** What the last removal did: { removed, refused } counts (the note above the list), null before one or after a change. */
+  const [removal, setRemoval] = useState(null);
+  const removalRef = useRef(null);
+  const removable = useMemo(() => plugins.filter((p) => !p.linked), [plugins]);
+  // a refreshed list drops the checks of plugins no longer in it
+  useEffect(() => {
+    setChecked((c) => {
+      const listed = new Set(removable.map((p) => p.id));
+      const next = new Set([...c].filter((x) => listed.has(x)));
+      return next.size === c.size ? c : next;
+    });
+  }, [removable]);
+  const check = (id, on) => {
+    setRemoval(null);
+    setChecked((c) => { const next = new Set(c); if (on) next.add(id); else next.delete(id); return next; });
+  };
+  const removeChecked = async () => {
+    const chosen = removable.filter((p) => checked.has(p.id));
+    if (!chosen.length || removing || !(await confirmRemoval(chosen))) return;
+    setRemoving(true);
+    setRemoval(null);
+    // the plugin open on the right closes first when it is one of them (its view never reads a folder that left)
+    if (chosen.some((p) => p.id === selected)) setSelected(null);
+    let r = null;
+    try { r = await removePlugins(chosen.map((p) => p.id), info.limits?.removeMax); } catch (e) {
+      hooks.errors.push(e?.code || String(e));
+      await alertDialog({ title: t('没有成功'), text: errorText(e) });
+    }
+    const gone = new Set((r?.removed || []).map((x) => x.id));
+    setChecked((c) => new Set([...c].filter((x) => !gone.has(x))));
+    setSelected((s) => (s && gone.has(s) ? null : s));
+    await refresh();
+    setRemoving(false);
+    if (!r) return;
+    setRemoval({ removed: gone.size, refused: r.refused.length });
+    if (r.refused.length) await showRefused(r.refused, chosen, gone.size);
+    // keyboard focus on what happened (the button that started it may be disabled now)
+    setTimeout(() => removalRef.current?.focus(), 0);
+  };
   // hot reload: the server's events (a plugin changed on disk)
   // (closed while the page is hidden in the browser's back / forward cache: an open stream holds one of the few
   // connections a browser keeps to a server, and a few kept pages would stall every request of the page shown)
@@ -313,8 +365,21 @@ function App({ info }) {
         <${Button} variant="primary" block=${true} onClick=${() => setCreateOpen(true)} data-testid="new-plugin">${t('新建插件')}<//>
         <${Button} block=${true} active=${pane === 'catalog'} onClick=${() => setPane('catalog')} data-testid="catalog-open">${t('从目录安装')}<//>
         <${Button} block=${true} class="st-forge-open" onClick=${() => setForgeOpen(true)} data-testid="forge-import">${t('从 Forge 包导入')}<//>
+        ${removable.length ? html`<${SelectTools} count=${checked.size} total=${removable.length} busy=${removing} onRemove=${removeChecked}
+          onAll=${(on) => { setRemoval(null); setChecked(on ? new Set(removable.map((p) => p.id)) : new Set()); }}
+          onClear=${() => { setRemoval(null); setChecked(new Set()); }} />` : null}
+        ${removal ? html`<div ref=${removalRef} tabindex="-1" role="status" data-testid="remove-result"
+            class=${cx('st-banner', 'st-side__result', removal.refused ? (removal.removed ? 'is-warn' : 'is-bad') : 'is-ok')}>
+          ${removal.removed ? html`<div>${t('已移到 plugins/_removed/：{n} 个插件', { n: removal.removed })}</div>` : null}
+          ${removal.refused ? html`<div>${t('{n} 个插件没有删除', { n: removal.refused })}</div>` : null}
+        </div>` : null}
         <ul class="st-list" data-testid="plugin-list">
-          ${list.map((p) => html`<li key=${p.id}><button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', (p.status === 'skipped' || p.linked) && 'is-bad')}
+          ${list.map((p) => html`<li key=${p.id} class="st-list__row">
+            <input type="checkbox" class="st-list__check" checked=${checked.has(p.id)} disabled=${!!p.linked || removing}
+              onChange=${(e) => check(p.id, e.currentTarget.checked)} data-testid="plugin-check" data-check=${p.id}
+              aria-label=${t('选中「{name}」', { name: p.name || p.id })}
+              title=${p.linked ? t('符号链接的插件文件夹不能在这里删除。') : undefined} />
+            <button type="button" class=${cx('st-list__item', selected === p.id && 'is-on', (p.status === 'skipped' || p.linked) && 'is-bad')}
               onClick=${() => { setPane('plugins'); setSelected(p.id); }} data-plugin=${p.id} disabled=${!!p.linked}
               title=${p.linked ? t('这个插件文件夹是符号链接：游戏照常读取它，工作台只打开真实的文件夹。') : undefined}>
             <span class="st-list__name">${p.name || p.id}</span>
@@ -326,7 +391,8 @@ function App({ info }) {
       </aside>
       <main class="st-main">
         ${pane === 'catalog' ? html`<${CatalogPage} canChange=${keyState === 'ok'} />`
-        : selected ? html`<${PluginView} key=${selected} id=${selected} info=${info} onListChanged=${refresh} eventsAt=${events.at} />`
+        : selected ? html`<${PluginView} key=${selected} id=${selected} info=${info} onListChanged=${refresh} eventsAt=${events.at}
+            onGone=${(gone) => setSelected((s) => (s === gone ? null : s))} />`
         : html`<div class="st-main__empty">
             <h2>${t('做一个插件')}</h2>
             <ol class="st-steps">

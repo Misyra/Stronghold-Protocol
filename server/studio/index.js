@@ -11,6 +11,12 @@
 //   GET  /studio/api/suggest-id?name=&target=&template=   a free plugin id
 //   GET  /studio/api/plugins            every plugin folder: name, version, class, loaded or skipped, its findings
 //   POST /studio/api/plugins            a new plugin from a template { template, id, name, target, authors, license, credits }
+//   POST /studio/api/plugins/remove     remove plugins { ids } (1–REMOVE_MAX): each folder moved to plugins/_removed/<id>-
+//                                       <time>/ (never deleted: moving it back restores it); an id that is no plugin folder
+//                                       right inside plugins/ (a '_' or dot folder, a symbolic link, a missing one), or a
+//                                       plugin in use (an open room's plugin set; a running match plays its room's), is
+//                                       refused alone → 200 { removed: [{ id, to }], refused: [{ id, error, params }] }
+//                                       also when some or all are refused (removePlugins)
 //   POST /studio/api/forge/preview      a Forge pack as { zip: base64 } or { files: [{ name, data: base64 }] } — the report,
 //                                       nothing written (server/plugins/forgeImport.js). No path on this machine.
 //                                       noScripts: true leaves the sandboxed script plugin of kits/ out (--no-scripts).
@@ -51,7 +57,7 @@ import { PLUGIN_MANIFEST, PLUGIN_LIMITS, PLUGIN_IMAGE_EXTS, PLUGIN_AUDIO_EXTS, e
 import { LOCK_FILE, locateAssetPath, readPluginLock } from '../../shared/plugins/visual.js';
 import { PLUGIN_ERRORS, isPluginErrorCode, issueList } from '../../shared/plugins/errors.js';
 import { CATALOG_FETCH_MAX_BYTES, annotateCatalog, readCatalog } from '../../shared/plugins/catalog.js';
-import { CATALOG_FETCH_TIMEOUT_MS, InstallError, fetchHttps, installFromUrl, installedPluginVersion } from '../plugins/install.js';
+import { CATALOG_FETCH_TIMEOUT_MS, InstallError, fetchHttps, installFromUrl, installedPluginVersion, movePluginAside } from '../plugins/install.js';
 import { sendError, sendJson } from '../http/common.js';
 import { MIME, serveFile, CompressCache } from '../http/files.js';
 import { checkPluginFolder, packPlugin, zipPlugin } from '../plugins/pack.js';
@@ -117,6 +123,10 @@ export const AUTHOR_TTL_MS = 10 * 60 * 1000;
 const PAGE_TYPES = new Set(['.html', '.js', '.css', '.png', '.svg', '.json']);
 /** One-click fixes the API runs itself (they move files or pack), beside the manifest edits of edit.js FIXES. */
 export const API_FIXES = Object.freeze(['pack', 'moveOut']);
+/** At most this many plugins in one removal (POST /studio/api/plugins/remove; the page sends more in turns) [ASSUMED]. */
+export const REMOVE_MAX = 100;
+/** The folder of plugins/ a removed plugin is moved into (a '_' folder: the registry never reads it). */
+export const REMOVED_DIR = '_removed';
 
 /**
  * Studio API routes (method and path). Frozen in docs/PLUGIN-API.md. Local and LAN only. HEAD answers as GET.
@@ -137,6 +147,7 @@ export const STUDIO_ROUTES = Object.freeze([
   'GET /studio/api/events',
   'GET /studio/api/plugins',
   'POST /studio/api/plugins',
+  'POST /studio/api/plugins/remove',
   'GET /studio/api/plugins/:id',
   'GET /studio/api/plugins/:id/preview',
   'GET /studio/api/plugins/:id/zip',
@@ -247,10 +258,10 @@ export function suggestId({ name = '', target = null, template = '' }, taken) {
  * The studio of one server (see the header).
  * @param {{ publicDir: string, pluginsDir: string, dataDir: string,
  *   registry: ReturnType<typeof import('../plugins/registry.js').createPluginRegistry>,
- *   lobby?: { autoApplyPlugins?: Function | null } | null, sessions?: { byToken?: (t: string) => any } | null,
+ *   lobby?: { autoApplyPlugins?: Function | null, rooms?: Map<string, any> } | null, sessions?: { byToken?: (t: string) => any } | null,
  *   log?: object, mode?: 'lan' | 'local' | 'off', watch?: Function }} opts
- *   lobby: the rooms (its autoApplyPlugins is set to the studio's rule); sessions: the session registry (a token the page
- *   names → its player)
+ *   lobby: the rooms (its autoApplyPlugins is set to the studio's rule; their plugin sets tell which plugins are in use);
+ *   sessions: the session registry (a token the page names → its player)
  */
 export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby = null, sessions = null, log = noopLog, mode = studioMode(), watch, trialSpawn, fetch: fetchImpl = globalThis.fetch }) {
   const pageDir = path.join(path.resolve(publicDir), 'studio');
@@ -481,6 +492,74 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   /** After a change: read the folders now (hot reload) and answer with the plugin's state. */
   const changed = (id) => { watcher.rescan(); return stateOf(id, true); };
 
+  /**
+   * The open rooms that use the plugin `id` now, each with whether its match runs. The lobby is what knows it: each room's
+   * plugin set, room.content.plugins (server/lobby.js — the plugins its host switched on and the ones switched on for them,
+   * 「自动」), which a running match plays (a gameplay set never changes while it runs; a cosmetic room is re-applied with
+   * the same chosen plugins, refreshPlugins). A player's personal plugins live in that player's browser alone
+   * (localStorage, public/js/content.js): no use the server could see, so none here.
+   * @param {string} id @returns {{ code: string, match: boolean }[]}
+   */
+  function roomsUsing(id) {
+    if (!lobby || !(lobby.rooms instanceof Map)) return [];
+    const out = [];
+    for (const room of lobby.rooms.values()) {
+      if (room.disposed || !Array.isArray(room.content?.plugins)) continue;
+      if (room.content.plugins.some((p) => p?.id === id)) out.push({ code: String(room.code), match: !!room.match });
+    }
+    return out;
+  }
+
+  /**
+   * Remove plugins (POST /studio/api/plugins/remove, see the header): each id of `body.ids`, once and in their order, must
+   * be a plugin folder right inside plugins/ — a plugin id (never a '_' template or a dot folder), a real folder under
+   * exactly that name (files.root: lstat'ed, never a symbolic link; the disk's own spelling, not another case of it) —
+   * that no room uses (roomsUsing); it is then moved to plugins/_removed/<id>-<time>/ (server/plugins/install.js
+   * movePluginAside, the forced install's move: nothing is deleted). Any other id is refused alone with its code and
+   * params. Afterwards the registry reads the folders (the watch's rescan): the page's change event names the removed ids.
+   * @param {any} body
+   * @returns {{ removed: { id: string, to: string }[], refused: { id: string, error: string, params: Record<string, unknown> }[] }}
+   */
+  function removePlugins(body) {
+    const ids = body.ids;
+    if (!Array.isArray(ids) || !ids.length || !ids.every((x) => typeof x === 'string')) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: 'ids: a list of plugin ids' });
+    if (ids.length > REMOVE_MAX) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: `at most ${REMOVE_MAX} plugins at once` });
+    const removed = [];
+    const refused = [];
+    for (const id of [...new Set(ids)]) {
+      const refuse = (error, params) => { refused.push({ id: id.slice(0, 64), error, params }); };
+      let dir;
+      try { dir = files.root(id); } catch (e) {
+        if (e instanceof StudioError) refuse(e.code, e.params);
+        else if (e?.code === 'ENOENT') refuse('PLUGIN_UNKNOWN', { id }); // no plugins/ folder at all
+        else refuse('PLUGIN_STUDIO_REMOVE', { id, detail: String(e?.code || 'unreadable') });
+        continue;
+      }
+      if (path.basename(dir) !== id) { refuse('PLUGIN_UNKNOWN', { id }); continue; }
+      const rooms = roomsUsing(id);
+      if (rooms.length) {
+        refuse('PLUGIN_STUDIO_IN_USE', { id, rooms: `${rooms.slice(0, 8).map((r) => r.code).join(', ')}${rooms.length > 8 ? ' …' : ''}`, matches: rooms.filter((r) => r.match).length });
+        continue;
+      }
+      try {
+        const to = `${REMOVED_DIR}/${path.basename(movePluginAside(path.dirname(dir), id, REMOVED_DIR))}`;
+        removed.push({ id, to });
+        log.info?.(`[studio] ${id}: removed — moved to plugins/${to}/`);
+      } catch (e) {
+        // an install error's own words, else the code only (a file system's message names the absolute path)
+        refuse('PLUGIN_STUDIO_REMOVE', { id, detail: e instanceof InstallError ? e.message : String(e?.code || 'the move failed') });
+      }
+    }
+    if (removed.length) {
+      // the change event, as after any change of the studio: the rescan names what it saw go; a folder the registry had
+      // not read yet is named all the same
+      const told = new Set(watcher.rescan());
+      const rest = removed.map((r) => r.id).filter((id) => !told.has(id));
+      if (rest.length) send(rest);
+    }
+    return { removed, refused };
+  }
+
   /** A slot of the plugin's sections at `at` (its dir and base), else one made from the path. */
   function slotAt(id, overlay, at) {
     const loc = locateAssetPath(at);
@@ -710,7 +789,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       return json(200, {
         // key: whether this request carried the studio's key ('ok'), another value ('wrong') or none ('missing')
         key: keyed(req) ? 'ok' : req.headers['x-sp-studio'] ? 'wrong' : 'missing',
-        app: APP_VERSION, api: PLUGIN_API, mode, watching: watcher.active, limits: { ...STUDIO_LIMITS, pluginBytes: PLUGIN_LIMITS.pluginBytes, trial: TRIAL_LIMITS },
+        app: APP_VERSION, api: PLUGIN_API, mode, watching: watcher.active, limits: { ...STUDIO_LIMITS, pluginBytes: PLUGIN_LIMITS.pluginBytes, trial: TRIAL_LIMITS, removeMax: REMOVE_MAX },
         templates: TEMPLATES.map((t) => ({ id: t.id, class: t.class, kinds: t.kinds })), kinds: Object.keys(TARGET_KINDS),
       });
     }
@@ -809,6 +888,11 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       else if (t) saveSections(id, [{ template: tpl.id, target: targetSpec(t) }]);
       log.info?.(`[studio] new plugin ${id} (${tpl.id}${t ? `, ${targetSpec(t)}` : ''})`);
       return json(201, changed(id));
+    }
+    // (before the plugin id routes: POST plugins/<id> itself is none, so a plugin named "remove" keeps all of its own)
+    if (route === 'plugins/remove' && method === 'POST') {
+      if (!mayChange(req)) return false;
+      return json(200, removePlugins(await readJson(req, 16 * 1024)));
     }
     if ((route === 'forge/preview' || route === 'forge/import') && method === 'POST') {
       if (!mayChange(req)) return false;

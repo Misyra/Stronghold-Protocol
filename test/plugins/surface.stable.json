@@ -940,6 +940,10 @@
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
   },
   {
+    "name": "studio.route.POST /studio/api/plugins/remove",
+    "anchor": "server/studio/index.js#STUDIO_ROUTES"
+  },
+  {
     "name": "studio.route.GET /studio/api/plugins/:id",
     "anchor": "server/studio/index.js#STUDIO_ROUTES"
   },
@@ -1393,6 +1397,14 @@
   },
   {
     "name": "error.PLUGIN_STUDIO_KEY",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_IN_USE",
+    "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
+  },
+  {
+    "name": "error.PLUGIN_STUDIO_REMOVE",
     "anchor": "shared/plugins/errors.js#PLUGIN_ERRORS"
   },
   {

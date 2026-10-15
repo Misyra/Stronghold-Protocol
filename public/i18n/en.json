@@ -1787,5 +1787,16 @@
   "已请求浏览器尽量保留这些素材。": "The browser was asked to keep these assets if it can.",
   "浏览器可能在存储空间不足时清掉导入的素材。": "The browser may delete imported assets when storage is low.",
   "秘术师能量": "Mystic Energy",
-  "在秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方用干员身上的特效表示，没有这个数字。": "Shows a Mystic Caster's stored attack energy / its maximum under the HP bar (e.g. 2/3). The official game shows it as an effect on the operator, without a number."
+  "在秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方用干员身上的特效表示，没有这个数字。": "Shows a Mystic Caster's stored attack energy / its maximum under the HP bar (e.g. 2/3). The official game shows it as an effect on the operator, without a number.",
+  "全选": "Select all",
+  "清除选择": "Clear selection",
+  "删除所选（{n}）": "Delete selected ({n})",
+  "删除所选插件": "Delete the selected plugins",
+  "下面 {n} 个插件会移到 plugins/_removed/ 文件夹，不会被彻底删除：": "These plugins ({n}) move to the plugins/_removed/ folder and are not deleted for good:",
+  "想恢复的话，把它的文件夹从 plugins/_removed/ 移回 plugins/，并把文件夹名改回插件 id（去掉后面的时间）。": "To restore one, move its folder from plugins/_removed/ back into plugins/ and rename it to the plugin id (drop the time at the end).",
+  "{n} 个插件没有删除": "{n} {n|plugin was|plugins were} not deleted",
+  "其余 {n} 个已移到 plugins/_removed/。": "The other {n} {n|was|were} moved to plugins/_removed/.",
+  "已移到 plugins/_removed/：{n} 个插件": "Moved to plugins/_removed/: {n} {n|plugin|plugins}",
+  "选中「{name}」": "Select \"{name}\"",
+  "符号链接的插件文件夹不能在这里删除。": "A plugin folder that is a symbolic link cannot be deleted here."
 }

@@ -3,8 +3,8 @@
 // is; an https URL is downloaded by this process (the browser never uploads the zip), and only when a sha256 is given.
 // The hash is checked on the bytes. The zip is extracted with readPluginZip (no traversal, no links, no bombs), written
 // under plugins/_incoming/, and checkPluginFolder must pass. It is then renamed into plugins/<id>/. The same id is left
-// untouched unless force: the old folder is renamed to plugins/_replaced/<id>-<time>/ and is not deleted. No file of
-// the package is imported, spawned or otherwise run.
+// untouched unless force: the old folder is renamed to plugins/_replaced/<id>-<time>/ and is not deleted (movePluginAside,
+// which the studio's removal uses for plugins/_removed/ too). No file of the package is imported, spawned or otherwise run.
 //
 // [ASSUMED] a zip download waits 60 s and a catalogue document 20 s. That one deadline covers DNS, every redirect and
 // the body. At most 5 redirects. Each hop must be https, port 443 (unless the operator allowlist names the host), and
@@ -582,21 +582,26 @@ function writeTree(dir, files) {
 }
 
 /**
- * Move plugins/<id> to plugins/_replaced/<id>-<stamp>/. The rename does not follow a symbolic link.
- * @param {string} pluginsDir @param {string} id
+ * Move plugins/<id> to plugins/<into>/<id>-<stamp>/ (the stamp of the header, -2, -3 … when that name is taken): the old
+ * folder of a forced install (`_replaced`) and a plugin the studio removes (`_removed`, POST /studio/api/plugins/remove:
+ * server/studio/index.js). `into` is a folder of plugins/ whose name starts with '_' — the registry never reads it — made
+ * when missing and refused when it is not a real folder (a symbolic link). The rename moves the entry itself: it never
+ * follows a symbolic link, and nothing is deleted.
+ * @param {string} pluginsDir @param {string} id @param {string} [into]
  * @returns {string} the new path
  */
-function moveAside(pluginsDir, id) {
+export function movePluginAside(pluginsDir, id, into = '_replaced') {
+  if (!/^_[a-z0-9-]+$/.test(into)) throw new InstallError('PLUGIN_INSTALL_ZIP', `${String(into).slice(0, 40)} is not a folder for moved plugins`, {});
   const src = path.join(pluginsDir, id);
-  const replacedRoot = path.join(pluginsDir, '_replaced');
-  fs.mkdirSync(replacedRoot, { recursive: true });
-  const rst = fs.lstatSync(replacedRoot);
-  if (rst.isSymbolicLink() || !rst.isDirectory()) throw new InstallError('PLUGIN_INSTALL_ZIP', 'plugins/_replaced is not a real folder', {});
+  const root = path.join(pluginsDir, into);
+  fs.mkdirSync(root, { recursive: true });
+  const rst = fs.lstatSync(root);
+  if (rst.isSymbolicLink() || !rst.isDirectory()) throw new InstallError('PLUGIN_INSTALL_ZIP', `plugins/${into} is not a real folder`, {});
   const base = `${id}-${stamp()}`;
-  let dest = path.join(replacedRoot, base);
+  let dest = path.join(root, base);
   for (let n = 2; fs.lstatSync(dest, { throwIfNoEntry: false }); n++) {
     if (n > 50) throw new InstallError('PLUGIN_INSTALL_EXISTS', `${id} could not be moved aside`, { id });
-    dest = path.join(replacedRoot, `${base}-${n}`);
+    dest = path.join(root, `${base}-${n}`);
   }
   fs.renameSync(src, dest);
   return dest;
@@ -647,7 +652,7 @@ export function installPluginBytes(bytes, { pluginsDir, force = false, expectedI
     const existing = fs.lstatSync(finalDir, { throwIfNoEntry: false });
     if (existing) {
       if (!force) throw new InstallError('PLUGIN_INSTALL_EXISTS', `${id} is already installed`, { id });
-      replaced = moveAside(pluginsDir, id);
+      replaced = movePluginAside(pluginsDir, id);
     }
     try {
       fs.renameSync(tempPlugin, finalDir);

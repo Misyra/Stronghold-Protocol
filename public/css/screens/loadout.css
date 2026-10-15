@@ -650,3 +650,91 @@
 }
 
 .diy-choice__tags { display: flex; flex-wrap: wrap; gap: .08rem; color: var(--text-lo); font-size: max(calc(.12 * var(--utility-text, var(--t))), 10px); }
+
+/* ---- 干员皮肤 (docs/SKINS.md, ui/skinPicker.js) --------------------------------------------------------------
+   The module tiles layout, with a square 180x180 avatar in place of the glyph. A skin whose files are not on this
+   server is dimmed but still clickable — clicking it is what installs it — and shows 未安装 · 点击安装 where an
+   installed one shows its series. */
+.lo-skins { display: flex; flex-wrap: wrap; gap: .08rem; }
+.lo-skin {
+  position: relative; flex: 1 1 1.9rem; min-width: 1.7rem; max-width: 3.2rem; display: flex; align-items: center; gap: .1rem; padding: .08rem .12rem .08rem .08rem;
+  font: inherit; color: var(--text-md); text-align: left; cursor: pointer;
+  background: rgba(255, 255, 255, .025); border: 1px solid var(--line);
+  transition: background var(--t-fast), border-color var(--t-fast); touch-action: manipulation;
+}
+.lo-skin:hover:not(:disabled) { border-color: var(--line-3); }
+.lo-skin.is-on { color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%); border-color: rgba(78, 216, 175, .7); }
+.lo-skin:disabled { cursor: default; opacity: .45; }
+.lo-skin--missing:not(:disabled) { opacity: .62; }
+.lo-skin--missing .lo-skin__group { color: var(--mint-300); }
+.lo-skin__art { flex: 0 0 auto; width: .46rem; height: .46rem; display: grid; place-items: center; overflow: hidden; background: rgba(0, 0, 0, .35); border: 1px solid var(--line); }
+.lo-skin__art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.lo-skin__art--none { width: 100%; height: 100%; background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .06) 0 3px, transparent 3px 7px); }
+.lo-skin__text { min-width: 0; display: flex; flex-direction: column; gap: .01rem; }
+.lo-skin__name { font-size: max(calc(.16 * var(--utility-text, var(--t))), 11px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-skin__group { font-family: var(--font-num); font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); letter-spacing: .06em; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.lo-skin__title { display: flex; align-items: baseline; gap: .06rem; margin: .06rem 0 .04rem; font-size: max(calc(.13 * var(--utility-text, var(--t))), 10px); font-weight: 700; color: var(--text-md); }
+.lo-skin__hint { margin: .04rem 0 0; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); line-height: 1.7; color: var(--text-dim); }
+
+/* 战斗模型 tiles: text only (the model itself is judged in .lo-model below), so they shrink to chips instead of
+   holding a 40 px box that a 400 px character cannot be read in. */
+.lo-skins--text .lo-skin { flex: 0 1 auto; min-width: 0; padding-right: .16rem; }
+.lo-skins--text .lo-skin__name { white-space: nowrap; }
+/* 小人预览 (render/spinePreview.js): the selected battle model, big enough to actually see. */
+.lo-model { display: flex; flex-direction: column; align-items: center; gap: .05rem; margin-top: .08rem; }
+.lo-model__box {
+  display: flex; align-items: center; justify-content: center; width: 2.6rem; max-width: 100%; height: 2.6rem; overflow: hidden;
+  background: rgba(0, 0, 0, .35); border: 1px solid var(--line);
+}
+.lo-model__box img { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.lo-model__cap { margin: 0; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); color: var(--text-dim); }
+
+/* 商店立绘 tiles: the same 1:2 portrait shape the shop card draws (that card sizes the 180×360 art by the card's
+   height, width auto, and fades its bottom out). A square box crops most of the portrait — the shop shows all of it. */
+.lo-skins--tall .lo-skin__art--tall { width: .3rem; height: .6rem; }
+.lo-skins--tall .lo-skin__art--tall img {
+  object-position: center top;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 88%);
+  mask-image: linear-gradient(180deg, #000 55%, transparent 88%);
+}
+
+/* 商店立绘 tiles: narrow columns (the user asked for a slim frame so the art can be bigger). The art keeps the shop
+   card's own 1:2 portrait shape, so nothing is cropped; the series line moves into the tile's tooltip. */
+.lo-skins--tall .lo-skin--tall {
+  flex: 0 0 auto; width: .98rem; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .05rem; padding: .06rem;
+}
+.lo-skins--tall .lo-skin--tall .lo-skin__art--tall { width: 100%; aspect-ratio: 1 / 2; height: auto; }
+.lo-skins--tall .lo-skin--tall .lo-skin__text { align-items: center; width: 100%; min-width: 0; }
+.lo-skins--tall .lo-skin--tall .lo-skin__name {
+  max-width: 100%; font-size: max(calc(.16 * var(--utility-text, var(--t))), 11px); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lo-skins--tall .lo-skin--tall .lo-skin__group { display: none; }
+/* the live preview's canvas fills the frame (render/spinePreview.js appends it there) */
+.lo-model__box { position: relative; }
+.lo-model__box .lo-model__art { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.lo-model__box[data-live] .lo-model__art { display: none; }
+.lo-model__live { position: absolute; inset: 0; }
+.lo-model__box .lo-model__live canvas { display: block; width: 100%; height: 100%; }
+/* one button per animation the model actually ships */
+.lo-model__clips { display: flex; flex-wrap: wrap; gap: .04rem; justify-content: center; max-width: 3.4rem; }
+.lo-clipbtn {
+  flex: 0 0 auto; padding: .03rem .1rem; font: inherit; font-size: max(calc(.12 * var(--utility-text, var(--t))), 10px);
+  color: var(--text-md); text-align: center; cursor: pointer; background: rgba(255, 255, 255, .025); border: 1px solid var(--line);
+  transition: background var(--t-fast), border-color var(--t-fast); touch-action: manipulation;
+}
+.lo-clipbtn:hover { border-color: var(--line-3); }
+.lo-clipbtn.is-on {
+  color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%);
+  border-color: rgba(78, 216, 175, .7);
+}
+
+.lo-clipbtn--more { color: var(--text-dim); border-style: dashed; }
+.lo-clipbtn--more .num { font-family: var(--font-num); }
+
+/* The 自选编队 per-slot 皮肤 panel (screens/diy.js): the same section the 干员调配 detail shows, laid out
+   full-width under the slot grid — ONE slot at a time (the preview renderer has a single canvas). */
+.diy-skin { display: flex; flex-direction: column; gap: .06rem; margin-top: .1rem; padding: .1rem .12rem; background: rgba(255, 255, 255, .015); border: 1px solid var(--line); }
+.diy-skin__head { display: flex; align-items: center; justify-content: space-between; gap: .08rem; }
+.diy-skin__head small { font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); color: var(--text-dim); }
+.diy-skin .lo-sec--skin { margin: 0; }

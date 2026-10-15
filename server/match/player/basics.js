@@ -112,6 +112,40 @@ export class PlayerBasics {
   }
 
   /**
+   * 干员皮肤 (docs/SKINS.md): replace this player's skin choices. `{ [chessId]: skinId }`; the ids come from
+   * data/skins.json on the client. Validation is deliberately light — an unknown or mismatched skinId cannot do
+   * anything but fall back to the operator's default model in spineEntry() — so only the shape and the chess id are
+   * checked here, and a malformed entry is dropped rather than rejecting the whole selection.
+   * @param {Record<string, string>|null} skins
+   * @returns {boolean} whether anything was accepted
+   */
+  setSkins(skins) {
+    if (this.isBot) return false;
+    const out = {};
+    if (skins && typeof skins === 'object' && !Array.isArray(skins)) {
+      for (const [id, skinId] of Object.entries(skins)) {
+        if (typeof skinId !== 'string' || !skinId) continue;
+        // Same gate the loadout uses (checkLoadout): a base, visible chess record. The key is the CHESS id
+        // (`chess_char_1_01_a`), which is what board pieces and the prep view carry — not the operator id.
+        // A 自选 slot's base record passes too — the slot IS the chess the player fields through their picks, and
+        // pieceView / battleInput look the skin up by the piece's baseId, which for a 自选 piece is the slot id, so
+        // the entry reaches the unit without any extra plumbing. Its `visible` is false by design (a slot is never
+        // sold as itself), so it is gated on isDiy + baseId instead of the visibility flags; a stale id after the
+        // pick changed just falls back to the default model (spineEntry) — the client clears it on re-pick.
+        const rec = this.gd.chess(id);
+        const base = rec && !rec.isGolden && (!rec.baseId || rec.baseId === id)
+          && (rec.isDiy || (rec.visible !== false && !rec.isHidden));
+        if (!base) continue;
+        out[id] = skinId;
+      }
+    }
+    this.skins = Object.freeze(out);
+    // skins are PUBLIC (a teammate sees your skin): markPrivate also flags the public view, so the change goes out
+    this.dirty();
+    return Object.keys(out).length > 0;
+  }
+
+  /**
    * The potential / 练度 this player's piece of chess record `chessRecord` fights at (0.2.2; shared/potential.js
    * cultivationOf over `this.ops` — defaults 潜能 6, 精英2 Lv.60): the operator the player owns — the chess fielded as
    * itself, an owned 自选 pick (its charId) — or null for a 补位 stand-in and a prototype 自选 pick.

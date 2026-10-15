@@ -94,7 +94,9 @@ export class MatchMessaging {
    * round's prep also its pair partner's m.private, which shows this board on its other half (bossMate, item 51).
    */
   markPrivate(ps) {
-    if (!ps) return;
+    // `_privDirty` is created after the player states (the PlayerState constructor may already mark itself dirty —
+    // setSkins does, seat.skins carrying a choice into a new match), so the guard is load-bearing, not defensive
+    if (!ps || !this._privDirty) return;
     this._privDirty.add(ps);
     this._pubDirty = true;
     this._persistRev = (this._persistRev | 0) + 1;

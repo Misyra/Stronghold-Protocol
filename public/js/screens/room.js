@@ -25,6 +25,7 @@ import { SettingsButton } from '../ui/settings.js';
 import { LoadoutButton } from './loadout.js';
 import { net, identity } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
+import { initialShare, shareAfterSubmit, shareAfterStatus, shareView, SHARE_POLL_MS, SHARE_POLL_TRIES } from '../ui/roomShare.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -248,20 +249,66 @@ export function RoomScreen() {
   const [busy, setBusy] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [fillTeam, setFillTeam] = useState(false);
-  const [portalEnabled, setPortalEnabled] = useState(false);
-  const [portalSubmitted, setPortalSubmitted] = useState(false);
+  // 分享（§12.5）：探测到的能力 + 本机登记状态 + 两个独立的计时（冷却 / 有效期）。判定全在 ui/roomShare.js 里。
+  const [share, setShare] = useState(() => initialShare());
+  const [, setClockTick] = useState(0);
+  /** 本机状态里的一切时间都用「服务端时间」比较（store 的 clock.offset），玩家机器的时钟不参与。 */
+  const serverNow = () => Date.now() + (store.get().clock?.offset || 0);
+  const applyShare = (next) => setShare((current) => (typeof next === 'function' ? next(current) : next));
+  const probeShare = async () => {
+    try {
+      const response = await fetch('/api/portal-room');
+      const data = response.ok ? await response.json() : null;
+      if (data) applyShare((current) => ({ ...current, enabled: data.enabled === true, mode: data.mode ?? 'off', available: data.available === true }));
+      return data;
+    } catch { return null; }
+  };
+  useEffect(() => { probeShare(); }, []);
+  // 房间实例或房主变了：旧登记状态与在途结果都不再属于这个界面（§12.5）。实例号是唯一能区分
+  // 「同一个码被新房间复用」的东西，所以它变了就一定要清。
   useEffect(() => {
-    const controller = new AbortController();
-    fetch('/api/portal-room', { signal: controller.signal }).then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (!controller.signal.aborted) setPortalEnabled(data?.enabled === true); }).catch(() => {});
-    return () => controller.abort();
-  }, []);
-  useEffect(() => { setPortalSubmitted(false); }, [room?.code]);
+    applyShare((current) => ({ ...initialShare(current), enabled: current.enabled, mode: current.mode, available: current.available }));
+  }, [room?.roomId, room?.hostId]);
+  // 一秒一跳：登记的剩余分钟与冷却的剩余秒数都要走。
   useEffect(() => {
-    if (!portalSubmitted) return;
-    const timer = setTimeout(() => setPortalSubmitted(false), 60000);
-    return () => clearTimeout(timer);
-  }, [portalSubmitted]);
+    if (share.state !== 'registered' && !share.cooldownUntil) return;
+    const timer = setInterval(() => setClockTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [share.state, share.cooldownUntil]);
+  /** 登记结果查询（§12.1「操作结果待确认时界面调用状态查询」）。 */
+  const queryShare = async ({ silent = false } = {}) => {
+    const current = store.get().room;
+    if (!current?.code) return null;
+    const boundRoomId = current.roomId ?? null;
+    try {
+      const response = await fetch(`/api/portal-room/status?code=${encodeURIComponent(current.code)}`, {
+        headers: { Authorization: `Bearer ${identity.getToken()}` }, signal: AbortSignal.timeout(10000) });
+      const data = await response.json().catch(() => null);
+      // 晚回执不写进新房间：查询期间房间可能已经被换掉了。
+      if (boundRoomId !== (store.get().room?.roomId ?? null)) return null;
+      if (data?.state === 'registered') toast(t('本房间已收录到联机站，登记最长保留十分钟'), 'success');
+      else if (data?.state === 'ended' || data?.state === 'absent') {
+        toast(t(data.state === 'ended' ? '登记已结束或已过期' : '没有查到这条登记，可以重新提交'), 'warn');
+      } else if (data?.state === 'pending' && !silent) toast(t('登记结果待确认，请稍后再查'), 'info');
+      else toast(t('登记查询失败，请稍后重试'), 'warn');
+      applyShare((now) => shareAfterStatus(data, { previous: now, serverNow: serverNow() }));
+      return data;
+    } catch {
+      if (!silent) toast(t('登记查询失败，请稍后重试'), 'warn');
+      return null;
+    }
+  };
+  // 结果待确认：自动查询几次（约 48 秒），之后交给手动按钮 —— 界面不能停在「待确认」上什么都不做。
+  useEffect(() => {
+    if (share.state !== 'pending') return;
+    let tries = 0, cancelled = false;
+    const timer = setInterval(() => {
+      if (cancelled || tries >= SHARE_POLL_TRIES) { clearInterval(timer); return; }
+      tries += 1;
+      queryShare({ silent: true });
+    }, SHARE_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [share.state]);
   const fillAvailable = room?.mode === 'coop' && (room.seats || []).filter(Boolean).length < MAX_SEATS &&
     !(room.seats || []).some((s) => s?.isBot);
   useEffect(() => { setFillTeam(false); }, [room?.code, room?.hostId, fillAvailable]);
@@ -293,14 +340,31 @@ export function RoomScreen() {
   };
 
   const toggleReady = () => run('ready', () => net.request('room.ready', { ready: !myReady }));
+  // 提交（§12.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
+  // 其余按业务码给文案。晚回执（房间已经不是当时那间）一概不写进界面。
   const submitPortal = () => run('portal', async () => {
-    const response = await fetch('/api/portal-room', { method: 'POST', signal: AbortSignal.timeout(10000),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.getToken()}` },
-      body: JSON.stringify({ code: room.code }) });
-    const data = await response.json();
-    if (!response.ok) { toast(data.error ? t(data.error) : t('提交失败，请稍后重试'), 'warn'); return; }
-    if (alive.current) setPortalSubmitted(true);
-    toast(t('本房间已收录到联机站，登记最长保留十分钟'), 'success');
+    const boundRoomId = room.roomId ?? null;
+    applyShare((current) => ({ ...current, state: 'submitting', error: null }));
+    let response, data = null;
+    try {
+      response = await fetch('/api/portal-room', { method: 'POST', signal: AbortSignal.timeout(10000),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.getToken()}` },
+        body: JSON.stringify({ code: room.code }) });
+      data = await response.json().catch(() => null);
+    } catch {
+      applyShare((current) => ({ ...current, state: 'idle', error: null }));
+      toast(t('提交失败，请稍后重试'), 'warn');
+      return;
+    }
+    if (boundRoomId !== (store.get().room?.roomId ?? null)) return;
+    if (!response.ok && data?.status !== 'pending') {
+      if (data?.error) toast(t(data.error), 'warn'); else toast(t('提交失败，请稍后重试'), 'warn');
+      // 链路侧不可用：把按钮翻成「暂不可用」，房主可以手动重试探测（而不是按一次报一次错）。
+      if (response.status === 503) applyShare((current) => ({ ...current, available: false }));
+    }
+    applyShare((current) => shareAfterSubmit({ data, previous: current, serverNow: serverNow() }));
+    if (data?.status === 'pending') toast(t('登记结果待确认，正在查询…'), 'info');
+    else if (data?.registered === true) toast(t('本房间已收录到联机站，登记最长保留十分钟'), 'success');
   });
   const start = () => run('start', () => net.request('room.start', {}));
   const search = () => run('search', () => net.request('room.matchmaking', {}));
@@ -356,6 +420,28 @@ export function RoomScreen() {
         ? html`<span class="t-mint">${t('已就绪 · 等待创建者开始模拟')}</span>`
         : html`<span class="t-lo">${t('准备就绪后，创建者即可开始模拟')}</span>`;
 
+  // 分享那一行的六个分支（§12.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
+  const shareStatus = shareView(share, { serverNow: serverNow(), online,
+    canSubmit: !busy && !facts.searching && facts.emptySeats >= 1 });
+  const shareLabels = {
+    unavailable: t('联机站暂不可用'),
+    submitting: t('正在提交…'),
+    pending: t('登记结果待确认'),
+    registered: t('已提交到联机站'),
+    expired: t('登记已过期，可重新提交'),
+    cooldown: t('提交本房间到联机站'),
+    idle: t('提交本房间到联机站'),
+  };
+  const shareHints = {
+    unavailable: t('联机站暂不可用，请稍后重试'),
+    submitting: t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期'),
+    pending: t('提交已发出，正在等待联机站确认；也可以手动查询'),
+    registered: t('本房间已收录到联机站，剩余 {n} 分钟', { n: shareStatus.remainingMin ?? 0 }),
+    expired: t('登记已过期，可以重新提交'),
+    cooldown: t('一分钟内只能提交一次，{n} 秒后可再试', { n: shareStatus.cooldownSec }),
+    idle: t('公开同盟密钥，方便组队 · 十分钟后自动过期'),
+  };
+
   return html`<div class=${`screen room-screen${coop ? ' room-screen--coop' : ''}`}>
     <header class="topbar">
       <div class="topbar__left">
@@ -393,14 +479,18 @@ export function RoomScreen() {
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
 
-    ${coop && facts.isHost && portalEnabled ? html`<div class="room-portal-entry">
-      <${Button} size="sm" variant="secondary" icon="link" loading=${busy === 'portal'}
-        disabled=${!!busy || !online || facts.searching || facts.emptySeats < 1 || portalSubmitted}
+    ${coop && facts.isHost && shareStatus.visible ? html`<div class="room-portal-entry">
+      <${Button} size="sm" variant="secondary" icon="link" loading=${shareStatus.kind === 'submitting'}
+        disabled=${shareStatus.kind === 'submitting' || shareStatus.disabled}
         title=${t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期')}
-        onClick=${submitPortal}>${portalSubmitted ? t('已提交到联机站') : t('提交本房间到联机站')}<//>
-      <span>${t('公开同盟密钥，方便组队 · 十分钟后自动过期')}</span>
+        onClick=${submitPortal}>${shareLabels[shareStatus.kind] ?? shareLabels.idle}<//>
+      ${shareStatus.action === 'query' ? html`<${Button} size="sm" variant="ghost" loading=${busy === 'shareQuery'}
+        title=${t('查询登记结果')} onClick=${() => run('shareQuery', () => queryShare())}>${t('查询登记结果')}<//>` : null}
+      ${shareStatus.action === 'retry' ? html`<${Button} size="sm" variant="ghost" title=${t('重试')}
+        onClick=${() => probeShare()}>${t('重试')}<//>` : null}
+      <span>${shareHints[shareStatus.kind] ?? shareHints.idle}</span>
     </div>` : null}
-    ${!portalEnabled && facts.searching && elapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
+    ${!share.enabled && facts.searching && elapsed >= 10 ? html`<p class="room-recruit-hint" role="status">
       ${t('迟迟匹配不到人？可前往')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a>
       ${t('发布当前同盟的房间号，来人更快。')}
     </p>` : null}

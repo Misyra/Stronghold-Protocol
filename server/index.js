@@ -43,9 +43,10 @@
 import { within } from './pathSafety.js';
 import { initializeModeration } from './moderation/nickname.js';
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
@@ -64,7 +65,8 @@ import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
-import { listenRoomAdmin, loadRoomConfig } from './roomAdmin.js';
+import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
+import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
 import { cleanupRuntime } from './runtimeCleanup.js';
 
@@ -107,6 +109,9 @@ export async function startServer(opts = {}) {
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
   const roomAdminToken = roomAdminTokenFrom(opts);
+  // 分享模式与它的本机凭据（§14.3）。放在启动时校验：填错一个字节不该等到某个玩家点分享才暴露。
+  const portalRoom = portalRoomOptionsFrom(opts);
+  const siteId = siteIdFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
   const lobbyOptions = lobbyOptionsFrom(opts);
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
@@ -131,11 +136,18 @@ export async function startServer(opts = {}) {
     if (within(root, roomAdminStateFile))
       throw new Error('SP_ROOM_ADMIN_STATE_FILE 不能位于公开静态目录');
   }
-  let savedRoomConfig = null;
+  let roomConfig = null;
   if (roomAdminToken) {
-    try { savedRoomConfig = await loadRoomConfig(roomAdminStateFile); }
+    try { roomConfig = await loadRoomConfigDocument(roomAdminStateFile); }
     catch (error) { log.error('[room-admin] saved room limit unavailable; using startup configuration', error); }
+    // v1 → v2 迁移（§10.2）：读出来就按第 1 版落成 v2。不这么做的话，旧文件会一直停在「被兼容读取」的
+    // 状态 —— 每次启动都读一遍旧格式，而第一次改动才写新格式，中间任何一个只读的排查都得自己换算。
+    if (roomConfig?.migrated) {
+      try { await saveRoomConfigDocument(roomAdminStateFile, roomConfig); }
+      catch (error) { log.error('[room-admin] room config migration to v2 failed; the old file stays readable', error); }
+    }
   }
+  const savedRoomConfig = roomConfig?.values ?? null;
   lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
   if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
   if (opts.limitForeignSessions == null && typeof savedRoomConfig?.limitForeignSessions === 'boolean')
@@ -146,6 +158,9 @@ export async function startServer(opts = {}) {
     lobbyOptions.maxForeignSessionsPerIp = savedRoomConfig.maxForeignSessionsPerIp;
   log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
   log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
+  // 分享模式的启动自述：排障的第一件事就是「这个站点是哪种模式、往哪里发」，而这两件事都只来自启动配置。
+  log.info(`[portal] site ${siteId ?? 'unset'} · room share ${portalRoom.mode}` +
+    (portalRoom.mode === 'agent' ? ` via ${portalRoom.agentUrl}` : portalRoom.mode === 'legacy-http' ? ` to ${new URL('/api/rooms/from-game', portalRoom.url).origin}` : ''));
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
@@ -238,6 +253,10 @@ export async function startServer(opts = {}) {
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
+  // Game boot id (lobby share / 联机站, docs/design/portal-agent-wss.md §13.3): a fresh value on every process start.
+  // The room instance id survives a restart, so "the same roomId" alone cannot tell a probe whether an observation it
+  // still holds predates the restart — this can, and the Agent reports it with every room observation.
+  const gameBootId = randomUUID();
   // createStaticHandler already computes the authoritative 16-character release
   // tag. The legacy buildTag exports remain compatibility helpers only.
 
@@ -246,9 +265,9 @@ export async function startServer(opts = {}) {
   const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
     serveStatic,
-    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
+    health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
-    trustProxy: network.opts.trustProxy,
+    portalRoom, trustProxy: network.opts.trustProxy,
   }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });
@@ -283,7 +302,7 @@ export async function startServer(opts = {}) {
     if (bound === null) throw lastError;
     boundHost = bound;
     try {
-      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken,
+      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId, roomConfig,
         port: opts.roomAdminPort ?? (process.env.SP_ROOM_ADMIN_PORT ? Number(process.env.SP_ROOM_ADMIN_PORT) : 3001),
         stateFile: roomAdminStateFile, log });
     } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }

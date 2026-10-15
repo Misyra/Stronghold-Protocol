@@ -5,8 +5,8 @@
 | 用途 | 入口 | 说明 |
 |---|---|---|
 | 安装与检查 | `npm run setup`、`npm run doctor` | 素材准备、依赖和运行环境诊断 |
-| 客户端依赖与素材 | `vendor.mjs`、`fetch-assets.mjs`、`assets/`、`local-extract/` | 下载、清单与本地客户端提取；见[素材说明](../docs/development/ASSETS.md) |
-| 数据与翻译 | `build-data.mjs`、`build-emotes.mjs`、`build-i18n.mjs`、`i18n.mjs` | 从数据表生成游戏数据、表情和多语言内容 |
+| 客户端依赖与素材 | `vendor.mjs`、`fetch-assets.mjs`、`install-skins.mjs`、`assets/`、`local-extract/` | 下载、清单与本地客户端提取；`install-skins.mjs` 按需装一套干员皮肤（约 1 MB，装在开服那台机器上），见[皮肤说明](../docs/SKINS.md)与[素材说明](../docs/development/ASSETS.md) |
+| 数据与翻译 | `build-data.mjs`、`build-emotes.mjs`、`build-i18n.mjs`、`build-skins.mjs`、`i18n.mjs` | 从数据表生成游戏数据、表情、皮肤目录和多语言内容 |
 | 构建体积 | `build-size.mjs` | 只读 Vite 构建模块体积报告：首屏、懒加载与合计（原始/gzip）；需先 `npm run build` |
 | 内容包 | `packs.mjs` | 内容包校验与索引；见[内容包指南](../docs/guides/PACKS.md) |
 | 代码检查与回归 | `check-fork-boundaries.mjs`、`check-imports.mjs`（旧入口）、`kit-coverage.mjs`、`golden.mjs` | 导入边界、技能覆盖和黄金结果 |

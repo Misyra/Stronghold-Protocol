@@ -22,6 +22,7 @@
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, MicroLabel, Spinner } from './components.js';
+import { recoverImageError } from '../image.js';
 import { useStore, shallowEqual } from '../store.js';
 import { data } from '../data.js';
 import { toast } from './toasts.js';
@@ -95,6 +96,11 @@ function skinPortrait(charId, skinId) {
  */
 function SkinGroup(p) {
   const { leading, list, chosenId, art, onPick, installing, progLabel, onInstall, thumbnails = true, tall = false } = p;
+  // A tile whose art 404s (an uninstalled skin's file, a broken mirror) falls back to the hatched placeholder instead
+  // of showing a broken-image box — the repo-wide rule for DOM game images is crossorigin + recoverImageError
+  // (public/js/image.js, test/ui/image-policy.test.js: CORS must precede src or the WebGL path would poison the cache).
+  const [bad, setBad] = useState(() => new Set());
+  const dropArt = (url) => setBad((s) => (s.has(url) ? s : new Set(s).add(url)));
   // `''` is the group's own tile and "nothing chosen" arrives as null/undefined — normalise both, or the tile that
   // means "the operator's own" would never read as selected (the first version compared the raw values)
   const chosen = chosenId || '';
@@ -105,8 +111,9 @@ function SkinGroup(p) {
       onClick=${extra.onClick}>
       ${thumbnails
         ? html`<span class=${cx('lo-skin__art', tall && 'lo-skin__art--tall')}>
-            ${url
-              ? html`<img src=${url} alt="" loading="lazy" />`
+            ${url && !bad.has(url)
+              ? html`<img crossorigin="anonymous" src=${url} alt="" draggable=${false} loading="lazy"
+                  onError=${(event) => recoverImageError(event, () => dropArt(url))} />`
               : extra.busy ? html`<${Spinner} size="sm" />` : html`<span class="lo-skin__art--none"></span>`}
           </span>`
         : null}
@@ -195,6 +202,12 @@ export function SkinSection({ chess, net = appNet }) {
     setExtraOpen(false);
     setLive(false);
   }, [charId, previewSkin]);
+
+  // The frame's still image must keep ONE constant shape (see TRANSPARENT_PX above): a failed URL swaps its src for
+  // the transparent pixel instead of dropping the img, or Preact re-diffs the box's children and takes the live canvas
+  // with it. Reset per (operator, skin) — a different choice is a different file.
+  const [artBad, setArtBad] = useState(false);
+  useEffect(() => { setArtBad(false); }, [charId, previewSkin]);
 
   // LIVE playback: mount the model in the frame and step it every frame, exactly like a battlefield view. Mounted
   // once per (operator, skin); the clip buttons only re-play on the existing instance.
@@ -291,7 +304,8 @@ export function SkinSection({ chess, net = appNet }) {
       onPick=${(id) => (id ? setSkin(chessId, id) : clearSkin(chessId))} />
     <div class="lo-model" data-testid="model-preview">
       <div class="lo-model__box" data-live=${live ? '1' : null}>
-        <img class="lo-model__art" src=${previewUrl || TRANSPARENT_PX} alt="" />
+        <img class="lo-model__art" crossorigin="anonymous" src=${artBad ? TRANSPARENT_PX : (previewUrl || TRANSPARENT_PX)} alt="" draggable=${false}
+          onError=${(event) => recoverImageError(event, () => setArtBad(true))} />
         <div class="lo-model__live" ref=${setBoxNode}></div>
       </div>
       <p class="lo-model__cap">${t('当前战斗模型：{name}', { name: previewName })}${currentClip ? ` · ${clipLabel(currentClip)}` : ''}${clipTotal ? ` · ${t('共 {n} 段动画', { n: clipTotal })}` : ''}${note}</p>

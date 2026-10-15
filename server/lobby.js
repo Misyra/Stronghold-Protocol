@@ -110,6 +110,10 @@ import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
+import { N_ } from '../shared/i18n.js';
+import { RoomActionLimiter } from './roomProtection.js';
+import { BotPopulation, botCountry } from './botPopulation.js';
+import { RoomReclamation } from './roomReclamation.js';
 import { ROOM_PROTECTION_DEFAULTS, validateRoomConfig } from './roomConfig.js';
 import { installSkinInBackground } from './skinInstall.js';
 

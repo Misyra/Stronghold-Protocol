@@ -4,6 +4,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Lobby } from '../server/lobby.js';
+import { SessionRegistry } from '../server/net.js';
 import { DATA, makeMatch } from './match/harness.js';
 import { Battle } from '../server/sim/Battle.js';
 import { avatarUrl, unitPictureUrl, createAssets } from '../public/js/assets.js';
@@ -13,10 +14,14 @@ const INSIDE_GOLDEN = 'chess_char_1_01_b';
 const SKIN_ID = 'char_498_inside@kitchen#2';
 
 describe('skins lifecycle: lobby wiring', () => {
-  /** A Lobby with the pieces a unit test needs (no sockets, no registry bookkeeping). */
+  /**
+   * A Lobby with the pieces a unit test needs (no sockets, no registry bookkeeping). The registry is the real
+   * SessionRegistry — this fork's lobby reaches into it (`registry.byId`, the room limiter's `session.limitKey`),
+   * so a hand-rolled `{ byId: new Map() }` stub is not enough.
+   */
   const lobbyWith = () => {
     const log = { info() {}, warn() {}, error() {} };
-    const lobby = new Lobby({ registry: { byId: new Map(), byPlayerId: new Map() }, log });
+    const lobby = new Lobby({ registry: new SessionRegistry(), log });
     lobby.broadcastState = () => {};
     return lobby;
   };

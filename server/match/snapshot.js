@@ -242,6 +242,9 @@ export const PLAYER_FIELDS = Object.freeze([
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult', 'diy', 'diyStock', 'diyBanned',
+  // 干员皮肤 (docs/SKINS.md): the per-chess model choice, carried in by the seat and public on the wire. Persisted
+  // like the loadout — a restored match would otherwise silently revert every player to the default model.
+  'skins',
 ]);
 
 // Explicitly rebuilt or phase-local state. A new own property must be classified here or persisted above.

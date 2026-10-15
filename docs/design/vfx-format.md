@@ -317,12 +317,14 @@ Only enabled modules are written (InitialModule always); a missing module is off
 names (`ParticleSystem` in a Unity YAML scene); the enum values are Unity's.
 
 **System fields**: `lengthInSec` (duration), `looping`, `prewarm` (a looping system starts as if one full duration had
-already run), `startDelay` (MinMaxCurve, s), `playOnAwake`, `simulationSpeed`, `moveWithTransform` (simulation space:
-0 Local — particles move with the system's transform, 1 World — they stay where they were emitted, 2 Custom — relative
-to `moveWithCustomTransform` `{node, component}`), `scalingMode` (0 Hierarchy — the full world scale applies, 1 Local —
-only the system's own `scale` applies to its particles, 2 Shape — scale applies to the emission shape only), `stopAction`,
-`cullingMode`, `ringBufferMode`, `ringBufferLoopRange`, `emitterVelocityMode` (0 Transform, 1 Rigidbody: the emitter's
-velocity for inherit-velocity and rate-over-distance), `useUnscaledTime`, `autoRandomSeed`, `randomSeed`.
+already run), `startDelay` (MinMaxCurve, s), `playOnAwake`, `simulationSpeed`, `moveWithTransform` (simulation space: 0
+Local — particles move with the system's transform, 1 World — they stay where they were emitted, 2 Custom — relative to
+`moveWithCustomTransform` `{node, component}`), `scalingMode` (0 Hierarchy — the full world scale applies, 1 Local —
+only the system's own `scale` applies to its particles: the player's frame is the world rotation with unit axes times
+that scale, and an axis a parent scaled to zero is rebuilt from the other two, mirrored with the effect (history
+§32.14.38), 2 Shape — scale applies to the emission shape only), `stopAction`, `cullingMode`, `ringBufferMode`,
+`ringBufferLoopRange`, `emitterVelocityMode` (0 Transform, 1 Rigidbody: the emitter's velocity for inherit-velocity and
+rate-over-distance), `useUnscaledTime`, `autoRandomSeed`, `randomSeed`.
 
 **InitialModule** (Main): `startLifetime`, `startSpeed` (along the shape's emission direction), `startSize` (or, with
 `size3D`, `startSize` / `startSizeY` / `startSizeZ` per axis), `startRotation` (radians; with `rotation3D`

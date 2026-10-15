@@ -85,3 +85,40 @@ describe('where the preload is reachable', () => {
     assert.equal(/可离线进入对局|断网[^。]*可用/.test(panel), false);
   });
 });
+
+/**
+ * 干员皮肤 in the manager (docs/SKINS.md): its own three-way scope next to the required/optional tiers, off by
+ * default, and the picked list rendered from the manifest's counters — never as just another optional group.
+ */
+describe('the 干员皮肤 scope', () => {
+  const panel = read('public/js/ui/resourcePanel.js');
+
+  test('the tier list leaves skins to their own section', () => {
+    assert.ok(panel.includes("g.tier === tier && g.id !== 'skin'"), 'the 可选资源 list skips the skin group');
+    assert.match(panel, /<\$\{ResourceSkins\} st=\$\{st\}/, 'the section is rendered by the manager');
+    assert.match(panel, /if \(!skins\.length\) return null;/, 'a deployment without skins installed shows nothing');
+  });
+
+  test('three modes, no reference to the 可选资源 switch', () => {
+    assert.ok(panel.includes("['off', t('不预载')], ['picked', t('挑选')], ['all', t('全部')]"));
+    assert.ok(panel.includes('data-testid="skin-modes"'));
+    assert.match(panel, /onScope\(\{ mode: next, keys: picked \}\)/, 'the picks survive a mode switch');
+    assert.ok(panel.includes("t('跟随我的皮肤选择')"), 'the equipped outfits are one click away');
+    assert.ok(panel.includes('data-testid="skin-list"'));
+    // Names are read into state and refreshed when the tables settle, not read during the render: reading them in the
+    // render races the load and the first paint after it shows ids instead of names.
+    assert.match(panel, /data\.loadAll\('assets', 'chess'\)/, 'names load only when the list is opened');
+    assert.match(panel, /data\.subscribe\(refresh\)/);
+    assert.match(panel, /useState\(labelTables\)/);
+    assert.equal(/resource-tier__list[\s\S]{0,400}skin/.test(panel), false, 'skins are not a tier row');
+  });
+
+  test('main.js persists the selection as its own setting pair', () => {
+    const main = read('public/js/main.js');
+    assert.match(main, /onSkins=\$\{\(scope\) => updateSettings\(\{ preloadSkins: scope\.mode, preloadSkinIds: scope\.keys \}\)\}/);
+    assert.ok(main.includes('{ mode: s.preloadSkins, keys: s.preloadSkinIds }'), 'the saved selection reaches syncResources');
+    const settings = read('public/js/ui/gameLogic/settings.js');
+    assert.ok(settings.includes("preloadSkins: 'off', preloadSkinIds: Object.freeze([])"));
+    assert.match(settings, /preloadSkins: PRELOAD_SKIN_MODES\.includes\(r\.preloadSkins\)/);
+  });
+});

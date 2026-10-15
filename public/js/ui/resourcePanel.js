@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Button, MicroLabel, Modal, ProgressBar } from './components.js';
 import { createStore, useStore } from '../store.js';
+import { data, getChess } from '../data.js';
+import { skinsStore } from './skins.js';
 import { formatBytes } from '../resources/common.js';
 import { clearResources, exportResources, importResources, inspectResources, pauseResources,
   resourceState, startResources, subscribeResources } from '../resources/index.js';
@@ -65,8 +67,9 @@ function stateText(st, enabled) {
   if (st.archive) return st.archive === 'import' ? t('正在导入') : t('正在导出');
   if (st.phase === 'foreign') return t('另一标签页处理中');
   if (busy(st)) return t('处理中');
-  if (st.complete) return t('全部已保存');
-  if (st.selectionComplete && st.tier1Total) return t('必备已保存');
+  // The selection decides the wording: with optional files (or chosen 干员皮肤) in it, 「全部已保存」 means those too.
+  if (st.selectionComplete) return st.tier2Wanted > 0 ? t('全部已保存') : t('必备已保存');
+  if (st.requiredComplete && st.tier1Total) return t('必备已保存');
   return enabled ? t('已暂停') : t('未开启');
 }
 
@@ -93,7 +96,9 @@ export function ResourceLauncher({ enabled }) {
 }
 
 function ResourceTier({ st, tier, optional, onOptional, disabled }) {
-  const groups = st.groups.filter((g) => g.tier === tier);
+  // 干员皮肤 are tier 2 too, but they are picked item by item in their own section (ResourceSkins below): keeping them
+  // out of this list is what makes 「可选资源」 mean voices/sound/music/tutorials again.
+  const groups = st.groups.filter((g) => g.tier === tier && g.id !== 'skin');
   const total = groups.reduce((n, g) => n + g.wanted, 0);
   const done = groups.reduce((n, g) => n + g.present, 0);
   const bytes = groups.reduce((n, g) => n + g.bytes, 0);
@@ -119,8 +124,139 @@ function ResourceTier({ st, tier, optional, onOptional, disabled }) {
   </section>`;
 }
 
+/** The skins this browser has equipped (ui/skins.js), as the `charId/skinId` keys a manifest carries. */
+function equippedSkinKeys() {
+  const keys = new Set();
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) {
+    const charId = getChess(chessId)?.charId;
+    if (charId && skinId) keys.add(`${charId}/${skinId}`);
+  }
+  return keys;
+}
+
+/** The label tables the list renders from, read in one go (`{ names, assets, catalogue }`). */
+function labelTables() {
+  return { names: operatorNames(), assets: data.get('assets'), catalogue: data.get('skins')?.chars };
+}
+
+/** Name and series of one `charId/skinId`, from the tables read by `labelTables()`. */
+function skinLabel(key, { names, assets, catalogue }) {
+  const slash = key.indexOf('/');
+  const charId = key.slice(0, slash), skinId = key.slice(slash + 1);
+  const entry = assets?.chars?.[charId]?.skins?.[skinId];
+  const fromCatalogue = (catalogue?.[charId] || []).find((s) => s.id === skinId);
+  return {
+    charId,
+    operator: names.get(charId) || charId,
+    skin: entry?.name || fromCatalogue?.name || skinId,
+    group: entry?.group || fromCatalogue?.group || '',
+  };
+}
+
+/**
+ * `charId` → operator name, from the chess table's records (the same table the skin sync itself is keyed by). That table
+ * is the game's roster, and the skin catalogue is wider than it — 174 operators ship outfits here against 266 chess
+ * records over 121 operators — so an outfit whose operator the roster does not carry keeps its charId as the label
+ * (`skinLabel`), which is at least searchable.
+ */
+function operatorNames() {
+  const out = new Map();
+  for (const record of data.list('chess')) {
+    if (record?.charId && record.name && !out.has(record.charId)) out.set(record.charId, record.name);
+  }
+  return out;
+}
+
+/**
+ * 干员皮肤 — the one optional group a player picks item by item (docs/SKINS.md). A full install is ~328 MiB, so it is
+ * off by default and never rides 「同时预载可选资源」: the modes are off / the picked ones / every skin the server offers.
+ * The counters come from the manifest (`st.skins`), so a deployment without skins installed simply shows nothing.
+ */
+function ResourceSkins({ st, scope, disabled, onScope }) {
+  const skins = st.skins || [];
+  if (!skins.length) return null;
+  const mode = scope.mode || 'off';
+  const picked = scope.keys || [];
+  const pickedSet = new Set(picked);
+  const files = skins.reduce((n, s) => n + s.files, 0);
+  const cachedFiles = skins.reduce((n, s) => n + s.present, 0);
+  const totalBytes = skins.reduce((n, s) => n + s.totalBytes, 0);
+  const cachedBytes = skins.reduce((n, s) => n + s.bytes, 0);
+  const done = skins.filter((s) => s.files > 0 && s.present >= s.files).length;
+  // Keep the picks while the mode is off/all: switching back to 「挑选」 restores what the player chose.
+  const setMode = (next) => onScope({ mode: next, keys: picked });
+  const setKeys = (keys) => onScope({ mode: 'picked', keys: [...new Set(keys)].sort() });
+  return html`<section class="resource-skins" aria-label=${t('干员皮肤')}>
+    <header class="resource-skins__head">
+      <div><h3>${t('干员皮肤')}</h3>
+        <p>${t('按套下载皮肤模型与立绘：一套约 1.2 MiB，{total} 套共 {size}。', { total: skins.length, size: formatBytes(totalBytes) })}</p></div>
+      <div class="resource-skin--modes" role="group" aria-label=${t('皮肤预载范围')} data-testid="skin-modes">
+        ${[['off', t('不预载')], ['picked', t('挑选')], ['all', t('全部')]].map(([id, label]) => html`<button type="button" key=${id}
+          aria-pressed=${mode === id ? 'true' : 'false'} disabled=${disabled} onClick=${() => setMode(id)}>${label}</button>`)}
+      </div>
+    </header>
+    <div class="resource-tier__summary">
+      <span class="num">${t('{done} / {total} 套已保存', { done, total: skins.length })}
+        ${mode === 'picked' ? ` · ${t('已选 {n} 套', { n: pickedSet.size })}` : ''}</span>
+      <span class="num">${formatBytes(cachedBytes)} / ${formatBytes(totalBytes)}</span>
+    </div>
+    <${ProgressBar} value=${cachedFiles} max=${Math.max(1, files)} size="sm" tone="amber" />
+    ${mode === 'picked' ? html`<${SkinList} skins=${skins} picked=${pickedSet} disabled=${disabled} setKeys=${setKeys} />` : null}
+  </section>`;
+}
+
+/** The item-by-item half of the section: search, per-skin checkboxes, 全选 / 清空 / 跟随我的皮肤选择. */
+function SkinList({ skins, picked, disabled, setKeys }) {
+  const [query, setQuery] = useState('');
+  // Names come from the asset manifest (skin name/series) and the chess table (operator name) — loaded on demand, only
+  // once the player opens this list, so a client that never picks skins never pays for either table. The tables are read
+  // *into state* and re-read whenever one of them settles (or the locale switches), which is what makes the first paint
+  // after the loads show names instead of ids: reading them during the render would race the load.
+  const [labels, setLabels] = useState(labelTables);
+  useEffect(() => {
+    let live = true;
+    const refresh = () => { if (live) setLabels(labelTables()); };
+    const unsub = data.subscribe(refresh);
+    void data.loadAll('assets', 'chess').then(refresh, refresh);
+    refresh();
+    return () => { live = false; unsub(); };
+  }, []);
+  const rows = skins.map((skin) => ({ ...skin, ...skinLabel(skin.id, labels) }));
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = terms.length ? rows.filter((row) => terms.every((term) =>
+    `${row.operator} ${row.skin} ${row.group} ${row.id}`.toLowerCase().includes(term))) : rows;
+  const toggle = (key, on) => setKeys(on ? [...picked, key] : [...picked].filter((k) => k !== key));
+  const follow = () => {
+    const equipped = equippedSkinKeys();
+    setKeys(skins.map((s) => s.id).filter((id) => equipped.has(id)));
+  };
+  return html`<div class="resource-skins__list" data-testid="skin-list">
+    <div class="resource-skins__tools">
+      <input type="search" value=${query} disabled=${disabled} placeholder=${t('搜索干员、皮肤或系列')}
+        aria-label=${t('搜索干员、皮肤或系列')} onInput=${(e) => setQuery(e.currentTarget.value)} />
+      <${Button} variant="secondary" size="sm" disabled=${disabled} onClick=${follow}>${t('跟随我的皮肤选择')}<//>
+      <${Button} variant="secondary" size="sm" disabled=${disabled} onClick=${() => setKeys(rows.map((r) => r.id))}>${t('全选')}<//>
+      <${Button} variant="secondary" size="sm" disabled=${disabled || !picked.size} onClick=${() => setKeys([])}>${t('清空')}<//>
+    </div>
+    <p class="set-hint">${t('只预载勾选的皮肤；未勾选的不会下载，已缓存的其他皮肤不会被清理。')}</p>
+    <ul class="resource-skins__rows">
+      ${shown.map((row) => {
+        const cached = row.files > 0 && row.present >= row.files;
+        return html`<li key=${row.id} class=${cached ? 'is-cached' : ''} data-skin=${row.id} title=${row.id}>
+          <label><input type="checkbox" checked=${picked.has(row.id)} disabled=${disabled}
+            onChange=${(e) => toggle(row.id, e.currentTarget.checked)} />
+            <span class="resource-skins__name">${row.skin}${row.group ? html`<small>${row.group}</small>` : null}</span>
+            <span class="resource-skins__op">${row.operator}</span>
+            <span class="num">${formatBytes(row.totalBytes)}</span>
+            <span class="num">${cached ? t('已保存') : t('未保存')}</span></label></li>`;
+      })}
+    </ul>
+    ${shown.length ? null : html`<p class="set-hint">${t('没有匹配的皮肤。')}</p>`}
+  </div>`;
+}
+
 /** Mounted once in main.js, above all screens including the settings modal. */
-export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', onVoiceLang, onChange, onOptional, onAllVoices }) {
+export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', skins, onVoiceLang, onChange, onOptional, onAllVoices, onSkins }) {
   const { open } = useStore((s) => s, Object.is, resourceUi);
   const st = useResources();
   const fileInput = useRef(null);
@@ -171,6 +307,7 @@ export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', o
         <${ResourceTier} st=${st} tier=${1} />
         <${ResourceTier} st=${st} tier=${2} optional=${optional} onOptional=${onOptional} disabled=${archiveBusy} />
       </div>
+      <${ResourceSkins} st=${st} scope=${skins || { mode: 'off', keys: [] }} disabled=${archiveBusy} onScope=${onSkins || (() => {})} />
       ${st.combat && enabled ? html`<p class="resource-manager__intro">${t('作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。')}</p>` : null}
       <p class=${`resource-manager__status${st.error ? ' is-error' : ''}`} role="status" aria-live="polite">
         ${st.message || (enabled ? t('预载已开启') : t('选择下载范围，然后开始预载；也可以直接导入资源包。'))}</p>

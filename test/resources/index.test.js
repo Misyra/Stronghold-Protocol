@@ -45,7 +45,10 @@ test('required-only preload stops after visuals; opting in later downloads only 
   await mod.syncResources(true, false);
   assert.deepEqual(env.calls.fetch.slice(1), FILES.filter((f) => f.tier === 1).map((f) => ORIGIN + f.url));
   assert.equal(mod.resourceState().selectionComplete, true);
-  assert.equal(mod.resourceState().complete, false);
+  // The optional tier is out of scope, so 「这次选择」 is the required tier alone — and the two flags still separate the
+  // two states the panel words differently (全部已保存 / 必备已保存).
+  assert.equal(mod.resourceState().requiredComplete, true);
+  assert.equal(mod.resourceState().tier2Wanted, 0);
   assert.match(mod.resourceState().message, /必备资源已预载完成/);
   const count = env.calls.fetch.length;
   await mod.startResources();
@@ -53,6 +56,38 @@ test('required-only preload stops after visuals; opting in later downloads only 
   await mod.syncResources(true, true);
   assert.deepEqual(env.calls.fetch.slice(count), FILES.filter((f) => f.tier === 2).map((f) => ORIGIN + f.url));
   assert.equal(mod.resourceState().complete, true);
+  await mod.syncResources(false);
+});
+
+test('干员皮肤: the saved selection decides which outfits are fetched, on its own switch', async (t) => {
+  const files = [
+    { url: '/assets/ui/panel.png', tier: 1, size: 4 },
+    { url: '/assets/audio/voice/cn/x.mp3', tier: 2, size: 6 },
+    { url: '/assets/spine/op/kalts/boc/boc.skel', tier: 2, size: 7, skin: 'char_003_kalts/char_003_kalts@boc#6' },
+    { url: '/assets/char/avatar/skin/kalts_boc.png', tier: 2, size: 5, skin: 'char_003_kalts/char_003_kalts@boc#6' },
+    { url: '/assets/spine/op/amiya/winter/winter.skel', tier: 2, size: 8, skin: 'char_002_amiya/char_002_amiya_winter_1' },
+  ];
+  const env = stubEnv({ manifest: { ...MANIFEST, files, count: files.length, tier1: 1, sized: files.length, totalBytes: 30 } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?skin-selection');
+  // 「同时预载可选资源」 off + one picked outfit: that outfit only — never a voice, never another outfit.
+  await mod.syncResources(true, false, 'cn', false, { mode: 'picked', keys: ['char_003_kalts/char_003_kalts@boc#6'] });
+  assert.deepEqual(env.calls.fetch.slice(1).sort(), [
+    ORIGIN + '/assets/ui/panel.png',
+    ORIGIN + '/assets/char/avatar/skin/kalts_boc.png',
+    ORIGIN + '/assets/spine/op/kalts/boc/boc.skel',
+  ].sort());
+  assert.ok(!env.calls.fetch.some((url) => url.includes('/voice/')), 'a skin pick never drags the voices in');
+  assert.equal(mod.resourceState().skinScope.mode, 'picked');
+  assert.equal(mod.resourceState().selectionComplete, true, 'the picked outfit is what this selection asked for');
+  // 全部: the rest of the installed outfits follow.
+  const count = env.calls.fetch.length;
+  await mod.syncResources(true, false, 'cn', false, 'all');
+  assert.deepEqual(env.calls.fetch.slice(count), [ORIGIN + '/assets/spine/op/amiya/winter/winter.skel']);
+  // 关闭皮肤: nothing new is fetched, and what is cached stays (the panel's cache cleaning owns that decision).
+  await mod.syncResources(true, false, 'cn', false, 'off');
+  assert.equal(env.calls.fetch.length, count + 1);
+  assert.equal(mod.resourceState().skinScope.mode, 'off');
   await mod.syncResources(false);
 });
 
@@ -311,7 +346,7 @@ function stubEnv({ manifest = MANIFEST, fail = false, secure = true } = {}) {
         if (fail) return new Response('nope', { status: 503 });
         return new Response(JSON.stringify(manifest), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      const file = FILES.find((f) => url.endsWith(f.url));
+      const file = (manifest.files || FILES).find((f) => url.endsWith(f.url));
       if (!file) return new Response('missing', { status: 404 });
       if (opts?.signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       return new Response('b'.repeat(file.size), { status: 200, headers: { 'Content-Type': 'image/png' } });

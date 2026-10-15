@@ -7,8 +7,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CACHE_NAME, CACHE_PREFIX, cacheName, indexUrl, rangeResponse } from '../../public/js/resources/common.js';
-import { ResourceStore } from '../../public/js/resources/store.js';
+import { CACHE_NAME, CACHE_PREFIX, cacheName, indexUrl, rangeResponse, TIER_ESSENTIAL, TIER_REST } from '../../public/js/resources/common.js';
+import { collectResourceFiles } from '../../server/resources.js';
+import { ResourceStore, normalizeSkinScope } from '../../public/js/resources/store.js';
 import { handleResourceRequest } from '../../public/js/resources/service.js';
 
 /** Minimal Cache Storage (Cache API surface the store uses: open/keys/delete + cache.put/match/keys). */
@@ -577,4 +578,105 @@ test('versioned media routes resolve cached audio and preserve range responses',
   const res = await handleResourceRequest(new Request(ORIGIN + root + '/media/bgm/act1', { headers: { Range: 'bytes=1-3' } }), { caches });
   assert.equal(res.status, 206);
   assert.equal(await res.text(), 'bcd');
+});
+
+/**
+ * 干员皮肤 in the preload selection (docs/SKINS.md): a full install is ~328 MiB, so the group is off by default and the
+ * player's picks decide what 「可选」 means for it — independently of the voices/sound/music switch.
+ */
+describe('干员皮肤 selection', () => {
+  const KALTS = { route: 'char_003_kalts/char_003_kalts@boc#6' };
+  const AMIYA = { route: 'char_002_amiya/char_002_amiya_winter_1' };
+  const FILES = [
+    { url: '/assets/spine/op/char_003_kalts/front/char_003_kalts.skel', tier: TIER_ESSENTIAL, size: 10 },
+    { url: '/assets/audio/voice/cn/char_003_kalts/1.mp3', tier: TIER_REST, size: 20 },
+    { url: '/assets/audio/voice/jp/char_003_kalts/1.mp3', tier: TIER_REST, size: 20 },
+    { url: '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel', tier: TIER_REST, size: 100, skin: KALTS.route },
+    { url: '/assets/char/avatar/skin/char_003_kalts_boc_6.png', tier: TIER_REST, size: 5, skin: KALTS.route },
+    { url: '/assets/spine/op/char_002_amiya/char_002_amiya_winter_1/front/char_002_amiya_winter_1.skel', tier: TIER_REST, size: 90, skin: AMIYA.route },
+  ];
+
+  test('normalizeSkinScope: one canonical shape, junk keys dropped', () => {
+    assert.deepEqual(normalizeSkinScope(null), { mode: 'off', keys: new Set() });
+    assert.deepEqual(normalizeSkinScope('all'), { mode: 'all', keys: new Set() });
+    assert.deepEqual(normalizeSkinScope('off'), { mode: 'off', keys: new Set() });
+    assert.deepEqual(normalizeSkinScope(['char_a/x']), { mode: 'picked', keys: new Set(['char_a/x']) });
+    assert.deepEqual(normalizeSkinScope({ mode: 'picked', keys: ['char_a/x', 'char_a/x'] }), { mode: 'picked', keys: new Set(['char_a/x']) });
+    assert.deepEqual(normalizeSkinScope({ mode: 'picked', keys: ['../etc/passwd', 42, 'char_a/x.png'] }), { mode: 'picked', keys: new Set() });
+    assert.deepEqual(normalizeSkinScope({ mode: 'something' }), { mode: 'off', keys: new Set() });
+    assert.deepEqual(normalizeSkinScope({ mode: 'picked', keys: new Set(['char_a/x']) }), { mode: 'picked', keys: new Set(['char_a/x']) });
+  });
+
+  test('off by default: skins out of the selection, the rest of the optional set unchanged', async () => {
+    const s = store(manifest(FILES));
+    s.setScope({ optional: true, voiceLang: 'cn' });
+    assert.equal(s.skinScope().mode, 'off');
+    const urls = s.selectedFiles.map((f) => f.url);
+    assert.ok(urls.includes('/assets/audio/voice/cn/char_003_kalts/1.mp3'));
+    assert.ok(!urls.includes('/assets/audio/voice/jp/char_003_kalts/1.mp3'), 'the other language stays out');
+    assert.ok(!urls.includes('/assets/char/avatar/skin/char_003_kalts_boc_6.png'), 'no skin until it is picked');
+    assert.ok(!urls.includes('/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel'));
+    const st = await s.status();
+    assert.equal(st.skins.length, 2, 'both installed skins are listed with their counters');
+    const kalts = st.skins.find((x) => x.id === KALTS.route);
+    assert.deepEqual([kalts.files, kalts.wanted, kalts.present, kalts.totalBytes], [2, 0, 0, 105]);
+    assert.equal(st.wanted, 2, 'required tier + the cn voice, nothing else');
+  });
+
+  test('picked: only those files are downloaded, and only when the rest of the selection is done', async () => {
+    const { fetch, calls } = fetcherFor();
+    const s = store(manifest(FILES), { fetch });
+    s.setScope({ optional: false, skins: { mode: 'picked', keys: [KALTS.route] } });
+    // 「同时预载」 is off and the voices stay out — a skin choice must never drag them along (and vice versa).
+    assert.deepEqual(s.selectedFiles.map((f) => f.url).sort(), [
+      '/assets/char/avatar/skin/char_003_kalts_boc_6.png',
+      '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel',
+      '/assets/spine/op/char_003_kalts/front/char_003_kalts.skel',
+    ].sort());
+    const st = await s.status();
+    assert.equal(st.tier2Wanted, 2, 'the picked skin is what tier 2 means here');
+    assert.equal(st.groups.find((g) => g.id === 'skin').tier, TIER_REST);
+    await s.download({ tiers: [TIER_ESSENTIAL] });
+    await s.download({ tiers: [TIER_REST] });
+    assert.deepEqual(calls.filter((u) => u.includes('skin') || u.includes('char_003_kalts_boc_6')).sort(), [
+      `${ORIGIN}/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel`,
+      `${ORIGIN}/assets/char/avatar/skin/char_003_kalts_boc_6.png`,
+    ].sort());
+    assert.ok(!calls.some((u) => u.includes('amiya_winter_1')), 'an unpicked skin is never fetched');
+    assert.ok(!calls.some((u) => u.includes('/audio/voice/')), 'and neither is a voice');
+    const after = await s.status();
+    assert.equal(after.complete, true);
+    assert.equal(after.skins.find((x) => x.id === KALTS.route).present, 2);
+  });
+
+  test('all: every installed skin, still without the optional audio', async () => {
+    const s = store(manifest(FILES));
+    s.setScope({ optional: false, skins: 'all' });
+    const urls = s.selectedFiles.map((f) => f.url);
+    assert.ok(urls.includes('/assets/spine/op/char_002_amiya/char_002_amiya_winter_1/front/char_002_amiya_winter_1.skel'));
+    assert.ok(!urls.some((u) => u.includes('/audio/voice/')));
+    const st = await s.status();
+    assert.equal(st.skins.every((x) => x.wanted === x.files), true, 'every installed skin is wanted in this mode');
+  });
+
+  test('the voice language filter still applies inside a selection, and clearing optional removes skins', async () => {
+    const caches = new MemoryCaches();
+    const s = store(manifest(FILES), { caches });
+    s.setScope({ optional: true, voiceLang: 'jp', skins: 'all' });
+    const urls = s.selectedFiles.map((f) => f.url);
+    assert.ok(urls.includes('/assets/audio/voice/jp/char_003_kalts/1.mp3'));
+    assert.ok(!urls.includes('/assets/audio/voice/cn/char_003_kalts/1.mp3'));
+    await seed(caches, `${ORIGIN}/assets/char/avatar/skin/char_003_kalts_boc_6.png`, 'skin', 'h4');
+    assert.equal((await s.status()).skins.find((x) => x.id === KALTS.route).present, 1);
+    await s.clear({ optionalOnly: true });
+    assert.equal((await s.status()).skins.find((x) => x.id === KALTS.route).present, 0, 'skins are optional resources too');
+    assert.equal((await s.status()).present.has(`${ORIGIN}/assets/spine/op/char_003_kalts/front/char_003_kalts.skel`), false);
+  });
+
+  test('a skin listed twice keeps its key and the lowest tier', () => {
+    const shared = '/assets/char/avatar/skin/shared.png';
+    const files = collectResourceFiles({ chars: { c: { avatar: shared, skins: { 'c@x#1': { avatar: shared } } } } }, null);
+    assert.equal(files[0].skin, 'c/c@x#1');
+    assert.equal(files[0].tier, TIER_ESSENTIAL, 'the required listing wins the tier');
+  });
 });

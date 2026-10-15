@@ -441,8 +441,9 @@ export class FxWiring {
    * important, skip, data }): at its FollowMountPoint's point when it has one — the client keeps it there from its first
    * frame, with the point's rotation unless `_keepOriginRotation` (a weapon effect rides its bone: 安洁莉娜's staff glow,
    * 灰毫's muzzle flash; a 驭械术士's floating unit its Special point) —, else at its spawn location (MUZZLE_POINT and the
-   * Special points with the point's rotation; DESIGN §33.11). `follow`: a held loop of a FollowOwner / FollowTileHeight
-   * effect keeps to the unit; `stick`: the effect keeps to the view's spawn point while it lives (what a projectile
+   * Special points with the point's rotation; DESIGN §33.11). `follow`: a held effect (a status, an aura, a skill's or
+   * a talent's loop) keeps to the unit — a FollowOwner / FollowTileHeight one to its feet, any other moves with it as
+   * a `_holdByOwner` prefab does —; `stick`: the effect keeps to the view's spawn point while it lives (what a projectile
    * places on its target); `strike`: the points as the attack clip poses them at its strike frame. A prefab not loaded
    * yet is placed by index.json's summary (`prefabs[key].spawn`, and `follow`: its FollowMountPoint's point, followed
    * from the first frame) and takes up its rotation, direction and pause behaviours once it has loaded (an idle loop
@@ -468,11 +469,14 @@ export class FxWiring {
     const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false, mountRot: P.rotKind ? mountRotation(skin, P.rotKind, pose) : null };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
-    // the owner each frame: FollowMountPoint keeps the effect on the unit's point (and its rotation), FollowDirection
-    // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
+    // the owner each frame: FollowMountPoint keeps the effect on the unit's point (and its rotation), a held effect
+    // moves with the unit (`keep`), FollowDirection turns it with the unit, PauseEffectIf hides it while the unit shows
+    // a condition; a prefab with chained effects (OnPlayEmitter: system.js FxHandle._start hands them this track) has
+    // one for them
     const stick = !!o.stick;
-    if (!o.track && (P.follow || stick || !def || def.direction || def.pause)) {
+    if (!o.track && (P.follow || P.keep || stick || !def || def.direction || def.pause || def.onPlay?.length)) {
       let d = def;
+      const at0 = [pose.x, pose.y, pose.z], kept = new WeakMap(), chained = new Map();
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
         if (!d) {
@@ -487,14 +491,30 @@ export class FxWiring {
           }
         }
         const p = this.pose(v);
-        if (P.follow) {
-          mountPoint(skin, P.follow.mount, p, fx.anchor);
-          if (P.onGround) fx.anchor[2] = -(v.z || 0);
+        // a chained effect by its own prefab: its FollowMountPoint keeps it on its point, its `_holdByOwner` with the unit
+        let Q = P;
+        if (d && fx.def && fx.def !== d) {
+          Q = chained.get(fx.def);
+          if (!Q) chained.set(fx.def, Q = this._placing(fx.def, null, {}));
+        }
+        const G = Q.fmp ? Q : P;
+        if (G.follow) {
+          mountPoint(skin, G.follow.mount, p, fx.anchor);
+          if (G.onGround) fx.anchor[2] = -(v.z || 0);
           fx.groundZ = -(v.z || 0);
-          if (P.fmp && P.rotKind) fx.mountRot = mountRotation(skin, P.rotKind, p, fx.mountRot || [0, 0, 0, 1]);
+          if (G.fmp && G.rotKind) fx.mountRot = mountRotation(skin, G.rotKind, p, fx.mountRot || [0, 0, 0, 1]);
         } else if (stick && v.alive !== false) {
           const sp = spawnPoint(skin, P.spawn, p);
           fx.anchor[0] = sp[0]; fx.anchor[1] = sp[1]; fx.anchor[2] = P.onGround ? -(v.z || 0) : sp[2];
+          fx.groundZ = -(v.z || 0);
+        } else if ((P.keep || Q.keep) && v.alive !== false) {
+          // held by the unit: it moves with the unit, its offset from the feet as it started (the client holds such an
+          // effect on its owner: `_holdByOwner`) [ASSUMED]
+          let at = kept.get(fx);
+          if (!at) kept.set(fx, at = at0.slice());
+          fx.anchor[0] += p.x - at[0]; fx.anchor[1] += p.y - at[1];
+          fx.anchor[2] = P.onGround ? -(v.z || 0) : fx.anchor[2] - (p.z - at[2]);
+          at[0] = p.x; at[1] = p.y; at[2] = p.z;
           fx.groundZ = -(v.z || 0);
         }
         if (d && d.direction) {
@@ -514,14 +534,16 @@ export class FxWiring {
    * FollowMountPoint, followed from the first frame; `follow` the point it keeps to — the FollowMountPoint's, else for a
    * held loop (o.follow) a FollowOwner's / FollowTileHeight's (the feet); `rotKind` the point whose rotation it takes (a
    * FollowMountPoint without `_keepOriginRotation`, a MUZZLE_POINT or Special-point spawn; a summary's: none until the
-   * descriptor says); `onGround` a ground spawn.
+   * descriptor says); `onGround` a ground spawn; `keep` no point to keep to, but the unit holds it — a held effect
+   * (o.follow), a `_holdByOwner` prefab —: it moves with the unit.
    */
   _placing(def, sum, o) {
     const spawn = def ? def.spawn : Number.isInteger(sum?.spawn) ? sum.spawn : 2;
     const fmp = def ? (def.follow && !def.follow.owner ? def.follow : null) : Number.isInteger(sum?.follow) ? { mount: sum.follow } : null;
     const follow = fmp || (o.follow && def?.follow) || null;
     const rotKind = !def ? null : fmp ? (fmp.keepRot ? null : mountKind(fmp.mount)) : spawnRotationKind(spawn);
-    return { spawn, fmp, follow, rotKind, onGround: GROUND_SPAWNS.has(spawn) && !fmp };
+    const keep = !follow && (!!o.follow || !!def?.holdByOwner);
+    return { spawn, fmp, follow, rotKind, onGround: GROUND_SPAWNS.has(spawn) && !fmp, keep };
   }
 
   /**

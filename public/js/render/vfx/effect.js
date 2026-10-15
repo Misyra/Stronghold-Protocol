@@ -25,7 +25,8 @@
 // the start: Unity plays child systems with their parent); sub-emitter systems only play for their parent. The effect
 // is finished when every non-looping system has ended with no live particle, the non-looping clips have ended and the
 // trails have faded; a looping effect (`_isLoop`, a looping system or clip) runs until `stop()`. `_maxLifetime` ends it
-// early; `_inactiveOnFinish` nodes hide during the `_delayToFinish` linger; `stop({ hit: true })` hides a projectile's
+// early; `_inactiveOnFinish` nodes hide when it finishes — at its stop() (a projectile's arrival) or when its content
+// has ended — and stay hidden through the `_delayToFinish` linger; `stop({ hit: true })` hides a projectile's
 // `_inactiveOnHit` nodes at once. The light tier (精簡) applies FxLODSetting (`_disableObjects` removed, the
 // `_particleDetailsHookers` shares of emission) on top of its emission × 0.5.
 
@@ -199,6 +200,8 @@ export function compileEffect(desc, lib = {}) {
   def.maxLifetime = num(pe._maxLifetime, -1);
   def.isLoop = on(pe._isLoop);
   def.spawn = num(def.pe?._spawnLocation, 0) | 0;
+  // ParticleEffect `_holdByOwner`: its owner holds it — the effect moves with the unit (render/vfx/wiring.js playOn)
+  def.holdByOwner = on(def.pe?._holdByOwner);
   def.rotateType = num(def.pe?._rotateType, 0) | 0;
   def.leftIsDefault = on(def.pe?._leftIsDefault);
   def.rotY = def.pe?._rotationY && def.pe._rotationY.node != null ? def.pe._rotationY.node : -1;
@@ -357,9 +360,14 @@ export class Effect {
   /** Content time (after `_delayToPlay`). */
   get ctime() { return this.time - this.delay; }
 
-  /** Stop: a looping effect stops emitting and ends when its particles are gone; `hit` hides `_inactiveOnHit`. */
+  /**
+   * Stop (the game finishes it: a status or a skill ends, a projectile lands): a looping effect stops emitting and ends
+   * when its particles are gone; `_inactiveOnFinish` hides at once — a projectile's body (崖心's hook, 灰毫's shell)
+   * while its trail fades through `_delayToFinish` —; `hit` also hides `_inactiveOnHit`.
+   */
   stop(o = {}) {
     if (this.state === 'done') return;
+    for (const nd of this.def.inactiveOnFinish) { this.forcedOff[nd] = 1; this.act[nd] = 0; }
     if (o.hit) for (const nd of this.def.inactiveOnHit) { this.forcedOff[nd] = 1; this.act[nd] = 0; }
     for (const s of this.sys) if (s) s.stopEmitting();
     for (const t of this.trails.values()) t.emitting = false;

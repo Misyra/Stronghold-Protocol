@@ -37,9 +37,11 @@ player picks a 商店立绘 ──→ localStorage only (never leaves the browse
 
 Three properties are load-bearing:
 
-- **Skins are installed on demand, never wholesale.** All 174 are ~190 MB, and the upstream link measured ~35 KB/s
-  from a mainland China line — a full set would be over an hour. `data/skins-installed.json` starts empty and only
-  `tools/install-skins.mjs` adds to it, so a fresh clone downloads no skins at all.
+- **Skins are installed on demand, never wholesale.** All 174 operators are ~328 MB installed (~190 MB by upstream's
+  older estimate), and the upstream link measured ~35 KB/s from a mainland China line — a full set would be over an
+  hour. `tools/install-skins.mjs` is the only thing that writes `data/skins-installed.json`, so a fresh clone downloads
+  no skins at all; **this fork's checkout ships the full set installed** (the Data side note at the end says what that
+  means for a deployment), which is why the 资源预载 panel has a 干员皮肤 row at all.
 - **The skin *choice* is keyed by chess id; the skin *catalogue* and the asset manifest are keyed by operator id.**
   A chess record is `chess_char_1_01_a` and carries `charId: char_498_inside`. Mixing the two is silent: the picker
   renders an empty section and `setSkins` drops every entry.
@@ -57,7 +59,7 @@ Three properties are load-bearing:
 | `tools/install-skins.mjs` | Install/uninstall skins on demand; `list` / `add` / `remove` / `add-char`. Also the library `server/skinInstall.js` imports |
 | `server/skinInstall.js` | Serialised background install queue: why it is queued, why it is never awaited (8 s client timeout) |
 | `data/skins.json` | The client's catalogue (no URLs) |
-| `data/skins-installed.json` | Which skin ids are installed — the single source of truth the build reads |
+| `data/skins-installed.json` | Which skin ids are installed — the single source of truth the build reads (this fork ships all 273) |
 | `public/js/ui/skins.js` | Client store + `room.skins` sync + install requests + manifest reload on `skins.changed` |
 | `public/js/ui/skinPicker.js` | The 皮肤 section of 干员调配 (self-contained: `screens/loadout.js` only names it) |
 | `test/skins.test.js`, `test/skins-protocol.test.js`, `test/skins-lifecycle.test.js`, `test/skins-portrait.test.js`, `test/ui/skins.e2e.test.js` | Lookup, wire format, the lobby→Match→sim→render path, the local 商店立绘 choice, the real-browser picker |
@@ -281,7 +283,13 @@ before it — none of them is a preference.
 | `test/skins-lifecycle.test.js` | the lobby fixture builds a real `SessionRegistry` | this fork's lobby calls `registry.byId()` and the room limiter reads `session.limitKey`, so upstream's `{ byId: new Map() }` stub throws |
 | `test/ui/skins.e2e.test.js` | dismisses the 全屏游玩 prompt, and opens 干员调配 only while the overlay is closed | a fork-only entry overlay sits above the lobby and swallows the first physical click; the entry button is hidden while the overlay is open |
 
-Data side (unchanged from upstream's design): `data/skins-installed.json` ships empty, and each deployment installs
-what it wants — `node tools/install-skins.mjs add <skinId…>` / `add-char <charId…>`. The upstream link is slow from a
-mainland line; through a local proxy the whole 273-skin catalogue is minutes rather than an hour, provided the process
-is started with `NODE_USE_ENV_PROXY=1` (`tools/assets/env-proxy.mjs` explains why that has to be at startup).
+Data side: `data/skins-installed.json` is the list of installed outfits and the build's single source of truth.
+**This fork's checkout ships the full set** — 273 outfits over 174 operators, with the regenerated `data/assets.json`
+carrying every `chars[charId].skins[skinId]` entry and the art published to R2 (`docs/operations/CDN.md`), so a
+deployment that pulls this repository has the outfits and their models/立绘 available without running the installer.
+A deployment that wants a smaller set still is one command: `node tools/install-skins.mjs add <skinId…>` /
+`add-char <charId…>` / `remove <skinId…>`, then `npm run assets` and commit the two files.
+
+Installing the whole catalogue takes an hour at the raw upstream speed; through a local proxy it is minutes, provided
+the process is started with `NODE_USE_ENV_PROXY=1` (`tools/assets/env-proxy.mjs` explains why that has to be at
+startup).

@@ -4,7 +4,9 @@
 // On the own prep board (DOM fallback field), picking up a hand piece — an operator or equipment — folds the shop bar
 // (the 展开商店 tab, the screen's `is-collapsed`) and keeps it folded through the dropped operator's direction wheel;
 // cancelling the drag / the wheel, or equipping, gives the player's own 收起/展开 state back — it is never written by
-// the drag. The zoomed camera itself is covered by issue602-deploy-fold.test.js's projection measurement.
+// the drag. The zoomed camera itself is covered by issue602-deploy-fold.test.js's projection measurement; the engine
+// test (0.3.0 port) checks the zoom on the render engine: at once with the pickup, the drop target following the camera
+// under a resting pointer, and the exact shop camera afterwards.
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,6 +111,60 @@ describe('the shop folds while deploying a piece and restores afterwards (#602)'
     assert.deepEqual(await h.folded(), { cls: false, tab: false }, 'cancelling the wheel restores the open shop');
     assert.deepEqual(h.problems, []);
     await h.page.close();
+  });
+
+  // the 0.3.0 port, on the render engine: the zoom starts with the pickup while the finger may rest — the drop target
+  // is the tile under the finger under the NEW camera (render/drag.js refresh) — and ends on the exact shop camera.
+  // Touch input: a resting mouse gets Chrome's synthetic moves when the layout changes (the shop bar folding), a finger not.
+  test('engine (touch): the pickup zooms at once, a resting finger keeps the tile under it as the target, the end restores the exact shop camera', async () => {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720, hasTouch: true });
+    const problems = [];
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+    await page.goto(`${base}/dev/game-mock.html?shot=1&phase=PREP`, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.waitForFunction(() => globalThis.__SP_VIEW__?.raw?.stats?.().mode === 'prep', { timeout: 30000 });
+    await sleep(1500);
+    const cam = () => page.evaluate(() => JSON.stringify(globalThis.__SP_VIEW__.raw.debug.cam.params()));
+    const shopCam = await cam();
+    const priv = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__MOCK__.S().priv)));
+    const chess = priv.hand.find((p) => p?.kind === 'chess');
+    const from = await page.evaluate((uid) => { const r = globalThis.__SP_VIEW__.pieceScreenRect(uid); return r && { x: r.left + r.width / 2, y: r.top + r.height * 0.7 }; }, chess.uid);
+    // where the pointer comes to rest: board tile (10, 6) as the shop camera shows it
+    const P = await page.evaluate(() => { const t = globalThis.__SP_VIEW__.tileScreen(10, 6); return { x: t.x, y: t.y }; });
+    assert.ok(from && P, 'the hand piece and the tile are on screen');
+    const t = page.touchscreen;
+    await t.touchStart(from.x, from.y);
+    // one move: the drag starts with the finger already on P (its target judged under the shop camera), then it rests
+    await t.touchMove(P.x, P.y);
+    await sleep(800); // the zoom (FOLD_CAMERA_MS) runs and ends under the resting finger
+    const s = await page.evaluate((P, uid) => {
+      const d = globalThis.__SP_VIEW__.raw.debug;
+      const rect = d.app.view.getBoundingClientRect();
+      const g = d.pick.groundTile(P.x - rect.left, P.y - rect.top);
+      const v = d.views.get('p:' + uid);
+      return {
+        under: g ? [g.row, g.col] : null, target: d.tiles.highlights.get('dragTarget')?.tiles?.[0] || null,
+        stands: v ? [Math.round(v.y), Math.round(v.x)] : null, dragging: d.drag.dragging,
+        folded: document.querySelector('.gm')?.classList.contains('is-collapsed') ?? null, cam: JSON.stringify(d.cam.params()),
+      };
+    }, P, chess.uid);
+    assert.equal(s.dragging, true);
+    assert.equal(s.folded, true, 'the shop folded with the pickup');
+    assert.notEqual(s.cam, shopCam, 'the camera zoomed to the shop-collapsed framing');
+    assert.ok(s.under && (s.under[0] !== 10 || s.under[1] !== 6), `the zoom moved the board under the resting finger (${s.under})`);
+    assert.deepEqual(s.target, s.under, 'the drop target is the tile under the finger now, not the one before the zoom');
+    await t.touchEnd();
+    await sleep(400);
+    if (await page.$('.fwheel')) {
+      assert.equal(await page.evaluate(() => document.querySelector('.gm')?.classList.contains('is-collapsed')), true, 'the wheel keeps the zoom');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.querySelector('.fwheel'));
+    }
+    await sleep(700);
+    assert.equal(await cam(), shopCam, 'back on exactly the shop camera');
+    assert.equal(await page.evaluate(() => document.querySelector('.gm')?.classList.contains('is-collapsed')), false);
+    assert.deepEqual(problems, []);
+    await page.close();
   });
 
   test('picking up equipment folds the shop too, and dropping it restores the player\'s state', async () => {

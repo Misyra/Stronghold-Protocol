@@ -126,3 +126,21 @@ describe('the deploy fold zooms the phone board like 收起, and ending it asks 
     });
   });
 });
+
+// ---- the 0.3.0 port: what the merge added on top of the PR ---------------------------------------------------------
+
+describe('0.3.0 port of PR #646', () => {
+  const game = read('public/js/screens/game.js');
+  const app = read('public/js/render/app.js');
+
+  test('the camera the pen returns to is remembered without its flight time (the fold zoom\'s 350 ms is not replayed)', () => {
+    // togglePen(false) repeats camRef's opts: with `ms: FOLD_CAMERA_MS` kept there, the way back from the pen flew
+    // 350 ms instead of the pen's own 0.25 s (render/app.js PEN_CAMERA_MS)
+    assert.match(game, /const setCam = useCallback\(\(kind, opts\) => \{[\s\S]{0,400}?const \{ ms: _ms, instant: _instant, \.\.\.framing \} = opts \|\| \{\};\n\s+camRef\.current = \{ kind, opts: framing \};/);
+    assert.match(game, /const c = camRef\.current;\n\s+view\.setCamera\(c\.kind, c\.opts\);/, 'the pen\'s way back repeats the remembered framing');
+  });
+
+  test('a drag under a still pointer follows a camera flight (the pickup zoom): the view judges it again every flying frame', () => {
+    assert.match(app, /const flying = !!camTo;\n\s+stepCamera\(now\);\n[\s\S]{0,300}?if \(flying && mode === 'prep' && drag\.dragging\) drag\.refresh\(\);/);
+  });
+});

@@ -191,6 +191,25 @@ the model itself is **played live** in the frame below them, with one button per
   covered by `test/ui/skins.e2e.test.js`, which needs `SP_E2E=1` + Chrome and is the only place a pixi/pixi-spine API
   drift would show up.
 
+### 自选编队 (screens/diy.js)
+
+A 自选 pick wears skins like any roster operator, and the whole pipeline is keyed by the SLOT: the picker panel opens
+from the slot card's 皮肤 button (one slot at a time — the preview renderer has a single canvas), the choice is stored
+under the slot's base id (), and that is the id every server side reads:  gates on
+isDiy + baseId (a slot's `visible` is false by design — it is never sold as itself — so the visibility flags do not
+apply to it),  /  look the skin up by the piece's baseId, and the composed record's
+`charId` is what spineEntry resolves. A golden slot form is refused like every elite.
+
+A slot's choice names a skin of the operator PICKED for it, so the client drops both choices (model + 商店立绘)
+when the pick changes to a different operator or the slot is cleared (ui/skins.js syncDiySkins) — a stale id would
+silently fall back to the default model while still looking chosen. The 导出 / 导入 envelopes carry the choices:/na 自选编队 file holds its slots' skins / portraits (keyed by slot id, applied to the slots whose pick survived), a
+干员调配 file the roster's (keyed by chess id) — neither claims the other's keys, so importing one leaves the other
+half alone; absent fields mean an older export and leave the current settings untouched.
+
+⚠️ Today the 自选 pool and the skin catalogue do not intersect (the catalogue covers the shop-pool operators; the
+自选 pool is the operators OUTSIDE it), so a pick's section offers 原始 / 精英二 立绘 and its default model only.
+The pipeline is ready for the day the catalogue grows: nothing about a slot is special beyond its key.
+
 ## Known limitations
 
 - **No skin effects.** The official per-character battle effects are `.ab` particle bundles that the project does

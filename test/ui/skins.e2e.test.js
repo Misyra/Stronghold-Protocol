@@ -237,4 +237,64 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     assert.ok(srcs.some((s) => /_2\.png$/.test(s)) || srcs.every((s) => !/_2\.png$/.test(s)),
       'the 精英二 tile points at the _2 art when the operator has one');
   });
+
+  test('a 自选 pick gets the 皮肤 section too, keyed by its slot', async () => {
+    const SLOT = 'chess_char_5_diy1_a';
+    // the overlay may not be open (this test also runs alone): open it, then the 自选编队 tab
+    await page.waitForSelector('[data-testid="loadout-open"]', { timeout: 20000 });
+    if (!(await page.$('.lo'))) {
+      await page.click('[data-testid="loadout-open"]');
+      await page.waitForSelector('.lo', { timeout: 10000 });
+    }
+    await page.click('.lo .lo-tab[data-tab="diy"]');
+    await page.waitForSelector(`.diy-slot[data-slot="${SLOT}"] .diy-slot__fill`, { visible: true, timeout: 15000 });
+    await page.click(`.diy-slot[data-slot="${SLOT}"] .diy-slot__fill`);
+    await page.waitForSelector('[data-testid="diy-picker"]', { visible: true, timeout: 10000 });
+    const picked = await page.evaluate(() => {
+      const opt = document.querySelector('[data-testid="diy-picker"] .diy-opt:not(.is-taken)');
+      if (!opt) return null;
+      opt.click();
+      return opt.getAttribute('data-char');
+    });
+    if (!picked) return; // the data names no legal pick — nothing to assert
+    await page.click('[data-testid="diy-confirm"]');
+    await page.waitForSelector('[data-testid="diy-picker"]', { hidden: true, timeout: 5000 });
+
+    // the filled card grows a 皮肤 button; it opens ONE section under the grid (the preview renderer has a single canvas)
+    await page.waitForSelector(`.diy-slot[data-slot="${SLOT}"] [data-testid="diy-skin"]`, { visible: true, timeout: 10000 });
+    await page.click(`.diy-slot[data-slot="${SLOT}"] [data-testid="diy-skin"]`).catch(() => {});
+    // a physical click can land on whatever overlays the button at that moment (the previous tests leave layers
+    // around); the button's own click handler is what matters, so fall back to the DOM click if it did not take
+    const expanded = () => page.evaluate((id) => document.querySelector(`.diy-slot[data-slot="${id}"] [data-testid="diy-skin"]`)?.getAttribute('aria-expanded'), SLOT);
+    if ((await expanded()) !== 'true') {
+      await page.evaluate((id) => document.querySelector(`.diy-slot[data-slot="${id}"] [data-testid="diy-skin"]`)?.click(), SLOT);
+    }
+    try {
+      await page.waitForSelector('[data-testid="diy-skin-panel"] [data-testid="skin-section"]', { timeout: 10000 });
+    } catch (e) {
+      const dump = await page.evaluate((id) => ({
+        prefDiy: localStorage.getItem('sp.pref.diy'),
+        slotChar: document.querySelector(`.diy-slot[data-slot="${id}"]`)?.getAttribute('data-char'),
+        panel: !!document.querySelector('[data-testid="diy-skin-panel"]'),
+        btnExpanded: document.querySelector(`.diy-slot[data-slot="${id}"] [data-testid="diy-skin"]`)?.getAttribute('aria-expanded'),
+        tabs: [...document.querySelectorAll('.lo-tab')].map((b) => `${b.dataset.tab}:${b.classList.contains('is-on')}`),
+      }), SLOT);
+      console.log('DEBUG dump:', JSON.stringify(dump, null, 1));
+      await page.screenshot({ path: path.join(ROOT, 'test/e2e/out/skins-diy-fail.png') }).catch(() => {});
+      throw e;
+    }
+    const label = await page.$eval('.diy-skin__head small', (e) => e.textContent.trim());
+    assert.match(label, /5阶 自选/, `the panel names the slot (${label})`);
+
+    // the choice is stored under the SLOT id — pieceView / battleInput look the skin up by the piece's baseId,
+    // which for a 自选 piece is the slot id, so this is the key the whole pipeline resolves
+    const stored = await page.evaluate((id) => JSON.parse(localStorage.getItem('sp.pref.skins') || '{}')[id] ?? null, SLOT);
+    assert.equal(stored, null, 'nothing stored yet (默认 is not a choice)');
+
+    // the 商店立绘 tiles at least offer 原始立绘, and the frame plays the pick's own model
+    const tiles = await page.$$eval('[data-testid="diy-skin-panel"] [data-skin-group="portrait"] .lo-skin', (els) => els.map((e) => e.getAttribute('data-skin')));
+    assert.ok(tiles.includes(''), `原始立绘 offered for the pick, got ${JSON.stringify(tiles)}`);
+    const drawn = await page.waitForFunction(() => !!document.querySelector('[data-testid="diy-skin-panel"] [data-testid="model-preview"] canvas'), { timeout: 60000 }).then(() => true).catch(() => false);
+    assert.ok(drawn, 'the frame plays the pick\'s model live');
+  });
 });

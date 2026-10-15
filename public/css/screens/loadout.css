@@ -731,3 +731,10 @@
 
 .lo-clipbtn--more { color: var(--text-dim); border-style: dashed; }
 .lo-clipbtn--more .num { font-family: var(--font-num); }
+
+/* The 自选编队 per-slot 皮肤 panel (screens/diy.js): the same section the 干员调配 detail shows, laid out
+   full-width under the slot grid — ONE slot at a time (the preview renderer has a single canvas). */
+.diy-skin { display: flex; flex-direction: column; gap: .06rem; margin-top: .1rem; padding: .1rem .12rem; background: rgba(255, 255, 255, .015); border: 1px solid var(--line); }
+.diy-skin__head { display: flex; align-items: center; justify-content: space-between; gap: .08rem; }
+.diy-skin__head small { font-size: max(calc(.12 * var(--t)), 9px); color: var(--text-dim); }
+.diy-skin .lo-sec--skin { margin: 0; }

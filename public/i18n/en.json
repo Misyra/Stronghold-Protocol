@@ -1252,5 +1252,6 @@
   "共 {n} 段动画": "{n} clips",
   "技能{n}": "Skill {n}",
   "更多动画": "More animations",
-  "该干员暂无皮肤": "No outfits for this operator"
+  "该干员暂无皮肤": "No outfits for this operator",
+  "{tier}阶 自选 · {name}": "Tier {tier} pick · {name}"
 }

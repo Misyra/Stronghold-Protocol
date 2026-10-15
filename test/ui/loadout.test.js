@@ -43,8 +43,11 @@ test('parseStored: tolerant of junk, keeps structurally valid entries; toStored 
 test('exportPayload / serializeExport: versioned envelope, entries copied; parseImport round trip', () => {
   const entries = { [INSIDE]: { skill: 0 }, [SWIRE]: { module: SWIRE_ALT } };
   const p = exportPayload(entries, { now: Date.UTC(2026, 9, 3, 4, 5, 6) });
-  assert.deepEqual(Object.keys(p).sort(), ['count', 'entries', 'exportedAt', 'kind', 'ops', 'v'], 'exactly the envelope (0.2.2: + the 潜能 / 练度 ops), no unused field');
+  assert.deepEqual(Object.keys(p).sort(), ['count', 'entries', 'exportedAt', 'kind', 'ops', 'portraits', 'skins', 'v'],
+    'exactly the envelope (0.2.2: + the 潜能 / 练度 ops; the 皮肤 feature: + skins / portraits, keyed by chess id — the export carries the ROSTER keys only, the 自选编队 file the slot ones)');
   assert.deepEqual(p.ops, {}, 'no settings: an empty map (an import then resets the settings to the defaults)');
+  assert.deepEqual(p.skins, {}, 'no 皮肤 either: empty means every operator on its default model');
+  assert.deepEqual(p.portraits, {}, 'and no 商店立绘 choice');
   assert.equal(p.kind, LOADOUT_EXPORT_KIND);
   assert.equal(p.v, LOADOUT_VERSION);
   assert.equal(p.count, 2);

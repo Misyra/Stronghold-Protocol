@@ -1545,5 +1545,21 @@
   "技能{n}": "Skill {n}",
   "更多动画": "More animations",
   "该干员暂无皮肤": "No outfits for this operator",
-  "{tier}阶 自选 · {name}": "Tier {tier} pick · {name}"
+  "{tier}阶 自选 · {name}": "Tier {tier} pick · {name}",
+  "请求无效": "Invalid request",
+  "请稍后重试": "Please try again later",
+  "本站不支持登记状态查询": "This server cannot query the listing result",
+  "联机站暂不可用，请稍后重试": "The multiplayer portal is temporarily unavailable. Please try again later",
+  "联机站暂不可用": "Multiplayer portal unavailable",
+  "正在提交…": "Submitting…",
+  "登记结果待确认": "Listing pending confirmation",
+  "登记结果待确认，正在查询…": "The listing result is still pending; checking…",
+  "登记结果待确认，请稍后再查": "The listing result is still pending. Please check again later",
+  "查询登记结果": "Check the listing result",
+  "登记查询失败，请稍后重试": "Could not check the listing result. Please try again later",
+  "提交已发出，正在等待联机站确认；也可以手动查询": "The submission was sent and is waiting for the portal to confirm; you can also check manually",
+  "本房间已收录到联机站，剩余 {n} 分钟": "This room is listed on the multiplayer portal — {n} minutes left",
+  "登记已过期，可重新提交": "Listing expired — you can submit again",
+  "登记已过期，可以重新提交": "The listing has expired; you can submit again",
+  "一分钟内只能提交一次，{n} 秒后可再试": "Only one submission per room per minute — try again in {n} seconds"
 }

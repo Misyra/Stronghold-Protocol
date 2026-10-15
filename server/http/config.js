@@ -10,6 +10,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOM_LIMIT_OPTIONS } from '../roomConfig.js';
+import { PORTAL_ROOM_MODES } from './portalRoom.js';
 
 /** Repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -33,6 +34,29 @@ export const DEFAULT_AGENT_ANNOUNCEMENT_FILE = process.platform === 'win32'
   ? path.join(ROOT, '.state', 'announcement.json') : '/var/lib/stronghold-announcement/announcement.json';
 
 /**
+ * 站点 ID（§14.3）。统一的 `SP_SITE_ID` 是唯一的站点身份：公告（panel 源）与房间分享都从它取站点，
+ * 用两个不同的 ID 意味着「公告写到 A 站、房间登记到 B 站」，而两边都不会报错 —— 只会安静地各干各的。
+ * 所以旧的 `SP_PORTAL_SITE_ID` 只当兼容别名，**同时出现且不同就拒绝启动**。
+ * 显式的 startServer() 选项优先（它就是程序配置），这里不跟它对账。
+ * @param {{ siteId?: string, announcementSiteId?: string, portalSiteId?: string }} opts
+ * @param {Record<string, string | undefined>} env
+ */
+export function siteIdFrom(opts = {}, env = process.env) {
+  const explicit = opts.siteId ?? opts.announcementSiteId ?? opts.portalSiteId;
+  if (explicit != null && explicit !== '') {
+    if (!/^[a-z0-9-]{1,40}$/.test(explicit)) throw new RangeError('SP_SITE_ID must be 1..40 characters of [a-z0-9-]');
+    return explicit;
+  }
+  const primary = env.SP_SITE_ID, alias = env.SP_PORTAL_SITE_ID;
+  if (primary && alias && primary !== alias)
+    throw new RangeError('SP_SITE_ID and SP_PORTAL_SITE_ID are both set and differ: the announcement and the room share must use one site id');
+  const value = primary || alias;
+  if (value == null || value === '') return null;
+  if (!/^[a-z0-9-]{1,40}$/.test(value)) throw new RangeError('SP_SITE_ID must be 1..40 characters of [a-z0-9-]');
+  return value;
+}
+
+/**
  * The default source is the managed probe file. Explicit feed URLs remain compatible.
  * @param {{ announcementSource?: string, announcementFile?: string, announcementAgentFile?: string, announcementPollMs?: number,
  * announcementSiteId?: string, announcementPortalUrl?: string, announcementUrl?: string }} opts
@@ -51,8 +75,8 @@ export function announcementOptionsFrom(opts = {}, env = process.env) {
   let url;
   if (explicitUrl) url = new URL(explicitUrl);
   else {
-    const siteId = opts.announcementSiteId ?? env.SP_SITE_ID;
-    if (!/^[a-z0-9-]{1,40}$/.test(siteId || '')) throw new RangeError('panel source requires a valid SP_SITE_ID or SP_ANNOUNCEMENT_URL');
+    const siteId = siteIdFrom(opts, env);
+    if (!siteId) throw new RangeError('panel source requires a valid SP_SITE_ID or SP_ANNOUNCEMENT_URL');
     const portal = opts.announcementPortalUrl ?? env.SP_PORTAL_URL;
     if (!portal) throw new RangeError('panel source requires SP_PORTAL_URL or SP_ANNOUNCEMENT_URL');
     url = new URL('/api/announce/v1/' + siteId, portal);
@@ -139,6 +163,81 @@ export function roomAdminTokenFrom(opts = {}, env = process.env) {
     throw new RangeError('SP_ROOM_ADMIN_TOKEN must contain 32..256 non-space ASCII characters');
   }
   return token;
+}
+
+/** 本机 Agent 地址允许的主机名。Docker 里分开部署时 127.0.0.1 并不互通（§14.3），首版只支持同宿主机回环。 */
+const LOOPBACK_HOSTS = Object.freeze(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+/**
+ * 游戏 → Agent 的本机地址（§14.3）。只允许回环上的 HTTP 根路径，且不得带用户名/密码/query/hash：
+ * 这个地址是**启动配置**，浏览器永远不能指定它（§12.1），所以配置错了必须在启动时就说出来，而不是等到
+ * 某个玩家点分享时才发现「原来填的是另一个站的域名」。
+ * @param {string} value
+ */
+export function localAgentUrlFrom(value) {
+  let url;
+  try { url = new URL(String(value)); } catch { throw new RangeError('SP_PORTAL_AGENT_URL must be an absolute URL'); }
+  if (url.protocol !== 'http:') throw new RangeError('SP_PORTAL_AGENT_URL must use http on loopback: the Agent is a local process');
+  if (!LOOPBACK_HOSTS.includes(url.hostname))
+    throw new RangeError('SP_PORTAL_AGENT_URL must point at a loopback address; game and Agent share the host (see §14.3 for containers)');
+  if (url.username || url.password || url.search || url.hash)
+    throw new RangeError('SP_PORTAL_AGENT_URL must not carry credentials, a query or a fragment');
+  if (url.pathname !== '/') throw new RangeError('SP_PORTAL_AGENT_URL must be the root path: the bridge path is fixed');
+  return url.href;
+}
+
+/**
+ * 房间分享的三种模式（§12.1 / §13.3 / §14.3），解析成 createPortalRoomHandler 的那组选项。
+ *
+ *   off          —— 显式关掉。**不看**其它变量：一个曾经配好的站点把模式改成 off 之后，不该因为它还留着
+ *                   旧的密钥而报「配置无效」。
+ *   legacy-http  —— 游戏自己带 HMAC 签名直连中央的老路。不写模式时按「HMAC 三项齐不齐」判定，于是旧部署
+ *                   升级这个版本以后行为完全不变。
+ *   agent        —— 走本机 Agent 的桥接口。这种模式**不需要**中央 URL，也不需要旧 HMAC key：游戏不再
+ *                   持有任何能代表本站改写公告/配置/关房的东西（§5.2 凭据分离）。
+ *
+ * @param {{ portalRoomMode?: string, portalUrl?: string, portalSiteId?: string, portalRoomKey?: string,
+ *   portalAgentUrl?: string, portalBridgeToken?: string, siteId?: string, announcementSiteId?: string,
+ *   roomAdminToken?: string }} opts
+ * @param {Record<string, string | undefined>} env
+ */
+export function portalRoomOptionsFrom(opts = {}, env = process.env) {
+  const siteId = siteIdFrom(opts, env);
+  const url = opts.portalUrl ?? env.SP_PORTAL_URL ?? null;
+  const key = opts.portalRoomKey ?? env.SP_PORTAL_ROOM_KEY ?? null;
+  const agentUrl = opts.portalAgentUrl ?? env.SP_PORTAL_AGENT_URL ?? null;
+  const bridgeToken = opts.portalBridgeToken ?? env.SP_PORTAL_BRIDGE_TOKEN ?? null;
+  const raw = opts.portalRoomMode ?? env.SP_PORTAL_ROOM_MODE;
+  const text = raw == null ? '' : String(raw).trim().toLowerCase();
+  if (text && !PORTAL_ROOM_MODES.includes(text))
+    throw new RangeError('SP_PORTAL_ROOM_MODE must be off, legacy-http or agent');
+  // 「不写模式」时按**分享专用**的那几个变量判定：分享密钥，或者那个只为分享存在的旧站点别名。
+  // `SP_PORTAL_URL` 不算信号 —— 它同时是公告 panel 源的基址，把它当信号会让一个只发送公告的站点直接启动
+  // 失败（或者更糟：以为自己在分享，其实缺密钥）。
+  const legacySignal = key || opts.portalSiteId || env.SP_PORTAL_SITE_ID;
+  const mode = text || (legacySignal ? 'legacy-http' : 'off');
+  if (mode === 'off') return { mode, url: null, siteId: null, key: null, agentUrl: null, bridgeToken: null };
+  if (mode === 'legacy-http') {
+    if (!url || !siteId || !key || !/^[a-f0-9]{64}$/.test(key))
+      throw new RangeError('legacy-http share mode requires SP_PORTAL_URL, SP_SITE_ID and a 64-hex SP_PORTAL_ROOM_KEY');
+    let base;
+    try { base = new URL(url); } catch { throw new RangeError('SP_PORTAL_URL must be an absolute URL'); }
+    if (base.username || base.password || base.search || base.hash)
+      throw new RangeError('SP_PORTAL_URL must not carry credentials, a query or a fragment');
+    if (base.protocol !== 'https:' && !(base.protocol === 'http:' && LOOPBACK_HOSTS.includes(base.hostname)))
+      throw new RangeError('SP_PORTAL_URL must use HTTPS (HTTP allowed on loopback only)');
+    return { mode, url, siteId, key, agentUrl: null, bridgeToken: null };
+  }
+  if (!agentUrl || !bridgeToken)
+    throw new RangeError('agent share mode requires SP_PORTAL_AGENT_URL and SP_PORTAL_BRIDGE_TOKEN');
+  // 桥接凭据是一把独立凭据（§5.2）：它只能读写在 Agent 手里的分享入口。与游戏自己的管理令牌相同意味着
+  // 「拿到分享凭据就等于拿到关房/改配置的资格」，而那正是 agent 模式要避免的事。
+  if (!/^[!-~]{32,256}$/.test(bridgeToken))
+    throw new RangeError('SP_PORTAL_BRIDGE_TOKEN must be 32..256 non-space ASCII characters');
+  const adminToken = opts.roomAdminToken ?? env.SP_ROOM_ADMIN_TOKEN;
+  if (adminToken && adminToken === bridgeToken)
+    throw new RangeError('SP_PORTAL_BRIDGE_TOKEN must differ from SP_ROOM_ADMIN_TOKEN: separate credentials (see §5.2)');
+  return { mode, url: null, siteId, key: null, agentUrl: localAgentUrlFrom(agentUrl), bridgeToken };
 }
 
 /** TRUST_PROXY env → net.js trustProxy ('auto' unless explicitly on/off). @param {string | undefined} v */

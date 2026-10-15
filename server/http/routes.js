@@ -250,7 +250,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
         sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' });
         return;
       }
-      // 公告的三层状态里，「游戏读到了哪一版」只有这里能回答（§13.3）：Agent 把它随 sync.report 报给中央，
+      // 公告的三层状态里，「游戏读到了哪一版」只有这里能回答（§44.3）：Agent 把它随 sync.report 报给中央，
       // 中央据此区分「文件写好了但游戏还没读到」与「根本没写进去」。它只是版本号与时间，玩家看到的公告
       // 内容与展示策略（announcement.id）一个字都没变。顺序重要：先真的读一次，再取「读到的是哪一版」。
       const announcement = await readAnnouncement();

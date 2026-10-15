@@ -1,4 +1,4 @@
-// 联机站（Agent）私有入口与房间实例号（docs/design/portal-agent-wss.md §13.1 / §13.3）。
+// 联机站（Agent）私有入口与房间实例号（docs/design/portal-agent-wss.md §44.1 / §44.3）。
 //
 // 这一组端点只有本机 Agent 用得上，但它们的每条判断都直接决定中央那边会发生什么：实例号回答「这个房间码现在
 // 是不是那间房」（房间码被复用 = 旧登记必须被丢掉），状态回答「这间房现在能不能加入」，而 closed / 查不到 的
@@ -127,7 +127,7 @@ test('批量状态：只回答问到的那些码，20 条上限，畸形条目�
   assert.match(String(answer.body.gameBootId), UUID_RE);
   assert.equal((await caller(`/api/portal/rooms/${code}/status`)).body.gameBootId, answer.body.gameBootId);
 
-  // 上限 20（§12.4）：超了整批拒，而不是悄悄截断前二十条。
+  // 上限 20（§43.4）：超了整批拒，而不是悄悄截断前二十条。
   const many = Array.from({ length: 21 }, (_, i) => ({ listingId: listingId(10 + i), code }));
   assert.equal((await batch(many)).status, 400);
   assert.equal((await batch(many.slice(0, 20))).status, 200);

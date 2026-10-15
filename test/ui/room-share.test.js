@@ -1,4 +1,4 @@
-// 分享界面的状态机（docs/design/portal-agent-wss.md §12.5）。
+// 分享界面的状态机（docs/design/portal-agent-wss.md §43.5）。
 //
 // 这组测试盯的是「两个计时器不许混成一个」与「只有 registered:true 才算收录」：
 //   冷却 60 秒约束的是**点按**，登记有效期 10 分钟说的是**中央那条登记能活多久**。刷新页面、重新进房间、

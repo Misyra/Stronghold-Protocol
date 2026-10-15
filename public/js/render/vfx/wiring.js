@@ -1151,7 +1151,10 @@ export class FxWiring {
     const fun = hpHit ? this.funnels.damage(v, time, type) : false;
     const drawn = (m && hpHit ? this._landed(m, v, time, type) : false) || fun;
     // an official shot on its way stands for the damage it brings (R3: the sim lands it before the drawn flight ends)
-    if (this._inAir(id, time, hpHit)) return true;
+    const flying = this._inAir(id, time, hpHit);
+    // a skill's kit hit (SkillFx.seen: no attack owns it — the frame's order names the skill): its hit stands for the spark
+    if (hpHit && this.skills.seen(v, false, !!(m || src || fun || flying))) return true;
+    if (flying) return true;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
     const ph = this.pendingHit.get(id);
@@ -1193,7 +1196,9 @@ export class FxWiring {
     const m = Number.isFinite(time) ? this._pending(id, time) : null;
     if (m && this._landed(m, v, time, 'heal')) return true;
     // an official heal on its way stands for it (R9: the sim heals at the 'atk', the projectile's hit plays on arrival)
-    if (this._inAir(id, time)) return true;
+    const flying = this._inAir(id, time);
+    if (this.skills.seen(v, true, !!m || flying)) return true;   // a skill's kit heal (SkillFx.seen)
+    if (flying) return true;
     const t = this.healed.get(id) ?? this.arrived.get(id);
     if (t != null && this.ofx.time - t < ARRIVAL_WINDOW) return true;
     const k = this.idx.generic?.hit?.heal;

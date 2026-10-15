@@ -47,7 +47,9 @@
 // ---- The plan (skillPlan) ------------------------------------------------------------------------------------------
 //   { unitKey, skillId, mode, modeName, kind,
 //     start, loop, end, ready, range,      skill-level: on the owner
-//     attacks: [{ node, ability, cast, range, aim, hit }],  the skill prefab's own attack abilities (each attack while on)
+//     attacks: [{ node, ability, cast, range, aim, hit, when? }],  the skill prefab's own attack abilities (each attack
+//                                          while on; `when` 'start' / 'end': the skill's own cast at its start / end —
+//                                          tagCasts, history §32.14.43 —, never a normal attack)
 //     each: { cast, hit },                 any attack of the owner while on (buff template actions)
 //     trigger,                             reactive: the owner taking damage while on
 //     cond,                                `[eff_cond]` state loops on the owner (COND_BUFFS, condState)
@@ -112,6 +114,8 @@
 //     (`_lineEffectKey`, `_startPointEffectKey`, `_waypointEffectKey`, `_endPointEffectKey`, `_edgeLineRendererEffectKey`)
 //     and `_tileEffectKey` need positions the client is not given: unmapped 'path' / 'tiles'.
 //   * `by: 'name'` (placed by the key's name) keeps that placement with `byName` [ASSUMED]; role `other` → unmapped.
+//   * one buff template action's facing variants (`<base>_up` / `_down` / `_left` / `<base>` …: the client's
+//     CheckCharacterDefaultDirection branches, written as a use each) are one entry with `slots` (dirFamilies).
 //   * hookEffectAfterFirstAttack: the row's key on the first attack (`firstOnly`), the hook's from the second on
 //     (`afterFirst`).
 //   * MultiHitUberEffectEmitter._hitGroups: version 2 gives each row its `group`, the list's length (`groups`) and the
@@ -480,6 +484,78 @@ export function condState({ on = false, charged = false, charges = null } = {}) 
 /** Unmapped reasons whose entries a kit's own 'fx' of the skill may stand for (plan.pulse). */
 const PULSE = new Set(['tick', 'channel-hit', 'hit-no-attack']);
 
+/** An effect key's facing suffix (a buff template's direction branches name their effects so): [1] base, [2] facing. */
+const DIR_SUFFIX = /^(.*?)_(up|down|left|right|back|front)$/;
+
+/**
+ * Facing variants among a list of uses (history §32.14.43): the rows of one buff template action — same `from`, `event`,
+ * `action`, `buff`, `node`, `on`, `role` and `mode`, no emitter `ability` — whose keys are one effect's variants by name
+ * (`<base>_up` / `_down` / `_left` / `_right`, `_back` for a unit facing up, `_front`, and the plain `<base>`) are one
+ * effect picked by the owner's facing: one use with `slots` (0 UP, 1 RIGHT, 2 DOWN, 3 LEFT; a facing without a variant of
+ * its own plays the plain key, else `_front`) and directionType 5, the owner's deploy direction (wiring.js _dirIndex).
+ * The client picks them with CheckCharacterDefaultDirection branches of the template's graph (仇白 S2's
+ * qiubai_s_2[sword_wind_effect]: UP `_up`, DOWN `_down`, RIGHT the plain key, else `_left`; 号角's overload switch: UP
+ * `_back`, else `_front`; 鸿雪's token buff) — index.json writes each branch's buff as a use of its own, without the
+ * condition; every such family of index v3 is one of those branches (client 26-09-13). Other uses are returned as they are.
+ */
+export function dirFamilies(uses) {
+  if (!Array.isArray(uses) || uses.length < 2) return uses || [];
+  const groups = new Map();
+  uses.forEach((u, i) => {
+    if (!isObj(u) || u.ability || !Array.isArray(u.keys) || u.keys.length !== 1 || (Array.isArray(u.slots) && u.slots.some(Boolean))) return;
+    const g = [u.from, u.event, u.action, u.buff, u.node, u.on, u.role, u.mode].map((x) => (x == null ? '' : String(x))).join('|');
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(i);
+  });
+  const repl = new Map();
+  const drop = new Set();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const fams = new Map();   // base → { dir → use index }
+    for (const i of list) {
+      const k = lc(uses[i].keys[0]);
+      const m = k ? DIR_SUFFIX.exec(k) : null;
+      const base = m ? m[1] : k;
+      if (!base) continue;
+      if (!fams.has(base)) fams.set(base, {});
+      const f = fams.get(base);
+      const d = m ? m[2] : 'plain';
+      if (f[d] == null) f[d] = i;
+    }
+    for (const f of fams.values()) {
+      const dirs = Object.keys(f);
+      if (dirs.length < 2 || !dirs.some((d) => d !== 'plain')) continue;
+      const key = (d) => (f[d] != null ? lc(uses[f[d]].keys[0]) : null);
+      const def = key('plain') || key('front') || null;
+      const slots = [key('up') || key('back') || def, key('right') || def, key('down') || def, key('left') || def];
+      const first = Math.min(...Object.values(f));
+      repl.set(first, { ...uses[first], keys: [def || slots.find(Boolean)], slots, directionType: 5, dirBy: 'name' });
+      for (const i of Object.values(f)) if (i !== first) drop.add(i);
+    }
+  }
+  if (!repl.size) return uses;
+  return uses.flatMap((u, i) => (repl.has(i) ? [repl.get(i)] : drop.has(i) ? [] : [u]));
+}
+
+/** An attack ability of a skill that its end casts (by name: FinalAttack, EndAttack …) [ASSUMED from the node names]. */
+const END_ATTACK = /^(?:Final|End)(?:[A-Z_]\w*)?$/;
+
+/**
+ * The skill's own casts among its attack abilities (history §32.14.43) — `when` on plan.attacks: 'end' for a final
+ * attack (END_ATTACK, or one whose cast rows are all `end`: 灵知 S3, 薄荷 S2, 歌蕾蒂娅 S3, 锏 S3), 'start' for the attacks
+ * of a lasting / passive skill whose root ability is a sequence (AbilitySequenceGroup: the skill runs it once as it
+ * starts — 缄默德克萨斯 S2 / S3's appear strike, 仇白 S2's sword split, 余 S2's teleport, 焰影苇草 S2's fire balls); the
+ * normal attacks while the skill is on are then the mode's (or the unit's own), not these. Our record decides `kind`:
+ * without one nothing is tagged.
+ */
+function tagCasts(plan, skill) {
+  const once = plan.kind != null && plan.kind !== 'instant' && /Sequence/.test(String(skill?.rootAbility || ''));
+  for (const a of plan.attacks) {
+    if (END_ATTACK.test(String(a.node || '')) || (a.cast.length && a.cast.every((e) => e.role === 'end'))) a.when = 'end';
+    else if (once) a.when = 'start';
+  }
+}
+
 /**
  * The plan of a skill (module header).
  * @param {any} idx index.json
@@ -508,7 +584,9 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
     const kk = lc(k);
     if (kk && projs[kk] && !plan.projectiles.includes(kk)) plan.projectiles.push(kk);
   }
-  return planUses(idx, plan, [...(Array.isArray(skill.uses) ? skill.uses : []), ...attach], { ...opts, abilities: skill.abilities });
+  planUses(idx, plan, [...(Array.isArray(skill.uses) ? skill.uses : []), ...attach], { ...opts, abilities: skill.abilities });
+  if (isObj(opts.rec)) tagCasts(plan, skill);
+  return plan;
 }
 
 /**
@@ -592,6 +670,8 @@ export function planUses(idx, plan, uses, opts = {}) {
   // an enemy skill held in several modes (index v2): its copies' uses name their `mode` — the plan of `opts.mode`
   // (default 'Default') keeps that copy's and the uses without one
   const mode = opts.mode === null ? null : typeof opts.mode === 'string' ? opts.mode : 'Default';
+  // one buff template action's facing variants are one effect picked by facing (dirFamilies)
+  uses = dirFamilies(uses);
   for (let i = 0; i < uses.length; i++) {
     const u = uses[i];
     if (!isObj(u) || !Array.isArray(u.keys)) continue;
@@ -611,6 +691,8 @@ export function planUses(idx, plan, uses, opts = {}) {
       const placed = place(plan, e, u, { attackOf, eachHit });
       if (placed) {
         miss(key, role, placed, u);
+        // a facing family's other variants are unmapped with it (dirFamilies)
+        if (u.dirBy === 'name') for (const s of new Set(e.slots || [])) if (s && s !== key) miss(s, role, placed, u);
         // a tick of the owner's buff plays on the owner, the others on what they hit
         if (PULSE.has(placed)) plan.pulse.push({ ...e, at: placed === 'tick' && e.on !== 'targets' ? 'owner' : 'target', hold: oneShotHold(e), reason: placed });
       }
@@ -1149,6 +1231,9 @@ export function chargeKeys(plan) {
  *               on the unit `extra.target` names (else at the fx's point), turned by the owner's side (FLIP_TWO_SIDE)
  *   hold        how long a looping reached effect stays: a blackboard key of our skill record (seconds), else `holdS`
  *   cover       fx kinds of the same owner at that tile that the reached effect draws (skipped while it plays)
+ * or, instead of a projectile (history §32.14.43):
+ *   attack      the node of the plan attack the fx stands for: its cast / range rows play on the owner at the fx, its hit
+ *               groups and aims on the damage the fx's frame deals after it (SkillFx kit hits)
  */
 export const FX_BINDINGS = Object.freeze({
   // 克莱门莎 S3 (op-clemnt.js bombard): the kit marks an enemy's tile ('lock': id = the enemy, src = her) and strikes it
@@ -1165,6 +1250,11 @@ export const FX_BINDINGS = Object.freeze({
   // planned as each.hit, which no attack of hers ever plays)
   skchr_bubble_2: Object.freeze({
     counter: Object.freeze({ owner: 'id', keys: Object.freeze(['bubble_skill_02_hit']), at: 'target' }),
+  }),
+  // 锏 S3 (op-blkkgt.js): each slash of the kit ('slash', id = her, every 0.3 s while the skill lasts) is the skill's
+  // Damage ability (MultiMeleeAttack: blkkgt_skill_03_start_01 / _02 on her); the finale is its EndAttack (`when: 'end'`)
+  skchr_blkkgt_3: Object.freeze({
+    slash: Object.freeze({ owner: 'id', attack: 'Damage' }),
   }),
 });
 

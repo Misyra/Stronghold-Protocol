@@ -231,7 +231,9 @@ export class Client {
     page.on('pageerror', (e) => this.problems.push(`pageerror: ${e.message}`));
     page.on('requestfailed', (r) => {
       const err = r.failure()?.errorText || '';
-      if (err === 'net::ERR_ABORTED' && /\.(mp3|ogg|wav|m4a)(\?|$)/.test(r.url())) return; // media element swaps
+      // media element swaps, and an <img> whose src changes while it loads (the shop's 冻结 icon flips between
+      // frozen_icon and frozen_icon2): the browser cancels the old request — not a failure of the page
+      if (err === 'net::ERR_ABORTED' && /\.(mp3|ogg|wav|m4a|png|webp|jpe?g|gif|svg)(\?|$)/.test(r.url())) return;
       this.problems.push(`requestfailed: ${r.url()} ${err}`);
     });
     page.on('response', (r) => { if (r.status() >= 400) this.problems.push(`http ${r.status()}: ${r.url()}`); });

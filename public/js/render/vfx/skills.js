@@ -18,6 +18,7 @@
 //                                             chargeFromIndex for version 2 —, else CHARGE_EMITTERS), null for other units
 //   chargeStep(plan, prev, next)            → what changes when the stored count goes prev → next
 //   FX_BINDINGS / bindingKeys(idx, skillId) → kit 'fx' tuples bound to a skill's official effect (Phase 3b, below)
+//   FX_COVER / coverOf(owner, kind)         → kit 'fx' kinds a skill's official effects stand for (no procedural fx; below)
 //   eventNum(e)                             → an ability event (name or number) → Torappu.Battle.AbilityStandard/Event
 //
 // ---- Resolving a battle unit (resolveSkill) --------------------------------------------------------------------------
@@ -207,6 +208,8 @@
 //     (the shortest such key), else the first [ASSUMED].
 //   * FX_BINDINGS: a kit 'fx' tuple that stands for an official effect of the skill which no plan row places (the skill's
 //     projectile reaching a target the kit picks, …), by skill id and fx kind — see the table.
+//   * FX_COVER: a kit 'fx' kind the skill's official effects stand for although nothing official is placed at that fx (the
+//     client shows the skill's own effects there and no such cue) — the procedural fx is skipped while the skill lasts.
 //
 // [ASSUMED] (the data does not say): the placements marked above; a looping prefab in a one-shot role is held for one
 // cast (a skill-level begin effect for the skill); buff loops on the owner last the skill (a buff's own duration is not
@@ -1101,13 +1104,24 @@ export function chargeKeys(plan) {
 /**
  * Kit 'fx' tuples (b.ev ['fx', kind, x, y, extra] of server/sim/content/kits) that stand for an official effect of a skill
  * which no plan row places, by skill id → fx kind. render/vfx/skillfx.js plays the binding and the field view skips the
- * procedural fx. A binding:
- *   owner       the extra field naming the skill's owner ('id' | 'src')
+ * procedural fx (it is drawn when none of the binding's prefabs is installed). A binding:
+ *   owner       the extra field naming the skill's owner ('id' | 'src'), or 'skill': the fx names no owner (焰影苇草's
+ *               fire strikes from its carrier) — the unit whose skill of that id lasts
  *   projectile  the skill projectile whose reached effects (onReached, else onHit) play where the fx happens
- *   at          'point': the fx's (x, y) on the ground (the unit `extra.id` names stands there: its feet)
- *   hold        how long a looping reached effect stays: a blackboard key of our skill record (seconds), else `holdS`
+ *   keys        else these prefabs (an official effect our projectile records do not list as reached: a projectile's
+ *               main effect, a skill row the kit's moment stands for)
+ *   at          'point': the fx's (x, y) on the ground (the unit `extra.id` names stands there: its feet); else on the
+ *               view `extra.id` names (the fx's point without one)
+ *   hold        how long a looping reached effect stays: a blackboard key of our skill record (seconds), 'fx' — the
+ *               fx's own `duration` / `dur` / `hold` (the kit's area or lock time) —, else `holdS`
  *   cover       fx kinds of the same owner at that tile that the reached effect draws (skipped while it plays)
+ *   during      only while the skill lasts (SkillFx._lasts: on, its activation frame, COVER_AFTER_S after its end, or a
+ *               binding of its owner still held — a lasting area's strikes); another fx of that kind is the kit's own
+ * The R11 entries (0.3.0 official-effects audit, history §32.14.44) bind a kit area or strike to the official prefab
+ * the client plays there: the areas are the skill projectiles' reached effects (the projectile stays where it lands —
+ * AuraHitBehaviour — for the area's life), the strikes their hit effects.
  */
+const binding = (o) => Object.freeze({ ...o, ...(o.cover ? { cover: Object.freeze(o.cover) } : {}), ...(o.keys ? { keys: Object.freeze(o.keys) } : {}) });
 export const FX_BINDINGS = Object.freeze({
   // 克莱门莎 S3 (op-clemnt.js bombard): the kit marks an enemy's tile ('lock': id = the enemy, src = her) and strikes it
   // three times ('blast', id = her, 0.5 / 1.5 / 2.5 s later). The client fires projectile_chr_clemnt_s3 at the marked
@@ -1115,16 +1129,102 @@ export const FX_BINDINGS = Object.freeze({
   // strikes (clips Mark_01_start 4.13 s and three Mark_trail_01), cleared when the projectile stops
   // (_clearReachedEffectWhenStop; its life time from the blackboard: projectile_life_time — the kit's tile lock)
   skchr_clemnt_3: Object.freeze({
-    lock: Object.freeze({ owner: 'src', projectile: 'projectile_chr_clemnt_s3', at: 'point', hold: 'projectile_life_time', holdS: 5, cover: Object.freeze(['blast']) }),
+    lock: binding({ owner: 'src', projectile: 'projectile_chr_clemnt_s3', at: 'point', hold: 'projectile_life_time', holdS: 5, cover: ['blast'] }),
+  }),
+  // 锡人 S1 / S2 (chess_char_2_19-tinman.js: the 'zone' on the struck tile, id = him, dur = the area's time): the client's
+  // flask (projectile_chr_tinman_s1 / _s2) lands there — its reached effects are the ring (tinman_skill_0N_range_01,
+  // looping), the flask on the ground (_token_01, looping) and the splash (_start_01 / _02)
+  skchr_tinman_1: Object.freeze({ zone: binding({ owner: 'id', projectile: 'projectile_chr_tinman_s1', at: 'point', hold: 'fx', holdS: 8, during: true, cover: ['zone'] }) }),
+  skchr_tinman_2: Object.freeze({ zone: binding({ owner: 'id', projectile: 'projectile_chr_tinman_s2', at: 'point', hold: 'fx', holdS: 8, during: true, cover: ['zone'] }) }),
+  // 引星棘刺 S1 / S3 (chess_char_5_15-thorn2.js: a 'zone' on each chosen ally's tile, id = her, duration): the unit she
+  // throws (projectile_chr_thorn2_s1 / _s3) lands there — thorn2_token_start, the unit (thorn2_skill_0N_token, looping),
+  // S1's ring (thorn2_skill_01_range). S2's unit drifts (its zone re-sent every second): not bound — the procedural area
+  // stays (open)
+  skchr_thorn2_1: Object.freeze({ zone: binding({ owner: 'id', projectile: 'projectile_chr_thorn2_s1', at: 'point', hold: 'fx', holdS: 6, during: true, cover: ['zone'] }) }),
+  skchr_thorn2_3: Object.freeze({ zone: binding({ owner: 'id', projectile: 'projectile_chr_thorn2_s3', at: 'point', hold: 'fx', holdS: 19, during: true, cover: ['zone'] }) }),
+  // 波登可 S2 ('zone' of her spores, id = her, dur): projectile_chr_podego_s2's reached podego_skill_02_range
+  skchr_podego_2: Object.freeze({ zone: binding({ owner: 'id', projectile: 'projectile_chr_podego_s2', at: 'point', hold: 'fx', holdS: 5, during: true, cover: ['zone'] }) }),
+  // 歌蕾蒂娅 S3 ('tornado', id = her, duration): projectile_chr_glady_s3_2's reached glady_skill_03_range / _02
+  skchr_glady_3: Object.freeze({ tornado: binding({ owner: 'id', projectile: 'projectile_chr_glady_s3_2', at: 'point', hold: 'fx', holdS: 10, during: true, cover: ['tornado'] }) }),
+  // 异客 S3 ('storm', id = him, duration): projectile_chr_pasngr_s3's reached pasngr_skill_03_range; the storm's strikes
+  // ('lightning': id = the enemy, src = him) — its _specialHitEffect pasngr_skill_03_hit on that enemy
+  skchr_pasngr_3: Object.freeze({
+    storm: binding({ owner: 'id', projectile: 'projectile_chr_pasngr_s3', at: 'point', hold: 'fx', holdS: 10, during: true, cover: ['storm'] }),
+    lightning: binding({ owner: 'src', keys: ['pasngr_skill_03_hit'], holdS: 2, during: true }),
+  }),
+  // 溯光星源 S2 (chess_char_6_16-halo2.js: a 'link' from her target to each enemy it pulls, id = her, ids = the pair, at
+  // the pulled one): projectile_chr_halo2_s2_link's hit halo2_skill_02_hit_02 there
+  skchr_halo2_2: Object.freeze({ link: binding({ owner: 'id', projectile: 'projectile_chr_halo2_s2_link', at: 'point', holdS: 2, during: true }) }),
+  // 焰影苇草 S2 (a 'strike' from a fireball's carrier every cooldown: id = the enemy, src = the carrier): the fireball
+  // projectile_chr_reed2_fire's hit reed2_skill_02_hit on the enemy
+  skchr_reed2_2: Object.freeze({ strike: binding({ owner: 'skill', projectile: 'projectile_chr_reed2_fire', holdS: 2, during: true }) }),
+  // 蕾缪安 S3: a 'lock' (id = the enemy, src = her, hold) is the aim projectile on it (projectile_chr_lemuen_s3_aim: its
+  // main lemuen_skill_03_crosshair_range and lemuen_skill_03_crosshair_02), held for the lock [ASSUMED 1.5 s without
+  // one]; a 'bombard' (id = her, its point) is projectile_chr_lemuen_s3_attack's reached lemuen_skill_03_hit_01. The
+  // falling shell ('bombardShell': the attack projectile's flight, not flown here) stays procedural
+  skchr_lemuen_3: Object.freeze({
+    lock: binding({ owner: 'src', keys: ['lemuen_skill_03_crosshair_range', 'lemuen_skill_03_crosshair_02'], hold: 'fx', holdS: 1.5, during: true }),
+    bombard: binding({ owner: 'id', projectile: 'projectile_chr_lemuen_s3_attack', at: 'point', holdS: 2, during: true }),
   }),
 });
 
-/** The reached effects of a binding's projectile (onReached, else onHit), lower case; [] without them. */
+/** The prefabs a binding plays: its `keys`, else its projectile's reached effects (onReached, else onHit), lower case. */
 export function bindingEffects(idx, bind) {
+  if (Array.isArray(bind?.keys)) return bind.keys.map(lc).filter(Boolean);
   const p = bind?.projectile ? idx?.projectiles?.[lc(bind.projectile)] : null;
   if (!p) return [];
   const list = Array.isArray(p.onReached) && p.onReached.length ? p.onReached : Array.isArray(p.onHit) ? p.onHit : [];
   return list.map(lc).filter(Boolean);
+}
+
+/** The fx kinds whose binding names no owner ('skill'), by kind → the skill ids that bind it. */
+export const BOUND_BY_SKILL = Object.freeze((() => {
+  const out = {};
+  for (const [sid, kinds] of Object.entries(FX_BINDINGS)) for (const [kind, b] of Object.entries(kinds)) if (b.owner === 'skill') (out[kind] ||= []).push(sid);
+  return out;
+})());
+
+/**
+ * Kit 'fx' kinds a skill's official effects stand for although no official effect is placed at the fx (render/vfx/
+ * skillfx.js rule 5: with 官方特效 on and the skill's plan drawable, the procedural fx is skipped while the skill lasts —
+ * the client shows the skill's own effects then, and no such cue). By skill id; decided per case from the client data
+ * (0.3.0 official-effects audit R11, history §32.14.44). Areas, locks and links stay procedural where the client shows
+ * such a cue that is not placed here (引星棘刺 S2's drifting unit, 余 S3's wall segments, 新约能天使's strikes, 扎罗's
+ * fear cage on its targets — open), and so do the cues of a talent (刺玫's and 雪猎's) or 泡泡 S2's counter (R17).
+ */
+export const FX_COVER = Object.freeze({
+  // 莫斯提马 S2: the zone at her feet — the skill's range rows (mostma_skill_02_range / _range_02) and loop show it
+  skchr_mostma_2: Object.freeze(['zone']),
+  // 白面鸮 S2: the heal field at her — the client shows the skill's loop on her (plosis_attack_01_start), no area
+  skchr_plosis_2: Object.freeze(['healField']),
+  // 流明 S1: the heal field on his patient — the skill's buff on its target (lumen_skill_01_range) plays there with the heal
+  skchr_lumen_1: Object.freeze(['healField']),
+  // 凛御银灰 S2: the blast in front of her — her skill attack's own cast / range / hit (svash2_skill_02_*_01)
+  skchr_svash2_2: Object.freeze(['aoe']),
+  // 远牙 S2, 溯光星源 S3: the link at the cast — the skills' loops (fartth_skill_02_buff; halo2_skill_03_buff_01 / _03)
+  skchr_fartth_2: Object.freeze(['link']),
+  skchr_halo2_3: Object.freeze(['link']),
+  // 空弦 S1 / S2, 流星 S2, 雪猎 S2: the volley — the skills' casts, projectiles and hits
+  skchr_archet_1: Object.freeze(['volley']),
+  skchr_archet_2: Object.freeze(['volley']),
+  skchr_shotst_2: Object.freeze(['volley']),
+  skchr_snhunt_2: Object.freeze(['volley']),
+  // 信仰搅拌机 S3: a counter is an attack of hers (its official casts and hits) under the skill's loops
+  skchr_rmixer_3: Object.freeze(['counter']),
+  // 歌蕾蒂娅 S3: the tornado's pulls — the tornado itself is bound (FX_BINDINGS)
+  skchr_glady_3: Object.freeze(['tornadoPulse']),
+  // 伺夜 S1 (a wolf more: the 'summon' on her wolf, src = her), 迷迭香 S3 (the 'summon' at her): the skills' start rows
+  // (vigil_skill_01_start_01–03; rosmon_skill_03_start) — a summon born in that frame is covered by its own birth
+  skchr_vigil_1: Object.freeze(['summon']),
+  skchr_rosmon_3: Object.freeze(['summon']),
+  // 卡涅利安 S2: the chains — her skill's loops, once they are drawable (audit R6: her conditional buffs)
+  skchr_billro_2: Object.freeze(['sandChains', 'sandChainsCharged']),
+});
+
+/** Whether a skill's official effects stand for a kit fx kind (FX_COVER). */
+export function coverOf(skillId, kind) {
+  const list = skillId ? FX_COVER[lc(skillId)] : null;
+  return !!list && list.includes(kind);
 }
 
 /** Every key a skill's bindings can play (preloading). */

@@ -104,7 +104,7 @@ export class FunnelFx {
           const si = Number.isInteger(info.diy?.skillIndex) ? info.diy.skillIndex : Number.isInteger(info.skillIndex) ? info.skillIndex : undefined;
           const srec = skillRecordOf(rec, si);
           U = {
-            id, key, v, plan, rec, srec, dmgType: rec && typeof rec.dmgType === 'string' ? rec.dmgType : 'arts',
+            id, key, v, plan, rec, srec, dmgType: rec && typeof rec.dmgType === 'string' ? rec.dmgType : null,
             attachN: 0,             // units one attach attack showed (0: initialCount)
             home: new Map(),        // `${key}|${mount}` → { h, key, mount, unit }
             out: new Map(),         // `${mode}|${i}` → { until, hit (a remote unit's playing hit), n (its hits) }
@@ -334,8 +334,9 @@ export class FunnelFx {
 
   /**
    * b.ev 'dmg' (an HP hit) on v: an attached unit's hit lands — its group plays on v (module header). The 'dmg' names no
-   * source: the hits of one attack are those of the owner's damage type (the 驭械术士's arts) in the tick of the first one
-   * (the sim deals the body hit and the units' with the attack, in one call); another tick's ends the record.
+   * source: the hits of one attack are those of the owner's damage type (its data record's: the 驭械术士's arts; none known,
+   * every HP hit) in the tick of the first one (the sim deals the body hit and the units' with the attack, in one call);
+   * another tick's ends the record.
    */
   damage(v, time, type = null) {
     if (!this.active() || !v) return false;

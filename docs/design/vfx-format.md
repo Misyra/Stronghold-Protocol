@@ -1352,7 +1352,8 @@ SkillFx and TalentFx —, `render/vfx/bones.js` follows the bone; DESIGN §9 "Of
   added unit, the units back from a hunt) plays its `appearEffect`.
 * **Attached units (the owner's 'atk').** 荒芜拉普兰德's Default, S1 and S2 (the sim deals the units' hits with her attack):
   the k-th HP 'dmg' on the target after the body hit is unit k's (a 'dmg' names no source: those of her damage type in
-  the tick of the first — the sim deals them in one call; and so is the count from then on); several targets of
+  the tick of the first — her data record's arts, any HP hit when a record names none; the sim deals them in one call;
+  and so is the count from then on); several targets of
   one attack (S2's locks; one enemy can hold several) are one unit each; each plays its hit group on its target and is
   home again 0.85 s later (`appearEffect`). A normal attack's units (MultiFunnelsNormalAttack) leave home with the attack
   (`disappearEffect`, the loop gone at once — `setActiveFalseWhenPause`), a skill mode's with their own hit. The body

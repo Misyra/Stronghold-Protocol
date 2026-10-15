@@ -158,7 +158,7 @@ function makeIndex() {
 }
 
 const RECS = {
-  char_901_wolf: { charId: 'char_901_wolf', skills: [
+  char_901_wolf: { charId: 'char_901_wolf', dmgType: 'arts', skills: [
     { index: 0, skillId: 'skchr_wolf_1', desc: '被动效果：浮游单元+1\n主动触发可以在下列状态和初始状态间切换', bb: { atk: 0.23, 'attack@cnt': 0 }, duration: -1 },
     { index: 1, skillId: 'skchr_wolf_2', desc: '浮游单元+3', bb: { 'attack@cnt': 2 }, duration: 18 },
     { index: 2, skillId: 'skchr_wolf_3', desc: '浮游单元+2', bb: { 'attack@cnt': 1, 'attack@times': 1.3 }, duration: 40 },

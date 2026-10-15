@@ -30,7 +30,8 @@ import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
 import { Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
 import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, ownStandIn, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, diyGetter } from './gameLogic.js';
-import { chessPortraitUrl, itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { shopPortraitUrl, itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { skinsStore } from './skins.js';
 import { data } from '../data.js';
 import { hotkeyLabelOf } from './settings.js';
 import { t } from '../../../shared/i18n.js';
@@ -88,6 +89,11 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
   const si = c0 && !dr ? ownStandIn(c0, priv, data.get('backups')) : null;
   const c = dr || si || c0;
   const m = data.get('assets');
+  // 商店立绘 (docs/SKINS.md, local to this browser): the card's 180×360 art follows this player's choice for the
+  // operator (independent of the battle model), falling back to the operator's own portrait. Read straight from the
+  // store rather than with a hook: the UI tests render cards by calling them as plain functions, and the card
+  // repaints with the next shop state push anyway (the choice never goes through the server).
+  const portraitSkin = skinsStore.get().portraits[c?.baseId || c?.chessId || slot.id] || null;
   const tier = c?.tier ?? 1;
   const prog = mergeProgress(priv, slot.id, (id) => data.lookup('chess', id));
   const hint = mergeHint(priv, slot.id);
@@ -102,7 +108,7 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
       aria-label=${`${t('{name}，价格 {price}', { name, price: slot.price })}${armed ? (disabled ? t('，无法购买') : t('，再次点击确认')) : ''}`} aria-pressed=${onTap ? String(!!armed) : undefined}>
     <span class="scard__bg" aria-hidden="true"></span>
     <span class="scard__water" aria-hidden="true">${bonds[0] ? html`<${BondGlyph} bondId=${bonds[0]} />` : null}</span>
-    <${Img} src=${chessPortraitUrl(m, c)} class="scard__art" />
+    <${Img} src=${shopPortraitUrl(m, c, portraitSkin)} class="scard__art" />
     <span class="scard__top">
       <${TierChip} tier=${tier} size="md" />
       <${PriceHex} slot=${slot} free=${free} poor=${reason === t('资金不足')} />

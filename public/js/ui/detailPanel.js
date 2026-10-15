@@ -38,7 +38,7 @@ import { useEffect } from '../../vendor/hooks.module.js';
 import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
 import { Img, RichText, UnitThumb, BondGlyph, GIcon, diyToken } from './gameComponents.js';
 import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, ownStandIn, standInOf, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, ownDiyPick, diyRecordFor, pickGetter, unitPick, unitCultivation } from './gameLogic.js';
-import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { shopPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
 import { attackRangeGrid } from '../../../shared/loadoutRecord.js';
@@ -46,6 +46,7 @@ import { SKILL_SUMMON_START_DEPLOY } from '../../../shared/constants.js';
 import { moduleBadge, fullTraitText } from './loadoutModel.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { audio } from '../audio.js';
+import { skinsStore } from './skins.js';
 import { tokenVariantFor } from './gameLogic/loadout.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -396,6 +397,10 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   // still apply (the owner's recall of the official mode, 2026-10-06)
   const si = standIn && standIn.standInFor ? standIn : null;
   const body = si || chess;
+  // 商店立绘 (docs/SKINS.md, local): the same 180×360 art the shop card shows, so tapping a card opens its own
+  // portrait instead of the operator's default one. A stand-in shows its own operator, never the skin. Read without
+  // a hook — the UI tests call this component as a plain function.
+  const portraitSkin = si ? null : (skinsStore.get().portraits[chess?.baseId || chess?.chessId] || null);
   // 0.2.2: at the operator's 潜能 / 练度 — the player's settings (`cultOpts.ops`) or a teammate's unit's own
   // (`cultOpts.cultivation`); a stand-in has neither
   const lo = si ? standInLoadout(si, getChess, data.get('backups')) : chessLoadout(chess, loadout, getChess, { ...(cultOpts || {}), effects: data.get('effects') });
@@ -420,7 +425,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   blocks.head = html`
     <div key="head" class="dhead">
       <div class=${cx('dhead__art', golden && 'is-golden', `dhead__art--t${c.tier}`)}>
-        <${Img} src=${chessPortraitUrl(m, body)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${si} />`} />
+        <${Img} src=${shopPortraitUrl(m, body, portraitSkin)} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${si} />`} />
       </div>
       <div class="dhead__info">
         <div class="dhead__chips">

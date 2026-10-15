@@ -19,6 +19,7 @@ import { diySlotList, pickChoices, pickOptions, slotRecord, defaultPick } from '
 import { OperatorVoice } from '../ui/operatorVoice.js';
 import { LoadoutStats } from '../ui/loadoutStats.js';
 import { CultivationSelects } from './cultivation.js';
+import { SkinSection } from '../ui/skinPicker.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -43,7 +44,7 @@ function Bonds({ bonds }) {
 }
 
 /** One slot: the pick (operator, class, bonds, skill, module, an owned pick's 潜能 / 练度) or an empty slot to fill. */
-function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = null }) {
+function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = null, onSkin = null, skinOpen = false }) {
   const D = diyData();
   const rec = pick ? slotRecord(slot.slotId, pick, D) : null;
   const elite = pick ? slotRecord(slot.slotId, pick, D, { elite: true }) : null;
@@ -83,6 +84,8 @@ function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = n
       ${illegal ? html`<p class="diy-slot__bad"><${Icon} name="warn" />${t('这项自选在当前版本不可用，开局时会被移除')}</p>` : null}
     </div>
     <div class="diy-slot__acts">
+      ${onSkin ? html`<${Button} variant="ghost" size="sm" data-testid="diy-skin" aria-expanded=${skinOpen ? 'true' : 'false'}
+          class=${cx(skinOpen && 'is-on')} onClick=${() => onSkin(slot.slotId)}>${t('皮肤')}<//>` : null}
       <${Button} variant="secondary" size="sm" icon="refresh" data-testid="diy-change" onClick=${() => onOpen(slot.slotId)}>${t('更换')}<//>
       <${Button} variant="ghost" size="sm" icon="close" data-testid="diy-clear" onClick=${() => onClear(slot.slotId)}>${t('清空')}<//>
     </div>
@@ -255,14 +258,20 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
  */
 export function DiyPanel(props) {
   const [picking, setPicking] = useState(null);
-  return DiyPanelView({ ...props, picking, onPicking: setPicking });
+  const [skinSlot, setSkinSlot] = useState(null);
+  return DiyPanelView({ ...props, picking, onPicking: setPicking, skinSlot, onSkin: setSkinSlot });
 }
 
 /** The tab's view (no hooks: the tests draw it): `picking` = the slot being filled, or null. */
-export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking, ops = {}, onOps = null }) {
+export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking, skinSlot = null, onSkin = null, ops = {}, onOps = null }) {
   const slots = diySlotList(diyData());
   const slot = picking ? slots.find((s) => s.slotId === picking) : null;
   const tiers = [...new Set(slots.map((s) => s.tier))];
+  // The 皮肤 section of ONE slot at a time (a second open one would move the preview's single canvas away — see
+  // render/spinePreview.js). The composed record of the open slot is exactly what ui/skinPicker.js expects:
+  // `chessId` = the slot's base id (the key the whole skins pipeline is keyed by) and `charId` = the pick.
+  const skinOpenSlot = skinSlot ? slots.find((s) => s.slotId === skinSlot) : null;
+  const skinRec = skinOpenSlot && picks[skinSlot] ? slotRecord(skinSlot, picks[skinSlot], diyData()) : null;
   return html`<main class="diy" data-testid="diy">
     <div class="own__bar">
       <p class="own__lead">${t('5阶与6阶各有两个自选名额：选择持有的 6★ 干员（任选技能与模组）或原型干员（技能锁定）。自选干员只出现在你自己的商店里，调度中心达到该阶等级后才会刷新，价格与同阶干员相同；盟约按干员实际所属阵营分配，没有特质。')}</p>
@@ -272,10 +281,18 @@ export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPickin
         <h3 class="own-tier__head"><${TierChip} tier=${tier} size="sm" /><span class="num">${ROMAN[tier]}</span><span>${t('阶')}</span></h3>
         <div class="diy-grid">
           ${slots.filter((s) => s.tier === tier).map((s) => html`<${SlotCard} key=${s.slotId} m=${m} slot=${s} pick=${picks[s.slotId] || null}
-            illegal=${!!picks[s.slotId] && !legal[s.slotId]} onOpen=${setPicking} onClear=${(id) => onSet(id, null)} ops=${ops} onOps=${onOps} />`)}
+            illegal=${!!picks[s.slotId] && !legal[s.slotId]} onOpen=${setPicking} onClear=${(id) => onSet(id, null)} ops=${ops} onOps=${onOps}
+            onSkin=${onSkin ? (id) => onSkin(id === skinSlot ? null : id) : null} skinOpen=${skinSlot === s.slotId} />`)}
         </div>
       </section>`)}
     </div>
+    ${skinRec && skinOpenSlot ? html`<section class="diy-skin" data-testid="diy-skin-panel">
+      <header class="diy-skin__head">
+        <small>${t('{tier}阶 自选 · {name}', { tier: skinOpenSlot.tier, name: skinRec.name })}</small>
+        <${Button} variant="ghost" size="sm" icon="collapse" data-testid="diy-skin-close" onClick=${() => onSkin(null)}>${t('收起')}<//>
+      </header>
+      <${SkinSection} chess=${skinRec} />
+    </section>` : null}
     ${slot ? html`<${DiyPicker} m=${m} slot=${slot} picks=${picks} kitted=${kitted} ops=${ops} onOps=${onOps} onClose=${() => setPicking(null)}
       onDone=${(pick) => { onSet(slot.slotId, pick); setPicking(null); }} />` : null}
   </main>`;

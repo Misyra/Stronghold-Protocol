@@ -255,8 +255,12 @@ async function main() {
     sk.o = { kind: o.kind || 'none', hits: Math.max(1, o.hits | 0 || 1), instant: !!o.instant, passive: !!o.passive, charge: o.charge | 0, ready: !!o.ready, manual: !!o.manual, s: o.s | 0 };
     // a synthetic data record (the viewer has no data store): the skill's id, type and a lasting duration unless instant;
     // an enemy's names its skills by prefabKey in the index's order (its slots)
-    const rec = enemy ? { skills: ids.map((k) => ({ prefabKey: k })) }
-      : sid ? { charId: unitKey, skill: { skillId: sid, index: o.s | 0, skillType: sk.o.passive ? 'PASSIVE' : 'MANUAL', durationType: 'NONE', duration: sk.o.instant || sk.o.passive ? 0 : 4, bb: o.bb || { duration: 3, projectile_life_time: 4 } } } : null;
+    // (its talents: every base talent index of the unit's talentKeys — index v3, render/vfx/talents.js; an enemy's are all on)
+    const talents = Object.keys(u?.talentKeys?.base || {}).map((i) => ({ index: Number(i) }));
+    // (an enemy's skills in its data record's order when given — `o.skills`, data/enemies.json prefabKeys: the slots the
+    // sim's 'cast' names — else the index's)
+    const rec = enemy ? { skills: (Array.isArray(o.skills) ? o.skills : ids).map((k) => ({ prefabKey: k })), talents: { bb: o.talentBb || {} } }
+      : { charId: unitKey, talents, ...(sid ? { skill: { skillId: sid, index: o.s | 0, skillType: sk.o.passive ? 'PASSIVE' : 'MANUAL', durationType: 'NONE', duration: sk.o.instant || sk.o.passive ? 0 : 4, bb: o.bb || { duration: 3, projectile_life_time: 4 } } } : {}) };
     wiring.opts.record = (info) => (info?.id === 1 ? rec : null);
     wiring.opts.view = (id) => (id === 1 ? sk.src : id === 2 ? sk.tgt : null);
     sk.src = fake(1, unitKey, UNIT_TILE.col, UNIT_TILE.row, enemy);
@@ -264,7 +268,7 @@ async function main() {
     sk.src.visFacing = left ? -1 : 1; sk.tgt.visFacing = left ? 1 : -1;
     if (!sk.src.isEnemy) sk.src.dir = left ? 'LEFT' : 'RIGHT';
     sk.src.info.skillIndex = o.s | 0;
-    Object.assign(sk.src, { sp: 0, spMax: 10, energy: sk.o.charge ? [0, sk.o.charge] : null, anim: 0, form: o.form || null });
+    Object.assign(sk.src, { sp: 0, spMax: 10, energy: sk.o.charge ? [0, sk.o.charge] : null, anim: 0, form: o.form || null, hp: 100, maxHp: 100 });
     if (o.block) sk.src.flags |= UF.BLOCKED;
     sk.on = true; sk.t = 0; sk.last = -1; sk.store = 0;
     wiring.begin([sk.src, sk.tgt]);
@@ -274,8 +278,11 @@ async function main() {
   }
   /**
    * One command of the skill demo (the tests drive it by hand): on, off, attack, energy n, deploy, die, fx kind [extra];
-   * an enemy's: cast slot (b.ev 'cast'), anim n (the snapshot's: ANIM.SKILL opens a single-skill enemy's window, leaving
-   * it closes the window), block on|off (UF.BLOCKED: its combat), form name.
+   * an enemy's: cast slot [dur] (b.ev 'cast'), anim n (the snapshot's: ANIM.SKILL opens a single-skill enemy's window,
+   * leaving it closes the window), block on|off (UF.BLOCKED: its combat), form name [fx extra] (a sim form fx: a 重生's
+   * 'reborn' / 'form2', a 替身's 'doll'); talents (index v3): spawn (an enemy's or a summon's deploy talents), hp n [max]
+   * (an HP-ratio toggle), flags n (the snapshot flags: blocked, 隐匿 …), kitfx kind [extra] (a kit fx naming the unit:
+   * 'substitute', 'extraAttack' …).
    */
   function skillCmd(cmd, a, b) {
     const s = sk.src, t = sk.tgt;
@@ -296,10 +303,14 @@ async function main() {
       case 'die': return wiring.death(s);
       case 'sp': s.sp = Number(a) || 0; return true;
       case 'fx': return wiring.simFx(a, b?.x ?? t.x, b?.y ?? t.y, { id: 1, ...(b || {}) });
-      case 'cast': return wiring.enemyCast(s, a | 0);
+      case 'cast': return wiring.enemyCast(s, a | 0, Number(b) || 0);
+      case 'spawn': return wiring.spawned(s);
+      case 'hp': s.hp = Number(a); s.maxHp = Number(b) || s.maxHp || 100; return true;
+      case 'flags': s.flags = a | 0; return true;
       case 'anim': s.anim = a | 0; return true;
       case 'block': if (a === false || a === 'off') s.flags &= ~UF.BLOCKED; else s.flags |= UF.BLOCKED; return true;
-      case 'form': s.form = a || null; return true;
+      case 'form': s.form = a || null; return wiring.form(s, a || null, b || {});
+      case 'kitfx': return wiring.simFx(a, s.x, s.y, { id: 1, ...(b || {}) });
       default: return false;
     }
   }

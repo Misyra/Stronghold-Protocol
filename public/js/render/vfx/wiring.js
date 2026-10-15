@@ -40,6 +40,7 @@ import { projectileParts, paracurve, arcHeight, wobble } from './flight.js';
 import { GROUND_SPAWNS } from './effect.js';
 import { SkillFx, fitsAttack, pickGroup, formMode } from './skillfx.js';
 import { TalentFx } from './talentfx.js';
+import { FunnelFx } from './funnelfx.js';
 import { formModes } from './talents.js';
 import { shotOf } from './skills.js';
 import { UF } from '../../../../shared/constants.js';
@@ -196,6 +197,7 @@ export class FxWiring {
     this.castFrame = new Map();   // unit id → the frame of its last attack (several targets of one attack cast once)
     this.skills = new SkillFx(this);
     this.talents = new TalentFx(this);
+    this.funnels = new FunnelFx(this);
   }
 
   get index() { return this.idx; }
@@ -311,6 +313,7 @@ export class FxWiring {
     // talents' and abilities' (render/vfx/talentfx.js, index v3)
     for (const k of this.skills.keys(views)) keys.add(k);
     for (const k of this.talents.keys(views)) keys.add(k);
+    for (const k of this.funnels.keys(views)) keys.add(k);   // the 驭械术士's floating units (render/vfx/funnelfx.js)
     return [...keys].map(lc).filter((k) => k && this.ofx.lib.has(k));
   }
 
@@ -437,10 +440,13 @@ export class FxWiring {
    * Spawn an effect key on a view (o: { toward (view|point), flipFrom (view), track, follow, stick, strike, loop,
    * important, skip, data }): at its FollowMountPoint's point when it has one — the client keeps it there from its first
    * frame, with the point's rotation unless `_keepOriginRotation` (a weapon effect rides its bone: 安洁莉娜's staff glow,
-   * 灰毫's muzzle flash) —, else at its spawn location (MUZZLE_POINT and the Special points with the point's rotation;
-   * DESIGN §33.11). `follow`: a held loop of a FollowOwner / FollowTileHeight effect keeps to the unit; `stick`: the
-   * effect keeps to the view's spawn point while it lives (what a projectile places on its target); `strike`: the points
-   * as the attack clip poses them at its strike frame.
+   * 灰毫's muzzle flash; a 驭械术士's floating unit its Special point) —, else at its spawn location (MUZZLE_POINT and the
+   * Special points with the point's rotation; DESIGN §33.11). `follow`: a held loop of a FollowOwner / FollowTileHeight
+   * effect keeps to the unit; `stick`: the effect keeps to the view's spawn point while it lives (what a projectile
+   * places on its target); `strike`: the points as the attack clip poses them at its strike frame. A prefab not loaded
+   * yet is placed by index.json's summary (`prefabs[key].spawn`, and `follow`: its FollowMountPoint's point, followed
+   * from the first frame) and takes up its rotation, direction and pause behaviours once it has loaded (an idle loop
+   * started in the battle's first frames used to sit at the HitPoint for good).
    */
   playOn(key, v, o = {}) {
     let k = lc(key);
@@ -453,47 +459,69 @@ export class FxWiring {
     }
     const u = this.unitOf(v);
     const skin = this.skinOf(u);
-    const spawn = def ? def.spawn : 2;
     const pose = this.pose(v);
     pose.strike = !!o.strike;
-    // a FollowMountPoint: its point from the first frame on, every effect that has one; FollowOwner / FollowTileHeight
-    // (`follow.owner`): at the spawn location, kept on the unit's feet for a held loop (o.follow) as before
-    const fmp = def?.follow && !def.follow.owner ? def.follow : null;
-    const follow = fmp || (o.follow && def?.follow) || null;
-    const pos = fmp ? mountPoint(skin, fmp.mount, pose) : spawnPoint(skin, spawn, pose);
+    let P = this._placing(def, def ? null : this.idx?.prefabs?.[k] || null, o);
+    const pos = P.fmp ? mountPoint(skin, P.fmp.mount, pose) : spawnPoint(skin, P.spawn, pose);
     const ground = (v.z || 0);
-    const onGround = !!def && GROUND_SPAWNS.has(spawn) && !fmp;
-    if (onGround) pos[2] = -ground;
-    const rotKind = fmp ? (fmp.keepRot ? null : mountKind(fmp.mount)) : def ? spawnRotationKind(spawn) : null;
-    const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false, mountRot: rotKind ? mountRotation(skin, rotKind, pose) : null };
+    if (P.onGround) pos[2] = -ground;
+    const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false, mountRot: P.rotKind ? mountRotation(skin, P.rotKind, pose) : null };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
     // the owner each frame: FollowMountPoint keeps the effect on the unit's point (and its rotation), FollowDirection
     // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
-    const turn = !!def?.direction, pause = def?.pause, stick = !!o.stick && !follow;
-    if (!o.track && (follow || turn || pause || stick)) {
+    const stick = !!o.stick;
+    if (!o.track && (P.follow || stick || !def || def.direction || def.pause)) {
+      let d = def;
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
+        if (!d) {
+          d = this.ofx.lib.def(k);
+          if (d) {
+            // loaded now: its own placement (a FollowOwner, `_keepOriginRotation`), and once the rotation and the
+            // direction it takes at its spawn (a mount point's, FLIP_TWO_SIDE, towards the target)
+            P = this._placing(d, null, o);
+            const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY, mountRot: P.rotKind ? mountRotation(skin, P.rotKind, pose) : null };
+            this._orient(d, pl, pose, o, v);
+            fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY; fx.mountRot = pl.mountRot;
+          }
+        }
         const p = this.pose(v);
-        if (follow) {
-          mountPoint(skin, follow.mount, p, fx.anchor);
-          if (onGround) fx.anchor[2] = -(v.z || 0);
+        if (P.follow) {
+          mountPoint(skin, P.follow.mount, p, fx.anchor);
+          if (P.onGround) fx.anchor[2] = -(v.z || 0);
           fx.groundZ = -(v.z || 0);
-          if (fmp && rotKind) fx.mountRot = mountRotation(skin, rotKind, p, fx.mountRot || [0, 0, 0, 1]);
+          if (P.fmp && P.rotKind) fx.mountRot = mountRotation(skin, P.rotKind, p, fx.mountRot || [0, 0, 0, 1]);
         } else if (stick && v.alive !== false) {
-          const sp = spawnPoint(skin, spawn, p);
-          fx.anchor[0] = sp[0]; fx.anchor[1] = sp[1]; fx.anchor[2] = onGround ? -(v.z || 0) : sp[2];
+          const sp = spawnPoint(skin, P.spawn, p);
+          fx.anchor[0] = sp[0]; fx.anchor[1] = sp[1]; fx.anchor[2] = P.onGround ? -(v.z || 0) : sp[2];
           fx.groundZ = -(v.z || 0);
         }
-        if (turn) {
+        if (d && d.direction) {
           const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY, mountRot: fx.mountRot };
-          this._orient(def, pl, p, {}, v);
+          this._orient(d, pl, p, {}, v);
           fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY;
         }
-        if (pause) fx.hidden = this._paused(pause, v, p);
+        if (d && d.pause) fx.hidden = this._paused(d.pause, v, p);
       };
     }
     return this.ofx.spawn(k, place, opts);
+  }
+
+  /**
+   * Where an effect sits on its unit, from its descriptor or — not loaded yet — index.json's summary `sum` (`spawn`,
+   * `follow`: a FollowMountPoint's MountPointType): `spawn` its spawn location (HIT without either); `fmp` its
+   * FollowMountPoint, followed from the first frame; `follow` the point it keeps to — the FollowMountPoint's, else for a
+   * held loop (o.follow) a FollowOwner's / FollowTileHeight's (the feet); `rotKind` the point whose rotation it takes (a
+   * FollowMountPoint without `_keepOriginRotation`, a MUZZLE_POINT or Special-point spawn; a summary's: none until the
+   * descriptor says); `onGround` a ground spawn.
+   */
+  _placing(def, sum, o) {
+    const spawn = def ? def.spawn : Number.isInteger(sum?.spawn) ? sum.spawn : 2;
+    const fmp = def ? (def.follow && !def.follow.owner ? def.follow : null) : Number.isInteger(sum?.follow) ? { mount: sum.follow } : null;
+    const follow = fmp || (o.follow && def?.follow) || null;
+    const rotKind = !def ? null : fmp ? (fmp.keepRot ? null : mountKind(fmp.mount)) : spawnRotationKind(spawn);
+    return { spawn, fmp, follow, rotKind, onGround: GROUND_SPAWNS.has(spawn) && !fmp };
   }
 
   /**
@@ -664,7 +692,9 @@ export class FxWiring {
     const u = this.unitOf(src);
     const nth = this.attackN.get(src.id ?? src.info?.id) || 0;
     const set = sk?.replace ? null : this._attackSet(u, this.mode(u, src, info.skillOn), src, tgt, kind, nth);
-    if (!set && !sk) return false;
+    // a funnel shot's casts on its floating unit (耶拉's token) start with the owner's wind-up
+    const fun = this.funnels.castStart(src, tgt, kind, info);
+    if (!set && !sk) return fun;
     if (set) this._casts(set, src, tgt, 'start', info);
     if (sk) this.skills.casts(sk, src, tgt, 'start', info);
     return true;
@@ -690,7 +720,10 @@ export class FxWiring {
     const set = this._attackSet(u, this.mode(u, src), src, tgt, kind, nth);
     const a = sk?.replace ? null : set;
     if (tgt) this.lastTargets.set(id, tgt);
-    if (!a && !sk) return false;
+    // the 驭械术士's floating units (render/vfx/funnelfx.js): they leave home and hit with the attack, or fly the funnel
+    // shot from their point; the body shot of another target of the same attack is not flown (`skipBody`)
+    const fun = this.funnels.attack(src, tgt, kind, time, again, wound);
+    if (!a && !sk) return !!fun;
     this.castFrame.set(id, this.skills.frame);
     const phase = wound ? 'strike' : 'all';
     if (a) this._casts(a, src, tgt, phase, { owner: !again });
@@ -711,6 +744,7 @@ export class FxWiring {
     if (a?.groups) { rec.modeGroups = a.groups.map(keysOf); rec.modeOpts = a.hitOpts; }
     if (sk && (sk.fx.hit.length || sk.buffs.length)) { rec.groups = sk.fx.hit; rec.hitOpts = sk.fx.hitOpts; rec.buffs = sk.buffs; rec.U = sk.U; }
     const grouped = !!(rec.groups || rec.modeGroups);
+    if (proj && tgt && isShot && fun?.skipBody) return true;
     if (proj && tgt && isShot) {
       // index v3: where the shot leaves (mount, a mount group's points) and its follow-up shots (skills.js shotOf)
       const shot = sk?.projectile ? sk.shot : set?.shot;
@@ -949,7 +983,9 @@ export class FxWiring {
     if (hpHit) this.skills.trigger(v);
     const id = v.id ?? v.info?.id;
     const m = this._pending(id, time);
-    const drawn = m && hpHit ? this._landed(m, v, time, type) : false;
+    // an attached floating unit's hit lands with its damage (荒芜拉普兰德's wolves: render/vfx/funnelfx.js)
+    const fun = hpHit ? this.funnels.damage(v, time, type) : false;
+    const drawn = (m && hpHit ? this._landed(m, v, time, type) : false) || fun;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
     const ph = this.pendingHit.get(id);
@@ -1022,6 +1058,7 @@ export class FxWiring {
     for (const [slot, h] of this.loops) if (slot.startsWith(`${id}|`)) { h.stop(); this.loops.delete(slot); }
     this.skills.release(v);
     this.talents.release(v);
+    this.funnels.release(v);
   }
 
   /** b.ev ['skill', id, on] (SkillFx.skill): true when the official layer shows the skill (no procedural burst / aura). */
@@ -1029,6 +1066,7 @@ export class FxWiring {
     if (!v || !this.idx) return false;
     const drew = this.skills.skill(v, !!on);
     this.talents.skill(v, !!on);   // the talents a skill start casts (ON_SKILL_START)
+    this.funnels.skill(v, !!on);   // the floating units of the skill's mode (render/vfx/funnelfx.js)
     return drew;
   }
 
@@ -1044,6 +1082,7 @@ export class FxWiring {
     const list = Array.isArray(views) ? views : [...views];   // (render/app.js passes the views Map's iterator)
     this.skills.sync(list);
     this.talents.sync(list);
+    this.funnels.sync(list);
   }
 
   /**
@@ -1054,7 +1093,9 @@ export class FxWiring {
   simFx(kind, x, y, extra) {
     if (!this.idx) return false;
     const t = this.talents.fx(kind, extra);
-    return this.skills.simFx(kind, x, y, extra) || t;
+    // the floating units stand for the kit's 'drone' / 'drones' / 'droneLock' / 'overload' (render/vfx/funnelfx.js)
+    const f = this.funnels.simFx(kind, x, y, extra);
+    return this.skills.simFx(kind, x, y, extra) || t || f;
   }
 
   /** b.ev 'die': the unit's own death effect or the generic one. */
@@ -1103,6 +1144,7 @@ export class FxWiring {
     this.castFrame.clear();
     this.skills.clear();
     this.talents.clear();
+    this.funnels.clear();
     this.forms.clear();
     this.lastTargets.clear();
     this.picks.clear();

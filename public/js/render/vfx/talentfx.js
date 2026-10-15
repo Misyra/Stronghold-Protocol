@@ -74,7 +74,8 @@ export class TalentFx {
         let rec = null;
         try { rec = typeof this.w.opts.record === 'function' ? this.w.opts.record(info) || null : null; } catch { rec = null; }
         const all = key ? talentBindings(this.w.idx, key, { info, rec }) : [];
-        const binds = all.filter((b) => bindable(b).ok || b.when === 'attack');
+        // (a 驭械术士's floating unit — the passive general ability beside her funnel shot — is FunnelFx's to draw)
+        const binds = all.filter((b) => (bindable(b).ok || b.when === 'attack') && !this.w.funnels?.owns(key, b));
         if (binds.length) {
           U = {
             id, key, v, binds, rec, standing: false, born: false,

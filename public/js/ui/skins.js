@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // 干员皮肤：客户端状态与同步 (docs/SKINS.md).
 //
 // Two different things live here, and keeping them apart is what makes 「按需安装」 work:

@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // test/spine-preview.test.js — 干员小人预览 (docs/SKINS.md): the preview frame of the picker is drawn by
 // render/spinePreview.js — a static snapshot first, then live playback on the same Spine + PIXI path the battlefield
 // uses — and the animation buttons under it come from `clipsOf()`, i.e. from what each model actually ships.

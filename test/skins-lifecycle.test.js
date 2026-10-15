@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // test/skins-lifecycle.test.js — end-to-end integration test for the skins pipeline:
 // lobby session/seats -> Match/PlayerState -> prep pieceView & prepFieldMeta -> battleInput & sim units -> public/js assets & avatarUrl.
 

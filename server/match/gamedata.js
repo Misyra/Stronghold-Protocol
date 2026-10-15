@@ -311,15 +311,20 @@ export class GameData {
     };
   }
 
-  /** Copies of a base chess in the shared pool. */
+  /**
+   * Copies of a base chess in the shared pool — and, for a DIY slot, of a slotted 自选 piece in its player's own stock
+   * (player/diy.js buildDiyStock).
+   */
   poolCopies(baseId) {
     const ov = this.economy.poolCopiesOverrides;
     const tier = this.tierOf(baseId);
     const pc = this.economy.poolCopies;
     const v = ov && Number.isInteger(ov[baseId]) && ov[baseId] >= 0 ? ov[baseId] : pc?.[tier];
     const base = Number.isInteger(v) && v >= 0 ? v : (DEFAULTS.poolCopies[tier] ?? 10);
-    // The measured doubled pool is shared by the whole co-op team, independent of team size. DIY is private stock.
-    const multiplier = this.isSolo || this.chess(baseId)?.isDiy ? 1 : posIntOr(this.economy.coopPoolMultiplier, 1);
+    // Co-op doubles the single-player counts: the measured shared pool (shared by the whole team, independent of team
+    // size) and each player's private 自选 stock alike — the maintainer's decision of 2026-10-15 (GitHub #650): with
+    // the shared pool doubled and the 自选 stock not, a 自选 operator was diluted in the copy-weighted rolls.
+    const multiplier = this.isSolo ? 1 : posIntOr(this.economy.coopPoolMultiplier, 1);
     return base * multiplier;
   }
 

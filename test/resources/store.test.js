@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { CACHE_NAME, CACHE_PREFIX, cacheName, indexUrl, rangeResponse, TIER_ESSENTIAL, TIER_REST } from '../../public/js/resources/common.js';
 import { collectResourceFiles } from '../../server/resources.js';
-import { ResourceStore, normalizeSkinKeys } from '../../public/js/resources/store.js';
+import { ResourceStore, normalizeSkinKeys, normalizeSkinScope } from '../../public/js/resources/store.js';
 import { handleResourceRequest } from '../../public/js/resources/service.js';
 
 /** Minimal Cache Storage (Cache API surface the store uses: open/keys/delete + cache.put/match/keys). */
@@ -609,6 +609,16 @@ describe('干员皮肤 selection', () => {
     assert.deepEqual([...normalizeSkinKeys({ keys: ['../etc/passwd', 42, 'char_a/x.png', ''] })], [], 'a hand-edited blob cannot widen the selection');
   });
 
+  test('normalizeSkinScope: 全部皮肤 is its own flag, never a side effect of a key list', () => {
+    assert.deepEqual(normalizeSkinScope(null), { keys: new Set(), all: false });
+    assert.deepEqual(normalizeSkinScope('off'), { keys: new Set(), all: false });
+    assert.deepEqual(normalizeSkinScope('all'), { keys: new Set(), all: true });
+    assert.deepEqual(normalizeSkinScope({ keys: [KALTS], all: true }), { keys: new Set([KALTS]), all: true });
+    assert.deepEqual(normalizeSkinScope({ keys: [KALTS] }), { keys: new Set([KALTS]), all: false });
+    assert.deepEqual(normalizeSkinScope([KALTS]).all, false, 'a plain list is not every outfit');
+    assert.deepEqual(normalizeSkinScope({ all: 'yes' }), { keys: new Set(), all: false }, 'only a real boolean widens it');
+  });
+
   test('nothing equipped: skins out of the selection, the rest of the optional set unchanged', async () => {
     const s = store(manifest(FILES));
     assert.deepEqual(s.skinKeys(), []);
@@ -655,6 +665,27 @@ describe('干员皮肤 selection', () => {
     assert.deepEqual(s.selectedFiles.filter((f) => f.skin).map((f) => f.url), ['/assets/spine/op/char_002_amiya/char_002_amiya_winter_1/front/char_002_amiya_winter_1.skel']);
     s.setScope({ optional: false, skins: 'off' });
     assert.equal(s.selectedFiles.filter((f) => f.skin).length, 0);
+  });
+
+  test('全部皮肤: every installed outfit is wanted, whatever 干员调配 has equipped', async () => {
+    const s = store(manifest(FILES));
+    s.setScope({ optional: false, skins: { all: true } });
+    assert.deepEqual(s.skinKeys(), [], 'no individual pick is needed');
+    assert.deepEqual(s.skinScope(), { keys: [], all: true });
+    assert.deepEqual(s.selectedFiles.filter((f) => f.skin).map((f) => f.url).sort(), [
+      '/assets/char/avatar/skin/char_003_kalts_boc_6.png',
+      '/assets/spine/op/char_002_amiya/char_002_amiya_winter_1/front/char_002_amiya_winter_1.skel',
+      '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel',
+    ].sort());
+    assert.ok(!s.selectedFiles.some((f) => f.url.includes('/audio/voice/')), 'the voices still need 「同时预载」');
+    const st = await s.status();
+    assert.deepEqual(st.skins.map((x) => x.id), [AMIYA, KALTS]);
+    assert.deepEqual(st.skins.map((x) => x.wanted), [1, 2], 'each listed outfit counts its own files');
+    assert.deepEqual(st.skinScope, { keys: [], all: true });
+    // Turning it off empties the scope again — nothing accumulated a key list behind the player's back.
+    s.setScope({ optional: false, skins: 'off' });
+    assert.equal(s.selectedFiles.filter((f) => f.skin).length, 0);
+    assert.deepEqual(s.skinScope(), { keys: [], all: false });
   });
 
   test('the voice language filter still applies inside a selection, and clearing optional removes skins', async () => {

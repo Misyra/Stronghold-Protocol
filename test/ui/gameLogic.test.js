@@ -734,7 +734,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, keys: { ...DEFAULT_SETTINGS.keys } },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: { ...DEFAULT_SETTINGS.keys } },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voice, DEFAULT_SETTINGS.voice, 'a saved profile without `voice` gets the default');
     // 语音语言 (0.2.2): 中文 by default — a profile saved before it, or any other value, plays the Chinese dub
@@ -754,6 +754,11 @@ describe('keyboard & settings', () => {
     assert.equal(sanitizeSettings({ preloadSkins: true }).preloadSkins, true);
     assert.equal(sanitizeSettings({ preloadSkins: false }).preloadSkins, false);
     for (const bad of ['picked', 'all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadSkins: bad }).preloadSkins, false, String(bad));
+    // 全部皮肤 (docs/SKINS.md): a second switch — the master still gates it, and it is never saved as a key list.
+    assert.equal(DEFAULT_SETTINGS.preloadSkinsAll, false);
+    assert.equal(sanitizeSettings({ preloadSkinsAll: true }).preloadSkinsAll, true);
+    assert.equal(sanitizeSettings({ preloadSkinsAll: false }).preloadSkinsAll, false);
+    for (const bad of ['all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadSkinsAll: bad }).preloadSkinsAll, false, String(bad));
     // 帧率上限 (frameRate.js): 0 = uncapped — a profile saved before it, or any other value, stays uncapped
     assert.equal(sanitizeSettings({ quality: 'low' }).fpsLimit, 0, 'older saved settings remain uncapped');
     for (const limit of [0, 30, 60, 120]) assert.equal(sanitizeSettings({ fpsLimit: limit }).fpsLimit, limit);
